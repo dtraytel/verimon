@@ -147,6 +147,7 @@ let add_let_index f n rels =
     | EUntil (f1,f2,_,_) ->
       update f1;
       update f2
+    | _ -> raise (Invalid_argument "not implemented yet")
   in
   update f
 
@@ -429,6 +430,7 @@ let rec eval f crt discard =
       | None -> inf.urel2 <- Some rel2; None
     in
     update_and_get_result (), loc
+  | _ -> raise (Invalid_argument "not implemented yet")
 
   in
   let result, loc = wrapper f in
@@ -482,6 +484,7 @@ let add_index f i tsi db =
     | EUntil (f1,f2,_,_) ->
       update lets f1;
       update lets f2
+    | _ -> raise (Invalid_argument "not implemented yet")
   in
   update [] f
 
@@ -716,6 +719,16 @@ let add_ext neval f =
     let inf = {ulast = neval0; urel2 = None; uaux} in
     wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
+  (*| MatchP (intv, r) ->
+    let (mr, f) = to_mregex r in
+    let ext_fl = List.map (add_ext None) f in
+    EMatchP (intv, mr, sorted_list_of_set (RPDs mr), ext_fl, replicate (List.length f) [], Neval.dummy_cell, [], next_loc())
+
+  | MatchF (intv, r) ->
+    let (mr, f) = to_mregex f in
+    let ext_fl = List.map (add_ext None) f in
+    EMatchF (intv, mr, sorted_list_of_set (LPDs mr), ext_fl, replicate (List.length f) [], Neval.dummy_cell, [], next_loc())*)
+    
   | _ -> failwith "[add_ext] internal error"
   in
   add_ext None false f, neval0

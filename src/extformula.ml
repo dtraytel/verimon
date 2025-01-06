@@ -25,6 +25,17 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+type mregex =  
+  | MSkip of int
+  | MTestPos of int
+  | MTestNeg of int
+  | MPlus of (mregex * mregex)
+  | MTimes of (mregex *  mregex)
+  | MStar of mregex
+
+type mrdeltaaux = (timestamp * (mregex, relation) Hashtbl.t) list
+type mldeltaaux = (timestamp * relation list * relation) list
+
 type extformula =
   | ERel of relation * int
   | EPred of predicate * comp_one * info * int
@@ -39,6 +50,9 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  | EMatchP of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mrdeltaaux * int
+  | EMatchF of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mldeltaaux * int
+
 
 
   let rec contains_eventually = function
@@ -55,6 +69,9 @@ type extformula =
   | ENext          (dt, f1, ninf, _)                             -> contains_eventually f1
   | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EUntil         (f1, f2, uinf, _)                             -> contains_eventually f1 || contains_eventually f2
+  | EMatchP        (_, _, _, fl, _, _, _, _)                     -> List.exists contains_eventually fl
+  | EMatchF        (_, _, _, fl, _, _, _, _)                     -> List.exists contains_eventually fl
+  (* | _ -> raise (Invalid_argument "not implemented yet") *)
 
 (* 
   Print functions used for debugging
@@ -272,6 +289,14 @@ let rec pp_structure ppf ff =
   | ENext (_, f1, _, loc) -> pp_unary "NEXT" loc f1
   | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EUntil (f1, f2, _, loc) -> pp_binary "UNTIL" loc f1 f2
+  | EMatchP (_, _, _, fl, _, _, _, loc) ->
+    fprintf ppf "@[<hv>%d: MATCHP@ %a@]"
+      loc
+      (pp_print_list ~pp_sep:pp_print_space pp_structure) fl
+  | EMatchF (_, _, _, fl, _, _, _, loc) ->
+    fprintf ppf "@[<hv>%d: MATCHF@ %a@]"
+      loc
+      (pp_print_list ~pp_sep:pp_print_space pp_structure) fl
 
 let extf_structure ff =
   pp_structure Format.str_formatter ff;

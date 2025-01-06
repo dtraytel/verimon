@@ -99,7 +99,9 @@ type formula =
   | Release of (interval * formula * formula)
   | Frex of (interval * regex)
   | Prex of (interval * regex)
-and regex =
+  | MatchP of (interval * regex)
+  | MatchF of (interval * regex)
+and regex = 
   | Wild
   | Test of formula
   | Concat of (regex * regex)
@@ -152,6 +154,9 @@ val is_mfodl: formula -> bool
 
 val free_vars: formula -> var list
   (** [free_vars f] returns the list of free variables of [f]. *)
+
+val free_re_vars: regex -> var list
+(** [free_re_vars r] returns the list of free variables of [r]. *)
 
 val fresh_var_mapping: string list -> var list -> string list * (var * string) list
 

@@ -23,6 +23,17 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+type mregex =  
+  | MSkip of int
+  | MTestPos of int
+  | MTestNeg of int
+  | MPlus of (mregex * mregex)
+  | MTimes of (mregex *  mregex)
+  | MStar of mregex
+
+type mrdeltaaux = (timestamp * (mregex, relation) Hashtbl.t) list
+type mldeltaaux = (timestamp * relation list * relation) list
+
 type extformula =
   | ERel of relation * int
   | EPred of predicate * comp_one * info * int
@@ -37,6 +48,8 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  | EMatchP of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mrdeltaaux * int
+  | EMatchF of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mldeltaaux * int
 
 val contains_eventually: extformula -> bool
 

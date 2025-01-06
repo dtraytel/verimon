@@ -79,6 +79,8 @@ type formula =
   | Release of (interval * formula * formula)
   | Frex of (interval * regex)
   | Prex of (interval * regex)
+  | MatchP of (interval * regex)
+  | MatchF of (interval * regex)
 and regex = 
   | Wild
   | Test of formula

@@ -52,6 +52,10 @@ open Db
 
 type expand_mode = ExpandAll | ExpandNonshared
 
+type context = Past | Future
+
+type mode = Strict | Lax
+
 val no_rw: bool ref
 val unfold_let: expand_mode option ref
   (** Flags corresponding to the command-line options -no_rw and -unfold_let. *)
@@ -61,6 +65,7 @@ val is_special_case: (var list) -> formula -> bool
     independently. *)
 
 val is_monitorable: formula -> bool * (formula * string) option
+val is_monitorable_regex: context -> mode -> regex -> bool
 
 val check_formula: schema -> formula -> bool * formula * (var * tcst) list
 (** Returns [true, pf, vtypes] if the formula is monitorable by our

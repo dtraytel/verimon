@@ -45,6 +45,10 @@ open Verified
 
 type expand_mode = ExpandAll | ExpandNonshared
 
+type context = Past | Future
+
+type mode = Strict | Lax
+
 let no_rw = ref false
 let unfold_let = ref None
 
@@ -463,8 +467,29 @@ let rec is_monitorable f =
   | Trigger _ 
   | Release _ ->
     failwith "[Rewriting.is_monitorable] The operators TRIGGER and RELEASE are only available with the -verified flag."
+and 
+  is_monitorable_regex c m r =  
+  match r with 
+  | Wild -> true
+  | Test (Neg f) -> m = Lax && fst(is_monitorable f) 
+  | Test f -> fst(is_monitorable f)
+  | Plus (r1, r2) ->
+      (m = Lax || MFOTL.free_re_vars r1 = MFOTL.free_re_vars r2) &&
+      is_monitorable_regex c m r1 &&
+      is_monitorable_regex c m r2
+  | Concat (r1, r2) -> 
+    (match c with
+      | Past -> (m = Lax || Misc.subset (MFOTL.free_re_vars r2) (MFOTL.free_re_vars r1)) &&
+        is_monitorable_regex Past m r1 && 
+        is_monitorable_regex Past Lax r2
+      | Future -> (m = Lax || Misc.subset (MFOTL.free_re_vars r1) (MFOTL.free_re_vars r2)) &&
+        is_monitorable_regex Future Lax r1 && 
+        is_monitorable_regex Future m r2)
+  | Star r -> m = Lax && is_monitorable_regex c m r    
 
-
+(**To do: 
+Handling of error messages for non monitorable formulas
+**)
 (** Range-restrictions, safe-range and TSF safe-range checks, and
     propagation of range restrictions
     (see Sec. 5.3.3-5 of Samuel Mueller's PhD thesis) **)
