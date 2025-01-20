@@ -86,7 +86,7 @@ let elim_double_negation f =
     | Frex (intv, r) -> Frex (intv, elim_re r)
     | Prex (intv, r) -> Prex (intv, elim_re r)
   and elim_re = function
-  | Wild -> Wild
+  | Skip n -> Skip n
   | Test f -> Test (elim f)
   | Concat (r1,r2) -> Concat(elim_re r1, elim_re r2)
   | Plus (r1,r2) -> Plus(elim_re r1, elim_re r2)
@@ -135,7 +135,7 @@ let simplify_terms f =
     | Frex (intv, r) -> Frex (intv, s_re r)
     | Prex (intv, r) -> Prex (intv, s_re r)
   and s_re = function
-  | Wild -> Wild
+  | Skip n -> Skip n
   | Test f -> Test (s f)
   | Concat (r1,r2) -> Concat(s_re r1, s_re r2)
   | Plus (r1,r2) -> Plus(s_re r1, s_re r2)
@@ -196,7 +196,7 @@ let rec elim_syntactic_sugar g =
     | Frex (intv, r) -> Frex (intv, elim_re r)
     | Prex (intv, r) -> Prex (intv, elim_re r)
   and elim_re = function
-  | Wild -> Wild
+  | Skip n -> Skip n
   | Test f -> Test (elim f)
   | Concat (r1,r2) -> Concat(elim_re r1, elim_re r2)
   | Plus (r1,r2) -> Plus(elim_re r1, elim_re r2)
@@ -258,7 +258,7 @@ let push_negation g =
     | Frex (intv, r) -> Frex (intv, push_re r)
     | Prex (intv, r) -> Prex (intv, push_re r)
   and push_re = function
-  | Wild -> Wild
+  | Skip n -> Skip n
   | Test f -> Test (push f)
   | Concat (r1,r2) -> Concat(push_re r1, push_re r2)
   | Plus (r1,r2) -> Plus(push_re r1, push_re r2)
@@ -454,8 +454,8 @@ let rec is_monitorable f =
             | _ -> f1)
         in
         is_monitorable f1'
-  | Frex (intv , f) -> failwith "[Rewriting.is_monitorable] The future match operator |.|> can be used only with the -verified flag set"
-  | Prex (intv , f) -> failwith "[Rewriting.is_monitorable] The past match operator <|.| can be used only with the -verified flag set"
+  | Frex (intv , r) -> is_monitorable_regex Future Strict r, None
+  | Prex (intv , r) -> is_monitorable_regex Past Strict r, None
 
   (* These operators should have been eliminated *)
   | Implies _
@@ -470,7 +470,7 @@ let rec is_monitorable f =
 and 
   is_monitorable_regex c m r =  
   match r with 
-  | Wild -> true
+  | Skip n -> true
   | Test (Neg f) -> m = Lax && fst(is_monitorable f) 
   | Test f -> fst(is_monitorable f)
   | Plus (r1, r2) ->
@@ -640,7 +640,7 @@ let rec rr = function
   | LetPast (_,_,f) -> rr f
   | _ -> failwith "[Rewriting.rr] internal error: syntactic sugar (IMPL, EQUIV, FORALL, ALWAYS and PAST_ALWAYS) not supported"
   and rr_re future = function 
-  | Wild -> ([],true)
+  | Skip n -> ([],true)
   | Test f -> rr f
   | Concat (r1,r2) -> let (rr1,b1) = rr_re future r1 in
                       let (rr2,b2) = rr_re future r2 in
@@ -893,7 +893,7 @@ function
   | Prex (intv, r) 
     -> (check_interval intv) && (check_re_intervals r)
 and check_re_intervals = function
-  | Wild -> true
+  | Skip n -> true
   | Test f -> (check_intervals f)
   | Concat (r1,r2)
   | Plus (r1,r2) 
@@ -953,7 +953,7 @@ function
   | Release (intv, f1, f2)
     -> (check_bound intv) && (check_bounds f1) && (check_bounds f2)
 and check_re_bounds = function
-  | Wild -> true
+  | Skip n -> true
   | Test f -> (check_bounds f)
   | Concat (r1,r2)
   | Plus (r1,r2) 
@@ -1001,7 +1001,7 @@ let rec is_future = function
   | Frex (_,_)
     -> true
 and is_re_future = function 
-  | Wild -> false
+  | Skip n -> false
   | Test f -> (is_future f)
   | Concat (r1,r2)
   | Plus (r1,r2) -> (is_re_future r1) || (is_re_future r2)
@@ -1092,7 +1092,7 @@ let rec check_let = function
   | Release (_, f1, f2)
     -> (check_let f1) && (check_let f2)
 and check_re_let = function 
-  | Wild -> true
+  | Skip n -> true
   | Test f -> (check_let f)
   | Concat (r1,r2)
   | Plus (r1,r2) -> (check_re_let r1) && (check_re_let r2)
@@ -1160,7 +1160,7 @@ let expand_let mode f =
   | Until (i, f1, f2) -> Until (i, expand_let_rec m f1, expand_let_rec m f2)
   | Release (i, f1, f2) -> Release (i, expand_let_rec m f1, expand_let_rec m f2)
 and expand_let_re_rec m = function
-  | Wild -> Wild 
+  | Skip n -> Skip n 
   | Test f -> Test (expand_let_rec m f)
   | Concat (r1,r2) -> Concat ((expand_let_re_rec m r1), (expand_let_re_rec m r2))
   | Plus (r1,r2) -> Plus (expand_let_re_rec m r1, (expand_let_re_rec m r2))
@@ -1212,7 +1212,7 @@ let rec check_aggregations = function
   | Release (_, f1, f2)
     -> (check_aggregations f1) && (check_aggregations f2)
 and check_re_aggregations = function 
-  | Wild -> true
+  | Skip n -> true
   | Test f -> (check_aggregations f)
   | Concat (r1,r2)
   | Plus (r1,r2) -> (check_re_aggregations r1) && (check_re_aggregations r2)
@@ -1666,7 +1666,7 @@ let rec type_check_formula (sch, vars) f =
   | Frex (intv,r) -> let (s,v,r) = type_check_re_formula (sch, vars) r in (s,v,Frex (intv,r))
   | Prex (intv,r) -> let (s,v,r) = type_check_re_formula (sch, vars) r in (s,v,Prex (intv,r))
 and type_check_re_formula (sch, vars) = function 
-  | Wild -> (sch, vars, Wild)
+  | Skip n -> (sch, vars, Skip n)
   | Test f -> let (s,v,f) = type_check_formula (sch, vars) f in (s,v,Test f)
   | Concat (r1,r2) ->
     let (s1,v1,r1) = type_check_re_formula (sch, vars) r1 in

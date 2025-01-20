@@ -259,8 +259,8 @@ fconcat:
 
 fatom:
   | LPA fregex RPA                   { f "r()"; $2 }
-  | DOT                              { f "f(wild)"; Wild }
-  | formula                          { f "f(fbase)"; Concat(Test ($1),Wild)} %prec BASE
+  | DOT                              { f "f(wild)"; wild }
+  | formula                          { f "f(fbase)"; Concat(Test ($1),wild)} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
   | fatom STAR                       { f "f(star)"; Star ($1)}
 
@@ -274,8 +274,8 @@ pconcat:
 
 patom:
   | LPA pregex RPA                   { f "r()"; $2 }
-  | DOT                              { f "f(wild)"; Wild }
-  | formula                          { f "f(pbase)"; Concat(Wild,Test ($1))} %prec BASE
+  | DOT                              { f "f(wild)"; wild }
+  | formula                          { f "f(pbase)"; Concat(wild,Test ($1))} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
   | patom STAR                       { f "f(star)"; Star ($1)}
 

@@ -99,14 +99,14 @@ type formula =
   | Release of (interval * formula * formula)
   | Frex of (interval * regex)
   | Prex of (interval * regex)
-  | MatchP of (interval * regex)
-  | MatchF of (interval * regex)
-and regex = 
-  | Wild
-  | Test of formula
-  | Concat of (regex * regex)
-  | Plus of (regex * regex)
-  | Star of regex
+  and regex = 
+    | Skip of int
+    | Test of formula
+    | Concat of (regex * regex)
+    | Plus of (regex * regex)
+    | Star of regex
+    
+val wild : regex
 
 (** Operations on timestamps: *)
 

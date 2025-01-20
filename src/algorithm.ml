@@ -85,6 +85,7 @@ open Helper
 open Marshalling
 open Splitting
 open Extformula
+open Rewriting
 open Mformula
 open Hypercube_slicer
 
@@ -151,7 +152,103 @@ let add_let_index f n rels =
   in
   update f
 
+let rec mbufnt_take f z buf crt =
+  if List.exists (fun b -> List.compare_length_with b 0 = 0) buf || Neval.is_last crt then
+    (z, buf, crt)
+  else
+    let heads = List.map List.hd buf in
+    let tails = List.map List.tl buf in
+    let new_z = f heads (snd(Neval.get_data crt)) z in
+    mbufnt_take f new_z tails (Neval.get_next crt)
 
+let mrtabulate ks f =
+  let filtered_pairs = 
+    List.filter_map (fun k -> 
+      let fk = f k in 
+      if Relation.equal fk Relation.empty then None else Some (k, fk)  
+    ) ks
+  in 
+  List.fold_left (fun acc (k, v) -> Map.add k v acc) Map.empty filtered_pairs
+
+let rec epsilon_lax guard fs = function
+  | MSkip m -> if m = 0 then guard else Relation.empty
+  | MTestPos i -> Relation.natural_join (fun t -> Some t) [] guard (List.nth fs i)
+  | MTestNeg i -> Relation.natural_join (fun t -> Some t) [] guard (Relation.diff Relation.empty (List.nth fs i))
+  | MPlus (r, s) -> Relation.union (epsilon_lax guard fs r) (epsilon_lax guard fs s)
+  | MTimes (r, s) -> Relation.natural_join (fun t -> Some t) [] (epsilon_lax guard fs r) (epsilon_lax Relation.empty fs s)
+  | MStar _ -> guard
+
+let rec r_epsilon_strict n fs = function
+  | MSkip m -> 
+    if m = 0 then
+      Relation.singleton (Tuple.make_tuple [])
+    else 
+      Relation.empty
+  | MTestPos i -> List.nth fs i
+  | MTestNeg i -> 
+    if Relation.equal (List.nth fs i) Relation.empty then 
+      Relation.singleton (Tuple.make_tuple [])
+    else
+      Relation.empty 
+  | MPlus (r, s) -> Relation.union (r_epsilon_strict n fs r) (r_epsilon_strict n fs s)
+  | MTimes (r, s) -> epsilon_lax (r_epsilon_strict n fs r) fs s
+  | MStar _ -> Relation.singleton (Tuple.make_tuple [])
+
+let rec l_epsilon_strict n fs = function 
+| MSkip m -> 
+  if m = 0 then
+    Relation.singleton (Tuple.make_tuple [])
+  else 
+    Relation.empty
+| MTestPos i -> List.nth fs i
+| MTestNeg i -> 
+  if Relation.equal (List.nth fs i) Relation.empty then 
+    Relation.singleton (Tuple.make_tuple [])
+  else
+    Relation.empty 
+| MPlus (r, s) -> Relation.union (l_epsilon_strict n fs r) (l_epsilon_strict n fs s)
+| MTimes (r, s) -> epsilon_lax (l_epsilon_strict n fs r) fs r
+| MStar _ -> Relation.singleton (Tuple.make_tuple [])
+
+let lookup x key = 
+  match Map.find_opt key x with 
+  | Some value -> value 
+  | None -> Relation.empty
+
+let rec r_delta kappa x fs = function
+  | MSkip n -> (
+    match n with 
+      | 0 -> Relation.empty
+      | _ -> lookup x (kappa (MSkip (n - 1))) 
+    )
+  | MTestPos i -> Relation.empty
+  | MTestNeg i -> Relation.empty
+  | MPlus (r, s) -> Relation.union (r_delta kappa x fs r) (r_delta kappa x fs s)
+  | MTimes (r, s) -> 
+    Relation.union 
+      (r_delta (fun t -> kappa (MTimes r t)) x fs s) 
+      (epsilon_lax (r_delta kappa x fs r) fs s)
+  | MStar r -> r_delta (fun t -> kappa (MTimes (MStar r) t)) x fs r
+
+let rec l_delta kappa x fs = function
+  | MSkip n -> (
+    match n with 
+      | 0 -> Relation.empty
+      | _ -> lookup x (kappa (MSkip (n - 1))) 
+    )
+  | MTestPos i -> Relation.empty
+  | MTestNeg i -> Relation.empty
+  | MPlus (r, s) -> Relation.union (l_delta kappa x fs r) (l_delta kappa x fs s)
+  | MTimes (r, s) -> 
+    Relation.union 
+      (l_delta (fun t -> kappa (MTimes t s)) x fs r) 
+      (epsilon_lax (l_delta kappa x fs s) fs r)
+  | MStar r -> l_delta (fun t -> kappa (MTimes t (MStar r))) x fs r
+let update_matchP n intv mr mrs rels nt aux =
+  (aux, [])
+
+let update_matchF n intv mr mrs rels nt aux =
+  aux
 
 (* Arguments:
    - [f] the current formula
@@ -430,6 +527,24 @@ let rec eval f crt discard =
       | None -> inf.urel2 <- Some rel2; None
     in
     update_and_get_result (), loc
+  (*| EMatchP (intv, mr, mrs, ext_fl, buf, neval0, aux, loc) ->
+    if Misc.debugging Dbg_eval then
+      Printf.eprintf "[eval,MatchP] q=%d\n" q;
+    let (xss, ext_fl) = List.split (List.map (fun f -> eval f q) ext_fl) in 
+
+    let ((zs, aux), buf, ts) = mbufnt_take (fun rels t (zs, aux) ->
+      let (z, aux) = update_matchP q intv mr mrs rels t aux in
+      (zs @ [z], aux)) ([], aux) (mbufn_add xss buf) (neval0 @ [t])
+    in
+    (zs, EMatchP (intv, mr, rpds, ext_fl, buf, neval0, aux)), loc
+       
+  | EMatchF (intv, mr, mrs, ext_fl, buf, neval0, aux, loc) ->
+    if Misc.debugging Dbg_eval then
+      Printf.eprintf "[eval,MatchF] q=%d\n" q;
+    let (xss, ext_fl) = List.split (List.map (fun f -> eval f q) ext_fl) in
+    let (aux, buf, ts) = mbufnt_take (update_matchF q intv mr mrs) aux (mbufn_add xss buf) (neval0 @ [t]) in
+    let (zs, aux) = eval_matchF intv mr (match ts with [] -> t | nt :: _ -> nt) aux in
+    (zs, EMatchF (intv, mr, mrs, ext_fl, buf, neval0, ts, aux)), loc*)
   | _ -> raise (Invalid_argument "not implemented yet")
 
   in
@@ -505,6 +620,70 @@ let apply_post = function
 let force_post = function
   | Some f -> f
   | None -> (fun t -> Some t)
+
+let rec to_mregex_exec r xs = 
+  match r with 
+  | MFOTL.Skip n -> (MSkip n, xs)
+
+  | MFOTL.Test f -> 
+    if fst (is_monitorable f) then
+      (MTestPos (List.length xs), xs @ [f])
+    else 
+      (match f with
+      | MFOTL.Neg f' -> (MTestNeg (List.length xs), xs @ [f'])
+      | _ -> (MSkip 0, xs)
+      )
+
+  | MFOTL.Plus (r, s) ->
+    let (mr, ys) = to_mregex_exec r xs in
+    let (ms, zs) = to_mregex_exec s ys in
+    (MPlus (mr, ms), zs)
+
+  | MFOTL.Concat (r, s) ->
+    let (mr, ys) = to_mregex_exec r xs in
+    let (ms, zs) = to_mregex_exec s ys in
+    (MTimes (mr, ms), zs)
+
+  | MFOTL.Star r -> 
+    let (mr, ys) = to_mregex_exec r xs in (MStar mr, ys)
+
+let to_mregex r = to_mregex_exec r []
+
+let mtimesl r s =
+  List.map (fun x -> MTimes (r, x)) s
+
+let mtimesr r s =
+  List.map (fun x -> MTimes (x, s)) r
+
+let rec rpd = function 
+  | MSkip n -> if n = 0 then [] else [MSkip (n - 1)]
+  | MTestPos _ -> []
+  | MTestNeg _ -> []
+  | MPlus (r, s) -> rpd r @ rpd s
+  | MTimes (r, s) -> mtimesl r (rpd s) @ rpd r
+  | MStar r -> mtimesl (MStar r) (rpd r)
+
+let rec rpds_aux s = 
+  let sa = List.concat_map rpd s @ s in 
+  if List.for_all (fun x -> List.mem x s) sa then s 
+  else rpds_aux sa 
+
+let rpds r = rpds_aux [r]
+
+let rec lpd = function 
+  | MSkip n -> if n = 0 then [] else [MSkip (n - 1)]
+  | MTestPos _ -> []
+  | MTestNeg _ -> []
+  | MPlus (r, s) -> lpd r @ lpd s
+  | MTimes (r, s) -> mtimesr (lpd r) s @ rpd s
+  | MStar r -> mtimesr (lpd r) (MStar r)
+
+let rec lpds_aux s = 
+  let sa = List.concat_map lpd s @ s in 
+  if List.for_all (fun x -> List.mem x s) sa then s 
+  else rpds_aux sa 
+
+let lpds r = lpds_aux [r]
 
 let add_ext neval f =
   let neval0 = Neval.get_last neval in
@@ -719,15 +898,15 @@ let add_ext neval f =
     let inf = {ulast = neval0; urel2 = None; uaux} in
     wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
-  (*| MatchP (intv, r) ->
+  | Prex (intv, r) ->
     let (mr, f) = to_mregex r in
     let ext_fl = List.map (add_ext None) f in
-    EMatchP (intv, mr, sorted_list_of_set (RPDs mr), ext_fl, replicate (List.length f) [], Neval.dummy_cell, [], next_loc())
+    EMatchP (intv, mr, rpds mr, ext_fl, List.init (List.length f) (fun _ -> []), neval0, [], next_loc())
 
-  | MatchF (intv, r) ->
-    let (mr, f) = to_mregex f in
+  | Frex (intv, r) ->
+    let (mr, f) = to_mregex r in
     let ext_fl = List.map (add_ext None) f in
-    EMatchF (intv, mr, sorted_list_of_set (LPDs mr), ext_fl, replicate (List.length f) [], Neval.dummy_cell, [], next_loc())*)
+    EMatchF (intv, mr, lpds mr, ext_fl, List.init (List.length f) (fun _ -> []), neval0, [], next_loc())
     
   | _ -> failwith "[add_ext] internal error"
   in

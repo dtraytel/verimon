@@ -136,7 +136,7 @@ let convert_formula dbschema f =
   | Prex (intv, r) -> MatchP (convert_interval intv, convert_re_vars fvl bvl lets r)
   | f -> unsupported (string_of_formula "Unsupported formula " f)
 and convert_re_vars fvl bvl lets = function
-  | Wild -> wild
+  | Skip n -> Skip (nat_of_int n)
   | Test f -> Test (convert_formula_vars fvl bvl lets f)
   | Concat (r1,r2) -> Times (convert_re_vars fvl bvl lets r1, convert_re_vars fvl bvl lets r2)
   | Plus (r1,r2) -> Plusa (convert_re_vars fvl bvl lets r1, convert_re_vars fvl bvl lets r2)

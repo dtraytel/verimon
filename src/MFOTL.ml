@@ -79,16 +79,14 @@ type formula =
   | Release of (interval * formula * formula)
   | Frex of (interval * regex)
   | Prex of (interval * regex)
-  | MatchP of (interval * regex)
-  | MatchF of (interval * regex)
 and regex = 
-  | Wild
+  | Skip of int
   | Test of formula
   | Concat of (regex * regex)
   | Plus of (regex * regex)
   | Star of regex
   
-
+let wild : regex = Skip 1
 
 let unixts = ref false
 
@@ -203,7 +201,7 @@ let rec formula_map = function
   | Frex (intv,r) -> mapf (Frex (intv,(formula_re_map r)))
   | Prex (intv,r) -> mapf (Prex (intv,(formula_re_map r)))
 and formula_re_map = function 
-  | Wild -> mapr Wild
+  | Skip n -> mapr (Skip n)
   | Test f -> mapr (Test (formula_map f))
   | Concat (r1,r2) ->
     let r1 = formula_re_map r1 in
@@ -249,7 +247,7 @@ let rec direct_subformulas = function
   | Frex (intv,r) -> direct_re_subformulas r
   | Prex (intv,r) -> direct_re_subformulas r
 and direct_re_subformulas = function 
-  | Wild -> []
+  | Skip n -> []
   | Test f -> [f]
   | Concat (r1,r2) 
   | Plus (r1,r2) -> (direct_re_subformulas r1) @ (direct_re_subformulas r2)
@@ -280,7 +278,7 @@ let rec temporal_subformulas f =
   | Prex (intv,r) -> f::(temporal_re_subformulas r)
   | _ -> List.concat (List.map temporal_subformulas (direct_subformulas f))
 and temporal_re_subformulas = function
-  | Wild -> []
+  | Skip n -> []
   | Test f -> temporal_subformulas f
   | Concat (r1,r2) 
   | Plus (r1,r2) -> (temporal_re_subformulas r1) @ (temporal_re_subformulas r2)
@@ -376,7 +374,7 @@ let rec free_vars = function
   | Frex (intv,r)
   | Prex (intv,r) -> free_re_vars r
 and free_re_vars = function 
-  | Wild -> []
+  | Skip n -> []
   | Test f -> free_vars f
   | Concat (r1,r2) 
   | Plus (r1,r2) -> Misc.union (free_re_vars r1) (free_re_vars r2)
@@ -507,7 +505,7 @@ let rec substitute_vars m =
   | Until (i, f1, f2) -> Until (i, substitute_vars m f1, substitute_vars m f2)
   | Release (i, f1, f2) -> Release (i, substitute_vars m f1, substitute_vars m f2)
 and substitute_re_vars m = function
-  | Wild -> Wild 
+  | Skip n -> Skip n 
   | Test f -> Test (substitute_vars m f)
   | Concat (r1,r2) -> Concat ((substitute_re_vars m r1), (substitute_re_vars m r2))
   | Plus (r1,r2) -> Plus (substitute_re_vars m r1, (substitute_re_vars m r2))
@@ -558,7 +556,7 @@ let count_pred_uses pred f =
 	| Until (_, f1, f2)
     | Release (_, f1, f2) -> go f1 + go f2
   and go_re = function
-    | Wild -> 0
+    | Skip n -> 0
     | Test f -> go f
     | Concat (r1, r2)
     | Plus (r1, r2) -> go_re r1 + go_re r2
@@ -901,7 +899,7 @@ let string_of_formula str g =
     )
   and string_r_rec top par h = 
   (match h with
-    | Wild -> "."
+    | Skip n -> if n = 1 then "." else ".{"^string_of_int n ^"}"
     | _ ->
         (if par && not top then "(" else "")
         ^ 
@@ -1224,7 +1222,7 @@ let string_of_parenthesized_formula str g =
   
     and string_r_rec top par h = 
     (match h with
-      | Wild -> "(" ^ "." ^ ")"
+      | Skip n -> if n = 1 then "(.)" else "(.{"^string_of_int n ^"})"
       | _ ->
           (match h with
             | Test f -> 
