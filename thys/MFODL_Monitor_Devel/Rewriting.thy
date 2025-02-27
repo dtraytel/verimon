@@ -2001,8 +2001,10 @@ next
   then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
 qed (simp only:rewrite.simps fix_r.simps;auto)+
 
-lemma final_sat: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> (project (rewrite (embed \<phi>) Same)) \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
-  unfolding sat_project sat_rewrite
+definition "rrewrite \<phi> = project (rewrite (embed \<phi>) Same)"
+
+lemma final_sat: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> rrewrite \<phi> \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
+  unfolding sat_project sat_rewrite rrewrite_def
   unfolding sat_embed[symmetric]
   by simp
 
