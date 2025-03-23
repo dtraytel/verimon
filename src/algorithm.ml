@@ -161,24 +161,39 @@ let rec mbufnt_take f z buf crt =
     let new_z = f heads (snd(Neval.get_data crt)) z in
     mbufnt_take f new_z tails (Neval.get_next crt)
 
-let mrtabulate ks f =
-  let filtered_pairs = 
-    List.filter_map (fun k -> 
-      let fk = f k in 
-      if Relation.equal fk Relation.empty then None else Some (k, fk)  
-    ) ks
-  in 
-  List.fold_left (fun acc (k, v) -> Map.add k v acc) Map.empty filtered_pairs
+let mbufn_add xs' xs = 
+  List.map2 (@) xs xs'
 
-let rec epsilon_lax guard fs = function
+let rec epsilon_lax attr_guard guard attr_fs fs = function
   | MSkip m -> if m = 0 then guard else Relation.empty
-  | MTestPos i -> Relation.natural_join (fun t -> Some t) [] guard (List.nth fs i)
-  | MTestNeg i -> Relation.natural_join (fun t -> Some t) [] guard (Relation.diff Relation.empty (List.nth fs i))
-  | MPlus (r, s) -> Relation.union (epsilon_lax guard fs r) (epsilon_lax guard fs s)
-  | MTimes (r, s) -> Relation.natural_join (fun t -> Some t) [] (epsilon_lax guard fs r) (epsilon_lax Relation.empty fs s)
+  | MTestPos i -> 
+    let f = (List.nth fs i) in 
+    let attr2 = (List.nth attr_fs i) in
+    let matches = Table.get_matches attr_guard attr2 in
+    Relation.natural_join_sc2 (fun t -> Some t) matches guard f
+  | MTestNeg i -> 
+    let f = (List.nth fs i) in 
+    let attr2 = (List.nth attr_fs i) in
+    let posl = List.map (fun v -> Misc.get_pos v attr_guard) attr2 in
+    Relation.minus None posl guard f
+  | MPlus (r, s) -> 
+    Relation.union 
+      (epsilon_lax attr_guard guard attr_fs fs r) 
+      (epsilon_lax attr_guard guard attr_fs fs s)
+  | MTimes (r, s) -> 
+      Relation.filtermap_inter None 
+        (epsilon_lax attr_guard guard attr_fs fs r) 
+        (epsilon_lax attr_guard guard attr_fs fs s)
   | MStar _ -> guard
 
-let rec r_epsilon_strict n fs = function
+let rec free_mre_vars attr_fs = function 
+  | MSkip n -> []
+  | MTestPos i | MTestNeg i -> List.nth attr_fs i
+  | MPlus (r1,r2) | MTimes (r1,r2) -> 
+    Misc.union (free_mre_vars attr_fs r1) (free_mre_vars attr_fs r2)
+  | MStar r -> free_mre_vars attr_fs r
+
+let rec r_epsilon_strict n attr_fs fs = function
   | MSkip m -> 
     if m = 0 then
       Relation.singleton (Tuple.make_tuple [])
@@ -186,15 +201,17 @@ let rec r_epsilon_strict n fs = function
       Relation.empty
   | MTestPos i -> List.nth fs i
   | MTestNeg i -> 
-    if Relation.equal (List.nth fs i) Relation.empty then 
+    if Relation.is_empty (List.nth fs i) then 
       Relation.singleton (Tuple.make_tuple [])
     else
       Relation.empty 
-  | MPlus (r, s) -> Relation.union (r_epsilon_strict n fs r) (r_epsilon_strict n fs s)
-  | MTimes (r, s) -> epsilon_lax (r_epsilon_strict n fs r) fs s
+  | MPlus (r, s) -> 
+    Relation.union (r_epsilon_strict n attr_fs fs r) (r_epsilon_strict n attr_fs fs s)
+  | MTimes (r, s) -> 
+    epsilon_lax (free_mre_vars attr_fs r) (r_epsilon_strict n attr_fs fs r) attr_fs fs s
   | MStar _ -> Relation.singleton (Tuple.make_tuple [])
 
-let rec l_epsilon_strict n fs = function 
+let rec l_epsilon_strict n attr_fs fs = function 
 | MSkip m -> 
   if m = 0 then
     Relation.singleton (Tuple.make_tuple [])
@@ -202,53 +219,97 @@ let rec l_epsilon_strict n fs = function
     Relation.empty
 | MTestPos i -> List.nth fs i
 | MTestNeg i -> 
-  if Relation.equal (List.nth fs i) Relation.empty then 
+  if Relation.is_empty (List.nth fs i) then 
     Relation.singleton (Tuple.make_tuple [])
   else
     Relation.empty 
-| MPlus (r, s) -> Relation.union (l_epsilon_strict n fs r) (l_epsilon_strict n fs s)
-| MTimes (r, s) -> epsilon_lax (l_epsilon_strict n fs r) fs r
+| MPlus (r, s) -> Relation.union (l_epsilon_strict n attr_fs fs r) (l_epsilon_strict n attr_fs fs s)
+| MTimes (r, s) -> epsilon_lax (free_mre_vars attr_fs r) (l_epsilon_strict n attr_fs fs r) attr_fs fs r
 | MStar _ -> Relation.singleton (Tuple.make_tuple [])
 
-let lookup x key = 
-  match Map.find_opt key x with 
-  | Some value -> value 
-  | None -> Relation.empty
+let mrtabulate ks f =
+  let fp = 
+    List.filter_map (fun k -> 
+      let fk = f k in 
+      if Relation.is_empty fk then None else Some (k, fk)  
+    ) ks
+  in 
+  List.fold_left (fun acc (k, v) -> mradd k v acc) mrempty fp
 
-let rec r_delta kappa x fs = function
+let rec r_delta kappa x attr_fs fs = function
   | MSkip n -> (
     match n with 
       | 0 -> Relation.empty
-      | _ -> lookup x (kappa (MSkip (n - 1))) 
+      | _ -> mrfind (kappa (MSkip (n - 1))) x
     )
   | MTestPos i -> Relation.empty
   | MTestNeg i -> Relation.empty
-  | MPlus (r, s) -> Relation.union (r_delta kappa x fs r) (r_delta kappa x fs s)
+  | MPlus (r, s) -> Relation.union (r_delta kappa x attr_fs fs r) (r_delta kappa x attr_fs fs s)
   | MTimes (r, s) -> 
     Relation.union 
-      (r_delta (fun t -> kappa (MTimes r t)) x fs s) 
-      (epsilon_lax (r_delta kappa x fs r) fs s)
-  | MStar r -> r_delta (fun t -> kappa (MTimes (MStar r) t)) x fs r
+    (r_delta (fun t -> kappa (MTimes (r, t))) x attr_fs fs s) 
+    (epsilon_lax (free_mre_vars attr_fs r) (r_delta kappa x attr_fs fs r) attr_fs fs r) 
+  | MStar r -> r_delta (fun t -> kappa (MTimes (MStar r, t))) x attr_fs fs r
 
-let rec l_delta kappa x fs = function
+let rec l_delta kappa x attr_fs fs = function
   | MSkip n -> (
     match n with 
       | 0 -> Relation.empty
-      | _ -> lookup x (kappa (MSkip (n - 1))) 
+      | _ -> mrfind (kappa (MSkip (n - 1))) x
     )
   | MTestPos i -> Relation.empty
   | MTestNeg i -> Relation.empty
-  | MPlus (r, s) -> Relation.union (l_delta kappa x fs r) (l_delta kappa x fs s)
+  | MPlus (r, s) -> Relation.union (l_delta kappa x attr_fs fs r) (l_delta kappa x attr_fs fs s)
   | MTimes (r, s) -> 
     Relation.union 
-      (l_delta (fun t -> kappa (MTimes t s)) x fs r) 
-      (epsilon_lax (l_delta kappa x fs s) fs r)
-  | MStar r -> l_delta (fun t -> kappa (MTimes t (MStar r))) x fs r
-let update_matchP n intv mr mrs rels nt aux =
-  (aux, [])
+      (l_delta (fun t -> kappa (MTimes (t, s))) x attr_fs fs r) 
+      (epsilon_lax (free_mre_vars attr_fs s) (l_delta kappa x attr_fs fs s) attr_fs fs r)
+  | MStar r -> l_delta (fun t -> kappa (MTimes (t, MStar r))) x attr_fs fs r
 
-let update_matchF n intv mr mrs rels nt aux =
-  aux
+
+let update_matchP n intv mr mrs attr_fs rels nt aux =
+  let aux = match List.filter_map (fun (t, rel) -> if MFOTL.in_left_ext (MFOTL.ts_minus nt t) intv then 
+    Some (t, mrtabulate mrs (fun mr -> Relation.union (r_delta (fun t -> t) rel attr_fs rels mr) (if t = nt then r_epsilon_strict n attr_fs rels mr else Relation.empty)))
+    else None) aux with 
+  | [] -> [(nt, mrtabulate mrs (r_epsilon_strict n attr_fs rels))]
+  | x :: aux' -> 
+    if fst x = nt then x :: aux'
+    else (nt, mrtabulate mrs (r_epsilon_strict n attr_fs rels)) :: x :: aux'
+  in 
+  let result = 
+    List.fold_right 
+      Relation.union 
+      (List.filter_map 
+      (fun (t, rel) -> if MFOTL.in_right_ext (MFOTL.ts_minus nt t) intv then Some(mrfind mr rel) else None) aux)
+      Relation.empty
+  in
+  (result, aux) 
+
+
+
+let update_matchF_base n intv mr mrs attr_fs rels nt =
+  let x = mrtabulate mrs (l_epsilon_strict n attr_fs rels) in 
+  ([(nt, rels, if MFOTL.in_right_ext MFOTL.ts_null intv then mrfind mr x else Relation.empty)], x)
+
+let update_matchF_step intv mr mrs nt attr_fs (t, rels', rel) (aux', x) =
+  let y = mrtabulate mrs (l_delta (fun t -> t) x attr_fs rels') in 
+  ((t, rels', if MFOTL.in_interval (MFOTL.ts_minus nt t) intv then Relation.union rel (mrfind mr y) else rel) :: aux', y)
+
+
+let update_matchF n intv mr mrs attr_fs rels nt aux =
+  let base = update_matchF_base n intv mr mrs attr_fs rels nt in 
+  let step = update_matchF_step intv mr mrs nt attr_fs in
+  fst (List.fold_right step aux base)
+
+let rec eval_matchF intv mr nt aux = 
+  match aux with 
+  | [] -> ([], [])
+  | (t, rels, rel) :: aux -> 
+    if not (MFOTL.in_left_ext (MFOTL.ts_minus nt t) intv) then
+      let (xs, aux) = eval_matchF intv mr nt aux in
+      (rel :: xs, aux)
+    else 
+      ([], (t, rels, rel) :: aux)
 
 (* Arguments:
    - [f] the current formula
@@ -527,26 +588,55 @@ let rec eval f crt discard =
       | None -> inf.urel2 <- Some rel2; None
     in
     update_and_get_result (), loc
-  (*| EMatchP (intv, mr, mrs, ext_fl, buf, neval0, aux, loc) ->
+  | EMatchP (ext_fl, inf, loc) ->
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,MatchP] q=%d\n" q;
-    let (xss, ext_fl) = List.split (List.map (fun f -> eval f q) ext_fl) in 
-
-    let ((zs, aux), buf, ts) = mbufnt_take (fun rels t (zs, aux) ->
-      let (z, aux) = update_matchP q intv mr mrs rels t aux in
-      (zs @ [z], aux)) ([], aux) (mbufn_add xss buf) (neval0 @ [t])
+    let rec eager_eval f rels =
+      if Neval.is_last inf.last then
+        rels
+      else
+        let crt1 = Neval.get_next inf.last in
+        match eval f crt1 false with
+        | Some rel ->
+          inf.last <- crt1;
+          eager_eval f (rel :: rels)
+        | None -> rels
+      in
+    let (xss) = (List.map (fun f -> eager_eval f []) ext_fl) in
+    let ((zs, aux), buf, nts) = mbufnt_take (fun rels crt (zs, aux) ->
+      let args = inf.args in 
+      let (z, aux) = update_matchP q args.intv args.mr args.mrs args.attr_fs rels crt aux in
+      (zs @ [z], aux)) ([], inf.mrdeltaaux) (mbufn_add xss inf.buf) crt
     in
-    (zs, EMatchP (intv, mr, rpds, ext_fl, buf, neval0, aux)), loc
-       
-  | EMatchF (intv, mr, mrs, ext_fl, buf, neval0, aux, loc) ->
+    inf.mrdeltaaux <- aux;
+    inf.buf <- buf; 
+    inf.crt <- nts;
+    inf.out <- inf.out @ zs;
+    (match inf.out with [] -> None | z::_ -> Some z), loc
+
+  | EMatchF (ext_fl, inf, loc) ->
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,MatchF] q=%d\n" q;
-    let (xss, ext_fl) = List.split (List.map (fun f -> eval f q) ext_fl) in
-    let (aux, buf, ts) = mbufnt_take (update_matchF q intv mr mrs) aux (mbufn_add xss buf) (neval0 @ [t]) in
-    let (zs, aux) = eval_matchF intv mr (match ts with [] -> t | nt :: _ -> nt) aux in
-    (zs, EMatchF (intv, mr, mrs, ext_fl, buf, neval0, ts, aux)), loc*)
-  | _ -> raise (Invalid_argument "not implemented yet")
-
+    let rec eager_eval f rels =
+      if Neval.is_last inf.last then
+        rels
+      else
+        let crt1 = Neval.get_next inf.last in
+        match eval f crt1 false with
+        | Some rel ->
+          inf.last <- crt1;
+          eager_eval f (rel :: rels)
+        | None -> rels
+      in
+    let (xss) = (List.map (fun f -> eager_eval f []) ext_fl) in
+    let args = inf.args in
+    let (aux, buf, nts) = mbufnt_take (update_matchF q args.intv args.mr args.mrs args.attr_fs) inf.mldeltaaux (mbufn_add xss inf.buf) crt in
+    let (zs, aux) = eval_matchF args.intv args.mr (if Neval.is_last nts then snd (Neval.get_data crt) else snd (Neval.get_data nts)) aux in
+    inf.mldeltaaux <- aux; 
+    inf.buf <- buf;
+    inf.crt <- nts; 
+    inf.out <- inf.out @ zs;
+    (match inf.out with [] -> None | z::_ -> Some z), loc
   in
   let result, loc = wrapper f in
   if !Perf.profile_enabled then
@@ -901,13 +991,18 @@ let add_ext neval f =
   | Prex (intv, r) ->
     let (mr, f) = to_mregex r in
     let ext_fl = List.map (add_ext None) f in
-    EMatchP (intv, mr, rpds mr, ext_fl, List.init (List.length f) (fun _ -> []), neval0, [], next_loc())
+    let fvl = List.map MFOTL.free_vars f in
+    let args = {intv = intv; mr = mr; mrs = rpds mr; attr_fs = fvl} in
+    let inf = {args = args; mrdeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
+    EMatchP (ext_fl, inf, next_loc())
 
   | Frex (intv, r) ->
     let (mr, f) = to_mregex r in
     let ext_fl = List.map (add_ext None) f in
-    EMatchF (intv, mr, lpds mr, ext_fl, List.init (List.length f) (fun _ -> []), neval0, [], next_loc())
-    
+    let fvl = List.map MFOTL.free_vars f in
+    let args = {intv = intv; mr = mr; mrs = lpds mr; attr_fs = fvl} in
+    let inf = {args = args; mldeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
+    EMatchF (ext_fl, inf, next_loc())
   | _ -> failwith "[add_ext] internal error"
   in
   add_ext None false f, neval0

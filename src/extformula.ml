@@ -25,6 +25,7 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+
 type mregex =  
   | MSkip of int
   | MTestPos of int
@@ -33,8 +34,38 @@ type mregex =
   | MTimes of (mregex *  mregex)
   | MStar of mregex
 
-type mrdeltaaux = (timestamp * (mregex, relation) Hashtbl.t) list
-type mldeltaaux = (timestamp * relation list * relation) list
+module MRegexMap = Map.Make (
+  struct type t = mregex
+    let compare = Stdlib.compare
+  end)
+
+type 'a mregex_map = 'a MRegexMap.t 
+type key = MRegexMap.key 
+
+let mrfind (k: mregex) (m: 'a mregex_map) = MRegexMap.find k m
+let mradd (k: mregex) (e: 'a) (m: 'a mregex_map) : 'a mregex_map = MRegexMap.add k e m
+let mrupdate k f m = MRegexMap.update k f m
+let mrempty : 'a mregex_map = MRegexMap.empty
+
+
+type rargs = {intv: interval;
+              mr: mregex;
+              mrs: mregex list;
+              attr_fs: var list list}
+
+type mpinfo = {args: rargs;
+              mutable mrdeltaaux: (timestamp * relation mregex_map) list;
+              mutable buf: relation list list;
+              mutable crt: Neval.cell; 
+              mutable last: Neval.cell;
+              mutable out: relation list}
+
+type mfinfo = {args: rargs;
+              mutable mldeltaaux: (timestamp * relation list * relation) list;
+              mutable buf: relation list list;
+              mutable crt: Neval.cell;
+              mutable last: Neval.cell;
+              mutable out: relation list}
 
 type extformula =
   | ERel of relation * int
@@ -50,8 +81,8 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
-  | EMatchP of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mrdeltaaux * int
-  | EMatchF of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mldeltaaux * int
+  | EMatchP of extformula list * mpinfo * int
+  | EMatchF of extformula list * mfinfo * int
 
 
 
@@ -69,8 +100,8 @@ type extformula =
   | ENext          (dt, f1, ninf, _)                             -> contains_eventually f1
   | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EUntil         (f1, f2, uinf, _)                             -> contains_eventually f1 || contains_eventually f2
-  | EMatchP        (_, _, _, fl, _, _, _, _)                     -> List.exists contains_eventually fl
-  | EMatchF        (_, _, _, fl, _, _, _, _)                     -> List.exists contains_eventually fl
+  | EMatchP        (fl, _, _)                                    -> List.exists contains_eventually fl
+  | EMatchF        (fl, _, _)                                    -> List.exists contains_eventually fl
   (* | _ -> raise (Invalid_argument "not implemented yet") *)
 
 (* 
@@ -289,11 +320,11 @@ let rec pp_structure ppf ff =
   | ENext (_, f1, _, loc) -> pp_unary "NEXT" loc f1
   | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EUntil (f1, f2, _, loc) -> pp_binary "UNTIL" loc f1 f2
-  | EMatchP (_, _, _, fl, _, _, _, loc) ->
+  | EMatchP (fl,_, loc) ->
     fprintf ppf "@[<hv>%d: MATCHP@ %a@]"
       loc
       (pp_print_list ~pp_sep:pp_print_space pp_structure) fl
-  | EMatchF (_, _, _, fl, _, _, _, loc) ->
+  | EMatchF (fl, _, loc) ->
     fprintf ppf "@[<hv>%d: MATCHF@ %a@]"
       loc
       (pp_print_list ~pp_sep:pp_print_space pp_structure) fl

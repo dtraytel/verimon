@@ -31,25 +31,49 @@ type mregex =
   | MTimes of (mregex *  mregex)
   | MStar of mregex
 
-type mrdeltaaux = (timestamp * (mregex, relation) Hashtbl.t) list
-type mldeltaaux = (timestamp * relation list * relation) list
+type 'a mregex_map 
+
+val mrfind: mregex -> 'a mregex_map  -> 'a
+val mradd: mregex-> 'a -> 'a mregex_map  -> 'a mregex_map 
+val mrupdate: mregex -> ('a option -> 'a option) -> 'a mregex_map  -> 'a mregex_map 
+val mrempty: 'a mregex_map 
+
+type rargs = {intv: interval;
+  mr: mregex;
+  mrs: mregex list;
+  attr_fs: var list list}
+
+type mpinfo = {args: rargs;
+  mutable mrdeltaaux: (timestamp * relation mregex_map) list;
+  mutable buf: relation list list;
+  mutable crt: Neval.cell; 
+  mutable last: Neval.cell;
+  mutable out: relation list}
+
+type mfinfo = {args: rargs;
+  mutable mldeltaaux: (timestamp * relation list * relation) list;
+  mutable buf: relation list list;
+  mutable crt: Neval.cell;
+  mutable last: Neval.cell;
+  mutable out: relation list}
+
 
 type extformula =
-  | ERel of relation * int
-  | EPred of predicate * comp_one * info * int
-  | ELet of predicate * comp_one * extformula * extformula * linfo * int
-  | ENeg of extformula * int
-  | EAnd of comp_two * extformula * extformula * ainfo * int
-  | EOr of comp_two * extformula * extformula * ainfo * int
-  | EExists of comp_one * extformula * int
-  | EAggreg of agg_info * Aggreg.aggregator * extformula * int
-  | EAggOnce of agg_info * Aggreg.once_aggregator * extformula * int
-  | EPrev of interval * extformula * pinfo * int
-  | ENext of interval * extformula * ninfo * int
-  | ESince of extformula * extformula * sinfo * int
-  | EUntil of extformula * extformula * uinfo * int
-  | EMatchP of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mrdeltaaux * int
-  | EMatchF of interval * mregex * mregex list * extformula list * relation list list * Neval.cell * mldeltaaux * int
+| ERel of relation * int
+| EPred of predicate * comp_one * info * int
+| ELet of predicate * comp_one * extformula * extformula * linfo * int
+| ENeg of extformula * int
+| EAnd of comp_two * extformula * extformula * ainfo * int
+| EOr of comp_two * extformula * extformula * ainfo * int
+| EExists of comp_one * extformula * int
+| EAggreg of agg_info * Aggreg.aggregator * extformula * int
+| EAggOnce of agg_info * Aggreg.once_aggregator * extformula * int
+| EPrev of interval * extformula * pinfo * int
+| ENext of interval * extformula * ninfo * int
+| ESince of extformula * extformula * sinfo * int
+| EUntil of extformula * extformula * uinfo * int
+| EMatchP of extformula list * mpinfo * int
+| EMatchF of extformula list * mfinfo * int
 
 val contains_eventually: extformula -> bool
 
