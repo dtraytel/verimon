@@ -19,8 +19,19 @@ definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw s
 
 end
 
-lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
+
+lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
   sorry
+
+lemma wty_push_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_negation \<phi>"
+  sorry
+
+lemma wty_elim_double_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> elim_double_negation \<phi>"
+  sorry
+
+lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
+  unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
+  by auto
 
 lemma "type_check (\<lambda>_. None) (Formula.Exists (TAny 0) (Formula.Eq (Formula.Var 0) (Formula.Var 0))) = XYZ"
   apply (simp add: type_check_def check_comparison_def clash_propagate_def new_type_symbol_def update_env_def)
@@ -61,10 +72,7 @@ interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig
       apply (auto simp add: check_check_subst wty_result_fX_def wf_f_comp simp flip: comp_assoc
         intro!: exI[of _ "convert_tysym"] wty_normalize dest: spec[of _ "convert_tysym \<circ> check_subst"])
       done
-      
-      sorry
-    subgoal sorry
-    done
+    sorry
   subgoal using prepare_Inr
     by (cases "prepare_verimon rw sig \<phi>")
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
