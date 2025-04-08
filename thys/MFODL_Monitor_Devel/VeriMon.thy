@@ -19,12 +19,198 @@ definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw s
 
 end
 
+lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st tm :: ty"
+  by (induction tm ty rule: wty_trm.induct)
+    (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
+
+inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
+inductive_cases wty_formula_AndE[elim!]: "S, E \<turnstile> Formula.And \<phi>1 \<phi>2"
+inductive_cases wty_formula_OrE[elim!]: "S, E \<turnstile> Formula.Or \<phi>1 \<phi>2"
+inductive_cases wty_formula_LetE[elim!]: "S, E \<turnstile> Formula.Let p \<phi>1 \<phi>2"
+inductive_cases wty_formula_AggE[elim!]: "S, E \<turnstile> Formula.Agg y \<omega> tys f \<phi>"
 
 lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
-  sorry
+proof (induction S E \<phi> rule: wty_formula.induct)
+  case (Pred S p tms tys E)
+  then show ?case sorry
+next
+  case (Let S E' \<phi> p E \<psi>)
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.Let)
+next
+  case (LetPast S p \<phi> E' E \<psi>)
+  then show ?case sorry
+next
+  case (Eq E x t y S)
+  then show ?case sorry
+next
+  case (Less E x t y S)
+  then show ?case sorry
+next
+  case (LessEq E x t y S)
+  then show ?case sorry
+next
+  case (Neg S E \<phi>)
+  then show ?case
+    by (auto intro!: wty_formula.Neg)
+next
+  case (Or S E \<phi> \<psi>)
+  then show ?case sorry
+next
+  case (And S E \<phi> \<psi>)
+  then show ?case 
+    by (auto intro!: wty_formula.And)
+next
+  case (Ands \<phi>s S E)
+  then show ?case
+    sorry
+next
+  case (Exists S t E \<phi>)
+  then show ?case sorry
+next
+  case (Agg E y agg_type t tys f S \<phi> d)
+  then show ?case
+    by (auto intro!: wty_formula.Agg)
+next
+  case (Prev S E \<phi> \<I>)
+  then show ?case sorry
+next
+  case (Next S E \<phi> \<I>)
+  then show ?case sorry
+next
+  case (Since S E \<phi> \<psi> \<I>)
+  then show ?case
+    by (auto intro!: wty_formula.Since)
+next
+  case (Until S E \<phi> \<psi> \<I>)
+  then show ?case sorry
+next
+  case (Trigger S E \<phi> \<psi> \<I>)
+  then show ?case sorry
+next
+  case (Release S E \<phi> \<psi> \<I>)
+  then show ?case sorry
+next
+  case (MatchP S E r I)
+  then show ?case
+    by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+next
+  case (MatchF S E r I)
+  then show ?case sorry
+next
+  case (TP E t S)
+  then show ?case
+    using wty_formula.TP wty_formula_TPD wty_trm_st by force
+next
+  case (TS E t S)
+  then show ?case
+    using wty_formula.TS wty_formula_TSD wty_trm_st by force
+qed
 
 lemma wty_push_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_negation \<phi>"
-  sorry
+proof (induction \<phi> arbitrary: S E rule: push_negation.induct)
+  case (1 \<phi> \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.Or wty_formula.Neg)
+next
+  case (2 \<phi> \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.And wty_formula.Neg)
+next
+  case (3 p \<phi> \<psi>)
+  then show ?case
+    by (force simp: push_negation_nfv intro!: wty_formula.Let)
+next
+  case (4 p \<phi> \<psi>)
+  then show ?case sorry
+next
+  case ("5_2" v va vb)
+  then show ?case sorry
+next
+  case ("5_3" v va vb)
+  then show ?case sorry
+next
+  case ("5_5" v va)
+  then show ?case sorry
+next
+  case ("5_6" v va)
+  then show ?case sorry
+next
+  case ("5_7" v)
+  then show ?case sorry
+next
+  case ("5_8" v)
+  then show ?case sorry
+next
+  case ("5_9" v va)
+  then show ?case sorry
+next
+  case ("5_10" v va vb vc vd)
+  then show ?case sorry
+next
+  case ("5_11" v va)
+  then show ?case sorry
+next
+  case ("5_12" v va)
+  then show ?case sorry
+next
+  case ("5_13" v va vb)
+  then show ?case sorry
+next
+  case ("5_14" v va vb)
+  then show ?case sorry
+next
+  case ("5_15" v va vb)
+  then show ?case sorry
+next
+  case ("5_16" v va vb)
+  then show ?case sorry
+next
+  case ("5_17" v va)
+  then show ?case sorry
+next
+  case ("5_18" v va)
+  then show ?case sorry
+next
+  case ("5_19" v)
+  then show ?case sorry
+next
+  case ("5_20" v)
+  then show ?case sorry
+next
+  case (6 \<phi> \<psi>)
+  then show ?case sorry
+next
+  case (7 \<phi> \<psi>)
+  then show ?case sorry
+next
+  case (8 l)
+  then show ?case sorry
+next
+  case (9 t \<phi>)
+  then show ?case sorry
+next
+  case (10 y \<omega> tys f \<phi>)
+  then show ?case by (auto intro!: wty_formula.Agg)
+next
+  case (11 I \<phi>)
+  then show ?case sorry
+next
+  case (12 I \<phi>)
+  then show ?case sorry
+next
+  case (13 \<phi> I \<psi>)
+  then show ?case sorry
+next
+  case (14 \<phi> I \<psi>)
+  then show ?case sorry
+next
+  case (15 I r)
+  then show ?case sorry
+next
+  case (16 I r)
+  then show ?case sorry
+qed auto
 
 lemma wty_elim_double_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> elim_double_negation \<phi>"
   sorry
