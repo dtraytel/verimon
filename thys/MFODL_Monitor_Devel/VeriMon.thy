@@ -23,6 +23,7 @@ lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st 
   by (induction tm ty rule: wty_trm.induct)
     (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
 
+inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
 inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
 inductive_cases wty_formula_AndE[elim!]: "S, E \<turnstile> Formula.And \<phi>1 \<phi>2"
 inductive_cases wty_formula_OrE[elim!]: "S, E \<turnstile> Formula.Or \<phi>1 \<phi>2"
@@ -39,23 +40,28 @@ next
     by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.Let)
 next
   case (LetPast S p \<phi> E' E \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.LetPast)
 next
   case (Eq E x t y S)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Eq wty_trm_st)
 next
   case (Less E x t y S)
-  then show ?case sorry
+  then show ?case 
+    by (auto intro!: wty_formula.Less wty_trm_st)
 next
   case (LessEq E x t y S)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.LessEq wty_trm_st)
 next
   case (Neg S E \<phi>)
   then show ?case
     by (auto intro!: wty_formula.Neg)
 next
   case (Or S E \<phi> \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Or)
 next
   case (And S E \<phi> \<psi>)
   then show ?case 
@@ -63,48 +69,55 @@ next
 next
   case (Ands \<phi>s S E)
   then show ?case
-    sorry
+    by (auto intro!: wty_formula.Ands)
 next
   case (Exists S t E \<phi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Exists)
 next
   case (Agg E y agg_type t tys f S \<phi> d)
   then show ?case
     by (auto intro!: wty_formula.Agg)
 next
   case (Prev S E \<phi> \<I>)
-  then show ?case sorry
+  then show ?case 
+    by (auto intro!: wty_formula.Prev)
 next
   case (Next S E \<phi> \<I>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Next)
 next
   case (Since S E \<phi> \<psi> \<I>)
   then show ?case
     by (auto intro!: wty_formula.Since)
 next
   case (Until S E \<phi> \<psi> \<I>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Until)
 next
   case (Trigger S E \<phi> \<psi> \<I>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Trigger)
 next
   case (Release S E \<phi> \<psi> \<I>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Release)
 next
   case (MatchP S E r I)
   then show ?case
     by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
   case (MatchF S E r I)
-  then show ?case sorry
+  then show ?case
+    by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 next
   case (TP E t S)
   then show ?case
-    using wty_formula.TP wty_formula_TPD wty_trm_st by force
+    by (auto intro!: wty_formula.TP wty_formula_TPD wty_trm_st)
 next
   case (TS E t S)
   then show ?case
-    using wty_formula.TS wty_formula_TSD wty_trm_st by force
+    by (auto intro!: wty_formula.TS wty_formula_TSD wty_trm_st)
 qed
 
 lemma wty_push_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_negation \<phi>"
