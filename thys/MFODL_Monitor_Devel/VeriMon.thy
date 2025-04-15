@@ -24,11 +24,20 @@ lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st 
     (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
 
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
-inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
-inductive_cases wty_formula_AndE[elim!]: "S, E \<turnstile> Formula.And \<phi>1 \<phi>2"
-inductive_cases wty_formula_OrE[elim!]: "S, E \<turnstile> Formula.Or \<phi>1 \<phi>2"
 inductive_cases wty_formula_LetE[elim!]: "S, E \<turnstile> Formula.Let p \<phi>1 \<phi>2"
+inductive_cases wty_formula_LetPastE[elim!]: "S, E \<turnstile> Formula.LetPast p \<phi>1 \<phi>2"
+inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
+inductive_cases wty_formula_OrE[elim!]: "S, E \<turnstile> Formula.Or \<phi>1 \<phi>2"
+inductive_cases wty_formula_AndE[elim!]: "S, E \<turnstile> Formula.And \<phi>1 \<phi>2"
+inductive_cases wty_formula_AndsE[elim!]: "S, E \<turnstile> Formula.Ands \<phi>"
+inductive_cases wty_formula_ExistsE[elim!]: "S, E \<turnstile> Formula.Exists t \<phi>"
 inductive_cases wty_formula_AggE[elim!]: "S, E \<turnstile> Formula.Agg y \<omega> tys f \<phi>"
+inductive_cases wty_formula_PrevE[elim!]: "S, E \<turnstile> Formula.Prev I \<phi>"
+inductive_cases wty_formula_NextE[elim!]: "S, E \<turnstile> Formula.Next I \<phi>"
+inductive_cases wty_formula_SinceE[elim!]: "S, E \<turnstile> Formula.Since \<phi>1 I \<phi>2"
+inductive_cases wty_formula_UntilE[elim!]: "S, E \<turnstile> Formula.Until \<phi>1 I \<phi>2"
+inductive_cases wty_formula_MatchFE[elim!]: "S, E \<turnstile> Formula.MatchF I \<phi>"
+inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I \<phi>"
 
 lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
@@ -132,97 +141,103 @@ next
 next
   case (3 p \<phi> \<psi>)
   then show ?case
-    by (force simp: push_negation_nfv intro!: wty_formula.Let)
+    by (auto simp: push_negation_nfv intro!: wty_formula.Let)
 next
   case (4 p \<phi> \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto simp: push_negation_nfv intro!: wty_formula.LetPast)
 next
   case ("5_2" v va vb)
-  then show ?case sorry
+  then show ?case
+    by (fastforce intro!: wty_formula.Let wty_formula.Neg)
 next
   case ("5_3" v va vb)
-  then show ?case sorry
-next
-  case ("5_5" v va)
-  then show ?case sorry
-next
-  case ("5_6" v va)
-  then show ?case sorry
+  then show ?case
+    by (fastforce intro!: wty_formula.Neg wty_formula.LetPast)
 next
   case ("5_7" v)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg)
 next
   case ("5_8" v)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Ands)
 next
   case ("5_9" v va)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Exists)
 next
   case ("5_10" v va vb vc vd)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Agg)
 next
   case ("5_11" v va)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Prev)
 next
   case ("5_12" v va)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Next)
 next
   case ("5_13" v va vb)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Since)
 next
   case ("5_14" v va vb)
-  then show ?case sorry
-next
-  case ("5_15" v va vb)
-  then show ?case sorry
-next
-  case ("5_16" v va vb)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.Until)
 next
   case ("5_17" v va)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Neg wty_formula.MatchF)
 next
   case ("5_18" v va)
-  then show ?case sorry
-next
-  case ("5_19" v)
-  then show ?case sorry
-next
-  case ("5_20" v)
-  then show ?case sorry
+  then show ?case 
+    by (auto intro!: wty_formula.Neg wty_formula.MatchP)
 next
   case (6 \<phi> \<psi>)
-  then show ?case sorry
+  then show ?case 
+    by (auto intro!: wty_formula.Or)
 next
   case (7 \<phi> \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.And)
 next
   case (8 l)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Ands)
 next
   case (9 t \<phi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Exists)
 next
   case (10 y \<omega> tys f \<phi>)
-  then show ?case by (auto intro!: wty_formula.Agg)
+  then show ?case
+    by (auto intro!: wty_formula.Agg)
 next
   case (11 I \<phi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Prev)
 next
   case (12 I \<phi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Next)
 next
   case (13 \<phi> I \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Since)
 next
   case (14 \<phi> I \<psi>)
-  then show ?case sorry
+  then show ?case
+    by (auto intro!: wty_formula.Until)
 next
   case (15 I r)
-  then show ?case sorry
+  then show ?case 
+    by (force simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
   case (16 I r)
-  then show ?case sorry
+  then show ?case
+    by (force simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed auto
 
 lemma wty_elim_double_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> elim_double_negation \<phi>"
