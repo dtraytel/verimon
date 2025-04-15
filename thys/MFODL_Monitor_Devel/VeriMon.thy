@@ -241,7 +241,112 @@ next
 qed auto
 
 lemma wty_elim_double_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> elim_double_negation \<phi>"
-  sorry
+proof (induction \<phi> arbitrary: S E rule: elim_double_negation.induct)
+  case (2 p \<phi> \<psi>)
+  then show ?case
+    by (auto simp: elim_double_negation_nfv intro!: wty_formula.Let)
+next
+  case (3 p \<phi> \<psi>)
+  then show ?case
+    by (auto simp: elim_double_negation_nfv intro!: wty_formula.LetPast)
+next
+  case ("4_1" v va)
+  then show ?case by auto
+next
+  case ("4_2" v va vb)
+  then show ?case by (fastforce intro!: wty_formula.Let wty_formula.Neg)
+next
+  case ("4_3" v va vb)
+  then show ?case by (fastforce intro!: wty_formula.LetPast wty_formula.Neg)
+next
+  case ("4_7" v va)
+  then show ?case
+    by (auto intro!: wty_formula.Or wty_formula.Neg)
+next
+  case ("4_8" v va)
+  then show ?case
+    by (auto intro!: wty_formula.And wty_formula.Neg)
+next
+  case ("4_9" v)
+  then show ?case
+    by (auto intro!: wty_formula.Ands wty_formula.Neg)
+next
+  case ("4_10" v va)
+  then show ?case
+    by (auto intro!: wty_formula.Exists wty_formula.Neg)
+next
+  case ("4_11" v va vb vc vd)
+  then show ?case
+    by (auto intro!: wty_formula.Agg wty_formula.Neg)
+next
+  case ("4_12" v va)
+  then show ?case
+    by (auto intro!: wty_formula.Prev wty_formula.Neg)
+next
+  case ("4_13" v va)
+  then show ?case
+    by (auto intro!: wty_formula.Next wty_formula.Neg)
+next
+  case ("4_14" v va vb)
+  then show ?case
+    by (auto intro!: wty_formula.Since wty_formula.Neg)
+next
+  case ("4_15" v va vb)
+  then show ?case
+    by (auto intro!: wty_formula.Until wty_formula.Neg)
+next
+  case ("4_18" v va)
+  then show ?case
+    by (auto intro!: wty_formula.MatchF wty_formula.Neg)
+next
+  case ("4_19" v va)
+  then show ?case
+    by (auto intro!: wty_formula.MatchP wty_formula.Neg)
+next
+  case (5 \<phi> \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.Or)
+next
+  case (6 \<phi> \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.And)
+next
+  case (7 l)
+  then show ?case
+    by (auto intro!: wty_formula.Ands)
+next
+  case (8 t \<phi>)
+  then show ?case
+    by (auto intro!: wty_formula.Exists)
+next
+  case (9 y \<omega> tys f \<phi>)
+  then show ?case
+    by (auto intro!: wty_formula.Agg)
+next
+  case (10 I \<phi>)
+  then show ?case
+    by (auto intro!: wty_formula.Prev)
+next
+  case (11 I \<phi>)
+  then show ?case
+    by (auto intro!: wty_formula.Next)
+next
+  case (12 \<phi> I \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.Since)
+next
+  case (13 \<phi> I \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.Until)
+next
+  case (14 I r)
+  then show ?case
+    by (force simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+next
+  case (15 I r)
+  then show ?case
+    by (force simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+qed auto (*TODO: Change to "(auto intro!: wty_formula.intros)" and remove trivial cases*)
 
 lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
