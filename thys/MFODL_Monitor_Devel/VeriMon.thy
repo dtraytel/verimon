@@ -36,13 +36,16 @@ inductive_cases wty_formula_PrevE[elim!]: "S, E \<turnstile> Formula.Prev I \<ph
 inductive_cases wty_formula_NextE[elim!]: "S, E \<turnstile> Formula.Next I \<phi>"
 inductive_cases wty_formula_SinceE[elim!]: "S, E \<turnstile> Formula.Since \<phi>1 I \<phi>2"
 inductive_cases wty_formula_UntilE[elim!]: "S, E \<turnstile> Formula.Until \<phi>1 I \<phi>2"
+inductive_cases wty_formula_TriggerE[elim!]: "S, E \<turnstile> Formula.Trigger \<phi>1 I \<phi>2"
+inductive_cases wty_formula_RelaseE[elim!]: "S, E \<turnstile> Formula.Release \<phi>1 I \<phi>2"
 inductive_cases wty_formula_MatchFE[elim!]: "S, E \<turnstile> Formula.MatchF I \<phi>"
 inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I \<phi>"
 
 lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
   case (Pred S p tms tys E)
-  then show ?case sorry
+  then show ?case
+    sorry
 next
   case (Let S E' \<phi> p E \<psi>)
   then show ?case
@@ -351,6 +354,84 @@ qed auto (*TODO: Change to "(auto intro!: wty_formula.intros)" and remove trivia
 lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
   by auto
+
+lemma wty_rewrite: "S, E \<turnstile> (project \<phi>) \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
+proof (induction \<phi> t rule: rewrite.induct)
+  case (2 \<alpha> \<beta> I \<gamma> t)
+  then show ?case by (fastforce simp: once_def eventually_def intro!: wty_formula.And wty_formula.Release wty_formula.Since wty_formula.Until)
+next
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  then show ?case by (fastforce simp: eventually_def intro!: wty_formula.And wty_formula.Trigger wty_formula.Until)
+next
+  case (4 \<alpha> k \<beta> t)
+  then show ?case(* needing Shift_I_r 0 by (auto intro!: wty_formula.And wty_formula.Exists)*) sorry
+next
+  case (6 \<alpha> \<beta> I \<gamma> t)
+  then show ?case(* by (auto simp: eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until)*) sorry
+next
+  case (7 \<alpha> \<beta> I \<gamma> t)
+  then show ?case(* by (auto simp: once_def intro!: wty_formula.And wty_formula.Until wty_formula.Since)*) sorry
+next(*
+  case (8 \<alpha> I \<beta> t)
+  then show ?case by (auto simp: once_def eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until)
+next
+  case (9 \<alpha> I \<beta> t)
+  then show ?case by (auto simp: eventually_def once_def intro!: wty_formula.And wty_formula.Until wty_formula.Since)
+next
+  case (10 \<alpha> I \<beta> t)
+  then show ?case by (auto simp: historically_def once_def eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until wty_formula.Neg)
+next
+  case (11 \<alpha> I \<beta> t)
+  then show ?case by (auto simp: always_def eventually_def once_def intro!: wty_formula.And wty_formula.Until wty_formula.Since wty_formula.Neg)
+next*)
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  then show ?case(* Since ( And)  by (auto simp: once_def eventually_def intro!: wty_formula.Since wty_formula.And wty_formula.Until)*) sorry
+next
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  then show ?case(* Until (And) fix_r? by (auto simp: eventually_def intro!: wty_formula.And wty_formula.Until)*) sorry
+next
+  case (23 k \<phi> t)
+  then show ?case (*Exists case_nat*)  sorry
+next
+  case (24 y \<omega> b' f \<phi> t)
+  then show ?case (*by (auto intro!: wty_formula.Agg agg_env)*) sorry
+next(*
+  case (30 I \<alpha> t)
+  then show ?case by (auto simp: eventually_def intro!: wty_formula.Until)
+next
+  case (31 I \<alpha> t)
+  then show ?case by (auto simp: once_def intro!: wty_formula.Since)
+next
+  case (32 I \<alpha> t)
+  then show ?case by (auto simp: always_def eventually_def intro!: wty_formula.Neg wty_formula.Until)
+next
+  case (33 I \<alpha> t)
+  then show ?case by (auto simp: historically_def once_def intro!: wty_formula.Neg wty_formula.Since)
+next*)
+  case (34 I r t)
+  then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+next
+  case (35 I r t)
+  then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
+
+lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> (project (embed \<phi>))"
+  proof (induction S E \<phi> rule: wty_formula.induct)
+    case (Let S E' \<phi> p E \<psi>)
+    then show ?case by (auto simp: nfv_project project_embed intro!: wty_formula.Let)
+  next
+    case (LetPast S p \<phi> E' E \<psi>)
+    then show ?case by (auto simp: nfv_project project_embed intro!: wty_formula.LetPast)
+  next
+    case (MatchP S E r I)
+    then show ?case by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+  next
+    case (MatchF S E r I)
+    then show ?case by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+  qed (auto intro!: wty_formula.intros)
+
+lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> rrewrite \<phi>"
+  unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
 
 lemma "type_check (\<lambda>_. None) (Formula.Exists (TAny 0) (Formula.Eq (Formula.Var 0) (Formula.Var 0))) = XYZ"
   apply (simp add: type_check_def check_comparison_def clash_propagate_def new_type_symbol_def update_env_def)
