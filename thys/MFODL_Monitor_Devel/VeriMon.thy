@@ -45,8 +45,7 @@ lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<tur
 proof (induction S E \<phi> rule: wty_formula.induct)
   case (Pred S p tms tys E)
   then show ?case
-   (* missing map st tms *)
-    sorry
+    by (auto intro!: wty_formula.Pred simp: list.rel_map wty_trm_st elim!: list.rel_mono_strong)
 next
   case (Let S E' \<phi> p E \<psi>)
   then show ?case
@@ -191,8 +190,8 @@ lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstil
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
   by auto
 
-lemma wty_rewrite: "S, E \<turnstile> (project \<phi>) \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
-proof (induction \<phi> t rule: rewrite.induct)
+lemma wty_rewrite: "S, E \<turnstile> project \<phi> \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
+proof (induction \<phi> t arbitrary: E rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case by (fastforce simp: once_def eventually_def intro!: wty_formula.And wty_formula.Release wty_formula.Since wty_formula.Until)
 next
@@ -210,30 +209,15 @@ next
     then show ?thesis
     proof (cases "prop_cond \<alpha> \<beta>")
       case T2:True
-      then show ?thesis
-        apply (auto simp: T1 intro!: wty_formula.intros)
-          subgoal
-            using 6 by auto
-          subgoal
-            sorry
-          subgoal
-            using 6 by auto
-      done
+      with 6(1,3,10) show ?thesis
+        by (auto simp: T1 eventually_def intro!: wty_formula.intros 6(2))
     next
       case F2:False
       then show ?thesis
       proof(cases "prop_cond \<alpha> \<gamma>")
         case T3:True
-        then show ?thesis
-          apply (auto simp: T1 F2 intro!: wty_formula.intros)
-            subgoal
-              using 6 by auto
-            subgoal
-              using F2 6 by auto
-            subgoal
-              using T1 F2 T3 6
-            sorry
-        done
+        with 6(4,5,10) show ?thesis
+          by (auto simp: T1 F2 eventually_def intro!: wty_formula.intros 6(6))
       next
         case F3:False
         then show ?thesis
@@ -258,14 +242,6 @@ next
   then show ?case(* Until (And) *)
     sorry
 next
-  case (23 k \<phi> t)
-  then show ?case(* Exists *)
-    sorry
-next
-  case (24 y \<omega> b' f \<phi> t)
-  then show ?case(* Agg *)
-    sorry
-next
   case (34 I r t)
   then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 next
@@ -273,7 +249,7 @@ next
   then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
 
-lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> (project (embed \<phi>))"
+lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> project (embed \<phi>)"
   proof (induction S E \<phi> rule: wty_formula.induct)
     case (Let S E' \<phi> p E \<psi>)
     then show ?case by (auto simp: nfv_project project_embed intro!: wty_formula.Let)
@@ -341,9 +317,23 @@ interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
+term "convert_tysym o check_subst"
+term \<phi>
+term minit_verimon
+lemma "prepare_verimon rw S \<phi> = Inr \<psi> \<Longrightarrow>
+   wf_mstate (map_sig (convert_tysym o check_subst) S) E \<psi> pnil R (minit \<psi>)"
+  unfolding prepare_verimon_def
+  apply (auto split: sum.splits if_splits simp: Let_def mmonitorable_def simp flip: monitorable_formula_code intro!: wf_mstate_minit)
+ 
+
 end
 
 context verimon begin
 thm mono_monitor sound_monitor complete_monitor sliceable_M
+find_theorems M
+thm M_def
+thm mstep_mverdicts
+thm wf_mstate_minit_safe
+find_theorems maux.minit_verimon
 end
 end
