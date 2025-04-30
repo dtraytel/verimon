@@ -24,6 +24,9 @@ lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st 
     (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
 
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
+inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
+inductive_cases wty_formula_LessE[elim!]: "S, E \<turnstile> Formula.Less t1 t2"
+inductive_cases wty_formula_LessEqE[elim!]: "S, E \<turnstile> Formula.LessEq t1 t2"
 inductive_cases wty_formula_LetE[elim!]: "S, E \<turnstile> Formula.Let p \<phi>1 \<phi>2"
 inductive_cases wty_formula_LetPastE[elim!]: "S, E \<turnstile> Formula.LetPast p \<phi>1 \<phi>2"
 inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
@@ -40,6 +43,8 @@ inductive_cases wty_formula_TriggerE[elim!]: "S, E \<turnstile> Formula.Trigger 
 inductive_cases wty_formula_RelaseE[elim!]: "S, E \<turnstile> Formula.Release \<phi>1 I \<phi>2"
 inductive_cases wty_formula_MatchFE[elim!]: "S, E \<turnstile> Formula.MatchF I \<phi>"
 inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I \<phi>"
+inductive_cases wty_formula_TSE[elim!]: "S, E \<turnstile> Formula.TS t"
+inductive_cases wty_formula_TPE[elim!]: "S, E \<turnstile> Formula.TP t"
 
 lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
@@ -190,6 +195,36 @@ lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstil
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
   by auto
 
+lemma wty_trm_shiftTI: "E \<turnstile> t :: T \<Longrightarrow> (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1)) \<turnstile> shiftTI n t :: T"
+  by (induct t T rule: wty_trm.induct) (auto intro!: wty_trm.intros)
+
+lemma wty_formula_shiftI_r: 
+  "S, E \<turnstile> project \<alpha> \<Longrightarrow> S, (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1)) \<turnstile> project (shiftI_r n \<alpha>)"
+proof (induction \<alpha> arbitrary: n E S)
+  case (Exists T \<alpha>)
+  have "(\<lambda>i. if i < Suc n then case i of 0 \<Rightarrow> T | Suc x \<Rightarrow> E x else if i = Suc n then k else case i - 1 of 0 \<Rightarrow> T | Suc x \<Rightarrow> E x) =
+        case_nat T (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1))"
+    by (auto simp: fun_eq_iff split: nat.splits)
+  with Exists(2) Exists(1)[of S "case_nat T E" "Suc n"] show ?case
+    by (auto intro!: wty_formula.Exists)
+next
+  case (Agg y \<omega> tys f \<alpha>)
+  have "(\<lambda>i. if i < n + length tys then agg_env E tys i else if i = n + length tys then k else agg_env E tys (i - 1)) =
+    agg_env (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1)) tys"
+    by (auto simp: fun_eq_iff simp: agg_env_def)
+  with Agg(2) Agg(1)[of S "agg_env E tys" "n + length tys"] show ?case
+    by (auto intro!: wty_formula.Agg dest!: wty_trm_shiftTI[of "agg_env E tys" f _ "n + length tys" k])
+next
+  case (MatchF I r)
+  then show ?case
+    by (auto intro!: wty_formula.MatchF simp: regex.pred_map elim!: regex.pred_mono_strong)
+next
+  case (MatchP I r)
+  then show ?case
+    by (auto intro!: wty_formula.MatchP simp: regex.pred_map elim!: regex.pred_mono_strong)
+qed (auto 0 4 simp: list.rel_map once_def eventually_def historically_def always_def
+    elim!: list.rel_mono_strong intro: wty_formula.intros wty_trm_shiftTI)
+
 lemma wty_rewrite: "S, E \<turnstile> project \<phi> \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
 proof (induction \<phi> t arbitrary: E rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
@@ -199,8 +234,11 @@ next
   then show ?case  by (fastforce simp: eventually_def intro!: wty_formula.And wty_formula.Trigger wty_formula.Until)
 next
   case (4 \<alpha> k \<beta> t)
-  then show ?case(* And (Exists) *)
-    sorry
+  have "(\<lambda>i. if i = 0 then k else E (i - 1)) = case_nat k E"
+    by (auto simp: fun_eq_iff split: nat.splits)
+  with 4(2-4) show ?case
+    using wty_formula_shiftI_r[of S E \<alpha> 0 k]
+    by (auto intro!: wty_formula.Exists wty_formula.And 4(1))
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case(* And (Since) *)
