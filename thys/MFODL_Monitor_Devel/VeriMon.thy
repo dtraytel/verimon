@@ -19,10 +19,7 @@ definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw s
 
 end
 
-lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st tm :: ty"
-  by (induction tm ty rule: wty_trm.induct)
-    (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
-
+(* Elimination rules for well-typed formulas*)
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
 inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
 inductive_cases wty_formula_LessE[elim!]: "S, E \<turnstile> Formula.Less t1 t2"
@@ -46,11 +43,17 @@ inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I 
 inductive_cases wty_formula_TSE[elim!]: "S, E \<turnstile> Formula.TS t"
 inductive_cases wty_formula_TPE[elim!]: "S, E \<turnstile> Formula.TP t"
 
+(* Proofs that normalize preserves well-typedness*)
+
+lemma wty_trm_st: "E \<turnstile> tm :: ty \<Longrightarrow>  E \<turnstile> st tm :: ty"
+  by (induction tm ty rule: wty_trm.induct)
+    (auto 0 3 simp: st_def ty_of_eval_trm ty_of_plus ty_of_minus ty_of_mult ty_of_div ty_of_mod elim: wty_trm.cases intro!: wty_trm.intros intro: ty_of_uminus)
+
 lemma wty_simplify_terms: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> simplify_terms \<phi>"
 proof (induction S E \<phi> rule: wty_formula.induct)
   case (Pred S p tms tys E)
   then show ?case
-    by (auto intro!: wty_formula.Pred simp: list.rel_map wty_trm_st elim!: list.rel_mono_strong)
+    by (auto simp: list.rel_map wty_trm_st intro!: wty_formula.Pred elim!: list.rel_mono_strong)
 next
   case (Let S E' \<phi> p E \<psi>)
   then show ?case
@@ -60,66 +63,6 @@ next
   then show ?case
     by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.LetPast)
 next
-  case (Eq E x t y S)
-  then show ?case
-    by (auto intro!: wty_formula.Eq wty_trm_st)
-next
-  case (Less E x t y S)
-  then show ?case 
-    by (auto intro!: wty_formula.Less wty_trm_st)
-next
-  case (LessEq E x t y S)
-  then show ?case
-    by (auto intro!: wty_formula.LessEq wty_trm_st)
-next
-  case (Neg S E \<phi>)
-  then show ?case
-    by (auto intro!: wty_formula.Neg)
-next
-  case (Or S E \<phi> \<psi>)
-  then show ?case
-    by (auto intro!: wty_formula.Or)
-next
-  case (And S E \<phi> \<psi>)
-  then show ?case 
-    by (auto intro!: wty_formula.And)
-next
-  case (Ands \<phi>s S E)
-  then show ?case
-    by (auto intro!: wty_formula.Ands)
-next
-  case (Exists S t E \<phi>)
-  then show ?case
-    by (auto intro!: wty_formula.Exists)
-next
-  case (Agg E y agg_type t tys f S \<phi> d)
-  then show ?case
-    by (auto intro!: wty_formula.Agg)
-next
-  case (Prev S E \<phi> \<I>)
-  then show ?case 
-    by (auto intro!: wty_formula.Prev)
-next
-  case (Next S E \<phi> \<I>)
-  then show ?case
-    by (auto intro!: wty_formula.Next)
-next
-  case (Since S E \<phi> \<psi> \<I>)
-  then show ?case
-    by (auto intro!: wty_formula.Since)
-next
-  case (Until S E \<phi> \<psi> \<I>)
-  then show ?case
-    by (auto intro!: wty_formula.Until)
-next
-  case (Trigger S E \<phi> \<psi> \<I>)
-  then show ?case
-    by (auto intro!: wty_formula.Trigger)
-next
-  case (Release S E \<phi> \<psi> \<I>)
-  then show ?case
-    by (auto intro!: wty_formula.Release)
-next
   case (MatchP S E r I)
   then show ?case
     by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
@@ -127,15 +70,7 @@ next
   case (MatchF S E r I)
   then show ?case
     by (auto simp: regex.pred_map comp_def intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
-next
-  case (TP E t S)
-  then show ?case
-    by (auto intro!: wty_formula.TP wty_formula_TPD wty_trm_st)
-next
-  case (TS E t S)
-  then show ?case
-    by (auto intro!: wty_formula.TS wty_formula_TSD wty_trm_st)
-qed (*TODO: Change to "(auto intro!: wty_formula.intros)" and remove trivial cases*)
+qed  (auto intro!: wty_formula.intros wty_trm_st)
 
 lemma wty_push_negation: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_negation \<phi>"
 proof (induction \<phi> arbitrary: S E rule: push_negation.induct)
@@ -195,6 +130,8 @@ lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstil
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
   by auto
 
+(* Proofs that rrewrite preserves well-typedness*)
+
 lemma wty_trm_shiftTI: "E \<turnstile> t :: T \<Longrightarrow> (\<lambda>i. if i < n then E i else if i = n then k else E (i - 1)) \<turnstile> shiftTI n t :: T"
   by (induct t T rule: wty_trm.induct) (auto intro!: wty_trm.intros)
 
@@ -228,10 +165,12 @@ qed (auto 0 4 simp: list.rel_map once_def eventually_def historically_def always
 lemma wty_rewrite: "S, E \<turnstile> project \<phi> \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
 proof (induction \<phi> t arbitrary: E rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case by (fastforce simp: once_def eventually_def intro!: wty_formula.And wty_formula.Release wty_formula.Since wty_formula.Until)
+  then show ?case
+    by (fastforce simp: once_def eventually_def intro!: wty_formula.And wty_formula.Release wty_formula.Since wty_formula.Until)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case  by (fastforce simp: eventually_def intro!: wty_formula.And wty_formula.Trigger wty_formula.Until)
+  then show ?case
+    by (fastforce simp: eventually_def intro!: wty_formula.And wty_formula.Trigger wty_formula.Until)
 next
   case (4 \<alpha> k \<beta> t)
   have "(\<lambda>i. if i = 0 then k else E (i - 1)) = case_nat k E"
@@ -248,43 +187,157 @@ next
     proof (cases "prop_cond \<alpha> \<beta>")
       case T2:True
       with 6(1,3,10) show ?thesis
-        by (auto simp: T1 eventually_def intro!: wty_formula.intros 6(2))
+        by (auto simp: T1 eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until 6(2))
     next
       case F2:False
       then show ?thesis
       proof(cases "prop_cond \<alpha> \<gamma>")
         case T3:True
         with 6(4,5,10) show ?thesis
-          by (auto simp: T1 F2 eventually_def intro!: wty_formula.intros 6(6))
+          by (auto simp: T1 F2 eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until 6(6))
       next
         case F3:False
-        then show ?thesis
-          using F2 6 wty_formula.intros by auto
+        with 6(7,8,9,10) show ?thesis
+          by (auto simp: F2 intro!: wty_formula.And wty_formula.Since)
       qed
     qed
   next
     case F1:False
-    then show ?thesis
-      using 6 wty_formula.intros by auto
+    with 6(7,8,9,10) show ?thesis
+      by (auto intro!: wty_formula.And wty_formula.Since)
   qed
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case(* And (Until) *)
-    sorry
+  proof (cases "bounded I")
+    case T1:True
+    then show ?thesis
+    proof (cases "prop_cond \<alpha> \<beta>")
+      case T2:True
+      with 7(1,3,10) show ?thesis
+        by (auto simp: T1 once_def
+            intro!: wty_formula.And wty_formula.Until wty_formula.Since 7(2))
+    next
+      case F2:False
+      then show ?thesis
+      proof(cases "prop_cond \<alpha> \<gamma>")
+        case T3:True
+        with 7(4,5,10) show ?thesis
+          by (auto simp: T1 F2 once_def
+              intro!: wty_formula.And wty_formula.Until wty_formula.Since 7(6))
+      next
+        case F3:False
+        with 7(7,8,9,10) show ?thesis
+          by (auto simp: F2 intro!: wty_formula.And wty_formula.Until)
+      qed
+    qed
+  next
+    case F1:False
+    with 7(7,8,9,10) show ?thesis
+      by (auto intro!: wty_formula.And wty_formula.Until)
+  qed
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
   then show ?case(* Since (And) *)
-    sorry
+  proof (cases "prop_cond \<alpha> \<beta>")
+    case T1:True
+    then show ?thesis
+    proof (cases t)
+      case Same
+      with 14(1,6,7) show ?thesis
+        by (auto simp: eventually_def
+            intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(2,3))
+    next
+      case Swapped
+      with 14(1,6,7) show ?thesis
+        by (auto simp: once_def intro!: wty_formula.Since wty_formula.And 14(4,5))
+    qed
+   next
+    case F1:False
+    then show ?thesis
+    proof (cases "prop_cond \<alpha> \<gamma>")
+      case T2:True
+      then show ?thesis
+      proof (cases t)
+        case Same
+        with 14(1,6,7) show ?thesis
+          by (auto simp: F1 eventually_def
+              intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(3))
+      next
+        case Swapped
+        with 14(1,6,7) show ?thesis
+          by (auto simp: F1 once_def intro!: wty_formula.Since wty_formula.And 14(5))
+      qed
+    next
+      case F2:False
+      then show ?thesis
+      proof (cases t)
+        case Same
+        with 14(1,6,7) show ?thesis
+          by (auto simp: eventually_def
+              intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(2,3))
+      next
+        case Swapped
+        with 14(1,6,7) show ?thesis
+          by (auto simp: once_def intro!: wty_formula.Since wty_formula.And 14(4,5))
+      qed
+    qed
+  qed
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
   then show ?case(* Until (And) *)
-    sorry
+  proof (cases "prop_cond \<alpha> \<beta>")
+    case T1:True
+    then show ?thesis
+    proof (cases t)
+      case Same
+      with 15(1,6,7) show ?thesis
+        by (auto simp: once_def
+            intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(2,3))
+    next
+      case Swapped
+      with 15(1,6,7) show ?thesis
+        by (auto simp: eventually_def intro!: wty_formula.Until wty_formula.And 15(4,5))
+    qed
+  next
+    case F1:False
+    then show ?thesis
+    proof (cases "prop_cond \<alpha> \<gamma>")
+      case T2:True
+      then show ?thesis
+      proof (cases t)
+        case Same
+        with 15(1,6,7) show ?thesis
+          by (auto simp: once_def F1
+              intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(3))
+      next
+        case Swapped
+        with 15(1,6,7) show ?thesis
+          by (auto simp: eventually_def F1 intro!: wty_formula.Until wty_formula.And 15(5))
+      qed
+    next
+      case F2:False
+      with 15 show ?thesis
+      proof (cases t)
+        case Same
+        with 15(1,6,7) show ?thesis
+          by (auto simp: once_def
+              intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(2,3))
+      next
+        case Swapped
+        with 15(1,6,7) show ?thesis
+          by (auto simp: eventually_def intro!: wty_formula.Until wty_formula.And 15(4,5))
+      qed
+    qed
+  qed
 next
   case (34 I r t)
-  then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+  then show ?case
+    by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 next
   case (35 I r t)
-  then show ?case by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+  then show ?case
+    by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
 
 lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> project (embed \<phi>)"
@@ -329,6 +382,10 @@ lemma wf_f_TCst_convert_tysym[simp]: "wf_f (TCst o convert_tysym)"
   unfolding wf_f_def
   by (auto simp: numeric_ty_def)
 
+lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))"
+  using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
+  by (auto simp: comp_assoc)
+
 interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   apply standard
   subgoal using prepare_Inr
@@ -355,10 +412,6 @@ interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
-lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))"
-  using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
-  by (auto simp: comp_assoc)
-
 lemma verimon_wf_mstate_minit: "prepare_verimon rw sig \<phi> = Inr \<psi> \<Longrightarrow>
   wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   unfolding prepare_verimon_def using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
@@ -371,6 +424,7 @@ end
 
 context verimon begin
 thm mono_monitor sound_monitor complete_monitor sliceable_M
+thm wf_mstate_minit_safe wf_mstate_mstep mstep_mverdicts
 find_theorems M
 thm M_def
 thm mstep_mverdicts
