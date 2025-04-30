@@ -355,13 +355,16 @@ interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
-term "convert_tysym o check_subst"
-term \<phi>
-term minit_verimon
-lemma "prepare_verimon rw S \<phi> = Inr \<psi> \<Longrightarrow>
-   wf_mstate (map_sig (convert_tysym o check_subst) S) E \<psi> pnil R (minit \<psi>)"
-  unfolding prepare_verimon_def
-  apply (auto split: sum.splits if_splits simp: Let_def mmonitorable_def simp flip: monitorable_formula_code intro!: wf_mstate_minit)
+lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))"
+  using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
+  by (auto simp: comp_assoc)
+
+lemma verimon_wf_mstate_minit: "prepare_verimon rw sig \<phi> = Inr \<psi> \<Longrightarrow>
+   wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
+  unfolding prepare_verimon_def using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
+  by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def type_check_def check_check_subst
+    simp flip: monitorable_formula_code
+    intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
  
 
 end
