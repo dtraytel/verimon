@@ -360,7 +360,7 @@ lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))
   by (auto simp: comp_assoc)
 
 lemma verimon_wf_mstate_minit: "prepare_verimon rw sig \<phi> = Inr \<psi> \<Longrightarrow>
-   wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
+  wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   unfolding prepare_verimon_def using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
   by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def type_check_def check_check_subst
     simp flip: monitorable_formula_code
