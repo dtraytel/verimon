@@ -19,6 +19,22 @@ definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw s
 
 end
 
+lemma normalize_fvi:
+  "Formula.fvi b (normalize \<phi>) = Formula.fvi b \<phi>"
+  unfolding normalize_def by (auto simp: elim_double_negation_fvi push_negation_fvi simplify_terms_fvi)
+
+lemma normalize_nfv:
+  "Formula.nfv (normalize \<phi>) = Formula.nfv \<phi>"
+  unfolding normalize_def by (auto simp: elim_double_negation_nfv push_negation_nfv simplify_terms_nfv)
+
+lemma rrewrite_fvi:
+  "Formula.fvi b (rrewrite \<phi>) = Formula.fvi b \<phi>"
+  unfolding rrewrite_def by (auto simp: rewrite_fv[symmetric] project_embed)
+
+lemma rrewrite_nfv:
+  "Formula.nfv (rrewrite \<phi>) = Formula.nfv \<phi>"
+  unfolding Formula.nfv_def rrewrite_fvi ..
+
 (* Elimination rules for well-typed formulas*)
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
 inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
@@ -373,10 +389,19 @@ lemma check_Inr: "\<exists>f. check sig TAny \<phi> = Inr f"
   by (simp add: bind_def split: sum.splits if_splits)
 
 definition "check_subst = (THE f. check sig TAny \<phi> = Inr f)"
+definition "\<psi> = (THE \<psi>. prepare_verimon rw sig \<phi> = Inr \<psi>)"
 
 lemma check_check_subst: "check sig TAny \<phi> = Inr check_subst"
   unfolding check_subst_def using check_Inr
   by auto
+lemma prepare_\<psi>: "prepare_verimon rw sig \<phi> = Inr \<psi>"
+  unfolding \<psi>_def using prepare_Inr
+  by (cases "prepare_verimon rw sig \<phi>") auto
+
+lemma safe_\<psi>: "safe_formula \<psi>"
+  using prepare_\<psi> unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def
+    simp flip: monitorable_formula_code)
 
 lemma wf_f_TCst_convert_tysym[simp]: "wf_f (TCst o convert_tysym)"
   unfolding wf_f_def
@@ -386,7 +411,8 @@ lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))
   using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
   by (auto simp: comp_assoc)
 
-interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  unfolding \<psi>_def
   apply standard
   subgoal using prepare_Inr
     apply (cases "prepare_verimon rw sig \<phi>")
@@ -412,13 +438,49 @@ interpretation verimon: verimon "projr (prepare_verimon rw sig \<phi>)" "map_sig
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
-lemma verimon_wf_mstate_minit: "prepare_verimon rw sig \<phi> = Inr \<psi> \<Longrightarrow>
-  wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
-  unfolding prepare_verimon_def using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
-  by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def type_check_def check_check_subst
-    simp flip: monitorable_formula_code
+interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
+  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  apply standard
+  sorry
+
+thm monitor_\<phi>.mono_monitor
+
+lemma sat_the_\<psi>:
+  "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
+  using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
+
+lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
+  sorry
+lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
+  sorry
+lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
+  sorry
+
+lemma "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress  \<sigma> P \<phi> j"
+  apply (induct \<phi> arbitrary: P j)
+                      apply (auto simp: Let_def)
+  sorry
+
+lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
+  unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
+  by (auto simp: sat_the_\<psi> fvi_\<psi> nfv_\<psi> pprogress_\<psi>)
+
+find_theorems push_negation Formula.fvi
+
+thm verimon_\<psi>.mono_monitor[unfolded verimon_\<psi>.M_def, folded sat_the_\<psi>]
+thm verimon_\<psi>.sound_monitor
+
+
+lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
+  using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
+  using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
+  by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
     intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
- 
+
+lemmas wf_mstate_minit = verimon_wf_mstate_minit
+lemmas wf_mstate_mstep = wf_mstate_mstep
+lemmas mstep_mverdicts = verimon_\<psi>.mstep_mverdicts[unfolded Mt_exchange]
 
 end
 
@@ -426,6 +488,7 @@ context verimon begin
 thm mono_monitor sound_monitor complete_monitor sliceable_M
 thm wf_mstate_minit_safe wf_mstate_mstep mstep_mverdicts
 find_theorems M
+thm Mt_def
 thm M_def
 thm mstep_mverdicts
 thm wf_mstate_minit_safe
