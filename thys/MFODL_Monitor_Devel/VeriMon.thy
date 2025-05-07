@@ -478,6 +478,10 @@ lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst)
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
     intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
 
+lemmas mono_monitor = monitor_\<phi>.mono_monitor
+lemmas sound_monitor = monitor_\<phi>.sound_monitor
+lemmas complete_monitor = monitor_\<phi>.complete_monitor
+lemmas sliceable_M = monitor_\<phi>.sliceable_M
 lemmas wf_mstate_minit = verimon_wf_mstate_minit
 lemmas wf_mstate_mstep = wf_mstate_mstep
 lemmas mstep_mverdicts = verimon_\<psi>.mstep_mverdicts[unfolded Mt_exchange]
