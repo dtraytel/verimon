@@ -374,10 +374,6 @@ lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turn
 lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> rrewrite \<phi>"
   unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
 
-lemma "type_check (\<lambda>_. None) (Formula.Exists (TAny 0) (Formula.Eq (Formula.Var 0) (Formula.Var 0))) = XYZ"
-  apply (simp add: type_check_def check_comparison_def clash_propagate_def new_type_symbol_def update_env_def)
-  oops
-
 locale actually_verimon = maux +
   fixes rw sig \<phi>
   assumes wf: "wf_formula \<phi>" 
@@ -394,6 +390,7 @@ definition "\<psi> = (THE \<psi>. prepare_verimon rw sig \<phi> = Inr \<psi>)"
 lemma check_check_subst: "check sig TAny \<phi> = Inr check_subst"
   unfolding check_subst_def using check_Inr
   by auto
+
 lemma prepare_\<psi>: "prepare_verimon rw sig \<phi> = Inr \<psi>"
   unfolding \<psi>_def using prepare_Inr
   by (cases "prepare_verimon rw sig \<phi>") auto
@@ -441,7 +438,32 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
 interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
   "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   apply standard
-  sorry
+  subgoal
+    using prepare_\<psi>
+    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
+    subgoal
+      apply (frule check_sound_proven[OF _ wf])
+      apply (auto simp add: check_check_subst wty_result_fX_def
+        intro!: exI[of _ "convert_tysym"] dest: spec[of _ "convert_tysym o check_subst"])
+      done
+    subgoal
+      apply (frule check_sound_proven[OF _ wf])
+      apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
+      done
+    subgoal
+      apply (frule check_sound_proven[OF _ wf])
+      apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
+      done
+    done
+  subgoal
+    using prepare_\<psi> unfolding prepare_verimon_def
+    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
+      apply (auto simp: mmonitorable_def check_check_subst simp flip: monitorable_formula_code)
+
+    find_theorems Safety.future_bounded
+
+    sorry
+  done
 
 thm monitor_\<phi>.mono_monitor
 
@@ -451,26 +473,34 @@ lemma sat_the_\<psi>:
   by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
 
 lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
-  sorry
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi rrewrite_fvi type_check_def check_check_subst)
+
 lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
-  sorry
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
+
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
+  unfolding pprogress_def
+  
   sorry
 
-lemma "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress  \<sigma> P \<phi> j"
+lemma "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
   apply (induct \<phi> arbitrary: P j)
-                      apply (auto simp: Let_def)
+   apply (auto simp: letpast_progress_def)
+    apply (auto simp: progress_regex_def regex.set_map)
+
+  find_theorems progress
+  find_theorems progress_regex
+  find_theorems min_regex_default
   sorry
 
 lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
   by (auto simp: sat_the_\<psi> fvi_\<psi> nfv_\<psi> pprogress_\<psi>)
 
-find_theorems push_negation Formula.fvi
-
 thm verimon_\<psi>.mono_monitor[unfolded verimon_\<psi>.M_def, folded sat_the_\<psi>]
 thm verimon_\<psi>.sound_monitor
-
 
 lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
@@ -494,8 +524,6 @@ thm wf_mstate_minit_safe wf_mstate_mstep mstep_mverdicts
 find_theorems M
 thm Mt_def
 thm M_def
-thm mstep_mverdicts
-thm wf_mstate_minit_safe
 find_theorems maux.minit_verimon
 end
 end
