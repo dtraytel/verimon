@@ -2,6 +2,10 @@ theory VeriMon
 imports Correctness Rewriting
 begin
 
+lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (release_safe_bounded \<phi> I \<psi>) =
+  release_safe_bounded (Formula.formula.map_formula f \<phi>) I (Formula.formula.map_formula f \<psi>)"
+  by (auto simp: release_safe_bounded_def eventually_def Formula.TT_def always_safe_bounded_def once_def)
+
 context maux begin
 
 definition "prepare_verimon rw sig \<phi> =
@@ -435,6 +439,39 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
+lemma safe_letpast_push_negation: "safe_letpast (p, n) (push_negation \<alpha>) = safe_letpast (p, n) \<alpha>"
+  by (induct \<alpha> arbitrary: p n rule: push_negation.induct)
+    (auto simp: push_negation_nfv image_image regex.set_map)
+
+lemma future_bounded_push_negation: "Safety.future_bounded (push_negation \<alpha>) \<Longrightarrow> Safety.future_bounded \<alpha>"
+  by (induct \<alpha> rule: push_negation.induct)
+    (auto simp: push_negation_nfv list.pred_map regex.pred_map safe_letpast_push_negation elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma future_bounded_historically[simp]: "Safety.future_bounded (historically I \<alpha>) = Safety.future_bounded \<alpha>"
+  by (auto simp: historically_def)
+lemma future_bounded_always[simp]: "Safety.future_bounded (always I \<alpha>) = (bounded I \<and> Safety.future_bounded \<alpha>)"
+  by (auto simp: always_def)
+
+lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<alpha>)) = Safety.future_bounded (project \<alpha>)"
+  by (induct \<alpha> arbitrary: i)
+    (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<alpha> t)) = Safety.future_bounded (project \<alpha>)"
+  by (induct \<alpha> t rule: fix_r.induct) auto
+
+lemma future_bounded_rewrite: "Safety.future_bounded (project (rewrite \<alpha> t)) \<Longrightarrow> Safety.future_bounded (project \<alpha>)"
+proof (induct \<alpha> t rule: rewrite.induct)
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  from 3(1-4,7) 3(5)[OF _ refl] 3(6)[OF _ refl refl] show ?case
+    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<beta> \<alpha>"; cases "prop_cond \<gamma> \<alpha>")
+      (auto simp: Let_def split: if_splits)
+next
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  from 14(1,7) 14(2-6)[OF refl] show ?case
+    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>") (auto simp: Let_def split: if_splits)
+qed (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
+
+
 interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
   "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   apply standard
@@ -456,9 +493,9 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
       done
     done
   subgoal
-    using prepare_\<psi> unfolding prepare_verimon_def
-    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
-      apply (auto simp: mmonitorable_def check_check_subst simp flip: monitorable_formula_code)
+    using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
+    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def flip: monitorable_formula_code 
+     split: sum.splits if_splits)
 
     find_theorems Safety.future_bounded
 
@@ -480,20 +517,21 @@ lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
 
+
+
+lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
+    (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
+lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<alpha>) j = progress \<sigma> P \<alpha> j"
+  sorry
+lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<alpha> t)) j = progress \<sigma> P (project \<alpha>) j"
+  sorry
+lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<alpha>) j = progress \<sigma> P \<alpha> j"
+  by (auto simp: rrewrite_def project_embed)
+
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
-  unfolding pprogress_def
-  
-  sorry
-
-lemma "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
-  apply (induct \<phi> arbitrary: P j)
-   apply (auto simp: letpast_progress_def)
-    apply (auto simp: progress_regex_def regex.set_map)
-
-  find_theorems progress
-  find_theorems progress_regex
-  find_theorems min_regex_default
-  sorry
+  using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst)
 
 lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
