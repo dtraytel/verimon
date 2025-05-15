@@ -378,6 +378,66 @@ lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turn
 lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> rrewrite \<phi>"
   unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
 
+(* Proofs that if a normalized formula is future-boundedness, then so is the original formula *)
+lemma safe_letpast_simplify_terms: "safe_letpast (p, n) (simplify_terms \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induct \<phi> arbitrary: p n rule: simplify_terms.induct)
+    (auto simp: simplify_terms_nfv image_image regex.set_map)
+
+lemma future_bounded_simplify_terms: "Safety.future_bounded (simplify_terms \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (induction \<phi> rule: simplify_terms.induct)
+    (auto simp: simplify_terms_nfv list.pred_map regex.pred_map safe_letpast_simplify_terms elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma safe_letpast_push_negation: "safe_letpast (p, n) (push_negation \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induct \<phi> arbitrary: p n rule: push_negation.induct)
+    (auto simp: push_negation_nfv image_image regex.set_map)
+
+lemma future_bounded_push_negation: "Safety.future_bounded (push_negation \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (induct \<phi> rule: push_negation.induct)
+    (auto simp: push_negation_nfv list.pred_map regex.pred_map safe_letpast_push_negation elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma safe_letpast_elim_double_negation: "safe_letpast (p, n) (elim_double_negation \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induct \<phi> arbitrary: p n rule: elim_double_negation.induct)
+    (auto simp: elim_double_negation_nfv image_image regex.set_map)
+
+lemma future_bounded_elim_double_negation: "Safety.future_bounded (elim_double_negation \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (induction \<phi> rule: elim_double_negation.induct)
+    (auto simp: elim_double_negation_nfv list.pred_map regex.pred_map safe_letpast_elim_double_negation elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma future_bounded_normalize: "Safety.future_bounded (normalize \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  unfolding normalize_def using future_bounded_simplify_terms future_bounded_push_negation future_bounded_elim_double_negation by auto
+
+(* Proofs that if a rewritten formula is future-boundedness, then so is the original formula *)
+lemma future_bounded_historically[simp]: "Safety.future_bounded (historically I \<phi>) = Safety.future_bounded \<phi>"
+  by (auto simp: historically_def)
+
+lemma future_bounded_always[simp]: "Safety.future_bounded (always I \<phi>) = (bounded I \<and> Safety.future_bounded \<phi>)"
+  by (auto simp: always_def)
+
+lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<phi>)) = Safety.future_bounded (project \<phi>)"
+  by (induct \<phi> arbitrary: i)
+    (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
+
+lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<phi> t)) = Safety.future_bounded (project \<phi>)"
+  by (induct \<phi> t rule: fix_r.induct) auto
+
+lemma future_bounded_rewrite: "Safety.future_bounded (project (rewrite \<phi> t)) \<Longrightarrow> Safety.future_bounded (project \<phi>)"
+proof (induct \<phi> t rule: rewrite.induct)
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  from 3(1-4,7) 3(5)[OF _ refl] 3(6)[OF _ refl refl] show ?case
+    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<beta> \<alpha>"; cases "prop_cond \<gamma> \<alpha>")
+      (auto simp: Let_def split: if_splits)
+next
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  from 14(1,7) 14(2-6)[OF refl] show ?case
+    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>") (auto simp: Let_def split: if_splits)
+qed (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
+
+lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi>)) \<Longrightarrow> Safety.future_bounded \<phi>"
+  by (auto simp: project_embed)
+
+lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
+  unfolding rrewrite_def using future_bounded_rewrite future_bounded_project_embed by auto
+
 locale actually_verimon = maux +
   fixes rw sig \<phi>
   assumes wf: "wf_formula \<phi>" 
@@ -439,39 +499,6 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
-lemma safe_letpast_push_negation: "safe_letpast (p, n) (push_negation \<alpha>) = safe_letpast (p, n) \<alpha>"
-  by (induct \<alpha> arbitrary: p n rule: push_negation.induct)
-    (auto simp: push_negation_nfv image_image regex.set_map)
-
-lemma future_bounded_push_negation: "Safety.future_bounded (push_negation \<alpha>) \<Longrightarrow> Safety.future_bounded \<alpha>"
-  by (induct \<alpha> rule: push_negation.induct)
-    (auto simp: push_negation_nfv list.pred_map regex.pred_map safe_letpast_push_negation elim: list.pred_mono_strong regex.pred_mono_strong)
-
-lemma future_bounded_historically[simp]: "Safety.future_bounded (historically I \<alpha>) = Safety.future_bounded \<alpha>"
-  by (auto simp: historically_def)
-lemma future_bounded_always[simp]: "Safety.future_bounded (always I \<alpha>) = (bounded I \<and> Safety.future_bounded \<alpha>)"
-  by (auto simp: always_def)
-
-lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<alpha>)) = Safety.future_bounded (project \<alpha>)"
-  by (induct \<alpha> arbitrary: i)
-    (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
-
-lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<alpha> t)) = Safety.future_bounded (project \<alpha>)"
-  by (induct \<alpha> t rule: fix_r.induct) auto
-
-lemma future_bounded_rewrite: "Safety.future_bounded (project (rewrite \<alpha> t)) \<Longrightarrow> Safety.future_bounded (project \<alpha>)"
-proof (induct \<alpha> t rule: rewrite.induct)
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  from 3(1-4,7) 3(5)[OF _ refl] 3(6)[OF _ refl refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<beta> \<alpha>"; cases "prop_cond \<gamma> \<alpha>")
-      (auto simp: Let_def split: if_splits)
-next
-  case (14 \<alpha> \<gamma> I \<beta> t)
-  from 14(1,7) 14(2-6)[OF refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>") (auto simp: Let_def split: if_splits)
-qed (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
-
-
 interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
   "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   apply standard
@@ -494,12 +521,10 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
     done
   subgoal
     using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
-    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def flip: monitorable_formula_code 
-     split: sum.splits if_splits)
-
-    find_theorems Safety.future_bounded
-
-    sorry
+    apply (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
+        simp flip: monitorable_formula_code 
+        split: sum.splits if_splits intro: future_bounded_rrewrite future_bounded_normalize)
+    done
   done
 
 thm monitor_\<phi>.mono_monitor
@@ -517,15 +542,17 @@ lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
 
-
-
 lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
     (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
+
 lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<alpha>) j = progress \<sigma> P \<alpha> j"
   sorry
+
 lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<alpha> t)) j = progress \<sigma> P (project \<alpha>) j"
+  (* Ignore the release case(?)*)
   sorry
+
 lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<alpha>) j = progress \<sigma> P \<alpha> j"
   by (auto simp: rrewrite_def project_embed)
 
