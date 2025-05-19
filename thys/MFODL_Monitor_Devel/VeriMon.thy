@@ -415,7 +415,7 @@ lemma future_bounded_always[simp]: "Safety.future_bounded (always I \<phi>) = (b
 
 lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<phi>)) = Safety.future_bounded (project \<phi>)"
   by (induct \<phi> arbitrary: i)
-    (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
+   (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
 
 lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<phi> t)) = Safety.future_bounded (project \<phi>)"
   by (induct \<phi> t rule: fix_r.induct) auto
@@ -437,6 +437,265 @@ lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi
 
 lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   unfolding rrewrite_def using future_bounded_rewrite future_bounded_project_embed by auto
+
+(* Proofs that rewriting does not change the progress of the monitor *)
+lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
+    (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
+
+lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
+  apply (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
+  apply (auto simp: simplify_terms_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
+    (* TODO: release_safe_bounded *)
+  sorry
+
+lemma progress_push_negation[simp]: "progress \<sigma> P (push_negation \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induction \<phi> arbitrary: P j rule: push_negation.induct)
+    (auto simp: push_negation_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
+
+lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_negation \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induction \<phi> arbitrary: P j rule: elim_double_negation.induct)
+    (auto simp: elim_double_negation_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
+
+lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
+  unfolding normalize_def by auto
+
+lemma progress_shiftI_r[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
+  apply (induct \<phi> arbitrary: i P j)
+   apply (auto simp: progress_regex_def regex.set_map image_image always_def eventually_def historically_def)
+  (* TODO: release_safe_bounded *)
+  sorry
+
+lemma progress_fix_r[simp]: "progress \<sigma> P (project (fix_r \<phi> t)) j = progress \<sigma> P (project \<phi>) j"
+proof (induct \<phi> t arbitrary: P j rule: fix_r.induct)
+  case (1 l I r)
+  then show ?case
+    sorry
+qed (auto simp: conj_commute)
+
+(*
+find_theorems progress "Suc _"
+find_theorems memL "min _ _"
+find_theorems memL 
+find_theorems "\<not> memL _ 0"
+find_theorems "min _ _" "Suc _" *)
+
+lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project \<phi>) j"
+proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
+  case (2 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    sorry
+next
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    sorry
+next
+  case (6 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    sorry
+next
+  case (7 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    sorry
+next
+  case (8 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: once_def eventually_def)
+    sorry
+next
+  case (9 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: eventually_def)
+    sorry
+next
+  case (10 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: historically_def eventually_def)
+    sorry
+next
+  case (11 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: once_def always_def eventually_def)
+    sorry
+next
+  case (12 \<alpha> I \<beta> t)
+  from 12(1-4) 12(5)[OF _ refl] show ?case
+    by (cases "prop_cond \<alpha> \<beta>") auto
+next
+  case (13 \<alpha> I \<beta> t) (* And \<alpha> (Next I \<beta>)) *)
+  then show ?case
+    sorry
+next
+  case (14 \<alpha> \<gamma> I \<beta> t) (* Since (And \<alpha> \<gamma>) I \<beta>) *)
+  then show ?case
+    sorry
+next
+  case (15 \<alpha> \<gamma> I \<beta> t) (* Until (And \<alpha> \<gamma>) I \<beta>) *)
+  then show ?case
+    sorry
+next (* Since (____) I \<beta>) *)
+  case ("16_1" v va I r) 
+  then show ?case
+    apply auto sorry
+next
+  case ("16_2" v va vb I r)
+  then show ?case
+    apply (auto simp: nfv_project) sorry
+next
+  case ("16_3" v va vb I r)
+  then show ?case
+    apply (auto simp: nfv_project letpast_progress_def Let_def) sorry
+next
+  case ("16_4" v va I r)
+  then show ?case
+    apply auto sorry
+next
+  case ("16_5" v va I r)
+  then show ?case
+    apply auto sorry
+next
+  case ("16_6" v va I r)
+  then show ?case sorry
+next
+  case ("16_7" v I r)
+  then show ?case sorry
+next
+  case ("16_8" v va I r)
+  then show ?case sorry
+next
+  case ("16_9" v I r)
+  then show ?case sorry
+next
+  case ("16_10" v va I r)
+  then show ?case sorry
+next
+  case ("16_11" v va vb vc vd I r)
+  then show ?case sorry
+next
+  case ("16_12" v va I r)
+  then show ?case sorry
+next
+  case ("16_13" v va I r)
+  then show ?case sorry
+next
+  case ("16_14" v va I r)
+  then show ?case sorry
+next
+  case ("16_15" v va I r)
+  then show ?case sorry
+next
+  case ("16_16" v va I r)
+  then show ?case sorry
+next
+  case ("16_17" v va I r)
+  then show ?case sorry
+next
+  case ("16_18" v va vb I r)
+  then show ?case sorry
+next
+  case ("16_19" v va vb I r)
+  then show ?case sorry
+next
+  case ("16_20" v va vb I r)
+  then show ?case sorry
+next
+  case ("16_21" v va vb I r)
+  then show ?case sorry
+next
+  case ("16_22" v va I r)
+  then show ?case sorry
+next
+  case ("16_23" v va I r)
+  then show ?case sorry
+next
+  case ("16_24" v I r)
+  then show ?case apply auto sorry
+next
+  case ("16_25" v I r)
+  then show ?case apply auto sorry
+next
+  case ("19_1" v va I r)
+  then show ?case apply auto sorry
+next
+  case ("19_2" v va vb I r)
+  then show ?case apply auto sorry
+next
+  case ("19_3" v va vb I r)
+  then show ?case sorry
+next
+  case ("19_4" v va I r)
+  then show ?case apply auto sorry
+next
+  case ("19_5" v va I r)
+  then show ?case sorry
+next
+  case ("19_6" v va I r)
+  then show ?case sorry
+next
+  case ("19_7" v I r)
+  then show ?case sorry
+next
+  case ("19_8" v va I r)
+  then show ?case sorry
+next
+  case ("19_9" v I r)
+  then show ?case sorry
+next
+  case ("19_10" v va I r)
+  then show ?case sorry
+next
+  case ("19_11" v va vb vc vd I r)
+  then show ?case sorry
+next
+  case ("19_12" v va I r)
+  then show ?case sorry
+next
+  case ("19_13" v va I r)
+  then show ?case sorry
+next
+  case ("19_14" v va I r)
+  then show ?case sorry
+next
+  case ("19_15" v va I r)
+  then show ?case sorry
+next
+  case ("19_16" v va I r)
+  then show ?case sorry
+next
+  case ("19_17" v va I r)
+  then show ?case sorry
+next
+  case ("19_18" v va vb I r)
+  then show ?case sorry
+next
+  case ("19_19" v va vb I r)
+  then show ?case sorry
+next
+  case ("19_20" v va vb I r)
+  then show ?case sorry
+next
+  case ("19_21" v va vb I r)
+  then show ?case sorry
+next
+  case ("19_22" v va I r)
+  then show ?case sorry
+next
+  case ("19_23" v va I r)
+  then show ?case apply (auto simp: progress_regex_def image_image regex.set_map) sorry
+next
+  case ("19_24" v I r)
+  then show ?case apply (auto) sorry
+next
+  case ("19_25" v I r)
+  then show ?case apply (auto) sorry
+next
+  case (27 \<phi> I \<psi> t) (* release_safe_bounded *)
+  then show ?case sorry
+qed (auto simp: conj_commute once_def always_def eventually_def historically_def
+    progress_regex_def regex.set_map image_image)
+
+lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
+  by (auto simp: rrewrite_def project_embed)
 
 locale actually_verimon = maux +
   fixes rw sig \<phi>
@@ -541,20 +800,6 @@ lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
 lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
-
-lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
-  by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
-    (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
-
-lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<alpha>) j = progress \<sigma> P \<alpha> j"
-  sorry
-
-lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<alpha> t)) j = progress \<sigma> P (project \<alpha>) j"
-  (* Ignore the release case(?)*)
-  sorry
-
-lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<alpha>) j = progress \<sigma> P \<alpha> j"
-  by (auto simp: rrewrite_def project_embed)
 
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
