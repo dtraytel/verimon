@@ -480,10 +480,37 @@ find_theorems memL
 find_theorems "\<not> memL _ 0"
 find_theorems "min _ _" "Suc _" *)
 
-lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project \<phi>) j"
+definition "conterex = Formula.And (Formula.Pred (STR ''a'') [Formula.Var 0, Formula.Var 1])
+  (Formula.Since (Formula.Or (Formula.Neg (Formula.Pred (STR ''b'') [Formula.Var 0])) (Formula.Pred (STR ''b'') [Formula.Var 1])) (interval 0 10) (Formula.Pred (STR ''c'') [Formula.Var 0, Formula.Var 1]))"
+lemma "progress \<sigma> Map.empty conterex j = j"
+  by (auto simp add: conterex_def)
+thm prop_cond_def[of "Rewriting.Pred (STR ''a'') [Formula.Var 0]" "Rewriting.Neg (Rewriting.Pred (STR ''b'') [Formula.Var 0])"]
+lemma "progress \<sigma> Map.empty (rrewrite conterex) j < j"
+  using interval_bounds[of 0 10]
+  apply (auto simp add: rrewrite_def prop_cond_def conterex_def eventually_def enat_0 min_less_iff_disj)
+  apply (subst cInf_less_iff)
+    apply (auto simp: enat_0 intro!: exI[of _ "j"]) []
+   apply auto []
+  apply auto
+  find_theorems "Inf _ < _"
+  sorry
+
+lemma bounded_init_ivl[simp]: "bounded I \<Longrightarrow> bounded (init_ivl I)"
+  by transfer auto
+
+lemma "\<not> mmonitorable conterex"
+  using interval_bounds[of 0 10, OF _ refl]
+  by (auto simp: rrewrite_def prop_cond_def conterex_def eventually_def mmonitorable_def safe_assignment_def enat_0)
+
+lemma "mmonitorable (rrewrite conterex)"
+  using interval_bounds[of 0 10, OF _ refl]
+  by (auto simp: rrewrite_def prop_cond_def conterex_def eventually_def mmonitorable_def safe_assignment_def enat_0)
+
+lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
 proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case
+    apply simp
     sorry
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
@@ -492,6 +519,7 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
+    apply simp
     sorry
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
@@ -533,161 +561,6 @@ next
   case (15 \<alpha> \<gamma> I \<beta> t) (* Until (And \<alpha> \<gamma>) I \<beta>) *)
   then show ?case
     sorry
-next (* Since (____) I \<beta>) *)
-  case ("16_1" v va I r) 
-  then show ?case
-    apply auto sorry
-next
-  case ("16_2" v va vb I r)
-  then show ?case
-    apply (auto simp: nfv_project) sorry
-next
-  case ("16_3" v va vb I r)
-  then show ?case
-    apply (auto simp: nfv_project letpast_progress_def Let_def) sorry
-next
-  case ("16_4" v va I r)
-  then show ?case
-    apply auto sorry
-next
-  case ("16_5" v va I r)
-  then show ?case
-    apply auto sorry
-next
-  case ("16_6" v va I r)
-  then show ?case sorry
-next
-  case ("16_7" v I r)
-  then show ?case sorry
-next
-  case ("16_8" v va I r)
-  then show ?case sorry
-next
-  case ("16_9" v I r)
-  then show ?case sorry
-next
-  case ("16_10" v va I r)
-  then show ?case sorry
-next
-  case ("16_11" v va vb vc vd I r)
-  then show ?case sorry
-next
-  case ("16_12" v va I r)
-  then show ?case sorry
-next
-  case ("16_13" v va I r)
-  then show ?case sorry
-next
-  case ("16_14" v va I r)
-  then show ?case sorry
-next
-  case ("16_15" v va I r)
-  then show ?case sorry
-next
-  case ("16_16" v va I r)
-  then show ?case sorry
-next
-  case ("16_17" v va I r)
-  then show ?case sorry
-next
-  case ("16_18" v va vb I r)
-  then show ?case sorry
-next
-  case ("16_19" v va vb I r)
-  then show ?case sorry
-next
-  case ("16_20" v va vb I r)
-  then show ?case sorry
-next
-  case ("16_21" v va vb I r)
-  then show ?case sorry
-next
-  case ("16_22" v va I r)
-  then show ?case sorry
-next
-  case ("16_23" v va I r)
-  then show ?case sorry
-next
-  case ("16_24" v I r)
-  then show ?case apply auto sorry
-next
-  case ("16_25" v I r)
-  then show ?case apply auto sorry
-next
-  case ("19_1" v va I r)
-  then show ?case apply auto sorry
-next
-  case ("19_2" v va vb I r)
-  then show ?case apply auto sorry
-next
-  case ("19_3" v va vb I r)
-  then show ?case sorry
-next
-  case ("19_4" v va I r)
-  then show ?case apply auto sorry
-next
-  case ("19_5" v va I r)
-  then show ?case sorry
-next
-  case ("19_6" v va I r)
-  then show ?case sorry
-next
-  case ("19_7" v I r)
-  then show ?case sorry
-next
-  case ("19_8" v va I r)
-  then show ?case sorry
-next
-  case ("19_9" v I r)
-  then show ?case sorry
-next
-  case ("19_10" v va I r)
-  then show ?case sorry
-next
-  case ("19_11" v va vb vc vd I r)
-  then show ?case sorry
-next
-  case ("19_12" v va I r)
-  then show ?case sorry
-next
-  case ("19_13" v va I r)
-  then show ?case sorry
-next
-  case ("19_14" v va I r)
-  then show ?case sorry
-next
-  case ("19_15" v va I r)
-  then show ?case sorry
-next
-  case ("19_16" v va I r)
-  then show ?case sorry
-next
-  case ("19_17" v va I r)
-  then show ?case sorry
-next
-  case ("19_18" v va vb I r)
-  then show ?case sorry
-next
-  case ("19_19" v va vb I r)
-  then show ?case sorry
-next
-  case ("19_20" v va vb I r)
-  then show ?case sorry
-next
-  case ("19_21" v va vb I r)
-  then show ?case sorry
-next
-  case ("19_22" v va I r)
-  then show ?case sorry
-next
-  case ("19_23" v va I r)
-  then show ?case apply (auto simp: progress_regex_def image_image regex.set_map) sorry
-next
-  case ("19_24" v I r)
-  then show ?case apply (auto) sorry
-next
-  case ("19_25" v I r)
-  then show ?case apply (auto) sorry
 next
   case (27 \<phi> I \<psi> t) (* release_safe_bounded *)
   then show ?case sorry
