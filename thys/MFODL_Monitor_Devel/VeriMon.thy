@@ -446,7 +446,8 @@ lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_form
 lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
   apply (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
   apply (auto simp: simplify_terms_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
-    (* TODO: release_safe_bounded *)
+    (* TODO: fix "linarith_split_limit exceeded (current value is 9)" in  release_safe_bounded *)
+  apply (auto simp: release_safe_bounded_def Formula.eventually_def always_safe_bounded_def)
   sorry
 
 lemma progress_push_negation[simp]: "progress \<sigma> P (push_negation \<phi>) j = progress \<sigma> P \<phi> j"
