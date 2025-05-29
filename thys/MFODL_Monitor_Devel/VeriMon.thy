@@ -438,7 +438,7 @@ lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi
 lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   unfolding rrewrite_def using future_bounded_rewrite future_bounded_project_embed by auto
 
-(* Proofs that rewriting does not change the progress of the monitor *)
+(* Proofs that normalizing does not change the progress of the monitor *)
 lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
     (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
@@ -460,40 +460,13 @@ lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_neg
 lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
 
-lemma progress_shiftI_r[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
-  apply (induct \<phi> arbitrary: i P j)
-   apply (auto simp: progress_regex_def regex.set_map image_image always_def eventually_def historically_def)
-  (* TODO: release_safe_bounded *)
-  sorry
-
-lemma progress_fix_r[simp]: "progress \<sigma> P (project (fix_r \<phi> t)) j = progress \<sigma> P (project \<phi>) j"
-proof (induct \<phi> t arbitrary: P j rule: fix_r.induct)
-  case (1 l I r)
-  then show ?case
-    sorry
-qed (auto simp: conj_commute)
-
-(*
-find_theorems progress "Suc _"
-find_theorems memL "min _ _"
-find_theorems memL 
-find_theorems "\<not> memL _ 0"
-find_theorems "min _ _" "Suc _" *)
-
+(* Counter example for progress not staying the same when rewriting a formula *)
+(* A(x,y) \<and> ((\<not>B(x) \<or> B(y)) Since C(x,y)) *)
 definition "conterex = Formula.And (Formula.Pred (STR ''a'') [Formula.Var 0, Formula.Var 1])
-  (Formula.Since (Formula.Or (Formula.Neg (Formula.Pred (STR ''b'') [Formula.Var 0])) (Formula.Pred (STR ''b'') [Formula.Var 1])) (interval 0 10) (Formula.Pred (STR ''c'') [Formula.Var 0, Formula.Var 1]))"
-lemma "progress \<sigma> Map.empty conterex j = j"
-  by (auto simp add: conterex_def)
-thm prop_cond_def[of "Rewriting.Pred (STR ''a'') [Formula.Var 0]" "Rewriting.Neg (Rewriting.Pred (STR ''b'') [Formula.Var 0])"]
-lemma "progress \<sigma> Map.empty (rrewrite conterex) j < j"
-  using interval_bounds[of 0 10]
-  apply (auto simp add: rrewrite_def prop_cond_def conterex_def eventually_def enat_0 min_less_iff_disj)
-  apply (subst cInf_less_iff)
-    apply (auto simp: enat_0 intro!: exI[of _ "j"]) []
-   apply auto []
-  apply auto
-  find_theorems "Inf _ < _"
-  sorry
+  (Formula.Since (Formula.Or (Formula.Neg (Formula.Pred (STR ''b'') [Formula.Var 0]))
+                             (Formula.Pred (STR ''b'') [Formula.Var 1]))
+                 (interval 0 10)
+                 (Formula.Pred (STR ''c'') [Formula.Var 0, Formula.Var 1]))"
 
 lemma bounded_init_ivl[simp]: "bounded I \<Longrightarrow> bounded (init_ivl I)"
   by transfer auto
@@ -506,8 +479,31 @@ lemma "mmonitorable (rrewrite conterex)"
   using interval_bounds[of 0 10, OF _ refl]
   by (auto simp: rrewrite_def prop_cond_def conterex_def eventually_def mmonitorable_def safe_assignment_def enat_0)
 
+lemma "progress \<sigma> Map.empty conterex j = j"
+  by (auto simp add: conterex_def)
+
+thm prop_cond_def[of "Rewriting.Pred (STR ''a'') [Formula.Var 0]" "Rewriting.Neg (Rewriting.Pred (STR ''b'') [Formula.Var 0])"]
+
+lemma "progress \<sigma> Map.empty (rrewrite conterex) j < j"
+  using interval_bounds[of 0 10]
+  apply (auto simp add: rrewrite_def prop_cond_def conterex_def eventually_def enat_0 min_less_iff_disj)
+  apply (subst cInf_less_iff)
+  subgoal
+    apply auto
+    apply (auto simp: enat_0 intro!: exI[of _ "j"])
+    done
+  subgoal
+    apply auto
+    done
+  subgoal
+    apply auto
+    sorry
+  find_theorems "Inf _ < _"
+  sorry
+
+(* TODO: remove this and the rewriting in prepare_verimon *)
 lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
-proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
+(* proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case
     apply simp
@@ -551,7 +547,8 @@ next
     by (cases "prop_cond \<alpha> \<beta>") auto
 next
   case (13 \<alpha> I \<beta> t) (* And \<alpha> (Next I \<beta>)) *)
-  then show ?case
+  from 13(1-4) 13(5)[OF _ refl] show ?case
+    apply auto
     sorry
 next
   case (14 \<alpha> \<gamma> I \<beta> t) (* Since (And \<alpha> \<gamma>) I \<beta>) *)
@@ -566,6 +563,7 @@ next
   then show ?case sorry
 qed (auto simp: conj_commute once_def always_def eventually_def historically_def
     progress_regex_def regex.set_map image_image)
+*) sorry
 
 lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
   by (auto simp: rrewrite_def project_embed)
