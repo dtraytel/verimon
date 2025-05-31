@@ -9,16 +9,24 @@ lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (re
 context maux begin
 
 definition "prepare_verimon rw sig \<phi> =
-(case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
-| Inr \<phi> \<Rightarrow>
-(if mmonitorable_exec \<phi> then Inr \<phi> else
-(if rw then
-let n\<phi> = normalize \<phi> in
-if mmonitorable_exec n\<phi> then Inr n\<phi> else
-let r\<phi> = rrewrite n\<phi> in
-if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
-else Inl STR ''not monitorable'')))"
-
+  (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
+    | Inr \<phi> \<Rightarrow>
+      (if mmonitorable_exec \<phi> then Inr \<phi> else
+        (if rw then
+          let n\<phi> = normalize \<phi> in
+            if mmonitorable_exec n\<phi> then Inr n\<phi> else Inl STR ''not monitorable''
+         else Inl STR ''not monitorable'')))"
+(* TODO: check here and remove all outcommented parts with rrewrite:
+  (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
+    | Inr \<phi> \<Rightarrow>
+      (if mmonitorable_exec \<phi> then Inr \<phi> else
+        (if rw then
+          let n\<phi> = normalize \<phi> in
+            if mmonitorable_exec n\<phi> then Inr n\<phi> else
+              let r\<phi> = rrewrite n\<phi> in
+                if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
+         else Inl STR ''not monitorable'')))"
+ *)
 definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw sig \<phi>)"
 
 end
@@ -500,13 +508,14 @@ lemma
     done
   subgoal
     by (auto simp: enat_0 intro!: exI[of _ "j - 1"])
-
-  thm progress_0 diff_Suc_less
   done
 
+thm progress_0 diff_Suc_less
+
+
 (* TODO: remove this and the rewriting in prepare_verimon *)
-lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
-(* proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
+(*lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
+  proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case
     apply simp
@@ -566,10 +575,12 @@ next
   then show ?case sorry
 qed (auto simp: conj_commute once_def always_def eventually_def historically_def
     progress_regex_def regex.set_map image_image)
-*) sorry
-
+  sorry
+*)
+(*
 lemma progress_rrewrite: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
   by (auto simp: rrewrite_def project_embed)
+*)
 
 locale actually_verimon = maux +
   fixes rw sig \<phi>
@@ -621,11 +632,13 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
       apply (auto simp add: check_check_subst wty_result_fX_def wf_f_comp simp flip: comp_assoc
         intro!: exI[of _ "convert_tysym"] wty_normalize dest: spec[of _ "convert_tysym \<circ> check_subst"])
       done
+(*
     subgoal
       apply (frule check_sound_proven[OF _ wf])
       apply (auto simp add: check_check_subst wty_result_fX_def wf_f_comp simp flip: comp_assoc
         intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite dest: spec[of _ "convert_tysym \<circ> check_subst"])
       done
+*)
     done
   subgoal using prepare_Inr
     by (cases "prepare_verimon rw sig \<phi>")
@@ -647,16 +660,18 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
       apply (frule check_sound_proven[OF _ wf])
       apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
       done
+(*
     subgoal
       apply (frule check_sound_proven[OF _ wf])
       apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
       done
+*)
     done
   subgoal
     using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
     apply (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
         simp flip: monitorable_formula_code 
-        split: sum.splits if_splits intro: future_bounded_rrewrite future_bounded_normalize)
+        split: sum.splits if_splits intro: (* future_bounded_rrewrite *) future_bounded_normalize)
     done
   done
 
@@ -667,11 +682,11 @@ lemma sat_the_\<psi>:
 
 lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi rrewrite_fvi type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi (* rrewrite_fvi *) type_check_def check_check_subst)
 
 lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv (* rrewrite_nfv *) type_check_def check_check_subst)
 
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
@@ -688,8 +703,9 @@ lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst)
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
   using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
-    intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
+    intro!: wf_mstate_minit (* wty_rrewrite *) wty_normalize dest!: spec[of _ "convert_tysym"])
 
+(* Correctness *)
 lemmas mono_monitor = monitor_\<phi>.mono_monitor
 lemmas sound_monitor = monitor_\<phi>.sound_monitor
 lemmas complete_monitor = monitor_\<phi>.complete_monitor
