@@ -444,11 +444,10 @@ lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_form
     (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
 
 lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
-  apply (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
-  apply (auto simp: simplify_terms_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
-    (* TODO: fix "linarith_split_limit exceeded (current value is 9)" in  release_safe_bounded *)
-  apply (auto simp: release_safe_bounded_def Formula.eventually_def always_safe_bounded_def)
-  sorry
+  using [[linarith_split_limit = 17]]
+  by (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
+    (auto simp: simplify_terms_nfv letpast_progress_def progress_regex_def regex.set_map image_image
+     release_safe_bounded_def Formula.eventually_def always_safe_bounded_def)
 
 lemma progress_push_negation[simp]: "progress \<sigma> P (push_negation \<phi>) j = progress \<sigma> P \<phi> j"
   by (induction \<phi> arbitrary: P j rule: push_negation.induct)
@@ -463,6 +462,7 @@ lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<phi>) j = prog
 
 (* Counter example for progress not staying the same when rewriting a formula *)
 (* A(x,y) \<and> ((\<not>B(x) \<or> B(y)) Since C(x,y)) *)
+(* Rewritten: A(x,y) \<and> (((Eventually A(x,y) \<and> \<not>(Eventually A(x,y) \<and> B(x))) \<or> (Eventually A(x,y) \<and> B(y))) Since C(x,y)) *)
 definition "conterex = Formula.And (Formula.Pred (STR ''a'') [Formula.Var 0, Formula.Var 1])
   (Formula.Since (Formula.Or (Formula.Neg (Formula.Pred (STR ''b'') [Formula.Var 0]))
                              (Formula.Pred (STR ''b'') [Formula.Var 1]))
@@ -485,8 +485,10 @@ lemma "progress \<sigma> Map.empty conterex j = j"
 
 thm prop_cond_def[of "Rewriting.Pred (STR ''a'') [Formula.Var 0]" "Rewriting.Neg (Rewriting.Pred (STR ''b'') [Formula.Var 0])"]
 
-lemma "progress \<sigma> Map.empty (rrewrite conterex) j < j"
-  using interval_bounds[of 0 10]
+lemma
+  assumes "0 < j"
+  shows "progress \<sigma> Map.empty (rrewrite conterex) j < j"
+  using interval_bounds[of 0 10] assms
   apply (auto simp add: rrewrite_def prop_cond_def conterex_def eventually_def enat_0 min_less_iff_disj)
   apply (subst cInf_less_iff)
   subgoal
@@ -497,10 +499,10 @@ lemma "progress \<sigma> Map.empty (rrewrite conterex) j < j"
     apply auto
     done
   subgoal
-    apply auto
-    sorry
-  find_theorems "Inf _ < _"
-  sorry
+    by (auto simp: enat_0 intro!: exI[of _ "j - 1"])
+
+  thm progress_0 diff_Suc_less
+  done
 
 (* TODO: remove this and the rewriting in prepare_verimon *)
 lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
@@ -566,7 +568,7 @@ qed (auto simp: conj_commute once_def always_def eventually_def historically_def
     progress_regex_def regex.set_map image_image)
 *) sorry
 
-lemma progress_rrewrite[simp]: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
+lemma progress_rrewrite: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
   by (auto simp: rrewrite_def project_embed)
 
 locale actually_verimon = maux +
@@ -658,8 +660,6 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
     done
   done
 
-thm monitor_\<phi>.mono_monitor
-
 lemma sat_the_\<psi>:
   "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
@@ -706,6 +706,7 @@ thm wf_mstate_minit_safe wf_mstate_mstep mstep_mverdicts
 find_theorems M
 thm Mt_def
 thm M_def
+thm mstep_mverdicts
 find_theorems maux.minit_verimon
 end
 end
