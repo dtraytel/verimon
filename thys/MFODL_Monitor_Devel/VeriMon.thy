@@ -468,6 +468,14 @@ lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_neg
 lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
 
+lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
+  apply (induct \<phi> arbitrary: i P j)
+  using [[linarith_split_limit=17]]
+  by (auto simp: image_image regex.set_map regex.map_comp eventually_def historically_def always_def
+    always_safe_bounded_def release_safe_bounded_def progress_regex_def
+    elim: list.pred_mono_strong regex.pred_mono_strong)
+
+
 (* Counter example for progress not staying the same when rewriting a formula *)
 (* A(x,y) \<and> ((\<not>B(x) \<or> B(y)) Since C(x,y)) *)
 (* Rewritten: A(x,y) \<and> (((Eventually A(x,y) \<and> \<not>(Eventually A(x,y) \<and> B(x))) \<or> (Eventually A(x,y) \<and> B(y))) Since C(x,y)) *)
@@ -511,76 +519,6 @@ lemma
   done
 
 thm progress_0 diff_Suc_less
-
-
-(* TODO: remove this and the rewriting in prepare_verimon *)
-(*lemma progress_rewrite[simp]: "progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
-  proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
-  case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    apply simp
-    sorry
-next
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    sorry
-next
-  case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    apply simp
-    sorry
-next
-  case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    sorry
-next
-  case (8 \<alpha> I \<beta> t)
-  then show ?case
-    apply (auto simp: once_def eventually_def)
-    sorry
-next
-  case (9 \<alpha> I \<beta> t)
-  then show ?case
-    apply (auto simp: eventually_def)
-    sorry
-next
-  case (10 \<alpha> I \<beta> t)
-  then show ?case
-    apply (auto simp: historically_def eventually_def)
-    sorry
-next
-  case (11 \<alpha> I \<beta> t)
-  then show ?case
-    apply (auto simp: once_def always_def eventually_def)
-    sorry
-next
-  case (12 \<alpha> I \<beta> t)
-  from 12(1-4) 12(5)[OF _ refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>") auto
-next
-  case (13 \<alpha> I \<beta> t) (* And \<alpha> (Next I \<beta>)) *)
-  from 13(1-4) 13(5)[OF _ refl] show ?case
-    apply auto
-    sorry
-next
-  case (14 \<alpha> \<gamma> I \<beta> t) (* Since (And \<alpha> \<gamma>) I \<beta>) *)
-  then show ?case
-    sorry
-next
-  case (15 \<alpha> \<gamma> I \<beta> t) (* Until (And \<alpha> \<gamma>) I \<beta>) *)
-  then show ?case
-    sorry
-next
-  case (27 \<phi> I \<psi> t) (* release_safe_bounded *)
-  then show ?case sorry
-qed (auto simp: conj_commute once_def always_def eventually_def historically_def
-    progress_regex_def regex.set_map image_image)
-  sorry
-*)
-(*
-lemma progress_rrewrite: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
-  by (auto simp: rrewrite_def project_embed)
-*)
 
 locale actually_verimon = maux +
   fixes rw sig \<phi>
@@ -725,4 +663,78 @@ thm M_def
 thm mstep_mverdicts
 find_theorems maux.minit_verimon
 end
+(*
+(* TODO: remove this and the rewriting in prepare_verimon *)
+lemma progress_rewrite[simp]: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
+  proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
+  case (2 \<alpha> \<beta> I \<gamma> t)
+  then show ?case  (*fine*)
+    apply simp
+    sorry
+next
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    sorry
+next
+  case (6 \<alpha> \<beta> I \<gamma> t)
+  then show ?case
+    apply simp
+    sorry
+next
+  case (7 \<alpha> \<beta> I \<gamma> t)
+  then show ?case  (*fine*)
+    sorry
+next
+  case (8 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: once_def eventually_def)
+    sorry
+next
+  case (9 \<alpha> I \<beta> t)
+  then show ?case  (*fine*)
+    apply (auto simp: eventually_def)
+    sorry
+next
+  case (10 \<alpha> I \<beta> t)
+  then show ?case
+    apply (auto simp: historically_def eventually_def)
+    sorry
+next
+  case (11 \<alpha> I \<beta> t)
+  then show ?case (*fine*)
+    apply (auto simp: once_def always_def eventually_def min_def)
+               apply (erule order_trans)
+    sorry
+next
+  case (12 \<alpha> I \<beta> t)
+  from 12(1-4) 12(5)[OF _ refl] 12(6) show ?case
+    by (cases "prop_cond \<alpha> \<beta>") auto
+next
+  case (13 \<alpha> I \<beta> t) (* And \<alpha> (Next I \<beta>)) *)
+  from 13(1-4) 13(5)[OF _ refl] 13(6) show ?case  (*fine*)
+    apply (auto)
+    apply (auto simp: min_def not_le less_Suc_eq)
+    using progress_le_gen[OF 13(6), of \<sigma> "project \<alpha>"] progress_le_gen[OF 13(6), of \<sigma> "project \<beta>"]
+      apply simp_all
+    done
+next
+  case (14 \<alpha> \<gamma> I \<beta> t) (* Since (And \<alpha> \<gamma>) I \<beta>) *)
+  then show ?case
+    sorry
+next
+  case (15 \<alpha> \<gamma> I \<beta> t) (* Until (And \<alpha> \<gamma>) I \<beta>) *)
+  then show ?case (*fine*)
+    sorry
+next
+  case (27 \<phi> I \<psi> t) (* release_safe_bounded *)
+  then show ?case using [[linarith_split_limit=17]]
+    by (auto simp: conj_commute once_def always_def eventually_def historically_def
+      release_safe_bounded_def always_safe_bounded_def)
+qed (auto simp: conj_commute once_def always_def eventually_def historically_def
+    progress_regex_def regex.set_map image_image)
+*)
+(*
+lemma progress_rrewrite: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
+  by (auto simp: rrewrite_def project_embed)
+*)
 end
