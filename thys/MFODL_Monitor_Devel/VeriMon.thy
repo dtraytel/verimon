@@ -20,7 +20,8 @@ definition "prepare_verimon rw sig \<phi> =
           let n\<phi> = normalize \<phi> in
             if mmonitorable_exec n\<phi> then Inr n\<phi> else Inl STR ''not monitorable''
          else Inl STR ''not monitorable'')))"
-(* TODO: check here and remove all outcommented parts with rrewrite:
+(* All outcommented parts correspond to lemmas concerning the rewrite function.
+definition "prepare_verimon rw sig \<phi> =
   (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
     | Inr \<phi> \<Rightarrow>
       (if mmonitorable_exec \<phi> then Inr \<phi> else
@@ -29,8 +30,8 @@ definition "prepare_verimon rw sig \<phi> =
             if mmonitorable_exec n\<phi> then Inr n\<phi> else
               let r\<phi> = rrewrite n\<phi> in
                 if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
-         else Inl STR ''not monitorable'')))"
- *)
+         else Inl STR ''not monitorable'')))" *)
+ 
 definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw sig \<phi>)"
 
 end
@@ -74,6 +75,7 @@ inductive_cases wty_formula_MatchFE[elim!]: "S, E \<turnstile> Formula.MatchF I 
 inductive_cases wty_formula_MatchPE[elim!]: "S, E \<turnstile> Formula.MatchP I \<phi>"
 inductive_cases wty_formula_TSE[elim!]: "S, E \<turnstile> Formula.TS t"
 inductive_cases wty_formula_TPE[elim!]: "S, E \<turnstile> Formula.TP t"
+
 
 (* Proofs that normalize preserves well-typedness*)
 
@@ -161,6 +163,7 @@ qed (auto intro!: wty_formula.intros)
 lemma wty_normalize: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> normalize \<phi>"
   unfolding normalize_def using wty_push_negation wty_simplify_terms wty_elim_double_negation
   by auto
+
 
 (* Proofs that rrewrite preserves well-typedness*)
 
@@ -384,59 +387,59 @@ lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turn
 lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> rrewrite \<phi>"
   unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
 
+
 (* Proofs that if a normalized formula is future-bounded, then so is the original formula *)
-lemma safe_letpast_simplify_terms: "safe_letpast (p, n) (simplify_terms \<phi>) = safe_letpast (p, n) \<phi>"
-  by (induct \<phi> arbitrary: p n rule: simplify_terms.induct)
+
+lemma safe_letpast_simplify_terms[simp]: "safe_letpast (p, n) (simplify_terms \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induction \<phi> arbitrary: p n rule: simplify_terms.induct)
     (auto simp: simplify_terms_nfv image_image regex.set_map)
 
 lemma future_bounded_simplify_terms: "Safety.future_bounded (simplify_terms \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   by (induction \<phi> rule: simplify_terms.induct)
-    (auto simp: simplify_terms_nfv list.pred_map regex.pred_map safe_letpast_simplify_terms elim: list.pred_mono_strong regex.pred_mono_strong)
+    (auto simp: simplify_terms_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
 
-lemma safe_letpast_push_negation: "safe_letpast (p, n) (push_negation \<phi>) = safe_letpast (p, n) \<phi>"
-  by (induct \<phi> arbitrary: p n rule: push_negation.induct)
+lemma safe_letpast_push_negation[simp]: "safe_letpast (p, n) (push_negation \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induction \<phi> arbitrary: p n rule: push_negation.induct)
     (auto simp: push_negation_nfv image_image regex.set_map)
 
 lemma future_bounded_push_negation: "Safety.future_bounded (push_negation \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
-  by (induct \<phi> rule: push_negation.induct)
-    (auto simp: push_negation_nfv list.pred_map regex.pred_map safe_letpast_push_negation elim: list.pred_mono_strong regex.pred_mono_strong)
+  by (induction \<phi> rule: push_negation.induct)
+    (auto simp: push_negation_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
 
-lemma safe_letpast_elim_double_negation: "safe_letpast (p, n) (elim_double_negation \<phi>) = safe_letpast (p, n) \<phi>"
-  by (induct \<phi> arbitrary: p n rule: elim_double_negation.induct)
+lemma safe_letpast_elim_double_negation[simp]: "safe_letpast (p, n) (elim_double_negation \<phi>) = safe_letpast (p, n) \<phi>"
+  by (induction \<phi> arbitrary: p n rule: elim_double_negation.induct)
     (auto simp: elim_double_negation_nfv image_image regex.set_map)
 
 lemma future_bounded_elim_double_negation: "Safety.future_bounded (elim_double_negation \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   by (induction \<phi> rule: elim_double_negation.induct)
-    (auto simp: elim_double_negation_nfv list.pred_map regex.pred_map safe_letpast_elim_double_negation elim: list.pred_mono_strong regex.pred_mono_strong)
+    (auto simp: elim_double_negation_nfv list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
 
 lemma future_bounded_normalize: "Safety.future_bounded (normalize \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   unfolding normalize_def using future_bounded_simplify_terms future_bounded_push_negation future_bounded_elim_double_negation by auto
 
-(* Proofs that if a rewritten formula is future-bounded, then so is the original formula *)
-lemma future_bounded_historically[simp]: "Safety.future_bounded (historically I \<phi>) = Safety.future_bounded \<phi>"
-  by (auto simp: historically_def)
 
-lemma future_bounded_always[simp]: "Safety.future_bounded (always I \<phi>) = (bounded I \<and> Safety.future_bounded \<phi>)"
-  by (auto simp: always_def)
+(* Proofs that if a rewritten formula is future-bounded, then so is the original formula *)
 
 lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i \<phi>)) = Safety.future_bounded (project \<phi>)"
-  by (induct \<phi> arbitrary: i)
-   (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong)
+  by (induction \<phi> arbitrary: i rule: Rewriting.formula.induct)
+   (auto simp: historically_def always_def list.pred_map regex.pred_map
+     elim: list.pred_mono_strong regex.pred_mono_strong)
 
 lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<phi> t)) = Safety.future_bounded (project \<phi>)"
-  by (induct \<phi> t rule: fix_r.induct) auto
+  by (induction \<phi> t rule: fix_r.induct) auto
 
 lemma future_bounded_rewrite: "Safety.future_bounded (project (rewrite \<phi> t)) \<Longrightarrow> Safety.future_bounded (project \<phi>)"
-proof (induct \<phi> t rule: rewrite.induct)
+proof (induction \<phi> t rule: rewrite.induct)
   case (3 \<alpha> \<beta> I \<gamma> t)
-  from 3(1-4,7) 3(5)[OF _ refl] 3(6)[OF _ refl refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<beta> \<alpha>"; cases "prop_cond \<gamma> \<alpha>")
-      (auto simp: Let_def split: if_splits)
+  then show ?case
+    by (fastforce simp: Let_def split: if_splits)
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
   from 14(1,7) 14(2-6)[OF refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>") (auto simp: Let_def split: if_splits)
-qed (auto simp: list.pred_map regex.pred_map elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
+    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>")
+      (auto simp: Let_def split: if_splits)
+qed (auto simp: always_def historically_def list.pred_map regex.pred_map
+      elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
 
 lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi>)) \<Longrightarrow> Safety.future_bounded \<phi>"
   by (auto simp: project_embed)
@@ -444,7 +447,9 @@ lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi
 lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longrightarrow> Safety.future_bounded \<phi>"
   unfolding rrewrite_def using future_bounded_rewrite future_bounded_project_embed by auto
 
+
 (* Proofs that normalize does not change the progress of the monitor *)
+
 lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
   using [[linarith_split_limit = 17]]
   by (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
@@ -459,8 +464,16 @@ lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_neg
   by (induction \<phi> arbitrary: P j rule: elim_double_negation.induct)
     (auto simp: elim_double_negation_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
 
-lemma progress_normalize[simp]: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
+lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
+
+(* Proof that shiftI_r preserves the progress - part of incomplete proof for rewrite *)
+lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
+  apply (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
+  using [[linarith_split_limit=17]]
+  by (auto simp: image_image regex.set_map regex.map_comp eventually_def historically_def always_def
+    always_safe_bounded_def release_safe_bounded_def progress_regex_def
+    elim: list.pred_mono_strong regex.pred_mono_strong)
 
 (* Counter example for progress not staying the same when rewriting a formula
 Original:  A(x,y) \<and> ((\<not>B(x) \<or> B(y)) Since C(x,y))
@@ -485,23 +498,19 @@ lemma "mmonitorable (rrewrite counterex)"
 lemma "progress \<sigma> Map.empty counterex j = j"
   by (auto simp add: counterex_def)
 
-thm prop_cond_def[of "Rewriting.Pred (STR ''a'') [Formula.Var 0]" "Rewriting.Neg (Rewriting.Pred (STR ''b'') [Formula.Var 0])"]
-
-lemma assumes "0 < j" shows "progress \<sigma> Map.empty (rrewrite counterex) j < j"
+lemma assumes "0 \<noteq> j" shows "progress \<sigma> Map.empty (rrewrite counterex) j < j"
   using interval_bounds[of 0 10] assms
   apply (auto simp add: rrewrite_def prop_cond_def counterex_def eventually_def enat_0 min_less_iff_disj)
   apply (subst cInf_less_iff)
   subgoal
-    apply auto
-    apply (auto simp: enat_0 intro!: exI[of _ "j"])
-    done
+    by (auto simp: enat_0 intro!: exI[of _ "j"])
   subgoal
-    apply auto
-    done
+    by auto
   subgoal
     by (auto simp: enat_0 intro!: exI[of _ "j - 1"])
   done
 
+(* Locale for correctness proofs *)
 locale verimon_rewrite = maux +
   fixes rw sig \<phi>
   assumes wf: "wf_formula \<phi>" 
@@ -523,23 +532,10 @@ lemma prepare_\<psi>: "prepare_verimon rw sig \<phi> = Inr \<psi>"
   unfolding \<psi>_def using prepare_Inr
   by (cases "prepare_verimon rw sig \<phi>") auto
 
-lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
-  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi (* rrewrite_fvi *) type_check_def check_check_subst)
-                              
-lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
-  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv (* rrewrite_nfv *) type_check_def check_check_subst)
-
 lemma safe_\<psi>: "safe_formula \<psi>"
   using prepare_\<psi> unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def mmonitorable_def
     simp flip: monitorable_formula_code)
-
-lemma sat_the_\<psi>:
-  "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
-  using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
 
 lemma wf_f_TCst_convert_tysym[simp]: "wf_f (TCst o convert_tysym)"
   unfolding wf_f_def                                      
@@ -556,17 +552,15 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
     apply (cases "prepare_verimon rw sig \<phi>")
      apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
-      done
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"] wty_normalize)
-      done
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize)
 (*
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
+      apply (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+      apply (auto simp add: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
       done
 *)
     done
@@ -582,42 +576,45 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
     using prepare_\<psi>
     apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp add: check_check_subst wty_result_fX_def
-        intro!: exI[of _ "convert_tysym"] dest: spec[of _ "convert_tysym o check_subst"])
-      done
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"]
+          dest: spec[of _ "convert_tysym o check_subst"])
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
-      done
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
 (*
     subgoal
-      apply (frule check_sound_proven[OF _ wf])
-      apply (auto simp add: check_check_subst wty_result_fX_def intro!: exI[of _ "convert_tysym"])
-      done
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] dest: spec[of _ "convert_tysym o check_subst"])
 *)
     done
   subgoal
     using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
-    apply (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
+    by (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
         simp flip: monitorable_formula_code 
         split: sum.splits if_splits intro: (* future_bounded_rrewrite *) future_bounded_normalize)
-    done
   done
+
+lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi (* rrewrite_fvi *) type_check_def check_check_subst)
+
+lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
+  using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv (* rrewrite_nfv *) type_check_def check_check_subst)
+
+lemma sat_the_\<psi>:
+  "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
+  using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
+  by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
 
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: progress_normalize Let_def type_check_def check_check_subst)
 
 lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
   by (auto simp: sat_the_\<psi> fvi_\<psi> nfv_\<psi> pprogress_\<psi>)
-
-thm verimon_\<psi>.M_def
-thm monitor_\<phi>.M_def
-thm verimon_\<psi>.mono_monitor
-thm verimon_\<psi>.mono_monitor[unfolded verimon_\<psi>.M_def, folded sat_the_\<psi>]
-thm verimon_\<psi>.sound_monitor
 
 lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
@@ -630,62 +627,46 @@ lemmas mono_monitor = monitor_\<phi>.mono_monitor
 lemmas sound_monitor = monitor_\<phi>.sound_monitor
 lemmas complete_monitor = monitor_\<phi>.complete_monitor
 lemmas sliceable_M = monitor_\<phi>.sliceable_M
-(* Correctness of output of the monitor (verdicts upheld) *)
+(* Correctness of output of the monitor (verdicts of \phi is the output) *)
 lemmas wf_mstate_minit = verimon_wf_mstate_minit
 lemmas wf_mstate_mstep = wf_mstate_mstep
 lemmas mstep_mverdicts = verimon_\<psi>.mstep_mverdicts[unfolded Mt_exchange]
 
-
-print_interps future_bounded_mfodl
-print_interps verimon
-print_locale verimon
-print_locale future_bounded_mfodl
-find_theorems minit
-
 end
 
-
-(*
-(* TODO: remove this and the rewriting in prepare_verimon *)
-lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
-  apply (induct \<phi> arbitrary: i P j)
-  using [[linarith_split_limit=17]]
-  by (auto simp: image_image regex.set_map regex.map_comp eventually_def historically_def always_def
-    always_safe_bounded_def release_safe_bounded_def progress_regex_def
-    elim: list.pred_mono_strong regex.pred_mono_strong)
-
+(* Incomplete proof of rewrite preserving the progress.
 lemma progress_rewrite[simp]: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
   proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
   case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case  (*fine*)
+  then show ?case (*And \<alpha> (Release \<beta> I \<gamma>) **fine** *)
     sorry
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
+  then show ?case (* And \<alpha> (Trigger \<beta> I \<gamma>) INTRODUCES A FUTURE OPERATOR *)
     sorry
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
+  then show ?case (* And \<alpha> (Since \<beta> I \<gamma>) INTRODUCES A FUTURE OPERATOR *)
     sorry
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case  (*fine*)
+  then show ?case  (* And \<alpha> (Until \<beta> I \<gamma>) **fine** *)
     sorry
 next
   case (8 \<alpha> I \<beta> t)
-  then show ?case
+  then show ?case (* And \<alpha> (Once I \<beta>) INTRODUCES A FUTURE OPERATOR *)
     sorry
 next
   case (9 \<alpha> I \<beta> t)
-  then show ?case  (*fine*))
+  then show ?case  (* And \<alpha> (Eventually I \<beta>) **fine** *)
     sorry
 next
   case (10 \<alpha> I \<beta> t)
-  then show ?case
+  then show ?case (* And \<alpha> (Historically I \<beta>) INTRODUCES A FUTURE OPERATOR *)
     sorry
 next
   case (11 \<alpha> I \<beta> t)
-  then show ?case (*fine*)
+  then show ?case (* And \<alpha> (Always I \<beta>) **fine** *)
     apply (auto simp: once_def always_def eventually_def min_def)
                apply (erule order_trans)
     sorry
@@ -694,20 +675,20 @@ next
   from 12(1-4) 12(5)[OF _ refl] 12(6) show ?case
     by (cases "prop_cond \<alpha> \<beta>") auto
 next
-  case (13 \<alpha> I \<beta> t) (* And \<alpha> (Next I \<beta>)) *)
-  from 13(1-4) 13(5)[OF _ refl] 13(6) show ?case  (*fine*)
-    apply (auto)
+  case (13 \<alpha> I \<beta> t)
+  from 13(1-4) 13(5)[OF _ refl] 13(6) show ?case
+    apply auto
     apply (auto simp: min_def not_le less_Suc_eq)
     using progress_le_gen[OF 13(6), of \<sigma> "project \<alpha>"] progress_le_gen[OF 13(6), of \<sigma> "project \<beta>"]
-      apply simp_all
+    apply simp_all
     done
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  then show ?case
+  then show ?case (* Since (And \<alpha> \<gamma>) I \<beta>) INTRODUCES A FUTURE OPERATOR  *)
     sorry
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
-  then show ?case (*fine*)
+  then show ?case (* Until (And \<alpha> \<gamma>) I \<beta> **fine** *)
     sorry
 next
   case (27 \<phi> I \<psi> t)
