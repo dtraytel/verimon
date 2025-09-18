@@ -167,6 +167,7 @@ fun eval_agg_op :: "ty agg_op \<Rightarrow> (event_data \<times> enat) set \<Rig
 
 qualified datatype (discs_sels) 't formula = Pred name "trm list"
   | Let name "'t formula" "'t formula"
+  | Frz name "'t formula" "'t formula"
   | LetPast name "'t formula" "'t formula"
   | Eq trm trm | Less trm trm | LessEq trm trm
   | Neg "'t formula" | Or "'t formula" "'t formula" | And "'t formula" "'t formula" 
@@ -222,6 +223,7 @@ qualified definition "TT \<equiv> Eq (Const (EInt 0)) (Const (EInt 0))"
 qualified fun fvi :: "nat \<Rightarrow> 't formula \<Rightarrow> nat set" where
   "fvi b (Pred r ts) = (\<Union>t\<in>set ts. fvi_trm b t)"
 | "fvi b (Let p \<phi> \<psi>) = fvi b \<psi>"
+| "fvi b (Frz p \<phi> \<psi>) = fvi b \<psi>"
 | "fvi b (LetPast p \<phi> \<psi>) = fvi b \<psi>"
 | "fvi b (Eq t1 t2) = fvi_trm b t1 \<union> fvi_trm b t2"
 | "fvi b (Less t1 t2) = fvi_trm b t1 \<union> fvi_trm b t2"
@@ -324,6 +326,7 @@ qualified definition envs :: "'t formula \<Rightarrow> env set" where
 
 lemma nfv_simps[simp]:
   "nfv (Let p \<phi> \<psi>) = nfv \<psi>"
+  "nfv (Frz p \<phi> \<psi>) = nfv \<psi>"
   "nfv (LetPast p \<phi> \<psi>) = nfv \<psi>"
   "nfv (Neg \<phi>) = nfv \<phi>"
   "nfv (Or \<phi> \<psi>) = max (nfv \<phi>) (nfv \<psi>)"
@@ -369,6 +372,7 @@ fun contains_pred :: "name \<times> nat \<Rightarrow> 't formula \<Rightarrow> b
 |  "contains_pred p (LessEq t1 t2) = False"
 |  "contains_pred p (Pred e ts) = (p = (e, length ts))"
 |  "contains_pred p (Let e \<phi> \<psi>) = ((contains_pred p \<phi> \<and> contains_pred (e, nfv \<phi>) \<psi>) \<or> (p \<noteq> (e, nfv \<phi>) \<and> contains_pred p \<psi>))"
+|  "contains_pred p (Frz e \<phi> \<psi>) = ((contains_pred p \<phi> \<and> contains_pred (e, nfv \<phi>) \<psi>) \<or> (p \<noteq> (e, nfv \<phi>) \<and> contains_pred p \<psi>))"
 |  "contains_pred p (LetPast e \<phi> \<psi>) =  (p \<noteq> (e, nfv \<phi>) \<and> ((contains_pred p \<phi> \<and> contains_pred (e, nfv \<phi>) \<psi>) \<or> contains_pred p \<psi>))"
 |  "contains_pred p (Neg \<phi>) = contains_pred p \<phi>"
 |  "contains_pred p (Or \<phi> \<psi>) = (contains_pred p \<phi> \<or> contains_pred p \<psi>)"
@@ -414,6 +418,7 @@ qualified fun sat :: "trace \<Rightarrow> (name \<times> nat \<rightharpoonup> e
        None \<Rightarrow> (r, map (eval_trm v) ts) \<in> \<Gamma> \<sigma> i
      | Some X \<Rightarrow> X (map (eval_trm v) ts) i)"
 | "sat \<sigma> V v i (Let p \<phi> \<psi>) = sat \<sigma> (V((p, nfv \<phi>) \<mapsto> \<lambda>w j. sat \<sigma> V w j \<phi>)) v i \<psi>"
+| "sat \<sigma> V v i (Frz p \<phi> \<psi>) = sat \<sigma> (V((p, nfv \<phi>) \<mapsto> \<lambda>w j. sat \<sigma> V w i \<phi>)) v i \<psi>"
 | "sat \<sigma> V v i (LetPast p \<phi> \<psi>) =
     (let pn = (p, nfv \<phi>) in
     sat \<sigma> (V(pn \<mapsto> letpast_sat (\<lambda>X u k. sat \<sigma> (V(pn \<mapsto> X)) u k \<phi>))) v i \<psi>)"
@@ -907,15 +912,25 @@ lemma contains_pred_release_safe_bounded [simp]: "contains_pred p (release_safe_
 lemma not_contains_pred_sat[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<phi> = Formula.sat \<sigma> V v i \<phi>"
   apply(induct p \<phi> arbitrary: V v x i rule: contains_pred.induct)
-                   apply(simp_all add:  split: nat.splits cong: match_cong)
-   apply (erule conjE)
-   apply (erule disjE_Not2)
-    apply auto []
-   apply (auto) []
+                      apply(simp_all add:  split: nat.splits cong: match_cong)
+    apply (erule conjE)
+    apply (erule disjE_Not2)
+     apply auto []
+    apply (auto) []
+       apply (metis (no_types, lifting) fun_upd_twist)
       apply (metis (no_types, lifting) fun_upd_twist)
      apply (metis (no_types, lifting) fun_upd_twist)
     apply (metis (no_types, lifting) fun_upd_twist)
-   apply (metis (no_types, lifting) fun_upd_twist)
+   apply (erule conjE)
+   apply (erule disjE_Not2)
+    apply auto []
+   apply(clarsimp simp add: Let_def)
+   apply(erule impCE)
+  subgoal for p n e \<phi> \<psi> V v x i
+    apply(rule ccontr)
+    apply(simp add: fun_upd_twist[of "(p, n)" "(e, Formula.nfv \<phi>)"])
+    done
+   apply simp
   apply (erule disjE_Not2)
    apply auto []
   apply(clarsimp simp add: Let_def)
@@ -936,6 +951,7 @@ fun past_only :: "'t formula \<Rightarrow> bool" where
 | "past_only (Less _ _) = True"
 | "past_only (LessEq _ _) = True"
 | "past_only (Let _ \<alpha> \<beta>) = (past_only \<alpha> \<and> past_only \<beta>)"
+| "past_only (Frz _ \<alpha> \<beta>) = (past_only \<alpha> \<and> past_only \<beta>)"
 | "past_only (LetPast _ \<alpha> \<beta>) = (past_only \<alpha> \<and> past_only \<beta>)"
 | "past_only (Neg \<psi>) = past_only \<psi>"
 | "past_only (Or \<alpha> \<beta>) = (past_only \<alpha> \<and> past_only \<beta>)"
@@ -992,6 +1008,26 @@ next
     next
       case False
       with * show ?thesis by (auto intro!: Let.prems(3))
+    qed
+  qed
+next
+  case (Frz p \<phi> \<psi>)
+  let ?pn = "(p, nfv \<phi>)"
+  let ?V = "\<lambda>V \<sigma>. (V(?pn \<mapsto> \<lambda>w j. sat \<sigma> V w i \<phi>))"
+  show ?case unfolding sat.simps proof (rule Frz.IH(2))
+    show "i < plen \<pi>" by fact
+    from Frz.prems show "past_only \<psi>" by simp
+    from Frz.prems show "dom (?V V \<sigma>) = dom (?V V' \<sigma>')"
+      by (simp del: fun_upd_apply)
+  next
+    fix p' v i
+    assume *: "p' \<in> dom (?V V \<sigma>)" "i < plen \<pi>"
+    show "the (?V V \<sigma> p') v i = the (?V V' \<sigma>' p') v i" proof (cases "p' = ?pn")
+      case True
+      with Frz \<open>i < plen \<pi>\<close> show ?thesis by auto
+    next
+      case False
+      with * show ?thesis by (auto intro!: Frz.prems(3))
     qed
   qed
 next
@@ -1069,6 +1105,7 @@ subsection \<open>Well-formed formulas\<close>
 
 fun wf_formula :: "'t formula \<Rightarrow> bool" 
   where "wf_formula (Let p \<phi> \<psi>) = ({0..<nfv \<phi>} \<subseteq> fv \<phi> \<and> wf_formula \<phi> \<and> wf_formula \<psi>)"
+| "wf_formula (Frz p \<phi> \<psi>) = ({0..<nfv \<phi>} \<subseteq> fv \<phi> \<and> wf_formula \<phi> \<and> wf_formula \<psi>)"
 | "wf_formula (LetPast p \<phi> \<psi>) = ({0..<nfv \<phi>} \<subseteq> fv \<phi> \<and> wf_formula \<phi> \<and> wf_formula \<psi>)"
 | "wf_formula (Neg \<phi>) =  wf_formula \<phi>"
 | "wf_formula (Or \<phi> \<psi>) = (wf_formula \<phi> \<and> wf_formula \<psi>)"
@@ -1337,7 +1374,7 @@ proof (rule iffI)
   }
   ultimately show "Formula.sat \<sigma> V v i (historically_safe_0 I1 \<phi>)"
     using I2_def historically_safe_0_def
-    by (metis sat.simps(8))
+    by (metis sat.simps(9))
 next
   define I2 where "I2 = flip_int I1"
   assume hist: "Formula.sat \<sigma> V v i (historically_safe_0 I1 \<phi>)"
@@ -1448,7 +1485,7 @@ proof (rule iffI)
     by auto
   then show "Formula.sat \<sigma> V v i (historically_safe_unbounded I1 \<phi>)"
     using assms historically_safe_unbounded_def I2_def
-    by (metis sat.simps(9))
+    by (metis sat.simps(10))
 next
   define I2 where "I2 = flip_int_less_lower I1"
   define A where "A = {j. j\<le>i \<and> mem I1 (\<tau> \<sigma> i - \<tau> \<sigma> j)}"
@@ -2869,6 +2906,9 @@ fun map_formula :: "('t Formula.formula \<Rightarrow> 't Formula.formula)
   | "map_formula f (Formula.Let p \<phi> \<psi>) = f (
       Formula.Let p (map_formula f \<phi>) (map_formula f \<psi>)
     )"
+  | "map_formula f (Formula.Frz p \<phi> \<psi>) = f (
+      Formula.Frz p (map_formula f \<phi>) (map_formula f \<psi>)
+    )"
   | "map_formula f (Formula.LetPast p \<phi> \<psi>) = f (
       Formula.LetPast p (map_formula f \<phi>) (map_formula f \<psi>)
     )"
@@ -2933,6 +2973,24 @@ proof (induction \<phi>)
       using assm
       by blast
     then have "Formula.sat \<sigma> V v i (formula.Let p \<phi>' \<psi>') = Formula.sat \<sigma> V v i (map_formula f (formula.Let p \<phi>' \<psi>'))"
+      using assm nfv_eq assms
+      by auto
+  }
+  then show ?case by blast
+next
+  case assm: (Frz p \<phi>' \<psi>')
+  from assms have nfv_eq: "\<forall>\<phi>. Formula.nfv (map_formula f \<phi>) = Formula.nfv \<phi>"
+    using Formula.nfv_def map_formula_fvi
+    by (simp add: Formula.nfv_def map_formula_fvi)
+  {
+    fix \<sigma> V v i
+    let ?V' = "V((p, Formula.nfv \<phi>') \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>')"
+    have "Formula.sat \<sigma> V v i (formula.Frz p \<phi>' \<psi>') = Formula.sat \<sigma> ?V' v i \<psi>'"
+      by auto
+    then have "Formula.sat \<sigma> V v i (formula.Frz p \<phi>' \<psi>') = Formula.sat \<sigma> ?V' v i (map_formula f \<psi>')"
+      using assm
+      by blast
+    then have "Formula.sat \<sigma> V v i (formula.Frz p \<phi>' \<psi>') = Formula.sat \<sigma> V v i (map_formula f (formula.Frz p \<phi>' \<psi>'))"
       using assm nfv_eq assms
       by auto
   }

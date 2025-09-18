@@ -28,6 +28,7 @@ function (sequential) mmonitorable_exec :: "'t Formula.formula \<Rightarrow> boo
   "mmonitorable_exec (Formula.Eq t1 t2) = is_simple_eq t1 t2"
 | "mmonitorable_exec (Formula.Pred e ts) = list_all (\<lambda>t. Formula.is_Var t \<or> Formula.is_Const t) ts"
 | "mmonitorable_exec (Formula.Let p \<phi> \<psi>) = ({0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> mmonitorable_exec \<phi> \<and> mmonitorable_exec \<psi>)"
+| "mmonitorable_exec (Formula.Frz p \<phi> \<psi>) = ({0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> mmonitorable_exec \<phi> \<and> mmonitorable_exec \<psi>)"
 | "mmonitorable_exec (Formula.LetPast p \<phi> \<psi>) = (Safety.safe_letpast (p, Formula.nfv \<phi>) \<phi> \<le> PastRec \<and>
     {0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> mmonitorable_exec \<phi> \<and> mmonitorable_exec \<psi>)"
 | "mmonitorable_exec (Formula.Neg \<phi>) = (fv \<phi> = {} \<and> mmonitorable_exec \<phi>)"
@@ -94,7 +95,7 @@ qed
 lemma safe_formula_mmonitorable_exec: 
   "safe_formula \<phi> \<Longrightarrow> Safety.future_bounded \<phi> \<Longrightarrow> mmonitorable_exec \<phi>"
 proof (induct \<phi> rule: safe_formula.induct)
-  case (9 \<phi> \<psi>)
+  case (10 \<phi> \<psi>)
   then show ?case
   proof (cases "fv \<psi> \<subseteq> fv \<phi> \<and> (is_constraint \<psi> \<or> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>'
       | (Formula.Trigger \<phi>' I \<psi>') \<Rightarrow> safe_dual True safe_formula \<phi>' I \<psi>'
@@ -109,7 +110,7 @@ proof (induct \<phi> rule: safe_formula.induct)
     then have fvs: "fv \<psi> \<subseteq> fv \<phi>"
       by auto
     show ?thesis
-      using True 9
+      using True 10
     proof (cases "is_constraint \<psi>")
       case False
       then have \<psi>_props: "(case \<psi> of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>'
@@ -127,7 +128,7 @@ proof (induct \<phi> rule: safe_formula.induct)
         case True
         then obtain \<psi>' where "\<psi> = Formula.Neg \<psi>'" "safe_formula \<psi>'"
           by (auto split:formula.splits)
-        then show ?thesis using 9 \<psi>_props by (auto split: formula.splits)
+        then show ?thesis using 10 \<psi>_props by (auto split: formula.splits)
       next
         case f1: False
         then show ?thesis
@@ -137,7 +138,7 @@ proof (induct \<phi> rule: safe_formula.induct)
             using \<psi>_props
             by (auto split:formula.splits)
           then show ?thesis 
-            using 9 \<psi>_props nat_le_iff_add 
+            using 10 \<psi>_props nat_le_iff_add 
             by (clarsimp simp add: safe_dual_def)
               (metis le_add2)
         next
@@ -155,25 +156,25 @@ proof (induct \<phi> rule: safe_formula.induct)
           
           have safe: "safe_formula (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
             unfolding and_release_safe_bounded_def
-            using safe_formula_release_bounded release_props fvs release_fvi(2) 9(8)
+            using safe_formula_release_bounded release_props fvs release_fvi(2) 10(8)
             by auto
           
           have bounded: "Safety.future_bounded (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
-            using release_bounded_future_bounded[of \<phi>' I \<psi>'] release_props(1-3) 9(9)
+            using release_bounded_future_bounded[of \<phi>' I \<psi>'] release_props(1-3) 10(9)
             by (auto simp add: and_release_safe_bounded_def)
           have "mmonitorable_exec (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
-            using 9(7)[OF _ fvs release_props(1) release_props(2-6) safe bounded]
-              "9.prems"(1) safe_formula.simps(9) by blast
+            using 10(7)[OF _ fvs release_props(1) release_props(2-6) safe bounded]
+              "10.prems"(1) safe_formula.simps(10) by blast
           then show ?thesis 
-            using 9 release_props 
+            using 10 release_props 
             by (auto simp add: safe_assignment_def)
         qed
       qed
     qed (auto)
   qed (auto)
 next
-  case (10 l)
-  from "10.prems"(2) have bounded: "Safety.future_bounded \<phi>" if "\<phi> \<in> set l" for \<phi>
+  case (11 l)
+  from "11.prems"(2) have bounded: "Safety.future_bounded \<phi>" if "\<phi> \<in> set l" for \<phi>
     using that by (auto simp: list.pred_set)
   obtain poss negs where posnegs: "(poss, negs) = partition safe_formula l" by simp
   obtain posm negm where posnegm: "(posm, negm) = partition mmonitorable_exec l" by simp
@@ -181,13 +182,13 @@ next
   proof (rule subsetI)
     fix x assume "x \<in> set poss"
     then have "x \<in> set l" "safe_formula x" using posnegs by simp_all
-    then have "mmonitorable_exec x" using "10.hyps"(1) bounded by blast
+    then have "mmonitorable_exec x" using "11.hyps"(1) bounded by blast
     then show "x \<in> set posm" using \<open>x \<in> set poss\<close> posnegm posnegs by simp
   qed
   then have "set negm \<subseteq> set negs" using posnegm posnegs by auto
   obtain "poss \<noteq> []" "list_all safe_formula (map remove_neg negs)"
     "(\<Union>x\<in>set negs. fv x) \<subseteq> (\<Union>x\<in>set poss. fv x)"
-    using "10.prems"(1) posnegs by simp
+    using "11.prems"(1) posnegs by simp
   then have "posm \<noteq> []" using \<open>set poss \<subseteq> set posm\<close> by auto
   moreover have "list_all mmonitorable_exec (map remove_neg negm)"
   proof -
@@ -205,7 +206,7 @@ next
         case True
         then obtain z where "y = Formula.Neg z" by blast
         then show ?thesis
-          using "10.hyps"(2)[OF posnegs refl] \<open>x = remove_neg y\<close> \<open>y \<in> set negs\<close> 
+          using "11.hyps"(2)[OF posnegs refl] \<open>x = remove_neg y\<close> \<open>y \<in> set negs\<close> 
             posnegs bounded \<open>safe_formula x\<close> \<open>poss \<noteq> []\<close>
           by fastforce
       next
@@ -213,7 +214,7 @@ next
         then have "remove_neg y = y" by (cases y) simp_all
         then have "y = x" unfolding \<open>x = remove_neg y\<close> by simp
         show ?thesis
-          using "10.hyps"(1) \<open>y \<in> set negs\<close> posnegs \<open>safe_formula x\<close> unfolding \<open>y = x\<close>
+          using "11.hyps"(1) \<open>y \<in> set negs\<close> posnegs \<open>safe_formula x\<close> unfolding \<open>y = x\<close>
           by auto
       qed
     qed
@@ -226,11 +227,11 @@ next
     using posnegm 
     by (simp add: list_all_iff)
 next
-  case (19 I r)
+  case (20 I r)
   then show ?case
     by (auto elim!: safe_regex_mono[rotated] simp: case_Neg_iff regex.pred_set)
 next
-  case (20 I r)
+  case (21 I r)
   then show ?case
     by (auto elim!: safe_regex_mono[rotated] simp: case_Neg_iff regex.pred_set)
 qed (auto simp add: is_simple_eq_def list.pred_set case_Neg_iff safe_dual_def split: if_splits)
@@ -243,12 +244,12 @@ lemma is_constraint_future_bounded: "is_constraint \<phi> \<Longrightarrow> Safe
 
 lemma mmonitorable_exec_mmonitorable: "mmonitorable_exec \<phi> \<Longrightarrow> mmonitorable \<phi>"
 proof (induct \<phi> rule: mmonitorable_exec.induct)
-  case (7 \<phi> \<psi>)
+  case (8 \<phi> \<psi>)
   show ?case
   proof (cases "\<exists>\<psi>'. \<psi> = Formula.Neg \<psi>'")
     case True
     then show ?thesis
-      using 7
+      using 8
       unfolding mmonitorable_def
       by (auto intro: safe_assignment_future_bounded is_constraint_future_bounded)
   next
@@ -259,7 +260,7 @@ proof (induct \<phi> rule: mmonitorable_exec.induct)
       then obtain \<phi>' I \<psi>' where \<psi>_def: "\<psi> = Formula.Trigger \<phi>' I \<psi>'"
         by blast
       then show ?thesis
-        using 7(1-2,8) 7(4)[OF _ _ \<psi>_def]
+        using 8(1-2,8) 8(4)[OF _ _ \<psi>_def]
         unfolding mmonitorable_def
         by (auto simp add: safe_assignment_def safe_dual_def 
             intro: is_constraint_future_bounded)
@@ -271,14 +272,14 @@ proof (induct \<phi> rule: mmonitorable_exec.induct)
         then obtain \<phi>' I \<psi>' where \<psi>_def: "\<psi> = Formula.Release \<phi>' I \<psi>'"
           by blast
         have \<phi>_props: "mmonitorable \<phi>"
-          using 7(1,8)
+          using 8(1,8)
           by auto
         
         show ?thesis
         proof (cases "mmonitorable_exec \<psi>")
           case True
           then have \<psi>_props: "safe_formula \<psi> \<and> Safety.future_bounded \<psi>"
-            using 7
+            using 8
             unfolding mmonitorable_def
             by auto
           then have "mem I 0" "bounded I" "fv \<phi>' \<subseteq> fv \<psi>'"
@@ -291,62 +292,62 @@ proof (induct \<phi> rule: mmonitorable_exec.induct)
         next
           case False
           then have "fv (formula.Release \<phi>' I \<psi>') \<subseteq> fv \<phi>"
-            using 7(8) \<phi>_props
+            using 8(8) \<phi>_props
             unfolding mmonitorable_exec.simps \<psi>_def
             by (auto simp add: safe_assignment_def)
 
           moreover have "bounded I \<and> \<not>mem I 0 \<and>
             mmonitorable_exec \<phi>' \<and> mmonitorable_exec \<psi>' \<and> fv \<phi>' = fv \<psi>' \<and>
             mmonitorable_exec (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
-            using 7(8) False
+            using 8(8) False
             unfolding \<psi>_def
             by (auto simp add: safe_assignment_def)
          
           ultimately show ?thesis
-            using 7(5-7)[OF _ _ \<psi>_def] \<phi>_props safe_formula_mmonitorable_exec
+            using 8(5-7)[OF _ _ \<psi>_def] \<phi>_props safe_formula_mmonitorable_exec
             unfolding mmonitorable_def
             by (auto simp add: \<psi>_def)
         qed
       next
         case False
         then have "mmonitorable_exec \<phi> \<and> (safe_assignment (fv \<phi>) \<psi> \<or> mmonitorable_exec \<psi> \<or> fv \<psi> \<subseteq> fv \<phi> \<and> is_constraint \<psi>)"
-          using non_neg no_trigger 7(8)
+          using non_neg no_trigger 8(8)
           by (auto split: formula.splits)
         then show ?thesis
-          using non_neg 7
+          using non_neg 8
           unfolding mmonitorable_def
           by (auto intro: safe_assignment_future_bounded is_constraint_future_bounded)
       qed
     qed
   qed
 next
-  case (8 l)
+  case (9 l)
   obtain poss negs where posnegs: "(poss, negs) = partition safe_formula l" by simp
   obtain posm negm where posnegm: "(posm, negm) = partition mmonitorable_exec l" by simp
   have pos_monitorable: "list_all mmonitorable_exec posm" using posnegm by (simp add: list_all_iff)
   have neg_monitorable: "list_all mmonitorable_exec (map remove_neg negm)"
-    using "8.prems" posnegm by (simp add: list_all_iff)
+    using "9.prems" posnegm by (simp add: list_all_iff)
   have "set posm \<subseteq> set poss"
-    using "8.hyps"(1) posnegs posnegm unfolding mmonitorable_def by auto
+    using "9.hyps"(1) posnegs posnegm unfolding mmonitorable_def by auto
   then have "set negs \<subseteq> set negm"
     using posnegs posnegm by auto
 
-  have "poss \<noteq> []" using "8.prems" posnegm \<open>set posm \<subseteq> set poss\<close> by auto
+  have "poss \<noteq> []" using "9.prems" posnegm \<open>set posm \<subseteq> set poss\<close> by auto
   moreover have "list_all safe_formula (map remove_neg negs)"
-    using neg_monitorable "8.hyps"(2)[OF posnegm refl] \<open>set negs \<subseteq> set negm\<close> "8.prems" posnegm
+    using neg_monitorable "9.hyps"(2)[OF posnegm refl] \<open>set negs \<subseteq> set negm\<close> "9.prems" posnegm
     unfolding mmonitorable_def by (auto simp: list_all_iff)
   moreover have "\<Union> (fv ` set negm) \<subseteq> \<Union> (fv ` set posm)"
-    using "8.prems" posnegm by simp
+    using "9.prems" posnegm by simp
   then have "\<Union> (fv ` set negs) \<subseteq> \<Union> (fv ` set poss)"
     using \<open>set posm \<subseteq> set poss\<close> \<open>set negs \<subseteq> set negm\<close> by fastforce
   ultimately have "safe_formula (Formula.Ands l)" using posnegs by simp
   moreover have "Safety.future_bounded (Formula.Ands l)"
   proof -
     have "list_all Safety.future_bounded posm"
-      using pos_monitorable "8.hyps"(1) posnegm unfolding mmonitorable_def
+      using pos_monitorable "9.hyps"(1) posnegm unfolding mmonitorable_def
       by (auto elim!: list.pred_mono_strong)
     moreover have fnegm: "list_all Safety.future_bounded (map remove_neg negm)"
-      using neg_monitorable "8.hyps"(2) posnegm "8.prems" unfolding mmonitorable_def
+      using neg_monitorable "9.hyps"(2) posnegm "9.prems" unfolding mmonitorable_def
       by (auto elim!: list.pred_mono_strong)
     then have "list_all Safety.future_bounded negm"
     proof -
@@ -363,29 +364,15 @@ next
   qed
   ultimately show ?case unfolding mmonitorable_def ..
 next
-  case (13 \<phi> I \<psi>)
+  case (14 \<phi> I \<psi>)
   then show ?case
     unfolding mmonitorable_def mmonitorable_exec.simps safe_formula.simps
     by (fastforce simp: case_Neg_iff)
 next
-  case (14 \<phi> I \<psi>)
+  case (15 \<phi> I \<psi>)
   then show ?case
     unfolding mmonitorable_def mmonitorable_exec.simps safe_formula.simps
     by (fastforce simp: one_enat_def case_Neg_iff)
-next
-  case (15 \<phi> I \<psi>)
-  then show ?case
-  proof (cases "mem I 0")
-    case mem: True
-    then show ?thesis
-      using 15
-      by (auto simp add: case_Neg_iff mmonitorable_def safe_dual_def split: if_splits)
-  next
-    case False
-    then show ?thesis
-      using 15
-      by (auto simp add: case_Neg_iff mmonitorable_def safe_dual_def split: if_splits)
-  qed
 next
   case (16 \<phi> I \<psi>)
   then show ?case
@@ -401,12 +388,26 @@ next
       by (auto simp add: case_Neg_iff mmonitorable_def safe_dual_def split: if_splits)
   qed
 next
-  case (17 I r)
+  case (17 \<phi> I \<psi>)
+  then show ?case
+  proof (cases "mem I 0")
+    case mem: True
+    then show ?thesis
+      using 17
+      by (auto simp add: case_Neg_iff mmonitorable_def safe_dual_def split: if_splits)
+  next
+    case False
+    then show ?thesis
+      using 17
+      by (auto simp add: case_Neg_iff mmonitorable_def safe_dual_def split: if_splits)
+  qed
+next
+  case (18 I r)
   then show ?case
     by (auto elim!: safe_regex_mono[rotated] dest: safe_regex_safe[rotated]
         simp: mmonitorable_regex_def mmonitorable_def case_Neg_iff regex.pred_set)
 next
-  case (18 I r)
+  case (19 I r)
   then show ?case
     by (auto 0 3 elim!: safe_regex_mono[rotated] dest: safe_regex_safe[rotated]
         simp: mmonitorable_regex_def mmonitorable_def case_Neg_iff regex.pred_set)

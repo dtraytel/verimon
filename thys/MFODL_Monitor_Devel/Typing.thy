@@ -182,6 +182,7 @@ fun agg_trm_type :: "Formula.agg_type \<Rightarrow> ty set" where
 inductive wty_formula :: "sig \<Rightarrow> tyenv \<Rightarrow> ty Formula.formula \<Rightarrow> bool" ("(_),/ (_)/ \<turnstile> (_)" [50,50,50] 50) where
   Pred: "S (p, length tms) = Some tys \<Longrightarrow> list_all2 (\<lambda>tm ty. E \<turnstile> tm :: ty) tms tys \<Longrightarrow> S, E \<turnstile> Formula.Pred p tms"
 | Let: "S, E' \<turnstile> \<phi> \<Longrightarrow> S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> Formula.Let p \<phi> \<psi>"
+| Frz: "S, E' \<turnstile> \<phi> \<Longrightarrow> S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> Formula.Frz p \<phi> \<psi>"
 | LetPast: "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E' \<turnstile> \<phi> \<Longrightarrow> 
     S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> Formula.LetPast p \<phi> \<psi>"
 | Eq: "E \<turnstile> x :: t \<Longrightarrow> E \<turnstile> y :: t \<Longrightarrow> S, E \<turnstile> Formula.Eq x y"
@@ -314,6 +315,11 @@ proof -
     then show ?case
       using fvi.simps(2) apply(auto intro!: wty_formula.Let) 
       using Let.IH(2) by blast
+  next 
+    case(Frz S E'' \<phi>  p E  \<psi>)
+    then show ?case
+      using fvi.simps(2) apply(auto intro!: wty_formula.Frz) 
+      using Frz.IH(2) by blast
   next
     case(Eq E x t y' S)
     then show ?case by (fastforce intro!: wty_formula.Eq
@@ -395,12 +401,12 @@ proof -
   next
     case (TS S E t)
     then show ?case 
-      using wty_trm_fv_cong fvi.simps(22) wty_formula.TS
+      using wty_trm_fv_cong fvi.simps(23) wty_formula.TS
       by blast
   next
     case (TP S E t)
     then show ?case 
-      using wty_trm_fv_cong fvi.simps(21) wty_formula.TP 
+      using wty_trm_fv_cong fvi.simps(22) wty_formula.TP 
       by blast
   qed 
   with assms show ?thesis by auto
@@ -546,6 +552,7 @@ fun sat' :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpo
        None \<Rightarrow> (r, map (eval_trm' v) ts) \<in> \<Gamma> \<sigma> i
      | Some X \<Rightarrow> X (map (eval_trm' v) ts) i)"
 | "sat' \<sigma> V v i (Formula.Let p \<phi> \<psi>) = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. sat' \<sigma> V w j \<phi>)) v i \<psi>"
+| "sat' \<sigma> V v i (Formula.Frz p \<phi> \<psi>) = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. sat' \<sigma> V w i \<phi>)) v i \<psi>"
 | "sat' \<sigma> V v i (Formula.LetPast p \<phi> \<psi>) =
     (let pn = (p, Formula.nfv \<phi>) in
     sat' \<sigma> (V(pn \<mapsto> letpast_sat (\<lambda>X u k. sat' \<sigma> (V(pn \<mapsto> X)) u k \<phi>))) v i \<psi>)"
@@ -1248,6 +1255,9 @@ next
   from Let.prems(4) have "x \<in> fv \<psi>" by simp
   show ?case by (rule Let.IH(2)) fact+
 next
+  case (Frz e \<phi> \<psi>)
+  then show ?case sorry
+next
   case (And_assign \<phi> \<psi>)
   from And_assign.prems(1) have phi1: "S, E \<turnstile> \<phi>" by cases
   from And_assign.prems(3) have phi2: "sat' \<sigma> V v i \<psi>" by auto
@@ -1745,39 +1755,39 @@ next
   case (6 p e \<phi> \<psi>)
   then show ?case by(cases \<psi>; auto) (metis Formula.nfv_def rel_formula_fv)+
 next
-  case (7 p \<phi>)
-  then show ?case by(cases \<psi>) auto
+  case (7 p e \<phi> \<psi>)
+  then show ?case by(cases \<psi>; auto) (metis Formula.nfv_def rel_formula_fv)+
 next
-  case (8 p \<phi> \<psi>)
+  case (8 p \<phi>)
   then show ?case by(cases \<psi>) auto
 next
   case (9 p \<phi> \<psi>)
   then show ?case by(cases \<psi>) auto
 next
-  case (10 p l)
+  case (10 p \<phi> \<psi>)
+  then show ?case by(cases \<psi>) auto
+next
+  case (11 p l)
   then obtain l' where 
     \<psi>_def: "\<psi> = formula.Ands l'" and
     all_rel: "list_all2 (formula.rel_formula f) l l'"
     by (cases \<psi>) auto
   have "(safe_letpast p ` set l) = (safe_letpast p ` set l')"
-    using list_all2_setD1[OF all_rel] list_all2_setD2[OF all_rel] 10(1) image_iff
+    using list_all2_setD1[OF all_rel] list_all2_setD2[OF all_rel] 11(1) image_iff
     by auto fastforce+
   then show ?case unfolding \<psi>_def by(auto)
 next
-  case (11 p t \<phi>)
+  case (12 p t \<phi>)
   then show ?case 
     by (cases \<psi>; clarsimp)
 next
-  case (12 p y \<omega> tys f \<phi>)
-  then show ?case by(cases \<psi>) auto
-next
-  case (13 p I \<phi>)
+  case (13 p y \<omega> tys f \<phi>)
   then show ?case by(cases \<psi>) auto
 next
   case (14 p I \<phi>)
   then show ?case by(cases \<psi>) auto
 next
-  case (15 p \<phi> I \<psi>)
+  case (15 p I \<phi>)
   then show ?case by(cases \<psi>) auto
 next
   case (16 p \<phi> I \<psi>)
@@ -1789,19 +1799,12 @@ next
   case (18 p \<phi> I \<psi>)
   then show ?case by(cases \<psi>) auto
 next
-  case (19 p I r)
-  then obtain r' where 
-    \<psi>_def: "\<psi> = formula.MatchP I r'" and
-    all_rel: "regex.rel_regex (formula.rel_formula f) r r'"
-    by(cases \<psi>) auto
-  have "(safe_letpast p ` regex.atms r) = (safe_letpast p ` regex.atms r')"
-    using image_iff rel_regex_regex_atms[OF all_rel] rel_regex_regex_atms'[OF all_rel] 19(1) 
-    by auto fastforce+ 
-  then show ?case unfolding \<psi>_def by auto
+  case (19 p \<phi> I \<psi>)
+  then show ?case by(cases \<psi>) auto
 next
   case (20 p I r)
   then obtain r' where 
-    \<psi>_def: "\<psi> = formula.MatchF I r'" and
+    \<psi>_def: "\<psi> = formula.MatchP I r'" and
     all_rel: "regex.rel_regex (formula.rel_formula f) r r'"
     by(cases \<psi>) auto
   have "(safe_letpast p ` regex.atms r) = (safe_letpast p ` regex.atms r')"
@@ -1809,10 +1812,20 @@ next
     by auto fastforce+ 
   then show ?case unfolding \<psi>_def by auto
 next
-  case (21 p t)
-  then show ?case by(cases \<psi>) auto
+  case (21 p I r)
+  then obtain r' where 
+    \<psi>_def: "\<psi> = formula.MatchF I r'" and
+    all_rel: "regex.rel_regex (formula.rel_formula f) r r'"
+    by(cases \<psi>) auto
+  have "(safe_letpast p ` regex.atms r) = (safe_letpast p ` regex.atms r')"
+    using image_iff rel_regex_regex_atms[OF all_rel] rel_regex_regex_atms'[OF all_rel] 21(1) 
+    by auto fastforce+ 
+  then show ?case unfolding \<psi>_def by auto
 next
   case (22 p t)
+  then show ?case by(cases \<psi>) auto
+next
+  case (23 p t)
   then show ?case by(cases \<psi>) auto
 qed
 
@@ -1835,6 +1848,10 @@ next
     by (cases \<psi>) auto
 next
   case (Let p \<phi>' \<phi> \<psi> )
+  then show ?case
+    by (cases \<psi>) (auto simp: Formula.nfv_def rel_formula_fv)
+next
+  case (Frz p \<phi>' \<phi> \<psi> )
   then show ?case
     by (cases \<psi>) (auto simp: Formula.nfv_def rel_formula_fv)
 next

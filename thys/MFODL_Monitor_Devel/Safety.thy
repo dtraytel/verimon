@@ -273,6 +273,9 @@ fun safe_letpast :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula 
   | "safe_letpast p (Formula.Let e \<phi> \<psi>) =
         (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion>
         (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
+  | "safe_letpast p (Formula.Frz e \<phi> \<psi>) =
+        (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion>
+        (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
   | "safe_letpast p (Formula.LetPast e \<phi> \<psi>) =
         (if p = (e, Formula.nfv \<phi>) then Unused else
           (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion> safe_letpast p \<psi>)"
@@ -362,6 +365,9 @@ next
       using False by (simp add: fun_upd_twist[of p])
   qed
   finally show ?case by (simp del: fun_upd_apply)
+next
+  case (Frz e \<phi> \<psi>)
+  then show ?case sorry
 next
   case (LetPast e \<phi> \<psi>)
   let ?en = "(e, Formula.nfv \<phi>)"
@@ -576,6 +582,7 @@ lemma safe_dual_size [fundef_cong]:
 fun size' :: "'t Formula.formula \<Rightarrow> nat" 
   where "size' (r \<dagger> ts) = 0"
   | "size' (Formula.Let p \<phi> \<psi>) = size' \<psi> + size' \<phi> + 1"
+  | "size' (Formula.Frz p \<phi> \<psi>) = size' \<psi> + size' \<phi> + 1"
   | "size' (Formula.LetPast p \<phi> \<psi>) = size' \<psi> + size' \<phi> + 1"
   | "size' (t1 =\<^sub>F t2) = 0"
   | "size' (t1 <\<^sub>F t2) = 0"
@@ -658,6 +665,7 @@ function (sequential) safe_formula :: "'t Formula.formula \<Rightarrow> bool"
   | "safe_formula (t1 \<le>\<^sub>F t2) = False"
   | "safe_formula (e \<dagger> ts) = (\<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t)"
   | "safe_formula (Formula.Let p \<phi> \<psi>) = ({0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> safe_formula \<phi> \<and> safe_formula \<psi>)"
+  | "safe_formula (Formula.Frz p \<phi> \<psi>) = ({0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> safe_formula \<phi> \<and> safe_formula \<psi>)"
   | "safe_formula (Formula.LetPast p \<phi> \<psi>) = (safe_letpast (p, Formula.nfv \<phi>) \<phi> \<le> PastRec \<and> {0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<and> safe_formula \<phi> \<and> safe_formula \<psi>)"
   | "safe_formula (\<not>\<^sub>F \<phi>) = (fv \<phi> = {} \<and> safe_formula \<phi>)"
   | "safe_formula (\<phi> \<or>\<^sub>F \<psi>) = (fv \<psi> = fv \<phi> \<and> safe_formula \<phi> \<and> safe_formula \<psi>)"
@@ -839,9 +847,9 @@ proof (cases \<phi>)
           unfolding And obs and_trigger_safe_bounded_def trigger_safe_bounded_def 
           apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
               Un_commute safe_dual_def)
-          by (smt (z3) And Un_absorb Un_commute formula.simps(501) fvi.simps(17) 
-              is_constraint.simps(38) safe safe_formula.simps(17) safe_formula.simps(9) 
-              safe_dual_def sup.orderE no_safe_assign_trigger)
+          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
+              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
+              safe_formula.simps(10,18) subset_Un_eq)
       next
         case False
         then have obs: "(rewrite_trigger (formula.And \<phi> \<psi>)) = and_trigger_safe_unbounded \<phi> \<alpha> I \<beta>"
@@ -853,9 +861,9 @@ proof (cases \<phi>)
           unfolding And obs and_trigger_safe_unbounded_def trigger_safe_unbounded_def
           apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
               Un_commute safe_dual_def)
-          by (smt (z3) And formula.simps(501) fvi.simps(17) is_constraint.simps(38) 
-              safe safe_formula.simps(17) safe_formula.simps(9) safe_dual_def 
-              sup.absorb_iff2 sup_assoc no_safe_assign_trigger)
+          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
+              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
+              safe_formula.simps(10,18) subset_Un_eq)
       qed
     qed
   qed (auto)
@@ -945,7 +953,7 @@ lemma finite_safe_atms[simp]: "finite (safe_atms r)"
 
 subsubsection \<open> Induction principle for safety \<close>
 
-lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred Let LetPast
+lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred Let Frz LetPast
     And_assign And_safe And_constraint And_Not And_Trigger And_Release
     Ands Neg Or Exists Agg
     Prev Next Since Not_Since Until Not_Until
@@ -959,6 +967,8 @@ lemma safe_formula_induct[consumes 1, case_names Eq_Const Eq_Var1 Eq_Var2 Pred L
     and Pred: "\<And>e ts. \<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t \<Longrightarrow> P (e \<dagger> ts)"
     and Let: "\<And>p \<phi> \<psi>. {0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<Longrightarrow> safe_formula \<phi> \<Longrightarrow> safe_formula \<psi> 
       \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (Formula.Let p \<phi> \<psi>)"
+    and Frz: "\<And>p \<phi> \<psi>. {0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<Longrightarrow> safe_formula \<phi> \<Longrightarrow> safe_formula \<psi> 
+      \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (Formula.Frz p \<phi> \<psi>)"
     and LetPast: "\<And>p \<phi> \<psi>. safe_letpast (p, Formula.nfv \<phi>) \<phi> \<le> PastRec 
       \<Longrightarrow> {0..<Formula.nfv \<phi>} \<subseteq> fv \<phi> \<Longrightarrow> safe_formula \<phi> \<Longrightarrow> safe_formula \<psi> 
       \<Longrightarrow> P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (Formula.LetPast p \<phi> \<psi>)"
@@ -1030,8 +1040,8 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
       using Eq_Const Eq_Var1 Eq_Var2 IH 
       by (auto simp: trm.is_Const_def trm.is_Var_def)
   next
-    case (9 \<phi>' \<psi>')
-    from IH(2)[unfolded 9]
+    case (10 \<phi>' \<psi>')
+    from IH(2)[unfolded 10]
     consider (a) "safe_assignment (fv \<phi>') \<psi>'"
       | (b) "\<not> safe_assignment (fv \<phi>') \<psi>'" "safe_formula \<psi>'"
       | (c) "fv \<psi>' \<subseteq> fv \<phi>'" "\<not> safe_assignment (fv \<phi>') \<psi>'" "\<not> safe_formula \<psi>'" "is_constraint \<psi>'"
@@ -1048,19 +1058,19 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
     proof cases
       case a
       thus ?thesis 
-        using IH by (auto simp: 9 intro: And_assign split: formula.splits)
+        using IH by (auto simp: 10 intro: And_assign split: formula.splits)
     next
       case b
       thus ?thesis 
-        using IH by (auto simp: 9 intro: And_safe split: formula.splits)
+        using IH by (auto simp: 10 intro: And_safe split: formula.splits)
     next
       case c
       thus ?thesis 
-        using IH by (auto simp: 9 is_constraint_iff intro: And_constraint split: formula.splits)
+        using IH by (auto simp: 10 is_constraint_iff intro: And_constraint split: formula.splits)
     next
       case d
       thus ?thesis 
-        using IH by (auto simp: 9 intro!: And_Not)
+        using IH by (auto simp: 10 intro!: And_Not)
     next
       case e
       thus ?thesis 
@@ -1082,70 +1092,70 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
           by auto
         thus ?thesis
           using IH \<open>safe_formula \<phi>'\<close>
-          by (auto simp: 9 intro!: And_safe split: formula.splits)
+          by (auto simp: 10 intro!: And_safe split: formula.splits)
       next
         case True
         have "P \<phi>'" "safe_formula \<phi>'' \<Longrightarrow> P \<phi>''" "safe_formula \<psi>'' \<Longrightarrow> P \<psi>''"
           using \<open>safe_formula \<phi>'\<close> 
-          by (auto simp: 9 e(1) intro!: IH)
+          by (auto simp: 10 e(1) intro!: IH)
         thus ?thesis
           using e True no_safe_assign_trigger[of \<phi>' \<phi>'' I]
-           apply (simp add: 9 safe_dual_def split: if_splits)
+           apply (simp add: 10 safe_dual_def split: if_splits)
           subgoal by (rule And_safe; clarsimp simp: safe_dual_def)
-              (rule IH; clarsimp simp: 9 safe_dual_def)
-          by (rule And_Trigger; clarsimp simp: 9 safe_dual_def)
+              (rule IH; clarsimp simp: 10 safe_dual_def)
+          by (rule And_Trigger; clarsimp simp: 10 safe_dual_def)
       qed
     next
       case f
       hence p: "P \<phi>'" "P \<phi>''" "P \<psi>''"
         using f
-        by (auto simp: 9 intro!: IH)
+        by (auto simp: 10 intro!: IH)
       have subs: "FV (\<phi>'' \<^bold>R I \<psi>'') \<subseteq> FV \<phi>'"
         using f(9)[unfolded f(1)] .
       show ?thesis
-        unfolding 9
+        unfolding 10
         using IH(2)
-        by (auto simp: 9 f intro!: And_Release[OF \<open>safe_formula \<phi>'\<close> f(6,7,8,3,2) subs _ p]
+        by (auto simp: 10 f intro!: And_Release[OF \<open>safe_formula \<phi>'\<close> f(6,7,8,3,2) subs _ p]
             IH size'_and_release size'_release_aux split: formula.splits)
     qed
   next
-    case (10 l)
+    case (11 l)
     obtain pos neg where posneg: "(pos, neg) = partition safe_formula l" by simp
-    have "pos \<noteq> []" using IH(2) posneg by (simp add: 10)
+    have "pos \<noteq> []" using IH(2) posneg by (simp add: 11)
     moreover have "list_all safe_formula pos" 
       using posneg 
       by (simp add: list.pred_set)
     moreover have safe_remove_neg: "list_all safe_formula (map remove_neg neg)"
       using IH(2) posneg 
-      by (auto simp: 10)
+      by (auto simp: 11)
     moreover have "list_all P pos"
       using posneg IH(1)
-      by (auto simp add: 10 list_all_iff le_imp_less_Suc size_list_estimation') 
+      by (auto simp add: 11 list_all_iff le_imp_less_Suc size_list_estimation') 
         (meson le_imp_less_Suc sum_list_mem_leq)
     moreover have "list_all P (map remove_neg neg)"
       using IH(1) posneg safe_remove_neg
-      by (auto simp add: 10 list_all_iff le_imp_less_Suc size_list_estimation' size_remove_neg)
+      by (auto simp add: 11 list_all_iff le_imp_less_Suc size_list_estimation' size_remove_neg)
         (meson le_imp_less_Suc order.trans size'_remove_neg sum_list_mem_leq)
     ultimately show ?thesis 
       using IH Ands posneg 
-      by (simp add: 10)
-  next
-    case (15 \<phi>' I \<psi>')
-    with IH show ?thesis
-    proof (cases \<phi>')
-      case (Ands l)
-      then show ?thesis using IH Since
-        by (auto simp: 15)
-    qed (auto 0 3 simp: 15 elim!: disjE_Not2 intro: Since Not_Since) (*SLOW*)
+      by (simp add: 11)
   next
     case (16 \<phi>' I \<psi>')
     with IH show ?thesis
     proof (cases \<phi>')
       case (Ands l)
-      then show ?thesis using IH Until by (auto simp: 16)
-    qed (auto 0 3 simp: 16 elim!: disjE_Not2 intro: Until Not_Until) (*SLOW*)
+      then show ?thesis using IH Since
+        by (auto simp: 16)
+    qed (auto 0 3 simp: 16 elim!: disjE_Not2 intro: Since Not_Since) (*SLOW*)
   next
     case (17 \<phi>' I \<psi>')
+    with IH show ?thesis
+    proof (cases \<phi>')
+      case (Ands l)
+      then show ?thesis using IH Until by (auto simp: 17)
+    qed (auto 0 3 simp: 17 elim!: disjE_Not2 intro: Until Not_Until) (*SLOW*)
+  next
+    case (18 \<phi>' I \<psi>')
     show ?thesis
     proof (cases "mem I 0")
       case mem0: True
@@ -1156,60 +1166,39 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
           and "safe_formula \<phi>''"
           by (auto split: formula.splits)
         hence "P \<phi>''" "safe_formula \<psi>' \<Longrightarrow> P \<psi>'"
-          by (auto simp: 17 intro!: IH)
+          by (auto simp: 18 intro!: IH)
         then show ?thesis 
-          using mem0 17 \<open>\<phi>' = \<not>\<^sub>F \<phi>''\<close> \<open>safe_formula \<phi>\<close>
+          using mem0 18 \<open>\<phi>' = \<not>\<^sub>F \<phi>''\<close> \<open>safe_formula \<phi>\<close>
           by (auto simp add: safe_dual_def intro!: Trigger_0)
       next
         case False
         hence "safe_formula \<phi>' \<Longrightarrow> P \<phi>'" "safe_formula \<psi>' \<Longrightarrow> P \<psi>'"
-          by (auto simp: 17 intro!: IH)
+          by (auto simp: 18 intro!: IH)
         then show ?thesis 
-          using False mem0 17 \<open>safe_formula \<phi>\<close>
+          using False mem0 18 \<open>safe_formula \<phi>\<close>
           by (auto simp add: safe_dual_def intro!: Trigger_0)
       qed
     next
       case False
       then show ?thesis 
         using \<open>safe_formula \<phi>\<close> IH Trigger[OF _ False]
-        by (simp add: 17 safe_dual_def)
+        by (simp add: 18 safe_dual_def)
     qed
   next
-    case (18 \<phi>' I \<psi>')
+    case (19 \<phi>' I \<psi>')
     then show ?thesis
     proof (cases "mem I 0")
       case mem: True
       show ?thesis 
-        using 18 \<open>safe_formula \<phi>\<close>
+        using 19 \<open>safe_formula \<phi>\<close>
         by (auto intro!: Release_0)
           (auto intro!: IH size'_release_aux(4))
     next
       case False
       then show ?thesis 
         using \<open>safe_formula \<phi>\<close>
-        by (simp add: 18 safe_dual_def)
+        by (simp add: 19 safe_dual_def)
     qed
-  next
-    case (19 I r)
-    have case_Neg: "\<phi> \<in> (case x of \<not>\<^sub>F \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {}) \<longleftrightarrow> x = \<not>\<^sub>F \<phi>" 
-      for \<phi> :: "'t Formula.formula" and x
-      by (auto split: Formula.formula.splits)
-    {
-      fix \<psi>
-      assume atms: "\<psi> \<in> safe_atms r"
-      then have "safe_formula \<psi>"
-        using safe_regex_safe_formula IH(2)
-        by (fastforce simp: 19 safe_atms_def)
-      moreover have obs: "size' \<psi> \<le> regex.size_regex size' r"
-        using atms
-        by (auto simp: safe_atms_def size_regex_estimation' case_Neg)
-      ultimately have "P \<psi>"
-        using IH(1)
-        by (auto simp: 19)
-    }
-    then show ?thesis
-      using IH(2)
-      by (auto simp: 19 intro!: MatchP)
   next
     case (20 I r)
     have case_Neg: "\<phi> \<in> (case x of \<not>\<^sub>F \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {}) \<longleftrightarrow> x = \<not>\<^sub>F \<phi>" 
@@ -1221,7 +1210,7 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
       then have "safe_formula \<psi>"
         using safe_regex_safe_formula IH(2)
         by (fastforce simp: 20 safe_atms_def)
-      moreover have "size' \<psi> \<le> regex.size_regex size' r"
+      moreover have obs: "size' \<psi> \<le> regex.size_regex size' r"
         using atms
         by (auto simp: safe_atms_def size_regex_estimation' case_Neg)
       ultimately have "P \<psi>"
@@ -1230,7 +1219,28 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
     }
     then show ?thesis
       using IH(2)
-      by (auto simp: 20 intro!: MatchF)
+      by (auto simp: 20 intro!: MatchP)
+  next
+    case (21 I r)
+    have case_Neg: "\<phi> \<in> (case x of \<not>\<^sub>F \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {}) \<longleftrightarrow> x = \<not>\<^sub>F \<phi>" 
+      for \<phi> :: "'t Formula.formula" and x
+      by (auto split: Formula.formula.splits)
+    {
+      fix \<psi>
+      assume atms: "\<psi> \<in> safe_atms r"
+      then have "safe_formula \<psi>"
+        using safe_regex_safe_formula IH(2)
+        by (fastforce simp: 21 safe_atms_def)
+      moreover have "size' \<psi> \<le> regex.size_regex size' r"
+        using atms
+        by (auto simp: safe_atms_def size_regex_estimation' case_Neg)
+      ultimately have "P \<psi>"
+        using IH(1)
+        by (auto simp: 21)
+    }
+    then show ?thesis
+      using IH(2)
+      by (auto simp: 21 intro!: MatchF)
   qed (auto simp: assms)
 qed
 
@@ -1240,6 +1250,7 @@ subsection \<open>Future reach definition \<close>
 qualified fun future_bounded :: "'t Formula.formula \<Rightarrow> bool" where
   "future_bounded (Formula.Pred _ _) = True"
 | "future_bounded (Formula.Let p \<phi> \<psi>) = (future_bounded \<phi> \<and> future_bounded \<psi>)"
+| "future_bounded (Formula.Frz p \<phi> \<psi>) = (future_bounded \<phi> \<and> future_bounded \<psi>)"
 | "future_bounded (Formula.LetPast p \<phi> \<psi>) = (safe_letpast (p, Formula.nfv \<phi>) \<phi> \<le> PastRec \<and> future_bounded \<phi> \<and> future_bounded \<psi>)"
 | "future_bounded (Formula.Eq _ _) = True"
 | "future_bounded (Formula.Less _ _) = True"
@@ -1374,6 +1385,7 @@ function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't F
   | "convert_multiway (Formula.Less t u) = (Formula.Less t u)"
   | "convert_multiway (Formula.LessEq t u) = (Formula.LessEq t u)"
   | "convert_multiway (Formula.Let p \<phi> \<psi>) = Formula.Let p (convert_multiway \<phi>) (convert_multiway \<psi>)"
+  | "convert_multiway (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (convert_multiway \<phi>) (convert_multiway \<psi>)"
   | "convert_multiway (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (convert_multiway \<phi>) (convert_multiway \<psi>)"
   | "convert_multiway (\<not>\<^sub>F \<phi>) = \<not>\<^sub>F (convert_multiway \<phi>)"
   | "convert_multiway (\<phi> \<or>\<^sub>F \<psi>) = (convert_multiway \<phi>) \<or>\<^sub>F (convert_multiway \<psi>)"
@@ -1443,6 +1455,9 @@ qualified fun matches ::
 | "matches v (Formula.Let p \<phi> \<psi>) e =
     ((\<exists>v'. length v' = Formula.nfv \<phi> \<and> matches v' \<phi> e \<and> matches v \<psi> (p, v')) \<or>
     (fst e \<noteq> p \<or> length (snd e) \<noteq> Formula.nfv \<phi>) \<and> matches v \<psi> e)"
+| "matches v (Formula.Frz p \<phi> \<psi>) e =
+    ((\<exists>v'. length v' = Formula.nfv \<phi> \<and> matches v' \<phi> e \<and> matches v \<psi> (p, v')) \<or>
+    (fst e \<noteq> p \<or> length (snd e) \<noteq> Formula.nfv \<phi>) \<and> matches v \<psi> e)"
 | "matches v (Formula.LetPast p \<phi> \<psi>) e =
     ((fst e \<noteq> p \<or> length (snd e) \<noteq> Formula.nfv \<phi>) \<and>
       (\<exists>e'. (\<lambda>e' e. matches (snd e') \<phi> e \<and> fst e' = p \<and> length (snd e') = Formula.nfv \<phi>)\<^sup>*\<^sup>* e' e \<and> matches v \<psi> e'))"
@@ -1474,6 +1489,10 @@ proof (induct \<phi> arbitrary: v v' e)
     by (simp cong: map_cong eval_trm_fv_cong[OF Pred(1)[simplified, THEN bspec]])
 next
   case (Let p \<phi> \<psi>)
+  then show ?case
+    by (cases e) (auto 11 0)
+next
+  case (Frz p \<phi> \<psi>)
   then show ?case
     by (cases e) (auto 11 0)
 next
@@ -1536,6 +1555,37 @@ next
       with V show ?thesis
         unfolding fun_upd_apply eqTrueI[OF True] if_True option.sel mem_Collect_eq
       proof (intro conj_cong refl Let(1)[where
+        S="{v'. (p, v') \<in> relevant_events \<psi> S \<and> length v' = Formula.nfv \<phi>}" and V=V],
+        goal_cases relevant' v' dom' V')
+        case relevant'
+        then show ?case
+          by (elim subset_trans[rotated]) auto
+      next
+        case v'
+        with True show ?case by simp
+      next
+        case (V' p' v' i)
+        then show ?case
+          by (intro V(4)) auto
+      qed auto
+    next
+      case False
+      from V(3,5,6,7) show ?thesis
+        unfolding fun_upd_apply eq_False[THEN iffD2, OF False] if_False
+        using False by (intro V(4)) (auto simp add: dom_def)
+    qed
+  qed (auto simp: dom_def)
+next
+  case (Frz p \<phi> \<psi>)
+  from Frz.prems show ?case unfolding sat.simps
+  proof (intro Frz(2)[of S], goal_cases relevant v dom V)
+    case (V p' n v' i)
+    then show ?case
+    proof (cases "(p', n) = (p, Formula.nfv \<phi>)")
+      case True
+      with V show ?thesis
+        unfolding fun_upd_apply eqTrueI[OF True] if_True option.sel mem_Collect_eq
+      proof (intro conj_cong refl Frz(1)[where
         S="{v'. (p, v') \<in> relevant_events \<psi> S \<and> length v' = Formula.nfv \<phi>}" and V=V],
         goal_cases relevant' v' dom' V')
         case relevant'
