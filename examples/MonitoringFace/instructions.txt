@@ -1,0 +1,4 @@
+Trace/bug1.log, Formula/bug1.mfotl, Signature/bug.sig
+Trace/bug2.log, Formula/bug2.mfotl, Signature/bug.sig
+Trace/bug3.log, Formula/bug3.mfotl, Signature/bug.sig
+Trace/bug4.log, Formula/bug4.mfotl, Signature/bug.sig
