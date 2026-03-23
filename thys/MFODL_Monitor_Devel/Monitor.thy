@@ -932,6 +932,8 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   MRel "event_data table"
   | MPred Formula.name "Formula.trm list" pred_mode
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
+  | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
+     "event_data table list" "(('msaux, 'muaux, 'mtaux) mformula \<times> event_data table) option"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MAndAssign "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
@@ -1311,6 +1313,7 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
+| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) [] None"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1673,6 +1676,9 @@ lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Long
   apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
   done
 
+fun freeze_meval0 where
+  "freeze_meval0 eval j \<alpha>s p (Some (\<psi>, \<alpha>, k)) = eval (Mapping.empty(p := replicate (j - k) \<alpha>))"
+
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
@@ -1712,6 +1718,11 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
+| "meval n ts db (MFrz p m \<phi> \<psi> \<alpha>s opt) =
+    (let (xs, \<phi>) = meval m ts db \<phi>;
+         (ys, \<psi>) = meval n ts db \<psi>;
+         (zs, \<alpha>s', opt') = (\<alpha>s @ xs)
+    in (ys, MFrz p m \<phi> \<psi>))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
