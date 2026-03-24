@@ -3,7 +3,6 @@ theory Monitor_Impl
   imports "MFODL_Monitor_Devel.Monitor"
     "MFODL_Monitor_Devel.Optimized_Agg_Temporal"
     "MFODL_Monitor_Devel.Optimized_Agg"
-    "MFODL_Monitor_Devel.Optimized_MTL"
     "HOL-Library.Code_Target_Nat"
     Containers.Containers
     "Generic_Join_Devel.Proj_Code"
@@ -888,7 +887,7 @@ context
 begin
 
 qualified definition card_UNIV' :: "'a card_UNIV"
-where [code del]: "card_UNIV' = Phantom('a) CARD('a)"
+where [code drop]: "card_UNIV' = Phantom('a) CARD('a)"
 
 lemma CARD_code [code_unfold]:
   "CARD('a) = of_phantom (card_UNIV' :: 'a card_UNIV)"
@@ -1111,7 +1110,7 @@ lemma RPDs_aux_code[code]:
   unfolding RPDs_aux_def bind_UNION
   by (subst saturate_code) auto
 
-declare RPDs_code[code del]
+declare RPDs_code[code drop]
 lemma RPDs_code[code]: "RPDs r = RPDs_aux {r}"
   unfolding RPDs_aux_def RPDs_code
   by (rule saturate_commute[where C="RPDs r"])
@@ -1124,7 +1123,7 @@ lemma LPDs_aux_code[code]:
   unfolding LPDs_aux_def bind_UNION
   by (subst saturate_code) auto
 
-declare LPDs_code[code del]
+declare LPDs_code[code drop]
 lemma LPDs_code[code]: "LPDs r = LPDs_aux {r}"
   unfolding LPDs_aux_def LPDs_code
   by (rule saturate_commute[where C="LPDs r"])
@@ -1769,7 +1768,7 @@ lemmas meinit0_code_simps = default_maux.meinit0.simps[unfolded verimon_maux.ini
 
 lemmas vmeinit0_code_simps = verimon_maux.meinit0.simps[unfolded verimon_maux.init_and_trigger'_def]
 
-declare default_maux.meinit0.simps [code del]
+declare default_maux.meinit0.simps [code drop]
 
 declare meinit0_code_simps [code]
   and vmeinit0_code_simps [code]
