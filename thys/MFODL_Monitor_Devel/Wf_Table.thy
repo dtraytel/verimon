@@ -208,7 +208,17 @@ lemma wf_idx_sig_of_set: "wf_idx_sig (wf_idx_of_set n A I T) = (n, A )"
   by transfer (auto simp: Let_def)
 
 lemma wf_idx_set_of_set: "wf_idx_set (wf_idx_of_set n A I T) = Set.filter (wf_tuple n A) T"
-  by transfer (auto simp: Let_def idx_create[OF table_filter])
+proof (transfer fixing: n A I)
+  fix T :: "'a option list set"
+  show "(case let A' = A; I' = I \<inter> A'
+               in (n, A', I',
+                   idx_create
+                    (Set.filter (wf_tuple n A') T)
+                    I') of
+          (n, A, I, x) \<Rightarrow> set_of_idx x) =
+         Set.filter (wf_tuple n A) T"
+    using idx_create[OF table_filter, of n A T "I \<inter> A"] by (auto simp: Let_def)
+qed
 
 definition idx_reindex :: "nat set \<Rightarrow> nat set \<Rightarrow> ('a option list, 'a option list set) mapping \<Rightarrow>
   ('a option list, 'a option list set) mapping" where

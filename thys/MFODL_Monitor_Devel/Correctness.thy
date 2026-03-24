@@ -2169,7 +2169,7 @@ next
   with MAndRel.prems show ?case
     by (cases rule: wf_mformula.cases)
       (auto simp: progress_constraint progress_le list.rel_map fv_formula_of_constraint \<phi>'_eq
-        Un_absorb2 wf_mformula_wf_set[unfolded wf_set_def] split: prod.splits
+        Un_absorb2 wf_mformula_wf_set[unfolded wf_set_def] simp del: Set.filter_eq split: prod.splits
         dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E
         dest!: MAndRel.IH eval_constraint_sat_eq[THEN iffD2]
         intro!: wf_mformula.AndRel

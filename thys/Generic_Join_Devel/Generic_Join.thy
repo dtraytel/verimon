@@ -95,7 +95,7 @@ fun query_of_squery :: "'a squery \<Rightarrow> 'a tuple \<Rightarrow> 'a query"
 lemma squery_correct: "t \<in> R \<Longrightarrow> newQuery J Q (I, t) = query_of_squery (squery_of_query I J
   (Set.image (\<lambda>(V, T). let R' = restrict (V \<inter> I) ` R in
     (V, Set.filter (\<lambda>t. restrict (V \<inter> I) t \<in> R') T)) Q)) t"
-  by (auto simp: Equiv_Relations.proj_def image_image intro!: image_cong rev_image_eqI) simp+
+  by (auto simp: Equiv_Relations.proj_def image_image intro!: image_cong rev_image_eqI)
 
 lemma genericJoin_code[code]:
   "genericJoin V Q_pos Q_neg =
@@ -119,7 +119,7 @@ lemma genericJoin_code[code]:
           | t . t \<in> R_I} in
         (\<Union>(t, x) \<in> X. {merge xx t | xx . xx \<in> x})))"
   by (subst genericJoin.simps)
-     (fastforce simp only: Let_def Set.is_empty_def squery_correct split: if_splits)
+     (fastforce simp only: Let_def Set.is_empty_iff squery_correct split: if_splits)
 
 fun wrapperGenericJoin :: "'a query \<Rightarrow> 'a query \<Rightarrow> 'a table" where
   "wrapperGenericJoin Q_pos Q_neg =

@@ -510,7 +510,7 @@ proof -
 qed
 
 lemma Mapping_keys_filter: "Mapping.keys (Mapping.filter (\<lambda>x _. P x) m) = Set.filter P (Mapping.keys m)"
-  by transfer (auto simp: Set.filter_def split: option.splits if_splits)
+  by transfer (auto split: option.splits if_splits)
 
 lemma join_mmsaux_abs_eq:
   assumes valid_before: "valid_mmsaux args cur

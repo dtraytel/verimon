@@ -188,7 +188,7 @@ proof -
       qed
       show ?thesis
         unfolding M_def M'_def
-        by (auto simp: non_default_case Let_def image_def Set.filter_def 1 3, metis "2")
+        by (auto simp: non_default_case Let_def image_def 1 3, metis "2")
     qed
     have drop_lift: "mem_restr (lift_envs' ?b R) x" if "x \<in> rel" "mem_restr R ((drop ?b x)[y:=z])" for x z
     proof -

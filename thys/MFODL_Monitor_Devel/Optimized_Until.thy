@@ -291,7 +291,8 @@ proof -
     have "list_all (\<lambda>k. isl k = (\<not> memL I 0)) (map snd (linearize tables))" using valid_before unfolding I_def by auto
     moreover have "tstp_h \<in> set (map snd (linearize tables))" unfolding tables_split hd_tl by auto
     moreover have "tstp \<in> set (map snd (linearize tables))"  using assm unfolding x_def tables_split by force
-    ultimately have isl_eq: "isl tstp_h = isl tstp" by (metis (mono_tags, lifting) list_all_append list_all_simps(1) split_list)
+    ultimately have isl_eq: "isl tstp_h = isl tstp"
+      by (auto simp: list.pred_set)
     have "\<forall>x \<in> set (map (tstp_unpack \<circ> snd) (linearize tables')). x \<ge> tstp_unpack tstp_h"
       using sorted_tables' unfolding hd_tl by auto
     moreover have "tstp_unpack tstp \<in> set (map (tstp_unpack \<circ> snd) (linearize tables'))" using assm[unfolded x_def] by force
@@ -738,7 +739,7 @@ proof -
   then have eval_step_mmuaux_eq: "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map,
     done) = (tp, tss''', tables', len - 1,  maskL, maskR, result', a1_map, a2_map'', tstp_map', T_agg # done)"
     using safe_hd_eq m_def m'_def mc_def a2_map'_def a2_map''_def I_def tstp_map'_def m_eq[unfolded m_del_def to_del_def to_del_approx_def taken_def] tables'_def ts'_tss'''_def[symmetric]
-    by (auto simp add: t_agg_eq Let_def result'_def to_del_def to_del_approx_def split:prod.splits) fastforce+
+    by (auto simp add: t_agg_eq Let_def result'_def to_del_def to_del_approx_def split:prod.splits simp del: Set.filter_eq)
   have lin_ts: "lin_ts_mmuaux (eval_step_mmuaux args aux) = tss''"
     using lin_tss_Cons assms(2) lin_tss''' unfolding aux_def eval_step_mmuaux_eq by auto
   have lookup_old: "Mapping.lookup a2_map tp = Some Mapping.empty" using valid_before by auto
@@ -1155,7 +1156,7 @@ proof -
     unfolding tmp'_def tmp_def by (auto simp add: less_SucI split: option.splits if_splits)
   have snd_tmp: "\<And>tp'. table n R (snd ` tmp')"
     using tabs(2) unfolding tmp'_def tmp_def n_def R_def
-    by(auto simp add: table_def split: if_splits option.splits) blast+
+    by(auto simp add: table_def split: if_splits option.splits)
   define a2_map' where "a2_map' = Mapping.update (tp + 1) Mapping.empty
     (upd_nested a2_map new_tstp (max_tstp new_tstp) tmp')"
   define a1_map' where "a1_map' = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)

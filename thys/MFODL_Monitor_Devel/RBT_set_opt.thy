@@ -1312,9 +1312,9 @@ definition nat_set_upt :: "nat \<Rightarrow> nat \<Rightarrow> nat set" where
 lemma nat_set_upt_prop: "nat_set_upt i j = RBT_set (sset (upt_sdlist i j))"
   by (auto simp: nat_set_upt_def RBT_set_sset upt_sdlist.rep_eq)
 
-declare Set_union_code(1)[code del]
+declare Set_union_code(1)[code drop]
 declare rbt_union_code[code]
-declare Set_inter_code(16)[code del]
+declare Set_inter_code(16)[code drop]
 declare rbt_inter_code[code]
 
 (* Set_minus on RBTs not supported in Set_Impl! *)
@@ -1322,14 +1322,14 @@ declare rbt_inter_code[code]
 (* definition "my_fun b t1 t2 = (if b then {0::nat,1,2,3,4} - {0::nat,1,2,5} else RBT_set t1 - RBT_set t2)"
 code_thms my_fun *)
 thm Set_minus_code
-declare Set_minus_code(2) [code del]
+declare Set_minus_code(2) [code drop]
 declare rbt_minus_code[code]
 
 
 
 (*
 The following code equation requires an executable sorting algorithm for ccompare.
-declare Set_Impl.set_code[code del]
+declare Set_Impl.set_code[code drop]
 declare set_code[code]
 *)
 

@@ -59,7 +59,7 @@ qed
 
 lemma nth_list_update_alt: 
   "xs[i := x] ! j = (if i < length xs \<and> i = j then x else xs ! j)"
-  by auto
+  by (auto simp add: list_update_beyond)
 
 lemma wf_tuple_upd_None: "wf_tuple n A xs \<Longrightarrow> A - {i} = B \<Longrightarrow> wf_tuple n B (xs[i:=None])"
   unfolding wf_tuple_def

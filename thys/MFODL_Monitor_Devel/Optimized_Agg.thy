@@ -470,7 +470,7 @@ proof -
   define M_list where [simp]: "M_list = linorder.sorted_list_of_set (le_of_comp c) M"
   obtain elem where elem_prop: "elem \<in> X \<and> drop b elem = k" using in_map valid_map imageE[of k "drop b" X] by auto
   then obtain m where m_prop: "(meval_trm f elem, m) \<in> M" 
-    by auto fastforce
+    by auto
   define group where [simp]: "group = Set.filter (\<lambda>x. meval_trm f x = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X)"
   have "ecard group \<noteq> 0" using finite elem_prop by (auto simp:ecard_def zero_enat_def) 
   then have m_pos: "m > 0 \<and> m \<noteq> \<infinity>" 
@@ -988,7 +988,7 @@ proof -
                  (\<lambda>x. (x, ecard (Set.filter (\<lambda>xa. meval_trm f xa = x) old_group))) ` old_evals"
     using other_evals_unchanged by (metis (mono_tags, lifting) aux1 aux2 image_cong)
   ultimately show "group_multiset k b f (Set.insert elem X) = Set.insert (meval_trm f elem, 1) (group_multiset k b f X)" using aux
-    by(simp add: old_evals_def)
+    by (simp add: old_evals_def del: Set.filter_eq)
 qed
 
 lemma single_term_in_multiset:
@@ -996,8 +996,8 @@ lemma single_term_in_multiset:
   and single_term_eval: "Set.filter (\<lambda>x. meval_trm f x = meval_trm f elem) (group k b X) = {elem}"
   shows "(meval_trm f elem, 1) \<in> group_multiset k b f X"
 proof -
-  have "elem \<in> group k b X" using single_term_eval elem_group by(simp add:Set.filter_def) blast
-  then obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f X" by auto fastforce
+  have "elem \<in> group k b X" using single_term_eval elem_group by auto
+  then obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f X" by auto
   then have "v' = ecard (Set.filter (\<lambda>x. meval_trm f x = meval_trm f elem) (group k b X))" by auto
   then have v'_val: "v' = 1" using single_term_eval by(simp add: ecard_def one_enat_def) 
   then show "(meval_trm f elem, 1) \<in> group_multiset k b f X" using v'_def by auto
@@ -1016,18 +1016,19 @@ proof (rule set_eqI, rule iffI)
   ultimately have noteq: "t \<noteq> meval_trm f elem" using imageE single_term_eval by auto
   then have "x \<noteq> (meval_trm f elem, 1)" using x_def by force
   moreover have "x \<in> group_multiset k b f X"
-    using  x_def by (metis Set.remove_def elem_group insert_Diff_single noteq other_evals_unchanged x_in_M)
+    using  x_def by (metis elem_group insert_Diff_single noteq other_evals_unchanged x_in_M)
   ultimately show "x \<in>  (group_multiset k b f X) - {(meval_trm f elem, 1)}" 
     by auto
 next
   fix x
   assume x_in_oldM: "x \<in> (group_multiset k b f X) - {(meval_trm f elem, 1)}"
   then obtain t v where x_def: "x = (t, v)" by (meson surj_pair)
-  have "elem \<in> group k b X" using single_term_eval elem_group by(simp add:Set.filter_def) blast
+  have "elem \<in> group k b X" using single_term_eval elem_group by auto
   have "(meval_trm f elem, 1) \<in> group_multiset k b f X" using single_term_in_multiset elem_group single_term_eval by auto
   then have "t \<noteq> meval_trm f elem" using  x_def x_in_oldM by (metis DiffE insertI1 unique_term_multiset)
   then show "x \<in> group_multiset k b f (X - {elem})" using x_def 
-    by (metis Set.member_remove Set.remove_def elem_group insert_Diff_single other_evals_unchanged x_in_oldM)
+    using other_evals_unchanged[of b elem k t f v] x_in_oldM elem_group
+    by (metis DiffD1 insert_Diff_single)
 qed
 
 lemma multiset_multiple_term_remove:
@@ -1056,7 +1057,7 @@ proof (rule set_eqI, rule iffI)
   then have correct_card: "enat (y - 1) = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group)" 
     using y_card by (smt (z3) Optimized_Agg.group_def card_Diff_singleton_if ecard_def elem_group enat.distinct(2) enat.inject filter_insert finite.emptyI finite.insertI finite_Diff2 insertCI insert_Diff inside old_group_def)
   obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f updated_data" using elem'_def 
-    by(simp add: updated_data_def) (metis (mono_tags) Set.member_filter imageI insert_Diff_single insert_iff)
+    by (simp add: updated_data_def) (metis (mono_tags, lifting) image_eqI mem_Collect_eq)
   then have "v' = y - 1" using correct_card by (auto simp: new_group_def)
   then have aux1: "(meval_trm f elem, enat (y - 1)) \<in> group_multiset k b f updated_data" using v'_def by auto
   have "enat y \<noteq> enat (y - 1)" using y_card by (smt (z3) Diff_insert_absorb Optimized_Agg.group_def cancel_comm_monoid_add_class.diff_cancel card.insert card_Diff_singleton_if diff_add_inverse2 ecard_def elem'_def enat.inject enat_defs(2) finite_Diff finite_filter idiff_enat_enat local.finite mk_disjoint_insert old_group_def plus_1_eq_Suc zero_neq_one)
@@ -1087,9 +1088,15 @@ next
   have "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group = (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group) - {elem}"
     using group_ins by fastforce
   then have correct_card: "enat (y - 1) = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group)" 
-    using y_card by (smt (z3) Optimized_Agg.group_def Set.member_filter card_Diff_singleton_if ecard_def elem_group enat.distinct(1) enat.inject finite.emptyI finite_Diff2 finite_insert inside old_group_def)
-  obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f updated_data" using elem'_def 
-    by(simp add: updated_data_def) (metis (mono_tags) Set.member_filter imageI insert_Diff_single insert_iff)
+    using y_card
+    by (smt (verit, ccfv_threshold) Diff_iff Optimized_Agg.group_def
+        Set.filter_eq assms(4) card.insert ecard_def elem_group
+        enat.simps(1,3) finite_insert insertCI insert_Diff
+        mem_Collect_eq old_group_def)
+  obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f updated_data" using elem'_def
+    by (metis (mono_tags, lifting) Set.filter_eq group_ins
+        group_multiset_def imageI insert_Diff_single insert_compr
+        mem_Collect_eq new_group_def old_group_def)
   then have "v' = y - 1" using correct_card by (auto simp: new_group_def)
   then have aux1: "(meval_trm f elem, y - 1) \<in> group_multiset k b f updated_data" using v'_def by auto
   show "x \<in> group_multiset k b f (X - {elem})" 
@@ -1124,10 +1131,11 @@ proof (rule set_eqI, rule iffI)
   have y_card: "enat n = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group)" using old_val by auto
   moreover have "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.insert elem (Set.filter (\<lambda>x. drop b x = k) X)) =
                  Set.insert elem  (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X))" by auto
-  moreover have "elem \<notin> Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X)" by (meson Set.member_filter disjoint)
+  moreover have "elem \<notin> Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X)" using disjoint by auto
   ultimately have correct_card: "enat (n + 1) = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group)" 
     using eSuc_enat plus_1_eSuc(2) group_ins by(auto simp: ecard_def) (metis enat.distinct(2))
-  then have aux1: "(meval_trm f elem, enat(n + 1)) \<in> group_multiset k b f (Set.insert elem X)" using group_ins by auto
+  then have aux1: "(meval_trm f elem, enat(n + 1)) \<in> group_multiset k b f (Set.insert elem X)" using group_ins
+    by (auto simp del: Set.filter_eq)
   have aux2: "(meval_trm f elem, enat n) \<notin> group_multiset k b f (Set.insert elem X)" 
     using unique_term_multiset[of "meval_trm f elem" "enat (n + 1)" k b f updated_data "enat n"] aux1 y_card
     by simp (smt (z3) the_enat.simps)
@@ -1153,10 +1161,11 @@ next
   have y_card: "enat n = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group)" using old_val by auto
   moreover have "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.insert elem (Set.filter (\<lambda>x. drop b x = k) X)) =
                  Set.insert elem  (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X))" by auto
-  moreover have "elem \<notin> Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X)" by (meson Set.member_filter disjoint)
+  moreover have "elem \<notin> Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) (Set.filter (\<lambda>x. drop b x = k) X)"
+    using disjoint by auto
   ultimately have correct_card: "enat (n + 1) = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group)" 
     using eSuc_enat plus_1_eSuc(2) group_ins by(auto simp: ecard_def) (metis enat.distinct(2))
-  then have aux1: "(meval_trm f elem, enat (n + 1)) \<in> group_multiset k b f (Set.insert elem X)" using group_ins by auto
+  then have aux1: "(meval_trm f elem, enat (n + 1)) \<in> group_multiset k b f (Set.insert elem X)" using group_ins by (auto simp del: Set.filter_eq)
   show "x \<in> group_multiset k b f (Set.insert elem X)" 
   proof (cases "t = meval_trm f elem")
     case True
@@ -1205,11 +1214,12 @@ next
     next
       case False
       then obtain n where n_def: "(meval_trm f elem, enat n) \<in> old_M" 
-        using valid_finite_group_mset[OF assms, of k b f] by(auto) (smt (z3) ecard_def filter_insert finite_filter image_insert insert.hyps(1) insertI1 mk_disjoint_insert)
+        using valid_finite_group_mset[OF assms, of k b f] insert.hyps(1)
+        by (force simp: ecard_def image_iff)
       then obtain xa where xa_def: "enat n = ecard (Set.filter (\<lambda>x. meval_trm f x = meval_trm f xa) (Set.filter (\<lambda>x. drop b x = drop b xa) F))" 
         by auto
       have aux1: "finite (Set.filter (\<lambda>x. meval_trm f x = meval_trm f xa) (Set.filter (\<lambda>x. drop b x = drop b xa) F))" using insert by auto
-      have finite_remove: "finite (old_M - {(meval_trm f elem, enat n)})" using both_finite finite_Diff  by (auto simp: Set.remove_def)
+      have finite_remove: "finite (old_M - {(meval_trm f elem, enat n)})" using both_finite finite_Diff  by auto
       have finite_insert: "finite (Set.insert (meval_trm f elem, enat n) old_M)" using both_finite by blast
       have M_insert_remove_def: "M = Set.insert (meval_trm f elem, enat (n + 1)) (old_M - {(meval_trm f elem, enat n)})" 
         using multiset_old_term_insert group_elem False n_def insert
@@ -1223,7 +1233,11 @@ next
     qed
     moreover have "group = Set.insert elem old_group"
       using True insert by(auto) 
-    ultimately show ?thesis using insert by auto
+    ultimately show ?thesis using insert
+      by (metis (no_types, lifting) ext M_def Optimized_Agg.group_def
+          add.commute card_insert_disjoint finite_filter
+          group_multiset_def insert_absorb local.group_def old_M_def
+          old_group_def plus_1_eq_Suc updated_data_def)
   next
     case False
     then have aux: "Optimized_Agg.group k b (Set.insert elem F) = Optimized_Agg.group k b F" by auto
@@ -1240,7 +1254,7 @@ proof -
   obtain c where c_def: "ID ccompare = Some (c :: (event_data \<times> enat) comparator)" 
     by (simp add: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def split:if_splits option.splits)
   interpret linorder "le_of_comp c" "lt_of_comp c"
-    using ID_ccompare[OF c_def] by auto
+    using ID_ccompare[OF c_def] .
   interpret comp_fun_commute "\<lambda>(t, m) y. y + the_enat m"
     by unfold_locales auto
   have "finite s" using assms(2) by (simp add:valid_finite_mset_def)
@@ -1323,7 +1337,7 @@ proof -
           then have *: "Set.filter (\<lambda>x. meval_trm f x = meval_trm f elem) (group k (length tys) X) = {}" "?old_M = {}"
             using valid_before valid by(auto) (metis domIff keys_dom_lookup rev_image_eqI)+
           have M_single: "?M = Set.insert (meval_trm f elem, enat 1) {}"
-            using multiset_new_term_insert[OF True *(1)] *(2) by (simp add: one_enat_def)
+            using multiset_new_term_insert[OF True *(1)] *(2) by (simp add: one_enat_def del: Set.filter_eq)
           then have valid_size: "size (int_mset_conv ?M) = 1"
             using Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of unpack_int]] i_def
             by(simp add:int_mset_conv_def mset_conv_def unpack_int_def)
@@ -1353,7 +1367,8 @@ proof -
           next
             case False
             then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-              using valid_finite_group_mset[of X k "length tys" f] k_def by(auto simp add:valid_finite_mset_def) (metis (mono_tags, lifting) Set.member_filter finite_Un imageI valid_finite)
+              using valid_finite_group_mset[of X k "length tys" f] k_def finite_X
+              by (fastforce simp add:valid_finite_mset_def image_iff)
             then have not_in: "(meval_trm f elem, enat (n + 1)) \<notin> ?old_M" using unique_term_multiset[OF n_def] by auto
             have valid_unpack: "unpack_int (meval_trm f elem) \<in> range Some" using i_def by(simp add: unpack_int_def)
             have M_insert_remove_def: "?M = Set.insert (meval_trm f elem, enat (n + 1)) (?old_M - {(meval_trm f elem, enat n)})" 
@@ -1432,7 +1447,7 @@ proof -
         then have *: "Set.filter (\<lambda>x. meval_trm f x = meval_trm f elem) (group k (length tys) X) = {}" "?old_M = {}"
           using valid_before valid by(auto) (metis domIff keys_dom_lookup rev_image_eqI)+
         have M_single: "?M = Set.insert (meval_trm f elem, enat 1) {}"
-          using multiset_new_term_insert[OF True *(1)] *(2) by (simp add: one_enat_def)
+          using multiset_new_term_insert[OF True *(1)] *(2) by (simp add: one_enat_def del: Set.filter_eq)
         then have valid_size: "size (mset_conv Some ?M) = 1"
           using Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of Some], of  "(meval_trm f elem, enat 1)"]
           by(simp add:mset_conv_def)
@@ -1455,7 +1470,7 @@ proof -
         next
           case False
           then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-            using valid_finite_group_mset[of X k "length tys" f] k_def by(auto simp add:valid_finite_mset_def) (metis (mono_tags, lifting) Set.member_filter finite_Un imageI valid_finite)
+            using valid_finite_group_mset[of X k "length tys" f] k_def finite_X by(fastforce simp add:valid_finite_mset_def image_iff)
           then have not_in: "(meval_trm f elem, enat (n + 1)) \<notin> ?old_M" using unique_term_multiset[OF n_def] by auto
           have M_insert_remove_def: "?M = Set.insert (meval_trm f elem, enat (n + 1)) (?old_M - {(meval_trm f elem, enat n)})" 
             using multiset_old_term_insert[OF k_def False n_def disjoint finite_X] by simp
@@ -1571,7 +1586,7 @@ proof -
           next
             case False
             then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-              using valid_finite_group_mset[of X k "length tys" f] k_def by(auto simp add:valid_finite_mset_def) (metis (mono_tags, lifting) Set.member_filter finite_X imageI)
+              using valid_finite_group_mset[of X k "length tys" f] k_def finite_X by(fastforce simp add:valid_finite_mset_def image_iff)
             then have not_in: "(meval_trm f elem, enat (n + 1)) \<notin> ?old_M" using unique_term_multiset[OF n_def] by auto
             have M_insert_remove_def: "?M = Set.insert (meval_trm f elem, enat (n + 1)) (?old_M - {(meval_trm f elem, enat n)})" 
               using multiset_old_term_insert[OF k_def False n_def disjoint finite_X] by simp
@@ -1584,8 +1599,10 @@ proof -
                 by(simp add:int_mset_conv_def unpack_int_def)
               then show ?thesis using Some k_in meval_def EInt valid_old filter_insert[of "(\<lambda>x. drop (length tys) x = k)"] mset_treelist_insert[of i]
                 apply(auto simp:k_def new_map_def  valid_list_aux_def valid_list_aux'_def 
-                      insort_mset split:option.splits)
-                by(simp add:type_restr_mset_def k_def) blast
+                      insort_mset split:option.splits simp del: Set.filter_eq)
+                apply(simp add:type_restr_mset_def k_def del: Set.filter_eq)
+                apply blast
+                done
             next
               case (EFloat x2)
               then show ?thesis using meval_def by auto
@@ -1597,8 +1614,10 @@ proof -
                 by(simp add:str_mset_conv_def unpack_string_def)
               then show ?thesis using Some k_in meval_def EString valid_old filter_insert[of "(\<lambda>x. drop (length tys) x = k)"] mset_treelist_insert[of s]
                 apply(auto simp:k_def new_map_def valid_list_aux_def valid_list_aux'_def 
-                      insort_mset split:option.splits)
-                by(simp add:type_restr_mset_def k_def) blast
+                      insort_mset split:option.splits simp del: Set.filter_eq)
+                apply (simp add:type_restr_mset_def k_def del: Set.filter_eq)
+                apply blast
+                done
             qed
           qed
         qed
@@ -1764,7 +1783,7 @@ proof -
     have elem_in: "drop b elem \<in> Mapping.keys m" using b_def in_set valid valid_before by auto
     have all_int: "meval_trm f ` X \<subseteq> range EInt" using valid valid_before by(auto simp:type_restr_def) blast+
     then have valid_unpack: "(\<And>t m. (t, m) \<in> group_multiset (drop b elem) b f X \<Longrightarrow> unpack_int t \<in> range Some)"
-      by(auto simp:unpack_int_def split:event_data.splits) fastforce+
+      by(auto simp:unpack_int_def split:event_data.splits)
     obtain c s where lookup_def: "Mapping.lookup m (drop b elem) = Some (c, s)" using b_def True del_def valid by(auto split:option.splits)
     then have "c = length (flatten_multiset (group_multiset (drop b elem) b f X))" 
       using length_mset_eq[OF _ valid_finite_group_mset[OF finite_X, of "(drop b elem)" b f], of unpack_int] valid_unpack
@@ -1783,7 +1802,9 @@ proof -
       proof(cases "drop b elem = k")
         case True
         then show ?thesis using length_flatten_multiset' assm valid_before valid
-          by(auto split:option.splits) (smt (z3) Optimized_Agg.group_def Set.member_filter c_def card_eq_Suc_0_ex1 elem_in in_set insert_absorb keys_update new_map_def)+
+          apply(auto simp: c_def new_map_def simp del: Set.filter_eq split:option.splits)
+          apply (metis (mono_tags, lifting) Set.filter_eq card_eq_Suc_0_ex1 in_set mem_Collect_eq)+
+          done
       next
         case False
         then have "k \<in> (drop b) ` X" using assm valid_before by auto
@@ -1854,7 +1875,8 @@ proof -
         next
           case False
           then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] by(auto) (smt (z3) ecard_def filter_insert finite_X finite_filter insertI1 insert_image mk_disjoint_insert)
+            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] finite_X
+            by (auto simp: ecard_def)
           then have "n \<noteq> 0" by (metis enat_0_iff(1) finite_X valid_finite_group_mset valid_finite_mset_def)
           then obtain n' where "n' = n - 1" by auto
           then have n'_def: "(meval_trm f elem, enat (n' + 1)) \<in> ?old_M" using n_def \<open>n \<noteq> 0\<close> by force
@@ -1922,7 +1944,9 @@ proof -
       proof(cases "drop b elem = k")
         case True
         then show ?thesis using length_flatten_multiset' assm valid_before valid
-          by(auto split:option.splits) (smt (z3) Optimized_Agg.group_def Set.member_filter c_def card_eq_Suc_0_ex1 elem_in in_set insert_absorb keys_update new_map_def)+
+          apply(auto simp: c_def new_map_def simp del: Set.filter_eq split:option.splits)
+          apply (metis (mono_tags, lifting) Set.filter_eq card_eq_Suc_0_ex1 in_set mem_Collect_eq)+
+          done
       next
         case False
         then have "k \<in> (drop b) ` X" using assm valid_before by auto
@@ -1984,7 +2008,8 @@ proof -
         next
           case False
           then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] by(auto) (smt (z3) ecard_def filter_insert finite_X finite_filter insertI1 insert_image mk_disjoint_insert)
+            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] finite_X
+            by (auto simp: ecard_def)
           then have "n \<noteq> 0" by (metis enat_0_iff(1) finite_X valid_finite_group_mset valid_finite_mset_def)
           then obtain n' where "n' = n - 1" by auto
           then have n'_def: "(meval_trm f elem, enat (n' + 1)) \<in> ?old_M" using n_def \<open>n \<noteq> 0\<close> by force
@@ -2022,7 +2047,8 @@ lemma valid_list_aux_length_eq:
 proof(cases l)
   case (LInt x1)
   then have "(\<And>t m. (t, m) \<in> group_multiset k b f X \<Longrightarrow> unpack_int t \<in> range Some)"
-    using assms by(auto simp:unpack_int_def valid_list_aux_def valid_list_aux'_def type_restr_mset_def) (smt (verit, del_insts) Set.member_filter event_data.simps(10) image_iff)
+    using assms
+    by(auto simp:unpack_int_def valid_list_aux_def valid_list_aux'_def type_restr_mset_def image_iff)
   then have "size (mset_conv unpack_int (group_multiset k b f X)) = length (flatten_multiset (group_multiset k b f X))"
     using length_mset_eq[OF _ valid_finite_group_mset[OF assms(2), of k b f], of unpack_int] by auto
   then show ?thesis using assms LInt
@@ -2030,7 +2056,7 @@ proof(cases l)
 next
   case (LString x2)
   then have "(\<And>t m. (t, m) \<in> group_multiset k b f X \<Longrightarrow> unpack_string t \<in> range Some)"
-    using assms by(auto simp:unpack_string_def valid_list_aux_def valid_list_aux'_def type_restr_mset_def) (smt (verit, del_insts) Set.member_filter event_data.simps image_iff)
+    using assms by(auto simp:unpack_string_def valid_list_aux_def valid_list_aux'_def type_restr_mset_def image_iff)
   then have "size (mset_conv unpack_string (group_multiset k b f X)) = length (flatten_multiset (group_multiset k b f X))"
     using length_mset_eq[OF _ valid_finite_group_mset[OF assms(2), of k b f], of unpack_string] by auto
   then show ?thesis using assms LString
@@ -2118,7 +2144,9 @@ proof -
       proof(cases "drop b elem = k")
         case True
         then obtain k' where "k' \<in> X" "k' \<noteq> elem" "drop b k' = k" using assm by fastforce
-        then have "card (Set.filter (\<lambda>x. drop b x = drop b elem) X) > 1" by (smt (verit, del_insts) DiffE Diff_cancel Set.member_filter True card_0_eq card_eq_Suc_0_ex1 finite_X finite_filter in_set)
+        then have "card (Set.filter (\<lambda>x. drop b x = drop b elem) X) > 1" using True finite_X
+          by (smt (verit, best) card_0_eq card_1_singleton_iff filter_insert finite_filter in_set
+              insertCI insert_Diff singletonD)
         then have geq1: "get_length l > 1" using True length_flatten_multiset'[OF finite_X, of k b f] 
           valid_list_aux_length_eq[OF lookup_def(2) finite_X] by auto
         show ?thesis 
@@ -2230,7 +2258,8 @@ proof -
         next
           case False
           then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 
-            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] by(auto) (smt (z3) ecard_def filter_insert finite_X finite_filter insertI1 insert_image mk_disjoint_insert)
+            using k_def in_set valid_finite_group_mset[OF finite_X, of k b f] finite_X
+            by (auto simp: ecard_def image_iff)
           then have "n \<noteq> 0" by (metis enat_0_iff(1) finite_X valid_finite_group_mset valid_finite_mset_def)
           then obtain n' where "n' = n - 1" by auto
           then have n'_def: "(meval_trm f elem, enat (n' + 1)) \<in> ?old_M" using n_def \<open>n \<noteq> 0\<close> by force
@@ -2246,7 +2275,7 @@ proof -
               by(simp add:int_mset_conv_def unpack_int_def) (metis (no_types, lifting) add_mset_remove_trivial)
             show ?thesis using mset_remove_treelist[of i li] vals
               unfolding valid_list_aux_def valid_list_aux'_def leq[symmetric] LInt type_restr_mset_def mset_conv_rel i_def laux_rel
-              by auto fastforce
+              by fastforce
           next
             case (LString ls)
             then obtain i where i_def: "meval_trm f elem = EString i" using restr meval_def by auto
@@ -2255,7 +2284,7 @@ proof -
               by(simp add:str_mset_conv_def unpack_string_def) (metis (no_types, lifting) add_mset_remove_trivial)
             show ?thesis using mset_remove_treelist[of i ls] vals
               unfolding valid_list_aux_def valid_list_aux'_def leq[symmetric] LString type_restr_mset_def mset_conv_rel i_def laux_rel
-              by auto fastforce
+              by fastforce
           qed
         qed
         then show ?thesis using lookup_new by auto
@@ -2268,7 +2297,7 @@ proof -
       qed
     qed
     have "valid_maggaux ?args (RankAux (m', type)) (X - {elem})" 
-      using b_def valid_finite valid_aggtype valid_type_restr valid_key_invariant valid_value_invariant by simp meson
+      using b_def valid_finite valid_aggtype valid_type_restr valid_key_invariant valid_value_invariant by (simp del: Set.filter_eq) meson
     then show ?thesis using del_def by(simp only:Let_def) fastforce
   next
     case False
@@ -2581,10 +2610,12 @@ proof(cases l)
   have surj: "\<forall>t m. (t, m) \<in> ?s \<longrightarrow> (\<exists>k. unpack_int t = Some k)"
     using assms(1) LInt by(auto simp:int_mset_conv_def valid_list_aux_def type_restr_mset_def unpack_int_def split:event_data.splits)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_int t1)) (the (unpack_int t2))"
-    using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def) (smt (z3) filter_insert image_insert insertI1 mk_disjoint_insert)
+    using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EInt" using assms(1) assms(3) LInt flatten_multiset_range 
-    by(simp add: valid_list_aux_def type_restr_mset_def) (metis (no_types, lifting) assms(2) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+  have "set (x # xs) \<subseteq> range EInt" using assms(1-3) LInt 
+    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
+    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+    done
   then have type_restr: "x \<in> range EInt" "set xs \<subseteq> range EInt" by auto
   have "sorted_treelist (sort_treelist x1)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_int a)) (x # xs) = x' # xs'" "x' = the (unpack_int x)" "xs' = map (\<lambda>a. the (unpack_int a)) xs" by force
@@ -2592,7 +2623,6 @@ proof(cases l)
   then have *: "sorted (x' # xs')" unfolding unpack_def(1)[symmetric] unpack_def(2-3) by auto
   show ?thesis unfolding LInt get_edata_list.simps 
     using sort_eq[unfolded assms(3) unpack_def(1)] sorted_foldl_min[OF *, symmetric]  unpack_foldl_min_eq_int[OF type_restr] unfolding unpack_def(2-3) by transfer auto
-    
 next
   case (LString x2)
   then have valid: "valid_list_aux' x2 (mset_conv unpack_string ?s)" 
@@ -2600,10 +2630,12 @@ next
   have surj: "\<forall>t m. (t, m) \<in> ?s \<longrightarrow> (\<exists>k. unpack_string t = Some k)"
     using assms(1) LString by(auto simp:str_mset_conv_def valid_list_aux_def type_restr_mset_def unpack_string_def split:event_data.splits)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_string t1)) (the (unpack_string t2))"
-    using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def) (smt (z3) filter_insert image_insert insertI1 mk_disjoint_insert)
+    using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EString" using assms(1) assms(3) LString flatten_multiset_range 
-    by(simp add: valid_list_aux_def type_restr_mset_def) (metis (no_types, lifting) assms(2) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+  have "set (x # xs) \<subseteq> range EString" using assms(1-3) LString 
+    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
+    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+    done
   then have type_restr: "x \<in> range EString" "set xs \<subseteq> range EString" by auto
   have "sorted_treelist (sort_treelist x2)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_string a)) (x # xs) = x' # xs'" "x' = the (unpack_string x)" "xs' = map (\<lambda>a. the (unpack_string a)) xs" by force
@@ -2631,10 +2663,12 @@ proof(cases l)
   have surj: "\<forall>t m. (t, m) \<in> ?s \<longrightarrow> (\<exists>k. unpack_int t = Some k)"
     using assms(1) LInt by(auto simp:int_mset_conv_def valid_list_aux_def type_restr_mset_def unpack_int_def split:event_data.splits)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_int t1)) (the (unpack_int t2))"
-    using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def) (smt (z3) filter_insert image_insert insertI1 mk_disjoint_insert)
+    using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EInt" using assms(1) assms(3) LInt flatten_multiset_range 
-    by(simp add: valid_list_aux_def type_restr_mset_def) (metis (no_types, lifting) assms(2) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+  have "set (x # xs) \<subseteq> range EInt" using assms(1-3) LInt 
+    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
+    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+    done
   then have type_restr: "x \<in> range EInt" "set xs \<subseteq> range EInt" by auto
   have "sorted_treelist (sort_treelist x1)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_int a)) (x # xs) = x' # xs'" "x' = the (unpack_int x)" "xs' = map (\<lambda>a. the (unpack_int a)) xs" by force
@@ -2649,10 +2683,12 @@ next
   have surj: "\<forall>t m. (t, m) \<in> ?s \<longrightarrow> (\<exists>k. unpack_string t = Some k)"
     using assms(1) LString by(auto simp:str_mset_conv_def valid_list_aux_def type_restr_mset_def unpack_string_def split:event_data.splits)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_string t1)) (the (unpack_string t2))"
-    using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def) (smt (z3) filter_insert image_insert insertI1 mk_disjoint_insert)
+    using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EString" using assms(1) assms(3) LString flatten_multiset_range 
-    by(simp add: valid_list_aux_def type_restr_mset_def) (metis (no_types, lifting) assms(2) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+  have "set (x # xs) \<subseteq> range EString" using assms(1-3) LString
+    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
+    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
+    done
   then have type_restr: "x \<in> range EString" "set xs \<subseteq> range EString" by auto
   have "sorted_treelist (sort_treelist x2)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_string a)) (x # xs) = x' # xs'" "x' = the (unpack_string x)" "xs' = map (\<lambda>a. the (unpack_string a)) xs" by force

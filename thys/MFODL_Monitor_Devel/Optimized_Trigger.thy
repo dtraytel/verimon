@@ -1958,7 +1958,8 @@ lemma idx_filter:
   assumes "i < length (filter f xs)"
   shows "\<exists>i' \<in> {0..<length xs}. xs!i' = x"
   using assms
-  by (metis (full_types) Set.member_filter atLeastLessThan_iff filter_set in_set_conv_nth zero_le)
+  by (metis (no_types, lifting) atLeastLessThan_iff in_set_conv_nth
+      mem_Collect_eq set_filter zero_le)
 
 lemma idx_filter_pair:
   assumes "x = (filter f xs)!i"
@@ -6870,7 +6871,7 @@ proof -
                 by (simp_all add: valid_mmtaux_def)
               then have "\<forall>db \<in> set (linearize data_prev'). time db \<le> nt"
                 unfolding auxlist_data_prev_def
-                by (metis Set.member_filter filter_set)
+                by (metis (no_types, lifting) mem_Collect_eq set_filter)
               then show ?thesis
                 unfolding time_def ts_tuple_rel_f_def
                 by auto

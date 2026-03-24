@@ -887,7 +887,7 @@ context
 begin
 
 qualified definition card_UNIV' :: "'a card_UNIV"
-where [code del]: "card_UNIV' = Phantom('a) CARD('a)"
+where [code drop]: "card_UNIV' = Phantom('a) CARD('a)"
 
 lemma CARD_code [code_unfold]:
   "CARD('a) = of_phantom (card_UNIV' :: 'a card_UNIV)"
@@ -1110,7 +1110,7 @@ lemma RPDs_aux_code[code]:
   unfolding RPDs_aux_def bind_UNION
   by (subst saturate_code) auto
 
-declare RPDs_code[code del]
+declare RPDs_code[code drop]
 lemma RPDs_code[code]: "RPDs r = RPDs_aux {r}"
   unfolding RPDs_aux_def RPDs_code
   by (rule saturate_commute[where C="RPDs r"])
@@ -1123,7 +1123,7 @@ lemma LPDs_aux_code[code]:
   unfolding LPDs_aux_def bind_UNION
   by (subst saturate_code) auto
 
-declare LPDs_code[code del]
+declare LPDs_code[code drop]
 lemma LPDs_code[code]: "LPDs r = LPDs_aux {r}"
   unfolding LPDs_aux_def LPDs_code
   by (rule saturate_commute[where C="LPDs r"])
@@ -1138,7 +1138,7 @@ lemma is_empty_table_unfold [code_unfold]:
   "(set_empty impl) = X \<longleftrightarrow> Set.is_empty X"
   "set_eq (set_empty impl) X \<longleftrightarrow> Set.is_empty X"
   "set_eq X (set_empty impl) \<longleftrightarrow> Set.is_empty X"
-  unfolding set_eq_def set_empty_def empty_table_def Set.is_empty_def
+  unfolding set_eq_def set_empty_def empty_table_def
   by auto
 
 lemma tabulate_rbt_code[code]: "Monitor.mrtabulate (xs :: mregex list) f =
@@ -1450,7 +1450,7 @@ proof (rule set_eqI, rule iffI)
   fix x
   assume "x \<in> (\<lambda>k. Let (Set.filter (\<lambda>x. f x = k) rel) (g k)) ` f ` rel"
   then obtain t where t_def: "t \<in> rel" "x = g (f t) {x \<in> rel. f x = f t}"
-    by (auto simp: Set.filter_def)
+    by auto
   have "(f t, {b. (f t, b) \<in> (\<lambda>t. (f t, t)) ` rel}) \<in>
     (\<lambda>a. (a, {b. (a, b) \<in> (\<lambda>t. (f t, t)) ` rel})) ` fst ` (\<lambda>t. (f t, t)) ` rel"
     using t_def(1)
@@ -1469,7 +1469,7 @@ next
     by (auto simp add: image_def)
   then show "x \<in> (\<lambda>k. Let (Set.filter (\<lambda>x. f x = k) rel) (g k)) ` f ` rel"
     using t_def(1)
-    by (auto simp: t_def(2) Set.filter_def)
+    by (auto simp: t_def(2))
 qed
 
 lemma eval_agg_code[code]: "eval_agg n g0 y \<omega> tys f rel = (if g0 \<and> rel = empty_table
@@ -1767,7 +1767,7 @@ lemmas meinit0_code_simps = default_maux.meinit0.simps[unfolded verimon_maux.ini
 
 lemmas vmeinit0_code_simps = verimon_maux.meinit0.simps[unfolded verimon_maux.init_and_trigger'_def]
 
-declare default_maux.meinit0.simps [code del]
+declare default_maux.meinit0.simps [code drop]
 
 declare meinit0_code_simps [code]
   and vmeinit0_code_simps [code]
