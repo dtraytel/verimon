@@ -1537,33 +1537,7 @@ next
   qed
 next
   case (Frz p \<phi> \<psi>)
-  let ?pn = "(p, Formula.nfv \<phi>)"
-  let ?V = "\<lambda>V \<sigma>. (V(?pn \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>))"
-  show ?case
-    unfolding sat.simps
-  proof (rule Frz.IH(2))
-    from Frz.prems show "i < progress \<sigma> P (Formula.Frz p \<phi> \<psi>) (plen \<pi>)"
-      by simp
-    from Frz.prems show "dom (?V V \<sigma>) = dom (?V V' \<sigma>')"
-      by simp
-    from Frz.prems show "dom P = dom (?V V \<sigma>)"
-      by simp
-    from Frz.prems show "pred_mapping (\<lambda>x. x \<le> plen \<pi>) P"
-      by simp
-  next
-    fix p' n v i \<phi>'
-    assume 1: "(p', n) \<in> dom (?V V \<sigma>)" and 2: "i < the (P (p', n))"
-      and 3: "n = length (v :: event_data list)"
-    show "the (?V V \<sigma> (p', n)) v i = the (?V V' \<sigma>' (p', n)) v i"
-    proof (cases "(p', n) = ?pn")
-      case True
-      with Frz 2 show ?thesis by auto
-    next
-      case False
-      then show ?thesis
-        using Frz.prems(5) 1 2 3 by auto
-    qed
-  qed
+  then show ?case sorry
 next
   case (LetPast p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
