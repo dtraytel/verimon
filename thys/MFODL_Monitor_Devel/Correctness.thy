@@ -1416,14 +1416,28 @@ proof -
     by blast
 qed
 
-
-
 lemma (in maux) wf_frz_queue_extend:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
+    and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
   shows "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip..<progress \<sigma> P' \<phi> (j + \<delta>)] (xs @ ys)"
-  sorry
+proof -
+  let ?jphi = "progress \<sigma> P \<phi> j"
+  let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
+  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+  from state have queue_old: "wf_frz_queue \<sigma> V m \<phi> [?jfrz + skip..< ?jphi] xs"
+    and bound_old: "?jfrz + skip \<le> ?jphi"
+    by (auto simp: wf_frz_state_def Let_def)
+  have queue_new: "wf_frz_queue \<sigma> V m \<phi> [?jphi..< ?jphi'] ys"
+    using phi_res by (simp add: wf_frz_queue_def frz_qtable_def)
+  have interval: "[?jfrz + skip..< ?jphi'] = [?jfrz + skip..< ?jphi] @ [?jphi..< ?jphi']"
+    using bound_old mono upt_add_eq_append' by blast
+  show ?thesis
+    unfolding wf_frz_queue_def interval
+    using queue_old queue_new
+    by (meson list_all2_appendI wf_frz_queue_def)
+qed
 
 lemma (in maux) freeze_meval0_post:
   assumes ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P \<phi> j"
@@ -1481,13 +1495,13 @@ next
     with ev Cons rec show ?thesis
       by (simp add: freeze_meval0.simps)
   qed
-
 qed
 
 lemma (in maux) frz_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
+    and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
   shows "let (skip', xs') = discharge_skip skip (xs @ ys)
     in wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip' xs'"
   sorry
@@ -1690,8 +1704,19 @@ next
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs) in
       wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s1"
-    using \<phi>_step frz_state_step[OF wf_state]
-    by fastforce
+  proof -
+    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
+    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
+      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
+    from \<phi>_step[unfolded e\<phi>] have resx:
+      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
+        [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
+      by auto
+    show ?thesis
+      unfolding e\<phi> Let_def
+      using frz_state_step[OF wf_state resx phi_prog_mono]
+      by simp
+  qed
   moreover have replay_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
