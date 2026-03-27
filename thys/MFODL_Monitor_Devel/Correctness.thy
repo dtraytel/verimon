@@ -1692,7 +1692,7 @@ next
       wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s1"
     using \<phi>_step frz_state_step[OF wf_state]
     by fastforce
-  have replay_step:
+  moreover have replay_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
           (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
@@ -1715,7 +1715,7 @@ next
       unfolding e\<phi> ds ef Let_def using rem
       by (simp add: ds ef)
   qed
-  have out_step:
+  moreover have out_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
           (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
@@ -1738,7 +1738,7 @@ next
       unfolding e\<phi> ds ef Let_def using len
       by (simp add: ds ef)
   qed
-  then show ?case
+  ultimately show ?case
     sorry
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
