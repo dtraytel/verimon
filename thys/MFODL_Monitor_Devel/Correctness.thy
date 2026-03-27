@@ -1711,36 +1711,16 @@ next
        in \<exists>ks. wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1 \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>))"
   proof -
     let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
-    let ?jphi = "progress \<sigma> P \<phi>1 j"
-    let ?jphi' = "progress \<sigma> P' \<phi>1 (j + \<delta>)"
-    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
     obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
       by (cases "meval (j + \<delta>) m ?ts db \<phi>")
     from \<phi>_step[unfolded e\<phi>] have resx:
-      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1)) [?jphi..< ?jphi'] xs"
+      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
+        [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
       by auto
-    from wf_state have queue_old: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz + skip0..< ?jphi] \<alpha>s"
-      and bound_old: "?jfrz + skip0 \<le> ?jphi"
-      by (auto simp: wf_frz_state_def Let_def)
-    have queue_new: "wf_frz_queue \<sigma> V m \<phi>1 [?jphi..< ?jphi'] xs"
-      using resx by (simp add: wf_frz_queue_def frz_qtable_def)
-    have interval: "[?jfrz + skip0..< ?jphi'] = [?jfrz + skip0..< ?jphi] @ [?jphi..< ?jphi']"
-      using bound_old phi_prog_mono
-      using upt_add_eq_append' by blast
-    have queue0: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz + skip0..< ?jphi'] (\<alpha>s @ xs)"
-      unfolding wf_frz_queue_def interval using queue_old queue_new
-      by (meson list_all2_appendI wf_frz_queue_def)
     obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
-    have len0: "length [?jfrz + skip0..< ?jphi'] = length (\<alpha>s @ xs)"
-      using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
-    let ?ks = "drop (length (\<alpha>s @ xs) - length \<alpha>s1) [?jfrz + skip0..< ?jphi']"
-    have queue1: "wf_frz_queue \<sigma> V m \<phi>1 ?ks \<alpha>s1"
-      using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
-    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
-      by auto
-    show ?thesis
-      unfolding e\<phi> Let_def using ds queue1 lt1 by auto
+    from frz_queue_step(1)[OF wf_state resx phi_prog_mono ds] show ?thesis
+      unfolding e\<phi> Let_def using ds by auto
   qed
   have state_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
@@ -1820,7 +1800,21 @@ next
        (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
       by (auto simp add: Let_def e\<phi> e\<psi>0 ds ef)
     show ?thesis
-      unfolding meq Frz_eq
+      unfolding meq Frz_eq prod.case
+      apply (intro conjI wf_mformula.Frz allI impI)
+      subgoal using \<phi>_step e\<phi> by auto
+      subgoal
+        apply (rule conjunct1[OF MFrz(2)[OF refl wf_\<psi> _ wty2, of \<delta> _ "Mapping.delete (p, m) db",
+          unfolded e\<psi>0 prod.case]])
+        sorry
+      subgoal for k X
+        sorry
+      subgoal
+        sorry
+      subgoal by (simp add: fv(2))
+      subgoal by (simp add: fv)
+      subgoal by (simp add: safe1)
+      subgoal by (simp add: safe2)
       sorry
   qed
 next
