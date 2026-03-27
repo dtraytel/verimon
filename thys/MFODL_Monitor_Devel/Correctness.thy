@@ -22,6 +22,13 @@ definition (in maux) frz_sat where
 definition (in maux) wf_frz_queue where
   "wf_frz_queue \<sigma> V m \<phi> ks Xs = list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi> k X) ks Xs"
 
+
+lemma (in maux) wf_frz_queue_discharge_skip:
+  assumes q: "wf_frz_queue \<sigma> V m \<phi> ks xs"
+    and ds: "discharge_skip skip xs = (skip', xs')"
+    and len: "length ks = length xs"
+  shows "wf_frz_queue \<sigma> V m \<phi> (drop (length xs - length xs') ks) xs'"
+  sorry
 definition (in maux) wf_frz_state where
   "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip Xs =
     (let jphi = progress \<sigma> P \<phi> j;
@@ -1321,6 +1328,34 @@ next
   case (3 skip \<alpha> \<alpha>s)
   then show ?case by simp
 qed
+lemma (in maux) discharge_skip_wf_frz_state:
+  assumes wf: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
+    and ds: "discharge_skip skip xs = (skip', xs')"
+  shows "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip' xs'"
+proof -
+  let ?jphi = "progress \<sigma> P \<phi> j"
+  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+  from wf have bounds: "?jfrz + skip \<le> ?jphi"
+    and queue: "wf_frz_queue \<sigma> V m \<phi> [?jfrz + skip..< ?jphi] xs"
+    and skip_nil: "skip > 0 \<longrightarrow> xs = []"
+    by (auto simp: wf_frz_state_def Let_def)
+  have len: "length [?jfrz + skip..< ?jphi] = length xs"
+    using bounds queue by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+  have queue': "wf_frz_queue \<sigma> V m \<phi> (drop (length xs - length xs') [?jfrz + skip..< ?jphi]) xs'"
+    using wf_frz_queue_discharge_skip[OF queue ds len] .
+  have skip_nil': "skip' > 0 \<longrightarrow> xs' = []"
+    using discharge_skip_pos_empty[OF ds] by blast
+  show ?thesis
+    sorry
+qed
+
+
+lemma (in maux) discharge_skip_wf_frz_state_skipD:
+  assumes wf: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
+    and ds: "discharge_skip skip xs = (skip', xs')"
+    and pos: "skip' > 0"
+  shows "xs' = []"
+  using discharge_skip_pos_empty[OF ds pos] .
 
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
