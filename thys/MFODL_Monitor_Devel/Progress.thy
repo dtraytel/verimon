@@ -788,6 +788,13 @@ lemma le_letpast_progress_preservation:
    apply (rule letpast_progress_mono[OF P P' jj' PP'])
   using i letpast_progress_le[OF P] by (rule order_trans)
 
+lemma Least_antimono: "Q \<le> P \<Longrightarrow> \<exists>x. Q x \<Longrightarrow> Least P \<le> Least (Q :: nat \<Rightarrow> bool)"
+  apply (erule exE)
+  apply (rule Least_le)
+  apply (rule LeastI2_wellorder)
+   apply auto
+  done
+
 lemma safe_letpast_progress_upd':
   fixes \<phi> :: "'t Formula.formula"
   shows "safe_letpast p \<phi> \<le> NonFutuRec \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P 
@@ -868,76 +875,234 @@ next
   case (Frz e \<phi> \<psi>)
   let ?en = "(e, Formula.nfv \<phi>)"
   let ?y\<phi> = "if safe_letpast p \<phi> = NonFutuRec then x else min (Suc x) j"
-  let ?y\<psi> = "if safe_letpast ?en \<psi> = NonFutuRec then ?y\<phi> else min (Suc ?y\<phi>) j"
-  have P\<phi>_le: "pred_mapping (\<lambda>x. x \<le> j) (P(?en \<mapsto> progress \<sigma> P \<phi> j))"
-    using Frz.prems(2) by (simp add: progress_le_gen)
-  have Px\<phi>_le: "pred_mapping (\<lambda>x. x \<le> j) (P(?en \<mapsto> progress \<sigma> (P(p \<mapsto> x)) \<phi> j))"
-    using Frz.prems(2,3) by (simp add: progress_le_gen)
+  let ?y\<psi> = "if safe_letpast p \<psi> = NonFutuRec then x else min (Suc x) j"
+  let ?p\<phi> = "progress \<sigma> P \<phi> j"
+  let ?px\<phi> = "progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+  let ?a = "\<lambda>i. if i < ?p\<phi> then j else 0"
+  let ?a' = "\<lambda>i. if i < ?px\<phi> then j else 0"
+  let ?r = "progress \<sigma> P (Formula.Frz e \<phi> \<psi>) j"
+  let ?r' = "progress \<sigma> (P(p \<mapsto> x)) (Formula.Frz e \<phi> \<psi>) j"
+  have Px_le: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> x))"
+    using Frz.prems(2,3) by simp
+  have r_le: "?r \<le> j"
+    by (rule progress_le_gen[OF Frz.prems(2)])
+  have r'_le: "?r' \<le> j"
+    by (rule progress_le_gen[OF Px_le])
   show ?case
   proof (cases "?en = p")
     case True
-    then show ?thesis
-      unfolding progress.simps Let_def
-      apply (rule order_trans[OF _ arg_cong[where f=Least, OF refl]])
-      using Frz.prems by auto
+    show ?thesis
+    proof (cases "safe_letpast ?en \<psi> = Unused")
+      case psi_unused: True
+      have not_contains: "\<not> contains_pred ?en \<psi>"
+        using safe_letpast_Unused[OF psi_unused] .
+      have p\<psi>_le: "progress \<sigma> P \<psi> j \<le> j"
+        by (rule progress_le_gen[OF Frz.prems(2)])
+      have px\<psi>_le: "progress \<sigma> (P(p \<mapsto> x)) \<psi> j \<le> j"
+        by (rule progress_le_gen[OF Px_le])
+      have r_eq: "?r = progress \<sigma> P \<psi> j"
+        unfolding progress.simps Let_def
+        using not_contains p\<psi>_le
+        by (intro Least_equality) simp_all
+      have r'_eq: "?r' = progress \<sigma> P \<psi> j"
+        unfolding progress.simps Let_def
+        using not_contains True px\<psi>_le
+        by (intro Least_equality) simp_all
+      show ?thesis
+        using r'_eq r_eq by linarith
+    next
+      case psi_used: False
+      have safe_\<phi>: "safe_letpast p \<phi> \<le> NonFutuRec"
+        using Frz.prems(1) True psi_used by simp
+      have y_eq: "y = ?y\<phi>"
+        using Frz.prems(1,4) True psi_used
+        by (simp add: frz_dep_def)
+      have ge_\<phi>: "min ?y\<phi> ?p\<phi> \<le> ?px\<phi>"
+        using Frz.IH(1)[OF safe_\<phi> Frz.prems(2,3)]
+        by blast
+      have r'_ex: "\<exists>i. i \<le> j \<and> progress \<sigma> (P(p \<mapsto> ?a' i)) \<psi> j \<le> i"
+      proof
+        have pm: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> ?a' j))"
+          using Frz.prems(2) by auto
+        moreover have "progress \<sigma> (P(p \<mapsto> ?a' j)) \<psi> j \<le> j"
+          by (rule progress_le_gen[OF pm])
+        ultimately show "j \<le> j \<and> progress \<sigma> (P(p \<mapsto> ?a' j)) \<psi> j \<le> j"
+          by simp
+      qed
+      have r'_prop: "?r' \<le> j \<and> progress \<sigma> (P(p \<mapsto> ?a' ?r')) \<psi> j \<le> ?r'"
+        unfolding progress.simps Let_def
+        using r'_ex True
+        by (simp add: exists_least_iff')
+      show ?thesis
+      proof (cases "?r' < min y ?r")
+        case less_min: True
+        have r'_lt_y: "?r' < y" and r'_lt_r: "?r' < ?r"
+          using less_min by simp_all
+        have a_le: "?a ?r' \<le> ?a' ?r'"
+        proof (cases "?r' < ?p\<phi>")
+          case True': True
+          have "?r' < min ?y\<phi> ?p\<phi>"
+            using r'_lt_y y_eq True' by simp
+          also have "... \<le> ?px\<phi>"
+            using ge_\<phi> by simp
+          finally have "?r' < ?px\<phi>" .
+          with True' show ?thesis by simp
+        next
+          case False
+          then show ?thesis by simp
+        qed
+        have pm_l: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> ?a ?r'))"
+          using Frz.prems(2) by auto
+        have pm_r: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> ?a' ?r'))"
+          using Frz.prems(2) by auto
+        have rm: "rel_mapping (\<le>) (P(p \<mapsto> ?a ?r')) (P(p \<mapsto> ?a' ?r'))"
+          by (rule rel_mapping_le_map_upd[OF a_le])
+        have old_le: "progress \<sigma> (P(p \<mapsto> ?a ?r')) \<psi> j \<le> ?r'"
+        proof -
+          have "progress \<sigma> (P(p \<mapsto> ?a ?r')) \<psi> j \<le> progress \<sigma> (P(p \<mapsto> ?a' ?r')) \<psi> j"
+            by (rule progress_mono_gen[OF order_refl pm_l pm_r rm])
+          also have "... \<le> ?r'"
+            using r'_prop by simp
+          finally show ?thesis .
+        qed
+        have "?r \<le> ?r'"
+          apply (subst progress.simps, unfold Let_def)
+          apply (intro Least_le conjI r'_le)
+          apply (rule order_trans[OF _ old_le])
+          using True by auto
+        with r'_lt_r show ?thesis by simp
+      next
+        case False
+        then show ?thesis
+          by linarith
+      qed
+    qed
   next
     case False
-    have ge\<phi>: "min ?y\<phi> (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
-      using Frz.IH(1)[OF _ Frz.prems(2,3)] Frz.prems(1,4)
-      by simp
-    have ge\<psi>: "min ?y\<psi> (progress \<sigma> (P(?en \<mapsto> progress \<sigma> P \<phi> j)) \<psi> j) \<le>
-      progress \<sigma> (P(?en \<mapsto> progress \<sigma> (P(p \<mapsto> x)) \<phi> j, p \<mapsto> x)) \<psi> j"
-    proof (rule Frz.IH(2)[of ?en _ ?y\<phi> ?y\<psi>])
-      show "safe_letpast ?en \<psi> \<le> NonFutuRec"
-        using Frz.prems(1) False by (simp add: frz_dep_def)
-      show "pred_mapping (\<lambda>x. x \<le> j) (P(?en \<mapsto> progress \<sigma> (P(p \<mapsto> x)) \<phi> j))"
-        by (rule Px\<phi>_le)
-      show "?y\<phi> \<le> j"
-        using Frz.prems(3) by simp
-      show "?y\<psi> = (if safe_letpast ?en \<psi> = NonFutuRec then ?y\<phi> else min (Suc ?y\<phi>) j)"
-        by simp
-    qed
-    have ge\<psi>': "min ?y\<psi> (progress \<sigma> (P(?en \<mapsto> progress \<sigma> P \<phi> j)) \<psi> j) \<le>
-      progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> progress \<sigma> (P(p \<mapsto> x)) \<phi> j)) \<psi> j"
-      using ge\<psi> False by (simp add: fun_upd_twist)
-    have y_le: "y \<le> ?y\<phi>"
-      using Frz.prems(1,3,4) by (auto simp: frz_dep_def)
-    have yy_le: "y \<le> ?y\<psi>"
-      using Frz.prems(1,3,4) by (auto simp: frz_dep_def)
-    have frz_mono: "progress \<sigma> (P(p \<mapsto> x)) (Formula.Frz e \<phi> \<psi>) j \<ge>
-      frz_progress \<sigma> (P(p \<mapsto> x)) e \<phi> \<psi> j"
-      by simp
-    have witness: "frz_progress \<sigma> (P(p \<mapsto> x)) e \<phi> \<psi> j \<ge> min y (frz_progress \<sigma> P e \<phi> \<psi> j)"
-      unfolding progress.simps Let_def
-    proof (cases "frz_progress \<sigma> P e \<phi> \<psi> j \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j")
-      case True
-      let ?r = "frz_progress \<sigma> P e \<phi> \<psi> j"
-      have r_le: "?r \<le> j"
-        using progress_le_gen[OF Frz.prems(2), of "Formula.Frz e \<phi> \<psi>"] Frz.prems(2) by simp
-      have a_le: "(if ?r < progress \<sigma> P \<phi> j then j else 0) \<le>
-        (if ?r < progress \<sigma> (P(p \<mapsto> x)) \<phi> j then j else 0)"
-        using True ge\<phi> y_le by auto
-      have rm: "rel_mapping (\<le>) (P(?en \<mapsto> (if ?r < progress \<sigma> P \<phi> j then j else 0)))
-        (P(p \<mapsto> x, ?en \<mapsto> (if ?r < progress \<sigma> (P(p \<mapsto> x)) \<phi> j then j else 0)))"
-        using False a_le Frz.prems(2,3) by (auto simp: rel_mapping_alt fun_upd_twist)
-      have pmx: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> x, ?en \<mapsto> (if ?r < progress \<sigma> (P(p \<mapsto> x)) \<phi> j then j else 0)))"
-        using Frz.prems(2,3) by (auto simp: fun_upd_twist)
-      have pmp: "pred_mapping (\<lambda>x. x \<le> j) (P(?en \<mapsto> (if ?r < progress \<sigma> P \<phi> j then j else 0)))"
-        using Frz.prems(2) by auto
-      have "progress \<sigma> (P(?en \<mapsto> (if ?r < progress \<sigma> P \<phi> j then j else 0))) \<psi> j \<le>
-        progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> (if ?r < progress \<sigma> (P(p \<mapsto> x)) \<phi> j then j else 0))) \<psi> j"
-        using Frz(2)[OF order_refl pmp pmx rm] by simp
-      also have "... \<le> ?r"
-        using ge\<psi>' True unfolding progress.simps Let_def by simp
-      finally show ?thesis
-        using True unfolding progress.simps Let_def by (rule Least_le)
+    show ?thesis
+    proof (cases "safe_letpast ?en \<psi> = Unused")
+      case psi_unused: True
+      have not_contains: "\<not> contains_pred ?en \<psi>"
+        using safe_letpast_Unused[OF psi_unused] .
+      have safe_\<psi>: "safe_letpast p \<psi> \<le> NonFutuRec"
+        using Frz.prems(1) False psi_unused by simp
+      have y_eq: "y = ?y\<psi>"
+        using Frz.prems(1,4) False psi_unused
+        by (simp add: frz_dep_def)
+      have p\<psi>_le: "progress \<sigma> P \<psi> j \<le> j"
+        by (rule progress_le_gen[OF Frz.prems(2)])
+      have px\<psi>_le: "progress \<sigma> (P(p \<mapsto> x)) \<psi> j \<le> j"
+        by (rule progress_le_gen[OF Px_le])
+      have r_eq: "?r = progress \<sigma> P \<psi> j"
+        unfolding progress.simps Let_def
+        using not_contains p\<psi>_le
+        by (intro Least_equality) simp_all
+      have r'_eq: "?r' = progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
+        unfolding progress.simps Let_def
+        using not_contains False px\<psi>_le
+        by (intro Least_equality) (simp_all add: fun_upd_twist)
+      show ?thesis
+        using Frz.IH(2)[OF safe_\<psi> Frz.prems(2,3) y_eq]
+        r_eq r'_eq by linarith
     next
-      case False
-      then show ?thesis
-        by (simp add: min_def not_le)
+      case psi_used: False
+      have safe_\<phi>: "safe_letpast p \<phi> \<le> NonFutuRec"
+        using Frz.prems(1) False psi_used by simp
+      have safe_\<psi>: "safe_letpast p \<psi> \<le> NonFutuRec"
+        using Frz.prems(1) False by simp
+      have y_le_\<phi>: "y \<le> ?y\<phi>"
+        using Frz.prems(1,4) False psi_used
+        by (simp add: Frz.prems(3) frz_dep_def sup_eq_NonFutuRec_iff)
+      have y_le_\<psi>: "y \<le> ?y\<psi>"
+        using Frz.prems(1,4) False psi_used
+        by (simp add: Frz.prems(3) frz_dep_def sup_eq_NonFutuRec_iff)
+      have ge_\<phi>: "min ?y\<phi> ?p\<phi> \<le> ?px\<phi>"
+        using Frz.IH(1)[OF safe_\<phi> Frz.prems(2,3)]
+        by blast
+      have r'_ex:
+        "\<exists>i. i \<le> j \<and> progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' i)) \<psi> j \<le> i"
+      proof
+        have pm: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> x, ?en \<mapsto> ?a' j))"
+          using Frz.prems(2,3) False by (auto simp: fun_upd_twist)
+        moreover have "progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' j)) \<psi> j \<le> j"
+          by (rule progress_le_gen[OF pm])
+        ultimately show "j \<le> j \<and> progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' j)) \<psi> j \<le> j"
+          by simp
+      qed
+      have r'_prop:
+        "?r' \<le> j \<and> progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' ?r')) \<psi> j \<le> ?r'"
+        unfolding progress.simps Let_def
+        using r'_ex False
+        by (simp add: exists_least_iff')
+      show ?thesis
+      proof (cases "?r' < min y ?r")
+        case True
+        have r'_lt_y: "?r' < y" and r'_lt_r: "?r' < ?r"
+          using True by simp_all
+        have r'_lt_y\<phi>: "?r' < ?y\<phi>"
+          using r'_lt_y y_le_\<phi> by linarith
+        have r'_lt_y\<psi>: "?r' < ?y\<psi>"
+          using r'_lt_y y_le_\<psi> by linarith
+        have a_le: "?a ?r' \<le> ?a' ?r'"
+        proof (cases "?r' < ?p\<phi>")
+          case True': True
+          have "?r' < min ?y\<phi> ?p\<phi>"
+            using r'_lt_y\<phi> True' by simp
+          also have "... \<le> ?px\<phi>"
+            using ge_\<phi> by simp
+          finally have "?r' < ?px\<phi>" .
+          with True' show ?thesis by simp
+        next
+          case False
+          then show ?thesis by simp
+        qed
+        have pm_mid: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> x, ?en \<mapsto> ?a ?r'))"
+          using Frz.prems(2,3) False by (auto simp: fun_upd_twist)
+        have pm_r: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> x, ?en \<mapsto> ?a' ?r'))"
+          using Frz.prems(2,3) False by (auto simp: fun_upd_twist)
+        have rm: "rel_mapping (\<le>) (P(p \<mapsto> x, ?en \<mapsto> ?a ?r')) (P(p \<mapsto> x, ?en \<mapsto> ?a' ?r'))"
+          by (intro rel_mapping_map_upd a_le rel_mapping_order_refl)
+        have mid_le: "progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a ?r')) \<psi> j \<le> ?r'"
+        proof -
+          have "progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a ?r')) \<psi> j
+            \<le> progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' ?r')) \<psi> j"
+            by (rule progress_mono_gen[OF order_refl pm_mid pm_r rm])
+          also have "... \<le> ?r'"
+            using r'_prop by simp
+          finally show ?thesis .
+        qed
+        have base_step:
+          "min ?y\<psi> (progress \<sigma> (P(?en \<mapsto> ?a ?r')) \<psi> j)
+            \<le> progress \<sigma> (P(?en \<mapsto> ?a ?r', p \<mapsto> x)) \<psi> j"
+        proof (rule Frz.IH(2)[of p "P(?en \<mapsto> ?a ?r')" x ?y\<psi>])
+          show "safe_letpast p \<psi> \<le> NonFutuRec"
+            by (rule safe_\<psi>)
+          show "pred_mapping (\<lambda>x. x \<le> j) (P(?en \<mapsto> ?a ?r'))"
+            using Frz.prems(2) by auto
+          show "x \<le> j"
+            by (rule Frz.prems(3))
+          show "?y\<psi> = (if safe_letpast p \<psi> = NonFutuRec then x else min (Suc x) j)"
+            by simp
+        qed
+        have base_le: "progress \<sigma> (P(?en \<mapsto> ?a ?r')) \<psi> j \<le> ?r'"
+        proof -
+          have "progress \<sigma> (P(?en \<mapsto> ?a ?r', p \<mapsto> x)) \<psi> j =
+            progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a ?r')) \<psi> j"
+            using False by (simp add: fun_upd_twist)
+          with base_step mid_le show ?thesis
+            using r'_lt_y\<psi> by linarith
+        qed
+        have "?r \<le> ?r'"
+          unfolding progress.simps Let_def
+          using r'_le base_le False
+          by (metis (lifting) not_less_Least progress.simps(3) r'_lt_r)
+        with r'_lt_r show ?thesis by simp
+      next
+        case False
+        then show ?thesis
+          by linarith
+      qed
     qed
-    then show ?thesis
-      by simp
   qed
 next
   case (LetPast e \<phi> \<psi>)
