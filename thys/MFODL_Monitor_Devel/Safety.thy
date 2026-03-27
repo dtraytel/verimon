@@ -263,6 +263,15 @@ lemma mult_le_NonFutuRec_cases:
 lemma mult_eq_NonFutuRec_iff: "x * y = NonFutuRec \<longleftrightarrow> x = NonFutuRec \<and> y = NonFutuRec"
   by (cases x; cases y) simp_all
 
+definition frz_dep where
+  "frz_dep x y = (if x = Unused then Unused else y)"
+
+lemma frz_dep_eq_Unused_iff[simp]: "frz_dep x y = Unused \<longleftrightarrow> x = Unused \<or> y = Unused"
+  by (cases x; cases y) (simp_all add: frz_dep_def)
+
+lemma frz_dep_le_NonFutuRec_iff[simp]: "frz_dep x y \<le> NonFutuRec \<longleftrightarrow> x = Unused \<or> y \<le> NonFutuRec"
+  by (cases x; cases y) (simp_all add: frz_dep_def)
+
 context begin
 
 fun safe_letpast :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> rec_safety" 
@@ -274,7 +283,7 @@ fun safe_letpast :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula 
         (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion>
         (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
   | "safe_letpast p (Formula.Frz e \<phi> \<psi>) =
-        (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion>
+        (frz_dep (safe_letpast (e, Formula.nfv \<phi>) \<psi>) (safe_letpast p \<phi>)) \<squnion>
         (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
   | "safe_letpast p (Formula.LetPast e \<phi> \<psi>) =
         (if p = (e, Formula.nfv \<phi>) then Unused else
@@ -367,7 +376,60 @@ next
   finally show ?case by (simp del: fun_upd_apply)
 next
   case (Frz e \<phi> \<psi>)
-  then show ?case sorry
+  let ?en = "(e, Formula.nfv \<phi>)"
+  let ?s\<phi> = "\<lambda>V v j. Formula.sat \<sigma> V v i \<phi>"
+  let ?s\<psi> = "\<lambda>V. Formula.sat \<sigma> V v i \<psi>"
+  have eq1: "?s\<psi> (V(p \<mapsto> f, ?en \<mapsto> ?s\<phi> (V(p \<mapsto> f)))) = ?s\<psi> (V(p \<mapsto> f, ?en \<mapsto> ?s\<phi> (V(p \<mapsto> g))))"
+  proof (cases "safe_letpast ?en \<psi> = Unused")
+    case True
+    then show ?thesis
+      by (simp add: safe_letpast_Unused)
+  next
+    case False
+    from Frz.prems(1) False have "safe_letpast p \<phi> \<le> NonFutuRec"
+      by simp
+    have eq_\<phi>: "?s\<phi> (V(p \<mapsto> f)) = ?s\<phi> (V(p \<mapsto> g))"
+    proof (rule ext)
+      fix v'
+      show "?s\<phi> (V(p \<mapsto> f)) v' = ?s\<phi> (V(p \<mapsto> g)) v'"
+      proof (rule ext)
+        fix j
+        show "?s\<phi> (V(p \<mapsto> f)) v' j = ?s\<phi> (V(p \<mapsto> g)) v' j"
+          using `safe_letpast p \<phi> \<le> NonFutuRec` Frz.prems(1,2,3) False
+          by (intro Frz.IH(1)) (simp_all add: frz_dep_def sup_eq_NonFutuRec_iff)
+      qed
+    qed
+    then show ?thesis
+      by (simp add: eq_\<phi>)
+  qed
+  have eq2: "?s\<psi> (V(p \<mapsto> f, ?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)))) = ?s\<psi> (V(p \<mapsto> g, ?en \<mapsto> ?s\<phi> (V(p \<mapsto> g))))"
+  proof (cases "p = ?en")
+    case True
+    then show ?thesis by simp
+  next
+    case False
+    from Frz.prems(1) False have "safe_letpast p \<psi> \<le> NonFutuRec"
+      by simp
+    moreover have "safe_letpast p \<psi> = NonFutuRec \<Longrightarrow> (\<And>v j. j \<le> i \<Longrightarrow> f v j = g v j)"
+    proof -
+      assume p\<psi>: "safe_letpast p \<psi> = NonFutuRec"
+      have "NonFutuRec \<le> safe_letpast p (Formula.Frz e \<phi> \<psi>)"
+        using False p\<psi> by simp
+      moreover have "safe_letpast p (Formula.Frz e \<phi> \<psi>) \<le> NonFutuRec"
+        using Frz.prems(1) .
+      ultimately have "safe_letpast p (Formula.Frz e \<phi> \<psi>) = NonFutuRec"
+        by order
+      with Frz.prems(2) show "\<And>v j. j \<le> i \<Longrightarrow> f v j = g v j" .
+    qed
+    moreover have "\<And>v j. j < i \<Longrightarrow> f v j = g v j"
+      by (rule Frz.prems(3))
+    ultimately have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
+      by (intro Frz.IH(2)) blast+
+    then show ?thesis
+      using False by (simp add: fun_upd_twist[of p])
+  qed
+  show "Formula.sat \<sigma> (V(p \<mapsto> f)) v i (Formula.Frz e \<phi> \<psi>) = Formula.sat \<sigma> (V(p \<mapsto> g)) v i (Formula.Frz e \<phi> \<psi>)"
+    using eq1 eq2 by (simp del: fun_upd_apply)
 next
   case (LetPast e \<phi> \<psi>)
   let ?en = "(e, Formula.nfv \<phi>)"
