@@ -1640,6 +1640,52 @@ next
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
     using MFrz(1)[OF wf_\<phi> MFrz.prems(2) wty1]
     by (auto simp: eqTrueI[OF mem_restr_UNIV, abs_def])
+  have phi_prog_mono: "progress \<sigma> P \<phi>1 j \<le> progress \<sigma> P' \<phi>1 (j + \<delta>)"
+  proof -
+    from MFrz.prems(2) have pm: "pred_mapping (\<lambda>x. x \<le> j) P"
+      and pm': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'"
+      and rm: "rel_mapping (\<le>) P P'"
+      by auto
+    show ?thesis
+      by (rule progress_mono_gen[OF le_add1 pm pm' rm])
+  qed
+  have queue_step:
+    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
+       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs)
+       in \<exists>ks. wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1 \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>))"
+  proof -
+    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
+    let ?jphi = "progress \<sigma> P \<phi>1 j"
+    let ?jphi' = "progress \<sigma> P' \<phi>1 (j + \<delta>)"
+    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
+      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
+    from \<phi>_step[unfolded e\<phi>] have resx:
+      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1)) [?jphi..< ?jphi'] xs"
+      by auto
+    from wf_state have queue_old: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz + skip0..< ?jphi] \<alpha>s"
+      and bound_old: "?jfrz + skip0 \<le> ?jphi"
+      by (auto simp: wf_frz_state_def Let_def)
+    have queue_new: "wf_frz_queue \<sigma> V m \<phi>1 [?jphi..< ?jphi'] xs"
+      using resx by (simp add: wf_frz_queue_def frz_qtable_def)
+    have interval: "[?jfrz + skip0..< ?jphi'] = [?jfrz + skip0..< ?jphi] @ [?jphi..< ?jphi']"
+      using bound_old phi_prog_mono
+      using upt_add_eq_append' by blast
+    have queue0: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz + skip0..< ?jphi'] (\<alpha>s @ xs)"
+      unfolding wf_frz_queue_def interval using queue_old queue_new
+      by (meson list_all2_appendI wf_frz_queue_def)
+    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
+      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
+    have len0: "length [?jfrz + skip0..< ?jphi'] = length (\<alpha>s @ xs)"
+      using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+    let ?ks = "drop (length (\<alpha>s @ xs) - length \<alpha>s1) [?jfrz + skip0..< ?jphi']"
+    have queue1: "wf_frz_queue \<sigma> V m \<phi>1 ?ks \<alpha>s1"
+      using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
+    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
+      by auto
+    show ?thesis
+      unfolding e\<phi> Let_def using ds queue1 lt1 by auto
+  qed
   have state_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs) in
@@ -1651,14 +1697,49 @@ next
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
           (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
       in (\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x)"
-    sorry
+  proof -
+    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
+    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
+      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
+    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
+      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
+    from queue_step[unfolded e\<phi> Let_def, simplified ds] obtain ks where
+      queue1: "wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1" and ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>)"
+      using ds by auto
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi> = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>")
+    from freeze_meval0_post[OF ks_lt queue1, unfolded ef] have rem:
+      "\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x"
+      by (smt (verit) case_prodD ef)
+    show ?thesis
+      unfolding e\<phi> ds ef Let_def using rem
+      by (simp add: ds ef)
+  qed
   have out_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
           (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
       in length ys + length \<alpha>s2 \<le> length \<alpha>s1"
+  proof -
+    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
+    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
+      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
+    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
+      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
+    from queue_step[unfolded e\<phi> Let_def, simplified ds] obtain ks where
+      queue1: "wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1" and ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>)"
+      using ds by auto
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi> = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>")
+    from freeze_meval0_post[OF ks_lt queue1, unfolded ef] have len:
+      "length ys + length \<alpha>s2 \<le> length \<alpha>s1"
+      by (metis (no_types, lifting) case_prodD ef)
+    show ?thesis
+      unfolding e\<phi> ds ef Let_def using len
+      by (simp add: ds ef)
+  qed
+  then show ?case
     sorry
-  show ?case sorry
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
   let ?pn = "(p, m)"
