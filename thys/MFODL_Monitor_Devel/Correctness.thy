@@ -1764,7 +1764,23 @@ next
       by (simp add: ds ef)
   qed
   ultimately show ?case
-    sorry
+  proof -
+    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> = (xs, \<phi>_new)"
+      by (cases "meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi>")
+    obtain zs0 \<psi>_new where e\<psi>0: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi> = (zs0, \<psi>_new)"
+      by (cases "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi>")
+    obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
+      by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new")
+    have meq:
+      "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MFrz p m \<phi> \<psi> skip0 \<alpha>s) =
+       (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
+      by (auto simp add: Let_def e\<phi> e\<psi>0 ds ef)
+    show ?thesis
+      unfolding meq Frz_eq
+      sorry
+  qed
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
   let ?pn = "(p, m)"
