@@ -78,6 +78,9 @@ context fixes \<sigma> :: "'a trace" begin
 function (sequential) progress :: "(Formula.name \<times> nat \<rightharpoonup> nat) \<Rightarrow> 't Formula.formula \<Rightarrow> nat \<Rightarrow> nat" where
   "progress P (Formula.Pred e ts) j = (case P (e, length ts) of None \<Rightarrow> j | Some k \<Rightarrow> k)"
 | "progress P (Formula.Let p \<phi> \<psi>) j = progress (P((p, Formula.nfv \<phi>) \<mapsto> progress P \<phi> j)) \<psi> j"
+| "progress P (Formula.Frz p \<phi> \<psi>) j =
+    (let pn = (p, Formula.nfv \<phi>) in
+     (LEAST i. i \<le> j \<and> progress (P(pn \<mapsto> (if i < progress P \<phi> j then j else 0))) \<psi> j \<le> i))"
 | "progress P (Formula.LetPast p \<phi> \<psi>) j =
     (let pn = (p, Formula.nfv \<phi>) in
     progress (P(pn \<mapsto> \<Sqinter>{i. i \<le> j \<and> i = progress (P(pn \<mapsto> i)) \<phi> j})) \<psi> j)"
@@ -271,10 +274,13 @@ qed
 
 definition "progress_regex P = min_regex_default (progress P)"
 definition "letpast_progress P p \<phi> j = \<Sqinter>{i. i \<le> j \<and> i = progress (P(p \<mapsto> i)) \<phi> j}"
+definition "frz_progress P p \<phi> \<psi> j =
+  (let pn = (p, Formula.nfv \<phi>) in
+   (LEAST i. i \<le> j \<and> progress (P(pn \<mapsto> (if i < progress P \<phi> j then j else 0))) \<psi> j \<le> i))"
 
 declare progress.simps[simp del]
 lemmas progress_simps[simp] 
-  = progress.simps[folded progress_regex_def[THEN fun_cong, THEN fun_cong] letpast_progress_def]
+  = progress.simps[folded progress_regex_def[THEN fun_cong, THEN fun_cong] letpast_progress_def frz_progress_def]
 
 end
 
