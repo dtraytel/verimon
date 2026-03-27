@@ -1331,13 +1331,6 @@ lemma (in maux) wf_mformula_and_release_safe0E:
 
 unbundle MFODL_notation
 
-lemma (in maux) wf_envs_frz_empty:
-  assumes wf: "wf_envs S \<sigma> j \<delta> P P' V db"
-  shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 m)) \<sigma> j \<delta>
-    (P((p, m) \<mapsto> j)) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {}))
-    (Mapping.update (p, m) (replicate \<delta> empty_table) (Mapping.delete (p, m) db))"
-  sorry
-
 lemma (in maux) discharge_skip_pos_empty:
   assumes ds: "discharge_skip skip xs = (skip', xs')"
     and pos: "skip' > 0"
@@ -1399,6 +1392,15 @@ proof -
     using bounds queue' skip_nil' interval discharge_skip_eq[of skip xs skip' xs'] ds len
     by (auto simp: wf_frz_state_def Let_def)
 qed
+
+lemma (in maux) freeze_meval0_post:
+  assumes wf_\<psi>_frz: "\<forall>k X. k < progress \<sigma> P \<phi> j \<longrightarrow> frz_qtable \<sigma> V m \<phi> k X \<longrightarrow>
+      wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi> \<psi>'"
+    and wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
+  shows "case freeze_meval0 (meval j n []) j xs (p, m) \<psi> of (ys, xs') \<Rightarrow>
+    (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
+    length ys + length xs' \<le> length xs"
+  sorry
 
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
@@ -1548,18 +1550,22 @@ next
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
     using MFrz(1)[OF wf_\<phi> MFrz.prems(2) wty1]
     by (auto simp: eqTrueI[OF mem_restr_UNIV, abs_def])
-  have \<psi>_step_upd:
-    "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>])
-        (Mapping.update ?pn (replicate \<delta> empty_table) ?db0) \<psi> of (ys, \<psi>_new) \<Rightarrow>
-      wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1 \<and>
-      list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> (V(?pn \<mapsto> frz_sat {})) (map the v) i \<psi>1))
-        [progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j..<progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>)] ys"
+  have state_step:
+    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
+      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs) in
+      wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s1"
     sorry
-  have \<psi>_step:
-    "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi> of (ys, \<psi>_new) \<Rightarrow>
-      wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1 \<and>
-      list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> (V(?pn \<mapsto> frz_sat {})) (map the v) i \<psi>1))
-        [progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j..<progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>)] ys"
+  have replay_step:
+    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
+      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
+          (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
+      in (\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x)"
+    sorry
+  have out_step:
+    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
+      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
+          (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
+      in length ys + length \<alpha>s2 \<le> length \<alpha>s1"
     sorry
   then show ?case sorry
 next
