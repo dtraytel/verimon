@@ -28,7 +28,32 @@ lemma (in maux) wf_frz_queue_discharge_skip:
     and ds: "discharge_skip skip xs = (skip', xs')"
     and len: "length ks = length xs"
   shows "wf_frz_queue \<sigma> V m \<phi> (drop (length xs - length xs') ks) xs'"
-  sorry
+  using q ds len
+proof (induction skip xs arbitrary: ks skip' xs' rule: discharge_skip.induct)
+  case (1 \<alpha>s)
+  then show ?case
+    by (auto simp: wf_frz_queue_def)
+next
+  case (2 skip)
+  then show ?case
+    by (auto simp: wf_frz_queue_def)
+next
+  case (3 skip \<alpha> \<alpha>s)
+  then obtain k ks' where ks: "ks = k # ks'"
+    by (cases ks) auto
+  with 3 have q': "wf_frz_queue \<sigma> V m \<phi> ks' \<alpha>s"
+    by (auto simp: wf_frz_queue_def)
+  from 3 have ds': "discharge_skip skip \<alpha>s = (skip', xs')"
+    by simp
+  from 3 ks have len': "length ks' = length \<alpha>s"
+    by auto
+  have "wf_frz_queue \<sigma> V m \<phi> (drop (length \<alpha>s - length xs') ks') xs'"
+    using 3(1)[OF q' ds' len'] .
+  with ks len' show ?case
+    by (cases "length xs' \<le> length \<alpha>s")
+      (auto simp: wf_frz_queue_def Suc_diff_le list_all2_lengthD)
+qed
+
 definition (in maux) wf_frz_state where
   "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip Xs =
     (let jphi = progress \<sigma> P \<phi> j;
