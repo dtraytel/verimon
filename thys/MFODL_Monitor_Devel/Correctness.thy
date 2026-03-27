@@ -1444,11 +1444,6 @@ lemma (in maux) wf_envs_frz_delete:
   shows "wf_envs S \<sigma> j \<delta> (P((p, m) \<mapsto> j)) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {})) (Mapping.delete (p, m) db)"
   sorry
 
-lemma (in maux) meval_MPred_db_delete_irrelevant:
-  assumes neq: "(e, length ts) \<noteq> pn"
-  shows "meval j n xs (Mapping.delete pn db) (MPred e ts mode) = meval j n xs db (MPred e ts mode)"
-  sorry
-
 lemma (in maux) freeze_meval0_post:
   assumes ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P \<phi> j"
     and wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
