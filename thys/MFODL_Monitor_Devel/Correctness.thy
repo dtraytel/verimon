@@ -1439,10 +1439,21 @@ proof -
     by (meson list_all2_appendI wf_frz_queue_def)
 qed
 
-lemma (in maux) wf_envs_frz_delete:
-  assumes wf: "wf_envs S \<sigma> j \<delta> P P' V db"
-  shows "wf_envs S \<sigma> j \<delta> (P((p, m) \<mapsto> j)) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {})) (Mapping.delete (p, m) db)"
-  sorry
+text \<open>Freeze follows the queue-based runtime from `AGENTS_simplified.md`, so the next
+proof steps should mirror that control flow instead of trying to force the deleted
+binder entry into a generic `wf_envs` update lemma.
+
+The key reason is operational as well as technical: `Mapping.delete (p, m) db`
+removes the binder key from the database, while `wf_envs` insists that the database
+covers the whole domain of the progress environment. So the deleted-db run of the
+shared template is not itself a `wf_envs` instance for the updated freeze binder.
+
+The remaining Frz proof work is therefore organized as follows:
+1. extend the snapshot queue using the `phi` step,
+2. discharge skip debt against that extended queue,
+3. prove the replay worker postcondition for `freeze_meval0`,
+4. combine plain-`psi` skip accounting with the queue invariant in `meval_correct`.
+\<close>
 
 lemma (in maux) freeze_meval0_post:
   assumes ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P \<phi> j"
@@ -1500,6 +1511,32 @@ next
     with ev Cons rec show ?thesis
       by (simp add: freeze_meval0.simps)
   qed
+qed
+
+lemma (in maux) frz_queue_step:
+  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
+    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
+    and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
+    and ds: "discharge_skip skip (xs @ ys) = (skip', xs')"
+  shows "\<exists>ks. wf_frz_queue \<sigma> V m \<phi> ks xs' \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>))"
+    and "skip' > 0 \<longrightarrow> xs' = []"
+proof -
+  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+  let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
+  from wf_frz_queue_extend[OF state phi_res mono]
+  have queue0: "wf_frz_queue \<sigma> V m \<phi> [?jfrz + skip..< ?jphi'] (xs @ ys)" .
+  have len0: "length [?jfrz + skip..< ?jphi'] = length (xs @ ys)"
+    using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+  let ?ks = "drop (length (xs @ ys) - length xs') [?jfrz + skip..< ?jphi']"
+  have queue1: "wf_frz_queue \<sigma> V m \<phi> ?ks xs'"
+    using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
+  have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
+    by auto
+  show "\<exists>ks. wf_frz_queue \<sigma> V m \<phi> ks xs' \<and> (\<forall>k\<in>set ks. k < ?jphi')"
+    using queue1 lt1 by blast
+  show "skip' > 0 \<longrightarrow> xs' = []"
+    using discharge_skip_pos_empty[OF ds] by blast
 qed
 
 lemma (in maux) frz_state_step:
