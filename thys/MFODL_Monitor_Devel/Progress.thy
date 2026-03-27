@@ -1537,7 +1537,69 @@ next
   qed
 next
   case (Frz p \<phi> \<psi>)
-  then show ?case sorry
+  let ?pn = "(p, Formula.nfv \<phi>)"
+  obtain P1 j1 where P1: "dom P1 = S" "range_mapping (Suc i) j1 P1"
+    "Suc i \<le> progress \<sigma> P1 \<phi> j1"
+    using Frz(1)[of S "Suc i"] Frz.prems by auto
+  obtain P2 j2 where P2: "dom P2 = insert ?pn S" "range_mapping i j2 P2"
+    "i \<le> progress \<sigma> P2 \<psi> j2"
+    using Frz(2)[of "insert ?pn S" i] Frz.prems by auto
+  let ?j = "max j1 j2"
+  let ?P12 = "max_mapping P1 P2"
+  have P1i: "range_mapping i j1 P1"
+    using P1(2) by (rule range_mapping_relax) auto
+  have P12_rng: "range_mapping i ?j ?P12"
+    using P1i P2(2) by simp
+  have P12_phi: "Suc i \<le> progress \<sigma> ?P12 \<phi> ?j"
+    using P1(1,2) P2(1,2,3)
+    by (intro order.trans[OF P1(3) progress_mono_gen[OF max.coboundedI1]])
+      (auto intro: max_mapping_cobounded1 simp: range_mapping_to_pred_mapping pred_mapping_max_mapping)
+  have j_ge_i: "i \<le> ?j"
+    using P2(1,2)
+    by (auto simp: pred_mapping_alt)
+  have P2_le: "progress \<sigma> P2 \<psi> j2 \<le> progress \<sigma> (?P12(?pn \<mapsto> ?j)) \<psi> ?j"
+  proof (rule progress_mono_gen[OF max.coboundedI2])
+    show "pred_mapping (\<lambda>x. x \<le> j2) P2"
+      using P2(2) by (rule range_mapping_to_pred_mapping)
+    show "pred_mapping (\<lambda>x. x \<le> ?j) (?P12(?pn \<mapsto> ?j))"
+      using P12_rng by (simp add: pred_mapping_alt)
+    show "rel_mapping (\<le>) P2 (?P12(?pn \<mapsto> ?j))"
+      using P1(1) P2(1,2)
+      by (auto simp: rel_mapping_alt max_mapping_def pred_mapping_alt split: option.splits)
+  qed simp
+  show ?case
+  proof (intro exI[of _ ?P12] exI[of _ ?j] conjI)
+    show "dom ?P12 = S"
+      using P1(1) P2(1) by auto
+    show "range_mapping i ?j ?P12"
+      by (rule P12_rng)
+    show "i \<le> progress \<sigma> ?P12 (Formula.Frz p \<phi> \<psi>) ?j"
+    proof (rule ccontr)
+      assume ni: "\<not> i \<le> progress \<sigma> ?P12 (Formula.Frz p \<phi> \<psi>) ?j"
+      let ?r = "progress \<sigma> ?P12 (Formula.Frz p \<phi> \<psi>) ?j"
+      have r_lt_i: "?r < i"
+        using ni by simp
+      have ex_r: "\<exists>k. k \<le> ?j \<and> progress \<sigma> (?P12(?pn \<mapsto> (if k < progress \<sigma> ?P12 \<phi> ?j then ?j else 0))) \<psi> ?j \<le> k"
+      proof
+        have "pred_mapping (\<lambda>x. x \<le> ?j) (?P12(?pn \<mapsto> (if ?j < progress \<sigma> ?P12 \<phi> ?j then ?j else 0)))"
+          using P12_rng by (simp add: pred_mapping_alt)
+        then have "progress \<sigma> (?P12(?pn \<mapsto> (if ?j < progress \<sigma> ?P12 \<phi> ?j then ?j else 0))) \<psi> ?j \<le> ?j"
+          by (rule progress_le_gen)
+        then show "?j \<le> ?j \<and> progress \<sigma> (?P12(?pn \<mapsto> (if ?j < progress \<sigma> ?P12 \<phi> ?j then ?j else 0))) \<psi> ?j \<le> ?j"
+          by simp
+      qed
+      have r_prop: "?r \<le> ?j \<and> progress \<sigma> (?P12(?pn \<mapsto> (if ?r < progress \<sigma> ?P12 \<phi> ?j then ?j else 0))) \<psi> ?j \<le> ?r"
+        unfolding progress.simps Let_def by (rule LeastI_ex[OF ex_r])
+      have r_lt_phi: "?r < progress \<sigma> ?P12 \<phi> ?j"
+        using r_lt_i P12_phi by linarith
+      hence r_psi_le: "progress \<sigma> (?P12(?pn \<mapsto> ?j)) \<psi> ?j \<le> ?r"
+        using r_prop by simp
+      have "i \<le> progress \<sigma> (?P12(?pn \<mapsto> ?j)) \<psi> ?j"
+        using P2(3) P2_le by linarith
+      with r_psi_le r_lt_i show False
+        by linarith
+    qed
+  qed
 next
   case (LetPast p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
@@ -1991,7 +2053,7 @@ next
   proof (rule arg_cong[where f=Least])
     show "(\<lambda>i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> (if i < progress \<sigma> P \<phi> j then j else 0))) \<psi> j \<le> i) =
       (\<lambda>i. i \<le> j \<and> progress \<sigma>' (P(?pn \<mapsto> (if i < progress \<sigma>' P \<phi> j then j else 0))) \<psi> j \<le> i)"
-      using Frz by (intro ext) auto
+      using Frz by (intro ext) (auto simp del: fun_upd_apply)
   qed
 next
   case(LetPast p \<phi> \<psi>)
@@ -2146,6 +2208,9 @@ next
         using 1 2 3 by auto
     qed
   qed
+next
+  case (Frz p \<phi> \<psi>)
+  then show ?case sorry
 next
   case (LetPast p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
