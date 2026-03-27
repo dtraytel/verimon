@@ -933,7 +933,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MPred Formula.name "Formula.trm list" pred_mode
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
   | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
-     "event_data table list" "(('msaux, 'muaux, 'mtaux) mformula \<times> event_data table) option"
+     nat "event_data table list"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MAndAssign "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
@@ -1313,7 +1313,7 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
-| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) [] None"
+| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 []"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1676,8 +1676,33 @@ lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Long
   apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
   done
 
+fun discharge_skip where
+  "discharge_skip 0 \<alpha>s = (0, \<alpha>s)"
+| "discharge_skip (Suc skip) [] = (Suc skip, [])"
+| "discharge_skip (Suc skip) (\<alpha> # \<alpha>s) = discharge_skip skip \<alpha>s"
+
 fun freeze_meval0 where
-  "freeze_meval0 eval j \<alpha>s p (Some (\<psi>, \<alpha>, k)) = eval (Mapping.empty(p := replicate (j - k) \<alpha>))"
+  "freeze_meval0 eval j [] p \<phi>0 = ([], [])"
+| "freeze_meval0 eval j (\<alpha> # \<alpha>s) p \<phi>0 =
+    (let (ys, \<psi>') = eval (Mapping.update p (replicate j \<alpha>) Mapping.empty) \<phi>0 in
+      case ys of
+        [] => ([], \<alpha> # \<alpha>s)
+      | y # _ =>
+          (let (zs, \<alpha>s') = freeze_meval0 eval j \<alpha>s p \<phi>0
+          in (y # zs, \<alpha>s')))"
+
+declare freeze_meval0.simps[simp del]
+
+lemma freeze_meval0_cong[fundef_cong]:
+  assumes "(\<And>db \<psi>. size \<psi> = size \<phi>0 \<Longrightarrow> eval db \<psi> = eval' db \<psi>)"
+  shows "freeze_meval0 eval j \<alpha>s p \<phi>0 = freeze_meval0 eval' j \<alpha>s p \<phi>0"
+  using assms
+  apply (induct eval j \<alpha>s p \<phi>0 rule: freeze_meval0.induct)
+   apply (subst (1 2) freeze_meval0.simps(1))
+   apply simp
+  apply (subst (1 2) freeze_meval0.simps(2))
+  apply (auto simp: Let_def split: prod.splits list.splits)
+  done
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
@@ -1718,11 +1743,13 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
-| "meval n ts db (MFrz p m \<phi> \<psi> \<alpha>s opt) =
+| "meval n ts db (MFrz p m \<phi> \<psi> skip \<alpha>s) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
-         (ys, \<psi>) = meval n ts db \<psi>;
-         (zs, \<alpha>s', opt') = (\<alpha>s @ xs)
-    in (ys, MFrz p m \<phi> \<psi>))"
+         db0 = Mapping.delete (p, m) db;
+         (zs0, \<psi>) = meval n ts db0 \<psi>;
+         (skip, \<alpha>s) = discharge_skip (skip + length zs0) (\<alpha>s @ xs);
+         (ys, \<alpha>s') = freeze_meval0 (meval n []) j \<alpha>s (p, m) \<psi>
+     in (zs0 @ ys, MFrz p m \<phi> \<psi> skip \<alpha>s'))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -1819,13 +1846,13 @@ lemma map_split_eq_Pair_iff: "map_split f xs = (ys, zs) \<longleftrightarrow> ys
 lemma
   psize_snd_meval: "meval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meval n t db \<phi>)) = size \<phi>"
   apply (induct rule: meval.pinduct)
-  apply (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
-    apply (metis snd_conv size_letpast_meval)
-    apply simp
+                      apply (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
+   apply (metis snd_conv size_letpast_meval)
+  apply simp
   done
 
 lemma total_meval: "All meval_dom"
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp psize_snd_meval)
+  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 
@@ -1840,6 +1867,7 @@ lemma mformula_induct[case_names MRel MPred MLet MLetPast
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m \<phi> \<psi>)) \<Longrightarrow>
+   (\<And>p m \<phi> \<psi> skip \<alpha>s. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow> P (MFrz p m \<phi> \<psi> skip \<alpha>s)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
    (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign \<phi> conf)) \<Longrightarrow>
