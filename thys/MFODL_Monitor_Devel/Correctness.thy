@@ -26,12 +26,23 @@ definition (in maux) wf_frz_state where
   "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip Xs =
     (let jphi = progress \<sigma> P \<phi> j;
          jfrz = progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j
-     in jfrz + skip \<le> jphi \<and> wf_frz_queue \<sigma> V m \<phi> [jfrz + skip..<jphi] Xs)"
+     in jfrz + skip \<le> jphi \<and> wf_frz_queue \<sigma> V m \<phi> [jfrz + skip..<jphi] Xs \<and> (skip > 0 \<longrightarrow> Xs = []))"
 
 lemma (in maux) wf_frz_state_Nil[simp]:
   "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip [] \<longleftrightarrow>
     progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip = progress \<sigma> P \<phi> j"
   by (auto simp: wf_frz_state_def wf_frz_queue_def Let_def list_all2_conv_all_nth)
+
+lemma (in maux) wf_frz_state_skipD:
+  assumes "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip Xs"
+    and "skip > 0"
+  shows "Xs = []"
+  using assms by (auto simp: wf_frz_state_def Let_def)
+
+text \<open>For the simplified freeze runtime, positive skip debt means that no frozen snapshot is
+currently available. We record this directly in the freeze state invariant and expose it via a
+small helper lemma, so later Frz proofs can case-split on skip without repeatedly unfolding the
+state definition.\<close>
 
 inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> nat 
   \<Rightarrow> event_data list set \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula \<Rightarrow> ty Formula.formula \<Rightarrow> bool" for \<sigma> j 
@@ -1286,16 +1297,30 @@ lemma (in maux) wf_mformula_and_release_safe0E:
   by (erule wf_mformula.cases; clarsimp simp: release_safe_0_def
       packagg_def split: option.splits if_splits)
 
-
-
-
 unbundle MFODL_notation
 
-lemma (in maux) wf_envs_delete:
+lemma (in maux) wf_envs_frz_empty:
   assumes wf: "wf_envs S \<sigma> j \<delta> P P' V db"
-    and absent: "p \<notin> dom P"
-  shows "wf_envs S \<sigma> j \<delta> P P' V (Mapping.delete p db)"
+  shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 m)) \<sigma> j \<delta>
+    (P((p, m) \<mapsto> j)) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {}))
+    (Mapping.update (p, m) (replicate \<delta> empty_table) (Mapping.delete (p, m) db))"
   sorry
+
+lemma (in maux) discharge_skip_pos_empty:
+  assumes ds: "discharge_skip skip xs = (skip', xs')"
+    and pos: "skip' > 0"
+  shows "xs' = []"
+  using ds pos
+proof (induction skip xs arbitrary: skip' xs' rule: discharge_skip.induct)
+  case (1 \<alpha>s)
+  then show ?case by simp
+next
+  case (2 skip)
+  then show ?case by simp
+next
+  case (3 skip \<alpha> \<alpha>s)
+  then show ?case by simp
+qed
 
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
@@ -1307,15 +1332,15 @@ lemma (in maux) meval_correct:
 proof (induction \<phi> arbitrary: db P P' V n R \<phi>' j \<delta> S E rule: mformula_induct)
   case (MRel rel) (* other repo-branches have ?case2 and ?case3 *)
   let ?case1 = "\<lambda>t1 t2. \<phi>' = t1 =\<^sub>F t2 \<and> rel = eq_rel n t1 t2
-  \<and> is_simple_eq t1 t2 \<and> (\<forall>x\<in>FV\<^sub>t t1. x < n) \<and> (\<forall>x\<in>FV\<^sub>t t2. x < n)" 
+  \<and> is_simple_eq t1 t2 \<and> (\<forall>x\<in>FV\<^sub>t t1. x < n) \<and> (\<forall>x\<in>FV\<^sub>t t2. x < n)"
   obtain t1 and t2 where cases: "?case1 t1 t2"
-    using MRel(1) 
+    using MRel(1)
     by (cases rule: wf_mformula.cases)
       (auto simp: and_release_safe_bounded_def release_safe_0_def always_safe_0_def
         elim: wf_mformula.cases)
   moreover have "?case1 t1 t2 \<Longrightarrow> ?case"
-    by (auto split: prod.splits intro!: qtable_eq_relI  wf_mformula.Eq)
-  ultimately show "?case"
+    by (auto split: prod.splits intro!: qtable_eq_relI wf_mformula.Eq)
+  ultimately show ?case
     using cases by (metis (no_types, lifting))
 next
   case (MPred p ts mode)
@@ -1445,8 +1470,12 @@ next
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
     using MFrz(1)[OF wf_\<phi> MFrz.prems(2) wty1]
     by (auto simp: eqTrueI[OF mem_restr_UNIV, abs_def])
-  have wf_db0: "wf_envs S \<sigma> j \<delta> P P' V ?db0"
-    apply (rule wf_envs_delete[OF MFrz.prems(2)])
+  have \<psi>_step_upd:
+    "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>])
+        (Mapping.update ?pn (replicate \<delta> empty_table) ?db0) \<psi> of (ys, \<psi>_new) \<Rightarrow>
+      wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1 \<and>
+      list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> (V(?pn \<mapsto> frz_sat {})) (map the v) i \<psi>1))
+        [progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j..<progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>)] ys"
     sorry
   have \<psi>_step:
     "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi> of (ys, \<psi>_new) \<Rightarrow>
