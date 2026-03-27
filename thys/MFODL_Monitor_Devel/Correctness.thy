@@ -1393,14 +1393,96 @@ proof -
     by (auto simp: wf_frz_state_def Let_def)
 qed
 
+text \<open>Freeze correctness should follow the simplified queue-based runtime from
+`AGENTS_simplified.md`: isolate queue facts first, then prove worker-level
+postconditions, and only then reconnect them to the main `meval_correct` branch.
+The helper below is the first reusable queue fact for that plan.\<close>
+
+lemma (in maux) wf_frz_queue_setD:
+  assumes wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
+    and xin: "x \<in> set xs"
+    and ks_lt: "\<forall>k\<in>set ks. k < B"
+  shows "\<exists>k. k < B \<and> frz_qtable \<sigma> V m \<phi> k x"
+proof -
+  from wfq have len: "length ks = length xs"
+    by (auto simp: wf_frz_queue_def dest: list_all2_lengthD)
+  from xin obtain i where i: "i < length xs" "xs ! i = x"
+    by (auto simp: in_set_conv_nth)
+  from wfq len i have "frz_qtable \<sigma> V m \<phi> (ks ! i) x"
+    by (auto simp: wf_frz_queue_def list_all2_conv_all_nth)
+  moreover from ks_lt len i have "ks ! i < B"
+    by auto
+  ultimately show ?thesis
+    by blast
+qed
+
+
+
+lemma (in maux) wf_frz_queue_extend:
+  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
+    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
+  shows "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip..<progress \<sigma> P' \<phi> (j + \<delta>)] (xs @ ys)"
+  sorry
+
 lemma (in maux) freeze_meval0_post:
-  assumes wf_\<psi>_frz: "\<forall>k X. k < progress \<sigma> P \<phi> j \<longrightarrow> frz_qtable \<sigma> V m \<phi> k X \<longrightarrow>
-      wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi> \<psi>'"
+  assumes ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P \<phi> j"
     and wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
   shows "case freeze_meval0 (meval j n []) j xs (p, m) \<psi> of (ys, xs') \<Rightarrow>
     (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
     length ys + length xs' \<le> length xs"
-  sorry
+  using wfq ks_lt
+proof (induction xs arbitrary: ks)
+  case Nil
+  then show ?case
+    by (cases ks) (simp_all add: wf_frz_queue_def freeze_meval0.simps)
+next
+  case (Cons \<alpha> \<alpha>s)
+  from Cons.prems obtain k ks' where ks: "ks = k # ks'"
+    and q\<alpha>: "frz_qtable \<sigma> V m \<phi> k \<alpha>"
+    and qrest: "wf_frz_queue \<sigma> V m \<phi> ks' \<alpha>s"
+    by (cases ks) (auto simp: wf_frz_queue_def)
+  have k_lt: "k < progress \<sigma> P \<phi> j"
+    and ks'_lt: "\<forall>k\<in>set ks'. k < progress \<sigma> P \<phi> j"
+    using Cons.prems(2) ks by auto
+  obtain us \<psi>' where ev:
+    "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi> = (us, \<psi>')"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi>")
+  show ?case
+  proof (cases us)
+    case Nil
+    have rem: "\<forall>x\<in>set (\<alpha> # \<alpha>s). \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
+    proof
+      fix x
+      assume xin: "x \<in> set (\<alpha> # \<alpha>s)"
+      show "\<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
+      proof (cases "x = \<alpha>")
+        case True
+        with k_lt q\<alpha> show ?thesis by auto
+      next
+        case False
+        with xin have xin': "x \<in> set \<alpha>s" by auto
+        from wf_frz_queue_setD[OF qrest xin' ks'_lt] show ?thesis .
+      qed
+    qed
+    with ev Nil show ?thesis
+      by (simp add: freeze_meval0.simps)
+  next
+    case (Cons y ys0)
+    obtain zs xs' where rec: "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> = (zs, xs')"
+      by (cases "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi>")
+    have IH': "case freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> of (ys, xs') \<Rightarrow>
+        (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
+        length ys + length xs' \<le> length \<alpha>s"
+      using Cons.IH[OF qrest ks'_lt] .
+    from IH'[unfolded rec] have rem: "\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
+      and len: "length zs + length xs' \<le> length \<alpha>s"
+      by simp_all
+    with ev Cons rec show ?thesis
+      by (simp add: freeze_meval0.simps)
+  qed
+
+qed
 
 lemma (in maux) frz_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
