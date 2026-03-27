@@ -2210,7 +2210,56 @@ next
   qed
 next
   case (Frz p \<phi> \<psi>)
-  then show ?case sorry
+  let ?pn = "(p, Formula.nfv \<phi>)"
+  let ?q = "if i < progress \<sigma> P \<phi> (plen \<pi>) then plen \<pi> else 0"
+  let ?P = "P(?pn \<mapsto> ?q)"
+  let ?V = "\<lambda>V \<sigma>. V(?pn \<mapsto> (\<lambda>w j. Formula.sat \<sigma> V w i \<phi>))"
+  have i_lt_plen: "i < plen \<pi>"
+    using Frz.prems(1,4) by (blast intro!: order.strict_trans2 progress_le_gen)
+  have i_lt_psi: "i < progress \<sigma> ?P \<psi> (plen \<pi>)"
+  proof (rule ccontr)
+    assume "\<not> i < progress \<sigma> ?P \<psi> (plen \<pi>)"
+    then have "progress \<sigma> ?P \<psi> (plen \<pi>) \<le> i"
+      by simp
+    then have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) (plen \<pi>) \<le> i"
+      unfolding progress.simps Let_def
+      by (intro Least_le) (use i_lt_plen in auto)
+    with Frz.prems(1) show False by simp
+  qed
+  show ?case
+    unfolding sat.simps Let_def
+  proof (rule Frz.IH(2))
+    show "i < progress \<sigma> ?P \<psi> (plen \<pi>)"
+      by (rule i_lt_psi)
+    from Frz.prems show "dom (?V V \<sigma>) = dom (?V V' \<sigma>')"
+      by simp
+    from Frz.prems show "dom ?P = dom (?V V \<sigma>)"
+      by simp
+    from Frz.prems show "pred_mapping (\<lambda>x. x \<le> plen \<pi>) ?P"
+      by auto
+  next
+    fix p' n w k \<phi>'
+    assume 1: "(p', n) \<in> dom (?V V \<sigma>)"
+      and 2: "k < the (?P (p', n))"
+      and 3: "n = length (w :: event_data list)"
+    show "the (?V V \<sigma> (p', n)) w k = the (?V V' \<sigma>' (p', n)) w k"
+    proof (cases "(p', n) = ?pn")
+      case True
+      then have i_lt_phi: "i < progress \<sigma> P \<phi> (plen \<pi>)"
+        using 2 option.sel by fastforce
+      have "Formula.sat \<sigma> V w i \<phi> = Formula.sat \<sigma>' V' w i \<phi>"
+        by (rule Frz.IH(1)[OF i_lt_phi Frz.prems(2-5)])
+      with True show ?thesis by simp
+    next
+      case False
+      then show ?thesis
+        apply simp
+        apply (intro conjI)
+          apply auto[2]
+        apply (rule Frz.prems(5))
+        using 1 2 3 by auto
+    qed
+  qed
 next
   case (LetPast p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
