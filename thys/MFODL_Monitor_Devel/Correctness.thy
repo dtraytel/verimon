@@ -1353,6 +1353,29 @@ next
   case (3 skip \<alpha> \<alpha>s)
   then show ?case by simp
 qed
+
+lemma (in maux) discharge_skip_le:
+  assumes "discharge_skip skip xs = (skip', xs')"
+  shows "length xs' \<le> length xs"
+  using assms
+  by (induction skip xs arbitrary: skip' xs' rule: discharge_skip.induct) auto
+
+lemma (in maux) discharge_skip_eq:
+  assumes "discharge_skip skip xs = (skip', xs')"
+  shows "skip = skip' + (length xs - length xs')"
+  using assms
+proof (induction skip xs arbitrary: skip' xs' rule: discharge_skip.induct)
+  case (1 \<alpha>s)
+  then show ?case by simp
+next
+  case (2 skip)
+  then show ?case by simp
+next
+  case (3 skip \<alpha> \<alpha>s)
+  then show ?case
+    by (auto simp add: Suc_diff_le discharge_skip_le)
+qed
+
 lemma (in maux) discharge_skip_wf_frz_state:
   assumes wf: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
     and ds: "discharge_skip skip xs = (skip', xs')"
@@ -1370,17 +1393,12 @@ proof -
     using wf_frz_queue_discharge_skip[OF queue ds len] .
   have skip_nil': "skip' > 0 \<longrightarrow> xs' = []"
     using discharge_skip_pos_empty[OF ds] by blast
+  have interval: "drop (length xs - length xs') [?jfrz + skip..< ?jphi] = [?jfrz + skip'..< ?jphi]"
+    using len discharge_skip_eq[of skip xs skip' xs'] ds skip_nil by fastforce
   show ?thesis
-    sorry
+    using bounds queue' skip_nil' interval discharge_skip_eq[of skip xs skip' xs'] ds len
+    by (auto simp: wf_frz_state_def Let_def)
 qed
-
-
-lemma (in maux) discharge_skip_wf_frz_state_skipD:
-  assumes wf: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
-    and ds: "discharge_skip skip xs = (skip', xs')"
-    and pos: "skip' > 0"
-  shows "xs' = []"
-  using discharge_skip_pos_empty[OF ds pos] .
 
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
