@@ -457,6 +457,12 @@ next
     apply (rule pred_mapping_map_upd[OF _ 1])
     using fp by (auto intro!: cInf_lower2[of i])
 next
+  case (Frz p \<phi> \<psi>) case 1
+  then show ?case sorry
+next
+  case (Frz p \<phi> \<psi>) case 2
+  then show ?case sorry
+next
   case (LetPast p \<phi>1 \<phi>2) case 2
   obtain i where fp: "i = progress \<sigma> (P((p, Formula.nfv \<phi>1) \<mapsto> i)) \<phi>1 j" "i \<le> j"
     using progress_fixpoint_ex'[OF LetPast(1,2)] 2 by blast
