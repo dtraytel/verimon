@@ -1402,6 +1402,14 @@ lemma (in maux) freeze_meval0_post:
     length ys + length xs' \<le> length xs"
   sorry
 
+lemma (in maux) frz_state_step:
+  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
+    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
+  shows "let (skip', xs') = discharge_skip skip (xs @ ys)
+    in wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip' xs'"
+  sorry
+
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
   shows "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> 
@@ -1554,7 +1562,8 @@ next
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs) in
       wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s1"
-    sorry
+    using \<phi>_step frz_state_step[OF wf_state]
+    by fastforce
   have replay_step:
     "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
@@ -1567,7 +1576,7 @@ next
           (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
       in length ys + length \<alpha>s2 \<le> length \<alpha>s1"
     sorry
-  then show ?case sorry
+  show ?case sorry
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
   let ?pn = "(p, m)"
