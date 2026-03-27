@@ -12,6 +12,27 @@ begin
 
 subsection \<open> Well-formed mformula invariant \<close>
 
+definition (in maux) frz_qtable where
+  "frz_qtable \<sigma> V m \<phi> k X =
+    qtable m (Formula.fv \<phi>) (mem_restr UNIV) (\<lambda>v. Formula.sat \<sigma> V (map the v) k \<phi>) X"
+
+definition (in maux) frz_sat where
+  "frz_sat X = (\<lambda>w _. map Some w \<in> X)"
+
+definition (in maux) wf_frz_queue where
+  "wf_frz_queue \<sigma> V m \<phi> ks Xs = list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi> k X) ks Xs"
+
+definition (in maux) wf_frz_state where
+  "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip Xs =
+    (let jphi = progress \<sigma> P \<phi> j;
+         jfrz = progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j
+     in jfrz + skip \<le> jphi \<and> wf_frz_queue \<sigma> V m \<phi> [jfrz + skip..<jphi] Xs)"
+
+lemma (in maux) wf_frz_state_Nil[simp]:
+  "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip [] \<longleftrightarrow>
+    progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip = progress \<sigma> P \<phi> j"
+  by (auto simp: wf_frz_state_def wf_frz_queue_def Let_def list_all2_conv_all_nth)
+
 inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> nat 
   \<Rightarrow> event_data list set \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula \<Rightarrow> ty Formula.formula \<Rightarrow> bool" for \<sigma> j 
   where Eq: "is_simple_eq t1 t2 
@@ -25,6 +46,13 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
       (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>')) n R \<psi> \<psi>'
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLet p m \<phi> \<psi>) (Formula.Let p \<phi>' \<psi>')"
+  | Frz: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>'
+    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi> \<psi>'
+    \<Longrightarrow> (\<forall>k X. k < progress \<sigma> P \<phi>' j \<longrightarrow> frz_qtable \<sigma> V m \<phi>' k X \<longrightarrow>
+         wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi> \<psi>')
+    \<Longrightarrow> wf_frz_state \<sigma> j P V p m \<phi>' \<psi>' skip Xs
+    \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
+    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> skip Xs) (Formula.Frz p \<phi>' \<psi>')"
   | LetPast: "wf_mformula \<sigma> j (P((p, m)\<mapsto>i)) 
       (V((p, m) \<mapsto> letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) u k \<phi>'))) m UNIV \<phi> \<phi>'
     \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> letpast_progress \<sigma> P (p, m) \<phi>' j)) 
@@ -604,9 +632,38 @@ next
   with fvi_less_nfv show ?case
     by (auto simp: pred_mapping_alt dom_def intro!: wf_mformula.Let Let(4,5))
 next
+  case (Frz p \<phi> \<psi>)
+  let ?pn = "(p, Formula.nfv \<phi>)"
+  have wf_\<psi>0: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R (minit0 n \<psi>) \<psi>"
+  proof (rule Frz.IH(2))
+    show "\<forall>x\<in>fv \<psi>. x < n"
+      using Frz by auto
+    show "pred_mapping (\<lambda>x. x = 0) (P(?pn \<mapsto> 0))"
+      using Frz.prems by (auto simp: pred_mapping_alt)
+  qed
+  have wf_\<psi>j: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat X)) n R (minit0 n \<psi>) \<psi>"
+    if "k < progress \<sigma> P \<phi> 0" and "frz_qtable \<sigma> V (Formula.nfv \<phi>) \<phi> k X" for k X
+  proof (rule Frz.IH(2))
+    show "\<forall>x\<in>fv \<psi>. x < n"
+      using Frz by auto
+    show "pred_mapping (\<lambda>x. x = 0) (P(?pn \<mapsto> 0))"
+      using Frz.prems by (auto simp: pred_mapping_alt)
+  qed
+  have wf_state: "wf_frz_state \<sigma> 0 P V p (Formula.nfv \<phi>) \<phi> \<psi> 0 []"
+  proof -
+    have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) 0 = 0"
+      using Frz.prems progress_0_gen by blast
+    moreover have "progress \<sigma> P \<phi> 0 = 0"
+      using Frz.prems by (simp add: progress_0_gen)
+    ultimately show ?thesis
+      by simp
+  qed
+  with Frz fvi_less_nfv show ?case
+    by (metis minit0.simps(5) wf_\<psi>0 wf_\<psi>j wf_mformula.Frz)
+next
   case (LetPast p \<phi> \<psi>)
   then show ?case
-    by (auto simp: pred_mapping_alt dom_def letpast_progress0 fvi_less_nfv 
+    by (auto simp: pred_mapping_alt dom_def letpast_progress0 fvi_less_nfv
         intro!: wf_mformula.LetPast)
 next
   case (And_assign \<phi> \<psi>)
@@ -1349,6 +1406,9 @@ next
   from MLet(2)[OF 2 wf_envs_update[OF MLet.prems(2) fv res1 safe1 wty1] wty2] wf1 e1 fv safe1 safe2
   show ?case unfolding Let
     by (auto simp: fun_upd_def intro!: wf_mformula.Let)
+next
+  case (MFrz p m \<phi> \<psi> skip \<alpha>s)
+  then show ?case sorry
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
   let ?pn = "(p, m)"
@@ -2371,7 +2431,7 @@ next
       apply (subst qtable_cong_strong[of "FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))" "FV ?AndRbdd" n "mem_restr R"])
       using fvs \<open>\<not> mem J 0\<close> \<open>bounded J\<close> sat_and_release_rewrite by auto
     have "wf_mformula \<sigma> (j + \<delta>) P' V n R (MOr \<phi>\<^sub>M \<psi>\<^sub>M buf') (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))"
-      using wf_mformula.intros(9)[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close> fvs(1,2) safes mbuf'_obs(1) IH1] 
+      using wf_mformula.intros(10)[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close> fvs(1,2) safes mbuf'_obs(1) IH1] 
       by force
     moreover have "list_all2 (\<lambda>i. qtable n (FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')))
        [Progress.progress \<sigma> P (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')) j..<Progress.progress \<sigma> P' (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')) (j + \<delta>)] \<phi>\<psi>s"
@@ -2439,7 +2499,7 @@ next
       using MOr.prems meval_defs preIH
       unfolding phi'_eq progress_release_rewrite_0[OF \<open>mem J 0\<close>, symmetric]
       apply (cases rule: wf_mformula.cases)
-      by (rule list.rel_mono_strong[OF mbuf'_obs(2), folded progress.simps(8) release_safe_0_def])
+      by (rule list.rel_mono_strong[OF mbuf'_obs(2), folded progress.simps(9) release_safe_0_def])
         (auto simp: fvs release_safe_0_def intro!: qtable_union)
     have "list_all2 (\<lambda>i. qtable n (FV ?R0) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>'' \<^bold>R J \<psi>''))
       [progress \<sigma> P (\<phi>'' \<^bold>R J \<psi>'') j..< progress \<sigma> P' (\<phi>'' \<^bold>R J \<psi>'') (j + \<delta>)] \<phi>\<psi>s"
@@ -2858,7 +2918,7 @@ next
   from MUntil.IH(1)[OF \<phi> MUntil.prems(2)] MUntil.IH(2)[OF \<psi> MUntil.prems(2)] pos fvi_subset wty1 wty2 
   show ?case
     unfolding meval.simps Let_def 
-    by (auto simp: args_ivl args_n args_pos agg_n[symmetric] Until_eq \<phi>''' progress.simps(7) Let_def
+    by (auto simp: args_ivl args_n args_pos agg_n[symmetric] Until_eq \<phi>''' progress.simps(8) Let_def
         split: prod.split if_splits option.splits dest!: update
         intro!: wf_mformula.Until[OF _ _ _ safe1 safe2 args_ivl args_n args_L args_R mr fvi_subset]
         elim!: list.rel_mono_strong qtable_cong
