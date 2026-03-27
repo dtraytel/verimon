@@ -1861,7 +1861,7 @@ termination meval
 
 end (* fixes j *)
 
-lemma mformula_induct[case_names MRel MPred MLet MLetPast 
+lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast 
     MAnd MAndAssign MAndRel MAndTrigger MAnds MOr MNeg
     MExists MAgg MPrev MNext MSince MUntil MTrigger MMatchP MMatchF MTP MTS]:
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
