@@ -1256,7 +1256,74 @@ next
   show ?case by (rule Let.IH(2)) fact+
 next
   case (Frz e \<phi> \<psi>)
-  then show ?case sorry
+  let ?V' = "V((e, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. sat' \<sigma> V w i \<phi>)"
+  from Frz.prems(1) obtain E' where
+    wty_\<phi>: "S, E' \<turnstile> \<phi>" and
+    wty_\<psi>: "S((e, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi>"
+    by (cases pred: wty_formula)
+  let ?S' = "S((e, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>))"
+  let ?tys = "tabulate E' 0 (Formula.nfv \<phi>)"
+  {
+    fix v'
+    assume len: "length v' = Formula.nfv \<phi>" and sat: "sat' \<sigma> V v' i \<phi>"
+    have "wty_tuple ?tys v'"
+    proof (unfold wty_tuple_def list_all2_conv_all_nth, intro conjI allI impI)
+      show "length ?tys = length v'"
+        using len by simp
+    next
+      fix x
+      assume x_lt: "x < length ?tys"
+      hence x_fv: "x \<in> fv \<phi>"
+        using Frz.hyps(1) by auto
+      have "ty_of (v' ! x) = E' x"
+        using Frz.IH(1) wty_\<phi> Frz.prems(2) sat x_fv by blast
+      also from x_lt have "E' x = ?tys ! x"
+        by simp
+      finally show "ty_of (v' ! x) = ?tys ! x"
+        by simp
+    qed
+  }
+  note aux = this
+  {
+    fix pa xs k
+    assume "(pa, xs) \<in> \<Gamma> \<sigma> k" and
+      "(pa, length xs) \<notin> dom ?V'"
+    hence "wty_event ?S' pa xs"
+      using Frz.prems(2) wty_envs_def wty_event_def by fastforce
+  } moreover {
+    fix pa xs k
+    assume in_V: "(pa, length xs) \<in> dom ?V'" and
+      valid: "the (?V' (pa, length xs)) xs k"
+    have "wty_event ?S' pa xs"
+    proof (cases "pa = e")
+      case e_eq: True
+      then show ?thesis
+      proof (cases "length xs = Formula.nfv \<phi>")
+        case len_eq: True
+        have eq: "(pa, length xs) = (e, Formula.nfv \<phi>)"
+          using e_eq len_eq by simp
+        have sat: "sat' \<sigma> V xs i \<phi>"
+          using valid unfolding eq by simp
+        show ?thesis
+          using aux[OF len_eq sat]
+          unfolding wty_event_def eq
+          by simp
+      next
+        case False
+        then show ?thesis
+          using Frz.prems(2) in_V valid wty_envs_def wty_event_def by auto
+      qed
+    next
+      case False
+      then show ?thesis
+        using Frz.prems(2) in_V valid wty_envs_def wty_event_def by auto
+    qed
+  }
+  ultimately have "wty_envs ?S' \<sigma> ?V'"
+    unfolding wty_envs_def by blast
+  from Frz.prems(3) have "sat' \<sigma> ?V' v i \<psi>" by simp
+  from Frz.prems(4) have "x \<in> fv \<psi>" by simp
+  show ?case by (rule Frz.IH(2)) fact+
 next
   case (And_assign \<phi> \<psi>)
   from And_assign.prems(1) have phi1: "S, E \<turnstile> \<phi>" by cases
