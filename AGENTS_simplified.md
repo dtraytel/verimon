@@ -22,7 +22,7 @@ The step is:
 
 ```text
 xs      := meval phi on current batch
-db0     := delete (p,m) from db
+db0     := update (p,m) with [] in db
 zs0     := meval psi on current batch and db0
 skip1   := skip + length zs0
 (skip2, alphas1) := discharge_skip skip1 (alphas @ xs)
@@ -72,16 +72,25 @@ Recommended shape:
 
 ```text
 wf_mformula sigma j P V m UNIV phi phi'
-wf_mformula sigma j (P((p,m) |-> 0)) (V((p,m) |-> frz_sat {})) n R psi psi'
+wf_mformula sigma j (P((p,m) |-> 0)) (V((p,m) |-> bot)) n R psi psi'
 wf_frz_state sigma j P V p m phi' psi' skip Xs
 ...
 ```
 
 Why `0` for the shared run:
 
-- the shared `psi` template is advanced on `db0 = Mapping.delete (p,m) db`
-- operationally this means no frozen information is available during that run
+- the shared `psi` template is advanced on `db0 = Mapping.update (p,m) [] db`
+- operationally this means the local binder is present but has empty information during that run
 - so the progress of `(p,m)` for the plain/shared run should be `0`, not `j`
+
+Why `bot` for the shared semantic environment:
+
+- the shared run now really is a standard `wf_envs` instance for
+  `P((p,m) |-> 0)` and `V((p,m) |-> bot)`
+- this matches `Mapping.update (p,m) [] db` directly, so the main `MFrz` proof can
+  reuse the ordinary induction hypothesis for `psi`
+- unlike the old delete-based setup, we no longer need a special-purpose
+  shared-psi correctness lemma outside the usual `meval_correct` flow
 
 Why there is no quantified replay premise in the invariant:
 
@@ -164,7 +173,7 @@ formula directly.
 The main branch should combine five facts:
 
 1. `phi_step`
-2. plain `psi` step on `db0`
+2. plain `psi` step on `db0 = Mapping.update (p,m) [] db`
 3. skip accounting through `length zs0`
 4. queue preservation through `frz_queue_step`
 5. replay postcondition through `freeze_meval0_post`
@@ -183,6 +192,7 @@ This should use:
 
 - updated `phi` monitor from `phi_step`
 - updated shared `psi` template from the plain `psi` run under `(p,m) |-> 0`
+  and `(p,m) |-> bot`
 - replay-specific well-formedness proved only when `freeze_meval0` actually
   tries a concrete snapshot
 - a repaired freeze-state invariant for `(skip', alphas')`
@@ -236,32 +246,39 @@ In particular, keep the two proof tracks separate:
 
 ## Dead ends / things that did not work
 
-### 1. Empty-shadow congruence
+### 1. Delete/update congruence detour
 
 Dead end:
 
 ```text
-meval ... (Mapping.delete (p,m) db) psi
-= meval ... (Mapping.update (p,m) empty_stream ...) psi
+prove a separate congruence relating alternative empty-shadow encodings
 ```
 
 Why it failed:
 
 - it is stronger than the proof needs
-- it treats `Frz` like a fake `Let`
+- the runtime now already commits to `Mapping.update (p,m) [] db`
+- so the right move is to prove one `wf_envs_update_Nil` lemma and reuse the
+  ordinary induction hypothesis for `psi`
 - it ignores the actual queue-based runtime split
 
-### 2. `wf_envs_frz_delete`
+### 2. Reconstructing the exact queue interval too early
 
-Dead end: trying to make the deleted database directly satisfy a `wf_envs`
-statement for the updated binder.
+Dead end: forcing the residual queue after `discharge_skip` and replay into the
+exact range
+
+```text
+[progress Frz (j + d) + skip' ..< progress phi (j+d))
+```
+
+before the final output proof is in place.
 
 Why it failed:
 
-- `wf_envs` requires database coverage for the whole progress domain
-- `Mapping.delete (p,m) db` intentionally removes that key
-- the shared `psi` run on `db0` is therefore not itself the right object for a
-  generic `wf_envs` update lemma
+- the algebra is brittle
+- replay only gives an existential queue fact plus a size bound
+- exact reconstruction should be postponed until the output proof makes clear
+  which equality is really needed
 
 ### 3. Treating the plain `psi` run as a frozen run
 
@@ -274,14 +291,12 @@ Why it failed:
   snapshot
 - the real outputs of `Frz` come from `zs0 @ ys`, not from `zs0` alone
 
-### 4. Reconstructing the exact queue interval too early
+## Immediate next proof targets
 
-Dead end: forcing the residual queue after `discharge_skip` into the exact range
-`[progress Frz j + skip' ..< progress phi (j+d))` before the final output proof
-was in place.
+Given the current `Correctness.thy`, the next intended proof steps are:
 
-Why it failed:
-
-- the algebra is brittle
-- the replay worker only needs an existential queue with valid snapshot indices
-- exact reconstruction should be postponed until it is proven necessary
+1. keep the already finished shared-`psi` step via `wf_envs_update_Nil` and the
+   induction hypothesis,
+2. prove the remaining freeze-state reconstruction lemma after replay,
+3. prove the final output-prefix lemma for `zs0 @ ys`,
+4. only then decide whether `wf_frz_state` should stay exact or be weakened.
