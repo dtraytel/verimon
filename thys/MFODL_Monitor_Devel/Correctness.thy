@@ -1814,7 +1814,7 @@ what remains is this semantic bridge.\<close>
         show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi>_new \<psi>1"
           by (rule IH\<psi>1)
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
-          sorry
+          by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef])
         show "{0..<m} \<subseteq> fv \<phi>1"
           by (simp add: fv(2))
         show "m = Formula.nfv \<phi>1"
@@ -1828,7 +1828,7 @@ what remains is this semantic bridge.\<close>
       show "list_all2
         (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
         [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0 @ ys)"
-        sorry
+        by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef])
     qed
   qed
 next
