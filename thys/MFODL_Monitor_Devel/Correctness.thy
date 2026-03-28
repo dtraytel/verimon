@@ -90,9 +90,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLet p m \<phi> \<psi>) (Formula.Let p \<phi>' \<psi>')"
   | Frz: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>'
-    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi> \<psi>'
-    \<Longrightarrow> (\<forall>k X. k < progress \<sigma> P \<phi>' j \<longrightarrow> frz_qtable \<sigma> V m \<phi>' k X \<longrightarrow>
-         wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi> \<psi>')
+    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi> \<psi>'
     \<Longrightarrow> wf_frz_state \<sigma> j P V p m \<phi>' \<psi>' skip Xs
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> skip Xs) (Formula.Frz p \<phi>' \<psi>')"
@@ -689,14 +687,6 @@ next
     show "pred_mapping (\<lambda>x. x = 0) (P(?pn \<mapsto> 0))"
       using Frz.prems by (auto simp: pred_mapping_alt)
   qed
-  have wf_\<psi>j: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat X)) n R (minit0 n \<psi>) \<psi>"
-    if "k < progress \<sigma> P \<phi> 0" and "frz_qtable \<sigma> V (Formula.nfv \<phi>) \<phi> k X" for k X
-  proof (rule Frz.IH(2))
-    show "\<forall>x\<in>fv \<psi>. x < n"
-      using Frz by auto
-    show "pred_mapping (\<lambda>x. x = 0) (P(?pn \<mapsto> 0))"
-      using Frz.prems by (auto simp: pred_mapping_alt)
-  qed
   have wf_state: "wf_frz_state \<sigma> 0 P V p (Formula.nfv \<phi>) \<phi> \<psi> 0 []"
   proof -
     have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) 0 = 0"
@@ -707,7 +697,7 @@ next
       by simp
   qed
   with Frz fvi_less_nfv show ?case
-    by (metis minit0.simps(5) wf_\<psi>0 wf_\<psi>j wf_mformula.Frz)
+    by (metis minit0.simps(5) wf_\<psi>0 wf_mformula.Frz)
 next
   case (LetPast p \<phi> \<psi>)
   then show ?case
@@ -1549,24 +1539,13 @@ lemma (in maux) frz_state_step:
   sorry
 
 lemma (in maux) frz_shared_psi_step:
-  assumes wf_psi: "wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m \<psi>"
+  assumes wf_psi: "wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m \<psi>"
     and wf: "wf_envs S \<sigma> j \<delta> P P' V db"
     and wty: "S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>)), E' \<turnstile> \<psi>"
     and eval: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.delete (p, m) db) \<psi>_m = (zs, \<psi>_m')"
-  shows "wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m' \<psi>"
+  shows "wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m' \<psi>"
     and "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> frz_sat {}), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
-      [progress \<sigma> (P((p, m) \<mapsto> j)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> j + \<delta>)) \<psi> (j + \<delta>)] zs"
-  sorry
-
-lemma (in maux) frz_shared_psi_frozen_step:
-  assumes wf_psi_frz: "\<forall>k X. k < progress \<sigma> P \<phi> j \<longrightarrow> frz_qtable \<sigma> V m \<phi> k X \<longrightarrow>
-      wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi>_m \<psi>"
-    and wf: "wf_envs S \<sigma> j \<delta> P P' V db"
-    and k_lt: "k < progress \<sigma> P' \<phi> (j + \<delta>)"
-    and qX: "frz_qtable \<sigma> V m \<phi> k X"
-    and wty: "S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>)), E' \<turnstile> \<psi>"
-    and eval: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.delete (p, m) db) \<psi>_m = (zs, \<psi>_m')"
-  shows "wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi>_m' \<psi>"
+      [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs"
   sorry
 
 lemma (in maux) frz_final_replay_post:
@@ -1592,26 +1571,13 @@ lemma (in maux) frz_full_state_step:
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
   sorry
 
-lemma (in maux) frz_final_mformula_step:
-  assumes phi_wf: "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_m' \<phi>"
-    and psi_empty_wf: "wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m' \<psi>"
-    and psi_frozen_wf: "\<forall>k X. k < progress \<sigma> P' \<phi> (j + \<delta>) \<longrightarrow> frz_qtable \<sigma> V m \<phi> k X \<longrightarrow>
-        wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> frz_sat X)) n R \<psi>_m' \<psi>"
-    and state_wf: "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip' alphas'"
-    and fv: "{0..<m} \<subseteq> fv \<phi>"
-    and m_eq: "m = Formula.nfv \<phi>"
-    and safe_phi: "safe_formula \<phi>"
-    and safe_psi: "safe_formula \<psi>"
-  shows "wf_mformula \<sigma> (j + \<delta>) P' V n R (MFrz p m \<phi>_m' \<psi>_m' skip' alphas') (Formula.Frz p \<phi> \<psi>)"
-  using assms by (intro wf_mformula.Frz) auto
-
 lemma (in maux) frz_output_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> frz_sat {}), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
-      [progress \<sigma> (P((p, m) \<mapsto> j)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> j + \<delta>)) \<psi> (j + \<delta>)] zs0"
+      [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
     and replay_rem: "\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x"
     and replay_len: "length ys + length alphas2 \<le> length alphas1"
@@ -1748,9 +1714,7 @@ next
   let ?db0 = "Mapping.delete ?pn db"
   from MFrz.prems(1) obtain \<phi>1 \<psi>1 where Frz_eq: "\<phi>' = Formula.Frz p \<phi>1 \<psi>1" and
     wf_\<phi>: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>1" and
-    wf_\<psi>: "wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> frz_sat {})) n R \<psi> \<psi>1" and
-    wf_\<psi>_frz: "\<forall>k X. k < progress \<sigma> P \<phi>1 j \<longrightarrow> frz_qtable \<sigma> V m \<phi>1 k X \<longrightarrow>
-      wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> frz_sat X)) n R \<psi> \<psi>1" and
+    wf_\<psi>: "wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R \<psi> \<psi>1" and
     wf_state: "wf_frz_state \<sigma> j P V p m \<phi>1 \<psi>1 skip0 \<alpha>s" and
     fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> fv \<phi>1" and
     safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1"
@@ -1872,7 +1836,34 @@ next
       by (auto simp add: Let_def e\<phi> e\<psi>0 ds ef)
     show ?thesis
       unfolding meq Frz_eq prod.case
-      sorry
+    proof (intro conjI)
+      show "wf_mformula \<sigma> (j + \<delta>) P' V n R (MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2) (Formula.Frz p \<phi>1 \<psi>1)"
+      proof (rule wf_mformula.Frz)
+        show "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_new \<phi>1"
+          using \<phi>_step e\<phi> by auto
+        show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1"
+          using frz_shared_psi_step(1)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] .
+        show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
+          using frz_full_state_step[OF wf_state, of P' \<delta> xs zs0 skip1 \<alpha>s1 ys \<alpha>s2]
+            \<phi>_step e\<phi> phi_prog_mono ds frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef]
+          sorry
+        show "{0..<m} \<subseteq> fv \<phi>1"
+          by (simp add: fv(2))
+        show "m = Formula.nfv \<phi>1"
+          by (simp add: fv)
+        show "safe_formula \<phi>1"
+          by (simp add: safe1)
+        show "safe_formula \<psi>1"
+          by (simp add: safe2)
+      qed
+    next
+      show "list_all2
+        (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
+        [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0 @ ys)"
+        using frz_output_step[OF wf_state _ phi_prog_mono frz_shared_psi_step(2)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] ds]
+          \<phi>_step e\<phi> frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef]
+        by auto
+    qed
   qed
 next
   case (MLetPast p m \<phi>1 \<phi>2 i buf)
