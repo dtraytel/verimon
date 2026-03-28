@@ -1830,6 +1830,11 @@ next
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
       by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new")
+    have replay_post:
+      "(\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x)"
+      "length ys + length \<alpha>s2 \<le> length \<alpha>s1"
+      using frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef] \<phi>_step e\<phi>
+      by auto
     have meq:
       "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MFrz p m \<phi> \<psi> skip0 \<alpha>s) =
        (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
@@ -1844,9 +1849,9 @@ next
         show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1"
           using frz_shared_psi_step(1)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] .
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
-          using frz_full_state_step[OF wf_state, of P' \<delta> xs zs0 skip1 \<alpha>s1 ys \<alpha>s2]
-            \<phi>_step e\<phi> phi_prog_mono ds frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef]
-          sorry
+          using frz_full_state_step[OF wf_state, of P' \<delta> xs zs0 skip1 \<alpha>s1 \<alpha>s2 ys]
+            \<phi>_step e\<phi> phi_prog_mono ds replay_post
+          by auto
         show "{0..<m} \<subseteq> fv \<phi>1"
           by (simp add: fv(2))
         show "m = Formula.nfv \<phi>1"
@@ -1861,7 +1866,7 @@ next
         (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
         [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0 @ ys)"
         using frz_output_step[OF wf_state _ phi_prog_mono frz_shared_psi_step(2)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] ds]
-          \<phi>_step e\<phi> frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef]
+          \<phi>_step e\<phi> replay_post
         by auto
     qed
   qed
