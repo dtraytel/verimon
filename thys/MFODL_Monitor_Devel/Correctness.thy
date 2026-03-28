@@ -1693,6 +1693,7 @@ lemma (in maux) frz_replay_residual_exact:
     and "length alphas2 =
       progress \<sigma> P' \<phi> (j + \<delta>) -
       (progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys)"
+    and "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
 proof -
   let ?jfrz0 = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
   let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
@@ -1706,7 +1707,13 @@ proof -
   have d_eq: "length (alphas @ xs) - length alphas1 = ?d"
     using discharge_skip_eq[OF ds] by simp
   have ks_eq: "ks = [?jfrz0 + skip0 + ?d..< ?jphi']"
-    unfolding ks_def d_eq using len0 drop_upt_eq_upt by simp
+  proof -
+    have "drop (length (alphas @ xs) - length alphas1) [?jfrz0 + skip0..< ?jphi'] =
+        [?jfrz0 + skip0 + (length (alphas @ xs) - length alphas1)..< ?jphi']"
+      using len0 drop_upt_eq_upt by simp
+    then show ?thesis
+      unfolding ks_def d_eq .
+  qed
   have queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1"
     unfolding ks_def using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
   have queue1': "wf_frz_queue \<sigma> V m \<phi> [?jfrz0 + skip0 + ?d..< ?jphi'] alphas1"
@@ -1720,14 +1727,29 @@ proof -
   have ys_le: "length ys \<le> ?jphi' - (?jfrz0 + skip0 + ?d)"
     using len1 len2 by simp
   have drop_eq: "drop (length ys) ks = [?jfrz0 + skip0 + ?d + length ys..< ?jphi']"
-    unfolding ks_eq using ys_le drop_upt_eq_upt by simp
+  proof -
+    have "drop (length ys) [?jfrz0 + skip0 + ?d..< ?jphi'] =
+        [?jfrz0 + skip0 + ?d + length ys..< ?jphi']"
+      using ys_le drop_upt_eq_upt by simp
+    then show ?thesis
+      unfolding ks_eq .
+  qed
   have queue2: "wf_frz_queue \<sigma> V m \<phi> [?jfrz0 + skip0 + ?d + length ys..< ?jphi'] alphas2"
     using queue2_raw unfolding drop_eq .
+  have bound: "?jfrz0 + skip0 + ?d + length ys \<le> ?jphi'"
+    using ys_le
+    by (smt (verit) add.assoc add.right_neutral
+        add_diff_cancel_left' d_eq dual_order.order_iff_strict
+        le_add_diff_inverse2 le_trans len0 len1 length_nth_simps(1)
+        length_upt nat_le_linear phi_mono state upt_conv_Nil
+        wf_frz_state_def)
   show "wf_frz_queue \<sigma> V m \<phi>
       [?jfrz0 + skip0 + ?d + length ys..< ?jphi'] alphas2"
     using queue2 .
   show "length alphas2 = ?jphi' - (?jfrz0 + skip0 + ?d + length ys)"
     using wf_frz_queue_length[OF queue2] .
+  show "?jfrz0 + skip0 + ?d + length ys \<le> ?jphi'"
+    using bound .
 qed
 
 lemma (in maux) frz_progress_accounting:
@@ -1768,7 +1790,8 @@ proof -
   show "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
     using queue' .
   from wf_frz_queue_length[OF queue'] show "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-    sorry
+    by arith
+ auto
 qed
 
 lemma (in maux) frz_full_state_step:
