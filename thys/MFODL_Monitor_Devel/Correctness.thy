@@ -1500,6 +1500,44 @@ next
   qed
 qed
 
+lemma (in maux) freeze_meval0_post_exact:
+  assumes wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
+  shows "case freeze_meval0 (meval j n []) j xs (p, m) \<psi> of (ys, xs') \<Rightarrow>
+    wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks) xs' \<and> length ys + length xs' = length xs"
+  using wfq
+proof (induction xs arbitrary: ks)
+  case Nil
+  then show ?case
+    by (cases ks) (simp_all add: wf_frz_queue_def freeze_meval0.simps)
+next
+  case (Cons \<alpha> \<alpha>s)
+  from Cons.prems obtain k ks' where ks: "ks = k # ks'"
+    and q\<alpha>: "frz_qtable \<sigma> V m \<phi> k \<alpha>"
+    and qrest: "wf_frz_queue \<sigma> V m \<phi> ks' \<alpha>s"
+    by (cases ks) (auto simp: wf_frz_queue_def)
+  obtain us \<psi>' where ev:
+    "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi> = (us, \<psi>')"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi>")
+  show ?case
+  proof (cases us)
+    case Nil
+    with ev ks Cons.prems show ?thesis
+      by (simp add: wf_frz_queue_def freeze_meval0.simps)
+  next
+    case (Cons y ys0)
+    obtain zs xs' where rec: "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> = (zs, xs')"
+      by (cases "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi>")
+    have IH': "case freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> of (ys, xs') \<Rightarrow>
+        wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks') xs' \<and> length ys + length xs' = length \<alpha>s"
+      using Cons.IH[OF qrest] .
+    from IH'[unfolded rec] have queue': "wf_frz_queue \<sigma> V m \<phi> (drop (length zs) ks') xs'"
+      and len': "length zs + length xs' = length \<alpha>s"
+      by simp_all
+    from ev Cons rec ks queue' len' show ?thesis
+      by (simp add: freeze_meval0.simps)
+  qed
+qed
+
 lemma (in maux) frz_queue_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -1576,6 +1614,10 @@ proof
     by simp
 qed
 
+
+text \<open>The current `MFrz` branch already uses the ordinary induction hypothesis for
+ the shared `psi` run. What remains is the replay/progress bookkeeping. The two
+ lemmas below are intentionally the last isolated `sorry`s in that branch.\<close>
 lemma (in maux) frz_full_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -1585,13 +1627,7 @@ lemma (in maux) frz_full_state_step:
     and replay_rem: "\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x"
     and replay_len: "length ys + length alphas2 \<le> length alphas1"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
-proof -
-  have skip1_replay_empty: "skip1 > 0 \<longrightarrow> alphas2 = []"
-    using frz_replay_skip_empty[OF ds replay_len] .
-  note state phi_res phi_mono ds replay_rem replay_len skip1_replay_empty
-  show ?thesis
-    sorry
-qed
+  sorry
 
 lemma (in maux) frz_output_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
@@ -1605,11 +1641,7 @@ lemma (in maux) frz_output_step:
     and replay_len: "length ys + length alphas2 \<le> length alphas1"
   shows "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
-proof -
-  note psi_rows replay_rem replay_len
-  show ?thesis
-    sorry
-qed
+  sorry
 
 lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
