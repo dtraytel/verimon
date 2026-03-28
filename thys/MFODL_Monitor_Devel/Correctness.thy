@@ -1558,10 +1558,17 @@ lemma (in maux) frz_final_replay_post:
   shows "(\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x)"
     and "length ys + length alphas2 \<le> length alphas1"
 proof -
-  obtain ks where
-    queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1" and
-    ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>)"
-    using frz_queue_step(1)[OF state phi_res phi_mono ds] by blast
+  define ks where
+    "ks = drop (length (alphas @ xs) - length alphas1)
+      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0..<progress \<sigma> P' \<phi> (j + \<delta>)]"
+  have queue0: "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0..<progress \<sigma> P' \<phi> (j + \<delta>)] (alphas @ xs)"
+    using wf_frz_queue_extend[OF state phi_res phi_mono] .
+  have len0: "length [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0..<progress \<sigma> P' \<phi> (j + \<delta>)] = length (alphas @ xs)"
+    using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+  have queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1"
+    unfolding ks_def using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
+  have ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>)"
+    unfolding ks_def by auto
   have replay:
     "case freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' of (zs, xs') \<Rightarrow>
        (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
@@ -1572,6 +1579,7 @@ proof -
     and "length ys + length alphas2 \<le> length alphas1"
     by simp_all
 qed
+
 
 lemma (in maux) frz_full_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
@@ -1843,11 +1851,14 @@ next
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
       by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new")
+    have phi_res':
+      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
+        [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
+      using \<phi>_step[unfolded e\<phi>] by auto
     have replay_post:
       "(\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x)"
       "length ys + length \<alpha>s2 \<le> length \<alpha>s1"
-      using frz_final_replay_post[OF _ phi_prog_mono wf_state e\<psi>0 ds ef] \<phi>_step e\<phi>
-      by auto
+      using frz_final_replay_post[OF phi_res' phi_prog_mono wf_state ds ef] by blast+
     have meq:
       "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MFrz p m \<phi> \<psi> skip0 \<alpha>s) =
        (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
