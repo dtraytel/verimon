@@ -1677,6 +1677,7 @@ lemma (in maux) freeze_meval0D:
     "freeze_meval0 eval j alphas pn \<psi> = (ys, alphas')"
   shows "wf_frz_queue \<sigma> V m \<phi> (drop (length ys) is) alphas'"
     "list_all2 (\<lambda>\<alpha> Y. case fst (eval (Mapping.update pn (replicate j \<alpha>) Mapping.empty) \<psi>) of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False) (take (length ys) alphas) ys"
+    "(case alphas' of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst (eval (Mapping.update pn (replicate j \<alpha>) Mapping.empty) \<psi>) = [])"
   using assms
   by (induct eval j alphas pn \<psi> arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
     (fastforce simp: freeze_meval0.simps wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+

@@ -248,6 +248,21 @@ Update after the recent proof work:
   exact dropped queue to the target `wf_frz_state` / output interval for
   `Formula.Frz`
 
+Important new finding:
+
+- the current exact `wf_frz_state` / `skip` story may still be too rigid
+- if one combines
+  - the frontier equation
+    `progress Frz' + skip1 = old_frontier + discharged + replayed`
+  - with the expected semantic output equation
+    `progress Frz' = progress Frz + length zs0 + length ys`
+  then one derives `skip1 = skip0`
+- but the runtime really changes `skip`, so these two equations cannot both be
+  the right bridge under the current invariant
+- therefore the remaining proof should treat the queue frontier and semantic
+  output progress as separate obligations and be ready to weaken or revise the
+  exact `wf_frz_state` invariant if needed
+
 In particular, keep the two proof tracks separate:
 
 - shared-template lemmas use binder progress `0`
