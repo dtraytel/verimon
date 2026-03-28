@@ -1684,7 +1684,7 @@ fun discharge_skip where
 fun freeze_meval0 where
   "freeze_meval0 eval j [] p \<phi>0 = ([], [])"
 | "freeze_meval0 eval j (\<alpha> # \<alpha>s) p \<phi>0 =
-    (let (ys, \<psi>') = eval (Mapping.update p (replicate j \<alpha>) Mapping.empty) \<phi>0 in
+    (let (ys, _) = eval (Mapping.update p (replicate j \<alpha>) Mapping.empty) \<phi>0 in
       case ys of
         [] => ([], \<alpha> # \<alpha>s)
       | y # _ =>
