@@ -63,6 +63,34 @@ Interpretation:
 - `skip` counts how many starts after that are already discharged by plain `psi`
 - `Xs` stores the remaining snapshots for starts in `[jfrz + skip ..< jphi)`
 
+## Revised `wf_mformula.Frz` invariant
+
+The `Frz` constructor should use two different binder-progress assumptions for
+the stored `psi` monitor.
+
+Recommended shape:
+
+```text
+wf_mformula sigma j P V m UNIV phi phi'
+wf_mformula sigma j (P((p,m) |-> 0)) (V((p,m) |-> frz_sat {})) n R psi psi'
+wf_frz_state sigma j P V p m phi' psi' skip Xs
+...
+```
+
+Why `0` for the shared run:
+
+- the shared `psi` template is advanced on `db0 = Mapping.delete (p,m) db`
+- operationally this means no frozen information is available during that run
+- so the progress of `(p,m)` for the plain/shared run should be `0`, not `j`
+
+Why there is no quantified replay premise in the invariant:
+
+- `freeze_meval0` starts from the stored shared template but does not store any
+  replay-derived monitor state back into `MFrz`
+- so replay well-formedness is not part of the persisted monitor invariant
+- it should instead be proved on demand by worker-specific helper lemmas in the
+  `MFrz` branch, from the stored shared template plus the concrete snapshot
+
 ## High-level correctness skeleton
 
 The `MFrz` branch of `meval_correct` should be proved in four layers.
@@ -154,9 +182,9 @@ wf_mformula ... (MFrz ... phi' psi' skip' alphas') (Frz p phi psi)
 This should use:
 
 - updated `phi` monitor from `phi_step`
-- updated shared `psi` template from the plain `psi` run
-- unchanged binder-side premise saying `psi` is well-formed for every valid
-  frozen snapshot
+- updated shared `psi` template from the plain `psi` run under `(p,m) |-> 0`
+- replay-specific well-formedness proved only when `freeze_meval0` actually
+  tries a concrete snapshot
 - a repaired freeze-state invariant for `(skip', alphas')`
 
 This is the place where a real successor to `frz_state_step` is needed.
@@ -198,6 +226,13 @@ Current recommendation:
   clear which indexing fact is actually needed.
 - first formalize the final `MFrz` branch around `queue_step`, `replay_step`,
   and the plain-`psi` skip contribution.
+
+In particular, keep the two proof tracks separate:
+
+- shared-template lemmas use binder progress `0`
+- replay lemmas are derived on demand for the concrete snapshot currently tried
+- `wf_frz_state` is the bridge that records when concrete snapshots are
+  available to move from the shared track to the replay track
 
 ## Dead ends / things that did not work
 
