@@ -1794,6 +1794,7 @@ next
         show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi>_new \<psi>1"
           by (rule IH\<psi>1)
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
+          sledgehammer
           sorry
         show "{0..<m} \<subseteq> fv \<phi>1"
           by (simp add: fv(2))
