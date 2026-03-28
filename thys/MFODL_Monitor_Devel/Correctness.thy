@@ -16,9 +16,6 @@ definition (in maux) frz_qtable where
   "frz_qtable \<sigma> V m \<phi> k X =
     qtable m (Formula.fv \<phi>) (mem_restr UNIV) (\<lambda>v. Formula.sat \<sigma> V (map the v) k \<phi>) X"
 
-definition (in maux) frz_sat where
-  "frz_sat X = (\<lambda>w _. map Some w \<in> X)"
-
 definition (in maux) wf_frz_queue where
   "wf_frz_queue \<sigma> V m \<phi> ks Xs = list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi> k X) ks Xs"
 
@@ -90,7 +87,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLet p m \<phi> \<psi>) (Formula.Let p \<phi>' \<psi>')"
   | Frz: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>'
-    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi> \<psi>'
+    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<bottom>)) n R \<psi> \<psi>'
     \<Longrightarrow> wf_frz_state \<sigma> j P V p m \<phi>' \<psi>' skip Xs
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> skip Xs) (Formula.Frz p \<phi>' \<psi>')"
@@ -680,7 +677,7 @@ next
 next
   case (Frz p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
-  have wf_\<psi>0: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R (minit0 n \<psi>) \<psi>"
+  have wf_\<psi>0: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R (minit0 n \<psi>) \<psi>"
   proof (rule Frz.IH(2))
     show "\<forall>x\<in>fv \<psi>. x < n"
       using Frz by auto
@@ -1433,7 +1430,7 @@ text \<open>Freeze follows the queue-based runtime from `AGENTS_simplified.md`, 
 proof steps should mirror that control flow instead of trying to force the deleted
 binder entry into a generic `wf_envs` update lemma.
 
-The key reason is operational as well as technical: `Mapping.delete (p, m) db`
+The key reason is operational as well as technical: `Mapping.update (p, m) p[ db`
 removes the binder key from the database, while `wf_envs` insists that the database
 covers the whole domain of the progress environment. So the deleted-db run of the
 shared template is not itself a `wf_envs` instance for the updated freeze binder.
@@ -1529,25 +1526,6 @@ proof -
     using discharge_skip_pos_empty[OF ds] by blast
 qed
 
-lemma (in maux) frz_state_step:
-  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
-    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
-      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
-    and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-  shows "let (skip', xs') = discharge_skip skip (xs @ ys)
-    in wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip' xs'"
-  sorry
-
-lemma (in maux) frz_shared_psi_step:
-  assumes wf_psi: "wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m \<psi>"
-    and wf: "wf_envs S \<sigma> j \<delta> P P' V db"
-    and wty: "S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>)), E' \<turnstile> \<psi>"
-    and eval: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.delete (p, m) db) \<psi>_m = (zs, \<psi>_m')"
-  shows "wf_mformula \<sigma> (j + \<delta>) (P'((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> frz_sat {})) n R \<psi>_m' \<psi>"
-    and "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> frz_sat {}), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
-      [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs"
-  sorry
-
 lemma (in maux) frz_final_replay_post:
   assumes phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
@@ -1597,7 +1575,7 @@ lemma (in maux) frz_output_step:
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-    and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> frz_sat {}), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
+    and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> \<bottom>), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
       [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
     and replay_rem: "\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x"
@@ -1605,6 +1583,18 @@ lemma (in maux) frz_output_step:
   shows "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
   sorry
+
+lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
+  wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
+  unfolding wf_envs_def wty_envs_def wty_event_def
+  apply (auto simp: subset_eq split: option.splits)
+  subgoal for q m
+    by (cases "(q, m) \<in> dom P") auto
+  subgoal by fastforce
+  subgoal by fastforce
+  subgoal by fastforce
+  subgoal by fastforce
+  done
 
 lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
@@ -1671,7 +1661,7 @@ next
       by (clarsimp simp: list.rel_map split: pred_mode.split)
   next
     let ?next_keys = "\<Union>k \<in> {j ..< j + \<delta>}. {(p, n). \<exists>x. (p, x) \<in> \<Gamma> \<sigma> k \<and> n = length x}"
-    let "?option_sats_at k" = "map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> k \<and> length v = length ts}"
+    let "?option_sats_at" = "\<lambda>k. map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> k \<and> length v = length ts}"
     case False
     hence obs: "?p \<notin> dom P'" "?p \<notin> dom V" "?p \<in> ?next_keys \<longrightarrow> ?p \<in> Mapping.keys db"
       using MPred(2)
@@ -1732,10 +1722,10 @@ next
 next
   case (MFrz p m \<phi> \<psi> skip0 \<alpha>s)
   let ?pn = "(p, m)"
-  let ?db0 = "Mapping.delete ?pn db"
+  let ?db0 = "Mapping.update ?pn [] db"
   from MFrz.prems(1) obtain \<phi>1 \<psi>1 where Frz_eq: "\<phi>' = Formula.Frz p \<phi>1 \<psi>1" and
     wf_\<phi>: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>1" and
-    wf_\<psi>: "wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R \<psi> \<psi>1" and
+    wf_\<psi>: "wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi> \<psi>1" and
     wf_state: "wf_frz_state \<sigma> j P V p m \<phi>1 \<psi>1 skip0 \<alpha>s" and
     fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> fv \<phi>1" and
     safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1"
@@ -1761,92 +1751,14 @@ next
     show ?thesis
       by (rule progress_mono_gen[OF le_add1 pm pm' rm])
   qed
-  have queue_step:
-    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
-       let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs)
-       in \<exists>ks. wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1 \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>))"
-  proof -
-    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
-    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
-      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
-    from \<phi>_step[unfolded e\<phi>] have resx:
-      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
-        [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
-      by auto
-    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
-      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
-    from frz_queue_step(1)[OF wf_state resx phi_prog_mono ds] show ?thesis
-      unfolding e\<phi> Let_def using ds by auto
-  qed
-  have state_step:
-    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
-      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs) in
-      wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s1"
-  proof -
-    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
-    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
-      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
-    from \<phi>_step[unfolded e\<phi>] have resx:
-      "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
-        [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
-      by auto
-    show ?thesis
-      unfolding e\<phi> Let_def
-      using frz_state_step[OF wf_state resx phi_prog_mono]
-      by simp
-  qed
-  moreover have replay_step:
-    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
-      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
-          (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
-      in (\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x)"
-  proof -
-    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
-    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
-      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
-    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
-      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
-    from queue_step[unfolded e\<phi> Let_def, simplified ds] obtain ks where
-      queue1: "wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1" and ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>)"
-      using ds by auto
-    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi> = (ys, \<alpha>s2)"
-      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>")
-    from freeze_meval0_post[OF ks_lt queue1, unfolded ef] have rem:
-      "\<forall>x\<in>set \<alpha>s2. \<exists>k. k < progress \<sigma> P' \<phi>1 (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi>1 k x"
-      by (smt (verit) case_prodD ef)
-    show ?thesis
-      unfolding e\<phi> ds ef Let_def using rem
-      by (simp add: ds ef)
-  qed
-  moreover have out_step:
-    "case meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>_new) \<Rightarrow>
-      let (skip1, \<alpha>s1) = discharge_skip skip0 (\<alpha>s @ xs);
-          (ys, \<alpha>s2) = freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>
-      in length ys + length \<alpha>s2 \<le> length \<alpha>s1"
-  proof -
-    let ?ts = "map (\<tau> \<sigma>) [j ..< j + \<delta>]"
-    obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m ?ts db \<phi> = (xs, \<phi>_new)"
-      by (cases "meval (j + \<delta>) m ?ts db \<phi>")
-    obtain skip1 \<alpha>s1 where ds: "discharge_skip skip0 (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
-      by (cases "discharge_skip skip0 (\<alpha>s @ xs)")
-    from queue_step[unfolded e\<phi> Let_def, simplified ds] obtain ks where
-      queue1: "wf_frz_queue \<sigma> V m \<phi>1 ks \<alpha>s1" and ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi>1 (j + \<delta>)"
-      using ds by auto
-    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi> = (ys, \<alpha>s2)"
-      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>")
-    from freeze_meval0_post[OF ks_lt queue1, unfolded ef] have len:
-      "length ys + length \<alpha>s2 \<le> length \<alpha>s1"
-      by (metis (no_types, lifting) case_prodD ef)
-    show ?thesis
-      unfolding e\<phi> ds ef Let_def using len
-      by (simp add: ds ef)
-  qed
-  ultimately show ?case
+  show ?case
   proof -
     obtain xs \<phi>_new where e\<phi>: "meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> = (xs, \<phi>_new)"
       by (cases "meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi>")
     obtain zs0 \<psi>_new where e\<psi>0: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi> = (zs0, \<psi>_new)"
       by (cases "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi>")
+    note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
+    note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
@@ -1870,8 +1782,8 @@ next
       proof (rule wf_mformula.Frz)
         show "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_new \<phi>1"
           using \<phi>_step e\<phi> by auto
-        show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> frz_sat {})) n R \<psi>_new \<psi>1"
-          using frz_shared_psi_step(1)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] .
+        show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi>_new \<psi>1"
+          by (rule IH\<psi>1)
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
           using frz_full_state_step[OF wf_state, of P' \<delta> xs zs0 skip1 \<alpha>s1 \<alpha>s2 ys]
             \<phi>_step e\<phi> phi_prog_mono ds replay_post
@@ -1889,8 +1801,7 @@ next
       show "list_all2
         (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
         [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0 @ ys)"
-        using frz_output_step[OF wf_state _ phi_prog_mono frz_shared_psi_step(2)[OF wf_\<psi> MFrz.prems(2) wty2 e\<psi>0] ds]
-          \<phi>_step e\<phi> replay_post
+        using frz_output_step[OF wf_state _ phi_prog_mono IH\<psi>2 ds] \<phi>_step e\<phi> replay_post
         by auto
     qed
   qed
