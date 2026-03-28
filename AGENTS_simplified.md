@@ -176,7 +176,7 @@ The main branch should combine five facts:
 2. plain `psi` step on `db0 = Mapping.update (p,m) [] db`
 3. skip accounting through `length zs0`
 4. queue preservation through `frz_queue_step`
-5. replay postcondition through `freeze_meval0_post`
+5. replay postcondition through `freeze_meval0_post_exact`
 
 The proof should then split into two obligations.
 
@@ -236,6 +236,17 @@ Current recommendation:
   clear which indexing fact is actually needed.
 - first formalize the final `MFrz` branch around `queue_step`, `replay_step`,
   and the plain-`psi` skip contribution.
+
+Update after the recent proof work:
+
+- we now do need an exact replay lemma, not only the weak residual-membership
+  form
+- `freeze_meval0_post_exact` is the right worker lemma: it preserves the exact
+  residual queue as `drop (length ys) ks` and gives the exact equality
+  `length ys + length xs' = length xs`
+- the remaining gap is therefore a final progress-accounting bridge from that
+  exact dropped queue to the target `wf_frz_state` / output interval for
+  `Formula.Frz`
 
 In particular, keep the two proof tracks separate:
 
