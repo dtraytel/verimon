@@ -1399,48 +1399,62 @@ lemma (in maux) wf_frz_queue_after_discharge:
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
     and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and ds: "discharge_skip (skip + extra) (xs @ ys) = (skip', xs')"
-  shows "\<exists>ks. wf_frz_queue \<sigma> V m \<phi> ks xs' \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>))"
+  shows "wf_frz_queue \<sigma> V m \<phi>
+      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + extra - skip'..<progress \<sigma> P' \<phi> (j + \<delta>)] xs'"
 proof -
   let ?jphi = "progress \<sigma> P \<phi> j"
   let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
+  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
   have queue_phi: "wf_frz_queue \<sigma> V m \<phi> [?jphi..< ?jphi'] ys"
     using phi_res by (simp add: wf_frz_queue_def frz_qtable_def)
   show ?thesis
   proof (cases "skip = 0")
     case True
-    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
     from state have queue_old: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi] xs"
       by (auto simp: wf_frz_state_def Let_def True)
-    have interval: "[?jfrz..< ?jphi'] = [?jfrz..< ?jphi] @ [?jphi..< ?jphi']"
+    have interval0: "[?jfrz..< ?jphi'] = [?jfrz..< ?jphi] @ [?jphi..< ?jphi']"
       using mono state True by (intro upt_add_eq_append') (auto simp: wf_frz_state_def Let_def)
     have queue0: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi'] (xs @ ys)"
-      unfolding wf_frz_queue_def interval using queue_old queue_phi
+      unfolding wf_frz_queue_def interval0 using queue_old queue_phi
       by (meson list_all2_appendI wf_frz_queue_def)
     have len0: "length [?jfrz..< ?jphi'] = length (xs @ ys)"
       using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
-    let ?ks = "drop (length (xs @ ys) - length xs') [?jfrz..< ?jphi']"
-    have queue1: "wf_frz_queue \<sigma> V m \<phi> ?ks xs'"
+    have consumed: "length (xs @ ys) - length xs' = extra - skip'"
+      using discharge_skip_eq[OF ds] True by arith
+    have le0: "extra - skip' \<le> ?jphi' - ?jfrz"
+      using len0 consumed by fastforce
+    have interval: "drop (length (xs @ ys) - length xs') [?jfrz..< ?jphi'] = [?jfrz + extra - skip'..< ?jphi']"
+      using le0 drop_upt consumed True discharge_skip_eq[OF ds] by auto
+    have queue1: "wf_frz_queue \<sigma> V m \<phi> (drop (length (xs @ ys) - length xs') [?jfrz..< ?jphi']) xs'"
       using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
-    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
-      by auto
-    show ?thesis
-      using queue1 lt1 by blast
+    from queue1 show ?thesis
+      unfolding interval .
   next
     case False
     with state have xs_nil: "xs = []"
       using wf_frz_state_skipD by blast
+    have skip_eq: "skip = ?jfrz - ?jphi"
+      using state by (auto simp: wf_frz_state_def Let_def)
     have len_phi: "length [?jphi..< ?jphi'] = length ys"
       using queue_phi by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
-    let ?ks = "drop (length ys - length xs') [?jphi..< ?jphi']"
-    have queue1: "wf_frz_queue \<sigma> V m \<phi> ?ks xs'"
+    have consumed: "length ys - length xs' = skip + extra - skip'"
+      using discharge_skip_eq[OF ds] xs_nil by simp
+    have le0: "skip + extra - skip' \<le> ?jphi' - ?jphi"
+      using len_phi consumed by auto
+    have interval: "drop (length ys - length xs') [?jphi..< ?jphi'] = [?jfrz + extra - skip'..< ?jphi']"
+    proof -
+      have "drop (length ys - length xs') [?jphi..< ?jphi'] = [?jphi + (length ys - length xs')..< ?jphi']"
+        unfolding consumed using le0 by simp
+      also have "?jphi + (length ys - length xs') = ?jfrz + extra - skip'"
+        using consumed skip_eq False discharge_skip_eq[OF ds] by fastforce
+      finally show ?thesis .
+    qed
+    have queue1: "wf_frz_queue \<sigma> V m \<phi> (drop (length ys - length xs') [?jphi..< ?jphi']) xs'"
       using wf_frz_queue_discharge_skip[OF queue_phi] ds xs_nil len_phi by simp
-    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
-      by auto
-    show ?thesis
-      using queue1 lt1 by blast
+    from queue1 show ?thesis
+      unfolding interval .
   qed
 qed
-
 
 text \<open>Freeze follows the queue-based runtime from `AGENTS_simplified.md`, so the next
 proof steps should mirror that control flow instead of trying to force the deleted
