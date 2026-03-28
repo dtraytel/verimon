@@ -1553,12 +1553,25 @@ lemma (in maux) frz_final_replay_post:
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
-    and eval_psi: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.delete (p, m) db) \<psi>_m = (zs0, \<psi>_m')"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
     and ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' = (ys, alphas2)"
   shows "(\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x)"
     and "length ys + length alphas2 \<le> length alphas1"
-  sorry
+proof -
+  obtain ks where
+    queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1" and
+    ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>)"
+    using frz_queue_step(1)[OF state phi_res phi_mono ds] by blast
+  have replay:
+    "case freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' of (zs, xs') \<Rightarrow>
+       (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
+       length zs + length xs' \<le> length alphas1"
+    using freeze_meval0_post[OF ks_lt queue1] .
+  from replay[unfolded ef] show
+    "(\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x)"
+    and "length ys + length alphas2 \<le> length alphas1"
+    by simp_all
+qed
 
 lemma (in maux) frz_full_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
