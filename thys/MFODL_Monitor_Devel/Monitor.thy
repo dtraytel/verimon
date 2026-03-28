@@ -1745,7 +1745,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     in (ys, MLet p m \<phi> \<psi>))"
 | "meval n ts db (MFrz p m \<phi> \<psi> skip \<alpha>s) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
-         db0 = Mapping.delete (p, m) db;
+         db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
          (skip, \<alpha>s) = discharge_skip (skip + length zs0) (\<alpha>s @ xs);
          (ys, \<alpha>s') = freeze_meval0 (meval n []) j \<alpha>s (p, m) \<psi>
