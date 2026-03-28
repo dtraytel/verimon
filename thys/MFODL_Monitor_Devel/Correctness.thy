@@ -1662,6 +1662,11 @@ lemma (in maux) wf_frz_queue_length:
   using wfq by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
 
 
+lemma drop_upt_eq_upt:
+  assumes n_le: "n \<le> b - a"
+  shows "drop n [a..<b] = [a + n..<b]"
+  using n_le by (induction n arbitrary: a) auto
+
 text \<open>The current `MFrz` branch already uses the ordinary induction hypothesis for
  the shared `psi` run. What remains is the replay/progress bookkeeping. The next
  helper isolates the exact queue/progress alignment needed for the persisted
@@ -1676,6 +1681,68 @@ lemma (in maux) freeze_meval0D:
   by (induct eval j alphas pn \<psi> arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
     (fastforce simp: freeze_meval0.simps wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
 
+lemma (in maux) frz_replay_residual_exact:
+  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
+    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
+    and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
+    and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
+    and ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' = (ys, alphas2)"
+  shows "wf_frz_queue \<sigma> V m \<phi>
+      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
+    and "length alphas2 =
+      progress \<sigma> P' \<phi> (j + \<delta>) -
+      (progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys)"
+proof -
+  let ?jfrz0 = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+  let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
+  let ?d = "(skip0 + length zs0) - skip1"
+  define ks where
+    "ks = drop (length (alphas @ xs) - length alphas1) [?jfrz0 + skip0..< ?jphi']"
+  have queue0: "wf_frz_queue \<sigma> V m \<phi> [?jfrz0 + skip0..< ?jphi'] (alphas @ xs)"
+    using wf_frz_queue_extend[OF state phi_res phi_mono] .
+  have len0: "length [?jfrz0 + skip0..< ?jphi'] = length (alphas @ xs)"
+    using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+  have d_eq: "length (alphas @ xs) - length alphas1 = ?d"
+    using discharge_skip_eq[OF ds] by simp
+  have ks_eq: "ks = [?jfrz0 + skip0 + ?d..< ?jphi']"
+    unfolding ks_def d_eq using len0 drop_upt_eq_upt by simp
+  have queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1"
+    unfolding ks_def using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
+  have queue1': "wf_frz_queue \<sigma> V m \<phi> [?jfrz0 + skip0 + ?d..< ?jphi'] alphas1"
+    using queue1 unfolding ks_eq .
+  have len1: "length alphas1 = ?jphi' - (?jfrz0 + skip0 + ?d)"
+    using wf_frz_queue_length[OF queue1'] .
+  have queue2_raw: "wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks) alphas2"
+    and len2: "length ys + length alphas2 = length alphas1"
+    using freeze_meval0_post_exact[OF queue1, of "j + \<delta>" n p \<psi>_m', unfolded ef prod.case]
+    by blast+
+  have ys_le: "length ys \<le> ?jphi' - (?jfrz0 + skip0 + ?d)"
+    using len1 len2 by simp
+  have drop_eq: "drop (length ys) ks = [?jfrz0 + skip0 + ?d + length ys..< ?jphi']"
+    unfolding ks_eq using ys_le drop_upt_eq_upt by simp
+  have queue2: "wf_frz_queue \<sigma> V m \<phi> [?jfrz0 + skip0 + ?d + length ys..< ?jphi'] alphas2"
+    using queue2_raw unfolding drop_eq .
+  show "wf_frz_queue \<sigma> V m \<phi>
+      [?jfrz0 + skip0 + ?d + length ys..< ?jphi'] alphas2"
+    using queue2 .
+  show "length alphas2 = ?jphi' - (?jfrz0 + skip0 + ?d + length ys)"
+    using wf_frz_queue_length[OF queue2] .
+qed
+
+lemma (in maux) frz_progress_accounting:
+  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
+    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
+      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
+    and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
+    and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> \<bottom>), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
+      [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
+    and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
+    and ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' = (ys, alphas2)"
+  shows "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 =
+    progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys"
+  sorry
+
 lemma (in maux) frz_progress_queue:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -1688,23 +1755,19 @@ lemma (in maux) frz_progress_queue:
   shows "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
 proof -
-  let ?jphi = "progress \<sigma> P' \<phi> (j + \<delta>)"
-  let ?jfrz = "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)"
-  have zs0_len:
-    "length zs0 = length [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)]"
-    using psi_rows by (auto dest!: list_all2_lengthD)
-  obtain ks where
-    queue1: "wf_frz_queue \<sigma> V m \<phi> ks alphas1" and
-    ks_lt: "\<forall>k\<in>set ks. k < ?jphi" and
-    queue2: "wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks) alphas2" and
-    len2: "length ys + length alphas2 = length alphas1"
-    using frz_final_replay_post_exact[OF phi_res phi_mono state ds ef] by blast
-  have len_queue2: "length alphas2 = ?jphi - (?jfrz + skip1)"
-    sorry
-  have queue2': "wf_frz_queue \<sigma> V m \<phi> [ ?jfrz + skip1..< ?jphi] alphas2"
-    sorry
-  then show "wf_frz_queue \<sigma> V m \<phi> [?jfrz + skip1..< ?jphi] alphas2" .
-  from len_queue2 queue2' show "?jfrz + skip1 \<le> ?jphi"
+  have eq:
+    "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 =
+      progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys"
+    using frz_progress_accounting[OF state phi_res phi_mono psi_rows ds ef] .
+  have queue:
+    "wf_frz_queue \<sigma> V m \<phi>
+      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
+    using frz_replay_residual_exact(1)[OF state phi_res phi_mono ds ef] .
+  have queue': "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
+    using queue unfolding eq .
+  show "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
+    using queue' .
+  from wf_frz_queue_length[OF queue'] show "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     sorry
 qed
 
@@ -1743,6 +1806,7 @@ lemma (in maux) frz_output_step:
   shows "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
   sorry
+
 
 lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
