@@ -1393,36 +1393,52 @@ next
     unfolding skip' xs' xs_nil .
 qed
 
-text \<open>Under the debt-style freeze invariant, the stored queue starts at semantic
-Frz progress and extends to the currently available `phi` frontier. Appending new
-`phi` rows therefore only enlarges the right endpoint.\<close>
-
-lemma (in maux) wf_frz_queue_extend:
+lemma (in maux) wf_frz_queue_after_discharge:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip xs"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] ys"
     and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-  shows "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' \<phi> (j + \<delta>)] (xs @ ys)"
-proof (cases "skip = 0")
-  case True
+    and ds: "discharge_skip (skip + extra) (xs @ ys) = (skip', xs')"
+  shows "\<exists>ks. wf_frz_queue \<sigma> V m \<phi> ks xs' \<and> (\<forall>k\<in>set ks. k < progress \<sigma> P' \<phi> (j + \<delta>))"
+proof -
   let ?jphi = "progress \<sigma> P \<phi> j"
   let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
-  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
-  from state have queue_old: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi] xs"
-    by (auto simp: wf_frz_state_def Let_def)
-  have queue_new: "wf_frz_queue \<sigma> V m \<phi> [?jphi..< ?jphi'] ys"
+  have queue_phi: "wf_frz_queue \<sigma> V m \<phi> [?jphi..< ?jphi'] ys"
     using phi_res by (simp add: wf_frz_queue_def frz_qtable_def)
-  have interval: "[?jfrz..< ?jphi'] = [?jfrz..< ?jphi] @ [?jphi..< ?jphi']"
-    using mono state True
-    by (intro upt_add_eq_append') (auto simp: wf_frz_state_def Let_def)
   show ?thesis
-    unfolding wf_frz_queue_def interval
-    using queue_old queue_new
-    by (meson list_all2_appendI wf_frz_queue_def)
-next
-  case False
-  with assms show ?thesis
-    sorry
+  proof (cases "skip = 0")
+    case True
+    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+    from state have queue_old: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi] xs"
+      by (auto simp: wf_frz_state_def Let_def True)
+    have interval: "[?jfrz..< ?jphi'] = [?jfrz..< ?jphi] @ [?jphi..< ?jphi']"
+      using mono state True by (intro upt_add_eq_append') (auto simp: wf_frz_state_def Let_def)
+    have queue0: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi'] (xs @ ys)"
+      unfolding wf_frz_queue_def interval using queue_old queue_phi
+      by (meson list_all2_appendI wf_frz_queue_def)
+    have len0: "length [?jfrz..< ?jphi'] = length (xs @ ys)"
+      using queue0 by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+    let ?ks = "drop (length (xs @ ys) - length xs') [?jfrz..< ?jphi']"
+    have queue1: "wf_frz_queue \<sigma> V m \<phi> ?ks xs'"
+      using wf_frz_queue_discharge_skip[OF queue0 ds len0] .
+    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
+      by auto
+    show ?thesis
+      using queue1 lt1 by blast
+  next
+    case False
+    with state have xs_nil: "xs = []"
+      using wf_frz_state_skipD by blast
+    have len_phi: "length [?jphi..< ?jphi'] = length ys"
+      using queue_phi by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+    let ?ks = "drop (length ys - length xs') [?jphi..< ?jphi']"
+    have queue1: "wf_frz_queue \<sigma> V m \<phi> ?ks xs'"
+      using wf_frz_queue_discharge_skip[OF queue_phi] ds xs_nil len_phi by simp
+    have lt1: "\<forall>k\<in>set ?ks. k < ?jphi'"
+      by auto
+    show ?thesis
+      using queue1 lt1 by blast
+  qed
 qed
 
 
