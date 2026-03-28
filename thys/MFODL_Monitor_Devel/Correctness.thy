@@ -1752,7 +1752,7 @@ proof -
     using bound .
 qed
 
-lemma (in maux) frz_progress_accounting:
+lemma (in maux) frz_progress_frontier:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
@@ -1780,18 +1780,21 @@ proof -
   have eq:
     "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 =
       progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys"
-    using frz_progress_accounting[OF state phi_res phi_mono psi_rows ds ef] .
+    using frz_progress_frontier[OF state phi_res phi_mono psi_rows ds ef] .
   have queue:
     "wf_frz_queue \<sigma> V m \<phi>
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
     using frz_replay_residual_exact(1)[OF state phi_res phi_mono ds ef] .
   have queue': "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
     using queue unfolding eq .
+  have bound_raw:
+    "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + skip0 + ((skip0 + length zs0) - skip1) + length ys \<le>
+      progress \<sigma> P' \<phi> (j + \<delta>)"
+    using frz_replay_residual_exact(3)[OF state phi_res phi_mono ds ef] .
   show "wf_frz_queue \<sigma> V m \<phi> [progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1..<progress \<sigma> P' \<phi> (j + \<delta>)] alphas2"
     using queue' .
-  from wf_frz_queue_length[OF queue'] show "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-    by arith
- auto
+  show "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) + skip1 \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
+    unfolding eq using bound_raw .
 qed
 
 lemma (in maux) frz_full_state_step:
