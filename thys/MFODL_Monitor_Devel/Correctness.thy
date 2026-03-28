@@ -1558,6 +1558,23 @@ proof -
     by simp_all
 qed
 
+text \<open>With the update-based shared run, the remaining Frz gap is no longer the
+shared `psi` step. What is still missing is the exact connection between replay
+consumption and the progress of `Formula.Frz`. The next helper records the easy
+part: positive skip debt after the plain run still forces the replay residual
+queue to be empty.\<close>
+
+lemma (in maux) frz_replay_skip_empty:
+  assumes ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
+    and replay_len: "length ys + length alphas2 \<le> length alphas1"
+  shows "skip1 > 0 \<longrightarrow> alphas2 = []"
+proof
+  assume pos: "skip1 > 0"
+  have "alphas1 = []"
+    using discharge_skip_pos_empty[OF ds] pos by blast
+  with replay_len show "alphas2 = []"
+    by simp
+qed
 
 lemma (in maux) frz_full_state_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
@@ -1568,7 +1585,13 @@ lemma (in maux) frz_full_state_step:
     and replay_rem: "\<forall>x\<in>set alphas2. \<exists>k. k < progress \<sigma> P' \<phi> (j + \<delta>) \<and> frz_qtable \<sigma> V m \<phi> k x"
     and replay_len: "length ys + length alphas2 \<le> length alphas1"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
-  sorry
+proof -
+  have skip1_replay_empty: "skip1 > 0 \<longrightarrow> alphas2 = []"
+    using frz_replay_skip_empty[OF ds replay_len] .
+  note state phi_res phi_mono ds replay_rem replay_len skip1_replay_empty
+  show ?thesis
+    sorry
+qed
 
 lemma (in maux) frz_output_step:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
@@ -1582,7 +1605,11 @@ lemma (in maux) frz_output_step:
     and replay_len: "length ys + length alphas2 \<le> length alphas1"
   shows "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
-  sorry
+proof -
+  note psi_rows replay_rem replay_len
+  show ?thesis
+    sorry
+qed
 
 lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
