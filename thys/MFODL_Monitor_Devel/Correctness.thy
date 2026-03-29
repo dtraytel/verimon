@@ -1681,6 +1681,8 @@ lemma (in maux) frz_step_post:
       [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
     and ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' = (ys, alphas2)"
+    and frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) =
+      progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + length zs0 + length ys"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
     and "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
@@ -1705,13 +1707,77 @@ proof -
     and replay_stop:
     "(case alphas2 of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst ((meval (j + \<delta>) n []) (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) Mapping.empty) \<psi>_m') = [])"
     using freeze_meval0D[OF queue1 ef] by simp_all
-(*
-  have frz_prog:
-    "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi> (j + \<delta>) + length ys = progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)"
-    using frz_progress_eq[OF psi_rows replay_rows replay_stop ef] .
-*)
   show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
-    sorry
+  proof -
+    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
+    let ?jphi = "progress \<sigma> P \<phi> j"
+    let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
+    let ?jfrz' = "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)"
+    have skip0_eq: "skip0 = ?jfrz - ?jphi"
+      using state by (auto simp: wf_frz_state_def Let_def)
+    have old_queue: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..<?jphi] alphas"
+      using state by (auto simp: wf_frz_state_def Let_def)
+    have len_alphas: "length alphas = ?jphi - ?jfrz"
+      using wf_frz_queue_length[OF old_queue] by simp
+    have len_xs: "length xs = ?jphi' - ?jphi"
+      using phi_res by (auto dest: list_all2_lengthD)
+    have len_app: "length (alphas @ xs) = (?jphi - ?jfrz) + (?jphi' - ?jphi)"
+      using len_alphas len_xs by simp
+    have skip1_val: "skip1 = (?jfrz + length zs0) - ?jphi'"
+      using ds skip0_eq len_app phi_mono frz_discharge_skip_nat
+      by (simp add: discharge_skip_alt)
+    have jfrz'_eq: "?jfrz' = ?jfrz + length zs0 + length ys"
+      using frz_prog .
+    have frontier_eq: "?jfrz + length zs0 - skip1 = min (?jfrz + length zs0) ?jphi'"
+      using discharge_skip_frontier_eq[OF state phi_res phi_mono ds] .
+    have len_alphas1: "length alphas1 = ?jphi' - min (?jfrz + length zs0) ?jphi'"
+      using wf_frz_queue_length[OF queue1] frontier_eq by simp
+    have ys_le: "length ys \<le> length alphas1"
+      using replay_len by simp
+    show ?thesis
+    proof (cases "?jfrz + length zs0 \<le> ?jphi'")
+      case True
+      then have skip1_zero: "skip1 = 0"
+        using skip1_val by simp
+      have len_a1: "length alphas1 = ?jphi' - (?jfrz + length zs0)"
+        using len_alphas1 True by simp
+      have ys_bound: "?jfrz + length zs0 + length ys \<le> ?jphi'"
+        using ys_le len_a1 True by simp
+      then have jfrz'_le: "?jfrz' \<le> ?jphi'"
+        using jfrz'_eq by simp
+      have skip_goal: "skip1 = ?jfrz' - ?jphi'"
+        using skip1_zero jfrz'_le jfrz'_eq ys_bound by simp
+      have queue_interval: "drop (length ys) [?jfrz + length zs0..<?jphi'] = [?jfrz'..<?jphi']"
+        using ys_bound jfrz'_eq by (simp add: drop_upt)
+      have queue_goal: "wf_frz_queue \<sigma> V m \<phi> [?jfrz'..<?jphi'] alphas2"
+        using replay_queue frontier_eq True queue_interval by simp
+      show ?thesis
+        unfolding wf_frz_state_def Let_def using skip_goal queue_goal by simp
+    next
+      case False
+      then have jphi'_lt: "?jphi' < ?jfrz + length zs0"
+        by simp
+      then have alphas1_nil: "length alphas1 = 0"
+        using len_alphas1 by simp
+      then have ys_nil: "length ys = 0" and alphas2_nil: "length alphas2 = 0"
+        using replay_len ys_le by simp_all
+      have skip_goal: "skip1 = ?jfrz' - ?jphi'"
+        using skip1_val jfrz'_eq ys_nil jphi'_lt by simp
+      have queue_goal: "wf_frz_queue \<sigma> V m \<phi> [?jfrz'..<?jphi'] alphas2"
+      proof -
+        have "?jphi' \<le> ?jfrz'"
+          using jfrz'_eq ys_nil jphi'_lt by simp
+        then have "[?jfrz'..<?jphi'] = []"
+          by simp
+        moreover have "alphas2 = []"
+          using alphas2_nil by (cases alphas2) simp_all
+        ultimately show ?thesis
+          by (simp add: wf_frz_queue_def)
+      qed
+      show ?thesis
+        unfolding wf_frz_state_def Let_def using skip_goal queue_goal by simp
+    qed
+  qed
   show "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
       [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0 @ ys)"
     sorry
@@ -1882,10 +1948,7 @@ next
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
     note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
     note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
-    find_theorems wf_envs
-    thm MFrz(2)
     note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
-    thm wf_envs_update_Nil[OF MFrz(4)]
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
@@ -1894,6 +1957,9 @@ next
       "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
       using \<phi>_step[unfolded e\<phi>] by auto
+    have frz_prog_eq: "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>) =
+      progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j + length zs0 + length ys"
+      sorry
     have meq:
       "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MFrz p m \<phi> \<psi> skip0 \<alpha>s) =
        (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
@@ -1908,7 +1974,7 @@ next
         show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi>_new \<psi>1"
           by (rule IH\<psi>1)
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
-          by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef])
+          by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef frz_prog_eq])
         show "{0..<m} \<subseteq> fv \<phi>1"
           by (simp add: fv(2))
         show "m = Formula.nfv \<phi>1"
@@ -1922,7 +1988,7 @@ next
       show "list_all2
         (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
         [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0 @ ys)"
-        by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef])
+        by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef frz_prog_eq])
     qed
   qed
 next
