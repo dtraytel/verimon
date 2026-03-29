@@ -1898,18 +1898,6 @@ next
       "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MFrz p m \<phi> \<psi> skip0 \<alpha>s) =
        (zs0 @ ys, MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2)"
       by (auto simp add: Let_def e\<phi> e\<psi>0 ds ef)
-    let ?jphi = "progress \<sigma> P \<phi>1 j"
-    let ?jphi' = "progress \<sigma> P' \<phi>1 (j + \<delta>)"
-    let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
-    let ?jfrz' = "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)"
-    have *: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz + length zs0 - skip1..<?jphi'] \<alpha>s1"
-      by (rule wf_frz_queue_after_discharge[OF wf_state phi_res' phi_prog_mono ds])
-    thm freeze_meval0D[OF * ef]
-    thm IH\<psi>2
-    also have "?jfrz + length zs0 - skip1 = ?jfrz'"
-      sorry
-    finally have *: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz'..<?jphi'] \<alpha>s1"
-      by blast
     show ?thesis
       unfolding meq Frz_eq prod.case
     proof (intro conjI)
