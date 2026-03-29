@@ -6,7 +6,6 @@ theory Correctness
     Correct_Since
     Correct_Trigger
     "MFOTL_Monitor_Devel.Abstract_Monitor"
-    iq.Isar_Explore
 begin
 (*>*)
 
@@ -707,7 +706,7 @@ next
     have "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) 0 = 0"
       using Frz.prems progress_0_gen by blast
     moreover have "progress \<sigma> P \<phi> 0 = 0"
-      using Frz.prems by (simp add: progress_0_gen)
+      using Frz.prems by simp
     ultimately show ?thesis
       by simp
   qed
@@ -1457,90 +1456,17 @@ proof -
   qed
 qed
 
-text \<open>Freeze follows the queue-based runtime from `AGENTS_simplified.md`, so the next
-proof steps should mirror that control flow instead of trying to force the deleted
-binder entry into a generic `wf_envs` update lemma.
-
-The key reason is operational as well as technical: `Mapping.update (p, m) p[ db`
-removes the binder key from the database, while `wf_envs` insists that the database
-covers the whole domain of the progress environment. So the deleted-db run of the
-shared template is not itself a `wf_envs` instance for the updated freeze binder.
-
-The remaining Frz proof work is therefore organized as follows:
-1. extend the snapshot queue using the `phi` step,
-2. discharge skip debt against that extended queue,
-3. prove the replay worker postcondition for `freeze_meval0`,
-4. combine plain-`psi` skip accounting with the queue invariant in `meval_correct`.
-\<close>
-
-lemma (in maux) freeze_meval0_post:
-  assumes ks_lt: "\<forall>k\<in>set ks. k < progress \<sigma> P \<phi> j"
-    and wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
-  shows "case freeze_meval0 (meval j n []) j xs (p, m) \<psi> of (ys, xs') \<Rightarrow>
-    (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
-    length ys + length xs' \<le> length xs"
-  using wfq ks_lt
-proof (induction xs arbitrary: ks)
-  case Nil
-  then show ?case
-    by (cases ks) (simp_all add: wf_frz_queue_def freeze_meval0.simps)
-next
-  case (Cons \<alpha> \<alpha>s)
-  from Cons.prems obtain k ks' where ks: "ks = k # ks'"
-    and q\<alpha>: "frz_qtable \<sigma> V m \<phi> k \<alpha>"
-    and qrest: "wf_frz_queue \<sigma> V m \<phi> ks' \<alpha>s"
-    by (cases ks) (auto simp: wf_frz_queue_def)
-  have k_lt: "k < progress \<sigma> P \<phi> j"
-    and ks'_lt: "\<forall>k\<in>set ks'. k < progress \<sigma> P \<phi> j"
-    using Cons.prems(2) ks by auto
-  obtain us \<psi>' where ev:
-    "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi> = (us, \<psi>')"
-    by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi>")
-  show ?case
-  proof (cases us)
-    case Nil
-    have rem: "\<forall>x\<in>set (\<alpha> # \<alpha>s). \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
-    proof
-      fix x
-      assume xin: "x \<in> set (\<alpha> # \<alpha>s)"
-      show "\<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
-      proof (cases "x = \<alpha>")
-        case True
-        with k_lt q\<alpha> show ?thesis by auto
-      next
-        case False
-        with xin have xin': "x \<in> set \<alpha>s" by auto
-        then show ?thesis
-          by (metis Cons.prems(1,2) list_all2_setD2 wf_frz_queue_def xin)
-      qed
-    qed
-    with ev Nil show ?thesis
-      by (simp add: freeze_meval0.simps)
-  next
-    case (Cons y ys0)
-    obtain zs xs' where rec: "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> = (zs, xs')"
-      by (cases "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi>")
-    have IH': "case freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> of (ys, xs') \<Rightarrow>
-        (\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x) \<and>
-        length ys + length xs' \<le> length \<alpha>s"
-      using Cons.IH[OF qrest ks'_lt] .
-    from IH'[unfolded rec] have rem: "\<forall>x\<in>set xs'. \<exists>k. k < progress \<sigma> P \<phi> j \<and> frz_qtable \<sigma> V m \<phi> k x"
-      and len: "length zs + length xs' \<le> length \<alpha>s"
-      by simp_all
-    with ev Cons rec show ?thesis
-      by (simp add: freeze_meval0.simps)
-  qed
-qed
+abbreviation (in maux) "frz_meval n p m j db \<psi> \<equiv> (\<lambda>\<alpha>. meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>)"
 
 lemma (in maux) freeze_meval0_post_exact:
   assumes wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
-  shows "case freeze_meval0 (meval j n []) j xs (p, m) \<psi> of (ys, xs') \<Rightarrow>
+  shows "case freeze_meval0 (frz_meval n p m j db \<psi>) xs of (ys, xs') \<Rightarrow>
     wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks) xs' \<and> length ys + length xs' = length xs"
   using wfq
 proof (induction xs arbitrary: ks)
   case Nil
   then show ?case
-    by (cases ks) (simp_all add: wf_frz_queue_def freeze_meval0.simps)
+    by (cases ks) (simp_all add: wf_frz_queue_def)
 next
   case (Cons \<alpha> \<alpha>s)
   from Cons.prems obtain k ks' where ks: "ks = k # ks'"
@@ -1548,25 +1474,25 @@ next
     and qrest: "wf_frz_queue \<sigma> V m \<phi> ks' \<alpha>s"
     by (cases ks) (auto simp: wf_frz_queue_def)
   obtain us \<psi>' where ev:
-    "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi> = (us, \<psi>')"
-    by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) Mapping.empty) \<psi>")
+    "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi> = (us, \<psi>')"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>")
   show ?case
   proof (cases us)
     case Nil
     with ev ks Cons.prems show ?thesis
-      by (simp add: wf_frz_queue_def freeze_meval0.simps)
+      by (simp add: wf_frz_queue_def)
   next
     case (Cons y ys0)
-    obtain zs xs' where rec: "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> = (zs, xs')"
-      by (cases "freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi>")
-    have IH': "case freeze_meval0 (meval j n []) j \<alpha>s (p, m) \<psi> of (ys, xs') \<Rightarrow>
+    obtain zs xs' where rec: "freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s = (zs, xs')"
+      by (cases "freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s")
+    have IH': "case freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s of (ys, xs') \<Rightarrow>
         wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks') xs' \<and> length ys + length xs' = length \<alpha>s"
       using Cons.IH[OF qrest] .
     from IH'[unfolded rec] have queue': "wf_frz_queue \<sigma> V m \<phi> (drop (length zs) ks') xs'"
       and len': "length zs + length xs' = length \<alpha>s"
       by simp_all
     from ev Cons rec ks queue' len' show ?thesis
-      by (simp add: freeze_meval0.simps)
+      by simp
   qed
 qed
 
@@ -1652,13 +1578,13 @@ lemma (in maux) wf_frz_queue_length:
 
 lemma (in maux) freeze_meval0D:
   assumes "wf_frz_queue \<sigma> V m \<phi> is alphas"
-    "freeze_meval0 eval j alphas pn \<psi> = (ys, alphas')"
+    "freeze_meval0 eval alphas = (ys, alphas')"
   shows "wf_frz_queue \<sigma> V m \<phi> (drop (length ys) is) alphas'"
-    "list_all2 (\<lambda>\<alpha> Y. case fst (eval (Mapping.update pn (replicate j \<alpha>) Mapping.empty) \<psi>) of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False) (take (length ys) alphas) ys"
-    "(case alphas' of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst (eval (Mapping.update pn (replicate j \<alpha>) Mapping.empty) \<psi>) = [])"
+    "list_all2 (\<lambda>\<alpha> Y. case fst (eval \<alpha>) of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False) (take (length ys) alphas) ys"
+    "(case alphas' of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst (eval \<alpha>) = [])"
   using assms
-  by (induct eval j alphas pn \<psi> arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
-    (fastforce simp: freeze_meval0.simps wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
+  by (induct eval alphas arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
+    (fastforce simp: wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
 
 lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
@@ -1680,7 +1606,7 @@ lemma (in maux) frz_step_post:
     and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> \<bottom>), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
       [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
-    and ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' = (ys, alphas2)"
+    and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') alphas1 = (ys, alphas2)"
     and frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + length zs0 + length ys"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
@@ -1693,7 +1619,7 @@ proof -
   have queue1: "wf_frz_queue \<sigma> V m \<phi> [?jfrz + length zs0 - skip1..< ?jphi'] alphas1"
     using wf_frz_queue_after_discharge[OF state phi_res phi_mono ds] .
   have replay_post:
-    "case freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) alphas1 (p, m) \<psi>_m' of (ys', xs') \<Rightarrow>
+    "case freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') alphas1 of (ys', xs') \<Rightarrow>
        wf_frz_queue \<sigma> V m \<phi> (drop (length ys') [?jfrz + length zs0 - skip1..< ?jphi']) xs' \<and>
        length ys' + length xs' = length alphas1"
     using freeze_meval0_post_exact[OF queue1] .
@@ -1702,10 +1628,10 @@ proof -
     and replay_len: "length ys + length alphas2 = length alphas1"
     by simp_all
   have replay_rows:
-    "list_all2 (\<lambda>\<alpha> Y. case fst ((meval (j + \<delta>) n []) (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) Mapping.empty) \<psi>_m') of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False)
+    "list_all2 (\<lambda>\<alpha> Y. case fst (frz_meval n p m (j + \<delta>) db \<psi>_m' \<alpha>) of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False)
       (take (length ys) alphas1) ys"
     and replay_stop:
-    "(case alphas2 of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst ((meval (j + \<delta>) n []) (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) Mapping.empty) \<psi>_m') = [])"
+    "(case alphas2 of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst (frz_meval n p m (j + \<delta>) db \<psi>_m' \<alpha>) = [])"
     using freeze_meval0D[OF queue1 ef] by simp_all
   show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> skip1 alphas2"
   proof -
@@ -1748,7 +1674,7 @@ proof -
       have skip_goal: "skip1 = ?jfrz' - ?jphi'"
         using skip1_zero jfrz'_le jfrz'_eq ys_bound by simp
       have queue_interval: "drop (length ys) [?jfrz + length zs0..<?jphi'] = [?jfrz'..<?jphi']"
-        using ys_bound jfrz'_eq by (simp add: drop_upt)
+        using ys_bound jfrz'_eq by simp
       have queue_goal: "wf_frz_queue \<sigma> V m \<phi> [?jfrz'..<?jphi'] alphas2"
         using replay_queue frontier_eq True queue_interval by simp
       show ?thesis
@@ -1951,8 +1877,8 @@ next
     note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
-    obtain ys \<alpha>s2 where ef: "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new = (ys, \<alpha>s2)"
-      by (cases "freeze_meval0 (meval (j + \<delta>) n []) (j + \<delta>) \<alpha>s1 ?pn \<psi>_new")
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1 = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1")
     have phi_res':
       "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"

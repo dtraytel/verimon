@@ -1682,27 +1682,14 @@ fun discharge_skip where
 | "discharge_skip (Suc skip) (\<alpha> # \<alpha>s) = discharge_skip skip \<alpha>s"
 
 fun freeze_meval0 where
-  "freeze_meval0 eval j [] p \<phi>0 = ([], [])"
-| "freeze_meval0 eval j (\<alpha> # \<alpha>s) p \<phi>0 =
-    (let (ys, _) = eval (Mapping.update p (replicate j \<alpha>) Mapping.empty) \<phi>0 in
+  "freeze_meval0 eval [] = ([], [])"
+| "freeze_meval0 eval (\<alpha> # \<alpha>s) =
+    (let (ys, _) = eval \<alpha> in
       case ys of
         [] => ([], \<alpha> # \<alpha>s)
       | y # _ =>
-          (let (zs, \<alpha>s') = freeze_meval0 eval j \<alpha>s p \<phi>0
+          (let (zs, \<alpha>s') = freeze_meval0 eval \<alpha>s
           in (y # zs, \<alpha>s')))"
-
-declare freeze_meval0.simps[simp del]
-
-lemma freeze_meval0_cong[fundef_cong]:
-  assumes "(\<And>db \<psi>. size \<psi> = size \<phi>0 \<Longrightarrow> eval db \<psi> = eval' db \<psi>)"
-  shows "freeze_meval0 eval j \<alpha>s p \<phi>0 = freeze_meval0 eval' j \<alpha>s p \<phi>0"
-  using assms
-  apply (induct eval j \<alpha>s p \<phi>0 rule: freeze_meval0.induct)
-   apply (subst (1 2) freeze_meval0.simps(1))
-   apply simp
-  apply (subst (1 2) freeze_meval0.simps(2))
-  apply (auto simp: Let_def split: prod.splits list.splits)
-  done
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
@@ -1748,7 +1735,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
          (skip, \<alpha>s) = discharge_skip (skip + length zs0) (\<alpha>s @ xs);
-         (ys, \<alpha>s') = freeze_meval0 (meval n []) j \<alpha>s (p, m) \<psi>
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) \<alpha>s
      in (zs0 @ ys, MFrz p m \<phi> \<psi> skip \<alpha>s'))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
