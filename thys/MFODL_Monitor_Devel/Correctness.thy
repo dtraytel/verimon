@@ -6,6 +6,7 @@ theory Correctness
     Correct_Since
     Correct_Trigger
     "MFOTL_Monitor_Devel.Abstract_Monitor"
+    iq.Isar_Explore
 begin
 (*>*)
 
@@ -1875,6 +1876,7 @@ next
     note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
     note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
     note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
+    thm MFrz
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1 = (ys, \<alpha>s2)"
