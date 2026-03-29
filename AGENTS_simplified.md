@@ -79,6 +79,23 @@ Why this looks better than the additive invariant:
 - this avoids the earlier tension where combining the frontier equation with the
   natural semantic progress equation forced `skip1 = skip0`
 
+## Nat arithmetic reminder
+
+All frontier/debt arithmetic here is over natural numbers, not integers.
+
+- `skip = jfrz - jphi` is nat subtraction, so it truncates at `0`
+- `jfrz + extra - skip'` must be manipulated with nat lemmas, not by informal
+  integer cancellation
+- the useful normal form for the discharge frontier is
+  `a - (a - b) = min a b`
+  instantiated with
+  `a = jfrz + extra` and `b = jphi'`
+- whenever a proof step "looks obvious by subtraction", first check which side is
+  known to be `<=` the other, or rewrite via `min`
+
+This matters especially for `discharge_skip_frontier_eq`, `frz_progress_eq`, and
+reconstruction of `skip' = progress Frz' - progress phi'`.
+
 ## Revised `wf_mformula.Frz` invariant
 
 The `Frz` constructor should still use two different binder-progress assumptions
