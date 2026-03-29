@@ -1972,7 +1972,7 @@ next
       apply(cases "us=[]")
        apply simp_all
       subgoal
-        apply (intro MLetPast.IH(1)[where j4="j+\<delta>" and \<delta>4="0", simplified])
+        apply (intro MLetPast.IH(1)[where j5="j+\<delta>" and \<delta>5="0", simplified])
           apply simp_all
         done
       apply(intro MLetPast.IH)
