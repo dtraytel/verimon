@@ -1328,16 +1328,6 @@ lemma (in maux) wf_frz_queue_length:
   shows "length xs = b - a"
   using wfq by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
 
-lemma (in maux) freeze_meval0D:
-  assumes "wf_frz_queue \<sigma> V m \<phi> is alphas"
-    "freeze_meval0 eval alphas = (ys, alphas')"
-  shows "wf_frz_queue \<sigma> V m \<phi> (drop (length ys) is) alphas'"
-    "list_all2 (\<lambda>\<alpha> Y. case fst (eval \<alpha>) of X # _ \<Rightarrow> X = Y | _ \<Rightarrow> False) (take (length ys) alphas) ys"
-    "(case alphas' of [] \<Rightarrow> True | \<alpha> # _ \<Rightarrow> fst (eval \<alpha>) = [])"
-  using assms
-  by (induct eval alphas arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
-    (fastforce simp: wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
-
 lemma (in maux) wf_envs_update3:
   assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
   and m_eq: "m = Formula.nfv \<phi>"
@@ -1457,10 +1447,10 @@ abbreviation (in maux) "frz_meval n p m j db \<psi> \<equiv> (\<lambda>\<alpha>.
 
 lemma (in maux) freeze_meval0_post_exact:
   assumes wfq: "wf_frz_queue \<sigma> V m \<phi> ks xs"
-  shows "case freeze_meval0 (frz_meval n p m j db \<psi>) xs of (ys, xs') \<Rightarrow>
+  shows "case freeze_meval0 (frz_meval n p m j db \<psi>) k0 xs of (ys, xs') \<Rightarrow>
     wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks) xs' \<and> length ys + length xs' = length xs"
   using wfq
-proof (induction xs arbitrary: ks)
+proof (induction xs arbitrary: ks k0)
   case Nil
   then show ?case
     by (cases ks) (simp_all add: wf_frz_queue_def)
@@ -1474,15 +1464,15 @@ next
     "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi> = (us, \<psi>')"
     by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>")
   show ?case
-  proof (cases us)
+  proof (cases "drop k0 us")
     case Nil
     with ev ks Cons.prems show ?thesis
       by (simp add: wf_frz_queue_def)
   next
     case (Cons y ys0)
-    obtain zs xs' where rec: "freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s = (zs, xs')"
-      by (cases "freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s")
-    have IH': "case freeze_meval0 (frz_meval n p m j db \<psi>) \<alpha>s of (ys, xs') \<Rightarrow>
+    obtain zs xs' where rec: "freeze_meval0 (frz_meval n p m j db \<psi>) (Suc k0) \<alpha>s = (zs, xs')"
+      by (cases "freeze_meval0 (frz_meval n p m j db \<psi>) (Suc k0) \<alpha>s")
+    have IH': "case freeze_meval0 (frz_meval n p m j db \<psi>) (Suc k0) \<alpha>s of (ys, xs') \<Rightarrow>
         wf_frz_queue \<sigma> V m \<phi> (drop (length ys) ks') xs' \<and> length ys + length xs' = length \<alpha>s"
       using Cons.IH[OF qrest] .
     from IH'[unfolded rec] have queue': "wf_frz_queue \<sigma> V m \<phi> (drop (length zs) ks') xs'"
@@ -1500,7 +1490,7 @@ lemma (in maux) frz_step_post:
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and d_eq: "d = progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j - jphi0 + length zs0_out"
     and alphas1_eq: "alphas1 = drop d (alphas @ xs)"
-    and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') alphas1 = (ys, alphas2)"
+    and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') 0 alphas1 = (ys, alphas2)"
     and frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + length zs0_out + length ys"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> (jphi0 + length xs) alphas2"
@@ -1603,7 +1593,7 @@ proof -
     then show ?thesis using interval_empty by (simp add: wf_frz_queue_def)
   qed
   have replay_post:
-    "case freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') alphas1 of (ys', xs') \<Rightarrow>
+    "case freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') 0 alphas1 of (ys', xs') \<Rightarrow>
        wf_frz_queue \<sigma> V m \<phi> (drop (length ys') [?jfrz + length zs0_out..<?jphi']) xs' \<and>
        length ys' + length xs' = length alphas1"
     using freeze_meval0_post_exact[OF queue1'] .
@@ -1789,13 +1779,14 @@ next
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
     note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
     note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
-    note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
+    thm wf_envs_update5[OF wf_envs_update4[OF MFrz(4)] fv _ safe1 wty1]
+    note IH\<psi>_new = MFrz(2)[OF size_new _ wf_envs_update5[OF wf_envs_update4[OF MFrz(4)] fv _ safe1 wty1] wty2]
     \<comment> \<open>New algorithm: drop-based, no discharge_skip\<close>
     define zs0_out where "zs0_out = drop (jfrz0 - jpsi0_val) zs0"
     define d where "d = jfrz0 - jphi0 + length zs0_out"
     define \<alpha>s1 where "\<alpha>s1 = drop d (\<alpha>s @ xs)"
-    obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1 = (ys, \<alpha>s2)"
-      by (cases "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1")
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) 0 \<alpha>s1 = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) 0 \<alpha>s1")
     \<comment> \<open>New state values\<close>
     define jfrz1 where "jfrz1 = jfrz0 + length zs0_out + length ys"
     define jpsi0_val1 where "jpsi0_val1 = jpsi0_val + length zs0"
@@ -1860,7 +1851,7 @@ next
              zs0_out' = drop (jfrz0 - jpsi0_val) zs0';
              jpsi0' = jpsi0_val + length zs0';
              \<alpha>s' = drop (jfrz0 - jphi0 + length zs0_out') (\<alpha>s @ xs');
-             (ys', \<alpha>s'') = freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>') \<alpha>s';
+             (ys', \<alpha>s'') = freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>') 0 \<alpha>s';
              jphi' = jphi0 + length xs';
              jfrz' = jfrz0 + length zs0_out' + length ys'
          in (zs0_out' @ ys', MFrz p m \<phi>' \<psi>' jfrz' jpsi0' jphi' \<alpha>s''))"
