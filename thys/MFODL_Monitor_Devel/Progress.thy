@@ -3131,7 +3131,6 @@ lemma sat_prefix_conv:
 lemma progress_remove_neg[simp]: "progress \<sigma> P (remove_neg \<phi>) j = progress \<sigma> P \<phi> j"
   by (cases \<phi>) simp_all
 
-
 (*<*)
 end
 (*>*)
