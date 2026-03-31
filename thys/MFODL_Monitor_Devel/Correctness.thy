@@ -1918,7 +1918,83 @@ next
         have zs0_out_rows: "list_all2
           (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
           [?jfrz..<?jfrz + length zs0_out] zs0_out"
-          sorry
+        proof -
+          have fv_eq: "FV (Formula.Frz p \<phi>1 \<psi>1) = FV \<psi>1" by simp
+          have jpsi0_le: "?jpsi0 \<le> ?jfrz"
+            using jpsi0_le_jfrz unfolding jfrz0_eq jpsi0_eq .
+          have d: "drop (?jfrz - ?jpsi0) zs0 = zs0_out"
+            unfolding zs0_out_def jfrz0_eq jpsi0_eq by simp
+          have dropped0: "list_all2
+            (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+            (drop (?jfrz - ?jpsi0) [?jpsi0..<?jpsi0']) (drop (?jfrz - ?jpsi0) zs0)"
+            by (rule list_all2_dropI[OF IH\<psi>2])
+          have idx_simp: "?jpsi0 + (?jfrz - ?jpsi0) = ?jfrz"
+            using jpsi0_le by simp
+          have dropped: "list_all2
+            (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+            [?jfrz..<?jpsi0'] zs0_out"
+            using dropped0 unfolding drop_upt d idx_simp .
+          have len_zs0_out: "length zs0_out = ?jpsi0' - ?jfrz"
+          proof -
+            from dropped have "length [?jfrz..<?jpsi0'] = length zs0_out"
+              by (rule list_all2_lengthD)
+            then show ?thesis by simp
+          qed
+          have interval_eq: "[?jfrz..<?jpsi0'] = [?jfrz..<?jfrz + length zs0_out]"
+            unfolding len_zs0_out
+            by (metis diff_is_0_eq nat_le_linear
+                ordered_cancel_comm_monoid_diff_class.add_diff_inverse upt_conv_Nil)
+          have domPV: "dom (P'(?pn \<mapsto> 0)) = dom (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1))"
+          proof -
+            from MFrz.prems(2) have domVP: "dom V = dom P" unfolding wf_envs_def by simp
+            from MFrz.prems(2) have "rel_mapping (\<le>) P P'" unfolding wf_envs_def by simp
+            then have "dom P = dom P'"  unfolding rel_mapping_alt by blast
+            with domVP show ?thesis by auto
+          qed
+          have pm': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> 0))"
+            using wf_envs_P_simps(2)[OF MFrz.prems(2)] by auto
+          \<comment> \<open>Convert predicate via list.rel_mono_strong\<close>
+          show ?thesis
+            unfolding interval_eq[symmetric]
+          proof (rule list.rel_mono_strong[OF dropped], goal_cases)
+            case (1 i z)
+            then have i_bound: "i \<in> set [?jfrz ..< ?jpsi0']" and
+              qtab: "qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1) z"
+              by simp_all
+            from i_bound have "i < ?jpsi0'" by auto
+            have sat_conv: "Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1)) v i \<psi>1 =
+              Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1)) v i \<psi>1" for v
+            proof (rule sat_V_cong[where P="P'(?pn \<mapsto> 0)" and j="j + \<delta>"])
+              show "i < progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>)" using \<open>i < ?jpsi0'\<close> by simp
+              show "dom (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1)) = dom (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1))"
+                by simp
+              show "dom (P'(?pn \<mapsto> 0)) = dom (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1))"
+                by (rule domPV)
+              show "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> 0))"
+                by (rule pm')
+            next
+              fix q_name q_n and v' :: "event_data list" and i'
+              assume mem: "(q_name, q_n) \<in> dom (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1))"
+                and lt: "i' < the ((P'(?pn \<mapsto> 0)) (q_name, q_n))" and len: "q_n = length v'"
+              show "the ((V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, ?jfrz\<rangle> \<Turnstile> \<phi>1)) (q_name, q_n)) v' i' =
+                the ((V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1)) (q_name, q_n)) v' i'"
+              proof (cases "(q_name, q_n) = ?pn")
+                case True
+                then have "the ((P'(?pn \<mapsto> 0)) (q_name, q_n)) = 0" by simp
+                with lt show ?thesis by simp
+              next
+                case False then show ?thesis
+                  by auto
+              qed
+            qed
+            have sat_frz: "Formula.sat \<sigma> V v i (Formula.Frz p \<phi>1 \<psi>1) =
+              Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1)) v i \<psi>1" for v
+              unfolding Formula.sat.simps fv(1) by simp
+            show ?case
+              unfolding fv_eq
+              using qtab fv(1) sat_conv by (auto intro: qtable_cong[OF _ refl])
+          qed
+        qed
         text \<open>Part B: ys covers [jfrz + |zs0_out|..<jfrz')\<close>
         have ys_rows: "list_all2
           (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
