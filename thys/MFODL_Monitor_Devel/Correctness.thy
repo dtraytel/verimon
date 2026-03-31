@@ -1377,6 +1377,18 @@ qed
 
 lemma (in maux) wf_envs_update4:
   assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
+  shows "wf_envs S \<sigma> k 0 (map_option (\<lambda>_. 0) o P) (map_option (\<lambda>_. 0) o P') V (Mapping.map_values (\<lambda>_ _. []) db)"
+  using assms unfolding wf_envs_def
+  apply (auto simp: rel_mapping_def pred_mapping_def rel_fun_def
+    option.rel_map option.pred_map option.rel_sel option.pred_rel eq_onp_def
+    lookup_map_values subset_eq keys_dom_lookup dest: in_keysD
+    elim!: option.rel_mono_strong option.pred_mono_strong)
+  apply (auto simp: map_option_case split: option.splits)
+  apply (metis not_None_eq)
+  done
+
+lemma (in maux) wf_envs_update5:
+  assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
   and m_eq: "m = Formula.nfv \<phi>"
   and in_fv: "{0..<m} \<subseteq> FV \<phi>"
   and \<alpha>: "qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>) \<alpha>"
@@ -1404,7 +1416,6 @@ next
   with assms show ?case unfolding wf_envs_def by (cases "q \<in> dom P") auto
 next
   case (7 q)
-  case (7 p')
   from \<alpha> in_fv have "\<alpha> = map Some ` {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
     apply(auto 0 3 simp: wf_tuple_def nth_append
         elim!: in_qtableE in_qtableI intro!: image_eqI[where x="map the _"])
@@ -1412,10 +1423,10 @@ next
     apply (rule map_cong[OF refl])
     apply simp
     by (metis atLeastLessThan_iff in_set_conv_nth le0 option.collapse subsetD)
-  moreover have "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd p' \<and> the (V p') v i}) [the (P p')..<the (P' p')] (the (Mapping.lookup db p'))"
-    if "(p, m) \<noteq> p'"
+  moreover have "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd q \<and> the (V q) v i}) [the (P q)..<the (P' q)] (the (Mapping.lookup db q))"
+    if "(p, m) \<noteq> q"
   proof -
-    from that 7 have "p' \<in> dom P" by simp
+    from that 7 have "q \<in> dom P" by simp
     with wf_envs show ?thesis unfolding wf_envs_def by blast
   qed
   ultimately show ?case
