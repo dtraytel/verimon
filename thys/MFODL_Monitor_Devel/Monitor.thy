@@ -1677,13 +1677,13 @@ lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Long
   done
 
 fun freeze_meval0 where
-  "freeze_meval0 eval [] = ([], [])"
-| "freeze_meval0 eval (\<alpha> # \<alpha>s) =
+  "freeze_meval0 eval k [] = ([], [])"
+| "freeze_meval0 eval k (\<alpha> # \<alpha>s) =
     (let (ys, _) = eval \<alpha> in
-      case ys of
+      case drop k ys of
         [] => ([], \<alpha> # \<alpha>s)
       | y # _ =>
-          (let (zs, \<alpha>s') = freeze_meval0 eval \<alpha>s
+          (let (zs, \<alpha>s') = freeze_meval0 eval (Suc k) \<alpha>s
           in (y # zs, \<alpha>s')))"
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
@@ -1732,7 +1732,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          zs0_out = drop (jfrz - jpsi0) zs0;
          jpsi0 = jpsi0 + length zs0;
          \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) \<alpha>s;
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) 0 \<alpha>s;
          jphi = jphi + length xs;
          jfrz = jfrz + length zs0_out + length ys
      in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
