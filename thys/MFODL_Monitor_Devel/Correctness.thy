@@ -104,7 +104,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLet p m \<phi> \<psi>) (Formula.Let p \<phi>' \<psi>')"
   | Frz: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>'
-    \<Longrightarrow> \<forall>f. wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> f)) n R \<psi> \<psi>'
+    \<Longrightarrow> \<forall>i. wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>')) n R \<psi> \<psi>'
     \<Longrightarrow> wf_frz_state \<sigma> j P V p m \<phi>' \<psi>' skip Xs
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> skip Xs) (Formula.Frz p \<phi>' \<psi>')"
@@ -1586,18 +1586,109 @@ lemma (in maux) freeze_meval0D:
   by (induct eval alphas arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
     (fastforce simp: wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
 
-lemma (in maux) wf_envs_update3: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
-  \<forall>i xs. f xs i \<longrightarrow> wty_tuple X xs \<Longrightarrow>
-  wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> f)) (Mapping.update pn [] db)"
-  unfolding wf_envs_def wty_envs_def wty_event_def
-  apply (auto simp: subset_eq split: option.splits)
-  subgoal for q m
-    by (cases "(q, m) \<in> dom P") auto
-  subgoal by fastforce
-  subgoal by fastforce
-  subgoal by fastforce
-  subgoal by fastforce
-  done
+lemma (in maux) wf_envs_update3:
+  assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
+  and m_eq: "m = Formula.nfv \<phi>"
+  and in_fv: "{0..<m} \<subseteq> FV \<phi>"
+  and safe: "safe_formula \<phi>"
+  and wty: "S, E \<turnstile> \<phi>"
+  shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>))) \<sigma> j \<delta> (P((p, m) \<mapsto> 0)) (P'((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>)) (Mapping.update (p, m) [] db)"
+  unfolding wf_envs_def
+proof (intro conjI ballI, goal_cases)
+  case 1
+  with assms show ?case unfolding wf_envs_def by auto
+next
+  case 2
+  with assms show ?case unfolding wf_envs_def by (auto simp: subset_iff)
+next
+  case 3
+  with assms show ?case by auto
+next
+  case 4
+  with assms show ?case by auto
+next
+  case 5
+  with assms show ?case by auto
+next
+  case (6 q)
+  with assms show ?case unfolding wf_envs_def by (cases "q \<in> dom P") auto
+next
+  case (7 q)
+  with assms show ?case unfolding wf_envs_def by auto
+next
+  case 8
+  from wf_envs have "wty_envs S \<sigma> V" unfolding wf_envs_def by simp
+  then show ?case unfolding wty_envs_def
+    using ty_of_sat_safe[OF safe wty] in_fv
+    by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+qed
+
+lemma (in maux) wf_envs_update4:
+  assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
+  and m_eq: "m = Formula.nfv \<phi>"
+  and in_fv: "{0..<m} \<subseteq> FV \<phi>"
+  and \<alpha>: "qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>) \<alpha>"
+  and safe: "safe_formula \<phi>"
+  and wty: "S, E \<turnstile> \<phi>"
+  shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>))) \<sigma> j \<delta> (P((p, m) \<mapsto> 0)) (P'((p, m) \<mapsto> j)) (V((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>)) (Mapping.update (p, m) (replicate j \<alpha>) db)"
+  unfolding wf_envs_def
+proof (intro conjI ballI, goal_cases)
+  case 1
+  with assms show ?case unfolding wf_envs_def by auto
+next
+  case 2
+  with assms show ?case unfolding wf_envs_def by (auto simp: subset_iff)
+next
+  case 3
+  with assms show ?case by auto
+next
+  case 4
+  with assms show ?case by auto
+next
+  case 5
+  with assms show ?case by auto
+next
+  case (6 q)
+  with assms show ?case unfolding wf_envs_def by (cases "q \<in> dom P") auto
+next
+  case (7 q)
+  case (7 p')
+  from \<alpha> in_fv have "\<alpha> = map Some ` {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
+    apply(auto 0 3 simp: wf_tuple_def nth_append
+        elim!: in_qtableE in_qtableI intro!: image_eqI[where x="map the _"])
+    apply (subst list.map_id[symmetric])
+    apply (rule map_cong[OF refl])
+    apply simp
+    by (metis atLeastLessThan_iff in_set_conv_nth le0 option.collapse subsetD)
+  moreover have "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd p' \<and> the (V p') v i}) [the (P p')..<the (P' p')] (the (Mapping.lookup db p'))"
+    if "(p, m) \<noteq> p'"
+  proof -
+    from that 7 have "p' \<in> dom P" by simp
+    with wf_envs show ?thesis unfolding wf_envs_def by blast
+  qed
+  ultimately show ?case
+    by (auto simp add: list.rel_map image_iff lookup_update')
+next
+  case 8
+  from wf_envs have "wty_envs S \<sigma> V" unfolding wf_envs_def by simp
+  then show ?case unfolding wty_envs_def
+    using ty_of_sat_safe[OF safe wty] in_fv
+    by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+qed
+
+lemma sat_V_cong:
+  fixes \<phi> :: "ty Formula.formula"
+  assumes "i < progress \<sigma> P \<phi> j" "dom V = dom V'" "dom P = dom V"
+    "pred_mapping (\<lambda>x. x \<le> j) P"
+    "\<And>p n v i. (p, n) \<in> dom V \<Longrightarrow> i < the (P (p, n)) \<Longrightarrow> n = length v \<Longrightarrow>
+      the (V (p, n)) v i = the (V' (p, n)) v i"
+  shows "Formula.sat \<sigma> V v i \<phi> \<longleftrightarrow> Formula.sat \<sigma> V' v i \<phi>"
+proof -
+  obtain \<pi> where pf: "prefix_of \<pi> \<sigma>" and pl: "plen \<pi> = j"
+    by (metis plen_take_prefix prefix_of_take_prefix)
+  show ?thesis
+    using sat_prefix_conv_gen[OF pf pf, unfolded pl, OF assms] by auto
+qed
 
 lemma (in maux) frz_step_post:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> skip0 alphas"
@@ -1839,7 +1930,7 @@ next
   let ?db0 = "Mapping.update ?pn [] db"
   from MFrz.prems(1) obtain \<phi>1 \<psi>1 where Frz_eq: "\<phi>' = Formula.Frz p \<phi>1 \<psi>1" and
     wf_\<phi>: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>1" and
-    wf_\<psi>: "\<And>f. wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> f)) n R \<psi> \<psi>1" and
+    wf_\<psi>: "\<And>i. wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<lambda>v j. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>1)) n R \<psi> \<psi>1" and
     wf_state: "wf_frz_state \<sigma> j P V p m \<phi>1 \<psi>1 skip0 \<alpha>s" and
     fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> fv \<phi>1" and
     safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1"
@@ -1873,10 +1964,9 @@ next
       by (cases "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi>")
     have size_new: "size \<psi>_new = size \<psi>"
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
-    note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
-    note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
+    note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
+    note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
     note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
-    thm MFrz
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
       by (cases "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs)")
     obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) \<alpha>s1 = (ys, \<alpha>s2)"
@@ -1896,12 +1986,11 @@ next
       unfolding meq Frz_eq prod.case
     proof (intro conjI)
       show "wf_mformula \<sigma> (j + \<delta>) P' V n R (MFrz p m \<phi>_new \<psi>_new skip1 \<alpha>s2) (Formula.Frz p \<phi>1 \<psi>1)"
-      proof (rule wf_mformula.Frz)
+      proof (intro wf_mformula.Frz allI)
         show "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_new \<phi>1"
           using \<phi>_step e\<phi> by auto
-        show "\<forall>f. wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> f)) n R \<psi>_new \<psi>1"
-          apply (intro allI IH\<psi>1[rule_format])
-          sorry
+        show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1)) n R \<psi>_new \<psi>1" for i
+          by (rule IH\<psi>1)
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
           by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef frz_prog_eq])
         show "{0..<m} \<subseteq> fv \<phi>1"
