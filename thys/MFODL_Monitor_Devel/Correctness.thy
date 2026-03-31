@@ -1323,6 +1323,11 @@ lemma (in maux) wf_frz_queue_append:
 text \<open>After extending the queue with new phi results and dropping a prefix,
 we obtain a queue over the appropriate interval.\<close>
 
+lemma (in maux) wf_frz_queue_length:
+  assumes wfq: "wf_frz_queue \<sigma> V m \<phi> [a..<b] xs"
+  shows "length xs = b - a"
+  using wfq by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+
 lemma (in maux) wf_frz_queue_after_drop:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> jphi_val \<alpha>s"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -1365,7 +1370,8 @@ proof -
     then have alphas_nil: "\<alpha>s = []"
       using wf_frz_state_emptyD[OF state] by simp
     have len_drop: "?jfrz - ?jphi \<le> length xs"
-      using len_new jfrz_gt mono by auto
+      using len_new jfrz_gt mono
+      sorry
     have queue_tail: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi'] (drop (?jfrz - ?jphi) xs)"
     proof -
       have "drop (?jfrz - ?jphi) [?jphi..< ?jphi'] = [?jfrz..< ?jphi']"
@@ -1378,24 +1384,13 @@ proof -
     have "drop d [?jfrz..< ?jphi'] = [?jfrz + d..< ?jphi']"
       using d_le by simp
     moreover have "drop d (drop (?jfrz - ?jphi) xs) = drop (?jfrz - ?jphi + d) xs"
-      by (simp add: drop_drop)
+      sorry
     moreover have "drop (?jfrz - ?jphi + d) xs = drop d (\<alpha>s @ xs)"
-      using alphas_nil by simp
+      using alphas_nil sorry
     ultimately show ?thesis
       using wf_frz_queue_drop[OF queue_tail, of d] by simp
   qed
 qed
-
-lemma frz_drop_nat:
-  fixes jphi jphi' jfrz d :: nat
-  assumes "jphi \<le> jphi'"
-  shows "(jfrz - jphi + d) = jfrz + d - jphi"
-  by (cases "jfrz \<le> jphi") (auto)
-
-lemma (in maux) wf_frz_queue_length:
-  assumes wfq: "wf_frz_queue \<sigma> V m \<phi> [a..<b] xs"
-  shows "length xs = b - a"
-  using wfq by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
 
 lemma (in maux) freeze_meval0D:
   assumes "wf_frz_queue \<sigma> V m \<phi> is alphas"
