@@ -1328,70 +1328,6 @@ lemma (in maux) wf_frz_queue_length:
   shows "length xs = b - a"
   using wfq by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
 
-lemma (in maux) wf_frz_queue_after_drop:
-  assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> jphi_val \<alpha>s"
-    and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
-      [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
-    and mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-    and d_bound: "d \<le> progress \<sigma> P' \<phi> (j + \<delta>) - progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
-  shows "wf_frz_queue \<sigma> V m \<phi>
-      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + d..<progress \<sigma> P' \<phi> (j + \<delta>)]
-      (drop d (\<alpha>s @ xs))"
-proof -
-  let ?jphi = "progress \<sigma> P \<phi> j"
-  let ?jphi' = "progress \<sigma> P' \<phi> (j + \<delta>)"
-  let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
-  from state have jphi_val: "jphi_val = ?jphi"
-    and queue_old: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi] \<alpha>s"
-    by (auto simp: wf_frz_state_def Let_def)
-  have queue_phi: "wf_frz_queue \<sigma> V m \<phi> [?jphi..< ?jphi'] xs"
-    using phi_res by (simp add: wf_frz_queue_def frz_qtable_def)
-  have len_old: "length \<alpha>s = ?jphi - ?jfrz"
-    using wf_frz_queue_length[OF queue_old] .
-  have len_new: "length xs = ?jphi' - ?jphi"
-    using phi_res by (auto dest: list_all2_lengthD)
-  show ?thesis
-  proof (cases "?jfrz \<le> ?jphi")
-    case True
-    have interval0: "[?jfrz..< ?jphi'] = [?jfrz..< ?jphi] @ [?jphi..< ?jphi']"
-      using mono True by (intro upt_add_eq_append') auto
-    have queue_all: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi'] (\<alpha>s @ xs)"
-      unfolding wf_frz_queue_def interval0 using queue_old queue_phi
-      by (meson list_all2_appendI wf_frz_queue_def)
-    from d_bound have d_le: "d \<le> ?jphi' - ?jfrz"
-      by simp
-    have "drop d [?jfrz..< ?jphi'] = [?jfrz + d..< ?jphi']"
-      using d_le by simp
-    then show ?thesis
-      using wf_frz_queue_drop[OF queue_all, of d] by simp
-  next
-    case False
-    then have jfrz_gt: "?jfrz > ?jphi" by simp
-    then have alphas_nil: "\<alpha>s = []"
-      using wf_frz_state_emptyD[OF state] by simp
-    have len_drop: "?jfrz - ?jphi \<le> length xs"
-      using len_new jfrz_gt mono
-      sorry
-    have queue_tail: "wf_frz_queue \<sigma> V m \<phi> [?jfrz..< ?jphi'] (drop (?jfrz - ?jphi) xs)"
-    proof -
-      have "drop (?jfrz - ?jphi) [?jphi..< ?jphi'] = [?jfrz..< ?jphi']"
-        using jfrz_gt mono by simp
-      then show ?thesis
-        using wf_frz_queue_drop[OF queue_phi, of "?jfrz - ?jphi"] by simp
-    qed
-    from d_bound have d_le: "d \<le> ?jphi' - ?jfrz"
-      by simp
-    have "drop d [?jfrz..< ?jphi'] = [?jfrz + d..< ?jphi']"
-      using d_le by simp
-    moreover have "drop d (drop (?jfrz - ?jphi) xs) = drop (?jfrz - ?jphi + d) xs"
-      sorry
-    moreover have "drop (?jfrz - ?jphi + d) xs = drop d (\<alpha>s @ xs)"
-      using alphas_nil sorry
-    ultimately show ?thesis
-      using wf_frz_queue_drop[OF queue_tail, of d] by simp
-  qed
-qed
-
 lemma (in maux) freeze_meval0D:
   assumes "wf_frz_queue \<sigma> V m \<phi> is alphas"
     "freeze_meval0 eval alphas = (ys, alphas')"
@@ -1557,8 +1493,6 @@ lemma (in maux) frz_step_post:
     and frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + length zs0_out + length ys"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> (jphi0 + length xs) alphas2"
-    and "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
-      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0_out @ ys)"
 proof -
   let ?pn = "(p, m)"
   let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j"
@@ -1675,9 +1609,6 @@ proof -
     show ?thesis
       unfolding wf_frz_state_def Let_def using jphi'_eq queue_goal by simp
   qed
-  show "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi> \<psi>)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi> \<psi>))
-      [progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j..<progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>)] (zs0_out @ ys)"
-    sorry
 qed
 
 lemma (in maux) meval_correct:
@@ -1862,6 +1793,42 @@ next
       "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
         [progress \<sigma> P \<phi>1 j..<progress \<sigma> P' \<phi>1 (j + \<delta>)] xs"
       using \<phi>_step[unfolded e\<phi>] by auto
+    have jpsi0_le_jfrz: "progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j \<le> progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+    proof -
+      let ?jphi = "progress \<sigma> P \<phi>1 j"
+      let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+      let ?a = "\<lambda>i. if i < ?jphi then j else (0::nat)"
+      from MFrz.prems(2) have pm: "pred_mapping (\<lambda>x. x \<le> j) P" by auto
+      have jfrz_ex: "\<exists>i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> ?a i)) \<psi>1 j \<le> i"
+      proof
+        have "pred_mapping (\<lambda>x. x \<le> j) (P(?pn \<mapsto> ?a j))"
+          using pm by auto
+        then have "progress \<sigma> (P(?pn \<mapsto> ?a j)) \<psi>1 j \<le> j"
+          by (rule progress_le_gen)
+        then show "j \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> ?a j)) \<psi>1 j \<le> j"
+          by simp
+      qed
+      have jfrz_prop: "?jfrz \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> ?a ?jfrz)) \<psi>1 j \<le> ?jfrz"
+    proof -
+      have "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j = (LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> ?a i)) \<psi>1 j \<le> i)"
+        unfolding progress_simps frz_progress_def Let_def fv(1) by simp
+      moreover have "\<dots> \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> ?a \<dots>)) \<psi>1 j \<le> \<dots>"
+        unfolding calculation by (rule LeastI_ex[OF jfrz_ex])
+      ultimately show ?thesis by simp
+    qed
+      have "progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j \<le> progress \<sigma> (P(?pn \<mapsto> ?a ?jfrz)) \<psi>1 j"
+      proof (rule progress_mono_gen[OF order_refl])
+        show "pred_mapping (\<lambda>x. x \<le> j) (P(?pn \<mapsto> 0))"
+          using pm by auto
+        show "pred_mapping (\<lambda>x. x \<le> j) (P(?pn \<mapsto> ?a ?jfrz))"
+          using pm jfrz_prop by auto
+        show "rel_mapping (\<le>) (P(?pn \<mapsto> 0)) (P(?pn \<mapsto> ?a ?jfrz))"
+          by (intro rel_mapping_map_upd) (auto simp: rel_mapping_reflp reflp_def)
+      qed
+      also have "\<dots> \<le> ?jfrz"
+        using jfrz_prop by simp
+      finally show ?thesis .
+    qed
     have frz_prog_eq: "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j + length zs0_out + length ys"
       sorry
@@ -1942,7 +1909,27 @@ next
       show "list_all2
         (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
         [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0_out @ ys)"
-         by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono d_eq \<alpha>s1_def' ef frz_prog_eq])
+      proof -
+        let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+        let ?jfrz' = "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)"
+        let ?jpsi0 = "progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j"
+        let ?jpsi0' = "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>)"
+        text \<open>Part A: zs0_out covers [jfrz..<jfrz + |zs0_out|)\<close>
+        have zs0_out_rows: "list_all2
+          (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
+          [?jfrz..<?jfrz + length zs0_out] zs0_out"
+          sorry
+        text \<open>Part B: ys covers [jfrz + |zs0_out|..<jfrz')\<close>
+        have ys_rows: "list_all2
+          (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
+          [?jfrz + length zs0_out..<?jfrz'] ys"
+          sorry
+        text \<open>Combine via list_all2_appendI\<close>
+        have interval_split: "[?jfrz..<?jfrz'] = [?jfrz..<?jfrz + length zs0_out] @ [?jfrz + length zs0_out..<?jfrz']"
+          using frz_prog_eq by (intro upt_add_eq_append') auto
+        show ?thesis
+          unfolding interval_split using zs0_out_rows ys_rows by (rule list_all2_appendI)
+      qed
      qed
   qed
 next
