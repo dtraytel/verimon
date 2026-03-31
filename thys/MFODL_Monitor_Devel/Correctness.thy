@@ -1779,8 +1779,7 @@ next
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
     note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
     note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
-    thm wf_envs_update5[OF wf_envs_update4[OF MFrz(4)] fv _ safe1 wty1]
-    note IH\<psi>_new = MFrz(2)[OF size_new _ wf_envs_update5[OF wf_envs_update4[OF MFrz(4)] fv _ safe1 wty1] wty2]
+    note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 wf_envs_update5[OF wf_envs_empty[OF MFrz(4)] fv _ safe1 wty1] wty2]
     \<comment> \<open>New algorithm: drop-based, no discharge_skip\<close>
     define zs0_out where "zs0_out = drop (jfrz0 - jpsi0_val) zs0"
     define d where "d = jfrz0 - jphi0 + length zs0_out"
