@@ -1367,18 +1367,6 @@ qed
 
 lemma (in maux) wf_envs_update4:
   assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
-  shows "wf_envs S \<sigma> k 0 (map_option (\<lambda>_. 0) o P) (map_option (\<lambda>_. 0) o P') V (Mapping.map_values (\<lambda>_ _. []) db)"
-  using assms unfolding wf_envs_def
-  apply (auto simp: rel_mapping_def pred_mapping_def rel_fun_def
-    option.rel_map option.pred_map option.rel_sel option.pred_rel eq_onp_def
-    lookup_map_values subset_eq keys_dom_lookup dest: in_keysD
-    elim!: option.rel_mono_strong option.pred_mono_strong)
-  apply (auto simp: map_option_case split: option.splits)
-  apply (metis not_None_eq)
-  done
-
-lemma (in maux) wf_envs_update5:
-  assumes wf_envs: "wf_envs S \<sigma> j \<delta> P P' V db"
   and m_eq: "m = Formula.nfv \<phi>"
   and in_fv: "{0..<m} \<subseteq> FV \<phi>"
   and \<alpha>: "qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>) \<alpha>"
@@ -1779,7 +1767,7 @@ next
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
     note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
     note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4) fv safe1 wty1] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
-    note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 wf_envs_update5[OF wf_envs_empty[OF MFrz(4)] fv _ safe1 wty1] wty2]
+    note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 wf_envs_update4[OF wf_envs_empty[OF MFrz(4)] fv _ safe1 wty1] wty2]
     \<comment> \<open>New algorithm: drop-based, no discharge_skip\<close>
     define zs0_out where "zs0_out = drop (jfrz0 - jpsi0_val) zs0"
     define d where "d = jfrz0 - jphi0 + length zs0_out"
