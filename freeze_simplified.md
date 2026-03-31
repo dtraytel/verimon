@@ -8,32 +8,48 @@ simplified runtime.
 The monitor state is
 
 ```text
-MFrz p m phi psi skip alphas
+MFrz p m phi psi jfrz jpsi0 jphi alphas
 ```
 
 with meaning:
 
 - `phi`: submonitor producing frozen snapshots
 - `psi`: shared template monitor, advanced on ordinary input only
-- `skip`: unresolved debt between semantic `Frz` progress and snapshot availability
+- `jfrz`: current progress of `Frz p phi psi` (= number of output tables produced)
+- `jpsi0`: current progress of ψ under `P(pn↦0)` (= how far the shared ψ-run has advanced)
+- `jphi`: current progress of φ (= how many snapshots have been produced)
 - `alphas`: pending snapshots that still need replay
 
 The step is (Monitor.thy line 1733):
 
 ```text
-xs      := meval phi on current batch
-db0     := update (p,m) with [] in db
-zs0     := meval psi on current batch and db0
-(skip1, alphas1) := discharge_skip (skip + length zs0) (alphas @ xs)
-(ys, alphas2)    := freeze_meval0 (frz_meval ...) alphas1
-result  := zs0 @ ys
-state'  := MFrz p m phi' psi' skip1 alphas2
+xs       := meval phi on current batch           -- xs covers [jphi..jphi')
+db0      := update (p,m) with [] in db
+zs0      := meval psi on current batch and db0   -- zs0 covers [jpsi0..jpsi0')
+zs0_out  := drop (jfrz - jpsi0) zs0              -- trim: only [jfrz..jpsi0')
+jpsi0'   := jpsi0 + |zs0|
+alphas1  := drop (jfrz - jphi + |zs0_out|) (alphas @ xs)
+(ys, alphas') := freeze_meval0 (frz_meval ...) alphas1
+jphi'    := jphi + |xs|
+jfrz'    := jfrz + |zs0_out| + |ys|
+result   := zs0_out @ ys
+state'   := MFrz p m phi' psi' jfrz' jpsi0' jphi' alphas'
 ```
 
-### Key definitions (refactored)
+### Why three progress values?
 
-**`freeze_meval0`** (Monitor.thy line 1684): Simplified to take just `eval :: 'a → 'b list × 'c`
-and a list of alphas. No more embedded `j`, `p`, `φ0`, `db0` parameters:
+The old design stored `skip = jfrz - jphi` and relied on `discharge_skip` to
+thread the leftover skip through the queue. This was both:
+- **Incorrect**: it discharged too few elements (missing the skip gap), and
+- **Unnecessary**: with three explicit progress values, the skip is always
+  computable as `jfrz - jphi`, and the discharge reduces to plain `drop`.
+
+The `discharge_skip` function has been removed from Monitor.thy entirely.
+
+### Key definitions
+
+**`freeze_meval0`** (Monitor.thy line 1679): Takes `eval :: 'a → 'b list × 'c`
+and a list of alphas:
 
 ```text
 freeze_meval0 eval [] = ([], [])
@@ -46,7 +62,7 @@ freeze_meval0 eval (α # αs) =
         in (y # zs, αs')))
 ```
 
-**`frz_meval`** (Correctness.thy line 1459): Abbreviation capturing the replay call:
+**`frz_meval`** (Correctness.thy): Abbreviation capturing the replay call:
 
 ```text
 frz_meval n p m j db ψ ≡
@@ -54,7 +70,7 @@ frz_meval n p m j db ψ ≡
     (Mapping.update (p, m) (replicate j α) (Mapping.map_values (λ_ _. []) db)) ψ)
 ```
 
-**MFrz call site** (Monitor.thy line 1738): Uses a lambda directly:
+**MFrz call site** (Monitor.thy line 1733): Uses a lambda directly:
 
 ```text
 (ys, αs') = freeze_meval0
@@ -62,38 +78,46 @@ frz_meval n p m j db ψ ≡
     (Mapping.map_values (λ_ _. []) db)) ψ) αs
 ```
 
-Key change from previous sessions: `Mapping.empty` is replaced by
-`Mapping.map_values (λ_ _. []) db`, which ensures all predicate keys present in
-`db` have `[]` entries. This is essential for constructing a valid `wf_envs` for
-the replay call.
+Key design choice: `Mapping.map_values (λ_ _. []) db` instead of `Mapping.empty`.
+This ensures all predicate keys present in `db` have `[]` entries, which is
+essential for constructing a valid `wf_envs` for the replay call.
 
 ## Proof objects
 
-These are the right basic objects in `Correctness.thy`:
+These are the basic objects in `Correctness.thy`:
 
-- `frz_qtable sigma V m phi k X`
-- `wf_frz_queue sigma V m phi ks Xs`
-- `wf_frz_state sigma j P V p m phi psi skip Xs`
+- `frz_qtable sigma V m phi k X` — a single snapshot table at time k
+- `wf_frz_queue sigma V m phi ks Xs` — queue of snapshots with key indices
+- `wf_frz_state sigma j P V p m phi psi jphi Xs` — full freeze state invariant
 
-Definition of `wf_frz_state` (line 55):
+Definition of `wf_frz_state` (to be updated):
 
 ```text
-skip = jfrz - jphi ∧ wf_frz_queue σ V m φ [jfrz..<jphi] Xs
+wf_frz_state σ j P V p m φ ψ jphi Xs =
+  (let jfrz = progress σ P (Formula.Frz p φ ψ) j
+   in jphi = progress σ P φ j ∧ wf_frz_queue σ V m φ [jfrz..<jphi] Xs)
 ```
-where `jfrz = progress σ P (Formula.Frz p φ ψ) j` and `jphi = progress σ P φ j`.
 
-## Invariant (`wf_mformula.Frz`, line 107)
+Note: `jphi` is now stored explicitly in the MFrz state and passed to the
+invariant. The invariant asserts that `jphi` matches `progress σ P φ j`.
+The interval `[jfrz..<jphi]` is the range of snapshot indices in the queue.
+When `jfrz ≥ jphi`, this is empty and `Xs = []`.
+
+## Invariant (`wf_mformula.Frz`)
 
 ```text
 wf_mformula σ j P V m UNIV φ φ'
-wf_mformula σ j (P((p,m) ↦ 0)) (V((p,m) ↦ ⊥)) n R ψ ψ'
-wf_frz_state σ j P V p m φ' ψ' skip Xs
+∀i. wf_mformula σ j (P((p,m) ↦ 0)) (V((p,m) ↦ λw k. sat σ V w i φ')) n R ψ ψ'
+wf_frz_state σ j P V p m φ' ψ' jphi αs
+jfrz = progress σ P (Frz p φ' ψ') j
+jpsi0 = progress σ (P((p,m) ↦ 0)) ψ' j
 {0..<m} ⊆ fv φ'    m = nfv φ'    safe φ'    safe ψ'
+⟹ wf_mformula σ j P V n R (MFrz p m φ ψ jfrz jpsi0 jphi αs) (Formula.Frz p φ' ψ')
 ```
 
 - `P((p,m) ↦ 0)` because the shared ψ run sees empty `[]` for predicate `(p,m)`
-- `V((p,m) ↦ ⊥)` means `V((p,m) := Some(λ_ _. False))` — V(pn) is semantically
-  irrelevant when P(pn)=0 (see V-insensitivity below)
+- `V((p,m) ↦ ⊥)` is semantically irrelevant when `P(pn)=0` (see V-insensitivity below)
+- `jfrz` and `jpsi0` are stored but must equal their semantic definitions
 
 ## Progress definition for Frz
 
@@ -124,44 +148,21 @@ sat σ V v i (Frz p φ ψ) = sat σ (V((p, nfv φ) ↦ λw j. sat σ V w i φ)) 
 
 Key: uses frozen outer time `i` inside φ, not queried time `j`.
 
-## Existing proved lemmas (no sorry)
+## Existing proved lemmas (status uncertain — many need updating)
 
-In Correctness.thy:
-- `wf_frz_state_Nil`, `wf_frz_state_skipD`
-- `wf_frz_queue_discharge_skip`, `wf_frz_queue_after_discharge`
-- `discharge_skip_alt`, `discharge_skip_eq`
-- `discharge_skip_frontier_eq`, `discharge_skip_frontier_le_phi`
-- `wf_frz_queue_length`
-- `freeze_meval0D` (3 conclusions: queue drop, replay rows, replay stop)
-- `freeze_meval0_post_exact`
-- `frz_replay_skip_empty`, `wf_envs_update_Nil`
-- `frz_discharge_skip_nat`
-- `frz_step_post` first conclusion (wf_frz_state post) — PROVED
-- `meval_correct` MFrz case skeleton — uses frz_step_post at line 1905/1919
-
-## Current sorry positions (2 remaining)
-
-### Sorry 1 (line 1710 in `frz_step_post`)
-
-```text
-list_all2 (λi. qtable n (FV (Formula.Frz p φ ψ)) (mem_restr R)
-  (λv. ⟨σ, V, v, i⟩ ⊨ᴹ Formula.Frz p φ ψ))
-  [progress σ P (Formula.Frz p φ ψ) j ..< progress σ P' (Formula.Frz p φ ψ) (j+δ)]
-  (zs0 @ ys)
-```
-
-This requires showing that each output row `zs0[k]` and `ys[k]` has the right
-semantic content. For `zs0`, the rows come from the shared ψ run with V(pn)=⊥.
-For `ys`, the rows come from replay calls through `frz_meval`.
-
-### Sorry 2 (line 1890 in `meval_correct`)
-
-```text
-progress σ P' (Formula.Frz p φ1 ψ1) (j+δ) =
-  progress σ P (Formula.Frz p φ1 ψ1) j + length zs0 + length ys
-```
-
-This is the fundamental progress equation.
+In Correctness.thy (may be broken by the design change, need checking):
+- `wf_frz_state_Nil`, `wf_frz_state_skipD` — may need reformulation
+- `wf_frz_queue_discharge_skip`, `wf_frz_queue_after_discharge` — discharge_skip gone, need drop versions
+- `discharge_skip_alt`, `discharge_skip_eq` — REMOVE (discharge_skip gone)
+- `discharge_skip_frontier_eq`, `discharge_skip_frontier_le_phi` — REMOVE or reformulate
+- `wf_frz_queue_length` — likely still valid
+- `freeze_meval0D` (3 conclusions: queue drop, replay rows, replay stop) — likely still valid
+- `freeze_meval0_post_exact` — likely still valid
+- `frz_replay_skip_empty` — needs reformulation (no skip)
+- `wf_envs_update_Nil`, `wf_envs_update3` — likely still valid
+- `frz_discharge_skip_nat` — REMOVE (discharge_skip gone)
+- `frz_step_post` — REWRITE entirely
+- `meval_correct` MFrz case — REWRITE entirely
 
 ## THE INDEX ALIGNMENT PROBLEM (critical discovery)
 
@@ -174,14 +175,14 @@ The `psi_rows` assumption gives tables `zs0` at indices:
 
 The Frz output requires tables at indices:
 ```
-[jfrz ..< jfrz + |zs0|]  where  jfrz = progress σ P (Frz p φ ψ) j
+[jfrz ..< jfrz + |zs0_out|]  where  jfrz = progress σ P (Frz p φ ψ) j
 ```
 
-Since `|zs0| = jpsi0' - jpsi0`, these ranges differ by the offset `jfrz - jpsi0`.
+Since `zs0_out = drop (jfrz - jpsi0) zs0`, the output tables are at indices
+`[jfrz ..< jpsi0')` (the tail of the shared-run range starting at jfrz).
 
-**If `jfrz > jpsi0`**: the same physical tables `zs0` would need to be valid at
-DIFFERENT time indices, which requires both V-insensitivity AND temporal invariance
-of sat — a very strong requirement that does NOT hold in general.
+**If `jfrz > jpsi0`**: the `drop` trims the first `jfrz - jpsi0` tables from `zs0`.
+The remaining tables are at the correct indices `[jfrz ..< jpsi0')`.
 
 ### Analysis of when `jfrz = jpsi0`
 
@@ -190,32 +191,16 @@ condition at `i = jpsi0`:
 - **Case A** (`jpsi0 ≥ jphi`): condition becomes `jpsi0 ≤ jpsi0` ✓, so `jfrz = jpsi0`.
 - **Case B** (`jpsi0 < jphi`): condition becomes `jpsij ≤ jpsi0`, true iff `jpsij = jpsi0`.
 
-Case B fails when increasing P(pn) from 0 to j changes ψ's progress (i.e.,
-`jpsij > jpsi0`). This happens exactly when ψ's progress depends on pn.
+Case B fails when increasing P(pn) from 0 to j changes ψ's progress.
 
-### Key saving grace: when `jfrz > jpsi0`, `|zs0| = 0`
-
-**Empirical observation** (verified on many examples, NOT formally proved):
+### Key saving grace: when `jfrz > jpsi0`, `|zs0_out| = 0` may hold
 
 When `jfrz > jpsi0` (Case B with `jpsij > jpsi0`), the ψ-progress with P(pn↦0)
-is "stuck" — it doesn't advance between steps. Specifically, `jpsi0' = jpsi0`
-and thus `|zs0| = 0`.
-
-**Why this should hold**: When `jpsij > jpsi0`, it means pn IS a bottleneck in ψ.
-With P(pn)=0, the pn-dependent paths in ψ have progress bounded by a small constant
-(at most the nesting depth of Prev/Since around pn lookups). This bound is
-INDEPENDENT of j, so both `progress(P(pn↦0)) ψ j` and `progress(P'(pn↦0)) ψ (j+δ)`
-hit the same constant bound, giving `jpsi0' = jpsi0`.
-
-**Examples verified**:
-- `ψ = Pred pn ts`: `jpsi0 = 0`, `jpsi0' = 0`, `|zs0| = 0` ✓
-- `ψ = And (Pred q ts1) (Pred pn ts2)`: `jpsi0 = 0`, `jpsi0' = 0` ✓
-- `ψ = Prev I (Pred pn ts)`: `jpsi0 = min(1,j)`, `jpsi0' = min(1,j+δ) = jpsi0` ✓
-- `ψ = Since (Eq t1 t2) I (Pred pn ts)`: `jpsi0 ∈ {0,1}`, constant ✓
+may be "stuck" — `jpsi0' = jpsi0` and thus `|zs0| = 0`, making `zs0_out` empty too.
 
 **What needs to be proved**: Either
 1. `jfrz = jpsi0` directly (under the proof invariants), or
-2. `jfrz > jpsi0 ⟹ jpsi0' = jpsi0` (making `|zs0| = 0` and the zs0 part vacuous)
+2. `jfrz > jpsi0 ⟹ |zs0_out| = 0` (making the zs0 part vacuous)
 
 Either result makes the zs0 index alignment problem disappear.
 
@@ -244,11 +229,6 @@ sat σ V(pn↦⊥) v i ψ = sat σ V(pn↦f) v i ψ
 ```
 for ANY f. This means the value of V(pn) is semantically irrelevant at these indices.
 
-**Coverage**: This applies to all `i` in `[jpsi0..< jpsi0']` (the psi_rows range).
-For the Frz output range `[jfrz..< jfrz + |zs0|]`, coverage requires
-`jfrz + |zs0| ≤ jpsi0'`, i.e., `jfrz ≤ jpsi0` (since `|zs0| = jpsi0' - jpsi0`).
-This is exactly the `jfrz = jpsi0` condition.
-
 ### V-insensitivity at the `wf_mformula` level
 
 For the REPLAY IH (applying `IHψ_new` for sorry 2), we need to convert
@@ -261,165 +241,62 @@ P pn = Some 0  ⟹  wf_mformula σ j P V n R ψ ψ1
   ⟹  wf_mformula σ j P (V(pn := x)) n R ψ ψ1
 ```
 
-This was previously inserted as a sorry and then removed. It still needs to be
-proved (by induction over `wf_mformula`, ~25 cases). The proof sketch:
-- When P(pn)=0, no data committed for pn, so V(pn) never appears in any
-  non-vacuous buffer/auxiliary-data condition.
-- Each wf_mformula constructor stores `list_all2 ... qtable` conditions
-  referencing `sat σ V v i φ`. Use `sat_prefix_conv_gen` (vacuously at pn)
-  to show these are insensitive to V(pn).
-- For recursive wf_mformula calls with P unchanged: use IH directly.
-- For recursive calls with P(pn) overwritten (Let, Frz, LetPast): V(pn)
-  is also overwritten, so the change to V(pn) at the outer level is irrelevant.
-
-## `sat_prefix_conv` for Frz (Progress.thy line 2212)
-
-The Frz case of `sat_prefix_conv_gen` establishes:
-
-For `i < progress σ P (Frz p φ ψ) (plen π)`:
-- Let `q = if i < progress P φ (plen π) then plen π else 0`
-- Then `i < progress σ (P(pn↦q)) ψ (plen π)` (proved by contradiction via `Least_le`)
-- The IH for ψ is applied with the updated progress map P(pn↦q)
-- When `(p',n) = pn` and `k < the(P(pn↦q) pn)`: we get `i < progress P φ (plen π)`,
-  and the IH for φ at the FROZEN time `i` gives `sat σ V w i φ = sat σ' V' w i φ`
-
-**Key insight**: The progress of the frozen predicate inside ψ is either `plen π`
-(full prefix, when the snapshot at time `i` exists) or `0` (when it doesn't).
-This is STRONGER than the `Let` case where the predicate progress is just
-`progress P φ (plen π)`.
+This needs to be proved by induction over `wf_mformula` (~25 cases).
 
 ## Proof strategy for sorry 2 (`frz_prog_eq`)
-
-### Available facts in the MFrz case
-
-- `IHψ_new`: induction hypothesis for ψ_new (the updated ψ monitor after the shared run)
-- `wf_envs_empty`: `wf_envs S σ j δ P P' V db ⟹ wf_envs S σ (j+δ) 0 P' P' V (map_values (λ_ _. []) db)`
-- `wf_envs_update_Nil`: updates wf_envs with a new pred at progress 0
-- `replay_rows`, `replay_stop` from `freeze_meval0D`
 
 ### Proof plan
 
 1. From `wf_envs_empty`: get `wf_envs S σ (j+δ) 0 P' P' V db_empty`
-2. Apply `wf_envs_update` or custom: get wf_envs for `P'(pn↦(j+δ))` with
-   `replicate (j+δ) α` in the db, using `V(pn↦f_frozen)` where
-   `f_frozen = λw k. sat σ V w i_frozen φ1`
+2. Apply `wf_envs_update`: get wf_envs for `P'(pn↦(j+δ))` with
+   `replicate (j+δ) α` in the db, using `V(pn↦f_frozen)`
 3. Apply V-insensitivity: convert `wf_mformula ... (V(pn↦⊥)) ... ψ_new ...`
    to `wf_mformula ... (V(pn↦f_frozen)) ... ψ_new ...`
 4. Apply `IHψ_new` to get: output length = `jpsij' - jpsi0'`
-   (progress(P'(pn↦j+δ)) ψ1 (j+δ) - progress(P'(pn↦0)) ψ1 (j+δ))
-5. Use `replay_rows` / `replay_stop` for all-or-nothing:
-   each replay call uses the SAME ψ_new state, so either ALL produce ≥1 row
-   or NONE do. So `length ys ∈ {0, length alphas1}`.
-6. Combine with LEAST properties of jfrz/jfrz' to prove the equation.
-
-**Note**: This plan requires V-insensitivity at the `wf_mformula` level (step 3).
-It also requires careful reasoning about the LEAST properties (step 6).
+5. Use `replay_rows` / `replay_stop` for all-or-nothing reasoning
+6. Combine with LEAST properties of jfrz/jfrz' to prove the equation
 
 ## Proof strategy for sorry 1 (semantic output rows)
 
-### Approach: split into zs0 and ys via `list_all2_appendI`
-
-The goal splits into two subgoals (verified in REPL):
+### Approach: split into zs0_out and ys via `list_all2_appendI`
 
 ```text
-1. list_all2 (λi. qtable ...) [jfrz..< jfrz + |zs0|] zs0
-2. list_all2 (λi. qtable ...) [jfrz + |zs0|..< jfrz'] ys
+1. list_all2 (λi. qtable ...) [jfrz..< jfrz + |zs0_out|] zs0_out
+2. list_all2 (λi. qtable ...) [jfrz + |zs0_out|..< jfrz'] ys
 ```
 
-### For `zs0` portion
+### For `zs0_out` portion
 
-**Prerequisites** (must resolve the index alignment problem first):
-- Either prove `jfrz = jpsi0` or prove `|zs0| = 0` when `jfrz > jpsi0`
-- If `jfrz = jpsi0`: the psi_rows range matches the target range exactly
-
-**Sat conversion** (assuming index ranges match):
-- `psi_rows` gives: `qtable n (FV ψ) (mem_restr R) (λv. sat σ V(pn↦⊥) (map the v) i ψ)`
-- Need: `qtable n (FV (Frz p φ ψ)) (mem_restr R) (λv. sat σ V (map the v) i (Frz p φ ψ))`
-- Unfold Frz sat: need `sat σ V(pn ↦ λw j. sat σ V w i φ) (map the v) i ψ`
-- By V-insensitivity (`sat_prefix_conv_gen` at P(pn↦0)):
-  `sat σ V(pn↦⊥) v i ψ = sat σ V(pn ↦ f) v i ψ` for `i < jpsi0'`
-- Also need `FV (Frz p φ ψ) = FV ψ` (or a suitable superset relationship)
+**Sat conversion** (the shared-run tables have the right semantics by V-insensitivity):
+- `psi_rows` gives: `qtable n (FV ψ) (mem_restr R) (λv. sat σ V(pn↦⊥) v i ψ)`
+- Need: `qtable n (FV (Frz p φ ψ)) (mem_restr R) (λv. sat σ V v i (Frz p φ ψ))`
+- By V-insensitivity at P(pn↦0): the two are equivalent for i < jpsi0'
 
 ### For `ys` portion
 
-Each row `ys[k]` comes from a replay call:
-```text
-meval (j+δ) n [] (Mapping.update pn (replicate (j+δ) α_k) db_empty) ψ_new
-```
-where `α_k = alphas1[k]` is the frozen snapshot at some start index `i_k`.
-
-Need to show the first output row satisfies:
-```
-qtable n (FV (Frz p φ ψ)) (mem_restr R) (λv. sat σ V v i_k (Frz p φ ψ))
-```
-
-This requires:
-1. Constructing `wf_envs` for the replay call with V(pn ↦ λw j. sat σ V w i_k φ)
-2. Applying V-insensitivity to convert ψ_new's wf_mformula to the new V
-3. Applying IHψ_new to characterize the replay output
-4. The first output row satisfies `sat σ V(pn ↦ f_frozen) v i_k ψ` which equals
-   `sat σ V v i_k (Frz p φ ψ)` by the Frz sat definition
-
-**The replay "all-or-nothing" property**: Since all replay calls use the SAME
-ψ_new state, they either ALL produce ≥1 output row or NONE do. This comes from
-the structure of `freeze_meval0` and the fact that `meval` is deterministic.
+Each row comes from a replay call with a frozen snapshot. Construct `wf_envs`
+with the frozen binding, apply V-insensitivity, then `IHψ_new`.
 
 ## Nat arithmetic reminder
 
-All frontier/debt arithmetic here is over natural numbers, not integers.
+All frontier arithmetic is over natural numbers, not integers.
 
-- `skip = jfrz - jphi` is nat subtraction, so it truncates at `0`
-- `jfrz + extra - skip'` must be manipulated with nat lemmas, not by informal
-  integer cancellation
-- the useful normal form for the discharge frontier is
-  `a - (a - b) = min a b`
-  instantiated with
-  `a = jfrz + extra` and `b = jphi'`
-- whenever a proof step "looks obvious by subtraction", first check which side is
-  known to be `<=` the other, or rewrite via `min`
+- `jfrz - jphi` is nat subtraction, so it truncates at `0`
+- `drop (jfrz - jphi + |zs0_out|) (αs @ xs)` — the drop amount is always ≥ 0
+  since it's a nat expression
+- When `jphi ≥ jfrz`, we have `jfrz - jphi = 0`, so we drop only `|zs0_out|`
+- When `jphi < jfrz`, we have `αs = []` (positive "skip" means no pending snapshots),
+  so we drop `(jfrz - jphi + |zs0_out|)` from `[] @ xs = xs`
 
 ## Key lemmas in other files
 
-- `sat_prefix_conv_gen` (Progress.thy line 2152): general V-insensitivity / prefix
-  preservation lemma. **Critical for both sorries**.
-- `not_contains_pred_progress` (Progress.thy line 582): `¬ contains_pred p φ ⟹ progress (P(p↦x)) φ j = progress P φ j`
-- `not_contains_pred_sat` (Formula.thy line 912): `¬ contains_pred p φ ⟹ sat σ (V(p ↦ x)) v i φ = sat σ V v i φ`
+- `sat_prefix_conv_gen` (Progress.thy line 2152): general V-insensitivity.
+- `not_contains_pred_progress` (Progress.thy line 582)
+- `not_contains_pred_sat` (Formula.thy line 912)
 - `progress_le_gen`: `pred_mapping (λx. x ≤ j) P ⟹ progress P φ j ≤ j`
 - `progress_mono_gen`: monotonicity of progress in P and j
-- `sat_prefix_conv` for Frz (Progress.thy line 2212): semantic preservation for Frz
-- `wf_envs_empty` (Correct_Until.thy line 32): produces wf_envs with 0 delta
-- `wf_envs_update` (Correct_Until.thy line 36): extends wf_envs with a new predicate binding
-- `wf_envs_update_sup` (Correct_Until.thy line 83): variant for LetPast
-
-## Relevant files / directories
-
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Correctness.thy` — main proof file; **2 sorries at lines 1710 and 1890**
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Monitor.thy` — `freeze_meval0` (line 1684), `meval` MFrz case (line 1733), `frz_meval` abbreviation is in Correctness.thy
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Progress.thy` — progress for Frz (line 81), `not_contains_pred_progress` (line 582), `sat_prefix_conv_gen` (line 2152), Frz case of `sat_prefix_conv_gen` (line 2212)
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Formula.thy` — `Formula.Frz` (line 170), `sat` for `Frz` (line 421), `not_contains_pred_sat` (line 912), `contains_pred` for Frz (line 375)
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Safety.thy` — `safe_formula` for Frz (line 730): `{0..<nfv φ} ⊆ fv φ ∧ safe φ ∧ safe ψ` (NO `not_contains_pred` constraint on ψ)
-- `/Users/kfx532/repos/verimon/thys/MFODL_Monitor_Devel/Correct_Until.thy` — `wf_envs` (line 17), `wf_envs_empty` (line 32), `wf_envs_update` (line 36)
-
-## Recommended attack order
-
-1. **Resolve the index alignment problem** (prerequisite for both sorries):
-   - Prove `jfrz = jpsi0` under proof invariants, OR
-   - Prove `jfrz > jpsi0 ⟹ jpsi0' = jpsi0` (making `|zs0| = 0` and zs0 part vacuous)
-   - This may require a general property of `progress` when one predicate has progress 0
-
-2. **Prove `wf_mformula_V_upd_zero`** (V-insensitivity at wf_mformula level):
-   - When `P pn = Some 0`, `wf_mformula σ j P V n R ψ ψ1 ⟹ wf_mformula σ j P (V(pn:=x)) n R ψ ψ1`
-   - Induction over `wf_mformula` (~25 cases)
-   - Use `sat_prefix_conv_gen` for buffer predicates
-
-3. **Prove sorry 2 (`frz_prog_eq`)**: the progress equation
-   - Requires V-insensitivity (step 2) and replay characterization via IHψ_new
-   - Key: construct wf_envs for replay, apply IHψ_new, reason about LEAST
-
-4. **Prove sorry 1 (`list_all2`)**: the semantic output correctness
-   - Split into zs0 and ys parts via `list_all2_appendI` (verified in REPL)
-   - zs0 part: V-insensitivity via `sat_prefix_conv_gen` (requires index alignment from step 1)
-   - ys part: replay semantics via IHψ_new application
+- `wf_envs_empty` (Correct_Until.thy line 32)
+- `wf_envs_update` (Correct_Until.thy line 36)
 
 ## Dead ends / things not to repeat
 
@@ -428,9 +305,9 @@ All frontier/debt arithmetic here is over natural numbers, not integers.
 - do not force the post-state exact interval before the new debt interpretation
   has been propagated through extend, discharge, and replay
 - do not use `Mapping.empty` for the replay db — use `Mapping.map_values (λ_ _. []) db`
-  (this was the key refactoring that unblocked the proof)
 - do not assume `sat σ V(pn↦⊥) v i ψ = sat σ V(pn↦f) v (i+d) ψ` for d>0 —
   V-insensitivity does NOT give temporal shifting
 - do not try to split sorry 1 without first resolving the index alignment problem
 - the `safe_formula` for Frz has NO `not_contains_pred` restriction on ψ, so ψ
   CAN reference pn — V-insensitivity is necessary, not just `not_contains_pred_sat`
+- do not use `discharge_skip` — it has been removed; use plain `drop` instead
