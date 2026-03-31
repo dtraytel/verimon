@@ -6,7 +6,6 @@ theory Correctness
     Correct_Since
     Correct_Trigger
     "MFOTL_Monitor_Devel.Abstract_Monitor"
-    iq.Isar_Explore
 begin
 (*>*)
 
@@ -105,7 +104,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MLet p m \<phi> \<psi>) (Formula.Let p \<phi>' \<psi>')"
   | Frz: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>'
-    \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> \<bottom>)) n R \<psi> \<psi>'
+    \<Longrightarrow> \<forall>f. wf_mformula \<sigma> j (P((p, m) \<mapsto> 0)) (V((p, m) \<mapsto> f)) n R \<psi> \<psi>'
     \<Longrightarrow> wf_frz_state \<sigma> j P V p m \<phi>' \<psi>' skip Xs
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> skip Xs) (Formula.Frz p \<phi>' \<psi>')"
@@ -1587,8 +1586,9 @@ lemma (in maux) freeze_meval0D:
   by (induct eval alphas arbitrary: "is" ys alphas' rule: freeze_meval0.induct)
     (fastforce simp: wf_frz_queue_def list_all2_Cons2 elim!: list.rel_mono_strong split: prod.splits list.splits)+
 
-lemma (in maux) wf_envs_update_Nil: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
-  wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> \<bottom>)) (Mapping.update pn [] db)"
+lemma (in maux) wf_envs_update3: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
+  \<forall>i xs. f xs i \<longrightarrow> wty_tuple X xs \<Longrightarrow>
+  wf_envs (S(pn \<mapsto> X)) \<sigma> j \<delta> (P(pn \<mapsto> 0)) (P'(pn \<mapsto> 0)) (V(pn \<mapsto> f)) (Mapping.update pn [] db)"
   unfolding wf_envs_def wty_envs_def wty_event_def
   apply (auto simp: subset_eq split: option.splits)
   subgoal for q m
@@ -1873,8 +1873,8 @@ next
       by (cases "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) ?db0 \<psi>")
     have size_new: "size \<psi>_new = size \<psi>"
       by (metis e\<psi>0 prod.sel(2) size_snd_meval)
-    note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
-    note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update_Nil[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
+    note IH\<psi>1 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct1]
+    note IH\<psi>2 = MFrz(2)[OF refl wf_\<psi> wf_envs_update3[OF MFrz(4)] wty2, unfolded e\<psi>0 prod.case, THEN conjunct2]
     note IH\<psi>_new = MFrz(2)[OF size_new IH\<psi>1 _ wty2]
     thm MFrz
     obtain skip1 \<alpha>s1 where ds: "discharge_skip (skip0 + length zs0) (\<alpha>s @ xs) = (skip1, \<alpha>s1)"
