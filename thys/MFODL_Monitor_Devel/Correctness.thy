@@ -694,8 +694,8 @@ next
 next
   case (Frz p \<phi> \<psi>)
   let ?pn = "(p, Formula.nfv \<phi>)"
-  have wf_\<psi>0: "wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R (minit0 n \<psi>) \<psi>"
-  proof (rule Frz.IH(2))
+  have wf_\<psi>0: "\<forall>f. wf_mformula \<sigma> 0 (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> f)) n R (minit0 n \<psi>) \<psi>"
+  proof (intro allI Frz.IH(2))
     show "\<forall>x\<in>fv \<psi>. x < n"
       using Frz by auto
     show "pred_mapping (\<lambda>x. x = 0) (P(?pn \<mapsto> 0))"
@@ -1839,7 +1839,7 @@ next
   let ?db0 = "Mapping.update ?pn [] db"
   from MFrz.prems(1) obtain \<phi>1 \<psi>1 where Frz_eq: "\<phi>' = Formula.Frz p \<phi>1 \<psi>1" and
     wf_\<phi>: "wf_mformula \<sigma> j P V m UNIV \<phi> \<phi>1" and
-    wf_\<psi>: "wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi> \<psi>1" and
+    wf_\<psi>: "\<And>f. wf_mformula \<sigma> j (P(?pn \<mapsto> 0)) (V(?pn \<mapsto> f)) n R \<psi> \<psi>1" and
     wf_state: "wf_frz_state \<sigma> j P V p m \<phi>1 \<psi>1 skip0 \<alpha>s" and
     fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> fv \<phi>1" and
     safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1"
@@ -1899,8 +1899,9 @@ next
       proof (rule wf_mformula.Frz)
         show "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>_new \<phi>1"
           using \<phi>_step e\<phi> by auto
-        show "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<bottom>)) n R \<psi>_new \<psi>1"
-          by (rule IH\<psi>1)
+        show "\<forall>f. wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> f)) n R \<psi>_new \<psi>1"
+          apply (intro allI IH\<psi>1[rule_format])
+          sorry
         show "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi>1 \<psi>1 skip1 \<alpha>s2"
           by (rule frz_step_post[OF wf_state phi_res' phi_prog_mono IH\<psi>2 ds ef frz_prog_eq])
         show "{0..<m} \<subseteq> fv \<phi>1"
