@@ -1695,7 +1695,7 @@ lemma (in maux) frz_step_post:
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
-    and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> \<bottom>), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
+    and psi_rows: "list_all2 (\<lambda>i. qtable n (FV \<psi>) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V((p, m) \<mapsto> f), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>))
       [progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi> j..<progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi> (j + \<delta>)] zs0"
     and ds: "discharge_skip (skip0 + length zs0) (alphas @ xs) = (skip1, alphas1)"
     and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') alphas1 = (ys, alphas2)"
