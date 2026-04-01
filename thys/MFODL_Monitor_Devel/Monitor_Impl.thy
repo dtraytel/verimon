@@ -93,6 +93,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) meformula =
   MRel "event_data table"
   | MPred Formula.name "Formula.trm list" pred_mode
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula"
+  | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula" nat nat nat "event_data table list"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) meformula" bool "nat set" "('msaux, 'muaux, 'mtaux) meformula" "event_data mebuf2"
   | MAndAssign "('msaux, 'muaux, 'mtaux) meformula" "nat \<times> Formula.trm"
@@ -117,6 +118,7 @@ fun Rep_meformula :: "('msaux, 'muaux, 'mtaux) meformula \<Rightarrow> ('msaux, 
   "Rep_meformula (MRel rel) = mformula.MRel rel"
 | "Rep_meformula (MPred e tms mode) = mformula.MPred e tms mode"
 | "Rep_meformula (MLet p m \<phi> \<psi>) = mformula.MLet p m (Rep_meformula \<phi>) (Rep_meformula \<psi>)"
+| "Rep_meformula (MFrz p m \<phi> \<psi> i j k \<alpha>) = mformula.MFrz p m (Rep_meformula \<phi>) (Rep_meformula \<psi>) i j k \<alpha>"
 | "Rep_meformula (MLetPast p m \<phi> \<psi> i buf) = mformula.MLetPast p m (Rep_meformula \<phi>) (Rep_meformula \<psi>) i buf"
 | "Rep_meformula (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) = mformula.MAnd A_\<phi> (Rep_meformula \<phi>) pos A_\<psi> (Rep_meformula \<psi>) (map_prod Rep_mbuf_t Rep_mbuf_t buf)"
 | "Rep_meformula (MAndAssign \<phi> conf) = mformula.MAndAssign (Rep_meformula \<phi>) conf"
@@ -213,6 +215,7 @@ function (in maux) (sequential) meinit0 :: "nat \<Rightarrow> ty Formula.formula
 | "meinit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
 | "meinit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "meinit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>)"
+| "meinit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>) 0 0 0 []"
 | "meinit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>) 0 None"
 | "meinit0 n (Formula.Or \<phi> \<psi>) = MOr (meinit0 n \<phi>) (meinit0 n \<psi>) (mbuf_t_empty, mbuf_t_empty)"
 | "meinit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -705,6 +708,17 @@ function (sequential) meeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
     (let (xs, \<phi>) = meeval m ts db \<phi>;
       (ys, \<psi>) = meeval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
+| "meeval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
+    (let (xs, \<phi>) = meeval m ts db \<phi>;
+         db0 = Mapping.update (p, m) [] db;
+         (zs0, \<psi>) = meeval n ts db0 \<psi>;
+         zs0_out = drop (jfrz - jpsi0) zs0;
+         jpsi0 = jpsi0 + length zs0;
+         \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meeval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0) \<alpha>s;
+         jphi = jphi + length xs;
+         jfrz = jfrz + length zs0_out + length ys
+     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
 | "meeval n ts db (MLetPast p m \<phi> \<psi> i buf) =
     (let (xs, i, buf, \<phi>) = letpast_meeval0 (meeval m) j i mbuf_t_empty (list_of_option buf) (p, m) ts db \<phi>;
          (ys, \<psi>) = meeval n ts (Mapping.update (p, m) (Rep_mbuf_t xs) db) \<psi>
@@ -796,44 +810,63 @@ lemma psize_snd_meeval: "meeval_dom (n, t, db, \<phi>) \<Longrightarrow> size (s
   done
 
 lemma total_meeval: "All meeval_dom"
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp psize_snd_meeval)
+  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meeval dest: sym)
 
 termination meeval
   by (rule total_meeval)
 
+lemma freeze_meval0_cong_fst: "(\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (eval \<alpha>) = fst (eval' \<alpha>)) \<Longrightarrow>
+  freeze_meval0 eval k \<alpha>s = freeze_meval0 eval' k \<alpha>s"
+  apply (induct eval k \<alpha>s rule: freeze_meval0.induct)
+   apply (auto simp: split_beta split: list.splits)
+  apply (metis eq_fst_iff)
+  apply (metis eq_fst_iff)
+  done
+
 lemma meval_code[code]: "meval j n ts db (Rep_meformula \<phi>) = (let (zs, \<phi>') = meeval n ts db \<phi> in (zs, Rep_meformula \<phi>'))"
 proof (induction n ts db \<phi> rule: meeval.induct)
-  case (4 n ts db p m \<phi> \<psi> i buf)
+next
+  case (4 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)
+  obtain xs \<phi>' where \<phi>: "meeval m ts db \<phi> = (xs, \<phi>')"
+    by (cases "meeval m ts db \<phi>")
+  obtain zs0 \<psi>' where \<psi>: "meeval n ts (Mapping.update (p, m) [] db) \<psi> = (zs0, \<psi>')"
+    by (cases "meeval n ts (Mapping.update (p, m) [] db) \<psi>")
+  { fix \<alpha>
+    have "\<exists>ys \<psi>''. meeval n []
+     (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db))
+     \<psi>' = (ys, \<psi>'')"
+    by (cases "meeval n []
+     (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>'") simp
+  }
+  from allI[OF this, of "\<lambda>x. x"] obtain ys \<psi>'' where \<psi>': "meeval n []
+     (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db))
+     \<psi>' = (ys \<alpha>, \<psi>'' \<alpha>)" for \<alpha>
+    by atomize_elim (unfold choice_iff)
+  show ?case
+    using 4(1)[unfolded \<phi> Let_def prod.case] 4(2)[OF refl \<phi>[symmetric] refl, unfolded \<psi> Let_def prod.case]
+      4(3)[OF \<phi>[symmetric] refl refl \<psi>[symmetric] refl refl refl refl, unfolded \<psi>' Let_def prod.case]
+    by (auto simp: Let_def \<phi> \<psi> \<psi>' split_beta intro!: arg_cong[OF freeze_meval0_cong_fst])
+next
+  case (5 n ts db p m \<phi> \<psi> i buf)
   have IH: "size \<psi> = size \<phi> \<Longrightarrow> meval j m ts db (Monitor_Impl.Rep_meformula \<psi>) =
     (case meeval m ts db \<psi> of (zs, \<psi>') \<Rightarrow> (zs, Monitor_Impl.Rep_meformula \<psi>'))" for ts db \<psi>
-    using 4 by auto
+    using 5 by auto
   show ?case
-    using 4(1) 4(2)[OF refl _ refl refl]
+    using 5(1) 5(2)[OF refl _ refl refl]
     by (cases "letpast_meeval0 (meeval m) j i mbuf_t_empty (list_of_option buf) (p, m) ts db \<phi>")
        (auto simp: letpast_meval_def mbuf_t_empty.rep_eq split: prod.splits
         dest!: letpast_meval0_cong_f[where ?eval="meval j m" and ?eval'="meeval m" and \<phi>=\<phi>, OF IH size_Rep_meformula, simplified] letpast_meeval0)
 next
-  case (9 n ts db A_pos A_neg L buf)
+  case (10 n ts db A_pos A_neg L buf)
   have "map fst (map (meeval n ts db) L) = map fst (map (meval j n ts db) (map Monitor_Impl.Rep_meformula L))"
     "map snd (map (meval j n ts db) (map Monitor_Impl.Rep_meformula L)) = map Monitor_Impl.Rep_meformula (map snd (map (meeval n ts db) L))"
-    by (auto dest: 9 split: prod.splits)
+    by (auto dest: 10 split: prod.splits)
   then show ?case
-    using 9
+    using 10
     by (auto simp only: Let_def meval.simps meeval.simps mbufn_add Rep_meformula.simps mbuf_t_empty.rep_eq
         split: prod.splits dest!: mebufn_take mbufn_take_app)
 next
-  case (19 n ts db I mr mrs \<phi>s buf nts aux)
-  have IH: "zs = zs' \<and> \<phi>s' = map Rep_meformula \<phi>s''" if
-    "map_split id (map (meval j n ts db) (map Rep_meformula \<phi>s)) = (zs, \<phi>s')"
-    "map_split id (map (meeval n ts db) \<phi>s) = (zs', \<phi>s'')" for zs zs' \<phi>s' \<phi>s''
-    using 19 that
-    by (induction \<phi>s arbitrary: zs zs' \<phi>s' \<phi>s'') (auto simp: comp_def split: prod.splits)
-  show ?case
-    using 19
-    by (auto simp only: meval.simps meeval.simps Rep_meformula.simps Let_def mbufn_add mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
-        split: prod.splits dest!: mebufnt_take IH dest: mbufnt_take_app)
-next
-  case (20 n ts db I mr mrs \<phi>s buf nts t aux)
+  case (20 n ts db I mr mrs \<phi>s buf nts aux)
   have IH: "zs = zs' \<and> \<phi>s' = map Rep_meformula \<phi>s''" if
     "map_split id (map (meval j n ts db) (map Rep_meformula \<phi>s)) = (zs, \<phi>s')"
     "map_split id (map (meeval n ts db) \<phi>s) = (zs', \<phi>s'')" for zs zs' \<phi>s' \<phi>s''
@@ -841,6 +874,17 @@ next
     by (induction \<phi>s arbitrary: zs zs' \<phi>s' \<phi>s'') (auto simp: comp_def split: prod.splits)
   show ?case
     using 20
+    by (auto simp only: meval.simps meeval.simps Rep_meformula.simps Let_def mbufn_add mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
+        split: prod.splits dest!: mebufnt_take IH dest: mbufnt_take_app)
+next
+  case (21 n ts db I mr mrs \<phi>s buf nts t aux)
+  have IH: "zs = zs' \<and> \<phi>s' = map Rep_meformula \<phi>s''" if
+    "map_split id (map (meval j n ts db) (map Rep_meformula \<phi>s)) = (zs, \<phi>s')"
+    "map_split id (map (meeval n ts db) \<phi>s) = (zs', \<phi>s'')" for zs zs' \<phi>s' \<phi>s''
+    using 21 that
+    by (induction \<phi>s arbitrary: zs zs' \<phi>s' \<phi>s'') (auto simp: comp_def split: prod.splits)
+  show ?case
+    using 21
     by (auto simp only: meval.simps meeval.simps Rep_meformula.simps Let_def mbufn_add mbuf_t_append.rep_eq
         split: prod.splits dest!: mebufnt_take IH)
 qed (auto simp: mbuf2_add mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
