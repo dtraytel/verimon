@@ -6,6 +6,7 @@ theory Correctness
     Correct_Since
     Correct_Trigger
     "MFOTL_Monitor_Devel.Abstract_Monitor"
+iq.Isar_Explore
 begin
 (*>*)
 
@@ -2181,16 +2182,6 @@ next
         using wf_state by (auto simp: wf_frz_state_def Let_def jfrz0_eq jphi0_eq)
       have len_\<alpha>s: "length \<alpha>s = ?jphi - ?jfrz"
         using wf_frz_queue_length[OF old_queue] .
-      have len_\<alpha>s_xs: "length (\<alpha>s @ xs) = ?jphi' - ?jfrz"
-      proof -
-        have "length (\<alpha>s @ xs) = (?jphi - ?jfrz) + (?jphi' - ?jphi)"
-          using len_\<alpha>s len_xs by simp
-        also have "\<dots> = ?jphi' - ?jfrz"
-          using phi_prog_mono jfrz_le_jfrz'
-          sorry
-          (*by simp*)
-        finally show ?thesis .
-      qed
       have d_val: "d = ?jfrz - ?jphi + length zs0_out"
         unfolding d_def jfrz0_eq jphi0_eq by simp
       \<comment> \<open>Compute jfrz + |zs0_out|\<close>
@@ -2200,7 +2191,15 @@ next
       have len_\<alpha>s1: "length \<alpha>s1 = ?jphi' - max ?jfrz ?jpsi0'"
       proof (cases "?jfrz \<le> ?jphi")
         case jfrz_le: True
-        then have d_simp: "d = length zs0_out" unfolding d_val by simp
+        have len_\<alpha>s_xs: "length (\<alpha>s @ xs) = ?jphi' - ?jfrz"
+        proof -
+          have "length (\<alpha>s @ xs) = (?jphi - ?jfrz) + (?jphi' - ?jphi)"
+            using len_\<alpha>s len_xs by simp
+          also have "\<dots> = ?jphi' - ?jfrz"
+            using phi_prog_mono jfrz_le by simp
+          finally show ?thesis .
+        qed
+        from jfrz_le have d_simp: "d = length zs0_out" unfolding d_val by simp
         have "length \<alpha>s1 = (?jphi' - ?jfrz) - length zs0_out"
           unfolding \<alpha>s1_def d_simp using len_\<alpha>s_xs by simp
         also have "\<dots> = ?jphi' - (?jfrz + length zs0_out)"
@@ -2390,8 +2389,7 @@ next
         unfolding zs0_out_def by simp
       also have "\<dots> = (?jpsi0'_B - ?jpsi0_B) - (?jfrz_B - ?jpsi0_B)"
         using IH\<psi>2 jfrz0_eq jpsi0_eq
-        sledgehammer
-        sorry
+        by (metis list_all2_lengthD length_upt)
       also have "\<dots> = ?jpsi0'_B - ?jfrz_B"
         using jpsi0_le_B by (cases "?jfrz_B \<le> ?jpsi0'_B") auto
       finally show ?thesis .
