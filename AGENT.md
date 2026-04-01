@@ -7,13 +7,13 @@ Prove the correctness of the freeze quantifier (`Formula.Frz` / `MFrz`) in VeriM
 ## Background
 
 Refer to `freeze_simplified.md` in the repository root for:
-- a description of the runtime algorithm and its state (`MFrz p m φ ψ jfrz jpsi0 jphi αs`),
+- the final runtime algorithm and state (`MFrz p m φ ψ jfrz jpsi0 jphi αs`),
 - the key definitions (`freeze_meval0`, `frz_meval`),
 - the proof objects and invariants (`wf_frz_state`, `wf_frz_queue`, `frz_qtable`),
-- a detailed analysis of the remaining sorry positions,
-- the index alignment problem and V-insensitivity strategy,
-- a recommended attack order,
-- dead ends to avoid.
+- the completed proof story for the `MFrz` case,
+- the index split at `M = max jfrz jpsi0'`,
+- the role of V-insensitivity, and
+- the arithmetic case split that was needed in the queue proof.
 
 Refer to `isabelle_guidance.md` for general rules on working with Isabelle/HOL.
 
@@ -64,17 +64,18 @@ The MFrz algorithm has been corrected and simplified. Key design choices:
    output       = zs0_out @ ys
    ```
 
-### Correctness.thy — NEEDS FIXING
+### Correctness.thy — DONE
 
-The file has errors because it still references the old two-nat MFrz pattern and
-the removed `discharge_skip` function. The following needs to be done:
+The `MFrz` proof has been updated to match the simplified runtime.
 
-1. **Remove/comment broken `discharge_skip` lemmas** in Correctness.thy
-2. **Update `wf_frz_state`** to use `jphi` directly instead of `skip = jfrz - jphi`
-3. **Update `wf_mformula.Frz`** constructor to match new `MFrz p m φ ψ jfrz jpsi0 jphi αs`
-4. **Rewrite `frz_step_post`** for the corrected algorithm
-5. **Rewrite `meval_correct` MFrz case** to use the new invariants
-6. **Prove the two main sorry goals** (semantic output rows + progress equation)
+Completed items:
+
+1. `wf_frz_state` now uses the explicit `jphi` state component.
+2. The `wf_mformula.Frz` constructor matches `MFrz p m φ ψ jfrz jpsi0 jphi αs`.
+3. The old `discharge_skip`-based reasoning has been removed from the active proof path.
+4. `frz_step_post` is proved for the drop-based algorithm.
+5. The `MFrz` case of `meval_correct` is fully proved.
+6. The semantic output proof is split into `zs0_out_rows` and `ys_rows`, then recombined with `list_all2_appendI`.
 
 ## The algorithm bug (critical discovery from earlier sessions)
 
@@ -89,43 +90,34 @@ The fix: `zs0_out = drop (jfrz - jpsi0) zs0` trims the shared-run output.
 Additionally, the old algorithm only discharged `|zs0|` snapshots from the queue,
 missing the gap `jfrz - jphi`. The fix: discharge `(jfrz - jphi) + |zs0_out|`.
 
-## Remaining sorry positions (expected after Correctness.thy is fixed)
+## Final proof status
 
-### Sorry 1 — semantic output rows (in `frz_step_post`)
+The main freeze facts are now established:
 
-```
-list_all2 (λi. qtable n (FV (Formula.Frz p φ ψ)) (mem_restr R)
-  (λv. ⟨σ, V, v, i⟩ ⊨ Formula.Frz p φ ψ))
-  [progress σ P (Formula.Frz p φ ψ) j ..< progress σ P' (Formula.Frz p φ ψ) (j+δ)]
-  (zs0_out @ ys)
-```
+- `frz_prog_eq`:
+  ```
+  progress σ P' (Formula.Frz p φ1 ψ1) (j+δ) =
+    progress σ P (Formula.Frz p φ1 ψ1) j + length zs0_out + length ys
+  ```
+- semantic output correctness for `(zs0_out @ ys)` on the interval
+  `[progress σ P (Formula.Frz p φ1 ψ1) j ..< progress σ P' (Formula.Frz p φ1 ψ1) (j+δ)]`
+- post-state queue correctness (`frz_step_post`)
+- full re-establishment of the `wf_mformula` invariant in the `MFrz` branch
 
-### Sorry 2 — progress equation (in `meval_correct`)
+## Proof strategy that ended up working
 
-```
-progress σ P' (Formula.Frz p φ1 ψ1) (j+δ) =
-  progress σ P (Formula.Frz p φ1 ψ1) j + length zs0_out + length ys
-```
-
-## Proof strategy
-
-### Recommended attack order
-
-1. **Resolve the index alignment problem** (prerequisite for both sorries).
-   Show either:
-   - `jfrz = jpsi0` under the proof invariants, OR
-   - `jfrz > jpsi0 ⟹ jpsi0' = jpsi0` (making `|zs0| = 0`, so `zs0_out` is empty too).
-   See `freeze_simplified.md` § "THE INDEX ALIGNMENT PROBLEM" for a detailed case analysis.
-
-2. **Prove V-insensitivity at the `wf_mformula` level** (`wf_mformula_V_upd_zero`).
-   When `P pn = Some 0`:
+1. Split the output interval at
    ```
-   wf_mformula σ j P V n R ψ ψ1 ⟹ wf_mformula σ j P (V(pn := x)) n R ψ ψ1
+   M = jfrz + |zs0_out| = max jfrz jpsi0'
    ```
-
-3. **Prove sorry 2** (progress equation).
-
-4. **Prove sorry 1** (semantic output rows).
+   so `[jfrz..<jfrz') = [jfrz..<M] @ [M..<jfrz')`.
+2. Prove `zs0_out_rows` from the shared `psi` run and convert the semantics via `sat_V_cong`.
+3. Prove `ys_rows` from replay:
+   - `freeze_meval0_diagonal` identifies the diagonal replay output,
+   - `queue_αs1_B` supplies the frozen `φ` table at index `M + i`,
+   - `IHψ_new` gives the replay rows for `ψ1`,
+   - unfolding `Formula.sat` for `Frz` converts those `ψ1` rows into `Frz` rows.
+4. Recombine with `list_all2_appendI`.
 
 ### Key lemmas to use
 
@@ -155,6 +147,8 @@ Note: the frozen binding uses the *outer* time `i`, not the queried time inside 
 4. **`jpsi0 ≤ jfrz`** always holds.
 5. **`jfrz ≤ jphi`** when `jpsi0 ≤ jphi`.
 6. **`jfrz = jpsi0`** when `jpsi0 ≥ jphi`.
+7. **`M = max jfrz jpsi0'`** is the exact boundary between shared output and replay output.
+8. **`jfrz' = jfrz + |zs0_out| + |ys|`** is the final progress equation.
 
 ## Dead ends — do not repeat these
 
@@ -172,7 +166,8 @@ Note: the frozen binding uses the *outer* time `i`, not the queried time inside 
 All frontier/debt arithmetic is over natural numbers, not integers.
 - `jfrz - jphi` is nat subtraction (truncates at 0).
 - The useful normal form for drop arithmetic is `drop (a - b + c) (xs @ ys)`.
-- Whenever a proof step "looks obvious by subtraction", first check which side is known to be ≤ the other, or rewrite via `min`.
+- The formula `length (αs @ xs) = jphi' - jfrz` is valid only in the case `jfrz ≤ jphi`.
+- When `jfrz > jphi`, the old queue is empty and the queue proof must work directly from `xs`.
 
 ## Workflow
 
@@ -185,5 +180,5 @@ All frontier/debt arithmetic is over natural numbers, not integers.
    - Replace one `sorry` at a time.
    - Keep the project error-free at every stage.
    - Prefer structured Isar proofs; avoid long unstructured `apply` scripts.
-5. Use the I/R REPL for exploratory proof attempts before committing edits to the theory file.
+5. The I/R REPL may be unavailable; MCP file/context tools were sufficient for the finished proof.
 6. When stuck, isolate the hard part into a named lemma (with `sorry` temporarily), add `text ‹ … ›` notes about the intended strategy, and continue with downstream development.
