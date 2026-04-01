@@ -2543,9 +2543,6 @@ next
     qed
     have len_xs_B: "length xs = ?jphi'_B - ?jphi_B"
       using phi_res' by (auto dest: list_all2_lengthD)
-    have len_\<alpha>s_xs_B: "length (\<alpha>s @ xs) = ?jphi'_B - ?jfrz_B"
-      using len_\<alpha>s_B len_xs_B phi_prog_mono jfrz_le_jfrz'_B
-      sorry
     have len_\<alpha>s1_B: "length \<alpha>s1 = ?jphi'_B - M"
     proof -
       have d_val_B: "d = ?jfrz_B - ?jphi_B + length zs0_out"
@@ -2554,7 +2551,15 @@ next
       show ?thesis
       proof (cases "?jfrz_B \<le> ?jphi_B")
         case True
-        then have "d = length zs0_out" unfolding d_val_B by simp
+        have len_\<alpha>s_xs_B: "length (\<alpha>s @ xs) = ?jphi'_B - ?jfrz_B"
+        proof -
+          have "length (\<alpha>s @ xs) = (?jphi_B - ?jfrz_B) + (?jphi'_B - ?jphi_B)"
+            using len_\<alpha>s_B len_xs_B by simp
+          also have "\<dots> = ?jphi'_B - ?jfrz_B"
+            using phi_prog_mono True by simp
+          finally show ?thesis .
+        qed
+        from True have "d = length zs0_out" unfolding d_val_B by simp
         then have "length \<alpha>s1 = (?jphi'_B - ?jfrz_B) - length zs0_out"
           unfolding \<alpha>s1_def using len_\<alpha>s_xs_B by simp
         then show ?thesis unfolding M_def by simp
@@ -2625,14 +2630,30 @@ next
       using frz_prog_eq unfolding jfrz0_eq M_def by simp
     \<comment> \<open>Queue invariant for \<alpha>s1 covering [M..jphi')\<close>
     have queue_\<alpha>s1_B: "wf_frz_queue \<sigma> V m \<phi>1 [M ..< ?jphi'_B] \<alpha>s1"
-    proof -
+    proof (cases "?jfrz_B \<le> ?jphi_B")
+      case jfrz_le: True
+      \<comment> \<open>When jfrz \<le> jphi: concatenate old and new queues, then drop\<close>
       from wf_state have old_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B..<?jphi_B] \<alpha>s"
         by (meson wf_frz_state_def)
       have new_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jphi_B ..< ?jphi'_B] xs"
         using phi_res' by (auto simp: wf_frz_queue_def list_all2_conv_all_nth frz_qtable_def)
+      have len_\<alpha>s_xs_B: "length (\<alpha>s @ xs) = ?jphi'_B - ?jfrz_B"
+      proof -
+        have "length (\<alpha>s @ xs) = (?jphi_B - ?jfrz_B) + (?jphi'_B - ?jphi_B)"
+          using len_\<alpha>s_B len_xs_B by simp
+        also have "\<dots> = ?jphi'_B - ?jfrz_B"
+          using phi_prog_mono jfrz_le by simp
+        finally show ?thesis .
+      qed
       have full_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B ..< ?jphi'_B] (\<alpha>s @ xs)"
         using old_queue new_queue phi_prog_mono
         using len_\<alpha>s_xs_B len_xs_B list_all2_upt_append wf_frz_queue_def by fastforce
+      have d_val_here: "d = length zs0_out"
+      proof -
+        have "d = ?jfrz_B - ?jphi_B + length zs0_out"
+          by (metis d_def jfrz0_eq wf_frz_state_def wf_state)
+        with jfrz_le show ?thesis by simp
+      qed
       have "wf_frz_queue \<sigma> V m \<phi>1 (drop d [?jfrz_B ..< ?jphi'_B]) (drop d (\<alpha>s @ xs))"
         by (rule list_all2_dropI[OF full_queue[unfolded wf_frz_queue_def], folded wf_frz_queue_def])
       moreover have "drop d [?jfrz_B ..< ?jphi'_B] = [M ..< ?jphi'_B]"
@@ -2640,21 +2661,81 @@ next
         have "drop d [?jfrz_B ..< ?jphi'_B] = [?jfrz_B + d ..< ?jphi'_B]"
           by (simp add: drop_upt)
         moreover have "?jfrz_B + d = M"
-        proof -
-          have "d = ?jfrz_B - ?jphi_B + length zs0_out"
-            by (metis d_def jfrz0_eq wf_frz_state_def wf_state)
-          then have "?jfrz_B + d = ?jfrz_B + (?jfrz_B - ?jphi_B + length zs0_out)" by simp
-          also have "\<dots> = ?jfrz_B + length zs0_out"
-            apply (cases "?jfrz_B \<le> ?jphi_B")
-             apply simp_all
-            sorry
-          also have "\<dots> = M" unfolding M_def ..
-          finally show ?thesis .
-        qed
+          unfolding d_val_here M_def by simp
         ultimately show ?thesis by simp
       qed
       moreover have "drop d (\<alpha>s @ xs) = \<alpha>s1" unfolding \<alpha>s1_def by simp
       ultimately show ?thesis by simp
+    next
+      case jfrz_gt: False
+      then have gt: "?jfrz_B > ?jphi_B" by simp
+      \<comment> \<open>When jfrz > jphi: \<alpha>s is empty, work from new_queue (xs) directly\<close>
+      have jfrz_eq_jpsi0: "?jfrz_B = ?jpsi0_B"
+      proof -
+        have "?jpsi0_B \<le> ?jfrz_B" using jpsi0_le_B .
+        moreover have "?jfrz_B \<le> ?jpsi0_B"
+        proof (rule ccontr)
+          assume "\<not> ?jfrz_B \<le> ?jpsi0_B"
+          define a where "a = (\<lambda>i::nat. if i < ?jphi_B then j else (0::nat))"
+          have jfrz_unfold: "?jfrz_B = (LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a i)) \<psi>1 j \<le> i)"
+            unfolding progress_simps frz_progress_def Let_def fv(1) a_def by simp
+          show False
+          proof (cases "?jpsi0_B \<le> ?jphi_B")
+            case True
+            have "?jfrz_B \<le> ?jphi_B"
+              unfolding jfrz_unfold by (intro Least_le conjI progress_le_gen[OF pm_B])
+                (simp add: a_def, use True in simp)
+            then show False using gt by simp
+          next
+            case False
+            then have "a ?jpsi0_B = 0" unfolding a_def by simp
+            have "?jpsi0_B \<le> j"
+            proof -
+              have "?jpsi0_B \<le> ?jfrz_B" using jpsi0_le_B .
+              also have "?jfrz_B \<le> j" unfolding jfrz_unfold using progress_le_gen[OF pm_B, of \<sigma> \<phi>1]
+                by (smt (verit, del_insts) Least_le MFrz.prems(2)
+                    \<open>\<not> Progress.progress \<sigma> P (formula.Frz p \<phi>1 \<psi>1) j \<le> Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j\<close>
+                    \<open>a (Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j) = 0\<close> jfrz_unfold jpsi0_le_jfrz
+                    order_refl order_trans progress_le_gen wf_envs_P_simps(1))
+              finally show ?thesis .
+            qed
+            then have "?jfrz_B \<le> ?jpsi0_B"
+              unfolding jfrz_unfold by (intro Least_le) (auto simp: \<open>a ?jpsi0_B = 0\<close>)
+            with \<open>\<not> ?jfrz_B \<le> ?jpsi0_B\<close> show False by simp
+          qed
+        qed
+        ultimately show ?thesis by simp
+      qed
+      have jpsi0'_ge: "?jpsi0'_B \<ge> ?jfrz_B" using jfrz_eq_jpsi0 jpsi0_mono_B by simp
+      have M_eq_jpsi0': "M = ?jpsi0'_B" unfolding M_eq using jpsi0'_ge by simp
+      have new_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jphi_B ..< ?jphi'_B] xs"
+        using phi_res' by (auto simp: wf_frz_queue_def list_all2_conv_all_nth frz_qtable_def)
+      \<comment> \<open>d = jpsi0' - jphi in this case\<close>
+      have d_eq_here: "d = ?jpsi0'_B - ?jphi_B"
+      proof -
+        have "d = ?jfrz_B - ?jphi_B + length zs0_out"
+          by (metis d_def jfrz0_eq wf_frz_state_def wf_state)
+        also have "\<dots> = (?jpsi0_B - ?jphi_B) + (?jpsi0'_B - ?jpsi0_B)"
+          unfolding jfrz_eq_jpsi0 len_zs0_out_B using jfrz_eq_jpsi0 jpsi0_le_B by simp
+        also have "\<dots> = ?jpsi0'_B - ?jphi_B"
+          using gt jfrz_eq_jpsi0 jpsi0_mono_B by simp
+        finally show ?thesis .
+      qed
+      have "length \<alpha>s = 0" using gt len_\<alpha>s_B by simp
+      then have "\<alpha>s1 = drop d xs" unfolding \<alpha>s1_def by simp
+      moreover have "wf_frz_queue \<sigma> V m \<phi>1 (drop (?jpsi0'_B - ?jphi_B) [?jphi_B ..< ?jphi'_B]) (drop (?jpsi0'_B - ?jphi_B) xs)"
+        by (rule list_all2_dropI[OF new_queue[unfolded wf_frz_queue_def], folded wf_frz_queue_def])
+      moreover have "drop (?jpsi0'_B - ?jphi_B) [?jphi_B ..< ?jphi'_B] = [?jpsi0'_B ..< ?jphi'_B]"
+      proof -
+        have "drop (?jpsi0'_B - ?jphi_B) [?jphi_B ..< ?jphi'_B] = [?jphi_B + (?jpsi0'_B - ?jphi_B) ..< ?jphi'_B]"
+          by (simp add: drop_upt)
+        moreover have "?jphi_B + (?jpsi0'_B - ?jphi_B) = ?jpsi0'_B"
+          using gt jfrz_eq_jpsi0 jpsi0_mono_B by simp
+        ultimately show ?thesis by simp
+      qed
+      ultimately have "wf_frz_queue \<sigma> V m \<phi>1 [?jpsi0'_B ..< ?jphi'_B] (drop d xs)"
+        using d_eq_here by simp
+      then show ?thesis unfolding M_eq_jpsi0' using \<open>\<alpha>s1 = drop d xs\<close> by simp
     qed
     have d_eq: "d = progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j - jphi0 + length zs0_out"
       unfolding d_def jfrz0_eq by simp
