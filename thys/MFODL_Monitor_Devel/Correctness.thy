@@ -1471,6 +1471,73 @@ next
   qed
 qed
 
+lemma freeze_meval0_diagonal:
+  assumes ef: "freeze_meval0 eval k0 \<alpha>s = (ys, \<alpha>s')"
+    and replay: "\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> \<exists>us \<psi>'. eval \<alpha> = (us, \<psi>') \<and> length us = L"
+    and k0_bound: "k0 \<le> L"
+  shows "length ys = min (length \<alpha>s) (L - k0)
+    \<and> (\<forall>i < length ys. ys ! i = fst (eval (\<alpha>s ! i)) ! (k0 + i))"
+  using ef replay k0_bound
+proof (induction \<alpha>s arbitrary: k0 ys \<alpha>s')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons \<alpha> \<alpha>s0)
+  obtain us \<psi>' where ev: "eval \<alpha> = (us, \<psi>')" and len_us: "length us = L"
+    using Cons.prems(2)[of \<alpha>] by auto
+  show ?case
+  proof (cases "drop k0 us")
+    case Nil
+    then have "k0 \<ge> L" using len_us by (simp add: drop_eq_Nil)
+    with Cons.prems(3) have "k0 = L" by simp
+    with Nil ev Cons.prems(1) have "ys = []" and "\<alpha>s' = \<alpha> # \<alpha>s0"
+      by (simp_all add: Let_def)
+    then show ?thesis using \<open>k0 = L\<close> by simp
+  next
+    case (Cons y rest)
+    then have k0_lt: "k0 < L" using len_us
+      by (metis drop_eq_Nil leI list.distinct(1))
+    have y_eq: "y = us ! k0"
+    proof -
+      have "hd (drop k0 us) = us ! k0"
+        using k0_lt len_us by (simp add: hd_drop_conv_nth)
+      moreover have "hd (drop k0 us) = y" using Cons by simp
+      ultimately show ?thesis by simp
+    qed
+    obtain zs \<alpha>s'' where rec: "freeze_meval0 eval (Suc k0) \<alpha>s0 = (zs, \<alpha>s'')"
+      by (cases "freeze_meval0 eval (Suc k0) \<alpha>s0")
+    from Cons ev rec have ys_eq: "ys = y # zs" and \<alpha>s'_eq: "\<alpha>s' = \<alpha>s''"
+      using Cons.prems(1) by (simp_all add: Let_def)
+    have IH: "length zs = min (length \<alpha>s0) (L - Suc k0) \<and>
+      (\<forall>i < length zs. zs ! i = fst (eval (\<alpha>s0 ! i)) ! (Suc k0 + i))"
+      using Cons.IH[OF rec] Cons.prems(2) k0_lt by auto
+    have len_ys: "length ys = min (length (\<alpha> # \<alpha>s0)) (L - k0)"
+    proof -
+      have "length ys = Suc (length zs)" using ys_eq by simp
+      also have "\<dots> = Suc (min (length \<alpha>s0) (L - Suc k0))" using IH by simp
+      also have "\<dots> = min (Suc (length \<alpha>s0)) (Suc (L - Suc k0))"
+        by (simp add: min_def)
+      also have "Suc (L - Suc k0) = L - k0" using k0_lt by simp
+      finally show ?thesis by simp
+    qed
+    have nth_ys: "\<forall>i < length ys. ys ! i = fst (eval ((\<alpha> # \<alpha>s0) ! i)) ! (k0 + i)"
+    proof (intro allI impI)
+      fix i assume "i < length ys"
+      show "ys ! i = fst (eval ((\<alpha> # \<alpha>s0) ! i)) ! (k0 + i)"
+      proof (cases i)
+        case 0
+        then show ?thesis using ys_eq y_eq ev by simp
+      next
+        case (Suc i')
+        then have "i' < length zs" using \<open>i < length ys\<close> ys_eq by simp
+        then have "zs ! i' = fst (eval (\<alpha>s0 ! i')) ! (Suc k0 + i')" using IH by simp
+        then show ?thesis using Suc ys_eq by simp
+      qed
+    qed
+    show ?thesis using len_ys nth_ys by blast
+  qed
+qed
+
 lemma (in maux) frz_step_post:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> jphi0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -1478,7 +1545,7 @@ lemma (in maux) frz_step_post:
     and phi_mono: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
     and d_eq: "d = progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j - jphi0 + length zs0_out"
     and alphas1_eq: "alphas1 = drop d (alphas @ xs)"
-    and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') 0 alphas1 = (ys, alphas2)"
+    and ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') k0 alphas1 = (ys, alphas2)"
     and frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi> \<psi>) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi> \<psi>) j + length zs0_out + length ys"
   shows "wf_frz_state \<sigma> (j + \<delta>) P' V p m \<phi> \<psi> (jphi0 + length xs) alphas2"
@@ -1581,7 +1648,7 @@ proof -
     then show ?thesis using interval_empty by (simp add: wf_frz_queue_def)
   qed
   have replay_post:
-    "case freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') 0 alphas1 of (ys', xs') \<Rightarrow>
+    "case freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_m') k0 alphas1 of (ys', xs') \<Rightarrow>
        wf_frz_queue \<sigma> V m \<phi> (drop (length ys') [?jfrz + length zs0_out..<?jphi']) xs' \<and>
        length ys' + length xs' = length alphas1"
     using freeze_meval0_post_exact[OF queue1'] .
@@ -1772,11 +1839,11 @@ next
     define zs0_out where "zs0_out = drop (jfrz0 - jpsi0_val) zs0"
     define d where "d = jfrz0 - jphi0 + length zs0_out"
     define \<alpha>s1 where "\<alpha>s1 = drop d (\<alpha>s @ xs)"
-    obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) 0 \<alpha>s1 = (ys, \<alpha>s2)"
-      by (cases "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) 0 \<alpha>s1")
+    define jpsi0_val1 where "jpsi0_val1 = jpsi0_val + length zs0"
+    obtain ys \<alpha>s2 where ef: "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) (jfrz0 - jpsi0_val1) \<alpha>s1 = (ys, \<alpha>s2)"
+      by (cases "freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>_new) (jfrz0 - jpsi0_val1) \<alpha>s1")
     \<comment> \<open>New state values\<close>
     define jfrz1 where "jfrz1 = jfrz0 + length zs0_out + length ys"
-    define jpsi0_val1 where "jpsi0_val1 = jpsi0_val + length zs0"
     define jphi1 where "jphi1 = jphi0 + length xs"
     have phi_res':
       "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
@@ -1820,7 +1887,777 @@ next
     qed
     have frz_prog_eq: "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>) =
       progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j + length zs0_out + length ys"
+    proof -
+      let ?pn = "(p, m)"
+      let ?jfrz = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+      let ?jfrz' = "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)"
+      let ?jphi = "progress \<sigma> P \<phi>1 j"
+      let ?jphi' = "progress \<sigma> P' \<phi>1 (j + \<delta>)"
+      let ?jpsi0 = "progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j"
+      let ?jpsi0' = "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>)"
+      let ?jpsij' = "progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>)"
+      let ?a' = "\<lambda>i. if i < ?jphi' then j + \<delta> else (0::nat)"
+      from MFrz.prems(2) have pm: "pred_mapping (\<lambda>x. x \<le> j) P" by auto
+      from MFrz.prems(2) have pm': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'" by auto
+      from MFrz.prems(2) have rm: "rel_mapping (\<le>) P P'" by auto
+      \<comment> \<open>Key progress facts\<close>
+      have jphi0_eq: "jphi0 = ?jphi"
+        using wf_state by (auto simp: wf_frz_state_def Let_def)
+      have len_xs: "length xs = ?jphi' - ?jphi"
+        using phi_res' by (auto dest: list_all2_lengthD)
+      have len_zs0: "length zs0 = ?jpsi0' - ?jpsi0"
+        using IH\<psi>2 by (metis list_all2_lengthD length_upt)
+      have jpsi0_le: "?jpsi0 \<le> ?jfrz"
+        using jpsi0_le_jfrz unfolding jfrz0_eq jpsi0_eq .
+      have jpsi0_mono: "?jpsi0 \<le> ?jpsi0'"
+      proof -
+        have pm0: "pred_mapping (\<lambda>x. x \<le> j) (P(?pn \<mapsto> 0))" using pm by auto
+        have pm0': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> 0))" using pm' by auto
+        have rm0: "rel_mapping (\<le>) (P(?pn \<mapsto> 0)) (P'(?pn \<mapsto> 0))"
+          using rm by (intro rel_mapping_map_upd) auto
+        show ?thesis by (rule progress_mono_gen[OF le_add1 pm0 pm0' rm0])
+      qed
+      have jpsi0'_le_jpsij': "?jpsi0' \<le> ?jpsij'"
+      proof -
+        have pm0': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> 0))" using pm' by auto
+        have pmj': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> j + \<delta>))" using pm' by auto
+        have rm0j: "rel_mapping (\<le>) (P'(?pn \<mapsto> 0)) (P'(?pn \<mapsto> j + \<delta>))"
+          by (intro rel_mapping_map_upd) (auto simp: rel_mapping_reflp reflp_def)
+        show ?thesis by (rule progress_mono_gen[OF order_refl pm0' pmj' rm0j])
+      qed
+      \<comment> \<open>length zs0_out\<close>
+      have len_zs0_out: "length zs0_out = ?jpsi0' - ?jfrz"
+      proof -
+        have "length zs0_out = length zs0 - (jfrz0 - jpsi0_val)"
+          unfolding zs0_out_def by simp
+        also have "\<dots> = (?jpsi0' - ?jpsi0) - (?jfrz - ?jpsi0)"
+          unfolding len_zs0 jfrz0_eq jpsi0_eq by simp
+        also have "\<dots> = ?jpsi0' - ?jfrz"
+        proof (cases "?jfrz \<le> ?jpsi0'")
+          case True
+          then show ?thesis using jpsi0_le by simp
+        next
+          case False
+          then have "?jpsi0' < ?jfrz" by simp
+          then have "?jpsi0' - ?jpsi0 \<le> ?jfrz - ?jpsi0" using jpsi0_le by simp
+          then show ?thesis using False by simp
+        qed
+        finally show ?thesis .
+      qed
+      \<comment> \<open>Progress facts for jfrz'\<close>
+      have jfrz'_le: "?jfrz' \<le> j + \<delta>"
+        by (rule progress_le_gen[OF pm'])
+      have jfrz_le_jfrz': "?jfrz \<le> ?jfrz'"
+        by (rule progress_mono_gen[OF le_add1 pm pm' rm])
+      \<comment> \<open>The LEAST characterization of jfrz'\<close>
+      have jfrz'_unfold: "?jfrz' = (LEAST i. i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+        unfolding progress_simps frz_progress_def Let_def fv(1) by simp
+      have jfrz'_ex: "\<exists>i. i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i"
+      proof
+        have "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> ?a' (j + \<delta>)))" using pm' by auto
+        then have "progress \<sigma> (P'(?pn \<mapsto> ?a' (j + \<delta>))) \<psi>1 (j + \<delta>) \<le> j + \<delta>"
+          by (rule progress_le_gen)
+        then show "j + \<delta> \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' (j + \<delta>))) \<psi>1 (j + \<delta>) \<le> j + \<delta>" by simp
+      qed
+      have jfrz'_prop: "?jfrz' \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' ?jfrz')) \<psi>1 (j + \<delta>) \<le> ?jfrz'"
+        unfolding jfrz'_unfold by (rule LeastI_ex[OF jfrz'_ex])
+      \<comment> \<open>Characterize the LEAST as a case split\<close>
+      \<comment> \<open>Case 1: jfrz' < jphi' implies a'(jfrz') = j+\<delta> and jpsij' \<le> jfrz'\<close>
+      \<comment> \<open>Case 2: jfrz' \<ge> jphi' implies a'(jfrz') = 0 and jpsi0' \<le> jfrz'\<close>
+      have case_low: "?jfrz' < ?jphi' \<Longrightarrow> ?jpsij' \<le> ?jfrz'"
+      proof -
+        assume lt: "?jfrz' < ?jphi'"
+        then have "?a' ?jfrz' = j + \<delta>" by simp
+        then have "progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>) \<le> ?jfrz'"
+          using jfrz'_prop by simp
+        then show "?jpsij' \<le> ?jfrz'" by simp
+      qed
+      have case_high: "?jfrz' \<ge> ?jphi' \<Longrightarrow> ?jpsi0' \<le> ?jfrz'"
+      proof -
+        assume ge: "?jfrz' \<ge> ?jphi'"
+        then have "?a' ?jfrz' = 0" by simp
+        then have "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>) \<le> ?jfrz'"
+          using jfrz'_prop by simp
+        then show "?jpsi0' \<le> ?jfrz'" by simp
+      qed
+      \<comment> \<open>Minimality of jfrz': for i < jfrz' with i \<le> j+\<delta>, the LEAST condition fails\<close>
+      have jfrz'_min: "\<And>i. i < ?jfrz' \<Longrightarrow> i \<le> j + \<delta> \<Longrightarrow>
+        \<not> (progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+      proof -
+        fix i assume "i < ?jfrz'" "i \<le> j + \<delta>"
+        then have "\<not> (i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+          unfolding jfrz'_unfold using not_less_Least by blast
+        with \<open>i \<le> j + \<delta>\<close> show "\<not> (progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)" by simp
+      qed
+      \<comment> \<open>For i < jphi': condition is jpsij' \<le> i; for i \<ge> jphi': condition is jpsi0' \<le> i\<close>
+      have min_below: "\<And>i. i < ?jfrz' \<Longrightarrow> i < ?jphi' \<Longrightarrow> ?jpsij' > i"
+      proof -
+        fix i assume "i < ?jfrz'" "i < ?jphi'"
+        then have "?a' i = j + \<delta>" by simp
+        moreover have "i \<le> j + \<delta>" using \<open>i < ?jfrz'\<close> jfrz'_le by simp
+        ultimately show "?jpsij' > i"
+          using jfrz'_min[OF \<open>i < ?jfrz'\<close>] by simp
+      qed
+      have min_above: "\<And>i. i < ?jfrz' \<Longrightarrow> i \<ge> ?jphi' \<Longrightarrow> ?jpsi0' > i"
+      proof -
+        fix i assume "i < ?jfrz'" "i \<ge> ?jphi'"
+        then have "?a' i = 0" by simp
+        moreover have "i \<le> j + \<delta>" using \<open>i < ?jfrz'\<close> jfrz'_le by simp
+        ultimately show "?jpsi0' > i"
+          using jfrz'_min[OF \<open>i < ?jfrz'\<close>] by simp
+      qed
+      \<comment> \<open>Now characterize jfrz' precisely by cases\<close>
+      have jfrz'_eq: "?jfrz' = (if ?jpsij' < ?jphi' then ?jpsij'
+        else if ?jpsi0' \<le> ?jphi' then ?jphi'
+        else ?jpsi0')"
+      proof (cases "?jpsij' < ?jphi'")
+        case jpsij_lt: True
+        \<comment> \<open>jfrz' = jpsij'\<close>
+        show ?thesis
+        proof -
+          have "?jfrz' \<le> ?jpsij'"
+          proof -
+            have "?a' ?jpsij' = j + \<delta>" using jpsij_lt by simp
+            moreover have pmj': "pred_mapping (\<lambda>x. x \<le> j + \<delta>) (P'(?pn \<mapsto> j + \<delta>))" using pm' by auto
+            moreover have "?jpsij' \<le> j + \<delta>" by (rule progress_le_gen[OF pmj'])
+            ultimately show ?thesis
+              unfolding jfrz'_unfold by (intro Least_le) auto
+          qed
+          moreover have "?jpsij' \<le> ?jfrz'"
+            using case_low jpsij_lt
+          proof -
+            have "?jfrz' < ?jphi' \<Longrightarrow> ?jpsij' \<le> ?jfrz'" using case_low by simp
+            moreover have "?jfrz' \<ge> ?jphi' \<Longrightarrow> ?jpsij' \<le> ?jfrz'"
+              using jpsij_lt by simp
+            ultimately show ?thesis by linarith
+          qed
+          ultimately show ?thesis using jpsij_lt by simp
+        qed
+      next
+        case jpsij_ge: False
+        then have jpsij_ge': "?jpsij' \<ge> ?jphi'" by simp
+        show ?thesis
+        proof (cases "?jpsi0' \<le> ?jphi'")
+          case jpsi0_le: True
+          \<comment> \<open>jfrz' = jphi'\<close>
+          show ?thesis
+          proof -
+            have "?jfrz' \<le> ?jphi'"
+            proof -
+              have "?a' ?jphi' = 0" by simp
+              then have "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>) \<le> ?jphi'"
+                using jpsi0_le by simp
+              moreover have "?jphi' \<le> j + \<delta>" by (rule progress_le_gen[OF pm'])
+              ultimately show ?thesis
+                unfolding jfrz'_unfold by (intro Least_le) auto
+            qed
+            moreover have "?jphi' \<le> ?jfrz'"
+            proof (rule ccontr)
+              assume "\<not> ?jphi' \<le> ?jfrz'"
+              then have "?jfrz' < ?jphi'" by simp
+              then have "?jpsij' \<le> ?jfrz'" using case_low by simp
+              then have "?jpsij' < ?jphi'" using \<open>?jfrz' < ?jphi'\<close> by simp
+              with jpsij_ge' show False by simp
+            qed
+            ultimately show ?thesis using jpsij_ge jpsi0_le by simp
+          qed
+        next
+          case jpsi0_gt: False
+          then have jpsi0_gt': "?jpsi0' > ?jphi'" by simp
+          \<comment> \<open>jfrz' = jpsi0'\<close>
+          show ?thesis
+          proof -
+            have "?jfrz' \<le> ?jpsi0'"
+            proof -
+              have "?a' ?jpsi0' = 0" using jpsi0_gt' by simp
+              moreover have "?jpsi0' \<le> j + \<delta>" using pm' by (intro progress_le_gen) auto
+              ultimately show ?thesis
+                unfolding jfrz'_unfold by (intro Least_le) auto
+            qed
+            moreover have "?jpsi0' \<le> ?jfrz'"
+            proof (rule ccontr)
+              assume "\<not> ?jpsi0' \<le> ?jfrz'"
+              then have lt: "?jfrz' < ?jpsi0'" by simp
+              show False
+              proof (cases "?jfrz' < ?jphi'")
+                case True
+                then have "?jpsij' \<le> ?jfrz'" using case_low by simp
+                then have "?jpsij' < ?jpsi0'" using lt by simp
+                with jpsi0'_le_jpsij' show False by simp
+              next
+                case False
+                then have "?jfrz' \<ge> ?jphi'" by simp
+                with lt have "?jpsi0' > ?jfrz'" by simp
+                then show False using False jfrz'_prop by auto
+              qed
+            qed
+            ultimately show ?thesis using jpsij_ge jpsi0_gt by simp
+          qed
+        qed
+      qed
+      \<comment> \<open>Now compute length ys using freeze_meval0_diagonal\<close>
+      \<comment> \<open>First establish the common replay output length\<close>
+      define L where "L = ?jpsij' - ?jpsi0'"
+      have replay_length: "\<And>\<alpha>. \<alpha> \<in> set \<alpha>s1 \<Longrightarrow>
+        \<exists>us \<psi>'. frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>') \<and> length us = L"
+      proof -
+        fix \<alpha> assume "\<alpha> \<in> set \<alpha>s1"
+        \<comment> \<open>\<alpha> is either from \<alpha>s (queue) or xs (phi step results)\<close>
+        \<comment> \<open>In both cases, \<alpha> satisfies qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. sat ... v k \<phi>1) \<alpha> for some k\<close>
+        have "\<exists>i_frz. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i_frz\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+        proof -
+          have \<alpha>s1_sub: "set \<alpha>s1 \<subseteq> set (\<alpha>s @ xs)"
+            unfolding \<alpha>s1_def by (rule set_drop_subset)
+          then have "\<alpha> \<in> set \<alpha>s \<or> \<alpha> \<in> set xs"
+            using \<open>\<alpha> \<in> set \<alpha>s1\<close> by auto
+          then show ?thesis
+          proof
+            assume "\<alpha> \<in> set \<alpha>s"
+            from wf_state have queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz..<?jphi] \<alpha>s"
+              by (auto simp: wf_frz_state_def Let_def jfrz0_eq jphi0_eq)
+            then have la2: "list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi>1 k X) [?jfrz..<?jphi] \<alpha>s"
+              by (simp add: wf_frz_queue_def)
+            from \<open>\<alpha> \<in> set \<alpha>s\<close> obtain idx where "idx < length \<alpha>s" "\<alpha>s ! idx = \<alpha>"
+              by (meson in_set_conv_nth)
+            then have "frz_qtable \<sigma> V m \<phi>1 ([?jfrz..<?jphi] ! idx) \<alpha>"
+              using la2 by (metis list_all2_nthD list_all2_lengthD)
+            then have "qtable m (fv \<phi>1) (mem_restr UNIV) (\<lambda>v. Formula.sat \<sigma> V (map the v) ([?jfrz..<?jphi] ! idx) \<phi>1) \<alpha>"
+              by (simp add: frz_qtable_def)
+            then show ?thesis by blast
+          next
+            assume "\<alpha> \<in> set xs"
+            from phi_res' have la2: "list_all2 (\<lambda>i. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>1))
+              [?jphi..<?jphi'] xs" .
+            from \<open>\<alpha> \<in> set xs\<close> obtain idx where "idx < length xs" "xs ! idx = \<alpha>"
+              by (meson in_set_conv_nth)
+            then have "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, [?jphi..<?jphi'] ! idx\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+              using la2 by (metis list_all2_nthD list_all2_lengthD)
+            then show ?thesis by blast
+          qed
+        qed
+        then obtain i_frz where qtab_\<alpha>: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i_frz\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+          by blast
+        \<comment> \<open>Apply IH\<psi>_new to get the replay output\<close>
+        from IH\<psi>_new[OF qtab_\<alpha>]
+        have ih: "case meval (j + \<delta> + 0) n (map (\<tau> \<sigma>) [j + \<delta>..<j + \<delta> + 0])
+           (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>_new
+          of (xs_r, \<phi>_n) \<Rightarrow>
+            wf_mformula \<sigma> (j + \<delta> + 0) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1)) n R \<phi>_n \<psi>1 \<and>
+            list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+            [?jpsi0'..<?jpsij'] xs_r" by (metis add_0_right)
+        obtain us \<psi>' where ev: "meval (j + \<delta>) n []
+           (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>_new = (us, \<psi>')"
+          by (cases "meval (j + \<delta>) n []
+           (Mapping.update ?pn (replicate (j + \<delta>) \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>_new")
+        from ih have "list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+            [?jpsi0'..<?jpsij'] us" using ev by (auto split: prod.splits)
+        then have "length us = ?jpsij' - ?jpsi0'"
+          by (metis list_all2_lengthD length_upt)
+        then have "length us = L" unfolding L_def by simp
+        moreover have "frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>')" using ev by simp
+        ultimately show "\<exists>us \<psi>'. frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>') \<and> length us = L" by blast
+      qed
+      have jfrz_le_jpsij: "?jfrz \<le> ?jpsij'"
+      proof -
+        have "?jfrz \<le> ?jfrz'" using jfrz_le_jfrz' .
+        also have "?jfrz' \<le> ?jpsij'"
+          using jfrz'_eq jpsi0'_le_jpsij' by (auto split: if_splits)
+        finally show ?thesis .
+      qed
+      have L_bound: "?jfrz - ?jpsi0' \<le> L"
+        using jfrz_le_jpsij unfolding L_def by simp
+      \<comment> \<open>Apply freeze_meval0_diagonal\<close>
+      define k0 where "k0 = ?jfrz - ?jpsi0'"
+      have k0_val: "k0 = jfrz0 - jpsi0_val1" unfolding k0_def jfrz0_eq jpsi0_val1_def jpsi0_eq
+        by (simp add: jpsi0_mono len_zs0)
+      have diag: "length ys = min (length \<alpha>s1) (L - k0) \<and>
+        (\<forall>i < length ys. ys ! i = fst (frz_meval n p m (j + \<delta>) db \<psi>_new (\<alpha>s1 ! i)) ! (k0 + i))"
+        using freeze_meval0_diagonal[OF ef[unfolded k0_val[symmetric]] replay_length L_bound[folded k0_def]] by simp
+      then have len_ys: "length ys = min (length \<alpha>s1) (L - k0)" by simp
+      \<comment> \<open>Compute length \<alpha>s1\<close>
+      have old_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz..<?jphi] \<alpha>s"
+        using wf_state by (auto simp: wf_frz_state_def Let_def jfrz0_eq jphi0_eq)
+      have len_\<alpha>s: "length \<alpha>s = ?jphi - ?jfrz"
+        using wf_frz_queue_length[OF old_queue] .
+      have len_\<alpha>s_xs: "length (\<alpha>s @ xs) = ?jphi' - ?jfrz"
+      proof -
+        have "length (\<alpha>s @ xs) = (?jphi - ?jfrz) + (?jphi' - ?jphi)"
+          using len_\<alpha>s len_xs by simp
+        also have "\<dots> = ?jphi' - ?jfrz"
+          using phi_prog_mono jfrz_le_jfrz'
+          sorry
+          (*by simp*)
+        finally show ?thesis .
+      qed
+      have d_val: "d = ?jfrz - ?jphi + length zs0_out"
+        unfolding d_def jfrz0_eq jphi0_eq by simp
+      \<comment> \<open>Compute jfrz + |zs0_out|\<close>
+      have target_base: "?jfrz + length zs0_out = max ?jfrz ?jpsi0'"
+        unfolding len_zs0_out by simp
+      \<comment> \<open>Compute length \<alpha>s1\<close>
+      have len_\<alpha>s1: "length \<alpha>s1 = ?jphi' - max ?jfrz ?jpsi0'"
+      proof (cases "?jfrz \<le> ?jphi")
+        case jfrz_le: True
+        then have d_simp: "d = length zs0_out" unfolding d_val by simp
+        have "length \<alpha>s1 = (?jphi' - ?jfrz) - length zs0_out"
+          unfolding \<alpha>s1_def d_simp using len_\<alpha>s_xs by simp
+        also have "\<dots> = ?jphi' - (?jfrz + length zs0_out)"
+        proof -
+          show ?thesis by simp
+        qed
+        also have "?jfrz + length zs0_out = max ?jfrz ?jpsi0'"
+          using target_base .
+        finally show ?thesis .
+      next
+        case jfrz_gt: False
+        then have gt: "?jfrz > ?jphi" by simp
+        \<comment> \<open>Key fact: jfrz > jphi implies jfrz = jpsi0\<close>
+        have jfrz_eq_jpsi0: "?jfrz = ?jpsi0"
+        proof -
+          have "?jpsi0 \<le> ?jfrz" using jpsi0_le .
+          moreover have "?jfrz \<le> ?jpsi0"
+          proof (rule ccontr)
+            assume "\<not> ?jfrz \<le> ?jpsi0"
+            then have "?jfrz > ?jpsi0" by simp
+            \<comment> \<open>jfrz > jpsi0 and jfrz > jphi. From jfrz_le_jphi (when jpsi0 \<le> jphi), jfrz \<le> jphi,
+               but jpsi0 \<le> jfrz > jphi means jpsi0 could be \<le> or > jphi.
+               Actually: if jpsi0 \<le> jphi, then jfrz \<le> jphi (fact 5), contradiction.
+               So jpsi0 > jphi, then jfrz = jpsi0 (fact 6), contradicting jfrz > jpsi0.\<close>
+            \<comment> \<open>Use LEAST characterization of jfrz to show jfrz \<le> candidate\<close>
+            define a where "a = (\<lambda>i::nat. if i < ?jphi then j else (0::nat))"
+            have jfrz_unfold: "?jfrz = (LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a i)) \<psi>1 j \<le> i)"
+              unfolding progress_simps frz_progress_def Let_def fv(1) a_def by simp
+            show False
+            proof (cases "?jpsi0 \<le> ?jphi")
+              case True
+              \<comment> \<open>jpsi0 \<le> jphi: show jphi is a valid candidate, so jfrz \<le> jphi\<close>
+              have "a ?jphi = 0" unfolding a_def by simp
+              then have P_a_phi: "P(?pn \<mapsto> a ?jphi) = P(?pn \<mapsto> 0)" by simp
+              have cand: "?jphi \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a ?jphi)) \<psi>1 j \<le> ?jphi"
+              proof
+                show "?jphi \<le> j" by (rule progress_le_gen[OF pm])
+              next
+                show "progress \<sigma> (P(?pn \<mapsto> a ?jphi)) \<psi>1 j \<le> ?jphi"
+                  unfolding P_a_phi using True by simp
+              qed
+              have "?jfrz \<le> ?jphi" unfolding jfrz_unfold
+                by (simp add: Least_le cand)
+              then show False using gt by simp
+            next
+              case jpsi0_gt: False
+              \<comment> \<open>jpsi0 > jphi: show jpsi0 is a valid candidate, so jfrz \<le> jpsi0\<close>
+              then have "\<not> ?jpsi0 < ?jphi" by simp
+              then have "a ?jpsi0 = 0" unfolding a_def by simp
+              then have P_a_psi: "P(?pn \<mapsto> a ?jpsi0) = P(?pn \<mapsto> 0)" by simp
+              have jpsi0_le_j: "?jpsi0 \<le> j"
+              proof -
+                have "?jpsi0 \<le> ?jfrz" using jpsi0_le .
+                also have "?jfrz \<le> j" unfolding jfrz_unfold
+                  using progress_le_gen[OF pm, of \<sigma> \<phi>1]
+                  unfolding a_def
+                  apply (intro LeastI_ex[THEN conjunct1] exI[of _ j])
+                  using \<open>Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j < Progress.progress \<sigma> P (formula.Frz p \<phi>1 \<psi>1) j\<close>
+                     \<open>a ?jpsi0 = 0\<close> jfrz_unfold not_less_Least pm by fastforce
+                finally show ?thesis .
+              qed
+              have cand: "?jpsi0 \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a ?jpsi0)) \<psi>1 j \<le> ?jpsi0"
+              proof
+                show "?jpsi0 \<le> j" by (rule jpsi0_le_j)
+              next
+                show "progress \<sigma> (P(?pn \<mapsto> a ?jpsi0)) \<psi>1 j \<le> ?jpsi0"
+                  unfolding P_a_psi by simp
+              qed
+              have "?jfrz \<le> ?jpsi0" unfolding jfrz_unfold by (simp add: Least_le cand)
+              then show False using \<open>?jfrz > ?jpsi0\<close> by simp
+            qed
+          qed
+          ultimately show ?thesis by simp
+        qed
+        have jpsi0'_ge_jfrz: "?jpsi0' \<ge> ?jfrz" using jfrz_eq_jpsi0 jpsi0_mono by simp
+        have "length \<alpha>s = 0" using gt len_\<alpha>s by simp
+        then have len_ax: "length (\<alpha>s @ xs) = ?jphi' - ?jphi" using len_xs by simp
+        have "d = ?jpsi0' - ?jphi"
+        proof -
+          have "d = ?jfrz - ?jphi + length zs0_out" using d_val .
+          also have "\<dots> = (?jpsi0 - ?jphi) + (?jpsi0' - ?jpsi0)"
+            unfolding jfrz_eq_jpsi0 len_zs0_out
+            using jfrz_eq_jpsi0 jpsi0_le by simp
+          also have "\<dots> = ?jpsi0' - ?jphi"
+            using gt jfrz_eq_jpsi0 jpsi0_mono by simp
+          finally show ?thesis .
+        qed
+        then have "length \<alpha>s1 = (?jphi' - ?jphi) - (?jpsi0' - ?jphi)"
+          unfolding \<alpha>s1_def using len_ax by simp
+        also have "\<dots> = ?jphi' - ?jpsi0'"
+        proof -
+          show ?thesis using gt jpsi0_mono jfrz_eq_jpsi0 by simp
+        qed
+        also have "?jpsi0' = max ?jfrz ?jpsi0'"
+          using jpsi0'_ge_jfrz by simp
+        finally show ?thesis by simp
+      qed
+      \<comment> \<open>Now prove frz_prog_eq: jfrz' = jfrz + |zs0_out| + |ys|\<close>
+      \<comment> \<open>First simplify: jfrz + |zs0_out| = max jfrz jpsi0'\<close>
+      have base_eq: "?jfrz + length zs0_out = max ?jfrz ?jpsi0'"
+        using target_base .
+      \<comment> \<open>Simplify L - k0\<close>
+      have Lk_eq: "L - k0 = ?jpsij' - max ?jfrz ?jpsi0'"
+      proof -
+        have "L - k0 = (?jpsij' - ?jpsi0') - (?jfrz - ?jpsi0')"
+          unfolding L_def k0_def by simp
+        also have "\<dots> = ?jpsij' - max ?jfrz ?jpsi0'"
+          using jfrz_le_jpsij jpsi0'_le_jpsij' by simp
+        finally show ?thesis .
+      qed
+      \<comment> \<open>Thus len_ys = min(jphi' - M, jpsij' - M) where M = max jfrz jpsi0'\<close>
+      have len_ys': "length ys = min (?jphi' - max ?jfrz ?jpsi0') (?jpsij' - max ?jfrz ?jpsi0')"
+        using len_ys unfolding len_\<alpha>s1 Lk_eq by simp
+      \<comment> \<open>Case split mirroring jfrz'_eq\<close>
+      show ?thesis
+      proof (cases "?jpsij' < ?jphi'")
+        case c1: True
+        then have "?jfrz' = ?jpsij'" using jfrz'_eq by simp
+        moreover have "length ys = ?jpsij' - max ?jfrz ?jpsi0'"
+          using len_ys' c1 by simp
+        ultimately show ?thesis using base_eq jfrz_le_jpsij jpsi0'_le_jpsij' by simp
+      next
+        case c1_false: False
+        then have ge: "?jpsij' \<ge> ?jphi'" by simp
+        show ?thesis
+        proof (cases "?jpsi0' \<le> ?jphi'")
+          case c2: True
+          then have jfrz'_val: "?jfrz' = ?jphi'" using jfrz'_eq c1_false by simp
+          moreover have "length ys = ?jphi' - max ?jfrz ?jpsi0'"
+            using len_ys' ge by simp
+          moreover have "max ?jfrz ?jpsi0' \<le> ?jphi'"
+          proof -
+            have "?jfrz \<le> ?jfrz'" using jfrz_le_jfrz' .
+            also have "?jfrz' = ?jphi'" using jfrz'_val .
+            finally have "?jfrz \<le> ?jphi'" .
+            then show ?thesis using c2 by simp
+          qed
+          ultimately show ?thesis using base_eq by simp
+        next
+          case c2_false: False
+          then have jpsi0'_gt: "?jpsi0' > ?jphi'" by simp
+          have jfrz'_val: "?jfrz' = ?jpsi0'" using jfrz'_eq c1_false c2_false by simp
+          moreover have "?jfrz \<le> ?jpsi0'"
+          proof -
+            have "?jfrz \<le> ?jfrz'" using jfrz_le_jfrz' .
+            also have "?jfrz' = ?jpsi0'" using jfrz'_val .
+            finally show ?thesis .
+          qed
+          then have max_eq: "max ?jfrz ?jpsi0' = ?jpsi0'" by simp
+          have "length \<alpha>s1 = 0" using len_\<alpha>s1 jpsi0'_gt unfolding max_eq by simp
+          then have "length ys = 0" using len_ys by simp
+          ultimately show ?thesis using base_eq max_eq by simp
+        qed
+      qed
+    qed
+    \<comment> \<open>Shared facts for Part A and Part B\<close>
+    let ?jphi_B = "progress \<sigma> P \<phi>1 j"
+    let ?jphi'_B = "progress \<sigma> P' \<phi>1 (j + \<delta>)"
+    let ?jpsi0_B = "progress \<sigma> (P(?pn \<mapsto> 0)) \<psi>1 j"
+    let ?jpsi0'_B = "progress \<sigma> (P'(?pn \<mapsto> 0)) \<psi>1 (j + \<delta>)"
+    let ?jpsij'_B = "progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>)"
+    let ?jfrz_B = "progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j"
+    let ?jfrz'_B = "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)"
+    define M where "M = ?jfrz_B + length zs0_out"
+    define L_val where "L_val = ?jpsij'_B - ?jpsi0'_B"
+    define k0_val where "k0_val = ?jfrz_B - ?jpsi0'_B"
+    from MFrz.prems(2) have pm_B: "pred_mapping (\<lambda>x. x \<le> j) P" by auto
+    from MFrz.prems(2) have pm'_B: "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'" by auto
+    from MFrz.prems(2) have rm_B: "rel_mapping (\<le>) P P'" by auto
+    have jpsi0_le_B: "?jpsi0_B \<le> ?jfrz_B"
+      using jpsi0_le_jfrz unfolding jfrz0_eq jpsi0_eq .
+    have jpsi0_mono_B: "?jpsi0_B \<le> ?jpsi0'_B"
+    proof -
+      have rm0: "rel_mapping (\<le>) (P(?pn \<mapsto> 0)) (P'(?pn \<mapsto> 0))"
+        using rm_B by (intro rel_mapping_map_upd) auto
+      show ?thesis using pm_B pm'_B rm0 by (intro progress_mono_gen[OF le_add1]) auto
+    qed
+    have jpsi0'_le_jpsij'_B: "?jpsi0'_B \<le> ?jpsij'_B"
+    proof -
+      have rm0j: "rel_mapping (\<le>) (P'(?pn \<mapsto> 0)) (P'(?pn \<mapsto> j + \<delta>))"
+        by (intro rel_mapping_map_upd) (auto simp: rel_mapping_reflp reflp_def)
+      show ?thesis using pm'_B rm0j by (intro progress_mono_gen[OF order_refl]) auto
+    qed
+    have len_zs0_out_B: "length zs0_out = ?jpsi0'_B - ?jfrz_B"
+    proof -
+      have "length zs0_out = length zs0 - (jfrz0 - jpsi0_val)"
+        unfolding zs0_out_def by simp
+      also have "\<dots> = (?jpsi0'_B - ?jpsi0_B) - (?jfrz_B - ?jpsi0_B)"
+        using IH\<psi>2 jfrz0_eq jpsi0_eq
+        sledgehammer
+        sorry
+      also have "\<dots> = ?jpsi0'_B - ?jfrz_B"
+        using jpsi0_le_B by (cases "?jfrz_B \<le> ?jpsi0'_B") auto
+      finally show ?thesis .
+    qed
+    have M_eq: "M = max ?jfrz_B ?jpsi0'_B"
+      unfolding M_def len_zs0_out_B by simp
+    have jfrz_le_jfrz'_B: "?jfrz_B \<le> ?jfrz'_B"
+      by (rule progress_mono_gen[OF le_add1 pm_B pm'_B rm_B])
+    have jfrz'_le_jpsij'_B: "?jfrz'_B \<le> ?jpsij'_B"
+    proof -
+      have "?jfrz'_B = (if ?jpsij'_B < ?jphi'_B then ?jpsij'_B
+        else if ?jpsi0'_B \<le> ?jphi'_B then ?jphi'_B
+        else ?jpsi0'_B)"
+        using frz_prog_eq
+      proof -
+        \<comment> \<open>Re-derive jfrz'_eq briefly for the bound\<close>
+        let ?a' = "\<lambda>i. if i < ?jphi'_B then j + \<delta> else (0::nat)"
+        have jfrz'_unfold: "?jfrz'_B = (LEAST i. i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+          unfolding progress_simps frz_progress_def Let_def fv(1) by simp
+        have jfrz'_ex: "\<exists>i. i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i"
+          using pm'_B pred_mapping_map_upd by auto
+        have jfrz'_prop: "?jfrz'_B \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' ?jfrz'_B)) \<psi>1 (j + \<delta>) \<le> ?jfrz'_B"
+          unfolding jfrz'_unfold by (rule LeastI_ex[OF jfrz'_ex])
+        have case_low: "?jfrz'_B < ?jphi'_B \<Longrightarrow> ?jpsij'_B \<le> ?jfrz'_B"
+          using jfrz'_prop by auto
+        show ?thesis
+        proof (cases "?jpsij'_B < ?jphi'_B")
+          case jpsij_lt: True
+          have "?jfrz'_B \<le> ?jpsij'_B"
+          proof -
+            have "?jpsij'_B \<le> j + \<delta>" using pm'_B by (intro progress_le_gen) auto
+            then show ?thesis
+              unfolding jfrz'_unfold using jpsij_lt by (intro Least_le) auto
+          qed
+          moreover have "?jpsij'_B \<le> ?jfrz'_B"
+            using case_low jpsij_lt by linarith
+          ultimately show ?thesis using jpsij_lt by simp
+        next
+          case jpsij_ge: False
+          show ?thesis
+          proof (cases "?jpsi0'_B \<le> ?jphi'_B")
+            case jpsi0_le2: True
+            have "?jfrz'_B \<le> ?jphi'_B"
+            proof -
+              have "?jphi'_B \<le> j + \<delta>" by (rule progress_le_gen[OF pm'_B])
+              then show ?thesis
+                unfolding jfrz'_unfold using jpsi0_le2 by (intro Least_le) auto
+            qed
+            moreover have "?jphi'_B \<le> ?jfrz'_B"
+              using case_low jpsij_ge by force
+            ultimately show ?thesis using jpsij_ge
+              using jpsi0_le2 by force
+          next
+            case jpsi0_gt: False
+            have "?jfrz'_B \<le> ?jpsi0'_B"
+            proof -
+              have "?jpsi0'_B \<le> j + \<delta>" using pm'_B by (intro progress_le_gen) auto
+              then show ?thesis
+                unfolding jfrz'_unfold using jpsi0_gt by (intro Least_le) auto
+            qed
+            moreover have "?jpsi0'_B \<le> ?jfrz'_B"
+            proof (rule ccontr)
+              assume "\<not> ?jpsi0'_B \<le> ?jfrz'_B"
+              then have lt: "?jfrz'_B < ?jpsi0'_B" by simp
+              have jfrz'_min: "\<And>i. i < ?jfrz'_B \<Longrightarrow> i \<le> j + \<delta> \<Longrightarrow>
+                \<not> (progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+              proof -
+                fix i assume "i < ?jfrz'_B" "i \<le> j + \<delta>"
+                then show "\<not> (progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i)"
+                  using not_less_Least[of i "\<lambda>i. i \<le> j + \<delta> \<and> progress \<sigma> (P'(?pn \<mapsto> ?a' i)) \<psi>1 (j + \<delta>) \<le> i"]
+                  unfolding jfrz'_unfold by auto
+              qed
+              show False
+              proof (cases "?jfrz'_B < ?jphi'_B")
+                case True
+                then have "?jpsij'_B \<le> ?jfrz'_B" using case_low by simp
+                then have "?jpsij'_B < ?jpsi0'_B" using lt by simp
+                with jpsi0'_le_jpsij'_B show False by simp
+              next
+                case False
+                then have "?a' ?jfrz'_B = 0" by simp
+                with jfrz'_prop have "?jpsi0'_B \<le> ?jfrz'_B" by simp
+                with lt show False by simp
+              qed
+            qed
+            ultimately show ?thesis using jpsij_ge jpsi0_gt by simp
+          qed
+        qed
+      qed
+      then show ?thesis using jpsi0'_le_jpsij'_B by (auto split: if_splits)
+    qed
+    have jfrz_le_jpsij_B: "?jfrz_B \<le> ?jpsij'_B"
+      using jfrz_le_jfrz'_B jfrz'_le_jpsij'_B by simp
+    have L_bound_B: "k0_val \<le> L_val"
+      using jfrz_le_jpsij_B unfolding L_val_def k0_val_def by simp
+    have k0_val_eq: "k0_val = jfrz0 - jpsi0_val1"
+      unfolding k0_val_def jfrz0_eq jpsi0_val1_def jpsi0_eq
+      by (metis IH\<psi>2 diff_add_inverse jpsi0_mono_B length_upt list_all2_lengthD nat_le_iff_add)
+    have replay_length_B: "\<And>\<alpha>. \<alpha> \<in> set \<alpha>s1 \<Longrightarrow>
+      \<exists>us \<psi>'. frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>') \<and> length us = L_val"
+    proof -
+      fix \<alpha> assume "\<alpha> \<in> set \<alpha>s1"
+      have "\<exists>i_frz. qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i_frz\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+      proof -
+        have \<alpha>s1_sub: "set \<alpha>s1 \<subseteq> set (\<alpha>s @ xs)"
+          unfolding \<alpha>s1_def by (rule set_drop_subset)
+        then have "\<alpha> \<in> set \<alpha>s \<or> \<alpha> \<in> set xs"
+          using \<open>\<alpha> \<in> set \<alpha>s1\<close> by auto
+        then show ?thesis
+        proof
+          assume "\<alpha> \<in> set \<alpha>s"
+          from wf_state have queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B..<?jphi_B] \<alpha>s"
+            by (meson wf_frz_state_def)
+          then have la2: "list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi>1 k X) [?jfrz_B..<?jphi_B] \<alpha>s"
+            by (simp add: wf_frz_queue_def)
+          from \<open>\<alpha> \<in> set \<alpha>s\<close> obtain idx where "idx < length \<alpha>s" "\<alpha>s ! idx = \<alpha>"
+            by (meson in_set_conv_nth)
+          then have "frz_qtable \<sigma> V m \<phi>1 ([?jfrz_B..<?jphi_B] ! idx) \<alpha>"
+            using la2 by (metis list_all2_nthD list_all2_lengthD)
+          then show ?thesis by (auto simp: frz_qtable_def)
+        next
+          assume "\<alpha> \<in> set xs"
+          from \<open>\<alpha> \<in> set xs\<close> obtain idx where "idx < length xs" "xs ! idx = \<alpha>"
+            by (meson in_set_conv_nth)
+          then have "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, [?jphi_B..<?jphi'_B] ! idx\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+            using phi_res' by (metis list_all2_nthD list_all2_lengthD)
+          then show ?thesis by blast
+        qed
+      qed
+      then obtain i_frz where qtab_\<alpha>: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i_frz\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+        by blast
+      from IH\<psi>_new[OF qtab_\<alpha>]
+      obtain us \<psi>' where ev: "frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>')"
+        and la2: "list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+            [?jpsi0'_B..<?jpsij'_B] us"
+        using \<open>case meval (j + \<delta> + 0) n (map (\<tau> \<sigma>) [j + \<delta>..<j + \<delta> + 0]) (Mapping.update (p, m) (replicate (j + \<delta>) \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>_new of (xs, \<phi>\<^sub>n) \<Rightarrow> wf_mformula \<sigma> (j + \<delta> + 0) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1)) n R \<phi>\<^sub>n \<psi>1 \<and> list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V ((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i_frz\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [Progress.progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi>1 (j + \<delta>)..< Progress.progress \<sigma> (P'((p, m) \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta> + 0)] xs\<close>
+          case_prod_conv list.simps(8) upt_conv_Nil by fastforce
+      from la2 have "length us = L_val"
+        unfolding L_val_def by (metis list_all2_lengthD length_upt)
+      with ev show "\<exists>us \<psi>'. frz_meval n p m (j + \<delta>) db \<psi>_new \<alpha> = (us, \<psi>') \<and> length us = L_val" by blast
+    qed
+    have diag_B: "length ys = min (length \<alpha>s1) (L_val - k0_val) \<and>
+      (\<forall>i < length ys. ys ! i = fst (frz_meval n p m (j + \<delta>) db \<psi>_new (\<alpha>s1 ! i)) ! (k0_val + i))"
+      using freeze_meval0_diagonal[OF ef[unfolded k0_val_eq[symmetric]] replay_length_B L_bound_B] by simp
+    have len_\<alpha>s_B: "length \<alpha>s = ?jphi_B - ?jfrz_B"
+    proof -
+      from wf_state have "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B..<?jphi_B] \<alpha>s"
+        by (meson wf_frz_state_def)
+      then show ?thesis by (auto simp: wf_frz_queue_def dest!: list_all2_lengthD)
+    qed
+    have len_xs_B: "length xs = ?jphi'_B - ?jphi_B"
+      using phi_res' by (auto dest: list_all2_lengthD)
+    have len_\<alpha>s_xs_B: "length (\<alpha>s @ xs) = ?jphi'_B - ?jfrz_B"
+      using len_\<alpha>s_B len_xs_B phi_prog_mono jfrz_le_jfrz'_B
       sorry
+    have len_\<alpha>s1_B: "length \<alpha>s1 = ?jphi'_B - M"
+    proof -
+      have d_val_B: "d = ?jfrz_B - ?jphi_B + length zs0_out"
+        unfolding d_def jfrz0_eq
+        by (metis wf_frz_state_def wf_state)
+      show ?thesis
+      proof (cases "?jfrz_B \<le> ?jphi_B")
+        case True
+        then have "d = length zs0_out" unfolding d_val_B by simp
+        then have "length \<alpha>s1 = (?jphi'_B - ?jfrz_B) - length zs0_out"
+          unfolding \<alpha>s1_def using len_\<alpha>s_xs_B by simp
+        then show ?thesis unfolding M_def by simp
+      next
+        case jfrz_gt: False
+        then have gt: "?jfrz_B > ?jphi_B" by simp
+        have jfrz_eq_jpsi0: "?jfrz_B = ?jpsi0_B"
+        proof -
+          have "?jpsi0_B \<le> ?jfrz_B" using jpsi0_le_B .
+          moreover have "?jfrz_B \<le> ?jpsi0_B"
+          proof (rule ccontr)
+            assume "\<not> ?jfrz_B \<le> ?jpsi0_B"
+            define a where "a = (\<lambda>i::nat. if i < ?jphi_B then j else (0::nat))"
+            have jfrz_unfold: "?jfrz_B = (LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a i)) \<psi>1 j \<le> i)"
+              unfolding progress_simps frz_progress_def Let_def fv(1) a_def by simp
+            show False
+            proof (cases "?jpsi0_B \<le> ?jphi_B")
+              case True
+              have "?jfrz_B \<le> ?jphi_B"
+                unfolding jfrz_unfold by (intro Least_le conjI progress_le_gen[OF pm_B])
+                  (simp add: a_def, use True in simp)
+              then show False using gt by simp
+            next
+              case False
+              then have "a ?jpsi0_B = 0" unfolding a_def by simp
+              have "?jpsi0_B \<le> j"
+              proof -
+                have "?jpsi0_B \<le> ?jfrz_B" using jpsi0_le_B .
+                also have "?jfrz_B \<le> j" unfolding jfrz_unfold using progress_le_gen[OF pm_B, of \<sigma> \<phi>1]
+                  by (smt (verit, del_insts) Least_le MFrz.prems(2)
+                      \<open>\<not> Progress.progress \<sigma> P (formula.Frz p \<phi>1 \<psi>1) j \<le> Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j\<close>
+                      \<open>a (Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j) = 0\<close> jfrz_unfold jpsi0_le_jfrz
+                      order_refl order_trans progress_le_gen wf_envs_P_simps(1))
+                finally show ?thesis .
+              qed
+              then have "?jfrz_B \<le> ?jpsi0_B"
+                unfolding jfrz_unfold by (intro Least_le) (auto simp: \<open>a ?jpsi0_B = 0\<close>)
+              with \<open>\<not> ?jfrz_B \<le> ?jpsi0_B\<close> show False by simp
+            qed
+          qed
+          ultimately show ?thesis by simp
+        qed
+        have "?jpsi0'_B \<ge> ?jfrz_B" using jfrz_eq_jpsi0 jpsi0_mono_B by simp
+        have "length \<alpha>s = 0" using gt len_\<alpha>s_B by simp
+        then have len_ax: "length (\<alpha>s @ xs) = ?jphi'_B - ?jphi_B" using len_xs_B by simp
+        have "d = ?jpsi0'_B - ?jphi_B"
+        proof -
+          have "d = ?jfrz_B - ?jphi_B + length zs0_out" using d_val_B .
+          also have "\<dots> = (?jpsi0_B - ?jphi_B) + (?jpsi0'_B - ?jpsi0_B)"
+            unfolding jfrz_eq_jpsi0 len_zs0_out_B using jfrz_eq_jpsi0 jpsi0_le_B by simp
+          also have "\<dots> = ?jpsi0'_B - ?jphi_B"
+            using gt jfrz_eq_jpsi0 jpsi0_mono_B by simp
+          finally show ?thesis .
+        qed
+        then have "length \<alpha>s1 = (?jphi'_B - ?jphi_B) - (?jpsi0'_B - ?jphi_B)"
+          unfolding \<alpha>s1_def using len_ax by simp
+        also have "\<dots> = ?jphi'_B - ?jpsi0'_B"
+          using gt jpsi0_mono_B jfrz_eq_jpsi0 by simp
+        also have "\<dots> = ?jphi'_B - M" unfolding M_eq using \<open>?jpsi0'_B \<ge> ?jfrz_B\<close> by simp
+        finally show ?thesis .
+      qed
+    qed
+    have Lk_eq_B: "L_val - k0_val = ?jpsij'_B - M"
+      unfolding L_val_def k0_val_def M_eq using jfrz_le_jpsij_B jpsi0'_le_jpsij'_B by simp
+    have len_ys_B: "length ys = min (?jphi'_B - M) (?jpsij'_B - M)"
+      using diag_B unfolding len_\<alpha>s1_B Lk_eq_B by simp
+    have jfrz'_val_B: "?jfrz'_B = M + length ys"
+      using frz_prog_eq unfolding jfrz0_eq M_def by simp
+    \<comment> \<open>Queue invariant for \<alpha>s1 covering [M..jphi')\<close>
+    have queue_\<alpha>s1_B: "wf_frz_queue \<sigma> V m \<phi>1 [M ..< ?jphi'_B] \<alpha>s1"
+    proof -
+      from wf_state have old_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B..<?jphi_B] \<alpha>s"
+        by (meson wf_frz_state_def)
+      have new_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jphi_B ..< ?jphi'_B] xs"
+        using phi_res' by (auto simp: wf_frz_queue_def list_all2_conv_all_nth frz_qtable_def)
+      have full_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz_B ..< ?jphi'_B] (\<alpha>s @ xs)"
+        using old_queue new_queue phi_prog_mono
+        using len_\<alpha>s_xs_B len_xs_B list_all2_upt_append wf_frz_queue_def by fastforce
+      have "wf_frz_queue \<sigma> V m \<phi>1 (drop d [?jfrz_B ..< ?jphi'_B]) (drop d (\<alpha>s @ xs))"
+        by (rule list_all2_dropI[OF full_queue[unfolded wf_frz_queue_def], folded wf_frz_queue_def])
+      moreover have "drop d [?jfrz_B ..< ?jphi'_B] = [M ..< ?jphi'_B]"
+      proof -
+        have "drop d [?jfrz_B ..< ?jphi'_B] = [?jfrz_B + d ..< ?jphi'_B]"
+          by (simp add: drop_upt)
+        moreover have "?jfrz_B + d = M"
+        proof -
+          have "d = ?jfrz_B - ?jphi_B + length zs0_out"
+            by (metis d_def jfrz0_eq wf_frz_state_def wf_state)
+          then have "?jfrz_B + d = ?jfrz_B + (?jfrz_B - ?jphi_B + length zs0_out)" by simp
+          also have "\<dots> = ?jfrz_B + length zs0_out"
+            apply (cases "?jfrz_B \<le> ?jphi_B")
+             apply simp_all
+            sorry
+          also have "\<dots> = M" unfolding M_def ..
+          finally show ?thesis .
+        qed
+        ultimately show ?thesis by simp
+      qed
+      moreover have "drop d (\<alpha>s @ xs) = \<alpha>s1" unfolding \<alpha>s1_def by simp
+      ultimately show ?thesis by simp
+    qed
     have d_eq: "d = progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j - jphi0 + length zs0_out"
       unfolding d_def jfrz0_eq by simp
      have \<alpha>s1_def': "\<alpha>s1 = drop d (\<alpha>s @ xs)"
@@ -1838,14 +2675,14 @@ next
              zs0_out' = drop (jfrz0 - jpsi0_val) zs0';
              jpsi0' = jpsi0_val + length zs0';
              \<alpha>s' = drop (jfrz0 - jphi0 + length zs0_out') (\<alpha>s @ xs');
-             (ys', \<alpha>s'') = freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>') 0 \<alpha>s';
+             (ys', \<alpha>s'') = freeze_meval0 (frz_meval n p m (j + \<delta>) db \<psi>') (jfrz0 - jpsi0') \<alpha>s';
              jphi' = jphi0 + length xs';
              jfrz' = jfrz0 + length zs0_out' + length ys'
          in (zs0_out' @ ys', MFrz p m \<phi>' \<psi>' jfrz' jpsi0' jphi' \<alpha>s''))"
         by (simp add: Let_def)
       show ?thesis
         unfolding step1 e\<phi> e\<psi>0 Let_def prod.case zs0_out_def[symmetric] \<alpha>s1_eq ef
-        by (simp add: jfrz1_def jpsi0_val1_def jphi1_def)
+        using ef jfrz1_def jphi1_def jpsi0_val1_def by force
     qed
     show ?thesis
       unfolding meq Frz_eq prod.case
