@@ -1489,7 +1489,7 @@ next
   show ?case
   proof (cases "drop k0 us")
     case Nil
-    then have "k0 \<ge> L" using len_us by (simp add: drop_eq_Nil)
+    then have "k0 \<ge> L" using len_us by simp
     with Cons.prems(3) have "k0 = L" by simp
     with Nil ev Cons.prems(1) have "ys = []" and "\<alpha>s' = \<alpha> # \<alpha>s0"
       by (simp_all add: Let_def)
@@ -1612,7 +1612,7 @@ proof -
       have "drop (length zs0_out) [?jfrz..<?jphi'] = [?jfrz + length zs0_out..<?jphi']"
         using zs0_out_bound by simp
       moreover have "drop (length zs0_out) (drop (?jfrz - ?jphi) xs) = drop (?jfrz - ?jphi + length zs0_out) xs"
-        by (simp add: drop_drop add.commute)
+        by (simp add: add.commute)
       ultimately show ?thesis
         using wf_frz_queue_drop[OF tail_queue, of "length zs0_out"] drop_xs by simp
     qed
@@ -2659,7 +2659,7 @@ next
       moreover have "drop d [?jfrz_B ..< ?jphi'_B] = [M ..< ?jphi'_B]"
       proof -
         have "drop d [?jfrz_B ..< ?jphi'_B] = [?jfrz_B + d ..< ?jphi'_B]"
-          by (simp add: drop_upt)
+          by simp
         moreover have "?jfrz_B + d = M"
           unfolding d_val_here M_def by simp
         ultimately show ?thesis by simp
@@ -2728,7 +2728,7 @@ next
       moreover have "drop (?jpsi0'_B - ?jphi_B) [?jphi_B ..< ?jphi'_B] = [?jpsi0'_B ..< ?jphi'_B]"
       proof -
         have "drop (?jpsi0'_B - ?jphi_B) [?jphi_B ..< ?jphi'_B] = [?jphi_B + (?jpsi0'_B - ?jphi_B) ..< ?jphi'_B]"
-          by (simp add: drop_upt)
+          by simp
         moreover have "?jphi_B + (?jpsi0'_B - ?jphi_B) = ?jpsi0'_B"
           using gt jfrz_eq_jpsi0 jpsi0_mono_B by simp
         ultimately show ?thesis by simp
@@ -2904,7 +2904,77 @@ next
         have ys_rows: "list_all2
           (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
           [?jfrz + length zs0_out..<?jfrz'] ys"
-          sorry
+        proof -
+          have fv_eq: "FV (Formula.Frz p \<phi>1 \<psi>1) = FV \<psi>1" by simp
+          have M_k0: "?jpsi0'_B + k0_val = M"
+            unfolding M_eq k0_val_def by simp
+          have ys_rows_M: "list_all2
+            (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
+            [M..<?jfrz'] ys"
+          proof (unfold list_all2_conv_all_nth, intro conjI allI impI)
+            show "length [M..<?jfrz'] = length ys"
+              unfolding jfrz'_val_B by simp
+          next
+            fix idx
+            assume idx_lt: "idx < length [M..<?jfrz']"
+            then have idx_lt_ys: "idx < length ys"
+              unfolding jfrz'_val_B by simp
+            have idx_lt_\<alpha>s1: "idx < length \<alpha>s1"
+              using diag_B idx_lt_ys by simp
+            have queue_la2: "list_all2 (\<lambda>k X. frz_qtable \<sigma> V m \<phi>1 k X) [M..<?jphi'_B] \<alpha>s1"
+              using queue_\<alpha>s1_B by (simp add: wf_frz_queue_def)
+            have qtab_\<alpha>: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, M + idx\<rangle> \<Turnstile>\<^sub>M \<phi>1) (\<alpha>s1 ! idx)"
+            proof -
+              from queue_la2 idx_lt_\<alpha>s1 have "frz_qtable \<sigma> V m \<phi>1 ([M..<?jphi'_B] ! idx) (\<alpha>s1 ! idx)"
+                by (metis list_all2_nthD list_all2_lengthD)
+              then show ?thesis
+                using idx_lt_\<alpha>s1 unfolding frz_qtable_def len_\<alpha>s1_B by simp
+            qed
+            from IH\<psi>_new[OF qtab_\<alpha>]
+            obtain us \<psi>' where ev: "frz_meval n p m (j + \<delta>) db \<psi>_new (\<alpha>s1 ! idx) = (us, \<psi>')"
+              and la2: "list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R)
+                    (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1))
+                  [?jpsi0'_B..<?jpsij'_B] us"
+              using \<open>case meval (j + \<delta> + 0) n (map (\<tau> \<sigma>) [j + \<delta>..<j + \<delta> + 0]) (Mapping.update (p, m) (replicate (j + \<delta>) (\<alpha>s1 ! idx)) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>_new of (xs, \<phi>\<^sub>n) \<Rightarrow> wf_mformula \<sigma> (j + \<delta> + 0) (P'((p, m) \<mapsto> j + \<delta>)) (V((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1)) n R \<phi>\<^sub>n \<psi>1 \<and> list_all2 (\<lambda>i. qtable n (FV \<psi>1) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V ((p, m) \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1), v, i\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [Progress.progress \<sigma> (P'((p, m) \<mapsto> 0)) \<psi>1 (j + \<delta>)..< Progress.progress \<sigma> (P'((p, m) \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta> + 0)] xs\<close>
+                case_prod_conv list.simps(8) upt_conv_Nil by fastforce
+            have len_us: "length us = L_val"
+              using la2 unfolding L_val_def by (metis list_all2_lengthD length_upt)
+            have idx_lt_L: "idx < L_val - k0_val"
+              using diag_B idx_lt_ys by simp
+            then have kth_lt: "k0_val + idx < length us"
+              using len_us by simp
+            have ys_nth: "ys ! idx = us ! (k0_val + idx)"
+              using diag_B idx_lt_ys ev by simp
+            have qtab_\<psi>': "qtable n (FV \<psi>1) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1), v, ([?jpsi0'_B..<?jpsij'_B] ! (k0_val + idx))\<rangle> \<Turnstile>\<^sub>M \<psi>1)
+              (us ! (k0_val + idx))"
+            proof -
+              have "k0_val + idx < length [?jpsi0'_B..<?jpsij'_B]"
+                using kth_lt len_us la2 by (metis list_all2_lengthD)
+              with la2 show ?thesis
+                using list_all2_nthD by blast
+            qed
+            have qtab_\<psi>: "qtable n (FV \<psi>1) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1), v, M + idx\<rangle> \<Turnstile>\<^sub>M \<psi>1)
+              (us ! (k0_val + idx))"
+              using qtab_\<psi>' kth_lt len_us unfolding L_val_def M_k0[symmetric]
+              by (auto simp: add.assoc)
+            have sat_frz: "Formula.sat \<sigma> V v (M + idx) (Formula.Frz p \<phi>1 \<psi>1) =
+              Formula.sat \<sigma> (V(?pn \<mapsto> \<lambda>w k. \<langle>\<sigma>, V, w, M + idx\<rangle> \<Turnstile> \<phi>1)) v (M + idx) \<psi>1" for v
+              unfolding Formula.sat.simps fv(1) by simp
+            have qtab_frz: "qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V, v, M + idx\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1)
+              (us ! (k0_val + idx))"
+              unfolding fv_eq
+              using qtab_\<psi> fv(1) sat_frz by (auto intro: qtable_cong[OF _ refl])
+            show "qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R)
+              (\<lambda>v. \<langle>\<sigma>, V, v, [M..<?jfrz'] ! idx\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1)
+              (ys ! idx)"
+              using qtab_frz ys_nth idx_lt unfolding jfrz'_val_B by simp
+          qed
+          show ?thesis
+             using ys_rows_M unfolding M_def by simp
+        qed
         text \<open>Combine via list_all2_appendI\<close>
         have interval_split: "[?jfrz..<?jfrz'] = [?jfrz..<?jfrz + length zs0_out] @ [?jfrz + length zs0_out..<?jfrz']"
           using frz_prog_eq by (intro upt_add_eq_append') auto
