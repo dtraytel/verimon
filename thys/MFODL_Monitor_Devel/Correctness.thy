@@ -6,7 +6,6 @@ theory Correctness
     Correct_Since
     Correct_Trigger
     "MFOTL_Monitor_Devel.Abstract_Monitor"
-iq.Isar_Explore
 begin
 (*>*)
 

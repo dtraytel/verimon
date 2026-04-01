@@ -77,6 +77,7 @@ fun preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) set" 
 |  "preds (Formula.LessEq t1 t2) = {}"
 |  "preds (Formula.Pred e ts) = {(e, length ts)}"
 |  "preds (Formula.Let e \<phi> \<psi>) = (preds \<phi> \<union> preds \<psi>)"
+|  "preds (Formula.Frz e \<phi> \<psi>) = (preds \<phi> \<union> preds \<psi>)"
      \<comment> \<open>(let en = (e, Formula.nfv \<phi>); p\<psi> = preds \<psi> in (p\<psi> - {en} \<union> (if en \<in> p\<psi> then preds \<phi> else {})))\<close>
 |  "preds (Formula.LetPast e \<phi> \<psi>) = (preds \<phi> \<union> preds \<psi>)"
      \<comment> \<open>(let en = (e, Formula.nfv \<phi>); p\<psi> = preds \<psi> in (p\<psi> \<union> (if en \<in> p\<psi> then preds \<phi> else {})) - {en})\<close>
@@ -116,6 +117,9 @@ fun sat :: "trace \<Rightarrow> Formula.env \<Rightarrow> nat \<Rightarrow> ty F
 | "sat \<sigma> v i (Formula.Let p \<phi> \<psi>) =
     (let pn = (p, Formula.nfv \<phi>) in
     sat (\<sigma>(pn \<Rrightarrow> \<lambda>j. {w. sat \<sigma> w j \<phi> \<and> length w = snd pn})) v i \<psi>)"
+| "sat \<sigma> v i (Formula.Frz p \<phi> \<psi>) =
+    (let pn = (p, Formula.nfv \<phi>) in
+    sat (\<sigma>(pn \<Rrightarrow> \<lambda>j. {w. sat \<sigma> w i \<phi> \<and> length w = snd pn})) v i \<psi>)"
 | "sat \<sigma> v i (Formula.LetPast p \<phi> \<psi>) =
     (let pn = (p, Formula.nfv \<phi>) in
     sat (\<sigma>(pn \<Rrightarrow> letpast_sat (\<lambda>X k. {u. sat (\<sigma>(pn \<Rrightarrow> X)) u k \<phi> \<and> length u = snd pn}))) v i \<psi>)"
@@ -214,6 +218,10 @@ next
   then show ?case
     by (simp del: fun_upd_apply add: convert_fun_upd)
 next
+  case (Frz p \<phi> \<psi>)
+  then show ?case
+    by (simp del: fun_upd_apply add: convert_fun_upd)
+next
   case (LetPast p \<phi> \<psi>)
   then show ?case
     by (simp del: fun_upd_apply add: Let_def convert_fun_upd letpast_sat_alt)
@@ -230,6 +238,12 @@ next
     unfolding sat.simps Let_def using Let(1,3)
     by (subst (1 2) Let(2)[symmetric])
       (auto simp add: Let_def intro!: map_\<Gamma>i_map_\<Gamma>i_cong arg_cong[of _ _ "\<lambda>X. sat X v i \<psi>"] split: if_splits)
+next
+  case (Frz p \<phi> \<psi>)
+  show ?case
+    unfolding sat.simps Let_def using Frz(1,3)
+    by (subst (1 2) Frz(2)[symmetric])
+      (auto simp add: Let_def intro!: map_\<Gamma>i_map_\<Gamma>i_cong arg_cong[of _ _ "\<lambda>X. sat X v _ \<psi>"] split: if_splits)
 next
   case (LetPast p \<phi> \<psi>)
   show ?case
@@ -516,7 +530,7 @@ lemma progress_convert_cong:
 
 lemma progress_regex_convert_cong:
   "convert \<sigma> V = convert \<sigma>' V' \<Longrightarrow> progress_regex \<sigma> P r j = progress_regex \<sigma>' P r j"
-  by (metis progress_convert_cong progress_simps(19))
+  by (metis progress_convert_cong progress_simps(20))
 
 lemma sat_convert_cong:
   "convert \<sigma> V = convert \<sigma>' V' \<Longrightarrow> Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma>' V' v i \<phi>"
@@ -524,14 +538,25 @@ lemma sat_convert_cong:
 
 lemma wf_mformula_convert_cong_aux:
   "wf_mformula \<sigma> j P V m R \<phi> \<phi>' \<Longrightarrow> convert \<sigma> V = convert \<sigma>' V' \<Longrightarrow> wf_mformula \<sigma>' j P V' m R \<phi> \<phi>'"
-proof (induction arbitrary: V' rule: wf_mformula.induct)
+proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
   case (Let P V m \<phi> \<phi>' p n R \<psi> \<psi>' b)
   show ?case
     apply (rule wf_mformula.Let)
-        apply (rule Let.IH(1); fact)
+         apply (rule Let.IH(1); fact)
        apply (rule Let.IH(2)[unfolded progress_convert_cong[OF Let.prems]])
        apply (simp add: convert_fun_upd Let.prems del: fun_upd_apply cong: sat_convert_cong)
     by fact+
+next
+  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0)
+  show ?case
+    apply (rule wf_mformula.Frz)
+            apply (rule Frz.IH(1); fact)
+           apply (rule allI Frz.IH(2)[unfolded progress_convert_cong[OF Frz.prems], rule_format, THEN conjunct2, rule_format])+
+           apply (simp add: convert_fun_upd Frz.prems del: fun_upd_apply cong: sat_convert_cong)
+    using Frz.hyps
+    apply (auto simp: wf_frz_state_def wf_frz_queue_def frz_qtable_def frz_progress_def
+         Let_def progress_convert_cong[OF Frz.prems] sat_convert_cong[OF Frz.prems])
+    done
 next
   case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf b)
   show ?case
