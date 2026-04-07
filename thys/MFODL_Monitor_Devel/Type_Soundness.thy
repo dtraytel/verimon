@@ -900,6 +900,58 @@ next
     subgoal for i xs using list_all_tab by presburger
     done
   then show ?case by auto
+next 
+  case (Frz p \<phi> \<psi>) 
+  obtain E' where 
+    psi_wty: "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)), E \<turnstile> \<psi>" and
+    phi_wty: "S, E' \<turnstile> \<phi>" using Frz.prems(1) by cases auto
+  have wtyenv: "x \<in> \<Gamma> \<sigma> i \<Longrightarrow> (case x of (p, xs) \<Rightarrow> (p, length xs) \<notin> dom V \<longrightarrow> (case S (p, length xs) of None \<Rightarrow> False | Some ts \<Rightarrow> wty_tuple ts xs))" for x i
+    using Frz.prems(3) by (auto simp add: wty_envs_def wty_event_def wty_tuple_def) 
+  have ty_of_phi: "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> ty_of (xs!x) = E' x" for x xs
+    apply (rule ty_of_sat_safe) using Frz phi_wty by auto 
+  have "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> (tabulate E' 0 (Formula.nfv \<phi>)!x) = ty_of (xs!x)" for x xs 
+    using ty_of_phi[of x xs] apply(auto simp add: Formula.nfv_def split: nat.splits)
+    by (metis Formula.nfv_def add.left_neutral fvi_less_nfv nth_tabulate)
+  then  have list_all_tab:"length xs = Formula.nfv \<phi> \<Longrightarrow>
+    Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi> \<Longrightarrow> list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs " for xs i 
+  proof -
+    assume a1: "Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi>"
+    assume a2: "length xs = Formula.nfv \<phi>"
+    obtain nn :: "event_data list \<Rightarrow> ty list \<Rightarrow> (ty \<Rightarrow> event_data \<Rightarrow> bool) \<Rightarrow> nat" where
+      "\<forall>x0 x1 x2. (\<exists>v3<length x1. \<not> x2 (x1 ! v3) (x0 ! v3)) = (nn x0 x1 x2 < length x1 \<and> \<not> x2 (x1 ! nn x0 x1 x2) (x0 ! nn x0 x1 x2))" by moura
+    then have "\<forall>p ts es. (\<not> list_all2 p ts es \<or> length ts = length es \<and> (\<forall>n. \<not> n < length ts \<or> p (ts ! n) (es ! n))) \<and> (list_all2 p ts es \<or> length ts \<noteq> length es \<or> nn es ts p < length ts \<and> \<not> p (ts ! nn es ts p) (es ! nn es ts p))"
+      by (metis (no_types) list_all2_conv_all_nth)
+    then show ?thesis
+      using a2 a1 by (smt (z3) Frz.hyps(1) Frz.hyps(2) Frz.prems(3) add.left_neutral atLeastLessThan_iff dual_order.refl length_tabulate less_nat_zero_code not_less nth_tabulate phi_wty subset_eq ty_of_sat'_safe ty_of_sat_safe)
+  qed
+  have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
+  proof -
+    {
+      assume sat: " Formula.sat \<sigma> V v5 i5 \<phi>"
+      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
+        thm ty_of_sat_safe
+        apply (rule ty_of_sat_safe) using Frz sat phi_wty by auto
+      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> " 
+        using phi_wty Frz by auto
+    } moreover {
+      assume sat': "sat' \<sigma> V v5 i5 \<phi>"
+      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
+        apply (rule ty_of_sat'_safe) using Frz sat' phi_wty by auto
+      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> "   
+        using phi_wty Frz by auto
+    } ultimately show ?thesis by auto
+  qed
+  have V_eq: "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. Formula.sat \<sigma> V v i \<phi>)) = V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. sat' \<sigma> V v i \<phi>))"
+    using phi_case by auto
+  have "Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. Formula.sat \<sigma> V v i \<phi>))) v i \<psi> = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. sat' \<sigma> V v i \<phi>))) v i \<psi>"  
+    unfolding V_eq
+    apply (rule Frz.IH(2))
+    using psi_wty phi_wty Frz.prems apply (auto simp add: wty_envs_def wty_event_def wty_tuple_def domIff)
+    subgoal for i a b apply (cases "a = p") by auto
+    subgoal for i xs using list_all_tab by auto
+    subgoal for i using list_all_tab by presburger
+    done
+  then show ?case by auto
 next
   case (And_assign \<phi> \<psi>)
   obtain t1 t2 where eq: "\<psi> = formula.Eq t1 t2" using And_assign(2) by (auto simp add: safe_assignment_def split: formula.splits)
