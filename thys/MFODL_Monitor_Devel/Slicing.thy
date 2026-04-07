@@ -220,6 +220,7 @@ definition "unshift_opt b vs = map (case_option None (\<lambda>y::nat. if y < b 
 fun inputs :: "'a Formula.formula \<Rightarrow> (Formula.name \<times> nat option list) set" where
   "inputs (Formula.Pred r ts) = {(r, map (\<lambda>t. case t of Formula.Var x \<Rightarrow> Some x | _ \<Rightarrow> None) ts)}"
 | "inputs (Formula.Let p \<phi> \<psi>) = compose_inputs p (Formula.nfv \<phi>) (inputs \<phi>) (inputs \<psi>)"
+| "inputs (Formula.Frz p \<phi> \<psi>) = compose_inputs p (Formula.nfv \<phi>) (inputs \<phi>) (inputs \<psi>)"
 | "inputs (Formula.LetPast p \<phi> \<psi>) = compose_inputs p (Formula.nfv \<phi>)
     (lfp (\<lambda>A. compose_inputs p (Formula.nfv \<phi>) A (inputs \<phi>))) (inputs \<psi>)"
 | "inputs (Formula.Eq t1 t2) = {}"
@@ -255,6 +256,10 @@ proof (induction \<phi> arbitrary: q vs x)
     by (force split: trm.splits)
 next
   case (Let p \<phi> \<psi>)
+  then show ?case
+    by (auto simp add: compose_inputs_def fvi_less_nfv split: option.splits)
+next
+  case (Frz p \<phi> \<psi>)
   then show ?case
     by (auto simp add: compose_inputs_def fvi_less_nfv split: option.splits)
 next
@@ -356,6 +361,18 @@ next
     case False
     then show ?thesis
       using Let by (clarsimp simp add: compose_inputs_def; metis length_map)
+  qed
+next
+  case (Frz p \<phi> \<psi>)
+  show ?case
+  proof (cases "(p, Formula.nfv \<phi>) = (q, length as)")
+    case True
+    then show ?thesis
+      using Frz by (simp add: compose_inputs_def) (metis length_map)
+  next
+    case False
+    then show ?thesis
+      using Frz by (clarsimp simp add: compose_inputs_def; metis length_map)
   qed
 next
   case (LetPast p \<phi> \<psi>)
@@ -522,6 +539,76 @@ next
       moreover assume "k' \<in> K"
       ultimately show "us ! k' \<in> Some ` X"
         using Let.prems(4) \<open>length us = length as\<close> by blast
+    qed
+  qed
+next
+  case (Frz p \<phi> \<psi>)
+  consider (left) v' where "Safety.matches v' \<phi> (q, as)" "Safety.matches v \<psi> (p, v')" "length v' = Formula.nfv \<phi>"
+    | (right) "p \<noteq> q \<or> length as \<noteq> Formula.nfv \<phi>" "Safety.matches v \<psi> (q, as)"
+    using Frz.prems(1) by auto
+  then show ?case proof cases
+    case left
+    then obtain vs' where input': "(p, vs') \<in> inputs \<psi>" "length vs' = Formula.nfv \<phi>"
+      by (metis matches_imp_input)
+    define Y where "Y = {y. \<exists>vs k'. (q, vs) \<in> inputs \<phi> \<and> length vs = length as \<and> k' \<in> K \<and> vs ! k' = Some y}"
+    show ?thesis
+      using left(1)
+    proof (rule Frz.IH(1))
+      show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v' ! y = z"
+      proof safe
+        fix y assume "y \<in> Y"
+        then show "y < Formula.nfv \<phi>"
+          using Frz.prems(3) inputs_subset_fv fvi_less_nfv
+          by (fastforce simp add: Y_def set_conv_nth eq_commute)
+        show "v' ! y = z"
+          using left(2)
+        proof (rule Frz.IH(2))
+          show "\<forall>x\<in>X. x < Formula.nfv \<psi> \<and> v ! x = z"
+            using Frz.prems(2) by simp
+          show "\<forall>k\<in>Y. k < length v'"
+            using Frz.prems(3) inputs_subset_fv fvi_less_nfv
+            by (fastforce simp add: Y_def set_conv_nth eq_commute left(3))
+          show "y \<in> Y" by fact
+          fix us' y'
+          assume "y' \<in> Y"
+          then obtain us k' where **: "(q, us) \<in> inputs \<phi>" "length us = length as"
+            "k' \<in> K" "us ! k' = Some y'"
+            by (auto simp add: Y_def)
+          moreover assume "(p, us') \<in> inputs \<psi>" "length us' = length v'"
+          ultimately have "(q, map (case_option None ((!) us')) us) \<in> inputs (Formula.Frz p \<phi> \<psi>)"
+            by (auto simp add: compose_inputs_def left(3))
+          then show "us' ! y' \<in> Some ` X"
+            using Frz.prems(3,4) ** by fastforce
+        qed
+      qed
+      show "\<forall>k\<in>K. k < length as" by fact
+      show "k \<in> K" by fact
+      fix us k'
+      assume 1: "(q, us) \<in> inputs \<phi>"
+      then have "(q, map (case_option None ((!) vs')) us) \<in> inputs (Formula.Frz p \<phi> \<psi>)"
+        using input' by (auto simp add: compose_inputs_def)
+      moreover assume 2: "k' \<in> K" "length us = length as"
+      ultimately have "map (case_option None ((!) vs')) us ! k' \<in> Some ` X"
+        using Frz.prems(4) by auto
+      then show "us ! k' \<in> Some ` Y"
+        using 1 2 Frz.prems(3) by (auto simp add: Y_def split: option.splits)
+    qed
+  next
+    case right
+    show ?thesis
+      using right(2)
+    proof (rule Frz.IH(2))
+      show "\<forall>x\<in>X. x < Formula.nfv \<psi> \<and> v ! x = z"
+        using Frz.prems(2) by simp
+      show "\<forall>k\<in>K. k < length as" by fact
+      show "k \<in> K" by fact
+      fix us k'
+      assume "(q, us) \<in> inputs \<psi>" "length us = length as"
+      then have "(q, us) \<in> inputs (Formula.Frz p \<phi> \<psi>)"
+        using right by (auto simp add: compose_inputs_def)
+      moreover assume "k' \<in> K"
+      ultimately show "us ! k' \<in> Some ` X"
+        using Frz.prems(4) \<open>length us = length as\<close> by blast
     qed
   qed
 next
@@ -955,6 +1042,8 @@ fun genvar :: "'a Formula.formula \<Rightarrow> bool \<Rightarrow> nat \<Rightar
   "genvar (Formula.Pred r ts) pos x q n c k = (pos = c \<and> q = r \<and> n = length ts \<and> k < length ts \<and> ts ! k = Formula.Var x)"
 | "genvar (Formula.Let p \<phi> \<psi>) pos x q n c k = ((\<exists>pos' y. genvar \<phi> pos' y q n c k \<and> genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y) \<or>
     (p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>) \<and> genvar \<psi> pos x q n c k)"
+| "genvar (Formula.Frz p \<phi> \<psi>) pos x q n c k = ((\<exists>pos' y. genvar \<phi> pos' y q n c k \<and> genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y) \<or>
+    (p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>) \<and> genvar \<psi> pos x q n c k)"
 | "genvar (Formula.LetPast p \<phi> \<psi>) pos x q n c k = ((p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>) \<and>
     ((\<exists>pos' y. lfp (\<lambda>g pos' y.
         genvar \<phi> pos' y q n c k \<or> (\<exists>pos'' y'. pos'' \<and> g pos'' y' \<and> genvar \<phi> pos' y p (Formula.nfv \<phi>) pos'' y')) pos' y \<and>
@@ -1043,6 +1132,42 @@ next
       using Let.prems right(1) by (simp add: domIff split: if_splits)
     with right(1) show ?thesis
       by (intro Let.prems(1)) (auto simp add: compose_inputs_def)
+  qed
+next
+  case (Frz p \<phi> \<psi>)
+  define pos where "pos = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
+  consider (left) pos' y where "genvar \<phi> pos' y q n c k" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
+    | (right) "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>" "genvar \<psi> pos x q n c k"
+    using Frz.prems(2) by (auto simp add: pos_def)
+  then show ?case proof cases
+    case left
+    obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
+      and pos': "pos' = Formula.sat \<sigma> V as j \<phi>"
+      apply (rule Frz.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified]])
+      using Frz.prems by (auto simp add: domIff)
+    obtain as' j' where "k < n"
+      "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
+      "length as' = n" "as' ! k = as ! y"
+      apply (rule Frz.IH(1)[rotated, OF left(1)[unfolded pos', simplified]])
+      using \<open>length as = Formula.nfv \<phi>\<close> by simp_all
+    show ?thesis proof (rule Frz.prems(1))
+      show "k < n" by fact
+      show "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c" by fact
+      show "as' ! k = v ! x"
+        using \<open>as' ! k = as ! y\<close> \<open>as ! y = v ! x\<close> by simp
+    qed fact+
+  next
+    case right
+    obtain as' j' where "k < n"
+      "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
+      "length as' = n" "as' ! k = v ! x"
+      apply (rule Frz.IH(2)[rotated, OF right(2)[unfolded pos_def, simplified]])
+      using Frz.prems apply simp
+      using Frz.prems right(1) by (simp add: domIff split: if_splits)
+    with right(1) show ?thesis
+      by (intro Frz.prems(1)) (auto simp add: compose_inputs_def)
   qed
 next
   case (LetPast p \<phi> \<psi>)

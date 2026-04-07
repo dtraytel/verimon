@@ -30,11 +30,11 @@ lemma fv_convert_multiway_TT[simp]: "Formula.fvi b (convert_multiway Formula.TT)
 lemma fv_convert_multiway: "Formula.fvi b (convert_multiway \<phi>) = Formula.fvi b \<phi>"
 proof (induction \<phi> arbitrary: b rule: convert_multiway.induct)
 next
-  case (9 \<phi> \<psi>)
-  note IH_safe_assign = 9(1)
-  note IH_not_safe_assign = 9(2-6)
-  note IH_psi_eq_release = 9(7,8,9)
-  note IH_not_anything = 9(10,11)
+  case (10 \<phi> \<psi>)
+  note IH_safe_assign = 10(1)
+  note IH_not_safe_assign = 10(2-6)
+  note IH_psi_eq_release = 10(7,8,9)
+  note IH_not_anything = 10(10,11)
   have "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
     "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
     by (simp split: formula.splits)+
@@ -117,13 +117,13 @@ lemma pred_cmultiway_conjD: "contains_pred p (convert_multiway (\<phi> \<and>\<^
 
 lemma no_pred_cmultiway_always_safe_0I: "\<not> contains_pred p (convert_multiway \<psi>) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway (always_safe_0 I \<psi>))"
-  by (auto simp: always_safe_0_def simp del: convert_multiway.simps(9,10) 
+  by (auto simp: always_safe_0_def simp del: convert_multiway.simps(10,11) 
       dest!: pred_cmultiway_conjD)
 
 lemma no_pred_cmultiway_release_safe_0I: "\<not> contains_pred p (convert_multiway \<phi>) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway \<psi>) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway (release_safe_0 \<phi> I \<psi>))"
-  by (auto simp: release_safe_0_def simp del: convert_multiway.simps(9,10) 
+  by (auto simp: release_safe_0_def simp del: convert_multiway.simps(10,11) 
       intro!: no_pred_cmultiway_always_safe_0I
       dest!: pred_cmultiway_conjD)
 
@@ -141,12 +141,12 @@ lemma no_pred_cmultiway_release_safe_boundedI: "\<not> contains_pred p (convert_
     \<Longrightarrow> \<not> contains_pred p (convert_multiway \<psi>) 
     \<Longrightarrow> \<not> contains_pred p (convert_multiway (release_safe_bounded \<phi> I \<psi>))"
   unfolding always_safe_0_def
-  by (auto simp: release_safe_bounded_def simp del: convert_multiway.simps(9,10) 
+  by (auto simp: release_safe_bounded_def simp del: convert_multiway.simps(10,11) 
       dest!: pred_cmultiway_conjD)
 
 lemma contains_pred_convert_multiway: "\<not> contains_pred p \<phi> \<Longrightarrow> \<not> contains_pred p (convert_multiway \<phi>)"
 proof (induction p \<phi> rule: contains_pred.induct)
-  case(9 p \<phi> \<psi>)
+  case(10 p \<phi> \<psi>)
   have "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
     and "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
     by (auto split: formula.splits)
@@ -154,31 +154,31 @@ proof (induction p \<phi> rule: contains_pred.induct)
     apply (simp only: convert_multiway.simps split: if_splits)
     apply (intro conjI impI allI iffI; clarsimp simp add: is_constraint_iff 
         safe_assignment_iff fv_get_and sup.commute)
-    using 9 apply (simp_all add: not_contains_pred_get_and split: if_splits)
-        apply (metis convert_multiway.simps(18) memR_zero not_contains_pred_get_and)
+    using 10 apply (simp_all add: not_contains_pred_get_and split: if_splits)
+        apply (metis convert_multiway.simps(19) memR_zero not_contains_pred_get_and)
        prefer 4 subgoal by (auto simp add: not_contains_pred_get_and)
        prefer 3 subgoal by (auto simp add: not_contains_pred_get_and)
      prefer 2 subgoal by (auto simp add: not_contains_pred_get_and)
     unfolding and_release_safe_bounded_def 
-    apply (simp only: convert_multiway.simps(8) contains_pred.simps)
+    apply (simp only: convert_multiway.simps(9) contains_pred.simps)
     apply (erule disjE)
     by (drule pred_cmultiway_conjD; simp)+
 next
-  case(18 p \<phi> I \<psi>)
+  case(19 p \<phi> I \<psi>)
   have "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
     and "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
     by (auto split: formula.splits)
   then show ?case 
-    using 18
+    using 19
     apply (simp only: convert_multiway.simps split: if_splits)
     apply (intro conjI impI allI iffI; clarsimp)
     using no_pred_cmultiway_release_safe_0I apply blast
     using no_pred_cmultiway_release_safe_boundedI by blast
 next
-  case(19 p I r)
+  case(20 p I r)
   then show ?case by (auto simp add: regex.set_map)
 next
-  case(20 p I r)
+  case(21 p I r)
   then show ?case by (auto simp add: regex.set_map)
 qed (auto simp: nfv_convert_multiway)
 
@@ -202,7 +202,7 @@ lemma sf_letpast_cmultiway_conj: "safe_letpast p (convert_multiway \<phi>) = saf
         sf_letpast_cmultiway_subst1 split: formula.splits) 
       (simp add: and_release_safe_bounded_def bot_rec_safety_def[symmetric] 
         sf_letpast_cmultiway_subst1 sf_letpast_cmultiway_subst2 
-        del: convert_multiway.simps(9))
+        del: convert_multiway.simps(10))
 
 lemma sf_letpast_cmultiway_subst3: "safe_letpast p (convert_multiway (always_safe_0 I \<psi>)) 
   = AnyRec * (safe_letpast p (convert_multiway \<psi>))"
@@ -241,34 +241,38 @@ proof (induction p \<phi> rule: safe_letpast.induct)
     by (auto simp add: contains_pred_convert_multiway nfv_convert_multiway)
 next
   case (6 p e \<phi> \<psi>)
-  then show?case 
+  then show ?case 
     by (auto simp add: contains_pred_convert_multiway nfv_convert_multiway)
 next
-  case(9 p \<phi> \<psi>)
+  case (7 p e \<phi> \<psi>)
+  then show ?case 
+    by (auto simp add: contains_pred_convert_multiway nfv_convert_multiway)
+next
+  case(10 p \<phi> \<psi>)
   then show ?case
     by (intro sf_letpast_cmultiway_conj)
 next
-  case (18 p \<phi> I \<psi>)
+  case (19 p \<phi> I \<psi>)
   hence "memL I 0 \<Longrightarrow> safe_letpast p (convert_multiway (release_safe_0 \<phi> I \<psi>)) 
     = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
     by (clarsimp simp: release_safe_0_def always_safe_0_def mult_sup_distrib mult_assoc[symmetric]
         sf_letpast_cmultiway_subst4 sf_letpast_cmultiway_subst7 sf_letpast_cmultiway_conj 
-        simp del: convert_multiway.simps(9))
+        simp del: convert_multiway.simps(10))
       (metis sup_commute sup_left_idem)
   moreover have "\<not> memL I 0 \<Longrightarrow> safe_letpast p (convert_multiway (release_safe_bounded \<phi> I \<psi>)) 
     = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
-    using 18 by (clarsimp simp: release_safe_bounded_def mult_sup_distrib mult_assoc[symmetric]
+    using 19 by (clarsimp simp: release_safe_bounded_def mult_sup_distrib mult_assoc[symmetric]
          sf_letpast_cmultiway_subst5 sf_letpast_cmultiway_subst7 sf_letpast_cmultiway_conj 
-         bot_rec_safety_def[symmetric] simp del: convert_multiway.simps(9))
+         bot_rec_safety_def[symmetric] simp del: convert_multiway.simps(10))
       (simp add: sup.commute)
   ultimately show ?case
     by simp
 next
-  case(19 p I r)
+  case(20 p I r)
   then show ?case
     by (simp add: regex.set_map image_image cong: image_cong)
 next
-  case(20 p I r)
+  case(21 p I r)
   then show ?case
     by (simp add: regex.set_map image_image cong: image_cong)
 qed (auto simp add: image_image)
@@ -843,7 +847,7 @@ next
   hence is_Neg_cm: "Formula.is_Neg (convert_multiway \<phi>) \<longleftrightarrow> Formula.is_Neg \<phi>" 
     for \<phi> :: "'t Formula.formula"
     by (cases \<phi>; clarsimp simp: release_safe_0_def release_safe_bounded_def eventually_def 
-        simp del: convert_multiway.simps(9)) blast+
+        simp del: convert_multiway.simps(10)) blast+
   from Ands show ?case
     by (fastforce simp: list.pred_set convert_multiway_remove_neg sat_remove_neg[OF is_Neg_cm])
 next
@@ -855,7 +859,7 @@ next
   then show ?case
     using sat_release_rewrite_0 
     by auto
-qed (auto cong: nat.case_cong)
+qed (auto simp: nfv_convert_multiway cong: nat.case_cong)
 
 subsection \<open> Finite @{term safe_formula} \<close>
 
@@ -1089,6 +1093,23 @@ next
     apply(elim finite_subset[rotated])
     by(auto)
 next
+  case (Frz p \<phi> \<psi>)
+  then have IH: " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
+    apply(simp)
+    done
+  then have IH2: "\<forall>i.  finite (map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>})" using Frz
+    by(auto)
+  then have "\<forall> i. {v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v i \<phi>} = map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    using Frz
+    apply(simp)
+    by(auto simp add: wf_tuple_def intro!: image_eqI[where x="map Some _"])
+   then have " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)) (map the v) i \<psi>}"
+     using Frz IH2
+    by(auto)
+  then show ?case using Frz
+    apply(elim finite_subset[rotated])
+    by(auto)
+next
   case (LetPast p \<phi> \<psi>)
   show ?case
     unfolding sat.simps fvi.simps Let_def
@@ -1232,7 +1253,7 @@ next
     by simp
   thus ?case
     using And_Trigger
-    by (auto simp del: fvi.simps(17)) 
+    by (auto simp del: fvi.simps(18)) 
       (smt (verit, best) Collect_mono_iff 
         Diff_partition Un_Diff_cancel2 
         Un_commute obs finite_subset)
@@ -1770,7 +1791,7 @@ next
     by (intro if_cong arg_cong[of _ _ Min] arg_cong[of _ _ Inf] arg_cong[of _ _ "(\<le>) _"]
       image_cong Collect_cong all_cong1 imp_cong conj_cong image_cong)
       (auto 0 4 simp: safe_atms_def elim!: disjE_Not2 dest: safe_regex_safe_formula)
-qed (auto simp add: nfv_convert_multiway)
+qed (auto simp add: nfv_convert_multiway frz_progress_def)
 
 unbundle MFODL_no_notation \<comment> \<open> enable notation \<close>
 

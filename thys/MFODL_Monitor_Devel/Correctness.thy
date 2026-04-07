@@ -2178,7 +2178,7 @@ next
       then have len_ys: "length ys = min (length \<alpha>s1) (L - k0)" by simp
       \<comment> \<open>Compute length \<alpha>s1\<close>
       have old_queue: "wf_frz_queue \<sigma> V m \<phi>1 [?jfrz..<?jphi] \<alpha>s"
-        using wf_state by (auto simp: wf_frz_state_def Let_def jfrz0_eq jphi0_eq)
+        using wf_state by (auto simp: wf_frz_state_def Let_def)
       have len_\<alpha>s: "length \<alpha>s = ?jphi - ?jfrz"
         using wf_frz_queue_length[OF old_queue] .
       have d_val: "d = ?jfrz - ?jphi + length zs0_out"

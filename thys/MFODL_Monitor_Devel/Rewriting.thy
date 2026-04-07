@@ -44,6 +44,7 @@ subsubsection \<open> New syntax and semantics \<close>
 datatype (discs_sels) 'a formula = 
     Pred Formula.name "Formula.trm list"
   | Let Formula.name "'a formula" "'a formula"
+  | Frz Formula.name "'a formula" "'a formula"
   | LetPast Formula.name "'a formula" "'a formula"
   | Eq Formula.trm Formula.trm
   | Less Formula.trm Formula.trm
@@ -125,6 +126,7 @@ unbundle rewrite_notation
 primrec project :: "'a formula \<Rightarrow> 'a Formula.formula"
   where "project (p \<dagger>\<^sub>R ts) = p \<dagger> ts"
   | "project (Let p \<phi> \<psi>) = Formula.Let p (project \<phi>) (project \<psi>)"
+  | "project (Frz p \<phi> \<psi>) = Formula.Frz p (project \<phi>) (project \<psi>)"
   | "project (LetPast p \<phi> \<psi>) = Formula.LetPast p (project \<phi>) (project \<psi>)"
   | "project (t1 =\<^sub>R t2) = (t1 =\<^sub>F t2)"
   | "project (t1 \<le>\<^sub>R t2) = (t1 \<le>\<^sub>F t2)"
@@ -153,6 +155,7 @@ primrec project :: "'a formula \<Rightarrow> 'a Formula.formula"
 primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   where "embed (p \<dagger> ts) = p \<dagger>\<^sub>R ts"
   | "embed (Formula.Let p \<phi> \<psi>) = Let p (embed \<phi>) (embed \<psi>)"
+  | "embed (Formula.Frz p \<phi> \<psi>) = Frz p (embed \<phi>) (embed \<psi>)"
   | "embed (Formula.LetPast p \<phi> \<psi>) = LetPast p (embed \<phi>) (embed \<psi>)"
   | "embed (t1 =\<^sub>F t2) = (t1 =\<^sub>R t2)"
   | "embed (t1 \<le>\<^sub>F t2) = (t1 \<le>\<^sub>R t2)"
@@ -182,6 +185,7 @@ lemma project_embed: "project (embed \<phi>) = \<phi>"
 fun fvi :: "nat \<Rightarrow> 't formula \<Rightarrow> nat set" 
   where "fvi b (Pred r ts) = (\<Union>t\<in>set ts. Formula.fvi_trm b t)"
   | "fvi b (Let p \<phi> \<psi>) = fvi b \<psi>"
+  | "fvi b (Frz p \<phi> \<psi>) = fvi b \<psi>"
   | "fvi b (LetPast p \<phi> \<psi>) = fvi b \<psi>"
   | "fvi b (Eq t1 t2) = Formula.fvi_trm b t1 \<union> Formula.fvi_trm b t2"
   | "fvi b (Less t1 t2) = Formula.fvi_trm b t1 \<union> Formula.fvi_trm b t2"
@@ -233,6 +237,7 @@ definition nfv :: "'t formula \<Rightarrow> nat" where
 
 lemma nfv_simps[simp]:
   "nfv (Let p \<phi> \<psi>) = nfv \<psi>"
+  "nfv (Frz p \<phi> \<psi>) = nfv \<psi>"
   "nfv (LetPast p \<phi> \<psi>) = nfv \<psi>"
   "nfv (Neg \<phi>) = nfv \<phi>"
   "nfv (Or \<phi> \<psi>) = max (nfv \<phi>) (nfv \<psi>)"
@@ -310,6 +315,7 @@ fun sat :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpoo
        None \<Rightarrow> (r, map (Formula.eval_trm v) ts) \<in> \<Gamma> \<sigma> i
      | Some X \<Rightarrow> X (map (Formula.eval_trm v) ts) i)"
   | "sat \<sigma> V v i (Let p \<phi> \<psi>) = sat \<sigma> (V((p, nfv \<phi>) \<mapsto> \<lambda>w j. sat \<sigma> V w j \<phi>)) v i \<psi>"
+  | "sat \<sigma> V v i (Frz p \<phi> \<psi>) = sat \<sigma> (V((p, nfv \<phi>) \<mapsto> \<lambda>w j. sat \<sigma> V w i \<phi>)) v i \<psi>"
   | "sat \<sigma> V v i (LetPast p \<phi> \<psi>) =
       (let pn = (p, nfv \<phi>) in
       sat \<sigma> (V(pn \<mapsto> letpast_sat (\<lambda>X u k. sat \<sigma> (V(pn \<mapsto> X)) u k \<phi>))) v i \<psi>)"
@@ -399,6 +405,7 @@ primrec tvars
 primrec rr :: "nat \<Rightarrow> 'a formula \<Rightarrow> nat set" 
   where "rr b (Pred r ts) = (\<Union>t\<in>set ts. Formula.fvi_trm b t)"
   | "rr b (Let p \<phi> \<psi>) = rr b \<psi>"
+  | "rr b (Frz p \<phi> \<psi>) = rr b \<psi>"
   | "rr b (LetPast p \<phi> \<psi>) = rr b \<psi>"
   | "rr  b(Eq t1 t2) = (case (t1,t2) of
                                (Formula.Var x,Formula.Const _) \<Rightarrow> {x-b}
@@ -467,6 +474,7 @@ primrec shiftI :: "nat \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula
   where "shiftI k (Formula.Pred r ts) = Formula.Pred r (map (shiftTI k) ts)"
   | "shiftI k (Formula.Exists t a) = Formula.Exists t (shiftI (Suc k) a)"
   | "shiftI k (Formula.Let nm a b) = Formula.Let nm a (shiftI k b)" (*fixed error, a is not shifted*)
+  | "shiftI k (Formula.Frz nm a b) = Formula.Frz nm a (shiftI k b)"
   | "shiftI k (Formula.LetPast nm a b) = Formula.LetPast nm a (shiftI k b)"
   | "shiftI k (Formula.Eq t1 t2) = Formula.Eq (shiftTI k t1) (shiftTI k t2)"
   | "shiftI k (Formula.Less t1 t2) =  Formula.Less (shiftTI k t1) (shiftTI k t2)"
@@ -511,6 +519,7 @@ primrec shiftI_r :: "nat \<Rightarrow> 'a formula \<Rightarrow> 'a formula"
   where "shiftI_r k (Pred r ts) = Pred r (map (shiftTI k) ts)"
   | "shiftI_r k (Exists t a) = Exists t (shiftI_r (Suc k) a)"
   | "shiftI_r k (Let nm a b) = Let nm a (shiftI_r k b)" (*fixed error, a is not shifted*)
+  | "shiftI_r k (Frz nm a b) = Frz nm a (shiftI_r k b)"
   | "shiftI_r k (LetPast nm a b) = LetPast nm a (shiftI_r k b)"
   | "shiftI_r k (Eq t1 t2) = Eq (shiftTI k t1) (shiftTI k t2)"
   | "shiftI_r k (Less t1 t2) =  Less (shiftTI k t1) (shiftTI k t2)"
@@ -553,11 +562,11 @@ lemma shift_fv_in_f: "(x+1) \<in> (Formula.fvi b (shiftI b \<phi>))
   \<longleftrightarrow> x \<in> (Formula.fvi b \<phi>)"
   using shift_fv_in_t 
 proof (induction b \<phi> rule: Formula.fvi.induct)
-  case (19 b I r)
+  case (20 b I r)
   then show ?case by (induct r;auto)
 
 next
-case (20 b I r)
+case (21 b I r)
   then show ?case by (induct r;auto)
 qed auto
 
@@ -757,6 +766,7 @@ lemma my_size_list_cong[fundef_cong]:
 fun my_size :: "'a formula \<Rightarrow> nat" where
   "my_size (Pred r ts) = 1"
 | "my_size (Let p \<phi> \<psi>) = 1"
+| "my_size (Frz p \<phi> \<psi>) = 1"
 | "my_size (LetPast p \<phi> \<psi>) = 1"
 | "my_size  (Eq t1 t2) = 1"
 | "my_size (Less t1 t2) = 1"
@@ -1337,13 +1347,13 @@ next
       qed
     qed
 next
-  case ("16_11" v va vb vc vd I r)
+  case ("16_12" v va vb vc vd I r)
   then show ?case by fastforce
 next
-  case ("17_11" v va vb vc vd I r)
+  case ("17_12" v va vb vc vd I r)
   then show ?case by fastforce
 next
-  case ("18_9" l v va vb vc vd)
+  case ("18_10" l v va vb vc vd)
   then show ?case by fastforce
 next
   case (23 \<phi> t)
@@ -1730,7 +1740,7 @@ next
       apply (simp only: fix_r.simps rewrite.simps if_True)
       apply(simp only: rsub_1[OF f_conr_1_t 4(1)[OF True] ] fix_r.simps)
       apply(simp only:  project.simps  fix_r.simps project_shift)
-      by (metis obs project.simps(11) project.simps(9) sat_project)(*remove embedding*)
+      by (metis obs project.simps(12) project.simps(10) sat_project)(*remove embedding*)
   next
     case False
     then show ?thesis
@@ -2009,6 +2019,7 @@ lemma eval_st:
 fun simplify_terms where
   "simplify_terms (Formula.Pred r ts) = Formula.Pred r (map st ts)"
 | "simplify_terms (Formula.Let p \<phi> \<psi>) = Formula.Let p (simplify_terms \<phi>) (simplify_terms \<psi>)"
+| "simplify_terms (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (simplify_terms \<phi>) (simplify_terms \<psi>)"
 | "simplify_terms (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (simplify_terms \<phi>) (simplify_terms \<psi>)"
 | "simplify_terms (Formula.Eq t1 t2) = Formula.Eq (st t1) (st t2)"
 | "simplify_terms (Formula.Less t1 t2) = Formula.Less (st t1) (st t2)"
@@ -2055,6 +2066,8 @@ next
   case (3 p \<phi> \<psi>)
   then show ?case unfolding simplify_terms.simps Formula.sat.simps 3 simplify_terms_nfv by auto
 next
+  case (4 p \<phi> \<psi>)
+  then show ?case unfolding simplify_terms.simps Formula.sat.simps 4 simplify_terms_nfv by auto
 qed (auto simp:eval_st Rewriting.match_map_regex simplify_terms_fvi split:nat.splits)
 
 
@@ -2064,6 +2077,7 @@ fun push_negation where
   "push_negation (Formula.Neg (Formula.And \<phi> \<psi>)) = Formula.Or (push_negation (Formula.Neg \<phi>)) (push_negation (Formula.Neg \<psi>))"
 | "push_negation (Formula.Neg (Formula.Or \<phi> \<psi>)) = Formula.And (push_negation (Formula.Neg \<phi>)) (push_negation (Formula.Neg \<psi>))"
 | "push_negation (Formula.Let p \<phi> \<psi>) = Formula.Let p (push_negation \<phi>) (push_negation \<psi>)"
+| "push_negation (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (push_negation \<phi>) (push_negation \<psi>)"
 | "push_negation (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (push_negation \<phi>) (push_negation \<psi>)"
 | "push_negation (Formula.Neg \<phi>) = Formula.Neg (push_negation \<phi>)"
 | "push_negation (Formula.Or \<phi> \<psi>) = Formula.Or (push_negation \<phi>) (push_negation \<psi>)"
@@ -2096,11 +2110,14 @@ next
   case (4 p \<phi> \<psi>)
   then show ?case unfolding push_negation.simps Formula.sat.simps 4 push_negation_nfv by auto
 next
+  case (5 p \<phi> \<psi>)
+  then show ?case unfolding push_negation.simps Formula.sat.simps 5 push_negation_nfv by auto
 qed (auto simp: Rewriting.match_map_regex push_negation_fvi split:nat.splits)
 
 fun elim_double_negation where
   "elim_double_negation (Formula.Neg (Formula.Neg \<phi>)) = elim_double_negation \<phi>"
 | "elim_double_negation (Formula.Let p \<phi> \<psi>) = Formula.Let p (elim_double_negation \<phi>) (elim_double_negation \<psi>)"
+| "elim_double_negation (Formula.Frz p \<phi> \<psi>) = Formula.Frz p (elim_double_negation \<phi>) (elim_double_negation \<psi>)"
 | "elim_double_negation (Formula.LetPast p \<phi> \<psi>) = Formula.LetPast p (elim_double_negation \<phi>) (elim_double_negation \<psi>)"
 | "elim_double_negation (Formula.Neg \<phi>) = Formula.Neg (elim_double_negation \<phi>)"
 | "elim_double_negation (Formula.Or \<phi> \<psi>) = Formula.Or (elim_double_negation \<phi>) (elim_double_negation \<psi>)"
@@ -2133,6 +2150,8 @@ next
   case (3 p \<phi> \<psi>)
   then show ?case unfolding elim_double_negation.simps Formula.sat.simps 3 elim_double_negation_nfv by auto
 next
+  case (4 p \<phi> \<psi>)
+  then show ?case unfolding elim_double_negation.simps Formula.sat.simps 4 elim_double_negation_nfv by auto
 qed (auto simp: Rewriting.match_map_regex elim_double_negation_fvi split:nat.splits)
 
 definition normalize where
