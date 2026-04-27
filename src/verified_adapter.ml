@@ -101,6 +101,16 @@ let convert_formula dbschema f =
       let fvl1 = List.flatten (List.map Predicate.tvars ts) in
       let lets' = (n, a) :: lets in
       LetPast (n, convert_formula_vars fvl1 [] lets' f1, convert_formula_vars fvl bvl lets' f2)
+  | Frz (p,f1,f2) ->
+      let (n,a,ts) = Predicate.get_info p in
+      if MFOTL.contains_pred_na n a f1 then
+        failwith (Printf.sprintf
+          "[verified_adapter] frozen predicate %s/%d must not appear in the frozen subformula (f1)" n a);
+      let fvl1 = List.flatten (List.map Predicate.tvars ts) in
+      (* p is in scope for f2 (ψ) but not for f1 (φ) *)
+      let lets2 = (n, a) :: lets in
+      Frz (n, convert_formula_vars fvl1 [] lets f1,
+               convert_formula_vars fvl bvl lets2 f2)
   | Neg f -> Neg (convert_formula_vars fvl bvl lets f)
   | And (f1,f2) -> And (convert_formula_vars fvl bvl lets f1, convert_formula_vars fvl bvl lets f2)
   | Or (f1,f2) -> Or (convert_formula_vars fvl bvl lets f1, convert_formula_vars fvl bvl lets f2)
