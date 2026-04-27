@@ -113,7 +113,6 @@ rule
   | "TRUE"                      { f "TRUE" lexbuf; TRUE }
   | "LET"                       { f "LET" lexbuf; LET }
   | "LETPAST"                   { f "LETPAST" lexbuf; LETPAST }
-  (* FRZ: keyword for the freeze operator "FRZ p = φ IN ψ" *)
   | "FRZ"                       { f "FRZ" lexbuf; FRZ }
   | "IN"                        { f "IN" lexbuf; IN }
   | "NOT"                       { f "NOT" lexbuf; NOT }
