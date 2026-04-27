@@ -62,6 +62,7 @@ let elim_double_negation f =
     | Pred p -> Pred p
     | Let (p,f1,f2) -> Let (p,elim f1, elim f2)
     | LetPast (p,f1,f2) -> LetPast (p,elim f1, elim f2)
+    | Frz (p,f1,f2) -> Frz (p, elim f1, elim f2)
 
     | Neg (Neg f) -> elim f
 
@@ -114,6 +115,7 @@ let simplify_terms f =
       Pred (Predicate.make_predicate (name, new_tlist))
     | Let (p,f1,f2) -> Let (p, s f1, s f2)
     | LetPast (p,f1,f2) -> LetPast (p, s f1, s f2)
+    | Frz (p,f1,f2) -> Frz (p, s f1, s f2)
     | Neg f -> Neg (s f)
     | And (f1, f2) -> And (s f1, s f2)
     | Or (f1, f2) -> Or (s f1, s f2)
@@ -158,6 +160,7 @@ let rec elim_syntactic_sugar g =
 
     | Let (p,f1,f2) -> Let (p, elim f1, elim f2)
     | LetPast (p,f1,f2) -> LetPast (p, elim f1, elim f2)
+    | Frz (p,f1,f2) -> Frz (p, elim f1, elim f2)
     | Neg f -> Neg (elim f)
     | And (f1, f2) -> And (elim f1, elim f2)
     | Or (f1, f2) -> Or (elim f1, elim f2)
@@ -225,6 +228,8 @@ let push_negation g =
     | Neg (Implies (f1, f2) as f) -> push (Neg (push f))
     | Neg (Equiv (f1, f2) as f) -> push (Neg (push f))
     | Neg (Let (p,f1,f2)) -> Let (p,f1, push (Neg f2))
+    | Neg (LetPast (p,f1,f2)) -> LetPast (p,f1, push (Neg f2))
+    | Neg (Frz (p,f1,f2)) -> Frz (p, f1, push (Neg f2))
     | Neg (Since (intv, f1, f2)) -> if !Misc.verified 
       then Trigger (intv, push (Neg f1), push (Neg f2))
       else Neg (Since (intv, push f1, push f2))
@@ -237,6 +242,7 @@ let push_negation g =
     | Neg f -> Neg (push f)
     | Let (p,f1,f2) -> Let (p,f1, push f2)
     | LetPast (p,f1,f2) -> LetPast (p,f1, push f2)
+    | Frz (p,f1,f2) -> Frz (p, f1, push f2)
     | Equal _ | Less _ | LessEq _ | Pred _ | Substring _ | Matches _ -> f
     | And (f1, f2) -> And (push f1, push f2)
     | Or (f1, f2) -> Or (push f1, push f2)
@@ -388,6 +394,12 @@ let rec is_monitorable f =
     else is_monitorable f2
 
   | LetPast (p,f1,f2) ->
+    let (is_mon1, r1) = is_monitorable f1 in
+    if not is_mon1
+    then (is_mon1, r1)
+    else is_monitorable f2
+
+  | Frz (p,f1,f2) ->
     let (is_mon1, r1) = is_monitorable f1 in
     if not is_mon1
     then (is_mon1, r1)
@@ -638,6 +650,7 @@ let rec rr = function
      set the boolean result accordingly. *)
   | Let (_,_,f) -> rr f
   | LetPast (_,_,f) -> rr f
+  | Frz (_,_,f) -> rr f
   | _ -> failwith "[Rewriting.rr] internal error: syntactic sugar (IMPL, EQUIV, FORALL, ALWAYS and PAST_ALWAYS) not supported"
   and rr_re future = function 
   | Skip n -> ([],true)
@@ -874,6 +887,8 @@ function
     -> (check_intervals f1) && (check_intervals f2)
   | LetPast (_,f1,f2)
     -> (check_intervals f1) && (check_intervals f2)
+  | Frz (_,f1,f2)
+    -> (check_intervals f1) && (check_intervals f2)
 
   | Eventually (intv, f)
   | Always (intv, f)
@@ -941,6 +956,8 @@ function
     -> (check_bounds f1) && (check_bounds f2)
   | LetPast (_,f1,f2)
     -> (check_bounds f1) && (check_bounds f2)
+  | Frz (_,f1,f2)
+    -> (check_bounds f1) && (check_bounds f2)
 
   | Eventually (intv, f)
   | Always (intv, f)
@@ -991,6 +1008,8 @@ let rec is_future = function
   | Let (_,f1,f2)
     -> (is_future f1) || (is_future f2)
   | LetPast (_,f1,f2)
+    -> (is_future f1) || (is_future f2)
+  | Frz (_,f1,f2)
     -> (is_future f1) || (is_future f2)
 
   | Next (_, _)
@@ -1055,6 +1074,37 @@ let rec check_let = function
       let string_of_vars = List.fold_left (fun s v -> s ^ " " ^ string_of_var v) "" in
       let str = Printf.sprintf "[Rewriting.check_let] LetPast %s's parameters %s do not coincide with \
       free variables %s of %s" n (string_of_vars prms) (string_of_vars fv1) (string_of_formula "" f1)
+      in failwith str
+    else ();
+    check_let f1 && check_let f2
+  | Frz (p,f1,f2) ->
+    let (n,a,ts) = get_info p in
+    let check_params = List.for_all (fun t -> match t with Var _ -> true | _ -> false) ts in
+    if not check_params
+    then
+      let string_of_terms = List.fold_left (fun s v -> s ^ " " ^ string_of_term v) "" in
+      let str = Printf.sprintf "[Rewriting.check_let] FRZ %s's parameters %s must be variables" n (string_of_terms ts)
+      in failwith str
+    else ();
+    let prms = List.flatten (List.map tvars ts) in
+    let fv1 = free_vars f1 in
+    if (List.length fv1) != a
+    then
+      let str = Printf.sprintf "[Rewriting.check_let] FRZ %s's arity %n must match the number \
+      of free variables of %s " n a (string_of_formula "" f1)
+      in failwith str
+    else ();
+    if not (Misc.subset fv1 prms && Misc.subset prms fv1)
+    then
+      let string_of_vars = List.fold_left (fun s v -> s ^ " " ^ string_of_var v) "" in
+      let str = Printf.sprintf "[Rewriting.check_let] FRZ %s's parameters %s do not coincide with \
+      free variables %s of %s" n (string_of_vars prms) (string_of_vars fv1) (string_of_formula "" f1)
+      in failwith str
+    else ();
+    (* FRZ is non-recursive: p must not appear in f1 *)
+    if MFOTL.contains_pred_na n a f1
+    then
+      let str = Printf.sprintf "[Rewriting.check_let] FRZ %s is recursive: predicate %s/%d appears in its definition formula" n n a
       in failwith str
     else ();
     check_let f1 && check_let f2
@@ -1137,6 +1187,14 @@ let expand_let mode f =
     let f2' = expand_let_rec m' f2 in
     LetPast (p, f1', f2')
 
+  | Frz (p, f1, f2) ->
+    (* Frz is non-recursive: p is not in scope in f1, only in f2 *)
+    let (n, a, _) = get_info p in
+    let m' = List.remove_assoc (n, a) m in
+    let f1' = expand_let_rec m' f1 in
+    let f2' = expand_let_rec m' f2 in
+    Frz (p, f1', f2')
+
   | Neg f -> Neg (expand_let_rec m f)
   | Exists (v, f) -> Exists (v,expand_let_rec m f)
   | ForAll (v, f) -> ForAll (v,expand_let_rec m f)
@@ -1202,6 +1260,7 @@ let rec check_aggregations = function
 
   | Let (_,f1,f2)
   | LetPast (_,f1,f2)
+  | Frz (_,f1,f2)
   | And (f1, f2)
   | Or (f1, f2)
   | Implies (f1, f2)
@@ -1579,6 +1638,24 @@ let rec type_check_formula (sch, vars) f =
     let (s2, v2, f2) = type_check_formula (delta,vars) f2 in
     let new_delta = List.filter (fun (p,_) -> not ((n,a)=p)) s2 in
     (shadowed_pred@new_delta, v2, LetPast(p,f1,f2))
+
+  | Frz (p, f1, f2) ->
+    (* f1 is checked without p in scope (non-recursive definition);
+       f2 is checked with p added to the schema (p is in scope in the body) *)
+    let (n,a,ts) = get_info p in
+    let new_vars = List.map (fun v -> match v with (Var t) -> t | _ -> failwith "Internal error") ts in
+    let new_typed_vars =
+      List.fold_left
+        (fun vrs vr -> (vr,new_type_symbol TAny sch (List.append vars vrs))::vrs) [] new_vars in
+    let (s1,v1,f1) = type_check_formula (sch, new_typed_vars) f1 in
+    assert((List.length v1) = (List.length new_typed_vars));
+    let new_sig = List.map (fun v -> (v, List.assoc v v1)) new_vars in
+    let new_sig = List.map (fun (_,t) -> t) new_sig in
+    let (shadowed_pred,rest) = List.partition (fun (p,_) -> (n,a)=p) s1 in
+    let delta = ((n,a),new_sig)::rest in
+    let (s2, v2, f2) = type_check_formula (delta,vars) f2 in
+    let new_delta = List.filter (fun (p,_) -> not ((n,a)=p)) s2 in
+    (shadowed_pred@new_delta, v2, Frz(p,f1,f2))
 
   | Neg f -> let (s,v,f) = type_check_formula (sch, vars) f in (s,v, Neg f)
   | Prev (intv,f) -> let (s,v,f) = type_check_formula (sch, vars) f in (s,v, Prev (intv,f))

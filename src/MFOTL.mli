@@ -79,6 +79,7 @@ type formula =
   | Pred of predicate
   | Let of (predicate * formula * formula)
   | LetPast of (predicate * formula * formula)
+  | Frz of (predicate * formula * formula)
   | Neg of formula
   | And of (formula * formula)
   | Or of (formula * formula)
@@ -165,6 +166,10 @@ val substitute_vars: (Predicate.var * Predicate.var Predicate.eterm) list -> for
 
 val count_pred_uses: Predicate.predicate -> formula -> int
   (** [count_pred_uses p f] counts how often the predicate [p] is used within [f] *)
+
+val contains_pred_na: string -> int -> formula -> bool
+  (** [contains_pred_na name arity f] returns [true] if the predicate with the
+      given name and arity appears free in [f], respecting shadowing by Let/LetPast/Frz. *)
 
 (** Conversion functions: *)
 

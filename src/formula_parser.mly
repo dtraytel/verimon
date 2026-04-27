@@ -142,7 +142,7 @@
 %token <Z.t> INT
 %token <float> RAT
 %token <int*char> TU
-%token LET LETPAST IN NOT AND OR IMPL EQUIV EX FA
+%token LET LETPAST FRZ IN NOT AND OR IMPL EQUIV EX FA
 %token PREV NEXT EVENTUALLY ONCE ALWAYS PAST_ALWAYS SINCE TRIGGER UNTIL RELEASE BAR FREX PREX
 %token CNT MIN MAX SUM AVG MED
 %token END
@@ -157,7 +157,7 @@
    made by default, now made explicit so the conflict is no longer reported. */
 %nonassoc REDUCE_CONCAT
 %nonassoc AGGREG
-%nonassoc LET IN
+%nonassoc LET FRZ IN
 %right SINCE TRIGGER UNTIL RELEASE
 %nonassoc PREV NEXT EVENTUALLY ONCE ALWAYS PAST_ALWAYS 
 %nonassoc EX FA
@@ -200,6 +200,10 @@ formula:
   | LETPAST predicate EQ formula IN formula
                                     { f "f(letpast)"; match $2 with
                                                   | Pred p -> LetPast (p,$4,$6)
+                                                  | _ -> failwith "[formula_parser.mly] expected predicate"}
+  | FRZ predicate EQ formula IN formula
+                                    { f "f(frz)"; match $2 with
+                                                  | Pred p -> Frz (p,$4,$6)
                                                   | _ -> failwith "[formula_parser.mly] expected predicate"}
   | term EQ term                    { f "f(eq)"; check (Equal ($1,$3)) }
   | term LESSEQ term                { f "f(leq)"; check (LessEq ($1,$3)) }
