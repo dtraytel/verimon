@@ -1163,7 +1163,6 @@ let expand_let mode f =
     LetPast (p, f1', f2')
 
   | Frz (p, f1, f2) ->
-    (* Frz is non-recursive: p is not in scope in f1, only in f2 *)
     let (n, a, _) = get_info p in
     let m' = List.remove_assoc (n, a) m in
     let f1' = expand_let_rec m' f1 in
