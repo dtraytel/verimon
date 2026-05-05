@@ -525,45 +525,6 @@ let same_pred p1 p2 =
   let (n2, a2, _) = get_info p2 in
   n1 = n2 && a1 = a2
 
-(* contains_pred_na name arity f: true iff the predicate (name, arity) appears
-   anywhere in f as a Pred node, respecting Let/LetPast/Frz shadowing. *)
-let rec contains_pred_na (n : string) (a : int) (f : formula) : bool =
-  match f with
-  | Pred p ->
-      let (pn, pa, _) = get_info p in
-      pn = n && pa = a
-  | Let (p, f1, f2) ->
-      let (pn, pa, _) = get_info p in
-      contains_pred_na n a f1 ||
-      (* p shadows (n,a) in f2 if they match *)
-      (not (pn = n && pa = a) && contains_pred_na n a f2)
-  | LetPast (p, f1, f2) ->
-      let (pn, pa, _) = get_info p in
-      if pn = n && pa = a then false
-      else contains_pred_na n a f1 || contains_pred_na n a f2
-  | Frz (p, f1, f2) ->
-      let (pn, pa, _) = get_info p in
-      contains_pred_na n a f1 ||
-      (not (pn = n && pa = a) && contains_pred_na n a f2)
-  | Neg f -> contains_pred_na n a f
-  | And (f1, f2) | Or (f1, f2) | Implies (f1, f2) | Equiv (f1, f2) ->
-      contains_pred_na n a f1 || contains_pred_na n a f2
-  | Exists (_, f) | ForAll (_, f) -> contains_pred_na n a f
-  | Aggreg (_, _, _, _, _, f) -> contains_pred_na n a f
-  | Prev (_, f) | Next (_, f) | Eventually (_, f) | Once (_, f)
-  | Always (_, f) | PastAlways (_, f) -> contains_pred_na n a f
-  | Since (_, f1, f2) | Trigger (_, f1, f2)
-  | Until (_, f1, f2) | Release (_, f1, f2) ->
-      contains_pred_na n a f1 || contains_pred_na n a f2
-  | Frex (_, r) | Prex (_, r) -> contains_pred_na_re n a r
-  | Equal _ | Less _ | LessEq _ | Substring _ | Matches _ -> false
-and contains_pred_na_re n a = function
-  | Wild -> false
-  | Test f -> contains_pred_na n a f
-  | Concat (r1, r2) | Plus (r1, r2) ->
-      contains_pred_na_re n a r1 || contains_pred_na_re n a r2
-  | Star r -> contains_pred_na_re n a r
-
 let count_pred_uses pred f =
   let rec go = function
     | Equal _

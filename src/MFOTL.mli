@@ -162,10 +162,6 @@ val substitute_vars: (Predicate.var * Predicate.var Predicate.eterm) list -> for
 val count_pred_uses: Predicate.predicate -> formula -> int
   (** [count_pred_uses p f] counts how often the predicate [p] is used within [f] *)
 
-val contains_pred_na: string -> int -> formula -> bool
-  (** [contains_pred_na name arity f] returns [true] if the predicate with the
-      given name and arity appears free in [f], respecting shadowing by Let/LetPast/Frz. *)
-
 (** Conversion functions: *)
 
 val ts_of_string: string -> timestamp
