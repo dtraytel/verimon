@@ -1101,12 +1101,6 @@ let rec check_let = function
       free variables %s of %s" n (string_of_vars prms) (string_of_vars fv1) (string_of_formula "" f1)
       in failwith str
     else ();
-    (* FRZ is non-recursive: p must not appear in f1 *)
-    if MFOTL.contains_pred_na n a f1
-    then
-      let str = Printf.sprintf "[Rewriting.check_let] FRZ %s is recursive: predicate %s/%d appears in its definition formula" n n a
-      in failwith str
-    else ();
     check_let f1 && check_let f2
 
   | Equal _
