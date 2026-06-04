@@ -54,30 +54,48 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
-  (* FRZ p phi psi:
-       - [comp_one] projects phi's free-variables onto p's parameters (like Let);
-       - the first [extformula] is the compiled phi-evaluator;
-       - the second [extformula] is the compiled psi (shared/static, like ELet.f2);
-         it lives in the outer formula tree so [add_index] injects live-predicate data
-         automatically; p is kept out of [lets] so its EPred queue is never populated;
-       - [frz_info] tracks phi's evaluation frontier and a pending frozen snapshot.
+  (* FRZ p phi psi.
+     Two evaluation modes chosen at compile-time:
 
-     Evaluation protocol at each outer timepoint j:
-       1. Advance frz_phi_last to crt, evaluating phi → frozen snapshot s_j.
-       2. Set pconst = Some s_j on all of p's EPred nodes inside psia.
-       3. Eval psia at crt (live predicates come from their queues filled by add_index;
-          p returns s_j via pconst regardless of which inner tp is looked at).
-       4. Clear pconst (reset to None) on those nodes.
-       If psia returns None (blocked on future data, e.g. NEXT), save s_j in
-       [frz_pending] and retry on the next eval call. *)
-  | EFrz of predicate * comp_one * extformula * extformula * frz_info * int
+     STATIC mode (non-temporal psi): psia lives in the outer formula tree, so
+       add_index automatically injects live-predicate data.  p's EPred nodes in
+       psia are shielded from add_index injection (p added to the 'lets' shadow
+       set) and are fed via pconst, set/cleared around each psia eval.
+       State accumulates correctly because there are no temporal operators.
+
+     PER-INSTANCE mode (temporal psi, e.g. ONCE or NEXT): a fresh psia is
+       compiled per outer timepoint so each instance starts with no history
+       (correct for constant-q semantics).  Only used when psia has no live
+       predicates (the only predicate in psia is the frozen p), so retroactive
+       data injection is unnecessary. *)
+  | EFrz of predicate * comp_one * extformula * frz_info * int
+
+and frz_inst = {
+  mutable inst_last: Neval.cell;
+  inst_tp: int;
+  inst_psi: extformula;
+  mutable inst_done: bool;
+}
+
+and frz_static = {
+  fst_psia: extformula;             (* compiled psia, static in formula tree *)
+  fst_q_pdinfos: pdinfo list;       (* q's EPred nodes in psia for pconst set/clear *)
+  mutable fst_pending: (int * relation) option;  (* pending snapshot for blocked retry *)
+}
+
+and frz_per_inst = {
+  mutable fpi_active: frz_inst list;
+  mutable fpi_mk_inst: unit -> extformula;  (* mutable: outer FRZ can chain pconst patching *)
+  fpi_db_snaps: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
+}
+
+and frz_mode =
+  | FrzStatic of frz_static
+  | FrzPerInst of frz_per_inst
 
 and frz_info = {
   mutable frz_phi_last: Neval.cell;
-  (* q's EPred pdinfo nodes inside psia (to set/clear pconst without a full tree walk) *)
-  frz_q_pdinfos: pdinfo list;
-  (* Pending frozen snapshot not yet consumed by psia (e.g., psia blocked on NEXT) *)
-  mutable frz_pending: (int * relation) option;  (* (outer_tp, snapshot) *)
+  frz_mode: frz_mode;
 }
 
 
@@ -95,7 +113,7 @@ and frz_info = {
   | ENext          (dt, f1, ninf, _)                             -> contains_eventually f1
   | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EUntil         (f1, f2, uinf, _)                             -> contains_eventually f1 || contains_eventually f2
-  | EFrz           (_, _, f1, f2, _, _)                          -> contains_eventually f1 || contains_eventually f2
+  | EFrz           (_, _, f1, _, _)                              -> contains_eventually f1
 
 (* 
   Print functions used for debugging
@@ -313,7 +331,7 @@ let rec pp_structure ppf ff =
   | ENext (_, f1, _, loc) -> pp_unary "NEXT" loc f1
   | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EUntil (f1, f2, _, loc) -> pp_binary "UNTIL" loc f1 f2
-  | EFrz (_, _, f1, f2, _, loc) -> pp_binary "FRZ" loc f1 f2
+  | EFrz (_, _, f1, _, loc) -> pp_unary "FRZ" loc f1
 
 let extf_structure ff =
   pp_structure Format.str_formatter ff;

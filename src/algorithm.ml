@@ -172,11 +172,18 @@ let add_let_index f n rels =
       update f1;
       update f2
 
-    (* For FRZ: p is shadowed inside psia (constant via pconst).  For other
-       let-bound predicates that appear in psia, we still need to update psia. *)
-    | EFrz ((pname, parity, _), _, f1, f2, _, _) ->
+    (* For FRZ: update phi (f1); for psia, handle by mode. *)
+    | EFrz ((pname2, parity2, _), _, f1, frz, _) ->
       update f1;
-      if (pname, parity) = n then () else update f2
+      (match frz.frz_mode with
+      | FrzStatic fs ->
+        (* Static: psia is in the tree; mirror ELet: skip if n is the frozen pred *)
+        if (pname2, parity2) = n then ()
+        else update fs.fst_psia
+      | FrzPerInst fp ->
+        List.iter (fun inst ->
+          if not inst.inst_done then update inst.inst_psi
+        ) fp.fpi_active)
   in
   update f
 
@@ -240,55 +247,143 @@ let rec eval f crt discard =
       add_let_index f2 (p, a) (List.rev (eval_f1 []));
       eval f2 crt discard, loc
 
-  | EFrz (p, comp, f1, f2, frz, loc) ->
-    (* ELet-style static psia approach:
-       - f1 = phi (provides frozen snapshot at each outer tp)
-       - f2 = psia (shared/static; live predicates filled by add_index; q skipped in add_index)
-       - pconst on q's EPred nodes is set around each psia evaluation
-
-       Protocol per outer tp j:
-         1. Get frozen snapshot from phi (either from pending retry or by advancing phi frontier)
-         2. Set pconst = snap on all q EPred nodes in psia
-         3. eval psia at crt → result
-         4. Clear pconst
-         If psia returns None (e.g. NEXT blocked), save snap in frz_pending for retry *)
+  | EFrz (p, comp, f1, frz, loc) ->
     let (tp_out, _) = Neval.get_data crt in
-    (* Determine which frozen snapshot to use for this outer tp *)
-    let snap_opt =
-      match frz.frz_pending with
-      | Some (pending_tp, snap) when pending_tp = tp_out ->
-        Some snap  (* retry with saved snapshot *)
-      | Some _ ->
-        (* frz_pending is for a different (older) tp: shouldn't happen in normal flow *)
-        None
-      | None ->
-        (* Advance phi frontier by one step *)
-        if frz.frz_phi_last == crt || Neval.is_last frz.frz_phi_last then None
+    let (pname, parity, _) = p in
+    (match frz.frz_mode with
+
+    (* ── STATIC MODE: non-temporal psia lives in the outer formula tree ── *)
+    | FrzStatic fs ->
+      (* Determine the frozen snapshot to use for this outer tp *)
+      let snap_opt =
+        match fs.fst_pending with
+        | Some (pending_tp, snap) when pending_tp = tp_out ->
+          Some snap  (* retry with saved snapshot *)
+        | Some _ -> None
+        | None ->
+          if frz.frz_phi_last == crt || Neval.is_last frz.frz_phi_last then None
+          else
+            let next_phi = Neval.get_next frz.frz_phi_last in
+            (match eval f1 next_phi false with
+            | Some frozen ->
+              frz.frz_phi_last <- next_phi;
+              Some frozen
+            | None -> None)
+      in
+      (match snap_opt with
+      | None -> (None, loc)
+      | Some snap ->
+        let frozen_rel = comp snap in
+        List.iter (fun pdinf -> pdinf.pconst <- Some frozen_rel) fs.fst_q_pdinfos;
+        let result = eval fs.fst_psia crt false in
+        List.iter (fun pdinf -> pdinf.pconst <- None) fs.fst_q_pdinfos;
+        (match result with
+        | Some _ -> fs.fst_pending <- None; (result, loc)
+        | None ->
+          fs.fst_pending <- Some (tp_out, snap);  (* blocked; save for retry *)
+          (None, loc)))
+
+    (* ── PER-INSTANCE MODE: temporal psia, fresh clone per outer tp ── *)
+    | FrzPerInst fp ->
+      (* Walk an inst_psi to permanently bind p's EPred nodes to frozen_rel.
+         For nested EFrz that doesn't shadow p, chain into frz_inner.fpi_mk_inst
+         so nested instances also inherit this outer frozen binding. *)
+      let rec set_pconst frozen_rel = function
+        | EPred ((n, a, _), _, pdinf, _) when n = pname && a = parity ->
+          pdinf.pconst <- Some frozen_rel
+        | EPred _ -> ()
+        | ERel _ -> ()
+        | ELet (_, _, ff1, ff2, _, _) ->
+          set_pconst frozen_rel ff1; set_pconst frozen_rel ff2
+        | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
+        | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+          set_pconst frozen_rel ff
+        | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
+        | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) ->
+          set_pconst frozen_rel ff1; set_pconst frozen_rel ff2
+        | EFrz ((fn, fa, _), _, ff1, frz_inner, _) ->
+          (match frz_inner.frz_mode with
+          | FrzPerInst fp_inner ->
+            set_pconst frozen_rel ff1;
+            if not (fn = pname && fa = parity) then begin
+              let orig = fp_inner.fpi_mk_inst in
+              fp_inner.fpi_mk_inst <- (fun () ->
+                let i = orig () in set_pconst frozen_rel i; i)
+            end
+          | FrzStatic fs_inner ->
+            set_pconst frozen_rel ff1;
+            if not (fn = pname && fa = parity) then begin
+              set_pconst frozen_rel fs_inner.fst_psia;
+              (* Also update q_pdinfos? They point to nodes in fst_psia, already done above *)
+              (* Update pending-cleared fst_pending: nothing needed *)
+              ()
+            end)
+      in
+      (* Retroactively inject a db snapshot into a fresh inst_psi.
+         Skips EPred nodes with pconst set (the frozen predicate p). *)
+      let rec inject_snap (i, tsi, snap) = function
+        | EPred ((n, _, _), icomp, pdinf, _) when pdinf.pconst = None ->
+          let rel = match List.assoc_opt n snap with Some r -> r | None -> Relation.empty in
+          Queue.add (i, tsi, icomp rel) pdinf.pqueue
+        | EPred _ -> ()
+        | ERel _ -> ()
+        | ELet (_, _, ff1, ff2, _, _) ->
+          inject_snap (i, tsi, snap) ff1; inject_snap (i, tsi, snap) ff2
+        | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
+        | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+          inject_snap (i, tsi, snap) ff
+        | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
+        | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) ->
+          inject_snap (i, tsi, snap) ff1; inject_snap (i, tsi, snap) ff2
+        | EFrz (_, _, ff1, _, _) -> inject_snap (i, tsi, snap) ff1
+      in
+      (* Advance phi up to (not past) crt, creating one new instance *)
+      let rec collect () =
+        if frz.frz_phi_last == crt || Neval.is_last frz.frz_phi_last then ()
         else
-          let next_phi = Neval.get_next frz.frz_phi_last in
-          (match eval f1 next_phi false with
+          let prev = frz.frz_phi_last in
+          let next = Neval.get_next prev in
+          (match eval f1 next false with
           | Some frozen ->
-            frz.frz_phi_last <- next_phi;
-            Some frozen
-          | None -> None)
-    in
-    (match snap_opt with
-    | None -> (None, loc)
-    | Some snap ->
-      (* Set pconst on all q EPred nodes in psia *)
-      let frozen_rel = comp snap in
-      List.iter (fun pdinf -> pdinf.pconst <- Some frozen_rel) frz.frz_q_pdinfos;
-      let result = eval f2 crt false in
-      (* Clear pconst *)
-      List.iter (fun pdinf -> pdinf.pconst <- None) frz.frz_q_pdinfos;
-      (match result with
-      | Some _ ->
-        frz.frz_pending <- None;
-        (result, loc)
-      | None ->
-        (* psia blocked (e.g. NEXT needs future data); save snapshot for retry *)
-        frz.frz_pending <- Some (tp_out, snap);
-        (None, loc)))
+            frz.frz_phi_last <- next;
+            let (outer_tp, _) = Neval.get_data next in
+            let inst_psi = fp.fpi_mk_inst () in
+            set_pconst (comp frozen) inst_psi;
+            if not (Queue.is_empty fp.fpi_db_snaps) then
+              inject_snap (Queue.pop fp.fpi_db_snaps) inst_psi;
+            let inst = {inst_last = prev; inst_tp = outer_tp;
+                        inst_psi; inst_done = false} in
+            fp.fpi_active <- fp.fpi_active @ [inst];
+            collect ()
+          | None -> ())
+      in
+      collect ();
+      (* Drive active instances; collect diagonal result for tp_out *)
+      let result = ref None in
+      List.iter (fun inst ->
+        if not inst.inst_done then begin
+          let rec drive () =
+            if Neval.is_last inst.inst_last then ()
+            else begin
+              let next = Neval.get_next inst.inst_last in
+              let (tp_now, _) = Neval.get_data next in
+              let want_discard = tp_now <> inst.inst_tp in
+              (match eval inst.inst_psi next want_discard with
+              | Some rel ->
+                inst.inst_last <- next;
+                if tp_now = inst.inst_tp then begin
+                  if inst.inst_tp = tp_out then result := Some rel;
+                  inst.inst_done <- true
+                end;
+                if not inst.inst_done && not (Neval.is_last next) then drive ()
+              | None -> ())
+            end
+          in
+          drive ()
+        end
+      ) fp.fpi_active;
+      fp.fpi_active <- List.filter (fun inst -> not inst.inst_done) fp.fpi_active;
+      !result, loc)
 
   | ENeg (f1,loc) ->
     (match eval f1 crt discard with
@@ -574,12 +669,20 @@ let add_index f i tsi db =
       update lets f1;
       update lets f2
 
-    (* FRZ: update phi (f1); also update psia (f2) with p in the lets-shadowed set
-       so that q's EPred nodes in psia are never populated by add_index (q is
-       provided via pconst during eval, not via the queue). *)
-    | EFrz ((pname, _, _), _, f1, f2, _, _) ->
+    (* FRZ: update phi (f1); psia handling depends on mode. *)
+    | EFrz ((pname3, _, _), _, f1, frz, _) ->
       update lets f1;
-      update (pname :: lets) f2
+      (match frz.frz_mode with
+      | FrzStatic fs ->
+        (* Static: psia in tree; shadow p so its EPred nodes are never queue-filled *)
+        update (pname3 :: lets) fs.fst_psia
+      | FrzPerInst fp ->
+        (* Per-instance: inject into active instances; save snapshot for new ones *)
+        List.iter (fun inst ->
+          if not inst.inst_done then update lets inst.inst_psi
+        ) fp.fpi_active;
+        let snap = Hashtbl.fold (fun k v acc -> (k, v) :: acc) db [] in
+        Queue.add (i, tsi, snap) fp.fpi_db_snaps)
   in
   update [] f
 
@@ -627,8 +730,8 @@ let add_ext neval f =
   | LetPast _ -> failwith "LETPAST is not supported except in -verified mode"
 
   | Frz (p, f1, f2) ->
-    (* Compile phi (f1); compile psia (f2) as a static shared formula (ELet-style).
-       The projection of phi's free-vars onto p's params mirrors ELet. *)
+    (* Compile phi (f1); choose static vs per-instance mode for psia based on
+       whether f2 contains any temporal operator. *)
     let attr1 = MFOTL.free_vars f1 in
     let attrp = Predicate.pvars p in
     let new_pos = List.map snd (Table.get_matches attr1 attrp) in
@@ -639,35 +742,53 @@ let add_ext neval f =
         Some (fun t -> Some (Tuple.projections new_pos t))
     in
     let ff1 = add_ext post1 f1 in
-    let ff2 = add_ext None f2 in
     let comp1 = (fun rel -> rel) in
-    (* Walk ff2 to collect all EPred nodes that correspond to the frozen predicate p.
-       These are the nodes whose pconst we set/clear around each psia evaluation.
-       We skip into nested EFrz bodies (they have their own frozen binding). *)
     let (pname, parity, _) = p in
-    let rec collect_q_pdinfos acc = function
-      | ERel _ -> acc
-      | EPred ((n, a, _), _, pdinf, _) when n = pname && a = parity -> pdinf :: acc
-      | EPred _ -> acc
-      | ELet (_, _, ff1b, ff2b, _, _) -> collect_q_pdinfos (collect_q_pdinfos acc ff1b) ff2b
-      | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
-      | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
-        collect_q_pdinfos acc ff
-      | EAnd (_, ff1b, ff2b, _, _) | EOr (_, ff1b, ff2b, _, _)
-      | ESince (ff1b, ff2b, _, _) | EUntil (ff1b, ff2b, _, _) ->
-        collect_q_pdinfos (collect_q_pdinfos acc ff1b) ff2b
-      | EFrz ((fn, fa, _), _, ff1b, ff2b, _, _) ->
-        let acc = collect_q_pdinfos acc ff1b in
-        (* If inner FRZ also binds q, then q is shadowed inside ff2b *)
-        if fn = pname && fa = parity then acc
-        else collect_q_pdinfos acc ff2b
+    (* Detect temporal operators in psia (source formula level) *)
+    let rec has_temporal = function
+      | MFOTL.Prev _ | MFOTL.Next _ | MFOTL.Once _ | MFOTL.PastAlways _
+      | MFOTL.Eventually _ | MFOTL.Always _ | MFOTL.Since _ | MFOTL.Until _
+      | MFOTL.Trigger _ | MFOTL.Release _ | MFOTL.Frex _ | MFOTL.Prex _ -> true
+      | MFOTL.Neg f' | MFOTL.Exists (_, f') | MFOTL.ForAll (_, f')
+      | MFOTL.Aggreg (_, _, _, _, _, f') -> has_temporal f'
+      | MFOTL.And (a, b) | MFOTL.Or (a, b) | MFOTL.Implies (a, b) | MFOTL.Equiv (a, b)
+      | MFOTL.Let (_, a, b) | MFOTL.LetPast (_, a, b) | MFOTL.Frz (_, a, b) ->
+        has_temporal a || has_temporal b
+      | _ -> false
     in
-    let q_pdinfos = collect_q_pdinfos [] ff2 in
-    EFrz (p, comp1, ff1, ff2,
-          {frz_phi_last = neval0;
-           frz_q_pdinfos = q_pdinfos;
-           frz_pending = None},
-          next_loc())
+    let frz_mode =
+      if has_temporal f2 then
+        (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
+        FrzPerInst {fpi_active = []; fpi_mk_inst = (fun () -> add_ext None f2);
+                    fpi_db_snaps = Queue.create ()}
+      else begin
+        (* Static: compile psia once, collect q's EPred pdinfo nodes *)
+        let ff2 = add_ext None f2 in
+        let rec collect_q acc = function
+          | ERel _ -> acc
+          | EPred ((n, a, _), _, pdinf, _) when n = pname && a = parity -> pdinf :: acc
+          | EPred _ -> acc
+          | ELet (_, _, g1, g2, _, _) -> collect_q (collect_q acc g1) g2
+          | ENeg (g, _) | EExists (_, g, _) | EAggreg (_, _, g, _)
+          | EAggOnce (_, _, g, _) | EPrev (_, g, _, _) | ENext (_, g, _, _) ->
+            collect_q acc g
+          | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
+          | ESince (g1, g2, _, _) | EUntil (g1, g2, _, _) ->
+            collect_q (collect_q acc g1) g2
+          | EFrz ((fn, fa, _), _, g1, frz_inner, _) ->
+            let acc = collect_q acc g1 in
+            (* If inner FRZ also binds q, q is shadowed inside its psia *)
+            (match frz_inner.frz_mode with
+            | FrzStatic fs_inner ->
+              if fn = pname && fa = parity then acc
+              else collect_q acc fs_inner.fst_psia
+            | FrzPerInst _ -> acc)  (* per-inst psia is dynamic, can't walk *)
+        in
+        let q_pdinfos = collect_q [] ff2 in
+        FrzStatic {fst_psia = ff2; fst_q_pdinfos = q_pdinfos; fst_pending = None}
+      end
+    in
+    EFrz (p, comp1, ff1, {frz_phi_last = neval0; frz_mode}, next_loc())
 
   | Equal (t1, t2) ->
     let rel = apply_post post (Relation.eval_equal t1 t2) in

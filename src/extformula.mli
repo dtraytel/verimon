@@ -31,10 +31,32 @@ type pdinfo = {
   mutable pconst: relation option;
 }
 
+and frz_inst = {
+  mutable inst_last: Neval.cell;
+  inst_tp: int;
+  inst_psi: extformula;
+  mutable inst_done: bool;
+}
+
+and frz_static = {
+  fst_psia: extformula;
+  fst_q_pdinfos: pdinfo list;
+  mutable fst_pending: (int * relation) option;
+}
+
+and frz_per_inst = {
+  mutable fpi_active: frz_inst list;
+  mutable fpi_mk_inst: unit -> extformula;
+  fpi_db_snaps: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
+}
+
+and frz_mode =
+  | FrzStatic of frz_static
+  | FrzPerInst of frz_per_inst
+
 and frz_info = {
   mutable frz_phi_last: Neval.cell;
-  frz_q_pdinfos: pdinfo list;
-  mutable frz_pending: (int * relation) option;
+  frz_mode: frz_mode;
 }
 
 and extformula =
@@ -51,7 +73,7 @@ and extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
-  | EFrz of predicate * comp_one * extformula * extformula * frz_info * int
+  | EFrz of predicate * comp_one * extformula * frz_info * int
 
 val contains_eventually: extformula -> bool
 
