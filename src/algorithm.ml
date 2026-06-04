@@ -351,7 +351,23 @@ let rec eval f crt discard =
             set_pconst (comp frozen) inst_psi;
             if not (Queue.is_empty fp.fpi_db_snaps) then
               inject_snap (Queue.pop fp.fpi_db_snaps) inst_psi;
-            let inst = {inst_last = prev; inst_tp = outer_tp;
+            (* Choose starting cell based on whether psia has live predicates:
+               - No live preds (only frozen q via pconst): start from neval0 so
+                 temporal operators like PREV advance plast through every step.
+               - Has live preds: start from prev so only the current tp's data
+                 (already injected above) is needed, avoiding missing historical data. *)
+            let rec has_live = function
+              | EPred (_, _, pdinf, _) -> pdinf.pconst = None
+              | ERel _ -> false
+              | ELet (_, _, g1, g2, _, _) -> has_live g1 || has_live g2
+              | ENeg (g, _) | EExists (_, g, _) | EAggreg (_, _, g, _)
+              | EAggOnce (_, _, g, _) | EPrev (_, g, _, _) | ENext (_, g, _, _) -> has_live g
+              | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
+              | ESince (g1, g2, _, _) | EUntil (g1, g2, _, _) -> has_live g1 || has_live g2
+              | EFrz (_, _, g1, _, _) -> has_live g1
+            in
+            let start = if has_live inst_psi then prev else fp.fpi_neval0 in
+            let inst = {inst_last = start; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
             fp.fpi_active <- fp.fpi_active @ [inst];
             collect ()
@@ -759,7 +775,8 @@ let add_ext neval f =
     let frz_mode =
       if has_temporal f2 then
         (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
-        FrzPerInst {fpi_active = []; fpi_mk_inst = (fun () -> add_ext None f2);
+        FrzPerInst {fpi_neval0 = neval0;
+                    fpi_active = []; fpi_mk_inst = (fun () -> add_ext None f2);
                     fpi_db_snaps = Queue.create ()}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)

@@ -84,6 +84,7 @@ and frz_static = {
 }
 
 and frz_per_inst = {
+  fpi_neval0: Neval.cell;           (* initial neval head; instances start from here *)
   mutable fpi_active: frz_inst list;
   mutable fpi_mk_inst: unit -> extformula;  (* mutable: outer FRZ can chain pconst patching *)
   fpi_db_snaps: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
