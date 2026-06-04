@@ -319,37 +319,34 @@ let rec eval f crt discard =
               ()
             end)
       in
-      (* Retroactively inject db snapshots into a fresh inst_psi.
-         Skips EPred nodes with pconst set (the frozen predicate p).
-         Context-aware: EUntil loops through multiple inner cells and needs the
-         full history; ESince/EAnd/etc. evaluate at ONE cell, so they only need
-         the current (most recent) snapshot. *)
-      let inject_snaps_into curr_snap all_hist =
-        let rec go in_until = function
+      (* Inject the accumulated db history (live-predicate data for every timepoint
+         seen so far) into a fresh inst_psi.  Skips EPred nodes with pconst set
+         (the frozen predicate p, fed via pconst).  This catches the instance up on
+         all timepoints that elapsed before its creation; subsequent timepoints are
+         fed incrementally by add_index (which updates every active instance). *)
+      let inject_history inst_psi =
+        let rec go = function
           | EPred ((n, _, _), icomp, pdinf, _) when pdinf.pconst = None ->
-            let snaps = if in_until then all_hist else [curr_snap] in
             List.iter (fun (i, tsi, snap) ->
               let rel = match List.assoc_opt n snap with Some r -> r | None -> Relation.empty in
               Queue.add (i, tsi, icomp rel) pdinf.pqueue
-            ) snaps
+            ) fp.fpi_db_hist
           | EPred _ | ERel _ -> ()
-          | ELet (_, _, ff1, ff2, _, _) -> go in_until ff1; go in_until ff2
+          | ELet (_, _, ff1, ff2, _, _) -> go ff1; go ff2
           | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
-          | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
-            go in_until ff
-          | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _) ->
-            go in_until ff1; go in_until ff2
-          | ESince (ff1, ff2, _, _) ->
-            (* SINCE evaluates at current crt only — use current snap *)
-            go false ff1; go false ff2
-          | EUntil (ff1, ff2, _, _) ->
-            (* UNTIL loops internally — inject full history *)
-            go true ff1; go true ff2
-          | EFrz (_, _, ff1, _, _) -> go in_until ff1
+          | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) -> go ff
+          | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
+          | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) -> go ff1; go ff2
+          | EFrz (_, _, ff1, _, _) -> go ff1
         in
-        go false
+        go inst_psi
       in
-      (* Advance phi up to (not past) crt, creating one new instance *)
+      (* Advance phi up to (not past) crt, creating one new instance per outer tp.
+         Each instance starts at neval0 and is driven cell-by-cell exactly like the
+         top-level eval_loop, which keeps any internal temporal operator (SINCE,
+         ONCE, PREV, UNTIL, EVENTUALLY) in lockstep: its result for inner tp k is
+         emitted when the drive reaches cell k.  The diagonal verdict (k = outer_tp)
+         is therefore produced naturally, after lookahead for future operators. *)
       let rec collect () =
         if frz.frz_phi_last == crt || Neval.is_last frz.frz_phi_last then ()
         else
@@ -361,48 +358,8 @@ let rec eval f crt discard =
             let (outer_tp, _) = Neval.get_data next in
             let inst_psi = fp.fpi_mk_inst () in
             set_pconst (comp frozen) inst_psi;
-            (* Inject db history into inst_psi: context-aware (UNTIL gets full
-               history for its live preds; SINCE and other operators get only
-               the current tp's snapshot). *)
-            (match fp.fpi_db_hist with
-            | [] -> ()
-            | _ ->
-              let curr_snap = List.nth fp.fpi_db_hist (List.length fp.fpi_db_hist - 1) in
-              inject_snaps_into curr_snap fp.fpi_db_hist inst_psi);
-            (* Choose starting cell based on whether psia has live predicates:
-               - No live preds (only frozen q via pconst): start from neval0 so
-                 temporal operators like PREV advance plast through every step.
-               - Has live preds: start from prev so only the current tp's data
-                 (already injected above) is needed, avoiding missing historical data. *)
-            let rec has_live = function
-              | EPred (_, _, pdinf, _) -> pdinf.pconst = None
-              | ERel _ -> false
-              | ELet (_, _, g1, g2, _, _) -> has_live g1 || has_live g2
-              | ENeg (g, _) | EExists (_, g, _) | EAggreg (_, _, g, _)
-              | EAggOnce (_, _, g, _) | EPrev (_, g, _, _) | ENext (_, g, _, _) -> has_live g
-              | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
-              | ESince (g1, g2, _, _) | EUntil (g1, g2, _, _) -> has_live g1 || has_live g2
-              | EFrz (_, _, g1, _, _) -> has_live g1
-            in
-            let start = if has_live inst_psi then prev else fp.fpi_neval0 in
-            (* For has_live instances (drive one step to diagonal), EUntil's
-               mu_out_tp must start at outer_tp so take_result_muaux emits the
-               result for the right outer timepoint.  Without this, it would emit
-               the result for tp=0 (empty/wrong relation) instead. *)
-            if has_live inst_psi then begin
-              let rec fix_until_out_tp = function
-                | EUntil (_, _, uinf, _) -> Optimized_mtl.set_muaux_out_tp uinf.uaux outer_tp
-                | ERel _ | EPred _ -> ()
-                | ELet (_, _, g1, g2, _, _) -> fix_until_out_tp g1; fix_until_out_tp g2
-                | ENeg (g, _) | EExists (_, g, _) | EAggreg (_, _, g, _)
-                | EAggOnce (_, _, g, _) | EPrev (_, g, _, _) | ENext (_, g, _, _) -> fix_until_out_tp g
-                | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
-                | ESince (g1, g2, _, _) -> fix_until_out_tp g1; fix_until_out_tp g2
-                | EFrz (_, _, g1, _, _) -> fix_until_out_tp g1
-              in
-              fix_until_out_tp inst_psi
-            end;
-            let inst = {inst_last = start; inst_tp = outer_tp;
+            inject_history inst_psi;
+            let inst = {inst_last = fp.fpi_neval0; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
             fp.fpi_active <- fp.fpi_active @ [inst];
             collect ()

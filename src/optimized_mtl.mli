@@ -19,6 +19,3 @@ val init_muaux: (tuple -> tuple option) option -> bool -> interval ->
 val update_lookahead_muaux: int -> timestamp -> muaux -> unit
 val take_result_muaux: muaux -> relation option
 val add_new_tables_muaux: relation -> relation -> muaux -> unit
-(** Set the output timepoint counter.  Used by FRZ to start fresh EUntil
-    instances at the correct output timepoint. *)
-val set_muaux_out_tp: muaux -> int -> unit
