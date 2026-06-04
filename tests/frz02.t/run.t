@@ -4,3 +4,6 @@ snapshot is empty, producing no output.
   $ monpoly -sig frz02.sig -formula frz02.mfotl -log frz02.log -verified
   @0 (time point 0): (1)
   @1 (time point 1): (2)
+  $ monpoly -sig frz02.sig -formula frz02.mfotl -log frz02.log -nofilteremptytp
+  @0 (time point 0): (1)
+  @1 (time point 1): (2)

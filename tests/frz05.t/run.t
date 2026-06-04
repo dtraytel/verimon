@@ -4,3 +4,6 @@ still {1}, so output is (1). Similarly at time 1: q frozen to {2}.
   $ monpoly -sig frz05.sig -formula frz05.mfotl -log frz05.log -verified
   @0 (time point 0): (1)
   @1 (time point 1): (2)
+  $ monpoly -sig frz05.sig -formula frz05.mfotl -log frz05.log -nofilteremptytp
+  @0 (time point 0): (1)
+  @1 (time point 1): (2)

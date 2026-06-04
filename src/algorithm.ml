@@ -319,23 +319,35 @@ let rec eval f crt discard =
               ()
             end)
       in
-      (* Retroactively inject a db snapshot into a fresh inst_psi.
-         Skips EPred nodes with pconst set (the frozen predicate p). *)
-      let rec inject_snap (i, tsi, snap) = function
-        | EPred ((n, _, _), icomp, pdinf, _) when pdinf.pconst = None ->
-          let rel = match List.assoc_opt n snap with Some r -> r | None -> Relation.empty in
-          Queue.add (i, tsi, icomp rel) pdinf.pqueue
-        | EPred _ -> ()
-        | ERel _ -> ()
-        | ELet (_, _, ff1, ff2, _, _) ->
-          inject_snap (i, tsi, snap) ff1; inject_snap (i, tsi, snap) ff2
-        | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
-        | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
-          inject_snap (i, tsi, snap) ff
-        | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
-        | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) ->
-          inject_snap (i, tsi, snap) ff1; inject_snap (i, tsi, snap) ff2
-        | EFrz (_, _, ff1, _, _) -> inject_snap (i, tsi, snap) ff1
+      (* Retroactively inject db snapshots into a fresh inst_psi.
+         Skips EPred nodes with pconst set (the frozen predicate p).
+         Context-aware: EUntil loops through multiple inner cells and needs the
+         full history; ESince/EAnd/etc. evaluate at ONE cell, so they only need
+         the current (most recent) snapshot. *)
+      let inject_snaps_into curr_snap all_hist =
+        let rec go in_until = function
+          | EPred ((n, _, _), icomp, pdinf, _) when pdinf.pconst = None ->
+            let snaps = if in_until then all_hist else [curr_snap] in
+            List.iter (fun (i, tsi, snap) ->
+              let rel = match List.assoc_opt n snap with Some r -> r | None -> Relation.empty in
+              Queue.add (i, tsi, icomp rel) pdinf.pqueue
+            ) snaps
+          | EPred _ | ERel _ -> ()
+          | ELet (_, _, ff1, ff2, _, _) -> go in_until ff1; go in_until ff2
+          | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
+          | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+            go in_until ff
+          | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _) ->
+            go in_until ff1; go in_until ff2
+          | ESince (ff1, ff2, _, _) ->
+            (* SINCE evaluates at current crt only — use current snap *)
+            go false ff1; go false ff2
+          | EUntil (ff1, ff2, _, _) ->
+            (* UNTIL loops internally — inject full history *)
+            go true ff1; go true ff2
+          | EFrz (_, _, ff1, _, _) -> go in_until ff1
+        in
+        go false
       in
       (* Advance phi up to (not past) crt, creating one new instance *)
       let rec collect () =
@@ -349,8 +361,14 @@ let rec eval f crt discard =
             let (outer_tp, _) = Neval.get_data next in
             let inst_psi = fp.fpi_mk_inst () in
             set_pconst (comp frozen) inst_psi;
-            if not (Queue.is_empty fp.fpi_db_snaps) then
-              inject_snap (Queue.pop fp.fpi_db_snaps) inst_psi;
+            (* Inject db history into inst_psi: context-aware (UNTIL gets full
+               history for its live preds; SINCE and other operators get only
+               the current tp's snapshot). *)
+            (match fp.fpi_db_hist with
+            | [] -> ()
+            | _ ->
+              let curr_snap = List.nth fp.fpi_db_hist (List.length fp.fpi_db_hist - 1) in
+              inject_snaps_into curr_snap fp.fpi_db_hist inst_psi);
             (* Choose starting cell based on whether psia has live predicates:
                - No live preds (only frozen q via pconst): start from neval0 so
                  temporal operators like PREV advance plast through every step.
@@ -367,6 +385,23 @@ let rec eval f crt discard =
               | EFrz (_, _, g1, _, _) -> has_live g1
             in
             let start = if has_live inst_psi then prev else fp.fpi_neval0 in
+            (* For has_live instances (drive one step to diagonal), EUntil's
+               mu_out_tp must start at outer_tp so take_result_muaux emits the
+               result for the right outer timepoint.  Without this, it would emit
+               the result for tp=0 (empty/wrong relation) instead. *)
+            if has_live inst_psi then begin
+              let rec fix_until_out_tp = function
+                | EUntil (_, _, uinf, _) -> Optimized_mtl.set_muaux_out_tp uinf.uaux outer_tp
+                | ERel _ | EPred _ -> ()
+                | ELet (_, _, g1, g2, _, _) -> fix_until_out_tp g1; fix_until_out_tp g2
+                | ENeg (g, _) | EExists (_, g, _) | EAggreg (_, _, g, _)
+                | EAggOnce (_, _, g, _) | EPrev (_, g, _, _) | ENext (_, g, _, _) -> fix_until_out_tp g
+                | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
+                | ESince (g1, g2, _, _) -> fix_until_out_tp g1; fix_until_out_tp g2
+                | EFrz (_, _, g1, _, _) -> fix_until_out_tp g1
+              in
+              fix_until_out_tp inst_psi
+            end;
             let inst = {inst_last = start; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
             fp.fpi_active <- fp.fpi_active @ [inst];
@@ -698,7 +733,7 @@ let add_index f i tsi db =
           if not inst.inst_done then update lets inst.inst_psi
         ) fp.fpi_active;
         let snap = Hashtbl.fold (fun k v acc -> (k, v) :: acc) db [] in
-        Queue.add (i, tsi, snap) fp.fpi_db_snaps)
+        fp.fpi_db_hist <- fp.fpi_db_hist @ [(i, tsi, snap)])
   in
   update [] f
 
@@ -777,7 +812,7 @@ let add_ext neval f =
         (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
         FrzPerInst {fpi_neval0 = neval0;
                     fpi_active = []; fpi_mk_inst = (fun () -> add_ext None f2);
-                    fpi_db_snaps = Queue.create ()}
+                    fpi_db_hist = []}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)
         let ff2 = add_ext None f2 in

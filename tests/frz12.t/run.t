@@ -3,3 +3,6 @@ The type-checker must reject this with an unknown-predicate error.
   $ monpoly -verified -sig frz12.sig -formula frz12.mfotl -log frz12.log
   Fatal error: exception Failure("[Rewriting.check_syntax] unknown predicate undeclared/1 in input formula")
   [2]
+  $ monpoly -sig frz12.sig -formula frz12.mfotl -log frz12.log -nofilteremptytp
+  Fatal error: exception Failure("[Rewriting.check_syntax] unknown predicate undeclared/1 in input formula")
+  [2]

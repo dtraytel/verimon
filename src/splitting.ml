@@ -597,4 +597,4 @@ let rec print_ef = function
   | ENext          (dt, f1, ninf, _)                             -> print_endline "Next";print_ef f1
   | ESince         (f1, f2, sinf, _)                             -> print_endline "Since";print_ef f1;print_ef f2
   | EUntil         (f1, f2, uinf, _)                             -> print_endline "Until";print_ef f1;print_ef f2
-  | EFrz           (_, _, f1, f2, _, _)                          -> print_endline "Frz";print_ef f1;print_ef f2
+  | EFrz           (_, _, f1, _, _)                              -> print_endline "Frz";print_ef f1

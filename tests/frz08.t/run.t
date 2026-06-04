@@ -3,3 +3,5 @@ At time 0: a(1) present, q() true. At time 1: only a(2), so a(1) absent, q() fal
 At time 2: a absent; q() false. Only time 0 produces output.
   $ monpoly -sig frz08.sig -formula frz08.mfotl -log frz08.log -verified
   @0 (time point 0): true
+  $ monpoly -sig frz08.sig -formula frz08.mfotl -log frz08.log -nofilteremptytp
+  @0 (time point 0): true

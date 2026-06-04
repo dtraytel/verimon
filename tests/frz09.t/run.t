@@ -4,3 +4,6 @@ Previously this formula was rejected; it must now run correctly.
   $ monpoly -verified -sig frz09.sig -formula frz09.mfotl -log frz09.log
   @0 (time point 0): (1)
   @1 (time point 1): (2)
+  $ monpoly -sig frz09.sig -formula frz09.mfotl -log frz09.log -nofilteremptytp
+  @0 (time point 0): (1)
+  @1 (time point 1): (2)

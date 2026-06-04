@@ -4,3 +4,6 @@ In psi, the frozen q is intersected with b(x).
   $ monpoly -verified -sig frz11.sig -formula frz11.mfotl -log frz11.log
   @0 (time point 0): (2)
   @1 (time point 1): (4)
+  $ monpoly -sig frz11.sig -formula frz11.mfotl -log frz11.log -nofilteremptytp
+  @0 (time point 0): (2)
+  @1 (time point 1): (4)

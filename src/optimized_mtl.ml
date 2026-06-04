@@ -490,3 +490,5 @@ let add_new_tables_muaux rel1 rel2 aux =
   else
     aux.mu_buf1 <- Some rel1
 
+
+let set_muaux_out_tp aux tp = aux.mu_out_tp <- tp

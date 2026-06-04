@@ -4,3 +4,6 @@ Output must be b(x) at each timepoint, not a(x).
   $ monpoly -verified -sig frz10.sig -formula frz10.mfotl -log frz10.log
   @0 (time point 0): (2)
   @1 (time point 1): (4)
+  $ monpoly -sig frz10.sig -formula frz10.mfotl -log frz10.log -nofilteremptytp
+  @0 (time point 0): (2)
+  @1 (time point 1): (4)
