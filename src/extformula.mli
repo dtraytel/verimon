@@ -23,9 +23,23 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
-type extformula =
+(* pdinfo: per-predicate info with optional constant relation for FRZ.
+   When [pconst = Some r] the predicate yields [r] at every timepoint
+   (the native "mres Const" analog) instead of consuming the queue. *)
+type pdinfo = {
+  pqueue: info;
+  mutable pconst: relation option;
+}
+
+and frz_info = {
+  mutable frz_phi_last: Neval.cell;
+  frz_q_pdinfos: pdinfo list;
+  mutable frz_pending: (int * relation) option;
+}
+
+and extformula =
   | ERel of relation * int
-  | EPred of predicate * comp_one * info * int
+  | EPred of predicate * comp_one * pdinfo * int
   | ELet of predicate * comp_one * extformula * extformula * linfo * int
   | ENeg of extformula * int
   | EAnd of comp_two * extformula * extformula * ainfo * int
@@ -37,13 +51,14 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  | EFrz of predicate * comp_one * extformula * extformula * frz_info * int
 
 val contains_eventually: extformula -> bool
 
 val prerr_auxel:  int * Relation.relation -> unit
 val prerr_sauxel: MFOTL.timestamp * Relation.relation -> unit
 
-val prerr_predinf: string -> info -> unit
+val prerr_predinf: string -> pdinfo -> unit
 val prerr_uinf: string -> uinfo -> unit
 
 val prerr_extf: string -> extformula -> unit

@@ -10,6 +10,11 @@ type info  = (int * timestamp * relation) Queue.t
 type linfo = {
   mutable llast: Neval.cell;
 }
+(* For the FRZ ("freeze") quantifier: a constant frozen relation can be bound
+   to a predicate so that it is returned at every (inner) timepoint without a
+   per-timepoint queue entry (the native analog of the verified "Const"/mres
+   representation that avoids the [replicate j alpha] cost). When [pconst] is
+   [Some r] the predicate yields [r] at every timepoint, ignoring its queue. *)
 type ainfo = {mutable arel: relation option}
 type pinfo = {mutable plast: Neval.cell}
 type ninfo = {mutable init: bool}
@@ -25,9 +30,19 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+(* Mutable per-predicate info: the usual queue of per-timepoint relations, plus
+   an optional [pconst] constant relation used by FRZ.  When [pconst = Some r]
+   the predicate returns [r] (after applying [comp]) at every timepoint, drawn
+   from a constant supply rather than the queue (the native "mres"-analog that
+   avoids replicating the frozen relation per timepoint). *)
+type pdinfo = {
+  pqueue: info;
+  mutable pconst: relation option;
+}
+
 type extformula =
   | ERel of relation * int
-  | EPred of predicate * comp_one * info * int
+  | EPred of predicate * comp_one * pdinfo * int
   | ELet of predicate * comp_one * extformula * extformula * linfo * int
   | ENeg of extformula * int
   | EAnd of comp_two * extformula * extformula * ainfo * int
@@ -39,6 +54,31 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  (* FRZ p phi psi:
+       - [comp_one] projects phi's free-variables onto p's parameters (like Let);
+       - the first [extformula] is the compiled phi-evaluator;
+       - the second [extformula] is the compiled psi (shared/static, like ELet.f2);
+         it lives in the outer formula tree so [add_index] injects live-predicate data
+         automatically; p is kept out of [lets] so its EPred queue is never populated;
+       - [frz_info] tracks phi's evaluation frontier and a pending frozen snapshot.
+
+     Evaluation protocol at each outer timepoint j:
+       1. Advance frz_phi_last to crt, evaluating phi → frozen snapshot s_j.
+       2. Set pconst = Some s_j on all of p's EPred nodes inside psia.
+       3. Eval psia at crt (live predicates come from their queues filled by add_index;
+          p returns s_j via pconst regardless of which inner tp is looked at).
+       4. Clear pconst (reset to None) on those nodes.
+       If psia returns None (blocked on future data, e.g. NEXT), save s_j in
+       [frz_pending] and retry on the next eval call. *)
+  | EFrz of predicate * comp_one * extformula * extformula * frz_info * int
+
+and frz_info = {
+  mutable frz_phi_last: Neval.cell;
+  (* q's EPred pdinfo nodes inside psia (to set/clear pconst without a full tree walk) *)
+  frz_q_pdinfos: pdinfo list;
+  (* Pending frozen snapshot not yet consumed by psia (e.g., psia blocked on NEXT) *)
+  mutable frz_pending: (int * relation) option;  (* (outer_tp, snapshot) *)
+}
 
 
   let rec contains_eventually = function
@@ -55,6 +95,7 @@ type extformula =
   | ENext          (dt, f1, ninf, _)                             -> contains_eventually f1
   | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EUntil         (f1, f2, uinf, _)                             -> contains_eventually f1 || contains_eventually f2
+  | EFrz           (_, _, f1, f2, _, _)                          -> contains_eventually f1 || contains_eventually f2
 
 (* 
   Print functions used for debugging
@@ -101,9 +142,9 @@ let prerr_aauxel (q,tsq,rel) =
 let prerr_inf inf =
   Misc.prerr_queue prerr_aauxel inf
 
-let prerr_predinf str inf =
+let prerr_predinf str pdinf =
   prerr_string str;
-  prerr_inf inf;
+  prerr_inf pdinf.pqueue;
   prerr_newline()
 
 let prerr_linf str inf =
@@ -134,10 +175,10 @@ let prerr_extf str ff =
       | ERel (_, loc) ->
         prerr_string "ERel\n";
 
-      | EPred (p,_,inf,loc) ->
+      | EPred (p,_,pdinf,loc) ->
         Predicate.prerr_predicate p;
         prerr_string ": inf=";
-        prerr_inf inf;
+        prerr_inf pdinf.pqueue;
         prerr_string "\n"
 
       | _ ->
@@ -272,6 +313,7 @@ let rec pp_structure ppf ff =
   | ENext (_, f1, _, loc) -> pp_unary "NEXT" loc f1
   | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EUntil (f1, f2, _, loc) -> pp_binary "UNTIL" loc f1 f2
+  | EFrz (_, _, f1, f2, _, loc) -> pp_binary "FRZ" loc f1 f2
 
 let extf_structure ff =
   pp_structure Format.str_formatter ff;

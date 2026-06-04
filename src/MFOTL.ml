@@ -321,7 +321,7 @@ let rec is_mfodl = function
   | Pred p -> false
   | Let (_,f1,f2) -> is_mfodl f1 || is_mfodl f2
   | LetPast (_,f1,f2) -> is_mfodl f1 || is_mfodl f2
-  | Frz (_,f1,f2) -> true
+  | Frz (_,f1,f2) -> is_mfodl f1 || is_mfodl f2
   | Neg f -> is_mfodl f
   | And (f1,f2) 
   | Or (f1,f2) 

@@ -26,7 +26,8 @@ let ext_to_m ff =
   let el2m linf = linf.llast in
   let rec e2m = function
     | ERel           (rel, loc)                         -> MRel         (rel, loc)
-    | EPred          (pred, c1, inf, loc)               -> MPred        (pred, c1, inf, loc)
+    | EPred          (pred, c1, pdinf, loc)             -> MPred        (pred, c1, pdinf.pqueue, loc)
+    | EFrz           _                                  -> failwith "FRZ: marshalling not yet supported"
     | ELet           (pred, c1, ext1, ext2, linf, loc)  -> MLet         (pred, c1, e2m ext1, e2m ext2, el2m linf, loc)
     | ENeg           (ext, loc)                         -> MNeg         (e2m ext, loc)
     | EAnd           (c2, ext1, ext2, ainf, loc)        -> MAnd         (c2, (e2m ext1), (e2m ext2), ainf, loc)
@@ -48,7 +49,7 @@ let m_to_ext mf =
   let ml2e mlast = {llast = mlast} in
   let rec m2e = function
     | MRel           (rel, loc)                        -> ERel         (rel, loc)
-    | MPred          (pred, c1, inf, loc)              -> EPred        (pred, c1, inf, loc)
+    | MPred          (pred, c1, inf, loc)              -> EPred        (pred, c1, {pqueue=inf; pconst=None}, loc)
     | MLet           (pred, c1, mf1, mf2, mlast, loc)  -> ELet         (pred, c1, m2e mf1, m2e mf2, ml2e mlast, loc)
     | MNeg           (mf, loc)                         -> ENeg         ((m2e mf), loc)
     | MAnd           (c2, mf1, mf2, ainf, loc)         -> EAnd         (c2, (m2e mf1), (m2e mf2), ainf, loc)

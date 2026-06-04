@@ -585,7 +585,7 @@ let split_with_slicer slicer num_partitions mf =
 
 let rec print_ef = function
   | ERel           (rel, _)                                      -> Printf.printf "Rel:"; Relation.print_rel "" rel; print_endline "";
-  | EPred          (p, comp, inf, _)                             -> print_endline "Pred:"; Queue.iter(fun e-> let _,_,r = e in Relation.print_rel "" r) inf; print_endline "";
+  | EPred          (p, comp, pdinf, _)                           -> print_endline "Pred:"; Queue.iter(fun e-> let _,_,r = e in Relation.print_rel "" r) pdinf.pqueue; print_endline "";
   | ELet           (p, comp, f1, f2, inf, _)                     -> print_endline "Let";print_ef f1; print_ef f2
   | ENeg           (f1, _)                                       -> print_endline "Neg";print_ef f1
   | EAnd           (c, f1, f2, ainf, _)                          -> print_endline "And";print_ef f1; print_ef f2
@@ -597,3 +597,4 @@ let rec print_ef = function
   | ENext          (dt, f1, ninf, _)                             -> print_endline "Next";print_ef f1
   | ESince         (f1, f2, sinf, _)                             -> print_endline "Since";print_ef f1;print_ef f2
   | EUntil         (f1, f2, uinf, _)                             -> print_endline "Until";print_ef f1;print_ef f2
+  | EFrz           (_, _, f1, f2, _, _)                          -> print_endline "Frz";print_ef f1;print_ef f2

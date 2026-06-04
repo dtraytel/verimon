@@ -146,9 +146,9 @@ let warn_if_empty_aggreg {op; default} {Aggreg.empty_rel; Aggreg.rel} =
 
 let add_let_index f n rels =
   let rec update = function
-    | EPred ((p, a, _), comp, inf, _) ->
+    | EPred ((p, a, _), comp, pdinf, _) ->
       if (p, a) = n then
-        List.iter (fun (i,tsi,rel) -> Queue.add (i,tsi, comp rel) inf) rels
+        List.iter (fun (i,tsi,rel) -> Queue.add (i,tsi, comp rel) pdinf.pqueue) rels
       else ()
 
     | ELet ((p, a, _), comp, f1, f2, inf, _) ->
@@ -171,6 +171,12 @@ let add_let_index f n rels =
     | EUntil (f1,f2,_,_) ->
       update f1;
       update f2
+
+    (* For FRZ: p is shadowed inside psia (constant via pconst).  For other
+       let-bound predicates that appear in psia, we still need to update psia. *)
+    | EFrz ((pname, parity, _), _, f1, f2, _, _) ->
+      update f1;
+      if (pname, parity) = n then () else update f2
   in
   update f
 
@@ -197,21 +203,26 @@ let rec eval f crt discard =
   let wrapper = function
   | ERel (rel,loc) -> Some rel, loc
 
-  | EPred (p,_,inf,loc) ->
+  | EPred (p,comp,pdinf,loc) ->
     if Misc.debugging Dbg_eval then
       begin
         prerr_string "[eval,Pred] ";
         Predicate.prerr_predicate p;
-        prerr_predinf  ": " inf
+        prerr_predinf  ": " pdinf
       end;
 
-    (if Queue.is_empty inf
-    then None
-    else begin
-      let (cq,ctsq,rel) = Queue.pop inf in
-      assert (cq = q && ctsq = tsq);
-      Some rel
-    end), loc
+    (* If a constant relation has been bound (e.g. by FRZ), return it without
+       consuming the queue.  Otherwise fall back to the normal per-timepoint queue. *)
+    (match pdinf.pconst with
+    | Some r -> Some (comp r)
+    | None ->
+      if Queue.is_empty pdinf.pqueue
+      then None
+      else begin
+        let (cq,ctsq,rel) = Queue.pop pdinf.pqueue in
+        assert (cq = q && ctsq = tsq);
+        Some rel
+      end), loc
 
   | ELet ((p, a, _), comp, f1, f2, inf, loc) ->
       let rec eval_f1 rels =
@@ -228,6 +239,56 @@ let rec eval f crt discard =
       in
       add_let_index f2 (p, a) (List.rev (eval_f1 []));
       eval f2 crt discard, loc
+
+  | EFrz (p, comp, f1, f2, frz, loc) ->
+    (* ELet-style static psia approach:
+       - f1 = phi (provides frozen snapshot at each outer tp)
+       - f2 = psia (shared/static; live predicates filled by add_index; q skipped in add_index)
+       - pconst on q's EPred nodes is set around each psia evaluation
+
+       Protocol per outer tp j:
+         1. Get frozen snapshot from phi (either from pending retry or by advancing phi frontier)
+         2. Set pconst = snap on all q EPred nodes in psia
+         3. eval psia at crt → result
+         4. Clear pconst
+         If psia returns None (e.g. NEXT blocked), save snap in frz_pending for retry *)
+    let (tp_out, _) = Neval.get_data crt in
+    (* Determine which frozen snapshot to use for this outer tp *)
+    let snap_opt =
+      match frz.frz_pending with
+      | Some (pending_tp, snap) when pending_tp = tp_out ->
+        Some snap  (* retry with saved snapshot *)
+      | Some _ ->
+        (* frz_pending is for a different (older) tp: shouldn't happen in normal flow *)
+        None
+      | None ->
+        (* Advance phi frontier by one step *)
+        if frz.frz_phi_last == crt || Neval.is_last frz.frz_phi_last then None
+        else
+          let next_phi = Neval.get_next frz.frz_phi_last in
+          (match eval f1 next_phi false with
+          | Some frozen ->
+            frz.frz_phi_last <- next_phi;
+            Some frozen
+          | None -> None)
+    in
+    (match snap_opt with
+    | None -> (None, loc)
+    | Some snap ->
+      (* Set pconst on all q EPred nodes in psia *)
+      let frozen_rel = comp snap in
+      List.iter (fun pdinf -> pdinf.pconst <- Some frozen_rel) frz.frz_q_pdinfos;
+      let result = eval f2 crt false in
+      (* Clear pconst *)
+      List.iter (fun pdinf -> pdinf.pconst <- None) frz.frz_q_pdinfos;
+      (match result with
+      | Some _ ->
+        frz.frz_pending <- None;
+        (result, loc)
+      | None ->
+        (* psia blocked (e.g. NEXT needs future data); save snapshot for retry *)
+        frz.frz_pending <- Some (tp_out, snap);
+        (None, loc)))
 
   | ENeg (f1,loc) ->
     (match eval f1 crt discard with
@@ -467,24 +528,30 @@ let rec eval f crt discard =
 
 let add_index f i tsi db =
   let rec update lets = function
-    | EPred (p, comp, inf, _) ->
+    | EPred (p, comp, pdinf, _) ->
       let name = Predicate.get_name p in
       if List.mem name lets
       then ()
-      else
-        let rel =
-          (try Hashtbl.find db name
-           with Not_found ->
-           match name with
-           | "tp" -> Relation.singleton (Tuple.make_tuple [Int (Z.of_int i)])
-           | "ts" -> Relation.singleton (Tuple.make_tuple [Int tsi])
-           | "tpts" ->
-             Relation.singleton (Tuple.make_tuple [Int (Z.of_int i); Int tsi])
-           | _ -> Relation.empty
-          )
-        in
-        let rel = comp rel in
-        Queue.add (i,tsi,rel) inf
+      else begin
+        (* Skip queue injection for constant predicates (FRZ-bound) — they return
+           [pdinf.pconst] at every timepoint without a per-timepoint entry. *)
+        match pdinf.pconst with
+        | Some _ -> ()
+        | None ->
+          let rel =
+            (try Hashtbl.find db name
+             with Not_found ->
+             match name with
+             | "tp" -> Relation.singleton (Tuple.make_tuple [Int (Z.of_int i)])
+             | "ts" -> Relation.singleton (Tuple.make_tuple [Int tsi])
+             | "tpts" ->
+               Relation.singleton (Tuple.make_tuple [Int (Z.of_int i); Int tsi])
+             | _ -> Relation.empty
+            )
+          in
+          let rel = comp rel in
+          Queue.add (i,tsi,rel) pdinf.pqueue
+      end
 
     | ELet (p, comp, f1, f2, inf, _) ->
       update lets f1;
@@ -506,6 +573,13 @@ let add_index f i tsi db =
     | EUntil (f1,f2,_,_) ->
       update lets f1;
       update lets f2
+
+    (* FRZ: update phi (f1); also update psia (f2) with p in the lets-shadowed set
+       so that q's EPred nodes in psia are never populated by add_index (q is
+       provided via pconst during eval, not via the queue). *)
+    | EFrz ((pname, _, _), _, f1, f2, _, _) ->
+      update lets f1;
+      update (pname :: lets) f2
   in
   update [] f
 
@@ -534,7 +608,7 @@ let add_ext neval f =
   let rec add_ext post = function
   | Pred p ->
     let comp = Relation.eval_pred post p in
-    EPred (p, comp, Queue.create(), next_loc())
+    EPred (p, comp, {pqueue=Queue.create(); pconst=None}, next_loc())
 
   | Let (p, f1, f2) ->
     let attr1 = MFOTL.free_vars f1 in
@@ -551,6 +625,49 @@ let add_ext neval f =
     ELet (p, (fun rel -> rel), ff1, ff2, {llast = neval0}, next_loc())
 
   | LetPast _ -> failwith "LETPAST is not supported except in -verified mode"
+
+  | Frz (p, f1, f2) ->
+    (* Compile phi (f1); compile psia (f2) as a static shared formula (ELet-style).
+       The projection of phi's free-vars onto p's params mirrors ELet. *)
+    let attr1 = MFOTL.free_vars f1 in
+    let attrp = Predicate.pvars p in
+    let new_pos = List.map snd (Table.get_matches attr1 attrp) in
+    let post1 =
+      if Misc.is_id_permutation (List.length attr1) new_pos then
+        None
+      else
+        Some (fun t -> Some (Tuple.projections new_pos t))
+    in
+    let ff1 = add_ext post1 f1 in
+    let ff2 = add_ext None f2 in
+    let comp1 = (fun rel -> rel) in
+    (* Walk ff2 to collect all EPred nodes that correspond to the frozen predicate p.
+       These are the nodes whose pconst we set/clear around each psia evaluation.
+       We skip into nested EFrz bodies (they have their own frozen binding). *)
+    let (pname, parity, _) = p in
+    let rec collect_q_pdinfos acc = function
+      | ERel _ -> acc
+      | EPred ((n, a, _), _, pdinf, _) when n = pname && a = parity -> pdinf :: acc
+      | EPred _ -> acc
+      | ELet (_, _, ff1b, ff2b, _, _) -> collect_q_pdinfos (collect_q_pdinfos acc ff1b) ff2b
+      | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
+      | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+        collect_q_pdinfos acc ff
+      | EAnd (_, ff1b, ff2b, _, _) | EOr (_, ff1b, ff2b, _, _)
+      | ESince (ff1b, ff2b, _, _) | EUntil (ff1b, ff2b, _, _) ->
+        collect_q_pdinfos (collect_q_pdinfos acc ff1b) ff2b
+      | EFrz ((fn, fa, _), _, ff1b, ff2b, _, _) ->
+        let acc = collect_q_pdinfos acc ff1b in
+        (* If inner FRZ also binds q, then q is shadowed inside ff2b *)
+        if fn = pname && fa = parity then acc
+        else collect_q_pdinfos acc ff2b
+    in
+    let q_pdinfos = collect_q_pdinfos [] ff2 in
+    EFrz (p, comp1, ff1, ff2,
+          {frz_phi_last = neval0;
+           frz_q_pdinfos = q_pdinfos;
+           frz_pending = None},
+          next_loc())
 
   | Equal (t1, t2) ->
     let rel = apply_post post (Relation.eval_equal t1 t2) in
