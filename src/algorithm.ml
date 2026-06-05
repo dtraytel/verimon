@@ -337,7 +337,23 @@ let rec eval f crt discard =
           | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) -> go ff
           | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
           | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) -> go ff1; go ff2
-          | EFrz (_, _, ff1, _, _) -> go ff1
+          | EFrz (_, _, ff1, frz_inner, _) ->
+            (* Seed the nested per-instance FRZ's db history from this FRZ's
+               accumulated history.  Without this, the nested FRZ only starts
+               recording snapshots once an enclosing instance becomes active
+               under add_index — which happens after the timepoint at which the
+               instance is created — so it permanently misses the timepoints
+               before its creation.  Those missing snapshots only surface at
+               triple (or deeper) nesting, where a grandchild live predicate
+               (the phi of the innermost FRZ) is seeded from this nested
+               history; at double nesting the innermost psia has no live
+               predicates so the gap is invisible.  The fresh instance starts
+               with an empty fpi_db_hist, so assigning is safe (no duplication);
+               subsequent timepoints are appended incrementally by add_index. *)
+            (match frz_inner.frz_mode with
+             | FrzPerInst fp_inner -> fp_inner.fpi_db_hist <- fp.fpi_db_hist
+             | FrzStatic _ -> ());
+            go ff1
         in
         go inst_psi
       in

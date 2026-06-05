@@ -1,0 +1,1 @@
+FRZ q(x) = a(x) IN (EVENTUALLY[2,5] (q(x) AND ONCE[1,3] (EXISTS y. (b(x,y) OR c(x)))))
