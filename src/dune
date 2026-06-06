@@ -1,12 +1,23 @@
 (ocamllex formula_lexer log_lexer)
 (ocamlyacc formula_parser)
 
+; The verified kernel is generated from the Isabelle/HOL formalization and is
+; not meant to be edited, so its (many, harmless) compiler warnings are silenced
+; by isolating it in its own library with -w -a. It only depends on zarith.
+(library
+  (name verified)
+  (public_name libmonpoly.verified)
+  (libraries zarith)
+  (instrumentation (backend bisect_ppx))
+  (flags (:standard -w -a))
+  (modules verified))
+
 (library
   (name libmonpoly)
   (public_name libmonpoly)
-  (libraries str unix zarith)
+  (libraries str unix zarith verified)
   (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main)))
+  (modules (:standard \ Main verified)))
 
 (executable
   (name main)
