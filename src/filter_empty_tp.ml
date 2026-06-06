@@ -106,6 +106,14 @@ let intv_contains_zero = function
     (* Printf.printf "excludes zero\n"; *)
     false
 
+(* [tp], [ts] and [tpts] are special predicates that hold at *every* time point
+   (they expose the current time-point/time-stamp), including empty ones. Unlike
+   ordinary predicates they are therefore not false on an empty time point, so a
+   formula that depends on them must not be classified as filterable. *)
+let special_predicates = ["tp"; "ts"; "tpts"]
+
+let is_special_pred p = List.mem (get_name p) special_predicates
+
 let add_labels (lf : lformula) : label list =
   let labels = ref [] in
   (* single operator rules: LFalse, LTrue *)
@@ -113,10 +121,15 @@ let add_labels (lf : lformula) : label list =
    | LEqual (_,_)
    | LLess (_,_)
    | LLessEq (_,_)
-   | LSubstring (_, _) 
+   | LSubstring (_, _)
    | LMatches (_, _) -> ()
-   | LPred _ ->
-     labels := add_label LFalse !labels
+   | LPred p ->
+     (* a special predicate holds on an empty tp (LTrue); an ordinary predicate
+        has no tuples on an empty tp (LFalse) *)
+     if is_special_pred p then
+       labels := add_label LTrue !labels
+     else
+       labels := add_label LFalse !labels
    | LNeg (f1, l1) -> begin
        if (has_label LTrue l1) then
          labels := add_label LFalse !labels
