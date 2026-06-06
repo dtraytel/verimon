@@ -531,7 +531,19 @@ let add_ext neval f =
   let neval0 = Neval.get_last neval in
   let loc = ref 0 in
   let next_loc () = incr loc; !loc in
-  let rec add_ext post = function
+  (* A non-injective [post] is not fused into a temporal operator's msaux/muaux;
+     instead it is applied to the operator's result by an enclosing [EExists]. *)
+  let fuse_post post proj = if proj then None else post in
+  let wrap_post post proj node =
+    if proj then EExists (apply_post post, node, next_loc()) else node in
+  (* [proj] records whether [post] is non-injective (contains a projection).
+     A non-injective [post] must not be fused into the windowed maintenance of
+     temporal operators (Once/Since/Until/Eventually), because their result is
+     updated via set difference: two distinct pre-images may collapse to the
+     same image, so dropping one tuple leaving the window would wrongly remove
+     the shared image. Filters (and bijective reorderings) are injective and
+     remain safe to fuse. *)
+  let rec add_ext post proj = function
   | Pred p ->
     let comp = Relation.eval_pred post p in
     EPred (p, comp, Queue.create(), next_loc())
@@ -546,8 +558,8 @@ let add_ext neval f =
       else
         Some (fun t -> Some (Tuple.projections new_pos t))
     in
-    let ff1 = add_ext post1 f1 in
-    let ff2 = add_ext post f2 in
+    let ff1 = add_ext post1 false f1 in
+    let ff2 = add_ext post proj f2 in
     ELet (p, (fun rel -> rel), ff1, ff2, {llast = neval0}, next_loc())
 
   | LetPast _ -> failwith "LETPAST is not supported except in -verified mode"
@@ -562,7 +574,7 @@ let add_ext neval f =
     ERel (rel, next_loc())
 
   | Neg f ->
-    let ff = add_ext None f in
+    let ff = add_ext None false f in
     let ff' = ENeg (ff, next_loc()) in
     (match post with
     | None -> ff'
@@ -574,7 +586,7 @@ let add_ext neval f =
     let pos = List.map (fun v -> Misc.get_pos v attr1) vl in
     let pos = List.sort Stdlib.compare pos in
     let post' = premap_post post (Tuple.project_away pos) in
-    add_ext post' f1
+    add_ext post' (proj || pos <> []) f1
 
   | Or (f1, f2) ->
     let attr1 = MFOTL.free_vars f1 in
@@ -587,8 +599,11 @@ let add_ext neval f =
         let new_pos = List.map snd matches in
         premap_post post (Tuple.projections new_pos)
     in
-    let ff1 = add_ext post f1 in
-    let ff2 = add_ext post2 f2 in
+    let ff1 = add_ext post proj f1 in
+    (* [post2] only reorders f2's columns to f1's order; for a monitorable Or the
+       free-variable sets coincide, so this is a bijection and adds no
+       non-injectivity. Hence f2 inherits [proj] unchanged. *)
+    let ff2 = add_ext post2 proj f2 in
     let comp = Relation.union in
     EOr (comp, ff1, ff2, {arel = None}, next_loc())
 
@@ -600,17 +615,17 @@ let add_ext neval f =
         let filter_cond = Tuple.get_filter attr1 f2 in
         let post' = bind_post post (fun t ->
           if filter_cond t then Some t else None) in
-        add_ext post' f1
+        add_ext post' proj f1
       else
         let process_tuple = Tuple.get_tf attr1 f2 in
         let post' = bind_post post process_tuple in
-        add_ext post' f1
+        add_ext post' proj f1
     else
-      let ff1 = add_ext None f1 in
+      let ff1 = add_ext None false f1 in
       let ff2 =
         match f2 with
-        | Neg f2' -> add_ext None f2'
-        | _ -> add_ext None f2
+        | Neg f2' -> add_ext None false f2'
+        | _ -> add_ext None false f2
       in
       let comp =
         match f2 with
@@ -652,7 +667,7 @@ let add_ext neval f =
       | Avg -> Aggreg.avg_once (force_post post) default intv 0 posx posG
       | Med -> Aggreg.med_once (force_post post) default intv 0 posx posG
     in
-    EAggOnce ({op; default}, state, add_ext None f, next_loc())
+    EAggOnce ({op; default}, state, add_ext None false f, next_loc())
 
   | Aggreg (t_y, y, op, x, glist, f)  ->
     let t_y = match t_y with TCst a -> a | _ -> failwith "Internal error" in
@@ -669,14 +684,14 @@ let add_ext neval f =
       | Avg -> Aggreg.avg (force_post post) default 0 posx posG
       | Med -> Aggreg.med (force_post post) default 0 posx posG
     in
-    EAggreg ({op; default}, comp, add_ext None f, next_loc())
+    EAggreg ({op; default}, comp, add_ext None false f, next_loc())
 
   | Prev (intv, f) ->
-    let ff = add_ext post f in
+    let ff = add_ext post proj f in
     EPrev (intv, ff, {plast = neval0}, next_loc())
 
   | Next (intv, f) ->
-    let ff = add_ext post f in
+    let ff = add_ext post proj f in
     ENext (intv, ff, {init = true}, next_loc())
 
   | Since (intv,f1,f2) ->
@@ -688,19 +703,19 @@ let add_ext neval f =
        | _ -> f1, true
       )
     in
-    let ff1 = add_ext None ef1 in
-    let ff2 = add_ext None f2 in
-    let saux = Optimized_mtl.init_msaux post pos intv attr1 attr2 in
+    let ff1 = add_ext None false ef1 in
+    let ff2 = add_ext None false f2 in
+    let saux = Optimized_mtl.init_msaux (fuse_post post proj) pos intv attr1 attr2 in
     let inf = {srel2 = None; saux} in
-    ESince (ff1,ff2,inf, next_loc())
+    wrap_post post proj (ESince (ff1,ff2,inf, next_loc()))
 
   | Once (intv,f) ->
     let attr = MFOTL.free_vars f in
     let ff1 = ERel (Relation.make_relation [Tuple.make_tuple []], next_loc()) in
-    let ff2 = add_ext None f in
-    let saux = Optimized_mtl.init_msaux post true intv [] attr in
+    let ff2 = add_ext None false f in
+    let saux = Optimized_mtl.init_msaux (fuse_post post proj) true intv [] attr in
     let inf = {srel2 = None; saux} in
-    ESince (ff1,ff2,inf, next_loc())
+    wrap_post post proj (ESince (ff1,ff2,inf, next_loc()))
 
   | Until (intv,f1,f2) ->
     let attr1 = MFOTL.free_vars f1 in
@@ -711,23 +726,23 @@ let add_ext neval f =
        | _ -> f1, true
       )
     in
-    let ff1 = add_ext None ef1 in
-    let ff2 = add_ext None f2 in
-    let uaux = Optimized_mtl.init_muaux post pos intv attr1 attr2 in
+    let ff1 = add_ext None false ef1 in
+    let ff2 = add_ext None false f2 in
+    let uaux = Optimized_mtl.init_muaux (fuse_post post proj) pos intv attr1 attr2 in
     let inf = {ulast = neval0; urel2 = None; uaux} in
-    EUntil (ff1,ff2,inf, next_loc())
+    wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
   | Eventually (intv,f) ->
     let attr = MFOTL.free_vars f in
     let ff1 = ERel (Relation.make_relation [Tuple.make_tuple []], next_loc()) in
-    let ff2 = add_ext None f in
-    let uaux = Optimized_mtl.init_muaux post true intv [] attr in
+    let ff2 = add_ext None false f in
+    let uaux = Optimized_mtl.init_muaux (fuse_post post proj) true intv [] attr in
     let inf = {ulast = neval0; urel2 = None; uaux} in
-    EUntil (ff1,ff2,inf, next_loc())
+    wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
   | _ -> failwith "[add_ext] internal error"
   in
-  add_ext None f, neval0
+  add_ext None false f, neval0
 
 
 type 'a state = {
