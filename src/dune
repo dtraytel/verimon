@@ -5,6 +5,7 @@
   (name libmonpoly)
   (public_name libmonpoly)
   (libraries str unix zarith)
+  (instrumentation (backend bisect_ppx))
   (modules (:standard \ Main)))
 
 (executable
@@ -12,4 +13,5 @@
   (public_name monpoly)
   (package monpoly)
   (libraries libmonpoly dune-build-info)
+  (instrumentation (backend bisect_ppx))
   (modules Main))
