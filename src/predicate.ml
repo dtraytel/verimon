@@ -192,27 +192,27 @@ let eval_eterm f t =
                implementation (int_of_float) where the type was Int instead of
                Z.t. Overflow caused an unspecified result, which was 0 in
                practice. *)
-            try Int (Z.of_float c)
-            with Z.Overflow -> Int Z.zero
-        | _ -> failwith "[Predicate.eval_eterm, f2i] wrong types")
+            (try Int (Z.of_float c)
+            with Z.Overflow -> Int Z.zero)
+        | Int _ | Str _ | Regexp _ -> failwith "[Predicate.eval_eterm, f2i] wrong types")
     | I2s t -> (match eval t with
         | Int c -> Str (Z.to_string c)
         | _ -> failwith "[Predicate.eval_eterm, i2s] wrong types")
     | S2i t -> (match eval t with
         | Str c ->
             (* TODO(JS): Should be a partial function; see also F2i above. *)
-            try Int (Z.of_string c)
-            with Invalid_argument _ -> Int Z.zero
-        | _ -> failwith "[Predicate.eval_eterm, s2i] wrong types")
+            (try Int (Z.of_string c)
+            with Invalid_argument _ -> Int Z.zero)
+        | Int _ | Float _ | Regexp _ -> failwith "[Predicate.eval_eterm, s2i] wrong types")
     | F2s t -> (match eval t with
         | Float c -> Str (Float.to_string c)
         | _ -> failwith "[Predicate.eval_eterm, i2s] wrong types")
     | S2f t -> (match eval t with
         | Str c ->
             (* TODO(JS): Should be a partial function; see also F2i above. *)
-            try Float (Float.of_string c)
-            with Failure _ -> Float 0.
-        | _ -> failwith "[Predicate.eval_eterm, s2f] wrong types")
+            (try Float (Float.of_string c)
+            with Failure _ -> Float 0.)
+        | Int _ | Float _ | Regexp _ -> failwith "[Predicate.eval_eterm, s2f] wrong types")
     | DayOfMonth t -> (match eval t with
         | Float t -> Int (Z.of_int (safe_gmtime t).tm_mday)
         | _ -> failwith "[Predicate.eval_eterm, DayOfMonth] wrong types")

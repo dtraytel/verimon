@@ -62,10 +62,12 @@ let parse_sig s =
     (String.split_on_char '|' s) in
   if s = "" then empty else
   if List.for_all (fun x -> List.length x == 2) ss then
-    List.fold_left (fun map (p::num) -> 
-      let arity = int_of_string (List.hd num) in 
-      let oldSet = try find arity map with Not_found -> Set.empty in 
-      add arity (Set.add p oldSet) map) empty ss
+    List.fold_left (fun map lst -> match lst with
+      | p::num ->
+        let arity = int_of_string (List.hd num) in
+        let oldSet = try find arity map with Not_found -> Set.empty in
+        add arity (Set.add p oldSet) map
+      | [] -> assert false) empty ss
   else 
     let _ = Printf.printf "Malformed sig: %s" s in
     empty
