@@ -170,7 +170,8 @@ let join_msaux rel aux =
       if aux.ms_args.a_gap then begin
         let discard_since = idx_table_inv_semijoin aux.ms_args
           aux.ms_since_idx rel in
-        Relation.iter (Hashtbl.remove aux.ms_since) discard_since
+        Relation.iter (Hashtbl.remove aux.ms_since) discard_since;
+        idx_table_remove aux.ms_args aux.ms_since_idx discard_since
       end
     end;
   if aux.ms_args.a_gap &&
