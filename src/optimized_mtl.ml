@@ -252,53 +252,6 @@ type muaux = {
     deletion from [mu_res] *)
 }
 
-let debug_muaux aux =
-  let string_of_list f = Misc.string_of_list_ext "(" ")" ", " f in
-  let string_of_queue q =
-    let l = List.of_seq (Queue.to_seq q) in
-    string_of_list (fun (jn, t, n) ->
-      Printf.sprintf "%d * %s [.. %d]" n (MFOTL.string_of_ts t) jn) l
-  in
-  let string_of_tbl1 f tbl =
-    let l = List.of_seq (Hashtbl.to_seq tbl) in
-    let l = List.sort (fun (a,_) (b,_) -> Stdlib.compare a b) l in
-    string_of_list (fun (tup, x) ->
-      Printf.sprintf "%s -> %d" (Tuple.string_of_tuple tup) (f x)) l
-  in
-  let string_of_seq1 = string_of_tbl1 (fun (j,_) -> j) in
-  let string_of_useq tbl =
-    let l = List.of_seq (Hashtbl.to_seq tbl) in
-    let l = List.sort (fun (a,_) (b,_) -> Stdlib.compare a b) l in
-    string_of_list (fun (j, tbl1) ->
-      Printf.sprintf "%d -> %s" j (string_of_tbl1 (fun k -> k) tbl1)) l
-  in
-  let string_of_delmap tbl =
-    let l = List.of_seq (Hashtbl.to_seq tbl) in
-    let l = List.sort (fun (a,_) (b,_) -> Stdlib.compare a b) l in
-    string_of_list (fun (k, tupl) ->
-      Printf.sprintf "%d -> %s" k (string_of_list Tuple.string_of_tuple tupl)) l
-  in
-  print_endline "[DEBUG] uaux = {";
-  Printf.printf "  mu_in_tp = %d\n" aux.mu_in_tp;
-  Printf.printf "  mu_in_ts = %s\n" (MFOTL.string_of_ts aux.mu_in_ts);
-  Printf.printf "  mu_ts_cnt = %d\n" aux.mu_ts_cnt;
-  Printf.printf "  mu_out_tp = %d\n" aux.mu_out_tp;
-  Printf.printf "  mu_out_cnt = %d\n" aux.mu_out_cnt;
-  Printf.printf "  mu_lb_tp = %d\n" aux.mu_lb_tp;
-  (match aux.mu_buf1 with
-  | None -> print_endline "  mu_buf1 = None"
-  | Some r -> Relation.print_reln "  mu_buf1 = " r
-  );
-  Printf.printf "  mu_gc = %s\n" (MFOTL.string_of_ts aux.mu_gc);
-  Printf.printf "  mu_prevq = %s\n" (string_of_queue aux.mu_prevq);
-  Printf.printf "  mu_inq = %s\n" (string_of_queue aux.mu_inq);
-  Printf.printf "  mu_seq1 = %s\n" (string_of_seq1 aux.mu_seq1);
-  Printf.printf "  mu_useq = %s\n" (string_of_useq aux.mu_useq);
-  Printf.printf "  mu_acc = %s\n" (string_of_tbl1 (fun j -> j) aux.mu_acc);
-  Relation.print_reln "  mu_res = " aux.mu_res;
-  Printf.printf "  mu_delmap = %s\n" (string_of_delmap aux.mu_delmap);
-  print_endline "}"
-
 let init_muaux opt_fm pos intv attr1 attr2 =
   {
     mu_args = init_args opt_fm pos intv attr1 attr2;

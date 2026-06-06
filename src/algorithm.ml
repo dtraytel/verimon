@@ -105,30 +105,6 @@ let slicer_seeds  = ref [|[||]|]
 let crt_ts = ref MFOTL.ts_invalid
 let crt_tp = ref (-1)
 
-let make_db db =
-  Db.make_db (List.map (fun (s,r) -> Table.make_table s r) db)
-
-let mqueue_add_last auxrels tsq rel2 =
-  if Mqueue.is_empty auxrels then
-    Mqueue.add (tsq,rel2) auxrels
-  else
-    let tslast, rellast =  Mqueue.get_last auxrels in
-    if tslast = tsq then
-      Mqueue.update_last (tsq, Relation.union rellast rel2) auxrels
-    else
-      Mqueue.add (tsq,rel2) auxrels
-
-let dllist_add_last auxrels tsq rel2 =
-  if Dllist.is_empty auxrels then
-    Dllist.add_last (tsq,rel2) auxrels
-  else
-    let tslast, rellast = Dllist.get_last auxrels in
-    if tslast = tsq then
-      let _ = Dllist.pop_last auxrels in
-      Dllist.add_last (tsq, Relation.union rellast rel2) auxrels
-    else
-      Dllist.add_last (tsq,rel2) auxrels
-
 let warn_if_empty_aggreg {op; default} {Aggreg.empty_rel; Aggreg.rel} =
   if empty_rel then
     (match op with
