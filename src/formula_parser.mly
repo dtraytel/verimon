@@ -168,7 +168,7 @@
 
 %nonassoc EQ LESSEQ LESS GTR GTREQ SUBSTRING MATCHES         /* comparisons, below arithmetic */
 %left PLUS MINUS                                             /* lowest precedence */
-%left STAR SLASH                                             /* medium precedence */
+%left STAR SLASH MOD                                         /* medium precedence */
 %nonassoc UMINUS F2I I2F DAY_OF_MONTH MONTH YEAR FORMAT_DATE /* highest precedence */
 
 %start formula
