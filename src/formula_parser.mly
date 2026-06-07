@@ -157,8 +157,6 @@
 %right IMPL
 %left OR
 %left AND
-%left ALT
-%left CONCAT
 %nonassoc LPA
 %nonassoc NOT
 %nonassoc BASE
@@ -233,23 +231,40 @@ formula:
   | PREX interval pregex             { f "f(prexd)"; Prex ($2,$3) }
   | PREX pregex                      { f "f(prexdf)"; Prex (dfintv,$2) }
 
+/* Stratified into alternation > concatenation > atom to remove the operator
+   ambiguities of the old flat `fregex fregex | fregex PLUS fregex` grammar.
+   Both levels are right-recursive to preserve the original right-associative
+   parse of `a + b + c` and `a b c`. Concatenation now binds tighter than
+   alternation (standard regex semantics): `a b + c` is `(a b) + c`. */
 fregex:
-  | LPA fregex RPA                   { f "r()"; $2 } 
+  | fconcat PLUS fregex              { f "f(plus)"; Plus ($1, $3)}
+  | fconcat                          { $1 }
+
+fconcat:
+  | fatom fconcat                    { f "f(concat)"; Concat ($1,$2)}
+  | fatom                            { $1 }
+
+fatom:
+  | LPA fregex RPA                   { f "r()"; $2 }
   | DOT                              { f "f(wild)"; Wild }
   | formula                          { f "f(fbase)"; Concat(Test ($1),Wild)} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
-  | fregex fregex                    { f "f(concat)"; Concat ($1,$2)}  %prec CONCAT
-  | fregex PLUS fregex               { f "f(plus)"; Plus ($1, $3)} %prec ALT
-  | fregex STAR                      { f "f(star)"; Star ($1)}
+  | fatom STAR                       { f "f(star)"; Star ($1)}
 
 pregex:
-  | LPA pregex RPA                   { f "r()"; $2 } 
+  | pconcat PLUS pregex              { f "f(plus)"; Plus ($1, $3)}
+  | pconcat                          { $1 }
+
+pconcat:
+  | patom pconcat                    { f "f(concat)"; Concat ($1,$2)}
+  | patom                            { $1 }
+
+patom:
+  | LPA pregex RPA                   { f "r()"; $2 }
   | DOT                              { f "f(wild)"; Wild }
   | formula                          { f "f(pbase)"; Concat(Wild,Test ($1))} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
-  | pregex pregex                    { f "f(concat)"; Concat ($1,$2)}  %prec CONCAT
-  | pregex PLUS pregex               { f "f(plus)"; Plus ($1, $3)} %prec ALT
-  | pregex STAR                      { f "f(star)"; Star ($1)}
+  | patom STAR                       { f "f(star)"; Star ($1)}
 
 
 aggreg:
