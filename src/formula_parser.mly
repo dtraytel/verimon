@@ -148,6 +148,11 @@
 %token END
 %token EOF
 
+/* REDUCE_CONCAT (lowest) tags the regex concatenation/alternation reduce rules so
+   the inherent, ambiguous "end the regex vs. start another atom" boundary resolves
+   to shift (greedy) — the same choice ocamlyacc made by default, now explicit. See
+   the regex-atom-start terminal group near the bottom of the precedence table. */
+%nonassoc REDUCE_CONCAT
 %nonassoc AGGREG
 %nonassoc LET IN
 %right SINCE TRIGGER UNTIL RELEASE
@@ -168,6 +173,11 @@
 %left PLUS MINUS                                             /* lowest precedence */
 %left STAR SLASH MOD                                         /* medium precedence */
 %nonassoc UMINUS F2I I2F DAY_OF_MONTH MONTH YEAR FORMAT_DATE /* highest precedence */
+/* Regex-atom-start terminals that otherwise have no precedence. Placing them above
+   REDUCE_CONCAT makes "shift another atom" win over "end the regex" at the bare-
+   formula juxtaposition boundary, matching the prior default-shift behaviour. */
+%nonassoc FALSE TRUE LD STR STR_CST REGEXP_CST INT RAT DOT FREX PREX
+%nonassoc LETPAST R2S S2R I2S S2I F2S S2F
 
 %start formula
 %type <MFOTL.formula> formula
@@ -238,11 +248,11 @@ formula:
    alternation (standard regex semantics): `a b + c` is `(a b) + c`. */
 fregex:
   | fconcat PLUS fregex              { f "f(plus)"; Plus ($1, $3)}
-  | fconcat                          { $1 }
+  | fconcat %prec REDUCE_CONCAT      { $1 }
 
 fconcat:
   | fatom fconcat                    { f "f(concat)"; Concat ($1,$2)}
-  | fatom                            { $1 }
+  | fatom %prec REDUCE_CONCAT        { $1 }
 
 fatom:
   | LPA fregex RPA                   { f "r()"; $2 }
@@ -253,11 +263,11 @@ fatom:
 
 pregex:
   | pconcat PLUS pregex              { f "f(plus)"; Plus ($1, $3)}
-  | pconcat                          { $1 }
+  | pconcat %prec REDUCE_CONCAT      { $1 }
 
 pconcat:
   | patom pconcat                    { f "f(concat)"; Concat ($1,$2)}
-  | patom                            { $1 }
+  | patom %prec REDUCE_CONCAT        { $1 }
 
 patom:
   | LPA pregex RPA                   { f "r()"; $2 }
