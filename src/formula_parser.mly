@@ -148,6 +148,7 @@
 %token END
 %token EOF
 
+%nonassoc AGGREG
 %nonassoc LET IN
 %right SINCE TRIGGER UNTIL RELEASE
 %nonassoc PREV NEXT EVENTUALLY ONCE ALWAYS PAST_ALWAYS 
@@ -165,6 +166,7 @@
 %nonassoc RPA
 
 
+%nonassoc EQ LESSEQ LESS GTR GTREQ SUBSTRING MATCHES         /* comparisons, below arithmetic */
 %left PLUS MINUS                                             /* lowest precedence */
 %left STAR SLASH                                             /* medium precedence */
 %nonassoc UMINUS F2I I2F DAY_OF_MONTH MONTH YEAR FORMAT_DATE /* highest precedence */
@@ -200,8 +202,8 @@ formula:
   | NOT formula                     { f "f(not)"; Neg ($2) }
   | EX varlist DOT formula %prec EX { f "f(ex)"; exists $2 $4 }
   | FA varlist DOT formula %prec FA { f "f(fa)"; forall $2 $4 }
-  | var LARROW aggreg var formula   { f "f(agg1)"; aggreg $1 $3 $4 [] $5 }
-  | var LARROW aggreg var SC varlist formula
+  | var LARROW aggreg var formula %prec AGGREG  { f "f(agg1)"; aggreg $1 $3 $4 [] $5 }
+  | var LARROW aggreg var SC varlist formula %prec AGGREG
                                     { f "f(agg2)"; aggreg $1 $3 $4 $6 $7 }
   | term SUBSTRING term             { f "f(substring)"; check (Substring ($1, $3)) }
   | term MATCHES term xopttermlist  { f "f(matches)"; check (Matches ($1, $3, $4)) }
