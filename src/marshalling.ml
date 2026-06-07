@@ -38,6 +38,8 @@ let ext_to_m ff =
     | ENext          (intv, ext, ninf, loc)             -> MNext        (intv, (e2m ext), ninf, loc)
     | ESince         (ext1, ext2, sinf, loc)            -> MSince       ((e2m ext1), (e2m ext2), sinf, loc)
     | EUntil         (ext1, ext2, uinf, loc)            -> MUntil       ((e2m ext1), (e2m ext2), uinf, loc)
+    | EMatchP        _
+    | EMatchF        _ -> failwith "[Marshalling.ext_to_m] saving/restoring state is not supported for the regex operators MATCHF/MATCHP"
   in e2m ff
 
 (*

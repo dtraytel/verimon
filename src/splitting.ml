@@ -597,3 +597,5 @@ let rec print_ef = function
   | ENext          (dt, f1, ninf, _)                             -> print_endline "Next";print_ef f1
   | ESince         (f1, f2, sinf, _)                             -> print_endline "Since";print_ef f1;print_ef f2
   | EUntil         (f1, f2, uinf, _)                             -> print_endline "Until";print_ef f1;print_ef f2
+  | EMatchP        _
+  | EMatchF        _                                             -> failwith "[Splitting.print_ef] splitting is not supported for the regex operators MATCHF/MATCHP"
