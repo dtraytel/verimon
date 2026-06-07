@@ -349,9 +349,16 @@ cst:
 
 
 termlist:
-  | term COM termlist       { f "termlist(list)"; $1 :: $3 }
-  | term                    { f "termlist(end)"; [$1] }
+  | termarg COM termlist    { f "termlist(list)"; $1 :: $3 }
+  | termarg                 { f "termlist(end)"; [$1] }
   |                         { f "termlist()"; [] }
+
+/* A predicate argument is a term or the anonymous `_`, which becomes a fresh unnamed
+   variable (existentially quantified by `add_ex`). `_` is handled here, not in `term`,
+   so it is not a general term and does not collide with the optterm don't-care `_`. */
+termarg:
+  | term                    { f "termarg(term)"; $1 }
+  | LD                      { f "termarg(_)"; incr var_cnt; Var ("_" ^ (string_of_int !var_cnt)) }
 
 varlist:
   | varlist COM var         { f "varlist(list)"; $1 @ [$3] }
@@ -367,17 +374,14 @@ opttermlist:
   | optterm                 { f "opttermlist(end)"; [$1] }
   |                         { f "opttermlist()"; [] }
 
-/* The grammar has 2 (intended) reduce/reduce conflicts here: on `_` (LD) followed
-   by `)` or `,`, ocamlyacc must choose between `optterm: LD` (the don't-capture
-   `None`) and `var: LD` (an unnamed variable, via `term`). Rule order makes
-   `optterm: LD` win, so a bare `_` in a MATCHES list is don't-capture, while `_`
-   inside a term (e.g. `_ + 1`) is still an unnamed variable. This cannot be
-   resolved by precedence (it is reduce/reduce) nor folded into the semantic action
-   (`None` and `Some (Var _)` differ in free_vars), so it is left as documented. */
 optterm:
   | LD                      { f "optterm(None)"; None }
   | term                    { f "optterm(Some)"; Some $1 }
 
+/* A `var` is a named variable only. The anonymous `_` (LD) is NOT a general var/term:
+   that is what previously made a lone `_` ambiguous in a MATCHES list (`optterm: LD`
+   = don't-capture None vs `var: LD` = unnamed var, a reduce/reduce conflict). `_` is
+   instead admitted only where it is meaningful: as an anonymous predicate argument
+   (see `termarg`) and as the optterm don't-care marker (`optterm: LD`). */
 var:
-  | LD                      { f "unnamed var"; incr var_cnt; "_" ^ (string_of_int !var_cnt) }
   | STR                     { f "var"; assert (String.length $1 > 0); $1 }
