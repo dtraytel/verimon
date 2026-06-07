@@ -148,10 +148,13 @@
 %token END
 %token EOF
 
-/* REDUCE_CONCAT (lowest) tags the regex concatenation/alternation reduce rules so
-   the inherent, ambiguous "end the regex vs. start another atom" boundary resolves
-   to shift (greedy) — the same choice ocamlyacc made by default, now explicit. See
-   the regex-atom-start terminal group near the bottom of the precedence table. */
+/* REDUCE_CONCAT (lowest) is a general "prefer shift over an empty/optional
+   production" marker. It tags (a) the regex concatenation/alternation reduce rules,
+   so the inherent ambiguous "end the regex vs. start another atom" boundary resolves
+   to shift (greedy); and (b) the empty `varlist` and empty `xopttermlist`
+   productions, so a following group-by var / arithmetic term is shifted rather than
+   committing to the empty list. In every case this is the choice ocamlyacc already
+   made by default, now made explicit so the conflict is no longer reported. */
 %nonassoc REDUCE_CONCAT
 %nonassoc AGGREG
 %nonassoc LET IN
@@ -353,17 +356,24 @@ termlist:
 varlist:
   | varlist COM var         { f "varlist(list)"; $1 @ [$3] }
   | var                     { f "varlist(end)"; [$1] }
-  |                         { f "varlist()"; [] }
+  |  %prec REDUCE_CONCAT    { f "varlist()"; [] }
 
 xopttermlist:
   | LPA opttermlist RPA     { f "xopttermlist(list)"; $2 }
-  |                         { f "xopttermlist()"; [] }
+  |  %prec REDUCE_CONCAT    { f "xopttermlist()"; [] }
 
 opttermlist:
   | opttermlist COM optterm { f "opttermlist(list)"; $1 @ [$3] }
   | optterm                 { f "opttermlist(end)"; [$1] }
   |                         { f "opttermlist()"; [] }
 
+/* The grammar has 2 (intended) reduce/reduce conflicts here: on `_` (LD) followed
+   by `)` or `,`, ocamlyacc must choose between `optterm: LD` (the don't-capture
+   `None`) and `var: LD` (an unnamed variable, via `term`). Rule order makes
+   `optterm: LD` win, so a bare `_` in a MATCHES list is don't-capture, while `_`
+   inside a term (e.g. `_ + 1`) is still an unnamed variable. This cannot be
+   resolved by precedence (it is reduce/reduce) nor folded into the semantic action
+   (`None` and `Some (Var _)` differ in free_vars), so it is left as documented. */
 optterm:
   | LD                      { f "optterm(None)"; None }
   | term                    { f "optterm(Some)"; Some $1 }
