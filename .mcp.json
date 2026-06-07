@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "isabelle-pide-mcp": {
+      "command": "/Applications/Isabelle2025-2.app/bin/isabelle",
+      "args": ["pide_mcp", "-d", "thys", "-l", "MFOTL_Monitor_Devel"]
+    }
+  }
+}

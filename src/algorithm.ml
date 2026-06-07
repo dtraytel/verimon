@@ -990,7 +990,7 @@ let add_ext neval f =
 
   | Prex (intv, r) ->
     let (mr, f) = to_mregex r in
-    let ext_fl = List.map (add_ext None) f in
+    let ext_fl = List.map (add_ext None false) f in
     let fvl = List.map MFOTL.free_vars f in
     let args = {intv = intv; mr = mr; mrs = rpds mr; attr_fs = fvl} in
     let inf = {args = args; mrdeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
@@ -998,7 +998,7 @@ let add_ext neval f =
 
   | Frex (intv, r) ->
     let (mr, f) = to_mregex r in
-    let ext_fl = List.map (add_ext None) f in
+    let ext_fl = List.map (add_ext None false) f in
     let fvl = List.map MFOTL.free_vars f in
     let args = {intv = intv; mr = mr; mrs = lpds mr; attr_fs = fvl} in
     let inf = {args = args; mldeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in

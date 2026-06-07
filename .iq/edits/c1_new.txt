@@ -1,0 +1,30 @@
+| "eval_since rs buf aux = (rev rs, buf, aux)"
+
+function (sequential) eval_since_mres ::
+    "event_data table list ⇒ event_data mres_mbuf2S ⇒ 'msaux ⇒
+     event_data table list × event_data mres_mbuf2S × 'msaux" where
+  "eval_since_mres rs (l, Dynamic [], t # ts, skew) aux =
+     (case mres_uncons l of
+        None ⇒ (rev rs, (l, Dynamic [], t # ts, skew), aux)
+      | Some (x, l') ⇒
+          if skew ∨ memL (args_ivl args) 0
+          then (rev rs, (l, Dynamic [], t # ts, skew), aux)
+          else let aux' = join_msaux args x (add_new_ts_msaux args t aux)
+               in eval_since_mres (result_msaux args aux' # rs) (l', Dynamic [], ts, True) aux')"
+| "eval_since_mres rs (l, Const r, ts, True) aux =
+     eval_since_mres rs (l, Const r, ts, False) (add_new_table_msaux args r aux)"
+| "eval_since_mres rs (l, Dynamic (y # ys), ts, True) aux =
+     eval_since_mres rs (l, Dynamic ys, ts, False) (add_new_table_msaux args y aux)"
+| "eval_since_mres rs (l, r, t # ts, False) aux =
+     (case (mres_uncons l, mres_uncons r) of
+        (Some (x, l'), Some (y, r')) ⇒
+          let aux' = add_new_table_msaux args y (join_msaux args x (add_new_ts_msaux args t aux))
+          in eval_since_mres (result_msaux args aux' # rs) (l', r', ts, False) aux'
+      | _ ⇒ (rev rs, (l, r, t # ts, False), aux))"
+| "eval_since_mres rs buf aux = (rev rs, buf, aux)"
+  by pat_completeness auto
+termination
+  by (relation "measure (λ(_, (_, _, ts, skew), _). 2 * length ts + (if skew then 1 else 0))")
+     (auto split: mres.splits list.splits)
+
+end (* fixes args *)

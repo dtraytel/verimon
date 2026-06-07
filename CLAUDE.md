@@ -1,0 +1,1 @@
+MonPoly and VeriMon are two monitors that share the same binary. They are distinguished via the verified flag. The file verified.ml is generated from the Isabelle/HOL formalization. Generally, that algorithm is assumed to be correct. The algorithm in algorithm.ml can be differentially tested against the verified algorithm.

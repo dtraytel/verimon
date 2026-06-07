@@ -1,0 +1,3 @@
+    else mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts))"
+
+fun match :: "Formula.trm list ⇒ event_data tuple ⇒ (nat ⇀ event_data) option" where

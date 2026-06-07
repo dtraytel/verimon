@@ -1,0 +1,45 @@
+subsection ‹ Constant-relation results (mres / xres) ›
+
+datatype 'a mres = Const "'a table" | Dynamic "'a table list"
+
+fun mres_map :: "('a table ⇒ 'b table) ⇒ 'a mres ⇒ 'b mres" where
+  "mres_map f (Const r)    = Const (f r)"
+| "mres_map f (Dynamic xs) = Dynamic (map f xs)"
+
+fun mres_snoc :: "'a mres ⇒ 'a mres ⇒ 'a mres" where
+  "mres_snoc (Const r)    _            = Const r"
+| "mres_snoc (Dynamic xs) (Const _)    = Dynamic xs"
+| "mres_snoc (Dynamic xs) (Dynamic ys) = Dynamic (xs @ ys)"
+
+fun mres_map2 :: "('a table ⇒ 'a table ⇒ 'b table) ⇒ 'a mres ⇒ 'a mres ⇒ 'b mres" where
+  "mres_map2 f (Const r1)   (Const r2)   = Const (f r1 r2)"
+| "mres_map2 f (Const r1)   (Dynamic ys) = Dynamic (map (f r1) ys)"
+| "mres_map2 f (Dynamic xs) (Const r2)   = Dynamic (map (λx. f x r2) xs)"
+| "mres_map2 f (Dynamic xs) (Dynamic ys) = Dynamic (map2 f xs ys)"
+
+fun mres_nth :: "'a mres ⇒ nat ⇒ 'a table" where
+  "mres_nth (Const r)    _ = r"
+| "mres_nth (Dynamic xs) i = xs ! i"
+
+fun mres_drop :: "nat ⇒ 'a mres ⇒ 'a mres" where
+  "mres_drop _ (Const r)    = Const r"
+| "mres_drop k (Dynamic xs) = Dynamic (drop k xs)"
+
+fun mres_len :: "'a mres ⇒ enat" where
+  "mres_len (Const _)    = ∞"
+| "mres_len (Dynamic xs) = enat (length xs)"
+
+fun mres_len_nat :: "'a mres ⇒ nat" where
+  "mres_len_nat (Const _)    = 0"
+| "mres_len_nat (Dynamic xs) = length xs"
+
+fun mres_to_list :: "'a mres ⇒ 'a table list" where
+  "mres_to_list (Const _)    = []"
+| "mres_to_list (Dynamic xs) = xs"
+
+fun mres_uncons :: "'a mres ⇒ ('a table × 'a mres) option" where
+  "mres_uncons (Const r)        = Some (r, Const r)"
+| "mres_uncons (Dynamic [])     = None"
+| "mres_uncons (Dynamic (x # xs)) = Some (x, Dynamic xs)"
+
+type_synonym 'a mbuf2 = "'a table list × 'a table list"
