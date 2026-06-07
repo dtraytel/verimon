@@ -139,7 +139,15 @@ let main () =
       begin
         (* read signature file *)
         let sign = Log_parser.parse_signature_file !sigfile in
-        let _ = if is_mfodl f then Misc.verified := true else () in
+        (* Regex operators (MATCHF/MATCHP) are evaluated by MonPoly's own
+           algorithm (algorithm.ml: EMatchP/EMatchF) when its monitorability check
+           accepts the formula; otherwise we fall back to the verified kernel,
+           which covers a larger fragment. [is_monitorable] raises on
+           TRIGGER/RELEASE outside -verified, so default to the verified kernel on
+           any exception. *)
+        let monpoly_monitorable f =
+          try fst (Rewriting.is_monitorable f) with _ -> false in
+        let _ = if is_mfodl f && not (monpoly_monitorable f) then Misc.verified := true else () in
 
         let is_mon, pf, vartypes = check_formula sign f in
         let fv = List.map fst vartypes in
@@ -151,11 +159,16 @@ let main () =
               -nonewlastts), we add a new maximal timestamp for future formulas;
               that is, we assume that no more events will happen in the
               future. For past-only formulas we never add such a timestamp. *)
-            if not (Rewriting.is_future pf) then
+            (* The regex eval (EMatchP/EMatchF) finalizes a time point only once
+               the next one's timestamp is known, so it needs the final maximal
+               timestamp to flush the last time point, even for past-only regex. *)
+            if not (Rewriting.is_future pf) && not (is_mfodl pf) then
               Misc.new_last_ts := false;
             if not !nofilterrelopt then
               Filter_rel.enable pf;
-            if not !nofilteremptytpopt && not !Misc.verified then
+            (* Filter_empty_tp does not support the regex operators (MATCHF/MATCHP),
+               so it is skipped for MFODL formulas, as it is for the verified kernel. *)
+            if not !nofilteremptytpopt && not !Misc.verified && not (is_mfodl pf) then
               Filter_empty_tp.enable pf;
             if !Algorithm.resumefile <> "" then
               Algorithm.resume sign !logfile

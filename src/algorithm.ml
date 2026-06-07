@@ -148,7 +148,9 @@ let add_let_index f n rels =
     | EUntil (f1,f2,_,_) ->
       update f1;
       update f2
-    | _ -> raise (Invalid_argument "not implemented yet")
+    | EMatchP (fl,_,_)
+    | EMatchF (fl,_,_) ->
+      List.iter update fl
   in
   update f
 
@@ -224,7 +226,7 @@ let rec l_epsilon_strict n attr_fs fs = function
   else
     Relation.empty 
 | MPlus (r, s) -> Relation.union (l_epsilon_strict n attr_fs fs r) (l_epsilon_strict n attr_fs fs s)
-| MTimes (r, s) -> epsilon_lax (free_mre_vars attr_fs r) (l_epsilon_strict n attr_fs fs r) attr_fs fs r
+| MTimes (r, s) -> epsilon_lax (free_mre_vars attr_fs s) (l_epsilon_strict n attr_fs fs s) attr_fs fs r
 | MStar _ -> Relation.singleton (Tuple.make_tuple [])
 
 let mrtabulate ks f =
@@ -236,34 +238,38 @@ let mrtabulate ks f =
   in 
   List.fold_left (fun acc (k, v) -> mradd k v acc) mrempty fp
 
+(* [mrtabulate] omits keys whose relation is empty, so an absent key denotes the
+   empty relation; look it up accordingly instead of raising Not_found. *)
+let mrlookup k m = try mrfind k m with Not_found -> Relation.empty
+
 let rec r_delta kappa x attr_fs fs = function
   | MSkip n -> (
     match n with 
       | 0 -> Relation.empty
-      | _ -> mrfind (kappa (MSkip (n - 1))) x
+      | _ -> mrlookup (kappa (MSkip (n - 1))) x
     )
   | MTestPos i -> Relation.empty
   | MTestNeg i -> Relation.empty
   | MPlus (r, s) -> Relation.union (r_delta kappa x attr_fs fs r) (r_delta kappa x attr_fs fs s)
-  | MTimes (r, s) -> 
-    Relation.union 
-    (r_delta (fun t -> kappa (MTimes (r, t))) x attr_fs fs s) 
-    (epsilon_lax (free_mre_vars attr_fs r) (r_delta kappa x attr_fs fs r) attr_fs fs r) 
+  | MTimes (r, s) ->
+    Relation.union
+    (r_delta (fun t -> kappa (MTimes (r, t))) x attr_fs fs s)
+    (epsilon_lax (free_mre_vars attr_fs (kappa r)) (r_delta kappa x attr_fs fs r) attr_fs fs s)
   | MStar r -> r_delta (fun t -> kappa (MTimes (MStar r, t))) x attr_fs fs r
 
 let rec l_delta kappa x attr_fs fs = function
   | MSkip n -> (
     match n with 
       | 0 -> Relation.empty
-      | _ -> mrfind (kappa (MSkip (n - 1))) x
+      | _ -> mrlookup (kappa (MSkip (n - 1))) x
     )
   | MTestPos i -> Relation.empty
   | MTestNeg i -> Relation.empty
   | MPlus (r, s) -> Relation.union (l_delta kappa x attr_fs fs r) (l_delta kappa x attr_fs fs s)
   | MTimes (r, s) -> 
     Relation.union 
-      (l_delta (fun t -> kappa (MTimes (t, s))) x attr_fs fs r) 
-      (epsilon_lax (free_mre_vars attr_fs s) (l_delta kappa x attr_fs fs s) attr_fs fs r)
+      (l_delta (fun t -> kappa (MTimes (t, s))) x attr_fs fs r)
+      (epsilon_lax (free_mre_vars attr_fs (kappa s)) (l_delta kappa x attr_fs fs s) attr_fs fs r)
   | MStar r -> l_delta (fun t -> kappa (MTimes (t, MStar r))) x attr_fs fs r
 
 
@@ -280,7 +286,7 @@ let update_matchP n intv mr mrs attr_fs rels nt aux =
     List.fold_right 
       Relation.union 
       (List.filter_map 
-      (fun (t, rel) -> if MFOTL.in_right_ext (MFOTL.ts_minus nt t) intv then Some(mrfind mr rel) else None) aux)
+      (fun (t, rel) -> if MFOTL.in_right_ext (MFOTL.ts_minus nt t) intv then Some(mrlookup mr rel) else None) aux)
       Relation.empty
   in
   (result, aux) 
@@ -289,11 +295,11 @@ let update_matchP n intv mr mrs attr_fs rels nt aux =
 
 let update_matchF_base n intv mr mrs attr_fs rels nt =
   let x = mrtabulate mrs (l_epsilon_strict n attr_fs rels) in 
-  ([(nt, rels, if MFOTL.in_right_ext MFOTL.ts_null intv then mrfind mr x else Relation.empty)], x)
+  ([(nt, rels, if MFOTL.in_right_ext MFOTL.ts_null intv then mrlookup mr x else Relation.empty)], x)
 
 let update_matchF_step intv mr mrs nt attr_fs (t, rels', rel) (aux', x) =
   let y = mrtabulate mrs (l_delta (fun t -> t) x attr_fs rels') in 
-  ((t, rels', if MFOTL.in_interval (MFOTL.ts_minus nt t) intv then Relation.union rel (mrfind mr y) else rel) :: aux', y)
+  ((t, rels', if MFOTL.in_interval (MFOTL.ts_minus nt t) intv then Relation.union rel (mrlookup mr y) else rel) :: aux', y)
 
 
 let update_matchF n intv mr mrs attr_fs rels nt aux =
@@ -301,14 +307,14 @@ let update_matchF n intv mr mrs attr_fs rels nt aux =
   let step = update_matchF_step intv mr mrs nt attr_fs in
   fst (List.fold_right step aux base)
 
-let rec eval_matchF intv mr nt aux = 
-  match aux with 
+let rec eval_matchF intv mr nt aux =
+  match aux with
   | [] -> ([], [])
-  | (t, rels, rel) :: aux -> 
+  | (t, rels, rel) :: aux ->
     if not (MFOTL.in_left_ext (MFOTL.ts_minus nt t) intv) then
       let (xs, aux) = eval_matchF intv mr nt aux in
       (rel :: xs, aux)
-    else 
+    else
       ([], (t, rels, rel) :: aux)
 
 (* Arguments:
@@ -591,18 +597,26 @@ let rec eval f crt discard =
   | EMatchP (ext_fl, inf, loc) ->
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,MatchP] q=%d\n" q;
-    let rec eager_eval f rels =
-      if Neval.is_last inf.last then
-        rels
-      else
-        let crt1 = Neval.get_next inf.last in
-        match eval f crt1 false with
-        | Some rel ->
-          inf.last <- crt1;
-          eager_eval f (rel :: rels)
-        | None -> rels
+    (* Each subformula must be evaluated over the SAME range of new time points,
+       so start every one from the shared [inf.last] rather than letting the first
+       one advance it past the others (which would leave their buffers empty). *)
+    let start = inf.last in
+    let last_reached = ref start in
+    let eager_eval f =
+      let rec go last rels =
+        if Neval.is_last last then (last, rels)
+        else
+          let crt1 = Neval.get_next last in
+          match eval f crt1 false with
+          | Some rel -> go crt1 (rel :: rels)
+          | None -> (last, rels)
       in
-    let (xss) = (List.map (fun f -> eager_eval f []) ext_fl) in
+      let (last', rels) = go start [] in
+      last_reached := last';
+      rels
+    in
+    let (xss) = List.map eager_eval ext_fl in
+    inf.last <- !last_reached;
     let ((zs, aux), buf, nts) = mbufnt_take (fun rels crt (zs, aux) ->
       let args = inf.args in 
       let (z, aux) = update_matchP q args.intv args.mr args.mrs args.attr_fs rels crt aux in
@@ -612,31 +626,44 @@ let rec eval f crt discard =
     inf.buf <- buf; 
     inf.crt <- nts;
     inf.out <- inf.out @ zs;
-    (match inf.out with [] -> None | z::_ -> Some z), loc
+    (match inf.out with [] -> None | z::rest -> inf.out <- rest; Some z), loc
 
   | EMatchF (ext_fl, inf, loc) ->
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,MatchF] q=%d\n" q;
-    let rec eager_eval f rels =
-      if Neval.is_last inf.last then
-        rels
-      else
-        let crt1 = Neval.get_next inf.last in
-        match eval f crt1 false with
-        | Some rel ->
-          inf.last <- crt1;
-          eager_eval f (rel :: rels)
-        | None -> rels
+    (* Each subformula must be evaluated over the SAME range of new time points,
+       so start every one from the shared [inf.last] rather than letting the first
+       one advance it past the others (which would leave their buffers empty). *)
+    let start = inf.last in
+    let last_reached = ref start in
+    let eager_eval f =
+      let rec go last rels =
+        if Neval.is_last last then (last, rels)
+        else
+          let crt1 = Neval.get_next last in
+          match eval f crt1 false with
+          | Some rel -> go crt1 (rel :: rels)
+          | None -> (last, rels)
       in
-    let (xss) = (List.map (fun f -> eager_eval f []) ext_fl) in
+      let (last', rels) = go start [] in
+      last_reached := last';
+      rels
+    in
+    let (xss) = List.map eager_eval ext_fl in
+    inf.last <- !last_reached;
     let args = inf.args in
-    let (aux, buf, nts) = mbufnt_take (update_matchF q args.intv args.mr args.mrs args.attr_fs) inf.mldeltaaux (mbufn_add xss inf.buf) crt in
-    let (zs, aux) = eval_matchF args.intv args.mr (if Neval.is_last nts then snd (Neval.get_data crt) else snd (Neval.get_data nts)) aux in
+    (* [inf.crt] is the cell whose timestamp pairs with the oldest buffered
+       relation. It starts at the pre-first sentinel cell (tp index < 0); on the
+       first evaluation the oldest buffered relation is the current cell, so anchor
+       it there. Afterwards [inf.crt] is the frontier returned by [mbufnt_take]. *)
+    if fst (Neval.get_data inf.crt) < 0 then inf.crt <- crt;
+    let (aux, buf, nts) = mbufnt_take (update_matchF q args.intv args.mr args.mrs args.attr_fs) inf.mldeltaaux (mbufn_add xss inf.buf) inf.crt in
+    let (zs, aux) = eval_matchF args.intv args.mr (snd (Neval.get_data nts)) aux in
     inf.mldeltaaux <- aux; 
     inf.buf <- buf;
     inf.crt <- nts; 
     inf.out <- inf.out @ zs;
-    (match inf.out with [] -> None | z::_ -> Some z), loc
+    (match inf.out with [] -> None | z::rest -> inf.out <- rest; Some z), loc
   in
   let result, loc = wrapper f in
   if !Perf.profile_enabled then
@@ -689,7 +716,9 @@ let add_index f i tsi db =
     | EUntil (f1,f2,_,_) ->
       update lets f1;
       update lets f2
-    | _ -> raise (Invalid_argument "not implemented yet")
+    | EMatchP (fl,_,_)
+    | EMatchF (fl,_,_) ->
+      List.iter (update lets) fl
   in
   update [] f
 
@@ -765,13 +794,13 @@ let rec lpd = function
   | MTestPos _ -> []
   | MTestNeg _ -> []
   | MPlus (r, s) -> lpd r @ lpd s
-  | MTimes (r, s) -> mtimesr (lpd r) s @ rpd s
+  | MTimes (r, s) -> mtimesr (lpd r) s @ lpd s
   | MStar r -> mtimesr (lpd r) (MStar r)
 
-let rec lpds_aux s = 
-  let sa = List.concat_map lpd s @ s in 
-  if List.for_all (fun x -> List.mem x s) sa then s 
-  else rpds_aux sa 
+let rec lpds_aux s =
+  let sa = List.concat_map lpd s @ s in
+  if List.for_all (fun x -> List.mem x s) sa then s
+  else lpds_aux sa
 
 let lpds r = lpds_aux [r]
 
@@ -994,7 +1023,10 @@ let add_ext neval f =
     let fvl = List.map MFOTL.free_vars f in
     let args = {intv = intv; mr = mr; mrs = rpds mr; attr_fs = fvl} in
     let inf = {args = args; mrdeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
-    EMatchP (ext_fl, inf, next_loc())
+    (* [post] (e.g. the projection of an enclosing EXISTS) is not fused into the
+       match maintenance, so apply it to the result via an enclosing EExists. *)
+    let node = EMatchP (ext_fl, inf, next_loc()) in
+    (match post with None -> node | Some _ -> EExists (apply_post post, node, next_loc()))
 
   | Frex (intv, r) ->
     let (mr, f) = to_mregex r in
@@ -1002,7 +1034,8 @@ let add_ext neval f =
     let fvl = List.map MFOTL.free_vars f in
     let args = {intv = intv; mr = mr; mrs = lpds mr; attr_fs = fvl} in
     let inf = {args = args; mldeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
-    EMatchF (ext_fl, inf, next_loc())
+    let node = EMatchF (ext_fl, inf, next_loc()) in
+    (match post with None -> node | Some _ -> EExists (apply_post post, node, next_loc()))
   | _ -> failwith "[add_ext] internal error"
   in
   add_ext None false f, neval0
