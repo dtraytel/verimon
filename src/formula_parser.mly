@@ -148,6 +148,15 @@
 %token END
 %token EOF
 
+/* REDUCE_CONCAT (lowest) is a general "prefer shift over an empty/optional
+   production" marker. It tags (a) the regex concatenation/alternation reduce rules,
+   so the inherent ambiguous "end the regex vs. start another atom" boundary resolves
+   to shift (greedy); and (b) the empty `varlist` and empty `xopttermlist`
+   productions, so a following group-by var / arithmetic term is shifted rather than
+   committing to the empty list. In every case this is the choice ocamlyacc already
+   made by default, now made explicit so the conflict is no longer reported. */
+%nonassoc REDUCE_CONCAT
+%nonassoc AGGREG
 %nonassoc LET FRZ IN
 %right SINCE TRIGGER UNTIL RELEASE
 %nonassoc PREV NEXT EVENTUALLY ONCE ALWAYS PAST_ALWAYS 
@@ -156,8 +165,6 @@
 %right IMPL
 %left OR
 %left AND
-%left ALT
-%left CONCAT
 %nonassoc LPA
 %nonassoc NOT
 %nonassoc BASE
@@ -165,9 +172,15 @@
 %nonassoc RPA
 
 
+%nonassoc EQ LESSEQ LESS GTR GTREQ SUBSTRING MATCHES         /* comparisons, below arithmetic */
 %left PLUS MINUS                                             /* lowest precedence */
-%left STAR SLASH                                             /* medium precedence */
+%left STAR SLASH MOD                                         /* medium precedence */
 %nonassoc UMINUS F2I I2F DAY_OF_MONTH MONTH YEAR FORMAT_DATE /* highest precedence */
+/* Regex-atom-start terminals that otherwise have no precedence. Placing them above
+   REDUCE_CONCAT makes "shift another atom" win over "end the regex" at the bare-
+   formula juxtaposition boundary, matching the prior default-shift behaviour. */
+%nonassoc FALSE TRUE LD STR STR_CST REGEXP_CST INT RAT DOT FREX PREX
+%nonassoc LETPAST R2S S2R I2S S2I F2S S2F
 
 %start formula
 %type <MFOTL.formula> formula
@@ -204,8 +217,8 @@ formula:
   | NOT formula                     { f "f(not)"; Neg ($2) }
   | EX varlist DOT formula %prec EX { f "f(ex)"; exists $2 $4 }
   | FA varlist DOT formula %prec FA { f "f(fa)"; forall $2 $4 }
-  | var LARROW aggreg var formula   { f "f(agg1)"; aggreg $1 $3 $4 [] $5 }
-  | var LARROW aggreg var SC varlist formula
+  | var LARROW aggreg var formula %prec AGGREG  { f "f(agg1)"; aggreg $1 $3 $4 [] $5 }
+  | var LARROW aggreg var SC varlist formula %prec AGGREG
                                     { f "f(agg2)"; aggreg $1 $3 $4 $6 $7 }
   | term SUBSTRING term             { f "f(substring)"; check (Substring ($1, $3)) }
   | term MATCHES term xopttermlist  { f "f(matches)"; check (Matches ($1, $3, $4)) }
@@ -235,23 +248,40 @@ formula:
   | PREX interval pregex             { f "f(prexd)"; Prex ($2,$3) }
   | PREX pregex                      { f "f(prexdf)"; Prex (dfintv,$2) }
 
+/* Stratified into alternation > concatenation > atom to remove the operator
+   ambiguities of the old flat `fregex fregex | fregex PLUS fregex` grammar.
+   Both levels are right-recursive to preserve the original right-associative
+   parse of `a + b + c` and `a b c`. Concatenation now binds tighter than
+   alternation (standard regex semantics): `a b + c` is `(a b) + c`. */
 fregex:
-  | LPA fregex RPA                   { f "r()"; $2 } 
-  | DOT                              { f "f(wild)"; Wild }
-  | formula                          { f "f(fbase)"; Concat(Test ($1),Wild)} %prec BASE
+  | fconcat PLUS fregex              { f "f(plus)"; Plus ($1, $3)}
+  | fconcat %prec REDUCE_CONCAT      { $1 }
+
+fconcat:
+  | fatom fconcat                    { f "f(concat)"; Concat ($1,$2)}
+  | fatom %prec REDUCE_CONCAT        { $1 }
+
+fatom:
+  | LPA fregex RPA                   { f "r()"; $2 }
+  | DOT                              { f "f(wild)"; wild }
+  | formula                          { f "f(fbase)"; Concat(Test ($1),wild)} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
-  | fregex fregex                    { f "f(concat)"; Concat ($1,$2)}  %prec CONCAT
-  | fregex PLUS fregex               { f "f(plus)"; Plus ($1, $3)} %prec ALT
-  | fregex STAR                      { f "f(star)"; Star ($1)}
+  | fatom STAR                       { f "f(star)"; Star ($1)}
 
 pregex:
-  | LPA pregex RPA                   { f "r()"; $2 } 
-  | DOT                              { f "f(wild)"; Wild }
-  | formula                          { f "f(pbase)"; Concat(Wild,Test ($1))} %prec BASE
+  | pconcat PLUS pregex              { f "f(plus)"; Plus ($1, $3)}
+  | pconcat %prec REDUCE_CONCAT      { $1 }
+
+pconcat:
+  | patom pconcat                    { f "f(concat)"; Concat ($1,$2)}
+  | patom %prec REDUCE_CONCAT        { $1 }
+
+patom:
+  | LPA pregex RPA                   { f "r()"; $2 }
+  | DOT                              { f "f(wild)"; wild }
+  | formula                          { f "f(pbase)"; Concat(wild,Test ($1))} %prec BASE
   | formula QM                       { f "f(test)"; Test ($1)}
-  | pregex pregex                    { f "f(concat)"; Concat ($1,$2)}  %prec CONCAT
-  | pregex PLUS pregex               { f "f(plus)"; Plus ($1, $3)} %prec ALT
-  | pregex STAR                      { f "f(star)"; Star ($1)}
+  | patom STAR                       { f "f(star)"; Star ($1)}
 
 
 aggreg:
@@ -323,18 +353,25 @@ cst:
 
 
 termlist:
-  | term COM termlist       { f "termlist(list)"; $1 :: $3 }
-  | term                    { f "termlist(end)"; [$1] }
+  | termarg COM termlist    { f "termlist(list)"; $1 :: $3 }
+  | termarg                 { f "termlist(end)"; [$1] }
   |                         { f "termlist()"; [] }
+
+/* A predicate argument is a term or the anonymous `_`, which becomes a fresh unnamed
+   variable (existentially quantified by `add_ex`). `_` is handled here, not in `term`,
+   so it is not a general term and does not collide with the optterm don't-care `_`. */
+termarg:
+  | term                    { f "termarg(term)"; $1 }
+  | LD                      { f "termarg(_)"; incr var_cnt; Var ("_" ^ (string_of_int !var_cnt)) }
 
 varlist:
   | varlist COM var         { f "varlist(list)"; $1 @ [$3] }
   | var                     { f "varlist(end)"; [$1] }
-  |                         { f "varlist()"; [] }
+  |  %prec REDUCE_CONCAT    { f "varlist()"; [] }
 
 xopttermlist:
   | LPA opttermlist RPA     { f "xopttermlist(list)"; $2 }
-  |                         { f "xopttermlist()"; [] }
+  |  %prec REDUCE_CONCAT    { f "xopttermlist()"; [] }
 
 opttermlist:
   | opttermlist COM optterm { f "opttermlist(list)"; $1 @ [$3] }
@@ -345,6 +382,10 @@ optterm:
   | LD                      { f "optterm(None)"; None }
   | term                    { f "optterm(Some)"; Some $1 }
 
+/* A `var` is a named variable only. The anonymous `_` (LD) is NOT a general var/term:
+   that is what previously made a lone `_` ambiguous in a MATCHES list (`optterm: LD`
+   = don't-capture None vs `var: LD` = unnamed var, a reduce/reduce conflict). `_` is
+   instead admitted only where it is meaningful: as an anonymous predicate argument
+   (see `termarg`) and as the optterm don't-care marker (`optterm: LD`). */
 var:
-  | LD                      { f "unnamed var"; incr var_cnt; "_" ^ (string_of_int !var_cnt) }
   | STR                     { f "var"; assert (String.length $1 > 0); $1 }

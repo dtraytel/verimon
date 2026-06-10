@@ -1,5 +1,7 @@
 *.o
 _build
+_coverage
+*.coverage
 /monpoly*.install
 
 *~

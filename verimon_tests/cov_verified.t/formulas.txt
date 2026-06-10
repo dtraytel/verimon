@@ -1,0 +1,23 @@
+P(x,y) TRIGGER[0,2] Q(x,y)
+P(x,y) TRIGGER[1,3] Q(x,y)
+R(x) TRIGGER[0,*) S(x)
+(NOT R(x)) TRIGGER[0,2] S(x)
+EXISTS y. (P(x,y) TRIGGER[0,2] Q(x,y))
+P(x,y) RELEASE[0,2] Q(x,y)
+P(x,y) RELEASE[1,3] Q(x,y)
+(NOT P(x,y)) RELEASE[0,2] Q(x,y)
+HISTORICALLY[0,2] R(x)
+HISTORICALLY[1,*) R(x)
+PAST_ALWAYS[0,2] R(x)
+ALWAYS[0,2] R(x)
+ALWAYS[1,3] R(x)
+ONCE[0,*) R(x)
+MATCHP[0,2] R(x)?
+MATCHF[0,2] R(x)?
+MATCHP[0,4] (R(x)? .)*
+MATCHF[0,4] (S(x)? .)*
+MATCHP[0,*) (R(x)? + S(x)?)
+R(x) AND MATCHP[0,2] (R(x)? .)*
+R(x) SINCE[0,2] (R(x) TRIGGER[0,2] S(x))
+R(x) AND EVENTUALLY[0,2] (R(x) UNTIL[0,2] S(x))
+LETPAST foo(x) = S(x) OR (EXISTS y. P(x,y) AND PREV[0,*) foo(y)) IN foo(x)

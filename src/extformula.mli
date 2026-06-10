@@ -23,6 +23,40 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+type mregex =
+  | MSkip of int
+  | MTestPos of int
+  | MTestNeg of int
+  | MPlus of (mregex * mregex)
+  | MTimes of (mregex *  mregex)
+  | MStar of mregex
+
+type 'a mregex_map
+
+val mrfind: mregex -> 'a mregex_map  -> 'a
+val mradd: mregex-> 'a -> 'a mregex_map  -> 'a mregex_map
+val mrupdate: mregex -> ('a option -> 'a option) -> 'a mregex_map  -> 'a mregex_map
+val mrempty: 'a mregex_map
+
+type rargs = {intv: interval;
+  mr: mregex;
+  mrs: mregex list;
+  attr_fs: var list list}
+
+type mpinfo = {args: rargs;
+  mutable mrdeltaaux: (timestamp * relation mregex_map) list;
+  mutable buf: relation list list;
+  mutable crt: Neval.cell;
+  mutable last: Neval.cell;
+  mutable out: relation list}
+
+type mfinfo = {args: rargs;
+  mutable mldeltaaux: (timestamp * relation list * relation) list;
+  mutable buf: relation list list;
+  mutable crt: Neval.cell;
+  mutable last: Neval.cell;
+  mutable out: relation list}
+
 (* pdinfo: per-predicate info with optional constant relation for FRZ.
    When [pconst = Some r] the predicate yields [r] at every timepoint
    (the native "mres Const" analog) instead of consuming the queue. *)
@@ -74,6 +108,8 @@ and extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  | EMatchP of extformula list * mpinfo * int
+  | EMatchF of extformula list * mfinfo * int
   | EFrz of predicate * comp_one * extformula * frz_info * int
 
 val contains_eventually: extformula -> bool

@@ -85,6 +85,7 @@ open Helper
 open Marshalling
 open Splitting
 open Extformula
+open Rewriting
 open Mformula
 open Hypercube_slicer
 
@@ -104,30 +105,6 @@ let slicer_seeds  = ref [|[||]|]
 
 let crt_ts = ref MFOTL.ts_invalid
 let crt_tp = ref (-1)
-
-let make_db db =
-  Db.make_db (List.map (fun (s,r) -> Table.make_table s r) db)
-
-let mqueue_add_last auxrels tsq rel2 =
-  if Mqueue.is_empty auxrels then
-    Mqueue.add (tsq,rel2) auxrels
-  else
-    let tslast, rellast =  Mqueue.get_last auxrels in
-    if tslast = tsq then
-      Mqueue.update_last (tsq, Relation.union rellast rel2) auxrels
-    else
-      Mqueue.add (tsq,rel2) auxrels
-
-let dllist_add_last auxrels tsq rel2 =
-  if Dllist.is_empty auxrels then
-    Dllist.add_last (tsq,rel2) auxrels
-  else
-    let tslast, rellast = Dllist.get_last auxrels in
-    if tslast = tsq then
-      let _ = Dllist.pop_last auxrels in
-      Dllist.add_last (tsq, Relation.union rellast rel2) auxrels
-    else
-      Dllist.add_last (tsq,rel2) auxrels
 
 let warn_if_empty_aggreg {op; default} {Aggreg.empty_rel; Aggreg.rel} =
   if empty_rel then
@@ -171,6 +148,9 @@ let add_let_index f n rels =
     | EUntil (f1,f2,_,_) ->
       update f1;
       update f2
+    | EMatchP (fl,_,_)
+    | EMatchF (fl,_,_) ->
+      List.iter update fl
 
     (* For FRZ: update phi (f1); for psia, handle by mode. *)
     | EFrz ((pname2, parity2, _), _, f1, frz, _) ->
@@ -187,7 +167,168 @@ let add_let_index f n rels =
   in
   update f
 
+let rec mbufnt_take f z buf crt =
+  if List.exists (fun b -> List.compare_length_with b 0 = 0) buf || Neval.is_last crt then
+    (z, buf, crt)
+  else
+    let heads = List.map List.hd buf in
+    let tails = List.map List.tl buf in
+    let new_z = f heads (snd(Neval.get_data crt)) z in
+    mbufnt_take f new_z tails (Neval.get_next crt)
 
+let mbufn_add xs' xs = 
+  List.map2 (@) xs xs'
+
+let rec epsilon_lax attr_guard guard attr_fs fs = function
+  | MSkip m -> if m = 0 then guard else Relation.empty
+  | MTestPos i -> 
+    let f = (List.nth fs i) in 
+    let attr2 = (List.nth attr_fs i) in
+    let matches = Table.get_matches attr_guard attr2 in
+    Relation.natural_join_sc2 (fun t -> Some t) matches guard f
+  | MTestNeg i -> 
+    let f = (List.nth fs i) in 
+    let attr2 = (List.nth attr_fs i) in
+    let posl = List.map (fun v -> Misc.get_pos v attr_guard) attr2 in
+    Relation.minus None posl guard f
+  | MPlus (r, s) -> 
+    Relation.union 
+      (epsilon_lax attr_guard guard attr_fs fs r) 
+      (epsilon_lax attr_guard guard attr_fs fs s)
+  | MTimes (r, s) -> 
+      Relation.filtermap_inter None 
+        (epsilon_lax attr_guard guard attr_fs fs r) 
+        (epsilon_lax attr_guard guard attr_fs fs s)
+  | MStar _ -> guard
+
+let rec free_mre_vars attr_fs = function 
+  | MSkip n -> []
+  | MTestPos i | MTestNeg i -> List.nth attr_fs i
+  | MPlus (r1,r2) | MTimes (r1,r2) -> 
+    Misc.union (free_mre_vars attr_fs r1) (free_mre_vars attr_fs r2)
+  | MStar r -> free_mre_vars attr_fs r
+
+let rec r_epsilon_strict n attr_fs fs = function
+  | MSkip m -> 
+    if m = 0 then
+      Relation.singleton (Tuple.make_tuple [])
+    else 
+      Relation.empty
+  | MTestPos i -> List.nth fs i
+  | MTestNeg i -> 
+    if Relation.is_empty (List.nth fs i) then 
+      Relation.singleton (Tuple.make_tuple [])
+    else
+      Relation.empty 
+  | MPlus (r, s) -> 
+    Relation.union (r_epsilon_strict n attr_fs fs r) (r_epsilon_strict n attr_fs fs s)
+  | MTimes (r, s) -> 
+    epsilon_lax (free_mre_vars attr_fs r) (r_epsilon_strict n attr_fs fs r) attr_fs fs s
+  | MStar _ -> Relation.singleton (Tuple.make_tuple [])
+
+let rec l_epsilon_strict n attr_fs fs = function 
+| MSkip m -> 
+  if m = 0 then
+    Relation.singleton (Tuple.make_tuple [])
+  else 
+    Relation.empty
+| MTestPos i -> List.nth fs i
+| MTestNeg i -> 
+  if Relation.is_empty (List.nth fs i) then 
+    Relation.singleton (Tuple.make_tuple [])
+  else
+    Relation.empty 
+| MPlus (r, s) -> Relation.union (l_epsilon_strict n attr_fs fs r) (l_epsilon_strict n attr_fs fs s)
+| MTimes (r, s) -> epsilon_lax (free_mre_vars attr_fs s) (l_epsilon_strict n attr_fs fs s) attr_fs fs r
+| MStar _ -> Relation.singleton (Tuple.make_tuple [])
+
+let mrtabulate ks f =
+  let fp = 
+    List.filter_map (fun k -> 
+      let fk = f k in 
+      if Relation.is_empty fk then None else Some (k, fk)  
+    ) ks
+  in 
+  List.fold_left (fun acc (k, v) -> mradd k v acc) mrempty fp
+
+(* [mrtabulate] omits keys whose relation is empty, so an absent key denotes the
+   empty relation; look it up accordingly instead of raising Not_found. *)
+let mrlookup k m = try mrfind k m with Not_found -> Relation.empty
+
+let rec r_delta kappa x attr_fs fs = function
+  | MSkip n -> (
+    match n with 
+      | 0 -> Relation.empty
+      | _ -> mrlookup (kappa (MSkip (n - 1))) x
+    )
+  | MTestPos i -> Relation.empty
+  | MTestNeg i -> Relation.empty
+  | MPlus (r, s) -> Relation.union (r_delta kappa x attr_fs fs r) (r_delta kappa x attr_fs fs s)
+  | MTimes (r, s) ->
+    Relation.union
+    (r_delta (fun t -> kappa (MTimes (r, t))) x attr_fs fs s)
+    (epsilon_lax (free_mre_vars attr_fs (kappa r)) (r_delta kappa x attr_fs fs r) attr_fs fs s)
+  | MStar r -> r_delta (fun t -> kappa (MTimes (MStar r, t))) x attr_fs fs r
+
+let rec l_delta kappa x attr_fs fs = function
+  | MSkip n -> (
+    match n with 
+      | 0 -> Relation.empty
+      | _ -> mrlookup (kappa (MSkip (n - 1))) x
+    )
+  | MTestPos i -> Relation.empty
+  | MTestNeg i -> Relation.empty
+  | MPlus (r, s) -> Relation.union (l_delta kappa x attr_fs fs r) (l_delta kappa x attr_fs fs s)
+  | MTimes (r, s) -> 
+    Relation.union 
+      (l_delta (fun t -> kappa (MTimes (t, s))) x attr_fs fs r)
+      (epsilon_lax (free_mre_vars attr_fs (kappa s)) (l_delta kappa x attr_fs fs s) attr_fs fs r)
+  | MStar r -> l_delta (fun t -> kappa (MTimes (t, MStar r))) x attr_fs fs r
+
+
+let update_matchP n intv mr mrs attr_fs rels nt aux =
+  let aux = match List.filter_map (fun (t, rel) -> if MFOTL.in_left_ext (MFOTL.ts_minus nt t) intv then 
+    Some (t, mrtabulate mrs (fun mr -> Relation.union (r_delta (fun t -> t) rel attr_fs rels mr) (if t = nt then r_epsilon_strict n attr_fs rels mr else Relation.empty)))
+    else None) aux with 
+  | [] -> [(nt, mrtabulate mrs (r_epsilon_strict n attr_fs rels))]
+  | x :: aux' -> 
+    if fst x = nt then x :: aux'
+    else (nt, mrtabulate mrs (r_epsilon_strict n attr_fs rels)) :: x :: aux'
+  in 
+  let result = 
+    List.fold_right 
+      Relation.union 
+      (List.filter_map 
+      (fun (t, rel) -> if MFOTL.in_right_ext (MFOTL.ts_minus nt t) intv then Some(mrlookup mr rel) else None) aux)
+      Relation.empty
+  in
+  (result, aux) 
+
+
+
+let update_matchF_base n intv mr mrs attr_fs rels nt =
+  let x = mrtabulate mrs (l_epsilon_strict n attr_fs rels) in 
+  ([(nt, rels, if MFOTL.in_right_ext MFOTL.ts_null intv then mrlookup mr x else Relation.empty)], x)
+
+let update_matchF_step intv mr mrs nt attr_fs (t, rels', rel) (aux', x) =
+  let y = mrtabulate mrs (l_delta (fun t -> t) x attr_fs rels') in 
+  ((t, rels', if MFOTL.in_interval (MFOTL.ts_minus nt t) intv then Relation.union rel (mrlookup mr y) else rel) :: aux', y)
+
+
+let update_matchF n intv mr mrs attr_fs rels nt aux =
+  let base = update_matchF_base n intv mr mrs attr_fs rels nt in 
+  let step = update_matchF_step intv mr mrs nt attr_fs in
+  fst (List.fold_right step aux base)
+
+let rec eval_matchF intv mr nt aux =
+  match aux with
+  | [] -> ([], [])
+  | (t, rels, rel) :: aux ->
+    if not (MFOTL.in_left_ext (MFOTL.ts_minus nt t) intv) then
+      let (xs, aux) = eval_matchF intv mr nt aux in
+      (rel :: xs, aux)
+    else
+      ([], (t, rels, rel) :: aux)
 
 (* Arguments:
    - [f] the current formula
@@ -301,6 +442,8 @@ let rec eval f crt discard =
         | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
         | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) ->
           set_pconst frozen_rel ff1; set_pconst frozen_rel ff2
+        | EMatchP (fl, _, _) | EMatchF (fl, _, _) ->
+          List.iter (set_pconst frozen_rel) fl
         | EFrz ((fn, fa, _), _, ff1, frz_inner, _) ->
           (match frz_inner.frz_mode with
           | FrzPerInst fp_inner ->
@@ -337,6 +480,7 @@ let rec eval f crt discard =
           | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) -> go ff
           | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
           | ESince (ff1, ff2, _, _) | EUntil (ff1, ff2, _, _) -> go ff1; go ff2
+          | EMatchP (fl, _, _) | EMatchF (fl, _, _) -> List.iter go fl
           | EFrz (_, _, ff1, frz_inner, _) ->
             (* Seed the nested per-instance FRZ's db history from this FRZ's
                accumulated history.  Without this, the nested FRZ only starts
@@ -638,7 +782,76 @@ let rec eval f crt discard =
       | None -> inf.urel2 <- Some rel2; None
     in
     update_and_get_result (), loc
+  | EMatchP (ext_fl, inf, loc) ->
+    if Misc.debugging Dbg_eval then
+      Printf.eprintf "[eval,MatchP] q=%d\n" q;
+    (* Each subformula must be evaluated over the SAME range of new time points,
+       so start every one from the shared [inf.last] rather than letting the first
+       one advance it past the others (which would leave their buffers empty). *)
+    let start = inf.last in
+    let last_reached = ref start in
+    let eager_eval f =
+      let rec go last rels =
+        if Neval.is_last last then (last, rels)
+        else
+          let crt1 = Neval.get_next last in
+          match eval f crt1 false with
+          | Some rel -> go crt1 (rel :: rels)
+          | None -> (last, rels)
+      in
+      let (last', rels) = go start [] in
+      last_reached := last';
+      rels
+    in
+    let (xss) = List.map eager_eval ext_fl in
+    inf.last <- !last_reached;
+    let ((zs, aux), buf, nts) = mbufnt_take (fun rels crt (zs, aux) ->
+      let args = inf.args in 
+      let (z, aux) = update_matchP q args.intv args.mr args.mrs args.attr_fs rels crt aux in
+      (zs @ [z], aux)) ([], inf.mrdeltaaux) (mbufn_add xss inf.buf) crt
+    in
+    inf.mrdeltaaux <- aux;
+    inf.buf <- buf; 
+    inf.crt <- nts;
+    inf.out <- inf.out @ zs;
+    (match inf.out with [] -> None | z::rest -> inf.out <- rest; Some z), loc
 
+  | EMatchF (ext_fl, inf, loc) ->
+    if Misc.debugging Dbg_eval then
+      Printf.eprintf "[eval,MatchF] q=%d\n" q;
+    (* Each subformula must be evaluated over the SAME range of new time points,
+       so start every one from the shared [inf.last] rather than letting the first
+       one advance it past the others (which would leave their buffers empty). *)
+    let start = inf.last in
+    let last_reached = ref start in
+    let eager_eval f =
+      let rec go last rels =
+        if Neval.is_last last then (last, rels)
+        else
+          let crt1 = Neval.get_next last in
+          match eval f crt1 false with
+          | Some rel -> go crt1 (rel :: rels)
+          | None -> (last, rels)
+      in
+      let (last', rels) = go start [] in
+      last_reached := last';
+      rels
+    in
+    let (xss) = List.map eager_eval ext_fl in
+    inf.last <- !last_reached;
+    let args = inf.args in
+    (* [inf.crt] is the cell whose timestamp pairs with the oldest buffered
+       relation. It starts at the pre-first sentinel cell (tp index < 0); on the
+       first evaluation the oldest buffered relation is the current cell, so anchor
+       it there. Afterwards [inf.crt] is the frontier returned by [mbufnt_take]. *)
+    if fst (Neval.get_data inf.crt) < 0 then inf.crt <- crt;
+    let (aux, buf, nts) = mbufnt_take (update_matchF q args.intv args.mr args.mrs args.attr_fs) inf.mldeltaaux (mbufn_add xss inf.buf) inf.crt in
+    let (zs, aux) = eval_matchF args.intv args.mr (snd (Neval.get_data nts)) aux in
+    inf.mldeltaaux <- aux; 
+    inf.buf <- buf;
+    inf.crt <- nts; 
+    inf.out <- inf.out @ zs;
+    (match inf.out with [] -> None | z::rest -> inf.out <- rest; Some z), loc
   in
   let result, loc = wrapper f in
   if !Perf.profile_enabled then
@@ -697,6 +910,9 @@ let add_index f i tsi db =
     | EUntil (f1,f2,_,_) ->
       update lets f1;
       update lets f2
+    | EMatchP (fl,_,_)
+    | EMatchF (fl,_,_) ->
+      List.iter (update lets) fl
 
     (* FRZ: update phi (f1); psia handling depends on mode. *)
     | EFrz ((pname3, _, _), _, f1, frz, _) ->
@@ -733,11 +949,87 @@ let force_post = function
   | Some f -> f
   | None -> (fun t -> Some t)
 
+let rec to_mregex_exec r xs = 
+  match r with 
+  | MFOTL.Skip n -> (MSkip n, xs)
+
+  | MFOTL.Test f -> 
+    if fst (is_monitorable f) then
+      (MTestPos (List.length xs), xs @ [f])
+    else 
+      (match f with
+      | MFOTL.Neg f' -> (MTestNeg (List.length xs), xs @ [f'])
+      | _ -> (MSkip 0, xs)
+      )
+
+  | MFOTL.Plus (r, s) ->
+    let (mr, ys) = to_mregex_exec r xs in
+    let (ms, zs) = to_mregex_exec s ys in
+    (MPlus (mr, ms), zs)
+
+  | MFOTL.Concat (r, s) ->
+    let (mr, ys) = to_mregex_exec r xs in
+    let (ms, zs) = to_mregex_exec s ys in
+    (MTimes (mr, ms), zs)
+
+  | MFOTL.Star r -> 
+    let (mr, ys) = to_mregex_exec r xs in (MStar mr, ys)
+
+let to_mregex r = to_mregex_exec r []
+
+let mtimesl r s =
+  List.map (fun x -> MTimes (r, x)) s
+
+let mtimesr r s =
+  List.map (fun x -> MTimes (x, s)) r
+
+let rec rpd = function 
+  | MSkip n -> if n = 0 then [] else [MSkip (n - 1)]
+  | MTestPos _ -> []
+  | MTestNeg _ -> []
+  | MPlus (r, s) -> rpd r @ rpd s
+  | MTimes (r, s) -> mtimesl r (rpd s) @ rpd r
+  | MStar r -> mtimesl (MStar r) (rpd r)
+
+let rec rpds_aux s = 
+  let sa = List.concat_map rpd s @ s in 
+  if List.for_all (fun x -> List.mem x s) sa then s 
+  else rpds_aux sa 
+
+let rpds r = rpds_aux [r]
+
+let rec lpd = function 
+  | MSkip n -> if n = 0 then [] else [MSkip (n - 1)]
+  | MTestPos _ -> []
+  | MTestNeg _ -> []
+  | MPlus (r, s) -> lpd r @ lpd s
+  | MTimes (r, s) -> mtimesr (lpd r) s @ lpd s
+  | MStar r -> mtimesr (lpd r) (MStar r)
+
+let rec lpds_aux s =
+  let sa = List.concat_map lpd s @ s in
+  if List.for_all (fun x -> List.mem x s) sa then s
+  else lpds_aux sa
+
+let lpds r = lpds_aux [r]
+
 let add_ext neval f =
   let neval0 = Neval.get_last neval in
   let loc = ref 0 in
   let next_loc () = incr loc; !loc in
-  let rec add_ext post = function
+  (* A non-injective [post] is not fused into a temporal operator's msaux/muaux;
+     instead it is applied to the operator's result by an enclosing [EExists]. *)
+  let fuse_post post proj = if proj then None else post in
+  let wrap_post post proj node =
+    if proj then EExists (apply_post post, node, next_loc()) else node in
+  (* [proj] records whether [post] is non-injective (contains a projection).
+     A non-injective [post] must not be fused into the windowed maintenance of
+     temporal operators (Once/Since/Until/Eventually), because their result is
+     updated via set difference: two distinct pre-images may collapse to the
+     same image, so dropping one tuple leaving the window would wrongly remove
+     the shared image. Filters (and bijective reorderings) are injective and
+     remain safe to fuse. *)
+  let rec add_ext post proj = function
   | Pred p ->
     let comp = Relation.eval_pred post p in
     EPred (p, comp, {pqueue=Queue.create(); pconst=None}, next_loc())
@@ -752,8 +1044,8 @@ let add_ext neval f =
       else
         Some (fun t -> Some (Tuple.projections new_pos t))
     in
-    let ff1 = add_ext post1 f1 in
-    let ff2 = add_ext post f2 in
+    let ff1 = add_ext post1 false f1 in
+    let ff2 = add_ext post proj f2 in
     ELet (p, (fun rel -> rel), ff1, ff2, {llast = neval0}, next_loc())
 
   | LetPast _ -> failwith "LETPAST is not supported except in -verified mode"
@@ -770,7 +1062,7 @@ let add_ext neval f =
       else
         Some (fun t -> Some (Tuple.projections new_pos t))
     in
-    let ff1 = add_ext post1 f1 in
+    let ff1 = add_ext post1 false f1 in
     let comp1 = (fun rel -> rel) in
     let (pname, parity, _) = p in
     (* Detect temporal operators in psia (source formula level) *)
@@ -789,11 +1081,11 @@ let add_ext neval f =
       if has_temporal f2 then
         (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
         FrzPerInst {fpi_neval0 = neval0;
-                    fpi_active = Queue.create (); fpi_mk_inst = (fun () -> add_ext None f2);
+                    fpi_active = Queue.create (); fpi_mk_inst = (fun () -> add_ext None false f2);
                     fpi_db_hist = Queue.create ()}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)
-        let ff2 = add_ext None f2 in
+        let ff2 = add_ext None false f2 in
         let rec collect_q acc = function
           | ERel _ -> acc
           | EPred ((n, a, _), _, pdinf, _) when n = pname && a = parity -> pdinf :: acc
@@ -805,6 +1097,8 @@ let add_ext neval f =
           | EAnd (_, g1, g2, _, _) | EOr (_, g1, g2, _, _)
           | ESince (g1, g2, _, _) | EUntil (g1, g2, _, _) ->
             collect_q (collect_q acc g1) g2
+          | EMatchP (fl, _, _) | EMatchF (fl, _, _) ->
+            List.fold_left collect_q acc fl
           | EFrz ((fn, fa, _), _, g1, frz_inner, _) ->
             let acc = collect_q acc g1 in
             (* If inner FRZ also binds q, q is shadowed inside its psia *)
@@ -830,7 +1124,7 @@ let add_ext neval f =
     ERel (rel, next_loc())
 
   | Neg f ->
-    let ff = add_ext None f in
+    let ff = add_ext None false f in
     let ff' = ENeg (ff, next_loc()) in
     (match post with
     | None -> ff'
@@ -842,7 +1136,7 @@ let add_ext neval f =
     let pos = List.map (fun v -> Misc.get_pos v attr1) vl in
     let pos = List.sort Stdlib.compare pos in
     let post' = premap_post post (Tuple.project_away pos) in
-    add_ext post' f1
+    add_ext post' (proj || pos <> []) f1
 
   | Or (f1, f2) ->
     let attr1 = MFOTL.free_vars f1 in
@@ -855,8 +1149,11 @@ let add_ext neval f =
         let new_pos = List.map snd matches in
         premap_post post (Tuple.projections new_pos)
     in
-    let ff1 = add_ext post f1 in
-    let ff2 = add_ext post2 f2 in
+    let ff1 = add_ext post proj f1 in
+    (* [post2] only reorders f2's columns to f1's order; for a monitorable Or the
+       free-variable sets coincide, so this is a bijection and adds no
+       non-injectivity. Hence f2 inherits [proj] unchanged. *)
+    let ff2 = add_ext post2 proj f2 in
     let comp = Relation.union in
     EOr (comp, ff1, ff2, {arel = None}, next_loc())
 
@@ -868,17 +1165,17 @@ let add_ext neval f =
         let filter_cond = Tuple.get_filter attr1 f2 in
         let post' = bind_post post (fun t ->
           if filter_cond t then Some t else None) in
-        add_ext post' f1
+        add_ext post' proj f1
       else
         let process_tuple = Tuple.get_tf attr1 f2 in
         let post' = bind_post post process_tuple in
-        add_ext post' f1
+        add_ext post' proj f1
     else
-      let ff1 = add_ext None f1 in
+      let ff1 = add_ext None false f1 in
       let ff2 =
         match f2 with
-        | Neg f2' -> add_ext None f2'
-        | _ -> add_ext None f2
+        | Neg f2' -> add_ext None false f2'
+        | _ -> add_ext None false f2
       in
       let comp =
         match f2 with
@@ -920,7 +1217,7 @@ let add_ext neval f =
       | Avg -> Aggreg.avg_once (force_post post) default intv 0 posx posG
       | Med -> Aggreg.med_once (force_post post) default intv 0 posx posG
     in
-    EAggOnce ({op; default}, state, add_ext None f, next_loc())
+    EAggOnce ({op; default}, state, add_ext None false f, next_loc())
 
   | Aggreg (t_y, y, op, x, glist, f)  ->
     let t_y = match t_y with TCst a -> a | _ -> failwith "Internal error" in
@@ -937,14 +1234,14 @@ let add_ext neval f =
       | Avg -> Aggreg.avg (force_post post) default 0 posx posG
       | Med -> Aggreg.med (force_post post) default 0 posx posG
     in
-    EAggreg ({op; default}, comp, add_ext None f, next_loc())
+    EAggreg ({op; default}, comp, add_ext None false f, next_loc())
 
   | Prev (intv, f) ->
-    let ff = add_ext post f in
+    let ff = add_ext post proj f in
     EPrev (intv, ff, {plast = neval0}, next_loc())
 
   | Next (intv, f) ->
-    let ff = add_ext post f in
+    let ff = add_ext post proj f in
     ENext (intv, ff, {init = true}, next_loc())
 
   | Since (intv,f1,f2) ->
@@ -956,19 +1253,19 @@ let add_ext neval f =
        | _ -> f1, true
       )
     in
-    let ff1 = add_ext None ef1 in
-    let ff2 = add_ext None f2 in
-    let saux = Optimized_mtl.init_msaux post pos intv attr1 attr2 in
+    let ff1 = add_ext None false ef1 in
+    let ff2 = add_ext None false f2 in
+    let saux = Optimized_mtl.init_msaux (fuse_post post proj) pos intv attr1 attr2 in
     let inf = {srel2 = None; saux} in
-    ESince (ff1,ff2,inf, next_loc())
+    wrap_post post proj (ESince (ff1,ff2,inf, next_loc()))
 
   | Once (intv,f) ->
     let attr = MFOTL.free_vars f in
     let ff1 = ERel (Relation.make_relation [Tuple.make_tuple []], next_loc()) in
-    let ff2 = add_ext None f in
-    let saux = Optimized_mtl.init_msaux post true intv [] attr in
+    let ff2 = add_ext None false f in
+    let saux = Optimized_mtl.init_msaux (fuse_post post proj) true intv [] attr in
     let inf = {srel2 = None; saux} in
-    ESince (ff1,ff2,inf, next_loc())
+    wrap_post post proj (ESince (ff1,ff2,inf, next_loc()))
 
   | Until (intv,f1,f2) ->
     let attr1 = MFOTL.free_vars f1 in
@@ -979,23 +1276,42 @@ let add_ext neval f =
        | _ -> f1, true
       )
     in
-    let ff1 = add_ext None ef1 in
-    let ff2 = add_ext None f2 in
-    let uaux = Optimized_mtl.init_muaux post pos intv attr1 attr2 in
+    let ff1 = add_ext None false ef1 in
+    let ff2 = add_ext None false f2 in
+    let uaux = Optimized_mtl.init_muaux (fuse_post post proj) pos intv attr1 attr2 in
     let inf = {ulast = neval0; urel2 = None; uaux} in
-    EUntil (ff1,ff2,inf, next_loc())
+    wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
   | Eventually (intv,f) ->
     let attr = MFOTL.free_vars f in
     let ff1 = ERel (Relation.make_relation [Tuple.make_tuple []], next_loc()) in
-    let ff2 = add_ext None f in
-    let uaux = Optimized_mtl.init_muaux post true intv [] attr in
+    let ff2 = add_ext None false f in
+    let uaux = Optimized_mtl.init_muaux (fuse_post post proj) true intv [] attr in
     let inf = {ulast = neval0; urel2 = None; uaux} in
-    EUntil (ff1,ff2,inf, next_loc())
+    wrap_post post proj (EUntil (ff1,ff2,inf, next_loc()))
 
+  | Prex (intv, r) ->
+    let (mr, f) = to_mregex r in
+    let ext_fl = List.map (add_ext None false) f in
+    let fvl = List.map MFOTL.free_vars f in
+    let args = {intv = intv; mr = mr; mrs = rpds mr; attr_fs = fvl} in
+    let inf = {args = args; mrdeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
+    (* [post] (e.g. the projection of an enclosing EXISTS) is not fused into the
+       match maintenance, so apply it to the result via an enclosing EExists. *)
+    let node = EMatchP (ext_fl, inf, next_loc()) in
+    (match post with None -> node | Some _ -> EExists (apply_post post, node, next_loc()))
+
+  | Frex (intv, r) ->
+    let (mr, f) = to_mregex r in
+    let ext_fl = List.map (add_ext None false) f in
+    let fvl = List.map MFOTL.free_vars f in
+    let args = {intv = intv; mr = mr; mrs = lpds mr; attr_fs = fvl} in
+    let inf = {args = args; mldeltaaux = []; buf = List.init (List.length f) (fun _ -> []); crt = neval0; last = neval0; out = []} in
+    let node = EMatchF (ext_fl, inf, next_loc()) in
+    (match post with None -> node | Some _ -> EExists (apply_post post, node, next_loc()))
   | _ -> failwith "[add_ext] internal error"
   in
-  add_ext None f, neval0
+  add_ext None false f, neval0
 
 
 type 'a state = {

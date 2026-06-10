@@ -1,0 +1,25 @@
+  | MTS mtrm
+
+datatype ('msaux, 'muaux, 'mtaux) xres =
+    XConst "event_data table"
+  | XDynamic "event_data table list × ('msaux, 'muaux, 'mtaux) mformula"
+
+fun xres_mres :: "('msaux, 'muaux, 'mtaux) xres ⇒ event_data mres" where
+  "xres_mres (XConst r)         = Const r"
+| "xres_mres (XDynamic (xs, _)) = Dynamic xs"
+
+fun xres_formula :: "('msaux, 'muaux, 'mtaux) xres ⇒ ('msaux, 'muaux, 'mtaux) mformula" where
+  "xres_formula (XConst r)         = MRel r"
+| "xres_formula (XDynamic (_, φ')) = φ'"
+
+fun xres_wrap :: "event_data mres ⇒ ('msaux, 'muaux, 'mtaux) mformula ⇒ ('msaux, 'muaux, 'mtaux) xres" where
+  "xres_wrap (Const r)    _ = XConst r"
+| "xres_wrap (Dynamic xs) φ = XDynamic (xs, φ)"
+
+fun xres_map :: "(event_data table ⇒ event_data table) ⇒
+    (('msaux, 'muaux, 'mtaux) mformula ⇒ ('msaux, 'muaux, 'mtaux) mformula) ⇒
+    ('msaux, 'muaux, 'mtaux) xres ⇒ ('msaux, 'muaux, 'mtaux) xres" where
+  "xres_map f _ (XConst r)         = XConst (f r)"
+| "xres_map f g (XDynamic (xs, φ)) = XDynamic (map f xs, g φ)"
+
+record ('msaux, 'muaux, 'mtaux) mstate =

@@ -286,7 +286,7 @@ let combine_uinfo uinf1 uinf2 = failwith "not implemented"
   If they do not, we raise an error.
  *)
 let comb_m lastev f1 f2 =
-  let c0 = ref (earliest_cell lastev f1) in
+  let _c0 = ref (earliest_cell lastev f1) in
   let rec comb_m f1 f2 = match (f1, f2) with
     | (MRel  (rel1, loc1),          MRel(rel2, loc2)) when loc1 = loc2
       -> MRel (Relation.union rel1 rel2, loc1)
@@ -406,7 +406,7 @@ let split_state mapping mf size =
     ) q;
     res
   in  
-  let split_queue2 q p =
+  let _split_queue2 q p =
     let res = Array.init size (fun i -> Queue.create()) in 
     Queue.iter (
     fun e -> 
@@ -416,7 +416,7 @@ let split_state mapping mf size =
     ) q;   
     res
   in  
-  let split_mqueue q p =
+  let _split_mqueue q p =
     let res = Array.init size (fun i -> Mqueue.create()) in 
     Mqueue.iter (
     fun e -> 
@@ -426,7 +426,7 @@ let split_state mapping mf size =
     ) q;    
     res
   in  
-  let split_dll1 l p = 
+  let _split_dll1 l p =
     let res = Array.init size (fun i -> Dllist.empty()) in 
     Dllist.iter (
       fun e -> let i, ts, r  = e in
@@ -435,7 +435,7 @@ let split_state mapping mf size =
     ) l;
     res
   in
-  let split_dll2 l p = 
+  let _split_dll2 l p =
     let res = Array.init size (fun i -> Dllist.empty()) in 
     Dllist.iter (
       fun e -> let ts, r  = e in
@@ -464,10 +464,10 @@ let split_state mapping mf size =
   let split_agg_once _state _p =
     failwith "State splitting for aggregations has not been implemented."
   in
-  let split_sinfo sinf p1 p2 =
-    let arr = Array.init size (fun i -> None) in 
-    let srels = match sinf.srel2 with
-    | Some r -> let states = (split r p2) in Array.map (fun s ->  Some s) states
+  let _split_sinfo sinf _p1 _p2 =
+    let arr = Array.init size (fun i -> None) in
+    let _srels = match sinf.srel2 with
+    | Some r -> let states = (split r _p2) in Array.map (fun s ->  Some s) states
     | None -> arr
     in
     failwith "not implemented"
@@ -475,7 +475,7 @@ let split_state mapping mf size =
     Array.map2 (fun srel2 nq -> {srel2 = srel2; sauxrels = nq}) srels queues*)
   in
   let p1 f1 = Mformula.free_vars f1 in
-  let p2 f1 f2 = free_vars2 f1 f2 in
+  let _p2 f1 f2 = free_vars2 f1 f2 in
   (* Recursive split call: At each step 
      - call split on the subformula(s), resulting in array(s)
      - get the relevant list of free vars and split the state, resulting in an array 
@@ -598,3 +598,5 @@ let rec print_ef = function
   | ESince         (f1, f2, sinf, _)                             -> print_endline "Since";print_ef f1;print_ef f2
   | EUntil         (f1, f2, uinf, _)                             -> print_endline "Until";print_ef f1;print_ef f2
   | EFrz           (_, _, f1, _, _)                              -> print_endline "Frz";print_ef f1
+  | EMatchP        _
+  | EMatchF        _                                             -> failwith "[Splitting.print_ef] splitting is not supported for the regex operators MATCHF/MATCHP"

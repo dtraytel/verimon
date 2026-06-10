@@ -30,6 +30,47 @@ type uinfo = {mutable ulast: Neval.cell;
 type comp_one = relation -> relation
 type comp_two = relation -> relation -> relation
 
+type mregex =
+  | MSkip of int
+  | MTestPos of int
+  | MTestNeg of int
+  | MPlus of (mregex * mregex)
+  | MTimes of (mregex *  mregex)
+  | MStar of mregex
+
+module MRegexMap = Map.Make (
+  struct type t = mregex
+    let compare = Stdlib.compare
+  end)
+
+type 'a mregex_map = 'a MRegexMap.t
+type key = MRegexMap.key
+
+let mrfind (k: mregex) (m: 'a mregex_map) = MRegexMap.find k m
+let mradd (k: mregex) (e: 'a) (m: 'a mregex_map) : 'a mregex_map = MRegexMap.add k e m
+let mrupdate k f m = MRegexMap.update k f m
+let mrempty : 'a mregex_map = MRegexMap.empty
+
+
+type rargs = {intv: interval;
+              mr: mregex;
+              mrs: mregex list;
+              attr_fs: var list list}
+
+type mpinfo = {args: rargs;
+              mutable mrdeltaaux: (timestamp * relation mregex_map) list;
+              mutable buf: relation list list;
+              mutable crt: Neval.cell;
+              mutable last: Neval.cell;
+              mutable out: relation list}
+
+type mfinfo = {args: rargs;
+              mutable mldeltaaux: (timestamp * relation list * relation) list;
+              mutable buf: relation list list;
+              mutable crt: Neval.cell;
+              mutable last: Neval.cell;
+              mutable out: relation list}
+
 (* Mutable per-predicate info: the usual queue of per-timepoint relations, plus
    an optional [pconst] constant relation used by FRZ.  When [pconst = Some r]
    the predicate returns [r] (after applying [comp]) at every timepoint, drawn
@@ -54,6 +95,8 @@ type extformula =
   | ENext of interval * extformula * ninfo * int
   | ESince of extformula * extformula * sinfo * int
   | EUntil of extformula * extformula * uinfo * int
+  | EMatchP of extformula list * mpinfo * int
+  | EMatchF of extformula list * mfinfo * int
   (* FRZ p phi psi.
      Two evaluation modes chosen at compile-time:
 
@@ -120,6 +163,9 @@ and frz_info = {
   | ESince         (f1, f2, sinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EUntil         (f1, f2, uinf, _)                             -> contains_eventually f1 || contains_eventually f2
   | EFrz           (_, _, f1, _, _)                              -> contains_eventually f1
+  | EMatchP        (fl, _, _)                                    -> List.exists contains_eventually fl
+  | EMatchF        (fl, _, _)                                    -> List.exists contains_eventually fl
+  (* | _ -> raise (Invalid_argument "not implemented yet") *)
 
 (* 
   Print functions used for debugging
@@ -338,6 +384,14 @@ let rec pp_structure ppf ff =
   | ESince (f1, f2, _, loc) -> pp_binary "SINCE" loc f1 f2
   | EUntil (f1, f2, _, loc) -> pp_binary "UNTIL" loc f1 f2
   | EFrz (_, _, f1, _, loc) -> pp_unary "FRZ" loc f1
+  | EMatchP (fl,_, loc) ->
+    fprintf ppf "@[<hv>%d: MATCHP@ %a@]"
+      loc
+      (pp_print_list ~pp_sep:pp_print_space pp_structure) fl
+  | EMatchF (fl, _, loc) ->
+    fprintf ppf "@[<hv>%d: MATCHF@ %a@]"
+      loc
+      (pp_print_list ~pp_sep:pp_print_space pp_structure) fl
 
 let extf_structure ff =
   pp_structure Format.str_formatter ff;

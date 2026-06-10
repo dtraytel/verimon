@@ -96,7 +96,7 @@ let get_predicates f =
         let bound2 = Predicate.get_name p :: bound in
         get_preds bound2 (get_preds bound preds f1) f2
   and get_re_preds bound preds = function
-    | Wild -> preds
+    | Skip n -> preds
     | Test f -> get_preds bound preds f
     | Concat (r1,r2)
     | Plus (r1,r2) -> get_re_preds bound (get_re_preds bound preds r1) r2
@@ -185,7 +185,7 @@ let get_tuple_filter f =
         let bound2 = Predicate.get_name p :: bound in
         get_tuples bound2 (get_tuples bound tuples f1) f2
   and get_re_tuples bound tuples = function (* regex *)
-    | Wild -> tuples
+    | Skip n -> tuples
     | Test f -> get_tuples bound tuples f
     | Concat (r1,r2)
     | Plus (r1,r2) -> get_re_tuples bound (get_re_tuples bound tuples r1) r2

@@ -356,7 +356,7 @@ let rec powerset = function
          let ps = powerset xs in
          ps @ List.map (fun ss -> x :: ss) ps
 
-let random_subset = Gen.oneofl << powerset 
+let random_subset = Gen.oneof_list << powerset
 
 (* 
    (random_bounded_subset n s) generates a random nonempty subset of s with cardinality no greater than n.
@@ -365,7 +365,7 @@ let random_subset = Gen.oneofl << powerset
 *)
 let random_bounded_subset n = 
   assert (n > 0);
-  Gen.oneofl << List.filter (fun x -> let l = List.length x in 1<=l && l <= n) << powerset 
+  Gen.oneof_list << List.filter (fun x -> let l = List.length x in 1<=l && l <= n) << powerset
 
 let shuffle l =
   let a = Array.of_list l in
@@ -380,7 +380,7 @@ let shuffle l =
 let var_op f vs1 vs2 = Set.elements (f (Set.of_list vs1) (Set.of_list vs2))
 
 let rel_gen v all_rels max_const = 
-  let rel  = if all_rels then Gen.oneofl [LT ; GT ; LEQ ; GEQ ; EQ] else Gen.return EQ in 
+  let rel  = if all_rels then Gen.oneof_list [LT ; GT ; LEQ ; GEQ ; EQ] else Gen.return EQ in
   let cons1 = Gen.int_bound max_const in 
   let cons2 = Gen.int_bound max_const in 
   cons1 >>= (fun c1 -> 
@@ -401,10 +401,10 @@ let predicate_gen map vs =
   let oldSet = try find (List.length vs) map with Not_found -> Set.empty in 
   let newSet = Set.add freshPred oldSet in 
   let updatedMap = add (List.length vs) newSet map in
-  let shuffled_Vars = Gen.shuffle_l vs in
+  let shuffled_Vars = Gen.shuffle_list vs in
   shuffled_Vars >>= (fun vs -> 
   Gen.map (fun (m,p) -> (m, make_predicate (p, shuffle vs))) 
-  (Gen.oneofl ((updatedMap, freshPred) :: (List.map (fun e -> (map,e)) (Set.elements oldSet)))))
+  (Gen.oneof_list ((updatedMap, freshPred) :: (List.map (fun e -> (map,e)) (Set.elements oldSet)))))
 
 let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi max_const qtl nogenlet varnum size = 
   let fq = if past_only || qtl then 0 else 1 in (* generate past-only formulas *)
@@ -458,13 +458,13 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
       let num_bvs = Random.int 3 in (* TODO: parametrize *)
       let num_bvs = if List.length vars = 0 then max 1 num_bvs else num_bvs in
       let new_bvs = new_bound_variables num_bvs vars in 
-      let result_var = Gen.oneofl vars in 
+      let result_var = Gen.oneof_list vars in
       (* let group_vars = Gen.map (fun r -> Set.diff (Set.of_list vars) (Set.singleton r)) result_var in *)
       let aggr_free_vars = var_op Set.union vars new_bvs in
-      let aggr_var = Gen.oneofl aggr_free_vars in
-      let aggr_gen_all = Gen.oneofl [MAX ; MIN ; CNT ; SUM ; AVG ; MED] in
-      let aggr_gen_mm = Gen.oneofl [MAX ; MIN] in
-      let aggr_gen_mmcs = Gen.oneofl [MAX ; MIN ; CNT ; SUM] in
+      let aggr_var = Gen.oneof_list aggr_free_vars in
+      let aggr_gen_all = Gen.oneof_list [MAX ; MIN ; CNT ; SUM ; AVG ; MED] in
+      let aggr_gen_mm = Gen.oneof_list [MAX ; MIN] in
+      let aggr_gen_mmcs = Gen.oneof_list [MAX ; MIN ; CNT ; SUM] in
       let side = Gen.bool in
       let noint = Gen.return (CBnd Z.zero, Inf) in
       let interval = if qtl then noint else interval_gen max_lb max_interval in
@@ -516,7 +516,7 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
                                 (fun s -> (newestMap, (f i lf rf)))))) in
     (* Monitrable formulas *)
     if not ndi then  
-      Gen.frequency [
+      Gen.oneof_weighted [
         1, binarybind gOr          vars vars;
         1, binarybind gNAndEQ      vars vars;
         1, vars_sub1 >>= (fun v1 -> binarybind gNAnd vars v1);
@@ -579,7 +579,7 @@ let formula_gen signature max_lb max_interval past_only all_rels aggr foo ndi ma
       ]
       else 
       (* Arbitrary formulas *)
-      Gen.frequency [
+      Gen.oneof_weighted [
         1, (go (predmap, vars, (n-1))) >>= (fun (newMap,sf1) -> (fun s -> (newMap, gNeg sf1)));
         1, vars_sub1 >>= (fun v1 -> vars_sub2 >>= (fun v2 -> let v2' = fv_cover v1 v2 vars in binarybind gAnd v1 v2'));
         1, vars_sub1 >>= (fun v1 -> vars_sub2 >>= (fun v2 -> let v2' = fv_cover v1 v2 vars in binarybind gOr v1 v2'));

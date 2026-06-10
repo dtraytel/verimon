@@ -96,6 +96,7 @@ let rec analyze lets f =
   | Matches _ -> result_of_atom
   | Pred p -> result_of_pred lets p
   | Let ((n, a, _), f1, f2) -> lift_let (go f1) (analyze ((n, a)::lets) f2)
+  | Frz ((n, a, _), f1, f2) -> lift_let (go f1) (analyze ((n, a)::lets) f2)
   | LetPast ((n, a, _), f1, f2) ->
       let lets' = (n, a)::lets in
       lift_let (analyze lets' f1) (analyze lets' f2)

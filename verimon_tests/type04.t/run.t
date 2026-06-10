@@ -5,129 +5,129 @@ No groups, no result shadowing
   $ echo 'x <- CNT y I(y)' > type04_1.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_1.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y I(y)
- 
+
   $ echo 'x <- CNT y F(y)' > type04_2.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_2.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y F(y)
- 
+
   $ echo 'x <- CNT y W(y)' > type04_3.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_3.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y W(y)
- 
+
   $ echo 'x <- SUM y I(y)' > type04_4.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_4.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- SUM y I(y)
- 
+
   $ echo 'x <- SUM y F(y)' > type04_5.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_5.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- SUM y F(y)
- 
+
   $ echo 'x <- AVG y I(y)' > type04_6.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_6.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y I(y)
- 
+
   $ echo 'x <- AVG y F(y)' > type04_7.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_7.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y F(y)
- 
+
   $ echo 'x <- MED y I(y)' > type04_8.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_8.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- MED y I(y)
- 
+
   $ echo 'x <- MED y F(y)' > type04_9.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_9.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- MED y F(y)
- 
+
   $ echo 'x <- MIN y I(y)' > type04_10.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_10.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MIN y I(y)
- 
+
   $ echo 'x <- MIN y F(y)' > type04_11.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_11.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- MIN y F(y)
- 
+
   $ echo 'x <- MIN y W(y)' > type04_12.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_12.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:String) ⊢ x <- MIN y W(y)
- 
+
   $ echo 'x <- MAX y I(y)' > type04_13.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_13.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MAX y I(y)
- 
+
   $ echo 'x <- MAX y F(y)' > type04_14.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_14.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- MAX y F(y)
- 
+
   $ echo 'x <- MAX y W(y)' > type04_15.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_15.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:String) ⊢ x <- MAX y W(y)
- 
+
 No groups, result shadowing
 
   $ echo 'x <- CNT y R(x,y)' > type04_16.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_16.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y R(x,y)
- 
+
   $ echo 'x <- CNT y EXISTS x . R(x,y) AND z = i2f(x)' > type04_17.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_17.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y EXISTS x. (R(x,y) AND z = i2f(x))
- 
+
   $ echo 'x <- CNT y EXISTS z . (EXISTS x . R(x,y) AND z = i2f(x)) AND z = x' > type04_18.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_18.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y EXISTS z. ((EXISTS x. (R(x,y) AND z = i2f(x))) AND z = x)
- 
+
   $ echo 'x <- CNT y I(y) AND W(x)' > type04_19.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_19.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- CNT y (I(y) AND W(x))
- 
+
   $ echo 'x <- SUM y R(x,y)' > type04_20.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_20.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- SUM y R(x,y)
- 
+
   $ echo 'x <- SUM y EXISTS x . R(x,y) AND z = i2f(x)' > type04_21.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_21.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- SUM y EXISTS x. (R(x,y) AND z = i2f(x))
- 
+
   $ echo 'x <- SUM y EXISTS z . (EXISTS x . R(x,y) AND z = i2f(x)) AND z = x' > type04_22.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_22.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- SUM y EXISTS z. ((EXISTS x. (R(x,y) AND z = i2f(x))) AND z = x)
- 
+
   $ echo 'x <- SUM y I(y) AND W(x)' > type04_23.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_23.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- SUM y (I(y) AND W(x))
- 
+
   $ echo 'x <- AVG y R(x,y)' > type04_24.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_24.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y R(x,y)
- 
+
   $ echo 'x <- AVG y EXISTS x . R(x,y) AND z = i2f(x)' > type04_25.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_25.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y EXISTS x. (R(x,y) AND z = i2f(x))
- 
+
   $ echo 'x <- AVG y EXISTS z . (EXISTS x . R(x,y) AND z = i2f(x)) AND z = x' > type04_26.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_26.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y EXISTS z. ((EXISTS x. (R(x,y) AND z = i2f(x))) AND z = x)
- 
+
   $ echo 'x <- AVG y I(y) AND W(x)' > type04_27.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_27.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Float) ⊢ x <- AVG y (I(y) AND W(x))
- 
+
   $ echo 'x <- MIN y R(x,y)' > type04_28.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_28.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MIN y R(x,y)
- 
+
   $ echo 'x <- MIN y EXISTS x . R(x,y) AND z = i2f(x)' > type04_29.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_29.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MIN y EXISTS x. (R(x,y) AND z = i2f(x))
- 
+
   $ echo 'x <- MIN y EXISTS z . (EXISTS x . R(x,y) AND z = i2f(x)) AND z = x' > type04_30.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_30.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MIN y EXISTS z. ((EXISTS x. (R(x,y) AND z = i2f(x))) AND z = x)
- 
+
   $ echo 'x <- MIN y I(y) AND W(x)' > type04_31.mfotl
   $ monpoly -verified -sig type04.sig -formula type04_31.mfotl -verbose -check -no_rw -debug typing 2>&1 | grep "final type judgement"
   [Rewriting.type_check] The final type judgement is (W:(String), F:(Float), I:(Int), S:(Int, Int, Int), R:(Int, Int), Q:(Int), P:(()), tp:(Int), ts:(Int), tpts:(Int, Int); x:Int) ⊢ x <- MIN y (I(y) AND W(x))
- 
+
 Groups, result shadowing
 
   $ echo 'r <- CNT y;x R(x,y) AND W(r)' > type04_32.mfotl
