@@ -85,12 +85,14 @@ and frz_static = {
 
 and frz_per_inst = {
   fpi_neval0: Neval.cell;           (* initial neval head; instances start from here *)
-  mutable fpi_active: frz_inst list;
+  mutable fpi_active: frz_inst Queue.t;
   mutable fpi_mk_inst: unit -> extformula;  (* mutable: outer FRZ can chain pconst patching *)
   (* Accumulated history of db snapshots, one per add_index call.  All entries
      are injected into each fresh instance so that future temporal operators (UNTIL,
-     ALWAYS, EVENTUALLY) can access live-predicate data for every past timepoint. *)
-  mutable fpi_db_hist: (int * MFOTL.timestamp * (string * relation) list) list;
+     ALWAYS, EVENTUALLY) can access live-predicate data for every past timepoint.
+     Queues (not lists): appending a snapshot / instance is O(1) instead of the
+     O(n) of (xs @ [x]), which made the per-timepoint bookkeeping quadratic. *)
+  mutable fpi_db_hist: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
 }
 
 and frz_mode =

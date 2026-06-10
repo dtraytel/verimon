@@ -181,7 +181,7 @@ let add_let_index f n rels =
         if (pname2, parity2) = n then ()
         else update fs.fst_psia
       | FrzPerInst fp ->
-        List.iter (fun inst ->
+        Queue.iter (fun inst ->
           if not inst.inst_done then update inst.inst_psi
         ) fp.fpi_active)
   in
@@ -327,7 +327,7 @@ let rec eval f crt discard =
       let inject_history inst_psi =
         let rec go = function
           | EPred ((n, _, _), icomp, pdinf, _) when pdinf.pconst = None ->
-            List.iter (fun (i, tsi, snap) ->
+            Queue.iter (fun (i, tsi, snap) ->
               let rel = match List.assoc_opt n snap with Some r -> r | None -> Relation.empty in
               Queue.add (i, tsi, icomp rel) pdinf.pqueue
             ) fp.fpi_db_hist
@@ -348,10 +348,12 @@ let rec eval f crt discard =
                (the phi of the innermost FRZ) is seeded from this nested
                history; at double nesting the innermost psia has no live
                predicates so the gap is invisible.  The fresh instance starts
-               with an empty fpi_db_hist, so assigning is safe (no duplication);
-               subsequent timepoints are appended incrementally by add_index. *)
+               with an empty fpi_db_hist; we hand it a *copy* of our queue so the
+               inner FRZ gets exactly the snapshots seen so far without aliasing
+               our (mutable) queue — subsequent timepoints are then appended
+               independently to each by add_index. *)
             (match frz_inner.frz_mode with
-             | FrzPerInst fp_inner -> fp_inner.fpi_db_hist <- fp.fpi_db_hist
+             | FrzPerInst fp_inner -> fp_inner.fpi_db_hist <- Queue.copy fp.fpi_db_hist
              | FrzStatic _ -> ());
             go ff1
         in
@@ -377,14 +379,14 @@ let rec eval f crt discard =
             inject_history inst_psi;
             let inst = {inst_last = fp.fpi_neval0; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
-            fp.fpi_active <- fp.fpi_active @ [inst];
+            Queue.add inst fp.fpi_active;
             collect ()
           | None -> ())
       in
       collect ();
       (* Drive active instances; collect diagonal result for tp_out *)
       let result = ref None in
-      List.iter (fun inst ->
+      Queue.iter (fun inst ->
         if not inst.inst_done then begin
           let rec drive () =
             if Neval.is_last inst.inst_last then ()
@@ -406,7 +408,10 @@ let rec eval f crt discard =
           drive ()
         end
       ) fp.fpi_active;
-      fp.fpi_active <- List.filter (fun inst -> not inst.inst_done) fp.fpi_active;
+      (* Drop finished instances, preserving order (same effect as List.filter). *)
+      let live = Queue.create () in
+      Queue.iter (fun inst -> if not inst.inst_done then Queue.add inst live) fp.fpi_active;
+      fp.fpi_active <- live;
       !result, loc)
 
   | ENeg (f1,loc) ->
@@ -702,11 +707,11 @@ let add_index f i tsi db =
         update (pname3 :: lets) fs.fst_psia
       | FrzPerInst fp ->
         (* Per-instance: inject into active instances; save snapshot for new ones *)
-        List.iter (fun inst ->
+        Queue.iter (fun inst ->
           if not inst.inst_done then update lets inst.inst_psi
         ) fp.fpi_active;
         let snap = Hashtbl.fold (fun k v acc -> (k, v) :: acc) db [] in
-        fp.fpi_db_hist <- fp.fpi_db_hist @ [(i, tsi, snap)])
+        Queue.add (i, tsi, snap) fp.fpi_db_hist)
   in
   update [] f
 
@@ -784,8 +789,8 @@ let add_ext neval f =
       if has_temporal f2 then
         (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
         FrzPerInst {fpi_neval0 = neval0;
-                    fpi_active = []; fpi_mk_inst = (fun () -> add_ext None f2);
-                    fpi_db_hist = []}
+                    fpi_active = Queue.create (); fpi_mk_inst = (fun () -> add_ext None f2);
+                    fpi_db_hist = Queue.create ()}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)
         let ff2 = add_ext None f2 in
