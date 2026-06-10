@@ -517,11 +517,31 @@ let rec eval f crt discard =
           (match eval f1 next false with
           | Some frozen ->
             frz.frz_phi_last <- next;
-            let (outer_tp, _) = Neval.get_data next in
+            let (outer_tp, ts_outer) = Neval.get_data next in
             let inst_psi = fp.fpi_mk_inst () in
             set_pconst (comp frozen) inst_psi;
+            (* Fix #1: for a bounded-past body, restrict this instance's replay to
+               the timestamp-window [ts_outer - d, ts_outer]: slide fpi_win_edge so
+               that the cell after it is the window's first timepoint, and drop
+               db-history older than the window before injecting.  With no depth
+               bound we fall back to replaying from fpi_neval0 over the full
+               prefix (the previous behaviour). *)
+            let start_cell =
+              match fp.fpi_depth with
+              | None -> fp.fpi_neval0
+              | Some d ->
+                while (not (Neval.is_last fp.fpi_win_edge))
+                      && (let (_, ts_n) = Neval.get_data (Neval.get_next fp.fpi_win_edge) in
+                          Z.gt (MFOTL.ts_minus ts_outer ts_n) d)
+                do fp.fpi_win_edge <- Neval.get_next fp.fpi_win_edge done;
+                while (not (Queue.is_empty fp.fpi_db_hist))
+                      && (let (_, ts_old, _) = Queue.peek fp.fpi_db_hist in
+                          Z.gt (MFOTL.ts_minus ts_outer ts_old) d)
+                do ignore (Queue.pop fp.fpi_db_hist) done;
+                fp.fpi_win_edge
+            in
             inject_history inst_psi;
-            let inst = {inst_last = fp.fpi_neval0; inst_tp = outer_tp;
+            let inst = {inst_last = start_cell; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
             Queue.add inst fp.fpi_active;
             collect ()
@@ -1077,12 +1097,43 @@ let add_ext neval f =
         has_temporal a || has_temporal b
       | _ -> false
     in
+    (* Bounded-past depth of the body psi, in timestamp units (fix #1).
+       Returns [Some d] only for a *purely bounded-past* body: boolean/quantifier
+       structure over predicates and ONCE/SINCE/PASTALWAYS/TRIGGER whose interval
+       upper bounds are all finite, with NO PREV/NEXT (those are timepoint- rather
+       than timestamp-relative), NO future operators (they need forward lookahead),
+       and NO nested FRZ/LET/regex.  In that case the body's value at tp i depends
+       only on timestamps in [ts_i - d, ts_i], so the per-instance replay can be
+       restricted to that window.  Any other shape returns [None] (no trimming). *)
+    let ub_of_intv (_, hi) = match hi with
+      | MFOTL.CBnd b | MFOTL.OBnd b -> Some b
+      | MFOTL.Inf -> None
+    in
+    let rec body_depth = function
+      | MFOTL.Equal _ | MFOTL.Less _ | MFOTL.LessEq _ | MFOTL.Substring _
+      | MFOTL.Matches _ | MFOTL.Pred _ -> Some Z.zero
+      | MFOTL.Neg f' | MFOTL.Exists (_, f') | MFOTL.ForAll (_, f')
+      | MFOTL.Aggreg (_, _, _, _, _, f') -> body_depth f'
+      | MFOTL.And (a, b) | MFOTL.Or (a, b) | MFOTL.Implies (a, b) | MFOTL.Equiv (a, b) ->
+        (match body_depth a, body_depth b with
+         | Some da, Some db -> Some (Z.max da db) | _ -> None)
+      | MFOTL.Once (i, f') | MFOTL.PastAlways (i, f') ->
+        (match ub_of_intv i, body_depth f' with
+         | Some ub, Some d -> Some (Z.add ub d) | _ -> None)
+      | MFOTL.Since (i, a, b) | MFOTL.Trigger (i, a, b) ->
+        (match ub_of_intv i, body_depth a, body_depth b with
+         | Some ub, Some da, Some db -> Some (Z.add ub (Z.max da db)) | _ -> None)
+      (* PREV/NEXT (timepoint-relative), future operators, nested FRZ/LET, and
+         regex all disable trimming. *)
+      | _ -> None
+    in
     let frz_mode =
       if has_temporal f2 then
         (* Per-instance: fresh psia per outer tp (handles ONCE, NEXT correctly) *)
         FrzPerInst {fpi_neval0 = neval0;
                     fpi_active = Queue.create (); fpi_mk_inst = (fun () -> add_ext None false f2);
-                    fpi_db_hist = Queue.create ()}
+                    fpi_db_hist = Queue.create ();
+                    fpi_depth = body_depth f2; fpi_win_edge = neval0}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)
         let ff2 = add_ext None false f2 in

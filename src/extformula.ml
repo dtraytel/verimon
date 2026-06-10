@@ -136,6 +136,17 @@ and frz_per_inst = {
      Queues (not lists): appending a snapshot / instance is O(1) instead of the
      O(n) of (xs @ [x]), which made the per-timepoint bookkeeping quadratic. *)
   mutable fpi_db_hist: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
+  (* Bounded-past optimization (fix #1).  [fpi_depth = Some d] means the body psi
+     reads at most [d] timestamp-units into the past (a bounded-past formula with
+     no PREV/NEXT, no future operators, no nested FRZ/regex): the per-instance
+     replay can then be restricted to the timestamp-window [ts_i - d, ts_i]
+     instead of the whole prefix, and fpi_db_hist is trimmed to that window.
+     [None] disables the optimization (whole-prefix replay, as before). *)
+  fpi_depth: MFOTL.tsdiff option;
+  (* Cell just before the window's first timepoint; instances start driving here
+     (only meaningful when fpi_depth = Some _).  Advances monotonically as the
+     window slides forward. *)
+  mutable fpi_win_edge: Neval.cell;
 }
 
 and frz_mode =

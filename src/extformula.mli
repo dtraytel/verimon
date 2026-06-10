@@ -83,6 +83,8 @@ and frz_per_inst = {
   mutable fpi_active: frz_inst Queue.t;
   mutable fpi_mk_inst: unit -> extformula;
   mutable fpi_db_hist: (int * MFOTL.timestamp * (string * relation) list) Queue.t;
+  fpi_depth: MFOTL.tsdiff option;
+  mutable fpi_win_edge: Neval.cell;
 }
 
 and frz_mode =
