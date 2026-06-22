@@ -106,11 +106,16 @@ type extformula =
        set) and are fed via pconst, set/cleared around each psia eval.
        State accumulates correctly because there are no temporal operators.
 
-     PER-INSTANCE mode (temporal psi, e.g. ONCE or NEXT): a fresh psia is
+     PER-INSTANCE mode (temporal psi, e.g. ONCE or NEXT): a fresh psia clone is
        compiled per outer timepoint so each instance starts with no history
-       (correct for constant-q semantics).  Only used when psia has no live
-       predicates (the only predicate in psia is the frozen p), so retroactive
-       data injection is unnecessary. *)
+       (correct for constant-q semantics) and is then driven forward cell-by-cell
+       like the top-level loop; the diagonal output (at the instance's own outer
+       tp) is the verdict.  Live predicates besides p ARE supported: a fresh clone
+       is caught up on the prefix that preceded its creation by replaying
+       fpi_db_hist (inject_history), and fed incrementally thereafter by add_index;
+       only p's EPred nodes are skipped (they are fed via pconst).  For a purely
+       bounded-past body the replay is trimmed to the [ts_i - d, ts_i] window
+       (fpi_depth / fpi_win_edge) instead of the whole prefix. *)
   | EFrz of predicate * comp_one * extformula * frz_info * int
 
 and frz_inst = {
