@@ -129,6 +129,9 @@ The result is then handed to `add_ext`.
    - `EAnd`/`EOr` hold a buffer `arel` for an already-computed left operand
      when the right operand is not yet evaluable.
    - `ELet` holds the cell up to which the defined predicate has been produced.
+   - `EFrz` holds a `frz_info`: the cursor `frz_phi_last` into `φ`'s evaluation
+     plus a `frz_mode` that is either `FrzStatic` (a single shared body) or
+     `FrzPerInst` (a queue of live per-outer-time-point clones) — see §7.
 
 The extformula is therefore both the *plan* (closures) and the *running state*
 (queues, sliding windows, cursors) of evaluation.
@@ -214,44 +217,121 @@ the rest of the engine.
 
 ## 7. The freeze quantifier `FRZ`
 
-`FRZ q(x̄) = φ IN ψ` binds `q` to the **constant relation** that `φ` denotes at
+Concrete syntax: `FRZ q(x̄) = φ IN ψ` (parsed to `MFOTL.Frz (q, φ, ψ)`). It
+binds the predicate symbol `q` to the **constant relation** that `φ` denotes at
 the *outer* time-point `i`, and evaluates `ψ` at `i` with `q` held fixed at that
 snapshot for **all inner time-points** that `ψ`'s temporal operators inspect.
 Semantically:
 
 ```
-sat σ V v i (FRZ q φ ψ) = sat σ (V[q ↦ λw j. sat σ V w i φ]) v i ψ
+sat σ V v i (FRZ q φ ψ) = sat σ (V[(q,m) ↦ λw j. sat σ V w i φ]) v i ψ
 ```
 
-Note the `i` (not `j`) inside: `q`'s meaning is frozen at the outer time `i`,
-independent of the inner time `j`.
+Note the `i` (not `j`) inside: `q`'s meaning is the *same* relation at every
+inner time-point `j` — frozen at the outer time `i`. `FRZ` may be nested, and an
+inner `FRZ` may re-bind a `q` of an enclosing one (shadowing).
 
-The native engine implements this with two compile-time modes, chosen by whether
-`ψ` contains a temporal operator:
+The native engine compiles `EFrz (q, comp, ϕ_ext, frz_info, loc)`. `frz_info`
+holds `frz_phi_last` — the `neval` cell up to which `φ` has been evaluated — and a
+`frz_mode` chosen at compile time by whether `ψ` contains **any** temporal
+operator (`has_temporal`):
 
-- **Static mode (non-temporal `ψ`).** `ψ` lives once in the formula tree.
-  `q`'s leaf nodes are *shielded* from `add_index` (so their queues stay empty)
-  and instead fed a **constant** relation `pconst` set/cleared around each
-  evaluation of `ψ`. Because there are no temporal operators, no per-time-point
-  history is needed, and the frozen snapshot can be served at every inner step
-  for free. This is the efficient common case.
+### Static mode (`FrzStatic` — non-temporal `ψ`)
 
-- **Per-instance mode (temporal `ψ`).** Correct constant-`q` semantics requires
-  that each outer time-point sees a *fresh* temporal evaluator with no leakage of
-  state across snapshots. For each outer time-point `j` with a non-empty `φ`, the
-  engine compiles a **fresh clone** of `ψ`, pins `q`'s leaves to the snapshot via
-  `pconst`, and drives the clone from the start of the stream cell-by-cell — just
-  like the top-level driver loop. The clone's accumulated history of live
-  predicates is replayed at creation (`inject_history`) and extended thereafter by
-  `add_index`. The **diagonal** verdict — the clone's output at its own outer
-  time-point `j` — is the answer for `j`; it is collected naturally, after
-  lookahead for future operators, thanks to the same lockstep invariant.
+`ψ` lives **once** in the formula tree (`fst_psia`). Because it has no temporal
+operators its value at the outer time-point depends only on the current
+database, so a single shared evaluator suffices:
 
-The verified kernel realizes the same specification differently: it keeps a
-single evaluator and uses a `replicate j α` representation of the frozen relation
-together with a constant-relation propagation optimization (`mres`/`xres`); the
-native per-instance "clone and drive forward" avoids replicating the entire
-prefix.
+- At compile time, `collect_q` gathers the `pdinfo` records of `q`'s `EPred`
+  leaves inside `ψ` (`fst_q_pdinfos`), descending into nested `FRZ`/`LET` bodies
+  but stopping where `q` is shadowed.
+- `add_index` **shields** those leaves: `ψ` is traversed with `q` added to the
+  `lets` shadow set, so `q`'s queues are never filled from the log.
+- To evaluate the outer time-point, `eval` advances `φ` by one cell, computes the
+  snapshot `frozen_rel = comp φ`, sets `pdinf.pconst <- Some frozen_rel` on every
+  collected leaf, evaluates `ψ`, then clears `pconst`. An `EPred` with `pconst =
+  Some r` returns `r` at *every* inner step without consuming its queue.
+- `fst_pending` saves `(outer_tp, snap)` so that if `ψ` returns `None` (it is
+  waiting on more input) the same snapshot is re-used on the retry rather than
+  consuming the next `φ` snapshot.
+
+This is the efficient common case.
+
+### Per-instance mode (`FrzPerInst` — temporal `ψ`)
+
+Constant-`q` semantics over a temporal `ψ` requires that **each outer
+time-point sees its own temporal evaluator** with no state leaking across
+snapshots. The state (`frz_per_inst`) is:
+
+- `fpi_mk_inst : unit -> extformula` — compiles a fresh clone of `ψ`;
+- `fpi_active : frz_inst Queue.t` — the currently-live clones, each a record
+  `{inst_last; inst_tp; inst_psi; inst_done}`;
+- `fpi_db_hist` — a queue of `(tp, ts, db-snapshot)` triples accumulated by
+  `add_index`, used to catch a freshly-created clone up on the prefix that
+  elapsed before it existed;
+- `fpi_depth`, `fpi_win_edge` — the bounded-past replay optimization (below).
+
+The evaluation of an outer time-point `tp_out` proceeds in three steps inside
+`eval`:
+
+1. **Spawn.** `collect` advances `φ` cell-by-cell up to (not past) the current
+   cell. For **every** outer time-point reached (regardless of whether `φ`'s
+   snapshot is empty) it builds one clone via `fpi_mk_inst ()`, permanently pins
+   `q`'s leaves in that clone to the snapshot with `set_pconst (comp frozen)`, and
+   appends `{inst_last = start_cell; inst_tp = outer_tp; inst_psi; inst_done =
+   false}` to `fpi_active`.
+2. **Catch up.** `inject_history` replays the accumulated `fpi_db_hist` into the
+   clone's live-predicate queues (it skips `pconst`-pinned leaves, i.e. `q`). This
+   is what lets per-instance mode support `ψ` with **live predicates besides `q`**
+   — the clone sees the same prefix the top level did. Subsequent time-points are
+   delivered incrementally because `add_index` recurses into every active clone.
+3. **Drive & read off the diagonal.** Each active clone is driven forward
+   cell-by-cell exactly like the top-level driver loop, keeping any internal
+   temporal operator (ONCE/SINCE/PREV/UNTIL/EVENTUALLY/ALWAYS) in lockstep. The
+   clone's output at its *own* outer time-point (`inst_tp`) is the **diagonal**
+   verdict — collected naturally after any future-operator lookahead. While
+   driving, cells with `tp ≠ inst_tp` are evaluated with `discard = true` (their
+   relations are not needed, only the temporal state advance). A clone is marked
+   `inst_done` once it has produced its diagonal and is then dropped from
+   `fpi_active`.
+
+#### Bounded-past replay trimming (fix #1)
+
+Naïvely each clone replays from the start of the stream (`fpi_neval0`), making
+per-instance mode quadratic in stream length. When `ψ` is a **purely
+bounded-past** body — boolean/quantifier/aggregation structure over predicates
+and `ONCE`/`SINCE`/`PAST_ALWAYS`/`TRIGGER` whose interval upper bounds are all
+finite, with **no** `PREV`/`NEXT` (time-point- rather than time-stamp-relative),
+**no** future operators, and **no** nested `FRZ`/`LET`/regex — then `body_depth`
+computes a finite time-stamp depth `d`, stored in `fpi_depth = Some d`. The body's
+value at outer time-stamp `τ` then depends only on time-stamps in `[τ − d, τ]`, so
+each clone starts driving from `fpi_win_edge` (the cell just before the window's
+first time-point, slid forward monotonically) and `fpi_db_hist` is trimmed to that
+window before injection. Any other body shape yields `fpi_depth = None` and falls
+back to whole-prefix replay.
+
+#### Nested `FRZ`
+
+`set_pconst` and `inject_history` both descend into nested `EFrz` bodies. An
+outer freeze chains its `pconst` binding into a nested per-instance freeze by
+wrapping that freeze's `fpi_mk_inst` (so every nested clone also inherits the
+outer frozen `q`), unless the nested freeze shadows the same `q`. To stop a
+nested per-instance freeze from missing the prefix that preceded an enclosing
+clone's creation, `inject_history` hands the nested freeze a **copy** of the
+current `fpi_db_hist`; this only becomes observable at triple (or deeper) nesting,
+where a grandchild live predicate is seeded from that history.
+
+### Relation to the verified kernel
+
+The verified kernel (`MFrz` in `src/verified.ml`, extracted from `Monitor.thy`)
+realizes the same specification with a single shared `ψ` evaluator rather than
+per-outer-tp clones. It advances `φ` and `ψ` on each batch, feeds the frozen
+relation in by binding `(q,m)` to `replicate j α` (the snapshot repeated for all
+`j` inner positions), and replays the *pending* snapshots `alpha_s` through
+`freeze_meval0` to recover each diagonal verdict — with the replay counter offset
+by `jfrz − jpsi0'` (the fix recorded in [`freeze_simplified.md`](freeze_simplified.md)).
+The native per-instance "clone and drive forward" (with fix #1 trimming) avoids
+materializing `replicate j α`, and is differentially tested against this kernel.
 
 ---
 
@@ -288,8 +368,9 @@ prefix.
 | `src/rewriting.ml` | Normalization and the monitorability check. |
 | `src/relation.ml`, `src/table.ml`, `src/tuple.ml` | Finite relations and relational algebra (join, project, select, anti-join). |
 | `src/aggreg.ml` | Incremental aggregation operators. |
-| `src/verified.ml` | Isabelle-extracted verified kernel (`-verified` flag); same spec, proof-carrying. |
+| `src/verified.ml` | Isabelle-extracted verified kernel (`-verified` flag); same spec, proof-carrying. The `MFrz` step implements freeze (§7). |
 | `src/log_parser.ml` | Streaming log reader that drives `Monitor`. |
+| `freeze_simplified.md`, `freeze_incremental.md`, `freeze_formalization.md` | Design notes for the verified freeze monitor (`MFrz`): proof story, progress, and the incremental replay design. |
 
 ---
 
