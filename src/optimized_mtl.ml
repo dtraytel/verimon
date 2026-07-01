@@ -272,6 +272,16 @@ let init_muaux opt_fm pos intv attr1 attr2 =
     mu_delmap = Hashtbl.create 1;
   }
 
+(* Rebase the muaux so its next emitted result is for time-point [w] instead of 0.
+   Used by FRZ per-instance replay when a bounded-past window lets an instance start
+   driving at tp [w] > 0 rather than from the trace start: the muaux keys all its
+   bookkeeping ([mu_useq], results) on absolute time-points derived from the fed
+   [i]s, and only [mu_out_tp] is seeded to 0, so rebasing it to [w] realigns the
+   result sequence with the (equally rebased) drive.  Must be called before any tp
+   is fed. *)
+let set_out_tp_muaux w aux =
+  aux.mu_out_tp <- w
+
 let apply_buf1 i tsi aux =
   match aux.mu_buf1 with
   | None -> ()

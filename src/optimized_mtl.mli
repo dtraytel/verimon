@@ -16,6 +16,7 @@ type muaux
 
 val init_muaux: (tuple -> tuple option) option -> bool -> interval ->
   var list -> var list -> muaux
+val set_out_tp_muaux: int -> muaux -> unit
 val update_lookahead_muaux: int -> timestamp -> muaux -> unit
 val take_result_muaux: muaux -> relation option
 val add_new_tables_muaux: relation -> relation -> muaux -> unit

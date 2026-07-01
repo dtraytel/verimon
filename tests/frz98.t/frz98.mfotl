@@ -1,0 +1,1 @@
+FRZ q(x) = a(x) IN (a(x) AND (EVENTUALLY[2,7] (q(x) AND b(y))))

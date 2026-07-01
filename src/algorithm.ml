@@ -503,6 +503,34 @@ let rec eval f crt discard =
         in
         go inst_psi
       in
+      (* When the replay is trimmed to a window (fpi_depth = Some), the drive starts
+         this instance at [start_cell] rather than neval0.  Push-based operators
+         (ESince/EAggOnce/EPred) read [crt] directly and so already start at the
+         window edge, but EUntil pulls from its own [ulast] cursor, which the clone
+         hardwires to neval0.  Fast-forward every EUntil's [ulast] to [start_cell] so
+         its muaux begins consuming at the same tp the drive feeds — keeping the whole
+         tree in lockstep.  (past_reach only returns Some for trees whose sole
+         pull-based operator is EUntil, so no other cursor needs fixing up.) *)
+      let rec fast_forward start = function
+        | EUntil (ff1, ff2, inf, _) ->
+          inf.ulast <- start;
+          (* The muaux keys its bookkeeping on absolute time-points but seeds its
+             result cursor to 0; rebase it to the first tp the drive will feed
+             (get_next start) so its result sequence realigns with the drive. *)
+          (if not (Neval.is_last start) then
+             let (w, _) = Neval.get_data (Neval.get_next start) in
+             Optimized_mtl.set_out_tp_muaux w inf.uaux);
+          fast_forward start ff1; fast_forward start ff2
+        | EPred _ | ERel _ -> ()
+        | ELet (_, _, ff1, ff2, _, _) -> fast_forward start ff1; fast_forward start ff2
+        | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
+        | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+          fast_forward start ff
+        | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
+        | ESince (ff1, ff2, _, _) -> fast_forward start ff1; fast_forward start ff2
+        | EMatchP (fl, _, _) | EMatchF (fl, _, _) -> List.iter (fast_forward start) fl
+        | EFrz (_, _, ff1, _, _) -> fast_forward start ff1
+      in
       (* Advance phi up to (not past) crt, creating one new instance per outer tp.
          Each instance starts at neval0 and is driven cell-by-cell exactly like the
          top-level eval_loop, which keeps any internal temporal operator (SINCE,
@@ -541,6 +569,9 @@ let rec eval f crt discard =
                 fp.fpi_win_edge
             in
             inject_history inst_psi;
+            (match fp.fpi_depth with
+             | Some _ -> fast_forward start_cell inst_psi
+             | None -> ());
             let inst = {inst_last = start_cell; inst_tp = outer_tp;
                         inst_psi; inst_done = false} in
             Queue.add inst fp.fpi_active;
@@ -1097,34 +1128,49 @@ let add_ext neval f =
         has_temporal a || has_temporal b
       | _ -> false
     in
-    (* Bounded-past depth of the body psi, in timestamp units (fix #1).
-       Returns [Some d] only for a *purely bounded-past* body: boolean/quantifier
-       structure over predicates and ONCE/SINCE/PASTALWAYS/TRIGGER whose interval
-       upper bounds are all finite, with NO PREV/NEXT (those are timepoint- rather
-       than timestamp-relative), NO future operators (they need forward lookahead),
-       and NO nested FRZ/LET/regex.  In that case the body's value at tp i depends
-       only on timestamps in [ts_i - d, ts_i], so the per-instance replay can be
-       restricted to that window.  Any other shape returns [None] (no trimming). *)
+    (* Past reach of the body psi, in timestamp units.  Returns [Some d] when the
+       value of psi at tp i depends only on timestamps in [ts_i - d, ts_i] on the
+       *past* side, so the per-instance replay can start at the window edge
+       [ts_i - d] instead of the whole prefix.  Crucially, *future* operators
+       (EVENTUALLY/ALWAYS/UNTIL/RELEASE) extend the *future* reach — served by the
+       drive's forward lookahead, not by the replay window — so they add nothing to
+       the past reach: we recurse into their operands and ignore the future
+       interval.  Bounded-past operators (ONCE/SINCE/PASTALWAYS/TRIGGER) add their
+       interval's upper bound (finite only).  PREV/NEXT are timepoint-relative and
+       need per-clone cursor initialization (not yet done), and nested FRZ/LET/regex
+       are unanalyzable here, so all of those return [None] (whole-prefix replay).
+
+       A [Some] result guarantees the compiled clone contains only push-based
+       temporal operators (ESince/EAggOnce, which read [crt] directly and so are
+       position-independent) and EUntil (fast-forwarded to the window edge in
+       collect); it never contains EPrev/ENext/EMatchP/EMatchF, whose cursors are
+       hardwired to neval0. *)
     let ub_of_intv (_, hi) = match hi with
       | MFOTL.CBnd b | MFOTL.OBnd b -> Some b
       | MFOTL.Inf -> None
     in
-    let rec body_depth = function
+    let rec past_reach = function
       | MFOTL.Equal _ | MFOTL.Less _ | MFOTL.LessEq _ | MFOTL.Substring _
       | MFOTL.Matches _ | MFOTL.Pred _ -> Some Z.zero
       | MFOTL.Neg f' | MFOTL.Exists (_, f') | MFOTL.ForAll (_, f')
-      | MFOTL.Aggreg (_, _, _, _, _, f') -> body_depth f'
+      | MFOTL.Aggreg (_, _, _, _, _, f') -> past_reach f'
       | MFOTL.And (a, b) | MFOTL.Or (a, b) | MFOTL.Implies (a, b) | MFOTL.Equiv (a, b) ->
-        (match body_depth a, body_depth b with
+        (match past_reach a, past_reach b with
          | Some da, Some db -> Some (Z.max da db) | _ -> None)
       | MFOTL.Once (i, f') | MFOTL.PastAlways (i, f') ->
-        (match ub_of_intv i, body_depth f' with
+        (match ub_of_intv i, past_reach f' with
          | Some ub, Some d -> Some (Z.add ub d) | _ -> None)
       | MFOTL.Since (i, a, b) | MFOTL.Trigger (i, a, b) ->
-        (match ub_of_intv i, body_depth a, body_depth b with
+        (match ub_of_intv i, past_reach a, past_reach b with
          | Some ub, Some da, Some db -> Some (Z.add ub (Z.max da db)) | _ -> None)
-      (* PREV/NEXT (timepoint-relative), future operators, nested FRZ/LET, and
-         regex all disable trimming. *)
+      (* Future operators: the interval reaches forward (drive lookahead), so it
+         adds nothing to past reach — recurse into the operands only. *)
+      | MFOTL.Eventually (_, f') | MFOTL.Always (_, f') -> past_reach f'
+      | MFOTL.Until (_, a, b) | MFOTL.Release (_, a, b) ->
+        (match past_reach a, past_reach b with
+         | Some da, Some db -> Some (Z.max da db) | _ -> None)
+      (* PREV/NEXT (need per-clone cursor init), nested FRZ/LET, and regex all
+         disable trimming. *)
       | _ -> None
     in
     let frz_mode =
@@ -1133,7 +1179,7 @@ let add_ext neval f =
         FrzPerInst {fpi_neval0 = neval0;
                     fpi_active = Queue.create (); fpi_mk_inst = (fun () -> add_ext None false f2);
                     fpi_db_hist = Queue.create ();
-                    fpi_depth = body_depth f2; fpi_win_edge = neval0}
+                    fpi_depth = past_reach f2; fpi_win_edge = neval0}
       else begin
         (* Static: compile psia once, collect q's EPred pdinfo nodes *)
         let ff2 = add_ext None false f2 in
