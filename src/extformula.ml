@@ -16,7 +16,12 @@ type linfo = {
    representation that avoids the [replicate j alpha] cost). When [pconst] is
    [Some r] the predicate yields [r] at every timepoint, ignoring its queue. *)
 type ainfo = {mutable arel: relation option}
-type pinfo = {mutable plast: Neval.cell}
+(* [plast]: cursor trailing the predecessor time-point.  [pinit]: when true, the
+   next eval skips reading the predecessor and returns empty (as at tp 0).  Set by
+   the FRZ per-instance fast-forward so a trimmed instance treats the window's first
+   time-point like tp 0 — keeping predicates under PREV aligned with the rest of the
+   body without a per-subformula injection offset. *)
+type pinfo = {mutable plast: Neval.cell; mutable pinit: bool}
 type ninfo = {mutable init: bool}
 
 type agg_info = {op: agg_op; default: cst}

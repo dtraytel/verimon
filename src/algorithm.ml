@@ -523,8 +523,12 @@ let rec eval f crt discard =
           fast_forward start ff1; fast_forward start ff2
         | EPred _ | ERel _ -> ()
         | ELet (_, _, ff1, ff2, _, _) -> fast_forward start ff1; fast_forward start ff2
+        | EPrev (_, ff, inf, _) ->
+          (* Prime PREV to skip its predecessor read at the window's first tp, with
+             [plast] = window edge = that tp's predecessor (so the next tp reads it). *)
+          inf.plast <- start; inf.pinit <- true; fast_forward start ff
         | ENeg (ff, _) | EExists (_, ff, _) | EAggreg (_, _, ff, _)
-        | EAggOnce (_, _, ff, _) | EPrev (_, ff, _, _) | ENext (_, ff, _, _) ->
+        | EAggOnce (_, _, ff, _) | ENext (_, ff, _, _) ->
           fast_forward start ff
         | EAnd (_, ff1, ff2, _, _) | EOr (_, ff1, ff2, _, _)
         | ESince (ff1, ff2, _, _) -> fast_forward start ff1; fast_forward start ff2
@@ -709,7 +713,12 @@ let rec eval f crt discard =
     if Misc.debugging Dbg_eval then
       Printf.eprintf "[eval,Prev] inf.plast=%s\n%!" (Neval.string_of_cell inf.plast);
 
-    (if q = 0 then
+    (if inf.pinit then
+      (* First eval of a trimmed instance: [plast] is the window edge (the
+         predecessor of this cell), so treat this like tp 0 — emit empty and leave
+         [plast] in place so the next tp reads this cell as its predecessor. *)
+      begin inf.pinit <- false; Some Relation.empty end
+    else if q = 0 then
       Some Relation.empty
     else
       begin
@@ -1164,13 +1173,19 @@ let add_ext neval f =
         (match ub_of_intv i, past_reach a, past_reach b with
          | Some ub, Some da, Some db -> Some (Z.add ub (Z.max da db)) | _ -> None)
       (* Future operators: the interval reaches forward (drive lookahead), so it
-         adds nothing to past reach — recurse into the operands only. *)
-      | MFOTL.Eventually (_, f') | MFOTL.Always (_, f') -> past_reach f'
+         adds nothing to past reach — recurse into the operands only.  NEXT is
+         future too: it reads the successor time-point via [crt], primes itself
+         with its [init] flag, and so is position-independent like EVENTUALLY. *)
+      | MFOTL.Eventually (_, f') | MFOTL.Always (_, f') | MFOTL.Next (_, f') -> past_reach f'
       | MFOTL.Until (_, a, b) | MFOTL.Release (_, a, b) ->
         (match past_reach a, past_reach b with
          | Some da, Some db -> Some (Z.max da db) | _ -> None)
-      (* PREV/NEXT (need per-clone cursor init), nested FRZ/LET, and regex all
-         disable trimming. *)
+      (* PREV reaches one time-point into the past, at most [ub] timestamp-units
+         back; the fast-forward primes its cursor at the window edge. *)
+      | MFOTL.Prev (i, f') ->
+        (match ub_of_intv i, past_reach f' with
+         | Some ub, Some d -> Some (Z.add ub d) | _ -> None)
+      (* nested FRZ/LET and regex disable trimming. *)
       | _ -> None
     in
     let frz_mode =
@@ -1335,7 +1350,7 @@ let add_ext neval f =
 
   | Prev (intv, f) ->
     let ff = add_ext post proj f in
-    EPrev (intv, ff, {plast = neval0}, next_loc())
+    EPrev (intv, ff, {plast = neval0; pinit = false}, next_loc())
 
   | Next (intv, f) ->
     let ff = add_ext post proj f in

@@ -9,7 +9,7 @@ module Sj = Dllist
 type info  = (int * timestamp * relation) Queue.t
 type linfo = {mutable llast: Neval.cell}
 type ainfo = {mutable arel: relation option}
-type pinfo = {mutable plast: Neval.cell}
+type pinfo = {mutable plast: Neval.cell; mutable pinit: bool}
 type ninfo = {mutable init: bool}
 
 type agg_info = {op: agg_op; default: cst}
