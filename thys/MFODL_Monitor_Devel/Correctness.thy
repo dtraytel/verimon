@@ -5991,7 +5991,7 @@ proof -
     assume ?L
     then show ?R
       unfolding flatten_verdicts_def mstep_def using set_Vs \<tau>_eq
-      by (auto simp add: in_set_enumerate_eq state_eqs meval_eq length_pts_eq_plen length_Vs
+      by (auto simp add: in_set_indexed_from_eq state_eqs meval_eq length_pts_eq_plen length_Vs
           split: prod.splits)
   next
     assume ?R
@@ -5999,7 +5999,7 @@ proof -
       by (metis Suc_leI Suc_le_mono le_trans progress_le)
     with \<open>?R\<close> show ?L
       unfolding flatten_verdicts_def mstep_def using set_Vs \<tau>_eq
-      by (auto simp add: in_set_enumerate_eq state_eqs meval_eq length_pts_eq_plen length_Vs
+      by (auto simp add: in_set_indexed_from_eq state_eqs meval_eq length_pts_eq_plen length_Vs
           min_add_distrib_left split: prod.splits 
           intro!: bexI[where x="(i, \<tau> \<sigma> i, Vs ! (i - ?p))"])
   qed
@@ -6033,7 +6033,7 @@ proof -
     by (auto simp: list_all2_conv_all_nth in_set_conv_nth qtable_def)
   then show ?thesis
     using assms(4) unfolding flatten_verdicts_def mstep_def
-    by (auto simp: state_eqs meval_eq in_set_enumerate_eq table_def)
+    by (auto simp: state_eqs meval_eq in_set_indexed_from_eq table_def)
       (use nth_mem[of "i - mstate_i st" Vs] in auto)
 qed
 

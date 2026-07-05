@@ -60,7 +60,7 @@ fun eannotate :: "nat \<Rightarrow> ts mbuf_t \<Rightarrow> 'a list \<Rightarrow
 lemma eannotate_eq:
   "eannotate i tq vs acc = (i', tq', vs') \<Longrightarrow>
      i' = i + length vs \<and> Rep_mbuf_t tq' = drop (length vs) (Rep_mbuf_t tq) \<and>
-     vs' = rev acc @ List.enumerate i (zip (Rep_mbuf_t tq) vs)"
+     vs' = rev acc @ List.indexed_from i (zip (Rep_mbuf_t tq) vs)"
 proof (induct vs arbitrary: i tq acc i' tq' vs')
   case (Cons v vs)
   obtain a tq0 where h: "mbuf_t_cases tq = (a, tq0)" by (cases "mbuf_t_cases tq")
@@ -119,10 +119,10 @@ definition emsim_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarro
      Rep_mbuf_t (emstate_t dst) = mstate_t st \<and> mstate_n st = n \<and> emstate_n dst = n \<and>
      emstate_cs dst = cs \<and> esim n ks cs tw (emstate_m dst) (mstate_m st)"
 
-lemma enumerate_zip_map:
-  "List.enumerate i (zip us (map f xs))
-     = map (\<lambda>(k, u, X). (k, u, f X)) (List.enumerate i (zip us xs))"
-  by (simp add: List.enumerate_eq_zip zip_map2 case_prod_beta)
+lemma indexed_from_zip_map:
+  "List.indexed_from i (zip us (map f xs))
+     = map (\<lambda>(k, u, X). (k, u, f X)) (List.indexed_from i (zip us xs))"
+  by (simp add: List.indexed_from_eq_zip zip_map2 case_prod_beta)
 
 subsection \<open>One step\<close>
 
@@ -148,7 +148,7 @@ proof -
   have tb: "list_all (ftable ks) xs"
     by (rule kgood_tables[OF kg e])
   have dnx: "enext tw [snd tdb] = snd tdb" by (simp add: enext_def)
-  have E: "mstep tdb st = (List.enumerate (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
+  have E: "mstep tdb st = (List.indexed_from (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
       \<lparr> mstate_i = mstate_i st + length xs, mstate_j = mstate_j st + 1, mstate_m = m,
         mstate_n = n, mstate_t = drop (length xs) (mstate_t st @ [snd tdb]) \<rparr>)"
     unfolding default_maux.mstep_def using e mn by (simp del: drop_append)
@@ -158,7 +158,7 @@ proof -
       (map (etabc ks cs) xs) []")
   have ie: "i' = mstate_i st + length xs"
     and te: "Rep_mbuf_t tq = drop (length xs) (mstate_t st @ [snd tdb])"
-    and ve: "vs = List.enumerate (mstate_i st)
+    and ve: "vs = List.indexed_from (mstate_i st)
       (zip (mstate_t st @ [snd tdb]) (map (etabc ks cs) xs))"
     using eannotate_eq[OF A] by (simp_all add: mbuf_t_append.rep_eq t)
   have D: "emstep tdb dst = (vs,
@@ -168,7 +168,7 @@ proof -
   show ?thesis
     unfolding E D fst_conv snd_conv ie ve
     using sim'[unfolded dnx] tb te
-    by (auto simp: emsim_state_def enumerate_zip_map List.in_set_enumerate_eq list_all_iff
+    by (auto simp: emsim_state_def indexed_from_zip_map List.in_set_indexed_from_eq list_all_iff
         set_zip)
 qed
 
