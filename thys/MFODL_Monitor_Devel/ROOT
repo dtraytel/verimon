@@ -44,6 +44,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Optimized_Trigger
     Optimized_Agg_Temporal
     Monitor_Impl
+    Code_Opt
   theories [document=false]
     Monitor_Code
   document_files

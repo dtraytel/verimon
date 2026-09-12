@@ -499,17 +499,16 @@ lemma dominate_False_sound:
     find_sub_False_proj_list_3_length_left find_sub_False_proj_list_3_length_right
     find_sub_False_sound
   by (auto simp del: proj_list_3.simps split: option.splits) fast+
-
-function mmulti_join :: "(nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
-  "mmulti_join n A_pos A_neg L = (if length A_pos + length A_neg \<noteq> length L then {} else
+function mmulti_join_gen :: "(nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
+  "mmulti_join_gen n A_pos A_neg L = (if length A_pos + length A_neg \<noteq> length L then {} else
     let L_pos = take (length A_pos) L; L_neg = drop (length A_pos) L in
     (case dominate_True A_pos L_pos of None \<Rightarrow>
       (case dominate_False A_pos L_pos A_neg L_neg of None \<Rightarrow> mmulti_join' A_pos A_neg L
       | Some (((A_zs, A_x, A_xs), A_ws, A_y, A_ys), ((zs, x, xs), ws, y, ys)) \<Rightarrow>
-        mmulti_join n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
+        mmulti_join_gen n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
         ((zs @ bin_join n A_x x False A_y y # xs) @ (ws @ ys)))
     | Some ((A_zs, A_x, A_xs, A_y, A_ys), (zs, x, xs, y, ys)) \<Rightarrow>
-      mmulti_join n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
+      mmulti_join_gen n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
       ((zs @ bin_join n A_x x True A_y y # xs @ ys) @ L_neg)))"
   by pat_completeness auto
 termination
@@ -519,9 +518,9 @@ termination
 lemma mmulti_join_link:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
-    shows "mmulti_join n A_pos A_neg L = mmulti_join' A_pos A_neg L"
+    shows "mmulti_join_gen n A_pos A_neg L = mmulti_join' A_pos A_neg L"
   using assms
-proof (induction A_pos A_neg L rule: mmulti_join.induct)
+proof (induction A_pos A_neg L rule: mmulti_join_gen.induct)
   case (1 n A_pos A_neg L)
   define L_pos where "L_pos = take (length A_pos) L"
   define L_neg where "L_neg = drop (length A_pos) L"
@@ -539,8 +538,8 @@ proof (induction A_pos A_neg L rule: mmulti_join.induct)
     proof (cases "dominate_False A_pos L_pos A_neg L_neg")
       case None
       show ?thesis
-        by (subst mmulti_join.simps)
-           (simp del: dominate_True.simps dominate_False.simps mmulti_join.simps
+        by (subst mmulti_join_gen.simps)
+           (simp del: dominate_True.simps dominate_False.simps mmulti_join_gen.simps
             mmulti_join'.simps add: Let_def dom_True L_pos_def[symmetric] None
             L_neg_def[symmetric] lens_sum split: option.splits)
     next
@@ -562,10 +561,10 @@ proof (induction A_pos A_neg L rule: mmulti_join.induct)
         using list_all2 by (auto simp add: lens list_all2_append)
       have bin_join_conv: "join x False y = bin_join n A_x x False A_y y"
         using bin_join_table[OF tabs, symmetric] .
-      have mmulti: "mmulti_join n A_pos A_neg L = mmulti_join n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
+      have mmulti: "mmulti_join_gen n A_pos A_neg L = mmulti_join_gen n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
         ((zs @ bin_join n A_x x False A_y y # xs) @ (ws @ ys))"
-        by (subst mmulti_join.simps)
-           (simp del: dominate_True.simps dominate_False.simps mmulti_join.simps
+        by (subst mmulti_join_gen.simps)
+           (simp del: dominate_True.simps dominate_False.simps mmulti_join_gen.simps
             add: Let_def dom_True L_pos_def[symmetric] L_neg_def[symmetric] dom_False lens_sum)
       show ?thesis
         unfolding mmulti
@@ -591,10 +590,10 @@ proof (induction A_pos A_neg L rule: mmulti_join.induct)
         using list_all2 by (auto simp add: lens list_all2_append)
     have bin_join_conv: "join x True y = bin_join n A_x x True A_y y"
       using bin_join_table[OF tabs, symmetric] .
-    have mmulti: "mmulti_join n A_pos A_neg L = mmulti_join n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys)
+    have mmulti: "mmulti_join_gen n A_pos A_neg L = mmulti_join_gen n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys)
       A_neg ((zs @ bin_join n A_x x True A_y y # xs @ ys) @ L_neg)"
-      by (subst mmulti_join.simps)
-         (simp del: dominate_True.simps dominate_False.simps mmulti_join.simps
+      by (subst mmulti_join_gen.simps)
+         (simp del: dominate_True.simps dominate_False.simps mmulti_join_gen.simps
           add: Let_def dom_True L_pos_def[symmetric] L_neg_def lens_sum)
     show ?thesis
       unfolding mmulti
@@ -610,10 +609,182 @@ qed
 lemma mmulti_join_correct:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
-  shows "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
+  shows "z \<in> mmulti_join_gen n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
     list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
     list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
   unfolding mmulti_join_link[OF assms] using mmulti_join'_correct[OF assms] .
+
+
+subsection \<open>Multi-way join as a sequence of binary joins\<close>
+
+text \<open>
+  The worst-case optimal generic join above has large constant factors in the generated code.
+  The monitor therefore evaluates multi-way joins as a left-deep sequence of binary joins
+  (which use an index on the common columns, see @{const bin_join}) followed by anti-joins
+  for the negated conjuncts. The correctness statement @{text mmulti_join_correct} is the same
+  as for the generic join, under the additional assumption that the columns of the negated
+  conjuncts are covered by the positive ones (which holds for all safe formulas).
+\<close>
+
+lemma join_restrict_tables:
+  assumes "table n A X" "table n B Y" "\<not> b \<Longrightarrow> B \<subseteq> A"
+  shows "v \<in> join X b Y \<longleftrightarrow> wf_tuple n (A \<union> B) v \<and> restrict A v \<in> X \<and>
+    (if b then restrict B v \<in> Y else restrict B v \<notin> Y)"
+  apply (rule join_restrict)
+  using assms by (auto simp: table_def)
+
+fun mmulti_join_pos :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> (nat set \<times> 'a table) list \<Rightarrow> nat set \<times> 'a table" where
+  "mmulti_join_pos n A t [] = (A, t)"
+| "mmulti_join_pos n A t ((A', t') # L) = mmulti_join_pos n (A \<union> A') (bin_join n A t True A' t') L"
+
+fun mmulti_join_neg :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> (nat set \<times> 'a table) list \<Rightarrow> 'a table" where
+  "mmulti_join_neg n A t [] = t"
+| "mmulti_join_neg n A t ((A', t') # L) = mmulti_join_neg n A (bin_join n A t False A' t') L"
+
+fun mmulti_join :: "nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
+  "mmulti_join n A_pos A_neg L = (case zip A_pos L of [] \<Rightarrow> {}
+    | (A, t) # Lpos \<Rightarrow> (case mmulti_join_pos n A t Lpos of (A', t') \<Rightarrow>
+        mmulti_join_neg n A' t' (zip A_neg (drop (length A_pos) L))))"
+
+lemma mmulti_join_pos_fst: "fst (mmulti_join_pos n A t L) = A \<union> \<Union>(fst ` set L)"
+proof (induction L arbitrary: A t)
+  case (Cons At L)
+  then show ?case
+    by (cases At) (auto simp: Un_assoc)
+qed simp
+
+lemma mmulti_join_pos_correct:
+  assumes "table n A t" "\<forall>(A', X) \<in> set L. table n A' X"
+  shows "table n (A \<union> \<Union>(fst ` set L)) (snd (mmulti_join_pos n A t L)) \<and>
+    (\<forall>z. z \<in> snd (mmulti_join_pos n A t L) \<longleftrightarrow> wf_tuple n (A \<union> \<Union>(fst ` set L)) z \<and>
+       restrict A z \<in> t \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<in> X))"
+  using assms
+proof (induction L arbitrary: A t)
+  case Nil
+  then show ?case
+    by (auto simp: table_def restrict_idle)
+next
+  case (Cons At L)
+  obtain A' t' where At: "At = (A', t')"
+    by (cases At)
+  have tab': "table n A' t'"
+    using Cons.prems(2) by (auto simp: At)
+  have join: "bin_join n A t True A' t' = join t True t'"
+    by (rule bin_join_table[OF Cons.prems(1) tab'])
+  have tab_join: "table n (A \<union> A') (join t True t')"
+    by (rule join_table[OF Cons.prems(1) tab']) auto
+  have IH: "table n (A \<union> A' \<union> \<Union>(fst ` set L)) (snd (mmulti_join_pos n (A \<union> A') (join t True t') L)) \<and>
+    (\<forall>z. z \<in> snd (mmulti_join_pos n (A \<union> A') (join t True t') L) \<longleftrightarrow>
+      wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z \<and>
+      restrict (A \<union> A') z \<in> join t True t' \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<in> X))"
+    by (rule Cons.IH[OF tab_join]) (use Cons.prems(2) in \<open>auto simp: At\<close>)
+  have *: "restrict (A \<union> A') z \<in> join t True t' \<longleftrightarrow> restrict A z \<in> t \<and> restrict A' z \<in> t'"
+    if "wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z" for z
+  proof -
+    have wf: "wf_tuple n (A \<union> A') (restrict (A \<union> A') z)"
+      by (rule wf_tuple_restrict_simple[OF that]) auto
+    show ?thesis
+      using join_restrict_tables[OF Cons.prems(1) tab', of True "restrict (A \<union> A') z"] wf
+      by (auto simp: restrict_restrict Int_absorb2[OF sup_ge1] Int_absorb2[OF sup_ge2])
+  qed
+  have eq: "mmulti_join_pos n A t (At # L) = mmulti_join_pos n (A \<union> A') (join t True t') L"
+    by (simp only: At mmulti_join_pos.simps join)
+  have cols: "A \<union> \<Union>(fst ` set (At # L)) = A \<union> A' \<union> \<Union>(fst ` set L)"
+    by (simp add: At Un_assoc)
+  show ?case
+    unfolding eq cols
+  proof (intro conjI allI)
+    show "table n (A \<union> A' \<union> \<Union>(fst ` set L)) (snd (mmulti_join_pos n (A \<union> A') (join t True t') L))"
+      using IH by blast
+    fix z
+    show "z \<in> snd (mmulti_join_pos n (A \<union> A') (join t True t') L) \<longleftrightarrow>
+      wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z \<and> restrict A z \<in> t \<and> (\<forall>(A', X) \<in> set (At # L). restrict A' z \<in> X)"
+      using conjunct2[OF IH, rule_format, of z] *[of z] by (auto simp: At)
+  qed
+qed
+
+lemma mmulti_join_neg_correct:
+  assumes "table n A t" "\<forall>(A', X) \<in> set L. table n A' X \<and> A' \<subseteq> A"
+  shows "z \<in> mmulti_join_neg n A t L \<longleftrightarrow> z \<in> t \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<notin> X)"
+  using assms
+proof (induction L arbitrary: t)
+  case Nil
+  then show ?case
+    by simp
+next
+  case (Cons At L)
+  obtain A' t' where At: "At = (A', t')"
+    by (cases At)
+  have tab': "table n A' t'" and sub: "A' \<subseteq> A"
+    using Cons.prems(2) by (auto simp: At)
+  have join: "bin_join n A t False A' t' = join t False t'"
+    by (rule bin_join_table[OF Cons.prems(1) tab'])
+  have tab_join: "table n A (join t False t')"
+    by (rule join_table[OF Cons.prems(1) tab']) (use sub in auto)
+  have *: "z \<in> join t False t' \<longleftrightarrow> z \<in> t \<and> restrict A' z \<notin> t'" for z
+    using join_restrict_tables[OF Cons.prems(1) tab', of False z] sub Cons.prems(1)
+    by (auto simp: Un_absorb2 restrict_idle table_def)
+  have IH: "z \<in> mmulti_join_neg n A (join t False t') L \<longleftrightarrow>
+    z \<in> join t False t' \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<notin> X)"
+    by (rule Cons.IH[OF tab_join]) (use Cons.prems(2) in \<open>auto simp: At\<close>)
+  have eq: "mmulti_join_neg n A t (At # L) = mmulti_join_neg n A (join t False t') L"
+    by (simp only: At mmulti_join_neg.simps join)
+  show ?case
+    unfolding eq IH * by (auto simp: At)
+qed
+
+lemma mmulti_join_correct:
+  assumes "A_pos \<noteq> []"
+      and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
+      and "\<Union>(set A_neg) \<subseteq> \<Union>(set A_pos)"
+  shows "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
+    list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
+    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
+proof -
+  define L_pos where "L_pos = take (length A_pos) L"
+  define L_neg where "L_neg = drop (length A_pos) L"
+  have len: "length L = length A_pos + length A_neg"
+    using list_all2_lengthD[OF assms(2)] by simp
+  have len_pos: "length L_pos = length A_pos" and len_neg: "length L_neg = length A_neg"
+    by (auto simp: L_pos_def L_neg_def len)
+  have L: "L = L_pos @ L_neg"
+    by (simp add: L_pos_def L_neg_def)
+  have "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) A_pos L_pos"
+    "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) A_neg L_neg"
+    using assms(2) unfolding L list_all2_append[OF len_pos[symmetric]] by auto
+  then have tabs: "\<forall>(A, X) \<in> set (zip A_pos L_pos). table n A X" "\<forall>(A, X) \<in> set (zip A_neg L_neg). table n A X"
+    unfolding list_all2_iff by auto
+  obtain A1 A_pos' where A_pos: "A_pos = A1 # A_pos'"
+    using assms(1) by (cases A_pos) auto
+  obtain t1 L_pos' where L_pos: "L_pos = t1 # L_pos'"
+    using len_pos by (cases L_pos) (auto simp: A_pos)
+  have len_pos': "length L_pos' = length A_pos'"
+    using len_pos by (simp add: A_pos L_pos)
+  have zip_pos: "zip A_pos L = (A1, t1) # zip A_pos' L_pos'"
+    by (simp add: L A_pos L_pos zip_append2 len_pos')
+  have tab1: "table n A1 t1" and tabs_pos': "\<forall>(A, X) \<in> set (zip A_pos' L_pos'). table n A X"
+    using tabs(1) by (auto simp: A_pos L_pos)
+  have cols: "A1 \<union> \<Union>(fst ` set (zip A_pos' L_pos')) = \<Union>(set A_pos)"
+    unfolding set_map[symmetric] map_fst_zip[OF len_pos'[symmetric]] by (simp add: A_pos)
+  obtain A' t' where pos: "mmulti_join_pos n A1 t1 (zip A_pos' L_pos') = (A', t')"
+    by fastforce
+  have A': "A' = \<Union>(set A_pos)"
+    using mmulti_join_pos_fst[of n A1 t1 "zip A_pos' L_pos'"] unfolding pos cols by simp
+  have pos_corr: "table n (\<Union>(set A_pos)) t' \<and> (\<forall>z. z \<in> t' \<longleftrightarrow> wf_tuple n (\<Union>(set A_pos)) z \<and>
+    restrict A1 z \<in> t1 \<and> (\<forall>(A, X) \<in> set (zip A_pos' L_pos'). restrict A z \<in> X))"
+    using mmulti_join_pos_correct[OF tab1 tabs_pos'] unfolding pos cols by simp
+  have negs: "\<forall>(A, X) \<in> set (zip A_neg L_neg). table n A X \<and> A \<subseteq> \<Union>(set A_pos)"
+    using tabs(2) assms(3)[unfolded Sup_le_iff] by (auto dest: set_zip_leftD)
+  have "mmulti_join n A_pos A_neg L = mmulti_join_neg n A' t' (zip A_neg L_neg)"
+    by (simp add: zip_pos pos L_neg_def)
+  then have "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> z \<in> t' \<and> (\<forall>(A, X) \<in> set (zip A_neg L_neg). restrict A z \<notin> X)"
+    using mmulti_join_neg_correct[OF conjunct1[OF pos_corr] negs, of z] unfolding A' by simp
+  also have "\<dots> \<longleftrightarrow> wf_tuple n (\<Union>(set A_pos)) z \<and> list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos L_pos \<and>
+    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg L_neg"
+    using pos_corr unfolding list_all2_iff by (auto simp: A_pos L_pos len_pos' len_neg)
+  finally show ?thesis
+    by (simp add: L_pos_def L_neg_def)
+qed
 
 (*<*)
 end

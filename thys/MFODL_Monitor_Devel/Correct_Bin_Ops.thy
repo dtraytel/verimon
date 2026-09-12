@@ -95,7 +95,7 @@ proof (rule qtableI)
     by (simp add: list_all3_conv_all_nth list_all2_conv_all_nth qtable_def)
   ultimately have L: "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) (L_pos @ L_neg)"
     by (rule list_all2_appendI)
-  note in_join_iff = mmulti_join_correct[OF \<open>A_pos \<noteq> []\<close> L]
+  note in_join_iff = mmulti_join_correct[OF \<open>A_pos \<noteq> []\<close> L fv_subset]
   from 1 have take_eq: "take (length A_pos) (L_pos @ L_neg) = L_pos"
     by (auto dest!: list_all2_lengthD)
   from 1 have drop_eq: "drop (length A_pos) (L_pos @ L_neg) = L_neg"
