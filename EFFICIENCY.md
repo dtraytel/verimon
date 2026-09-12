@@ -157,11 +157,16 @@ and so are the proofs. The exported `src/verified.ml` was regenerated from Isabe
 1. **Direct comparators.** Code equations for `compare :: nat/integer/string8` and for the
    derived `comparator_event_data` that perform a single `<`/`=` test on the concrete type
    instead of going through `comparator_of` and the `linorder` dictionary.
-2. **Index-based binary join.** The general case of `bin_join` (neither column set contains
-   the other) clusters both tables by their common columns (`cluster`, an RBT of RBTs) and
-   joins only matching buckets (`mapping_join`). The code equation is unconditional because
-   it checks, in linear time, that every tuple is defined on the join columns; otherwise it
-   falls back to the nested loop (this never happens for well-formed tables).
+2. **Index-based binary join (probe join).** The general case of `bin_join` (neither column
+   set contains the other) clusters the *smaller* table by the common columns (`cluster`, an
+   RBT of RBT sets) and probes the index with every tuple of the larger table, inserting the
+   joined tuples directly into the result (`probe_join`, built from `comp_fun_idem` folds so
+   that it executes through Containers' `set_fold_cfi`). The code equation is unconditional
+   because it checks, in linear time, that every tuple is defined on the join columns
+   (`complete_on`); otherwise it falls back to the nested loop (this never happens for
+   well-formed tables). Indexing only the smaller side matters: in a formula such as
+   `A(x,y) AND ONCE[0,20] B(y,z)` the `ONCE` table is large and re-joined at every time point,
+   so clustering it each time would cost more than the join itself.
 3. **Nested-loop join as a fold.** The default code equation for `A ⋈ B` builds a set of
    singleton sets (which requires the expensive lexicographic comparator on *sets*) and then
    takes its union. A code equation evaluates it as a double fold inserting joined tuples
@@ -189,7 +194,19 @@ Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
 
 (see below; filled in after regenerating `verified.ml`)
 
-## 5. Further opportunities (not implemented)
+## 5. Regenerating the verified kernel
+
+```
+cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 35 min, needs ~8 GB RAM
+cp MFODL_Monitor_Devel/verified.ocaml ../src/verified.ml
+cd .. && dune build --profile=release && dune test
+```
+
+The AFP (Containers, Deriving, IEEE_Floating_Point, ...) must be registered as an Isabelle
+component. `Code_Opt.thy` is the last theory before `Monitor_Code.thy`; the code equations it
+introduces are checked like any other theorem, so the exported code remains verified.
+
+## 6. Further opportunities (not implemented)
 
 * **Dictionary hoisting / monomorphization.** 8-12% of the run time constructs type-class
   dictionaries. Isabelle's code generator has no facility to share dictionaries across calls
@@ -201,4 +218,8 @@ Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
 * **Until auxiliary structure.** `add_new_mmuaux` dominates Until formulas; it maintains
   three nested `Mapping`s keyed by tuples and rebuilds a `tmp` set per time point. An
   algorithmic review is warranted.
+* **Front end.** For output-heavy formulas (`once`) more than a third of VeriMon's time is
+  spent outside the kernel: converting result tables to MonPoly relations and printing them.
+  The specialised `Tuple.compare` on this branch removes part of that; converting the
+  verified RBT directly into a sorted list would remove the rest.
 * **Imperative refinement** of `mmsaux`/`mmuaux` (Section 2.3), once the above are done.
