@@ -265,9 +265,11 @@ let set_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
   | _ -> failwith "[set_fold] unexpected set representation"
 
+(* The RBT is traversed in ascending order of the verified comparator, which coincides with
+   [Tuple.compare] on well-typed tables; [Helper.show_results_list] re-sorts only if needed. *)
 let unconvert_violations =
-  let add_tuple t = Relation.add (unconvert_tuple t) in
-  let ucv_rel rel = set_fold add_tuple rel Relation.empty in
+  let add_tuple t acc = unconvert_tuple t :: acc in
+  let ucv_rel rel = List.rev (set_fold add_tuple rel []) in
   let ucv (tp, (ts, v)) = (int_of_nat tp, integer_of_nat ts, ucv_rel v) in
   List.map ucv
 

@@ -17,4 +17,4 @@ val type_check_formula: Db.schema -> Verified.Monitor.tysym Verified.Monitor.for
 
 type state
 val init: Verified.Monitor.ty Verified.Monitor.formula -> state
-val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * relation) list * state
+val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * Tuple.tuple list) list * state

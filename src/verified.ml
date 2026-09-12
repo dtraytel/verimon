@@ -1,7 +1,9 @@
 module Config : sig
   val generic_join : bool ref
+  val imperative_join : bool ref
 end = struct
   let generic_join = ref false
+  let imperative_join = ref false
 end
 
 module Uint32 : sig

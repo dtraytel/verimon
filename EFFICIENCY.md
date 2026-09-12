@@ -371,3 +371,69 @@ balanced tree is small here (the indexed side is the *smaller* table) and cannot
 these constant factors. The imperative join is therefore kept as an option for experiments
 and as the template for imperative refinements of larger structures, whose payoff would be
 subject to the same overheads.
+
+## 9. Roadmap towards MonPoly's performance
+
+Where the remaining time goes with the default kernel of this branch (inclusive shares,
+`perf`, see Section 1.2 for the method):
+
+| benchmark | kernel share | of which | front end share | of which |
+|---|---|---|---|---|
+| P3 (Since) | 81% | Since structure 65% (`add_new_ts_mmsaux` 22%, `shift_end` 16%, `add_new_table` 11%, `gc_join` 11%) | 15% | parsing, database construction 3% |
+| P2 (Until) | 88% | Until structure 67% (`eval_step_mmuaux` 29%) | 10% | parsing, database construction 2% |
+| once | 39% | `add_new_table` 22%, `shift_end` 12% | 55% | output conversion 28%, printing 21%, database 7% |
+| complex | 82% | joins 44%, Since 29% | 15% | printing 5%, output 4%, database 3% |
+
+Inside the auxiliary structures no single pathological pattern is left (the set-of-sets
+unions were removed from the joins; a small one remains in `add_new_mmuaux`): the time is
+spread over red-black-tree insertions, deletions, filters, unions and intersections on
+persistent tables and tuple-keyed mappings, index (re)construction for new tables
+(`wf_idx_of_set`), and the constant factors identified in Section 2 (dictionaries,
+comparators, GC, `nat` as big integers).
+
+The plan, ordered by expected gain per effort:
+
+1. **Front end (done on this branch, Section 9.1).** Convert result tables to lists instead
+   of MonPoly relations, print through a buffer, format machine-size integers without
+   `Z.to_string`, skip re-sorting when the kernel order already agrees. Output-heavy
+   formulas gain 20-30%; the same printing path could be adopted by MonPoly.
+2. **Database construction.** `insert_into_db` performs one RBT insertion and one
+   string-keyed mapping update per input tuple (3-8%). Accumulating the tuples of a time
+   point per predicate on the OCaml side and building each table in one verified bulk
+   operation (sorted list to RBT, `rbtreeify`, linear time) removes most of it. Requires a
+   small verified constant (`table_of_list`) and one session build.
+3. **Set-of-sets union in the Until structure.** `add_new_mmuaux` builds `tmp` as a union
+   over an image of singleton sets, exactly the pattern replaced in the joins. A fold-based
+   code equation (proof like `join_True_fold_code`) is worth about 5% on Until formulas.
+4. **Dictionary sharing / monomorphisation (10-18%, Section 7).** Cheapest as a
+   post-processing pass on the generated OCaml (`evaluation/microbench/hoist_dicts.py`
+   plus a direct tuple comparator), soundest as the `etuple` refinement in `Monitor_Impl`,
+   most general as a code-generator improvement (emit dictionaries of monomorphic
+   instances as values). This is the item that would also make the imperative refinement
+   (Section 8) pay off, since its remaining overhead is dictionary construction per heap
+   operation.
+5. **Flambda.** The release Docker image builds with an flambda compiler (`-O3`); all
+   measurements here use the distribution compiler. Inlining across the generated
+   higher-order code (dictionary records, `comp_fun_idem` folds, Heap thunks) is expected
+   to help VeriMon more than MonPoly; to be measured.
+6. **Since/Until auxiliary structures.** The largest remaining share (40-67%) and the
+   largest effort: their proofs (`Correct_Since`, `Correct_Until`, `Optimized_*`) are tied
+   to the concrete data representation. Two directions: (a) reduce persistent-structure
+   churn within the current design (avoid rebuilding `wf_idx` indices for every new table,
+   maintain the `tuple_in`/`tuple_since` mappings with fewer intermediate sets); (b) an
+   imperative refinement of `mmsaux`/`mmuaux` along the lines of Section 8, which only pays
+   off after item 4 and after replacing `nat` indices by machine words in the hot paths.
+7. **Machine integers for time stamps and time points** (3-5%): would require a
+   verified bound or the `Native_Word` types throughout the monitor state; low priority.
+
+Matching MonPoly on the temporal benchmarks (P2/P3: still 4-5x) requires items 4 and 6;
+the join-dominated formulas are already within 2-2.5x and item 2 plus 4 would bring them to
+about 1.5x.
+
+### 9.1 Front end changes on this branch
+
+* `Verified_adapter.step` returns tuple lists in kernel order; `Helper.show_results_list`
+  projects, checks sortedness (re-sorting only if the free-variable permutation changed the
+  order), and prints each time point through one buffer.
+* `Predicate.string_of_cst` formats integers that fit a machine word with `string_of_int`.
+* `Tuple.compare` is specialised (Section 4).

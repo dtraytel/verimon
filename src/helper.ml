@@ -141,6 +141,56 @@ let rec is_enum_list n = function
 (** This function displays the "results" (if any) obtained after
     analyzing event index [i]. The results are those tuples satisfying
     the formula for some index [q<=i]. *)
+(* Variant of [show_results] for a list of tuples (used by the verified kernel, whose
+   result tables are converted to lists instead of relations). The list is sorted and
+   deduplicated with [Tuple.compare], so the output is identical to [show_results] on the
+   corresponding relation. The non-verbose output of a time point is assembled in a buffer
+   and written at once. *)
+let show_results_list posl i q tsq tuples =
+  let tuples =
+    if is_enum_list 0 posl then tuples
+    else List.map (Tuple.projections posl) tuples
+  in
+  let rec strictly_sorted = function
+    | x :: (y :: _ as rest) -> Tuple.compare x y < 0 && strictly_sorted rest
+    | _ -> true
+  in
+  let tuples = if strictly_sorted tuples then tuples else List.sort_uniq Tuple.compare tuples in
+  let tuples =
+    if !Misc.stop_at_first_viol then
+      (match tuples with t :: _ :: _ -> [t] | _ -> tuples)
+    else tuples
+  in
+  if !Misc.verbose then
+    if posl = [] then
+      Printf.printf "@%s (time point %d): %b\n%!"
+        (MFOTL.string_of_ts tsq) q (tuples <> [])
+    else
+      begin
+        Printf.printf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q;
+        Misc.print_list Tuple.print_tuple tuples;
+        print_newline()
+      end
+  else
+    begin
+      if Misc.debugging Dbg_perf then
+        Perf.show_results q tsq;
+      if tuples <> [] then (* formula satisfied *)
+        if posl = [] then (* no free variables *)
+          Printf.printf "@%s (time point %d): true\n%!" (MFOTL.string_of_ts tsq) q
+        else (* free variables *)
+          begin
+            let b = Buffer.create 1024 in
+            Buffer.add_string b (Printf.sprintf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q);
+            List.iteri (fun k t ->
+                if k > 0 then Buffer.add_char b ' ';
+                Buffer.add_string b (Tuple.string_of_tuple t)) tuples;
+            Buffer.add_char b '\n';
+            print_string (Buffer.contents b);
+            flush stdout
+          end
+    end
+
 let show_results posl i q tsq rel =
   let rel =
     if is_enum_list 0 posl then rel else

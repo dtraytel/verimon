@@ -365,7 +365,7 @@ let rec string_of_cst c =
         else "\"" ^ s ^ "\""
 
   in match c with
-  | Int i -> Z.to_string i
+  | Int i -> if Z.fits_int i then string_of_int (Z.to_int i) else Z.to_string i
   | Float f -> Printf.sprintf "%g" f
   | Str s -> format_string s
   | Regexp (p, _) -> Printf.sprintf "r%s" (format_string p)
