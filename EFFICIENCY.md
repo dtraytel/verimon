@@ -318,3 +318,56 @@ auxiliary structures, list operations and the front end make up the rest. A refi
 touching every table-manipulating function of the implementation layer for a 10-15% gain
 was therefore not adopted; the hoisting script remains as a documented experiment. The
 next real steps are algorithmic (Until/Since auxiliary structures) and the front end.
+
+## 8. Imperative refinement of the join index (implemented, selectable)
+
+`thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an
+imperative hash table, using Imperative HOL and the separation-logic library
+`Separation_Logic_Imperative_HOL` (its `Hash_Map`).
+
+**Design.**
+* `heap`, `countable` and `hashable` instances for `event_data` (and the underlying
+  `double`, `string8`, `integer`, IEEE `float` types), so that tuples can be stored in the
+  heap and hashed.
+* `run :: 'a Heap ⇒ 'a` executes a heap computation on the empty heap and returns its
+  result. `run_hoare` shows that a total-correctness triple `<emp> c <λr. ↑(r = v)>t` yields
+  `run c = v`, i.e. the result of such a computation is a pure value independent of the heap.
+  The generated OCaml applies the thunk (`(_ ())`); this and the standard Imperative HOL
+  adaptation are the trusted parts.
+* `probe_join_imp I xs ys` allocates a hash table, inserts the tuples of the smaller side
+  keyed by their restriction to the join columns (`hm_insert_all`), probes it with the larger
+  side (`probe_all`) and collects the joined tuples in a functional table. The Hoare triples
+  `hm_insert_all_rule`, `probe_all_rule` and `probe_join_imp_rule` are proved with `sep_auto`
+  by induction over the lists, against an abstract bucket map (`bucket_map`).
+* `hprobe_join` wraps this with `run` and the list views of the tables; `hprobe_join_join`
+  shows it equals the relational join under the same side conditions as `probe_join_join`.
+  `bin_join_code_imp` is the new code equation for `bin_join`; it dispatches on the
+  unspecified constant `use_imperative_join` (both branches proved), read from the flag
+  `-imperative_join`.
+
+**Generated-code pitfalls found on the way.** The first measurement was 60% *slower* than
+the functional index. Profiling showed that 22% of the run time went into the conversions
+between `integer` and `uint32` of `Native_Word`, whose default OCaml code tests bits one by one
+and re-parses big-integer literals from strings on every call, and that the hash of string
+literals materialises a character list. Both are now printed directly on machine integers and
+bytes (documented in the theory). Another latent bug surfaced: `literal_string8` was printed
+as `id`, which does not exist in OCaml's toplevel.
+
+**Result.** With those fixes the imperative index is correct (all tests pass, outputs agree)
+but still not faster than the persistent RBT index of Section 3:
+
+| formula | VeriMon, RBT index (default) | VeriMon, `-imperative_join` |
+|---|---|---|
+| and | 0.42 s | 0.50 s |
+| complex | 4.38 s | 4.75 s |
+| other benchmarks | unchanged (no general-case binary join) | |
+
+The profile of the imperative version attributes the difference to exactly the effects
+anticipated in Section 2.3: the generic hash map code rebuilds the `heap` (`typerep`),
+`hashable` and `equal` dictionaries on every operation (`heap_list`, `typerep_prod`,
+`typerep_list` now appear in the profile), every monadic bind allocates a thunk, and array
+indices go through arbitrary-precision `nat`. The asymptotic advantage of hashing over a
+balanced tree is small here (the indexed side is the *smaller* table) and cannot compensate
+these constant factors. The imperative join is therefore kept as an option for experiments
+and as the template for imperative refinements of larger structures, whose payoff would be
+subject to the same overheads.
