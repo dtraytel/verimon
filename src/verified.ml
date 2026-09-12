@@ -6162,52 +6162,45 @@ let rec minus_set (_A1, _A2)
 let rec join_mask
   n x = mapa (fun i -> member (ceq_nat, ccompare_nat) i x) (upt zero_nata n);;
 
-let rec entriesa _A xa = entries (impl_ofa _A xa);;
-
-let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
-  (RBT_Mapping t) =
-    (match ccompare _A2
-      with None ->
-        failwith "set_of_idx RBT_Mapping: ccompare = None"
-          (fun _ ->
-            set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
-              (RBT_Mapping t))
-      | Some _ ->
-        sup_setb (_B1, _B2, _B3, _B4, _B5)
-          (image
-            ((ceq_prod _A1 (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
-              (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))))
-            ((ceq_set (_B2, _B3, _B4.ccompare_cproper_interval)),
-              (ccompare_set (_B1, _B3, _B4, _B5)), set_impl_set)
-            snd (set ((ceq_prod _A1
-                        (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
-                       (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))),
-                       (set_impl_prod _A3 set_impl_set))
-                  (entriesa _A2 t))));;
-
-let rec idx_join_gen (_A1, _A2, _A3)
-  i ta t =
-    set_of_idx
-      ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-        set_impl_list)
-      (finite_UNIV_list, cenum_list, (ceq_list (ceq_option _A1)),
-        (cproper_interval_list (ccompare_option _A2)), set_impl_list)
-      (mapping_join (ccompare_list (ccompare_option _A2))
-        (fun tb -> join (_A1, _A2, _A3) tb true)
-        (cluster
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-            set_impl_list)
-          (ccompare_list (ccompare_option _A2))
-          (comp (fun a -> Some a) (restrict i)) ta)
-        (cluster
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-            set_impl_list)
-          (ccompare_list (ccompare_option _A2))
-          (comp (fun a -> Some a) (restrict i)) t));;
-
 let rec complete_on
   i t = ball (ceq_nat, ccompare_nat) i
           (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
+
+let rec join1_inserta (_A1, _A2, _A3)
+  b a acc = join1_insert (_A1, _A2, _A3) a b acc;;
+
+let rec join1_insert_cfia (_A1, _A2, _A3)
+  xa = Abs_comp_fun_idem (join1_inserta (_A1, _A2, _A3) xa);;
+
+let rec probe_step (_A1, _A2, _A3)
+  i m b acc =
+    (match
+      lookupa
+        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
+        m (restrict i b)
+      with None -> acc
+      | Some a ->
+        set_fold_cfi
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (join1_insert_cfia (_A1, _A2, _A3) b) acc a);;
+
+let rec probe_step_cfi (_A1, _A2, _A3)
+  xb xc = Abs_comp_fun_idem (probe_step (_A1, _A2, _A3) xb xc);;
+
+let rec probe_join (_A1, _A2, _A3)
+  i ta t =
+    set_fold_cfi
+      ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+      (probe_step_cfi (_A1, _A2, _A3) i
+        (cluster
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
+            set_impl_list)
+          (ccompare_list (ccompare_option _A2))
+          (comp (fun a -> Some a) (restrict i)) ta))
+      (set_empty
+        ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+        (of_phantom set_impl_lista))
+      t;;
 
 let rec bin_join (_A1, _A2, _A3)
   n aa ta pos a t =
@@ -6258,14 +6251,31 @@ let rec bin_join (_A1, _A2, _A3)
         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
         (fun asa -> proj_tuple_in_join (_A1, _A2) pos (join_mask n aa) asa ta) t
  else (if pos &&
-            (ball ((ceq_list (ceq_option _A1)),
-                    (ccompare_list (ccompare_option _A2)))
-               ta (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)) &&
-              ball ((ceq_list (ceq_option _A1)),
-                     (ccompare_list (ccompare_option _A2)))
-                t (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))
-        then idx_join_gen (_A1, _A2, _A3)
-               (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+            (finite
+               (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+                 (ccompare_list (ccompare_option _A2)))
+               ta &&
+              (finite
+                 (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+                   (ccompare_list (ccompare_option _A2)))
+                 t &&
+                (ball ((ceq_list (ceq_option _A1)),
+                        (ccompare_list (ccompare_option _A2)))
+                   ta (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)) &&
+                  ball ((ceq_list (ceq_option _A1)),
+                         (ccompare_list (ccompare_option _A2)))
+                    t (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))))
+        then (if less_eq_nat
+                   (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                           (ccompare_list (ccompare_option _A2)))
+                     ta)
+                   (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                           (ccompare_list (ccompare_option _A2)))
+                     t)
+               then probe_join (_A1, _A2, _A3)
+                      (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+               else probe_join (_A1, _A2, _A3)
+                      (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
         else join (_A1, _A2, _A3) ta pos t)))))));;
 
 let rec idx_join _A (_B1, _B2, _B3)
@@ -8621,6 +8631,29 @@ let rec wf_set_union (_A1, _A2)
         (rep_wf_set xc));;
 
 let rec rep_wf_idx (Abs_wf_idx x) = x;;
+
+let rec entriesa _A xa = entries (impl_ofa _A xa);;
+
+let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
+  (RBT_Mapping t) =
+    (match ccompare _A2
+      with None ->
+        failwith "set_of_idx RBT_Mapping: ccompare = None"
+          (fun _ ->
+            set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
+              (RBT_Mapping t))
+      | Some _ ->
+        sup_setb (_B1, _B2, _B3, _B4, _B5)
+          (image
+            ((ceq_prod _A1 (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
+              (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))))
+            ((ceq_set (_B2, _B3, _B4.ccompare_cproper_interval)),
+              (ccompare_set (_B1, _B3, _B4, _B5)), set_impl_set)
+            snd (set ((ceq_prod _A1
+                        (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
+                       (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))),
+                       (set_impl_prod _A3 set_impl_set))
+                  (entriesa _A2 t))));;
 
 let rec idx_reindex (_A1, _A2)
   ia i t =

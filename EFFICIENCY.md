@@ -192,7 +192,30 @@ Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
 
 ## 4. Results
 
-(see below; filled in after regenerating `verified.ml`)
+Same machine and inputs as Section 1; `verimon_new` is this branch (regenerated
+`src/verified.ml` plus the specialised `Tuple.compare`), `verimon_old` the previous kernel.
+All outputs are identical across the three columns, and the 152 cram tests (93 of which run
+the verified kernel) pass.
+
+| formula | MonPoly | VeriMon old | VeriMon new | speedup |
+|---|---|---|---|---|
+| P2 | 0.42 s | 2.66 s | 2.12 s | 1.25x |
+| P3 | 0.43 s | 2.44 s | 1.88 s | 1.30x |
+| and | 0.16 s | 0.74 s | 0.33 s | 2.24x |
+| andnot | 0.15 s | 0.73 s | 0.22 s | 3.32x |
+| once | 0.72 s | 3.21 s | 2.67 s | 1.20x |
+| since | 0.25 s | 1.01 s | 0.94 s | 1.07x |
+| eventually | 0.49 s | 1.79 s | 1.41 s | 1.27x |
+| until | 0.23 s | 0.67 s | 0.53 s | 1.26x |
+| agg | 0.16 s | 0.48 s | 0.47 s | 1.02x |
+| complex | 0.84 s | 8.88 s | 3.51 s | 2.53x |
+
+Join-dominated formulas improve by 2-3.3x; formulas dominated by the Since/Until auxiliary
+structures by 1.1-1.3x (they profit from the comparator code equations and the fold-based
+join inside the indexed tables only). The remaining gap to MonPoly on `complex` is about
+4x and is now spread over the `ONCE` structure (`add_new_table_mmsaux`, `shift_end`, i.e.
+building `wf_table` indices per time point), the index construction of the probe join, and
+the general dictionary/comparator/GC overheads quantified in Section 2.
 
 ## 5. Regenerating the verified kernel
 
