@@ -3703,7 +3703,9 @@ type 'a wf_set = Abs_wf_set of (nat * (nat set * (('a option) list) set));;
 type ('a, 'b, 'c) mformula = Rep_meformula of ('a, 'b, 'c) meformula;;
 
 type 'a wf_table = Wf_table_of_wf_set of 'a wf_set |
-  Wf_table_of_idx of 'a wf_idx;;
+  Wf_table_of_idx of 'a wf_idx |
+  Wf_table_of_set of nat * nat set * (('a option) list) set |
+  Wf_table_of_keys of nat * nat set * ((('a option) list), nat) mapping;;
 
 type typea = IntT | StringT;;
 
@@ -10237,8 +10239,11 @@ let rec wf_idx_of_set (_A1, _A2)
 
 let rec wf_table_of_set_args (_A1, _A2)
   args x =
-    Wf_table_of_idx
-      (wf_idx_of_set (_A1, _A2) (args_n args) (args_R args) (args_L args) x);;
+    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
+      then Wf_table_of_set (args_n args, args_R args, x)
+      else Wf_table_of_idx
+             (wf_idx_of_set (_A1, _A2) (args_n args) (args_R args) (args_L args)
+               x));;
 
 let rec minus_keys (_A1, _A2, _A3)
   x m = filter (_A1, _A2)
@@ -10255,6 +10260,11 @@ let ed_minus_keys_v :
             (ccompare_list (ccompare_option ccompare_event_data)),
             (equal_list (equal_option equal_event_data))));;
 
+let rec wf_table_upd
+  args m w =
+    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
+      then Wf_table_of_keys (args_n args, args_R args, m) else w ());;
+
 let rec rep_wf_set (Abs_wf_set x) = x;;
 
 let rec wf_idx_of_wf_set (_A1, _A2)
@@ -10263,6 +10273,14 @@ let rec wf_idx_of_wf_set (_A1, _A2)
       (let (n, (a, t)) = rep_wf_set xc in
        let i = inf_seta (ceq_nat, ccompare_nat) xb a in
         (n, (a, (i, idx_create (_A1, _A2) t i))));;
+
+let rec wf_set_of_set (_A1, _A2)
+  xc xd xe =
+    Abs_wf_set
+      (xc, (xd, filter
+                  ((ceq_list (ceq_option _A1)),
+                    (ccompare_list (ccompare_option _A2)))
+                  (wf_tuple xc xd) xe));;
 
 let rec wf_set_union (_A1, _A2)
   xb xc =
@@ -10322,7 +10340,7 @@ let rec wf_idx_union (_A1, _A2)
 let rec wf_idx_cols x = (let (_, (_, (i, _))) = rep_wf_idx x in i);;
 
 let rec wf_table_union (_A1, _A2)
-  x0 x1 = match x0, x1 with
+  t ta = match t, ta with
     Wf_table_of_idx ia, Wf_table_of_idx i ->
       Wf_table_of_idx (wf_idx_union (_A1, _A2) ia i)
     | Wf_table_of_idx i, Wf_table_of_wf_set t ->
@@ -10334,7 +10352,28 @@ let rec wf_table_union (_A1, _A2)
     | Wf_table_of_wf_set t, Wf_table_of_idx i ->
         Wf_table_of_idx
           (wf_idx_union (_A1, _A2)
-            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i);;
+            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i)
+    | Wf_table_of_set (n, a, x), t ->
+        wf_table_union (_A1, _A2)
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x)) t
+    | Wf_table_of_keys (n, a, m), t ->
+        wf_table_union (_A1, _A2)
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)))
+          t
+    | t, Wf_table_of_set (n, a, x) ->
+        wf_table_union (_A1, _A2) t
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x))
+    | t, Wf_table_of_keys (n, a, m) ->
+        wf_table_union (_A1, _A2) t
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)));;
 
 let rec ed_add_new_table_mmsaux
   args x
@@ -10346,23 +10385,27 @@ let rec ed_add_new_table_mmsaux
                        (wf_table_in,
                          (tuple_in, (wf_table_since, tuple_since))))))))))
     = (let xa = unbox ed_minus_keys_v x tuple_since in
-       let wf_table_sincea =
-         wf_table_union (ceq_event_data, ccompare_event_data) wf_table_since
-           (wf_table_of_set_args (ceq_event_data, ccompare_event_data) args xa)
-         in
        let tuple_sincea = unbox ed_upd_set_nat_v tuple_since (fun _ -> t) xa in
+       let wf_table_sincea =
+         wf_table_upd args tuple_sincea
+           (fun _ ->
+             wf_table_union (ceq_event_data, ccompare_event_data) wf_table_since
+               (wf_table_of_set_args (ceq_event_data, ccompare_event_data) args
+                 xa))
+         in
         (if memL (args_ivl args) zero_nata
           then (t, (gc, (maskL,
                           (maskR,
                             (data_prev,
                               (append_queue (t, x) data_in,
                                 (unbox ed_union_v table_in x,
-                                  (wf_table_union
-                                     (ceq_event_data, ccompare_event_data)
-                                     wf_table_in
-                                     (wf_table_of_set_args
-                                       (ceq_event_data, ccompare_event_data)
-                                       args x),
+                                  (wf_table_upd args
+                                     (unbox ed_upd_set_nat_v tuple_in
+                                       (fun _ -> t) x)
+                                     (fun _ ->
+                                       wf_table_union
+ (ceq_event_data, ccompare_event_data) wf_table_in
+ (wf_table_of_set_args (ceq_event_data, ccompare_event_data) args x)),
                                     (unbox ed_upd_set_nat_v tuple_in
                                        (fun _ -> t) x,
                                       (wf_table_sincea, tuple_sincea))))))))))
@@ -10464,8 +10507,10 @@ let rec add_new_ts_mmsaux (_A1, _A2, _A3)
                              ((ceq_list (ceq_option _A1)),
                                (ccompare_list (ccompare_option _A2)))
                              table_in add,
-                            (wf_table_union (_A1, _A2) wf_table_in
-                               (wf_table_of_set_args (_A1, _A2) args add),
+                            (wf_table_upd args tuple_ina
+                               (fun _ ->
+                                 wf_table_union (_A1, _A2) wf_table_in
+                                   (wf_table_of_set_args (_A1, _A2) args add)),
                               (tuple_ina,
                                 (wf_table_since, tuple_since)))))))))));;
 
@@ -10531,12 +10576,11 @@ let rec add_new_ts_mmasauxa
                            (data_preva,
                              (data_ina,
                                (unbox ed_union_v table_in add,
-                                 (wf_table_union
-                                    (ceq_event_data, ccompare_event_data)
-                                    wf_table_in
-                                    (wf_table_of_set_args
-                                      (ceq_event_data, ccompare_event_data) args
-                                      add),
+                                 (wf_table_upd args tuple_ina
+                                    (fun _ ->
+                                      wf_table_union
+(ceq_event_data, ccompare_event_data) wf_table_in
+(wf_table_of_set_args (ceq_event_data, ccompare_event_data) args add)),
                                    (tuple_ina,
                                      (wf_table_since, tuple_since)))))))))),
               insert_maggauxa aggargs
@@ -10620,7 +10664,7 @@ let rec wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5)
         (rep_wf_idx xc));;
 
 let rec wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
-  x0 x1 = match x0, x1 with
+  t ta = match t, ta with
     Wf_table_of_idx ia, Wf_table_of_idx i ->
       Wf_table_of_idx (wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5) ia i)
     | Wf_table_of_idx i, Wf_table_of_wf_set t ->
@@ -10632,7 +10676,28 @@ let rec wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
     | Wf_table_of_wf_set t, Wf_table_of_idx i ->
         Wf_table_of_idx
           (wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5)
-            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i);;
+            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i)
+    | Wf_table_of_set (n, a, x), t ->
+        wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x)) t
+    | Wf_table_of_keys (n, a, m), t ->
+        wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)))
+          t
+    | t, Wf_table_of_set (n, a, x) ->
+        wf_table_antijoin (_A1, _A2, _A3, _A4, _A5) t
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x))
+    | t, Wf_table_of_keys (n, a, m) ->
+        wf_table_antijoin (_A1, _A2, _A3, _A4, _A5) t
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)));;
 
 let rec ed_shift_end
   args nt
@@ -10664,13 +10729,16 @@ let rec ed_shift_end
                      (data_preva,
                        (data_ina,
                          (unbox ed_minus_v table_in del,
-                           (wf_table_antijoin
-                              (ceq_event_data, ccompare_event_data,
-                                equal_event_data, hashable_event_data,
-                                heap_event_data)
-                              wf_table_in
-                              (wf_table_of_set_args
-                                (ceq_event_data, ccompare_event_data) args del),
+                           (wf_table_upd args tuple_ina
+                              (fun _ ->
+                                wf_table_antijoin
+                                  (ceq_event_data, ccompare_event_data,
+                                    equal_event_data, hashable_event_data,
+                                    heap_event_data)
+                                  wf_table_in
+                                  (wf_table_of_set_args
+                                    (ceq_event_data, ccompare_event_data) args
+                                    del)),
                              (tuple_ina,
                                (wf_table_since, tuple_since)))))))))));;
 
@@ -10719,14 +10787,14 @@ let rec shift_end_mmasaux
                           (data_preva,
                             (data_ina,
                               (unbox ed_minus_v table_in del,
-                                (wf_table_antijoin
-                                   (ceq_event_data, ccompare_event_data,
-                                     equal_event_data, hashable_event_data,
-                                     heap_event_data)
-                                   wf_table_in
-                                   (wf_table_of_set_args
-                                     (ceq_event_data, ccompare_event_data) args
-                                     del),
+                                (wf_table_upd args tuple_ina
+                                   (fun _ ->
+                                     wf_table_antijoin
+                                       (ceq_event_data, ccompare_event_data,
+ equal_event_data, hashable_event_data, heap_event_data)
+                                       wf_table_in
+                                       (wf_table_of_set_args
+ (ceq_event_data, ccompare_event_data) args del)),
                                   (tuple_ina,
                                     (wf_table_since, tuple_since)))))))))),
               delete_maggauxa aggargs del aggaux)));;
@@ -10761,7 +10829,7 @@ let rec wf_idx_join (_A1, _A2, _A3, _A4, _A5)
         (rep_wf_idx xc));;
 
 let rec wf_table_join (_A1, _A2, _A3, _A4, _A5)
-  x0 x1 = match x0, x1 with
+  t ta = match t, ta with
     Wf_table_of_idx ia, Wf_table_of_idx i ->
       Wf_table_of_idx (wf_idx_join (_A1, _A2, _A3, _A4, _A5) ia i)
     | Wf_table_of_idx i, Wf_table_of_wf_set t ->
@@ -10773,7 +10841,28 @@ let rec wf_table_join (_A1, _A2, _A3, _A4, _A5)
     | Wf_table_of_wf_set t, Wf_table_of_idx i ->
         Wf_table_of_idx
           (wf_idx_join (_A1, _A2, _A3, _A4, _A5)
-            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i);;
+            (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i)
+    | Wf_table_of_set (n, a, x), t ->
+        wf_table_join (_A1, _A2, _A3, _A4, _A5)
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x)) t
+    | Wf_table_of_keys (n, a, m), t ->
+        wf_table_join (_A1, _A2, _A3, _A4, _A5)
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)))
+          t
+    | t, Wf_table_of_set (n, a, x) ->
+        wf_table_join (_A1, _A2, _A3, _A4, _A5) t
+          (Wf_table_of_wf_set (wf_set_of_set (_A1, _A2) n a x))
+    | t, Wf_table_of_keys (n, a, m) ->
+        wf_table_join (_A1, _A2, _A3, _A4, _A5) t
+          (Wf_table_of_wf_set
+            (wf_set_of_set (_A1, _A2) n a
+              (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)), set_impl_list)
+                m)));;
 
 let rec wf_set_set x = (let (_, (_, t)) = rep_wf_set x in t);;
 
@@ -10786,7 +10875,18 @@ let rec wf_idx_set (_A1, _A2)
 
 let rec wf_table_set (_A1, _A2)
   = function Wf_table_of_idx t -> wf_idx_set (_A1, _A2) t
-    | Wf_table_of_wf_set t -> wf_set_set t;;
+    | Wf_table_of_wf_set t -> wf_set_set t
+    | Wf_table_of_set (n, a, x) ->
+        filter
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (wf_tuple n a) x
+    | Wf_table_of_keys (n, a, m) ->
+        filter
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (wf_tuple n a)
+          (keys (cenum_list, (ceq_list (ceq_option _A1)),
+                  (ccompare_list (ccompare_option _A2)), set_impl_list)
+            m);;
 
 let rec ed_join_mmsaux
   args x
@@ -11051,9 +11151,11 @@ let rec ed_gc_mmsaux
                           (table_in,
                             (wf_table_in,
                               (tuple_in,
-                                (wf_table_of_set_args
-                                   (ceq_event_data, ccompare_event_data) args
-                                   (unbox ed_keys_nat_v tuple_sincea),
+                                (wf_table_upd args tuple_sincea
+                                   (fun _ ->
+                                     wf_table_of_set_args
+                                       (ceq_event_data, ccompare_event_data)
+                                       args (unbox ed_keys_nat_v tuple_sincea)),
                                   tuple_sincea)))))))))));;
 
 let rec gc_join_mmasaux
@@ -11748,9 +11850,8 @@ let rec ed_init_mmsaux
             (empty_queue,
               (empty_queue,
                 (ed_bot,
-                  (Wf_table_of_idx
-                     (wf_idx_of_set (ceq_event_data, ccompare_event_data)
-                       (args_n args) (args_R args) (args_L args) ed_bot),
+                  (wf_table_of_set_args (ceq_event_data, ccompare_event_data)
+                     args ed_bot,
                     (ed_mempty_nat,
                       (wf_table_of_set_args
                          (ceq_event_data, ccompare_event_data) args ed_bot,

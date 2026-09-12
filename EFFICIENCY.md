@@ -407,7 +407,30 @@ formulas with join columns run the same code as before. `wf_table_of_set_args` a
 builds an index for the empty join column set, and `init_mmsaux` starts from the plain
 representation.
 
-**Effect.** See the table in Section 4 ("Since without indices"). RESULTS_PLACEHOLDER
+**Effect** (kernel exported from the session, two runs on an idle machine, distribution
+compiler, compared with the monomorphised kernel of Section 7; all cram tests pass, all
+outputs identical):
+
+| formula | before | after (run 1 / run 2) | speedup |
+|---|---|---|---|
+| P3 | 1.84-1.90 s | 1.24 s / 1.24 s | 1.48-1.53x |
+| once | 2.32-2.56 s | 1.92 s / 1.86 s | 1.25-1.33x |
+| complex | 3.61-3.76 s | 3.00 s / 2.95 s | 1.20-1.27x |
+| since (join columns, unchanged code path) | 0.81-0.84 s | 0.83 s / 0.84 s | 1.0x |
+| P2, and, andnot, eventually, until, agg | | | unchanged (0.96-1.05x) |
+
+P3 is now 2.5x slower than MonPoly (was 5.9x at the start of this branch); what remains in
+its profile is the mapping maintenance itself (`upd_set_keys`, `filter_set`), the table
+union/difference, the `valid_tuple` filter, GC and parsing. The same duplication exists for
+formulas *with* join columns (index plus table plus mapping); removing it there needs the
+index to become the only representation of `table_in`, a larger change to `Optimized_Since`.
+
+**A pitfall worth recording.** Re-declaring `code_datatype` for `wf_table` silently drops all
+existing code equations that pattern-match on its constructors; they must be re-declared
+after it (`declare wf_table_union_code[code] ...`). The first build without this produced code
+that failed with a pattern-matching exception for Since with join columns, caught by the
+`since` benchmark and the test suite.
+
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
@@ -507,13 +530,15 @@ The plan, ordered by expected gain per effort:
 5. **Flambda (measured, Section 4).** The release Docker image builds with an flambda
    compiler; with it VeriMon gains another 10-30% while MonPoly is unchanged, so the
    distribution-compiler numbers overstate the gap by that much.
-6. **Since/Until auxiliary structures.** The largest remaining share (40-67%) and the
-   largest effort: their proofs (`Correct_Since`, `Correct_Until`, `Optimized_*`) are tied
-   to the concrete data representation. Two directions: (a) reduce persistent-structure
-   churn within the current design (avoid rebuilding `wf_idx` indices for every new table,
-   maintain the `tuple_in`/`tuple_since` mappings with fewer intermediate sets); (b) an
+6. **Since/Until auxiliary structures.** The largest remaining share and the largest
+   effort: their proofs (`Correct_Since`, `Correct_Until`, `Optimized_*`) are tied to the
+   concrete data representation. First step done (Section 7b): for formulas without join
+   columns the Since structure no longer maintains its tuple indices (P3 1.5x, once 1.3x,
+   complex 1.2x). Next: (a) make the index the only representation of the result table for
+   formulas with join columns and avoid rebuilding indices for every new table; (b) the
+   corresponding duplications in the Until structure (`a1_map`/`a2_map`/`tables`); (c) an
    imperative refinement of `mmsaux`/`mmuaux` along the lines of Section 8, which only pays
-   off after item 4 and after replacing `nat` indices by machine words in the hot paths.
+   off after replacing `nat` indices by machine words in the hot paths.
 7. **Machine integers for time stamps and time points** (3-5%): would require a
    verified bound or the `Native_Word` types throughout the monitor state; low priority.
 
