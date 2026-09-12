@@ -515,7 +515,7 @@ termination
   by (relation "measure (\<lambda>(n, A_pos, A_neg, L). length A_pos + length A_neg)")
     (use find_sub_True_sound find_sub_False_sound in \<open>fastforce split: option.splits\<close>)+
 
-lemma mmulti_join_link:
+lemma mmulti_join_gen_link:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
     shows "mmulti_join_gen n A_pos A_neg L = mmulti_join' A_pos A_neg L"
@@ -606,13 +606,13 @@ proof (induction A_pos A_neg L rule: mmulti_join_gen.induct)
   qed
 qed
 
-lemma mmulti_join_correct:
+lemma mmulti_join_gen_correct:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
   shows "z \<in> mmulti_join_gen n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
     list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
     list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
-  unfolding mmulti_join_link[OF assms] using mmulti_join'_correct[OF assms] .
+  unfolding mmulti_join_gen_link[OF assms] using mmulti_join'_correct[OF assms] .
 
 
 subsection \<open>Multi-way join as a sequence of binary joins\<close>
