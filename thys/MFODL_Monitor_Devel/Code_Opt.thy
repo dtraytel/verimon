@@ -292,6 +292,218 @@ lemma bin_join_code[code]:
     else join t pos t')"
   by (subst bin_join.simps) (auto simp: probe_join_join join_commute)
 
+section \<open>Code equations for the auxiliary structures\<close>
+
+subsection \<open>Until: building the candidate set without sets of sets\<close>
+
+text \<open>
+  The code equations of @{const add_new_mmuaux} and @{const add_new_mmauaux} build the set of
+  candidate tuples as the union of an image of singleton sets, which the generated code
+  evaluates through a set of sets (and its expensive comparator). We build it with a fold.
+\<close>
+
+definition tmp_elem :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_elem a1_map maskL pos tp len as = (case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+      (if \<not>pos then {(tp - len, as)} else {})
+      | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
+      else {(max (tp - len) (tp' + 1), as)})"
+
+lemma tmp_elem_eta: "tmp_elem a1_map maskL pos tp len = (\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+      (if \<not>pos then {(tp - len, as)} else {})
+      | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
+      else {(max (tp - len) (tp' + 1), as)})"
+  by (simp add: fun_eq_iff tmp_elem_def)
+
+definition tmp_step :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_step a1_map maskL pos tp len as acc = (case Mapping.lookup a1_map (proj_tuple maskL as) of
+      None \<Rightarrow> (if \<not>pos then Set.insert (tp - len, as) acc else acc)
+    | Some tp' \<Rightarrow> (if pos then Set.insert (max (tp - len) tp', as) acc else Set.insert (max (tp - len) (tp' + 1), as) acc))"
+
+lemma comp_fun_idem_tmp_step: "comp_fun_idem (tmp_step a1_map maskL pos tp len)"
+  by unfold_locales (auto simp: fun_eq_iff tmp_step_def Set.insert_commute split: option.splits)
+
+lemma fold_tmp_step:
+  assumes "finite X"
+  shows "Finite_Set.fold (tmp_step a1_map maskL pos tp len) acc X = acc \<union> \<Union>(tmp_elem a1_map maskL pos tp len ` X)"
+proof -
+  interpret comp_fun_idem "tmp_step a1_map maskL pos tp len"
+    by (rule comp_fun_idem_tmp_step)
+  from assms show ?thesis
+  proof (induction X arbitrary: acc)
+    case (insert x X)
+    then show ?case
+      unfolding fold_insert[OF insert.hyps(1,2)] insert.IH
+      by (auto simp: tmp_step_def tmp_elem_def split: option.splits)
+  qed simp
+qed
+
+lift_definition tmp_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ('a tuple, (nat \<times> 'a tuple) set) comp_fun_idem"
+  is tmp_step
+  by (rule comp_fun_idem_tmp_step)
+
+definition tmp_set :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_set a1_map maskL pos tp len B rel2 = \<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> B"
+
+lemma tmp_set_code[code]:
+  "tmp_set a1_map maskL pos tp len B rel2 = (if finite rel2 then set_fold_cfi (tmp_step_cfi a1_map maskL pos tp len) B rel2
+     else Code.abort (STR ''tmp_set: infinite table'') (\<lambda>_. tmp_set a1_map maskL pos tp len B rel2))"
+  unfolding set_fold_cfi.rep_eq tmp_step_cfi.rep_eq by (simp add: fold_tmp_step tmp_set_def Un_commute)
+
+declare [[code drop: add_new_mmuaux add_new_mmauaux]]
+
+lemma add_new_mmuaux_fold_code[code]: 
+  "add_new_mmuaux args rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    shift_mmuaux args nt aux;
+    I = args_ivl args; pos = args_pos args;
+    new_tstp = (if memL I 0 then Inr tp else Inl nt);
+    tstp_map = Mapping.update tp nt tstp_map;
+    tmp = tmp_set a1_map maskL pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
+    tmp = Set.filter (\<lambda>(tp, as). case Mapping.lookup tstp_map tp of Some ts \<Rightarrow> memL I (nt - ts)) tmp;
+    table = snd ` tmp;
+    tables = append_queue (table, if memL I 0 then Inr tp else Inl nt) tables;
+    a2_map = Mapping.update (tp + 1) Mapping.empty
+      (upd_nested_max_tstp a2_map new_tstp tmp);
+    a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+      (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+    tss = append_queue nt tss in
+    (tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
+  by (subst add_new_mmuaux_code) (simp only: tmp_set_def tmp_elem_eta)
+
+lemma add_new_mmauaux_fold_code[code]:
+  "add_new_mmauaux args rel1 rel2 nt (mmuaux, aggaux) =
+    (case args_agg args of 
+     None \<Rightarrow> let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) = add_new_mmuaux args rel1 rel2 nt mmuaux in
+  ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) |
+     Some aggargs \<Rightarrow>
+    (let ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) = shift_mmauaux args nt (mmuaux, aggaux);
+    I = args_ivl args; pos = args_pos args;
+    new_tstp = (if memL I 0 then Inr tp else Inl nt);
+    tstp_map = Mapping.update tp nt tstp_map;
+    m = case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow> m;
+    tmp = tmp_set a1_map maskL pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
+    tmp = Set.filter (\<lambda>(tp, as). case Mapping.lookup tstp_map tp of Some ts \<Rightarrow> memL I (nt - ts)) tmp;
+    table = snd ` tmp;
+    tables = append_queue (table, if memL I 0 then Inr tp else Inl nt) tables;
+    a2_map' = Mapping.update (tp + 1) Mapping.empty
+      (upd_nested_max_tstp a2_map new_tstp tmp);
+    a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+      (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+    to_add = to_add_set (tp - len) m tmp;
+    aggaux = insert_maggaux' aggargs to_add aggaux;
+    tss = append_queue nt tss in
+    ((tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map', tstp_map, done), aggaux)))"
+  by (subst add_new_mmauaux_code) (simp only: tmp_set_def tmp_elem_eta)
+
+subsection \<open>Unions of families of tables as folds\<close>
+
+text \<open>
+  @{term "\<Union>(snd ` set xs)"} and @{term "\<Union>(set xs)"} are compiled by Containers through a
+  set of sets; the following code equations fold the union over the list instead. They affect
+  @{const set_of_idx} (used by the indexed tables of the Since structure), @{const gc_mmsaux}
+  and the @{text eval_step} functions of the Until structures.
+\<close>
+
+lemma Union_image_snd_fold: "\<Union>(snd ` set xs) = fold (\<lambda>p acc. snd p \<union> acc) xs {}"
+proof -
+  have "\<Union>(snd ` set xs) \<union> A = fold (\<lambda>p acc. snd p \<union> acc) xs A" for A
+  proof (induction xs arbitrary: A)
+    case (Cons p xs)
+    show ?case
+      using Cons.IH[of "snd p \<union> A"] by auto
+  qed simp
+  from this[of "{}"] show ?thesis by simp
+qed
+
+lemma Union_set_fold: "\<Union>(set xs) = fold (\<union>) xs {}"
+proof -
+  have "\<Union>(set xs) \<union> A = fold (\<union>) xs A" for A
+  proof (induction xs arbitrary: A)
+    case (Cons x xs)
+    show ?case
+      using Cons.IH[of "x \<union> A"] by auto
+  qed simp
+  from this[of "{}"] show ?thesis by simp
+qed
+
+declare [[code drop: set_of_idx]]
+
+lemma set_of_idx_fold_code[code]:
+  fixes t :: "('a :: ccompare, 'b set) mapping_rbt"
+  shows "set_of_idx (RBT_Mapping t) =
+    (case ID CCOMPARE('a) of None \<Rightarrow> Code.abort (STR ''set_of_idx RBT_Mapping: ccompare = None'') (\<lambda>_. set_of_idx (RBT_Mapping t))
+    | Some _ \<Rightarrow> fold (\<lambda>p acc. snd p \<union> acc) (RBT_Mapping2.entries t) {})"
+  by (subst set_of_idx_code) (simp only: Union_image_snd_fold)
+
+declare [[code drop: gc_mmsaux eval_step_mmuaux eval_step_mmauaux]]
+
+lemma gc_mmsaux_fold_code[code]:
+  "gc_mmsaux args (nt, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) =
+    (let all_tuples = fold (\<lambda>p acc. snd p \<union> acc) (linearize data_prev @ linearize data_in) {};
+    tuple_since' = Mapping.filter (\<lambda>as _. as \<in> all_tuples) tuple_since in
+    (nt, nt, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in,
+     wf_table_of_set_args args (Mapping.keys tuple_since'), tuple_since'))"
+  by (subst gc_mmsaux.simps) (simp only: set_append[symmetric] Union_image_snd_fold)
+
+lemma eval_step_mmuaux_fold_code[code]:
+  "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (case safe_hd tss of (Some ts, tss') \<Rightarrow>
+      (case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow>
+        let I = args_ivl args;
+        T = eval_args_agg args result;
+        tss' = tl_queue tss';
+        (ts', tss'') = case safe_hd tss' of 
+              (Some ts', tss'') \<Rightarrow> (ts', tss'') |
+              (None, tss'') \<Rightarrow> (0, tss'');
+        (tables, taken) = takedropWhile_queue (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables;
+        to_del_approx = fold (\<union>) (map fst taken) {};
+        to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of Some tstp \<Rightarrow> (\<not>ts_tp_lt I ts' (tp - len + 1) tstp) |
+                                                            None \<Rightarrow> False) to_del_approx;
+        m'' = mapping_delete_set m to_del;
+        result' = if len = 1 then {} else (result - to_del) \<union> (case Mapping.lookup a2_map (tp - len + 1) of Some m' \<Rightarrow> Mapping.keys m');
+        a2_map = if len = 1 then Mapping.update tp Mapping.empty a2_map
+                 else Mapping.update (tp - len + 1)
+          (case Mapping.lookup a2_map (tp - len + 1) of Some m' \<Rightarrow>
+          Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m') a2_map;
+        a2_map = Mapping.delete (tp - len) a2_map;
+        tstp_map = Mapping.delete (tp - len) tstp_map in
+        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done)))"
+  by (subst eval_step_mmuaux.simps) (simp only: Union_set_fold)
+
+lemma eval_step_mmauaux_fold_code[code]:
+  "eval_step_mmauaux args ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) = 
+  (case safe_hd tss of 
+  (Some ts, tss') \<Rightarrow>
+    (case args_agg args of 
+    None \<Rightarrow> (eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) |
+    Some aggargs \<Rightarrow>
+      (case Mapping.lookup a2_map (tp - len) of 
+      Some m \<Rightarrow> 
+        let I = args_ivl args;
+        tss' = tl_queue tss';
+        (ts', tss'') = case safe_hd tss' of 
+              (Some ts', tss'') \<Rightarrow> (ts', tss'') |
+              (None, tss'') \<Rightarrow> (0, tss'');
+        (tables, taken) = takedropWhile_queue (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables;
+        to_del_approx = fold (\<union>) (map fst taken) {};
+        to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of Some tstp \<Rightarrow> (\<not>ts_tp_lt I ts' (tp - len + 1) tstp) |
+                                                            None \<Rightarrow> False) to_del_approx;
+        m'' = mapping_delete_set m to_del;
+        result' = if len = 1 then {} else (result - to_del) \<union> (case Mapping.lookup a2_map (tp - len + 1) of Some m' \<Rightarrow> Mapping.keys m');
+        to_ins = case Mapping.lookup a2_map (tp - len + 1) of Some m' \<Rightarrow> m';
+        a2_map = if len = 1 then Mapping.update tp Mapping.empty a2_map
+                 else Mapping.update (tp - len + 1)
+          (Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' to_ins) a2_map;
+        a2_map = Mapping.delete (tp - len) a2_map;
+        tstp_map = Mapping.delete (tp - len) tstp_map;
+        agg_result = result_maggaux' aggargs aggaux;
+        T = case agg_result of Some k \<Rightarrow> k |
+                               None \<Rightarrow> eval_args_agg args (Mapping.keys m);
+        to_ins = Mapping.filter (\<lambda>k v. Mapping.lookup m'' k = None) to_ins;
+        aggaux = (if len = 1 then init_maggaux' aggargs else insert_maggaux' aggargs (Mapping.keys to_ins) (delete_maggaux' aggargs to_del aggaux)) in
+        ((tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done), aggaux))))"
+  by (subst eval_step_mmauaux.simps) (simp only: Union_set_fold)
+
 (*<*)
 end
 (*>*)
