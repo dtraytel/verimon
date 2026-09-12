@@ -93,7 +93,7 @@ fun shift_end_mmasaux :: "args \<Rightarrow> ts \<Rightarrow> mmasaux \<Rightarr
          (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
          (tuple_in, del) = fold filter_set discard (tuple_in, {}) in
          ((t, gc, maskL, maskR, data_prev', data_in,
-          table_in - del, wf_table_antijoin wf_table_in (wf_table_of_set_args args del), tuple_in,
+          table_in - del, wf_table_upd args tuple_in (\<lambda>_. wf_table_antijoin wf_table_in (wf_table_of_set_args args del)), tuple_in,
           wf_table_since, tuple_since), delete_maggaux' aggargs del aggaux)))"
 
 fun add_new_ts_mmasaux' :: "args \<Rightarrow> ts \<Rightarrow> mmasaux \<Rightarrow> mmasaux" where
@@ -105,7 +105,7 @@ fun add_new_ts_mmasaux' :: "args \<Rightarrow> ts \<Rightarrow> mmasaux \<Righta
          (data_prev, move) = takedropWhile_queue (\<lambda>(t, X). memL I (nt - t)) data_prev;
           data_in = fold (\<lambda>(t, X) data_in. append_queue (t, X) data_in) move data_in;
          (tuple_in', add) = fold (upd_set_keys (\<lambda>X t. {as \<in> X. valid_tuple tuple_since (t, as)})) move (tuple_in, {}) in
-         ((nt, gc, maskL, maskR, data_prev, data_in, table_in \<union> add, wf_table_union wf_table_in (wf_table_of_set_args args add), tuple_in', wf_table_since, tuple_since),
+         ((nt, gc, maskL, maskR, data_prev, data_in, table_in \<union> add, wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args add)), tuple_in', wf_table_since, tuple_since),
          insert_maggaux' aggargs (add - Mapping.keys tuple_in) aggaux)))"
 
 definition add_new_ts_mmasaux :: "args \<Rightarrow> ts \<Rightarrow> mmasaux \<Rightarrow> mmasaux" where
