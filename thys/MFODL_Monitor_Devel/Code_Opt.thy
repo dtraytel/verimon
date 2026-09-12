@@ -28,14 +28,14 @@ lemma compare_string8_code[code]: "compare (x :: string8) y = (if x < y then Lt 
 
 lemma comparator_event_data_code[code]:
   "comparator_event_data (EInt x) (EInt y) = (if x < y then Lt else if x = y then Eq else Gt)"
-  "comparator_event_data (EInt x) (EFloat y) = Lt"
-  "comparator_event_data (EInt x) (EString y) = Lt"
-  "comparator_event_data (EFloat x) (EInt y) = Gt"
-  "comparator_event_data (EFloat x) (EFloat y) = comparator_double x y"
-  "comparator_event_data (EFloat x) (EString y) = Lt"
-  "comparator_event_data (EString x) (EInt y) = Gt"
-  "comparator_event_data (EString x) (EFloat y) = Gt"
-  "comparator_event_data (EString x) (EString y) = (if x < y then Lt else if x = y then Eq else Gt)"
+  "comparator_event_data (EInt x) (EFloat e) = Lt"
+  "comparator_event_data (EInt x) (EString t) = Lt"
+  "comparator_event_data (EFloat d) (EInt y) = Gt"
+  "comparator_event_data (EFloat d) (EFloat e) = comparator_double d e"
+  "comparator_event_data (EFloat d) (EString t) = Lt"
+  "comparator_event_data (EString s) (EInt y) = Gt"
+  "comparator_event_data (EString s) (EFloat e) = Gt"
+  "comparator_event_data (EString s) (EString t) = (if s < t then Lt else if s = t then Eq else Gt)"
   by (simp_all add: comparator_of_def)
 
 subsection \<open>Joins\<close>
@@ -50,6 +50,77 @@ text \<open>
   the correctness proofs of the monitor are unaffected.
 \<close>
 
+subsection \<open>Nested-loop join as a fold\<close>
+
+text \<open>
+  The default code equation @{thm join_True_code} builds a set of singleton sets (which
+  requires the expensive comparator on sets) and then takes its union. We replace it by a
+  double fold that inserts the joined tuples directly into the result.
+\<close>
+
+definition join1_insert :: "'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join1_insert a b acc = (case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> insert z acc)"
+
+lemma comp_fun_idem_join1_insert: "comp_fun_idem (join1_insert a)"
+  by unfold_locales (auto simp: fun_eq_iff join1_insert_def insert_commute split: option.splits)
+
+lemma fold_join1_insert:
+  assumes "finite B"
+  shows "Finite_Set.fold (join1_insert a) acc B = acc \<union> (\<Union>b \<in> B. set_option (join1 (a, b)))"
+proof -
+  interpret comp_fun_idem "join1_insert a"
+    by (rule comp_fun_idem_join1_insert)
+  from assms show ?thesis
+  proof (induction B arbitrary: acc)
+    case (insert x B)
+    then show ?case
+      unfolding fold_insert[OF insert.hyps(1,2)] insert.IH
+      by (auto simp: join1_insert_def split: option.splits)
+  qed simp
+qed
+
+lift_definition join1_insert_cfi :: "'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join1_insert
+  by (rule comp_fun_idem_join1_insert)
+
+definition join_row :: "'a table \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join_row B a acc = set_fold_cfi (join1_insert_cfi a) acc B"
+
+lemma join_row_alt: "join_row B a acc = (if finite B then acc \<union> (\<Union>b \<in> B. set_option (join1 (a, b))) else acc)"
+  unfolding join_row_def
+  by (transfer fixing: B a acc) (auto simp: fold_join1_insert fold_infinite)
+
+lemma comp_fun_idem_join_row: "comp_fun_idem (join_row B)"
+  by unfold_locales (auto simp: fun_eq_iff join_row_alt)
+
+lift_definition join_row_cfi :: "'a table \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join_row
+  by (rule comp_fun_idem_join_row)
+
+lemma fold_join_row:
+  assumes "finite A" "finite B"
+  shows "Finite_Set.fold (join_row B) {} A = join A True B"
+proof -
+  interpret comp_fun_idem "join_row B"
+    by (rule comp_fun_idem_join_row)
+  from assms(1) show ?thesis
+    unfolding join_True_code
+    by (induction A) (auto simp: join_row_alt assms(2))
+qed
+
+declare [[code drop: join]]
+
+lemma join_True_fold_code[code]:
+  "join A True B = (if finite A \<and> finite B then set_fold_cfi (join_row_cfi B) {} A
+     else Code.abort (STR ''join: infinite table'') (\<lambda>_. join A True B))"
+proof (cases "finite A \<and> finite B")
+  case True
+  have "set_fold_cfi (join_row_cfi B) {} A = Finite_Set.fold (join_row B) {} A"
+    by (transfer fixing: A B) simp
+  then show ?thesis
+    using True by (simp add: fold_join_row)
+qed simp
+
+lemmas join_False_code'[code] = join_False_code
+
 subsection \<open>Index-based binary join\<close>
 
 definition complete_on :: "nat set \<Rightarrow> 'a tuple \<Rightarrow> bool" where
@@ -62,10 +133,16 @@ proof -
   have len: "length x = length y"
     and nth: "\<And>i. i < length x \<Longrightarrow> x ! i = None \<or> y ! i = None \<or> (\<exists>a. x ! i = Some a \<and> y ! i = Some a)"
     using join1_Some_iff[of x y] assms(1) by auto
+  have eq: "x ! i = y ! i" if "i \<in> I" for i
+  proof -
+    have "i < length x" "x ! i \<noteq> None" "y ! i \<noteq> None"
+      using assms(2,3) that by (auto simp: complete_on_def)
+    then show ?thesis
+      using nth[of i] by auto
+  qed
   show ?thesis
     unfolding restrict_def len
-    apply (rule map_cong[OF refl])
-    using assms(2,3) nth by (auto simp: complete_on_def len)
+    by (rule map_cong[OF refl]) (simp add: eq)
 qed
 
 lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
@@ -75,7 +152,7 @@ lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
 lemma lookup_mapping_join: "Mapping.lookup (mapping_join f m m') x =
   (case Mapping.lookup m x of None \<Rightarrow> None
    | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (f y y')))"
-  by transfer simp
+  by (transfer fixing: f x) simp
 
 lemma set_of_idx_iff: "z \<in> set_of_idx m \<longleftrightarrow> (\<exists>k Y. Mapping.lookup m k = Some Y \<and> z \<in> Y)"
   by transfer (auto simp: ran_def)
@@ -94,17 +171,38 @@ proof (rule set_eqI)
     unfolding idx_join_gen_def set_of_idx_iff lookup_mapping_join lookup_cluster
     by (auto split: if_splits option.splits)
   also have "\<dots> \<longleftrightarrow> z \<in> join t True t'"
-    unfolding join_True_code
-  proof safe
-    fix k a b
-    assume "a \<in> t" "b \<in> t'" "z \<in> set_option (join1 (a, b))"
-    then show "\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
-      z \<in> (\<Union>a\<in>{y \<in> t. restrict I y = k}. \<Union>b\<in>{y \<in> t'. restrict I y = k}. set_option (join1 (a, b)))"
-      using assms join1_Some_restrict_complete[of a b z I]
-      by (intro exI[of _ "restrict I a"]) (auto split: option.splits)
-  qed auto
+  proof
+    assume "\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
+      z \<in> join {y \<in> t. restrict I y = k} True {y \<in> t'. restrict I y = k}"
+    then show "z \<in> join t True t'"
+      unfolding join_True_code by auto
+  next
+    assume "z \<in> join t True t'"
+    then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 (a, b) = Some z"
+      unfolding join_True_code by auto
+    then have eq: "restrict I a = restrict I b"
+      using assms join1_Some_restrict_complete by blast
+    show "\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
+      z \<in> join {y \<in> t. restrict I y = k} True {y \<in> t'. restrict I y = k}"
+    proof (intro exI[of _ "restrict I a"] conjI)
+      show "Some (restrict I a) \<in> (Some \<circ> restrict I) ` t"
+        using ab(1) by force
+      show "Some (restrict I a) \<in> (Some \<circ> restrict I) ` t'"
+        using ab(2) eq by force
+      show "z \<in> join {y \<in> t. restrict I y = restrict I a} True {y \<in> t'. restrict I y = restrict I a}"
+        unfolding join_True_code
+        apply (rule UN_I[of a])
+        subgoal using ab(1) by simp
+        apply (rule UN_I[of b])
+        subgoal using ab(2) eq by simp
+        subgoal using ab(3) by simp
+        done
+    qed
+  qed
   finally show "z \<in> idx_join_gen I t t' \<longleftrightarrow> z \<in> join t True t'" .
 qed
+
+declare [[code drop: bin_join]]
 
 lemma bin_join_code[code]:
   "bin_join n A t pos A' t' =
@@ -118,8 +216,6 @@ lemma bin_join_code[code]:
       then idx_join_gen (A \<inter> A') t t'
     else join t pos t')"
   by (subst bin_join.simps) (auto simp: idx_join_gen_join)
-
-declare bin_join.simps[code del]
 
 subsection \<open>Multi-way join as a sequence of binary joins\<close>
 
@@ -144,7 +240,11 @@ lemma join_restrict_tables:
   using assms by (auto simp: table_def)
 
 lemma mmulti_join_pos_fst: "fst (mmulti_join_pos n A t L) = A \<union> \<Union>(fst ` set L)"
-  by (induction L arbitrary: A t) (auto simp: Un_assoc)
+proof (induction L arbitrary: A t)
+  case (Cons At L)
+  then show ?case
+    by (cases At) (auto simp: Un_assoc)
+qed simp
 
 lemma mmulti_join_pos_correct:
   assumes "table n A t" "\<forall>(A', X) \<in> set L. table n A' X"
@@ -170,7 +270,7 @@ next
     (\<forall>z. z \<in> snd (mmulti_join_pos n (A \<union> A') (join t True t') L) \<longleftrightarrow>
       wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z \<and>
       restrict (A \<union> A') z \<in> join t True t' \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<in> X))"
-    using Cons.IH[OF tab_join] Cons.prems(2) by (auto simp: At)
+    by (rule Cons.IH[OF tab_join]) (use Cons.prems(2) in \<open>auto simp: At\<close>)
   have *: "restrict (A \<union> A') z \<in> join t True t' \<longleftrightarrow> restrict A z \<in> t \<and> restrict A' z \<in> t'"
     if "wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z" for z
   proof -
@@ -180,8 +280,20 @@ next
       using join_restrict_tables[OF Cons.prems(1) tab', of True "restrict (A \<union> A') z"] wf
       by (auto simp: restrict_restrict Int_absorb2[OF sup_ge1] Int_absorb2[OF sup_ge2])
   qed
+  have eq: "mmulti_join_pos n A t (At # L) = mmulti_join_pos n (A \<union> A') (join t True t') L"
+    by (simp only: At mmulti_join_pos.simps join)
+  have cols: "A \<union> \<Union>(fst ` set (At # L)) = A \<union> A' \<union> \<Union>(fst ` set L)"
+    by (simp add: At Un_assoc)
   show ?case
-    using IH * by (auto simp: At join Un_assoc)
+    unfolding eq cols
+  proof (intro conjI allI)
+    show "table n (A \<union> A' \<union> \<Union>(fst ` set L)) (snd (mmulti_join_pos n (A \<union> A') (join t True t') L))"
+      using IH by blast
+    fix z
+    show "z \<in> snd (mmulti_join_pos n (A \<union> A') (join t True t') L) \<longleftrightarrow>
+      wf_tuple n (A \<union> A' \<union> \<Union>(fst ` set L)) z \<and> restrict A z \<in> t \<and> (\<forall>(A', X) \<in> set (At # L). restrict A' z \<in> X)"
+      using conjunct2[OF IH, rule_format, of z] *[of z] by (auto simp: At)
+  qed
 qed
 
 lemma mmulti_join_neg_correct:
@@ -201,12 +313,17 @@ next
   have join: "bin_join n A t False A' t' = join t False t'"
     by (rule bin_join_table[OF Cons.prems(1) tab'])
   have tab_join: "table n A (join t False t')"
-    by (rule join_table[OF Cons.prems(1) tab']) (auto simp: sub)
+    by (rule join_table[OF Cons.prems(1) tab']) (use sub in auto)
   have *: "z \<in> join t False t' \<longleftrightarrow> z \<in> t \<and> restrict A' z \<notin> t'" for z
     using join_restrict_tables[OF Cons.prems(1) tab', of False z] sub Cons.prems(1)
     by (auto simp: Un_absorb2 restrict_idle table_def)
+  have IH: "z \<in> mmulti_join_neg n A (join t False t') L \<longleftrightarrow>
+    z \<in> join t False t' \<and> (\<forall>(A', X) \<in> set L. restrict A' z \<notin> X)"
+    by (rule Cons.IH[OF tab_join]) (use Cons.prems(2) in \<open>auto simp: At\<close>)
+  have eq: "mmulti_join_neg n A t (At # L) = mmulti_join_neg n A (join t False t') L"
+    by (simp only: At mmulti_join_neg.simps join)
   show ?case
-    using Cons.IH[OF tab_join] Cons.prems(2) * by (auto simp: At join)
+    unfolding eq IH * by (auto simp: At)
 qed
 
 lemma mmulti_join_pw_correct:
@@ -224,8 +341,11 @@ proof -
     by (auto simp: L_pos_def L_neg_def len)
   have L: "L = L_pos @ L_neg"
     by (simp add: L_pos_def L_neg_def)
-  have tabs: "\<forall>(A, X) \<in> set (zip A_pos L_pos). table n A X" "\<forall>(A, X) \<in> set (zip A_neg L_neg). table n A X"
-    using assms(2) unfolding L list_all2_append[OF len_pos[symmetric]] list_all2_iff by auto
+  have "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) A_pos L_pos"
+    "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) A_neg L_neg"
+    using assms(2) unfolding L list_all2_append[OF len_pos[symmetric]] by auto
+  then have tabs: "\<forall>(A, X) \<in> set (zip A_pos L_pos). table n A X" "\<forall>(A, X) \<in> set (zip A_neg L_neg). table n A X"
+    unfolding list_all2_iff by auto
   obtain A1 A_pos' where A_pos: "A_pos = A1 # A_pos'"
     using assms(1) by (cases A_pos) auto
   obtain t1 L_pos' where L_pos: "L_pos = t1 # L_pos'"
@@ -258,6 +378,8 @@ proof -
     by (simp add: L_pos_def L_neg_def)
 qed
 
+declare [[code drop: mmulti_join]]
+
 lemma mmulti_join_code[code]:
   "mmulti_join n A_pos A_neg L =
     (if A_pos \<noteq> [] \<and> list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L \<and>
@@ -281,7 +403,7 @@ proof (cases "A_pos \<noteq> [] \<and> list_all2 (\<lambda>A X. table n A X \<an
     by (auto simp: Sup_set_fold)
   show ?thesis
     unfolding if_P[OF True]
-    by (rule set_eqI) (simp add: mmulti_join_correct[OF assms(1,2)] mmulti_join_pw_correct[OF assms])
+    by (rule set_eqI) (simp only: mmulti_join_correct[OF assms(1,2)] mmulti_join_pw_correct[OF assms])
 next
   case False
   show ?thesis
@@ -290,8 +412,6 @@ next
     apply (rule refl)
     done
 qed
-
-declare mmulti_join.simps[code del]
 
 (*<*)
 end
