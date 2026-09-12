@@ -1,0 +1,361 @@
+(*<*)
+theory Monomorphic_Code
+  imports Imperative_Join
+begin
+(*>*)
+
+section \<open>Monomorphisation of the hot code as a refinement\<close>
+
+text \<open>
+  The generated code passes type class dictionaries (@{class ceq}, @{class ccompare}, \dots) at
+  run time. For the tuple type @{typ "event_data tuple"} these dictionaries are composite
+  (@{text "ccompare_list (ccompare_option ccompare_event_data)"}) and are rebuilt at every
+  call of a polymorphic function that constructs them from its own dictionary parameters, in
+  particular in the per-tuple inner loops of the joins and of the auxiliary structures.
+
+  This theory removes that overhead by a refinement at the level of code equations, without
+  changing any definition or correctness proof of the monitor:
+  \<^item> for each polymorphic function @{text f} of the implementation that is hot at type
+    @{typ event_data}, a monomorphic copy @{text "ed_f = f"} is introduced whose code equations
+    are the code equations of @{text f} instantiated to @{typ event_data} (derived by the
+    kernel from the definition @{text "ed_f = f"}), and all applied occurrences of @{text f} at
+    that type are redirected to @{text ed_f} by a @{text code_unfold} rule;
+  \<^item> for each generic container operation @{text c} used at a closed type involving tuples of
+    event data, a nullary constant @{text "c_v = Box c"} is introduced. The generated code for a
+    nullary constant of a non-function type is a value, so the dictionaries of @{text c} at that
+    type are built once, when the program starts; @{text "c x = unbox c_v x"} redirects the calls.
+  Both constructions are automated in \<^file>\<open>monomorphize.ML\<close>.
+\<close>
+
+subsection \<open>A direct comparator on tuples of event data\<close>
+
+fun ed_comparator :: "event_data tuple comparator" where
+  "ed_comparator [] [] = Eq"
+| "ed_comparator [] (y # ys) = Lt"
+| "ed_comparator (x # xs) [] = Gt"
+| "ed_comparator (None # xs) (None # ys) = ed_comparator xs ys"
+| "ed_comparator (None # xs) (Some b # ys) = Lt"
+| "ed_comparator (Some a # xs) (None # ys) = Gt"
+| "ed_comparator (Some a # xs) (Some b # ys) =
+    (case comparator_event_data a b of Eq \<Rightarrow> ed_comparator xs ys | r \<Rightarrow> r)"
+
+lemma ed_comparator_eq: "ed_comparator xs ys = comparator_list (comparator_option comparator_event_data) xs ys"
+  by (induction xs ys rule: ed_comparator.induct) (auto split: order.splits)
+
+lemma ccompare_etuple: "CCOMPARE(event_data tuple) = Some ed_comparator"
+  by (simp add: ccompare_list_def ccompare_option_def ccompare_event_data_def ID_def ed_comparator_eq[abs_def])
+
+lemma ID_ccompare_etuple: "ID CCOMPARE(event_data tuple) = Some ed_comparator"
+  by (simp add: ccompare_etuple ID_def)
+
+lemma ccomp_etuple: "(ccomp :: event_data tuple comparator) = ed_comparator"
+  by (simp add: ID_ccompare_etuple)
+
+lemma ceq_etuple: "CEQ(event_data tuple) = Some (equality_list (equality_option (=)))"
+  by (simp add: ceq_list_def ceq_option_def ceq_event_data_def ID_def)
+
+lemma ID_ceq_etuple: "ID CEQ(event_data tuple) = Some (equality_list (equality_option (=)))"
+  by (simp add: ceq_etuple ID_def)
+
+lemmas etuple_dict_simps = ccompare_etuple ID_ccompare_etuple ccomp_etuple ceq_etuple ID_ceq_etuple
+  option.case option.sel ID_def id_apply
+
+subsection \<open>Folds over red-black trees without the @{type comp_fun_idem} wrapper\<close>
+
+lemma set_fold_cfi_RBT:
+  fixes rbt :: "'a :: ccompare set_rbt"
+  assumes "comp_fun_idem_apply g = f"
+  shows "set_fold_cfi g b (RBT_set rbt) = (case ID CCOMPARE('a) of
+      None \<Rightarrow> Code.abort s (\<lambda>_. set_fold_cfi g b (RBT_set rbt))
+    | Some _ \<Rightarrow> RBT_Set2.fold f rbt b)"
+proof (cases "ID CCOMPARE('a)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some c)
+  then show ?thesis by (subst set_fold_cfi_code(1)) (simp add: assms)
+qed
+
+declare [[code drop: join_row probe_step probe_join tmp_set]]
+
+lemma join_row_RBT_code[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "join_row (RBT_set rbt) a acc = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''join_row: ccompare = None'') (\<lambda>_. join_row (RBT_set rbt) a acc)
+    | Some _ \<Rightarrow> RBT_Set2.fold (join1_insert a) rbt acc)"
+  unfolding join_row_def by (rule set_fold_cfi_RBT[OF join1_insert_cfi.rep_eq])
+
+lemmas join_row_fallback_code[code] =
+  join_row_def[where B = "DList_set _"] join_row_def[where B = "Set_Monad _"]
+  join_row_def[where B = "Collect_set _"] join_row_def[where B = "Complement _"]
+
+definition probe_fold :: "'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_fold b acc T = set_fold_cfi (join1_insert_cfi' b) acc T"
+
+lemma probe_fold_RBT_code[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "probe_fold b acc (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''probe_fold: ccompare = None'') (\<lambda>_. probe_fold b acc (RBT_set rbt))
+    | Some _ \<Rightarrow> RBT_Set2.fold (join1_insert' b) rbt acc)"
+  unfolding probe_fold_def by (rule set_fold_cfi_RBT[OF join1_insert_cfi'.rep_eq])
+
+lemmas probe_fold_fallback_code[code] =
+  probe_fold_def[where T = "DList_set _"] probe_fold_def[where T = "Set_Monad _"]
+  probe_fold_def[where T = "Collect_set _"] probe_fold_def[where T = "Complement _"]
+
+lemma probe_step_code[code]:
+  "probe_step I m b acc = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> acc | Some T \<Rightarrow> probe_fold b acc T)"
+  unfolding probe_step_def probe_fold_def ..
+
+lemma probe_join_RBT_code[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "probe_join I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join I t (RBT_set rbt))
+    | Some _ \<Rightarrow> RBT_Set2.fold (probe_step I (cluster (Some \<circ> restrict I) t)) rbt {})"
+  unfolding probe_join_def by (rule set_fold_cfi_RBT[OF probe_step_cfi.rep_eq])
+
+lemmas probe_join_fallback_code[code] =
+  probe_join_def[where t' = "DList_set _"] probe_join_def[where t' = "Set_Monad _"]
+  probe_join_def[where t' = "Collect_set _"] probe_join_def[where t' = "Complement _"]
+
+lemma tmp_set_RBT_code[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "tmp_set a1_map maskL pos tp len B (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''tmp_set: ccompare = None'') (\<lambda>_. tmp_set a1_map maskL pos tp len B (RBT_set rbt))
+    | Some _ \<Rightarrow> RBT_Set2.fold (tmp_step a1_map maskL pos tp len) rbt B)"
+proof (cases "ID CCOMPARE('a tuple)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some c)
+  then have "finite (RBT_set rbt)"
+    by (subst RBT_set_conv_keys) auto
+  with Some show ?thesis
+    by (subst tmp_set_code) (simp add: set_fold_cfi_RBT[OF tmp_step_cfi.rep_eq, where s = "STR ''x''"])
+qed
+
+lemmas tmp_set_fallback_code[code] =
+  tmp_set_code[of _ _ _ _ _ _ "DList_set _"] tmp_set_code[of _ _ _ _ _ _ "Set_Monad _"]
+  tmp_set_code[of _ _ _ _ _ _ "Collect_set _"] tmp_set_code[of _ _ _ _ _ _ "Complement _"]
+
+datatype 'a boxed = Box (unbox: 'a)
+
+ML_file \<open>monomorphize.ML\<close>
+
+subsection \<open>Empty tables and mappings as values\<close>
+
+lemma RBT_Mapping_empty: "RBT_Mapping RBT_Mapping2.empty = Mapping.empty"
+  by (simp add: Mapping.empty_def)
+
+definition ed_bot :: "event_data table" where "ed_bot = {}"
+definition ed_bot_pair :: "(nat \<times> event_data tuple) set" where "ed_bot_pair = {}"
+
+lemma ed_bot_code[code]: "ed_bot = RBT_set RBT_Set2.empty"
+  by (simp add: ed_bot_def)
+lemma ed_bot_pair_code[code]: "ed_bot_pair = RBT_set RBT_Set2.empty"
+  by (simp add: ed_bot_pair_def)
+
+lemma ed_bot_unfold[code_unfold]:
+  "(bot :: event_data table) = ed_bot"
+  "set_empty (of_phantom SET_IMPL(event_data tuple)) = ed_bot"
+  "(empty_table :: event_data table) = ed_bot"
+  "(bot :: (nat \<times> event_data tuple) set) = ed_bot_pair"
+  "set_empty (of_phantom SET_IMPL(nat \<times> event_data tuple)) = ed_bot_pair"
+  by (simp_all add: ed_bot_def ed_bot_pair_def empty_table_def)
+
+
+definition ed_mempty_nat :: "(event_data tuple, nat) mapping" where "ed_mempty_nat = Mapping.empty"
+lemma ed_mempty_nat_code[code]: "ed_mempty_nat = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: ed_mempty_nat_def RBT_Mapping_empty)
+lemma ed_mempty_nat_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data tuple, nat) mapping) = ed_mempty_nat"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, nat) mapping) = ed_mempty_nat"
+  by (simp_all add: ed_mempty_nat_def)
+
+definition ed_mempty_tstp :: "(event_data tuple, nat + nat) mapping" where "ed_mempty_tstp = Mapping.empty"
+lemma ed_mempty_tstp_code[code]: "ed_mempty_tstp = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: ed_mempty_tstp_def RBT_Mapping_empty)
+lemma ed_mempty_tstp_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data tuple, nat + nat) mapping) = ed_mempty_tstp"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, nat + nat) mapping) = ed_mempty_tstp"
+  by (simp_all add: ed_mempty_tstp_def)
+
+definition ed_mempty_table :: "(event_data tuple, event_data table) mapping" where "ed_mempty_table = Mapping.empty"
+lemma ed_mempty_table_code[code]: "ed_mempty_table = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: ed_mempty_table_def RBT_Mapping_empty)
+lemma ed_mempty_table_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data tuple, event_data table) mapping) = ed_mempty_table"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, event_data table) mapping) = ed_mempty_table"
+  by (simp_all add: ed_mempty_table_def)
+
+definition ed_mempty_sum :: "(event_data tuple, nat \<times> integer) mapping" where "ed_mempty_sum = Mapping.empty"
+lemma ed_mempty_sum_code[code]: "ed_mempty_sum = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: ed_mempty_sum_def RBT_Mapping_empty)
+lemma ed_mempty_sum_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data tuple, nat \<times> integer) mapping) = ed_mempty_sum"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, nat \<times> integer) mapping) = ed_mempty_sum"
+  by (simp_all add: ed_mempty_sum_def)
+
+definition ed_mempty_rank :: "(event_data tuple, list_aux) mapping" where "ed_mempty_rank = Mapping.empty"
+lemma ed_mempty_rank_code[code]: "ed_mempty_rank = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: ed_mempty_rank_def RBT_Mapping_empty)
+lemma ed_mempty_rank_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data tuple, list_aux) mapping) = ed_mempty_rank"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, list_aux) mapping) = ed_mempty_rank"
+  by (simp_all add: ed_mempty_rank_def)
+
+
+ML \<open>
+val etuple = "event_data tuple"
+val ed_value_types =
+  [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data table"),
+   ("sum", "nat \<times> integer"), ("rank", "list_aux")]
+val ed_mapping_ops =
+  [("Mapping.lookup", "lookup"), ("Mapping.update", "update"), ("Mapping.delete", "delete"),
+   ("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
+val ed_agg_maps =
+  ["nat agg_map", "(nat \<times> integer) agg_map", "list_aux agg_map",
+   "bool \<times> nat agg_map", "bool \<times> (nat \<times> integer) agg_map", "bool \<times> list_aux agg_map"]
+val ed_box_specs =
+  [("Set.insert", "ed_insert_v", [etuple]),
+   ("Set.member", "ed_member_v", [etuple]),
+   ("Set.remove", "ed_remove_v", [etuple]),
+   ("sup :: _ set \<Rightarrow> _", "ed_union_v", [etuple]),
+   ("inf :: _ set \<Rightarrow> _", "ed_inter_v", [etuple]),
+   ("minus :: _ set \<Rightarrow> _", "ed_minus_v", [etuple]),
+   ("Set.filter", "ed_filter_v", [etuple]),
+   ("image", "ed_image_v", [etuple, etuple]),
+   ("Ball", "ed_Ball_v", [etuple]),
+   ("Bex", "ed_Bex_v", [etuple]),
+   ("finite", "ed_finite_v", [etuple]),
+   ("card", "ed_card_v", [etuple]),
+   ("set_eq", "ed_set_eq_v", [etuple]),
+   ("Set.is_empty", "ed_is_empty_v", [etuple]),
+   ("less_eq :: _ set \<Rightarrow> _", "ed_subset_v", [etuple]),
+   ("csorted_list_of_set", "ed_csorted_list_of_set_v", [etuple]),
+   ("RBT_Set2.fold", "ed_rbt_fold_table_v", [etuple, "event_data table"]),
+   ("RBT_Set2.fold", "ed_rbt_fold_pair_v", [etuple, "(nat \<times> event_data tuple) set"]),
+   ("set_fold_cfi", "ed_fold_cfi_table_v", [etuple, "event_data table"]),
+   ("set_fold_cfi", "ed_fold_cfi_pair_v", [etuple, "(nat \<times> event_data tuple) set"]),
+   ("cluster", "ed_cluster_v", [etuple, etuple]),
+   ("set_of_idx", "ed_set_of_idx_v", [etuple, etuple]),
+   ("mapping_join", "ed_mapping_join_v", [etuple, "event_data table"]),
+   ("mapping_antijoin", "ed_mapping_antijoin_v", [etuple, "event_data table"]),
+   ("mapping_delete_set", "ed_mapping_delete_set_tstp_v", [etuple, "nat + nat"]),
+   ("upd_set", "ed_upd_set_nat_v", [etuple, "nat"]),
+   ("upd_set_keys", "ed_upd_set_keys_v", ["event_data table", "nat", etuple]),
+   ("upd_nested_max_tstp", "ed_upd_nested_max_tstp_v", ["nat", etuple]),
+   ("filter_set", "ed_filter_set_v", ["nat", etuple]),
+   ("minus_keys", "ed_minus_keys_v", [etuple, "nat"]),
+   (* sets of (time point, tuple) pairs of the Until structure *)
+   ("Set.insert", "ed_insert_pair_v", ["nat \<times> event_data tuple"]),
+   ("Set.filter", "ed_filter_pair_v", ["nat \<times> event_data tuple"]),
+   ("sup :: _ set \<Rightarrow> _", "ed_union_pair_v", ["nat \<times> event_data tuple"]),
+   ("image", "ed_image_pair_snd_v", ["nat \<times> event_data tuple", etuple]),
+   ("image", "ed_image_pair_v", [etuple, "nat \<times> event_data tuple"]),
+   ("finite", "ed_finite_pair_v", ["nat \<times> event_data tuple"])]
+  @ maps (fn (c, nm) => map (fn (tn, ty) => (c, "ed_" ^ nm ^ "_" ^ tn ^ "_v", [etuple, ty])) ed_value_types)
+      ed_mapping_ops
+  @ map (fn (tn, ty) => ("Mapping.combine", "ed_combine_" ^ tn ^ "_v", [ty, etuple])) ed_value_types
+  @ map_index (fn (i, ty) => ("set_fold_cfc", "ed_fold_cfc_agg" ^ string_of_int i ^ "_v", [etuple, ty])) ed_agg_maps
+\<close>
+
+setup \<open>Monomorphize.box_cmd ed_box_specs\<close>
+
+subsection \<open>Compatibility with the other preprocessor rules\<close>
+
+text \<open>
+  The code preprocessor rewrites bottom-up. The redirections above therefore fire inside the
+  left-hand sides of other @{text code_unfold} rules before those get a chance to apply (e.g.
+  @{term "{a \<in> A. P a}"} is normally folded into @{term "Set.filter P A"}, and membership in
+  @{term "Mapping.keys m"} is normally turned into a lookup). We restate the affected rules in
+  terms of the redirected constants.
+\<close>
+
+lemma ed_member_compat[code_unfold]:
+  "Collect (\<lambda>a. unbox ed_member_v a A \<and> P a) = Set.filter P A"
+  "Collect (\<lambda>a. unbox ed_member_v a A) = A"
+  "unbox ed_member_v a (Collect Q) = Q a"
+  "unbox ed_member_v x (set xs) = List.member xs x"
+  "unbox ed_Ball_v (set xs) P = list_all P xs"
+  "unbox ed_Bex_v (set xs) P = list_ex P xs"
+  "unbox ed_union_v (set xs) (set ys) = set (xs @ ys)"
+  unfolding ed_member_v_unfold[symmetric] ed_Ball_v_unfold[symmetric] ed_Bex_v_unfold[symmetric]
+    ed_union_v_unfold[symmetric]
+  by (auto simp: list_all_iff list_ex_iff)
+
+lemma ed_bot_compat[code_unfold]:
+  "(A = ed_bot) = Set.is_empty A"
+  "(ed_bot = A) = Set.is_empty A"
+  "set_eq A ed_bot = Set.is_empty A"
+  "set_eq ed_bot A = Set.is_empty A"
+  "(B = ed_bot_pair) = Set.is_empty B"
+  "(ed_bot_pair = B) = Set.is_empty B"
+  "set_eq B ed_bot_pair = Set.is_empty B"
+  "set_eq ed_bot_pair B = Set.is_empty B"
+  by (auto simp: ed_bot_def ed_bot_pair_def)
+
+lemma ed_keys_compat[code_unfold]:
+  "unbox ed_member_v k (unbox ed_keys_nat_v m1) = (\<not> Option.is_none (unbox ed_lookup_nat_v m1 k))"
+  "unbox ed_member_v k (unbox ed_keys_tstp_v m2) = (\<not> Option.is_none (unbox ed_lookup_tstp_v m2 k))"
+  "unbox ed_member_v k (unbox ed_keys_table_v m3) = (\<not> Option.is_none (unbox ed_lookup_table_v m3 k))"
+  "unbox ed_member_v k (unbox ed_keys_sum_v m4) = (\<not> Option.is_none (unbox ed_lookup_sum_v m4 k))"
+  "unbox ed_member_v k (unbox ed_keys_rank_v m5) = (\<not> Option.is_none (unbox ed_lookup_rank_v m5 k))"
+  unfolding ed_member_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_v_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_v_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_v_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_v_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_v_unfold[symmetric]
+  by (simp_all add: Mapping.keys_is_none_rep)
+
+lemma ed_minus_keys_compat[code_unfold]:
+  "unbox ed_minus_v X (unbox ed_keys_nat_v m1) = Set.filter (\<lambda>k. unbox ed_lookup_nat_v m1 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_tstp_v m2) = Set.filter (\<lambda>k. unbox ed_lookup_tstp_v m2 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_table_v m3) = Set.filter (\<lambda>k. unbox ed_lookup_table_v m3 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_sum_v m4) = Set.filter (\<lambda>k. unbox ed_lookup_sum_v m4 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_rank_v m5) = Set.filter (\<lambda>k. unbox ed_lookup_rank_v m5 k = None) X"
+  unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_v_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_v_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_v_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_v_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_v_unfold[symmetric]
+  by (auto simp: Mapping.keys_dom_lookup)
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("join1_insert", "ed_join1_insert", ["event_data"]),
+   ("join1_insert'", "ed_join1_insert'", ["event_data"]),
+   ("join_row", "ed_join_row", ["event_data"]),
+   ("join", "ed_join", ["event_data"]),
+   ("probe_fold", "ed_probe_fold", ["event_data"]),
+   ("probe_step", "ed_probe_step", ["event_data"]),
+   ("probe_join", "ed_probe_join", ["event_data"]),
+   ("bin_join", "ed_bin_join", ["event_data"]),
+   ("tmp_step", "ed_tmp_step", ["event_data"]),
+   ("tmp_set", "ed_tmp_set", ["event_data"]),
+   ("proj_tuple_in_join", "ed_proj_tuple_in_join", ["event_data"]),
+   ("proj_tuple_in_join_optim", "ed_proj_tuple_in_join_optim", ["event_data"]),
+   ("singleton_table", "ed_singleton_table", ["event_data"]),
+   ("unit_table", "ed_unit_table", ["event_data"]),
+   ("valid_tuple", "ed_valid_tuple", ["event_data"]),
+   ("mmulti_join", "ed_mmulti_join", ["event_data"]),
+   ("mmulti_join_pw", "ed_mmulti_join_pw", ["event_data"]),
+   ("mmulti_join_pos", "ed_mmulti_join_pos", ["event_data"]),
+   ("mmulti_join_neg", "ed_mmulti_join_neg", ["event_data"]),
+   ("mmulti_join_gen", "ed_mmulti_join_gen", ["event_data"]),
+   ("hprobe_join", "ed_hprobe_join", ["event_data"]),
+   ("probe_join_imp", "ed_probe_join_imp", ["event_data"]),
+   ("idx_create", "ed_idx_create", ["event_data"]),
+   ("idx_reindex", "ed_idx_reindex", ["event_data"]),
+   ("idx_join", "ed_idx_join", ["event_data tuple", "event_data"]),
+   ("idx_antijoin", "ed_idx_antijoin", ["event_data tuple", "event_data"]),
+   ("idx_union", "ed_idx_union", ["event_data tuple", "event_data tuple"]),
+   ("wf_idx_set", "ed_wf_idx_set", ["event_data"]),
+   ("join_mmsaux", "ed_join_mmsaux", ["event_data"]),
+   ("add_new_table_mmsaux", "ed_add_new_table_mmsaux", ["event_data"]),
+   ("add_new_ts_mmsaux", "ed_add_new_ts_mmsaux", ["event_data"]),
+   ("shift_end", "ed_shift_end", ["event_data"]),
+   ("gc_mmsaux", "ed_gc_mmsaux", ["event_data"]),
+   ("init_mmsaux", "ed_init_mmsaux", ["event_data"]),
+   ("update_mmtaux", "ed_update_mmtaux", ["event_data"]),
+   ("init_mmtaux", "ed_init_mmtaux", ["event_data"]),
+   ("update_matchF_step", "ed_update_matchF_step", ["event_data"]),
+   ("update_matchF_base", "ed_update_matchF_base", ["event_data"]),
+   ("mrtabulate", "ed_mrtabulate", ["event_data"]),
+   ("get_map_result", "ed_get_map_result", ["event_data"])]
+  ["etuple_dict_simps"]\<close>
+
+(*<*)
+end
+(*>*)
