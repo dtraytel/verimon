@@ -182,6 +182,16 @@ Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
    `qtable_mmulti_join` (`Correct_Bin_Ops.thy`) already had (`fv_subset`); this is the only
    change to the correctness development (one line).
 
+   The worst-case optimal generic join is still available: `mmulti_join` dispatches on the
+   unspecified constant `use_generic_join` between `mmulti_join_gen` and the pairwise
+   `mmulti_join_pw`, and `mmulti_join_correct` is proved for both values. The generated code
+   reads the constant from the mutable flag `Verified.Config.generic_join` (a small
+   `code_printing` module), which the front end sets from the new option `-generic_join`.
+   The existing `-no_mw` option (do not flatten conjunctions into `MAnds` at all) is
+   unchanged. Pairwise evaluation is the default because it was faster on all benchmarks
+   here; the generic join keeps its worst-case guarantees on cyclic queries (see the
+   `triangle` benchmark in Section 4).
+
    A first attempt kept the generic join as the definition and switched to the pairwise
    evaluation through an unconditional code equation guarded by a run-time check that all
    inputs are well-formed tables. That check is linear in the sizes of *all* input tables at
@@ -231,11 +241,9 @@ introduces are checked like any other theorem, so the exported code remains veri
 
 ## 6. Further opportunities (not implemented)
 
-* **Dictionary hoisting / monomorphization.** 8-12% of the run time constructs type-class
-  dictionaries. Isabelle's code generator has no facility to share dictionaries across calls
-  of polymorphic functions; the options are (a) making the hot theories monomorphic in
-  `event_data`, or (b) a post-processing pass on the generated OCaml (a MLton-style
-  monomorphization). Both are mechanical but invasive.
+* **Dictionary hoisting / monomorphisation** was tried (see Section 7): the achievable gain
+  is 10-15%, and an Isabelle-level formulation requires a data refinement of the tuple type
+  through the whole implementation layer.
 * **Native machine integers for `nat`.** Time points and time stamps are `Z.t` big integers.
   Mapping them to 63-bit OCaml integers would be unsound without overflow checks.
 * **Until auxiliary structure.** `add_new_mmuaux` dominates Until formulas; it maintains
@@ -246,3 +254,54 @@ introduces are checked like any other theorem, so the exported code remains veri
   The specialised `Tuple.compare` on this branch removes part of that; converting the
   verified RBT directly into a sorted list would remove the rest.
 * **Imperative refinement** of `mmsaux`/`mmuaux` (Section 2.3), once the above are done.
+
+## 7. Monomorphisation as an algorithm refinement (tried, not adopted)
+
+**Goal.** 8-12% of VeriMon's time constructs `ceq`/`ccompare` dictionaries for
+`event_data option list` at run time, and the generic comparator chain
+(`comparator_list` -> `comparator_option` -> `comparator_event_data`) costs another
+10-20% (Section 1.2). Monomorphising the hot code to `event_data` should let the code
+generator emit the dictionaries once and allow a direct recursive tuple comparator.
+
+**Refinement in `Monitor_Impl` (design).** Following the existing `mbuf_t`/`meformula`
+refinement, introduce a monomorphic copy of the tuple type,
+`typedef etuple = "UNIV :: event_data tuple set"` (or a one-constructor datatype), with
+`ceq`/`ccompare`/`set_impl` instances whose comparator is a direct recursive function on the
+list. Because `etuple` has no type parameter, its `ccompare` instance is a *value* in the
+generated code (like `ccompare_nat`), so every set or mapping operation on `etuple` tables
+receives a constant dictionary, and comparisons no longer go through closures. Tables become
+`etuple set`, and the implementation-level functions (`bin_join`, `probe_join`,
+`mmulti_join`, all `mmsaux`/`mmuaux`/`mtaux` operations, `wf_table`, the regex and
+aggregation auxiliaries, and the `meformula` fields) are lifted to the copied type with
+`lift_definition ... is f` and `transfer`; `meeval` is re-derived for the refined state
+exactly as `Monitor_Impl` does today for buffers.
+
+**Why a cheaper Isabelle-level variant does not exist.** A monomorphic wrapper constant
+such as `ed_insert = (Set.insert :: event_data tuple => ...)` does *not* help: Isabelle's ML
+serializer prints all definitions in `let rec` groups (`code_ml.ML`) and therefore
+eta-expands function-typed constants, producing `let rec ed_insert x = insert (dicts) x`,
+which rebuilds the dictionaries on every call (verified with a small export experiment).
+Code equations cannot be specialised to a type instance, and `code_printing` cannot be
+attached to the polymorphic `list`/`option` class instances for OCaml. Only a type without
+parameters yields a dictionary *value*, hence the type copy above.
+
+**Measured upper bound.** Before undertaking that refinement, its effect was measured on the
+generated code directly (`evaluation/microbench/hoist_dicts.py`, both experiments are purely
+syntactic transformations of `src/verified.ml` and were validated by comparing all benchmark
+outputs):
+
+1. hoisting the 50 distinct closed dictionary expressions (1429 occurrences) in monomorphic
+   code to top-level values: 0-16% faster (P2 1.16x, P3 1.13x, until 1.13x, agg 1.10x,
+   `once`/`since`/`complex` about 1.0x, because their time is in polymorphic Since code and in
+   the front end);
+2. additionally replacing every tuple dictionary, including those built inside polymorphic
+   functions from their dictionary parameters, by a direct monomorphic comparator (what the
+   `etuple` refinement would generate): 0-18% faster (P2 1.12x, P3 1.13x, and 1.14x,
+   until 1.18x, complex 1.14x, `once` 1.0x).
+
+The set operations are simply a smaller share of the end-to-end time than the
+microbenchmark of Section 2.2 suggests; GC, RBT rebalancing, the `nat`-keyed mappings of the
+auxiliary structures, list operations and the front end make up the rest. A refinement
+touching every table-manipulating function of the implementation layer for a 10-15% gain
+was therefore not adopted; the hoisting script remains as a documented experiment. The
+next real steps are algorithmic (Until/Since auxiliary structures) and the front end.
