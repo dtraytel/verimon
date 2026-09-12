@@ -886,13 +886,8 @@ let cEnum _A = _A.cEnum;;
 
 let cenum_nat = ({cEnum = cEnum_nat} : nat cenum);;
 
-let rec eq _A a b = equal _A a b;;
-
-let rec comparator_of (_A1, _A2)
-  x y = (if less _A2.order_linorder.preorder_order.ord_preorder x y then Lt
-          else (if eq _A1 x y then Eqa else Gt));;
-
-let rec compare_nat x = comparator_of (equal_nat, linorder_nat) x;;
+let rec compare_nat
+  x y = (if less_nat x y then Lt else (if equal_nata x y then Eqa else Gt));;
 
 let ccompare_nata : (nat -> nat -> ordera) option = Some compare_nat;;
 
@@ -957,6 +952,8 @@ let rec rbt_recolor
         then Branch (B, t1, k, v, t2) else Branch (R, t1, k, v, t2))
     | Empty -> Empty
     | Branch (B, va, vb, vc, vd) -> Branch (B, va, vb, vc, vd);;
+
+let rec eq _A a b = equal _A a b;;
 
 let rec equal_optiona _A x0 x1 = match x0, x1 with None, Some x2 -> false
                            | Some x2, None -> false
@@ -2799,41 +2796,28 @@ let set_impl_trma : (trm, set_impla) phantom = Phantom Set_RBT;;
 
 let set_impl_trm = ({set_impl = set_impl_trma} : trm set_impl);;
 
+let rec comparator_of (_A1, _A2)
+  x y = (if less _A2.order_linorder.preorder_order.ord_preorder x y then Lt
+          else (if eq _A1 x y then Eqa else Gt));;
+
 let rec comparator_double
   x y = (let c = lcompare_double x y in
           (if Z.equal c Z.zero then Eqa
             else (if Z.lt c Z.zero then Lt else Gt)));;
 
-let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
-
-let order_integer = ({preorder_order = preorder_integer} : Z.t order);;
-
-let linorder_integer = ({order_linorder = order_integer} : Z.t linorder);;
-
-let equal_integer = ({equal = Z.equal} : Z.t equal);;
-
-let ord_string8 = ({less_eq = Stdlib.(<=); less = Stdlib.(<)} : string ord);;
-
-let preorder_string8 = ({ord_preorder = ord_string8} : string preorder);;
-
-let order_string8 = ({preorder_order = preorder_string8} : string order);;
-
-let linorder_string8 = ({order_linorder = order_string8} : string linorder);;
-
-let equal_string8 = ({equal = Stdlib.(=)} : string equal);;
-
 let rec comparator_event_data
   x0 x1 = match x0, x1 with
-    EInt x, EInt y -> comparator_of (equal_integer, linorder_integer) x y
-    | EInt x, EFloat ya -> Lt
-    | EInt x, EString yb -> Lt
-    | EFloat x, EInt y -> Gt
-    | EFloat x, EFloat ya -> comparator_double x ya
-    | EFloat x, EString yb -> Lt
-    | EString x, EInt y -> Gt
-    | EString x, EFloat ya -> Gt
-    | EString x, EString yb ->
-        comparator_of (equal_string8, linorder_string8) x yb;;
+    EInt x, EInt y ->
+      (if Z.lt x y then Lt else (if Z.equal x y then Eqa else Gt))
+    | EInt x, EFloat e -> Lt
+    | EInt x, EString t -> Lt
+    | EFloat d, EInt y -> Gt
+    | EFloat d, EFloat e -> comparator_double d e
+    | EFloat d, EString t -> Lt
+    | EString s, EInt y -> Gt
+    | EString s, EFloat e -> Gt
+    | EString s, EString t ->
+        (if Stdlib.(<) s t then Lt else (if Stdlib.(=) s t then Eqa else Gt));;
 
 let rec comparator_trm
   x0 x1 = match x0, x1 with
@@ -3278,7 +3262,18 @@ let ccompare_rec_safetya : (rec_safety -> rec_safety -> ordera) option
 let ccompare_rec_safety =
   ({ccompare = ccompare_rec_safetya} : rec_safety ccompare);;
 
-let rec compare_string8 x = comparator_of (equal_string8, linorder_string8) x;;
+let equal_string8 = ({equal = Stdlib.(=)} : string equal);;
+
+let ord_string8 = ({less_eq = Stdlib.(<=); less = Stdlib.(<)} : string ord);;
+
+let preorder_string8 = ({ord_preorder = ord_string8} : string preorder);;
+
+let order_string8 = ({preorder_order = preorder_string8} : string order);;
+
+let linorder_string8 = ({order_linorder = order_string8} : string linorder);;
+
+let rec compare_string8
+  x y = (if Stdlib.(<) x y then Lt else (if Stdlib.(=) x y then Eqa else Gt));;
 
 let ccompare_string8a : (string -> string -> ordera) option
   = Some compare_string8;;
@@ -3290,6 +3285,14 @@ let mapping_impl_string8a : (string, mapping_impla) phantom
 
 let mapping_impl_string8 =
   ({mapping_impl = mapping_impl_string8a} : string mapping_impl);;
+
+let equal_integer = ({equal = Z.equal} : Z.t equal);;
+
+let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
+
+let order_integer = ({preorder_order = preorder_integer} : Z.t order);;
+
+let linorder_integer = ({order_linorder = order_integer} : Z.t linorder);;
 
 let equal_event_data = ({equal = equal_event_dataa} : event_data equal);;
 
@@ -4258,6 +4261,35 @@ let rec rpd
         sup_seta (ceq_mregex, ccompare_mregex) (mTimesL r (rpd s)) (rpd r)
     | MStar r -> mTimesL (MStar r) (rpd r);;
 
+let rec all_interval (_A1, _A2)
+  p a b =
+    (if less _A2.linorder_interval.order_linorder.preorder_order.ord_preorder a
+          b
+      then p a &&
+             all_interval (_A1, _A2) p
+               (plus _A2.comm_semiring_1_cancel_interval.comm_semiring_1_comm_semiring_1_cancel.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral.semigroup_add_numeral.plus_semigroup_add
+                 a (one _A2.comm_semiring_1_cancel_interval.comm_semiring_1_comm_semiring_1_cancel.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral.one_numeral))
+               b
+      else true) &&
+      (if eq _A1 a b then p a else true);;
+
+let rec wf_tuple
+  n v x =
+    equal_nata (size_lista x) n &&
+      (let d = minus_nata n one_nata in
+        (if less_nat d n
+          then all_interval (equal_nat, interval_nat)
+                 (fun i ->
+                   equal_boola (is_none (nth x i))
+                     (not (member (ceq_nat, ccompare_nat) i v)))
+                 zero_nata d
+          else true));;
+
+let rec table (_A1, _A2)
+  n v x =
+    ball ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2))) x
+      (wf_tuple n v);;
+
 let rec update _A
   k v x2 = match k, v, x2 with k, v, [] -> [(k, v)]
     | k, v, p :: ps ->
@@ -4933,30 +4965,6 @@ let rec restrict
   a v = mapa (fun i ->
                (if member (ceq_nat, ccompare_nat) i a then nth v i else None))
           (upt zero_nata (size_lista v));;
-
-let rec all_interval (_A1, _A2)
-  p a b =
-    (if less _A2.linorder_interval.order_linorder.preorder_order.ord_preorder a
-          b
-      then p a &&
-             all_interval (_A1, _A2) p
-               (plus _A2.comm_semiring_1_cancel_interval.comm_semiring_1_comm_semiring_1_cancel.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral.semigroup_add_numeral.plus_semigroup_add
-                 a (one _A2.comm_semiring_1_cancel_interval.comm_semiring_1_comm_semiring_1_cancel.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral.one_numeral))
-               b
-      else true) &&
-      (if eq _A1 a b then p a else true);;
-
-let rec wf_tuple
-  n v x =
-    equal_nata (size_lista x) n &&
-      (let d = minus_nata n one_nata in
-        (if less_nat d n
-          then all_interval (equal_nat, interval_nat)
-                 (fun i ->
-                   equal_boola (is_none (nth x i))
-                     (not (member (ceq_nat, ccompare_nat) i v)))
-                 zero_nata d
-          else true));;
 
 let rec add_to_rbt_comp (_B1, _B2, _B3)
   c = (fun (a, b) t ->
@@ -6508,6 +6516,53 @@ let rec minus_set (_A1, _A2)
 let rec join_mask
   n x = mapa (fun i -> member (ceq_nat, ccompare_nat) i x) (upt zero_nata n);;
 
+let rec entriesa _A xa = entries (impl_ofa _A xa);;
+
+let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
+  (RBT_Mapping t) =
+    (match ccompare _A2
+      with None ->
+        failwith "set_of_idx RBT_Mapping: ccompare = None"
+          (fun _ ->
+            set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
+              (RBT_Mapping t))
+      | Some _ ->
+        sup_setb (_B1, _B2, _B3, _B4, _B5)
+          (image
+            ((ceq_prod _A1 (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
+              (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))))
+            ((ceq_set (_B2, _B3, _B4.ccompare_cproper_interval)),
+              (ccompare_set (_B1, _B3, _B4, _B5)), set_impl_set)
+            snd (set ((ceq_prod _A1
+                        (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
+                       (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))),
+                       (set_impl_prod _A3 set_impl_set))
+                  (entriesa _A2 t))));;
+
+let rec idx_join_gen (_A1, _A2, _A3)
+  i ta t =
+    set_of_idx
+      ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
+        set_impl_list)
+      (finite_UNIV_list, cenum_list, (ceq_list (ceq_option _A1)),
+        (cproper_interval_list (ccompare_option _A2)), set_impl_list)
+      (mapping_join (ccompare_list (ccompare_option _A2))
+        (fun tb -> join (_A1, _A2, _A3) tb true)
+        (cluster
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
+            set_impl_list)
+          (ccompare_list (ccompare_option _A2))
+          (comp (fun a -> Some a) (restrict i)) ta)
+        (cluster
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
+            set_impl_list)
+          (ccompare_list (ccompare_option _A2))
+          (comp (fun a -> Some a) (restrict i)) t));;
+
+let rec complete_on
+  i t = ball (ceq_nat, ccompare_nat) i
+          (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
+
 let rec bin_join (_A1, _A2, _A3)
   n aa ta pos a t =
     (if is_empty
@@ -6556,7 +6611,16 @@ let rec bin_join (_A1, _A2, _A3)
  then filter
         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
         (fun asa -> proj_tuple_in_join (_A1, _A2) pos (join_mask n aa) asa ta) t
- else join (_A1, _A2, _A3) ta pos t))))));;
+ else (if pos &&
+            (ball ((ceq_list (ceq_option _A1)),
+                    (ccompare_list (ccompare_option _A2)))
+               ta (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)) &&
+              ball ((ceq_list (ceq_option _A1)),
+                     (ccompare_list (ccompare_option _A2)))
+                t (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))
+        then idx_join_gen (_A1, _A2, _A3)
+               (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+        else join (_A1, _A2, _A3) ta pos t)))))));;
 
 let rec idx_join _A (_B1, _B2, _B3)
   n aa ta a t =
@@ -8882,6 +8946,8 @@ let rec letpast_meeval0 (_B1, _B2) _D
                           ysa p [] (map_values _B1 (fun _ _ -> []) db)
                           phia))));;
 
+let rec wf_set n v = ball (ceq_nat, ccompare_nat) v (fun x -> less_nat x n);;
+
 let rec find_sub_in (_A1, _A2, _A3)
   x xa1 b = match x, xa1, b with x, [], b -> None
     | xa, x :: xs, b ->
@@ -9740,36 +9806,79 @@ let rec mmulti_joina (_A1, _A2)
        in
       new_max_getIJ_wrapperGenericJoin (_A1, _A2) q a);;
 
+let rec mmulti_join_pos (_A1, _A2, _A3)
+  n a t x3 = match n, a, t, x3 with n, a, t, [] -> (a, t)
+    | n, aa, ta, (a, t) :: l ->
+        mmulti_join_pos (_A1, _A2, _A3) n
+          (sup_seta (ceq_nat, ccompare_nat) aa a)
+          (bin_join (_A1, _A2, _A3) n aa ta true a t) l;;
+
+let rec mmulti_join_neg (_A1, _A2, _A3)
+  n a t x3 = match n, a, t, x3 with n, a, t, [] -> t
+    | n, aa, ta, (a, t) :: l ->
+        mmulti_join_neg (_A1, _A2, _A3) n aa
+          (bin_join (_A1, _A2, _A3) n aa ta false a t) l;;
+
+let rec mmulti_join_pw (_A1, _A2, _A3)
+  n a_pos a_neg l =
+    (match zip a_pos l
+      with [] ->
+        set_empty
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (of_phantom set_impl_lista)
+      | (a, t) :: lpos ->
+        (let (aa, ta) = mmulti_join_pos (_A1, _A2, _A3) n a t lpos in
+          mmulti_join_neg (_A1, _A2, _A3) n aa ta
+            (zip a_neg (drop (size_lista a_pos) l))));;
+
+let rec list_all2 p xs ys = match p, xs, ys with p, [], ys -> null ys
+                    | p, xs, [] -> null xs
+                    | p, x :: xs, y :: ys -> p x y && list_all2 p xs ys;;
+
 let rec mmulti_join (_A1, _A2, _A3)
   n a_pos a_neg l =
-    (if not (equal_nata (plus_nata (size_lista a_pos) (size_lista a_neg))
-              (size_lista l))
-      then set_empty
-             ((ceq_list (ceq_option _A1)),
-               (ccompare_list (ccompare_option _A2)))
-             (of_phantom set_impl_lista)
-      else (let l_pos = take (size_lista a_pos) l in
-            let l_neg = drop (size_lista a_pos) l in
-             (match dominate_True a_pos l_pos
-               with None ->
-                 (match dominate_False a_pos l_pos a_neg l_neg
-                   with None -> mmulti_joina (_A1, _A2) a_pos a_neg l
-                   | Some (((a_zs, (a_x, a_xs)), (a_ws, (a_y, a_ys))),
-                            ((zs, (x, xs)), (ws, (y, ys))))
-                     -> mmulti_join (_A1, _A2, _A3) n (a_zs @ a_x :: a_xs)
-                          (a_ws @ a_ys)
-                          ((zs @ bin_join (_A1, _A2, _A3) n a_x x false a_y y ::
-                                   xs) @
-                            ws @ ys))
-               | Some ((a_zs, (a_x, (a_xs, (a_y, a_ys)))),
-                        (zs, (x, (xs, (y, ys)))))
-                 -> mmulti_join (_A1, _A2, _A3) n
-                      (a_zs @
-                        sup_seta (ceq_nat, ccompare_nat) a_x a_y :: a_xs @ a_ys)
-                      a_neg
-                      ((zs @ bin_join (_A1, _A2, _A3) n a_x x true a_y y ::
-                               xs @ ys) @
-                        l_neg))));;
+    (if not (null a_pos) &&
+          (list_all2 (fun a x -> table (_A1, _A2) n a x && wf_set n a)
+             (a_pos @ a_neg) l &&
+            list_all
+              (fun a ->
+                less_eq_set (cenum_nat, ceq_nat, ccompare_nat) a
+                  (fold (sup_seta (ceq_nat, ccompare_nat)) a_pos
+                    (set_empty (ceq_nat, ccompare_nat)
+                      (of_phantom set_impl_nata))))
+              a_neg)
+      then mmulti_join_pw (_A1, _A2, _A3) n a_pos a_neg l
+      else (if not (equal_nata (plus_nata (size_lista a_pos) (size_lista a_neg))
+                     (size_lista l))
+             then set_empty
+                    ((ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)))
+                    (of_phantom set_impl_lista)
+             else (let l_pos = take (size_lista a_pos) l in
+                   let l_neg = drop (size_lista a_pos) l in
+                    (match dominate_True a_pos l_pos
+                      with None ->
+                        (match dominate_False a_pos l_pos a_neg l_neg
+                          with None -> mmulti_joina (_A1, _A2) a_pos a_neg l
+                          | Some (((a_zs, (a_x, a_xs)), (a_ws, (a_y, a_ys))),
+                                   ((zs, (x, xs)), (ws, (y, ys))))
+                            -> mmulti_join (_A1, _A2, _A3) n
+                                 (a_zs @ a_x :: a_xs) (a_ws @ a_ys)
+                                 ((zs @ bin_join (_A1, _A2, _A3) n a_x x false
+  a_y y ::
+  xs) @
+                                   ws @ ys))
+                      | Some ((a_zs, (a_x, (a_xs, (a_y, a_ys)))),
+                               (zs, (x, (xs, (y, ys)))))
+                        -> mmulti_join (_A1, _A2, _A3) n
+                             (a_zs @
+                               sup_seta (ceq_nat, ccompare_nat) a_x a_y ::
+                                 a_xs @ a_ys)
+                             a_neg
+                             ((zs @ bin_join (_A1, _A2, _A3) n a_x x true a_y
+                                      y ::
+                                      xs @ ys) @
+                               l_neg)))));;
 
 let rec idx_create (_A1, _A2)
   t x = cluster
@@ -9824,29 +9933,6 @@ let rec wf_set_union (_A1, _A2)
         (rep_wf_set xc));;
 
 let rec rep_wf_idx (Abs_wf_idx x) = x;;
-
-let rec entriesa _A xa = entries (impl_ofa _A xa);;
-
-let rec set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
-  (RBT_Mapping t) =
-    (match ccompare _A2
-      with None ->
-        failwith "set_of_idx RBT_Mapping: ccompare = None"
-          (fun _ ->
-            set_of_idx (_A1, _A2, _A3) (_B1, _B2, _B3, _B4, _B5)
-              (RBT_Mapping t))
-      | Some _ ->
-        sup_setb (_B1, _B2, _B3, _B4, _B5)
-          (image
-            ((ceq_prod _A1 (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
-              (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))))
-            ((ceq_set (_B2, _B3, _B4.ccompare_cproper_interval)),
-              (ccompare_set (_B1, _B3, _B4, _B5)), set_impl_set)
-            snd (set ((ceq_prod _A1
-                        (ceq_set (_B2, _B3, _B4.ccompare_cproper_interval))),
-                       (ccompare_prod _A2 (ccompare_set (_B1, _B3, _B4, _B5))),
-                       (set_impl_prod _A3 set_impl_set))
-                  (entriesa _A2 t))));;
 
 let rec idx_reindex (_A1, _A2)
   ia i t =
