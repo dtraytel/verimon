@@ -202,23 +202,31 @@ Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
 
 ## 4. Results
 
-Same machine and inputs as Section 1; `verimon_new` is this branch (regenerated
-`src/verified.ml` plus the specialised `Tuple.compare`), `verimon_old` the previous kernel.
-All outputs are identical across the three columns, and the 152 cram tests (93 of which run
-the verified kernel) pass.
+Same machine and inputs as Section 1; `verimon_new` is the final kernel of this branch
+(all code equations of Sections 3, 8 and 9.2 plus the front-end changes of Section 9.1),
+`verimon_old` the original kernel, both compiled with the distribution OCaml 4.14 compiler
+(no flambda) and measured in one run on an idle machine (the machine was slower during this
+run than in Section 1, so compare within the row). All outputs are identical, and the 152
+cram tests (93 of which run the verified kernel) pass.
 
-| formula | MonPoly | VeriMon old | VeriMon new | speedup |
-|---|---|---|---|---|
-| P2 | 0.42 s | 2.66 s | 2.12 s | 1.25x |
-| P3 | 0.43 s | 2.44 s | 1.88 s | 1.30x |
-| and | 0.16 s | 0.74 s | 0.33 s | 2.24x |
-| andnot | 0.15 s | 0.73 s | 0.22 s | 3.32x |
-| once | 0.72 s | 3.21 s | 2.67 s | 1.20x |
-| since | 0.25 s | 1.01 s | 0.94 s | 1.07x |
-| eventually | 0.49 s | 1.79 s | 1.41 s | 1.27x |
-| until | 0.23 s | 0.67 s | 0.53 s | 1.26x |
-| agg | 0.16 s | 0.48 s | 0.47 s | 1.02x |
-| complex | 0.84 s | 8.88 s | 3.51 s | 2.53x |
+| formula | MonPoly | VeriMon old | VeriMon new | speedup | VeriMon new, flambda |
+|---|---|---|---|---|---|
+| P2 | 0.49 s | 3.62 s | 2.59 s | 1.40x | 2.10 s |
+| P3 | 0.53 s | 3.24 s | 2.33 s | 1.39x | 2.06 s |
+| and | 0.18 s | 0.94 s | 0.42 s | 2.24x | 0.34 s |
+| andnot | 0.19 s | 0.92 s | 0.26 s | 3.54x | 0.23 s |
+| once | 0.87 s | 4.12 s | 2.75 s | 1.50x | 2.49 s |
+| since | 0.29 s | 1.26 s | 1.01 s | 1.25x | 0.85 s |
+| eventually | 0.57 s | 2.11 s | 1.47 s | 1.44x | 1.26 s |
+| until | 0.27 s | 0.73 s | 0.61 s | 1.20x | 0.52 s |
+| agg | 0.19 s | 0.65 s | 0.53 s | 1.23x | 0.40 s |
+| complex | 1.00 s | 11.03 s | 4.13 s | 2.67x | 3.75 s |
+
+The last column uses an flambda compiler (OCaml 4.14.1+flambda, default optimisation level,
+as in the release Docker image); flambda helps VeriMon by 10-30% and MonPoly by almost
+nothing (its MonPoly column was within 5% of the non-flambda one), because the generated
+code is dominated by small higher-order functions and dictionary records that flambda can
+inline. `-O3` was not better than the default level.
 
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
 `chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
@@ -402,9 +410,11 @@ The plan, ordered by expected gain per effort:
    point per predicate on the OCaml side and building each table in one verified bulk
    operation (sorted list to RBT, `rbtreeify`, linear time) removes most of it. Requires a
    small verified constant (`table_of_list`) and one session build.
-3. **Set-of-sets union in the Until structure.** `add_new_mmuaux` builds `tmp` as a union
-   over an image of singleton sets, exactly the pattern replaced in the joins. A fold-based
-   code equation (proof like `join_True_fold_code`) is worth about 5% on Until formulas.
+3. **Unions over sets of sets in the auxiliary structures (done, Section 9.2).**
+   `add_new_mmuaux` built its candidate set as a union over an image of singleton sets, and
+   `set_of_idx`, `gc_mmsaux` and the `eval_step` functions took unions of families of tables
+   through a set of sets. Fold-based code equations gained 6-18% on P2, P3, since, once,
+   eventually and until.
 4. **Dictionary sharing / monomorphisation (10-18%, Section 7).** Cheapest as a
    post-processing pass on the generated OCaml (`evaluation/microbench/hoist_dicts.py`
    plus a direct tuple comparator), soundest as the `etuple` refinement in `Monitor_Impl`,
@@ -412,10 +422,9 @@ The plan, ordered by expected gain per effort:
    instances as values). This is the item that would also make the imperative refinement
    (Section 8) pay off, since its remaining overhead is dictionary construction per heap
    operation.
-5. **Flambda.** The release Docker image builds with an flambda compiler (`-O3`); all
-   measurements here use the distribution compiler. Inlining across the generated
-   higher-order code (dictionary records, `comp_fun_idem` folds, Heap thunks) is expected
-   to help VeriMon more than MonPoly; to be measured.
+5. **Flambda (measured, Section 4).** The release Docker image builds with an flambda
+   compiler; with it VeriMon gains another 10-30% while MonPoly is unchanged, so the
+   distribution-compiler numbers overstate the gap by that much.
 6. **Since/Until auxiliary structures.** The largest remaining share (40-67%) and the
    largest effort: their proofs (`Correct_Since`, `Correct_Until`, `Optimized_*`) are tied
    to the concrete data representation. Two directions: (a) reduce persistent-structure
@@ -429,6 +438,18 @@ The plan, ordered by expected gain per effort:
 Matching MonPoly on the temporal benchmarks (P2/P3: still 4-5x) requires items 4 and 6;
 the join-dominated formulas are already within 2-2.5x and item 2 plus 4 would bring them to
 about 1.5x.
+
+### 9.2 Code equations for the auxiliary structures (Code_Opt, section "Code equations for
+the auxiliary structures")
+
+* `tmp_set`: the candidate set of `add_new_mmuaux`/`add_new_mmauaux` as a `comp_fun_idem`
+  fold (`tmp_step`) instead of `⋃ (f ` rel2)`;
+* `set_of_idx`, `gc_mmsaux`, `eval_step_mmuaux`, `eval_step_mmauaux`: unions of a list of
+  tables as `fold (∪)` instead of `⋃ (set xs)` / `⋃ (snd ` set xs)`.
+
+All are unconditional code equations proved from the original ones; the correctness proofs
+are untouched. Effect (idle machine, same run): P2 2.79 → 2.47 s, P3 2.43 → 2.30 s,
+once 3.14 → 2.74 s, since 1.09 → 0.92 s, eventually 1.71 → 1.46 s, until 0.65 → 0.61 s.
 
 ### 9.1 Front end changes on this branch
 
