@@ -542,6 +542,11 @@ declare [[code drop: wf_table_of_set wf_table_of_keys]]
 
 code_datatype wf_table_of_wf_set wf_table_of_idx wf_table_of_set wf_table_of_keys
 
+text \<open>Re-declaring the representations drops the existing code equations that match on them.\<close>
+
+declare wf_table_sig_code[code] wf_table_set_code[code] wf_table_union_code[code]
+  wf_table_join_code[code] wf_table_antijoin_code[code] wf_table_permute_code[code] wf_table_idx_code[code]
+
 lemma wf_table_conv:
   "wf_table_of_set n A X = wf_table_of_wf_set (wf_set_of_set n A X)"
   "wf_table_of_keys n A m = wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))"
