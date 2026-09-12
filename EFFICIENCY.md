@@ -257,8 +257,9 @@ cd .. && dune build --profile=release && dune test
 ```
 
 The AFP (Containers, Deriving, IEEE_Floating_Point, ...) must be registered as an Isabelle
-component. `Code_Opt.thy` is the last theory before `Monitor_Code.thy`; the code equations it
-introduces are checked like any other theorem, so the exported code remains verified.
+component. `Code_Opt.thy`, `Imperative_Join.thy` and `Monomorphic_Code.thy` are the theories
+between `Monitor_Impl.thy` and `Monitor_Code.thy`; the code equations they introduce are
+checked like any other theorem, so the exported code remains verified.
 
 ## 6. Further opportunities (not implemented)
 
@@ -276,56 +277,86 @@ introduces are checked like any other theorem, so the exported code remains veri
   verified RBT directly into a sorted list would remove the rest.
 * **Imperative refinement** of `mmsaux`/`mmuaux` (Section 2.3), once the above are done.
 
-## 7. Monomorphisation as an algorithm refinement (tried, not adopted)
+## 7. Monomorphisation as a code-equation refinement (implemented)
 
-**Goal.** 8-12% of VeriMon's time constructs `ceq`/`ccompare` dictionaries for
+**Goal.** 8-12% of VeriMon's time constructed `ceq`/`ccompare` dictionaries for
 `event_data option list` at run time, and the generic comparator chain
 (`comparator_list` -> `comparator_option` -> `comparator_event_data`) costs another
-10-20% (Section 1.2). Monomorphising the hot code to `event_data` should let the code
-generator emit the dictionaries once and allow a direct recursive tuple comparator.
+10-20% (Section 1.2). The generated code rebuilds a composite dictionary such as
+`ccompare_list (ccompare_option ccompare_event_data)` at every call of a polymorphic function
+that constructs it from its own dictionary parameters (`join1_insert`, `probe_step`,
+`tmp_step`, ... are called once per tuple), and at every use of a container operation at a
+tuple type in the monomorphic top-level code (1429 occurrences).
 
-**Refinement in `Monitor_Impl` (design).** Following the existing `mbuf_t`/`meformula`
-refinement, introduce a monomorphic copy of the tuple type,
-`typedef etuple = "UNIV :: event_data tuple set"` (or a one-constructor datatype), with
-`ceq`/`ccompare`/`set_impl` instances whose comparator is a direct recursive function on the
-list. Because `etuple` has no type parameter, its `ccompare` instance is a *value* in the
-generated code (like `ccompare_nat`), so every set or mapping operation on `etuple` tables
-receives a constant dictionary, and comparisons no longer go through closures. Tables become
-`etuple set`, and the implementation-level functions (`bin_join`, `probe_join`,
-`mmulti_join`, all `mmsaux`/`mmuaux`/`mtaux` operations, `wf_table`, the regex and
-aggregation auxiliaries, and the `meformula` fields) are lifted to the copied type with
-`lift_definition ... is f` and `transfer`; `meeval` is re-derived for the refined state
-exactly as `Monitor_Impl` does today for buffers.
+**Why a naive wrapper does not help.** A monomorphic wrapper constant such as
+`ed_insert = (Set.insert :: event_data tuple => ...)` is eta-expanded by the ML serializer
+(`let rec ed_insert x = insert (dicts) x`) and rebuilds the dictionaries on every call, and a
+type copy `etuple` with a value dictionary (the design considered first) would require
+re-deriving the whole implementation layer by transfer. Both were rejected.
 
-**Why a cheaper Isabelle-level variant does not exist.** A monomorphic wrapper constant
-such as `ed_insert = (Set.insert :: event_data tuple => ...)` does *not* help: Isabelle's ML
-serializer prints all definitions in `let rec` groups (`code_ml.ML`) and therefore
-eta-expands function-typed constants, producing `let rec ed_insert x = insert (dicts) x`,
-which rebuilds the dictionaries on every call (verified with a small export experiment).
-Code equations cannot be specialised to a type instance, and `code_printing` cannot be
-attached to the polymorphic `list`/`option` class instances for OCaml. Only a type without
-parameters yields a dictionary *value*, hence the type copy above.
+**What is implemented (`thys/MFODL_Monitor_Devel/Monomorphic_Code.thy`, `monomorphize.ML`).**
+A refinement at the level of code equations that touches no definition and no correctness
+proof of the monitor, automated by a small Isabelle/ML tool:
 
-**Measured upper bound.** Before undertaking that refinement, its effect was measured on the
-generated code directly (`evaluation/microbench/hoist_dicts.py`, both experiments are purely
-syntactic transformations of `src/verified.ml` and were validated by comparing all benchmark
-outputs):
+1. *Boxing.* For a generic container operation `c` used at a closed type involving tuples of
+   event data (`Set.insert`, `Set.member`, union, intersection, difference, `Set.filter`,
+   `image`, `Ball`, `finite`, `card`, `set_eq`, `csorted_list_of_set`, the folds over
+   red-black trees, `Mapping.lookup/update/delete/filter/keys/combine/is_empty` at the five
+   value types occurring in the monitor state, `cluster`, `set_of_idx`, `mapping_join`,
+   `mapping_antijoin`, `upd_set`, `upd_nested_max_tstp`, ...), a nullary constant
+   `c_v = Box c` is defined. Its generated code is a *value* of a non-function type and hence
+   not eta-expanded: `let ed_insert_v = Box (insert (ceq_list ..., ccompare_list ...))` builds
+   the dictionaries once when the program starts. The `code_unfold` rule `c x = unbox c_v x`
+   (proved from the definition) redirects all applied occurrences of `c` at that type; the
+   applied form deliberately leaves `c` untouched where it is passed as an argument, e.g. as a
+   locale parameter. Empty tables and empty mappings are the analogous nullary constants
+   `ed_bot`, `ed_mempty_*`.
+2. *Monomorphic copies.* For each polymorphic function `f` of the implementation that is hot
+   at type `event_data` (the joins `join1_insert`, `join_row`, `probe_*`, `bin_join`,
+   `mmulti_join*`, `proj_tuple_in_join*`, the Until candidate set `tmp_step`/`tmp_set`, the
+   Since operations `join_mmsaux`, `add_new_table_mmsaux`, `add_new_ts_mmsaux`, `shift_end`,
+   `gc_mmsaux`, the index operations `idx_*`, `update_mmtaux`, the regex and aggregation
+   helpers, ...), a copy `ed_f = f` at `event_data` is defined. Its code equations are the
+   (preprocessed) code equations of `f`, instantiated by the kernel to `event_data`, folded
+   with the definition and simplified with `CCOMPARE(event_data tuple) = Some ed_comparator`
+   and `CEQ(...) = Some ...`, so that the `case ID CCOMPARE(...) of None => abort | Some _ => ...`
+   dispatch disappears. Inside `ed_f` all container operations are at closed tuple types and
+   are redirected to the boxed values by (1); the rule `f x = ed_f x` redirects the callers.
+3. *Folds without the `comp_fun_idem` wrapper.* Values of an abstract type (`comp_fun_idem`,
+   `mapping_rbt`, `wf_idx`, ...) can only be built by the polymorphic abstract code equation
+   of their constructor, which cannot be specialised. The fold-based code equations of
+   Section 3 (`join_row`, `probe_step`, `probe_join`, `tmp_set`) therefore get a separate
+   clause per set representation whose `RBT_set` case folds the step function directly over
+   the tree (`RBT_Set2.fold (join1_insert a) rbt acc`), so that the monomorphic step is
+   reached without passing through the wrapper.
+4. *Compatibility.* The preprocessor rewrites bottom-up, so the redirections fire inside the
+   left-hand sides of other `code_unfold` rules (`{a in A. P a}` is normally folded into
+   `Set.filter P A`, `k in Mapping.keys m` into a lookup, `A = {}` into `Set.is_empty A`).
+   These rules are restated for the redirected constants.
 
-1. hoisting the 50 distinct closed dictionary expressions (1429 occurrences) in monomorphic
-   code to top-level values: 0-16% faster (P2 1.16x, P3 1.13x, until 1.13x, agg 1.10x,
-   `once`/`since`/`complex` about 1.0x, because their time is in polymorphic Since code and in
-   the front end);
-2. additionally replacing every tuple dictionary, including those built inside polymorphic
-   functions from their dictionary parameters, by a direct monomorphic comparator (what the
-   `etuple` refinement would generate): 0-18% faster (P2 1.12x, P3 1.13x, and 1.14x,
-   until 1.18x, complex 1.14x, `once` 1.0x).
+`ed_comparator` is a direct recursive comparator on `event_data tuple`, proved equal to the
+derived `comparator_list (comparator_option comparator_event_data)`; it is what the
+dictionary lemmas expose, but the red-black trees still call the derived comparator through
+the boxed dictionary values, because the comparator inside a Containers dictionary cannot be
+replaced per type instance.
 
-The set operations are simply a smaller share of the end-to-end time than the
-microbenchmark of Section 2.2 suggests; GC, RBT rebalancing, the `nat`-keyed mappings of the
-auxiliary structures, list operations and the front end make up the rest. A refinement
-touching every table-manipulating function of the implementation layer for a 10-15% gain
-was therefore not adopted; the hoisting script remains as a documented experiment. The
-next real steps are algorithmic (Until/Since auxiliary structures) and the front end.
+**What remains polymorphic.** The Since structure stores its tables as `wf_table` /
+`wf_idx`, whose operations (`wf_idx_join`, `wf_idx_antijoin`, `wf_idx_union`, ...) are
+abstract code equations of a typedef with an invariant. Their bodies are generated once,
+polymorphically, and call the polymorphic `idx_join` -> `bin_join` -> `probe_join` -> ...
+chain, in which the per-tuple dictionary construction persists (148 occurrences in the
+generated code, down from 202 constructions from parameters and from 236 closed
+constructions; the remaining closed ones are the boxed values themselves and a few in the
+aggregation operator). Removing them requires either making `wf_idx` a plain type with the
+invariant carried by the proofs, or the `etuple` type copy.
+
+**Effect.** Measured with the kernel exported from the session (`compare.sh`, same binary for
+both kernels, distribution compiler): see the table in Section 4 (row "monomorphisation").
+The gain is what the hoisting experiment predicted for the join- and Until-dominated
+formulas and smaller for Since-dominated ones. After this step the profile of P2 is
+dominated by GC (about 30%), red-black-tree rebalancing and insertion (about 10%) and
+comparisons of `nat` time stamps represented as `Z.t` (about 5%); dictionary construction
+no longer appears among the top entries.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
@@ -415,13 +446,13 @@ The plan, ordered by expected gain per effort:
    `set_of_idx`, `gc_mmsaux` and the `eval_step` functions took unions of families of tables
    through a set of sets. Fold-based code equations gained 6-18% on P2, P3, since, once,
    eventually and until.
-4. **Dictionary sharing / monomorphisation (10-18%, Section 7).** Cheapest as a
-   post-processing pass on the generated OCaml (`evaluation/microbench/hoist_dicts.py`
-   plus a direct tuple comparator), soundest as the `etuple` refinement in `Monitor_Impl`,
-   most general as a code-generator improvement (emit dictionaries of monomorphic
-   instances as values). This is the item that would also make the imperative refinement
-   (Section 8) pay off, since its remaining overhead is dictionary construction per heap
-   operation.
+4. **Dictionary sharing / monomorphisation (done, Section 7).** Implemented as a
+   code-equation refinement (boxed container operations, monomorphic copies of the hot
+   functions). What is left is the polymorphic `wf_idx` chain of the Since structure
+   (a typedef with an invariant, hence abstract code equations) and the aggregation
+   operator; the direct tuple comparator is proved but cannot be injected into the
+   Containers dictionaries. This is also the item that would make the imperative
+   refinement (Section 8) pay off.
 5. **Flambda (measured, Section 4).** The release Docker image builds with an flambda
    compiler; with it VeriMon gains another 10-30% while MonPoly is unchanged, so the
    distribution-compiler numbers overstate the gap by that much.
