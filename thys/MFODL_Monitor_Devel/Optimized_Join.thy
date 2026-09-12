@@ -643,7 +643,7 @@ fun mmulti_join_neg :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Right
 
 text \<open>
   The choice between the two evaluation strategies is left open in the formalization: the
-  constant @{text use_generic_join} is unspecified, and the correctness of @{const mmulti_join}
+  constant @{text use_generic_join} is unspecified, and the correctness of @{text mmulti_join}
   below is proved for both of its values. The generated code reads it from a mutable flag
   (see theory @{text Code_Opt}), which the front end sets from the command line option
   @{text "-generic_join"}.
