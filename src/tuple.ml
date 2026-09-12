@@ -64,7 +64,29 @@ let cached x =
 
 
 (* compare two tuples *)
-let compare t1 t2 = compare t1 t2
+(* Specialised, allocation-free comparison that induces exactly the same order as
+   Stdlib.compare on [cst list] (constructor order Int < Str < Float < Regexp, Z.compare
+   on integers, String.compare on strings, Stdlib.compare on floats, structural
+   comparison on regexps; [] < non-empty lists). Stdlib.compare on this type is
+   noticeably slower because of its generic traversal and page-table lookups. *)
+let cst_rank = function Int _ -> 0 | Str _ -> 1 | Float _ -> 2 | Regexp _ -> 3
+
+let compare_cst c1 c2 =
+  match c1, c2 with
+  | Int a, Int b -> Z.compare a b
+  | Str a, Str b -> String.compare a b
+  | Float a, Float b -> Stdlib.compare (a : float) b
+  | Regexp _, Regexp _ -> Stdlib.compare c1 c2
+  | _, _ -> Stdlib.compare (cst_rank c1) (cst_rank c2)
+
+let rec compare t1 t2 =
+  match t1, t2 with
+  | [], [] -> 0
+  | [], _ :: _ -> -1
+  | _ :: _, [] -> 1
+  | x :: xs, y :: ys ->
+    let c = compare_cst x y in
+    if c <> 0 then c else compare xs ys
   (* this is Stdlib.compare: [2]>[1;4] (as 2>1), [2]<[3;4] (as 2<3),
      and [2]<[2;4] (as []<l for any non-empty l) *)
 
