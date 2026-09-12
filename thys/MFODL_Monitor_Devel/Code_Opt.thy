@@ -38,6 +38,22 @@ lemma comparator_event_data_code[code]:
   "comparator_event_data (EString s) (EString t) = (if s < t then Lt else if s = t then Eq else Gt)"
   by (simp_all add: comparator_of_def)
 
+subsection \<open>Run-time selection of the multi-way join strategy\<close>
+
+text \<open>
+  @{const use_generic_join} is an unspecified constant; both values are covered by the
+  correctness proofs. The generated code reads it from a mutable flag in a small auxiliary
+  module, so that the front end can choose the strategy at run time.
+\<close>
+
+code_printing code_module Config \<rightharpoonup> (OCaml)
+\<open>module Config : sig
+  val generic_join : bool ref
+end = struct
+  let generic_join = ref false
+end\<close>
+| constant use_generic_join \<rightharpoonup> (OCaml) "!Config.generic'_join"
+
 subsection \<open>Joins\<close>
 
 text \<open>

@@ -641,10 +641,24 @@ fun mmulti_join_neg :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Right
   "mmulti_join_neg n A t [] = t"
 | "mmulti_join_neg n A t ((A', t') # L) = mmulti_join_neg n A (bin_join n A t False A' t') L"
 
-fun mmulti_join :: "nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
-  "mmulti_join n A_pos A_neg L = (case zip A_pos L of [] \<Rightarrow> {}
+text \<open>
+  The choice between the two evaluation strategies is left open in the formalization: the
+  constant @{text use_generic_join} is unspecified, and the correctness of @{const mmulti_join}
+  below is proved for both of its values. The generated code reads it from a mutable flag
+  (see theory @{text Code_Opt}), which the front end sets from the command line option
+  @{text "-generic_join"}.
+\<close>
+
+consts use_generic_join :: bool
+
+fun mmulti_join_pw :: "nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
+  "mmulti_join_pw n A_pos A_neg L = (case zip A_pos L of [] \<Rightarrow> {}
     | (A, t) # Lpos \<Rightarrow> (case mmulti_join_pos n A t Lpos of (A', t') \<Rightarrow>
         mmulti_join_neg n A' t' (zip A_neg (drop (length A_pos) L))))"
+
+fun mmulti_join :: "nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
+  "mmulti_join n A_pos A_neg L =
+    (if use_generic_join then mmulti_join_gen n A_pos A_neg L else mmulti_join_pw n A_pos A_neg L)"
 
 lemma mmulti_join_pos_fst: "fst (mmulti_join_pos n A t L) = A \<union> \<Union>(fst ` set L)"
 proof (induction L arbitrary: A t)
@@ -733,11 +747,11 @@ next
     unfolding eq IH * by (auto simp: At)
 qed
 
-lemma mmulti_join_correct:
+lemma mmulti_join_pw_correct:
   assumes "A_pos \<noteq> []"
       and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
       and "\<Union>(set A_neg) \<subseteq> \<Union>(set A_pos)"
-  shows "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
+  shows "z \<in> mmulti_join_pw n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
     list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
     list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
 proof -
@@ -775,9 +789,9 @@ proof -
     using mmulti_join_pos_correct[OF tab1 tabs_pos'] unfolding pos cols by simp
   have negs: "\<forall>(A, X) \<in> set (zip A_neg L_neg). table n A X \<and> A \<subseteq> \<Union>(set A_pos)"
     using tabs(2) assms(3)[unfolded Sup_le_iff] by (auto dest: set_zip_leftD)
-  have "mmulti_join n A_pos A_neg L = mmulti_join_neg n A' t' (zip A_neg L_neg)"
+  have "mmulti_join_pw n A_pos A_neg L = mmulti_join_neg n A' t' (zip A_neg L_neg)"
     by (simp add: zip_pos pos L_neg_def)
-  then have "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> z \<in> t' \<and> (\<forall>(A, X) \<in> set (zip A_neg L_neg). restrict A z \<notin> X)"
+  then have "z \<in> mmulti_join_pw n A_pos A_neg L \<longleftrightarrow> z \<in> t' \<and> (\<forall>(A, X) \<in> set (zip A_neg L_neg). restrict A z \<notin> X)"
     using mmulti_join_neg_correct[OF conjunct1[OF pos_corr] negs, of z] unfolding A' by simp
   also have "\<dots> \<longleftrightarrow> wf_tuple n (\<Union>(set A_pos)) z \<and> list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos L_pos \<and>
     list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg L_neg"
@@ -785,6 +799,16 @@ proof -
   finally show ?thesis
     by (simp add: L_pos_def L_neg_def)
 qed
+
+lemma mmulti_join_correct:
+  assumes "A_pos \<noteq> []"
+      and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
+      and "\<Union>(set A_neg) \<subseteq> \<Union>(set A_pos)"
+  shows "z \<in> mmulti_join n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
+    list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
+    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
+  using mmulti_join_gen_correct[OF assms(1,2)] mmulti_join_pw_correct[OF assms]
+  by (cases use_generic_join) simp_all
 
 (*<*)
 end

@@ -51,7 +51,7 @@ let usage_string =
   "Usage: monpoly -sig <file> -formula <file> [-negate] [-log <file>]
                [-help] [-version] [-debug <unit>] [-verbose] [-no_rw]
                [-check] [-sigout] [-unix] [-mem] [-nonewlastts] [-verified]
-               [-no_mw] [-nofilterrel] [-nofilteremptytp] [-stats]
+               [-no_mw] [-generic_join] [-nofilterrel] [-nofilteremptytp] [-stats]
                [-ignore_parse_errors] [-stop_at_out_of_order_ts]
                [-stop_at_first_viol] [-load <file>]"
 
@@ -213,6 +213,7 @@ let _ =
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
+    "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tEvaluate multi-way joins with the worst-case optimal generic join instead of pairwise binary joins (only with the verified kernel)";
     "-unfold_let", Arg.Symbol (["no"; "full"; "smart"], set_unfold_let),
       "\tWhether and how LET expressions in the formula should be unfolded (default 'no')";
     "-strcache", Arg.Set Misc.str_cache, "\tUse string cache to reduce memory usage";
