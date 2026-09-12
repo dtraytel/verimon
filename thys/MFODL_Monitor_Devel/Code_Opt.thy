@@ -43,7 +43,7 @@ subsection \<open>Joins\<close>
 text \<open>
   The default code for the general case of @{const bin_join} is a nested loop over both tables
   (quadratic in the table sizes). We replace it, via a proven code equation, by an index-based
-  join: both tables are clustered by their common columns and only matching buckets are joined.
+  join.
   The code equations are unconditional theorems, so the correctness proofs of the monitor
   are unaffected. (The multi-way join is evaluated pairwise by definition, see
   @{const mmulti_join} in theory @{text Optimized_Join}.)
@@ -86,7 +86,7 @@ definition join_row :: "'a table \<Rightarrow> 'a tuple \<Rightarrow> 'a table \
 
 lemma join_row_alt: "join_row B a acc = (if finite B then acc \<union> (\<Union>b \<in> B. set_option (join1 (a, b))) else acc)"
   unfolding join_row_def set_fold_cfi.rep_eq join1_insert_cfi.rep_eq
-  by (cases "finite B") (auto simp: fold_join1_insert fold_infinite)
+  by (cases "finite B") (auto simp: fold_join1_insert)
 
 lemma comp_fun_idem_join_row: "comp_fun_idem (join_row B)"
   by unfold_locales (auto simp: fun_eq_iff join_row_alt)
@@ -135,6 +135,14 @@ lemmas join_False_code'[code] = join_False_code
 
 subsection \<open>Index-based binary join\<close>
 
+text \<open>
+  The general case of @{const bin_join} (neither column set contains the other) clusters the
+  smaller table by the common columns and probes the resulting index with the tuples of the
+  larger table. The code equation is unconditional: it checks that all tuples are defined on
+  the join columns (which holds for well-formed tables) and otherwise falls back to the
+  nested loop.
+\<close>
+
 definition complete_on :: "nat set \<Rightarrow> 'a tuple \<Rightarrow> bool" where
   "complete_on I t \<longleftrightarrow> (\<forall>i \<in> I. i < length t \<and> t ! i \<noteq> None)"
 
@@ -161,57 +169,93 @@ lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
   (if Some x \<in> f ` Y then Some {y \<in> Y. f y = Some x} else None)"
   by transfer simp
 
-lemma lookup_mapping_join: "Mapping.lookup (mapping_join f m m') x =
-  (case Mapping.lookup m x of None \<Rightarrow> None
-   | Some y \<Rightarrow> (case Mapping.lookup m' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (f y y')))"
-  by (transfer fixing: f x) simp
+subsection \<open>Probe join: index the smaller table, probe with the larger one\<close>
 
-lemma set_of_idx_iff: "z \<in> set_of_idx m \<longleftrightarrow> (\<exists>k Y. Mapping.lookup m k = Some Y \<and> z \<in> Y)"
-  by transfer (auto simp: ran_def)
+definition join1_insert' :: "'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join1_insert' b a acc = join1_insert a b acc"
 
-definition idx_join_gen :: "nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "idx_join_gen I t t' = set_of_idx (mapping_join (\<lambda>T T'. join T True T')
-     (cluster (Some \<circ> restrict I) t) (cluster (Some \<circ> restrict I) t'))"
+lemma comp_fun_idem_join1_insert': "comp_fun_idem (join1_insert' b)"
+  by unfold_locales
+    (auto simp: fun_eq_iff join1_insert'_def join1_insert_def Set.insert_commute split: option.splits)
 
-lemma idx_join_gen_join:
-  assumes "\<forall>x \<in> t. complete_on I x" "\<forall>y \<in> t'. complete_on I y"
-  shows "idx_join_gen I t t' = join t True t'"
-proof (rule set_eqI)
+lemma fold_join1_insert':
+  assumes "finite T"
+  shows "Finite_Set.fold (join1_insert' b) acc T = acc \<union> (\<Union>a \<in> T. set_option (join1 (a, b)))"
+proof -
+  interpret comp_fun_idem "join1_insert' b"
+    by (rule comp_fun_idem_join1_insert')
+  from assms show ?thesis
+  proof (induction T arbitrary: acc)
+    case (insert x T)
+    then show ?case
+      unfolding fold_insert[OF insert.hyps(1,2)] insert.IH
+      by (auto simp: join1_insert'_def join1_insert_def split: option.splits)
+  qed simp
+qed
+
+lift_definition join1_insert_cfi' :: "'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join1_insert'
+  by (rule comp_fun_idem_join1_insert')
+
+definition probe_step :: "nat set \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_step I m b acc = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> set_fold_cfi (join1_insert_cfi' b) acc T)"
+
+lemma probe_step_alt: "probe_step I m b acc = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> if finite T then acc \<union> (\<Union>a \<in> T. set_option (join1 (a, b))) else acc)"
+  unfolding probe_step_def set_fold_cfi.rep_eq join1_insert_cfi'.rep_eq
+  by (auto simp: fold_join1_insert' split: option.splits)
+
+lemma comp_fun_idem_probe_step: "comp_fun_idem (probe_step I m)"
+  by unfold_locales (auto simp: fun_eq_iff probe_step_alt split: option.splits)
+
+lift_definition probe_step_cfi :: "nat set \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+  is probe_step
+  by (rule comp_fun_idem_probe_step)
+
+definition probe_join :: "nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_join I t t' = set_fold_cfi (probe_step_cfi I (cluster (Some \<circ> restrict I) t)) {} t'"
+
+lemma fold_probe_step:
+  assumes "finite t" "finite t'"
+  shows "Finite_Set.fold (probe_step I (cluster (Some \<circ> restrict I) t)) {} t' =
+    (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+proof -
+  interpret comp_fun_idem "probe_step I (cluster (Some \<circ> restrict I) t)"
+    by (rule comp_fun_idem_probe_step)
+  let ?m = "cluster (Some \<circ> restrict I) t"
+  from assms(2) show ?thesis
+  proof (induction t')
+    case (insert b F)
+    have fin: "finite {a \<in> t. restrict I a = restrict I b}"
+      using assms(1) by simp
+    have "Finite_Set.fold (probe_step I ?m) {} (Set.insert b F) = probe_step I ?m b (Finite_Set.fold (probe_step I ?m) {} F)"
+      by (rule fold_insert[OF insert.hyps(1,2)])
+    also have "\<dots> = probe_step I ?m b (\<Union>b \<in> F. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+      unfolding insert.IH ..
+    also have "\<dots> = (\<Union>b \<in> Set.insert b F. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+      unfolding probe_step_alt lookup_cluster using fin by (auto split: if_splits simp: image_iff)
+    finally show ?case .
+  qed simp
+qed
+
+lemma probe_join_join:
+  assumes "finite t" "finite t'" "\<forall>x \<in> t. complete_on I x" "\<forall>y \<in> t'. complete_on I y"
+  shows "probe_join I t t' = join t True t'"
+  unfolding probe_join_def set_fold_cfi.rep_eq probe_step_cfi.rep_eq fold_probe_step[OF assms(1,2)]
+proof (intro set_eqI iffI)
   fix z
-  have "z \<in> idx_join_gen I t t' \<longleftrightarrow> (\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
-    z \<in> join {y \<in> t. restrict I y = k} True {y \<in> t'. restrict I y = k})"
-    unfolding idx_join_gen_def set_of_idx_iff lookup_mapping_join lookup_cluster
-    by (auto split: if_splits option.splits)
-  also have "\<dots> \<longleftrightarrow> z \<in> join t True t'"
-  proof
-    assume "\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
-      z \<in> join {y \<in> t. restrict I y = k} True {y \<in> t'. restrict I y = k}"
-    then show "z \<in> join t True t'"
-      unfolding join_True_code by auto
-  next
-    assume "z \<in> join t True t'"
-    then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 (a, b) = Some z"
-      unfolding join_True_code by auto
-    then have eq: "restrict I a = restrict I b"
-      using assms join1_Some_restrict_complete by blast
-    show "\<exists>k. Some k \<in> (Some \<circ> restrict I) ` t \<and> Some k \<in> (Some \<circ> restrict I) ` t' \<and>
-      z \<in> join {y \<in> t. restrict I y = k} True {y \<in> t'. restrict I y = k}"
-    proof (intro exI[of _ "restrict I a"] conjI)
-      show "Some (restrict I a) \<in> (Some \<circ> restrict I) ` t"
-        using ab(1) by force
-      show "Some (restrict I a) \<in> (Some \<circ> restrict I) ` t'"
-        using ab(2) eq by force
-      show "z \<in> join {y \<in> t. restrict I y = restrict I a} True {y \<in> t'. restrict I y = restrict I a}"
-        unfolding join_True_code
-        apply (rule UN_I[of a])
-        subgoal using ab(1) by simp
-        apply (rule UN_I[of b])
-        subgoal using ab(2) eq by simp
-        subgoal using ab(3) by simp
-        done
-    qed
-  qed
-  finally show "z \<in> idx_join_gen I t t' \<longleftrightarrow> z \<in> join t True t'" .
+  assume "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+  then show "z \<in> join t True t'"
+    unfolding join_True_code by auto
+next
+  fix z
+  assume "z \<in> join t True t'"
+  then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 (a, b) = Some z"
+    unfolding join_True_code by auto
+  then have "restrict I a = restrict I b"
+    using assms(3,4) join1_Some_restrict_complete by blast
+  then show "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+    using ab by (intro UN_I[of b] UN_I[of a]) auto
 qed
 
 declare [[code drop: bin_join]]
@@ -224,10 +268,11 @@ lemma bin_join_code[code]:
     else if A' = A then (if pos then t \<inter> t' else t - t')
     else if A' \<subseteq> A then {as \<in> t. proj_tuple_in_join pos (join_mask n A') as t'}
     else if A \<subseteq> A' \<and> pos then {as \<in> t'. proj_tuple_in_join pos (join_mask n A) as t}
-    else if pos \<and> (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
-      then idx_join_gen (A \<inter> A') t t'
+    else if pos \<and> finite t \<and> finite t' \<and>
+        (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
+      then (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)
     else join t pos t')"
-  by (subst bin_join.simps) (auto simp: idx_join_gen_join)
+  by (subst bin_join.simps) (auto simp: probe_join_join join_commute)
 
 (*<*)
 end
