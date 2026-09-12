@@ -228,6 +228,29 @@ nothing (its MonPoly column was within 5% of the non-flambda one), because the g
 code is dominated by small higher-order functions and dictionary records that flambda can
 inline. `-O3` was not better than the default level.
 
+**Monomorphisation (Section 7).** The kernel with the monomorphisation refinement,
+compared with the kernel of the table above (`verimon_new`), same binary for both, two runs
+on an idle machine, distribution compiler; all outputs identical, all cram tests pass:
+
+| formula | before | after (run 1 / run 2) | speedup |
+|---|---|---|---|
+| P2 | 2.38 s | 2.11 s / 2.34 s | 1.02-1.13x |
+| P3 | 2.04-2.23 s | 2.10 s / 1.86 s | 1.06-1.10x |
+| and | 0.36 s | 0.37 s / 0.34 s | 1.00-1.06x |
+| andnot | 0.23-0.26 s | 0.23 s / 0.22 s | 1.05-1.13x |
+| once | 2.37-2.42 s | 2.48 s / 2.45 s | 0.97-0.98x |
+| since | 0.83 s | 0.83 s / 0.85 s | 0.98-1.01x |
+| eventually | 1.25-1.30 s | 1.29 s / 1.24 s | 1.01x |
+| until | 0.56-0.63 s | 0.53 s / 0.52 s | 1.08-1.19x |
+| agg | 0.49-0.50 s | 0.49 s / 0.47 s | 1.02-1.04x |
+| complex | 3.78-3.92 s | 3.74 s / 3.63 s | 1.04-1.05x |
+
+The gain is 5-15% on the join- and Until-dominated formulas and within the run-to-run noise
+on the Since-dominated ones, whose hot path stays polymorphic (Section 7, "what remains
+polymorphic"). This is the upper half of what the syntactic hoisting experiment predicted;
+the dictionary constructions have disappeared from the profile, and what remains is GC,
+red-black-tree work and big-integer time stamps (Section 9).
+
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
 `chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
 
@@ -351,9 +374,9 @@ aggregation operator). Removing them requires either making `wf_idx` a plain typ
 invariant carried by the proofs, or the `etuple` type copy.
 
 **Effect.** Measured with the kernel exported from the session (`compare.sh`, same binary for
-both kernels, distribution compiler): see the table in Section 4 (row "monomorphisation").
-The gain is what the hoisting experiment predicted for the join- and Until-dominated
-formulas and smaller for Since-dominated ones. After this step the profile of P2 is
+both kernels, distribution compiler): see the table "Monomorphisation" in Section 4. The gain
+is 5-15% on the join- and Until-dominated formulas and within noise on the Since-dominated
+ones. After this step the profile of P2 is
 dominated by GC (about 30%), red-black-tree rebalancing and insertion (about 10%) and
 comparisons of `nat` time stamps represented as `Z.t` (about 5%); dictionary construction
 no longer appears among the top entries.
