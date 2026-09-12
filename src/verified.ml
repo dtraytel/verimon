@@ -6728,6 +6728,35 @@ let rec proj_tuple_in_join (_A1, _A2)
                    (ccompare_list (ccompare_option _A2)))
                  (proj_tuple bs asa) t));;
 
+let rec minus_comp
+  comp t1 t2 =
+    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
+      else (if small_rbta t1
+             then rbtreeify
+                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
+                      (entries t1))
+             else (match t2 with Empty -> t1
+                    | Branch (_, l2, a, (), r2) ->
+                      (let (l1, (_, r1)) = split_comp comp t1 a in
+                        rbt_join2a (minus_comp comp l1 l2)
+                          (minus_comp comp r1 r2)))));;
+
+let rec rbt_minus_rbt_join2 _A
+  xb xc =
+    Mapping_RBTa
+      (rbt_recolor
+        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+
+let rec minus_set (_A1, _A2)
+  a b = match a, b with
+    RBT_set t1, RBT_set t2 ->
+      (match ccompare _A2
+        with None ->
+          failwith "minus RBT_set RBT_set: ccompare = None"
+            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
+        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
+    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
+
 let rec bucket_list = function None -> []
                       | Some l -> l;;
 
@@ -6847,35 +6876,6 @@ let rec hprobe_join (_A1, _A2, _A3, _A4, _A5)
        (csorted_list_of_set
          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
          t)) ());;
-
-let rec minus_comp
-  comp t1 t2 =
-    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
-      else (if small_rbta t1
-             then rbtreeify
-                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
-                      (entries t1))
-             else (match t2 with Empty -> t1
-                    | Branch (_, l2, a, (), r2) ->
-                      (let (l1, (_, r1)) = split_comp comp t1 a in
-                        rbt_join2a (minus_comp comp l1 l2)
-                          (minus_comp comp r1 r2)))));;
-
-let rec rbt_minus_rbt_join2 _A
-  xb xc =
-    Mapping_RBTa
-      (rbt_recolor
-        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
-
-let rec minus_set (_A1, _A2)
-  a b = match a, b with
-    RBT_set t1, RBT_set t2 ->
-      (match ccompare _A2
-        with None ->
-          failwith "minus RBT_set RBT_set: ccompare = None"
-            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
-        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
-    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
 
 let rec join_mask
   n x = mapa (fun i -> member (ceq_nat, ccompare_nat) i x) (upt zero_nata n);;
@@ -6997,17 +6997,33 @@ let rec bin_join (_A1, _A2, _A3, _A4, _A5)
                    else probe_join (_A1, _A2, _A3)
                           (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
                | Some _ ->
-                 (if less_eq_nat
-                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
-                               (ccompare_list (ccompare_option _A2)))
-                         ta)
-                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
-                               (ccompare_list (ccompare_option _A2)))
-                         t)
-                   then hprobe_join (_A1, _A2, _A3, _A4, _A5)
-                          (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
-                   else hprobe_join (_A1, _A2, _A3, _A4, _A5)
-                          (inf_seta (ceq_nat, ccompare_nat) aa a) t ta))
+                 (if !Config.imperative_join
+                   then (if less_eq_nat
+                              (card (card_UNIV_list,
+                                      (ceq_list (ceq_option _A1)),
+                                      (ccompare_list (ccompare_option _A2)))
+                                ta)
+                              (card (card_UNIV_list,
+                                      (ceq_list (ceq_option _A1)),
+                                      (ccompare_list (ccompare_option _A2)))
+                                t)
+                          then hprobe_join (_A1, _A2, _A3, _A4, _A5)
+                                 (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+                          else hprobe_join (_A1, _A2, _A3, _A4, _A5)
+                                 (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
+                   else (if less_eq_nat
+                              (card (card_UNIV_list,
+                                      (ceq_list (ceq_option _A1)),
+                                      (ccompare_list (ccompare_option _A2)))
+                                ta)
+                              (card (card_UNIV_list,
+                                      (ceq_list (ceq_option _A1)),
+                                      (ccompare_list (ccompare_option _A2)))
+                                t)
+                          then probe_join (_A1, _A2, _A3)
+                                 (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+                          else probe_join (_A1, _A2, _A3)
+                                 (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)))
         else join (_A1, _A2, _A3) ta pos t)))))));;
 
 let rec idx_join _A (_B1, _B2, _B3, _B4, _B5)

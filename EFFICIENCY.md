@@ -358,8 +358,8 @@ but still not faster than the persistent RBT index of Section 3:
 
 | formula | VeriMon, RBT index (default) | VeriMon, `-imperative_join` |
 |---|---|---|
-| and | 0.42 s | 0.50 s |
-| complex | 4.38 s | 4.75 s |
+| and | 0.40 s | 0.52 s |
+| complex | 4.36 s | 4.79 s |
 | other benchmarks | unchanged (no general-case binary join) | |
 
 The profile of the imperative version attributes the difference to exactly the effects
