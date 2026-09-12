@@ -52,7 +52,7 @@ code_printing code_module Config \<rightharpoonup> (OCaml)
 end = struct
   let generic_join = ref false
 end\<close>
-| constant use_generic_join \<rightharpoonup> (OCaml) "!Config.generic'_join"
+| constant use_generic_join \<rightharpoonup> (OCaml) "'!Config.generic'_join"
 
 subsection \<open>Joins\<close>
 
