@@ -71,7 +71,7 @@ text \<open>
   operation in the generated code.
 \<close>
 
-definition wf_table_of_keys :: "nat \<Rightarrow> nat set \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> 'a wf_table" where
+definition wf_table_of_keys :: "nat \<Rightarrow> nat set \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a wf_table" where
   "wf_table_of_keys n A m = wf_table_of_set n A (Mapping.keys m)"
 
 lemma wf_table_sig_of_keys[simp]: "wf_table_sig (wf_table_of_keys n A m) = (n, A)"
@@ -80,7 +80,7 @@ lemma wf_table_sig_of_keys[simp]: "wf_table_sig (wf_table_of_keys n A m) = (n, A
 lemma wf_table_set_of_keys: "table n A (Mapping.keys m) \<Longrightarrow> wf_table_set (wf_table_of_keys n A m) = Mapping.keys m"
   by (auto simp: wf_table_of_keys_def wf_table_set_of_set table_def)
 
-definition wf_table_upd :: "args \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> (unit \<Rightarrow> 'a wf_table) \<Rightarrow> 'a wf_table" where
+definition wf_table_upd :: "args \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> (unit \<Rightarrow> 'a wf_table) \<Rightarrow> 'a wf_table" where
   "wf_table_upd args m w = (if args_L args = {} then wf_table_of_keys (args_n args) (args_R args) m else w ())"
 
 lemma wf_table_sig_upd: "wf_table_sig (w ()) = (args_n args, args_R args) \<Longrightarrow>

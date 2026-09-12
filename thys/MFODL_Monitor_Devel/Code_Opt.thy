@@ -442,7 +442,7 @@ lemma gc_mmsaux_fold_code[code]:
     (let all_tuples = fold (\<lambda>p acc. snd p \<union> acc) (linearize data_prev @ linearize data_in) {};
     tuple_since' = Mapping.filter (\<lambda>as _. as \<in> all_tuples) tuple_since in
     (nt, nt, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in,
-     wf_table_of_set_args args (Mapping.keys tuple_since'), tuple_since'))"
+     wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since')), tuple_since'))"
   by (subst gc_mmsaux.simps) (simp only: set_append[symmetric] Union_image_snd_fold)
 
 lemma eval_step_mmuaux_fold_code[code]:
