@@ -381,6 +381,34 @@ dominated by GC (about 30%), red-black-tree rebalancing and insertion (about 10%
 comparisons of `nat` time stamps represented as `Z.t` (about 5%); dictionary construction
 no longer appears among the top entries.
 
+## 7b. Since structure: no tuple indices without join columns (implemented)
+
+**Observation.** The Since structure (`mmsaux`, `Optimized_Since.thy`) keeps, next to the
+result table `table_in` and the two mappings `tuple_in`/`tuple_since`, two indexed copies
+`wf_table_in`/`wf_table_since` (`wf_table`, indexed by the join columns `args_L`). They are
+read only by `join_mmsaux`, and only when there are join columns. For `ONCE`-like formulas
+(`args_L = {}`: P3, `once`, the Since subformula of `complex`) every time point nevertheless
+built an index for the moved, expired and new tables (`wf_idx_of_set`: filter, cluster,
+`set_of_idx`), unioned indices (`wf_idx_union`) and antijoined them: about 28% of P3's time
+for structures that were never read.
+
+**Change (a small definitional refinement with re-proved invariants).** The four operations
+`shift_end`, `add_new_ts_mmsaux'`, `add_new_table_mmsaux` and `gc_mmsaux` now compute the
+indexed tables through `wf_table_upd args m (\<lambda>_. incremental)`: with join columns the
+incremental index operation as before; without, `wf_table_of_keys n R m`, the well-formed
+table whose set is the key set of the corresponding mapping (`wf_table_of_set n R (keys m)`).
+The invariant `valid_mmsaux` is unchanged; its four preservation proofs only needed the two
+facts `wf_table_sig_upd`/`wf_table_set_upd` (the set of keys of the new mapping is a table).
+For the code generator, `wf_table_of_set` and `wf_table_of_keys` become representations of
+`wf_table` (`code_datatype`, in `Code_Opt.thy`): constructing them is a constant-time
+allocation, the reads (never executed without join columns) filter lazily, and the binary
+operations convert the new representations to the plain set representation first, so
+formulas with join columns run the same code as before. `wf_table_of_set_args` also no longer
+builds an index for the empty join column set, and `init_mmsaux` starts from the plain
+representation.
+
+**Effect.** See the table in Section 4 ("Since without indices"). RESULTS_PLACEHOLDER
+
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
 `thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an
