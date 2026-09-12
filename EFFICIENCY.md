@@ -162,12 +162,28 @@ and so are the proofs. The exported `src/verified.ml` was regenerated from Isabe
    joins only matching buckets (`mapping_join`). The code equation is unconditional because
    it checks, in linear time, that every tuple is defined on the join columns; otherwise it
    falls back to the nested loop (this never happens for well-formed tables).
-3. **Pairwise multi-way join.** `mmulti_join` (used for `MAnds` produced by
-   `convert_multiway`) is evaluated as a left-deep sequence of binary joins followed by
-   anti-joins for the negative conjuncts, whenever the inputs are tables over the declared
-   column sets and the negative columns are covered by the positive ones (checked at run time;
-   otherwise the original worst-case-optimal join is used). Correctness follows from
-   `mmulti_join_correct` and `join_restrict`.
+3. **Nested-loop join as a fold.** The default code equation for `A ⋈ B` builds a set of
+   singleton sets (which requires the expensive lexicographic comparator on *sets*) and then
+   takes its union. A code equation evaluates it as a double fold inserting joined tuples
+   directly (`join_True_fold_code`). This also speeds up the bucket joins of item 2.
+
+Additionally, in `thys/MFODL_Monitor_Devel/Optimized_Join.thy`:
+
+4. **Pairwise multi-way join.** `mmulti_join` (used for `MAnds`, i.e. all conjunctions after
+   `convert_multiway`) is now *defined* as a left-deep sequence of binary joins followed by
+   anti-joins for the negative conjuncts; the worst-case optimal generic join is kept as
+   `mmulti_join_gen`. `mmulti_join_correct` is re-proven with the same statement plus the
+   assumption that the negated conjuncts' columns are covered by the positive ones, which
+   `qtable_mmulti_join` (`Correct_Bin_Ops.thy`) already had (`fv_subset`); this is the only
+   change to the correctness development (one line).
+
+   A first attempt kept the generic join as the definition and switched to the pairwise
+   evaluation through an unconditional code equation guarded by a run-time check that all
+   inputs are well-formed tables. That check is linear in the sizes of *all* input tables at
+   every time point, while the join itself is often much cheaper (e.g. one new tuple against
+   a large negated table): on `P3` it slowed VeriMon down by two orders of magnitude. Guards
+   in code equations must be asymptotically dominated by the operation they guard; the
+   `complete_on` check in `bin_join` (linear in the two tables that are being indexed) is fine.
 
 ## 4. Results
 
