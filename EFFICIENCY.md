@@ -220,6 +220,19 @@ the verified kernel) pass.
 | agg | 0.16 s | 0.48 s | 0.47 s | 1.02x |
 | complex | 0.84 s | 8.88 s | 3.51 s | 2.53x |
 
+The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
+`chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
+
+| formula | MonPoly | VeriMon pairwise (default) | VeriMon `-generic_join` |
+|---|---|---|---|
+| triangle `A(x,y) AND B(y,z) AND C(z,x)` | 1.13 s | 2.86 s | 9.09 s |
+| chain `A(x,y) AND B(y,z) AND C(z,w)` | 9.65 s | 21.83 s | 54.25 s |
+| complex (Section 1) | 1.01 s | 4.20 s | 9.97 s |
+
+On these inputs the pairwise strategy wins even on the cyclic query, because the intermediate
+results stay small relative to the constant factors of the generic join; the generic join
+remains available for inputs where its worst-case guarantee matters.
+
 Join-dominated formulas improve by 2-3.3x; formulas dominated by the Since/Until auxiliary
 structures by 1.1-1.3x (they profit from the comparator code equations and the fold-based
 join inside the indexed tables only). The remaining gap to MonPoly on `complex` is about
