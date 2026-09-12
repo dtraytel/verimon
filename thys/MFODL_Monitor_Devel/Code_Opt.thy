@@ -504,6 +504,90 @@ lemma eval_step_mmauaux_fold_code[code]:
         ((tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done), aggaux))))"
   by (subst eval_step_mmauaux.simps) (simp only: Union_set_fold)
 
+
+section \<open>Since without join columns\<close>
+
+text \<open>
+  The Since structure keeps two @{typ "'a wf_table"}s indexed by the join columns
+  @{term "args_L args"}. They are consulted by @{const join_mmsaux} only when there are join
+  columns; without them (@{term "args_L args = {}"}, e.g. for @{text ONCE}) the operations of
+  @{text Optimized_Since} maintain them as @{term "wf_table_of_keys n R m"}, the set of keys of
+  the corresponding mapping. Both @{const wf_table_of_set} and @{const wf_table_of_keys} are made
+  representations of @{typ "'a wf_table"} for the code generator: constructing them costs
+  nothing, the (never taken) reads filter lazily, and the binary operations convert them to the
+  plain set representation first. Constructing an index for the empty join column set is also
+  replaced by the plain representation.
+\<close>
+
+lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set n A I X) = wf_table_of_set n A X"
+  by (rule wf_table_eqI) (simp_all add: wf_idx_sig_of_set wf_idx_set_of_set wf_table_sig_of_set wf_table_set_of_set)
+
+declare [[code drop: wf_table_of_set_args]]
+
+lemma wf_table_of_set_args_code[code]:
+  "wf_table_of_set_args args X = (if args_L args = {}
+     then wf_table_of_set (args_n args) (args_R args) X
+     else wf_table_of_idx (wf_idx_of_set (args_n args) (args_R args) (args_L args) X))"
+  by (simp add: wf_table_of_set_args_def wf_table_of_idx_of_set)
+
+declare [[code drop: init_mmsaux]]
+
+lemma init_mmsaux_code[code]:
+  "init_mmsaux args = (0, 0, join_mask (args_n args) (args_L args),
+    join_mask (args_n args) (args_R args), empty_queue, empty_queue,
+    {}, wf_table_of_set_args args {}, Mapping.empty, wf_table_of_set_args args {}, Mapping.empty)"
+  by (simp add: wf_table_of_set_args_def)
+
+declare [[code drop: wf_table_of_set wf_table_of_keys]]
+
+code_datatype wf_table_of_wf_set wf_table_of_idx wf_table_of_set wf_table_of_keys
+
+lemma wf_table_conv:
+  "wf_table_of_set n A X = wf_table_of_wf_set (wf_set_of_set n A X)"
+  "wf_table_of_keys n A m = wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))"
+  by (simp_all add: wf_table_of_set_code wf_table_of_keys_def)
+
+lemma wf_table_sig_code'[code]:
+  "wf_table_sig (wf_table_of_set n A X) = (n, A)"
+  "wf_table_sig (wf_table_of_keys n A m) = (n, A)"
+  by (simp_all add: wf_table_sig_of_set)
+
+lemma wf_table_set_code'[code]:
+  "wf_table_set (wf_table_of_set n A X) = Set.filter (wf_tuple n A) X"
+  "wf_table_set (wf_table_of_keys n A m) = Set.filter (wf_tuple n A) (Mapping.keys m)"
+  by (simp_all add: wf_table_set_of_set wf_table_of_keys_def)
+
+lemma wf_table_union_code'[code]:
+  "wf_table_union (wf_table_of_set n A X) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set n A X)) t"
+  "wf_table_union (wf_table_of_keys n A m) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
+  "wf_table_union t (wf_table_of_set n A X) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set n A X))"
+  "wf_table_union t (wf_table_of_keys n A m) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  by (simp_all only: wf_table_conv)
+
+lemma wf_table_join_code'[code]:
+  "wf_table_join (wf_table_of_set n A X) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set n A X)) t"
+  "wf_table_join (wf_table_of_keys n A m) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
+  "wf_table_join t (wf_table_of_set n A X) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set n A X))"
+  "wf_table_join t (wf_table_of_keys n A m) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  by (simp_all only: wf_table_conv)
+
+lemma wf_table_antijoin_code'[code]:
+  "wf_table_antijoin (wf_table_of_set n A X) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set n A X)) t"
+  "wf_table_antijoin (wf_table_of_keys n A m) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
+  "wf_table_antijoin t (wf_table_of_set n A X) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set n A X))"
+  "wf_table_antijoin t (wf_table_of_keys n A m) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  by (simp_all only: wf_table_conv)
+
+lemma wf_table_idx_code'[code]:
+  "wf_table_idx I (wf_table_of_set n A X) = wf_table_idx I (wf_table_of_wf_set (wf_set_of_set n A X))"
+  "wf_table_idx I (wf_table_of_keys n A m) = wf_table_idx I (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  by (simp_all only: wf_table_conv)
+
+lemma wf_table_permute_code'[code]:
+  "wf_table_permute ns (wf_table_of_set n A X) = wf_table_permute ns (wf_table_of_wf_set (wf_set_of_set n A X))"
+  "wf_table_permute ns (wf_table_of_keys n A m) = wf_table_permute ns (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  by (simp_all only: wf_table_conv)
+
 (*<*)
 end
 (*>*)

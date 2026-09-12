@@ -64,6 +64,33 @@ lemma wf_table_of_set_args_wf_table_set: "wf_table_sig t = (args_n args, args_R 
   wf_table_of_set_args args (wf_table_set t) = t"
   by (auto simp: wf_table_sig_args wf_table_of_set_args[OF wf_table_set_table] intro: wf_table_eqI)
 
+text \<open>
+  The two indexed tables are consulted by @{const join_mmsaux} only when there are join columns.
+  Without join columns (@{term "args_L args = {}"}, e.g. for @{text ONCE}) they are maintained as
+  the (lazily represented) set of keys of the corresponding mapping, which costs nothing per
+  operation in the generated code.
+\<close>
+
+definition wf_table_of_keys :: "nat \<Rightarrow> nat set \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> 'a wf_table" where
+  "wf_table_of_keys n A m = wf_table_of_set n A (Mapping.keys m)"
+
+lemma wf_table_sig_of_keys[simp]: "wf_table_sig (wf_table_of_keys n A m) = (n, A)"
+  by (simp add: wf_table_of_keys_def wf_table_sig_of_set)
+
+lemma wf_table_set_of_keys: "table n A (Mapping.keys m) \<Longrightarrow> wf_table_set (wf_table_of_keys n A m) = Mapping.keys m"
+  by (auto simp: wf_table_of_keys_def wf_table_set_of_set table_def)
+
+definition wf_table_upd :: "args \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> (unit \<Rightarrow> 'a wf_table) \<Rightarrow> 'a wf_table" where
+  "wf_table_upd args m w = (if args_L args = {} then wf_table_of_keys (args_n args) (args_R args) m else w ())"
+
+lemma wf_table_sig_upd: "wf_table_sig (w ()) = (args_n args, args_R args) \<Longrightarrow>
+  wf_table_sig (wf_table_upd args m w) = (args_n args, args_R args)"
+  by (simp add: wf_table_upd_def)
+
+lemma wf_table_set_upd: "table (args_n args) (args_R args) (Mapping.keys m) \<Longrightarrow> wf_table_set (w ()) = Mapping.keys m \<Longrightarrow>
+  wf_table_set (wf_table_upd args m w) = Mapping.keys m"
+  by (simp add: wf_table_upd_def wf_table_set_of_keys)
+
 fun init_mmsaux :: "args \<Rightarrow> 'a mmsaux" where
   "init_mmsaux args = (0, 0, join_mask (args_n args) (args_L args),
   join_mask (args_n args) (args_R args), empty_queue, empty_queue,
@@ -83,7 +110,7 @@ fun shift_end :: "args \<Rightarrow> ts \<Rightarrow> 'a mmsaux \<Rightarrow> 'a
     (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
     (tuple_in, del) = fold filter_set discard (tuple_in, {}) in
     (t, gc, maskL, maskR, data_prev', data_in,
-     table_in - del, wf_table_antijoin wf_table_in (wf_table_of_set_args args del), tuple_in,
+     table_in - del, wf_table_upd args tuple_in (\<lambda>_. wf_table_antijoin wf_table_in (wf_table_of_set_args args del)), tuple_in,
      wf_table_since, tuple_since))"
 
 lemma valid_shift_end_mmsaux_unfolded:
@@ -221,19 +248,19 @@ proof -
     and set_in: "wf_table_set wf_table_in = Mapping.keys tuple_in"
     using valid_before
     by auto
-  have sig_in'': "wf_table_sig (wf_table_antijoin wf_table_in (wf_table_of_set_args args del)) = (args_n args, args_R args)"
+  have sig_in'': "wf_table_sig (wf_table_upd args tuple_in' (\<lambda>_. wf_table_antijoin wf_table_in (wf_table_of_set_args args del))) = (args_n args, args_R args)"
     and sig_since: "wf_table_sig wf_table_since = (args_n args, args_R args)"
     and keys_since: "wf_table_set wf_table_since = Mapping.keys tuple_since"
     using valid_before
-    by (auto simp: wf_table_sig_antijoin)
+    by (auto intro!: wf_table_sig_upd simp: wf_table_sig_antijoin)
   have "table (args_n args) (args_R args) (\<Union>(snd ` (set (linearize data_in))))"
     using valid_before
     by (auto simp: table_def)
   then have table_del: "table (args_n args) (args_R args) del"
     using fold_filter_set_sub[OF fold_filter_set] set_discard New_max.wf_atable_subset
     by fastforce
-  have keys_tuple_in'': "wf_table_set (wf_table_antijoin wf_table_in (wf_table_of_set_args args del)) = Mapping.keys tuple_in'"
-    by (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
+  have keys_tuple_in'': "wf_table_set (wf_table_upd args tuple_in' (\<lambda>_. wf_table_antijoin wf_table_in (wf_table_of_set_args args del))) = Mapping.keys tuple_in'"
+    by (rule wf_table_set_upd[OF table_in']) (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
         wf_table_set_antijoin[OF sig_in wf_table_sig_args subset_refl]
         join_False_alt join_eq[OF table_del wf_table_set_table[OF sig_in]]
         wf_table_set_table[OF wf_table_sig_args] wf_table_of_set_args[OF table_del])
@@ -264,7 +291,7 @@ fun add_new_ts_mmsaux' :: "args \<Rightarrow> ts \<Rightarrow> 'a mmsaux \<Right
     (data_prev, move) = takedropWhile_queue (\<lambda>(t, X). memL I (nt - t)) data_prev;
     data_in = fold (\<lambda>(t, X) data_in. append_queue (t, X) data_in) move data_in;
     (tuple_in, add) = fold (upd_set_keys (\<lambda>X t. {as \<in> X. valid_tuple tuple_since (t, as)})) move (tuple_in, {}) in
-    (nt, gc, maskL, maskR, data_prev, data_in, table_in \<union> add, wf_table_union wf_table_in (wf_table_of_set_args args add), tuple_in, wf_table_since, tuple_since))"
+    (nt, gc, maskL, maskR, data_prev, data_in, table_in \<union> add, wf_table_upd args tuple_in (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args add)), tuple_in, wf_table_since, tuple_since))"
 
 lemma Mapping_keys_fold_upd_set: "k \<in> Mapping.keys (fold (\<lambda>(t, X) m. upd_set m (\<lambda>_. t) (Z t X))
   xs m) \<Longrightarrow> k \<in> Mapping.keys m \<or> (\<exists>(t, X) \<in> set xs. k \<in> Z t X)"
@@ -417,11 +444,11 @@ proof -
     and set_in: "wf_table_set wf_table_in = Mapping.keys tuple_in"
     using valid_before
     by auto
-  have sig_in'': "wf_table_sig (wf_table_union wf_table_in (wf_table_of_set_args args add)) = (args_n args, args_R args)"
+  have sig_in'': "wf_table_sig (wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args add))) = (args_n args, args_R args)"
     and sig_since: "wf_table_sig wf_table_since = (args_n args, args_R args)"
     and keys_since: "wf_table_set wf_table_since = Mapping.keys tuple_since"
     using valid_before
-    by (auto simp: wf_table_sig_union wf_table_sig_args)
+    by (auto intro!: wf_table_sig_upd simp: wf_table_sig_union wf_table_sig_args)
   have "table (args_n args) (args_R args) (\<Union>(snd ` (set (linearize data_prev))))"
     using valid_before
     by (auto simp: table_def)
@@ -430,8 +457,9 @@ proof -
   ultimately have table_add: "table (args_n args) (args_R args) add"
     using fold_upd_set_keys_sub[OF _ aux] New_max.wf_atable_subset
     by fastforce
-  have keys_tuple_in'': "wf_table_set (wf_table_union wf_table_in (wf_table_of_set_args args add)) = Mapping.keys tuple_in'"
-    by (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
+  have keys_tuple_in'': "wf_table_set (wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args add))) = Mapping.keys tuple_in'"
+    by (rule wf_table_set_upd[OF table_in'[unfolded n_def R_def]])
+      (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
         wf_table_set_union[OF trans[OF sig_in wf_table_sig_args[symmetric]]]
         wf_table_of_set_args[OF table_add])
   have data_prev'_move: "(data_prev', move) =
@@ -439,7 +467,7 @@ proof -
     using takedropWhile_queue_fst takedropWhile_queue_snd data_prev'_def move_def
     by (metis surjective_pairing)
   moreover have "valid_mmsaux args nt (nt, gc, maskL, maskR, data_prev', data_in', table_in \<union> add,
-    wf_table_union wf_table_in (wf_table_of_set_args args add), tuple_in', wf_table_since, tuple_since) auxlist"
+    wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args add)), tuple_in', wf_table_since, tuple_since) auxlist"
     using lin_data_prev' sorted_lin_data_prev' lin_data_in' move_filter sorted_lin_data_in'
       nt_mono valid_before ts_tuple_rel' lookup' memL_mono[of "args_ivl args" "ot - a" "nt - a" for a]
       table_in' keys_tuple_in' sig_in'' keys_tuple_in'' sig_since keys_since unfolding I_def
@@ -820,7 +848,7 @@ fun gc_mmsaux :: "args \<Rightarrow> 'a mmsaux \<Rightarrow> 'a mmsaux" where
     (let all_tuples = \<Union>(snd ` (set (linearize data_prev) \<union> set (linearize data_in)));
     tuple_since' = Mapping.filter (\<lambda>as _. as \<in> all_tuples) tuple_since in
     (nt, nt, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in,
-     wf_table_of_set_args args (Mapping.keys tuple_since'), tuple_since'))"
+     wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since')), tuple_since'))"
 
 lemma valid_gc_mmsaux_unfolded:
   assumes valid_before: "valid_mmsaux args cur (nt, gc, maskL, maskR, data_prev, data_in,
@@ -873,10 +901,14 @@ proof -
     using Mapping.keys_filter valid_before
     by (auto simp add: tuple_since'_def Mapping.lookup_filter split: option.splits
         intro!: Mapping_keys_intro dest: Mapping.in_keysD)
+  have sig_since'': "wf_table_sig (wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since'))) = (args_n args, args_R args)"
+    by (auto intro!: wf_table_sig_upd simp: wf_table_sig_args)
+  have keys_since'': "wf_table_set (wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since'))) = Mapping.keys tuple_since'"
+    by (rule wf_table_set_upd[OF table_since'[unfolded n_def R_def]])
+      (auto simp: wf_table_of_set_args[OF table_since'[unfolded n_def R_def]])
   ultimately show ?thesis
-    using all_tuples_def tuple_since'_def valid_before table_since'
-      wf_table_of_set_args[OF table_since'[unfolded n_def R_def]]
-    by (auto simp add: n_def R_def Let_def wf_table_sig_args)
+    using all_tuples_def tuple_since'_def valid_before table_since' sig_since'' keys_since''
+    by (auto simp add: n_def R_def Let_def)
 qed
 
 lemma valid_gc_mmsaux: "valid_mmsaux args cur aux ys \<Longrightarrow> valid_mmsaux args cur (gc_mmsaux args aux) ys"
@@ -909,10 +941,10 @@ lemma minus_keys_code[code]: "minus_keys X m = {x \<in> X. case Mapping.lookup m
 fun add_new_table_mmsaux :: "args \<Rightarrow> 'a table \<Rightarrow> 'a mmsaux \<Rightarrow> 'a mmsaux" where
   "add_new_table_mmsaux args X (t, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) =
     (let X' = (minus_keys X tuple_since);
-         wf_table_since' = wf_table_union wf_table_since (wf_table_of_set_args args X');
-         tuple_since' = upd_set tuple_since (\<lambda>_. t) X' in
+         tuple_since' = upd_set tuple_since (\<lambda>_. t) X';
+         wf_table_since' = wf_table_upd args tuple_since' (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X')) in
     (if memL (args_ivl args) 0 then
-      (t, gc, maskL, maskR, data_prev, append_queue (t, X) data_in, table_in \<union> X, wf_table_union wf_table_in (wf_table_of_set_args args X), upd_set tuple_in (\<lambda>_. t) X, wf_table_since', tuple_since')
+      (t, gc, maskL, maskR, data_prev, append_queue (t, X) data_in, table_in \<union> X, wf_table_upd args (upd_set tuple_in (\<lambda>_. t) X) (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X)), upd_set tuple_in (\<lambda>_. t) X, wf_table_since', tuple_since')
     else (t, gc, maskL, maskR, append_queue (t, X) data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since', tuple_since')))"
 
 lemma valid_add_new_table_mmsaux_unfolded:
@@ -934,7 +966,7 @@ proof -
   define pos where "pos = args_pos args"
   define tuple_in' where "tuple_in' \<equiv> upd_set tuple_in (\<lambda>_. nt) X"
   define X' where "X' \<equiv> X - Mapping.keys tuple_since"
-  define wf_table_since' where "wf_table_since' \<equiv> wf_table_union wf_table_since (wf_table_of_set_args args X')"
+  define wf_table_since' where "wf_table_since' \<equiv> wf_table_upd args tuple_since' (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X'))"
   define tuple_since' where "tuple_since' \<equiv> upd_set tuple_since (\<lambda>_. nt) X'"
   define data_prev' where "data_prev' \<equiv> append_queue (nt, X) data_prev"
   define data_in' where "data_in' \<equiv> append_queue (nt, X) data_in"
@@ -1052,16 +1084,17 @@ proof -
     and set_since: "wf_table_set wf_table_since = Mapping.keys tuple_since"
     using valid_before
     by auto
-  have sig_since'': "wf_table_sig (wf_table_union wf_table_since (wf_table_of_set_args args X')) = (args_n args, args_R args)"
+  have sig_since'': "wf_table_sig (wf_table_upd args tuple_since' (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X'))) = (args_n args, args_R args)"
     and sig_since: "wf_table_sig wf_table_since = (args_n args, args_R args)"
     and keys_since: "wf_table_set wf_table_since = Mapping.keys tuple_since"
     using valid_before
-    by (auto simp: wf_table_sig_union wf_table_sig_args)
+    by (auto intro!: wf_table_sig_upd simp: wf_table_sig_union wf_table_sig_args)
   have table_X': "table (args_n args) (args_R args) X'"
     using assms(2)
     by (auto simp: X'_def table_def)
-  have keys_tuple_since'': "wf_table_set (wf_table_union wf_table_since (wf_table_of_set_args args X')) = Mapping.keys tuple_since'"
-    by (auto simp: keys_tuple_since'[symmetric] set_since[symmetric]
+  have keys_tuple_since'': "wf_table_set (wf_table_upd args tuple_since' (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X'))) = Mapping.keys tuple_since'"
+    by (rule wf_table_set_upd[OF table_since'[unfolded n_def R_def]])
+      (auto simp: keys_tuple_since'[symmetric] set_since[symmetric]
         wf_table_set_union[OF trans[OF sig_since wf_table_sig_args[symmetric]]]
         wf_table_of_set_args[OF table_X'])
   have table_in: "table (args_n args) (args_R args) (Mapping.keys tuple_in)"
@@ -1076,13 +1109,14 @@ proof -
     and set_in: "wf_table_set wf_table_in = Mapping.keys tuple_in"
     using valid_before
     by auto
-  have sig_in'': "wf_table_sig (wf_table_union wf_table_in (wf_table_of_set_args args X)) = (args_n args, args_R args)"
+  have sig_in'': "wf_table_sig (wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X))) = (args_n args, args_R args)"
     and sig_since: "wf_table_sig wf_table_since = (args_n args, args_R args)"
     and keys_since: "wf_table_set wf_table_since = Mapping.keys tuple_since"
     using valid_before
-    by (auto simp: wf_table_sig_union wf_table_sig_args)
-  have keys_tuple_in'': "wf_table_set (wf_table_union wf_table_in (wf_table_of_set_args args X)) = Mapping.keys tuple_in'"
-    by (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
+    by (auto intro!: wf_table_sig_upd simp: wf_table_sig_union wf_table_sig_args)
+  have keys_tuple_in'': "wf_table_set (wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X))) = Mapping.keys tuple_in'"
+    by (rule wf_table_set_upd[OF table_in'[unfolded n_def R_def]])
+      (auto simp: keys_tuple_in keys_tuple_in'[symmetric] set_in[symmetric]
         wf_table_set_union[OF trans[OF sig_in wf_table_sig_args[symmetric]]]
         wf_table_of_set_args[OF table_X])
   show ?thesis
@@ -1090,7 +1124,7 @@ proof -
     case True
     then have add_def: "add_new_table_mmsaux args X (nt, gc, maskL, maskR, data_prev, data_in,
       table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) = (nt, gc, maskL, maskR, data_prev, data_in',
-      table_in \<union> X, wf_table_union wf_table_in (wf_table_of_set_args args X), tuple_in', wf_table_since', tuple_since')"
+      table_in \<union> X, wf_table_upd args tuple_in' (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X)), tuple_in', wf_table_since', tuple_since')"
       using data_in'_def tuple_in'_def tuple_since'_def
       by (auto simp: Let_def I_def minus_keys_def wf_table_since'_def X'_def)
     have "\<forall>t \<in> fst ` set (linearize data_in'). t \<le> nt \<and> memL I (nt - t)"
