@@ -49,8 +49,10 @@ text \<open>
 code_printing code_module Config \<rightharpoonup> (OCaml)
 \<open>module Config : sig
   val generic_join : bool ref
+  val imperative_join : bool ref
 end = struct
   let generic_join = ref false
+  let imperative_join = ref false
 end\<close>
 | constant use_generic_join \<rightharpoonup> (OCaml) "'!Config.generic'_join"
 

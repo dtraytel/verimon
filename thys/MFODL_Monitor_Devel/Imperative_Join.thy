@@ -60,6 +60,34 @@ instance
 
 end
 
+text \<open>
+  Two adaptations for the generated OCaml code: @{const literal_string8} is the identity on the
+  common string representation (the adaptation in @{text Event_Data} prints it as @{text id},
+  which does not exist in OCaml's toplevel), and the hash of a string literal, defined in
+  @{text HashCode} as @{term "foldl (\<lambda>h c. h * 33 + uint32_of_int (of_char c)) 5381"} over
+  the exploded string, is computed directly over the bytes of the OCaml string with wrap-around
+  32-bit arithmetic instead of materialising a character list first.
+\<close>
+
+text \<open>
+  The default OCaml code for the conversions between @{typ integer} and @{typ uint32} tests
+  bits one by one and re-parses big-integer literals from strings on every call, which
+  dominated the cost of hashing. Both conversions are total functions on machine integers:
+  @{term "Uint32 i"} is @{text i} modulo \<open>2\<^sup>3\<^sup>2\<close> (OCaml's @{text Int32.of_int} takes the low 32
+  bits) and @{term "integer_of_uint32 w"} is the unsigned value of @{text w}.
+\<close>
+
+code_printing
+  constant "Uint32 :: integer \<Rightarrow> uint32" \<rightharpoonup> (OCaml)
+    "Int32.of'_int (Z.to'_int (Z.logand _ (Z.of'_int 4294967295)))"
+| constant "integer_of_uint32 :: uint32 \<Rightarrow> integer" \<rightharpoonup> (OCaml)
+    "Z.of'_int ((Int32.to'_int _) land 4294967295)"
+
+code_printing
+  constant "literal_string8 :: string8 \<Rightarrow> String.literal" \<rightharpoonup> (OCaml) "(fun x -> x)"
+| constant "hashcode :: String.literal \<Rightarrow> uint32" \<rightharpoonup> (OCaml)
+    "(fun s -> let h = ref 5381l in String.iter (fun c -> h := Int32.add (Int32.mul !h 33l) (Int32.of'_int (Char.code c))) s; !h)"
+
 subsection \<open>Running heap computations from pure code\<close>
 
 text \<open>
@@ -214,6 +242,17 @@ qed
 
 subsection \<open>Code equation\<close>
 
+text \<open>
+  As for the multi-way join strategy, the choice between the persistent index
+  (@{const probe_join}) and the imperative hash index (@{const hprobe_join}) is left open in
+  the formalization through an unspecified constant, proved correct for both values and read
+  from a mutable flag by the generated code (command line option @{text "-imperative_join"}).
+\<close>
+
+consts use_imperative_join :: bool
+
+code_printing constant use_imperative_join \<rightharpoonup> (OCaml) "'!Config.imperative'_join"
+
 declare [[code drop: bin_join]]
 
 lemma bin_join_code_imp[code]:
@@ -228,7 +267,9 @@ lemma bin_join_code_imp[code]:
         (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
       then (case ID CCOMPARE('a tuple) of
           None \<Rightarrow> (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)
-        | Some _ \<Rightarrow> (if card t \<le> card t' then hprobe_join (A \<inter> A') t t' else hprobe_join (A \<inter> A') t' t))
+        | Some _ \<Rightarrow> (if use_imperative_join
+            then (if card t \<le> card t' then hprobe_join (A \<inter> A') t t' else hprobe_join (A \<inter> A') t' t)
+            else (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)))
     else join t pos t')"
   by (subst bin_join.simps) (auto simp: probe_join_join hprobe_join_join join_commute split: option.splits)
 

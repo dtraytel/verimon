@@ -1,5 +1,6 @@
 let no_mw = ref false
 let generic_join = ref false
+let imperative_join = ref false
 
 module Monitor = struct
   type t = {
@@ -70,6 +71,7 @@ let monitor_gen parse dbschema logfile fv f =
     Verified.Monitor.Inr cf ->
       let cf = if !no_mw then cf else Verified.Monitor.convert_multiway cf in
       Verified.Config.generic_join := !generic_join;
+      Verified.Config.imperative_join := !imperative_join;
       let ctxt = Monitor.{
         fv_pos;
         cur_tp = 0;

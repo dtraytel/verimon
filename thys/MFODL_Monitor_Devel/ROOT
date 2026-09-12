@@ -5,6 +5,11 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     IEEE_Floating_Point
     Generic_Join_Devel
     "HOL-Data_Structures"
+    "HOL-Imperative_HOL"
+    Automatic_Refinement
+    Collections
+    Native_Word
+    Separation_Logic_Imperative_HOL
   theories
     Cluster
     Mapping_Code
@@ -45,6 +50,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Optimized_Agg_Temporal
     Monitor_Impl
     Code_Opt
+    Imperative_Join
   theories [document=false]
     Monitor_Code
   document_files

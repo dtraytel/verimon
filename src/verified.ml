@@ -53,6 +53,80 @@ end = struct
   let compare x y = Z.of_int (Stdlib.compare x y);;
 end;;
 
+
+module Bit_Shifts : sig
+  val push : Z.t -> Z.t -> Z.t
+  val drop : Z.t -> Z.t -> Z.t
+end = struct
+
+let rec fold f xs y = match xs with
+  [] -> y
+  | (x :: xs) -> fold f xs (f x y);;
+
+let rec replicate n x = (if Z.leq n Z.zero then [] else x :: replicate (Z.pred n) x);;
+
+let max_index = Z.of_int max_int;;
+
+let splitIndex i = let (b, s) = Z.div_rem i max_index
+  in Z.to_int s :: replicate b max_int;;
+
+let push' i k = Z.shift_left k i;;
+
+let drop' i k = Z.shift_right k i;;
+
+(* The implementations are formally total, though indices >~ max_index will produce heavy computation load *)
+
+let push i = fold push' (splitIndex (Z.abs i));;
+
+let drop i = fold drop' (splitIndex (Z.abs i));;
+
+end;;
+
+
+module Str_Literal : sig
+  val literal_of_asciis : Z.t list -> string
+  val asciis_of_literal: string -> Z.t list
+end = struct
+
+(* deliberate clones not relying on List._ module *)
+
+let rec length xs = match xs with
+    [] -> 0
+  | x :: xs -> 1 + length xs;;
+
+let rec nth xs n = match xs with
+  (x :: xs) -> if n <= 0 then x else nth xs (n - 1);;
+
+let rec map_range f n =
+  if n <= 0
+    then []
+    else
+      let m = n - 1
+    in map_range f m @ [f m];;
+
+let implode f xs =
+  String.init (length xs) (fun n -> f (nth xs n));;
+
+let explode f s =
+  map_range (fun n -> f (String.get s n)) (String.length s);;
+
+let z_128 = Z.of_int 128;;
+
+let check_ascii k =
+  if 0 <= k && k < 128
+  then k
+  else failwith "Non-ASCII character in literal";;
+
+let char_of_ascii k = Char.chr (Z.to_int (Z.rem k z_128));;
+
+let ascii_of_char c = Z.of_int (check_ascii (Char.code c));;
+
+let literal_of_asciis ks = implode char_of_ascii ks;;
+
+let asciis_of_literal s = explode ascii_of_char s;;
+
+end;;
+
 module Monitor : sig
   type ('a, 'b) phantom
   type set_impla
@@ -2601,6 +2675,28 @@ let rec equal_lista _A
 
 let rec equal_list _A = ({equal = equal_lista _A} : ('a list) equal);;
 
+type typerepa = Typerep of string * typerepa list;;
+
+type 'a itself = Type;;
+
+type 'a typerep = {typerep : 'a itself -> typerepa};;
+let typerep _A = _A.typerep;;
+
+let rec typerep_lista _A t = Typerep ("List.list", [typerep _A Type]);;
+
+type 'a countable = unit;;
+
+type 'a heap = {countable_heap : 'a countable; typerep_heap : 'a typerep};;
+
+let rec countable_list _A = (() : ('a list) countable);;
+
+let rec typerep_list _A = ({typerep = typerep_lista _A} : ('a list) typerep);;
+
+let rec heap_list _A =
+  ({countable_heap = (countable_list _A.countable_heap);
+     typerep_heap = (typerep_list _A.typerep_heap)}
+    : ('a list) heap);;
+
 let rec equality_list
   eq_a x1 x2 = match eq_a, x1, x2 with eq_a, [], [] -> true
     | eq_a, [], y :: ya -> false
@@ -2611,6 +2707,30 @@ let rec ceq_lista _A
   = (match ceq _A with None -> None | Some eq_a -> Some (equality_list eq_a));;
 
 let rec ceq_list _A = ({ceq = ceq_lista _A} : ('a list) ceq);;
+
+type 'a hashable =
+  {hashcode : 'a -> int32; def_hashmap_size : 'a itself -> nat};;
+let hashcode _A = _A.hashcode;;
+let def_hashmap_size _A = _A.def_hashmap_size;;
+
+let rec def_hashmap_size_list _A
+  = (fun _ ->
+      times_nata (nat_of_integer (Z.of_int 2)) (def_hashmap_size _A Type));;
+
+let rec foldl f a x2 = match f, a, x2 with f, a, [] -> a
+                | f, a, x :: xs -> foldl f (f a x) xs;;
+
+let rec hashcode_list _A
+  = foldl (fun h x ->
+            Int32.add
+              (Int32.mul h
+                (Int32.of_int (Z.to_int (Z.logand (Z.of_int 33) (Z.of_int 4294967295)))))
+              (hashcode _A x))
+      (Int32.of_int (Z.to_int (Z.logand (Z.of_int 5381) (Z.of_int 4294967295))));;
+
+let rec hashable_list _A =
+  ({hashcode = hashcode_list _A; def_hashmap_size = def_hashmap_size_list _A} :
+    ('a list) hashable);;
 
 let set_impl_lista : (('a list), set_impla) phantom = Phantom Set_Choose;;
 
@@ -2944,6 +3064,18 @@ let ccompare_trm = ({ccompare = ccompare_trma} : trm ccompare);;
 
 let rec equal_option _A = ({equal = equal_optiona _A} : ('a option) equal);;
 
+let rec typerep_optiona _A t = Typerep ("Option.option", [typerep _A Type]);;
+
+let rec countable_option _A = (() : ('a option) countable);;
+
+let rec typerep_option _A =
+  ({typerep = typerep_optiona _A} : ('a option) typerep);;
+
+let rec heap_option _A =
+  ({countable_heap = (countable_option _A.countable_heap);
+     typerep_heap = (typerep_option _A.typerep_heap)}
+    : ('a option) heap);;
+
 let rec equality_option
   eq_a x1 x2 = match eq_a, x1, x2 with eq_a, None, None -> true
     | eq_a, None, Some y -> false
@@ -2955,6 +3087,18 @@ let rec ceq_optiona _A
       | Some eq_a -> Some (equality_option eq_a));;
 
 let rec ceq_option _A = ({ceq = ceq_optiona _A} : ('a option) ceq);;
+
+let rec def_hashmap_size_option _A
+  = (fun _ -> plus_nata (def_hashmap_size _A Type) one_nata);;
+
+let rec hashcode_option _A
+  opt = (match opt with None -> Int32.zero
+          | Some a -> Int32.add (hashcode _A a) Int32.one);;
+
+let rec hashable_option _A =
+  ({hashcode = hashcode_option _A;
+     def_hashmap_size = def_hashmap_size_option _A}
+    : ('a option) hashable);;
 
 let rec comparator_option
   comp_a x1 x2 = match comp_a, x1, x2 with comp_a, None, None -> Eqa
@@ -3122,6 +3266,19 @@ let ccompare_enat = ({ccompare = ccompare_enata} : enat ccompare);;
 let rec equal_proda _A _B (x1, x2) (y1, y2) = eq _A x1 y1 && eq _B x2 y2;;
 
 let rec equal_prod _A _B = ({equal = equal_proda _A _B} : ('a * 'b) equal);;
+
+let rec typerep_proda _A _B
+  t = Typerep ("Product_Type.prod", [typerep _A Type; typerep _B Type]);;
+
+let rec countable_prod _A _B = (() : ('a * 'b) countable);;
+
+let rec typerep_prod _A _B =
+  ({typerep = typerep_proda _A _B} : ('a * 'b) typerep);;
+
+let rec heap_prod _A _B =
+  ({countable_heap = (countable_prod _A.countable_heap _B.countable_heap);
+     typerep_heap = (typerep_prod _A.typerep_heap _B.typerep_heap)}
+    : ('a * 'b) heap);;
 
 let rec equality_prod eq_a eq_b (x, xa) (y, ya) = eq_a x y && eq_b xa ya;;
 
@@ -3302,6 +3459,17 @@ let linorder_integer = ({order_linorder = order_integer} : Z.t linorder);;
 
 let equal_event_data = ({equal = equal_event_dataa} : event_data equal);;
 
+let rec typerep_event_dataa t = Typerep ("Event_Data.event_data", []);;
+
+let countable_event_data = (() : event_data countable);;
+
+let typerep_event_data =
+  ({typerep = typerep_event_dataa} : event_data typerep);;
+
+let heap_event_data =
+  ({countable_heap = countable_event_data; typerep_heap = typerep_event_data} :
+    event_data heap);;
+
 let rec less_eq_event_data
   x0 x1 = match x0, x1 with EInt x, EInt y -> Z.leq x y
     | EFloat x, EFloat y -> Stdlib.(<=) x y
@@ -3323,6 +3491,23 @@ let ceq_event_dataa : (event_data -> event_data -> bool) option
   = Some equal_event_dataa;;
 
 let ceq_event_data = ({ceq = ceq_event_dataa} : event_data ceq);;
+
+let rec def_hashmap_size_event_data uu = nat_of_integer (Z.of_int 16);;
+
+let rec hashcode_integer
+  i = Int32.of_int (Z.to_int (Z.logand i (Z.of_int 4294967295)));;
+
+let rec hashcode_event_data
+  = function EInt i -> hashcode_integer i
+    | EFloat d -> hashcode_integer (Z.of_float d)
+    | EString s ->
+        (fun s -> let h = ref 5381l in String.iter (fun c -> h := Int32.add (Int32.mul !h 33l) (Int32.of_int (Char.code c))) s; !h)
+          ((fun x -> x) s);;
+
+let hashable_event_data =
+  ({hashcode = hashcode_event_data;
+     def_hashmap_size = def_hashmap_size_event_data}
+    : event_data hashable);;
 
 let set_impl_event_dataa : (event_data, set_impla) phantom = Phantom Set_RBT;;
 
@@ -3543,6 +3728,8 @@ type 'a wf_wbt = Abs_wf_wbt of ('a * nat) tree;;
 
 type 'a treelist = Collapse of 'a wf_wbt;;
 
+type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
+
 type list_aux = LInt of Z.t treelist | LString of string treelist;;
 
 type aggaux = CntAux of (((event_data option) list), nat) mapping |
@@ -3652,6 +3839,18 @@ let rec bind (_A1, _A2) (_B1, _B2, _B3)
             foldc _A1 (comp (sup_seta (_B1, _B2)) f) dxs
               (bot_set (_B1, _B2, _B3)))
     | Set_Monad xs, f -> fold (comp (sup_seta (_B1, _B2)) f) xs (Set_Monad []);;
+
+let rec len _A
+  a = (fun f_ () -> f_ (((fun () -> Z.of_int (Array.length a))) ()) ())
+        (fun i -> (fun () -> (nat_of_integer i)));;
+
+let rec ntha _A a n = (fun () -> Array.get a (Z.to_int (integer_of_nat n)));;
+
+let rec upd _A
+  i x a =
+    (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int (integer_of_nat i)) x))
+      ()) ())
+      (fun _ -> (fun () -> a));;
 
 let rec drop
   n x1 = match n, x1 with n, [] -> []
@@ -3878,9 +4077,6 @@ let rec image (_A1, _A2) (_B1, _B2, _B3)
     | f, Set_Monad xs -> Set_Monad (mapa f xs);;
 
 let tt : 'a formula = Eq (Const (EInt Z.zero), Const (EInt Z.zero));;
-
-let rec foldl f a x2 = match f, a, x2 with f, a, [] -> a
-                | f, a, x :: xs -> foldl f (f a x) xs;;
 
 let rec foldr f x1 = match f, x1 with f, [] -> id
                 | f, x :: xs -> comp (f x) (foldr f xs);;
@@ -4619,8 +4815,8 @@ let rec check_pred
           binda (check_pred p (comp f e) trms (mapa f ts))
             (fun fa -> Inr (comp fa f)))
     | p, e, [], [] -> Inr id
-    | p, e, [], v :: va -> Inl ("wrong arity for predicate " ^ id p)
-    | p, e, v :: va, [] -> Inl ("wrong arity for predicate " ^ id p);;
+    | p, e, [], v :: va -> Inl ("wrong arity for predicate " ^ (fun x -> x) p)
+    | p, e, v :: va, [] -> Inl ("wrong arity for predicate " ^ (fun x -> x) p);;
 
 let rec check_ands_f
   check s e =
@@ -4648,7 +4844,8 @@ let rec check
   s e x2 = match s, e, x2 with
     s, e, Pred (r, ts) ->
       (match s (r, size_lista ts)
-        with None -> Inl (("unknown predicate " ^ id r) ^ " in input formula")
+        with None ->
+          Inl (("unknown predicate " ^ (fun x -> x) r) ^ " in input formula")
         | Some a -> check_pred r e ts a)
     | s, e, Let (p, phi, psi) ->
         (let f0 = funpow (nfv phi) new_type_symbol in
@@ -5580,6 +5777,51 @@ let rec productb _A _B
       (foldc _A (fun a -> foldc _B (fun c -> (fun b -> (a, c) :: b)) dxs2) dxs1
         []);;
 
+let rec ht_new_sz (_A1, _A2) _B
+  n = (let l = replicate n [] in
+        (fun f_ () -> f_ (((fun () -> Array.of_list l)) ()) ())
+          (fun a -> (fun () -> (HashTable (a, zero_nata)))));;
+
+let rec ht_new (_A1, _A2) _B
+  = ht_new_sz (_A1, _A2) _B (def_hashmap_size _A1 Type);;
+
+let rec nat_of_uint32
+  x = nat_of_integer (Z.of_int ((Int32.to_int x) land 4294967295));;
+
+let rec nat_of_hashcode x = nat_of_uint32 x;;
+
+let rec bounded_hashcode_nat _A
+  n x = modulo_nata (nat_of_hashcode (hashcode _A x)) n;;
+
+let rec the_array (HashTable (a, uu)) = a;;
+
+let rec ls_update _A
+  k v x2 = match k, v, x2 with k, v, [] -> ([(k, v)], false)
+    | k, v, (l, w) :: ls ->
+        (if eq _A k l then ((k, v) :: ls, true)
+          else (let r = ls_update _A k v ls in ((l, w) :: fst r, snd r)));;
+
+let rec the_size (HashTable (uu, n)) = n;;
+
+let rec ht_upd (_A1, _A2, _A3) _B
+  k v ht =
+    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
+      ())
+      (fun m ->
+        (let i = bounded_hashcode_nat _A2 m k in
+          (fun f_ () -> f_
+            ((ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i) ()) ())
+            (fun l ->
+              (let la = ls_update _A1 k v l in
+                (fun f_ () -> f_
+                  ((upd (heap_list (heap_prod _A3 _B)) i (fst la)
+                     (the_array ht))
+                  ()) ())
+                  (fun _ ->
+                    (let n = (if snd la then the_size ht else suc (the_size ht))
+                       in
+                      (fun () -> (HashTable (the_array ht, n)))))))));;
+
 let rec flip_int
   xa = Abs_I (if bounded xa
                then ((fun i -> not (memR xa i)), ((fun _ -> true), false))
@@ -6484,6 +6726,126 @@ let rec proj_tuple_in_join (_A1, _A2)
                    (ccompare_list (ccompare_option _A2)))
                  (proj_tuple bs asa) t));;
 
+let rec bucket_list = function None -> []
+                      | Some l -> l;;
+
+let load_factor : nat = nat_of_integer (Z.of_int 75);;
+
+let rec ht_insls (_A1, _A2, _A3) _B
+  x0 ht = match x0, ht with [], ht -> (fun () -> ht)
+    | (k, v) :: l, ht ->
+        (fun f_ () -> f_ ((ht_upd (_A1, _A2, _A3) _B k v ht) ()) ())
+          (ht_insls (_A1, _A2, _A3) _B l);;
+
+let rec ht_copy (_A1, _A2, _A3) _B
+  n src dst =
+    (if equal_nata n zero_nata then (fun () -> dst)
+      else (fun f_ () -> f_
+             ((ntha (heap_list (heap_prod _A3 _B)) (the_array src)
+                (minus_nata n one_nata))
+             ()) ())
+             (fun l ->
+               (fun f_ () -> f_ ((ht_insls (_A1, _A2, _A3) _B l dst) ()) ())
+                 (ht_copy (_A1, _A2, _A3) _B (minus_nata n one_nata) src)));;
+
+let rec ht_rehash (_A1, _A2, _A3) _B
+  ht = (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
+         ())
+         (fun n ->
+           (fun f_ () -> f_
+             ((ht_new_sz (_A2, _A3) _B
+                (times_nata (nat_of_integer (Z.of_int 2)) n))
+             ()) ())
+             (ht_copy (_A1, _A2, _A3) _B n ht));;
+
+let rec ht_update (_A1, _A2, _A3) _B
+  k v ht =
+    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
+      ())
+      (fun m ->
+        (fun f_ () -> f_
+          ((if less_eq_nat (times_nata m load_factor)
+                 (times_nata (the_size ht) (nat_of_integer (Z.of_int 100)))
+             then ht_rehash (_A1, _A2, _A3) _B ht else (fun () -> ht))
+          ()) ())
+          (ht_upd (_A1, _A2, _A3) _B k v));;
+
+let rec ls_lookup _A
+  x xa1 = match x, xa1 with x, [] -> None
+    | x, (k, v) :: l -> (if eq _A x k then Some v else ls_lookup _A x l);;
+
+let rec ht_lookup (_A1, _A2, _A3) _B
+  x ht =
+    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
+      ())
+      (fun m ->
+        (let i = bounded_hashcode_nat _A2 m x in
+          (fun f_ () -> f_
+            ((ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i) ()) ())
+            (fun l -> (fun () -> (ls_lookup _A1 x l)))));;
+
+let rec hm_insert_all (_A1, _A2, _A3)
+  i x1 ht = match i, x1, ht with i, [], ht -> (fun () -> ht)
+    | i, x :: xs, ht ->
+        (fun f_ () -> f_
+          ((ht_lookup
+             ((equal_list (equal_option _A1)),
+               (hashable_list (hashable_option _A2)),
+               (heap_list (heap_option _A3)))
+             (heap_list (heap_list (heap_option _A3))) (restrict i x) ht)
+          ()) ())
+          (fun b ->
+            (fun f_ () -> f_
+              ((ht_update
+                 ((equal_list (equal_option _A1)),
+                   (hashable_list (hashable_option _A2)),
+                   (heap_list (heap_option _A3)))
+                 (heap_list (heap_list (heap_option _A3))) (restrict i x)
+                 (x :: bucket_list b) ht)
+              ()) ())
+              (hm_insert_all (_A1, _A2, _A3) i xs));;
+
+let rec probe_all (_A1, _A2, _A3, _A4, _A5)
+  i x1 ht acc = match i, x1, ht, acc with i, [], ht, acc -> (fun () -> acc)
+    | i, y :: ys, ht, acc ->
+        (fun f_ () -> f_
+          ((ht_lookup
+             ((equal_list (equal_option _A3)),
+               (hashable_list (hashable_option _A4)),
+               (heap_list (heap_option _A5)))
+             (heap_list (heap_list (heap_option _A5))) (restrict i y) ht)
+          ()) ())
+          (fun b ->
+            probe_all (_A1, _A2, _A3, _A4, _A5) i ys ht
+              (fold (fun x -> join1_insert (_A1, _A2, _A3) x y) (bucket_list b)
+                acc));;
+
+let rec probe_join_imp (_A1, _A2, _A3, _A4, _A5)
+  i xs ys =
+    (fun f_ () -> f_
+      ((ht_new
+         ((hashable_list (hashable_option _A4)), (heap_list (heap_option _A5)))
+         (heap_list (heap_list (heap_option _A5))))
+      ()) ())
+      (fun ht ->
+        (fun f_ () -> f_ ((hm_insert_all (_A3, _A4, _A5) i xs ht) ()) ())
+          (fun hta ->
+            probe_all (_A1, _A2, _A3, _A4, _A5) i ys hta
+              (set_empty
+                ((ceq_list (ceq_option _A1)),
+                  (ccompare_list (ccompare_option _A2)))
+                (of_phantom set_impl_lista))));;
+
+let rec hprobe_join (_A1, _A2, _A3, _A4, _A5)
+  i ta t =
+    ((probe_join_imp (_A1, _A2, _A3, _A4, _A5) i
+       (csorted_list_of_set
+         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+         ta)
+       (csorted_list_of_set
+         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+         t)) ());;
+
 let rec minus_comp
   comp t1 t2 =
     (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
@@ -6556,7 +6918,7 @@ let rec probe_join (_A1, _A2, _A3)
         (of_phantom set_impl_lista))
       t;;
 
-let rec bin_join (_A1, _A2, _A3)
+let rec bin_join (_A1, _A2, _A3, _A4, _A5)
   n aa ta pos a t =
     (if is_empty
           (card_UNIV_list, (ceq_list (ceq_option _A1)),
@@ -6619,20 +6981,34 @@ let rec bin_join (_A1, _A2, _A3)
                   ball ((ceq_list (ceq_option _A1)),
                          (ccompare_list (ccompare_option _A2)))
                     t (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))))
-        then (if less_eq_nat
-                   (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
-                           (ccompare_list (ccompare_option _A2)))
-                     ta)
-                   (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
-                           (ccompare_list (ccompare_option _A2)))
-                     t)
-               then probe_join (_A1, _A2, _A3)
-                      (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
-               else probe_join (_A1, _A2, _A3)
-                      (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
+        then (match ccompare_lista (ccompare_option _A2)
+               with None ->
+                 (if less_eq_nat
+                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                               (ccompare_list (ccompare_option _A2)))
+                         ta)
+                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                               (ccompare_list (ccompare_option _A2)))
+                         t)
+                   then probe_join (_A1, _A2, _A3)
+                          (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+                   else probe_join (_A1, _A2, _A3)
+                          (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
+               | Some _ ->
+                 (if less_eq_nat
+                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                               (ccompare_list (ccompare_option _A2)))
+                         ta)
+                       (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
+                               (ccompare_list (ccompare_option _A2)))
+                         t)
+                   then hprobe_join (_A1, _A2, _A3, _A4, _A5)
+                          (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+                   else hprobe_join (_A1, _A2, _A3, _A4, _A5)
+                          (inf_seta (ceq_nat, ccompare_nat) aa a) t ta))
         else join (_A1, _A2, _A3) ta pos t)))))));;
 
-let rec idx_join _A (_B1, _B2, _B3)
+let rec idx_join _A (_B1, _B2, _B3, _B4, _B5)
   n aa ta a t =
     filterc _A
       (fun _ tb ->
@@ -6640,8 +7016,8 @@ let rec idx_join _A (_B1, _B2, _B3)
               (card_UNIV_list, (ceq_list (ceq_option _B1)),
                 (cproper_interval_list (ccompare_option _B2)))
               tb))
-      (mapping_join _A (fun tb -> bin_join (_B1, _B2, _B3) n aa tb true a) ta
-        t);;
+      (mapping_join _A
+        (fun tb -> bin_join (_B1, _B2, _B3, _B4, _B5) n aa tb true a) ta t);;
 
 let rec comp_fun_commute_apply (Abs_comp_fun_commute x) = x;;
 
@@ -9814,7 +10190,7 @@ let rec mmulti_joina (_A1, _A2)
        in
       new_max_getIJ_wrapperGenericJoin (_A1, _A2) q a);;
 
-let rec mmulti_join_gen (_A1, _A2, _A3)
+let rec mmulti_join_gen (_A1, _A2, _A3, _A4, _A5)
   n a_pos a_neg l =
     (if not (equal_nata (plus_nata (size_lista a_pos) (size_lista a_neg))
               (size_lista l))
@@ -9830,35 +10206,37 @@ let rec mmulti_join_gen (_A1, _A2, _A3)
                    with None -> mmulti_joina (_A1, _A2) a_pos a_neg l
                    | Some (((a_zs, (a_x, a_xs)), (a_ws, (a_y, a_ys))),
                             ((zs, (x, xs)), (ws, (y, ys))))
-                     -> mmulti_join_gen (_A1, _A2, _A3) n (a_zs @ a_x :: a_xs)
-                          (a_ws @ a_ys)
-                          ((zs @ bin_join (_A1, _A2, _A3) n a_x x false a_y y ::
+                     -> mmulti_join_gen (_A1, _A2, _A3, _A4, _A5) n
+                          (a_zs @ a_x :: a_xs) (a_ws @ a_ys)
+                          ((zs @ bin_join (_A1, _A2, _A3, _A4, _A5) n a_x x
+                                   false a_y y ::
                                    xs) @
                             ws @ ys))
                | Some ((a_zs, (a_x, (a_xs, (a_y, a_ys)))),
                         (zs, (x, (xs, (y, ys)))))
-                 -> mmulti_join_gen (_A1, _A2, _A3) n
+                 -> mmulti_join_gen (_A1, _A2, _A3, _A4, _A5) n
                       (a_zs @
                         sup_seta (ceq_nat, ccompare_nat) a_x a_y :: a_xs @ a_ys)
                       a_neg
-                      ((zs @ bin_join (_A1, _A2, _A3) n a_x x true a_y y ::
+                      ((zs @ bin_join (_A1, _A2, _A3, _A4, _A5) n a_x x true a_y
+                               y ::
                                xs @ ys) @
                         l_neg))));;
 
-let rec mmulti_join_pos (_A1, _A2, _A3)
+let rec mmulti_join_pos (_A1, _A2, _A3, _A4, _A5)
   n a t x3 = match n, a, t, x3 with n, a, t, [] -> (a, t)
     | n, aa, ta, (a, t) :: l ->
-        mmulti_join_pos (_A1, _A2, _A3) n
+        mmulti_join_pos (_A1, _A2, _A3, _A4, _A5) n
           (sup_seta (ceq_nat, ccompare_nat) aa a)
-          (bin_join (_A1, _A2, _A3) n aa ta true a t) l;;
+          (bin_join (_A1, _A2, _A3, _A4, _A5) n aa ta true a t) l;;
 
-let rec mmulti_join_neg (_A1, _A2, _A3)
+let rec mmulti_join_neg (_A1, _A2, _A3, _A4, _A5)
   n a t x3 = match n, a, t, x3 with n, a, t, [] -> t
     | n, aa, ta, (a, t) :: l ->
-        mmulti_join_neg (_A1, _A2, _A3) n aa
-          (bin_join (_A1, _A2, _A3) n aa ta false a t) l;;
+        mmulti_join_neg (_A1, _A2, _A3, _A4, _A5) n aa
+          (bin_join (_A1, _A2, _A3, _A4, _A5) n aa ta false a t) l;;
 
-let rec mmulti_join_pw (_A1, _A2, _A3)
+let rec mmulti_join_pw (_A1, _A2, _A3, _A4, _A5)
   n a_pos a_neg l =
     (match zip a_pos l
       with [] ->
@@ -9866,15 +10244,15 @@ let rec mmulti_join_pw (_A1, _A2, _A3)
           ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
           (of_phantom set_impl_lista)
       | (a, t) :: lpos ->
-        (let (aa, ta) = mmulti_join_pos (_A1, _A2, _A3) n a t lpos in
-          mmulti_join_neg (_A1, _A2, _A3) n aa ta
+        (let (aa, ta) = mmulti_join_pos (_A1, _A2, _A3, _A4, _A5) n a t lpos in
+          mmulti_join_neg (_A1, _A2, _A3, _A4, _A5) n aa ta
             (zip a_neg (drop (size_lista a_pos) l))));;
 
-let rec mmulti_join (_A1, _A2, _A3)
+let rec mmulti_join (_A1, _A2, _A3, _A4, _A5)
   n a_pos a_neg l =
     (if !Config.generic_join
-      then mmulti_join_gen (_A1, _A2, _A3) n a_pos a_neg l
-      else mmulti_join_pw (_A1, _A2, _A3) n a_pos a_neg l);;
+      then mmulti_join_gen (_A1, _A2, _A3, _A4, _A5) n a_pos a_neg l
+      else mmulti_join_pw (_A1, _A2, _A3, _A4, _A5) n a_pos a_neg l);;
 
 let rec idx_create (_A1, _A2)
   t x = cluster
@@ -10256,7 +10634,7 @@ let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
       else failwith "upd_set: infinite"
              (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
 
-let rec wf_set_antijoin (_A1, _A2, _A3)
+let rec wf_set_antijoin (_A1, _A2, _A3, _A4, _A5)
   xb xc =
     Abs_wf_set
       ((let (n, (a, t)) = rep_wf_set xb in
@@ -10264,7 +10642,7 @@ let rec wf_set_antijoin (_A1, _A2, _A3)
            (if equal_nata n na &&
                  less_eq_set (cenum_nat, ceq_nat, ccompare_nat) aa a
              then (n, (sup_seta (ceq_nat, ccompare_nat) a aa,
-                        bin_join (_A1, _A2, _A3) n a t false aa ta))
+                        bin_join (_A1, _A2, _A3, _A4, _A5) n a t false aa ta))
              else (n, (a, t)))))
         (rep_wf_set xc));;
 
@@ -10276,7 +10654,7 @@ let rec mapping_antijoin _A
           (fun _ -> mapping_antijoin _A (RBT_Mapping t) (RBT_Mapping u))
       | Some _ -> RBT_Mapping (diff _A t u));;
 
-let rec idx_antijoin _A (_B1, _B2, _B3)
+let rec idx_antijoin _A (_B1, _B2, _B3, _B4, _B5)
   n aa ta a t =
     combine _A
       (sup_seta
@@ -10288,10 +10666,11 @@ let rec idx_antijoin _A (_B1, _B2, _B3)
                 (card_UNIV_list, (ceq_list (ceq_option _B1)),
                   (cproper_interval_list (ccompare_option _B2)))
                 tb))
-        (mapping_join _A (fun tb -> bin_join (_B1, _B2, _B3) n aa tb false a) ta
+        (mapping_join _A
+          (fun tb -> bin_join (_B1, _B2, _B3, _B4, _B5) n aa tb false a) ta
           t));;
 
-let rec wf_idx_antijoin (_A1, _A2, _A3)
+let rec wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5)
   xb xc =
     Abs_wf_idx
       ((let (n, (a, (i, t))) = rep_wf_idx xb in
@@ -10306,26 +10685,27 @@ let rec wf_idx_antijoin (_A1, _A2, _A3)
                       else (let ic = idx_reindex (_A1, _A2) ib i t in
                             let iaa = idx_reindex (_A1, _A2) ib ia ta in
                              (n, (a, (ib, idx_antijoin
-    (ccompare_list (ccompare_option _A2)) (_A1, _A2, _A3) n a ic aa iaa))))))
+    (ccompare_list (ccompare_option _A2)) (_A1, _A2, _A3, _A4, _A5) n a ic aa
+    iaa))))))
              else (n, (a, (i, t))))))
         (rep_wf_idx xc));;
 
-let rec wf_table_antijoin (_A1, _A2, _A3)
+let rec wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
   x0 x1 = match x0, x1 with
     Wf_table_of_idx ia, Wf_table_of_idx i ->
-      Wf_table_of_idx (wf_idx_antijoin (_A1, _A2, _A3) ia i)
+      Wf_table_of_idx (wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5) ia i)
     | Wf_table_of_idx i, Wf_table_of_wf_set t ->
         Wf_table_of_idx
-          (wf_idx_antijoin (_A1, _A2, _A3) i
+          (wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5) i
             (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t))
     | Wf_table_of_wf_set ta, Wf_table_of_wf_set t ->
-        Wf_table_of_wf_set (wf_set_antijoin (_A1, _A2, _A3) ta t)
+        Wf_table_of_wf_set (wf_set_antijoin (_A1, _A2, _A3, _A4, _A5) ta t)
     | Wf_table_of_wf_set t, Wf_table_of_idx i ->
         Wf_table_of_idx
-          (wf_idx_antijoin (_A1, _A2, _A3)
+          (wf_idx_antijoin (_A1, _A2, _A3, _A4, _A5)
             (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i);;
 
-let rec shift_end (_A1, _A2, _A3)
+let rec shift_end (_A1, _A2, _A3, _A4, _A5)
   args nt
     (t, (gc, (maskL,
                (maskR,
@@ -10363,7 +10743,8 @@ let rec shift_end (_A1, _A2, _A3)
                             ((ceq_list (ceq_option _A1)),
                               (ccompare_list (ccompare_option _A2)))
                             table_in del,
-                           (wf_table_antijoin (_A1, _A2, _A3) wf_table_in
+                           (wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
+                              wf_table_in
                               (wf_table_of_set_args (_A1, _A2) args del),
                              (tuple_ina,
                                (wf_table_since, tuple_since)))))))))));;
@@ -10380,7 +10761,9 @@ let rec shift_end_mmasaux
       aggaux)
     = (match args_agg args
         with None ->
-          (shift_end (ceq_event_data, ccompare_event_data, equal_event_data)
+          (shift_end
+             (ceq_event_data, ccompare_event_data, equal_event_data,
+               hashable_event_data, heap_event_data)
              args nt
              (t, (gc, (maskL,
                         (maskR,
@@ -10425,7 +10808,8 @@ let rec shift_end_mmasaux
                                  table_in del,
                                 (wf_table_antijoin
                                    (ceq_event_data, ccompare_event_data,
-                                     equal_event_data)
+                                     equal_event_data, hashable_event_data,
+                                     heap_event_data)
                                    wf_table_in
                                    (wf_table_of_set_args
                                      (ceq_event_data, ccompare_event_data) args
@@ -10437,18 +10821,18 @@ let rec shift_end_mmasaux
 let rec add_new_ts_mmasaux
   args nt aux = add_new_ts_mmasauxa args nt (shift_end_mmasaux args nt aux);;
 
-let rec wf_set_join (_A1, _A2, _A3)
+let rec wf_set_join (_A1, _A2, _A3, _A4, _A5)
   xb xc =
     Abs_wf_set
       ((let (n, (a, t)) = rep_wf_set xb in
          (fun (na, (aa, ta)) ->
            (if equal_nata n na
              then (n, (sup_seta (ceq_nat, ccompare_nat) a aa,
-                        bin_join (_A1, _A2, _A3) n a t true aa ta))
+                        bin_join (_A1, _A2, _A3, _A4, _A5) n a t true aa ta))
              else (n, (a, t)))))
         (rep_wf_set xc));;
 
-let rec wf_idx_join (_A1, _A2, _A3)
+let rec wf_idx_join (_A1, _A2, _A3, _A4, _A5)
   xb xc =
     Abs_wf_idx
       ((let (n, (a, (i, t))) = rep_wf_idx xb in
@@ -10459,23 +10843,23 @@ let rec wf_idx_join (_A1, _A2, _A3)
                    let iaa = idx_reindex (_A1, _A2) ib ia ta in
                     (n, (sup_seta (ceq_nat, ccompare_nat) a aa,
                           (ib, idx_join (ccompare_list (ccompare_option _A2))
-                                 (_A1, _A2, _A3) n a ic aa iaa))))
+                                 (_A1, _A2, _A3, _A4, _A5) n a ic aa iaa))))
              else (n, (a, (i, t))))))
         (rep_wf_idx xc));;
 
-let rec wf_table_join (_A1, _A2, _A3)
+let rec wf_table_join (_A1, _A2, _A3, _A4, _A5)
   x0 x1 = match x0, x1 with
     Wf_table_of_idx ia, Wf_table_of_idx i ->
-      Wf_table_of_idx (wf_idx_join (_A1, _A2, _A3) ia i)
+      Wf_table_of_idx (wf_idx_join (_A1, _A2, _A3, _A4, _A5) ia i)
     | Wf_table_of_idx i, Wf_table_of_wf_set t ->
         Wf_table_of_idx
-          (wf_idx_join (_A1, _A2, _A3) i
+          (wf_idx_join (_A1, _A2, _A3, _A4, _A5) i
             (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t))
     | Wf_table_of_wf_set ta, Wf_table_of_wf_set t ->
-        Wf_table_of_wf_set (wf_set_join (_A1, _A2, _A3) ta t)
+        Wf_table_of_wf_set (wf_set_join (_A1, _A2, _A3, _A4, _A5) ta t)
     | Wf_table_of_wf_set t, Wf_table_of_idx i ->
         Wf_table_of_idx
-          (wf_idx_join (_A1, _A2, _A3)
+          (wf_idx_join (_A1, _A2, _A3, _A4, _A5)
             (wf_idx_of_wf_set (_A1, _A2) (wf_idx_cols i) t) i);;
 
 let rec wf_set_set x = (let (_, (_, t)) = rep_wf_set x in t);;
@@ -10493,7 +10877,7 @@ let rec wf_table_set (_A1, _A2)
   = function Wf_table_of_idx t -> wf_idx_set (_A1, _A2) t
     | Wf_table_of_wf_set t -> wf_set_set t;;
 
-let rec join_mmsaux (_A1, _A2, _A3)
+let rec join_mmsaux (_A1, _A2, _A3, _A4, _A5)
   args x
     (t, (gc, (maskL,
                (maskR,
@@ -10559,8 +10943,8 @@ let rec join_mmsaux (_A1, _A2, _A3)
                       (args_L args) x)
                   in
                 let wf_in_del =
-                  (if pos then wf_table_antijoin (_A1, _A2, _A3)
-                    else wf_table_join (_A1, _A2, _A3))
+                  (if pos then wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
+                    else wf_table_join (_A1, _A2, _A3, _A4, _A5))
                     wf_table_in
                     wf_X
                   in
@@ -10579,10 +10963,12 @@ let rec join_mmsaux (_A1, _A2, _A3)
                     table_in in_del
                   in
                 let wf_table_ina =
-                  wf_table_antijoin (_A1, _A2, _A3) wf_table_in wf_in_del in
+                  wf_table_antijoin (_A1, _A2, _A3, _A4, _A5) wf_table_in
+                    wf_in_del
+                  in
                 let wf_since_del =
-                  (if pos then wf_table_antijoin (_A1, _A2, _A3)
-                    else wf_table_join (_A1, _A2, _A3))
+                  (if pos then wf_table_antijoin (_A1, _A2, _A3, _A4, _A5)
+                    else wf_table_join (_A1, _A2, _A3, _A4, _A5))
                     wf_table_since
                     wf_X
                   in
@@ -10595,7 +10981,8 @@ let rec join_mmsaux (_A1, _A2, _A3)
                     tuple_since since_del
                   in
                 let wf_table_sincea =
-                  wf_table_antijoin (_A1, _A2, _A3) wf_table_since wf_since_del
+                  wf_table_antijoin (_A1, _A2, _A3, _A4, _A5) wf_table_since
+                    wf_since_del
                   in
                  (t, (gc, (maskL,
                             (maskR,
@@ -10618,7 +11005,9 @@ let rec join_mmasaux
       aggaux)
     = (match args_agg args
         with None ->
-          (join_mmsaux (ceq_event_data, ccompare_event_data, equal_event_data)
+          (join_mmsaux
+             (ceq_event_data, ccompare_event_data, equal_event_data,
+               hashable_event_data, heap_event_data)
              args x
              (t, (gc, (maskL,
                         (maskR,
@@ -10701,10 +11090,12 @@ let rec join_mmasaux
                       (if pos
                         then wf_table_antijoin
                                (ceq_event_data, ccompare_event_data,
-                                 equal_event_data)
+                                 equal_event_data, hashable_event_data,
+                                 heap_event_data)
                         else wf_table_join
                                (ceq_event_data, ccompare_event_data,
-                                 equal_event_data))
+                                 equal_event_data, hashable_event_data,
+                                 heap_event_data))
                         wf_table_in
                         wf_X
                       in
@@ -10728,17 +11119,20 @@ let rec join_mmasaux
                       in
                     let wf_table_ina =
                       wf_table_antijoin
-                        (ceq_event_data, ccompare_event_data, equal_event_data)
+                        (ceq_event_data, ccompare_event_data, equal_event_data,
+                          hashable_event_data, heap_event_data)
                         wf_table_in wf_in_del
                       in
                     let wf_since_del =
                       (if pos
                         then wf_table_antijoin
                                (ceq_event_data, ccompare_event_data,
-                                 equal_event_data)
+                                 equal_event_data, hashable_event_data,
+                                 heap_event_data)
                         else wf_table_join
                                (ceq_event_data, ccompare_event_data,
-                                 equal_event_data))
+                                 equal_event_data, hashable_event_data,
+                                 heap_event_data))
                         wf_table_since
                         wf_X
                       in
@@ -10756,7 +11150,8 @@ let rec join_mmasaux
                       in
                     let wf_table_sincea =
                       wf_table_antijoin
-                        (ceq_event_data, ccompare_event_data, equal_event_data)
+                        (ceq_event_data, ccompare_event_data, equal_event_data,
+                          hashable_event_data, heap_event_data)
                         wf_table_since wf_since_del
                       in
                      ((t, (gc, (maskL,
@@ -10799,43 +11194,19 @@ let rec gc_mmsaux (_A1, _A2)
                    (cproper_interval_list (ccompare_option _A2)),
                    set_impl_list)),
                set_impl_set)
-             snd (sup_seta
-                   ((ceq_prod ceq_nat
-                      (ceq_set
-                        (cenum_list, (ceq_list (ceq_option _A1)),
-                          (cproper_interval_list
-                            (ccompare_option _A2)).ccompare_cproper_interval))),
-                     (ccompare_prod ccompare_nat
-                       (ccompare_set
-                         (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-                           (cproper_interval_list (ccompare_option _A2)),
-                           set_impl_list))))
-                   (set ((ceq_prod ceq_nat
-                           (ceq_set
-                             (cenum_list, (ceq_list (ceq_option _A1)),
-                               (cproper_interval_list
-                                 (ccompare_option
-                                   _A2)).ccompare_cproper_interval))),
-                          (ccompare_prod ccompare_nat
-                            (ccompare_set
-                              (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-                                (cproper_interval_list (ccompare_option _A2)),
-                                set_impl_list))),
-                          (set_impl_prod set_impl_nat set_impl_set))
-                     (linearize data_prev))
-                   (set ((ceq_prod ceq_nat
-                           (ceq_set
-                             (cenum_list, (ceq_list (ceq_option _A1)),
-                               (cproper_interval_list
-                                 (ccompare_option
-                                   _A2)).ccompare_cproper_interval))),
-                          (ccompare_prod ccompare_nat
-                            (ccompare_set
-                              (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-                                (cproper_interval_list (ccompare_option _A2)),
-                                set_impl_list))),
-                          (set_impl_prod set_impl_nat set_impl_set))
-                     (linearize data_in))))
+             snd (set ((ceq_prod ceq_nat
+                         (ceq_set
+                           (cenum_list, (ceq_list (ceq_option _A1)),
+                             (cproper_interval_list
+                               (ccompare_option
+                                 _A2)).ccompare_cproper_interval))),
+                        (ccompare_prod ccompare_nat
+                          (ccompare_set
+                            (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+                              (cproper_interval_list (ccompare_option _A2)),
+                              set_impl_list))),
+                        (set_impl_prod set_impl_nat set_impl_set))
+                   (linearize data_prev @ linearize data_in)))
          in
        let tuple_sincea =
          filterc (ccompare_list (ccompare_option _A2))
@@ -11381,7 +11752,9 @@ let rec meeval
          let (zs, buf) =
            mebuf2_take
              (fun r1 ->
-               bin_join (ceq_event_data, ccompare_event_data, equal_event_data)
+               bin_join
+                 (ceq_event_data, ccompare_event_data, equal_event_data,
+                   hashable_event_data, heap_event_data)
                  n a_phi r1 pos a_psi)
              (mebuf2_add xs ys bufc)
            in
@@ -11429,7 +11802,8 @@ let rec meeval
                       (fun r1 (aa, ba) ->
                         bin_join
                           (ceq_event_data, ccompare_event_data,
-                            equal_event_data)
+                            equal_event_data, hashable_event_data,
+                            heap_event_data)
                           n v_phi r1 true aa ba)
                       (mebuf2_add asa zs_trigger buf1)
                     in
@@ -11445,8 +11819,9 @@ let rec meeval
              (fun xs zs ->
                mbuf_t_append zs
                  [mmulti_join
-                    (ceq_event_data, ccompare_event_data, equal_event_data) n
-                    a_pos a_neg xs])
+                    (ceq_event_data, ccompare_event_data, equal_event_data,
+                      hashable_event_data, heap_event_data)
+                    n a_pos a_neg xs])
              mbuf_t_empty bufa
            in
           (rep_mbuf_t zs, MAnds (a_pos, a_neg, mapa snd r, bufb)))
@@ -13177,7 +13552,9 @@ let rec vmeeval
          let (zs, buf) =
            mebuf2_take
              (fun r1 ->
-               bin_join (ceq_event_data, ccompare_event_data, equal_event_data)
+               bin_join
+                 (ceq_event_data, ccompare_event_data, equal_event_data,
+                   hashable_event_data, heap_event_data)
                  n a_phi r1 pos a_psi)
              (mebuf2_add xs ys bufc)
            in
@@ -13225,7 +13602,8 @@ let rec vmeeval
                       (fun r1 (aa, ba) ->
                         bin_join
                           (ceq_event_data, ccompare_event_data,
-                            equal_event_data)
+                            equal_event_data, hashable_event_data,
+                            heap_event_data)
                           n v_phi r1 true aa ba)
                       (mebuf2_add asa zs_trigger buf1)
                     in
@@ -13241,8 +13619,9 @@ let rec vmeeval
              (fun xs zs ->
                mbuf_t_append zs
                  [mmulti_join
-                    (ceq_event_data, ccompare_event_data, equal_event_data) n
-                    a_pos a_neg xs])
+                    (ceq_event_data, ccompare_event_data, equal_event_data,
+                      hashable_event_data, heap_event_data)
+                    n a_pos a_neg xs])
              mbuf_t_empty bufa
            in
           (rep_mbuf_t zs, MAnds (a_pos, a_neg, mapa snd r, bufb)))
