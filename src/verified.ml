@@ -7003,6 +7003,27 @@ let rec hprobe_join (_A1, _A2, _A3, _A4, _A5)
 let rec join_mask
   n x = mapa (fun i -> member (ceq_nat, ccompare_nat) i x) (upt zero_nata n);;
 
+let rec complete_chk
+  x0 x1 = match x0, x1 with [], [] -> Some true
+    | b :: bs, x :: xs ->
+        (match complete_chk bs xs with None -> None
+          | Some r -> Some ((if b then not (is_none x) else true) && r))
+    | v :: va, [] -> None
+    | [], v :: va -> None;;
+
+let rec complete_on
+  i t = ball (ceq_nat, ccompare_nat) i
+          (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
+
+let rec complete_with
+  i n = (let mask = join_mask n i in
+         let ok = ball (ceq_nat, ccompare_nat) i (fun ia -> less_nat ia n) in
+          (fun t ->
+            (if ok
+              then (match complete_chk mask t with None -> complete_on i t
+                     | Some b -> b)
+              else complete_on i t)));;
+
 let rec join1_inserta (_A1, _A2, _A3)
   b a acc = join1_insert (_A1, _A2, _A3) a b acc;;
 
@@ -7166,10 +7187,6 @@ let rec probe_join_n (_A1, _A2, _A3)
     | n, i, t, Collect_set uu -> probe_join (_A1, _A2, _A3) i t (Collect_set uu)
     | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu);;
 
-let rec complete_on
-  i t = ball (ceq_nat, ccompare_nat) i
-          (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
-
 let rec bin_join (_A1, _A2, _A3, _A4, _A5)
   n aa ta pos a t =
     (if is_empty
@@ -7228,12 +7245,14 @@ let rec bin_join (_A1, _A2, _A3, _A4, _A5)
                  (finite_UNIV_list, (ceq_list (ceq_option _A1)),
                    (ccompare_list (ccompare_option _A2)))
                  t &&
-                (ball ((ceq_list (ceq_option _A1)),
-                        (ccompare_list (ccompare_option _A2)))
-                   ta (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)) &&
+                (let c = complete_with (inf_seta (ceq_nat, ccompare_nat) aa a) n
+                   in
                   ball ((ceq_list (ceq_option _A1)),
                          (ccompare_list (ccompare_option _A2)))
-                    t (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))))
+                    ta c &&
+                    ball ((ceq_list (ceq_option _A1)),
+                           (ccompare_list (ccompare_option _A2)))
+                      t c)))
         then (match ccompare_lista (ccompare_option _A2)
                with None ->
                  (if less_eq_nat
@@ -9555,10 +9574,9 @@ let rec ed_bin_join
  else (if pos &&
             (unbox ed_finite_v ta &&
               (unbox ed_finite_v t &&
-                (unbox ed_Ball_v ta
-                   (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)) &&
-                  unbox ed_Ball_v t
-                    (complete_on (inf_seta (ceq_nat, ccompare_nat) aa a)))))
+                (let c = complete_with (inf_seta (ceq_nat, ccompare_nat) aa a) n
+                   in
+                  unbox ed_Ball_v ta c && unbox ed_Ball_v t c)))
         then (if !Config.imperative_join
                then (if less_eq_nat (unbox ed_card_v ta) (unbox ed_card_v t)
                       then ed_hprobe_join
