@@ -771,3 +771,88 @@ once 3.14 → 2.74 s, since 1.09 → 0.92 s, eventually 1.71 → 1.46 s, until 0
   path is the same as before.
 * `Predicate.string_of_cst` formats integers that fit a machine word with `string_of_int`.
 * `Tuple.compare` is specialised (Section 4).
+
+## 10. Imperative refinement of the Since structure: feasibility and potential
+
+Asked to try an imperative refinement of the Since structure, this section records what was
+tried, what blocks it, and what it would be worth. The measurements come from a
+micro-benchmark that drives the auxiliary structures directly (`evaluation/since_bench/`):
+200000 time points, time stamps advancing every 1700 time points as in the P2/P3 logs, one
+tuple per time point ("dense") or one non-empty table every eight time points ("sparse", the
+shape of P3's `auth` stream), against a hash-table sliding window doing the same work.
+
+**What an imperative structure would gain.** Per step, ONCE with window [2,21):
+
+| operation | dense | sparse |
+|---|---|---|
+| `shift_end` | 0.58 us | 0.32 us |
+| `add_new_ts_mmsaux'` | 2.22 us | 0.71 us |
+| `gc_join_mmsaux` | 0.68 us | 0.28 us |
+| `add_new_table_mmsaux` | 0.57 us | 0.19 us |
+| total | 4.1 us | 1.5 us |
+| imperative window (hash table + queue) | 0.40 us | 0.40 us |
+
+and EVENTUALLY[0,6) for the Until structure:
+
+| operation | dense | sparse |
+|---|---|---|
+| `shift_mmuaux` (runs the `eval_step`s) | 4.70 us | 2.29 us |
+| `tstp_map` update | 0.61 us | 1.56 us |
+| fold over the new table | 3.29 us | 0.47 us |
+| new `a2_map` entry | 0.62 us | 0.68 us |
+| `a1_map` update | 0.32 us | 0.32 us |
+| total (`add_new_mmuaux`) | 10.7 us | 4.2 us |
+| imperative window | 0.24 us | 0.09 us |
+
+So an imperative implementation is about 10x faster on the structures themselves. The cost
+of the functional ones is not in any single place: it is the persistent red-black-tree
+operations, about 0.3 us each on tuple keys (a lookup in a 5000-key tree takes 260-280 ns)
+and about 0.6 us each on the time-point-keyed mappings of the Until structure, which hold
+one entry per time point in the window (10000 here, because a time stamp spans 1700 time
+points); a tuple's lifetime in the Since structure costs about seven such operations, a
+time point in the Until structure about eight plus the `eval_step`. The imperative version
+does the same in O(1) hash-table and queue operations without allocation.
+
+**What it would gain end to end.** The Since structure is about a quarter of P3 and the
+Until structure about 85% of P2 (P2 minus its non-temporal part is 2.0 s of 2.36 s), so the
+refinement would bring P3 to about 1.0 s (1.3x) and P2 to about 0.6 s (4x, within 1.5x of
+MonPoly); `since`/`once`/`eventually`/`until` would gain 1.5-2x.
+
+**What blocks it.** Imperative HOL programs keep their state on a heap that exists only
+inside a `Heap` computation. The auxiliary structures are threaded through `meval` as pure
+values (`eval_since` in `Monitor.thy` calls `add_new_ts_msaux`, `join_msaux`,
+`add_new_table_msaux`, `result_msaux` on a value of the locale's abstract type, and the
+front end calls the pure `mstep` once per time point). A structure that lives on the heap
+cannot persist between two pure calls: `run`-style wrappers (as used for the probe join,
+Section 8) start from a fresh heap and are sound only for computations whose result is a
+value. Making the structure imperative therefore means making the interface monadic: a
+locale `maux_imp` with `Heap`-typed operations, a monadic `meval_imp` (the Since/Until cases
+and the buffer machinery bind, everything else lifts), imperative representations of
+`mmsaux`/`mmuaux` (hash maps for `tuple_in`/`tuple_since`, arrays or deques indexed by time
+point for `a2_map`/`tstp_map`) with separation-logic invariants that imply `valid_mmsaux`/
+`valid_mmuaux`, and a simulation proof against the pure `meval`. The call sites are few
+(`eval_since`, `eval_until`, `minit0`), but the invariants of `Optimized_Since.thy` (1352
+lines) and `Optimized_Until.thy` (2286 lines) would have to be re-established for the new
+representations. This is weeks of proof work, not something for this branch.
+
+**What was tried instead, and measured negative.**
+
+* Monomorphising the last polymorphic call on the Since path (`add_new_ts_mmsaux'`, called by
+  the aggregation wrapper) and boxing the dictionaries of the Until fold: no change; the
+  dictionaries are not the cost.
+* Fusing the three passes of the window move into one fold: `add_new_ts_mmsaux'` 2.34 us ->
+  2.01 us dense, unchanged sparse; nothing end to end (Section 7g).
+* A direct tuple comparator inside the tree operations: Containers' abstract tree type does
+  accept a type-specific constructor (`lift_definition ed_rbt_insert ... is rbt_comp_insert
+  ed_comparator` is accepted by the code generator, contrary to the note in Section 7), but
+  a lookup with the direct comparator is only 8% faster than with the generic
+  `comparator_list (comparator_option comparator_event_data)` chain: the tree walk and the
+  big-integer comparisons dominate, not the closures.
+
+**Cheaper functional alternatives for the Until structure.** Its time-point-keyed mappings
+are indexed by consecutive integers; a deque of inner mappings (O(1) at both ends, which is
+where new time points arrive and old ones expire) would remove most of the 0.6 us tree
+operations per step without leaving pure HOL, at the cost of redoing the `Optimized_Until`
+invariants for the new representation. This is the most promising next step short of the
+monadic refinement.
+
