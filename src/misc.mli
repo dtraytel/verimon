@@ -64,6 +64,8 @@ val alrm: bool ref
 val verbose: bool ref
 val checkf: bool ref
 val verified: bool ref
+(** GC space overhead in percent to set before monitoring (0: leave the default). *)
+val gc_space_overhead: int ref
 val new_last_ts: bool ref
 val ignore_parse_errors: bool ref
 val stop_at_out_of_order_ts: bool ref

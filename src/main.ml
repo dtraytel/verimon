@@ -174,10 +174,17 @@ let main () =
               Algorithm.resume sign !logfile
             else if !Algorithm.combine_files <> "" then
               Algorithm.combine sign !logfile
-            else if !Misc.verified then
-              Algorithm_verified.monitor sign !logfile fv pf
-            else
-              Algorithm.monitor sign !logfile fv pf
+            else begin
+              (* The verified kernel allocates much more than MonPoly's algorithm; a larger GC
+                 space overhead (memory for speed) gains 5-15% there (see EFFICIENCY.md, Section 9). *)
+              let so = if !Misc.gc_space_overhead > 0 then !Misc.gc_space_overhead
+                else if !Misc.verified then 300 else 0 in
+              if so > 0 then Gc.set { (Gc.get ()) with Gc.space_overhead = so };
+              if !Misc.verified then
+                Algorithm_verified.monitor sign !logfile fv pf
+              else
+                Algorithm.monitor sign !logfile fv pf
+            end
           end
       end
 
@@ -212,6 +219,7 @@ let _ =
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
+    "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 300 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
     "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tEvaluate multi-way joins with the worst-case optimal generic join instead of pairwise binary joins (only with the verified kernel)";
     "-imperative_join", Arg.Set Algorithm_verified.imperative_join, "\tUse the imperative (Imperative HOL) hash index for binary joins (only with the verified kernel)";

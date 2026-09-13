@@ -81,6 +81,10 @@ let verbose = ref false
 let checkf = ref false
 
 let verified = ref false
+(* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
+   verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
+   mappings), so main.ml uses 300 with the verified kernel unless the user chose a value. *)
+let gc_space_overhead = ref 0
 
 let new_last_ts = ref true
 

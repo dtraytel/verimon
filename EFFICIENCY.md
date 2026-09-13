@@ -704,12 +704,16 @@ The plan, ordered by expected gain per effort:
    off after replacing `nat` indices by machine words in the hot paths.
 7. **Machine integers for time stamps and time points** (3-5%): would require a
    verified bound or the `Native_Word` types throughout the monitor state; low priority.
-8. **GC parameters (measured, not changed).** The generated code allocates much more than
-   MonPoly (P2: 37% of the time in the collector). `OCAMLRUNPARAM=o=400` (space overhead 400
-   instead of the default 120) gives 10-14% on P2, P3 and `complex` on these logs at 1.1-1.7x
-   the (small) heap; `o=200` gives 4-10%; a larger minor heap (`s=2M`) is slower. The default
-   is kept because the heap of a long-running monitor with a large state would grow by the
-   same factor; users can set the variable.
+8. **GC parameters (done: `-gc_space_overhead`).** The generated code allocates much more
+   than MonPoly (P2: about 40% of the time in the collector and the best-fit allocator). A
+   larger GC space overhead trades memory for speed: with 300 instead of the default 120,
+   P2 1.11x, `once` 1.13x, P3 1.04x at about 1.3x the (small) heap; 400 gives P2 1.17x at
+   1.4x the heap; a larger minor heap (`s=2M`-`16M`) is slower. The verified kernel now sets
+   300 by default (MonPoly's own algorithm is unchanged) and the option
+   `-gc_space_overhead N` overrides it in both modes; the trade-off scales with the live
+   state, so a monitor with a large state can set 120 to keep MonPoly's memory behaviour.
+   Aggressive `ocamlopt` inlining flags (`-O3 -inline 200 -unsafe`, without flambda) gain
+   only 1-2%.
 
 **The Until structure (P2, `eventually`, `until`; item 6b) in detail.** With the kernel of
 Section 7f, P2 spends 55% in `add_new_mmuaux` and 19% in `eval_step_mmuaux`. Per new tuple
