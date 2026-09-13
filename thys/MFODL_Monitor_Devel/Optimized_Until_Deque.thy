@@ -32,8 +32,15 @@ definition dq_empty :: "'a dq" where
 definition dq_len :: "'a dq \<Rightarrow> nat" where
   "dq_len d = dq_nf d + dq_nb d"
 
+text \<open>
+  The front list is empty only for the empty deque: @{text dq_push} builds the front when it
+  is empty, and @{text dq_tl} normalises after removing the head. Otherwise an access to the
+  oldest entry (the common case in @{text add_new}) would walk the whole back list.
+\<close>
+
 definition dq_push :: "'a \<Rightarrow> 'a dq \<Rightarrow> 'a dq" where
-  "dq_push x d = Dq (dq_f d) (x # dq_b d) (dq_nf d) (dq_nb d + 1)"
+  "dq_push x d = (if dq_f d = [] then Dq (rev (x # dq_b d)) [] (dq_nb d + 1) 0
+     else Dq (dq_f d) (x # dq_b d) (dq_nf d) (dq_nb d + 1))"
 
 text \<open>
   When the front list is exhausted, only the older half of the back list is moved to the
@@ -46,7 +53,7 @@ definition dq_norm :: "'a dq \<Rightarrow> 'a dq" where
      Dq (rev (drop h (dq_b d))) (take h (dq_b d)) (dq_nb d - h) h) else d)"
 
 definition dq_tl :: "'a dq \<Rightarrow> 'a dq" where
-  "dq_tl d = (let d' = dq_norm d in Dq (tl (dq_f d')) (dq_b d') (dq_nf d' - 1) (dq_nb d'))"
+  "dq_tl d = (let d' = dq_norm d in dq_norm (Dq (tl (dq_f d')) (dq_b d') (dq_nf d' - 1) (dq_nb d')))"
 
 definition dq_nth :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a" where
   "dq_nth d k = (if k < dq_nf d then dq_f d ! k else dq_b d ! (dq_nb d - 1 - (k - dq_nf d)))"
@@ -65,10 +72,10 @@ lemma dq_len_list: "dq_inv d \<Longrightarrow> dq_len d = length (dq_list d)"
   by (simp add: dq_inv_def dq_len_def dq_list_def)
 
 lemma dq_inv_push[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_push x d)"
-  by (simp add: dq_inv_def dq_push_def)
+  by (auto simp add: dq_inv_def dq_push_def)
 
 lemma dq_list_push[simp]: "dq_list (dq_push x d) = dq_list d @ [x]"
-  by (simp add: dq_list_def dq_push_def)
+  by (auto simp add: dq_list_def dq_push_def)
 
 lemma dq_inv_norm[simp]:
   assumes inv: "dq_inv d"
@@ -103,21 +110,32 @@ proof (cases "dq_f d = []")
   then show ?thesis using True assms(1) by (simp add: dq_norm_def dq_inv_def Let_def)
 qed (simp add: dq_norm_def)
 
-lemma dq_inv_tl[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_tl d)"
-  using dq_inv_norm[of d] by (auto simp add: dq_inv_def dq_tl_def Let_def)
+lemma dq_inv_tl[simp]:
+  assumes inv: "dq_inv d"
+  shows "dq_inv (dq_tl d)"
+proof -
+  have "dq_inv (Dq (tl (dq_f (dq_norm d))) (dq_b (dq_norm d)) (dq_nf (dq_norm d) - 1) (dq_nb (dq_norm d)))"
+    using dq_inv_norm[OF inv] unfolding dq_inv_def by simp
+  then show ?thesis unfolding dq_tl_def Let_def by (rule dq_inv_norm)
+qed
 
 lemma dq_list_tl[simp]:
   assumes inv: "dq_inv d"
   shows "dq_list (dq_tl d) = tl (dq_list d)"
-proof (cases "dq_list d = []")
-  case True
-  then have "dq_f (dq_norm d) = []" "dq_b (dq_norm d) = []" using dq_list_norm[of d] by (auto simp: dq_list_def)
-  then show ?thesis using True by (simp add: dq_list_def dq_tl_def Let_def)
-next
-  case False
-  have "dq_list (dq_tl d) = tl (dq_f (dq_norm d) @ rev (dq_b (dq_norm d)))"
-    using dq_f_norm[OF inv False] by (simp add: dq_list_def dq_tl_def Let_def tl_append2)
-  then show ?thesis using dq_list_norm[of d] by (simp add: dq_list_def)
+proof -
+  have *: "dq_list (dq_tl d) = tl (dq_f (dq_norm d)) @ rev (dq_b (dq_norm d))"
+    unfolding dq_tl_def Let_def dq_list_norm by (simp add: dq_list_def)
+  show ?thesis
+  proof (cases "dq_list d = []")
+    case True
+    then have "dq_f (dq_norm d) = []" "dq_b (dq_norm d) = []" using dq_list_norm[of d] by (auto simp: dq_list_def)
+    then show ?thesis using True * by simp
+  next
+    case False
+    have "dq_list (dq_tl d) = tl (dq_f (dq_norm d) @ rev (dq_b (dq_norm d)))"
+      using dq_f_norm[OF inv False] * by (simp add: tl_append2)
+    then show ?thesis using dq_list_norm[of d] by (simp add: dq_list_def)
+  qed
 qed
 
 lemma dq_nth: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth d k = dq_list d ! k"
