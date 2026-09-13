@@ -511,7 +511,13 @@ computes the same abstract structure as before (`join_eq` for the sets,
 `wf_table_eqI`. The code equation for `wf_table_of_set_args` picks the plain set
 representation in the same case.
 
-Effect (best of three, distribution compiler): RESULTS_7E
+Effect (two runs, distribution compiler): `since` (`B(x,y) SINCE[0,50] A(x,y)`) 0.88-0.91 s ->
+0.45-0.47 s (1.9x; MonPoly 0.30 s); all other benchmarks unchanged within noise (their Since
+operators have no or a proper subset of join columns). `C(x) SINCE[0,50] A(x,y)`, where the
+index is still needed, stays at 0.90 s (MonPoly 0.31 s): there the remaining time is spread
+over the index construction for the new tables (`wf_idx_of_set`, 18%), the index antijoins
+(16%) and flattening the deleted index (`set_of_idx`, 12%). All outputs identical, all cram
+tests pass.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
@@ -614,8 +620,9 @@ The plan, ordered by expected gain per effort:
    effort: their proofs (`Correct_Since`, `Correct_Until`, `Optimized_*`) are tied to the
    concrete data representation. First step done (Section 7b): for formulas without join
    columns the Since structure no longer maintains its tuple indices (P3 1.5x, once 1.3x,
-   complex 1.2x). Next: (a) make the index the only representation of the result table for
-   formulas with join columns and avoid rebuilding indices for every new table; (b) the
+   complex 1.2x); the same when all columns are join columns (Section 7e, since 1.9x).
+   Next: (a) make the index the only representation of the result table for formulas with a
+   proper subset of join columns and avoid rebuilding indices for every new table; (b) the
    corresponding duplications in the Until structure (`a1_map`/`a2_map`/`tables`); (c) an
    imperative refinement of `mmsaux`/`mmuaux` along the lines of Section 8, which only pays
    off after replacing `nat` indices by machine words in the hot paths.

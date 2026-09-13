@@ -10241,7 +10241,8 @@ let rec wf_idx_of_set (_A1, _A2)
 
 let rec wf_table_of_set_args (_A1, _A2)
   args x =
-    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
+    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args) ||
+          set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args) (args_R args)
       then Wf_table_of_set (args_n args, args_R args, x)
       else Wf_table_of_idx
              (wf_idx_of_set (_A1, _A2) (args_n args) (args_R args) (args_L args)
@@ -10264,7 +10265,8 @@ let ed_minus_keys_v :
 
 let rec wf_table_upd
   args m w =
-    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
+    (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args) ||
+          set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args) (args_R args)
       then Wf_table_of_keys (args_n args, args_R args, m) else w ());;
 
 let rec rep_wf_set (Abs_wf_set x) = x;;
@@ -10804,6 +10806,14 @@ let rec shift_end_mmasaux
 let rec add_new_ts_mmasaux
   args nt aux = add_new_ts_mmasauxa args nt (shift_end_mmasaux args nt aux);;
 
+let rec filter_join (_A1, _A2)
+  pos x m =
+    filterc _A2
+      (fun asa _ ->
+        (if pos then member (_A1, _A2) asa x
+          else not (member (_A1, _A2) asa x)))
+      m;;
+
 let rec wf_set_join (_A1, _A2, _A3, _A4, _A5)
   xb xc =
     Abs_wf_set
@@ -10926,79 +10936,127 @@ let rec ed_join_mmsaux
                                     (wf_table_ina,
                                       (tuple_ina,
 (wf_table_sincea, tuple_sincea)))))))))))
-          else (let wf_X =
-                  Wf_table_of_idx
-                    (wf_idx_of_set (ceq_event_data, ccompare_event_data)
-                      (args_n args) (args_L args) (args_L args) x)
-                  in
-                let wf_in_del =
-                  (if pos
-                    then wf_table_antijoin
+          else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args)
+                     (args_R args)
+                 then (let in_del =
+                         (if pos then unbox ed_minus_v table_in x
+                           else unbox ed_inter_v table_in x)
+                         in
+                       let tuple_ina =
+                         mapping_delete_set
+                           (finite_UNIV_list,
+                             (ceq_list (ceq_option ceq_event_data)),
+                             (ccompare_list
+                               (ccompare_option ccompare_event_data)),
+                             (equal_list (equal_option equal_event_data)))
+                           tuple_in in_del
+                         in
+                       let table_ina = unbox ed_minus_v table_in in_del in
+                       let wf_table_ina =
+                         wf_table_upd args tuple_ina
+                           (fun _ ->
+                             wf_table_of_set_args
+                               (ceq_event_data, ccompare_event_data) args
+                               table_ina)
+                         in
+                       let tuple_sincea =
+                         filter_join
+                           ((ceq_list (ceq_option ceq_event_data)),
+                             (ccompare_list
+                               (ccompare_option ccompare_event_data)))
+                           pos x tuple_since
+                         in
+                       let wf_table_sincea =
+                         wf_table_upd args tuple_sincea
+                           (fun _ ->
+                             wf_table_of_set_args
+                               (ceq_event_data, ccompare_event_data) args
+                               (unbox ed_keys_nat_v tuple_sincea))
+                         in
+                        (t, (gc, (maskL,
+                                   (maskR,
+                                     (data_prev,
+                                       (data_in,
+ (table_ina,
+   (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea)))))))))))
+                 else (let wf_X =
+                         Wf_table_of_idx
+                           (wf_idx_of_set (ceq_event_data, ccompare_event_data)
+                             (args_n args) (args_L args) (args_L args) x)
+                         in
+                       let wf_in_del =
+                         (if pos
+                           then wf_table_antijoin
+                                  (ceq_event_data, ccompare_event_data,
+                                    equal_event_data, hashable_event_data,
+                                    heap_event_data)
+                           else wf_table_join
+                                  (ceq_event_data, ccompare_event_data,
+                                    equal_event_data, hashable_event_data,
+                                    heap_event_data))
+                           wf_table_in
+                           wf_X
+                         in
+                       let in_del =
+                         wf_table_set (ceq_event_data, ccompare_event_data)
+                           wf_in_del
+                         in
+                       let tuple_ina =
+                         mapping_delete_set
+                           (finite_UNIV_list,
+                             (ceq_list (ceq_option ceq_event_data)),
+                             (ccompare_list
+                               (ccompare_option ccompare_event_data)),
+                             (equal_list (equal_option equal_event_data)))
+                           tuple_in in_del
+                         in
+                       let table_ina = unbox ed_minus_v table_in in_del in
+                       let wf_table_ina =
+                         wf_table_antijoin
                            (ceq_event_data, ccompare_event_data,
                              equal_event_data, hashable_event_data,
                              heap_event_data)
-                    else wf_table_join
-                           (ceq_event_data, ccompare_event_data,
-                             equal_event_data, hashable_event_data,
-                             heap_event_data))
-                    wf_table_in
-                    wf_X
-                  in
-                let in_del =
-                  wf_table_set (ceq_event_data, ccompare_event_data) wf_in_del
-                  in
-                let tuple_ina =
-                  mapping_delete_set
-                    (finite_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
-                      (ccompare_list (ccompare_option ccompare_event_data)),
-                      (equal_list (equal_option equal_event_data)))
-                    tuple_in in_del
-                  in
-                let table_ina = unbox ed_minus_v table_in in_del in
-                let wf_table_ina =
-                  wf_table_antijoin
-                    (ceq_event_data, ccompare_event_data, equal_event_data,
-                      hashable_event_data, heap_event_data)
-                    wf_table_in wf_in_del
-                  in
-                let wf_since_del =
-                  (if pos
-                    then wf_table_antijoin
+                           wf_table_in wf_in_del
+                         in
+                       let wf_since_del =
+                         (if pos
+                           then wf_table_antijoin
+                                  (ceq_event_data, ccompare_event_data,
+                                    equal_event_data, hashable_event_data,
+                                    heap_event_data)
+                           else wf_table_join
+                                  (ceq_event_data, ccompare_event_data,
+                                    equal_event_data, hashable_event_data,
+                                    heap_event_data))
+                           wf_table_since
+                           wf_X
+                         in
+                       let since_del =
+                         wf_table_set (ceq_event_data, ccompare_event_data)
+                           wf_since_del
+                         in
+                       let tuple_sincea =
+                         mapping_delete_set
+                           (finite_UNIV_list,
+                             (ceq_list (ceq_option ceq_event_data)),
+                             (ccompare_list
+                               (ccompare_option ccompare_event_data)),
+                             (equal_list (equal_option equal_event_data)))
+                           tuple_since since_del
+                         in
+                       let wf_table_sincea =
+                         wf_table_antijoin
                            (ceq_event_data, ccompare_event_data,
                              equal_event_data, hashable_event_data,
                              heap_event_data)
-                    else wf_table_join
-                           (ceq_event_data, ccompare_event_data,
-                             equal_event_data, hashable_event_data,
-                             heap_event_data))
-                    wf_table_since
-                    wf_X
-                  in
-                let since_del =
-                  wf_table_set (ceq_event_data, ccompare_event_data)
-                    wf_since_del
-                  in
-                let tuple_sincea =
-                  mapping_delete_set
-                    (finite_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
-                      (ccompare_list (ccompare_option ccompare_event_data)),
-                      (equal_list (equal_option equal_event_data)))
-                    tuple_since since_del
-                  in
-                let wf_table_sincea =
-                  wf_table_antijoin
-                    (ceq_event_data, ccompare_event_data, equal_event_data,
-                      hashable_event_data, heap_event_data)
-                    wf_table_since wf_since_del
-                  in
-                 (t, (gc, (maskL,
-                            (maskR,
-                              (data_prev,
-                                (data_in,
-                                  (table_ina,
-                                    (wf_table_ina,
-                                      (tuple_ina,
-(wf_table_sincea, tuple_sincea)))))))))))));;
+                           wf_table_since wf_since_del
+                         in
+                        (t, (gc, (maskL,
+                                   (maskR,
+                                     (data_prev,
+                                       (data_in,
+ (table_ina,
+   (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea))))))))))))));;
 
 let rec join_mmasaux
   args x
@@ -11054,81 +11112,126 @@ let rec join_mmasaux
                                        (table_ina,
  (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea)))))))))),
                        aggauxa))
-              else (let wf_X =
-                      Wf_table_of_idx
-                        (wf_idx_of_set (ceq_event_data, ccompare_event_data)
-                          (args_n args) (args_L args) (args_L args) x)
-                      in
-                    let wf_in_del =
-                      (if pos
-                        then wf_table_antijoin
+              else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args)
+                         (args_R args)
+                     then (let in_del =
+                             (if pos then unbox ed_minus_v table_in x
+                               else unbox ed_inter_v table_in x)
+                             in
+                           let tuple_ina =
+                             mapping_delete_set
+                               (finite_UNIV_list,
+                                 (ceq_list (ceq_option ceq_event_data)),
+                                 (ccompare_list
+                                   (ccompare_option ccompare_event_data)),
+                                 (equal_list (equal_option equal_event_data)))
+                               tuple_in in_del
+                             in
+                           let table_ina = unbox ed_minus_v table_in in_del in
+                           let wf_table_ina =
+                             wf_table_upd args tuple_ina
+                               (fun _ ->
+                                 wf_table_of_set_args
+                                   (ceq_event_data, ccompare_event_data) args
+                                   table_ina)
+                             in
+                           let tuple_sincea =
+                             unbox ed_mfilter_nat_v
+                               (fun asa _ ->
+                                 (if pos then unbox ed_member_v asa x
+                                   else not (unbox ed_member_v asa x)))
+                               tuple_since
+                             in
+                           let wf_table_sincea =
+                             wf_table_upd args tuple_sincea
+                               (fun _ ->
+                                 wf_table_of_set_args
+                                   (ceq_event_data, ccompare_event_data) args
+                                   (unbox ed_keys_nat_v tuple_sincea))
+                             in
+                            ((t, (gc, (maskL,
+(maskR,
+  (data_prev,
+    (data_in,
+      (table_ina,
+        (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea)))))))))),
+                              delete_maggauxa aggargs in_del aggaux))
+                     else (let wf_X =
+                             Wf_table_of_idx
+                               (wf_idx_of_set
+                                 (ceq_event_data, ccompare_event_data)
+                                 (args_n args) (args_L args) (args_L args) x)
+                             in
+                           let wf_in_del =
+                             (if pos
+                               then wf_table_antijoin
+                                      (ceq_event_data, ccompare_event_data,
+equal_event_data, hashable_event_data, heap_event_data)
+                               else wf_table_join
+                                      (ceq_event_data, ccompare_event_data,
+equal_event_data, hashable_event_data, heap_event_data))
+                               wf_table_in
+                               wf_X
+                             in
+                           let in_del =
+                             wf_table_set (ceq_event_data, ccompare_event_data)
+                               wf_in_del
+                             in
+                           let tuple_ina =
+                             mapping_delete_set
+                               (finite_UNIV_list,
+                                 (ceq_list (ceq_option ceq_event_data)),
+                                 (ccompare_list
+                                   (ccompare_option ccompare_event_data)),
+                                 (equal_list (equal_option equal_event_data)))
+                               tuple_in in_del
+                             in
+                           let table_ina = unbox ed_minus_v table_in in_del in
+                           let wf_table_ina =
+                             wf_table_antijoin
                                (ceq_event_data, ccompare_event_data,
                                  equal_event_data, hashable_event_data,
                                  heap_event_data)
-                        else wf_table_join
-                               (ceq_event_data, ccompare_event_data,
-                                 equal_event_data, hashable_event_data,
-                                 heap_event_data))
-                        wf_table_in
-                        wf_X
-                      in
-                    let in_del =
-                      wf_table_set (ceq_event_data, ccompare_event_data)
-                        wf_in_del
-                      in
-                    let tuple_ina =
-                      mapping_delete_set
-                        (finite_UNIV_list,
-                          (ceq_list (ceq_option ceq_event_data)),
-                          (ccompare_list (ccompare_option ccompare_event_data)),
-                          (equal_list (equal_option equal_event_data)))
-                        tuple_in in_del
-                      in
-                    let table_ina = unbox ed_minus_v table_in in_del in
-                    let wf_table_ina =
-                      wf_table_antijoin
-                        (ceq_event_data, ccompare_event_data, equal_event_data,
-                          hashable_event_data, heap_event_data)
-                        wf_table_in wf_in_del
-                      in
-                    let wf_since_del =
-                      (if pos
-                        then wf_table_antijoin
+                               wf_table_in wf_in_del
+                             in
+                           let wf_since_del =
+                             (if pos
+                               then wf_table_antijoin
+                                      (ceq_event_data, ccompare_event_data,
+equal_event_data, hashable_event_data, heap_event_data)
+                               else wf_table_join
+                                      (ceq_event_data, ccompare_event_data,
+equal_event_data, hashable_event_data, heap_event_data))
+                               wf_table_since
+                               wf_X
+                             in
+                           let since_del =
+                             wf_table_set (ceq_event_data, ccompare_event_data)
+                               wf_since_del
+                             in
+                           let tuple_sincea =
+                             mapping_delete_set
+                               (finite_UNIV_list,
+                                 (ceq_list (ceq_option ceq_event_data)),
+                                 (ccompare_list
+                                   (ccompare_option ccompare_event_data)),
+                                 (equal_list (equal_option equal_event_data)))
+                               tuple_since since_del
+                             in
+                           let wf_table_sincea =
+                             wf_table_antijoin
                                (ceq_event_data, ccompare_event_data,
                                  equal_event_data, hashable_event_data,
                                  heap_event_data)
-                        else wf_table_join
-                               (ceq_event_data, ccompare_event_data,
-                                 equal_event_data, hashable_event_data,
-                                 heap_event_data))
-                        wf_table_since
-                        wf_X
-                      in
-                    let since_del =
-                      wf_table_set (ceq_event_data, ccompare_event_data)
-                        wf_since_del
-                      in
-                    let tuple_sincea =
-                      mapping_delete_set
-                        (finite_UNIV_list,
-                          (ceq_list (ceq_option ceq_event_data)),
-                          (ccompare_list (ccompare_option ccompare_event_data)),
-                          (equal_list (equal_option equal_event_data)))
-                        tuple_since since_del
-                      in
-                    let wf_table_sincea =
-                      wf_table_antijoin
-                        (ceq_event_data, ccompare_event_data, equal_event_data,
-                          hashable_event_data, heap_event_data)
-                        wf_table_since wf_since_del
-                      in
-                     ((t, (gc, (maskL,
-                                 (maskR,
-                                   (data_prev,
-                                     (data_in,
-                                       (table_ina,
- (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea)))))))))),
-                       delete_maggauxa aggargs in_del aggaux)))));;
+                               wf_table_since wf_since_del
+                             in
+                            ((t, (gc, (maskL,
+(maskR,
+  (data_prev,
+    (data_in,
+      (table_ina,
+        (wf_table_ina, (tuple_ina, (wf_table_sincea, tuple_sincea)))))))))),
+                              delete_maggauxa aggargs in_del aggaux))))));;
 
 let rec ed_gc_mmsaux
   args (nt, (gc, (maskL,
