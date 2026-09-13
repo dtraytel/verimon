@@ -54,4 +54,30 @@ let dq_pieces () =
   Printf.printf "  front empty at add_new: %d of %d steps; a1 pair index: " !front_empty ntp;
   Hashtbl.iter (fun k v -> Printf.printf "%s:%d " k v) idx_hist; print_newline ()
 
-let () = List.iter (fun sp -> sparse := sp; Printf.printf "-- one non-empty table every %d time points:\n" sp; dq_pieces ()) [1; 8]
+let old_until () =
+  let args = args () in
+  let aux = ref (M.init_mmauaux args) in
+  let t_add = ref 0. and t_eval = ref 0. in
+  for tp = 0 to ntp - 1 do
+    let ts = nat (tp / per_ts) in
+    let (a1, d1) = time (fun () -> M.add_new_mmauaux args unit_table (table (tp mod domain)) ts !aux) in
+    let ((zs, a2), d2) = time (fun () -> M.eval_mmauaux args ts a1) in
+    aux := a2; t_add := !t_add +. d1; t_eval := !t_eval +. d2
+  done;
+  Printf.printf "mapping Until (us/tp): add_new %.2f  eval %.2f  total %.2f\n"
+    (!t_add *. 1e6 /. float ntp) (!t_eval *. 1e6 /. float ntp) ((!t_add +. !t_eval) *. 1e6 /. float ntp)
+
+let dq_until () =
+  let args = args () in
+  let aux = ref (M.init_dq args) in
+  let t_add = ref 0. and t_eval = ref 0. in
+  for tp = 0 to ntp - 1 do
+    let ts = nat (tp / per_ts) in
+    let (a1, d1) = time (fun () -> M.add_new_dq args unit_table (table (tp mod domain)) ts !aux) in
+    let ((zs, a2), d2) = time (fun () -> M.eval_dq args ts a1) in
+    aux := a2; t_add := !t_add +. d1; t_eval := !t_eval +. d2
+  done;
+  Printf.printf "deque   Until (us/tp): add_new %.2f  eval %.2f  total %.2f\n"
+    (!t_add *. 1e6 /. float ntp) (!t_eval *. 1e6 /. float ntp) ((!t_add +. !t_eval) *. 1e6 /. float ntp)
+
+let () = List.iter (fun sp -> sparse := sp; Printf.printf "-- one non-empty table every %d time points:\n" sp; old_until (); dq_until (); dq_pieces ()) [1; 8]

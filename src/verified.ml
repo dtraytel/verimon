@@ -9171,7 +9171,9 @@ let rec dq_norm
 
 let rec dq_tl
   d = (let da = dq_norm d in
-        Dq (tla (dq_f da), dq_b da, minus_nata (dq_nf da) one_nata, dq_nb da));;
+        dq_norm
+          (Dq (tla (dq_f da), dq_b da, minus_nata (dq_nf da) one_nata,
+                dq_nb da)));;
 
 let rec eval_step_dq
   args (tp, (tss, (tables,
@@ -9250,7 +9252,11 @@ let rec shift_dq
           (linearize tss_queue));;
 
 let rec dq_push
-  x d = Dq (dq_f d, x :: dq_b d, dq_nf d, plus_nata (dq_nb d) one_nata);;
+  x d = (if null (dq_f d)
+          then Dq (rev (x :: dq_b d), [], plus_nata (dq_nb d) one_nata,
+                    zero_nata)
+          else Dq (dq_f d, x :: dq_b d, dq_nf d,
+                    plus_nata (dq_nb d) one_nata));;
 
 let rec add_new_dq
   args rel1 rel2 nt aux =
