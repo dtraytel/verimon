@@ -16,3 +16,8 @@ create a temporary one), then:
 
 (the directory has no `dune` file of its own so that the ordinary build does not depend on
 the generated copy).
+
+`until_dq_bench.ml` does the same for the deque-based Until structure of
+`Optimized_Until_Deque.thy` (Section 11 of `EFFICIENCY.md`): it times the pieces of
+`add_new_dq` and records which deque entries the new table's pairs touch and how often the
+front list of the deque is empty when they do.

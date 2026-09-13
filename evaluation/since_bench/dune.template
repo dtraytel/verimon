@@ -1,5 +1,5 @@
-(executable
-  (name since_bench)
-  (modules since_bench verified_open)
+(executables
+  (names since_bench until_dq_bench)
+  (modules since_bench until_dq_bench verified_open)
   (flags (:standard -w -a))
   (libraries zarith unix))
