@@ -432,6 +432,42 @@ that failed with a pattern-matching exception for Since with join columns, caugh
 `since` benchmark and the test suite.
 
 
+## 7c. Bulk construction of the database (implemented)
+
+`insert_into_db` inserted every input tuple separately: a string-keyed mapping update and a
+red-black-tree insertion per tuple (1.6% of P3, but 10-17% of `agg` and `since`, whose logs
+have many tuples per time point relative to the kernel's work). Now the front end collects
+the tuples of a time point per predicate, sorts them with an OCaml comparator that mirrors
+the verified one, and hands the list to the verified `table_of_list`, which checks strict
+sortedness with the verified comparator in linear time and then builds the tree in linear
+time with `rbtreeify`; if the check fails (the two comparators disagree), it falls back to
+repeated insertion, so the result is `set xs` in every case (`RBT_set_rbt_of_sorted_list`).
+`insert_table_into_db` inserts the table with one mapping update and is proved equal to
+folding `insert_into_db` over the list (`insert_table_into_db_fold`). Duplicates are removed
+in the front end only when the tuples are equal as values (bitwise for floats), so no tuple
+is lost. Effect: the database construction share of `agg` fell from about 25% to 17%; the
+linear path is taken on all benchmark logs (`rbtreeify` 2.4%, sortedness check 1%).
+
+## 7d. Aggregation without quadratic filtering; option-valued unions (implemented)
+
+Profiling `agg` showed two more algorithmic problems, both fixed by proven code equations
+in `Code_Opt.thy`:
+
+* `eval_agg` filtered the whole table once per group and each group once per distinct value
+  of the aggregated term. The new equation clusters the table by the group key and each
+  group by the term value (`cluster`, one insertion per tuple), then applies the aggregation
+  operator to the value/count pairs (`agg_values`).
+* The `Match` mode of predicate evaluation computes `\<Union>v\<in>X. set_option (...)`, which
+  Containers compiles through a set of sets whose comparator compares whole tables
+  (`comp_of_ords`/`lexord_fusion`: 40% of the large aggregation run). The `code_unfold` rule
+  `Union_set_option_these` rewrites it to `Option.these` of the image. This affects every
+  predicate whose argument list is not a plain list of distinct variables, not only
+  aggregations.
+
+Effect (best of three, distribution compiler): `agg` (50 tuples per time point) 0.49 s ->
+0.37 s; a log with 2000 tuples and 20 groups per time point 1.41 s -> 0.87 s (MonPoly:
+0.24 s). RESULTS_7D
+
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
 `thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an
