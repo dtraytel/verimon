@@ -510,13 +510,14 @@ section \<open>Since without join columns\<close>
 text \<open>
   The Since structure keeps two @{typ "'a wf_table"}s indexed by the join columns
   @{term "args_L args"}. They are consulted by @{const join_mmsaux} only when there are join
-  columns; without them (@{term "args_L args = {}"}, e.g. for @{text ONCE}) the operations of
-  @{text Optimized_Since} maintain them as @{term "wf_table_of_keys n R m"}, the set of keys of
-  the corresponding mapping. Both @{const wf_table_of_set} and @{const wf_table_of_keys} are made
+  columns that do not cover all columns; without them (@{term "args_L args = {}"}, e.g. for
+  @{text ONCE}) or when all columns are join columns (@{term "args_L args = args_R args"}) the
+  operations of @{text Optimized_Since} maintain them as @{term "wf_table_of_keys n R m"}, the
+  set of keys of the corresponding mapping. Both @{const wf_table_of_set} and @{const wf_table_of_keys} are made
   representations of @{typ "'a wf_table"} for the code generator: constructing them costs
   nothing, the (never taken) reads filter lazily, and the binary operations convert them to the
-  plain set representation first. Constructing an index for the empty join column set is also
-  replaced by the plain representation.
+  plain set representation first. Constructing an index for the empty or the full join column
+  set is also replaced by the plain representation.
 \<close>
 
 lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set n A I X) = wf_table_of_set n A X"
@@ -525,7 +526,7 @@ lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set n A I X) = wf_tabl
 declare [[code drop: wf_table_of_set_args]]
 
 lemma wf_table_of_set_args_code[code]:
-  "wf_table_of_set_args args X = (if args_L args = {}
+  "wf_table_of_set_args args X = (if args_L args = {} \<or> args_L args = args_R args
      then wf_table_of_set (args_n args) (args_R args) X
      else wf_table_of_idx (wf_idx_of_set (args_n args) (args_R args) (args_L args) X))"
   by (simp add: wf_table_of_set_args_def wf_table_of_idx_of_set)

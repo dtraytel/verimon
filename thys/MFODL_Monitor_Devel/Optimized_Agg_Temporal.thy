@@ -65,6 +65,14 @@ fun join_mmasaux :: "args \<Rightarrow> event_data table \<Rightarrow> mmasaux \
           wf_table_since' = (if take_all then wf_table_since else wf_table_of_set_args args {});
           tuple_since' = (if take_all then tuple_since else Mapping.empty) in
           ((t, gc, maskL, maskR, data_prev, data_in, table_in', wf_table_in', tuple_in', wf_table_since', tuple_since'), aggaux'))
+       else if args_L args = args_R args then
+          (let in_del = (if pos then table_in - X else table_in \<inter> X);
+          tuple_in' = mapping_delete_set tuple_in in_del;
+          table_in' = table_in - in_del;
+          wf_table_in' = wf_table_upd args tuple_in' (\<lambda>_. wf_table_of_set_args args table_in');
+          tuple_since' = Mapping.filter (\<lambda>as _. join_cond pos X as) tuple_since;
+          wf_table_since' = wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since')) in
+          ((t, gc, maskL, maskR, data_prev, data_in, table_in', wf_table_in', tuple_in', wf_table_since', tuple_since'), delete_maggaux' aggargs in_del aggaux))
        else (let wf_X = wf_table_of_idx (wf_idx_of_set (args_n args) (args_L args) (args_L args) X);
           wf_in_del = (if pos then wf_table_antijoin else wf_table_join) wf_table_in wf_X;
           in_del = wf_table_set wf_in_del;
@@ -245,6 +253,33 @@ proof -
       then show ?thesis using * by presburger
     next
       case False
+      show ?thesis
+      proof (cases "args_L args = args_R args")
+        case eq: True
+        let ?temp = "let in_del = (if args_pos args then table_in - rel1 else table_in \<inter> rel1);
+          tuple_in' = mapping_delete_set tuple_in in_del;
+          table_in' = table_in - in_del;
+          wf_table_in' = wf_table_upd args tuple_in' (\<lambda>_. wf_table_of_set_args args table_in');
+          tuple_since' = Mapping.filter (\<lambda>as _. join_cond (args_pos args) rel1 as) tuple_since;
+          wf_table_since' = wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since')) in
+          ((nt, gc, maskL, maskR, data_prev, data_in, table_in', wf_table_in', tuple_in', wf_table_since', tuple_since'), delete_maggaux' aggargs in_del aggaux)"
+        have *: "join_mmasaux args rel1 ((nt, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since), aggaux) = ?temp"
+          using False eq some_aggargs by auto
+        have "valid_mmasaux args cur ?temp (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
+        proof(cases aggaux)
+          case None
+          then show ?thesis using some_aggargs valid_msaux' False eq by(simp del:valid_mmsaux.simps)
+        next
+          case (Some a)
+          then have valid_maggaux: "valid_maggaux aggargs a (Mapping.keys tuple_in)" using some_aggargs assms(1) by auto
+          have in_del_sub: "(if args_pos args then table_in - rel1 else table_in \<inter> rel1) \<subseteq> Mapping.keys tuple_in"
+            by (auto simp: keys_in)
+          show ?thesis using valid_delete_maggaux[OF valid_maggaux in_del_sub] some_aggargs Some valid_msaux' False eq
+            by (auto simp del:delete_maggaux.simps valid_mmsaux.simps simp: keys_in split:option.splits prod.splits if_splits)
+        qed
+        then show ?thesis using * by presburger
+      next
+        case neq: False
       let ?temp = "let wf_X = wf_table_of_idx (wf_idx_of_set (args_n args) (args_L args) (args_L args) rel1);
         wf_in_del = (if args_pos args then wf_table_antijoin else wf_table_join) wf_table_in wf_X;
         in_del = wf_table_set wf_in_del;
@@ -257,11 +292,11 @@ proof -
         wf_table_since' = wf_table_antijoin wf_table_since wf_since_del in
         ((nt, gc, maskL, maskR, data_prev, data_in, table_in', wf_table_in', tuple_in', wf_table_since', tuple_since'), delete_maggaux' aggargs in_del aggaux)"
       have *: "join_mmasaux args rel1 ((nt, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since), aggaux) = ?temp" 
-        using False some_aggargs by auto
+        using False neq some_aggargs by auto
       have "valid_mmasaux args cur ?temp (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)" 
       proof(cases aggaux)
         case None
-        then show ?thesis using some_aggargs valid_msaux' False by(simp del:valid_mmsaux.simps) 
+        then show ?thesis using some_aggargs valid_msaux' False neq by(simp del:valid_mmsaux.simps) 
       next
         case (Some a)
         then have valid_maggaux: "valid_maggaux aggargs a (Mapping.keys tuple_in)" using some_aggargs assms(1) by auto
@@ -274,12 +309,13 @@ proof -
         show ?thesis using
             valid_delete_maggaux[OF valid_maggaux,
               where ?Y="wf_table_set ((if args_pos args then wf_table_antijoin else wf_table_join) wf_table_in (wf_table_of_idx (wf_idx_of_set (args_n args) (args_L args) (args_L args) rel1)))"]
-              some_aggargs Some valid_msaux' False mapping_filter_keys_diff[of _ tuple_in, symmetric]
+              some_aggargs Some valid_msaux' False neq mapping_filter_keys_diff[of _ tuple_in, symmetric]
           by (auto simp del:delete_maggaux.simps valid_mmsaux.simps simp: keys_in table_in
               wf_table_set_antijoin[OF sig_in aux L_R, unfolded join_sub[OF L_R wf_table_set_table[OF aux] wf_table_set_table[OF sig_in]]]
               wf_table_set_join[OF sig_in aux refl, where ?A'="args_L args", unfolded join_sub[OF L_R wf_table_set_table[OF aux] wf_table_set_table[OF sig_in]]] split:option.splits prod.splits if_splits)
       qed
       then show ?thesis using * by presburger
+      qed
     qed
   qed
 qed
