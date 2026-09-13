@@ -546,11 +546,10 @@ The plan, ordered by expected gain per effort:
    of MonPoly relations, print through a buffer, format machine-size integers without
    `Z.to_string`, skip re-sorting when the kernel order already agrees. Output-heavy
    formulas gain 20-30%; the same printing path could be adopted by MonPoly.
-2. **Database construction.** `insert_into_db` performs one RBT insertion and one
-   string-keyed mapping update per input tuple (3-8%). Accumulating the tuples of a time
-   point per predicate on the OCaml side and building each table in one verified bulk
-   operation (sorted list to RBT, `rbtreeify`, linear time) removes most of it. Requires a
-   small verified constant (`table_of_list`) and one session build.
+2. **Database construction (done, Section 7c).** `insert_into_db` performed one RBT
+   insertion and one string-keyed mapping update per input tuple (3-8%). The tuples of a
+   time point are now accumulated per predicate on the OCaml side and each table is built
+   by one verified bulk operation (sorted list to RBT, `rbtreeify`, linear time).
 3. **Unions over sets of sets in the auxiliary structures (done, Section 9.2).**
    `add_new_mmuaux` built its candidate set as a union over an image of singleton sets, and
    `set_of_idx`, `gc_mmsaux` and the `eval_step` functions took unions of families of tables
@@ -596,8 +595,11 @@ once 3.14 → 2.74 s, since 1.09 → 0.92 s, eventually 1.71 → 1.46 s, until 0
 
 ### 9.1 Front end changes on this branch
 
-* `Verified_adapter.step` returns tuple lists in kernel order; `Helper.show_results_list`
-  projects, checks sortedness (re-sorting only if the free-variable permutation changed the
-  order), and prints each time point through one buffer.
+* `Verified_adapter.step` returns the verdict tables in the kernel's representation;
+  `Verified_adapter.show_results` folds them out of the red-black tree in kernel order,
+  projects, checks sortedness with MonPoly's tuple order (re-sorting only if the
+  free-variable permutation changed the order), and prints each time point through one
+  buffer directly from `event_data` values, without building `Tuple.tuple`s or
+  intermediate strings (a further 1.2x on `once`, 1.05-1.08x on P2 and `complex`).
 * `Predicate.string_of_cst` formats integers that fit a machine word with `string_of_int`.
 * `Tuple.compare` is specialised (Section 4).
