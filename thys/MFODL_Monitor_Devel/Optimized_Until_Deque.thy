@@ -35,8 +35,15 @@ definition dq_len :: "'a dq \<Rightarrow> nat" where
 definition dq_push :: "'a \<Rightarrow> 'a dq \<Rightarrow> 'a dq" where
   "dq_push x d = Dq (dq_f d) (x # dq_b d) (dq_nf d) (dq_nb d + 1)"
 
+text \<open>
+  When the front list is exhausted, only the older half of the back list is moved to the
+  front, so that the newest entries stay at the head of the back list: the entries accessed
+  by @{text add_new} are the newest ones, and a walk of the whole window is avoided.
+\<close>
+
 definition dq_norm :: "'a dq \<Rightarrow> 'a dq" where
-  "dq_norm d = (if dq_f d = [] then Dq (rev (dq_b d)) [] (dq_nb d) 0 else d)"
+  "dq_norm d = (if dq_f d = [] then (let h = dq_nb d div 2 in
+     Dq (rev (drop h (dq_b d))) (take h (dq_b d)) (dq_nb d - h) h) else d)"
 
 definition dq_tl :: "'a dq \<Rightarrow> 'a dq" where
   "dq_tl d = (let d' = dq_norm d in Dq (tl (dq_f d')) (dq_b d') (dq_nf d' - 1) (dq_nb d'))"
@@ -64,19 +71,43 @@ lemma dq_list_push[simp]: "dq_list (dq_push x d) = dq_list d @ [x]"
   by (simp add: dq_list_def dq_push_def)
 
 lemma dq_inv_norm[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_norm d)"
-  by (simp add: dq_inv_def dq_norm_def)
+  by (auto simp add: dq_inv_def dq_norm_def Let_def min_def)
 
 lemma dq_list_norm[simp]: "dq_list (dq_norm d) = dq_list d"
-  by (simp add: dq_list_def dq_norm_def)
+proof (cases "dq_f d = []")
+  case True
+  have "rev (drop h (dq_b d)) @ rev (take h (dq_b d)) = rev (dq_b d)" for h
+    by (metis append_take_drop_id rev_append)
+  then show ?thesis using True by (simp add: dq_list_def dq_norm_def Let_def)
+qed (simp add: dq_list_def dq_norm_def)
 
-lemma dq_f_norm: "dq_inv d \<Longrightarrow> dq_list d \<noteq> [] \<Longrightarrow> dq_f (dq_norm d) \<noteq> []"
-  by (auto simp add: dq_inv_def dq_norm_def dq_list_def)
+lemma dq_f_norm:
+  assumes "dq_inv d" "dq_list d \<noteq> []"
+  shows "dq_f (dq_norm d) \<noteq> []"
+proof (cases "dq_f d = []")
+  case True
+  then have "dq_b d \<noteq> []" using assms(2) by (simp add: dq_list_def)
+  then have "0 < length (dq_b d)" by simp
+  then have "length (dq_b d) div 2 < length (dq_b d)" by presburger
+  then show ?thesis using True by (simp add: dq_norm_def Let_def)
+qed (simp add: dq_norm_def)
 
 lemma dq_inv_tl[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_tl d)"
-  by (auto simp add: dq_inv_def dq_tl_def dq_norm_def)
+  using dq_inv_norm[of d] by (auto simp add: dq_inv_def dq_tl_def Let_def)
 
-lemma dq_list_tl[simp]: "dq_inv d \<Longrightarrow> dq_list (dq_tl d) = tl (dq_list d)"
-  by (auto simp add: dq_inv_def dq_tl_def dq_norm_def dq_list_def)
+lemma dq_list_tl[simp]:
+  assumes inv: "dq_inv d"
+  shows "dq_list (dq_tl d) = tl (dq_list d)"
+proof (cases "dq_list d = []")
+  case True
+  then have "dq_f (dq_norm d) = []" "dq_b (dq_norm d) = []" using dq_list_norm[of d] by (auto simp: dq_list_def)
+  then show ?thesis using True by (simp add: dq_list_def dq_tl_def Let_def)
+next
+  case False
+  have "dq_list (dq_tl d) = tl (dq_f (dq_norm d) @ rev (dq_b (dq_norm d)))"
+    using dq_f_norm[OF inv False] by (simp add: dq_list_def dq_tl_def Let_def tl_append2)
+  then show ?thesis using dq_list_norm[of d] by (simp add: dq_list_def)
+qed
 
 lemma dq_nth: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth d k = dq_list d ! k"
   by (auto simp add: dq_inv_def dq_nth_def dq_len_def dq_list_def nth_append rev_nth)
