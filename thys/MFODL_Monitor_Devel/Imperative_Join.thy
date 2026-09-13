@@ -261,17 +261,17 @@ lemma bin_join_code_imp[code]:
     else if t' = {} then (if pos then {} else t)
     else if A' = {} then (if (pos \<longleftrightarrow> replicate n None \<in> t') then t else {})
     else if A' = A then (if pos then t \<inter> t' else t - t')
-    else if A' \<subseteq> A then {as \<in> t. proj_tuple_in_join pos (join_mask n A') as t'}
-    else if A \<subseteq> A' \<and> pos then {as \<in> t'. proj_tuple_in_join pos (join_mask n A) as t}
+    else if A' \<subseteq> A then (let m = join_mask n A' in {as \<in> t. proj_tuple_in_join pos m as t'})
+    else if A \<subseteq> A' \<and> pos then (let m = join_mask n A in {as \<in> t'. proj_tuple_in_join pos m as t})
     else if pos \<and> finite t \<and> finite t' \<and>
         (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
       then (case ID CCOMPARE('a tuple) of
-          None \<Rightarrow> (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)
+          None \<Rightarrow> (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)
         | Some _ \<Rightarrow> (if use_imperative_join
             then (if card t \<le> card t' then hprobe_join (A \<inter> A') t t' else hprobe_join (A \<inter> A') t' t)
-            else (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)))
+            else (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)))
     else join t pos t')"
-  by (subst bin_join.simps) (auto simp: probe_join_join hprobe_join_join join_commute split: option.splits)
+  by (subst bin_join.simps) (auto simp: Let_def probe_join_n_def probe_join_join hprobe_join_join join_commute split: option.splits)
 
 (*<*)
 end

@@ -519,6 +519,28 @@ over the index construction for the new tables (`wf_idx_of_set`, 18%), the index
 (16%) and flattening the deleted index (`set_of_idx`, 12%). All outputs identical, all cram
 tests pass.
 
+## 7f. Tuple projections without index arithmetic (implemented)
+
+`restrict A v`, the projection of a tuple to a column set, is defined as
+`map (λi. if i ∈ A then v ! i else None) [0..<length v]`: per tuple it allocates an index list
+of big integers, tests set membership per position and accesses the list quadratically. It is
+evaluated for every tuple of both operands of a probe join (as the key of the hash/tree
+index) and for every tuple that enters a tuple index of the Since structure; in the `complex`
+profile the index arithmetic (`upt`, `nth`, `length`, `Suc`) was about 15% of the time.
+
+Two code equations in `Code_Opt.thy`/`Monomorphic_Code.thy`:
+
+* `restrict A v = restrict_aux 0 A v` walks the tuple once (proved by `nth_equalityI`);
+* the probe join receives the arity from `bin_join` (`probe_join_n n I t t' = probe_join I t t'`)
+  and computes the key function once per join: `restrict_with I n` builds the mask
+  `join_mask n I` and projects every tuple by a single traversal (`proj_tuple_chk`, which
+  also checks the length so that `restrict_with I n = restrict I` holds unconditionally and
+  no invariant is needed). `bin_join` also computes `join_mask` once per join instead of
+  once per tuple in its subset cases (it was inside the filter predicate).
+
+Effect (scratch export, one run, distribution compiler): `complex` 3.28 s -> 2.86 s (1.15x),
+`and` 1.09x, `andnot` 1.05x, `agg` 1.06x, `since` 1.04x, others within noise. RESULTS_7F
+
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
 `thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an

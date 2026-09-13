@@ -276,6 +276,57 @@ next
     using ab by (intro UN_I[of b] UN_I[of a]) auto
 qed
 
+section \<open>Projections without index arithmetic\<close>
+
+text \<open>
+  @{const restrict} is defined through @{term "[0..<length v]"} and @{const nth}, i.e. with
+  big-integer index arithmetic and quadratic list access per tuple; it is evaluated for every
+  tuple of both operands of a probe join and for every tuple entering a tuple index. The code
+  equation below walks the tuple once. For the probe join the column set is additionally
+  turned into a mask once per join (@{text restrict_with}), which is the same function as
+  @{const restrict} (it falls back to it for tuples of an unexpected length), so that the
+  projection of a tuple is a single traversal without set membership tests.
+\<close>
+
+fun restrict_aux :: "nat \<Rightarrow> nat set \<Rightarrow> 'a option list \<Rightarrow> 'a option list" where
+  "restrict_aux i A [] = []"
+| "restrict_aux i A (x # xs) = (if i \<in> A then x else None) # restrict_aux (Suc i) A xs"
+
+lemma length_restrict_aux[simp]: "length (restrict_aux i A v) = length v"
+  by (induction v arbitrary: i) auto
+
+lemma nth_restrict_aux: "j < length v \<Longrightarrow> restrict_aux i A v ! j = (if i + j \<in> A then v ! j else None)"
+  by (induction v arbitrary: i j) (auto simp: nth_Cons split: nat.splits)
+
+declare [[code drop: restrict]]
+
+lemma restrict_code[code]: "restrict A v = restrict_aux 0 A v"
+  by (rule nth_equalityI) (auto simp: restrict_def nth_restrict_aux)
+
+fun proj_tuple_chk :: "bool list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple option" where
+  "proj_tuple_chk [] [] = Some []"
+| "proj_tuple_chk (b # bs) (x # xs) = map_option ((#) (if b then x else None)) (proj_tuple_chk bs xs)"
+| "proj_tuple_chk _ _ = None"
+
+lemma proj_tuple_chk: "proj_tuple_chk bs xs = (if length bs = length xs then Some (proj_tuple bs xs) else None)"
+  by (induction bs xs rule: proj_tuple_chk.induct) auto
+
+definition restrict_with :: "nat set \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+  "restrict_with I n = (let mask = join_mask n I in
+    (\<lambda>v. case proj_tuple_chk mask v of Some r \<Rightarrow> r | None \<Rightarrow> restrict I v))"
+
+lemma restrict_with[simp]: "restrict_with I n = restrict I"
+proof -
+  have len: "length (join_mask n I) = n"
+    by (simp add: join_mask_def)
+  show ?thesis
+    by (auto simp: restrict_with_def Let_def fun_eq_iff proj_tuple_chk len proj_tuple_join_mask_restrict
+        split: option.splits if_splits)
+qed
+
+definition probe_join_n :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_join_n n I t t' = probe_join I t t'"
+
 declare [[code drop: bin_join]]
 
 lemma bin_join_code[code]:
@@ -284,13 +335,13 @@ lemma bin_join_code[code]:
     else if t' = {} then (if pos then {} else t)
     else if A' = {} then (if (pos \<longleftrightarrow> replicate n None \<in> t') then t else {})
     else if A' = A then (if pos then t \<inter> t' else t - t')
-    else if A' \<subseteq> A then {as \<in> t. proj_tuple_in_join pos (join_mask n A') as t'}
-    else if A \<subseteq> A' \<and> pos then {as \<in> t'. proj_tuple_in_join pos (join_mask n A) as t}
+    else if A' \<subseteq> A then (let m = join_mask n A' in {as \<in> t. proj_tuple_in_join pos m as t'})
+    else if A \<subseteq> A' \<and> pos then (let m = join_mask n A in {as \<in> t'. proj_tuple_in_join pos m as t})
     else if pos \<and> finite t \<and> finite t' \<and>
         (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
-      then (if card t \<le> card t' then probe_join (A \<inter> A') t t' else probe_join (A \<inter> A') t' t)
+      then (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)
     else join t pos t')"
-  by (subst bin_join.simps) (auto simp: probe_join_join join_commute)
+  by (subst bin_join.simps) (auto simp: Let_def probe_join_n_def probe_join_join join_commute)
 
 section \<open>Code equations for the auxiliary structures\<close>
 

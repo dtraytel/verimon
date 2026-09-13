@@ -118,6 +118,29 @@ lemmas probe_join_fallback_code[code] =
   probe_join_def[where t' = "DList_set _"] probe_join_def[where t' = "Set_Monad _"]
   probe_join_def[where t' = "Collect_set _"] probe_join_def[where t' = "Complement _"]
 
+text \<open>The probe join with a precomputed projection mask (@{const probe_join_n}, Code_Opt).\<close>
+
+definition probe_step_key :: "('a tuple \<Rightarrow> 'a tuple) \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_step_key key m b acc = (case Mapping.lookup m (key b) of None \<Rightarrow> acc | Some T \<Rightarrow> probe_fold b acc T)"
+
+lemma probe_step_key_restrict: "probe_step_key (restrict I) = probe_step I"
+  by (simp add: fun_eq_iff probe_step_key_def probe_step_code)
+
+declare [[code drop: probe_join_n]]
+
+lemma probe_join_n_RBT_code[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "probe_join_n n I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join_n n I t (RBT_set rbt))
+    | Some _ \<Rightarrow> (let key = restrict_with I n in
+        RBT_Set2.fold (probe_step_key key (cluster (Some \<circ> key) t)) rbt {}))"
+  unfolding probe_join_n_def
+  by (subst probe_join_RBT_code) (simp only: Let_def restrict_with probe_step_key_restrict)
+
+lemmas probe_join_n_fallback_code[code] =
+  probe_join_n_def[where t' = "DList_set _"] probe_join_n_def[where t' = "Set_Monad _"]
+  probe_join_n_def[where t' = "Collect_set _"] probe_join_n_def[where t' = "Complement _"]
+
 lemma tmp_set_RBT_code[code]:
   fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
   shows "tmp_set a1_map maskL pos tp len B (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
@@ -324,6 +347,8 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("probe_fold", "ed_probe_fold", ["event_data"]),
    ("probe_step", "ed_probe_step", ["event_data"]),
    ("probe_join", "ed_probe_join", ["event_data"]),
+   ("probe_step_key", "ed_probe_step_key", ["event_data"]),
+   ("probe_join_n", "ed_probe_join_n", ["event_data"]),
    ("bin_join", "ed_bin_join", ["event_data"]),
    ("tmp_step", "ed_tmp_step", ["event_data"]),
    ("tmp_set", "ed_tmp_set", ["event_data"]),
