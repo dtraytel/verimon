@@ -493,6 +493,26 @@ large aggregation log 1.47 s -> 0.91 s (1.6x; MonPoly 0.26 s), `and` 1.14x, `eve
 1.08x, `until` 1.05x; P2, P3 and `since` within the run-to-run noise. All outputs identical,
 all cram tests pass.
 
+## 7e. Since structure: plain sets when all columns are join columns (implemented)
+
+For `B(x,y) SINCE A(x,y)` and similar formulas the join columns of the Since structure are all
+its columns (`args_L args = args_R args`), so the join in `join_mmsaux` is an intersection or a
+set difference and the tuple indices (`wf_idx`, a mapping from projected keys to singleton
+tables) are pure overhead: on the `since` benchmark 28% of the time went into building and
+rebuilding them (`wf_idx_of_set`) and another 13% into flattening them (`set_of_idx`).
+
+`join_mmsaux` and `join_mmasaux` get a third branch for this case: the deleted tuples are
+`table_in - X` (or `table_in ∩ X` for negated left operands), `tuple_since` is filtered with
+one membership test per key, and both `wf_table`s are maintained by `wf_table_upd`, whose
+condition is extended to `args_L args = {} ∨ args_L args = args_R args`. The correctness
+proof (`join_mmsaux_abs_eq`, then the aggregation variant) shows that the new branch
+computes the same abstract structure as before (`join_eq` for the sets,
+`proj_tuple_in_join_mask_idle` for the filter); the `wf_table` values agree by
+`wf_table_eqI`. The code equation for `wf_table_of_set_args` picks the plain set
+representation in the same case.
+
+Effect (best of three, distribution compiler): RESULTS_7E
+
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
 `thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an
