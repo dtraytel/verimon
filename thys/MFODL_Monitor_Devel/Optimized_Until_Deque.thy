@@ -73,9 +73,15 @@ lemma dq_list_push[simp]: "dq_list (dq_push x d) = dq_list d @ [x]"
 lemma dq_inv_norm[simp]:
   assumes inv: "dq_inv d"
   shows "dq_inv (dq_norm d)"
-proof -
-  have le: "length (dq_b d) div 2 \<le> length (dq_b d)" by (rule div_le_dividend)
-  show ?thesis using inv le unfolding dq_inv_def dq_norm_def Let_def by (auto simp add: min_def)
+proof (cases "dq_f d = []")
+  case True
+  have nb: "dq_nb d = length (dq_b d)" using inv unfolding dq_inv_def by simp
+  have "min (length (dq_b d) div 2) (length (dq_b d)) = length (dq_b d) div 2"
+    by (rule min_absorb1) (rule div_le_dividend)
+  then show ?thesis using True unfolding dq_norm_def dq_inv_def Let_def nb by simp
+next
+  case False
+  then show ?thesis using inv by (simp add: dq_norm_def)
 qed
 
 lemma dq_list_norm[simp]: "dq_list (dq_norm d) = dq_list d"
