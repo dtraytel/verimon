@@ -251,6 +251,27 @@ polymorphic"). This is the upper half of what the syntactic hoisting experiment 
 the dictionary constructions have disappeared from the profile, and what remains is GC,
 red-black-tree work and big-integer time stamps (Section 9).
 
+**Since without indices (Section 7b), bulk construction and aggregation (Sections 7c, 7d).**
+Kernel of Section 7d compared with the kernel of the monomorphisation table above
+(`after`), one run each, distribution compiler, plus the direct verdict printer of
+Section 9.1 in the front end; all outputs identical, all cram tests pass:
+
+| formula | after monomorphisation | Section 7d kernel | speedup |
+|---|---|---|---|
+| P2 | 2.11-2.34 s | 2.46 s | (slower machine; 1.04x against the 7b kernel in the same run) |
+| P3 | 1.86-2.10 s | 1.41-1.52 s | 1.3-1.4x (Section 7b) |
+| and | 0.34-0.37 s | 0.36 s | 1.0x |
+| andnot | 0.22-0.23 s | 0.24 s | 1.0x |
+| once | 2.45-2.48 s | 1.81 s | 1.35x (7b and printer) |
+| since | 0.83-0.85 s | 0.88-1.00 s | 0.9-1.0x |
+| eventually | 1.24-1.29 s | 1.34 s | 0.95x |
+| until | 0.52-0.53 s | 0.56 s | 0.95x |
+| agg | 0.47-0.49 s | 0.42 s | 1.15x |
+| complex | 3.63-3.74 s | 3.25 s | 1.13x |
+
+(The machine was about 10% slower during this run than during the monomorphisation run, as
+the MonPoly column of the same run shows: P2 0.56 s instead of 0.49 s.)
+
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
 `chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
 
@@ -466,7 +487,11 @@ in `Code_Opt.thy`:
 
 Effect (best of three, distribution compiler): `agg` (50 tuples per time point) 0.49 s ->
 0.37 s; a log with 2000 tuples and 20 groups per time point 1.41 s -> 0.87 s (MonPoly:
-0.24 s). RESULTS_7D
+0.24 s). With the regenerated canonical kernel (bulk construction, clustering, option-valued
+unions; two runs, compared with the kernel of Section 7b): `agg` 0.52 s -> 0.42 s (1.24x), the
+large aggregation log 1.47 s -> 0.91 s (1.6x; MonPoly 0.26 s), `and` 1.14x, `eventually`
+1.08x, `until` 1.05x; P2, P3 and `since` within the run-to-run noise. All outputs identical,
+all cram tests pass.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
