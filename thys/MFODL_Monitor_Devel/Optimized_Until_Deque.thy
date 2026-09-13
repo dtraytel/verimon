@@ -70,8 +70,13 @@ lemma dq_inv_push[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_push x d)"
 lemma dq_list_push[simp]: "dq_list (dq_push x d) = dq_list d @ [x]"
   by (simp add: dq_list_def dq_push_def)
 
-lemma dq_inv_norm[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_norm d)"
-  by (auto simp add: dq_inv_def dq_norm_def Let_def min_def)
+lemma dq_inv_norm[simp]:
+  assumes inv: "dq_inv d"
+  shows "dq_inv (dq_norm d)"
+proof -
+  have le: "length (dq_b d) div 2 \<le> length (dq_b d)" by (rule div_le_dividend)
+  show ?thesis using inv le unfolding dq_inv_def dq_norm_def Let_def by (auto simp add: min_def)
+qed
 
 lemma dq_list_norm[simp]: "dq_list (dq_norm d) = dq_list d"
 proof (cases "dq_f d = []")
@@ -89,7 +94,7 @@ proof (cases "dq_f d = []")
   then have "dq_b d \<noteq> []" using assms(2) by (simp add: dq_list_def)
   then have "0 < length (dq_b d)" by simp
   then have "length (dq_b d) div 2 < length (dq_b d)" by presburger
-  then show ?thesis using True by (simp add: dq_norm_def Let_def)
+  then show ?thesis using True assms(1) by (simp add: dq_norm_def dq_inv_def Let_def)
 qed (simp add: dq_norm_def)
 
 lemma dq_inv_tl[simp]: "dq_inv d \<Longrightarrow> dq_inv (dq_tl d)"
