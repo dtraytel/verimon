@@ -779,6 +779,36 @@ lemma eval_step_mmauaux_fold_code[code]:
         ((tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done), aggaux))))"
   by (subst eval_step_mmauaux.simps) (simp only: Union_set_fold)
 
+text \<open>
+  The deque-based Until structure of @{theory MFODL_Monitor_Devel.Optimized_Until_Deque} gets the
+  same treatment for its @{const eval_step_dq}. Its @{const add_new_dq} is a fold already.
+\<close>
+
+declare [[code drop: eval_step_dq]]
+
+lemma eval_step_dq_fold_code[code]:
+  "eval_step_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) =
+    (case safe_hd tss of (Some ts, tss') \<Rightarrow>
+      (let m = dq_nth a2_dq 0;
+        I = args_ivl args;
+        T = eval_args_agg args result;
+        tss' = tl_queue tss';
+        (ts', tss'') = case safe_hd tss' of
+              (Some ts', tss'') \<Rightarrow> (ts', tss'') |
+              (None, tss'') \<Rightarrow> (0, tss'');
+        (tables, taken) = takedropWhile_queue (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables;
+        to_del_approx = fold (\<union>) (map fst taken) {};
+        to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of Some tstp \<Rightarrow> (\<not>ts_tp_lt I ts' (tp - len + 1) tstp) |
+                                                            None \<Rightarrow> False) to_del_approx;
+        m'' = mapping_delete_set m to_del;
+        m' = dq_nth a2_dq 1;
+        result' = if len = 1 then {} else (result - to_del) \<union> Mapping.keys m';
+        a2_dq = dq_tl (dq_upd a2_dq 1 (if len = 1 then Mapping.empty
+          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m'));
+        tstp_dq = dq_tl tstp_dq in
+        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # done)))"
+  by (subst eval_step_dq.simps) (simp only: Union_set_fold)
+
 
 section \<open>Since without join columns\<close>
 

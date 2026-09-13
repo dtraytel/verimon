@@ -48,6 +48,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Optimized_Until
     Optimized_Trigger
     Optimized_Agg_Temporal
+    Optimized_Until_Deque
     Monitor_Impl
     Code_Opt
     Imperative_Join
