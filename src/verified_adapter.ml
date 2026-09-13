@@ -401,7 +401,7 @@ let rec is_enum_list n = function
   | [] -> true
   | x :: l -> x = n && is_enum_list (n + 1) l
 
-let show_results posl _i q tsq (table: verdict) =
+let show_results_slow posl q tsq (table: verdict) =
   let defined t = List.filter_map (fun x -> x) t in
   let proj = if is_enum_list 0 posl then defined
     else fun t -> Misc.get_positions posl (defined t) in
@@ -443,6 +443,56 @@ let show_results posl _i q tsq (table: verdict) =
       end
   end;
   tuples <> []
+
+exception Slow_path
+
+(* MonPoly's tuple order on the kernel's tuples; an undefined column leaves the fast path. *)
+let rec compare_otuple_mp t1 t2 = match t1, t2 with
+  | [], [] -> 0
+  | [], _ :: _ -> -1
+  | _ :: _, [] -> 1
+  | Some x :: xs, Some y :: ys ->
+    let c = compare_event_data_mp x y in
+    if c <> 0 then c else compare_otuple_mp xs ys
+  | _ -> raise Slow_path
+
+(* Fast path for the common case (no projection, not verbose, all violations wanted): the
+   tuples are streamed from the tree in its order straight into the buffer, without building
+   tuple lists; the order is checked against the previous tuple on the way. If the tree order
+   is not MonPoly's (mixed-type columns) or a column is undefined, the general path is taken. *)
+let show_results posl _i q tsq (table: verdict) =
+  if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
+    show_results_slow posl q tsq table
+  else begin
+    let b = Buffer.create 1024 in
+    Buffer.add_string b (Printf.sprintf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q);
+    let prev = ref None in
+    let ok =
+      try
+        set_fold (fun t () ->
+            (match !prev with
+             | Some p -> if compare_otuple_mp p t >= 0 then raise Slow_path; Buffer.add_char b ' '
+             | None -> ());
+            Buffer.add_char b '(';
+            List.iteri (fun k x -> match x with
+                | Some v -> if k > 0 then Buffer.add_char b ','; add_event_data b v
+                | None -> raise Slow_path) t;
+            Buffer.add_char b ')';
+            prev := Some t) table ();
+        true
+      with Slow_path -> false
+    in
+    if not ok then show_results_slow posl q tsq table
+    else begin
+      if Misc.debugging Dbg_perf then Perf.show_results q tsq;
+      if !prev <> None then begin
+        Buffer.add_char b '\n';
+        print_string (Buffer.contents b);
+        flush stdout
+      end;
+      !prev <> None
+    end
+  end
 
 let is_monitorable dbschema f =
   let s = mmonitorable_exec (convert_formula dbschema f) in

@@ -760,6 +760,9 @@ once 3.14 → 2.74 s, since 1.09 → 0.92 s, eventually 1.71 → 1.46 s, until 0
   intermediate strings (a further 1.2x on `once`, 1.05-1.08x on P2 and `complex`). Machine-size
   integers are written into the buffer digit by digit instead of through `string_of_int`
   (which formats via `printf` and allocates): `once` 1.9 s -> 1.55 s (another 1.2x), `complex`
-  1.04x; `once` is now within 1.7x of MonPoly, whose output path is the same as before.
+  1.04x. In the common case (no projection, not verbose) the tuples are streamed from the
+  tree straight into the buffer with the order check done on the fly, so no tuple lists are
+  built at all (`once` another 1.10x); `once` is now within 1.5x of MonPoly, whose output
+  path is the same as before.
 * `Predicate.string_of_cst` formats integers that fit a machine word with `string_of_int`.
 * `Tuple.compare` is specialised (Section 4).
