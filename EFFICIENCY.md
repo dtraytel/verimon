@@ -294,7 +294,8 @@ MonPoly; all outputs identical, all 152 cram tests pass:
 Against the original kernel (first table) the cumulative factors are 1.8x (P2) to 5x
 (`complex`, `andnot`); the remaining gap to MonPoly is 1.1-1.9x on the join-, aggregation-
 and output-dominated formulas, 2.4x on `complex`, 3x on P3 and 3.9x on the per-time-point
-workload P2 (Section 7g).
+workload P2 (Section 7g). With the deque-based Until structure of Section 11, P2 is 1.18 s
+(1.45x over the `final` column, 2.9x from MonPoly); the other rows do not change.
 
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
 `chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
@@ -851,8 +852,117 @@ representations. This is weeks of proof work, not something for this branch.
 
 **Cheaper functional alternatives for the Until structure.** Its time-point-keyed mappings
 are indexed by consecutive integers; a deque of inner mappings (O(1) at both ends, which is
-where new time points arrive and old ones expire) would remove most of the 0.6 us tree
-operations per step without leaving pure HOL, at the cost of redoing the `Optimized_Until`
-invariants for the new representation. This is the most promising next step short of the
-monadic refinement.
+where new time points arrive and old ones expire) removes most of the 0.6 us tree operations
+per step without leaving pure HOL. Done in Section 11, with a simulation relation instead of
+redoing the `Optimized_Until` invariants.
+
+## 11. Until structure with deques (implemented)
+
+The "cheaper functional alternative" of Section 10, done as a verified refinement in pure
+HOL (`thys/MFODL_Monitor_Devel/Optimized_Until_Deque.thy`, 950 lines).
+
+**The change.** The Until structure `mmuaux` keeps two mappings keyed by the time points of
+the window: `a2_map` (for every time point of the window plus the next one, the mapping from
+tuples to the time stamp or time point at which they can be output) and `tstp_map` (the time
+stamp of every time point). Their key sets are always the contiguous ranges
+`{tp - len..tp}` and `{tp - len..<tp}`: `eval_step` removes the smallest key and `add_new`
+adds the largest one, and the only other access is the update of arbitrary entries in the
+window when a new table arrives. Both are now deques (`'a dq`: a front list, a back list and
+their cached lengths, with `dq_tl`, `dq_push`, `dq_nth` and `dq_upd`), so that the per-step
+operations of the structure at the two ends of the window are O(1) list operations instead
+of persistent red-black-tree operations on big-integer keys (about 0.6 us each, Section 10).
+Access to an entry in the middle of the window costs a list walk from the nearer end; the
+tree costs O(log n). The entries accessed by `add_new` are the time points at which the
+left operand last held for a tuple, clipped to the window: for `EVENTUALLY` and formulas
+whose left operand holds at most time points this is the newest entry, for a left operand
+that never holds it is the oldest one, both O(1).
+
+**The proof.** Rather than redoing the 2300 lines of `Optimized_Until` invariants for the
+new representation, the deque structure `mmuaux_dq` is related to the original `mmuaux` by a
+simulation relation `rel_uaux`: all components but the two mappings are equal, and
+`a2_map`/`tstp_map` are the mappings whose key sets are the two ranges and whose entry at
+`tp - len + k` is the `k`-th deque element. Every operation preserves the relation
+(`eval_step_sim`, `shift_sim`, `eval_sim`, `init_sim`, `length_sim`, `add_new_sim`), given
+that the original structure is valid (validity supplies `len <= tp`, the key sets and the
+bound `tp' < tp` on the values of `a1_map`, which puts all updated entries inside the
+window). The abstract type of the `muaux` locale becomes a sum type `muaux_dq` (deque
+structure for formulas without aggregation, the aggregation structure `mmauaux` otherwise)
+with validity "some valid `mmuaux` is related to the deque structure"; the four locale
+lemmas follow from the simulation lemmas and the original locale lemmas, and the
+`default_maux` interpretation in `Monitor_Impl` now uses `muaux_dq`. The relation is
+functional (`rel_uaux_det`: the related `mmuaux` is determined by the deque structure) and
+total on valid structures (`rel_uaux_of`), which also gives the fallback for infinite
+operand tables, where the fold below is not available: convert, run `add_new_mmuaux`,
+convert back.
+
+**The code.** `add_new_dq` is one fold over the sorted list of the new table
+(`csorted_list_of_set`, linear on the tree): each tuple contributes one or two (time point,
+tuple) pairs, each pair that passes the interval check goes into the table appended to the
+queue, into the deque entry of its time point (`upd_nested_step_dq`: `dq_nth`, update of the
+inner mapping, `dq_upd`) and, for the oldest time point, into the result. Folding over the
+list rather than the set (as the fused code equation of Section 7g does) needs no
+commutativity argument: the deque produced by the fold is characterised entry-wise
+(`dq_nth_upd_nested_dq`), which is all the simulation needs. The definition is executable
+as it stands; only `eval_step_dq` gets a code equation in `Code_Opt.thy` (the union of the
+expired tables as a fold, as for `eval_step_mmuaux`).
+
+**Two representation bugs found by measuring.** The first version reversed the whole back
+list into the front when the front was exhausted; afterwards every access to the newest
+entries walked the whole front list, and P2 got slower (2.15 s against 1.91 s). Moving only
+the older half restored the newest entries to the head of the back list, but P2 gained only
+5%, and the micro-benchmark (`evaluation/since_bench/until_dq_bench.ml`, EVENTUALLY[0,6),
+one tuple per time point, 1700 time points per time stamp) showed why: `add_new` cost 58 us
+per step against 9.5 us for the mapping version, all of it in the fold, and the entry the
+fold touched was always the oldest one (index 0: for `TRUE UNTIL B` the unit tuple entered
+`a1_map` at time point 0 and stays there, so the pair's time point is clipped to the start
+of the window), while the front list was empty in 8.5% of the steps: a burst of
+`eval_step`s that ends exactly when the front runs out leaves the front empty for the whole
+next time stamp, and index 0 is then the far end of the back list (about 10000 elements
+walked and copied per step). The final version keeps the front non-empty for every
+non-empty deque (`dq_tl` normalises after removing the head, `dq_push` builds the front when
+it is empty), so both ends are O(1) always.
+
+**Results.** Micro-benchmark (`evaluation/since_bench/until_dq_bench.ml`, same setting as
+Section 10), per step:
+
+| operation | mapping version, dense | deque, dense | mapping, sparse | deque, sparse |
+|---|---|---|---|---|
+| `shift` (runs the `eval_step`s) | 4.70 us | 4.07 us | 2.29 us | 1.44 us |
+| `tstp_map` update / `tstp_dq` push | 0.61 us | 0.05 us | 1.56 us | 0.05 us |
+| fold over the new table | 3.29 us | 2.51 us | 0.47 us | 0.33 us |
+| new `a2_map` entry / `a2_dq` push | 0.62 us | 0.04 us | 0.68 us | 0.04 us |
+| `a1_map` update | 0.32 us | 0.42 us | 0.32 us | 0.42 us |
+| `add_new` total | 10.2 us | 6.9 us | 4.5 us | 2.3 us |
+
+The four tree operations per step on time-point keys are gone (1.5x dense, 1.9x sparse on
+the structure); what remains is the `eval_step` (`Mapping.combine` of the expiring inner
+mapping into the next one, the `to_del` filter) and the tuple-keyed inner mappings.
+
+End to end (median of five runs, MonPoly from the same binary, all outputs identical, all
+cram tests pass):
+
+| formula | MonPoly | before (Section 4, final) | deque Until | speedup | deque / MonPoly |
+|---|---|---|---|---|---|
+| P2 | 0.41 s | 1.71 s | 1.18 s | 1.45x | 2.9x |
+| P3 | 0.42 s | 1.24 s | 1.23 s | 1.01x | 2.9x |
+| once | 0.71 s | 1.12 s | 1.09 s | 1.03x | 1.5x |
+| eventually | 0.47 s | 0.78 s | 0.78 s | 1.00x | 1.7x |
+| until | 0.22 s | 0.39 s | 0.38 s | 1.03x | 1.7x |
+| complex | 0.82 s | 2.04 s | 2.02 s | 1.01x | 2.5x |
+
+(`and`, `andnot`, `since`, `agg`: unchanged within noise.) P2, whose window spans about
+10000 time points, gains 1.45x and is now within 2.9x of MonPoly (3.9x before this
+branch's Section 7g, 8.6x at the start). The synthetic `eventually`/`until` benchmarks do
+not move: their windows hold at most a few dozen time points, where a red-black tree on
+small integers is already cheap. The remaining cost of P2 is the `eval_step` and the
+tuple-keyed operations, i.e. the constant factors of Section 2.
+
+**Trade-off.** The deque makes both ends O(1) but an entry in the middle of the window
+costs a list walk from the nearer end, where the tree costs O(log n). The entries touched
+by `add_new` are the time points at which the left operand last held for the tuple, clipped
+to the window: the oldest entry when the left operand is a constant or rarely true, the
+newest ones when it holds continuously. A left operand that changes truth value every few
+hundred time points inside a window of thousands would hit the middle; a balanced
+random-access sequence (a Braun tree, `HOL-Data_Structures`) would give O(log n) middle
+access with cheap index arithmetic instead of comparisons, at the price of O(log n) ends.
 
