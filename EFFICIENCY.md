@@ -560,6 +560,11 @@ Two code equations in `Code_Opt.thy`/`Monomorphic_Code.thy`:
   also checks the length so that `restrict_with I n = restrict I` holds unconditionally and
   no invariant is needed). `bin_join` also computes `join_mask` once per join instead of
   once per tuple in its subset cases (it was inside the filter predicate).
+* The probe join's precondition that all join columns are defined in every tuple
+  (`complete_on`, checked for every tuple of both operands on every join with `length` and
+  `nth`, about 9% of `complex`) is checked by `complete_with`: the mask is built once per
+  join and each tuple is checked in one traversal; it equals `complete_on` unconditionally.
+  `complex` and `and` gain another 3-5% (scratch export).
 
 Effect (scratch export, one run, distribution compiler): `complex` 3.28 s -> 2.86 s (1.15x),
 `and` 1.09x, `andnot` 1.05x, `agg` 1.06x, `since` 1.04x, others within noise. With the
