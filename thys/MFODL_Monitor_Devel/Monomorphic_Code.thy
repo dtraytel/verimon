@@ -356,6 +356,105 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("get_map_result", "ed_get_map_result", ["event_data"])]
   ["etuple_dict_simps"]\<close>
 
+
+section \<open>Bulk construction of tables\<close>
+
+text \<open>
+  The front end builds the database of a time point by inserting tuples one at a time
+  (@{const insert_into_db}). @{text table_of_list} builds a table from a list in one step: if
+  the list is strictly sorted with respect to the comparator (checked in linear time; the
+  front end sorts with an unverified comparator), the red-black tree is built in linear time
+  by @{const rbtreeify}, otherwise by the usual repeated insertion. Either way the result is
+  @{term "set xs"}.
+\<close>
+
+fun strict_sorted_by :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> bool" where
+  "strict_sorted_by c (x # y # zs) \<longleftrightarrow> c x y = Lt \<and> strict_sorted_by c (y # zs)"
+| "strict_sorted_by c _ \<longleftrightarrow> True"
+
+lemma lt_of_comp_Lt: "lt_of_comp c x y \<longleftrightarrow> c x y = Lt"
+  by (simp add: lt_of_comp_def split: order.splits)
+
+lemma strict_sorted_by_sorted_wrt:
+  assumes "comparator c"
+  shows "strict_sorted_by c xs \<longleftrightarrow> sorted_wrt (lt_of_comp c) xs"
+proof -
+  have transp: "transp (lt_of_comp c)"
+    using comparator.comp_trans[OF assms]
+    by (auto intro!: transpI simp: lt_of_comp_def split: order.splits)
+  show ?thesis
+  proof (induction xs rule: induct_list012)
+    case (3 x y zs)
+    then show ?case
+      by (subst sorted_wrt2[OF transp]) (simp add: lt_of_comp_Lt[abs_def])
+  qed auto
+qed
+
+lift_definition rbt_of_sorted_list :: "'a :: ccompare list \<Rightarrow> 'a set_rbt" is
+  "\<lambda>xs. if strict_sorted_by ccomp xs then rbtreeify (map (\<lambda>x. (x, ())) xs)
+    else rbt_comp_bulkload ccomp (map (\<lambda>x. (x, ())) xs)"
+proof goal_cases
+  case (1 xs)
+  show ?case
+  proof (cases "ID CCOMPARE('a)")
+    case None
+    then show ?thesis by simp
+  next
+    case (Some c)
+    note lin = ID_ccompare[OF Some] and comp = ID_ccompare'[OF Some]
+    show ?thesis
+      using Some
+      by (auto simp: rbt_comp_bulkload[OF comp] strict_sorted_by_sorted_wrt[OF comp]
+          linorder.strict_sorted_iff[OF lin] comp_def
+          intro!: linorder.is_rbt_rbtreeify[OF lin] linorder.rbt_bulkload_is_rbt[OF lin])
+  qed
+qed
+
+lemma RBT_set_rbt_of_sorted_list:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "RBT_set (rbt_of_sorted_list (xs :: 'a list)) = set xs"
+proof -
+  from assms obtain c where Some: "ID CCOMPARE('a) = Some c" by auto
+  note lin = ID_ccompare[OF Some] and comp = ID_ccompare'[OF Some]
+  show ?thesis
+    using Some
+    by (auto simp: RBT_set_def RBT_Set2.member.rep_eq rbt_of_sorted_list.rep_eq rbt_comp_lookup[OF comp]
+        rbt_comp_bulkload[OF comp] strict_sorted_by_sorted_wrt[OF comp] linorder.strict_sorted_iff[OF lin] comp_def
+        linorder.rbt_lookup_rbtreeify[OF lin] linorder.rbt_lookup_rbt_bulkload[OF lin] dom_map_of_conv_image_fst)
+qed
+
+definition table_of_list :: "event_data tuple list \<Rightarrow> event_data table" where
+  "table_of_list xs = set xs"
+
+lemma table_of_list_code[code]: "table_of_list xs = RBT_set (rbt_of_sorted_list xs)"
+  by (simp add: table_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple)
+
+definition insert_table_into_db :: "string8 \<times> nat \<Rightarrow> event_data table \<Rightarrow> database \<Rightarrow> database" where
+  "insert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"
+
+lemma lookup_update_mapping_with:
+  "Mapping.lookup (update_mapping_with f k v m) k' =
+    (if k' = k then (case Mapping.lookup m k of None \<Rightarrow> Some v | Some v' \<Rightarrow> Some (f k v' v)) else Mapping.lookup m k')"
+  by transfer (auto split: option.splits)
+
+lemma insert_table_into_db_insert:
+  "insert_table_into_db p Y (insert_into_db p x db) = insert_table_into_db p (Set.insert x Y) db"
+  by (rule mapping_eqI)
+    (auto simp: insert_table_into_db_def insert_into_db_def lookup_update_mapping_with split: option.splits)
+
+lemma insert_table_into_db_fold:
+  "fold (insert_into_db p) (x # xs) db = insert_table_into_db p (set (x # xs)) db"
+proof (induction xs arbitrary: x db)
+  case Nil
+  show ?case
+    by (auto simp: insert_table_into_db_def insert_into_db_def lookup_update_mapping_with
+        intro!: mapping_eqI split: option.splits)
+next
+  case (Cons y ys)
+  show ?case
+    using Cons.IH[of y "insert_into_db p x db"] by (simp add: insert_table_into_db_insert)
+qed
+
 (*<*)
 end
 (*>*)

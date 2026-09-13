@@ -10,6 +10,12 @@ type db
 val empty_db: db
 val insert_into_db: Table.schema -> string list -> db -> db
 
+(* tuples of a time point, collected per predicate and inserted in bulk *)
+type batch
+val empty_batch: unit -> batch
+val add_to_batch: batch -> Table.schema -> string list -> unit
+val flush_batch: batch -> db -> db
+
 type tyssig 
 val convert_into_tysym: tcst -> Verified.Monitor.tysym
 val convert_schema_into_sig: Db.schema -> tyssig

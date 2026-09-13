@@ -187,6 +187,75 @@ let insert_into_db ((pname, tl) as schema) sl db =
   let a = nat_of_int (List.length tl) in
   insert_into_db (pname, a) (convert_tuple schema sl) db
 
+(* Bulk construction of the tables of a time point.
+
+   The tuples of each predicate are collected, sorted with [compare_tuple] (which mirrors the
+   verified comparator on [event_data option list]) and handed to the verified [table_of_list],
+   which checks the sortedness in linear time and then builds the red-black tree in linear
+   time; if the check fails (the comparators disagree), it falls back to repeated insertion,
+   so the result is [set xs] either way. Duplicates are removed only when they are equal as
+   values (bitwise for floats), so no tuple is lost. *)
+
+let compare_double x y =
+  let iszero z = Stdlib.classify_float z = Stdlib.FP_zero in
+  if iszero x && iszero y then Stdlib.compare (Stdlib.copysign 1.0 x) (Stdlib.copysign 1.0 y)
+  else Stdlib.compare x y
+
+let compare_event_data a b = match a, b with
+  | EInt x, EInt y -> Z.compare x y
+  | EInt _, _ -> -1
+  | _, EInt _ -> 1
+  | EFloat x, EFloat y -> compare_double x y
+  | EFloat _, _ -> -1
+  | _, EFloat _ -> 1
+  | EString x, EString y -> String.compare x y
+
+let rec compare_tuple a b = match a, b with
+  | [], [] -> 0
+  | [], _ -> -1
+  | _, [] -> 1
+  | None :: xs, None :: ys -> compare_tuple xs ys
+  | None :: _, Some _ :: _ -> -1
+  | Some _ :: _, None :: _ -> 1
+  | Some x :: xs, Some y :: ys ->
+    let c = compare_event_data x y in
+    if c <> 0 then c else compare_tuple xs ys
+
+let equal_event_data a b = match a, b with
+  | EInt x, EInt y -> Z.equal x y
+  | EFloat x, EFloat y -> Int64.equal (Int64.bits_of_float x) (Int64.bits_of_float y)
+  | EString x, EString y -> String.equal x y
+  | _ -> false
+
+let equal_tuple a b =
+  List.length a = List.length b &&
+  List.for_all2 (fun x y -> match x, y with
+    | None, None -> true
+    | Some x, Some y -> equal_event_data x y
+    | _ -> false) a b
+
+let rec dedup_sorted = function
+  | x :: (y :: _ as rest) -> if equal_tuple x y then dedup_sorted rest else x :: dedup_sorted rest
+  | l -> l
+
+type batch = (string * nat, (event_data option) list list ref) Hashtbl.t
+
+let empty_batch () : batch = Hashtbl.create 16
+
+let add_to_batch (b: batch) ((pname, tl) as schema) sl =
+  let key = (pname, nat_of_int (List.length tl)) in
+  let t = convert_tuple schema sl in
+  match Hashtbl.find_opt b key with
+  | Some r -> r := t :: !r
+  | None -> Hashtbl.add b key (ref [t])
+
+let flush_batch (b: batch) db =
+  let db = Hashtbl.fold (fun key r db ->
+    let sorted = dedup_sorted (List.stable_sort compare_tuple !r) in
+    insert_table_into_db key (table_of_list sorted) db) b db in
+  Hashtbl.reset b;
+  db
+
 let convert_into_tysym ty = 
   match ty with
     TInt -> Verified.Monitor.TCst (Verified.Monitor.TInt)
