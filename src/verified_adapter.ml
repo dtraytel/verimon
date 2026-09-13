@@ -253,7 +253,7 @@ let flush_batch (b: batch) db =
   let db = Hashtbl.fold (fun key r db ->
     let sorted = dedup_sorted (List.stable_sort compare_tuple !r) in
     insert_table_into_db key (table_of_list sorted) db) b db in
-  Hashtbl.reset b;
+  Hashtbl.clear b; (* keep the bucket array; [reset] would reallocate it at every time point *)
   db
 
 let convert_into_tysym ty = 
