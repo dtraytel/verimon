@@ -1818,7 +1818,7 @@ declare meinit0_code_simps [code]
   and vmeinit0_code_simps [code]
 
 declare default_mmasaux.init_since'_def [code_unfold]
-  and default_mmauaux.init_until'_def [code_unfold]
+  and dq_muaux.init_until'_def [code_unfold]
   and verimon_maux.init_since'_def [code_unfold]
   and verimon_maux.init_until'_def [code_unfold]
   and verimon_maux.init_trigger'_def [code_unfold]
