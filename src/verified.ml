@@ -5197,10 +5197,13 @@ let rec tl_queue_t = function ([], []) -> ([], [])
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
 
-let rec restrict
-  a v = mapa (fun i ->
-               (if member (ceq_nat, ccompare_nat) i a then nth v i else None))
-          (upt zero_nata (size_lista v));;
+let rec restrict_aux
+  i a x2 = match i, a, x2 with i, a, [] -> []
+    | i, a, x :: xs ->
+        (if member (ceq_nat, ccompare_nat) i a then x else None) ::
+          restrict_aux (suc i) a xs;;
+
+let rec restrict a v = restrict_aux zero_nata a v;;
 
 let rec all_interval (_A1, _A2)
   p a b =
@@ -6937,10 +6940,6 @@ let rec hprobe_join (_A1, _A2, _A3, _A4, _A5)
 let rec join_mask
   n x = mapa (fun i -> member (ceq_nat, ccompare_nat) i x) (upt zero_nata n);;
 
-let rec complete_on
-  i t = ball (ceq_nat, ccompare_nat) i
-          (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
-
 let rec join1_inserta (_A1, _A2, _A3)
   b a acc = join1_insert (_A1, _A2, _A3) a b acc;;
 
@@ -6973,6 +6972,28 @@ let rec probe_fold (_A1, _A2, _A3)
         set_fold_cfi
           ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
           (join1_insert_cfia (_A1, _A2, _A3) b) acc (Complement uu);;
+
+let rec probe_step_key (_A1, _A2, _A3)
+  key m b acc =
+    (match
+      lookupa
+        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
+        m (key b)
+      with None -> acc | Some a -> probe_fold (_A1, _A2, _A3) b acc a);;
+
+let rec proj_tuple_chk
+  x0 x1 = match x0, x1 with [], [] -> Some []
+    | b :: bs, x :: xs ->
+        map_option (fun a -> (if b then x else None) :: a)
+          (proj_tuple_chk bs xs)
+    | v :: va, [] -> None
+    | [], v :: va -> None;;
+
+let rec restrict_with
+  i n = (let mask = join_mask n i in
+          (fun v ->
+            (match proj_tuple_chk mask v with None -> restrict i v
+              | Some r -> r)));;
 
 let rec probe_step (_A1, _A2, _A3)
   i m b acc =
@@ -7057,6 +7078,35 @@ let rec probe_join (_A1, _A2, _A3)
             (of_phantom set_impl_lista))
           (Complement uu);;
 
+let rec probe_join_n (_A1, _A2, _A3)
+  n i t x3 = match n, i, t, x3 with
+    n, i, t, RBT_set rbt ->
+      (match ccompare_lista (ccompare_option _A2)
+        with None ->
+          failwith "probe_join: ccompare = None"
+            (fun _ -> probe_join_n (_A1, _A2, _A3) n i t (RBT_set rbt))
+        | Some _ ->
+          (let key = restrict_with i n in
+            foldb (ccompare_list (ccompare_option _A2))
+              (probe_step_key (_A1, _A2, _A3) key
+                (cluster
+                  ((ceq_list (ceq_option _A1)),
+                    (ccompare_list (ccompare_option _A2)), set_impl_list)
+                  (ccompare_list (ccompare_option _A2))
+                  (comp (fun a -> Some a) key) t))
+              rbt (set_empty
+                    ((ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)))
+                    (of_phantom set_impl_lista))))
+    | n, i, t, DList_set uu -> probe_join (_A1, _A2, _A3) i t (DList_set uu)
+    | n, i, t, Set_Monad uu -> probe_join (_A1, _A2, _A3) i t (Set_Monad uu)
+    | n, i, t, Collect_set uu -> probe_join (_A1, _A2, _A3) i t (Collect_set uu)
+    | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu);;
+
+let rec complete_on
+  i t = ball (ceq_nat, ccompare_nat) i
+          (fun ia -> less_nat ia (size_lista t) && not (is_none (nth t ia)));;
+
 let rec bin_join (_A1, _A2, _A3, _A4, _A5)
   n aa ta pos a t =
     (if is_empty
@@ -7096,15 +7146,16 @@ let rec bin_join (_A1, _A2, _A3, _A4, _A5)
  ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2))) ta t)
                            else (if less_eq_set
                                       (cenum_nat, ceq_nat, ccompare_nat) a aa
-                                  then filter
- ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
- (fun asa -> proj_tuple_in_join (_A1, _A2) pos (join_mask n a) asa t) ta
+                                  then (let m = join_mask n a in
+ filter ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+   (fun asa -> proj_tuple_in_join (_A1, _A2) pos m asa t) ta)
                                   else (if less_eq_set
      (cenum_nat, ceq_nat, ccompare_nat) aa a &&
      pos
- then filter
-        ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-        (fun asa -> proj_tuple_in_join (_A1, _A2) pos (join_mask n aa) asa ta) t
+ then (let m = join_mask n aa in
+        filter
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (fun asa -> proj_tuple_in_join (_A1, _A2) pos m asa ta) t)
  else (if pos &&
             (finite
                (finite_UNIV_list, (ceq_list (ceq_option _A1)),
@@ -7129,9 +7180,9 @@ let rec bin_join (_A1, _A2, _A3, _A4, _A5)
                        (card (card_UNIV_list, (ceq_list (ceq_option _A1)),
                                (ccompare_list (ccompare_option _A2)))
                          t)
-                   then probe_join (_A1, _A2, _A3)
+                   then probe_join_n (_A1, _A2, _A3) n
                           (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
-                   else probe_join (_A1, _A2, _A3)
+                   else probe_join_n (_A1, _A2, _A3) n
                           (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
                | Some _ ->
                  (if !Config.imperative_join
@@ -7157,9 +7208,9 @@ let rec bin_join (_A1, _A2, _A3, _A4, _A5)
                                       (ceq_list (ceq_option _A1)),
                                       (ccompare_list (ccompare_option _A2)))
                                 t)
-                          then probe_join (_A1, _A2, _A3)
+                          then probe_join_n (_A1, _A2, _A3) n
                                  (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
-                          else probe_join (_A1, _A2, _A3)
+                          else probe_join_n (_A1, _A2, _A3) n
                                  (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)))
         else join (_A1, _A2, _A3) ta pos t)))))));;
 
@@ -9145,36 +9196,6 @@ let rec dominate_True
     (match find_sub_True (cenum_nat, ceq_nat, ccompare_nat) a_pos
       with None -> None | Some split -> Some (split, proj_list_5 l_pos split));;
 
-let ed_csorted_list_of_set_v :
-  (((event_data option) list) set -> ((event_data option) list) list) boxed
-  = Box (csorted_list_of_set
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let rec ed_probe_join_imp
-  i xs ys =
-    (fun f_ () -> f_
-      ((ht_new
-         ((hashable_list (hashable_option hashable_event_data)),
-           (heap_list (heap_option heap_event_data)))
-         (heap_list (heap_list (heap_option heap_event_data))))
-      ()) ())
-      (fun ht ->
-        (fun f_ () -> f_
-          ((hm_insert_all
-             (equal_event_data, hashable_event_data, heap_event_data) i xs ht)
-          ()) ())
-          (fun hta ->
-            probe_all
-              (ceq_event_data, ccompare_event_data, equal_event_data,
-                hashable_event_data, heap_event_data)
-              i ys hta ed_bot));;
-
-let rec ed_hprobe_join
-  i ta t =
-    ((ed_probe_join_imp i (unbox ed_csorted_list_of_set_v ta)
-       (unbox ed_csorted_list_of_set_v t)) ());;
-
 let ed_rbt_fold_table_v :
   (((event_data option) list ->
      ((event_data option) list) set -> ((event_data option) list) set) ->
@@ -9224,6 +9245,11 @@ let rec ed_probe_fold
             (ceq_event_data, ccompare_event_data, equal_event_data) b)
           acc (Complement uu);;
 
+let rec ed_probe_step_key
+  key m b acc =
+    (match unbox ed_lookup_table_v m (key b) with None -> acc
+      | Some a -> ed_probe_fold b acc a);;
+
 let rec ed_probe_step
   i m b acc =
     (match unbox ed_lookup_table_v m (restrict i b) with None -> acc
@@ -9260,6 +9286,49 @@ let rec ed_probe_join
             (ceq_event_data, ccompare_event_data, equal_event_data) i
             (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
           ed_bot (Complement uu);;
+
+let rec ed_probe_join_n
+  n i t x3 = match n, i, t, x3 with
+    n, i, t, RBT_set rbt ->
+      (let key = restrict_with i n in
+        unbox ed_rbt_fold_table_v
+          (ed_probe_step_key key
+            (unbox ed_cluster_v (comp (fun a -> Some a) key) t))
+          rbt ed_bot)
+    | n, i, t, DList_set uu -> ed_probe_join i t (DList_set uu)
+    | n, i, t, Set_Monad uu -> ed_probe_join i t (Set_Monad uu)
+    | n, i, t, Collect_set uu -> ed_probe_join i t (Collect_set uu)
+    | n, i, t, Complement uu -> ed_probe_join i t (Complement uu);;
+
+let ed_csorted_list_of_set_v :
+  (((event_data option) list) set -> ((event_data option) list) list) boxed
+  = Box (csorted_list_of_set
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let rec ed_probe_join_imp
+  i xs ys =
+    (fun f_ () -> f_
+      ((ht_new
+         ((hashable_list (hashable_option hashable_event_data)),
+           (heap_list (heap_option heap_event_data)))
+         (heap_list (heap_list (heap_option heap_event_data))))
+      ()) ())
+      (fun ht ->
+        (fun f_ () -> f_
+          ((hm_insert_all
+             (equal_event_data, hashable_event_data, heap_event_data) i xs ht)
+          ()) ())
+          (fun hta ->
+            probe_all
+              (ceq_event_data, ccompare_event_data, equal_event_data,
+                hashable_event_data, heap_event_data)
+              i ys hta ed_bot));;
+
+let rec ed_hprobe_join
+  i ta t =
+    ((ed_probe_join_imp i (unbox ed_csorted_list_of_set_v ta)
+       (unbox ed_csorted_list_of_set_v t)) ());;
 
 let ed_is_empty_v : (((event_data option) list) set -> bool) boxed
   = Box (is_empty
@@ -9307,13 +9376,13 @@ let rec ed_bin_join
                                   else unbox ed_minus_v ta t)
                            else (if less_eq_set
                                       (cenum_nat, ceq_nat, ccompare_nat) a aa
-                                  then unbox ed_filter_v
- (fun asa -> ed_proj_tuple_in_join pos (join_mask n a) asa t) ta
+                                  then (let m = join_mask n a in
+ unbox ed_filter_v (fun asa -> ed_proj_tuple_in_join pos m asa t) ta)
                                   else (if less_eq_set
      (cenum_nat, ceq_nat, ccompare_nat) aa a &&
      pos
- then unbox ed_filter_v
-        (fun asa -> ed_proj_tuple_in_join pos (join_mask n aa) asa ta) t
+ then (let m = join_mask n aa in
+        unbox ed_filter_v (fun asa -> ed_proj_tuple_in_join pos m asa ta) t)
  else (if pos &&
             (unbox ed_finite_v ta &&
               (unbox ed_finite_v t &&
@@ -9328,10 +9397,10 @@ let rec ed_bin_join
                       else ed_hprobe_join
                              (inf_seta (ceq_nat, ccompare_nat) aa a) t ta)
                else (if less_eq_nat (unbox ed_card_v ta) (unbox ed_card_v t)
-                      then ed_probe_join (inf_seta (ceq_nat, ccompare_nat) aa a)
-                             ta t
-                      else ed_probe_join (inf_seta (ceq_nat, ccompare_nat) aa a)
-                             t ta))
+                      then ed_probe_join_n n
+                             (inf_seta (ceq_nat, ccompare_nat) aa a) ta t
+                      else ed_probe_join_n n
+                             (inf_seta (ceq_nat, ccompare_nat) aa a) t ta))
         else ed_join ta pos t)))))));;
 
 let rec inf_setb (_A1, _A2, _A3, _A4, _A5)

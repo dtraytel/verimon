@@ -539,7 +539,11 @@ Two code equations in `Code_Opt.thy`/`Monomorphic_Code.thy`:
   once per tuple in its subset cases (it was inside the filter predicate).
 
 Effect (scratch export, one run, distribution compiler): `complex` 3.28 s -> 2.86 s (1.15x),
-`and` 1.09x, `andnot` 1.05x, `agg` 1.06x, `since` 1.04x, others within noise. RESULTS_7F
+`and` 1.09x, `andnot` 1.05x, `agg` 1.06x, `since` 1.04x, others within noise. With the
+regenerated canonical kernel (compared with the kernel of Section 7e in one run; the front
+end also carries the integer printer of Section 9.1): `complex` 3.40 s -> 2.87 s (1.18x),
+`eventually` 1.22x, `until` 1.10x, `and` 1.09x, P2, P3, `andnot`, `once`, `agg` 1.05-1.06x.
+All outputs identical, all cram tests pass.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
