@@ -324,6 +324,43 @@ proof -
         split: option.splits if_splits)
 qed
 
+text \<open>
+  The probe join requires all join columns to be defined in every tuple of both operands
+  (@{const complete_on}); @{const bin_join} checks this for every tuple on every join, with
+  @{const length} and @{const nth} on big-integer indices. @{text complete_with} builds the mask
+  once per join and checks a tuple in one traversal; it equals @{const complete_on}
+  unconditionally (a tuple of an unexpected length or a column set outside the arity falls
+  back to the definition).
+\<close>
+
+fun complete_chk :: "bool list \<Rightarrow> 'a option list \<Rightarrow> bool option" where
+  "complete_chk [] [] = Some True"
+| "complete_chk (b # bs) (x # xs) = (case complete_chk bs xs of None \<Rightarrow> None
+    | Some r \<Rightarrow> Some ((b \<longrightarrow> x \<noteq> None) \<and> r))"
+| "complete_chk _ _ = None"
+
+lemma complete_chk: "complete_chk bs xs =
+  (if length bs = length xs then Some (\<forall>i < length bs. bs ! i \<longrightarrow> xs ! i \<noteq> None) else None)"
+  by (induction bs xs rule: complete_chk.induct) (auto simp: less_Suc_eq_0_disj nth_Cons split: nat.splits)
+
+lemma complete_on_mask:
+  assumes "\<forall>i \<in> I. i < n" "length t = n"
+  shows "complete_on I t \<longleftrightarrow> (\<forall>i < n. join_mask n I ! i \<longrightarrow> t ! i \<noteq> None)"
+  using assms by (auto simp: complete_on_def join_mask_def)
+
+definition complete_with :: "nat set \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> bool" where
+  "complete_with I n = (let mask = join_mask n I; ok = (\<forall>i \<in> I. i < n) in
+    (\<lambda>t. if ok then (case complete_chk mask t of Some b \<Rightarrow> b | None \<Rightarrow> complete_on I t)
+     else complete_on I t))"
+
+lemma complete_with[simp]: "complete_with I n = complete_on I"
+proof -
+  have len: "length (join_mask m I) = m" for m
+    by (simp add: join_mask_def)
+  show ?thesis
+    by (auto simp: complete_with_def Let_def fun_eq_iff complete_chk len complete_on_mask split: option.splits if_splits)
+qed
+
 definition probe_join_n :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "probe_join_n n I t t' = probe_join I t t'"
 
@@ -338,7 +375,7 @@ lemma bin_join_code[code]:
     else if A' \<subseteq> A then (let m = join_mask n A' in {as \<in> t. proj_tuple_in_join pos m as t'})
     else if A \<subseteq> A' \<and> pos then (let m = join_mask n A in {as \<in> t'. proj_tuple_in_join pos m as t})
     else if pos \<and> finite t \<and> finite t' \<and>
-        (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
+        (let c = complete_with (A \<inter> A') n in (\<forall>x \<in> t. c x) \<and> (\<forall>y \<in> t'. c y))
       then (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)
     else join t pos t')"
   by (subst bin_join.simps) (auto simp: Let_def probe_join_n_def probe_join_join join_commute)

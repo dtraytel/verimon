@@ -264,7 +264,7 @@ lemma bin_join_code_imp[code]:
     else if A' \<subseteq> A then (let m = join_mask n A' in {as \<in> t. proj_tuple_in_join pos m as t'})
     else if A \<subseteq> A' \<and> pos then (let m = join_mask n A in {as \<in> t'. proj_tuple_in_join pos m as t})
     else if pos \<and> finite t \<and> finite t' \<and>
-        (\<forall>x \<in> t. complete_on (A \<inter> A') x) \<and> (\<forall>y \<in> t'. complete_on (A \<inter> A') y)
+        (let c = complete_with (A \<inter> A') n in (\<forall>x \<in> t. c x) \<and> (\<forall>y \<in> t'. c y))
       then (case ID CCOMPARE('a tuple) of
           None \<Rightarrow> (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)
         | Some _ \<Rightarrow> (if use_imperative_join
