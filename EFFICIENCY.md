@@ -272,27 +272,28 @@ Section 9.1 in the front end; all outputs identical, all cram tests pass:
 (The machine was about 10% slower during this run than during the monomorphisation run, as
 the MonPoly column of the same run shows: P2 0.56 s instead of 0.49 s.)
 
-**Overall (Sections 7-7g and 9.1).** The final kernel of this branch (`verified.ml` at the
-last commit) against the kernel of the first table above (`verimon_new` there; all code
-equations of Sections 3, 8 and 9.2), one run, distribution compiler, same binary for MonPoly;
-all outputs identical, all 152 cram tests pass:
+**Overall (Sections 7-7g, 9.1 and the GC default of item 8).** The final binary of this
+branch (`verified.ml` and front end at the last commit, GC space overhead 300 in verified
+mode) against the kernel of the first table above (`verimon_new` there; all code equations
+of Sections 3, 8 and 9.2), median of three runs each, distribution compiler, same binary for
+MonPoly; all outputs identical, all 152 cram tests pass:
 
-| formula | MonPoly | kernel of Section 4 | final kernel | speedup | final / MonPoly |
+| formula | MonPoly | kernel of Section 4 | final | speedup | final / MonPoly |
 |---|---|---|---|---|---|
-| P2 | 0.49 s | 2.96 s | 2.36 s | 1.25x | 4.8x |
-| P3 | 0.57 s | 2.41 s | 1.67 s | 1.44x | 2.9x |
-| and | 0.19 s | 0.42 s | 0.35 s | 1.20x | 1.8x |
-| andnot | 0.20 s | 0.28 s | 0.24 s | 1.17x | 1.2x |
-| once | 0.96 s | 2.84 s | 1.66 s | 1.71x | 1.7x |
-| since | 0.32 s | 0.94 s | 0.49 s | 1.92x | 1.5x |
-| eventually | 0.57 s | 1.39 s | 1.07 s | 1.30x | 1.9x |
-| until | 0.27 s | 0.60 s | 0.50 s | 1.20x | 1.9x |
-| agg | 0.21 s | 0.53 s | 0.34 s | 1.56x | 1.6x |
-| complex | 1.01 s | 4.27 s | 2.75 s | 1.55x | 2.7x |
+| P2 | 0.42 s | 2.01 s | 1.62 s | 1.24x | 3.9x |
+| P3 | 0.43 s | 1.87 s | 1.27 s | 1.47x | 3.0x |
+| and | 0.16 s | 0.32 s | 0.26 s | 1.23x | 1.6x |
+| andnot | 0.15 s | 0.22 s | 0.17 s | 1.29x | 1.1x |
+| once | 0.76 s | 2.20 s | 1.10 s | 2.00x | 1.4x |
+| since | 0.24 s | 0.78 s | 0.35 s | 2.23x | 1.5x |
+| eventually | 0.48 s | 1.19 s | 0.81 s | 1.47x | 1.7x |
+| until | 0.22 s | 0.51 s | 0.39 s | 1.31x | 1.8x |
+| agg | 0.15 s | 0.44 s | 0.28 s | 1.57x | 1.9x |
+| complex | 0.85 s | 3.41 s | 2.08 s | 1.64x | 2.4x |
 
-Against the original kernel (first table) the cumulative factors are 1.5x (P2) to 4x
-(`complex`); the remaining gap to MonPoly is 1.2-1.9x on the join-, aggregation- and
-output-dominated formulas, 2.7-2.9x on `complex` and P3, and 4.8x on the per-time-point
+Against the original kernel (first table) the cumulative factors are 1.8x (P2) to 5x
+(`complex`, `andnot`); the remaining gap to MonPoly is 1.1-1.9x on the join-, aggregation-
+and output-dominated formulas, 2.4x on `complex`, 3x on P3 and 3.9x on the per-time-point
 workload P2 (Section 7g).
 
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
@@ -598,7 +599,11 @@ big-integer time points, buffers, the evaluation of the conjunction), not on tup
 that needs a leaner representation of the Until state (e.g. no fresh inner mapping per time
 point, machine-word time points), not another code equation. With the regenerated canonical
 kernel: `eventually` 1.04x, `agg` 1.09x, all others within noise; all outputs identical, all
-cram tests pass.
+cram tests pass. The analogous fusion for the Since structure (moving the tables that enter
+the window: filter by `valid_tuple`, update `tuple_in`, accumulate the new tuples, in one fold
+per table instead of three passes) was proved and measured the same way and brought nothing
+measurable on P3, `once` or `complex`, so it was not adopted: those passes run over the
+one-tuple tables of the per-time-point logs, where the fixed cost per step dominates.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
