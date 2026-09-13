@@ -9163,7 +9163,11 @@ let rec dq_of_uaux
                                      donea))))))))));;
 
 let rec dq_norm
-  d = (if null (dq_f d) then Dq (rev (dq_b d), [], dq_nb d, zero_nata) else d);;
+  d = (if null (dq_f d)
+        then (let h = divide_nata (dq_nb d) (nat_of_integer (Z.of_int 2)) in
+               Dq (rev (drop h (dq_b d)), take h (dq_b d),
+                    minus_nata (dq_nb d) h, h))
+        else d);;
 
 let rec dq_tl
   d = (let da = dq_norm d in
