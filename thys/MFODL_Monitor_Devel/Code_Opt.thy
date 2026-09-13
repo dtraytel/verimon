@@ -593,6 +593,63 @@ lemma wf_table_permute_code'[code]:
   "wf_table_permute ns (wf_table_of_keys n A m) = wf_table_permute ns (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
   by (simp_all only: wf_table_conv)
 
+
+section \<open>Aggregations by clustering\<close>
+
+text \<open>
+  The default code for @{const eval_agg} filters the whole table once per group and each group
+  once per distinct value of the aggregated term (quadratic). The following code equation
+  clusters the table by the group key and each group by the term value with @{const cluster}
+  (one red-black-tree insertion per tuple).
+\<close>
+
+derive (no) cenum event_data
+
+lemma keys_cluster: "Mapping.keys (cluster (Some \<circ> g) X) = g ` X"
+  by (auto simp: Mapping.keys_dom_lookup lookup_cluster image_iff split: if_splits)
+
+lemma lookup_cluster_Some: "k \<in> g ` X \<Longrightarrow> Mapping.lookup (cluster (Some \<circ> g) X) k = Some (Set.filter (\<lambda>x. g x = k) X)"
+  by (auto simp: lookup_cluster image_iff)
+
+definition agg_values :: "Formula.trm \<Rightarrow> event_data table \<Rightarrow> (event_data \<times> enat) set" where
+  "agg_values f G = (let vals = cluster (Some \<circ> meval_trm f) G in
+     (\<lambda>v. case Mapping.lookup vals v of Some S \<Rightarrow> (v, ecard S)) ` Mapping.keys vals)"
+
+lemma agg_values: "agg_values f G = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. meval_trm f x = v) G))) ` meval_trm f ` G"
+  unfolding agg_values_def Let_def keys_cluster
+  by (intro image_cong refl) (simp add: lookup_cluster_Some)
+
+declare [[code drop: eval_agg]]
+
+lemma eval_agg_code[code]:
+  "eval_agg n g0 y \<omega> tys f rel = (if g0 \<and> rel = empty_table then singleton_table n y (eval_agg_op \<omega> {})
+    else (let groups = cluster (Some \<circ> drop (length tys)) rel in
+      (\<lambda>k. case Mapping.lookup groups k of Some G \<Rightarrow> list_update k y (Some (eval_agg_op \<omega> (agg_values f G))))
+        ` Mapping.keys groups))"
+  unfolding eval_agg_def Let_def keys_cluster
+  by (intro if_cong refl image_cong) (simp add: lookup_cluster_Some agg_values)
+
+
+subsection \<open>Unions of option-valued images without sets of sets\<close>
+
+text \<open>
+  @{term "\<Union>v \<in> X. set_option (f v)"} (used by the @{text Match} mode of predicate evaluation)
+  is compiled by Containers through a set of sets, whose comparator compares whole tables.
+  The rewrite below turns it into an image followed by @{const Option.these}.
+\<close>
+
+lemma Union_set_option_these[code_unfold]: "(\<Union>v \<in> X. set_option (f v)) = Option.these (f ` X)"
+proof (intro set_eqI iffI)
+  fix x
+  assume "x \<in> (\<Union>v \<in> X. set_option (f v))"
+  then obtain v where "v \<in> X" "f v = Some x" by auto
+  then show "x \<in> Option.these (f ` X)" by (auto simp: in_these_eq intro: rev_image_eqI)
+next
+  fix x
+  assume "x \<in> Option.these (f ` X)"
+  then show "x \<in> (\<Union>v \<in> X. set_option (f v))" by (auto simp: in_these_eq)
+qed
+
 (*<*)
 end
 (*>*)
