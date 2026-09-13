@@ -361,9 +361,23 @@ let rec compare_tuple_mp t1 t2 = match t1, t2 with
     let c = compare_event_data_mp x y in
     if c <> 0 then c else compare_tuple_mp xs ys
 
+(* Decimal representation of a machine integer written directly into the buffer
+   ([string_of_int] goes through [Printf]-style formatting and allocates). *)
+let add_int b n =
+  if n = 0 then Buffer.add_char b '0'
+  else if n = min_int then Buffer.add_string b (string_of_int n)
+  else begin
+    let n = if n < 0 then (Buffer.add_char b '-'; -n) else n in
+    let digits = Bytes.create 20 in
+    let rec go n k = if n = 0 then k else begin
+        Bytes.unsafe_set digits k (Char.unsafe_chr (48 + n mod 10)); go (n / 10) (k - 1) end in
+    let k = go n 19 in
+    Buffer.add_subbytes b digits (k + 1) (19 - k)
+  end
+
 let add_event_data b = function
   | EInt i ->
-    Buffer.add_string b (if Z.fits_int i then string_of_int (Z.to_int i) else Z.to_string i)
+    if Z.fits_int i then add_int b (Z.to_int i) else Buffer.add_string b (Z.to_string i)
   | EFloat f -> Buffer.add_string b (Printf.sprintf "%g" f)
   | EString s ->
     let n = String.length s in

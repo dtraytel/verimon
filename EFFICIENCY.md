@@ -674,6 +674,9 @@ once 3.14 → 2.74 s, since 1.09 → 0.92 s, eventually 1.71 → 1.46 s, until 0
   projects, checks sortedness with MonPoly's tuple order (re-sorting only if the
   free-variable permutation changed the order), and prints each time point through one
   buffer directly from `event_data` values, without building `Tuple.tuple`s or
-  intermediate strings (a further 1.2x on `once`, 1.05-1.08x on P2 and `complex`).
+  intermediate strings (a further 1.2x on `once`, 1.05-1.08x on P2 and `complex`). Machine-size
+  integers are written into the buffer digit by digit instead of through `string_of_int`
+  (which formats via `printf` and allocates): `once` 1.9 s -> 1.55 s (another 1.2x), `complex`
+  1.04x; `once` is now within 1.7x of MonPoly, whose output path is the same as before.
 * `Predicate.string_of_cst` formats integers that fit a machine word with `string_of_int`.
 * `Tuple.compare` is specialised (Section 4).
