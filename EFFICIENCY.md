@@ -272,6 +272,29 @@ Section 9.1 in the front end; all outputs identical, all cram tests pass:
 (The machine was about 10% slower during this run than during the monomorphisation run, as
 the MonPoly column of the same run shows: P2 0.56 s instead of 0.49 s.)
 
+**Overall (Sections 7-7g and 9.1).** The final kernel of this branch (`verified.ml` at the
+last commit) against the kernel of the first table above (`verimon_new` there; all code
+equations of Sections 3, 8 and 9.2), one run, distribution compiler, same binary for MonPoly;
+all outputs identical, all 152 cram tests pass:
+
+| formula | MonPoly | kernel of Section 4 | final kernel | speedup | final / MonPoly |
+|---|---|---|---|---|---|
+| P2 | 0.49 s | 2.96 s | 2.36 s | 1.25x | 4.8x |
+| P3 | 0.57 s | 2.41 s | 1.67 s | 1.44x | 2.9x |
+| and | 0.19 s | 0.42 s | 0.35 s | 1.20x | 1.8x |
+| andnot | 0.20 s | 0.28 s | 0.24 s | 1.17x | 1.2x |
+| once | 0.96 s | 2.84 s | 1.66 s | 1.71x | 1.7x |
+| since | 0.32 s | 0.94 s | 0.49 s | 1.92x | 1.5x |
+| eventually | 0.57 s | 1.39 s | 1.07 s | 1.30x | 1.9x |
+| until | 0.27 s | 0.60 s | 0.50 s | 1.20x | 1.9x |
+| agg | 0.21 s | 0.53 s | 0.34 s | 1.56x | 1.6x |
+| complex | 1.01 s | 4.27 s | 2.75 s | 1.55x | 2.7x |
+
+Against the original kernel (first table) the cumulative factors are 1.5x (P2) to 4x
+(`complex`); the remaining gap to MonPoly is 1.2-1.9x on the join-, aggregation- and
+output-dominated formulas, 2.7-2.9x on `complex` and P3, and 4.8x on the per-time-point
+workload P2 (Section 7g).
+
 The two multi-way join strategies on cyclic and chain joins (`evaluation/synthetic/triangle.*`,
 `chain.mfotl`; 500 time points, 300 tuples per relation per time point, domain 40):
 
@@ -568,7 +591,9 @@ on average one tuple each, and VeriMon spends about 11 us per time point against
 2.5 us on the fixed work of a step (queue and mapping updates of the Until structure with
 big-integer time points, buffers, the evaluation of the conjunction), not on tuples. Reducing
 that needs a leaner representation of the Until state (e.g. no fresh inner mapping per time
-point, machine-word time points), not another code equation. RESULTS_7G
+point, machine-word time points), not another code equation. With the regenerated canonical
+kernel: `eventually` 1.04x, `agg` 1.09x, all others within noise; all outputs identical, all
+cram tests pass.
 
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
