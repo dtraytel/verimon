@@ -545,6 +545,31 @@ end also carries the integer printer of Section 9.1): `complex` 3.40 s -> 2.87 s
 `eventually` 1.22x, `until` 1.10x, `and` 1.09x, P2, P3, `andnot`, `once`, `agg` 1.05-1.06x.
 All outputs identical, all cram tests pass.
 
+## 7g. Until structure: one pass over the new table (implemented)
+
+`add_new_mmuaux` built the pair set `tmp` (a tree with a pair comparator, one insertion per
+new tuple), filtered it into a second tree, took its image for the table appended to the
+queue, folded it into the nested mapping `a2_map` and filtered and imaged it once more for the
+result. The new code equation (`Code_Opt.thy`, section "Code equations for the auxiliary
+structures") computes the three consumers in a single fold over the operand: `until_step`
+processes one pair (table insertion, nested update, result insertion when the pair belongs to
+the expiring time point), `until_elem_step` the one or two pairs a tuple contributes. Both are
+`comp_fun_idem`, so the fold over the operand equals the folds over the pair set
+(`fold_until_elem_step`, `fold_until_step`, `until_fused`); the code equation is proved from
+the definition of `add_new_mmuaux` and falls back to the original expression for infinite
+tables. The aggregation variant `add_new_mmauaux` keeps the pair set, which it needs for its
+own bookkeeping.
+
+Effect (scratch export, one run): `eventually` 1.14 s -> 1.08 s and `until` 0.53 s -> 0.50 s
+(1.06x); P2 unchanged within noise. The remaining Until time is in the tree operations that
+are still necessary (the table and nested-mapping insertions, 45%) and in the collector
+(30%). P2 in particular is a per-time-point workload: its log has 201157 time points with
+on average one tuple each, and VeriMon spends about 11 us per time point against MonPoly's
+2.5 us on the fixed work of a step (queue and mapping updates of the Until structure with
+big-integer time points, buffers, the evaluation of the conjunction), not on tuples. Reducing
+that needs a leaner representation of the Until state (e.g. no fresh inner mapping per time
+point, machine-word time points), not another code equation. RESULTS_7G
+
 ## 8. Imperative refinement of the join index (implemented, selectable)
 
 `thys/MFODL_Monitor_Devel/Imperative_Join.thy` refines the index of the probe join to an

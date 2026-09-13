@@ -402,7 +402,7 @@ lemma tmp_set_code[code]:
 
 declare [[code drop: add_new_mmuaux add_new_mmauaux]]
 
-lemma add_new_mmuaux_fold_code[code]: 
+lemma add_new_mmuaux_fold_code:
   "add_new_mmuaux args rel1 rel2 nt aux =
     (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux;
@@ -420,6 +420,193 @@ lemma add_new_mmuaux_fold_code[code]:
     tss = append_queue nt tss in
     (tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
   by (subst add_new_mmuaux_code) (simp only: tmp_set_def tmp_elem_eta)
+
+text \<open>
+  For the plain Until structure the three consumers of @{text tmp} (the table appended to the
+  queue, the nested update of @{text a2_map} and the contribution to the result) are computed
+  in one fold over the new table instead: @{text until_step} processes one pair, and
+  @{text until_elem_step} the one or two pairs that a tuple of the operand contributes; both
+  are @{const comp_fun_idem}, so that the fold over the operand equals the folds over the
+  pair set (@{text fold_until_elem_step}, @{text fold_until_step}). The aggregation variant
+  below still materialises the pair set, which it also needs for its own bookkeeping.
+\<close>
+
+lemma cfi_upd_nested_step: "comp_fun_idem (upd_nested_step d (max_tstp d))"
+  by (unfold_locales; rule ext)
+    (auto simp add: comp_def upd_nested_step_def Mapping.lookup_update'
+      update_update max_tstp_d_d max_tstp_idem' split: option.splits)
+
+type_synonym 'a until_acc = "'a table \<times> (nat, ('a tuple, ts + tp) mapping) mapping \<times> 'a table"
+
+definition until_step :: "(nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> nat \<Rightarrow> nat \<times> 'a tuple \<Rightarrow> 'a until_acc \<Rightarrow> 'a until_acc" where
+  "until_step P d t0 p acc = (case acc of (tbl, a2, res) \<Rightarrow> if P (fst p) then
+     (Set.insert (snd p) tbl, upd_nested_step d (max_tstp d) p a2,
+      if fst p = t0 then Set.insert (snd p) res else res)
+   else acc)"
+
+lemma comp_fun_idem_until_step: "comp_fun_idem (until_step P d t0 :: nat \<times> 'a tuple \<Rightarrow> 'a until_acc \<Rightarrow> 'a until_acc)"
+proof -
+  interpret u: comp_fun_idem "upd_nested_step d (max_tstp d)" by (rule cfi_upd_nested_step)
+  have comm: "upd_nested_step d (max_tstp d) y (upd_nested_step d (max_tstp d) x a) =
+    upd_nested_step d (max_tstp d) x (upd_nested_step d (max_tstp d) y a)"
+    for x y :: "nat \<times> 'a tuple" and a :: "(nat, ('a tuple, ts + tp) mapping) mapping"
+    using u.fun_left_comm by metis
+  have idem: "upd_nested_step d (max_tstp d) x (upd_nested_step d (max_tstp d) x a) =
+    upd_nested_step d (max_tstp d) x a"
+    for x :: "nat \<times> 'a tuple" and a :: "(nat, ('a tuple, ts + tp) mapping) mapping"
+    using u.fun_left_idem by metis
+  show ?thesis
+    by unfold_locales (auto simp: fun_eq_iff until_step_def comm idem Set.insert_commute split: prod.splits)
+qed
+
+lemma Set_filter_insert: "Set.filter Q (Set.insert x X) = (if Q x then Set.insert x (Set.filter Q X) else Set.filter Q X)"
+  by auto
+
+lemma fold_until_step:
+  assumes "finite X"
+  shows "Finite_Set.fold (until_step P d t0) (tbl, a2, res) X =
+    (tbl \<union> snd ` Set.filter (\<lambda>p. P (fst p)) X, upd_nested_max_tstp a2 d (Set.filter (\<lambda>p. P (fst p)) X),
+     res \<union> snd ` Set.filter (\<lambda>p. P (fst p) \<and> fst p = t0) X)"
+proof -
+  interpret comp_fun_idem "until_step P d t0" by (rule comp_fun_idem_until_step)
+  note upd_nested_insert' = upd_nested_insert[of d "max_tstp d", OF max_tstp_d_d[symmetric] max_tstp_idem']
+  from assms show ?thesis
+  proof (induction X)
+    case (insert x X)
+    show ?case
+      unfolding fold_insert[OF insert.hyps(1,2)] insert.IH Set_filter_insert
+      by (cases "P (fst x)"; cases "fst x = t0")
+        (simp_all add: until_step_def upd_nested_max_tstp_def upd_nested_insert')
+  qed (simp add: upd_nested_max_tstp_def)
+qed
+
+definition until_pairs :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "until_pairs a1_map maskL pos tp len inz as = tmp_elem a1_map maskL pos tp len as \<union> (if inz then {(tp, as)} else {})"
+
+lemma finite_tmp_elem: "finite (tmp_elem a1_map maskL pos tp len as)"
+  by (auto simp: tmp_elem_def split: option.splits)
+
+lemma finite_until_pairs: "finite (until_pairs a1_map maskL pos tp len inz as)"
+  by (auto simp: until_pairs_def finite_tmp_elem)
+
+definition until_elem_step :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+  (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc \<Rightarrow> 'a until_acc" where
+  "until_elem_step a1_map maskL pos tp len inz P d as acc =
+    (let acc' = (case Mapping.lookup a1_map (proj_tuple maskL as) of
+        None \<Rightarrow> (if \<not>pos then until_step P d (tp - len) (tp - len, as) acc else acc)
+      | Some tp' \<Rightarrow> until_step P d (tp - len) (if pos then (max (tp - len) tp', as) else (max (tp - len) (tp' + 1), as)) acc)
+     in if inz then until_step P d (tp - len) (tp, as) acc' else acc')"
+
+lemma until_elem_step_fold:
+  "until_elem_step a1_map maskL pos tp len inz P d as acc =
+    Finite_Set.fold (until_step P d (tp - len)) acc (until_pairs a1_map maskL pos tp len inz as)"
+proof -
+  interpret comp_fun_idem "until_step P d (tp - len)" by (rule comp_fun_idem_until_step)
+  show ?thesis
+    by (auto simp: until_elem_step_def until_pairs_def tmp_elem_def Let_def split: option.splits)
+qed
+
+lemma fold_fold_union:
+  assumes "comp_fun_idem f" "finite A" "finite B"
+  shows "Finite_Set.fold f (Finite_Set.fold f z A) B = Finite_Set.fold f z (A \<union> B)"
+proof -
+  interpret comp_fun_idem f by fact
+  from assms(3) show ?thesis
+    using assms(2) by (induction B) auto
+qed
+
+lemma comp_fun_idem_until_elem_step: "comp_fun_idem (until_elem_step a1_map maskL pos tp len inz P d)"
+proof -
+  note cfi = comp_fun_idem_until_step[of P d "tp - len"]
+  show ?thesis
+    by unfold_locales
+      (auto simp: fun_eq_iff until_elem_step_fold fold_fold_union[OF cfi finite_until_pairs finite_until_pairs] Un_commute)
+qed
+
+lift_definition until_elem_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+  (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> ('a tuple, 'a until_acc) comp_fun_idem"
+  is until_elem_step
+  by (rule comp_fun_idem_until_elem_step)
+
+definition until_tmp :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "until_tmp a1_map maskL pos tp len inz rel2 = \<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})"
+
+lemma until_tmp_insert: "until_tmp a1_map maskL pos tp len inz (Set.insert as rel2) =
+  until_tmp a1_map maskL pos tp len inz rel2 \<union> until_pairs a1_map maskL pos tp len inz as"
+  by (auto simp: until_tmp_def until_pairs_def)
+
+lemma finite_until_tmp: "finite rel2 \<Longrightarrow> finite (until_tmp a1_map maskL pos tp len inz rel2)"
+  by (auto simp: until_tmp_def finite_tmp_elem)
+
+lemma fold_until_elem_step:
+  assumes "finite rel2"
+  shows "Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc rel2 =
+    Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz rel2)"
+proof -
+  interpret e: comp_fun_idem "until_elem_step a1_map maskL pos tp len inz P d" by (rule comp_fun_idem_until_elem_step)
+  note cfi = comp_fun_idem_until_step[of P d "tp - len"]
+  from assms show ?thesis
+  proof (induction rel2)
+    case (insert as rel2)
+    have "Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc (Set.insert as rel2) =
+      until_elem_step a1_map maskL pos tp len inz P d as (Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc rel2)"
+      by (rule e.fold_insert[OF insert.hyps(1,2)])
+    also have "\<dots> = Finite_Set.fold (until_step P d (tp - len))
+      (Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz rel2))
+      (until_pairs a1_map maskL pos tp len inz as)"
+      unfolding insert.IH by (rule until_elem_step_fold)
+    also have "\<dots> = Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz (Set.insert as rel2))"
+      unfolding until_tmp_insert by (rule fold_fold_union[OF cfi finite_until_tmp[OF insert.hyps(1)] finite_until_pairs])
+    finally show ?case .
+  qed (simp add: until_tmp_def)
+qed
+
+lemma until_fused:
+  assumes "finite rel2"
+  shows "set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len inz P d) ({}, a2, res) rel2 =
+    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})) in
+     (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))"
+  unfolding set_fold_cfi.rep_eq until_elem_step_cfi.rep_eq fold_until_elem_step[OF assms]
+  unfolding fold_until_step[OF finite_until_tmp[OF assms]]
+  unfolding until_tmp_def Let_def
+  by (auto simp: split_beta image_iff intro!: prod_eqI)
+
+declare [[code drop: add_new_mmuaux]]
+
+lemma add_new_mmuaux_fused_code[code]:
+  "add_new_mmuaux args rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    shift_mmuaux args nt aux;
+    I = args_ivl args; pos = args_pos args;
+    new_tstp = (if memL I 0 then Inr tp else Inl nt);
+    tstp_map = Mapping.update tp nt tstp_map;
+    P = (\<lambda>t. case Mapping.lookup tstp_map t of Some ts \<Rightarrow> memL I (nt - ts));
+    (tbl, a2_map', result') = (if finite rel2
+      then set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len (memL I 0) P new_tstp) ({}, a2_map, result) rel2
+      else Code.abort (STR ''add_new_mmuaux: infinite table'') (\<lambda>_.
+        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {})) in
+        (snd ` tmp, upd_nested_max_tstp a2_map new_tstp tmp, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp)));
+    tables = append_queue (tbl, if memL I 0 then Inr tp else Inl nt) tables;
+    a2_map = Mapping.update (tp + 1) Mapping.empty a2_map';
+    a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+      (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+    tss = append_queue nt tss in
+    (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_map, tstp_map, done))"
+proof -
+  have *: "(if finite R
+      then set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len inz P d) ({}, a2, res) R
+      else Code.abort msg (\<lambda>_.
+        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` R) \<union> (if inz then {tp} \<times> R else {})) in
+        (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))) =
+    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` R) \<union> (if inz then {tp} \<times> R else {})) in
+     (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))"
+    for a1_map :: "(event_data tuple, nat) mapping" and maskL pos tp len inz P d a2 res msg R
+    by (auto simp: until_fused)
+  show ?thesis
+    unfolding *
+    unfolding add_new_mmuaux_def Let_def tmp_elem_eta upd_nested_max_tstp_def
+    by (simp split: prod.splits)
+qed
 
 lemma add_new_mmauaux_fold_code[code]:
   "add_new_mmauaux args rel1 rel2 nt (mmuaux, aggaux) =
