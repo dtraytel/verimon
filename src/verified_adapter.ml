@@ -287,20 +287,7 @@ type state =
                         (((event_data option) list), nat)
                           mapping)))))))))) *
      aggaux option),
-    ((nat *
-       (nat queue *
-         ((((event_data option) list) set * (nat, nat) sum) queue *
-           (nat *
-             (bool list *
-               (bool list *
-                 (((event_data option) list) set *
-                   ((((event_data option) list), nat) mapping *
-                     ((nat, (((event_data option) list), (nat, nat) sum)
-                              mapping)
-                        mapping *
-                       ((nat, nat) mapping *
-                         ((event_data option) list) set list)))))))))) *
-      aggaux option),
+    muaux_dq,
       (nat *
           (nat *
             (nat *
