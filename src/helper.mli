@@ -61,4 +61,3 @@ type ('a, 'b) stree =  ('a, 'b option) Sliding.node atree
 val get_new_elements: 'a Dllist.dllist -> 'a Dllist.cell -> ('a -> bool) -> ('a -> 'b) -> 'b list * 'a Dllist.cell
 
 val show_results: int list -> 'a -> int -> timestamp -> relation -> unit
-val show_results_list: int list -> int -> int -> MFOTL.timestamp -> Tuple.tuple list -> unit

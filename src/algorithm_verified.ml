@@ -32,9 +32,9 @@ module Monitor = struct
     ctxt.cur_state <- new_state;
     if !Misc.verbose then
       Printf.printf "At time point %d:\n%!" ctxt.cur_tp;
-    List.iter (fun (q, tsq, tuples) ->
-      Helper.show_results_list ctxt.fv_pos ctxt.cur_tp q tsq tuples;
-      if !Misc.stop_at_first_viol && tuples <> [] then
+    List.iter (fun (q, tsq, table) ->
+      let nonempty = Verified_adapter.show_results ctxt.fv_pos ctxt.cur_tp q tsq table in
+      if !Misc.stop_at_first_viol && nonempty then
         raise Log_parser.Stop_parser
       ) vs;
     ctxt.cur_tp <- ctxt.cur_tp + 1

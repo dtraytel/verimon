@@ -322,29 +322,113 @@ type state =
 
 let init cf = minit_safe cf
 
-let cst_of_event_data = function
-  | EInt x -> Int x
-  | EFloat x -> Float x
-  | EString x -> Str x
-
-let unconvert_tuple l =
-  List.filter_map (Option.map cst_of_event_data) l |> Tuple.make_tuple
-
 let set_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
   | _ -> failwith "[set_fold] unexpected set representation"
 
-(* The RBT is traversed in ascending order of the verified comparator, which coincides with
-   [Tuple.compare] on well-typed tables; [Helper.show_results_list] re-sorts only if needed. *)
-let unconvert_violations =
-  let add_tuple t acc = unconvert_tuple t :: acc in
-  let ucv_rel rel = List.rev (set_fold add_tuple rel []) in
-  let ucv (tp, (ts, v)) = (int_of_nat tp, integer_of_nat ts, ucv_rel v) in
-  List.map ucv
+(* Verdicts are kept in the kernel's representation; [show_results] below prints them without
+   converting to [Tuple.tuple] first. *)
+type verdict = (event_data option) list set
 
 let step t db st =
   let (vs, st') = mstep (db, nat_of_integer t) st in
-  (unconvert_violations vs, st')
+  (List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs, st')
+
+(* Direct output of verdicts.
+
+   The tuples of a verdict table are folded out of the red-black tree in the order of the
+   verified comparator, projected to the requested positions, and written into a buffer with
+   the same formatting as [Predicate.string_of_cst]/[Tuple.string_of_tuple]. This avoids
+   allocating [Tuple.tuple]s and intermediate strings for every result tuple (formerly around
+   a third of the running time for formulas with large output). The output order is that of
+   MonPoly ([Tuple.compare], ranking Int < Str < Float), which coincides with the tree order on
+   well-typed tables; the list is re-sorted only if the check fails (e.g. after a non-monotone
+   projection). *)
+
+let mp_rank = function EInt _ -> 0 | EString _ -> 1 | EFloat _ -> 2
+
+let compare_event_data_mp a b = match a, b with
+  | EInt x, EInt y -> Z.compare x y
+  | EString x, EString y -> String.compare x y
+  | EFloat x, EFloat y -> Stdlib.compare (x: float) y
+  | _, _ -> Stdlib.compare (mp_rank a) (mp_rank b)
+
+let rec compare_tuple_mp t1 t2 = match t1, t2 with
+  | [], [] -> 0
+  | [], _ :: _ -> -1
+  | _ :: _, [] -> 1
+  | x :: xs, y :: ys ->
+    let c = compare_event_data_mp x y in
+    if c <> 0 then c else compare_tuple_mp xs ys
+
+let add_event_data b = function
+  | EInt i ->
+    Buffer.add_string b (if Z.fits_int i then string_of_int (Z.to_int i) else Z.to_string i)
+  | EFloat f -> Buffer.add_string b (Printf.sprintf "%g" f)
+  | EString s ->
+    let n = String.length s in
+    if n = 0 then Buffer.add_string b "\"\""
+    else if s.[0] = '\"' && s.[n-1] = '\"' then Buffer.add_string b s
+    else begin Buffer.add_char b '\"'; Buffer.add_string b s; Buffer.add_char b '\"' end
+
+let add_tuple b t =
+  Buffer.add_char b '(';
+  List.iteri (fun k x -> if k > 0 then Buffer.add_char b ','; add_event_data b x) t;
+  Buffer.add_char b ')'
+
+let add_tuples_ext b lm rm del t = match t with
+  | [] -> Buffer.add_string b lm; Buffer.add_string b rm
+  | _ ->
+    Buffer.add_string b lm;
+    List.iteri (fun k x -> if k > 0 then Buffer.add_string b del; add_tuple b x) t;
+    Buffer.add_string b rm
+
+let rec is_enum_list n = function
+  | [] -> true
+  | x :: l -> x = n && is_enum_list (n + 1) l
+
+let show_results posl _i q tsq (table: verdict) =
+  let defined t = List.filter_map (fun x -> x) t in
+  let proj = if is_enum_list 0 posl then defined
+    else fun t -> Misc.get_positions posl (defined t) in
+  let tuples = List.rev (set_fold (fun t acc -> proj t :: acc) table []) in
+  let rec strictly_sorted = function
+    | x :: (y :: _ as rest) -> compare_tuple_mp x y < 0 && strictly_sorted rest
+    | _ -> true
+  in
+  let tuples = if strictly_sorted tuples then tuples
+    else List.sort_uniq compare_tuple_mp tuples in
+  let tuples =
+    if !Misc.stop_at_first_viol then
+      (match tuples with t :: _ :: _ -> [t] | _ -> tuples)
+    else tuples
+  in
+  let b = Buffer.create 1024 in
+  if !Misc.verbose then
+    if posl = [] then
+      Printf.printf "@%s (time point %d): %b\n%!" (MFOTL.string_of_ts tsq) q (tuples <> [])
+    else begin
+      Buffer.add_string b (Printf.sprintf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q);
+      add_tuples_ext b "(" ")" "," tuples;
+      Buffer.add_char b '\n';
+      print_string (Buffer.contents b);
+      flush stdout
+    end
+  else begin
+    if Misc.debugging Dbg_perf then
+      Perf.show_results q tsq;
+    if tuples <> [] then (* formula satisfied *)
+      if posl = [] then (* no free variables *)
+        Printf.printf "@%s (time point %d): true\n%!" (MFOTL.string_of_ts tsq) q
+      else begin (* free variables *)
+        Buffer.add_string b (Printf.sprintf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q);
+        add_tuples_ext b "" "" " " tuples;
+        Buffer.add_char b '\n';
+        print_string (Buffer.contents b);
+        flush stdout
+      end
+  end;
+  tuples <> []
 
 let is_monitorable dbschema f =
   let s = mmonitorable_exec (convert_formula dbschema f) in

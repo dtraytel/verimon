@@ -23,4 +23,8 @@ val type_check_formula: Db.schema -> Verified.Monitor.tysym Verified.Monitor.for
 
 type state
 val init: Verified.Monitor.ty Verified.Monitor.formula -> state
-val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * Tuple.tuple list) list * state
+type verdict
+val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * verdict) list * state
+(** [show_results posl i q tsq table] prints the verdict [table] for time point [q] like
+    [Helper.show_results] and returns whether it is non-empty. *)
+val show_results: int list -> int -> int -> MFOTL.timestamp -> verdict -> bool
