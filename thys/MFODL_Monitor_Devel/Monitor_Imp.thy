@@ -438,6 +438,26 @@ definition mstep_imp :: "database \<times> ts \<Rightarrow> mstate_h \<Rightarro
        \<lparr> mstate_i = mstate_i st + length xs, mstate_j = mstate_j st + 1, mstate_m = m,
          mstate_n = mstate_n st, mstate_t = drop (length xs) (mstate_t st @ [snd tdb]) \<rparr>) }"
 
+text \<open>
+  The code setup of @{theory MFODL_Monitor_Devel.Monitor_Impl} represents the monitor state by
+  the constructor @{const mestate}, which keeps the time stamps in a queue; the code equations
+  of the two entry points below are stated for that representation, like @{thm [source]
+  default_maux.mstep_code}.
+\<close>
+
+lemma linearize_funpow_tl: "linearize ((tl_queue ^^ k) q) = drop k (linearize q)"
+  by (induction k) (auto simp: tl_queue_rep drop_Suc tl_drop)
+
+declare [[code drop: mstep_imp]]
+
+lemma mstep_imp_code[code]:
+  "mstep_imp (db, t) (mestate i j m n tq \<zeta>) =
+    do { (vs, m') \<leftarrow> meval_imp (j + 1) n [t] db m;
+         return (List.enumerate i (zip (linearize (append_queue t tq)) vs),
+           mestate (i + length vs) (j + 1) m' n ((tl_queue ^^ length vs) (append_queue t tq)) \<zeta>) }"
+  unfolding mstep_imp_def mestate_def
+  by (simp add: linearize_funpow_tl append_queue_rep split_beta)
+
 lemma mstep_imp_rule:
   "<is_mstate st sti> mstep_imp tdb sti
    <\<lambda>r. \<up>(fst r = fst (mstep tdb st)) * is_mstate (snd (mstep tdb st)) (snd r)>\<^sub>t"
@@ -446,15 +466,8 @@ lemma mstep_imp_rule:
 
 definition minit_safe_imp :: "ty Formula.formula \<Rightarrow> mstate_h Heap" where
   "minit_safe_imp \<phi> = do {
-     m \<leftarrow> mformula_imp (mstate_m (minit_safe \<phi>));
-     return \<lparr> mstate_i = mstate_i (minit_safe \<phi>), mstate_j = mstate_j (minit_safe \<phi>), mstate_m = m,
-       mstate_n = mstate_n (minit_safe \<phi>), mstate_t = mstate_t (minit_safe \<phi>) \<rparr> }"
-
-lemma minit_safe_imp_rule:
-  assumes "reset (mstate_m (minit_safe \<phi>)) = mstate_m (minit_safe \<phi>)"
-  shows "<emp> minit_safe_imp \<phi> <is_mstate (minit_safe \<phi>)>\<^sub>t"
-  unfolding minit_safe_imp_def is_mstate_def
-  by (sep_auto heap: mformula_imp_rule simp: assms)
+     m \<leftarrow> mformula_imp (minit0 (Formula.nfv \<phi>) \<phi>);
+     return (mestate 0 0 m (Formula.nfv \<phi>) empty_queue ()) }"
 
 lemmas init_defs = default_mmasaux.init_since_def dq_muaux.init_until_def
   verimon_maux.init_and_trigger_def verimon_maux.init_trigger_def
@@ -467,15 +480,14 @@ lemma reset_minit0: "reset (minit0 n \<phi>) = minit0 n \<phi>"
       simp del: default_maux.minit0.simps)
   done
 
-lemma reset_minit_safe:
-  assumes "mmonitorable_exec \<phi>"
-  shows "reset (mstate_m (minit_safe \<phi>)) = mstate_m (minit_safe \<phi>)"
-  using assms by (simp add: default_maux.minit_safe_def default_maux.minit_def Let_def reset_minit0)
-
 lemma minit_safe_imp_rule':
   assumes "mmonitorable_exec \<phi>"
   shows "<emp> minit_safe_imp \<phi> <is_mstate (minit_safe \<phi>)>\<^sub>t"
-  by (rule minit_safe_imp_rule[OF reset_minit_safe[OF assms]])
+  unfolding minit_safe_imp_def is_mstate_def
+  using assms
+  by (sep_auto heap: mformula_imp_rule
+      simp: default_maux.minit_safe_def default_maux.minit_def mestate_def Let_def
+      reset_minit0 empty_queue_rep)
 
 subsection \<open>Running a whole prefix in one heap computation\<close>
 
