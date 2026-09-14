@@ -6,6 +6,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
      Separate session so that the base session, whose heap image it reuses, does not have to be
      rebuilt when the refinement changes."
   theories
+    Table_Imp
     Optimized_Since_Imp
     Monitor_Imp
   theories [document=false]

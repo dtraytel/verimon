@@ -133,6 +133,8 @@ module Monitor : sig
   type ('a, 'b) phantom
   type nat
   val integer_of_nat : nat -> Z.t
+  type 'a heap
+  type num
   type mapping_impla
   type 'a set_dlist
   type ('b, 'a) mapping_rbt
@@ -181,6 +183,21 @@ module Monitor : sig
   type muaux_dq
   val wild : 'a regex
   val integer_of_int : int -> Z.t
+  val ht_ins :
+    Z.t * (((event_data option) list * unit) list) array ->
+      (event_data option) list -> (unit -> unit)
+  val im_lookup :
+    'a heap ->
+      Z.t * (((event_data option) list * 'a) list) array ->
+        (event_data option) list -> (unit -> ('a option))
+  val ht_mem :
+    Z.t * (((event_data option) list * unit) list) array ->
+      (event_data option) list -> (unit -> bool)
+  val im_new :
+    'a heap ->
+      Z.t -> (unit -> (Z.t * (((event_data option) list * 'a) list) array))
+  val ht_new :
+    Z.t -> (unit -> (Z.t * (((event_data option) list * unit) list) array))
   val interval : nat -> enat -> i
   val type_check :
     (string * nat -> (tysym list) option) ->
@@ -301,6 +318,24 @@ module Monitor : sig
                                     ((event_data option) list) set)))))))))))),
             unit)
             mstate_ext
+  val im_delete :
+    'a heap ->
+      Z.t * (((event_data option) list * 'a) list) array ->
+        (event_data option) list -> (unit -> unit)
+  val im_update :
+    'a heap ->
+      Z.t * (((event_data option) list * 'a) list) array ->
+        (event_data option) list -> 'a -> (unit -> unit)
+  val ht_of_list :
+    ((event_data option) list) list ->
+      (unit -> (Z.t * (((event_data option) list * unit) list) array))
+  val im_to_list :
+    'a heap ->
+      Z.t * (((event_data option) list * 'a) list) array ->
+        (unit -> (((event_data option) list * 'a) list))
+  val ht_to_list :
+    Z.t * (((event_data option) list * unit) list) array ->
+      (unit -> (((event_data option) list) list))
   val mstep_imp :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -3431,6 +3466,15 @@ let rec cproper_interval_prod _A _B =
      cproper_interval = cproper_interval_proda _A _B}
     : ('a * 'b) cproper_interval);;
 
+let rec typerep_unita t = Typerep ("Product_Type.unit", []);;
+
+let countable_unit = (() : unit countable);;
+
+let typerep_unit = ({typerep = typerep_unita} : unit typerep);;
+
+let heap_unit =
+  ({countable_heap = countable_unit; typerep_heap = typerep_unit} : unit heap);;
+
 type rec_safety = Unused | PastRec | NonFutuRec | AnyRec;;
 
 let rec equal_rec_safety x0 x1 = match x0, x1 with NonFutuRec, AnyRec -> false
@@ -5934,6 +5978,42 @@ let rec unit_table (_A1, _A2)
           ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
           (of_phantom set_impl_lista));;
 
+let rec hm_look_list
+  x xa1 = match x, xa1 with x, [] -> None
+    | x, y :: ys ->
+        (if (fun x y -> x = y) x (fst y) then Some (snd y)
+          else hm_look_list x ys);;
+
+let rec ht_ins
+  q x = (let (n, a) = q in
+         let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n
+           in
+          (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+            (fun b ->
+              (if is_none (hm_look_list x b)
+                then (fun () -> Array.set a (Z.to_int i) ((x, ()) :: b))
+                else (fun () -> ()))));;
+
+let rec im_lookup _A
+  q x = (let (n, a) = q in
+          (fun f_ () -> f_
+            (((fun () -> Array.get a (Z.to_int
+               ((fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x
+                 n))))
+            ()) ())
+            (fun b -> (fun () -> (hm_look_list x b))));;
+
+let rec ht_mem
+  q x = (fun f_ () -> f_ ((im_lookup heap_unit q x) ()) ())
+          (fun v -> (fun () -> (not (is_none v))));;
+
+let rec im_new _A
+  n = (let m = (if Z.lt n (Z.of_int 8) then (Z.of_int 8) else n) in
+        (fun f_ () -> f_ (((fun () -> Array.make (Z.to_int m) [])) ()) ())
+          (fun a -> (fun () -> (m, a))));;
+
+let rec ht_new n = im_new heap_unit n;;
+
 let rec upd_cfi (_A1, _A2)
   xa = Abs_comp_fun_idem (fun a -> updateb (_A1, _A2) a (xa a));;
 
@@ -6089,7 +6169,7 @@ let rec ht_new_sz (_A1, _A2) _B
         (fun f_ () -> f_ (((fun () -> Array.of_list l)) ()) ())
           (fun a -> (fun () -> (HashTable (a, zero_nata)))));;
 
-let rec ht_new (_A1, _A2) _B
+let rec ht_newa (_A1, _A2) _B
   = ht_new_sz (_A1, _A2) _B (def_hashmap_size _A1 Type);;
 
 let rec nat_of_uint32
@@ -7182,7 +7262,7 @@ let rec probe_all (_A1, _A2, _A3, _A4, _A5)
 let rec probe_join_imp (_A1, _A2, _A3, _A4, _A5)
   i xs ys =
     (fun f_ () -> f_
-      ((ht_new
+      ((ht_newa
          ((hashable_list (hashable_option _A4)), (heap_list (heap_option _A5)))
          (heap_list (heap_list (heap_option _A5))))
       ()) ())
@@ -10091,7 +10171,7 @@ let rec ed_probe_join_n
 let rec ed_probe_join_imp
   i xs ys =
     (fun f_ () -> f_
-      ((ht_new
+      ((ht_newa
          ((hashable_list (hashable_option hashable_event_data)),
            (heap_list (heap_option heap_event_data)))
          (heap_list (heap_list (heap_option heap_event_data))))
@@ -14026,6 +14106,26 @@ let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
                        | TP v -> [TP v]
                        | TS v -> [TS v];;
 
+let rec hm_del_list
+  x xa1 = match x, xa1 with x, [] -> []
+    | x, y :: ys ->
+        (if (fun x y -> x = y) x (fst y) then ys else y :: hm_del_list x ys);;
+
+let rec im_delete _A
+  q x = (let (n, a) = q in
+         let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n
+           in
+          (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+            (fun b -> (fun () -> Array.set a (Z.to_int i) (hm_del_list x b))));;
+
+let rec im_update _A
+  q x v =
+    (let (n, a) = q in
+     let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n in
+      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+        (fun b ->
+          (fun () -> Array.set a (Z.to_int i) ((x, v) :: hm_del_list x b))));;
+
 let rec ls_delete _A
   k x1 = match k, x1 with k, [] -> ([], false)
     | k, (l, w) :: ls ->
@@ -14056,6 +14156,32 @@ let rec ht_delete (_A1, _A2, _A3) _B
 let rec is_simple_eq
   t1 t2 =
     is_Const t1 && (is_Const t2 || is_Var t2) || is_Var t1 && is_Const t2;;
+
+let rec ht_ins_list
+  q xs =
+    (match xs with [] -> (fun () -> ())
+      | y :: ys ->
+        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun _ -> ht_ins_list q ys));;
+
+let rec ht_of_list
+  xs = (fun f_ () -> f_
+         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
+         (fun q ->
+           (fun f_ () -> f_ ((ht_ins_list q xs) ()) ())
+             (fun _ -> (fun () -> q)));;
+
+let rec im_fold_idx _A
+  f a i n acc =
+    (if Z.leq n i then (fun () -> acc)
+      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+             (fun b -> im_fold_idx _A f a (Z.add i (Z.of_int 1)) n (f b acc)));;
+
+let rec im_to_list _A
+  q = (let (n, a) = q in im_fold_idx _A (fun aa b -> aa @ b) a Z.zero n []);;
+
+let rec ht_to_list
+  q = (fun f_ () -> f_ ((im_to_list heap_unit q) ()) ())
+        (fun kvs -> (fun () -> (mapa fst kvs)));;
 
 let rec since_loop (_A1, _A2, _A3, _A4, _A5)
   t x1 h y = match t, x1, h, y with t, [], h, y -> (fun () -> (h, y))
@@ -14311,14 +14437,14 @@ let rec join_imp
                    (unbox ed_member_v (replicate (size_lista mL) None) x)
                then (fun () -> q)
                else (fun f_ () -> f_
-                      ((ht_new
+                      ((ht_newa
                          ((hashable_list (hashable_option hashable_event_data)),
                            (heap_list (heap_option heap_event_data)))
                          heap_nat)
                       ()) ())
                       (fun hina ->
                         (fun f_ () -> f_
-                          ((ht_new
+                          ((ht_newa
                              ((hashable_list
                                 (hashable_option hashable_event_data)),
                                (heap_list (heap_option heap_event_data)))
@@ -15082,14 +15208,14 @@ let rec convert_multiway
 let rec init_imp
   args =
     (fun f_ () -> f_
-      ((ht_new
+      ((ht_newa
          ((hashable_list (hashable_option hashable_event_data)),
            (heap_list (heap_option heap_event_data)))
          heap_nat)
       ()) ())
       (fun hin ->
         (fun f_ () -> f_
-          ((ht_new
+          ((ht_newa
              ((hashable_list (hashable_option hashable_event_data)),
                (heap_list (heap_option heap_event_data)))
              heap_nat)

@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Imp
-  imports Monitor_Imp "MFODL_Monitor_Devel.Monitor_Code"
+  imports Monitor_Imp Table_Imp "MFODL_Monitor_Devel.Monitor_Code"
 begin
 (*>*)
 
@@ -21,6 +21,9 @@ export_code
   (*main functions*)
   convert_multiway mmonitorable_exec minit_safe mstep type_check vminit_safe vmstep
   minit_safe_imp mstep_imp
+  (*heap-resident tables, for the micro-benchmark*)
+  ht_new ht_ins ht_mem ht_of_list ht_to_list
+  im_new im_lookup im_update im_delete im_to_list
   (*rewrite functions*)
   rewrite_trigger
   in OCaml module_name Monitor file_prefix "verified"
