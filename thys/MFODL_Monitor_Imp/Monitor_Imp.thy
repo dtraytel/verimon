@@ -7,78 +7,79 @@ begin
 section \<open>A monitor with heap-resident Since structures\<close>
 
 text \<open>
-  The auxiliary structures are threaded through @{const meval} as pure values, so a structure
-  that lives on the heap forces the evaluation function to be monadic. We clone @{const meval}
-  in the heap monad for the fragment of formulas in which a Since operator can profit from the
-  imperative structure of @{theory MFODL_Monitor_Devel.Optimized_Since_Imp}: the Boolean
-  connectives, quantification, aggregation, the temporal operators and Since itself. Under the
+  The auxiliary structures are threaded through the evaluation function as pure values, so a
+  heap-resident structure forces that function to be monadic. We clone @{const meeval}, the
+  evaluation function used by the generated code, in the heap monad for the fragment of
+  formulas in which a Since operator can profit from the imperative structure of
+  @{theory MFODL_Monitor_Imp.Optimized_Since_Imp}: the Boolean connectives, assignments and
+  constraints, quantification, aggregation, the temporal operators and Since itself. Under the
   remaining constructors (@{text LET}, @{text LETPAST}, @{text FRZ}, @{text ANDS}, the regular
-  expression operators), whose evaluation functions call the evaluation of their subformulas in
-  loops, the subformulas keep the pure structure and are evaluated by the pure @{const meval};
-  this costs nothing but the acceleration. Since the fragment is closed under the operators
-  that a monitored formula is usually built from, the Since operators of a typical formula are
-  all in it.
+  expression operators), whose evaluation calls the evaluation of their subformulas in loops,
+  the subformulas keep the pure structure and are evaluated by the pure @{const meeval}; this
+  costs nothing but the acceleration. Since the fragment is closed under the operators a
+  monitored formula is usually built from, the Since operators of a typical formula are all in
+  it.
 \<close>
 
-type_synonym mformula_p = "(mmasaux, muaux_dq, event_data mmtaux) mformula"
-type_synonym mformula_h = "(msaux_h, muaux_dq, event_data mmtaux) mformula"
+type_synonym mformula_p = "(mmasaux, muaux_dq, event_data mmtaux) meformula"
+type_synonym mformula_h = "(msaux_h, muaux_dq, event_data mmtaux) meformula"
 type_synonym mstate_p = "(mmasaux, muaux_dq, event_data mmtaux) mstate"
-type_synonym mstate_h = "(msaux_h, muaux_dq, event_data mmtaux) mstate"
+type_synonym mstate_h = "nat \<times> nat \<times> mformula_h \<times> nat \<times> ts queue"
 
 subsection \<open>Formulas with pure structures, and back\<close>
 
 fun embed :: "mformula_p \<Rightarrow> mformula_h" where
-  "embed (mformula.MRel rel) = mformula.MRel rel"
-| "embed (mformula.MPred e tms mode) = mformula.MPred e tms mode"
-| "embed (mformula.MLet p m \<phi> \<psi>) = mformula.MLet p m (embed \<phi>) (embed \<psi>)"
-| "embed (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = mformula.MFrz p m (embed \<phi>) (embed \<psi>) jfrz jpsi0 jphi \<alpha>s"
-| "embed (mformula.MLetPast p m \<phi> \<psi> i buf) = mformula.MLetPast p m (embed \<phi>) (embed \<psi>) i buf"
-| "embed (mformula.MAnd A \<phi> pos B \<psi> buf) = mformula.MAnd A (embed \<phi>) pos B (embed \<psi>) buf"
-| "embed (mformula.MAndAssign \<phi> conf) = mformula.MAndAssign (embed \<phi>) conf"
-| "embed (mformula.MAndRel \<phi> conf) = mformula.MAndRel (embed \<phi>) conf"
-| "embed (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
-    mformula.MAndTrigger V (embed \<phi>) buf1 args (embed \<phi>') (embed \<psi>') buf2 nts aux"
-| "embed (mformula.MAnds A_pos A_neg L buf) = mformula.MAnds A_pos A_neg (map embed L) buf"
-| "embed (mformula.MOr \<phi> \<psi> buf) = mformula.MOr (embed \<phi>) (embed \<psi>) buf"
-| "embed (mformula.MNeg \<phi>) = mformula.MNeg (embed \<phi>)"
-| "embed (mformula.MExists \<phi>) = mformula.MExists (embed \<phi>)"
-| "embed (mformula.MAgg args \<phi>) = mformula.MAgg args (embed \<phi>)"
-| "embed (mformula.MPrev I \<phi> first buf nts) = mformula.MPrev I (embed \<phi>) first buf nts"
-| "embed (mformula.MNext I \<phi> first nts) = mformula.MNext I (embed \<phi>) first nts"
-| "embed (mformula.MSince args \<phi> \<psi> buf aux) = mformula.MSince args (embed \<phi>) (embed \<psi>) buf (MSH_pure aux)"
-| "embed (mformula.MUntil args \<phi> \<psi> buf nts t aux) = mformula.MUntil args (embed \<phi>) (embed \<psi>) buf nts t aux"
-| "embed (mformula.MTrigger args \<phi> \<psi> buf nts aux) = mformula.MTrigger args (embed \<phi>) (embed \<psi>) buf nts aux"
-| "embed (mformula.MMatchP I mr mrs \<phi>s buf nts aux) = mformula.MMatchP I mr mrs (map embed \<phi>s) buf nts aux"
-| "embed (mformula.MMatchF I mr mrs \<phi>s buf nts t aux) = mformula.MMatchF I mr mrs (map embed \<phi>s) buf nts t aux"
-| "embed (mformula.MTP mt i) = mformula.MTP mt i"
-| "embed (mformula.MTS mt) = mformula.MTS mt"
+  "embed (MRel rel) = MRel rel"
+| "embed (MPred e tms mode) = MPred e tms mode"
+| "embed (MLet p m \<phi> \<psi>) = MLet p m (embed \<phi>) (embed \<psi>)"
+| "embed (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = MFrz p m (embed \<phi>) (embed \<psi>) jfrz jpsi0 jphi \<alpha>s"
+| "embed (MLetPast p m \<phi> \<psi> i buf) = MLetPast p m (embed \<phi>) (embed \<psi>) i buf"
+| "embed (MAnd A \<phi> pos B \<psi> buf) = MAnd A (embed \<phi>) pos B (embed \<psi>) buf"
+| "embed (MAndAssign \<phi> conf) = MAndAssign (embed \<phi>) conf"
+| "embed (MAndRel \<phi> conf) = MAndRel (embed \<phi>) conf"
+| "embed (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
+    MAndTrigger V (embed \<phi>) buf1 args (embed \<phi>') (embed \<psi>') buf2 nts aux"
+| "embed (MAnds A_pos A_neg L buf) = MAnds A_pos A_neg (map embed L) buf"
+| "embed (MOr \<phi> \<psi> buf) = MOr (embed \<phi>) (embed \<psi>) buf"
+| "embed (MNeg \<phi>) = MNeg (embed \<phi>)"
+| "embed (MExists \<phi>) = MExists (embed \<phi>)"
+| "embed (MAgg args \<phi>) = MAgg args (embed \<phi>)"
+| "embed (MPrev I \<phi> first buf nts) = MPrev I (embed \<phi>) first buf nts"
+| "embed (MNext I \<phi> first nts) = MNext I (embed \<phi>) first nts"
+| "embed (MSince args \<phi> \<psi> buf aux) = MSince args (embed \<phi>) (embed \<psi>) buf (MSH_pure aux)"
+| "embed (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (embed \<phi>) (embed \<psi>) buf nts t aux"
+| "embed (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (embed \<phi>) (embed \<psi>) buf nts aux"
+| "embed (MMatchP I mr mrs \<phi>s buf nts aux) = MMatchP I mr mrs (map embed \<phi>s) buf nts aux"
+| "embed (MMatchF I mr mrs \<phi>s buf nts t aux) = MMatchF I mr mrs (map embed \<phi>s) buf nts t aux"
+| "embed (MTP mt i) = MTP mt i"
+| "embed (MTS mt) = MTS mt"
 
 fun purify :: "mformula_h \<Rightarrow> mformula_p" where
-  "purify (mformula.MRel rel) = mformula.MRel rel"
-| "purify (mformula.MPred e tms mode) = mformula.MPred e tms mode"
-| "purify (mformula.MLet p m \<phi> \<psi>) = mformula.MLet p m (purify \<phi>) (purify \<psi>)"
-| "purify (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = mformula.MFrz p m (purify \<phi>) (purify \<psi>) jfrz jpsi0 jphi \<alpha>s"
-| "purify (mformula.MLetPast p m \<phi> \<psi> i buf) = mformula.MLetPast p m (purify \<phi>) (purify \<psi>) i buf"
-| "purify (mformula.MAnd A \<phi> pos B \<psi> buf) = mformula.MAnd A (purify \<phi>) pos B (purify \<psi>) buf"
-| "purify (mformula.MAndAssign \<phi> conf) = mformula.MAndAssign (purify \<phi>) conf"
-| "purify (mformula.MAndRel \<phi> conf) = mformula.MAndRel (purify \<phi>) conf"
-| "purify (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
-    mformula.MAndTrigger V (purify \<phi>) buf1 args (purify \<phi>') (purify \<psi>') buf2 nts aux"
-| "purify (mformula.MAnds A_pos A_neg L buf) = mformula.MAnds A_pos A_neg (map purify L) buf"
-| "purify (mformula.MOr \<phi> \<psi> buf) = mformula.MOr (purify \<phi>) (purify \<psi>) buf"
-| "purify (mformula.MNeg \<phi>) = mformula.MNeg (purify \<phi>)"
-| "purify (mformula.MExists \<phi>) = mformula.MExists (purify \<phi>)"
-| "purify (mformula.MAgg args \<phi>) = mformula.MAgg args (purify \<phi>)"
-| "purify (mformula.MPrev I \<phi> first buf nts) = mformula.MPrev I (purify \<phi>) first buf nts"
-| "purify (mformula.MNext I \<phi> first nts) = mformula.MNext I (purify \<phi>) first nts"
-| "purify (mformula.MSince args \<phi> \<psi> buf (MSH_pure s)) = mformula.MSince args (purify \<phi>) (purify \<psi>) buf s"
-| "purify (mformula.MSince args \<phi> \<psi> buf (MSH_imp q)) = mformula.MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
-| "purify (mformula.MUntil args \<phi> \<psi> buf nts t aux) = mformula.MUntil args (purify \<phi>) (purify \<psi>) buf nts t aux"
-| "purify (mformula.MTrigger args \<phi> \<psi> buf nts aux) = mformula.MTrigger args (purify \<phi>) (purify \<psi>) buf nts aux"
-| "purify (mformula.MMatchP I mr mrs \<phi>s buf nts aux) = mformula.MMatchP I mr mrs (map purify \<phi>s) buf nts aux"
-| "purify (mformula.MMatchF I mr mrs \<phi>s buf nts t aux) = mformula.MMatchF I mr mrs (map purify \<phi>s) buf nts t aux"
-| "purify (mformula.MTP mt i) = mformula.MTP mt i"
-| "purify (mformula.MTS mt) = mformula.MTS mt"
+  "purify (MRel rel) = MRel rel"
+| "purify (MPred e tms mode) = MPred e tms mode"
+| "purify (MLet p m \<phi> \<psi>) = MLet p m (purify \<phi>) (purify \<psi>)"
+| "purify (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = MFrz p m (purify \<phi>) (purify \<psi>) jfrz jpsi0 jphi \<alpha>s"
+| "purify (MLetPast p m \<phi> \<psi> i buf) = MLetPast p m (purify \<phi>) (purify \<psi>) i buf"
+| "purify (MAnd A \<phi> pos B \<psi> buf) = MAnd A (purify \<phi>) pos B (purify \<psi>) buf"
+| "purify (MAndAssign \<phi> conf) = MAndAssign (purify \<phi>) conf"
+| "purify (MAndRel \<phi> conf) = MAndRel (purify \<phi>) conf"
+| "purify (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
+    MAndTrigger V (purify \<phi>) buf1 args (purify \<phi>') (purify \<psi>') buf2 nts aux"
+| "purify (MAnds A_pos A_neg L buf) = MAnds A_pos A_neg (map purify L) buf"
+| "purify (MOr \<phi> \<psi> buf) = MOr (purify \<phi>) (purify \<psi>) buf"
+| "purify (MNeg \<phi>) = MNeg (purify \<phi>)"
+| "purify (MExists \<phi>) = MExists (purify \<phi>)"
+| "purify (MAgg args \<phi>) = MAgg args (purify \<phi>)"
+| "purify (MPrev I \<phi> first buf nts) = MPrev I (purify \<phi>) first buf nts"
+| "purify (MNext I \<phi> first nts) = MNext I (purify \<phi>) first nts"
+| "purify (MSince args \<phi> \<psi> buf (MSH_pure s)) = MSince args (purify \<phi>) (purify \<psi>) buf s"
+| "purify (MSince args \<phi> \<psi> buf (MSH_imp q)) = MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
+| "purify (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t aux"
+| "purify (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (purify \<phi>) (purify \<psi>) buf nts aux"
+| "purify (MMatchP I mr mrs \<phi>s buf nts aux) = MMatchP I mr mrs (map purify \<phi>s) buf nts aux"
+| "purify (MMatchF I mr mrs \<phi>s buf nts t aux) = MMatchF I mr mrs (map purify \<phi>s) buf nts t aux"
+| "purify (MTP mt i) = MTP mt i"
+| "purify (MTS mt) = MTS mt"
 
 lemma purify_embed[simp]: "purify (embed \<phi>) = \<phi>"
   by (induction \<phi> rule: embed.induct) (auto simp: comp_def intro!: map_idI)
@@ -98,38 +99,38 @@ text \<open>
 \<close>
 
 fun is_mformula :: "mformula_p \<Rightarrow> mformula_h \<Rightarrow> assn" where
-  "is_mformula (mformula.MAnd A \<phi> pos B \<psi> buf) \<chi> =
-    (case \<chi> of mformula.MAnd A' \<phi>i pos' B' \<psi>i buf' \<Rightarrow>
+  "is_mformula (MAnd A \<phi> pos B \<psi> buf) \<chi> =
+    (case \<chi> of MAnd A' \<phi>i pos' B' \<psi>i buf' \<Rightarrow>
       \<up>(A' = A \<and> pos' = pos \<and> B' = B \<and> buf' = buf) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MAndAssign \<phi> conf) \<chi> =
-    (case \<chi> of mformula.MAndAssign \<phi>i conf' \<Rightarrow> \<up>(conf' = conf) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MAndRel \<phi> conf) \<chi> =
-    (case \<chi> of mformula.MAndRel \<phi>i conf' \<Rightarrow> \<up>(conf' = conf) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) \<chi> =
-    (case \<chi> of mformula.MAndTrigger V' \<phi>i buf1' args' \<phi>i' \<psi>i' buf2' nts' aux' \<Rightarrow>
+| "is_mformula (MAndAssign \<phi> conf) \<chi> =
+    (case \<chi> of MAndAssign \<phi>i conf' \<Rightarrow> \<up>(conf' = conf) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
+| "is_mformula (MAndRel \<phi> conf) \<chi> =
+    (case \<chi> of MAndRel \<phi>i conf' \<Rightarrow> \<up>(conf' = conf) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
+| "is_mformula (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) \<chi> =
+    (case \<chi> of MAndTrigger V' \<phi>i buf1' args' \<phi>i' \<psi>i' buf2' nts' aux' \<Rightarrow>
       \<up>(V' = V \<and> buf1' = buf1 \<and> args' = args \<and> buf2' = buf2 \<and> nts' = nts \<and> aux' = aux) *
       is_mformula \<phi> \<phi>i * is_mformula \<phi>' \<phi>i' * is_mformula \<psi>' \<psi>i' | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MOr \<phi> \<psi> buf) \<chi> =
-    (case \<chi> of mformula.MOr \<phi>i \<psi>i buf' \<Rightarrow> \<up>(buf' = buf) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MNeg \<phi>) \<chi> = (case \<chi> of mformula.MNeg \<phi>i \<Rightarrow> is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MExists \<phi>) \<chi> = (case \<chi> of mformula.MExists \<phi>i \<Rightarrow> is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MAgg args \<phi>) \<chi> =
-    (case \<chi> of mformula.MAgg args' \<phi>i \<Rightarrow> \<up>(args' = args) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MPrev I \<phi> first buf nts) \<chi> =
-    (case \<chi> of mformula.MPrev I' \<phi>i first' buf' nts' \<Rightarrow>
+| "is_mformula (MOr \<phi> \<psi> buf) \<chi> =
+    (case \<chi> of MOr \<phi>i \<psi>i buf' \<Rightarrow> \<up>(buf' = buf) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i | _ \<Rightarrow> false)"
+| "is_mformula (MNeg \<phi>) \<chi> = (case \<chi> of MNeg \<phi>i \<Rightarrow> is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
+| "is_mformula (MExists \<phi>) \<chi> = (case \<chi> of MExists \<phi>i \<Rightarrow> is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
+| "is_mformula (MAgg args \<phi>) \<chi> =
+    (case \<chi> of MAgg args' \<phi>i \<Rightarrow> \<up>(args' = args) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
+| "is_mformula (MPrev I \<phi> first buf nts) \<chi> =
+    (case \<chi> of MPrev I' \<phi>i first' buf' nts' \<Rightarrow>
       \<up>(I' = I \<and> first' = first \<and> buf' = buf \<and> nts' = nts) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MNext I \<phi> first nts) \<chi> =
-    (case \<chi> of mformula.MNext I' \<phi>i first' nts' \<Rightarrow>
+| "is_mformula (MNext I \<phi> first nts) \<chi> =
+    (case \<chi> of MNext I' \<phi>i first' nts' \<Rightarrow>
       \<up>(I' = I \<and> first' = first \<and> nts' = nts) * is_mformula \<phi> \<phi>i | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MSince args \<phi> \<psi> buf aux) \<chi> =
-    (case \<chi> of mformula.MSince args' \<phi>i \<psi>i buf' auxi \<Rightarrow>
+| "is_mformula (MSince args \<phi> \<psi> buf aux) \<chi> =
+    (case \<chi> of MSince args' \<phi>i \<psi>i buf' auxi \<Rightarrow>
       \<up>(args' = args \<and> buf' = buf) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i * is_msaux_h args aux auxi | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MUntil args \<phi> \<psi> buf nts t aux) \<chi> =
-    (case \<chi> of mformula.MUntil args' \<phi>i \<psi>i buf' nts' t' aux' \<Rightarrow>
+| "is_mformula (MUntil args \<phi> \<psi> buf nts t aux) \<chi> =
+    (case \<chi> of MUntil args' \<phi>i \<psi>i buf' nts' t' aux' \<Rightarrow>
       \<up>(args' = args \<and> buf' = buf \<and> nts' = nts \<and> t' = t \<and> aux' = aux) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i
     | _ \<Rightarrow> false)"
-| "is_mformula (mformula.MTrigger args \<phi> \<psi> buf nts aux) \<chi> =
-    (case \<chi> of mformula.MTrigger args' \<phi>i \<psi>i buf' nts' aux' \<Rightarrow>
+| "is_mformula (MTrigger args \<phi> \<psi> buf nts aux) \<chi> =
+    (case \<chi> of MTrigger args' \<phi>i \<psi>i buf' nts' aux' \<Rightarrow>
       \<up>(args' = args \<and> buf' = buf \<and> nts' = nts \<and> aux' = aux) * is_mformula \<phi> \<phi>i * is_mformula \<psi> \<psi>i | _ \<Rightarrow> false)"
 | "is_mformula \<phi> \<chi> = \<up>(\<chi> = embed \<phi>)"
 
@@ -138,122 +139,124 @@ lemma is_mformula_embed: "is_mformula \<phi> (embed \<phi>) = emp"
 
 subsection \<open>Evaluation of the Since buffer\<close>
 
-fun eval_since_imp :: "args \<Rightarrow> event_data table list \<Rightarrow> event_data mbuf2S \<Rightarrow> msaux_h \<Rightarrow>
-    (event_data table list \<times> event_data mbuf2S \<times> msaux_h) Heap" where
-  "eval_since_imp args rs (x # xs, [], t # ts, skew) aux =
-    (if skew \<or> memL (args_ivl args) 0 then return (rev rs, (x # xs, [], t # ts, skew), aux)
-     else do { aux \<leftarrow> add_new_ts_h args t aux; aux' \<leftarrow> join_h args x aux; r \<leftarrow> result_h args aux';
-               return (rev (r # rs), (xs, [], ts, True), aux') })"
-| "eval_since_imp args rs (xs, y # ys, ts, True) aux =
-    do { aux \<leftarrow> add_new_table_h args y aux; eval_since_imp args rs (xs, ys, ts, False) aux }"
-| "eval_since_imp args rs (x # xs, y # ys, t # ts, False) aux =
-    do { aux \<leftarrow> add_new_ts_h args t aux; aux \<leftarrow> join_h args x aux; aux' \<leftarrow> add_new_table_h args y aux;
-         r \<leftarrow> result_h args aux'; eval_since_imp args (r # rs) (xs, ys, ts, False) aux' }"
-| "eval_since_imp args rs buf aux = return (rev rs, buf, aux)"
+fun eval_since_imp :: "args \<Rightarrow> event_data table list \<Rightarrow> event_data mebuf2S \<Rightarrow> msaux_h \<Rightarrow>
+    (event_data table list \<times> event_data mebuf2S \<times> msaux_h) Heap" where
+  "eval_since_imp args rs (xs, ys, ts, skew) aux =
+    (case mbuf_t_cases ys of (None, ys') \<Rightarrow>
+      (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
+        (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
+          (if skew \<or> memL (args_ivl args) 0
+           then return (rev rs, (x ## xs', mbuf_t_empty, t ## ts', skew), aux)
+           else do { aux \<leftarrow> add_new_ts_h args t aux; aux' \<leftarrow> join_h args x aux; r \<leftarrow> result_h args aux';
+                     return (rev (r # rs), (xs', mbuf_t_empty, ts', True), aux') })
+        | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', mbuf_t_empty, mbuf_t_empty, skew), aux))
+      | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, mbuf_t_empty, ts, skew), aux))
+    | (Some y, ys') \<Rightarrow>
+      if skew then do { aux \<leftarrow> add_new_table_h args y aux; eval_since_imp args rs (xs, ys', ts, False) aux }
+      else
+      (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
+        (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
+          do { aux \<leftarrow> add_new_ts_h args t aux; aux \<leftarrow> join_h args x aux; aux' \<leftarrow> add_new_table_h args y aux;
+               r \<leftarrow> result_h args aux'; eval_since_imp args (r # rs) (xs', ys', ts', False) aux' }
+        | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', y ## ys', ts', skew), aux))
+      | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
 
 lemma eval_since_imp_rule:
   "<is_msaux_h args s q> eval_since_imp args rs buf q
-   <\<lambda>r. \<up>(fst r = fst (meval_since args rs buf s) \<and> fst (snd r) = fst (snd (meval_since args rs buf s))) *
-      is_msaux_h args (snd (snd (meval_since args rs buf s))) (snd (snd r))>\<^sub>t"
-proof (induction rs buf s arbitrary: q rule: default_maux.eval_since.induct[where args = args])
-  case (1 rs x xs t ts skew aux)
+   <\<lambda>r. \<up>(fst r = fst (eeval_since args rs buf s) \<and> fst (snd r) = fst (snd (eeval_since args rs buf s))) *
+      is_msaux_h args (snd (snd (eeval_since args rs buf s))) (snd (snd r))>\<^sub>t"
+proof (induction rs buf s arbitrary: q rule: default_maux.eeval_since.induct[where args = args])
+  case (1 rs xs ys ts skew aux)
   show ?case
-    by (sep_auto heap: add_new_ts_h_rule join_h_rule result_h_rule simp: Let_def)
-next
-  case (2 rs xs y ys ts aux)
-  show ?case
-    by (sep_auto heap: add_new_table_h_rule "2.IH")
-next
-  case (3 rs x xs y ys t ts aux)
-  show ?case
-    by (sep_auto heap: add_new_ts_h_rule join_h_rule add_new_table_h_rule result_h_rule "3.IH" simp: Let_def)
-qed sep_auto+
+    by (sep_auto heap: add_new_ts_h_rule join_h_rule result_h_rule add_new_table_h_rule "1.IH"
+        simp: Let_def split: option.splits prod.splits)
+qed
 
 subsection \<open>Evaluation of a formula\<close>
 
 fun meval_imp :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_h \<Rightarrow> (event_data table list \<times> mformula_h) Heap" where
-  "meval_imp j n ts db (mformula.MAnd A \<phi> pos B \<psi> buf) = do {
+  "meval_imp j n ts db (MAnd A \<phi> pos B \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_imp j n ts db \<psi>;
-     return (let (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A r1 pos B r2) (mbuf2_add xs ys buf)
-       in (zs, mformula.MAnd A \<phi> pos B \<psi> buf)) }"
-| "meval_imp j n ts db (mformula.MAndAssign \<phi> conf) = do {
+     return (let (zs, buf) = mebuf2_take (\<lambda>r1 r2. bin_join n A r1 pos B r2) (mebuf2_add xs ys buf)
+       in (zs, MAnd A \<phi> pos B \<psi> buf)) }"
+| "meval_imp j n ts db (MAndAssign \<phi> conf) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
-     return (map (\<lambda>r. eval_assignment conf ` r) xs, mformula.MAndAssign \<phi> conf) }"
-| "meval_imp j n ts db (mformula.MAndRel \<phi> conf) = do {
+     return (map (\<lambda>r. eval_assignment conf ` r) xs, MAndAssign \<phi> conf) }"
+| "meval_imp j n ts db (MAndRel \<phi> conf) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
-     return (map (\<lambda>r. Set.filter (eval_constraint conf) r) xs, mformula.MAndRel \<phi> conf) }"
-| "meval_imp j n ts db (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) = do {
+     return (map (Set.filter (eval_constraint conf)) xs, MAndRel \<phi> conf) }"
+| "meval_imp j n ts db (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) = do {
      (as, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
      (xs, \<phi>') \<leftarrow> meval_imp j n ts db \<phi>';
      (ys, \<psi>') \<leftarrow> meval_imp j n ts db \<psi>';
-     return (let ((zs_trigger, aux), buf2, nts) = mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+     return (let ((zs_trigger, aux), buf2, nts) = mebuf2T_take (\<lambda>r1 r2 t (zs, aux).
          let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
-         in (zs @ [(fv_z, z)], aux)) ([], aux) (mbuf2_add xs ys buf2) (nts @ ts);
-       (zs, buf1) = mbuf2_take (\<lambda>r1 (V_trigger, r2). bin_join n V r1 True V_trigger r2) (mbuf2_add as zs_trigger buf1)
-       in (zs, mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux)) }"
-| "meval_imp j n ts db (mformula.MOr \<phi> \<psi> buf) = do {
+         in (zs @ [(fv_z, z)], aux)) ([], aux) (mebuf2_add xs ys buf2) (nts @@ ts);
+       (zs, buf1) = mebuf2_take (\<lambda>r1 (V_trigger, r2). bin_join n V r1 True V_trigger r2) (mebuf2_add as zs_trigger buf1)
+       in (zs, MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux)) }"
+| "meval_imp j n ts db (MOr \<phi> \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_imp j n ts db \<psi>;
-     return (let (zs, buf) = mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add xs ys buf)
-       in (zs, mformula.MOr \<phi> \<psi> buf)) }"
-| "meval_imp j n ts db (mformula.MNeg \<phi>) = do {
+     return (let (zs, buf) = mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mebuf2_add xs ys buf)
+       in (zs, MOr \<phi> \<psi> buf)) }"
+| "meval_imp j n ts db (MNeg \<phi>) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
-     return (map (\<lambda>r. if r = empty_table then unit_table n else empty_table) xs, mformula.MNeg \<phi>) }"
-| "meval_imp j n ts db (mformula.MExists \<phi>) = do {
+     return (map (\<lambda>r. if r = empty_table then unit_table n else empty_table) xs, MNeg \<phi>) }"
+| "meval_imp j n ts db (MExists \<phi>) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j (Suc n) ts db \<phi>;
-     return (map (\<lambda>r. tl ` r) xs, mformula.MExists \<phi>) }"
-| "meval_imp j n ts db (mformula.MAgg args \<phi>) = do {
+     return (map (\<lambda>r. tl ` r) xs, MExists \<phi>) }"
+| "meval_imp j n ts db (MAgg args \<phi>) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j (length (aggargs_tys args) + n) ts db \<phi>;
-     return (map (eval_aggargs args) xs, mformula.MAgg args \<phi>) }"
-| "meval_imp j n ts db (mformula.MPrev I \<phi> first buf nts) = do {
+     return (map (eval_aggargs args) xs, MAgg args \<phi>) }"
+| "meval_imp j n ts db (MPrev I \<phi> first buf nts) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
-     return (if first \<and> ts = [] then ([], mformula.MPrev I \<phi> True (buf @ xs) (nts @ ts))
-       else let (zs, buf, nts) = mprev_next I (buf @ xs) (nts @ ts)
-         in (if first then empty_table # zs else zs, mformula.MPrev I \<phi> False buf nts)) }"
-| "meval_imp j n ts db (mformula.MNext I \<phi> first nts) = do {
+     return (if first \<and> ts = [] then ([], MPrev I \<phi> True (buf @@ xs) (nts @@ ts))
+       else let (zs, buf, nts) = meprev_next I (buf @@ xs) (nts @@ ts)
+         in (if first then empty_table # zs else zs, MPrev I \<phi> False buf nts)) }"
+| "meval_imp j n ts db (MNext I \<phi> first nts) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
      return (let (xs, first) = (case (xs, first) of (_ # xs, True) \<Rightarrow> (xs, False) | a \<Rightarrow> a);
-       (zs, buf, nts) = mprev_next I xs (nts @ ts)
-       in (zs, mformula.MNext I \<phi> first nts)) }"
-| "meval_imp j n ts db (mformula.MSince args \<phi> \<psi> buf aux) = do {
+       (zs, buf, nts) = meprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
+       in (zs, MNext I \<phi> first nts)) }"
+| "meval_imp j n ts db (MSince args \<phi> \<psi> buf aux) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j (args_n args) ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_imp j (args_n args) ts db \<psi>;
-     (zs, buf, aux) \<leftarrow> eval_since_imp args [] (mbuf2S_add xs ys ts buf) aux;
-     return (zs, mformula.MSince args \<phi> \<psi> buf aux) }"
-| "meval_imp j n ts db (mformula.MUntil args \<phi> \<psi> buf nts t aux) = do {
+     (zs, buf, aux) \<leftarrow> eval_since_imp args [] (mebuf2S_add xs ys ts buf) aux;
+     return (zs, MSince args \<phi> \<psi> buf aux) }"
+| "meval_imp j n ts db (MUntil args \<phi> \<psi> buf nts t aux) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j (args_n args) ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_imp j (args_n args) ts db \<psi>;
-     return (let (aux, buf, nt, nts') = mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add xs ys buf) t (nts @ ts);
+     return (let (aux, buf, nt, nts') = mebuf2t_take (add_new_muaux_dq args) aux (mebuf2_add xs ys buf) t (nts @@ ts);
        (zs, aux) = eval_muaux_dq args nt aux
-       in (zs, mformula.MUntil args \<phi> \<psi> buf nts' nt aux)) }"
-| "meval_imp j n ts db (mformula.MTrigger args \<phi> \<psi> buf nts aux) = do {
+       in (zs, MUntil args \<phi> \<psi> buf nts' nt aux)) }"
+| "meval_imp j n ts db (MTrigger args \<phi> \<psi> buf nts aux) = do {
      (xs, \<phi>) \<leftarrow> meval_imp j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_imp j n ts db \<psi>;
-     return (let ((zs, aux), buf, nts) = mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+     return (let ((zs, aux), buf, nts) = mebuf2T_take (\<lambda>r1 r2 t (zs, aux).
          let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
-         in (zs @ [z], aux)) ([], aux) (mbuf2_add xs ys buf) (nts @ ts)
-       in (zs, mformula.MTrigger args \<phi> \<psi> buf nts aux)) }"
-| "meval_imp j n ts db \<phi>i = return (let (xs, \<phi>) = meval j n ts db (purify \<phi>i) in (xs, embed \<phi>))"
+         in (zs @ [z], aux)) ([], aux) (mebuf2_add xs ys buf) (nts @@ ts)
+       in (zs, MTrigger args \<phi> \<psi> buf nts aux)) }"
+| "meval_imp j n ts db \<phi>i = return (let (xs, \<phi>) = meeval j n ts db (purify \<phi>i) in (xs, embed \<phi>))"
 
 lemma meval_imp_rule:
   "<is_mformula \<phi> \<phi>i> meval_imp j n ts db \<phi>i
-   <\<lambda>r. \<up>(fst r = fst (meval j n ts db \<phi>)) * is_mformula (snd (meval j n ts db \<phi>)) (snd r)>\<^sub>t"
+   <\<lambda>r. \<up>(fst r = fst (meeval j n ts db \<phi>)) * is_mformula (snd (meeval j n ts db \<phi>)) (snd r)>\<^sub>t"
 proof (induction \<phi> arbitrary: \<phi>i n ts db)
   case (MRel x1)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MPred x1 x2 x3)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MLet x1 x2 x3 x4)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MFrz x1 x2 x3 x4 x5 x6 x7 x8)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MLetPast x1 x2 x3 x4 x5 x6)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MAnd x1 x2 x3 x4 x5 x6)
   show ?case by (cases \<phi>i) (sep_auto heap: MAnd.IH simp: split_beta)+
@@ -268,7 +271,7 @@ next
   show ?case by (cases \<phi>i) (sep_auto heap: MAndTrigger.IH simp: split_beta)+
 next
   case (MAnds x1 x2 x3 x4)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MOr x1 x2 x3)
   show ?case by (cases \<phi>i) (sep_auto heap: MOr.IH simp: split_beta)+
@@ -298,59 +301,59 @@ next
   show ?case by (cases \<phi>i) (sep_auto heap: MTrigger.IH simp: split_beta)+
 next
   case (MMatchP x1 x2 x3 x4 x5 x6 x7)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MMatchF x1 x2 x3 x4 x5 x6 x7 x8)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MTP x1 x2)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MTS x1)
-  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meval_simps)
+  show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 qed
 
 subsection \<open>Building the initial formula on the heap\<close>
 
 fun reset :: "mformula_p \<Rightarrow> mformula_p" where
-  "reset (mformula.MAnd A \<phi> pos B \<psi> buf) = mformula.MAnd A (reset \<phi>) pos B (reset \<psi>) buf"
-| "reset (mformula.MAndAssign \<phi> conf) = mformula.MAndAssign (reset \<phi>) conf"
-| "reset (mformula.MAndRel \<phi> conf) = mformula.MAndRel (reset \<phi>) conf"
-| "reset (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
-    mformula.MAndTrigger V (reset \<phi>) buf1 args (reset \<phi>') (reset \<psi>') buf2 nts aux"
-| "reset (mformula.MOr \<phi> \<psi> buf) = mformula.MOr (reset \<phi>) (reset \<psi>) buf"
-| "reset (mformula.MNeg \<phi>) = mformula.MNeg (reset \<phi>)"
-| "reset (mformula.MExists \<phi>) = mformula.MExists (reset \<phi>)"
-| "reset (mformula.MAgg args \<phi>) = mformula.MAgg args (reset \<phi>)"
-| "reset (mformula.MPrev I \<phi> first buf nts) = mformula.MPrev I (reset \<phi>) first buf nts"
-| "reset (mformula.MNext I \<phi> first nts) = mformula.MNext I (reset \<phi>) first nts"
-| "reset (mformula.MSince args \<phi> \<psi> buf aux) = mformula.MSince args (reset \<phi>) (reset \<psi>) buf (init_mmasaux args)"
-| "reset (mformula.MUntil args \<phi> \<psi> buf nts t aux) = mformula.MUntil args (reset \<phi>) (reset \<psi>) buf nts t aux"
-| "reset (mformula.MTrigger args \<phi> \<psi> buf nts aux) = mformula.MTrigger args (reset \<phi>) (reset \<psi>) buf nts aux"
+  "reset (MAnd A \<phi> pos B \<psi> buf) = MAnd A (reset \<phi>) pos B (reset \<psi>) buf"
+| "reset (MAndAssign \<phi> conf) = MAndAssign (reset \<phi>) conf"
+| "reset (MAndRel \<phi> conf) = MAndRel (reset \<phi>) conf"
+| "reset (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
+    MAndTrigger V (reset \<phi>) buf1 args (reset \<phi>') (reset \<psi>') buf2 nts aux"
+| "reset (MOr \<phi> \<psi> buf) = MOr (reset \<phi>) (reset \<psi>) buf"
+| "reset (MNeg \<phi>) = MNeg (reset \<phi>)"
+| "reset (MExists \<phi>) = MExists (reset \<phi>)"
+| "reset (MAgg args \<phi>) = MAgg args (reset \<phi>)"
+| "reset (MPrev I \<phi> first buf nts) = MPrev I (reset \<phi>) first buf nts"
+| "reset (MNext I \<phi> first nts) = MNext I (reset \<phi>) first nts"
+| "reset (MSince args \<phi> \<psi> buf aux) = MSince args (reset \<phi>) (reset \<psi>) buf (init_mmasaux args)"
+| "reset (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (reset \<phi>) (reset \<psi>) buf nts t aux"
+| "reset (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (reset \<phi>) (reset \<psi>) buf nts aux"
 | "reset \<phi> = \<phi>"
 
 fun mformula_imp :: "mformula_p \<Rightarrow> mformula_h Heap" where
-  "mformula_imp (mformula.MAnd A \<phi> pos B \<psi> buf) = do {
-     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (mformula.MAnd A \<phi>i pos B \<psi>i buf) }"
-| "mformula_imp (mformula.MAndAssign \<phi> conf) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MAndAssign \<phi>i conf) }"
-| "mformula_imp (mformula.MAndRel \<phi> conf) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MAndRel \<phi>i conf) }"
-| "mformula_imp (mformula.MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) = do {
+  "mformula_imp (MAnd A \<phi> pos B \<psi> buf) = do {
+     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (MAnd A \<phi>i pos B \<psi>i buf) }"
+| "mformula_imp (MAndAssign \<phi> conf) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MAndAssign \<phi>i conf) }"
+| "mformula_imp (MAndRel \<phi> conf) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MAndRel \<phi>i conf) }"
+| "mformula_imp (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) = do {
      \<phi>i \<leftarrow> mformula_imp \<phi>; \<phi>i' \<leftarrow> mformula_imp \<phi>'; \<psi>i' \<leftarrow> mformula_imp \<psi>';
-     return (mformula.MAndTrigger V \<phi>i buf1 args \<phi>i' \<psi>i' buf2 nts aux) }"
-| "mformula_imp (mformula.MOr \<phi> \<psi> buf) = do {
-     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (mformula.MOr \<phi>i \<psi>i buf) }"
-| "mformula_imp (mformula.MNeg \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MNeg \<phi>i) }"
-| "mformula_imp (mformula.MExists \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MExists \<phi>i) }"
-| "mformula_imp (mformula.MAgg args \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MAgg args \<phi>i) }"
-| "mformula_imp (mformula.MPrev I \<phi> first buf nts) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MPrev I \<phi>i first buf nts) }"
-| "mformula_imp (mformula.MNext I \<phi> first nts) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (mformula.MNext I \<phi>i first nts) }"
-| "mformula_imp (mformula.MSince args \<phi> \<psi> buf aux) = do {
+     return (MAndTrigger V \<phi>i buf1 args \<phi>i' \<psi>i' buf2 nts aux) }"
+| "mformula_imp (MOr \<phi> \<psi> buf) = do {
+     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (MOr \<phi>i \<psi>i buf) }"
+| "mformula_imp (MNeg \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MNeg \<phi>i) }"
+| "mformula_imp (MExists \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MExists \<phi>i) }"
+| "mformula_imp (MAgg args \<phi>) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MAgg args \<phi>i) }"
+| "mformula_imp (MPrev I \<phi> first buf nts) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MPrev I \<phi>i first buf nts) }"
+| "mformula_imp (MNext I \<phi> first nts) = do { \<phi>i \<leftarrow> mformula_imp \<phi>; return (MNext I \<phi>i first nts) }"
+| "mformula_imp (MSince args \<phi> \<psi> buf aux) = do {
      \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; q \<leftarrow> init_h args;
-     return (mformula.MSince args \<phi>i \<psi>i buf q) }"
-| "mformula_imp (mformula.MUntil args \<phi> \<psi> buf nts t aux) = do {
-     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (mformula.MUntil args \<phi>i \<psi>i buf nts t aux) }"
-| "mformula_imp (mformula.MTrigger args \<phi> \<psi> buf nts aux) = do {
-     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (mformula.MTrigger args \<phi>i \<psi>i buf nts aux) }"
+     return (MSince args \<phi>i \<psi>i buf q) }"
+| "mformula_imp (MUntil args \<phi> \<psi> buf nts t aux) = do {
+     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (MUntil args \<phi>i \<psi>i buf nts t aux) }"
+| "mformula_imp (MTrigger args \<phi> \<psi> buf nts aux) = do {
+     \<phi>i \<leftarrow> mformula_imp \<phi>; \<psi>i \<leftarrow> mformula_imp \<psi>; return (MTrigger args \<phi>i \<psi>i buf nts aux) }"
 | "mformula_imp \<phi> = return (embed \<phi>)"
 
 lemma mformula_imp_rule: "<emp> mformula_imp \<phi> <is_mformula (reset \<phi>)>\<^sub>t"
@@ -427,67 +430,58 @@ qed
 
 subsection \<open>The monitor\<close>
 
+text \<open>
+  The state of the imperative monitor keeps the same data as @{typ mstate_p}, with the formula
+  on the heap and the time stamps in a queue, as the code representation @{const mestate} of the
+  pure state does.
+\<close>
+
 definition is_mstate :: "mstate_p \<Rightarrow> mstate_h \<Rightarrow> assn" where
-  "is_mstate st sti = \<up>(mstate_i sti = mstate_i st \<and> mstate_j sti = mstate_j st \<and>
-     mstate_n sti = mstate_n st \<and> mstate_t sti = mstate_t st) * is_mformula (mstate_m st) (mstate_m sti)"
+  "is_mstate st sti = (case sti of (i, j, m, n, tq) \<Rightarrow>
+     (\<exists>\<^sub>Ae. \<up>(i = mstate_i st \<and> j = mstate_j st \<and> n = mstate_n st \<and>
+        linearize tq = mstate_t st \<and> mstate_m st = Rep_meformula e) * is_mformula e m))"
 
 definition mstep_imp :: "database \<times> ts \<Rightarrow> mstate_h \<Rightarrow> ((nat \<times> ts \<times> event_data table) list \<times> mstate_h) Heap" where
-  "mstep_imp tdb st = do {
-     (xs, m) \<leftarrow> meval_imp (mstate_j st + 1) (mstate_n st) [snd tdb] (fst tdb) (mstate_m st);
-     return (List.enumerate (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
-       \<lparr> mstate_i = mstate_i st + length xs, mstate_j = mstate_j st + 1, mstate_m = m,
-         mstate_n = mstate_n st, mstate_t = drop (length xs) (mstate_t st @ [snd tdb]) \<rparr>) }"
-
-text \<open>
-  The code setup of @{theory MFODL_Monitor_Devel.Monitor_Impl} represents the monitor state by
-  the constructor @{const mestate}, which keeps the time stamps in a queue; the code equations
-  of the two entry points below are stated for that representation, like @{thm [source]
-  default_maux.mstep_code}.
-\<close>
+  "mstep_imp tdb sti = (case sti of (i, j, m, n, tq) \<Rightarrow> do {
+     (vs, m') \<leftarrow> meval_imp (j + 1) n [snd tdb] (fst tdb) m;
+     return (let tq' = append_queue (snd tdb) tq in
+       (List.enumerate i (zip (linearize tq') vs),
+        (i + length vs, j + 1, m', n, (tl_queue ^^ length vs) tq'))) })"
 
 lemma linearize_funpow_tl: "linearize ((tl_queue ^^ k) q) = drop k (linearize q)"
   by (induction k) (auto simp: tl_queue_rep drop_Suc tl_drop)
 
-declare [[code drop: mstep_imp]]
-
-lemma mstep_imp_code[code]:
-  "mstep_imp (db, t) (mestate i j m n tq \<zeta>) =
-    do { (vs, m') \<leftarrow> meval_imp (j + 1) n [t] db m;
-         return (List.enumerate i (zip (linearize (append_queue t tq)) vs),
-           mestate (i + length vs) (j + 1) m' n ((tl_queue ^^ length vs) (append_queue t tq)) \<zeta>) }"
-  unfolding mstep_imp_def mestate_def
-  by (simp add: linearize_funpow_tl append_queue_rep split_beta)
-
 lemma mstep_imp_rule:
   "<is_mstate st sti> mstep_imp tdb sti
    <\<lambda>r. \<up>(fst r = fst (mstep tdb st)) * is_mstate (snd (mstep tdb st)) (snd r)>\<^sub>t"
-  unfolding mstep_imp_def default_maux.mstep_def is_mstate_def
-  by (sep_auto heap: meval_imp_rule simp: split_beta)
+  unfolding is_mstate_def mstep_imp_def default_maux.mstep_def
+  by (sep_auto heap: meval_imp_rule
+      simp: default_maux.meval_code linearize_funpow_tl append_queue_rep split_beta)
+
+lemmas init_defs = default_mmasaux.init_since'_def dq_muaux.init_until'_def
+  verimon_maux.init_and_trigger'_def verimon_maux.init_trigger'_def
+
+lemma reset_meinit0: "reset (meinit0 n \<phi>) = meinit0 n \<phi>"
+  apply (induction n \<phi> rule: default_maux.meinit0.induct)
+  apply (simp_all add: init_defs Let_def)
+  apply (simp_all add: init_defs Let_def split: formula.split del: default_maux.meinit0.simps)
+  apply (auto simp: init_defs Let_def split: formula.split prod.split
+      simp del: default_maux.meinit0.simps)
+  done
 
 definition minit_safe_imp :: "ty Formula.formula \<Rightarrow> mstate_h Heap" where
   "minit_safe_imp \<phi> = do {
-     m \<leftarrow> mformula_imp (minit0 (Formula.nfv \<phi>) \<phi>);
-     return (mestate 0 0 m (Formula.nfv \<phi>) empty_queue ()) }"
+     m \<leftarrow> mformula_imp (meinit0 (Formula.nfv \<phi>) \<phi>);
+     return (0, 0, m, Formula.nfv \<phi>, empty_queue) }"
 
-lemmas init_defs = default_mmasaux.init_since_def dq_muaux.init_until_def
-  verimon_maux.init_and_trigger_def verimon_maux.init_trigger_def
-
-lemma reset_minit0: "reset (minit0 n \<phi>) = minit0 n \<phi>"
-  apply (induction n \<phi> rule: default_maux.minit0.induct)
-  apply (simp_all add: init_defs Let_def)
-  apply (simp_all add: init_defs Let_def split: formula.split del: default_maux.minit0.simps)
-  apply (auto simp: init_defs Let_def split: formula.split prod.split
-      simp del: default_maux.minit0.simps)
-  done
-
-lemma minit_safe_imp_rule':
+lemma minit_safe_imp_rule:
   assumes "mmonitorable_exec \<phi>"
   shows "<emp> minit_safe_imp \<phi> <is_mstate (minit_safe \<phi>)>\<^sub>t"
   unfolding minit_safe_imp_def is_mstate_def
   using assms
   by (sep_auto heap: mformula_imp_rule
-      simp: default_maux.minit_safe_def default_maux.minit_def mestate_def Let_def
-      reset_minit0 empty_queue_rep)
+      simp: default_maux.minit_safe_def default_maux.minit_def default_maux.minit0_code
+      mestate_def Let_def reset_meinit0 empty_queue_rep)
 
 subsection \<open>Running a whole prefix in one heap computation\<close>
 
@@ -524,7 +518,7 @@ lemma monitor_imp_rule:
   assumes "mmonitorable_exec \<phi>"
   shows "<emp> monitor_imp \<phi> \<pi> <\<lambda>r. \<up>(r = msteps0_stateless \<pi> (minit_safe \<phi>))>\<^sub>t"
   unfolding monitor_imp_def
-  by (sep_auto heap: minit_safe_imp_rule'[OF assms] msteps0_imp_rule
+  by (sep_auto heap: minit_safe_imp_rule[OF assms] msteps0_imp_rule
       simp: default_maux.msteps0_msteps0_stateless[symmetric])
 
 theorem run_monitor_imp:
