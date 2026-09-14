@@ -956,6 +956,167 @@ next
   then show "x \<in> (\<Union>v \<in> X. set_option (f v))" by (auto simp: in_these_eq)
 qed
 
+
+subsection \<open>Moving tables into the window in one pass\<close>
+
+text \<open>
+  @{const add_new_ts_mmsaux'} moves the tables whose time stamp has entered the window from
+  @{text data_prev} to @{text data_in}, updates @{text tuple_in} with the tuples that are valid
+  at their time point, and collects those tuples to add them to the result table. The equation
+  of @{const upd_set_keys} names the set of valid tuples of a table twice, so the generated
+  code computes it twice, builds it as a table, and then traverses it again for the mapping and
+  once more for the result. Folding over the table once and updating the mapping and the result
+  in the step avoids the intermediate table and the extra traversals. When the operator has no
+  join columns or all columns are join columns, the collected tuples are only used for the
+  result table (@{const wf_table_upd} then ignores the index), so the fold can start from the
+  result table itself and the union at the end disappears as well.
+\<close>
+
+definition move_insert :: "('a tuple, ts) mapping \<Rightarrow> ts \<Rightarrow> 'a tuple \<Rightarrow>
+  (('a tuple, ts) mapping \<times> 'a table) \<Rightarrow> (('a tuple, ts) mapping \<times> 'a table)" where
+  "move_insert tuple_since t as = (\<lambda>(m, Y). if valid_tuple tuple_since (t, as)
+     then (Mapping.update as t m, Set.insert as Y) else (m, Y))"
+
+lemma Mapping_update_same_commute:
+  "Mapping.update a t (Mapping.update b t m) = Mapping.update b t (Mapping.update a t m)"
+  by (rule mapping_eqI) (auto simp: Mapping.lookup_update')
+
+lemma Mapping_update_idem: "Mapping.update a t (Mapping.update a t m) = Mapping.update a t m"
+  by (rule mapping_eqI) (auto simp: Mapping.lookup_update')
+
+lemma comp_fun_idem_move_insert: "comp_fun_idem (move_insert tuple_since t)"
+  by unfold_locales
+    (auto simp: fun_eq_iff move_insert_def Set.insert_commute Mapping_update_same_commute Mapping_update_idem
+      split: prod.splits)
+
+lemma upd_set_const_insert:
+  "Mapping.update x t (upd_set m (\<lambda>_. t) S) = upd_set m (\<lambda>_. t) (Set.insert x S)"
+  by (rule mapping_eqI) (auto simp: Mapping_lookup_upd_set Mapping.lookup_update')
+
+lemma fold_move_insert:
+  assumes "finite X"
+  shows "Finite_Set.fold (move_insert tuple_since t) (m, Y) X =
+    (upd_set m (\<lambda>_. t) {as \<in> X. valid_tuple tuple_since (t, as)},
+     Y \<union> {as \<in> X. valid_tuple tuple_since (t, as)})"
+proof -
+  interpret comp_fun_idem "move_insert tuple_since t"
+    by (rule comp_fun_idem_move_insert)
+  from assms show ?thesis
+  proof (induction X arbitrary: m Y rule: finite_induct)
+    case empty
+    show ?case by auto
+  next
+    case (insert x F)
+    have step: "Finite_Set.fold (move_insert tuple_since t) (m, Y) (Set.insert x F) =
+      move_insert tuple_since t x (upd_set m (\<lambda>_. t) {as \<in> F. valid_tuple tuple_since (t, as)},
+        Y \<union> {as \<in> F. valid_tuple tuple_since (t, as)})"
+      unfolding fold_insert[OF insert.hyps(1,2)] insert.IH ..
+    show ?case
+    proof (cases "valid_tuple tuple_since (t, x)")
+      case True
+      then have S: "{as \<in> Set.insert x F. valid_tuple tuple_since (t, as)} =
+        Set.insert x {as \<in> F. valid_tuple tuple_since (t, as)}" by auto
+      show ?thesis unfolding step S
+        by (simp only: move_insert_def prod.case if_P[OF True] upd_set_const_insert Un_insert_right)
+    next
+      case False
+      then have S: "{as \<in> Set.insert x F. valid_tuple tuple_since (t, as)} =
+        {as \<in> F. valid_tuple tuple_since (t, as)}" by auto
+      show ?thesis unfolding step S
+        by (simp only: move_insert_def prod.case if_not_P[OF False])
+    qed
+  qed
+qed
+
+lift_definition move_insert_cfi :: "('a tuple, ts) mapping \<Rightarrow> ts \<Rightarrow>
+  ('a tuple, ('a tuple, ts) mapping \<times> 'a table) comp_fun_idem" is move_insert
+  by (rule comp_fun_idem_move_insert)
+
+definition move_tbl :: "('a tuple, ts) mapping \<Rightarrow> ts \<times> 'a table \<Rightarrow>
+  (('a tuple, ts) mapping \<times> 'a table) \<Rightarrow> (('a tuple, ts) mapping \<times> 'a table)" where
+  "move_tbl tuple_since = (\<lambda>(t, X) acc. if finite X
+     then set_fold_cfi (move_insert_cfi tuple_since t) acc X
+     else upd_set_keys (\<lambda>X t. {as \<in> X. valid_tuple tuple_since (t, as)}) (t, X) acc)"
+
+lemma move_tbl_eq:
+  "move_tbl tuple_since = upd_set_keys (\<lambda>X t. {as \<in> X. valid_tuple tuple_since (t, as)})"
+proof (intro ext, goal_cases)
+  case (1 tX acc)
+  obtain t X where tX: "tX = (t, X)" by (cases tX)
+  obtain m Y where acc: "acc = (m, Y)" by (cases acc)
+  show ?case
+    unfolding tX acc move_tbl_def prod.case
+    by (cases "finite X")
+      (simp_all add: set_fold_cfi.rep_eq move_insert_cfi.rep_eq fold_move_insert upd_set_keys.simps)
+qed
+
+lemma fold_upd_set_keys_un:
+  "fold (upd_set_keys Z) xs (m, Y1 \<union> Y2) =
+    (fst (fold (upd_set_keys Z) xs (m, Y1)), snd (fold (upd_set_keys Z) xs (m, Y1)) \<union> Y2)"
+proof (induction xs arbitrary: m Y1 Y2)
+  case (Cons x xs)
+  obtain t X where x: "x = (t, X)" by (cases x)
+  have "(Y1 \<union> Y2) \<union> Z X t = (Y1 \<union> Z X t) \<union> Y2" by auto
+  then show ?case
+    unfolding x by (simp add: upd_set_keys.simps Cons.IH)
+qed simp
+
+declare [[code drop: add_new_ts_mmsaux']]
+
+lemma add_new_ts_mmsaux'_code[code]:
+  "add_new_ts_mmsaux' args nt (t, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in,
+     tuple_in, wf_table_since, tuple_since) =
+    (let I = args_ivl args;
+     (data_prev', move) = takedropWhile_queue (\<lambda>(t, X). memL I (nt - t)) data_prev;
+     data_in' = fold (\<lambda>(t, X) data_in. append_queue (t, X) data_in) move data_in in
+     if args_L args = {} \<or> args_L args = args_R args
+     then (let (tuple_in', table_in') = fold (move_tbl tuple_since) move (tuple_in, table_in)
+           in (nt, gc, maskL, maskR, data_prev', data_in', table_in',
+               wf_table_of_keys (args_n args) (args_R args) tuple_in', tuple_in',
+               wf_table_since, tuple_since))
+     else (let (tuple_in', add) = fold (move_tbl tuple_since) move (tuple_in, {})
+           in (nt, gc, maskL, maskR, data_prev', data_in', table_in \<union> add,
+               wf_table_union wf_table_in (wf_table_of_set_args args add), tuple_in',
+               wf_table_since, tuple_since)))"
+proof -
+  let ?Z = "\<lambda>X t. {as \<in> X. valid_tuple tuple_since (t, as)}"
+  have key: "fold (upd_set_keys ?Z) mv (tuple_in, table_in) =
+    (fst (fold (upd_set_keys ?Z) mv (tuple_in, {})),
+     table_in \<union> snd (fold (upd_set_keys ?Z) mv (tuple_in, {})))" for mv
+    using fold_upd_set_keys_un[of ?Z mv tuple_in "{}" table_in] by (simp add: Un_commute)
+  show ?thesis
+    unfolding add_new_ts_mmsaux'.simps move_tbl_eq wf_table_upd_def Let_def
+    by (simp add: key split_beta)
+qed
+
+subsection \<open>Adding a table to the window without updating the mapping twice\<close>
+
+text \<open>
+  When the interval starts at 0, @{const add_new_table_mmsaux} puts the new table straight into
+  the window. Its equation names @{term "upd_set tuple_in (\<lambda>_. t) X"} twice, once for the
+  mapping component and once for the index, so the generated code inserts every tuple of the
+  table into the mapping twice. Naming the updated mapping once removes the second pass.
+\<close>
+
+declare [[code drop: add_new_table_mmsaux]]
+
+lemma add_new_table_mmsaux_code[code]:
+  "add_new_table_mmsaux args X (t, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in,
+     tuple_in, wf_table_since, tuple_since) =
+    (let X' = minus_keys X tuple_since;
+         tuple_since' = upd_set tuple_since (\<lambda>_. t) X';
+         wf_table_since' = wf_table_upd args tuple_since'
+           (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X')) in
+     if memL (args_ivl args) 0
+     then (let tuple_in' = upd_set tuple_in (\<lambda>_. t) X in
+           (t, gc, maskL, maskR, data_prev, append_queue (t, X) data_in, table_in \<union> X,
+            wf_table_upd args tuple_in'
+              (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X)),
+            tuple_in', wf_table_since', tuple_since'))
+     else (t, gc, maskL, maskR, append_queue (t, X) data_prev, data_in, table_in, wf_table_in,
+           tuple_in, wf_table_since', tuple_since'))"
+  by (simp add: Let_def)
+
 (*<*)
 end
 (*>*)

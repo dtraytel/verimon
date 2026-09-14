@@ -5934,6 +5934,70 @@ let rec unit_table (_A1, _A2)
           ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
           (of_phantom set_impl_lista));;
 
+let rec upd_cfi (_A1, _A2)
+  xa = Abs_comp_fun_idem (fun a -> updateb (_A1, _A2) a (xa a));;
+
+let rec upd_set (_A1, _A2, _A3, _A4)
+  m f a =
+    (if finite (_A1, _A2, _A3) a
+      then set_fold_cfi (_A2, _A3) (upd_cfi (_A3, _A4) f) m a
+      else failwith "upd_set: infinite"
+             (fun _ -> upd_set (_A1, _A2, _A3, _A4) m f a));;
+
+let rec upd_set_keys (_C1, _C2, _C3, _C4)
+  z (t, x) (m, y) =
+    (upd_set (_C1, _C2, _C3, _C4) m (fun _ -> t) (z x t),
+      sup_seta (_C2, _C3) y (z x t));;
+
+let rec valid_tuple (_A1, _A2)
+  tuple_since =
+    (fun (t, asa) ->
+      (match
+        lookupa
+          ((ccompare_list (ccompare_option _A1)),
+            (equal_list (equal_option _A2)))
+          tuple_since asa
+        with None -> false | Some ta -> less_eq_nat ta t));;
+
+let rec move_insert (_A1, _A2, _A3)
+  tuple_since t asa =
+    (fun (m, y) ->
+      (if valid_tuple (_A2, _A3) tuple_since (t, asa)
+        then (updateb
+                ((ccompare_list (ccompare_option _A2)),
+                  (equal_list (equal_option _A3)))
+                asa t m,
+               insert
+                 ((ceq_list (ceq_option _A1)),
+                   (ccompare_list (ccompare_option _A2)))
+                 asa y)
+        else (m, y)));;
+
+let rec move_insert_cfi (_A1, _A2, _A3)
+  xb xc = Abs_comp_fun_idem (move_insert (_A1, _A2, _A3) xb xc);;
+
+let rec move_tbl (_A1, _A2, _A3)
+  tuple_since =
+    (fun (t, x) acc ->
+      (if finite
+            (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+              (ccompare_list (ccompare_option _A2)))
+            x
+        then set_fold_cfi
+               ((ceq_list (ceq_option _A1)),
+                 (ccompare_list (ccompare_option _A2)))
+               (move_insert_cfi (_A1, _A2, _A3) tuple_since t) acc x
+        else upd_set_keys
+               (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+                 (ccompare_list (ccompare_option _A2)),
+                 (equal_list (equal_option _A3)))
+               (fun xa ta ->
+                 filter
+                   ((ceq_list (ceq_option _A1)),
+                     (ccompare_list (ccompare_option _A2)))
+                   (fun asa -> valid_tuple (_A2, _A3) tuple_since (ta, asa)) xa)
+               (t, x) acc));;
+
 let rec proj_tuple x0 x1 = match x0, x1 with [], [] -> []
                      | true :: bs, a :: asa -> a :: proj_tuple bs asa
                      | false :: bs, a :: asa -> None :: proj_tuple bs asa
@@ -8685,16 +8749,6 @@ let ed_image_pair_snd_v :
             (ccompare_list (ccompare_option ccompare_event_data)),
             set_impl_list));;
 
-let rec upd_cfi (_A1, _A2)
-  xa = Abs_comp_fun_idem (fun a -> updateb (_A1, _A2) a (xa a));;
-
-let rec upd_set (_A1, _A2, _A3, _A4)
-  m f a =
-    (if finite (_A1, _A2, _A3) a
-      then set_fold_cfi (_A2, _A3) (upd_cfi (_A3, _A4) f) m a
-      else failwith "upd_set: infinite"
-             (fun _ -> upd_set (_A1, _A2, _A3, _A4) m f a));;
-
 let ed_upd_set_nat_v :
   ((((event_data option) list), nat) mapping ->
     ((event_data option) list -> nat) ->
@@ -11166,21 +11220,19 @@ let rec ed_add_new_table_mmsaux
                  xa))
          in
         (if memL (args_ivl args) zero_nata
-          then (t, (gc, (maskL,
-                          (maskR,
-                            (data_prev,
-                              (append_queue (t, x) data_in,
-                                (unbox ed_union_v table_in x,
-                                  (wf_table_upd args
-                                     (unbox ed_upd_set_nat_v tuple_in
-                                       (fun _ -> t) x)
-                                     (fun _ ->
-                                       wf_table_union
- (ceq_event_data, ccompare_event_data) wf_table_in
- (wf_table_of_set_args (ceq_event_data, ccompare_event_data) args x)),
-                                    (unbox ed_upd_set_nat_v tuple_in
-                                       (fun _ -> t) x,
-                                      (wf_table_sincea, tuple_sincea))))))))))
+          then (let tuple_ina = unbox ed_upd_set_nat_v tuple_in (fun _ -> t) x
+                  in
+                 (t, (gc, (maskL,
+                            (maskR,
+                              (data_prev,
+                                (append_queue (t, x) data_in,
+                                  (unbox ed_union_v table_in x,
+                                    (wf_table_upd args tuple_ina
+                                       (fun _ ->
+ wf_table_union (ceq_event_data, ccompare_event_data) wf_table_in
+   (wf_table_of_set_args (ceq_event_data, ccompare_event_data) args x)),
+                                      (tuple_ina,
+(wf_table_sincea, tuple_sincea)))))))))))
           else (t, (gc, (maskL,
                           (maskR,
                             (append_queue (t, x) data_prev,
@@ -11223,21 +11275,6 @@ let rec add_new_table_mmasaux
                        aggaux
                 else aggaux))));;
 
-let rec upd_set_keys (_C1, _C2, _C3, _C4)
-  z (t, x) (m, y) =
-    (upd_set (_C1, _C2, _C3, _C4) m (fun _ -> t) (z x t),
-      sup_seta (_C2, _C3) y (z x t));;
-
-let rec valid_tuple (_A1, _A2)
-  tuple_since =
-    (fun (t, asa) ->
-      (match
-        lookupa
-          ((ccompare_list (ccompare_option _A1)),
-            (equal_list (equal_option _A2)))
-          tuple_since asa
-        with None -> false | Some ta -> less_eq_nat ta t));;
-
 let rec add_new_ts_mmsaux (_A1, _A2, _A3)
   args nt
     (t, (gc, (maskL,
@@ -11253,38 +11290,43 @@ let rec add_new_ts_mmsaux (_A1, _A2, _A3)
            data_prev
          in
        let data_ina = fold (fun (ta, x) -> append_queue (ta, x)) move data_in in
-       let (tuple_ina, add) =
-         fold (upd_set_keys
-                (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-                  (ccompare_list (ccompare_option _A2)),
-                  (equal_list (equal_option _A3)))
-                (fun x ta ->
-                  filter
-                    ((ceq_list (ceq_option _A1)),
-                      (ccompare_list (ccompare_option _A2)))
-                    (fun asa -> valid_tuple (_A2, _A3) tuple_since (ta, asa))
-                    x))
-           move
-           (tuple_in,
-             set_empty
-               ((ceq_list (ceq_option _A1)),
-                 (ccompare_list (ccompare_option _A2)))
-               (of_phantom set_impl_lista))
-         in
-        (nt, (gc, (maskL,
-                    (maskR,
-                      (data_preva,
-                        (data_ina,
-                          (sup_seta
-                             ((ceq_list (ceq_option _A1)),
-                               (ccompare_list (ccompare_option _A2)))
-                             table_in add,
-                            (wf_table_upd args tuple_ina
-                               (fun _ ->
-                                 wf_table_union (_A1, _A2) wf_table_in
-                                   (wf_table_of_set_args (_A1, _A2) args add)),
-                              (tuple_ina,
-                                (wf_table_since, tuple_since)))))))))));;
+        (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
+              (args_L args) ||
+              set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args)
+                (args_R args)
+          then (let (tuple_ina, table_ina) =
+                  fold (move_tbl (_A1, _A2, _A3) tuple_since) move
+                    (tuple_in, table_in)
+                  in
+                 (nt, (gc, (maskL,
+                             (maskR,
+                               (data_preva,
+                                 (data_ina,
+                                   (table_ina,
+                                     (Wf_table_of_keys
+(args_n args, args_R args, tuple_ina),
+                                       (tuple_ina,
+ (wf_table_since, tuple_since)))))))))))
+          else (let (tuple_ina, add) =
+                  fold (move_tbl (_A1, _A2, _A3) tuple_since) move
+                    (tuple_in,
+                      set_empty
+                        ((ceq_list (ceq_option _A1)),
+                          (ccompare_list (ccompare_option _A2)))
+                        (of_phantom set_impl_lista))
+                  in
+                 (nt, (gc, (maskL,
+                             (maskR,
+                               (data_preva,
+                                 (data_ina,
+                                   (sup_seta
+                                      ((ceq_list (ceq_option _A1)),
+(ccompare_list (ccompare_option _A2)))
+                                      table_in add,
+                                     (wf_table_union (_A1, _A2) wf_table_in
+(wf_table_of_set_args (_A1, _A2) args add),
+                                       (tuple_ina,
+ (wf_table_since, tuple_since)))))))))))));;
 
 let ed_upd_set_keys_v :
   ((((event_data option) list) set -> nat -> ((event_data option) list) set) ->
