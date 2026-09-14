@@ -34,14 +34,14 @@ let bench k n reps =
       Array.iteri (fun i x -> m := m_upd !m x (nat i)) ks done);
   time "imap update" (fun () ->
     for _ = 1 to reps do
-      let m = im_new heap_nat (Z.of_int (2 * n)) () in
-      Array.iteri (fun i x -> im_update heap_nat m x (nat i) ()) ks done);
+      let m = ref (im_new heap_nat (Z.of_int (2 * n)) ()) in
+      Array.iteri (fun i x -> m := im_update heap_nat !m x (nat i) ()) ks done);
   time "ocaml update" (fun () ->
     for _ = 1 to reps do
       let m = H.create (2 * n) in
       Array.iteri (fun i x -> H.replace m x i) ks done);
   let m1 = let m = ref (m_empty ()) in Array.iteri (fun i x -> m := m_upd !m x (nat i)) ks; !m in
-  let m2 = let m = im_new heap_nat (Z.of_int (2 * n)) () in Array.iteri (fun i x -> im_update heap_nat m x (nat i) ()) ks; m in
+  let m2 = let m = ref (im_new heap_nat (Z.of_int (2 * n)) ()) in Array.iteri (fun i x -> m := im_update heap_nat !m x (nat i) ()) ks; !m in
   let m3 = let m = H.create (2 * n) in Array.iteri (fun i x -> H.replace m x i) ks; m in
   let c = ref 0 in
   time "mapping lookup" (fun () -> for _ = 1 to reps do Array.iter (fun x -> if m_look m1 x <> None then incr c) ks done);
@@ -50,8 +50,7 @@ let bench k n reps =
   time "mapping delete" (fun () -> for _ = 1 to reps do
     let m = ref m1 in Array.iter (fun x -> m := m_del !m x) ks done);
   time "imap delete" (fun () -> for _ = 1 to reps do
-    Array.iter (fun x -> im_delete heap_nat m2 x ()) ks;
-    Array.iteri (fun i x -> im_update heap_nat m2 x (nat i) ()) ks done);
+    let m = ref m2 in Array.iter (fun x -> m := im_delete heap_nat !m x ()) ks done);
   Printf.printf "  (checksum %d)\n\n%!" !c
 
 let () = bench 1 50 2000; bench 2 1000 100; bench 4 5000 20

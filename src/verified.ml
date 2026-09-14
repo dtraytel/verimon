@@ -183,21 +183,34 @@ module Monitor : sig
   type muaux_dq
   val wild : 'a regex
   val integer_of_int : int -> Z.t
-  val ht_ins :
-    Z.t * (((event_data option) list * unit) list) array ->
-      (event_data option) list -> (unit -> unit)
-  val im_lookup :
+  val im_to_list :
     'a heap ->
-      Z.t * (((event_data option) list * 'a) list) array ->
-        (event_data option) list -> (unit -> ('a option))
-  val ht_mem :
-    Z.t * (((event_data option) list * unit) list) array ->
-      (event_data option) list -> (unit -> bool)
+      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+        (unit -> (((event_data option) list * 'a) list))
   val im_new :
     'a heap ->
-      Z.t -> (unit -> (Z.t * (((event_data option) list * 'a) list) array))
+      Z.t ->
+        (unit -> (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
+  val im_update :
+    'a heap ->
+      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+        (event_data option) list ->
+          'a -> (unit ->
+                  (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
+  val ht_ins :
+    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
+      (event_data option) list ->
+        (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
+  val im_lookup :
+    'a heap ->
+      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+        (event_data option) list -> (unit -> ('a option))
+  val ht_mem :
+    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
+      (event_data option) list -> (unit -> bool)
   val ht_new :
-    Z.t -> (unit -> (Z.t * (((event_data option) list * unit) list) array))
+    Z.t ->
+      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
   val interval : nat -> enat -> i
   val type_check :
     (string * nat -> (tysym list) option) ->
@@ -320,21 +333,14 @@ module Monitor : sig
             mstate_ext
   val im_delete :
     'a heap ->
-      Z.t * (((event_data option) list * 'a) list) array ->
-        (event_data option) list -> (unit -> unit)
-  val im_update :
-    'a heap ->
-      Z.t * (((event_data option) list * 'a) list) array ->
-        (event_data option) list -> 'a -> (unit -> unit)
+      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+        (event_data option) list ->
+          (unit -> (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
   val ht_of_list :
     ((event_data option) list) list ->
-      (unit -> (Z.t * (((event_data option) list * unit) list) array))
-  val im_to_list :
-    'a heap ->
-      Z.t * (((event_data option) list * 'a) list) array ->
-        (unit -> (((event_data option) list * 'a) list))
+      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
   val ht_to_list :
-    Z.t * (((event_data option) list * unit) list) array ->
+    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
       (unit -> (((event_data option) list) list))
   val mstep_imp :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
@@ -5984,18 +5990,72 @@ let rec hm_look_list
         (if (fun x y -> x = y) x (fst y) then Some (snd y)
           else hm_look_list x ys);;
 
-let rec ht_ins
-  q x = (let (n, a) = q in
-         let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n
+let rec hm_del_list
+  x xa1 = match x, xa1 with x, [] -> []
+    | x, y :: ys ->
+        (if (fun x y -> x = y) x (fst y) then ys else y :: hm_del_list x ys);;
+
+let rec im_fold_idx _A
+  f a i n acc =
+    (if Z.leq n i then (fun () -> acc)
+      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+             (fun b -> im_fold_idx _A f a (Z.add i (Z.of_int 1)) n (f b acc)));;
+
+let rec im_to_list _A
+  q = (let (n, (_, a)) = q in
+        im_fold_idx _A (fun aa b -> aa @ b) a Z.zero n []);;
+
+let rec im_fill _A
+  q kvs =
+    (match kvs with [] -> (fun () -> q)
+      | xv :: r ->
+        (let (n, (c, a)) = q in
+         let i =
+           (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) (fst xv) n
            in
           (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
             (fun b ->
-              (if is_none (hm_look_list x b)
-                then (fun () -> Array.set a (Z.to_int i) ((x, ()) :: b))
-                else (fun () -> ()))));;
+              (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int i) (xv :: b)))
+                ()) ())
+                (fun _ -> im_fill _A (n, (Z.add c (Z.of_int 1), a)) r))));;
+
+let rec im_new _A
+  n = (let m = (if Z.lt n (Z.of_int 8) then (Z.of_int 8) else n) in
+        (fun f_ () -> f_ (((fun () -> Array.make (Z.to_int m) [])) ()) ())
+          (fun a -> (fun () -> (m, (Z.zero, a)))));;
+
+let rec im_grow _A
+  q = (let (n, (_, _)) = q in
+        (fun f_ () -> f_ ((im_to_list _A q) ()) ())
+          (fun kvs ->
+            (fun f_ () -> f_ ((im_new _A (Z.mul (Z.of_int 2) n)) ()) ())
+              (fun qa -> im_fill _A qa kvs)));;
+
+let rec im_update _A
+  q x v =
+    (let (n, (c, a)) = q in
+     let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n in
+      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+        (fun b ->
+          (match hm_look_list x b
+            with None ->
+              (fun f_ () -> f_
+                (((fun () -> Array.set a (Z.to_int i) ((x, v) :: b))) ()) ())
+                (fun _ ->
+                  (if Z.lt (Z.add c (Z.of_int 1)) n
+                    then (fun () -> (n, (Z.add c (Z.of_int 1), a)))
+                    else im_grow _A (n, (Z.add c (Z.of_int 1), a))))
+            | Some _ ->
+              (fun f_ () -> f_
+                (((fun () -> Array.set a (Z.to_int i)
+                   ((x, v) :: hm_del_list x b)))
+                ()) ())
+                (fun _ -> (fun () -> q)))));;
+
+let rec ht_ins q x = im_update heap_unit q x ();;
 
 let rec im_lookup _A
-  q x = (let (n, a) = q in
+  q x = (let (n, (_, a)) = q in
           (fun f_ () -> f_
             (((fun () -> Array.get a (Z.to_int
                ((fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x
@@ -6006,11 +6066,6 @@ let rec im_lookup _A
 let rec ht_mem
   q x = (fun f_ () -> f_ ((im_lookup heap_unit q x) ()) ())
           (fun v -> (fun () -> (not (is_none v))));;
-
-let rec im_new _A
-  n = (let m = (if Z.lt n (Z.of_int 8) then (Z.of_int 8) else n) in
-        (fun f_ () -> f_ (((fun () -> Array.make (Z.to_int m) [])) ()) ())
-          (fun a -> (fun () -> (m, a))));;
 
 let rec ht_new n = im_new heap_unit n;;
 
@@ -14106,25 +14161,18 @@ let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
                        | TP v -> [TP v]
                        | TS v -> [TS v];;
 
-let rec hm_del_list
-  x xa1 = match x, xa1 with x, [] -> []
-    | x, y :: ys ->
-        (if (fun x y -> x = y) x (fst y) then ys else y :: hm_del_list x ys);;
-
 let rec im_delete _A
-  q x = (let (n, a) = q in
+  q x = (let (n, (c, a)) = q in
          let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n
            in
           (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
-            (fun b -> (fun () -> Array.set a (Z.to_int i) (hm_del_list x b))));;
-
-let rec im_update _A
-  q x v =
-    (let (n, a) = q in
-     let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n in
-      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
-        (fun b ->
-          (fun () -> Array.set a (Z.to_int i) ((x, v) :: hm_del_list x b))));;
+            (fun b ->
+              (match hm_look_list x b with None -> (fun () -> q)
+                | Some _ ->
+                  (fun f_ () -> f_
+                    (((fun () -> Array.set a (Z.to_int i) (hm_del_list x b)))
+                    ()) ())
+                    (fun _ -> (fun () -> (n, (Z.sub c (Z.of_int 1), a)))))));;
 
 let rec ls_delete _A
   k x1 = match k, x1 with k, [] -> ([], false)
@@ -14159,25 +14207,14 @@ let rec is_simple_eq
 
 let rec ht_ins_list
   q xs =
-    (match xs with [] -> (fun () -> ())
+    (match xs with [] -> (fun () -> q)
       | y :: ys ->
-        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun _ -> ht_ins_list q ys));;
+        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
 
 let rec ht_of_list
   xs = (fun f_ () -> f_
          ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
-         (fun q ->
-           (fun f_ () -> f_ ((ht_ins_list q xs) ()) ())
-             (fun _ -> (fun () -> q)));;
-
-let rec im_fold_idx _A
-  f a i n acc =
-    (if Z.leq n i then (fun () -> acc)
-      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
-             (fun b -> im_fold_idx _A f a (Z.add i (Z.of_int 1)) n (f b acc)));;
-
-let rec im_to_list _A
-  q = (let (n, a) = q in im_fold_idx _A (fun aa b -> aa @ b) a Z.zero n []);;
+         (fun q -> ht_ins_list q xs);;
 
 let rec ht_to_list
   q = (fun f_ () -> f_ ((im_to_list heap_unit q) ()) ())

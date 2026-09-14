@@ -40,7 +40,7 @@ code_printing
   constant teq \<rightharpoonup> (OCaml) "(fun x y -> x = y)"
 | constant ibucket \<rightharpoonup> (OCaml) "(fun t n -> Z.of'_int ((Hashtbl.hash t) mod (Z.to'_int n)))"
 
-type_synonym 'v imap = "integer \<times> ((event_data tuple \<times> 'v) list) array"
+type_synonym 'v imap = "integer \<times> integer \<times> ((event_data tuple \<times> 'v) list) array"
 
 fun hm_look_list :: "event_data tuple \<Rightarrow> (event_data tuple \<times> 'v) list \<Rightarrow> 'v option" where
   "hm_look_list x [] = None"
@@ -52,43 +52,14 @@ fun hm_del_list :: "event_data tuple \<Rightarrow> (event_data tuple \<times> 'v
 
 definition im_new :: "integer \<Rightarrow> ('v::heap) imap Heap" where
   "im_new n = (let m = (if n < 8 then 8 else n) in
-     do { a \<leftarrow> Array.new' m []; return (m, a) })"
+     do { a \<leftarrow> Array.new' m []; return (m, 0, a) })"
+
+definition im_size :: "('v::heap) imap \<Rightarrow> integer" where
+  "im_size q = fst (snd q)"
 
 definition im_lookup :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
-  "im_lookup q x = (case q of (n, a) \<Rightarrow>
+  "im_lookup q x = (case q of (n, c, a) \<Rightarrow>
      do { b \<leftarrow> Array.nth' a (ibucket x n); return (hm_look_list x b) })"
-
-definition im_update :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v \<Rightarrow> unit Heap" where
-  "im_update q x v = (case q of (n, a) \<Rightarrow> (let i = ibucket x n in
-     do { b \<leftarrow> Array.nth' a i; Array.upd' a i ((x, v) # hm_del_list x b) }))"
-
-definition im_delete :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> unit Heap" where
-  "im_delete q x = (case q of (n, a) \<Rightarrow> (let i = ibucket x n in
-     do { b \<leftarrow> Array.nth' a i; Array.upd' a i (hm_del_list x b) }))"
-
-subsection \<open>A hash set of tuples on the heap\<close>
-
-type_synonym itbl = "unit imap"
-
-definition ht_new :: "integer \<Rightarrow> itbl Heap" where
-  "ht_new n = im_new n"
-
-definition ht_ins :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> unit Heap" where
-  "ht_ins q x = (case q of (n, a) \<Rightarrow> (let i = ibucket x n in
-     do { b \<leftarrow> Array.nth' a i;
-          if hm_look_list x b = None then Array.upd' a i ((x, ()) # b) else return () }))"
-
-definition ht_mem :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> bool Heap" where
-  "ht_mem q x = do { v \<leftarrow> im_lookup q x; return (v \<noteq> None) }"
-
-partial_function (heap) ht_ins_list :: "itbl \<Rightarrow> event_data tuple list \<Rightarrow> unit Heap" where
-  [code]:
-  "ht_ins_list q xs = (case xs of [] \<Rightarrow> return ()
-    | y # ys \<Rightarrow> do { _ \<leftarrow> ht_ins q y; ht_ins_list q ys })"
-
-definition ht_of_list :: "event_data tuple list \<Rightarrow> itbl Heap" where
-  "ht_of_list xs = do { q \<leftarrow> ht_new (2 * integer_of_nat (length xs));
-                        _ \<leftarrow> ht_ins_list q xs; return q }"
 
 partial_function (heap) im_fold_idx ::
   "((event_data tuple \<times> 'v) list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> ((event_data tuple \<times> 'v::heap) list) array \<Rightarrow>
@@ -98,7 +69,52 @@ partial_function (heap) im_fold_idx ::
      else do { b \<leftarrow> Array.nth' a i; im_fold_idx f a (i + 1) n (f b acc) })"
 
 definition im_to_list :: "('v::heap) imap \<Rightarrow> (event_data tuple \<times> 'v) list Heap" where
-  "im_to_list q = (case q of (n, a) \<Rightarrow> im_fold_idx (\<lambda>b acc. b @ acc) a 0 n [])"
+  "im_to_list q = (case q of (n, c, a) \<Rightarrow> im_fold_idx (\<lambda>b acc. b @ acc) a 0 n [])"
+
+partial_function (heap) im_fill :: "('v::heap) imap \<Rightarrow> (event_data tuple \<times> 'v) list \<Rightarrow> ('v imap) Heap" where
+  [code]:
+  "im_fill q kvs = (case kvs of [] \<Rightarrow> return q
+     | xv # r \<Rightarrow> (case q of (n, c, a) \<Rightarrow> (let i = ibucket (fst xv) n in
+        do { b \<leftarrow> Array.nth' a i; _ \<leftarrow> Array.upd' a i (xv # b); im_fill (n, c + 1, a) r })))"
+
+definition im_grow :: "('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+  "im_grow q = (case q of (n, c, a) \<Rightarrow>
+     do { kvs \<leftarrow> im_to_list q; q' \<leftarrow> im_new (2 * n); im_fill q' kvs })"
+
+definition im_update :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v \<Rightarrow> ('v imap) Heap" where
+  "im_update q x v = (case q of (n, c, a) \<Rightarrow> (let i = ibucket x n in
+     do { b \<leftarrow> Array.nth' a i;
+          (case hm_look_list x b of
+             Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i ((x, v) # hm_del_list x b); return q }
+           | None \<Rightarrow> do { _ \<leftarrow> Array.upd' a i ((x, v) # b);
+                          if c + 1 < n then return (n, c + 1, a) else im_grow (n, c + 1, a) }) }))"
+
+definition im_delete :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> ('v imap) Heap" where
+  "im_delete q x = (case q of (n, c, a) \<Rightarrow> (let i = ibucket x n in
+     do { b \<leftarrow> Array.nth' a i;
+          (case hm_look_list x b of None \<Rightarrow> return q
+           | Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i (hm_del_list x b); return (n, c - 1, a) }) }))"
+
+subsection \<open>A hash set of tuples on the heap\<close>
+
+type_synonym itbl = "unit imap"
+
+definition ht_new :: "integer \<Rightarrow> itbl Heap" where
+  "ht_new n = im_new n"
+
+definition ht_ins :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> itbl Heap" where
+  "ht_ins q x = im_update q x ()"
+
+definition ht_mem :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> bool Heap" where
+  "ht_mem q x = do { v \<leftarrow> im_lookup q x; return (v \<noteq> None) }"
+
+partial_function (heap) ht_ins_list :: "itbl \<Rightarrow> event_data tuple list \<Rightarrow> itbl Heap" where
+  [code]:
+  "ht_ins_list q xs = (case xs of [] \<Rightarrow> return q
+    | y # ys \<Rightarrow> do { q \<leftarrow> ht_ins q y; ht_ins_list q ys })"
+
+definition ht_of_list :: "event_data tuple list \<Rightarrow> itbl Heap" where
+  "ht_of_list xs = do { q \<leftarrow> ht_new (2 * integer_of_nat (length xs)); ht_ins_list q xs }"
 
 definition ht_to_list :: "itbl \<Rightarrow> event_data tuple list Heap" where
   "ht_to_list q = do { kvs \<leftarrow> im_to_list q; return (map fst kvs) }"
