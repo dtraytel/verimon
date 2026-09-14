@@ -64,6 +64,10 @@ val alrm: bool ref
 val verbose: bool ref
 val checkf: bool ref
 val verified: bool ref
+
+(* Use the verified kernel whose Since structures for operators without join columns live on
+   the heap as hash tables. *)
+val heap_since: bool ref
 (** GC space overhead in percent to set before monitoring (0: leave the default). *)
 val gc_space_overhead: int ref
 val new_last_ts: bool ref

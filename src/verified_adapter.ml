@@ -273,7 +273,47 @@ let rec convert_schema_into_sig sch =
 let type_check_formula dbschema f =
   type_check (convert_schema_into_sig dbschema) f
 
-type state =
+(* Two verified kernels are available. The default keeps the Since structures as pure values
+   ([minit_safe]/[mstep]); with [-heap_since] the structures of Since operators without join
+   columns live on the heap as hash tables ([minit_safe_imp]/[mstep_imp], see
+   thys/MFODL_Monitor_Imp). Both are exported from the same formalization and, by the
+   refinement theorem, produce the same verdicts. *)
+
+type pure_state =
+  (((nat *
+      (nat *
+        (bool list *
+          (bool list *
+            ((nat * ((event_data option) list) set) queue *
+              ((nat * ((event_data option) list) set) queue *
+                (((event_data option) list) set *
+                  (event_data wf_table *
+                    ((((event_data option) list), nat) mapping *
+                      (event_data wf_table *
+                        (((event_data option) list), nat)
+                          mapping)))))))))) *
+     aggaux option),
+    muaux_dq,
+      (nat *
+          (nat *
+            (nat *
+              (nat *
+                (bool list *
+                  (bool list *
+                    ((nat *
+                       (((event_data option) list) set *
+                         ((event_data option) list) set))
+                       queue *
+                      ((nat * ((event_data option) list) set) queue *
+                        ((((event_data option) list), nat) mapping *
+                          (((event_data option) list) set *
+                            ((((event_data option) list), nat) mapping *
+                              (((event_data option) list) set *
+                                ((event_data option) list) set)))))))))))),
+    unit)
+    mstate_ext
+
+type heap_state =
   (nat *
     (nat *
       ((msaux_h, muaux_dq,
@@ -296,7 +336,12 @@ type state =
          meformula *
         (nat * nat queue))))
 
-let init cf = minit_safe_imp cf ()
+type state =
+  | Pure of pure_state
+  | Heap of heap_state
+
+let init cf = if !Misc.heap_since then Heap (minit_safe_imp cf ()) else Pure (minit_safe cf)
+
 
 let set_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
@@ -306,9 +351,11 @@ let set_fold f s x = match s with
    converting to [Tuple.tuple] first. *)
 type verdict = (event_data option) list set
 
-let step t db st =
-  let (vs, st') = mstep_imp (db, nat_of_integer t) st () in
-  (List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs, st')
+let annotate vs = List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs
+
+let step t db = function
+  | Pure st -> let (vs, st') = mstep (db, nat_of_integer t) st in (annotate vs, Pure st')
+  | Heap st -> let (vs, st') = mstep_imp (db, nat_of_integer t) st () in (annotate vs, Heap st')
 
 (* Direct output of verdicts.
 

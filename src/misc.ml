@@ -81,6 +81,10 @@ let verbose = ref false
 let checkf = ref false
 
 let verified = ref false
+
+(* Use the verified kernel whose Since structures for operators without join columns live on
+   the heap as hash tables (thys/MFODL_Monitor_Imp). *)
+let heap_since = ref false
 (* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
    verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
    mappings), so main.ml uses 300 with the verified kernel unless the user chose a value. *)
