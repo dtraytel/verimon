@@ -725,9 +725,15 @@ The plan, ordered by expected gain per effort:
    larger GC space overhead trades memory for speed: with 300 instead of the default 120,
    P2 1.11x, `once` 1.13x, P3 1.04x at about 1.3x the (small) heap; 400 gives P2 1.17x at
    1.4x the heap; a larger minor heap (`s=2M`-`16M`) is slower. The verified kernel now sets
-   300 by default (MonPoly's own algorithm is unchanged) and the option
+   500 by default (MonPoly's own algorithm is unchanged) and the option
    `-gc_space_overhead N` overrides it in both modes; the trade-off scales with the live
    state, so a monitor with a large state can set 120 to keep MonPoly's memory behaviour.
+   The default was 300 until the measurement was repeated on the kernel of Section 13
+   (median of five runs, peak resident set in brackets): P2 1.23 s [27 MB] at 300, 1.15 s
+   [33 MB] at 500, 1.19 s [50 MB] at 800; P3 1.12 [29], 1.09 [37], 1.09 [46]; `once` 1.07
+   [13], 1.01 [13], 0.97 [14]; `complex` 1.98 [13], 1.86 [14], 1.81 [15]. 500 wins on every
+   benchmark for about a quarter more heap, 800 only on the two where the live state is
+   small, so the default is now 500.
    Aggressive `ocamlopt` inlining flags (`-O3 -inline 200 -unsafe`, without flambda) gain
    only 1-2%.
 
@@ -1161,3 +1167,33 @@ appear twice. What makes them expensive is that the code generator does not shar
 `ocamlopt` without flambda does not either. Reading the generated OCaml for the functions that a
 profile puts at the top is the way to find them; the same reading is what showed that a code
 equation declared after `Monomorphic_Code.thy` never reaches the exported code.
+
+### 13.1 Where the remaining time goes (callgrind, kernel of Section 13)
+
+Instruction shares, counted with `callgrind` (`perf` does not work on this kernel), on the
+20000-time-point prefixes of the P2 and P3 logs:
+
+| category | P2 | P3 |
+|---|---|---|
+| garbage collector and allocator | 28% | 17% |
+| Since/Until auxiliary structure | 33% | 44% |
+| comparator and dictionary chain | 5% | 10% |
+| `nat` as `Z.t` (add, sub, compare) | 8% | 7% |
+| log parsing (shared with MonPoly, identical counts) | 8% | 10% |
+
+MonPoly on the same P3 prefix retires 319 M instructions against VeriMon's 662 M, and the
+parsing counts inside those are identical to the instruction, so the gap is entirely in the
+kernel and in the collector that feeds it.
+
+Two observations for whoever continues:
+
+* **The collector is the largest single category on P2.** Section 9's item 8 tunes it; what
+  would remove it is allocating less, which means the auxiliary structures, not a flag.
+* **The deque of Section 11 reads its second element in linear time.** `eval_step_dq` takes
+  the head mapping and the one behind it, combines them and drops the head. `dq_norm` only
+  rebalances when the front list is empty, so when the front holds exactly one element the
+  access to index 1 falls into the back list at its far end, and `dq_nth` and `dq_upd` both
+  walk it. Doing the `dq_tl` first and then reading index 0, which `dq_norm` guarantees to be
+  at the front, makes both constant time. It is worth about 4% of P2, and the obstacle is that
+  the two forms are equal as deques only after a case analysis over the rebalancing, so it is
+  a proof about `dq_norm` rather than a rewrite.
