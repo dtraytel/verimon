@@ -321,14 +321,19 @@ the general dictionary/comparator/GC overheads quantified in Section 2.
 
 ```
 cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 35 min, needs ~8 GB RAM
-cp MFODL_Monitor_Devel/verified.ocaml ../src/verified.ml
+isabelle build -b -e -d . MFODL_Monitor_Imp                  # about 2 min on top of it
+cp MFODL_Monitor_Imp/verified.ocaml ../src/verified.ml
 cd .. && dune build --profile=release && dune test
 ```
 
 The AFP (Containers, Deriving, IEEE_Floating_Point, ...) must be registered as an Isabelle
 component. `Code_Opt.thy`, `Imperative_Join.thy` and `Monomorphic_Code.thy` are the theories
 between `Monitor_Impl.thy` and `Monitor_Code.thy`; the code equations they introduce are
-checked like any other theorem, so the exported code remains verified.
+checked like any other theorem, so the exported code remains verified. `MFODL_Monitor_Imp`
+is a child session (Section 12) that adds the heap-resident Since structures and the entry
+points `-heap_since` selects; its export repeats everything `MFODL_Monitor_Devel` exports, so
+`src/verified.ml` comes from it. Iterating on that refinement rebuilds only its two theories,
+not the 35-minute base session.
 
 ## 6. Further opportunities (not implemented)
 
@@ -854,7 +859,9 @@ representations. This is weeks of proof work, not something for this branch.
 are indexed by consecutive integers; a deque of inner mappings (O(1) at both ends, which is
 where new time points arrive and old ones expire) removes most of the 0.6 us tree operations
 per step without leaving pure HOL. Done in Section 11, with a simulation relation instead of
-redoing the `Optimized_Until` invariants.
+redoing the `Optimized_Until` invariants. The imperative Since structure itself, together with
+the monadic evaluation function it forces, is done in Section 12; end to end it is worth much
+less than the numbers above, for the reasons recorded there.
 
 ## 11. Until structure with deques (implemented)
 
@@ -966,3 +973,120 @@ hundred time points inside a window of thousands would hit the middle; a balance
 random-access sequence (a Braun tree, `HOL-Data_Structures`) would give O(log n) middle
 access with cheap index arithmetic instead of comparisons, at the price of O(log n) ends.
 
+
+## 12. Imperative refinement of the Since structure (implemented, selectable)
+
+Section 10 concluded that an imperative Since structure would be worth several microseconds
+per step on the structure itself, but that the pure interface of the evaluation function
+blocks it. This section carries the refinement out, end to end, and measures what survives.
+The work lives in its own Isabelle session, `thys/MFODL_Monitor_Imp`, which builds on the
+heap of `MFODL_Monitor_Devel` in about two minutes instead of rebuilding it.
+
+**The structure** (`thys/MFODL_Monitor_Imp/Optimized_Since_Imp.thy`, 830 lines). The two
+tuple-keyed mappings of `mmsaux` (`tuple_in`, `tuple_since`) become hash maps from
+`Separation_Logic_Imperative_HOL`; the remaining components (the two time stamps, the masks,
+the two queues of tables and the result table) stay pure and are carried alongside. The
+assertion `is_msaux` relates the heap structure to a pure `mmsaux`; it fixes the two index
+components to `wf_keys` of the respective mapping, which is what the pure operations maintain
+when there are no join columns or when all columns are join columns (`special_args`). Each
+operation of the `msaux` interface is a monadic program over the hash maps, specified by a
+total-correctness Hoare triple in separation logic stating that it computes exactly the
+result of the pure operation:
+
+| pure operation | imperative program | loop |
+|---|---|---|
+| `shift_end` | `shift_end_imp` | `expire_loop`/`filter_loop` over the expiring tables |
+| `add_new_ts_mmsaux'` | `add_new_ts_imp'` | `move_loop`/`upd_loop` over the tables entering the window |
+| `gc_mmsaux` | `gc_imp` | `hm_to_list` + `del_loop` over `tuple_since` |
+| `join_mmsaux` | `join_imp` | `del_loop` over the deleted tuples |
+| `add_new_table_mmsaux` | `add_new_table_imp` | `since_loop`/`ins_loop` over the new table |
+| `result_mmsaux` | `result_imp` | none (the result table is a pure component) |
+
+A sum type `msaux_h` selects the heap structure or the pure aggregation-aware structure, so
+that no formula loses its current implementation; the heap structure also converts itself
+back to a pure one if an infinite table is ever added (impossible for tables the monitor
+produces, but not excluded by the locale's assumptions).
+
+**The monitor** (`thys/MFODL_Monitor_Imp/Monitor_Imp.thy`, 610 lines). Auxiliary structures
+are threaded through the evaluation function as pure values, so a heap-resident structure
+forces that function to be monadic. `meval_imp` clones `meeval`, the evaluation function the
+generated code uses, in the heap monad for the fragment of formulas in which a Since operator
+can profit: the Boolean connectives, assignments and constraints, quantification, aggregation,
+the temporal operators and Since itself. Under the remaining constructors (`LET`, `LETPAST`,
+`FRZ`, `ANDS`, the regular expression operators), whose evaluation calls the evaluation of
+their subformulas in loops, the subformulas keep the pure structure and are evaluated by the
+pure `meeval`; this costs nothing but the acceleration, and the fragment is closed under the
+operators a monitored formula is usually built from. The relation `is_mformula` between a pure
+and a heap formula is the identity except at Since nodes of the fragment, where the structures
+are related by `is_msaux_h`, and outside the fragment, where the heap formula is the embedding
+of the pure one and carries no heap structure at all. The refinement theorem
+
+    <is_mformula φ φi> meval_imp j n ts db φi
+    <λr. ↑(fst r = fst (meeval j n ts db φ)) * is_mformula (snd (meeval j n ts db φ)) (snd r)>t
+
+says that the monadic evaluation returns the verdicts of the pure one and preserves the
+relation; `mstep_imp` and `minit_safe_imp` lift it to the monitor's step and initialisation.
+For a whole prefix the composition is a single heap computation whose result is a pure value,
+so it can be run from pure code and the refinement becomes an ordinary HOL equation:
+
+    run (monitor_imp φ π) = msteps0_stateless π (minit_safe φ)
+
+**What is trusted.** The streaming front end calls `mstep_imp` once per time point instead of
+running the whole prefix at once, i.e. it performs the composition
+`do { st1 ← mstep_imp tdb1 st0; st2 ← mstep_imp tdb2 st1; ... }` itself. In the generated
+OCaml a heap computation is a thunk `unit -> 'a` and the hash tables are ordinary mutable
+arrays, so the driver's loop is exactly that composition provided it applies each thunk once
+and in order, and never steps a state twice (the front end keeps one current state and
+overwrites it, so it does not). This is the same kind of adaptation as `run` (Section 8), one
+step stronger: `run` needs the computation to start from an empty heap, the driver needs the
+steps to be executed in sequence.
+
+**Two performance traps, both in the monitor rather than the structure.** They are worth
+recording because neither is visible in the refinement proof, which only fixes the result.
+
+* The step function first paired verdicts with their time stamps by reading the whole
+  time-stamp queue (`linearize`), which costs time proportional to the number of pending time
+  points. P2, whose window spans about 10000 time points, became twenty times slower. The
+  pure code equation of `mstep` avoids this with `annotate_verdicts`, which takes time stamps
+  off the front of the queue one by one; `annotate_verdicts_h` does the same.
+* The heap structure keeps the result table as a pure component *in addition to* the two hash
+  tables. It therefore only saves work where the pure structure would maintain an index, and
+  pays double where a join deletes tuples. With join columns it was 30% slower than the pure
+  structure, so `init_h` chooses it only when the operator has no join columns
+  (`args_L args = {}`, the shape of `ONCE` and `HISTORICALLY`), even though the assertion
+  admits `args_L args = args_R args` as well.
+
+**Results.** Median of seven runs on the benchmarks of Section 4, all three configurations
+producing identical output. "pure" is the default kernel, "heap" the same binary with
+`-heap_since`:
+
+| formula | Section 11 kernel | pure | heap | heap vs. pure |
+|---|---|---|---|---|
+| `once` `ONCE[0,20] A(x,y)` | 1.19 s | 1.16 s | 1.07 s | 1.08x |
+| `once200` `ONCE[0,200] A(x,y)` | 4.88 s | 4.98 s | 4.66 s | 1.07x |
+| P3 | 1.29 s | 1.33 s | 1.26 s | 1.06x |
+| P2 | 1.29 s | 1.30 s | 1.28 s | 1.02x |
+| `complex` | 2.10 s | 2.05 s | 2.10 s | 0.98x |
+| `since` `B(x,y) SINCE[0,50] A(x,y)` | 0.36 s | 0.37 s | 0.37 s | 1.00x |
+| `eventually`, `until`, `and`, `andnot`, `agg` | | | | 1.00x |
+
+So the imperative structure is worth 5-8% on formulas dominated by a Since operator without
+join columns, and nothing elsewhere; the monadic evaluation itself costs up to 3% on formulas
+that contain no such operator. That is far less than the 4-10x the micro-benchmark of
+Section 10 measured on the structure in isolation, for two reasons. The pure refinements of
+Sections 7b and 7e already removed the index maintenance that the hash tables were meant to
+replace, exactly in the join-free case; and per time point the monitor does much more than
+touch the structure (building the argument tables, the red-black tree of the result, the
+front end's output), so the structure's share of a step is small.
+
+Because the gain is real but narrow, both kernels are exported and the front end picks
+between them: the default is the pure one, and `-heap_since` selects the heap-resident
+structures. Both are exported from the same formalization, and by the refinement theorem
+they produce the same verdicts.
+
+**What would be needed for more.** The remaining structure cost is dominated by the result
+table, which the monitor materialises as a red-black tree at every time point because
+`meval`'s interface returns tables as sets. Making the result of a step a heap object as well
+would remove that, but it changes the interface of the whole implementation layer, not just
+one auxiliary structure: every operator that consumes a table (joins, projections, the output
+printer) would have to be refined along with it.
