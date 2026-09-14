@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code
-  imports Monomorphic_Code Monitor_Imp RBT_set_opt
+  imports Monomorphic_Code RBT_set_opt
 begin
 (*>*)
 
@@ -14,8 +14,7 @@ export_code
   (*term, formula, and regex constructors*)
   EInt Formula.Var Formula.Agg_Cnt Formula.Pred Regex.Skip Regex.Wild Typing.TAny Formula.TInt
   (*main functions*)
-  convert_multiway mmonitorable_exec minit_safe mstep type_check vminit_safe vmstep
-  minit_safe_imp mstep_imp
+  convert_multiway mmonitorable_exec minit_safe mstep type_check vminit_safe vmstep  
   (*rewrite functions*)
   rewrite_trigger
   in OCaml module_name Monitor file_prefix "verified"

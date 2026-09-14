@@ -1,6 +1,6 @@
 (*<*)
 theory Optimized_Since_Imp
-  imports Imperative_Join
+  imports "MFODL_Monitor_Devel.Imperative_Join"
 begin
 (*>*)
 
