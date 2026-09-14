@@ -163,13 +163,25 @@ fun eval_since_imp :: "args \<Rightarrow> event_data table list \<Rightarrow> ev
 
 lemma eval_since_imp_rule:
   "<is_msaux_h args s q> eval_since_imp args rs buf q
-   <\<lambda>r. \<up>(fst r = fst (eeval_since args rs buf s) \<and> fst (snd r) = fst (snd (eeval_since args rs buf s))) *
-      is_msaux_h args (snd (snd (eeval_since args rs buf s))) (snd (snd r))>\<^sub>t"
+   <\<lambda>r. \<up>(fst r = fst (meeval_since args rs buf s) \<and> fst (snd r) = fst (snd (meeval_since args rs buf s))) *
+      is_msaux_h args (snd (snd (meeval_since args rs buf s))) (snd (snd r))>\<^sub>t"
 proof (induction rs buf s arbitrary: q rule: default_maux.eeval_since.induct[where args = args])
   case (1 rs xs ys ts skew aux)
+  note simps1 = default_maux.eeval_since.simps[where args = args and rs = rs and xs = xs
+    and ys = ys and ts = ts and aux = aux]
+  note simps2 = eval_since_imp.simps[where args = args and rs = rs and xs = xs
+    and ys = ys and ts = ts]
+  obtain x xs' where xs_def: "mbuf_t_cases xs = (x, xs')"
+    by fastforce
+  obtain y ys' where ys_def: "mbuf_t_cases ys = (y, ys')"
+    by fastforce
+  obtain t ts' where ts_def: "mbuf_t_cases ts = (t, ts')"
+    by fastforce
   show ?case
-    by (sep_auto heap: add_new_ts_h_rule join_h_rule result_h_rule add_new_table_h_rule "1.IH"
-        simp: Let_def split: option.splits prod.splits)
+    by (cases y; cases x; cases t; cases skew)
+      (sep_auto heap: add_new_ts_h_rule join_h_rule result_h_rule add_new_table_h_rule "1.IH"
+        simp: simps1 simps2 xs_def ys_def ts_def Let_def
+        simp del: default_maux.eeval_since.simps eval_since_imp.simps)+
 qed
 
 subsection \<open>Evaluation of a formula\<close>
@@ -259,46 +271,85 @@ next
   show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MAnd x1 x2 x3 x4 x5 x6)
-  show ?case by (cases \<phi>i) (sep_auto heap: MAnd.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MAnd.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MAndAssign x1 x2)
-  show ?case by (cases \<phi>i) (sep_auto heap: MAndAssign.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MAndAssign.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MAndRel x1 x2)
-  show ?case by (cases \<phi>i) (sep_auto heap: MAndRel.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MAndRel.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MAndTrigger x1 x2 x3 x4 x5 x6 x7 x8 x9)
-  show ?case by (cases \<phi>i) (sep_auto heap: MAndTrigger.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MAndTrigger.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MAnds x1 x2 x3 x4)
   show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
 next
   case (MOr x1 x2 x3)
-  show ?case by (cases \<phi>i) (sep_auto heap: MOr.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MOr.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MNeg x1)
-  show ?case by (cases \<phi>i) (sep_auto heap: MNeg.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MNeg.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MExists x1)
-  show ?case by (cases \<phi>i) (sep_auto heap: MExists.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MExists.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MAgg x1 x2)
-  show ?case by (cases \<phi>i) (sep_auto heap: MAgg.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MAgg.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MPrev x1 x2 x3 x4 x5)
-  show ?case by (cases \<phi>i) (sep_auto heap: MPrev.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MPrev.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MNext x1 x2 x3 x4)
-  show ?case by (cases \<phi>i) (sep_auto heap: MNext.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MNext.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MSince x1 x2 x3 x4 x5)
-  show ?case by (cases \<phi>i) (sep_auto heap: MSince.IH eval_since_imp_rule simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MSince.IH eval_since_imp_rule simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MUntil x1 x2 x3 x4 x5 x6 x7)
-  show ?case by (cases \<phi>i) (sep_auto heap: MUntil.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MUntil.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MTrigger x1 x2 x3 x4 x5 x6)
-  show ?case by (cases \<phi>i) (sep_auto heap: MTrigger.IH simp: split_beta)+
+  show ?case by (cases \<phi>i; (simp only: is_mformula.simps meformula.case false_rule)?)
+    (sep_auto heap: MTrigger.IH simp: split_beta
+      simp del: mebuf2_take.simps mebuf2t_take.simps mebuf2T_take.simps meprev_next.simps
+        eval_since_imp.simps default_maux.eeval_since.simps)
 next
   case (MMatchP x1 x2 x3 x4 x5 x6 x7)
   show ?case by (sep_auto simp: is_mformula_embed split_beta simp del: default_maux.meeval.simps)
