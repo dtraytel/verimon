@@ -16,9 +16,15 @@ partial_function (heap) hm_kv_rec where [code]:
 lemma hm_is_it_finite: "hm_is_it m ht m' it \<Longrightarrow>\<^sub>A hm_is_it m ht m' it * \<up>(finite (dom m'))"
   unfolding hm_is_it_def by (sep_auto simp: finite_dom_map_of)
 
+lemma map_of_step: "m' k = Some v \<Longrightarrow> (map_of acc ++ m' |` (- {k}))(k \<mapsto> v) = map_of acc ++ m'"
+  by (auto simp: fun_eq_iff map_add_def restrict_map_def split: option.splits)
+
+lemma dom_step: "m' k = Some v \<Longrightarrow> Set.insert k (dom m' - {k} \<union> S) = dom m' \<union> S"
+  by auto
+
 lemma hm_kv_rec_rule_aux:
   "finite (dom m') \<Longrightarrow> <hm_is_it m ht m' it> hm_kv_rec it acc
-    <\<lambda>r. is_hashmap m ht * \<up>(set (map fst r) = dom m' \<union> set (map fst acc))>\<^sub>t"
+    <\<lambda>r. is_hashmap m ht * \<up>(map_of r = map_of acc ++ m' \<and> set (map fst r) = dom m' \<union> set (map fst acc))>\<^sub>t"
 proof (induction "card (dom m')" arbitrary: m' it acc rule: less_induct)
   case less
   show ?case
@@ -34,7 +40,8 @@ proof (induction "card (dom m')" arbitrary: m' it acc rule: less_induct)
   next
     case False
     have IH: "<hm_is_it m ht (m' |` (- {k})) it'> hm_kv_rec it' acc'
-      <\<lambda>r. is_hashmap m ht * \<up>(set (map fst r) = dom (m' |` (- {k})) \<union> set (map fst acc'))>\<^sub>t"
+      <\<lambda>r. is_hashmap m ht * \<up>(map_of r = map_of acc' ++ (m' |` (- {k})) \<and>
+         set (map fst r) = dom (m' |` (- {k})) \<union> set (map fst acc'))>\<^sub>t"
       if "m' k = Some v" for k v it' acc'
     proof (rule less.hyps)
       have kin: "k \<in> dom m'" using that by auto
@@ -45,20 +52,21 @@ proof (induction "card (dom m')" arbitrary: m' it acc rule: less_induct)
     qed
     show ?thesis
       apply (subst hm_kv_rec.simps)
-      apply (sep_auto heap: IH simp: False dom_restrict)
+      apply (sep_auto heap: IH simp: False dom_restrict map_of_step dom_step)
       done
   qed
 qed
 
 lemma hm_kv_rec_rule:
-  "<hm_is_it m ht m' it> hm_kv_rec it acc <\<lambda>r. is_hashmap m ht * \<up>(set (map fst r) = dom m' \<union> set (map fst acc))>\<^sub>t"
+  "<hm_is_it m ht m' it> hm_kv_rec it acc
+    <\<lambda>r. is_hashmap m ht * \<up>(map_of r = map_of acc ++ m' \<and> set (map fst r) = dom m' \<union> set (map fst acc))>\<^sub>t"
   by (rule cons_pre_rule[OF hm_is_it_finite]) (sep_auto heap: hm_kv_rec_rule_aux)
 
 definition hm_to_list :: "('k::{heap,hashable}, 'v::heap) hashtable \<Rightarrow> ('k \<times> 'v) list Heap" where
   "hm_to_list ht = do { it \<leftarrow> hm_it_init ht; hm_kv_rec it [] }"
 
 lemma hm_to_list_rule:
-  "<is_hashmap m ht> hm_to_list ht <\<lambda>l. is_hashmap m ht * \<up>(set (map fst l) = dom m)>\<^sub>t"
+  "<is_hashmap m ht> hm_to_list ht <\<lambda>l. is_hashmap m ht * \<up>(map_of l = m \<and> set (map fst l) = dom m)>\<^sub>t"
   unfolding hm_to_list_def by (sep_auto heap: hm_kv_rec_rule)
 
 text \<open>Deleting the keys of a list that fail a predicate.\<close>
@@ -623,6 +631,348 @@ proof -
     "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfsince, ts_m)" by (cases s) auto
   obtain c hin hsince where q: "q = (c, hin, hsince)" by (cases q)
   show ?thesis unfolding s q is_msaux.simps result_imp_def result_mmsaux.simps by sep_auto
+qed
+
+subsection \<open>The interface for the monitor: heap structure or pure structure\<close>
+
+text \<open>
+  The monitor uses the imperative structure for Since operators without aggregation whose
+  join columns are none or all columns, and the pure aggregation-aware structure
+  @{typ mmasaux} otherwise. A pure structure also results when an infinite table is added
+  (which cannot happen for tables produced by the monitor, but is not excluded by the locale
+  assumptions): the heap structure is then converted to a pure one. That conversion cannot
+  recover the index components of the pure state, so the pure fallback is related to the
+  abstract state up to these components (@{text agree}); the pure operations are congruent
+  for that relation as long as the join columns are none or all columns.
+\<close>
+
+fun agree :: "'a mmsaux \<Rightarrow> 'a mmsaux \<Rightarrow> bool" where
+  "agree (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m) (t', gc', mL', mR', dp', di', tin', wfin', tin_m', wfs', ts_m') \<longleftrightarrow>
+     t = t' \<and> gc = gc' \<and> mL = mL' \<and> mR = mR' \<and> dp = dp' \<and> di = di' \<and> tin = tin' \<and> tin_m = tin_m' \<and> ts_m = ts_m'"
+
+fun mask_of :: "'a mmsaux \<Rightarrow> bool list" where
+  "mask_of (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m) = mL"
+
+lemma agree_refl[simp]: "agree s s"
+  by (cases s) auto
+
+lemma agreeE:
+  assumes "agree s s'"
+  obtains t gc mL mR dp di tin wfin tin_m wfs ts_m wfin' wfs' where
+    "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)" "s' = (t, gc, mL, mR, dp, di, tin, wfin', tin_m, wfs', ts_m)"
+  using assms by (cases s; cases s') auto
+
+lemma agree_shift_end: "agree s s' \<Longrightarrow> agree (shift_end args nt s) (shift_end args nt s')"
+  by (elim agreeE) (auto simp: shift_end.simps Let_def split: prod.splits)
+
+lemma agree_add_new_ts': "agree s s' \<Longrightarrow> agree (add_new_ts_mmsaux' args nt s) (add_new_ts_mmsaux' args nt s')"
+  by (elim agreeE) (auto simp: add_new_ts_mmsaux'.simps Let_def split: prod.splits)
+
+lemma agree_add_new_ts: "agree s s' \<Longrightarrow> agree (add_new_ts_mmsaux args nt s) (add_new_ts_mmsaux args nt s')"
+  unfolding add_new_ts_mmsaux_def by (intro agree_add_new_ts' agree_shift_end)
+
+lemma agree_gc: "agree s s' \<Longrightarrow> agree (gc_mmsaux args s) (gc_mmsaux args s')"
+  by (elim agreeE) (auto simp: gc_mmsaux.simps Let_def)
+
+lemma agree_join:
+  assumes a: "agree s s'" and sp: "special_args args (mask_of s)"
+  shows "agree (join_mmsaux args X s) (join_mmsaux args X s')"
+  using a
+proof (elim agreeE)
+  fix t gc mL mR dp di tin wfin tin_m wfs ts_m wfin' wfs'
+  assume s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    and s': "s' = (t, gc, mL, mR, dp, di, tin, wfin', tin_m, wfs', ts_m)"
+  show ?thesis
+  proof (cases "\<forall>i \<in> set mL. \<not> i")
+    case True
+    show ?thesis unfolding s s' join_mmsaux.simps Let_def if_P[OF True] by simp
+  next
+    case False
+    have LR: "args_L args = args_R args" using sp False unfolding s special_args_def by simp
+    show ?thesis unfolding s s' join_mmsaux.simps Let_def if_not_P[OF False] if_P[OF LR] by simp
+  qed
+qed
+
+fun gc_of :: "'a mmsaux \<Rightarrow> ts" where
+  "gc_of (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m) = gc"
+
+lemma gc_join_mmsaux_if: "gc_join_mmsaux args X s =
+  (if \<not> memR (args_ivl args) (time_mmsaux s - gc_of s) then join_mmsaux args X (gc_mmsaux args s) else join_mmsaux args X s)"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s by (simp only: gc_join_mmsaux.simps gc_of.simps time_mmsaux.simps prod.case)
+qed
+
+lemma agree_time_gc: "agree s s' \<Longrightarrow> time_mmsaux s' = time_mmsaux s \<and> gc_of s' = gc_of s"
+  by (elim agreeE) simp
+
+lemma case_prod_const: "(case p of (a, b) \<Rightarrow> c) = c"
+  by (cases p) simp
+
+lemma mask_of_shift_end: "mask_of (shift_end args nt s) = mask_of s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s shift_end.simps Let_def
+    by (simp only: prod.case_distrib[of mask_of] mask_of.simps case_prod_const)
+qed
+
+lemma mask_of_add_new_ts': "mask_of (add_new_ts_mmsaux' args nt s) = mask_of s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s add_new_ts_mmsaux'.simps Let_def
+    by (simp only: prod.case_distrib[of mask_of] mask_of.simps case_prod_const)
+qed
+
+lemma mask_of_add_new_ts: "mask_of (add_new_ts_mmsaux args nt s) = mask_of s"
+  unfolding add_new_ts_mmsaux_def mask_of_add_new_ts' mask_of_shift_end ..
+
+lemma mask_of_gc: "mask_of (gc_mmsaux args s) = mask_of s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s gc_mmsaux.simps Let_def by (simp only: mask_of.simps)
+qed
+
+lemma mask_of_join: "mask_of (join_mmsaux args X s) = mask_of s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s join_mmsaux.simps Let_def
+    by (simp only: if_distrib[of mask_of] mask_of.simps if_cancel)
+qed
+
+lemma mask_of_gc_join: "mask_of (gc_join_mmsaux args X s) = mask_of s"
+  using gc_join_mmsaux_alt[of args X s] by (auto simp only: mask_of_join mask_of_gc)
+
+lemma mask_of_add_new_table: "mask_of (add_new_table_mmsaux args X s) = mask_of s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  show ?thesis unfolding s add_new_table_mmsaux.simps Let_def
+    by (simp only: if_distrib[of mask_of] mask_of.simps if_cancel)
+qed
+
+lemmas mask_of_ops = mask_of_shift_end mask_of_add_new_ts' mask_of_add_new_ts mask_of_gc mask_of_join mask_of_gc_join
+  mask_of_add_new_table
+
+lemma agree_add_new_table: "agree s s' \<Longrightarrow> agree (add_new_table_mmsaux args X s) (add_new_table_mmsaux args X s')"
+  by (elim agreeE) (auto simp: add_new_table_mmsaux.simps Let_def)
+
+lemma agree_result: "agree s s' \<Longrightarrow> result_mmsaux args s = result_mmsaux args s'"
+  by (elim agreeE) simp
+
+lemma agree_gc_join:
+  assumes a: "agree s s'" and sp: "special_args args (mask_of s)"
+  shows "agree (gc_join_mmsaux args X s) (gc_join_mmsaux args X s')"
+proof -
+  have eq: "time_mmsaux s' = time_mmsaux s" "gc_of s' = gc_of s" using agree_time_gc[OF a] by simp_all
+  have sp': "special_args args (mask_of (gc_mmsaux args s))" using sp by (simp only: mask_of_gc)
+  show ?thesis
+  proof (cases "memR (args_ivl args) (time_mmsaux s - gc_of s)")
+    case True
+    then show ?thesis unfolding gc_join_mmsaux_if eq
+      by (simp only: if_False not_True_eq_False agree_join[OF a sp])
+  next
+    case False
+    then show ?thesis unfolding gc_join_mmsaux_if eq
+      by (simp only: if_True not_False_eq_True agree_join[OF agree_gc[OF a] sp'])
+  qed
+qed
+
+text \<open>The aggregation-aware operations without aggregation.\<close>
+
+lemma mmasaux_None:
+  assumes agg: "args_agg args = None"
+  shows "init_mmasaux args = (init_mmsaux args, None)"
+    "add_new_ts_mmasaux args nt (s, ag) = (add_new_ts_mmsaux args nt s, ag)"
+    "gc_join_mmasaux args X (s, ag) = (gc_join_mmsaux args X s, ag)"
+    "add_new_table_mmasaux args X (s, ag) = (add_new_table_mmsaux args X s, ag)"
+    "result_mmasaux args (s, ag) = result_mmsaux args s"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfs ts_m where s: "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)"
+    by (cases s) auto
+  obtain t1 gc1 mL1 mR1 dp1 di1 tin1 wfin1 tin_m1 wfs1 ts_m1 where sh:
+    "shift_end args nt (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m) = (t1, gc1, mL1, mR1, dp1, di1, tin1, wfin1, tin_m1, wfs1, ts_m1)"
+    by (cases "shift_end args nt (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)") auto
+  obtain t2 gc2 mL2 mR2 dp2 di2 tin2 wfin2 tin_m2 wfs2 ts_m2 where g:
+    "gc_mmsaux args (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m) = (t2, gc2, mL2, mR2, dp2, di2, tin2, wfin2, tin_m2, wfs2, ts_m2)"
+    by (cases "gc_mmsaux args (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfs, ts_m)") auto
+  show "init_mmasaux args = (init_mmsaux args, None)" using agg by simp
+  show "add_new_ts_mmasaux args nt (s, ag) = (add_new_ts_mmsaux args nt s, ag)"
+    unfolding s add_new_ts_mmasaux_def add_new_ts_mmsaux_def shift_end_mmasaux.simps agg option.case sh
+      add_new_ts_mmasaux'.simps option.case ..
+  show "gc_join_mmasaux args X (s, ag) = (gc_join_mmsaux args X s, ag)"
+    unfolding s gc_join_mmasaux.simps gc_join_mmsaux.simps g join_mmasaux.simps agg option.case
+    by (cases "memR (args_ivl args) (t - gc)") simp_all
+  show "add_new_table_mmasaux args X (s, ag) = (add_new_table_mmsaux args X s, ag)"
+    unfolding s add_new_table_mmasaux.simps Let_def agg option.case ..
+  show "result_mmasaux args (s, ag) = result_mmsaux args s"
+    unfolding s using agg by (cases ag) simp_all
+qed
+
+lemma mmasaux_None_fs:
+  assumes agg: "args_agg args = None"
+  shows "add_new_ts_mmasaux args nt s = (add_new_ts_mmsaux args nt (fst s), snd s)"
+    "gc_join_mmasaux args X s = (gc_join_mmsaux args X (fst s), snd s)"
+    "add_new_table_mmasaux args X s = (add_new_table_mmsaux args X (fst s), snd s)"
+    "result_mmasaux args s = result_mmsaux args (fst s)"
+  by (cases s; simp add: mmasaux_None[OF agg])+
+
+subsubsection \<open>Conversion to the pure structure\<close>
+
+lemma of_alist_eq: "map_of l = Mapping.lookup m \<Longrightarrow> Mapping.of_alist l = m"
+  by (rule mapping_eqI) (simp add: lookup_of_alist)
+
+definition to_pure :: "args \<Rightarrow> event_data msaux_imp \<Rightarrow> event_data mmsaux Heap" where
+  "to_pure args q = (case q of ((t, gc, mL, mR, dp, di, tin), hin, hsince) \<Rightarrow> do {
+     l1 \<leftarrow> hm_to_list hin; l2 \<leftarrow> hm_to_list hsince;
+     return (t, gc, mL, mR, dp, di, tin, wf_table_of_set_args args {}, Mapping.of_alist l1,
+       wf_table_of_set_args args {}, Mapping.of_alist l2) })"
+
+lemma to_pure_rule: "<is_msaux args s q> to_pure args q <\<lambda>r. \<up>(agree s r \<and> special_args args (mask_of s))>\<^sub>t"
+proof -
+  obtain t gc mL mR dp di tin wfin tin_m wfsince ts_m where s:
+    "s = (t, gc, mL, mR, dp, di, tin, wfin, tin_m, wfsince, ts_m)" by (cases s) auto
+  obtain c hin hsince where q: "q = (c, hin, hsince)" by (cases q)
+  show ?thesis unfolding s q is_msaux.simps to_pure_def
+    by (sep_auto heap: hm_to_list_rule simp: of_alist_eq)
+qed
+
+subsubsection \<open>The sum type and its operations\<close>
+
+datatype msaux_h = MSH_imp "event_data msaux_imp" | MSH_pure mmasaux
+
+definition rel_pure :: "args \<Rightarrow> mmasaux \<Rightarrow> mmasaux \<Rightarrow> bool" where
+  "rel_pure args s s' \<longleftrightarrow> snd s' = snd s \<and> (fst s' = fst s \<or>
+     (args_agg args = None \<and> agree (fst s) (fst s') \<and> special_args args (mask_of (fst s))))"
+
+lemma rel_pure_refl[simp]: "rel_pure args s s"
+  by (simp add: rel_pure_def)
+
+lemma rel_pure_intro: "args_agg args = None \<Longrightarrow> agree s0 r \<Longrightarrow> special_args args (mask_of s0) \<Longrightarrow> rel_pure args (s0, None) (r, None)"
+  by (simp add: rel_pure_def)
+
+lemma rel_pure_step:
+  assumes rel: "rel_pure args s s'"
+    and none_fs: "\<And>u. args_agg args = None \<Longrightarrow> opa u = (op (fst u), snd u)"
+    and cong: "\<And>a b. agree a b \<Longrightarrow> special_args args (mask_of a) \<Longrightarrow> agree (op a) (op b)"
+    and mask: "\<And>a. mask_of (op a) = mask_of a"
+  shows "rel_pure args (opa s) (opa s')"
+proof (cases "s' = s")
+  case True
+  then show ?thesis by simp
+next
+  case False
+  then have "fst s' \<noteq> fst s" using rel by (auto simp: rel_pure_def prod_eq_iff)
+  then have N: "args_agg args = None" and A: "agree (fst s) (fst s')" and SP: "special_args args (mask_of (fst s))"
+    and S: "snd s' = snd s" using rel by (auto simp: rel_pure_def)
+  show ?thesis unfolding rel_pure_def none_fs[OF N] using S cong[OF A SP] N SP by (simp add: mask)
+qed
+
+lemma rel_pure_add_new_ts: "rel_pure args s s' \<Longrightarrow> rel_pure args (add_new_ts_mmasaux args nt s) (add_new_ts_mmasaux args nt s')"
+  by (rule rel_pure_step[where op = "add_new_ts_mmsaux args nt"]) (auto simp: mmasaux_None_fs agree_add_new_ts mask_of_ops)
+
+lemma rel_pure_gc_join: "rel_pure args s s' \<Longrightarrow> rel_pure args (gc_join_mmasaux args X s) (gc_join_mmasaux args X s')"
+  by (rule rel_pure_step[where op = "gc_join_mmsaux args X"]) (auto simp: mmasaux_None_fs agree_gc_join mask_of_ops)
+
+lemma rel_pure_add_new_table: "rel_pure args s s' \<Longrightarrow> rel_pure args (add_new_table_mmasaux args X s) (add_new_table_mmasaux args X s')"
+  by (rule rel_pure_step[where op = "add_new_table_mmsaux args X"]) (auto simp: mmasaux_None_fs agree_add_new_table mask_of_ops)
+
+lemma rel_pure_result: "rel_pure args s s' \<Longrightarrow> result_mmasaux args s' = result_mmasaux args s"
+proof (cases "s' = s")
+  case False
+  assume rel: "rel_pure args s s'"
+  from False have "fst s' \<noteq> fst s" using rel by (auto simp: rel_pure_def prod_eq_iff)
+  then have N: "args_agg args = None" and A: "agree (fst s) (fst s')" using rel by (auto simp: rel_pure_def)
+  show ?thesis unfolding mmasaux_None_fs[OF N] using agree_result[OF A] by simp
+qed simp
+
+fun is_msaux_h :: "args \<Rightarrow> mmasaux \<Rightarrow> msaux_h \<Rightarrow> assn" where
+  "is_msaux_h args s (MSH_imp q) = is_msaux args (fst s) q * \<up>(args_agg args = None \<and> snd s = None)"
+| "is_msaux_h args s (MSH_pure s') = \<up>(rel_pure args s s')"
+
+definition init_h :: "args \<Rightarrow> msaux_h Heap" where
+  "init_h args = (if args_agg args = None \<and> special_args args (join_mask (args_n args) (args_L args))
+     then do { q \<leftarrow> init_imp args; return (MSH_imp q) } else return (MSH_pure (init_mmasaux args)))"
+
+fun add_new_ts_h :: "args \<Rightarrow> ts \<Rightarrow> msaux_h \<Rightarrow> msaux_h Heap" where
+  "add_new_ts_h args nt (MSH_imp q) = do { q \<leftarrow> add_new_ts_imp args nt q; return (MSH_imp q) }"
+| "add_new_ts_h args nt (MSH_pure s) = return (MSH_pure (add_new_ts_mmasaux args nt s))"
+
+fun join_h :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_h \<Rightarrow> msaux_h Heap" where
+  "join_h args X (MSH_imp q) = do { q \<leftarrow> gc_join_imp args X q; return (MSH_imp q) }"
+| "join_h args X (MSH_pure s) = return (MSH_pure (gc_join_mmasaux args X s))"
+
+fun add_new_table_h :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_h \<Rightarrow> msaux_h Heap" where
+  "add_new_table_h args X (MSH_imp q) = (if finite X then do { q \<leftarrow> add_new_table_imp args X q; return (MSH_imp q) }
+     else do { s \<leftarrow> to_pure args q; return (MSH_pure (add_new_table_mmasaux args X (s, None))) })"
+| "add_new_table_h args X (MSH_pure s) = return (MSH_pure (add_new_table_mmasaux args X s))"
+
+fun result_h :: "args \<Rightarrow> msaux_h \<Rightarrow> event_data table Heap" where
+  "result_h args (MSH_imp q) = result_imp q"
+| "result_h args (MSH_pure s) = return (result_mmasaux args s)"
+
+lemma init_h_rule: "<emp> init_h args <is_msaux_h args (init_mmasaux args)>\<^sub>t"
+proof (cases "args_agg args = None \<and> special_args args (join_mask (args_n args) (args_L args))")
+  case True
+  then show ?thesis unfolding init_h_def if_P[OF True]
+    by (sep_auto heap: init_imp_rule simp: mmasaux_None(1))
+next
+  case False
+  then show ?thesis unfolding init_h_def if_not_P[OF False] by sep_auto
+qed
+
+lemma add_new_ts_h_rule: "<is_msaux_h args s q> add_new_ts_h args nt q <is_msaux_h args (add_new_ts_mmasaux args nt s)>\<^sub>t"
+proof (cases q)
+  case (MSH_imp qi)
+  show ?thesis unfolding MSH_imp
+    by (cases s) (sep_auto heap: add_new_ts_imp_rule simp: mmasaux_None(2))
+next
+  case (MSH_pure sp)
+  show ?thesis unfolding MSH_pure by (sep_auto simp: rel_pure_add_new_ts)
+qed
+
+lemma join_h_rule: "<is_msaux_h args s q> join_h args X q <is_msaux_h args (gc_join_mmasaux args X s)>\<^sub>t"
+proof (cases q)
+  case (MSH_imp qi)
+  show ?thesis unfolding MSH_imp
+    by (cases s) (sep_auto heap: gc_join_imp_rule simp: mmasaux_None(3))
+next
+  case (MSH_pure sp)
+  show ?thesis unfolding MSH_pure by (sep_auto simp: rel_pure_gc_join)
+qed
+
+lemma add_new_table_h_rule:
+  "<is_msaux_h args s q> add_new_table_h args X q <is_msaux_h args (add_new_table_mmasaux args X s)>\<^sub>t"
+proof (cases q)
+  case (MSH_imp qi)
+  obtain s0 ag where s: "s = (s0, ag)" by (cases s)
+  show ?thesis
+  proof (cases "finite X")
+    case True
+    show ?thesis unfolding MSH_imp s add_new_table_h.simps if_P[OF True]
+      by (sep_auto heap: add_new_table_imp_rule[OF True] simp: mmasaux_None(4))
+  next
+    case False
+    show ?thesis unfolding MSH_imp s add_new_table_h.simps if_not_P[OF False]
+      by (sep_auto heap: to_pure_rule simp: rel_pure_add_new_table[OF rel_pure_intro])
+  qed
+next
+  case (MSH_pure sp)
+  show ?thesis unfolding MSH_pure by (sep_auto simp: rel_pure_add_new_table)
+qed
+
+lemma result_h_rule: "<is_msaux_h args s q> result_h args q <\<lambda>r. is_msaux_h args s q * \<up>(r = result_mmasaux args s)>\<^sub>t"
+proof (cases q)
+  case (MSH_imp qi)
+  show ?thesis unfolding MSH_imp
+    by (cases s) (sep_auto heap: result_imp_rule simp: mmasaux_None(5))
+next
+  case (MSH_pure sp)
+  show ?thesis unfolding MSH_pure by (sep_auto simp: rel_pure_result)
 qed
 
 (*<*)
