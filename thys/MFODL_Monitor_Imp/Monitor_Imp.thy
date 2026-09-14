@@ -492,22 +492,51 @@ definition is_mstate :: "mstate_p \<Rightarrow> mstate_h \<Rightarrow> assn" whe
      (\<exists>\<^sub>Ae. \<up>(i = mstate_i st \<and> j = mstate_j st \<and> n = mstate_n st \<and>
         linearize tq = mstate_t st \<and> mstate_m st = Rep_meformula e) * is_mformula e m))"
 
-definition mstep_imp :: "database \<times> ts \<Rightarrow> mstate_h \<Rightarrow> ((nat \<times> ts \<times> event_data table) list \<times> mstate_h) Heap" where
-  "mstep_imp tdb sti = (case sti of (i, j, m, n, tq) \<Rightarrow> do {
-     (vs, m') \<leftarrow> meval_imp (j + 1) n [snd tdb] (fst tdb) m;
-     return (let tq' = append_queue (snd tdb) tq in
-       (List.enumerate i (zip (linearize tq') vs),
-        (i + length vs, j + 1, m', n, (tl_queue ^^ length vs) tq'))) })"
+text \<open>
+  The verdicts are paired with their time stamps by taking them off the front of the queue one
+  by one, as in the code equation of @{const mstep}; reading the whole queue once per time
+  point would cost time proportional to the number of pending time points.
+\<close>
+
+fun annotate_verdicts_h :: "nat \<Rightarrow> ts queue \<Rightarrow> event_data table list \<Rightarrow>
+    (nat \<times> ts \<times> event_data table) list \<Rightarrow> nat \<times> ts queue \<times> (nat \<times> ts \<times> event_data table) list" where
+  "annotate_verdicts_h i tq [] acc = (i, tq, rev acc)"
+| "annotate_verdicts_h i tq (v # vs) acc = (case pop tq of
+      (None, tq') \<Rightarrow> (i + 1 + length vs, (tl_queue ^^ (1 + length vs)) tq', rev acc)
+    | (Some t, tq') \<Rightarrow> annotate_verdicts_h (i + 1) tq' vs ((i, t, v) # acc))"
 
 lemma linearize_funpow_tl: "linearize ((tl_queue ^^ k) q) = drop k (linearize q)"
   by (induction k) (auto simp: tl_queue_rep drop_Suc tl_drop)
+
+lemma annotate_verdicts_h_alt: "annotate_verdicts_h i tq xs acc = (i', tq', xs') \<Longrightarrow>
+  i' = i + length xs \<and> linearize tq' = drop (length xs) (linearize tq) \<and>
+    xs' = rev acc @ List.enumerate i (zip (linearize tq) xs)"
+  by (induction i tq xs acc rule: annotate_verdicts_h.induct)
+    (auto simp: linearize_funpow_tl tl_queue_rep drop_Suc neq_Nil_conv
+      simp del: funpow.simps split: prod.splits option.splits dest!: pop_rep)
+
+lemma annotate_verdicts_h_proj:
+  "fst (annotate_verdicts_h i tq xs acc) = i + length xs"
+  "linearize (fst (snd (annotate_verdicts_h i tq xs acc))) = drop (length xs) (linearize tq)"
+  "snd (snd (annotate_verdicts_h i tq xs acc)) = rev acc @ List.enumerate i (zip (linearize tq) xs)"
+  using annotate_verdicts_h_alt[of i tq xs acc
+    "fst (annotate_verdicts_h i tq xs acc)"
+    "fst (snd (annotate_verdicts_h i tq xs acc))"
+    "snd (snd (annotate_verdicts_h i tq xs acc))"]
+  by simp_all
+
+definition mstep_imp :: "database \<times> ts \<Rightarrow> mstate_h \<Rightarrow> ((nat \<times> ts \<times> event_data table) list \<times> mstate_h) Heap" where
+  "mstep_imp tdb sti = (case sti of (i, j, m, n, tq) \<Rightarrow> do {
+     (vs, m') \<leftarrow> meval_imp (j + 1) n [snd tdb] (fst tdb) m;
+     return (case annotate_verdicts_h i (append_queue (snd tdb) tq) vs [] of
+       (i', tq', vs') \<Rightarrow> (vs', (i', j + 1, m', n, tq'))) })"
 
 lemma mstep_imp_rule:
   "<is_mstate st sti> mstep_imp tdb sti
    <\<lambda>r. \<up>(fst r = fst (mstep tdb st)) * is_mstate (snd (mstep tdb st)) (snd r)>\<^sub>t"
   unfolding is_mstate_def mstep_imp_def default_maux.mstep_def
   by (sep_auto heap: meval_imp_rule
-      simp: default_maux.meval_code linearize_funpow_tl append_queue_rep split_beta)
+      simp: default_maux.meval_code append_queue_rep split_beta annotate_verdicts_h_proj)
 
 lemmas init_defs = default_mmasaux.init_since'_def dq_muaux.init_until'_def
   verimon_maux.init_and_trigger'_def verimon_maux.init_trigger'_def

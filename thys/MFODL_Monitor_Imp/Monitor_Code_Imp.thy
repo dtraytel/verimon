@@ -9,7 +9,7 @@ text \<open>
   the imperative monitor: @{const minit_safe_imp} builds the initial state, allocating a hash
   table for every Since structure of the fragment, and @{const mstep_imp} performs one step on
   it. Both are heap computations; the generated OCaml represents them as thunks that the front
-  end applies once per time point, in order (see @{theory MFODL_Monitor_Devel.Monitor_Imp}).
+  end applies once per time point, in order (see @{theory MFODL_Monitor_Imp.Monitor_Imp}).
 \<close>
 
 export_code

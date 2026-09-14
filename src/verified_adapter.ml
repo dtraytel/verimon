@@ -274,40 +274,29 @@ let type_check_formula dbschema f =
   type_check (convert_schema_into_sig dbschema) f
 
 type state =
-  (((nat *
-      (nat *
-        (bool list *
-          (bool list *
-            ((nat * ((event_data option) list) set) queue *
-              ((nat * ((event_data option) list) set) queue *
-                (((event_data option) list) set *
-                  (event_data wf_table *
-                    ((((event_data option) list), nat) mapping *
-                      (event_data wf_table *
-                        (((event_data option) list), nat)
-                          mapping)))))))))) *
-     aggaux option),
-    muaux_dq,
-      (nat *
-          (nat *
-            (nat *
-              (nat *
-                (bool list *
-                  (bool list *
-                    ((nat *
-                       (((event_data option) list) set *
-                         ((event_data option) list) set))
-                       queue *
-                      ((nat * ((event_data option) list) set) queue *
-                        ((((event_data option) list), nat) mapping *
-                          (((event_data option) list) set *
-                            ((((event_data option) list), nat) mapping *
-                              (((event_data option) list) set *
-                                ((event_data option) list) set)))))))))))),
-    unit)
-    mstate_ext
+  (nat *
+    (nat *
+      ((msaux_h, muaux_dq,
+         (nat *
+           (nat *
+             (nat *
+               (nat *
+                 (bool list *
+                   (bool list *
+                     ((nat *
+                        (((event_data option) list) set *
+                          ((event_data option) list) set))
+                        queue *
+                       ((nat * ((event_data option) list) set) queue *
+                         ((((event_data option) list), nat) mapping *
+                           (((event_data option) list) set *
+                             ((((event_data option) list), nat) mapping *
+                               (((event_data option) list) set *
+                                 ((event_data option) list) set)))))))))))))
+         meformula *
+        (nat * nat queue))))
 
-let init cf = minit_safe cf
+let init cf = minit_safe_imp cf ()
 
 let set_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
@@ -318,7 +307,7 @@ let set_fold f s x = match s with
 type verdict = (event_data option) list set
 
 let step t db st =
-  let (vs, st') = mstep (db, nat_of_integer t) st in
+  let (vs, st') = mstep_imp (db, nat_of_integer t) st () in
   (List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs, st')
 
 (* Direct output of verdicts.

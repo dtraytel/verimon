@@ -735,8 +735,17 @@ fun is_msaux_h :: "args \<Rightarrow> mmasaux \<Rightarrow> msaux_h \<Rightarrow
   "is_msaux_h args s (MSH_imp q) = is_msaux args (fst s) q * \<up>(args_agg args = None \<and> snd s = None)"
 | "is_msaux_h args s (MSH_pure s') = \<up>(s' = s)"
 
+text \<open>
+  The heap structure replaces the index that the pure structure rebuilds for every time point,
+  but it maintains the result table in addition to the two hash tables. It therefore pays off
+  exactly when the Since operator has no join columns (@{term "args_L args = {}"}, the shape of
+  @{text ONCE} and of @{text "HISTORICALLY"}), where no tuple is ever removed by a join. With
+  join columns the pure structure is chosen, even though the assertion would admit the heap
+  structure for @{term "args_L args = args_R args"} as well.
+\<close>
+
 definition init_h :: "args \<Rightarrow> msaux_h Heap" where
-  "init_h args = (if args_agg args = None \<and> special_args args
+  "init_h args = (if args_agg args = None \<and> args_L args = {}
      then do { q \<leftarrow> init_imp args; return (MSH_imp q) } else return (MSH_pure (init_mmasaux args)))"
 
 fun add_new_ts_h :: "args \<Rightarrow> ts \<Rightarrow> msaux_h \<Rightarrow> msaux_h Heap" where
@@ -757,9 +766,10 @@ fun result_h :: "args \<Rightarrow> msaux_h \<Rightarrow> event_data table Heap"
 | "result_h args (MSH_pure s) = return (result_mmasaux args s)"
 
 lemma init_h_rule: "<emp> init_h args <is_msaux_h args (init_mmasaux args)>\<^sub>t"
-proof (cases "args_agg args = None \<and> special_args args")
+proof (cases "args_agg args = None \<and> args_L args = {}")
   case True
-  then show ?thesis unfolding init_h_def if_P[OF True]
+  then have "special_args args" by (simp add: special_args_def)
+  with True show ?thesis unfolding init_h_def if_P[OF True]
     by (sep_auto heap: init_imp_rule simp: mmasaux_None(1))
 next
   case False
