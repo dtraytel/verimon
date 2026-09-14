@@ -52,6 +52,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Monitor_Impl
     Code_Opt
     Imperative_Join
+    Optimized_Since_Imp
     Monomorphic_Code
   theories [document=false]
     Monitor_Code
