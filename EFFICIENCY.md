@@ -1089,4 +1089,75 @@ table, which the monitor materialises as a red-black tree at every time point be
 `meval`'s interface returns tables as sets. Making the result of a step a heap object as well
 would remove that, but it changes the interface of the whole implementation layer, not just
 one auxiliary structure: every operator that consumes a table (joins, projections, the output
-printer) would have to be refined along with it.
+printer) would have to be refined along with it. Profiling the pure structure once more for
+this comparison turned up something cheaper and unrelated to heap storage, which Section 13
+carries out.
+
+## 13. Since structure: one pass per table (implemented)
+
+Section 12 measured the imperative Since structure and found the hash tables worth little,
+because earlier sections had already removed the index maintenance they were meant to replace.
+Profiling the pure structure again with `callgrind` (`perf` does not work on this kernel) showed
+that what is left is not tree operations that an imperative structure would avoid, but tree
+operations the code performs twice. Two equations name a value twice, and since the code
+generator emits each occurrence as a separate expression, the generated OCaml computes it
+twice.
+
+**A table entering the window.** `add_new_ts_mmsaux'` moves the tables whose time stamp has
+entered the window, updates the mapping from tuples to their time stamp with those tuples that
+are valid at their time point, and collects the same tuples for the result table. Its equation
+reads
+
+    (tuple_in, add) = fold (upd_set_keys (λX t. {as ∈ X. valid_tuple tuple_since (t, as)})) move (tuple_in, {})
+    ... table_in ∪ add ...
+
+and `upd_set_keys Z (t, X) (m, Y) = (upd_set m (λ_. t) (Z X t), Y ∪ Z X t)` names `Z X t` twice.
+Per table entering the window the generated code therefore filtered the table twice, built the
+filtered table, and then traversed it once for the mapping and once for the union. One fold over
+the table replaces all of that, inserting each valid tuple into the mapping and into the result
+in the same step:
+
+    move_insert tuple_since t as = (λ(m, Y). if valid_tuple tuple_since (t, as)
+      then (Mapping.update as t m, Set.insert as Y) else (m, Y))
+
+The step is idempotent and commutes with itself (two distinct tuples are written to different
+keys, both with the same time stamp), so `Finite_Set.fold` applies and Containers' `set_fold_cfi`
+runs it directly on the red-black tree. `move_tbl` falls back to the old equation for an
+infinite table, so the refinement is one unconditional equation
+`move_tbl tuple_since = upd_set_keys (λX t. {as ∈ X. valid_tuple tuple_since (t, as)})`.
+Where the operator has no join columns or all columns are join columns, `wf_table_upd` ignores
+the index argument and the collected tuples reach only the result table; there the fold starts
+from the result table itself and the union at the end disappears as well.
+
+**A table added to a window that starts at 0.** When the interval's lower bound is 0 a new
+table goes straight into the window, and `add_new_table_mmsaux` names `upd_set tuple_in (λ_. t) X`
+twice, once for the mapping component and once for the index. Every tuple of every input table
+was inserted into the mapping twice. A `let` removes the second pass. This equation has to be
+declared before `Monomorphic_Code.thy`, which is where the monomorphic copy the monitor actually
+calls is generated; declared after it, it has no effect on the exported code at all.
+
+**Results.** Instructions retired, counted exactly with `callgrind` (20000 time points for
+P2/P3, the Section 4 logs otherwise):
+
+| benchmark | before | after | reduction |
+|---|---|---|---|
+| P3 `ONCE[2,21)` | 732.9 M | 662.4 M | 9.6% |
+| `once` `ONCE[0,20]` | 7695.0 M | 7103.4 M | 7.7% |
+| `since` `B SINCE[0,50] A` | 2952.3 M | 2777.3 M | 5.9% |
+| `complex` | 14269.6 M | 13633.8 M | 4.5% |
+| P2, `and`, `andnot`, `agg`, `eventually`, `until` | | | unchanged |
+
+Wall clock, median of seven runs: P3 1.28 s to 1.18 s, `once` 1.17 s to 1.06 s, `complex`
+2.05 s to 1.94 s, `since` 0.36 s to 0.34 s. P2 is an Until formula and does not touch either
+equation. The verdicts are unchanged on every benchmark and both test suites.
+
+The two halves cover disjoint cases: a Since operator whose interval starts at 0 never puts a
+table into `data_prev`, so it only meets the second equation, and one whose interval starts
+later meets only the first. P3 and `once` are the two shapes.
+
+**On finding this kind of thing.** Neither equation is wrong, and neither shows up as a
+pathological pattern in the source: they are ordinary definitions in which a subterm happens to
+appear twice. What makes them expensive is that the code generator does not share subterms and
+`ocamlopt` without flambda does not either. Reading the generated OCaml for the functions that a
+profile puts at the top is the way to find them; the same reading is what showed that a code
+equation declared after `Monomorphic_Code.thy` never reaches the exported code.
