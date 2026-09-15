@@ -189,6 +189,117 @@ lemma tl_queue_t_code[code]:
               | l # v # va \<Rightarrow> (tl (rev (v # va)), [l]))))"
   by (cases q rule: tl_queue_t.cases) auto
 
+text \<open>
+  @{const safe_hd} returns a pair whose second component is a queue, so the code generator
+  cannot state its code equation directly: @{command lift_definition} with the @{text code_dt}
+  option introduces an intermediate datatype, and the generated @{const safe_hd} builds a value
+  of it and then takes it apart into a fresh pair.  That is two blocks allocated and two
+  projections executed around a function that, with the equations above, no longer allocates
+  anything in the common case.  Splitting @{const safe_hd} into its two components avoids the
+  detour: each half has a result type the code generator can handle on its own, and the pair is
+  built once, by the equation below.
+\<close>
+
+fun hd_queue_t :: "'a queue_t \<Rightarrow> 'a option" where
+  "hd_queue_t ([], []) = None"
+| "hd_queue_t ([], [l]) = Some l"
+| "hd_queue_t ([], l # ls) = Some (last ls)"
+| "hd_queue_t (f # fs, l # ls) = Some f"
+| "hd_queue_t (f # fs, []) = undefined"
+
+fun norm_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
+  "norm_queue_t ([], []) = ([], [])"
+| "norm_queue_t ([], [l]) = ([], [l])"
+| "norm_queue_t ([], l # ls) = (rev ls, [l])"
+| "norm_queue_t (f # fs, l # ls) = (f # fs, l # ls)"
+| "norm_queue_t (f # fs, []) = undefined"
+
+lemma safe_hd_t_split:
+  "queue_invariant q \<Longrightarrow> safe_hd_t q = (hd_queue_t q, norm_queue_t q)"
+  by (cases q rule: safe_hd_t.cases)
+     (auto simp: queue_invariant_def Let_def hd_rev)
+
+lemma norm_queue_t_invariant:
+  "queue_invariant q \<Longrightarrow> queue_invariant (norm_queue_t q)"
+  by (cases q rule: norm_queue_t.cases)
+     (auto simp: queue_invariant_def split: list.splits)
+
+lift_definition hd_queue :: "'a queue \<Rightarrow> 'a option" is hd_queue_t .
+
+lift_definition norm_queue :: "'a queue \<Rightarrow> 'a queue" is norm_queue_t
+  by (rule norm_queue_t_invariant)
+
+declare [[code drop: safe_hd]]
+
+lemma safe_hd_code[code]: "safe_hd q = (hd_queue q, norm_queue q)"
+  by transfer (rule safe_hd_t_split)
+
+declare [[code drop: norm_queue_t]]
+
+lemma norm_queue_t_code[code]:
+  "norm_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> q)
+      | [] \<Rightarrow> (case ls of
+                 [] \<Rightarrow> q
+               | [l] \<Rightarrow> q
+               | l # v # va \<Rightarrow> (rev (v # va), [l]))))"
+  by (cases q rule: norm_queue_t.cases) auto
+
+lemma hd_queue_t_rep:
+  "queue_invariant q \<Longrightarrow>
+   hd_queue_t q = (case (case q of (fs, ls) \<Rightarrow> fs @ rev ls) of [] \<Rightarrow> None | x # _ \<Rightarrow> Some x)"
+  by (cases q rule: hd_queue_t.cases)
+     (auto simp: queue_invariant_def hd_rev hd_append list.case_eq_if)
+
+lemma hd_queue_rep: "hd_queue q = (case linearize q of [] \<Rightarrow> None | x # _ \<Rightarrow> Some x)"
+  by transfer (rule hd_queue_t_rep)
+
+text \<open>
+  Dropping the head is @{const safe_hd} followed by @{const tl_queue}, which normalises the
+  queue and then rebuilds it a second time.  One function does it in a single step.
+\<close>
+
+fun pop_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
+  "pop_queue_t ([], []) = ([], [])"
+| "pop_queue_t ([], [l]) = ([], [])"
+| "pop_queue_t ([], l # ls) = (tl (rev ls), [l])"
+| "pop_queue_t (f # fs, ls) = (fs, ls)"
+
+lemma pop_queue_t_invariant:
+  "queue_invariant q \<Longrightarrow> queue_invariant (pop_queue_t q)"
+  by (cases q rule: pop_queue_t.cases)
+     (auto simp: queue_invariant_def split: list.splits)
+
+lift_definition pop_queue :: "'a queue \<Rightarrow> 'a queue" is pop_queue_t
+  by (rule pop_queue_t_invariant)
+
+lemma pop_queue_t_rep:
+  "queue_invariant q \<Longrightarrow>
+   (case pop_queue_t q of (fs, ls) \<Rightarrow> fs @ rev ls) =
+   tl (case q of (fs, ls) \<Rightarrow> fs @ rev ls)"
+  by (cases q rule: pop_queue_t.cases)
+     (auto simp: queue_invariant_def tl_append split: list.splits)
+
+lemma pop_queue_rep: "linearize (pop_queue q) = tl (linearize q)"
+  by transfer (rule pop_queue_t_rep)
+
+text \<open>
+  Appending a list element by element wraps and unwraps the queue once per element.  Appending
+  the whole list in one pass costs one pass over the list and nothing else.
+\<close>
+
+lemma fold_Cons_append_rev: "fold (#) xs ys = rev xs @ ys"
+  by (induction xs arbitrary: ys) auto
+
+lift_definition append_queue_list :: "'a list \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is
+  "\<lambda>ys q. (case q of (fs, ls) \<Rightarrow> (fs, fold (#) ys ls))"
+  by (auto simp: queue_invariant_def fold_Cons_append_rev split: list.splits)
+
+lemma append_queue_list_rep:
+  "linearize (append_queue_list ys q) = linearize q @ ys"
+  by transfer (auto simp: linearize_def fold_Cons_append_rev)
+
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append split: prod.splits list.splits elim!: tl_queue_t.elims)
 

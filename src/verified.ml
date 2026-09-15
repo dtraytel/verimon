@@ -45,10 +45,8 @@ end;; (*struct Uint32*)
 
 module ConfigImp : sig
   val heap_join_min : int ref
-  val bulk_min : int ref
 end = struct
   let heap_join_min = ref 0
-  let bulk_min = ref 64
 end
 
 module FloatUtil : sig
@@ -352,8 +350,6 @@ module Monitor : sig
                                     ((event_data option) list) set)))))))))))),
             unit)
             mstate_ext
-  val table_of_list :
-    ((event_data option) list) list -> ((event_data option) list) set
   val mstep_j :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -578,6 +574,8 @@ mapping *
       (event_data option) list ->
         ((string * nat), (((event_data option) list) set list)) mapping ->
           ((string * nat), (((event_data option) list) set list)) mapping
+  val table_of_list :
+    ((event_data option) list) list -> ((event_data option) list) set
   val insert_table_into_db :
     string * nat ->
       ((event_data option) list) set ->
@@ -1243,6 +1241,14 @@ let rec rbt_comp_lookup
         (match c k x with Eqa -> Some y | Lt -> rbt_comp_lookup c l k
           | Gt -> rbt_comp_lookup c r k);;
 
+let rec bh_le
+  x0 t2 = match x0, t2 with Empty, t2 -> true
+    | Branch (R, l1, a1, b1, r1), t2 -> bh_le l1 t2
+    | Branch (B, l1, a1, b1, r1), Empty -> false
+    | Branch (B, l1, a1, b1, r1), Branch (R, l2, a2, b2, r2) ->
+        bh_le (Branch (B, l1, a1, b1, r1)) l2
+    | Branch (B, l1, a1, b1, r1), Branch (B, l2, a2, b2, r2) -> bh_le l1 l2;;
+
 let rec baliR
   t1 a x2 = match t1, a, x2 with
     t1, a, Branch (R, t2, b, (), Branch (R, t3, c, (), t4)) ->
@@ -1275,16 +1281,9 @@ let rec baliR
                  (v, Branch (B, ve, vj, vk, vl), vb, vc,
                    Branch (B, vf, vg, vh, vi)));;
 
-let rec suc n = plus_nata n one_nata;;
-
-let rec bheight
-  = function Empty -> zero_nata
-    | Branch (c, lt, k, v, rt) ->
-        (if equal_color c B then suc (bheight lt) else bheight lt);;
-
 let rec rbt_joinRa
   l x r =
-    (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, x, (), r)
+    (if bh_le l r then Branch (R, l, x, (), r)
       else (match l
              with Branch (R, la, xa, (), ra) ->
                Branch (R, la, xa, (), rbt_joinRa ra x r)
@@ -1324,7 +1323,7 @@ let rec baliL
 
 let rec rbt_joinLa
   l x r =
-    (if less_eq_nat (bheight r) (bheight l) then Branch (R, l, x, (), r)
+    (if bh_le r l then Branch (R, l, x, (), r)
       else (match r
              with Branch (R, la, xa, (), ra) ->
                Branch (R, rbt_joinLa l x la, xa, (), ra)
@@ -1335,8 +1334,8 @@ let rec painta c x1 = match c, x1 with c, Empty -> Empty
 
 let rec rbt_joina
   l x r =
-    (if less_nat (bheight r) (bheight l) then painta B (rbt_joinRa l x r)
-      else (if less_nat (bheight l) (bheight r) then painta B (rbt_joinLa l x r)
+    (if not (bh_le l r) then painta B (rbt_joinRa l x r)
+      else (if not (bh_le r l) then painta B (rbt_joinLa l x r)
              else Branch (B, l, x, (), r)));;
 
 let rec split_comp
@@ -1352,7 +1351,14 @@ let rec split_comp
 
 let rec nat_of_integer k = Nat (max ord_integer Z.zero k);;
 
-let rec small_rbta t = less_nat (bheight t) (nat_of_integer (Z.of_int 6));;
+let rec bh_lt
+  k x1 = match k, x1 with k, Empty -> less_nat zero_nata k
+    | k, Branch (R, l, a, b, r) -> bh_lt k l
+    | k, Branch (B, l, a, b, r) ->
+        (if equal_nata k zero_nata then false
+          else bh_lt (minus_nata k one_nata) l);;
+
+let rec small_rbta t = bh_lt (nat_of_integer (Z.of_int 6)) t;;
 
 let rec is_emptyb
   t = (match t with Empty -> true | Branch (_, _, _, _, _) -> false);;
@@ -1367,7 +1373,9 @@ let rec rbt_join2a
   l r = (if is_emptyb r then l
           else (let (a, b) = split_min r in rbt_joina l a b));;
 
-let rec flip_rbt t1 t2 = less_nat (bheight t2) (bheight t1);;
+let rec flip_rbt t1 t2 = not (bh_le t1 t2);;
+
+let rec suc n = plus_nata n one_nata;;
 
 let rec length_tailrec x0 n = match x0, n with [], n -> n
                          | x :: xs, n -> length_tailrec xs (suc n);;
@@ -4758,8 +4766,6 @@ let rec nfv
 
 let rec fun_upd _A f a b = (fun x -> (if eq _A x a then b else f x));;
 
-let rec concat xss = foldr (fun a b -> a @ b) xss [];;
-
 let rec membera _A x0 y = match x0, y with [], y -> false
                      | x :: xs, y -> eq _A x y || membera _A xs y;;
 
@@ -5662,6 +5668,11 @@ let rec rbt_baliR
                  (v, Branch (B, ve, vj, vk, vl), vb, vc,
                    Branch (B, vf, vg, vh, vi)));;
 
+let rec bheight
+  = function Empty -> zero_nata
+    | Branch (c, lt, k, v, rt) ->
+        (if equal_color c B then suc (bheight lt) else bheight lt);;
+
 let rec rbt_joinR
   l a b r =
     (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, a, b, r)
@@ -6438,37 +6449,6 @@ let rec ht_mem
           (fun v -> (fun () -> (not (is_none v))));;
 
 let rec ht_new n = im_new heap_unit n;;
-
-let rec ed_comparator
-  x0 x1 = match x0, x1 with [], [] -> Eqa
-    | [], y :: ys -> Lt
-    | x :: xs, [] -> Gt
-    | None :: xs, None :: ys -> ed_comparator xs ys
-    | None :: xs, Some b :: ys -> Lt
-    | Some a :: xs, None :: ys -> Gt
-    | Some a :: xs, Some b :: ys ->
-        (match comparator_event_data a b with Eqa -> ed_comparator xs ys
-          | Lt -> Lt | Gt -> Gt);;
-
-let rec merge_t
-  x0 ys = match x0, ys with [], ys -> ys
-    | x :: xs, [] -> x :: xs
-    | x :: xs, y :: ys ->
-        (match ed_comparator x y with Eqa -> x :: merge_t xs ys
-          | Lt -> x :: merge_t xs (y :: ys) | Gt -> y :: merge_t (x :: xs) ys);;
-
-let rec merge_pairs_t = function a :: b :: r -> merge_t a b :: merge_pairs_t r
-                        | [] -> []
-                        | [v] -> [v];;
-
-let rec merge_all_t
-  k xss =
-    (if equal_nata k zero_nata then concat xss
-      else (match xss with [] -> [] | [a] -> a
-             | _ :: _ :: _ ->
-               merge_all_t (minus_nata k one_nata) (merge_pairs_t xss)));;
-
-let rec sort_t xs = merge_all_t (size_lista xs) (mapa (fun x -> [x]) xs);;
 
 let rec upd_cfi (_A1, _A2)
   xa = Abs_comp_fun_idem (fun a -> updateb (_A1, _A2) a (xa a));;
@@ -8181,21 +8161,6 @@ let rec complete_with
                      | Some b -> b)
               else complete_on i t)));;
 
-let rec probe_step_key_list (_A1, _A2, _A3)
-  key m b acc =
-    (match
-      lookupa
-        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
-        m (key b)
-      with None -> acc
-      | Some t ->
-        fold (fun a acca ->
-               (match join1 _A3 (a, b) with None -> acca | Some z -> z :: acca))
-          (csorted_list_of_set
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            t)
-          acc);;
-
 let rec join1_inserta (_A1, _A2, _A3)
   b a acc = join1_insert (_A1, _A2, _A3) a b acc;;
 
@@ -8237,49 +8202,6 @@ let rec probe_step_key (_A1, _A2, _A3)
         m (key b)
       with None -> acc | Some a -> probe_fold (_A1, _A2, _A3) b acc a);;
 
-let rec rbt_comp_bulkload
-  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
-
-let rec strict_sorted_by
-  c x1 = match c, x1 with
-    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
-    | c, [] -> true
-    | c, [v] -> true;;
-
-let rec rbt_of_sorted_list _A
-  xa = Mapping_RBTa
-         (if strict_sorted_by (the (ccompare _A)) xa
-           then rbtreeify (mapa (fun x -> (x, ())) xa)
-           else rbt_comp_bulkload (the (ccompare _A))
-                  (mapa (fun x -> (x, ())) xa));;
-
-let rec merge_c _A
-  x0 ys = match x0, ys with [], ys -> ys
-    | x :: xs, [] -> x :: xs
-    | x :: xs, y :: ys ->
-        (match the (ccompare _A) x y with Eqa -> x :: merge_c _A xs ys
-          | Lt -> x :: merge_c _A xs (y :: ys)
-          | Gt -> y :: merge_c _A (x :: xs) ys);;
-
-let rec merge_pairs_c _A
-  = function a :: b :: r -> merge_c _A a b :: merge_pairs_c _A r
-    | [] -> []
-    | [v] -> [v];;
-
-let rec merge_all_c _A
-  k xss =
-    (if equal_nata k zero_nata then concat xss
-      else (match xss with [] -> [] | [a] -> a
-             | _ :: _ :: _ ->
-               merge_all_c _A (minus_nata k one_nata) (merge_pairs_c _A xss)));;
-
-let rec sort_c _A xs = merge_all_c _A (size_lista xs) (mapa (fun x -> [x]) xs);;
-
-let rec set_of_list (_A1, _A2, _A3)
-  xs = (if Z.lt (integer_of_nat (size_lista xs)) (Z.of_int !Config.bulk_min)
-         then set (_A1, _A2, _A3) xs
-         else RBT_set (rbt_of_sorted_list _A2 (sort_c _A2 xs)));;
-
 let rec proj_tuple_chk
   x0 x1 = match x0, x1 with [], [] -> Some []
     | b :: bs, x :: xs ->
@@ -8294,40 +8216,6 @@ let rec restrict_with
             (match proj_tuple_chk mask v with None -> restrict i v
               | Some r -> r)));;
 
-let rec probe_cluster (_A1, _A2, _A3)
-  i m b =
-    (match
-      lookupa
-        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
-        m (restrict i b)
-      with None ->
-        set_empty
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (of_phantom set_impl_lista)
-      | Some t -> t);;
-
-let rec probe_list (_A1, _A2, _A3)
-  i ta t =
-    (let m =
-       cluster
-         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-           set_impl_list)
-         (ccompare_list (ccompare_option _A2))
-         (comp (fun a -> Some a) (restrict i)) ta
-       in
-      fold (fun b ->
-             fold (fun a acc ->
-                    (match join1 _A3 (a, b) with None -> acc
-                      | Some z -> z :: acc))
-               (csorted_list_of_set
-                 ((ceq_list (ceq_option _A1)),
-                   (ccompare_list (ccompare_option _A2)))
-                 (probe_cluster (_A1, _A2, _A3) i m b)))
-        (csorted_list_of_set
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          t)
-        []);;
-
 let rec probe_step (_A1, _A2, _A3)
   i m b acc =
     (match
@@ -8340,70 +8228,101 @@ let rec probe_step_cfi (_A1, _A2, _A3)
   xb xc = Abs_comp_fun_idem (probe_step (_A1, _A2, _A3) xb xc);;
 
 let rec probe_join (_A1, _A2, _A3)
-  i ta t =
-    (if finite
-          (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-            (ccompare_list (ccompare_option _A2)))
-          ta &&
-          (finite
-             (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-               (ccompare_list (ccompare_option _A2)))
-             t &&
-            not (is_none (ccompare_lista (ccompare_option _A2))))
-      then set_of_list
-             ((ceq_list (ceq_option _A1)),
-               (ccompare_list (ccompare_option _A2)), set_impl_list)
-             (probe_list (_A1, _A2, _A3) i ta t)
-      else set_fold_cfi
-             ((ceq_list (ceq_option _A1)),
-               (ccompare_list (ccompare_option _A2)))
-             (probe_step_cfi (_A1, _A2, _A3) i
-               (cluster
-                 ((ceq_list (ceq_option _A1)),
-                   (ccompare_list (ccompare_option _A2)), set_impl_list)
-                 (ccompare_list (ccompare_option _A2))
-                 (comp (fun a -> Some a) (restrict i)) ta))
-             (set_empty
-               ((ceq_list (ceq_option _A1)),
-                 (ccompare_list (ccompare_option _A2)))
-               (of_phantom set_impl_lista))
-             t);;
+  i t x2 = match i, t, x2 with
+    i, t, RBT_set rbt ->
+      (match ccompare_lista (ccompare_option _A2)
+        with None ->
+          failwith "probe_join: ccompare = None"
+            (fun _ -> probe_join (_A1, _A2, _A3) i t (RBT_set rbt))
+        | Some _ ->
+          foldb (ccompare_list (ccompare_option _A2))
+            (probe_step (_A1, _A2, _A3) i
+              (cluster
+                ((ceq_list (ceq_option _A1)),
+                  (ccompare_list (ccompare_option _A2)), set_impl_list)
+                (ccompare_list (ccompare_option _A2))
+                (comp (fun a -> Some a) (restrict i)) t))
+            rbt (set_empty
+                  ((ceq_list (ceq_option _A1)),
+                    (ccompare_list (ccompare_option _A2)))
+                  (of_phantom set_impl_lista)))
+    | i, t, DList_set uu ->
+        set_fold_cfi
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (probe_step_cfi (_A1, _A2, _A3) i
+            (cluster
+              ((ceq_list (ceq_option _A1)),
+                (ccompare_list (ccompare_option _A2)), set_impl_list)
+              (ccompare_list (ccompare_option _A2))
+              (comp (fun a -> Some a) (restrict i)) t))
+          (set_empty
+            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+            (of_phantom set_impl_lista))
+          (DList_set uu)
+    | i, t, Set_Monad uu ->
+        set_fold_cfi
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (probe_step_cfi (_A1, _A2, _A3) i
+            (cluster
+              ((ceq_list (ceq_option _A1)),
+                (ccompare_list (ccompare_option _A2)), set_impl_list)
+              (ccompare_list (ccompare_option _A2))
+              (comp (fun a -> Some a) (restrict i)) t))
+          (set_empty
+            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+            (of_phantom set_impl_lista))
+          (Set_Monad uu)
+    | i, t, Collect_set uu ->
+        set_fold_cfi
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (probe_step_cfi (_A1, _A2, _A3) i
+            (cluster
+              ((ceq_list (ceq_option _A1)),
+                (ccompare_list (ccompare_option _A2)), set_impl_list)
+              (ccompare_list (ccompare_option _A2))
+              (comp (fun a -> Some a) (restrict i)) t))
+          (set_empty
+            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+            (of_phantom set_impl_lista))
+          (Collect_set uu)
+    | i, t, Complement uu ->
+        set_fold_cfi
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (probe_step_cfi (_A1, _A2, _A3) i
+            (cluster
+              ((ceq_list (ceq_option _A1)),
+                (ccompare_list (ccompare_option _A2)), set_impl_list)
+              (ccompare_list (ccompare_option _A2))
+              (comp (fun a -> Some a) (restrict i)) t))
+          (set_empty
+            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+            (of_phantom set_impl_lista))
+          (Complement uu);;
 
 let rec probe_join_n (_A1, _A2, _A3)
   n i t x3 = match n, i, t, x3 with
-    n, i, t, DList_set uu -> probe_join (_A1, _A2, _A3) i t (DList_set uu)
+    n, i, t, RBT_set rbt ->
+      (match ccompare_lista (ccompare_option _A2)
+        with None ->
+          failwith "probe_join: ccompare = None"
+            (fun _ -> probe_join_n (_A1, _A2, _A3) n i t (RBT_set rbt))
+        | Some _ ->
+          (let key = restrict_with i n in
+            foldb (ccompare_list (ccompare_option _A2))
+              (probe_step_key (_A1, _A2, _A3) key
+                (cluster
+                  ((ceq_list (ceq_option _A1)),
+                    (ccompare_list (ccompare_option _A2)), set_impl_list)
+                  (ccompare_list (ccompare_option _A2))
+                  (comp (fun a -> Some a) key) t))
+              rbt (set_empty
+                    ((ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)))
+                    (of_phantom set_impl_lista))))
+    | n, i, t, DList_set uu -> probe_join (_A1, _A2, _A3) i t (DList_set uu)
     | n, i, t, Set_Monad uu -> probe_join (_A1, _A2, _A3) i t (Set_Monad uu)
     | n, i, t, Collect_set uu -> probe_join (_A1, _A2, _A3) i t (Collect_set uu)
-    | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu)
-    | n, i, t, RBT_set rbt ->
-        (match ccompare_lista (ccompare_option _A2)
-          with None ->
-            failwith "probe_join: ccompare = None"
-              (fun _ -> probe_join_n (_A1, _A2, _A3) n i t (RBT_set rbt))
-          | Some _ ->
-            (let key = restrict_with i n in
-             let m =
-               cluster
-                 ((ceq_list (ceq_option _A1)),
-                   (ccompare_list (ccompare_option _A2)), set_impl_list)
-                 (ccompare_list (ccompare_option _A2))
-                 (comp (fun a -> Some a) key) t
-               in
-              (if finite
-                    (finite_UNIV_list, (ceq_list (ceq_option _A1)),
-                      (ccompare_list (ccompare_option _A2)))
-                    t
-                then set_of_list
-                       ((ceq_list (ceq_option _A1)),
-                         (ccompare_list (ccompare_option _A2)), set_impl_list)
-                       (foldb (ccompare_list (ccompare_option _A2))
-                         (probe_step_key_list (_A1, _A2, _A3) key m) rbt [])
-                else foldb (ccompare_list (ccompare_option _A2))
-                       (probe_step_key (_A1, _A2, _A3) key m) rbt
-                       (set_empty
-                         ((ceq_list (ceq_option _A1)),
-                           (ccompare_list (ccompare_option _A2)))
-                         (of_phantom set_impl_lista)))));;
+    | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu);;
 
 let rec bin_join (_A1, _A2, _A3, _A4, _A5)
   n aa ta pos a t =
@@ -11243,43 +11162,55 @@ let rec ed_probe_step_key
     (match unbox ed_lookup_table_v m (key b) with None -> acc
       | Some a -> ed_probe_fold b acc a);;
 
+let rec ed_probe_step
+  i m b acc =
+    (match unbox ed_lookup_table_v m (restrict i b) with None -> acc
+      | Some a -> ed_probe_fold b acc a);;
+
 let rec ed_probe_join
-  i ta t =
-    (if unbox ed_finite_v ta &&
-          (unbox ed_finite_v t && not (is_none (Some ed_comparator)))
-      then set_of_list
-             ((ceq_list (ceq_option ceq_event_data)),
-               (ccompare_list (ccompare_option ccompare_event_data)),
-               set_impl_list)
-             (probe_list (ceq_event_data, ccompare_event_data, equal_event_data)
-               i ta t)
-      else unbox ed_fold_cfi_table_v
-             (probe_step_cfi
-               (ceq_event_data, ccompare_event_data, equal_event_data) i
-               (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) ta))
-             ed_bot t);;
+  i t x2 = match i, t, x2 with
+    i, t, RBT_set rbt ->
+      unbox ed_rbt_fold_table_v
+        (ed_probe_step i
+          (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
+        rbt ed_bot
+    | i, t, DList_set uu ->
+        unbox ed_fold_cfi_table_v
+          (probe_step_cfi
+            (ceq_event_data, ccompare_event_data, equal_event_data) i
+            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
+          ed_bot (DList_set uu)
+    | i, t, Set_Monad uu ->
+        unbox ed_fold_cfi_table_v
+          (probe_step_cfi
+            (ceq_event_data, ccompare_event_data, equal_event_data) i
+            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
+          ed_bot (Set_Monad uu)
+    | i, t, Collect_set uu ->
+        unbox ed_fold_cfi_table_v
+          (probe_step_cfi
+            (ceq_event_data, ccompare_event_data, equal_event_data) i
+            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
+          ed_bot (Collect_set uu)
+    | i, t, Complement uu ->
+        unbox ed_fold_cfi_table_v
+          (probe_step_cfi
+            (ceq_event_data, ccompare_event_data, equal_event_data) i
+            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
+          ed_bot (Complement uu);;
 
 let rec ed_probe_join_n
   n i t x3 = match n, i, t, x3 with
-    n, i, t, DList_set uu -> ed_probe_join i t (DList_set uu)
+    n, i, t, RBT_set rbt ->
+      (let key = restrict_with i n in
+        unbox ed_rbt_fold_table_v
+          (ed_probe_step_key key
+            (unbox ed_cluster_v (comp (fun a -> Some a) key) t))
+          rbt ed_bot)
+    | n, i, t, DList_set uu -> ed_probe_join i t (DList_set uu)
     | n, i, t, Set_Monad uu -> ed_probe_join i t (Set_Monad uu)
     | n, i, t, Collect_set uu -> ed_probe_join i t (Collect_set uu)
-    | n, i, t, Complement uu -> ed_probe_join i t (Complement uu)
-    | n, i, t, RBT_set rbt ->
-        (let key = restrict_with i n in
-         let m = unbox ed_cluster_v (comp (fun a -> Some a) key) t in
-          (if unbox ed_finite_v t
-            then set_of_list
-                   ((ceq_list (ceq_option ceq_event_data)),
-                     (ccompare_list (ccompare_option ccompare_event_data)),
-                     set_impl_list)
-                   (foldb (ccompare_list (ccompare_option ccompare_event_data))
-                     (probe_step_key_list
-                       (ceq_event_data, ccompare_event_data, equal_event_data)
-                       key m)
-                     rbt [])
-            else unbox ed_rbt_fold_table_v (ed_probe_step_key key m) rbt
-                   ed_bot));;
+    | n, i, t, Complement uu -> ed_probe_join i t (Complement uu);;
 
 let rec ed_probe_join_imp
   i xs ys =
@@ -12828,6 +12759,9 @@ let rec eval_assignment (x, t) y = list_update y x (Some (meval_trm t y));;
 let rec list_of_option = function None -> []
                          | Some x -> [x];;
 
+let rec rbt_comp_bulkload
+  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
+
 let rec bulkload _A
   xa = Mapping_RBTa (rbt_comp_bulkload (the (ccompare _A)) xa);;
 
@@ -13874,7 +13808,7 @@ let rec probe_all
                 | Some l ->
                   fold (fun y acca ->
                          (match join1 equal_event_data (x, y) with None -> acca
-                           | Some z -> z :: acca))
+                           | Some z -> unbox ed_insert_v z acca))
                     l acc)));;
 
 let rec purifya
@@ -14866,19 +14800,6 @@ let rec ht_delete (_A1, _A2, _A3) _B
 
 let use_heap_join : bool = true;;
 
-let rec table_of_list
-  xs = RBT_set
-         (rbt_of_sorted_list
-           (ccompare_list (ccompare_option ccompare_event_data)) xs);;
-
-let rec table_of_unsorted
-  xs = (if Z.lt (integer_of_nat (size_lista xs)) (Z.of_int !ConfigImp.bulk_min)
-         then set ((ceq_list (ceq_option ceq_event_data)),
-                    (ccompare_list (ccompare_option ccompare_event_data)),
-                    set_impl_list)
-                xs
-         else table_of_list (sort_t xs));;
-
 let rec idx_ins_list
   msk xs q =
     (match xs with [] -> (fun () -> q)
@@ -14906,9 +14827,7 @@ let rec probe_join_j
         ()) ())
         (fun q ->
           (fun f_ () -> f_ ((idx_ins_list msk ys q) ()) ())
-            (fun qa ->
-              (fun f_ () -> f_ ((probe_all msk qa xs []) ()) ())
-                (fun zs -> (fun () -> (table_of_unsorted zs))))));;
+            (fun qa -> probe_all msk qa xs ed_bot)));;
 
 let rec heap_join_ok
   idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
@@ -16844,6 +16763,24 @@ let rec insert_into_db
     update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat)
       (fun _ tbl _ -> mapa (unbox ed_insert_v xs) tbl) p
       [unbox ed_insert_v xs ed_bot] db;;
+
+let rec strict_sorted_by
+  c x1 = match c, x1 with
+    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
+    | c, [] -> true
+    | c, [v] -> true;;
+
+let rec rbt_of_sorted_list _A
+  xa = Mapping_RBTa
+         (if strict_sorted_by (the (ccompare _A)) xa
+           then rbtreeify (mapa (fun x -> (x, ())) xa)
+           else rbt_comp_bulkload (the (ccompare _A))
+                  (mapa (fun x -> (x, ())) xa));;
+
+let rec table_of_list
+  xs = RBT_set
+         (rbt_of_sorted_list
+           (ccompare_list (ccompare_option ccompare_event_data)) xs);;
 
 let rec insert_table_into_db
   p x db =

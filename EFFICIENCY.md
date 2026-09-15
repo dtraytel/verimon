@@ -1587,3 +1587,40 @@ more cheaply than a tree insertion -- a hash set, which the imperative kernel al
 `itbl`: `n` hashes, then `k log k` comparisons to sort the survivors and `k` nodes to build. For
 `n` much larger than `k` that beats both. That is the shape to try next, and it only exists in
 the imperative kernel.
+
+### 15.8 Comparing black heights without computing them
+
+`bheight` walks a tree's entire left spine and allocates a boxed `nat` per level. Every set
+union calls it three times: `small_rbt t = bheight t < 6` decides whether to bulk-build or
+insert, and `flip_rbt t1 t2 = bheight t2 < bheight t1` decides which side to iterate over.
+`rbt_join` and its two helpers compare two black heights at every step of the join. On P2,
+`bheight` accounted for 3.6M of the monitor's 6.7M calls to `suc`.
+
+All of these are comparisons, and a comparison does not need the numbers. `bh_le t1 t2`
+descends the two left spines in lockstep and answers as soon as one of them runs out;
+`bh_lt k t` counts a constant down and stops as soon as the tree exceeds it. Neither
+allocates, and both stop earlier than `bheight` could.
+
+The five constants get code equations phrased in the new tests, proved equal to the originals
+via `bh_le_correct` and `bh_lt_correct` (`thys/MFODL_Monitor_Devel/RBT_set_opt.thy`).
+
+| | before | after |
+|---|---:|---:|
+| P2 instructions, default GC | 8249.2M | 8296.9M (+0.6%) |
+| P2 instructions, compaction off | 7993.1M | 7898.7M (**-1.2%**) |
+| P3 instructions, default GC | 6381.0M | 6279.0M (**-1.6%**) |
+| P2 minor words | 434.9M | 431.3M (-0.8%) |
+
+The first row is the interesting one, and it is not a regression. Per-function costs show the
+change doing exactly what it was meant to: `bheight` -37.9M, `suc` -24.1M, `Z.add` -33.3M,
+a total of 95M fewer instructions in the monitor's own code. What moved the other way is the
+major collector -- `do_compaction` +46.1M, `do_some_marking` +43.3M, `invert_pointer_at`
++14.4M -- because the slightly different heap crossed a fragmentation threshold and compacted
+one more time. Compaction is a discrete event triggered by a ratio, not a cost proportional to
+anything the change touches; running both binaries with compaction disabled isolates the real
+effect, and it is the -1.2% the function-level counts predict.
+
+This is worth stating as a rule for the rest of this document: a difference of well under a
+percent in a whole-program instruction count can be a single major-heap event rather than a
+property of the code. Where such a number matters, it needs the per-function breakdown or a
+run with compaction off before it is read as a result.

@@ -97,18 +97,33 @@ termination
 lemma bh_le_correct: "bh_le t1 t2 \<longleftrightarrow> bheight t1 \<le> bheight t2"
   by (induction t1 t2 rule: bh_le.induct) auto
 
-fun bh_lt :: "nat \<Rightarrow> 'a urbt \<Rightarrow> bool" where
+fun bh_lt :: "integer \<Rightarrow> 'a urbt \<Rightarrow> bool" where
   "bh_lt k RBT_Impl.Empty = (0 < k)"
 | "bh_lt k (Branch RBT_Impl.R l a b r) = bh_lt k l"
-| "bh_lt k (Branch RBT_Impl.B l a b r) = (case k of 0 \<Rightarrow> False | Suc k' \<Rightarrow> bh_lt k' l)"
+| "bh_lt k (Branch RBT_Impl.B l a b r) = (if k \<le> 0 then False else bh_lt (k - 1) l)"
 
-lemma bh_lt_correct: "bh_lt k t \<longleftrightarrow> bheight t < k"
-  by (induction k t rule: bh_lt.induct) (auto split: nat.splits)
+lemma bh_lt_correct: "bh_lt k t \<longleftrightarrow> integer_of_nat (bheight t) < k"
+proof (induction k t rule: bh_lt.induct)
+  case (3 k l a b r)
+  show ?case
+  proof (cases "k \<le> 0")
+    case True
+    have "k \<le> 0" by (rule True)
+    also have "(0::integer) \<le> 1 + of_nat (bheight l)"
+      by (simp add: add_nonneg_nonneg)
+    finally have "k \<le> 1 + of_nat (bheight l)" .
+    then show ?thesis using True by (simp add: integer_of_nat_eq_of_nat not_less)
+  next
+    case False
+    then show ?thesis using 3
+      by (simp add: integer_of_nat_eq_of_nat less_diff_eq add.commute)
+  qed
+qed (auto simp: integer_of_nat_eq_of_nat)
 
 declare [[code drop: small_rbt flip_rbt rbt_joinL rbt_joinR rbt_join]]
 
 lemma small_rbt_code[code]: "small_rbt t = bh_lt 6 t"
-  by (simp add: small_rbt_def bh_lt_correct)
+  by (simp add: small_rbt_def bh_lt_correct integer_of_nat_eq_of_nat)
 
 lemma flip_rbt_code[code]: "flip_rbt t1 t2 = (\<not> bh_le t1 t2)"
   by (simp add: flip_rbt_def bh_le_correct not_le)
