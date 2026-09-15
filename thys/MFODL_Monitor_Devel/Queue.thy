@@ -229,10 +229,22 @@ lift_definition hd_queue :: "'a queue \<Rightarrow> 'a option" is hd_queue_t .
 lift_definition norm_queue :: "'a queue \<Rightarrow> 'a queue" is norm_queue_t
   by (rule norm_queue_t_invariant)
 
+lemma hd_queue_t_norm:
+  "queue_invariant q \<Longrightarrow> hd_queue_t (norm_queue_t q) = hd_queue_t q"
+  by (cases q rule: norm_queue_t.cases)
+     (auto simp: queue_invariant_def hd_rev split: list.splits)
+
 declare [[code drop: safe_hd]]
 
-lemma safe_hd_code[code]: "safe_hd q = (hd_queue q, norm_queue q)"
-  by transfer (rule safe_hd_t_split)
+text \<open>
+  The head is read off the normalised queue rather than off the argument: on a normalised queue
+  it is the first element of the front list, while on the argument it can be the last element of
+  the back list, which costs a second pass over it.
+\<close>
+
+lemma safe_hd_code[code]: "safe_hd q = (let q' = norm_queue q in (hd_queue q', q'))"
+  unfolding Let_def
+  by transfer (simp add: safe_hd_t_split hd_queue_t_norm)
 
 declare [[code drop: norm_queue_t]]
 

@@ -85,6 +85,38 @@ lemma mbuf_t_cases_code[code]: "mbuf_t_cases (MBuf2_t xs) = (case safe_hd xs of 
   | (Some x, xs') \<Rightarrow> (Some x, MBuf2_t (tl_queue xs')))"
   by transfer' (auto simp: tl_queue_rep split: list.splits prod.splits option.splits dest: safe_hd_rep)
 
+text \<open>
+  The two code equations above take the buffer apart and put it back together more often than
+  they need to: @{const mbuf_t_cases} asks @{const safe_hd} for a pair it immediately splits,
+  and then calls @{const tl_queue} on a queue @{const safe_hd} has just rebuilt, while
+  @{const mbuf_t_append} wraps and unwraps the queue once per appended element.  Asking for the
+  head and the tail separately -- and appending in one pass -- allocates the pair once and the
+  queue once.  In the empty case the buffer is returned unchanged, so nothing is allocated
+  at all.
+\<close>
+
+lift_definition mbuf_t_hd :: "'a mbuf_t \<Rightarrow> 'a option" is
+  "\<lambda>xs. case xs of [] \<Rightarrow> None | y # _ \<Rightarrow> Some y" .
+
+lift_definition mbuf_t_tl :: "'a mbuf_t \<Rightarrow> 'a mbuf_t" is tl .
+
+declare [[code drop: mbuf_t_cases mbuf_t_append]]
+
+lemma mbuf_t_cases_alt[code]:
+  "mbuf_t_cases b = (let a = mbuf_t_hd b in
+     (a, case a of None \<Rightarrow> b | Some _ \<Rightarrow> mbuf_t_tl b))"
+  by transfer (auto split: list.splits)
+
+lemma mbuf_t_hd_code[code]: "mbuf_t_hd (MBuf2_t xs) = hd_queue xs"
+  by transfer' (simp add: hd_queue_rep)
+
+lemma mbuf_t_tl_code[code]: "mbuf_t_tl (MBuf2_t xs) = MBuf2_t (pop_queue xs)"
+  by transfer' (simp add: pop_queue_rep)
+
+lemma mbuf_t_append_code'[code]:
+  "mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs)"
+  by transfer' (simp add: append_queue_list_rep)
+
 type_synonym 'a mebuf2 = "'a table mbuf_t \<times> 'a table mbuf_t"
 type_synonym 'a mebuft2 = "('a table) mbuf_t \<times> (nat set \<times> 'a table) mbuf_t"
 type_synonym 'a mebufn = "'a table mbuf_t list"

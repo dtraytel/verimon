@@ -1349,16 +1349,13 @@ let rec split_comp
             (let (r1, (b, r2)) = split_comp comp r x in
               (rbt_joina l a r1, (b, r2))));;
 
-let rec nat_of_integer k = Nat (max ord_integer Z.zero k);;
-
 let rec bh_lt
-  k x1 = match k, x1 with k, Empty -> less_nat zero_nata k
+  k x1 = match k, x1 with k, Empty -> Z.lt Z.zero k
     | k, Branch (R, l, a, b, r) -> bh_lt k l
     | k, Branch (B, l, a, b, r) ->
-        (if equal_nata k zero_nata then false
-          else bh_lt (minus_nata k one_nata) l);;
+        (if Z.leq k Z.zero then false else bh_lt (Z.sub k (Z.of_int 1)) l);;
 
-let rec small_rbta t = bh_lt (nat_of_integer (Z.of_int 6)) t;;
+let rec small_rbta t = bh_lt (Z.of_int 6) t;;
 
 let rec is_emptyb
   t = (match t with Empty -> true | Branch (_, _, _, _, _) -> false);;
@@ -1381,6 +1378,8 @@ let rec length_tailrec x0 n = match x0, n with [], n -> n
                          | x :: xs, n -> length_tailrec xs (suc n);;
 
 let rec size_lista xs = length_tailrec xs zero_nata;;
+
+let rec nat_of_integer k = Nat (max ord_integer Z.zero k);;
 
 let rec map_prod f g (a, b) = (f a, g b);;
 
@@ -4192,6 +4191,8 @@ let rec drop
         (if equal_nata n zero_nata then x :: xs
           else drop (minus_nata n one_nata) xs);;
 
+let rec last (x :: xs) = (if null xs then x else last xs);;
+
 let rec maps f x1 = match f, x1 with f, [] -> []
                | f, x :: xs -> f x @ maps f xs;;
 
@@ -5374,17 +5375,21 @@ let rec matcha
     | [], v :: va -> None
     | uu, None :: va -> None;;
 
-let rec safe_hd_t
-  q = (match q with ([], []) -> (None, q) | ([], [l]) -> (Some l, q)
-        | ([], l :: v :: va) ->
-          (let gs = rev (v :: va) in (Some (hda gs), (gs, [l])))
-        | (f :: _, _ :: _) -> (Some f, q));;
+let rec norm_queue_t
+  q = (match q with ([], []) -> q | ([], [_]) -> q
+        | ([], l :: v :: va) -> (rev (v :: va), [l]) | (_ :: _, _ :: _) -> q);;
 
-let rec safe_hd_aux
-  xa = Abs_x_a_queue_x_a_option_prod_x_x_x_a_list_x_a_list_prod_x_a_option_prod
-         (safe_hd_t (rep_queue xa));;
+let rec norm_queue xa = Abs_queue (norm_queue_t (rep_queue xa));;
 
-let rec safe_hd x = rep_isom (safe_hd_aux x);;
+let rec hd_queue_t = function ([], []) -> None
+                     | ([], [l]) -> Some l
+                     | ([], l :: v :: va) -> Some (last (v :: va))
+                     | (f :: fs, l :: ls) -> Some f
+                     | (f :: fs, []) -> failwith "undefined";;
+
+let rec hd_queue x = hd_queue_t (rep_queue x);;
+
+let rec safe_hd q = (hd_queue q, norm_queue q);;
 
 let rec inorder = function Leaf -> []
                   | Node (l, (a, uu), r) -> inorder l @ a :: inorder r;;
