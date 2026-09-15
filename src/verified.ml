@@ -338,6 +338,9 @@ module Monitor : sig
                                     ((event_data option) list) set)))))))))))),
             unit)
             mstate_ext
+  val ht_of_list :
+    ((event_data option) list) list ->
+      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
   val mstep_j :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -384,9 +387,6 @@ mapping *
  (((event_data option) list) set * ((event_data option) list) set)))))))))))))
                    meformula *
                   (nat * nat queue))))))
-  val ht_of_list :
-    ((event_data option) list) list ->
-      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
   val ht_to_list :
     Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
       (unit -> (((event_data option) list) list))
@@ -8049,7 +8049,7 @@ let rec hm_insert_all (_A1, _A2, _A3)
               ()) ())
               (hm_insert_all (_A1, _A2, _A3) i xs));;
 
-let rec probe_all (_A1, _A2, _A3, _A4, _A5)
+let rec probe_alla (_A1, _A2, _A3, _A4, _A5)
   i x1 ht acc = match i, x1, ht, acc with i, [], ht, acc -> (fun () -> acc)
     | i, y :: ys, ht, acc ->
         (fun f_ () -> f_
@@ -8060,7 +8060,7 @@ let rec probe_all (_A1, _A2, _A3, _A4, _A5)
              (heap_list (heap_list (heap_option _A5))) (restrict i y) ht)
           ()) ())
           (fun b ->
-            probe_all (_A1, _A2, _A3, _A4, _A5) i ys ht
+            probe_alla (_A1, _A2, _A3, _A4, _A5) i ys ht
               (fold (fun x -> join1_insert (_A1, _A2, _A3) x y) (bucket_list b)
                 acc));;
 
@@ -8074,7 +8074,7 @@ let rec probe_join_imp (_A1, _A2, _A3, _A4, _A5)
       (fun ht ->
         (fun f_ () -> f_ ((hm_insert_all (_A3, _A4, _A5) i xs ht) ()) ())
           (fun hta ->
-            probe_all (_A1, _A2, _A3, _A4, _A5) i ys hta
+            probe_alla (_A1, _A2, _A3, _A4, _A5) i ys hta
               (set_empty
                 ((ceq_list (ceq_option _A1)),
                   (ccompare_list (ccompare_option _A2)))
@@ -11174,7 +11174,7 @@ let rec ed_probe_join_imp
              (equal_event_data, hashable_event_data, heap_event_data) i xs ht)
           ()) ())
           (fun hta ->
-            probe_all
+            probe_alla
               (ceq_event_data, ccompare_event_data, equal_event_data,
                 hashable_event_data, heap_event_data)
               i ys hta ed_bot));;
@@ -13742,6 +13742,23 @@ let rec hm_it_next (_A1, _A2) _B
                     (fun () ->
                       (a, (suc (minus_nata i one_nata), (b :: l, ht)))))));;
 
+let rec probe_all
+  msk q xs acc =
+    (match xs with [] -> (fun () -> acc)
+      | x :: r ->
+        (fun f_ () -> f_
+          ((im_lookup (heap_list (heap_list (heap_option heap_event_data))) q
+             (proj_tuple msk x))
+          ()) ())
+          (fun v ->
+            probe_all msk q r
+              (match v with None -> acc
+                | Some l ->
+                  fold (fun y acca ->
+                         (match join1 equal_event_data (x, y) with None -> acca
+                           | Some z -> unbox ed_insert_v z acca))
+                    l acc)));;
+
 let rec purifya
   = function MRel rel -> MRel rel
     | MPred (e, tms, mode) -> MPred (e, tms, mode)
@@ -14730,6 +14747,91 @@ let rec ht_delete (_A1, _A2, _A3) _B
                        in
                       (fun () -> (HashTable (the_array ht, n)))))))));;
 
+let use_heap_join : bool = true;;
+
+let rec idx_ins_list
+  msk xs q =
+    (match xs with [] -> (fun () -> q)
+      | x :: r ->
+        (fun f_ () -> f_
+          ((im_lookup (heap_list (heap_list (heap_option heap_event_data))) q
+             (proj_tuple msk x))
+          ()) ())
+          (fun v ->
+            (fun f_ () -> f_
+              ((im_update (heap_list (heap_list (heap_option heap_event_data)))
+                 q (proj_tuple msk x)
+                 (match v with None -> [x] | Some a -> x :: a))
+              ()) ())
+              (idx_ins_list msk r)));;
+
+let rec probe_join_j
+  n a ta b t =
+    (let msk = join_mask n (inf_seta (ceq_nat, ccompare_nat) a b) in
+      (fun f_ () -> f_
+        ((im_new (heap_list (heap_list (heap_option heap_event_data)))
+           (Z.mul (Z.of_int 2) (integer_of_nat (unbox ed_card_v t))))
+        ()) ())
+        (fun q ->
+          (fun f_ () -> f_
+            ((idx_ins_list msk (unbox ed_csorted_list_of_set_v t) q) ()) ())
+            (fun qa ->
+              probe_all msk qa (unbox ed_csorted_list_of_set_v ta) ed_bot)));;
+
+let rec probe_filter
+  pr pos q xs acc =
+    (match xs with [] -> (fun () -> acc)
+      | x :: r ->
+        (fun f_ () -> f_ ((ht_mem q (pr x)) ()) ())
+          (fun b ->
+            probe_filter pr pos q r
+              (if equal_boola b pos then unbox ed_insert_v x acc else acc)));;
+
+let rec ht_ins_list
+  q xs =
+    (match xs with [] -> (fun () -> q)
+      | y :: ys ->
+        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
+
+let rec ht_of_list
+  xs = (fun f_ () -> f_
+         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
+         (fun q -> ht_ins_list q xs);;
+
+let rec bin_join_j
+  n aa ta pos a t =
+    (if not use_heap_join then (fun () -> (ed_bin_join n aa ta pos a t))
+      else (if unbox ed_set_eq_v ta ed_bot then (fun () -> ed_bot)
+             else (if unbox ed_set_eq_v t ed_bot
+                    then (fun () -> (if pos then ed_bot else ta))
+                    else (if is_empty
+                               (card_UNIV_nat, ceq_nat, cproper_interval_nat) a
+                           then (fun () ->
+                                  (if equal_boola pos
+(unbox ed_member_v (replicate n None) t)
+                                    then ta else ed_bot))
+                           else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) a
+                                      aa
+                                  then (fun f_ () -> f_
+ ((ht_of_list (unbox ed_csorted_list_of_set_v t)) ()) ())
+ (fun q ->
+   probe_filter (fun asa -> asa) pos q (unbox ed_csorted_list_of_set_v ta)
+     ed_bot)
+                                  else (if less_eq_set
+     (cenum_nat, ceq_nat, ccompare_nat) a aa
+ then (fun f_ () -> f_ ((ht_of_list (unbox ed_csorted_list_of_set_v t)) ()) ())
+        (fun q ->
+          probe_filter (proj_tuple (join_mask n a)) pos q
+            (unbox ed_csorted_list_of_set_v ta) ed_bot)
+ else (if less_eq_set (cenum_nat, ceq_nat, ccompare_nat) aa a && pos
+        then (fun f_ () -> f_ ((ht_of_list (unbox ed_csorted_list_of_set_v ta))
+               ()) ())
+               (fun q ->
+                 probe_filter (proj_tuple (join_mask n aa)) pos q
+                   (unbox ed_csorted_list_of_set_v t) ed_bot)
+        else (if pos then probe_join_j n aa ta a t
+               else (fun () -> (ed_join ta pos t))))))))));;
+
 let rec is_simple_eq
   t1 t2 =
     is_Const t1 && (is_Const t2 || is_Var t2) || is_Var t1 && is_Const t2;;
@@ -14941,6 +15043,19 @@ let rec eval_since_j
                                        (fun r ->
  eval_since_j args (r :: rs) (xsa, (ysa, (tsa, false))) auxc)))))))));;
 
+let rec mebuf2_take_j
+  f buf =
+    (let (xs, ys) = buf in
+      (match mbuf_t_cases xs with (None, xsa) -> (fun () -> ([], (xsa, ys)))
+        | (Some x, xsa) ->
+          (match mbuf_t_cases ys
+            with (None, ysa) -> (fun () -> ([], (mbuf_t_Cons x xsa, ysa)))
+            | (Some y, ysa) ->
+              (fun f_ () -> f_ ((f x y) ()) ())
+                (fun z ->
+                  (fun f_ () -> f_ ((mebuf2_take_j f (xsa, ysa)) ()) ())
+                    (fun r -> (fun () -> (z :: fst r, snd r)))))));;
+
 let rec ins_new_tp_list
   tp xs q =
     (match xs with [] -> (fun () -> q)
@@ -15093,12 +15208,12 @@ let rec meval_j
           (fun (xs, phia) ->
             (fun f_ () -> f_ ((meval_j j n ts db psi) ()) ())
               (fun (ys, psia) ->
-                (fun () ->
-                  (let (zs, bufa) =
-                     mebuf2_take (fun r1 -> ed_bin_join n a r1 pos b)
-                       (mebuf2_add xs ys buf)
-                     in
-                    (zs, MAnd (a, phia, pos, b, psia, bufa))))))
+                (fun f_ () -> f_
+                  ((mebuf2_take_j (fun r1 -> bin_join_j n a r1 pos b)
+                     (mebuf2_add xs ys buf))
+                  ()) ())
+                  (fun r ->
+                    (fun () -> (fst r, MAnd (a, phia, pos, b, psia, snd r))))))
     | j, n, ts, db, MAndAssign (phi, conf) ->
         (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
           (fun (xs, phia) ->
@@ -15317,17 +15432,6 @@ let rec mstep_j
             (let (ia, (tqa, vsa)) =
                annotate_verdicts_j i (append_queue (snd tdb) tq) vs [] in
               (vsa, (ia, (plus_nata j one_nata, (ma, (n, tqa)))))))));;
-
-let rec ht_ins_list
-  q xs =
-    (match xs with [] -> (fun () -> q)
-      | y :: ys ->
-        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
-
-let rec ht_of_list
-  xs = (fun f_ () -> f_
-         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
-         (fun q -> ht_ins_list q xs);;
 
 let rec ht_to_list
   q = (fun f_ () -> f_ ((im_to_list heap_unit q) ()) ())

@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Imp2
-  imports Since_Imp2 Until_Imp2
+  imports Since_Imp2 Until_Imp2 Join_Imp2
 begin
 (*>*)
 
@@ -118,8 +118,8 @@ fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> databa
 | "meval_j j n ts db (MAnd A \<phi> pos B \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_j j n ts db \<psi>;
-     return (let (zs, buf) = mebuf2_take (\<lambda>r1 r2. bin_join n A r1 pos B r2) (mebuf2_add xs ys buf)
-       in (zs, MAnd A \<phi> pos B \<psi> buf)) }"
+     r \<leftarrow> mebuf2_take_j (\<lambda>r1 r2. bin_join_j n A r1 pos B r2) (mebuf2_add xs ys buf);
+     return (fst r, MAnd A \<phi> pos B \<psi> (snd r)) }"
 | "meval_j j n ts db (MAndAssign \<phi> conf) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
      return (map (\<lambda>r. eval_assignment conf ` r) xs, MAndAssign \<phi> conf) }"
