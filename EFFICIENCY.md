@@ -1327,7 +1327,7 @@ the maps will reach them.
 Section 14 ended by pointing at the collector and the tables. This section measures both, and
 finds that the gap to MonPoly is one shape of allocation repeated everywhere.
 
-### 15.1 The gap is allocation, and it is in the operators
+### 15.1 The gap is in the operators
 
 Instruction counts (`callgrind`) and allocation counts (`OCAMLRUNPARAM=v=0x400`) on P2:
 
@@ -1353,41 +1353,42 @@ adapter that converts each event into a tuple and builds the table:
 
 So the operators allocate 17.7 times as much, and the adapter a further 93M.
 
-### 15.2 It is one shape: tables built by repeated insertion
+### 15.2 Where it goes, and a correction
 
 `Gc.Memprof` samples allocations and records their call stacks; `src/memprof_hook.ml` turns
 that into a table of allocation by site, enabled with `MONPOLY_MEMPROF=<rate>` and costing
-nothing when the variable is unset. On every benchmark the same handful of lines of
-`verified.ml` dominates, and they are all the same thing:
+nothing when the variable is unset.
 
-    balance                       (rbt_comp_ins)
-    rbt_comp_ins  Branch cases
-    rbt_comp_insert_with_key / paint
-    folda                         (the fold in union_comp)
-    insertb                       (Set.insert on an RBT_set)
+**The first ranking this produced was wrong, and the way it was wrong is worth recording.**
+Memprof samples each allocated *word* with probability `rate`, so a block of `n` words yields
+`Binomial(n, rate)` samples and the number of samples at a site, divided by the rate, estimates
+the words allocated there. The hook instead weighted each sample by the size of its block, which
+estimates `n²` and ranks a handful of large blocks above very many small ones. Under that
+estimator the red-black tree insertions dominated every benchmark and the conclusion was that
+nearly all of the allocation is one shape. Under the correct one they do not, and it is not.
 
-An operator builds its result table by inserting its tuples one at a time into a persistent
-red-black tree. Each insertion copies the root-to-leaf path it descends, so a table of `n`
-tuples costs about `n log n` nodes of six words -- and the table is rebuilt at every time point.
-`Set.insert` in a fold is the shape; `union_comp`, which falls back to `folda (rbt_comp_insert
-comp)` when one side is small, is the same shape one level up.
+Corrected, the profile is flat. No site is above 6% of P2:
 
-Allocation by operator on the standard log, with the trivial formula subtracted so that only the
-operator's own allocation is counted:
+| P2, pure kernel | share |
+|---|---:|
+| `safe_hd_t` rebuilding a queue it does not change | 6.1% |
+| the verdict printer's per-time-point buffer | 5.2% |
+| `plus_nata` under `suc` (boxed `nat` arithmetic) | 2.8% |
+| the log lexer | 2.6% |
+| `append_queue` | 1.9% |
+| `rep_isom` (the `code_dt` wrapper around `safe_hd`) | 1.8% |
+| `rev` under `fold` | 1.6% |
 
-| formula | MonPoly | VeriMon | ratio |
-|---|---:|---:|---:|
-| `andnot` | 7.7M | 11.1M | 1.4x |
-| `once` | 71.8M | 218.5M | 3.0x |
-| `complex` | 111.3M | 501.8M | 4.5x |
-| `eventually` | 42.6M | 218.4M | 5.1x |
-| `since` | 12.5M | 86.2M | 6.9x |
-| `and` | 6.8M | 57.1M | 8.4x |
-| `until` | 10.7M | 99.8M | 9.3x |
+For `once` the ranking is different again -- `folda`, the fold by which `union_comp` inserts a
+small set into a large one, is 8.5%; the adapter's tuple conversion is 7.7% and 6.2%; `balance`
+inside `rbt_comp_ins` is 3.5% and 3.2%. So repeated tree insertion *is* the largest category
+there, at around 18% of allocation rather than nearly all of it.
 
-`andnot` is the exception that confirms the diagnosis: an anti-join whose column sets are nested
-is a filter of an existing tree, which allocates only its result, and it is the one operator at
-parity.
+The lesson is not only about the estimator. Allocation volume is not by itself the cost: OCaml's
+minor heap allocates by bumping a pointer, about two instructions a word, and collects
+short-lived garbage for nothing. What costs is promotion -- and P2 promotes 28.7M words against
+MonPoly's 3.96M. A change that removes minor garbage without removing work can therefore be a
+regression, and Section 15.4 contains one.
 
 ### 15.3 What the heap-resident maps did and did not do
 
@@ -1434,10 +1435,14 @@ alongside the definition.
 
 P3 is unchanged, as expected: it has no Until, so `eval_step_dq` never runs.
 
-**Tables built in one pass.** `table_of_unsorted` sorts the tuples with a bottom-up merge sort
-over `ed_comparator` that drops duplicates as it merges -- exactly the form
-`rbt_of_sorted_list` checks for -- and then builds the tree in one pass. The imperative join now
-collects its tuples in a list and builds the table once instead of inserting into it.
+**Tables built in one pass.** An operator that builds its result table by inserting tuples one
+at a time into a persistent red-black tree copies the root-to-leaf path it descends per tuple,
+so an `n`-tuple table costs about `n log n` nodes where one pass costs `n`. This is not the
+whole of the allocation -- see the correction in 15.2 -- but it is the largest single category
+for `once`, at around 18%. `table_of_unsorted` sorts the tuples with a bottom-up merge sort over
+`ed_comparator` that drops duplicates as it merges -- exactly the form `rbt_of_sorted_list`
+checks for -- and then builds the tree in one pass. The imperative join now collects its tuples
+in a list and builds the table once instead of inserting into it.
 
 Sorting only pays once the table is big enough, because the sort costs `n log n` comparisons on
 top of the ones the insertions would have done. Unthresholded it gains on `complex` and loses on
@@ -1479,23 +1484,65 @@ monomorphisation, not adding to it -- a well-specified change with a measured ce
 `ed_comparator` does now appear in the generated kernel, called by the merge sort above. It is
 in the code; it is the trees that do not use it.
 
-### 15.5 What this says about closing the gap
+### 15.5 The queue and the printer
 
-The 7.3x allocation ratio is one shape of code, and the two changes above take about a percent
-of it each. That is the honest scale of what a targeted fix achieves here, and it is why the
-remaining work is not a list of further micro-optimizations:
+The two largest sites of 15.2 are both cases of doing work whose result is thrown away.
 
-* **The same fix belongs in the pure kernel, where it is provable.** `probe_join`'s fold, the
-  `Set.insert` folds in the auxiliary structures, and `union_comp`'s fallback to
-  `folda (rbt_comp_insert comp)` are all the same shape, they are all code equations rather than
-  imperative details, and `table_of_list xs = set xs` is definitional -- so a code equation that
-  collects and builds in one pass is a set-equality proof, not a refinement. This is the single
-  largest piece of provable work the measurements point at, and it applies to the pure kernel,
-  not only to `-heap_maps`.
-* **Many of these accumulations are already sorted.** An operator that keeps a subset of a table
-  it walked in order -- every filter-shaped case of `bin_join`, the loops of the Since structure
-  -- produces its tuples in comparator order already, so those need no sort at all: the list is
-  strictly sorted by construction and `table_of_list` applies directly. That is the `log n`
-  factor without the `n log n` comparisons the general case pays.
-* **Heap-resident tables do not address this.** They change what a lookup costs, not what a table
-  costs to build; Section 15.3 measures `-heap_maps` allocation as unchanged or worse.
+**The queue rebuilds queues it does not change.** `Queue.thy` writes every case of every
+operation so that it names its result, which reads well and generates badly:
+
+    safe_hd_t (f # fs, l # ls) = (Some f, (f # fs, l # ls))
+
+allocates two cons cells and a pair equal to the ones it was given, and `safe_hd` runs once per
+time point per queue. Code equations for `safe_hd_t`, `safe_last_t`, `prepend_queue_t`,
+`replace_hd_t` and `tl_queue_t` return the argument wherever the result *is* the argument; each
+is one `cases` and an `auto`, and nothing else about the queue changes.
+
+**The printer built a header it usually threw away.** `show_results` created a 1KB buffer and
+formatted `"@<ts> (time point <i>): "` with `Printf.sprintf` at every time point, then discarded
+both unless that time point had a verdict -- which most do not. It now writes nothing until the
+first tuple arrives, and reuses one buffer across the run.
+
+A first attempt at this reused the buffer but kept the header. That cut allocation by 5.4% and
+made P2 **1.35% slower**: the discarded buffers were minor garbage that cost almost nothing,
+while the shared buffer sits in the major heap and is a worse write target. What was actually
+expensive was the format interpretation, which the first attempt left in place.
+
+Exact counts, the two changes composed, on the kernel as of Section 15.4:
+
+| | instructions | | minor words | |
+|---|---:|---:|---:|---:|
+| P2 before | 9000.9M | | 497.0M | |
+| P2 + printer | 8559.8M | -4.9% | 458.3M | -7.8% |
+| P2 + printer + queue | **8229.8M** | **-8.6%** | **435.0M** | **-12.5%** |
+| P3 before | 7067.6M | | 495.3M | |
+| P3 + printer | 6497.5M | -8.1% | 456.0M | -7.9% |
+| P3 + printer + queue | **6390.8M** | **-9.6%** | **440.1M** | **-11.1%** |
+
+Both are verified-kernel changes and apply with or without `-heap_maps`; the queue equations are
+proved, and the printer is checked by the cram suites, which compare output byte for byte. The
+differential suite agrees on 678 verified invocations with 0 differing.
+
+### 15.6 What this says about closing the gap
+
+The corrected profile changes the priorities. The trees are one category among several, and the
+categories above them were not algorithmic at all -- they were work whose result was discarded.
+What remains, in the order the measurements support:
+
+* **Finish the queue.** `safe_hd` still goes through the `code_dt` isomorphism: `safe_hd_aux`
+  wraps the result in a datatype and `rep_isom` unpacks it into a fresh pair, so a call that now
+  allocates nothing in `safe_hd_t` still allocates two blocks around it (1.8% of P2 before these
+  changes). Removing that means giving `safe_hd` a code equation that does not go through the
+  lifted product, which is a question about `lift_definition(code_dt)` rather than about queues.
+* **One-pass construction in the pure kernel**, for the category that is genuinely tree
+  insertion. `probe_join`'s fold and the `Set.insert` folds of the auxiliary structures are code
+  equations, and `table_of_list xs = set xs` is definitional, so this is a set-equality proof
+  rather than a refinement. Many of these accumulations are already in comparator order -- every
+  filter-shaped case of `bin_join`, the loops of the Since structure -- and those need no sort at
+  all. Note that Containers' own `Set.filter` on an `RBT_set` is already one pass
+  (`rbtreeify (filter P (entries t))`), so the filter cases are not the target; the folds are.
+* **Boxed `nat`** is 2.8% of P2 in allocation alone and more in arithmetic, and is the next
+  largest category after the two fixed here. It was excluded from this round by choice, not by
+  measurement.
+* **Heap-resident tables do not address any of this.** They change what a lookup costs, not what
+  a table costs to build; Section 15.3 measures `-heap_maps` allocation as unchanged or worse.

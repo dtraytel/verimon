@@ -5367,12 +5367,10 @@ let rec matcha
     | uu, None :: va -> None;;
 
 let rec safe_hd_t
-  = function ([], []) -> (None, ([], []))
-    | ([], [l]) -> (Some l, ([], [l]))
-    | ([], l :: v :: va) ->
-        (let fs = rev (v :: va) in (Some (hda fs), (fs, [l])))
-    | (f :: fs, l :: ls) -> (Some f, (f :: fs, l :: ls))
-    | (f :: fs, []) -> failwith "undefined";;
+  q = (match q with ([], []) -> (None, q) | ([], [l]) -> (Some l, q)
+        | ([], l :: v :: va) ->
+          (let gs = rev (v :: va) in (Some (hda gs), (gs, [l])))
+        | (f :: _, _ :: _) -> (Some f, q));;
 
 let rec safe_hd_aux
   xa = Abs_x_a_queue_x_a_option_prod_x_x_x_a_list_x_a_list_prod_x_a_option_prod
@@ -5507,10 +5505,10 @@ let rec is_emptya
   x = (match rep_queue x with ([], []) -> true | ([], _ :: _) -> false
         | (_ :: _, _) -> false);;
 
-let rec tl_queue_t = function ([], []) -> ([], [])
-                     | ([], [l]) -> ([], [])
-                     | ([], l :: v :: va) -> (tla (rev (v :: va)), [l])
-                     | (a :: asa, fs) -> (asa, fs);;
+let rec tl_queue_t
+  q = (match q with ([], []) -> q | ([], [_]) -> ([], [])
+        | ([], l :: v :: va) -> (tla (rev (v :: va)), [l])
+        | (_ :: asa, ls) -> (asa, ls));;
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
 
@@ -9874,9 +9872,10 @@ let rec eval_step_mmauaux
                                   (a2_mapb, (tstp_mapa, t :: donea)))))))))),
                 a))));;
 
-let rec prepend_queue_t a x1 = match a, x1 with a, ([], []) -> ([], [a])
-                          | a, (fs, l :: ls) -> (a :: fs, l :: ls)
-                          | a, (f :: fs, []) -> failwith "undefined";;
+let rec prepend_queue_t
+  a q = (let (fs, ls) = q in
+          (match ls with [] -> (let [] = fs in ([], [a]))
+            | _ :: _ -> (a :: fs, ls)));;
 
 let rec prepend_queue xb xc = Abs_queue (prepend_queue_t xb (rep_queue xc));;
 
