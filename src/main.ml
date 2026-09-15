@@ -220,6 +220,7 @@ let _ =
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
     "-heap_maps", Arg.Set Misc.heap_all, "\tKeep the auxiliary structures of Since operators on heap-resident hash maps (only with the verified kernel; not proved)";
+    "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tSmallest table size for which a join builds a heap-resident index (default 256; only with -heap_maps)";
     "-heap_since", Arg.Set Misc.heap_since, "\tKeep the auxiliary structures of Since operators without join columns on the heap (only with the verified kernel)";
     "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 500 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";

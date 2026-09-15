@@ -73,6 +73,7 @@ let monitor_gen parse dbschema logfile fv f =
       let cf = if !no_mw then cf else Verified.Monitor.convert_multiway cf in
       Verified.Config.generic_join := !generic_join;
       Verified.Config.imperative_join := !imperative_join;
+      Verified.ConfigImp.heap_join_min := !Misc.heap_join_min;
       let ctxt = Monitor.{
         fv_pos;
         cur_tp = 0;

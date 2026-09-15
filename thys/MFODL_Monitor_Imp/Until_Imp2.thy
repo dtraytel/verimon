@@ -26,23 +26,28 @@ text \<open>The keys of a map as a table, the merge of one map into another, and
   list of keys, each in one pass and without reading the map back as a list.\<close>
 
 partial_function (heap) im_keys_idx ::
-  "((event_data tuple \<times> 'v::heap) list) array \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+  "(('v::heap) ientry list) array \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
   [code]:
   "im_keys_idx a i n acc = (if n \<le> i then return acc
-     else do { b \<leftarrow> Array.nth' a i; im_keys_idx a (i + 1) n (fold (\<lambda>kv acc. Set.insert (fst kv) acc) b acc) })"
+     else do { b \<leftarrow> Array.nth' a i;
+               im_keys_idx a (i + 1) n (fold (\<lambda>e acc. Set.insert (fst (snd e)) acc) b acc) })"
 
 definition im_keys_tbl :: "('v::heap) imap \<Rightarrow> event_data table Heap" where
   "im_keys_tbl q = (case q of (n, c, a) \<Rightarrow> im_keys_idx a 0 n {})"
 
-partial_function (heap) im_merge_list :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> (event_data tuple \<times> 'v) list \<Rightarrow>
+text \<open>The entries carry their hashes, so merging one map into another rehashes nothing: the
+  hash travels with the key from the source bucket into the lookup and the update.\<close>
+
+partial_function (heap) im_merge_list :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ('v ientry) list \<Rightarrow>
     ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
   [code]:
-  "im_merge_list f kvs q = (case kvs of [] \<Rightarrow> return q
-     | kv # r \<Rightarrow> do { v \<leftarrow> im_lookup q (fst kv);
-                       q \<leftarrow> im_update q (fst kv) (case v of None \<Rightarrow> snd kv | Some u \<Rightarrow> f (snd kv) u);
-                       im_merge_list f r q })"
+  "im_merge_list f es q = (case es of [] \<Rightarrow> return q
+     | e # r \<Rightarrow> (case e of (h, x, w) \<Rightarrow>
+         do { v \<leftarrow> im_lookup_h q h x;
+              q \<leftarrow> im_update_h q h x (case v of None \<Rightarrow> w | Some u \<Rightarrow> f w u);
+              im_merge_list f r q }))"
 
-partial_function (heap) im_merge_idx :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ((event_data tuple \<times> 'v::heap) list) array \<Rightarrow>
+partial_function (heap) im_merge_idx :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> (('v::heap) ientry list) array \<Rightarrow>
     integer \<Rightarrow> integer \<Rightarrow> ('v imap) \<Rightarrow> ('v imap) Heap" where
   [code]:
   "im_merge_idx f a i n q = (if n \<le> i then return q
@@ -75,9 +80,10 @@ text \<open>With a positive left operand a tuple that is already in the map keep
 partial_function (heap) ins_new_tp_list :: "tp \<Rightarrow> event_data tuple list \<Rightarrow> tp imap \<Rightarrow> (tp imap) Heap" where
   [code]:
   "ins_new_tp_list tp xs q = (case xs of [] \<Rightarrow> return q
-     | x # r \<Rightarrow> do { v \<leftarrow> im_lookup q x;
-                       q \<leftarrow> (if v = None then im_update q x tp else return q);
-                       ins_new_tp_list tp r q })"
+     | x # r \<Rightarrow> (let h = ihash x in
+         do { v \<leftarrow> im_lookup_h q h x;
+              q \<leftarrow> (if v = None then im_update_h q h x tp else return q);
+              ins_new_tp_list tp r q }))"
 
 subsection \<open>Adding the tuples of a time point\<close>
 
@@ -87,9 +93,9 @@ definition upd_nested_step2 :: "nat \<Rightarrow> (ts + tp) \<Rightarrow> ((ts +
     imap_tstp dq \<Rightarrow> (imap_tstp dq) Heap" where
   "upd_nested_step2 base d f x dq = (case x of (k, k') \<Rightarrow>
      if base \<le> k \<and> k - base < dq_len dq then
-       (let i = k - base; m = dq_nth dq i in
-        do { v \<leftarrow> im_lookup m k';
-             m \<leftarrow> im_update m k' (case v of Some u \<Rightarrow> f u | None \<Rightarrow> d);
+       (let i = k - base; m = dq_nth dq i; h = ihash k' in
+        do { v \<leftarrow> im_lookup_h m h k';
+             m \<leftarrow> im_update_h m h k' (case v of Some u \<Rightarrow> f u | None \<Rightarrow> d);
              return (dq_upd dq i m) })
      else return dq)"
 

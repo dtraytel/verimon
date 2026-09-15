@@ -112,9 +112,8 @@ fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> databa
      return (x # xs) }"
 | "meval_j j n ts db (MAnds A_pos A_neg L buf) = do {
      R \<leftarrow> meval_j_list j n ts db L;
-     return (let buf = mebufn_add (map fst R) buf;
-                 (zs, buf) = mebufn_take (\<lambda>xs zs. zs @@ [mmulti_join n A_pos A_neg xs]) mbuf_t_empty buf
-             in (Rep_mbuf_t zs, MAnds A_pos A_neg (map snd R) buf)) }"
+     p \<leftarrow> mebufn_take_j (mmulti_join_j n A_pos A_neg) mbuf_t_empty (mebufn_add (map fst R) buf);
+     return (Rep_mbuf_t (fst p), MAnds A_pos A_neg (map snd R) (snd p)) }"
 | "meval_j j n ts db (MAnd A \<phi> pos B \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_j j n ts db \<psi>;

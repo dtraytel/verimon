@@ -71,6 +71,9 @@ val heap_since: bool ref
 
 (* Since structures over the heap-resident maps (unproved; for performance experiments). *)
 val heap_all: bool ref
+
+(* Smallest table size for which a join builds a heap-resident index. *)
+val heap_join_min: int ref
 (** GC space overhead in percent to set before monitoring (0: leave the default). *)
 val gc_space_overhead: int ref
 val new_last_ts: bool ref

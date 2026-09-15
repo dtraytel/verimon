@@ -89,6 +89,10 @@ let heap_since = ref false
 (* Use the verified kernel whose Since structures live on the heap-resident maps of
    thys/MFODL_Monitor_Imp/Table_Imp.thy (unproved; for performance experiments). *)
 let heap_all = ref false
+
+(* Smallest table size for which a join builds a heap-resident index instead of probing the
+   comparison-based tree; below it the tree is cheaper (see thys/.../Join_Imp2.thy). *)
+let heap_join_min = ref 256
 (* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
    verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
    mappings), so main.ml uses 500 with the verified kernel unless the user chose a value. *)

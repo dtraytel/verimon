@@ -41,6 +41,12 @@ let test_bit x n =
 
 end;; (*struct Uint32*)
 
+module ConfigImp : sig
+  val heap_join_min : int ref
+end = struct
+  let heap_join_min = ref 256
+end
+
 module FloatUtil : sig
   val iszero : float -> bool
   val isinfinite : float -> bool
@@ -188,36 +194,40 @@ module Monitor : sig
   val im_new :
     'a heap ->
       Z.t ->
-        (unit -> (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
+        (unit ->
+          (Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array)))
   val im_delete :
     'a heap ->
-      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+      Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array) ->
         (event_data option) list ->
-          (unit -> (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
-  val im_to_list :
-    'a heap ->
-      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
-        (unit -> (((event_data option) list * 'a) list))
+          (unit ->
+            (Z.t *
+              (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array)))
   val im_update :
     'a heap ->
-      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+      Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array) ->
         (event_data option) list ->
           'a -> (unit ->
-                  (Z.t * (Z.t * (((event_data option) list * 'a) list) array)))
+                  (Z.t *
+                    (Z.t *
+                      ((Z.t * ((event_data option) list * 'a)) list) array)))
   val ht_ins :
-    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
+    Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array) ->
       (event_data option) list ->
-        (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
+        (unit ->
+          (Z.t *
+            (Z.t * ((Z.t * ((event_data option) list * unit)) list) array)))
   val im_lookup :
     'a heap ->
-      Z.t * (Z.t * (((event_data option) list * 'a) list) array) ->
+      Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array) ->
         (event_data option) list -> (unit -> ('a option))
   val ht_mem :
-    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
+    Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array) ->
       (event_data option) list -> (unit -> bool)
   val ht_new :
     Z.t ->
-      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
+      (unit ->
+        (Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array)))
   val interval : nat -> enat -> i
   val type_check :
     (string * nat -> (tysym list) option) ->
@@ -340,7 +350,8 @@ module Monitor : sig
             mstate_ext
   val ht_of_list :
     ((event_data option) list) list ->
-      (unit -> (Z.t * (Z.t * (((event_data option) list * unit) list) array)))
+      (unit ->
+        (Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array)))
   val mstep_j :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -387,8 +398,12 @@ mapping *
  (((event_data option) list) set * ((event_data option) list) set)))))))))))))
                    meformula *
                   (nat * nat queue))))))
+  val im_to_list :
+    'a heap ->
+      Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array) ->
+        (unit -> (((event_data option) list * 'a) list))
   val ht_to_list :
-    Z.t * (Z.t * (((event_data option) list * unit) list) array) ->
+    Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array) ->
       (unit -> (((event_data option) list) list))
   val mstep_imp :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
@@ -3946,8 +3961,8 @@ type msaux_j =
              ((nat * ((event_data option) list) set) queue *
                ((nat * ((event_data option) list) set) queue *
                  ((event_data option) list) set)))))) *
-      ((Z.t * (Z.t * (((event_data option) list * nat) list) array)) *
-        (Z.t * (Z.t * (((event_data option) list * nat) list) array))))
+      ((Z.t * (Z.t * ((Z.t * ((event_data option) list * nat)) list) array)) *
+        (Z.t * (Z.t * ((Z.t * ((event_data option) list * nat)) list) array))))
   | MSJ_pure of
       ((nat *
          (nat *
@@ -4003,10 +4018,12 @@ type muaux_j =
               (bool list *
                 (((event_data option) list) set *
                   ((Z.t *
-                     (Z.t * (((event_data option) list * nat) list) array)) *
+                     (Z.t *
+                       ((Z.t * ((event_data option) list * nat)) list) array)) *
                     ((Z.t *
                        (Z.t *
-                         (((event_data option) list * (nat, nat) sum) list)
+                         ((Z.t *
+                            ((event_data option) list * (nat, nat) sum)) list)
                            array))
                        dq *
                       (nat dq * ((event_data option) list) set list))))))))))
@@ -5514,7 +5531,7 @@ let rec im_filter_idx _A
     (if Z.leq n i then (fun () -> c)
       else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
              (fun b ->
-               (let ba = filtera (fun kv -> p (fst kv)) b in
+               (let ba = filtera (fun e -> p (fst (snd e))) b in
                  (fun f_ () -> f_
                    ((if Z.equal (im_count ba) (im_count b) then (fun () -> ())
                       else (fun () -> Array.set a (Z.to_int i) ba))
@@ -6171,8 +6188,17 @@ let rec args_L
 
 let empty_queue : 'a queue = Abs_queue ([], []);;
 
+let rec im_cap_aux
+  k c n =
+    (if equal_nata k zero_nata then c
+      else (if Z.leq n c then c
+             else im_cap_aux (minus_nata k one_nata) (Z.mul (Z.of_int 2) c)
+                    n));;
+
+let rec im_cap n = im_cap_aux (nat_of_integer (Z.of_int 64)) (Z.of_int 8) n;;
+
 let rec im_new _A
-  n = (let m = (if Z.lt n (Z.of_int 8) then (Z.of_int 8) else n) in
+  n = (let m = im_cap n in
         (fun f_ () -> f_ (((fun () -> Array.make (Z.to_int m) [])) ()) ())
           (fun a -> (fun () -> (m, (Z.zero, a)))));;
 
@@ -6258,28 +6284,32 @@ let rec args_pos
     args_pos;;
 
 let rec hm_look_list
-  x xa1 = match x, xa1 with x, [] -> None
-    | x, y :: ys ->
-        (if (fun x y -> x = y) x (fst y) then Some (snd y)
-          else hm_look_list x ys);;
+  h x xa2 = match h, x, xa2 with h, x, [] -> None
+    | h, x, y :: ys ->
+        (if Z.equal h (fst y) && (fun x y -> x = y) x (fst (snd y))
+          then Some (snd (snd y)) else hm_look_list h x ys);;
 
 let rec hm_del_list
-  x xa1 = match x, xa1 with x, [] -> []
-    | x, y :: ys ->
-        (if (fun x y -> x = y) x (fst y) then ys else y :: hm_del_list x ys);;
+  h x xa2 = match h, x, xa2 with h, x, [] -> []
+    | h, x, y :: ys ->
+        (if Z.equal h (fst y) && (fun x y -> x = y) x (fst (snd y)) then ys
+          else y :: hm_del_list h x ys);;
+
+let rec im_delete_h _A
+  q h x =
+    (let (n, (c, a)) = q in
+     let i = (fun h n -> Z.logand h (Z.pred n)) h n in
+      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+        (fun b ->
+          (match hm_look_list h x b with None -> (fun () -> q)
+            | Some _ ->
+              (fun f_ () -> f_
+                (((fun () -> Array.set a (Z.to_int i) (hm_del_list h x b))) ())
+                ())
+                (fun _ -> (fun () -> (n, (Z.sub c (Z.of_int 1), a)))))));;
 
 let rec im_delete _A
-  q x = (let (n, (c, a)) = q in
-         let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n
-           in
-          (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
-            (fun b ->
-              (match hm_look_list x b with None -> (fun () -> q)
-                | Some _ ->
-                  (fun f_ () -> f_
-                    (((fun () -> Array.set a (Z.to_int i) (hm_del_list x b)))
-                    ()) ())
-                    (fun _ -> (fun () -> (n, (Z.sub c (Z.of_int 1), a)))))));;
+  q x = im_delete_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x;;
 
 let rec del_loop2
   p ks h =
@@ -6337,41 +6367,40 @@ let rec im_fold_idx _A
       else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
              (fun b -> im_fold_idx _A f a (Z.add i (Z.of_int 1)) n (f b acc)));;
 
-let rec im_to_list _A
+let rec im_entries _A
   q = (let (n, (_, a)) = q in
         im_fold_idx _A (fun aa b -> aa @ b) a Z.zero n []);;
 
 let rec im_fill _A
   q kvs =
     (match kvs with [] -> (fun () -> q)
-      | xv :: r ->
+      | e :: r ->
         (let (n, (c, a)) = q in
-         let i =
-           (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) (fst xv) n
-           in
+         let i = (fun h n -> Z.logand h (Z.pred n)) (fst e) n in
           (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
             (fun b ->
-              (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int i) (xv :: b)))
+              (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int i) (e :: b)))
                 ()) ())
                 (fun _ -> im_fill _A (n, (Z.add c (Z.of_int 1), a)) r))));;
 
 let rec im_grow _A
   q = (let (n, (_, _)) = q in
-        (fun f_ () -> f_ ((im_to_list _A q) ()) ())
+        (fun f_ () -> f_ ((im_entries _A q) ()) ())
           (fun kvs ->
             (fun f_ () -> f_ ((im_new _A (Z.mul (Z.of_int 2) n)) ()) ())
               (fun qa -> im_fill _A qa kvs)));;
 
-let rec im_update _A
-  q x v =
+let rec im_update_h _A
+  q h x v =
     (let (n, (c, a)) = q in
-     let i = (fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x n in
+     let i = (fun h n -> Z.logand h (Z.pred n)) h n in
       (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
         (fun b ->
-          (match hm_look_list x b
+          (match hm_look_list h x b
             with None ->
               (fun f_ () -> f_
-                (((fun () -> Array.set a (Z.to_int i) ((x, v) :: b))) ()) ())
+                (((fun () -> Array.set a (Z.to_int i) ((h, (x, v)) :: b))) ())
+                ())
                 (fun _ ->
                   (if Z.lt (Z.add c (Z.of_int 1)) n
                     then (fun () -> (n, (Z.add c (Z.of_int 1), a)))
@@ -6379,20 +6408,26 @@ let rec im_update _A
             | Some _ ->
               (fun f_ () -> f_
                 (((fun () -> Array.set a (Z.to_int i)
-                   ((x, v) :: hm_del_list x b)))
+                   ((h, (x, v)) :: hm_del_list h x b)))
                 ()) ())
                 (fun _ -> (fun () -> q)))));;
 
+let rec im_update _A
+  q x v = im_update_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x v;;
+
 let rec ht_ins q x = im_update heap_unit q x ();;
 
+let rec im_lookup_h _A
+  q h x =
+    (let (n, (_, a)) = q in
+      (fun f_ () -> f_
+        (((fun () -> Array.get a (Z.to_int
+           ((fun h n -> Z.logand h (Z.pred n)) h n))))
+        ()) ())
+        (fun b -> (fun () -> (hm_look_list h x b))));;
+
 let rec im_lookup _A
-  q x = (let (n, (_, a)) = q in
-          (fun f_ () -> f_
-            (((fun () -> Array.get a (Z.to_int
-               ((fun t n -> Z.of_int ((Hashtbl.hash t) mod (Z.to_int n))) x
-                 n))))
-            ()) ())
-            (fun b -> (fun () -> (hm_look_list x b))));;
+  q x = im_lookup_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x;;
 
 let rec ht_mem
   q x = (fun f_ () -> f_ ((im_lookup heap_unit q x) ()) ())
@@ -14546,7 +14581,7 @@ let rec im_keys_idx _A
       else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
              (fun b ->
                im_keys_idx _A a (Z.add i (Z.of_int 1)) n
-                 (fold (fun kv -> unbox ed_insert_v (fst kv)) b acc)));;
+                 (fold (fun e -> unbox ed_insert_v (fst (snd e))) b acc)));;
 
 let rec im_keys_tbl _A
   q = (let (n, (_, a)) = q in im_keys_idx _A a Z.zero n ed_bot);;
@@ -14558,14 +14593,13 @@ let rec im_del_list _A
         (fun f_ () -> f_ ((im_delete _A q x) ()) ()) (im_del_list _A r));;
 
 let rec im_merge_list _A
-  f kvs q =
-    (match kvs with [] -> (fun () -> q)
-      | kv :: r ->
-        (fun f_ () -> f_ ((im_lookup _A q (fst kv)) ()) ())
+  f es q =
+    (match es with [] -> (fun () -> q)
+      | (h, (x, w)) :: r ->
+        (fun f_ () -> f_ ((im_lookup_h _A q h x) ()) ())
           (fun v ->
             (fun f_ () -> f_
-              ((im_update _A q (fst kv)
-                 (match v with None -> snd kv | Some a -> f (snd kv) a))
+              ((im_update_h _A q h x (match v with None -> w | Some a -> f w a))
               ()) ())
               (im_merge_list _A f r)));;
 
@@ -14753,30 +14787,30 @@ let rec idx_ins_list
   msk xs q =
     (match xs with [] -> (fun () -> q)
       | x :: r ->
-        (fun f_ () -> f_
-          ((im_lookup (heap_list (heap_list (heap_option heap_event_data))) q
-             (proj_tuple msk x))
-          ()) ())
-          (fun v ->
-            (fun f_ () -> f_
-              ((im_update (heap_list (heap_list (heap_option heap_event_data)))
-                 q (proj_tuple msk x)
-                 (match v with None -> [x] | Some a -> x :: a))
-              ()) ())
-              (idx_ins_list msk r)));;
+        (let k = proj_tuple msk x in
+         let h = (fun t -> Z.of_int (Hashtbl.hash t)) k in
+          (fun f_ () -> f_
+            ((im_lookup_h (heap_list (heap_list (heap_option heap_event_data)))
+               q h k)
+            ()) ())
+            (fun v ->
+              (fun f_ () -> f_
+                ((im_update_h
+                   (heap_list (heap_list (heap_option heap_event_data))) q h k
+                   (match v with None -> [x] | Some a -> x :: a))
+                ()) ())
+                (idx_ins_list msk r))));;
 
 let rec probe_join_j
-  n a ta b t =
+  n a xs b ys =
     (let msk = join_mask n (inf_seta (ceq_nat, ccompare_nat) a b) in
       (fun f_ () -> f_
         ((im_new (heap_list (heap_list (heap_option heap_event_data)))
-           (Z.mul (Z.of_int 2) (integer_of_nat (unbox ed_card_v t))))
+           (Z.mul (Z.of_int 2) (integer_of_nat (size_lista ys))))
         ()) ())
         (fun q ->
-          (fun f_ () -> f_
-            ((idx_ins_list msk (unbox ed_csorted_list_of_set_v t) q) ()) ())
-            (fun qa ->
-              probe_all msk qa (unbox ed_csorted_list_of_set_v ta) ed_bot)));;
+          (fun f_ () -> f_ ((idx_ins_list msk ys q) ()) ())
+            (fun qa -> probe_all msk qa xs ed_bot)));;
 
 let rec probe_filter
   pr pos q xs acc =
@@ -14786,6 +14820,10 @@ let rec probe_filter
           (fun b ->
             probe_filter pr pos q r
               (if equal_boola b pos then unbox ed_insert_v x acc else acc)));;
+
+let rec heap_join_ok
+  idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
+          (integer_of_nat (size_lista idx));;
 
 let rec ht_ins_list
   q xs =
@@ -14812,24 +14850,35 @@ let rec bin_join_j
                                     then ta else ed_bot))
                            else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) a
                                       aa
-                                  then (fun f_ () -> f_
- ((ht_of_list (unbox ed_csorted_list_of_set_v t)) ()) ())
- (fun q ->
-   probe_filter (fun asa -> asa) pos q (unbox ed_csorted_list_of_set_v ta)
-     ed_bot)
+                                  then (let ys =
+  unbox ed_csorted_list_of_set_v t in
+ (if not (heap_join_ok ys) then (fun () -> (ed_bin_join n aa ta pos a t))
+   else (fun f_ () -> f_ ((ht_of_list ys) ()) ())
+          (fun q ->
+            probe_filter (fun asa -> asa) pos q
+              (unbox ed_csorted_list_of_set_v ta) ed_bot)))
                                   else (if less_eq_set
      (cenum_nat, ceq_nat, ccompare_nat) a aa
- then (fun f_ () -> f_ ((ht_of_list (unbox ed_csorted_list_of_set_v t)) ()) ())
-        (fun q ->
-          probe_filter (proj_tuple (join_mask n a)) pos q
-            (unbox ed_csorted_list_of_set_v ta) ed_bot)
+ then (let ys = unbox ed_csorted_list_of_set_v t in
+        (if not (heap_join_ok ys) then (fun () -> (ed_bin_join n aa ta pos a t))
+          else (fun f_ () -> f_ ((ht_of_list ys) ()) ())
+                 (fun q ->
+                   probe_filter (proj_tuple (join_mask n a)) pos q
+                     (unbox ed_csorted_list_of_set_v ta) ed_bot)))
  else (if less_eq_set (cenum_nat, ceq_nat, ccompare_nat) aa a && pos
-        then (fun f_ () -> f_ ((ht_of_list (unbox ed_csorted_list_of_set_v ta))
-               ()) ())
-               (fun q ->
-                 probe_filter (proj_tuple (join_mask n aa)) pos q
-                   (unbox ed_csorted_list_of_set_v t) ed_bot)
-        else (if pos then probe_join_j n aa ta a t
+        then (let xs = unbox ed_csorted_list_of_set_v ta in
+               (if not (heap_join_ok xs)
+                 then (fun () -> (ed_bin_join n aa ta pos a t))
+                 else (fun f_ () -> f_ ((ht_of_list xs) ()) ())
+                        (fun q ->
+                          probe_filter (proj_tuple (join_mask n aa)) pos q
+                            (unbox ed_csorted_list_of_set_v t) ed_bot)))
+        else (if pos
+               then (let ys = unbox ed_csorted_list_of_set_v t in
+                      (if not (heap_join_ok ys)
+                        then (fun () -> (ed_bin_join n aa ta pos a t))
+                        else probe_join_j n aa
+                               (unbox ed_csorted_list_of_set_v ta) a ys))
                else (fun () -> (ed_join ta pos t))))))))));;
 
 let rec is_simple_eq
@@ -14858,12 +14907,14 @@ let rec since_loop2
   t xs h =
     (match xs with [] -> (fun () -> h)
       | x :: r ->
-        (fun f_ () -> f_ ((im_lookup heap_nat h x) ()) ())
-          (fun v ->
-            (fun f_ () -> f_
-              ((if is_none v then im_update heap_nat h x t else (fun () -> h))
-              ()) ())
-              (since_loop2 t r)));;
+        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+          (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
+            (fun v ->
+              (fun f_ () -> f_
+                ((if is_none v then im_update_h heap_nat h hx x t
+                   else (fun () -> h))
+                ()) ())
+                (since_loop2 t r))));;
 
 let rec ins_loop2
   t xs h =
@@ -14900,14 +14951,17 @@ let rec upd_loop2
   t xs hs h y =
     (match xs with [] -> (fun () -> (h, y))
       | x :: r ->
-        (fun f_ () -> f_ ((im_lookup heap_nat hs x) ()) ())
-          (fun a ->
-            (match a with None -> upd_loop2 t r hs h y
-              | Some ta ->
-                (if less_eq_nat ta t
-                  then (fun f_ () -> f_ ((im_update heap_nat h x t) ()) ())
-                         (fun ha -> upd_loop2 t r hs ha (unbox ed_insert_v x y))
-                  else upd_loop2 t r hs h y))));;
+        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+          (fun f_ () -> f_ ((im_lookup_h heap_nat hs hx x) ()) ())
+            (fun a ->
+              (match a with None -> upd_loop2 t r hs h y
+                | Some ta ->
+                  (if less_eq_nat ta t
+                    then (fun f_ () -> f_ ((im_update_h heap_nat h hx x t) ())
+                           ())
+                           (fun ha ->
+                             upd_loop2 t r hs ha (unbox ed_insert_v x y))
+                    else upd_loop2 t r hs h y)))));;
 
 let rec move_loop2
   xs hs h y =
@@ -14935,12 +14989,13 @@ let rec filter_loop2
   t xs h y =
     (match xs with [] -> (fun () -> (h, y))
       | x :: r ->
-        (fun f_ () -> f_ ((im_lookup heap_nat h x) ()) ())
-          (fun v ->
-            (if equal_optiona equal_nat v (Some t)
-              then (fun f_ () -> f_ ((im_delete heap_nat h x) ()) ())
-                     (fun ha -> filter_loop2 t r ha (unbox ed_insert_v x y))
-              else filter_loop2 t r h y)));;
+        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+          (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
+            (fun v ->
+              (if equal_optiona equal_nat v (Some t)
+                then (fun f_ () -> f_ ((im_delete_h heap_nat h hx x) ()) ())
+                       (fun ha -> filter_loop2 t r ha (unbox ed_insert_v x y))
+                else filter_loop2 t r h y))));;
 
 let rec expire_loop2
   xs h y =
@@ -15043,6 +15098,39 @@ let rec eval_since_j
                                        (fun r ->
  eval_since_j args (r :: rs) (xsa, (ysa, (tsa, false))) auxc)))))))));;
 
+let rec mmulti_join_pos_j
+  n a t x3 = match n, a, t, x3 with n, a, t, [] -> (fun () -> (a, t))
+    | n, aa, ta, (a, t) :: l ->
+        (fun f_ () -> f_ ((bin_join_j n aa ta true a t) ()) ())
+          (fun tb ->
+            mmulti_join_pos_j n (sup_seta (ceq_nat, ccompare_nat) aa a) tb l);;
+
+let rec mmulti_join_neg_j
+  n a t x3 = match n, a, t, x3 with n, a, t, [] -> (fun () -> t)
+    | n, aa, ta, (a, t) :: l ->
+        (fun f_ () -> f_ ((bin_join_j n aa ta false a t) ()) ())
+          (fun tb -> mmulti_join_neg_j n aa tb l);;
+
+let rec mmulti_join_j
+  n a_pos a_neg l =
+    (if !Config.generic_join || not use_heap_join
+      then (fun () -> (ed_mmulti_join n a_pos a_neg l))
+      else (match zip a_pos l with [] -> (fun () -> ed_bot)
+             | (a, t) :: lpos ->
+               (fun f_ () -> f_ ((mmulti_join_pos_j n a t lpos) ()) ())
+                 (fun p ->
+                   mmulti_join_neg_j n (fst p) (snd p)
+                     (zip a_neg (drop (size_lista a_pos) l)))));;
+
+let rec mebufn_take_j
+  f z buf =
+    (if null buf || list_ex mbuf_t_is_empty buf then (fun () -> (z, buf))
+      else (fun f_ () -> f_ ((f (mapa (comp (comp the fst) mbuf_t_cases) buf))
+             ()) ())
+             (fun x ->
+               mebufn_take_j f (mbuf_t_append z [x])
+                 (mapa (comp snd mbuf_t_cases) buf)));;
+
 let rec mebuf2_take_j
   f buf =
     (let (xs, ys) = buf in
@@ -15060,12 +15148,14 @@ let rec ins_new_tp_list
   tp xs q =
     (match xs with [] -> (fun () -> q)
       | x :: r ->
-        (fun f_ () -> f_ ((im_lookup heap_nat q x) ()) ())
-          (fun v ->
-            (fun f_ () -> f_
-              ((if is_none v then im_update heap_nat q x tp else (fun () -> q))
-              ()) ())
-              (ins_new_tp_list tp r)));;
+        (let h = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+          (fun f_ () -> f_ ((im_lookup_h heap_nat q h x) ()) ())
+            (fun v ->
+              (fun f_ () -> f_
+                ((if is_none v then im_update_h heap_nat q h x tp
+                   else (fun () -> q))
+                ()) ())
+                (ins_new_tp_list tp r))));;
 
 let rec upd_nested_step2
   base d f x dq =
@@ -15073,11 +15163,12 @@ let rec upd_nested_step2
       (if less_eq_nat base k && less_nat (minus_nata k base) (dq_len dq)
         then (let i = minus_nata k base in
               let m = dq_nth dq i in
-               (fun f_ () -> f_ ((im_lookup (heap_sum heap_nat heap_nat) m ka)
-                 ()) ())
+              let h = (fun t -> Z.of_int (Hashtbl.hash t)) ka in
+               (fun f_ () -> f_
+                 ((im_lookup_h (heap_sum heap_nat heap_nat) m h ka) ()) ())
                  (fun v ->
                    (fun f_ () -> f_
-                     ((im_update (heap_sum heap_nat heap_nat) m ka
+                     ((im_update_h (heap_sum heap_nat heap_nat) m h ka
                         (match v with None -> d | Some a -> f a))
                      ()) ())
                      (fun ma -> (fun () -> (dq_upd dq i ma)))))
@@ -15194,15 +15285,13 @@ let rec meval_j
     j, n, ts, db, MAnds (a_pos, a_neg, l, buf) ->
       (fun f_ () -> f_ ((meval_j_list j n ts db l) ()) ())
         (fun r ->
-          (fun () ->
-            (let bufa = mebufn_add (mapa fst r) buf in
-             let (zs, bufb) =
-               mebufn_take
-                 (fun xs zs ->
-                   mbuf_t_append zs [ed_mmulti_join n a_pos a_neg xs])
-                 mbuf_t_empty bufa
-               in
-              (rep_mbuf_t zs, MAnds (a_pos, a_neg, mapa snd r, bufb)))))
+          (fun f_ () -> f_
+            ((mebufn_take_j (mmulti_join_j n a_pos a_neg) mbuf_t_empty
+               (mebufn_add (mapa fst r) buf))
+            ()) ())
+            (fun p ->
+              (fun () ->
+                (rep_mbuf_t (fst p), MAnds (a_pos, a_neg, mapa snd r, snd p)))))
     | j, n, ts, db, MAnd (a, phi, pos, b, psi, buf) ->
         (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
           (fun (xs, phia) ->
@@ -15432,6 +15521,10 @@ let rec mstep_j
             (let (ia, (tqa, vsa)) =
                annotate_verdicts_j i (append_queue (snd tdb) tq) vs [] in
               (vsa, (ia, (plus_nata j one_nata, (ma, (n, tqa)))))))));;
+
+let rec im_to_list _A
+  q = (fun f_ () -> f_ ((im_entries _A q) ()) ())
+        (fun kvs -> (fun () -> (mapa snd kvs)));;
 
 let rec ht_to_list
   q = (fun f_ () -> f_ ((im_to_list heap_unit q) ()) ())

@@ -23,9 +23,10 @@ partial_function (heap) filter_loop2 ::
   "ts \<Rightarrow> event_data tuple list \<Rightarrow> ts imap \<Rightarrow> event_data table \<Rightarrow> (ts imap \<times> event_data table) Heap" where
   [code]:
   "filter_loop2 t xs h Y = (case xs of [] \<Rightarrow> return (h, Y)
-    | x # r \<Rightarrow> do { v \<leftarrow> im_lookup h x;
-        if v = Some t then do { h \<leftarrow> im_delete h x; filter_loop2 t r h (Set.insert x Y) }
-        else filter_loop2 t r h Y })"
+    | x # r \<Rightarrow> (let hx = ihash x in
+        do { v \<leftarrow> im_lookup_h h hx x;
+             if v = Some t then do { h \<leftarrow> im_delete_h h hx x; filter_loop2 t r h (Set.insert x Y) }
+             else filter_loop2 t r h Y }))"
 
 partial_function (heap) expire_loop2 ::
   "(ts \<times> event_data table) list \<Rightarrow> ts imap \<Rightarrow> event_data table \<Rightarrow> (ts imap \<times> event_data table) Heap" where
@@ -38,10 +39,12 @@ partial_function (heap) upd_loop2 ::
   "ts \<Rightarrow> event_data tuple list \<Rightarrow> ts imap \<Rightarrow> ts imap \<Rightarrow> event_data table \<Rightarrow> (ts imap \<times> event_data table) Heap" where
   [code]:
   "upd_loop2 t xs hs h Y = (case xs of [] \<Rightarrow> return (h, Y)
-    | x # r \<Rightarrow> do { v \<leftarrow> im_lookup hs x;
-        (case v of None \<Rightarrow> upd_loop2 t r hs h Y
-         | Some t' \<Rightarrow> if t' \<le> t then do { h \<leftarrow> im_update h x t; upd_loop2 t r hs h (Set.insert x Y) }
-                      else upd_loop2 t r hs h Y) })"
+    | x # r \<Rightarrow> (let hx = ihash x in
+        do { v \<leftarrow> im_lookup_h hs hx x;
+             (case v of None \<Rightarrow> upd_loop2 t r hs h Y
+              | Some t' \<Rightarrow> if t' \<le> t
+                  then do { h \<leftarrow> im_update_h h hx x t; upd_loop2 t r hs h (Set.insert x Y) }
+                  else upd_loop2 t r hs h Y) }))"
 
 partial_function (heap) move_loop2 ::
   "(ts \<times> event_data table) list \<Rightarrow> ts imap \<Rightarrow> ts imap \<Rightarrow> event_data table \<Rightarrow> (ts imap \<times> event_data table) Heap" where
@@ -64,9 +67,10 @@ partial_function (heap) ins_loop2 :: "ts \<Rightarrow> event_data tuple list \<R
 partial_function (heap) since_loop2 :: "ts \<Rightarrow> event_data tuple list \<Rightarrow> ts imap \<Rightarrow> ts imap Heap" where
   [code]:
   "since_loop2 t xs h = (case xs of [] \<Rightarrow> return h
-    | x # r \<Rightarrow> do { v \<leftarrow> im_lookup h x;
-                     h \<leftarrow> (if v = None then im_update h x t else return h);
-                     since_loop2 t r h })"
+    | x # r \<Rightarrow> (let hx = ihash x in
+        do { v \<leftarrow> im_lookup_h h hx x;
+             h \<leftarrow> (if v = None then im_update_h h hx x t else return h);
+             since_loop2 t r h }))"
 
 subsection \<open>Operations\<close>
 
