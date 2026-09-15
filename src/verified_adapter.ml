@@ -414,13 +414,19 @@ let rec compare_tuple_mp t1 t2 = match t1, t2 with
     if c <> 0 then c else compare_tuple_mp xs ys
 
 (* Decimal representation of a machine integer written directly into the buffer
-   ([string_of_int] goes through [Printf]-style formatting and allocates). *)
+   ([string_of_int] goes through [Printf]-style formatting and allocates). The scratch bytes
+   are allocated once rather than per integer: printing a verdict of a few thousand tuples
+   calls this once per column, and the per-call [Bytes.create] was the largest allocation
+   site of the [once] benchmark (see EFFICIENCY.md, Section 15). Writing them is finished
+   before anything else can run, so one buffer for the whole run is enough. *)
+let int_digits = Bytes.create 20
+
 let add_int b n =
   if n = 0 then Buffer.add_char b '0'
   else if n = min_int then Buffer.add_string b (string_of_int n)
   else begin
     let n = if n < 0 then (Buffer.add_char b '-'; -n) else n in
-    let digits = Bytes.create 20 in
+    let digits = int_digits in
     let rec go n k = if n = 0 then k else begin
         Bytes.unsafe_set digits k (Char.unsafe_chr (48 + n mod 10)); go (n / 10) (k - 1) end in
     let k = go n 19 in
@@ -514,6 +520,13 @@ let rec compare_otuple_mp t1 t2 = match t1, t2 with
    is not MonPoly's (mixed-type columns) or a column is undefined, the general path is taken. *)
 let out_buf = Buffer.create 4096
 
+(* The columns of one tuple, as a top-level function rather than a closure passed to
+   [List.iteri]: the closure was allocated once per tuple of every verdict. *)
+let rec add_otuple b first = function
+  | [] -> ()
+  | Some v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_otuple b false r
+  | None :: _ -> raise Slow_path
+
 let show_results posl _i q tsq (table: verdict) =
   if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
     show_results_slow posl q tsq table
@@ -533,9 +546,7 @@ let show_results posl _i q tsq (table: verdict) =
              | Some p -> if compare_otuple_mp p t >= 0 then raise Slow_path; Buffer.add_char b ' '
              | None -> ());
             Buffer.add_char b '(';
-            List.iteri (fun k x -> match x with
-                | Some v -> if k > 0 then Buffer.add_char b ','; add_event_data b v
-                | None -> raise Slow_path) t;
+            add_otuple b true t;
             Buffer.add_char b ')';
             prev := Some t) table ();
         true
