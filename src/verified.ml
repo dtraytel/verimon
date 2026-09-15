@@ -5389,7 +5389,7 @@ let rec hd_queue_t = function ([], []) -> None
 
 let rec hd_queue x = hd_queue_t (rep_queue x);;
 
-let rec safe_hd q = (hd_queue q, norm_queue q);;
+let rec safe_hd q = (let qa = norm_queue q in (hd_queue qa, qa));;
 
 let rec inorder = function Leaf -> []
                   | Node (l, (a, uu), r) -> inorder l @ a :: inorder r;;
@@ -5782,6 +5782,13 @@ let rec combine _B
         failwith "combine RBT_Mapping: ccompare = None"
           (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
       | Some _ -> RBT_Mapping (joina _B (fun _ -> f) t u));;
+
+let rec pop_queue_t = function ([], []) -> ([], [])
+                      | ([], [l]) -> ([], [])
+                      | ([], l :: v :: va) -> (tla (rev (v :: va)), [l])
+                      | (f :: fs, ls) -> (fs, ls);;
+
+let rec pop_queue xa = Abs_queue (pop_queue_t (rep_queue xa));;
 
 let rec bounded x = snd (snd (rep_I x));;
 
@@ -12177,7 +12184,12 @@ let rec ed_mmulti_join
 
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
 
-let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (fold append_queue ys xs);;
+let rec append_queue_list
+  xb xc =
+    Abs_queue
+      (let (fs, ls) = rep_queue xc in (fs, fold (fun a b -> a :: b) xb ls));;
+
+let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
 
 let mbuf_t_empty : 'a mbuf_t = MBuf2_t empty_queue;;
 
@@ -12617,10 +12629,13 @@ let rec result_mmasaux
         | (Some aggargs, None) -> eval_aggargs aggargs table_in
         | (Some aggargs, Some a) -> result_maggaux aggargs a);;
 
+let rec mbuf_t_tl (MBuf2_t xs) = MBuf2_t (pop_queue xs);;
+
+let rec mbuf_t_hd (MBuf2_t xs) = hd_queue xs;;
+
 let rec mbuf_t_cases
-  (MBuf2_t xs) =
-    (match safe_hd xs with (None, xsa) -> (None, MBuf2_t xsa)
-      | (Some x, xsa) -> (Some x, MBuf2_t (tl_queue xsa)));;
+  b = (let a = mbuf_t_hd b in
+        (a, (match a with None -> b | Some _ -> mbuf_t_tl b)));;
 
 let rec mbuf_t_Cons x (MBuf2_t xs) = MBuf2_t (prepend_queue x xs);;
 

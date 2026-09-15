@@ -1624,3 +1624,61 @@ This is worth stating as a rule for the rest of this document: a difference of w
 percent in a whole-program instruction count can be a single major-heap event rather than a
 property of the code. Where such a number matters, it needs the per-function breakdown or a
 run with compaction off before it is read as a result.
+
+### 15.9 Finishing the queue
+
+Section 15.6 put `safe_hd` first on the list, and the buffer operations around it turned out to
+be the same problem three times over.
+
+`safe_hd` returns a pair whose second component is a queue. The code generator cannot state a
+code equation for that directly, so `lift_definition (code_dt)` introduces an intermediate
+datatype: the generated `safe_hd` builds a value of it and `rep_isom` takes it apart into a
+fresh pair. Two blocks allocated and two projections executed around a function that, since
+the code equations of Section 15.5, allocates nothing in the common case. Splitting `safe_hd`
+into `hd_queue` and `norm_queue` gives each half a result type the generator handles on its
+own, and the pair is built once.
+
+The head has to be read off the *normalised* queue, not off the argument: on a normalised
+queue it is the first element of the front list, while on the argument it can be the last
+element of the back list. Reading it off the argument -- the first version measured here -- put
+a second pass over the back list next to the reversal that was already there, and `last`
+appeared in the profile at 12.6M instructions. `safe_hd q = (let q' = norm_queue q in
+(hd_queue q', q'))` keeps the single pass.
+
+`mbuf_t_cases` asked `safe_hd` for a pair it immediately split, then called `tl_queue` on the
+queue `safe_hd` had just rebuilt -- two rebuilds for one pop. `mbuf_t_hd` and `mbuf_t_tl` ask
+for the two halves separately and `pop_queue` normalises and drops in a single step. In the
+empty case the buffer is returned unchanged, so nothing is allocated at all.
+
+`mbuf_t_append` wrapped and unwrapped the queue once per appended element; `append_queue_list`
+conses the whole list onto the back in one pass.
+
+P2, cumulative over Sections 15.8 and 15.9:
+
+| | before 15.8 | after 15.8 | after 15.9 |
+|---|---:|---:|---:|
+| instructions, compaction off | 7993.1M | 7898.7M | **7863.1M** (-1.63%) |
+| instructions, default GC | 8249.2M | 8296.9M | 8214.0M (-0.43%) |
+| minor words | 434.9M | 431.3M | **403.8M** (-7.1%) |
+| promoted words | 27.03M | 27.27M | 27.03M |
+
+P3 instructions fall from 6381.0M to 6240.0M (-2.21%). All 678 differential tests agree and
+the cram suite passes.
+
+**The ratio between the two rows is the lesson.** 31M fewer words allocated bought 130M
+instructions -- about four instructions per word. That is the cost of bumping the allocation
+pointer and of the minor collector walking a slightly smaller live set; it is *not* the 6.8
+instructions per word that dividing the collector's total by the word count suggests. Promoted
+words did not move at all, and promotion is what the major collector charges for. Sections
+15.5 and 15.7 each recorded a version of this; three measurements in, the shape is clear:
+**removing minor allocation that was already dying young pays about four instructions a word,
+and nothing more.** Allocation counts are a good way to find code that does unnecessary work,
+and a bad way to predict how much removing it will save.
+
+What did pay here was the work removed alongside the allocation: `rep_isom` -50.9M,
+`safe_hd` -47.5M against its own previous version, `append_queue` -25.2M, `tl_queue_t` -20.5M,
+`norm_queue_t` -16.2M.
+
+Wall clock against MonPoly on the standard suite is now 2.52x on P2 and 2.23x on P3 (median of
+five runs; the machine's run-to-run spread is about 5%), against instruction-count ratios of
+2.36x and 2.16x.
