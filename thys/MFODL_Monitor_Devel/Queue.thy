@@ -229,10 +229,15 @@ lift_definition hd_queue :: "'a queue \<Rightarrow> 'a option" is hd_queue_t .
 lift_definition norm_queue :: "'a queue \<Rightarrow> 'a queue" is norm_queue_t
   by (rule norm_queue_t_invariant)
 
+lemma hd_queue_t_front:
+  "fs \<noteq> [] \<Longrightarrow> ls \<noteq> [] \<Longrightarrow> hd_queue_t (fs, ls) = Some (hd fs)"
+  by (cases fs; cases ls) auto
+
 lemma hd_queue_t_norm:
   "queue_invariant q \<Longrightarrow> hd_queue_t (norm_queue_t q) = hd_queue_t q"
   by (cases q rule: norm_queue_t.cases)
-     (auto simp: queue_invariant_def hd_rev split: list.splits)
+     (auto simp: queue_invariant_def hd_queue_t_front hd_rev hd_append
+           split: list.splits)
 
 declare [[code drop: safe_hd]]
 
