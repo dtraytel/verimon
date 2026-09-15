@@ -127,6 +127,68 @@ fun tl_queue_t :: "'a queue_t \<Rightarrow> 'a queue_t" where
 lift_definition tl_queue :: "'a queue \<Rightarrow> 'a queue" is tl_queue_t
   by (auto simp: queue_invariant_def split: list.splits elim!: tl_queue_t.elims)
 
+text \<open>
+  The equations above are written so that every case names its result, which makes them read
+  well but makes the generated code rebuild a queue it does not change: the case
+  @{text "safe_hd_t (f # fs, l # ls) = (Some f, (f # fs, l # ls))"} allocates two cons cells
+  and a pair that are equal to the ones it was given. On P2 that single case was the largest
+  allocation site of the whole monitor, because @{const safe_hd} runs once per time point per
+  queue. The code equations below return the argument instead wherever the result is the
+  argument; nothing else about the queue changes.
+\<close>
+
+declare [[code drop: safe_hd_t]]
+
+lemma safe_hd_t_code[code]:
+  "safe_hd_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> (Some f, q))
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> (None, q)
+              | [l] \<Rightarrow> (Some l, q)
+              | l # v # va \<Rightarrow> (let gs = rev (v # va) in (Some (hd gs), (gs, [l]))))))"
+  by (cases q rule: safe_hd_t.cases) (auto simp: Let_def)
+
+declare [[code drop: safe_last_t]]
+
+lemma safe_last_t_code[code]:
+  "safe_last_t q = (case q of (fs, ls) \<Rightarrow>
+     (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> (None, q) | _ \<Rightarrow> undefined)
+      | l # _ \<Rightarrow> (Some l, q)))"
+  by (cases q rule: safe_last_t.cases) auto
+
+declare [[code drop: prepend_queue_t]]
+
+lemma prepend_queue_t_code[code]:
+  "prepend_queue_t a q = (case q of (fs, ls) \<Rightarrow>
+     (case ls of [] \<Rightarrow> (case fs of [] \<Rightarrow> ([], [a]) | _ \<Rightarrow> undefined)
+      | _ \<Rightarrow> (a # fs, ls)))"
+  by (cases "(a, q)" rule: prepend_queue_t.cases) auto
+
+declare [[code drop: replace_hd_t]]
+
+lemma replace_hd_t_code[code]:
+  "replace_hd_t a q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        f # fs' \<Rightarrow> (case ls of [] \<Rightarrow> undefined | _ \<Rightarrow> (a # fs', ls))
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> q
+              | [l] \<Rightarrow> ([], [a])
+              | l # v # va \<Rightarrow> (let gs = rev (v # va) in (a # tl gs, [l])))))"
+  by (cases "(a, q)" rule: replace_hd_t.cases) (auto simp: Let_def)
+
+declare [[code drop: tl_queue_t]]
+
+lemma tl_queue_t_code[code]:
+  "tl_queue_t q = (case q of (fs, ls) \<Rightarrow>
+     (case fs of
+        a # as \<Rightarrow> (as, ls)
+      | [] \<Rightarrow> (case ls of
+                [] \<Rightarrow> q
+              | [l] \<Rightarrow> ([], [])
+              | l # v # va \<Rightarrow> (tl (rev (v # va)), [l]))))"
+  by (cases q rule: tl_queue_t.cases) auto
+
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append split: prod.splits list.splits elim!: tl_queue_t.elims)
 

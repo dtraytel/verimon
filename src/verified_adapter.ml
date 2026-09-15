@@ -512,12 +512,19 @@ let rec compare_otuple_mp t1 t2 = match t1, t2 with
    tuples are streamed from the tree in its order straight into the buffer, without building
    tuple lists; the order is checked against the previous tuple on the way. If the tree order
    is not MonPoly's (mixed-type columns) or a column is undefined, the general path is taken. *)
+let out_buf = Buffer.create 4096
+
 let show_results posl _i q tsq (table: verdict) =
   if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
     show_results_slow posl q tsq table
   else begin
-    let b = Buffer.create 1024 in
-    Buffer.add_string b (Printf.sprintf "@%s (time point %d): " (MFOTL.string_of_ts tsq) q);
+    (* Most time points have no verdict, so nothing is built until the first tuple arrives:
+       the header costs a [Printf.sprintf], which interprets its format at run time and was
+       1.7% of P2 on its own, and the buffer is reused across time points rather than
+       allocated per call. The header is still written before the tuples, because it is
+       printed directly and the tuples follow from the buffer. *)
+    let b = out_buf in
+    Buffer.clear b;
     let prev = ref None in
     let ok =
       try
@@ -538,6 +545,11 @@ let show_results posl _i q tsq (table: verdict) =
     else begin
       if Misc.debugging Dbg_perf then Perf.show_results q tsq;
       if !prev <> None then begin
+        print_string "@";
+        print_string (MFOTL.string_of_ts tsq);
+        print_string " (time point ";
+        print_string (string_of_int q);
+        print_string "): ";
         Buffer.add_char b '\n';
         print_string (Buffer.contents b);
         flush stdout

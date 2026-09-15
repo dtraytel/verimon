@@ -23,21 +23,25 @@ let key bt =
     done;
     Buffer.contents buf
 
+(* Memprof samples each allocated WORD with probability [rate], so a block of [size] words
+   yields Binomial(size, rate) samples and the number of samples at a site, divided by the
+   rate, estimates the words allocated there. Weighting a sample by the size of its block
+   instead would estimate size squared and rank a few large blocks above many small ones. *)
 let record (a : Gc.Memprof.allocation) =
   let k = key a.Gc.Memprof.callstack in
-  let (w, c) = try Hashtbl.find table k with Not_found -> (0, 0) in
-  Hashtbl.replace table k (w + a.Gc.Memprof.n_samples * a.Gc.Memprof.size,
-                           c + a.Gc.Memprof.n_samples);
+  let (n, blocks) = try Hashtbl.find table k with Not_found -> (0, 0) in
+  Hashtbl.replace table k (n + a.Gc.Memprof.n_samples, blocks + 1);
   None
 
 let report () =
-  let rows = Hashtbl.fold (fun k (w, c) acc -> (k, w, c) :: acc) table [] in
+  let rows = Hashtbl.fold (fun k (n, blocks) acc -> (k, n, blocks) :: acc) table [] in
   let rows = List.sort (fun (_, a, _) (_, b, _) -> compare b a) rows in
-  let total = List.fold_left (fun acc (_, w, _) -> acc + w) 0 rows in
-  Printf.eprintf "# sampled words: %d\n" total;
-  List.iteri (fun i (k, w, c) ->
+  let total = List.fold_left (fun acc (_, n, _) -> acc + n) 0 rows in
+  Printf.eprintf "# samples: %d (each is one allocated word, sampled at the given rate)\n" total;
+  List.iteri (fun i (k, n, blocks) ->
     if i < 40 then
-      Printf.eprintf "%10d %5.1f%% %8d  %s\n" w (100.0 *. float_of_int w /. float_of_int total) c k)
+      Printf.eprintf "%10d %5.1f%% %8d  %s\n" n
+        (100.0 *. float_of_int n /. float_of_int total) blocks k)
     rows
 
 let start () =
