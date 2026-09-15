@@ -77,6 +77,59 @@ definition rbt_join :: "'a urbt \<Rightarrow> 'a \<Rightarrow> 'a urbt \<Rightar
 declare rbt_joinL.simps[simp del]
 declare rbt_joinR.simps[simp del]
 
+text \<open>The black height of a tree is a @{typ nat} computed by walking the whole left spine, so
+every comparison of two black heights allocates a boxed number per level of both trees.  Both
+uses are comparisons, and a comparison can be decided by descending the two spines in lockstep,
+or---for the comparison against a constant---by counting down and stopping as soon as the
+constant is exceeded.  Neither allocates.\<close>
+
+function bh_le :: "'a urbt \<Rightarrow> 'b urbt \<Rightarrow> bool" where
+  "bh_le RBT_Impl.Empty t2 = True"
+| "bh_le (Branch RBT_Impl.R l1 a1 b1 r1) t2 = bh_le l1 t2"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) RBT_Impl.Empty = False"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.R l2 a2 b2 r2) =
+     bh_le (Branch RBT_Impl.B l1 a1 b1 r1) l2"
+| "bh_le (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.B l2 a2 b2 r2) = bh_le l1 l2"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(t1, t2). size t1 + size t2)") auto
+
+lemma bh_le_correct: "bh_le t1 t2 \<longleftrightarrow> bheight t1 \<le> bheight t2"
+  by (induction t1 t2 rule: bh_le.induct) auto
+
+fun bh_lt :: "nat \<Rightarrow> 'a urbt \<Rightarrow> bool" where
+  "bh_lt k RBT_Impl.Empty = (0 < k)"
+| "bh_lt k (Branch RBT_Impl.R l a b r) = bh_lt k l"
+| "bh_lt k (Branch RBT_Impl.B l a b r) = (case k of 0 \<Rightarrow> False | Suc k' \<Rightarrow> bh_lt k' l)"
+
+lemma bh_lt_correct: "bh_lt k t \<longleftrightarrow> bheight t < k"
+  by (induction k t rule: bh_lt.induct) (auto split: nat.splits)
+
+declare [[code drop: small_rbt flip_rbt rbt_joinL rbt_joinR rbt_join]]
+
+lemma small_rbt_code[code]: "small_rbt t = bh_lt 6 t"
+  by (simp add: small_rbt_def bh_lt_correct)
+
+lemma flip_rbt_code[code]: "flip_rbt t1 t2 = (\<not> bh_le t1 t2)"
+  by (simp add: flip_rbt_def bh_le_correct not_le)
+
+lemma rbt_joinL_code[code]: "rbt_joinL l x r = (if bh_le r l then MR l x r
+    else case r of MB l' x' r' \<Rightarrow> baliL (rbt_joinL l x l') x' r'
+    | MR l' x' r' \<Rightarrow> MR (rbt_joinL l x l') x' r')"
+  by (subst rbt_joinL.simps) (simp add: bh_le_correct)
+
+lemma rbt_joinR_code[code]: "rbt_joinR l x r = (if bh_le l r then MR l x r
+    else case l of MB l' x' r' \<Rightarrow> baliR l' x' (rbt_joinR r' x r)
+    | MR l' x' r' \<Rightarrow> MR l' x' (rbt_joinR r' x r))"
+  by (subst rbt_joinR.simps) (simp add: bh_le_correct)
+
+lemma rbt_join_code[code]: "rbt_join l x r = (if \<not> bh_le l r
+    then paint RBT_Impl.B (rbt_joinR l x r)
+    else if \<not> bh_le r l
+    then paint RBT_Impl.B (rbt_joinL l x r)
+    else MB l x r)"
+  by (simp add: rbt_join_def bh_le_correct)
+
 lemma [simp]: "size (paint c t) = size t"
   by (cases t) auto
 
