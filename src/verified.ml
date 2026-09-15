@@ -43,8 +43,10 @@ end;; (*struct Uint32*)
 
 module ConfigImp : sig
   val heap_join_min : int ref
+  val bulk_min : int ref
 end = struct
   let heap_join_min = ref 0
+  let bulk_min = ref 64
 end
 
 module FloatUtil : sig
@@ -348,6 +350,8 @@ module Monitor : sig
                                     ((event_data option) list) set)))))))))))),
             unit)
             mstate_ext
+  val table_of_list :
+    ((event_data option) list) list -> ((event_data option) list) set
   val mstep_j :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -572,8 +576,6 @@ mapping *
       (event_data option) list ->
         ((string * nat), (((event_data option) list) set list)) mapping ->
           ((string * nat), (((event_data option) list) set list)) mapping
-  val table_of_list :
-    ((event_data option) list) list -> ((event_data option) list) set
   val insert_table_into_db :
     string * nat ->
       ((event_data option) list) set ->
@@ -4754,6 +4756,8 @@ let rec nfv
 
 let rec fun_upd _A f a b = (fun x -> (if eq _A x a then b else f x));;
 
+let rec concat xss = foldr (fun a b -> a @ b) xss [];;
+
 let rec membera _A x0 y = match x0, y with [], y -> false
                      | x :: xs, y -> eq _A x y || membera _A xs y;;
 
@@ -6434,6 +6438,37 @@ let rec ht_mem
           (fun v -> (fun () -> (not (is_none v))));;
 
 let rec ht_new n = im_new heap_unit n;;
+
+let rec ed_comparator
+  x0 x1 = match x0, x1 with [], [] -> Eqa
+    | [], y :: ys -> Lt
+    | x :: xs, [] -> Gt
+    | None :: xs, None :: ys -> ed_comparator xs ys
+    | None :: xs, Some b :: ys -> Lt
+    | Some a :: xs, None :: ys -> Gt
+    | Some a :: xs, Some b :: ys ->
+        (match comparator_event_data a b with Eqa -> ed_comparator xs ys
+          | Lt -> Lt | Gt -> Gt);;
+
+let rec merge_t
+  x0 ys = match x0, ys with [], ys -> ys
+    | x :: xs, [] -> x :: xs
+    | x :: xs, y :: ys ->
+        (match ed_comparator x y with Eqa -> x :: merge_t xs ys
+          | Lt -> x :: merge_t xs (y :: ys) | Gt -> y :: merge_t (x :: xs) ys);;
+
+let rec merge_pairs_t = function a :: b :: r -> merge_t a b :: merge_pairs_t r
+                        | [] -> []
+                        | [v] -> [v];;
+
+let rec merge_all_t
+  k xss =
+    (if equal_nata k zero_nata then concat xss
+      else (match xss with [] -> [] | [a] -> a
+             | _ :: _ :: _ ->
+               merge_all_t (minus_nata k one_nata) (merge_pairs_t xss)));;
+
+let rec sort_t xs = merge_all_t (size_lista xs) (mapa (fun x -> [x]) xs);;
 
 let rec upd_cfi (_A1, _A2)
   xa = Abs_comp_fun_idem (fun a -> updateb (_A1, _A2) a (xa a));;
@@ -10625,16 +10660,17 @@ let rec eval_step_dq
            to_del_approx
          in
        let ma = unbox ed_mapping_delete_set_tstp_v m to_del in
-       let maa = dq_nth a2_dq one_nata in
+       let a2_dqa = dq_tl a2_dq in
+       let maa = dq_nth a2_dqa zero_nata in
        let resulta =
          (if equal_nata len one_nata then ed_bot
            else unbox ed_union_v (unbox ed_minus_v result to_del)
                   (unbox ed_keys_tstp_v maa))
          in
-       let a2_dqa =
-         dq_tl (dq_upd a2_dq one_nata
-                 (if equal_nata len one_nata then ed_mempty_tstp
-                   else unbox ed_combine_tstp_v max_tstp ma maa))
+       let a2_dqb =
+         dq_upd a2_dqa zero_nata
+           (if equal_nata len one_nata then ed_mempty_tstp
+             else unbox ed_combine_tstp_v max_tstp ma maa)
          in
        let tstp_dqa = dq_tl tstp_dq in
         (tp, (tssc,
@@ -10643,7 +10679,7 @@ let rec eval_step_dq
                    (maskL,
                      (maskR,
                        (resulta,
-                         (a1_map, (a2_dqa, (tstp_dqa, t :: donea)))))))))));;
+                         (a1_map, (a2_dqb, (tstp_dqa, t :: donea)))))))))));;
 
 let rec shift_dq
   args nt
@@ -13791,7 +13827,7 @@ let rec probe_all
                 | Some l ->
                   fold (fun y acca ->
                          (match join1 equal_event_data (x, y) with None -> acca
-                           | Some z -> unbox ed_insert_v z acca))
+                           | Some z -> z :: acca))
                     l acc)));;
 
 let rec purifya
@@ -14783,6 +14819,32 @@ let rec ht_delete (_A1, _A2, _A3) _B
 
 let use_heap_join : bool = true;;
 
+let rec strict_sorted_by
+  c x1 = match c, x1 with
+    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
+    | c, [] -> true
+    | c, [v] -> true;;
+
+let rec rbt_of_sorted_list _A
+  xa = Mapping_RBTa
+         (if strict_sorted_by (the (ccompare _A)) xa
+           then rbtreeify (mapa (fun x -> (x, ())) xa)
+           else rbt_comp_bulkload (the (ccompare _A))
+                  (mapa (fun x -> (x, ())) xa));;
+
+let rec table_of_list
+  xs = RBT_set
+         (rbt_of_sorted_list
+           (ccompare_list (ccompare_option ccompare_event_data)) xs);;
+
+let rec table_of_unsorted
+  xs = (if Z.lt (integer_of_nat (size_lista xs)) (Z.of_int !ConfigImp.bulk_min)
+         then set ((ceq_list (ceq_option ceq_event_data)),
+                    (ccompare_list (ccompare_option ccompare_event_data)),
+                    set_impl_list)
+                xs
+         else table_of_list (sort_t xs));;
+
 let rec idx_ins_list
   msk xs q =
     (match xs with [] -> (fun () -> q)
@@ -14810,7 +14872,9 @@ let rec probe_join_j
         ()) ())
         (fun q ->
           (fun f_ () -> f_ ((idx_ins_list msk ys q) ()) ())
-            (fun qa -> probe_all msk qa xs ed_bot)));;
+            (fun qa ->
+              (fun f_ () -> f_ ((probe_all msk qa xs []) ()) ())
+                (fun zs -> (fun () -> (table_of_unsorted zs))))));;
 
 let rec heap_join_ok
   idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
@@ -16746,24 +16810,6 @@ let rec insert_into_db
     update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat)
       (fun _ tbl _ -> mapa (unbox ed_insert_v xs) tbl) p
       [unbox ed_insert_v xs ed_bot] db;;
-
-let rec strict_sorted_by
-  c x1 = match c, x1 with
-    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
-    | c, [] -> true
-    | c, [v] -> true;;
-
-let rec rbt_of_sorted_list _A
-  xa = Mapping_RBTa
-         (if strict_sorted_by (the (ccompare _A)) xa
-           then rbtreeify (mapa (fun x -> (x, ())) xa)
-           else rbt_comp_bulkload (the (ccompare _A))
-                  (mapa (fun x -> (x, ())) xa));;
-
-let rec table_of_list
-  xs = RBT_set
-         (rbt_of_sorted_list
-           (ccompare_list (ccompare_option ccompare_event_data)) xs);;
 
 let rec insert_table_into_db
   p x db =

@@ -1321,3 +1321,181 @@ the collector (about 18%: `caml_oldify_one`, `do_some_marking`, `caml_modify`, `
 only the mappings inside the auxiliary structures moved to the heap. The comparisons and a
 large part of the allocation are in the tables, not in the structures, and no amount of work on
 the maps will reach them.
+
+## 15. Where the allocation goes (measurements)
+
+Section 14 ended by pointing at the collector and the tables. This section measures both, and
+finds that the gap to MonPoly is one shape of allocation repeated everywhere.
+
+### 15.1 The gap is allocation, and it is in the operators
+
+Instruction counts (`callgrind`) and allocation counts (`OCAMLRUNPARAM=v=0x400`) on P2:
+
+| | MonPoly | VeriMon | ratio |
+|---|---:|---:|---:|
+| instructions | 3474M | 9257M | 2.7x |
+| minor words | 69.4M | 504.8M | **7.3x** |
+| major (promoted) words | 3.96M | 28.7M | 7.2x |
+
+Decomposing the instruction gap by category: the collector is 36% of it and VeriMon's own code
+55%; everything else rounds to noise. Since most of that own code is the code that allocates,
+the gap is an allocation problem.
+
+Running the same log under a trivial formula separates the front end from the operators. The
+front end is shared -- both monitors use MonPoly's parser -- so what differs there is the
+adapter that converts each event into a tuple and builds the table:
+
+| | MonPoly | VeriMon |
+|---|---:|---:|
+| trivial formula | 48.9M | 141.9M |
+| P2 | 69.4M | 504.8M |
+| difference (the operators) | **20.5M** | **362.9M** |
+
+So the operators allocate 17.7 times as much, and the adapter a further 93M.
+
+### 15.2 It is one shape: tables built by repeated insertion
+
+`Gc.Memprof` samples allocations and records their call stacks; `src/memprof_hook.ml` turns
+that into a table of allocation by site, enabled with `MONPOLY_MEMPROF=<rate>` and costing
+nothing when the variable is unset. On every benchmark the same handful of lines of
+`verified.ml` dominates, and they are all the same thing:
+
+    balance                       (rbt_comp_ins)
+    rbt_comp_ins  Branch cases
+    rbt_comp_insert_with_key / paint
+    folda                         (the fold in union_comp)
+    insertb                       (Set.insert on an RBT_set)
+
+An operator builds its result table by inserting its tuples one at a time into a persistent
+red-black tree. Each insertion copies the root-to-leaf path it descends, so a table of `n`
+tuples costs about `n log n` nodes of six words -- and the table is rebuilt at every time point.
+`Set.insert` in a fold is the shape; `union_comp`, which falls back to `folda (rbt_comp_insert
+comp)` when one side is small, is the same shape one level up.
+
+Allocation by operator on the standard log, with the trivial formula subtracted so that only the
+operator's own allocation is counted:
+
+| formula | MonPoly | VeriMon | ratio |
+|---|---:|---:|---:|
+| `andnot` | 7.7M | 11.1M | 1.4x |
+| `once` | 71.8M | 218.5M | 3.0x |
+| `complex` | 111.3M | 501.8M | 4.5x |
+| `eventually` | 42.6M | 218.4M | 5.1x |
+| `since` | 12.5M | 86.2M | 6.9x |
+| `and` | 6.8M | 57.1M | 8.4x |
+| `until` | 10.7M | 99.8M | 9.3x |
+
+`andnot` is the exception that confirms the diagnosis: an anti-join whose column sets are nested
+is a filter of an existing tree, which allocates only its result, and it is the one operator at
+parity.
+
+### 15.3 What the heap-resident maps did and did not do
+
+The heap-resident maps of Sections 12 and 14 do not touch this. Allocation with and without
+`-heap_maps` on the standard log:
+
+| formula | MonPoly | VeriMon | `-heap_maps` |
+|---|---:|---:|---:|
+| `and` | 28.4M | 95.9M | 103.4M |
+| `once` | 93.4M | 257.2M | 222.4M |
+| `since` | 34.1M | 124.9M | 126.4M |
+| `until` | 32.3M | 138.5M | 139.0M |
+| `complex` | 132.9M | 540.6M | 567.9M |
+
+Only `once` improves; `and` and `complex` get worse, because the heap index allocates a bucket
+array per call while the result table is still built by repeated insertion. Those sections moved
+the *mappings inside the auxiliary structures* to the heap and left the *tables flowing between
+the operators* where they were, which is why they were worth single-digit percentages: they
+changed what a lookup costs, not what a table costs to build.
+
+### 15.4 Three changes measured against that diagnosis
+
+Wall-clock differences of a few percent are below the noise of this machine, so the numbers
+below are exact instruction counts (`callgrind`) and exact allocation counts.
+
+**The deque reads index 0 after dropping the head (Section 13.1's open item).**
+`eval_step_dq` took the head mapping and the one behind it, combined them and dropped the head.
+`dq_norm` only rebalances when the front list is empty, so when the front holds exactly one
+element the access to index 1 falls into the back list at its far end, and `dq_nth` and `dq_upd`
+both walk it. Dropping the head first and reading and writing index 0 -- which `dq_norm`
+guarantees to be at the front -- makes both constant time.
+
+`rel_a2` sees a deque only through `dq_inv`, `dq_len` and `dq_nth`, so the new form relates the
+refined structure to the same abstract one. The first attempt stated that as a congruence and
+rewrote the goal with it; the congruence proves but the rewrite did not fire, so the lemma is
+instead proved by mirroring `rel_a2_step`'s own proof with `dq_nth_upd_tl` in place of
+`dq_nth_tl_upd`. `Code_Opt.thy` restates `eval_step_dq` as a code equation and had to be updated
+alongside the definition.
+
+| | before | after | |
+|---|---:|---:|---:|
+| P2, pure kernel | 9257.0M | 9019.3M | **-2.6%** |
+| P2, `-heap_maps` | 9853.5M | 9590.8M | **-2.7%** |
+
+P3 is unchanged, as expected: it has no Until, so `eval_step_dq` never runs.
+
+**Tables built in one pass.** `table_of_unsorted` sorts the tuples with a bottom-up merge sort
+over `ed_comparator` that drops duplicates as it merges -- exactly the form
+`rbt_of_sorted_list` checks for -- and then builds the tree in one pass. The imperative join now
+collects its tuples in a list and builds the table once instead of inserting into it.
+
+Sorting only pays once the table is big enough, because the sort costs `n log n` comparisons on
+top of the ones the insertions would have done. Unthresholded it gains on `complex` and loses on
+`and`, whose join result is about a dozen tuples per time point:
+
+| `-heap_maps` | before | `bulk_min=0` | `bulk_min=64` |
+|---|---:|---:|---:|
+| `complex` | 11848.6M | 11701.2M | **11658.6M (-1.6%)** |
+| `and` | 2154.3M | 2210.9M | 2170.3M (+0.7%) |
+| `complex` minor words | 567.9M | | **531.7M (-6.4%)** |
+
+The threshold is a flag (`-bulk_min`, default 64) so it can be moved without regenerating the
+kernel. The residual 0.7% on `and` is the list detour itself, taken and then discarded when the
+result turns out to be short.
+
+**The fused tuple comparator is still not reached.** `ed_comparator` (Section 7) is proved equal
+to `comparator_list (comparator_option comparator_event_data)`, and the profile says the generic
+chain costs about 2.6% of P2: 5.88M indirect calls from `comparator_list` to its element
+comparator, 2.21M more from `comparator_option`, and 2.2M from `rbt_comp_lookup` and
+`rbt_comp_ins`, each going through `caml_apply2`. Yet before this section `ed_comparator` did not
+appear in `verified.ml` at all.
+
+The reason is that the dictionary at a composite type cannot be specialised: `ccompare` for
+`event_data option list` is `ccompare_lista (ccompare_option ccompare_event_data)`, whose body
+binds the element comparator at run time, so no code equation can see through it. What *can*
+reach it is monomorphisation: instantiating `Set.member` and the RBT operations below it at
+`event_data tuple` resolves `ID CCOMPARE(event_data tuple)` to `Some ed_comparator` by
+`etuple_dict_simps`. A probe session confirms the chain builds -- but its generated code still
+reads
+
+    let rec probe1 xa x = unbox ed_member_v xa x;;
+
+because `Monomorphize.box` has already registered `Set.member = unbox ed_member_v` as a
+preprocessor rule and it shadows the monomorphisation redirect. Routing the comparator through
+therefore means replacing the boxed treatment of the hot set and mapping operations by
+monomorphisation, not adding to it -- a well-specified change with a measured ceiling of about
+2.6% of P2, weighed against whatever the boxes themselves are worth (Section 7).
+
+`ed_comparator` does now appear in the generated kernel, called by the merge sort above. It is
+in the code; it is the trees that do not use it.
+
+### 15.5 What this says about closing the gap
+
+The 7.3x allocation ratio is one shape of code, and the two changes above take about a percent
+of it each. That is the honest scale of what a targeted fix achieves here, and it is why the
+remaining work is not a list of further micro-optimizations:
+
+* **The same fix belongs in the pure kernel, where it is provable.** `probe_join`'s fold, the
+  `Set.insert` folds in the auxiliary structures, and `union_comp`'s fallback to
+  `folda (rbt_comp_insert comp)` are all the same shape, they are all code equations rather than
+  imperative details, and `table_of_list xs = set xs` is definitional -- so a code equation that
+  collects and builds in one pass is a set-equality proof, not a refinement. This is the single
+  largest piece of provable work the measurements point at, and it applies to the pure kernel,
+  not only to `-heap_maps`.
+* **Many of these accumulations are already sorted.** An operator that keeps a subset of a table
+  it walked in order -- every filter-shaped case of `bin_join`, the loops of the Since structure
+  -- produces its tuples in comparator order already, so those need no sort at all: the list is
+  strictly sorted by construction and `table_of_list` applies directly. That is the `log n`
+  factor without the `n log n` comparisons the general case pays.
+* **Heap-resident tables do not address this.** They change what a lookup costs, not what a table
+  costs to build; Section 15.3 measures `-heap_maps` allocation as unchanged or worse.

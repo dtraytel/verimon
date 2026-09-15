@@ -74,6 +74,9 @@ val heap_all: bool ref
 
 (* Smallest table size for which a join builds a heap-resident index. *)
 val heap_join_min: int ref
+
+(* Smallest table built in one pass from a sorted list. *)
+val bulk_min: int ref
 (** GC space overhead in percent to set before monitoring (0: leave the default). *)
 val gc_space_overhead: int ref
 val new_last_ts: bool ref

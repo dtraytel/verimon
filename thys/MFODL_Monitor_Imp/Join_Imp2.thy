@@ -16,27 +16,6 @@ definition use_heap_join :: bool where
   "use_heap_join = True"
 
 text \<open>
-  The threshold below is read from a mutable flag rather than fixed in the kernel, so that it
-  can be measured without regenerating the code; the front end exposes it as
-  @{text "-heap_join_min"}. Its default is zero: once the case and the side are chosen as
-  described below, an index of any size is at least as good as the pure code on every
-  benchmark, so there is nothing left for a threshold to exclude.
-\<close>
-
-code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
-\<open>module ConfigImp : sig
-  val heap_join_min : int ref
-end = struct
-  let heap_join_min = ref 0
-end\<close>
-
-definition heap_join_min :: integer where
-  "heap_join_min = 0"
-
-code_printing
-  constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
-
-text \<open>
   The heap index is used in one case only: the one in which neither operand's columns contain
   the other's. The cases the pure code has a good algorithm for are left to it, and the measured
   cost of taking them away from it is steep. When the column sets are equal the join is a set

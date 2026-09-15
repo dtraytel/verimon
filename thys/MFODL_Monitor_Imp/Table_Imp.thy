@@ -41,6 +41,30 @@ text \<open>Hashes live in the array next to the keys, so the target type must b
 
 instance integer :: heap ..
 
+text \<open>
+  Two thresholds that are worth measuring rather than fixing, so they are read from a mutable
+  flag; the front end exposes them as @{text "-heap_join_min"} and @{text "-bulk_min"}.
+\<close>
+
+code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
+\<open>module ConfigImp : sig
+  val heap_join_min : int ref
+  val bulk_min : int ref
+end = struct
+  let heap_join_min = ref 0
+  let bulk_min = ref 64
+end\<close>
+
+definition heap_join_min :: integer where
+  "heap_join_min = 0"
+
+definition bulk_min :: integer where
+  "bulk_min = 64"
+
+code_printing
+  constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
+| constant bulk_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.bulk'_min)"
+
 definition teq :: "event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
   "teq x y = (x = y)"
 
@@ -221,8 +245,15 @@ text \<open>
   walked in order -- @{const table_of_list} is used directly and nothing is sorted.
 \<close>
 
+text \<open>
+  Sorting only pays once the table is big enough: the sort costs \<open>n log n\<close> comparisons on top,
+  which for a handful of tuples is more than the tree insertions it saves. Below the threshold
+  the table is built the usual way.
+\<close>
+
 definition table_of_unsorted :: "event_data tuple list \<Rightarrow> event_data table" where
-  "table_of_unsorted xs = table_of_list (sort_t xs)"
+  "table_of_unsorted xs =
+     (if integer_of_nat (length xs) < bulk_min then set xs else table_of_list (sort_t xs))"
 
 subsection \<open>A hash set of tuples on the heap\<close>
 

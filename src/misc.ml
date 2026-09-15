@@ -93,6 +93,10 @@ let heap_all = ref false
 (* Smallest table size for which a join builds a heap-resident index instead of probing the
    comparison-based tree; below it the tree is cheaper (see thys/.../Join_Imp2.thy). *)
 let heap_join_min = ref 0
+
+(* Smallest table for which the tuples are sorted and the tree built in one pass instead of
+   being inserted one at a time (see thys/MFODL_Monitor_Imp/Table_Imp.thy). *)
+let bulk_min = ref 64
 (* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
    verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
    mappings), so main.ml uses 500 with the verified kernel unless the user chose a value. *)
