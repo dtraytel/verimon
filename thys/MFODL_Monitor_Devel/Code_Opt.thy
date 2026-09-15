@@ -6,6 +6,28 @@ begin
 
 section \<open>Efficient code equations\<close>
 
+subsection \<open>Folding a red-black tree of keys\<close>
+
+text \<open>
+  @{const RBT_Set2.fold} is defined by discarding the value of each entry, which the generated
+  code does by wrapping the element function in a closure: one closure allocated per fold, and
+  two indirect calls per element instead of one.  A fold that takes the element function
+  directly does the same work.
+\<close>
+
+fun rbt_fold_key :: "('a \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> ('a, unit) RBT_Impl.rbt \<Rightarrow> 'b \<Rightarrow> 'b" where
+  "rbt_fold_key f RBT_Impl.Empty s = s"
+| "rbt_fold_key f (RBT_Impl.Branch c l k v r) s = rbt_fold_key f r (f k (rbt_fold_key f l s))"
+
+lemma rbt_fold_key_eq: "rbt_fold_key f t s = RBT_Impl.fold (\<lambda>a _. f a) t s"
+  by (induction f t s rule: rbt_fold_key.induct) (auto simp: RBT_Impl.fold_def)
+
+declare [[code drop: RBT_Set2.fold]]
+
+lemma rbt_set2_fold_code[code]:
+  "RBT_Set2.fold f t = rbt_fold_key f (RBT_Mapping2.impl_of t)"
+  by (rule ext) (simp add: rbt_fold_key_eq RBT_Set2.fold.rep_eq)
+
 subsection \<open>Direct comparators\<close>
 
 text \<open>

@@ -306,16 +306,32 @@ text \<open>
   the whole list in one pass costs one pass over the list and nothing else.
 \<close>
 
-lemma fold_Cons_append_rev: "fold (#) xs ys = rev xs @ ys"
+text \<open>
+  Reversing a list onto another one is a two-argument recursion, but the code equation the
+  library gives @{const rev} states it as a fold over a function argument, which the generated
+  code passes as a closure and applies through the generic application path once per element.
+  A named function does the same work with a direct call.
+\<close>
+
+fun rev_prepend :: "'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "rev_prepend [] ys = ys"
+| "rev_prepend (x # xs) ys = rev_prepend xs (x # ys)"
+
+lemma rev_prepend_eq: "rev_prepend xs ys = rev xs @ ys"
   by (induction xs arbitrary: ys) auto
 
+declare [[code drop: rev]]
+
+lemma rev_code[code]: "rev xs = rev_prepend xs []"
+  by (simp add: rev_prepend_eq)
+
 lift_definition append_queue_list :: "'a list \<Rightarrow> 'a queue \<Rightarrow> 'a queue" is
-  "\<lambda>ys q. (case q of (fs, ls) \<Rightarrow> (fs, fold (#) ys ls))"
-  by (auto simp: queue_invariant_def fold_Cons_append_rev split: list.splits)
+  "\<lambda>ys q. (case q of (fs, ls) \<Rightarrow> (fs, rev_prepend ys ls))"
+  by (auto simp: queue_invariant_def rev_prepend_eq split: list.splits)
 
 lemma append_queue_list_rep:
   "linearize (append_queue_list ys q) = linearize q @ ys"
-  by transfer (auto simp: linearize_def fold_Cons_append_rev)
+  by transfer (auto simp: linearize_def rev_prepend_eq)
 
 lemma tl_queue_rep: "linearize (tl_queue q) = tl (linearize q)"
   by transfer (auto simp: tl_append split: prod.splits list.splits elim!: tl_queue_t.elims)
