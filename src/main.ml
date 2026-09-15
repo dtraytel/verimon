@@ -180,6 +180,7 @@ let main () =
               let so = if !Misc.gc_space_overhead > 0 then !Misc.gc_space_overhead
                 else if !Misc.verified then 500 else 0 in
               if so > 0 then Gc.set { (Gc.get ()) with Gc.space_overhead = so };
+              Memprof_hook.start ();
               if !Misc.verified then
                 Algorithm_verified.monitor sign !logfile fv pf
               else
