@@ -1197,3 +1197,127 @@ Two observations for whoever continues:
   at the front, makes both constant time. It is worth about 4% of P2, and the obstacle is that
   the two forms are equal as deques only after a case analysis over the rebalancing, so it is
   a proof about `dq_norm` rather than a rewrite.
+
+## 14. Are the benchmarks representative? (measurements)
+
+The benchmarks of Sections 4 and 12 use relations of 50 tuples per time point over a domain of
+200, and on them the heap-resident maps of Section 12 were worth a few percent. That is a
+reason to doubt the benchmarks rather than the maps, so this section varies the shape of the
+log and re-measures. The generator takes a number of time points, a number of events per time
+point per predicate and a domain size, and emits `A(int,int)`, `B(int,int)` and `C(int)`; the
+total number of events is held constant at 100000 per predicate, so wider relations mean fewer
+time points.
+
+**Two things were wrong with the original log, not one.** The obvious one is the width: 50
+tuples is below the size at which a hash table beats a comparison-based tree, which the
+micro-benchmark of Section 10 put at about a thousand. The second one only showed up when the
+width was raised with the domain scaled along with it (`d = 4n`, chosen to keep the join
+selectivity constant): `since` then measures nothing at all, because two operands drawn from
+`d² = 16n²` possible pairs almost never share a tuple, so the mapping from tuples to time
+stamps that the whole Since structure exists to maintain stays nearly empty. Widening the
+relations while keeping the domain wide makes the tables bigger and the structures emptier.
+
+The second family of logs therefore keeps `d² ≈ 2n`, so that the operands overlap heavily and
+the structures fill. Median of three, `h/p` is the heap-resident kernel over the pure one:
+
+| width | `once` sparse | `once` dense | `since` dense | `and` dense | `complex` dense |
+|------:|--------------:|-------------:|--------------:|------------:|----------------:|
+|    50 |         0.80x |        0.96x |         0.97x |       1.03x |           1.03x |
+|   250 |         0.80x |        0.97x |         0.93x |       0.98x |           1.01x |
+|   500 |         0.86x |        0.97x |         0.94x |       0.98x |           1.00x |
+|  1000 |         0.70x |        0.95x |         0.94x |       0.94x |           1.03x |
+|  2000 |         0.79x |        0.96x |         0.96x |       1.04x |           1.04x |
+
+So the answer is a qualified yes, and less interesting than it looked. On the sparse-domain
+logs `once` gains 20-30%, but that is the heap-resident Since structure of Section 12 doing
+what it already did on the original log, not a width effect: the gain is the same at 50 tuples
+as at 2000. On the dense logs, where the structures actually fill, everything sits within a few
+percent of the pure kernel at every width. The width was never what held the heap maps back --
+and it was certainly not what held the join back, which was flat at every width for a reason
+that has nothing to do with the log.
+
+### 14.1 The binary join was never reached
+
+`bin_join_j` (Section 8's imperative probe, lifted into the heap monad) showed exactly no
+effect at any width because a conjunction is not evaluated by `bin_join`. `convert_multiway`
+compiles conjunctions to `MAnds`, which `meval` evaluates with `mmulti_join`; `bin_join` is
+reached only from `MAnd`, which survives only for the few shapes multi-way conversion leaves
+alone. The left-deep sequence of binary joins and the anti-joins that follow it
+(`mmulti_join_pos`, `mmulti_join_neg`, `mmulti_join_pw`) are therefore lifted into the heap
+monad as well, and the `MAnds` case of the evaluation function goes through them.
+
+Making the imperative join reachable is what turned it from a no-op into a measurable effect --
+in both directions. Three things had to be right, and each was found by measuring the wrong
+one:
+
+1. **Do not take the equal-column case from the tree.** When both operands have the same
+   columns the join is `t ∩ t'` or `t - t'`. On two red-black trees over the same order that is
+   a linear merge exploiting their shared structure, not a lookup per tuple. Indexing instead
+   made P2 eleven times slower (1.3 s to 14.3 s).
+2. **Do not take the containment cases either.** When one column set contains the other, which
+   side is indexed is forced by the shape of the join. The index is then frequently the larger
+   table, built to be probed a few times -- the anti-joins of P2 and P3 are exactly this shape.
+   Routing them through an index made P3 fifty times slower (1.1 s to 50.7 s), and restricting
+   it to calls whose index is no longer than the probing side still left P2 60% slower.
+3. **Index the smaller side.** In the remaining case either table may be indexed, and the pure
+   code picks the smaller (`if card t ≤ card t' then probe_join_n n K t t' else ... t' t`).
+   Indexing `t'` unconditionally, as the first version did, builds a big index and reads it a
+   few times whenever the operands differ in size. On the standard `complex` benchmark that is
+   the difference between a 27% loss and a 16% gain.
+
+What is left for the index is the case the pure code has no good algorithm for: neither column
+set contains the other, so it either builds a pure index or, when the operands are not complete
+on the common columns, degenerates to a nested loop. There the heap index wins, and a size
+threshold for it (exposed as `-heap_join_min`) turned out to be unnecessary once the case and
+the side were right -- an index of any size was at least as good as the pure code on every
+benchmark, so the flag defaults to zero.
+
+Standard suite, median of five, all four configurations timed in one interleaved pass so that
+they share the state of the machine. "heap-old" is the kernel of Section 13, in which
+`bin_join_j` existed but was unreachable; "heap-new" is this section's.
+
+| formula      | MonPoly | VeriMon | heap-old | heap-new |
+|--------------|--------:|--------:|---------:|---------:|
+| P2           |   0.44s |   1.22s |    1.27s |    1.34s |
+| P3           |   0.48s |   1.15s |    1.09s |    1.10s |
+| `and`        |   0.16s |   0.25s |    0.26s |    0.23s |
+| `andnot`     |   0.15s |   0.17s |    0.17s |    0.17s |
+| `once`       |   0.72s |   1.03s |    0.87s |    0.84s |
+| `since`      |   0.24s |   0.34s |    0.37s |    0.34s |
+| `eventually` |   0.47s |   0.81s |    0.81s |    0.80s |
+| `until`      |   0.24s |   0.40s |    0.41s |    0.40s |
+| `agg`        |   0.17s |   0.30s |    0.30s |    0.30s |
+| `complex`    |   0.82s |   1.92s |    1.70s |    1.58s |
+
+Reaching the multi-way join is worth 7% on `complex` (1.70 s to 1.58 s) and 12% on `and`
+(0.26 s to 0.23 s) on top of what the heap-resident Since structures already gave, and costs 6%
+on P2, whose conjunctions are the equal-column and containment shapes that stay with the pure
+code and now pay for the case analysis that decides so. Against MonPoly the heap kernel stands
+at 1.35x on `and`, 1.17x on `once`, 1.42x on `since`, 1.93x on `complex` and 3.0x on P2; the
+pure kernel is at 1.56x, 1.43x, 1.42x, 2.34x and 2.8x.
+
+### 14.2 Memoizing the hash
+
+Hashing a tuple walks its whole representation and is the most expensive step of every map
+operation, so the bucket entry now carries the hash next to the key and the value. Growing a
+table redistributes its entries from the stored hashes without looking at a key again; a bucket
+scan rejects a colliding entry by comparing two machine integers before it compares two tuples;
+capacities are powers of two, so the bucket index is a mask rather than a division; and every
+operation has a variant taking the hash as an argument, so the loops of the Since structure, the
+Until structure and the join index -- which look a key up and then update or delete it -- hash
+it once instead of twice.
+
+It is a correct optimization and it is worth almost nothing here: 0.3% on `once` and 0.24% on
+`since` (exact instruction counts, `callgrind`). The reason is that the earlier estimate came
+from the profile of the heap-resident *Until* structure, where rehashing during repeated
+forward merging accounted for 7.6 million hash calls; that structure is disabled (Section 13.1
+explains why it cannot work). In the Since structures that remain, `caml_hash` is 4.5% of the
+run, so removing part of it cannot show up. The profile of the heap path is now flat and led by
+the collector (about 18%: `caml_oldify_one`, `do_some_marking`, `caml_modify`, `sweep_slice`,
+`bf_allocate`), the tree comparisons of the tables themselves (about 11%: `do_compare_val`,
+`compare_tuple`, `comparator_list`, `compare_event_data`) and parsing the log (about 8%).
+
+**What this says about where to go next.** The tables are still Containers red-black sets;
+only the mappings inside the auxiliary structures moved to the heap. The comparisons and a
+large part of the allocation are in the tables, not in the structures, and no amount of work on
+the maps will reach them.
