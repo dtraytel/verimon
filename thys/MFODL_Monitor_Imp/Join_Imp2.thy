@@ -7,68 +7,69 @@ begin
 section \<open>The binary join over a heap-resident index\<close>
 
 text \<open>
-  The cases of @{const bin_join} that test every tuple of one table for membership in the other,
-  with the probed side indexed by a hash set built once per call. This is the access pattern in
-  which an imperative structure should win: the index is written once and read as often as the
-  probing side is long. Definitions only, no proofs.
+  The one case of @{const bin_join} in which a hash index beats the comparison-based tree, with
+  the probed side indexed once per call, and the multi-way join that reaches it. Definitions
+  only, no proofs.
 \<close>
 
 definition use_heap_join :: bool where
   "use_heap_join = True"
 
 text \<open>
-  Building an index pays only once the probing side is long enough to amortise it. Hashing a
-  tuple walks its whole representation, whereas a lookup in a small comparison-based tree is a
-  handful of comparisons that stop at the first differing column, so below a few hundred tuples
-  the tree wins. The threshold is read from a mutable flag so that it can be measured without
-  regenerating the kernel; the front end exposes it as @{text "-heap_join_min"}.
+  The threshold below is read from a mutable flag rather than fixed in the kernel, so that it
+  can be measured without regenerating the code; the front end exposes it as
+  @{text "-heap_join_min"}. Its default is zero: once the case and the side are chosen as
+  described below, an index of any size is at least as good as the pure code on every
+  benchmark, so there is nothing left for a threshold to exclude.
 \<close>
 
 code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
 \<open>module ConfigImp : sig
   val heap_join_min : int ref
 end = struct
-  let heap_join_min = ref 256
+  let heap_join_min = ref 0
 end\<close>
 
 definition heap_join_min :: integer where
-  "heap_join_min = 256"
+  "heap_join_min = 0"
 
 code_printing
   constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
 
 text \<open>
-  The size of the indexed table decides, and not the number of probes: hashing a tuple walks
-  its whole representation, whereas a descent through a small comparison-based tree is a few
-  comparisons that stop at the first column in which the tuples differ, so for a short index
-  the tree is cheaper however often it is read. Measured on the wide logs of Section 14, an
-  index of a hundred tuples probed five hundred times still loses, while one of two thousand
-  tuples wins; the threshold is a flag so that it can be moved without regenerating the kernel.
+  The heap index is used in one case only: the one in which neither operand's columns contain
+  the other's. The cases the pure code has a good algorithm for are left to it, and the measured
+  cost of taking them away from it is steep. When the column sets are equal the join is a set
+  intersection or difference, which on two red-black trees over the same order is a linear merge
+  that exploits their shared structure rather than a lookup per tuple. When one column set
+  contains the other, the indexed side is forced by the shape of the join and cannot be chosen,
+  so the index is often the larger table built to be probed a few times; that is what the
+  anti-joins of @{text P2} and @{text P3} are. Routing those two families through an index made
+  @{text P2} eleven times slower and @{text P3} fifty times, and even requiring the index to be
+  no longer than the probing side still left @{text P2} 60% slower.
+
+  The remaining case is the one the pure code has no good algorithm for: it either builds a
+  pure index (@{text probe_join_n}) or, if the operands are not complete on the common columns,
+  degenerates to a nested loop. Its guard is reproduced here so that the index is built on the
+  same tuples the pure code would index.
+
+  Here either table may be indexed, and the smaller one is, as in the pure code: indexing costs
+  a hash per tuple of the indexed side and probing one per tuple of the other, so indexing the
+  larger side buys a big index that is read a few times. Getting this the wrong way round cost
+  more than the index saved wherever the two operands differ much in size; on the standard
+  @{text complex} benchmark it is the difference between a 27% loss and a 16% gain. A threshold
+  on the size of the indexed side is a flag as well, but its default is zero: once the case and
+  the side are chosen, an index of any size was at least as good as the pure code on every
+  benchmark measured.
 \<close>
 
 definition heap_join_ok :: "event_data tuple list \<Rightarrow> bool" where
   "heap_join_ok idx = (heap_join_min \<le> integer_of_nat (length idx))"
 
-partial_function (heap) probe_filter :: "(event_data tuple \<Rightarrow> event_data tuple) \<Rightarrow> bool \<Rightarrow> itbl \<Rightarrow>
-    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
-  [code]:
-  "probe_filter pr pos q xs acc = (case xs of [] \<Rightarrow> return acc
-     | x # r \<Rightarrow> do { b \<leftarrow> ht_mem q (pr x);
-                      probe_filter pr pos q r (if b = pos then Set.insert x acc else acc) })"
-
-subsection \<open>The indexed probe join\<close>
-
 text \<open>
-  The general case, where neither side's columns contain the other's: the smaller side is
-  indexed on the columns the two share, and every tuple of the other side probes it. This is
-  Measured outcome: neither this nor the cases above changes anything on the benchmarks,
-  because a conjunction is compiled to a multi-way conjunction whose joins go through
-  @{const mmulti_join}, not through @{const bin_join}. The pure kernel already indexes that
-  join (Section 7f of EFFICIENCY.md), and the tables it joins hold about fifty tuples, where
-  the micro-benchmark in evaluation/table_bench puts a hash set behind a red-black tree. The
-  switch above therefore stays on only because it costs nothing: with it the two conjunctive
-  benchmarks retire 2,279,460,795 and 12,648,433,147 instructions, without it 2,279,349,289
-  and 12,648,740,584.
+  The index maps a tuple's projection onto the common columns to the tuples of the indexed
+  table that have it, so that each tuple of the probing side is combined only with the ones it
+  can join with.
 \<close>
 
 type_synonym jidx = "(event_data tuple list) imap"
@@ -97,35 +98,18 @@ definition probe_join_j :: "nat \<Rightarrow> nat set \<Rightarrow> event_data t
           q \<leftarrow> idx_ins_list msk ys q;
           probe_all msk q xs {} })"
 
-text \<open>
-  In each case the table that becomes the index is read as a list first; if it turns out to be
-  short, the pure join runs instead and the list is discarded. The list is the same one the
-  imperative branch would have built, so nothing is done twice on the branch that pays.
-\<close>
-
 definition bin_join_j :: "nat \<Rightarrow> nat set \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> nat set \<Rightarrow> event_data table \<Rightarrow>
     event_data table Heap" where
   "bin_join_j n A t pos A' t' =
-    (if \<not> use_heap_join then return (bin_join n A t pos A' t')
-     else if t = {} then return {}
-     else if t' = {} then return (if pos then {} else t)
-     else if A' = {} then return (if (pos \<longleftrightarrow> replicate n None \<in> t') then t else {})
-     else if A' = A then (let ys = csorted_list_of_set t' in
-       if \<not> heap_join_ok ys then return (bin_join n A t pos A' t')
-       else do { q \<leftarrow> ht_of_list ys;
-                 probe_filter (\<lambda>as. as) pos q (csorted_list_of_set t) {} })
-     else if A' \<subseteq> A then (let ys = csorted_list_of_set t' in
-       if \<not> heap_join_ok ys then return (bin_join n A t pos A' t')
-       else do { q \<leftarrow> ht_of_list ys;
-                 probe_filter (proj_tuple (join_mask n A')) pos q (csorted_list_of_set t) {} })
-     else if A \<subseteq> A' \<and> pos then (let xs = csorted_list_of_set t in
-       if \<not> heap_join_ok xs then return (bin_join n A t pos A' t')
-       else do { q \<leftarrow> ht_of_list xs;
-                 probe_filter (proj_tuple (join_mask n A)) pos q (csorted_list_of_set t') {} })
-     else if pos then (let ys = csorted_list_of_set t' in
-       if \<not> heap_join_ok ys then return (bin_join n A t pos A' t')
-       else probe_join_j n A (csorted_list_of_set t) A' ys)
-     else return (join t pos t'))"
+    (if \<not> use_heap_join \<or> \<not> pos \<or> t = {} \<or> t' = {} \<or> A' = {} \<or> A' \<subseteq> A \<or> A \<subseteq> A'
+       \<or> \<not> finite t \<or> \<not> finite t'
+       \<or> \<not> (let c = complete_with (A \<inter> A') n in (\<forall>x \<in> t. c x) \<and> (\<forall>y \<in> t'. c y))
+     then return (bin_join n A t pos A' t')
+     else (let xs = csorted_list_of_set t; ys = csorted_list_of_set t';
+               idx = (if length xs \<le> length ys then xs else ys);
+               prb = (if length xs \<le> length ys then ys else xs) in
+       if \<not> heap_join_ok idx then return (bin_join n A t pos A' t')
+       else probe_join_j n A prb A' idx))"
 
 subsection \<open>Multi-way joins\<close>
 

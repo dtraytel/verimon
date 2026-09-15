@@ -44,7 +44,7 @@ end;; (*struct Uint32*)
 module ConfigImp : sig
   val heap_join_min : int ref
 end = struct
-  let heap_join_min = ref 256
+  let heap_join_min = ref 0
 end
 
 module FloatUtil : sig
@@ -348,10 +348,6 @@ module Monitor : sig
                                     ((event_data option) list) set)))))))))))),
             unit)
             mstate_ext
-  val ht_of_list :
-    ((event_data option) list) list ->
-      (unit ->
-        (Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array)))
   val mstep_j :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -398,6 +394,10 @@ mapping *
  (((event_data option) list) set * ((event_data option) list) set)))))))))))))
                    meformula *
                   (nat * nat queue))))))
+  val ht_of_list :
+    ((event_data option) list) list ->
+      (unit ->
+        (Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array)))
   val im_to_list :
     'a heap ->
       Z.t * (Z.t * ((Z.t * ((event_data option) list * 'a)) list) array) ->
@@ -14812,74 +14812,39 @@ let rec probe_join_j
           (fun f_ () -> f_ ((idx_ins_list msk ys q) ()) ())
             (fun qa -> probe_all msk qa xs ed_bot)));;
 
-let rec probe_filter
-  pr pos q xs acc =
-    (match xs with [] -> (fun () -> acc)
-      | x :: r ->
-        (fun f_ () -> f_ ((ht_mem q (pr x)) ()) ())
-          (fun b ->
-            probe_filter pr pos q r
-              (if equal_boola b pos then unbox ed_insert_v x acc else acc)));;
-
 let rec heap_join_ok
   idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
           (integer_of_nat (size_lista idx));;
 
-let rec ht_ins_list
-  q xs =
-    (match xs with [] -> (fun () -> q)
-      | y :: ys ->
-        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
-
-let rec ht_of_list
-  xs = (fun f_ () -> f_
-         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
-         (fun q -> ht_ins_list q xs);;
-
 let rec bin_join_j
   n aa ta pos a t =
-    (if not use_heap_join then (fun () -> (ed_bin_join n aa ta pos a t))
-      else (if unbox ed_set_eq_v ta ed_bot then (fun () -> ed_bot)
-             else (if unbox ed_set_eq_v t ed_bot
-                    then (fun () -> (if pos then ed_bot else ta))
-                    else (if is_empty
-                               (card_UNIV_nat, ceq_nat, cproper_interval_nat) a
-                           then (fun () ->
-                                  (if equal_boola pos
-(unbox ed_member_v (replicate n None) t)
-                                    then ta else ed_bot))
-                           else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) a
-                                      aa
-                                  then (let ys =
-  unbox ed_csorted_list_of_set_v t in
- (if not (heap_join_ok ys) then (fun () -> (ed_bin_join n aa ta pos a t))
-   else (fun f_ () -> f_ ((ht_of_list ys) ()) ())
-          (fun q ->
-            probe_filter (fun asa -> asa) pos q
-              (unbox ed_csorted_list_of_set_v ta) ed_bot)))
-                                  else (if less_eq_set
-     (cenum_nat, ceq_nat, ccompare_nat) a aa
- then (let ys = unbox ed_csorted_list_of_set_v t in
-        (if not (heap_join_ok ys) then (fun () -> (ed_bin_join n aa ta pos a t))
-          else (fun f_ () -> f_ ((ht_of_list ys) ()) ())
-                 (fun q ->
-                   probe_filter (proj_tuple (join_mask n a)) pos q
-                     (unbox ed_csorted_list_of_set_v ta) ed_bot)))
- else (if less_eq_set (cenum_nat, ceq_nat, ccompare_nat) aa a && pos
-        then (let xs = unbox ed_csorted_list_of_set_v ta in
-               (if not (heap_join_ok xs)
-                 then (fun () -> (ed_bin_join n aa ta pos a t))
-                 else (fun f_ () -> f_ ((ht_of_list xs) ()) ())
-                        (fun q ->
-                          probe_filter (proj_tuple (join_mask n aa)) pos q
-                            (unbox ed_csorted_list_of_set_v t) ed_bot)))
-        else (if pos
-               then (let ys = unbox ed_csorted_list_of_set_v t in
-                      (if not (heap_join_ok ys)
-                        then (fun () -> (ed_bin_join n aa ta pos a t))
-                        else probe_join_j n aa
-                               (unbox ed_csorted_list_of_set_v ta) a ys))
-               else (fun () -> (ed_join ta pos t))))))))));;
+    (if not use_heap_join ||
+          (not pos ||
+            (unbox ed_set_eq_v ta ed_bot ||
+              (unbox ed_set_eq_v t ed_bot ||
+                (is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) a ||
+                  (less_eq_set (cenum_nat, ceq_nat, ccompare_nat) a aa ||
+                    (less_eq_set (cenum_nat, ceq_nat, ccompare_nat) aa a ||
+                      (not (unbox ed_finite_v ta) ||
+                        (not (unbox ed_finite_v t) ||
+                          not (let c =
+                                 complete_with
+                                   (inf_seta (ceq_nat, ccompare_nat) aa a) n
+                                 in
+                                unbox ed_Ball_v ta c &&
+                                  unbox ed_Ball_v t c)))))))))
+      then (fun () -> (ed_bin_join n aa ta pos a t))
+      else (let xs = unbox ed_csorted_list_of_set_v ta in
+            let ys = unbox ed_csorted_list_of_set_v t in
+            let idx =
+              (if less_eq_nat (size_lista xs) (size_lista ys) then xs else ys)
+              in
+            let prb =
+              (if less_eq_nat (size_lista xs) (size_lista ys) then ys else xs)
+              in
+             (if not (heap_join_ok idx)
+               then (fun () -> (ed_bin_join n aa ta pos a t))
+               else probe_join_j n aa prb a idx)));;
 
 let rec is_simple_eq
   t1 t2 =
@@ -15521,6 +15486,17 @@ let rec mstep_j
             (let (ia, (tqa, vsa)) =
                annotate_verdicts_j i (append_queue (snd tdb) tq) vs [] in
               (vsa, (ia, (plus_nata j one_nata, (ma, (n, tqa)))))))));;
+
+let rec ht_ins_list
+  q xs =
+    (match xs with [] -> (fun () -> q)
+      | y :: ys ->
+        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
+
+let rec ht_of_list
+  xs = (fun f_ () -> f_
+         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
+         (fun q -> ht_ins_list q xs);;
 
 let rec im_to_list _A
   q = (fun f_ () -> f_ ((im_entries _A q) ()) ())
