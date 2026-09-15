@@ -801,10 +801,11 @@ lemma eval_step_dq_fold_code[code]:
         to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of Some tstp \<Rightarrow> (\<not>ts_tp_lt I ts' (tp - len + 1) tstp) |
                                                             None \<Rightarrow> False) to_del_approx;
         m'' = mapping_delete_set m to_del;
-        m' = dq_nth a2_dq 1;
+        a2_dq' = dq_tl a2_dq;
+        m' = dq_nth a2_dq' 0;
         result' = if len = 1 then {} else (result - to_del) \<union> Mapping.keys m';
-        a2_dq = dq_tl (dq_upd a2_dq 1 (if len = 1 then Mapping.empty
-          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m'));
+        a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
+          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
         tstp_dq = dq_tl tstp_dq in
         (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # done)))"
   by (subst eval_step_dq.simps) (simp only: Union_set_fold)

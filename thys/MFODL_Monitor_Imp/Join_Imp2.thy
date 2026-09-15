@@ -82,21 +82,28 @@ partial_function (heap) idx_ins_list :: "bool list \<Rightarrow> event_data tupl
               q \<leftarrow> im_update_h q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
               idx_ins_list msk r q }))"
 
+text \<open>
+  The joined tuples are collected in a list and the table is built from it in one pass. Inserting
+  them one at a time into the result table instead, which is what the pure code does, copies a
+  root-to-leaf path of the tree per tuple and is where the monitor's allocation goes.
+\<close>
+
 partial_function (heap) probe_all :: "bool list \<Rightarrow> jidx \<Rightarrow>
-    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+    event_data tuple list \<Rightarrow> event_data tuple list \<Rightarrow> event_data tuple list Heap" where
   [code]:
   "probe_all msk q xs acc = (case xs of [] \<Rightarrow> return acc
      | x # r \<Rightarrow> do { v \<leftarrow> im_lookup q (proj_tuple msk x);
                       probe_all msk q r (case v of None \<Rightarrow> acc
                         | Some l \<Rightarrow> fold (\<lambda>y acc. case join1 (x, y) of None \<Rightarrow> acc
-                                            | Some z \<Rightarrow> Set.insert z acc) l acc) })"
+                                            | Some z \<Rightarrow> z # acc) l acc) })"
 
 definition probe_join_j :: "nat \<Rightarrow> nat set \<Rightarrow> event_data tuple list \<Rightarrow> nat set \<Rightarrow>
     event_data tuple list \<Rightarrow> event_data table Heap" where
   "probe_join_j n A xs B ys = (let msk = join_mask n (A \<inter> B) in
      do { q \<leftarrow> im_new (2 * integer_of_nat (length ys));
           q \<leftarrow> idx_ins_list msk ys q;
-          probe_all msk q xs {} })"
+          zs \<leftarrow> probe_all msk q xs [];
+          return (table_of_unsorted zs) })"
 
 definition bin_join_j :: "nat \<Rightarrow> nat set \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> nat set \<Rightarrow> event_data table \<Rightarrow>
     event_data table Heap" where

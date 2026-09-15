@@ -210,6 +210,54 @@ proof -
   finally show ?thesis .
 qed
 
+text \<open>
+  The same entry, reached the other way round: dropping the head first and then reading and
+  writing at index 0. @{const dq_norm} guarantees that the front list of a non-empty deque is
+  non-empty, so index 0 is the head of the front list and both the read and the write are
+  constant time, whereas index 1 of the deque before the head is dropped falls into the back
+  list whenever the front list holds exactly one element, and is then reached by walking the
+  back list to its far end.
+\<close>
+
+lemma tl_list_update_1: "tl (xs[Suc 0 := X]) = (tl xs)[0 := X]"
+  by (cases xs) auto
+
+lemma dq_nth_upd_tl:
+  assumes "dq_inv d" "Suc 0 < dq_len d" "Suc k < dq_len d"
+  shows "dq_nth (dq_upd (dq_tl d) 0 X) k = (dq_list d)[Suc 0 := X] ! Suc k"
+proof -
+  have inv1: "dq_inv (dq_tl d)" using assms(1) by simp
+  have len1: "dq_len (dq_tl d) = dq_len d - 1" using assms(1) by (simp add: dq_len_tl)
+  have k1: "k < dq_len (dq_tl d)" using assms(3) len1 by simp
+  have z1: "0 < dq_len (dq_tl d)" using assms(2) len1 by simp
+  have inv2: "dq_inv (dq_upd (dq_tl d) 0 X)" using inv1 by simp
+  have len2: "dq_len (dq_upd (dq_tl d) 0 X) = dq_len (dq_tl d)"
+    using inv1 z1 by (simp add: dq_len_upd)
+  have "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_list (dq_upd (dq_tl d) 0 X) ! k"
+    using inv2 len2 k1 by (intro dq_nth) auto
+  also have "\<dots> = (dq_list (dq_tl d))[0 := X] ! k" using inv1 z1 by (simp add: dq_list_upd)
+  also have "\<dots> = (tl (dq_list d))[0 := X] ! k" using assms(1) by simp
+  also have "\<dots> = tl ((dq_list d)[Suc 0 := X]) ! k" by (simp add: tl_list_update_1)
+  also have "\<dots> = (dq_list d)[Suc 0 := X] ! Suc k"
+    using assms by (intro nth_tl) (simp add: dq_len_list)
+  finally show ?thesis .
+qed
+
+lemma dq_nth_tl_0:
+  assumes "dq_inv d" "Suc 0 < dq_len d"
+  shows "dq_nth (dq_tl d) 0 = dq_nth d 1"
+proof -
+  have inv1: "dq_inv (dq_tl d)" using assms(1) by simp
+  have len1: "dq_len (dq_tl d) = dq_len d - 1" using assms(1) by (simp add: dq_len_tl)
+  have "dq_nth (dq_tl d) 0 = dq_list (dq_tl d) ! 0"
+    using inv1 len1 assms(2) by (intro dq_nth) auto
+  also have "\<dots> = tl (dq_list d) ! 0" using assms(1) by simp
+  also have "\<dots> = dq_list d ! Suc 0"
+    using assms by (intro nth_tl) (simp add: dq_len_list)
+  also have "\<dots> = dq_nth d 1" using assms by (simp add: dq_nth)
+  finally show ?thesis .
+qed
+
 lemma rel_a2_step:
   assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
   shows "rel_a2 tp (len - 1) (dq_tl (dq_upd d 1 X)) (Mapping.delete (tp - len) (Mapping.update (tp - len + 1) X m))"
@@ -351,6 +399,62 @@ next
   then show ?thesis using rel_a2_step[OF assms, of C] by simp
 qed
 
+text \<open>
+  @{const rel_a2} sees a deque only through @{const dq_inv}, @{const dq_len} and
+  @{const dq_nth}, so the two ways of reaching the entry behind the head relate the refined
+  structure to the same abstract one.
+\<close>
+
+lemma rel_a2_cong:
+  assumes "dq_inv d" "dq_inv d'" "dq_len d = dq_len d'"
+    and "\<And>k. k < dq_len d \<Longrightarrow> dq_nth d k = dq_nth d' k"
+  shows "rel_a2 tp len d m = rel_a2 tp len d' m"
+  using assms by (fastforce simp: rel_a2_def)
+
+lemma rel_a2_step_tl:
+  assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
+  shows "rel_a2 tp (len - 1) (dq_upd (dq_tl d) 0 X) (Mapping.delete (tp - len) (Mapping.update (tp - len + 1) X m))"
+proof -
+  have inv: "dq_inv d" and dlen: "dq_len d = len + 1"
+    using assms(1) by (auto simp: rel_a2_def)
+  have gt1: "Suc 0 < dq_len d" using dlen assms(2) by simp
+  have invL: "dq_inv (dq_upd (dq_tl d) 0 X)" using inv by simp
+  have invR: "dq_inv (dq_tl (dq_upd d 1 X))" using inv by simp
+  have gt1': "1 < dq_len d" using dlen assms(2) by simp
+  have lenL: "dq_len (dq_upd (dq_tl d) 0 X) = len"
+    using inv gt1 dlen by (simp add: dq_len_upd dq_len_tl)
+  have lenR: "dq_len (dq_tl (dq_upd d 1 X)) = len"
+    using inv gt1' dlen by (simp add: dq_len_tl dq_len_upd)
+  have lenEq: "dq_len (dq_upd (dq_tl d) 0 X) = dq_len (dq_tl (dq_upd d 1 X))"
+    using lenL lenR by simp
+  have nth: "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_nth (dq_tl (dq_upd d 1 X)) k"
+    if "k < dq_len (dq_upd (dq_tl d) 0 X)" for k
+  proof -
+    have k: "Suc k < dq_len d" using that lenL dlen by simp
+    have A: "dq_nth (dq_upd (dq_tl d) 0 X) k = (dq_list d)[Suc 0 := X] ! Suc k"
+      by (rule dq_nth_upd_tl[OF inv gt1 k])
+    have B: "dq_nth (dq_tl (dq_upd d 1 X)) k = (dq_list d)[1 := X] ! Suc k"
+      by (rule dq_nth_tl_upd[OF inv gt1' k])
+    show ?thesis unfolding A B by simp
+  qed
+  show ?thesis
+    unfolding rel_a2_cong[OF invL invR lenEq nth]
+    by (rule rel_a2_step[OF assms])
+qed
+
+lemma rel_a2_step_tl':
+  assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
+  shows "rel_a2 tp (len - 1) (dq_upd (dq_tl d) 0 (if len = 1 then E else C))
+    (Mapping.delete (tp - len) (if len = 1 then Mapping.update tp E m else Mapping.update (tp - len + 1) C m))"
+proof (cases "len = 1")
+  case True
+  have eq: "tp - len + 1 = tp" using True assms(3) by simp
+  show ?thesis using True rel_a2_step_tl[OF assms, of E, unfolded eq] by simp
+next
+  case False
+  then show ?thesis using rel_a2_step_tl[OF assms, of C] by simp
+qed
+
 subsection \<open>Operations\<close>
 
 fun eval_step_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
@@ -368,10 +472,11 @@ fun eval_step_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event
         to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of Some tstp \<Rightarrow> (\<not>ts_tp_lt I ts' (tp - len + 1) tstp) |
                                                             None \<Rightarrow> False) to_del_approx;
         m'' = mapping_delete_set m to_del;
-        m' = dq_nth a2_dq 1;
+        a2_dq' = dq_tl a2_dq;
+        m' = dq_nth a2_dq' 0;
         result' = if len = 1 then {} else (result - to_del) \<union> Mapping.keys m';
-        a2_dq = dq_tl (dq_upd a2_dq 1 (if len = 1 then Mapping.empty
-          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m'));
+        a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
+          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
         tstp_dq = dq_tl tstp_dq in
         (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # done)))"
 
@@ -392,10 +497,14 @@ proof -
   obtain ts0 tss0 where hd: "safe_hd tss = (Some ts0, tss0)"
     using safe_hd_rep[of tss] lin by (cases "safe_hd tss") (auto split: option.splits)
   have m0: "Mapping.lookup a2_map (tp - len) = Some (dq_nth a2_dq 0)" by (rule rel_a2_lookup0[OF ra2])
-  have m1: "Mapping.lookup a2_map (tp - len + 1) = Some (dq_nth a2_dq 1)" by (rule rel_a2_lookup1[OF ra2 len1])
-  have ra2': "rel_a2 tp (len - 1) (dq_tl (dq_upd a2_dq 1 (if len = 1 then Mapping.empty else C)))
+  have inv: "dq_inv a2_dq" and dlen: "dq_len a2_dq = len + 1"
+    using ra2 by (auto simp: rel_a2_def)
+  have gt1: "Suc 0 < dq_len a2_dq" using dlen len1 by simp
+  have m1: "Mapping.lookup a2_map (tp - len + 1) = Some (dq_nth (dq_tl a2_dq) 0)"
+    using rel_a2_lookup1[OF ra2 len1] dq_nth_tl_0[OF inv gt1] by simp
+  have ra2': "rel_a2 tp (len - 1) (dq_upd (dq_tl a2_dq) 0 (if len = 1 then Mapping.empty else C))
     (Mapping.delete (tp - len) (if len = 1 then Mapping.update tp Mapping.empty a2_map else Mapping.update (tp - len + 1) C a2_map))" for C
-    by (rule rel_a2_step'[OF ra2 len1 lentp])
+    by (rule rel_a2_step_tl'[OF ra2 len1 lentp])
   have rt': "rel_tstp tp (len - 1) (dq_tl tstp_dq) (Mapping.delete (tp - len) tstp_map)"
     by (rule rel_tstp_step[OF rt len1 lentp])
   show ?thesis
