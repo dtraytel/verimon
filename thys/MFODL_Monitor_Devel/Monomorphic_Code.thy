@@ -339,52 +339,6 @@ lemma ed_minus_keys_compat[code_unfold]:
   unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_v_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_v_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_v_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_v_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_v_unfold[symmetric]
   by (auto simp: Mapping.keys_dom_lookup)
 
-setup \<open>Monomorphize.monomorphize_cmd
-  [("join1_insert", "ed_join1_insert", ["event_data"]),
-   ("join1_insert'", "ed_join1_insert'", ["event_data"]),
-   ("join_row", "ed_join_row", ["event_data"]),
-   ("join", "ed_join", ["event_data"]),
-   ("probe_fold", "ed_probe_fold", ["event_data"]),
-   ("probe_step", "ed_probe_step", ["event_data"]),
-   ("probe_join", "ed_probe_join", ["event_data"]),
-   ("probe_step_key", "ed_probe_step_key", ["event_data"]),
-   ("probe_join_n", "ed_probe_join_n", ["event_data"]),
-   ("bin_join", "ed_bin_join", ["event_data"]),
-   ("tmp_step", "ed_tmp_step", ["event_data"]),
-   ("tmp_set", "ed_tmp_set", ["event_data"]),
-   ("proj_tuple_in_join", "ed_proj_tuple_in_join", ["event_data"]),
-   ("proj_tuple_in_join_optim", "ed_proj_tuple_in_join_optim", ["event_data"]),
-   ("singleton_table", "ed_singleton_table", ["event_data"]),
-   ("unit_table", "ed_unit_table", ["event_data"]),
-   ("valid_tuple", "ed_valid_tuple", ["event_data"]),
-   ("mmulti_join", "ed_mmulti_join", ["event_data"]),
-   ("mmulti_join_pw", "ed_mmulti_join_pw", ["event_data"]),
-   ("mmulti_join_pos", "ed_mmulti_join_pos", ["event_data"]),
-   ("mmulti_join_neg", "ed_mmulti_join_neg", ["event_data"]),
-   ("mmulti_join_gen", "ed_mmulti_join_gen", ["event_data"]),
-   ("hprobe_join", "ed_hprobe_join", ["event_data"]),
-   ("probe_join_imp", "ed_probe_join_imp", ["event_data"]),
-   ("idx_create", "ed_idx_create", ["event_data"]),
-   ("idx_reindex", "ed_idx_reindex", ["event_data"]),
-   ("idx_join", "ed_idx_join", ["event_data tuple", "event_data"]),
-   ("idx_antijoin", "ed_idx_antijoin", ["event_data tuple", "event_data"]),
-   ("idx_union", "ed_idx_union", ["event_data tuple", "event_data tuple"]),
-   ("wf_idx_set", "ed_wf_idx_set", ["event_data"]),
-   ("join_mmsaux", "ed_join_mmsaux", ["event_data"]),
-   ("add_new_table_mmsaux", "ed_add_new_table_mmsaux", ["event_data"]),
-   ("add_new_ts_mmsaux", "ed_add_new_ts_mmsaux", ["event_data"]),
-   ("shift_end", "ed_shift_end", ["event_data"]),
-   ("gc_mmsaux", "ed_gc_mmsaux", ["event_data"]),
-   ("init_mmsaux", "ed_init_mmsaux", ["event_data"]),
-   ("update_mmtaux", "ed_update_mmtaux", ["event_data"]),
-   ("init_mmtaux", "ed_init_mmtaux", ["event_data"]),
-   ("update_matchF_step", "ed_update_matchF_step", ["event_data"]),
-   ("update_matchF_base", "ed_update_matchF_base", ["event_data"]),
-   ("mrtabulate", "ed_mrtabulate", ["event_data"]),
-   ("get_map_result", "ed_get_map_result", ["event_data"])]
-  ["etuple_dict_simps"]\<close>
-
-
 section \<open>Bulk construction of tables\<close>
 
 text \<open>
@@ -456,6 +410,218 @@ definition table_of_list :: "event_data tuple list \<Rightarrow> event_data tabl
 
 lemma table_of_list_code[code]: "table_of_list xs = RBT_set (rbt_of_sorted_list xs)"
   by (simp add: table_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple)
+
+
+section \<open>Tables built in one pass\<close>
+
+text \<open>
+  An operator that builds its result table by inserting its tuples one at a time into a
+  persistent red-black tree copies the root-to-leaf path it descends for every tuple, so a
+  table of \<open>n\<close> tuples costs about \<open>n log n\<close> nodes of six words where one pass costs \<open>n\<close>.
+  @{const rbt_of_sorted_list} above builds the tree in one pass, but it wants a list that is
+  strictly sorted with respect to the comparator, and the tuples an operator produces are not.
+  They are therefore collected in a list and sorted here, by a bottom-up merge sort that drops
+  duplicates as it merges -- which is exactly the form @{const rbt_of_sorted_list} checks for,
+  so nothing is sorted twice and nothing falls back to the bulkload.
+
+  Only the set of the sorted list matters for correctness: @{const rbt_of_sorted_list} checks
+  the sortedness itself and falls back if it does not hold, so @{thm [source]
+  RBT_set_rbt_of_sorted_list} holds unconditionally and the merge sort needs no sortedness
+  proof, only @{thm [source] set_sort_c}.
+
+  The probe join is the first user. Its fold over the probing table inserts each joined tuple
+  into the result, and it is the case of @{const bin_join} the pure code has no better
+  algorithm for.
+\<close>
+
+section \<open>A comparator merge sort\<close>
+
+fun merge_c :: "('a :: ccompare) list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "merge_c [] ys = ys"
+| "merge_c (x # xs) [] = x # xs"
+| "merge_c (x # xs) (y # ys) = (case ccomp x y of
+     Lt \<Rightarrow> x # merge_c xs (y # ys)
+   | Gt \<Rightarrow> y # merge_c (x # xs) ys
+   | Eq \<Rightarrow> x # merge_c xs ys)"
+
+fun merge_pairs_c :: "('a :: ccompare) list list \<Rightarrow> 'a list list" where
+  "merge_pairs_c (a # b # r) = merge_c a b # merge_pairs_c r"
+| "merge_pairs_c r = r"
+
+fun merge_all_c :: "nat \<Rightarrow> ('a :: ccompare) list list \<Rightarrow> 'a list" where
+  "merge_all_c 0 xss = concat xss"
+| "merge_all_c (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
+     | _ \<Rightarrow> merge_all_c k (merge_pairs_c xss))"
+
+definition sort_c :: "('a :: ccompare) list \<Rightarrow> 'a list" where
+  "sort_c xs = merge_all_c (length xs) (map (\<lambda>x. [x]) xs)"
+
+lemma set_merge_c:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "set (merge_c (xs :: 'a list) ys) = set xs \<union> set ys"
+proof -
+  from assms obtain c where Some: "ID CCOMPARE('a) = Some c" by auto
+  have ccomp_eq: "(ccomp :: 'a comparator) = c" using Some by simp
+  have eq: "\<And>x y. ccomp x y = Eq \<Longrightarrow> (x :: 'a) = y"
+    using comparator.eq[OF ID_ccompare'[OF Some]] by (simp add: ccomp_eq)
+  show ?thesis
+    by (induction xs ys rule: merge_c.induct) (auto split: order.splits dest: eq)
+qed
+
+lemma set_concat_merge_pairs_c:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "\<Union> (set ` set (merge_pairs_c (xss :: 'a list list))) = \<Union> (set ` set xss)"
+proof (induction xss rule: merge_pairs_c.induct)
+  case (1 a b r)
+  then show ?case by (simp add: set_merge_c[OF assms] Un_assoc)
+qed simp_all
+
+lemma set_merge_all_c:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "set (merge_all_c n (xss :: 'a list list)) = \<Union> (set ` set xss)"
+proof (induction n arbitrary: xss)
+  case (Suc k)
+  show ?case
+  proof (cases xss)
+    case Nil
+    then show ?thesis by simp
+  next
+    case (Cons a r)
+    show ?thesis
+    proof (cases r)
+      case Nil
+      then show ?thesis using Cons by simp
+    next
+      case (Cons b r')
+      then show ?thesis using \<open>xss = a # r\<close>
+        by (simp add: Suc.IH set_concat_merge_pairs_c[OF assms] set_merge_c[OF assms] Un_assoc)
+    qed
+  qed
+qed simp
+
+lemma set_sort_c:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "set (sort_c (xs :: 'a list)) = set xs"
+  by (simp add: sort_c_def set_merge_all_c[OF assms])
+
+definition set_of_list :: "('a :: ccompare) list \<Rightarrow> 'a set" where
+  "set_of_list xs = RBT_set (rbt_of_sorted_list (sort_c xs))"
+
+lemma set_of_list_eq:
+  assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
+  shows "set_of_list (xs :: 'a list) = set xs"
+  by (simp add: set_of_list_def RBT_set_rbt_of_sorted_list[OF assms] set_sort_c[OF assms])
+
+section \<open>The probe join in one pass\<close>
+
+definition probe_cluster :: "nat set \<Rightarrow> (('a :: {ccompare, ceq}) tuple, 'a table) mapping \<Rightarrow>
+    'a tuple \<Rightarrow> 'a table" where
+  "probe_cluster I m b = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> {} | Some T \<Rightarrow> T)"
+
+lemma probe_cluster_cluster:
+  "probe_cluster I (cluster (Some \<circ> restrict I) t) b = {a \<in> t. restrict I a = restrict I b}"
+  unfolding probe_cluster_def lookup_cluster by (auto split: if_splits simp: image_iff)
+
+definition probe_list :: "nat set \<Rightarrow> ('a :: {ccompare, ceq}) table \<Rightarrow> 'a table \<Rightarrow> 'a tuple list" where
+  "probe_list I t t' = (let m = cluster (Some \<circ> restrict I) t in
+     fold (\<lambda>b acc. fold (\<lambda>a acc. case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> z # acc)
+                        (csorted_list_of_set (probe_cluster I m b)) acc)
+       (csorted_list_of_set t') [])"
+
+lemma set_fold_join1_cons:
+  "set (fold (\<lambda>a acc. case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> z # acc) as acc)
+     = set acc \<union> (\<Union>a \<in> set as. set_option (join1 (a, b)))"
+  by (induction as arbitrary: acc) (auto split: option.splits)
+
+lemma set_fold_probe:
+  "set (fold (\<lambda>b acc. fold (\<lambda>a acc. case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> z # acc)
+                (g b) acc) bs acc)
+     = set acc \<union> (\<Union>b \<in> set bs. \<Union>a \<in> set (g b). set_option (join1 (a, b)))"
+  by (induction bs arbitrary: acc) (auto simp: set_fold_join1_cons)
+
+lemma set_probe_list:
+  fixes t t' :: "('a :: {ccompare, ceq}) table"
+  assumes "finite t" "finite t'" "ID CCOMPARE('a tuple) \<noteq> None"
+  shows "set (probe_list I t t') =
+    (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+proof -
+  have t': "set (csorted_list_of_set t') = t'"
+    using assms(2,3) by (subst csorted_list_of_set_split) auto
+  have cl: "set (csorted_list_of_set (probe_cluster I (cluster (Some \<circ> restrict I) t) b)) =
+    {a \<in> t. restrict I a = restrict I b}" for b
+    using assms(1,3) unfolding probe_cluster_cluster
+    by (subst csorted_list_of_set_split) auto
+  show ?thesis
+    unfolding probe_list_def Let_def set_fold_probe t' cl by simp
+qed
+
+declare [[code drop: probe_join]]
+
+lemma probe_join_code[code]:
+  fixes t t' :: "('a :: {ccompare, ceq}) table"
+  shows "probe_join I t t' =
+    (if finite t \<and> finite t' \<and> ID CCOMPARE('a tuple) \<noteq> None
+     then set_of_list (probe_list I t t')
+     else set_fold_cfi (probe_step_cfi I (cluster (Some \<circ> restrict I) t)) {} t')"
+proof (cases "finite t \<and> finite t' \<and> ID CCOMPARE('a tuple) \<noteq> None")
+  case True
+  then have fin: "finite t" "finite t'" and cc: "ID CCOMPARE('a tuple) \<noteq> None" by auto
+  have "probe_join I t t' =
+    (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+    unfolding probe_join_def set_fold_cfi.rep_eq probe_step_cfi.rep_eq
+    by (rule fold_probe_step[OF fin])
+  also have "\<dots> = set (probe_list I t t')"
+    by (rule set_probe_list[OF fin cc, symmetric])
+  also have "\<dots> = set_of_list (probe_list I t t')"
+    by (rule set_of_list_eq[OF cc, symmetric])
+  finally show ?thesis using True by simp
+qed (auto simp: probe_join_def)
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("join1_insert", "ed_join1_insert", ["event_data"]),
+   ("join1_insert'", "ed_join1_insert'", ["event_data"]),
+   ("join_row", "ed_join_row", ["event_data"]),
+   ("join", "ed_join", ["event_data"]),
+   ("probe_fold", "ed_probe_fold", ["event_data"]),
+   ("probe_step", "ed_probe_step", ["event_data"]),
+   ("probe_join", "ed_probe_join", ["event_data"]),
+   ("probe_step_key", "ed_probe_step_key", ["event_data"]),
+   ("probe_join_n", "ed_probe_join_n", ["event_data"]),
+   ("bin_join", "ed_bin_join", ["event_data"]),
+   ("tmp_step", "ed_tmp_step", ["event_data"]),
+   ("tmp_set", "ed_tmp_set", ["event_data"]),
+   ("proj_tuple_in_join", "ed_proj_tuple_in_join", ["event_data"]),
+   ("proj_tuple_in_join_optim", "ed_proj_tuple_in_join_optim", ["event_data"]),
+   ("singleton_table", "ed_singleton_table", ["event_data"]),
+   ("unit_table", "ed_unit_table", ["event_data"]),
+   ("valid_tuple", "ed_valid_tuple", ["event_data"]),
+   ("mmulti_join", "ed_mmulti_join", ["event_data"]),
+   ("mmulti_join_pw", "ed_mmulti_join_pw", ["event_data"]),
+   ("mmulti_join_pos", "ed_mmulti_join_pos", ["event_data"]),
+   ("mmulti_join_neg", "ed_mmulti_join_neg", ["event_data"]),
+   ("mmulti_join_gen", "ed_mmulti_join_gen", ["event_data"]),
+   ("hprobe_join", "ed_hprobe_join", ["event_data"]),
+   ("probe_join_imp", "ed_probe_join_imp", ["event_data"]),
+   ("idx_create", "ed_idx_create", ["event_data"]),
+   ("idx_reindex", "ed_idx_reindex", ["event_data"]),
+   ("idx_join", "ed_idx_join", ["event_data tuple", "event_data"]),
+   ("idx_antijoin", "ed_idx_antijoin", ["event_data tuple", "event_data"]),
+   ("idx_union", "ed_idx_union", ["event_data tuple", "event_data tuple"]),
+   ("wf_idx_set", "ed_wf_idx_set", ["event_data"]),
+   ("join_mmsaux", "ed_join_mmsaux", ["event_data"]),
+   ("add_new_table_mmsaux", "ed_add_new_table_mmsaux", ["event_data"]),
+   ("add_new_ts_mmsaux", "ed_add_new_ts_mmsaux", ["event_data"]),
+   ("shift_end", "ed_shift_end", ["event_data"]),
+   ("gc_mmsaux", "ed_gc_mmsaux", ["event_data"]),
+   ("init_mmsaux", "ed_init_mmsaux", ["event_data"]),
+   ("update_mmtaux", "ed_update_mmtaux", ["event_data"]),
+   ("init_mmtaux", "ed_init_mmtaux", ["event_data"]),
+   ("update_matchF_step", "ed_update_matchF_step", ["event_data"]),
+   ("update_matchF_base", "ed_update_matchF_base", ["event_data"]),
+   ("mrtabulate", "ed_mrtabulate", ["event_data"]),
+   ("get_map_result", "ed_get_map_result", ["event_data"])]
+  ["etuple_dict_simps"]\<close>
+
 
 definition insert_table_into_db :: "string8 \<times> nat \<Rightarrow> event_data table \<Rightarrow> database \<Rightarrow> database" where
   "insert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"
