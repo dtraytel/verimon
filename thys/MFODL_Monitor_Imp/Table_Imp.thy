@@ -42,28 +42,22 @@ text \<open>Hashes live in the array next to the keys, so the target type must b
 instance integer :: heap ..
 
 text \<open>
-  Two thresholds that are worth measuring rather than fixing, so they are read from a mutable
-  flag; the front end exposes them as @{text "-heap_join_min"} and @{text "-bulk_min"}.
+  A threshold worth measuring rather than fixing, so it is read from a mutable flag; the front
+  end exposes it as @{text "-heap_join_min"}.
 \<close>
 
 code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
 \<open>module ConfigImp : sig
   val heap_join_min : int ref
-  val bulk_min : int ref
 end = struct
   let heap_join_min = ref 0
-  let bulk_min = ref 64
 end\<close>
 
 definition heap_join_min :: integer where
   "heap_join_min = 0"
 
-definition bulk_min :: integer where
-  "bulk_min = 64"
-
 code_printing
   constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
-| constant bulk_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.bulk'_min)"
 
 definition teq :: "event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
   "teq x y = (x = y)"
@@ -201,59 +195,6 @@ text \<open>
 
 definition im_filter :: "(event_data tuple \<Rightarrow> bool) \<Rightarrow> ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
   "im_filter p q = (case q of (n, c, a) \<Rightarrow> do { c \<leftarrow> im_filter_idx p a 0 n c; return (n, c, a) })"
-
-subsection \<open>Building a table in one pass\<close>
-
-text \<open>
-  Statistical allocation profiling (Section 15 of \<^file>\<open>../../EFFICIENCY.md\<close>) attributes almost
-  all of the monitor's allocation to one shape: an operator builds its result table by inserting
-  its tuples one at a time into a persistent red-black tree. Each insertion copies the path it
-  descends, so a table of \<open>n\<close> tuples costs \<open>n log n\<close> tree nodes of six words, and the tree is
-  rebuilt at every time point.
-
-  @{const table_of_list} builds the tree in one pass, allocating exactly \<open>n\<close> nodes, but it needs
-  a list that is strictly sorted with respect to the comparator. The tuples an operator produces
-  are not, so they are collected in a list and sorted here: a bottom-up merge sort that drops
-  duplicates as it merges, which leaves the list in exactly the form
-  @{const rbt_of_sorted_list} checks for. The fuel bounds the number of merge rounds; the length
-  of the list is always enough.
-\<close>
-
-fun merge_t :: "event_data tuple list \<Rightarrow> event_data tuple list \<Rightarrow> event_data tuple list" where
-  "merge_t [] ys = ys"
-| "merge_t (x # xs) [] = x # xs"
-| "merge_t (x # xs) (y # ys) = (case ed_comparator x y of
-     Lt \<Rightarrow> x # merge_t xs (y # ys)
-   | Gt \<Rightarrow> y # merge_t (x # xs) ys
-   | Eq \<Rightarrow> x # merge_t xs ys)"
-
-fun merge_pairs_t :: "event_data tuple list list \<Rightarrow> event_data tuple list list" where
-  "merge_pairs_t (a # b # r) = merge_t a b # merge_pairs_t r"
-| "merge_pairs_t r = r"
-
-fun merge_all_t :: "nat \<Rightarrow> event_data tuple list list \<Rightarrow> event_data tuple list" where
-  "merge_all_t 0 xss = concat xss"
-| "merge_all_t (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
-     | _ \<Rightarrow> merge_all_t k (merge_pairs_t xss))"
-
-definition sort_t :: "event_data tuple list \<Rightarrow> event_data tuple list" where
-  "sort_t xs = merge_all_t (length xs) (map (\<lambda>x. [x]) xs)"
-
-text \<open>
-  A table from a list of tuples in whatever order they were produced. When the tuples are
-  already strictly sorted -- which they are whenever the operator keeps a subset of a table it
-  walked in order -- @{const table_of_list} is used directly and nothing is sorted.
-\<close>
-
-text \<open>
-  Sorting only pays once the table is big enough: the sort costs \<open>n log n\<close> comparisons on top,
-  which for a handful of tuples is more than the tree insertions it saves. Below the threshold
-  the table is built the usual way.
-\<close>
-
-definition table_of_unsorted :: "event_data tuple list \<Rightarrow> event_data table" where
-  "table_of_unsorted xs =
-     (if integer_of_nat (length xs) < bulk_min then set xs else table_of_list (sort_t xs))"
 
 subsection \<open>A hash set of tuples on the heap\<close>
 

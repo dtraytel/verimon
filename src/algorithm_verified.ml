@@ -75,7 +75,6 @@ let monitor_gen parse dbschema logfile fv f =
       Verified.Config.imperative_join := !imperative_join;
       Verified.ConfigImp.heap_join_min := !Misc.heap_join_min;
       Verified.Config.bulk_min := !Misc.bulk_min;
-      Verified.ConfigImp.bulk_min := !Misc.bulk_min;
       let ctxt = Monitor.{
         fv_pos;
         cur_tp = 0;

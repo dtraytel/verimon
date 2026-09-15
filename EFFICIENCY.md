@@ -1534,15 +1534,56 @@ What remains, in the order the measurements support:
   allocates nothing in `safe_hd_t` still allocates two blocks around it (1.8% of P2 before these
   changes). Removing that means giving `safe_hd` a code equation that does not go through the
   lifted product, which is a question about `lift_definition(code_dt)` rather than about queues.
-* **One-pass construction in the pure kernel**, for the category that is genuinely tree
-  insertion. `probe_join`'s fold and the `Set.insert` folds of the auxiliary structures are code
-  equations, and `table_of_list xs = set xs` is definitional, so this is a set-equality proof
-  rather than a refinement. Many of these accumulations are already in comparator order -- every
-  filter-shaped case of `bin_join`, the loops of the Since structure -- and those need no sort at
-  all. Note that Containers' own `Set.filter` on an `RBT_set` is already one pass
-  (`rbtreeify (filter P (entries t))`), so the filter cases are not the target; the folds are.
+* **One-pass construction in the pure kernel** was tried for the probe join and does not work.
+  Section 15.7 records what was measured and why.
 * **Boxed `nat`** is 2.8% of P2 in allocation alone and more in arithmetic, and is the next
   largest category after the two fixed here. It was excluded from this round by choice, not by
   measurement.
 * **Heap-resident tables do not address any of this.** They change what a lookup costs, not what
   a table costs to build; Section 15.3 measures `-heap_maps` allocation as unchanged or worse.
+
+### 15.7 One-pass construction for the probe join: a negative result
+
+The shape that 15.2 identifies -- an operator building its result table by inserting tuples one
+at a time -- suggests collecting the tuples in a list and building the tree once, which costs
+`n` nodes instead of about `n log n`. That was done for the probe join, in both kernels, and
+measured. It is slower, and the reason is worth recording.
+
+**The first attempt was not reached at all.** A code equation for `probe_join` measured as
+*exactly* no change: allocation identical to the word on both benchmarks and both logs,
+instructions within 0.002%. `probe_join_n` has its own code equation for the `RBT_set` case --
+the masked probe join of Section 7f -- which bypasses `probe_join` for the only representation
+that ever occurs. An identical-to-the-word measurement is not a small effect; it says the code
+is unreachable. The equation was moved to `probe_join_n`.
+
+**Reached, it loses.** Exact instruction counts for `complex`, one-pass against repeated
+insertion, with the threshold flag switching between them:
+
+| | sparse log (50 tuples/tp) | dense log (1000 tuples/tp, domain 45) |
+|---|---:|---:|
+| pure kernel, repeated insertion | 14038.8M | 42010.8M |
+| pure kernel, one pass | 13985.1M (-0.4%) | **55521.1M (+32%)** |
+| `-heap_maps`, repeated insertion | 11780.4M | 41416.3M |
+| `-heap_maps`, one pass | 11305.2M (-4.0%) | **52823.9M (+27%)** |
+
+Allocation does fall as predicted -- 655.9M to 358.8M words on `and` over the dense log, a 45%
+cut -- and the run still gets a third slower. This is the same lesson as the printer buffer in
+15.5, in a sharper form: allocation is not the cost.
+
+**Why.** Inserting into a set deduplicates as it goes. A join that produces `n` tuples of which
+`k` are distinct costs `n log k` comparisons and keeps a tree of `k` nodes. Collecting the
+tuples in a list defers the deduplication to the sort, which then does `n log n` comparisons on
+the undeduplicated count. The dense log draws 1000 events per time point from a domain of 45,
+so its joins produce many more tuples than they have distinct results, and `n log n` against
+`n log k` is exactly the factor measured.
+
+No threshold on the length of the list can separate the two cases, because `k` is not known
+until the work is done. Both code equations were therefore reverted; the lemmas are kept, proved
+and unused, next to this explanation.
+
+**What would work.** The construction is right for tuples one already has in a list and wrong
+for tuples one is generating. To get both, the deduplication has to happen during generation but
+more cheaply than a tree insertion -- a hash set, which the imperative kernel already has as
+`itbl`: `n` hashes, then `k log k` comparisons to sort the survivors and `k` nodes to build. For
+`n` much larger than `k` that beats both. That is the shape to try next, and it only exists in
+the imperative kernel.

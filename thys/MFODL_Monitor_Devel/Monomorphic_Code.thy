@@ -128,7 +128,7 @@ lemma probe_step_key_restrict: "probe_step_key (restrict I) = probe_step I"
 
 declare [[code drop: probe_join_n]]
 
-lemma probe_join_n_RBT_code:
+lemma probe_join_n_RBT_code[code]:
   fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
   shows "probe_join_n n I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
       None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join_n n I t (RBT_set rbt))
@@ -429,9 +429,19 @@ text \<open>
   @{const set} holds unconditionally and the merge sort needs no sortedness proof -- only that
   it preserves the set of its argument.
 
-  The probe join is the first user. Its fold over the probing table inserts each joined tuple
-  into the result, and it is the case of @{const bin_join} the pure code has no better
-  algorithm for.
+  The probe join was meant to be the first user, and is not: the equations below are proved
+  and deliberately not code equations. Measured, the one-pass construction loses to the
+  repeated insertion it was meant to replace, by 34% of @{text complex} on a log whose join
+  produces many duplicates and by 5% on one whose joins are small.
+
+  The reason is that inserting into a set deduplicates as it goes, so a join that produces
+  \<open>n\<close> tuples of which \<open>k\<close> are distinct costs \<open>n log k\<close> comparisons and keeps a tree of \<open>k\<close>
+  nodes. Collecting the tuples in a list defers the deduplication to the sort, which then does
+  \<open>n log n\<close> comparisons on the undeduplicated count; when \<open>n\<close> is much larger than \<open>k\<close> -- which
+  is what a join over a small domain produces -- that is far worse, and no threshold on the
+  length of the list can tell the two cases apart, because \<open>k\<close> is not known until the work is
+  done. The construction is right for tuples one already has in a list and wrong for tuples one
+  is generating; see Section 15.6 of \<^file>\<open>../../EFFICIENCY.md\<close>.
 \<close>
 
 section \<open>A comparator merge sort\<close>
@@ -556,9 +566,7 @@ proof -
     unfolding probe_list_def Let_def set_fold_probe t' cl by simp
 qed
 
-declare [[code drop: probe_join]]
-
-lemma probe_join_code[code]:
+lemma probe_join_one_pass:
   fixes t t' :: "('a :: {ccompare, ceq}) table"
   shows "probe_join I t t' =
     (if finite t \<and> finite t' \<and> ID CCOMPARE('a tuple) \<noteq> None
@@ -654,7 +662,7 @@ proof -
   finally show ?thesis ..
 qed
 
-lemma probe_join_n_RBT_one_pass[code]:
+lemma probe_join_n_RBT_one_pass:
   fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
   shows "probe_join_n n I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
       None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join_n n I t (RBT_set rbt))

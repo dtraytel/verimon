@@ -1,9 +1,11 @@
 module Config : sig
   val generic_join : bool ref
   val imperative_join : bool ref
+  val bulk_min : int ref
 end = struct
   let generic_join = ref false
   let imperative_join = ref false
+  let bulk_min = ref 64
 end
 
 module Uint32 : sig
@@ -8179,6 +8181,21 @@ let rec complete_with
                      | Some b -> b)
               else complete_on i t)));;
 
+let rec probe_step_key_list (_A1, _A2, _A3)
+  key m b acc =
+    (match
+      lookupa
+        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
+        m (key b)
+      with None -> acc
+      | Some t ->
+        fold (fun a acca ->
+               (match join1 _A3 (a, b) with None -> acca | Some z -> z :: acca))
+          (csorted_list_of_set
+            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+            t)
+          acc);;
+
 let rec join1_inserta (_A1, _A2, _A3)
   b a acc = join1_insert (_A1, _A2, _A3) a b acc;;
 
@@ -8220,20 +8237,6 @@ let rec probe_step_key (_A1, _A2, _A3)
         m (key b)
       with None -> acc | Some a -> probe_fold (_A1, _A2, _A3) b acc a);;
 
-let rec proj_tuple_chk
-  x0 x1 = match x0, x1 with [], [] -> Some []
-    | b :: bs, x :: xs ->
-        map_option (fun a -> (if b then x else None) :: a)
-          (proj_tuple_chk bs xs)
-    | v :: va, [] -> None
-    | [], v :: va -> None;;
-
-let rec restrict_with
-  i n = (let mask = join_mask n i in
-          (fun v ->
-            (match proj_tuple_chk mask v with None -> restrict i v
-              | Some r -> r)));;
-
 let rec rbt_comp_bulkload
   c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
 
@@ -8272,7 +8275,24 @@ let rec merge_all_c _A
 
 let rec sort_c _A xs = merge_all_c _A (size_lista xs) (mapa (fun x -> [x]) xs);;
 
-let rec set_of_list _A xs = RBT_set (rbt_of_sorted_list _A (sort_c _A xs));;
+let rec set_of_list (_A1, _A2, _A3)
+  xs = (if Z.lt (integer_of_nat (size_lista xs)) (Z.of_int !Config.bulk_min)
+         then set (_A1, _A2, _A3) xs
+         else RBT_set (rbt_of_sorted_list _A2 (sort_c _A2 xs)));;
+
+let rec proj_tuple_chk
+  x0 x1 = match x0, x1 with [], [] -> Some []
+    | b :: bs, x :: xs ->
+        map_option (fun a -> (if b then x else None) :: a)
+          (proj_tuple_chk bs xs)
+    | v :: va, [] -> None
+    | [], v :: va -> None;;
+
+let rec restrict_with
+  i n = (let mask = join_mask n i in
+          (fun v ->
+            (match proj_tuple_chk mask v with None -> restrict i v
+              | Some r -> r)));;
 
 let rec probe_cluster (_A1, _A2, _A3)
   i m b =
@@ -8330,7 +8350,9 @@ let rec probe_join (_A1, _A2, _A3)
                (ccompare_list (ccompare_option _A2)))
              t &&
             not (is_none (ccompare_lista (ccompare_option _A2))))
-      then set_of_list (ccompare_list (ccompare_option _A2))
+      then set_of_list
+             ((ceq_list (ceq_option _A1)),
+               (ccompare_list (ccompare_option _A2)), set_impl_list)
              (probe_list (_A1, _A2, _A3) i ta t)
       else set_fold_cfi
              ((ceq_list (ceq_option _A1)),
@@ -8349,28 +8371,39 @@ let rec probe_join (_A1, _A2, _A3)
 
 let rec probe_join_n (_A1, _A2, _A3)
   n i t x3 = match n, i, t, x3 with
-    n, i, t, RBT_set rbt ->
-      (match ccompare_lista (ccompare_option _A2)
-        with None ->
-          failwith "probe_join: ccompare = None"
-            (fun _ -> probe_join_n (_A1, _A2, _A3) n i t (RBT_set rbt))
-        | Some _ ->
-          (let key = restrict_with i n in
-            foldb (ccompare_list (ccompare_option _A2))
-              (probe_step_key (_A1, _A2, _A3) key
-                (cluster
-                  ((ceq_list (ceq_option _A1)),
-                    (ccompare_list (ccompare_option _A2)), set_impl_list)
-                  (ccompare_list (ccompare_option _A2))
-                  (comp (fun a -> Some a) key) t))
-              rbt (set_empty
-                    ((ceq_list (ceq_option _A1)),
-                      (ccompare_list (ccompare_option _A2)))
-                    (of_phantom set_impl_lista))))
-    | n, i, t, DList_set uu -> probe_join (_A1, _A2, _A3) i t (DList_set uu)
+    n, i, t, DList_set uu -> probe_join (_A1, _A2, _A3) i t (DList_set uu)
     | n, i, t, Set_Monad uu -> probe_join (_A1, _A2, _A3) i t (Set_Monad uu)
     | n, i, t, Collect_set uu -> probe_join (_A1, _A2, _A3) i t (Collect_set uu)
-    | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu);;
+    | n, i, t, Complement uu -> probe_join (_A1, _A2, _A3) i t (Complement uu)
+    | n, i, t, RBT_set rbt ->
+        (match ccompare_lista (ccompare_option _A2)
+          with None ->
+            failwith "probe_join: ccompare = None"
+              (fun _ -> probe_join_n (_A1, _A2, _A3) n i t (RBT_set rbt))
+          | Some _ ->
+            (let key = restrict_with i n in
+             let m =
+               cluster
+                 ((ceq_list (ceq_option _A1)),
+                   (ccompare_list (ccompare_option _A2)), set_impl_list)
+                 (ccompare_list (ccompare_option _A2))
+                 (comp (fun a -> Some a) key) t
+               in
+              (if finite
+                    (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+                      (ccompare_list (ccompare_option _A2)))
+                    t
+                then set_of_list
+                       ((ceq_list (ceq_option _A1)),
+                         (ccompare_list (ccompare_option _A2)), set_impl_list)
+                       (foldb (ccompare_list (ccompare_option _A2))
+                         (probe_step_key_list (_A1, _A2, _A3) key m) rbt [])
+                else foldb (ccompare_list (ccompare_option _A2))
+                       (probe_step_key (_A1, _A2, _A3) key m) rbt
+                       (set_empty
+                         ((ceq_list (ceq_option _A1)),
+                           (ccompare_list (ccompare_option _A2)))
+                         (of_phantom set_impl_lista)))));;
 
 let rec bin_join (_A1, _A2, _A3, _A4, _A5)
   n aa ta pos a t =
@@ -11214,7 +11247,10 @@ let rec ed_probe_join
   i ta t =
     (if unbox ed_finite_v ta &&
           (unbox ed_finite_v t && not (is_none (Some ed_comparator)))
-      then set_of_list (ccompare_list (ccompare_option ccompare_event_data))
+      then set_of_list
+             ((ceq_list (ceq_option ceq_event_data)),
+               (ccompare_list (ccompare_option ccompare_event_data)),
+               set_impl_list)
              (probe_list (ceq_event_data, ccompare_event_data, equal_event_data)
                i ta t)
       else unbox ed_fold_cfi_table_v
@@ -11225,16 +11261,25 @@ let rec ed_probe_join
 
 let rec ed_probe_join_n
   n i t x3 = match n, i, t, x3 with
-    n, i, t, RBT_set rbt ->
-      (let key = restrict_with i n in
-        unbox ed_rbt_fold_table_v
-          (ed_probe_step_key key
-            (unbox ed_cluster_v (comp (fun a -> Some a) key) t))
-          rbt ed_bot)
-    | n, i, t, DList_set uu -> ed_probe_join i t (DList_set uu)
+    n, i, t, DList_set uu -> ed_probe_join i t (DList_set uu)
     | n, i, t, Set_Monad uu -> ed_probe_join i t (Set_Monad uu)
     | n, i, t, Collect_set uu -> ed_probe_join i t (Collect_set uu)
-    | n, i, t, Complement uu -> ed_probe_join i t (Complement uu);;
+    | n, i, t, Complement uu -> ed_probe_join i t (Complement uu)
+    | n, i, t, RBT_set rbt ->
+        (let key = restrict_with i n in
+         let m = unbox ed_cluster_v (comp (fun a -> Some a) key) t in
+          (if unbox ed_finite_v t
+            then set_of_list
+                   ((ceq_list (ceq_option ceq_event_data)),
+                     (ccompare_list (ccompare_option ccompare_event_data)),
+                     set_impl_list)
+                   (foldb (ccompare_list (ccompare_option ccompare_event_data))
+                     (probe_step_key_list
+                       (ceq_event_data, ccompare_event_data, equal_event_data)
+                       key m)
+                     rbt [])
+            else unbox ed_rbt_fold_table_v (ed_probe_step_key key m) rbt
+                   ed_bot));;
 
 let rec ed_probe_join_imp
   i xs ys =
