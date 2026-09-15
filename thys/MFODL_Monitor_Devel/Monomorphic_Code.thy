@@ -425,9 +425,9 @@ text \<open>
   so nothing is sorted twice and nothing falls back to the bulkload.
 
   Only the set of the sorted list matters for correctness: @{const rbt_of_sorted_list} checks
-  the sortedness itself and falls back if it does not hold, so @{thm [source]
-  RBT_set_rbt_of_sorted_list} holds unconditionally and the merge sort needs no sortedness
-  proof, only @{thm [source] set_sort_c}.
+  the sortedness itself and falls back if it does not hold, so the equation relating it to
+  @{const set} holds unconditionally and the merge sort needs no sortedness proof -- only that
+  it preserves the set of its argument.
 
   The probe join is the first user. Its fold over the probing table inserts each joined tuple
   into the result, and it is the case of @{const bin_join} the pure code has no better
