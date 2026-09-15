@@ -405,41 +405,50 @@ text \<open>
   structure to the same abstract one.
 \<close>
 
-lemma rel_a2_cong:
-  assumes "dq_inv d" "dq_inv d'" "dq_len d = dq_len d'"
-    and "\<And>k. k < dq_len d \<Longrightarrow> dq_nth d k = dq_nth d' k"
-  shows "rel_a2 tp len d m = rel_a2 tp len d' m"
-  using assms by (fastforce simp: rel_a2_def)
-
 lemma rel_a2_step_tl:
   assumes "rel_a2 tp len d m" "1 \<le> len" "len \<le> tp"
   shows "rel_a2 tp (len - 1) (dq_upd (dq_tl d) 0 X) (Mapping.delete (tp - len) (Mapping.update (tp - len + 1) X m))"
 proof -
-  have inv: "dq_inv d" and dlen: "dq_len d = len + 1"
+  have inv: "dq_inv d" and dlen: "dq_len d = len + 1" and keys: "Mapping.keys m = {tp - len..tp}"
+    and look: "\<And>k. k \<le> len \<Longrightarrow> Mapping.lookup m (tp - len + k) = Some (dq_nth d k)"
     using assms(1) by (auto simp: rel_a2_def)
-  have gt1: "Suc 0 < dq_len d" using dlen assms(2) by simp
-  have invL: "dq_inv (dq_upd (dq_tl d) 0 X)" using inv by simp
-  have invR: "dq_inv (dq_tl (dq_upd d 1 X))" using inv by simp
-  have gt1': "1 < dq_len d" using dlen assms(2) by simp
-  have lenL: "dq_len (dq_upd (dq_tl d) 0 X) = len"
-    using inv gt1 dlen by (simp add: dq_len_upd dq_len_tl)
-  have lenR: "dq_len (dq_tl (dq_upd d 1 X)) = len"
-    using inv gt1' dlen by (simp add: dq_len_tl dq_len_upd)
-  have lenEq: "dq_len (dq_upd (dq_tl d) 0 X) = dq_len (dq_tl (dq_upd d 1 X))"
-    using lenL lenR by simp
-  have nth: "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_nth (dq_tl (dq_upd d 1 X)) k"
-    if "k < dq_len (dq_upd (dq_tl d) 0 X)" for k
-  proof -
-    have k: "Suc k < dq_len d" using that lenL dlen by simp
-    have A: "dq_nth (dq_upd (dq_tl d) 0 X) k = (dq_list d)[Suc 0 := X] ! Suc k"
-      by (rule dq_nth_upd_tl[OF inv gt1 k])
-    have B: "dq_nth (dq_tl (dq_upd d 1 X)) k = (dq_list d)[1 := X] ! Suc k"
-      by (rule dq_nth_tl_upd[OF inv gt1' k])
-    show ?thesis unfolding A B by simp
-  qed
+  have len_list: "length (dq_list d) = len + 1"
+    using inv dlen by (simp add: dq_len_list)
+  have invtl: "dq_inv (dq_tl d)" using inv by simp
+  have lentl: "dq_len (dq_tl d) = len" using inv dlen by (simp add: dq_len_tl)
+  have inv': "dq_inv (dq_upd (dq_tl d) 0 X)" using invtl by simp
+  have len': "dq_len (dq_upd (dq_tl d) 0 X) = len"
+    using invtl lentl assms(2) by (simp add: dq_len_upd)
+  have nth': "dq_nth (dq_upd (dq_tl d) 0 X) k = (dq_list d)[Suc 0 := X] ! Suc k" if "k < len" for k
+    using that inv dlen assms(2) by (intro dq_nth_upd_tl) auto
   show ?thesis
-    unfolding rel_a2_cong[OF invL invR lenEq nth]
-    by (rule rel_a2_step[OF assms])
+    unfolding rel_a2_def
+  proof (intro conjI allI impI)
+    show "dq_inv (dq_upd (dq_tl d) 0 X)" by (rule inv')
+    show "dq_len (dq_upd (dq_tl d) 0 X) = len - 1 + 1" using len' assms(2) by simp
+    show "Mapping.keys (Mapping.delete (tp - len) (Mapping.update (tp - len + 1) X m)) = {tp - (len - 1)..tp}"
+      using assms(2,3) by (auto simp: keys)
+    fix k assume k: "k \<le> len - 1"
+    then have klen: "k < len" using assms(2) by simp
+    show "Mapping.lookup (Mapping.delete (tp - len) (Mapping.update (tp - len + 1) X m)) (tp - (len - 1) + k) =
+      Some (dq_nth (dq_upd (dq_tl d) 0 X) k)"
+    proof (cases k)
+      case 0
+      have e: "tp - (len - 1) + k = tp - len + 1" using 0 assms(2,3) by simp
+      have nthX: "dq_nth (dq_upd (dq_tl d) 0 X) k = X"
+        unfolding nth'[OF klen] using 0 len_list assms(2) by simp
+      show ?thesis
+        unfolding e nthX by (simp add: Mapping.lookup_update')
+    next
+      case (Suc k')
+      have e: "tp - (len - 1) + k = tp - len + (k' + 2)" using Suc assms(2,3) by simp
+      have nth2: "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_nth d (k' + 2)"
+        unfolding nth'[OF klen] using inv dlen Suc klen by (simp add: dq_nth)
+      show ?thesis
+        unfolding e nth2 using look[of "k' + 2"] klen Suc
+        by (simp add: Mapping.lookup_delete Mapping.lookup_update')
+    qed
+  qed
 qed
 
 lemma rel_a2_step_tl':
