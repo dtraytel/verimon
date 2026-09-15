@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Imp2
-  imports Since_Imp2
+  imports Since_Imp2 Until_Imp2
 begin
 (*>*)
 
@@ -13,7 +13,7 @@ text \<open>
 \<close>
 
 type_synonym mformula_p = "(mmasaux, muaux_dq, event_data mmtaux) meformula"
-type_synonym mformula_j = "(msaux_j, muaux_dq, event_data mmtaux) meformula"
+type_synonym mformula_j = "(msaux_j, muaux_j, event_data mmtaux) meformula"
 type_synonym mstate_j = "nat \<times> nat \<times> mformula_j \<times> nat \<times> ts queue"
 
 fun embed :: "mformula_p \<Rightarrow> mformula_j" where
@@ -35,7 +35,7 @@ fun embed :: "mformula_p \<Rightarrow> mformula_j" where
 | "embed (MPrev I \<phi> first buf nts) = MPrev I (embed \<phi>) first buf nts"
 | "embed (MNext I \<phi> first nts) = MNext I (embed \<phi>) first nts"
 | "embed (MSince args \<phi> \<psi> buf aux) = MSince args (embed \<phi>) (embed \<psi>) buf (MSJ_pure aux)"
-| "embed (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (embed \<phi>) (embed \<psi>) buf nts t aux"
+| "embed (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (embed \<phi>) (embed \<psi>) buf nts t (MUJ_pure aux)"
 | "embed (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (embed \<phi>) (embed \<psi>) buf nts aux"
 | "embed (MMatchP I mr mrs \<phi>s buf nts aux) = MMatchP I mr mrs (map embed \<phi>s) buf nts aux"
 | "embed (MMatchF I mr mrs \<phi>s buf nts t aux) = MMatchF I mr mrs (map embed \<phi>s) buf nts t aux"
@@ -62,7 +62,8 @@ fun purify :: "mformula_j \<Rightarrow> mformula_p" where
 | "purify (MNext I \<phi> first nts) = MNext I (purify \<phi>) first nts"
 | "purify (MSince args \<phi> \<psi> buf (MSJ_pure s)) = MSince args (purify \<phi>) (purify \<psi>) buf s"
 | "purify (MSince args \<phi> \<psi> buf (MSJ_imp q)) = MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
-| "purify (MUntil args \<phi> \<psi> buf nts t aux) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t aux"
+| "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_pure a)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t a"
+| "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_imp d)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t (init_muaux_dq args)"
 | "purify (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (purify \<phi>) (purify \<psi>) buf nts aux"
 | "purify (MMatchP I mr mrs \<phi>s buf nts aux) = MMatchP I mr mrs (map purify \<phi>s) buf nts aux"
 | "purify (MMatchF I mr mrs \<phi>s buf nts t aux) = MMatchF I mr mrs (map purify \<phi>s) buf nts t aux"
@@ -91,6 +92,15 @@ partial_function (heap) eval_since_j :: "args \<Rightarrow> event_data table lis
                r \<leftarrow> result_j args aux'; eval_since_j args (r # rs) (xs', ys', ts', False) aux' }
         | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', y ## ys', ts', skew), aux))
       | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux))))"
+
+partial_function (heap) mebuf2t_take_j :: "(event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b Heap) \<Rightarrow> 'b \<Rightarrow>
+    event_data mebuf2 \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow> ('b \<times> event_data mebuf2 \<times> ts \<times> ts mbuf_t) Heap" where
+  [code]:
+  "mebuf2t_take_j f z buf t0 ts = (case buf of (xs, ys) \<Rightarrow>
+    (case mbuf_t_cases ts of (None, ts') \<Rightarrow> return (z, (xs, ys), t0, ts') | (Some t, ts') \<Rightarrow>
+    (case mbuf_t_cases xs of (None, xs') \<Rightarrow> return (z, (xs', ys), t, t ## ts') | (Some x, xs') \<Rightarrow>
+    (case mbuf_t_cases ys of (None, ys') \<Rightarrow> return (z, (x ## xs', ys'), t, t ## ts') | (Some y, ys') \<Rightarrow>
+    do { z \<leftarrow> f x y t z; mebuf2t_take_j f z (xs', ys') t ts' }))))"
 
 fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_j \<Rightarrow> (event_data table list \<times> mformula_j) Heap"
   and meval_j_list :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_j list \<Rightarrow>
@@ -157,9 +167,10 @@ fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> databa
 | "meval_j j n ts db (MUntil args \<phi> \<psi> buf nts t aux) = do {
      (xs, \<phi>) \<leftarrow> meval_j j (args_n args) ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_j j (args_n args) ts db \<psi>;
-     return (let (aux, buf, nt, nts') = mebuf2t_take (add_new_muaux_dq args) aux (mebuf2_add xs ys buf) t (nts @@ ts);
-       (zs, aux) = eval_muaux_dq args nt aux
-       in (zs, MUntil args \<phi> \<psi> buf nts' nt aux)) }"
+     r \<leftarrow> mebuf2t_take_j (add_new_u_j args) aux (mebuf2_add xs ys buf) t (nts @@ ts);
+     (case r of (aux, buf, nt, nts') \<Rightarrow>
+      do { z \<leftarrow> eval_u_j args nt aux;
+           return (fst z, MUntil args \<phi> \<psi> buf nts' nt (snd z)) }) }"
 | "meval_j j n ts db (MTrigger args \<phi> \<psi> buf nts aux) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
      (ys, \<psi>) \<leftarrow> meval_j j n ts db \<psi>;
@@ -211,7 +222,8 @@ fun mformula_j_of :: "mformula_p \<Rightarrow> mformula_j Heap"
      \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; q \<leftarrow> init_j args;
      return (MSince args \<phi>i \<psi>i buf q) }"
 | "mformula_j_of (MUntil args \<phi> \<psi> buf nts t aux) = do {
-     \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; return (MUntil args \<phi>i \<psi>i buf nts t aux) }"
+     \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; d \<leftarrow> init_u_j args;
+     return (MUntil args \<phi>i \<psi>i buf nts t d) }"
 | "mformula_j_of (MTrigger args \<phi> \<psi> buf nts aux) = do {
      \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; return (MTrigger args \<phi>i \<psi>i buf nts aux) }"
 | "mformula_j_of \<phi> = return (embed \<phi>)"

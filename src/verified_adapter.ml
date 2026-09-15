@@ -339,7 +339,7 @@ type heap_state =
 type jheap_state =
         (nat *
           (nat *
-            ((msaux_j, muaux_dq,
+            ((msaux_j, muaux_j,
                (nat *
                  (nat *
                    (nat *

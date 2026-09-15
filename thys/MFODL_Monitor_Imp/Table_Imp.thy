@@ -95,6 +95,29 @@ definition im_delete :: "('v::heap) imap \<Rightarrow> event_data tuple \<Righta
           (case hm_look_list x b of None \<Rightarrow> return q
            | Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i (hm_del_list x b); return (n, c - 1, a) }) }))"
 
+definition im_count :: "(event_data tuple \<times> 'v) list \<Rightarrow> integer" where
+  "im_count b = integer_of_nat (length b)"
+
+partial_function (heap) im_filter_idx ::
+  "(event_data tuple \<Rightarrow> bool) \<Rightarrow> ((event_data tuple \<times> 'v::heap) list) array \<Rightarrow>
+    integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer Heap" where
+  [code]:
+  "im_filter_idx p a i n c = (if n \<le> i then return c
+     else do { b \<leftarrow> Array.nth' a i;
+               (let b' = filter (\<lambda>kv. p (fst kv)) b in
+                do { _ \<leftarrow> (if im_count b' = im_count b then return () else Array.upd' a i b');
+                     im_filter_idx p a (i + 1) n (c - (im_count b - im_count b')) }) })"
+
+text \<open>
+  Keeping the keys that satisfy a predicate, in one pass over the buckets. Reading the whole
+  map back as a list first, which is what a generic interface forces, allocates a cons cell per
+  entry on every call; the Since structure does this once per time point when the operator has
+  join columns.
+\<close>
+
+definition im_filter :: "(event_data tuple \<Rightarrow> bool) \<Rightarrow> ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+  "im_filter p q = (case q of (n, c, a) \<Rightarrow> do { c \<leftarrow> im_filter_idx p a 0 n c; return (n, c, a) })"
+
 subsection \<open>A hash set of tuples on the heap\<close>
 
 type_synonym itbl = "unit imap"

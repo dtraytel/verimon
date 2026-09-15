@@ -99,8 +99,7 @@ definition add_new_ts2 :: "args \<Rightarrow> ts \<Rightarrow> msaux2 \<Rightarr
 definition gc2 :: "msaux2 \<Rightarrow> msaux2 Heap" where
   "gc2 q = (case q of ((t, gc, mL, mR, dp, di, tin), hin, hsince) \<Rightarrow>
      (let all = fold (\<lambda>p acc. snd p \<union> acc) (linearize dp @ linearize di) {} in
-      do { ks \<leftarrow> im_to_list hsince;
-           hsince \<leftarrow> del_loop2 (\<lambda>k. k \<in> all) (map fst ks) hsince;
+      do { hsince \<leftarrow> im_filter (\<lambda>k. k \<in> all) hsince;
            return ((t, t, mL, mR, dp, di, tin), hin, hsince) }))"
 
 definition join2 :: "args \<Rightarrow> event_data table \<Rightarrow> msaux2 \<Rightarrow> msaux2 Heap" where
@@ -112,8 +111,7 @@ definition join2 :: "args \<Rightarrow> event_data table \<Rightarrow> msaux2 \<
                   return ((t, gc, mL, mR, dp, di, {}), hin, hsince) })
      else (let in_del = (if pos then tin - X else tin \<inter> X) in
        do { hin \<leftarrow> del_loop2 (\<lambda>k. k \<notin> in_del) (csorted_list_of_set in_del) hin;
-            ks \<leftarrow> im_to_list hsince;
-            hsince \<leftarrow> del_loop2 (jc pos X) (map fst ks) hsince;
+            hsince \<leftarrow> im_filter (jc pos X) hsince;
             return ((t, gc, mL, mR, dp, di, tin - in_del), hin, hsince) })))"
 
 definition gc_join2 :: "args \<Rightarrow> event_data table \<Rightarrow> msaux2 \<Rightarrow> msaux2 Heap" where
