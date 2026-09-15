@@ -128,7 +128,7 @@ lemma probe_step_key_restrict: "probe_step_key (restrict I) = probe_step I"
 
 declare [[code drop: probe_join_n]]
 
-lemma probe_join_n_RBT_code[code]:
+lemma probe_join_n_RBT_code:
   fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
   shows "probe_join_n n I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
       None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join_n n I t (RBT_set rbt))
@@ -505,7 +505,8 @@ lemma set_sort_c:
   by (simp add: sort_c_def set_merge_all_c[OF assms])
 
 definition set_of_list :: "('a :: ccompare) list \<Rightarrow> 'a set" where
-  "set_of_list xs = RBT_set (rbt_of_sorted_list (sort_c xs))"
+  "set_of_list xs = (if integer_of_nat (length xs) < bulk_min then set xs
+     else RBT_set (rbt_of_sorted_list (sort_c xs)))"
 
 lemma set_of_list_eq:
   assumes "ID CCOMPARE('a :: ccompare) \<noteq> None"
@@ -576,6 +577,113 @@ proof (cases "finite t \<and> finite t' \<and> ID CCOMPARE('a tuple) \<noteq> No
     by (rule set_of_list_eq[OF cc, symmetric])
   finally show ?thesis using True by simp
 qed (auto simp: probe_join_def)
+
+text \<open>
+  The masked probe join above folds over the probing table and inserts every joined tuple into
+  the result, which is the shape the one-pass construction of the previous section exists for.
+  The list version collects the tuples instead and the table is built once. This is the join
+  the pure kernel uses by default, so unlike the imperative version it applies without
+  @{text "-heap_maps"}.
+\<close>
+
+lemma probe_step_key_alt:
+  "probe_step_key key m b acc = (case Mapping.lookup m (key b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> if finite T then acc \<union> (\<Union>a \<in> T. set_option (join1 (a, b))) else acc)"
+  unfolding probe_step_key_def probe_fold_def set_fold_cfi.rep_eq join1_insert_cfi'.rep_eq
+  by (auto simp: fold_join1_insert' split: option.splits)
+
+definition probe_step_key_list :: "('a tuple \<Rightarrow> 'a tuple) \<Rightarrow>
+    (('a :: {ccompare, ceq}) tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple list \<Rightarrow> 'a tuple list" where
+  "probe_step_key_list key m b acc = (case Mapping.lookup m (key b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> fold (\<lambda>a acc. case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> z # acc)
+                      (csorted_list_of_set T) acc)"
+
+lemma set_fold_join1_cons':
+  "set (fold (\<lambda>a acc. case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> z # acc) as acc)
+     = set acc \<union> (\<Union>a \<in> set as. set_option (join1 (a, b)))"
+  by (induction as arbitrary: acc) (auto split: option.splits)
+
+lemma set_fold_probe_step_key_list:
+  fixes m :: "(('a :: {ccompare, ceq}) tuple, 'a table) mapping"
+  assumes "ID CCOMPARE('a tuple) \<noteq> None"
+    and "\<And>b T. Mapping.lookup m (key b) = Some T \<Longrightarrow> finite T"
+  shows "set (fold (probe_step_key_list key m) bs acc) = fold (probe_step_key key m) bs (set acc)"
+proof (induction bs arbitrary: acc)
+  case (Cons b bs)
+  have "set (probe_step_key_list key m b acc) = probe_step_key key m b (set acc)"
+  proof (cases "Mapping.lookup m (key b)")
+    case None
+    then show ?thesis by (simp add: probe_step_key_list_def probe_step_key_alt)
+  next
+    case (Some T)
+    then have finT: "finite T" using assms(2) by blast
+    have setT: "set (csorted_list_of_set T) = T"
+      using assms(1) finT by (subst csorted_list_of_set_split) auto
+    show ?thesis
+      using Some finT
+      by (simp add: probe_step_key_list_def probe_step_key_alt set_fold_join1_cons' setT)
+  qed
+  then show ?case using Cons.IH[of "probe_step_key_list key m b acc"] by simp
+qed simp
+
+lemma lookup_cluster_finite:
+  assumes "finite t"
+  shows "Mapping.lookup (cluster (Some \<circ> key) t) (key b) = Some T \<Longrightarrow> finite T"
+  using assms by (auto simp: lookup_cluster split: if_splits)
+
+lemma probe_join_n_one_pass:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  assumes "ID CCOMPARE('a tuple) \<noteq> None" "finite t"
+  shows "probe_join_n n I t (RBT_set rbt) =
+    set_of_list (RBT_Set2.fold (probe_step_key_list (restrict_with I n)
+      (cluster (Some \<circ> restrict_with I n) t)) rbt [])"
+proof -
+  let ?key = "restrict_with I n"
+  let ?m = "cluster (Some \<circ> ?key) t"
+  have fin: "\<And>b T. Mapping.lookup ?m (?key b) = Some T \<Longrightarrow> finite T"
+    by (rule lookup_cluster_finite[OF assms(2)])
+  have "set_of_list (RBT_Set2.fold (probe_step_key_list ?key ?m) rbt []) =
+    set (fold (probe_step_key_list ?key ?m) (RBT_Set2.keys rbt) [])"
+    by (simp add: set_of_list_eq[OF assms(1)] RBT_Set2.fold_conv_fold_keys)
+  also have "\<dots> = fold (probe_step_key ?key ?m) (RBT_Set2.keys rbt) (set [])"
+    by (rule set_fold_probe_step_key_list[OF assms(1) fin])
+  also have "\<dots> = RBT_Set2.fold (probe_step_key ?key ?m) rbt {}"
+    by (simp add: RBT_Set2.fold_conv_fold_keys)
+  also have "\<dots> = probe_join_n n I t (RBT_set rbt)"
+    using assms(1) by (subst probe_join_n_RBT_code) (auto simp: Let_def)
+  finally show ?thesis ..
+qed
+
+lemma probe_join_n_RBT_one_pass[code]:
+  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
+  shows "probe_join_n n I t (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
+      None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join_n n I t (RBT_set rbt))
+    | Some _ \<Rightarrow> (let key = restrict_with I n; m = cluster (Some \<circ> key) t in
+        if finite t then set_of_list (RBT_Set2.fold (probe_step_key_list key m) rbt [])
+        else RBT_Set2.fold (probe_step_key key m) rbt {}))"
+proof (cases "ID CCOMPARE('a tuple)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some c)
+  then have cc: "ID CCOMPARE('a tuple) \<noteq> None" by simp
+  show ?thesis
+  proof (cases "finite t")
+    case True
+    show ?thesis
+      unfolding probe_join_n_one_pass[OF cc True] using Some True by (simp add: Let_def)
+  next
+    case False
+    then have inf: "\<not> finite t" by simp
+    have old: "probe_join_n n I t (RBT_set rbt) =
+      (let key = restrict_with I n in RBT_Set2.fold (probe_step_key key (cluster (Some \<circ> key) t)) rbt {})"
+      using Some by (subst probe_join_n_RBT_code) simp_all
+    show ?thesis
+      unfolding old using Some inf by (simp add: Let_def)
+  qed
+qed
+
+
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("join1_insert", "ed_join1_insert", ["event_data"]),

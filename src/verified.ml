@@ -8234,6 +8234,80 @@ let rec restrict_with
             (match proj_tuple_chk mask v with None -> restrict i v
               | Some r -> r)));;
 
+let rec rbt_comp_bulkload
+  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
+
+let rec strict_sorted_by
+  c x1 = match c, x1 with
+    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
+    | c, [] -> true
+    | c, [v] -> true;;
+
+let rec rbt_of_sorted_list _A
+  xa = Mapping_RBTa
+         (if strict_sorted_by (the (ccompare _A)) xa
+           then rbtreeify (mapa (fun x -> (x, ())) xa)
+           else rbt_comp_bulkload (the (ccompare _A))
+                  (mapa (fun x -> (x, ())) xa));;
+
+let rec merge_c _A
+  x0 ys = match x0, ys with [], ys -> ys
+    | x :: xs, [] -> x :: xs
+    | x :: xs, y :: ys ->
+        (match the (ccompare _A) x y with Eqa -> x :: merge_c _A xs ys
+          | Lt -> x :: merge_c _A xs (y :: ys)
+          | Gt -> y :: merge_c _A (x :: xs) ys);;
+
+let rec merge_pairs_c _A
+  = function a :: b :: r -> merge_c _A a b :: merge_pairs_c _A r
+    | [] -> []
+    | [v] -> [v];;
+
+let rec merge_all_c _A
+  k xss =
+    (if equal_nata k zero_nata then concat xss
+      else (match xss with [] -> [] | [a] -> a
+             | _ :: _ :: _ ->
+               merge_all_c _A (minus_nata k one_nata) (merge_pairs_c _A xss)));;
+
+let rec sort_c _A xs = merge_all_c _A (size_lista xs) (mapa (fun x -> [x]) xs);;
+
+let rec set_of_list _A xs = RBT_set (rbt_of_sorted_list _A (sort_c _A xs));;
+
+let rec probe_cluster (_A1, _A2, _A3)
+  i m b =
+    (match
+      lookupa
+        ((ccompare_list (ccompare_option _A2)), (equal_list (equal_option _A3)))
+        m (restrict i b)
+      with None ->
+        set_empty
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          (of_phantom set_impl_lista)
+      | Some t -> t);;
+
+let rec probe_list (_A1, _A2, _A3)
+  i ta t =
+    (let m =
+       cluster
+         ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
+           set_impl_list)
+         (ccompare_list (ccompare_option _A2))
+         (comp (fun a -> Some a) (restrict i)) ta
+       in
+      fold (fun b ->
+             fold (fun a acc ->
+                    (match join1 _A3 (a, b) with None -> acc
+                      | Some z -> z :: acc))
+               (csorted_list_of_set
+                 ((ceq_list (ceq_option _A1)),
+                   (ccompare_list (ccompare_option _A2)))
+                 (probe_cluster (_A1, _A2, _A3) i m b)))
+        (csorted_list_of_set
+          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+          t)
+        []);;
+
 let rec probe_step (_A1, _A2, _A3)
   i m b acc =
     (match
@@ -8246,76 +8320,32 @@ let rec probe_step_cfi (_A1, _A2, _A3)
   xb xc = Abs_comp_fun_idem (probe_step (_A1, _A2, _A3) xb xc);;
 
 let rec probe_join (_A1, _A2, _A3)
-  i t x2 = match i, t, x2 with
-    i, t, RBT_set rbt ->
-      (match ccompare_lista (ccompare_option _A2)
-        with None ->
-          failwith "probe_join: ccompare = None"
-            (fun _ -> probe_join (_A1, _A2, _A3) i t (RBT_set rbt))
-        | Some _ ->
-          foldb (ccompare_list (ccompare_option _A2))
-            (probe_step (_A1, _A2, _A3) i
-              (cluster
-                ((ceq_list (ceq_option _A1)),
-                  (ccompare_list (ccompare_option _A2)), set_impl_list)
-                (ccompare_list (ccompare_option _A2))
-                (comp (fun a -> Some a) (restrict i)) t))
-            rbt (set_empty
-                  ((ceq_list (ceq_option _A1)),
-                    (ccompare_list (ccompare_option _A2)))
-                  (of_phantom set_impl_lista)))
-    | i, t, DList_set uu ->
-        set_fold_cfi
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (probe_step_cfi (_A1, _A2, _A3) i
-            (cluster
-              ((ceq_list (ceq_option _A1)),
-                (ccompare_list (ccompare_option _A2)), set_impl_list)
-              (ccompare_list (ccompare_option _A2))
-              (comp (fun a -> Some a) (restrict i)) t))
-          (set_empty
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            (of_phantom set_impl_lista))
-          (DList_set uu)
-    | i, t, Set_Monad uu ->
-        set_fold_cfi
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (probe_step_cfi (_A1, _A2, _A3) i
-            (cluster
-              ((ceq_list (ceq_option _A1)),
-                (ccompare_list (ccompare_option _A2)), set_impl_list)
-              (ccompare_list (ccompare_option _A2))
-              (comp (fun a -> Some a) (restrict i)) t))
-          (set_empty
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            (of_phantom set_impl_lista))
-          (Set_Monad uu)
-    | i, t, Collect_set uu ->
-        set_fold_cfi
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (probe_step_cfi (_A1, _A2, _A3) i
-            (cluster
-              ((ceq_list (ceq_option _A1)),
-                (ccompare_list (ccompare_option _A2)), set_impl_list)
-              (ccompare_list (ccompare_option _A2))
-              (comp (fun a -> Some a) (restrict i)) t))
-          (set_empty
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            (of_phantom set_impl_lista))
-          (Collect_set uu)
-    | i, t, Complement uu ->
-        set_fold_cfi
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (probe_step_cfi (_A1, _A2, _A3) i
-            (cluster
-              ((ceq_list (ceq_option _A1)),
-                (ccompare_list (ccompare_option _A2)), set_impl_list)
-              (ccompare_list (ccompare_option _A2))
-              (comp (fun a -> Some a) (restrict i)) t))
-          (set_empty
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            (of_phantom set_impl_lista))
-          (Complement uu);;
+  i ta t =
+    (if finite
+          (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+            (ccompare_list (ccompare_option _A2)))
+          ta &&
+          (finite
+             (finite_UNIV_list, (ceq_list (ceq_option _A1)),
+               (ccompare_list (ccompare_option _A2)))
+             t &&
+            not (is_none (ccompare_lista (ccompare_option _A2))))
+      then set_of_list (ccompare_list (ccompare_option _A2))
+             (probe_list (_A1, _A2, _A3) i ta t)
+      else set_fold_cfi
+             ((ceq_list (ceq_option _A1)),
+               (ccompare_list (ccompare_option _A2)))
+             (probe_step_cfi (_A1, _A2, _A3) i
+               (cluster
+                 ((ceq_list (ceq_option _A1)),
+                   (ccompare_list (ccompare_option _A2)), set_impl_list)
+                 (ccompare_list (ccompare_option _A2))
+                 (comp (fun a -> Some a) (restrict i)) ta))
+             (set_empty
+               ((ceq_list (ceq_option _A1)),
+                 (ccompare_list (ccompare_option _A2)))
+               (of_phantom set_impl_lista))
+             t);;
 
 let rec probe_join_n (_A1, _A2, _A3)
   n i t x3 = match n, i, t, x3 with
@@ -11180,42 +11210,18 @@ let rec ed_probe_step_key
     (match unbox ed_lookup_table_v m (key b) with None -> acc
       | Some a -> ed_probe_fold b acc a);;
 
-let rec ed_probe_step
-  i m b acc =
-    (match unbox ed_lookup_table_v m (restrict i b) with None -> acc
-      | Some a -> ed_probe_fold b acc a);;
-
 let rec ed_probe_join
-  i t x2 = match i, t, x2 with
-    i, t, RBT_set rbt ->
-      unbox ed_rbt_fold_table_v
-        (ed_probe_step i
-          (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
-        rbt ed_bot
-    | i, t, DList_set uu ->
-        unbox ed_fold_cfi_table_v
-          (probe_step_cfi
-            (ceq_event_data, ccompare_event_data, equal_event_data) i
-            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
-          ed_bot (DList_set uu)
-    | i, t, Set_Monad uu ->
-        unbox ed_fold_cfi_table_v
-          (probe_step_cfi
-            (ceq_event_data, ccompare_event_data, equal_event_data) i
-            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
-          ed_bot (Set_Monad uu)
-    | i, t, Collect_set uu ->
-        unbox ed_fold_cfi_table_v
-          (probe_step_cfi
-            (ceq_event_data, ccompare_event_data, equal_event_data) i
-            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
-          ed_bot (Collect_set uu)
-    | i, t, Complement uu ->
-        unbox ed_fold_cfi_table_v
-          (probe_step_cfi
-            (ceq_event_data, ccompare_event_data, equal_event_data) i
-            (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) t))
-          ed_bot (Complement uu);;
+  i ta t =
+    (if unbox ed_finite_v ta &&
+          (unbox ed_finite_v t && not (is_none (Some ed_comparator)))
+      then set_of_list (ccompare_list (ccompare_option ccompare_event_data))
+             (probe_list (ceq_event_data, ccompare_event_data, equal_event_data)
+               i ta t)
+      else unbox ed_fold_cfi_table_v
+             (probe_step_cfi
+               (ceq_event_data, ccompare_event_data, equal_event_data) i
+               (unbox ed_cluster_v (comp (fun a -> Some a) (restrict i)) ta))
+             ed_bot t);;
 
 let rec ed_probe_join_n
   n i t x3 = match n, i, t, x3 with
@@ -12776,9 +12782,6 @@ let rec eval_assignment (x, t) y = list_update y x (Some (meval_trm t y));;
 
 let rec list_of_option = function None -> []
                          | Some x -> [x];;
-
-let rec rbt_comp_bulkload
-  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
 
 let rec bulkload _A
   xa = Mapping_RBTa (rbt_comp_bulkload (the (ccompare _A)) xa);;
@@ -14817,19 +14820,6 @@ let rec ht_delete (_A1, _A2, _A3) _B
                       (fun () -> (HashTable (the_array ht, n)))))))));;
 
 let use_heap_join : bool = true;;
-
-let rec strict_sorted_by
-  c x1 = match c, x1 with
-    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
-    | c, [] -> true
-    | c, [v] -> true;;
-
-let rec rbt_of_sorted_list _A
-  xa = Mapping_RBTa
-         (if strict_sorted_by (the (ccompare _A)) xa
-           then rbtreeify (mapa (fun x -> (x, ())) xa)
-           else rbt_comp_bulkload (the (ccompare _A))
-                  (mapa (fun x -> (x, ())) xa));;
 
 let rec table_of_list
   xs = RBT_set

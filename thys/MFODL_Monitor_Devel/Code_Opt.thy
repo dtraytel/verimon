@@ -50,11 +50,27 @@ code_printing code_module Config \<rightharpoonup> (OCaml)
 \<open>module Config : sig
   val generic_join : bool ref
   val imperative_join : bool ref
+  val bulk_min : int ref
 end = struct
   let generic_join = ref false
   let imperative_join = ref false
+  let bulk_min = ref 64
 end\<close>
 | constant use_generic_join \<rightharpoonup> (OCaml) "'!Config.generic'_join"
+
+text \<open>
+  The smallest table that is worth building in one pass from a sorted list rather than by
+  inserting its tuples one at a time (see @{text set_of_list} in theory @{text
+  Monomorphic_Code}). Sorting costs \<open>n log n\<close> comparisons on top of the ones the insertions
+  would have done, so for a handful of tuples it does not pay. The value is read from a
+  mutable flag so that it can be measured without regenerating the kernel.
+\<close>
+
+definition bulk_min :: integer where
+  "bulk_min = 64"
+
+code_printing
+  constant bulk_min \<rightharpoonup> (OCaml) "(Z.of'_int '!Config.bulk'_min)"
 
 subsection \<open>Joins\<close>
 
