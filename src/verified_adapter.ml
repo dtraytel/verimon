@@ -336,11 +336,39 @@ type heap_state =
          meformula *
         (nat * nat queue))))
 
+type jheap_state =
+        (nat *
+          (nat *
+            ((msaux_j, muaux_dq,
+               (nat *
+                 (nat *
+                   (nat *
+                     (nat *
+                       (bool list *
+                         (bool list *
+                           ((nat *
+                              (((event_data option) list) set *
+                                ((event_data option) list) set))
+                              queue *
+                             ((nat * ((event_data option) list) set) queue *
+                               ((((event_data option) list), nat) mapping *
+                                 (((event_data option) list) set *
+                                   ((((event_data option) list), nat) mapping *
+                                     (((event_data option) list) set *
+                                       ((event_data option) list)
+ set)))))))))))))
+               meformula *
+              (nat * nat queue))))
+
 type state =
   | Pure of pure_state
   | Heap of heap_state
+  | JHeap of jheap_state
 
-let init cf = if !Misc.heap_since then Heap (minit_safe_imp cf ()) else Pure (minit_safe cf)
+let init cf =
+  if !Misc.heap_all then JHeap (minit_safe_j cf ())
+  else if !Misc.heap_since then Heap (minit_safe_imp cf ())
+  else Pure (minit_safe cf)
 
 
 let set_fold f s x = match s with
@@ -356,6 +384,7 @@ let annotate vs = List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat 
 let step t db = function
   | Pure st -> let (vs, st') = mstep (db, nat_of_integer t) st in (annotate vs, Pure st')
   | Heap st -> let (vs, st') = mstep_imp (db, nat_of_integer t) st () in (annotate vs, Heap st')
+  | JHeap st -> let (vs, st') = mstep_j (db, nat_of_integer t) st () in (annotate vs, JHeap st')
 
 (* Direct output of verdicts.
 

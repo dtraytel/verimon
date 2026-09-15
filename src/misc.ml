@@ -85,6 +85,10 @@ let verified = ref false
 (* Use the verified kernel whose Since structures for operators without join columns live on
    the heap as hash tables (thys/MFODL_Monitor_Imp). *)
 let heap_since = ref false
+
+(* Use the verified kernel whose Since structures live on the heap-resident maps of
+   thys/MFODL_Monitor_Imp/Table_Imp.thy (unproved; for performance experiments). *)
+let heap_all = ref false
 (* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
    verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
    mappings), so main.ml uses 500 with the verified kernel unless the user chose a value. *)

@@ -8,6 +8,8 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
   theories
     Table_Imp
     Optimized_Since_Imp
+    Since_Imp2
+    Monitor_Imp2
     Monitor_Imp
   theories [document=false]
     Monitor_Code_Imp
