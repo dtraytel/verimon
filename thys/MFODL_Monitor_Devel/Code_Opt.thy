@@ -28,6 +28,21 @@ lemma rbt_set2_fold_code[code]:
   "RBT_Set2.fold f t = rbt_fold_key f (RBT_Mapping2.impl_of t)"
   by (rule ext) (simp add: rbt_fold_key_eq RBT_Set2.fold.rep_eq)
 
+declare [[code drop: rbt_fold]]
+
+lemma rbt_fold_code[code]: "rbt_fold f t = rbt_fold_key f (RBT_Mapping2.impl_of t)"
+  by (simp add: rbt_fold_def rbt_set2_fold_code)
+
+text \<open>
+  Folding over a mapped list builds the mapped list first.  Applying the two functions to the
+  element in one step removes it, and -- because the redirections of Section \<open>Monomorphic_Code\<close>
+  rewrite an operation applied to an argument, not an operation on its own -- it also lets the
+  monomorphic container operations reach folds whose function argument was written point-free.
+\<close>
+
+lemma fold_map_unfold[code_unfold]: "fold f (map g xs) = fold (\<lambda>x. f (g x)) xs"
+  by (simp add: fold_map comp_def)
+
 subsection \<open>Direct comparators\<close>
 
 text \<open>

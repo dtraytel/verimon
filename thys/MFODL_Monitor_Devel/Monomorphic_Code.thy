@@ -693,8 +693,23 @@ qed
 
 
 
+text \<open>
+  A second round of boxes, for operations whose definitions come after the first one: the bulk
+  construction of a table, the projection out of a red-black tree that @{const rbt_fold} needs,
+  and the two operations on the database, whose key type is a pair rather than a tuple and whose
+  dictionary was therefore rebuilt at every predicate lookup and every inserted table.
+\<close>
+
+setup \<open>Monomorphize.box_cmd
+  [("rbt_of_sorted_list", "ed_rbt_of_sorted_list_v", [etuple]),
+   ("RBT_Mapping2.impl_of", "ed_impl_of_v", [etuple, "unit"]),
+   ("Mapping.lookup", "db_lookup_v", ["string8 \<times> nat", "event_data table list"]),
+   ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])]\<close>
+
 setup \<open>Monomorphize.monomorphize_cmd
-  [("join1_insert", "ed_join1_insert", ["event_data"]),
+  [("until_step_dq", "ed_until_step_dq", ["event_data"]),
+   ("until_elem_step_dq", "ed_until_elem_step_dq", ["event_data"]),
+   ("join1_insert", "ed_join1_insert", ["event_data"]),
    ("join1_insert'", "ed_join1_insert'", ["event_data"]),
    ("join_row", "ed_join_row", ["event_data"]),
    ("join", "ed_join", ["event_data"]),
