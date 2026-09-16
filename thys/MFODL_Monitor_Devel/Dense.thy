@@ -356,6 +356,133 @@ proof -
   qed
 qed
 
+subsection \<open>Tables of short tuples\<close>
+
+definition dtabc :: "nat \<Rightarrow> cols \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dtabc n cs T = dproj (wide_mask n cs) ` T"
+
+lemma dtabc_eq_dtab: "sorted_wrt (<) cs \<Longrightarrow> dtabc n cs T = dtab n (set cs) T"
+  by (simp add: dtabc_def dtab_def wide_mask_eq_join_mask)
+
+lemma sorted_merge_cols:
+  "sorted_wrt (<) cs \<Longrightarrow> sorted_wrt (<) ds \<Longrightarrow> sorted_wrt (<) (merge_cols cs ds)"
+  by (induct cs ds rule: merge_cols.induct) (auto simp: set_merge_cols)
+
+text \<open>The short join of two tables is the short form of the kernel's join of the wide ones.\<close>
+
+lemma dtabc_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+  shows "dtabc n (merge_cols cs1 cs2) (join T True T')
+       = (\<Union>a \<in> dtabc n cs1 T. \<Union>b \<in> dtabc n cs2 T'.
+            set_option (djoin1 (mrg_plan cs1 cs2) a b))"
+proof -
+  have key: "\<And>a b. a \<in> T \<Longrightarrow> b \<in> T' \<Longrightarrow>
+      djoin1 (mrg_plan cs1 cs2) (dproj (wide_mask n cs1) a) (dproj (wide_mask n cs2) b)
+        = map_option (dproj (wide_mask n (merge_cols cs1 cs2))) (join1 (a, b))"
+    using t1 t2 by (intro djoin1_join1[OF s1 s2 b1 b2]) (auto simp: table_def)
+  have "dtabc n (merge_cols cs1 cs2) (join T True T')
+      = (\<Union>a \<in> T. \<Union>b \<in> T'. dproj (wide_mask n (merge_cols cs1 cs2)) ` set_option (join1 (a, b)))"
+    unfolding dtabc_def join_True_code by blast
+  also have "\<dots> = (\<Union>a \<in> T. \<Union>b \<in> T'. set_option
+      (djoin1 (mrg_plan cs1 cs2) (dproj (wide_mask n cs1) a) (dproj (wide_mask n cs2) b)))"
+    by (intro SUP_cong refl) (auto simp: key split: option.splits)
+  also have "\<dots> = (\<Union>a \<in> dtabc n cs1 T. \<Union>b \<in> dtabc n cs2 T'.
+      set_option (djoin1 (mrg_plan cs1 cs2) a b))"
+    unfolding dtabc_def by blast
+  finally show ?thesis .
+qed
+
+subsection \<open>Projecting a short tuple onto a sublist of its columns\<close>
+
+fun mrg_left_key :: "mrg list \<Rightarrow> bool list" where
+  "mrg_left_key [] = []"
+| "mrg_left_key (MLft # p) = False # mrg_left_key p"
+| "mrg_left_key (MRgt # p) = mrg_left_key p"
+| "mrg_left_key (MBth # p) = True # mrg_left_key p"
+
+definition no_right :: "mrg list \<Rightarrow> bool" where
+  "no_right p = list_all (\<lambda>m. m \<noteq> MRgt) p"
+
+lemma no_right_mrg_plan:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
+     no_right (mrg_plan cs1 cs2) = (set cs2 \<subseteq> set cs1)"
+  by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: no_right_def list_all_iff)
+
+lemma dproj_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     dproj (mrg_left_key (mrg_plan cs1 cs2)) (map f cs1) = map f cs2"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+text \<open>Reading the shared columns out of a short tuple is the same as taking the short form of
+  the kernel's masked projection.\<close>
+
+lemma dproj_left_key_eq:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and sub: "set cs2 \<subseteq> set cs1" and b1: "\<forall>c \<in> set cs1. c < n"
+    and w: "wf_tuple n (set cs1) a"
+  shows "dproj (mrg_left_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs1) a)
+       = dproj (wide_mask n cs2) (proj_tuple (join_mask n (set cs2)) a)"
+proof -
+  have la: "length a = n" using w by (simp add: wf_tuple_def)
+  have b2: "\<forall>c \<in> set cs2. c < n" using sub b1 by auto
+  have lp: "length (proj_tuple (join_mask n (set cs2)) a) = n"
+    using la by (simp add: proj_tuple_alt join_mask_def)
+  have "\<And>c. c \<in> set cs2 \<Longrightarrow> proj_tuple (join_mask n (set cs2)) a ! c = a ! c"
+    using la b2 by (auto simp: proj_tuple_alt join_mask_def)
+  then show ?thesis
+    using dproj_mrg_left_key[OF s1 s2 sub, of "\<lambda>c. a ! c"]
+      dproj_wide_mask_eq_map_nth[OF s1 b1 la]
+      dproj_wide_mask_eq_map_nth[OF s2 b2 lp]
+    by (simp cong: map_cong)
+qed
+
+subsection \<open>The join when one operand's columns are among the other's\<close>
+
+definition dsemi :: "bool list \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dsemi msk pos A B = Set.filter (\<lambda>a. (dproj msk a \<in> B) = pos) A"
+
+lemma wf_tuple_proj_tuple:
+  "wf_tuple n X a \<Longrightarrow> Y \<subseteq> X \<Longrightarrow> wf_tuple n Y (proj_tuple (join_mask n Y) a)"
+  by (auto simp: wf_tuple_def proj_tuple_alt join_mask_def)
+
+lemma join_cond_eq: "join_cond pos t v = ((v \<in> t) = pos)"
+  by (cases pos) auto
+
+text \<open>
+  This is the shape the anti-join of @{text "\<phi> AND NOT \<psi>"} takes, and the intersection when the
+  two column lists are equal: every tuple of the left operand either has a partner or does not,
+  and the test is a membership of its projection.
+\<close>
+
+theorem dsemi_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and sub: "set cs2 \<subseteq> set cs1" and b1: "\<forall>c \<in> set cs1. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+  shows "dsemi (mrg_left_key (mrg_plan cs1 cs2)) pos (dtabc n cs1 T) (dtabc n cs2 T')
+       = dtabc n cs1 (join T pos T')"
+proof -
+  have b2: "\<forall>c \<in> set cs2. c < n" using sub b1 by auto
+  have "join T pos T' = {a \<in> T. (proj_tuple (join_mask n (set cs2)) a \<in> T') = pos}"
+    using join_sub[OF sub t2 t1] by (simp add: proj_tuple_in_join_def join_cond_eq)
+  moreover have "\<And>a. a \<in> T \<Longrightarrow>
+      (dproj (mrg_left_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs1) a) \<in> dtabc n cs2 T')
+        = (proj_tuple (join_mask n (set cs2)) a \<in> T')"
+  proof -
+    fix a assume a: "a \<in> T"
+    then have w: "wf_tuple n (set cs1) a" using t1 by (simp add: table_def)
+    have wp: "wf_tuple n (set cs2) (proj_tuple (join_mask n (set cs2)) a)"
+      using wf_tuple_proj_tuple[OF w sub] .
+    show "(dproj (mrg_left_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs1) a) \<in> dtabc n cs2 T')
+        = (proj_tuple (join_mask n (set cs2)) a \<in> T')"
+      unfolding dproj_left_key_eq[OF s1 s2 sub b1 w] dtabc_eq_dtab[OF s2]
+      by (subst wide_mask_eq_join_mask[OF s2], rule dtab_in_iff[OF t2 wp])
+  qed
+  ultimately show ?thesis
+    unfolding dsemi_def dtabc_def by auto
+qed
+
 (*<*)
 end
 (*>*)
