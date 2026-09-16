@@ -62,6 +62,7 @@ fun purify :: "mformula_j \<Rightarrow> mformula_p" where
 | "purify (MNext I \<phi> first nts) = MNext I (purify \<phi>) first nts"
 | "purify (MSince args \<phi> \<psi> buf (MSJ_pure s)) = MSince args (purify \<phi>) (purify \<psi>) buf s"
 | "purify (MSince args \<phi> \<psi> buf (MSJ_imp q)) = MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
+| "purify (MSince args \<phi> \<psi> buf (MSJ_evt a)) = MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
 | "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_pure a)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t a"
 | "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_imp d)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t (init_muaux_dq args)"
 | "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_evt a)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t (init_muaux_dq args)"

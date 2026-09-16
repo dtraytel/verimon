@@ -3989,7 +3989,13 @@ type msaux_j =
                        ((((event_data option) list), nat) mapping *
                          (event_data wf_table *
                            (((event_data option) list), nat) mapping)))))))))) *
-        aggaux option);;
+        aggaux option)
+  | MSJ_evt of
+      (nat *
+        ((nat * ((event_data option) list) set) queue *
+          ((nat * ((event_data option) list) set) queue *
+            ((((event_data option) list), nat) mapping *
+              ((event_data option) list) set))));;
 
 type 'a dq = Dq of 'a list * 'a list * nat * nat;;
 
@@ -7631,12 +7637,21 @@ let rec special_args
     is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args) ||
       set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args) (args_R args);;
 
+let rec sevt_applies
+  args =
+    is_none (args_agg args) &&
+      is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args);;
+
+let rec init_sevt
+  args = (zero_nata, (empty_queue, (empty_queue, (ed_mempty_nat, ed_bot))));;
+
 let rec init_j
   args =
-    (if is_none (args_agg args) && special_args args
-      then (fun f_ () -> f_ ((init2 args) ()) ())
-             (fun q -> (fun () -> (MSJ_imp q)))
-      else (fun () -> (MSJ_pure (init_mmasaux args))));;
+    (if sevt_applies args then (fun () -> (MSJ_evt (init_sevt args)))
+      else (if is_none (args_agg args) && special_args args
+             then (fun f_ () -> f_ ((init2 args) ()) ())
+                    (fun q -> (fun () -> (MSJ_imp q)))
+             else (fun () -> (MSJ_pure (init_mmasaux args)))));;
 
 let rec comp_fun_commute_apply (Abs_comp_fun_commute x) = x;;
 
@@ -9105,6 +9120,19 @@ let rec gc_join_mmasaux
                                        (wf_table_since, tuple_since)))))))))),
                  aux));;
 
+let ed_is_empty_v : (((event_data option) list) set -> bool) boxed
+  = Box (is_empty
+          (card_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
+            (cproper_interval_list (ccompare_option ccompare_event_data))));;
+
+let rec join_sevt
+  args x aux =
+    (let (t, (_, (_, (_, _)))) = aux in
+      (if (if args_pos args then not (unbox ed_is_empty_v x)
+            else unbox ed_is_empty_v x)
+        then aux
+        else (t, (empty_queue, (empty_queue, (ed_mempty_nat, ed_bot))))));;
+
 let rec gc_join2
   args x q =
     (let ((t, (gc, (_, (_, (_, (_, _)))))), (_, _)) = q in
@@ -9117,7 +9145,36 @@ let rec join_j
     args, x, MSJ_imp q ->
       (fun f_ () -> f_ ((gc_join2 args x q) ()) ())
         (fun qa -> (fun () -> (MSJ_imp qa)))
-    | args, x, MSJ_pure s -> (fun () -> (MSJ_pure (gc_join_mmasaux args x s)));;
+    | args, x, MSJ_pure s -> (fun () -> (MSJ_pure (gc_join_mmasaux args x s)))
+    | args, x, MSJ_evt a -> (fun () -> (MSJ_evt (join_sevt args x a)));;
+
+let rec evt_add
+  t cc =
+    fold (fun ta (c, s) ->
+           (match unbox ed_lookup_nat_v c ta
+             with None ->
+               (unbox ed_update_nat_v ta one_nata c, unbox ed_insert_v ta s)
+             | Some k ->
+               (unbox ed_update_nat_v ta (plus_nata k one_nata) c, s)))
+      (unbox ed_csorted_list_of_set_v t) cc;;
+
+let ed_remove_v :
+  ((event_data option) list ->
+    ((event_data option) list) set -> ((event_data option) list) set)
+    boxed
+  = Box (remove
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let rec evt_del
+  t cc =
+    fold (fun ta (c, s) ->
+           (match unbox ed_lookup_nat_v c ta with None -> (c, s)
+             | Some k ->
+               (if less_eq_nat k one_nata
+                 then (unbox ed_delete_nat_v ta c, unbox ed_remove_v ta s)
+                 else (unbox ed_update_nat_v ta (minus_nata k one_nata) c, s))))
+      (unbox ed_csorted_list_of_set_v t) cc;;
 
 let rec check_wty_regex
   check_wty_formula x1 = match check_wty_formula, x1 with
@@ -11254,11 +11311,6 @@ let rec ed_hprobe_join
   i ta t =
     ((ed_probe_join_imp i (unbox ed_csorted_list_of_set_v ta)
        (unbox ed_csorted_list_of_set_v t)) ());;
-
-let ed_is_empty_v : (((event_data option) list) set -> bool) boxed
-  = Box (is_empty
-          (card_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
-            (cproper_interval_list (ccompare_option ccompare_event_data))));;
 
 let ed_card_v : (((event_data option) list) set -> nat) boxed
   = Box (card (card_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
@@ -13773,34 +13825,6 @@ let rec mstep
 
 let rec result2 q = (fun () -> (snd (snd (snd (snd (snd (snd (fst q))))))));;
 
-let rec evt_add
-  t cc =
-    fold (fun ta (c, s) ->
-           (match unbox ed_lookup_nat_v c ta
-             with None ->
-               (unbox ed_update_nat_v ta one_nata c, unbox ed_insert_v ta s)
-             | Some k ->
-               (unbox ed_update_nat_v ta (plus_nata k one_nata) c, s)))
-      (unbox ed_csorted_list_of_set_v t) cc;;
-
-let ed_remove_v :
-  ((event_data option) list ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (remove
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let rec evt_del
-  t cc =
-    fold (fun ta (c, s) ->
-           (match unbox ed_lookup_nat_v c ta with None -> (c, s)
-             | Some k ->
-               (if less_eq_nat k one_nata
-                 then (unbox ed_delete_nat_v ta c, unbox ed_remove_v ta s)
-                 else (unbox ed_update_nat_v ta (minus_nata k one_nata) c, s))))
-      (unbox ed_csorted_list_of_set_v t) cc;;
-
 let rec hm_it_adjust (_A1, _A2) _B
   v ht =
     (if equal_nata v zero_nata then (fun () -> zero_nata)
@@ -13894,6 +13918,8 @@ let rec purifya
     | MSince (args, phi, psi, buf, MSJ_pure s) ->
         MSince (args, purifya phi, purifya psi, buf, s)
     | MSince (args, phi, psi, buf, MSJ_imp q) ->
+        MSince (args, purifya phi, purifya psi, buf, init_mmasaux args)
+    | MSince (args, phi, psi, buf, MSJ_evt a) ->
         MSince (args, purifya phi, purifya psi, buf, init_mmasaux args)
     | MUntil (args, phi, psi, buf, nts, t, MUJ_pure a) ->
         MUntil (args, purifya phi, purifya psi, buf, nts, t, a)
@@ -14633,8 +14659,11 @@ let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
                        | TP v -> [TP v]
                        | TS v -> [TS v];;
 
+let rec result_sevt args aux = (let (_, (_, (_, (_, cur)))) = aux in cur);;
+
 let rec result_j args x1 = match args, x1 with args, MSJ_imp q -> result2 q
-                   | args, MSJ_pure s -> (fun () -> (result_mmasaux args s));;
+                   | args, MSJ_pure s -> (fun () -> (result_mmasaux args s))
+                   | args, MSJ_evt a -> (fun () -> (result_sevt args a));;
 
 let rec im_keep_list
   p xs q acc =
@@ -15018,6 +15047,14 @@ let rec mebuf2t_take_j
                   (fun f_ () -> f_ ((f x y t z) ()) ())
                     (fun za -> mebuf2t_take_j f za (xsa, ysa) t tsa)))));;
 
+let rec add_new_table_sevt
+  args x aux =
+    (let (t, (pend, (win, (cnt, cur)))) = aux in
+      (if memL (args_ivl args) zero_nata
+        then (let (cnta, cura) = evt_add x (cnt, cur) in
+               (t, (pend, (append_queue (t, x) win, (cnta, cura)))))
+        else (t, (append_queue (t, x) pend, (win, (cnt, cur))))));;
+
 let rec since_loop2
   t xs h =
     (match xs with [] -> (fun () -> h)
@@ -15060,7 +15097,36 @@ let rec add_new_table_j
       (fun f_ () -> f_ ((add_new_table2 args x q) ()) ())
         (fun qa -> (fun () -> (MSJ_imp qa)))
     | args, x, MSJ_pure s ->
-        (fun () -> (MSJ_pure (add_new_table_mmasaux args x s)));;
+        (fun () -> (MSJ_pure (add_new_table_mmasaux args x s)))
+    | args, x, MSJ_evt a ->
+        (fun () -> (MSJ_evt (add_new_table_sevt args x a)));;
+
+let rec sevt_expire
+  args nt win cnt cur =
+    (match safe_hd win with (None, wina) -> (wina, (cnt, cur))
+      | (Some e, wina) ->
+        (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, (cnt, cur))
+          else (let (a, b) = evt_del (snd e) (cnt, cur) in
+                 sevt_expire args nt (tl_queue wina) a b)));;
+
+let rec sevt_move
+  args nt pend win cnt cur =
+    (match safe_hd pend with (None, penda) -> (penda, (win, (cnt, cur)))
+      | (Some e, penda) ->
+        (if memL (args_ivl args) (minus_nata nt (fst e))
+          then (if memR (args_ivl args) (minus_nata nt (fst e))
+                 then (let (a, b) = evt_add (snd e) (cnt, cur) in
+                        sevt_move args nt (tl_queue penda) (append_queue e win)
+                          a b)
+                 else sevt_move args nt (tl_queue penda) win cnt cur)
+          else (penda, (win, (cnt, cur)))));;
+
+let rec add_new_ts_sevt
+  args nt aux =
+    (let (_, (pend, (win, (cnt, cur)))) = aux in
+     let (penda, (wina, (cnta, cura))) = sevt_move args nt pend win cnt cur in
+     let (winb, (cntb, curb)) = sevt_expire args nt wina cnta cura in
+      (nt, (penda, (winb, (cntb, curb)))));;
 
 let rec upd_loop2
   t xs hs h y =
@@ -15147,7 +15213,8 @@ let rec add_new_ts_j
       (fun f_ () -> f_ ((add_new_ts2 args nt q) ()) ())
         (fun qa -> (fun () -> (MSJ_imp qa)))
     | args, nt, MSJ_pure s ->
-        (fun () -> (MSJ_pure (add_new_ts_mmasaux args nt s)));;
+        (fun () -> (MSJ_pure (add_new_ts_mmasaux args nt s)))
+    | args, nt, MSJ_evt a -> (fun () -> (MSJ_evt (add_new_ts_sevt args nt a)));;
 
 let rec eval_since_j
   args rs buf aux =

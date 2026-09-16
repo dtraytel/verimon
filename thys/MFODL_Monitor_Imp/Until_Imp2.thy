@@ -226,23 +226,6 @@ type_synonym evt_entry = "ts \<times> event_data table \<times> bool"
 type_synonym evtaux = "ts queue \<times> evt_entry queue \<times> evt_entry queue \<times> nat \<times> bool \<times>
   (event_data tuple, nat) mapping \<times> event_data table \<times> event_data table list"
 
-subsection \<open>The union of the window, as a count per tuple\<close>
-
-definition evt_add :: "event_data table \<Rightarrow> (event_data tuple, nat) mapping \<times> event_data table \<Rightarrow>
-    (event_data tuple, nat) mapping \<times> event_data table" where
-  "evt_add T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
-       None \<Rightarrow> (Mapping.update t 1 c, Set.insert t s)
-     | Some k \<Rightarrow> (Mapping.update t (k + 1) c, s)) (csorted_list_of_set T) cc"
-
-definition evt_del :: "event_data table \<Rightarrow> (event_data tuple, nat) mapping \<times> event_data table \<Rightarrow>
-    (event_data tuple, nat) mapping \<times> event_data table" where
-  "evt_del T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
-       None \<Rightarrow> (c, s)
-     | Some k \<Rightarrow> (if k \<le> 1 then (Mapping.delete t c, Set.remove t s)
-                  else (Mapping.update t (k - 1) c, s))) (csorted_list_of_set T) cc"
-
-subsection \<open>Extending the window\<close>
-
 text \<open>The window is extended one time point at a time, and stops at the first one whose
 timestamp is out of range or at the one after which the left operand fails.  Both bounds only
 move to the right as the structure advances, so over a run each time point enters the window
