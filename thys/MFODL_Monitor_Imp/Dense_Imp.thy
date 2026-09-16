@@ -182,6 +182,104 @@ fun dbin_join :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \
 | "dbin_join (DJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. dproj msk b \<in> A) B else A)"
 | "dbin_join (DJGen p lk rk) A pos B = (if pos then dgen_join p lk rk A B else A)"
 
+subsection \<open>Indexing a join on the heap\<close>
+
+text \<open>
+  The same index as @{theory MFODL_Monitor_Imp.Join_Imp2}, over the short tuples.  Two things
+  the sparse version has to worry about go away.  Its guard requires both operands to be
+  complete on the common columns, because a tuple with a hole there means ``any value'' and a
+  hash index would miss the matches; a short tuple has no holes at all, so the guard is
+  vacuous and the index applies wherever the shape is right.  And the key is the projection
+  onto the shared columns, which here is as short as the shared columns rather than as long as
+  the formula is wide, so it is cheaper both to build and to hash.
+\<close>
+
+partial_function (heap) didx_ins :: "bool list \<Rightarrow> event_data tuple list \<Rightarrow> jidx \<Rightarrow> jidx Heap" where
+  [code]:
+  "didx_ins msk xs q = (case xs of [] \<Rightarrow> return q
+     | x # r \<Rightarrow> (let k = dproj msk x; h = ihash k in
+         do { v \<leftarrow> im_lookup_h q h k;
+              q \<leftarrow> im_update_h q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
+              didx_ins msk r q }))"
+
+text \<open>The index holds the right operand and the left probes it.\<close>
+
+partial_function (heap) dprobe_r :: "mrg list \<Rightarrow> bool list \<Rightarrow> jidx \<Rightarrow>
+    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+  [code]:
+  "dprobe_r p lk q xs acc = (case xs of [] \<Rightarrow> return acc
+     | x # r \<Rightarrow> (let k = dproj lk x in
+         do { v \<leftarrow> im_lookup_h q (ihash k) k;
+              dprobe_r p lk q r (case v of None \<Rightarrow> acc
+                | Some l \<Rightarrow> fold (\<lambda>y acc. Set.insert (dmerge p x y) acc) l acc) }))"
+
+text \<open>The index holds the left operand and the right probes it; the merge keeps its sides.\<close>
+
+partial_function (heap) dprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> jidx \<Rightarrow>
+    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+  [code]:
+  "dprobe_l p rk q ys acc = (case ys of [] \<Rightarrow> return acc
+     | y # r \<Rightarrow> (let k = dproj rk y in
+         do { v \<leftarrow> im_lookup_h q (ihash k) k;
+              dprobe_l p rk q r (case v of None \<Rightarrow> acc
+                | Some l \<Rightarrow> fold (\<lambda>x acc. Set.insert (dmerge p x y) acc) l acc) }))"
+
+text \<open>As in the sparse code, the smaller side is indexed and the larger probes it, and only the
+  case in which neither operand's columns contain the other's is taken away from the tree.\<close>
+
+fun dbin_join_h :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
+    event_data table Heap" where
+  "dbin_join_h (DJGen p lk rk) A pos B =
+     (if \<not> dense_heap_join \<or> \<not> pos \<or> Set.is_empty A \<or> Set.is_empty B
+      then return (dbin_join (DJGen p lk rk) A pos B)
+      else (let xs = csorted_list_of_set A; ys = csorted_list_of_set B in
+        if length ys \<le> length xs
+        then (if \<not> heap_join_ok ys then return (dbin_join (DJGen p lk rk) A pos B)
+              else do { q \<leftarrow> im_new (2 * integer_of_nat (length ys));
+                        q \<leftarrow> didx_ins rk ys q;
+                        dprobe_r p lk q xs empty_table })
+        else (if \<not> heap_join_ok xs then return (dbin_join (DJGen p lk rk) A pos B)
+              else do { q \<leftarrow> im_new (2 * integer_of_nat (length xs));
+                        q \<leftarrow> didx_ins lk xs q;
+                        dprobe_l p rk q ys empty_table })))"
+| "dbin_join_h pl A pos B = return (dbin_join pl A pos B)"
+
+subsection \<open>The multi-way conjunction\<close>
+
+text \<open>
+  A conjunction of more than two conjuncts -- and in practice nearly every conjunction, see
+  @{theory MFODL_Monitor_Imp.Join_Imp2} -- is compiled to @{term MAnds}, so without this case
+  the short tuples would never reach a join at all.  The positive conjuncts are joined
+  left-deep and the negative ones subtracted afterwards, as in the sparse code; the columns of
+  every intermediate result are known at build time, so all the plans are made once.
+\<close>
+
+fun dands_plans :: "cols \<Rightarrow> cols list \<Rightarrow> djoin_plan list" where
+  "dands_plans acc [] = []"
+| "dands_plans acc (c # cs) = mk_djoin acc c # dands_plans (merge_cols acc c) cs"
+
+fun dands_cols :: "cols \<Rightarrow> cols list \<Rightarrow> cols" where
+  "dands_cols acc [] = acc"
+| "dands_cols acc (c # cs) = dands_cols (merge_cols acc c) cs"
+
+fun dands_pos_h :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
+    event_data table Heap" where
+  "dands_pos_h [] t us = return t"
+| "dands_pos_h (p # ps) t [] = return t"
+| "dands_pos_h (p # ps) t (u # us) = do { t \<leftarrow> dbin_join_h p t True u; dands_pos_h ps t us }"
+
+fun dands_neg_h :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
+    event_data table Heap" where
+  "dands_neg_h [] t us = return t"
+| "dands_neg_h (p # ps) t [] = return t"
+| "dands_neg_h (p # ps) t (u # us) = do { t \<leftarrow> dbin_join_h p t False u; dands_neg_h ps t us }"
+
+definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow> event_data table list \<Rightarrow>
+    event_data table Heap" where
+  "dmulti_join ps ns us = (case us of [] \<Rightarrow> return empty_table
+     | t # r \<Rightarrow> do { t \<leftarrow> dands_pos_h ps t (take (length ps) r);
+                     dands_neg_h ns t (drop (length ps) r) })"
+
 subsection \<open>Narrowing at the boundary with the unmodified evaluator\<close>
 
 definition dnarrow :: "bool list \<Rightarrow> event_data table \<Rightarrow> event_data table" where
@@ -255,6 +353,9 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
   "mcols n (MPred e tms mode) = Some (tms_cols tms)"
 | "mcols n (MAnd A \<phi> pos B \<psi> buf) =
     Some (if pos then merge_cols (set_cols A) (set_cols B) else set_cols A)"
+| "mcols n (MAnds A_pos A_neg L buf) =
+    (case A_pos of [] \<Rightarrow> None
+     | A # As \<Rightarrow> Some (dands_cols (set_cols A) (map set_cols As)))"
 | "mcols n (MAndRel \<phi> conf) = mcols n \<phi>"
 | "mcols n (MOr \<phi> \<psi> buf) = mcols n \<phi>"
 | "mcols n (MNeg \<phi>) = Some []"
@@ -272,6 +373,7 @@ datatype dformula =
   | DPredS Formula.name nat
   | DPredM Formula.name nat "Formula.trm list" cols
   | DAnd djoin_plan dformula bool dformula "event_data mebuf2"
+  | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mebufn"
   | DAndRel dformula "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
   | DOr dformula dformula "event_data mebuf2"
   | DNeg dformula
@@ -283,8 +385,26 @@ datatype dformula =
 
 subsection \<open>Building it\<close>
 
-fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap" where
-  "dformula_of n cs (MPred e tms mode) =
+fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap"
+  and dformula_of_list :: "nat \<Rightarrow> cols list \<Rightarrow> mformula_j list \<Rightarrow> dformula list Heap" where
+  "dformula_of_list n cs [] = return []"
+| "dformula_of_list n cs (\<phi> # r) = do {
+     \<phi>d \<leftarrow> dformula_of n (case cs of [] \<Rightarrow> [] | c # _ \<Rightarrow> c) \<phi>;
+     \<phi>s \<leftarrow> dformula_of_list n (case cs of [] \<Rightarrow> [] | _ # r' \<Rightarrow> r') r;
+     return (\<phi>d # \<phi>s) }"
+| "dformula_of n cs (MAnds A_pos A_neg L buf) =
+     (case A_pos of [] \<Rightarrow> return (DPure (MAnds A_pos A_neg L buf) n (wide_mask n cs))
+      | A # As \<Rightarrow>
+        (let cs_pos = set_cols A # map set_cols As;
+             fin = dands_cols (set_cols A) (map set_cols As);
+             cs_neg = map set_cols A_neg in
+         if length L \<noteq> length A_pos + length A_neg
+         then return (DPure (MAnds A_pos A_neg L buf) n (wide_mask n cs))
+         else do {
+           Ld \<leftarrow> dformula_of_list n (cs_pos @ cs_neg) L;
+           return (DAnds (dands_plans (set_cols A) (map set_cols As))
+                     (map (mk_djoin fin) cs_neg) Ld buf) }))"
+| "dformula_of n cs (MPred e tms mode) =
      return (if mode \<noteq> Match \<and> cs = tms_cols tms then DPredS e (length tms)
              else DPredM e (length tms) tms cs)"
 | "dformula_of n cs (MRel rel) = return (DRel (dnarrow (wide_mask n cs) rel))"
@@ -327,8 +447,17 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
 
 subsection \<open>Evaluating it\<close>
 
-fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> (event_data table list \<times> dformula) Heap" where
-  "deval j ts db (DPure \<phi> n msk) = do {
+fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> (event_data table list \<times> dformula) Heap"
+  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
+    ((event_data table list \<times> dformula) list) Heap" where
+  "deval_list j ts db [] = return []"
+| "deval_list j ts db (\<phi> # r) = do {
+     x \<leftarrow> deval j ts db \<phi>; xs \<leftarrow> deval_list j ts db r; return (x # xs) }"
+| "deval j ts db (DAnds ps ns L buf) = do {
+     R \<leftarrow> deval_list j ts db L;
+     p \<leftarrow> mebufn_take_j (dmulti_join ps ns) mbuf_t_empty (mebufn_add (map fst R) buf);
+     return (Rep_mbuf_t (fst p), DAnds ps ns (map snd R) (snd p)) }"
+| "deval j ts db (DPure \<phi> n msk) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
      return (map (dnarrow msk) xs, DPure \<phi> n msk) }"
 | "deval j ts db (DRel rel) = return (replicate (length ts) rel, DRel rel)"
@@ -342,8 +471,8 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
 | "deval j ts db (DAnd pl \<phi> pos \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     return (let (zs, buf) = mebuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (mebuf2_add xs ys buf)
-       in (zs, DAnd pl \<phi> pos \<psi> buf)) }"
+     r \<leftarrow> mebuf2_take_j (\<lambda>r1 r2. dbin_join_h pl r1 pos r2) (mebuf2_add xs ys buf);
+     return (fst r, DAnd pl \<phi> pos \<psi> (snd r)) }"
 | "deval j ts db (DAndRel \<phi> conf) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (map (Set.filter (eval_constraint conf)) xs, DAndRel \<phi> conf) }"
@@ -382,6 +511,22 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
            return (fst z, DUntil args \<phi> \<psi> buf nts' nt (snd z)) }) }"
 
 subsection \<open>The state\<close>
+
+fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformula list \<Rightarrow> nat" where
+  "dpure_nodes_list [] = 0"
+| "dpure_nodes_list (\<phi> # r) = dpure_nodes \<phi> + dpure_nodes_list r"
+| "dpure_nodes (DPure \<phi> n msk) = 1"
+| "dpure_nodes (DAnds ps ns L buf) = dpure_nodes_list L"
+| "dpure_nodes (DAnd pl \<phi> pos \<psi> buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DAndRel \<phi> conf) = dpure_nodes \<phi>"
+| "dpure_nodes (DOr \<phi> \<psi> buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DNeg \<phi>) = dpure_nodes \<phi>"
+| "dpure_nodes (DExists \<phi> b) = dpure_nodes \<phi>"
+| "dpure_nodes (DPrev I \<phi> f buf nts) = dpure_nodes \<phi>"
+| "dpure_nodes (DNext I \<phi> f nts) = dpure_nodes \<phi>"
+| "dpure_nodes (DSince args \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DUntil args \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
 

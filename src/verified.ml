@@ -45,8 +45,10 @@ end;; (*struct Uint32*)
 
 module ConfigImp : sig
   val heap_join_min : int ref
+  val dense_heap_join : bool ref
 end = struct
   let heap_join_min = ref 0
+  let dense_heap_join = ref false
 end
 
 module FloatUtil : sig
@@ -161,7 +163,10 @@ module Monitor : sig
   type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med
   type ty = TInt | TFloat | TString
   type i
+  type 'a args_ext
   type 'a queue
+  type 'a mbuf_t
+  type mconstraint
   type ('a, 'b) mapping
   type ('a, 'b, 'c) meformula
   type int = Int_of_integer of Z.t
@@ -185,6 +190,7 @@ module Monitor : sig
     MatchP of i * 'a formula regex | TP of trm | TS of trm
   type ('a, 'b, 'c) mformula
   type 'a wf_table
+  type djoin_plan
   type aggaux
   type muaux_dq
   type muaux_j
@@ -415,6 +421,7 @@ mapping *
   val ht_to_list :
     Z.t * (Z.t * ((Z.t * ((event_data option) list * unit)) list) array) ->
       (unit -> (((event_data option) list) list))
+  val dpure_nodes : dformula -> nat
   val mstep_imp :
     ((string * nat), (((event_data option) list) set list)) mapping * nat ->
       nat * (nat *
@@ -4100,6 +4107,9 @@ type dformula =
     djoin_plan * dformula * bool * dformula *
       (((event_data option) list) set mbuf_t *
         ((event_data option) list) set mbuf_t)
+  | DAnds of
+      djoin_plan list * djoin_plan list * dformula list *
+        ((event_data option) list) set mbuf_t list
   | DAndRel of dformula * (trm * (bool * (mconstraint * trm))) |
   DOr of
     dformula * dformula *
@@ -5776,6 +5786,8 @@ let rec cluster (_A1, _A2, _A3) _B
           | Some _ ->
             RBT_Mapping
               (mapping_of_cluster (_A1, _A2, _A3) _B f (impl_ofa _A2 t))));;
+
+let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
 
 let ed_set_eq_v :
   (((event_data option) list) set -> ((event_data option) list) set -> bool)
@@ -9304,6 +9316,9 @@ let rec mebuf2S_add
     (mbuf_t_append xs xsa,
       (mbuf_t_append ys ysa, (mbuf_t_append ts tsa, skew)));;
 
+let rec mebufn_add
+  xsa xs = mapa (fun (a, b) -> mbuf_t_append a b) (zip xs xsa);;
+
 let rec mebuf2_add
   xsa ysa (xs, ys) = (mbuf_t_append xs xsa, mbuf_t_append ys ysa);;
 
@@ -9315,6 +9330,29 @@ let rec eval_constraint0
 let rec eval_constraint
   (t1, (p, (c, t2))) x =
     equal_boola (eval_constraint0 c (meval_trm t1 x) (meval_trm t2 x)) p;;
+
+let rec mbuf_t_is_empty (MBuf2_t xs) = is_emptya xs;;
+
+let rec mebufn_take_j
+  f z buf =
+    (if null buf || list_ex mbuf_t_is_empty buf then (fun () -> (z, buf))
+      else binda (f (mapa (comp (comp the fst) mbuf_t_cases) buf))
+             (fun x ->
+               mebufn_take_j f (mbuf_t_append z [x])
+                 (mapa (comp snd mbuf_t_cases) buf)));;
+
+let rec mebuf2_take_j
+  f buf =
+    (let (xs, ys) = buf in
+      (match mbuf_t_cases xs with (None, xsa) -> (fun () -> ([], (xsa, ys)))
+        | (Some x, xsa) ->
+          (match mbuf_t_cases ys
+            with (None, ysa) -> (fun () -> ([], (mbuf_t_Cons x xsa, ysa)))
+            | (Some y, ysa) ->
+              binda (f x y)
+                (fun z ->
+                  binda (mebuf2_take_j f (xsa, ysa))
+                    (fun r -> (fun () -> (z :: fst r, snd r)))))));;
 
 let rec upd_nested_step (_B1, _B2) (_C1, _C2, _C3)
   d f x m =
@@ -10914,6 +10952,208 @@ let rec dmatch_table
           (set_impl_option set_impl_list))
         (fun xa -> map_option (fun f -> mapa f cs) (matcha tms xa)) x);;
 
+let rec heap_join_ok
+  idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
+          (integer_of_nat (size_lista idx));;
+
+let rec dmerge x0 xs ys = match x0, xs, ys with [], xs, ys -> []
+                 | MLft :: p, x :: xs, ys -> x :: dmerge p xs ys
+                 | MRgt :: p, xs, y :: ys -> y :: dmerge p xs ys
+                 | MBth :: p, x :: xs, y :: ys -> x :: dmerge p xs ys
+                 | MRgt :: p, xs, [] -> []
+                 | MBth :: p, [], ys -> []
+                 | MBth :: p, xs, [] -> []
+                 | MLft :: p, [], ys -> []
+                 | m :: p, [], [] -> [];;
+
+let rec dproj x0 xs = match x0, xs with [], xs -> []
+                | true :: bs, x :: xs -> x :: dproj bs xs
+                | false :: bs, x :: xs -> dproj bs xs
+                | b :: bs, [] -> [];;
+
+let rec dprobe_step
+  p msk m a acc =
+    (match
+      lookupa
+        ((ccompare_list (ccompare_option ccompare_event_data)),
+          (equal_list (equal_option equal_event_data)))
+        m (dproj msk a)
+      with None -> acc
+      | Some l -> fold (fun b -> ed_insert (dmerge p a b)) l acc);;
+
+let rec dindex_step
+  msk b m =
+    (let k = dproj msk b in
+      (match
+        lookupa
+          ((ccompare_list (ccompare_option ccompare_event_data)),
+            (equal_list (equal_option equal_event_data)))
+          m k
+        with None ->
+          updateb
+            ((ccompare_list (ccompare_option ccompare_event_data)),
+              (equal_list (equal_option equal_event_data)))
+            k [b] m
+        | Some l ->
+          updateb
+            ((ccompare_list (ccompare_option ccompare_event_data)),
+              (equal_list (equal_option equal_event_data)))
+            k (b :: l) m));;
+
+let rec dindex
+  msk b =
+    fold (dindex_step msk) (unbox ed_csorted_list_of_set_v b)
+      (mapping_empty (ccompare_list (ccompare_option ccompare_event_data))
+        (of_phantom mapping_impl_lista));;
+
+let rec dgen_join
+  p lk rk a b =
+    (let m = dindex rk b in
+      fold (dprobe_step p lk m) (unbox ed_csorted_list_of_set_v a) ed_bot);;
+
+let rec dsemi
+  msk pos a b =
+    unbox ed_filter_v (fun aa -> equal_boola (ed_member (dproj msk aa) b) pos)
+      a;;
+
+let rec dbin_join
+  x0 a pos b = match x0, a, pos, b with
+    DJSub msk, a, pos, b -> dsemi msk pos a b
+    | DJSup msk, a, pos, b ->
+        (if pos then unbox ed_filter_v (fun ba -> ed_member (dproj msk ba) a) b
+          else a)
+    | DJGen (p, lk, rk), a, pos, b ->
+        (if pos then dgen_join p lk rk a b else a);;
+
+let jidx_lookup_h_v :
+  (Z.t * (Z.t *
+           ((Z.t *
+              ((event_data option) list *
+                ((event_data option) list) list)) list)
+             array) ->
+    Z.t ->
+      (event_data option) list ->
+        (unit -> ((((event_data option) list) list) option)))
+    boxed
+  = Box (im_lookup_h (heap_list (heap_list (heap_option heap_event_data))));;
+
+let rec dprobe_r
+  p lk q xs acc =
+    (match xs with [] -> (fun () -> acc)
+      | x :: r ->
+        (let k = dproj lk x in
+          binda (unbox jidx_lookup_h_v q
+                  ((fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+                    k)
+                  k)
+            (fun v ->
+              dprobe_r p lk q r
+                (match v with None -> acc
+                  | Some l ->
+                    fold (fun y -> ed_insert (dmerge p x y)) l acc))));;
+
+let rec dprobe_l
+  p rk q ys acc =
+    (match ys with [] -> (fun () -> acc)
+      | y :: r ->
+        (let k = dproj rk y in
+          binda (unbox jidx_lookup_h_v q
+                  ((fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+                    k)
+                  k)
+            (fun v ->
+              dprobe_l p rk q r
+                (match v with None -> acc
+                  | Some l ->
+                    fold (fun x -> ed_insert (dmerge p x y)) l acc))));;
+
+let jidx_update_h_v :
+  (Z.t * (Z.t *
+           ((Z.t *
+              ((event_data option) list *
+                ((event_data option) list) list)) list)
+             array) ->
+    Z.t ->
+      (event_data option) list ->
+        ((event_data option) list) list ->
+          (unit ->
+            (Z.t *
+              (Z.t *
+                ((Z.t *
+                   ((event_data option) list *
+                     ((event_data option) list) list)) list)
+                  array))))
+    boxed
+  = Box (im_update_h (heap_list (heap_list (heap_option heap_event_data))));;
+
+let rec didx_ins
+  msk xs q =
+    (match xs with [] -> (fun () -> q)
+      | x :: r ->
+        (let k = dproj msk x in
+         let h =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             k
+           in
+          binda (unbox jidx_lookup_h_v q h k)
+            (fun v ->
+              binda (unbox jidx_update_h_v q h k
+                      (match v with None -> [x] | Some a -> x :: a))
+                (didx_ins msk r))));;
+
+let rec dbin_join_h
+  x0 a pos b = match x0, a, pos, b with
+    DJGen (p, lk, rk), a, pos, b ->
+      (if not !ConfigImp.dense_heap_join ||
+            (not pos || (unbox ed_is_empty_v a || unbox ed_is_empty_v b))
+        then (fun () -> (dbin_join (DJGen (p, lk, rk)) a pos b))
+        else (let xs = unbox ed_csorted_list_of_set_v a in
+              let ys = unbox ed_csorted_list_of_set_v b in
+               (if less_eq_nat (size_lista ys) (size_lista xs)
+                 then (if not (heap_join_ok ys)
+                        then (fun () -> (dbin_join (DJGen (p, lk, rk)) a pos b))
+                        else binda (im_new
+                                     (heap_list
+                                       (heap_list
+ (heap_option heap_event_data)))
+                                     (Z.mul (Z.of_int 2)
+                                       (integer_of_nat (size_lista ys))))
+                               (fun q ->
+                                 binda (didx_ins rk ys q)
+                                   (fun qa -> dprobe_r p lk qa xs ed_bot)))
+                 else (if not (heap_join_ok xs)
+                        then (fun () -> (dbin_join (DJGen (p, lk, rk)) a pos b))
+                        else binda (im_new
+                                     (heap_list
+                                       (heap_list
+ (heap_option heap_event_data)))
+                                     (Z.mul (Z.of_int 2)
+                                       (integer_of_nat (size_lista xs))))
+                               (fun q ->
+                                 binda (didx_ins lk xs q)
+                                   (fun qa -> dprobe_l p rk qa ys ed_bot))))))
+    | DJSub v, a, pos, b -> (fun () -> (dbin_join (DJSub v) a pos b))
+    | DJSup v, a, pos, b -> (fun () -> (dbin_join (DJSup v) a pos b));;
+
+let rec dands_pos_h
+  x0 t us = match x0, t, us with [], t, us -> (fun () -> t)
+    | p :: ps, t, [] -> (fun () -> t)
+    | p :: ps, t, u :: us ->
+        binda (dbin_join_h p t true u) (fun ta -> dands_pos_h ps ta us);;
+
+let rec dands_neg_h
+  x0 t us = match x0, t, us with [], t, us -> (fun () -> t)
+    | p :: ps, t, [] -> (fun () -> t)
+    | p :: ps, t, u :: us ->
+        binda (dbin_join_h p t false u) (fun ta -> dands_neg_h ps ta us);;
+
+let rec dmulti_join
+  ps ns us =
+    (match us with [] -> (fun () -> ed_bot)
+      | t :: r ->
+        binda (dands_pos_h ps t (take (size_lista ps) r))
+          (fun ta -> dands_neg_h ns ta (drop (size_lista ps) r)));;
+
 let rec ed_proj_tuple_in_join
   pos bs asa t =
     (if pos then ed_member (proj_tuple bs asa) t
@@ -11179,8 +11419,6 @@ let rec result_mmtaux
                unbox ed_union_v (unbox ed_union_v tuple_in_once_keys hist_sat)
                  since_sat));;
 
-let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
-
 let ed_rbt_fold_table_v :
   (((event_data option) list ->
      ((event_data option) list) set -> ((event_data option) list) set) ->
@@ -11383,9 +11621,6 @@ let rec mebuf2T_take
               with (None, ysa) ->
                 (z, ((mbuf_t_Cons x xsa, ysa), mbuf_t_Cons t tsa))
               | (Some y, ysa) -> mebuf2T_take f (f x y t z) (xsa, ysa) tsa)));;
-
-let rec mebufn_add
-  xsa xs = mapa (fun (a, b) -> mbuf_t_append a b) (zip xs xsa);;
 
 let rec eval_assignment (x, t) y = list_update y x (Some (meval_trm t y));;
 
@@ -12371,37 +12606,6 @@ let rec ed_mmulti_join
 
 let use_heap_join : bool = true;;
 
-let jidx_update_h_v :
-  (Z.t * (Z.t *
-           ((Z.t *
-              ((event_data option) list *
-                ((event_data option) list) list)) list)
-             array) ->
-    Z.t ->
-      (event_data option) list ->
-        ((event_data option) list) list ->
-          (unit ->
-            (Z.t *
-              (Z.t *
-                ((Z.t *
-                   ((event_data option) list *
-                     ((event_data option) list) list)) list)
-                  array))))
-    boxed
-  = Box (im_update_h (heap_list (heap_list (heap_option heap_event_data))));;
-
-let jidx_lookup_h_v :
-  (Z.t * (Z.t *
-           ((Z.t *
-              ((event_data option) list *
-                ((event_data option) list) list)) list)
-             array) ->
-    Z.t ->
-      (event_data option) list ->
-        (unit -> ((((event_data option) list) list) option)))
-    boxed
-  = Box (im_lookup_h (heap_list (heap_list (heap_option heap_event_data))));;
-
 let rec idx_ins_list
   msk xs q =
     (match xs with [] -> (fun () -> q)
@@ -12476,10 +12680,6 @@ let rec probe_join_j
           binda (idx_ins_list msk ys q)
             (fun qa -> probe_all msk qa xs ed_bot)));;
 
-let rec heap_join_ok
-  idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
-          (integer_of_nat (size_lista idx));;
-
 let rec bin_join_j
   n aa ta pos a t =
     (if not use_heap_join ||
@@ -12533,29 +12733,6 @@ let rec mmulti_join_j
                  (fun p ->
                    mmulti_join_neg_j n (fst p) (snd p)
                      (zip a_neg (drop (size_lista a_pos) l)))));;
-
-let rec mbuf_t_is_empty (MBuf2_t xs) = is_emptya xs;;
-
-let rec mebufn_take_j
-  f z buf =
-    (if null buf || list_ex mbuf_t_is_empty buf then (fun () -> (z, buf))
-      else binda (f (mapa (comp (comp the fst) mbuf_t_cases) buf))
-             (fun x ->
-               mebufn_take_j f (mbuf_t_append z [x])
-                 (mapa (comp snd mbuf_t_cases) buf)));;
-
-let rec mebuf2_take_j
-  f buf =
-    (let (xs, ys) = buf in
-      (match mbuf_t_cases xs with (None, xsa) -> (fun () -> ([], (xsa, ys)))
-        | (Some x, xsa) ->
-          (match mbuf_t_cases ys
-            with (None, ysa) -> (fun () -> ([], (mbuf_t_Cons x xsa, ysa)))
-            | (Some y, ysa) ->
-              binda (f x y)
-                (fun z ->
-                  binda (mebuf2_take_j f (xsa, ysa))
-                    (fun r -> (fun () -> (z :: fst r, snd r)))))));;
 
 let rec eval_mmauaux
   args nt aux =
@@ -13644,75 +13821,6 @@ and meval_j_list
             binda (meval_j_list j n ts db r)
               (fun xs -> (fun () -> (x :: xs))));;
 
-let rec dmerge x0 xs ys = match x0, xs, ys with [], xs, ys -> []
-                 | MLft :: p, x :: xs, ys -> x :: dmerge p xs ys
-                 | MRgt :: p, xs, y :: ys -> y :: dmerge p xs ys
-                 | MBth :: p, x :: xs, y :: ys -> x :: dmerge p xs ys
-                 | MRgt :: p, xs, [] -> []
-                 | MBth :: p, [], ys -> []
-                 | MBth :: p, xs, [] -> []
-                 | MLft :: p, [], ys -> []
-                 | m :: p, [], [] -> [];;
-
-let rec dproj x0 xs = match x0, xs with [], xs -> []
-                | true :: bs, x :: xs -> x :: dproj bs xs
-                | false :: bs, x :: xs -> dproj bs xs
-                | b :: bs, [] -> [];;
-
-let rec dprobe_step
-  p msk m a acc =
-    (match
-      lookupa
-        ((ccompare_list (ccompare_option ccompare_event_data)),
-          (equal_list (equal_option equal_event_data)))
-        m (dproj msk a)
-      with None -> acc
-      | Some l -> fold (fun b -> ed_insert (dmerge p a b)) l acc);;
-
-let rec dindex_step
-  msk b m =
-    (let k = dproj msk b in
-      (match
-        lookupa
-          ((ccompare_list (ccompare_option ccompare_event_data)),
-            (equal_list (equal_option equal_event_data)))
-          m k
-        with None ->
-          updateb
-            ((ccompare_list (ccompare_option ccompare_event_data)),
-              (equal_list (equal_option equal_event_data)))
-            k [b] m
-        | Some l ->
-          updateb
-            ((ccompare_list (ccompare_option ccompare_event_data)),
-              (equal_list (equal_option equal_event_data)))
-            k (b :: l) m));;
-
-let rec dindex
-  msk b =
-    fold (dindex_step msk) (unbox ed_csorted_list_of_set_v b)
-      (mapping_empty (ccompare_list (ccompare_option ccompare_event_data))
-        (of_phantom mapping_impl_lista));;
-
-let rec dgen_join
-  p lk rk a b =
-    (let m = dindex rk b in
-      fold (dprobe_step p lk m) (unbox ed_csorted_list_of_set_v a) ed_bot);;
-
-let rec dsemi
-  msk pos a b =
-    unbox ed_filter_v (fun aa -> equal_boola (ed_member (dproj msk aa) b) pos)
-      a;;
-
-let rec dbin_join
-  x0 a pos b = match x0, a, pos, b with
-    DJSub msk, a, pos, b -> dsemi msk pos a b
-    | DJSup msk, a, pos, b ->
-        (if pos then unbox ed_filter_v (fun ba -> ed_member (dproj msk ba) a) b
-          else a)
-    | DJGen (p, lk, rk), a, pos, b ->
-        (if pos then dgen_join p lk rk a b else a);;
-
 let rec all_true bs = list_all id bs;;
 
 let rec dnarrow
@@ -13720,10 +13828,18 @@ let rec dnarrow
 
 let rec deval
   j ts db x3 = match j, ts, db, x3 with
-    j, ts, db, DPure (phi, n, msk) ->
-      binda (meval_j j n ts db phi)
-        (fun (xs, phia) ->
-          (fun () -> (mapa (dnarrow msk) xs, DPure (phia, n, msk))))
+    j, ts, db, DAnds (ps, ns, l, buf) ->
+      binda (deval_list j ts db l)
+        (fun r ->
+          binda (mebufn_take_j (dmulti_join ps ns) mbuf_t_empty
+                  (mebufn_add (mapa fst r) buf))
+            (fun p ->
+              (fun () ->
+                (rep_mbuf_t (fst p), DAnds (ps, ns, mapa snd r, snd p)))))
+    | j, ts, db, DPure (phi, n, msk) ->
+        binda (meval_j j n ts db phi)
+          (fun (xs, phia) ->
+            (fun () -> (mapa (dnarrow msk) xs, DPure (phia, n, msk))))
     | j, ts, db, DRel rel ->
         (fun () -> (replicate (size_lista ts) rel, DRel rel))
     | j, ts, db, DPredS (e, ar) ->
@@ -13742,12 +13858,10 @@ let rec deval
           (fun (xs, phia) ->
             binda (deval j ts db psi)
               (fun (ys, psia) ->
-                (fun () ->
-                  (let (zs, bufa) =
-                     mebuf2_take (fun r1 -> dbin_join pl r1 pos)
-                       (mebuf2_add xs ys buf)
-                     in
-                    (zs, DAnd (pl, phia, pos, psia, bufa))))))
+                binda (mebuf2_take_j (fun r1 -> dbin_join_h pl r1 pos)
+                        (mebuf2_add xs ys buf))
+                  (fun r ->
+                    (fun () -> (fst r, DAnd (pl, phia, pos, psia, snd r))))))
     | j, ts, db, DAndRel (phi, conf) ->
         binda (deval j ts db phi)
           (fun (xs, phia) ->
@@ -13832,7 +13946,13 @@ let rec deval
                         (fun () ->
                           (fst z,
                             DUntil
-                              (args, phia, psia, bufa, ntsa, nt, snd z)))))));;
+                              (args, phia, psia, bufa, ntsa, nt, snd z)))))))
+and deval_list
+  j ts db x3 = match j, ts, db, x3 with j, ts, db, [] -> (fun () -> [])
+    | j, ts, db, phi :: r ->
+        binda (deval j ts db phi)
+          (fun x ->
+            binda (deval_list j ts db r) (fun xs -> (fun () -> (x :: xs))));;
 
 let rec merge_cols
   x0 ds = match x0, ds with [], ds -> ds
@@ -13841,6 +13961,9 @@ let rec merge_cols
         (if less_nat c d then c :: merge_cols cs (d :: ds)
           else (if less_nat d c then d :: merge_cols (c :: cs) ds
                  else c :: merge_cols cs ds));;
+
+let rec dands_cols acc x1 = match acc, x1 with acc, [] -> acc
+                     | acc, c :: cs -> dands_cols (merge_cols acc c) cs;;
 
 let rec trm_vars = function Var x -> [x]
                    | Const c -> []
@@ -13863,6 +13986,9 @@ let rec mcols
   n x1 = match n, x1 with n, MPred (e, tms, mode) -> Some (tms_cols tms)
     | n, MAnd (a, phi, pos, b, psi, buf) ->
         Some (if pos then merge_cols (set_cols a) (set_cols b) else set_cols a)
+    | n, MAnds (a_pos, a_neg, l, buf) ->
+        (match a_pos with [] -> None
+          | a :: asa -> Some (dands_cols (set_cols a) (mapa set_cols asa)))
     | n, MAndRel (phi, conf) -> mcols n phi
     | n, MOr (phi, psi, buf) -> mcols n phi
     | n, MNeg phi -> Some []
@@ -13885,7 +14011,6 @@ let rec mcols
     | n, MLetPast (v, va, vb, vc, vd, ve) -> None
     | n, MAndAssign (v, va) -> None
     | n, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
-    | n, MAnds (v, va, vb, vc) -> None
     | n, MAgg (v, va) -> None
     | n, MTrigger (v, va, vb, vc, vd, ve) -> None
     | n, MMatchP (v, va, vb, vc, vd, ve, vf) -> None
@@ -16206,6 +16331,10 @@ let rec im_to_list _A
 let rec ht_to_list
   q = binda (im_to_list heap_unit q) (fun kvs -> (fun () -> (mapa fst kvs)));;
 
+let rec dands_plans
+  acc x1 = match acc, x1 with acc, [] -> []
+    | acc, c :: cs -> mk_djoin acc c :: dands_plans (merge_cols acc c) cs;;
+
 let rec equal_pred_mode x0 x1 = match x0, x1 with Simple, Match -> false
                           | Match, Simple -> false
                           | Copy, Match -> false
@@ -16235,12 +16364,30 @@ let rec reindex_constraint
 
 let rec dformula_of
   n cs x2 = match n, cs, x2 with
-    n, cs, MPred (e, tms, mode) ->
-      (fun () ->
-        (if not (equal_pred_mode mode Match) &&
-              equal_lista equal_nat cs (tms_cols tms)
-          then DPredS (e, size_lista tms)
-          else DPredM (e, size_lista tms, tms, cs)))
+    n, cs, MAnds (a_pos, a_neg, l, buf) ->
+      (match a_pos
+        with [] ->
+          (fun () -> (DPure (MAnds (a_pos, a_neg, l, buf), n, wide_mask n cs)))
+        | a :: asa ->
+          (let cs_pos = set_cols a :: mapa set_cols asa in
+           let fin = dands_cols (set_cols a) (mapa set_cols asa) in
+           let cs_neg = mapa set_cols a_neg in
+            (if not (equal_nata (size_lista l)
+                      (plus_nata (size_lista a_pos) (size_lista a_neg)))
+              then (fun () ->
+                     (DPure (MAnds (a_pos, a_neg, l, buf), n, wide_mask n cs)))
+              else binda (dformula_of_list n (cs_pos @ cs_neg) l)
+                     (fun ld ->
+                       (fun () ->
+                         (DAnds
+                           (dands_plans (set_cols a) (mapa set_cols asa),
+                             mapa (mk_djoin fin) cs_neg, ld, buf)))))))
+    | n, cs, MPred (e, tms, mode) ->
+        (fun () ->
+          (if not (equal_pred_mode mode Match) &&
+                equal_lista equal_nat cs (tms_cols tms)
+            then DPredS (e, size_lista tms)
+            else DPredM (e, size_lista tms, tms, cs)))
     | n, cs, MRel rel -> (fun () -> (DRel (dnarrow (wide_mask n cs) rel)))
     | n, cs, MAnd (a, phi, pos, b, psi, buf) ->
         binda (dformula_of n (set_cols a) phi)
@@ -16319,8 +16466,6 @@ let rec dformula_of
           (DPure
             (MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh), n,
               wide_mask n cs)))
-    | n, cs, MAnds (v, va, vb, vc) ->
-        (fun () -> (DPure (MAnds (v, va, vb, vc), n, wide_mask n cs)))
     | n, cs, MAgg (v, va) ->
         (fun () -> (DPure (MAgg (v, va), n, wide_mask n cs)))
     | n, cs, MTrigger (v, va, vb, vc, vd, ve) ->
@@ -16333,7 +16478,37 @@ let rec dformula_of
         (fun () ->
           (DPure (MMatchF (v, va, vb, vc, vd, ve, vf, vg), n, wide_mask n cs)))
     | n, cs, MTP (v, va) -> (fun () -> (DPure (MTP (v, va), n, wide_mask n cs)))
-    | n, cs, MTS v -> (fun () -> (DPure (MTS v, n, wide_mask n cs)));;
+    | n, cs, MTS v -> (fun () -> (DPure (MTS v, n, wide_mask n cs)))
+and dformula_of_list
+  n cs x2 = match n, cs, x2 with n, cs, [] -> (fun () -> [])
+    | n, cs, phi :: r ->
+        binda (dformula_of n (match cs with [] -> [] | c :: _ -> c) phi)
+          (fun phi_d ->
+            binda (dformula_of_list n (match cs with [] -> [] | _ :: ra -> ra)
+                    r)
+              (fun phi_s -> (fun () -> (phi_d :: phi_s))));;
+
+let rec dpure_nodes
+  = function DPure (phi, n, msk) -> one_nata
+    | DAnds (ps, ns, l, buf) -> dpure_nodes_list l
+    | DAnd (pl, phi, pos, psi, buf) ->
+        plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DAndRel (phi, conf) -> dpure_nodes phi
+    | DOr (phi, psi, buf) -> plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DNeg phi -> dpure_nodes phi
+    | DExists (phi, b) -> dpure_nodes phi
+    | DPrev (i, phi, f, buf, nts) -> dpure_nodes phi
+    | DNext (i, phi, f, nts) -> dpure_nodes phi
+    | DSince (args, phi, psi, buf, aux) ->
+        plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DUntil (args, phi, psi, buf, nts, t, aux) ->
+        plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DRel v -> zero_nata
+    | DPredS (v, va) -> zero_nata
+    | DPredM (v, va, vb, vc) -> zero_nata
+and dpure_nodes_list
+  = function [] -> zero_nata
+    | phi :: r -> plus_nata (dpure_nodes phi) (dpure_nodes_list r);;
 
 let rec since_loop (_A1, _A2, _A3, _A4, _A5)
   t x1 h y = match t, x1, h, y with t, [], h, y -> (fun () -> (h, y))

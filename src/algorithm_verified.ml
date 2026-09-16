@@ -74,6 +74,8 @@ let monitor_gen parse dbschema logfile fv f =
       Verified.Config.generic_join := !generic_join;
       Verified.Config.imperative_join := !imperative_join;
       Verified.ConfigImp.heap_join_min := !Misc.heap_join_min;
+      (* -dense -heap_maps: index the short tuples on the heap where the sparse code would *)
+      Verified.ConfigImp.dense_heap_join := !Misc.dense_cols && !Misc.heap_all;
       Verified.Config.bulk_min := !Misc.bulk_min;
       let ctxt = Monitor.{
         fv_pos;

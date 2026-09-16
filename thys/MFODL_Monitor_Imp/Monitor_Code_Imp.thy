@@ -42,7 +42,7 @@ export_code
   (*heap-resident tables, for the micro-benchmark*)
   minit_safe_j mstep_j
   (*tuples without their empty columns*)
-  minit_safe_d mstep_d
+  minit_safe_d mstep_d dpure_nodes
   (*heap-resident tables and maps, for the micro-benchmarks*)
   ht_new ht_ins ht_mem ht_of_list ht_to_list
   im_new im_lookup im_update im_delete im_to_list

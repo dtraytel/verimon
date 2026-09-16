@@ -66,15 +66,24 @@ code_printing constant Heap_Monad.bind \<rightharpoonup> (OCaml)
 code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
 \<open>module ConfigImp : sig
   val heap_join_min : int ref
+  val dense_heap_join : bool ref
 end = struct
   let heap_join_min = ref 0
+  let dense_heap_join = ref false
 end\<close>
 
 definition heap_join_min :: integer where
   "heap_join_min = 0"
 
+text \<open>Whether the monitor over the short tuples indexes a join on the heap; the front end
+  exposes it as @{text "-dense -heap_maps"}.\<close>
+
+definition dense_heap_join :: bool where
+  "dense_heap_join = False"
+
 code_printing
   constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
+| constant dense_heap_join \<rightharpoonup> (OCaml) "'!ConfigImp.dense'_heap'_join"
 
 text \<open>
   Equality of two tuples.  Stated as @{text "x = y"} it becomes OCaml's polymorphic comparison,

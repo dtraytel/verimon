@@ -405,7 +405,14 @@ type state =
   | Dense of dense_state
 
 let init cf =
-  if !Misc.dense_cols then Dense (minit_safe_d cf ())
+  if !Misc.dense_cols then begin
+    let st = minit_safe_d cf () in
+    (match st with (_, (_, (m, _))) ->
+      if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
+        Printf.eprintf "[dense] subformulas still evaluated by the sparse function: %d\n%!"
+          (int_of_nat (dpure_nodes m)));
+    Dense st
+  end
   else if !Misc.heap_all then JHeap (minit_safe_j cf ())
   else if !Misc.heap_since then Heap (minit_safe_imp cf ())
   else Pure (minit_safe cf)
