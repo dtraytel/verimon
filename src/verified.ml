@@ -4041,7 +4041,17 @@ type muaux_j =
                            array))
                        dq *
                       (nat dq * ((event_data option) list) set list))))))))))
-  | MUJ_pure of muaux_dq;;
+  | MUJ_pure of muaux_dq |
+  MUJ_evt of
+    (nat *
+      (nat queue *
+        ((nat * (((event_data option) list) set * bool)) queue *
+          ((nat * (((event_data option) list) set * bool)) queue *
+            (nat *
+              (bool *
+                ((((event_data option) list), nat) mapping *
+                  (((event_data option) list) set *
+                    ((event_data option) list) set list))))))));;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -13764,6 +13774,34 @@ let rec mstep
 
 let rec result2 q = (fun () -> (snd (snd (snd (snd (snd (snd (fst q))))))));;
 
+let rec evt_add
+  t cc =
+    fold (fun ta (c, s) ->
+           (match unbox ed_lookup_nat_v c ta
+             with None ->
+               (unbox ed_update_nat_v ta one_nata c, unbox ed_insert_v ta s)
+             | Some k ->
+               (unbox ed_update_nat_v ta (plus_nata k one_nata) c, s)))
+      (unbox ed_csorted_list_of_set_v t) cc;;
+
+let ed_remove_v :
+  ((event_data option) list ->
+    ((event_data option) list) set -> ((event_data option) list) set)
+    boxed
+  = Box (remove
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let rec evt_del
+  t cc =
+    fold (fun ta (c, s) ->
+           (match unbox ed_lookup_nat_v c ta with None -> (c, s)
+             | Some k ->
+               (if less_eq_nat k one_nata
+                 then (unbox ed_delete_nat_v ta c, unbox ed_remove_v ta s)
+                 else (unbox ed_update_nat_v ta (minus_nata k one_nata) c, s))))
+      (unbox ed_csorted_list_of_set_v t) cc;;
+
 let rec hm_it_adjust (_A1, _A2) _B
   v ht =
     (if equal_nata v zero_nata then (fun () -> zero_nata)
@@ -13861,6 +13899,8 @@ let rec purifya
     | MUntil (args, phi, psi, buf, nts, t, MUJ_pure a) ->
         MUntil (args, purifya phi, purifya psi, buf, nts, t, a)
     | MUntil (args, phi, psi, buf, nts, t, MUJ_imp d) ->
+        MUntil (args, purifya phi, purifya psi, buf, nts, t, init_muaux_dq args)
+    | MUntil (args, phi, psi, buf, nts, t, MUJ_evt a) ->
         MUntil (args, purifya phi, purifya psi, buf, nts, t, init_muaux_dq args)
     | MTrigger (args, phi, psi, buf, nts, aux) ->
         MTrigger (args, purifya phi, purifya psi, buf, nts, aux)
@@ -14751,6 +14791,75 @@ let rec eval_dq2
                                       (result,
 (a1, (a2, (tstp_dq, [])))))))))))));;
 
+let rec evt_extend
+  args ts0 win rest bend cnt cur =
+    (if not bend then (win, (rest, (bend, (cnt, cur))))
+      else (match safe_hd rest
+             with (None, resta) -> (win, (resta, (bend, (cnt, cur))))
+             | (Some e, resta) ->
+               (if memR (args_ivl args) (minus_nata (fst e) ts0)
+                 then (let (a, b) = evt_add (fst (snd e)) (cnt, cur) in
+                        evt_extend args ts0 (append_queue e win)
+                          (tl_queue resta) (snd (snd e)) a b)
+                 else (win, (resta, (bend, (cnt, cur)))))));;
+
+let rec evt_step
+  args aux =
+    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) = aux in
+      (match safe_hd nts
+        with (None, ntsa) ->
+          (tp, (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea))))))))
+        | (Some ts0, ntsa) ->
+          (let (wina, (resta, (benda, (cnta, cura)))) =
+             evt_extend args ts0 win rest bend cnt cur in
+            (match safe_hd wina
+              with (None, winb) ->
+                (match safe_hd resta
+                  with (None, restb) ->
+                    (tp, (tl_queue ntsa,
+                           (winb,
+                             (restb,
+                               (minus_nata len one_nata,
+                                 (benda, (cnta, (cura, ed_bot :: donea))))))))
+                  | (Some _, restb) ->
+                    (tp, (tl_queue ntsa,
+                           (winb,
+                             (tl_queue restb,
+                               (minus_nata len one_nata,
+                                 (benda, (cnta, (cura, ed_bot :: donea)))))))))
+              | (Some e, winb) ->
+                (let winc = tl_queue winb in
+                 let (cntb, curaa) = evt_del (fst (snd e)) (cnta, cura) in
+                 let bendb = (if is_emptya winc then true else benda) in
+                  (tp, (tl_queue ntsa,
+                         (winc,
+                           (resta,
+                             (minus_nata len one_nata,
+                               (bendb,
+                                 (cntb, (curaa, cura :: donea)))))))))))));;
+
+let rec evt_loop
+  args k aux =
+    (if equal_nata k zero_nata then aux
+      else evt_loop args (minus_nata k one_nata) (evt_step args aux));;
+
+let rec shift_evt
+  args nt aux =
+    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) = aux in
+     let (q, ntsa) =
+       takeWhile_queue (fun t -> not (memR (args_ivl args) (minus_nata nt t)))
+         nts
+       in
+      evt_loop args (size_lista (linearize q))
+        (tp, (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))));;
+
+let rec eval_evt
+  args nt aux =
+    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) =
+       shift_evt args nt aux in
+      (rev donea,
+        (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, []))))))))));;
+
 let rec eval_u_j
   args nt x2 = match args, nt, x2 with
     args, nt, MUJ_imp d ->
@@ -14758,7 +14867,9 @@ let rec eval_u_j
         (fun r -> (fun () -> (fst r, MUJ_imp (snd r))))
     | args, nt, MUJ_pure a ->
         (fun () ->
-          (let r = eval_muaux_dq args nt a in (fst r, MUJ_pure (snd r))));;
+          (let r = eval_muaux_dq args nt a in (fst r, MUJ_pure (snd r))))
+    | args, nt, MUJ_evt a ->
+        (fun () -> (let r = eval_evt args nt a in (fst r, MUJ_evt (snd r))));;
 
 let rec init_dq2
   args =
@@ -14778,14 +14889,28 @@ let rec init_dq2
                             (a1, (dq_push m dq_empty,
                                    (dq_empty, [])))))))))))));;
 
+let rec init_evt
+  args =
+    (zero_nata,
+      (empty_queue,
+        (empty_queue,
+          (empty_queue, (zero_nata, (true, (ed_mempty_nat, (ed_bot, []))))))));;
+
 let use_heap_until : bool = false;;
+
+let rec evt_applies
+  args =
+    is_none (args_agg args) &&
+      (is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args) &&
+        memL (args_ivl args) zero_nata);;
 
 let rec init_u_j
   args =
     (if is_none (args_agg args) && use_heap_until
       then (fun f_ () -> f_ ((init_dq2 args) ()) ())
              (fun d -> (fun () -> (MUJ_imp d)))
-      else (fun () -> (MUJ_pure (init_muaux_dq args))));;
+      else (if evt_applies args then (fun () -> (MUJ_evt (init_evt args)))
+             else (fun () -> (MUJ_pure (init_muaux_dq args)))));;
 
 let rec ls_delete _A
   k x1 = match k, x1 with k, [] -> ([], false)
@@ -15142,6 +15267,19 @@ let rec mebuf2_take_j
                   (fun f_ () -> f_ ((mebuf2_take_j f (xsa, ysa)) ()) ())
                     (fun r -> (fun () -> (z :: fst r, snd r)))))));;
 
+let rec add_new_evt
+  args rel1 rel2 nt aux =
+    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) =
+       shift_evt args nt aux in
+     let b =
+       (if args_pos args then not (unbox ed_is_empty_v rel1)
+         else unbox ed_is_empty_v rel1)
+       in
+      (plus_nata tp one_nata,
+        (append_queue nt nts,
+          (win, (append_queue (nt, (rel2, b)) rest,
+                  (plus_nata len one_nata, (bend, (cnt, (cur, donea)))))))));;
+
 let rec ins_new_tp_list
   tp xs q =
     (match xs with [] -> (fun () -> q)
@@ -15276,7 +15414,9 @@ let rec add_new_u_j
       (fun f_ () -> f_ ((add_new_dq2 args rel1 rel2 nt d) ()) ())
         (fun da -> (fun () -> (MUJ_imp da)))
     | args, rel1, rel2, nt, MUJ_pure a ->
-        (fun () -> (MUJ_pure (add_new_muaux_dq args rel1 rel2 nt a)));;
+        (fun () -> (MUJ_pure (add_new_muaux_dq args rel1 rel2 nt a)))
+    | args, rel1, rel2, nt, MUJ_evt a ->
+        (fun () -> (MUJ_evt (add_new_evt args rel1 rel2 nt a)));;
 
 let rec meval_j
   j n ts db x4 = match j, n, ts, db, x4 with

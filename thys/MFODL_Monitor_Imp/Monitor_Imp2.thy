@@ -64,6 +64,7 @@ fun purify :: "mformula_j \<Rightarrow> mformula_p" where
 | "purify (MSince args \<phi> \<psi> buf (MSJ_imp q)) = MSince args (purify \<phi>) (purify \<psi>) buf (init_mmasaux args)"
 | "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_pure a)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t a"
 | "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_imp d)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t (init_muaux_dq args)"
+| "purify (MUntil args \<phi> \<psi> buf nts t (MUJ_evt a)) = MUntil args (purify \<phi>) (purify \<psi>) buf nts t (init_muaux_dq args)"
 | "purify (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (purify \<phi>) (purify \<psi>) buf nts aux"
 | "purify (MMatchP I mr mrs \<phi>s buf nts aux) = MMatchP I mr mrs (map purify \<phi>s) buf nts aux"
 | "purify (MMatchF I mr mrs \<phi>s buf nts t aux) = MMatchF I mr mrs (map purify \<phi>s) buf nts t aux"

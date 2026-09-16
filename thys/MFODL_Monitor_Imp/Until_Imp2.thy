@@ -194,6 +194,142 @@ definition eval_dq2 :: "args \<Rightarrow> ts \<Rightarrow> muaux2 \<Rightarrow>
      (case s of (tp, tss, tables, len, maskL, maskR, result, a1, a2, tstp_dq, done) \<Rightarrow>
        return (rev done, (tp, tss, tables, len, maskL, maskR, result, a1, a2, tstp_dq, []))) }"
 
+
+section \<open>Until with a closed left operand\<close>
+
+text \<open>
+  @{text "EVENTUALLY I \<phi>"} is rewritten by the front end into @{text "Until TT I \<phi>"}, and
+  @{text "ALWAYS"}, @{text "ONCE"} and @{text "HISTORICALLY"} likewise produce an Until or a
+  Since whose left operand is closed.  The general structure then carries a mapping from tuples
+  to the last time point at which the left operand held, one such mapping per time point in the
+  window.  When the left operand is closed it holds either for every valuation or for none, so
+  ``the left operand held throughout @{text "[i, j)"}'' is a property of time points alone, and
+  the answer at @{text i} is simply the union of the right operand's tables over a contiguous
+  run of time points.
+
+  Both ends of that run move to the right as @{text i} advances: the far end because a later
+  @{text i} has a later timestamp and so admits later @{text j}, and the blocking end because
+  the first time point at which the left operand fails can only move forward.  A sliding window
+  whose ends both advance needs no per-time-point mapping.  This structure keeps the union of
+  the window as a count for every tuple, so that adding or removing a table costs one update
+  per tuple of that table, and keeps the answer itself as a set that changes only when a count
+  reaches or leaves zero.  On a log where most time points contribute nothing -- which is what
+  a bounded-future interval over a coarse timestamp sequence looks like -- most steps then
+  touch nothing at all.
+
+  Definitions only, no proofs; the structure is selected only where the conditions above hold
+  and the general one is used otherwise.
+\<close>
+
+type_synonym evt_entry = "ts \<times> event_data table \<times> bool"
+
+type_synonym evtaux = "tp \<times> ts queue \<times> evt_entry queue \<times> evt_entry queue \<times> nat \<times> bool \<times>
+  (event_data tuple, nat) mapping \<times> event_data table \<times> event_data table list"
+
+subsection \<open>The union of the window, as a count per tuple\<close>
+
+definition evt_add :: "event_data table \<Rightarrow> (event_data tuple, nat) mapping \<times> event_data table \<Rightarrow>
+    (event_data tuple, nat) mapping \<times> event_data table" where
+  "evt_add T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
+       None \<Rightarrow> (Mapping.update t 1 c, Set.insert t s)
+     | Some k \<Rightarrow> (Mapping.update t (k + 1) c, s)) (csorted_list_of_set T) cc"
+
+definition evt_del :: "event_data table \<Rightarrow> (event_data tuple, nat) mapping \<times> event_data table \<Rightarrow>
+    (event_data tuple, nat) mapping \<times> event_data table" where
+  "evt_del T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
+       None \<Rightarrow> (c, s)
+     | Some k \<Rightarrow> (if k \<le> 1 then (Mapping.delete t c, Set.remove t s)
+                  else (Mapping.update t (k - 1) c, s))) (csorted_list_of_set T) cc"
+
+subsection \<open>Extending the window\<close>
+
+text \<open>The window is extended one time point at a time, and stops at the first one whose
+timestamp is out of range or at the one after which the left operand fails.  Both bounds only
+move to the right as the structure advances, so over a run each time point enters the window
+once, and a step that extends it by nothing touches nothing.\<close>
+
+function evt_extend :: "args \<Rightarrow> ts \<Rightarrow> evt_entry queue \<Rightarrow> evt_entry queue \<Rightarrow> bool \<Rightarrow>
+    (event_data tuple, nat) mapping \<Rightarrow> event_data table \<Rightarrow>
+    evt_entry queue \<times> evt_entry queue \<times> bool \<times> (event_data tuple, nat) mapping \<times> event_data table" where
+  "evt_extend args ts0 win rest bend cnt cur =
+     (if \<not> bend then (win, rest, bend, cnt, cur)
+      else (case safe_hd rest of
+              (None, rest') \<Rightarrow> (win, rest', bend, cnt, cur)
+            | (Some e, rest') \<Rightarrow>
+                (if memR (args_ivl args) (fst e - ts0)
+                 then (case evt_add (fst (snd e)) (cnt, cur) of (cnt', cur') \<Rightarrow>
+                         evt_extend args ts0 (append_queue e win) (tl_queue rest')
+                           (snd (snd e)) cnt' cur')
+                 else (win, rest', bend, cnt, cur))))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, ts0, win, rest, bend, cnt, cur). length (linearize rest))")
+     (fastforce split: prod.splits)+
+
+declare evt_extend.simps[simp del]
+
+subsection \<open>Operations\<close>
+
+definition init_evt :: "args \<Rightarrow> evtaux" where
+  "init_evt args = (0, empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, {}, [])"
+
+definition length_evt :: "args \<Rightarrow> evtaux \<Rightarrow> nat" where
+  "length_evt args aux = (case aux of (tp, nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
+     length done + len)"
+
+text \<open>One time point leaves the structure: the window is extended as far as its timestamp
+  allows, the union of the window is the verdict, and the time point itself is dropped.\<close>
+
+definition evt_step :: "args \<Rightarrow> evtaux \<Rightarrow> evtaux" where
+  "evt_step args aux = (case aux of (tp, nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
+     (case safe_hd nts of
+        (None, nts') \<Rightarrow> (tp, nts', win, rest, len, bend, cnt, cur, done)
+      | (Some ts0, nts') \<Rightarrow>
+        (case evt_extend args ts0 win rest bend cnt cur of (win, rest, bend, cnt, cur) \<Rightarrow>
+           (case safe_hd win of
+              (None, win') \<Rightarrow>
+                (case safe_hd rest of
+                   (None, rest') \<Rightarrow>
+                     (tp, tl_queue nts', win', rest', len - 1, bend, cnt, cur, {} # done)
+                 | (Some _, rest') \<Rightarrow>
+                     (tp, tl_queue nts', win', tl_queue rest', len - 1, bend, cnt, cur, {} # done))
+            | (Some e, win') \<Rightarrow>
+              (let win'' = tl_queue win';
+                   (cnt', cur') = evt_del (fst (snd e)) (cnt, cur);
+                   bend' = (if Queue.is_empty win'' then True else bend)
+               in (tp, tl_queue nts', win'', rest, len - 1, bend', cnt', cur', cur # done))))))"
+
+fun evt_loop :: "args \<Rightarrow> nat \<Rightarrow> evtaux \<Rightarrow> evtaux" where
+  "evt_loop args 0 aux = aux"
+| "evt_loop args (Suc k) aux = evt_loop args k (evt_step args aux)"
+
+text \<open>@{const takeWhile_queue} returns the queue it normalised on the way; keeping it is what
+makes the queue amortised, and dropping it costs a reversal of the whole window at every step.\<close>
+
+definition shift_evt :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> evtaux" where
+  "shift_evt args nt aux = (case aux of (tp, nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
+     (case takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) nts of (q, nts') \<Rightarrow>
+        evt_loop args (length (linearize q)) (tp, nts', win, rest, len, bend, cnt, cur, done)))"
+
+definition add_new_evt :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> evtaux" where
+  "add_new_evt args rel1 rel2 nt aux =
+     (case shift_evt args nt aux of (tp, nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
+       (let b = (if args_pos args then \<not> Set.is_empty rel1 else Set.is_empty rel1)
+        in (tp + 1, append_queue nt nts, win, append_queue (nt, rel2, b) rest,
+            len + 1, bend, cnt, cur, done)))"
+
+definition eval_evt :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> event_data table list \<times> evtaux" where
+  "eval_evt args nt aux =
+     (case shift_evt args nt aux of (tp, nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
+       (rev done, (tp, nts, win, rest, len, bend, cnt, cur, [])))"
+
+text \<open>The structure applies when the left operand is closed, the interval starts at zero so that
+  every time point of the window contributes, and there is no aggregation.\<close>
+
+definition evt_applies :: "args \<Rightarrow> bool" where
+  "evt_applies args \<longleftrightarrow> args_agg args = None \<and> args_L args = {} \<and> memL (args_ivl args) 0"
+
 subsection \<open>Heap structure or pure structure\<close>
 
 definition use_heap_until :: bool where
@@ -204,7 +340,7 @@ text \<open>
   @{theory MFODL_Monitor_Devel.Optimized_Until_Deque} otherwise.
 \<close>
 
-datatype muaux_j = MUJ_imp muaux2 | MUJ_pure muaux_dq
+datatype muaux_j = MUJ_imp muaux2 | MUJ_pure muaux_dq | MUJ_evt evtaux
 
 text \<open>
   The heap structure is defined but not selected, and the condition below is the switch that
@@ -228,15 +364,18 @@ text \<open>
 definition init_u_j :: "args \<Rightarrow> muaux_j Heap" where
   "init_u_j args = (if args_agg args = None \<and> use_heap_until
      then do { d \<leftarrow> init_dq2 args; return (MUJ_imp d) }
+     else if evt_applies args then return (MUJ_evt (init_evt args))
      else return (MUJ_pure (init_muaux_dq args)))"
 
 fun add_new_u_j :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> muaux_j \<Rightarrow> muaux_j Heap" where
   "add_new_u_j args rel1 rel2 nt (MUJ_imp d) = do { d \<leftarrow> add_new_dq2 args rel1 rel2 nt d; return (MUJ_imp d) }"
 | "add_new_u_j args rel1 rel2 nt (MUJ_pure a) = return (MUJ_pure (add_new_muaux_dq args rel1 rel2 nt a))"
+| "add_new_u_j args rel1 rel2 nt (MUJ_evt a) = return (MUJ_evt (add_new_evt args rel1 rel2 nt a))"
 
 fun eval_u_j :: "args \<Rightarrow> ts \<Rightarrow> muaux_j \<Rightarrow> (event_data table list \<times> muaux_j) Heap" where
   "eval_u_j args nt (MUJ_imp d) = do { r \<leftarrow> eval_dq2 args nt d; return (fst r, MUJ_imp (snd r)) }"
 | "eval_u_j args nt (MUJ_pure a) = return (let r = eval_muaux_dq args nt a in (fst r, MUJ_pure (snd r)))"
+| "eval_u_j args nt (MUJ_evt a) = return (let r = eval_evt args nt a in (fst r, MUJ_evt (snd r)))"
 
 (*<*)
 end
