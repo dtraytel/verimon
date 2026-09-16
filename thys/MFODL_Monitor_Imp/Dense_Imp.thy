@@ -89,6 +89,9 @@ fun merge_cols :: "cols \<Rightarrow> cols \<Rightarrow> cols" where
      else if d < c then d # merge_cols (c # cs) ds
      else c # merge_cols cs ds)"
 
+definition set_cols :: "nat set \<Rightarrow> cols" where
+  "set_cols A = csorted_list_of_set A"
+
 text \<open>The two masks that select the shared columns out of each side, and the mask that selects
   the left side's own columns out of the merged tuple.\<close>
 
@@ -154,13 +157,30 @@ definition dprobe_step :: "mrg list \<Rightarrow> bool list \<Rightarrow>
       None \<Rightarrow> acc
     | Some l \<Rightarrow> fold (\<lambda>b acc. Set.insert (dmerge p a b) acc) l acc)"
 
+text \<open>The index is built on the smaller side and the larger one probes it, as in
+  @{const bin_join}: indexing costs a lookup per tuple of the indexed side and probing one per
+  tuple of the other, so indexing the larger side buys a big index that is read a few times.
+  The first version of this join always indexed the right operand, which on the complex
+  benchmark is the sliding window of an @{text ONCE} against a fifty-tuple predicate, and it
+  was slower than the kernel's own pure join.\<close>
+
+definition dprobe_step_l :: "mrg list \<Rightarrow> bool list \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
+    event_data table \<Rightarrow> event_data table" where
+  "dprobe_step_l p rk m y acc = (case Mapping.lookup m (dproj rk y) of
+      None \<Rightarrow> acc
+    | Some l \<Rightarrow> fold (\<lambda>x acc. Set.insert (dmerge p x y) acc) l acc)"
+
 definition dgen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool list \<Rightarrow>
     event_data table \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "dgen_join p lk rk A B =
-     (let m = dindex rk B in fold (dprobe_step p lk m) (csorted_list_of_set A) empty_table)"
+     (if card A \<le> card B
+      then (let m = dindex lk A in fold (dprobe_step_l p rk m) (csorted_list_of_set B) empty_table)
+      else (let m = dindex rk B in fold (dprobe_step p lk m) (csorted_list_of_set A) empty_table))"
 
 datatype djoin_plan =
-    DJSub "bool list" | DJSup "bool list" | DJGen "mrg list" "bool list" "bool list"
+    DJEq | DJEmp | DJSub "bool list" | DJSup "bool list"
+  | DJGen "mrg list" "bool list" "bool list"
 
 definition no_right :: "mrg list \<Rightarrow> bool" where
   "no_right p = list_all (\<lambda>m. m \<noteq> MRgt) p"
@@ -169,18 +189,34 @@ definition no_left :: "mrg list \<Rightarrow> bool" where
   "no_left p = list_all (\<lambda>m. m \<noteq> MLft) p"
 
 definition mk_djoin :: "cols \<Rightarrow> cols \<Rightarrow> djoin_plan" where
-  "mk_djoin cs1 cs2 = (let p = mrg_plan cs1 cs2 in
-     if no_right p then DJSub (mrg_left_key p)
-     else if no_left p then DJSup (mrg_right_key p)
-     else DJGen p (mrg_left_key p) (mrg_right_key p))"
+  "mk_djoin cs1 cs2 = (if cs1 = cs2 then DJEq else if cs2 = [] then DJEmp
+     else (let p = mrg_plan cs1 cs2 in
+       if no_right p then DJSub (mrg_left_key p)
+       else if no_left p then DJSup (mrg_right_key p)
+       else DJGen p (mrg_left_key p) (mrg_right_key p)))"
 
-text \<open>A negative join whose right operand has a column the left does not have cannot remove
-  anything: the merged tuple would be wider than the one it is asked to equal.\<close>
+text \<open>
+  The cases of @{const bin_join}, over the short tuples.  Two of them are worth keeping apart
+  from the general one for the same reason the kernel keeps them apart: equal columns make the
+  join a set intersection or difference, which on two red-black trees over one order is a merge
+  that shares structure rather than a lookup per tuple, and a right operand with no columns
+  decides the whole join with one membership test.
 
-fun dbin_join :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow> event_data table" where
-  "dbin_join (DJSub msk) A pos B = dsemi msk pos A B"
-| "dbin_join (DJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. dproj msk b \<in> A) B else A)"
-| "dbin_join (DJGen p lk rk) A pos B = (if pos then dgen_join p lk rk A B else A)"
+  A negative join whose right operand has a column the left does not have cannot remove
+  anything: the merged tuple would be wider than the one it is asked to equal.
+\<close>
+
+fun dbin_join0 :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dbin_join0 DJEq A pos B = (if pos then A \<inter> B else A - B)"
+| "dbin_join0 DJEmp A pos B = (if pos = ([] \<in> B) then A else empty_table)"
+| "dbin_join0 (DJSub msk) A pos B = dsemi msk pos A B"
+| "dbin_join0 (DJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. dproj msk b \<in> A) B else A)"
+| "dbin_join0 (DJGen p lk rk) A pos B = (if pos then dgen_join p lk rk A B else A)"
+
+definition dbin_join :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dbin_join pl A pos B = (if Set.is_empty A then empty_table
+     else if Set.is_empty B then (if pos then empty_table else A)
+     else dbin_join0 pl A pos B)"
 
 subsection \<open>Indexing a join on the heap\<close>
 
@@ -318,6 +354,44 @@ definition reindex_constraint ::
   "reindex_constraint cs conf = (case conf of (t1, p, c, t2) \<Rightarrow>
      (reindex_trm cs t1, p, c, reindex_trm cs t2))"
 
+subsection \<open>Aggregation\<close>
+
+text \<open>
+  @{const eval_agg} groups the operand by @{term "drop (length tys)"} of each tuple -- the
+  aggregation's bound variables occupy the bottom of the frame, so the group key is the rest --
+  and writes the aggregate into position @{term y} of the key.  Over short tuples the same two
+  steps are the same two steps: @{term "{0..<length tys}"} is contained in the operand's free
+  variables, so those columns are the first @{term "length tys"} of every short tuple and the
+  group key is again a suffix, and the aggregate is inserted at the one position that @{term y}
+  occupies among the group's columns.  The clustering and the value counting are the kernel's,
+  with the term read at the short tuple's positions.
+\<close>
+
+definition dagg :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    event_data table \<Rightarrow> event_data table" where
+  "dagg g0 \<omega> f k pos rel =
+     (if g0 \<and> Set.is_empty rel then {[Some (eval_agg_op \<omega> {})]}
+      else (let groups = cluster (Some \<circ> drop k) rel in
+        (\<lambda>g. case Mapping.lookup groups g of
+                None \<Rightarrow> g
+              | Some G \<Rightarrow> take pos g @ Some (eval_agg_op \<omega> (agg_values f G)) # drop pos g)
+          ` Mapping.keys groups))"
+
+text \<open>The columns of the operand, of the groups, and of the result.\<close>
+
+definition dagg_child_cols :: "aggargs \<Rightarrow> cols" where
+  "dagg_child_cols args = set_cols (aggargs_cols args)"
+
+definition dagg_group_cols :: "aggargs \<Rightarrow> cols" where
+  "dagg_group_cols args = map (\<lambda>c. c - length (aggargs_tys args))
+     (drop (length (aggargs_tys args)) (dagg_child_cols args))"
+
+definition dagg_cols :: "aggargs \<Rightarrow> cols" where
+  "dagg_cols args = merge_cols (dagg_group_cols args) [aggargs_y args]"
+
+definition dagg_pos :: "aggargs \<Rightarrow> nat" where
+  "dagg_pos args = length (filter (\<lambda>c. c < aggargs_y args) (dagg_group_cols args))"
+
 section \<open>A monitor over the short tuples\<close>
 
 text \<open>
@@ -344,9 +418,6 @@ fun trm_vars :: "Formula.trm \<Rightarrow> nat list" where
 definition tms_cols :: "Formula.trm list \<Rightarrow> cols" where
   "tms_cols tms = csorted_list_of_set (set (concat (map trm_vars tms)))"
 
-definition set_cols :: "nat set \<Rightarrow> cols" where
-  "set_cols A = csorted_list_of_set A"
-
 text \<open>The columns a subformula produces, where they can be read off it.\<close>
 
 fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
@@ -356,6 +427,7 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
 | "mcols n (MAnds A_pos A_neg L buf) =
     (case A_pos of [] \<Rightarrow> None
      | A # As \<Rightarrow> Some (dands_cols (set_cols A) (map set_cols As)))"
+| "mcols n (MAgg args \<phi>) = Some (dagg_cols args)"
 | "mcols n (MAndRel \<phi> conf) = mcols n \<phi>"
 | "mcols n (MOr \<phi> \<psi> buf) = mcols n \<phi>"
 | "mcols n (MNeg \<phi>) = Some []"
@@ -378,6 +450,7 @@ datatype dformula =
   | DOr dformula dformula "event_data mebuf2"
   | DNeg dformula
   | DExists dformula bool
+  | DAgg bool "ty Formula.agg_op" Formula.trm nat nat dformula
   | DPrev \<I> dformula bool "event_data table mbuf_t" "ts mbuf_t"
   | DNext \<I> dformula bool "ts mbuf_t"
   | DSince args dformula dformula "event_data mebuf2S" msaux_j
@@ -425,6 +498,11 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
    | Some ccs \<Rightarrow> do {
        \<phi>d \<leftarrow> dformula_of (Suc n) ccs \<phi>;
        return (DExists \<phi>d (case ccs of [] \<Rightarrow> False | c # _ \<Rightarrow> c = 0)) })"
+| "dformula_of n cs (MAgg args \<phi>) = do {
+     \<phi>d \<leftarrow> dformula_of (length (aggargs_tys args) + n) (dagg_child_cols args) \<phi>;
+     return (DAgg (aggargs_g0 args) (aggargs_\<omega> args)
+               (reindex_trm (dagg_child_cols args) (aggargs_f args))
+               (length (aggargs_tys args)) (dagg_pos args) \<phi>d) }"
 | "dformula_of n cs (MPrev I \<phi> first buf nts) = do {
      \<phi>d \<leftarrow> dformula_of n cs \<phi>; return (DPrev I \<phi>d first buf nts) }"
 | "dformula_of n cs (MNext I \<phi> first nts) = do {
@@ -487,6 +565,9 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
 | "deval j ts db (DExists \<phi> drop0) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (if drop0 then map (\<lambda>r. tl ` r) xs else xs, DExists \<phi> drop0) }"
+| "deval j ts db (DAgg g0 \<omega> f k pos \<phi>) = do {
+     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+     return (map (dagg g0 \<omega> f k pos) xs, DAgg g0 \<omega> f k pos \<phi>) }"
 | "deval j ts db (DPrev I \<phi> first buf nts) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (if first \<and> ts = [] then ([], DPrev I \<phi> True (buf @@ xs) (nts @@ ts))
@@ -522,6 +603,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DOr \<phi> \<psi> buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DNeg \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DExists \<phi> b) = dpure_nodes \<phi>"
+| "dpure_nodes (DAgg g0 \<omega> f k pos \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DPrev I \<phi> f buf nts) = dpure_nodes \<phi>"
 | "dpure_nodes (DNext I \<phi> f nts) = dpure_nodes \<phi>"
 | "dpure_nodes (DSince args \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"

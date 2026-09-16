@@ -2506,59 +2506,82 @@ wherever the shape is right. And the key is the projection onto the shared colum
 is as short as those columns rather than as wide as the formula, so it is cheaper to build and
 to hash.
 
-### 19.5 Five configurations, by the clock
+### 19.5 Fixing the pure join
 
-Median of nine, all outputs identical; `dense+h` is `-dense -heap_maps`. The two runs of this
-table agreed within noise on the five benchmarks above half a second and disagreed by up to a
-tenth on the small ones, where the timer's granularity dominates -- `and`, `andnot`, `since`,
-`agg` and `until` all finish in under a third of a second and should not be read closely.
+The first version of the dense join was worse than the kernel's own pure join, and for two
+reasons that had nothing to do with short tuples.
 
-| formula | MonPoly | pure | dense | **dense+h** | heap | p/mp | d/mp | **dh/mp** | h/mp |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| P2 | 0.39s | 0.91s | 0.64s | 0.64s | 0.68s | 2.33x | **1.64x** | **1.64x** | 1.74x |
-| P3 | 0.42s | 0.75s | 0.57s | 0.58s | 0.63s | 1.79x | **1.36x** | 1.38x | 1.50x |
-| and | 0.14s | 0.21s | 0.15s | 0.13s | 0.17s | 1.50x | 1.07x | **0.93x** | 1.21x |
-| andnot | 0.14s | 0.13s | 0.11s | 0.13s | 0.13s | 0.93x | **0.79x** | 0.93x | 0.93x |
-| once | 0.62s | 0.74s | 0.50s | 0.49s | 0.48s | 1.19x | 0.81x | 0.79x | **0.77x** |
-| since | 0.22s | 0.27s | 0.24s | 0.27s | 0.27s | 1.23x | **1.09x** | 1.23x | 1.23x |
-| eventually | 0.40s | 0.52s | 0.35s | 0.36s | 0.36s | 1.30x | **0.87x** | 0.90x | 0.90x |
-| until | 0.21s | 0.30s | 0.30s | 0.30s | 0.31s | 1.43x | 1.43x | 1.43x | 1.48x |
-| agg | 0.15s | 0.24s | 0.24s | 0.24s | 0.24s | 1.60x | 1.60x | 1.60x | 1.60x |
-| complex | 0.76s | 1.38s | 1.57s | **0.86s** | 1.00s | 1.82x | 2.07x | **1.13x** | 1.32x |
+It always indexed the right operand. `bin_join` indexes **the smaller side** and probes with
+the larger -- indexing costs a lookup per tuple of the indexed side and probing one per tuple
+of the other, so indexing the larger side buys a big index that is read a few times. On the
+complex formula the right operand is the sliding window of an `ONCE`, some thousand tuples,
+against a fifty-tuple predicate: exactly the wrong way round, and exactly the failure Section
+17 documents for the heap index.
 
-**Combining the two is the best configuration on the join-heavy benchmark and the only one that
-gets it near MonPoly**: `complex` goes 1.82x plain, 1.32x with the sparse index, and 1.13x with
-the index over short tuples. On P2 and P3 the short tuples alone are the best configuration and
-the index adds nothing, because those formulas' joins are the anti-join and subset shapes that
-are never indexed -- the index is reached only where neither operand's columns contain the
-other's, which is exactly `complex`.
+And it had no case for equal columns. `bin_join` answers that one with a set intersection or
+difference, which on two red-black trees over one order is a merge that shares structure; the
+dense join was doing a lookup per tuple instead. A right operand with no columns at all is the
+other case worth keeping apart -- one membership test decides the whole join.
 
-One number in that table is a loss and is the most informative of them: **the dense monitor
-without the index is worse on `complex` than the plain kernel, 2.07x against 1.82x.** The pure
-index join written here -- a `Mapping` built by folding a sorted list, none of it monomorphised
--- is worse than the kernel's own tuned `probe_join_n` by more than the short tuples save. The
-representation is worth about 14% on that join, which is visible in the indexed columns (1.32x
-to 1.13x) and invisible in the pure ones because a worse join eats it. A fair pure comparison
-needs the pure dense join brought up to the standard of the one it replaces, which is the first
-thing to do next.
+With the smaller side indexed and both special cases in, the complex formula goes from 2.07x to
+**1.21x**, which is better than the sparse monitor with its heap index (1.25x).
 
-### 19.6 What this says
+### 19.6 The aggregation
 
-The imperative layer of Sections 12 to 17 was built on the idea that a hash index is the way
-past a persistent tree. Three configurations now exist that did not before, and between them
-they separate that idea into two:
+`eval_agg` groups its operand by `drop (length tys)` of each tuple -- the aggregation's bound
+variables occupy the bottom of the frame, so the group key is the rest -- and writes the
+aggregate into position `y` of the key. Over short tuples it is the same two steps for a reason
+worth stating: `{0..<length tys}` is contained in the operand's free variables, so those columns
+are the first `length tys` of every short tuple and **the group key is again a suffix**. The
+aggregate goes at the one position `y` occupies among the group's columns. The clustering and
+the value counting are the kernel's, with the term read at the short tuple's positions.
 
-- Where the join shape admits an index at all, the index is worth having, and it is worth more
-  over short tuples than over wide ones: 1.32x to 1.13x on `complex`.
-- Everywhere else -- P2, P3, `once`, `eventually`, which is most of the suite -- **the index
-  buys nothing and the short tuples buy 6 to 10%**, and the best configuration is the pure one.
-  `-dense` on its own allocates nothing on the heap: pure Since and Until structures, pure
-  joins, red-black trees.
+That removes the last fallback: every benchmark here now reports zero subformulas evaluated by
+the old function. It does nothing for the `agg` benchmark, and the reason is the one from 19.3
+again -- `s <- SUM y; x A(x,y)` has no empty columns anywhere, so there is nothing to drop.
+`B(u,v) AND (s <- SUM y; x A(x,y))`, where the aggregation sits inside a wider formula and its
+operand uses two of five columns, is the case that shows it.
 
-### 19.7 What is left
+### 19.7 Five configurations, by the clock
 
-The pure dense join, as above. Then the aggregation, which is the one benchmark still entirely
-in the fallback and the one furthest from MonPoly at 1.60x. Underneath both, a short tuple is
-still an `event_data option list`, so every value still carries a `Some` box; dropping the option
-as well would take two words off every value, but it changes the type of every table and so of
-every auxiliary structure, which is why it was not done here.
+Median of nine, all outputs identical; `dense+h` is `-dense -heap_maps`. Benchmarks under a
+third of a second -- `and`, `andnot`, `since`, `agg`, `until` -- moved by up to a tenth between
+runs and should not be read closely.
+
+| formula | MonPoly | pure | dense | **dense+h** | heap |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.44s | 2.23x | 1.55x | **1.52x** | 1.61x |
+| P3 | 0.47s | 1.87x | 1.34x | **1.30x** | 1.40x |
+| and | 0.17s | 1.41x | 1.12x | **0.94x** | 1.29x |
+| andnot | 0.17s | 0.94x | 0.94x | 0.94x | 0.94x |
+| once | 0.76s | 1.03x | 0.75x | 0.72x | **0.71x** |
+| since | 0.26s | 1.23x | 1.19x | 1.19x | **1.15x** |
+| eventually | 0.50s | 1.20x | **0.84x** | **0.84x** | 0.88x |
+| until | 0.24s | **1.42x** | 1.50x | 1.50x | **1.42x** |
+| agg | 0.18s | 1.50x | 1.50x | 1.50x | 1.56x |
+| complex | 0.89s | 1.72x | 1.21x | **1.03x** | 1.25x |
+| aggwide | 3.69s | 0.99x | 0.76x | 0.78x | 0.88x |
+
+Short tuples are now the best or joint-best configuration on nine of eleven, and the two they
+lose are `until` and `since`, by a hundredth of a second each on benchmarks that move by more
+than that between runs.
+
+**The two ideas are worth different things and both are worth having.** Where the join shape
+admits an index -- which is where neither operand's columns contain the other's, and among these
+benchmarks that is `complex` and `and` -- the heap index is still worth 15 to 20% on top of the
+short tuples. Everywhere else it buys nothing, and the short tuples buy between 10% and 25%
+against the plain kernel, with no heap at all: pure Since and Until structures, pure joins,
+red-black trees.
+
+Four of eleven benchmarks are now at or faster than MonPoly, and the two worst -- P2 at 1.52x
+and `agg` at 1.50x -- are worst for reasons the representation cannot reach. P2 is seven eighths
+a three-column predicate with no holes, and its profile is a third garbage collector and a tenth
+lexer. `agg` likewise has no holes; at 0.18s against 226,000 events it is mostly parsing.
+
+### 19.8 What is left
+
+A short tuple is still an `event_data option list`, so every value carries a `Some` box: two
+words per value that the representation cannot drop without changing the type of every table and
+so of every auxiliary structure. Underneath that, `nat` is a boxed constructor around an
+arbitrary-precision integer, which Section 18.8 already named as the largest remaining
+allocation. Neither is a change to an algorithm; both are changes to what a value costs.
