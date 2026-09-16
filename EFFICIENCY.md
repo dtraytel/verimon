@@ -1978,3 +1978,90 @@ and `HISTORICALLY` produces -- "the left operand held throughout `[i,j)`" is a p
 points alone, not on tuples, and the answer at `i` is the union of the right operand's tables
 over a contiguous run whose two ends both move right monotonically. That is a sliding-window
 union, and it needs no per-time-point tuple mapping at all.
+
+## 16. An Until structure for a closed left operand
+
+Section 15.18 left P2's gap in one place, and this is the structure that closes most of it.
+
+### 16.1 What the general structure is asked to do
+
+`EVENTUALLY I phi` is not an operator of the monitor: the front end rewrites it into
+`Until TT I phi` (`verified_adapter.ml`), and `ALWAYS`, `ONCE` and `HISTORICALLY` likewise turn
+into a temporal operator whose left operand is closed. The general Until structure therefore
+carries, for every time point in the window, a mapping from tuples to the last time point at
+which the left operand held -- machinery for a dependence on the valuation that a closed left
+operand does not have.
+
+A closed left operand holds either for every valuation or for none. So "the left operand held
+throughout `[i, j)`" is a property of time points alone, and the answer at `i` is
+
+  the union of the right operand's tables over `j` in `[i, e(i)]`,
+
+where `e(i)` is the last time point still within the interval, or the first one after which the
+left operand fails, whichever comes first. Both bounds move to the right as `i` advances -- the
+first because a later `i` has a later timestamp, the second because the first failure of the
+left operand can only move forward -- so this is a sliding window whose two ends both advance.
+
+### 16.2 The structure
+
+`Until_Imp2.thy` keeps the union of that window as a count for every tuple and the answer itself
+as a set. Adding a table to the window costs one map update per tuple of *that table*; removing
+one costs the same; and the answer changes only where a count reaches or leaves zero. Where most
+time points contribute nothing -- which is what a bounded-future interval over a coarse timestamp
+sequence looks like -- most steps then touch nothing at all. The window is extended one time
+point at a time, so over a run each time point enters it once.
+
+Two details cost more than they look:
+
+* `takeWhile_queue` returns the queue it normalised on the way. Dropping that second component
+  and shifting the original queue instead re-reverses the whole window at every step: `rev` alone
+  was 16.6% of the run, and P2 was *slower* than with the general structure.
+* The structure was carrying a time point index nothing read, and the shift built a queue and a
+  list only to take their length. Both are per-step allocation on a structure whose point is to
+  allocate nothing per step.
+
+### 16.3 Measurements
+
+P2, with heap-resident maps:
+
+| | before | after |
+|---|---:|---:|
+| instructions | 8250.4M | **5650.4M** (-31.5%) |
+| minor words | 469.5M | 344.0M (-26.7%) |
+| promoted words | 27.33M | 16.16M (-40.9%) |
+| wall clock | 1.05s | **0.73s** |
+
+Wall clock against MonPoly over the standard suite, median of seven runs:
+
+| | MonPoly | pure | heap | h/mp before | h/mp after |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.41s | 1.01s | 0.73s | 2.56x | **1.78x** |
+| P3 | 0.44s | 0.89s | 0.80s | 1.84x | 1.82x |
+| and | 0.16s | 0.25s | 0.24s | 1.44x | 1.50x |
+| andnot | 0.16s | 0.16s | 0.16s | 1.07x | **1.00x** |
+| once | 0.72s | 0.90s | 0.72s | 1.01x | **1.00x** |
+| since | 0.25s | 0.32s | 0.33s | 1.33x | 1.32x |
+| eventually | 0.47s | 0.71s | 0.48s | 1.51x | **1.02x** |
+| until | 0.23s | 0.38s | 0.38s | 1.65x | 1.65x |
+| agg | 0.17s | 0.28s | 0.29s | 1.75x | 1.71x |
+| complex | 0.85s | 1.78s | 1.47s | 1.80x | 1.73x |
+
+Decomposing P2 again: the Eventually now costs VeriMon 0.48s against MonPoly's 0.19s, where
+before this structure it cost 0.80s against 0.17s. `until`, whose left operand has free
+variables, is untouched at 1.65x -- that is the general case, and it is doing the work the
+general structure exists for.
+
+### 16.4 Where it lives, and why
+
+The structure is selected when the left operand is closed (`args_L args = {}`), the interval
+starts at zero so that every time point of the window contributes, and there is no aggregation;
+the general structure is used otherwise. It lives in `MFODL_Monitor_Imp`, the unproved layer, and
+is therefore reached only with `-heap_maps`.
+
+It cannot simply be moved into the pure kernel. `muaux_dq` in
+`MFODL_Monitor_Devel.Optimized_Until_Deque` is not just a datatype: `valid_muaux_dq` is a
+correctness invariant that the base session's proofs about `meeval` depend on, and a third
+constructor would need a validity argument for the new structure -- that is, its correctness
+proof -- before `valid_init_muaux_dq` goes through again. The separate session exists exactly so
+that a refinement can be written and measured before it is proved. This one is now measured;
+proving it is what would let the default path have it.
