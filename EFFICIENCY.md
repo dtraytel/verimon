@@ -1781,3 +1781,66 @@ large live state.
 
 The rule that follows: **judge a change that only moves code by instruction counts, and a change
 that moves the collector by wall clock.**
+
+### 15.13 Pairs taken apart in the parameter
+
+A function whose parameter is a pattern -- `let rec fst (a, b) = a` -- is compiled by OCaml as a
+function of the pattern's *components*, and an application of it to a pair that is not written
+out at the call site goes through `caml_tuplify2`, an adapter that rebuilds the pair and takes
+it apart again. On P2 that adapter is entered 11.8 million times, and it costs 104.3M
+instructions, 1.27% of the run. The callers are ordinary: `fst` 3.67M, `hd_queue_t` 2.99M,
+`snd` 1.68M, `pop_queue_t` 1.40M.
+
+Matching on the argument inside the body instead gives an ordinary one-argument function. An
+`export_code` probe confirms the shape:
+
+```
+  lemma "fst p = (case p of (a, b) => a)"   -->  let rec fst p = (let (a, _) = p in a);;
+  lemma "fst (a, b) = a"                    -->  let rec fst (a, b) = a;;
+```
+
+`fst`, `snd`, `hd_queue_t` and `pop_queue_t` get the first form.
+
+| P2 | before | after |
+|---|---:|---:|
+| `caml_tuplify2` | 104.3M | **16.7M** (-84%) |
+| `mbuf_t_cases` | 46.5M | 33.6M |
+| instructions, compaction off | 7630.6M | **7544.2M** (-1.13%) |
+
+P3 falls from 6098.1M to 5981.7M (-1.91%) -- and here the default-GC count agrees, because
+the change does not move allocation.
+
+**This is worth remembering as a shape, not just as a fix.** Isabelle writes pattern-matching
+definitions because that is how the functions are defined; OCaml reads a pattern in the
+parameter as a calling convention. Nothing in the Isabelle source suggests that `fst` costs
+more than a field load. The only way to see it was to count entries into a runtime symbol that
+belongs to neither the monitor nor the collector, and then ask what the code generator had
+produced. Section 15.10 found the same thing one level up, in `caml_apply2`.
+
+### 15.14 Where Section 15 leaves the monitor
+
+Cumulative over Sections 15.8 to 15.13, against the binary that opened Section 15.8:
+
+| | before | after |
+|---|---:|---:|
+| P2 instructions, compaction off | 7993.1M | **7544.2M** (-5.62%) |
+| P3 instructions, default GC | 6381.0M | **5981.7M** (-6.26%) |
+| P2 minor words | 434.9M | 374.2M (-14.0%) |
+
+Wall clock against MonPoly, median of seven runs:
+
+| | MonPoly | pure | heap | p/mp | h/mp |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.42s | 1.02s | 1.06s | 2.43x | 2.52x |
+| P3 | 0.44s | 0.92s | 0.82s | 2.09x | **1.86x** |
+| and | 0.16s | 0.26s | 0.24s | 1.62x | 1.50x |
+| andnot | 0.16s | 0.17s | 0.17s | 1.06x | 1.06x |
+| once | 0.72s | 0.90s | 0.71s | 1.25x | **0.99x** |
+| since | 0.24s | 0.32s | 0.33s | 1.33x | 1.38x |
+| eventually | 0.47s | 0.71s | 0.73s | 1.51x | 1.55x |
+| until | 0.23s | 0.39s | 0.38s | 1.70x | 1.65x |
+| agg | 0.17s | 0.28s | 0.30s | 1.65x | 1.76x |
+| complex | 0.84s | 1.77s | 1.50s | 2.11x | 1.79x |
+
+The single-operator benchmarks are between 1.0x and 1.8x; `once` with heap-resident maps is at
+parity. The compound formulas are the slow ones.

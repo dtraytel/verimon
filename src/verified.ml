@@ -762,7 +762,7 @@ k l
 (if Z.equal s Z.zero then (Z.neg r, Z.zero)
   else (Z.sub (Z.neg r) (Z.of_int 1), Z.sub (Z.neg l) s)))))));;
 
-let rec fst (x1, x2) = x1;;
+let rec fst p = (let (a, _) = p in a);;
 
 let rec divide_integer k l = fst (divmod_integer k l);;
 
@@ -774,7 +774,7 @@ let divide _A = _A.divide;;
 
 let divide_nat = ({divide = divide_nata} : nat divide);;
 
-let rec snd (x1, x2) = x2;;
+let rec snd p = (let (_, b) = p in b);;
 
 let rec modulo_integer k l = snd (divmod_integer k l);;
 
@@ -5390,11 +5390,10 @@ let rec norm_queue_t
 
 let rec norm_queue xa = Abs_queue (norm_queue_t (rep_queue xa));;
 
-let rec hd_queue_t = function ([], []) -> None
-                     | ([], [l]) -> Some l
-                     | ([], l :: v :: va) -> Some (last (v :: va))
-                     | (f :: fs, l :: ls) -> Some f
-                     | (f :: fs, []) -> failwith "undefined";;
+let rec hd_queue_t
+  q = (match q with ([], []) -> None | ([], [l]) -> Some l
+        | ([], _ :: v :: va) -> Some (last (v :: va))
+        | (f :: _, _ :: _) -> Some f);;
 
 let rec hd_queue x = hd_queue_t (rep_queue x);;
 
@@ -5792,10 +5791,10 @@ let rec combine _B
           (fun _ -> combine _B f (RBT_Mapping t) (RBT_Mapping u))
       | Some _ -> RBT_Mapping (joina _B (fun _ -> f) t u));;
 
-let rec pop_queue_t = function ([], []) -> ([], [])
-                      | ([], [l]) -> ([], [])
-                      | ([], l :: v :: va) -> (tla (rev (v :: va)), [l])
-                      | (f :: fs, ls) -> (fs, ls);;
+let rec pop_queue_t
+  q = (match q with ([], []) -> q | ([], [_]) -> ([], [])
+        | ([], l :: v :: va) -> (tla (rev (v :: va)), [l])
+        | (_ :: fs, ls) -> (fs, ls));;
 
 let rec pop_queue xa = Abs_queue (pop_queue_t (rep_queue xa));;
 
