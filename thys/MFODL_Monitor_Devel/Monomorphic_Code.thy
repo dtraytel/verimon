@@ -743,6 +743,13 @@ text \<open>
   @{term "max 0"}, which on P2 is six million dictionary-dispatched comparisons -- a third of
   all entries into the two-argument application path.  Monomorphic copies at the three types
   that occur here call the ordering directly.
+
+  Membership is the same story one level up.  @{const Set.member} is monomorphised, but its
+  red-black-tree case calls @{const RBT_Set2.member}, which is not, so the dictionary is built
+  and the composite comparator reached after all: on the Until benchmark that is 3.8 million
+  entries into the chain and on the aggregation benchmark 5.6\% of the run.  The same holds for
+  the nested update of the Until deque, whose key type is a tuple and whose value type is a
+  time-stamp or a time-point.
 \<close>
 
 setup \<open>Monomorphize.box_cmd
@@ -755,6 +762,8 @@ setup \<open>Monomorphize.box_cmd
 setup \<open>Monomorphize.monomorphize_cmd
   [("Set.insert", "ed_insert", [etuple]),
    ("RBT_Mapping2.insert", "ed_rbt_insert", [etuple, "unit"]),
+   ("RBT_Set2.member", "ed_rbt_member", [etuple]),
+   ("upd_nested_step_dq", "ed_upd_nested_step_dq", ["nat + nat", etuple]),
    ("max", "ed_max_integer", ["integer"]),
    ("min", "ed_min_integer", ["integer"]),
    ("max", "ed_max_nat", ["nat"]),
