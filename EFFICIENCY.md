@@ -1720,3 +1720,64 @@ Cumulative over Sections 15.8 to 15.10, against the binary that opened Section 1
 | P2 instructions, default GC | 8249.2M | 8061.4M (-2.28%) |
 | P2 minor words | 434.9M | 400.3M (-8.0%) |
 | P3 instructions, default GC | 6381.0M | 6223.6M (-2.47%) |
+
+### 15.11 The last composite dictionaries
+
+Section 7 boxed the container operations at the tuple type so their dictionaries are built once
+when the module starts. Four places were left out, and the profile names them precisely: on P2,
+`ccompare_lista` and `ccompare_optiona` are each entered 748k times and `ccompare_proda`
+603k times, and every entry allocates a record, an option and a partially applied comparator.
+The callers are
+
+* `table_of_list`, the bulk construction of a table (201k) -- it calls `rbt_of_sorted_list`,
+  which is defined after the first round of boxes and so was never in it;
+* `rbt_fold`, the tree traversal the output printer uses (198k) -- its accumulator type is
+  polymorphic, so the operation itself cannot be boxed, but the projection it needs out of the
+  tree can be;
+* `meeval`'s predicate lookup (402k) and `insert_table_into_db` (201k) -- the database is keyed
+  by a name and an arity, so its dictionary is a `ccompare_prod` rather than a tuple
+  dictionary, and no rule covered it;
+* `until_step_dq` and `until_elem_step_dq` (150k), which are polymorphic and build the tuple
+  dictionaries from their own dictionary arguments, like the joins before Section 7.
+
+The first four become boxes, the last two monomorphic copies. One further rule was needed:
+the redirections rewrite *an operation applied to an argument*, so an operation written
+point-free is out of their reach -- `fold (∪) (map fst taken) {}` in the deque step kept the
+polymorphic union. `fold_map_unfold` applies the two functions in one step, which removes the
+intermediate list as well.
+
+| P2 | before | after |
+|---|---:|---:|
+| `ccompare_lista` | 19.5M | 6.5M |
+| `ccompare_optiona` | 19.5M | 6.5M |
+| `meeval` | 99.2M | 89.2M |
+| minor words | 400.3M | **374.2M** (-6.5%) |
+| instructions, compaction off | 7750.1M | **7630.6M** (-1.54%) |
+
+P3 falls from 6155.8M to 6098.1M with compaction off, and from 6223.6M to 6098.1M with the
+default settings.
+
+### 15.12 Two warnings about how to measure this
+
+**Compaction makes whole-program instruction counts unreliable below a few percent.** With the
+default settings P2 *rises* 2.0% across the change of Section 15.11 while every symbol the
+change touches falls: `do_compaction` +87.4M, `do_some_marking` +68.6M, `invert_pointer_at`
++27.7M, `sweep_slice` +20.0M. VeriMon's default `space_overhead` of 500 leaves the P2 run
+sitting on a compaction threshold, so a change of a few million words flips an expensive
+compaction on or off. Section 15.8 saw the same thing in the other direction. Every instruction
+count in Sections 15.8 to 15.11 is therefore reported with compaction disabled as well, and the
+compaction-off number is the one that tracks the per-symbol counts.
+
+**Instruction counts and wall clock diverge once the collector's behaviour changes.** Disabling
+compaction is worth 7.2% of P2's instructions and between -2.9% and +1.1% of its wall clock:
+compaction spends instructions to buy locality, and on this workload the trade is roughly
+even. So it was not made the default. The same gap appears in `space_overhead`: raising it from
+500 to 4000 is worth 10.1% of P2's instructions but 3.8% of its wall clock, and costs four
+times the peak memory (155MB against 38MB on P2, 177MB against 62MB on the dense `complex`
+benchmark). At 2000 it is worth about 4% of wall clock for twice the memory. The flag
+`-gc_space_overhead` exists for users who want to make that trade; the default stays at 500,
+because `space_overhead` is a ratio of live data and VeriMon's workloads are the ones with
+large live state.
+
+The rule that follows: **judge a change that only moves code by instruction counts, and a change
+that moves the collector by wall clock.**

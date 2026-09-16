@@ -145,6 +145,7 @@ module Monitor : sig
   type num
   type mapping_impla
   type 'a set_dlist
+  type ('a, 'b) rbt
   type ('b, 'a) mapping_rbt
   val nat_of_integer : Z.t -> nat
   type 'a set = Collect_set of ('a -> bool) | DList_set of 'a set_dlist |
@@ -10508,46 +10509,33 @@ let rec upd_nested_step_dq (_B1, _B2)
                    | Some v -> updateb (_B1, _B2) ka (f v) m))
         else dq));;
 
-let rec until_step_dq (_A1, _A2, _A3)
+let rec ed_until_step_dq
   pa d t0 p acc =
     (let (tbl, (a2, res)) = acc in
       (if pa (fst p)
-        then (insert
-                ((ceq_list (ceq_option _A1)),
-                  (ccompare_list (ccompare_option _A2)))
-                (snd p) tbl,
+        then (unbox ed_insert_v (snd p) tbl,
                (upd_nested_step_dq
-                  ((ccompare_list (ccompare_option _A2)),
-                    (equal_list (equal_option _A3)))
+                  ((ccompare_list (ccompare_option ccompare_event_data)),
+                    (equal_list (equal_option equal_event_data)))
                   t0 d (max_tstp d) p a2,
-                 (if equal_nata (fst p) t0
-                   then insert
-                          ((ceq_list (ceq_option _A1)),
-                            (ccompare_list (ccompare_option _A2)))
-                          (snd p) res
+                 (if equal_nata (fst p) t0 then unbox ed_insert_v (snd p) res
                    else res)))
         else acc));;
 
-let rec until_elem_step_dq (_A1, _A2, _A3)
+let rec ed_until_elem_step_dq
   a1_map maskL pos tp len inz p d asa acc =
     (let acca =
-       (if inz
-         then until_step_dq (_A1, _A2, _A3) p d (minus_nata tp len) (tp, asa)
-                acc
+       (if inz then ed_until_step_dq p d (minus_nata tp len) (tp, asa) acc
          else acc)
        in
-      (match
-        lookupa
-          ((ccompare_list (ccompare_option _A2)),
-            (equal_list (equal_option _A3)))
-          a1_map (proj_tuple maskL asa)
+      (match unbox ed_lookup_nat_v a1_map (proj_tuple maskL asa)
         with None ->
           (if not pos
-            then until_step_dq (_A1, _A2, _A3) p d (minus_nata tp len)
+            then ed_until_step_dq p d (minus_nata tp len)
                    (minus_nata tp len, asa) acca
             else acca)
         | Some tpa ->
-          until_step_dq (_A1, _A2, _A3) p d (minus_nata tp len)
+          ed_until_step_dq p d (minus_nata tp len)
             (if pos then (max ord_nat (minus_nata tp len) tpa, asa)
               else (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata),
                      asa))
@@ -10728,9 +10716,8 @@ let rec add_new_dq
                     (dq_nth tstp_dqa (minus_nata t (minus_nata tp len)))))
               in
             let (tbl, (a2_dqa, resulta)) =
-              fold (until_elem_step_dq
-                     (ceq_event_data, ccompare_event_data, equal_event_data)
-                     a1_map maskL pos tp len inz p new_tstp)
+              fold (ed_until_elem_step_dq a1_map maskL pos tp len inz p
+                     new_tstp)
                 (unbox ed_csorted_list_of_set_v rel2) (ed_bot, (a2_dq, result))
               in
             let tablesa = append_queue (tbl, new_tstp) tables in
@@ -12192,6 +12179,14 @@ let rec ed_mmulti_join
 
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
 
+let db_lookup_v :
+  (((string * nat), (((event_data option) list) set list)) mapping ->
+    string * nat -> (((event_data option) list) set list) option)
+    boxed
+  = Box (lookupa
+          ((ccompare_prod ccompare_string8 ccompare_nat),
+            (equal_prod equal_string8 equal_nat)));;
+
 let rec append_queue_list
   xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
 
@@ -12991,11 +12986,7 @@ let rec meeval
   j n ts db x4 = match j, n, ts, db, x4 with
     j, n, ts, db, MRel rel -> (replicate (size_lista ts) rel, MRel rel)
     | lookahead, n, ts, db, MPred (e, tms, mode) ->
-        ((match
-           lookupa
-             ((ccompare_prod ccompare_string8 ccompare_nat),
-               (equal_prod equal_string8 equal_nat))
-             db (e, size_lista tms)
+        ((match unbox db_lookup_v db (e, size_lista tms)
            with None -> replicate (size_lista ts) ed_bot
            | Some xs ->
              (match mode with Copy -> xs
@@ -13984,11 +13975,7 @@ let rec vmeeval
   j n ts db x4 = match j, n, ts, db, x4 with
     j, n, ts, db, MRel rel -> (replicate (size_lista ts) rel, MRel rel)
     | lookahead, n, ts, db, MPred (e, tms, mode) ->
-        ((match
-           lookupa
-             ((ccompare_prod ccompare_string8 ccompare_nat),
-               (equal_prod equal_string8 equal_nat))
-             db (e, size_lista tms)
+        ((match unbox db_lookup_v db (e, size_lista tms)
            with None -> replicate (size_lista ts) ed_bot
            | Some xs ->
              (match mode with Copy -> xs
@@ -16184,8 +16171,13 @@ let empty_db : ((string * nat), (((event_data option) list) set list)) mapping
   = mapping_empty (ccompare_prod ccompare_string8 ccompare_nat)
       (of_phantom (mapping_impl_prod mapping_impl_string8 mapping_impl_nat));;
 
-let rec rbt_fold
-  x = foldb (ccompare_list (ccompare_option ccompare_event_data)) x;;
+let ed_impl_of_v :
+  ((((event_data option) list), unit) mapping_rbt ->
+    (((event_data option) list), unit) rbt)
+    boxed
+  = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
+
+let rec rbt_fold f t = rbt_fold_key f (unbox ed_impl_of_v t);;
 
 let rec historically_safe_0
   i phi =
@@ -16784,10 +16776,21 @@ let rec update_mapping_with _A
           (fun _ -> update_mapping_with _A f k v (RBT_Mapping t))
       | Some _ -> RBT_Mapping (mapping_rbt_insertwk _A f k v t));;
 
+let db_update_with_v :
+  ((string * nat ->
+     ((event_data option) list) set list ->
+       ((event_data option) list) set list ->
+         ((event_data option) list) set list) ->
+    string * nat ->
+      ((event_data option) list) set list ->
+        ((string * nat), (((event_data option) list) set list)) mapping ->
+          ((string * nat), (((event_data option) list) set list)) mapping)
+    boxed
+  = Box (update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat));;
+
 let rec insert_into_db
   p xs db =
-    update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat)
-      (fun _ tbl _ -> mapa (unbox ed_insert_v xs) tbl) p
+    unbox db_update_with_v (fun _ tbl _ -> mapa (unbox ed_insert_v xs) tbl) p
       [unbox ed_insert_v xs ed_bot] db;;
 
 let rec strict_sorted_by
@@ -16803,14 +16806,18 @@ let rec rbt_of_sorted_list _A
            else rbt_comp_bulkload (the (ccompare _A))
                   (mapa (fun x -> (x, ())) xa));;
 
-let rec table_of_list
-  xs = RBT_set
-         (rbt_of_sorted_list
-           (ccompare_list (ccompare_option ccompare_event_data)) xs);;
+let ed_rbt_of_sorted_list_v :
+  (((event_data option) list) list ->
+    (((event_data option) list), unit) mapping_rbt)
+    boxed
+  = Box (rbt_of_sorted_list
+          (ccompare_list (ccompare_option ccompare_event_data)));;
+
+let rec table_of_list xs = RBT_set (unbox ed_rbt_of_sorted_list_v xs);;
 
 let rec insert_table_into_db
   p x db =
-    update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat)
-      (fun _ tbl _ -> mapa (unbox ed_union_v x) tbl) p [x] db;;
+    unbox db_update_with_v (fun _ tbl _ -> mapa (unbox ed_union_v x) tbl) p [x]
+      db;;
 
 end;; (*struct Monitor*)
