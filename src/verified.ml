@@ -4043,15 +4043,14 @@ type muaux_j =
                       (nat dq * ((event_data option) list) set list))))))))))
   | MUJ_pure of muaux_dq |
   MUJ_evt of
-    (nat *
-      (nat queue *
+    (nat queue *
+      ((nat * (((event_data option) list) set * bool)) queue *
         ((nat * (((event_data option) list) set * bool)) queue *
-          ((nat * (((event_data option) list) set * bool)) queue *
-            (nat *
-              (bool *
-                ((((event_data option) list), nat) mapping *
-                  (((event_data option) list) set *
-                    ((event_data option) list) set list))))))));;
+          (nat *
+            (bool *
+              ((((event_data option) list), nat) mapping *
+                (((event_data option) list) set *
+                  ((event_data option) list) set list)))))));;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -14804,61 +14803,55 @@ let rec evt_extend
                  else (win, (resta, (bend, (cnt, cur)))))));;
 
 let rec evt_step
-  args aux =
-    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) = aux in
+  args ts0 aux =
+    (let (nts, (win, (rest, (len, (bend, (cnt, (cur, donea))))))) = aux in
+     let (wina, (resta, (benda, (cnta, cura)))) =
+       evt_extend args ts0 win rest bend cnt cur in
+      (match safe_hd wina
+        with (None, winb) ->
+          (match safe_hd resta
+            with (None, restb) ->
+              (tl_queue nts,
+                (winb,
+                  (restb,
+                    (minus_nata len one_nata,
+                      (benda, (cnta, (cura, ed_bot :: donea)))))))
+            | (Some _, restb) ->
+              (tl_queue nts,
+                (winb,
+                  (tl_queue restb,
+                    (minus_nata len one_nata,
+                      (benda, (cnta, (cura, ed_bot :: donea))))))))
+        | (Some e, winb) ->
+          (let winc = tl_queue winb in
+           let (cntb, curaa) = evt_del (fst (snd e)) (cnta, cura) in
+           let bendb = (if is_emptya winc then true else benda) in
+            (tl_queue nts,
+              (winc,
+                (resta,
+                  (minus_nata len one_nata,
+                    (bendb, (cntb, (curaa, cura :: donea))))))))));;
+
+let rec evt_shift
+  args nt aux =
+    (let (nts, (win, (rest, (len, (bend, (cnt, (cur, donea))))))) = aux in
       (match safe_hd nts
         with (None, ntsa) ->
-          (tp, (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea))))))))
+          (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))
         | (Some ts0, ntsa) ->
-          (let (wina, (resta, (benda, (cnta, cura)))) =
-             evt_extend args ts0 win rest bend cnt cur in
-            (match safe_hd wina
-              with (None, winb) ->
-                (match safe_hd resta
-                  with (None, restb) ->
-                    (tp, (tl_queue ntsa,
-                           (winb,
-                             (restb,
-                               (minus_nata len one_nata,
-                                 (benda, (cnta, (cura, ed_bot :: donea))))))))
-                  | (Some _, restb) ->
-                    (tp, (tl_queue ntsa,
-                           (winb,
-                             (tl_queue restb,
-                               (minus_nata len one_nata,
-                                 (benda, (cnta, (cura, ed_bot :: donea)))))))))
-              | (Some e, winb) ->
-                (let winc = tl_queue winb in
-                 let (cntb, curaa) = evt_del (fst (snd e)) (cnta, cura) in
-                 let bendb = (if is_emptya winc then true else benda) in
-                  (tp, (tl_queue ntsa,
-                         (winc,
-                           (resta,
-                             (minus_nata len one_nata,
-                               (bendb,
-                                 (cntb, (curaa, cura :: donea)))))))))))));;
-
-let rec evt_loop
-  args k aux =
-    (if equal_nata k zero_nata then aux
-      else evt_loop args (minus_nata k one_nata) (evt_step args aux));;
-
-let rec shift_evt
-  args nt aux =
-    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) = aux in
-     let (q, ntsa) =
-       takeWhile_queue (fun t -> not (memR (args_ivl args) (minus_nata nt t)))
-         nts
-       in
-      evt_loop args (size_lista (linearize q))
-        (tp, (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))));;
+          (if memR (args_ivl args) (minus_nata nt ts0) ||
+                equal_nata len zero_nata
+            then (ntsa, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))
+            else evt_shift args nt
+                   (evt_step args ts0
+                     (ntsa,
+                       (win, (rest, (len, (bend, (cnt, (cur, donea)))))))))));;
 
 let rec eval_evt
   args nt aux =
-    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) =
-       shift_evt args nt aux in
-      (rev donea,
-        (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, []))))))))));;
+    (let (nts, (win, (rest, (len, (bend, (cnt, (cur, donea))))))) =
+       evt_shift args nt aux in
+      (rev donea, (nts, (win, (rest, (len, (bend, (cnt, (cur, [])))))))));;
 
 let rec eval_u_j
   args nt x2 = match args, nt, x2 with
@@ -14891,10 +14884,9 @@ let rec init_dq2
 
 let rec init_evt
   args =
-    (zero_nata,
+    (empty_queue,
       (empty_queue,
-        (empty_queue,
-          (empty_queue, (zero_nata, (true, (ed_mempty_nat, (ed_bot, []))))))));;
+        (empty_queue, (zero_nata, (true, (ed_mempty_nat, (ed_bot, [])))))));;
 
 let use_heap_until : bool = false;;
 
@@ -15269,16 +15261,15 @@ let rec mebuf2_take_j
 
 let rec add_new_evt
   args rel1 rel2 nt aux =
-    (let (tp, (nts, (win, (rest, (len, (bend, (cnt, (cur, donea)))))))) =
-       shift_evt args nt aux in
+    (let (nts, (win, (rest, (len, (bend, (cnt, (cur, donea))))))) =
+       evt_shift args nt aux in
      let b =
        (if args_pos args then not (unbox ed_is_empty_v rel1)
          else unbox ed_is_empty_v rel1)
        in
-      (plus_nata tp one_nata,
-        (append_queue nt nts,
-          (win, (append_queue (nt, (rel2, b)) rest,
-                  (plus_nata len one_nata, (bend, (cnt, (cur, donea)))))))));;
+      (append_queue nt nts,
+        (win, (append_queue (nt, (rel2, b)) rest,
+                (plus_nata len one_nata, (bend, (cnt, (cur, donea))))))));;
 
 let rec ins_new_tp_list
   tp xs q =
