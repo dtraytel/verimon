@@ -118,7 +118,20 @@ fun monomorphize1 eqngr simps ({const = c_raw, name, tyinst} : spec) thy =
         |> Drule.zero_var_indexes
       end;
     val eqns' = map (apfst instantiate) eqns;
-    val thy = Code.declare_eqns_global eqns' thy;
+    (* A function into an abstract type has its code equations stated through the type's
+       projection, as proj (c x) = ..., and the code generator takes them by a different door. *)
+    val n_const =
+      (case Thm.term_of (Thm.lhs_of def') of
+        Const (d, _) => d
+      | t => raise TERM ("monomorphize: unexpected definition", [t]));
+    fun is_abstract_eqn thm =
+      (case Term.head_of (fst (dest_eqn (Thm.prop_of thm))) of
+        Const (d, _) => d <> n_const
+      | _ => true);
+    val thy =
+      if exists (is_abstract_eqn o fst) eqns'
+      then fold (Code.declare_abstract_eqn_global o fst) eqns' thy
+      else Code.declare_eqns_global eqns' thy;
     val (_, thy) = Global_Theory.add_thmss
       [((Binding.suffix_name "_code" b, map fst eqns'), [])] thy;
     (* redirect applied occurrences of c at the instantiated type to c'; the applied form

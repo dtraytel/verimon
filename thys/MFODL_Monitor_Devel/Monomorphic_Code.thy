@@ -240,8 +240,7 @@ val ed_agg_maps =
   ["nat agg_map", "(nat \<times> integer) agg_map", "list_aux agg_map",
    "bool \<times> nat agg_map", "bool \<times> (nat \<times> integer) agg_map", "bool \<times> list_aux agg_map"]
 val ed_box_specs =
-  [("Set.insert", "ed_insert_v", [etuple]),
-   ("Set.member", "ed_member_v", [etuple]),
+  [("Set.member", "ed_member_v", [etuple]),
    ("Set.remove", "ed_remove_v", [etuple]),
    ("sup :: _ set \<Rightarrow> _", "ed_union_v", [etuple]),
    ("inf :: _ set \<Rightarrow> _", "ed_inter_v", [etuple]),
@@ -701,6 +700,13 @@ text \<open>
 \<close>
 
 text \<open>
+  Insertion into a table is monomorphised rather than boxed.  A box builds the dictionary once
+  but still passes it, so the comparator reached at the bottom is the composite
+  @{text "comparator_list (comparator_option comparator_event_data)"}: three calls through the
+  generic application path for every element of every tuple compared.  Monomorphising the whole
+  chain down to the red-black tree primitive lets @{thm [source] ccomp_etuple} rewrite the
+  comparator to @{const ed_comparator}, a single recursive function over the tuple.
+
   @{const max} and @{const min} are not class parameters but plain overloaded definitions, so
   the generated code has one copy that takes an @{class ord} dictionary and calls the ordering
   through it.  @{const nat_of_integer} and subtraction on @{typ nat} both go through
@@ -716,7 +722,9 @@ setup \<open>Monomorphize.box_cmd
    ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])]\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
-  [("max", "ed_max_integer", ["integer"]),
+  [("Set.insert", "ed_insert", [etuple]),
+   ("RBT_Mapping2.insert", "ed_rbt_insert", [etuple, "unit"]),
+   ("max", "ed_max_integer", ["integer"]),
    ("min", "ed_min_integer", ["integer"]),
    ("max", "ed_max_nat", ["nat"]),
    ("min", "ed_min_nat", ["nat"]),
