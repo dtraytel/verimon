@@ -43,6 +43,21 @@ text \<open>
 lemma fold_map_unfold[code_unfold]: "fold f (map g xs) = fold (\<lambda>x. f (g x)) xs"
   by (simp add: fold_map comp_def)
 
+text \<open>
+  @{const fst} and @{const snd} are generated from their defining equations on a pair pattern,
+  which compiles them as functions of two arguments; every application to a pair that is not
+  written out at the call site then goes through the adapter that rebuilds the pair.  They
+  account for five of the eleven million entries into it on P2.
+\<close>
+
+declare [[code drop: fst snd]]
+
+lemma fst_code[code]: "fst p = (case p of (a, b) \<Rightarrow> a)"
+  by (simp split: prod.splits)
+
+lemma snd_code[code]: "snd p = (case p of (a, b) \<Rightarrow> b)"
+  by (simp split: prod.splits)
+
 subsection \<open>Direct comparators\<close>
 
 text \<open>
