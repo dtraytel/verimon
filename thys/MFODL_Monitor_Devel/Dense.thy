@@ -483,6 +483,199 @@ proof -
     unfolding dsemi_def dtabc_def by auto
 qed
 
+subsection \<open>The short form of a table commutes with intersection and difference\<close>
+
+lemma dtabc_Int:
+  assumes s: "sorted_wrt (<) cs" and t1: "table n (set cs) T" and t2: "table n (set cs) T'"
+  shows "dtabc n cs (T \<inter> T') = dtabc n cs T \<inter> dtabc n cs T'"
+proof (intro equalityI subsetI)
+  fix z assume "z \<in> dtabc n cs T \<inter> dtabc n cs T'"
+  then obtain a a' where a: "a \<in> T" "z = dproj (wide_mask n cs) a"
+    and a': "a' \<in> T'" "z = dproj (wide_mask n cs) a'"
+    unfolding dtabc_def by auto
+  have "a = a'" using a a' t1 t2 inj_on_dproj_wf[of n "set cs"]
+    by (auto simp: table_def wide_mask_eq_join_mask[OF s] inj_on_def)
+  then show "z \<in> dtabc n cs (T \<inter> T')" using a a' unfolding dtabc_def by auto
+qed (auto simp: dtabc_def)
+
+lemma dtabc_Diff:
+  assumes s: "sorted_wrt (<) cs" and t1: "table n (set cs) T" and t2: "table n (set cs) T'"
+  shows "dtabc n cs (T - T') = dtabc n cs T - dtabc n cs T'"
+proof (intro equalityI subsetI)
+  fix z assume "z \<in> dtabc n cs (T - T')"
+  then obtain a where a: "a \<in> T" "a \<notin> T'" "z = dproj (wide_mask n cs) a"
+    unfolding dtabc_def by auto
+  have "z \<notin> dtabc n cs T'"
+  proof
+    assume "z \<in> dtabc n cs T'"
+    then obtain a' where a': "a' \<in> T'" "z = dproj (wide_mask n cs) a'"
+      unfolding dtabc_def by auto
+    have "a = a'" using a a' t1 t2 inj_on_dproj_wf[of n "set cs"]
+      by (auto simp: table_def wide_mask_eq_join_mask[OF s] inj_on_def)
+    then show False using a a' by auto
+  qed
+  then show "z \<in> dtabc n cs T - dtabc n cs T'" using a unfolding dtabc_def by auto
+qed (auto simp: dtabc_def)
+
+subsection \<open>Equal columns, and a right operand with no columns\<close>
+
+theorem dtabc_join_eq:
+  assumes s: "sorted_wrt (<) cs" and t1: "table n (set cs) T" and t2: "table n (set cs) T'"
+  shows "(if pos then dtabc n cs T \<inter> dtabc n cs T' else dtabc n cs T - dtabc n cs T')
+       = dtabc n cs (join T pos T')"
+  using join_eq[OF t2 t1, of pos] dtabc_Int[OF s t1 t2] dtabc_Diff[OF s t1 t2] by simp
+
+lemma wf_tuple_empty_cols: "wf_tuple n {} x \<longleftrightarrow> x = replicate n None"
+  by (auto simp: wf_tuple_def intro!: nth_equalityI)
+
+lemma wide_mask_at_Nil: "wide_mask_at i k [] = replicate k False"
+  by (induct i k "[] :: cols" rule: wide_mask_at.induct) auto
+
+lemma wide_mask_Nil: "wide_mask n [] = replicate n False"
+  unfolding wide_mask_def by (rule wide_mask_at_Nil)
+
+lemma dproj_replicate_False: "length xs = k \<Longrightarrow> dproj (replicate k False) xs = []"
+  by (induct xs arbitrary: k) auto
+
+lemma dtabc_Nil_cols:
+  assumes "table n {} T'"
+  shows "dtabc n [] T' = (if T' = {} then {} else {[]})"
+proof -
+  have "\<And>x. x \<in> T' \<Longrightarrow> dproj (wide_mask n []) x = []"
+    using assms by (auto simp: table_def wf_tuple_def wide_mask_Nil dproj_replicate_False)
+  then show ?thesis unfolding dtabc_def by auto
+qed
+
+theorem dtabc_join_no_cols:
+  assumes t1: "table n (set cs) T" and t2: "table n {} T'"
+  shows "(if pos = ([] \<in> dtabc n [] T') then dtabc n cs T else {})
+       = dtabc n cs (join T pos T')"
+proof -
+  have "([] \<in> dtabc n [] T') = (replicate n None \<in> T')"
+    using t2 by (auto simp: dtabc_Nil_cols table_def wf_tuple_empty_cols)
+  then show ?thesis
+    using join_no_cols[OF t2 t1, of pos] by (simp add: dtabc_def)
+qed
+
+subsection \<open>The join the other way round\<close>
+
+fun mrg_right_key :: "mrg list \<Rightarrow> bool list" where
+  "mrg_right_key [] = []"
+| "mrg_right_key (MLft # p) = mrg_right_key p"
+| "mrg_right_key (MRgt # p) = False # mrg_right_key p"
+| "mrg_right_key (MBth # p) = True # mrg_right_key p"
+
+definition no_left :: "mrg list \<Rightarrow> bool" where
+  "no_left p = list_all (\<lambda>m. m \<noteq> MLft) p"
+
+lemma no_left_mrg_plan:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
+     no_left (mrg_plan cs1 cs2) = (set cs1 \<subseteq> set cs2)"
+proof (induct cs1 cs2 rule: mrg_plan.induct)
+  case (1 ds)
+  then show ?case by (simp add: no_left_def list_all_iff)
+next
+  case (3 c cs d ds)
+  have s1: "sorted_wrt (<) cs" and hc: "\<forall>x \<in> set cs. c < x"
+    and s2: "sorted_wrt (<) ds" and hd: "\<forall>x \<in> set ds. d < x"
+    using 3(4,5) by auto
+  consider (lt) "c < d" | (gt) "d < c" | (eq) "c = d" by force
+  then show ?case
+  proof cases
+    case lt
+    have "c \<notin> set (d # ds)" using lt hd by force
+    then show ?thesis using lt by (simp add: no_left_def)
+  next
+    case gt
+    have "d \<notin> set (c # cs)" using gt hc by force
+    then have "(set (c # cs) \<subseteq> set (d # ds)) = (set (c # cs) \<subseteq> set ds)" by auto
+    then show ?thesis using 3(2)[OF _ gt 3(4) s2] gt by (simp add: no_left_def)
+  next
+    case eq
+    have "(set (c # cs) \<subseteq> set (d # ds)) = (set cs \<subseteq> set ds)" using eq hc by force
+    then show ?thesis using 3(3)[OF _ _ s1 s2] eq by (simp add: no_left_def)
+  qed
+qed (simp add: no_left_def)
+
+lemma mrg_right_key_all_MRgt: "mrg_right_key (map (\<lambda>_. MRgt) ds) = replicate (length ds) False"
+  by (induct ds) auto
+
+lemma dproj_mrg_right_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs1 \<subseteq> set cs2 \<Longrightarrow>
+     dproj (mrg_right_key (mrg_plan cs1 cs2)) (map g cs2) = map g cs1"
+proof (induct cs1 cs2 rule: mrg_plan.induct)
+  case (1 ds)
+  then show ?case by (simp add: mrg_right_key_all_MRgt dproj_replicate_False)
+next
+  case (3 c cs d ds)
+  have s1: "sorted_wrt (<) cs" and hc: "\<forall>x \<in> set cs. c < x"
+    and s2: "sorted_wrt (<) ds" and hd: "\<forall>x \<in> set ds. d < x"
+    using 3(4,5) by auto
+  consider (lt) "c < d" | (gt) "d < c" | (eq) "c = d" by force
+  then show ?case
+  proof cases
+    case lt
+    have "c \<notin> set (d # ds)" using lt hd by auto
+    then show ?thesis using 3(6) by auto
+  next
+    case gt
+    have "d \<notin> set (c # cs)" using gt hc by force
+    then have "set (c # cs) \<subseteq> set ds" using 3(6) by auto
+    then show ?thesis using 3(2)[OF _ gt 3(4) s2] gt by simp
+  next
+    case eq
+    have "set cs \<subseteq> set ds" using 3(6) eq hc by force
+    then show ?thesis using 3(3)[OF _ _ s1 s2] eq by simp
+  qed
+qed simp
+
+lemma dproj_right_key_eq:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and sub: "set cs1 \<subseteq> set cs2" and b2: "\<forall>c \<in> set cs2. c < n"
+    and w: "wf_tuple n (set cs2) b"
+  shows "dproj (mrg_right_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs2) b)
+       = dproj (wide_mask n cs1) (proj_tuple (join_mask n (set cs1)) b)"
+proof -
+  have lb: "length b = n" using w by (simp add: wf_tuple_def)
+  have b1: "\<forall>c \<in> set cs1. c < n" using sub b2 by auto
+  have lp: "length (proj_tuple (join_mask n (set cs1)) b) = n"
+    using lb by (simp add: proj_tuple_alt join_mask_def)
+  have "\<And>c. c \<in> set cs1 \<Longrightarrow> proj_tuple (join_mask n (set cs1)) b ! c = b ! c"
+    using lb b1 by (auto simp: proj_tuple_alt join_mask_def)
+  then show ?thesis
+    using dproj_mrg_right_key[OF s1 s2 sub, of "\<lambda>c. b ! c"]
+      dproj_wide_mask_eq_map_nth[OF s2 b2 lb]
+      dproj_wide_mask_eq_map_nth[OF s1 b1 lp]
+    by (simp cong: map_cong)
+qed
+
+theorem dsup_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and sub: "set cs1 \<subseteq> set cs2" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+  shows "Set.filter (\<lambda>b. dproj (mrg_right_key (mrg_plan cs1 cs2)) b \<in> dtabc n cs1 T)
+           (dtabc n cs2 T')
+       = dtabc n cs2 (join T True T')"
+proof -
+  have b1: "\<forall>c \<in> set cs1. c < n" using sub b2 by auto
+  have "join T True T' = {b \<in> T'. (proj_tuple (join_mask n (set cs1)) b \<in> T) = True}"
+    using join_sub'[OF sub t2 t1] by (simp add: proj_tuple_in_join_def join_cond_eq)
+  moreover have "\<And>b. b \<in> T' \<Longrightarrow>
+      (dproj (mrg_right_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs2) b) \<in> dtabc n cs1 T)
+        = (proj_tuple (join_mask n (set cs1)) b \<in> T)"
+  proof -
+    fix b assume b: "b \<in> T'"
+    then have w: "wf_tuple n (set cs2) b" using t2 by (simp add: table_def)
+    have wp: "wf_tuple n (set cs1) (proj_tuple (join_mask n (set cs1)) b)"
+      using wf_tuple_proj_tuple[OF w sub] .
+    show "(dproj (mrg_right_key (mrg_plan cs1 cs2)) (dproj (wide_mask n cs2) b) \<in> dtabc n cs1 T)
+        = (proj_tuple (join_mask n (set cs1)) b \<in> T)"
+      unfolding dproj_right_key_eq[OF s1 s2 sub b2 w] dtabc_eq_dtab[OF s1]
+      by (subst wide_mask_eq_join_mask[OF s1], rule dtab_in_iff[OF t1 wp])
+  qed
+  ultimately show ?thesis unfolding dtabc_def by auto
+qed
+
 (*<*)
 end
 (*>*)
