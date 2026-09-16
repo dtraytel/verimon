@@ -5416,6 +5416,15 @@ let rec hd_queue x = hd_queue_t (rep_queue x);;
 
 let rec safe_hd q = (let qa = norm_queue q in (hd_queue qa, qa));;
 
+let rec oeq x0 x1 = match x0, x1 with None, None -> true
+              | Some a, Some b -> equal_event_dataa a b
+              | None, Some b -> false
+              | Some a, None -> false;;
+
+let rec teq x0 ys = match x0, ys with [], ys -> null ys
+              | x :: xs, [] -> false
+              | x :: xs, y :: ys -> oeq x y && teq xs ys;;
+
 let rec inorder = function Leaf -> []
                   | Node (l, (a, uu), r) -> inorder l @ a :: inorder r;;
 
@@ -6371,13 +6380,13 @@ let rec args_pos
 let rec hm_look_list
   h x xa2 = match h, x, xa2 with h, x, [] -> None
     | h, x, y :: ys ->
-        (if Z.equal h (fst y) && (fun x y -> x = y) x (fst (snd y))
-          then Some (snd (snd y)) else hm_look_list h x ys);;
+        (if Z.equal h (fst y) && teq x (fst (snd y)) then Some (snd (snd y))
+          else hm_look_list h x ys);;
 
 let rec hm_del_list
   h x xa2 = match h, x, xa2 with h, x, [] -> []
     | h, x, y :: ys ->
-        (if Z.equal h (fst y) && (fun x y -> x = y) x (fst (snd y)) then ys
+        (if Z.equal h (fst y) && teq x (fst (snd y)) then ys
           else y :: hm_del_list h x ys);;
 
 let rec im_delete_h _A
@@ -13859,6 +13868,13 @@ let rec mstep
 
 let rec result2 q = (fun () -> (snd (snd (snd (snd (snd (snd (fst q))))))));;
 
+let rec teq_proj
+  x0 xs k = match x0, xs, k with [], xs, k -> null k
+    | b :: bs, [], k -> null k
+    | b :: bs, x :: xs, [] -> false
+    | b :: bs, x :: xs, y :: ys ->
+        (if b then oeq x y else oeq None y) && teq_proj bs xs ys;;
+
 let rec hm_it_adjust (_A1, _A2) _B
   v ht =
     (if equal_nata v zero_nata then (fun () -> zero_nata)
@@ -13909,13 +13925,32 @@ let rec hm_it_next (_A1, _A2) _B
                     (fun () ->
                       (a, (suc (minus_nata i one_nata), (b :: l, ht)))))));;
 
+let rec hm_look_list_proj
+  h m x xa3 = match h, m, x, xa3 with h, m, x, [] -> None
+    | h, m, x, y :: ys ->
+        (if Z.equal h (fst y) && teq_proj m x (fst (snd y))
+          then Some (snd (snd y)) else hm_look_list_proj h m x ys);;
+
+let rec im_lookup_proj _A
+  q m x =
+    (let (n, (_, a)) = q in
+     let h =
+       (fun m t -> let rec go h ms l = (match ms, l with [], uu -> h | uv, [] -> h | false :: mr, uw :: r -> go (h * 31) mr r | true :: mr, None :: r -> go (h * 31) mr r | true :: mr, Some (EInt z) :: r -> go (h * 31 + Z.hash z) mr r | true :: mr, Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) mr r | true :: mr, Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) mr r) in Z.of_int ((go 17 m t) land 1073741823))
+         m x
+       in
+      (fun f_ () -> f_
+        (((fun () -> Array.get a (Z.to_int
+           ((fun h n -> Z.logand h (Z.pred n)) h n))))
+        ()) ())
+        (fun b -> (fun () -> (hm_look_list_proj h m x b))));;
+
 let rec probe_all
   msk q xs acc =
     (match xs with [] -> (fun () -> acc)
       | x :: r ->
         (fun f_ () -> f_
-          ((im_lookup (heap_list (heap_list (heap_option heap_event_data))) q
-             (proj_tuple msk x))
+          ((im_lookup_proj (heap_list (heap_list (heap_option heap_event_data)))
+             q msk x)
           ()) ())
           (fun v ->
             probe_all msk q r

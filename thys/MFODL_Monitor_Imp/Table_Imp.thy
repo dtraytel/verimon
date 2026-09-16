@@ -59,8 +59,37 @@ definition heap_join_min :: integer where
 code_printing
   constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
 
-definition teq :: "event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
-  "teq x y = (x = y)"
+text \<open>
+  Equality of two tuples.  Stated as @{text "x = y"} it becomes OCaml's polymorphic comparison,
+  which on the join below costs 158M instructions; the type is known here too.
+\<close>
+
+fun oeq :: "event_data option \<Rightarrow> event_data option \<Rightarrow> bool" where
+  "oeq None None = True"
+| "oeq (Some a) (Some b) = (a = b)"
+| "oeq None (Some b) = False"
+| "oeq (Some a) None = False"
+
+fun teq :: "event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
+  "teq [] ys = List.null ys"
+| "teq (x # xs) [] = False"
+| "teq (x # xs) (y # ys) = (oeq x y \<and> teq xs ys)"
+
+text \<open>
+  A probe looks up the projection of a tuple, which the obvious code builds and throws away once
+  per probed tuple.  Hashing and comparing against the mask directly leaves the projection
+  unbuilt; both agree with @{const proj_tuple} clause by clause.
+\<close>
+
+fun teq_proj :: "bool list \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
+  "teq_proj [] xs k = List.null k"
+| "teq_proj (b # bs) [] k = List.null k"
+| "teq_proj (b # bs) (x # xs) [] = False"
+| "teq_proj (b # bs) (x # xs) (y # ys) =
+     ((if b then oeq x y else oeq None y) \<and> teq_proj bs xs ys)"
+
+definition ihash_proj :: "bool list \<Rightarrow> event_data tuple \<Rightarrow> integer" where
+  "ihash_proj m t = 0"
 
 text \<open>
   The hash of a tuple.  The obvious implementation, OCaml's polymorphic @{text Hashtbl.hash},
@@ -79,8 +108,8 @@ definition ibkt :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "ibkt h n = 0"
 
 code_printing
-  constant teq \<rightharpoonup> (OCaml) "(fun x y -> x = y)"
-| constant ihash \<rightharpoonup> (OCaml) "(fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of'_int ((go 17 t) land 1073741823))"
+  constant ihash \<rightharpoonup> (OCaml) "(fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of'_int ((go 17 t) land 1073741823))"
+| constant ihash_proj \<rightharpoonup> (OCaml) "(fun m t -> let rec go h ms l = (match ms, l with [], uu -> h | uv, [] -> h | false :: mr, uw :: r -> go (h * 31) mr r | true :: mr, None :: r -> go (h * 31) mr r | true :: mr, Some (EInt z) :: r -> go (h * 31 + Z.hash z) mr r | true :: mr, Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) mr r | true :: mr, Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) mr r) in Z.of'_int ((go 17 m t) land 1073741823))"
 | constant ibkt \<rightharpoonup> (OCaml) "(fun h n -> Z.logand h (Z.pred n))"
 
 text \<open>
@@ -133,6 +162,17 @@ definition im_lookup_h :: "('v::heap) imap \<Rightarrow> integer \<Rightarrow> e
 
 definition im_lookup :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
   "im_lookup q x = im_lookup_h q (ihash x) x"
+
+fun hm_look_list_proj :: "integer \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow> ('v ientry) list \<Rightarrow> 'v option" where
+  "hm_look_list_proj h m x [] = None"
+| "hm_look_list_proj h m x (y # ys) =
+     (if h = fst y \<and> teq_proj m x (fst (snd y)) then Some (snd (snd y))
+      else hm_look_list_proj h m x ys)"
+
+definition im_lookup_proj :: "('v::heap) imap \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
+  "im_lookup_proj q m x = (case q of (n, c, a) \<Rightarrow>
+     (let h = ihash_proj m x in
+      do { b \<leftarrow> Array.nth' a (ibkt h n); return (hm_look_list_proj h m x b) }))"
 
 partial_function (heap) im_fold_idx ::
   "(('v ientry) list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> (('v::heap) ientry list) array \<Rightarrow>

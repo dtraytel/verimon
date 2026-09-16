@@ -73,7 +73,7 @@ partial_function (heap) probe_all :: "bool list \<Rightarrow> jidx \<Rightarrow>
     event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
   [code]:
   "probe_all msk q xs acc = (case xs of [] \<Rightarrow> return acc
-     | x # r \<Rightarrow> do { v \<leftarrow> im_lookup q (proj_tuple msk x);
+     | x # r \<Rightarrow> do { v \<leftarrow> im_lookup_proj q msk x;
                       probe_all msk q r (case v of None \<Rightarrow> acc
                         | Some l \<Rightarrow> fold (\<lambda>y acc. case join1 (x, y) of None \<Rightarrow> acc
                                             | Some z \<Rightarrow> Set.insert z acc) l acc) })"
