@@ -2226,3 +2226,107 @@ Three benchmarks are now at or better than MonPoly. **What the join needed was n
 Of the 1675M instructions removed, none came from changing how tuples are matched: they came from
 a polymorphic hash, a polymorphic equality, a projection built to be thrown away, a type-class
 dictionary rebuilt per probe, and a monad encoding that allocated twice where once would do.
+
+## 18. The Until, and the things standing next to it
+
+### 18.1 What the operator can be asked to do
+
+`A(x,y) UNTIL[0,20] B(x,y)` was 1.68x MonPoly, the worst of the ten benchmarks, and the obvious
+first question is whether it has an algorithmic lever like the one Section 16 found for
+`EVENTUALLY`. It does not. Section 16 works because a closed left operand makes the answer the
+same for every tuple, so the whole per-time-point mapping collapses into a sliding-window union
+with counts. Here the left operand is `A(x,y)` with the same free variables as the right, so
+whether a tuple is still alive genuinely differs per tuple, which is exactly what `a1_map` is
+for. There is no structure to remove.
+
+So the question becomes what the operator spends its instructions on that is not the algorithm.
+The answer, from a profile of the 1779M instructions the operator itself accounted for, was that
+**36% of them were tuple comparison** -- and not because tuples are compared too often, but
+because each comparison went the long way round.
+
+### 18.2 One call into the arbitrary-precision library instead of two
+
+Containers derives the order on `event_data` from `comparator_of`, which is `if x < y then Lt
+else if x = y then Eq else Gt`: for the `EInt` case, two separate calls out of OCaml into zarith
+where the C function already returns the sign. `cmp_integer` makes the one call and reads it.
+
+On its own this was worth only 3.0% of the operator, and the profile said why: `ed_comparator`
+went from 559 thousand calls to 2.19 million, but the generic `comparator_list` chain was still
+entered 3.84 million times. The comparison was cheaper; it was still the wrong comparison.
+
+### 18.3 The dictionary built to be ignored
+
+Section 15.11 monomorphised `Set.member` and `Mapping.lookup` at the tuple type, so that the
+comparator is resolved at code-generation time. The profile showed `ccompare_lista` and
+`ccompare_optiona` still entered 600,513 times each -- exactly once per lookup. The monomorphic
+`ed_rbt_lookup_nat` builds the dictionary for no other reason than to hand it to
+`RBT_Mapping2.impl_of`, which projects a tree out of its wrapper and never looks at it.
+
+Boxing `impl_of` at each of the five value types makes the projection a nullary constant. The
+dictionary builds halved, 15.6M instructions to 7.85M.
+
+The write side went the same way: `update`, `delete` and `combine`, and the tree primitives
+`insert`, `delete` and `join` underneath them, monomorphised at all five value types. Together
+with the boxing this was worth 3.0% of P2 -- and only 0.7% of the Until benchmark, because the
+Until's remaining chain comparisons turned out not to come from the write side at all (18.6).
+
+### 18.4 The batch table in the adapter
+
+The tuples of a time point are collected in a table keyed by the predicate's name and arity,
+and the arity was an arbitrary-precision natural. A generic `Hashtbl` hashes such a key
+structurally and then runs the polymorphic comparison down the bucket chain, so every event paid
+a `caml_hash` over a string and a custom block and about three `do_compare_val`s. That was
+**5.5% of the run in `do_compare_val` and a further 1.6% in `caml_hash`**, none of it doing any
+work the monitor cares about.
+
+Hashing the name alone, comparing the two components directly, and keeping the arity a machine
+integer until the flush removes all of it. Events also arrive grouped by predicate, so
+remembering the list the previous event went into consults the table once per predicate per time
+point rather than once per event; the cache is keyed on the signature's own type list, which
+physical equality identifies, except for nullary predicates whose list is the immediate `[]`,
+hence a name check as well.
+
+**Until: 3002M to 2840M instructions, -5.4%.** This is the largest single step in Section 18, and
+it is not in the verified kernel at all.
+
+### 18.5 Reading zarith's representation
+
+With the batch table gone, `ml_z_compare` was the costliest single symbol of the benchmark at
+5.7%, at about fourteen instructions a call for what is usually a comparison of two machine
+integers. Zarith keeps every integer that fits in an OCaml integer as an immediate and only
+larger ones as a custom block, so two immediates are in the same order as the machine integers
+they carry and the two cases are told apart by a tag test. `cmp_integer` now takes that path in
+OCaml and falls back to the library for everything else.
+
+**2840M to 2764M, -2.7%.** This reads the representation the library documents rather than its
+interface, so it is one more thing to believe about the generated code, alongside the hash
+functions of the imperative tables; the theory text says so where the printing is declared.
+
+### 18.6 A nursery three times the default
+
+With the comparison work cut down, the remaining P2 profile is about a third garbage collector
+and allocator: marking, promotion, the write barrier, sweeping, compaction. Most of what the
+kernel allocates dies before the next time point, and the default 256k-word nursery promotes a
+lot of it to the major heap first, so a larger nursery should help.
+
+Instruction counts agree enthusiastically: 4M words removes 13.7% of P2 and 9.9% of the Until
+benchmark. **Wall clock says the opposite.** A nursery that does not fit in cache costs more in
+misses than it saves in collections, and at 4M words P2 runs a third slower than at the default.
+
+| words | 256k | 512k | 768k | 1M | 2M |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.68s | 0.68s | **0.67s** | 0.69s | 0.74s |
+| P3 | 0.63s | 0.63s | **0.63s** | 0.66s | 0.70s |
+| until | 0.34s | 0.34s | **0.32s** | 0.33s | 0.33s |
+| complex | 1.16s | 1.18s | **1.05s** | 1.05s | 1.06s |
+| once | 0.57s | 0.53s | **0.53s** | 0.52s | 0.57s |
+| since | 0.29s | 0.29s | **0.29s** | 0.29s | 0.33s |
+
+768k words: six megabytes, no benchmark slower, the allocation-heavy ones 5-9% faster. This is
+the sharpest instance so far of the warning in Section 15.12, and the reason it is worth
+restating: **a change that only moves the collector must be judged on wall clock, because the
+instruction count is measuring the thing the change is trading away.**
+
+MonPoly's own run gains 5.9% from the same setting; it is not enabled for MonPoly, on the same
+grounds as the space overhead of Section 9 -- the flag exists for either monitor, and the
+verified kernel is the one whose allocation rate needs it.
