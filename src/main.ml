@@ -232,6 +232,7 @@ let _ =
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
+    "-dense", Arg.Set Misc.dense_cols, "\tRepresent tuples without the columns that are empty for the whole table (only with the verified kernel; not proved)";
     "-heap_maps", Arg.Set Misc.heap_all, "\tKeep the auxiliary structures of Since operators on heap-resident hash maps (only with the verified kernel; not proved)";
     "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tSmallest table size for which a join builds a heap-resident index (default 0, i.e. always; only with -heap_maps)";
     "-bulk_min", Arg.Set_int Misc.bulk_min, "\tSmallest table built in one pass from a sorted list rather than by repeated insertion (default 64)";

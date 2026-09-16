@@ -395,13 +395,18 @@ type jheap_state =
                meformula *
               (nat * nat queue))))
 
+(* Tuples without their empty columns (thys/MFODL_Monitor_Imp/Dense_Imp.thy). *)
+type dense_state = nat * (nat * (dformula * (nat * nat queue)))
+
 type state =
   | Pure of pure_state
   | Heap of heap_state
   | JHeap of jheap_state
+  | Dense of dense_state
 
 let init cf =
-  if !Misc.heap_all then JHeap (minit_safe_j cf ())
+  if !Misc.dense_cols then Dense (minit_safe_d cf ())
+  else if !Misc.heap_all then JHeap (minit_safe_j cf ())
   else if !Misc.heap_since then Heap (minit_safe_imp cf ())
   else Pure (minit_safe cf)
 
@@ -420,6 +425,7 @@ let step t db = function
   | Pure st -> let (vs, st') = mstep (db, nat_of_integer t) st in (annotate vs, Pure st')
   | Heap st -> let (vs, st') = mstep_imp (db, nat_of_integer t) st () in (annotate vs, Heap st')
   | JHeap st -> let (vs, st') = mstep_j (db, nat_of_integer t) st () in (annotate vs, JHeap st')
+  | Dense st -> let (vs, st') = mstep_d (db, nat_of_integer t) st () in (annotate vs, Dense st')
 
 (* Direct output of verdicts.
 

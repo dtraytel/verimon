@@ -108,6 +108,10 @@ let gc_space_overhead = ref 0
    one keeps it in the minor heap. *)
 let gc_minor_heap = ref 0
 
+(* Represent each table's tuples without the positions that are None for all of them, keeping
+   the column list in the formula (see thys/MFODL_Monitor_Imp/Dense_Imp.thy). *)
+let dense_cols = ref false
+
 let new_last_ts = ref true
 
 let ignore_parse_errors = ref false

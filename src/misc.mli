@@ -80,6 +80,7 @@ val bulk_min: int ref
 (** GC space overhead in percent to set before monitoring (0: leave the default). *)
 val gc_space_overhead: int ref
 val gc_minor_heap: int ref
+val dense_cols: bool ref
 val new_last_ts: bool ref
 val ignore_parse_errors: bool ref
 val stop_at_out_of_order_ts: bool ref
