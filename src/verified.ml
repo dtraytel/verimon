@@ -4199,16 +4199,17 @@ let rec bind (_A1, _A2) (_B1, _B2, _B3)
               (bot_set (_B1, _B2, _B3)))
     | Set_Monad xs, f -> fold (comp (sup_seta (_B1, _B2)) f) xs (Set_Monad []);;
 
+let rec binda m f = (fun () -> f (m ()) ());;
+
 let rec len _A
-  a = (fun f_ () -> f_ (((fun () -> Z.of_int (Array.length a))) ()) ())
+  a = binda ((fun () -> Z.of_int (Array.length a)))
         (fun i -> (fun () -> (nat_of_integer i)));;
 
 let rec ntha _A a n = (fun () -> Array.get a (Z.to_int (integer_of_nat n)));;
 
 let rec upd _A
   i x a =
-    (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int (integer_of_nat i)) x))
-      ()) ())
+    binda ((fun () -> Array.set a (Z.to_int (integer_of_nat i)) x))
       (fun _ -> (fun () -> a));;
 
 let rec drop
@@ -5055,15 +5056,15 @@ let rec map_formula
     | f, TP x22a -> TP x22a
     | f, TS x23a -> TS x23a;;
 
-let rec binda m f = (match m with Inl a -> Inl a | Inr a -> f a);;
+let rec bindb m f = (match m with Inl a -> Inl a | Inr a -> f a);;
 
 let rec map_sig f s = comp (map_option (mapa f)) s;;
 
 let rec check_two_formulas
   check s e phi psi =
-    binda (check s e phi)
+    bindb (check s e phi)
       (fun f ->
-        binda (check (map_sig f s) (comp f e) (map_formula f psi))
+        bindb (check (map_sig f s) (comp f e) (map_formula f psi))
           (fun fa -> Inr (comp fa f)));;
 
 let rec new_type_symbol
@@ -5123,18 +5124,18 @@ let rec min_type
 
 let rec clash_propagate
   t1 t2 e =
-    catch_error (binda (min_type t1 t2) (fun k -> Inr (update_env k e)))
+    catch_error (bindb (min_type t1 t2) (fun k -> Inr (update_env k e)))
       (fun _ ->
         Inl ((("clash of types " ^ str_of_tysym t1) ^ " and ") ^
               str_of_tysym t2));;
 
 let rec check_binop
   check_trm e typ t1 t2 exp_typ =
-    binda (clash_propagate exp_typ typ e)
+    bindb (clash_propagate exp_typ typ e)
       (fun f ->
-        binda (check_trm (comp f e) (f typ) t1)
+        bindb (check_trm (comp f e) (f typ) t1)
           (fun fa ->
-            binda (check_trm (comp (comp fa f) e) (comp fa f typ) t2)
+            bindb (check_trm (comp (comp fa f) e) (comp fa f typ) t2)
               (fun fb -> Inr (comp (comp fb fa) f))));;
 
 let rec ty_of = function EInt uu -> TInt
@@ -5145,51 +5146,51 @@ let rec check_trm
   e typ x2 = match e, typ, x2 with e, typ, Var v -> clash_propagate (e v) typ e
     | e, typ, Const c -> clash_propagate (TCst (ty_of c)) typ e
     | e, typ, F2i t ->
-        binda (clash_propagate typ (TCst TInt) e)
+        bindb (clash_propagate typ (TCst TInt) e)
           (fun f ->
-            binda (check_trm (comp f e) (TCst TFloat) t)
+            bindb (check_trm (comp f e) (TCst TFloat) t)
               (fun fa ->
                 Inr (fun ta ->
                       (if equal_tysym ta typ then TCst TInt
                         else comp fa f ta))))
     | e, typ, I2f t ->
-        binda (clash_propagate typ (TCst TFloat) e)
+        bindb (clash_propagate typ (TCst TFloat) e)
           (fun f ->
-            binda (check_trm (comp f e) (TCst TInt) t)
+            bindb (check_trm (comp f e) (TCst TInt) t)
               (fun fa ->
                 Inr (fun ta ->
                       (if equal_tysym ta typ then TCst TFloat
                         else comp fa f ta))))
     | e, typ, UMinus t ->
-        binda (clash_propagate (TNum zero_nata) (new_type_symbol typ)
+        bindb (clash_propagate (TNum zero_nata) (new_type_symbol typ)
                 (comp new_type_symbol e))
           (fun f ->
-            binda (check_trm (comp (comp f new_type_symbol) e)
+            bindb (check_trm (comp (comp f new_type_symbol) e)
                     (f (new_type_symbol typ)) t)
               (fun fa -> Inr (comp (comp fa f) new_type_symbol)))
     | e, typ, Plus (t1, t2) ->
-        binda (check_binop check_trm (comp new_type_symbol e)
+        bindb (check_binop check_trm (comp new_type_symbol e)
                 (new_type_symbol typ) t1 t2 (TNum zero_nata))
           (fun f -> Inr (comp f new_type_symbol))
     | e, typ, Minus (t1, t2) ->
-        binda (check_binop check_trm (comp new_type_symbol e)
+        bindb (check_binop check_trm (comp new_type_symbol e)
                 (new_type_symbol typ) t1 t2 (TNum zero_nata))
           (fun f -> Inr (comp f new_type_symbol))
     | e, typ, Mult (t1, t2) ->
-        binda (check_binop check_trm (comp new_type_symbol e)
+        bindb (check_binop check_trm (comp new_type_symbol e)
                 (new_type_symbol typ) t1 t2 (TNum zero_nata))
           (fun f -> Inr (comp f new_type_symbol))
     | e, typ, Div (t1, t2) ->
-        binda (check_binop check_trm (comp new_type_symbol e)
+        bindb (check_binop check_trm (comp new_type_symbol e)
                 (new_type_symbol typ) t1 t2 (TNum zero_nata))
           (fun f -> Inr (comp f new_type_symbol))
     | e, typ, Mod (t1, t2) -> check_binop check_trm e typ t1 t2 (TCst TInt);;
 
 let rec check_comparison
   e t1 t2 =
-    binda (check_trm (comp new_type_symbol e) (TAny zero_nata) t1)
+    bindb (check_trm (comp new_type_symbol e) (TAny zero_nata) t1)
       (fun f ->
-        binda (check_trm (comp (comp f new_type_symbol) e) (f (TAny zero_nata))
+        bindb (check_trm (comp (comp f new_type_symbol) e) (f (TAny zero_nata))
                 t2)
           (fun fa -> Inr (comp (comp fa f) new_type_symbol)));;
 
@@ -5211,15 +5212,15 @@ let rec check_regex
   check s e x3 = match check, s, e, x3 with check, s, e, Skip l -> Inr id
     | check, s, e, Test phi -> check s e phi
     | check, sa, e, Plusa (r, s) ->
-        binda (check_regex check sa e r)
+        bindb (check_regex check sa e r)
           (fun f ->
-            binda (check_regex check (map_sig f sa) (comp f e)
+            bindb (check_regex check (map_sig f sa) (comp f e)
                     (map_regex (map_formula f) s))
               (fun fa -> Inr (comp fa f)))
     | check, sa, e, Times (r, s) ->
-        binda (check_regex check sa e r)
+        bindb (check_regex check sa e r)
           (fun f ->
-            binda (check_regex check (map_sig f sa) (comp f e)
+            bindb (check_regex check (map_sig f sa) (comp f e)
                     (map_regex (map_formula f) s))
               (fun fa -> Inr (comp fa f)))
     | check, s, e, Star r -> check_regex check s e r;;
@@ -5227,9 +5228,9 @@ let rec check_regex
 let rec check_pred
   p e x2 x3 = match p, e, x2, x3 with
     p, e, trm :: trms, t :: ts ->
-      binda (check_trm e t trm)
+      bindb (check_trm e t trm)
         (fun f ->
-          binda (check_pred p (comp f e) trms (mapa f ts))
+          bindb (check_pred p (comp f e) trms (mapa f ts))
             (fun fa -> Inr (comp fa f)))
     | p, e, [], [] -> Inr id
     | p, e, [], v :: va -> Inl ("wrong arity for predicate " ^ (fun x -> x) p)
@@ -5238,9 +5239,9 @@ let rec check_pred
 let rec check_ands_f
   check s e =
     (fun phi f_op ->
-      binda f_op
+      bindb f_op
         (fun f ->
-          binda (check (map_sig f s) (comp f e) (map_formula f phi))
+          bindb (check (map_sig f s) (comp f e) (map_formula f phi))
             (fun fa -> Inr (comp fa f))));;
 
 let rec check_ands
@@ -5266,9 +5267,9 @@ let rec check
         | Some a -> check_pred r e ts a)
     | s, e, Let (p, phi, psi) ->
         (let f0 = funpow (nfv phi) new_type_symbol in
-          binda (check (map_sig f0 s) (fun a -> TAny a) (map_formula f0 phi))
+          bindb (check (map_sig f0 s) (fun a -> TAny a) (map_formula f0 phi))
             (fun f1 ->
-              binda (check
+              bindb (check
                       (map_sig f1
                         (fun_upd (equal_prod equal_string8 equal_nat)
                           (map_sig f0 s) (p, nfv phi)
@@ -5278,9 +5279,9 @@ let rec check
                 (fun f2 -> Inr (comp (comp f2 f1) f0))))
     | s, e, Frz (p, phi, psi) ->
         (let f0 = funpow (nfv phi) new_type_symbol in
-          binda (check (map_sig f0 s) (fun a -> TAny a) (map_formula f0 phi))
+          bindb (check (map_sig f0 s) (fun a -> TAny a) (map_formula f0 phi))
             (fun f1 ->
-              binda (check
+              bindb (check
                       (map_sig f1
                         (fun_upd (equal_prod equal_string8 equal_nat)
                           (map_sig f0 s) (p, nfv phi)
@@ -5301,19 +5302,19 @@ let rec check
             (if equal_nata n zero_nata then t else e (minus_nata n one_nata)))
           phi
     | s, e, Agg (y, (agg_type, d), tys, trm, phi) ->
-        binda (check_trm (comp new_type_symbol (agg_tysenv e tys))
+        bindb (check_trm (comp new_type_symbol (agg_tysenv e tys))
                 (agg_trm_tysym agg_type) trm)
           (fun f ->
-            binda (check (map_sig (comp f new_type_symbol) s)
+            bindb (check (map_sig (comp f new_type_symbol) s)
                     (comp (comp f new_type_symbol) (agg_tysenv e tys))
                     (map_formula (comp f new_type_symbol) phi))
               (fun fa ->
-                binda (check_trm (comp (comp (comp fa f) new_type_symbol) e)
+                bindb (check_trm (comp (comp (comp fa f) new_type_symbol) e)
                         (comp fa f
                           (t_res_tysym agg_type (agg_trm_tysym agg_type)))
                         (Var y))
                   (fun fb ->
-                    binda (check_trm
+                    bindb (check_trm
                             (comp (comp (comp (comp fb fa) f) new_type_symbol)
                               e)
                             (comp (comp (comp fb fa) f) new_type_symbol d)
@@ -5331,13 +5332,13 @@ let rec check
     | s, e, MatchP (i, r) -> check_regex check s e r
     | s, e, LetPast (p, phi, psi) ->
         (let f0 = funpow (nfv phi) new_type_symbol in
-          binda (check
+          bindb (check
                   (fun_upd (equal_prod equal_string8 equal_nat) (map_sig f0 s)
                     (p, nfv phi)
                     (Some (tabulate (fun a -> TAny a) zero_nata (nfv phi))))
                   (fun a -> TAny a) (map_formula f0 phi))
             (fun f1 ->
-              binda (check
+              bindb (check
                       (map_sig f1
                         (fun_upd (equal_prod equal_string8 equal_nat)
                           (map_sig f0 s) (p, nfv phi)
@@ -5611,20 +5612,19 @@ let rec im_count b = integer_of_nat (size_lista b);;
 let rec im_filter_idx _A
   p a i n c =
     (if Z.leq n i then (fun () -> c)
-      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      else binda ((fun () -> Array.get a (Z.to_int i)))
              (fun b ->
                (let ba = filtera (fun e -> p (fst (snd e))) b in
-                 (fun f_ () -> f_
-                   ((if Z.equal (im_count ba) (im_count b) then (fun () -> ())
-                      else (fun () -> Array.set a (Z.to_int i) ba))
-                   ()) ())
+                 binda (if Z.equal (im_count ba) (im_count b)
+                         then (fun () -> ())
+                         else (fun () -> Array.set a (Z.to_int i) ba))
                    (fun _ ->
                      im_filter_idx _A p a (Z.add i (Z.of_int 1)) n
                        (Z.sub c (Z.sub (im_count b) (im_count ba)))))));;
 
 let rec im_filter _A
   p q = (let (n, (c, a)) = q in
-          (fun f_ () -> f_ ((im_filter_idx _A p a Z.zero n c) ()) ())
+          binda (im_filter_idx _A p a Z.zero n c)
             (fun ca -> (fun () -> (n, (ca, a)))));;
 
 let rec linearize x = (let (fs, ls) = rep_queue x in fs @ rev ls);;
@@ -5635,9 +5635,7 @@ let rec gc2
          fold (fun p -> unbox ed_union_v (snd p)) (linearize dp @ linearize di)
            ed_bot
          in
-        (fun f_ () -> f_
-          ((im_filter heap_nat (fun k -> unbox ed_member_v k all) hsince) ())
-          ())
+        binda (im_filter heap_nat (fun k -> unbox ed_member_v k all) hsince)
           (fun hsincea ->
             (fun () ->
               ((t, (t, (mL, (mR, (dp, (di, tin)))))), (hin, hsincea)))));;
@@ -6293,14 +6291,14 @@ let rec im_cap n = im_cap_aux (nat_of_integer (Z.of_int 64)) (Z.of_int 8) n;;
 
 let rec im_new _A
   n = (let m = im_cap n in
-        (fun f_ () -> f_ (((fun () -> Array.make (Z.to_int m) [])) ()) ())
+        binda ((fun () -> Array.make (Z.to_int m) []))
           (fun a -> (fun () -> (m, (Z.zero, a)))));;
 
 let rec init2
   args =
-    (fun f_ () -> f_ ((im_new heap_nat (Z.of_int 16)) ()) ())
+    binda (im_new heap_nat (Z.of_int 16))
       (fun hin ->
-        (fun f_ () -> f_ ((im_new heap_nat (Z.of_int 16)) ()) ())
+        binda (im_new heap_nat (Z.of_int 16))
           (fun hsince ->
             (fun () ->
               ((zero_nata,
@@ -6393,13 +6391,11 @@ let rec im_delete_h _A
   q h x =
     (let (n, (c, a)) = q in
      let i = (fun h n -> Z.logand h (Z.pred n)) h n in
-      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      binda ((fun () -> Array.get a (Z.to_int i)))
         (fun b ->
           (match hm_look_list h x b with None -> (fun () -> q)
             | Some _ ->
-              (fun f_ () -> f_
-                (((fun () -> Array.set a (Z.to_int i) (hm_del_list h x b))) ())
-                ())
+              binda ((fun () -> Array.set a (Z.to_int i) (hm_del_list h x b)))
                 (fun _ -> (fun () -> (n, (Z.sub c (Z.of_int 1), a)))))));;
 
 let rec im_delete _A
@@ -6413,8 +6409,7 @@ let rec del_loop2
     (match ks with [] -> (fun () -> h)
       | k :: r ->
         (if p k then del_loop2 p r h
-          else (fun f_ () -> f_ ((im_delete heap_nat h k) ()) ())
-                 (del_loop2 p r)));;
+          else binda (im_delete heap_nat h k) (del_loop2 p r)));;
 
 let rec join2
   args x q =
@@ -6424,10 +6419,9 @@ let rec join2
         then (if equal_boola pos
                    (unbox ed_member_v (replicate (size_lista mL) None) x)
                then (fun () -> q)
-               else (fun f_ () -> f_ ((im_new heap_nat (Z.of_int 16)) ()) ())
+               else binda (im_new heap_nat (Z.of_int 16))
                       (fun hina ->
-                        (fun f_ () -> f_ ((im_new heap_nat (Z.of_int 16)) ())
-                          ())
+                        binda (im_new heap_nat (Z.of_int 16))
                           (fun hsincea ->
                             (fun () ->
                               ((t, (gc, (mL, (mR, (dp, (di, ed_bot)))))),
@@ -6435,15 +6429,12 @@ let rec join2
         else (let in_del =
                 (if pos then unbox ed_minus_v tin x else unbox ed_inter_v tin x)
                 in
-               (fun f_ () -> f_
-                 ((del_loop2 (fun k -> not (unbox ed_member_v k in_del))
-                    (unbox ed_csorted_list_of_set_v in_del) hin)
-                 ()) ())
+               binda (del_loop2 (fun k -> not (unbox ed_member_v k in_del))
+                       (unbox ed_csorted_list_of_set_v in_del) hin)
                  (fun hina ->
-                   (fun f_ () -> f_
-                     ((im_filter heap_nat
-                        (jc (ceq_event_data, ccompare_event_data) pos x) hsince)
-                     ()) ())
+                   binda (im_filter heap_nat
+                           (jc (ceq_event_data, ccompare_event_data) pos x)
+                           hsince)
                      (fun hsincea ->
                        (fun () ->
                          ((t, (gc, (mL, (mR,
@@ -6461,7 +6452,7 @@ let rec unit_table (_A1, _A2)
 let rec im_fold_idx _A
   f a i n acc =
     (if Z.leq n i then (fun () -> acc)
-      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      else binda ((fun () -> Array.get a (Z.to_int i)))
              (fun b -> im_fold_idx _A f a (Z.add i (Z.of_int 1)) n (f b acc)));;
 
 let rec im_entries _A
@@ -6474,39 +6465,34 @@ let rec im_fill _A
       | e :: r ->
         (let (n, (c, a)) = q in
          let i = (fun h n -> Z.logand h (Z.pred n)) (fst e) n in
-          (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+          binda ((fun () -> Array.get a (Z.to_int i)))
             (fun b ->
-              (fun f_ () -> f_ (((fun () -> Array.set a (Z.to_int i) (e :: b)))
-                ()) ())
+              binda ((fun () -> Array.set a (Z.to_int i) (e :: b)))
                 (fun _ -> im_fill _A (n, (Z.add c (Z.of_int 1), a)) r))));;
 
 let rec im_grow _A
   q = (let (n, (_, _)) = q in
-        (fun f_ () -> f_ ((im_entries _A q) ()) ())
+        binda (im_entries _A q)
           (fun kvs ->
-            (fun f_ () -> f_ ((im_new _A (Z.mul (Z.of_int 2) n)) ()) ())
+            binda (im_new _A (Z.mul (Z.of_int 2) n))
               (fun qa -> im_fill _A qa kvs)));;
 
 let rec im_update_h _A
   q h x v =
     (let (n, (c, a)) = q in
      let i = (fun h n -> Z.logand h (Z.pred n)) h n in
-      (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      binda ((fun () -> Array.get a (Z.to_int i)))
         (fun b ->
           (match hm_look_list h x b
             with None ->
-              (fun f_ () -> f_
-                (((fun () -> Array.set a (Z.to_int i) ((h, (x, v)) :: b))) ())
-                ())
+              binda ((fun () -> Array.set a (Z.to_int i) ((h, (x, v)) :: b)))
                 (fun _ ->
                   (if Z.lt (Z.add c (Z.of_int 1)) n
                     then (fun () -> (n, (Z.add c (Z.of_int 1), a)))
                     else im_grow _A (n, (Z.add c (Z.of_int 1), a))))
             | Some _ ->
-              (fun f_ () -> f_
-                (((fun () -> Array.set a (Z.to_int i)
-                   ((h, (x, v)) :: hm_del_list h x b)))
-                ()) ())
+              binda ((fun () -> Array.set a (Z.to_int i)
+                      ((h, (x, v)) :: hm_del_list h x b)))
                 (fun _ -> (fun () -> q)))));;
 
 let rec im_update _A
@@ -6521,10 +6507,8 @@ let rec ht_ins q x = im_update heap_unit q x ();;
 let rec im_lookup_h _A
   q h x =
     (let (n, (_, a)) = q in
-      (fun f_ () -> f_
-        (((fun () -> Array.get a (Z.to_int
-           ((fun h n -> Z.logand h (Z.pred n)) h n))))
-        ()) ())
+      binda ((fun () -> Array.get a (Z.to_int
+              ((fun h n -> Z.logand h (Z.pred n)) h n))))
         (fun b -> (fun () -> (hm_look_list h x b))));;
 
 let rec im_lookup _A
@@ -6534,7 +6518,7 @@ let rec im_lookup _A
           x;;
 
 let rec ht_mem
-  q x = (fun f_ () -> f_ ((im_lookup heap_unit q x) ()) ())
+  q x = binda (im_lookup heap_unit q x)
           (fun v -> (fun () -> (not (is_none v))));;
 
 let rec ht_new n = im_new heap_unit n;;
@@ -6693,7 +6677,7 @@ let rec productb _A _B
 
 let rec ht_new_sz (_A1, _A2) _B
   n = (let l = replicate n [] in
-        (fun f_ () -> f_ (((fun () -> Array.of_list l)) ()) ())
+        binda ((fun () -> Array.of_list l))
           (fun a -> (fun () -> (HashTable (a, zero_nata)))));;
 
 let rec ht_newa (_A1, _A2) _B
@@ -6719,18 +6703,14 @@ let rec the_size (HashTable (uu, n)) = n;;
 
 let rec ht_upd (_A1, _A2, _A3) _B
   k v ht =
-    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
-      ())
+    binda (len (heap_list (heap_prod _A3 _B)) (the_array ht))
       (fun m ->
         (let i = bounded_hashcode_nat _A2 m k in
-          (fun f_ () -> f_
-            ((ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i) ()) ())
+          binda (ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i)
             (fun l ->
               (let la = ls_update _A1 k v l in
-                (fun f_ () -> f_
-                  ((upd (heap_list (heap_prod _A3 _B)) i (fst la)
-                     (the_array ht))
-                  ()) ())
+                binda (upd (heap_list (heap_prod _A3 _B)) i (fst la)
+                        (the_array ht))
                   (fun _ ->
                     (let n = (if snd la then the_size ht else suc (the_size ht))
                        in
@@ -7701,8 +7681,7 @@ let rec init_j
   args =
     (if sevt_applies args then (fun () -> (MSJ_evt (init_sevt args)))
       else (if is_none (args_agg args) && special_args args
-             then (fun f_ () -> f_ ((init2 args) ()) ())
-                    (fun q -> (fun () -> (MSJ_imp q)))
+             then binda (init2 args) (fun q -> (fun () -> (MSJ_imp q)))
              else (fun () -> (MSJ_pure (init_mmasaux args)))));;
 
 let rec comp_fun_commute_apply (Abs_comp_fun_commute x) = x;;
@@ -8128,40 +8107,32 @@ let load_factor : nat = nat_of_integer (Z.of_int 75);;
 let rec ht_insls (_A1, _A2, _A3) _B
   x0 ht = match x0, ht with [], ht -> (fun () -> ht)
     | (k, v) :: l, ht ->
-        (fun f_ () -> f_ ((ht_upd (_A1, _A2, _A3) _B k v ht) ()) ())
+        binda (ht_upd (_A1, _A2, _A3) _B k v ht)
           (ht_insls (_A1, _A2, _A3) _B l);;
 
 let rec ht_copy (_A1, _A2, _A3) _B
   n src dst =
     (if equal_nata n zero_nata then (fun () -> dst)
-      else (fun f_ () -> f_
-             ((ntha (heap_list (heap_prod _A3 _B)) (the_array src)
-                (minus_nata n one_nata))
-             ()) ())
+      else binda (ntha (heap_list (heap_prod _A3 _B)) (the_array src)
+                   (minus_nata n one_nata))
              (fun l ->
-               (fun f_ () -> f_ ((ht_insls (_A1, _A2, _A3) _B l dst) ()) ())
+               binda (ht_insls (_A1, _A2, _A3) _B l dst)
                  (ht_copy (_A1, _A2, _A3) _B (minus_nata n one_nata) src)));;
 
 let rec ht_rehash (_A1, _A2, _A3) _B
-  ht = (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
-         ())
+  ht = binda (len (heap_list (heap_prod _A3 _B)) (the_array ht))
          (fun n ->
-           (fun f_ () -> f_
-             ((ht_new_sz (_A2, _A3) _B
-                (times_nata (nat_of_integer (Z.of_int 2)) n))
-             ()) ())
+           binda (ht_new_sz (_A2, _A3) _B
+                   (times_nata (nat_of_integer (Z.of_int 2)) n))
              (ht_copy (_A1, _A2, _A3) _B n ht));;
 
 let rec ht_update (_A1, _A2, _A3) _B
   k v ht =
-    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
-      ())
+    binda (len (heap_list (heap_prod _A3 _B)) (the_array ht))
       (fun m ->
-        (fun f_ () -> f_
-          ((if less_eq_nat (times_nata m load_factor)
-                 (times_nata (the_size ht) (nat_of_integer (Z.of_int 100)))
-             then ht_rehash (_A1, _A2, _A3) _B ht else (fun () -> ht))
-          ()) ())
+        binda (if less_eq_nat (times_nata m load_factor)
+                    (times_nata (the_size ht) (nat_of_integer (Z.of_int 100)))
+                then ht_rehash (_A1, _A2, _A3) _B ht else (fun () -> ht))
           (ht_upd (_A1, _A2, _A3) _B k v));;
 
 let rec ls_lookup _A
@@ -8170,45 +8141,37 @@ let rec ls_lookup _A
 
 let rec ht_lookup (_A1, _A2, _A3) _B
   x ht =
-    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
-      ())
+    binda (len (heap_list (heap_prod _A3 _B)) (the_array ht))
       (fun m ->
         (let i = bounded_hashcode_nat _A2 m x in
-          (fun f_ () -> f_
-            ((ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i) ()) ())
+          binda (ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i)
             (fun l -> (fun () -> (ls_lookup _A1 x l)))));;
 
 let rec hm_insert_all (_A1, _A2, _A3)
   i x1 ht = match i, x1, ht with i, [], ht -> (fun () -> ht)
     | i, x :: xs, ht ->
-        (fun f_ () -> f_
-          ((ht_lookup
-             ((equal_list (equal_option _A1)),
-               (hashable_list (hashable_option _A2)),
-               (heap_list (heap_option _A3)))
-             (heap_list (heap_list (heap_option _A3))) (restrict i x) ht)
-          ()) ())
+        binda (ht_lookup
+                ((equal_list (equal_option _A1)),
+                  (hashable_list (hashable_option _A2)),
+                  (heap_list (heap_option _A3)))
+                (heap_list (heap_list (heap_option _A3))) (restrict i x) ht)
           (fun b ->
-            (fun f_ () -> f_
-              ((ht_update
-                 ((equal_list (equal_option _A1)),
-                   (hashable_list (hashable_option _A2)),
-                   (heap_list (heap_option _A3)))
-                 (heap_list (heap_list (heap_option _A3))) (restrict i x)
-                 (x :: bucket_list b) ht)
-              ()) ())
+            binda (ht_update
+                    ((equal_list (equal_option _A1)),
+                      (hashable_list (hashable_option _A2)),
+                      (heap_list (heap_option _A3)))
+                    (heap_list (heap_list (heap_option _A3))) (restrict i x)
+                    (x :: bucket_list b) ht)
               (hm_insert_all (_A1, _A2, _A3) i xs));;
 
 let rec probe_alla (_A1, _A2, _A3, _A4, _A5)
   i x1 ht acc = match i, x1, ht, acc with i, [], ht, acc -> (fun () -> acc)
     | i, y :: ys, ht, acc ->
-        (fun f_ () -> f_
-          ((ht_lookup
-             ((equal_list (equal_option _A3)),
-               (hashable_list (hashable_option _A4)),
-               (heap_list (heap_option _A5)))
-             (heap_list (heap_list (heap_option _A5))) (restrict i y) ht)
-          ()) ())
+        binda (ht_lookup
+                ((equal_list (equal_option _A3)),
+                  (hashable_list (hashable_option _A4)),
+                  (heap_list (heap_option _A5)))
+                (heap_list (heap_list (heap_option _A5))) (restrict i y) ht)
           (fun b ->
             probe_alla (_A1, _A2, _A3, _A4, _A5) i ys ht
               (fold (fun x -> join1_insert (_A1, _A2, _A3) x y) (bucket_list b)
@@ -8216,13 +8179,12 @@ let rec probe_alla (_A1, _A2, _A3, _A4, _A5)
 
 let rec probe_join_imp (_A1, _A2, _A3, _A4, _A5)
   i xs ys =
-    (fun f_ () -> f_
-      ((ht_newa
-         ((hashable_list (hashable_option _A4)), (heap_list (heap_option _A5)))
-         (heap_list (heap_list (heap_option _A5))))
-      ()) ())
+    binda (ht_newa
+            ((hashable_list (hashable_option _A4)),
+              (heap_list (heap_option _A5)))
+            (heap_list (heap_list (heap_option _A5))))
       (fun ht ->
-        (fun f_ () -> f_ ((hm_insert_all (_A3, _A4, _A5) i xs ht) ()) ())
+        binda (hm_insert_all (_A3, _A4, _A5) i xs ht)
           (fun hta ->
             probe_alla (_A1, _A2, _A3, _A4, _A5) i ys hta
               (set_empty
@@ -9189,14 +9151,12 @@ let rec gc_join2
   args x q =
     (let ((t, (gc, (_, (_, (_, (_, _)))))), (_, _)) = q in
       (if not (memR (args_ivl args) (minus_nata t gc))
-        then (fun f_ () -> f_ ((gc2 q) ()) ()) (join2 args x)
-        else join2 args x q));;
+        then binda (gc2 q) (join2 args x) else join2 args x q));;
 
 let rec join_j
   args x xa2 = match args, x, xa2 with
     args, x, MSJ_imp q ->
-      (fun f_ () -> f_ ((gc_join2 args x q) ()) ())
-        (fun qa -> (fun () -> (MSJ_imp qa)))
+      binda (gc_join2 args x q) (fun qa -> (fun () -> (MSJ_imp qa)))
     | args, x, MSJ_pure s -> (fun () -> (MSJ_pure (gc_join_mmasaux args x s)))
     | args, x, MSJ_evt a -> (fun () -> (MSJ_evt (join_sevt args x a)));;
 
@@ -9264,7 +9224,7 @@ let rec convert_tysym = function TCst a -> a
 
 let rec type_check
   s phi =
-    binda (check s (fun a -> TAny a) phi)
+    bindb (check s (fun a -> TAny a) phi)
       (fun f ->
         (if check_wty_formula (map_formula f phi)
           then Inr (map_formula (comp convert_tysym f) phi)
@@ -11333,17 +11293,14 @@ let rec ed_probe_join_n
 
 let rec ed_probe_join_imp
   i xs ys =
-    (fun f_ () -> f_
-      ((ht_newa
-         ((hashable_list (hashable_option hashable_event_data)),
-           (heap_list (heap_option heap_event_data)))
-         (heap_list (heap_list (heap_option heap_event_data))))
-      ()) ())
+    binda (ht_newa
+            ((hashable_list (hashable_option hashable_event_data)),
+              (heap_list (heap_option heap_event_data)))
+            (heap_list (heap_list (heap_option heap_event_data))))
       (fun ht ->
-        (fun f_ () -> f_
-          ((hm_insert_all
-             (equal_event_data, hashable_event_data, heap_event_data) i xs ht)
-          ()) ())
+        binda (hm_insert_all
+                (equal_event_data, hashable_event_data, heap_event_data) i xs
+                ht)
           (fun hta ->
             probe_alla
               (ceq_event_data, ccompare_event_data, equal_event_data,
@@ -13878,10 +13835,8 @@ let rec teq_proj
 let rec hm_it_adjust (_A1, _A2) _B
   v ht =
     (if equal_nata v zero_nata then (fun () -> zero_nata)
-      else (fun f_ () -> f_
-             ((ntha (heap_list (heap_prod _A2 _B)) (the_array ht)
-                (suc (minus_nata v one_nata)))
-             ()) ())
+      else binda (ntha (heap_list (heap_prod _A2 _B)) (the_array ht)
+                   (suc (minus_nata v one_nata)))
              (fun a ->
                (match a
                  with [] ->
@@ -13890,17 +13845,13 @@ let rec hm_it_adjust (_A1, _A2) _B
                  | _ :: _ -> (fun () -> (suc (minus_nata v one_nata))))));;
 
 let rec hm_it_init (_A1, _A2) _B
-  ht = (fun f_ () -> f_ ((len (heap_list (heap_prod _A2 _B)) (the_array ht)) ())
-         ())
+  ht = binda (len (heap_list (heap_prod _A2 _B)) (the_array ht))
          (fun n ->
            (if equal_nata n zero_nata then (fun () -> (zero_nata, ([], ht)))
-             else (fun f_ () -> f_
-                    ((hm_it_adjust (_A1, _A2) _B (minus_nata n one_nata) ht) ())
-                    ())
+             else binda (hm_it_adjust (_A1, _A2) _B (minus_nata n one_nata) ht)
                     (fun i ->
-                      (fun f_ () -> f_
-                        ((ntha (heap_list (heap_prod _A2 _B)) (the_array ht) i)
-                        ()) ())
+                      binda (ntha (heap_list (heap_prod _A2 _B)) (the_array ht)
+                              i)
                         (fun l -> (fun () -> (i, (l, ht)))))));;
 
 let rec hm_it_next (_A1, _A2) _B
@@ -13912,14 +13863,11 @@ let rec hm_it_next (_A1, _A2) _B
                     (fun () -> (a, (zero_nata, (b :: l, ht)))))
            else (match aa
                   with ([a], ht) ->
-                    (fun f_ () -> f_
-                      ((hm_it_adjust (_A1, _A2) _B (minus_nata i one_nata) ht)
-                      ()) ())
+                    binda (hm_it_adjust (_A1, _A2) _B (minus_nata i one_nata)
+                            ht)
                       (fun ia ->
-                        (fun f_ () -> f_
-                          ((ntha (heap_list (heap_prod _A2 _B)) (the_array ht)
-                             ia)
-                          ()) ())
+                        binda (ntha (heap_list (heap_prod _A2 _B))
+                                (the_array ht) ia)
                           (fun l -> (fun () -> (a, (ia, (rev l, ht))))))
                   | (a :: b :: l, ht) ->
                     (fun () ->
@@ -13938,20 +13886,27 @@ let rec im_lookup_proj _A
        (fun m t -> let rec go h ms l = (match ms, l with [], uu -> h | uv, [] -> h | false :: mr, uw :: r -> go (h * 31) mr r | true :: mr, None :: r -> go (h * 31) mr r | true :: mr, Some (EInt z) :: r -> go (h * 31 + Z.hash z) mr r | true :: mr, Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) mr r | true :: mr, Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) mr r) in Z.of_int ((go 17 m t) land 1073741823))
          m x
        in
-      (fun f_ () -> f_
-        (((fun () -> Array.get a (Z.to_int
-           ((fun h n -> Z.logand h (Z.pred n)) h n))))
-        ()) ())
+      binda ((fun () -> Array.get a (Z.to_int
+              ((fun h n -> Z.logand h (Z.pred n)) h n))))
         (fun b -> (fun () -> (hm_look_list_proj h m x b))));;
+
+let jidx_lookup_v :
+  (Z.t * (Z.t *
+           ((Z.t *
+              ((event_data option) list *
+                ((event_data option) list) list)) list)
+             array) ->
+    bool list ->
+      (event_data option) list ->
+        (unit -> ((((event_data option) list) list) option)))
+    boxed
+  = Box (im_lookup_proj (heap_list (heap_list (heap_option heap_event_data))));;
 
 let rec probe_all
   msk q xs acc =
     (match xs with [] -> (fun () -> acc)
       | x :: r ->
-        (fun f_ () -> f_
-          ((im_lookup_proj (heap_list (heap_list (heap_option heap_event_data)))
-             q msk x)
-          ()) ())
+        binda (unbox jidx_lookup_v q msk x)
           (fun v ->
             probe_all msk q r
               (match v with None -> acc
@@ -14738,7 +14693,7 @@ let rec im_keep_list
   p xs q acc =
     (match xs with [] -> (fun () -> acc)
       | x :: r ->
-        (fun f_ () -> f_ ((im_lookup (heap_sum heap_nat heap_nat) q x) ()) ())
+        binda (im_lookup (heap_sum heap_nat heap_nat) q x)
           (fun v ->
             im_keep_list p r q
               (match v with None -> acc
@@ -14747,7 +14702,7 @@ let rec im_keep_list
 let rec im_keys_idx _A
   a i n acc =
     (if Z.leq n i then (fun () -> acc)
-      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      else binda ((fun () -> Array.get a (Z.to_int i)))
              (fun b ->
                im_keys_idx _A a (Z.add i (Z.of_int 1)) n
                  (fold (fun e -> ed_insert (fst (snd e))) b acc)));;
@@ -14758,26 +14713,24 @@ let rec im_keys_tbl _A
 let rec im_del_list _A
   xs q =
     (match xs with [] -> (fun () -> q)
-      | x :: r ->
-        (fun f_ () -> f_ ((im_delete _A q x) ()) ()) (im_del_list _A r));;
+      | x :: r -> binda (im_delete _A q x) (im_del_list _A r));;
 
 let rec im_merge_list _A
   f es q =
     (match es with [] -> (fun () -> q)
       | (h, (x, w)) :: r ->
-        (fun f_ () -> f_ ((im_lookup_h _A q h x) ()) ())
+        binda (im_lookup_h _A q h x)
           (fun v ->
-            (fun f_ () -> f_
-              ((im_update_h _A q h x (match v with None -> w | Some a -> f w a))
-              ()) ())
+            binda (im_update_h _A q h x
+                    (match v with None -> w | Some a -> f w a))
               (im_merge_list _A f r)));;
 
 let rec im_merge_idx _A
   f a i n q =
     (if Z.leq n i then (fun () -> q)
-      else (fun f_ () -> f_ (((fun () -> Array.get a (Z.to_int i))) ()) ())
+      else binda ((fun () -> Array.get a (Z.to_int i)))
              (fun b ->
-               (fun f_ () -> f_ ((im_merge_list _A f b q) ()) ())
+               binda (im_merge_list _A f b q)
                  (im_merge_idx _A f a (Z.add i (Z.of_int 1)) n)));;
 
 let rec im_merge _A
@@ -14807,20 +14760,15 @@ let rec eval_step_dq2
        in
      let to_del_approx = fold (fun p -> unbox ed_union_v (fst p)) taken ed_bot
        in
-      (fun f_ () -> f_
-        ((im_keep_list (ts_tp_lt i ts (plus_nata (minus_nata tp len) one_nata))
-           (unbox ed_csorted_list_of_set_v to_del_approx) m ed_bot)
-        ()) ())
+      binda (im_keep_list
+              (ts_tp_lt i ts (plus_nata (minus_nata tp len) one_nata))
+              (unbox ed_csorted_list_of_set_v to_del_approx) m ed_bot)
         (fun to_del ->
-          (fun f_ () -> f_
-            ((im_del_list (heap_sum heap_nat heap_nat)
-               (unbox ed_csorted_list_of_set_v to_del) m)
-            ()) ())
+          binda (im_del_list (heap_sum heap_nat heap_nat)
+                  (unbox ed_csorted_list_of_set_v to_del) m)
             (fun ma ->
               (if equal_nata len one_nata
-                then (fun f_ () -> f_
-                       ((im_new (heap_sum heap_nat heap_nat) (Z.of_int 16)) ())
-                       ())
+                then binda (im_new (heap_sum heap_nat heap_nat) (Z.of_int 16))
                        (fun e ->
                          (fun () ->
                            (tp, (tssc,
@@ -14831,13 +14779,10 @@ let rec eval_step_dq2
   (ed_bot,
     (a1, (dq_tl (dq_upd a2 one_nata e), (dq_tl tstp_dq, t :: donea))))))))))))
                 else (let maa = dq_nth a2 one_nata in
-                       (fun f_ () -> f_
-                         ((im_keys_tbl (heap_sum heap_nat heap_nat) maa) ()) ())
+                       binda (im_keys_tbl (heap_sum heap_nat heap_nat) maa)
                          (fun ks ->
-                           (fun f_ () -> f_
-                             ((im_merge (heap_sum heap_nat heap_nat) max_tstp ma
-                                maa)
-                             ()) ())
+                           binda (im_merge (heap_sum heap_nat heap_nat) max_tstp
+                                   ma maa)
                              (fun mb ->
                                (fun () ->
                                  (tp, (tssc,
@@ -14852,7 +14797,7 @@ let rec eval_step_dq2
 let rec shift_loop2
   args k aux =
     (if equal_nata k zero_nata then (fun () -> aux)
-      else (fun f_ () -> f_ ((eval_step_dq2 args aux) ()) ())
+      else binda (eval_step_dq2 args aux)
              (shift_loop2 args (minus_nata k one_nata)));;
 
 let rec shift_dq2
@@ -14874,7 +14819,7 @@ let rec shift_dq2
 
 let rec eval_dq2
   args nt aux =
-    (fun f_ () -> f_ ((shift_dq2 args nt aux) ()) ())
+    binda (shift_dq2 args nt aux)
       (fun (tp, (tss, (tables,
                         (len, (maskL,
                                 (maskR,
@@ -14953,8 +14898,7 @@ let rec eval_evt
 let rec eval_u_j
   args nt x2 = match args, nt, x2 with
     args, nt, MUJ_imp d ->
-      (fun f_ () -> f_ ((eval_dq2 args nt d) ()) ())
-        (fun r -> (fun () -> (fst r, MUJ_imp (snd r))))
+      binda (eval_dq2 args nt d) (fun r -> (fun () -> (fst r, MUJ_imp (snd r))))
     | args, nt, MUJ_pure a ->
         (fun () ->
           (let r = eval_muaux_dq args nt a in (fst r, MUJ_pure (snd r))))
@@ -14963,10 +14907,9 @@ let rec eval_u_j
 
 let rec init_dq2
   args =
-    (fun f_ () -> f_ ((im_new heap_nat (Z.of_int 16)) ()) ())
+    binda (im_new heap_nat (Z.of_int 16))
       (fun a1 ->
-        (fun f_ () -> f_ ((im_new (heap_sum heap_nat heap_nat) (Z.of_int 16))
-          ()) ())
+        binda (im_new (heap_sum heap_nat heap_nat) (Z.of_int 16))
           (fun m ->
             (fun () ->
               (zero_nata,
@@ -14996,8 +14939,7 @@ let rec evt_applies
 let rec init_u_j
   args =
     (if is_none (args_agg args) && use_heap_until
-      then (fun f_ () -> f_ ((init_dq2 args) ()) ())
-             (fun d -> (fun () -> (MUJ_imp d)))
+      then binda (init_dq2 args) (fun d -> (fun () -> (MUJ_imp d)))
       else (if evt_applies args then (fun () -> (MUJ_evt (init_evt args)))
              else (fun () -> (MUJ_pure (init_muaux_dq args)))));;
 
@@ -15009,18 +14951,14 @@ let rec ls_delete _A
 
 let rec ht_delete (_A1, _A2, _A3) _B
   k ht =
-    (fun f_ () -> f_ ((len (heap_list (heap_prod _A3 _B)) (the_array ht)) ())
-      ())
+    binda (len (heap_list (heap_prod _A3 _B)) (the_array ht))
       (fun m ->
         (let i = bounded_hashcode_nat _A2 m k in
-          (fun f_ () -> f_
-            ((ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i) ()) ())
+          binda (ntha (heap_list (heap_prod _A3 _B)) (the_array ht) i)
             (fun l ->
               (let la = ls_delete _A1 k l in
-                (fun f_ () -> f_
-                  ((upd (heap_list (heap_prod _A3 _B)) i (fst la)
-                     (the_array ht))
-                  ()) ())
+                binda (upd (heap_list (heap_prod _A3 _B)) i (fst la)
+                        (the_array ht))
                   (fun _ ->
                     (let n =
                        (if snd la then minus_nata (the_size ht) one_nata
@@ -15029,6 +14967,37 @@ let rec ht_delete (_A1, _A2, _A3) _B
                       (fun () -> (HashTable (the_array ht, n)))))))));;
 
 let use_heap_join : bool = true;;
+
+let jidx_update_h_v :
+  (Z.t * (Z.t *
+           ((Z.t *
+              ((event_data option) list *
+                ((event_data option) list) list)) list)
+             array) ->
+    Z.t ->
+      (event_data option) list ->
+        ((event_data option) list) list ->
+          (unit ->
+            (Z.t *
+              (Z.t *
+                ((Z.t *
+                   ((event_data option) list *
+                     ((event_data option) list) list)) list)
+                  array))))
+    boxed
+  = Box (im_update_h (heap_list (heap_list (heap_option heap_event_data))));;
+
+let jidx_lookup_h_v :
+  (Z.t * (Z.t *
+           ((Z.t *
+              ((event_data option) list *
+                ((event_data option) list) list)) list)
+             array) ->
+    Z.t ->
+      (event_data option) list ->
+        (unit -> ((((event_data option) list) list) option)))
+    boxed
+  = Box (im_lookup_h (heap_list (heap_list (heap_option heap_event_data))));;
 
 let rec idx_ins_list
   msk xs q =
@@ -15039,27 +15008,19 @@ let rec idx_ins_list
            (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              k
            in
-          (fun f_ () -> f_
-            ((im_lookup_h (heap_list (heap_list (heap_option heap_event_data)))
-               q h k)
-            ()) ())
+          binda (unbox jidx_lookup_h_v q h k)
             (fun v ->
-              (fun f_ () -> f_
-                ((im_update_h
-                   (heap_list (heap_list (heap_option heap_event_data))) q h k
-                   (match v with None -> [x] | Some a -> x :: a))
-                ()) ())
+              binda (unbox jidx_update_h_v q h k
+                      (match v with None -> [x] | Some a -> x :: a))
                 (idx_ins_list msk r))));;
 
 let rec probe_join_j
   n a xs b ys =
     (let msk = join_mask n (inf_seta (ceq_nat, ccompare_nat) a b) in
-      (fun f_ () -> f_
-        ((im_new (heap_list (heap_list (heap_option heap_event_data)))
-           (Z.mul (Z.of_int 2) (integer_of_nat (size_lista ys))))
-        ()) ())
+      binda (im_new (heap_list (heap_list (heap_option heap_event_data)))
+              (Z.mul (Z.of_int 2) (integer_of_nat (size_lista ys))))
         (fun q ->
-          (fun f_ () -> f_ ((idx_ins_list msk ys q) ()) ())
+          binda (idx_ins_list msk ys q)
             (fun qa -> probe_all msk qa xs ed_bot)));;
 
 let rec heap_join_ok
@@ -15115,7 +15076,7 @@ let rec mebuf2t_take_j
                   (fun () ->
                     (z, ((mbuf_t_Cons x xsa, ysa), (t, mbuf_t_Cons t tsa))))
                 | (Some y, ysa) ->
-                  (fun f_ () -> f_ ((f x y t z) ()) ())
+                  binda (f x y t z)
                     (fun za -> mebuf2t_take_j f za (xsa, ysa) t tsa)))));;
 
 let rec add_new_table_sevt
@@ -15134,28 +15095,25 @@ let rec since_loop2
            (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              x
            in
-          (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
+          binda (im_lookup_h heap_nat h hx x)
             (fun v ->
-              (fun f_ () -> f_
-                ((if is_none v then im_update_h heap_nat h hx x t
-                   else (fun () -> h))
-                ()) ())
+              binda (if is_none v then im_update_h heap_nat h hx x t
+                      else (fun () -> h))
                 (since_loop2 t r))));;
 
 let rec ins_loop2
   t xs h =
     (match xs with [] -> (fun () -> h)
-      | x :: r ->
-        (fun f_ () -> f_ ((im_update heap_nat h x t) ()) ()) (ins_loop2 t r));;
+      | x :: r -> binda (im_update heap_nat h x t) (ins_loop2 t r));;
 
 let rec add_new_table2
   args x q =
     (let ((t, (gc, (mL, (mR, (dp, (di, tin)))))), (hin, hsince)) = q in
      let xs = unbox ed_csorted_list_of_set_v x in
-      (fun f_ () -> f_ ((since_loop2 t xs hsince) ()) ())
+      binda (since_loop2 t xs hsince)
         (fun hsincea ->
           (if memL (args_ivl args) zero_nata
-            then (fun f_ () -> f_ ((ins_loop2 t xs hin) ()) ())
+            then binda (ins_loop2 t xs hin)
                    (fun hina ->
                      (fun () ->
                        ((t, (gc, (mL, (mR,
@@ -15168,8 +15126,7 @@ let rec add_new_table2
 let rec add_new_table_j
   args x xa2 = match args, x, xa2 with
     args, x, MSJ_imp q ->
-      (fun f_ () -> f_ ((add_new_table2 args x q) ()) ())
-        (fun qa -> (fun () -> (MSJ_imp qa)))
+      binda (add_new_table2 args x q) (fun qa -> (fun () -> (MSJ_imp qa)))
     | args, x, MSJ_pure s ->
         (fun () -> (MSJ_pure (add_new_table_mmasaux args x s)))
     | args, x, MSJ_evt a ->
@@ -15210,13 +15167,12 @@ let rec upd_loop2
            (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              x
            in
-          (fun f_ () -> f_ ((im_lookup_h heap_nat hs hx x) ()) ())
+          binda (im_lookup_h heap_nat hs hx x)
             (fun a ->
               (match a with None -> upd_loop2 t r hs h y
                 | Some ta ->
                   (if less_eq_nat ta t
-                    then (fun f_ () -> f_ ((im_update_h heap_nat h hx x t) ())
-                           ())
+                    then binda (im_update_h heap_nat h hx x t)
                            (fun ha -> upd_loop2 t r hs ha (ed_insert x y))
                     else upd_loop2 t r hs h y)))));;
 
@@ -15224,9 +15180,8 @@ let rec move_loop2
   xs hs h y =
     (match xs with [] -> (fun () -> (h, y))
       | tX :: r ->
-        (fun f_ () -> f_
-          ((upd_loop2 (fst tX) (unbox ed_csorted_list_of_set_v (snd tX)) hs h y)
-          ()) ())
+        binda (upd_loop2 (fst tX) (unbox ed_csorted_list_of_set_v (snd tX)) hs h
+                y)
           (fun p -> move_loop2 r hs (fst p) (snd p)));;
 
 let rec add_new_ts2a
@@ -15235,7 +15190,7 @@ let rec add_new_ts2a
      let i = args_ivl args in
      let p = takedropWhile_queue (fun (t, _) -> memL i (minus_nata nt t)) dp in
      let dia = fold append_queue (snd p) di in
-      (fun f_ () -> f_ ((move_loop2 (snd p) hsince hin ed_bot) ()) ())
+      binda (move_loop2 (snd p) hsince hin ed_bot)
         (fun r ->
           (fun () ->
             ((nt, (gc, (mL, (mR, (fst p,
@@ -15250,10 +15205,10 @@ let rec filter_loop2
            (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              x
            in
-          (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
+          binda (im_lookup_h heap_nat h hx x)
             (fun v ->
               (if equal_optiona equal_nat v (Some t)
-                then (fun f_ () -> f_ ((im_delete_h heap_nat h hx x) ()) ())
+                then binda (im_delete_h heap_nat h hx x)
                        (fun ha -> filter_loop2 t r ha (ed_insert x y))
                 else filter_loop2 t r h y))));;
 
@@ -15261,9 +15216,8 @@ let rec expire_loop2
   xs h y =
     (match xs with [] -> (fun () -> (h, y))
       | tX :: r ->
-        (fun f_ () -> f_
-          ((filter_loop2 (fst tX) (unbox ed_csorted_list_of_set_v (snd tX)) h y)
-          ()) ())
+        binda (filter_loop2 (fst tX) (unbox ed_csorted_list_of_set_v (snd tX)) h
+                y)
           (fun p -> expire_loop2 r (fst p) (snd p)));;
 
 let rec shift_end2
@@ -15275,7 +15229,7 @@ let rec shift_end2
      let p =
        takedropWhile_queue (fun (ta, _) -> not (memR i (minus_nata nt ta))) di
        in
-      (fun f_ () -> f_ ((expire_loop2 (snd p) hin ed_bot) ()) ())
+      binda (expire_loop2 (snd p) hin ed_bot)
         (fun r ->
           (fun () ->
             ((t, (gc, (mL, (mR, (dpa, (fst p,
@@ -15283,14 +15237,12 @@ unbox ed_minus_v tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec add_new_ts2
-  args nt q =
-    (fun f_ () -> f_ ((shift_end2 args nt q) ()) ()) (add_new_ts2a args nt);;
+  args nt q = binda (shift_end2 args nt q) (add_new_ts2a args nt);;
 
 let rec add_new_ts_j
   args nt x2 = match args, nt, x2 with
     args, nt, MSJ_imp q ->
-      (fun f_ () -> f_ ((add_new_ts2 args nt q) ()) ())
-        (fun qa -> (fun () -> (MSJ_imp qa)))
+      binda (add_new_ts2 args nt q) (fun qa -> (fun () -> (MSJ_imp qa)))
     | args, nt, MSJ_pure s ->
         (fun () -> (MSJ_pure (add_new_ts_mmasaux args nt s)))
     | args, nt, MSJ_evt a -> (fun () -> (MSJ_evt (add_new_ts_sevt args nt a)));;
@@ -15319,18 +15271,18 @@ let rec eval_since_j
                              ((mbuf_t_Cons x xsa,
                                 (mbuf_t_empty, (mbuf_t_Cons t tsa, skew))),
                                aux)))
-                    else (fun f_ () -> f_ ((add_new_ts_j args t aux) ()) ())
+                    else binda (add_new_ts_j args t aux)
                            (fun auxa ->
-                             (fun f_ () -> f_ ((join_j args x auxa) ()) ())
+                             binda (join_j args x auxa)
                                (fun auxb ->
-                                 (fun f_ () -> f_ ((result_j args auxb) ()) ())
+                                 binda (result_j args auxb)
                                    (fun r ->
                                      (fun () ->
                                        (rev (r :: rs),
  ((xsa, (mbuf_t_empty, (tsa, true))), auxb)))))))))
         | (Some y, ysa) ->
           (if skew
-            then (fun f_ () -> f_ ((add_new_table_j args y aux) ()) ())
+            then binda (add_new_table_j args y aux)
                    (eval_since_j args rs (xs, (ysa, (ts, false))))
             else (match mbuf_t_cases xs
                    with (None, _) ->
@@ -15347,29 +15299,27 @@ let rec eval_since_j
                                 (mbuf_t_Cons y ysa, (tsa, skew))),
                                aux)))
                        | (Some t, tsa) ->
-                         (fun f_ () -> f_ ((add_new_ts_j args t aux) ()) ())
+                         binda (add_new_ts_j args t aux)
                            (fun auxa ->
-                             (fun f_ () -> f_ ((join_j args x auxa) ()) ())
+                             binda (join_j args x auxa)
                                (fun auxb ->
-                                 (fun f_ () -> f_ ((add_new_table_j args y auxb)
-                                   ()) ())
+                                 binda (add_new_table_j args y auxb)
                                    (fun auxc ->
-                                     (fun f_ () -> f_ ((result_j args auxc) ())
-                                       ())
+                                     binda (result_j args auxc)
                                        (fun r ->
  eval_since_j args (r :: rs) (xsa, (ysa, (tsa, false))) auxc)))))))));;
 
 let rec mmulti_join_pos_j
   n a t x3 = match n, a, t, x3 with n, a, t, [] -> (fun () -> (a, t))
     | n, aa, ta, (a, t) :: l ->
-        (fun f_ () -> f_ ((bin_join_j n aa ta true a t) ()) ())
+        binda (bin_join_j n aa ta true a t)
           (fun tb ->
             mmulti_join_pos_j n (sup_seta (ceq_nat, ccompare_nat) aa a) tb l);;
 
 let rec mmulti_join_neg_j
   n a t x3 = match n, a, t, x3 with n, a, t, [] -> (fun () -> t)
     | n, aa, ta, (a, t) :: l ->
-        (fun f_ () -> f_ ((bin_join_j n aa ta false a t) ()) ())
+        binda (bin_join_j n aa ta false a t)
           (fun tb -> mmulti_join_neg_j n aa tb l);;
 
 let rec mmulti_join_j
@@ -15378,7 +15328,7 @@ let rec mmulti_join_j
       then (fun () -> (ed_mmulti_join n a_pos a_neg l))
       else (match zip a_pos l with [] -> (fun () -> ed_bot)
              | (a, t) :: lpos ->
-               (fun f_ () -> f_ ((mmulti_join_pos_j n a t lpos) ()) ())
+               binda (mmulti_join_pos_j n a t lpos)
                  (fun p ->
                    mmulti_join_neg_j n (fst p) (snd p)
                      (zip a_neg (drop (size_lista a_pos) l)))));;
@@ -15386,8 +15336,7 @@ let rec mmulti_join_j
 let rec mebufn_take_j
   f z buf =
     (if null buf || list_ex mbuf_t_is_empty buf then (fun () -> (z, buf))
-      else (fun f_ () -> f_ ((f (mapa (comp (comp the fst) mbuf_t_cases) buf))
-             ()) ())
+      else binda (f (mapa (comp (comp the fst) mbuf_t_cases) buf))
              (fun x ->
                mebufn_take_j f (mbuf_t_append z [x])
                  (mapa (comp snd mbuf_t_cases) buf)));;
@@ -15400,9 +15349,9 @@ let rec mebuf2_take_j
           (match mbuf_t_cases ys
             with (None, ysa) -> (fun () -> ([], (mbuf_t_Cons x xsa, ysa)))
             | (Some y, ysa) ->
-              (fun f_ () -> f_ ((f x y) ()) ())
+              binda (f x y)
                 (fun z ->
-                  (fun f_ () -> f_ ((mebuf2_take_j f (xsa, ysa)) ()) ())
+                  binda (mebuf2_take_j f (xsa, ysa))
                     (fun r -> (fun () -> (z :: fst r, snd r)))))));;
 
 let rec add_new_evt
@@ -15425,12 +15374,10 @@ let rec ins_new_tp_list
            (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              x
            in
-          (fun f_ () -> f_ ((im_lookup_h heap_nat q h x) ()) ())
+          binda (im_lookup_h heap_nat q h x)
             (fun v ->
-              (fun f_ () -> f_
-                ((if is_none v then im_update_h heap_nat q h x tp
-                   else (fun () -> q))
-                ()) ())
+              binda (if is_none v then im_update_h heap_nat q h x tp
+                      else (fun () -> q))
                 (ins_new_tp_list tp r))));;
 
 let rec upd_nested_step2
@@ -15443,13 +15390,10 @@ let rec upd_nested_step2
                 (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
                   ka
                 in
-               (fun f_ () -> f_
-                 ((im_lookup_h (heap_sum heap_nat heap_nat) m h ka) ()) ())
+               binda (im_lookup_h (heap_sum heap_nat heap_nat) m h ka)
                  (fun v ->
-                   (fun f_ () -> f_
-                     ((im_update_h (heap_sum heap_nat heap_nat) m h ka
-                        (match v with None -> d | Some a -> f a))
-                     ()) ())
+                   binda (im_update_h (heap_sum heap_nat heap_nat) m h ka
+                           (match v with None -> d | Some a -> f a))
                      (fun ma -> (fun () -> (dq_upd dq i ma)))))
         else (fun () -> dq)));;
 
@@ -15457,7 +15401,7 @@ let rec until_step2
   pa d t0 p acc =
     (let (tbl, (a2, res)) = acc in
       (if pa (fst p)
-        then (fun f_ () -> f_ ((upd_nested_step2 t0 d (max_tstp d) p a2) ()) ())
+        then binda (upd_nested_step2 t0 d (max_tstp d) p a2)
                (fun a2a ->
                  (fun () ->
                    (ed_insert (snd p) tbl,
@@ -15467,12 +15411,10 @@ let rec until_step2
 
 let rec until_elem_step2
   a1 maskL pos tp len inz p d asa acc =
-    (fun f_ () -> f_
-      ((if inz then until_step2 p d (minus_nata tp len) (tp, asa) acc
-         else (fun () -> acc))
-      ()) ())
+    binda (if inz then until_step2 p d (minus_nata tp len) (tp, asa) acc
+            else (fun () -> acc))
       (fun acca ->
-        (fun f_ () -> f_ ((im_lookup heap_nat a1 (proj_tuple maskL asa)) ()) ())
+        binda (im_lookup heap_nat a1 (proj_tuple maskL asa))
           (fun a ->
             (match a
               with None ->
@@ -15492,20 +15434,17 @@ let rec until_fold2
   a1 maskL pos tp len inz p d xs acc =
     (match xs with [] -> (fun () -> acc)
       | asa :: r ->
-        (fun f_ () -> f_ ((until_elem_step2 a1 maskL pos tp len inz p d asa acc)
-          ()) ())
+        binda (until_elem_step2 a1 maskL pos tp len inz p d asa acc)
           (until_fold2 a1 maskL pos tp len inz p d r));;
 
 let rec ins_tp_list
   tp xs q =
     (match xs with [] -> (fun () -> q)
-      | x :: r ->
-        (fun f_ () -> f_ ((im_update heap_nat q x tp) ()) ())
-          (ins_tp_list tp r));;
+      | x :: r -> binda (im_update heap_nat q x tp) (ins_tp_list tp r));;
 
 let rec add_new_dq2
   args rel1 rel2 nt aux =
-    (fun f_ () -> f_ ((shift_dq2 args nt aux) ()) ())
+    binda (shift_dq2 args nt aux)
       (fun (tp, (tss, (tables,
                         (len, (maskL,
                                 (maskR,
@@ -15521,25 +15460,19 @@ let rec add_new_dq2
                   (minus_nata nt
                     (dq_nth tstp_dqa (minus_nata t (minus_nata tp len)))))
               in
-             (fun f_ () -> f_
-               ((until_fold2 a1 maskL pos tp len inz p new_tstp
-                  (unbox ed_csorted_list_of_set_v rel2) (ed_bot, (a2, result)))
-               ()) ())
+             binda (until_fold2 a1 maskL pos tp len inz p new_tstp
+                     (unbox ed_csorted_list_of_set_v rel2)
+                     (ed_bot, (a2, result)))
                (fun (tbl, (a2a, resulta)) ->
-                 (fun f_ () -> f_
-                   ((im_new (heap_sum heap_nat heap_nat) (Z.of_int 16)) ()) ())
+                 binda (im_new (heap_sum heap_nat heap_nat) (Z.of_int 16))
                    (fun e ->
-                     (fun f_ () -> f_
-                       ((if pos
-                          then (fun f_ () -> f_
-                                 ((ins_new_tp_list tp
+                     binda (if pos
+                             then binda (ins_new_tp_list tp
+  (unbox ed_csorted_list_of_set_v rel1) a1)
+                                    (im_filter heap_nat
+                                      (fun asa -> unbox ed_member_v asa rel1))
+                             else ins_tp_list tp
                                     (unbox ed_csorted_list_of_set_v rel1) a1)
-                                 ()) ())
-                                 (im_filter heap_nat
-                                   (fun asa -> unbox ed_member_v asa rel1))
-                          else ins_tp_list tp
-                                 (unbox ed_csorted_list_of_set_v rel1) a1)
-                       ()) ())
                        (fun a1a ->
                          (fun () ->
                            (plus_nata tp one_nata,
@@ -15554,7 +15487,7 @@ let rec add_new_dq2
 let rec add_new_u_j
   args rel1 rel2 nt x4 = match args, rel1, rel2, nt, x4 with
     args, rel1, rel2, nt, MUJ_imp d ->
-      (fun f_ () -> f_ ((add_new_dq2 args rel1 rel2 nt d) ()) ())
+      binda (add_new_dq2 args rel1 rel2 nt d)
         (fun da -> (fun () -> (MUJ_imp da)))
     | args, rel1, rel2, nt, MUJ_pure a ->
         (fun () -> (MUJ_pure (add_new_muaux_dq args rel1 rel2 nt a)))
@@ -15564,44 +15497,40 @@ let rec add_new_u_j
 let rec meval_j
   j n ts db x4 = match j, n, ts, db, x4 with
     j, n, ts, db, MAnds (a_pos, a_neg, l, buf) ->
-      (fun f_ () -> f_ ((meval_j_list j n ts db l) ()) ())
+      binda (meval_j_list j n ts db l)
         (fun r ->
-          (fun f_ () -> f_
-            ((mebufn_take_j (mmulti_join_j n a_pos a_neg) mbuf_t_empty
-               (mebufn_add (mapa fst r) buf))
-            ()) ())
+          binda (mebufn_take_j (mmulti_join_j n a_pos a_neg) mbuf_t_empty
+                  (mebufn_add (mapa fst r) buf))
             (fun p ->
               (fun () ->
                 (rep_mbuf_t (fst p), MAnds (a_pos, a_neg, mapa snd r, snd p)))))
     | j, n, ts, db, MAnd (a, phi, pos, b, psi, buf) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_j j n ts db psi) ()) ())
+            binda (meval_j j n ts db psi)
               (fun (ys, psia) ->
-                (fun f_ () -> f_
-                  ((mebuf2_take_j (fun r1 -> bin_join_j n a r1 pos b)
-                     (mebuf2_add xs ys buf))
-                  ()) ())
+                binda (mebuf2_take_j (fun r1 -> bin_join_j n a r1 pos b)
+                        (mebuf2_add xs ys buf))
                   (fun r ->
                     (fun () -> (fst r, MAnd (a, phia, pos, b, psia, snd r))))))
     | j, n, ts, db, MAndAssign (phi, conf) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (unbox ed_image_v (eval_assignment conf)) xs,
                 MAndAssign (phia, conf))))
     | j, n, ts, db, MAndRel (phi, conf) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (unbox ed_filter_v (eval_constraint conf)) xs,
                 MAndRel (phia, conf))))
     | j, n, ts, db, MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux)
-        -> (fun f_ () -> f_ ((meval_j j n ts db phia) ()) ())
+        -> binda (meval_j j n ts db phia)
              (fun (asa, phiaa) ->
-               (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+               binda (meval_j j n ts db phi)
                  (fun (xs, phib) ->
-                   (fun f_ () -> f_ ((meval_j j n ts db psi) ()) ())
+                   binda (meval_j j n ts db psi)
                      (fun (ys, psia) ->
                        (fun () ->
                          (let (a, b) =
@@ -15626,9 +15555,9 @@ let rec meval_j
 (v, phiaa, buf1a, args, phib, psia, buf2a, ntsa, auxa)))))
                              b)))))
     | j, n, ts, db, MOr (phi, psi, buf) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_j j n ts db psi) ()) ())
+            binda (meval_j j n ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (zs, bufa) =
@@ -15641,7 +15570,7 @@ let rec meval_j
                      in
                     (zs, MOr (phia, psia, bufa))))))
     | j, n, ts, db, MNeg phi ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (fun r ->
@@ -15650,17 +15579,16 @@ let rec meval_j
                  xs,
                 MNeg phia)))
     | j, n, ts, db, MExists phi ->
-        (fun f_ () -> f_ ((meval_j j (suc n) ts db phi) ()) ())
+        binda (meval_j j (suc n) ts db phi)
           (fun (xs, phia) ->
             (fun () -> (mapa (unbox ed_image_v tla) xs, MExists phia)))
     | j, n, ts, db, MAgg (args, phi) ->
-        (fun f_ () -> f_
-          ((meval_j j (plus_nata (size_lista (aggargs_tys args)) n) ts db phi)
-          ()) ())
+        binda (meval_j j (plus_nata (size_lista (aggargs_tys args)) n) ts db
+                phi)
           (fun (xs, phia) ->
             (fun () -> (mapa (eval_aggargs args) xs, MAgg (args, phia))))
     | j, n, ts, db, MPrev (i, phi, first, buf, nts) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (if first && null ts
@@ -15673,7 +15601,7 @@ let rec meval_j
                        ((if first then ed_bot :: zs else zs),
                          MPrev (i, phia, false, bufa, ntsa))))))
     | j, n, ts, db, MNext (i, phi, first, nts) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (let (xsa, firsta) =
@@ -15687,34 +15615,31 @@ let rec meval_j
                  in
                 (zs, MNext (i, phia, firsta, ntsa)))))
     | j, n, ts, db, MSince (args, phi, psi, buf, aux) ->
-        (fun f_ () -> f_ ((meval_j j (args_n args) ts db phi) ()) ())
+        binda (meval_j j (args_n args) ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_j j (args_n args) ts db psi) ()) ())
+            binda (meval_j j (args_n args) ts db psi)
               (fun (ys, psia) ->
-                (fun f_ () -> f_
-                  ((eval_since_j args [] (mebuf2S_add xs ys ts buf) aux) ()) ())
+                binda (eval_since_j args [] (mebuf2S_add xs ys ts buf) aux)
                   (fun (zs, (bufa, auxa)) ->
                     (fun () -> (zs, MSince (args, phia, psia, bufa, auxa))))))
     | j, n, ts, db, MUntil (args, phi, psi, buf, nts, t, aux) ->
-        (fun f_ () -> f_ ((meval_j j (args_n args) ts db phi) ()) ())
+        binda (meval_j j (args_n args) ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_j j (args_n args) ts db psi) ()) ())
+            binda (meval_j j (args_n args) ts db psi)
               (fun (ys, psia) ->
-                (fun f_ () -> f_
-                  ((mebuf2t_take_j (add_new_u_j args) aux (mebuf2_add xs ys buf)
-                     t (mbuf_t_append nts ts))
-                  ()) ())
+                binda (mebuf2t_take_j (add_new_u_j args) aux
+                        (mebuf2_add xs ys buf) t (mbuf_t_append nts ts))
                   (fun (auxa, (bufa, (nt, ntsa))) ->
-                    (fun f_ () -> f_ ((eval_u_j args nt auxa) ()) ())
+                    binda (eval_u_j args nt auxa)
                       (fun z ->
                         (fun () ->
                           (fst z,
                             MUntil
                               (args, phia, psia, bufa, ntsa, nt, snd z)))))))
     | j, n, ts, db, MTrigger (args, phi, psi, buf, nts, aux) ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_j j n ts db psi) ()) ())
+            binda (meval_j j n ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (a, b) =
@@ -15775,9 +15700,9 @@ let rec meval_j
 and meval_j_list
   j n ts db x4 = match j, n, ts, db, x4 with j, n, ts, db, [] -> (fun () -> [])
     | j, n, ts, db, phi :: r ->
-        (fun f_ () -> f_ ((meval_j j n ts db phi) ()) ())
+        binda (meval_j j n ts db phi)
           (fun x ->
-            (fun f_ () -> f_ ((meval_j_list j n ts db r) ()) ())
+            binda (meval_j_list j n ts db r)
               (fun xs -> (fun () -> (x :: xs))));;
 
 let rec annotate_verdicts_j
@@ -15795,8 +15720,7 @@ let rec annotate_verdicts_j
 let rec mstep_j
   tdb sti =
     (let (i, (j, (m, (n, tq)))) = sti in
-      (fun f_ () -> f_ ((meval_j (plus_nata j one_nata) n [snd tdb] (fst tdb) m)
-        ()) ())
+      binda (meval_j (plus_nata j one_nata) n [snd tdb] (fst tdb) m)
         (fun (vs, ma) ->
           (fun () ->
             (let (ia, (tqa, vsa)) =
@@ -15806,30 +15730,25 @@ let rec mstep_j
 let rec ht_ins_list
   q xs =
     (match xs with [] -> (fun () -> q)
-      | y :: ys ->
-        (fun f_ () -> f_ ((ht_ins q y) ()) ()) (fun qa -> ht_ins_list qa ys));;
+      | y :: ys -> binda (ht_ins q y) (fun qa -> ht_ins_list qa ys));;
 
 let rec ht_of_list
-  xs = (fun f_ () -> f_
-         ((ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs)))) ()) ())
+  xs = binda (ht_new (Z.mul (Z.of_int 2) (integer_of_nat (size_lista xs))))
          (fun q -> ht_ins_list q xs);;
 
 let rec im_to_list _A
-  q = (fun f_ () -> f_ ((im_entries _A q) ()) ())
-        (fun kvs -> (fun () -> (mapa snd kvs)));;
+  q = binda (im_entries _A q) (fun kvs -> (fun () -> (mapa snd kvs)));;
 
 let rec ht_to_list
-  q = (fun f_ () -> f_ ((im_to_list heap_unit q) ()) ())
-        (fun kvs -> (fun () -> (mapa fst kvs)));;
+  q = binda (im_to_list heap_unit q) (fun kvs -> (fun () -> (mapa fst kvs)));;
 
 let rec since_loop (_A1, _A2, _A3, _A4, _A5)
   t x1 h y = match t, x1, h, y with t, [], h, y -> (fun () -> (h, y))
     | t, x :: xs, h, y ->
-        (fun f_ () -> f_ ((ht_lookup (_A3, _A4, _A5) heap_nat x h) ()) ())
+        binda (ht_lookup (_A3, _A4, _A5) heap_nat x h)
           (fun v ->
             (if is_none v
-              then (fun f_ () -> f_ ((ht_update (_A3, _A4, _A5) heap_nat x t h)
-                     ()) ())
+              then binda (ht_update (_A3, _A4, _A5) heap_nat x t h)
                      (fun ha ->
                        since_loop (_A1, _A2, _A3, _A4, _A5) t xs ha
                          (insert (_A1, _A2) x y))
@@ -15838,31 +15757,28 @@ let rec since_loop (_A1, _A2, _A3, _A4, _A5)
 let rec ins_loop (_A1, _A2, _A3)
   t x1 h = match t, x1, h with t, [], h -> (fun () -> h)
     | t, x :: xs, h ->
-        (fun f_ () -> f_ ((ht_update (_A1, _A2, _A3) heap_nat x t h) ()) ())
+        binda (ht_update (_A1, _A2, _A3) heap_nat x t h)
           (ins_loop (_A1, _A2, _A3) t xs);;
 
 let rec add_new_table_imp
   args x q =
     (let ((t, (gc, (mL, (mR, (dp, (di, tin)))))), (hin, hsince)) = q in
      let xs = unbox ed_csorted_list_of_set_v x in
-      (fun f_ () -> f_
-        ((since_loop
-           ((ceq_list (ceq_option ceq_event_data)),
-             (ccompare_list (ccompare_option ccompare_event_data)),
-             (equal_list (equal_option equal_event_data)),
-             (hashable_list (hashable_option hashable_event_data)),
-             (heap_list (heap_option heap_event_data)))
-           t xs hsince ed_bot)
-        ()) ())
+      binda (since_loop
+              ((ceq_list (ceq_option ceq_event_data)),
+                (ccompare_list (ccompare_option ccompare_event_data)),
+                (equal_list (equal_option equal_event_data)),
+                (hashable_list (hashable_option hashable_event_data)),
+                (heap_list (heap_option heap_event_data)))
+              t xs hsince ed_bot)
         (fun r ->
           (if memL (args_ivl args) zero_nata
-            then (fun f_ () -> f_
-                   ((ins_loop
-                      ((equal_list (equal_option equal_event_data)),
-                        (hashable_list (hashable_option hashable_event_data)),
-                        (heap_list (heap_option heap_event_data)))
-                      t xs hin)
-                   ()) ())
+            then binda (ins_loop
+                         ((equal_list (equal_option equal_event_data)),
+                           (hashable_list
+                             (hashable_option hashable_event_data)),
+                           (heap_list (heap_option heap_event_data)))
+                         t xs hin)
                    (fun hina ->
                      (fun () ->
                        ((t, (gc, (mL, (mR,
@@ -15881,32 +15797,28 @@ let rec hm_it_has_next (_A1, _A2) _B
 
 let rec hm_kv_rec (_A1, _A2) _B
   it acc =
-    (fun f_ () -> f_ ((hm_it_has_next (_A1, _A2) _B it) ()) ())
+    binda (hm_it_has_next (_A1, _A2) _B it)
       (fun b ->
-        (if b then (fun f_ () -> f_ ((hm_it_next (_A1, _A2) _B it) ()) ())
+        (if b then binda (hm_it_next (_A1, _A2) _B it)
                      (fun (kv, ita) -> hm_kv_rec (_A1, _A2) _B ita (kv :: acc))
           else (fun () -> acc)));;
 
 let rec hm_to_list (_A1, _A2) _B
-  ht = (fun f_ () -> f_ ((hm_it_init (_A1, _A2) _B ht) ()) ())
+  ht = binda (hm_it_init (_A1, _A2) _B ht)
          (fun it -> hm_kv_rec (_A1, _A2) _B it []);;
 
 let rec to_pure
   args q =
     (let ((t, (gc, (mL, (mR, (dp, (di, tin)))))), (hin, hsince)) = q in
-      (fun f_ () -> f_
-        ((hm_to_list
-           ((hashable_list (hashable_option hashable_event_data)),
-             (heap_list (heap_option heap_event_data)))
-           heap_nat hin)
-        ()) ())
+      binda (hm_to_list
+              ((hashable_list (hashable_option hashable_event_data)),
+                (heap_list (heap_option heap_event_data)))
+              heap_nat hin)
         (fun l1 ->
-          (fun f_ () -> f_
-            ((hm_to_list
-               ((hashable_list (hashable_option hashable_event_data)),
-                 (heap_list (heap_option heap_event_data)))
-               heap_nat hsince)
-            ()) ())
+          binda (hm_to_list
+                  ((hashable_list (hashable_option hashable_event_data)),
+                    (heap_list (heap_option heap_event_data)))
+                  heap_nat hsince)
             (fun l2 ->
               (fun () ->
                 (t, (gc, (mL, (mR, (dp, (di,
@@ -15938,9 +15850,9 @@ let rec add_new_table_h
   args x xa2 = match args, x, xa2 with
     args, x, MSH_imp q ->
       (if unbox ed_finite_v x
-        then (fun f_ () -> f_ ((add_new_table_imp args x q) ()) ())
+        then binda (add_new_table_imp args x q)
                (fun qa -> (fun () -> (MSH_imp qa)))
-        else (fun f_ () -> f_ ((to_pure args q) ()) ())
+        else binda (to_pure args q)
                (fun s ->
                  (fun () ->
                    (MSH_pure (add_new_table_mmasaux args x (s, None))))))
@@ -15950,11 +15862,10 @@ let rec add_new_table_h
 let rec upd_loop (_A1, _A2, _A3, _A4, _A5)
   t x1 hs h y = match t, x1, hs, h, y with t, [], hs, h, y -> (fun () -> (h, y))
     | t, x :: xs, hs, h, y ->
-        (fun f_ () -> f_ ((ht_lookup (_A3, _A4, _A5) heap_nat x hs) ()) ())
+        binda (ht_lookup (_A3, _A4, _A5) heap_nat x hs)
           (fun v ->
             (if (match v with None -> false | Some ta -> less_eq_nat ta t)
-              then (fun f_ () -> f_ ((ht_update (_A3, _A4, _A5) heap_nat x t h)
-                     ()) ())
+              then binda (ht_update (_A3, _A4, _A5) heap_nat x t h)
                      (fun ha ->
                        upd_loop (_A1, _A2, _A3, _A4, _A5) t xs hs ha
                          (insert (_A1, _A2) x y))
@@ -15963,15 +15874,13 @@ let rec upd_loop (_A1, _A2, _A3, _A4, _A5)
 let rec move_loop
   x0 hs h y = match x0, hs, h, y with [], hs, h, y -> (fun () -> (h, y))
     | (t, x) :: xs, hs, h, y ->
-        (fun f_ () -> f_
-          ((upd_loop
-             ((ceq_list (ceq_option ceq_event_data)),
-               (ccompare_list (ccompare_option ccompare_event_data)),
-               (equal_list (equal_option equal_event_data)),
-               (hashable_list (hashable_option hashable_event_data)),
-               (heap_list (heap_option heap_event_data)))
-             t (unbox ed_csorted_list_of_set_v x) hs h y)
-          ()) ())
+        binda (upd_loop
+                ((ceq_list (ceq_option ceq_event_data)),
+                  (ccompare_list (ccompare_option ccompare_event_data)),
+                  (equal_list (equal_option equal_event_data)),
+                  (hashable_list (hashable_option hashable_event_data)),
+                  (heap_list (heap_option heap_event_data)))
+                t (unbox ed_csorted_list_of_set_v x) hs h y)
           (fun r -> move_loop xs hs (fst r) (snd r));;
 
 let rec add_new_ts_impa
@@ -15980,7 +15889,7 @@ let rec add_new_ts_impa
      let i = args_ivl args in
      let p = takedropWhile_queue (fun (t, _) -> memL i (minus_nata nt t)) dp in
      let dia = fold append_queue (snd p) di in
-      (fun f_ () -> f_ ((move_loop (snd p) hsince hin ed_bot) ()) ())
+      binda (move_loop (snd p) hsince hin ed_bot)
         (fun r ->
           (fun () ->
             ((nt, (gc, (mL, (mR, (fst p,
@@ -15990,10 +15899,10 @@ let rec add_new_ts_impa
 let rec filter_loop (_A1, _A2) (_B1, _B2, _B3, _B4, _B5)
   t x1 h y = match t, x1, h, y with t, [], h, y -> (fun () -> (h, y))
     | t, x :: xs, h, y ->
-        (fun f_ () -> f_ ((ht_lookup (_B3, _B4, _B5) _A2 x h) ()) ())
+        binda (ht_lookup (_B3, _B4, _B5) _A2 x h)
           (fun v ->
             (if equal_optiona _A1 v (Some t)
-              then (fun f_ () -> f_ ((ht_delete (_B3, _B4, _B5) _A2 x h) ()) ())
+              then binda (ht_delete (_B3, _B4, _B5) _A2 x h)
                      (fun ha ->
                        filter_loop (_A1, _A2) (_B1, _B2, _B3, _B4, _B5) t xs ha
                          (insert (_B1, _B2) x y))
@@ -16002,15 +15911,13 @@ let rec filter_loop (_A1, _A2) (_B1, _B2, _B3, _B4, _B5)
 let rec expire_loop
   x0 h y = match x0, h, y with [], h, y -> (fun () -> (h, y))
     | (t, x) :: xs, h, y ->
-        (fun f_ () -> f_
-          ((filter_loop (equal_nat, heap_nat)
-             ((ceq_list (ceq_option ceq_event_data)),
-               (ccompare_list (ccompare_option ccompare_event_data)),
-               (equal_list (equal_option equal_event_data)),
-               (hashable_list (hashable_option hashable_event_data)),
-               (heap_list (heap_option heap_event_data)))
-             t (unbox ed_csorted_list_of_set_v x) h y)
-          ()) ())
+        binda (filter_loop (equal_nat, heap_nat)
+                ((ceq_list (ceq_option ceq_event_data)),
+                  (ccompare_list (ccompare_option ccompare_event_data)),
+                  (equal_list (equal_option equal_event_data)),
+                  (hashable_list (hashable_option hashable_event_data)),
+                  (heap_list (heap_option heap_event_data)))
+                t (unbox ed_csorted_list_of_set_v x) h y)
           (fun r -> expire_loop xs (fst r) (snd r));;
 
 let rec shift_end_imp
@@ -16022,7 +15929,7 @@ let rec shift_end_imp
      let p =
        takedropWhile_queue (fun (ta, _) -> not (memR i (minus_nata nt ta))) di
        in
-      (fun f_ () -> f_ ((expire_loop (snd p) hin ed_bot) ()) ())
+      binda (expire_loop (snd p) hin ed_bot)
         (fun r ->
           (fun () ->
             ((t, (gc, (mL, (mR, (dpa, (fst p,
@@ -16030,15 +15937,12 @@ unbox ed_minus_v tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec add_new_ts_imp
-  args nt q =
-    (fun f_ () -> f_ ((shift_end_imp args nt q) ()) ())
-      (add_new_ts_impa args nt);;
+  args nt q = binda (shift_end_imp args nt q) (add_new_ts_impa args nt);;
 
 let rec add_new_ts_h
   args nt x2 = match args, nt, x2 with
     args, nt, MSH_imp q ->
-      (fun f_ () -> f_ ((add_new_ts_imp args nt q) ()) ())
-        (fun qa -> (fun () -> (MSH_imp qa)))
+      binda (add_new_ts_imp args nt q) (fun qa -> (fun () -> (MSH_imp qa)))
     | args, nt, MSH_pure s ->
         (fun () -> (MSH_pure (add_new_ts_mmasaux args nt s)));;
 
@@ -16052,7 +15956,7 @@ let rec del_loop (_A1, _A2, _A3) _B
   p x1 h = match p, x1, h with p, [], h -> (fun () -> h)
     | p, k :: ks, h ->
         (if p k then del_loop (_A1, _A2, _A3) _B p ks h
-          else (fun f_ () -> f_ ((ht_delete (_A1, _A2, _A3) _B k h) ()) ())
+          else binda (ht_delete (_A1, _A2, _A3) _B k h)
                  (del_loop (_A1, _A2, _A3) _B p ks));;
 
 let rec join_imp
@@ -16063,20 +15967,17 @@ let rec join_imp
         then (if equal_boola pos
                    (unbox ed_member_v (replicate (size_lista mL) None) x)
                then (fun () -> q)
-               else (fun f_ () -> f_
-                      ((ht_newa
-                         ((hashable_list (hashable_option hashable_event_data)),
-                           (heap_list (heap_option heap_event_data)))
-                         heap_nat)
-                      ()) ())
+               else binda (ht_newa
+                            ((hashable_list
+                               (hashable_option hashable_event_data)),
+                              (heap_list (heap_option heap_event_data)))
+                            heap_nat)
                       (fun hina ->
-                        (fun f_ () -> f_
-                          ((ht_newa
-                             ((hashable_list
-                                (hashable_option hashable_event_data)),
-                               (heap_list (heap_option heap_event_data)))
-                             heap_nat)
-                          ()) ())
+                        binda (ht_newa
+                                ((hashable_list
+                                   (hashable_option hashable_event_data)),
+                                  (heap_list (heap_option heap_event_data)))
+                                heap_nat)
                           (fun hsincea ->
                             (fun () ->
                               ((t, (gc, (mL, (mR, (dp, (di, ed_bot)))))),
@@ -16084,32 +15985,27 @@ let rec join_imp
         else (let in_del =
                 (if pos then unbox ed_minus_v tin x else unbox ed_inter_v tin x)
                 in
-               (fun f_ () -> f_
-                 ((del_loop
-                    ((equal_list (equal_option equal_event_data)),
-                      (hashable_list (hashable_option hashable_event_data)),
-                      (heap_list (heap_option heap_event_data)))
-                    heap_nat (fun k -> not (unbox ed_member_v k in_del))
-                    (unbox ed_csorted_list_of_set_v in_del) hin)
-                 ()) ())
+               binda (del_loop
+                       ((equal_list (equal_option equal_event_data)),
+                         (hashable_list (hashable_option hashable_event_data)),
+                         (heap_list (heap_option heap_event_data)))
+                       heap_nat (fun k -> not (unbox ed_member_v k in_del))
+                       (unbox ed_csorted_list_of_set_v in_del) hin)
                  (fun hina ->
-                   (fun f_ () -> f_
-                     ((hm_to_list
-                        ((hashable_list (hashable_option hashable_event_data)),
-                          (heap_list (heap_option heap_event_data)))
-                        heap_nat hsince)
-                     ()) ())
+                   binda (hm_to_list
+                           ((hashable_list
+                              (hashable_option hashable_event_data)),
+                             (heap_list (heap_option heap_event_data)))
+                           heap_nat hsince)
                      (fun ks ->
-                       (fun f_ () -> f_
-                         ((del_loop
-                            ((equal_list (equal_option equal_event_data)),
-                              (hashable_list
-                                (hashable_option hashable_event_data)),
-                              (heap_list (heap_option heap_event_data)))
-                            heap_nat
-                            (jc (ceq_event_data, ccompare_event_data) pos x)
-                            (mapa fst ks) hsince)
-                         ()) ())
+                       binda (del_loop
+                               ((equal_list (equal_option equal_event_data)),
+                                 (hashable_list
+                                   (hashable_option hashable_event_data)),
+                                 (heap_list (heap_option heap_event_data)))
+                               heap_nat
+                               (jc (ceq_event_data, ccompare_event_data) pos x)
+                               (mapa fst ks) hsince)
                          (fun hsincea ->
                            (fun () ->
                              ((t, (gc, (mL,
@@ -16122,21 +16018,17 @@ let rec gc_imp
          fold (fun p -> unbox ed_union_v (snd p)) (linearize dp @ linearize di)
            ed_bot
          in
-        (fun f_ () -> f_
-          ((hm_to_list
-             ((hashable_list (hashable_option hashable_event_data)),
-               (heap_list (heap_option heap_event_data)))
-             heap_nat hsince)
-          ()) ())
+        binda (hm_to_list
+                ((hashable_list (hashable_option hashable_event_data)),
+                  (heap_list (heap_option heap_event_data)))
+                heap_nat hsince)
           (fun ks ->
-            (fun f_ () -> f_
-              ((del_loop
-                 ((equal_list (equal_option equal_event_data)),
-                   (hashable_list (hashable_option hashable_event_data)),
-                   (heap_list (heap_option heap_event_data)))
-                 heap_nat (fun k -> unbox ed_member_v k all) (mapa fst ks)
-                 hsince)
-              ()) ())
+            binda (del_loop
+                    ((equal_list (equal_option equal_event_data)),
+                      (hashable_list (hashable_option hashable_event_data)),
+                      (heap_list (heap_option heap_event_data)))
+                    heap_nat (fun k -> unbox ed_member_v k all) (mapa fst ks)
+                    hsince)
               (fun hsincea ->
                 (fun () ->
                   ((t, (t, (mL, (mR, (dp, (di, tin)))))), (hin, hsincea))))));;
@@ -16145,14 +16037,12 @@ let rec gc_join_imp
   args x q =
     (let ((t, (gc, (_, (_, (_, (_, _)))))), (_, _)) = q in
       (if not (memR (args_ivl args) (minus_nata t gc))
-        then (fun f_ () -> f_ ((gc_imp q) ()) ()) (join_imp args x)
-        else join_imp args x q));;
+        then binda (gc_imp q) (join_imp args x) else join_imp args x q));;
 
 let rec join_h
   args x xa2 = match args, x, xa2 with
     args, x, MSH_imp q ->
-      (fun f_ () -> f_ ((gc_join_imp args x q) ()) ())
-        (fun qa -> (fun () -> (MSH_imp qa)))
+      binda (gc_join_imp args x q) (fun qa -> (fun () -> (MSH_imp qa)))
     | args, x, MSH_pure s -> (fun () -> (MSH_pure (gc_join_mmasaux args x s)));;
 
 let rec eval_since_imp
@@ -16177,11 +16067,11 @@ let rec eval_since_imp
                            ((mbuf_t_Cons x xsa,
                               (mbuf_t_empty, (mbuf_t_Cons t tsa, skew))),
                              aux)))
-                  else (fun f_ () -> f_ ((add_new_ts_h args t aux) ()) ())
+                  else binda (add_new_ts_h args t aux)
                          (fun auxa ->
-                           (fun f_ () -> f_ ((join_h args x auxa) ()) ())
+                           binda (join_h args x auxa)
                              (fun auxb ->
-                               (fun f_ () -> f_ ((result_h args auxb) ()) ())
+                               binda (result_h args auxb)
                                  (fun r ->
                                    (fun () ->
                                      (rev (r :: rs),
@@ -16189,7 +16079,7 @@ let rec eval_since_imp
  auxb)))))))))
       | (Some y, ysa) ->
         (if skew
-          then (fun f_ () -> f_ ((add_new_table_h args y aux) ()) ())
+          then binda (add_new_table_h args y aux)
                  (eval_since_imp args rs (xs, (ysa, (ts, false))))
           else (match mbuf_t_cases xs
                  with (None, _) ->
@@ -16205,15 +16095,13 @@ let rec eval_since_imp
                               (mbuf_t_Cons y ysa, (tsa, skew))),
                              aux)))
                      | (Some t, tsa) ->
-                       (fun f_ () -> f_ ((add_new_ts_h args t aux) ()) ())
+                       binda (add_new_ts_h args t aux)
                          (fun auxa ->
-                           (fun f_ () -> f_ ((join_h args x auxa) ()) ())
+                           binda (join_h args x auxa)
                              (fun auxb ->
-                               (fun f_ () -> f_ ((add_new_table_h args y auxb)
-                                 ()) ())
+                               binda (add_new_table_h args y auxb)
                                  (fun auxc ->
-                                   (fun f_ () -> f_ ((result_h args auxc) ())
-                                     ())
+                                   binda (result_h args auxc)
                                      (fun r ->
                                        eval_since_imp args (r :: rs)
  (xsa, (ysa, (tsa, false))) auxc))))))));;
@@ -16221,9 +16109,9 @@ let rec eval_since_imp
 let rec meval_imp
   j n ts db x4 = match j, n, ts, db, x4 with
     j, n, ts, db, MAnd (a, phi, pos, b, psi, buf) ->
-      (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+      binda (meval_imp j n ts db phi)
         (fun (xs, phia) ->
-          (fun f_ () -> f_ ((meval_imp j n ts db psi) ()) ())
+          binda (meval_imp j n ts db psi)
             (fun (ys, psia) ->
               (fun () ->
                 (let (zs, bufa) =
@@ -16232,23 +16120,23 @@ let rec meval_imp
                    in
                   (zs, MAnd (a, phia, pos, b, psia, bufa))))))
     | j, n, ts, db, MAndAssign (phi, conf) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (unbox ed_image_v (eval_assignment conf)) xs,
                 MAndAssign (phia, conf))))
     | j, n, ts, db, MAndRel (phi, conf) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (unbox ed_filter_v (eval_constraint conf)) xs,
                 MAndRel (phia, conf))))
     | j, n, ts, db, MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux)
-        -> (fun f_ () -> f_ ((meval_imp j n ts db phia) ()) ())
+        -> binda (meval_imp j n ts db phia)
              (fun (asa, phiaa) ->
-               (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+               binda (meval_imp j n ts db phi)
                  (fun (xs, phib) ->
-                   (fun f_ () -> f_ ((meval_imp j n ts db psi) ()) ())
+                   binda (meval_imp j n ts db psi)
                      (fun (ys, psia) ->
                        (fun () ->
                          (let (a, b) =
@@ -16273,9 +16161,9 @@ let rec meval_imp
 (v, phiaa, buf1a, args, phib, psia, buf2a, ntsa, auxa)))))
                              b)))))
     | j, n, ts, db, MOr (phi, psi, buf) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_imp j n ts db psi) ()) ())
+            binda (meval_imp j n ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (zs, bufa) =
@@ -16288,7 +16176,7 @@ let rec meval_imp
                      in
                     (zs, MOr (phia, psia, bufa))))))
     | j, n, ts, db, MNeg phi ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (fun r ->
@@ -16297,17 +16185,16 @@ let rec meval_imp
                  xs,
                 MNeg phia)))
     | j, n, ts, db, MExists phi ->
-        (fun f_ () -> f_ ((meval_imp j (suc n) ts db phi) ()) ())
+        binda (meval_imp j (suc n) ts db phi)
           (fun (xs, phia) ->
             (fun () -> (mapa (unbox ed_image_v tla) xs, MExists phia)))
     | j, n, ts, db, MAgg (args, phi) ->
-        (fun f_ () -> f_
-          ((meval_imp j (plus_nata (size_lista (aggargs_tys args)) n) ts db phi)
-          ()) ())
+        binda (meval_imp j (plus_nata (size_lista (aggargs_tys args)) n) ts db
+                phi)
           (fun (xs, phia) ->
             (fun () -> (mapa (eval_aggargs args) xs, MAgg (args, phia))))
     | j, n, ts, db, MPrev (i, phi, first, buf, nts) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (if first && null ts
@@ -16320,7 +16207,7 @@ let rec meval_imp
                        ((if first then ed_bot :: zs else zs),
                          MPrev (i, phia, false, bufa, ntsa))))))
     | j, n, ts, db, MNext (i, phi, first, nts) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (let (xsa, firsta) =
@@ -16334,19 +16221,17 @@ let rec meval_imp
                  in
                 (zs, MNext (i, phia, firsta, ntsa)))))
     | j, n, ts, db, MSince (args, phi, psi, buf, aux) ->
-        (fun f_ () -> f_ ((meval_imp j (args_n args) ts db phi) ()) ())
+        binda (meval_imp j (args_n args) ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_imp j (args_n args) ts db psi) ()) ())
+            binda (meval_imp j (args_n args) ts db psi)
               (fun (ys, psia) ->
-                (fun f_ () -> f_
-                  ((eval_since_imp args [] (mebuf2S_add xs ys ts buf) aux) ())
-                  ())
+                binda (eval_since_imp args [] (mebuf2S_add xs ys ts buf) aux)
                   (fun (zs, (bufa, auxa)) ->
                     (fun () -> (zs, MSince (args, phia, psia, bufa, auxa))))))
     | j, n, ts, db, MUntil (args, phi, psi, buf, nts, t, aux) ->
-        (fun f_ () -> f_ ((meval_imp j (args_n args) ts db phi) ()) ())
+        binda (meval_imp j (args_n args) ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_imp j (args_n args) ts db psi) ()) ())
+            binda (meval_imp j (args_n args) ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (auxa, (bufa, (nt, ntsa))) =
@@ -16356,9 +16241,9 @@ let rec meval_imp
                    let (zs, auxb) = eval_muaux_dq args nt auxa in
                     (zs, MUntil (args, phia, psia, bufa, ntsa, nt, auxb))))))
     | j, n, ts, db, MTrigger (args, phi, psi, buf, nts, aux) ->
-        (fun f_ () -> f_ ((meval_imp j n ts db phi) ()) ())
+        binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
-            (fun f_ () -> f_ ((meval_imp j n ts db psi) ()) ())
+            binda (meval_imp j n ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (a, b) =
@@ -16434,8 +16319,7 @@ let rec annotate_verdicts_h
 let rec mstep_imp
   tdb sti =
     (let (i, (j, (m, (n, tq)))) = sti in
-      (fun f_ () -> f_
-        ((meval_imp (plus_nata j one_nata) n [snd tdb] (fst tdb) m) ()) ())
+      binda (meval_imp (plus_nata j one_nata) n [snd tdb] (fst tdb) m)
         (fun (vs, ma) ->
           (fun () ->
             (let (ia, (tqa, vsa)) =
@@ -16833,19 +16717,15 @@ let rec convert_multiway
 
 let rec init_imp
   args =
-    (fun f_ () -> f_
-      ((ht_newa
-         ((hashable_list (hashable_option hashable_event_data)),
-           (heap_list (heap_option heap_event_data)))
-         heap_nat)
-      ()) ())
+    binda (ht_newa
+            ((hashable_list (hashable_option hashable_event_data)),
+              (heap_list (heap_option heap_event_data)))
+            heap_nat)
       (fun hin ->
-        (fun f_ () -> f_
-          ((ht_newa
-             ((hashable_list (hashable_option hashable_event_data)),
-               (heap_list (heap_option heap_event_data)))
-             heap_nat)
-          ()) ())
+        binda (ht_newa
+                ((hashable_list (hashable_option hashable_event_data)),
+                  (heap_list (heap_option heap_event_data)))
+                heap_nat)
           (fun hsince ->
             (fun () ->
               ((zero_nata,
@@ -16859,71 +16739,67 @@ let rec init_h
   args =
     (if is_none (args_agg args) &&
           is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
-      then (fun f_ () -> f_ ((init_imp args) ()) ())
-             (fun q -> (fun () -> (MSH_imp q)))
+      then binda (init_imp args) (fun q -> (fun () -> (MSH_imp q)))
       else (fun () -> (MSH_pure (init_mmasaux args))));;
 
 let rec mformula_imp
   = function
     MAnd (a, phi, pos, b, psi, buf) ->
-      (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+      binda (mformula_imp phi)
         (fun phi_i ->
-          (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+          binda (mformula_imp psi)
             (fun psi_i -> (fun () -> (MAnd (a, phi_i, pos, b, psi_i, buf)))))
     | MAndAssign (phi, conf) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i -> (fun () -> (MAndAssign (phi_i, conf))))
     | MAndRel (phi, conf) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i -> (fun () -> (MAndRel (phi_i, conf))))
     | MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux) ->
-        (fun f_ () -> f_ ((mformula_imp phia) ()) ())
+        binda (mformula_imp phia)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+            binda (mformula_imp phi)
               (fun phi_ia ->
-                (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+                binda (mformula_imp psi)
                   (fun psi_i ->
                     (fun () ->
                       (MAndTrigger
                         (v, phi_i, buf1, args, phi_ia, psi_i, buf2, nts,
                           aux))))))
     | MOr (phi, psi, buf) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+            binda (mformula_imp psi)
               (fun psi_i -> (fun () -> (MOr (phi_i, psi_i, buf)))))
     | MNeg phi ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
-          (fun phi_i -> (fun () -> (MNeg phi_i)))
+        binda (mformula_imp phi) (fun phi_i -> (fun () -> (MNeg phi_i)))
     | MExists phi ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
-          (fun phi_i -> (fun () -> (MExists phi_i)))
+        binda (mformula_imp phi) (fun phi_i -> (fun () -> (MExists phi_i)))
     | MAgg (args, phi) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
-          (fun phi_i -> (fun () -> (MAgg (args, phi_i))))
+        binda (mformula_imp phi) (fun phi_i -> (fun () -> (MAgg (args, phi_i))))
     | MPrev (i, phi, first, buf, nts) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i -> (fun () -> (MPrev (i, phi_i, first, buf, nts))))
     | MNext (i, phi, first, nts) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i -> (fun () -> (MNext (i, phi_i, first, nts))))
     | MSince (args, phi, psi, buf, aux) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+            binda (mformula_imp psi)
               (fun psi_i ->
-                (fun f_ () -> f_ ((init_h args) ()) ())
+                binda (init_h args)
                   (fun q -> (fun () -> (MSince (args, phi_i, psi_i, buf, q))))))
     | MUntil (args, phi, psi, buf, nts, t, aux) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+            binda (mformula_imp psi)
               (fun psi_i ->
                 (fun () -> (MUntil (args, phi_i, psi_i, buf, nts, t, aux)))))
     | MTrigger (args, phi, psi, buf, nts, aux) ->
-        (fun f_ () -> f_ ((mformula_imp phi) ()) ())
+        binda (mformula_imp phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_imp psi) ()) ())
+            binda (mformula_imp psi)
               (fun psi_i ->
                 (fun () -> (MTrigger (args, phi_i, psi_i, buf, nts, aux)))))
     | MRel v -> (fun () -> (embed (MRel v)))
@@ -16947,69 +16823,67 @@ let rec vminit_safe
 let rec mformula_j_of
   = function
     MAnds (a_pos, a_neg, l, buf) ->
-      (fun f_ () -> f_ ((mformula_j_of_list l) ()) ())
+      binda (mformula_j_of_list l)
         (fun li -> (fun () -> (MAnds (a_pos, a_neg, li, buf))))
     | MAnd (a, phi, pos, b, psi, buf) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+            binda (mformula_j_of psi)
               (fun psi_i -> (fun () -> (MAnd (a, phi_i, pos, b, psi_i, buf)))))
     | MAndAssign (phi, conf) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i -> (fun () -> (MAndAssign (phi_i, conf))))
     | MAndRel (phi, conf) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i -> (fun () -> (MAndRel (phi_i, conf))))
     | MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux) ->
-        (fun f_ () -> f_ ((mformula_j_of phia) ()) ())
+        binda (mformula_j_of phia)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+            binda (mformula_j_of phi)
               (fun phi_ia ->
-                (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+                binda (mformula_j_of psi)
                   (fun psi_i ->
                     (fun () ->
                       (MAndTrigger
                         (v, phi_i, buf1, args, phi_ia, psi_i, buf2, nts,
                           aux))))))
     | MOr (phi, psi, buf) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+            binda (mformula_j_of psi)
               (fun psi_i -> (fun () -> (MOr (phi_i, psi_i, buf)))))
     | MNeg phi ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
-          (fun phi_i -> (fun () -> (MNeg phi_i)))
+        binda (mformula_j_of phi) (fun phi_i -> (fun () -> (MNeg phi_i)))
     | MExists phi ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
-          (fun phi_i -> (fun () -> (MExists phi_i)))
+        binda (mformula_j_of phi) (fun phi_i -> (fun () -> (MExists phi_i)))
     | MAgg (args, phi) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i -> (fun () -> (MAgg (args, phi_i))))
     | MPrev (i, phi, first, buf, nts) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i -> (fun () -> (MPrev (i, phi_i, first, buf, nts))))
     | MNext (i, phi, first, nts) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i -> (fun () -> (MNext (i, phi_i, first, nts))))
     | MSince (args, phi, psi, buf, aux) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+            binda (mformula_j_of psi)
               (fun psi_i ->
-                (fun f_ () -> f_ ((init_j args) ()) ())
+                binda (init_j args)
                   (fun q -> (fun () -> (MSince (args, phi_i, psi_i, buf, q))))))
     | MUntil (args, phi, psi, buf, nts, t, aux) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+            binda (mformula_j_of psi)
               (fun psi_i ->
-                (fun f_ () -> f_ ((init_u_j args) ()) ())
+                binda (init_u_j args)
                   (fun d ->
                     (fun () -> (MUntil (args, phi_i, psi_i, buf, nts, t, d))))))
     | MTrigger (args, phi, psi, buf, nts, aux) ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of psi) ()) ())
+            binda (mformula_j_of psi)
               (fun psi_i ->
                 (fun () -> (MTrigger (args, phi_i, psi_i, buf, nts, aux)))))
     | MRel v -> (fun () -> (embeda (MRel v)))
@@ -17028,18 +16902,18 @@ let rec mformula_j_of
 and mformula_j_of_list
   = function [] -> (fun () -> [])
     | phi :: r ->
-        (fun f_ () -> f_ ((mformula_j_of phi) ()) ())
+        binda (mformula_j_of phi)
           (fun phi_i ->
-            (fun f_ () -> f_ ((mformula_j_of_list r) ()) ())
+            binda (mformula_j_of_list r)
               (fun phi_s -> (fun () -> (phi_i :: phi_s))));;
 
 let rec minit_safe_j
-  phi = (fun f_ () -> f_ ((mformula_j_of (meinit0 (nfv phi) phi)) ()) ())
+  phi = binda (mformula_j_of (meinit0 (nfv phi) phi))
           (fun m ->
             (fun () -> (zero_nata, (zero_nata, (m, (nfv phi, empty_queue))))));;
 
 let rec minit_safe_imp
-  phi = (fun f_ () -> f_ ((mformula_imp (meinit0 (nfv phi) phi)) ()) ())
+  phi = binda (mformula_imp (meinit0 (nfv phi) phi))
           (fun m ->
             (fun () -> (zero_nata, (zero_nata, (m, (nfv phi, empty_queue))))));;
 

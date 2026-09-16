@@ -46,6 +46,23 @@ text \<open>
   end exposes it as @{text "-heap_join_min"}.
 \<close>
 
+text \<open>
+  The monad's bind is printed by Imperative HOL as a two-argument
+  lambda applied to one argument, @{text "(fun f_ () -> f_ (m ()) ()) f"}, which OCaml compiles
+  as a partial application: two closures allocated for every bind.  Naming both arguments of the
+  inner lambda makes it a saturated application, which OCaml calls directly, and leaves one
+  closure.  The monad's behaviour is unchanged; only the shape of the generated code is.
+\<close>
+
+definition bind_flip :: "('a \<Rightarrow> 'b Heap) \<Rightarrow> 'a Heap \<Rightarrow> 'b Heap" where
+  "bind_flip f m = Heap_Monad.bind m f"
+
+lemma bind_flip_code[code]: "Heap_Monad.bind m f = bind_flip f m"
+  by (simp add: bind_flip_def)
+
+code_printing constant Heap_Monad.bind \<rightharpoonup> (OCaml)
+| constant bind_flip \<rightharpoonup> (OCaml) "(fun/ ()/ ->/ (_)/ ((_)/ ())/ ())"
+
 code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
 \<open>module ConfigImp : sig
   val heap_join_min : int ref

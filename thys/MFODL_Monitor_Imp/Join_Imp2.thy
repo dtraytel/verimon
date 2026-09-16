@@ -53,6 +53,18 @@ text \<open>
 
 type_synonym jidx = "(event_data tuple list) imap"
 
+text \<open>
+  The operations on a heap map take the value type's @{class heap} dictionary, and the code
+  generator builds it at every call: on the join of @{text "A(x,y) AND (ONCE[0,20] B(y,z))"} the
+  nested type representations of a list and of an option are 28.5 and 14.4 million words, and
+  with the monadic closures around them the dictionary is 42\% of everything the join allocates.  The index's value type is closed, so the dictionary can be built once.
+\<close>
+
+setup \<open>Monomorphize.box_cmd
+  [("im_lookup_proj", "jidx_lookup_v", ["event_data tuple list"]),
+   ("im_lookup_h", "jidx_lookup_h_v", ["event_data tuple list"]),
+   ("im_update_h", "jidx_update_h_v", ["event_data tuple list"])]\<close>
+
 partial_function (heap) idx_ins_list :: "bool list \<Rightarrow> event_data tuple list \<Rightarrow> jidx \<Rightarrow> jidx Heap" where
   [code]:
   "idx_ins_list msk xs q = (case xs of [] \<Rightarrow> return q

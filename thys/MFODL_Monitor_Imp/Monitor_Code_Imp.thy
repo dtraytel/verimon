@@ -12,6 +12,24 @@ text \<open>
   end applies once per time point, in order (see @{theory MFODL_Monitor_Imp.Monitor_Imp}).
 \<close>
 
+text \<open>
+  Imperative HOL prints the monad's bind as a two-argument lambda applied to one argument,
+  @{text "(fun f_ () -> f_ (m ()) ()) f"}, which OCaml compiles as a partial application: two
+  closures for every bind.  On the join of @{text "A(x,y) AND (ONCE[0,20] B(y,z))"} that is 104
+  million words, a third of everything the join allocates.  Printing it as
+  @{text "(fun () -> f (m ()) ())"} leaves one closure, and the placeholders of a printing are
+  filled in argument order, so the flipped @{const bind_flip} is what carries it.
+
+  The declaration belongs here rather than next to that definition: this theory merges the
+  branch that carries it with the one that carries Imperative HOL's own, and the merge keeps
+  the original unless it is superseded in the theory that exports the code.
+\<close>
+
+code_printing constant Heap_Monad.bind \<rightharpoonup> (OCaml)
+| constant bind_flip \<rightharpoonup> (OCaml) "(fun/ ()/ ->/ (_)/ ((_)/ ())/ ())"
+
+declare bind_flip_code[code]
+
 export_code
   (*basic types*)
   nat_of_integer integer_of_nat int_of_integer integer_of_int enat
