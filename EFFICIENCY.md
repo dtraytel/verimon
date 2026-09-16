@@ -2411,3 +2411,120 @@ Sections 15, 17 and 18 have been about, are down to a few percent. **The next th
 not a comparison but an allocation**, and the largest single candidate is that `nat` is a boxed
 constructor around an arbitrary-precision integer, so every subtraction on a time point allocates
 twice where MonPoly's machine integer allocates not at all.
+
+## 19. Tuples without their empty columns
+
+### 19.1 What the holes are
+
+A table of the monitor is a set of tuples all of one width, the number of free variables of the
+whole formula, and `wf_tuple n V x` says that `x` carries `None` at exactly the positions outside
+`V`, the free variables of the subformula that produced the table. Those positions are therefore
+the same for every tuple of a table and are known from the formula alone -- which is what makes
+deleting them possible, and what makes the column list have to live in the formula.
+
+Deleting a fixed set of positions from every tuple of a table does not change their order. So
+everything that only compares or collects tuples is untouched by the change, and in particular
+the Since and Until structures of Sections 16 and 17 need no change at all: they read
+`args_ivl` and `args_pos` and nothing else. What does need the column list is what reads a tuple
+by position -- the join, the projection, the predicate and the constraints.
+
+Instrumenting the comparator said the holes were worth removing: of the positions it walks, 65%
+are holes on P2, 64% on P3, 45% on the complex formula, 50% on the aggregation. It also confirmed
+the invariant the whole idea rests on, which is worth having as a measurement and not only as a
+lemma: **in 45 million comparisons, not once did a comparison meet a hole on one side and a value
+on the other.**
+
+### 19.2 The theory
+
+`thys/MFODL_Monitor_Imp/Dense_Imp.thy`, a new pure theory in the child session, so the base
+session is not rebuilt. It carries the compacting projection and its inverse, the masks, the
+merge plan of two column lists, the dense join of two tuples, a binary join with three shapes
+(the right operand's columns inside the left's, which is the anti-join and the intersection; the
+left's inside the right's; and otherwise an index on the shared columns), and a formula with the
+columns at every node.
+
+A constructor the theory does not handle yet is wrapped in `DPure`, which evaluates it with the
+existing function and deletes the holes from its result. The two representations therefore mix,
+and the fragment can grow one constructor at a time; today it is everything except aggregation,
+the multi-way conjunction, the regex operators, `LET`, and the Since and Until outside the
+closed-left-operand case. At the root the columns are all of them, so the verdicts have the width
+the printer expects and nothing is converted there.
+
+Two cases fall out that are not merely narrower tuples:
+
+- A predicate whose arguments are distinct variables in increasing order needs **no conversion at
+  all** -- the database table already is the dense table, where today `simple_match` rebuilds
+  every event as a width-`n` tuple.
+- An existential quantifier over a variable the body does not mention becomes a **relabelling**
+  instead of a rebuild of the whole table.
+
+Behind `-dense`; 678 differential invocations agree with the verified kernel, cram suite green.
+
+### 19.3 What it is worth, with everything else held fixed
+
+The first measurement of `-dense` against the plain kernel said 24% on P2, which is wrong as an
+attribution: `-dense` reaches its Since and Until through `init_j`, so it also picks up the
+Section 16 structures, which on the pure path one otherwise only gets with `-heap_maps`. The
+comparison that isolates the representation runs the same evaluator and the same structures with
+sparse tuples and the pure join (`-heap_maps -heap_join_min` set beyond every table):
+
+| | sparse tuples | dense tuples | |
+|---|---:|---:|---:|
+| P2 | 5344M | 5376M | +0.6% |
+| P3 | 4540M | 4573M | +0.7% |
+| complex | 8593M | **7090M** | **-17.5%** |
+| once | 3859M | 3856M | -0.1% |
+| until | 2551M | 2572M | +0.8% |
+
+**The premise did not predict the result.** 65% of P2's comparator steps are holes, and removing
+them changes P2 by nothing: the comparator's own cost is 63.4M instructions, 1.2% of the run, and
+it is *identical* in the two profiles. The histogram counted comparison steps, and after Sections
+15, 17 and 18 comparison is no longer what P2 spends anything on -- which is what Section 18.8
+said when it pointed at allocation instead. Counting the log rather than the comparator would
+have predicted this in one line: P2 is 176,122 `trans` events, whose three columns are all used,
+against 25,035 `report` events with one column of three. Seven eighths of what P2 allocates has
+no holes in it.
+
+The complex formula is the other case. `A(x,y) AND (ONCE[0,20] B(y,z)) AND NOT C(z)` over three
+variables has a hole in every one of its three predicates and 113 events per time point spread
+across them, and there the representation is worth 17.5%.
+
+### 19.4 What the dense monitor says about the imperative one
+
+Wall clock, median of seven, all four configurations, outputs identical throughout:
+
+| formula | MonPoly | pure | **dense** | heap | p/mp | d/mp | h/mp |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| P2 | 0.42s | 1.01s | 0.71s | 0.73s | 2.40x | **1.69x** | 1.74x |
+| P3 | 0.45s | 0.95s | 0.72s | 0.69s | 2.11x | 1.60x | 1.53x |
+| and | 0.16s | 0.23s | 0.20s | 0.20s | 1.44x | 1.25x | 1.25x |
+| andnot | 0.16s | 0.15s | 0.15s | 0.14s | 0.94x | 0.94x | 0.88x |
+| once | 0.72s | 0.78s | 0.55s | 0.57s | 1.08x | **0.76x** | 0.79x |
+| since | 0.25s | 0.30s | 0.30s | 0.30s | 1.20x | 1.20x | 1.20x |
+| eventually | 0.47s | 0.59s | 0.41s | 0.41s | 1.26x | **0.87x** | 0.87x |
+| until | 0.23s | 0.32s | 0.34s | 0.34s | 1.39x | 1.48x | 1.48x |
+| agg | 0.17s | 0.26s | 0.27s | 0.26s | 1.53x | 1.59x | 1.53x |
+| complex | 0.85s | 1.52s | 1.08s | 1.07s | 1.79x | 1.27x | 1.26x |
+
+**The dense monitor is a purely functional monitor that matches the imperative one everywhere.**
+`-dense` allocates nothing on the heap: its Since and Until are the pure `sevtaux` and `evtaux`
+of Section 16, its joins are pure, its tables are red-black trees. It ties `-heap_maps` on all ten
+benchmarks, and the instruction counts say exactly where the tie comes from. On P2 the imperative
+join buys nothing over the pure one (5343M against 5344M); the whole of `-heap_maps`'s advantage
+over the plain kernel there is the Section 16 structures, which are themselves pure. On the
+complex formula the imperative hash join does buy 17%, and the dense representation buys the same
+17% without it.
+
+That is a better answer to Section 12's question than Section 12 gave. The imperative layer was
+built because a hash index looked like the way past a persistent tree. What it actually bought,
+where it bought anything, was avoiding work on columns that carry nothing -- and that can be done
+in the tree.
+
+### 19.5 What is left
+
+The aggregation, the multi-way conjunction, the regex operators and the general Since and Until
+still go through `DPure`; `agg` at 1.59x is the benchmark that would gain most from the first of
+those. Underneath, a dense tuple is still an `event_data option list`, so every value still
+carries a `Some` box: dropping the option as well would take two words off every value, but it
+changes the type of every table and so of every auxiliary structure, which is the reason it was
+not done here.
