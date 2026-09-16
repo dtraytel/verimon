@@ -6394,7 +6394,10 @@ let rec im_delete_h _A
                 (fun _ -> (fun () -> (n, (Z.sub c (Z.of_int 1), a)))))));;
 
 let rec im_delete _A
-  q x = im_delete_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x;;
+  q x = im_delete_h _A q
+          ((fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+            x)
+          x;;
 
 let rec del_loop2
   p ks h =
@@ -6498,7 +6501,11 @@ let rec im_update_h _A
                 (fun _ -> (fun () -> q)))));;
 
 let rec im_update _A
-  q x v = im_update_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x v;;
+  q x v =
+    im_update_h _A q
+      ((fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+        x)
+      x v;;
 
 let rec ht_ins q x = im_update heap_unit q x ();;
 
@@ -6512,7 +6519,10 @@ let rec im_lookup_h _A
         (fun b -> (fun () -> (hm_look_list h x b))));;
 
 let rec im_lookup _A
-  q x = im_lookup_h _A q ((fun t -> Z.of_int (Hashtbl.hash t)) x) x;;
+  q x = im_lookup_h _A q
+          ((fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+            x)
+          x;;
 
 let rec ht_mem
   q x = (fun f_ () -> f_ ((im_lookup heap_unit q x) ()) ())
@@ -14990,7 +15000,10 @@ let rec idx_ins_list
     (match xs with [] -> (fun () -> q)
       | x :: r ->
         (let k = proj_tuple msk x in
-         let h = (fun t -> Z.of_int (Hashtbl.hash t)) k in
+         let h =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             k
+           in
           (fun f_ () -> f_
             ((im_lookup_h (heap_list (heap_list (heap_option heap_event_data)))
                q h k)
@@ -15082,7 +15095,10 @@ let rec since_loop2
   t xs h =
     (match xs with [] -> (fun () -> h)
       | x :: r ->
-        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+        (let hx =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             x
+           in
           (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
             (fun v ->
               (fun f_ () -> f_
@@ -15155,7 +15171,10 @@ let rec upd_loop2
   t xs hs h y =
     (match xs with [] -> (fun () -> (h, y))
       | x :: r ->
-        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+        (let hx =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             x
+           in
           (fun f_ () -> f_ ((im_lookup_h heap_nat hs hx x) ()) ())
             (fun a ->
               (match a with None -> upd_loop2 t r hs h y
@@ -15192,7 +15211,10 @@ let rec filter_loop2
   t xs h y =
     (match xs with [] -> (fun () -> (h, y))
       | x :: r ->
-        (let hx = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+        (let hx =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             x
+           in
           (fun f_ () -> f_ ((im_lookup_h heap_nat h hx x) ()) ())
             (fun v ->
               (if equal_optiona equal_nat v (Some t)
@@ -15364,7 +15386,10 @@ let rec ins_new_tp_list
   tp xs q =
     (match xs with [] -> (fun () -> q)
       | x :: r ->
-        (let h = (fun t -> Z.of_int (Hashtbl.hash t)) x in
+        (let h =
+           (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+             x
+           in
           (fun f_ () -> f_ ((im_lookup_h heap_nat q h x) ()) ())
             (fun v ->
               (fun f_ () -> f_
@@ -15379,7 +15404,10 @@ let rec upd_nested_step2
       (if less_eq_nat base k && less_nat (minus_nata k base) (dq_len dq)
         then (let i = minus_nata k base in
               let m = dq_nth dq i in
-              let h = (fun t -> Z.of_int (Hashtbl.hash t)) ka in
+              let h =
+                (fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
+                  ka
+                in
                (fun f_ () -> f_
                  ((im_lookup_h (heap_sum heap_nat heap_nat) m h ka) ()) ())
                  (fun v ->

@@ -62,6 +62,16 @@ code_printing
 definition teq :: "event_data tuple \<Rightarrow> event_data tuple \<Rightarrow> bool" where
   "teq x y = (x = y)"
 
+text \<open>
+  The hash of a tuple.  The obvious implementation, OCaml's polymorphic @{text Hashtbl.hash},
+  walks an unknown structure with a work queue and a node budget, and on the join of a formula
+  like @{text "A(x,y) AND (ONCE[0,20] B(y,z))"} it costs 378 instructions per call over 2.4
+  million calls.  The structure is not unknown here: a list of optional event data.  Walking it
+  directly, with @{text Z.hash} for the integers, is the same hash function's job done with the
+  type in hand.  Only determinism is required of it, since a bucket entry is confirmed by
+  @{const teq}.
+\<close>
+
 definition ihash :: "event_data tuple \<Rightarrow> integer" where
   "ihash t = 0"
 
@@ -70,7 +80,7 @@ definition ibkt :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
 
 code_printing
   constant teq \<rightharpoonup> (OCaml) "(fun x y -> x = y)"
-| constant ihash \<rightharpoonup> (OCaml) "(fun t -> Z.of'_int (Hashtbl.hash t))"
+| constant ihash \<rightharpoonup> (OCaml) "(fun t -> let rec go h l = (match l with [] -> h | None :: r -> go (h * 31) r | Some (EInt z) :: r -> go (h * 31 + Z.hash z) r | Some (EFloat f) :: r -> go (h * 31 + Hashtbl.hash f) r | Some (EString s) :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of'_int ((go 17 t) land 1073741823))"
 | constant ibkt \<rightharpoonup> (OCaml) "(fun h n -> Z.logand h (Z.pred n))"
 
 text \<open>
