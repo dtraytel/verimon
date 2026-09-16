@@ -93,7 +93,7 @@ lemma compare_string8_code[code]: "compare (x :: string8) y = (if x < y then Lt 
 text \<open>
   Comparing two integers with @{text "<"} and then @{text "="} is two calls into the
   arbitrary-precision library where one would do; on the Until benchmark they are 5.3\% and 1.8\%
-  of the run.  @{const cmp_integer} makes the one call and reads its sign.
+  of the run.  The comparison below makes the one call and reads its sign.
 \<close>
 
 definition cmp_integer :: "integer \<Rightarrow> integer \<Rightarrow> order" where
