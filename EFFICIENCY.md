@@ -2065,3 +2065,65 @@ constructor would need a validity argument for the new structure -- that is, its
 proof -- before `valid_init_muaux_dq` goes through again. The separate session exists exactly so
 that a refinement can be written and measured before it is proved. This one is now measured;
 proving it is what would let the default path have it.
+
+### 16.5 Re-measuring the imperative Until
+
+Section 16 leans on a claim recorded earlier in this document and in
+`MFODL_Monitor_Imp/Until_Imp2.thy`: that the heap-resident Until structure is sixty times slower
+than the pure deque. Sixty times is the signature of something quadratic rather than of a
+constant factor, so it was worth re-measuring rather than repeating. It was also worth
+re-measuring because the same session had just produced a bug of exactly that shape -- a
+`shift_evt` that discarded the queue `takeWhile_queue` had normalised, re-reversing the whole
+window at every step, which made the specialised structure *slower* than the general one until
+one line changed.
+
+The measurement, on prefixes of the P2 log, evaluating
+`trans(c,t,a) AND NOT EVENTUALLY[0,6) report(t)` (exact instruction counts):
+
+| time points | pure deque | specialised | imperative |
+|---:|---:|---:|---:|
+| 4,000 | 84.1M | 76.5M | 122.8M (1.5x) |
+| 8,000 | 168.7M | 152.0M | 245.3M (1.5x) |
+| 11,000 | 208.0M | -- | 339.9M (1.6x) |
+| 12,000 | 271.5M | -- | 4312.4M (16x) |
+| 16,000 | 457.4M | 401.5M | 18082.5M (45x) |
+
+**The claim is right and the usual reading of it is wrong.** Below about eleven thousand time
+points the imperative structure costs 1.5x the pure deque -- an ordinary hash-map-against-tree
+constant. Between 11,000 and 12,000 it jumps by a factor of 12.7 for a 9% larger input. P2's log
+carries about 1900 time points per timestamp, so an interval of six time units spans some 11,400
+of them: the jump is exactly where the window fills.
+
+Call counts at 16,000 time points name the operation:
+
+| | calls | per `eval_step_dq2` |
+|---|---:|---:|
+| `eval_step_dq2` | 5,629 | -- |
+| `im_merge_idx` | 7,711,229 | 1,370 |
+| `im_update_h` | 5,389,627 | 957 |
+| `im_fill` (rehash) | 7,653,245 | 1,360 |
+| `im_keys_idx` | 95,693 | **17** |
+
+`im_keys_tbl`, which builds a key set from a bucket array and was the obvious suspect on reading
+the code, is entered seventeen times per step and is not the problem. `im_merge` is: 957 entries
+re-inserted and 1,370 buckets walked per step, once entries merged forward for the length of the
+window have accumulated in one mapping.
+
+The asymmetry is specific and worth stating precisely, because "hash tables are slower here" is
+not it. `Mapping.combine` on a red-black tree goes through `rbt_join` and splices whole subtrees,
+leaving untouched entries alone -- the `bh_le`/`small_rbt` machinery of Section 15.8. A hash map
+has no subtree to splice and must read and re-insert every entry of one side. **A merge is the
+one operation a hash map cannot do by sharing, and this algorithm merges a window-sized map at
+every step.**
+
+One genuine defect turned up alongside, and it does not change the verdict: each step creates the
+destination map with `im_new 16` and then merges about 957 entries into it, so it is rehashed
+some six times per step -- 1,360 `im_fill` calls. Sizing it to what is about to go in would be
+worth perhaps a factor of two or three, against a factor of forty-five.
+
+The useful form of the lesson, which is narrower than the one this document carried before: **an
+imperative map wins where entries are written once and read often, and loses where the algorithm
+repeatedly merges maps that a persistent structure could share.** That is why the heap-resident
+Since structure pays and this one does not, and why the way out for this operator was not a
+better map but a better algorithm -- Section 16.1, where a closed left operand removes the
+per-time-point mapping altogether.

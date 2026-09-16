@@ -329,22 +329,40 @@ text \<open>
 datatype muaux_j = MUJ_imp muaux2 | MUJ_pure muaux_dq | MUJ_evt evtaux
 
 text \<open>
-  The heap structure is defined but not selected, and the condition below is the switch that
-  turns it on again. Measured on P2 it is sixty times slower than the pure deque, and the
-  reason is structural rather than a matter of constant factors. Every step of
-  @{const eval_step_dq2} merges the mapping of the expiring time point into the mapping of the
-  next one, so an entry is merged forward once per time point it survives. A persistent tree
-  merges two mappings by sharing the parts that do not change, which costs
-  @{text "O(m log (n/m))"} and leaves the untouched entries alone; a hash table has to read and
-  re-insert every entry of one side, which costs @{text "O(m)"} with a hash and an equality
-  test each. Over a window of @{text len} time points the first is near linear in the whole run
-  and the second is quadratic. On the P2 prefix of 16000 time points the pure structure retires
-  465 million instructions and this one 28 billion, of which 26% is hashing and a further 13%
-  is the rehashing that the repeated insertion triggers.
+  The heap structure is defined but not selected, and the condition above is the switch that
+  turns it on again.  It is not slower everywhere: on a prefix of P2 short enough that the
+  window never fills it costs 1.5 times the pure deque, which is what one would expect of a
+  hash map against a tree.  The interesting number is what happens when the window does fill.
+  On P2, whose log carries about 1900 time points per timestamp, an interval of six time units
+  spans some 11400 of them, and the measurement crosses exactly there:
 
-  The lesson generalises beyond this structure: an imperative map wins where entries are
-  written once and read often, and loses where the algorithm repeatedly merges maps that a
-  persistent structure could share.
+  \<^item> 8000 time points: 245M instructions against the pure deque's 169M;
+  \<^item> 11000 time points: 340M against 208M;
+  \<^item> 12000 time points: 4312M against 271M;
+  \<^item> 16000 time points: 18083M against 457M.
+
+  Doubling the input from 8000 multiplies this structure's cost by 74.  The call counts say
+  where it goes: at 16000 time points @{const eval_step_dq2} is entered 5629 times and
+  @{const im_merge_idx} 7.7 million, which is 1370 buckets walked and 957 entries re-inserted
+  per step, with @{text im_fill} rehashing 1360 times on top because each step merges those
+  entries into a map that @{const im_new} has just created with room for sixteen.
+
+  The reason is the one operation a hash map cannot do by sharing.  Every step merges the
+  mapping of the expiring time point into the mapping of the next one, and once entries have
+  been merged forward for the length of the window that mapping holds the window's worth of
+  them.  @{const Mapping.combine} on a red-black tree splices whole subtrees through
+  @{const rbt_join} and leaves the untouched entries alone; a hash map has no subtree to splice
+  and must read and re-insert every entry of one side.  Sizing the destination map to what is
+  about to go into it would remove the rehashing and win perhaps a factor of two or three,
+  against a factor of forty-five.
+
+  So the lesson is not that imperative structures are slower, and not that this hash map is
+  buggy.  It is narrower and more useful: an imperative map wins where entries are written once
+  and read often, which is what the heap-resident Since structure of this session
+  does, and loses where the algorithm repeatedly merges maps that a persistent structure could
+  share.  The way out for this operator was not a better map but a better algorithm: where the
+  left operand is closed, the per-time-point mapping is not needed at all, and the structure
+  above replaces it with a sliding window.
 \<close>
 
 definition init_u_j :: "args \<Rightarrow> muaux_j Heap" where
