@@ -1670,7 +1670,7 @@ let rec union _A = foldc _A (inserta _A);;
 
 let rec memberc _A xa = list_member (the (ceq _A)) (list_of_dlist _A xa);;
 
-let rec lookupc _A xa = rbt_comp_lookup (the (ccompare _A)) (impl_ofa _A xa);;
+let rec lookupc _A t k = rbt_comp_lookup (the (ccompare _A)) (impl_ofa _A t) k;;
 
 let rec memberb _A t x = equal_optiona equal_unit (lookupc _A t x) (Some ());;
 

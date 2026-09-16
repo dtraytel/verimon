@@ -1905,3 +1905,76 @@ Wall clock against MonPoly, median of seven runs:
 `once` with heap-resident maps is now faster than MonPoly; `andnot` is at parity; the other
 single-operator benchmarks are between 1.2x and 1.8x. P3 and `complex` have come down to 1.76x.
 P2 is the one that has not moved.
+
+### 15.17 One more closure, and where P2's gap actually is
+
+`RBT_Mapping2.lookup` is stated point-free, so the generated code applies it to the tree, gets a
+closure back, and applies that to the key: one closure allocated per lookup, 1.3% of everything
+the monitor allocates on P2. Eta-expanding the code equation removes it -- P2 and P3 each fall
+0.36% with compaction off, minor allocation 0.55%.
+
+That is the end of what the flat profile has to give: after nine changes the largest single
+identifiable site left is under 2%, and the next thing worth doing is not another one of these.
+
+**Section 15 in total**, against the binary that opened Section 15.8:
+
+| | before | after |
+|---|---:|---:|
+| P2 instructions, compaction off | 7993.1M | **7373.1M** (-7.76%) |
+| P3 instructions, compaction off | ~6381M | **5864.4M** (-8.1%) |
+| P2 minor words | 434.9M | 372.2M (-14.4%) |
+
+### 15.18 Where P2's gap is
+
+P2 is the benchmark that has not moved: 2.41x where the single-operator benchmarks are between
+1.07x and 1.75x. Two facts about its log explain why it is different from everything else in
+Section 14's suite. It has **201157 time points but only 106 distinct timestamps** -- about 1900
+time points per timestamp -- so a bounded-future interval of six time units spans some eleven
+thousand time points; and it carries about one event per time point, so nothing in it is
+dominated by the size of a table.
+
+Evaluating the formula piece by piece on that log localises the gap exactly:
+
+| | MonPoly | VeriMon | ratio |
+|---|---:|---:|---:|
+| `trans(c,t,a)` | 0.37s | 0.36s | 0.97x |
+| `trans(c,t,a) AND 2000 < a` | 0.23s | 0.27s | 1.17x |
+| `trans(c,t,a) AND report(t)` | 0.22s | 0.29s | 1.32x |
+| `trans(c,t,a) AND NOT report(t)` | 0.42s | 0.42s | **1.00x** |
+| `trans(c,t,a) AND NOT ONCE[0,6) report(t)` | 0.55s | 0.97s | 1.76x |
+| `trans(c,t,a) AND NOT EVENTUALLY[0,6) report(t)` | 0.59s | 1.22s | **2.07x** |
+| the whole of P2 | 0.41s | 0.99s | 2.41x |
+
+Predicates, filters, joins and anti-joins are at or near parity. The temporal operators are the
+gap, and the Until structure is the worse of the two: the Eventually costs MonPoly 0.17s and
+VeriMon 0.80s, a factor of 4.7.
+
+What that 0.80s consists of is worth recording, because it is not what one would guess.
+`eval_step_dq` is entered exactly once per time point and `max_tstp` only 25632 times in the
+whole run, so the structure is not doing work proportional to the window at every step. The cost
+is allocation: the Eventually adds 271.2M minor words and 31.7M promoted words to the same
+formula without it, against MonPoly's 20.1M and 6.0M -- 13.5x the minor allocation and 5.3x the
+promotion, for the same operator on the same log. Essentially all of P2's major-collector work
+belongs to this one structure, and it is spread over dozens of sites of one to three percent
+each, in exactly the shape Section 15 has been grinding down everywhere else.
+
+Two ways out are already closed:
+
+* **An imperative Until structure is a measured negative result**, recorded in
+  `MFODL_Monitor_Imp/Until_Imp2.thy`: sixty times slower than the pure deque, because every step
+  merges the expiring time point's mapping into the next one, and a hash table has to read and
+  re-insert every entry where a persistent tree shares the parts that do not change.
+* **The join is not the problem here.** On a log with many time points and few tuples the join
+  *is* the outlier -- `and` is 2.06x where `once` is 0.88x and `eventually` 1.04x, because the
+  column-set analysis in `bin_join` is redone at every call and `sorted_list_subset_fusion` and
+  its iterator cost 2.2% of that run. On P2 the same tests cost 0.2%, because P2's joins take
+  the subset branch instead.
+
+The remaining lever on P2 is the structure itself. `EVENTUALLY I phi` is rewritten by the
+adapter into `Until TT I phi` (`verified_adapter.ml`), so it is evaluated by the general Until
+machinery: a tuple-to-timestamp mapping per time point in the window. When the left operand is
+closed -- which is what `args_L args = {}` says, and what every `EVENTUALLY`, `ALWAYS`, `ONCE`
+and `HISTORICALLY` produces -- "the left operand held throughout `[i,j)`" is a predicate on time
+points alone, not on tuples, and the answer at `i` is the union of the right operand's tables
+over a contiguous run whose two ends both move right monotonically. That is a sliding-window
+union, and it needs no per-time-point tuple mapping at all.
