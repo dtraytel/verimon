@@ -234,13 +234,13 @@ val ed_value_types =
   [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data table"),
    ("sum", "nat \<times> integer"), ("rank", "list_aux")]
 val ed_mapping_ops =
-  [("Mapping.lookup", "lookup"), ("Mapping.update", "update"), ("Mapping.delete", "delete"),
+  [("Mapping.update", "update"), ("Mapping.delete", "delete"),
    ("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
 val ed_agg_maps =
   ["nat agg_map", "(nat \<times> integer) agg_map", "list_aux agg_map",
    "bool \<times> nat agg_map", "bool \<times> (nat \<times> integer) agg_map", "bool \<times> list_aux agg_map"]
 val ed_box_specs =
-  [("Set.member", "ed_member_v", [etuple]),
+  [
    ("Set.remove", "ed_remove_v", [etuple]),
    ("sup :: _ set \<Rightarrow> _", "ed_union_v", [etuple]),
    ("inf :: _ set \<Rightarrow> _", "ed_inter_v", [etuple]),
@@ -287,6 +287,26 @@ val ed_box_specs =
 
 setup \<open>Monomorphize.box_cmd ed_box_specs\<close>
 
+text \<open>
+  Membership and lookup are monomorphised rather than boxed.  A box builds the dictionary once
+  but still passes it, so the comparator that reaches the red-black tree is the composite
+  @{text "comparator_list (comparator_option comparator_event_data)"}, three calls through the
+  generic application path for every element of every tuple compared.  Monomorphising the chain
+  down to the tree primitive lets @{thm [source] ccomp_etuple} rewrite it to
+  @{const ed_comparator}.  Lookups are where this pays: on the Until benchmark the composite
+  comparator is entered 5.48 million times against @{const ed_comparator}'s 559 thousand, and
+  the tree descents of 602 thousand lookups account for nearly all of it.
+
+  These come before the compatibility rules below, which mention the redirected constants.
+\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  ([("Set.member", "ed_member", [etuple]),
+    ("RBT_Mapping2.lookup", "ed_rbt_lookup_unit", [etuple, "unit"])]
+   @ map (fn (tn, ty) => ("Mapping.lookup", "ed_lookup_" ^ tn, [etuple, ty])) ed_value_types
+   @ map (fn (tn, ty) => ("RBT_Mapping2.lookup", "ed_rbt_lookup_" ^ tn, [etuple, ty])) ed_value_types)
+  ["etuple_dict_simps"]\<close>
+
 subsection \<open>Compatibility with the other preprocessor rules\<close>
 
 text \<open>
@@ -298,14 +318,14 @@ text \<open>
 \<close>
 
 lemma ed_member_compat[code_unfold]:
-  "Collect (\<lambda>a. unbox ed_member_v a A \<and> P a) = Set.filter P A"
-  "Collect (\<lambda>a. unbox ed_member_v a A) = A"
-  "unbox ed_member_v a (Collect Q) = Q a"
-  "unbox ed_member_v x (set xs) = List.member xs x"
+  "Collect (\<lambda>a. ed_member a A \<and> P a) = Set.filter P A"
+  "Collect (\<lambda>a. ed_member a A) = A"
+  "ed_member a (Collect Q) = Q a"
+  "ed_member x (set xs) = List.member xs x"
   "unbox ed_Ball_v (set xs) P = list_all P xs"
   "unbox ed_Bex_v (set xs) P = list_ex P xs"
   "unbox ed_union_v (set xs) (set ys) = set (xs @ ys)"
-  unfolding ed_member_v_unfold[symmetric] ed_Ball_v_unfold[symmetric] ed_Bex_v_unfold[symmetric]
+  unfolding ed_member_unfold[symmetric] ed_Ball_v_unfold[symmetric] ed_Bex_v_unfold[symmetric]
     ed_union_v_unfold[symmetric]
   by (auto simp: list_all_iff list_ex_iff)
 
@@ -321,21 +341,21 @@ lemma ed_bot_compat[code_unfold]:
   by (auto simp: ed_bot_def ed_bot_pair_def)
 
 lemma ed_keys_compat[code_unfold]:
-  "unbox ed_member_v k (unbox ed_keys_nat_v m1) = (\<not> Option.is_none (unbox ed_lookup_nat_v m1 k))"
-  "unbox ed_member_v k (unbox ed_keys_tstp_v m2) = (\<not> Option.is_none (unbox ed_lookup_tstp_v m2 k))"
-  "unbox ed_member_v k (unbox ed_keys_table_v m3) = (\<not> Option.is_none (unbox ed_lookup_table_v m3 k))"
-  "unbox ed_member_v k (unbox ed_keys_sum_v m4) = (\<not> Option.is_none (unbox ed_lookup_sum_v m4 k))"
-  "unbox ed_member_v k (unbox ed_keys_rank_v m5) = (\<not> Option.is_none (unbox ed_lookup_rank_v m5 k))"
-  unfolding ed_member_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_v_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_v_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_v_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_v_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_v_unfold[symmetric]
+  "ed_member k (unbox ed_keys_nat_v m1) = (\<not> Option.is_none (ed_lookup_nat m1 k))"
+  "ed_member k (unbox ed_keys_tstp_v m2) = (\<not> Option.is_none (ed_lookup_tstp m2 k))"
+  "ed_member k (unbox ed_keys_table_v m3) = (\<not> Option.is_none (ed_lookup_table m3 k))"
+  "ed_member k (unbox ed_keys_sum_v m4) = (\<not> Option.is_none (ed_lookup_sum m4 k))"
+  "ed_member k (unbox ed_keys_rank_v m5) = (\<not> Option.is_none (ed_lookup_rank m5 k))"
+  unfolding ed_member_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
   by (simp_all add: Mapping.keys_is_none_rep)
 
 lemma ed_minus_keys_compat[code_unfold]:
-  "unbox ed_minus_v X (unbox ed_keys_nat_v m1) = Set.filter (\<lambda>k. unbox ed_lookup_nat_v m1 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_tstp_v m2) = Set.filter (\<lambda>k. unbox ed_lookup_tstp_v m2 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_table_v m3) = Set.filter (\<lambda>k. unbox ed_lookup_table_v m3 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_sum_v m4) = Set.filter (\<lambda>k. unbox ed_lookup_sum_v m4 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_rank_v m5) = Set.filter (\<lambda>k. unbox ed_lookup_rank_v m5 k = None) X"
-  unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_v_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_v_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_v_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_v_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_v_unfold[symmetric]
+  "unbox ed_minus_v X (unbox ed_keys_nat_v m1) = Set.filter (\<lambda>k. ed_lookup_nat m1 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_tstp_v m2) = Set.filter (\<lambda>k. ed_lookup_tstp m2 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_table_v m3) = Set.filter (\<lambda>k. ed_lookup_table m3 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_sum_v m4) = Set.filter (\<lambda>k. ed_lookup_sum m4 k = None) X"
+  "unbox ed_minus_v X (unbox ed_keys_rank_v m5) = Set.filter (\<lambda>k. ed_lookup_rank m5 k = None) X"
+  unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
   by (auto simp: Mapping.keys_dom_lookup)
 
 section \<open>Bulk construction of tables\<close>
