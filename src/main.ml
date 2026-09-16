@@ -180,12 +180,14 @@ let main () =
               let so = if !Misc.gc_space_overhead > 0 then !Misc.gc_space_overhead
                 else if !Misc.verified then 500 else 0 in
               (* Most of what the verified kernel allocates dies before the next time point,
-                 but with the default 256k-word nursery it is promoted first and collected by
-                 the major GC; a larger nursery lets it die where it was born.  4M words is
-                 worth 14% of P2 and 10% of the Until benchmark in instructions, but a change
-                 that moves the collector has to be judged on wall clock (EFFICIENCY.md,
-                 Section 15.12), so it is opt-in until that measurement is in. *)
-              let mh = !Misc.gc_minor_heap in
+                 but with the default 256k-word nursery some of it is promoted first and
+                 collected by the major GC.  Instruction counts say to make the nursery as
+                 large as possible -- 4M words removes 14% of P2 -- and wall clock says the
+                 opposite, because a nursery that does not fit the cache costs more than the
+                 collections it saves: 4M words is a third slower than the default.  768k
+                 words is where the two meet (EFFICIENCY.md, Section 18). *)
+              let mh = if !Misc.gc_minor_heap > 0 then !Misc.gc_minor_heap
+                else if !Misc.verified then 786432 else 0 in
               if so > 0 || mh > 0 then
                 Gc.set { (Gc.get ()) with
                   Gc.space_overhead = (if so > 0 then so else (Gc.get ()).Gc.space_overhead);
@@ -235,7 +237,7 @@ let _ =
     "-bulk_min", Arg.Set_int Misc.bulk_min, "\tSmallest table built in one pass from a sorted list rather than by repeated insertion (default 64)";
     "-heap_since", Arg.Set Misc.heap_since, "\tKeep the auxiliary structures of Since operators without join columns on the heap (only with the verified kernel)";
     "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 500 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
-    "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default: the OCaml default of 256k); larger values trade memory for speed";
+    "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default: 768k with the verified kernel, otherwise the OCaml default of 256k)";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
     "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tEvaluate multi-way joins with the worst-case optimal generic join instead of pairwise binary joins (only with the verified kernel)";
     "-imperative_join", Arg.Set Algorithm_verified.imperative_join, "\tUse the imperative (Imperative HOL) hash index for binary joins (only with the verified kernel)";
