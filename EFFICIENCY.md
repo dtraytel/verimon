@@ -2330,3 +2330,84 @@ instruction count is measuring the thing the change is trading away.**
 MonPoly's own run gains 5.9% from the same setting; it is not enabled for MonPoly, on the same
 grounds as the space overhead of Section 9 -- the flag exists for either monitor, and the
 verified kernel is the one whose allocation rate needs it.
+
+### 18.7 Membership, one level up
+
+After all of 18.2 and 18.3 the generic `comparator_list` chain was still entered 3.84 million
+times on the Until benchmark, and the write side was not where it came from. `Set.member` is
+monomorphised, but its red-black-tree case calls `RBT_Set2.member`, which was not, so the
+dictionary was built and the composite comparator reached after all -- once per membership test,
+on the one operation the Until does most. The same held for the nested update of the Until
+deque, whose keys are tuples and whose values are a time-stamp or a time-point.
+
+Two more entries in the monomorphisation list. `ed_member`'s tree case became
+`ed_rbt_member rbt x`, with no dictionary and no chain.
+
+| | pure | heap |
+|---|---:|---:|
+| until | 2570M | 2551M (-7.1%) |
+| complex | 9646M | 7101M (-16.4%) |
+| agg | 2078M | 2099M (-4.7%) |
+| P2 | 7137M | 5331M (-4.0%) |
+
+### 18.8 Where Section 18 leaves the monitor
+
+Both paths, because they are two different monitors: `pure` is the verified kernel as exported,
+`heap` is the same kernel with the unproved imperative layer of Sections 12 to 17 switched in.
+
+Exact instruction counts:
+
+| formula | MonPoly | pure | heap | p/mp | h/mp |
+|---|---:|---:|---:|---:|---:|
+| P2 | 3467M | 7137M | 5331M | 2.06x | 1.54x |
+| P3 | 3309M | 5537M | 4539M | 1.67x | 1.37x |
+| and | 1436M | 1865M | 1721M | 1.30x | 1.20x |
+| andnot | 1468M | 1267M | 1267M | **0.86x** | **0.86x** |
+| once | 7096M | 5184M | 3858M | **0.73x** | **0.54x** |
+| since | 2192M | 2360M | 2327M | 1.08x | 1.06x |
+| eventually | 4585M | 4042M | 2912M | **0.88x** | **0.64x** |
+| until | 2053M | 2570M | 2551M | 1.25x | 1.24x |
+| agg | 1465M | 2078M | 2099M | 1.42x | 1.43x |
+| complex | 6876M | 9646M | 7101M | 1.40x | 1.03x |
+
+Wall clock, median of seven:
+
+| formula | MonPoly | pure | heap | p/mp | h/mp | before Section 18 (heap) |
+|---|---:|---:|---:|---:|---:|---:|
+| P2 | 0.42s | 0.96s | 0.68s | 2.29x | **1.62x** | 1.71x |
+| P3 | 0.44s | 0.84s | 0.67s | 1.91x | 1.52x | 1.44x |
+| and | 0.16s | 0.22s | 0.19s | 1.38x | **1.19x** | 1.38x |
+| andnot | 0.16s | 0.14s | 0.14s | **0.88x** | **0.88x** | 1.00x |
+| once | 0.74s | 0.77s | 0.54s | 1.04x | **0.73x** | 0.88x |
+| since | 0.24s | 0.30s | 0.30s | 1.25x | 1.25x | 1.29x |
+| eventually | 0.47s | 0.58s | 0.40s | 1.23x | **0.85x** | 0.98x |
+| until | 0.23s | 0.32s | 0.32s | 1.39x | **1.39x** | 1.68x |
+| agg | 0.16s | 0.25s | 0.26s | 1.56x | 1.62x | 1.81x |
+| complex | 0.84s | 1.46s | 1.08s | 1.74x | **1.29x** | 1.54x |
+
+The Until went from 1.68x to 1.39x without one instruction of its algorithm changing. P3 reads
+1.52x against 1.44x before, but both monitors moved a few percent on it between the two runs, so
+it is better read as unchanged than as a regression.
+
+Three observations the two columns make that one would not:
+
+**The imperative layer does nothing for the Until or the Since.** `until` is 1.39x either way and
+`since` 1.25x either way, because `use_heap_until` is off (Section 16.5: the algorithm merges a
+window-sized map at every step, which is the one thing a hash map cannot do by sharing) and
+because the specialised Since structure of Section 16 already removed what the heap maps were
+there to help with. Where the layer does pay, it pays large: `once` 1.04x to 0.73x, `eventually`
+1.23x to 0.85x, `complex` 1.74x to 1.29x.
+
+**Instruction counts and wall clock disagree about which benchmarks are won.** By instructions
+the verified kernel beats MonPoly on four of ten; by wall clock on one, and `once` at 0.54x in
+instructions is 0.73x in time. The gap is allocation: the counts do not see the cache, and the
+kernel's persistent structures touch far more memory per instruction than MonPoly's mutable ones.
+Section 18.6 is the same lesson in miniature.
+
+**Where the remaining gap is.** For P2, the largest at 1.62x, the profile is now about a third
+garbage collector and allocator and about a tenth lexer -- the latter shared with MonPoly, which
+runs the same parser. Comparison, dictionaries and the generic application path, which is what
+Sections 15, 17 and 18 have been about, are down to a few percent. **The next thing to attack is
+not a comparison but an allocation**, and the largest single candidate is that `nat` is a boxed
+constructor around an arbitrary-precision integer, so every subtraction on a time point allocates
+twice where MonPoly's machine integer allocates not at all.
