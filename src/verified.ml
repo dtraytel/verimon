@@ -5602,13 +5602,18 @@ let ed_union_v :
           ((ceq_list (ceq_option ceq_event_data)),
             (ccompare_list (ccompare_option ccompare_event_data))));;
 
+let rec ed_rbt_lookup_unit
+  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_v t) k;;
+
+let rec ed_rbt_member
+  t x = equal_optiona equal_unit (ed_rbt_lookup_unit t x) (Some ());;
+
 let rec ed_member
   x xa1 = match x, xa1 with
     x, Set_Monad xs ->
       list_member (equality_list (equality_option equal_event_dataa)) xs x
     | xa, Complement x -> not (ed_member xa x)
-    | x, RBT_set rbt ->
-        memberb (ccompare_list (ccompare_option ccompare_event_data)) rbt x
+    | x, RBT_set rbt -> ed_rbt_member rbt x
     | x, DList_set dxs -> memberc (ceq_list (ceq_option ceq_event_data)) dxs x
     | x, Collect_set a -> a x;;
 
@@ -10604,6 +10609,21 @@ let rec add_new_mmauaux
                   aggauxb))))
             b));;
 
+let rec ed_rbt_insert_tstp
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_tstp_v xe));;
+
+let rec ed_update_tstp
+  k v x2 = match k, v, x2 with
+    k, v, RBT_Mapping t -> RBT_Mapping (ed_rbt_insert_tstp k v t)
+    | k, v, Assoc_List_Mapping al ->
+        Assoc_List_Mapping
+          (updatea (equal_list (equal_option equal_event_data)) k v al)
+    | k, v, Mapping m ->
+        Mapping
+          (fun_upd (equal_list (equal_option equal_event_data)) m k (Some v));;
+
 let rec dq_nf (Dq (x1, x2, x3, x4)) = x3;;
 
 let rec dq_nb (Dq (x1, x2, x3, x4)) = x4;;
@@ -10631,16 +10651,15 @@ let rec dq_nth
 
 let rec dq_len d = plus_nata (dq_nf d) (dq_nb d);;
 
-let rec upd_nested_step_dq (_B1, _B2)
+let rec ed_upd_nested_step_dq
   base d f x dq =
     (let (k, ka) = x in
       (if less_eq_nat base k && less_nat (minus_nata k base) (dq_len dq)
         then (let i = minus_nata k base in
               let m = dq_nth dq i in
                dq_upd dq i
-                 (match lookupa (_B1, _B2) m ka
-                   with None -> updateb (_B1, _B2) ka d m
-                   | Some v -> updateb (_B1, _B2) ka (f v) m))
+                 (match ed_lookup_tstp m ka with None -> ed_update_tstp ka d m
+                   | Some v -> ed_update_tstp ka (f v) m))
         else dq));;
 
 let rec ed_until_step_dq
@@ -10648,10 +10667,7 @@ let rec ed_until_step_dq
     (let (tbl, (a2, res)) = acc in
       (if pa (fst p)
         then (ed_insert (snd p) tbl,
-               (upd_nested_step_dq
-                  ((ccompare_list (ccompare_option ccompare_event_data)),
-                    (equal_list (equal_option equal_event_data)))
-                  t0 d (max_tstp d) p a2,
+               (ed_upd_nested_step_dq t0 d (max_tstp d) p a2,
                  (if equal_nata (fst p) t0 then ed_insert (snd p) res
                    else res)))
         else acc));;
