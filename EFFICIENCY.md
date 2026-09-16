@@ -1844,3 +1844,64 @@ Wall clock against MonPoly, median of seven runs:
 
 The single-operator benchmarks are between 1.0x and 1.8x; `once` with heap-resident maps is at
 parity. The compound formulas are the slow ones.
+
+### 15.15 Comparing without a dictionary where the type is known
+
+`caml_apply2` -- OCaml's path for applying a closure of unknown arity to two arguments -- is
+entered 22.2 million times on P2. Following it to its callers turns up something that has
+nothing to do with sets or tuples: `max` and `min`.
+
+They are not class parameters but plain overloaded definitions, so the generated code has one
+copy, `max _A a b = (if less_eq _A a b then b else a)`, that calls the ordering through a
+dictionary. `nat_of_integer k = Nat (max 0 k)` and subtraction on `nat`, which goes through the
+same, account for six million of those entries -- each an indirect call into `Z.leq` and from
+there into `ml_z_compare`, three levels to decide whether a machine integer is negative.
+
+`Monomorphize.monomorphize_cmd` at `integer`, `nat` and `event_data` gives
+`ed_max_integer a b = (if Z.leq a b then b else a)`: a direct call.
+
+| P2 | before | after |
+|---|---:|---:|
+| `caml_apply2` (both entry points) | 182.6M | 134.4M |
+| `Z.leq` | 65.7M | 0 |
+| `minus_nata` | 95.2M | 75.4M |
+| `nat_of_integer` | 42.2M | 32.1M |
+| instructions, compaction off | 7544.2M | **7400.0M** (-1.91%) |
+
+P3 falls from 5981.7M to 5885.4M (-1.61%).
+
+This is the same shape as Sections 15.10 and 15.13 for the third time: the Isabelle source says
+`max 0 k`, and what that costs depends on a code-generator decision -- here, that an overloaded
+constant which is not a class parameter gets one dictionary-passing copy -- that is invisible
+from the source. All three were found by counting entries into runtime symbols that belong to
+neither the monitor nor the collector, and none of them would have been found by reading the
+formalisation.
+
+### 15.16 Section 15 in total
+
+Against the binary that opened Section 15.8, over eight changes:
+
+| | before | after |
+|---|---:|---:|
+| P2 instructions, compaction off | 7993.1M | **7400.0M** (-7.42%) |
+| P3 instructions, default GC | 6381.0M | **5885.4M** (-7.77%) |
+| P2 minor words | 434.9M | 374.2M (-14.0%) |
+
+Wall clock against MonPoly, median of seven runs:
+
+| | MonPoly | pure | heap | p/mp | h/mp |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.42s | 1.02s | 1.05s | 2.43x | 2.50x |
+| P3 | 0.45s | 0.91s | 0.79s | 2.02x | **1.76x** |
+| and | 0.16s | 0.25s | 0.24s | 1.56x | 1.50x |
+| andnot | 0.16s | 0.17s | 0.17s | 1.06x | 1.06x |
+| once | 0.74s | 0.90s | 0.71s | 1.22x | **0.96x** |
+| since | 0.25s | 0.32s | 0.33s | 1.28x | 1.32x |
+| eventually | 0.49s | 0.71s | 0.72s | 1.45x | 1.47x |
+| until | 0.23s | 0.38s | 0.37s | 1.65x | 1.61x |
+| agg | 0.17s | 0.29s | 0.30s | 1.71x | 1.76x |
+| complex | 0.84s | 1.78s | 1.48s | 2.12x | **1.76x** |
+
+`once` with heap-resident maps is now faster than MonPoly; `andnot` is at parity; the other
+single-operator benchmarks are between 1.2x and 1.8x. P3 and `complex` have come down to 1.76x.
+P2 is the one that has not moved.

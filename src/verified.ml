@@ -691,22 +691,20 @@ type 'a power = {one_power : 'a one; times_power : 'a times};;
 
 let power_nat = ({one_power = one_nat; times_power = times_nat} : nat power);;
 
-type 'a ord = {less_eq : 'a -> 'a -> bool; less : 'a -> 'a -> bool};;
-let less_eq _A = _A.less_eq;;
-let less _A = _A.less;;
-
-let rec max _A a b = (if less_eq _A a b then b else a);;
-
-let ord_integer = ({less_eq = Z.leq; less = Z.lt} : Z.t ord);;
+let rec ed_max_integer a b = (if Z.leq a b then b else a);;
 
 let rec minus_nata
-  m n = Nat (max ord_integer Z.zero
+  m n = Nat (ed_max_integer Z.zero
               (Z.sub (integer_of_nat m) (integer_of_nat n)));;
 
 type 'a minus = {minus : 'a -> 'a -> 'a};;
 let minus _A = _A.minus;;
 
 let minus_nat = ({minus = minus_nata} : nat minus);;
+
+type 'a ord = {less_eq : 'a -> 'a -> bool; less : 'a -> 'a -> bool};;
+let less_eq _A = _A.less_eq;;
+let less _A = _A.less;;
 
 let rec min _A a b = (if less_eq _A a b then a else b);;
 
@@ -722,6 +720,8 @@ type 'a inf = {inf : 'a -> 'a -> 'a};;
 let inf _A = _A.inf;;
 
 let inf_nat = ({inf = inf_nata} : nat inf);;
+
+let rec max _A a b = (if less_eq _A a b then b else a);;
 
 let rec sup_nata x = max ord_nat x;;
 
@@ -1380,7 +1380,7 @@ let rec length_tailrec x0 n = match x0, n with [], n -> n
 
 let rec size_lista xs = length_tailrec xs zero_nata;;
 
-let rec nat_of_integer k = Nat (max ord_integer Z.zero k);;
+let rec nat_of_integer k = Nat (ed_max_integer Z.zero k);;
 
 let rec map_prod f g (a, b) = (f a, g b);;
 
@@ -3673,6 +3673,8 @@ let mapping_impl_string8 =
   ({mapping_impl = mapping_impl_string8a} : string mapping_impl);;
 
 let equal_integer = ({equal = Z.equal} : Z.t equal);;
+
+let ord_integer = ({less_eq = Z.leq; less = Z.lt} : Z.t ord);;
 
 let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
 
@@ -6534,6 +6536,8 @@ let rec move_tbl (_A1, _A2, _A3)
                    (fun asa -> valid_tuple (_A2, _A3) tuple_since (ta, asa)) xa)
                (t, x) acc));;
 
+let rec ed_max_nat a b = (if less_eq_nat a b then b else a);;
+
 let rec proj_tuple x0 x1 = match x0, x1 with [], [] -> []
                      | true :: bs, a :: asa -> a :: proj_tuple bs asa
                      | false :: bs, a :: asa -> None :: proj_tuple bs asa
@@ -6569,7 +6573,7 @@ let rec tmp_elem (_A1, _A2, _A3)
                  ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                    (ccompare_prod ccompare_nat
                      (ccompare_list (ccompare_option _A2))))
-                 (max ord_nat (minus_nata tp len) tpa, asa)
+                 (ed_max_nat (minus_nata tp len) tpa, asa)
                  (set_empty
                    ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                      (ccompare_prod ccompare_nat
@@ -6579,7 +6583,7 @@ let rec tmp_elem (_A1, _A2, _A3)
                  ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                    (ccompare_prod ccompare_nat
                      (ccompare_list (ccompare_option _A2))))
-                 (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
+                 (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
                  (set_empty
                    ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                      (ccompare_prod ccompare_nat
@@ -6606,12 +6610,12 @@ let rec tmp_step (_A1, _A2, _A3)
                  ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                    (ccompare_prod ccompare_nat
                      (ccompare_list (ccompare_option _A2))))
-                 (max ord_nat (minus_nata tp len) tpa, asa) acc
+                 (ed_max_nat (minus_nata tp len) tpa, asa) acc
           else insert
                  ((ceq_prod ceq_nat (ceq_list (ceq_option _A1))),
                    (ccompare_prod ccompare_nat
                      (ccompare_list (ccompare_option _A2))))
-                 (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
+                 (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
                  acc));;
 
 let rec productb _A _B
@@ -9312,8 +9316,8 @@ let rec upd_nested_step (_B1, _B2) (_C1, _C2, _C3)
               updateb (_B1, _B2) k (updateb (_C1, _C2) ka (f v) ma) m)));;
 
 let rec max_tstp
-  x0 x1 = match x0, x1 with Inl tsa, Inl ts -> Inl (max ord_nat tsa ts)
-    | Inr tpa, Inr tp -> Inr (max ord_nat tpa tp)
+  x0 x1 = match x0, x1 with Inl tsa, Inl ts -> Inl (ed_max_nat tsa ts)
+    | Inr tpa, Inr tp -> Inr (ed_max_nat tpa tp)
     | Inl ts, Inr v -> Inl ts
     | Inr v, Inl ts -> Inl ts;;
 
@@ -10012,8 +10016,8 @@ let rec until_elem_step (_A1, _A2, _A3)
              else acc)
          | Some tpa ->
            until_step (_A1, _A2, _A3) p d (minus_nata tp len)
-             (if pos then (max ord_nat (minus_nata tp len) tpa, asa)
-               else (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata),
+             (if pos then (ed_max_nat (minus_nata tp len) tpa, asa)
+               else (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata),
                       asa))
              acc)
        in
@@ -10287,10 +10291,10 @@ let rec ed_tmp_step
           else acc)
       | Some tpa ->
         (if pos
-          then unbox ed_insert_pair_v (max ord_nat (minus_nata tp len) tpa, asa)
+          then unbox ed_insert_pair_v (ed_max_nat (minus_nata tp len) tpa, asa)
                  acc
           else unbox ed_insert_pair_v
-                 (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
+                 (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata), asa)
                  acc));;
 
 let rec tmp_step_cfi (_A1, _A2, _A3)
@@ -10535,8 +10539,8 @@ let rec ed_until_elem_step_dq
             else acca)
         | Some tpa ->
           ed_until_step_dq p d (minus_nata tp len)
-            (if pos then (max ord_nat (minus_nata tp len) tpa, asa)
-              else (max ord_nat (minus_nata tp len) (plus_nata tpa one_nata),
+            (if pos then (ed_max_nat (minus_nata tp len) tpa, asa)
+              else (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata),
                      asa))
             acca));;
 
@@ -15197,8 +15201,8 @@ let rec until_elem_step2
                   else (fun () -> acca))
               | Some tpa ->
                 until_step2 p d (minus_nata tp len)
-                  (if pos then (max ord_nat (minus_nata tp len) tpa, asa)
-                    else (max ord_nat (minus_nata tp len)
+                  (if pos then (ed_max_nat (minus_nata tp len) tpa, asa)
+                    else (ed_max_nat (minus_nata tp len)
                             (plus_nata tpa one_nata),
                            asa))
                   acca)));;
