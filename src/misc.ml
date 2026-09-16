@@ -102,6 +102,12 @@ let bulk_min = ref 64
    mappings), so main.ml uses 500 with the verified kernel unless the user chose a value. *)
 let gc_space_overhead = ref 0
 
+(* Minor heap size in words to set before monitoring; 0 keeps the OCaml default of 256k
+   words.  The verified kernel allocates far more short-lived data than MonPoly's own
+   algorithm, and with the default nursery much of it is promoted before it dies; a larger
+   one keeps it in the minor heap. *)
+let gc_minor_heap = ref 0
+
 let new_last_ts = ref true
 
 let ignore_parse_errors = ref false

@@ -94,13 +94,22 @@ text \<open>
   Comparing two integers with @{text "<"} and then @{text "="} is two calls into the
   arbitrary-precision library where one would do; on the Until benchmark they are 5.3\% and 1.8\%
   of the run.  The comparison below makes the one call and reads its sign.
+
+  Even the one call is a call out of OCaml, and after the change above it was the single
+  costliest symbol of the Until benchmark at 5.7\%.  Zarith keeps every integer that fits in an
+  OCaml integer as an immediate and only larger ones as a custom block, so two immediates are
+  in the same order as the machine integers they carry, and the two cases are told apart by
+  the tag.  The printing below takes that path in OCaml and falls back to the library for
+  everything else, which is where the values that do not fit are compared.  This reads the
+  representation that the library documents rather than its interface, so it is one more thing
+  to believe about the generated code, next to the hash functions of the imperative tables.
 \<close>
 
 definition cmp_integer :: "integer \<Rightarrow> integer \<Rightarrow> order" where
   "cmp_integer x y = (if x < y then Lt else if x = y then Eq else Gt)"
 
 code_printing constant cmp_integer \<rightharpoonup> (OCaml)
-  "(fun x y -> let c = Z.compare x y in if c < 0 then Lt else if c = 0 then Eqa else Gt)"
+  "(fun x y -> if Obj.is'_int (Obj.repr x) && Obj.is'_int (Obj.repr y) then (let a = (Obj.magic x : int) and b = (Obj.magic y : int) in if a < b then Lt else if a = b then Eqa else Gt) else (let c = Z.compare x y in if c < 0 then Lt else if c = 0 then Eqa else Gt))"
 
 lemma comparator_event_data_code[code]:
   "comparator_event_data (EInt x) (EInt y) = cmp_integer x y"

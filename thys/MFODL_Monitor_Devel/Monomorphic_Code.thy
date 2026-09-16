@@ -234,8 +234,7 @@ val ed_value_types =
   [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data table"),
    ("sum", "nat \<times> integer"), ("rank", "list_aux")]
 val ed_mapping_ops =
-  [("Mapping.update", "update"), ("Mapping.delete", "delete"),
-   ("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
+  [("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
 val ed_agg_maps =
   ["nat agg_map", "(nat \<times> integer) agg_map", "list_aux agg_map",
    "bool \<times> nat agg_map", "bool \<times> (nat \<times> integer) agg_map", "bool \<times> list_aux agg_map"]
@@ -281,7 +280,6 @@ val ed_box_specs =
    ("finite", "ed_finite_pair_v", ["nat \<times> event_data tuple"])]
   @ maps (fn (c, nm) => map (fn (tn, ty) => (c, "ed_" ^ nm ^ "_" ^ tn ^ "_v", [etuple, ty])) ed_value_types)
       ed_mapping_ops
-  @ map (fn (tn, ty) => ("Mapping.combine", "ed_combine_" ^ tn ^ "_v", [ty, etuple])) ed_value_types
   @ map_index (fn (i, ty) => ("set_fold_cfc", "ed_fold_cfc_agg" ^ string_of_int i ^ "_v", [etuple, ty])) ed_agg_maps
 \<close>
 
@@ -297,14 +295,26 @@ text \<open>
   comparator is entered 5.48 million times against @{const ed_comparator}'s 559 thousand, and
   the tree descents of 602 thousand lookups account for nearly all of it.
 
+  The write side goes the same way -- update, delete and combine, each down to its tree
+  primitive -- and the projection out of a tree is boxed at every value type, because it ignores
+  the dictionary its caller builds for it and that build was one per lookup.
+
   These come before the compatibility rules below, which mention the redirected constants.
 \<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   ([("Set.member", "ed_member", [etuple]),
-    ("RBT_Mapping2.lookup", "ed_rbt_lookup_unit", [etuple, "unit"])]
-   @ map (fn (tn, ty) => ("Mapping.lookup", "ed_lookup_" ^ tn, [etuple, ty])) ed_value_types
-   @ map (fn (tn, ty) => ("RBT_Mapping2.lookup", "ed_rbt_lookup_" ^ tn, [etuple, ty])) ed_value_types)
+    ("RBT_Mapping2.lookup", "ed_rbt_lookup_unit", [etuple, "unit"]),
+    ("RBT_Mapping2.delete", "ed_rbt_delete_unit", [etuple, "unit"])]
+   @ maps (fn (tn, ty) =>
+       [("Mapping.lookup", "ed_lookup_" ^ tn, [etuple, ty]),
+        ("Mapping.update", "ed_update_" ^ tn, [etuple, ty]),
+        ("Mapping.delete", "ed_delete_" ^ tn, [etuple, ty]),
+        ("Mapping.combine", "ed_combine_" ^ tn, [ty, etuple]),
+        ("RBT_Mapping2.lookup", "ed_rbt_lookup_" ^ tn, [etuple, ty]),
+        ("RBT_Mapping2.insert", "ed_rbt_insert_" ^ tn, [etuple, ty]),
+        ("RBT_Mapping2.delete", "ed_rbt_delete_" ^ tn, [etuple, ty]),
+        ("RBT_Mapping2.join", "ed_rbt_join_" ^ tn, [etuple, ty])]) ed_value_types)
   ["etuple_dict_simps"]\<close>
 
 subsection \<open>Compatibility with the other preprocessor rules\<close>
@@ -736,10 +746,11 @@ text \<open>
 \<close>
 
 setup \<open>Monomorphize.box_cmd
-  [("rbt_of_sorted_list", "ed_rbt_of_sorted_list_v", [etuple]),
+  (map (fn (tn, ty) => ("RBT_Mapping2.impl_of", "ed_impl_of_" ^ tn ^ "_v", [etuple, ty])) ed_value_types
+   @ [("rbt_of_sorted_list", "ed_rbt_of_sorted_list_v", [etuple]),
    ("RBT_Mapping2.impl_of", "ed_impl_of_v", [etuple, "unit"]),
    ("Mapping.lookup", "db_lookup_v", ["string8 \<times> nat", "event_data table list"]),
-   ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])]\<close>
+   ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])])\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   [("Set.insert", "ed_insert", [etuple]),
