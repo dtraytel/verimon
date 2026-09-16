@@ -700,6 +700,15 @@ text \<open>
   dictionary was therefore rebuilt at every predicate lookup and every inserted table.
 \<close>
 
+text \<open>
+  @{const max} and @{const min} are not class parameters but plain overloaded definitions, so
+  the generated code has one copy that takes an @{class ord} dictionary and calls the ordering
+  through it.  @{const nat_of_integer} and subtraction on @{typ nat} both go through
+  @{term "max 0"}, which on P2 is six million dictionary-dispatched comparisons -- a third of
+  all entries into the two-argument application path.  Monomorphic copies at the three types
+  that occur here call the ordering directly.
+\<close>
+
 setup \<open>Monomorphize.box_cmd
   [("rbt_of_sorted_list", "ed_rbt_of_sorted_list_v", [etuple]),
    ("RBT_Mapping2.impl_of", "ed_impl_of_v", [etuple, "unit"]),
@@ -707,7 +716,13 @@ setup \<open>Monomorphize.box_cmd
    ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])]\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
-  [("until_step_dq", "ed_until_step_dq", ["event_data"]),
+  [("max", "ed_max_integer", ["integer"]),
+   ("min", "ed_min_integer", ["integer"]),
+   ("max", "ed_max_nat", ["nat"]),
+   ("min", "ed_min_nat", ["nat"]),
+   ("max", "ed_max_event_data", ["event_data"]),
+   ("min", "ed_min_event_data", ["event_data"]),
+   ("until_step_dq", "ed_until_step_dq", ["event_data"]),
    ("until_elem_step_dq", "ed_until_elem_step_dq", ["event_data"]),
    ("join1_insert", "ed_join1_insert", ["event_data"]),
    ("join1_insert'", "ed_join1_insert'", ["event_data"]),
