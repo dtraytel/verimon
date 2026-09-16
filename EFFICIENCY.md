@@ -2460,71 +2460,105 @@ Two cases fall out that are not merely narrower tuples:
 
 Behind `-dense`; 678 differential invocations agree with the verified kernel, cram suite green.
 
-### 19.3 What it is worth, with everything else held fixed
+### 19.3 A first measurement that measured nothing
 
-The first measurement of `-dense` against the plain kernel said 24% on P2, which is wrong as an
-attribution: `-dense` reaches its Since and Until through `init_j`, so it also picks up the
-Section 16 structures, which on the pure path one otherwise only gets with `-heap_maps`. The
-comparison that isolates the representation runs the same evaluator and the same structures with
-sparse tuples and the pure join (`-heap_maps -heap_join_min` set beyond every table):
+The first reading of `-dense` against the plain kernel said 24% on P2 and 17.5% on the complex
+formula. Both were wrong, in two different ways, and the way they were wrong is worth recording.
 
-| | sparse tuples | dense tuples | |
+The 24% was an attribution error: `-dense` reaches its Since and Until through `init_j`, so it
+also picks up the Section 16 structures, which on the pure path one otherwise only gets with
+`-heap_maps`. Comparing against `-heap_maps` instead of against the plain kernel removes it.
+
+The 17.5% was worse. **Nothing in those runs was dense at all.** `bin_join` is almost never
+reached from a realistic formula: a conjunction of more than two conjuncts -- and in practice
+nearly every conjunction -- is compiled to `MAnds` and evaluated by `mmulti_join`, as
+`Join_Imp2` records. `MAnds` was not in the fragment, so every one of these formulas was a
+single `DPure` node wrapping the whole formula, and `DPure` runs the old evaluation function
+*with the heap index still on by default*. The 17.5% was the imperative join, seen through a
+wrapper that did nothing.
+
+Turning the index off on both sides gives the honest figure for the representation as it stood:
+
+| | sparse | dense | |
 |---|---:|---:|---:|
-| P2 | 5344M | 5376M | +0.6% |
+| P2 | 5344M | 5375M | +0.6% |
 | P3 | 4540M | 4573M | +0.7% |
-| complex | 8593M | **7090M** | **-17.5%** |
-| once | 3859M | 3856M | -0.1% |
-| until | 2551M | 2572M | +0.8% |
+| complex | 8593M | 8610M | +0.2% |
+| and | 1951M | 1948M | -0.2% |
+| andnot | 1267M | 1268M | +0.1% |
 
-**The premise did not predict the result.** 65% of P2's comparator steps are holes, and removing
-them changes P2 by nothing: the comparator's own cost is 63.4M instructions, 1.2% of the run, and
-it is *identical* in the two profiles. The histogram counted comparison steps, and after Sections
-15, 17 and 18 comparison is no longer what P2 spends anything on -- which is what Section 18.8
-said when it pointed at allocation instead. Counting the log rather than the comparator would
-have predicted this in one line: P2 is 176,122 `trans` events, whose three columns are all used,
-against 25,035 `report` events with one column of three. Seven eighths of what P2 allocates has
-no holes in it.
+Nothing, plus the cost of a wrapper. The lesson is cheap to state and was expensive to miss: a
+representation change behind a fallback needs a counter for how often the fallback fires. There
+is one now, `dpure_nodes`, behind `MONPOLY_DENSE_STATS`; it reports 0 for every benchmark here
+except the aggregation, which reports 1.
 
-The complex formula is the other case. `A(x,y) AND (ONCE[0,20] B(y,z)) AND NOT C(z)` over three
-variables has a hole in every one of its three predicates and 113 events per time point spread
-across them, and there the representation is worth 17.5%.
+### 19.4 The multi-way conjunction, and the index over short tuples
 
-### 19.4 What the dense monitor says about the imperative one
+`MAnds` joins its positive conjuncts left-deep and subtracts the negative ones, and the columns
+of every intermediate result are known at build time, so all the join plans are made once. With
+that case in place the short tuples finally reach a join.
 
-Wall clock, median of seven, all four configurations, outputs identical throughout:
+The heap index of Section 17 is then also worth having over them, which is `-dense -heap_maps`.
+Two of the sparse version's worries go away. Its guard requires both operands to be complete on
+the common columns, because a hole there means "any value" and a hash index would miss matches;
+**a short tuple has no holes by construction, so the guard is vacuous** and the index applies
+wherever the shape is right. And the key is the projection onto the shared columns, which here
+is as short as those columns rather than as wide as the formula, so it is cheaper to build and
+to hash.
 
-| formula | MonPoly | pure | **dense** | heap | p/mp | d/mp | h/mp |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| P2 | 0.42s | 1.01s | 0.71s | 0.73s | 2.40x | **1.69x** | 1.74x |
-| P3 | 0.45s | 0.95s | 0.72s | 0.69s | 2.11x | 1.60x | 1.53x |
-| and | 0.16s | 0.23s | 0.20s | 0.20s | 1.44x | 1.25x | 1.25x |
-| andnot | 0.16s | 0.15s | 0.15s | 0.14s | 0.94x | 0.94x | 0.88x |
-| once | 0.72s | 0.78s | 0.55s | 0.57s | 1.08x | **0.76x** | 0.79x |
-| since | 0.25s | 0.30s | 0.30s | 0.30s | 1.20x | 1.20x | 1.20x |
-| eventually | 0.47s | 0.59s | 0.41s | 0.41s | 1.26x | **0.87x** | 0.87x |
-| until | 0.23s | 0.32s | 0.34s | 0.34s | 1.39x | 1.48x | 1.48x |
-| agg | 0.17s | 0.26s | 0.27s | 0.26s | 1.53x | 1.59x | 1.53x |
-| complex | 0.85s | 1.52s | 1.08s | 1.07s | 1.79x | 1.27x | 1.26x |
+### 19.5 Five configurations, by the clock
 
-**The dense monitor is a purely functional monitor that matches the imperative one everywhere.**
-`-dense` allocates nothing on the heap: its Since and Until are the pure `sevtaux` and `evtaux`
-of Section 16, its joins are pure, its tables are red-black trees. It ties `-heap_maps` on all ten
-benchmarks, and the instruction counts say exactly where the tie comes from. On P2 the imperative
-join buys nothing over the pure one (5343M against 5344M); the whole of `-heap_maps`'s advantage
-over the plain kernel there is the Section 16 structures, which are themselves pure. On the
-complex formula the imperative hash join does buy 17%, and the dense representation buys the same
-17% without it.
+Median of nine, all outputs identical; `dense+h` is `-dense -heap_maps`. The two runs of this
+table agreed within noise on the five benchmarks above half a second and disagreed by up to a
+tenth on the small ones, where the timer's granularity dominates -- `and`, `andnot`, `since`,
+`agg` and `until` all finish in under a third of a second and should not be read closely.
 
-That is a better answer to Section 12's question than Section 12 gave. The imperative layer was
-built because a hash index looked like the way past a persistent tree. What it actually bought,
-where it bought anything, was avoiding work on columns that carry nothing -- and that can be done
-in the tree.
+| formula | MonPoly | pure | dense | **dense+h** | heap | p/mp | d/mp | **dh/mp** | h/mp |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| P2 | 0.39s | 0.91s | 0.64s | 0.64s | 0.68s | 2.33x | **1.64x** | **1.64x** | 1.74x |
+| P3 | 0.42s | 0.75s | 0.57s | 0.58s | 0.63s | 1.79x | **1.36x** | 1.38x | 1.50x |
+| and | 0.14s | 0.21s | 0.15s | 0.13s | 0.17s | 1.50x | 1.07x | **0.93x** | 1.21x |
+| andnot | 0.14s | 0.13s | 0.11s | 0.13s | 0.13s | 0.93x | **0.79x** | 0.93x | 0.93x |
+| once | 0.62s | 0.74s | 0.50s | 0.49s | 0.48s | 1.19x | 0.81x | 0.79x | **0.77x** |
+| since | 0.22s | 0.27s | 0.24s | 0.27s | 0.27s | 1.23x | **1.09x** | 1.23x | 1.23x |
+| eventually | 0.40s | 0.52s | 0.35s | 0.36s | 0.36s | 1.30x | **0.87x** | 0.90x | 0.90x |
+| until | 0.21s | 0.30s | 0.30s | 0.30s | 0.31s | 1.43x | 1.43x | 1.43x | 1.48x |
+| agg | 0.15s | 0.24s | 0.24s | 0.24s | 0.24s | 1.60x | 1.60x | 1.60x | 1.60x |
+| complex | 0.76s | 1.38s | 1.57s | **0.86s** | 1.00s | 1.82x | 2.07x | **1.13x** | 1.32x |
 
-### 19.5 What is left
+**Combining the two is the best configuration on the join-heavy benchmark and the only one that
+gets it near MonPoly**: `complex` goes 1.82x plain, 1.32x with the sparse index, and 1.13x with
+the index over short tuples. On P2 and P3 the short tuples alone are the best configuration and
+the index adds nothing, because those formulas' joins are the anti-join and subset shapes that
+are never indexed -- the index is reached only where neither operand's columns contain the
+other's, which is exactly `complex`.
 
-The aggregation, the multi-way conjunction, the regex operators and the general Since and Until
-still go through `DPure`; `agg` at 1.59x is the benchmark that would gain most from the first of
-those. Underneath, a dense tuple is still an `event_data option list`, so every value still
-carries a `Some` box: dropping the option as well would take two words off every value, but it
-changes the type of every table and so of every auxiliary structure, which is the reason it was
-not done here.
+One number in that table is a loss and is the most informative of them: **the dense monitor
+without the index is worse on `complex` than the plain kernel, 2.07x against 1.82x.** The pure
+index join written here -- a `Mapping` built by folding a sorted list, none of it monomorphised
+-- is worse than the kernel's own tuned `probe_join_n` by more than the short tuples save. The
+representation is worth about 14% on that join, which is visible in the indexed columns (1.32x
+to 1.13x) and invisible in the pure ones because a worse join eats it. A fair pure comparison
+needs the pure dense join brought up to the standard of the one it replaces, which is the first
+thing to do next.
+
+### 19.6 What this says
+
+The imperative layer of Sections 12 to 17 was built on the idea that a hash index is the way
+past a persistent tree. Three configurations now exist that did not before, and between them
+they separate that idea into two:
+
+- Where the join shape admits an index at all, the index is worth having, and it is worth more
+  over short tuples than over wide ones: 1.32x to 1.13x on `complex`.
+- Everywhere else -- P2, P3, `once`, `eventually`, which is most of the suite -- **the index
+  buys nothing and the short tuples buy 6 to 10%**, and the best configuration is the pure one.
+  `-dense` on its own allocates nothing on the heap: pure Since and Until structures, pure
+  joins, red-black trees.
+
+### 19.7 What is left
+
+The pure dense join, as above. Then the aggregation, which is the one benchmark still entirely
+in the fallback and the one furthest from MonPoly at 1.60x. Underneath both, a short tuple is
+still an `event_data option list`, so every value still carries a `Some` box; dropping the option
+as well would take two words off every value, but it changes the type of every table and so of
+every auxiliary structure, which is why it was not done here.
