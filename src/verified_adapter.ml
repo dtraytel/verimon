@@ -238,22 +238,57 @@ let rec dedup_sorted = function
   | x :: (y :: _ as rest) -> if equal_tuple x y then dedup_sorted rest else x :: dedup_sorted rest
   | l -> l
 
-type batch = (string * nat, (event_data option) list list ref) Hashtbl.t
+(* The batch is keyed by the predicate name and its arity.  The generic [Hashtbl] would
+   hash and compare that key structurally, which means hashing the name and the
+   arbitrary-precision arity and then running the polymorphic comparison down the bucket
+   chain -- on the Until benchmark that was 5.5% of the run in [do_compare_val] alone and a
+   further 1.6% in [caml_hash].  Hashing the name and comparing the two components directly
+   costs a fraction of that, and the arity stays a machine integer until the flush. *)
+module Pred_key = struct
+  type t = string * Stdlib.Int.t
+  let equal ((p1 : string), (a1 : Stdlib.Int.t)) (p2, a2) = a1 = a2 && String.equal p1 p2
+  let hash ((p : string), _) = Hashtbl.hash p
+end
+module Pred_tbl = Hashtbl.Make(Pred_key)
 
-let empty_batch () : batch = Hashtbl.create 16
+(* Events of one time point arrive grouped by predicate, so the table is consulted once per
+   predicate rather than once per event: [b_last] holds the list the previous event went
+   into.  The type list is the signature's own, so physical equality identifies the
+   predicate -- except for nullary predicates, whose list is the immediate [[]], hence the
+   name check as well.  [b_live] invalidates the cache at the flush, which drops the
+   lists. *)
+type batch = {
+  b_tbl: (event_data option) list list ref Pred_tbl.t;
+  mutable b_live: bool;
+  mutable b_tl: (string * tcst) list;
+  mutable b_name: string;
+  mutable b_last: (event_data option) list list ref;
+}
+
+let empty_batch () : batch =
+  { b_tbl = Pred_tbl.create 16; b_live = false; b_tl = []; b_name = ""; b_last = ref [] }
 
 let add_to_batch (b: batch) ((pname, tl) as schema) sl =
-  let key = (pname, nat_of_int (List.length tl)) in
   let t = convert_tuple schema sl in
-  match Hashtbl.find_opt b key with
-  | Some r -> r := t :: !r
-  | None -> Hashtbl.add b key (ref [t])
+  if b.b_live && b.b_tl == tl && String.equal b.b_name pname then
+    b.b_last := t :: !(b.b_last)
+  else begin
+    let r =
+      match Pred_tbl.find_opt b.b_tbl (pname, List.length tl) with
+      | Some r -> r
+      | None ->
+        let r = ref [] in Pred_tbl.add b.b_tbl (pname, List.length tl) r; r in
+    r := t :: !r;
+    b.b_live <- true; b.b_tl <- tl; b.b_name <- pname; b.b_last <- r
+  end
 
 let flush_batch (b: batch) db =
-  let db = Hashtbl.fold (fun key r db ->
+  let db = Pred_tbl.fold (fun (pname, a) r db ->
     let sorted = dedup_sorted (List.stable_sort compare_tuple !r) in
-    insert_table_into_db key (table_of_list sorted) db) b db in
-  Hashtbl.clear b; (* keep the bucket array; [reset] would reallocate it at every time point *)
+    insert_table_into_db (pname, nat_of_int a) (table_of_list sorted) db) b.b_tbl db in
+  (* keep the bucket array; [reset] would reallocate it at every time point *)
+  Pred_tbl.clear b.b_tbl;
+  b.b_live <- false;
   db
 
 let convert_into_tysym ty = 
