@@ -1682,3 +1682,41 @@ What did pay here was the work removed alongside the allocation: `rep_isom` -50.
 Wall clock against MonPoly on the standard suite is now 2.52x on P2 and 2.23x on P3 (median of
 five runs; the machine's run-to-run spread is about 5%), against instruction-count ratios of
 2.36x and 2.16x.
+
+### 15.10 The generic application path
+
+Four of the ten most expensive symbols on P2 belong to neither the monitor nor the collector:
+anonymous closures at 3.37%, `fold` at 1.91%, `caml_apply2` at 1.79% and `caml_tuplify2` at
+1.27% -- 8.3% of the run spent passing functions to functions. Two library code equations turn
+a direct recursion into exactly that.
+
+`rev` is generated as a fold over `Cons`, so reversing a list allocates nothing extra but
+applies a closure through OCaml's generic application path once per element. `rev_prepend` is
+the same two-argument recursion written directly. `RBT_Set2.fold` discards each entry's value
+by wrapping the element function in a closure: one allocation per fold and two indirect calls
+per element instead of one. `rbt_fold_key` takes the element function directly.
+
+| P2 | before | after |
+|---|---:|---:|
+| `fold` | 156.8M | 76.2M |
+| anonymous closures | 276.7M | 234.9M |
+| `caml_apply2` | 61.2M | 38.8M |
+| `do_some_marking` | 571.6M | 530.3M |
+| instructions, compaction off | 7863.1M | **7750.1M** (-1.44%) |
+| instructions, default GC | 8214.0M | 8061.4M (-1.86%) |
+
+P3 falls 1.35% with compaction off. This is the best return per line of proof in this section:
+two code equations, no change to any data structure, and the effect is in the monitor's own
+instruction count rather than in allocation, which barely moved (403.8M to 400.3M words).
+
+What is left of the category is a long tail -- the largest remaining anonymous function is
+0.44% of P2 -- so there is no second round of this.
+
+Cumulative over Sections 15.8 to 15.10, against the binary that opened Section 15.8:
+
+| | before | after |
+|---|---:|---:|
+| P2 instructions, compaction off | 7993.1M | **7750.1M** (-3.04%) |
+| P2 instructions, default GC | 8249.2M | 8061.4M (-2.28%) |
+| P2 minor words | 434.9M | 400.3M (-8.0%) |
+| P3 instructions, default GC | 6381.0M | 6223.6M (-2.47%) |

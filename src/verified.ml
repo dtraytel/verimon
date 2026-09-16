@@ -4120,7 +4120,10 @@ let rec nth
   (x :: xs) n =
     (if equal_nata n zero_nata then x else nth xs (minus_nata n one_nata));;
 
-let rec rev xs = fold (fun a b -> a :: b) xs [];;
+let rec rev_prepend x0 ys = match x0, ys with [], ys -> ys
+                      | x :: xs, ys -> rev_prepend xs (x :: ys);;
+
+let rec rev xs = rev_prepend xs [];;
 
 let rec upt i j = (if less_nat i j then i :: upt (suc i) j else []);;
 
@@ -4151,7 +4154,12 @@ let rec ball (_A1, _A2)
           | Some _ -> dlist_all _A1 p dxs)
     | Set_Monad xs, p -> list_all p xs;;
 
-let rec foldb _A x xc = folda (fun a _ -> x a) (impl_ofa _A xc);;
+let rec rbt_fold_key
+  f x1 s = match f, x1, s with f, Empty, s -> s
+    | f, Branch (c, l, k, v, r), s ->
+        rbt_fold_key f r (f k (rbt_fold_key f l s));;
+
+let rec foldb _A f t = rbt_fold_key f (impl_ofa _A t);;
 
 let rec bind (_A1, _A2) (_B1, _B2, _B3)
   x0 f = match x0, f with
@@ -12185,9 +12193,7 @@ let rec ed_mmulti_join
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
 
 let rec append_queue_list
-  xb xc =
-    Abs_queue
-      (let (fs, ls) = rep_queue xc in (fs, fold (fun a b -> a :: b) xb ls));;
+  xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
 
 let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
 
