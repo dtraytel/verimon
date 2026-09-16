@@ -2127,3 +2127,102 @@ repeatedly merges maps that a persistent structure could share.** That is why th
 Since structure pays and this one does not, and why the way out for this operator was not a
 better map but a better algorithm -- Section 16.1, where a closed left operand removes the
 per-time-point mapping altogether.
+
+## 17. The join
+
+Section 16 left the join as the worst single ratio measured anywhere: on
+`A(x,y) AND (ONCE[0,20] B(y,z))` over the dense log, evaluating the `ONCE` alone costs MonPoly
+0.70s and VeriMon 0.62s, and adding the join takes MonPoly to 0.79s and VeriMon to 1.31s. The
+join itself is 0.08s against 0.68s.
+
+Five changes, none of them to the join algorithm. Every one is something the *encoding* was
+doing that the join did not ask for.
+
+### 17.1 Hashing a tuple with the type in hand
+
+The index hashed its key with OCaml's polymorphic `Hashtbl.hash`, which walks an unknown
+structure with a work queue and a node budget: **378 instructions per call over 2.4 million
+calls**. The structure is not unknown -- it is a list of optional event data -- and walking it
+directly, with `Z.hash` for the integers, is the same job done with the type known. Only
+determinism is required of a hash here, since a bucket entry is confirmed by `teq`.
+
+5168M instructions to 4377M (-15.3%).
+
+### 17.2 Comparing with the type in hand, and not building the projection
+
+`teq` was `x = y`, which is OCaml's polymorphic comparison: 158M instructions. And every probe
+built the projection of its tuple, hashed it, compared it once and discarded it -- two million
+tuples allocated per run. `teq` is now a structural equality, and `ihash_proj`/`teq_proj` hash
+and compare against the mask directly, agreeing with `proj_tuple` clause by clause. The
+projection is still built for the hundred thousand tuples that enter the index, where it is the
+stored key.
+
+4377M to 4001M.
+
+### 17.3 The dictionary that was rebuilt on every probe
+
+The largest allocation site in the join was not in the join:
+
+```
+im_lookup_proj (heap_list (heap_list (heap_option heap_event_data))) q msk x
+```
+
+The operations on a heap map take the value type's `heap` dictionary, and the code generator
+builds it at the call site. The nested type representations of a list and of an option were
+28.5M and 14.4M words, and with the monadic closures around them the dictionary was **42% of
+everything the join allocated**. The index's value type is closed, so it is boxed and built once.
+
+4001M to 3774M.
+
+### 17.4 One closure per bind
+
+What remained was the monad itself. Imperative HOL prints `bind` as
+
+```
+(fun f_ () -> f_ (m ()) ()) f
+```
+
+a two-argument lambda applied to one argument, which OCaml compiles as a partial application:
+two closures for every bind, **104M words on this join, a third of everything it allocated**.
+The direct form `(fun () -> f (m ()) ())` leaves one. Two things had to be worked around:
+
+* a printing's placeholders are filled in argument order, and the function has to appear before
+  the action, so the flipped `bind_flip` carries the printing and a code equation redirects
+  `bind` to it;
+* the declaration has to sit in the theory that exports the code. Put next to the definition it
+  has no effect: that theory's branch is merged with the one carrying Imperative HOL's own
+  printing, and the merge keeps the original.
+
+This one is not specific to the join -- it is every bind in the imperative layer.
+
+3774M to 3493M, and the formula's minor allocation from 472M words to 390M.
+
+### 17.5 Where the join is now
+
+| | instructions | vs start |
+|---|---:|---:|
+| start of Section 17 | 5168M | -- |
+| specialised hash | 4377M | -15.3% |
+| specialised equality, no projection | 4001M | -22.6% |
+| boxed heap dictionary | 3774M | -27.0% |
+| one closure per bind | **3493M** | **-32.4%** |
+
+Wall clock against MonPoly, median of seven runs, with heap-resident maps:
+
+| | MonPoly | pure | heap | before Section 17 | now |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.41s | 0.98s | 0.70s | 1.76x | **1.71x** |
+| P3 | 0.45s | 0.89s | 0.65s | 1.55x | **1.44x** |
+| and | 0.16s | 0.25s | 0.22s | 1.38x | 1.38x |
+| andnot | 0.16s | 0.16s | 0.16s | 1.00x | **1.00x** |
+| once | 0.72s | 0.89s | 0.63s | 0.89x | **0.88x** |
+| since | 0.24s | 0.31s | 0.31s | 1.29x | 1.29x |
+| eventually | 0.48s | 0.69s | 0.47s | 1.02x | **0.98x** |
+| until | 0.22s | 0.37s | 0.37s | 1.68x | 1.68x |
+| agg | 0.16s | 0.28s | 0.29s | 1.81x | 1.81x |
+| complex | 0.83s | 1.76s | 1.28s | 1.65x | **1.54x** |
+
+Three benchmarks are now at or better than MonPoly. **What the join needed was not a better join.**
+Of the 1675M instructions removed, none came from changing how tuples are matched: they came from
+a polymorphic hash, a polymorphic equality, a projection built to be thrown away, a type-class
+dictionary rebuilt per probe, and a monad encoding that allocated twice where once would do.
