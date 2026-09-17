@@ -3164,15 +3164,19 @@ a prefix, and the correctness theorems carry it -- which is what a log gives the
 
 ### 20.10 Discharging `produces`
 
-`thys/MFODL_Monitor_Imp/Dense_Produces.thy`, 622 lines, 1147 commands, no `sorry`.
+`thys/MFODL_Monitor_Imp/Dense_Produces.thy` (1069 lines, 3223 commands),
+`Dense_Match.thy` (730 lines, 1345 commands) and `Dense_Let.thy` (268 lines, 463 commands); no
+`sorry` in any of them. **All 23 constructors of the kernel's formula datatype are done.**
 
 `produces` is the last of the simulation's three input hypotheses, and unlike the other two it is
 not a property of the input but of the kernel's evaluation:
 
 ```isabelle
-coinductive produces :: "nat ⇒ nat set ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ bool"
-  where "(⋀j ts db xs φ'. wf_db db ⟹ meval j n ts db φ = (xs, φ') ⟹
-      list_all (λX. table n A X ∧ finite X) xs ∧ produces n A φ') ⟹ produces n A φ"
+coinductive produces :: "nat ⇒ nat set ⇒ ts ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ bool"
+  where "(⋀j ts db xs φ'. wf_db db ⟹ sorted ts ⟹ (∀t ∈ set ts. tw ≤ t) ⟹
+      meval j n ts db φ = (xs, φ') ⟹
+      list_all (λX. table n A X ∧ finite X) xs ∧ produces n A (dnext tw ts) φ')
+    ⟹ produces n A tw φ"
 ```
 
 It quantifies over *every* well-formed database, not just the ones a particular trace produces, so
@@ -3180,11 +3184,20 @@ it cannot be read off the kernel's `meval_correct` (which needs `wf_envs`, hence
 progress bookkeeping). It is a kernel-side obligation of its own: *the executable monitor's tables
 are finite tables over the free variables, for any finite well-formed database*.
 
+The timestamp lower bound `tw` is not decoration. The verified Since and Until structures accept a
+new timestamp only at or after the one they are already at (`valid_add_new_ts_msaux`,
+`valid_add_new_muaux`), and a fresh batch of timestamps arrives at a node from outside, where no
+per-node invariant can see it. So the invariant reads *every timestamp in the batch is at least
+`tw`*, and re-establishes itself at the bound `dnext tw ts` the batch leaves behind -- exactly the
+bound `dsim` already carried for the same reason. The non-temporal nodes carry it without using it.
+`produces_mono` says raising the bound is harmless, which is what the recursive let needs when it
+rejects a round.
+
 It is discharged **constructor by constructor** rather than through one monolithic invariant: for
 each node of the kernel's formula, a lemma saying that if the operands produce finite tables over
 their columns then so does the node. Each is a coinduction with an invariant that says only what
-that node needs, so the lemmas compose by structural induction at the end and can be done
-independently. Three of them are packaged:
+that node needs, so the lemmas compose by structural induction at the end and could be done
+independently. Four are packaged:
 
 - `producesI` -- the coinduction with the trivial equations of its conclusion already solved, so a
   node's lemma only has to name its own invariant;
@@ -3195,34 +3208,77 @@ independently. Three of them are packaged:
   the buffer's own well-formedness; it survives because a take only removes a prefix
   (`mbuf2_take_sub`) and the outputs are what the step function built (`mbuf2_take_out`).
 
-**Done (13 of the 24 constructors).** `MRel`; `MNeg` (unconditionally -- its output is the unit or
-the empty table either way); `MAndRel`, `MAndAssign`, `MExists`, `MAgg` through `produces_unop`;
-all three modes of `MPred` (`wf_tuple_simple_match` and `match_wf_tuple` from the kernel's own
-correctness development give the two matching modes their shape); `MTP`, `MTS`; `MOr` and `MAnd`
-through `produces_binop` (`ftable_bin_join`: at tables of the operands' frames `bin_join` is the
-plain join, so `join_table` and `finite_join` give the result's shape); `MPrev` and `MNext`, whose
-outputs come from the buffer or are the empty table (`mprev_next_out`).
+**The simple nodes.** `MRel`; `MNeg` (unconditionally -- its output is the unit or the empty table
+either way); `MAndRel`, `MAndAssign`, `MExists`, `MAgg` through `produces_unop`; all three modes of
+`MPred` (`wf_tuple_simple_match` and `match_wf_tuple` from the kernel's own correctness development
+give the two matching modes their shape); `MTP`, `MTS`; `MOr` and `MAnd` through `produces_binop`
+(`ftable_bin_join`: at tables of the operands' frames `bin_join` is the plain join, so `join_table`
+and `finite_join` give the result's shape); `MPrev` and `MNext`, whose outputs come from the buffer
+or are the empty table (`mprev_next_out`). For `MAgg`, `ftable_eval_agg` is the one with content:
+the operand's columns sit above the aggregation's group-by prefix, so dropping that prefix lands the
+tuple on the group key and writing the aggregate into position `y` widens it by exactly `{y}`.
 
-For `MAgg`, `ftable_eval_agg` is the one with content: the operand's columns sit above the
-aggregation's group-by prefix, so dropping that prefix lands the tuple on the group key and writing
-the aggregate into position `y` widens it by exactly `{y}`.
+`MAnds` is the glue over `mmulti_join`'s shape: at well-formed operands it is the left-to-right
+fold of the positive tables followed by the anti-joins against the negative ones -- the same fold
+`dmulti_join_dtabc` uses -- and `kands_pos_ftable` / `kands_neg_ftable` say each step of both folds
+keeps the table over the accumulated columns and keeps it finite. `mbufn_take_out` is the
+multi-way analogue of `mbuf2_take_out`.
 
-**The multi-way join's shape is ready** even though its node is not: at well-formed operands
-`mmulti_join` is the left-to-right fold of the positive tables followed by the anti-joins against
-the negative ones -- the same fold `dmulti_join_dtabc` uses -- and `kands_pos_ftable` /
-`kands_neg_ftable` say each step of both folds keeps the table over the accumulated columns and
-keeps it finite. `ftable_mmulti_join` and `ftable_mmulti_join'` package that, and
-`mbufn_take_out` is the multi-way analogue of `mbuf2_take_out`.
+**The temporal nodes.** `MSince`, `MUntil` and `MTrigger` each carry the *wide half* of the
+relation 20.6-20.8 already built for the dense side: the verified structure is valid for an
+abstract auxiliary list whose tables are finite tables over the node's columns, at a current
+timestamp that the buffer's timestamps -- and the batch still to come -- are at or after.
 
-**Still to do (11 constructors).** `MAnds` (the glue over the two packaged pieces above);
-`MSince` and `MUntil`, where the invariant has to carry the `msaux` / `muaux` structure's validity
-together with "the auxiliary list's tables are finite tables over `args_R`" -- exactly the first
-conjunct of 20.6's `dsaux` and 20.8's `duaux`, at the wide frame; `MTrigger` and `MAndTrigger`
-(the `mtaux` structure); `MMatchP` and `MMatchF` (`update_matchP` / `update_matchF` and their
-`mrδaux` / `mlδaux`); and `MLet`, `MLetPast`, `MFrz`, which are the only ones that need more than
-a per-node invariant: they feed their body a database whose table at the let-bound predicate is
-*not* full-width, so `produces` has to be generalised to carry a predicate environment
-(`wf_dbe E db`, with `wf_dbe Map.empty = wf_db` recovering the present notion at the top level).
+- `saux_inv` / `eval_since_ftable`: one firing of the kernel's own `eval_since` recursion, the same
+  induction `eval_since_rel` follows, with `ftable_result_mmasaux` reading the structure's result
+  off `valid_result_msaux` as a union of the auxiliary list's tables. The three auxiliary-list
+  steps -- filter, join, `add_new_table` -- got finiteness alongside the well-formedness Dense.thy
+  already had for them.
+- `uaux_inv` / `until_step_ftable`: the Until structure is stepped from inside a buffer traversal,
+  so the traversal gets its own invariant lemma (`mbuf2t_take_inv`), which reports the timestamp
+  the traversal stops at and that every timestamp it leaves queued is at or after the one the
+  accumulator reached.
+- `taux_inv` / `trigger_step_ftable`: the trigger structure's result is genuinely *not* a table
+  over a fixed column set -- with an empty window it reports the unit table, and the column set it
+  returns alongside says so. But the kernel only builds a trigger node for an interval containing
+  zero, and then the entry the update has just appended is itself in the interval, so the window is
+  never empty: the result is a table over the right operand's columns, and it is finite because
+  that entry's own table bounds it (the last index has nowhere later to send its disjunct).
+- `MAndTrigger` is the fused conjunction-with-a-trigger, and there the trigger's varying column set
+  is not discarded: the buffer holds the pairs the structure reports and the join reads each pair's
+  column set off the pair. With an interval containing zero that set is always the right operand's,
+  so the join is the ordinary one and the result stays over the conjunction's columns.
+
+**The match nodes** (`Dense_Match.thy`) need a toolkit of their own: the kernel's derivative
+operations on marked regular expressions. Finiteness of those is purely structural -- every one of
+them builds unions and joins of the operand tables -- but well-formedness over the node's column
+set is not, because `rε_strict` returns the unit table at a `Skip 0`, and that is a table over the
+node's columns only because the safety condition forces them to be empty there. So `ε_lax` and the
+two derivatives (`ftable_rdelta`, `ftable_ldelta`) are proved directly, while the two strict
+epsilons borrow the kernel's own `qtable_rε_strict` and `qtable_lε_strict`: instantiated at the
+empty restriction, where `qtable` degenerates to `table` (`qtable_mem_restr_empty`), they give
+exactly what is needed without redoing their inductions over the safety predicate. On top of that:
+`mbufnt_take_out` for the n-ary buffer traversal, `maux_inv` (a mapping per timestamp) for the past
+node, `mfaux_inv` (the operands plus the accumulated table) for the future one, and the two node
+lemmas. Neither match node needs the timestamp bound -- their updates accept any timestamp.
+
+**The let nodes** (`Dense_Let.thy`). This is where 20.10's earlier reading was wrong: `MLet`,
+`MLetPast` and `MFrz` need **no** predicate-environment generalisation of `produces`. Because
+`produces` quantifies over every well-formed database, the body's own invariant applies to the
+extended one as soon as the extension is well formed -- and `wf_db_update` says it is, since the
+bound formula is evaluated at the full frame `{0..<m}`, which is exactly the shape `wf_db` asks of
+a stored relation of arity `m`. `wf_db_map_values_empty` covers the emptied databases the other two
+build.
+
+- `MLet`: one extension, one evaluation.
+- `MLetPast`: `letpast_meval0_ftable` carries the invariant through the fixpoint iteration. Each
+  round evaluates against a database in which the bound predicate holds the previous round's output
+  and -- from the second round on -- everything else is empty, at an empty batch of timestamps, so
+  the bound does not move after the first round. The guard that rejects a round in which the
+  formula's size changed keeps the old state, which the invariant still covers by `produces_mono`.
+- `MFrz`: `freeze_meval0_ftable`. The body is evaluated once against the database with the bound
+  predicate empty, and then once more per stored operand table against a database holding just that
+  table; the states those repeated evaluations produce are discarded rather than threaded.
 
 ### 20.11 The dense monitor, measured again
 
@@ -3285,22 +3341,21 @@ that currently get none.
 
 ### 20.12 What is left
 
-1. **The rest of `produces`** -- the eleven constructors listed at the end of 20.10.
-2. **The compilation.** A pure `dof` and `mcols` (the ones in `Dense_Imp.thy` are monadic, because
+1. **The compilation.** A pure `dof` and `mcols` (the ones in `Dense_Imp.thy` are monadic, because
    they initialise the imperative structures) must be proved to produce a `dsim` for the initial
    formula `minit0 n φ`: that the column list of a node is the subformula's free-variable set, that
    the join plans and the embedding plan are the ones the frames call for, and that every node's
    `produces` holds. That is the last thing `dmonitor_mverdicts` asks of its caller, and with it
    the chain from `Mt π` down to the short tuples is closed.
-3. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
+2. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
    the dense fragment -- which today takes a Since or Until only when the left operand has no free
    variables, so a genuine two-sided one falls back to a single `DPure` node. This changes the
    running program, so the timings will have to be re-measured afterwards; 20.11 says what to
    expect, since `since` and `until` are the two benchmarks the short tuples currently do nothing
    for.
-4. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
+3. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
-5. **Then** `Dense.thy`, `Dense_Eval.thy`, `Dense_Produces.thy` and `Dense_Correct.thy` move to
-   the base session.
+4. **Then** `Dense.thy`, `Dense_Eval.thy`, `Dense_Produces.thy`, `Dense_Match.thy`,
+   `Dense_Let.thy` and `Dense_Correct.thy` move to the base session.
