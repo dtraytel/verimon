@@ -179,8 +179,8 @@ datatype dformula =
   | DAgg bool "ty Formula.agg_op" Formula.trm nat nat dformula
   | DPrev \<I> dformula bool "event_data table mbuf_t" "ts mbuf_t"
   | DNext \<I> dformula bool "ts mbuf_t"
-  | DSince args dformula dformula "event_data mebuf2S" msaux_j
-  | DUntil args dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_j
+  | DSince args "nat option list option" dformula dformula "event_data mebuf2S" msaux_j
+  | DUntil args "nat option list option" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_j
 
 subsection \<open>Building it\<close>
 
@@ -234,18 +234,36 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
 | "dformula_of n cs (MNext I \<phi> first nts) = do {
      \<phi>d \<leftarrow> dformula_of n cs \<phi>; return (DNext I \<phi>d first nts) }"
 | "dformula_of n cs (MSince args \<phi> \<psi> buf aux) =
-     (if sevt_applies args then do {
-        \<phi>d \<leftarrow> dformula_of n (set_cols (args_L args)) \<phi>;
+     (let cs_L = set_cols (args_L args) in
+      if sevt_applies args then do {
+        \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
         q \<leftarrow> init_j args;
-        return (DSince args \<phi>d \<psi>d buf q) }
+        return (DSince args None \<phi>d \<psi>d buf q) }
+      else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
+              set cs_L \<subseteq> set cs
+      then (let dags = dargs cs cs_L args in do {
+        \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
+        \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+        q \<leftarrow> init_j dags;
+        return (DSince dags (if cs_L = cs then None else Some (emb_plan cs cs_L))
+                  \<phi>d \<psi>d buf q) })
       else return (DPure (MSince args \<phi> \<psi> buf aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
-     (if evt_applies args \<and> \<not> use_heap_until then do {
-        \<phi>d \<leftarrow> dformula_of n (set_cols (args_L args)) \<phi>;
+     (let cs_L = set_cols (args_L args) in
+      if evt_applies args \<and> \<not> use_heap_until then do {
+        \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
         d \<leftarrow> init_u_j args;
-        return (DUntil args \<phi>d \<psi>d buf nts t d) }
+        return (DUntil args None \<phi>d \<psi>d buf nts t d) }
+      else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
+              set cs_L \<subseteq> set cs
+      then (let dags = dargs cs cs_L args in do {
+        \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
+        \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+        d \<leftarrow> init_u_j dags;
+        return (DUntil dags (if cs_L = cs then None else Some (emb_plan cs cs_L))
+                  \<phi>d \<psi>d buf nts t d) })
       else return (DPure (MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs)))"
 | "dformula_of n cs \<phi> = return (DPure \<phi> n (wide_mask n cs))"
 
@@ -304,18 +322,20 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      return (let (xs, first) = (case (xs, first) of (_ # xs, True) \<Rightarrow> (xs, False) | a \<Rightarrow> a);
        (zs, buf, nts) = meprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
        in (zs, DNext I \<phi> first nts)) }"
-| "deval j ts db (DSince args \<phi> \<psi> buf aux) = do {
+| "deval j ts db (DSince args pl \<phi> \<psi> buf aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     (zs, buf, aux) \<leftarrow> eval_since_j args [] (mebuf2S_add xs ys ts buf) aux;
-     return (zs, DSince args \<phi> \<psi> buf aux) }"
-| "deval j ts db (DUntil args \<phi> \<psi> buf nts t aux) = do {
+     (zs, buf, aux) \<leftarrow> eval_since_j args []
+       (mebuf2S_add (case pl of None \<Rightarrow> xs | Some p \<Rightarrow> map (dembedp p) xs) ys ts buf) aux;
+     return (zs, DSince args pl \<phi> \<psi> buf aux) }"
+| "deval j ts db (DUntil args pl \<phi> \<psi> buf nts t aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     r \<leftarrow> mebuf2t_take_j (add_new_u_j args) aux (mebuf2_add xs ys buf) t (nts @@ ts);
+     r \<leftarrow> mebuf2t_take_j (add_new_u_j args) aux
+       (mebuf2_add (case pl of None \<Rightarrow> xs | Some p \<Rightarrow> map (dembedp p) xs) ys buf) t (nts @@ ts);
      (case r of (aux, buf, nt, nts') \<Rightarrow>
       do { z \<leftarrow> eval_u_j args nt aux;
-           return (fst z, DUntil args \<phi> \<psi> buf nts' nt (snd z)) }) }"
+           return (fst z, DUntil args pl \<phi> \<psi> buf nts' nt (snd z)) }) }"
 
 subsection \<open>The state\<close>
 
@@ -332,8 +352,8 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DAgg g0 \<omega> f k pos \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DPrev I \<phi> f buf nts) = dpure_nodes \<phi>"
 | "dpure_nodes (DNext I \<phi> f nts) = dpure_nodes \<phi>"
-| "dpure_nodes (DSince args \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
-| "dpure_nodes (DUntil args \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DSince args pl \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DUntil args pl \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"

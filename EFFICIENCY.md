@@ -3344,12 +3344,8 @@ that currently get none.
 1. **The compilation.** Done: 20.13 does the `produces` half and closes the chain through the
    escape hatch `DPure`, down to the kernel's own initial state, and 20.14 replaces that escape
    hatch by a descending compiler.
-2. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
-   the dense fragment -- which today takes a Since or Until only when the left operand has no free
-   variables, so a genuine two-sided one falls back to a single `DPure` node. This changes the
-   running program, so the timings will have to be re-measured afterwards; 20.11 says what to
-   expect, since `since` and `until` are the two benchmarks the short tuples currently do nothing
-   for.
+2. **The Since and Until cases.** Done: 20.15 rebuilds the running fragment on 20.6-20.8, so a
+   genuine two-sided Since or Until is a dense node rather than a `DPure` one, and re-measures.
 3. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
@@ -3550,4 +3546,52 @@ theorem dmonitor_mverdicts_dof (in verimon_spec):
 
 is 20.13's theorem on that state instead of the inert one: the same correctness statement, now
 about a monitor that really runs on short tuples.
+
+### 20.15 The general Since and Until, running
+
+The fragment 20.11 measured took a Since only when `sevt_applies args` -- `args_agg args = None`
+and `args_L args = {}`, so the node is an `ONCE` -- and an Until only under the analogous
+`evt_applies`. Anything else became a single `DPure` node covering the whole formula. 20.6-20.8
+lift that restriction on paper: `dsaux` and `duaux` are stated over the general `mmasaux` and
+`muaux_dq` at the narrow frame `dargs cs cs_L args`, with the left operand's tables embedded into
+the wider frame by `emb_plan`. `Dense_Imp.thy` now does the same:
+
+```isabelle
+| DSince args "nat option list option" dformula dformula "event_data mebuf2S" msaux_j
+```
+
+The new field is the embedding plan, `None` when none is needed. `dformula_of` builds the dense
+node whenever `args_agg args = None`, the node's frame is the formula's, its right columns are the
+node's own, and the left columns are contained in them -- and falls back to `DPure` otherwise, as
+before. `deval` embeds the left operand's tables through the plan before the buffer.
+
+**`None` when none is needed** is not a detail. Where the two operands have the same columns --
+which is exactly the `since` and `until` benchmarks, `B(x,y) SINCE[0,50] A(x,y)` over a
+two-column frame -- the plan is the identity, and building every left tuple again through it costs
+more than the short tuples save. Emitting `None` there took the two benchmarks from a loss to a
+wash, and the wide ones from a wash to a win.
+
+**Measured**, median of seven on a log four times the size of 20.11's (8000 time points, so the
+differences are above the noise floor, which the unchanged `once` row calibrates at about three
+points):
+
+| formula | before: pure | before: dense | before | after: pure | after: dense | after |
+|---|---:|---:|---:|---:|---:|---:|
+| sincewide | 3.57s | 3.48s | 1.03x | 3.56s | 2.98s | **1.19x** |
+| untilwide | 3.84s | 3.55s | 1.08x | 3.71s | 3.18s | **1.17x** |
+| once | 2.80s | 1.92s | 1.46x | 2.82s | 1.96s | 1.44x |
+
+where `sincewide` is `C(z) AND (B(x,y) SINCE[0,50] A(x,y))` and `untilwide` is
+`C(z) AND (A(x,y) UNTIL[0,20] B(x,y))` -- a two-sided operator inside a wider formula, so its
+tuples have a column to drop. `once` is the control: its path did not change, and it did not move.
+
+**On `since` and `until` themselves the change buys nothing, and 20.11's diagnosis of them was
+wrong.** Those formulas are `B(x,y) SINCE[0,50] A(x,y)` at a two-column frame: every column is
+live at every node, so there are no empty columns to drop and the dense representation is the
+sparse one. Their 0.96x and 0.94x were not the `DPure` fallback -- they were 19.3's case, the same
+one `agg` is in. The node counter now reports zero subformulas evaluated by the sparse function on
+every benchmark in the table, `since` and `until` included, and they sit at a wash.
+
+The cram suites are green and all 537 `-verified` invocations agree between `-dense` and the plain
+verified kernel.
 

@@ -764,6 +764,9 @@ subsection \<open>Narrowing a whole frame commutes with the join\<close>
 definition cpos :: "cols \<Rightarrow> nat set \<Rightarrow> nat set" where
   "cpos cs L = {i. i < length cs \<and> cs ! i \<in> L}"
 
+lemma cpos_code[code]: "cpos cs L = set (filter (\<lambda>i. cs ! i \<in> L) [0..<length cs])"
+  by (auto simp: cpos_def)
+
 lemma cpos_all: "cpos cs (set cs) = {0..<length cs}"
   by (auto simp: cpos_def)
 
