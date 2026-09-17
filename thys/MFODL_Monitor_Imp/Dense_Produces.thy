@@ -16,6 +16,10 @@ text \<open>
 
 subsection \<open>The coinduction, packaged\<close>
 
+lemma ftable_empty_table[simp]: "ftable n A empty_table"
+  by (simp add: empty_table_def table_def)
+
+
 text \<open>@{thm [source] produces.coinduct} with the trivial equations of its conclusion already
   solved, so that each node's lemma only has to name its own invariant.\<close>
 
@@ -218,6 +222,193 @@ lemma produces_MTP: "produces n (mtrm_cols mt) (mformula.MTP mt i)"
 
 lemma produces_MTS: "produces n (mtrm_cols mt) (mformula.MTS mt)"
   by (rule produces_fix) (auto simp: list_all_iff ftable_eval_mtrm)
+
+
+subsection \<open>The binary nodes with a buffer\<close>
+
+lemma mbuf2_take_out:
+  "mbuf2_take f (xs, ys) = (zs, buf') \<Longrightarrow>
+     (\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> P (f a b)) \<Longrightarrow> list_all P zs"
+proof (induct xs arbitrary: ys zs buf')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  note IH = Cons(1) and e = Cons(2) and st = Cons(3)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using e by simp
+  next
+    case (Cons y ys0)
+    obtain ws bf where w: "mbuf2_take f (xs, ys0) = (ws, bf)"
+      by (cases "mbuf2_take f (xs, ys0)")
+    have z: "zs = f x y # ws" using e Cons w by simp
+    have "list_all P ws" by (rule IH[OF w]) (use st Cons in simp)
+    then show ?thesis using st Cons by (simp add: z)
+  qed
+qed
+
+lemma produces_binop:
+  assumes step: "\<And>j ts db \<chi> \<eta> bf as \<chi>' bs \<eta>' zs bf'.
+      meval j n ts db \<chi> = (as, \<chi>') \<Longrightarrow> meval j n ts db \<eta> = (bs, \<eta>') \<Longrightarrow>
+      mbuf2_take f (mbuf2_add as bs bf) = (zs, bf') \<Longrightarrow>
+      meval j n ts db (C \<chi> \<eta> bf) = (zs, C \<chi>' \<eta>' bf')"
+    and tab: "\<And>X Y. ftable n B1 X \<Longrightarrow> ftable n B2 Y \<Longrightarrow> ftable n A (f X Y)"
+    and p1: "produces n B1 \<phi>" and p2: "produces n B2 \<psi>"
+    and bf1: "list_all (ftable n B1) (fst buf)" and bf2: "list_all (ftable n B2) (snd buf)"
+  shows "produces n A (C \<phi> \<psi> buf)"
+proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and> produces n B2 \<eta> \<and>
+       list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> bf. C \<phi> \<psi> buf = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and>
+      produces n B2 \<eta> \<and> list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"
+    using p1 p2 bf1 bf2 by blast
+next
+  fix n' A' \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and>
+      produces n B2 \<eta> \<and> list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"
+    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf where Phi: "\<Phi> = C \<chi> \<eta> bf" and pc: "produces n B1 \<chi>"
+    and pe: "produces n B2 \<eta>" and b1: "list_all (ftable n B1) (fst bf)"
+    and b2: "list_all (ftable n B2) (snd bf)" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain zs c1 c2 where e3: "mbuf2_take f (mbuf2_add as bs bf) = (zs, (c1, c2))"
+    by (cases "mbuf2_take f (mbuf2_add as bs bf)") auto
+  have "meval j n ts db (C \<chi> \<eta> bf) = (zs, C \<chi>' \<eta>' (c1, c2))" by (rule step[OF e1 e2 e3])
+  then have x: "xs = zs" and f': "\<Phi>' = C \<chi>' \<eta>' (c1, c2)" using e X Phi by simp_all
+  have ta: "list_all (ftable n B1) as" by (rule produces_tables[OF pc w e1])
+  have tb: "list_all (ftable n B2) bs" by (rule produces_tables[OF pe w e2])
+  have add: "mbuf2_add as bs bf = (fst bf @ as, snd bf @ bs)" by (cases bf) simp
+  have la: "list_all (ftable n B1) (fst bf @ as)" using b1 ta by simp
+  have lb: "list_all (ftable n B2) (snd bf @ bs)" using b2 tb by simp
+  have e3': "mbuf2_take f (fst bf @ as, snd bf @ bs) = (zs, (c1, c2))"
+    using e3 unfolding add by simp
+  have tz: "list_all (ftable n A) zs"
+    by (rule mbuf2_take_out[OF e3']) (use la lb tab in \<open>auto simp: list_all_iff\<close>)
+  have sb: "set c1 \<subseteq> set (fst bf @ as) \<and> set c2 \<subseteq> set (snd bf @ bs)"
+    by (rule mbuf2_take_sub[OF e3'])
+  have lc1: "list_all (ftable n B1) c1" using sb la by (auto simp: list_all_iff)
+  have lc2: "list_all (ftable n B2) c2" using sb lb by (auto simp: list_all_iff)
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi>' = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and> produces n B2 \<eta> \<and>
+         list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))) \<or>
+       produces n' A' \<Phi>')"
+    using X tz lc1 lc2 produces_next[OF pc w e1] produces_next[OF pe w e2]
+    by (auto simp: x f')
+qed
+
+lemma produces_MOr:
+  assumes p1: "produces n A \<phi>" and p2: "produces n A \<psi>"
+    and bf1: "list_all (ftable n A) (fst buf)" and bf2: "list_all (ftable n A) (snd buf)"
+  shows "produces n A (mformula.MOr \<phi> \<psi> buf)"
+proof -
+  have step: "\<And>j ts db \<chi> \<eta> bf as \<chi>' bs \<eta>' zs bf'.
+      meval j n ts db \<chi> = (as, \<chi>') \<Longrightarrow> meval j n ts db \<eta> = (bs, \<eta>') \<Longrightarrow>
+      mbuf2_take (\<lambda>X Y. X \<union> Y) (mbuf2_add as bs bf) = (zs, bf') \<Longrightarrow>
+      meval j n ts db (mformula.MOr \<chi> \<eta> bf) = (zs, mformula.MOr \<chi>' \<eta>' bf')"
+    by simp
+  have tab: "\<And>X Y. ftable n A X \<Longrightarrow> ftable n A Y \<Longrightarrow> ftable n A (X \<union> Y)"
+    by (auto simp: table_def)
+  show ?thesis by (rule produces_binop[OF step tab p1 p2 bf1 bf2])
+qed
+
+lemma ftable_bin_join:
+  fixes X Y :: "event_data table"
+  assumes tX: "ftable n A1 X" and tY: "ftable n A2 Y"
+    and sub: "\<not> pos \<Longrightarrow> A2 \<subseteq> A1" and A: "A = (if pos then A1 \<union> A2 else A1)"
+  shows "ftable n A (bin_join n A1 X pos A2 Y)"
+proof -
+  have tj: "table n A (join X pos Y)"
+    by (rule join_table[of n A1 X A2 Y pos A]) (use tX tY sub A in auto)
+  have fj: "finite (join X pos Y)" by (rule finite_join) (use tX tY in auto)
+  have bj: "bin_join n A1 X pos A2 Y = join X pos Y"
+    by (rule bin_join_table) (use tX tY in auto)
+  show ?thesis unfolding bj using tj fj by simp
+qed
+
+lemma produces_MAnd:
+  assumes p1: "produces n A1 \<phi>" and p2: "produces n A2 \<psi>"
+    and bf1: "list_all (ftable n A1) (fst buf)" and bf2: "list_all (ftable n A2) (snd buf)"
+    and sub: "\<not> pos \<Longrightarrow> A2 \<subseteq> A1" and A: "A = (if pos then A1 \<union> A2 else A1)"
+  shows "produces n A (mformula.MAnd A1 \<phi> pos A2 \<psi> buf)"
+proof -
+  have step: "\<And>j ts db \<chi> \<eta> bf as \<chi>' bs \<eta>' zs bf'.
+      meval j n ts db \<chi> = (as, \<chi>') \<Longrightarrow> meval j n ts db \<eta> = (bs, \<eta>') \<Longrightarrow>
+      mbuf2_take (\<lambda>X Y. bin_join n A1 X pos A2 Y) (mbuf2_add as bs bf) = (zs, bf') \<Longrightarrow>
+      meval j n ts db (mformula.MAnd A1 \<chi> pos A2 \<eta> bf)
+        = (zs, mformula.MAnd A1 \<chi>' pos A2 \<eta>' bf')"
+    by (simp del: bin_join.simps)
+  show ?thesis
+    by (rule produces_binop[OF step ftable_bin_join[OF _ _ sub A] p1 p2 bf1 bf2])
+qed
+
+subsection \<open>The temporal shift nodes\<close>
+
+lemma mprev_next_out:
+  "mprev_next I xs ts = (zs, xs', ts') \<Longrightarrow> list_all P xs \<Longrightarrow> P empty_table \<Longrightarrow>
+     list_all P zs \<and> list_all P xs'"
+  by (induct I xs ts arbitrary: zs xs' ts' rule: mprev_next.induct)
+    (auto split: prod.splits)
+
+lemma produces_MPrev:
+  assumes p: "produces n A \<phi>" and bf: "list_all (ftable n A) buf"
+  shows "produces n A (mformula.MPrev I \<phi> first buf nts)"
+proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> b bs nt. \<Phi> = mformula.MPrev I \<chi> b bs nt \<and> produces n A \<chi> \<and>
+       list_all (ftable n A) bs)"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> b bs nt. mformula.MPrev I \<phi> first buf nts
+      = mformula.MPrev I \<chi> b bs nt \<and> produces n A \<chi> \<and> list_all (ftable n A) bs)"
+    using p bf by blast
+next
+  fix n' A' \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> b bs nt. \<Phi> = mformula.MPrev I \<chi> b bs nt \<and>
+      produces n A \<chi> \<and> list_all (ftable n A) bs)"
+    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> b bs nt where Phi: "\<Phi> = mformula.MPrev I \<chi> b bs nt"
+    and pc: "produces n A \<chi>" and lb: "list_all (ftable n A) bs" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w e1])
+  obtain ws bs' nt' where e2: "mprev_next I (bs @ as) (nt @ ts) = (ws, bs', nt')"
+    by (cases "mprev_next I (bs @ as) (nt @ ts)") auto
+  have out: "list_all (ftable n A) ws \<and> list_all (ftable n A) bs'"
+    by (rule mprev_next_out[OF e2]) (use lb ta in \<open>auto simp: table_def\<close>)
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> b bs nt. \<Phi>' = mformula.MPrev I \<chi> b bs nt \<and>
+         produces n A \<chi> \<and> list_all (ftable n A) bs)) \<or> produces n' A' \<Phi>')"
+    using X e Phi e1 e2 out lb ta produces_next[OF pc w e1]
+    by (auto simp: table_def split: if_splits)
+qed
+
+lemma produces_MNext:
+  assumes p: "produces n A \<phi>"
+  shows "produces n A (mformula.MNext I \<phi> first nts)"
+proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> b nt. mformula.MNext I \<phi> first nts
+      = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)" using p by blast
+next
+  fix n' A' \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)"
+    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> b nt where Phi: "\<Phi> = mformula.MNext I \<chi> b nt" and pc: "produces n A \<chi>"
+    by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w e1])
+  obtain cs b' where c: "(case (as, b) of (_ # as', True) \<Rightarrow> (as', False) | a \<Rightarrow> a) = (cs, b')"
+    by (cases "(case (as, b) of (_ # as', True) \<Rightarrow> (as', False) | a \<Rightarrow> a)") auto
+  have tc: "list_all (ftable n A) cs"
+    using ta c by (cases as; cases b) auto
+  obtain ws cs' nt' where e2: "mprev_next I cs (nt @ ts) = (ws, cs', nt')"
+    by (cases "mprev_next I cs (nt @ ts)") auto
+  have out: "list_all (ftable n A) ws \<and> list_all (ftable n A) cs'"
+    by (rule mprev_next_out[OF e2]) (use tc in \<open>auto simp: table_def\<close>)
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> b nt. \<Phi>' = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)) \<or>
+       produces n' A' \<Phi>')"
+    using X e Phi e1 c e2 out produces_next[OF pc w e1] by auto
+qed
 
 (*<*)
 end
