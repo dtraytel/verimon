@@ -2227,6 +2227,95 @@ proof safe
     by (auto simp: update_until_def dest!: w intro!: table_Un intro: table_join_sub)
 qed
 
+section \<open>Buffers of narrowed tables\<close>
+
+text \<open>
+  A buffer never looks inside a tuple: it lines up the tables the operands produce and hands
+  matching pairs to the node's operation.  So a buffer of narrowed tables behaves as the
+  narrowing of a buffer of wide ones.  These are map-fusion lemmas for the kernel's own
+  list-level buffers, which is where its verified @{const meval} lives; the queue
+  representation of @{theory MFODL_Monitor_Devel.Monitor_Impl} is layered on top of that by the
+  kernel's own code equations, so the dense side can reuse it unchanged.
+\<close>
+
+lemma mbuf2_add_map:
+  "mbuf2_add (map h xs') (map k ys') (map h xs, map k ys) = (map h (xs @ xs'), map k (ys @ ys'))"
+  by simp
+
+lemma mbuf2_take_map:
+  "(\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> g (h a) (k b) = m (f a b)) \<Longrightarrow>
+   mbuf2_take f (xs, ys) = (zs, (xs', ys')) \<Longrightarrow>
+   mbuf2_take g (map h xs, map k ys) = (map m zs, (map h xs', map k ys'))"
+proof (induct xs arbitrary: ys zs xs' ys')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 by simp
+  next
+    case (Cons y ys2)
+    note e = Cons
+    obtain ws as bs where w: "mbuf2_take f (xs, ys2) = (ws, (as, bs))"
+      by (cases "mbuf2_take f (xs, ys2)") auto
+    have p1: "\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> g (h a) (k b) = m (f a b)"
+      using P1 e by simp
+    have ih: "mbuf2_take g (map h xs, map k ys2) = (map m ws, (map h as, map k bs))"
+      by (rule IH[OF p1 w])
+    have d: "zs = f x y # ws" "xs' = as" "ys' = bs" using P2 e w by auto
+    show ?thesis using P1 e w ih d by simp
+  qed
+qed
+
+lemma mprev_next_map:
+  "h empty_table = empty_table \<Longrightarrow> mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow>
+     mprev_next I (map h xs) ts = (map h ys, map h xs', ts')"
+  by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
+    (auto split: prod.splits)
+
+lemma mbuf2t_take_rel:
+  "(\<And>a b t z z'. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R z z' \<Longrightarrow>
+      R (f a b t z) (g (h a) (k b) t z')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4) and P4 = Cons(5)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 by (auto split: list.splits)
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P3 P4 ysC by simp
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have r: "R (f x y t z) (g (h x) (k y) t z')" using P1 P2 ysC by simp
+      have p1: "\<And>a b t' za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R za z'a \<Longrightarrow>
+          R (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2t_take f (f x y t z) (xs, ys2) t ts3 = (w, (xs', ys'), nt, ts')"
+        using P3 ysC tsC by simp
+      have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
+          = (w2, buf2, nt2, ts2)"
+        using P4 ysC tsC by simp
+      show ?thesis by (rule IH[OF p1 r s1 s2])
+    qed
+  qed
+qed
+
 (*<*)
 end
 (*>*)
