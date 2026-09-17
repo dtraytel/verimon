@@ -850,33 +850,34 @@ qed
 
 lemma dtabc_join_frame:
   assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
-    and sub: "L \<subseteq> set cs"
-    and t1: "table n (set cs) T" and t2: "table n L T'"
+    and sub: "L \<subseteq> A" and subA: "A \<subseteq> set cs"
+    and t1: "table n A T" and t2: "table n L T'"
   shows "dtabc n cs (join T pos T') = join (dtabc n cs T) pos (dtabc n cs T')"
 proof -
+  have sub': "L \<subseteq> set cs" using sub subA by auto
   have j1: "join T pos T' = {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}"
     using join_sub[OF sub t2 t1] by (simp add: proj_tuple_in_join_def join_cond_eq)
-  have t1': "table (length cs) {0..<length cs} (dtabc n cs T)"
-    using table_dtabc_cpos[OF s b _ t1] by (simp add: cpos_all)
+  have t1': "table (length cs) (cpos cs A) (dtabc n cs T)"
+    by (rule table_dtabc_cpos[OF s b subA t1])
   have t2': "table (length cs) (cpos cs L) (dtabc n cs T')"
-    by (rule table_dtabc_cpos[OF s b sub t2])
+    by (rule table_dtabc_cpos[OF s b sub' t2])
   have j2: "join (dtabc n cs T) pos (dtabc n cs T')
       = {d \<in> dtabc n cs T. (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
-    using join_sub[OF _ t2' t1'] cpos_mono[of L "set cs" cs] sub
-    by (simp add: proj_tuple_in_join_def join_cond_eq cpos_all)
+    using join_sub[OF cpos_mono[OF sub] t2' t1']
+    by (simp add: proj_tuple_in_join_def join_cond_eq)
   have key: "\<And>a. a \<in> T \<Longrightarrow>
       (proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) a) \<in> dtabc n cs T')
         = (proj_tuple (join_mask n L) a \<in> T')"
   proof -
     fix a assume "a \<in> T"
-    then have w: "wf_tuple n (set cs) a" using t1 by (simp add: table_def)
+    then have w: "wf_tuple n A a" using t1 by (simp add: table_def)
     then have l: "length a = n" by (simp add: wf_tuple_def)
     have wp: "wf_tuple n L (proj_tuple (join_mask n L) a)"
-      using wf_tuple_proj_tuple[OF w] sub by simp
+      using wf_tuple_proj_tuple[OF w sub] .
     show "(proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) a) \<in> dtabc n cs T')
         = (proj_tuple (join_mask n L) a \<in> T')"
-      unfolding proj_tuple_dproj[OF s b sub l] dtabc_def
-      using dproj_inj_sub[OF s b sub] wp t2 by (auto simp: table_def inj_on_def)
+      unfolding proj_tuple_dproj[OF s b sub' l] dtabc_def
+      using dproj_inj_sub[OF s b sub'] wp t2 by (auto simp: table_def inj_on_def)
   qed
   have "dtabc n cs {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}
       = {d \<in> dtabc n cs T. (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
@@ -2086,6 +2087,144 @@ proof -
       using lhs by simp
   qed
   then show ?thesis unfolding dtabc_def image_image by (cases "ex_drop0 ccs") auto
+qed
+
+section \<open>The temporal operators at a re-indexed frame\<close>
+
+text \<open>
+  The @{locale msaux} and @{locale muaux} specifications are stated over an abstract auxiliary
+  list of timestamped tables, and everything they do to it is a join, a union, or a filter on
+  timestamps.  None of those reads a tuple position except the join, and the join commutes with
+  narrowing by @{thm [source] dtabc_join_frame}.  So the verified structures can be run unchanged at a
+  frame whose width is the number of columns, on narrowed tables -- which is what the theorems of
+  this section say, one per operation of the two locales.
+\<close>
+
+definition dargs :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> args" where
+  "dargs cs_R cs_L args = init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+     {0..<length cs_R} (args_pos args) None"
+
+lemma dargs_simps[simp]:
+  "args_ivl (dargs cs_R cs_L args) = args_ivl args"
+  "args_n (dargs cs_R cs_L args) = length cs_R"
+  "args_L (dargs cs_R cs_L args) = cpos cs_R (set cs_L)"
+  "args_R (dargs cs_R cs_L args) = {0..<length cs_R}"
+  "args_pos (dargs cs_R cs_L args) = args_pos args"
+  "args_agg (dargs cs_R cs_L args) = None"
+  by (simp_all add: dargs_def init_args_def)
+
+lemma dargs_L_R: "set cs_L \<subseteq> set cs_R \<Longrightarrow>
+    args_L (dargs cs_R cs_L args) \<subseteq> args_R (dargs cs_R cs_L args)"
+  by (auto simp: cpos_def)
+
+lemma dtabc_empty[simp]: "dtabc n cs {} = {}"
+  by (simp add: dtabc_def)
+
+lemma dtabc_Un_img: "dtabc n cs (A \<union> B) = dtabc n cs A \<union> dtabc n cs B"
+  by (simp add: dtabc_def image_Un)
+
+lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
+  by (simp add: eval_args_agg_def)
+
+subsection \<open>The Since structure's auxiliary list\<close>
+
+definition dauxlist :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'a table) list \<Rightarrow> (ts \<times> 'a table) list" where
+  "dauxlist n cs aux = map (\<lambda>(t, rel). (t, dtabc n cs rel)) aux"
+
+lemma dauxlist_filter:
+  "dauxlist n cs (filter (\<lambda>(t, rel). P t) aux) = filter (\<lambda>(t, rel). P t) (dauxlist n cs aux)"
+  by (induct aux) (auto simp: dauxlist_def)
+
+lemma dauxlist_join:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and sub: "L \<subseteq> set cs"
+    and wf: "\<forall>(t, rel) \<in> set aux. table n (set cs) rel" and t1: "table n L rel1"
+  shows "dauxlist n cs (map (\<lambda>(t, rel). (t, join rel pos rel1)) aux)
+       = map (\<lambda>(t, rel). (t, join rel pos (dtabc n cs rel1))) (dauxlist n cs aux)"
+  using wf by (induct aux)
+    (auto simp: dauxlist_def dtabc_join_frame[OF s b sub subset_refl _ t1])
+
+lemma dauxlist_add_new_table:
+  "dauxlist n cs (case aux of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # aux)
+   = (case dauxlist n cs aux of [] \<Rightarrow> [(cur, dtabc n cs rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc n cs rel2) # r
+                         else (cur, dtabc n cs rel2) # dauxlist n cs aux)"
+  by (cases aux) (auto simp: dauxlist_def dtabc_Un_img)
+
+lemma dtabc_result:
+  assumes "\<forall>(t, rel) \<in> set aux. table n (set cs) rel"
+  shows "dtabc n cs (foldr (\<union>) [rel. (t, rel) \<leftarrow> aux, P t] {})
+       = foldr (\<union>) [rel. (t, rel) \<leftarrow> dauxlist n cs aux, P t] {}"
+  using assms by (induct aux) (auto simp: dauxlist_def dtabc_Un_img)
+
+lemma dauxlist_wf_filter:
+  "\<forall>(t, rel) \<in> set aux. table n (set cs) rel \<Longrightarrow>
+     \<forall>(t, rel) \<in> set (filter (\<lambda>(t, rel). P t) aux). table n (set cs) rel"
+  by auto
+
+lemma dauxlist_wf_join:
+  assumes "\<forall>(t, rel) \<in> set aux. table n (set cs) rel" and "L \<subseteq> set cs" and "table n L rel1"
+  shows "\<forall>(t, rel) \<in> set (map (\<lambda>(t, rel). (t, join rel pos rel1)) aux). table n (set cs) rel"
+  using assms by (fastforce intro: join_table[of n "set cs" _ L rel1 pos])
+
+lemma dauxlist_wf_add_new_table:
+  assumes "\<forall>(t, rel) \<in> set aux. table n (set cs) rel" and "table n (set cs) rel2"
+  shows "\<forall>(t, rel) \<in> set (case aux of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # aux).
+         table n (set cs) rel"
+  using assms by (cases aux) (auto simp: table_def)
+
+subsection \<open>The Until structure's auxiliary list\<close>
+
+definition dauxlist3 :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'a table \<times> 'a table) list \<Rightarrow>
+    (ts \<times> 'a table \<times> 'a table) list" where
+  "dauxlist3 n cs aux = map (\<lambda>(t, a1, a2). (t, dtabc n cs a1, dtabc n cs a2)) aux"
+
+lemma dauxlist3_update_until:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and sub: "L \<subseteq> set cs"
+    and wf: "\<forall>(t, a1, a2) \<in> set aux. table n L a1 \<and> table n (set cs) a2"
+    and t1: "table n L rel1" and t2: "table n (set cs) rel2"
+    and iv: "args_ivl args' = args_ivl args" and po: "args_pos args' = args_pos args"
+  shows "dauxlist3 n cs (update_until args rel1 rel2 nt aux)
+       = update_until args' (dtabc n cs rel1) (dtabc n cs rel2) nt (dauxlist3 n cs aux)"
+  using wf
+  by (induct aux)
+    (auto simp: dauxlist3_def update_until_def iv po empty_table_def dtabc_Un_img
+       dtabc_join_frame[OF s b subset_refl sub _ t1]
+       dtabc_join_frame[OF s b sub subset_refl t2])
+
+lemma dauxlist3_eval_until:
+  "eval_until I nt aux = (res, aux') \<Longrightarrow>
+     eval_until I nt (dauxlist3 n cs aux) = (map (dtabc n cs) res, dauxlist3 n cs aux')"
+  by (induct I nt aux arbitrary: res aux' rule: eval_until.induct)
+    (auto simp: dauxlist3_def split: if_splits prod.splits)
+
+lemma table_join_same: "table n A X \<Longrightarrow> table n A Y \<Longrightarrow> table n A (join X b Y)"
+  by (rule join_table[of n A X A Y b A]) auto
+
+lemma table_join_sub: "table n A X \<Longrightarrow> table n B Y \<Longrightarrow> B \<subseteq> A \<Longrightarrow> table n A (join X b Y)"
+  by (rule join_table[of n A X B Y b A]) auto
+
+lemma table_Un: "table n A X \<Longrightarrow> table n A Y \<Longrightarrow> table n A (X \<union> Y)"
+  by (auto simp: table_def)
+
+lemma table_empty[simp]: "table n A empty_table"
+  by (simp add: table_def empty_table_def)
+
+lemma dauxlist3_wf_update_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table n L a1 \<and> table n (set cs) a2"
+    and sub: "L \<subseteq> set cs" and t1: "table n L rel1" and t2: "table n (set cs) rel2"
+  shows "\<forall>(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux).
+      table n L a1 \<and> table n (set cs) a2"
+proof safe
+  have w: "\<And>t b1 b2. (t, b1, b2) \<in> set aux \<Longrightarrow> table n L b1 \<and> table n (set cs) b2"
+    using wf by auto
+  fix t a1 a2 assume m: "(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux)"
+  show "table n L a1"
+    using m t1 t2 by (auto simp: update_until_def dest!: w intro: table_join_same table_Un)
+  show "table n (set cs) a2"
+    using m t1 t2 sub
+    by (auto simp: update_until_def dest!: w intro!: table_Un intro: table_join_sub)
 qed
 
 (*<*)
