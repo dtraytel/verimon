@@ -3341,12 +3341,12 @@ that currently get none.
 
 ### 20.12 What is left
 
-1. **The compilation.** A pure `dof` and `mcols` (the ones in `Dense_Imp.thy` are monadic, because
-   they initialise the imperative structures) must be proved to produce a `dsim` for the initial
-   formula `minit0 n φ`: that the column list of a node is the subformula's free-variable set, that
-   the join plans and the embedding plan are the ones the frames call for, and that every node's
-   `produces` holds. That is the last thing `dmonitor_mverdicts` asks of its caller, and with it
-   the chain from `Mt π` down to the short tuples is closed.
+1. **The compilation.** 20.13 does the `produces` half and closes the chain through the escape
+   hatch `DPure`. What is left of this item is the *descending* compiler: a pure `dof` and `mcols`
+   (the ones in `Dense_Imp.thy` are monadic, because they initialise the imperative structures)
+   producing a `dsim` whose nodes are dense rather than `DPure` -- that the column list of a node
+   is the subformula's free-variable set, and that the join plans and the embedding plan are the
+   ones the frames call for.
 2. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
    the dense fragment -- which today takes a Since or Until only when the left operand has no free
    variables, so a genuine two-sided one falls back to a single `DPure` node. This changes the
@@ -3359,3 +3359,90 @@ that currently get none.
    `-dense -heap_maps` is not.
 4. **Then** `Dense.thy`, `Dense_Eval.thy`, `Dense_Produces.thy`, `Dense_Match.thy`,
    `Dense_Let.thy` and `Dense_Correct.thy` move to the base session.
+
+### 20.13 Closing the chain: the criterion and the initial state
+
+The transferred theorems of 20.9 all ask the caller for a related initial state,
+`dmsim_state n cs 0 (minit_safe φ) dst`, and until one is produced they say nothing about any
+concrete monitor. `Dense_Compile.thy` produces one.
+
+**The criterion.** The node lemmas of 20.10 each say: if a node's operands produce finite tables
+over their columns, so does the node. They compose by structural induction, and
+
+```isabelle
+inductive mok :: "nat ⇒ nat set ⇒ ts ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ bool"
+```
+
+is what they compose into -- one rule per node, carrying exactly that node's lemma's hypotheses
+with the operands' `produces` replaced by `mok` itself, and
+
+```isabelle
+theorem mok_produces: "mok n A tw φ ⟹ produces n A tw φ"
+```
+
+discharges them all by `mok.induct`, one node lemma per case. `mok` is inductive rather than a
+recursive function because the two match rules quantify over the atom list the marked regular
+expression was compiled from: `safe_regex` is a property of the source regex and is not
+recoverable from the `mformula` alone.
+
+**Two node lemmas had to be corrected or extended first.**
+
+*The aggregated Since and Until.* `produces_MSince` and `produces_MUntil` were proved for
+`args_agg args = None`. The kernel also fuses an aggregation into these two nodes: for
+`Agg y ω tys f (Since φ I ψ)` it builds a single `MSince` whose `args` carry `Some aggargs`,
+evaluating the operands at the inner frame `length tys + n` and emitting tables at the outer frame
+`n`. Only the output step of each proof looks at the aggregation, so each is generalised over what
+that step delivers -- a parameter `Res` on the structure's result for Since, an output frame
+`(nr, Ar)` for both -- and the aggregated instances follow. This is `Dense_Agg.thy`.
+
+*The aggregation's columns.* `produces_MAgg` asked for `∀i ∈ G. length (aggargs_tys args) ≤ i` of
+the operand's columns `G`. In the kernel's own initial state that hypothesis cannot hold:
+`safe_formula` for `Agg y ω tys f φ` requires `{0..<length tys} ⊆ fv φ`, so `G` always contains the
+bound columns, and the lemma was only about aggregations that bind nothing. `eval_agg` drops the
+first `length tys` entries of each tuple and groups by what is left, so the node's columns are
+
+```isabelle
+Set.insert y ((λi. i - length tys) ` (G - {0..<length tys}))
+```
+
+and `ftable_eval_agg`, `produces_MAgg` and the aggregated Since and Until now say that.
+
+**The state.** With the criterion in hand,
+
+```isabelle
+definition dpure_state :: "nat ⇒ cols ⇒ mstate ⇒ dmstate"
+lemma dmsim_state_dpure_state_mok:
+  "wf_cols n cs ⟹ mstate_n st = n ⟹ mok n (set cs) tw (mstate_m st)
+     ⟹ dmsim_state n cs tw st (dpure_state n cs st)"
+theorem dmonitor_mverdicts_pure (in verimon_spec)
+```
+
+produce a related state through the `DsPure` rule of 20.9, whose only content beyond the column
+list is `produces`. The monitor built this way runs the kernel's evaluator and narrows its output,
+so it is the bottom of the refinement rather than the interesting point of it; what it settles is
+that the theorems are about something, and what the descending compiler of 20.12 will replace is
+the dense formula, not the chain.
+
+**The initial state.** What `dmonitor_mverdicts_pure` still asks of its caller is
+
+```isabelle
+lemma mok_minit0:
+  "safe_formula φ ⟹ ∀x ∈ fv φ. x < n ⟹ mok n (fv φ) tw (minit0 n φ)"
+```
+
+by induction with `safe_formula_induct`. Thirty-one of its thirty-two cases are done, in
+`Dense_Init.thy`; because one is not, that theory is deliberately absent from `ROOT`, so the
+session itself stays free of `sorry`. The initial state makes the auxiliary invariants cheap --
+`saux_inv_init`, `until_inv_init` and `trigger_inv_init` all rest on the kernel's own
+`valid_init_*` lemmas at `cur = 0` -- and the work is in following `minit0` through the
+rewritings: the release forms, the fused aggregations, the multi-way conjunction's positive and
+negative partitions, and the two match nodes' `to_mregex`.
+
+The case that is left is `And_Trigger`, and it needs a node lemma that does not exist yet. Its
+interval need not contain `0`, while `produces_MAndTrigger` assumes it does, because the trigger
+structure's result carries its own column set and that set is the operand's only when the window
+is nonempty; otherwise the structure reports the empty column set and the unit table. Either way
+the join that follows gives a table over the left operand's columns, so the node lemma can be
+weakened to a result whose column set is bounded rather than fixed. The finiteness of the result
+in that case comes from `safe_dual`, which for `¬ mem I 0` forces `fv φ' = fv ψ'`, so the join
+condition pins every column of the tuple.
