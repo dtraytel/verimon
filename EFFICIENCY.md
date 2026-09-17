@@ -2436,6 +2436,10 @@ on the other.**
 
 ### 19.2 The theory
 
+(Written while the theory lived entirely in the child session. Section 20 verifies the pure part
+of it and moves that part into the base session as `thys/MFODL_Monitor_Devel/Dense.thy`; what
+stays behind in `Dense_Imp.thy` is the heap index, the compilation and the evaluation function.)
+
 `thys/MFODL_Monitor_Imp/Dense_Imp.thy`, a new pure theory in the child session, so the base
 session is not rebuilt. It carries the compacting projection and its inverse, the masks, the
 merge plan of two column lists, the dense join of two tuples, a binary join with three shapes
@@ -2585,3 +2589,129 @@ words per value that the representation cannot drop without changing the type of
 so of every auxiliary structure. Underneath that, `nat` is a boxed constructor around an
 arbitrary-precision integer, which Section 18.8 already named as the largest remaining
 allocation. Neither is a change to an algorithm; both are changes to what a value costs.
+
+## 20. Verifying the short-tuple representation
+
+### 20.1 What there is to prove
+
+Section 19 built a second evaluator over short tuples and tested it differentially against the
+kernel. That is evidence, not a proof. This section replaces the evidence for the part of it that
+can be replaced: every table operation of the dense evaluator now has a theorem saying it computes
+the short form of what the kernel computes.
+
+The relation between the two representations is one function. For a column list `cs` -- strictly
+sorted, all entries below the frame width `n` -- narrowing is
+
+```isabelle
+definition dtabc :: "nat ⇒ cols ⇒ 'a table ⇒ 'a table" where
+  "dtabc n cs T = dproj (wide_mask n cs) ` T"
+```
+
+and `dproj` deletes the positions the mask does not mark. Two facts make it a representation
+rather than merely a function: on well-formed tuples it is injective (`inj_on_dproj_cols`, via
+`dwiden_dproj_wf`, which reconstructs the wide tuple from the short one and the mask), and the
+mask of a sorted column list is the kernel's own `join_mask` of its set (`wide_mask_eq_join_mask`).
+The second is what lets every proof below hand a goal back to a kernel lemma.
+
+Each operation then gets an equation of the shape
+
+> *dense operation applied to narrowed arguments = narrowing of the kernel's operation applied to
+> the wide arguments*,
+
+so a whole evaluation over short tuples is the narrowing of the kernel's evaluation as long as
+every step composes -- which is what the shapes of these equations arrange: the right-hand side of
+each is a `dtabc` of a kernel result, ready to be the left-hand side's argument at the next step.
+
+### 20.2 What is proved
+
+`thys/MFODL_Monitor_Devel/Dense.thy`, now part of the base session, 1900 lines and 113 lemmas
+and theorems, no `sorry`. The operation theorems, in the order the file proves them:
+
+| kernel operation | dense operation | theorem |
+|---|---|---|
+| `join T pos T'`, equal columns | `A ∩ B` / `A - B` | `dtabc_join_eq` |
+| `join T pos T'`, right operand closed | membership test | `dtabc_join_no_cols` |
+| `join T pos T'`, right columns ⊆ left | `dsemi` | `dsemi_join` |
+| `join T True T'`, left columns ⊆ right | filter on a projection | `dsup_join` |
+| `join T True T'`, general | `dgen_join` (index) | `dtabc_gen_join` |
+| `bin_join n A T pos A' T'` | `dbin_join (mk_djoin cs1 cs2)` | `dbin_join_bin_join` |
+| `mmulti_join' A_pos A_neg L` | `dands_neg ∘ dands_pos` | `dmulti_join_dtabc` |
+| `eval_agg n g0 y ω tys f` | `dagg` | `dagg_eval_agg` |
+| `simple_match n 0 tms \` X` (Copy, Simple) | the database table itself | `dtabc_simple_match` |
+| `(λf. tabulate f 0 n) \` these (match tms \` X)` | `dmatch_table` | `dmatch_table_dtabc` |
+| `tl \` X` (the existential) | `tl` or nothing | `dtabc_exists` |
+| narrowing at the boundary | `dnarrow` | `dnarrow_dtabc` |
+
+Three of these are worth a word.
+
+**The general join.** `dgen_join` indexes one side by the shared columns and probes it with the
+other, choosing which side by `card A ≤ card B`. Two things had to be proved that the sparse
+kernel never needs. First, that a probe that hits can merge without a test: `djoin1_dmerge` says
+two short tuples join exactly when they agree on the shared columns, and that the result is then
+`dmerge`, which walks the plan and copies. Second, that the size heuristic is transparent:
+`dgen_join_eq` computes both branches of `card A ≤ card B` and shows they are the same set, so the
+choice cannot be observed. Underneath, `dindex_lookup` says the fold that builds the index maps a
+key to exactly the tuples with that key, and `dprobe_fold` / `dprobe_l_fold` say the probe folds
+accumulate the merges.
+
+**The multi-way join.** The kernel's `mmulti_join'` picks a join order at run time from the
+variable sets; the dense evaluator folds binary joins left to right against a plan list computed
+once when the formula is compiled. Proving these equal did not need a new argument about the
+generic join: the kernel already carries `mmulti_join'_opt_True` and `mmulti_join'_opt_False`,
+which merge two adjacent positive operands into their join and discharge a negative operand by an
+anti-join. Iterating them (`mmulti_join'_fold_pos`, `mmulti_join'_fold_neg`) folds the whole thing
+down to the one-operand case `mmulti_join'_single`, which is the left-to-right fold. The dense
+half (`dands_pos_dtabc`, `dands_neg_dtabc`) is then a straight induction on `dbin_join_bin_join`.
+
+**The aggregation.** The kernel groups by `drop (length tys)` of the wide tuple and writes the
+aggregate at position `y`. Over short tuples the group key is still a suffix -- `drop_dproj_agg`,
+which needs the operand's columns to be `[0..<m]` followed by the group's columns shifted up by
+`m`, which is exactly what the aggregation's frame gives -- but the aggregate goes at the one
+position `y` occupies among the group's columns (`dproj_list_update`, `ins_pos`). The values
+aggregated do not change (`agg_values_dtabc`): the re-indexed term reads the short tuple where the
+original reads the wide one (`meval_trm_reindex`), and the multiset of values is the same because
+narrowing is injective on a group (`ecard_image`).
+
+### 20.3 What is not proved, and why
+
+The evaluation function itself. `deval` in `thys/MFODL_Monitor_Imp/Dense_Imp.thy` is not proved to
+simulate `meval`, and three separate things stand in the way, of quite different sizes.
+
+**The Since and Until cases route through unproved structures.** `DSince` and `DUntil` use the
+`sevtaux` / `evtaux` structures of Section 16, which are code-level constructions in the child
+session with no correctness proof of their own. A dense monitor that could be verified would have
+to use the base session's `mmasaux` and `muaux_dq` instead, with `args` re-indexed to the dense
+frame: `args_n` becomes `length cols_R`, and `args_L` becomes the positions of the left operand's
+columns within the right's. That re-indexing is a real piece of work -- every invariant of those
+structures is stated in terms of `table (args_n args) (args_R args)` -- but it is work of a kind
+that has been done before in this development, not a new obstacle.
+
+**The heap index is Imperative HOL without Hoare triples.** `dbin_join_h` and the `didx_ins` /
+`dprobe_r` / `dprobe_l` it calls are monadic and unproved, exactly as `hprobe_join` was before
+Section 8 proved it. The pure `dgen_join` it falls back to *is* proved, and the fallback is what
+runs whenever `-heap_maps` is off, so `-dense` alone is covered by the theorems above and
+`-dense -heap_maps` is not.
+
+**The compilation is unproved.** `dformula_of` turns an `mformula_j` into the dense fragment and
+computes the column list of every node (`mcols`). Nothing says that the column list it computes is
+the free-variable set of the subformula, which is the hypothesis every theorem in 20.2 needs. This
+is the smallest of the three and the most mechanical: an induction over `mformula_j` against the
+kernel's own `wf_mformula`.
+
+So the honest statement is: **the representation and every table operation over it are verified;
+the evaluator that strings them together is tested, not verified.** That is a real narrowing of
+what has to be trusted -- the table operations are where all the index arithmetic lives, and they
+are where the two bugs of Section 19.5 were -- but it is not the whole claim.
+
+### 20.4 What the proof cost, and what it found
+
+Nothing in the dense evaluator changed. Every definition in `Dense.thy` is the definition that was
+already running, moved from the child session into the base one; `Dense_Imp.thy` now imports it and
+keeps only the three unproved parts named above. The differential tests and the timings of Section
+19.7 therefore still stand as measured.
+
+The proofs found no defect. That is worth recording next to Section 19.5, where testing found two
+in the same code: the two bugs -- indexing the wrong side, and a missing equal-columns case -- were
+both found and fixed by measurement before the proof was attempted, and the proof would have found
+both. The general-join theorem `dtabc_gen_join` is exactly the statement the first bug violated,
+and `dbin_join0_join`'s case analysis is exactly the case the second one was missing.
