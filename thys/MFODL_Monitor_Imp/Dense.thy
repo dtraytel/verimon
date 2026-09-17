@@ -2651,6 +2651,192 @@ proof -
   show ?thesis unfolding dtabc_def using pt by auto
 qed
 
+
+section ‹Embedding a short tuple in a wider short frame›
+
+text \<open>
+  A Since structure joins its left operand into the running tables, so the left operand has to
+  live in the same frame as the right one: at the dense frame, that is tuples of width
+  @{term "length cs_R"} with holes outside the left columns' positions.  The left operand's own
+  narrowing is at its own column list, so it has to be embedded first.  The plan is computed once
+  when the formula is compiled.
+\<close>
+
+definition emb_plan :: "cols \<Rightarrow> cols \<Rightarrow> nat option list" where
+  "emb_plan cs_R cs_L = map (\<lambda>c. if c \<in> set cs_L then Some (col_pos cs_L c) else None) cs_R"
+
+definition dembed1 :: "nat option list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+  "dembed1 p d = map (\<lambda>q. case q of None \<Rightarrow> None | Some i \<Rightarrow> d ! i) p"
+
+definition dembed :: "cols \<Rightarrow> cols \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dembed cs_R cs_L D = dembed1 (emb_plan cs_R cs_L) ` D"
+
+lemma dembed1_dproj:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and b_R: "\<forall>c \<in> set cs_R. c < n" and b_L: "\<forall>c \<in> set cs_L. c < n"
+    and w: "wf_tuple n (set cs_L) x"
+  shows "dembed1 (emb_plan cs_R cs_L) (dproj (wide_mask n cs_L) x) = dproj (wide_mask n cs_R) x"
+proof -
+  have l: "length x = n" using w by (simp add: wf_tuple_def)
+  have dL: "dproj (wide_mask n cs_L) x = map (\<lambda>c. x ! c) cs_L"
+    by (rule dproj_wide_mask_eq_map_nth[OF s_L b_L l])
+  have dR: "dproj (wide_mask n cs_R) x = map (\<lambda>c. x ! c) cs_R"
+    by (rule dproj_wide_mask_eq_map_nth[OF s_R b_R l])
+  have pt: "\<And>c. c \<in> set cs_R \<Longrightarrow>
+      (case (if c \<in> set cs_L then Some (col_pos cs_L c) else None) of
+         None \<Rightarrow> None | Some i \<Rightarrow> map (\<lambda>c. x ! c) cs_L ! i) = x ! c"
+  proof -
+    fix c assume c: "c \<in> set cs_R"
+    show "(case (if c \<in> set cs_L then Some (col_pos cs_L c) else None) of
+        None \<Rightarrow> None | Some i \<Rightarrow> map (\<lambda>c. x ! c) cs_L ! i) = x ! c"
+    proof (cases "c \<in> set cs_L")
+      case True
+      then show ?thesis by (simp add: col_pos_nth)
+    next
+      case False
+      have "x ! c = None" using w b_R c False by (simp add: wf_tuple_def)
+      then show ?thesis using False by simp
+    qed
+  qed
+  show ?thesis unfolding dembed1_def emb_plan_def dL dR map_map
+    by (rule map_cong[OF refl]) (simp add: o_def pt)
+qed
+
+theorem dembed_dtabc:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and b_R: "\<forall>c \<in> set cs_R. c < n" and b_L: "\<forall>c \<in> set cs_L. c < n"
+    and t: "table n (set cs_L) T"
+  shows "dembed cs_R cs_L (dtabc n cs_L T) = dtabc n cs_R T"
+proof -
+  have pt: "\<And>x. x \<in> T \<Longrightarrow>
+      dembed1 (emb_plan cs_R cs_L) (dproj (wide_mask n cs_L) x) = dproj (wide_mask n cs_R) x"
+    using t by (intro dembed1_dproj[OF s_R s_L b_R b_L]) (simp add: table_def)
+  show ?thesis unfolding dembed_def dtabc_def image_image
+    by (rule image_cong[OF refl]) (rule pt)
+qed
+
+text \<open>Both narrowings land where the structure at @{const dargs} expects them: by
+  @{thm [source] table_dtabc_cpos} the right operand's in the full dense frame
+  (@{term "cpos cs (set cs) = {0..<length cs}"}, which is @{thm [source] cpos_all}), and the left
+  operand's, after the embedding above, in the positions its columns occupy there.\<close>
+
+
+section ‹The verified Since structure at the dense frame›
+
+text \<open>
+  Putting the pieces together: the invariant the dense Since node carries is that the verified
+  @{typ mmasaux}, run at @{const dargs}, is valid for the narrowing of the auxiliary list the wide
+  one is valid for.  Each of the structure's four operations preserves it, and the result it
+  computes is the narrowing of the result the wide one computes.  The aggregation is the one thing
+  that does not transport -- @{const dargs} has no aggregation -- so a Since with an aggregation
+  pushed into it stays a wide node.
+\<close>
+
+definition dsaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> mmasaux \<Rightarrow>
+    (ts \<times> event_data table) list \<Rightarrow> bool" where
+  "dsaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel) \<and>
+     valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+
+lemma dsaux_init:
+  assumes sub: "set cs_L \<subseteq> set cs_R"
+  shows "dsaux n cs_R cs_L args 0 (init_mmasaux (dargs cs_R cs_L args)) []"
+proof -
+  have "valid_mmasaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+      {0..<length cs_R} (args_pos args) None) 0
+      (init_mmasaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+        {0..<length cs_R} (args_pos args) None)) []"
+    by (rule default_mmasaux.valid_init_msaux)
+      (use sub in \<open>auto simp: cpos_def valid_aggargs_def\<close>)
+  then show ?thesis by (simp add: dsaux_def dargs_def dauxlist_def)
+qed
+
+lemma dsaux_add_new_ts:
+  assumes v: "dsaux n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
+  shows "dsaux n cs_R cs_L args nt (add_new_ts_mmasaux (dargs cs_R cs_L args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux_def)
+  have "valid_mmasaux (dargs cs_R cs_L args) nt
+      (add_new_ts_mmasaux (dargs cs_R cs_L args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
+        (dauxlist n cs_R auxlist))"
+    by (rule default_mmasaux.valid_add_new_ts_msaux[OF d nt])
+  then show ?thesis using w by (simp add: dsaux_def dauxlist_filter)
+qed
+
+lemma dsaux_join:
+  assumes v: "dsaux n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and b_R: "\<forall>c \<in> set cs_R. c < n" and b_L: "\<forall>c \<in> set cs_L. c < n"
+    and sub: "set cs_L \<subseteq> set cs_R" and t1: "table n (set cs_L) rel1"
+  shows "dsaux n cs_R cs_L args cur
+      (gc_join_mmasaux (dargs cs_R cs_L args) (dembed cs_R cs_L (dtabc n cs_L rel1)) daux)
+      (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux_def)
+  have e: "dembed cs_R cs_L (dtabc n cs_L rel1) = dtabc n cs_R rel1"
+    by (rule dembed_dtabc[OF s_R s_L b_R b_L t1])
+  have tt: "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
+      (dtabc n cs_R rel1)"
+    by (simp add: table_dtabc_cpos[OF s_R b_R sub t1])
+  have "valid_mmasaux (dargs cs_R cs_L args) cur
+      (gc_join_mmasaux (dargs cs_R cs_L args) (dtabc n cs_R rel1) daux)
+      (map (\<lambda>(t, rel). (t, join rel (args_pos (dargs cs_R cs_L args)) (dtabc n cs_R rel1)))
+        (dauxlist n cs_R auxlist))"
+    by (rule default_mmasaux.valid_join_msaux[OF d tt])
+  then show ?thesis using w e
+    by (simp add: dsaux_def dauxlist_join[OF s_R b_R sub w t1]
+        dauxlist_wf_join[OF w sub t1])
+qed
+
+lemma dsaux_add_new_table:
+  assumes v: "dsaux n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and t2: "table n (set cs_R) rel2"
+  shows "dsaux n cs_R cs_L args cur
+      (add_new_table_mmasaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+      (case auxlist of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux_def)
+  have tt: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R rel2)"
+    using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
+  have "valid_mmasaux (dargs cs_R cs_L args) cur
+      (add_new_table_mmasaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+      (case dauxlist n cs_R auxlist of [] \<Rightarrow> [(cur, dtabc n cs_R rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc n cs_R rel2) # r
+                         else (cur, dtabc n cs_R rel2) # dauxlist n cs_R auxlist)"
+    by (rule default_mmasaux.valid_add_new_table_msaux[OF d tt])
+  then show ?thesis using w t2
+    by (simp add: dsaux_def dauxlist_add_new_table[symmetric]
+        dauxlist_wf_add_new_table[OF w t2])
+qed
+
+lemma dsaux_result:
+  assumes v: "dsaux n cs_R cs_L args cur daux auxlist"
+  shows "result_mmasaux (dargs cs_R cs_L args) daux
+      = dtabc n cs_R (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist,
+          memL (args_ivl args) (cur - t)] {})"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux_def)
+  have "result_mmasaux (dargs cs_R cs_L args) daux
+      = eval_args_agg (dargs cs_R cs_L args) (foldr (\<union>)
+          [rel. (t, rel) \<leftarrow> dauxlist n cs_R auxlist,
+           memL (args_ivl (dargs cs_R cs_L args)) (cur - t)] {})"
+    by (rule default_mmasaux.valid_result_msaux[OF d])
+  then show ?thesis by (simp add: dtabc_result[OF w])
+qed
+
 (*<*)
 end
 (*>*)

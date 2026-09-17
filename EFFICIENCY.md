@@ -2597,7 +2597,7 @@ kernel. That is evidence, not a proof. The goal of this section is a refinement 
 dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
 verified one.
 
-*Work in progress. 20.1-20.4 are done, 20.5 all but the temporal nodes; 20.6 is what is left.*
+*Work in progress. 20.1-20.4 and 20.6 are done, 20.5 all but the temporal nodes; 20.7 is what is left.*
 
 ### 20.1 The pair of morphisms
 
@@ -2639,7 +2639,7 @@ the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 2656 lines and 174 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2842 lines and 181 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2912,12 +2912,56 @@ takes its operand list slot by slot: `∀i < length L. dsim n ((c0 # css @ nss) 
 That indexed form rather than a `list_all2` is deliberate -- the inductive package derives the
 induction hypothesis through `∀`/`⟶` but not through a `list_all2` of a pair-splitting lambda.
 
-### 20.6 What is left
+### 20.6 The verified Since structure at the dense frame
 
-1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. The algebra is in 20.3-20.4
-   (`dargs`, the `dauxlist*` family, `mbuf2t_take_rel`); what is left is the node case itself, and
-   it is entangled with item 3 below, because the dense fragment's current Since and Until do not
-   run the verified structures at all.
+20.3 argued that the `msaux` specification transports to the dense frame. That argument is now
+carried out against the *verified* structure, `mmasaux`, which is what the monitor actually runs:
+
+```isabelle
+definition dsaux :: "nat ⇒ cols ⇒ cols ⇒ args ⇒ ts ⇒ mmasaux ⇒ (ts × event_data table) list ⇒ bool" where
+  "dsaux n cs_R cs_L args cur daux auxlist ⟷
+     (∀(t, rel) ∈ set auxlist. table n (set cs_R) rel) ∧
+     valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
+```
+
+-- the dense structure, run at `dargs`, is valid for the narrowing of the auxiliary list the wide
+one is valid for. `dsaux_init`, `dsaux_add_new_ts`, `dsaux_join` and `dsaux_add_new_table` say each
+of the four operations preserves it, and `dsaux_result` says the result the dense structure computes
+is the narrowing of the one the wide structure computes. Two things the argument in 20.3 had not
+accounted for:
+
+**The left operand has to be embedded.** `join_msaux` joins its argument into the running tables, so
+the argument must live in the *same* frame as they do: at the dense frame, tuples of width
+`length cs_R` with holes outside `cpos cs_R (set cs_L)`. The left operand's own narrowing is at its
+own column list `cs_L`, of width `length cs_L`. So a new operation is needed, with the plan computed
+once at compile time:
+
+```isabelle
+definition emb_plan :: "cols ⇒ cols ⇒ nat option list" where
+  "emb_plan cs_R cs_L = map (λc. if c ∈ set cs_L then Some (col_pos cs_L c) else None) cs_R"
+definition dembed1 :: "nat option list ⇒ 'a tuple ⇒ 'a tuple" where
+  "dembed1 p d = map (λq. case q of None ⇒ None | Some i ⇒ d ! i) p"
+definition dembed :: "cols ⇒ cols ⇒ 'a table ⇒ 'a table" where
+  "dembed cs_R cs_L D = dembed1 (emb_plan cs_R cs_L) ` D"
+
+theorem dembed_dtabc: "… ⟹ table n (set cs_L) T ⟹
+  dembed cs_R cs_L (dtabc n cs_L T) = dtabc n cs_R T"
+```
+
+This is a real cost the dense representation pays that the wide one does not -- one pass over the
+left operand's table per time point -- but it is the same cost class as the join it feeds.
+
+**The aggregation does not transport.** `dargs` has `args_agg = None`, so `result_msaux` at the dense
+frame is the plain union while the wide one applies the aggregation. A Since with an aggregation
+pushed into it therefore stays a wide `DPure` node.
+
+### 20.7 What is left
+
+1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. For Since, 20.6 has the
+   structure; what is left is the simulation of `eval_since` itself (an induction over its own
+   recursion, the two sides stepping in lockstep because the recursion is driven by the buffer
+   alone) and the node case. For Until the same, with `mbuf2t_take_rel`, `dauxlist3` and the
+   `muaux` locale's two operations.
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
    `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.
