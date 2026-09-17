@@ -1314,6 +1314,253 @@ proof -
   qed
 qed
 
+section \<open>Predicates, relations, and the existential\<close>
+
+subsection \<open>Turning a set of columns into a column list\<close>
+
+definition set_cols :: "nat set \<Rightarrow> cols" where
+  "set_cols A = csorted_list_of_set A"
+
+lemma set_cols:
+  assumes "finite A"
+  shows "sorted_wrt (<) (set_cols A)" "set (set_cols A) = A"
+  using assms unfolding set_cols_def
+  by (subst csorted_list_of_set_split;
+      auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
+
+subsection \<open>Narrowing at the boundary with the unmodified evaluator\<close>
+
+definition all_true :: "bool list \<Rightarrow> bool" where
+  "all_true bs = list_all id bs"
+
+lemma dproj_all_true: "all_true bs \<Longrightarrow> length xs = length bs \<Longrightarrow> dproj bs xs = xs"
+  by (induct bs xs rule: dproj.induct) (auto simp: all_true_def)
+
+definition dnarrow :: "bool list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dnarrow msk r = (if all_true msk then r else dproj msk ` r)"
+
+text \<open>When every column is present the mask is the identity, so the narrowing of a table that
+  already has no holes costs nothing.\<close>
+
+lemma dnarrow_dtabc:
+  assumes "table n (set cs) T"
+  shows "dnarrow (wide_mask n cs) T = dtabc n cs T"
+proof (cases "all_true (wide_mask n cs)")
+  case True
+  have "\<And>x. x \<in> T \<Longrightarrow> dproj (wide_mask n cs) x = x"
+    using assms True by (auto simp: table_def wf_tuple_def intro!: dproj_all_true)
+  then show ?thesis using True by (auto simp: dnarrow_def dtabc_def intro!: rev_image_eqI)
+qed (simp add: dnarrow_def dtabc_def)
+
+subsection \<open>Matching a predicate's arguments\<close>
+
+definition dmatch_table :: "Formula.trm list \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dmatch_table tms cs X = Option.these ((\<lambda>x. map_option (\<lambda>f. map f cs) (match tms x)) ` X)"
+
+lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
+  by (force simp: Option.these_def image_iff)
+
+text \<open>The kernel writes the matching assignment into a tuple of the full width; over short
+  tuples it is read off at the predicate's columns.\<close>
+
+theorem dmatch_table_dtabc:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+  shows "dmatch_table tms cs X
+       = dtabc n cs ((\<lambda>f. Table.tabulate f 0 n) ` Option.these (match tms ` X))"
+proof -
+  have t: "\<And>f :: nat \<Rightarrow> event_data option.
+      dproj (wide_mask n cs) (Table.tabulate f 0 n) = map f cs"
+  proof -
+    fix f :: "nat \<Rightarrow> event_data option"
+    have "dproj (wide_mask n cs) (Table.tabulate f 0 n)
+        = map (\<lambda>c. Table.tabulate f 0 n ! c) cs"
+      by (rule dproj_wide_mask_eq_map_nth[OF s b]) simp
+    also have "\<dots> = map f cs" using b by (auto intro!: map_cong[OF refl])
+    finally show "dproj (wide_mask n cs) (Table.tabulate f 0 n) = map f cs" .
+  qed
+  have "dmatch_table tms cs X = (\<lambda>f. map f cs) ` Option.these (match tms ` X)"
+    unfolding dmatch_table_def image_image[symmetric] these_map_option_image
+    by (rule refl)
+  also have "\<dots> = dtabc n cs ((\<lambda>f. Table.tabulate f 0 n) ` Option.these (match tms ` X))"
+    unfolding dtabc_def image_image by (simp add: t)
+  finally show ?thesis .
+qed
+
+subsection \<open>A predicate whose arguments are distinct variables in ascending order\<close>
+
+text \<open>Then the argument tuples of the database are already the short tuples: the kernel's
+  @{const simple_match} spreads them over the full width, and narrowing puts them back.\<close>
+
+fun smp_cols :: "Formula.trm list \<Rightarrow> cols" where
+  "smp_cols [] = []"
+| "smp_cols (Formula.Var y # ts) = y # smp_cols ts"
+| "smp_cols (t # ts) = []"
+
+lemma smp_cols_sorted:
+  "is_simple_pattern tms m \<Longrightarrow> sorted_wrt (<) (smp_cols tms) \<and> (\<forall>y \<in> set (smp_cols tms). m \<le> y)"
+  by (induct tms m rule: is_simple_pattern.induct) force+
+
+lemma dproj_simple_match:
+  "is_simple_pattern tms m \<Longrightarrow> length x = length tms \<Longrightarrow>
+   \<forall>y \<in> set (smp_cols tms). y < n \<Longrightarrow> m \<le> n \<Longrightarrow>
+   dproj (wide_mask_at m (n - m) (smp_cols tms)) (simple_match n m tms x) = x"
+proof (induct n m tms x rule: simple_match.induct)
+  case (1 n m)
+  then show ?case by (simp add: wide_mask_at_Nil dproj_replicate_False)
+next
+  case (2 n m y ts v vs)
+  have my: "m \<le> y" and sp: "is_simple_pattern ts (Suc y)" using 2(3) by simp_all
+  have yn: "y < n" using 2(5) by simp
+  then have mn: "m < n" using my by simp
+  have k: "n - m = Suc (n - Suc m)" using mn by simp
+  show ?case
+  proof (cases "m < y")
+    case True
+    have "dproj (wide_mask_at (Suc m) (n - Suc m) (smp_cols (Formula.Var y # ts)))
+        (simple_match n (Suc m) (Formula.Var y # ts) (v # vs)) = v # vs"
+    proof (rule 2(1))
+      show "m < y" by (rule True)
+      show "is_simple_pattern (Formula.Var y # ts) (Suc m)" using True sp by simp
+      show "length (v # vs) = length (Formula.Var y # ts)" using 2(4) by simp
+      show "\<forall>z \<in> set (smp_cols (Formula.Var y # ts)). z < n" using 2(5) by simp
+      show "Suc m \<le> n" using mn by simp
+    qed
+    then show ?thesis using True by (simp add: k)
+  next
+    case False
+    then have ym: "y = m" using my by simp
+    have "dproj (wide_mask_at (Suc m) (n - Suc m) (smp_cols ts)) (simple_match n (Suc m) ts vs) = vs"
+    proof (rule 2(2))
+      show "\<not> m < y" by (rule False)
+      show "is_simple_pattern ts (Suc m)" using sp ym by simp
+      show "length vs = length ts" using 2(4) by simp
+      show "\<forall>z \<in> set (smp_cols ts). z < n" using 2(5) by simp
+      show "Suc m \<le> n" using mn by simp
+    qed
+    then show ?thesis using False ym by (simp add: k)
+  qed
+qed auto
+
+lemma dproj_simple_match0:
+  "is_simple_pattern tms 0 \<Longrightarrow> length x = length tms \<Longrightarrow> \<forall>y \<in> set (smp_cols tms). y < n \<Longrightarrow>
+     dproj (wide_mask n (smp_cols tms)) (simple_match n 0 tms x) = x"
+  using dproj_simple_match[of tms 0 x n] by (simp add: wide_mask_def)
+
+theorem dtabc_simple_match:
+  assumes sp: "is_simple_pattern tms 0" and b: "\<forall>y \<in> set (smp_cols tms). y < n"
+    and l: "\<forall>x \<in> X. length x = length tms"
+  shows "dtabc n (smp_cols tms) (simple_match n 0 tms ` X) = X"
+proof -
+  have e: "\<And>x. x \<in> X \<Longrightarrow> dproj (wide_mask n (smp_cols tms)) (simple_match n 0 tms x) = x"
+    using l b by (intro dproj_simple_match0[OF sp]) auto
+  have "(\<lambda>x. dproj (wide_mask n (smp_cols tms)) (simple_match n 0 tms x)) ` X = (\<lambda>x. x) ` X"
+    by (rule image_cong[OF refl]) (rule e)
+  then show ?thesis unfolding dtabc_def image_image by simp
+qed
+
+subsection \<open>The existential\<close>
+
+text \<open>
+  The kernel drops the first component of every tuple.  Over short tuples the first column is
+  either present -- and then it is the head, which is dropped -- or absent, and then there is
+  nothing to do; either way the remaining columns move down by one.
+\<close>
+
+definition ex_drop0 :: "cols \<Rightarrow> bool" where
+  "ex_drop0 ccs = (case ccs of [] \<Rightarrow> False | c # _ \<Rightarrow> c = 0)"
+
+definition ex_cols :: "cols \<Rightarrow> cols" where
+  "ex_cols ccs = map (\<lambda>c. c - Suc 0) (if ex_drop0 ccs then tl ccs else ccs)"
+
+lemma ex_cols_pos: "sorted_wrt (<) ccs \<Longrightarrow> \<forall>c \<in> set (if ex_drop0 ccs then tl ccs else ccs). 0 < c"
+  by (cases ccs) (auto simp: ex_drop0_def)
+
+lemma ex_cols_sorted:
+  assumes "sorted_wrt (<) ccs" shows "sorted_wrt (<) (ex_cols ccs)"
+proof -
+  have s: "sorted_wrt (<) (if ex_drop0 ccs then tl ccs else ccs)"
+    using assms by (cases ccs) (auto simp: ex_drop0_def)
+  have p: "\<forall>c \<in> set (if ex_drop0 ccs then tl ccs else ccs). 0 < c"
+    by (rule ex_cols_pos[OF assms])
+  show ?thesis unfolding ex_cols_def sorted_wrt_map
+    by (rule sorted_wrt_mono_rel[OF _ s]) (use p in auto)
+qed
+
+lemma nth_tl_Suc: "0 < c \<Longrightarrow> c < length x \<Longrightarrow> tl x ! (c - Suc 0) = x ! c"
+  by (cases x) auto
+
+lemma ex_cols_bound:
+  "sorted_wrt (<) ccs \<Longrightarrow> \<forall>c \<in> set ccs. c < Suc n \<Longrightarrow> \<forall>c \<in> set (ex_cols ccs). c < n"
+  using ex_cols_pos[of ccs] by (cases ccs) (auto simp: ex_cols_def ex_drop0_def)
+
+lemma ex_cols_set:
+  "sorted_wrt (<) ccs \<Longrightarrow> set (ex_cols ccs) = (\<lambda>c. c - Suc 0) ` (set ccs - {0})"
+  by (cases ccs) (auto simp: ex_cols_def ex_drop0_def)
+
+lemma table_tl:
+  assumes s: "sorted_wrt (<) ccs" and t: "table (Suc n) (set ccs) T"
+  shows "table n (set (ex_cols ccs)) (tl ` T)"
+proof -
+  have "\<And>x. x \<in> T \<Longrightarrow> wf_tuple n (set (ex_cols ccs)) (tl x)"
+  proof -
+    fix x assume "x \<in> T"
+    then have w: "wf_tuple (Suc n) (set ccs) x" using t by (simp add: table_def)
+    then have l: "length x = Suc n" by (simp add: wf_tuple_def)
+    have "\<And>i. i < n \<Longrightarrow> (tl x ! i = None) = (i \<notin> set (ex_cols ccs))"
+    proof -
+      fix i assume i: "i < n"
+      have "tl x ! i = x ! Suc i" using l i by (cases x) auto
+      moreover have "(x ! Suc i = None) = (Suc i \<notin> set ccs)" using w i by (simp add: wf_tuple_def)
+      moreover have "(Suc i \<in> set ccs) = (i \<in> set (ex_cols ccs))"
+        using ex_cols_set[OF s] by force
+      ultimately show "(tl x ! i = None) = (i \<notin> set (ex_cols ccs))" by simp
+    qed
+    then show "wf_tuple n (set (ex_cols ccs)) (tl x)" using l by (simp add: wf_tuple_def)
+  qed
+  then show ?thesis by (auto simp: table_def)
+qed
+
+theorem dtabc_exists:
+  assumes s: "sorted_wrt (<) ccs" and b: "\<forall>c \<in> set ccs. c < Suc n"
+    and t: "table (Suc n) (set ccs) T"
+  shows "(if ex_drop0 ccs then tl ` dtabc (Suc n) ccs T else dtabc (Suc n) ccs T)
+       = dtabc n (ex_cols ccs) (tl ` T)"
+proof -
+  let ?cs' = "if ex_drop0 ccs then tl ccs else ccs"
+  have pos: "\<forall>c \<in> set ?cs'. 0 < c" by (rule ex_cols_pos[OF s])
+  have s': "sorted_wrt (<) (ex_cols ccs)" by (rule ex_cols_sorted[OF s])
+  have b': "\<forall>c \<in> set (ex_cols ccs). c < n" by (rule ex_cols_bound[OF s b])
+  have "\<And>x. x \<in> T \<Longrightarrow>
+      (if ex_drop0 ccs then tl (dproj (wide_mask (Suc n) ccs) x) else dproj (wide_mask (Suc n) ccs) x)
+        = dproj (wide_mask n (ex_cols ccs)) (tl x)"
+  proof -
+    fix x assume "x \<in> T"
+    then have w: "wf_tuple (Suc n) (set ccs) x" using t by (simp add: table_def)
+    then have l: "length x = Suc n" by (simp add: wf_tuple_def)
+    have lt: "length (tl x) = n" using l by simp
+    have "dproj (wide_mask (Suc n) ccs) x = map (\<lambda>c. x ! c) ccs"
+      by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+    then have lhs: "(if ex_drop0 ccs then tl (dproj (wide_mask (Suc n) ccs) x)
+          else dproj (wide_mask (Suc n) ccs) x) = map (\<lambda>c. x ! c) ?cs'"
+      by (cases ccs) (auto simp: ex_drop0_def)
+    have "dproj (wide_mask n (ex_cols ccs)) (tl x) = map (\<lambda>c. tl x ! c) (ex_cols ccs)"
+      by (rule dproj_wide_mask_eq_map_nth[OF s' b' lt])
+    also have "\<dots> = map (\<lambda>c. tl x ! (c - Suc 0)) ?cs'" by (simp add: ex_cols_def)
+    also have "\<dots> = map (\<lambda>c. x ! c) ?cs'"
+    proof (rule map_cong[OF refl])
+      fix c assume c: "c \<in> set ?cs'"
+      then have c0: "0 < c" using pos by simp
+      have "set ?cs' \<subseteq> set ccs" by (cases ccs) (auto simp: ex_drop0_def)
+      then have "c < length x" using c b l by auto
+      then show "tl x ! (c - Suc 0) = x ! c" by (rule nth_tl_Suc[OF c0])
+    qed
+    finally show "(if ex_drop0 ccs then tl (dproj (wide_mask (Suc n) ccs) x)
+          else dproj (wide_mask (Suc n) ccs) x) = dproj (wide_mask n (ex_cols ccs)) (tl x)"
+      using lhs by simp
+  qed
+  then show ?thesis unfolding dtabc_def image_image by (cases "ex_drop0 ccs") auto
+qed
+
 (*<*)
 end
 (*>*)
