@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Compile
-  imports Dense_Let
+  imports Dense_Correct
 begin
 (*>*)
 
@@ -206,6 +206,53 @@ next
     by (rule produces_MMatchF[OF MokMatchF(1) MokMatchF(2) MokMatchF(3) MokMatchF(4)
         MokMatchF(5) MokMatchF(6) MokMatchF(7) pL MokMatchF(9) MokMatchF(10) MokMatchF(11)])
 qed
+
+section \<open>Closing the chain\<close>
+
+text \<open>
+  The transferred correctness theorems of @{theory MFODL_Monitor_Imp.Dense_Correct} all ask the
+  caller for a related initial state, @{term "dmsim_state n cs 0 (minit_safe \<phi>) dst"}, and
+  until one is produced they say nothing about any concrete monitor.  @{thm [source] DsPure} is the
+  cheapest way to produce one: it relates @{term "DPure \<phi> n (wide_mask n cs)"} to
+  @{term \<phi>} for any kernel state that @{const produces} finite tables over @{term "set cs"}.
+  The dense monitor built this way runs the kernel's own evaluator and narrows its output, so it
+  is the bottom of the refinement rather than the interesting point of it; what it settles is
+  that the theorems are about something.  Everything the criterion of the previous section buys
+  is the hypothesis @{const produces}, which @{thm [source] mok_produces} now supplies from a
+  structural check.
+\<close>
+
+definition dpure_state :: "nat \<Rightarrow> cols \<Rightarrow>
+    (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> dmstate" where
+  "dpure_state n cs st =
+     \<lparr> dmstate_i = mstate_i st, dmstate_j = mstate_j st,
+       dmstate_m = DPure (mstate_m st) n (wide_mask n cs),
+       dmstate_n = n, dmstate_cs = cs, dmstate_t = mstate_t st \<rparr>"
+
+lemma dmsim_state_dpure_state:
+  assumes w: "wf_cols n cs" and n: "mstate_n st = n"
+    and p: "produces n (set cs) tw (mstate_m st)"
+  shows "dmsim_state n cs tw st (dpure_state n cs st)"
+  by (simp add: dmsim_state_def dpure_state_def n DsPure[OF w p])
+
+lemma dmsim_state_dpure_state_mok:
+  assumes w: "wf_cols n cs" and n: "mstate_n st = n"
+    and p: "mok n (set cs) tw (mstate_m st)"
+  shows "dmsim_state n cs tw st (dpure_state n cs st)"
+  by (rule dmsim_state_dpure_state[OF w n mok_produces[OF p]])
+
+context verimon_spec
+begin
+
+theorem dmonitor_mverdicts_pure:
+  assumes w: "wf_cols n cs" and ni: "mstate_n (minit_safe \<phi>) = n"
+    and p: "mok n (set cs) 0 (mstate_m (minit_safe \<phi>))"
+    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
+  shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw n cs X))
+      (dmonitor (dpure_state n cs (minit_safe \<phi>)) \<pi>)) = Mt \<pi>"
+  using w by (intro dmonitor_mverdicts[OF dmsim_state_dpure_state_mok[OF w ni p] _ f wty]) simp
+
+end
 
 (*<*)
 end
