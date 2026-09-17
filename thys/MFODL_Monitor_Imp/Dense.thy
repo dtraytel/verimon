@@ -1,6 +1,6 @@
 (*<*)
 theory Dense
-  imports Code_Opt
+  imports "MFODL_Monitor_Devel.Code_Opt"
 begin
 (*>*)
 
