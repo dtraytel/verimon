@@ -1032,6 +1032,252 @@ next
     by (auto simp: x f)
 qed
 
+subsection \<open>The Until node\<close>
+
+text \<open>
+  The Until node's invariant is again the wide half of the relation
+  @{theory MFODL_Monitor_Imp.Dense_Eval} carries: the verified structure is valid for an abstract
+  auxiliary list whose two table components are finite tables over the operands' columns.  The
+  structure is stepped from inside a buffer traversal, so the traversal gets its own invariant
+  lemma first.
+\<close>
+
+lemma mbuf2t_take_inv:
+  "(\<And>a b v w z. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (f a b v z)) \<Longrightarrow>
+   Q u0 z \<Longrightarrow> u0 \<le> t0 \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>v \<in> set ts. u0 \<le> v) \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   (\<exists>v. Q v w \<and> v \<le> nt \<and> (\<forall>u \<in> set ts'. v \<le> u)) \<and> sorted ts' \<and>
+     (nt = t0 \<or> nt \<in> set ts) \<and> set ts' \<subseteq> set ts"
+proof (induct xs arbitrary: ys z u0 t0 ts w xs' ys' nt ts')
+  case Nil
+  note r = Nil(2) and le = Nil(3) and s = Nil(4) and mb = Nil(5) and P = Nil(6)
+  have w: "w = z" and ts': "ts' = ts"
+    and nt: "nt = (case ts of [] \<Rightarrow> t0 | v # _ \<Rightarrow> v)"
+    using P by (auto split: list.splits)
+  have "u0 \<le> nt" using le mb unfolding nt by (cases ts) auto
+  then show ?case using r s mb unfolding w ts' nt by (cases ts) auto
+next
+  case (Cons x xs)
+  note step = Cons(2) and r = Cons(3) and le = Cons(4) and s = Cons(5)
+    and mb = Cons(6) and P = Cons(7) and IH = Cons(1)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P r le s mb by (auto split: list.splits)
+  next
+    case (Cons y ys0)
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P r le s mb \<open>ys = y # ys0\<close> by (auto split: list.splits)
+    next
+      case (Cons v ts0)
+      have e: "mbuf2t_take f (f x y v z) (xs, ys0) v ts0 = (w, (xs', ys'), nt, ts')"
+        using P \<open>ys = y # ys0\<close> Cons by simp
+      have rt: "Q v (f x y v z)"
+        using step[of x y u0 z v] r mb Cons \<open>ys = y # ys0\<close> by simp
+      have s0: "sorted ts0" using s Cons by simp
+      have mb0: "\<forall>u \<in> set ts0. v \<le> u" using s Cons by simp
+      have "(\<exists>u. Q u w \<and> u \<le> nt \<and> (\<forall>u' \<in> set ts'. u \<le> u')) \<and> sorted ts' \<and>
+          (nt = v \<or> nt \<in> set ts0) \<and> set ts' \<subseteq> set ts0"
+        by (rule IH[OF _ rt order_refl s0 mb0 e]) (use step \<open>ys = y # ys0\<close> in auto)
+      then show ?thesis using Cons by auto
+    qed
+  qed
+qed
+
+lemma fauxlist3_update_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. ftable n L a1 \<and> ftable n R a2"
+    and sub: "L \<subseteq> R" and t1: "ftable n L rel1" and t2: "ftable n R rel2"
+  shows "\<forall>(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux).
+      ftable n L a1 \<and> ftable n R a2"
+proof safe
+  have w: "\<And>t b1 b2. (t, b1, b2) \<in> set aux \<Longrightarrow> ftable n L b1 \<and> ftable n R b2"
+    using wf by auto
+  fix t a1 a2 assume m: "(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux)"
+  show "table n L a1"
+    using m t1 t2 by (auto simp: update_until_def dest!: w intro: table_join_same table_Un)
+  show "finite a1"
+    using m t1 t2 by (auto simp: update_until_def finite_join dest!: w)
+  show "table n R a2"
+    using m t1 t2 sub
+    by (auto simp: update_until_def dest!: w intro!: table_Un intro: table_join_sub)
+  show "finite a2"
+    using m t1 t2 by (auto simp: update_until_def finite_join empty_table_def dest!: w)
+qed
+
+definition uaux_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow> bool" where
+  "uaux_inv args n L R cur aux \<longleftrightarrow>
+     (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
+        (\<forall>(t, a1, a2) \<in> set auxlist. ftable n L a1 \<and> ftable n R a2))"
+
+lemma uaux_inv_step:
+  assumes v: "uaux_inv args n L R u aux"
+    and sub: "L \<subseteq> R" and an: "args_n args = n" and aL: "args_L args = L"
+    and aR: "args_R args = R"
+    and t1: "ftable n L a" and t2: "ftable n R b" and ut: "u \<le> t"
+  shows "uaux_inv args n L R t (add_new_muaux_dq args a b t aux)"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
+    and wf: "\<forall>(v, a1, a2) \<in> set auxlist. ftable n L a1 \<and> ftable n R a2"
+    using v unfolding uaux_inv_def by blast
+  have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux)
+      (update_until args a b t auxlist)"
+    by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 an aL aR in simp_all)
+  moreover have "\<forall>(v, a1, a2) \<in> set (update_until args a b t auxlist).
+      ftable n L a1 \<and> ftable n R a2"
+    by (rule fauxlist3_update_until[OF wf sub t1 t2])
+  ultimately show ?thesis unfolding uaux_inv_def by blast
+qed
+
+lemma eval_until_ftable:
+  "eval_until I nt auxlist = (res, auxlist') \<Longrightarrow>
+   (\<forall>(t, a1, a2) \<in> set auxlist. ftable n L a1 \<and> ftable n R a2) \<Longrightarrow>
+   list_all (ftable n R) res \<and>
+     (\<forall>(t, a1, a2) \<in> set auxlist'. ftable n L a1 \<and> ftable n R a2)"
+  by (induct I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
+    (auto split: if_splits prod.splits)
+
+lemma uaux_inv_eval:
+  assumes v: "uaux_inv args n L R cur aux" and nt: "cur \<le> nt"
+    and agg: "args_agg args = None"
+    and we: "eval_muaux_dq args nt aux = (zs, aux')"
+  shows "list_all (ftable n R) zs \<and> uaux_inv args n L R cur aux'"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
+    and wf: "\<forall>(t, a1, a2) \<in> set auxlist. ftable n L a1 \<and> ftable n R a2"
+    using v unfolding uaux_inv_def by blast
+  obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+    by (cases "eval_until (args_ivl args) nt auxlist")
+  have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
+    by (rule valid_eval_muaux_dq[OF vw nt we eu])
+  have u: "list_all (ftable n R) res \<and>
+      (\<forall>(t, a1, a2) \<in> set auxlist'. ftable n L a1 \<and> ftable n R a2)"
+    by (rule eval_until_ftable[OF eu wf])
+  show ?thesis using w u agg unfolding uaux_inv_def
+    by (auto simp: eval_args_agg_def list_all_iff)
+qed
+
+definition until_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow>
+    muaux_dq \<Rightarrow> event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
+  "until_inv args n L R u t aux buf nts \<longleftrightarrow>
+     (\<exists>cur. uaux_inv args n L R cur aux \<and> cur \<le> t \<and> t \<le> u \<and>
+        list_all (ftable n L) (fst buf) \<and> list_all (ftable n R) (snd buf) \<and>
+        sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u))"
+
+text \<open>
+  One firing of the Until node: the buffer traversal steps the structure at each timestamp it
+  consumes, and one evaluation at the timestamp the traversal reports yields the node's output.
+\<close>
+
+lemma until_step_ftable:
+  fixes args :: args
+  assumes sub: "L \<subseteq> R" and agg: "args_agg args = None" and an: "args_n args = n"
+    and aL: "args_L args = L" and aR: "args_R args = R"
+    and rel: "until_inv args n L R u t aux buf nts"
+    and ta: "list_all (ftable n L) as" and tb: "list_all (ftable n R) bs"
+    and s: "sorted tss" and bnd: "\<forall>v \<in> set tss. u \<le> v"
+    and we: "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ tss)
+      = (aux1, buf1, nt, nts1)"
+    and wev: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+  shows "list_all (ftable n R) zs \<and> until_inv args n L R (dnext u tss) nt aux2 buf1 nts1"
+proof -
+  obtain cur where vr: "uaux_inv args n L R cur aux" and ct: "cur \<le> t" and ttw: "t \<le> u"
+    and lu: "list_all (ftable n L) (fst buf)"
+    and lv: "list_all (ftable n R) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u"
+    using rel unfolding until_inv_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable n L) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable n R) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b v w z. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow>
+      uaux_inv args n L R w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      uaux_inv args n L R v (add_new_muaux_dq args a b v z)"
+    using lus lvs by (intro uaux_inv_step[OF _ sub an aL aR]) (auto simp: list_all_iff)
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ct ttw by fastforce
+  have tdn: "t \<le> dnext u tss" using ttw dnext_ge[OF bnd] by simp
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext u tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have we': "mbuf2t_take (add_new_muaux_dq args) aux (us, vs) t (nts @ tss)
+      = (aux1, (b1, b2), nt, nts1)" using we unfolding ma bfs by simp
+  have Rr: "(\<exists>v. uaux_inv args n L R v aux1 \<and> v \<le> nt \<and> (\<forall>w \<in> set nts1. v \<le> w)) \<and>
+      sorted nts1 \<and> (nt = t \<or> nt \<in> set (nts @ tss)) \<and> set nts1 \<subseteq> set (nts @ tss)"
+    by (rule mbuf2t_take_inv[OF step vr ct sts cts we'])
+  obtain v where vu: "uaux_inv args n L R v aux1" and unt: "v \<le> nt"
+    and un: "\<forall>w \<in> set nts1. v \<le> w" using Rr by blast
+  have sn1: "sorted nts1" and sub1: "set nts1 \<subseteq> set (nts @ tss)" using Rr by blast+
+  have ntdn: "nt \<le> dnext u tss" using Rr tdn bound by blast
+  have ev: "list_all (ftable n R) zs \<and> uaux_inv args n L R v aux2"
+    by (rule uaux_inv_eval[OF vu unt agg wev])
+  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
+  have lb1: "list_all (ftable n L) b1" using sb lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable n R) b2" using sb lvs by (auto simp: list_all_iff)
+  have "uaux_inv args n L R v aux2 \<and> v \<le> nt \<and> nt \<le> dnext u tss \<and>
+      list_all (ftable n L) (fst buf1) \<and> list_all (ftable n R) (snd buf1) \<and>
+      sorted nts1 \<and> (\<forall>w \<in> set nts1. v \<le> w \<and> w \<le> dnext u tss)"
+    using ev unt ntdn lb1 lb2 sn1 un sub1 bound bfs by auto
+  then have "until_inv args n L R (dnext u tss) nt aux2 buf1 nts1"
+    unfolding until_inv_def by blast
+  then show ?thesis using ev by simp
+qed
+
+lemma produces_MUntil:
+  fixes args :: args
+  assumes p1: "produces n L tw \<phi>" and p2: "produces n R tw \<psi>"
+    and r: "until_inv args n L R tw t aux buf nts"
+    and agg: "args_agg args = None" and an: "args_n args = n"
+    and aL: "args_L args = L" and aR: "args_R args = R" and sub: "L \<subseteq> R"
+  shows "produces n R tw (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = R \<and>
+    (\<exists>\<chi> \<eta> bf ns tt ax. \<Phi> = mformula.MUntil args \<chi> \<eta> bf ns tt ax \<and>
+       produces n L u \<chi> \<and> produces n R u \<eta> \<and>
+       until_inv args n L R u tt ax bf ns)"])
+  show "n = n \<and> R = R \<and> (\<exists>\<chi> \<eta> bf ns tt ax.
+      mformula.MUntil args \<phi> \<psi> buf nts t aux = mformula.MUntil args \<chi> \<eta> bf ns tt ax \<and>
+      produces n L tw \<chi> \<and> produces n R tw \<eta> \<and> until_inv args n L R tw tt ax bf ns)"
+    using p1 p2 r by blast
+next
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = R \<and> (\<exists>\<chi> \<eta> bf ns tt ax.
+      \<Phi> = mformula.MUntil args \<chi> \<eta> bf ns tt ax \<and>
+      produces n L u \<chi> \<and> produces n R u \<eta> \<and> until_inv args n L R u tt ax bf ns)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf ns tt ax where Phi: "\<Phi> = mformula.MUntil args \<chi> \<eta> bf ns tt ax"
+    and pc: "produces n L u \<chi>" and pe: "produces n R u \<eta>"
+    and inv: "until_inv args n L R u tt ax bf ns" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain ax1 bf1 nt ns1 where e3:
+    "mbuf2t_take (add_new_muaux_dq args) ax (mbuf2_add as bs bf) tt (ns @ ts)
+       = (ax1, bf1, nt, ns1)"
+    by (cases "mbuf2t_take (add_new_muaux_dq args) ax (mbuf2_add as bs bf) tt (ns @ ts)")
+      auto
+  obtain zs ax2 where e4: "eval_muaux_dq args nt ax1 = (zs, ax2)"
+    by (cases "eval_muaux_dq args nt ax1")
+  have x: "xs = zs" and f: "\<Phi>' = mformula.MUntil args \<chi>' \<eta>' bf1 ns1 nt ax2"
+    using e X Phi e1 e2 e3 e4 an by simp_all
+  have ta: "list_all (ftable n L) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable n R) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have step: "list_all (ftable n R) zs \<and>
+      until_inv args n L R (dnext u ts) nt ax2 bf1 ns1"
+    by (rule until_step_ftable[OF sub agg an aL aR inv ta tb sts mts e3 e4])
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = R \<and>
+          (\<exists>\<chi> \<eta> bf ns tt ax. \<Phi>' = mformula.MUntil args \<chi> \<eta> bf ns tt ax \<and>
+             produces n L (dnext u ts) \<chi> \<and> produces n R (dnext u ts) \<eta> \<and>
+             until_inv args n L R (dnext u ts) tt ax bf ns)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X step produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
 (*<*)
 end
 (*>*)
