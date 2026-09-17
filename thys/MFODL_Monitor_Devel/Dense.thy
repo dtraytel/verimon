@@ -805,6 +805,197 @@ proof -
   finally show ?thesis using dproj_wide_mask_eq_map_nth[OF s b lk] by simp
 qed
 
+subsection \<open>The group is a table over the group's columns\<close>
+
+lemma wf_tuple_drop_agg:
+  "wf_tuple (m + n) (set (agg_cols m gcols)) x \<Longrightarrow> wf_tuple n (set gcols) (drop m x)"
+  by (auto simp: wf_tuple_def)
+
+lemma ecard_image: "inj_on f A \<Longrightarrow> ecard (f ` A) = ecard A"
+  by (simp add: ecard_def card_image finite_image_iff)
+
+lemma inj_on_dproj_cols:
+  "sorted_wrt (<) cs \<Longrightarrow> inj_on (dproj (wide_mask n cs)) {x. wf_tuple n (set cs) x}"
+  by (simp add: wide_mask_eq_join_mask inj_on_dproj_wf)
+
+lemma dproj_cols_eq_iff:
+  assumes s: "sorted_wrt (<) cs"
+    and x: "wf_tuple n (set cs) x" and y: "wf_tuple n (set cs) y"
+  shows "(dproj (wide_mask n cs) x = dproj (wide_mask n cs) y) = (x = y)"
+  using inj_on_dproj_cols[OF s, of n] x y by (auto simp: inj_on_def)
+
+lemma drop_dtabc_agg:
+  assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
+    and rel: "table (m + n) (set (agg_cols m gcols)) rel"
+  shows "drop m ` dtabc (m + n) (agg_cols m gcols) rel = dtabc n gcols (drop m ` rel)"
+proof -
+  have "\<And>x. x \<in> rel \<Longrightarrow> length x = m + n" using rel by (auto simp: table_def wf_tuple_def)
+  then show ?thesis
+    unfolding dtabc_def image_image
+    by (intro image_cong refl) (simp add: drop_dproj_agg[OF sg bg])
+qed
+
+text \<open>Selecting a group commutes with narrowing: the short tuples whose key is the short form of
+  @{term "drop m x0"} are exactly the short forms of the wide tuples whose key is @{term "drop m x0"}.\<close>
+
+lemma dtabc_agg_group:
+  assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
+    and rel: "table (m + n) (set (agg_cols m gcols)) rel" and x0: "x0 \<in> rel"
+  shows "Set.filter (\<lambda>z. drop m z = dproj (wide_mask n gcols) (drop m x0))
+           (dtabc (m + n) (agg_cols m gcols) rel)
+       = dtabc (m + n) (agg_cols m gcols) (Set.filter (\<lambda>x. drop m x = drop m x0) rel)"
+proof -
+  have wf: "\<And>x. x \<in> rel \<Longrightarrow> wf_tuple (m + n) (set (agg_cols m gcols)) x"
+    using rel by (simp add: table_def)
+  then have len: "\<And>x. x \<in> rel \<Longrightarrow> length x = m + n" by (simp add: wf_tuple_def)
+  have key: "\<And>x. x \<in> rel \<Longrightarrow>
+      (drop m (dproj (wide_mask (m + n) (agg_cols m gcols)) x)
+         = dproj (wide_mask n gcols) (drop m x0)) = (drop m x = drop m x0)"
+    by (simp add: drop_dproj_agg[OF sg bg len]
+        dproj_cols_eq_iff[OF sg wf_tuple_drop_agg[OF wf] wf_tuple_drop_agg[OF wf[OF x0]]])
+  show ?thesis unfolding dtabc_def by (auto simp: key)
+qed
+
+subsection \<open>The aggregated values do not change\<close>
+
+lemma agg_values_dtabc:
+  assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
+    and tG: "table (m + n) (set (agg_cols m gcols)) G"
+    and fv: "Formula.fv_trm f \<subseteq> set (agg_cols m gcols)"
+  shows "agg_values (reindex_trm (agg_cols m gcols) f) (dtabc (m + n) (agg_cols m gcols) G)
+       = agg_values f G"
+proof -
+  let ?cc = "agg_cols m gcols"
+  let ?M = "wide_mask (m + n) ?cc"
+  let ?g = "reindex_trm ?cc f"
+  have wf: "\<And>x. x \<in> G \<Longrightarrow> wf_tuple (m + n) (set ?cc) x" using tG by (simp add: table_def)
+  then have len: "\<And>x. x \<in> G \<Longrightarrow> length x = m + n" by (simp add: wf_tuple_def)
+  have ev: "\<And>x. x \<in> G \<Longrightarrow> meval_trm ?g (dproj ?M x) = meval_trm f x"
+  proof -
+    fix x assume x: "x \<in> G"
+    have "meval_trm ?g (map (\<lambda>c. x ! c) ?cc) = meval_trm f x"
+      by (rule meval_trm_reindex[OF fv])
+    then show "meval_trm ?g (dproj ?M x) = meval_trm f x"
+      by (simp only: dproj_wide_mask_eq_map_nth[OF agg_cols_sorted[OF sg]
+            agg_cols_bound[OF bg] len[OF x]])
+  qed
+  have inj: "inj_on (dproj ?M) G"
+    by (rule inj_on_subset[OF inj_on_dproj_cols[OF agg_cols_sorted[OF sg]]]) (blast intro: wf)
+  have img: "meval_trm ?g ` dproj ?M ` G = meval_trm f ` G"
+    unfolding image_image by (intro image_cong[OF refl] ev)
+  have "agg_values ?g (dproj ?M ` G)
+      = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. meval_trm f x = v) G))) ` meval_trm f ` G"
+    unfolding agg_values img
+  proof (intro image_cong[OF refl])
+    fix v :: event_data
+    have fil: "Set.filter (\<lambda>z. meval_trm ?g z = v) (dproj ?M ` G)
+        = dproj ?M ` Set.filter (\<lambda>x. meval_trm f x = v) G"
+      by (auto simp: ev)
+    have inj': "inj_on (dproj ?M) (Set.filter (\<lambda>x. meval_trm f x = v) G)"
+      by (rule inj_on_subset[OF inj]) auto
+    show "(v, ecard (Set.filter (\<lambda>z. meval_trm ?g z = v) (dproj ?M ` G)))
+        = (v, ecard (Set.filter (\<lambda>x. meval_trm f x = v) G))"
+      unfolding fil ecard_image[OF inj'] by (rule refl)
+  qed
+  also have "\<dots> = agg_values f G" by (simp add: agg_values)
+  finally show ?thesis unfolding dtabc_def .
+qed
+
+subsection \<open>Aggregation over short tuples agrees with the kernel's\<close>
+
+text \<open>
+  The dense aggregation takes the group key as a suffix of the short tuple (of length
+  @{term "length tys"} before it, exactly as in the wide frame), and writes the aggregate at the
+  position @{term y} occupies among the group's columns rather than at @{term y} itself.
+\<close>
+
+definition dagg :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    event_data table \<Rightarrow> event_data table" where
+  "dagg g0 \<omega> f k pos rel =
+     (if g0 \<and> Set.is_empty rel then {[Some (eval_agg_op \<omega> {})]}
+      else (let groups = cluster (Some \<circ> drop k) rel in
+        (\<lambda>g. case Mapping.lookup groups g of
+                None \<Rightarrow> g
+              | Some G \<Rightarrow> take pos g @ Some (eval_agg_op \<omega> (agg_values f G)) # drop pos g)
+          ` Mapping.keys groups))"
+
+theorem dagg_eval_agg:
+  assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
+    and yn: "y < n" and yg: "y \<notin> set gcols"
+    and rel: "table (length tys + n) (set (agg_cols (length tys) gcols)) rel"
+    and fv: "Formula.fv_trm f \<subseteq> set (agg_cols (length tys) gcols)"
+    and g0: "g0 \<Longrightarrow> gcols = []"
+  shows "dagg g0 \<omega> (reindex_trm (agg_cols (length tys) gcols) f) (length tys) (ins_pos gcols y)
+           (dtabc (length tys + n) (agg_cols (length tys) gcols) rel)
+       = dtabc n (merge_cols gcols [y]) (eval_agg n g0 y \<omega> tys f rel)"
+proof -
+  let ?m = "length tys"
+  let ?cc = "agg_cols ?m gcols"
+  let ?M = "wide_mask (?m + n) ?cc"
+  let ?G = "wide_mask n gcols"
+  let ?R = "wide_mask n (merge_cols gcols [y])"
+  let ?g = "reindex_trm ?cc f"
+  let ?p = "ins_pos gcols y"
+  let ?z = "eval_agg_op \<omega> {}"
+  let ?A = "\<lambda>x. eval_agg_op \<omega>
+     (agg_values f (Set.filter (\<lambda>x'. drop ?m x' = drop ?m x) rel))"
+  have wf: "\<And>x. x \<in> rel \<Longrightarrow> wf_tuple (?m + n) (set ?cc) x" using rel by (simp add: table_def)
+  then have len: "\<And>x. x \<in> rel \<Longrightarrow> length x = ?m + n" by (simp add: wf_tuple_def)
+  show ?thesis
+  proof (cases "g0 \<and> rel = empty_table")
+    case True
+    then have e: "rel = {}" and g: "g0" by (auto simp: empty_table_def)
+    have mc: "merge_cols gcols [y] = [y]" using g0[OF g] by simp
+    let ?t = "Table.tabulate (\<lambda>j. if y = j then Some ?z else None) 0 n"
+    have "dtabc n (merge_cols gcols [y]) (eval_agg n g0 y \<omega> tys f rel)
+        = {dproj (wide_mask n [y]) ?t}"
+      using True by (simp add: eval_agg_def dtabc_def singleton_table_def mc)
+    also have "\<dots> = {[Some ?z]}"
+      using yn by (simp add: dproj_wide_mask_eq_map_nth[where cs="[y]"])
+    finally show ?thesis using e g by (simp add: dagg_def dtabc_def)
+  next
+    case False
+    then have ne: "\<not> (g0 \<and> rel = empty_table)" by simp
+    then have ne': "\<not> (g0 \<and> Set.is_empty (dproj ?M ` rel))"
+      by (auto simp: empty_table_def)
+    have "dagg g0 \<omega> ?g ?m ?p (dtabc (?m + n) ?cc rel)
+        = (\<lambda>k. case Mapping.lookup (cluster (Some \<circ> drop ?m) (dproj ?M ` rel)) k of
+                 None \<Rightarrow> k
+               | Some G \<Rightarrow> take ?p k @ Some (eval_agg_op \<omega> (agg_values ?g G)) # drop ?p k)
+          ` (drop ?m ` dproj ?M ` rel)"
+      unfolding dagg_def dtabc_def Let_def keys_cluster using ne' by simp
+    also have "\<dots> = (\<lambda>k. take ?p k @ Some (eval_agg_op \<omega>
+          (agg_values ?g (Set.filter (\<lambda>z. drop ?m z = k) (dproj ?M ` rel)))) # drop ?p k)
+          ` (drop ?m ` dproj ?M ` rel)"
+      by (intro image_cong[OF refl]) (simp add: lookup_cluster_Some)
+    also have "\<dots> = (\<lambda>x. dproj ?R ((drop ?m x)[y := Some (?A x)])) ` rel"
+      unfolding image_image
+    proof (intro image_cong[OF refl])
+      fix x assume x: "x \<in> rel"
+      let ?gr = "Set.filter (\<lambda>x'. drop ?m x' = drop ?m x) rel"
+      have k: "drop ?m (dproj ?M x) = dproj ?G (drop ?m x)"
+        by (rule drop_dproj_agg[OF sg bg len[OF x]])
+      have grp: "Set.filter (\<lambda>z. drop ?m z = dproj ?G (drop ?m x)) (dproj ?M ` rel)
+          = dproj ?M ` ?gr"
+        using dtabc_agg_group[OF sg bg rel x] unfolding dtabc_def .
+      have tgr: "table (?m + n) (set ?cc) ?gr" using rel by (auto simp: table_def)
+      have av: "agg_values ?g (dproj ?M ` ?gr) = agg_values f ?gr"
+        using agg_values_dtabc[OF sg bg tgr fv] unfolding dtabc_def .
+      have upd: "dproj ?R ((drop ?m x)[y := Some (?A x)])
+          = take ?p (dproj ?G (drop ?m x)) @ Some (?A x) # drop ?p (dproj ?G (drop ?m x))"
+        by (rule dproj_list_update[OF sg bg yn yg]) (simp add: len[OF x])
+      show "take ?p (drop ?m (dproj ?M x)) @ Some (eval_agg_op \<omega>
+              (agg_values ?g (Set.filter (\<lambda>z. drop ?m z = drop ?m (dproj ?M x))
+                 (dproj ?M ` rel)))) # drop ?p (drop ?m (dproj ?M x))
+          = dproj ?R ((drop ?m x)[y := Some (?A x)])"
+        unfolding upd k grp av by (rule refl)
+    qed
+    also have "\<dots> = dtabc n (merge_cols gcols [y]) (eval_agg n g0 y \<omega> tys f rel)"
+      unfolding dtabc_def eval_agg_def Let_def agg_values by (simp add: ne image_image)
+    finally show ?thesis .
+  qed
+qed
+
 (*<*)
 end
 (*>*)
