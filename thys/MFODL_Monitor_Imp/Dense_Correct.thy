@@ -8,16 +8,25 @@ section \<open>The dense monitor inherits the kernel's correctness theorems\<clo
 
 subsection \<open>The trace's databases are well formed\<close>
 
-lemma wf_db_mk_db: "wf_db (mk_db X)"
+lemma wf_db_mk_db:
+  assumes f: "finite X"
+  shows "wf_db (mk_db X)"
   unfolding wf_db_def
 proof (intro allI impI)
   fix e ar and T :: "event_data table list"
   assume "Mapping.lookup (mk_db X) (e, ar) = Some T"
-  then have "T = [map Some ` {ts. (e, ts) \<in> X \<and> ar = length ts}]"
+  then have T: "T = [map Some ` {ts. (e, ts) \<in> X \<and> ar = length ts}]"
     by (transfer fixing: e ar) (auto split: if_splits)
-  then show "list_all (\<lambda>T. table ar {0..<ar} T) T"
-    by (auto simp: table_def wf_tuple_def)
+  have "{ts. (e, ts) \<in> X \<and> ar = length ts} \<subseteq> snd ` X" by force
+  then have "finite {ts. (e, ts) \<in> X \<and> ar = length ts}"
+    using f by (auto elim: finite_subset)
+  then show "list_all (\<lambda>T. table ar {0..<ar} T \<and> finite T) T"
+    unfolding T by (auto simp: table_def wf_tuple_def)
 qed
+
+text \<open>A prefix all of whose databases are finite -- what a log is.\<close>
+
+lift_definition pfinite :: "Formula.prefix \<Rightarrow> bool" is "\<lambda>p. \<forall>x \<in> set p. finite (fst x)" .
 
 subsection \<open>The concrete monitor is a @{locale verimon}\<close>
 
@@ -140,6 +149,7 @@ text \<open>
 
 lemma dmsteps0_stateless_rel:
   "dmsim_state n cs tw st dst \<Longrightarrow> sorted (map snd \<pi>) \<Longrightarrow> (\<forall>x \<in> set \<pi>. tw \<le> snd x) \<Longrightarrow>
+   (\<forall>x \<in> set \<pi>. finite (fst x)) \<Longrightarrow>
    dmsteps0_stateless \<pi> dst = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (msteps0_stateless \<pi> st)
    \<and> (\<forall>(i, t, X) \<in> set (msteps0_stateless \<pi> st). table n (set cs) X)"
 proof (induct \<pi> arbitrary: st dst tw)
@@ -147,8 +157,8 @@ proof (induct \<pi> arbitrary: st dst tw)
   then show ?case by simp
 next
   case (Cons tdb \<pi>)
-  note IH = Cons(1) and r = Cons(2) and srt = Cons(3) and b = Cons(4)
-  have w: "wf_db (fst (apfst mk_db tdb))" by (simp add: wf_db_mk_db)
+  note IH = Cons(1) and r = Cons(2) and srt = Cons(3) and b = Cons(4) and fin = Cons(5)
+  have w: "wf_db (fst (apfst mk_db tdb))" using fin by (simp add: wf_db_mk_db)
   have le: "tw \<le> snd (apfst mk_db tdb)" using b by simp
   have step: "fst (dmstep (apfst mk_db tdb) dst)
       = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (fst (mstep (apfst mk_db tdb) st))"
@@ -158,25 +168,27 @@ next
     using dmstep_mstep[OF r w le] by simp_all
   have b': "\<forall>x \<in> set \<pi>. snd tdb \<le> snd x" using srt by simp
   have srt': "sorted (map snd \<pi>)" using srt by simp
-  show ?case using IH[OF r' srt' b'] step tb by (simp add: split_beta) blast
+  have fin': "\<forall>x \<in> set \<pi>. finite (fst x)" using fin by simp
+  show ?case using IH[OF r' srt' b' fin'] step tb by (simp add: split_beta) blast
 qed
 
 lemma dmsteps_stateless_rel:
-  assumes r: "dmsim_state n cs 0 st dst"
+  assumes r: "dmsim_state n cs 0 st dst" and f: "pfinite \<pi>"
   shows "dmsteps_stateless \<pi> dst
        = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (msteps_stateless \<pi> st)
      \<and> (\<forall>(i, t, X) \<in> set (msteps_stateless \<pi> st). table n (set cs) X)"
 proof -
   have srt: "sorted (map snd (Rep_prefix \<pi>))" using Rep_prefix[of \<pi>] by simp
+  have fin: "\<forall>x \<in> set (Rep_prefix \<pi>). finite (fst x)" using f by (simp add: pfinite.rep_eq)
   show ?thesis
     unfolding dmsteps_stateless.rep_eq default_maux.msteps_stateless.rep_eq
-    by (rule dmsteps0_stateless_rel[OF r srt]) simp
+    by (rule dmsteps0_stateless_rel[OF r srt _ fin]) simp
 qed
 
 subsection \<open>The verdicts are the narrowing of the kernel's\<close>
 
 theorem dmonitor_monitor:
-  assumes "dmsim_state n cs 0 (minit_safe \<phi>) dst"
+  assumes "dmsim_state n cs 0 (minit_safe \<phi>) dst" and "pfinite \<pi>"
   shows "dmonitor dst \<pi> = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (monitor \<phi> \<pi>)"
   using dmsteps_stateless_rel[OF assms]
   by (simp add: dmonitor_def default_maux.monitor_def)
@@ -192,12 +204,13 @@ lemma map_dtabw_dtabc:
 
 theorem dmonitor_widen:
   assumes r: "dmsim_state n cs 0 (minit_safe \<phi>) dst" and s: "sorted_wrt (<) cs"
+    and f: "pfinite \<pi>"
   shows "map (\<lambda>(i, t, X). (i, t, dtabw n cs X)) (dmonitor dst \<pi>) = monitor \<phi> \<pi>"
 proof -
   have e: "dmonitor dst \<pi> = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (monitor \<phi> \<pi>)"
-    by (rule dmonitor_monitor[OF r])
+    by (rule dmonitor_monitor[OF r f])
   have t: "\<forall>(i, t, X) \<in> set (monitor \<phi> \<pi>). table n (set cs) X"
-    using dmsteps_stateless_rel[OF r] by (simp add: default_maux.monitor_def)
+    using dmsteps_stateless_rel[OF r f] by (simp add: default_maux.monitor_def)
   show ?thesis unfolding e by (rule map_dtabw_dtabc[OF s t])
 qed
 
@@ -216,22 +229,22 @@ begin
 
 theorem dmonitor_mverdicts:
   assumes r: "dmsim_state n cs 0 (minit_safe \<phi>) dst" and s: "sorted_wrt (<) cs"
-    and wty: "wty_prefix SIG \<pi>"
+    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw n cs X)) (dmonitor dst \<pi>)) = Mt \<pi>"
-  unfolding dmonitor_widen[OF r s] Monitor_Impl.monitor_def
+  unfolding dmonitor_widen[OF r s f] Monitor_Impl.monitor_def
   by (rule dmon.monitor_mverdicts[OF wty])
 
 theorem dmstep_mverdicts:
   assumes r: "dmsim_state n cs tw st dst" and s: "sorted_wrt (<) cs"
     and wf: "dmon.wf_mstate SIG ENV \<phi> \<pi> R st"
-    and wtydb: "wty_db SIG (fst tdb)"
+    and wtydb: "wty_db SIG (fst tdb)" and fin: "finite (fst tdb)"
     and le: "last_ts \<pi> \<le> snd tdb" and tle: "tw \<le> snd tdb"
     and restrict: "mem_restr R v"
   shows "(i, t, v) \<in> flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw n cs X))
         (fst (dmstep (apfst mk_db tdb) dst)))
      \<longleftrightarrow> (i, t, v) \<in> Mt (psnoc \<pi> tdb) - Mt \<pi>"
 proof -
-  have w: "wf_db (fst (apfst mk_db tdb))" by (simp add: wf_db_mk_db)
+  have w: "wf_db (fst (apfst mk_db tdb))" using fin by (simp add: wf_db_mk_db)
   have tle': "tw \<le> snd (apfst mk_db tdb)" using tle by simp
   have step: "fst (dmstep (apfst mk_db tdb) dst)
       = map (\<lambda>(i, t, X). (i, t, dtabc n cs X)) (fst (mstep (apfst mk_db tdb) st))"

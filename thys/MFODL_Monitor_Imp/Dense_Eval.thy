@@ -23,16 +23,23 @@ text \<open>
   that width with no holes -- which is what the trace's own databases look like.  The dense
   formula only ever reads a database at a genuine input predicate (a let-bound one is always
   inside a @{term DPure} node, where the kernel's own evaluator handles it), so this is exactly
-  the condition its predicate nodes need.
+  the condition its predicate nodes need.  The tables are also required to be finite: the dense
+  multi-way join and the dense aggregation need it, and it cannot come from anywhere else -- the
+  kernel's own invariant does not carry finiteness (@{term qtable} does not), and the trace does
+  not either.  It is a property of the input, and a real log has it.
 \<close>
 
 definition wf_db :: "database \<Rightarrow> bool" where
   "wf_db db \<longleftrightarrow> (\<forall>e ar X. Mapping.lookup db (e, ar) = Some X \<longrightarrow>
-     list_all (\<lambda>T. table ar {0..<ar} T) X)"
+     list_all (\<lambda>T. table ar {0..<ar} T \<and> finite T) X)"
 
 lemma wf_dbD:
   "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow>
      table ar {0..<ar} T"
+  by (auto simp: wf_db_def list_all_iff)
+
+lemma wf_dbD_finite:
+  "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow> finite T"
   by (auto simp: wf_db_def list_all_iff)
 
 coinductive produces :: "nat \<Rightarrow> nat set \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool"
