@@ -2436,9 +2436,9 @@ on the other.**
 
 ### 19.2 The theory
 
-(Written while the theory lived entirely in the child session. Section 20 verifies the pure part
-of it and moves that part into the base session as `thys/MFODL_Monitor_Devel/Dense.thy`; what
-stays behind in `Dense_Imp.thy` is the heap index, the compilation and the evaluation function.)
+(Section 20 splits this theory: the pure part, with its agreement theorems, is now
+`thys/MFODL_Monitor_Imp/Dense.thy`; what stays in `Dense_Imp.thy` is the heap index, the
+compilation and the evaluation function.)
 
 `thys/MFODL_Monitor_Imp/Dense_Imp.thy`, a new pure theory in the child session, so the base
 session is not rebuilt. It carries the compacting projection and its inverse, the masks, the
@@ -2592,12 +2592,14 @@ allocation. Neither is a change to an algorithm; both are changes to what a valu
 
 ## 20. Verifying the short-tuple representation
 
+*Work in progress. 20.1-20.2 are done; 20.3 lists what is left, which is the larger half.*
+
 ### 20.1 What there is to prove
 
 Section 19 built a second evaluator over short tuples and tested it differentially against the
-kernel. That is evidence, not a proof. This section replaces the evidence for the part of it that
-can be replaced: every table operation of the dense evaluator now has a theorem saying it computes
-the short form of what the kernel computes.
+kernel. That is evidence, not a proof. The goal of this section is to replace the evidence with a
+refinement theorem: that `deval` over short tuples simulates the kernel's `meval`, so that running
+the dense monitor is running the verified one.
 
 The relation between the two representations is one function. For a column list `cs` -- strictly
 sorted, all entries below the frame width `n` -- narrowing is
@@ -2613,19 +2615,19 @@ rather than merely a function: on well-formed tuples it is injective (`inj_on_dp
 mask of a sorted column list is the kernel's own `join_mask` of its set (`wide_mask_eq_join_mask`).
 The second is what lets every proof below hand a goal back to a kernel lemma.
 
-Each operation then gets an equation of the shape
+The simulation decomposes into one equation per table operation, each of the shape
 
 > *dense operation applied to narrowed arguments = narrowing of the kernel's operation applied to
 > the wide arguments*,
 
-so a whole evaluation over short tuples is the narrowing of the kernel's evaluation as long as
-every step composes -- which is what the shapes of these equations arrange: the right-hand side of
-each is a `dtabc` of a kernel result, ready to be the left-hand side's argument at the next step.
+plus an induction over the formula that strings them together. The equations are 20.2; the
+induction is 20.3.
 
-### 20.2 What is proved
+### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Devel/Dense.thy`, now part of the base session, 1900 lines and 113 lemmas
-and theorems, no `sorry`. The operation theorems, in the order the file proves them:
+`thys/MFODL_Monitor_Imp/Dense.thy`, 1900 lines and 113 lemmas and theorems, no `sorry`. It sits in
+the child session for now, so that changing it costs a two-minute build rather than a rebuild of
+the base session; it moves to the base session once the whole refinement is in place.
 
 | kernel operation | dense operation | theorem |
 |---|---|---|
@@ -2672,46 +2674,46 @@ aggregated do not change (`agg_values_dtabc`): the re-indexed term reads the sho
 original reads the wide one (`meval_trm_reindex`), and the multiset of values is the same because
 narrowing is injective on a group (`ecard_image`).
 
-### 20.3 What is not proved, and why
-
-The evaluation function itself. `deval` in `thys/MFODL_Monitor_Imp/Dense_Imp.thy` is not proved to
-simulate `meval`, and three separate things stand in the way, of quite different sizes.
-
-**The Since and Until cases route through unproved structures.** `DSince` and `DUntil` use the
-`sevtaux` / `evtaux` structures of Section 16, which are code-level constructions in the child
-session with no correctness proof of their own. A dense monitor that could be verified would have
-to use the base session's `mmasaux` and `muaux_dq` instead, with `args` re-indexed to the dense
-frame: `args_n` becomes `length cols_R`, and `args_L` becomes the positions of the left operand's
-columns within the right's. That re-indexing is a real piece of work -- every invariant of those
-structures is stated in terms of `table (args_n args) (args_R args)` -- but it is work of a kind
-that has been done before in this development, not a new obstacle.
-
-**The heap index is Imperative HOL without Hoare triples.** `dbin_join_h` and the `didx_ins` /
-`dprobe_r` / `dprobe_l` it calls are monadic and unproved, exactly as `hprobe_join` was before
-Section 8 proved it. The pure `dgen_join` it falls back to *is* proved, and the fallback is what
-runs whenever `-heap_maps` is off, so `-dense` alone is covered by the theorems above and
-`-dense -heap_maps` is not.
-
-**The compilation is unproved.** `dformula_of` turns an `mformula_j` into the dense fragment and
-computes the column list of every node (`mcols`). Nothing says that the column list it computes is
-the free-variable set of the subformula, which is the hypothesis every theorem in 20.2 needs. This
-is the smallest of the three and the most mechanical: an induction over `mformula_j` against the
-kernel's own `wf_mformula`.
-
-So the honest statement is: **the representation and every table operation over it are verified;
-the evaluator that strings them together is tested, not verified.** That is a real narrowing of
-what has to be trusted -- the table operations are where all the index arithmetic lives, and they
-are where the two bugs of Section 19.5 were -- but it is not the whole claim.
-
-### 20.4 What the proof cost, and what it found
-
-Nothing in the dense evaluator changed. Every definition in `Dense.thy` is the definition that was
-already running, moved from the child session into the base one; `Dense_Imp.thy` now imports it and
-keeps only the three unproved parts named above. The differential tests and the timings of Section
-19.7 therefore still stand as measured.
-
 The proofs found no defect. That is worth recording next to Section 19.5, where testing found two
 in the same code: the two bugs -- indexing the wrong side, and a missing equal-columns case -- were
-both found and fixed by measurement before the proof was attempted, and the proof would have found
-both. The general-join theorem `dtabc_gen_join` is exactly the statement the first bug violated,
-and `dbin_join0_join`'s case analysis is exactly the case the second one was missing.
+found by measurement before the proof was attempted, and the proof would have found both. The
+general-join theorem `dtabc_gen_join` is exactly the statement the first bug violated, and
+`dbin_join0_join`'s case analysis is exactly the case the second was missing.
+
+### 20.3 The evaluation function (to do)
+
+`deval` is not yet proved to simulate `meval`. Four things stand in the way; none of them is a
+reason to stop, and the order below is the order they will be done in.
+
+**1. A pure evaluator to state the theorem about.** `deval` returns in the `Heap` monad, because
+of the heap index, and a simulation theorem against `meval` should not have to talk about the
+heap. So the refinement is split in two: a pure `deval` proved to simulate `meval`, and the
+monadic one proved -- or, as today, only tested -- to refine the pure one. This also isolates the
+heap index, which is the one part whose verification needs Imperative HOL Hoare triples in the
+style of Section 8.
+
+**2. The Since and Until cases must use verified structures.** `DSince` and `DUntil` today use the
+`sevtaux` / `evtaux` structures of Section 16, which are code-level constructions with no
+correctness proof of their own, so no amount of work on the dense side would make those two cases
+verified. The pure dense evaluator has to use the base session's `mmasaux` and `muaux_dq` instead,
+with `args` re-indexed to the dense frame: `args_n` becomes `length cols_R`, and `args_L` becomes
+the positions of the left operand's columns within the right's. Every invariant of those
+structures is stated as `table (args_n args) (args_R args) ...`, so the re-indexing has to be
+carried through `valid_mmsaux` / `valid_mmuaux` -- the largest single piece of the remaining work,
+and the reason Section 19 left it alone.
+
+**3. The compilation must be proved.** `dformula_of` turns an `mformula_j` into the dense fragment
+and `mcols` computes the column list of every node. Nothing yet says that the column list is the
+subformula's free-variable set, which is the hypothesis every theorem in 20.2 needs. This is an
+induction over `mformula_j` against the kernel's own `wf_mformula`, and it is the most mechanical
+of the four.
+
+**4. The buffers and the temporal shifts.** `DPrev`, `DNext`, `DOr` and `DAnds` thread tables
+through `mbuf2` / `mbufn` buffers. These never look inside a tuple, so each needs only a lemma
+saying that a buffer of narrowed tables behaves as the narrowing of a buffer of wide ones -- but
+those lemmas have to be stated and proved, and there is one per buffer operation.
+
+`DPure`, the escape hatch that runs the kernel evaluator on wide tuples and narrows the result, is
+already covered by `dnarrow_dtabc`; it is what makes the fragment partial rather than total, and
+it is what the simulation theorem will fall back on for every constructor not in the dense
+fragment.

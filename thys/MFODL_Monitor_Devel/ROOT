@@ -53,7 +53,6 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Code_Opt
     Imperative_Join
     Monomorphic_Code
-    Dense
   theories [document=false]
     Monitor_Code
   document_files

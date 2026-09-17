@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Imp
-  imports Monitor_Imp2 "MFODL_Monitor_Devel.Dense"
+  imports Monitor_Imp2 Dense
 begin
 (*>*)
 
@@ -8,7 +8,7 @@ section \<open>Tuples without their empty columns\<close>
 
 text \<open>
   The short-tuple representation, its operations and their agreement with the kernel's live in
-  @{theory MFODL_Monitor_Devel.Dense}.  What is left here is the part that is not a pure
+  @{theory MFODL_Monitor_Imp.Dense}.  What is left here is the part that is not a pure
   refinement: the heap-resident join index, the monadic evaluation function, and the
   compilation of an @{type mformula_j} into the dense fragment.
 \<close>
