@@ -816,13 +816,15 @@ theorem dtabc_gen_join:
   assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
     and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
     and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
-    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
-    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+    and fT: "finite T" and fT': "finite T'"
   shows "dgen_join (mrg_plan cs1 cs2) (mrg_left_key (mrg_plan cs1 cs2))
            (mrg_right_key (mrg_plan cs1 cs2)) (dtabc n cs1 T) (dtabc n cs2 T')
        = dtabc n (merge_cols cs1 cs2) (join T True T')"
 proof -
   let ?p = "mrg_plan cs1 cs2"
+  have cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+    using fT fT' by (auto simp: dtabc_def intro!: set_csorted_list_of_set_etuple)
   have la: "\<And>a. a \<in> dtabc n cs1 T \<Longrightarrow> length a = length (filter (\<lambda>m. m \<noteq> MRgt) ?p)"
     using t1 by (auto simp: dtabc_def table_def wf_tuple_def length_filter_mrg_plan_left
         dproj_wide_mask_eq_map_nth[OF s1 b1])
@@ -897,8 +899,7 @@ theorem dbin_join0_join:
     and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
     and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
-    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
-    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+    and fT: "finite T" and fT': "finite T'"
   shows "dbin_join0 (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
        = dtabc n (merge_cols cs1 cs2) (join T pos T')"
 proof (cases "cs1 = cs2")
@@ -943,7 +944,7 @@ next
           by (simp add: mk_djoin_def)
       next
         case False
-        show ?thesis using dtabc_gen_join[OF s1 s2 b1 b2 t1 t2 cA cB]
+        show ?thesis using dtabc_gen_join[OF s1 s2 b1 b2 t1 t2 fT fT']
             ne ne2 nr False p
           by (simp add: mk_djoin_def Let_def)
       qed
@@ -956,8 +957,7 @@ theorem dbin_join_join:
     and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
     and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
-    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
-    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+    and fT: "finite T" and fT': "finite T'"
   shows "dbin_join (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
        = dtabc n (merge_cols cs1 cs2) (join T pos T')"
 proof (cases "T = {}")
@@ -976,7 +976,7 @@ next
     case False
     then show ?thesis using T
       by (simp add: dbin_join_def dtabc_empty_iff
-          dbin_join0_join[OF s1 s2 b1 b2 t1 t2 neg cA cB])
+          dbin_join0_join[OF s1 s2 b1 b2 t1 t2 neg fT fT'])
   qed
 qed
 
@@ -987,12 +987,317 @@ corollary dbin_join_bin_join:
     and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
     and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
-    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
-    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+    and fT: "finite T" and fT': "finite T'"
   shows "dbin_join (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
        = dtabc n (merge_cols cs1 cs2) (bin_join n (set cs1) T pos (set cs2) T')"
   unfolding bin_join_table[OF t1 t2]
-  by (rule dbin_join_join[OF s1 s2 b1 b2 t1 t2 neg cA cB])
+  by (rule dbin_join_join[OF s1 s2 b1 b2 t1 t2 neg fT fT'])
+
+subsection \<open>The multi-way join\<close>
+
+text \<open>
+  The kernel's @{const mmulti_join'} picks an order at run time from the variable sets; the
+  dense evaluator joins left to right against a plan list computed once.  The two agree: the
+  kernel's own optimisation lemmas say that merging two adjacent positive operands into their
+  join, or removing a negative operand by an anti-join, leaves the result unchanged.
+\<close>
+
+fun dands_plans :: "cols \<Rightarrow> cols list \<Rightarrow> djoin_plan list" where
+  "dands_plans acc [] = []"
+| "dands_plans acc (c # cs) = mk_djoin acc c # dands_plans (merge_cols acc c) cs"
+
+fun dands_cols :: "cols \<Rightarrow> cols list \<Rightarrow> cols" where
+  "dands_cols acc [] = acc"
+| "dands_cols acc (c # cs) = dands_cols (merge_cols acc c) cs"
+
+fun dands_pos :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
+    event_data table" where
+  "dands_pos [] t us = t"
+| "dands_pos (p # ps) t [] = t"
+| "dands_pos (p # ps) t (u # us) = dands_pos ps (dbin_join p t True u) us"
+
+fun dands_neg :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
+    event_data table" where
+  "dands_neg [] t us = t"
+| "dands_neg (p # ps) t [] = t"
+| "dands_neg (p # ps) t (u # us) = dands_neg ps (dbin_join p t False u) us"
+
+fun kands_pos :: "'a table \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
+  "kands_pos t [] = t"
+| "kands_pos t (u # us) = kands_pos (join t True u) us"
+
+fun kands_neg :: "'a table \<Rightarrow> 'a table list \<Rightarrow> 'a table" where
+  "kands_neg t [] = t"
+| "kands_neg t (u # us) = kands_neg (join t False u) us"
+
+lemma finite_these: "finite A \<Longrightarrow> finite (Option.these A)"
+  by (simp add: Option.these_def)
+
+lemma finite_join: "finite X \<Longrightarrow> finite Y \<Longrightarrow> finite (join X b Y)"
+  by (cases b) (auto simp: join_True_code join_False_alt)
+
+lemma set_dands_cols: "set (dands_cols acc css) = set acc \<union> (\<Union>c \<in> set css. set c)"
+  by (induct css arbitrary: acc) (auto simp: set_merge_cols)
+
+lemma sorted_dands_cols:
+  "sorted_wrt (<) acc \<Longrightarrow> \<forall>c \<in> set css. sorted_wrt (<) c \<Longrightarrow> sorted_wrt (<) (dands_cols acc css)"
+  by (induct css arbitrary: acc) (auto simp: sorted_merge_cols)
+
+abbreviation (input) wf_operand :: "nat \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> bool" where
+  "wf_operand n c U \<equiv> sorted_wrt (<) c \<and> (\<forall>d \<in> set c. d < n) \<and> table n (set c) U \<and> finite U"
+
+theorem dands_pos_dtabc:
+  assumes "sorted_wrt (<) acc" and "\<forall>c \<in> set acc. c < n"
+    and "table n (set acc) T" and "finite T"
+    and "list_all2 (wf_operand n) css Us"
+  shows "dands_pos (dands_plans acc css) (dtabc n acc T) (map2 (dtabc n) css Us)
+       = dtabc n (dands_cols acc css) (kands_pos T Us)"
+  using assms
+proof (induct css arbitrary: acc T Us)
+  case (Cons c cs)
+  from Cons(6) obtain U Us' where U: "Us = U # Us'" and wf: "wf_operand n c U"
+    and rest: "list_all2 (wf_operand n) cs Us'"
+    by (cases Us) auto
+  have j: "dbin_join (mk_djoin acc c) (dtabc n acc T) True (dtabc n c U)
+      = dtabc n (merge_cols acc c) (join T True U)"
+  proof (rule dbin_join_join)
+    show "sorted_wrt (<) acc" by (rule Cons(2))
+    show "sorted_wrt (<) c" using wf by simp
+    show "\<forall>d \<in> set acc. d < n" by (rule Cons(3))
+    show "\<forall>d \<in> set c. d < n" using wf by simp
+    show "table n (set acc) T" by (rule Cons(4))
+    show "table n (set c) U" using wf by simp
+    show "\<not> True \<Longrightarrow> set c \<subseteq> set acc" by simp
+    show "finite T" by (rule Cons(5))
+    show "finite U" using wf by simp
+  qed
+  have t: "table n (set (merge_cols acc c)) (join T True U)"
+    using Cons(4) wf by (auto simp: set_merge_cols
+        intro!: join_table[of n "set acc" T "set c" U True])
+  have "dands_pos (dands_plans acc (c # cs)) (dtabc n acc T) (map2 (dtabc n) (c # cs) Us)
+      = dands_pos (dands_plans (merge_cols acc c) cs)
+          (dtabc n (merge_cols acc c) (join T True U)) (map2 (dtabc n) cs Us')"
+    unfolding U by (simp add: j)
+  also have "\<dots> = dtabc n (dands_cols (merge_cols acc c) cs) (kands_pos (join T True U) Us')"
+  proof (rule Cons(1))
+    show "sorted_wrt (<) (merge_cols acc c)" using Cons(2) wf by (simp add: sorted_merge_cols)
+    show "\<forall>d \<in> set (merge_cols acc c). d < n" using Cons(3) wf by (auto simp: set_merge_cols)
+    show "table n (set (merge_cols acc c)) (join T True U)" by (rule t)
+    show "finite (join T True U)" using Cons(5) wf by (simp add: finite_join)
+    show "list_all2 (wf_operand n) cs Us'" by (rule rest)
+  qed
+  finally show ?case unfolding U by simp
+qed simp
+
+theorem dands_neg_dtabc:
+  assumes "sorted_wrt (<) acc" and "\<forall>c \<in> set acc. c < n"
+    and "table n (set acc) T" and "finite T"
+    and "list_all2 (wf_operand n) nss Vs" and "\<forall>c \<in> set nss. set c \<subseteq> set acc"
+  shows "dands_neg (dands_plans acc nss) (dtabc n acc T) (map2 (dtabc n) nss Vs)
+       = dtabc n acc (kands_neg T Vs)"
+  using assms
+proof (induct nss arbitrary: acc T Vs)
+  case (Cons c cs)
+  from Cons(6) obtain V Vs' where V: "Vs = V # Vs'" and wf: "wf_operand n c V"
+    and rest: "list_all2 (wf_operand n) cs Vs'"
+    by (cases Vs) auto
+  have sub: "set c \<subseteq> set acc" using Cons(7) by simp
+  have mc: "merge_cols acc c = acc"
+    using Cons(2) wf sub by (simp add: merge_cols_sub_left)
+  have j0: "dbin_join (mk_djoin acc c) (dtabc n acc T) False (dtabc n c V)
+      = dtabc n (merge_cols acc c) (join T False V)"
+  proof (rule dbin_join_join)
+    show "sorted_wrt (<) acc" by (rule Cons(2))
+    show "sorted_wrt (<) c" using wf by simp
+    show "\<forall>d \<in> set acc. d < n" by (rule Cons(3))
+    show "\<forall>d \<in> set c. d < n" using wf by simp
+    show "table n (set acc) T" by (rule Cons(4))
+    show "table n (set c) V" using wf by simp
+    show "\<not> False \<Longrightarrow> set c \<subseteq> set acc" by (rule sub)
+    show "finite T" by (rule Cons(5))
+    show "finite V" using wf by simp
+  qed
+  have j: "dbin_join (mk_djoin acc c) (dtabc n acc T) False (dtabc n c V)
+      = dtabc n acc (join T False V)" using j0 by (simp add: mc)
+  have t: "table n (set acc) (join T False V)"
+    using Cons(4) wf sub by (auto intro: join_table[of n "set acc" T "set c" V False])
+  have "dands_neg (dands_plans acc (c # cs)) (dtabc n acc T) (map2 (dtabc n) (c # cs) Vs)
+      = dands_neg (dands_plans acc cs) (dtabc n acc (join T False V)) (map2 (dtabc n) cs Vs')"
+    unfolding V by (simp add: j mc)
+  also have "\<dots> = dtabc n acc (kands_neg (join T False V) Vs')"
+  proof (rule Cons(1))
+    show "sorted_wrt (<) acc" by (rule Cons(2))
+    show "\<forall>d \<in> set acc. d < n" by (rule Cons(3))
+    show "table n (set acc) (join T False V)" by (rule t)
+    show "finite (join T False V)" using Cons(5) wf by (simp add: finite_join)
+    show "list_all2 (wf_operand n) cs Vs'" by (rule rest)
+    show "\<forall>d \<in> set cs. set d \<subseteq> set acc" using Cons(7) by simp
+  qed
+  finally show ?case unfolding V by simp
+qed simp
+
+subsubsection \<open>The kernel's multi-way join is the same left-to-right fold\<close>
+
+lemma mmulti_join'_single:
+  assumes "table n A X" "wf_set n A"
+  shows "mmulti_join' [A] [] [X] = X"
+proof (intro set_eqI iffI)
+  fix z assume "z \<in> mmulti_join' [A] [] [X]"
+  then have "wf_tuple n A z" "restrict A z \<in> X"
+    using mmulti_join'_correct[of "[A]" n "[]" "[X]" z] assms by auto
+  then show "z \<in> X" by (simp add: restrict_idle)
+next
+  fix z assume z: "z \<in> X"
+  then have w: "wf_tuple n A z" using assms by (simp add: table_def)
+  then show "z \<in> mmulti_join' [A] [] [X]"
+    using mmulti_join'_correct[of "[A]" n "[]" "[X]" z] assms z by (simp add: restrict_idle)
+qed
+
+lemma mmulti_join'_peel_pos:
+  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ((A0 # A1 # As) @ A_neg) ((X0 # X1 # Xs) @ L_neg)"
+    and "length As = length Xs"
+  shows "mmulti_join' (A0 # A1 # As) A_neg ((X0 # X1 # Xs) @ L_neg)
+       = mmulti_join' ((A0 \<union> A1) # As) A_neg ((join X0 True X1 # Xs) @ L_neg)"
+  using mmulti_join'_opt_True[of n "[]" A0 "[]" A1 As A_neg "[]" X0 "[]" X1 Xs L_neg] assms
+  by simp
+
+lemma mmulti_join'_peel_neg:
+  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ([A0] @ (B0 # Bs)) ([X0] @ (Y0 # Ys))"
+    and "length Bs = length Ys" and "B0 \<subseteq> A0"
+  shows "mmulti_join' [A0] (B0 # Bs) (X0 # Y0 # Ys)
+       = mmulti_join' [A0] Bs (join X0 False Y0 # Ys)"
+  using mmulti_join'_opt_False[where n = n and A_zs = "[]" and A_x = A0 and A_xs = "[]"
+      and A_ws = "[]" and A_y = B0 and A_ys = Bs
+      and zs = "[]" and x = X0 and xs = "[]" and ws = "[]" and y = Y0 and ys = Ys] assms
+  by (simp del: mmulti_join'.simps)
+
+lemma wf_set_finite: "wf_set n A \<Longrightarrow> finite A"
+  unfolding wf_set_def by (rule bounded_nat_set_is_finite)
+
+lemma mmulti_join'_fold_pos:
+  "\<And>A0 X0 A_neg L_neg. length As = length Xs \<Longrightarrow>
+   list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ((A0 # As) @ A_neg) ((X0 # Xs) @ L_neg) \<Longrightarrow>
+   mmulti_join' (A0 # As) A_neg ((X0 # Xs) @ L_neg)
+     = mmulti_join' [A0 \<union> \<Union>(set As)] A_neg (kands_pos X0 Xs # L_neg)"
+proof (induct As Xs rule: list_induct2')
+  case (4 A1 As X1 Xs)
+  have "mmulti_join' (A0 # A1 # As) A_neg ((X0 # X1 # Xs) @ L_neg)
+      = mmulti_join' ((A0 \<union> A1) # As) A_neg ((join X0 True X1 # Xs) @ L_neg)"
+    using 4(2,3) by (intro mmulti_join'_peel_pos) auto
+  also have "\<dots> = mmulti_join' [(A0 \<union> A1) \<union> \<Union>(set As)] A_neg (kands_pos (join X0 True X1) Xs # L_neg)"
+    using 4(2,3) by (intro 4(1)) (auto simp: list_all2_Cons1 list_all2_append1 wf_set_def
+        intro!: join_table[of n A0 X0 A1 X1 True])
+  finally show ?case by (simp add: Un_assoc)
+qed auto
+
+lemma mmulti_join'_fold_neg:
+  "\<And>A0 X0. length Bs = length Ys \<Longrightarrow>
+   list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ([A0] @ Bs) ([X0] @ Ys) \<Longrightarrow>
+   \<forall>B \<in> set Bs. B \<subseteq> A0 \<Longrightarrow>
+   mmulti_join' [A0] Bs (X0 # Ys) = kands_neg X0 Ys"
+proof (induct Bs Ys rule: list_induct2')
+  case (1 A0 X0)
+  then show ?case by (auto simp add: mmulti_join'_single simp del: mmulti_join'.simps)
+next
+  case (4 B0 Bs Y0 Ys A0 X0)
+  have tabs: "table n A0 X0" "wf_set n A0" "table n B0 Y0" "wf_set n B0"
+    using 4(3) by (auto simp: list_all2_Cons1)
+  have sub: "B0 \<subseteq> A0" using 4(4) by simp
+  have "mmulti_join' [A0] (B0 # Bs) (X0 # Y0 # Ys)
+      = mmulti_join' [A0] Bs (join X0 False Y0 # Ys)"
+    using 4(2,3) sub by (intro mmulti_join'_peel_neg) auto
+  also have "\<dots> = kands_neg (join X0 False Y0) Ys"
+  proof (rule 4(1))
+    show "length Bs = length Ys" using 4(2) by simp
+    show "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ([A0] @ Bs) ([join X0 False Y0] @ Ys)"
+      using 4(3) tabs sub by (auto simp: list_all2_Cons1
+          intro!: join_table[of n A0 X0 B0 Y0 False])
+    show "\<forall>B \<in> set Bs. B \<subseteq> A0" using 4(4) by simp
+  qed
+  finally show ?case by simp
+qed (auto simp del: mmulti_join'.simps)
+
+subsubsection \<open>The two agree\<close>
+
+lemma list_all2_wf_of_operand:
+  "list_all2 (wf_operand n) cs Us \<Longrightarrow> list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (map set cs) Us"
+  by (induct rule: list_all2_induct) (auto simp: wf_set_def)
+
+lemma kands_pos_table:
+  "list_all2 (wf_operand n) css Us \<Longrightarrow> table n A T \<Longrightarrow>
+     table n (A \<union> (\<Union>c \<in> set css. set c)) (kands_pos T Us)"
+proof (induct css Us arbitrary: A T rule: list_all2_induct)
+  case (Cons c cs U Us)
+  have "table n (A \<union> set c) (join T True U)"
+    using Cons(1,4) by (auto intro!: join_table[of n A T "set c" U True])
+  from Cons(3)[OF this] show ?case by (simp add: Un_assoc)
+qed simp
+
+lemma wf_operand_bounds:
+  "list_all2 (wf_operand n) css Us \<Longrightarrow> \<forall>c \<in> set css. \<forall>d \<in> set c. d < n"
+  by (induct rule: list_all2_induct) auto
+
+lemma wf_operand_sorted:
+  "list_all2 (wf_operand n) css Us \<Longrightarrow> \<forall>c \<in> set css. sorted_wrt (<) c"
+  by (induct rule: list_all2_induct) auto
+
+lemma kands_pos_finite: "list_all2 (wf_operand n) css Us \<Longrightarrow> finite T \<Longrightarrow> finite (kands_pos T Us)"
+  by (induct css Us arbitrary: T rule: list_all2_induct) (auto simp: finite_join)
+
+text \<open>The whole multi-way join: the dense left-to-right fold against the plan list is the short
+  form of the kernel's @{const mmulti_join'}.\<close>
+
+theorem dmulti_join_dtabc:
+  assumes s0: "sorted_wrt (<) c0" and b0: "\<forall>d \<in> set c0. d < n"
+    and t0: "table n (set c0) T0" and f0: "finite T0"
+    and pos: "list_all2 (wf_operand n) css Us"
+    and neg: "list_all2 (wf_operand n) nss Vs"
+    and sub: "\<forall>c \<in> set nss. set c \<subseteq> set (dands_cols c0 css)"
+  shows "dands_neg (dands_plans (dands_cols c0 css) nss)
+           (dands_pos (dands_plans c0 css) (dtabc n c0 T0) (map2 (dtabc n) css Us))
+           (map2 (dtabc n) nss Vs)
+       = dtabc n (dands_cols c0 css)
+           (mmulti_join' (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs))"
+proof -
+  let ?A = "set (dands_cols c0 css)"
+  have lp: "length (map set css) = length Us" using pos by (simp add: list_all2_lengthD)
+  have ln: "length (map set nss) = length Vs" using neg by (simp add: list_all2_lengthD)
+  have la: "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+      ((set c0 # map set css) @ map set nss) ((T0 # Us) @ Vs)"
+    using t0 b0 list_all2_wf_of_operand[OF pos] list_all2_wf_of_operand[OF neg]
+    by (simp add: wf_set_def list_all2_appendI)
+  have A_eq: "set c0 \<union> (\<Union>c \<in> set css. set c) = ?A" by (simp add: set_dands_cols)
+  have tk: "table n ?A (kands_pos T0 Us)"
+    using kands_pos_table[OF pos t0] by (simp add: set_dands_cols)
+  have fk: "finite (kands_pos T0 Us)" by (rule kands_pos_finite[OF pos f0])
+  have "mmulti_join' (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs)
+      = mmulti_join' [?A] (map set nss) (kands_pos T0 Us # Vs)"
+    using mmulti_join'_fold_pos[OF lp la] by (simp add: A_eq del: mmulti_join'.simps)
+  also have "\<dots> = kands_neg (kands_pos T0 Us) Vs"
+  proof (rule mmulti_join'_fold_neg)
+    show "length (map set nss) = length Vs" by (rule ln)
+    show "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+        ([?A] @ map set nss) ([kands_pos T0 Us] @ Vs)"
+      using tk b0 wf_operand_bounds[OF pos] list_all2_wf_of_operand[OF neg]
+      by (auto simp: wf_set_def set_dands_cols intro!: list_all2_appendI)
+    show "\<forall>B \<in> set (map set nss). B \<subseteq> ?A" using sub by auto
+  qed
+  finally have kernel: "mmulti_join' (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs)
+      = kands_neg (kands_pos T0 Us) Vs" .
+  have sacc: "sorted_wrt (<) (dands_cols c0 css)"
+    by (rule sorted_dands_cols[OF s0 wf_operand_sorted[OF pos]])
+  have bacc: "\<forall>d \<in> ?A. d < n"
+    using b0 wf_operand_bounds[OF pos] by (auto simp: set_dands_cols)
+  have "dands_pos (dands_plans c0 css) (dtabc n c0 T0) (map2 (dtabc n) css Us)
+      = dtabc n (dands_cols c0 css) (kands_pos T0 Us)"
+    by (rule dands_pos_dtabc[OF s0 b0 t0 f0 pos])
+  then have "dands_neg (dands_plans (dands_cols c0 css) nss)
+        (dands_pos (dands_plans c0 css) (dtabc n c0 T0) (map2 (dtabc n) css Us))
+        (map2 (dtabc n) nss Vs)
+      = dtabc n (dands_cols c0 css) (kands_neg (kands_pos T0 Us) Vs)"
+    using dands_neg_dtabc[OF sacc bacc tk fk neg] sub by simp
+  then show ?thesis using kernel by simp
+qed
 
 section \<open>Aggregation over short tuples\<close>
 
