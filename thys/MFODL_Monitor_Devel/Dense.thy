@@ -676,6 +676,168 @@ proof -
   ultimately show ?thesis unfolding dtabc_def by auto
 qed
 
+subsection \<open>The general join: an index on the shared columns\<close>
+
+text \<open>
+  When neither operand's columns are contained in the other's, one side is indexed by the
+  shared columns and the other probes the index.  A probe that hits knows the two tuples agree
+  on the shared columns, so the merge needs no test at all.
+\<close>
+
+fun dmerge :: "mrg list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+  "dmerge [] xs ys = []"
+| "dmerge (MLft # p) (x # xs) ys = x # dmerge p xs ys"
+| "dmerge (MRgt # p) xs (y # ys) = y # dmerge p xs ys"
+| "dmerge (MBth # p) (x # xs) (y # ys) = x # dmerge p xs ys"
+| "dmerge (m # p) xs ys = []"
+
+lemma length_filter_mrg_plan_left: "length (filter (\<lambda>m. m \<noteq> MRgt) (mrg_plan cs1 cs2)) = length cs1"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+lemma length_filter_mrg_plan_right: "length (filter (\<lambda>m. m \<noteq> MLft) (mrg_plan cs1 cs2)) = length cs2"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+text \<open>The join of two short tuples succeeds exactly when they agree on the shared columns, and
+  then it is the test-free merge.\<close>
+
+lemma djoin1_dmerge:
+  "length a = length (filter (\<lambda>m. m \<noteq> MRgt) p) \<Longrightarrow>
+   length b = length (filter (\<lambda>m. m \<noteq> MLft) p) \<Longrightarrow>
+   djoin1 p a b = (if dproj (mrg_left_key p) a = dproj (mrg_right_key p) b
+                   then Some (dmerge p a b) else None)"
+proof (induct p arbitrary: a b)
+  case (Cons m p)
+  show ?case
+  proof (cases m)
+    case MLft
+    then obtain x xs where a: "a = x # xs" using Cons(2) by (cases a) auto
+    show ?thesis using Cons(1)[of xs b] Cons(2,3) by (simp add: MLft a)
+  next
+    case MRgt
+    then obtain y ys where b: "b = y # ys" using Cons(3) by (cases b) auto
+    show ?thesis using Cons(1)[of a ys] Cons(2,3) by (simp add: MRgt b)
+  next
+    case MBth
+    then obtain x xs where a: "a = x # xs" using Cons(2) by (cases a) auto
+    obtain y ys where b: "b = y # ys" using MBth Cons(3) by (cases b) auto
+    show ?thesis using Cons(1)[of xs ys] Cons(2,3) by (simp add: MBth a b)
+  qed
+qed simp
+
+definition dindex_step :: "bool list \<Rightarrow> event_data tuple \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping" where
+  "dindex_step msk b m = (let k = dproj msk b in
+     (case Mapping.lookup m k of None \<Rightarrow> Mapping.update k [b] m
+      | Some l \<Rightarrow> Mapping.update k (b # l) m))"
+
+definition dindex :: "bool list \<Rightarrow> event_data table \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping" where
+  "dindex msk B = fold (dindex_step msk) (csorted_list_of_set B) Mapping.empty"
+
+definition dprobe_step :: "mrg list \<Rightarrow> bool list \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
+    event_data table \<Rightarrow> event_data table" where
+  "dprobe_step p msk m a acc = (case Mapping.lookup m (dproj msk a) of
+      None \<Rightarrow> acc
+    | Some l \<Rightarrow> fold (\<lambda>b acc. Set.insert (dmerge p a b) acc) l acc)"
+
+definition dprobe_step_l :: "mrg list \<Rightarrow> bool list \<Rightarrow>
+    (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
+    event_data table \<Rightarrow> event_data table" where
+  "dprobe_step_l p rk m y acc = (case Mapping.lookup m (dproj rk y) of
+      None \<Rightarrow> acc
+    | Some l \<Rightarrow> fold (\<lambda>x acc. Set.insert (dmerge p x y) acc) l acc)"
+
+text \<open>The index is built on the smaller side and the larger one probes it, as in
+  @{const bin_join}: indexing costs a lookup per tuple of the indexed side and probing one per
+  tuple of the other, so indexing the larger side buys a big index that is read a few times.\<close>
+
+definition dgen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool list \<Rightarrow>
+    event_data table \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dgen_join p lk rk A B =
+     (if card A \<le> card B
+      then (let m = dindex lk A in fold (dprobe_step_l p rk m) (csorted_list_of_set B) empty_table)
+      else (let m = dindex rk B in fold (dprobe_step p lk m) (csorted_list_of_set A) empty_table))"
+
+definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Rightarrow>
+    event_data tuple \<Rightarrow> event_data tuple list" where
+  "bucket m k = (case Mapping.lookup m k of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
+
+lemma fold_insert_image: "fold (\<lambda>b acc. Set.insert (f b) acc) l acc = f ` set l \<union> acc"
+  by (induct l arbitrary: acc) auto
+
+lemma bucket_dindex_step:
+  "bucket (dindex_step msk x m) k = (if dproj msk x = k then x # bucket m k else bucket m k)"
+  by (auto simp: bucket_def dindex_step_def Let_def Mapping.lookup_update'
+      split: option.splits)
+
+lemma dindex_fold_lookup:
+  "set (bucket (fold (dindex_step msk) xs m) k)
+   = {b \<in> set xs. dproj msk b = k} \<union> set (bucket m k)"
+  by (induct xs arbitrary: m) (auto simp: bucket_dindex_step)
+
+lemma dindex_lookup:
+  assumes "set (csorted_list_of_set B) = B"
+  shows "set (bucket (dindex msk B) k) = {b \<in> B. dproj msk b = k}"
+  using dindex_fold_lookup[of msk "csorted_list_of_set B" Mapping.empty k] assms
+  by (simp add: dindex_def bucket_def)
+
+lemma dprobe_fold:
+  "fold (dprobe_step p lk m) xs acc
+   = acc \<union> (\<Union>a \<in> set xs. (\<lambda>b. dmerge p a b) ` set (bucket m (dproj lk a)))"
+  by (induct xs arbitrary: acc)
+    (auto simp: dprobe_step_def bucket_def fold_insert_image split: option.splits)
+
+lemma dprobe_l_fold:
+  "fold (dprobe_step_l p rk m) ys acc
+   = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. dmerge p x y) ` set (bucket m (dproj rk y)))"
+  by (induct ys arbitrary: acc)
+    (auto simp: dprobe_step_l_def bucket_def fold_insert_image split: option.splits)
+
+text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
+  columns, merged.\<close>
+
+lemma dgen_join_eq:
+  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
+  shows "dgen_join p lk rk A B
+       = {dmerge p a b | a b. a \<in> A \<and> b \<in> B \<and> dproj lk a = dproj rk b}"
+  by (auto simp: dgen_join_def Let_def dprobe_fold dprobe_l_fold empty_table_def
+      dindex_lookup[OF cA] dindex_lookup[OF cB] cA cB) force
+
+lemma set_option_djoin1:
+  "length a = length (filter (\<lambda>m. m \<noteq> MRgt) p) \<Longrightarrow>
+   length b = length (filter (\<lambda>m. m \<noteq> MLft) p) \<Longrightarrow>
+   set_option (djoin1 p a b)
+     = (if dproj (mrg_left_key p) a = dproj (mrg_right_key p) b then {dmerge p a b} else {})"
+  by (simp add: djoin1_dmerge)
+
+theorem dtabc_gen_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+  shows "dgen_join (mrg_plan cs1 cs2) (mrg_left_key (mrg_plan cs1 cs2))
+           (mrg_right_key (mrg_plan cs1 cs2)) (dtabc n cs1 T) (dtabc n cs2 T')
+       = dtabc n (merge_cols cs1 cs2) (join T True T')"
+proof -
+  let ?p = "mrg_plan cs1 cs2"
+  have la: "\<And>a. a \<in> dtabc n cs1 T \<Longrightarrow> length a = length (filter (\<lambda>m. m \<noteq> MRgt) ?p)"
+    using t1 by (auto simp: dtabc_def table_def wf_tuple_def length_filter_mrg_plan_left
+        dproj_wide_mask_eq_map_nth[OF s1 b1])
+  have lb: "\<And>b. b \<in> dtabc n cs2 T' \<Longrightarrow> length b = length (filter (\<lambda>m. m \<noteq> MLft) ?p)"
+    using t2 by (auto simp: dtabc_def table_def wf_tuple_def length_filter_mrg_plan_right
+        dproj_wide_mask_eq_map_nth[OF s2 b2])
+  have "dgen_join ?p (mrg_left_key ?p) (mrg_right_key ?p) (dtabc n cs1 T) (dtabc n cs2 T')
+      = (\<Union>a \<in> dtabc n cs1 T. \<Union>b \<in> dtabc n cs2 T'. set_option (djoin1 ?p a b))"
+    unfolding dgen_join_eq[OF cA cB]
+    by (auto simp: set_option_djoin1[OF la lb] split: if_splits)
+  also have "\<dots> = dtabc n (merge_cols cs1 cs2) (join T True T')"
+    by (rule dtabc_join[OF s1 s2 b1 b2 t1 t2, symmetric])
+  finally show ?thesis .
+qed
+
 section \<open>Aggregation over short tuples\<close>
 
 subsection \<open>Reading a term at the short tuple's positions\<close>
