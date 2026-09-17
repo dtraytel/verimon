@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Correct
-  imports Dense_Match
+  imports Dense_Let
 begin
 (*>*)
 

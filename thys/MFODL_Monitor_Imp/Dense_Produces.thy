@@ -51,6 +51,32 @@ qed
 
 text \<open>A node that does not change under evaluation.\<close>
 
+text \<open>Raising the bound only weakens what the invariant promises about the batches to come.\<close>
+
+lemma produces_mono:
+  assumes p: "produces n A u \<phi>" and le: "u \<le> u'"
+  shows "produces n A u' \<phi>"
+proof (rule producesI[where X = "\<lambda>n'' A'' w \<psi>. n'' = n \<and> A'' = A \<and>
+    (\<exists>v. v \<le> w \<and> produces n A v \<psi>)"])
+  show "n = n \<and> A = A \<and> (\<exists>v. v \<le> u' \<and> produces n A v \<phi>)" using p le by blast
+next
+  fix n'' A'' w \<psi> j ts db xs \<psi>'
+  assume X: "n'' = n \<and> A'' = A \<and> (\<exists>v. v \<le> w \<and> produces n A v \<psi>)"
+    and wf: "wf_db db" and s: "sorted ts" and b: "\<forall>t \<in> set ts. w \<le> t"
+    and e: "meval j n'' ts db \<psi> = (xs, \<psi>')"
+  from X obtain v where vw: "v \<le> w" and pv: "produces n A v \<psi>" by blast
+  have b': "\<forall>t \<in> set ts. v \<le> t" using b vw by force
+  have t: "list_all (ftable n A) xs" using X
+    by (auto intro: produces_tables[OF pv wf s b' e[unfolded conjunct1[OF X]]])
+  have n': "produces n A (dnext v ts) \<psi>'" using X
+    by (auto intro: produces_next[OF pv wf s b' e[unfolded conjunct1[OF X]]])
+  have "dnext v ts \<le> dnext w ts" using vw by (cases ts) (auto simp: dnext_def)
+  then show "list_all (ftable n'' A'') xs \<and>
+      ((n'' = n \<and> A'' = A \<and> (\<exists>v. v \<le> dnext w ts \<and> produces n A v \<psi>')) \<or>
+       produces n'' A'' (dnext w ts) \<psi>')"
+    using X t n' by blast
+qed
+
 lemma produces_fix:
   assumes "\<And>j ts db xs \<phi>'. wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
       list_all (ftable n A) xs \<and> \<phi>' = \<phi>"
