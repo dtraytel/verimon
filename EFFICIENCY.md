@@ -3099,18 +3099,144 @@ side conditions as `DsSince` plus the node relation.
 `Dense_Eval.thy` is 1479 lines, 2355 commands, no `sorry`; `Dense.thy` is 3017 lines, 5359
 commands, 6 benign warnings. `dsim_deval` now covers every node of the dense fragment.
 
-### 20.9 What is left
+### 20.9 The dense monitor inherits the kernel's correctness theorems
 
-1. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
-   particular that the column list of a node is the subformula's free-variable set, and that
-   `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`. This is
-   also where the three input hypotheses -- `produces`, `wf_db` and the timestamp bound -- are
-   discharged.
-2. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
+`thys/MFODL_Monitor_Imp/Dense_Correct.thy`, 265 lines, 323 commands, no `sorry`. This is the point
+of the whole exercise: the simulation carries the kernel's collected correctness results across to
+the dense algorithm, with nothing about the dense representation left in the statements.
+
+**The dense monitor.** Its online interface mirrors the kernel's field for field, with
+`deval` in place of `meval`, plus the column list its verdicts are narrowed at:
+
+```isabelle
+record dmstate = dmstate_i :: nat  dmstate_j :: nat  dmstate_m :: dformula
+  dmstate_n :: nat  dmstate_cs :: cols  dmstate_t :: "ts list"
+
+definition dmstep :: "database × ts ⇒ dmstate ⇒ (nat × ts × event_data table) list × dmstate"
+definition dmonitor :: "dmstate ⇒ Formula.prefix ⇒ (nat × ts × event_data table) list"
+```
+
+**The state relation.**
+
+```isabelle
+definition dmsim_state where
+  "dmsim_state n cs tw st dst ⟷
+     dmstate_i dst = mstate_i st ∧ dmstate_j dst = mstate_j st ∧
+     dmstate_t dst = mstate_t st ∧ mstate_n st = n ∧ dmstate_n dst = n ∧
+     dmstate_cs dst = cs ∧ dsim n cs tw (dmstate_m dst) (mstate_m st)"
+```
+
+`dmstep_mstep` is one step. `dmsteps0_stateless_rel` is the whole prefix, and it is where two of
+`dsim_deval`'s three input hypotheses are discharged once and for all: the timestamp bound, from
+the prefix's own sortedness (each step re-establishes the bound at the timestamp just consumed, and
+the next one is no smaller), and the database condition, from `wf_db_mk_db`.
+
+**The verdicts.** `dmonitor_monitor` says the dense verdicts are the narrowing of the kernel's, and
+`dmonitor_widen` says widening them back recovers the kernel's *exactly* -- the narrowing is a
+bijection on the tables of the frame (`dtabw_dtabc`) and the kernel's verdict tables live there.
+Then, inside `verimon_spec` (which now carries the concrete monitor as a `verimon` interpretation,
+by a `sublocale` whose `maux` part the existing `default_maux` interpretation discharges):
+
+```isabelle
+theorem (in verimon_spec) dmonitor_mverdicts:
+  assumes "dmsim_state n cs 0 (minit_safe φ) dst" and "sorted_wrt (<) cs"
+    and "pfinite π" and "wty_prefix SIG π"
+  shows "flatten_verdicts (map (λ(i, t, X). (i, t, dtabw n cs X)) (dmonitor dst π)) = Mt π"
+
+theorem (in verimon_spec) dmstep_mverdicts: ...
+```
+
+These are the kernel's own `monitor_mverdicts` and `mstep_mverdicts` with the dense monitor in
+place of the kernel's. The one thing they still ask of the caller is a related initial state; that
+is the compilation, 20.11 below.
+
+**`wf_db` needs finiteness, and it is an input property.** The dense multi-way join and the dense
+aggregation need finite tables, so `produces` carries finiteness -- and there is nowhere else it
+can come from. The kernel's own invariant does not have it (`qtable n A P Q X ⟷ table n A X ∧ …`,
+no finiteness) and neither does the trace (a trace is a sorted stream of arbitrary event sets; the
+kernel is correct for infinite databases because `Formula.sat`'s aggregation degenerates the same
+way `eval_agg` does). Without it `produces` is not provable even for a predicate node, whose
+output is the database's table verbatim. So `wf_db` now says the database's tables are *finite*
+tables of full-width tuples, `wf_db_mk_db` asks its event set to be finite, `pfinite` lifts that to
+a prefix, and the correctness theorems carry it -- which is what a log gives them.
+
+### 20.10 Discharging `produces`
+
+`thys/MFODL_Monitor_Imp/Dense_Produces.thy`, 622 lines, 1147 commands, no `sorry`.
+
+`produces` is the last of the simulation's three input hypotheses, and unlike the other two it is
+not a property of the input but of the kernel's evaluation:
+
+```isabelle
+coinductive produces :: "nat ⇒ nat set ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ bool"
+  where "(⋀j ts db xs φ'. wf_db db ⟹ meval j n ts db φ = (xs, φ') ⟹
+      list_all (λX. table n A X ∧ finite X) xs ∧ produces n A φ') ⟹ produces n A φ"
+```
+
+It quantifies over *every* well-formed database, not just the ones a particular trace produces, so
+it cannot be read off the kernel's `meval_correct` (which needs `wf_envs`, hence a trace and the
+progress bookkeeping). It is a kernel-side obligation of its own: *the executable monitor's tables
+are finite tables over the free variables, for any finite well-formed database*.
+
+It is discharged **constructor by constructor** rather than through one monolithic invariant: for
+each node of the kernel's formula, a lemma saying that if the operands produce finite tables over
+their columns then so does the node. Each is a coinduction with an invariant that says only what
+that node needs, so the lemmas compose by structural induction at the end and can be done
+independently. Three of them are packaged:
+
+- `producesI` -- the coinduction with the trivial equations of its conclusion already solved, so a
+  node's lemma only has to name its own invariant;
+- `produces_fix` -- a node unchanged by evaluation (`MRel`, `MPred`, `MTS`);
+- `produces_unop` -- one operand, output mapped pointwise, which covers every unary node; the
+  table-and-finiteness obligation is the only thing that varies from one to the next;
+- `produces_binop` -- two operands and a two-way buffer, where the invariant additionally carries
+  the buffer's own well-formedness; it survives because a take only removes a prefix
+  (`mbuf2_take_sub`) and the outputs are what the step function built (`mbuf2_take_out`).
+
+**Done (13 of the 24 constructors).** `MRel`; `MNeg` (unconditionally -- its output is the unit or
+the empty table either way); `MAndRel`, `MAndAssign`, `MExists`, `MAgg` through `produces_unop`;
+all three modes of `MPred` (`wf_tuple_simple_match` and `match_wf_tuple` from the kernel's own
+correctness development give the two matching modes their shape); `MTP`, `MTS`; `MOr` and `MAnd`
+through `produces_binop` (`ftable_bin_join`: at tables of the operands' frames `bin_join` is the
+plain join, so `join_table` and `finite_join` give the result's shape); `MPrev` and `MNext`, whose
+outputs come from the buffer or are the empty table (`mprev_next_out`).
+
+For `MAgg`, `ftable_eval_agg` is the one with content: the operand's columns sit above the
+aggregation's group-by prefix, so dropping that prefix lands the tuple on the group key and writing
+the aggregate into position `y` widens it by exactly `{y}`.
+
+**The multi-way join's shape is ready** even though its node is not: at well-formed operands
+`mmulti_join` is the left-to-right fold of the positive tables followed by the anti-joins against
+the negative ones -- the same fold `dmulti_join_dtabc` uses -- and `kands_pos_ftable` /
+`kands_neg_ftable` say each step of both folds keeps the table over the accumulated columns and
+keeps it finite. `ftable_mmulti_join` and `ftable_mmulti_join'` package that, and
+`mbufn_take_out` is the multi-way analogue of `mbuf2_take_out`.
+
+**Still to do (11 constructors).** `MAnds` (the glue over the two packaged pieces above);
+`MSince` and `MUntil`, where the invariant has to carry the `msaux` / `muaux` structure's validity
+together with "the auxiliary list's tables are finite tables over `args_R`" -- exactly the first
+conjunct of 20.6's `dsaux` and 20.8's `duaux`, at the wide frame; `MTrigger` and `MAndTrigger`
+(the `mtaux` structure); `MMatchP` and `MMatchF` (`update_matchP` / `update_matchF` and their
+`mrδaux` / `mlδaux`); and `MLet`, `MLetPast`, `MFrz`, which are the only ones that need more than
+a per-node invariant: they feed their body a database whose table at the let-bound predicate is
+*not* full-width, so `produces` has to be generalised to carry a predicate environment
+(`wf_dbe E db`, with `wf_dbe Map.empty = wf_db` recovering the present notion at the top level).
+
+### 20.11 What is left
+
+1. **The rest of `produces`** -- the eleven constructors listed at the end of 20.10.
+2. **The compilation.** A pure `dof` and `mcols` (the ones in `Dense_Imp.thy` are monadic, because
+   they initialise the imperative structures) must be proved to produce a `dsim` for the initial
+   formula `minit0 n φ`: that the column list of a node is the subformula's free-variable set, that
+   the join plans and the embedding plan are the ones the frames call for, and that every node's
+   `produces` holds. That is the last thing `dmonitor_mverdicts` asks of its caller, and with it
+   the chain from `Mt π` down to the short tuples is closed.
+3. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
    dense fragment. This changes the running program, so Section 19.7's timings will have to be
    re-measured afterwards.
-3. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
+4. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
-4. **Then** `Dense.thy` and `Dense_Eval.thy` move to the base session.
+5. **Then** `Dense.thy`, `Dense_Eval.thy`, `Dense_Produces.thy` and `Dense_Correct.thy` move to
+   the base session.
