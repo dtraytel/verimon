@@ -2331,6 +2331,7 @@ lemma mbuf2t_take_rel_ts:
    mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
    mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
    (\<exists>u. R u w w2 \<and> u \<le> nt \<and> (\<forall>t \<in> set ts'. u \<le> t)) \<and> sorted ts' \<and>
+     (nt = t0 \<or> nt \<in> set ts) \<and> set ts' \<subseteq> set ts \<and>
      buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
 proof (induct xs arbitrary: ys z z' u0 t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
   case Nil
@@ -2363,8 +2364,40 @@ next
       have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
           = (w2, buf2, nt2, ts2)"
         using P7 ysC tsC by simp
-      show ?thesis
+      have "(\<exists>u. R u w w2 \<and> u \<le> nt \<and> (\<forall>t' \<in> set ts'. u \<le> t')) \<and> sorted ts' \<and>
+          (nt = t \<or> nt \<in> set ts3) \<and> set ts' \<subseteq> set ts3 \<and>
+          buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
         by (rule IH[OF p1 r order_refl _ _ s1 s2]) (use P4 tsC in auto)
+      then show ?thesis using tsC by auto
+    qed
+  qed
+qed
+
+lemma mbuf2t_take_sub:
+  "mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+     set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
+proof (induct xs arbitrary: ys z t0 ts w xs' ys' nt ts')
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P = Cons(2)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P by (auto split: list.splits)
+  next
+    case (Cons y ys0)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P ysC by simp
+    next
+      case (Cons t ts0)
+      have "mbuf2t_take f (f x y t z) (xs, ys0) t ts0 = (w, (xs', ys'), nt, ts')"
+        using P ysC Cons by simp
+      from IH[OF this] show ?thesis using ysC by auto
     qed
   qed
 qed

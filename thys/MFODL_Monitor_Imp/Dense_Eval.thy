@@ -79,6 +79,7 @@ datatype dformula =
   | DNext \<I> dformula bool "ts list"
   | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mbufn"
   | DSince args "nat option list" dformula dformula "event_data mbuf2S" mmasaux
+  | DUntil args "nat option list" dformula dformula "event_data mbuf2" "ts list" ts muaux_dq
 
 fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
   and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
@@ -135,6 +136,12 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
           (zs, buf', aux') =
             meval_since dags [] (mbuf2S_add (map (dembedp pl) xs) ys ts buf) aux
       in (zs, DSince dags pl \<phi>' \<psi>' buf' aux'))"
+| "deval j ts db (DUntil dags pl \<phi> \<psi> buf nts t aux) =
+     (let (xs, \<phi>') = deval j ts db \<phi>; (ys, \<psi>') = deval j ts db \<psi>;
+          (aux', buf', nt, nts') = mbuf2t_take (add_new_muaux_dq dags) aux
+            (mbuf2_add (map (dembedp pl) xs) ys buf) t (nts @ ts);
+          (zs, aux'') = eval_muaux_dq dags nt aux'
+      in (zs, DUntil dags pl \<phi>' \<psi>' buf' nts' nt aux''))"
 
 section \<open>The simulation relation\<close>
 
@@ -260,6 +267,156 @@ proof (cases buf)
     by simp
 qed
 
+subsection \<open>The Until structure at the dense frame, and its buffer\<close>
+
+text \<open>
+  The Until node's state is the pair of verified structures, related through the abstract
+  auxiliary list they are both valid for, together with the current timestamp.  Since the
+  structure is stepped from inside a buffer traversal, that part is factored out on its own.
+\<close>
+
+definition duaux_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
+    muaux_dq \<Rightarrow> muaux_dq \<Rightarrow> bool" where
+  "duaux_rel n cs_R cs_L args cur aux daux \<longleftrightarrow>
+     (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
+        duaux n cs_R cs_L args cur daux auxlist)"
+
+lemma duaux_rel_step:
+  assumes v: "duaux_rel n cs_R cs_L args u aux daux"
+    and sR: "sorted_wrt (<) cs_R" and bR: "\<forall>c \<in> set cs_R. c < n"
+    and sub: "set cs_L \<subseteq> set cs_R"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
+    and t1: "table n (set cs_L) a" and t2: "table n (set cs_R) b" and ut: "u \<le> t"
+  shows "duaux_rel n cs_R cs_L args t (add_new_muaux_dq args a b t aux)
+     (add_new_muaux_dq (dargs cs_R cs_L args) (dtabc n cs_R a) (dtabc n cs_R b) t daux)"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
+    and vd: "duaux n cs_R cs_L args u daux auxlist"
+    using v unfolding duaux_rel_def by blast
+  have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux) (update_until args a b t auxlist)"
+    by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 an aL aR in simp_all)
+  moreover have "duaux n cs_R cs_L args t
+      (add_new_muaux_dq (dargs cs_R cs_L args) (dtabc n cs_R a) (dtabc n cs_R b) t daux)
+      (update_until args a b t auxlist)"
+    by (rule duaux_add_new[OF vd sR bR sub t1 t2 ut])
+  ultimately show ?thesis unfolding duaux_rel_def by blast
+qed
+
+lemma duaux_rel_eval:
+  assumes v: "duaux_rel n cs_R cs_L args cur aux daux" and nt: "cur \<le> nt"
+    and agg: "args_agg args = None"
+    and we: "eval_muaux_dq args nt aux = (zs, aux')"
+    and de: "eval_muaux_dq (dargs cs_R cs_L args) nt daux = (dzs, daux')"
+  shows "dzs = map (dtabc n cs_R) zs \<and> duaux_rel n cs_R cs_L args cur aux' daux'"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
+    and vd: "duaux n cs_R cs_L args cur daux auxlist"
+    using v unfolding duaux_rel_def by blast
+  obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+    by (cases "eval_until (args_ivl args) nt auxlist")
+  have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
+    by (rule valid_eval_muaux_dq[OF vw nt we eu])
+  have d: "dzs = map (dtabc n cs_R) res \<and> duaux n cs_R cs_L args cur daux' auxlist'"
+    by (rule duaux_eval[OF vd nt de eu])
+  show ?thesis using w d agg unfolding duaux_rel_def by auto
+qed
+
+text \<open>The node relation.  The stored timestamp is at or after the structure's current one and
+  at or before the bound, and so is every timestamp still queued.\<close>
+
+definition duntil_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow>
+    muaux_dq \<Rightarrow> muaux_dq \<Rightarrow> event_data mbuf2 \<Rightarrow> event_data mbuf2 \<Rightarrow>
+    ts list \<Rightarrow> bool" where
+  "duntil_rel n cs_R cs_L args tw t aux daux buf dbuf nts \<longleftrightarrow>
+     (\<exists>cur. duaux_rel n cs_R cs_L args cur aux daux \<and> cur \<le> t \<and> t \<le> tw \<and>
+        list_all (ftable n (set cs_L)) (fst buf) \<and>
+        list_all (ftable n (set cs_R)) (snd buf) \<and>
+        dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf)) \<and>
+        sorted nts \<and> (\<forall>u \<in> set nts. cur \<le> u \<and> u \<le> tw))"
+
+text \<open>
+  One firing of the Until node: the buffer traversal steps the two structures in lockstep, and
+  then one evaluation at the timestamp the traversal reports yields the narrowing of what the wide
+  one yields.
+\<close>
+
+lemma until_step_rel:
+  assumes sR: "sorted_wrt (<) cs_R" and bR: "\<forall>c \<in> set cs_R. c < n"
+    and sub: "set cs_L \<subseteq> set cs_R" and agg: "args_agg args = None"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
+    and rel: "duntil_rel n cs_R cs_L args tw t aux daux buf dbuf nts"
+    and ta: "list_all (ftable n (set cs_L)) as" and tb: "list_all (ftable n (set cs_R)) bs"
+    and s: "sorted tss" and bnd: "\<forall>u \<in> set tss. tw \<le> u"
+    and we: "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ tss)
+      = (aux1, buf1, nt, nts1)"
+    and de: "mbuf2t_take (add_new_muaux_dq (dargs cs_R cs_L args)) daux
+      (mbuf2_add (map (dtabc n cs_R) as) (map (dtabc n cs_R) bs) dbuf) t (nts @ tss)
+      = (daux1, dbuf1, dnt, dnts1)"
+    and wev: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+    and dev: "eval_muaux_dq (dargs cs_R cs_L args) dnt daux1 = (dzs, daux2)"
+  shows "dzs = map (dtabc n cs_R) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+     dbuf1 = (map (dtabc n cs_R) (fst buf1), map (dtabc n cs_R) (snd buf1)) \<and>
+     duntil_rel n cs_R cs_L args (dnext tw tss) nt aux2 daux2 buf1 dbuf1 nts1"
+proof -
+  obtain cur where vr: "duaux_rel n cs_R cs_L args cur aux daux"
+    and ct: "cur \<le> t" and ttw: "t \<le> tw"
+    and lu: "list_all (ftable n (set cs_L)) (fst buf)"
+    and lv: "list_all (ftable n (set cs_R)) (snd buf)"
+    and dbe: "dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf))"
+    and sn: "sorted nts" and cn: "\<forall>u \<in> set nts. cur \<le> u \<and> u \<le> tw"
+    using rel unfolding duntil_rel_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have mda: "mbuf2_add (map (dtabc n cs_R) as) (map (dtabc n cs_R) bs) dbuf
+      = (map (dtabc n cs_R) us, map (dtabc n cs_R) vs)"
+    unfolding dbe us_def vs_def by (cases buf) simp
+  have lus: "list_all (ftable n (set cs_L)) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable n (set cs_R)) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b t' u z z'. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow>
+      duaux_rel n cs_R cs_L args u z z' \<Longrightarrow> u \<le> t' \<Longrightarrow>
+      duaux_rel n cs_R cs_L args t' (add_new_muaux_dq args a b t' z)
+        (add_new_muaux_dq (dargs cs_R cs_L args) (dtabc n cs_R a) (dtabc n cs_R b) t' z')"
+    using lus lvs by (intro duaux_rel_step[OF _ sR bR sub an aL aR]) (auto simp: list_all_iff)
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>u \<in> set (nts @ tss). cur \<le> u" using cn bnd ct ttw by fastforce
+  have tdn: "t \<le> dnext tw tss" using ttw dnext_ge[OF bnd] by simp
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext tw tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have we': "mbuf2t_take (add_new_muaux_dq args) aux (us, vs) t (nts @ tss)
+      = (aux1, (b1, b2), nt, nts1)" using we unfolding ma bfs by simp
+  have de': "mbuf2t_take (add_new_muaux_dq (dargs cs_R cs_L args)) daux
+      (map (dtabc n cs_R) us, map (dtabc n cs_R) vs) t (nts @ tss) = (daux1, dbuf1, dnt, dnts1)"
+    using de unfolding mda by simp
+  have R: "(\<exists>u. duaux_rel n cs_R cs_L args u aux1 daux1 \<and> u \<le> nt \<and>
+        (\<forall>v \<in> set nts1. u \<le> v)) \<and> sorted nts1 \<and>
+      (nt = t \<or> nt \<in> set (nts @ tss)) \<and> set nts1 \<subseteq> set (nts @ tss) \<and>
+      dbuf1 = (map (dtabc n cs_R) b1, map (dtabc n cs_R) b2) \<and> dnt = nt \<and> dnts1 = nts1"
+    by (rule mbuf2t_take_rel_ts[OF step vr ct sts cts we' de'])
+  obtain u where vu: "duaux_rel n cs_R cs_L args u aux1 daux1" and unt: "u \<le> nt"
+    and un: "\<forall>v \<in> set nts1. u \<le> v" using R by blast
+  have dn: "dnt = nt" and dns: "dnts1 = nts1" and sn1: "sorted nts1"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)"
+    and dbf: "dbuf1 = (map (dtabc n cs_R) b1, map (dtabc n cs_R) b2)" using R by blast+
+  have ntdn: "nt \<le> dnext tw tss" using R tdn bound by blast
+  have ev: "dzs = map (dtabc n cs_R) zs \<and> duaux_rel n cs_R cs_L args u aux2 daux2"
+    by (rule duaux_rel_eval[OF vu unt agg wev dev[unfolded dn]])
+  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
+  have lb1: "list_all (ftable n (set cs_L)) b1" using sb lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable n (set cs_R)) b2" using sb lvs by (auto simp: list_all_iff)
+  have "duaux_rel n cs_R cs_L args u aux2 daux2 \<and> u \<le> nt \<and> nt \<le> dnext tw tss \<and>
+      list_all (ftable n (set cs_L)) (fst buf1) \<and>
+      list_all (ftable n (set cs_R)) (snd buf1) \<and>
+      dbuf1 = (map (dtabc n cs_R) (fst buf1), map (dtabc n cs_R) (snd buf1)) \<and>
+      sorted nts1 \<and> (\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> dnext tw tss)"
+    using ev unt ntdn lb1 lb2 dbf sn1 un sub1 bound bfs by auto
+  then have "duntil_rel n cs_R cs_L args (dnext tw tss) nt aux2 daux2 buf1 dbuf1 nts1"
+    unfolding duntil_rel_def by blast
+  then show ?thesis using ev dn dns dbf bfs by simp
+qed
+
 subsection \<open>The relation itself\<close>
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformula \<Rightarrow>
@@ -341,6 +498,16 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dags = dargs cs cs_L args \<Longrightarrow> pl = emb_plan cs cs_L \<Longrightarrow>
     dsince_rel n cs cs_L args tw aux daux buf dbuf \<Longrightarrow>
     dsim n cs tw (DSince dags pl \<phi>d \<psi>d dbuf daux) (mformula.MSince args \<phi> \<psi> buf aux)"
+| DsUntil: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MUntil args \<phi> \<psi> buf nts t aux) \<Longrightarrow>
+    dsim n cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols n cs_L \<Longrightarrow> set cs_L \<subseteq> set cs \<Longrightarrow>
+    args_agg args = None \<Longrightarrow> args_n args = n \<Longrightarrow>
+    args_L args = set cs_L \<Longrightarrow> args_R args = set cs \<Longrightarrow>
+    dags = dargs cs cs_L args \<Longrightarrow> pl = emb_plan cs cs_L \<Longrightarrow>
+    duntil_rel n cs cs_L args tw t aux daux buf dbuf nts \<Longrightarrow>
+    dsim n cs tw (DUntil dags pl \<phi>d \<psi>d dbuf nts t daux)
+      (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -1245,6 +1412,65 @@ next
       unfolding f
       by (rule dsim.DsSince[OF wf produces_next[OF pr w m, unfolded f] s1 s2 wfL sub agg an aL aR
             dag pe]) (use step in simp)
+  qed
+next
+  case (DsUntil n cs args \<phi> \<psi> buf nts t aux cs_L tw \<phi>d \<psi>d dags pl daux dbuf)
+  note wf = DsUntil.hyps(1) and pr = DsUntil.hyps(2)
+    and sim1 = DsUntil.hyps(3) and IH1 = DsUntil.hyps(4)
+    and sim2 = DsUntil.hyps(5) and IH2 = DsUntil.hyps(6)
+    and wfL = DsUntil.hyps(7) and sub = DsUntil.hyps(8) and agg = DsUntil.hyps(9)
+    and an = DsUntil.hyps(10) and aL = DsUntil.hyps(11) and aR = DsUntil.hyps(12)
+    and dag = DsUntil.hyps(13) and pe = DsUntil.hyps(14) and rel = DsUntil.hyps(15)
+    and w = DsUntil.prems(1) and sts = DsUntil.prems(2)
+    and mts = DsUntil.prems(3) and m = DsUntil.prems(4)
+  obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain aux1 buf1 nt nts1 where e3: "mbuf2t_take (add_new_muaux_dq args) aux
+      (mbuf2_add as bs buf) t (nts @ ts) = (aux1, buf1, nt, nts1)"
+    by (cases "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ ts)")
+  obtain zs aux2 where e4: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+    by (cases "eval_muaux_dq args nt aux1")
+  have x: "xs = zs" and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
+    using m e1 e2 e3 e4 an by simp_all
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) as, \<phi>d2)"
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+  have ta: "list_all (ftable n (set cs_L)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w e1])
+  have tb: "list_all (ftable n (set cs)) bs"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w e2])
+  have emb: "map (dembedp pl \<circ> dtabc n cs_L) as = map (dtabc n cs) as"
+  proof (intro map_cong refl)
+    fix a assume "a \<in> set as"
+    then have "table n (set cs_L) a" using ta by (simp add: list_all_iff)
+    then show "(dembedp pl \<circ> dtabc n cs_L) a = dtabc n cs a"
+      unfolding pe o_def using wf wfL by (intro dembedp_dtabc) auto
+  qed
+  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (add_new_muaux_dq dags) daux
+      (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf) t (nts @ ts)
+      = (daux1, dbuf1, dnt, dnts1)"
+    by (cases "mbuf2t_take (add_new_muaux_dq dags) daux
+      (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf) t (nts @ ts)")
+  obtain dzs daux2 where d4: "eval_muaux_dq dags dnt daux1 = (dzs, daux2)"
+    by (cases "eval_muaux_dq dags dnt daux1")
+  have step: "dzs = map (dtabc n cs) zs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+      dbuf1 = (map (dtabc n cs) (fst buf1), map (dtabc n cs) (snd buf1)) \<and>
+      duntil_rel n cs cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    by (rule until_step_rel[OF _ _ sub agg an aL aR rel ta tb sts mts e3
+        d3[unfolded dag] e4 d4[unfolded dag]]) (use wf in auto)
+  have dz: "dzs = map (dtabc n cs) zs" and dn: "dnt = nt" and dns: "dnts1 = nts1"
+    and rel': "duntil_rel n cs cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    using step by blast+
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DUntil dags pl \<phi>d \<psi>d dbuf nts t daux)
+        = (map (dtabc n cs) xs, DUntil dags pl \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2)"
+      using d1 d2 d3 d4 dz dn dns x by (simp add: emb)
+    show "dsim n cs (dnext tw ts) (DUntil dags pl \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsUntil[OF wf produces_next[OF pr w m, unfolded f] s1 s2 wfL sub agg an aL aR
+            dag pe rel'])
   qed
 qed
 

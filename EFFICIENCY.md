@@ -2786,9 +2786,9 @@ column list and so its own narrowing: it relates `mbufn_take f z buf` to
 `mbufn_take g z' (map2 map hs buf)` for a list `hs` of per-slot narrowings, under a step condition
 that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
-### 20.5 The simulation (all but the Until node)
+### 20.5 The simulation
 
-`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 1250 lines, no `sorry`. This is the part that turns
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 1479 lines, no `sorry`. This is the part that turns
 20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
 
 **Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
@@ -3050,22 +3050,67 @@ is the first one whose *state* is a verified data structure rather than a list o
 relation between the two states is carried entirely by 20.6's `dsaux`, so nothing about `mmasaux`'s
 eleven components appears in the simulation.
 
-`Dense_Eval.thy` is 1250 lines, 2011 commands, no `sorry`.
+### 20.8 The Until node
 
-### 20.8 What is left
+The Until node needs the same three ingredients, plus one generic buffer lemma.
 
-1. **The Until node.** The same work as 20.7 over again, with `mbuf2t_take_rel`, `dauxlist3` and
-   the `muaux` locale's two operations. The timestamp bound is already in place.
-2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
+**The structure.** `duaux` is the Until analogue of `dsaux`: the verified `muaux_dq`, run at
+`dargs`, is valid for the narrowing of the auxiliary list the wide one is valid for. An Until entry
+carries two tables per time point -- the left operand's accumulated join and the right operand's
+accumulated union -- and `dauxlist3` narrows both at the right operand's column list, so the one
+new fact needed from 20.2 was already there (`dauxlist3_update_until`, `dauxlist3_eval_until`).
+`duaux_init`, `duaux_add_new` and `duaux_eval` are the three preservation lemmas; as with Since the
+aggregation does not transport, so `duaux_eval` needs `args_agg args = None` to conclude that the
+result list is the plain narrowing.
+
+**The buffer traversal, with timestamps.** The Until node steps its structure from *inside* a
+buffer traversal, and `add_new_muaux` accepts a new timestamp only at or after the one the
+structure is already at. `mbuf2t_take_rel` cannot express that -- its step condition has to hold
+for every timestamp -- so it gets a timestamp-aware sibling:
+
+```isabelle
+lemma mbuf2t_take_rel_ts:
+  "(⋀a b t u za z'a. a ∈ set xs ⟹ b ∈ set ys ⟹ R u za z'a ⟹ u ≤ t ⟹
+      R t (f a b t za) (g (h a) (k b) t z'a)) ⟹
+   R u0 z z' ⟹ u0 ≤ t0 ⟹ sorted ts ⟹ (∀t ∈ set ts. u0 ≤ t) ⟹
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') ⟹
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) ⟹
+   (∃u. R u w w2 ∧ u ≤ nt ∧ (∀t ∈ set ts'. u ≤ t)) ∧ sorted ts' ∧
+     (nt = t0 ∨ nt ∈ set ts) ∧ set ts' ⊆ set ts ∧
+     buf2 = (map h xs', map k ys') ∧ nt2 = nt ∧ ts2 = ts'"
+```
+
+The accumulator relation is indexed by the structure's current timestamp; the step may assume the
+new timestamp is no smaller; and the conclusion says where the accumulator ended up -- at or before
+the timestamp the traversal reports and at or before every timestamp it did not consume. The two
+extra conjuncts (`nt = t0 ∨ nt ∈ set ts`, `set ts' ⊆ set ts`) are what lets the node re-establish
+its *upper* bound afterwards: whatever the traversal reports came either from the node's own stored
+timestamp or from the batch. `mbuf2t_take_sub` is the leftover-buffer analogue of
+`mbuf2_take_sub`.
+
+**The node.** `duntil_rel n cs_R cs_L args tw t aux daux buf dbuf nts` holds when the structure's
+current timestamp `cur` satisfies `cur ≤ t ≤ tw`, the two structures are related at `cur`
+(`duaux_rel`, the existential over the shared auxiliary list, factored out because the traversal
+steps it on its own), the buffer's two halves are well formed at their own column lists and the
+dense buffer is their narrowing, and every queued timestamp lies in `[cur, tw]`. `until_step_rel`
+is the whole firing -- traversal then evaluation -- and `DsUntil` is the rule, with the same twelve
+side conditions as `DsSince` plus the node relation.
+
+`Dense_Eval.thy` is 1479 lines, 2355 commands, no `sorry`; `Dense.thy` is 3017 lines, 5359
+commands, 6 benign warnings. `dsim_deval` now covers every node of the dense fragment.
+
+### 20.9 What is left
+
+1. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
    `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`. This is
    also where the three input hypotheses -- `produces`, `wf_db` and the timestamp bound -- are
    discharged.
-3. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
+2. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
    dense fragment. This changes the running program, so Section 19.7's timings will have to be
    re-measured afterwards.
-4. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
+3. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
-5. **Then** `Dense.thy` and `Dense_Eval.thy` move to the base session.
+4. **Then** `Dense.thy` and `Dense_Eval.thy` move to the base session.
