@@ -2769,18 +2769,15 @@ qed
 
 lemma dsaux_join:
   assumes v: "dsaux n cs_R cs_L args cur daux auxlist"
-    and s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
-    and b_R: "\<forall>c \<in> set cs_R. c < n" and b_L: "\<forall>c \<in> set cs_L. c < n"
+    and s_R: "sorted_wrt (<) cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
     and sub: "set cs_L \<subseteq> set cs_R" and t1: "table n (set cs_L) rel1"
   shows "dsaux n cs_R cs_L args cur
-      (gc_join_mmasaux (dargs cs_R cs_L args) (dembed cs_R cs_L (dtabc n cs_L rel1)) daux)
+      (gc_join_mmasaux (dargs cs_R cs_L args) (dtabc n cs_R rel1) daux)
       (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
 proof -
   have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
     and d: "valid_mmasaux (dargs cs_R cs_L args) cur daux (dauxlist n cs_R auxlist)"
     using v by (auto simp: dsaux_def)
-  have e: "dembed cs_R cs_L (dtabc n cs_L rel1) = dtabc n cs_R rel1"
-    by (rule dembed_dtabc[OF s_R s_L b_R b_L t1])
   have tt: "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
       (dtabc n cs_R rel1)"
     by (simp add: table_dtabc_cpos[OF s_R b_R sub t1])
@@ -2789,7 +2786,7 @@ proof -
       (map (\<lambda>(t, rel). (t, join rel (args_pos (dargs cs_R cs_L args)) (dtabc n cs_R rel1)))
         (dauxlist n cs_R auxlist))"
     by (rule default_mmasaux.valid_join_msaux[OF d tt])
-  then show ?thesis using w e
+  then show ?thesis using w
     by (simp add: dsaux_def dauxlist_join[OF s_R b_R sub w t1]
         dauxlist_wf_join[OF w sub t1])
 qed

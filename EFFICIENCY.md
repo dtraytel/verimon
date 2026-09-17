@@ -2639,7 +2639,7 @@ the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 2842 lines and 181 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2839 lines and 180 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2788,7 +2788,7 @@ that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
 ### 20.5 The simulation (all but the temporal nodes)
 
-`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 908 lines, no `sorry`. This is the part that turns
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 1101 lines, no `sorry`. This is the part that turns
 20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
 
 **Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
@@ -2912,7 +2912,7 @@ takes its operand list slot by slot: `∀i < length L. dsim n ((c0 # css @ nss) 
 That indexed form rather than a `list_all2` is deliberate -- the inductive package derives the
 induction hypothesis through `∀`/`⟶` but not through a `list_all2` of a pair-splitting lambda.
 
-### 20.6 The verified Since structure at the dense frame
+### 20.6 The verified Since structure at the dense frame, and one firing of it
 
 20.3 argued that the `msaux` specification transports to the dense frame. That argument is now
 carried out against the *verified* structure, `mmasaux`, which is what the monitor actually runs:
@@ -2955,13 +2955,47 @@ left operand's table per time point -- but it is the same cost class as the join
 frame is the plain union while the wide one applies the aggregation. A Since with an aggregation
 pushed into it therefore stays a wide `DPure` node.
 
+**One firing of the Since evaluator.** The node relation puts the two structures and the two
+buffers together, sharing the current timestamp -- the structure's, which is also the lower bound
+on the timestamps still queued:
+
+```isabelle
+definition dsince_rel :: "nat ⇒ cols ⇒ cols ⇒ args ⇒ mmasaux ⇒ mmasaux ⇒
+    event_data mbuf2S ⇒ event_data mbuf2S ⇒ bool" where
+  "dsince_rel n cs_R cs_L args aux daux buf dbuf ⟷
+     (∃cur auxlist. valid_mmasaux args cur aux auxlist ∧
+        dsaux n cs_R cs_L args cur daux auxlist ∧
+        (case buf of (xs, ys, tss, sk) ⇒
+           list_all (ftable n (set cs_L)) xs ∧ list_all (ftable n (set cs_R)) ys ∧
+           sorted tss ∧ (∀t ∈ set tss. cur ≤ t) ∧
+           dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)))"
+
+lemma eval_since_rel:
+  assumes "sorted_wrt (<) cs_R" "∀c ∈ set cs_R. c < n" "set cs_L ⊆ set cs_R"
+    "args_agg args = None" "args_n args = n" "args_L args = set cs_L" "args_R args = set cs_R"
+  shows "meval_since args rs buf aux = (zs, buf', aux') ⟹
+    meval_since (dargs cs_R cs_L args) (map (dtabc n cs_R) rs) dbuf daux = (dzs, dbuf', daux') ⟹
+    dsince_rel n cs_R cs_L args aux daux buf dbuf ⟹
+    dzs = map (dtabc n cs_R) zs ∧ dsince_rel n cs_R cs_L args aux' daux' buf' dbuf'"
+```
+
+The proof is an induction over the kernel's own recursion (`eval_since.induct`, taken at the wide
+`args`): the recursion is driven by the buffer alone, so the two sides step in lockstep, and each
+of the three stepping equations is one of 20.6's four preservation lemmas plus `dsaux_result`. The
+pattern-completion cases, where the buffer has run dry, are the ones where neither side steps.
+
+Stating the dense result as a *given* rather than an existential -- the shape
+`mbuf2t_take_rel` already used -- is what makes the proof tractable: the eight remaining
+pattern-completion cases then close uniformly, where an existential conclusion had the automation
+guessing witnesses inside the verified structure's 11-tuple.
+
 ### 20.7 What is left
 
-1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. For Since, 20.6 has the
-   structure; what is left is the simulation of `eval_since` itself (an induction over its own
-   recursion, the two sides stepping in lockstep because the recursion is driven by the buffer
-   alone) and the node case. For Until the same, with `mbuf2t_take_rel`, `dauxlist3` and the
-   `muaux` locale's two operations.
+1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. For Since, 20.6 now has
+   everything: the structure, its four preservation lemmas, and `eval_since_rel` for one firing;
+   what is left is the node itself -- a `DSince` constructor, its `deval` equation and its `dsim`
+   rule. For Until the same work over again, with `mbuf2t_take_rel`, `dauxlist3` and the `muaux`
+   locale's two operations.
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
    `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.
