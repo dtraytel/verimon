@@ -2412,12 +2412,12 @@ proof (induct f z buf arbitrary: z' w buf' w2 buf2 rule: mbufn_take.induct)
 qed
 
 
-subsection ‹Leftovers of a buffer›
+subsection \<open>Leftovers of a buffer\<close>
 
-text ‹A take only ever removes a prefix, so whatever stays in the buffer was already there.›
+text \<open>A take only ever removes a prefix, so whatever stays in the buffer was already there.\<close>
 
 lemma mbuf2_take_sub:
-  "mbuf2_take f (xs, ys) = (zs, (xs', ys')) ⟹ set xs' ⊆ set xs ∧ set ys' ⊆ set ys"
+  "mbuf2_take f (xs, ys) = (zs, (xs', ys')) \<Longrightarrow> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
 proof (induct xs arbitrary: ys zs xs' ys')
   case Nil
   then show ?case by simp
@@ -2437,7 +2437,7 @@ next
   qed
 qed
 
-subsection ‹The unit and empty tables›
+subsection \<open>The unit and empty tables\<close>
 
 lemma dtabc_unit_table: "dtabc n [] (unit_table n) = unit_table 0"
   by (simp add: dtabc_def unit_table_def
@@ -2451,7 +2451,7 @@ lemma dtabc_neg:
      = (if dtabc n [] T = empty_table then unit_table 0 else empty_table)"
   by (simp add: dtabc_unit_table dtabc_empty_iff empty_table_def)
 
-subsection ‹A frame with no empty columns›
+subsection \<open>A frame with no empty columns\<close>
 
 text \<open>When the column list covers the whole frame the mask is all true, so narrowing is the
   identity.  That is the case of a predicate whose arguments are exactly @{term "[0..<n]"}, which
@@ -2479,7 +2479,7 @@ qed
 lemma dtabc_upt: "table n {0..<n} T \<Longrightarrow> dtabc n [0..<n] T = T"
   by (rule dtabc_full) auto
 
-subsection ‹Leftovers and additions of the multi-way buffer›
+subsection \<open>Leftovers and additions of the multi-way buffer\<close>
 
 lemma set_tl_sub: "set (tl xs) \<subseteq> set xs"
   by (cases xs) auto
@@ -2516,7 +2516,7 @@ proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
   qed
 qed
 
-subsection ‹The multi-way join as one function of the operand list›
+subsection \<open>The multi-way join as one function of the operand list\<close>
 
 text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
   the negative ones, and the operand tables as a single list.\<close>
@@ -2533,13 +2533,13 @@ lemma map2_append:
   "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
   by (simp add: zip_append)
 
-subsection ‹Leftovers of the shift buffer›
+subsection \<open>Leftovers of the shift buffer\<close>
 
 lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
   by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
     (auto split: prod.splits)
 
-subsection ‹The multi-way join the monitor actually runs›
+subsection \<open>The multi-way join the monitor actually runs\<close>
 
 text \<open>@{const mmulti_join} chooses between the generic join and the pairwise one; both have the
   same membership characterisation as @{const mmulti_join'}, which is what @{thm
@@ -2612,29 +2612,29 @@ proof -
   finally show ?thesis .
 qed
 
-section ‹Comparisons on short tuples›
+section \<open>Comparisons on short tuples\<close>
 
-text ‹
+text \<open>
   A constraint node only filters; it never changes a tuple.  Reindexing its two terms against
   the node's column list makes the filter read the short tuple at the position the column
   occupies there, which by @{thm meval_trm_reindex} evaluates to the same value.  Filtering
   commutes with an image without any injectivity, so the narrowing passes through.
-›
+\<close>
 
 definition reindex_constraint ::
-    "cols ⇒ Formula.trm × bool × mconstraint × Formula.trm ⇒
-     Formula.trm × bool × mconstraint × Formula.trm" where
-  "reindex_constraint cs conf = (case conf of (t1, p, c, t2) ⇒
+    "cols \<Rightarrow> Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow>
+     Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm" where
+  "reindex_constraint cs conf = (case conf of (t1, p, c, t2) \<Rightarrow>
      (reindex_trm cs t1, p, c, reindex_trm cs t2))"
 
 lemma eval_constraint_reindex:
   assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
-    and fv1: "Formula.fv_trm t1 ⊆ set cs" and fv2: "Formula.fv_trm t2 ⊆ set cs"
+    and fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
     and t: "table n (set cs) T"
   shows "dtabc n cs (Set.filter (eval_constraint (t1, p, c, t2)) T)
        = Set.filter (eval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc n cs T)"
 proof -
-  have pt: "\<And>x. x \<in> T ⟹
+  have pt: "\<And>x. x \<in> T \<Longrightarrow>
       eval_constraint (reindex_constraint cs (t1, p, c, t2)) (dproj (wide_mask n cs) x)
         = eval_constraint (t1, p, c, t2) x"
   proof -
@@ -2652,7 +2652,7 @@ proof -
 qed
 
 
-section ‹Embedding a short tuple in a wider short frame›
+section \<open>Embedding a short tuple in a wider short frame\<close>
 
 text \<open>
   A Since structure joins its left operand into the running tables, so the left operand has to
@@ -2670,6 +2670,14 @@ definition dembed1 :: "nat option list \<Rightarrow> 'a tuple \<Rightarrow> 'a t
 
 definition dembed :: "cols \<Rightarrow> cols \<Rightarrow> 'a table \<Rightarrow> 'a table" where
   "dembed cs_R cs_L D = dembed1 (emb_plan cs_R cs_L) ` D"
+
+text \<open>The node stores the plan, not the two column lists.\<close>
+
+definition dembedp :: "nat option list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dembedp p D = dembed1 p ` D"
+
+lemma dembedp_emb_plan: "dembedp (emb_plan cs_R cs_L) D = dembed cs_R cs_L D"
+  by (simp add: dembedp_def dembed_def)
 
 lemma dembed1_dproj:
   assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
@@ -2715,13 +2723,20 @@ proof -
     by (rule image_cong[OF refl]) (rule pt)
 qed
 
+corollary dembedp_dtabc:
+  assumes "sorted_wrt (<) cs_R" and "sorted_wrt (<) cs_L"
+    and "\<forall>c \<in> set cs_R. c < n" and "\<forall>c \<in> set cs_L. c < n"
+    and "table n (set cs_L) T"
+  shows "dembedp (emb_plan cs_R cs_L) (dtabc n cs_L T) = dtabc n cs_R T"
+  unfolding dembedp_emb_plan by (rule dembed_dtabc[OF assms])
+
 text \<open>Both narrowings land where the structure at @{const dargs} expects them: by
   @{thm [source] table_dtabc_cpos} the right operand's in the full dense frame
   (@{term "cpos cs (set cs) = {0..<length cs}"}, which is @{thm [source] cpos_all}), and the left
   operand's, after the embedding above, in the positions its columns occupy there.\<close>
 
 
-section ‹The verified Since structure at the dense frame›
+section \<open>The verified Since structure at the dense frame\<close>
 
 text \<open>
   Putting the pieces together: the invariant the dense Since node carries is that the verified

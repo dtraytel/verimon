@@ -78,6 +78,7 @@ datatype dformula =
   | DPrev \<I> dformula bool "event_data table list" "ts list"
   | DNext \<I> dformula bool "ts list"
   | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mbufn"
+  | DSince args "nat option list" dformula dformula "event_data mbuf2S" mmasaux
 
 fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
   and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
@@ -129,6 +130,11 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
           (zs, dbuf') = mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as]) []
             (mbufn_add (map fst R) dbuf)
       in (zs, DAnds ps ns (map snd R) dbuf'))"
+| "deval j ts db (DSince dags pl \<phi> \<psi> buf aux) =
+     (let (xs, \<phi>') = deval j ts db \<phi>; (ys, \<psi>') = deval j ts db \<psi>;
+          (zs, buf', aux') =
+            meval_since dags [] (mbuf2S_add (map (dembedp pl) xs) ys ts buf) aux
+      in (zs, DSince dags pl \<phi>' \<psi>' buf' aux'))"
 
 section \<open>The simulation relation\<close>
 
@@ -171,6 +177,90 @@ lemma dnext_bound: "sorted ts \<Longrightarrow> \<forall>t \<in> set ts. t \<le>
 proof (induct ts rule: rev_induct)
   case (snoc a ts) then show ?case by (auto simp: dnext_def sorted_append)
 qed (simp add: dnext_def)
+
+subsection \<open>The Since structure at the dense frame, and its buffer\<close>
+
+text \<open>
+  The dense Since node runs the verified structure at @{const dargs} (20.6).  What the node
+  carries is the pair of structures -- the wide one the kernel steps and the dense one -- related
+  through the abstract auxiliary list they are both valid for, together with the two buffers.  The
+  current timestamp is shared: the structure's, and the lower bound on the timestamps still in the
+  buffer.  The left operand's tables enter the buffer already embedded into the wider dense frame,
+  which by @{thm [source] dembed_dtabc} is the same as narrowing them at the right operand's
+  columns.
+\<close>
+
+definition dsince_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
+    mmasaux \<Rightarrow> mmasaux \<Rightarrow> event_data mbuf2S \<Rightarrow> event_data mbuf2S \<Rightarrow> bool" where
+  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<longleftrightarrow>
+     (\<exists>cur auxlist. valid_mmasaux args cur aux auxlist \<and>
+        dsaux n cs_R cs_L args cur daux auxlist \<and> cur \<le> tw \<and>
+        (case buf of (xs, ys, tss, sk) \<Rightarrow>
+           list_all (ftable n (set cs_L)) xs \<and> list_all (ftable n (set cs_R)) ys \<and>
+           sorted tss \<and> (\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw) \<and>
+           dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)))"
+
+lemma dsince_relI:
+  "valid_mmasaux args cur aux auxlist \<Longrightarrow> dsaux n cs_R cs_L args cur daux auxlist \<Longrightarrow>
+   cur \<le> tw \<Longrightarrow>
+   list_all (ftable n (set cs_L)) xs \<Longrightarrow> list_all (ftable n (set cs_R)) ys \<Longrightarrow>
+   sorted tss \<Longrightarrow> \<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw \<Longrightarrow>
+   dsince_rel n cs_R cs_L args tw aux daux (xs, ys, tss, sk)
+     (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)"
+  unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
+
+lemma dsince_relE:
+  assumes "dsince_rel n cs_R cs_L args tw aux daux (xs, ys, tss, sk) dbuf"
+  obtains cur auxlist where "valid_mmasaux args cur aux auxlist"
+    and "dsaux n cs_R cs_L args cur daux auxlist" and "cur \<le> tw"
+    and "list_all (ftable n (set cs_L)) xs" and "list_all (ftable n (set cs_R)) ys"
+    and "sorted tss" and "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw"
+    and "dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)"
+  using assms unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
+
+lemma dsince_relD_buf:
+  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<Longrightarrow>
+     dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (fst (snd buf)),
+             fst (snd (snd buf)), snd (snd (snd buf)))"
+  by (cases buf) (auto elim!: dsince_relE)
+
+text \<open>Widening the bound is harmless, which is what the node needs when a new batch of
+  timestamps arrives.\<close>
+
+lemma dsince_rel_mono:
+  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<Longrightarrow> tw \<le> tw' \<Longrightarrow>
+     dsince_rel n cs_R cs_L args tw' aux daux buf dbuf"
+  unfolding dsince_rel_def by (fastforce simp del: valid_mmasaux.simps)
+
+text \<open>A fresh batch of operand tables and timestamps enters the buffer at both frames at once.
+  The batch's timestamps are all at or after the old bound, and the buffer's are all at or before
+  it, so the concatenation stays sorted and the new bound is the batch's last timestamp.\<close>
+
+lemma dsince_rel_add:
+  assumes r: "dsince_rel n cs_R cs_L args tw aux daux buf dbuf"
+    and lx: "list_all (ftable n (set cs_L)) xs" and ly: "list_all (ftable n (set cs_R)) ys"
+    and s: "sorted ts" and b: "\<forall>t \<in> set ts. tw \<le> t"
+  shows "dsince_rel n cs_R cs_L args (dnext tw ts) aux daux (mbuf2S_add xs ys ts buf)
+     (mbuf2S_add (map (dtabc n cs_R) xs) (map (dtabc n cs_R) ys) ts dbuf)"
+proof (cases buf)
+  case (fields us vs tss sk)
+  obtain cur auxlist where vw: "valid_mmasaux args cur aux auxlist"
+    and vd: "dsaux n cs_R cs_L args cur daux auxlist" and ctw: "cur \<le> tw"
+    and lu: "list_all (ftable n (set cs_L)) us" and lv: "list_all (ftable n (set cs_R)) vs"
+    and st: "sorted tss" and ct: "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw"
+    and dbuf: "dbuf = (map (dtabc n cs_R) us, map (dtabc n cs_R) vs, tss, sk)"
+    using r unfolding fields by (rule dsince_relE)
+  have "sorted (tss @ ts)" using st s ct b
+    by (fastforce simp: sorted_append intro: order_trans)
+  moreover have "\<forall>t \<in> set (tss @ ts). cur \<le> t \<and> t \<le> dnext tw ts"
+    using ct b ctw dnext_ge[OF b] dnext_bound[OF s] by fastforce
+  ultimately show ?thesis unfolding fields dbuf
+    using dsince_relI[OF vw vd order_trans[OF ctw dnext_ge[OF b]],
+      of "us @ xs" "vs @ ys" "tss @ ts" sk] lu lx lv ly
+    by simp
+qed
+
+subsection \<open>The relation itself\<close>
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformula \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool" where
@@ -242,6 +332,15 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dsim n cs tw (DAgg (aggargs_g0 args) (aggargs_\<omega> args)
         (reindex_trm (agg_cols (length (aggargs_tys args)) gcols) (aggargs_f args))
         (length (aggargs_tys args)) (ins_pos gcols y) \<phi>d) (mformula.MAgg args \<phi>)"
+| DsSince: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MSince args \<phi> \<psi> buf aux) \<Longrightarrow>
+    dsim n cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols n cs_L \<Longrightarrow> set cs_L \<subseteq> set cs \<Longrightarrow>
+    args_agg args = None \<Longrightarrow> args_n args = n \<Longrightarrow>
+    args_L args = set cs_L \<Longrightarrow> args_R args = set cs \<Longrightarrow>
+    dags = dargs cs cs_L args \<Longrightarrow> pl = emb_plan cs cs_L \<Longrightarrow>
+    dsince_rel n cs cs_L args tw aux daux buf dbuf \<Longrightarrow>
+    dsim n cs tw (DSince dags pl \<phi>d \<psi>d dbuf daux) (mformula.MSince args \<phi> \<psi> buf aux)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -452,59 +551,7 @@ proof (induct L arbitrary: css Ld)
   show ?case unfolding c d using rest dv sm e by (auto simp: nth_Cons split: nat.splits)
 qed simp
 
-subsection \<open>The Since structure at the dense frame, and its buffer\<close>
-
-text \<open>
-  The dense Since node runs the verified structure at @{const dargs} (20.6).  What the node
-  carries is the pair of structures -- the wide one the kernel steps and the dense one -- related
-  through the abstract auxiliary list they are both valid for, together with the two buffers.  The
-  current timestamp is shared: the structure's, and the lower bound on the timestamps still in the
-  buffer.  The left operand's tables enter the buffer already embedded into the wider dense frame,
-  which by @{thm [source] dembed_dtabc} is the same as narrowing them at the right operand's
-  columns.
-\<close>
-
-definition dsince_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
-    mmasaux \<Rightarrow> mmasaux \<Rightarrow> event_data mbuf2S \<Rightarrow> event_data mbuf2S \<Rightarrow> bool" where
-  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<longleftrightarrow>
-     (\<exists>cur auxlist. valid_mmasaux args cur aux auxlist \<and>
-        dsaux n cs_R cs_L args cur daux auxlist \<and> cur \<le> tw \<and>
-        (case buf of (xs, ys, tss, sk) \<Rightarrow>
-           list_all (ftable n (set cs_L)) xs \<and> list_all (ftable n (set cs_R)) ys \<and>
-           sorted tss \<and> (\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw) \<and>
-           dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)))"
-
-lemma dsince_relI:
-  "valid_mmasaux args cur aux auxlist \<Longrightarrow> dsaux n cs_R cs_L args cur daux auxlist \<Longrightarrow>
-   cur \<le> tw \<Longrightarrow>
-   list_all (ftable n (set cs_L)) xs \<Longrightarrow> list_all (ftable n (set cs_R)) ys \<Longrightarrow>
-   sorted tss \<Longrightarrow> \<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw \<Longrightarrow>
-   dsince_rel n cs_R cs_L args tw aux daux (xs, ys, tss, sk)
-     (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)"
-  unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
-
-lemma dsince_relE:
-  assumes "dsince_rel n cs_R cs_L args tw aux daux (xs, ys, tss, sk) dbuf"
-  obtains cur auxlist where "valid_mmasaux args cur aux auxlist"
-    and "dsaux n cs_R cs_L args cur daux auxlist" and "cur \<le> tw"
-    and "list_all (ftable n (set cs_L)) xs" and "list_all (ftable n (set cs_R)) ys"
-    and "sorted tss" and "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw"
-    and "dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)"
-  using assms unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
-
-lemma dsince_relD_buf:
-  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<Longrightarrow>
-     dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (fst (snd buf)),
-             fst (snd (snd buf)), snd (snd (snd buf)))"
-  by (cases buf) (auto elim!: dsince_relE)
-
-text \<open>Widening the bound is harmless, which is what the node needs when a new batch of
-  timestamps arrives.\<close>
-
-lemma dsince_rel_mono:
-  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf \<Longrightarrow> tw \<le> tw' \<Longrightarrow>
-     dsince_rel n cs_R cs_L args tw' aux daux buf dbuf"
-  unfolding dsince_rel_def by (fastforce simp del: valid_mmasaux.simps)
+subsection \<open>One firing of the Since structure\<close>
 
 text \<open>
   One firing of @{const meval_since} at the dense frame yields the narrowing of what one firing at
@@ -1144,6 +1191,61 @@ next
       (auto simp: list_all_iff eval_aggargs_def dagg_eval_agg)
   then show ?case using d sim' produces_next[OF pr w m] wf wg ne ye yn yg g0 fv cse f
     by (auto intro!: dsim.DsAgg)
+next
+  case (DsSince n cs args \<phi> \<psi> buf aux cs_L tw \<phi>d \<psi>d dags pl daux dbuf)
+  note wf = DsSince.hyps(1) and pr = DsSince.hyps(2)
+    and sim1 = DsSince.hyps(3) and IH1 = DsSince.hyps(4)
+    and sim2 = DsSince.hyps(5) and IH2 = DsSince.hyps(6)
+    and wfL = DsSince.hyps(7) and sub = DsSince.hyps(8) and agg = DsSince.hyps(9)
+    and an = DsSince.hyps(10) and aL = DsSince.hyps(11) and aR = DsSince.hyps(12)
+    and dag = DsSince.hyps(13) and pe = DsSince.hyps(14) and rel = DsSince.hyps(15)
+    and w = DsSince.prems(1) and sts = DsSince.prems(2)
+    and mts = DsSince.prems(3) and m = DsSince.prems(4)
+  obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain zs buf2 aux2 where e3: "meval_since args [] (mbuf2S_add as bs ts buf) aux
+      = (zs, buf2, aux2)" by (cases "meval_since args [] (mbuf2S_add as bs ts buf) aux")
+  have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
+    using m e1 e2 e3 an by simp_all
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) as, \<phi>d2)"
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+  have ta: "list_all (ftable n (set cs_L)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w e1])
+  have tb: "list_all (ftable n (set cs)) bs"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w e2])
+  have emb: "map (dembedp pl \<circ> dtabc n cs_L) as = map (dtabc n cs) as"
+  proof (intro map_cong refl)
+    fix a assume "a \<in> set as"
+    then have "table n (set cs_L) a" using ta by (simp add: list_all_iff)
+    then show "(dembedp pl \<circ> dtabc n cs_L) a = dtabc n cs a"
+      unfolding pe o_def using wf wfL by (intro dembedp_dtabc) auto
+  qed
+  obtain dzs dbuf2 daux2 where d3: "meval_since dags []
+      (mbuf2S_add (map (dtabc n cs) as) (map (dtabc n cs) bs) ts dbuf) daux
+      = (dzs, dbuf2, daux2)"
+    by (cases "meval_since dags []
+      (mbuf2S_add (map (dtabc n cs) as) (map (dtabc n cs) bs) ts dbuf) daux")
+  have radd: "dsince_rel n cs cs_L args (dnext tw ts) aux daux (mbuf2S_add as bs ts buf)
+      (mbuf2S_add (map (dtabc n cs) as) (map (dtabc n cs) bs) ts dbuf)"
+    by (rule dsince_rel_add[OF rel ta tb sts mts])
+  have d3': "meval_since (dargs cs cs_L args) (map (dtabc n cs) [])
+      (mbuf2S_add (map (dtabc n cs) as) (map (dtabc n cs) bs) ts dbuf) daux
+      = (dzs, dbuf2, daux2)" using d3 unfolding dag by simp
+  have step: "dzs = map (dtabc n cs) zs \<and>
+      dsince_rel n cs cs_L args (dnext tw ts) aux2 daux2 buf2 dbuf2"
+    using eval_since_rel[OF _ _ sub agg an aL aR e3 d3' radd] wf by simp
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DSince dags pl \<phi>d \<psi>d dbuf daux)
+        = (map (dtabc n cs) xs, DSince dags pl \<phi>d2 \<psi>d2 dbuf2 daux2)"
+      using d1 d2 d3 step x by (simp add: emb)
+    show "dsim n cs (dnext tw ts) (DSince dags pl \<phi>d2 \<psi>d2 dbuf2 daux2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsSince[OF wf produces_next[OF pr w m, unfolded f] s1 s2 wfL sub agg an aL aR
+            dag pe]) (use step in simp)
+  qed
 qed
 
 (*<*)

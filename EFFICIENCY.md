@@ -2786,9 +2786,9 @@ column list and so its own narrowing: it relates `mbufn_take f z buf` to
 `mbufn_take g z' (map2 map hs buf)` for a list `hs` of per-slot narrowings, under a step condition
 that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
-### 20.5 The simulation (all but the temporal nodes)
+### 20.5 The simulation (all but the Until node)
 
-`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 1101 lines, no `sorry`. This is the part that turns
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 1250 lines, no `sorry`. This is the part that turns
 20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
 
 **Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
@@ -2828,8 +2828,9 @@ a mask at the boundary. `DPure φ m msk` is the escape hatch -- it runs the kern
 on a subformula and narrows the result -- so a dense formula need not cover every node of the
 kernel's language in order to be usable. `deval` is the corresponding evaluator, `j ts db` only.
 
-**The relation.** `dsim n cs φd φ` relates a dense formula to a kernel one at a frame of width `n`
-whose live columns are `cs`. Each rule carries `wf_cols n cs` and the node's own `produces`, so
+**The relation.** `dsim n cs tw φd φ` relates a dense formula to a kernel one at a frame of
+width `n` whose live columns are `cs`, with every timestamp stored anywhere inside the node at most
+`tw` (20.7). Each rule carries `wf_cols n cs` and the node's own `produces`, so
 `dsim_wf_cols` and `dsim_produces` hand out at every node exactly the two side conditions the
 20.2 theorems ask for. The buffers are related by
 
@@ -2859,8 +2860,9 @@ with `dbufn_add` and `dbufn_take` packaging `mbufn_add_map2`, `mbufn_take_rel` a
 
 ```isabelle
 theorem dsim_deval:
-  "dsim n cs φd φ ⟹ wf_db db ⟹ meval j n ts db φ = (xs, φ') ⟹
-   ∃φd'. deval j ts db φd = (map (dtabc n cs) xs, φd') ∧ dsim n cs φd' φ'"
+  "dsim n cs tw φd φ ⟹ wf_db db ⟹ sorted ts ⟹ (∀t ∈ set ts. tw ≤ t) ⟹
+   meval j n ts db φ = (xs, φ') ⟹
+   ∃φd'. deval j ts db φd = (map (dtabc n cs) xs, φd') ∧ dsim n cs (dnext tw ts) φd' φ'"
 ```
 
 One step of the dense evaluator produces the narrowing of what one step of the kernel's produces,
@@ -2960,14 +2962,14 @@ buffers together, sharing the current timestamp -- the structure's, which is als
 on the timestamps still queued:
 
 ```isabelle
-definition dsince_rel :: "nat ⇒ cols ⇒ cols ⇒ args ⇒ mmasaux ⇒ mmasaux ⇒
+definition dsince_rel :: "nat ⇒ cols ⇒ cols ⇒ args ⇒ ts ⇒ mmasaux ⇒ mmasaux ⇒
     event_data mbuf2S ⇒ event_data mbuf2S ⇒ bool" where
-  "dsince_rel n cs_R cs_L args aux daux buf dbuf ⟷
+  "dsince_rel n cs_R cs_L args tw aux daux buf dbuf ⟷
      (∃cur auxlist. valid_mmasaux args cur aux auxlist ∧
-        dsaux n cs_R cs_L args cur daux auxlist ∧
+        dsaux n cs_R cs_L args cur daux auxlist ∧ cur ≤ tw ∧
         (case buf of (xs, ys, tss, sk) ⇒
            list_all (ftable n (set cs_L)) xs ∧ list_all (ftable n (set cs_R)) ys ∧
-           sorted tss ∧ (∀t ∈ set tss. cur ≤ t) ∧
+           sorted tss ∧ (∀t ∈ set tss. cur ≤ t ∧ t ≤ tw) ∧
            dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)))"
 
 lemma eval_since_rel:
@@ -2975,8 +2977,8 @@ lemma eval_since_rel:
     "args_agg args = None" "args_n args = n" "args_L args = set cs_L" "args_R args = set cs_R"
   shows "meval_since args rs buf aux = (zs, buf', aux') ⟹
     meval_since (dargs cs_R cs_L args) (map (dtabc n cs_R) rs) dbuf daux = (dzs, dbuf', daux') ⟹
-    dsince_rel n cs_R cs_L args aux daux buf dbuf ⟹
-    dzs = map (dtabc n cs_R) zs ∧ dsince_rel n cs_R cs_L args aux' daux' buf' dbuf'"
+    dsince_rel n cs_R cs_L args tw aux daux buf dbuf ⟹
+    dzs = map (dtabc n cs_R) zs ∧ dsince_rel n cs_R cs_L args tw aux' daux' buf' dbuf'"
 ```
 
 The proof is an induction over the kernel's own recursion (`eval_since.induct`, taken at the wide
@@ -2989,31 +2991,76 @@ Stating the dense result as a *given* rather than an existential -- the shape
 pattern-completion cases then close uniformly, where an existential conclusion had the automation
 guessing witnesses inside the verified structure's 11-tuple.
 
-### 20.7 What is left
+### 20.7 The Since node
 
-1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. For Since, 20.6 now has
-   everything below the node: the structure, its four preservation lemmas, and `eval_since_rel`
-   for one firing. What is left is the node itself -- a `DSince` constructor, its `deval` equation
-   and its `dsim` rule -- and that needs one structural change to `dsim`, which is worth spelling
-   out because it is the third and last thing the simulation will assume about its input.
+Two things were missing between 20.6 and a `dsim` rule for `MSince`.
 
-   `valid_add_new_ts_msaux` needs `nt ≥ cur`: the structure only accepts a timestamp at or after
-   the one it is already at. `dsince_rel` carries that for the timestamps already queued
-   (`∀t ∈ set tss. cur ≤ t`), but a *new* batch arrives at the node as `meval`'s `ts` argument, and
-   nothing in the relation can bound it, because `cur` is internal to the node. So `dsim` needs a
-   timestamp parameter -- `dsim n cs tw φd φ`, read as *every timestamp stored anywhere inside is
-   at most `tw`* -- with `dsim_deval` assuming `sorted ts` and `∀t ∈ set ts. tw ≤ t` and concluding
-   at the new bound `if ts = [] then tw else last ts`. Every rule but `DsSince` and `DsUntil`
-   carries `tw` without looking at it; those two require `cur ≤ tw` and `∀t ∈ set tss. t ≤ tw`
-   inside `dsince_rel`, which `eval_since_rel` then preserves because the timestamp it moves `cur`
-   to comes out of the buffer. Like `produces` and `wf_db`, the hypothesis is discharged once, at
-   the top, from the trace's monotonicity.
+**A timestamp bound on the relation.** `valid_add_new_ts_msaux` needs `nt ≥ cur`: the structure
+only accepts a timestamp at or after the one it is already at. `dsince_rel` carries that for the
+timestamps already queued, but a *new* batch arrives at the node as `meval`'s `ts` argument, and
+nothing inside the relation can bound it, because `cur` is internal to the node. So `dsim` carries
+a timestamp parameter -- `dsim n cs tw φd φ`, read as *every timestamp stored anywhere inside is at
+most `tw`* -- and `dsim_deval` assumes `sorted ts` and `∀t ∈ set ts. tw ≤ t`, concluding at the new
+bound `dnext tw ts = (if ts = [] then tw else last ts)`. Every rule but `DsSince` (and `DsUntil` to
+come) carries `tw` without looking at it. Like `produces` and `wf_db`, the hypothesis is discharged
+once, at the top, from the trace's monotonicity -- these three are the whole interface between this
+development and the kernel's.
 
-   For Until the same work over again, with `mbuf2t_take_rel`, `dauxlist3` and the `muaux`
-   locale's two operations.
+Inside `dsince_rel` the bound reads `cur ≤ tw` and `∀t ∈ set tss. t ≤ tw`, and one lemma does the
+transition:
+
+```isabelle
+lemma dsince_rel_add:
+  assumes "dsince_rel n cs_R cs_L args tw aux daux buf dbuf"
+    "list_all (ftable n (set cs_L)) xs" "list_all (ftable n (set cs_R)) ys"
+    "sorted ts" "∀t ∈ set ts. tw ≤ t"
+  shows "dsince_rel n cs_R cs_L args (dnext tw ts) aux daux (mbuf2S_add xs ys ts buf)
+     (mbuf2S_add (map (dtabc n cs_R) xs) (map (dtabc n cs_R) ys) ts dbuf)"
+```
+
+The batch's timestamps are all at or after the old bound and the buffer's are all at or before it,
+so the concatenation is still sorted; `eval_since_rel` then preserves the bound for free, because
+the timestamp it moves `cur` to comes out of the buffer.
+
+**The node.** The dense node stores the embedding plan rather than the two column lists, so
+``dembedp p D = dembed1 p ` D`` is the operation the evaluator calls, with `dembedp_dtabc` the
+corollary of `dembed_dtabc` at that shape:
+
+```isabelle
+| "deval j ts db (DSince dags pl φ ψ buf aux) =
+     (let (xs, φ') = deval j ts db φ; (ys, ψ') = deval j ts db ψ;
+          (zs, buf', aux') =
+            meval_since dags [] (mbuf2S_add (map (dembedp pl) xs) ys ts buf) aux
+      in (zs, DSince dags pl φ' ψ' buf' aux'))"
+
+| DsSince: "wf_cols n cs ⟹ produces n (set cs) (mformula.MSince args φ ψ buf aux) ⟹
+    dsim n cs_L tw φd φ ⟹ dsim n cs tw ψd ψ ⟹
+    wf_cols n cs_L ⟹ set cs_L ⊆ set cs ⟹
+    args_agg args = None ⟹ args_n args = n ⟹
+    args_L args = set cs_L ⟹ args_R args = set cs ⟹
+    dags = dargs cs cs_L args ⟹ pl = emb_plan cs cs_L ⟹
+    dsince_rel n cs cs_L args tw aux daux buf dbuf ⟹
+    dsim n cs tw (DSince dags pl φd ψd dbuf daux) (mformula.MSince args φ ψ buf aux)"
+```
+
+The proof case is three steps: `dembedp_dtabc` pointwise over the left operand's output turns its
+own narrowing at `cs_L` into the narrowing at `cs`, which is what `dsince_rel` expects in the
+buffer; `dsince_rel_add` puts the batch in; `eval_since_rel` fires the structure. The `DSince` node
+is the first one whose *state* is a verified data structure rather than a list of tables, and the
+relation between the two states is carried entirely by 20.6's `dsaux`, so nothing about `mmasaux`'s
+eleven components appears in the simulation.
+
+`Dense_Eval.thy` is 1250 lines, 2011 commands, no `sorry`.
+
+### 20.8 What is left
+
+1. **The Until node.** The same work as 20.7 over again, with `mbuf2t_take_rel`, `dauxlist3` and
+   the `muaux` locale's two operations. The timestamp bound is already in place.
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
-   `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.
+   `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`. This is
+   also where the three input hypotheses -- `produces`, `wf_db` and the timestamp bound -- are
+   discharged.
 3. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
    dense fragment. This changes the running program, so Section 19.7's timings will have to be
    re-measured afterwards.
