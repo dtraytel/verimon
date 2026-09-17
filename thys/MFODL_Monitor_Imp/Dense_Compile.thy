@@ -1,14 +1,16 @@
 (*<*)
 theory Dense_Compile
-  imports Dense_Correct
+  imports Dense_Correct Dense_Agg
 begin
 (*>*)
 
 section \<open>One criterion for the whole formula\<close>
 
 text \<open>
-  The twenty-five node lemmas of the three preceding theories each say: if the operands produce
-  finite tables over their columns, so does this node.  They compose by structural induction, and
+  The node lemmas of the four preceding theories each say: if the operands produce finite tables
+  over their columns, so does this node -- one per kernel constructor, plus the three modes of
+  @{const mformula.MPred} and the aggregated forms of @{const mformula.MSince} and
+  @{const mformula.MUntil}.  They compose by structural induction, and
   the predicate \<open>mok\<close> below is what they compose into -- one rule per node, carrying
   exactly that node's lemma's hypotheses, with the operands' @{const produces} replaced by
   \<open>mok\<close> itself.  So \<open>mok\<close> is a structural criterion on the kernel's
@@ -73,6 +75,22 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
     until_inv args n L R tw t aux buf nts \<Longrightarrow> args_agg args = None \<Longrightarrow>
     args_n args = n \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> L \<subseteq> R \<Longrightarrow>
     mok n R tw (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
+| MokSinceAgg: "mok m L tw \<phi> \<Longrightarrow> mok m R tw \<psi> \<Longrightarrow>
+    saux_inv args m L R tw buf aux \<Longrightarrow> args_agg args = Some aggargs \<Longrightarrow>
+    args_n args = m \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> L \<subseteq> R \<Longrightarrow>
+    m = length (aggargs_tys aggargs) + n \<Longrightarrow> aggargs_n aggargs = n \<Longrightarrow>
+    aggargs_y aggargs < n \<Longrightarrow> (\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i) \<Longrightarrow>
+    (aggargs_g0 aggargs \<Longrightarrow> R = {}) \<Longrightarrow>
+    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R) \<Longrightarrow>
+    mok n A tw (mformula.MSince args \<phi> \<psi> buf aux)"
+| MokUntilAgg: "mok m L tw \<phi> \<Longrightarrow> mok m R tw \<psi> \<Longrightarrow>
+    until_inv args m L R tw t aux buf nts \<Longrightarrow> args_agg args = Some aggargs \<Longrightarrow>
+    args_n args = m \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> L \<subseteq> R \<Longrightarrow>
+    m = length (aggargs_tys aggargs) + n \<Longrightarrow> aggargs_n aggargs = n \<Longrightarrow>
+    aggargs_y aggargs < n \<Longrightarrow> (\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i) \<Longrightarrow>
+    (aggargs_g0 aggargs \<Longrightarrow> R = {}) \<Longrightarrow>
+    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R) \<Longrightarrow>
+    mok n A tw (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
 | MokTrigger: "mok n L tw \<phi> \<Longrightarrow> mok n R tw \<psi> \<Longrightarrow>
     trigger_inv args n L R tw aux buf nts \<Longrightarrow> args_n args = n \<Longrightarrow>
     args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> mem (args_ivl args) 0 \<Longrightarrow>
@@ -171,6 +189,18 @@ next
   show ?case
     by (rule produces_MUntil[OF MokUntil(2) MokUntil(4) MokUntil(5) MokUntil(6)
         MokUntil(7) MokUntil(8) MokUntil(9) MokUntil(10)])
+next
+  case MokSinceAgg
+  show ?case unfolding MokSinceAgg(16)
+    by (rule produces_MSince_agg[OF MokSinceAgg(2) MokSinceAgg(4) MokSinceAgg(5)
+        MokSinceAgg(7) MokSinceAgg(8) MokSinceAgg(9) MokSinceAgg(10) MokSinceAgg(6)
+        MokSinceAgg(11) MokSinceAgg(12) MokSinceAgg(13) MokSinceAgg(14) MokSinceAgg(15)])
+next
+  case MokUntilAgg
+  show ?case unfolding MokUntilAgg(16)
+    by (rule produces_MUntil_agg[OF MokUntilAgg(2) MokUntilAgg(4) MokUntilAgg(5)
+        MokUntilAgg(7) MokUntilAgg(8) MokUntilAgg(9) MokUntilAgg(10) MokUntilAgg(6)
+        MokUntilAgg(11) MokUntilAgg(12) MokUntilAgg(13) MokUntilAgg(14) MokUntilAgg(15)])
 next
   case MokTrigger
   show ?case
