@@ -2597,7 +2597,9 @@ kernel. That is evidence, not a proof. The goal of this section is a refinement 
 dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
 verified one.
 
-*Work in progress. 20.1-20.4 and 20.6 are done, 20.5 all but the temporal nodes; 20.7 is what is left.*
+*Work in progress. 20.1-20.10 are done -- the simulation covers every node of the dense fragment
+and the kernel's correctness theorems transfer (20.9); 20.11 is what is left, chiefly the rest of
+`produces` and the compilation.*
 
 ### 20.1 The pair of morphisms
 
@@ -3222,7 +3224,66 @@ a per-node invariant: they feed their body a database whose table at the let-bou
 *not* full-width, so `produces` has to be generalised to carry a predicate environment
 (`wf_dbe E db`, with `wf_dbe Map.empty = wf_db` recovering the present notion at the top level).
 
-### 20.11 What is left
+### 20.11 The dense monitor, measured again
+
+The proofs of 20.1-20.10 did not change a line of the running program -- `src/` is unchanged since
+the commit 19.7 was measured on -- so this is a confirmation run, on a machine that is faster in
+absolute terms than 19.7's (MonPoly's P2 is 0.37s here against 0.44s there). Compare within a row.
+
+Median of nine, all five configurations byte-identical on every formula (55 runs, one output hash
+per row); `dense+h` is `-dense -heap_maps`. Benchmarks under a quarter of a second -- `and`,
+`andnot`, `since`, `until`, `agg` -- move by a tenth between runs and should not be read closely.
+
+| formula | MonPoly | pure | dense | dense+h | heap |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.37s | 2.50x | **1.71x** | 1.72x | 1.85x |
+| P3 | 0.43s | 1.91x | 1.35x | **1.34x** | 1.39x |
+| and | 0.14s | 1.31x | 1.05x | **0.90x** | 1.24x |
+| andnot | 0.13s | 0.93x | 0.97x | **0.90x** | 0.95x |
+| once | 0.58s | 1.20x | 0.79x | **0.77x** | 0.83x |
+| since | 0.22s | **1.17x** | 1.22x | 1.23x | 1.28x |
+| eventually | 0.39s | 1.29x | 0.92x | 0.88x | **0.86x** |
+| until | 0.20s | 1.45x | 1.54x | **1.39x** | 1.42x |
+| agg | 0.15s | 1.57x | 1.52x | **1.50x** | 1.53x |
+| complex | 0.70s | 2.03x | 1.34x | **1.13x** | 1.39x |
+| aggwide | 2.97s | 1.18x | 0.87x | **0.84x** | 1.04x |
+
+Short tuples are the best or joint-best configuration on nine of eleven, four are at or faster
+than MonPoly, and 19.7's conclusions all hold. Differentially, `-dense` and `-dense -heap_maps`
+agree with the plain verified kernel on all 537 `-verified` invocations of the two cram suites.
+
+**What the short tuples alone buy**, `pure / dense`, is the number this section is really about:
+
+| P2 | P3 | and | andnot | once | since | eventually | until | agg | complex | aggwide |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1.46x | 1.41x | 1.24x | 0.96x | 1.52x | 0.96x | 1.40x | 0.94x | 1.03x | 1.52x | 1.36x |
+
+**And the three benchmarks that get nothing name exactly what is left to do.** `agg` (1.03x) is
+19.6's case: `s <- SUM y; x A(x,y)` has no empty columns anywhere, so there is nothing to drop --
+which is why `aggwide` is in the table at all, and it gets 1.36x. But `since` (0.96x) and `until`
+(0.94x) are a different matter, and the dense node counter says why:
+
+```
+$ MONPOLY_DENSE_STATS=1 monpoly -verified -dense …
+[dense] subformulas still evaluated by the sparse function: 1   (since, until)
+                                                            0   (all nine others)
+```
+
+The running dense fragment takes a Since only when `sevt_applies args`, that is
+`args_agg args = None ∧ args_L args = {}` -- the left operand has no free variables, so the node is
+an `ONCE` -- and an Until only under the analogous `evt_applies`. A genuine two-sided
+`B(x,y) SINCE[0,50] A(x,y)` fails that test, becomes a single `DPure` node covering the whole
+formula, and `-dense` then only pays the narrowing at the boundary and gains nothing. That is
+precisely the 4% it loses. `once` and `eventually`, which do pass, get 1.52x and 1.40x.
+
+This is the gap 20.6-20.8 close on paper: `dsaux` and `duaux` are stated over the *general*
+`mmasaux` and `muaux_dq`, with no `args_L = {}` restriction, and `DSince` and `DUntil` are proved
+against them. Rebuilding the running fragment on those (20.12 item 3) is therefore not only what
+makes `-dense` a refinement of the verified kernel rather than a parallel implementation of it --
+it is also the one change these measurements say is still worth wall clock, on the two benchmarks
+that currently get none.
+
+### 20.12 What is left
 
 1. **The rest of `produces`** -- the eleven constructors listed at the end of 20.10.
 2. **The compilation.** A pure `dof` and `mcols` (the ones in `Dense_Imp.thy` are monadic, because
@@ -3231,9 +3292,12 @@ a per-node invariant: they feed their body a database whose table at the let-bou
    the join plans and the embedding plan are the ones the frames call for, and that every node's
    `produces` holds. That is the last thing `dmonitor_mverdicts` asks of its caller, and with it
    the chain from `Mt π` down to the short tuples is closed.
-3. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
-   dense fragment. This changes the running program, so Section 19.7's timings will have to be
-   re-measured afterwards.
+3. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
+   the dense fragment -- which today takes a Since or Until only when the left operand has no free
+   variables, so a genuine two-sided one falls back to a single `DPure` node. This changes the
+   running program, so the timings will have to be re-measured afterwards; 20.11 says what to
+   expect, since `since` and `until` are the two benchmarks the short tuples currently do nothing
+   for.
 4. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
