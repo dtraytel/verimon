@@ -2592,40 +2592,54 @@ allocation. Neither is a change to an algorithm; both are changes to what a valu
 
 ## 20. Verifying the short-tuple representation
 
-*Work in progress. 20.1-20.2 are done; 20.3 lists what is left, which is the larger half.*
-
-### 20.1 What there is to prove
-
 Section 19 built a second evaluator over short tuples and tested it differentially against the
-kernel. That is evidence, not a proof. The goal of this section is to replace the evidence with a
-refinement theorem: that `deval` over short tuples simulates the kernel's `meval`, so that running
-the dense monitor is running the verified one.
+kernel. That is evidence, not a proof. The goal of this section is a refinement theorem: that the
+dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
+verified one.
 
-The relation between the two representations is one function. For a column list `cs` -- strictly
-sorted, all entries below the frame width `n` -- narrowing is
+*Work in progress. 20.1-20.4 are done; 20.5 is what is left.*
+
+### 20.1 The pair of morphisms
+
+The relation between the two representations is a pair of inverse maps. For a column list `cs` --
+strictly sorted, all entries below the frame width `n` -- narrowing deletes the empty columns and
+widening puts them back:
 
 ```isabelle
-definition dtabc :: "nat ⇒ cols ⇒ 'a table ⇒ 'a table" where
-  "dtabc n cs T = dproj (wide_mask n cs) ` T"
+definition dtabc     :: "nat ⇒ cols ⇒ 'a table ⇒ 'a table" where "dtabc n cs T = dproj  (wide_mask n cs) ` T"
+definition dtabw     :: "nat ⇒ cols ⇒ 'a table ⇒ 'a table" where "dtabw n cs D = dwiden (wide_mask n cs) ` D"
+definition dwf_tuple :: "nat ⇒ 'a tuple ⇒ bool"           where "dwf_tuple k d ⟷ length d = k ∧ (∀i<k. d ! i ≠ None)"
+definition dtable    :: "cols ⇒ 'a table ⇒ bool"          where "dtable cs D ⟷ (∀d ∈ D. dwf_tuple (length cs) d)"
 ```
 
-and `dproj` deletes the positions the mask does not mark. Two facts make it a representation
-rather than merely a function: on well-formed tuples it is injective (`inj_on_dproj_cols`, via
-`dwiden_dproj_wf`, which reconstructs the wide tuple from the short one and the mask), and the
-mask of a sorted column list is the kernel's own `join_mask` of its set (`wide_mask_eq_join_mask`).
-The second is what lets every proof below hand a goal back to a kernel lemma.
+`wide_mask n cs` is what turns "a number and a list of positions" into the mask the two maps take.
+`dwf_tuple` is the point of the whole exercise: a short tuple has *no* holes, which is what makes
+the pair a bijection rather than merely a surjection, and it is proved as such --
 
-The simulation decomposes into one equation per table operation, each of the shape
+```isabelle
+lemma dtable_dtabc : "sorted_wrt (<) cs ⟹ ∀c∈set cs. c<n ⟹ table n (set cs) T ⟹ dtable cs (dtabc n cs T)"
+lemma table_dtabw  : "sorted_wrt (<) cs ⟹ ∀c∈set cs. c<n ⟹ dtable cs D ⟹ table n (set cs) (dtabw n cs D)"
+lemma dtabw_dtabc  : "sorted_wrt (<) cs ⟹ table n (set cs) T ⟹ dtabw n cs (dtabc n cs T) = T"
+lemma dtabc_dtabw  : "sorted_wrt (<) cs ⟹ ∀c∈set cs. c<n ⟹ dtable cs D ⟹ dtabc n cs (dtabw n cs D) = D"
+```
+
+-- so that `dtabc n cs` is a bijection from `{T. table n (set cs) T}` onto `{D. dtable cs D}` with
+inverse `dtabw n cs`. `wide_mask_eq_join_mask : sorted_wrt (<) cs ⟹ wide_mask n cs = join_mask n (set cs)`
+is the bridge that lets every proof below hand a goal back to a kernel lemma about `join_mask`.
+
+Everything else in this section is one statement per operation, all of the same shape:
 
 > *dense operation applied to narrowed arguments = narrowing of the kernel's operation applied to
-> the wide arguments*,
+> the wide arguments*
 
-plus an induction over the formula that strings them together. The equations are 20.2; the
-induction is 20.3.
+with the column list transforming alongside the table -- `merge_cols cs1 cs2` for a join,
+`merge_cols gcols [y]` for an aggregation, `ex_cols ccs` for the existential. That is what makes
+the equations compose: the right-hand side of each is a `dtabc` of a kernel result, ready to be
+the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 1900 lines and 113 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2300 lines and 152 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2636,6 +2650,7 @@ the base session; it moves to the base session once the whole refinement is in p
 | `join T pos T'`, right columns ⊆ left | `dsemi` | `dsemi_join` |
 | `join T True T'`, left columns ⊆ right | filter on a projection | `dsup_join` |
 | `join T True T'`, general | `dgen_join` (index) | `dtabc_gen_join` |
+| `join T pos T'`, one frame | `join` at the narrow frame | `dtabc_join_frame` |
 | `bin_join n A T pos A' T'` | `dbin_join (mk_djoin cs1 cs2)` | `dbin_join_bin_join` |
 | `mmulti_join' A_pos A_neg L` | `dands_neg ∘ dands_pos` | `dmulti_join_dtabc` |
 | `eval_agg n g0 y ω tys f` | `dagg` | `dagg_eval_agg` |
@@ -2644,7 +2659,7 @@ the base session; it moves to the base session once the whole refinement is in p
 | `tl \` X` (the existential) | `tl` or nothing | `dtabc_exists` |
 | narrowing at the boundary | `dnarrow` | `dnarrow_dtabc` |
 
-Three of these are worth a word.
+Three are worth a word.
 
 **The general join.** `dgen_join` indexes one side by the shared columns and probes it with the
 other, choosing which side by `card A ≤ card B`. Two things had to be proved that the sparse
@@ -2680,40 +2695,110 @@ found by measurement before the proof was attempted, and the proof would have fo
 general-join theorem `dtabc_gen_join` is exactly the statement the first bug violated, and
 `dbin_join0_join`'s case analysis is exactly the case the second was missing.
 
-### 20.3 The evaluation function (to do)
+### 20.3 The Since and Until need no new structure (done)
 
-`deval` is not yet proved to simulate `meval`. Four things stand in the way; none of them is a
-reason to stop, and the order below is the order they will be done in.
+Section 19 left the temporal operators alone, and Section 20.3 of the first draft of this section
+named them as the biggest obstacle: `DSince` and `DUntil` fire only when
+`sevt_applies args ⟷ args_agg args = None ∧ args_L args = {}` -- that is, only for `ONCE` and
+`EVENTUALLY` -- and they use the `sevtaux` / `evtaux` structures of Section 16, which have no
+correctness proof of their own.
 
-**1. A pure evaluator to state the theorem about.** `deval` returns in the `Heap` monad, because
-of the heap index, and a simulation theorem against `meval` should not have to talk about the
-heap. So the refinement is split in two: a pure `deval` proved to simulate `meval`, and the
-monadic one proved -- or, as today, only tested -- to refine the pure one. This also isolates the
-heap index, which is the one part whose verification needs Imperative HOL Hoare triples in the
-style of Section 8.
+Reading the `msaux` and `muaux` locales dissolved the obstacle. Their entire specification is
+stated over an abstract auxiliary list of timestamped tables, and everything the operations do to
+that list is a join, a union, or a filter on timestamps:
 
-**2. The Since and Until cases must use verified structures.** `DSince` and `DUntil` today use the
-`sevtaux` / `evtaux` structures of Section 16, which are code-level constructions with no
-correctness proof of their own, so no amount of work on the dense side would make those two cases
-verified. The pure dense evaluator has to use the base session's `mmasaux` and `muaux_dq` instead,
-with `args` re-indexed to the dense frame: `args_n` becomes `length cols_R`, and `args_L` becomes
-the positions of the left operand's columns within the right's. Every invariant of those
-structures is stated as `table (args_n args) (args_R args) ...`, so the re-indexing has to be
-carried through `valid_mmsaux` / `valid_mmuaux` -- the largest single piece of the remaining work,
-and the reason Section 19 left it alone.
+```isabelle
+valid_join_msaux:          table (args_n args) (args_L args) rel1 ⟹ … (map (λ(t,rel). (t, join rel (args_pos args) rel1)) auxlist)
+valid_add_new_table_msaux: table (args_n args) (args_R args) rel2 ⟹ … (… y ∪ rel2 …)
+valid_result_msaux:        result_msaux args aux = eval_args_agg args (foldr (∪) [rel. (t,rel) ← auxlist, memL … ] {})
+valid_add_new_muaux:       … (update_until args rel1 rel2 nt auxlist)
+valid_eval_muaux:          eval_until (args_ivl args) nt auxlist = (res', auxlist') ⟹ … res = map (eval_args_agg args) res'
+```
 
-**3. The compilation must be proved.** `dformula_of` turns an `mformula_j` into the dense fragment
-and `mcols` computes the column list of every node. Nothing yet says that the column list is the
-subformula's free-variable set, which is the hypothesis every theorem in 20.2 needs. This is an
-induction over `mformula_j` against the kernel's own `wf_mformula`, and it is the most mechanical
-of the four.
+Nothing there reads a tuple position except the join, and the join commutes with narrowing. So the
+base session's **verified** `mmasaux` and `muaux_dq` can be run unchanged at a frame whose width is
+the number of columns, on narrowed tables. The re-indexing is
 
-**4. The buffers and the temporal shifts.** `DPrev`, `DNext`, `DOr` and `DAnds` thread tables
-through `mbuf2` / `mbufn` buffers. These never look inside a tuple, so each needs only a lemma
-saying that a buffer of narrowed tables behaves as the narrowing of a buffer of wide ones -- but
-those lemmas have to be stated and proved, and there is one per buffer operation.
+```isabelle
+definition cpos  :: "cols ⇒ nat set ⇒ nat set" where "cpos cs L = {i. i < length cs ∧ cs ! i ∈ L}"
+definition dargs :: "cols ⇒ cols ⇒ args ⇒ args" where
+  "dargs cs_R cs_L args = init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L)) {0..<length cs_R} (args_pos args) None"
+```
 
-`DPure`, the escape hatch that runs the kernel evaluator on wide tuples and narrows the result, is
-already covered by `dnarrow_dtabc`; it is what makes the fragment partial rather than total, and
-it is what the simulation theorem will fall back on for every constructor not in the dense
-fragment.
+-- the width becomes `length cs_R`, the `R` set becomes *all* of the columns, and the `L` set
+becomes the positions of the left operand's columns inside the right's, so that `join_mask` at the
+new args is exactly the sub-mask of `cs_L` in `cs_R`. Note that `R` being all of the columns makes
+the structure's own `proj_tuple` on the right side the identity: the dense frame is not just
+smaller for these structures, it is also simpler.
+
+The one new preservation lemma this needs is the join in a single frame,
+
+```isabelle
+lemma dtabc_join_frame:
+  assumes "sorted_wrt (<) cs" "∀c ∈ set cs. c < n" "L ⊆ A" "A ⊆ set cs"
+      and "table n A T" "table n L T'"
+  shows "dtabc n cs (join T pos T') = join (dtabc n cs T) pos (dtabc n cs T')"
+```
+
+proved through the kernel's own `join_sub` on both sides, plus `proj_tuple_dproj` (masking commutes
+with narrowing) and `dproj_inj_sub` (narrowing is injective on `wf_tuple n L` when `L ⊆ set cs`).
+On top of it there is one theorem per locale operation, over `dauxlist` and `dauxlist3`, which
+narrow every table of the auxiliary list:
+
+| locale operation | theorem |
+|---|---|
+| `add_new_ts_msaux` | `dauxlist_filter` |
+| `join_msaux` | `dauxlist_join` |
+| `add_new_table_msaux` | `dauxlist_add_new_table` |
+| `result_msaux` | `dtabc_result` (with `eval_args_agg_None`) |
+| `add_new_muaux` | `dauxlist3_update_until` |
+| `eval_muaux` | `dauxlist3_eval_until` |
+
+with `dauxlist_wf_filter`, `dauxlist_wf_join`, `dauxlist_wf_add_new_table` and
+`dauxlist3_wf_update_until` carrying `table n (set cs)` across each step.
+
+So this is a case where verification made the program **better**, not merely checked: the dense
+Since and Until will cover the general case rather than `ONCE` and `EVENTUALLY`, and will use a
+verified structure rather than an unverified one.
+
+### 20.4 The buffers (done, except the multi-way one)
+
+A buffer never looks inside a tuple: it lines up the tables the operands produce and hands matching
+pairs to the node's operation. So a buffer of narrowed tables behaves as the narrowing of a buffer
+of wide ones. These are map-fusion lemmas for the kernel's *list-level* buffers -- the ones its
+verified `meval` uses. The queue representation of `Monitor_Impl` is layered on top of that by the
+kernel's own code equations (`mebuf2_take_aux` and friends), so the dense side reuses it unchanged
+instead of redoing it.
+
+| buffer operation | theorem | used by |
+|---|---|---|
+| `mbuf2_add` | `mbuf2_add_map` | `MAnd`, `MOr`, `MUntil` |
+| `mbuf2_take` | `mbuf2_take_map` | `MAnd` (with `dbin_join_bin_join`), `MOr` (with `dtabc_Un_img`) |
+| `mprev_next` | `mprev_next_map` | `MPrev`, `MNext` |
+| `mbuf2t_take` | `mbuf2t_take_rel` | `MUntil` (with `dauxlist3_update_until`) |
+
+`mbuf2t_take_rel` is relational rather than an equation, because the accumulator of the `MUntil`
+buffer is not a narrowed table but an auxiliary structure related to the wide one; the step
+condition is therefore `R z z' ⟹ R (f a b t z) (g (h a) (k b) t z')`.
+
+Still missing on the buffer side: `mbufn_take`, for the multi-way conjunction, where each slot of
+the buffer has its own column list and so its own narrowing.
+
+### 20.5 What is left
+
+1. **`mbufn_take`** for `MAnds`, as above.
+2. **The simulation itself.** A relation `dsim n cs φd φ` between a dense formula and an
+   `mformula`, and the induction that composes 20.2-20.4 into
+   `deval` producing `map (dtabc n cs)` of what `meval` produces, with `dsim` preserved. This is
+   the part that has to thread the kernel's `wf_mformula` invariant through, because table-ness of
+   the operand tables -- the hypothesis of every theorem in 20.2 -- is a consequence of it.
+3. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
+   particular that the column list of a node is the subformula's free-variable set. An induction
+   over `mformula_j` against `wf_mformula`.
+4. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
+   dense fragment. This changes the running program, so Section 19.7's timings will have to be
+   re-measured afterwards.
+5. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
+   Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
+   The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
+   `-dense -heap_maps` is not.
