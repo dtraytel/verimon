@@ -2992,9 +2992,24 @@ guessing witnesses inside the verified structure's 11-tuple.
 ### 20.7 What is left
 
 1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. For Since, 20.6 now has
-   everything: the structure, its four preservation lemmas, and `eval_since_rel` for one firing;
-   what is left is the node itself -- a `DSince` constructor, its `deval` equation and its `dsim`
-   rule. For Until the same work over again, with `mbuf2t_take_rel`, `dauxlist3` and the `muaux`
+   everything below the node: the structure, its four preservation lemmas, and `eval_since_rel`
+   for one firing. What is left is the node itself -- a `DSince` constructor, its `deval` equation
+   and its `dsim` rule -- and that needs one structural change to `dsim`, which is worth spelling
+   out because it is the third and last thing the simulation will assume about its input.
+
+   `valid_add_new_ts_msaux` needs `nt ≥ cur`: the structure only accepts a timestamp at or after
+   the one it is already at. `dsince_rel` carries that for the timestamps already queued
+   (`∀t ∈ set tss. cur ≤ t`), but a *new* batch arrives at the node as `meval`'s `ts` argument, and
+   nothing in the relation can bound it, because `cur` is internal to the node. So `dsim` needs a
+   timestamp parameter -- `dsim n cs tw φd φ`, read as *every timestamp stored anywhere inside is
+   at most `tw`* -- with `dsim_deval` assuming `sorted ts` and `∀t ∈ set ts. tw ≤ t` and concluding
+   at the new bound `if ts = [] then tw else last ts`. Every rule but `DsSince` and `DsUntil`
+   carries `tw` without looking at it; those two require `cur ≤ tw` and `∀t ∈ set tss. t ≤ tw`
+   inside `dsince_rel`, which `eval_since_rel` then preserves because the timestamp it moves `cur`
+   to comes out of the buffer. Like `produces` and `wf_db`, the hypothesis is discharged once, at
+   the top, from the trace's monotonicity.
+
+   For Until the same work over again, with `mbuf2t_take_rel`, `dauxlist3` and the `muaux`
    locale's two operations.
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
