@@ -469,15 +469,21 @@ lemma wf_tuple_insert_upd:
   "wf_tuple n B t \<Longrightarrow> y < n \<Longrightarrow> wf_tuple n (Set.insert y B) (t[y := Some v])"
   by (auto simp: wf_tuple_def nth_list_update)
 
+text \<open>
+  The node drops the aggregation's own @{term "length tys"} bound columns and groups by what is
+  left, so the columns it emits are the operand's columns above that boundary, shifted down, plus
+  the result column.  The operand's columns below the boundary are exactly the bound variables
+  and do not survive.
+\<close>
+
 lemma ftable_eval_agg:
   assumes t: "table (length tys + n) G rel" and fin: "finite rel"
-    and y: "y < n" and sh: "\<forall>i \<in> G. length tys \<le> i"
-    and g0: "g0 \<Longrightarrow> G = {}"
-  shows "ftable n (Set.insert y ((\<lambda>i. i - length tys) ` G))
+    and y: "y < n" and g0: "g0 \<Longrightarrow> G \<subseteq> {0..<length tys}"
+  shows "ftable n (Set.insert y ((\<lambda>i. i - length tys) ` (G - {0..<length tys})))
       (eval_agg n g0 y \<omega> tys trm rel)"
 proof (cases "g0 \<and> rel = empty_table")
   case True
-  then have G: "G = {}" using g0 by simp
+  then have G: "G - {0..<length tys} = {}" using g0 by auto
   have "table n {y} (singleton_table n y (eval_agg_op \<omega> {}))" by simp
   moreover have "finite (singleton_table n y (eval_agg_op \<omega> {}))"
     by (simp add: singleton_table_def)
@@ -485,12 +491,27 @@ proof (cases "g0 \<and> rel = empty_table")
 next
   case False
   have w: "\<And>x. x \<in> rel \<Longrightarrow>
-      wf_tuple n ((\<lambda>i. i - length tys) ` G) (drop (length tys) x)"
+      wf_tuple n ((\<lambda>i. i - length tys) ` (G - {0..<length tys})) (drop (length tys) x)"
   proof -
     fix x assume x: "x \<in> rel"
     then have wx: "wf_tuple (length tys + n) G x" using t by (simp add: table_def)
-    show "wf_tuple n ((\<lambda>i. i - length tys) ` G) (drop (length tys) x)"
-      using wx sh by (fastforce simp: wf_tuple_def image_iff)
+    show "wf_tuple n ((\<lambda>i. i - length tys) ` (G - {0..<length tys})) (drop (length tys) x)"
+      unfolding wf_tuple_def
+    proof (intro conjI allI impI)
+      show "length (drop (length tys) x) = n" using wx by (simp add: wf_tuple_def)
+    next
+      fix i assume i: "i < n"
+      have d: "drop (length tys) x ! i = x ! (length tys + i)"
+        using wx i by (simp add: wf_tuple_def)
+      have g: "(x ! (length tys + i) = None) = (length tys + i \<notin> G)"
+        using wx i by (simp add: wf_tuple_def)
+      have s: "(length tys + i \<in> G)
+          = (i \<in> (\<lambda>j. j - length tys) ` (G - {0..<length tys}))"
+        by (force simp: image_iff)
+      show "(drop (length tys) x ! i = None)
+          = (i \<notin> (\<lambda>j. j - length tys) ` (G - {0..<length tys}))"
+        unfolding d g using s by blast
+    qed
   qed
   show ?thesis
     unfolding eval_agg_def if_not_P[OF False]
@@ -500,9 +521,9 @@ qed
 lemma produces_MAgg:
   assumes p: "produces (length (aggargs_tys args) + n) G tw \<phi>"
     and an: "aggargs_n args = n" and y: "aggargs_y args < n"
-    and sh: "\<forall>i \<in> G. length (aggargs_tys args) \<le> i"
-    and g0: "aggargs_g0 args \<Longrightarrow> G = {}"
-  shows "produces n (Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G))
+    and g0: "aggargs_g0 args \<Longrightarrow> G \<subseteq> {0..<length (aggargs_tys args)}"
+  shows "produces n (Set.insert (aggargs_y args)
+      ((\<lambda>i. i - length (aggargs_tys args)) ` (G - {0..<length (aggargs_tys args)})))
       tw (mformula.MAgg args \<phi>)"
 proof -
   have step: "\<And>j ts db \<chi> ys \<chi>'.
@@ -510,11 +531,12 @@ proof -
       meval j n ts db (mformula.MAgg args \<chi>) = (map (eval_aggargs args) ys, mformula.MAgg args \<chi>')"
     by simp
   have tab: "\<And>Y. table (length (aggargs_tys args) + n) G Y \<Longrightarrow> finite Y \<Longrightarrow>
-      table n (Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G))
+      table n (Set.insert (aggargs_y args)
+          ((\<lambda>i. i - length (aggargs_tys args)) ` (G - {0..<length (aggargs_tys args)})))
         (eval_aggargs args Y) \<and>
       finite (eval_aggargs args Y)"
     unfolding eval_aggargs_def an[symmetric]
-    by (rule ftable_eval_agg[OF _ _ _ sh g0]) (use y an in auto)
+    by (rule ftable_eval_agg[OF _ _ _ g0]) (use y an in auto)
   show ?thesis by (rule produces_unop[OF step tab p])
 qed
 

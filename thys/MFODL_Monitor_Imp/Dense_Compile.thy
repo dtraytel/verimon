@@ -54,9 +54,9 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
 | MokNext: "mok n A tw \<phi> \<Longrightarrow> mok n A tw (mformula.MNext I \<phi> first nts)"
 | MokAgg: "mok (length (aggargs_tys args) + n) G tw \<phi> \<Longrightarrow>
     aggargs_n args = n \<Longrightarrow> aggargs_y args < n \<Longrightarrow>
-    (\<forall>i \<in> G. length (aggargs_tys args) \<le> i) \<Longrightarrow>
-    (aggargs_g0 args \<Longrightarrow> G = {}) \<Longrightarrow>
-    A = Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G) \<Longrightarrow>
+    (aggargs_g0 args \<Longrightarrow> G \<subseteq> {0..<length (aggargs_tys args)}) \<Longrightarrow>
+    A = Set.insert (aggargs_y args)
+      ((\<lambda>i. i - length (aggargs_tys args)) ` (G - {0..<length (aggargs_tys args)})) \<Longrightarrow>
     mok n A tw (mformula.MAgg args \<phi>)"
 | MokAnds: "length L = length ((A0 # As) @ A_neg) \<Longrightarrow>
     length buf = length ((A0 # As) @ A_neg) \<Longrightarrow>
@@ -79,17 +79,19 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
     saux_inv args m L R tw buf aux \<Longrightarrow> args_agg args = Some aggargs \<Longrightarrow>
     args_n args = m \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> L \<subseteq> R \<Longrightarrow>
     m = length (aggargs_tys aggargs) + n \<Longrightarrow> aggargs_n aggargs = n \<Longrightarrow>
-    aggargs_y aggargs < n \<Longrightarrow> (\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i) \<Longrightarrow>
-    (aggargs_g0 aggargs \<Longrightarrow> R = {}) \<Longrightarrow>
-    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R) \<Longrightarrow>
+    aggargs_y aggargs < n \<Longrightarrow>
+    (aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}) \<Longrightarrow>
+    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs))
+      ` (R - {0..<length (aggargs_tys aggargs)})) \<Longrightarrow>
     mok n A tw (mformula.MSince args \<phi> \<psi> buf aux)"
 | MokUntilAgg: "mok m L tw \<phi> \<Longrightarrow> mok m R tw \<psi> \<Longrightarrow>
     until_inv args m L R tw t aux buf nts \<Longrightarrow> args_agg args = Some aggargs \<Longrightarrow>
     args_n args = m \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow> L \<subseteq> R \<Longrightarrow>
     m = length (aggargs_tys aggargs) + n \<Longrightarrow> aggargs_n aggargs = n \<Longrightarrow>
-    aggargs_y aggargs < n \<Longrightarrow> (\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i) \<Longrightarrow>
-    (aggargs_g0 aggargs \<Longrightarrow> R = {}) \<Longrightarrow>
-    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R) \<Longrightarrow>
+    aggargs_y aggargs < n \<Longrightarrow>
+    (aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}) \<Longrightarrow>
+    A = Set.insert (aggargs_y aggargs) ((\<lambda>i. i - length (aggargs_tys aggargs))
+      ` (R - {0..<length (aggargs_tys aggargs)})) \<Longrightarrow>
     mok n A tw (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
 | MokTrigger: "mok n L tw \<phi> \<Longrightarrow> mok n R tw \<psi> \<Longrightarrow>
     trigger_inv args n L R tw aux buf nts \<Longrightarrow> args_n args = n \<Longrightarrow>
@@ -191,16 +193,16 @@ next
         MokUntil(7) MokUntil(8) MokUntil(9) MokUntil(10)])
 next
   case MokSinceAgg
-  show ?case unfolding MokSinceAgg(16)
+  show ?case unfolding MokSinceAgg(15)
     by (rule produces_MSince_agg[OF MokSinceAgg(2) MokSinceAgg(4) MokSinceAgg(5)
         MokSinceAgg(7) MokSinceAgg(8) MokSinceAgg(9) MokSinceAgg(10) MokSinceAgg(6)
-        MokSinceAgg(11) MokSinceAgg(12) MokSinceAgg(13) MokSinceAgg(14) MokSinceAgg(15)])
+        MokSinceAgg(11) MokSinceAgg(12) MokSinceAgg(13) MokSinceAgg(14)])
 next
   case MokUntilAgg
-  show ?case unfolding MokUntilAgg(16)
+  show ?case unfolding MokUntilAgg(15)
     by (rule produces_MUntil_agg[OF MokUntilAgg(2) MokUntilAgg(4) MokUntilAgg(5)
         MokUntilAgg(7) MokUntilAgg(8) MokUntilAgg(9) MokUntilAgg(10) MokUntilAgg(6)
-        MokUntilAgg(11) MokUntilAgg(12) MokUntilAgg(13) MokUntilAgg(14) MokUntilAgg(15)])
+        MokUntilAgg(11) MokUntilAgg(12) MokUntilAgg(13) MokUntilAgg(14)])
 next
   case MokTrigger
   show ?case

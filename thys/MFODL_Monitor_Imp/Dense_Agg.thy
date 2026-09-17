@@ -182,10 +182,10 @@ lemma ftable_result_mmasaux_agg:
     and agg: "args_agg args = Some aggargs"
     and ty: "n = length (aggargs_tys aggargs) + nr"
     and an': "aggargs_n aggargs = nr" and y: "aggargs_y aggargs < nr"
-    and sh: "\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i"
-    and g0: "aggargs_g0 aggargs \<Longrightarrow> R = {}"
+    and g0: "aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}"
   shows "ftable nr (Set.insert (aggargs_y aggargs)
-      ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R)) (result_mmasaux args aux)"
+      ((\<lambda>i. i - length (aggargs_tys aggargs))
+        ` (R - {0..<length (aggargs_tys aggargs)}))) (result_mmasaux args aux)"
 proof -
   have f: "ftable n R (foldr (\<union>)
       [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
@@ -194,24 +194,24 @@ proof -
       (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
     using default_mmasaux.valid_result_msaux[OF v] by (simp add: eval_args_agg_def agg)
   show ?thesis unfolding e eval_aggargs_def an'
-    by (rule ftable_eval_agg[OF _ _ y sh g0]) (use f ty in auto)
+    by (rule ftable_eval_agg[OF _ _ y g0]) (use f ty in auto)
 qed
 
 lemma ftable_eval_args_agg:
   assumes agg: "args_agg args = Some aggargs"
     and ty: "n = length (aggargs_tys aggargs) + nr"
     and an': "aggargs_n aggargs = nr" and y: "aggargs_y aggargs < nr"
-    and sh: "\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i"
-    and g0: "aggargs_g0 aggargs \<Longrightarrow> R = {}"
+    and g0: "aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}"
     and f: "ftable n R X"
   shows "ftable nr (Set.insert (aggargs_y aggargs)
-      ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R)) (eval_args_agg args X)"
+      ((\<lambda>i. i - length (aggargs_tys aggargs))
+        ` (R - {0..<length (aggargs_tys aggargs)}))) (eval_args_agg args X)"
 proof -
   have e: "eval_args_agg args X = eval_agg nr (aggargs_g0 aggargs) (aggargs_y aggargs)
       (aggargs_\<omega> aggargs) (aggargs_tys aggargs) (aggargs_f aggargs) X"
     by (simp add: eval_args_agg_def agg eval_aggargs_def an')
   show ?thesis unfolding e
-    by (rule ftable_eval_agg[OF _ _ y sh g0]) (use f ty in auto)
+    by (rule ftable_eval_agg[OF _ _ y g0]) (use f ty in auto)
 qed
 
 lemma produces_MSince_agg:
@@ -223,17 +223,18 @@ lemma produces_MSince_agg:
     and agg: "args_agg args = Some aggargs"
     and ty: "n = length (aggargs_tys aggargs) + nr"
     and an': "aggargs_n aggargs = nr" and y: "aggargs_y aggargs < nr"
-    and sh: "\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i"
-    and g0: "aggargs_g0 aggargs \<Longrightarrow> R = {}"
+    and g0: "aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}"
   shows "produces nr (Set.insert (aggargs_y aggargs)
-      ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R)) tw (mformula.MSince args \<phi> \<psi> buf aux)"
+      ((\<lambda>i. i - length (aggargs_tys aggargs))
+        ` (R - {0..<length (aggargs_tys aggargs)}))) tw (mformula.MSince args \<phi> \<psi> buf aux)"
 proof (rule produces_MSince_gen[OF p1 p2 r an aL aR sub])
   fix cur' aux'' al
   assume "valid_mmasaux args cur' aux'' al"
     and "\<forall>(v, rel) \<in> set al. ftable n R rel"
   then show "ftable nr (Set.insert (aggargs_y aggargs)
-      ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R)) (result_mmasaux args aux'')"
-    by (rule ftable_result_mmasaux_agg[OF _ _ agg ty an' y sh g0])
+      ((\<lambda>i. i - length (aggargs_tys aggargs))
+        ` (R - {0..<length (aggargs_tys aggargs)}))) (result_mmasaux args aux'')"
+    by (rule ftable_result_mmasaux_agg[OF _ _ agg ty an' y g0])
 qed
 
 subsection \<open>The Until node, over an arbitrary output frame\<close>
@@ -384,13 +385,13 @@ lemma produces_MUntil_agg:
     and agg: "args_agg args = Some aggargs"
     and ty: "n = length (aggargs_tys aggargs) + nr"
     and an': "aggargs_n aggargs = nr" and y: "aggargs_y aggargs < nr"
-    and sh: "\<forall>i \<in> R. length (aggargs_tys aggargs) \<le> i"
-    and g0: "aggargs_g0 aggargs \<Longrightarrow> R = {}"
+    and g0: "aggargs_g0 aggargs \<Longrightarrow> R \<subseteq> {0..<length (aggargs_tys aggargs)}"
   shows "produces nr (Set.insert (aggargs_y aggargs)
-      ((\<lambda>i. i - length (aggargs_tys aggargs)) ` R)) tw
+      ((\<lambda>i. i - length (aggargs_tys aggargs))
+        ` (R - {0..<length (aggargs_tys aggargs)}))) tw
       (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
   by (rule produces_MUntil_gen[OF p1 p2 r an aL aR sub
-        ftable_eval_args_agg[OF agg ty an' y sh g0]])
+        ftable_eval_args_agg[OF agg ty an' y g0]])
 
 (*<*)
 end
