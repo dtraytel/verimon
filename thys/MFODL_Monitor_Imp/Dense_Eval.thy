@@ -77,9 +77,14 @@ datatype dformula =
   | DAnd djoin_plan dformula bool dformula "event_data mbuf2"
   | DPrev \<I> dformula bool "event_data table list" "ts list"
   | DNext \<I> dformula bool "ts list"
+  | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mbufn"
 
-fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula" where
-  "deval j ts db (DPure \<phi> m msk) =
+fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
+  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
+    (event_data table list \<times> dformula) list" where
+  "deval_list j ts db [] = []"
+| "deval_list j ts db (\<phi> # r) = deval j ts db \<phi> # deval_list j ts db r"
+| "deval j ts db (DPure \<phi> m msk) =
      (let (xs, \<phi>') = meval j m ts db \<phi> in (map (dnarrow msk) xs, DPure \<phi>' m msk))"
 | "deval j ts db (DRel rel) = (replicate (length ts) rel, DRel rel)"
 | "deval j ts db (DPredS e ar) =
@@ -119,6 +124,11 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
           (xs, first') = (case (xs, first) of (_ # xs', True) \<Rightarrow> (xs', False) | a \<Rightarrow> a);
           (zs, _, nts') = mprev_next I xs (nts @ ts)
       in (zs, DNext I \<phi>' first' nts'))"
+| "deval j ts db (DAnds ps ns Ld dbuf) =
+     (let R = deval_list j ts db Ld;
+          (zs, dbuf') = mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as]) []
+            (mbufn_add (map fst R) dbuf)
+      in (zs, DAnds ps ns (map snd R) dbuf'))"
 
 section \<open>The simulation relation\<close>
 
@@ -136,6 +146,11 @@ definition dbuf2 :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> eve
   "dbuf2 n cs1 cs2 buf dbuf \<longleftrightarrow>
      list_all (ftable n (set cs1)) (fst buf) \<and> list_all (ftable n (set cs2)) (snd buf) \<and>
      dbuf = (map (dtabc n cs1) (fst buf), map (dtabc n cs2) (snd buf))"
+
+definition dbufn :: "nat \<Rightarrow> cols list \<Rightarrow> event_data mbufn \<Rightarrow> event_data mbufn \<Rightarrow> bool" where
+  "dbufn n css buf dbuf \<longleftrightarrow> length buf = length css \<and>
+     (\<forall>i < length css. list_all (ftable n (set (css ! i))) (buf ! i)) \<and>
+     dbuf = map2 map (map (dtabc n) css) buf"
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> dformula \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool" where
@@ -185,6 +200,18 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> dformula \<Rightarrow>
     produces n (set cs) (mformula.MNext I \<phi> first nts) \<Longrightarrow>
     dsim n cs \<phi>d \<phi> \<Longrightarrow>
     dsim n cs (DNext I \<phi>d first nts) (mformula.MNext I \<phi> first nts)"
+| DsAnds: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs)
+      (mformula.MAnds (set c0 # map set css) (map set nss) L buf) \<Longrightarrow>
+    (\<forall>i < length L. dsim n ((c0 # css @ nss) ! i) (Ld ! i) (L ! i)) \<Longrightarrow>
+    length Ld = length L \<Longrightarrow> length (c0 # css @ nss) = length L \<Longrightarrow>
+    (\<forall>c \<in> set (c0 # css @ nss). wf_cols n c) \<Longrightarrow>
+    (\<forall>c \<in> set nss. set c \<subseteq> set (dands_cols c0 css)) \<Longrightarrow>
+    cs = dands_cols c0 css \<Longrightarrow>
+    ps = dands_plans c0 css \<Longrightarrow> ns = dands_plans (dands_cols c0 css) nss \<Longrightarrow>
+    dbufn n (c0 # css @ nss) buf dbuf \<Longrightarrow>
+    dsim n cs (DAnds ps ns Ld dbuf)
+      (mformula.MAnds (set c0 # map set css) (map set nss) L buf)"
 | DsAgg: "wf_cols n cs \<Longrightarrow> produces n (set cs) (mformula.MAgg args \<phi>) \<Longrightarrow>
     dsim (length (aggargs_tys args) + n) (agg_cols (length (aggargs_tys args)) gcols) \<phi>d \<phi> \<Longrightarrow>
     wf_cols n gcols \<Longrightarrow> aggargs_n args = n \<Longrightarrow> aggargs_y args = y \<Longrightarrow>
@@ -236,6 +263,174 @@ proof -
     using mbuf2_take_sub[of f b1 b2 zs c1 c2] t1 buf buf' by auto
   ultimately show ?thesis using d l1 l2 buf' by (auto simp: dbuf2_def list_all_iff)
 qed
+
+subsection \<open>The multi-way buffer of narrowed tables\<close>
+
+lemma map2_apply_map: "map2 (\<lambda>h a. h a) (map f as) bs = map2 f as bs"
+proof (induct as arbitrary: bs)
+  case (Cons a as) then show ?case by (cases bs) auto
+qed simp
+
+lemma map2_map_map: "map2 map (map f css) xss = map2 (\<lambda>c x. map (f c) x) css xss"
+proof (induct css arbitrary: xss)
+  case (Cons c css) then show ?case by (cases xss) auto
+qed simp
+
+lemma dbufn_add:
+  assumes b: "dbufn n css buf dbuf" and l: "length xss = length css"
+    and t: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (xss ! i)"
+  shows "dbufn n css (mbufn_add xss buf)
+      (mbufn_add (map2 (\<lambda>c x. map (dtabc n c) x) css xss) dbuf)"
+proof -
+  have lb: "length buf = length css"
+    and lt: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (buf ! i)"
+    and d: "dbuf = map2 map (map (dtabc n) css) buf"
+    using b by (auto simp: dbufn_def)
+  have "\<forall>i < length css. list_all (ftable n (set (css ! i))) (mbufn_add xss buf ! i)"
+    using lt t lb l by (auto simp: list_all_iff)
+  moreover have "mbufn_add (map2 (\<lambda>c x. map (dtabc n c) x) css xss) dbuf
+      = map2 map (map (dtabc n) css) (mbufn_add xss buf)"
+  proof -
+    have "map2 map (map (dtabc n) css) (mbufn_add xss buf)
+        = mbufn_add (map2 map (map (dtabc n) css) xss) (map2 map (map (dtabc n) css) buf)"
+      by (rule mbufn_add_map2) (use lb l in simp_all)
+    then show ?thesis unfolding d by (simp add: map2_map_map)
+  qed
+  ultimately show ?thesis using lb l by (simp add: dbufn_def)
+qed
+
+lemma dbufn_take:
+  fixes f g :: "event_data table list \<Rightarrow> event_data table"
+    and buf buf' dbuf :: "event_data mbufn" and zs :: "event_data table list"
+  assumes b: "dbufn n css buf dbuf"
+    and eq: "\<And>as :: event_data table list. length as = length css \<Longrightarrow>
+        (\<forall>i < length css. ftable n (set (css ! i)) (as ! i)) \<Longrightarrow>
+        dtabc n cs (f as) = g (map2 (dtabc n) css as)"
+    and t: "mbufn_take (\<lambda>as zs. zs @ [f as]) [] buf = (zs, buf')"
+  shows "\<exists>dbuf'. mbufn_take (\<lambda>as zs. zs @ [g as]) [] dbuf = (map (dtabc n cs) zs, dbuf')
+      \<and> dbufn n css buf' dbuf'"
+proof -
+  have lb: "length buf = length css"
+    and lt: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (buf ! i)"
+    and d: "dbuf = map2 map (map (dtabc n) css) buf"
+    using b by (auto simp: dbufn_def)
+  define hs :: "(event_data table \<Rightarrow> event_data table) list"
+    where "hs = map (dtabc n) css"
+  define Ss :: "event_data table set list"
+    where "Ss = map (\<lambda>c. {T. ftable n (set c) T}) css"
+  obtain w2 buf2 where e2: "mbufn_take (\<lambda>as zs. zs @ [g as])
+      ([] :: event_data table list) dbuf = (w2, buf2)"
+    by (cases "mbufn_take (\<lambda>as zs. zs @ [g as]) ([] :: event_data table list) dbuf") auto
+  have sub: "\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i"
+    using lt lb by (auto simp: Ss_def list_all_iff)
+  have step: "\<And>as :: event_data table list. \<And>u u' :: event_data table list.
+      length as = length hs \<Longrightarrow>
+      (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> u' = map (dtabc n cs) u \<Longrightarrow>
+      u' @ [g (map2 (\<lambda>h a. h a) hs as)] = map (dtabc n cs) (u @ [f as])"
+  proof -
+    fix as u u' :: "event_data table list"
+    assume la: "length as = length hs"
+      and ma: "\<forall>i < length as. as ! i \<in> Ss ! i" and mu: "u' = map (dtabc n cs) u"
+    have la': "length as = length css" using la by (simp add: hs_def)
+    have ma': "\<forall>i < length css. ftable n (set (css ! i)) (as ! i)"
+      using ma la' by (auto simp: Ss_def)
+    show "u' @ [g (map2 (\<lambda>h a. h a) hs as)] = map (dtabc n cs) (u @ [f as])"
+      using mu eq[OF la' ma'] by (simp add: hs_def map2_apply_map)
+  qed
+  have r: "(w2 = map (dtabc n cs) zs) \<and> buf2 = map2 map hs buf'"
+  proof (rule mbufn_take_rel[where R = "\<lambda>u u'. u' = map (dtabc n cs) u" and Ss = Ss
+        and hs = hs and f = "\<lambda>as zs. zs @ [f as]" and g = "\<lambda>as zs. zs @ [g as]"
+        and z = "[]" and z' = "[]" and buf = buf and buf' = buf' and w = zs])
+    show "length hs = length buf" using lb by (simp add: hs_def)
+    show "length Ss = length buf" using lb by (simp add: Ss_def)
+    show "\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i" by (rule sub)
+    show "\<And>as u u'. length as = length hs \<Longrightarrow>
+        (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> u' = map (dtabc n cs) u \<Longrightarrow>
+        u' @ [g (map2 (\<lambda>h a. h a) hs as)] = map (dtabc n cs) (u @ [f as])"
+      by (rule step)
+    show "([] :: event_data table list) = map (dtabc n cs) []" by simp
+    show "mbufn_take (\<lambda>as zs. zs @ [f as]) [] buf = (zs, buf')" by (rule t)
+    show "mbufn_take (\<lambda>as zs. zs @ [g as]) [] (map2 map hs buf) = (w2, buf2)"
+      using e2 d by (simp add: hs_def)
+  qed
+  have ls: "length buf' = length buf"
+    and ss: "\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i)"
+    using mbufn_take_sub[OF t] by auto
+  have "dbufn n css buf' buf2"
+    using lt lb ls ss r by (fastforce simp: dbufn_def hs_def list_all_iff)
+  then show ?thesis using e2 r by auto
+qed
+
+subsection \<open>Stepping a list of operands\<close>
+
+lemma dsims_tables:
+  "(\<forall>i < length L. dsim n (css ! i) (Ld ! i) (L ! i)) \<Longrightarrow>
+   length Ld = length L \<Longrightarrow> length css = length L \<Longrightarrow> wf_db db \<Longrightarrow> i < length L \<Longrightarrow>
+     list_all (ftable n (set (css ! i))) (fst (meval j n ts db (L ! i)))"
+proof (induct L arbitrary: css Ld i)
+  case (Cons \<psi> L')
+  note la = Cons(2) and l1 = Cons(3) and l2 = Cons(4) and w = Cons(5) and i = Cons(6)
+    and IH = Cons(1)
+  obtain c css' where c: "css = c # css'" using l2 by (cases css) auto
+  obtain \<psi>d Ld' where d: "Ld = \<psi>d # Ld'" using l1 by (cases Ld) auto
+  show ?case
+  proof (cases i)
+    case 0
+    have h: "dsim n c \<psi>d \<psi>" using la unfolding c d by (auto dest: spec[of _ 0])
+    obtain as \<psi>2 where e: "meval j n ts db \<psi> = (as, \<psi>2)" by (cases "meval j n ts db \<psi>")
+    have "list_all (ftable n (set c)) as" by (rule produces_tables[OF dsim_produces[OF h] w e])
+    then show ?thesis unfolding c 0 using e by simp
+  next
+    case (Suc i')
+    have ta: "\<forall>k < length L'. dsim n (css' ! k) (Ld' ! k) (L' ! k)"
+      using la unfolding c d by auto
+    show ?thesis using IH[OF ta _ _ w] l1 l2 i unfolding c d Suc by simp
+  qed
+qed simp
+
+lemma deval_list_rel:
+  "length Ld = length L \<Longrightarrow> length css = length L \<Longrightarrow>
+   (\<forall>i < length L. dsim n (css ! i) (Ld ! i) (L ! i) \<and>
+       (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
+          (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (css ! i)) as, \<psi>d')
+             \<and> dsim n (css ! i) \<psi>d' \<psi>'))) \<Longrightarrow>
+   length (deval_list j ts db Ld) = length L \<and>
+   map fst (deval_list j ts db Ld)
+       = map2 (\<lambda>c x. map (dtabc n c) x) css (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
+   (\<forall>i < length L. dsim n (css ! i) (map snd (deval_list j ts db Ld) ! i)
+       (snd (meval j n ts db (L ! i))))"
+proof (induct L arbitrary: css Ld)
+  case (Cons \<psi> L')
+  note l1 = Cons(2) and l2 = Cons(3) and la = Cons(4) and IH = Cons(1)
+  obtain c css' where c: "css = c # css'" using l2 by (cases css) auto
+  obtain \<psi>d Ld' where d: "Ld = \<psi>d # Ld'" using l1 by (cases Ld) auto
+  have h: "dsim n c \<psi>d \<psi> \<and> (\<forall>as \<psi>'. meval j n ts db \<psi> = (as, \<psi>') \<longrightarrow>
+      (\<exists>\<psi>d'. deval j ts db \<psi>d = (map (dtabc n c) as, \<psi>d') \<and> dsim n c \<psi>d' \<psi>'))"
+    using la unfolding c d by (auto dest: spec[of _ 0])
+  have ta: "\<forall>k < length L'. dsim n (css' ! k) (Ld' ! k) (L' ! k) \<and>
+      (\<forall>as \<psi>'. meval j n ts db (L' ! k) = (as, \<psi>') \<longrightarrow>
+         (\<exists>\<psi>d'. deval j ts db (Ld' ! k) = (map (dtabc n (css' ! k)) as, \<psi>d')
+            \<and> dsim n (css' ! k) \<psi>d' \<psi>'))"
+    using la unfolding c d by auto
+  obtain as \<psi>2 where e: "meval j n ts db \<psi> = (as, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain \<psi>d2 where dv: "deval j ts db \<psi>d = (map (dtabc n c) as, \<psi>d2)"
+    and sm: "dsim n c \<psi>d2 \<psi>2" using h e by blast
+  have rest: "length (deval_list j ts db Ld') = length L' \<and>
+      map fst (deval_list j ts db Ld')
+        = map2 (\<lambda>c x. map (dtabc n c) x) css'
+            (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L') \<and>
+      (\<forall>k < length L'. dsim n (css' ! k) (map snd (deval_list j ts db Ld') ! k)
+          (snd (meval j n ts db (L' ! k))))"
+  proof (rule IH)
+    show "length Ld' = length L'" using l1 unfolding d by simp
+    show "length css' = length L'" using l2 unfolding c by simp
+    show "\<forall>k < length L'. dsim n (css' ! k) (Ld' ! k) (L' ! k) \<and>
+        (\<forall>as \<psi>'. meval j n ts db (L' ! k) = (as, \<psi>') \<longrightarrow>
+           (\<exists>\<psi>d'. deval j ts db (Ld' ! k) = (map (dtabc n (css' ! k)) as, \<psi>d')
+              \<and> dsim n (css' ! k) \<psi>d' \<psi>'))" by (rule ta)
+  qed
+  show ?case unfolding c d using rest dv sm e by (auto simp: nth_Cons split: nat.splits)
+qed simp
 
 text \<open>
   The simulation itself.  Every case is one theorem of @{theory MFODL_Monitor_Imp.Dense}
@@ -547,6 +742,141 @@ next
     by (rule mprev_next_map[OF _ g]) simp
   show ?case using d c' g' x f sim' produces_next[OF pr w m] wf
     by (auto intro!: dsim.DsNext)
+next
+  case (DsAnds n cs c0 css nss L buf Ld ps ns dbuf)
+  note wf = DsAnds.hyps(1) and pr = DsAnds.hyps(2) and la = DsAnds.hyps(3)
+    and l1 = DsAnds.hyps(4) and l2 = DsAnds.hyps(5) and wc = DsAnds.hyps(6)
+    and sb = DsAnds.hyps(7) and cse = DsAnds.hyps(8) and pse = DsAnds.hyps(9)
+    and nse = DsAnds.hyps(10) and bf = DsAnds.hyps(11)
+    and w = DsAnds.prems(1) and m = DsAnds.prems(2)
+  let ?cs' = "c0 # css @ nss"
+  let ?R = "map (meval j n ts db) L"
+  obtain zs buf' where g0: "mbufn_take
+      (\<lambda>as zs. zs @ [mmulti_join n (set c0 # map set css) (map set nss) as])
+      ([] :: event_data table list) (mbufn_add (map fst ?R) buf) = (zs, buf')"
+    by (cases "mbufn_take
+      (\<lambda>as zs. zs @ [mmulti_join n (set c0 # map set css) (map set nss) as])
+      ([] :: event_data table list) (mbufn_add (map fst ?R) buf)") auto
+  have x: "xs = zs"
+    and fe: "\<phi>' = mformula.MAnds (set c0 # map set css) (map set nss) (map snd ?R) buf'"
+    using m g0 by (simp_all add: Let_def del: mbufn_take.simps mmulti_join.simps)
+  \<comment> \<open>the operands, and their narrowing\<close>
+  have la0: "\<forall>i < length L. dsim n (?cs' ! i) (Ld ! i) (L ! i)" using la by blast
+  have tabs: "\<forall>i < length ?cs'. list_all (ftable n (set (?cs' ! i))) (map fst ?R ! i)"
+  proof (intro allI impI)
+    fix i assume i: "i < length ?cs'"
+    then have iL: "i < length L" using l2 by simp
+    have "list_all (ftable n (set (?cs' ! i))) (fst (meval j n ts db (L ! i)))"
+      by (rule dsims_tables[OF la0 l1 l2 w iL])
+    then show "list_all (ftable n (set (?cs' ! i))) (map fst ?R ! i)"
+      using iL by simp
+  qed
+  have la1: "\<forall>i < length L. dsim n (?cs' ! i) (Ld ! i) (L ! i) \<and>
+      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
+         (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (?cs' ! i)) as, \<psi>d')
+            \<and> dsim n (?cs' ! i) \<psi>d' \<psi>'))"
+    using la w by blast
+  have dlr: "length (deval_list j ts db Ld) = length L \<and>
+      map fst (deval_list j ts db Ld)
+        = map2 (\<lambda>c y. map (dtabc n c) y) ?cs'
+            (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
+      (\<forall>i < length L. dsim n (?cs' ! i) (map snd (deval_list j ts db Ld) ! i)
+          (snd (meval j n ts db (L ! i))))"
+    by (rule deval_list_rel[OF l1 l2 la1])
+  have dl0: "length (deval_list j ts db Ld) = length L" using dlr by blast
+  have dl: "map fst (deval_list j ts db Ld)
+      = map2 (\<lambda>c y. map (dtabc n c) y) ?cs' (map fst ?R)"
+    using dlr by (simp add: comp_def)
+  have dl2: "\<forall>i < length L. dsim n (?cs' ! i) (map snd (deval_list j ts db Ld) ! i)
+      (snd (meval j n ts db (L ! i)))" using dlr by blast
+  \<comment> \<open>the buffer\<close>
+  have badd: "dbufn n ?cs' (mbufn_add (map fst ?R) buf)
+      (mbufn_add (map fst (deval_list j ts db Ld)) dbuf)"
+    unfolding dl by (rule dbufn_add[OF bf _ tabs]) (use l2 in simp)
+  \<comment> \<open>the join at each firing\<close>
+  have step: "\<And>as :: event_data table list. length as = length ?cs' \<Longrightarrow>
+      (\<forall>i < length ?cs'. ftable n (set (?cs' ! i)) (as ! i)) \<Longrightarrow>
+      dtabc n cs (mmulti_join n (set c0 # map set css) (map set nss) as)
+        = dmulti_join ps ns (map2 (dtabc n) ?cs' as)"
+  proof -
+    fix as :: "event_data table list"
+    assume las: "length as = length ?cs'"
+      and mas: "\<forall>i < length ?cs'. ftable n (set (?cs' ! i)) (as ! i)"
+    obtain T0 r where a0: "as = T0 # r" using las by (cases as) auto
+    have lr: "length r = length css + length nss" using las a0 by simp
+    define Us where "Us = take (length css) r"
+    define Vs where "Vs = drop (length css) r"
+    have uv: "r = Us @ Vs" by (simp add: Us_def Vs_def)
+    have lu: "length Us = length css" using lr by (simp add: Us_def)
+    have lv: "length Vs = length nss" using lr by (simp add: Vs_def)
+    have p0: "\<forall>i < length css. ftable n (set (css ! i)) (Us ! i)"
+    proof (intro allI impI)
+      fix i assume i: "i < length css"
+      have "ftable n (set (?cs' ! Suc i)) (as ! Suc i)"
+        using mas[rule_format, of "Suc i"] i by simp
+      then show "ftable n (set (css ! i)) (Us ! i)"
+        using i lu unfolding a0 uv by (simp add: nth_append)
+    qed
+    have p1: "\<forall>i < length nss. ftable n (set (nss ! i)) (Vs ! i)"
+    proof (intro allI impI)
+      fix i assume i: "i < length nss"
+      have "ftable n (set (?cs' ! Suc (length css + i))) (as ! Suc (length css + i))"
+        using mas[rule_format, of "Suc (length css + i)"] i by simp
+      then show "ftable n (set (nss ! i)) (Vs ! i)"
+        using i lu unfolding a0 uv by (simp add: nth_append)
+    qed
+    have wc0: "wf_cols n c0" and wcp: "\<forall>c \<in> set css. wf_cols n c"
+        and wcn: "\<forall>c \<in> set nss. wf_cols n c"
+      using wc by auto
+    have t0: "table n (set c0) T0" and f0: "finite T0"
+      using mas[rule_format, of 0] a0 by auto
+    have pos: "list_all2 (wf_operand n) css Us"
+      using lu p0 wcp by (auto simp: list_all2_conv_all_nth)
+    have neg: "list_all2 (wf_operand n) nss Vs"
+      using lv p1 wcn by (auto simp: list_all2_conv_all_nth)
+    have DJ: "dmulti_join (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
+          (map2 (dtabc n) (c0 # css @ nss) ((T0 # Us) @ Vs))
+        = dtabc n (dands_cols c0 css)
+            (mmulti_join n (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs))"
+      by (rule dmulti_join_eq[OF conjunct1[OF wc0] conjunct2[OF wc0] t0 f0 pos neg sb])
+    show "dtabc n cs (mmulti_join n (set c0 # map set css) (map set nss) as)
+        = dmulti_join ps ns (map2 (dtabc n) ?cs' as)"
+      using DJ unfolding cse pse nse a0 uv by simp
+  qed
+  obtain dbuf' where dt: "mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as])
+        ([] :: event_data table list) (mbufn_add (map fst (deval_list j ts db Ld)) dbuf)
+      = (map (dtabc n cs) zs, dbuf')"
+    and bf': "dbufn n ?cs' buf' dbuf'"
+    using dbufn_take[OF badd step g0] by blast
+  have dv: "deval j ts db (DAnds ps ns Ld dbuf)
+      = (map (dtabc n cs) xs, DAnds ps ns (map snd (deval_list j ts db Ld)) dbuf')"
+    using dt x by (simp add: Let_def del: mbufn_take.simps)
+  have s2: "dsim n cs (DAnds ps ns (map snd (deval_list j ts db Ld)) dbuf')
+      (mformula.MAnds (set c0 # map set css) (map set nss) (map snd ?R) buf')"
+  proof (rule dsim.DsAnds)
+    show "wf_cols n cs" by (rule wf)
+    show "produces n (set cs)
+        (mformula.MAnds (set c0 # map set css) (map set nss) (map snd ?R) buf')"
+      using produces_next[OF pr w m] fe by simp
+    show "\<forall>i < length (map snd ?R). dsim n (?cs' ! i)
+        (map snd (deval_list j ts db Ld) ! i) (map snd ?R ! i)"
+    proof (intro allI impI)
+      fix i assume "i < length (map snd ?R)"
+      then have iL: "i < length L" by simp
+      show "dsim n (?cs' ! i) (map snd (deval_list j ts db Ld) ! i) (map snd ?R ! i)"
+        using dl2 iL by simp
+    qed
+    show "length (map snd (deval_list j ts db Ld)) = length (map snd ?R)"
+      using dl0 by simp
+    show "length ?cs' = length (map snd ?R)" using l2 by simp
+    show "\<forall>c \<in> set ?cs'. wf_cols n c" by (rule wc)
+    show "\<forall>c \<in> set nss. set c \<subseteq> set (dands_cols c0 css)" by (rule sb)
+    show "cs = dands_cols c0 css" by (rule cse)
+    show "ps = dands_plans c0 css" by (rule pse)
+    show "ns = dands_plans (dands_cols c0 css) nss" by (rule nse)
+    show "dbufn n ?cs' buf' dbuf'" by (rule bf')
+  qed
+  show ?case using dv s2 fe by auto
 next
   case (DsAgg n cs args \<phi> gcols \<phi>d y)
   note wf = DsAgg.hyps(1) and pr = DsAgg.hyps(2) and sim = DsAgg.hyps(3) and IH = DsAgg.hyps(4)

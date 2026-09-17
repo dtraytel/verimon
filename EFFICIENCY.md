@@ -2597,7 +2597,7 @@ kernel. That is evidence, not a proof. The goal of this section is a refinement 
 dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
 verified one.
 
-*Work in progress. 20.1-20.4 are done, 20.5 all but the multi-way conjunction and the temporal nodes; 20.6 is what is left.*
+*Work in progress. 20.1-20.4 are done, 20.5 all but the temporal nodes; 20.6 is what is left.*
 
 ### 20.1 The pair of morphisms
 
@@ -2639,7 +2639,7 @@ the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 2557 lines and 168 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2656 lines and 174 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2786,9 +2786,9 @@ column list and so its own narrowing: it relates `mbufn_take f z buf` to
 `mbufn_take g z' (map2 map hs buf)` for a list `hs` of per-slot narrowings, under a step condition
 that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
-### 20.5 The simulation (all but the multi-way conjunction and the temporal nodes)
+### 20.5 The simulation (all but the temporal nodes)
 
-`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 578 lines, no `sorry`. This is the part that turns
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 908 lines, no `sorry`. This is the part that turns
 20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
 
 **Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
@@ -2843,6 +2843,17 @@ definition dbuf2 :: "nat ⇒ cols ⇒ cols ⇒ event_data mbuf2 ⇒ event_data m
 -- the two halves may live at different column lists, as they do at an `MAnd`. `dbuf2_add` and
 `dbuf2_take` package `mbuf2_add_map`, `mbuf2_take_map` and the new `mbuf2_take_sub` (a take only
 removes a prefix, so whatever stays in the buffer was already there, and so is still well formed).
+The multi-way conjunction has its own relation, one column list per slot:
+
+```isabelle
+definition dbufn :: "nat ⇒ cols list ⇒ event_data mbufn ⇒ event_data mbufn ⇒ bool" where
+  "dbufn n css buf dbuf ⟷ length buf = length css ∧
+     (∀i < length css. list_all (ftable n (set (css ! i))) (buf ! i)) ∧
+     dbuf = map2 map (map (dtabc n) css) buf"
+```
+
+with `dbufn_add` and `dbufn_take` packaging `mbufn_add_map2`, `mbufn_take_rel` and the new
+`mbufn_take_sub`.
 
 **The theorem.**
 
@@ -2871,6 +2882,7 @@ list, with `produces_next` re-establishing the invariant for the successor:
 | `DAnd` | `dbin_join_bin_join` + `dbuf2_add` / `dbuf2_take` |
 | `DAgg` | `dagg_eval_agg` |
 | `DPrev`, `DNext` | `mprev_next_map` + `mprev_next_sub` (new, the leftover-buffer analogue of `mbuf2_take_sub`) |
+| `DAnds` | `dmulti_join_eq` (new) + `dbufn_add` / `dbufn_take` |
 
 `eval_constraint_reindex` is the one algebraic law 20.2 was missing. `reindex_constraint` moves
 into `Dense.thy` (it was unverified in `Dense_Imp.thy`) and
@@ -2887,14 +2899,25 @@ lemma eval_constraint_reindex:
 `meval_trm_reindex` is the same value, and filtering commutes with an image without needing any
 injectivity.
 
+`dmulti_join_eq` is the multi-way join in the shape the evaluator calls it -- one plan list for the
+positive operands, one for the negative ones, and the operand tables as a single list -- against
+the `mmulti_join` the monitor actually runs. Two steps: `mmulti_join_eq_mmulti_join'` says that
+whichever of the generic and the pairwise join the monitor picks at run time, it agrees with the
+`mmulti_join'` that 20.2's `dmulti_join_dtabc` is stated over (both have the same membership
+characterisation; the pairwise one additionally needs the negated conjuncts' columns covered, which
+holds for every safe formula), and then `dmulti_join_dtabc` itself.
+
+The `DAnds` node is where `deval` becomes mutually recursive with `deval_list`, and the relation
+takes its operand list slot by slot: `∀i < length L. dsim n ((c0 # css @ nss) ! i) (Ld ! i) (L ! i)`.
+That indexed form rather than a `list_all2` is deliberate -- the inductive package derives the
+induction hypothesis through `∀`/`⟶` but not through a `list_all2` of a pair-splitting lambda.
+
 ### 20.6 What is left
 
-1. **The remaining nodes of `dsim` / `deval`.** `MAnds`, `MSince`, `MUntil`. The algebra for all
-   of them is in 20.2-20.4 (`dmulti_join_dtabc` + `mbufn_take_rel`, `dauxlist*` +
-   `mbuf2t_take_rel`); what is left is the node case itself. For `MAnds` the bridge from the
-   monitor's own `mmulti_join` to the `mmulti_join'` that `dmulti_join_dtabc` is stated over is
-   now proved (`mmulti_join_eq_mmulti_join'`: both branches of the run-time choice between the
-   generic and the pairwise join have the same membership characterisation as `mmulti_join'`).
+1. **The remaining nodes of `dsim` / `deval`.** `MSince` and `MUntil`. The algebra is in 20.3-20.4
+   (`dargs`, the `dauxlist*` family, `mbuf2t_take_rel`); what is left is the node case itself, and
+   it is entangled with item 3 below, because the dense fragment's current Since and Until do not
+   run the verified structures at all.
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
    `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.

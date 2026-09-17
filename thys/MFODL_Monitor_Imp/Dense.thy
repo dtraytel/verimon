@@ -2479,6 +2479,60 @@ qed
 lemma dtabc_upt: "table n {0..<n} T \<Longrightarrow> dtabc n [0..<n] T = T"
   by (rule dtabc_full) auto
 
+subsection ‹Leftovers and additions of the multi-way buffer›
+
+lemma set_tl_sub: "set (tl xs) \<subseteq> set xs"
+  by (cases xs) auto
+
+lemma mbufn_add_map2:
+  "length hs = length buf \<Longrightarrow> length hs = length xss \<Longrightarrow>
+     map2 map hs (mbufn_add xss buf) = mbufn_add (map2 map hs xss) (map2 map hs buf)"
+proof (induct hs arbitrary: buf xss)
+  case (Cons h hs)
+  obtain b bs where b: "buf = b # bs" using Cons(2) by (cases buf) auto
+  obtain x xs where x: "xss = x # xs" using Cons(3) by (cases xss) auto
+  show ?case using Cons(1)[of bs xs] Cons(2,3) unfolding b x by simp
+qed simp
+
+lemma mbufn_take_sub:
+  "mbufn_take f z buf = (w, buf') \<Longrightarrow>
+     length buf' = length buf \<and> (\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i))"
+proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
+  case (1 f z buf)
+  note IH = 1(1) and E = 1(2)
+  show ?case
+  proof (cases "buf = [] \<or> [] \<in> set buf")
+    case True
+    have "(z, buf) = (w, buf')" using E by (subst (asm) mbufn_take.simps) (simp add: True)
+    then show ?thesis by auto
+  next
+    case False
+    have e: "mbufn_take f (f (map hd buf) z) (map tl buf) = (w, buf')"
+      using E by (subst (asm) mbufn_take.simps) (simp add: False)
+    have "length buf' = length (map tl buf) \<and>
+        (\<forall>i < length (map tl buf). set (buf' ! i) \<subseteq> set (map tl buf ! i))"
+      by (rule IH[OF False e])
+    then show ?thesis using set_tl_sub by fastforce
+  qed
+qed
+
+subsection ‹The multi-way join as one function of the operand list›
+
+text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
+  the negative ones, and the operand tables as a single list.\<close>
+
+definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow>
+    event_data table list \<Rightarrow> event_data table" where
+  "dmulti_join ps ns us = (case us of [] \<Rightarrow> empty_table
+     | t # r \<Rightarrow> dands_neg ns (dands_pos ps t (take (length ps) r)) (drop (length ps) r))"
+
+lemma length_dands_plans[simp]: "length (dands_plans acc css) = length css"
+  by (induct css arbitrary: acc) auto
+
+lemma map2_append:
+  "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
+  by (simp add: zip_append)
+
 subsection ‹Leftovers of the shift buffer›
 
 lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
@@ -2510,6 +2564,51 @@ next
   also have "\<dots> = mmulti_join' A_pos A_neg L"
     by (rule set_eqI)
       (simp only: mmulti_join_pw_correct[OF ne la sub] mmulti_join'_correct[OF ne la])
+  finally show ?thesis .
+qed
+
+theorem dmulti_join_eq:
+  assumes s0: "sorted_wrt (<) c0" and b0: "\<forall>d \<in> set c0. d < n"
+    and t0: "table n (set c0) T0" and f0: "finite T0"
+    and pos: "list_all2 (wf_operand n) css Us"
+    and neg: "list_all2 (wf_operand n) nss Vs"
+    and sub: "\<forall>c \<in> set nss. set c \<subseteq> set (dands_cols c0 css)"
+  shows "dmulti_join (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
+           (map2 (dtabc n) (c0 # css @ nss) ((T0 # Us) @ Vs))
+       = dtabc n (dands_cols c0 css)
+           (mmulti_join n (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs))"
+proof -
+  have lp: "length css = length Us" using pos by (rule list_all2_lengthD)
+  have ln: "length nss = length Vs" using neg by (rule list_all2_lengthD)
+  have m: "map2 (dtabc n) (c0 # css @ nss) ((T0 # Us) @ Vs)
+      = dtabc n c0 T0 # (map2 (dtabc n) css Us @ map2 (dtabc n) nss Vs)"
+    by (simp add: map2_append[OF lp])
+  have t1: "take (length (dands_plans c0 css))
+      (map2 (dtabc n) css Us @ map2 (dtabc n) nss Vs) = map2 (dtabc n) css Us"
+    using lp by simp
+  have t2: "drop (length (dands_plans c0 css))
+      (map2 (dtabc n) css Us @ map2 (dtabc n) nss Vs) = map2 (dtabc n) nss Vs"
+    using lp by simp
+  have "dmulti_join (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
+          (map2 (dtabc n) (c0 # css @ nss) ((T0 # Us) @ Vs))
+      = dands_neg (dands_plans (dands_cols c0 css) nss)
+          (dands_pos (dands_plans c0 css) (dtabc n c0 T0) (map2 (dtabc n) css Us))
+          (map2 (dtabc n) nss Vs)"
+    unfolding dmulti_join_def m by (simp add: t1 t2 lp)
+  also have "\<dots> = dtabc n (dands_cols c0 css)
+      (mmulti_join' (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs))"
+    by (rule dmulti_join_dtabc[OF s0 b0 t0 f0 pos neg sub])
+  also have "mmulti_join' (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs)
+      = mmulti_join n (set c0 # map set css) (map set nss) ((T0 # Us) @ Vs)"
+  proof -
+    have la: "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+        ((set c0 # map set css) @ map set nss) ((T0 # Us) @ Vs)"
+      using t0 b0 list_all2_wf_of_operand[OF pos] list_all2_wf_of_operand[OF neg]
+      by (simp add: wf_set_def list_all2_appendI)
+    have su: "\<Union>(set (map set nss)) \<subseteq> \<Union>(set (set c0 # map set css))"
+      using sub by (auto simp: set_dands_cols)
+    show ?thesis by (rule mmulti_join_eq_mmulti_join'[OF _ la su, symmetric]) simp
+  qed
   finally show ?thesis .
 qed
 
