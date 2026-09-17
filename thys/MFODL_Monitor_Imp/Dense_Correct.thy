@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Correct
-  imports Dense_Eval "MFODL_Monitor_Devel.Correctness"
+  imports Dense_Produces
 begin
 (*>*)
 
