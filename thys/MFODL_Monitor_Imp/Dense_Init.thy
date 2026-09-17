@@ -7,20 +7,21 @@ begin
 section \<open>Work in progress: the criterion for the kernel's initial state\<close>
 
 text \<open>
-  This theory is NOT part of the session (it is deliberately absent from \<open>ROOT\<close>): five
-  of the thirty-two cases of @{text mok_minit0} are still \<open>sorry\<close>.  It is kept in the
-  repository so that the twenty-seven finished ones are not lost.
+  This theory is NOT part of the session (it is deliberately absent from \<open>ROOT\<close>):
+  one of the thirty-two cases of @{text mok_minit0} is still \<open>sorry\<close>, so the session
+  itself stays free of them.
 
   @{text mok_minit0} is the last open hypothesis of
   @{text dmonitor_mverdicts_pure}: with it, the dense monitor's transferred correctness
-  theorems hold outright for every safe formula.  The cases that remain are \<open>Agg\<close>,
-  \<open>Trigger_0\<close>, \<open>And_Trigger\<close>, \<open>MatchP\<close> and \<open>MatchF\<close>.
-  \<open>And_Trigger\<close> additionally needs a node lemma the theory does not have yet: its
-  interval need not contain \<open>0\<close>, and @{thm [source] produces_MAndTrigger} assumes it
-  does, because the trigger structure's result carries its own column set, which is the
-  operand's only when the window is nonempty.  Joining that pair back against the left operand
-  gives a table over the left operand's columns either way, so the node lemma can be weakened --
-  that is the next step.
+  theorems hold outright for every safe formula.
+
+  The one case left is \<open>And_Trigger\<close>, and it needs a node lemma the theory does not
+  have yet.  Its interval need not contain \<open>0\<close>, while
+  @{thm [source] produces_MAndTrigger} assumes it does, because the trigger structure's result
+  carries its own column set and that set is the operand's only when the window is nonempty --
+  otherwise the structure reports the empty column set and the unit table.  Either way the join
+  that follows gives a table over the left operand's columns, so the node lemma can be weakened
+  to a result whose column set is bounded rather than fixed.  That is the next step.
 \<close>
 
 lemma ftable_eval_agg':
@@ -110,6 +111,35 @@ proof -
     unfolding taux_inv_def using v by (intro exI[of _ "[]"]) simp
   show ?thesis unfolding trigger_inv_def using t by (auto intro!: exI[of _ 0])
 qed
+
+lemma fvi_image: "Formula.fvi b \<phi> = (\<lambda>i. i - b) ` (Formula.fv \<phi> - {0..<b})"
+proof (intro set_eqI iffI)
+  fix x assume "x \<in> Formula.fvi b \<phi>"
+  then have "x + b \<in> Formula.fv \<phi>" by (rule fvi_iff_fv[THEN iffD1])
+  then show "x \<in> (\<lambda>i. i - b) ` (Formula.fv \<phi> - {0..<b})"
+    by (intro rev_image_eqI[of "x + b"]) auto
+next
+  fix x assume "x \<in> (\<lambda>i. i - b) ` (Formula.fv \<phi> - {0..<b})"
+  then obtain j where j: "j \<in> Formula.fv \<phi>" "b \<le> j" "x = j - b" by auto
+  then have "x + b \<in> Formula.fv \<phi>" by simp
+  then show "x \<in> Formula.fvi b \<phi>" by (rule fvi_iff_fv[THEN iffD2])
+qed
+
+lemma fvi_trm_mono:
+  assumes s: "Formula.fv_trm f \<subseteq> Formula.fv \<phi>"
+  shows "Formula.fvi_trm b f \<subseteq> Formula.fvi b \<phi>"
+proof
+  fix x assume "x \<in> Formula.fvi_trm b f"
+  then have "x + b \<in> Formula.fv_trm f" by (rule fvi_trm_iff_fv_trm[THEN iffD1])
+  then have "x + b \<in> Formula.fv \<phi>" using s by blast
+  then show "x \<in> Formula.fvi b \<phi>" by (rule fvi_iff_fv[THEN iffD2])
+qed
+
+lemma fv_Agg_image:
+  assumes t: "Formula.fvi_trm (length tys) f \<subseteq> Formula.fvi (length tys) \<phi>"
+  shows "Formula.fv (Formula.Agg y \<omega> tys f \<phi>)
+     = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<phi> - {0..<length tys}))"
+  using t by (auto simp: fvi_image[symmetric])
 
 lemma mok_minit0:
   "safe_formula \<phi> \<Longrightarrow> \<forall>x \<in> Formula.fv \<phi>. x < n \<Longrightarrow>
@@ -304,7 +334,151 @@ next
     by (rule fv_Exists_image)
   show ?case unfolding m by (rule MokExists[OF p e])
 next
-  case (Agg y \<omega> tys f \<phi>) then show ?case sorry
+  case (Agg y \<omega> tys f \<phi>)
+  note tsub = \<open>{0..<length tys} \<subseteq> Formula.fv \<phi>\<close>
+  note fsub = \<open>Formula.fv_trm f \<subseteq> Formula.fv \<phi>\<close>
+  note sf = \<open>safe_formula \<phi>\<close>
+  have A: "Formula.fv (Formula.Agg y \<omega> tys f \<phi>)
+      = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<phi> - {0..<length tys}))"
+    by (rule fv_Agg_image[OF fvi_trm_mono[OF fsub]])
+  have yn: "y < n" using Agg.prems A by simp
+  have bp: "\<forall>x \<in> Formula.fv \<phi>. x < length tys + n"
+  proof
+    fix x assume x: "x \<in> Formula.fv \<phi>"
+    show "x < length tys + n"
+    proof (cases "x < length tys")
+      case True then show ?thesis by simp
+    next
+      case False
+      then have "x - length tys
+          \<in> (\<lambda>i. i - length tys) ` (Formula.fv \<phi> - {0..<length tys})" using x by auto
+      then have "x - length tys < n" using Agg.prems A by auto
+      then show ?thesis using False by simp
+    qed
+  qed
+  let ?ag = "init_aggargs (Formula.fv \<phi>) n (Formula.fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f"
+  have ag: "\<And>c g. aggargs_n (init_aggargs c n g y \<omega> tys f) = n"
+      "\<And>c g. aggargs_y (init_aggargs c n g y \<omega> tys f) = y"
+      "\<And>c g. aggargs_tys (init_aggargs c n g y \<omega> tys f) = tys"
+      "\<And>c g. aggargs_g0 (init_aggargs c n g y \<omega> tys f) = g"
+    by (simp_all add: init_aggargs_def)
+  have p: "mok (length tys + n) (Formula.fv \<phi>) tw (minit0 (length tys + n) \<phi>)"
+    by (rule Agg.IH[OF order_refl sf bp])
+  have D: "mok n (Formula.fv (Formula.Agg y \<omega> tys f \<phi>)) tw
+      (mformula.MAgg ?ag (minit0 (length tys + n) \<phi>))"
+    unfolding A
+  proof (rule MokAgg[where args = "?ag" and G = "Formula.fv \<phi>"])
+    show "mok (length (aggargs_tys ?ag) + n) (Formula.fv \<phi>) tw
+        (minit0 (length tys + n) \<phi>)" using p by (simp add: init_aggargs_def)
+  qed (simp_all add: init_aggargs_def yn)
+  show ?case
+  proof (cases \<phi>)
+    case (Since \<chi> I \<eta>)
+    have s: "Formula.fv \<chi> \<subseteq> Formula.fv \<eta>" and se: "safe_formula \<eta>"
+      and sc: "safe_formula \<chi> \<or>
+        (case \<chi> of Formula.Neg \<chi>' \<Rightarrow> safe_formula \<chi>' | _ \<Rightarrow> False)"
+      using sf unfolding Since by auto
+    have R: "Formula.fv \<eta> = Formula.fv \<phi>" using s unfolding Since by auto
+    have bR: "\<forall>x \<in> Formula.fv \<eta>. x < length tys + n" using bp R by simp
+    have bL: "\<forall>x \<in> Formula.fv \<chi>. x < length tys + n" using bR s by auto
+    have p2: "mok (length tys + n) (Formula.fv \<eta>) tw (minit0 (length tys + n) \<eta>)"
+      by (rule Agg.IH[OF _ se bR]) (simp add: Since)
+    have Ag: "Formula.fv (Formula.Agg y \<omega> tys f \<phi>)
+        = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<eta> - {0..<length tys}))"
+      unfolding A R ..
+    show ?thesis
+    proof (cases "safe_formula \<chi>")
+      case True
+      have p1: "mok (length tys + n) (Formula.fv \<chi>) tw (minit0 (length tys + n) \<chi>)"
+        by (rule Agg.IH[OF _ True bL]) (simp add: Since)
+      let ?args = "init_args I (length tys + n) (Formula.fv \<chi>) (Formula.fv \<eta>)
+          True (Some ?ag)"
+      have m: "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = mformula.MSince ?args
+          (minit0 (length tys + n) \<chi>) (minit0 (length tys + n) \<eta>) init_mbuf2S
+          (init_mmasaux ?args)"
+        using True unfolding Since
+        by (simp add: Let_def default_mmasaux.init_since_def)
+      have aggeq: "args_agg ?args = Some ?ag" by (simp add: init_args_def)
+      show ?thesis unfolding m Ag
+        by (rule MokSinceAgg[OF p1 p2 saux_inv_init[OF s] aggeq])
+          (simp_all add: init_args_def ag s[unfolded R] yn R)
+    next
+      case False
+      have "case \<chi> of Formula.Neg \<chi>' \<Rightarrow> safe_formula \<chi>' | _ \<Rightarrow> False"
+        using sc False by simp
+      then obtain \<chi>' where chi: "\<chi> = Formula.Neg \<chi>'" and sc': "safe_formula \<chi>'"
+        by (cases \<chi>) auto
+      have fvc: "Formula.fv \<chi>' = Formula.fv \<chi>" using chi by simp
+      have bL': "\<forall>x \<in> Formula.fv \<chi>'. x < length tys + n"
+        using bL unfolding fvc[symmetric] .
+      have p1: "mok (length tys + n) (Formula.fv \<chi>) tw (minit0 (length tys + n) \<chi>')"
+        unfolding fvc[symmetric]
+        by (rule Agg.IH[OF _ sc' bL']) (simp add: Since chi)
+      let ?args = "init_args I (length tys + n) (Formula.fv \<chi>) (Formula.fv \<eta>)
+          False (Some ?ag)"
+      have m: "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = mformula.MSince ?args
+          (minit0 (length tys + n) \<chi>') (minit0 (length tys + n) \<eta>) init_mbuf2S
+          (init_mmasaux ?args)"
+        using False chi unfolding Since
+        by (simp add: Let_def default_mmasaux.init_since_def)
+      have aggeq: "args_agg ?args = Some ?ag" by (simp add: init_args_def)
+      show ?thesis unfolding m Ag
+        by (rule MokSinceAgg[OF p1 p2 saux_inv_init[OF s] aggeq])
+          (simp_all add: init_args_def ag s[unfolded R] yn R)
+    qed
+  next
+    case (Until \<chi> I \<eta>)
+    have s: "Formula.fv \<chi> \<subseteq> Formula.fv \<eta>" and se: "safe_formula \<eta>"
+      and sc: "safe_formula \<chi> \<or>
+        (case \<chi> of Formula.Neg \<chi>' \<Rightarrow> safe_formula \<chi>' | _ \<Rightarrow> False)"
+      using sf unfolding Until by auto
+    have R: "Formula.fv \<eta> = Formula.fv \<phi>" using s unfolding Until by auto
+    have bR: "\<forall>x \<in> Formula.fv \<eta>. x < length tys + n" using bp R by simp
+    have bL: "\<forall>x \<in> Formula.fv \<chi>. x < length tys + n" using bR s by auto
+    have p2: "mok (length tys + n) (Formula.fv \<eta>) tw (minit0 (length tys + n) \<eta>)"
+      by (rule Agg.IH[OF _ se bR]) (simp add: Until)
+    have Ag: "Formula.fv (Formula.Agg y \<omega> tys f \<phi>)
+        = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<eta> - {0..<length tys}))"
+      unfolding A R ..
+    show ?thesis
+    proof (cases "safe_formula \<chi>")
+      case True
+      have p1: "mok (length tys + n) (Formula.fv \<chi>) tw (minit0 (length tys + n) \<chi>)"
+        by (rule Agg.IH[OF _ True bL]) (simp add: Until)
+      let ?args = "init_args I (length tys + n) (Formula.fv \<chi>) (Formula.fv \<eta>)
+          True (Some ?ag)"
+      have m: "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = mformula.MUntil ?args
+          (minit0 (length tys + n) \<chi>) (minit0 (length tys + n) \<eta>) ([], []) [] 0
+          (init_muaux_dq ?args)"
+        using True unfolding Until by (simp add: Let_def dq_muaux.init_until_def)
+      have aggeq: "args_agg ?args = Some ?ag" by (simp add: init_args_def)
+      show ?thesis unfolding m Ag
+        by (rule MokUntilAgg[OF p1 p2 until_inv_init[OF s] aggeq])
+          (simp_all add: init_args_def ag s[unfolded R] yn R)
+    next
+      case False
+      have "case \<chi> of Formula.Neg \<chi>' \<Rightarrow> safe_formula \<chi>' | _ \<Rightarrow> False"
+        using sc False by simp
+      then obtain \<chi>' where chi: "\<chi> = Formula.Neg \<chi>'" and sc': "safe_formula \<chi>'"
+        by (cases \<chi>) auto
+      have fvc: "Formula.fv \<chi>' = Formula.fv \<chi>" using chi by simp
+      have bL': "\<forall>x \<in> Formula.fv \<chi>'. x < length tys + n"
+        using bL unfolding fvc[symmetric] .
+      have p1: "mok (length tys + n) (Formula.fv \<chi>) tw (minit0 (length tys + n) \<chi>')"
+        unfolding fvc[symmetric]
+        by (rule Agg.IH[OF _ sc' bL']) (simp add: Until chi)
+      let ?args = "init_args I (length tys + n) (Formula.fv \<chi>) (Formula.fv \<eta>)
+          False (Some ?ag)"
+      have m: "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = mformula.MUntil ?args
+          (minit0 (length tys + n) \<chi>') (minit0 (length tys + n) \<eta>) ([], []) [] 0
+          (init_muaux_dq ?args)"
+        using False chi unfolding Until by (simp add: Let_def dq_muaux.init_until_def)
+      have aggeq: "args_agg ?args = Some ?ag" by (simp add: init_args_def)
+      show ?thesis unfolding m Ag
+        by (rule MokUntilAgg[OF p1 p2 until_inv_init[OF s] aggeq])
+          (simp_all add: init_args_def ag s[unfolded R] yn R)
+    qed
+  qed (use D in \<open>simp_all add: Let_def\<close>)
 next
   case (Prev I \<phi>)
   have p: "mok n (Formula.fv \<phi>) tw (minit0 n \<phi>)"
@@ -378,7 +552,58 @@ next
   show ?case unfolding m e
     by (rule MokUntil[OF p1 p2 until_inv_init[OF sub]]) (simp_all add: init_args_def sub)
 next
-  case (Trigger_0 \<phi> I \<psi>) then show ?case sorry
+  case (Trigger_0 \<phi> I \<psi>)
+  note m0 = \<open>mem I 0\<close>
+  have sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>" using Trigger_0(3) .
+  have b: "\<forall>x \<in> Formula.fv \<psi>. x < n" using Trigger_0.prems by simp
+  have bp: "\<forall>x \<in> Formula.fv \<phi>. x < n" using b sub by auto
+  have p2: "mok n (Formula.fv \<psi>) tw (minit0 n \<psi>)" by (rule Trigger_0(5)[OF b])
+  have e: "Formula.fv (Formula.Trigger \<phi> I \<psi>) = Formula.fv \<psi>" using sub by auto
+  show ?case
+  proof (cases "safe_formula \<phi>")
+    case True
+    have p1: "mok n (Formula.fv \<phi>) tw (minit0 n \<phi>)"
+    proof (cases "\<forall>x. (\<forall>xa \<in> Formula.fv \<phi>. xa < x)
+        \<longrightarrow> mok x (Formula.fv \<phi>) tw (minit0 x \<phi>)")
+      case True then show ?thesis using bp by blast
+    next
+      case False
+      then have "case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and>
+          (\<forall>x. (\<forall>xa \<in> Formula.fv \<chi>. xa < x) \<longrightarrow>
+            mok x (Formula.fv \<chi>) tw (minit0 x \<chi>)) | _ \<Rightarrow> False"
+        using Trigger_0(4) by blast
+      then obtain \<chi> where phi: "\<phi> = Formula.Neg \<chi>" by (cases \<phi>) auto
+      have "Formula.fv \<chi> = {}" using \<open>safe_formula \<phi>\<close> phi by simp
+      then show ?thesis using phi by (simp add: MokNeg)
+    qed
+    let ?args = "init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None"
+    have m: "minit0 n (Formula.Trigger \<phi> I \<psi>) = mformula.MTrigger ?args
+        (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mmtaux ?args)"
+      using True by (simp add: verimon_maux.init_trigger_def)
+    show ?thesis unfolding m e
+      by (rule MokTrigger[OF p1 p2 trigger_inv_init[OF m0 sub]])
+        (simp_all add: init_args_def m0)
+  next
+    case False
+    have "case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and>
+        (\<forall>x. (\<forall>xa \<in> Formula.fv \<chi>. xa < x) \<longrightarrow>
+          mok x (Formula.fv \<chi>) tw (minit0 x \<chi>)) | _ \<Rightarrow> False"
+      using Trigger_0(4) False by auto
+    then obtain \<chi> where phi: "\<phi> = Formula.Neg \<chi>"
+      and ih: "\<forall>x. (\<forall>xa \<in> Formula.fv \<chi>. xa < x) \<longrightarrow>
+          mok x (Formula.fv \<chi>) tw (minit0 x \<chi>)"
+      by (cases \<phi>) auto
+    have fvc: "Formula.fv \<chi> = Formula.fv \<phi>" using phi by simp
+    have p1: "mok n (Formula.fv \<phi>) tw (minit0 n \<chi>)"
+      using ih bp unfolding fvc by blast
+    let ?args = "init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) False None"
+    have m: "minit0 n (Formula.Trigger \<phi> I \<psi>) = mformula.MTrigger ?args
+        (minit0 n \<chi>) (minit0 n \<psi>) ([], []) [] (init_mmtaux ?args)"
+      using False phi by (simp add: verimon_maux.init_trigger_def)
+    show ?thesis unfolding m e
+      by (rule MokTrigger[OF p1 p2 trigger_inv_init[OF m0 sub]])
+        (simp_all add: init_args_def m0)
+  qed
 next
   case (Trigger \<phi> I \<psi>) then show ?case by simp
 next
@@ -389,9 +614,65 @@ next
 next
   case (Release \<phi> I \<psi>) then show ?case by simp
 next
-  case (MatchP I r) then show ?case sorry
+  case (MatchP I r)
+  note sr = \<open>Regex.safe_regex fv rgx_safe_pred Past Strict r\<close>
+  obtain mr \<phi>s where tm: "to_mregex r = (mr, \<phi>s)" by (cases "to_mregex r")
+  have ok: "ok (length \<phi>s) mr" and at: "set \<phi>s = safe_atms r"
+    using to_mregex_ok[OF tm] by auto
+  have fm: "from_mregex mr \<phi>s = r" by (rule from_mregex_eq[OF sr tm])
+  have fr: "Formula.fv_regex r = (\<Union>\<psi> \<in> set \<phi>s. Formula.fv \<psi>)"
+    unfolding at by (rule fv_regex_alt2[OF sr])
+  have sub: "\<forall>i < length \<phi>s. Formula.fv (\<phi>s ! i) \<subseteq> Formula.fv_regex r"
+  proof (intro allI impI subsetI)
+    fix i x assume i: "i < length \<phi>s" and x: "x \<in> Formula.fv (\<phi>s ! i)"
+    show "x \<in> Formula.fv_regex r" unfolding fr using i x by auto
+  qed
+  have b: "\<forall>x \<in> Formula.fv_regex r. x < n" using MatchP.prems by simp
+  have pL: "\<forall>i < length \<phi>s. mok n (Formula.fv (\<phi>s ! i)) tw (minit0 n (\<phi>s ! i))"
+  proof (intro allI impI)
+    fix i assume i: "i < length \<phi>s"
+    have mem: "\<phi>s ! i \<in> safe_atms r" using nth_mem[OF i] at by blast
+    have bi: "\<forall>x \<in> Formula.fv (\<phi>s ! i). x < n" using b sub i by auto
+    show "mok n (Formula.fv (\<phi>s ! i)) tw (minit0 n (\<phi>s ! i))"
+      using MatchP.IH mem bi by blast
+  qed
+  have m: "minit0 n (Formula.MatchP I r) = mformula.MMatchP I mr
+      (sorted_list_of_set (RPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] []"
+    using tm by simp
+  have A: "Formula.fv (Formula.MatchP I r) = Formula.fv_regex r" by simp
+  show ?case unfolding m A
+    by (rule MokMatchP[OF sr[folded fm] ok])
+      (simp_all add: fm finite_RPDs sub pL maux_inv_def)
 next
-  case (MatchF I r) then show ?case sorry
+  case (MatchF I r)
+  note sr = \<open>Regex.safe_regex fv rgx_safe_pred Futu Strict r\<close>
+  obtain mr \<phi>s where tm: "to_mregex r = (mr, \<phi>s)" by (cases "to_mregex r")
+  have ok: "ok (length \<phi>s) mr" and at: "set \<phi>s = safe_atms r"
+    using to_mregex_ok[OF tm] by auto
+  have fm: "from_mregex mr \<phi>s = r" by (rule from_mregex_eq[OF sr tm])
+  have fr: "Formula.fv_regex r = (\<Union>\<psi> \<in> set \<phi>s. Formula.fv \<psi>)"
+    unfolding at by (rule fv_regex_alt2[OF sr])
+  have sub: "\<forall>i < length \<phi>s. Formula.fv (\<phi>s ! i) \<subseteq> Formula.fv_regex r"
+  proof (intro allI impI subsetI)
+    fix i x assume i: "i < length \<phi>s" and x: "x \<in> Formula.fv (\<phi>s ! i)"
+    show "x \<in> Formula.fv_regex r" unfolding fr using i x by auto
+  qed
+  have b: "\<forall>x \<in> Formula.fv_regex r. x < n" using MatchF.prems by simp
+  have pL: "\<forall>i < length \<phi>s. mok n (Formula.fv (\<phi>s ! i)) tw (minit0 n (\<phi>s ! i))"
+  proof (intro allI impI)
+    fix i assume i: "i < length \<phi>s"
+    have mem: "\<phi>s ! i \<in> safe_atms r" using nth_mem[OF i] at by blast
+    have bi: "\<forall>x \<in> Formula.fv (\<phi>s ! i). x < n" using b sub i by auto
+    show "mok n (Formula.fv (\<phi>s ! i)) tw (minit0 n (\<phi>s ! i))"
+      using MatchF.IH mem bi by blast
+  qed
+  have m: "minit0 n (Formula.MatchF I r) = mformula.MMatchF I mr
+      (sorted_list_of_set (LPDs mr)) (map (minit0 n) \<phi>s) (replicate (length \<phi>s) []) [] 0 []"
+    using tm by simp
+  have A: "Formula.fv (Formula.MatchF I r) = Formula.fv_regex r" by simp
+  show ?case unfolding m A
+    by (rule MokMatchF[OF sr[folded fm] ok])
+      (simp_all add: fm finite_LPDs sub pL mfaux_inv_def)
 next
   case (TP t)
   then show ?case by (cases t) (auto intro!: MokTP)
