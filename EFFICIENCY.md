@@ -2597,7 +2597,7 @@ kernel. That is evidence, not a proof. The goal of this section is a refinement 
 dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
 verified one.
 
-*Work in progress. 20.1-20.4 are done; 20.5 is what is left.*
+*Work in progress. 20.1-20.5 are done; 20.6 is what is left.*
 
 ### 20.1 The pair of morphisms
 
@@ -2639,7 +2639,7 @@ the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 2300 lines and 152 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2500 lines and 163 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2761,7 +2761,7 @@ So this is a case where verification made the program **better**, not merely che
 Since and Until will cover the general case rather than `ONCE` and `EVENTUALLY`, and will use a
 verified structure rather than an unverified one.
 
-### 20.4 The buffers (done, except the multi-way one)
+### 20.4 The buffers (done)
 
 A buffer never looks inside a tuple: it lines up the tables the operands produce and hands matching
 pairs to the node's operation. So a buffer of narrowed tables behaves as the narrowing of a buffer
@@ -2781,24 +2781,107 @@ instead of redoing it.
 buffer is not a narrowed table but an auxiliary structure related to the wide one; the step
 condition is therefore `R z z' ⟹ R (f a b t z) (g (h a) (k b) t z')`.
 
-Still missing on the buffer side: `mbufn_take`, for the multi-way conjunction, where each slot of
-the buffer has its own column list and so its own narrowing.
+`mbufn_take_rel` covers the multi-way conjunction, where each slot of the buffer has its own
+column list and so its own narrowing: it relates `mbufn_take f z buf` to
+`mbufn_take g z' (map2 map hs buf)` for a list `hs` of per-slot narrowings, under a step condition
+that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
-### 20.5 What is left
+### 20.5 The simulation (the eight structural nodes are done)
 
-1. **`mbufn_take`** for `MAnds`, as above.
-2. **The simulation itself.** A relation `dsim n cs φd φ` between a dense formula and an
-   `mformula`, and the induction that composes 20.2-20.4 into
-   `deval` producing `map (dtabc n cs)` of what `meval` produces, with `dsim` preserved. This is
-   the part that has to thread the kernel's `wf_mformula` invariant through, because table-ness of
-   the operand tables -- the hypothesis of every theorem in 20.2 -- is a consequence of it.
-3. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
-   particular that the column list of a node is the subformula's free-variable set. An induction
-   over `mformula_j` against `wf_mformula`.
-4. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 376 lines, no `sorry`. This is the part that turns
+20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
+
+**Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
+tables to be finite and well formed over the node's columns. That is not a property of a single
+call but of a formula's whole future, so it is isolated into one coinductive predicate:
+
+```isabelle
+coinductive produces :: "nat ⇒ nat set ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ bool"
+  where "(⋀j ts db xs φ'. meval j n ts db φ = (xs, φ') ⟹
+      list_all (λX. table n A X ∧ finite X) xs ∧ produces n A φ') ⟹ produces n A φ"
+```
+
+`produces_tables` and `produces_next` are the only two facts the simulation ever uses about the
+kernel's own evaluation, and the kernel's well-formedness invariant is what will discharge
+`produces` at compile time (20.6 below). Nothing else in the induction touches the trace, the
+progress functions, or `qtable`.
+
+**The dense formula and its evaluator.** `dformula` mirrors the kernel's `mformula` node by node,
+but each node carries what the *short* representation needs rather than what the wide one needs: a
+join plan instead of two variable sets, a term already reindexed against the operand's column list,
+a mask at the boundary. `DPure φ m msk` is the escape hatch -- it runs the kernel's own evaluator
+on a subformula and narrows the result -- so a dense formula need not cover every node of the
+kernel's language in order to be usable. `deval` is the corresponding evaluator, `j ts db` only.
+
+**The relation.** `dsim n cs φd φ` relates a dense formula to a kernel one at a frame of width `n`
+whose live columns are `cs`. Each rule carries `wf_cols n cs` and the node's own `produces`, so
+`dsim_wf_cols` and `dsim_produces` hand out at every node exactly the two side conditions the
+20.2 theorems ask for. The buffers are related by
+
+```isabelle
+definition dbuf2 :: "nat ⇒ cols ⇒ cols ⇒ event_data mbuf2 ⇒ event_data mbuf2 ⇒ bool" where
+  "dbuf2 n cs1 cs2 buf dbuf ⟷
+     list_all (ftable n (set cs1)) (fst buf) ∧ list_all (ftable n (set cs2)) (snd buf) ∧
+     dbuf = (map (dtabc n cs1) (fst buf), map (dtabc n cs2) (snd buf))"
+```
+
+-- the two halves may live at different column lists, as they do at an `MAnd`. `dbuf2_add` and
+`dbuf2_take` package `mbuf2_add_map`, `mbuf2_take_map` and the new `mbuf2_take_sub` (a take only
+removes a prefix, so whatever stays in the buffer was already there, and so is still well formed).
+
+**The theorem.**
+
+```isabelle
+theorem dsim_deval:
+  "dsim n cs φd φ ⟹ meval j n ts db φ = (xs, φ') ⟹
+   ∃φd'. deval j ts db φd = (map (dtabc n cs) xs, φd') ∧ dsim n cs φd' φ'"
+```
+
+One step of the dense evaluator produces the narrowing of what one step of the kernel's produces,
+and the relation is preserved, so by coinduction the two agree on the whole stream. It is proved by
+induction on `dsim`; each case is one theorem of 20.2 applied pointwise to the operand's output
+list, with `produces_next` re-establishing the invariant for the successor:
+
+| node | uses |
+|---|---|
+| `DPure` | `dnarrow_dtabc` |
+| `DRel` | `map_replicate` |
+| `DAndRel` | `eval_constraint_reindex` (new, see below) |
+| `DNeg` | `dtabc_neg` (new: `dtabc n [] (unit_table n) = unit_table 0`, and `dtabc_empty_iff`) |
+| `DExists` | `dtabc_exists` |
+| `DOr` | `dtabc_Un_img` + `dbuf2_add` / `dbuf2_take` |
+| `DAnd` | `dbin_join_bin_join` + `dbuf2_add` / `dbuf2_take` |
+| `DAgg` | `dagg_eval_agg` |
+
+`eval_constraint_reindex` is the one algebraic law 20.2 was missing. `reindex_constraint` moves
+into `Dense.thy` (it was unverified in `Dense_Imp.thy`) and
+
+```isabelle
+lemma eval_constraint_reindex:
+  assumes "sorted_wrt (<) cs" "∀c ∈ set cs. c < n"
+    "Formula.fv_trm t1 ⊆ set cs" "Formula.fv_trm t2 ⊆ set cs" "table n (set cs) T"
+  shows "dtabc n cs (Set.filter (eval_constraint (t1, p, c, t2)) T)
+       = Set.filter (eval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc n cs T)"
+```
+
+-- the reindexed terms read the short tuple at the position the column occupies there, which by
+`meval_trm_reindex` is the same value, and filtering commutes with an image without needing any
+injectivity.
+
+### 20.6 What is left
+
+1. **The remaining nodes of `dsim` / `deval`.** `MPred` (Copy, Simple, Match), `MAnds`, `MPrev`,
+   `MNext`, `MSince`, `MUntil`. The algebra for all of them is in 20.2-20.4
+   (`dtabc_simple_match`, `dmatch_table_dtabc`, `dmulti_join_dtabc` + `mbufn_take_rel`,
+   `mprev_next_map`, `dauxlist*` + `mbuf2t_take_rel`); what is left is the node case itself.
+2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
+   particular that the column list of a node is the subformula's free-variable set, and that
+   `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.
+3. **The Since and Until cases must be rebuilt** on 20.3, replacing `sevtaux` / `evtaux` in the
    dense fragment. This changes the running program, so Section 19.7's timings will have to be
    re-measured afterwards.
-5. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
+4. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
+5. **Then** `Dense.thy` and `Dense_Eval.thy` move to the base session.

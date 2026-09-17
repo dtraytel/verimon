@@ -2411,6 +2411,85 @@ proof (induct f z buf arbitrary: z' w buf' w2 buf2 rule: mbufn_take.induct)
   qed
 qed
 
+
+subsection ‹Leftovers of a buffer›
+
+text ‹A take only ever removes a prefix, so whatever stays in the buffer was already there.›
+
+lemma mbuf2_take_sub:
+  "mbuf2_take f (xs, ys) = (zs, (xs', ys')) ⟹ set xs' ⊆ set xs ∧ set ys' ⊆ set ys"
+proof (induct xs arbitrary: ys zs xs' ys')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P = Cons(2)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P by simp
+  next
+    case (Cons y ys0)
+    obtain ws b1 b2 where w: "mbuf2_take f (xs, ys0) = (ws, (b1, b2))"
+      by (cases "mbuf2_take f (xs, ys0)") auto
+    have "xs' = b1" "ys' = b2" using P Cons w by simp_all
+    then show ?thesis using IH[OF w] Cons by auto
+  qed
+qed
+
+subsection ‹The unit and empty tables›
+
+lemma dtabc_unit_table: "dtabc n [] (unit_table n) = unit_table 0"
+  by (simp add: dtabc_def unit_table_def
+      dproj_wide_mask_eq_map_nth[where cs="[]" and n=n and xs="replicate n None"])
+
+text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
+  emptiness -- which narrowing preserves in both directions.\<close>
+
+lemma dtabc_neg:
+  "dtabc n [] (if T = empty_table then unit_table n else empty_table)
+     = (if dtabc n [] T = empty_table then unit_table 0 else empty_table)"
+  by (simp add: dtabc_unit_table dtabc_empty_iff empty_table_def)
+
+section ‹Comparisons on short tuples›
+
+text ‹
+  A constraint node only filters; it never changes a tuple.  Reindexing its two terms against
+  the node's column list makes the filter read the short tuple at the position the column
+  occupies there, which by @{thm meval_trm_reindex} evaluates to the same value.  Filtering
+  commutes with an image without any injectivity, so the narrowing passes through.
+›
+
+definition reindex_constraint ::
+    "cols ⇒ Formula.trm × bool × mconstraint × Formula.trm ⇒
+     Formula.trm × bool × mconstraint × Formula.trm" where
+  "reindex_constraint cs conf = (case conf of (t1, p, c, t2) ⇒
+     (reindex_trm cs t1, p, c, reindex_trm cs t2))"
+
+lemma eval_constraint_reindex:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and fv1: "Formula.fv_trm t1 ⊆ set cs" and fv2: "Formula.fv_trm t2 ⊆ set cs"
+    and t: "table n (set cs) T"
+  shows "dtabc n cs (Set.filter (eval_constraint (t1, p, c, t2)) T)
+       = Set.filter (eval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc n cs T)"
+proof -
+  have pt: "\<And>x. x \<in> T ⟹
+      eval_constraint (reindex_constraint cs (t1, p, c, t2)) (dproj (wide_mask n cs) x)
+        = eval_constraint (t1, p, c, t2) x"
+  proof -
+    fix x assume "x \<in> T"
+    then have "wf_tuple n (set cs) x" using t by (simp add: table_def)
+    then have l: "length x = n" by (simp add: wf_tuple_def)
+    have d: "dproj (wide_mask n cs) x = map (\<lambda>c. x ! c) cs"
+      by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+    show "eval_constraint (reindex_constraint cs (t1, p, c, t2)) (dproj (wide_mask n cs) x)
+        = eval_constraint (t1, p, c, t2) x"
+      unfolding reindex_constraint_def d
+      by (simp add: meval_trm_reindex[OF fv1] meval_trm_reindex[OF fv2])
+  qed
+  show ?thesis unfolding dtabc_def using pt by auto
+qed
+
 (*<*)
 end
 (*>*)

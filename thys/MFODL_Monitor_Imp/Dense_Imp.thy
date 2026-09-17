@@ -103,16 +103,6 @@ definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Right
      | t # r \<Rightarrow> do { t \<leftarrow> dands_pos_h ps t (take (length ps) r);
                      dands_neg_h ns t (drop (length ps) r) })"
 
-subsection \<open>Re-indexing a constraint\<close>
-
-definition reindex_constraint ::
-    "cols \<Rightarrow> Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow>
-     Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm" where
-  "reindex_constraint cs conf = (case conf of (t1, p, c, t2) \<Rightarrow>
-     (reindex_trm cs t1, p, c, reindex_trm cs t2))"
-
-
-
 text \<open>The columns of the operand, of the groups, and of the result.\<close>
 
 definition dagg_child_cols :: "aggargs \<Rightarrow> cols" where
