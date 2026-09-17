@@ -676,6 +676,228 @@ proof -
   ultimately show ?thesis unfolding dtabc_def by auto
 qed
 
+subsection \<open>The pair of morphisms\<close>
+
+text \<open>
+  Narrowing deletes the empty columns; widening puts them back.  The two are inverse bijections
+  between the tables that are well formed over @{term "set cs"} in the wide frame and the tables
+  of short tuples of length @{term "length cs"} with no holes at all.  Every theorem below is the
+  statement that one operation commutes with this pair.
+\<close>
+
+definition dtabw :: "nat \<Rightarrow> cols \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "dtabw n cs D = dwiden (wide_mask n cs) ` D"
+
+definition dwf_tuple :: "nat \<Rightarrow> 'a tuple \<Rightarrow> bool" where
+  "dwf_tuple k d \<longleftrightarrow> length d = k \<and> (\<forall>i < k. d ! i \<noteq> None)"
+
+definition dtable :: "cols \<Rightarrow> 'a table \<Rightarrow> bool" where
+  "dtable cs D \<longleftrightarrow> (\<forall>d \<in> D. dwf_tuple (length cs) d)"
+
+lemma nth_wide_mask:
+  "sorted_wrt (<) cs \<Longrightarrow> i < n \<Longrightarrow> wide_mask n cs ! i = (i \<in> set cs)"
+  unfolding wide_mask_def by (subst wide_mask_at_eq) auto
+
+lemma length_filter_wide_mask:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+  shows "length (filter id (wide_mask n cs)) = length cs"
+  using length_dproj[of "wide_mask n cs" "replicate n None"]
+    dproj_wide_mask_eq_map_nth[OF s b, of "replicate n None"]
+  by (metis length_map length_replicate length_wide_mask)
+
+lemma dwf_tuple_dproj:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and w: "wf_tuple n (set cs) x"
+  shows "dwf_tuple (length cs) (dproj (wide_mask n cs) x)"
+proof -
+  have l: "length x = n" using w by (simp add: wf_tuple_def)
+  have "dproj (wide_mask n cs) x = map (\<lambda>c. x ! c) cs"
+    by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+  moreover have "\<forall>c \<in> set cs. x ! c \<noteq> None" using w b by (auto simp: wf_tuple_def)
+  ultimately show ?thesis by (auto simp: dwf_tuple_def)
+qed
+
+lemma dtable_dtabc:
+  "sorted_wrt (<) cs \<Longrightarrow> \<forall>c \<in> set cs. c < n \<Longrightarrow> table n (set cs) T \<Longrightarrow> dtable cs (dtabc n cs T)"
+  by (auto simp: dtable_def dtabc_def table_def dwf_tuple_dproj)
+
+lemma dwiden_props:
+  "length d = length (filter id bs) \<Longrightarrow> (\<forall>x \<in> set d. x \<noteq> None) \<Longrightarrow>
+     length (dwiden bs d) = length bs \<and> (\<forall>i < length bs. (dwiden bs d ! i = None) = (\<not> bs ! i))"
+  by (induct bs d rule: dwiden.induct) (auto simp: nth_Cons split: nat.splits)
+
+lemma wf_tuple_dwiden:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and d: "dwf_tuple (length cs) d"
+  shows "wf_tuple n (set cs) (dwiden (wide_mask n cs) d)"
+proof -
+  have lf: "length d = length (filter id (wide_mask n cs))"
+    using d by (simp add: dwf_tuple_def length_filter_wide_mask[OF s b])
+  have nn: "\<forall>x \<in> set d. x \<noteq> None" using d by (auto simp: dwf_tuple_def in_set_conv_nth)
+  show ?thesis using dwiden_props[OF lf nn] nth_wide_mask[OF s] by (auto simp: wf_tuple_def)
+qed
+
+lemma table_dtabw:
+  "sorted_wrt (<) cs \<Longrightarrow> \<forall>c \<in> set cs. c < n \<Longrightarrow> dtable cs D \<Longrightarrow> table n (set cs) (dtabw n cs D)"
+  by (auto simp: dtabw_def dtable_def table_def wf_tuple_dwiden)
+
+lemma dtabw_dtabc:
+  assumes s: "sorted_wrt (<) cs" and t: "table n (set cs) T"
+  shows "dtabw n cs (dtabc n cs T) = T"
+  using dwiden_dtab[OF t]
+  by (simp add: dtabw_def dtabc_eq_dtab[OF s] wide_mask_eq_join_mask[OF s])
+
+lemma dproj_dwiden:
+  "length d = length (filter id bs) \<Longrightarrow> dproj bs (dwiden bs d) = d"
+  by (induct bs d rule: dwiden.induct) auto
+
+lemma dtabc_dtabw:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and d: "dtable cs D"
+  shows "dtabc n cs (dtabw n cs D) = D"
+proof -
+  have "\<And>x. x \<in> D \<Longrightarrow> dproj (wide_mask n cs) (dwiden (wide_mask n cs) x) = x"
+    using d by (intro dproj_dwiden) (simp add: dtable_def dwf_tuple_def
+        length_filter_wide_mask[OF s b])
+  then show ?thesis unfolding dtabc_def dtabw_def image_image by (auto intro!: rev_image_eqI)
+qed
+
+subsection \<open>Narrowing a whole frame commutes with the join\<close>
+
+definition cpos :: "cols \<Rightarrow> nat set \<Rightarrow> nat set" where
+  "cpos cs L = {i. i < length cs \<and> cs ! i \<in> L}"
+
+lemma cpos_all: "cpos cs (set cs) = {0..<length cs}"
+  by (auto simp: cpos_def)
+
+lemma cpos_mono: "L \<subseteq> M \<Longrightarrow> cpos cs L \<subseteq> cpos cs M"
+  by (auto simp: cpos_def)
+
+lemma table_dtabc_cpos:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and sub: "L \<subseteq> set cs" and t: "table n L T"
+  shows "table (length cs) (cpos cs L) (dtabc n cs T)"
+proof -
+  have "\<And>x. x \<in> T \<Longrightarrow> wf_tuple (length cs) (cpos cs L) (dproj (wide_mask n cs) x)"
+  proof -
+    fix x assume "x \<in> T"
+    then have w: "wf_tuple n L x" using t by (simp add: table_def)
+    then have l: "length x = n" by (simp add: wf_tuple_def)
+    have e: "dproj (wide_mask n cs) x = map (\<lambda>c. x ! c) cs"
+      by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+    have "\<And>i. i < length cs \<Longrightarrow> (x ! (cs ! i) = None) = (i \<notin> cpos cs L)"
+      using w b by (auto simp: wf_tuple_def cpos_def)
+    then show "wf_tuple (length cs) (cpos cs L) (dproj (wide_mask n cs) x)"
+      using e by (auto simp: wf_tuple_def)
+  qed
+  then show ?thesis by (auto simp: table_def dtabc_def)
+qed
+
+lemma proj_tuple_dproj:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and sub: "L \<subseteq> set cs" and l: "length x = n"
+  shows "proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) x)
+       = dproj (wide_mask n cs) (proj_tuple (join_mask n L) x)"
+proof -
+  have lp: "length (proj_tuple (join_mask n L) x) = n"
+    using l by (simp add: proj_tuple_alt join_mask_def)
+  have rhs: "dproj (wide_mask n cs) (proj_tuple (join_mask n L) x)
+      = map (\<lambda>c. if c \<in> L then x ! c else None) cs"
+    unfolding dproj_wide_mask_eq_map_nth[OF s b lp]
+    using l b by (auto simp: proj_tuple_join_mask_restrict restrict_def
+        intro!: map_cong[OF refl])
+  have d: "dproj (wide_mask n cs) x = map (\<lambda>c. x ! c) cs"
+    by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+  have "proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) x)
+      = restrict (cpos cs L) (map (\<lambda>c. x ! c) cs)"
+    unfolding d by (rule proj_tuple_join_mask_restrict) simp
+  also have "restrict (cpos cs L) (map (\<lambda>c. x ! c) cs)
+      = map (\<lambda>c. if c \<in> L then x ! c else None) cs"
+  proof (intro nth_equalityI)
+    show "length (restrict (cpos cs L) (map (\<lambda>c. x ! c) cs))
+        = length (map (\<lambda>c. if c \<in> L then x ! c else None) cs)" by (simp add: restrict_def)
+    fix i assume "i < length (restrict (cpos cs L) (map (\<lambda>c. x ! c) cs))"
+    then have i: "i < length cs" by (simp add: restrict_def)
+    then show "restrict (cpos cs L) (map (\<lambda>c. x ! c) cs) ! i
+        = map (\<lambda>c. if c \<in> L then x ! c else None) cs ! i"
+      by (simp add: restrict_def cpos_def)
+  qed
+  finally show ?thesis using rhs by simp
+qed
+
+lemma dproj_inj_sub:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and sub: "L \<subseteq> set cs"
+  shows "inj_on (dproj (wide_mask n cs)) {y. wf_tuple n L y}"
+proof (rule inj_onI, clarsimp)
+  fix y z assume w: "wf_tuple n L y" "wf_tuple n L z"
+    and e: "dproj (wide_mask n cs) y = dproj (wide_mask n cs) z"
+  have ly: "length y = n" and lz: "length z = n" using w by (simp_all add: wf_tuple_def)
+  have "map (\<lambda>c. y ! c) cs = map (\<lambda>c. z ! c) cs"
+    using e dproj_wide_mask_eq_map_nth[OF s b ly] dproj_wide_mask_eq_map_nth[OF s b lz] by simp
+  then have agree: "\<And>c. c \<in> set cs \<Longrightarrow> y ! c = z ! c"
+    by (auto simp: in_set_conv_nth dest!: arg_cong[where f = "\<lambda>l. l ! _"])
+  have "\<And>i. i < n \<Longrightarrow> y ! i = z ! i"
+  proof -
+    fix i assume i: "i < n"
+    show "y ! i = z ! i"
+    proof (cases "i \<in> set cs")
+      case True then show ?thesis by (rule agree)
+    next
+      case False
+      then have "i \<notin> L" using sub by auto
+      then show ?thesis using w i by (auto simp: wf_tuple_def)
+    qed
+  qed
+  then show "y = z" using ly lz by (intro nth_equalityI) auto
+qed
+
+lemma dtabc_join_frame:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and sub: "L \<subseteq> set cs"
+    and t1: "table n (set cs) T" and t2: "table n L T'"
+  shows "dtabc n cs (join T pos T') = join (dtabc n cs T) pos (dtabc n cs T')"
+proof -
+  have j1: "join T pos T' = {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}"
+    using join_sub[OF sub t2 t1] by (simp add: proj_tuple_in_join_def join_cond_eq)
+  have t1': "table (length cs) {0..<length cs} (dtabc n cs T)"
+    using table_dtabc_cpos[OF s b _ t1] by (simp add: cpos_all)
+  have t2': "table (length cs) (cpos cs L) (dtabc n cs T')"
+    by (rule table_dtabc_cpos[OF s b sub t2])
+  have j2: "join (dtabc n cs T) pos (dtabc n cs T')
+      = {d \<in> dtabc n cs T. (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
+    using join_sub[OF _ t2' t1'] cpos_mono[of L "set cs" cs] sub
+    by (simp add: proj_tuple_in_join_def join_cond_eq cpos_all)
+  have key: "\<And>a. a \<in> T \<Longrightarrow>
+      (proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) a) \<in> dtabc n cs T')
+        = (proj_tuple (join_mask n L) a \<in> T')"
+  proof -
+    fix a assume "a \<in> T"
+    then have w: "wf_tuple n (set cs) a" using t1 by (simp add: table_def)
+    then have l: "length a = n" by (simp add: wf_tuple_def)
+    have wp: "wf_tuple n L (proj_tuple (join_mask n L) a)"
+      using wf_tuple_proj_tuple[OF w] sub by simp
+    show "(proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) a) \<in> dtabc n cs T')
+        = (proj_tuple (join_mask n L) a \<in> T')"
+      unfolding proj_tuple_dproj[OF s b sub l] dtabc_def
+      using dproj_inj_sub[OF s b sub] wp t2 by (auto simp: table_def inj_on_def)
+  qed
+  have "dtabc n cs {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}
+      = {d \<in> dtabc n cs T. (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
+  proof (intro set_eqI iffI)
+    fix d assume "d \<in> dtabc n cs {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}"
+    then obtain a where a: "a \<in> T" "(proj_tuple (join_mask n L) a \<in> T') = pos"
+      "d = dproj (wide_mask n cs) a" unfolding dtabc_def by auto
+    then show "d \<in> {d \<in> dtabc n cs T.
+        (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
+      using key[OF a(1)] by (auto simp: dtabc_def)
+  next
+    fix d assume d: "d \<in> {d \<in> dtabc n cs T.
+        (proj_tuple (join_mask (length cs) (cpos cs L)) d \<in> dtabc n cs T') = pos}"
+    then obtain a where a: "a \<in> T" "d = dproj (wide_mask n cs) a"
+      unfolding dtabc_def by auto
+    then show "d \<in> dtabc n cs {a \<in> T. (proj_tuple (join_mask n L) a \<in> T') = pos}"
+      using d key[OF a(1)] unfolding dtabc_def by auto
+  qed
+  then show ?thesis unfolding j1 j2 .
+qed
+
 subsection \<open>The general join: an index on the shared columns\<close>
 
 text \<open>
