@@ -1278,6 +1278,53 @@ next
     by (auto simp: x f)
 qed
 
+subsection \<open>The let node\<close>
+
+text \<open>
+  A let node evaluates its body against a database extended by the bound predicate.  Since
+  @{const produces} quantifies over every well-formed database, the body's own invariant applies
+  to the extended one as soon as the extension is well formed -- which it is, because the
+  definition evaluates the bound formula at the full frame @{term "{0..<m}"}, exactly the shape
+  @{const wf_db} asks of a stored relation of arity @{term m}.
+\<close>
+
+lemma wf_db_update:
+  "wf_db db \<Longrightarrow> list_all (ftable m {0..<m}) xs \<Longrightarrow>
+     wf_db (Mapping.update (p, m) xs db)"
+  by (auto simp: wf_db_def lookup_update' split: if_splits)
+
+lemma produces_MLet:
+  assumes p1: "produces m {0..<m} tw \<phi>" and p2: "produces n A tw \<psi>"
+  shows "produces n A tw (mformula.MLet p m \<phi> \<psi>)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> \<eta>. \<Phi> = mformula.MLet p m \<chi> \<eta> \<and>
+       produces m {0..<m} u \<chi> \<and> produces n A u \<eta>)"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta>. mformula.MLet p m \<phi> \<psi> = mformula.MLet p m \<chi> \<eta> \<and>
+      produces m {0..<m} tw \<chi> \<and> produces n A tw \<eta>)" using p1 p2 by blast
+next
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta>. \<Phi> = mformula.MLet p m \<chi> \<eta> \<and>
+      produces m {0..<m} u \<chi> \<and> produces n A u \<eta>)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> where Phi: "\<Phi> = mformula.MLet p m \<chi> \<eta>"
+    and pc: "produces m {0..<m} u \<chi>" and pe: "produces n A u \<eta>" by blast
+  obtain as \<chi>' where e1: "meval j m ts db \<chi> = (as, \<chi>')" by (cases "meval j m ts db \<chi>")
+  have ta: "list_all (ftable m {0..<m}) as" by (rule produces_tables[OF pc w sts mts e1])
+  have w2: "wf_db (Mapping.update (p, m) as db)" by (rule wf_db_update[OF w ta])
+  obtain bs \<eta>' where e2: "meval j n ts (Mapping.update (p, m) as db) \<eta> = (bs, \<eta>')"
+    by (cases "meval j n ts (Mapping.update (p, m) as db) \<eta>")
+  have tb: "list_all (ftable n A) bs" by (rule produces_tables[OF pe w2 sts mts e2])
+  have x: "xs = bs" and f: "\<Phi>' = mformula.MLet p m \<chi>' \<eta>'"
+    using e X Phi e1 e2 by simp_all
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta>. \<Phi>' = mformula.MLet p m \<chi> \<eta> \<and>
+          produces m {0..<m} (dnext u ts) \<chi> \<and> produces n A (dnext u ts) \<eta>)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X tb produces_next[OF pc w sts mts e1] produces_next[OF pe w2 sts mts e2]
+    by (auto simp: x f)
+qed
+
 (*<*)
 end
 (*>*)
