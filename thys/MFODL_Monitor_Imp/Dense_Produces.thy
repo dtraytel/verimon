@@ -20,6 +20,7 @@ lemma ftable_empty_table[simp]: "ftable n A empty_table"
   by (simp add: empty_table_def table_def)
 
 
+
 text \<open>@{thm [source] produces.coinduct} with the trivial equations of its conclusion already
   solved, so that each node's lemma only has to name its own invariant.\<close>
 
@@ -615,6 +616,145 @@ proof -
   have L: "L = (X0 # Xs) @ N" by (simp add: L0 R)
   show ?thesis unfolding L
     by (rule ftable_mmulti_join[OF lXs[symmetric] lN lpos sn t0 f0 w0 sub])
+qed
+
+
+lemma ftable_mmulti_join_nth:
+  fixes as :: "event_data table list"
+  assumes la: "length as = length ((A0 # As) @ A_neg)"
+    and ha: "\<forall>i < length as. ftable n (((A0 # As) @ A_neg) ! i) (as ! i)"
+    and wf: "\<forall>C \<in> set ((A0 # As) @ A_neg). wf_set n C"
+    and sub: "\<forall>B \<in> set A_neg. B \<subseteq> A0 \<union> \<Union>(set As)"
+  shows "ftable n (A0 \<union> \<Union>(set As)) (mmulti_join n (A0 # As) A_neg as)"
+proof -
+  have wfi: "\<And>i. i < length ((A0 # As) @ A_neg) \<Longrightarrow> wf_set n (((A0 # As) @ A_neg) ! i)"
+    using wf by (meson nth_mem)
+  show ?thesis
+    by (rule ftable_mmulti_join'[OF _ sub])
+      (use la ha wfi in \<open>auto simp: list_all2_conv_all_nth\<close>)
+qed
+
+lemma produces_MAnds:
+  assumes lL: "length L = length ((A0 # As) @ A_neg)"
+    and lb: "length buf = length ((A0 # As) @ A_neg)"
+    and pL: "\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (L ! i)"
+    and pb: "\<forall>i < length ((A0 # As) @ A_neg).
+        list_all (ftable n (((A0 # As) @ A_neg) ! i)) (buf ! i)"
+    and wf: "\<forall>C \<in> set ((A0 # As) @ A_neg). wf_set n C"
+    and sub: "\<forall>B \<in> set A_neg. B \<subseteq> A0 \<union> \<Union>(set As)"
+    and A: "A = A0 \<union> \<Union>(set As)"
+  shows "produces n A (mformula.MAnds (A0 # As) A_neg L buf)"
+proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>M bf. \<Phi> = mformula.MAnds (A0 # As) A_neg M bf \<and>
+       length M = length ((A0 # As) @ A_neg) \<and>
+       length bf = length ((A0 # As) @ A_neg) \<and>
+       (\<forall>i < length ((A0 # As) @ A_neg).
+          produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+       (\<forall>i < length ((A0 # As) @ A_neg).
+          list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"])
+  show "n = n \<and> A = A \<and> (\<exists>M bf. mformula.MAnds (A0 # As) A_neg L buf
+      = mformula.MAnds (A0 # As) A_neg M bf \<and>
+      length M = length ((A0 # As) @ A_neg) \<and> length bf = length ((A0 # As) @ A_neg) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg).
+         list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"
+    using lL lb pL pb by blast
+next
+  fix n' A' \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>M bf. \<Phi> = mformula.MAnds (A0 # As) A_neg M bf \<and>
+      length M = length ((A0 # As) @ A_neg) \<and> length bf = length ((A0 # As) @ A_neg) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg).
+         list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"
+    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  define Cs where "Cs = (A0 # As) @ A_neg"
+  from X obtain M0 bf0 where Phi: "\<Phi> = mformula.MAnds (A0 # As) A_neg M0 bf0"
+    and lM: "length M0 = length Cs" and lbf: "length bf0 = length Cs"
+    and pM: "\<forall>i < length Cs. produces n (Cs ! i) (M0 ! i)"
+    and pbf: "\<forall>i < length Cs. list_all (ftable n (Cs ! i)) (bf0 ! i)"
+    unfolding Cs_def by blast
+  define R where "R = map (meval j n ts db) M0"
+  define bf1 where "bf1 = mbufn_add (map fst R) bf0"
+  define Ss :: "event_data table set list" where "Ss = map (\<lambda>C. {X. ftable n C X}) Cs"
+  define f :: "event_data table list \<Rightarrow> event_data table list \<Rightarrow> event_data table list"
+    where "f = (\<lambda>as zs. zs @ [mmulti_join n (A0 # As) A_neg as])"
+  have lR: "length R = length Cs" using lM by (simp add: R_def)
+  have lb1: "length bf1 = length Cs" using lbf lR by (simp add: bf1_def)
+  have lSs: "length Ss = length Cs" by (simp add: Ss_def)
+  have tR: "\<And>i. i < length Cs \<Longrightarrow> list_all (ftable n (Cs ! i)) (fst (R ! i))"
+  proof -
+    fix i assume i: "i < length Cs"
+    obtain as \<chi>' where ei: "meval j n ts db (M0 ! i) = (as, \<chi>')"
+      by (cases "meval j n ts db (M0 ! i)")
+    have "list_all (ftable n (Cs ! i)) as"
+      by (rule produces_tables[OF _ w ei]) (use pM i in blast)
+    then show "list_all (ftable n (Cs ! i)) (fst (R ! i))"
+      using ei i lM by (simp add: R_def)
+  qed
+  have nR: "\<And>i. i < length Cs \<Longrightarrow> produces n (Cs ! i) (snd (R ! i))"
+  proof -
+    fix i assume i: "i < length Cs"
+    obtain as \<chi>' where ei: "meval j n ts db (M0 ! i) = (as, \<chi>')"
+      by (cases "meval j n ts db (M0 ! i)")
+    have "produces n (Cs ! i) \<chi>'"
+      by (rule produces_next[OF _ w ei]) (use pM i in blast)
+    then show "produces n (Cs ! i) (snd (R ! i))"
+      using ei i lM by (simp add: R_def)
+  qed
+  have sub1: "\<forall>i < length bf1. set (bf1 ! i) \<subseteq> Ss ! i"
+  proof (intro allI impI)
+    fix i assume i: "i < length bf1"
+    then have ic: "i < length Cs" using lb1 by simp
+    have "bf1 ! i = bf0 ! i @ fst (R ! i)" using ic lbf lR by (simp add: bf1_def)
+    then show "set (bf1 ! i) \<subseteq> Ss ! i"
+      using pbf tR[OF ic] ic by (auto simp: Ss_def list_all_iff)
+  qed
+  have st: "\<And>as u. length as = length Ss \<Longrightarrow> (\<forall>i < length Ss. as ! i \<in> Ss ! i) \<Longrightarrow>
+      list_all (ftable n A) u \<Longrightarrow> list_all (ftable n A) (f as u)"
+  proof -
+    fix as :: "event_data table list" and u :: "event_data table list"
+    assume la: "length as = length Ss" and ha: "\<forall>i < length Ss. as ! i \<in> Ss ! i"
+      and qu: "list_all (ftable n A) u"
+    have ha': "\<forall>i < length Cs. ftable n (Cs ! i) (as ! i)"
+    proof (intro allI impI)
+      fix i assume i: "i < length Cs"
+      then have "as ! i \<in> Ss ! i" using ha lSs by simp
+      then show "ftable n (Cs ! i) (as ! i)" using i by (simp add: Ss_def)
+    qed
+    have lac: "length as = length ((A0 # As) @ A_neg)" using la lSs by (simp add: Cs_def)
+    have hac: "\<forall>i < length as. ftable n (((A0 # As) @ A_neg) ! i) (as ! i)"
+      using ha' la lSs by (simp add: Cs_def)
+    have "ftable n A (mmulti_join n (A0 # As) A_neg as)"
+      unfolding A by (rule ftable_mmulti_join_nth[OF lac hac wf sub])
+    then show "list_all (ftable n A) (f as u)" using qu by (simp add: f_def)
+  qed
+  obtain zs bf2 where e2: "mbufn_take f [] bf1 = (zs, bf2)"
+    by (cases "mbufn_take f [] bf1")
+  have lSb: "length Ss = length bf1" using lSs lb1 by simp
+  have qz: "list_all (ftable n A) []" by simp
+  have out: "list_all (ftable n A) zs \<and> length bf2 = length bf1 \<and>
+      (\<forall>i < length bf2. set (bf2 ! i) \<subseteq> Ss ! i)"
+    by (rule mbufn_take_out[where Q = "list_all (ftable n A)" and f = f and Ss = Ss,
+        OF e2 lSb sub1 st qz])
+  have m: "meval j n ts db (mformula.MAnds (A0 # As) A_neg M0 bf0)
+      = (zs, mformula.MAnds (A0 # As) A_neg (map snd R) bf2)"
+    using e2 unfolding R_def bf1_def f_def
+    by (simp add: Let_def del: mbufn_take.simps mmulti_join.simps)
+  have x: "xs = zs" and f': "\<Phi>' = mformula.MAnds (A0 # As) A_neg (map snd R) bf2"
+    using e X Phi m by simp_all
+  have pM': "\<forall>i < length Cs. produces n (Cs ! i) (map snd R ! i)"
+    using nR lR by simp
+  have pbf': "\<forall>i < length Cs. list_all (ftable n (Cs ! i)) (bf2 ! i)"
+    using out lb1 by (auto simp: Ss_def list_all_iff subset_eq)
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>M bf. \<Phi>' = mformula.MAnds (A0 # As) A_neg M bf \<and>
+         length M = length ((A0 # As) @ A_neg) \<and>
+         length bf = length ((A0 # As) @ A_neg) \<and>
+         (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+         (\<forall>i < length ((A0 # As) @ A_neg).
+            list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))) \<or>
+       produces n' A' \<Phi>')"
+    using X out pM' pbf' lM lb1 lR by (auto simp: x f' Cs_def)
 qed
 
 (*<*)
