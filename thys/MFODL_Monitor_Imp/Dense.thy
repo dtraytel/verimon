@@ -2316,6 +2316,101 @@ next
   qed
 qed
 
+subsection \<open>The multi-way buffer\<close>
+
+text \<open>
+  @{const mbufn_take} lines up one table per conjunct, and each conjunct has its own column list,
+  so the morphism is a list of narrowings applied slotwise.  The step condition is relational for
+  the same reason as @{thm [source] mbuf2t_take_rel}, and it is restricted to tables drawn from
+  fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
+  formed for the multi-way join theorem to apply and the buffer only ever shrinks.
+\<close>
+
+lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
+  by simp
+
+lemma map2_map_empty_iff:
+  "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
+  by (induct hs buf rule: list_induct2) auto
+
+lemma map2_map_nil_iff: "length hs = length buf \<Longrightarrow> (map2 map hs buf = []) = (buf = [])"
+  by (induct hs buf rule: list_induct2) auto
+
+lemma map2_map_hd:
+  "length hs = length buf \<Longrightarrow> [] \<notin> set buf \<Longrightarrow>
+     map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+  by (induct hs buf rule: list_induct2) (auto simp: hd_map)
+
+lemma map2_map_tl:
+  "length hs = length buf \<Longrightarrow> [] \<notin> set buf \<Longrightarrow>
+     map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+  by (induct hs buf rule: list_induct2) (auto simp: map_tl)
+
+lemma mbufn_take_rel:
+  "length hs = length buf \<Longrightarrow> length Ss = length buf \<Longrightarrow>
+   (\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i) \<Longrightarrow>
+   (\<And>as u u'. length as = length hs \<Longrightarrow> (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+      R (f as u) (g (map2 (\<lambda>h a. h a) hs as) u')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbufn_take f z buf = (w, buf') \<Longrightarrow>
+   mbufn_take g z' (map2 map hs buf) = (w2, buf2) \<Longrightarrow>
+   R w w2 \<and> buf2 = map2 map hs buf'"
+proof (induct f z buf arbitrary: z' w buf' w2 buf2 rule: mbufn_take.induct)
+  case (1 f z buf)
+  note IH = 1(1) and L1 = 1(2) and L2 = 1(3) and SUB = 1(4)
+    and STEP = 1(5) and RZ = 1(6) and E1 = 1(7) and E2 = 1(8)
+  show ?case
+  proof (cases "buf = [] \<or> [] \<in> set buf")
+    case True
+    then have "map2 map hs buf = [] \<or> [] \<in> set (map2 map hs buf)"
+      by (simp only: map2_map_nil_iff[OF L1] map2_map_empty_iff[OF L1])
+    then show ?thesis using True RZ E1 E2 by (simp add: mbufn_take.simps)
+  next
+    case False
+    then have ne: "\<not> (map2 map hs buf = [] \<or> [] \<in> set (map2 map hs buf))"
+      by (simp only: map2_map_nil_iff[OF L1] map2_map_empty_iff[OF L1]) simp
+    have las: "length (map hd buf) = length hs" using L1 by simp
+    have mem: "\<forall>i < length (map hd buf). map hd buf ! i \<in> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map hd buf)"
+      then have i': "i < length buf" by simp
+      then have "buf ! i \<noteq> []" using False by (auto simp: in_set_conv_nth)
+      then have "hd (buf ! i) \<in> set (buf ! i)" by simp
+      then show "map hd buf ! i \<in> Ss ! i" using SUB i' by auto
+    qed
+    have r: "R (f (map hd buf) z) (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z')"
+      by (rule STEP[OF las mem RZ])
+    have sub': "\<forall>i < length (map tl buf). set (map tl buf ! i) \<subseteq> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map tl buf)"
+      then have i': "i < length buf" by simp
+      have "set (tl (buf ! i)) \<subseteq> set (buf ! i)" by (cases "buf ! i") auto
+      then show "set (map tl buf ! i) \<subseteq> Ss ! i" using SUB i' by auto
+    qed
+    have e1: "mbufn_take f (f (map hd buf) z) (map tl buf) = (w, buf')"
+      using E1 False by (simp add: mbufn_take.simps)
+    have e2: "mbufn_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z') (map2 map hs (map tl buf))
+        = (w2, buf2)"
+    proof -
+      have u: "mbufn_take g z' (map2 map hs buf)
+          = mbufn_take g (g (map hd (map2 map hs buf)) z') (map tl (map2 map hs buf))"
+        using ne by (subst mbufn_take.simps) simp
+      have hd': "map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+        by (rule map2_map_hd[OF L1]) (use False in simp)
+      have tl': "map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+        by (rule map2_map_tl[OF L1]) (use False in simp)
+      have "mbufn_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z') (map2 map hs (map tl buf))
+          = mbufn_take g (g (map hd (map2 map hs buf)) z') (map tl (map2 map hs buf))"
+        by (simp only: hd' tl')
+      also have "\<dots> = mbufn_take g z' (map2 map hs buf)" by (simp only: u)
+      also have "\<dots> = (w2, buf2)" by (rule E2)
+      finally show ?thesis .
+    qed
+    show ?thesis
+      by (rule IH[OF False _ _ sub' STEP r e1 e2]) (use L1 L2 in simp_all)
+  qed
+qed
+
 (*<*)
 end
 (*>*)
