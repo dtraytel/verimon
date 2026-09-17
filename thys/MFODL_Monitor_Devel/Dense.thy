@@ -676,6 +676,135 @@ proof -
   ultimately show ?thesis unfolding dtabc_def by auto
 qed
 
+section \<open>Aggregation over short tuples\<close>
+
+subsection \<open>Reading a term at the short tuple's positions\<close>
+
+fun col_pos :: "cols \<Rightarrow> nat \<Rightarrow> nat" where
+  "col_pos [] x = 0"
+| "col_pos (c # cs) x = (if c = x then 0 else Suc (col_pos cs x))"
+
+fun reindex_trm :: "cols \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm" where
+  "reindex_trm cs (Formula.Var x) = Formula.Var (col_pos cs x)"
+| "reindex_trm cs (Formula.Const c) = Formula.Const c"
+| "reindex_trm cs (Formula.Plus a b) = Formula.Plus (reindex_trm cs a) (reindex_trm cs b)"
+| "reindex_trm cs (Formula.Minus a b) = Formula.Minus (reindex_trm cs a) (reindex_trm cs b)"
+| "reindex_trm cs (Formula.UMinus a) = Formula.UMinus (reindex_trm cs a)"
+| "reindex_trm cs (Formula.Mult a b) = Formula.Mult (reindex_trm cs a) (reindex_trm cs b)"
+| "reindex_trm cs (Formula.Div a b) = Formula.Div (reindex_trm cs a) (reindex_trm cs b)"
+| "reindex_trm cs (Formula.Mod a b) = Formula.Mod (reindex_trm cs a) (reindex_trm cs b)"
+| "reindex_trm cs (Formula.F2i a) = Formula.F2i (reindex_trm cs a)"
+| "reindex_trm cs (Formula.I2f a) = Formula.I2f (reindex_trm cs a)"
+
+lemma col_pos_nth: "c \<in> set cs \<Longrightarrow> map f cs ! col_pos cs c = f c"
+  by (induct cs) auto
+
+text \<open>The re-indexed term read at the short tuple's positions is the original term read at the
+  wide one's.\<close>
+
+lemma meval_trm_reindex:
+  "Formula.fv_trm t \<subseteq> set cs \<Longrightarrow>
+     meval_trm (reindex_trm cs t) (map (\<lambda>c. x ! c) cs) = meval_trm t x"
+  by (induct t) (auto simp: col_pos_nth)
+
+subsection \<open>The group key is a suffix in both representations\<close>
+
+text \<open>
+  The aggregation's bound variables occupy the bottom of the frame and are contained in the
+  operand's free variables, so the operand's column list is @{term "[0..<m]"} followed by the
+  group's columns shifted up by @{term m}.  Under that decomposition the group key -- which the
+  kernel takes as @{term "drop m"} of the wide tuple -- is @{term "drop m"} of the short one.
+\<close>
+
+abbreviation agg_cols :: "nat \<Rightarrow> cols \<Rightarrow> cols" where
+  "agg_cols m gcols \<equiv> [0..<m] @ map (\<lambda>c. c + m) gcols"
+
+lemma agg_cols_sorted:
+  "sorted_wrt (<) gcols \<Longrightarrow> sorted_wrt (<) (agg_cols m gcols)"
+  by (auto simp: sorted_wrt_append sorted_wrt_map)
+
+lemma agg_cols_bound:
+  "\<forall>c \<in> set gcols. c < n \<Longrightarrow> \<forall>c \<in> set (agg_cols m gcols). c < m + n"
+  by auto
+
+lemma drop_dproj_agg:
+  assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
+    and lx: "length x = m + n"
+  shows "drop m (dproj (wide_mask (m + n) (agg_cols m gcols)) x)
+       = dproj (wide_mask n gcols) (drop m x)"
+proof -
+  have ld: "length (drop m x) = n" using lx by simp
+  have "dproj (wide_mask (m + n) (agg_cols m gcols)) x = map (\<lambda>c. x ! c) (agg_cols m gcols)"
+    by (rule dproj_wide_mask_eq_map_nth[OF agg_cols_sorted[OF sg] agg_cols_bound[OF bg] lx])
+  then have "drop m (dproj (wide_mask (m + n) (agg_cols m gcols)) x)
+      = map (\<lambda>c. x ! (c + m)) gcols" by simp
+  moreover have "dproj (wide_mask n gcols) (drop m x) = map (\<lambda>c. x ! (c + m)) gcols"
+    using dproj_wide_mask_eq_map_nth[OF sg bg ld] bg lx
+    by (auto simp: add.commute cong: map_cong)
+  ultimately show ?thesis by simp
+qed
+
+subsection \<open>Writing the aggregate into the group key\<close>
+
+definition ins_pos :: "cols \<Rightarrow> nat \<Rightarrow> nat" where
+  "ins_pos cs y = length (filter (\<lambda>c. c < y) cs)"
+
+lemma merge_cols_single:
+  "sorted_wrt (<) cs \<Longrightarrow> y \<notin> set cs \<Longrightarrow>
+     merge_cols cs [y] = take (ins_pos cs y) cs @ y # drop (ins_pos cs y) cs"
+proof (induct cs)
+  case (Cons c cs)
+  show ?case
+  proof (cases "c < y")
+    case True
+    then show ?thesis using Cons by (simp add: ins_pos_def)
+  next
+    case False
+    then have yc: "y < c" using Cons(3) by auto
+    then have "filter (\<lambda>d. d < y) (c # cs) = []" using Cons(2)
+      by (force simp: filter_empty_conv)
+    then show ?thesis using yc False by (simp add: ins_pos_def merge_cols_Nil2)
+  qed
+qed (simp add: ins_pos_def)
+
+text \<open>The kernel writes the aggregate at position @{term y} of the group key; over short tuples
+  it goes at the one position @{term y} occupies among the group's columns.\<close>
+
+lemma dproj_list_update:
+  assumes s: "sorted_wrt (<) gcols" and b: "\<forall>c \<in> set gcols. c < n"
+    and yn: "y < n" and yg: "y \<notin> set gcols" and lk: "length k = n"
+  shows "dproj (wide_mask n (merge_cols gcols [y])) (k[y := Some v])
+       = take (ins_pos gcols y) (dproj (wide_mask n gcols) k) @ Some v
+         # drop (ins_pos gcols y) (dproj (wide_mask n gcols) k)"
+proof -
+  let ?p = "ins_pos gcols y"
+  have sm: "sorted_wrt (<) (merge_cols gcols [y])" using s by (simp add: sorted_merge_cols)
+  have bm: "\<forall>c \<in> set (merge_cols gcols [y]). c < n" using b yn by (simp add: set_merge_cols)
+  have lu: "length (k[y := Some v]) = n" using lk by simp
+  have "dproj (wide_mask n (merge_cols gcols [y])) (k[y := Some v])
+      = map (\<lambda>c. (k[y := Some v]) ! c) (merge_cols gcols [y])"
+    by (rule dproj_wide_mask_eq_map_nth[OF sm bm lu])
+  also have "\<dots> = map (\<lambda>c. (k[y := Some v]) ! c) (take ?p gcols @ y # drop ?p gcols)"
+    by (simp add: merge_cols_single[OF s yg])
+  also have "\<dots> = map (\<lambda>c. k ! c) (take ?p gcols) @ Some v # map (\<lambda>c. k ! c) (drop ?p gcols)"
+  proof -
+    have upd: "\<And>c. c \<in> set gcols \<Longrightarrow> (k[y := Some v]) ! c = k ! c"
+    proof -
+      fix c assume "c \<in> set gcols"
+      then have "y \<noteq> c" using yg by auto
+      then show "(k[y := Some v]) ! c = k ! c" by simp
+    qed
+    have t: "map (\<lambda>c. (k[y := Some v]) ! c) (take ?p gcols) = map (\<lambda>c. k ! c) (take ?p gcols)"
+      by (rule map_cong[OF refl]) (auto dest: in_set_takeD intro!: upd)
+    have d: "map (\<lambda>c. (k[y := Some v]) ! c) (drop ?p gcols) = map (\<lambda>c. k ! c) (drop ?p gcols)"
+      by (rule map_cong[OF refl]) (auto dest: in_set_dropD intro!: upd)
+    show ?thesis using t d yn lk by simp
+  qed
+  also have "\<dots> = take ?p (map (\<lambda>c. k ! c) gcols) @ Some v # drop ?p (map (\<lambda>c. k ! c) gcols)"
+    by (simp add: take_map drop_map)
+  finally show ?thesis using dproj_wide_mask_eq_map_nth[OF s b lk] by simp
+qed
+
 (*<*)
 end
 (*>*)
