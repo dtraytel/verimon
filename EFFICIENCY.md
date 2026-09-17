@@ -3341,12 +3341,9 @@ that currently get none.
 
 ### 20.12 What is left
 
-1. **The compilation.** 20.13 does the `produces` half and closes the chain through the escape
-   hatch `DPure`, down to the kernel's own initial state. What is left of this item is the *descending* compiler: a pure `dof` and `mcols`
-   (the ones in `Dense_Imp.thy` are monadic, because they initialise the imperative structures)
-   producing a `dsim` whose nodes are dense rather than `DPure` -- that the column list of a node
-   is the subformula's free-variable set, and that the join plans and the embedding plan are the
-   ones the frames call for.
+1. **The compilation.** Done: 20.13 does the `produces` half and closes the chain through the
+   escape hatch `DPure`, down to the kernel's own initial state, and 20.14 replaces that escape
+   hatch by a descending compiler.
 2. **The Since and Until cases must be rebuilt** on 20.6-20.8, replacing `sevtaux` / `evtaux` in
    the dense fragment -- which today takes a Since or Until only when the left operand has no free
    variables, so a genuine two-sided one falls back to a single `DPure` node. This changes the
@@ -3482,3 +3479,75 @@ theorem dmonitor_mverdicts_dense (in verimon_spec):
 states the dense monitor's correctness with no hypotheses left for the caller beyond the locale's
 own `mmonitorable φ` and the prefix being a finite, well-typed log. `Dense_Init.thy` is in `ROOT`
 and the session builds with no `sorry`.
+
+### 20.14 The descending compiler
+
+20.13 relates the compiled state to the kernel's through a single `DPure` node at the root. That
+is honest but inert: `DPure` runs the kernel's own evaluator and narrows its output, so none of
+the dense representation is used. `Dense_Descend.thy` replaces it by a compiler that descends into
+the formula and emits a dense node wherever the simulation has a rule for one.
+
+```isabelle
+fun dof :: "nat ⇒ cols ⇒ (mmasaux, muaux_dq, event_data mmtaux) mformula ⇒ dformula"
+```
+
+`dof n cs φ` is a plain function of the kernel's formula and the column list its result is to
+have. It is total: at every constructor it either builds the dense node or falls back to
+`DPure φ n (wide_mask n cs)`, and each dense branch is guarded by a decidable check of exactly
+what the corresponding `dsim` rule asks for. That is what makes the correctness proof work case by
+case without a separate well-formedness criterion: where a guard fails the fallback is sound
+anyway, because `DsPure` needs only `produces`, which 20.13 already supplies for every node of the
+initial state.
+
+**No second pass computing a node's columns.** The monadic compiler in `Dense_Imp.thy` carries an
+`mcols` that reads a node's column set off it. The pure compiler does not need one. At every
+recursive call the operand's column list is read off the node itself -- the two variable sets a
+conjunction stores, the argument record a temporal node stores, the operand columns an aggregation
+stores -- with one exception, the existential, where it is reconstructed from the node's own
+columns: a safe existential binds a variable that does occur, so
+
+```isabelle
+dof n cs (mformula.MExists φ) = DExists (dof (Suc n) (0 # map Suc cs) φ) True
+```
+
+is right, and `ex_cols (0 # map Suc cs) = cs` closes the circle. The corresponding fact about the
+kernel's column sets, `set_cols (fv φ) = 0 # map Suc (set_cols (fvi 1 φ))` for `0 ∈ fv φ`, is the
+only place the column arithmetic of the binders shows up.
+
+**The theorem.**
+
+```isabelle
+theorem dsim_dof_minit0:
+  "safe_formula φ ⟹ ∀x ∈ fv φ. x < n ⟹
+   dsim n (set_cols (fv φ)) tw (dof n (set_cols (fv φ)) (minit0 n φ)) (minit0 n φ)"
+```
+
+by `safe_formula_induct` again, one lemma per constructor proved beforehand with the induction
+hypotheses as assumptions -- so the thirty-two cases of the induction itself are one line each.
+Two of the lemmas needed something new. The aggregation's operand columns had to be shown to be
+`[0..<k] @ map (+ k) gcols`, which is where a strictly sorted list of naturals containing
+`{0..<k}` begins with `0, …, k-1`; `strict_sorted_take_upt` is that fact. The Since and Until
+nodes needed the dense structure at time `0`, which is `dsaux_init` and `duaux_init` of 20.6-20.8
+paired with the kernel's own `valid_init_*`; `dsince_rel_init` and `duntil_rel_init` package them.
+
+**What compiles densely.** Every constructor the dense fragment covers: relations, the three
+prediction modes, the conjunction in its three forms, the multi-way conjunction, negation,
+disjunction, the existential, the aggregation, previous and next, and Since and Until. What stays
+`DPure` is what `dsim` has no rule for -- `Let`, `LetPast`, `Frz`, the assignment conjunction, the
+match nodes, the trigger nodes, the time-point and timestamp nodes, and the Since and Until with a
+fused aggregation, whose structure carries the aggregation in its arguments while the dense ones
+do not.
+
+**The chain, once more.** `dof_state` puts the compiled formula into the dense monitor's state
+record, and
+
+```isabelle
+theorem dmonitor_mverdicts_dof (in verimon_spec):
+  "pfinite π ⟹ wty_prefix SIG π ⟹
+   flatten_verdicts (map (λ(i, t, X). (i, t, dtabw (nfv φ) (set_cols (fv φ)) X))
+     (dmonitor (dof_state (nfv φ) (set_cols (fv φ)) (minit_safe φ)) π)) = Mt π"
+```
+
+is 20.13's theorem on that state instead of the inert one: the same correctness statement, now
+about a monitor that really runs on short tuples.
+

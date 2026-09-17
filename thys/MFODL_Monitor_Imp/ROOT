@@ -21,6 +21,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
     Dense_Correct
     Dense_Compile
     Dense_Init
+    Dense_Descend
     Dense_Imp
     Monitor_Imp
   theories [document=false]
