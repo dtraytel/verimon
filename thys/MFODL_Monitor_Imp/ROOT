@@ -15,6 +15,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
     Dense
     Dense_Eval
     Dense_Produces
+    Dense_Match
     Dense_Correct
     Dense_Imp
     Monitor_Imp
