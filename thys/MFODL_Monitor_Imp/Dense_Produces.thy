@@ -1325,6 +1325,268 @@ next
     by (auto simp: x f)
 qed
 
+subsection \<open>The trigger node\<close>
+
+text \<open>
+  The trigger structure's result is not a table over a fixed column set in general: when nothing
+  in its window lies in the interval it reports the unit table, and the column set it reports
+  alongside says so.  The kernel only ever builds a trigger node for an interval containing zero,
+  and then the entry the update has just appended is itself in the interval, so the window is
+  never empty, the result is always a table over the right operand's columns, and it is finite
+  because that entry's own table bounds it -- the last index's disjunct has nowhere later to go.
+\<close>
+
+lemma mbuf2T_take_inv:
+  "(\<And>a b v w z. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (f a b v z)) \<Longrightarrow>
+   Q u0 z \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>v \<in> set ts. u0 \<le> v) \<Longrightarrow>
+   (\<forall>v \<in> set ts. v \<le> tb) \<Longrightarrow> u0 \<le> tb \<Longrightarrow>
+   mbuf2T_take f z (xs, ys) ts = (w, (xs', ys'), ts') \<Longrightarrow>
+   (\<exists>v. Q v w \<and> v \<le> tb \<and> (\<forall>u \<in> set ts'. v \<le> u)) \<and> sorted ts' \<and>
+     set ts' \<subseteq> set ts \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
+proof (induct xs arbitrary: ys z u0 ts w xs' ys' ts')
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note step = Cons(2) and r = Cons(3) and s = Cons(4) and mb = Cons(5)
+    and ub = Cons(6) and le = Cons(7) and P = Cons(8) and IH = Cons(1)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P r le s mb by auto
+  next
+    case (Cons y ys0)
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P r le s mb \<open>ys = y # ys0\<close> by auto
+    next
+      case (Cons v ts0)
+      have e: "mbuf2T_take f (f x y v z) (xs, ys0) ts0 = (w, (xs', ys'), ts')"
+        using P \<open>ys = y # ys0\<close> Cons by simp
+      have rt: "Q v (f x y v z)"
+        using step[of x y u0 z v] r mb Cons \<open>ys = y # ys0\<close> by simp
+      have s0: "sorted ts0" using s Cons by simp
+      have mb0: "\<forall>u \<in> set ts0. v \<le> u" using s Cons by simp
+      have ub0: "\<forall>u \<in> set ts0. u \<le> tb" using ub Cons by simp
+      have vb: "v \<le> tb" using ub Cons by simp
+      have "(\<exists>u. Q u w \<and> u \<le> tb \<and> (\<forall>u' \<in> set ts'. u \<le> u')) \<and> sorted ts' \<and>
+          set ts' \<subseteq> set ts0 \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys0"
+        by (rule IH[OF _ rt s0 mb0 ub0 vb e]) (use step \<open>ys = y # ys0\<close> in auto)
+      then show ?thesis using Cons \<open>ys = y # ys0\<close> by auto
+    qed
+  qed
+qed
+
+lemma ftable_trigger_results:
+  fixes args :: args
+  assumes wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r"
+    and ne: "auxlist \<noteq> []" and m0: "mem (args_ivl args) 0"
+    and lst: "fst (last auxlist) = cur"
+    and an: "args_n args = n" and aR: "args_R args = R"
+  shows "ftable n R (snd (trigger_results args cur auxlist))"
+    and "fst (trigger_results args cur auxlist) = R"
+proof -
+  have kl: "length auxlist - 1 < length auxlist" using ne by simp
+  obtain l0 r0 where a0: "auxlist ! (length auxlist - 1) = (cur, l0, r0)"
+    using lst ne by (cases "auxlist ! (length auxlist - 1)") (simp add: last_conv_nth)
+  have mem0: "auxlist ! (length auxlist - 1) \<in> set auxlist" using kl by (rule nth_mem)
+  have tr0: "ftable n R r0" using wf mem0 a0 by force
+  have mm: "mem (args_ivl args) (cur - cur)" using m0 by simp
+  have m: "(cur, l0, r0) \<in> set auxlist" using mem0 a0 by simp
+  have fl: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist \<noteq> []"
+  proof
+    assume e: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist = []"
+    have "\<forall>x \<in> set auxlist. \<not> (case x of (t, _, _) \<Rightarrow> mem (args_ivl args) (cur - t))"
+      using e unfolding filter_empty_conv by simp
+    from this[rule_format, OF m] show False using mm by simp
+  qed
+  have tb: "table n R (snd (trigger_results args cur auxlist))"
+    using fl an aR by (auto simp: table_def)
+  have sub: "snd (trigger_results args cur auxlist) \<subseteq> r0"
+  proof
+    fix tu assume tu: "tu \<in> snd (trigger_results args cur auxlist)"
+    have H: "\<forall>i \<in> {0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
+        mem (args_ivl args) (cur - t) \<longrightarrow>
+        (tu \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
+           join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
+             (proj_tuple (join_mask (args_n args) (args_L args)) tu)))"
+      using tu fl by simp
+    have "{length auxlist - 1<..<length auxlist} = {}" using ne by auto
+    then show "tu \<in> r0" using H[rule_format, of "length auxlist - 1"] kl a0 mm by simp
+  qed
+  have fin: "finite (snd (trigger_results args cur auxlist))"
+    by (rule finite_subset[OF sub]) (use tr0 in simp)
+  show "ftable n R (snd (trigger_results args cur auxlist))" using tb fin by simp
+  show "fst (trigger_results args cur auxlist) = R" using fl aR by simp
+qed
+
+definition taux_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
+    event_data mmtaux \<Rightarrow> bool" where
+  "taux_inv args n L R cur aux \<longleftrightarrow>
+     (\<exists>auxlist. valid_mmtaux args cur aux auxlist \<and>
+        (\<forall>(t, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r))"
+
+lemma taux_inv_step:
+  fixes args :: args
+  assumes v: "taux_inv args n L R u aux"
+    and an: "args_n args = n" and aL: "args_L args = L" and aR: "args_R args = R"
+    and m0: "mem (args_ivl args) 0"
+    and t1: "ftable n L a" and t2: "ftable n R b" and ut: "u \<le> t"
+  shows "taux_inv args n L R t (update_mmtaux args t a b aux) \<and>
+     ftable n R (snd (result_mmtaux args (update_mmtaux args t a b aux))) \<and>
+     fst (result_mmtaux args (update_mmtaux args t a b aux)) = R"
+proof -
+  obtain auxlist where vw: "valid_mmtaux args u aux auxlist"
+    and wf: "\<forall>(v, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r"
+    using v unfolding taux_inv_def by blast
+  define al where "al = filter (\<lambda>(v, _). memR (args_ivl args) (t - v)) auxlist @ [(t, a, b)]"
+  have vw': "valid_mmtaux args t (update_mmtaux args t a b aux) al"
+    unfolding al_def by (rule valid_update_mmtaux[OF ut _ _ vw]) (use t1 t2 an aL aR in simp_all)
+  have wf': "\<forall>(v, l, r) \<in> set al. ftable n L l \<and> ftable n R r"
+    using wf t1 t2 unfolding al_def by auto
+  have ne: "al \<noteq> []" by (simp add: al_def)
+  have lst: "fst (last al) = t" by (simp add: al_def)
+  have ftr: "ftable n R (snd (trigger_results args t al))"
+    and fstR: "fst (trigger_results args t al) = R"
+    by (rule ftable_trigger_results[OF wf' ne m0 lst an aR])+
+  have res: "result_mmtaux args (update_mmtaux args t a b aux) = trigger_results args t al"
+    by (rule valid_result_mmtaux[OF vw'])
+  have "taux_inv args n L R t (update_mmtaux args t a b aux)"
+    unfolding taux_inv_def using vw' wf' by blast
+  then show ?thesis using ftr fstR unfolding res by simp
+qed
+
+definition trigger_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
+    event_data mmtaux \<Rightarrow> event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
+  "trigger_inv args n L R u aux buf nts \<longleftrightarrow>
+     (\<exists>cur. taux_inv args n L R cur aux \<and> cur \<le> u \<and>
+        list_all (ftable n L) (fst buf) \<and> list_all (ftable n R) (snd buf) \<and>
+        sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u))"
+
+lemma trigger_step_ftable:
+  fixes args :: args
+  assumes an: "args_n args = n" and aL: "args_L args = L" and aR: "args_R args = R"
+    and m0: "mem (args_ivl args) 0"
+    and rel: "trigger_inv args n L R u aux buf nts"
+    and ta: "list_all (ftable n L) as" and tb: "list_all (ftable n R) bs"
+    and s: "sorted tss" and bnd: "\<forall>v \<in> set tss. u \<le> v"
+    and we: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+        let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+        in (zs @ [z], aux)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
+      = ((zs, aux1), buf1, nts1)"
+  shows "list_all (ftable n R) zs \<and> trigger_inv args n L R (dnext u tss) aux1 buf1 nts1"
+proof -
+  obtain cur where vr: "taux_inv args n L R cur aux" and ct: "cur \<le> u"
+    and lu: "list_all (ftable n L) (fst buf)"
+    and lv: "list_all (ftable n R) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u"
+    using rel unfolding trigger_inv_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  define g where "g = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
+    let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+    in (zs @ [z], ax))"
+  define Q where "Q = (\<lambda>v (pr :: event_data table list \<times> event_data mmtaux).
+    list_all (ftable n R) (fst pr) \<and> taux_inv args n L R v (snd pr))"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable n L) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable n R) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b v w z. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (g a b v z)"
+  proof -
+    fix a b v w and z :: "event_data table list \<times> event_data mmtaux"
+    assume au: "a \<in> set us" and bv: "b \<in> set vs" and q: "Q w z" and wv: "w \<le> v"
+    have t1: "ftable n L a" using au lus by (simp add: list_all_iff)
+    have t2: "ftable n R b" using bv lvs by (simp add: list_all_iff)
+    have "taux_inv args n L R v (update_mmtaux args v a b (snd z)) \<and>
+        ftable n R (snd (result_mmtaux args (update_mmtaux args v a b (snd z)))) \<and>
+        fst (result_mmtaux args (update_mmtaux args v a b (snd z))) = R"
+      by (rule taux_inv_step[OF _ an aL aR m0 t1 t2 wv]) (use q in \<open>simp add: Q_def\<close>)
+    then show "Q v (g a b v z)" using q
+      by (cases z) (auto simp: Q_def g_def Let_def split: prod.splits)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ct by fastforce
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext u tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have cdn: "cur \<le> dnext u tss" using ct dnext_ge[OF bnd] by simp
+  have q0: "Q cur ([], aux)" using vr by (simp add: Q_def)
+  have we': "mbuf2T_take g ([], aux) (us, vs) (nts @ tss) = ((zs, aux1), (b1, b2), nts1)"
+    using we unfolding ma bfs g_def by simp
+  have Rr: "(\<exists>v. Q v (zs, aux1) \<and> v \<le> dnext u tss \<and> (\<forall>w \<in> set nts1. v \<le> w)) \<and>
+      sorted nts1 \<and> set nts1 \<subseteq> set (nts @ tss) \<and> set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs"
+    by (rule mbuf2T_take_inv[where Q = Q and f = g and xs = us and ys = vs,
+        OF step q0 sts cts bound cdn we'])
+  obtain v where qv: "Q v (zs, aux1)" and vb: "v \<le> dnext u tss"
+    and un: "\<forall>w \<in> set nts1. v \<le> w" using Rr by blast
+  have sn1: "sorted nts1" and sb1: "set b1 \<subseteq> set us" and sb2: "set b2 \<subseteq> set vs"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)" using Rr by blast+
+  have lb1: "list_all (ftable n L) b1" using sb1 lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable n R) b2" using sb2 lvs by (auto simp: list_all_iff)
+  have tz: "list_all (ftable n R) zs" using qv by (simp add: Q_def)
+  have "taux_inv args n L R v aux1 \<and> v \<le> dnext u tss \<and>
+      list_all (ftable n L) (fst buf1) \<and> list_all (ftable n R) (snd buf1) \<and>
+      sorted nts1 \<and> (\<forall>w \<in> set nts1. v \<le> w \<and> w \<le> dnext u tss)"
+    using qv vb lb1 lb2 sn1 un sub1 bound bfs by (auto simp: Q_def)
+  then have "trigger_inv args n L R (dnext u tss) aux1 buf1 nts1"
+    unfolding trigger_inv_def by blast
+  then show ?thesis using tz by simp
+qed
+
+lemma produces_MTrigger:
+  fixes args :: args
+  assumes p1: "produces n L tw \<phi>" and p2: "produces n R tw \<psi>"
+    and r: "trigger_inv args n L R tw aux buf nts"
+    and an: "args_n args = n" and aL: "args_L args = L" and aR: "args_R args = R"
+    and m0: "mem (args_ivl args) 0"
+  shows "produces n R tw (mformula.MTrigger args \<phi> \<psi> buf nts aux)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = R \<and>
+    (\<exists>\<chi> \<eta> bf ns ax. \<Phi> = mformula.MTrigger args \<chi> \<eta> bf ns ax \<and>
+       produces n L u \<chi> \<and> produces n R u \<eta> \<and> trigger_inv args n L R u ax bf ns)"])
+  show "n = n \<and> R = R \<and> (\<exists>\<chi> \<eta> bf ns ax.
+      mformula.MTrigger args \<phi> \<psi> buf nts aux = mformula.MTrigger args \<chi> \<eta> bf ns ax \<and>
+      produces n L tw \<chi> \<and> produces n R tw \<eta> \<and> trigger_inv args n L R tw ax bf ns)"
+    using p1 p2 r by blast
+next
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = R \<and> (\<exists>\<chi> \<eta> bf ns ax.
+      \<Phi> = mformula.MTrigger args \<chi> \<eta> bf ns ax \<and>
+      produces n L u \<chi> \<and> produces n R u \<eta> \<and> trigger_inv args n L R u ax bf ns)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf ns ax where Phi: "\<Phi> = mformula.MTrigger args \<chi> \<eta> bf ns ax"
+    and pc: "produces n L u \<chi>" and pe: "produces n R u \<eta>"
+    and inv: "trigger_inv args n L R u ax bf ns" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain zs ax1 bf1 ns1 where e3: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [z], aux)) ([], ax) (mbuf2_add as bs bf) (ns @ ts)
+        = ((zs, ax1), bf1, ns1)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [z], aux)) ([], ax) (mbuf2_add as bs bf) (ns @ ts)") auto
+  have x: "xs = zs" and f: "\<Phi>' = mformula.MTrigger args \<chi>' \<eta>' bf1 ns1 ax1"
+    using e X Phi e1 e2 e3 by simp_all
+  have ta: "list_all (ftable n L) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable n R) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have step: "list_all (ftable n R) zs \<and>
+      trigger_inv args n L R (dnext u ts) ax1 bf1 ns1"
+    by (rule trigger_step_ftable[OF an aL aR m0 inv ta tb sts mts e3])
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = R \<and>
+          (\<exists>\<chi> \<eta> bf ns ax. \<Phi>' = mformula.MTrigger args \<chi> \<eta> bf ns ax \<and>
+             produces n L (dnext u ts) \<chi> \<and> produces n R (dnext u ts) \<eta> \<and>
+             trigger_inv args n L R (dnext u ts) ax bf ns)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X step produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
 (*<*)
 end
 (*>*)
