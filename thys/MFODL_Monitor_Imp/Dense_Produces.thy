@@ -25,21 +25,27 @@ text \<open>@{thm [source] produces.coinduct} with the trivial equations of its 
   solved, so that each node's lemma only has to name its own invariant.\<close>
 
 lemma producesI[case_names init step]:
-  assumes init: "X n A \<phi>"
-    and step: "\<And>m B \<psi> j ts db xs \<psi>'. X m B \<psi> \<Longrightarrow> wf_db db \<Longrightarrow>
+  assumes init: "X n A tw \<phi>"
+    and step: "\<And>m B u \<psi> j ts db xs \<psi>'. X m B u \<psi> \<Longrightarrow> wf_db db \<Longrightarrow>
+        sorted ts \<Longrightarrow> (\<forall>t \<in> set ts. u \<le> t) \<Longrightarrow>
         meval j m ts db \<psi> = (xs, \<psi>') \<Longrightarrow>
-        list_all (ftable m B) xs \<and> (X m B \<psi>' \<or> produces m B \<psi>')"
-  shows "produces n A \<phi>"
+        list_all (ftable m B) xs \<and>
+          (X m B (dnext u ts) \<psi>' \<or> produces m B (dnext u ts) \<psi>')"
+  shows "produces n A tw \<phi>"
   using init
 proof (rule produces.coinduct)
-  fix m B \<psi>
-  assume X: "X m B \<psi>"
-  have "\<forall>j ts db xs \<chi>. wf_db db \<longrightarrow> meval j m ts db \<psi> = (xs, \<chi>) \<longrightarrow>
-      list_all (ftable m B) xs \<and> (X m B \<chi> \<or> produces m B \<chi>)"
+  fix m B u \<psi>
+  assume X: "X m B u \<psi>"
+  have "\<forall>j ts db xs \<chi>. wf_db db \<longrightarrow> sorted ts \<longrightarrow>
+      (\<forall>t \<in> set ts. u \<le> t) \<longrightarrow> meval j m ts db \<psi> = (xs, \<chi>) \<longrightarrow>
+      list_all (ftable m B) xs \<and>
+        (X m B (dnext u ts) \<chi> \<or> produces m B (dnext u ts) \<chi>)"
     using step[OF X] by blast
-  then show "\<exists>m' \<psi>' B'. m = m' \<and> B = B' \<and> \<psi> = \<psi>' \<and>
-      (\<forall>j ts db xs \<chi>. wf_db db \<longrightarrow> meval j m' ts db \<psi>' = (xs, \<chi>) \<longrightarrow>
-         list_all (ftable m' B') xs \<and> (X m' B' \<chi> \<or> produces m' B' \<chi>))"
+  then show "\<exists>u' m' \<psi>' B'. m = m' \<and> B = B' \<and> u = u' \<and> \<psi> = \<psi>' \<and>
+      (\<forall>j ts db xs \<chi>. wf_db db \<longrightarrow> sorted ts \<longrightarrow>
+         (\<forall>t \<in> set ts. u' \<le> t) \<longrightarrow> meval j m' ts db \<psi>' = (xs, \<chi>) \<longrightarrow>
+         list_all (ftable m' B') xs \<and>
+           (X m' B' (dnext u' ts) \<chi> \<or> produces m' B' (dnext u' ts) \<chi>))"
     by blast
 qed
 
@@ -48,8 +54,9 @@ text \<open>A node that does not change under evaluation.\<close>
 lemma produces_fix:
   assumes "\<And>j ts db xs \<phi>'. wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
       list_all (ftable n A) xs \<and> \<phi>' = \<phi>"
-  shows "produces n A \<phi>"
-  by (rule producesI[where X = "\<lambda>m B \<psi>. m = n \<and> B = A \<and> \<psi> = \<phi>"]) (use assms in auto)
+  shows "produces n A tw \<phi>"
+  by (rule producesI[where X = "\<lambda>m B u \<psi>. m = n \<and> B = A \<and> \<psi> = \<phi>"])
+    (use assms in auto)
 
 text \<open>
   A node with one operand whose output is the operand's, mapped pointwise.  This covers every
@@ -61,35 +68,41 @@ lemma produces_unop:
   assumes step: "\<And>j ts db \<psi> ys \<psi>'. meval j m ts db \<psi> = (ys, \<psi>') \<Longrightarrow>
       meval j n ts db (C \<psi>) = (map g ys, C \<psi>')"
     and tab: "\<And>Y. table m B Y \<Longrightarrow> finite Y \<Longrightarrow> table n A (g Y) \<and> finite (g Y)"
-    and p: "produces m B \<phi>"
-  shows "produces n A (C \<phi>)"
+    and p: "produces m B tw \<phi>"
+  shows "produces n A tw (C \<phi>)"
 proof (rule producesI[where
-    X = "\<lambda>n' A' \<psi>. n' = n \<and> A' = A \<and> (\<exists>\<chi>. \<psi> = C \<chi> \<and> produces m B \<chi>)"])
-  show "n = n \<and> A = A \<and> (\<exists>\<chi>. C \<phi> = C \<chi> \<and> produces m B \<chi>)" using p by blast
+    X = "\<lambda>n' A' u \<psi>. n' = n \<and> A' = A \<and>
+      (\<exists>\<chi>. \<psi> = C \<chi> \<and> produces m B u \<chi>)"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi>. C \<phi> = C \<chi> \<and> produces m B tw \<chi>)"
+    using p by blast
 next
-  fix n' A' \<psi> j ts db xs \<psi>'
-  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi>. \<psi> = C \<chi> \<and> produces m B \<chi>)"
-    and w: "wf_db db" and e: "meval j n' ts db \<psi> = (xs, \<psi>')"
-  from X obtain \<chi> where pc: "produces m B \<chi>" and psi: "\<psi> = C \<chi>" by blast
+  fix n' A' u \<psi> j ts db xs \<psi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi>. \<psi> = C \<chi> \<and> produces m B u \<chi>)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<psi> = (xs, \<psi>')"
+  from X obtain \<chi> where pc: "produces m B u \<chi>" and psi: "\<psi> = C \<chi>" by blast
   obtain ys \<chi>' where e': "meval j m ts db \<chi> = (ys, \<chi>')" by (cases "meval j m ts db \<chi>")
   have "meval j n ts db (C \<chi>) = (map g ys, C \<chi>')" by (rule step[OF e'])
   then have x: "xs = map g ys" and f: "\<psi>' = C \<chi>'" using e X psi by simp_all
-  have t: "list_all (ftable m B) ys" by (rule produces_tables[OF pc w e'])
+  have t: "list_all (ftable m B) ys" by (rule produces_tables[OF pc w sts mts e'])
   show "list_all (ftable n' A') xs \<and>
-      ((n' = n \<and> A' = A \<and> (\<exists>\<chi>. \<psi>' = C \<chi> \<and> produces m B \<chi>)) \<or> produces n' A' \<psi>')"
-    using X t produces_next[OF pc w e'] tab by (auto simp: x f list_all_iff)
+      ((n' = n \<and> A' = A \<and>
+          (\<exists>\<chi>. \<psi>' = C \<chi> \<and> produces m B (dnext u ts) \<chi>)) \<or>
+       produces n' A' (dnext u ts) \<psi>')"
+    using X t produces_next[OF pc w sts mts e'] tab by (auto simp: x f list_all_iff)
 qed
 
 subsection \<open>Nodes whose output does not depend on the operand's tables\<close>
 
-lemma produces_MRel: "table n A rel \<Longrightarrow> finite rel \<Longrightarrow> produces n A (mformula.MRel rel)"
-proof (coinduction arbitrary: rel)
+lemma produces_MRel:
+  "table n A rel \<Longrightarrow> finite rel \<Longrightarrow> produces n A tw (mformula.MRel rel)"
+proof (coinduction arbitrary: rel tw)
   case produces
   then show ?case by (auto simp: list_all_iff)
 qed
 
-lemma produces_MNeg: "produces n {} (mformula.MNeg \<phi>)"
-proof (coinduction arbitrary: \<phi>)
+lemma produces_MNeg: "produces n {} tw (mformula.MNeg \<phi>)"
+proof (coinduction arbitrary: \<phi> tw)
   case produces
   then show ?case
     by (auto simp: list_all_iff unit_table_def empty_table_def table_def wf_tuple_def
@@ -100,7 +113,7 @@ qed
 subsection \<open>The unary nodes\<close>
 
 lemma produces_MAndRel:
-  "produces n A \<phi> \<Longrightarrow> produces n A (mformula.MAndRel \<phi> conf)"
+  "produces n A tw \<phi> \<Longrightarrow> produces n A tw (mformula.MAndRel \<phi> conf)"
   by (rule produces_unop[where m = n and B = A and C = "\<lambda>\<psi>. mformula.MAndRel \<psi> conf"
       and g = "Set.filter (eval_constraint conf)"])
     (auto simp: table_def split: prod.splits)
@@ -111,15 +124,15 @@ lemma table_eval_assignment:
   by (cases conf) (auto simp: table_def wf_tuple_def nth_list_update)
 
 lemma produces_MAndAssign:
-  assumes x: "fst conf < n" and p: "produces n B \<phi>"
-  shows "produces n (Set.insert (fst conf) B) (mformula.MAndAssign \<phi> conf)"
+  assumes x: "fst conf < n" and p: "produces n B tw \<phi>"
+  shows "produces n (Set.insert (fst conf) B) tw (mformula.MAndAssign \<phi> conf)"
   by (rule produces_unop[where m = n and B = B and C = "\<lambda>\<psi>. mformula.MAndAssign \<psi> conf"
       and g = "\<lambda>Y. eval_assignment conf ` Y", OF _ _ p])
     (use x in \<open>auto simp: table_eval_assignment split: prod.splits\<close>)
 
 lemma produces_MExists:
-  "produces (Suc n) B \<phi> \<Longrightarrow>
-     produces n ((\<lambda>x. x - Suc 0) ` (B - {0})) (mformula.MExists \<phi>)"
+  "produces (Suc n) B tw \<phi> \<Longrightarrow>
+     produces n ((\<lambda>x. x - Suc 0) ` (B - {0})) tw (mformula.MExists \<phi>)"
   by (rule produces_unop[where m = "Suc n" and B = B and C = mformula.MExists
       and g = "\<lambda>Y. tl ` Y"])
     (auto simp: table_project split: prod.splits)
@@ -129,7 +142,7 @@ subsection \<open>The predicate and time nodes\<close>
 
 lemma produces_MPred_Copy:
   assumes l: "length tms = n"
-  shows "produces n {0..<n} (mformula.MPred e tms Copy)"
+  shows "produces n {0..<n} tw (mformula.MPred e tms Copy)"
 proof (rule produces_fix)
   fix j ts db xs \<phi>'
   assume w: "wf_db db" and m: "meval j n ts db (mformula.MPred e tms Copy) = (xs, \<phi>')"
@@ -147,7 +160,8 @@ qed
 lemma produces_MPred_Simple:
   assumes sp: "is_simple_pattern tms 0"
     and b: "\<forall>t \<in> set tms. \<forall>x \<in> Formula.fv_trm t. x < n"
-  shows "produces n (\<Union>t \<in> set tms. Formula.fv_trm t) (mformula.MPred e tms Simple)"
+  shows "produces n (\<Union>t \<in> set tms. Formula.fv_trm t) tw
+      (mformula.MPred e tms Simple)"
 proof (rule produces_fix)
   fix j ts db xs \<phi>'
   assume w: "wf_db db" and m: "meval j n ts db (mformula.MPred e tms Simple) = (xs, \<phi>')"
@@ -174,7 +188,7 @@ proof (rule produces_fix)
 qed
 
 lemma produces_MPred_Match:
-  "produces n (\<Union>t \<in> set tms. Formula.fv_trm t) (mformula.MPred e tms Match)"
+  "produces n (\<Union>t \<in> set tms. Formula.fv_trm t) tw (mformula.MPred e tms Match)"
 proof (rule produces_fix)
   fix j ts db xs \<phi>'
   assume w: "wf_db db" and m: "meval j n ts db (mformula.MPred e tms Match) = (xs, \<phi>')"
@@ -216,12 +230,13 @@ next
   ultimately show ?thesis using MConst by (auto simp: empty_table_def)
 qed
 
-lemma produces_MTP: "produces n (mtrm_cols mt) (mformula.MTP mt i)"
+lemma produces_MTP: "produces n (mtrm_cols mt) tw (mformula.MTP mt i)"
   by (rule producesI[where
-      X = "\<lambda>m B \<psi>. m = n \<and> B = mtrm_cols mt \<and> (\<exists>k. \<psi> = mformula.MTP mt k)"])
+      X = "\<lambda>m B u \<psi>. m = n \<and> B = mtrm_cols mt \<and>
+        (\<exists>k. \<psi> = mformula.MTP mt k)"])
     (auto simp: list_all_iff ftable_eval_mtrm)
 
-lemma produces_MTS: "produces n (mtrm_cols mt) (mformula.MTS mt)"
+lemma produces_MTS: "produces n (mtrm_cols mt) tw (mformula.MTS mt)"
   by (rule produces_fix) (auto simp: list_all_iff ftable_eval_mtrm)
 
 
@@ -256,22 +271,26 @@ lemma produces_binop:
       mbuf2_take f (mbuf2_add as bs bf) = (zs, bf') \<Longrightarrow>
       meval j n ts db (C \<chi> \<eta> bf) = (zs, C \<chi>' \<eta>' bf')"
     and tab: "\<And>X Y. ftable n B1 X \<Longrightarrow> ftable n B2 Y \<Longrightarrow> ftable n A (f X Y)"
-    and p1: "produces n B1 \<phi>" and p2: "produces n B2 \<psi>"
+    and p1: "produces n B1 tw \<phi>" and p2: "produces n B2 tw \<psi>"
     and bf1: "list_all (ftable n B1) (fst buf)" and bf2: "list_all (ftable n B2) (snd buf)"
-  shows "produces n A (C \<phi> \<psi> buf)"
-proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
-    (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and> produces n B2 \<eta> \<and>
+  shows "produces n A tw (C \<phi> \<psi> buf)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 u \<chi> \<and>
+       produces n B2 u \<eta> \<and>
        list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"])
-  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> bf. C \<phi> \<psi> buf = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and>
-      produces n B2 \<eta> \<and> list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> bf. C \<phi> \<psi> buf = C \<chi> \<eta> bf \<and>
+      produces n B1 tw \<chi> \<and> produces n B2 tw \<eta> \<and>
+      list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"
     using p1 p2 bf1 bf2 by blast
 next
-  fix n' A' \<Phi> j ts db xs \<Phi>'
-  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and>
-      produces n B2 \<eta> \<and> list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))"
-    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
-  from X obtain \<chi> \<eta> bf where Phi: "\<Phi> = C \<chi> \<eta> bf" and pc: "produces n B1 \<chi>"
-    and pe: "produces n B2 \<eta>" and b1: "list_all (ftable n B1) (fst bf)"
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi> = C \<chi> \<eta> bf \<and> produces n B1 u \<chi> \<and>
+      produces n B2 u \<eta> \<and> list_all (ftable n B1) (fst bf) \<and>
+      list_all (ftable n B2) (snd bf))"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf where Phi: "\<Phi> = C \<chi> \<eta> bf" and pc: "produces n B1 u \<chi>"
+    and pe: "produces n B2 u \<eta>" and b1: "list_all (ftable n B1) (fst bf)"
     and b2: "list_all (ftable n B2) (snd bf)" by blast
   obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
   obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
@@ -279,8 +298,8 @@ next
     by (cases "mbuf2_take f (mbuf2_add as bs bf)") auto
   have "meval j n ts db (C \<chi> \<eta> bf) = (zs, C \<chi>' \<eta>' (c1, c2))" by (rule step[OF e1 e2 e3])
   then have x: "xs = zs" and f': "\<Phi>' = C \<chi>' \<eta>' (c1, c2)" using e X Phi by simp_all
-  have ta: "list_all (ftable n B1) as" by (rule produces_tables[OF pc w e1])
-  have tb: "list_all (ftable n B2) bs" by (rule produces_tables[OF pe w e2])
+  have ta: "list_all (ftable n B1) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable n B2) bs" by (rule produces_tables[OF pe w sts mts e2])
   have add: "mbuf2_add as bs bf = (fst bf @ as, snd bf @ bs)" by (cases bf) simp
   have la: "list_all (ftable n B1) (fst bf @ as)" using b1 ta by simp
   have lb: "list_all (ftable n B2) (snd bf @ bs)" using b2 tb by simp
@@ -293,17 +312,18 @@ next
   have lc1: "list_all (ftable n B1) c1" using sb la by (auto simp: list_all_iff)
   have lc2: "list_all (ftable n B2) c2" using sb lb by (auto simp: list_all_iff)
   show "list_all (ftable n' A') xs \<and>
-      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi>' = C \<chi> \<eta> bf \<and> produces n B1 \<chi> \<and> produces n B2 \<eta> \<and>
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> \<eta> bf. \<Phi>' = C \<chi> \<eta> bf \<and>
+         produces n B1 (dnext u ts) \<chi> \<and> produces n B2 (dnext u ts) \<eta> \<and>
          list_all (ftable n B1) (fst bf) \<and> list_all (ftable n B2) (snd bf))) \<or>
-       produces n' A' \<Phi>')"
-    using X tz lc1 lc2 produces_next[OF pc w e1] produces_next[OF pe w e2]
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X tz lc1 lc2 produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
     by (auto simp: x f')
 qed
 
 lemma produces_MOr:
-  assumes p1: "produces n A \<phi>" and p2: "produces n A \<psi>"
+  assumes p1: "produces n A tw \<phi>" and p2: "produces n A tw \<psi>"
     and bf1: "list_all (ftable n A) (fst buf)" and bf2: "list_all (ftable n A) (snd buf)"
-  shows "produces n A (mformula.MOr \<phi> \<psi> buf)"
+  shows "produces n A tw (mformula.MOr \<phi> \<psi> buf)"
 proof -
   have step: "\<And>j ts db \<chi> \<eta> bf as \<chi>' bs \<eta>' zs bf'.
       meval j n ts db \<chi> = (as, \<chi>') \<Longrightarrow> meval j n ts db \<eta> = (bs, \<eta>') \<Longrightarrow>
@@ -330,10 +350,10 @@ proof -
 qed
 
 lemma produces_MAnd:
-  assumes p1: "produces n A1 \<phi>" and p2: "produces n A2 \<psi>"
+  assumes p1: "produces n A1 tw \<phi>" and p2: "produces n A2 tw \<psi>"
     and bf1: "list_all (ftable n A1) (fst buf)" and bf2: "list_all (ftable n A2) (snd buf)"
     and sub: "\<not> pos \<Longrightarrow> A2 \<subseteq> A1" and A: "A = (if pos then A1 \<union> A2 else A1)"
-  shows "produces n A (mformula.MAnd A1 \<phi> pos A2 \<psi> buf)"
+  shows "produces n A tw (mformula.MAnd A1 \<phi> pos A2 \<psi> buf)"
 proof -
   have step: "\<And>j ts db \<chi> \<eta> bf as \<chi>' bs \<eta>' zs bf'.
       meval j n ts db \<chi> = (as, \<chi>') \<Longrightarrow> meval j n ts db \<eta> = (bs, \<eta>') \<Longrightarrow>
@@ -354,49 +374,53 @@ lemma mprev_next_out:
     (auto split: prod.splits)
 
 lemma produces_MPrev:
-  assumes p: "produces n A \<phi>" and bf: "list_all (ftable n A) buf"
-  shows "produces n A (mformula.MPrev I \<phi> first buf nts)"
-proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
-    (\<exists>\<chi> b bs nt. \<Phi> = mformula.MPrev I \<chi> b bs nt \<and> produces n A \<chi> \<and>
+  assumes p: "produces n A tw \<phi>" and bf: "list_all (ftable n A) buf"
+  shows "produces n A tw (mformula.MPrev I \<phi> first buf nts)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> b bs nt. \<Phi> = mformula.MPrev I \<chi> b bs nt \<and> produces n A u \<chi> \<and>
        list_all (ftable n A) bs)"])
   show "n = n \<and> A = A \<and> (\<exists>\<chi> b bs nt. mformula.MPrev I \<phi> first buf nts
-      = mformula.MPrev I \<chi> b bs nt \<and> produces n A \<chi> \<and> list_all (ftable n A) bs)"
+      = mformula.MPrev I \<chi> b bs nt \<and> produces n A tw \<chi> \<and> list_all (ftable n A) bs)"
     using p bf by blast
 next
-  fix n' A' \<Phi> j ts db xs \<Phi>'
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
   assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> b bs nt. \<Phi> = mformula.MPrev I \<chi> b bs nt \<and>
-      produces n A \<chi> \<and> list_all (ftable n A) bs)"
-    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+      produces n A u \<chi> \<and> list_all (ftable n A) bs)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
   from X obtain \<chi> b bs nt where Phi: "\<Phi> = mformula.MPrev I \<chi> b bs nt"
-    and pc: "produces n A \<chi>" and lb: "list_all (ftable n A) bs" by blast
+    and pc: "produces n A u \<chi>" and lb: "list_all (ftable n A) bs" by blast
   obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
-  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w e1])
+  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w sts mts e1])
   obtain ws bs' nt' where e2: "mprev_next I (bs @ as) (nt @ ts) = (ws, bs', nt')"
     by (cases "mprev_next I (bs @ as) (nt @ ts)") auto
   have out: "list_all (ftable n A) ws \<and> list_all (ftable n A) bs'"
     by (rule mprev_next_out[OF e2]) (use lb ta in \<open>auto simp: table_def\<close>)
   show "list_all (ftable n' A') xs \<and>
       ((n' = n \<and> A' = A \<and> (\<exists>\<chi> b bs nt. \<Phi>' = mformula.MPrev I \<chi> b bs nt \<and>
-         produces n A \<chi> \<and> list_all (ftable n A) bs)) \<or> produces n' A' \<Phi>')"
-    using X e Phi e1 e2 out lb ta produces_next[OF pc w e1]
+         produces n A (dnext u ts) \<chi> \<and> list_all (ftable n A) bs)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X e Phi e1 e2 out lb ta produces_next[OF pc w sts mts e1]
     by (auto simp: table_def split: if_splits)
 qed
 
 lemma produces_MNext:
-  assumes p: "produces n A \<phi>"
-  shows "produces n A (mformula.MNext I \<phi> first nts)"
-proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
-    (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)"])
+  assumes p: "produces n A tw \<phi>"
+  shows "produces n A tw (mformula.MNext I \<phi> first nts)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
+    (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A u \<chi>)"])
   show "n = n \<and> A = A \<and> (\<exists>\<chi> b nt. mformula.MNext I \<phi> first nts
-      = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)" using p by blast
+      = mformula.MNext I \<chi> b nt \<and> produces n A tw \<chi>)" using p by blast
 next
-  fix n' A' \<Phi> j ts db xs \<Phi>'
-  assume X: "n' = n \<and> A' = A \<and> (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)"
-    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
-  from X obtain \<chi> b nt where Phi: "\<Phi> = mformula.MNext I \<chi> b nt" and pc: "produces n A \<chi>"
-    by blast
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = A \<and>
+      (\<exists>\<chi> b nt. \<Phi> = mformula.MNext I \<chi> b nt \<and> produces n A u \<chi>)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> b nt where Phi: "\<Phi> = mformula.MNext I \<chi> b nt"
+    and pc: "produces n A u \<chi>" by blast
   obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
-  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w e1])
+  have ta: "list_all (ftable n A) as" by (rule produces_tables[OF pc w sts mts e1])
   obtain cs b' where c: "(case (as, b) of (_ # as', True) \<Rightarrow> (as', False) | a \<Rightarrow> a) = (cs, b')"
     by (cases "(case (as, b) of (_ # as', True) \<Rightarrow> (as', False) | a \<Rightarrow> a)") auto
   have tc: "list_all (ftable n A) cs"
@@ -406,9 +430,10 @@ next
   have out: "list_all (ftable n A) ws \<and> list_all (ftable n A) cs'"
     by (rule mprev_next_out[OF e2]) (use tc in \<open>auto simp: table_def\<close>)
   show "list_all (ftable n' A') xs \<and>
-      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> b nt. \<Phi>' = mformula.MNext I \<chi> b nt \<and> produces n A \<chi>)) \<or>
-       produces n' A' \<Phi>')"
-    using X e Phi e1 c e2 out produces_next[OF pc w e1] by auto
+      ((n' = n \<and> A' = A \<and> (\<exists>\<chi> b nt. \<Phi>' = mformula.MNext I \<chi> b nt \<and>
+          produces n A (dnext u ts) \<chi>)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X e Phi e1 c e2 out produces_next[OF pc w sts mts e1] by auto
 qed
 
 
@@ -447,12 +472,12 @@ next
 qed
 
 lemma produces_MAgg:
-  assumes p: "produces (length (aggargs_tys args) + n) G \<phi>"
+  assumes p: "produces (length (aggargs_tys args) + n) G tw \<phi>"
     and an: "aggargs_n args = n" and y: "aggargs_y args < n"
     and sh: "\<forall>i \<in> G. length (aggargs_tys args) \<le> i"
     and g0: "aggargs_g0 args \<Longrightarrow> G = {}"
   shows "produces n (Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G))
-      (mformula.MAgg args \<phi>)"
+      tw (mformula.MAgg args \<phi>)"
 proof -
   have step: "\<And>j ts db \<chi> ys \<chi>'.
       meval j (length (aggargs_tys args) + n) ts db \<chi> = (ys, \<chi>') \<Longrightarrow>
@@ -637,40 +662,44 @@ qed
 lemma produces_MAnds:
   assumes lL: "length L = length ((A0 # As) @ A_neg)"
     and lb: "length buf = length ((A0 # As) @ A_neg)"
-    and pL: "\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (L ! i)"
+    and pL: "\<forall>i < length ((A0 # As) @ A_neg).
+        produces n (((A0 # As) @ A_neg) ! i) tw (L ! i)"
     and pb: "\<forall>i < length ((A0 # As) @ A_neg).
         list_all (ftable n (((A0 # As) @ A_neg) ! i)) (buf ! i)"
     and wf: "\<forall>C \<in> set ((A0 # As) @ A_neg). wf_set n C"
     and sub: "\<forall>B \<in> set A_neg. B \<subseteq> A0 \<union> \<Union>(set As)"
     and A: "A = A0 \<union> \<Union>(set As)"
-  shows "produces n A (mformula.MAnds (A0 # As) A_neg L buf)"
-proof (rule producesI[where X = "\<lambda>n' A' \<Phi>. n' = n \<and> A' = A \<and>
+  shows "produces n A tw (mformula.MAnds (A0 # As) A_neg L buf)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
     (\<exists>M bf. \<Phi> = mformula.MAnds (A0 # As) A_neg M bf \<and>
        length M = length ((A0 # As) @ A_neg) \<and>
        length bf = length ((A0 # As) @ A_neg) \<and>
        (\<forall>i < length ((A0 # As) @ A_neg).
-          produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+          produces n (((A0 # As) @ A_neg) ! i) u (M ! i)) \<and>
        (\<forall>i < length ((A0 # As) @ A_neg).
           list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"])
   show "n = n \<and> A = A \<and> (\<exists>M bf. mformula.MAnds (A0 # As) A_neg L buf
       = mformula.MAnds (A0 # As) A_neg M bf \<and>
       length M = length ((A0 # As) @ A_neg) \<and> length bf = length ((A0 # As) @ A_neg) \<and>
-      (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg).
+         produces n (((A0 # As) @ A_neg) ! i) tw (M ! i)) \<and>
       (\<forall>i < length ((A0 # As) @ A_neg).
          list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"
     using lL lb pL pb by blast
 next
-  fix n' A' \<Phi> j ts db xs \<Phi>'
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
   assume X: "n' = n \<and> A' = A \<and> (\<exists>M bf. \<Phi> = mformula.MAnds (A0 # As) A_neg M bf \<and>
       length M = length ((A0 # As) @ A_neg) \<and> length bf = length ((A0 # As) @ A_neg) \<and>
-      (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+      (\<forall>i < length ((A0 # As) @ A_neg).
+         produces n (((A0 # As) @ A_neg) ! i) u (M ! i)) \<and>
       (\<forall>i < length ((A0 # As) @ A_neg).
          list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))"
-    and w: "wf_db db" and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
   define Cs where "Cs = (A0 # As) @ A_neg"
   from X obtain M0 bf0 where Phi: "\<Phi> = mformula.MAnds (A0 # As) A_neg M0 bf0"
     and lM: "length M0 = length Cs" and lbf: "length bf0 = length Cs"
-    and pM: "\<forall>i < length Cs. produces n (Cs ! i) (M0 ! i)"
+    and pM: "\<forall>i < length Cs. produces n (Cs ! i) u (M0 ! i)"
     and pbf: "\<forall>i < length Cs. list_all (ftable n (Cs ! i)) (bf0 ! i)"
     unfolding Cs_def by blast
   define R where "R = map (meval j n ts db) M0"
@@ -687,18 +716,18 @@ next
     obtain as \<chi>' where ei: "meval j n ts db (M0 ! i) = (as, \<chi>')"
       by (cases "meval j n ts db (M0 ! i)")
     have "list_all (ftable n (Cs ! i)) as"
-      by (rule produces_tables[OF _ w ei]) (use pM i in blast)
+      by (rule produces_tables[OF _ w sts mts ei]) (use pM i in blast)
     then show "list_all (ftable n (Cs ! i)) (fst (R ! i))"
       using ei i lM by (simp add: R_def)
   qed
-  have nR: "\<And>i. i < length Cs \<Longrightarrow> produces n (Cs ! i) (snd (R ! i))"
+  have nR: "\<And>i. i < length Cs \<Longrightarrow> produces n (Cs ! i) (dnext u ts) (snd (R ! i))"
   proof -
     fix i assume i: "i < length Cs"
     obtain as \<chi>' where ei: "meval j n ts db (M0 ! i) = (as, \<chi>')"
       by (cases "meval j n ts db (M0 ! i)")
-    have "produces n (Cs ! i) \<chi>'"
-      by (rule produces_next[OF _ w ei]) (use pM i in blast)
-    then show "produces n (Cs ! i) (snd (R ! i))"
+    have "produces n (Cs ! i) (dnext u ts) \<chi>'"
+      by (rule produces_next[OF _ w sts mts ei]) (use pM i in blast)
+    then show "produces n (Cs ! i) (dnext u ts) (snd (R ! i))"
       using ei i lM by (simp add: R_def)
   qed
   have sub1: "\<forall>i < length bf1. set (bf1 ! i) \<subseteq> Ss ! i"
@@ -742,7 +771,7 @@ next
     by (simp add: Let_def del: mbufn_take.simps mmulti_join.simps)
   have x: "xs = zs" and f': "\<Phi>' = mformula.MAnds (A0 # As) A_neg (map snd R) bf2"
     using e X Phi m by simp_all
-  have pM': "\<forall>i < length Cs. produces n (Cs ! i) (map snd R ! i)"
+  have pM': "\<forall>i < length Cs. produces n (Cs ! i) (dnext u ts) (map snd R ! i)"
     using nR lR by simp
   have pbf': "\<forall>i < length Cs. list_all (ftable n (Cs ! i)) (bf2 ! i)"
     using out lb1 by (auto simp: Ss_def list_all_iff subset_eq)
@@ -750,10 +779,11 @@ next
       ((n' = n \<and> A' = A \<and> (\<exists>M bf. \<Phi>' = mformula.MAnds (A0 # As) A_neg M bf \<and>
          length M = length ((A0 # As) @ A_neg) \<and>
          length bf = length ((A0 # As) @ A_neg) \<and>
-         (\<forall>i < length ((A0 # As) @ A_neg). produces n (((A0 # As) @ A_neg) ! i) (M ! i)) \<and>
+         (\<forall>i < length ((A0 # As) @ A_neg).
+            produces n (((A0 # As) @ A_neg) ! i) (dnext u ts) (M ! i)) \<and>
          (\<forall>i < length ((A0 # As) @ A_neg).
             list_all (ftable n (((A0 # As) @ A_neg) ! i)) (bf ! i)))) \<or>
-       produces n' A' \<Phi>')"
+       produces n' A' (dnext u ts) \<Phi>')"
     using X out pM' pbf' lM lb1 lR by (auto simp: x f' Cs_def)
 qed
 

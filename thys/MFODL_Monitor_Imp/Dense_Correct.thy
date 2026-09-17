@@ -118,7 +118,7 @@ proof -
     and sim': "dsim n cs (dnext tw [snd tdb]) dm m"
     using dsim_deval[OF sim w _ _ e] le by auto
   have tb: "list_all (ftable n (set cs)) xs"
-    by (rule produces_tables[OF dsim_produces[OF sim] w e])
+    by (rule produces_tables[OF dsim_produces[OF sim] w _ _ e]) (use le in auto)
   have dnx: "dnext tw [snd tdb] = snd tdb" by (simp add: dnext_def)
   have E: "mstep tdb st = (List.enumerate (mstate_i st) (zip (mstate_t st @ [snd tdb]) xs),
       \<lparr> mstate_i = mstate_i st + length xs, mstate_j = mstate_j st + 1, mstate_m = m,
