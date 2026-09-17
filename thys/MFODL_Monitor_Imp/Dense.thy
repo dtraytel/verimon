@@ -2316,6 +2316,59 @@ next
   qed
 qed
 
+text \<open>
+  The Until node's operation is the one place where the step condition is not uniform in the
+  timestamp: the verified structure accepts a new timestamp only at or after the one it is already
+  at.  So the accumulator relation is indexed by that timestamp, the step may assume the new one
+  is no smaller, and the conclusion says where the accumulator ended up -- at or before the
+  timestamp the buffer reports and at or before every timestamp it did not consume.
+\<close>
+
+lemma mbuf2t_take_rel_ts:
+  "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
+      R t (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R u0 z z' \<Longrightarrow> u0 \<le> t0 \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>t \<in> set ts. u0 \<le> t) \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   (\<exists>u. R u w w2 \<and> u \<le> nt \<and> (\<forall>t \<in> set ts'. u \<le> t)) \<and> sorted ts' \<and>
+     buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' u0 t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (cases ts) (auto intro!: exI[of _ u0])
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4)
+    and P4 = Cons(5) and P5 = Cons(6) and P6 = Cons(7) and P7 = Cons(8)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 P5 P6 P7 by (cases ts) (auto intro!: exI[of _ u0])
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P3 P6 P7 ysC by (auto intro!: exI[of _ u0])
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have ut: "u0 \<le> t" using P5 tsC by simp
+      have r: "R t (f x y t z) (g (h x) (k y) t z')"
+        using P1[of x y u0 z z' t] P2 ut ysC by simp
+      have p1: "\<And>a b t' u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t' \<Longrightarrow>
+          R t' (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2t_take f (f x y t z) (xs, ys2) t ts3 = (w, (xs', ys'), nt, ts')"
+        using P6 ysC tsC by simp
+      have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
+          = (w2, buf2, nt2, ts2)"
+        using P7 ysC tsC by simp
+      show ?thesis
+        by (rule IH[OF p1 r order_refl _ _ s1 s2]) (use P4 tsC in auto)
+    qed
+  qed
+qed
+
 subsection \<open>The multi-way buffer\<close>
 
 text \<open>
@@ -2847,6 +2900,83 @@ proof -
            memL (args_ivl (dargs cs_R cs_L args)) (cur - t)] {})"
     by (rule default_mmasaux.valid_result_msaux[OF d])
   then show ?thesis by (simp add: dtabc_result[OF w])
+qed
+
+
+section \<open>The verified Until structure at the dense frame\<close>
+
+text \<open>
+  The same argument for the Until structure.  Its auxiliary list carries two tables per time
+  point -- the left operand's accumulated join and the right operand's accumulated union -- and
+  both are narrowed at the right operand's column list, which is where @{const dauxlist3} puts
+  them.  There are three operations rather than five, and the aggregation again does not
+  transport.
+\<close>
+
+definition duaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow>
+    event_data muaux \<Rightarrow> bool" where
+  "duaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2) \<and>
+     valid_muaux_dq (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+
+lemma duaux_init:
+  assumes sub: "set cs_L \<subseteq> set cs_R"
+  shows "duaux n cs_R cs_L args 0 (init_muaux_dq (dargs cs_R cs_L args)) []"
+proof -
+  have "valid_muaux_dq (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+      {0..<length cs_R} (args_pos args) None) 0
+      (init_muaux_dq (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+        {0..<length cs_R} (args_pos args) None)) []"
+    by (rule valid_init_muaux_dq) (use sub in \<open>auto simp: cpos_def\<close>)
+  then show ?thesis by (simp add: duaux_def dargs_def dauxlist3_def)
+qed
+
+lemma duaux_add_new:
+  assumes v: "duaux n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and sub: "set cs_L \<subseteq> set cs_R"
+    and t1: "table n (set cs_L) rel1" and t2: "table n (set cs_R) rel2"
+    and nt: "cur \<le> nt"
+  shows "duaux n cs_R cs_L args nt
+      (add_new_muaux_dq (dargs cs_R cs_L args) (dtabc n cs_R rel1) (dtabc n cs_R rel2) nt daux)
+      (update_until args rel1 rel2 nt auxlist)"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and d: "valid_muaux_dq (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: duaux_def)
+  have tt1: "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
+      (dtabc n cs_R rel1)"
+    by (simp add: table_dtabc_cpos[OF s_R b_R sub t1])
+  have tt2: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R rel2)"
+    using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
+  have "valid_muaux_dq (dargs cs_R cs_L args) nt
+      (add_new_muaux_dq (dargs cs_R cs_L args) (dtabc n cs_R rel1) (dtabc n cs_R rel2) nt daux)
+      (update_until (dargs cs_R cs_L args) (dtabc n cs_R rel1) (dtabc n cs_R rel2) nt
+        (dauxlist3 n cs_R auxlist))"
+    by (rule valid_add_new_muaux_dq[OF d tt1 tt2 nt])
+  then show ?thesis using dauxlist3_wf_update_until[OF w sub t1 t2]
+    by (simp add: duaux_def dauxlist3_update_until[OF s_R b_R sub w t1 t2, symmetric])
+qed
+
+lemma duaux_eval:
+  assumes v: "duaux n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
+    and de: "eval_muaux_dq (dargs cs_R cs_L args) nt daux = (dres, daux')"
+    and we: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+  shows "dres = map (dtabc n cs_R) res \<and> duaux n cs_R cs_L args cur daux' auxlist'"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and d: "valid_muaux_dq (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: duaux_def)
+  have de': "eval_until (args_ivl (dargs cs_R cs_L args)) nt (dauxlist3 n cs_R auxlist)
+      = (map (dtabc n cs_R) res, dauxlist3 n cs_R auxlist')"
+    using dauxlist3_eval_until[OF we] by simp
+  have vd: "valid_muaux_dq (dargs cs_R cs_L args) cur daux' (dauxlist3 n cs_R auxlist')"
+    and r: "dres = map (eval_args_agg (dargs cs_R cs_L args)) (map (dtabc n cs_R) res)"
+    using valid_eval_muaux_dq[OF d nt de de'] by simp_all
+  have "set auxlist' \<subseteq> set auxlist"
+    using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
+  then show ?thesis using vd r w by (auto simp: duaux_def)
 qed
 
 (*<*)
