@@ -4,24 +4,27 @@ theory Dense_Init
 begin
 (*>*)
 
-section \<open>Work in progress: the criterion for the kernel's initial state\<close>
+section \<open>The criterion for the kernel's initial state\<close>
 
 text \<open>
-  This theory is NOT part of the session (it is deliberately absent from \<open>ROOT\<close>):
-  one of the thirty-two cases of @{text mok_minit0} is still \<open>sorry\<close>, so the session
-  itself stays free of them.
+  @{text mok_minit0} says that the kernel's initial state for a safe formula satisfies the
+  structural criterion \<open>mok\<close> of the preceding theory, with the formula's free
+  variables as its column set.  It is the last open hypothesis of
+  @{text dmonitor_mverdicts_pure}, so with it the dense monitor's transferred
+  correctness theorems hold outright for every monitorable formula --
+  @{text dmonitor_mverdicts_dense} at the end of this theory states them in that form.
 
-  @{text mok_minit0} is the last open hypothesis of
-  @{text dmonitor_mverdicts_pure}: with it, the dense monitor's transferred correctness
-  theorems hold outright for every safe formula.
-
-  The one case left is \<open>And_Trigger\<close>, and it needs a node lemma the theory does not
-  have yet.  Its interval need not contain \<open>0\<close>, while
-  @{thm [source] produces_MAndTrigger} assumes it does, because the trigger structure's result
-  carries its own column set and that set is the operand's only when the window is nonempty --
-  otherwise the structure reports the empty column set and the unit table.  Either way the join
-  that follows gives a table over the left operand's columns, so the node lemma can be weakened
-  to a result whose column set is bounded rather than fixed.  That is the next step.
+  The proof is by @{thm [source] safe_formula_induct}, one case per constructor.  What each case
+  has to supply beyond the induction hypotheses is the initial auxiliary structure's invariant,
+  and that comes from the kernel's own \<open>valid_init\<close> lemmas at time \<open>0\<close>:
+  the three lemmas @{text saux_inv_init}, @{text until_inv_init} and
+  @{text trigger_inv_init} below package them.  The two remaining wrinkles are the column
+  arithmetic of the binders -- the existential and the aggregation shift the free variables, so
+  their cases go through @{text fvi_image} and @{text fv_Agg_image} -- and the fused conjunction
+  with a trigger, which splits on whether the interval contains \<open>0\<close>: when it does,
+  the trigger itself is safe and the kernel builds an ordinary conjunction node; when it does
+  not, the kernel builds the fused node and the weakened trigger lemmas of
+  @{theory MFODL_Monitor_Imp.Dense_Agg} apply.
 \<close>
 
 lemma ftable_eval_agg':
@@ -106,6 +109,21 @@ proof -
       (init_mmtaux (init_args I n L R b agg)) []"
     using valid_init_mmtaux[where I = I and L = L and R = R and pos = b and n = n and agg = agg]
       m sub by (simp add: Let_def)
+  have t: "taux_inv (init_args I n L R b agg) n L R 0
+      (init_mmtaux (init_args I n L R b agg))"
+    unfolding taux_inv_def using v by (intro exI[of _ "[]"]) simp
+  show ?thesis unfolding trigger_inv_def using t by (auto intro!: exI[of _ 0])
+qed
+
+lemma trigger_inv_init_weak:
+  assumes wkc: "mem I 0 \<or> (b \<and> L = R)" and sub: "L \<subseteq> R"
+  shows "trigger_inv (init_args I n L R b agg) n L R tw
+     (init_mmtaux (init_args I n L R b agg)) ([], []) []"
+proof -
+  have v: "valid_mmtaux (init_args I n L R b agg) 0
+      (init_mmtaux (init_args I n L R b agg)) []"
+    using valid_init_mmtaux[where I = I and L = L and R = R and pos = b and n = n and agg = agg]
+      wkc sub by (auto simp: Let_def)
   have t: "taux_inv (init_args I n L R b agg) n L R 0
       (init_mmtaux (init_args I n L R b agg))"
     unfolding taux_inv_def using v by (intro exI[of _ "[]"]) simp
@@ -240,7 +258,60 @@ next
     using sub by auto
   show ?case unfolding m e by (rule MokAnd[OF p1 p2]) (use sub in auto)
 next
-  case (And_Trigger \<phi> \<phi>' I \<psi>') then show ?case sorry
+  case (And_Trigger \<phi> \<phi>' I \<psi>')
+  note sp = \<open>safe_formula \<phi>\<close> and sp' = \<open>safe_formula \<phi>'\<close>
+  note sd = \<open>safe_dual True safe_formula \<phi>' I \<psi>'\<close>
+  note subf = \<open>Formula.fv (Formula.Trigger \<phi>' I \<psi>') \<subseteq> Formula.fv \<phi>\<close>
+  have sub: "Formula.fv \<phi>' \<subseteq> Formula.fv \<psi>'"
+    using sd sp' by (auto simp: safe_dual_def split: if_splits)
+  have subR: "Formula.fv \<psi>' \<subseteq> Formula.fv \<phi>" using subf by auto
+  have bA: "\<forall>x \<in> Formula.fv \<phi>. x < n" using And_Trigger.prems by simp
+  have bR: "\<forall>x \<in> Formula.fv \<psi>'. x < n" using bA subR by auto
+  have bL: "\<forall>x \<in> Formula.fv \<phi>'. x < n" using bR sub by auto
+  have pa: "mok n (Formula.fv \<phi>) tw (minit0 n \<phi>)" by (rule And_Trigger(5)[OF bA])
+  have p1: "mok n (Formula.fv \<phi>') tw (minit0 n \<phi>')" by (rule And_Trigger(6)[OF bL])
+  have p2: "mok n (Formula.fv \<psi>') tw (minit0 n \<psi>')" by (rule And_Trigger(7)[OF bR])
+  have fvt: "Formula.fv \<phi>' \<union> Formula.fv \<psi>' = Formula.fv \<psi>'" using sub by auto
+  have et: "Formula.fv (Formula.Trigger \<phi>' I \<psi>') = Formula.fv \<psi>'" using sub by auto
+  have e: "Formula.fv (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')) = Formula.fv \<phi>"
+    using subf by auto
+  let ?args = "\<lambda>b. init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') b None"
+  show ?case
+  proof (cases "mem I 0")
+    case True
+    have st: "safe_formula (Formula.Trigger \<phi>' I \<psi>')"
+      using sd sp' True by (simp add: safe_dual_def)
+    have mt: "minit0 n (Formula.Trigger \<phi>' I \<psi>') = mformula.MTrigger (?args True)
+        (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mmtaux (?args True))"
+      using sp' by (simp add: verimon_maux.init_trigger_def)
+    have pt: "mok n (Formula.fv \<psi>') tw (minit0 n (Formula.Trigger \<phi>' I \<psi>'))"
+      unfolding mt
+      by (rule MokTrigger[OF p1 p2 trigger_inv_init[OF True sub]])
+        (simp_all add: init_args_def True)
+    have m: "minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')) =
+        mformula.MAnd (Formula.fv \<phi>) (minit0 n \<phi>) True (Formula.fv \<psi>')
+          (minit0 n (Formula.Trigger \<phi>' I \<psi>')) ([], [])"
+      using st fvt by (simp add: no_safe_assign_trigger)
+    show ?thesis unfolding m e
+      by (rule MokAnd[OF pa pt]) (use subR in auto)
+  next
+    case False
+    have LR: "Formula.fv \<phi>' = Formula.fv \<psi>'"
+      using sd False by (simp add: safe_dual_def)
+    have nst: "\<not> safe_formula (Formula.Trigger \<phi>' I \<psi>')"
+      using False by (simp add: safe_dual_def)
+    have m: "minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')) =
+        mformula.MAndTrigger (Formula.fv \<phi>) (minit0 n \<phi>) ([], []) (?args True)
+          (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mmtaux (?args True))"
+      using nst sp' by (simp add: no_safe_assign_trigger verimon_maux.init_and_trigger_def)
+    have wkc: "mem (args_ivl (?args True)) 0 \<or>
+        (args_pos (?args True) \<and> Formula.fv \<phi>' = Formula.fv \<psi>')"
+      using LR by (simp add: init_args_def)
+    show ?thesis unfolding m e
+      by (rule MokAndTrigger[OF pa p1 p2
+          trigger_inv_init_weak[OF _ sub] _ _ _ _ _ wkc])
+        (use subR LR in \<open>simp_all add: init_args_def\<close>)
+  qed
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
   show ?case
@@ -680,6 +751,48 @@ next
   case (TS t)
   then show ?case by (cases t) (auto intro!: MokTS)
 qed
+
+section \<open>The dense monitor's correctness theorem, without hypotheses\<close>
+
+text \<open>
+  Putting @{text mok_minit0} into @{text dmonitor_mverdicts_pure} closes the chain: for a
+  monitorable formula, the dense monitor started from the kernel's own initial state, viewed
+  through @{const dpure_state} with the formula's free columns, reports exactly the specified
+  verdicts.  Nothing is left to discharge at the call site.
+\<close>
+
+lemma minit_safe_state:
+  assumes "mmonitorable \<phi>"
+  shows "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>"
+    and "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
+  using assms[unfolded monitorable_formula_code]
+  by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
+
+context verimon_spec
+begin
+
+theorem dmonitor_mverdicts_dense:
+  assumes f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
+  shows "flatten_verdicts (map (\<lambda>(i, t, X).
+      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
+      (dmonitor (dpure_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
+         (minit_safe \<phi>)) \<pi>)) = Mt \<pi>"
+proof -
+  have mm: "mmonitorable \<phi>" by (rule monitorable)
+  then have s: "safe_formula \<phi>" by (simp add: mmonitorable_def)
+  have fin: "finite (Formula.fv \<phi>)" by simp
+  have b: "\<forall>x \<in> Formula.fv \<phi>. x < Formula.nfv \<phi>" by (rule fvi_less_nfv)
+  have w: "wf_cols (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))"
+    using set_cols[OF fin] b by auto
+  have ni: "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>" by (rule minit_safe_state(1)[OF mm])
+  have mm0: "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
+    by (rule minit_safe_state(2)[OF mm])
+  have p: "mok (Formula.nfv \<phi>) (set (set_cols (Formula.fv \<phi>))) 0 (mstate_m (minit_safe \<phi>))"
+    unfolding mm0 set_cols(2)[OF fin] by (rule mok_minit0[OF s b])
+  show ?thesis by (rule dmonitor_mverdicts_pure[OF w ni p f wty])
+qed
+
+end
 
 (*<*)
 end

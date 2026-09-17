@@ -3342,7 +3342,7 @@ that currently get none.
 ### 20.12 What is left
 
 1. **The compilation.** 20.13 does the `produces` half and closes the chain through the escape
-   hatch `DPure`. What is left of this item is the *descending* compiler: a pure `dof` and `mcols`
+   hatch `DPure`, down to the kernel's own initial state. What is left of this item is the *descending* compiler: a pure `dof` and `mcols`
    (the ones in `Dense_Imp.thy` are monadic, because they initialise the imperative structures)
    producing a `dsim` whose nodes are dense rather than `DPure` -- that the column list of a node
    is the subformula's free-variable set, and that the join plans and the embedding plan are the
@@ -3430,19 +3430,55 @@ lemma mok_minit0:
   "safe_formula φ ⟹ ∀x ∈ fv φ. x < n ⟹ mok n (fv φ) tw (minit0 n φ)"
 ```
 
-by induction with `safe_formula_induct`. Thirty-one of its thirty-two cases are done, in
-`Dense_Init.thy`; because one is not, that theory is deliberately absent from `ROOT`, so the
-session itself stays free of `sorry`. The initial state makes the auxiliary invariants cheap --
-`saux_inv_init`, `until_inv_init` and `trigger_inv_init` all rest on the kernel's own
-`valid_init_*` lemmas at `cur = 0` -- and the work is in following `minit0` through the
-rewritings: the release forms, the fused aggregations, the multi-way conjunction's positive and
-negative partitions, and the two match nodes' `to_mregex`.
+by induction with `safe_formula_induct`, all thirty-two cases, in `Dense_Init.thy`, which is now
+part of the session. The initial state makes the auxiliary invariants cheap -- `saux_inv_init`,
+`until_inv_init` and `trigger_inv_init` all rest on the kernel's own `valid_init_*` lemmas at
+`cur = 0` -- and the work is in following `minit0` through the rewritings: the release forms, the
+fused aggregations, the multi-way conjunction's positive and negative partitions, and the two
+match nodes' `to_mregex`.
 
-The case that is left is `And_Trigger`, and it needs a node lemma that does not exist yet. Its
-interval need not contain `0`, while `produces_MAndTrigger` assumes it does, because the trigger
-structure's result carries its own column set and that set is the operand's only when the window
-is nonempty; otherwise the structure reports the empty column set and the unit table. Either way
-the join that follows gives a table over the left operand's columns, so the node lemma can be
-weakened to a result whose column set is bounded rather than fixed. The finiteness of the result
-in that case comes from `safe_dual`, which for `¬ mem I 0` forces `fv φ' = fv ψ'`, so the join
-condition pins every column of the tuple.
+**A third node lemma had to be weakened: the fused trigger.** `produces_MAndTrigger` assumed
+`mem (args_ivl args) 0`, and the `And_Trigger` case of the induction cannot supply it. The kernel
+splits on exactly that interval: when it contains `0` the trigger is itself `safe_formula`, so
+`minit0` builds an ordinary `MAnd` over the trigger's own `MTrigger` node and the existing rules
+suffice; when it does not, `safe_formula` of the trigger is `False` and `minit0` builds the fused
+`MAndTrigger`. The assumption was there because the fused node's buffer holds *pairs* -- the
+trigger structure reports its own column set alongside its table -- and the old invariant pinned
+that set to the right operand's `R`, which holds only while the window is nonempty; on an empty
+window the structure reports the empty column set and the unit table. So the buffer invariant
+
+```isabelle
+list_all (λp. fst p = R ∧ ftable n R (snd p)) (snd buf1)
+```
+
+becomes a bound,
+
+```isabelle
+list_all (λp. fst p ⊆ R ∧ ftable n (fst p) (snd p)) (snd buf1)
+```
+
+which is all the following join needs: with `R ⊆ A` the join is against a table over a subset of
+the conjunction's columns, so its result is still a table over `A`. The four weakened lemmas
+`ftable_trigger_results_weak`, `taux_inv_step_weak`, `trigger_pairs_step_weak` and
+`produces_MAndTrigger_weak` are in `Dense_Agg.thy`, and `MokAndTrigger` now carries
+`mem (args_ivl args) 0 ∨ (args_pos args ∧ L = R)` in place of the interval condition.
+
+Finiteness of the result in the new case is the one point that needs an argument rather than a
+weakening. `safe_dual True safe_formula φ' I ψ'` with `¬ mem I 0` forces `safe_formula φ'` and
+`fv φ' = fv ψ'`, so `L = R` and the structure is built with `args_pos args`. Every tuple the
+trigger reports is then `wf_tuple n R`, so `wf_tuple_proj_idle` makes the join mask the identity
+on it and the structure's own characterisation puts each reported tuple in `r i0 ∪ (⋃ j. l j)` for
+any in-window index `i0` -- a finite union of finite tables. That is `ftable_trigger_results_weak`.
+
+**The chain, closed.** With the last case in place,
+
+```isabelle
+theorem dmonitor_mverdicts_dense (in verimon_spec):
+  "pfinite π ⟹ wty_prefix SIG π ⟹
+   flatten_verdicts (map (λ(i, t, X). (i, t, dtabw (nfv φ) (set_cols (fv φ)) X))
+     (dmonitor (dpure_state (nfv φ) (set_cols (fv φ)) (minit_safe φ)) π)) = Mt π"
+```
+
+states the dense monitor's correctness with no hypotheses left for the caller beyond the locale's
+own `mmonitorable φ` and the prefix being a finite, well-typed log. `Dense_Init.thy` is in `ROOT`
+and the session builds with no `sorry`.

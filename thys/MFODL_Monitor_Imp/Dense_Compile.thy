@@ -100,9 +100,9 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
 | MokAndTrigger: "mok n A tw \<alpha> \<Longrightarrow> mok n L tw \<phi> \<Longrightarrow> mok n R tw \<psi> \<Longrightarrow>
     trigger_inv args n L R tw aux buf2 nts \<Longrightarrow>
     list_all (ftable n A) (fst buf1) \<Longrightarrow>
-    list_all (\<lambda>p. fst p = R \<and> ftable n R (snd p)) (snd buf1) \<Longrightarrow>
+    list_all (\<lambda>p. fst p \<subseteq> R \<and> ftable n (fst p) (snd p)) (snd buf1) \<Longrightarrow>
     args_n args = n \<Longrightarrow> args_L args = L \<Longrightarrow> args_R args = R \<Longrightarrow>
-    mem (args_ivl args) 0 \<Longrightarrow> R \<subseteq> A \<Longrightarrow>
+    (mem (args_ivl args) 0 \<or> (args_pos args \<and> L = R)) \<Longrightarrow> R \<subseteq> A \<Longrightarrow>
     mok n A tw (mformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)"
 | MokLet: "mok m {0..<m} tw \<phi> \<Longrightarrow> mok n A tw \<psi> \<Longrightarrow>
     mok n A tw (mformula.MLet p m \<phi> \<psi>)"
@@ -211,7 +211,7 @@ next
 next
   case MokAndTrigger
   show ?case
-    by (rule produces_MAndTrigger[OF MokAndTrigger(2) MokAndTrigger(4) MokAndTrigger(6)
+    by (rule produces_MAndTrigger_weak[OF MokAndTrigger(2) MokAndTrigger(4) MokAndTrigger(6)
         MokAndTrigger(7) MokAndTrigger(8) MokAndTrigger(9) MokAndTrigger(10)
         MokAndTrigger(11) MokAndTrigger(12) MokAndTrigger(13) MokAndTrigger(14)])
 next
