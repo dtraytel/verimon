@@ -787,6 +787,251 @@ next
     using X out pM' pbf' lM lb1 lR by (auto simp: x f' Cs_def)
 qed
 
+subsection \<open>The Since node\<close>
+
+text \<open>
+  The Since node's invariant is the verified structure's own: it is valid for an abstract
+  auxiliary list whose tables are finite tables over the node's columns, at a current timestamp
+  that the buffer's timestamps -- and every timestamp still to come -- are at or after.  This is
+  the wide half of @{const dsince_rel}; the node needs nothing of the dense half in order to
+  produce well-formed tables.
+\<close>
+
+lemma ftable_foldr_Un:
+  "\<forall>(t, rel) \<in> set aux. ftable n R rel \<Longrightarrow>
+     ftable n R (foldr (\<union>) [rel. (t, rel) \<leftarrow> aux, P t] {})"
+  by (induct aux) (auto simp: table_def split: if_splits)
+
+lemma fauxlist_join:
+  assumes sub: "L \<subseteq> R" and r1: "ftable n L rel1"
+  shows "\<forall>(t, rel) \<in> set aux. ftable n R rel \<Longrightarrow>
+    \<forall>(t, rel) \<in> set (map (\<lambda>(t, rel). (t, join rel pos rel1)) aux). ftable n R rel"
+proof (induct aux)
+  case (Cons p aux)
+  obtain v rel where p: "p = (v, rel)" by (cases p)
+  have t: "ftable n R rel" using Cons.prems p by simp
+  have tj: "table n R (join rel pos rel1)"
+    by (rule join_table[of n R rel L rel1 pos R]) (use t r1 sub in auto)
+  have fj: "finite (join rel pos rel1)" using t r1 by (simp add: finite_join)
+  show ?case using Cons.hyps Cons.prems tj fj p by simp
+qed simp
+
+lemma fauxlist_add_new_table:
+  assumes a: "\<forall>(t, rel) \<in> set aux. ftable n R rel" and r2: "ftable n R rel2"
+  shows "\<forall>(t, rel) \<in> set (case aux of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # aux).
+         ftable n R rel"
+  using assms by (cases aux) (auto simp: table_def)
+
+definition saux_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
+    event_data mbuf2S \<Rightarrow> mmasaux \<Rightarrow> bool" where
+  "saux_inv args n L R u buf aux \<longleftrightarrow>
+     (\<exists>cur auxlist. valid_mmasaux args cur aux auxlist \<and> cur \<le> u \<and>
+        (\<forall>(t, rel) \<in> set auxlist. ftable n R rel) \<and>
+        (case buf of (xs, ys, tss, sk) \<Rightarrow>
+           list_all (ftable n L) xs \<and> list_all (ftable n R) ys \<and>
+           sorted tss \<and> (\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> u)))"
+
+lemma saux_invI:
+  "valid_mmasaux args cur aux auxlist \<Longrightarrow> cur \<le> u \<Longrightarrow>
+   (\<forall>(t, rel) \<in> set auxlist. ftable n R rel) \<Longrightarrow>
+   list_all (ftable n L) xs \<Longrightarrow> list_all (ftable n R) ys \<Longrightarrow>
+   sorted tss \<Longrightarrow> \<forall>t \<in> set tss. cur \<le> t \<and> t \<le> u \<Longrightarrow>
+   saux_inv args n L R u (xs, ys, tss, sk) aux"
+  unfolding saux_inv_def by (auto simp del: valid_mmasaux.simps)
+
+lemma saux_invE:
+  assumes "saux_inv args n L R u (xs, ys, tss, sk) aux"
+  obtains cur auxlist where "valid_mmasaux args cur aux auxlist" and "cur \<le> u"
+    and "\<forall>(t, rel) \<in> set auxlist. ftable n R rel"
+    and "list_all (ftable n L) xs" and "list_all (ftable n R) ys"
+    and "sorted tss" and "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> u"
+  using assms unfolding saux_inv_def by (auto simp del: valid_mmasaux.simps)
+
+lemma ftable_result_mmasaux:
+  assumes v: "valid_mmasaux args cur aux auxlist"
+    and w: "\<forall>(t, rel) \<in> set auxlist. ftable n R rel"
+    and agg: "args_agg args = None"
+  shows "ftable n R (result_mmasaux args aux)"
+  using default_mmasaux.valid_result_msaux[OF v] agg ftable_foldr_Un[OF w]
+  by (simp add: eval_args_agg_def)
+
+text \<open>A fresh batch enters the buffer at or after the bound, which becomes the batch's last
+  timestamp.\<close>
+
+lemma saux_inv_add:
+  assumes r: "saux_inv args n L R u buf aux"
+    and lx: "list_all (ftable n L) xs" and ly: "list_all (ftable n R) ys"
+    and s: "sorted ts" and b: "\<forall>t \<in> set ts. u \<le> t"
+  shows "saux_inv args n L R (dnext u ts) (mbuf2S_add xs ys ts buf) aux"
+proof (cases buf)
+  case (fields us vs tss sk)
+  obtain cur auxlist where vw: "valid_mmasaux args cur aux auxlist" and cu: "cur \<le> u"
+    and wa: "\<forall>(t, rel) \<in> set auxlist. ftable n R rel"
+    and lu: "list_all (ftable n L) us" and lv: "list_all (ftable n R) vs"
+    and st: "sorted tss" and ct: "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> u"
+    using r unfolding fields by (rule saux_invE)
+  have "sorted (tss @ ts)" using st s ct b
+    by (fastforce simp: sorted_append intro: order_trans)
+  moreover have "\<forall>t \<in> set (tss @ ts). cur \<le> t \<and> t \<le> dnext u ts"
+    using ct b cu dnext_ge[OF b] dnext_bound[OF s] by fastforce
+  ultimately show ?thesis unfolding fields
+    using saux_invI[OF vw order_trans[OF cu dnext_ge[OF b]] wa,
+      where xs = "us @ xs" and ys = "vs @ ys" and tss = "tss @ ts" and sk = sk] lu lx lv ly
+    by simp
+qed
+
+text \<open>
+  One firing of @{const meval_since} keeps the invariant and only ever appends results of the
+  structure, which by @{thm [source] ftable_result_mmasaux} are tables over the node's columns.
+  The induction is the kernel's own recursion, the same one
+  @{thm [source] eval_since_rel} follows.
+\<close>
+
+lemma eval_since_ftable:
+  fixes args :: args
+  assumes agg: "args_agg args = None" and an: "args_n args = n"
+    and aL: "args_L args = L" and aR: "args_R args = R" and sub: "L \<subseteq> R"
+  shows "meval_since args rs buf aux = (zs, buf', aux') \<Longrightarrow>
+    saux_inv args n L R u buf aux \<Longrightarrow> list_all (ftable n R) rs \<Longrightarrow>
+    list_all (ftable n R) zs \<and> saux_inv args n L R u buf' aux'"
+proof (induction rs buf aux arbitrary: zs buf' aux'
+    taking: args rule: default_maux.eval_since.induct)
+  case (1 rs x xs t tss skew aux)
+  note E = 1(1) and R = 1(2) and Q = 1(3)
+  obtain cur auxlist where vw: "valid_mmasaux args cur aux auxlist" and cu: "cur \<le> u"
+    and wa: "\<forall>(t, rel) \<in> set auxlist. ftable n R rel"
+    and lx: "list_all (ftable n L) (x # xs)"
+    and st: "sorted (t # tss)" and ct: "\<forall>v \<in> set (t # tss). cur \<le> v \<and> v \<le> u"
+    using R by (rule saux_invE)
+  have tx: "ftable n L x" using lx by simp
+  have ctu: "cur \<le> t" using ct by simp
+  show ?case
+  proof (cases "skew \<or> memL (args_ivl args) 0")
+    case True
+    show ?thesis using E R Q True by (auto simp: list_all_iff)
+  next
+    case False
+    let ?wa = "gc_join_mmasaux args x (add_new_ts_mmasaux args t aux)"
+    let ?al = "map (\<lambda>(v, rel). (v, join rel (args_pos args) x))
+        (filter (\<lambda>(v, rel). memR (args_ivl args) (t - v)) auxlist)"
+    have vw': "valid_mmasaux args t ?wa ?al"
+      by (rule default_mmasaux.valid_join_msaux
+          [OF default_mmasaux.valid_add_new_ts_msaux[OF vw ctu]]) (use tx an aL in simp)
+    have wa': "\<forall>(v, rel) \<in> set ?al. ftable n R rel"
+      by (rule fauxlist_join[OF sub tx]) (use wa in auto)
+    have EW: "meval_since args rs (x # xs, [], t # tss, skew) aux
+        = (rev (result_mmasaux args ?wa # rs), (xs, [], tss, True), ?wa)"
+      using False by (simp add: Let_def)
+    have EE: "(rev (result_mmasaux args ?wa # rs), (xs, [], tss, True), ?wa) = (zs, buf', aux')"
+      by (rule trans[OF EW[symmetric] E])
+    have tr: "ftable n R (result_mmasaux args ?wa)"
+      by (rule ftable_result_mmasaux[OF vw' wa' agg])
+    have R': "saux_inv args n L R u (xs, [], tss, True) ?wa"
+      by (rule saux_invI[OF vw' _ wa']) (use lx st ct in auto)
+    show ?thesis using EE Q tr R' by auto
+  qed
+next
+  case (2 rs xs y ys tss aux)
+  note IH = 2(1) and E = 2(2) and R = 2(3) and Q = 2(4)
+  obtain cur auxlist where vw: "valid_mmasaux args cur aux auxlist" and cu: "cur \<le> u"
+    and wa: "\<forall>(t, rel) \<in> set auxlist. ftable n R rel"
+    and lx: "list_all (ftable n L) xs" and ly: "list_all (ftable n R) (y # ys)"
+    and st: "sorted tss" and ct: "\<forall>v \<in> set tss. cur \<le> v \<and> v \<le> u"
+    using R by (rule saux_invE)
+  have ty: "ftable n R y" using ly by simp
+  let ?al = "case auxlist of [] \<Rightarrow> [(cur, y)]
+      | ((v, w) # r) \<Rightarrow> if v = cur then (v, w \<union> y) # r else (cur, y) # auxlist"
+  have vw': "valid_mmasaux args cur (add_new_table_mmasaux args y aux) ?al"
+    by (rule default_mmasaux.valid_add_new_table_msaux[OF vw]) (use ty an aR in simp)
+  have wa': "\<forall>(v, rel) \<in> set ?al. ftable n R rel"
+    by (rule fauxlist_add_new_table[OF wa ty])
+  have E': "meval_since args rs (xs, ys, tss, False) (add_new_table_mmasaux args y aux)
+      = (zs, buf', aux')" using E by simp
+  have R': "saux_inv args n L R u (xs, ys, tss, False) (add_new_table_mmasaux args y aux)"
+    by (rule saux_invI[OF vw' cu wa']) (use lx ly st ct in auto)
+  show ?case by (rule IH[OF E' R' Q])
+next
+  case (3 rs x xs y ys t tss aux)
+  note IH = 3(1) and E = 3(2) and R = 3(3) and Q = 3(4)
+  obtain cur auxlist where vw: "valid_mmasaux args cur aux auxlist" and cu: "cur \<le> u"
+    and wa: "\<forall>(v, rel) \<in> set auxlist. ftable n R rel"
+    and lx: "list_all (ftable n L) (x # xs)" and ly: "list_all (ftable n R) (y # ys)"
+    and st: "sorted (t # tss)" and ct: "\<forall>v \<in> set (t # tss). cur \<le> v \<and> v \<le> u"
+    using R by (rule saux_invE)
+  have tx: "ftable n L x" using lx by simp
+  have ty: "ftable n R y" using ly by simp
+  have ctu: "cur \<le> t" using ct by simp
+  let ?jl = "map (\<lambda>(v, rel). (v, join rel (args_pos args) x))
+      (filter (\<lambda>(v, rel). memR (args_ivl args) (t - v)) auxlist)"
+  let ?al = "case ?jl of [] \<Rightarrow> [(t, y)]
+      | ((v, w) # r) \<Rightarrow> if v = t then (v, w \<union> y) # r else (t, y) # ?jl"
+  let ?wa = "add_new_table_mmasaux args y
+      (gc_join_mmasaux args x (add_new_ts_mmasaux args t aux))"
+  have vwj: "valid_mmasaux args t (gc_join_mmasaux args x (add_new_ts_mmasaux args t aux)) ?jl"
+    by (rule default_mmasaux.valid_join_msaux
+        [OF default_mmasaux.valid_add_new_ts_msaux[OF vw ctu]]) (use tx an aL in simp)
+  have wj: "\<forall>(v, rel) \<in> set ?jl. ftable n R rel"
+    by (rule fauxlist_join[OF sub tx]) (use wa in auto)
+  have vw': "valid_mmasaux args t ?wa ?al"
+    by (rule default_mmasaux.valid_add_new_table_msaux[OF vwj]) (use ty an aR in simp)
+  have wa': "\<forall>(v, rel) \<in> set ?al. ftable n R rel"
+    by (rule fauxlist_add_new_table[OF wj ty])
+  have tr: "ftable n R (result_mmasaux args ?wa)"
+    by (rule ftable_result_mmasaux[OF vw' wa' agg])
+  have E': "meval_since args (result_mmasaux args ?wa # rs) (xs, ys, tss, False) ?wa
+      = (zs, buf', aux')" using E by (simp add: Let_def)
+  have R': "saux_inv args n L R u (xs, ys, tss, False) ?wa"
+    by (rule saux_invI[OF vw' _ wa']) (use lx ly st ct in auto)
+  have Q': "list_all (ftable n R) (result_mmasaux args ?wa # rs)" using tr Q by simp
+  show ?case by (rule IH[OF refl E' R' Q'])
+qed auto
+
+lemma produces_MSince:
+  fixes args :: args
+  assumes p1: "produces n L tw \<phi>" and p2: "produces n R tw \<psi>"
+    and r: "saux_inv args n L R tw buf aux"
+    and agg: "args_agg args = None" and an: "args_n args = n"
+    and aL: "args_L args = L" and aR: "args_R args = R" and sub: "L \<subseteq> R"
+  shows "produces n R tw (mformula.MSince args \<phi> \<psi> buf aux)"
+proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = R \<and>
+    (\<exists>\<chi> \<eta> bf ax. \<Phi> = mformula.MSince args \<chi> \<eta> bf ax \<and>
+       produces n L u \<chi> \<and> produces n R u \<eta> \<and> saux_inv args n L R u bf ax)"])
+  show "n = n \<and> R = R \<and> (\<exists>\<chi> \<eta> bf ax. mformula.MSince args \<phi> \<psi> buf aux
+      = mformula.MSince args \<chi> \<eta> bf ax \<and> produces n L tw \<chi> \<and> produces n R tw \<eta> \<and>
+      saux_inv args n L R tw bf ax)"
+    using p1 p2 r by blast
+next
+  fix n' A' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> A' = R \<and> (\<exists>\<chi> \<eta> bf ax. \<Phi> = mformula.MSince args \<chi> \<eta> bf ax \<and>
+      produces n L u \<chi> \<and> produces n R u \<eta> \<and> saux_inv args n L R u bf ax)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf ax where Phi: "\<Phi> = mformula.MSince args \<chi> \<eta> bf ax"
+    and pc: "produces n L u \<chi>" and pe: "produces n R u \<eta>"
+    and inv: "saux_inv args n L R u bf ax" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain zs bf' ax' where e3: "meval_since args [] (mbuf2S_add as bs ts bf) ax = (zs, bf', ax')"
+    by (cases "meval_since args [] (mbuf2S_add as bs ts bf) ax")
+  have x: "xs = zs" and f: "\<Phi>' = mformula.MSince args \<chi>' \<eta>' bf' ax'"
+    using e X Phi e1 e2 e3 an by simp_all
+  have ta: "list_all (ftable n L) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable n R) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have add: "saux_inv args n L R (dnext u ts) (mbuf2S_add as bs ts bf) ax"
+    by (rule saux_inv_add[OF inv ta tb sts mts])
+  have step: "list_all (ftable n R) zs \<and> saux_inv args n L R (dnext u ts) bf' ax'"
+    by (rule eval_since_ftable[OF agg an aL aR sub e3 add]) simp
+  show "list_all (ftable n' A') xs \<and>
+      ((n' = n \<and> A' = R \<and>
+          (\<exists>\<chi> \<eta> bf ax. \<Phi>' = mformula.MSince args \<chi> \<eta> bf ax \<and>
+             produces n L (dnext u ts) \<chi> \<and> produces n R (dnext u ts) \<eta> \<and>
+             saux_inv args n L R (dnext u ts) bf ax)) \<or>
+       produces n' A' (dnext u ts) \<Phi>')"
+    using X step produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
 (*<*)
 end
 (*>*)
