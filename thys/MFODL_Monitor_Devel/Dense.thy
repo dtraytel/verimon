@@ -838,6 +838,162 @@ proof -
   finally show ?thesis .
 qed
 
+subsection \<open>Dispatching on the shape of the two column lists\<close>
+
+text \<open>
+  The plan is computed once, when the formula is compiled, and replayed at every time point;
+  the kernel's @{const bin_join} recomputes the same case distinction from the two variable
+  sets on every call.
+\<close>
+
+datatype djoin_plan =
+    DJEq | DJEmp | DJSub "bool list" | DJSup "bool list"
+  | DJGen "mrg list" "bool list" "bool list"
+
+definition mk_djoin :: "cols \<Rightarrow> cols \<Rightarrow> djoin_plan" where
+  "mk_djoin cs1 cs2 = (if cs1 = cs2 then DJEq else if cs2 = [] then DJEmp
+     else (let p = mrg_plan cs1 cs2 in
+       if no_right p then DJSub (mrg_left_key p)
+       else if no_left p then DJSup (mrg_right_key p)
+       else DJGen p (mrg_left_key p) (mrg_right_key p)))"
+
+fun dbin_join0 :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
+    event_data table" where
+  "dbin_join0 DJEq A pos B = (if pos then A \<inter> B else A - B)"
+| "dbin_join0 DJEmp A pos B = (if pos = ([] \<in> B) then A else empty_table)"
+| "dbin_join0 (DJSub msk) A pos B = dsemi msk pos A B"
+| "dbin_join0 (DJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. dproj msk b \<in> A) B else A)"
+| "dbin_join0 (DJGen p lk rk) A pos B = (if pos then dgen_join p lk rk A B else A)"
+
+definition dbin_join :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
+    event_data table" where
+  "dbin_join pl A pos B = (if Set.is_empty A then empty_table
+     else if Set.is_empty B then (if pos then empty_table else A)
+     else dbin_join0 pl A pos B)"
+
+lemma sorted_wrt_less_unique:
+  "sorted_wrt (<) xs \<Longrightarrow> sorted_wrt (<) ys \<Longrightarrow> set xs = set ys \<Longrightarrow> xs = (ys :: 'a :: linorder list)"
+  by (simp add: strict_sorted_iff sorted_distinct_set_unique)
+
+lemma merge_cols_sub_left:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     merge_cols cs1 cs2 = cs1"
+  by (rule sorted_wrt_less_unique[OF sorted_merge_cols]) (auto simp: set_merge_cols)
+
+lemma merge_cols_sub_right:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs1 \<subseteq> set cs2 \<Longrightarrow>
+     merge_cols cs1 cs2 = cs2"
+  by (rule sorted_wrt_less_unique[OF sorted_merge_cols]) (auto simp: set_merge_cols)
+
+lemma dtabc_empty_iff: "(dtabc n cs T = {}) = (T = {})"
+  by (auto simp: dtabc_def)
+
+text \<open>Every shape of the plan computes the short form of the kernel's join.  A negative join
+  needs the right operand's columns among the left's, which is what the safety condition of
+  @{term "\<phi> AND NOT \<psi>"} provides; the other shapes then arise only for a positive join.\<close>
+
+theorem dbin_join0_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+    and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
+    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+  shows "dbin_join0 (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
+       = dtabc n (merge_cols cs1 cs2) (join T pos T')"
+proof (cases "cs1 = cs2")
+  case True
+  have "dbin_join0 (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
+      = (if pos then dtabc n cs1 T \<inter> dtabc n cs1 T' else dtabc n cs1 T - dtabc n cs1 T')"
+    using True by (simp add: mk_djoin_def)
+  also have "\<dots> = dtabc n cs1 (join T pos T')"
+    using True t2 by (intro dtabc_join_eq[OF s1 t1]) simp
+  finally show ?thesis using True merge_cols_sub_left[OF s1 s2] by simp
+next
+  case ne: False
+  show ?thesis
+  proof (cases "cs2 = []")
+    case True
+    then have tt: "table n {} T'" using t2 by simp
+    have "dbin_join0 (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
+        = (if pos = ([] \<in> dtabc n [] T') then dtabc n cs1 T else {})"
+      using ne True by (simp add: mk_djoin_def empty_table_def)
+    also have "\<dots> = dtabc n cs1 (join T pos T')" by (rule dtabc_join_no_cols[OF t1 tt])
+    finally show ?thesis using True by (simp add: merge_cols_Nil2)
+  next
+    case ne2: False
+    let ?p = "mrg_plan cs1 cs2"
+    show ?thesis
+    proof (cases "no_right ?p")
+      case True
+      then have sub: "set cs2 \<subseteq> set cs1" using no_right_mrg_plan[OF s1 s2] by simp
+      show ?thesis using dsemi_join[OF s1 s2 sub b1 t1 t2, of pos]
+          merge_cols_sub_left[OF s1 s2 sub] ne ne2 True
+        by (simp add: mk_djoin_def)
+    next
+      case nr: False
+      then have nsub: "\<not> set cs2 \<subseteq> set cs1" using no_right_mrg_plan[OF s1 s2] by simp
+      then have p: "pos" using neg by blast
+      show ?thesis
+      proof (cases "no_left ?p")
+        case True
+        then have sub: "set cs1 \<subseteq> set cs2" using no_left_mrg_plan[OF s1 s2] by simp
+        show ?thesis using dsup_join[OF s1 s2 sub b2 t1 t2]
+            merge_cols_sub_right[OF s1 s2 sub] ne ne2 nr True p
+          by (simp add: mk_djoin_def)
+      next
+        case False
+        show ?thesis using dtabc_gen_join[OF s1 s2 b1 b2 t1 t2 cA cB]
+            ne ne2 nr False p
+          by (simp add: mk_djoin_def Let_def)
+      qed
+    qed
+  qed
+qed
+
+theorem dbin_join_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+    and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
+    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+  shows "dbin_join (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
+       = dtabc n (merge_cols cs1 cs2) (join T pos T')"
+proof (cases "T = {}")
+  case True
+  then show ?thesis
+    by (simp add: dbin_join_def dtabc_empty_iff join_empty_left empty_table_def dtabc_def)
+next
+  case T: False
+  show ?thesis
+  proof (cases "T' = {}")
+    case True
+    then show ?thesis using T neg merge_cols_sub_left[OF s1 s2]
+      by (cases pos)
+        (simp_all add: dbin_join_def dtabc_empty_iff join_empty_right empty_table_def dtabc_def)
+  next
+    case False
+    then show ?thesis using T
+      by (simp add: dbin_join_def dtabc_empty_iff
+          dbin_join0_join[OF s1 s2 b1 b2 t1 t2 neg cA cB])
+  qed
+qed
+
+text \<open>And hence the short join refines the kernel's @{const bin_join}.\<close>
+
+corollary dbin_join_bin_join:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and b1: "\<forall>c \<in> set cs1. c < n" and b2: "\<forall>c \<in> set cs2. c < n"
+    and t1: "table n (set cs1) T" and t2: "table n (set cs2) T'"
+    and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
+    and cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
+  shows "dbin_join (mk_djoin cs1 cs2) (dtabc n cs1 T) pos (dtabc n cs2 T')
+       = dtabc n (merge_cols cs1 cs2) (bin_join n (set cs1) T pos (set cs2) T')"
+  unfolding bin_join_table[OF t1 t2]
+  by (rule dbin_join_join[OF s1 s2 b1 b2 t1 t2 neg cA cB])
+
 section \<open>Aggregation over short tuples\<close>
 
 subsection \<open>Reading a term at the short tuple's positions\<close>
