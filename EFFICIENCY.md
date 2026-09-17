@@ -2597,7 +2597,7 @@ kernel. That is evidence, not a proof. The goal of this section is a refinement 
 dense evaluator simulates the kernel's `meval`, so that running the dense monitor is running the
 verified one.
 
-*Work in progress. 20.1-20.5 are done; 20.6 is what is left.*
+*Work in progress. 20.1-20.4 are done, 20.5 all but the multi-way conjunction and the temporal nodes; 20.6 is what is left.*
 
 ### 20.1 The pair of morphisms
 
@@ -2639,7 +2639,7 @@ the left-hand side's argument at the next step.
 
 ### 20.2 The table operations (done)
 
-`thys/MFODL_Monitor_Imp/Dense.thy`, 2500 lines and 163 lemmas and theorems, no `sorry`. It sits in
+`thys/MFODL_Monitor_Imp/Dense.thy`, 2557 lines and 168 lemmas and theorems, no `sorry`. It sits in
 the child session for now, so that changing it costs a two-minute build rather than a rebuild of
 the base session; it moves to the base session once the whole refinement is in place.
 
@@ -2786,9 +2786,9 @@ column list and so its own narrowing: it relates `mbufn_take f z buf` to
 `mbufn_take g z' (map2 map hs buf)` for a list `hs` of per-slot narrowings, under a step condition
 that only has to hold for tuples drawn from per-slot sets `Ss ! i`.
 
-### 20.5 The simulation (the eight structural nodes are done)
+### 20.5 The simulation (all but the multi-way conjunction and the temporal nodes)
 
-`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 376 lines, no `sorry`. This is the part that turns
+`thys/MFODL_Monitor_Imp/Dense_Eval.thy`, 578 lines, no `sorry`. This is the part that turns
 20.2-20.4 from a list of algebraic identities into a statement about the evaluator.
 
 **Where the kernel's invariant enters, and only there.** Every theorem of 20.2 wants its operand
@@ -2805,6 +2805,21 @@ coinductive produces :: "nat ⇒ nat set ⇒ (mmasaux, muaux_dq, event_data mmta
 kernel's own evaluation, and the kernel's well-formedness invariant is what will discharge
 `produces` at compile time (20.6 below). Nothing else in the induction touches the trace, the
 progress functions, or `qtable`.
+
+The second -- and last -- thing the simulation assumes about its input is that the database is
+well formed:
+
+```isabelle
+definition wf_db :: "database ⇒ bool" where
+  "wf_db db ⟷ (∀e ar X. Mapping.lookup db (e, ar) = Some X ⟶ list_all (λT. table ar {0..<ar} T) X)"
+```
+
+That is what the trace's own databases look like, and it is what the predicate nodes need: they
+read the database's table and hand it straight through, so its tuples have to be the short ones
+already. A let-bound predicate, whose table is *not* of this shape, is always inside a `DPure`
+node, where the kernel's own evaluator handles the lookup -- so the condition is never needed
+there. `wf_db` is a hypothesis of the simulation theorem, discharged at the top level by
+`wf_envs`.
 
 **The dense formula and its evaluator.** `dformula` mirrors the kernel's `mformula` node by node,
 but each node carries what the *short* representation needs rather than what the wide one needs: a
@@ -2833,7 +2848,7 @@ removes a prefix, so whatever stays in the buffer was already there, and so is s
 
 ```isabelle
 theorem dsim_deval:
-  "dsim n cs φd φ ⟹ meval j n ts db φ = (xs, φ') ⟹
+  "dsim n cs φd φ ⟹ wf_db db ⟹ meval j n ts db φ = (xs, φ') ⟹
    ∃φd'. deval j ts db φd = (map (dtabc n cs) xs, φd') ∧ dsim n cs φd' φ'"
 ```
 
@@ -2846,12 +2861,16 @@ list, with `produces_next` re-establishing the invariant for the successor:
 |---|---|
 | `DPure` | `dnarrow_dtabc` |
 | `DRel` | `map_replicate` |
+| `DPredS`, Copy mode | `dtabc_upt` (new: a frame with no empty columns, so narrowing is the identity) |
+| `DPredS`, Simple mode | `dtabc_simple_match` + `wf_db` for the tuple widths |
+| `DPredM`, Match mode | `dmatch_table_dtabc` |
 | `DAndRel` | `eval_constraint_reindex` (new, see below) |
 | `DNeg` | `dtabc_neg` (new: `dtabc n [] (unit_table n) = unit_table 0`, and `dtabc_empty_iff`) |
 | `DExists` | `dtabc_exists` |
 | `DOr` | `dtabc_Un_img` + `dbuf2_add` / `dbuf2_take` |
 | `DAnd` | `dbin_join_bin_join` + `dbuf2_add` / `dbuf2_take` |
 | `DAgg` | `dagg_eval_agg` |
+| `DPrev`, `DNext` | `mprev_next_map` + `mprev_next_sub` (new, the leftover-buffer analogue of `mbuf2_take_sub`) |
 
 `eval_constraint_reindex` is the one algebraic law 20.2 was missing. `reindex_constraint` moves
 into `Dense.thy` (it was unverified in `Dense_Imp.thy`) and
@@ -2870,10 +2889,12 @@ injectivity.
 
 ### 20.6 What is left
 
-1. **The remaining nodes of `dsim` / `deval`.** `MPred` (Copy, Simple, Match), `MAnds`, `MPrev`,
-   `MNext`, `MSince`, `MUntil`. The algebra for all of them is in 20.2-20.4
-   (`dtabc_simple_match`, `dmatch_table_dtabc`, `dmulti_join_dtabc` + `mbufn_take_rel`,
-   `mprev_next_map`, `dauxlist*` + `mbuf2t_take_rel`); what is left is the node case itself.
+1. **The remaining nodes of `dsim` / `deval`.** `MAnds`, `MSince`, `MUntil`. The algebra for all
+   of them is in 20.2-20.4 (`dmulti_join_dtabc` + `mbufn_take_rel`, `dauxlist*` +
+   `mbuf2t_take_rel`); what is left is the node case itself. For `MAnds` the bridge from the
+   monitor's own `mmulti_join` to the `mmulti_join'` that `dmulti_join_dtabc` is stated over is
+   now proved (`mmulti_join_eq_mmulti_join'`: both branches of the run-time choice between the
+   generic and the pairwise join have the same membership characterisation as `mmulti_join'`).
 2. **The compilation.** `dformula_of` and `mcols` must be proved to produce a `dsim`; in
    particular that the column list of a node is the subformula's free-variable set, and that
    `wf_mformula` implies `produces`. An induction over `mformula_j` against `wf_mformula`.

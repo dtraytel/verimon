@@ -2451,6 +2451,68 @@ lemma dtabc_neg:
      = (if dtabc n [] T = empty_table then unit_table 0 else empty_table)"
   by (simp add: dtabc_unit_table dtabc_empty_iff empty_table_def)
 
+subsection ‹A frame with no empty columns›
+
+text \<open>When the column list covers the whole frame the mask is all true, so narrowing is the
+  identity.  That is the case of a predicate whose arguments are exactly @{term "[0..<n]"}, which
+  the kernel evaluates by handing the database's table straight through.\<close>
+
+lemma all_true_wide_mask_full:
+  assumes s: "sorted_wrt (<) cs" and e: "set cs = {0..<n}"
+  shows "all_true (wide_mask n cs)"
+  unfolding all_true_def list_all_length
+  using nth_wide_mask[OF s] e by auto
+
+lemma dtabc_empty_table[simp]: "dtabc n cs empty_table = empty_table"
+  by (simp add: empty_table_def)
+
+lemma dtabc_full:
+  assumes s: "sorted_wrt (<) cs" and e: "set cs = {0..<n}" and t: "table n (set cs) T"
+  shows "dtabc n cs T = T"
+proof -
+  have "\<And>x. x \<in> T \<Longrightarrow> dproj (wide_mask n cs) x = x"
+    using t all_true_wide_mask_full[OF s e]
+    by (auto simp: table_def wf_tuple_def intro!: dproj_all_true)
+  then show ?thesis unfolding dtabc_def by (auto intro!: rev_image_eqI)
+qed
+
+lemma dtabc_upt: "table n {0..<n} T \<Longrightarrow> dtabc n [0..<n] T = T"
+  by (rule dtabc_full) auto
+
+subsection ‹Leftovers of the shift buffer›
+
+lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
+  by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
+    (auto split: prod.splits)
+
+subsection ‹The multi-way join the monitor actually runs›
+
+text \<open>@{const mmulti_join} chooses between the generic join and the pairwise one; both have the
+  same membership characterisation as @{const mmulti_join'}, which is what @{thm
+  dmulti_join_dtabc} is stated over.  The pairwise one needs the negated conjuncts' columns to be
+  covered, which holds for every safe formula.\<close>
+
+lemma mmulti_join_eq_mmulti_join':
+  assumes ne: "A_pos \<noteq> []"
+    and la: "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
+    and sub: "\<Union>(set A_neg) \<subseteq> \<Union>(set A_pos)"
+  shows "mmulti_join n A_pos A_neg L = mmulti_join' A_pos A_neg L"
+proof (cases use_generic_join)
+  case True
+  have "mmulti_join n A_pos A_neg L = mmulti_join_gen n A_pos A_neg L"
+    by (simp only: mmulti_join.simps True if_True)
+  also have "\<dots> = mmulti_join' A_pos A_neg L" by (rule mmulti_join_gen_link[OF ne la])
+  finally show ?thesis .
+next
+  case False
+  have "mmulti_join n A_pos A_neg L = mmulti_join_pw n A_pos A_neg L"
+    by (simp only: mmulti_join.simps False if_False)
+  also have "\<dots> = mmulti_join' A_pos A_neg L"
+    by (rule set_eqI)
+      (simp only: mmulti_join_pw_correct[OF ne la sub] mmulti_join'_correct[OF ne la])
+  finally show ?thesis .
+qed
+
 section ‹Comparisons on short tuples›
 
 text ‹

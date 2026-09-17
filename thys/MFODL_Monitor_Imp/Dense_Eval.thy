@@ -18,21 +18,39 @@ text \<open>
 abbreviation (input) ftable :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> bool" where
   "ftable n A X \<equiv> table n A X \<and> finite X"
 
+text \<open>
+  A database is well formed when the table stored at a name of arity @{term ar} holds tuples of
+  that width with no holes -- which is what the trace's own databases look like.  The dense
+  formula only ever reads a database at a genuine input predicate (a let-bound one is always
+  inside a @{term DPure} node, where the kernel's own evaluator handles it), so this is exactly
+  the condition its predicate nodes need.
+\<close>
+
+definition wf_db :: "database \<Rightarrow> bool" where
+  "wf_db db \<longleftrightarrow> (\<forall>e ar X. Mapping.lookup db (e, ar) = Some X \<longrightarrow>
+     list_all (\<lambda>T. table ar {0..<ar} T) X)"
+
+lemma wf_dbD:
+  "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow>
+     table ar {0..<ar} T"
+  by (auto simp: wf_db_def list_all_iff)
+
 coinductive produces :: "nat \<Rightarrow> nat set \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool"
-  where produces: "(\<And>j ts db xs \<phi>'. meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+  where produces: "(\<And>j ts db xs \<phi>'. wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
       list_all (ftable n A) xs \<and> produces n A \<phi>') \<Longrightarrow> produces n A \<phi>"
 
 lemma produces_step:
-  "produces n A \<phi> \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+  "produces n A \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
      list_all (ftable n A) xs \<and> produces n A \<phi>'"
   by (erule produces.cases) blast
 
 lemma produces_tables:
-  "produces n A \<phi> \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> list_all (ftable n A) xs"
+  "produces n A \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+     list_all (ftable n A) xs"
   by (drule produces_step) auto
 
 lemma produces_next:
-  "produces n A \<phi> \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> produces n A \<phi>'"
+  "produces n A \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> produces n A \<phi>'"
   by (drule produces_step) auto
 
 section \<open>The dense formula\<close>
@@ -49,17 +67,29 @@ text \<open>
 datatype dformula =
     DPure "(mmasaux, muaux_dq, event_data mmtaux) mformula" nat "bool list"
   | DRel "event_data table"
+  | DPredS Formula.name nat
+  | DPredM Formula.name nat "Formula.trm list" cols
   | DAndRel dformula "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
   | DNeg dformula
   | DExists dformula bool
   | DAgg bool "ty Formula.agg_op" Formula.trm nat nat dformula
   | DOr dformula dformula "event_data mbuf2"
   | DAnd djoin_plan dformula bool dformula "event_data mbuf2"
+  | DPrev \<I> dformula bool "event_data table list" "ts list"
+  | DNext \<I> dformula bool "ts list"
 
 fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula" where
   "deval j ts db (DPure \<phi> m msk) =
      (let (xs, \<phi>') = meval j m ts db \<phi> in (map (dnarrow msk) xs, DPure \<phi>' m msk))"
 | "deval j ts db (DRel rel) = (replicate (length ts) rel, DRel rel)"
+| "deval j ts db (DPredS e ar) =
+     ((case Mapping.lookup db (e, ar) of
+         None \<Rightarrow> replicate (length ts) empty_table
+       | Some xs \<Rightarrow> xs), DPredS e ar)"
+| "deval j ts db (DPredM e ar tms cs) =
+     ((case Mapping.lookup db (e, ar) of
+         None \<Rightarrow> replicate (length ts) empty_table
+       | Some xs \<Rightarrow> map (dmatch_table tms cs) xs), DPredM e ar tms cs)"
 | "deval j ts db (DAndRel \<phi> conf) =
      (let (xs, \<phi>') = deval j ts db \<phi>
       in (map (Set.filter (eval_constraint conf)) xs, DAndRel \<phi>' conf))"
@@ -79,6 +109,16 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      (let (xs, \<phi>') = deval j ts db \<phi>; (ys, \<psi>') = deval j ts db \<psi>;
           (zs, buf') = mbuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (mbuf2_add xs ys buf)
       in (zs, DAnd pl \<phi>' pos \<psi>' buf'))"
+| "deval j ts db (DPrev I \<phi> first buf nts) =
+     (let (xs, \<phi>') = deval j ts db \<phi>
+      in if first \<and> ts = [] then ([], DPrev I \<phi>' True (buf @ xs) (nts @ ts))
+      else let (zs, buf', nts') = mprev_next I (buf @ xs) (nts @ ts)
+        in (if first then empty_table # zs else zs, DPrev I \<phi>' False buf' nts'))"
+| "deval j ts db (DNext I \<phi> first nts) =
+     (let (xs, \<phi>') = deval j ts db \<phi>;
+          (xs, first') = (case (xs, first) of (_ # xs', True) \<Rightarrow> (xs', False) | a \<Rightarrow> a);
+          (zs, _, nts') = mprev_next I xs (nts @ ts)
+      in (zs, DNext I \<phi>' first' nts'))"
 
 section \<open>The simulation relation\<close>
 
@@ -104,6 +144,17 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> dformula \<Rightarrow>
 | DsRel: "wf_cols n cs \<Longrightarrow> produces n (set cs) (mformula.MRel rel) \<Longrightarrow>
     table n (set cs) rel \<Longrightarrow>
     dsim n cs (DRel (dtabc n cs rel)) (mformula.MRel rel)"
+| DsPredC: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MPred e tms Copy) \<Longrightarrow>
+    tms = map Formula.Var [0..<n] \<Longrightarrow> cs = [0..<n] \<Longrightarrow>
+    dsim n cs (DPredS e n) (mformula.MPred e tms Copy)"
+| DsPredS: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MPred e tms Simple) \<Longrightarrow>
+    is_simple_pattern tms 0 \<Longrightarrow> cs = smp_cols tms \<Longrightarrow>
+    dsim n cs (DPredS e (length tms)) (mformula.MPred e tms Simple)"
+| DsPredM: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MPred e tms Match) \<Longrightarrow>
+    dsim n cs (DPredM e (length tms) tms cs) (mformula.MPred e tms Match)"
 | DsAndRel: "wf_cols n cs \<Longrightarrow> produces n (set cs) (mformula.MAndRel \<phi> (t1, p, c, t2)) \<Longrightarrow>
     dsim n cs \<phi>d \<phi> \<Longrightarrow>
     Formula.fv_trm t1 \<subseteq> set cs \<Longrightarrow> Formula.fv_trm t2 \<subseteq> set cs \<Longrightarrow>
@@ -125,6 +176,15 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> dformula \<Rightarrow>
     (\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1) \<Longrightarrow>
     dbuf2 n cs1 cs2 buf dbuf \<Longrightarrow>
     dsim n cs (DAnd pl \<phi>d pos \<psi>d dbuf) (mformula.MAnd (set cs1) \<phi> pos (set cs2) \<psi> buf)"
+| DsPrev: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MPrev I \<phi> first buf nts) \<Longrightarrow>
+    dsim n cs \<phi>d \<phi> \<Longrightarrow>
+    list_all (ftable n (set cs)) buf \<Longrightarrow> dbuf = map (dtabc n cs) buf \<Longrightarrow>
+    dsim n cs (DPrev I \<phi>d first dbuf nts) (mformula.MPrev I \<phi> first buf nts)"
+| DsNext: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) (mformula.MNext I \<phi> first nts) \<Longrightarrow>
+    dsim n cs \<phi>d \<phi> \<Longrightarrow>
+    dsim n cs (DNext I \<phi>d first nts) (mformula.MNext I \<phi> first nts)"
 | DsAgg: "wf_cols n cs \<Longrightarrow> produces n (set cs) (mformula.MAgg args \<phi>) \<Longrightarrow>
     dsim (length (aggargs_tys args) + n) (agg_cols (length (aggargs_tys args)) gcols) \<phi>d \<phi> \<Longrightarrow>
     wf_cols n gcols \<Longrightarrow> aggargs_n args = n \<Longrightarrow> aggargs_y args = y \<Longrightarrow>
@@ -184,32 +244,115 @@ text \<open>
 \<close>
 
 theorem dsim_deval:
-  "dsim n cs \<phi>d \<phi> \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+  "dsim n cs \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
    \<exists>\<phi>d'. deval j ts db \<phi>d = (map (dtabc n cs) xs, \<phi>d') \<and> dsim n cs \<phi>d' \<phi>'"
 proof (induct arbitrary: j ts db xs \<phi>' rule: dsim.induct)
   case (DsPure n cs \<phi>)
-  note wf = DsPure.hyps(1) and p = DsPure.hyps(2) and m = DsPure.prems
-  have t: "list_all (ftable n (set cs)) xs" by (rule produces_tables[OF p m])
+  note wf = DsPure.hyps(1) and p = DsPure.hyps(2)
+    and w = DsPure.prems(1) and m = DsPure.prems(2)
+  have t: "list_all (ftable n (set cs)) xs" by (rule produces_tables[OF p w m])
   have "map (dnarrow (wide_mask n cs)) xs = map (dtabc n cs) xs"
     using t by (intro map_cong refl dnarrow_dtabc) (auto simp: list_all_iff)
-  then show ?case using m wf produces_next[OF p m] by (auto intro!: dsim.DsPure)
+  then show ?case using m wf produces_next[OF p w m] by (auto intro!: dsim.DsPure)
 next
   case (DsRel n cs rel)
-  note wf = DsRel.hyps(1) and p = DsRel.hyps(2) and t = DsRel.hyps(3) and m = DsRel.prems
+  note wf = DsRel.hyps(1) and p = DsRel.hyps(2) and t = DsRel.hyps(3)
+    and w = DsRel.prems(1) and m = DsRel.prems(2)
   have x: "xs = replicate (length ts) rel" and f: "\<phi>' = mformula.MRel rel" using m by simp_all
   show ?case using wf p t by (simp add: x f dsim.DsRel)
+next
+  case (DsPredC n cs e tms)
+  note wf = DsPredC.hyps(1) and pr = DsPredC.hyps(2) and tm = DsPredC.hyps(3)
+    and cse = DsPredC.hyps(4) and w = DsPredC.prems(1) and m = DsPredC.prems(2)
+  have ar: "length tms = n" using tm by simp
+  have f: "\<phi>' = mformula.MPred e tms Copy" using m by simp
+  show ?case
+  proof (cases "Mapping.lookup db (e, n)")
+    case None
+    have x: "xs = replicate (length ts) empty_table"
+      using m ar None by (simp add: empty_table_def)
+    show ?thesis using wf pr tm cse produces_next[OF pr w m] None x f
+      by (auto intro!: dsim.DsPredC)
+  next
+    case (Some ys)
+    have x: "xs = ys" using m ar Some by simp
+    have dt: "\<And>T. T \<in> set ys \<Longrightarrow> dtabc n cs T = T"
+    proof -
+      fix T assume "T \<in> set ys"
+      then have "table n {0..<n} T" by (rule wf_dbD[OF w Some])
+      then show "dtabc n cs T = T" unfolding cse by (rule dtabc_upt)
+    qed
+    have mp: "map (dtabc n cs) ys = ys" using dt by (induct ys) auto
+    show ?thesis using wf pr tm cse produces_next[OF pr w m] Some x f mp
+      by (auto intro!: dsim.DsPredC)
+  qed
+next
+  case (DsPredS n cs e tms)
+  note wf = DsPredS.hyps(1) and pr = DsPredS.hyps(2) and sp = DsPredS.hyps(3)
+    and cse = DsPredS.hyps(4) and w = DsPredS.prems(1) and m = DsPredS.prems(2)
+  have f: "\<phi>' = mformula.MPred e tms Simple" using m by simp
+  show ?case
+  proof (cases "Mapping.lookup db (e, length tms)")
+    case None
+    have x: "xs = replicate (length ts) empty_table"
+      using m None by (simp add: empty_table_def)
+    show ?thesis using wf pr sp cse produces_next[OF pr w m] None x f
+      by (auto intro!: dsim.DsPredS)
+  next
+    case (Some ys)
+    have x: "xs = map (\<lambda>T. simple_match n 0 tms ` T) ys" using m Some by simp
+    have b: "\<forall>y \<in> set (smp_cols tms). y < n" using wf cse by simp
+    have dt: "\<And>T. T \<in> set ys \<Longrightarrow> dtabc n cs (simple_match n 0 tms ` T) = T"
+    proof -
+      fix T assume "T \<in> set ys"
+      then have "table (length tms) {0..<length tms} T" by (rule wf_dbD[OF w Some])
+      then have l: "\<forall>x \<in> T. length x = length tms"
+        by (simp add: table_def wf_tuple_def)
+      show "dtabc n cs (simple_match n 0 tms ` T) = T"
+        unfolding cse by (rule dtabc_simple_match[OF sp b l])
+    qed
+    have mp: "map (dtabc n cs) (map (\<lambda>T. simple_match n 0 tms ` T) ys) = ys"
+      using dt by (induct ys) auto
+    show ?thesis using wf pr sp cse produces_next[OF pr w m] Some x f mp
+      by (auto intro!: dsim.DsPredS)
+  qed
+next
+  case (DsPredM n cs e tms)
+  note wf = DsPredM.hyps(1) and pr = DsPredM.hyps(2)
+    and w = DsPredM.prems(1) and m = DsPredM.prems(2)
+  have f: "\<phi>' = mformula.MPred e tms Match" using m by simp
+  show ?case
+  proof (cases "Mapping.lookup db (e, length tms)")
+    case None
+    have x: "xs = replicate (length ts) empty_table"
+      using m None by (simp add: empty_table_def)
+    show ?thesis using wf pr produces_next[OF pr w m] None x f
+      by (auto intro!: dsim.DsPredM)
+  next
+    case (Some ys)
+    have x: "xs = map (\<lambda>T. (\<lambda>g. Table.tabulate g 0 n) ` Option.these (match tms ` T)) ys"
+      using m Some by simp
+    have dt: "\<And>T. dmatch_table tms cs T
+        = dtabc n cs ((\<lambda>g. Table.tabulate g 0 n) ` Option.these (match tms ` T))"
+      using wf by (intro dmatch_table_dtabc) simp_all
+    have mp: "map (dmatch_table tms cs) ys
+        = map (dtabc n cs) (map (\<lambda>T. (\<lambda>g. Table.tabulate g 0 n) ` Option.these (match tms ` T)) ys)"
+      using dt by (induct ys) auto
+    show ?thesis using wf pr produces_next[OF pr w m] Some x f mp
+      by (auto intro!: dsim.DsPredM)
+  qed
 next
   case (DsAndRel n cs \<phi> t1 p c t2 \<phi>d)
   note wf = DsAndRel.hyps(1) and pr = DsAndRel.hyps(2) and sim = DsAndRel.hyps(3)
     and IH = DsAndRel.hyps(4) and fv1 = DsAndRel.hyps(5) and fv2 = DsAndRel.hyps(6)
-    and m = DsAndRel.prems
+    and w = DsAndRel.prems(1) and m = DsAndRel.prems(2)
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (Set.filter (eval_constraint (t1, p, c, t2))) ys"
     and f: "\<phi>' = mformula.MAndRel \<psi>' (t1, p, c, t2)" using m e by simp_all
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
-    and sim': "dsim n cs \<psi>d' \<psi>'" using IH[OF e] by blast
+    and sim': "dsim n cs \<psi>d' \<psi>'" using IH[OF w e] by blast
   have t: "list_all (ftable n (set cs)) ys"
-    by (rule produces_tables[OF dsim_produces[OF sim] e])
+    by (rule produces_tables[OF dsim_produces[OF sim] w e])
   have pc: "\<And>r. r \<in> set ys \<Longrightarrow>
       dtabc n cs (Set.filter (eval_constraint (t1, p, c, t2)) r)
         = Set.filter (eval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc n cs r)"
@@ -223,33 +366,34 @@ next
         = (dtabc n cs \<circ> Set.filter (eval_constraint (t1, p, c, t2))) r"
       using pc[OF r] by simp
   qed
-  then show ?case using d sim' produces_next[OF pr m] wf fv1 fv2 f
+  then show ?case using d sim' produces_next[OF pr w m] wf fv1 fv2 f
     by (auto intro!: dsim.DsAndRel)
 next
   case (DsNeg n \<phi> \<phi>d)
-  note pr = DsNeg.hyps(1) and sim = DsNeg.hyps(2) and IH = DsNeg.hyps(3) and m = DsNeg.prems
+  note pr = DsNeg.hyps(1) and sim = DsNeg.hyps(2) and IH = DsNeg.hyps(3)
+    and w = DsNeg.prems(1) and m = DsNeg.prems(2)
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (\<lambda>r. if r = empty_table then unit_table n else empty_table) ys"
     and f: "\<phi>' = mformula.MNeg \<psi>'" using m e by simp_all
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n []) ys, \<psi>d')"
-    and sim': "dsim n [] \<psi>d' \<psi>'" using IH[OF e] by blast
+    and sim': "dsim n [] \<psi>d' \<psi>'" using IH[OF w e] by blast
   have "map (\<lambda>r. if r = empty_table then unit_table 0 else empty_table) (map (dtabc n []) ys)
       = map (dtabc n []) xs"
     unfolding x by (simp add: dtabc_neg)
-  then show ?case using d sim' produces_next[OF pr m] f by (auto intro!: dsim.DsNeg)
+  then show ?case using d sim' produces_next[OF pr w m] f by (auto intro!: dsim.DsNeg)
 next
   case (DsExists n cs \<phi> ccs \<phi>d b)
   note wf = DsExists.hyps(1) and pr = DsExists.hyps(2) and sim = DsExists.hyps(3)
     and IH = DsExists.hyps(4) and cse = DsExists.hyps(5) and be = DsExists.hyps(6)
-    and m = DsExists.prems
+    and w = DsExists.prems(1) and m = DsExists.prems(2)
   obtain ys \<psi>' where e: "meval j (Suc n) ts db \<phi> = (ys, \<psi>')"
     by (cases "meval j (Suc n) ts db \<phi>")
   have x: "xs = map (\<lambda>r. tl ` r) ys" and f: "\<phi>' = mformula.MExists \<psi>'" using m e by simp_all
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc (Suc n) ccs) ys, \<psi>d')"
-    and sim': "dsim (Suc n) ccs \<psi>d' \<psi>'" using IH[OF e] by blast
+    and sim': "dsim (Suc n) ccs \<psi>d' \<psi>'" using IH[OF w e] by blast
   have wfc: "wf_cols (Suc n) ccs" by (rule dsim_wf_cols[OF sim])
   have t: "list_all (ftable (Suc n) (set ccs)) ys"
-    by (rule produces_tables[OF dsim_produces[OF sim] e])
+    by (rule produces_tables[OF dsim_produces[OF sim] w e])
   have pe: "\<And>r. r \<in> set ys \<Longrightarrow>
       (if ex_drop0 ccs then tl ` dtabc (Suc n) ccs r else dtabc (Suc n) ccs r)
         = dtabc n (ex_cols ccs) (tl ` r)"
@@ -273,25 +417,26 @@ next
     finally show "(if ex_drop0 ccs then map (\<lambda>r. tl ` r) (map (dtabc (Suc n) ccs) ys)
          else map (dtabc (Suc n) ccs) ys) = map (dtabc n (ex_cols ccs)) (map (\<lambda>r. tl ` r) ys)" .
   qed
-  then show ?case using d sim' produces_next[OF pr m] wf cse be f
+  then show ?case using d sim' produces_next[OF pr w m] wf cse be f
     by (auto intro!: dsim.DsExists)
 next
   case (DsOr n cs \<phi> \<psi> buf \<phi>d \<psi>d dbuf)
   note wf = DsOr.hyps(1) and pr = DsOr.hyps(2) and sim1 = DsOr.hyps(3) and IH1 = DsOr.hyps(4)
-    and sim2 = DsOr.hyps(5) and IH2 = DsOr.hyps(6) and bf = DsOr.hyps(7) and m = DsOr.prems
+    and sim2 = DsOr.hyps(5) and IH2 = DsOr.hyps(6) and bf = DsOr.hyps(7)
+    and w = DsOr.prems(1) and m = DsOr.prems(2)
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
   obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
   obtain zs buf2 where e3: "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add as bs buf) = (zs, buf2)"
     by (cases "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add as bs buf)")
   have x: "xs = zs" and f: "\<phi>' = mformula.MOr \<phi>2 \<psi>2 buf2" using m e1 e2 e3 by simp_all
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs) as, \<phi>d2)"
-    and s1: "dsim n cs \<phi>d2 \<phi>2" using IH1[OF e1] by blast
+    and s1: "dsim n cs \<phi>d2 \<phi>2" using IH1[OF w e1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
-    and s2: "dsim n cs \<psi>d2 \<psi>2" using IH2[OF e2] by blast
+    and s2: "dsim n cs \<psi>d2 \<psi>2" using IH2[OF w e2] by blast
   have ta: "list_all (ftable n (set cs)) as"
-    by (rule produces_tables[OF dsim_produces[OF sim1] e1])
+    by (rule produces_tables[OF dsim_produces[OF sim1] w e1])
   have tb: "list_all (ftable n (set cs)) bs"
-    by (rule produces_tables[OF dsim_produces[OF sim2] e2])
+    by (rule produces_tables[OF dsim_produces[OF sim2] w e2])
   have badd: "dbuf2 n cs cs (mbuf2_add as bs buf)
       (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf)"
     by (rule dbuf2_add[OF bf ta tb])
@@ -303,14 +448,15 @@ next
       = (map (dtabc n cs) zs, dbuf2')"
     and bf': "dbuf2 n cs cs buf2 dbuf2'"
     using dbuf2_take[OF badd step e3] by blast
-  show ?case using d1 d2 dt bf' s1 s2 produces_next[OF pr m] wf x f
+  show ?case using d1 d2 dt bf' s1 s2 produces_next[OF pr w m] wf x f
     by (auto intro!: dsim.DsOr)
 next
   case (DsAnd n cs cs1 \<phi> pos cs2 \<psi> buf \<phi>d \<psi>d pl dbuf)
   note wf = DsAnd.hyps(1) and pr = DsAnd.hyps(2) and sim1 = DsAnd.hyps(3)
     and IH1 = DsAnd.hyps(4) and sim2 = DsAnd.hyps(5) and IH2 = DsAnd.hyps(6)
     and cse = DsAnd.hyps(7) and ple = DsAnd.hyps(8) and neg = DsAnd.hyps(9)
-    and bf = DsAnd.hyps(10) and m = DsAnd.prems
+    and bf = DsAnd.hyps(10)
+    and w = DsAnd.prems(1) and m = DsAnd.prems(2)
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
   obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
   obtain zs buf2 where e3: "mbuf2_take (\<lambda>r1 r2. bin_join n (set cs1) r1 pos (set cs2) r2)
@@ -320,17 +466,17 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MAnd (set cs1) \<phi>2 pos (set cs2) \<psi>2 buf2"
     using m e1 e2 e3 by simp_all
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs1) as, \<phi>d2)"
-    and s1: "dsim n cs1 \<phi>d2 \<phi>2" using IH1[OF e1] by blast
+    and s1: "dsim n cs1 \<phi>d2 \<phi>2" using IH1[OF w e1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs2) bs, \<psi>d2)"
-    and s2: "dsim n cs2 \<psi>d2 \<psi>2" using IH2[OF e2] by blast
+    and s2: "dsim n cs2 \<psi>d2 \<psi>2" using IH2[OF w e2] by blast
   have so1: "sorted_wrt (<) cs1" and b1: "\<forall>c \<in> set cs1. c < n"
     using dsim_wf_cols[OF sim1] by (blast dest: conjunct1 conjunct2)+
   have so2: "sorted_wrt (<) cs2" and b2: "\<forall>c \<in> set cs2. c < n"
     using dsim_wf_cols[OF sim2] by (blast dest: conjunct1 conjunct2)+
   have ta: "list_all (ftable n (set cs1)) as"
-    by (rule produces_tables[OF dsim_produces[OF sim1] e1])
+    by (rule produces_tables[OF dsim_produces[OF sim1] w e1])
   have tb: "list_all (ftable n (set cs2)) bs"
-    by (rule produces_tables[OF dsim_produces[OF sim2] e2])
+    by (rule produces_tables[OF dsim_produces[OF sim2] w e2])
   have badd: "dbuf2 n cs1 cs2 (mbuf2_add as bs buf)
       (mbuf2_add (map (dtabc n cs1) as) (map (dtabc n cs2) bs) dbuf)"
     by (rule dbuf2_add[OF bf ta tb])
@@ -344,14 +490,70 @@ next
       = (map (dtabc n cs) zs, dbuf2')"
     and bf': "dbuf2 n cs1 cs2 buf2 dbuf2'"
     using dbuf2_take[OF badd step e3] by blast
-  show ?case using d1 d2 dt bf' s1 s2 produces_next[OF pr m] wf cse ple neg x f
+  show ?case using d1 d2 dt bf' s1 s2 produces_next[OF pr w m] wf cse ple neg x f
     by (auto intro!: dsim.DsAnd)
+next
+  case (DsPrev n cs I \<phi> first buf nts \<phi>d dbuf)
+  note wf = DsPrev.hyps(1) and pr = DsPrev.hyps(2) and sim = DsPrev.hyps(3)
+    and IH = DsPrev.hyps(4) and lb = DsPrev.hyps(5) and be = DsPrev.hyps(6)
+    and w = DsPrev.prems(1) and m = DsPrev.prems(2)
+  obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
+  obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
+    and sim': "dsim n cs \<psi>d' \<psi>'" using IH[OF w e] by blast
+  have t: "list_all (ftable n (set cs)) ys"
+    by (rule produces_tables[OF dsim_produces[OF sim] w e])
+  have tb: "list_all (ftable n (set cs)) (buf @ ys)" using lb t by simp
+  show ?case
+  proof (cases "first \<and> ts = []")
+    case True
+    have x: "xs = []" and f: "\<phi>' = mformula.MPrev I \<psi>' True (buf @ ys) (nts @ ts)"
+      using m e True by simp_all
+    show ?thesis using d be True x f sim' produces_next[OF pr w m] wf tb
+      by (auto intro!: dsim.DsPrev)
+  next
+    case False
+    obtain zs buf' nts' where g: "mprev_next I (buf @ ys) (nts @ ts) = (zs, buf', nts')"
+      by (cases "mprev_next I (buf @ ys) (nts @ ts)") auto
+    have x: "xs = (if first then empty_table # zs else zs)"
+      and f: "\<phi>' = mformula.MPrev I \<psi>' False buf' nts'"
+      using m e g False by (simp_all add: Let_def)
+    have g': "mprev_next I (map (dtabc n cs) (buf @ ys)) (nts @ ts)
+        = (map (dtabc n cs) zs, map (dtabc n cs) buf', nts')"
+      by (rule mprev_next_map[OF _ g]) simp
+    have tb': "list_all (ftable n (set cs)) buf'"
+      using mprev_next_sub[OF g] tb by (auto simp: list_all_iff)
+    show ?thesis using d be False x f sim' produces_next[OF pr w m] wf tb' g'
+      by (auto intro!: dsim.DsPrev)
+  qed
+next
+  case (DsNext n cs I \<phi> first nts \<phi>d)
+  note wf = DsNext.hyps(1) and pr = DsNext.hyps(2) and sim = DsNext.hyps(3)
+    and IH = DsNext.hyps(4) and w = DsNext.prems(1) and m = DsNext.prems(2)
+  obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
+  obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
+    and sim': "dsim n cs \<psi>d' \<psi>'" using IH[OF w e] by blast
+  obtain ys0 first0 where c:
+      "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a) = (ys0, first0)"
+    by (cases "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a)") auto
+  have c': "(case (map (dtabc n cs) ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a)
+      = (map (dtabc n cs) ys0, first0)"
+    using c by (cases ys; cases first) auto
+  obtain zs buf' nts' where g: "mprev_next I ys0 (nts @ ts) = (zs, buf', nts')"
+    by (cases "mprev_next I ys0 (nts @ ts)") auto
+  have x: "xs = zs" and f: "\<phi>' = mformula.MNext I \<psi>' first0 nts'"
+    using m e c g by (simp_all add: Let_def split: prod.splits)
+  have g': "mprev_next I (map (dtabc n cs) ys0) (nts @ ts)
+      = (map (dtabc n cs) zs, map (dtabc n cs) buf', nts')"
+    by (rule mprev_next_map[OF _ g]) simp
+  show ?case using d c' g' x f sim' produces_next[OF pr w m] wf
+    by (auto intro!: dsim.DsNext)
 next
   case (DsAgg n cs args \<phi> gcols \<phi>d y)
   note wf = DsAgg.hyps(1) and pr = DsAgg.hyps(2) and sim = DsAgg.hyps(3) and IH = DsAgg.hyps(4)
     and wg = DsAgg.hyps(5) and ne = DsAgg.hyps(6) and ye = DsAgg.hyps(7) and yn = DsAgg.hyps(8)
     and yg = DsAgg.hyps(9) and g0 = DsAgg.hyps(10) and fv = DsAgg.hyps(11)
-    and cse = DsAgg.hyps(12) and m = DsAgg.prems
+    and cse = DsAgg.hyps(12)
+    and w = DsAgg.prems(1) and m = DsAgg.prems(2)
   let ?mm = "length (aggargs_tys args)"
   let ?cc = "agg_cols ?mm gcols"
   obtain ys \<psi>' where e: "meval j (?mm + n) ts db \<phi> = (ys, \<psi>')"
@@ -359,15 +561,15 @@ next
   have x: "xs = map (eval_aggargs args) ys" and f: "\<phi>' = mformula.MAgg args \<psi>'"
     using m e by simp_all
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc (?mm + n) ?cc) ys, \<psi>d')"
-    and sim': "dsim (?mm + n) ?cc \<psi>d' \<psi>'" using IH[OF e] by blast
+    and sim': "dsim (?mm + n) ?cc \<psi>d' \<psi>'" using IH[OF w e] by blast
   have t: "list_all (ftable (?mm + n) (set ?cc)) ys"
-    by (rule produces_tables[OF dsim_produces[OF sim] e])
+    by (rule produces_tables[OF dsim_produces[OF sim] w e])
   have "map (dagg (aggargs_g0 args) (aggargs_\<omega> args) (reindex_trm ?cc (aggargs_f args)) ?mm
           (ins_pos gcols y)) (map (dtabc (?mm + n) ?cc) ys) = map (dtabc n cs) xs"
     unfolding x cse using t wg yn yg fv g0 ne ye
     by (intro nth_equalityI)
       (auto simp: list_all_iff eval_aggargs_def dagg_eval_agg)
-  then show ?case using d sim' produces_next[OF pr m] wf wg ne ye yn yg g0 fv cse f
+  then show ?case using d sim' produces_next[OF pr w m] wf wg ne ye yn yg g0 fv cse f
     by (auto intro!: dsim.DsAgg)
 qed
 
