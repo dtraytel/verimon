@@ -410,6 +410,213 @@ next
     using X e Phi e1 c e2 out produces_next[OF pc w e1] by auto
 qed
 
+
+subsection \<open>The aggregation node\<close>
+
+lemma wf_tuple_insert_upd:
+  "wf_tuple n B t \<Longrightarrow> y < n \<Longrightarrow> wf_tuple n (Set.insert y B) (t[y := Some v])"
+  by (auto simp: wf_tuple_def nth_list_update)
+
+lemma ftable_eval_agg:
+  assumes t: "table (length tys + n) G rel" and fin: "finite rel"
+    and y: "y < n" and sh: "\<forall>i \<in> G. length tys \<le> i"
+    and g0: "g0 \<Longrightarrow> G = {}"
+  shows "ftable n (Set.insert y ((\<lambda>i. i - length tys) ` G))
+      (eval_agg n g0 y \<omega> tys trm rel)"
+proof (cases "g0 \<and> rel = empty_table")
+  case True
+  then have G: "G = {}" using g0 by simp
+  have "table n {y} (singleton_table n y (eval_agg_op \<omega> {}))" by simp
+  moreover have "finite (singleton_table n y (eval_agg_op \<omega> {}))"
+    by (simp add: singleton_table_def)
+  ultimately show ?thesis using True by (simp add: eval_agg_def G)
+next
+  case False
+  have w: "\<And>x. x \<in> rel \<Longrightarrow>
+      wf_tuple n ((\<lambda>i. i - length tys) ` G) (drop (length tys) x)"
+  proof -
+    fix x assume x: "x \<in> rel"
+    then have wx: "wf_tuple (length tys + n) G x" using t by (simp add: table_def)
+    show "wf_tuple n ((\<lambda>i. i - length tys) ` G) (drop (length tys) x)"
+      using wx sh by (fastforce simp: wf_tuple_def image_iff)
+  qed
+  show ?thesis
+    unfolding eval_agg_def if_not_P[OF False]
+    using fin w y by (auto simp: table_def Let_def intro!: wf_tuple_insert_upd)
+qed
+
+lemma produces_MAgg:
+  assumes p: "produces (length (aggargs_tys args) + n) G \<phi>"
+    and an: "aggargs_n args = n" and y: "aggargs_y args < n"
+    and sh: "\<forall>i \<in> G. length (aggargs_tys args) \<le> i"
+    and g0: "aggargs_g0 args \<Longrightarrow> G = {}"
+  shows "produces n (Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G))
+      (mformula.MAgg args \<phi>)"
+proof -
+  have step: "\<And>j ts db \<chi> ys \<chi>'.
+      meval j (length (aggargs_tys args) + n) ts db \<chi> = (ys, \<chi>') \<Longrightarrow>
+      meval j n ts db (mformula.MAgg args \<chi>) = (map (eval_aggargs args) ys, mformula.MAgg args \<chi>')"
+    by simp
+  have tab: "\<And>Y. table (length (aggargs_tys args) + n) G Y \<Longrightarrow> finite Y \<Longrightarrow>
+      table n (Set.insert (aggargs_y args) ((\<lambda>i. i - length (aggargs_tys args)) ` G))
+        (eval_aggargs args Y) \<and>
+      finite (eval_aggargs args Y)"
+    unfolding eval_aggargs_def an[symmetric]
+    by (rule ftable_eval_agg[OF _ _ _ sh g0]) (use y an in auto)
+  show ?thesis by (rule produces_unop[OF step tab p])
+qed
+
+
+subsection \<open>The multi-way conjunction\<close>
+
+text \<open>
+  The multi-way join's shape follows from the same fold that
+  @{thm [source] dmulti_join_dtabc} uses: at well-formed operands it is the left-to-right fold of
+  the positive tables followed by the anti-joins against the negative ones, and each step of both
+  folds keeps the table over the accumulated columns and keeps it finite.
+\<close>
+
+lemma kands_pos_ftable:
+  "list_all2 (\<lambda>A X. table n A X \<and> finite X) As Xs \<Longrightarrow> table n B T \<Longrightarrow> finite T \<Longrightarrow>
+     table n (B \<union> \<Union>(set As)) (kands_pos T Xs) \<and> finite (kands_pos T Xs)"
+proof (induct As arbitrary: Xs B T)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons A As)
+  from Cons.prems(1) obtain X Xs' where Xs: "Xs = X # Xs'"
+    and hd: "table n A X" "finite X"
+    and tl: "list_all2 (\<lambda>A X. table n A X \<and> finite X) As Xs'"
+    by (cases Xs) auto
+  have t: "table n (B \<union> A) (join T True X)"
+    using Cons.prems(2) hd by (intro join_table[of n B T A X True]) auto
+  have f: "finite (join T True X)" using Cons.prems(3) hd by (simp add: finite_join)
+  show ?case using Cons.hyps[OF tl t f] by (simp add: Xs Un_assoc)
+qed
+
+lemma kands_neg_ftable:
+  "list_all2 (\<lambda>A X. table n A X \<and> finite X) Bs Ys \<Longrightarrow> table n B T \<Longrightarrow> finite T \<Longrightarrow>
+     (\<forall>A \<in> set Bs. A \<subseteq> B) \<Longrightarrow>
+     table n B (kands_neg T Ys) \<and> finite (kands_neg T Ys)"
+proof (induct Bs arbitrary: Ys T)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons A Bs)
+  from Cons.prems(1) obtain Y Ys' where Ys: "Ys = Y # Ys'"
+    and hd: "table n A Y" "finite Y"
+    and tl: "list_all2 (\<lambda>A X. table n A X \<and> finite X) Bs Ys'"
+    by (cases Ys) auto
+  have s: "A \<subseteq> B" using Cons.prems(4) by simp
+  have t: "table n B (join T False Y)"
+    using Cons.prems(2) hd s by (intro join_table[of n B T A Y False B]) auto
+  have f: "finite (join T False Y)" using Cons.prems(3) hd by (simp add: finite_join)
+  show ?case using Cons.hyps[OF tl t f] Cons.prems(4) by (simp add: Ys)
+qed
+
+lemma ftable_mmulti_join:
+  assumes lp: "length As = length Xs" and ln: "length A_neg = length L_neg"
+    and lpos: "list_all2 (\<lambda>A X. table n A X \<and> finite X \<and> wf_set n A) As Xs"
+    and lneg: "list_all2 (\<lambda>A X. table n A X \<and> finite X \<and> wf_set n A) A_neg L_neg"
+    and t0: "table n A0 X0" and f0: "finite X0" and w0: "wf_set n A0"
+    and sub: "\<forall>B \<in> set A_neg. B \<subseteq> A0 \<union> \<Union>(set As)"
+  shows "ftable n (A0 \<union> \<Union>(set As)) (mmulti_join n (A0 # As) A_neg ((X0 # Xs) @ L_neg))"
+proof -
+  let ?A = "A0 \<union> \<Union>(set As)"
+  let ?K = "kands_pos X0 Xs"
+  have lpos': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) As Xs"
+    by (rule list_all2_mono[OF lpos]) auto
+  have lneg': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) A_neg L_neg"
+    by (rule list_all2_mono[OF lneg]) auto
+  have lposf: "list_all2 (\<lambda>A X. table n A X \<and> finite X) As Xs"
+    by (rule list_all2_mono[OF lpos]) auto
+  have lnegf: "list_all2 (\<lambda>A X. table n A X \<and> finite X) A_neg L_neg"
+    by (rule list_all2_mono[OF lneg]) auto
+  have la': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+      ((A0 # As) @ A_neg) ((X0 # Xs) @ L_neg)"
+    using t0 w0 lpos' lneg' by (simp add: list_all2_appendI)
+  have subU: "\<Union>(set A_neg) \<subseteq> \<Union>(set (A0 # As))" using sub by auto
+  have tk: "table n ?A ?K" and fk: "finite ?K"
+    using kands_pos_ftable[OF lposf t0 f0] by auto
+  have wA: "wf_set n ?A"
+  proof -
+    have "\<And>i. i < length As \<Longrightarrow> wf_set n (As ! i)"
+      using lpos by (auto dest: list_all2_nthD)
+    then have "\<And>C. C \<in> set As \<Longrightarrow> wf_set n C" by (auto simp: in_set_conv_nth)
+    then show ?thesis using w0 by (auto simp: wf_set_def)
+  qed
+  have eq1: "mmulti_join n (A0 # As) A_neg ((X0 # Xs) @ L_neg)
+      = mmulti_join' (A0 # As) A_neg ((X0 # Xs) @ L_neg)"
+    by (rule mmulti_join_eq_mmulti_join'[OF _ la' subU]) simp
+  have eq2: "mmulti_join' (A0 # As) A_neg ((X0 # Xs) @ L_neg)
+      = mmulti_join' [?A] A_neg (?K # L_neg)"
+    by (rule mmulti_join'_fold_pos[OF lp la'])
+  have eq3: "mmulti_join' [?A] A_neg (?K # L_neg) = kands_neg ?K L_neg"
+  proof (rule mmulti_join'_fold_neg[OF ln])
+    show "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ([?A] @ A_neg) ([?K] @ L_neg)"
+      using tk wA lneg' by (simp add: list_all2_appendI)
+    show "\<forall>B \<in> set A_neg. B \<subseteq> ?A" by (rule sub)
+  qed
+  show ?thesis unfolding eq1 eq2 eq3
+    using kands_neg_ftable[OF lnegf tk fk sub] by simp
+qed
+
+lemma mbufn_take_out:
+  "mbufn_take f z buf = (w, buf') \<Longrightarrow> length Ss = length buf \<Longrightarrow>
+   (\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i) \<Longrightarrow>
+   (\<And>as u. length as = length Ss \<Longrightarrow> (\<forall>i < length Ss. as ! i \<in> Ss ! i) \<Longrightarrow> Q u \<Longrightarrow>
+      Q (f as u)) \<Longrightarrow>
+   Q z \<Longrightarrow>
+   Q w \<and> length buf' = length buf \<and> (\<forall>i < length buf'. set (buf' ! i) \<subseteq> Ss ! i)"
+proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
+  case (1 f z buf)
+  note IH = 1(1) and E = 1(2) and L = 1(3) and SUB = 1(4) and ST = 1(5) and QZ = 1(6)
+  show ?case
+  proof (cases "buf = [] \<or> [] \<in> set buf")
+    case True
+    then show ?thesis using E L SUB QZ by simp
+  next
+    case False
+    then have ne: "\<And>i. i < length buf \<Longrightarrow> buf ! i \<noteq> []" by (auto simp: in_set_conv_nth)
+    have las: "length (map hd buf) = length Ss" using L by simp
+    have has: "\<forall>i < length Ss. map hd buf ! i \<in> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length Ss"
+      then have ib: "i < length buf" using L by simp
+      have "hd (buf ! i) \<in> set (buf ! i)" using ne[OF ib] by simp
+      then show "map hd buf ! i \<in> Ss ! i" using SUB ib by auto
+    qed
+    have q: "Q (f (map hd buf) z)" by (rule ST[OF las has QZ])
+    have lt: "length Ss = length (map tl buf)" using L by simp
+    have st: "\<forall>i < length (map tl buf). set (map tl buf ! i) \<subseteq> Ss ! i"
+      using SUB L by (auto dest: set_tl_sub[THEN subsetD])
+    have e: "mbufn_take f (f (map hd buf) z) (map tl buf) = (w, buf')"
+      using E False by simp
+    show ?thesis using IH[OF False e lt st ST q] L by simp
+  qed
+qed
+
+lemma ftable_mmulti_join':
+  assumes lall: "list_all2 (\<lambda>C X. table n C X \<and> finite X \<and> wf_set n C)
+      ((A0 # As) @ A_neg) L"
+    and sub: "\<forall>B \<in> set A_neg. B \<subseteq> A0 \<union> \<Union>(set As)"
+  shows "ftable n (A0 \<union> \<Union>(set As)) (mmulti_join n (A0 # As) A_neg L)"
+proof -
+  let ?Q = "\<lambda>C X. table n C X \<and> finite X \<and> wf_set n C"
+  obtain X0 R where L0: "L = X0 # R" and h0: "?Q A0 X0"
+    and rest: "list_all2 ?Q (As @ A_neg) R"
+    using lall by (auto simp: list_all2_Cons1)
+  obtain Xs N where R: "R = Xs @ N" and lXs: "length Xs = length As"
+    and lpos: "list_all2 ?Q As Xs" and sn: "list_all2 ?Q A_neg N"
+    using rest by (auto simp: list_all2_append1)
+  have lN: "length A_neg = length N" by (rule list_all2_lengthD[OF sn])
+  have t0: "table n A0 X0" and f0: "finite X0" and w0: "wf_set n A0"
+    using h0 by simp_all
+  have L: "L = (X0 # Xs) @ N" by (simp add: L0 R)
+  show ?thesis unfolding L
+    by (rule ftable_mmulti_join[OF lXs[symmetric] lN lpos sn t0 f0 w0 sub])
+qed
+
 (*<*)
 end
 (*>*)
