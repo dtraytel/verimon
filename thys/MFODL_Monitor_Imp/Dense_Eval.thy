@@ -125,8 +125,10 @@ datatype dformula =
   | DTP mtrm nat
   | DTS mtrm
   | DLet Formula.name nat dformula dformula
+  | DFrz Formula.name nat dformula dformula nat nat nat "event_data table list"
 
-fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
+function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow>
+    event_data table list \<times> dformula"
   and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
     (event_data table list \<times> dformula) list" where
   "deval_list j ts db [] = []"
@@ -196,6 +198,110 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      (let (xs, \<phi>') = deval j ts db \<phi>;
           (ys, \<psi>') = deval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, DLet p m \<phi>' \<psi>'))"
+| "deval j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
+     (let (xs, \<phi>) = deval j ts db \<phi>;
+          db0 = Mapping.update (p, m) [] db;
+          (zs0, \<psi>) = deval j ts db0 \<psi>;
+          zs0_out = drop (jfrz - jpsi0) zs0;
+          jpsi0 = jpsi0 + length zs0;
+          \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. deval j []
+            (Mapping.update (p, m) (replicate j \<alpha>)
+              (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0) \<alpha>s;
+          jphi = jphi + length xs;
+          jfrz = jfrz + length zs0_out + length ys
+      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
+  by pat_completeness auto
+
+text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
+  not a subterm of the node, so the recursion is not structural and termination goes by the
+  formula's size -- exactly as the kernel's own evaluator does it.  Evaluation preserves that
+  size, which is the fact that makes the measure decrease.\<close>
+
+lemma size_list_map_cong: "map f xs = map g ys \<Longrightarrow> size_list f xs = size_list g ys"
+  by (metis length_map size_list_conv_sum_list)
+
+lemma psize_snd_deval:
+  "deval_deval_list_dom (Inl (j, ts, db, \<phi>)) \<Longrightarrow> size (snd (deval j ts db \<phi>)) = size \<phi>"
+  "deval_deval_list_dom (Inr (j, ts, db, L)) \<Longrightarrow>
+     map (size \<circ> snd) (deval_list j ts db L) = map size L"
+  apply (induct rule: deval_deval_list.pinduct)
+  apply (auto simp only: prod.inject deval.psimps deval_list.psimps Let_def snd_conv fst_conv
+      dformula.size list.map o_apply size_list_map cong: size_list_cong split: prod.splits)
+   apply simp
+  apply (drule size_list_map_cong)
+  apply simp
+  done
+
+lemma total_deval: "All deval_deval_list_dom"
+  by (relation "measure (\<lambda>x. case x of Inl (j, ts, db, \<phi>) \<Rightarrow> size \<phi>
+      | Inr (j, ts, db, L) \<Rightarrow> size_list size L)")
+    (auto simp: termination_simp dest!: psize_snd_deval(1) dest: sym)
+
+lemmas size_snd_deval = psize_snd_deval(1)[OF total_deval[THEN spec]]
+lemmas map_size_snd_deval_list = psize_snd_deval(2)[OF total_deval[THEN spec]]
+
+termination deval by (rule total_deval)
+
+text \<open>The freeze's own recursion is polymorphic in the evaluator and in the state it discards,
+  so the dense side reuses @{const freeze_meval0} itself; all that is needed is that the two
+  runs take the same branches, which they do because narrowing a list preserves its length.\<close>
+
+lemma freeze_meval0_sub: "freeze_meval0 ev k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow> set \<alpha>s' \<subseteq> set \<alpha>s"
+proof (induct ev k \<alpha>s arbitrary: ys \<alpha>s' rule: freeze_meval0.induct)
+  case (2 ev k \<alpha> r)
+  note IH = 2(1) and E = 2(2)
+  obtain zs st where ev: "ev \<alpha> = (zs, st)" by (cases "ev \<alpha>")
+  show ?case
+  proof (cases "drop k zs")
+    case Nil
+    then show ?thesis using E ev by simp
+  next
+    case (Cons y rr)
+    obtain ws \<beta>s where e2: "freeze_meval0 ev (Suc k) r = (ws, \<beta>s)"
+      by (cases "freeze_meval0 ev (Suc k) r")
+    have "set \<beta>s \<subseteq> set r" by (rule IH[OF ev[symmetric] refl Cons e2])
+    moreover have "\<alpha>s' = \<beta>s" using E ev Cons e2 by auto
+    ultimately show ?thesis by auto
+  qed
+qed simp
+
+lemma freeze_meval0_rel:
+  "freeze_meval0 ev k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow> freeze_meval0 dv k \<alpha>s = (dys, d\<alpha>s') \<Longrightarrow>
+   (\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (dv \<alpha>) = map (dtabc n cs) (fst (ev \<alpha>))) \<Longrightarrow>
+   dys = map (dtabc n cs) ys \<and> d\<alpha>s' = \<alpha>s'"
+proof (induct \<alpha>s arbitrary: k ys \<alpha>s' dys d\<alpha>s')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons \<alpha> r)
+  note IH = Cons(1) and E = Cons(2) and D = Cons(3) and AG = Cons(4)
+  obtain zs st where ev: "ev \<alpha> = (zs, st)" by (cases "ev \<alpha>")
+  obtain dzs dst where dv: "dv \<alpha> = (dzs, dst)" by (cases "dv \<alpha>")
+  have dz: "dzs = map (dtabc n cs) zs" using AG[of \<alpha>] ev dv by simp
+  show ?case
+  proof (cases "drop k zs")
+    case Nil
+    then have dn: "drop k dzs = []" unfolding dz by (simp add: drop_map)
+    have "ys = []" and "\<alpha>s' = \<alpha> # r" using E ev Nil by auto
+    moreover have "dys = []" and "d\<alpha>s' = \<alpha> # r" using D dv dn by auto
+    ultimately show ?thesis by simp
+  next
+    case (Cons y rr)
+    obtain ws \<beta>s where e2: "freeze_meval0 ev (Suc k) r = (ws, \<beta>s)"
+      by (cases "freeze_meval0 ev (Suc k) r")
+    obtain dws d\<beta>s where d2: "freeze_meval0 dv (Suc k) r = (dws, d\<beta>s)"
+      by (cases "freeze_meval0 dv (Suc k) r")
+    have rel: "dws = map (dtabc n cs) ws \<and> d\<beta>s = \<beta>s"
+      by (rule IH[OF e2 d2]) (use AG in auto)
+    have dd: "drop k dzs = dtabc n cs y # map (dtabc n cs) rr"
+      unfolding dz using Cons by (simp add: drop_map)
+    have y1: "ys = y # ws" and y2: "\<alpha>s' = \<beta>s" using E ev Cons e2 by auto
+    have y3: "dys = dtabc n cs y # dws" and y4: "d\<alpha>s' = d\<beta>s"
+      using D dv dd d2 by auto
+    show ?thesis using rel y1 y2 y3 y4 by simp
+  qed
+qed
 
 section \<open>The simulation relation\<close>
 
@@ -567,6 +673,12 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
 | DsLet: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MLet p m \<phi> \<psi>) \<Longrightarrow>
     dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
     dsim n cs tw (DLet p m \<phi>d \<psi>d) (mformula.MLet p m \<phi> \<psi>)"
+| DsFrz: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) \<Longrightarrow>
+    dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow>
+    dsim n cs tw (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s)
+      (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -1674,6 +1786,97 @@ next
     show "dsim n cs (dnext tw ts) (DLet p m \<phi>d2 \<psi>d2) \<phi>'"
       unfolding f
       by (rule dsim.DsLet[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2])
+  qed
+next
+  case (DsFrz n cs tw p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<phi>d \<psi>d)
+  note wf = DsFrz.hyps(1) and pr = DsFrz.hyps(2) and sim1 = DsFrz.hyps(3)
+    and IH1 = DsFrz.hyps(4) and sim2 = DsFrz.hyps(5) and IH2 = DsFrz.hyps(6)
+    and tas = DsFrz.hyps(7)
+    and w = DsFrz.prems(1) and sts = DsFrz.prems(2)
+    and mts = DsFrz.prems(3) and mv = DsFrz.prems(4) and le = DsFrz.prems(5)
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ le], simp)+
+  have szs: "size \<psi> < NN" by (rule order.strict_trans2[OF _ le]) simp
+  \<comment> \<open>the left operand: at its own full frame, so its tables are their own dense form\<close>
+  obtain as \<phi>2 where e1: "meval j m ts db \<phi> = (as, \<phi>2)" by (cases "meval j m ts db \<phi>")
+  have ta: "list_all (ftable m {0..<m}) as"
+    using dsim_produces[OF sim1] by (intro produces_tables[OF _ w sts mts e1]) simp
+  have dt: "map (dtabc m [0..<m]) as = as" using ta by (induct as) (auto simp: dtabc_upt)
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (as, \<phi>d2)"
+    and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2"
+    using IH1[OF w sts mts e1 sz1] unfolding dt by blast
+  \<comment> \<open>the body, against the database in which the bound predicate is empty\<close>
+  have w0: "wf_db (Mapping.update (p, m) [] db)" by (rule wf_db_update'[OF w]) simp
+  obtain zs0 \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) [] db) \<psi> = (zs0, \<psi>2)"
+    by (cases "meval j n ts (Mapping.update (p, m) [] db) \<psi>")
+  obtain \<psi>d2 where d2: "deval j ts (Mapping.update (p, m) [] db) \<psi>d
+        = (map (dtabc n cs) zs0, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2"
+    using IH2[OF w0 sts mts e2 sz2] by blast
+  have szp: "size \<psi>2 < NN"
+    using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<psi>] e2 szs
+    by simp
+  \<comment> \<open>the frozen tuples the two runs are handed are the same list\<close>
+  let ?as1 = "drop (jfrz - jphi + length (drop (jfrz - jpsi0) zs0)) (\<alpha>s @ as)"
+  have tas1: "list_all (ftable m {0..<m}) ?as1"
+    using tas ta by (auto simp: list_all_iff dest!: in_set_dropD)
+  have agree: "\<And>\<alpha>. \<alpha> \<in> set ?as1 \<Longrightarrow>
+      fst (deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
+             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
+        = map (dtabc n cs) (fst (meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
+             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2))"
+  proof -
+    fix \<alpha> assume a: "\<alpha> \<in> set ?as1"
+    have wa: "wf_db (Mapping.update (p, m) (replicate j \<alpha>)
+        (Mapping.map_values (\<lambda>_ _. []) db))"
+      by (rule wf_db_update'[OF wf_db_map_values_empty]) (use tas1 a in \<open>simp add: list_all_iff\<close>)
+    obtain us \<chi> where eu: "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
+        (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2 = (us, \<chi>)"
+      by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
+        (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2")
+    obtain dus where du: "deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
+          (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2 = (map (dtabc n cs) us, dus)"
+      using Q[OF szp s2 wa _ _ eu] by auto
+    show "fst (deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
+             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
+        = map (dtabc n cs) (fst (meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
+             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2))"
+      using du eu by simp
+  qed
+  obtain ys as' where e3: "freeze_meval0 (\<lambda>\<alpha>. meval j n []
+        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2)
+        (jfrz - (jpsi0 + length zs0)) ?as1 = (ys, as')"
+    by (cases "freeze_meval0 (\<lambda>\<alpha>. meval j n []
+        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2)
+        (jfrz - (jpsi0 + length zs0)) ?as1")
+  obtain dys das' where d3: "freeze_meval0 (\<lambda>\<alpha>. deval j []
+        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
+        (jfrz - (jpsi0 + length zs0)) ?as1 = (dys, das')"
+    by (cases "freeze_meval0 (\<lambda>\<alpha>. deval j []
+        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
+        (jfrz - (jpsi0 + length zs0)) ?as1")
+  have frel: "dys = map (dtabc n cs) ys \<and> das' = as'"
+    by (rule freeze_meval0_rel[OF e3 d3 agree])
+  have tas': "list_all (ftable m {0..<m}) as'"
+    using freeze_meval0_sub[OF e3] tas1 by (auto simp: list_all_iff)
+  \<comment> \<open>the two runs agree, component by component\<close>
+  have x: "xs = drop (jfrz - jpsi0) zs0 @ ys"
+    and f: "\<phi>' = mformula.MFrz p m \<phi>2 \<psi>2
+        (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
+        (jpsi0 + length zs0) (jphi + length as) as'"
+    using mv e1 e2 e3 by (simp_all add: Let_def)
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s)
+        = (map (dtabc n cs) xs, DFrz p m \<phi>d2 \<psi>d2
+             (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
+             (jpsi0 + length zs0) (jphi + length as) as')"
+      using d1 d2 d3 frel dt unfolding x by (simp add: Let_def drop_map)
+    show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2
+             (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
+             (jpsi0 + length zs0) (jphi + length as) as') \<phi>'"
+      unfolding f
+      by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas'])
   qed
 qed
 
