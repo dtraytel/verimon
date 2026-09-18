@@ -4131,7 +4131,8 @@ type dformula =
         (((event_data option) list) set mbuf_t *
           ((event_data option) list) set mbuf_t) *
         nat mbuf_t * nat * muaux_j
-  | DAndAssign of nat * trm * dformula | DTP of mtrm * nat | DTS of mtrm;;
+  | DAndAssign of nat * trm * dformula | DTP of mtrm * nat | DTS of mtrm |
+  DLet of string * nat * dformula * dformula;;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -14283,6 +14284,16 @@ let rec deval
     | j, ts, db, DTS mt ->
         (fun () ->
           (mapa (fun x -> dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt))
+    | j, ts, db, DLet (p, m, phi, psi) ->
+        binda (deval j ts db phi)
+          (fun (xs, phia) ->
+            binda (deval j ts
+                    (updateb
+                      ((ccompare_prod ccompare_string8 ccompare_nat),
+                        (equal_prod equal_string8 equal_nat))
+                      (p, m) xs db)
+                    psi)
+              (fun (ys, psia) -> (fun () -> (ys, DLet (p, m, phia, psia)))))
 and deval_list
   j ts db x3 = match j, ts, db, x3 with j, ts, db, [] -> (fun () -> [])
     | j, ts, db, phi :: r ->
@@ -14365,10 +14376,10 @@ let rec mcols
                         (fvi_trm zero_nata (snd conf))
                         (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
               then None else Some (merge_cols cs [fst conf])))
+    | n, MLet (p, m, phi, psi) -> mcols n psi
     | n, MTP (mt, i) -> Some (mtrm_dcols mt)
     | n, MTS mt -> Some (mtrm_dcols mt)
     | n, MRel v -> None
-    | n, MLet (v, va, vb, vc) -> None
     | n, MFrz (v, va, vb, vc, vd, ve, vf, vg) -> None
     | n, MLetPast (v, va, vb, vc, vd, ve) -> None
     | n, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
@@ -16802,6 +16813,11 @@ let rec dformula_of
                        (DAndAssign (ins_pos cs0 y, reindex_trm cs0 t, phi_d))))
             else (fun () ->
                    (DPure (MAndAssign (phi, conf), n, wide_mask n cs)))))
+    | n, cs, MLet (p, m, phi, psi) ->
+        binda (dformula_of m (upt zero_nata m) phi)
+          (fun phi_d ->
+            binda (dformula_of n cs psi)
+              (fun psi_d -> (fun () -> (DLet (p, m, phi_d, psi_d)))))
     | n, cs, MTP (mt, i) ->
         (fun () ->
           (if equal_lista equal_nat cs (mtrm_dcols mt) then DTP (mt, i)
@@ -16810,8 +16826,6 @@ let rec dformula_of
         (fun () ->
           (if equal_lista equal_nat cs (mtrm_dcols mt) then DTS mt
             else DPure (MTS mt, n, wide_mask n cs)))
-    | n, cs, MLet (v, va, vb, vc) ->
-        (fun () -> (DPure (MLet (v, va, vb, vc), n, wide_mask n cs)))
     | n, cs, MFrz (v, va, vb, vc, vd, ve, vf, vg) ->
         (fun () ->
           (DPure (MFrz (v, va, vb, vc, vd, ve, vf, vg), n, wide_mask n cs)))
@@ -16858,6 +16872,7 @@ let rec dpure_nodes
     | DUntil (args, pl, phi, psi, buf, nts, t, aux) ->
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DAndAssign (p, t, phi) -> dpure_nodes phi
+    | DLet (p, m, phi, psi) -> plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DRel v -> zero_nata
     | DPredS (v, va) -> zero_nata
     | DPredM (v, va, vb, vc) -> zero_nata
