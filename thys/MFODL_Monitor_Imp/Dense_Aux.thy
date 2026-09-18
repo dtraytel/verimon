@@ -1371,7 +1371,7 @@ lemma fold_duntil_elem_step_dq:
 
 definition dadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
     event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
-  "dadd_new_dq args msk rel1 rel2 nt aux = (if finite rel2 then
+  "dadd_new_dq args msk rel1 rel2 nt aux =
     (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
        shift_dq args nt aux;
      I = args_ivl args; pos = args_pos args; inz = memL I 0;
@@ -1385,13 +1385,19 @@ definition dadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data
      a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
        (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
      tss = append_queue nt tss in
-     (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn))
-   else nkeys_uaux msk (add_new_dq args (dwiden msk ` rel1) rel2 nt (wkeys_uaux msk aux)))"
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn))"
 
 text \<open>
   The dense operation is the verified one against the widened table of the left operand, so the
   node need not widen it.  Only the right operand's table has to be finite, which is all the
   evaluator ever produces.
+
+  Where @{const add_new_dq} guards the fold with @{term \<open>finite rel2\<close>} and falls back on the
+  wide structure, this one folds unconditionally: the fold is over
+  @{term \<open>csorted_list_of_set rel2\<close>}, which is unspecified for an infinite table, and every
+  theorem below assumes the table finite anyway.  A fallback keyed the other way round would have
+  to rename the keys of a mapping, which @{const wkeys} and @{const nkeys} do over the whole
+  function space and which therefore does not execute.
 \<close>
 
 lemma wkeys_a1_update:
@@ -1483,25 +1489,23 @@ proof -
 qed
 
 lemma fst_lft_of_dadd_new_dq:
-  assumes fin: "finite rel2"
-  shows "fst (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)) = fst (lft_of daux)"
+  "fst (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)) = fst (lft_of daux)"
 proof (cases "shift_dq args nt daux" rule: mmuaux_dq_cases)
   case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
   have lf: "(maskL, a1_map) = lft_of daux"
     using a1_of_shift_dq[of args nt daux] unfolding 1 by simp
-  show ?thesis unfolding dadd_new_dq_def if_P[OF fin] 1
+  show ?thesis unfolding dadd_new_dq_def 1
     by (simp add: Let_def lf[symmetric] split: prod.splits)
 qed
 
 lemma keys_snd_lft_of_dadd_new_dq:
-  assumes fin: "finite rel2"
-  shows "Mapping.keys (snd (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)))
+  "Mapping.keys (snd (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)))
      \<subseteq> Mapping.keys (snd (lft_of daux)) \<union> rel1"
 proof (cases "shift_dq args nt daux" rule: mmuaux_dq_cases)
   case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
   have lf: "(maskL, a1_map) = lft_of daux"
     using a1_of_shift_dq[of args nt daux] unfolding 1 by simp
-  show ?thesis unfolding dadd_new_dq_def if_P[OF fin] 1
+  show ?thesis unfolding dadd_new_dq_def 1
     by (auto simp: Let_def lf[symmetric] Mapping_upd_set_keys Mapping_keys_filter
         split: prod.splits)
 qed
@@ -1531,7 +1535,7 @@ proof -
     by (simp add: wkeys_uaux_dadd_new_dq[OF fin mk na r1 r2])
   show ?thesis
     unfolding dvalid_muaux_def
-    using vv mk na r1 fst_lft_of_dadd_new_dq[OF fin] keys_snd_lft_of_dadd_new_dq[OF fin] by blast
+    using vv mk na r1 fst_lft_of_dadd_new_dq keys_snd_lft_of_dadd_new_dq by blast
 qed
 
 lemma lft_of_eval_dq: "lft_of (snd (eval_dq args nt d)) = lft_of d"

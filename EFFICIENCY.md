@@ -4987,11 +4987,48 @@ Until, relating a raw `event_data mmuaux_dq` at the dense frame to the narrowed 
 through `dvalid_muaux`, with `duaux'_init`, `duaux'_add_new`, `duaux'_eval` and `duaux'_length`
 the four operations the evaluator needs.
 
-**What is left.** The verified fragment is done: the whole dense chain -- `Dense_Eval`,
-`Dense_Produces`, `Dense_Match`, `Dense_Let`, `Dense_Agg`, `Dense_Correct`, `Dense_Compile`,
-`Dense_Init`, `Dense_Descend` -- reprocesses green with no embedding on either temporal node. For
-the win to reach the generated code, the same has to happen in `Dense_Imp.thy`, which declares its
-own `dformula` and its own heap-resident Since structure (`msaux_j = MSJ_imp msaux2 | MSJ_pure
-mmasaux | MSJ_evt sevtaux`) and is what `verified.ml` is actually exported from. Until that is
-rewired `src/verified.ml` stays byte-identical and the measured fallback-node count is unchanged.
-That is the next step, and it is the first one after which the embedding can be measured away.
+The verified fragment is done: the whole dense chain -- `Dense_Eval`, `Dense_Produces`,
+`Dense_Match`, `Dense_Let`, `Dense_Agg`, `Dense_Correct`, `Dense_Compile`, `Dense_Init`,
+`Dense_Descend` -- reprocesses green with no embedding on either temporal node.
+
+### 20.33 The same, in the executable evaluator
+
+`verified.ml` is exported from `Dense_Imp.thy`, which declares its own `dformula` and its own
+Since and Until structures, so the win only reaches the generated code once that file makes the
+same swap. It turns out to be a small one, because of where the sum type branches.
+
+`init_j` picks between three structures: `MSJ_evt` for a closed left operand, `MSJ_imp` -- the
+heap-resident one -- when `special_args args`, and `MSJ_pure` otherwise. And
+
+```isabelle
+special_args args ⟷ args_L args = {} ∨ args_L args = args_R args
+```
+
+is *exactly* the condition under which the embedding was a no-op: the node already passed `None`
+for its plan when `cs_L = cs`, and a closed left operand has nothing to widen. So the branch that
+carries a real embedding is always, and only, the pure one. Swapping that branch for the dense
+structure removes every embedding the evaluator ever performs, and leaves the heap-resident and
+closed-left-operand structures untouched:
+
+```isabelle
+datatype msaux_d = MSD_imp msaux2 | MSD_dns "event_data dmsaux" | MSD_evt sevtaux
+datatype muaux_d = MUD_imp muaux2 | MUD_dns "event_data mmuaux_dq" | MUD_evt evtaux
+```
+
+with `init_d`/`init_u_d` choosing by the same conditions and the five (resp. three) dispatch
+functions calling `dadd_new_ts_msaux`, `dgc_join_msaux`, `dadd_new_table_msaux`, `dresult_msaux`
+and `dadd_new_dq`, `eval_dq` in the dense branch. The nodes lose their plan:
+
+```isabelle
+  | DSince args dformula dformula "event_data mebuf2S" msaux_d
+  | DUntil args "bool list" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_d
+```
+
+and `deval`'s two clauses drop the `case pl of None ⇒ xs | Some p ⇒ map (dembedp p) xs` that used
+to sit in front of each buffer add. What the Until keeps is the mask, which is read once per
+`dadd_new_dq` to key a lookup rather than applied to every tuple of every table.
+
+**What is left.** `Dense_Imp.thy` carries no proofs -- it is the executable layer, and its
+correspondence with the verified fragment is a matter of building the same thing, which is why
+that fragment was done first. The remaining work is the measurement: a full session rebuild, the
+export, the two cram suites, and the benchmark numbers with and without the embedding.

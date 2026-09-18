@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Imp
-  imports Monitor_Imp2 Dense
+  imports Monitor_Imp2 Dense_Aux
 begin
 (*>*)
 
@@ -171,6 +171,107 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
 | "mcols n (MTS mt) = Some (mtrm_dcols mt)"
 | "mcols n \<phi> = None"
 
+subsection \<open>The temporal structures at the dense frame\<close>
+
+text \<open>
+  The Since and the Until of @{theory MFODL_Monitor_Imp.Since_Imp2} and
+  @{theory MFODL_Monitor_Imp.Until_Imp2} take the left operand's table at the right operand's
+  frame, which is why the node had to embed it first.  The structures of
+  @{theory MFODL_Monitor_Imp.Dense_Aux} take it at the left operand's own frame, so the
+  embedding disappears.
+
+  They replace exactly one branch each.  Where @{const init_j} picks @{const MSJ_pure} it is
+  because @{const special_args} fails, that is, because the join columns are a proper nonempty
+  subset -- and that is precisely the case in which the embedding was not a no-op.  The other
+  two branches, the heap-resident structure and the closed-left-operand one, are reached only
+  when the two frames coincide or the left one is empty, where there was nothing to embed.  So
+  the dense node keeps them unchanged and swaps the pure structure for the dense one.
+\<close>
+
+datatype msaux_d = MSD_imp msaux2 | MSD_dns "event_data dmsaux" | MSD_evt sevtaux
+
+definition init_d :: "args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
+  "init_d args msk = (if sevt_applies args then return (MSD_evt (init_sevt args))
+     else if args_agg args = None \<and> special_args args
+     then do { q \<leftarrow> init2 args; return (MSD_imp q) }
+     else return (MSD_dns (dinit_msaux args msk)))"
+
+fun add_new_ts_d :: "args \<Rightarrow> ts \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
+  "add_new_ts_d args nt (MSD_imp q) = do { q \<leftarrow> add_new_ts2 args nt q; return (MSD_imp q) }"
+| "add_new_ts_d args nt (MSD_dns s) = return (MSD_dns (dadd_new_ts_msaux args nt s))"
+| "add_new_ts_d args nt (MSD_evt a) = return (MSD_evt (add_new_ts_sevt args nt a))"
+
+text \<open>The table this takes is the left operand's, at the left operand's frame in the dense
+  branch and at the common frame in the other two.\<close>
+
+fun join_d :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
+  "join_d args X (MSD_imp q) = do { q \<leftarrow> gc_join2 args X q; return (MSD_imp q) }"
+| "join_d args X (MSD_dns s) = return (MSD_dns (dgc_join_msaux args X s))"
+| "join_d args X (MSD_evt a) = return (MSD_evt (join_sevt args X a))"
+
+fun add_new_table_d :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
+  "add_new_table_d args X (MSD_imp q) = do { q \<leftarrow> add_new_table2 args X q; return (MSD_imp q) }"
+| "add_new_table_d args X (MSD_dns s) = return (MSD_dns (dadd_new_table_msaux args X s))"
+| "add_new_table_d args X (MSD_evt a) = return (MSD_evt (add_new_table_sevt args X a))"
+
+fun result_d :: "args \<Rightarrow> msaux_d \<Rightarrow> event_data table Heap" where
+  "result_d args (MSD_imp q) = result2 q"
+| "result_d args (MSD_dns s) = return (dresult_msaux args s)"
+| "result_d args (MSD_evt a) = return (result_sevt args a)"
+
+partial_function (heap) eval_since_d :: "args \<Rightarrow> event_data table list \<Rightarrow> event_data mebuf2S \<Rightarrow>
+    msaux_d \<Rightarrow> (event_data table list \<times> event_data mebuf2S \<times> msaux_d) Heap" where
+  [code]:
+  "eval_since_d args rs buf aux = (case buf of (xs, ys, ts, skew) \<Rightarrow>
+    (case mbuf_t_cases ys of (None, ys') \<Rightarrow>
+      (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
+        (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
+          (if skew \<or> memL (args_ivl args) 0
+           then return (rev rs, (x ## xs', mbuf_t_empty, t ## ts', skew), aux)
+           else do { aux \<leftarrow> add_new_ts_d args t aux; aux' \<leftarrow> join_d args x aux;
+                     r \<leftarrow> result_d args aux';
+                     return (rev (r # rs), (xs', mbuf_t_empty, ts', True), aux') })
+        | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', mbuf_t_empty, mbuf_t_empty, skew), aux))
+      | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, mbuf_t_empty, ts, skew), aux))
+    | (Some y, ys') \<Rightarrow>
+      if skew then do { aux \<leftarrow> add_new_table_d args y aux;
+                        eval_since_d args rs (xs, ys', ts, False) aux }
+      else
+      (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
+        (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
+          do { aux \<leftarrow> add_new_ts_d args t aux; aux \<leftarrow> join_d args x aux;
+               aux' \<leftarrow> add_new_table_d args y aux; r \<leftarrow> result_d args aux';
+               eval_since_d args (r # rs) (xs', ys', ts', False) aux' }
+        | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', y ## ys', ts', skew), aux))
+      | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux))))"
+
+text \<open>
+  The Until is the same story.  Only @{const add_new_dq} reads the left operand, and the dense
+  @{const dadd_new_dq} reads it at the left operand's frame, keyed by the mask the node carries.
+\<close>
+
+datatype muaux_d = MUD_imp muaux2 | MUD_dns "event_data mmuaux_dq" | MUD_evt evtaux
+
+definition init_u_d :: "args \<Rightarrow> bool list \<Rightarrow> muaux_d Heap" where
+  "init_u_d args msk = (if args_agg args = None \<and> use_heap_until
+     then do { d \<leftarrow> init_dq2 args; return (MUD_imp d) }
+     else if evt_applies args then return (MUD_evt (init_evt args))
+     else return (MUD_dns (init_dq args)))"
+
+fun add_new_u_d :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
+    muaux_d \<Rightarrow> muaux_d Heap" where
+  "add_new_u_d args msk rel1 rel2 nt (MUD_imp d) =
+     do { d \<leftarrow> add_new_dq2 args rel1 rel2 nt d; return (MUD_imp d) }"
+| "add_new_u_d args msk rel1 rel2 nt (MUD_dns a) =
+     return (MUD_dns (dadd_new_dq args msk rel1 rel2 nt a))"
+| "add_new_u_d args msk rel1 rel2 nt (MUD_evt a) =
+     return (MUD_evt (add_new_evt args rel1 rel2 nt a))"
+
+fun eval_u_d :: "args \<Rightarrow> ts \<Rightarrow> muaux_d \<Rightarrow> (event_data table list \<times> muaux_d) Heap" where
+  "eval_u_d args nt (MUD_imp d) = do { r \<leftarrow> eval_dq2 args nt d; return (fst r, MUD_imp (snd r)) }"
+| "eval_u_d args nt (MUD_dns a) = return (case eval_dq args nt a of (zs, a') \<Rightarrow> (zs, MUD_dns a'))"
+| "eval_u_d args nt (MUD_evt a) = return (case eval_evt args nt a of (zs, a') \<Rightarrow> (zs, MUD_evt a'))"
+
 datatype dformula =
     DPure mformula_j nat "bool list"
   | DRel "event_data table"
@@ -185,8 +286,8 @@ datatype dformula =
   | DAgg bool "ty Formula.agg_op" Formula.trm nat nat dformula
   | DPrev \<I> dformula bool "event_data table mbuf_t" "ts mbuf_t"
   | DNext \<I> dformula bool "ts mbuf_t"
-  | DSince args "nat option list option" dformula dformula "event_data mebuf2S" msaux_j
-  | DUntil args "nat option list option" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_j
+  | DSince args dformula dformula "event_data mebuf2S" msaux_d
+  | DUntil args "bool list" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_d
   | DAndAssign nat Formula.trm dformula
   | DTP mtrm nat
   | DTS mtrm
@@ -248,32 +349,30 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
       if sevt_applies args then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
-        q \<leftarrow> init_j args;
-        return (DSince args None \<phi>d \<psi>d buf q) }
+        q \<leftarrow> init_d args (dmsk (set_cols (args_R args)) cs_L);
+        return (DSince args \<phi>d \<psi>d buf q) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-        q \<leftarrow> init_j dags;
-        return (DSince dags (if cs_L = cs then None else Some (emb_plan cs cs_L))
-                  \<phi>d \<psi>d buf q) })
+        q \<leftarrow> init_d dags (dmsk cs cs_L);
+        return (DSince dags \<phi>d \<psi>d buf q) })
       else return (DPure (MSince args \<phi> \<psi> buf aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
       if evt_applies args \<and> \<not> use_heap_until then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
-        d \<leftarrow> init_u_j args;
-        return (DUntil args None \<phi>d \<psi>d buf nts t d) }
+        d \<leftarrow> init_u_d args (dmsk (set_cols (args_R args)) cs_L);
+        return (DUntil args (dmsk (set_cols (args_R args)) cs_L) \<phi>d \<psi>d buf nts t d) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-        d \<leftarrow> init_u_j dags;
-        return (DUntil dags (if cs_L = cs then None else Some (emb_plan cs cs_L))
-                  \<phi>d \<psi>d buf nts t d) })
+        d \<leftarrow> init_u_d dags (dmsk cs cs_L);
+        return (DUntil dags (dmsk cs cs_L) \<phi>d \<psi>d buf nts t d) })
       else return (DPure (MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
@@ -349,20 +448,18 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      return (let (xs, first) = (case (xs, first) of (_ # xs, True) \<Rightarrow> (xs, False) | a \<Rightarrow> a);
        (zs, buf, nts) = meprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
        in (zs, DNext I \<phi> first nts)) }"
-| "deval j ts db (DSince args pl \<phi> \<psi> buf aux) = do {
+| "deval j ts db (DSince args \<phi> \<psi> buf aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     (zs, buf, aux) \<leftarrow> eval_since_j args []
-       (mebuf2S_add (case pl of None \<Rightarrow> xs | Some p \<Rightarrow> map (dembedp p) xs) ys ts buf) aux;
-     return (zs, DSince args pl \<phi> \<psi> buf aux) }"
-| "deval j ts db (DUntil args pl \<phi> \<psi> buf nts t aux) = do {
+     (zs, buf, aux) \<leftarrow> eval_since_d args [] (mebuf2S_add xs ys ts buf) aux;
+     return (zs, DSince args \<phi> \<psi> buf aux) }"
+| "deval j ts db (DUntil args msk \<phi> \<psi> buf nts t aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     r \<leftarrow> mebuf2t_take_j (add_new_u_j args) aux
-       (mebuf2_add (case pl of None \<Rightarrow> xs | Some p \<Rightarrow> map (dembedp p) xs) ys buf) t (nts @@ ts);
+     r \<leftarrow> mebuf2t_take_j (add_new_u_d args msk) aux (mebuf2_add xs ys buf) t (nts @@ ts);
      (case r of (aux, buf, nt, nts') \<Rightarrow>
-      do { z \<leftarrow> eval_u_j args nt aux;
-           return (fst z, DUntil args pl \<phi> \<psi> buf nts' nt (snd z)) }) }"
+      do { z \<leftarrow> eval_u_d args nt aux;
+           return (fst z, DUntil args msk \<phi> \<psi> buf nts' nt (snd z)) }) }"
 | "deval j ts db (DAndAssign p t \<phi>) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (map (dassign p t) xs, DAndAssign p t \<phi>) }"
@@ -390,8 +487,8 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DAgg g0 \<omega> f k pos \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DPrev I \<phi> f buf nts) = dpure_nodes \<phi>"
 | "dpure_nodes (DNext I \<phi> f nts) = dpure_nodes \<phi>"
-| "dpure_nodes (DSince args pl \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
-| "dpure_nodes (DUntil args pl \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DSince args \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DUntil args msk \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DAndAssign p t \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DLet p m \<phi> \<psi>) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes \<phi> = 0"
