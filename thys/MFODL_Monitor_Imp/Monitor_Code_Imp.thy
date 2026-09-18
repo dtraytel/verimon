@@ -1,6 +1,7 @@
 (*<*)
 theory Monitor_Code_Imp
-  imports Monitor_Imp Monitor_Imp2 Dense_Imp "MFODL_Monitor_Devel.Monitor_Code"
+  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt
+    "MFODL_Monitor_Devel.Monitor_Code"
 begin
 (*>*)
 
