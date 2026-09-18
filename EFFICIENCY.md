@@ -4422,3 +4422,90 @@ mask `cpos cs_R (set cs_L)` into the internals so the index is still used, with 
 lemma restated through `dsemi_join`. `join_mmsaux` lives in `Optimized_Agg_Temporal.thy` in the
 base session, so this is a base-session change and each iteration costs a ~52-minute rebuild of
 `MFODL_Monitor_Devel` plus ~5 minutes for the child.
+
+### 20.27 Coverage, step 1: the assignment, the time point and the timestamp
+
+20.25's inventory said ten of the kernel's twenty-three `mformula` constructors have no dense
+case. Three of them are small and share a shape -- each produces or extends a table by
+arithmetic on one tuple at a time -- so they go first, and they also settle what a coverage step
+consists of.
+
+**The short forms.** The kernel's assignment fills the hole at the assigned variable's position,
+`eval_assignment (x, t) y = y[x := Some (meval_trm t y)]`. A short tuple has no hole to fill, so
+the value is *inserted* at the position the new column occupies in the merged column list -- the
+same insertion the aggregation's output already does, at the same `ins_pos`:
+
+```isabelle
+definition dassign1 :: "nat ⇒ Formula.trm ⇒ event_data tuple ⇒ event_data tuple" where
+  "dassign1 p t d = take p d @ Some (meval_trm t d) # drop p d"
+
+theorem dassign_eval_assignment:
+  assumes "sorted_wrt (<) cs" and "∀c ∈ set cs. c < n" and "y < n" and "y ∉ set cs"
+    and "Formula.fv_trm t ⊆ set cs" and "table n (set cs) T"
+  shows "dassign (ins_pos cs y) (reindex_trm cs t) (dtabc n cs T)
+       = dtabc n (merge_cols cs [y]) (eval_assignment (y, t) ` T)"
+```
+
+The two nodes that turn a number into a table are even shorter: a one-column table holding the
+number, or a zero-column truth value, so no frame-wide tuple is built at all.
+
+```isabelle
+fun dmtrm :: "mtrm ⇒ event_data ⇒ event_data table" where
+  "dmtrm (MVar v) x = {[Some x]}"
+| "dmtrm (MConst c) x = (if c = x then unit_table 0 else empty_table)"
+
+theorem dtabc_eval_mtrm:
+  "∀c ∈ set (mtrm_dcols mt). c < n ⟹
+     dtabc n (mtrm_dcols mt) (eval_mtrm n mt x) = dmtrm mt x"
+```
+
+**What a coverage step costs.** Six places, in a fixed order: the dense operation and its
+agreement theorem in `Dense.thy`; the constructor and its `deval` case; the `dsim` rule; the case
+of `dsim_deval`; the `dof` case and its reachability lemma, plus the corresponding case of
+`dsim_dof_minit0`; and the mirror in the executable monadic fragment of `Dense_Imp.thy`, which is
+what the binary runs. `produces` needs nothing: the coinductive invariant was already proved for
+every constructor, `produces_MAndAssign`, `produces_MTP` and `produces_MTS` included, so the
+input well-formedness a dense operation needs is in hand at a node the moment the node exists.
+Two of the three `dof` guards turned out to be discharged for free by the reachability lemma:
+`split_assignment_props` says a safe assignment's split names a variable outside the operand's
+free variables whose term reads only those, which is exactly what `dassign_eval_assignment` asks
+for.
+
+The operand's column list is the node's without the assigned column, so `rem_col cs y` (the
+filter) and `merge_rem_col` (putting it back is the merge the theorem wants) were needed, and
+`set_cols_eqI` -- a sorted distinct list with the right element set *is* `set_cols` of it --
+which is the small fact any further column bookkeeping will want too.
+
+**Measured coverage.** The kernel reports its fallback-node count under `MONPOLY_DENSE_STATS`,
+which makes coverage measurable rather than asserted. Over both cram suites, counting every
+`-verified` invocation:
+
+| | invocations | with a fallback node | fallback nodes |
+|---|---:|---:|---:|
+| before | 90 | 86 | 87 |
+| after | 108 | 86 | 87 |
+
+The 18 extra invocations are the new test (below) and they all compile to zero fallback nodes.
+The 86 that remain are almost all `FRZ` -- one node wrapping the whole formula -- plus four
+`LET`. **So this step's gain does not show up on the existing suite at all**: every assignment
+and every `tp`/`ts` in it sits inside a `FRZ` or `LET` subtree that the compiler hands to the
+kernel's evaluator whole. That is worth stating plainly, because it is the shape of the
+remaining work: `FRZ`, `LET` and `LETPAST` are where the coverage is, not the leaves.
+
+**A test that exercises them.** Since the suite had no verified formula using an assignment or
+`tp`/`ts` outside such a subtree, the differential comparison could not have caught a mistake in
+these nodes. `verimon_tests/dense_nodes.t` adds nine formulas over a small log -- assignments
+plain, under an existential, chained, and as a Since operand; `tp`, `ts` and `tpts` plain, under
+`ONCE`, and under an existential with a constraint -- and runs each with `-verified` and with
+`-verified -dense`. Each compiles to zero fallback nodes; before the change each had one or two.
+
+**Validation.** `MFODL_Monitor_Imp` builds green (3:54 on top of the base session); both cram
+suites pass; the differential checker reports 555/555 agreement on all three comparisons (dense
+against plain, dense+heap against dense, and the new binary against the previous one); and the
+benchmark table is unchanged within this machine's spread, as it should be, since no benchmark
+formula uses any of the three constructors.
+
+One incidental fix: `dsim_wf_cols` was proved by induction over the simulation, and its `auto`
+over nineteen cases took 120 seconds -- most of `Dense_Eval.thy`'s build. Every rule either
+carries `wf_cols` as a premise or has `cs = []`, so case analysis suffices, and it now takes
+under a second.
