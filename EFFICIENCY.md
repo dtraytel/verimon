@@ -4789,3 +4789,165 @@ contain zero -- is still `DPure`, and so are `MMatchP`/`MMatchF` and the aggrega
 `MSince`/`MUntil`. The *executable* fragment is untouched, so the measured fallback-node count over
 the cram suites is still 83 and `src/verified.ml` is byte-identical. Session builds green in 3:07;
 both cram suites pass.
+
+### 20.32 The dense Since and Until, with the probe at the left operand's frame
+
+Section 20.24 established that the `option` in the dense tuple is load-bearing because of the
+Since and the Until: their nodes run the verified structure at `dargs` (20.6), where a stored
+tuple is hole-free at the right operand's width, but the *probe* -- the left operand's table --
+arrives at the left operand's own, narrower frame and is widened tuple by tuple with `dembedp`
+before the structure sees it. That is one allocation per left tuple per time point, and it is the
+last place where the dense representation puts a hole back into a tuple.
+
+This section builds both structures with the probe taken at the frame the left operand already
+produces it at. Everything lives in a new theory, `thys/MFODL_Monitor_Imp/Dense_Aux.thy`, which
+imports only `Dense`, so editing it does not make the dense evaluator or the descending compiler
+reprocess.
+
+**The mask.** The dense projection the structures need is the one 20.8's dense semi-join already
+uses, `mrg_left_key (mrg_plan cs_R cs_L)`. Two lemmas tie it to the frame:
+
+```isabelle
+lemma dmsk_args_dargs:
+  "sorted_wrt (<) cs_R ⟹ sorted_wrt (<) cs_L ⟹ set cs_L ⊆ set cs_R ⟹
+     dmsk_args (dargs cs_R cs_L args) (mrg_left_key (mrg_plan cs_R cs_L))"
+
+lemma dwiden_image_dtabc:
+  assumes … and "table n (set cs_L) T"
+  shows "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) ` dtabc n cs_L T = dtabc n cs_R T"
+```
+
+`dmsk_args args msk` says the mask describes the frame: it has width `args_n args`, every column
+belongs to the right operand, and the left operand's columns are the mask's true positions. The
+second says that widening the left operand's *own* table by that mask gives exactly the
+`cs_R`-narrowing of the wide table -- which is what the evaluator computes today, per tuple, by
+embedding. So the two runs are looking at the same table; only one of them materialises it.
+
+**The Since structure.** The state is the verified one with the two indexed tables replaced by
+`didx` indices keyed by the dense projection, and the two masks collapsed into the dense mask (at
+the dense frame every column is a column of the right operand, so `maskR` is all-true). It is a
+ten-tuple rather than eleven:
+
+```isabelle
+type_synonym 'a dmsaux = "ts × ts × bool list ×
+  (ts × 'a table) queue × (ts × 'a table) queue × 'a table ×
+  ('a tuple, 'a table) mapping × ('a tuple, ts) mapping ×
+  ('a tuple, 'a table) mapping × ('a tuple, ts) mapping"
+```
+
+What makes the whole thing cheap to verify is that *validity is not re-proved*. `dmsaux_of`
+recovers the verified state a dense state stands for -- it rebuilds the two indexed tables from
+the keys of the mappings they index, which the generated code never does -- and `mmsaux_norm`
+does the same to a verified state. `valid_mmsaux` cannot tell the two apart:
+
+```isabelle
+lemma valid_mmsaux_norm: "valid_mmsaux args cur aux ys ⟹
+    valid_mmsaux args cur (mmsaux_norm args aux) ys"
+```
+
+so for every operation but the join it is enough to check that the dense operation agrees with the
+verified one on the fields that are not indexed tables, and that the index invariant survives:
+
+```isabelle
+lemma dmsaux_of_dshift_end:
+  "dmsaux_of args (dshift_end args nt daux)
+   = mmsaux_norm args (shift_end args nt (dmsaux_of args daux))"
+```
+
+and then `valid_dshift_end` is the verified lemma. The index is maintained incrementally --
+`didx_union` for the tables that enter the window, `didx_minus` for the ones that leave -- and,
+exactly as the verified structure does with its indexed tables (7d, 13), not maintained at all
+where the join will not consult it.
+
+**The join.** This is the point of the exercise. Its three branches are the verified ones read
+densely. Without join columns the mask is all-false, the dense projection of every stored tuple is
+the empty tuple, and the whole window stands or falls with `[] ∈ Y`. When every column is a join
+column the mask is all-true, the dense projection is the identity, and the probe table meets the
+stored tables directly. Otherwise the index decides -- and densely a bucket's key *is* what the
+probe table holds, so the surviving tuples are the union of the surviving buckets:
+
+```isabelle
+      else
+        (let in_del = dsemi_idx msk (¬ pos) idx_in Y;
+         since_del = dsemi_idx msk (¬ pos) idx_since Y in
+         (t, gc, msk, data_prev, data_in, table_in - in_del,
+          Mapping.filter (λk _. (k ∈ Y) = pos) idx_in, mapping_delete_set tuple_in in_del,
+          Mapping.filter (λk _. (k ∈ Y) = pos) idx_since,
+          mapping_delete_set tuple_since since_del))
+```
+
+No tuple of `Y` is touched and none is widened; where the verified structure builds a `wf_idx` of
+the probe table, the dense one builds nothing, because the probe table already *is* the key set.
+That branch also keeps the invariant, by `didx_filter`: restricting the index to the surviving
+keys is the index of the surviving tuples, since a bucket passes or fails as a whole.
+
+The correctness statement is that the dense join is the verified join against the widened probe
+table:
+
+```isabelle
+lemma djoin_msaux_abs:
+  assumes "valid_dmsaux args msk cur (…) ys" and "dmsk_args args msk"
+    and "⋀y. y ∈ Y ⟹ dwf_tuple (length (filter id msk)) y"
+  shows "dmsaux_of args (djoin_msaux args Y (…))
+     = join_mmsaux_abs args (dwiden msk ` Y) (dmsaux_of args (…))"
+```
+
+`join_mmsaux_abs` is the verified join's own abstract form, which the kernel proves equal to the
+optimised one under validity, and which is already in normalised shape. The pointwise step is
+
+```isabelle
+lemma proj_tuple_in_join_dense:
+  "length as = length msk ⟹ (⋀y. y ∈ Y ⟹ dwf_tuple (length (filter id msk)) y) ⟹
+     proj_tuple_in_join pos msk as (dwiden msk ` Y) = ((dproj msk as ∈ Y) = pos)"
+```
+
+-- the kernel's projection and the dense one classify a stored tuple identically, the first
+against the widened table and the second against the narrow one.
+
+`dsaux'` then repeats 20.6's five lemmas for the dense structure; only `dsaux'_join` reads
+differently, taking `dtabc n cs_L rel1` where `dsaux_join` takes `dtabc n cs_R rel1`. And
+`deval_since` is the kernel's `eval_since` with the dense operations put in.
+
+**The Until structure.** The Until needed far less. Of its eleven components only two mention the
+left operand at all: the mask, and the mapping `a1_map` that records, for each tuple of the left
+operand's frame, the last time point at which it held. The window's step, the shift, the
+evaluation and the length carry both through untouched -- which is not obvious from the code but
+is what the commutation lemmas say:
+
+```isabelle
+lemma shift_dq_wkeys: "shift_dq args nt (wkeys_uaux msk d) = wkeys_uaux msk (shift_dq args nt d)"
+```
+
+where `wkeys msk` widens a mapping's keys and `nkeys msk` narrows them back. (`eval_step_dq`
+itself only commutes when the timestamp queue is non-empty -- it is underdefined otherwise -- so
+the commutation for the shift goes through a fold whose length is bounded by that queue, which
+`takeWhile_queue_rep_fst` supplies.)
+
+So the dense Until *is* the verified structure, with `a1_map` keyed by the left operand's own
+tuples, and only the one operation that reads the left operand changes: where the verified one
+looks a stored tuple up by `proj_tuple maskL as`, the dense one looks it up by `dproj msk as`, and
+it takes the left operand's table at that frame. The theorem is again that it is the verified
+operation against the widened table:
+
+```isabelle
+theorem wkeys_uaux_dadd_new_dq:
+  assumes "finite rel2" and "fst (lft_of aux) = msk"
+    and "⋀k. k ∈ Mapping.keys (snd (lft_of aux)) ⟹ dnarrow_tuple msk k"
+    and "⋀y. y ∈ rel1 ⟹ dnarrow_tuple msk y" and "⋀as. as ∈ rel2 ⟹ length as = length msk"
+  shows "wkeys_uaux msk (dadd_new_dq args msk rel1 rel2 nt aux)
+       = add_new_dq args (dwiden msk ` rel1) rel2 nt (wkeys_uaux msk aux)"
+```
+
+`dvalid_muaux` collects the three conditions a dense state has to meet -- the verified state it
+stands for is valid, the mask it carries is the frame's, and every key of `a1_map` is a tuple of
+the left operand's own width -- and the four operations preserve it. The finiteness hypothesis is
+the only one that is not free: `add_new_dq` has a fallback for infinite right-hand tables that the
+evaluator never reaches, since the operand tables are `ftable`, i.e. finite by construction.
+
+**What is left.** Both structures are in place and verified; what is not yet done is the
+rewiring. `deval`'s `DSince` and `DUntil` still embed their left operand and still carry the
+verified structures, so `src/verified.ml` is byte-identical and the measured fallback-node count is
+unchanged. Wiring them in means changing the `dformula` constructors, `dsim`'s two cases, `dof`'s
+two clauses, and -- for the win to reach the generated code -- the executable dense evaluator in
+`Dense_Imp.thy` and its heap-resident Since structure. That is the next step, and it is the first
+one after which the embedding can be measured away.
