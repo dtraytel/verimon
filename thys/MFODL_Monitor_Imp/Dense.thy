@@ -3531,6 +3531,54 @@ proof -
   show ?thesis unfolding res by (rule dtabc_trigger_results[OF s b sub an aL aR w])
 qed
 
+section \<open>An index for the dense semi-join\<close>
+
+text \<open>
+  The Since and the Until probe their stored tables with the left operand's table.  At the wide
+  frame that probe is a two-sided index join, because the left operand's tuples have to be widened
+  to the full frame first and a key is then a wide tuple with holes outside the join columns --
+  which is what @{typ \<open>'a wf_idx\<close>} is for.  Densely the probe table \<^emph>\<open>is\<close> the key set: a stored
+  tuple is kept exactly when its projection at the merge plan's key mask is in the probe table,
+  or, for a negative operand, out of it.  So the index is a plain clustering of the stored table
+  by that projection, and the probe is a restriction of the mapping.
+\<close>
+
+definition didx :: "bool list \<Rightarrow> 'b list set \<Rightarrow> ('b list, 'b list set) mapping" where
+  "didx msk T = cluster (Some \<circ> dproj msk) T"
+
+lemma set_of_idx_didx: "set_of_idx (didx msk T) = T"
+  unfolding didx_def by (rule set_of_idx_cluster)
+
+definition dsemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow> 'b list set \<Rightarrow>
+    'b list set" where
+  "dsemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
+
+lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
+  by transfer (auto simp: ran_def)
+
+lemma lookup_didx: "Mapping.lookup (didx msk T) k =
+  (if k \<in> dproj msk ` T then Some {y \<in> T. dproj msk y = k} else None)"
+  unfolding didx_def by transfer auto
+
+text \<open>The index computes the semi-join: a stored tuple's bucket survives the restriction exactly
+  when the tuple itself survives the filter.\<close>
+
+theorem dsemi_idx_dsemi: "dsemi_idx msk pos (didx msk T) X = dsemi msk pos T X"
+proof (intro set_eqI iffI)
+  fix y assume "y \<in> dsemi_idx msk pos (didx msk T) X"
+  then show "y \<in> dsemi msk pos T X"
+    by (auto simp: dsemi_idx_def dsemi_def in_set_of_idx Mapping.lookup_filter lookup_didx
+        split: if_splits option.splits)
+next
+  fix y assume "y \<in> dsemi msk pos T X"
+  then have yT: "y \<in> T" and yp: "(dproj msk y \<in> X) = pos" by (auto simp: dsemi_def)
+  have "Mapping.lookup (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (didx msk T)) (dproj msk y)
+      = Some {z \<in> T. dproj msk z = dproj msk y}"
+    using yT yp by (simp add: Mapping.lookup_filter lookup_didx)
+  then show "y \<in> dsemi_idx msk pos (didx msk T) X"
+    using yT by (auto simp: dsemi_idx_def in_set_of_idx)
+qed
+
 (*<*)
 end
 (*>*)
