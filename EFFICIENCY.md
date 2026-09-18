@@ -5262,5 +5262,105 @@ tests of `tests/` and the 284 of `verimon_tests/` all pass, and the four configu
 MonPoly, `-verified`, `-verified -dense` and `-verified -dense -heap_maps` -- agree byte for byte
 on the fourteen synthetic formulas of 20.35's table that the smaller log covers.
 
-**Not yet measured.** What this is worth is a question for the next section; nothing here has been
-timed.
+**What it is worth** is 20.37, which also has the one thing that had to be added before it was
+worth anything.
+
+### 20.37 What the unboxing cost, and what it is worth
+
+**The first measurement said: nothing.** Nine interleaved repetitions of the suite, the kernel
+exported before 20.36 against the one after, gave a geometric mean of 1.00x and three rows --
+`sincewide`, `untilwide`, `aggwide` -- slower after. The generated code said why. 20.36's generic
+layer is polymorphic in the element type, so the code generator gives every operation of it a
+dictionary argument and rebuilds the composite comparator from that argument at every call:
+
+```ocaml
+let rec gprobe_step_l (_A1, _A2, _A3) p rk m y acc =
+  (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (dproj rk y)
+   with None -> acc
+   | Some l -> fold (fun x -> insert ((ceq_list _A1), (ccompare_list _A2)) (dmerge p x y)) l acc)
+```
+
+where the same function before 20.36 read `ed_lookup_tuples m (dproj rk y)` and `ed_insert`.
+That is exactly what `Monomorphic_Code` and the first two sections of `Dense_Code_Opt` remove for
+the wide tuples, and what the dense evaluator had for free while its operations were stated at
+`event_data tuple` outright. Two words per field were saved and a dictionary build per probed
+tuple was bought; on the rows where the tables are widest the second outweighed the first.
+
+**The fix is the third section of `Dense_Code_Opt`.** It specialises the whole dense layer at
+`event_data` -- the join, the two Since structures, the Until deque, the two
+closed-left-operand ones -- and the heap-resident Since at both tuple types it is used at; it
+boxes the operations those call that are not themselves specialised (the emptiness and
+cardinality tests, the sorted list of a table, the folds, the mapping projections, the empty
+mappings), and monomorphises the tree primitives that membership and insertion reach. The probe
+is then
+
+```ocaml
+let rec de_gprobe_step_l p rk m y acc =
+  (match edl_lookup_tuples m (dproj rk y) with None -> acc
+   | Some l -> fold (fun x -> edl_insert (dmerge p x y)) l acc)
+```
+
+and the join's emptiness test is `unbox edl_is_empty_v a`, as it was for the wide tuples.
+
+**The suite.** Nine repetitions, interleaved across configurations, medians, multipliers relative
+to MonPoly, lower is better. The 8.6 MB log of 20.18 and 20.35 and the same P2/P3 logs.
+"dense (was)" is the kernel exported before 20.36; every configuration agrees with MonPoly byte
+for byte on every row, and so does "dense (was)".
+
+| formula | MonPoly | pure | dense (was) | dense | dense+h |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.39s | 2.39x | **1.60x** | 1.60x | 1.62x |
+| P3 | 0.43s | 1.93x | 1.36x | 1.33x | **1.31x** |
+| and | 0.54s | 1.28x | 1.03x | 1.03x | **0.94x** |
+| andnot | 0.48s | 1.02x | 1.07x | **1.01x** | 1.01x |
+| once | 2.36s | 1.14x | 0.78x | **0.74x** | 0.74x |
+| since | 0.85s | 1.26x | **1.10x** | 1.14x | 1.12x |
+| eventually | 1.42s | 1.39x | 0.99x | **0.92x** | 0.93x |
+| until | 0.80s | 1.43x | 1.55x | **1.36x** | 1.37x |
+| agg | 0.59s | 1.58x | 1.58x | **1.46x** | 1.48x |
+| complex | 2.91s | 1.72x | 1.01x | **0.99x** | 1.02x |
+| sincewide | 2.78s | 1.20x | 1.00x | 0.95x | **0.95x** |
+| untilwide | 2.87s | 1.16x | 1.07x | **0.99x** | 1.00x |
+| aggwide | 11.73s | 1.03x | 0.79x | 0.76x | **0.76x** |
+| sincesub | 0.80s | 2.61x | 2.12x | **1.84x** | 1.85x |
+| untilsub | 0.68s | 1.48x | 1.56x | **1.39x** | 1.40x |
+| sincesub3 | 0.66s | 1.91x | 1.31x | 1.20x | **1.14x** |
+
+**The unboxing is worth about 6%, and it is worth it everywhere.** Comparing "dense (was)"
+against "dense" row by row, the geometric mean of the sixteen ratios is 1.059 on the medians and
+1.055 on the minima, and no row is behind by more than 3% on either. The rows it helps most are
+the Until (1.14x), the sub-frame Since (1.16x), the sub-frame Until (1.13x) and the wide Until
+(1.08x); the one it cannot help is `P2`, whose left operand is closed, so its structure holds a
+count per tuple and a union rather than tables of tuples.
+
+| row | was (s) | now (s) | median | was range | now range |
+|---|---:|---:|---:|---|---|
+| `sincesub` | 1.69 | **1.47** | 1.16x | 1.32--1.82 | 1.24--1.50 |
+| `until` | 1.24 | **1.09** | 1.14x | 1.04--1.27 | 0.88--1.11 |
+| `untilsub` | 1.06 | **0.94** | 1.13x | 0.84--1.10 | 0.76--0.98 |
+| `sincesub3` | 0.87 | **0.80** | 1.09x | 0.68--0.88 | 0.68--0.83 |
+| `untilwide` | 3.08 | **2.84** | 1.08x | 2.63--3.24 | 2.45--2.94 |
+| `agg` | 0.92 | **0.85** | 1.08x | 0.78--0.94 | 0.70--0.87 |
+| `aggwide` | 9.27 | **8.92** | 1.04x | 8.52--10.17 | 8.00--9.46 |
+
+The per-cell spread on this container runs from 11% to 33% of the median (21% at the median), so
+a single row's 6% is not readable on its own; sixteen rows all leaning the same way are. The
+minima, which are the cleanest estimator on a machine whose noise can only add time, agree: 1.055
+against 1.059.
+
+**The dense monitor is at or ahead of MonPoly on seven of the sixteen rows** -- `and` and
+`complex` with the heap index, `andnot`, `once`, `eventually`, `sincewide`, `untilwide` and
+`aggwide` -- and 20.35's split is unchanged: short tuples pay where there are columns to shorten.
+Against the pure verified kernel the dense one is ahead on every row but `until` and `untilsub`,
+where the deque's own cost dominates.
+
+**The heap index has stopped earning its keep.** `-heap_maps` was the best configuration on eight
+of sixteen rows in 20.35 and is the best on six here, but its margin over plain `-dense` is now
+under 2% on every row except `and` (0.94x against 1.03x) and `sincesub3` (1.14x against 1.20x):
+the tree it was avoiding got cheaper, because its comparator is now `edl_comparator` over the
+short tuples rather than the composite one over the wide. That is worth remembering the next time
+the flag's default is considered.
+
+**What is left.** `MAndTrigger` and the two `MatchP`/`MatchF` operators still fall back to the
+evaluation function over the wide tuples (20.21), which is also the only thing that still converts
+a database between the two representations.
