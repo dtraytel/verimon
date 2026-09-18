@@ -1,0 +1,1 @@
+EXISTS i. (tp(i) AND i = 2)

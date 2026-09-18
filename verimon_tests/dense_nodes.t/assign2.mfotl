@@ -1,0 +1,1 @@
+EXISTS x. P(x) AND y = x * 2

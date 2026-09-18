@@ -168,6 +168,7 @@ module Monitor : sig
   type 'a mbuf_t
   type mconstraint
   type ('a, 'b) mapping
+  type mtrm
   type ('a, 'b, 'c) meformula
   type int = Int_of_integer of Z.t
   type 'a regex = Skip of nat | Test of 'a | Plusa of 'a regex * 'a regex |
@@ -4129,7 +4130,8 @@ type dformula =
       unit args_ext * ((nat option) list) option * dformula * dformula *
         (((event_data option) list) set mbuf_t *
           ((event_data option) list) set mbuf_t) *
-        nat mbuf_t * nat * muaux_j;;
+        nat mbuf_t * nat * muaux_j
+  | DAndAssign of nat * trm * dformula | DTP of mtrm * nat | DTS of mtrm;;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -5243,6 +5245,13 @@ let rec dargs
         (size_lista cs_R))
       (args_pos args) None;;
 
+let rec ed_unit_table n = ed_insert (replicate n None) ed_bot;;
+
+let rec dmtrm
+  xa0 x = match xa0, x with MVar v, x -> ed_insert [Some x] ed_bot
+    | MConst c, x ->
+        (if equal_event_dataa c x then ed_unit_table zero_nata else ed_bot);;
+
 let rec dproj x0 xs = match x0, xs with [], xs -> []
                 | true :: bs, x :: xs -> x :: dproj bs xs
                 | false :: bs, x :: xs -> dproj bs xs
@@ -5993,6 +6002,10 @@ let rec col_pos
   xa0 x = match xa0, x with [], x -> zero_nata
     | c :: cs, x -> (if equal_nata c x then zero_nata else suc (col_pos cs x));;
 
+let rec dassign1 p t d = take p d @ Some (meval_trm t d) :: drop p d;;
+
+let rec dassign p t d = ed_image (dassign1 p t) d;;
+
 let rec dembed1
   p d = mapa (fun a -> (match a with None -> None | Some aa -> nth d aa)) p;;
 
@@ -6012,6 +6025,8 @@ let rec dnarrow (_A1, _A2)
              ((ceq_list _A1), (ccompare_list _A2), set_impl_list) (dproj msk)
              r);;
 
+let rec ins_pos cs y = size_lista (filtera (fun c -> less_nat c y) cs);;
+
 let rec equal_mrg x0 x1 = match x0, x1 with MRgt, MBth -> false
                     | MBth, MRgt -> false
                     | MLft, MBth -> false
@@ -6023,6 +6038,8 @@ let rec equal_mrg x0 x1 = match x0, x1 with MRgt, MBth -> false
                     | MLft, MLft -> true;;
 
 let rec no_left p = list_all (fun m -> not (equal_mrg m MLft)) p;;
+
+let rec rem_col cs y = filtera (fun c -> not (equal_nata c y)) cs;;
 
 let first : 'a formula = Neg (Prev (all, tt));;
 
@@ -6182,8 +6199,6 @@ let rec ed_singleton_table
       (tabulate (fun j -> (if equal_nata i j then Some x else None)) zero_nata
         n)
       ed_bot;;
-
-let rec ed_unit_table n = ed_insert (replicate n None) ed_bot;;
 
 let rec eq_rel
   n uu uv = match n, uu, uv with
@@ -14257,6 +14272,17 @@ let rec deval
                             DUntil
                               (args, pl, phia, psia, bufa, ntsa, nt,
                                 snd z)))))))
+    | j, ts, db, DAndAssign (p, t, phi) ->
+        binda (deval j ts db phi)
+          (fun (xs, phia) ->
+            (fun () -> (mapa (dassign p t) xs, DAndAssign (p, t, phia))))
+    | j, ts, db, DTP (mt, i) ->
+        (fun () ->
+          (mapa (fun x -> dmtrm mt (EInt (integer_of_nat x))) (upt i j),
+            DTP (mt, j)))
+    | j, ts, db, DTS mt ->
+        (fun () ->
+          (mapa (fun x -> dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt))
 and deval_list
   j ts db x3 = match j, ts, db, x3 with j, ts, db, [] -> (fun () -> [])
     | j, ts, db, phi :: r ->
@@ -14302,6 +14328,8 @@ let rec tms_cols
   tms = csorted_list_of_set (ceq_nat, ccompare_nat)
           (set (ceq_nat, ccompare_nat, set_impl_nat) (maps trm_vars tms));;
 
+let rec mtrm_dcols mt = (match mt with MVar v -> [v] | MConst _ -> []);;
+
 let rec dands_cols acc x1 = match acc, x1 with acc, [] -> acc
                      | acc, c :: cs -> dands_cols (merge_cols acc c) cs;;
 
@@ -14329,17 +14357,24 @@ let rec mcols
     | n, MSince (args, phi, psi, buf, aux) -> Some (set_cols (args_R args))
     | n, MUntil (args, phi, psi, buf, nts, t, aux) ->
         Some (set_cols (args_R args))
+    | n, MAndAssign (phi, conf) ->
+        (match mcols n phi with None -> None
+          | Some cs ->
+            (if membera equal_nat cs (fst conf) ||
+                  not (less_eq_set (cenum_nat, ceq_nat, ccompare_nat)
+                        (fvi_trm zero_nata (snd conf))
+                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
+              then None else Some (merge_cols cs [fst conf])))
+    | n, MTP (mt, i) -> Some (mtrm_dcols mt)
+    | n, MTS mt -> Some (mtrm_dcols mt)
     | n, MRel v -> None
     | n, MLet (v, va, vb, vc) -> None
     | n, MFrz (v, va, vb, vc, vd, ve, vf, vg) -> None
     | n, MLetPast (v, va, vb, vc, vd, ve) -> None
-    | n, MAndAssign (v, va) -> None
     | n, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
     | n, MTrigger (v, va, vb, vc, vd, ve) -> None
     | n, MMatchP (v, va, vb, vc, vd, ve, vf) -> None
-    | n, MMatchF (v, va, vb, vc, vd, ve, vf, vg) -> None
-    | n, MTP (v, va) -> None
-    | n, MTS v -> None;;
+    | n, MMatchF (v, va, vb, vc, vd, ve, vf, vg) -> None;;
 
 let rec bounded x = snd (snd (rep_I x));;
 
@@ -16753,6 +16788,28 @@ let rec dformula_of
                           (DPure
                             (MUntil (args, phi, psi, buf, nts, t, aux), n,
                               wide_mask n cs))))))
+    | n, cs, MAndAssign (phi, conf) ->
+        (let y = fst conf in
+         let t = snd conf in
+         let cs0 = rem_col cs y in
+          (if membera equal_nat cs y &&
+                less_eq_set (cenum_nat, ceq_nat, ccompare_nat)
+                  (fvi_trm zero_nata t)
+                  (set (ceq_nat, ccompare_nat, set_impl_nat) cs0)
+            then binda (dformula_of n cs0 phi)
+                   (fun phi_d ->
+                     (fun () ->
+                       (DAndAssign (ins_pos cs0 y, reindex_trm cs0 t, phi_d))))
+            else (fun () ->
+                   (DPure (MAndAssign (phi, conf), n, wide_mask n cs)))))
+    | n, cs, MTP (mt, i) ->
+        (fun () ->
+          (if equal_lista equal_nat cs (mtrm_dcols mt) then DTP (mt, i)
+            else DPure (MTP (mt, i), n, wide_mask n cs)))
+    | n, cs, MTS mt ->
+        (fun () ->
+          (if equal_lista equal_nat cs (mtrm_dcols mt) then DTS mt
+            else DPure (MTS mt, n, wide_mask n cs)))
     | n, cs, MLet (v, va, vb, vc) ->
         (fun () -> (DPure (MLet (v, va, vb, vc), n, wide_mask n cs)))
     | n, cs, MFrz (v, va, vb, vc, vd, ve, vf, vg) ->
@@ -16761,8 +16818,6 @@ let rec dformula_of
     | n, cs, MLetPast (v, va, vb, vc, vd, ve) ->
         (fun () ->
           (DPure (MLetPast (v, va, vb, vc, vd, ve), n, wide_mask n cs)))
-    | n, cs, MAndAssign (v, va) ->
-        (fun () -> (DPure (MAndAssign (v, va), n, wide_mask n cs)))
     | n, cs, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) ->
         (fun () ->
           (DPure
@@ -16777,8 +16832,6 @@ let rec dformula_of
     | n, cs, MMatchF (v, va, vb, vc, vd, ve, vf, vg) ->
         (fun () ->
           (DPure (MMatchF (v, va, vb, vc, vd, ve, vf, vg), n, wide_mask n cs)))
-    | n, cs, MTP (v, va) -> (fun () -> (DPure (MTP (v, va), n, wide_mask n cs)))
-    | n, cs, MTS v -> (fun () -> (DPure (MTS v, n, wide_mask n cs)))
 and dformula_of_list
   n cs x2 = match n, cs, x2 with n, cs, [] -> (fun () -> [])
     | n, cs, phi :: r ->
@@ -16804,9 +16857,12 @@ let rec dpure_nodes
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DUntil (args, pl, phi, psi, buf, nts, t, aux) ->
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DAndAssign (p, t, phi) -> dpure_nodes phi
     | DRel v -> zero_nata
     | DPredS (v, va) -> zero_nata
     | DPredM (v, va, vb, vc) -> zero_nata
+    | DTP (v, va) -> zero_nata
+    | DTS v -> zero_nata
 and dpure_nodes_list
   = function [] -> zero_nata
     | phi :: r -> plus_nata (dpure_nodes phi) (dpure_nodes_list r);;
