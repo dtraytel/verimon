@@ -15,10 +15,12 @@ text \<open>
   Definitions only, no proofs.
 \<close>
 
-type_synonym imap_tstp = "(ts + tp) imap"
+type_synonym 'v itmap = "(event_data tuple, 'v) imap"
+
+type_synonym imap_tstp = "(ts + tp) itmap"
 
 type_synonym muaux2 = "tp \<times> ts queue \<times> (event_data table \<times> (ts + tp)) queue \<times> nat \<times> bool list \<times>
-  bool list \<times> event_data table \<times> tp imap \<times> imap_tstp dq \<times> ts dq \<times> event_data table list"
+  bool list \<times> event_data table \<times> tp itmap \<times> imap_tstp dq \<times> ts dq \<times> event_data table list"
 
 subsection \<open>Passes over a map's buckets\<close>
 
@@ -26,63 +28,68 @@ text \<open>The keys of a map as a table, the merge of one map into another, and
   list of keys, each in one pass and without reading the map back as a list.\<close>
 
 partial_function (heap) im_keys_idx ::
-  "(('v::heap) ientry list) array \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+  "((event_data tuple, 'v::heap) ientry list) array \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> event_data table \<Rightarrow>
+    event_data table Heap" where
   [code]:
   "im_keys_idx a i n acc = (if n \<le> i then return acc
      else do { b \<leftarrow> Array.nth' a i;
                im_keys_idx a (i + 1) n (fold (\<lambda>e acc. Set.insert (fst (snd e)) acc) b acc) })"
 
-definition im_keys_tbl :: "('v::heap) imap \<Rightarrow> event_data table Heap" where
+definition im_keys_tbl :: "('v::heap) itmap \<Rightarrow> event_data table Heap" where
   "im_keys_tbl q = (case q of (n, c, a) \<Rightarrow> im_keys_idx a 0 n {})"
 
 text \<open>The entries carry their hashes, so merging one map into another rehashes nothing: the
   hash travels with the key from the source bucket into the lookup and the update.\<close>
 
-partial_function (heap) im_merge_list :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ('v ientry) list \<Rightarrow>
-    ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+partial_function (heap) im_merge_list :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ((event_data tuple, 'v) ientry) list \<Rightarrow>
+    ('v::heap) itmap \<Rightarrow> ('v itmap) Heap" where
   [code]:
   "im_merge_list f es q = (case es of [] \<Rightarrow> return q
      | e # r \<Rightarrow> (case e of (h, x, w) \<Rightarrow>
-         do { v \<leftarrow> im_lookup_h q h x;
-              q \<leftarrow> im_update_h q h x (case v of None \<Rightarrow> w | Some u \<Rightarrow> f w u);
+         do { v \<leftarrow> im_lookup_h teq q h x;
+              q \<leftarrow> im_update_h teq q h x (case v of None \<Rightarrow> w | Some u \<Rightarrow> f w u);
               im_merge_list f r q }))"
 
-partial_function (heap) im_merge_idx :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> (('v::heap) ientry list) array \<Rightarrow>
-    integer \<Rightarrow> integer \<Rightarrow> ('v imap) \<Rightarrow> ('v imap) Heap" where
+partial_function (heap) im_merge_idx :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow>
+    ((event_data tuple, 'v::heap) ientry list) array \<Rightarrow>
+    integer \<Rightarrow> integer \<Rightarrow> ('v itmap) \<Rightarrow> ('v itmap) Heap" where
   [code]:
   "im_merge_idx f a i n q = (if n \<le> i then return q
      else do { b \<leftarrow> Array.nth' a i; q \<leftarrow> im_merge_list f b q; im_merge_idx f a (i + 1) n q })"
 
-definition im_merge :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ('v::heap) imap \<Rightarrow> 'v imap \<Rightarrow> ('v imap) Heap" where
+definition im_merge :: "('v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> ('v::heap) itmap \<Rightarrow> 'v itmap \<Rightarrow> ('v itmap) Heap" where
   "im_merge f q1 q2 = (case q1 of (n, c, a) \<Rightarrow> im_merge_idx f a 0 n q2)"
 
-partial_function (heap) im_del_list :: "event_data tuple list \<Rightarrow> ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+partial_function (heap) im_del_list ::
+  "event_data tuple list \<Rightarrow> ('v::heap) itmap \<Rightarrow> ('v itmap) Heap" where
   [code]:
   "im_del_list xs q = (case xs of [] \<Rightarrow> return q
-     | x # r \<Rightarrow> do { q \<leftarrow> im_delete q x; im_del_list r q })"
+     | x # r \<Rightarrow> do { q \<leftarrow> im_delete ihash teq q x; im_del_list r q })"
 
 partial_function (heap) im_keep_list :: "((ts + tp) \<Rightarrow> bool) \<Rightarrow> event_data tuple list \<Rightarrow> imap_tstp \<Rightarrow>
     event_data table \<Rightarrow> event_data table Heap" where
   [code]:
   "im_keep_list P xs q acc = (case xs of [] \<Rightarrow> return acc
-     | x # r \<Rightarrow> do { v \<leftarrow> im_lookup q x;
+     | x # r \<Rightarrow> do { v \<leftarrow> im_lookup ihash teq q x;
                       im_keep_list P r q (case v of None \<Rightarrow> acc
                         | Some tstp \<Rightarrow> if P tstp then acc else Set.insert x acc) })"
 
-partial_function (heap) ins_tp_list :: "tp \<Rightarrow> event_data tuple list \<Rightarrow> tp imap \<Rightarrow> (tp imap) Heap" where
+partial_function (heap) ins_tp_list ::
+  "tp \<Rightarrow> event_data tuple list \<Rightarrow> tp itmap \<Rightarrow> (tp itmap) Heap" where
   [code]:
   "ins_tp_list tp xs q = (case xs of [] \<Rightarrow> return q
-     | x # r \<Rightarrow> do { q \<leftarrow> im_update q x tp; ins_tp_list tp r q })"
+     | x # r \<Rightarrow> do { q \<leftarrow> im_update ihash teq q x tp; ins_tp_list tp r q })"
 
 text \<open>With a positive left operand a tuple that is already in the map keeps the time point it
   has; only tuples that are not in it yet are added.\<close>
 
-partial_function (heap) ins_new_tp_list :: "tp \<Rightarrow> event_data tuple list \<Rightarrow> tp imap \<Rightarrow> (tp imap) Heap" where
+partial_function (heap) ins_new_tp_list ::
+  "tp \<Rightarrow> event_data tuple list \<Rightarrow> tp itmap \<Rightarrow> (tp itmap) Heap" where
   [code]:
   "ins_new_tp_list tp xs q = (case xs of [] \<Rightarrow> return q
      | x # r \<Rightarrow> (let h = ihash x in
-         do { v \<leftarrow> im_lookup_h q h x;
-              q \<leftarrow> (if v = None then im_update_h q h x tp else return q);
+         do { v \<leftarrow> im_lookup_h teq q h x;
+              q \<leftarrow> (if v = None then im_update_h teq q h x tp else return q);
               ins_new_tp_list tp r q }))"
 
 subsection \<open>Adding the tuples of a time point\<close>
@@ -94,8 +101,8 @@ definition upd_nested_step2 :: "nat \<Rightarrow> (ts + tp) \<Rightarrow> ((ts +
   "upd_nested_step2 base d f x dq = (case x of (k, k') \<Rightarrow>
      if base \<le> k \<and> k - base < dq_len dq then
        (let i = k - base; m = dq_nth dq i; h = ihash k' in
-        do { v \<leftarrow> im_lookup_h m h k';
-             m \<leftarrow> im_update_h m h k' (case v of Some u \<Rightarrow> f u | None \<Rightarrow> d);
+        do { v \<leftarrow> im_lookup_h teq m h k';
+             m \<leftarrow> im_update_h teq m h k' (case v of Some u \<Rightarrow> f u | None \<Rightarrow> d);
              return (dq_upd dq i m) })
      else return dq)"
 
@@ -107,17 +114,17 @@ definition until_step2 :: "(nat \<Rightarrow> bool) \<Rightarrow> (ts + tp) \<Ri
        return (Set.insert (snd p) tbl, a2, if fst p = t0 then Set.insert (snd p) res else res) }
      else return acc)"
 
-definition until_elem_step2 :: "tp imap \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> (nat \<Rightarrow> bool) \<Rightarrow>
+definition until_elem_step2 :: "tp itmap \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> (nat \<Rightarrow> bool) \<Rightarrow>
     (ts + tp) \<Rightarrow> event_data tuple \<Rightarrow> until_acc2 \<Rightarrow> until_acc2 Heap" where
   "until_elem_step2 a1 maskL pos tp len inz P d as acc = do {
      acc \<leftarrow> (if inz then until_step2 P d (tp - len) (tp, as) acc else return acc);
-     v \<leftarrow> im_lookup a1 (proj_tuple maskL as);
+     v \<leftarrow> im_lookup ihash teq a1 (proj_tuple maskL as);
      (case v of
         None \<Rightarrow> (if \<not> pos then until_step2 P d (tp - len) (tp - len, as) acc else return acc)
       | Some tp' \<Rightarrow> until_step2 P d (tp - len)
           (if pos then (max (tp - len) tp', as) else (max (tp - len) (tp' + 1), as)) acc) }"
 
-partial_function (heap) until_fold2 :: "tp imap \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+partial_function (heap) until_fold2 :: "tp itmap \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
     (nat \<Rightarrow> bool) \<Rightarrow> (ts + tp) \<Rightarrow> event_data tuple list \<Rightarrow> until_acc2 \<Rightarrow> until_acc2 Heap" where
   [code]:
   "until_fold2 a1 maskL pos tp len inz P d xs acc = (case xs of [] \<Rightarrow> return acc

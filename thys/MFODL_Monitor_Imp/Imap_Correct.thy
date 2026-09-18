@@ -28,19 +28,30 @@ lemma oeq_eq[simp]: "oeq x y \<longleftrightarrow> x = y"
 lemma teq_eq[simp]: "teq x y \<longleftrightarrow> x = y"
   by (induct x y rule: teq.induct) (auto simp: List.null_iff)
 
+text \<open>
+  The map is keyed on a type that is a parameter, so everything below is stated once for the
+  wide tuples and once for the short ones.  Of the two operations the map is given, the hash is
+  only ever required to be a function, and the equality to be the one of the key type.
+\<close>
+
+locale imap_ops =
+  fixes khash :: "'k :: heap \<Rightarrow> integer" and keq :: "'k \<Rightarrow> 'k \<Rightarrow> bool"
+  assumes keq_eq[simp]: "keq x y \<longleftrightarrow> x = y"
+begin
+
 lemma hm_look_list_eq:
-  assumes "\<forall>e \<in> set b. fst e = ihash (fst (snd e))"
-  shows "hm_look_list (ihash x) x b = map_of (map snd b) x"
+  assumes "\<forall>e \<in> set b. fst e = khash (fst (snd e))"
+  shows "hm_look_list keq (khash x) x b = map_of (map snd b) x"
   using assms by (induct b) auto
 
 lemma hm_del_list_eq:
-  assumes "\<forall>e \<in> set b. fst e = ihash (fst (snd e))"
+  assumes "\<forall>e \<in> set b. fst e = khash (fst (snd e))"
     and "distinct (map (\<lambda>e. fst (snd e)) b)"
-  shows "map (\<lambda>e. fst (snd e)) (hm_del_list (ihash x) x b)
+  shows "map (\<lambda>e. fst (snd e)) (hm_del_list keq (khash x) x b)
       = removeAll x (map (\<lambda>e. fst (snd e)) b)"
   using assms by (induct b) auto
 
-lemma hm_del_list_set: "set (hm_del_list h x b) \<subseteq> set b"
+lemma hm_del_list_set: "set (hm_del_list keq h x b) \<subseteq> set b"
   by (induct b) auto
 
 subsection \<open>Bucket indices are in range\<close>
@@ -69,16 +80,16 @@ lemma nat_of_integer_less:
 
 text \<open>The bucket a key belongs to, as an index into the list of buckets.\<close>
 
-definition ibucket :: "integer \<Rightarrow> event_data tuple \<Rightarrow> nat" where
-  "ibucket n x = nat_of_integer (ibkt (ihash x) n)"
+definition ibucket :: "integer \<Rightarrow> 'k \<Rightarrow> nat" where
+  "ibucket n x = nat_of_integer (ibkt (khash x) n)"
 
-lemma ibucket_conv: "0 < n \<Longrightarrow> (ibkt (ihash x) n = integer_of_nat i) \<longleftrightarrow> ibucket n x = i"
-  using ibkt_in_range[of n "ihash x"]
+lemma ibucket_conv: "0 < n \<Longrightarrow> (ibkt (khash x) n = integer_of_nat i) \<longleftrightarrow> ibucket n x = i"
+  using ibkt_in_range[of n "khash x"]
   by (auto simp: ibucket_def integer_of_nat_nat_of_integer)
 
 lemma ibucket_lt: "0 < n \<Longrightarrow> integer_of_nat l = n \<Longrightarrow> ibucket n x < l"
   unfolding ibucket_def
-  by (rule nat_of_integer_less) (use ibkt_in_range[of n "ihash x"] in auto)
+  by (rule nat_of_integer_less) (use ibkt_in_range[of n "khash x"] in auto)
 
 subsection \<open>The abstraction\<close>
 
@@ -90,10 +101,10 @@ text \<open>
   depend on that.
 \<close>
 
-definition ientry_ok :: "integer \<Rightarrow> nat \<Rightarrow> ('v ientry) \<Rightarrow> bool" where
-  "ientry_ok n i e \<longleftrightarrow> fst e = ihash (fst (snd e)) \<and> ibucket n (fst (snd e)) = i"
+definition ientry_ok :: "integer \<Rightarrow> nat \<Rightarrow> (('k, 'v) ientry) \<Rightarrow> bool" where
+  "ientry_ok n i e \<longleftrightarrow> fst e = khash (fst (snd e)) \<and> ibucket n (fst (snd e)) = i"
 
-definition imap_inv :: "integer \<Rightarrow> ('v ientry) list list \<Rightarrow> bool" where
+definition imap_inv :: "integer \<Rightarrow> (('k, 'v) ientry) list list \<Rightarrow> bool" where
   "imap_inv n bs \<longleftrightarrow> 0 < n \<and> integer_of_nat (length bs) = n \<and>
      (\<forall>i < length bs. \<forall>e \<in> set (bs ! i). ientry_ok n i e) \<and>
      distinct (map (\<lambda>e. fst (snd e)) (concat bs))"
@@ -105,10 +116,10 @@ text \<open>
   which is what the growth step needs.
 \<close>
 
-definition imap_map :: "integer \<Rightarrow> ('v ientry) list list \<Rightarrow> event_data tuple \<Rightarrow> 'v option" where
-  "imap_map n bs x = hm_look_list (ihash x) x (bs ! ibucket n x)"
+definition imap_map :: "integer \<Rightarrow> (('k, 'v) ientry) list list \<Rightarrow> 'k \<Rightarrow> 'v option" where
+  "imap_map n bs x = hm_look_list keq (khash x) x (bs ! ibucket n x)"
 
-definition is_imap :: "(event_data tuple \<Rightarrow> 'v option) \<Rightarrow> ('v::heap) imap \<Rightarrow> assn" where
+definition is_imap :: "('k \<Rightarrow> 'v option) \<Rightarrow> ('k, 'v::heap) imap \<Rightarrow> assn" where
   "is_imap m q =
      (\<exists>\<^sub>Abs. snd (snd q) \<mapsto>\<^sub>a bs * \<up>(imap_inv (fst q) bs \<and> m = imap_map (fst q) bs))"
 
@@ -121,7 +132,7 @@ lemma imap_inv_len: "imap_inv n bs \<Longrightarrow> integer_of_nat (length bs) 
 lemma imap_inv_bucket_lt: "imap_inv n bs \<Longrightarrow> ibucket n x < length bs"
   by (rule ibucket_lt[OF imap_inv_pos imap_inv_len])
 
-lemma imap_inv_hash: "imap_inv n bs \<Longrightarrow> i < length bs \<Longrightarrow> \<forall>e \<in> set (bs ! i). fst e = ihash (fst (snd e))"
+lemma imap_inv_hash: "imap_inv n bs \<Longrightarrow> i < length bs \<Longrightarrow> \<forall>e \<in> set (bs ! i). fst e = khash (fst (snd e))"
   by (auto simp: imap_inv_def ientry_ok_def)
 
 lemma in_concat_nth:
@@ -302,7 +313,7 @@ qed
 lemma imap_map_list_update:
   assumes inv: "imap_inv n bs" and i: "i < length bs"
   shows "imap_map n (list_update bs i b') x =
-    (if i = ibucket n x then hm_look_list (ihash x) x b' else imap_map n bs x)"
+    (if i = ibucket n x then hm_look_list keq (khash x) x b' else imap_map n bs x)"
   using imap_inv_bucket_lt[OF inv] i by (simp add: imap_map_def)
 
 subsection \<open>Creating a table\<close>
@@ -329,7 +340,7 @@ qed
 subsection \<open>Looking a key up\<close>
 
 lemma im_lookup_h_rule:
-  "<is_imap m q> im_lookup_h q (ihash x) x <\<lambda>r. is_imap m q * \<up>(r = m x)>"
+  "<is_imap m q> im_lookup_h keq q (khash x) x <\<lambda>r. is_imap m q * \<up>(r = m x)>"
 proof (cases q)
   case (fields n c a)
   show ?thesis
@@ -344,7 +355,7 @@ proof (cases q)
   qed
 qed
 
-lemma im_lookup_rule: "<is_imap m q> im_lookup q x <\<lambda>r. is_imap m q * \<up>(r = m x)>"
+lemma im_lookup_rule: "<is_imap m q> im_lookup khash keq q x <\<lambda>r. is_imap m q * \<up>(r = m x)>"
   unfolding im_lookup_def by (rule im_lookup_h_rule)
 
 subsection \<open>Reading all entries back\<close>
@@ -433,7 +444,7 @@ text \<open>
 \<close>
 
 lemma im_fill_rule:
-  "imap_inv n bs \<Longrightarrow> (\<forall>e \<in> set kvs. fst e = ihash (fst (snd e))) \<Longrightarrow>
+  "imap_inv n bs \<Longrightarrow> (\<forall>e \<in> set kvs. fst e = khash (fst (snd e))) \<Longrightarrow>
    distinct (map (\<lambda>e. fst (snd e)) (concat bs @ kvs)) \<Longrightarrow>
    <a \<mapsto>\<^sub>a bs>
      im_fill (n, c, a) kvs
@@ -446,7 +457,7 @@ next
   case (Cons e r)
   note inv = Cons(2)
   have pos: "0 < n" by (rule imap_inv_pos[OF inv])
-  have hsh: "fst e = ihash (fst (snd e))" using Cons(3) by simp
+  have hsh: "fst e = khash (fst (snd e))" using Cons(3) by simp
   define i where "i = ibucket n (fst (snd e))"
   have ib: "ibkt (fst e) n = integer_of_nat i"
     unfolding i_def hsh by (simp add: ibucket_conv[OF pos])
@@ -508,17 +519,17 @@ lemma im_grow_rule:
   shows "<a \<mapsto>\<^sub>a bs> im_grow (n, c, a) <\<lambda>q'. is_imap (imap_map n bs) q'>\<^sub>t"
 proof -
   let ?k = "\<lambda>e. fst (snd e)"
-  have hsh0: "\<forall>e \<in> set (concat bs). fst e = ihash (?k e)"
+  have hsh0: "\<forall>e \<in> set (concat bs). fst e = khash (?k e)"
   proof
     fix e assume "e \<in> set (concat bs)"
     from in_concat_nth[OF this] obtain j where "j < length bs" and "e \<in> set (bs ! j)" by blast
-    then show "fst e = ihash (?k e)" using inv by (auto simp: imap_inv_def ientry_ok_def)
+    then show "fst e = khash (?k e)" using inv by (auto simp: imap_inv_def ientry_ok_def)
   qed
-  have hsh: "\<forall>e \<in> set (concat (rev bs)). fst e = ihash (?k e)" using hsh0 by simp
+  have hsh: "\<forall>e \<in> set (concat (rev bs)). fst e = khash (?k e)" using hsh0 by simp
   have dst: "distinct (map ?k (concat (rev bs)))"
     by (rule distinct_map_mset_cong[OF mset_concat_rev]) (use inv in \<open>simp add: imap_inv_def\<close>)
   define n' where "n' = im_cap (2 * n)"
-  define bs0 where "bs0 = replicate (nat_of_integer n') ([] :: 'a ientry list)"
+  define bs0 where "bs0 = replicate (nat_of_integer n') ([] :: ('k, 'a) ientry list)"
   have p': "0 < n'" unfolding n'_def by (rule im_cap_pos)
   have l': "integer_of_nat (length bs0) = n'"
     unfolding bs0_def by (simp add: integer_of_nat_nat_of_integer[OF less_imp_le[OF p']])
@@ -543,28 +554,28 @@ qed
 subsection \<open>Adding or replacing a key\<close>
 
 lemma hm_look_list_del:
-  "\<forall>e \<in> set b. fst e = ihash (fst (snd e)) \<Longrightarrow> y \<noteq> x \<Longrightarrow>
-   hm_look_list (ihash y) y (hm_del_list (ihash x) x b) = hm_look_list (ihash y) y b"
+  "\<forall>e \<in> set b. fst e = khash (fst (snd e)) \<Longrightarrow> y \<noteq> x \<Longrightarrow>
+   hm_look_list keq (khash y) y (hm_del_list keq (khash x) x b) = hm_look_list keq (khash y) y b"
   by (induct b) auto
 
 lemma hm_look_list_None_key:
-  "hm_look_list (ihash x) x b = None \<Longrightarrow> \<forall>e \<in> set b. fst e = ihash (fst (snd e)) \<Longrightarrow>
+  "hm_look_list keq (khash x) x b = None \<Longrightarrow> \<forall>e \<in> set b. fst e = khash (fst (snd e)) \<Longrightarrow>
    x \<notin> set (map (\<lambda>e. fst (snd e)) b)"
   by (induct b) (auto split: if_splits)
 
 lemma imap_map_insert:
   assumes inv: "imap_inv n bs"
-    and rest: "\<And>y. y \<noteq> x \<Longrightarrow> hm_look_list (ihash y) y rest
-                 = hm_look_list (ihash y) y (bs ! ibucket n x)"
-  shows "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # rest))
+    and rest: "\<And>y. y \<noteq> x \<Longrightarrow> hm_look_list keq (khash y) y rest
+                 = hm_look_list keq (khash y) y (bs ! ibucket n x)"
+  shows "imap_map n (list_update bs (ibucket n x) ((khash x, x, v) # rest))
        = (imap_map n bs)(x \<mapsto> v)"
 proof
   fix y
   have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
-  note upd = imap_map_list_update[OF inv lt, of "(ihash x, x, v) # rest" y]
+  note upd = imap_map_list_update[OF inv lt, of "(khash x, x, v) # rest" y]
   consider (eq) "y = x" | (same) "y \<noteq> x" "ibucket n x = ibucket n y"
     | (other) "y \<noteq> x" "ibucket n x \<noteq> ibucket n y" by blast
-  then show "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # rest)) y
+  then show "imap_map n (list_update bs (ibucket n x) ((khash x, x, v) # rest)) y
       = ((imap_map n bs)(x \<mapsto> v)) y"
   proof cases
     case eq
@@ -590,60 +601,60 @@ lemma im_update_bucket_inv:
     and sub: "set rest \<subseteq> set (bs ! ibucket n x)"
     and dk: "distinct (map (\<lambda>e. fst (snd e)) rest)"
     and nk: "x \<notin> set (map (\<lambda>e. fst (snd e)) rest)"
-  shows "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # rest))"
+  shows "imap_inv n (list_update bs (ibucket n x) ((khash x, x, v) # rest))"
 proof (rule imap_inv_list_update[OF inv imap_inv_bucket_lt[OF inv]])
-  fix e assume "e \<in> set ((ihash x, x, v) # rest)"
+  fix e assume "e \<in> set ((khash x, x, v) # rest)"
   then show "ientry_ok n (ibucket n x) e"
     using sub inv imap_inv_bucket_lt[OF inv] by (auto simp: ientry_ok_def imap_inv_def)
 next
-  show "distinct (map (\<lambda>e. fst (snd e)) ((ihash x, x, v) # rest))" using dk nk by simp
+  show "distinct (map (\<lambda>e. fst (snd e)) ((khash x, x, v) # rest))" using dk nk by simp
 qed
 
 lemma im_update_None:
-  assumes inv: "imap_inv n bs" and lk: "hm_look_list (ihash x) x (bs ! ibucket n x) = None"
-  shows "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))"
-    and "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))
+  assumes inv: "imap_inv n bs" and lk: "hm_look_list keq (khash x) x (bs ! ibucket n x) = None"
+  shows "imap_inv n (list_update bs (ibucket n x) ((khash x, x, v) # bs ! ibucket n x))"
+    and "imap_map n (list_update bs (ibucket n x) ((khash x, x, v) # bs ! ibucket n x))
        = (imap_map n bs)(x \<mapsto> v)"
 proof -
   have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
-  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = ihash (fst (snd e))"
+  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = khash (fst (snd e))"
     by (rule imap_inv_hash[OF inv lt])
-  show "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))"
+  show "imap_inv n (list_update bs (ibucket n x) ((khash x, x, v) # bs ! ibucket n x))"
     by (rule im_update_bucket_inv[OF inv subset_refl imap_inv_bucket_distinct[OF inv lt]
         hm_look_list_None_key[OF lk hb]])
-  show "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))
+  show "imap_map n (list_update bs (ibucket n x) ((khash x, x, v) # bs ! ibucket n x))
       = (imap_map n bs)(x \<mapsto> v)"
     by (rule imap_map_insert[OF inv]) simp
 qed
 
 lemma im_update_Some:
-  assumes inv: "imap_inv n bs" and lk: "hm_look_list (ihash x) x (bs ! ibucket n x) = Some u"
+  assumes inv: "imap_inv n bs" and lk: "hm_look_list keq (khash x) x (bs ! ibucket n x) = Some u"
   shows "imap_inv n (list_update bs (ibucket n x)
-            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))"
+            ((khash x, x, v) # hm_del_list keq (khash x) x (bs ! ibucket n x)))"
     and "imap_map n (list_update bs (ibucket n x)
-            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))
+            ((khash x, x, v) # hm_del_list keq (khash x) x (bs ! ibucket n x)))
        = (imap_map n bs)(x \<mapsto> v)"
 proof -
   have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
-  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = ihash (fst (snd e))"
+  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = khash (fst (snd e))"
     by (rule imap_inv_hash[OF inv lt])
   have db: "distinct (map (\<lambda>e. fst (snd e)) (bs ! ibucket n x))"
     by (rule imap_inv_bucket_distinct[OF inv lt])
-  have km: "map (\<lambda>e. fst (snd e)) (hm_del_list (ihash x) x (bs ! ibucket n x))
+  have km: "map (\<lambda>e. fst (snd e)) (hm_del_list keq (khash x) x (bs ! ibucket n x))
       = removeAll x (map (\<lambda>e. fst (snd e)) (bs ! ibucket n x))"
     by (rule hm_del_list_eq[OF hb db])
   show "imap_inv n (list_update bs (ibucket n x)
-            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))"
+            ((khash x, x, v) # hm_del_list keq (khash x) x (bs ! ibucket n x)))"
     by (rule im_update_bucket_inv[OF inv hm_del_list_set])
        (simp_all add: km db distinct_removeAll)
   show "imap_map n (list_update bs (ibucket n x)
-            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))
+            ((khash x, x, v) # hm_del_list keq (khash x) x (bs ! ibucket n x)))
       = (imap_map n bs)(x \<mapsto> v)"
     by (rule imap_map_insert[OF inv]) (rule hm_look_list_del[OF hb])
 qed
 
 lemma im_update_h_rule:
-  "<is_imap m q> im_update_h q (ihash x) x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
+  "<is_imap m q> im_update_h keq q (khash x) x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
 proof (cases q)
   case (fields n c a)
   have pre: "is_imap m (n, c, a) = (\<exists>\<^sub>Abs. a \<mapsto>\<^sub>a bs * \<up>(imap_inv n bs \<and> m = imap_map n bs))"
@@ -654,8 +665,19 @@ proof (cases q)
         im_update_None im_update_Some split: option.splits heap: im_grow_rule)
 qed
 
-lemma im_update_rule: "<is_imap m q> im_update q x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
+lemma im_update_rule: "<is_imap m q> im_update khash keq q x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
   unfolding im_update_def by (rule im_update_h_rule)
+
+end
+
+text \<open>The map of the monitor over the wide tuples, and the one of the monitor over the short
+  tuples.\<close>
+
+interpretation itup: imap_ops ihash teq
+  by unfold_locales simp
+
+interpretation ided: imap_ops uihash ueq
+  by unfold_locales (induct_tac x y rule: ueq.induct, auto simp: List.null_iff)
 
 (*<*)
 end

@@ -139,24 +139,53 @@ code_printing
 | constant ibkt \<rightharpoonup> (OCaml) "(fun h n -> Z.logand h (Z.pred n))"
 
 text \<open>
+  The same two primitives for the short tuples further down in this session, which are lists of
+  event data with nothing around the elements.  The hash walks one constructor less per element,
+  and the equality compares the elements themselves.
+\<close>
+
+fun ueq :: "event_data list \<Rightarrow> event_data list \<Rightarrow> bool" where
+  "ueq [] ys = List.null ys"
+| "ueq (x # xs) [] = False"
+| "ueq (x # xs) (y # ys) = (x = y \<and> ueq xs ys)"
+
+definition uihash :: "event_data list \<Rightarrow> integer" where
+  "uihash t = 0"
+
+code_printing
+  constant uihash \<rightharpoonup> (OCaml) "(fun t -> let rec go h l = (match l with [] -> h | EInt z :: r -> go (h * 31 + Z.hash z) r | EFloat f :: r -> go (h * 31 + Hashtbl.hash f) r | EString s :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of'_int ((go 17 t) land 1073741823))"
+
+text \<open>
   An entry is a hash, a key and a value. The capacity is carried as a pure value rather than
   read back from the heap, because reading the array's length allocates an arbitrary-precision
   integer on every access.
 \<close>
 
-type_synonym 'v ientry = "integer \<times> event_data tuple \<times> 'v"
+type_synonym ('k, 'v) ientry = "integer \<times> 'k \<times> 'v"
 
-type_synonym 'v imap = "integer \<times> integer \<times> (('v ientry) list) array"
+type_synonym ('k, 'v) imap = "integer \<times> integer \<times> ((('k, 'v) ientry) list) array"
 
-fun hm_look_list :: "integer \<Rightarrow> event_data tuple \<Rightarrow> ('v ientry) list \<Rightarrow> 'v option" where
-  "hm_look_list h x [] = None"
-| "hm_look_list h x (y # ys) =
-     (if h = fst y \<and> teq x (fst (snd y)) then Some (snd (snd y)) else hm_look_list h x ys)"
+text \<open>
+  The key type is a parameter, because the monitor over the short tuples keys the same maps on
+  @{typ "event_data list"} where the one over the wide tuples keys them on
+  @{typ "event_data tuple"}.  The operations that compare two keys take the equality as an
+  argument rather than using the one of @{class equal}, which the code generator would turn into
+  a structural comparison assembled from dictionaries; the argument is applied at most once per
+  operation, behind the comparison of the two stored hashes, so passing it costs nothing that
+  the hash itself does not cost many times over.
+\<close>
 
-fun hm_del_list :: "integer \<Rightarrow> event_data tuple \<Rightarrow> ('v ientry) list \<Rightarrow> ('v ientry) list" where
-  "hm_del_list h x [] = []"
-| "hm_del_list h x (y # ys) =
-     (if h = fst y \<and> teq x (fst (snd y)) then ys else y # hm_del_list h x ys)"
+fun hm_look_list :: "('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> integer \<Rightarrow> 'k \<Rightarrow> (('k, 'v) ientry) list \<Rightarrow>
+    'v option" where
+  "hm_look_list eq h x [] = None"
+| "hm_look_list eq h x (y # ys) =
+     (if h = fst y \<and> eq x (fst (snd y)) then Some (snd (snd y)) else hm_look_list eq h x ys)"
+
+fun hm_del_list :: "('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> integer \<Rightarrow> 'k \<Rightarrow> (('k, 'v) ientry) list \<Rightarrow>
+    (('k, 'v) ientry) list" where
+  "hm_del_list eq h x [] = []"
+| "hm_del_list eq h x (y # ys) =
+     (if h = fst y \<and> eq x (fst (snd y)) then ys else y # hm_del_list eq h x ys)"
 
 text \<open>
   Capacities are powers of two of at least eight, so that the bucket index is the hash masked
@@ -170,10 +199,10 @@ fun im_cap_aux :: "nat \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow>
 definition im_cap :: "integer \<Rightarrow> integer" where
   "im_cap n = im_cap_aux 64 8 n"
 
-definition im_new :: "integer \<Rightarrow> ('v::heap) imap Heap" where
+definition im_new :: "integer \<Rightarrow> ('k::heap, 'v::heap) imap Heap" where
   "im_new n = (let m = im_cap n in do { a \<leftarrow> Array.new' m []; return (m, 0, a) })"
 
-definition im_size :: "('v::heap) imap \<Rightarrow> integer" where
+definition im_size :: "('k, 'v::heap) imap \<Rightarrow> integer" where
   "im_size q = fst (snd q)"
 
 subsection \<open>Operations\<close>
@@ -182,35 +211,43 @@ text \<open>
   The hash-taking variants are the primitive ones; the others hash and delegate.
 \<close>
 
-definition im_lookup_h :: "('v::heap) imap \<Rightarrow> integer \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
-  "im_lookup_h q h x = (case q of (n, c, a) \<Rightarrow>
-     do { b \<leftarrow> Array.nth' a (ibkt h n); return (hm_look_list h x b) })"
+definition im_lookup_h :: "('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> integer \<Rightarrow> 'k \<Rightarrow>
+    'v option Heap" where
+  "im_lookup_h eq q h x = (case q of (n, c, a) \<Rightarrow>
+     do { b \<leftarrow> Array.nth' a (ibkt h n); return (hm_look_list eq h x b) })"
 
-definition im_lookup :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
-  "im_lookup q x = im_lookup_h q (ihash x) x"
+definition im_lookup :: "('k \<Rightarrow> integer) \<Rightarrow> ('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> 'k \<Rightarrow>
+    'v option Heap" where
+  "im_lookup hsh eq q x = im_lookup_h eq q (hsh x) x"
 
-fun hm_look_list_proj :: "integer \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow> ('v ientry) list \<Rightarrow> 'v option" where
+text \<open>The probe variant that never builds the projection is used only by the join over the wide
+  tuples, whose key is as long as the formula is wide; the one over the short tuples projects
+  first, because its key is only as long as the shared columns.\<close>
+
+fun hm_look_list_proj :: "integer \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow>
+    ((event_data tuple, 'v) ientry) list \<Rightarrow> 'v option" where
   "hm_look_list_proj h m x [] = None"
 | "hm_look_list_proj h m x (y # ys) =
      (if h = fst y \<and> teq_proj m x (fst (snd y)) then Some (snd (snd y))
       else hm_look_list_proj h m x ys)"
 
-definition im_lookup_proj :: "('v::heap) imap \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow> 'v option Heap" where
+definition im_lookup_proj :: "(event_data tuple, 'v::heap) imap \<Rightarrow> bool list \<Rightarrow> event_data tuple \<Rightarrow>
+    'v option Heap" where
   "im_lookup_proj q m x = (case q of (n, c, a) \<Rightarrow>
      (let h = ihash_proj m x in
       do { b \<leftarrow> Array.nth' a (ibkt h n); return (hm_look_list_proj h m x b) }))"
 
 partial_function (heap) im_fold_idx ::
-  "(('v ientry) list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> (('v::heap) ientry list) array \<Rightarrow>
+  "(('k, 'v) ientry list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> (('k::heap, 'v::heap) ientry list) array \<Rightarrow>
     integer \<Rightarrow> integer \<Rightarrow> 'b \<Rightarrow> 'b Heap" where
   [code]:
   "im_fold_idx f a i n acc = (if n \<le> i then return acc
      else do { b \<leftarrow> Array.nth' a i; im_fold_idx f a (i + 1) n (f b acc) })"
 
-definition im_entries :: "('v::heap) imap \<Rightarrow> ('v ientry) list Heap" where
+definition im_entries :: "('k::heap, 'v::heap) imap \<Rightarrow> (('k, 'v) ientry) list Heap" where
   "im_entries q = (case q of (n, c, a) \<Rightarrow> im_fold_idx (\<lambda>b acc. b @ acc) a 0 n [])"
 
-definition im_to_list :: "('v::heap) imap \<Rightarrow> (event_data tuple \<times> 'v) list Heap" where
+definition im_to_list :: "('k::heap, 'v::heap) imap \<Rightarrow> ('k \<times> 'v) list Heap" where
   "im_to_list q = do { kvs \<leftarrow> im_entries q; return (map snd kvs) }"
 
 text \<open>
@@ -219,41 +256,46 @@ text \<open>
   ends up with \<open>n\<close> entries hashes each of them once more for every doubling it survives.
 \<close>
 
-partial_function (heap) im_fill :: "('v::heap) imap \<Rightarrow> ('v ientry) list \<Rightarrow> ('v imap) Heap" where
+partial_function (heap) im_fill :: "('k::heap, 'v::heap) imap \<Rightarrow> (('k, 'v) ientry) list \<Rightarrow>
+    (('k, 'v) imap) Heap" where
   [code]:
   "im_fill q kvs = (case kvs of [] \<Rightarrow> return q
      | e # r \<Rightarrow> (case q of (n, c, a) \<Rightarrow> (let i = ibkt (fst e) n in
         do { b \<leftarrow> Array.nth' a i; _ \<leftarrow> Array.upd' a i (e # b); im_fill (n, c + 1, a) r })))"
 
-definition im_grow :: "('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+definition im_grow :: "('k::heap, 'v::heap) imap \<Rightarrow> (('k, 'v) imap) Heap" where
   "im_grow q = (case q of (n, c, a) \<Rightarrow>
      do { kvs \<leftarrow> im_entries q; q' \<leftarrow> im_new (2 * n); im_fill q' kvs })"
 
-definition im_update_h :: "('v::heap) imap \<Rightarrow> integer \<Rightarrow> event_data tuple \<Rightarrow> 'v \<Rightarrow> ('v imap) Heap" where
-  "im_update_h q h x v = (case q of (n, c, a) \<Rightarrow> (let i = ibkt h n in
+definition im_update_h :: "('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> integer \<Rightarrow> 'k \<Rightarrow> 'v \<Rightarrow>
+    (('k, 'v) imap) Heap" where
+  "im_update_h eq q h x v = (case q of (n, c, a) \<Rightarrow> (let i = ibkt h n in
      do { b \<leftarrow> Array.nth' a i;
-          (case hm_look_list h x b of
-             Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i ((h, x, v) # hm_del_list h x b); return q }
+          (case hm_look_list eq h x b of
+             Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i ((h, x, v) # hm_del_list eq h x b); return q }
            | None \<Rightarrow> do { _ \<leftarrow> Array.upd' a i ((h, x, v) # b);
                           if c + 1 < n then return (n, c + 1, a) else im_grow (n, c + 1, a) }) }))"
 
-definition im_update :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> 'v \<Rightarrow> ('v imap) Heap" where
-  "im_update q x v = im_update_h q (ihash x) x v"
+definition im_update :: "('k \<Rightarrow> integer) \<Rightarrow> ('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> 'k \<Rightarrow>
+    'v \<Rightarrow> (('k, 'v) imap) Heap" where
+  "im_update hsh eq q x v = im_update_h eq q (hsh x) x v"
 
-definition im_delete_h :: "('v::heap) imap \<Rightarrow> integer \<Rightarrow> event_data tuple \<Rightarrow> ('v imap) Heap" where
-  "im_delete_h q h x = (case q of (n, c, a) \<Rightarrow> (let i = ibkt h n in
+definition im_delete_h :: "('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> integer \<Rightarrow> 'k \<Rightarrow>
+    (('k, 'v) imap) Heap" where
+  "im_delete_h eq q h x = (case q of (n, c, a) \<Rightarrow> (let i = ibkt h n in
      do { b \<leftarrow> Array.nth' a i;
-          (case hm_look_list h x b of None \<Rightarrow> return q
-           | Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i (hm_del_list h x b); return (n, c - 1, a) }) }))"
+          (case hm_look_list eq h x b of None \<Rightarrow> return q
+           | Some _ \<Rightarrow> do { _ \<leftarrow> Array.upd' a i (hm_del_list eq h x b); return (n, c - 1, a) }) }))"
 
-definition im_delete :: "('v::heap) imap \<Rightarrow> event_data tuple \<Rightarrow> ('v imap) Heap" where
-  "im_delete q x = im_delete_h q (ihash x) x"
+definition im_delete :: "('k \<Rightarrow> integer) \<Rightarrow> ('k \<Rightarrow> 'k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> 'k \<Rightarrow>
+    (('k, 'v) imap) Heap" where
+  "im_delete hsh eq q x = im_delete_h eq q (hsh x) x"
 
-definition im_count :: "('v ientry) list \<Rightarrow> integer" where
+definition im_count :: "(('k, 'v) ientry) list \<Rightarrow> integer" where
   "im_count b = integer_of_nat (length b)"
 
 partial_function (heap) im_filter_idx ::
-  "(event_data tuple \<Rightarrow> bool) \<Rightarrow> (('v::heap) ientry list) array \<Rightarrow>
+  "('k \<Rightarrow> bool) \<Rightarrow> (('k::heap, 'v::heap) ientry list) array \<Rightarrow>
     integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer Heap" where
   [code]:
   "im_filter_idx p a i n c = (if n \<le> i then return c
@@ -269,21 +311,21 @@ text \<open>
   join columns.
 \<close>
 
-definition im_filter :: "(event_data tuple \<Rightarrow> bool) \<Rightarrow> ('v::heap) imap \<Rightarrow> ('v imap) Heap" where
+definition im_filter :: "('k \<Rightarrow> bool) \<Rightarrow> ('k::heap, 'v::heap) imap \<Rightarrow> (('k, 'v) imap) Heap" where
   "im_filter p q = (case q of (n, c, a) \<Rightarrow> do { c \<leftarrow> im_filter_idx p a 0 n c; return (n, c, a) })"
 
 subsection \<open>A hash set of tuples on the heap\<close>
 
-type_synonym itbl = "unit imap"
+type_synonym itbl = "(event_data tuple, unit) imap"
 
 definition ht_new :: "integer \<Rightarrow> itbl Heap" where
   "ht_new n = im_new n"
 
 definition ht_ins :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> itbl Heap" where
-  "ht_ins q x = im_update q x ()"
+  "ht_ins q x = im_update ihash teq q x ()"
 
 definition ht_mem :: "itbl \<Rightarrow> event_data tuple \<Rightarrow> bool Heap" where
-  "ht_mem q x = do { v \<leftarrow> im_lookup q x; return (v \<noteq> None) }"
+  "ht_mem q x = do { v \<leftarrow> im_lookup ihash teq q x; return (v \<noteq> None) }"
 
 partial_function (heap) ht_ins_list :: "itbl \<Rightarrow> event_data tuple list \<Rightarrow> itbl Heap" where
   [code]:

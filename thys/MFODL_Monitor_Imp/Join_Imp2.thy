@@ -51,7 +51,7 @@ text \<open>
   can join with.
 \<close>
 
-type_synonym jidx = "(event_data tuple list) imap"
+type_synonym jidx = "(event_data tuple, event_data tuple list) imap"
 
 text \<open>
   The operations on a heap map take the value type's @{class heap} dictionary, and the code
@@ -62,15 +62,15 @@ text \<open>
 
 setup \<open>Monomorphize.box_cmd
   [("im_lookup_proj", "jidx_lookup_v", ["event_data tuple list"]),
-   ("im_lookup_h", "jidx_lookup_h_v", ["event_data tuple list"]),
-   ("im_update_h", "jidx_update_h_v", ["event_data tuple list"])]\<close>
+   ("im_lookup_h", "jidx_lookup_h_v", ["event_data tuple", "event_data tuple list"]),
+   ("im_update_h", "jidx_update_h_v", ["event_data tuple", "event_data tuple list"])]\<close>
 
 partial_function (heap) idx_ins_list :: "bool list \<Rightarrow> event_data tuple list \<Rightarrow> jidx \<Rightarrow> jidx Heap" where
   [code]:
   "idx_ins_list msk xs q = (case xs of [] \<Rightarrow> return q
      | x # r \<Rightarrow> (let k = proj_tuple msk x; h = ihash k in
-         do { v \<leftarrow> im_lookup_h q h k;
-              q \<leftarrow> im_update_h q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
+         do { v \<leftarrow> im_lookup_h teq q h k;
+              q \<leftarrow> im_update_h teq q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
               idx_ins_list msk r q }))"
 
 text \<open>
