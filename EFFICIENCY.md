@@ -3707,3 +3707,8 @@ theorem dmulti_join_rule:
 So `-dense -heap_maps` now computes what `-dense` computes, which 20.2 in turn relates to the
 kernel. `im_delete_h` and `im_filter`, which the Since and Until structures use but the join does
 not, are untouched; `Table_Imp` still has no correctness property beyond what the join needed.
+
+The generated OCaml is byte-identical -- the two theories add lemmas and no code equations -- and
+both cram suites are green. Differentially, all 537 `-verified` invocations of the suites agree
+between `-dense` and the plain verified kernel, and all 537 agree between `-dense` and
+`-dense -heap_maps`, which is the branch this section proves.
