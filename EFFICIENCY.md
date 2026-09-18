@@ -3812,8 +3812,8 @@ behind. It just does far more of them against memory.
 Four things, in the order the profile sizes them. None of them is an imperative refinement; all
 four are representation or code-equation work of the kind Sections 7-19 already did.
 
-**1. The `option` in a dense tuple is provably dead weight.** A dense tuple has type
-`event_data option list`, but `Dense.thy` already carries
+**1. The `option` in a dense tuple is dead weight -- but not where this first said.** A dense
+tuple has type `event_data option list`, and `Dense.thy` already carries
 
 ```isabelle
 definition dwf_tuple :: "nat ⇒ 'a tuple ⇒ bool" where
@@ -3821,12 +3821,19 @@ definition dwf_tuple :: "nat ⇒ 'a tuple ⇒ bool" where
 definition dtable where "dtable cs D ⟷ (∀d ∈ D. dwf_tuple (length cs) d)"
 ```
 
-as an invariant of every dense table, in every theorem of the development. So every element of
-every dense tuple is a `Some`: two words of allocation and one dereference per element, for a
-constructor that cannot be anything else. Changing the dense representation to `event_data list`
-is a pure representation change with the invariant needed to justify it already proved. It is the
-one change that attacks the allocation ratio directly, and it touches every dense operation,
-which is why it is worth doing as its own step rather than folded into another.
+as an invariant of every dense table, in every theorem of the development, so every element of
+every dense tuple is a `Some`. This section first concluded that the wrapper therefore costs two
+words of allocation per element and that changing the representation to `event_data list` was the
+way to attack the allocation ratio. **That was wrong, and 20.21 measures why**: those `Some` cells
+arrive once with the input event and are then shared -- `dproj` and `dmerge` reuse the elements
+and allocate only cons cells -- so building dense tuples at all is 5.5% of allocation, and the
+`Some` cells are a fraction of that. The type change would have been weeks of work across eleven
+theories for a few per cent.
+
+What the option layer does cost, 23.3% of allocation, is its *dictionary and comparator chain*:
+`ccompare_optiona`, `ccompare_lista`, `ceq_optiona`, `ceq_lista`, `equal_option`, `equal_list`,
+`comparator_option` and `comparator_list`, rebuilt per call in the dense inner loops. That is a
+code-equation problem, not a type problem, and 20.21 fixes it.
 
 **2. The red-black tree primitives take the comparator as an argument, so every use of it is an
 indirect call.** Section 8's monomorphisation baked `ed_comparator` into the *call sites* --
@@ -3873,3 +3880,120 @@ the right tool for the Since and Until windows, where the same map is updated in
 and the pure version copied a tree per update. They are the wrong tool for the join, where the
 tables are built once and read once, and 20.18's timings bear that out. What is left to win is in
 the representation, and items 1 to 4 are all provable in HOL.
+
+### 20.21 The dictionaries and the comparator of the dense inner loops
+
+20.20's items 1 and 2, done. Both turned out to be in the generated code rather than in any
+definition, and `Dense_Code_Opt.thy` holds them.
+
+**What the profile found.** Allocation was attributed by sampling the callers of `caml_call_gc`
+under a 1 Kword nursery -- with OCaml's inline bump-pointer allocation the collector is entered
+once per nursery filled, attributed to whichever frame tripped the limit, which samples frames in
+proportion to the words they allocate. 1,265 samples on `complex` gave
+
+| | share of allocation |
+|---|---:|
+| red-black tree node churn (`balance` alone 21.3%) | 34.0% |
+| dictionary and composite comparator construction | 23.3% |
+| `csorted_list_of_set` materialisation (`gen_keys`) | 6.7% |
+| building dense tuples at all (cons cells) | 5.5% |
+| parsing and the log lexer | 4.0% |
+
+and the second row had a single cause, visible in the generated code:
+
+```ocaml
+let rec dprobe_step_l p rk m y acc =
+  (match lookupa ((ccompare_list (ccompare_option ccompare_event_data)),
+                  (equal_list (equal_option equal_event_data)))
+           m (dproj rk y)
+   with None -> acc | Some l -> fold (fun x -> ed_insert (dmerge p x y)) l acc)
+```
+
+Four dictionary records, a `Some` and two closures, built for every probed tuple. Section 8
+removed exactly this from the kernel's inner loops, but it was written before the dense
+representation existed and its list of mapping value types does not contain the one the dense
+join index uses, `event_data tuple list`: a key of shared columns mapped to the tuples that agree
+on it. `Set.insert` in the same function was already redirected to `ed_insert`; only the mapping
+side was missed. Six monomorphised constants at that type close it, and the probe becomes
+
+```ocaml
+let rec dprobe_step_l p rk m y acc =
+  (match ed_lookup_tuples m (dproj rk y) with None -> acc
+   | Some l -> fold (fun x -> ed_insert (dmerge p x y)) l acc)
+```
+
+**And the tree now calls the comparator by name.** The primitives of
+`Deriving.RBT_Comparator_Impl` take the comparator as an argument, so inside `rbt_comp_lookup` it
+is an unknown function and OCaml compiles `c k x` as a generic two-argument application --
+15.5 M `caml_apply2` calls from the lookup, 6.5 M from the insertion, 1.7 M from the deletion, out
+of 57.4 M. Specialising each on `ed_comparator` gives
+
+```ocaml
+let rec ed_rbt_lookup x0 k = match x0, k with Empty, k -> None
+  | Branch (cc, l, x, y, r), k ->
+      (match ed_comparator k x with Eqa -> Some y | Lt -> ed_rbt_lookup l k
+        | Gt -> ed_rbt_lookup r k)
+```
+
+Nothing is proved about the trees: each copy is the partial application by definition and its code
+equations are the originals' with the argument substituted, so the `code_unfold` rules only choose
+which of two equal functions the generated code names.
+
+**What it costs to run.** Callgrind on `complex`, 2.1 MB log, against the same measurement in
+20.19:
+
+| | MonPoly | before | after |
+|---|---:|---:|---:|
+| instructions | 6.876 G | 7.194 G | **6.216 G** |
+| `caml_apply*` | 95 M | 490 M | **123 M** |
+| `comparator_list` | -- | 354 M | 75 M |
+| `comparator_option` | -- | 215 M | 45 M |
+| `ed_comparator` | -- | 296 M | 599 M |
+| GC | 445 M | 789 M | 726 M |
+| D1 misses | 40.2 M | 95.1 M | 87.7 M |
+| ... of which writes | 17.8 M | 56.8 M | 50.2 M |
+| minor words allocated | 132.9 M | 423.8 M | **372.9 M** |
+| promoted words | 5.56 M | 13.00 M | 11.80 M |
+
+Instructions fall 13.6%, of which three quarters is the generic application path collapsing into
+`ed_comparator` -- the work does not vanish, it moves into one frame with a direct call, which is
+why `ed_comparator` doubles while the two composite frames lose four fifths of their cost.
+Allocation falls 12% and the write misses 12%. Discounting the parts that are not monitoring, the
+verified monitor now takes 1.03x MonPoly's instructions where 20.19 measured 1.19x.
+
+**Timings**, nine repetitions, medians, 8.6 MB log, with 20.18's figures for comparison:
+
+| formula | MonPoly | pure | dense | dense+h | 20.18 dense | 20.18 dense+h |
+|---|---:|---:|---:|---:|---:|---:|
+| sincewide | 3.17s | 1.09x | **0.92x** | 0.91x | 0.93x | 0.95x |
+| untilwide | 3.04s | 1.20x | **0.99x** | 0.99x | 0.99x | 1.01x |
+| aggwide | 11.39s | 1.08x | 0.85x | **0.84x** | 0.80x | 0.80x |
+| once | 2.37s | 1.17x | 0.78x | **0.77x** | 0.76x | 0.77x |
+| eventually | 1.65s | 1.23x | **0.84x** | 0.87x | 0.88x | 0.88x |
+| complex | 2.90s | 1.89x | 1.15x | **0.96x** | 1.25x | 1.10x |
+
+**The verified monitor is now faster than MonPoly on all six.** The row that moved is `complex`:
+1.25x to 1.15x dense, and 1.10x to 0.96x with the heap index. That is the right row and the only
+one that should have moved -- it is the one benchmark with a genuine multi-way join on wide
+operands, so it is the only one where `dprobe_step_l` and `dindex_step` run millions of times.
+The other five do not go through the dense join index much and sit where they were; `aggwide`
+reads 0.85x against 20.18's 0.80x, but MonPoly's own absolute time on it moved from 12.51 s to
+11.39 s between the two runs, so that ratio is not comparable across runs and nothing in this
+change touches the aggregation.
+
+The exported OCaml is 26 lines longer, both cram suites are green, and both differential checks
+still agree on all 537 `-verified` invocations: `-dense` against the plain kernel and
+`-dense -heap_maps` against `-dense`.
+
+**Left from 20.20.** Item 3, the set operations -- `rbt_comp_union_swap_rec`,
+`rbt_comp_inter_swap_rec`, `rbt_comp_minus`, `rbt_comp_bulkload` and the `_with_key` variants --
+still receive `the (ccompare _A)` rather than `ed_comparator`, because Section 8 boxed them
+instead of monomorphising them and a box builds the dictionary once but still passes it. One
+`rbt_comp_union_with_key ed_comparator` site remains unspecialised for the same reason; it does
+not appear among the `caml_apply2` callers, so it was left rather than spend a build and a
+revalidation on it. Item 4, the join materialising both operands as lists, is untouched: `gen_keys`
+is still 6.7% of allocation. And the largest row of all, the 34% that is red-black tree node
+churn, is the price of a persistent tree -- MonPoly pays `caml_hash` and
+`caml_page_table_lookup` for 15% of its instructions precisely because it uses mutable hash
+tables there instead. That one is not a representation problem, and it is what the imperative
+window structures of Sections 20-21 are for.
