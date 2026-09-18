@@ -4298,10 +4298,15 @@ counterpart of the `mmtaux` structure, for which `Dense_Agg.thy`'s fused trigger
 neither `Copy` nor `Simple` nor `Match` applies, `MAndRel` when the constraint's variables escape
 the column set, `MNeg` when `cs ≠ []`, `MAnd` when the merge does not match, `MAnds` when the
 positive list is empty or the lengths disagree, `MAgg` on the column shape, and `MSince` and
-`MUntil` on the argument record. **Some of these are not incidental.** `MNeg` at `cs ≠ []` returns
-`unit_table n`, whose single tuple is `replicate n None`; densely that is a tuple of holes, exactly
-like 20.24's embedding. The guard is not marking work nobody got round to, it is marking a case the
-hole-free reading of the dense representation does not cover.
+`MUntil` on the argument record. **Most of these are dischargeable rather than cases to
+implement**, because `dof` is total on `mformula` and so was written defensively, while the
+formulas that actually reach it are safe. `safe_formula (¬⇩F φ) = (fv φ = {} ∧ safe_formula φ)`, so
+a safe negation has no free variables and `cs = []` holds at every reachable `MNeg`; the guard is
+provable from the `produces` hypotheses, not a gap. `MPred`'s three modes are exhaustive by
+construction in `minit0`, `MAndRel`'s constraint has `fv ψ ⊆ fv φ` from safety, `MAnds`' positive
+list is non-empty from safety, and `MAnd` and `MAgg` are of the same kind. The exception that is
+real work is `MSince` and `MUntil` with `args_agg args ≠ None`: the kernel fuses an aggregation
+into those operators and the dense fragment has no case for it.
 
 **What it would buy.** Coverage, not speed on the current benchmarks: 20.15 already measured zero
 subformulas evaluated by the sparse function on every benchmark in its table. Across the two cram
@@ -4313,6 +4318,22 @@ monitor.
 **It does not unblock the unboxing.** `DPure` is a boundary, and a boundary is what an unboxed
 dense representation wants: it runs `meval`, and instead of narrowing it would narrow and strip the
 wrappers in the same pass, at the cost of one traversal of the fallback subformula's output. The
-blocker for unboxing is 20.24's embedding, and `MNeg` above is a second instance of the same
-thing. Removing `DPure` and unboxing the representation are two separate projects, and the first
-is the larger of the two.
+blocker for unboxing is 20.24's embedding. Removing `DPure` and unboxing the representation are
+two separate projects, related only in that any operator written for the first should be written
+unboxed, so that it is not written twice.
+
+**And that embedding is not a wart, it is how the structure reuse works.** `dargs` sets
+`args_n = length cs_R` and `args_L = cpos cs_R (set cs_L)`, so the dense Since runs the *sparse*
+`mmsaux` at the dense width with the left operand's columns as a subset of positions, and
+`dsince_rel` keeps both buffers at `cs_R`:
+
+```isabelle
+dbuf = (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys, tss, sk)
+```
+
+That is exactly how the sparse Since works -- `args_L`, `args_R` and `wf_tuple` with holes -- and
+reusing it is what made 20.15 cheap. Removing the embedding therefore means a dense-native Since
+and Until: the left tables stored at `cs_L`, and the filtering step done with the dense masked
+join of `mk_djoin` and `dgen_join`, which is already proved. That is a new auxiliary structure
+with its own validity invariant and correctness proof for each of the two operators, and it is the
+largest single item in the unboxing.
