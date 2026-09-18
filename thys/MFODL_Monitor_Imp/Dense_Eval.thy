@@ -109,6 +109,9 @@ datatype dformula =
   | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mbufn"
   | DSince args "nat option list" dformula dformula "event_data mbuf2S" mmasaux
   | DUntil args "nat option list" dformula dformula "event_data mbuf2" "ts list" ts muaux_dq
+  | DAndAssign nat Formula.trm dformula
+  | DTP mtrm nat
+  | DTS mtrm
 
 fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
   and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
@@ -171,6 +174,11 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
             (mbuf2_add (map (dembedp pl) xs) ys buf) t (nts @ ts);
           (zs, aux'') = eval_muaux_dq dags nt aux'
       in (zs, DUntil dags pl \<phi>' \<psi>' buf' nts' nt aux''))"
+| "deval j ts db (DAndAssign p t \<phi>) =
+     (let (xs, \<phi>') = deval j ts db \<phi> in (map (dassign p t) xs, DAndAssign p t \<phi>'))"
+| "deval j ts db (DTP mt i) =
+     (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
+| "deval j ts db (DTS mt) = (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
 
 section \<open>The simulation relation\<close>
 
@@ -526,11 +534,24 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     duntil_rel n cs cs_L args tw t aux daux buf dbuf nts \<Longrightarrow>
     dsim n cs tw (DUntil dags pl \<phi>d \<psi>d dbuf nts t daux)
       (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
+| DsAndAssign: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MAndAssign \<phi> (y, t)) \<Longrightarrow>
+    dsim n cs0 tw \<phi>d \<phi> \<Longrightarrow>
+    y < n \<Longrightarrow> y \<notin> set cs0 \<Longrightarrow> Formula.fv_trm t \<subseteq> set cs0 \<Longrightarrow>
+    cs = merge_cols cs0 [y] \<Longrightarrow>
+    dsim n cs tw (DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<phi>d)
+      (mformula.MAndAssign \<phi> (y, t))"
+| DsTP: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MTP mt i) \<Longrightarrow>
+    cs = mtrm_dcols mt \<Longrightarrow>
+    dsim n cs tw (DTP mt i) (mformula.MTP mt i)"
+| DsTS: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MTS mt) \<Longrightarrow>
+    cs = mtrm_dcols mt \<Longrightarrow>
+    dsim n cs tw (DTS mt) (mformula.MTS mt)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
 lemma dsim_wf_cols: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_cols n cs"
-  by (induct rule: dsim.induct)
+  by (erule dsim.cases)
     (auto simp: ex_cols_sorted ex_cols_bound sorted_merge_cols set_merge_cols)
 
 lemma dsim_produces: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> produces n (set cs) tw \<phi>"
@@ -1491,6 +1512,81 @@ next
       unfolding f
       by (rule dsim.DsUntil[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub agg an aL aR
             dag pe rel'])
+  qed
+next
+  case (DsAndAssign n cs tw \<phi> y t cs0 \<phi>d)
+  note wf = DsAndAssign.hyps(1) and pr = DsAndAssign.hyps(2) and sim = DsAndAssign.hyps(3)
+    and IH = DsAndAssign.hyps(4) and yb = DsAndAssign.hyps(5)
+    and ynn = DsAndAssign.hyps(6) and fv = DsAndAssign.hyps(7)
+    and cse = DsAndAssign.hyps(8)
+    and w = DsAndAssign.prems(1) and sts = DsAndAssign.prems(2)
+    and mts = DsAndAssign.prems(3) and m = DsAndAssign.prems(4)
+  obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
+  have x: "xs = map (\<lambda>r. eval_assignment (y, t) ` r) ys"
+    and f: "\<phi>' = mformula.MAndAssign \<psi>' (y, t)"
+    using m e by (simp_all del: eval_assignment.simps)
+  obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs0) ys, \<psi>d')"
+    and sim': "dsim n cs0 (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+  have tb: "list_all (ftable n (set cs0)) ys"
+    by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
+  have wf0: "wf_cols n cs0" by (rule dsim_wf_cols[OF sim])
+  have pc: "\<And>r. r \<in> set ys \<Longrightarrow>
+      dassign (ins_pos cs0 y) (reindex_trm cs0 t) (dtabc n cs0 r)
+        = dtabc n cs (eval_assignment (y, t) ` r)"
+    using tb wf0 yb ynn fv unfolding cse
+    by (intro dassign_eval_assignment) (auto simp: list_all_iff)
+  have mapeq: "map (dassign (ins_pos cs0 y) (reindex_trm cs0 t)) (map (dtabc n cs0) ys)
+      = map (dtabc n cs) xs"
+    unfolding x map_map
+  proof (intro map_cong refl)
+    fix r assume r: "r \<in> set ys"
+    show "(dassign (ins_pos cs0 y) (reindex_trm cs0 t) \<circ> dtabc n cs0) r
+        = (dtabc n cs \<circ> (\<lambda>r. eval_assignment (y, t) ` r)) r"
+      using pc[OF r] by simp
+  qed
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<phi>d)
+        = (map (dtabc n cs) xs, DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<psi>d')"
+      using d mapeq by simp
+    show "dsim n cs (dnext tw ts) (DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<psi>d') \<phi>'"
+      unfolding f
+      by (rule dsim.DsAndAssign[OF wf produces_next[OF pr w sts mts m, unfolded f]
+            sim' yb ynn fv cse])
+  qed
+next
+  case (DsTP n cs tw mt i)
+  note wf = DsTP.hyps(1) and pr = DsTP.hyps(2) and cse = DsTP.hyps(3)
+    and w = DsTP.prems(1) and sts = DsTP.prems(2)
+    and mts = DsTP.prems(3) and m = DsTP.prems(4)
+  have x: "xs = map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) [i..<j]"
+    and f: "\<phi>' = mformula.MTP mt j" using m by simp_all
+  have b: "\<forall>c \<in> set (mtrm_dcols mt). c < n" using wf unfolding cse by simp
+  have mapeq: "map (dtabc n cs) xs = map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j]"
+    unfolding x map_map cse by (simp add: dtabc_eval_mtrm[OF b])
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DTP mt i) = (map (dtabc n cs) xs, DTP mt j)" using mapeq by simp
+    show "dsim n cs (dnext tw ts) (DTP mt j) \<phi>'"
+      unfolding f
+      by (rule dsim.DsTP[OF wf produces_next[OF pr w sts mts m, unfolded f] cse])
+  qed
+next
+  case (DsTS n cs tw mt)
+  note wf = DsTS.hyps(1) and pr = DsTS.hyps(2) and cse = DsTS.hyps(3)
+    and w = DsTS.prems(1) and sts = DsTS.prems(2)
+    and mts = DsTS.prems(3) and m = DsTS.prems(4)
+  have x: "xs = map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) ts"
+    and f: "\<phi>' = mformula.MTS mt" using m by simp_all
+  have b: "\<forall>c \<in> set (mtrm_dcols mt). c < n" using wf unfolding cse by simp
+  have mapeq: "map (dtabc n cs) xs = map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts"
+    unfolding x map_map cse by (simp add: dtabc_eval_mtrm[OF b])
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DTS mt) = (map (dtabc n cs) xs, DTS mt)" using mapeq by simp
+    show "dsim n cs (dnext tw ts) (DTS mt) \<phi>'"
+      unfolding f
+      by (rule dsim.DsTS[OF wf produces_next[OF pr w sts mts m, unfolded f] cse])
   qed
 qed
 

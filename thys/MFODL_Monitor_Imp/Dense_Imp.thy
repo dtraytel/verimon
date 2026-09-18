@@ -163,6 +163,11 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
 | "mcols n (MNext I \<phi> first nts) = mcols n \<phi>"
 | "mcols n (MSince args \<phi> \<psi> buf aux) = Some (set_cols (args_R args))"
 | "mcols n (MUntil args \<phi> \<psi> buf nts t aux) = Some (set_cols (args_R args))"
+| "mcols n (MAndAssign \<phi> conf) = (case mcols n \<phi> of None \<Rightarrow> None
+    | Some cs \<Rightarrow> (if fst conf \<in> set cs \<or> \<not> Formula.fv_trm (snd conf) \<subseteq> set cs then None
+                 else Some (merge_cols cs [fst conf])))"
+| "mcols n (MTP mt i) = Some (mtrm_dcols mt)"
+| "mcols n (MTS mt) = Some (mtrm_dcols mt)"
 | "mcols n \<phi> = None"
 
 datatype dformula =
@@ -181,6 +186,9 @@ datatype dformula =
   | DNext \<I> dformula bool "ts mbuf_t"
   | DSince args "nat option list option" dformula dformula "event_data mebuf2S" msaux_j
   | DUntil args "nat option list option" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_j
+  | DAndAssign nat Formula.trm dformula
+  | DTP mtrm nat
+  | DTS mtrm
 
 subsection \<open>Building it\<close>
 
@@ -265,6 +273,19 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         return (DUntil dags (if cs_L = cs then None else Some (emb_plan cs cs_L))
                   \<phi>d \<psi>d buf nts t d) })
       else return (DPure (MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs)))"
+| "dformula_of n cs (MAndAssign \<phi> conf) =
+     (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
+      if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
+      then do {
+        \<phi>d \<leftarrow> dformula_of n cs0 \<phi>;
+        return (DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<phi>d) }
+      else return (DPure (MAndAssign \<phi> conf) n (wide_mask n cs)))"
+| "dformula_of n cs (MTP mt i) =
+     return (if cs = mtrm_dcols mt then DTP mt i
+             else DPure (MTP mt i) n (wide_mask n cs))"
+| "dformula_of n cs (MTS mt) =
+     return (if cs = mtrm_dcols mt then DTS mt
+             else DPure (MTS mt) n (wide_mask n cs))"
 | "dformula_of n cs \<phi> = return (DPure \<phi> n (wide_mask n cs))"
 
 subsection \<open>Evaluating it\<close>
@@ -336,6 +357,13 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      (case r of (aux, buf, nt, nts') \<Rightarrow>
       do { z \<leftarrow> eval_u_j args nt aux;
            return (fst z, DUntil args pl \<phi> \<psi> buf nts' nt (snd z)) }) }"
+| "deval j ts db (DAndAssign p t \<phi>) = do {
+     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+     return (map (dassign p t) xs, DAndAssign p t \<phi>) }"
+| "deval j ts db (DTP mt i) =
+     return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
+| "deval j ts db (DTS mt) =
+     return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
 
 subsection \<open>The state\<close>
 
@@ -354,6 +382,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DNext I \<phi> f nts) = dpure_nodes \<phi>"
 | "dpure_nodes (DSince args pl \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DUntil args pl \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DAndAssign p t \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"

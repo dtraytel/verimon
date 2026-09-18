@@ -1859,6 +1859,23 @@ lemma set_cols:
   by (subst csorted_list_of_set_split;
       auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
 
+lemma set_cols_eqI:
+  assumes f: "finite A" and s: "sorted_wrt (<) xs" and e: "set xs = A"
+  shows "xs = set_cols A"
+proof -
+  have x: "sorted xs" "distinct xs" using s by (simp_all add: strict_sorted_iff)
+  have y: "sorted (set_cols A)" "distinct (set_cols A)"
+    using set_cols(1)[OF f] by (simp_all add: strict_sorted_iff)
+  show ?thesis using x y e set_cols(2)[OF f]
+    by (simp add: sorted_distinct_set_unique)
+qed
+
+lemma set_cols_empty: "set_cols {} = []"
+  by (rule set_cols_eqI[symmetric]) simp_all
+
+lemma set_cols_singleton: "set_cols {x} = [x]"
+  by (rule set_cols_eqI[symmetric]) simp_all
+
 subsection \<open>Narrowing at the boundary with the unmodified evaluator\<close>
 
 definition all_true :: "bool list \<Rightarrow> bool" where
@@ -2823,6 +2840,169 @@ text \<open>Both narrowings land where the structure at @{const dargs} expects t
   @{thm [source] table_dtabc_cpos} the right operand's in the full dense frame
   (@{term "cpos cs (set cs) = {0..<length cs}"}, which is @{thm [source] cpos_all}), and the left
   operand's, after the embedding above, in the positions its columns occupy there.\<close>
+
+
+section \<open>The assignment, the time point and the timestamp\<close>
+
+text \<open>
+  Three of the kernel's nodes produce or extend a table by arithmetic on one tuple at a time,
+  and each has a short counterpart that does the same work on a tuple that is as long as the
+  node's columns rather than as long as the frame.
+\<close>
+
+subsection \<open>Assigning a term to a fresh column\<close>
+
+text \<open>
+  The kernel's assignment fills the hole at the assigned variable's position:
+  @{thm eval_assignment.simps}.  A short tuple has no hole to fill, so the value is
+  \<^emph>\<open>inserted\<close> at the position the new column occupies in the merged column list --
+  the same insertion the aggregation's output does, at the same @{const ins_pos}.
+\<close>
+
+definition dassign1 :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
+  "dassign1 p t d = take p d @ Some (meval_trm t d) # drop p d"
+
+definition dassign :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dassign p t D = dassign1 p t ` D"
+
+theorem dassign_eval_assignment:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and y: "y < n" and yn: "y \<notin> set cs"
+    and fv: "Formula.fv_trm t \<subseteq> set cs" and tT: "table n (set cs) T"
+  shows "dassign (ins_pos cs y) (reindex_trm cs t) (dtabc n cs T)
+       = dtabc n (merge_cols cs [y]) (eval_assignment (y, t) ` T)"
+proof -
+  let ?p = "ins_pos cs y"
+  let ?cs' = "merge_cols cs [y]"
+  have cs': "?cs' = take ?p cs @ y # drop ?p cs" by (rule merge_cols_single[OF s yn])
+  have s': "sorted_wrt (<) ?cs'" using s by (intro sorted_merge_cols) simp_all
+  have b': "\<forall>c \<in> set ?cs'. c < n" using b y by (simp add: set_merge_cols)
+  have key: "\<And>x. x \<in> T \<Longrightarrow>
+      dassign1 ?p (reindex_trm cs t) (dproj (wide_mask n cs) x)
+        = dproj (wide_mask n ?cs') (eval_assignment (y, t) x)"
+  proof -
+    fix x assume x: "x \<in> T"
+    have len: "length x = n" using tT x by (auto simp: table_def wf_tuple_def)
+    let ?v = "Some (meval_trm t x)"
+    let ?x' = "x[y := ?v]"
+    have len': "length ?x' = n" using len by simp
+    have d: "dproj (wide_mask n cs) x = map (\<lambda>c. x ! c) cs"
+      by (rule dproj_wide_mask_eq_map_nth[OF s b len])
+    have ev: "meval_trm (reindex_trm cs t) (map (\<lambda>c. x ! c) cs) = meval_trm t x"
+      by (rule meval_trm_reindex[OF fv])
+    have d': "dproj (wide_mask n ?cs') ?x' = map (\<lambda>c. ?x' ! c) ?cs'"
+      by (rule dproj_wide_mask_eq_map_nth[OF s' b' len'])
+    have nth_cs: "\<And>c. c \<in> set cs \<Longrightarrow> ?x' ! c = x ! c"
+      using yn by (metis nth_list_update_neq)
+    have nth_y: "?x' ! y = ?v" using y len by simp
+    have mm: "map (\<lambda>c. ?x' ! c) ?cs'
+        = map (\<lambda>c. x ! c) (take ?p cs) @ ?v # map (\<lambda>c. x ! c) (drop ?p cs)"
+      unfolding cs' using nth_cs nth_y
+      by (auto intro!: map_cong dest: in_set_takeD in_set_dropD)
+    show "dassign1 ?p (reindex_trm cs t) (dproj (wide_mask n cs) x)
+        = dproj (wide_mask n ?cs') (eval_assignment (y, t) x)"
+      unfolding eval_assignment.simps d' mm dassign1_def d ev
+      by (simp add: take_map drop_map)
+  qed
+  show ?thesis unfolding dassign_def dtabc_def image_image
+    using key by (auto intro!: image_cong)
+qed
+
+lemma finite_dassign: "finite D \<Longrightarrow> finite (dassign p t D)"
+  by (simp add: dassign_def)
+
+text \<open>The operand's column list is the node's without the assigned column, and putting the
+  latter back is the merge the theorem above asks for.\<close>
+
+definition rem_col :: "cols \<Rightarrow> nat \<Rightarrow> cols" where
+  "rem_col cs y = filter (\<lambda>c. c \<noteq> y) cs"
+
+lemma sorted_rem_col: "sorted_wrt (<) cs \<Longrightarrow> sorted_wrt (<) (rem_col cs y)"
+  unfolding rem_col_def by (induct cs) auto
+
+lemma set_rem_col: "set (rem_col cs y) = set cs - {y}"
+  unfolding rem_col_def by auto
+
+lemma rem_col_set_cols:
+  "finite A \<Longrightarrow> y \<notin> A \<Longrightarrow> rem_col (set_cols (Set.insert y A)) y = set_cols A"
+  by (rule set_cols_eqI)
+    (auto simp: set_rem_col sorted_rem_col set_cols(1)[of "Set.insert y A"]
+      set_cols(2)[of "Set.insert y A"])
+
+lemma merge_rem_col:
+  "sorted_wrt (<) cs \<Longrightarrow> y \<in> set cs \<Longrightarrow> merge_cols (rem_col cs y) [y] = cs"
+  unfolding rem_col_def
+proof (induct cs)
+  case (Cons c cs)
+  note IH = Cons(1) and srt = Cons(2) and mem = Cons(3)
+  show ?case
+  proof (cases "c = y")
+    case True
+    then have ny: "y \<notin> set cs" using srt by auto
+    then have f: "filter (\<lambda>c. c \<noteq> y) cs = cs" by (auto simp: filter_id_conv)
+    have "merge_cols cs [y] = y # cs"
+    proof (cases cs)
+      case Nil
+      then show ?thesis by simp
+    next
+      case (Cons d ds)
+      then have "y < d" using srt True by auto
+      then show ?thesis using Cons by (simp add: merge_cols_Nil2)
+    qed
+    then show ?thesis using True f by simp
+  next
+    case False
+    then have ymem: "y \<in> set cs" using mem by auto
+    then have cy: "c < y" using srt by auto
+    show ?thesis using IH[OF _ ymem] srt cy False by simp
+  qed
+qed simp
+
+subsection \<open>The time point and the timestamp\<close>
+
+text \<open>
+  The two nodes that turn a number into a table produce either a one-column table holding that
+  number or a zero-column truth value, so their short forms are @{term "{[Some x]}"} and the
+  short unit or empty table -- no frame-wide tuple is built at all.
+\<close>
+
+fun dmtrm :: "mtrm \<Rightarrow> event_data \<Rightarrow> event_data table" where
+  "dmtrm (MVar v) x = {[Some x]}"
+| "dmtrm (MConst c) x = (if c = x then unit_table 0 else empty_table)"
+
+definition mtrm_dcols :: "mtrm \<Rightarrow> cols" where
+  "mtrm_dcols mt = (case mt of MVar v \<Rightarrow> [v] | MConst c \<Rightarrow> [])"
+
+lemma sorted_mtrm_dcols: "sorted_wrt (<) (mtrm_dcols mt)"
+  by (cases mt) (simp_all add: mtrm_dcols_def)
+
+lemma finite_dmtrm: "finite (dmtrm mt x)"
+  by (cases mt) (simp_all add: unit_table_def empty_table_def)
+
+theorem dtabc_eval_mtrm:
+  assumes b: "\<forall>c \<in> set (mtrm_dcols mt). c < n"
+  shows "dtabc n (mtrm_dcols mt) (eval_mtrm n mt x) = dmtrm mt x"
+proof (cases mt)
+  case (MVar v)
+  have v: "v < n" using b unfolding MVar mtrm_dcols_def by simp
+  let ?tab = "Table.tabulate (\<lambda>j. if v = j then Some x else None) 0 n"
+  have len: "length ?tab = n" by simp
+  have "dproj (wide_mask n [v]) ?tab = map (\<lambda>c. ?tab ! c) [v]"
+    by (rule dproj_wide_mask_eq_map_nth) (use v len in simp_all)
+  then show ?thesis
+    unfolding MVar mtrm_dcols_def dtabc_def by (simp add: singleton_table_def v)
+next
+  case (MConst c)
+  show ?thesis
+  proof (cases "c = x")
+    case True
+    then show ?thesis unfolding MConst mtrm_dcols_def by (simp add: dtabc_unit_table)
+  next
+    case False
+    then show ?thesis unfolding MConst mtrm_dcols_def
+      by (simp add: dtabc_def empty_table_def)
+  qed
+qed
 
 
 section \<open>The verified Since structure at the dense frame\<close>

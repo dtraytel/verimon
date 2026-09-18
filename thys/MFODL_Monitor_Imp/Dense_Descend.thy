@@ -94,6 +94,17 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] 0
              (init_muaux_dq (dargs cs cs_L args))
       else DPure (mformula.MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs))"
+| "dof n cs (mformula.MAndAssign \<phi> conf) =
+     (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
+      if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
+      then DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (dof n cs0 \<phi>)
+      else DPure (mformula.MAndAssign \<phi> conf) n (wide_mask n cs))"
+| "dof n cs (mformula.MTP mt i) =
+     (if cs = mtrm_dcols mt then DTP mt i
+      else DPure (mformula.MTP mt i) n (wide_mask n cs))"
+| "dof n cs (mformula.MTS mt) =
+     (if cs = mtrm_dcols mt then DTS mt
+      else DPure (mformula.MTS mt) n (wide_mask n cs))"
 | "dof n cs \<phi> = DPure \<phi> n (wide_mask n cs)"
 
 subsection \<open>Column lists from column sets\<close>
@@ -825,6 +836,70 @@ next
   qed
 qed
 
+text \<open>The assignment node's own column is the one the compiler removes, and it is the one the
+  split of a safe assignment names.\<close>
+
+lemma split_assignment_props:
+  assumes s: "safe_assignment X \<psi>" and sp: "split_assignment X \<psi> = (y, t)"
+  shows "y \<notin> X \<and> Formula.fv_trm t \<subseteq> X \<and> Formula.fv \<psi> \<union> X = Set.insert y X"
+  using s sp unfolding safe_assignment_def
+  by (cases \<psi>) (auto split: trm.splits if_splits)
+
+lemma dsim_dof_minit0_AndAssign:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MAndAssign (minit0 n \<chi>) (y, t)"
+    and yn: "y \<notin> Formula.fv \<chi>" and fvt: "Formula.fv_trm t \<subseteq> Formula.fv \<chi>"
+    and A: "Formula.fv \<phi> = Set.insert y (Formula.fv \<chi>)"
+    and i1: "dofc n tw \<chi>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  let ?csc = "set_cols (Formula.fv \<chi>)"
+  have fc: "finite (Formula.fv \<chi>)" by (rule finite_fvi)
+  have yb: "y < n" using b unfolding A by simp
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have cs0: "rem_col ?cs y = ?csc" unfolding A by (rule rem_col_set_cols[OF fc yn])
+  have ymem: "y \<in> set ?cs" unfolding A by (simp add: set_cols(2)[OF finite_fvi])
+  have ynn: "y \<notin> set ?csc" using yn by (simp add: set_cols(2)[OF fc])
+  have fvs: "Formula.fv_trm t \<subseteq> set ?csc" using fvt by (simp add: set_cols(2)[OF fc])
+  have pr: "produces n (set ?cs) tw (mformula.MAndAssign (minit0 n \<chi>) (y, t))"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MAndAssign (minit0 n \<chi>) (y, t))
+      = DAndAssign (ins_pos ?csc y) (reindex_trm ?csc t) (dof n ?csc (minit0 n \<chi>))"
+    using ymem fvs cs0 by (simp add: Let_def)
+  have mc: "?cs = merge_cols ?csc [y]"
+    using merge_rem_col[OF conjunct1[OF w] ymem] unfolding cs0 by simp
+  show ?thesis unfolding m d by (rule dsim.DsAndAssign[OF w pr i1 yb ynn fvs mc])
+qed
+
+lemma dsim_dof_minit0_TP:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MTP mt i"
+    and cse: "set_cols (Formula.fv \<phi>) = mtrm_dcols mt"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have pr: "produces n (set ?cs) tw (mformula.MTP mt i)"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MTP mt i) = DTP mt i" using cse by simp
+  show ?thesis unfolding m d by (rule dsim.DsTP[OF w pr cse])
+qed
+
+lemma dsim_dof_minit0_TS:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MTS mt"
+    and cse: "set_cols (Formula.fv \<phi>) = mtrm_dcols mt"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have pr: "produces n (set ?cs) tw (mformula.MTS mt)"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MTS mt) = DTS mt" using cse by simp
+  show ?thesis unfolding m d by (rule dsim.DsTS[OF w pr cse])
+qed
+
 subsection \<open>The compiler produces a simulation\<close>
 
 theorem dsim_dof_minit0:
@@ -856,7 +931,18 @@ next
   show ?case by (rule dsim_dof_minit0_pure) (use LetPast.hyps LetPast.prems in simp_all)
 next
   case (And_assign \<phi> \<psi>)
-  show ?case by (rule dsim_dof_minit0_pure) (use And_assign.hyps And_assign.prems in simp_all)
+  obtain y t where sp: "split_assignment (Formula.fv \<phi>) \<psi> = (y, t)"
+    by (cases "split_assignment (Formula.fv \<phi>) \<psi>") auto
+  note props = split_assignment_props[OF And_assign.hyps(2) sp]
+  have sfa: "safe_formula (Formula.And \<phi> \<psi>)" using And_assign.hyps by simp
+  have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using And_assign.prems by simp
+  have m: "minit0 n (Formula.And \<phi> \<psi>) = mformula.MAndAssign (minit0 n \<phi>) (y, t)"
+    using And_assign.hyps(2) sp by simp
+  have A: "Formula.fv (Formula.And \<phi> \<psi>) = Set.insert y (Formula.fv \<phi>)"
+    using props by auto
+  show ?case
+    by (rule dsim_dof_minit0_AndAssign[OF sfa And_assign.prems m _ _ A
+          And_assign.IH[OF b1]]) (use props in auto)
 next
   case (And_safe \<phi> \<psi>)
   have sfa: "safe_formula (Formula.And \<phi> \<psi>)" using And_safe.hyps by simp
@@ -1224,12 +1310,20 @@ next
       (use MatchF.hyps MatchF.prems in \<open>simp_all split: prod.split\<close>)
 next
   case (TP t)
-  show ?case by (rule dsim_dof_minit0_pure)
-      (use TP.hyps TP.prems in \<open>simp_all split: trm.splits\<close>)
+  have sfa: "safe_formula (Formula.TP t)" using TP.hyps by simp
+  have m: "minit0 n (Formula.TP t) = mformula.MTP (mtrm_of_trm t) 0" by simp
+  have cse: "set_cols (Formula.fv (Formula.TP t)) = mtrm_dcols (mtrm_of_trm t)"
+    using TP.hyps by (auto simp: Formula.is_Var_def Formula.is_Const_def
+        mtrm_dcols_def set_cols_singleton)
+  show ?case by (rule dsim_dof_minit0_TP[OF sfa TP.prems m cse])
 next
   case (TS t)
-  show ?case by (rule dsim_dof_minit0_pure)
-      (use TS.hyps TS.prems in \<open>simp_all split: trm.splits\<close>)
+  have sfa: "safe_formula (Formula.TS t)" using TS.hyps by simp
+  have m: "minit0 n (Formula.TS t) = mformula.MTS (mtrm_of_trm t)" by simp
+  have cse: "set_cols (Formula.fv (Formula.TS t)) = mtrm_dcols (mtrm_of_trm t)"
+    using TS.hyps by (auto simp: Formula.is_Var_def Formula.is_Const_def
+        mtrm_dcols_def set_cols_singleton)
+  show ?case by (rule dsim_dof_minit0_TS[OF sfa TS.prems m cse])
 qed
 
 section \<open>The dense monitor's correctness theorem, on the compiled state\<close>
