@@ -4607,3 +4607,62 @@ The same induction principle is what the recursive let needs, and its size guard
 a second time, to show the dense and sparse recursions take the same branch. So the two nodes
 share both pieces of work, which is the argument for doing them together and after the
 induction is converted.
+
+### 20.29 The freeze, in the verified fragment
+
+20.28 said the freeze's obstacle was the simulation proof's induction principle, not the
+evaluator. Both halves are now done, and the diagnosis held.
+
+**The induction.** `dsim_deval` was proved `by (induct rule: dsim.induct)`, which hands out the
+statement for an operand's *own* derivation. The freeze evaluates its body once per frozen
+tuple at the body's state after the current batch, related by a derivation the body's induction
+hypothesis produces rather than a sub-derivation, so that case could not be closed at all. The
+theorem now carries a bound and an assumption below it,
+
+```isabelle
+theorem dsim_deval_N:
+  assumes Q: "⋀… χ …. size χ < NN ⟹ dsim … χ ⟹ … ⟹ ∃φd''. …"
+  shows "dsim n cs tw φd φ ⟹ … ⟹ size φ ≤ NN ⟹ ∃φd'. …"
+```
+
+`dsim_deval_bound` discharges `Q` by induction on the bound and `dsim_deval` instantiates it at
+the formula's own size, so what downstream theories use is unchanged. Each of the twelve
+induction-hypothesis uses gained one line, `size <operand> ≤ NN` by `order_trans` and `simp`,
+and the multi-way conjunction gets it per operand from `size_list_estimation'`. This is the
+same construction the kernel needs for `meval`, for the same reason.
+
+**The evaluator.** `deval` becomes `function (sequential)`, with
+
+```isabelle
+lemma psize_snd_deval:
+  "deval_deval_list_dom (Inl (j, ts, db, φ)) ⟹ size (snd (deval j ts db φ)) = size φ"
+  "deval_deval_list_dom (Inr (j, ts, db, L)) ⟹
+     map (size ∘ snd) (deval_list j ts db L) = map size L"
+```
+
+by partial induction, and termination by the sum measure `size` / `size_list size`.
+`freeze_meval0` is polymorphic in the evaluator and in the state it throws away, so the dense
+side reuses it rather than defining a counterpart; `freeze_meval0_rel` says the two runs take
+the same branches -- narrowing a list preserves its length, so `drop k` is empty on one side
+exactly when it is on the other -- and `freeze_meval0_sub` that the frozen tuples left over come
+from the ones handed in, which is what re-establishes the node's own invariant.
+
+The simulation case is where the size induction earns its keep: the body agreement the freeze
+needs comes from `Q` at `size ψ2 < NN`, with `size ψ2 = size ψ` supplied by the kernel's own
+`size_snd_meval`. `dof` emits `DFrz` unconditionally, and `dsim_dof_minit0_Frz` reads
+`fv φ = {0..<nfv φ}` off the safety side condition exactly as the let's lemma does.
+
+**What this does and does not buy.** The *verified* dense fragment now covers the freeze; the
+*executable* one does not, so the fallback-node count over the cram suites is still 83 and every
+remaining node is still a `FRZ`. The reason is specific and worth recording: `Dense_Imp`'s
+evaluator lives in the `Heap` monad, and a `fun` termination measure cannot read the resulting
+formula out of a monadic computation, so the size argument that works for the pure evaluator
+does not transfer. The executable side needs `partial_function (heap)`, which does not support
+mutual recursion, so `deval` and `deval_list` have to be merged into one function over a
+sum-typed argument first; a fuel parameter is the alternative and is worse, because it needs an
+unreachable `fuel = 0` branch that would be a silent correctness cliff in an unverified
+evaluator. The monadic freeze itself is easy -- structurally recursive on the frozen-tuple list,
+so a plain `fun`.
+
+Session builds green in 2:48; `src/verified.ml` is byte-identical, as it must be, since nothing
+that is code-generated changed.
