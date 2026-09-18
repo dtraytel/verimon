@@ -1064,6 +1064,29 @@ proof -
   then show ?thesis by (simp add: dtabc_result[OF w])
 qed
 
+section \<open>The dense evaluation of a Since buffer\<close>
+
+text \<open>
+  The kernel's @{text eval_since} with the dense operations put in.  The left operand's tables
+  reach it at the left operand's own frame; nothing is embedded on the way in, and the
+  structure's join reads them there.
+\<close>
+
+fun deval_since :: "args \<Rightarrow> event_data table list \<Rightarrow> event_data mbuf2S \<Rightarrow> event_data dmsaux \<Rightarrow>
+    event_data table list \<times> event_data mbuf2S \<times> event_data dmsaux" where
+  "deval_since args rs (x # xs, [], t # ts, skew) daux =
+    (if skew \<or> memL (args_ivl args) 0
+     then (rev rs, (x # xs, [], t # ts, skew), daux)
+     else (let daux' = dgc_join_msaux args x (dadd_new_ts_msaux args t daux)
+       in (rev (dresult_msaux args daux' # rs), (xs, [], ts, True), daux')))"
+| "deval_since args rs (xs, y # ys, ts, True) daux =
+    deval_since args rs (xs, ys, ts, False) (dadd_new_table_msaux args y daux)"
+| "deval_since args rs (x # xs, y # ys, t # ts, False) daux =
+    (let daux' = dadd_new_table_msaux args y
+       (dgc_join_msaux args x (dadd_new_ts_msaux args t daux))
+     in deval_since args (dresult_msaux args daux' # rs) (xs, ys, ts, False) daux')"
+| "deval_since args rs buf daux = (rev rs, buf, daux)"
+
 (*<*)
 end
 (*>*)
