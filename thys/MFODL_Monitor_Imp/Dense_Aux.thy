@@ -1087,6 +1087,216 @@ fun deval_since :: "args \<Rightarrow> event_data table list \<Rightarrow> event
      in deval_since args (dresult_msaux args daux' # rs) (xs, ys, ts, False) daux')"
 | "deval_since args rs buf daux = (rev rs, buf, daux)"
 
+section \<open>The dense Until structure\<close>
+
+text \<open>
+  The Until structure needs far less than the Since one.  Of its eleven components only two
+  mention the left operand at all: the mask, and the mapping @{text a1_map} that records, for each
+  tuple of the left operand's frame, the last time point at which it held.  Every other operation
+  -- the window's step, the shift, the evaluation, the length -- carries both through untouched.
+  So the dense structure is the verified one with @{text a1_map} keyed by the left operand's
+  \<^emph>\<open>dense\<close> tuples, and only the one operation that reads the left operand changes.
+
+  The two key transformations below are mutually inverse on the states that occur: @{text wkeys}
+  widens a narrow key set to the frame the verified structure stores at, @{text nkeys} narrows it
+  back.
+\<close>
+
+lift_definition wkeys :: "bool list \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> ('a tuple, 'b) mapping" is
+  "\<lambda>msk m k. if k = dwiden msk (dproj msk k) then m (dproj msk k) else None" .
+
+lift_definition nkeys :: "bool list \<Rightarrow> ('a tuple, 'b) mapping \<Rightarrow> ('a tuple, 'b) mapping" is
+  "\<lambda>msk m k. m (dwiden msk k)" .
+
+lemma lookup_wkeys: "Mapping.lookup (wkeys msk m) k =
+  (if k = dwiden msk (dproj msk k) then Mapping.lookup m (dproj msk k) else None)"
+  by transfer simp
+
+lemma lookup_nkeys: "Mapping.lookup (nkeys msk m) k = Mapping.lookup m (dwiden msk k)"
+  by transfer simp
+
+lemma dwiden_dproj_dwiden:
+  "length y = length (filter id msk) \<Longrightarrow> dwiden msk (dproj msk (dwiden msk y)) = dwiden msk y"
+  by (simp add: dproj_dwiden)
+
+lemma lookup_wkeys_dwiden:
+  "length y = length (filter id msk) \<Longrightarrow>
+     Mapping.lookup (wkeys msk m) (dwiden msk y) = Mapping.lookup m y"
+  by (simp add: lookup_wkeys dproj_dwiden dwiden_dproj_dwiden)
+
+lemma lookup_wkeys_proj_tuple:
+  "length as = length msk \<Longrightarrow>
+     Mapping.lookup (wkeys msk m) (proj_tuple msk as) = Mapping.lookup m (dproj msk as)"
+  by (simp add: proj_tuple_dwiden_dproj lookup_wkeys_dwiden length_dproj)
+
+abbreviation (input) dnarrow_tuple :: "bool list \<Rightarrow> 'a tuple \<Rightarrow> bool" where
+  "dnarrow_tuple msk y \<equiv> length y = length (filter id msk)"
+
+lemma inj_on_dwiden: "inj_on (dwiden msk) {y. dnarrow_tuple msk y}"
+  by (rule inj_onI) (metis dproj_dwiden mem_Collect_eq)
+
+lemma dwiden_image_iff:
+  assumes X: "\<And>y. y \<in> X \<Longrightarrow> dnarrow_tuple msk y" and k: "k = dwiden msk (dproj msk k)"
+  shows "(k \<in> dwiden msk ` X) = (dproj msk k \<in> X)"
+proof
+  assume "k \<in> dwiden msk ` X"
+  then obtain y where y: "y \<in> X" "k = dwiden msk y" by auto
+  then show "dproj msk k \<in> X" using X[OF y(1)] by (simp add: dproj_dwiden)
+next
+  assume "dproj msk k \<in> X"
+  then show "k \<in> dwiden msk ` X" using k by (metis image_eqI)
+qed
+
+lemma dwiden_image_not:
+  assumes X: "\<And>y. y \<in> X \<Longrightarrow> dnarrow_tuple msk y" and k: "k \<noteq> dwiden msk (dproj msk k)"
+  shows "k \<notin> dwiden msk ` X"
+  using X k by (auto simp: dproj_dwiden)
+
+lemma keys_wkeys:
+  assumes m: "\<And>k. k \<in> Mapping.keys m \<Longrightarrow> dnarrow_tuple msk k"
+  shows "Mapping.keys (wkeys msk m) = dwiden msk ` Mapping.keys m"
+proof (intro set_eqI iffI)
+  fix k assume "k \<in> Mapping.keys (wkeys msk m)"
+  then have "k = dwiden msk (dproj msk k)" and "dproj msk k \<in> Mapping.keys m"
+    by (auto simp: Mapping.keys_dom_lookup lookup_wkeys dom_def split: if_splits)
+  then show "k \<in> dwiden msk ` Mapping.keys m" by (metis image_eqI)
+next
+  fix k assume "k \<in> dwiden msk ` Mapping.keys m"
+  then obtain y where y: "y \<in> Mapping.keys m" "k = dwiden msk y" by auto
+  then show "k \<in> Mapping.keys (wkeys msk m)"
+    using m[OF y(1)] by (auto simp: Mapping.keys_dom_lookup lookup_wkeys dom_def dproj_dwiden)
+qed
+
+lemma wkeys_upd_set:
+  assumes X: "\<And>y. y \<in> X \<Longrightarrow> dnarrow_tuple msk y"
+  shows "wkeys msk (upd_set m (\<lambda>_. v) X) = upd_set (wkeys msk m) (\<lambda>_. v) (dwiden msk ` X)"
+proof (intro mapping_eqI)
+  fix k
+  show "Mapping.lookup (wkeys msk (upd_set m (\<lambda>_. v) X)) k
+      = Mapping.lookup (upd_set (wkeys msk m) (\<lambda>_. v) (dwiden msk ` X)) k"
+  proof (cases "k = dwiden msk (dproj msk k)")
+    case True
+    show ?thesis
+      by (simp add: lookup_wkeys Mapping_lookup_upd_set dwiden_image_iff[OF X True]
+          if_P[OF True])
+  next
+    case False
+    show ?thesis
+      by (simp add: lookup_wkeys Mapping_lookup_upd_set dwiden_image_not[OF X False]
+          if_not_P[OF False])
+  qed
+qed
+
+lemma wkeys_filter:
+  assumes X: "\<And>y. y \<in> X \<Longrightarrow> dnarrow_tuple msk y"
+  shows "wkeys msk (Mapping.filter (\<lambda>as _. as \<in> X) m)
+       = Mapping.filter (\<lambda>as _. as \<in> dwiden msk ` X) (wkeys msk m)"
+proof (intro mapping_eqI)
+  fix k
+  show "Mapping.lookup (wkeys msk (Mapping.filter (\<lambda>as _. as \<in> X) m)) k
+      = Mapping.lookup (Mapping.filter (\<lambda>as _. as \<in> dwiden msk ` X) (wkeys msk m)) k"
+  proof (cases "k = dwiden msk (dproj msk k)")
+    case True
+    show ?thesis
+      by (simp add: lookup_wkeys Mapping.lookup_filter dwiden_image_iff[OF X True]
+          if_P[OF True] split: option.splits)
+  next
+    case False
+    show ?thesis
+      by (simp add: lookup_wkeys Mapping.lookup_filter if_not_P[OF False] split: option.splits)
+  qed
+qed
+
+subsection \<open>The state transformation, and the operations that ignore it\<close>
+
+lemma mmuaux_dq_cases:
+  fixes d :: "event_data mmuaux_dq"
+  obtains tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+  where "d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+  by (metis prod.collapse)
+
+fun wkeys_uaux :: "bool list \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
+  "wkeys_uaux msk (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn) =
+     (tp, tss, tables, len, mL, mR, result, wkeys msk a1_map, a2_dq, tstp_dq, dn)"
+
+fun nkeys_uaux :: "bool list \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
+  "nkeys_uaux msk (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn) =
+     (tp, tss, tables, len, mL, mR, result, nkeys msk a1_map, a2_dq, tstp_dq, dn)"
+
+text \<open>
+  The window's step never reads the mapping the left operand fills, so it commutes with the
+  transformation, and so do the shift and the evaluation built on it.
+\<close>
+
+lemma eval_step_dq_wkeys:
+  assumes ne: "linearize (fst (snd d)) \<noteq> []"
+  shows "eval_step_dq args (wkeys_uaux msk d) = wkeys_uaux msk (eval_step_dq args d)"
+proof (cases d rule: mmuaux_dq_cases)
+  case (1 tp tss tables len mL mR result a1_map a2_dq tstp_dq dn)
+  obtain a q' where hd: "safe_hd tss = (Some a, q')"
+    using ne unfolding 1
+    by (cases "safe_hd tss") (auto dest!: safe_hd_rep split: option.splits)
+  show ?thesis unfolding 1 wkeys_uaux.simps eval_step_dq.simps hd
+    by (simp add: Let_def split: prod.splits option.splits)
+qed
+
+lemma linearize_eval_step_dq:
+  assumes ne: "linearize (fst (snd d)) \<noteq> []"
+  shows "linearize (fst (snd (eval_step_dq args d))) = tl (linearize (fst (snd d)))"
+proof (cases d rule: mmuaux_dq_cases)
+  case (1 tp tss tables len mL mR result a1_map a2_dq tstp_dq dn)
+  obtain a q' where hd: "safe_hd tss = (Some a, q')"
+    using ne unfolding 1
+    by (cases "safe_hd tss") (auto dest!: safe_hd_rep split: option.splits)
+  have lq: "linearize q' = linearize tss" using safe_hd_rep[OF hd] by simp
+  obtain b q'' where hd': "safe_hd (tl_queue q') = (b, q'')" by fastforce
+  have lq'': "linearize q'' = tl (linearize tss)"
+    using safe_hd_rep[OF hd'] lq by (simp add: tl_queue_rep)
+  show ?thesis unfolding 1 eval_step_dq.simps hd
+    by (simp add: Let_def hd' lq'' split: prod.splits option.splits)
+qed
+
+lemma foldl_eval_step_dq_wkeys:
+  "length xs \<le> length (linearize (fst (snd d))) \<Longrightarrow>
+     foldl (\<lambda>aux _. eval_step_dq args aux) (wkeys_uaux msk d) xs
+     = wkeys_uaux msk (foldl (\<lambda>aux _. eval_step_dq args aux) d xs)"
+proof (induct xs arbitrary: d)
+  case (Cons x xs)
+  then have ne: "linearize (fst (snd d)) \<noteq> []" by auto
+  have "length xs \<le> length (linearize (fst (snd (eval_step_dq args d))))"
+    using Cons(2) linearize_eval_step_dq[OF ne] by simp
+  then show ?case using Cons(1) eval_step_dq_wkeys[OF ne] by simp
+qed simp
+
+lemma shift_dq_wkeys: "shift_dq args nt (wkeys_uaux msk d) = wkeys_uaux msk (shift_dq args nt d)"
+proof (cases d rule: mmuaux_dq_cases)
+  case (1 tp tss tables len mL mR result a1_map a2_dq tstp_dq dn)
+  obtain q0 q1 where tw: "takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss = (q0, q1)"
+    by fastforce
+  have le: "length (linearize q0) \<le> length (linearize q1)"
+    using takeWhile_queue_rep_fst[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+      takeWhile_queue_rep_snd[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+    unfolding tw by (simp add: length_takeWhile_le)
+  have key: "foldl (\<lambda>aux _. eval_step_dq args aux)
+      (tp, q1, tables, len, mL, mR, result, wkeys msk a1_map, a2_dq, tstp_dq, dn) (linearize q0)
+    = wkeys_uaux msk (foldl (\<lambda>aux _. eval_step_dq args aux)
+      (tp, q1, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn) (linearize q0))"
+    using foldl_eval_step_dq_wkeys[where xs = "linearize q0"
+      and d = "(tp, q1, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"] le by simp
+  show ?thesis unfolding 1 wkeys_uaux.simps shift_dq.simps tw by (simp add: key)
+qed
+
+lemma eval_dq_wkeys:
+  "eval_dq args nt (wkeys_uaux msk d)
+   = (fst (eval_dq args nt d), wkeys_uaux msk (snd (eval_dq args nt d)))"
+  by (cases "shift_dq args nt d" rule: mmuaux_dq_cases) (simp add: shift_dq_wkeys)
+
+lemma length_dq_wkeys: "length_dq args (wkeys_uaux msk d) = length_dq args d"
+  by (cases d rule: mmuaux_dq_cases) simp
+
+lemma wkeys_uaux_init: "wkeys_uaux msk (init_dq args) = init_dq args"
+  by (simp add: init_dq_def wkeys.abs_eq Mapping.empty_def)
+
 (*<*)
 end
 (*>*)
