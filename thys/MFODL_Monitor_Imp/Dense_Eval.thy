@@ -634,7 +634,6 @@ text \<open>One firing of the trigger structure: the buffer traversal that steps
 lemma dtrigger_step_rel:
   assumes s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
     and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
-    and m0: "mem (args_ivl args) 0"
     and rel: "dtrigger_rel n cs_R cs_L args tw aux daux buf dbuf nts"
     and ta: "list_all (ftable n (set cs_L)) as" and tb: "list_all (ftable n (set cs_R)) bs"
     and st: "sorted tss" and bnd: "\<forall>v \<in> set tss. tw \<le> v"
@@ -702,14 +701,12 @@ proof -
     have vd': "dtaux n cs_R cs_L args v
         (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')) al'"
       unfolding al'_def by (rule dtaux_update[OF vdz wv s b sub]) (use t1 t2 in simp_all)
-    have ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (v - t)) al')"
-      unfolding al'_def by (rule filter_mem_last_nonempty[OF m0])
     have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
         = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
     have dres: "snd (result_mmtaux (dargs cs_R cs_L args)
           (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')))
         = dtabc n cs_R (snd (trigger_results args v al'))"
-      by (rule dtaux_result[OF vd' s b sub an aL aR ne])
+      by (rule dtaux_result[OF vd' s b sub an aL aR])
     have dres': "snd (result_mmtaux (dargs cs_R cs_L args)
           (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')))
         = dtabc n cs_R (snd (result_mmtaux args (update_mmtaux args v a c (snd z))))"
@@ -2283,7 +2280,7 @@ next
       (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf) (nts @ ts)") auto
   have step: "dzs = map (dtabc n cs) zs \<and> dnts2 = nts2 \<and>
       dtrigger_rel n cs cs_L args (dnext tw ts) aux2 daux2 buf2 dbuf2 nts2"
-    by (rule dtrigger_step_rel[OF cwf cb sub an aL aR m0 rel ta tb sts mts e3
+    by (rule dtrigger_step_rel[OF cwf cb sub an aL aR rel ta tb sts mts e3
           d3[unfolded dag]])
   show ?case
   proof (intro exI conjI)

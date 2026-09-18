@@ -4751,12 +4751,20 @@ supply them *pointwise* rather than as an image, which is the only new thing nee
 `wf_tuple_dproj_full` and `wf_tuple_dwiden_full` make the frames correspond in both directions, so
 the comprehension can be matched term for term.
 
-The *else* branch does not transport: it answers `unit_table (args_n args)`, a table over no
-columns rather than over the node's own, and narrowing that at a non-empty column list is not
-meaningful. It is also unreachable: the node's interval contains zero (`Trigger_0` is the only
-safe shape) and the structure is read immediately after an update that appended an entry carrying
-the current timestamp, so the filter is non-empty -- `filter_mem_last_nonempty`. The theorem
-assumes `ne` and the caller discharges it from the update it just did.
+The *else* branch transports too, and needs no side condition. I first got this wrong and
+assumed it away: it answers `unit_table (args_n args)`, and I read that as a table over no columns
+that cannot be narrowed at a non-empty column list. It can. The unit table narrows to the unit
+table of the dense frame,
+
+```isabelle
+lemma dtabc_unit_table_cols:
+  "sorted_wrt (<) cs ⟹ ∀c ∈ set cs. c < n ⟹ dtabc n cs (unit_table n) = unit_table (length cs)"
+```
+
+which at the empty column list is `{[]}`. The filter that chooses the branch reads only the
+timestamps, and `dauxlist3` leaves those alone, so the two frames take the same branch; the
+theorem therefore holds unconditionally, and `dtaux_result` and `dtrigger_step_rel` lost an
+assumption each.
 
 On top of that, `dtaux` relates the two structures through the abstract auxiliary list they are
 both valid for, with `dtaux_init`, `dtaux_update` and `dtaux_result` in the shape `dsaux` and

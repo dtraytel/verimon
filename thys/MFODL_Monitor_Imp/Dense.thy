@@ -3284,12 +3284,27 @@ text \<open>The transfer itself.  The node's interval contains zero and the stru
   answer right after a time point was entered, so the \<^emph>\<open>else\<close> branch is out of reach; it is
   assumed away, and the caller discharges it from the update it just did.\<close>
 
+text \<open>The unit table narrows to the unit table of the dense frame -- at the empty column list,
+  to @{term "{[]}"}.  That is what makes the second branch of @{const trigger_results} transport
+  like the first one, rather than having to be assumed away.\<close>
+
+lemma dtabc_unit_table_cols:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+  shows "dtabc n cs (unit_table n) = unit_table (length cs)"
+proof -
+  have l: "length (replicate n None :: 'a tuple) = n" by simp
+  have "dproj (wide_mask n cs) (replicate n None :: 'a tuple)
+      = map (\<lambda>c. (replicate n None :: 'a tuple) ! c) cs"
+    by (rule dproj_wide_mask_eq_map_nth[OF s b l])
+  also have "\<dots> = replicate (length cs) None" using b by (intro nth_equalityI) auto
+  finally show ?thesis by (simp add: dtabc_def unit_table_def)
+qed
+
 theorem dtabc_trigger_results:
   assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
     and sub: "set cs_L \<subseteq> set cs"
     and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs"
     and wf: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs) r"
-    and ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
   shows "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist))
        = dtabc n cs (snd (trigger_results args cur auxlist))"
 proof -
@@ -3368,14 +3383,29 @@ proof -
     have wa: "wf_tuple n (set cs) a" using a by simp
     show "d \<in> ?D" using a cond[OF wa] wf_tuple_dproj_full[OF s b wa] unfolding de by simp
   qed
-  have ne': "0 < length
-      (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) (dauxlist3 n cs auxlist))"
-    using ne unfolding length_filter_dauxlist3 .
-  have dsimp: "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist)) = ?D"
-    unfolding trigger_results_snd using ne' by (simp add: len)
-  have ssimp: "snd (trigger_results args cur auxlist) = ?S"
-    unfolding trigger_results_snd using ne by (simp add: an aL aR)
-  show ?thesis unfolding dsimp ssimp by (rule DS)
+  have flt: "(0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t))
+        (dauxlist3 n cs auxlist)))
+      = (0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist))"
+    unfolding length_filter_dauxlist3 ..
+  show ?thesis
+  proof (cases "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)")
+    case True
+    have dsimp: "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist)) = ?D"
+      unfolding trigger_results_snd using True flt by (simp add: len)
+    have ssimp: "snd (trigger_results args cur auxlist) = ?S"
+      unfolding trigger_results_snd using True by (simp add: an aL aR)
+    show ?thesis unfolding dsimp ssimp by (rule DS)
+  next
+    \<comment> \<open>the empty window: both frames answer their own unit table, and narrowing takes one to
+        the other\<close>
+    case False
+    have dsimp: "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist))
+        = unit_table (length cs)"
+      unfolding trigger_results_snd using False flt by (simp add: unit_table_def)
+    have ssimp: "snd (trigger_results args cur auxlist) = unit_table n"
+      unfolding trigger_results_snd using False by (simp add: an unit_table_def)
+    show ?thesis unfolding dsimp ssimp by (rule dtabc_unit_table_cols[OF s b, symmetric])
+  qed
 qed
 
 text \<open>The structure at the dense frame, related to the kernel's through the abstract auxiliary
@@ -3439,14 +3469,6 @@ next
   qed
 qed
 
-text \<open>The second branch of @{const trigger_results} is out of reach right after a time
-  point was entered, because the entry the update just appended carries the current timestamp and
-  the node's interval contains zero.\<close>
-
-lemma filter_mem_last_nonempty:
-  "mem I 0 \<Longrightarrow> 0 < length (filter (\<lambda>(t, _, _). mem I (nt - t)) (al @ [(nt, l, r)]))"
-  by simp
-
 definition dtaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmtaux \<Rightarrow>
     event_data mtaux \<Rightarrow> bool" where
   "dtaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
@@ -3497,7 +3519,6 @@ lemma dtaux_result:
   assumes v: "dtaux n cs_R cs_L args cur daux auxlist"
     and s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
     and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
-    and ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
   shows "snd (result_mmtaux (dargs cs_R cs_L args) daux)
        = dtabc n cs_R (snd (trigger_results args cur auxlist))"
 proof -
@@ -3507,7 +3528,7 @@ proof -
   have res: "result_mmtaux (dargs cs_R cs_L args) daux
       = trigger_results (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist)"
     by (rule valid_result_mmtaux[OF d])
-  show ?thesis unfolding res by (rule dtabc_trigger_results[OF s b sub an aL aR w ne])
+  show ?thesis unfolding res by (rule dtabc_trigger_results[OF s b sub an aL aR w])
 qed
 
 (*<*)
