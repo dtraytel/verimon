@@ -3997,3 +3997,74 @@ churn, is the price of a persistent tree -- MonPoly pays `caml_hash` and
 `caml_page_table_lookup` for 15% of its instructions precisely because it uses mutable hash
 tables there instead. That one is not a representation problem, and it is what the imperative
 window structures of Sections 20-21 are for.
+
+### 20.22 Could the interface not have the `Some`s at all?
+
+A design note, not a change. 20.21 established that the option wrapper's *allocation* is not where
+the money is; this asks the other half of the question -- whether the wrapper could be absent from
+the interface in the first place, so that it costs neither residency nor a dereference.
+
+**Where the wrappers come from.** `convert_tuple` in `src/verified_adapter.ml` builds one `Some`
+per field of every input event, because the interface is typed
+
+```ocaml
+type db = ((string * nat), (((event_data option) list) set list)) mapping
+```
+
+and the tuples it puts there are total -- a log event has a value in every argument position, so
+no `None` is ever built at the interface. The wrappers then persist, because of this:
+
+```isabelle
+| "deval j ts db (DPredS e ar) =
+     ((case Mapping.lookup db (e, ar) of
+         None ⇒ replicate (length ts) empty_table | Some xs ⇒ xs), DPredS e ar)"
+```
+
+**For a simple predicate the dense monitor uses the input table verbatim.** So the adapter's
+tuples *are* the dense tuples, and every element of every dense table in the whole pipeline is a
+two-word `Some` block pointing at the `event_data`. That is also the dense representation's best
+trick at predicates -- the sparse monitor has to build a widened `wf_tuple` per input tuple in the
+`Simple` case (`simple_match n 0 tms`), where the dense one does nothing at all.
+
+**What it would buy.** A microbenchmark of the comparator alone, on resident tuples, no
+allocation in the measured loop, `ed_comparator`'s exact clause structure against the same
+comparator over bare elements:
+
+| tuple width | flat / boxed |
+|---:|---:|
+| 2 | 1.02x |
+| 3 | 0.81x |
+| 5 | 0.75x |
+
+At width two the comparison usually resolves on the first element and the second box is never
+touched; from width three on, removing it is worth 19-25% of the comparator. Comparison is
+`ed_comparator` 9.6% plus `comparator_event_data` 9.2% plus the remaining composite 1.9%, so about
+20% of the dense monitor's instructions, which puts the direct saving at 4-5% of instructions.
+On top of that, two words per element leave the resident tables, which is the other half of
+20.19's read-miss gap -- 37.4 M against MonPoly's 22.4 M, where MonPoly's tuple has one box per
+element and ours has two.
+
+**Why the adapter cannot do it alone, and what it would take.** The `db` type is dictated by the
+kernel's tuple type, so an unboxed adapter needs an unboxed dense table, which needs the dense
+element type to change. Three points make that cheaper than it sounds:
+
+- The dense *operations* do not look at the option. `dproj`, `dmerge`, `dembedp`, the join, the
+  index and the probe are all definable over a plain element type; `Dense_Match.thy`, 729 lines,
+  mentions `Some` and `None` not once. Generalising them from `'a tuple` to a bare list is a type
+  generalisation, and instantiating the element type at `event_data option` recovers exactly
+  today's behaviour, so the generalisation can be checked before anything is retyped.
+- What does look at the option is the boundary: `dwf_tuple`, `dtabc`, `dtabw`, `dwiden`,
+  `dnarrow` and the `dsim` relation. Those stay astride the two representations, which is where a
+  conversion belongs and where `DPredM` already performs one (`dmatch_table`).
+- **The sparse monitor would barely notice.** Of its three predicate modes, only `Copy` uses the
+  input table as it stands and would need a wrapping pass; `Simple` and `Match` already construct
+  their tuples (`simple_match`, `match`) and would construct them from a bare list at the same
+  cost. `Copy` is the mode for a predicate whose arguments are exactly `Var 0 .. Var (n-1)` at the
+  formula's full width, which is the rare case -- narrower occurrences are `Simple`.
+
+So the shape of it is: generalise the dense operations' element type, retype the dense tables,
+change `database` and the adapter, and wrap in `meval`'s `Copy` case. The parts that are not
+mechanical are `meval`'s predicate case in the base session and its correctness proof, and the
+`dsim` bridge. It is a bigger step than 20.21's two, and unlike them it changes a definition
+rather than a code equation, so the differential tests stop being the only thing that has to
+agree -- the transferred correctness theorems have to be re-proved across the new boundary.
