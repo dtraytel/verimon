@@ -218,6 +218,22 @@ setup \<open>Monomorphize.monomorphize_cmd
      ("image", "ed_image", [etuple, etuple])] end)
   ["etuple_dict_simps"]\<close>
 
+text \<open>
+  Monomorphising the class operations is only half of it: their tree-to-tree branches, which are
+  the hot ones, call the primitives of @{theory Containers.RBT_Mapping2} and
+  @{theory Containers.RBT_Set2}, and those take the comparator as an argument, so what the
+  monomorphisation achieves on its own is to move the dictionary build from the box's once-at-start
+  into the branch.  The primitives have to go with them.
+\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  (let val etuple = "event_data tuple" in
+    [("RBT_Mapping2.join", "ed_rbt_join_unit", [etuple, "unit"]),
+     ("RBT_Mapping2.meet", "ed_rbt_meet_unit", [etuple, "unit"]),
+     ("RBT_Set2.minus", "ed_rbt_set_minus", [etuple]),
+     ("RBT_Set2.inter_list", "ed_rbt_inter_list", [etuple])] end)
+  ["etuple_dict_simps"]\<close>
+
 (*<*)
 end
 (*>*)
