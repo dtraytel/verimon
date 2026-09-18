@@ -57,6 +57,29 @@ lemma im_cap_pos: "0 < im_cap n"
 lemma ibkt_in_range: "0 < n \<Longrightarrow> 0 \<le> ibkt h n \<and> ibkt h n < n"
   by (simp add: ibkt_def)
 
+lemma integer_of_nat_nat_of_integer: "0 \<le> k \<Longrightarrow> integer_of_nat (nat_of_integer k) = k"
+  by (simp add: integer_eq_iff nat_of_integer.rep_eq less_eq_integer.rep_eq
+      integer_of_nat_eq_of_nat)
+
+lemma nat_of_integer_less:
+  assumes "0 \<le> k" and "k < integer_of_nat l"
+  shows "nat_of_integer k < l"
+  using assms by (simp add: less_integer.rep_eq less_eq_integer.rep_eq
+      nat_of_integer.rep_eq integer_of_nat_eq_of_nat nat_less_iff)
+
+text \<open>The bucket a key belongs to, as an index into the list of buckets.\<close>
+
+definition ibucket :: "integer \<Rightarrow> event_data tuple \<Rightarrow> nat" where
+  "ibucket n x = nat_of_integer (ibkt (ihash x) n)"
+
+lemma ibucket_conv: "0 < n \<Longrightarrow> (ibkt (ihash x) n = integer_of_nat i) \<longleftrightarrow> ibucket n x = i"
+  using ibkt_in_range[of n "ihash x"]
+  by (auto simp: ibucket_def integer_of_nat_nat_of_integer)
+
+lemma ibucket_lt: "0 < n \<Longrightarrow> integer_of_nat l = n \<Longrightarrow> ibucket n x < l"
+  unfolding ibucket_def
+  by (rule nat_of_integer_less) (use ibkt_in_range[of n "ihash x"] in auto)
+
 subsection \<open>The abstraction\<close>
 
 text \<open>
@@ -68,18 +91,38 @@ text \<open>
 \<close>
 
 definition ientry_ok :: "integer \<Rightarrow> nat \<Rightarrow> ('v ientry) \<Rightarrow> bool" where
-  "ientry_ok n i e \<longleftrightarrow> fst e = ihash (fst (snd e)) \<and> ibkt (fst e) n = integer_of_nat i"
+  "ientry_ok n i e \<longleftrightarrow> fst e = ihash (fst (snd e)) \<and> ibucket n (fst (snd e)) = i"
 
 definition imap_inv :: "integer \<Rightarrow> ('v ientry) list list \<Rightarrow> bool" where
   "imap_inv n bs \<longleftrightarrow> 0 < n \<and> integer_of_nat (length bs) = n \<and>
      (\<forall>i < length bs. \<forall>e \<in> set (bs ! i). ientry_ok n i e) \<and>
      distinct (map (\<lambda>e. fst (snd e)) (concat bs))"
 
-definition imap_map :: "('v ientry) list list \<Rightarrow> event_data tuple \<Rightarrow> 'v option" where
-  "imap_map bs = map_of (map snd (concat bs))"
+text \<open>
+  The map a list of buckets stands for is read off the bucket the key belongs to, which is how
+  @{const im_lookup_h} reads it.  Stating it this way makes an update of one bucket a local
+  change of the map; @{text imap_map_global} below identifies it with the map of all entries,
+  which is what the growth step needs.
+\<close>
+
+definition imap_map :: "integer \<Rightarrow> ('v ientry) list list \<Rightarrow> event_data tuple \<Rightarrow> 'v option" where
+  "imap_map n bs x = hm_look_list (ihash x) x (bs ! ibucket n x)"
 
 definition is_imap :: "(event_data tuple \<Rightarrow> 'v option) \<Rightarrow> ('v::heap) imap \<Rightarrow> assn" where
-  "is_imap m q = (\<exists>\<^sub>Abs. snd (snd q) \<mapsto>\<^sub>a bs * \<up>(imap_inv (fst q) bs \<and> m = imap_map bs))"
+  "is_imap m q =
+     (\<exists>\<^sub>Abs. snd (snd q) \<mapsto>\<^sub>a bs * \<up>(imap_inv (fst q) bs \<and> m = imap_map (fst q) bs))"
+
+lemma imap_inv_pos: "imap_inv n bs \<Longrightarrow> 0 < n"
+  by (simp add: imap_inv_def)
+
+lemma imap_inv_len: "imap_inv n bs \<Longrightarrow> integer_of_nat (length bs) = n"
+  by (simp add: imap_inv_def)
+
+lemma imap_inv_bucket_lt: "imap_inv n bs \<Longrightarrow> ibucket n x < length bs"
+  by (rule ibucket_lt[OF imap_inv_pos imap_inv_len])
+
+lemma imap_inv_hash: "imap_inv n bs \<Longrightarrow> i < length bs \<Longrightarrow> \<forall>e \<in> set (bs ! i). fst e = ihash (fst (snd e))"
+  by (auto simp: imap_inv_def ientry_ok_def)
 
 lemma in_concat_nth:
   assumes "e \<in> set (concat bs)"
@@ -110,17 +153,25 @@ proof
   qed
 qed
 
-lemma imap_map_bucket:
-  assumes inv: "imap_inv n bs" and i: "i < length bs"
-    and ib: "ibkt (ihash x) n = integer_of_nat i"
-  shows "imap_map bs x = map_of (map snd (bs ! i)) x"
-proof -
+text \<open>
+  Scanning the key's own bucket sees every entry with that key, because the invariant puts an
+  entry nowhere else.  So the local reading of the map agrees with the global one.
+\<close>
+
+lemma imap_map_global:
+  assumes inv: "imap_inv n bs"
+  shows "imap_map n bs = map_of (map snd (concat bs))"
+proof
+  fix x
+  have i: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
   have d: "distinct (map fst (map snd (concat bs)))"
     using inv by (simp add: imap_inv_def o_def)
-  have si: "set (bs ! i) \<subseteq> set (concat bs)" using nth_mem[OF i] by auto
-  have sub: "set (map snd (bs ! i)) \<subseteq> set (map snd (concat bs))" using si by auto
-  show ?thesis
-  proof (cases "map_of (map snd (bs ! i)) x")
+  have si: "set (bs ! ibucket n x) \<subseteq> set (concat bs)" using nth_mem[OF i] by auto
+  have sub: "set (map snd (bs ! ibucket n x)) \<subseteq> set (map snd (concat bs))" using si by auto
+  have lk: "imap_map n bs x = map_of (map snd (bs ! ibucket n x)) x"
+    unfolding imap_map_def by (rule hm_look_list_eq[OF imap_inv_hash[OF inv i]])
+  show "imap_map n bs x = map_of (map snd (concat bs)) x"
+  proof (cases "map_of (map snd (bs ! ibucket n x)) x")
     case None
     have "x \<notin> fst ` set (map snd (concat bs))"
     proof
@@ -130,39 +181,140 @@ proof -
       have k: "fst (snd e) = x" using kp pe by simp
       obtain j where j: "j < length bs" and ej: "e \<in> set (bs ! j)"
         using in_concat_nth[OF e] by blast
-      have io: "ientry_ok n j e" using inv j ej by (simp add: imap_inv_def)
-      have "ibkt (ihash (fst (snd e))) n = integer_of_nat j"
-        using io unfolding ientry_ok_def by auto
-      then have "integer_of_nat j = integer_of_nat i" using k ib by simp
-      then have "j = i" by (simp add: integer_of_nat_eq_of_nat)
-      then have "e \<in> set (bs ! i)" using ej by simp
-      then have "x \<in> fst ` set (map snd (bs ! i))" using k by force
+      have "ientry_ok n j e" using inv j ej by (simp add: imap_inv_def)
+      then have "j = ibucket n x" using k unfolding ientry_ok_def by auto
+      then have "e \<in> set (bs ! ibucket n x)" using ej by simp
+      then have "x \<in> fst ` set (map snd (bs ! ibucket n x))" using k by force
       then show False using None by (simp add: map_of_eq_None_iff)
     qed
     then have "map_of (map snd (concat bs)) x = None" by (simp add: map_of_eq_None_iff)
-    then show ?thesis using None by (simp add: imap_map_def)
+    then show ?thesis using None lk by simp
   next
     case (Some v)
-    then have "(x, v) \<in> set (map snd (bs ! i))" by (rule map_of_SomeD)
+    then have "(x, v) \<in> set (map snd (bs ! ibucket n x))" by (rule map_of_SomeD)
     then have "(x, v) \<in> set (map snd (concat bs))" using sub by blast
-    then show ?thesis using Some d by (simp add: imap_map_def map_of_is_SomeI)
+    then show ?thesis using Some d lk by (simp add: map_of_is_SomeI)
   qed
 qed
 
+subsection \<open>Changing one bucket\<close>
+
+text \<open>
+  A key can only ever sit in the bucket its hash selects, so two keys in different buckets are
+  different and the global distinctness is exactly distinctness inside each bucket.  Both the
+  invariant and the map are therefore local: replacing one bucket by a well-formed one leaves
+  the rest of the table alone.
+\<close>
+
+lemma concat_nth_split:
+  "i < length bs \<Longrightarrow> concat bs = concat (take i bs) @ bs ! i @ concat (drop (Suc i) bs)"
+  by (subst id_take_nth_drop[of i bs]) simp_all
+
+lemma distinct_concat_bucketed:
+  "(\<And>j. j < length bs \<Longrightarrow> distinct (map k (bs ! j))) \<Longrightarrow>
+   (\<And>j e. j < length bs \<Longrightarrow> e \<in> set (bs ! j) \<Longrightarrow> g (k e) = s + j) \<Longrightarrow>
+   distinct (map k (concat bs))"
+proof (induct bs arbitrary: s)
+  case Nil
+  show ?case by simp
+next
+  case (Cons b bs)
+  have db: "distinct (map k b)" using Cons(2)[of 0] by simp
+  have gb: "\<And>e. e \<in> set b \<Longrightarrow> g (k e) = s" using Cons(3)[of 0] by simp
+  have ih: "distinct (map k (concat bs))"
+  proof (rule Cons(1))
+    fix j assume "j < length bs"
+    then show "distinct (map k (bs ! j))" using Cons(2)[of "Suc j"] by simp
+  next
+    fix j e assume "j < length bs" and "e \<in> set (bs ! j)"
+    then show "g (k e) = Suc s + j" using Cons(3)[of "Suc j" e] by simp
+  qed
+  have "set (map k b) \<inter> set (map k (concat bs)) = {}"
+  proof safe
+    fix y assume y: "y \<in> set (map k b)" and y': "y \<in> set (map k (concat bs))"
+    from y obtain e where e: "e \<in> set b" and ke: "k e = y" by auto
+    from y' obtain e' where e': "e' \<in> set (concat bs)" and ke': "k e' = y" by auto
+    obtain j where j: "j < length bs" and ej: "e' \<in> set (bs ! j)"
+      using in_concat_nth[OF e'] by blast
+    have "g y = s" using gb[OF e] ke by simp
+    moreover have "g y = Suc s + j" using Cons(3)[of "Suc j" e'] j ej ke' by simp
+    ultimately show "y \<in> {}" by simp
+  qed
+  then show ?case using db ih by auto
+qed
+
+lemma imap_inv_alt:
+  assumes pos: "0 < n" and len: "integer_of_nat (length bs) = n"
+    and ok: "\<And>i e. i < length bs \<Longrightarrow> e \<in> set (bs ! i) \<Longrightarrow> ientry_ok n i e"
+    and d: "\<And>i. i < length bs \<Longrightarrow> distinct (map (\<lambda>e. fst (snd e)) (bs ! i))"
+  shows "imap_inv n bs"
+proof -
+  have "distinct (map (\<lambda>e. fst (snd e)) (concat bs))"
+  proof (rule distinct_concat_bucketed[where g = "ibucket n" and s = 0])
+    fix j assume "j < length bs"
+    then show "distinct (map (\<lambda>e. fst (snd e)) (bs ! j))" by (rule d)
+  next
+    fix j e assume "j < length bs" and "e \<in> set (bs ! j)"
+    from ok[OF this] show "ibucket n (fst (snd e)) = 0 + j" by (simp add: ientry_ok_def)
+  qed
+  then show ?thesis using pos len ok by (auto simp: imap_inv_def)
+qed
+
+lemma imap_inv_bucket_distinct:
+  assumes inv: "imap_inv n bs" and i: "i < length bs"
+  shows "distinct (map (\<lambda>e. fst (snd e)) (bs ! i))"
+proof -
+  have "distinct (map (\<lambda>e. fst (snd e)) (concat bs))" using inv by (simp add: imap_inv_def)
+  then show ?thesis by (subst (asm) concat_nth_split[OF i]) simp
+qed
+
+lemma imap_inv_list_update:
+  assumes inv: "imap_inv n bs" and i: "i < length bs"
+    and ok: "\<And>e. e \<in> set b' \<Longrightarrow> ientry_ok n i e"
+    and d: "distinct (map (\<lambda>e. fst (snd e)) b')"
+  shows "imap_inv n (list_update bs i b')"
+proof (rule imap_inv_alt)
+  show "0 < n" by (rule imap_inv_pos[OF inv])
+next
+  show "integer_of_nat (length (list_update bs i b')) = n" using imap_inv_len[OF inv] by simp
+next
+  fix j e assume j: "j < length (list_update bs i b')" and e: "e \<in> set (list_update bs i b' ! j)"
+  show "ientry_ok n j e"
+  proof (cases "j = i")
+    case True
+    then show ?thesis using e ok i by simp
+  next
+    case False
+    then show ?thesis using e inv j by (auto simp: imap_inv_def)
+  qed
+next
+  fix j assume j: "j < length (list_update bs i b')"
+  show "distinct (map (\<lambda>e. fst (snd e)) (list_update bs i b' ! j))"
+  proof (cases "j = i")
+    case True
+    then show ?thesis using d i by simp
+  next
+    case False
+    then show ?thesis using imap_inv_bucket_distinct[OF inv] j by simp
+  qed
+qed
+
+lemma imap_map_list_update:
+  assumes inv: "imap_inv n bs" and i: "i < length bs"
+  shows "imap_map n (list_update bs i b') x =
+    (if i = ibucket n x then hm_look_list (ihash x) x b' else imap_map n bs x)"
+  using imap_inv_bucket_lt[OF inv] i by (simp add: imap_map_def)
+
 subsection \<open>Creating a table\<close>
 
-lemma integer_of_nat_nat_of_integer: "0 \<le> k \<Longrightarrow> integer_of_nat (nat_of_integer k) = k"
-  by (simp add: integer_eq_iff nat_of_integer.rep_eq less_eq_integer.rep_eq
-      integer_of_nat_eq_of_nat)
-
-lemma nat_of_integer_less:
-  assumes "0 \<le> k" and "k < integer_of_nat l"
-  shows "nat_of_integer k < l"
-  using assms by (simp add: less_integer.rep_eq less_eq_integer.rep_eq
-      nat_of_integer.rep_eq integer_of_nat_eq_of_nat nat_less_iff)
-
-lemma imap_map_replicate[simp]: "imap_map (replicate k []) = Map.empty"
-  by (simp add: imap_map_def)
+lemma imap_map_replicate:
+  assumes "0 < n" and "integer_of_nat k = n"
+  shows "imap_map n (replicate k []) = Map.empty"
+proof
+  fix x
+  have "ibucket n x < k" by (rule ibucket_lt[OF assms])
+  then show "imap_map n (replicate k []) x = Map.empty x" by (simp add: imap_map_def)
+qed
 
 lemma im_new_rule: "<emp> im_new n <is_imap Map.empty>"
 proof -
@@ -171,7 +323,7 @@ proof -
     by (rule integer_of_nat_nat_of_integer) (use p in simp)
   show ?thesis
     unfolding im_new_def Array.new'_def
-    by (sep_auto simp: is_imap_def imap_inv_def l p)
+    by (sep_auto simp: is_imap_def imap_inv_def l p imap_map_replicate[OF p l])
 qed
 
 subsection \<open>Looking a key up\<close>
@@ -184,26 +336,143 @@ proof (cases q)
     unfolding fields is_imap_def im_lookup_h_def Array.nth'_def
   proof (sep_auto, goal_cases)
     case (1 bs)
-    then have inv: "imap_inv n bs" by simp
-    then have p: "0 < n" and le: "integer_of_nat (length bs) = n"
-      by (simp_all add: imap_inv_def)
-    show ?case
-      by (rule nat_of_integer_less) (use ibkt_in_range[OF p] le in auto)
+    then have "imap_inv n bs" by simp
+    from imap_inv_bucket_lt[OF this] show ?case by (simp add: ibucket_def)
   next
     case (2 bs)
-    then have inv: "imap_inv n bs" and mm: "m = imap_map bs" by simp_all
-    have le: "integer_of_nat (length bs) = n" using inv by (simp add: imap_inv_def)
-    have p: "0 < n" using inv by (simp add: imap_inv_def)
-    have lt: "nat_of_integer (ibkt (ihash x) n) < length bs"
-      by (rule nat_of_integer_less) (use ibkt_in_range[OF p] le in auto)
-    have ib: "ibkt (ihash x) n = integer_of_nat (nat_of_integer (ibkt (ihash x) n))"
-      using ibkt_in_range[OF p] by (simp add: integer_of_nat_nat_of_integer)
-    have hb: "\<forall>e \<in> set (bs ! nat_of_integer (ibkt (ihash x) n)). fst e = ihash (fst (snd e))"
-      using inv lt by (auto simp: imap_inv_def ientry_ok_def)
-    have eq: "hm_look_list (ihash x) x (bs ! nat_of_integer (ibkt (ihash x) n)) = m x"
-      unfolding hm_look_list_eq[OF hb] mm by (rule imap_map_bucket[OF inv lt ib, symmetric])
-    show ?case by (sep_auto simp: eq inv mm)
+    then show ?case by (sep_auto simp: imap_map_def ibucket_def)
   qed
+qed
+
+lemma im_lookup_rule: "<is_imap m q> im_lookup q x <\<lambda>r. is_imap m q * \<up>(r = m x)>"
+  unfolding im_lookup_def by (rule im_lookup_h_rule)
+
+subsection \<open>Reading all entries back\<close>
+
+lemma nat_of_integer_integer_of_nat[simp]: "nat_of_integer (integer_of_nat j) = j"
+  by (simp add: nat_of_integer.rep_eq integer_of_nat_eq_of_nat)
+
+lemma integer_of_nat_less_iff[simp]: "integer_of_nat i < integer_of_nat j \<longleftrightarrow> i < j"
+  by (simp add: less_integer.rep_eq integer_of_nat_eq_of_nat)
+
+lemma integer_of_nat_le_iff[simp]: "integer_of_nat i \<le> integer_of_nat j \<longleftrightarrow> i \<le> j"
+  by (simp add: less_eq_integer.rep_eq integer_of_nat_eq_of_nat)
+
+lemma integer_of_nat_Suc: "integer_of_nat (Suc j) = integer_of_nat j + 1"
+  by (simp add: integer_of_nat_eq_of_nat)
+
+lemma integer_of_nat_0[simp]: "integer_of_nat 0 = 0"
+  by (simp add: integer_of_nat_eq_of_nat)
+
+text \<open>
+  The fold walks the buckets from an index to the end, so its rule is an induction on how many
+  buckets are left.  With the append as the folded step the result is the entries of those
+  buckets, the buckets in reverse order; only the multiset of entries matters downstream.
+\<close>
+
+lemma im_fold_idx_append_rule:
+  assumes n: "integer_of_nat (length bs) = n"
+  shows "j \<le> length bs \<Longrightarrow>
+    <a \<mapsto>\<^sub>a bs>
+      im_fold_idx (\<lambda>b acc. b @ acc) a (integer_of_nat j) n acc
+    <\<lambda>r. a \<mapsto>\<^sub>a bs * \<up>(r = concat (rev (drop j bs)) @ acc)>"
+proof (induct "length bs - j" arbitrary: j acc)
+  case 0
+  then have "j = length bs" by simp
+  then show ?case by (subst im_fold_idx.simps) (sep_auto simp: n)
+next
+  case (Suc x)
+  then have lt: "j < length bs" by simp
+  have ne: "\<not> n \<le> integer_of_nat j" using lt unfolding n[symmetric] by simp
+  have ih: "<a \<mapsto>\<^sub>a bs>
+      im_fold_idx (\<lambda>b acc. b @ acc) a (integer_of_nat (Suc j)) n (bs ! j @ acc)
+    <\<lambda>r. a \<mapsto>\<^sub>a bs * \<up>(r = concat (rev (drop (Suc j) bs)) @ bs ! j @ acc)>"
+    by (rule Suc(1)) (use lt Suc(2) in simp_all)
+  have dr: "concat (rev (drop j bs)) @ acc = concat (rev (drop (Suc j) bs)) @ bs ! j @ acc"
+    using lt by (subst Cons_nth_drop_Suc[symmetric]) simp_all
+  show ?case
+    by (subst im_fold_idx.simps)
+       (sep_auto simp: ne Array.nth'_def lt integer_of_nat_Suc[symmetric] dr heap: ih)
+qed
+
+lemma im_entries_rule:
+  assumes n: "integer_of_nat (length bs) = n"
+  shows "<a \<mapsto>\<^sub>a bs> im_entries (n, c, a) <\<lambda>r. a \<mapsto>\<^sub>a bs * \<up>(r = concat (rev bs))>"
+proof -
+  have "<a \<mapsto>\<^sub>a bs> im_fold_idx (\<lambda>b acc. b @ acc) a (integer_of_nat 0) n []
+        <\<lambda>r. a \<mapsto>\<^sub>a bs * \<up>(r = concat (rev (drop 0 bs)) @ [])>"
+    by (rule im_fold_idx_append_rule[OF n]) simp
+  then show ?thesis unfolding im_entries_def by simp
+qed
+
+subsection \<open>Redistributing the entries into a bigger table\<close>
+
+lemma concat_list_update:
+  "i < length bs \<Longrightarrow>
+   concat (list_update bs i b') = concat (take i bs) @ b' @ concat (drop (Suc i) bs)"
+  by (subst upd_conv_take_nth_drop) simp_all
+
+lemma distinct_map_mset_cong: "mset xs = mset ys \<Longrightarrow> distinct (map k ys) \<Longrightarrow> distinct (map k xs)"
+  by (metis mset_eq_imp_distinct_iff mset_map)
+
+lemma im_new_rule':
+  "<emp> im_new n <\<lambda>q. \<exists>\<^sub>Abs. snd (snd q) \<mapsto>\<^sub>a bs * \<up>(imap_inv (fst q) bs \<and> concat bs = [])>"
+proof -
+  have p: "0 < im_cap n" by (rule im_cap_pos)
+  have l: "integer_of_nat (nat_of_integer (im_cap n)) = im_cap n"
+    by (rule integer_of_nat_nat_of_integer) (use p in simp)
+  show ?thesis
+    unfolding im_new_def Array.new'_def
+    by (sep_auto simp: imap_inv_def l p)
+qed
+
+text \<open>
+  Filling a fresh table from a list of entries keeps the invariant and collects exactly those
+  entries: each one goes into the bucket its stored hash selects, which is the bucket of its own
+  key because the hash stored next to a key is that key's.
+\<close>
+
+lemma im_fill_rule:
+  "imap_inv n bs \<Longrightarrow> (\<forall>e \<in> set kvs. fst e = ihash (fst (snd e))) \<Longrightarrow>
+   distinct (map (\<lambda>e. fst (snd e)) (concat bs @ kvs)) \<Longrightarrow>
+   <a \<mapsto>\<^sub>a bs>
+     im_fill (n, c, a) kvs
+   <\<lambda>q'. \<exists>\<^sub>Abs'. a \<mapsto>\<^sub>a bs' * \<up>(fst q' = n \<and> snd (snd q') = a \<and> imap_inv n bs' \<and>
+      mset (concat bs') = mset (concat bs @ kvs))>"
+proof (induct kvs arbitrary: bs c)
+  case Nil
+  then show ?case by (subst im_fill.simps) sep_auto
+next
+  case (Cons e r)
+  note inv = Cons(2)
+  have pos: "0 < n" by (rule imap_inv_pos[OF inv])
+  have hsh: "fst e = ihash (fst (snd e))" using Cons(3) by simp
+  define i where "i = ibucket n (fst (snd e))"
+  have ib: "ibkt (fst e) n = integer_of_nat i"
+    unfolding i_def hsh by (simp add: ibucket_conv[OF pos])
+  have lt: "i < length bs" unfolding i_def by (rule imap_inv_bucket_lt[OF inv])
+  have ke: "fst (snd e) \<notin> set (map (\<lambda>e. fst (snd e)) (concat bs))" using Cons(4) by auto
+  have sub: "set (bs ! i) \<subseteq> set (concat bs)" using nth_mem[OF lt] by auto
+  have d1: "distinct (map (\<lambda>e. fst (snd e)) (e # bs ! i))"
+    using imap_inv_bucket_distinct[OF inv lt] ke sub by auto
+  have ok1: "\<And>e'. e' \<in> set (e # bs ! i) \<Longrightarrow> ientry_ok n i e'"
+    using inv lt hsh by (auto simp: imap_inv_def ientry_ok_def i_def)
+  have inv1: "imap_inv n (list_update bs i (e # bs ! i))"
+    by (rule imap_inv_list_update[OF inv lt ok1 d1])
+  have ms: "mset (concat (list_update bs i (e # bs ! i))) = add_mset e (mset (concat bs))"
+    using lt by (simp add: concat_list_update concat_nth_split[of i bs])
+  have mm: "mset (concat (list_update bs i (e # bs ! i)) @ r) = mset (concat bs @ e # r)"
+    using ms by simp
+  have d2: "distinct (map (\<lambda>e. fst (snd e)) (concat (list_update bs i (e # bs ! i)) @ r))"
+    by (rule distinct_map_mset_cong[OF mm Cons(4)])
+  have ih: "<a \<mapsto>\<^sub>a list_update bs i (e # bs ! i)>
+      im_fill (n, c + 1, a) r
+    <\<lambda>q'. \<exists>\<^sub>Abs'. a \<mapsto>\<^sub>a bs' * \<up>(fst q' = n \<and> snd (snd q') = a \<and> imap_inv n bs' \<and>
+       mset (concat bs') = mset (concat (list_update bs i (e # bs ! i)) @ r))>"
+    by (rule Cons(1)[OF inv1 _ d2]) (use Cons(3) in simp)
+  show ?case
+    by (subst im_fill.simps)
+       (sep_auto simp: ib Array.nth'_def Array.upd'_def lt ms heap: ih)
 qed
 
 (*<*)
