@@ -3972,14 +3972,19 @@ verified monitor now takes 1.03x MonPoly's instructions where 20.19 measured 1.1
 | eventually | 1.65s | 1.23x | **0.84x** | 0.87x | 0.88x | 0.88x |
 | complex | 2.90s | 1.89x | 1.15x | **0.96x** | 1.25x | 1.10x |
 
-**The verified monitor is now faster than MonPoly on all six.** The row that moved is `complex`:
-1.25x to 1.15x dense, and 1.10x to 0.96x with the heap index. That is the right row and the only
-one that should have moved -- it is the one benchmark with a genuine multi-way join on wide
-operands, so it is the only one where `dprobe_step_l` and `dindex_step` run millions of times.
-The other five do not go through the dense join index much and sit where they were; `aggwide`
-reads 0.85x against 20.18's 0.80x, but MonPoly's own absolute time on it moved from 12.51 s to
-11.39 s between the two runs, so that ratio is not comparable across runs and nothing in this
-change touches the aggregation.
+The row that moved is `complex`, from 1.25x to 1.15x dense and 1.10x to 0.96x with the heap index.
+That is the right row and the only one that should have moved -- it is the one benchmark with a
+genuine multi-way join on wide operands, so the only one where `dprobe_step_l` and `dindex_step`
+run millions of times.
+
+**These wall-clock figures are not trustworthy to the precision they are quoted at, and 20.23
+re-measures them.** They are medians of nine, but each configuration was timed in a block rather
+than interleaved with the others, so drift over a block biases the comparison; and this machine's
+spread on a single configuration is 9-21%. MonPoly's own absolute time on `complex` moved from
+2.90 s to 2.41 s between two runs of the same binary. On the protocol of 20.23 `complex` reads
+1.02x rather than 0.96x, so the claim this section originally made -- that the verified monitor is
+faster than MonPoly on all six -- was not supported by its own measurement. The instruction
+counts above are exact and stand.
 
 The exported OCaml is 26 lines longer, both cram suites are green, and both differential checks
 still agree on all 537 `-verified` invocations: `-dense` against the plain kernel and
@@ -4107,3 +4112,108 @@ is worth doing first on its own account, because instantiating the generalisatio
 `event_data option` has to reproduce today's kernel exactly, which makes it checkable before
 anything is committed to the new representation -- and once it is done, the adapter change the
 suggestion asks for is the easy end of the job rather than the impossible one.
+
+### 20.23 Item 3, and how the timings were being mismeasured
+
+20.20's item 3: the set operations were reaching the red-black tree with the composite comparator
+rather than @{const ed_comparator}. Two rounds were needed, and the first was wrong in a way the
+generated code showed plainly.
+
+`Monomorphic_Code` *boxes* the set operations and monomorphises only membership and lookup. A box
+builds the dictionary once at start-up, which removes the construction cost, but it still passes
+the dictionary, so the comparator that reaches the tree is the three-frame composite.
+Monomorphising union, intersection, difference, `Set.filter` and `image` instead -- after removing
+the boxes' redirect rules from the code preprocessor, or the two compete for the same term --
+fixes their type and lets `ccomp_etuple` rewrite the comparator. That alone achieved nothing:
+
+```ocaml
+| RBT_set rbt1, RBT_set rbt2 ->
+    RBT_set (joina (ccompare_list (ccompare_option ccompare_event_data))
+               (fun _ _ -> id) rbt1 rbt2)
+```
+
+Their tree-to-tree branches, which are the hot ones, call `joina`, `meet`, `minus` and
+`inter_list` of `RBT_Mapping2` and `RBT_Set2`, and those take the comparator as an argument
+exactly as `rbt_comp_lookup` did before 20.21. So the monomorphisation only moved the dictionary
+build out of the box and into the branch -- a small regression for those branches and no gain at
+all on the comparator. Monomorphising the four primitives as well gives
+
+```ocaml
+| RBT_set rbt1, RBT_set rbt2 -> RBT_set (ed_rbt_join_unit (fun _ _ -> id) rbt1 rbt2)
+
+let rec ed_rbt_join_unit xc xd xe =
+  Mapping_RBTa (rbt_comp_union_with_key ed_comparator xc
+                  (unbox ed_impl_of_v xd) (unbox ed_impl_of_v xe))
+```
+
+**A leak 20.21 introduced, found while profiling for this.** Monomorphising `Mapping.lookup`
+pushed the per-call dictionary build one frame down into `impl_of`, which ignores the comparator
+its caller hands it. `Monomorphic_Code` boxes `impl_of` at every value type for that reason; the
+index's was missing, so `ed_rbt_lookup_tuples` called `ccompare_lista` 2.16 million times and
+`ed_rbt_insert_tuples` another 0.1 million -- 144 M instructions between
+`ccompare_optiona` and `ccompare_lista`, more than item 3 itself was worth. Boxed now.
+
+**Instructions and memory**, callgrind on `complex`, the three stages against the 20.19 baseline:
+
+| | MonPoly | 20.19 | after 1+2 | after 1+2+3 |
+|---|---:|---:|---:|---:|
+| instructions | 6.876 G | 7.194 G | 6.216 G | **5.972 G** |
+| ... `-dense -heap_maps` | -- | -- | -- | **5.914 G** |
+| D1 misses | 40.2 M | 95.1 M | 87.7 M | **80.8 M** |
+| ... of which writes | 17.8 M | 56.8 M | 50.2 M | **44.4 M** |
+| minor words | 132.9 M | 423.8 M | 372.9 M | **327.7 M** |
+| promoted words | 5.56 M | 13.00 M | 11.80 M | **10.66 M** |
+
+Instructions fall 17.0% from the baseline, allocation 22.7%, write misses 21.8%. Discounting the
+parts that are not monitoring -- MonPoly spends 817 M printing through `printf` where the direct
+printer spends 2 M, and both lex the log for 125 M -- the monitoring work is 5.934 G for MonPoly
+against 5.845 G dense and 5.787 G with the heap index, or **0.98x**, where 20.19 measured 1.19x.
+Allocation is still 2.47x MonPoly's, down from 3.19x, and that is what is left of the gap.
+
+**How the timings were being mismeasured.** The tables of 20.18 and 20.21 are medians of nine, but
+each configuration was timed in a block rather than interleaved, so drift over a block biases the
+comparison between them. Interleaving the four configurations run by run on `complex` shows why
+that matters:
+
+```
+MonPoly    2.903s  [2.758-3.032]  spread  9.4%
+pure       5.352s  [4.785-5.719]  spread 17.5%
+dense      3.225s  [3.060-3.376]  spread  9.8%
+dense+h    3.069s  [2.620-3.281]  spread 21.5%
+```
+
+A 9-21% spread on one configuration is wider than most of the differences those sections quote to
+three significant figures, and MonPoly's own absolute time on `complex` moved from 2.90 s to
+2.41 s between two runs of the same binary. **So the single-digit movements in 20.18 and 20.21 are
+at or below this machine's noise floor and should not be read as results**; the instruction counts,
+which are exact, are what those sections' conclusions should rest on.
+
+Re-measured properly -- the four configurations interleaved run by run, minimum of nine, which is
+the robust estimator when the noise is one-sided:
+
+| formula | MonPoly | pure | dense | dense+h |
+|---|---:|---:|---:|---:|
+| sincewide | 2.70s | 1.04x | 0.90x | **0.89x** |
+| untilwide | 2.78s | 1.13x | 0.99x | **0.92x** |
+| aggwide | 10.51s | 1.05x | 0.89x | **0.77x** |
+| once | 2.01s | 1.16x | 0.77x | **0.74x** |
+| eventually | 1.30s | 1.28x | **0.88x** | 0.96x |
+| complex | 2.54s | 1.89x | 1.06x | **1.02x** |
+
+**The verified monitor is ahead of MonPoly on five of the six and level on the sixth.** That is
+the claim the measurement supports; 20.21's stronger one is withdrawn above. The short tuples are
+worth 1.04x to 1.89x over the plain verified kernel, and the heap index, which 20.18 found no
+faster than the pure dense code, is now the best configuration on five of six -- the dictionary
+and comparator work it used to carry per probed tuple is what had been hiding it.
+
+The exported OCaml is unchanged in behaviour: both cram suites are green and both differential
+checks agree on all 537 `-verified` invocations, `-dense` against the plain kernel and
+`-dense -heap_maps` against `-dense`.
+
+**Left.** `rbt_comp_union_with_key`, `rbt_comp_minus` and `rbt_comp_inter_with_key` still take
+`ed_comparator` as an argument, so inside them it is applied through `caml_apply2` -- the same
+thing 20.21 fixed for lookup, insertion and deletion, and worth the same treatment, since a union
+walks both trees and so makes O(n) indirect calls. Item 4 of 20.20, the join materialising both
+operands as lists, is untouched: `gen_keys` is still 193 M instructions and 6.7% of allocation.
+And the 34% of allocation that is red-black tree node churn is unchanged, because it is the price
+of a persistent tree rather than anything the code generator is doing.
