@@ -940,9 +940,23 @@ text \<open>
   operand well-formedness and @{thm produces_next} re-establishing it for the successor.
 \<close>
 
-theorem dsim_deval:
-  "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
-   (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+text \<open>
+  The induction is over the derivation of the simulation, which gives the statement for an
+  operand's own derivation.  A node that re-enters the evaluator on an operand's \<^emph>\<open>successor\<close>
+  state -- the freeze does -- needs it for a derivation that is not a sub-derivation, so the
+  statement carries a bound \<open>NN\<close> on the formula's size and an assumption \<open>Q\<close> giving
+  it below that bound.  \<open>dsim_deval_bound\<close> closes the loop by induction on the
+  bound, and \<open>dsim_deval\<close> instantiates it.
+\<close>
+
+theorem dsim_deval_N:
+  assumes Q: "\<And>n' cs' tw' \<phi>d' \<chi> j' ts' db' xs' \<chi>'. size \<chi> < NN \<Longrightarrow> dsim n' cs' tw' \<phi>d' \<chi> \<Longrightarrow>
+      wf_db db' \<Longrightarrow> sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
+      meval j' n' ts' db' \<chi> = (xs', \<chi>') \<Longrightarrow>
+      \<exists>\<phi>d''. deval j' ts' db' \<phi>d' = (map (dtabc n' cs') xs', \<phi>d'')
+        \<and> dsim n' cs' (dnext tw' ts') \<phi>d'' \<chi>'"
+  shows "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+   (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> size \<phi> \<le> NN \<Longrightarrow>
    \<exists>\<phi>d'. deval j ts db \<phi>d = (map (dtabc n cs) xs, \<phi>d')
      \<and> dsim n cs (dnext tw ts) \<phi>d' \<phi>'"
 proof (induct arbitrary: j ts db xs \<phi>' rule: dsim.induct)
@@ -1054,8 +1068,9 @@ next
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (Set.filter (eval_constraint (t1, p, c, t2))) ys"
     and f: "\<phi>' = mformula.MAndRel \<psi>' (t1, p, c, t2)" using m e by simp_all
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsAndRel.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
-    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have t: "list_all (ftable n (set cs)) ys"
     by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
   have pc: "\<And>r. r \<in> set ys \<Longrightarrow>
@@ -1081,8 +1096,9 @@ next
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (\<lambda>r. if r = empty_table then unit_table n else empty_table) ys"
     and f: "\<phi>' = mformula.MNeg \<psi>'" using m e by simp_all
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsNeg.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n []) ys, \<psi>d')"
-    and sim': "dsim n [] (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim n [] (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have "map (\<lambda>r. if r = empty_table then unit_table 0 else empty_table) (map (dtabc n []) ys)
       = map (dtabc n []) xs"
     unfolding x by (simp add: dtabc_neg)
@@ -1096,8 +1112,9 @@ next
   obtain ys \<psi>' where e: "meval j (Suc n) ts db \<phi> = (ys, \<psi>')"
     by (cases "meval j (Suc n) ts db \<phi>")
   have x: "xs = map (\<lambda>r. tl ` r) ys" and f: "\<phi>' = mformula.MExists \<psi>'" using m e by simp_all
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsExists.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc (Suc n) ccs) ys, \<psi>d')"
-    and sim': "dsim (Suc n) ccs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim (Suc n) ccs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have wfc: "wf_cols (Suc n) ccs" by (rule dsim_wf_cols[OF sim])
   have t: "list_all (ftable (Suc n) (set ccs)) ys"
     by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
@@ -1137,10 +1154,12 @@ next
   obtain zs buf2 where e3: "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add as bs buf) = (zs, buf2)"
     by (cases "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add as bs buf)")
   have x: "xs = zs" and f: "\<phi>' = mformula.MOr \<phi>2 \<psi>2 buf2" using m e1 e2 e3 by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsOr.prems(5)], simp)+
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs) as, \<phi>d2)"
-    and s1: "dsim n cs (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+    and s1: "dsim n cs (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
-    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
   have ta: "list_all (ftable n (set cs)) as"
     by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
   have tb: "list_all (ftable n (set cs)) bs"
@@ -1174,10 +1193,12 @@ next
         (mbuf2_add as bs buf)")
   have x: "xs = zs" and f: "\<phi>' = mformula.MAnd (set cs1) \<phi>2 pos (set cs2) \<psi>2 buf2"
     using m e1 e2 e3 by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsAnd.prems(5)], simp)+
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs1) as, \<phi>d2)"
-    and s1: "dsim n cs1 (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+    and s1: "dsim n cs1 (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs2) bs, \<psi>d2)"
-    and s2: "dsim n cs2 (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+    and s2: "dsim n cs2 (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
   have so1: "sorted_wrt (<) cs1" and b1: "\<forall>c \<in> set cs1. c < n"
     using dsim_wf_cols[OF sim1] by (blast dest: conjunct1 conjunct2)+
   have so2: "sorted_wrt (<) cs2" and b2: "\<forall>c \<in> set cs2. c < n"
@@ -1208,8 +1229,9 @@ next
     and w = DsPrev.prems(1) and sts = DsPrev.prems(2)
     and mts = DsPrev.prems(3) and m = DsPrev.prems(4)
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsPrev.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
-    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have t: "list_all (ftable n (set cs)) ys"
     by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
   have tb: "list_all (ftable n (set cs)) (buf @ ys)" using lb t by simp
@@ -1241,8 +1263,9 @@ next
     and IH = DsNext.hyps(4) and w = DsNext.prems(1) and sts = DsNext.prems(2)
     and mts = DsNext.prems(3) and m = DsNext.prems(4)
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsNext.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs) ys, \<psi>d')"
-    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim n cs (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   obtain ys0 first0 where c:
       "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a) = (ys0, first0)"
     by (cases "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a)") auto
@@ -1288,11 +1311,19 @@ next
     then show "list_all (ftable n (set (?cs' ! i))) (map fst ?R ! i)"
       using iL by simp
   qed
+  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
+  proof -
+    fix i assume i: "i < length L"
+    have "size (L ! i) \<le> size_list size L"
+      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ DsAnds.prems(5)]) simp
+    finally show "size (L ! i) \<le> NN" .
+  qed
   have la1: "\<forall>i < length L. dsim n (?cs' ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
          (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (?cs' ! i)) as, \<psi>d')
             \<and> dsim n (?cs' ! i) (dnext tw ts) \<psi>d' \<psi>'))"
-    using la w sts mts by blast
+    using la w sts mts szL by blast
   have dlr: "length (deval_list j ts db Ld) = length L \<and>
       map fst (deval_list j ts db Ld)
         = map2 (\<lambda>c y. map (dtabc n c) y) ?cs'
@@ -1408,8 +1439,9 @@ next
     by (cases "meval j (?mm + n) ts db \<phi>")
   have x: "xs = map (eval_aggargs args) ys" and f: "\<phi>' = mformula.MAgg args \<psi>'"
     using m e by simp_all
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsAgg.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc (?mm + n) ?cc) ys, \<psi>d')"
-    and sim': "dsim (?mm + n) ?cc (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim (?mm + n) ?cc (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have t: "list_all (ftable (?mm + n) (set ?cc)) ys"
     by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
   have "map (dagg (aggargs_g0 args) (aggargs_\<omega> args) (reindex_trm ?cc (aggargs_f args)) ?mm
@@ -1435,10 +1467,12 @@ next
       = (zs, buf2, aux2)" by (cases "meval_since args [] (mbuf2S_add as bs ts buf) aux")
   have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
     using m e1 e2 e3 an by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsSince.prems(5)], simp)+
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) as, \<phi>d2)"
-    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
-    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
   have ta: "list_all (ftable n (set cs_L)) as"
     by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
   have tb: "list_all (ftable n (set cs)) bs"
@@ -1493,10 +1527,12 @@ next
     by (cases "eval_muaux_dq args nt aux1")
   have x: "xs = zs" and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
     using m e1 e2 e3 e4 an by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsUntil.prems(5)], simp)+
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) as, \<phi>d2)"
-    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
   obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
-    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2] by blast
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
   have ta: "list_all (ftable n (set cs_L)) as"
     by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
   have tb: "list_all (ftable n (set cs)) bs"
@@ -1545,8 +1581,9 @@ next
   have x: "xs = map (\<lambda>r. eval_assignment (y, t) ` r) ys"
     and f: "\<phi>' = mformula.MAndAssign \<psi>' (y, t)"
     using m e by (simp_all del: eval_assignment.simps)
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ DsAndAssign.prems(5)]) simp
   obtain \<psi>d' where d: "deval j ts db \<phi>d = (map (dtabc n cs0) ys, \<psi>d')"
-    and sim': "dsim n cs0 (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e] by blast
+    and sim': "dsim n cs0 (dnext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz] by blast
   have tb: "list_all (ftable n (set cs0)) ys"
     by (rule produces_tables[OF dsim_produces[OF sim] w sts mts e])
   have wf0: "wf_cols n cs0" by (rule dsim_wf_cols[OF sim])
@@ -1623,11 +1660,13 @@ next
   have dt: "map (dtabc m [0..<m]) as = as" using ta by (induct as) (auto simp: dtabc_upt)
   have w': "wf_db (Mapping.update (p, m) as db)"
     by (rule wf_db_update'[OF w]) (use ta in simp)
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsLet.prems(5)], simp)+
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc m [0..<m]) as, \<phi>d2)"
-    and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+    and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
   obtain \<psi>d2 where d2: "deval j ts (Mapping.update (p, m) as db) \<psi>d
         = (map (dtabc n cs) bs, \<psi>d2)"
-    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w' sts mts e2] by blast
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w' sts mts e2 sz2] by blast
   show ?case
   proof (intro exI conjI)
     show "deval j ts db (DLet p m \<phi>d \<psi>d) = (map (dtabc n cs) xs, DLet p m \<phi>d2 \<psi>d2)"
@@ -1637,6 +1676,28 @@ next
       by (rule dsim.DsLet[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2])
   qed
 qed
+
+text \<open>Induction on the bound discharges the assumption the theorem above carries, and
+  instantiating it at the formula's own size recovers the statement without it.\<close>
+
+lemma dsim_deval_bound:
+  "size \<phi> \<le> NN \<Longrightarrow> dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+   (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+   \<exists>\<phi>d'. deval j ts db \<phi>d = (map (dtabc n cs) xs, \<phi>d')
+     \<and> dsim n cs (dnext tw ts) \<phi>d' \<phi>'"
+proof (induct NN arbitrary: n cs tw \<phi>d \<phi> j ts db xs \<phi>' rule: less_induct)
+  case (less NN)
+  show ?case
+    by (rule dsim_deval_N[OF _ less(3) less(4) less(5) less(6) less(7) less(2)])
+      (use less(1) in blast)
+qed
+
+theorem dsim_deval:
+  "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+   (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow>
+   \<exists>\<phi>d'. deval j ts db \<phi>d = (map (dtabc n cs) xs, \<phi>d')
+     \<and> dsim n cs (dnext tw ts) \<phi>d' \<phi>'"
+  by (rule dsim_deval_bound[OF order.refl])
 
 (*<*)
 end
