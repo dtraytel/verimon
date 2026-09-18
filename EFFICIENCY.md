@@ -4068,3 +4068,42 @@ mechanical are `meval`'s predicate case in the base session and its correctness 
 `dsim` bridge. It is a bigger step than 20.21's two, and unlike them it changes a definition
 rather than a code equation, so the differential tests stop being the only thing that has to
 agree -- the transferred correctness theorems have to be re-proved across the new boundary.
+
+**Addendum: could it be done in the OCaml only, in the adapter?** The suggestion is the right
+instinct about where the cost is introduced, and the representation it wants is sound and free:
+every @{text event_data} value is a block -- @{text EInt}, @{text EFloat} and @{text EString} all
+carry an argument -- so `None` can be the immediate `0` and `Some x` can be `x` itself, with
+`Obj.is_int` deciding between them at no cost. That is the same class of trusted adaptation the
+development already uses for `ihash`, `ibkt` and the two configuration flags.
+
+It still cannot be done in the OCaml alone, and the reason is one line of `Monomorphic_Code`:
+
+```isabelle
+lemma ccompare_etuple: "CCOMPARE(event_data tuple) = Some ed_comparator"
+```
+
+`ed_comparator` *is* the comparator instance for `event_data tuple`, so it is the single function
+that every tuple set and every tuple-keyed mapping compares with -- in the dense monitor and in
+the sparse one alike, down to the Until deque's nested mapping. A dense table never contains a
+`None`, but a sparse table must, so one runtime representation cannot serve both: under the
+sentinel convention `ed_comparator`'s `Some a :: xs` pattern would match a bare `EInt z` (both are
+tag-0 blocks with one field), bind `a` to the `Z.t`, and then compare it as an `event_data`.
+Replacing `ed_comparator` with a hand-written unboxed version fixes the dense monitor and breaks
+the sparse one.
+
+The same holds for the rest of the element inspectors. In the generated kernel they are
+`ed_comparator`, `oeq`, `teq`, `teq_proj`, the `comparator_option` and `equality_option` instances
+at `event_data`, the sparse tuple machinery `join1`, `matcha`, `simple_match`, `proj_tuple`,
+`proj_tuple_chk` and `restrict_aux`, and the dense/sparse boundary `dtabc`, `dwiden`, `dnarrow`
+and `dembedp` -- about fifteen constants, each of which would need its OCaml written by hand.
+That is a tractable number, and `Obj.magic` would remove the compiler's help in checking it, so a
+single missed inspector would misread data rather than fail to compile; but the blocker is not the
+count. It is that the dense and the sparse monitor share the type, and therefore share all
+fifteen.
+
+So the adapter can only stop building the wrappers once the dense tables have an element type of
+their own, which is step 1 above: generalise the dense operations in their element type. That step
+is worth doing first on its own account, because instantiating the generalisation at
+`event_data option` has to reproduce today's kernel exactly, which makes it checkable before
+anything is committed to the new representation -- and once it is done, the adapter change the
+suggestion asks for is the easy end of the job rather than the impossible one.
