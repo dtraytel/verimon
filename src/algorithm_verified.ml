@@ -8,7 +8,7 @@ module Monitor = struct
     mutable cur_tp: int;
     mutable cur_ts: MFOTL.timestamp;
     mutable cur_db: Verified_adapter.db;
-    cur_batch: Verified_adapter.batch;
+    cur_batch: Verified_adapter.batches;
     mutable cur_state: Verified_adapter.state;
   }
 
@@ -27,7 +27,7 @@ module Monitor = struct
 
   let end_tp ctxt =
     let db = Verified_adapter.flush_batch ctxt.cur_batch ctxt.cur_db in
-    ctxt.cur_db <- Verified_adapter.empty_db;
+    ctxt.cur_db <- Verified_adapter.empty_db ();
     let (vs, new_state) = Verified_adapter.step ctxt.cur_ts db ctxt.cur_state in
     ctxt.cur_state <- new_state;
     if !Misc.verbose then
@@ -81,7 +81,7 @@ let monitor_gen parse dbschema logfile fv f =
         fv_pos;
         cur_tp = 0;
         cur_ts = MFOTL.ts_invalid;
-        cur_db = Verified_adapter.empty_db;
+        cur_db = Verified_adapter.empty_db ();
         cur_batch = Verified_adapter.empty_batch ();
         cur_state = Verified_adapter.init cf;
       } in

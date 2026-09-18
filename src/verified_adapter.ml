@@ -178,14 +178,47 @@ let convert_tuple (pname, tl) sl =
       pname (List.length tl) (List.length sl) in
     failwith msg
 
-type db = ((string * nat), (((event_data option) list) set list)) mapping
+(* The monitor over the short tuples reads its input with nothing around the fields, so the
+   conversion is the one above without the [Some].  Wrapping the result of one in the other
+   would allocate a second spine per event on whichever path did not get it first, and this is
+   the hottest path there is. *)
+let uconvert_tuple (pname, tl) sl =
+  let pos = ref 0 in
+  let type_error tname =
+    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for\
+      \ predicate %s, field number %d") tname pname !pos in
+    failwith msg
+  in
+  try List.map2
+    (fun (_, t) s ->
+      incr pos;
+      (match t with
+      | TInt ->
+        (try EInt (Z.of_string s)
+         with Invalid_argument _ -> type_error "int")
+      | TStr -> EString s
+      | TFloat ->
+        (try EFloat (float_of_string s)
+         with Failure _ -> type_error "float")
+      | TRegexp -> unsupported "Regular expressions constants are not supported"
+      )
+    )
+    tl sl
+  with Invalid_argument _ ->
+    let msg = Printf.sprintf "[convert_tuple] Wrong tuple length for\
+      \ predicate %s (expected: %d, actual: %d)"
+      pname (List.length tl) (List.length sl) in
+    failwith msg
+
+type wdb = ((string * nat), (((event_data option) list) set list)) mapping
+type udb = ((string * nat), ((event_data list) set list)) mapping
+
+(* The database of one time point, in the representation the monitor in use reads. *)
+type db = Wide of wdb | Short of udb
+
 type tyssig = string * nat -> (tysym list) option
 
-let empty_db = empty_db
-
-let insert_into_db ((pname, tl) as schema) sl db =
-  let a = nat_of_int (List.length tl) in
-  insert_into_db (pname, a) (convert_tuple schema sl) db
+let empty_db () = if !Misc.dense_cols then Short uempty_db else Wide empty_db
 
 (* Bulk construction of the tables of a time point.
 
@@ -234,8 +267,19 @@ let equal_tuple a b =
     | Some x, Some y -> equal_event_data x y
     | _ -> false) a b
 
-let rec dedup_sorted = function
-  | x :: (y :: _ as rest) -> if equal_tuple x y then dedup_sorted rest else x :: dedup_sorted rest
+let rec compare_utuple a b = match a, b with
+  | [], [] -> 0
+  | [], _ -> -1
+  | _, [] -> 1
+  | x :: xs, y :: ys ->
+    let c = compare_event_data x y in
+    if c <> 0 then c else compare_utuple xs ys
+
+let equal_utuple a b =
+  List.length a = List.length b && List.for_all2 equal_event_data a b
+
+let rec dedup_sorted eq = function
+  | x :: (y :: _ as rest) -> if eq x y then dedup_sorted eq rest else x :: dedup_sorted eq rest
   | l -> l
 
 (* The batch is keyed by the predicate name and its arity.  The generic [Hashtbl] would
@@ -257,19 +301,27 @@ module Pred_tbl = Hashtbl.Make(Pred_key)
    predicate -- except for nullary predicates, whose list is the immediate [[]], hence the
    name check as well.  [b_live] invalidates the cache at the flush, which drops the
    lists. *)
-type batch = {
-  b_tbl: (event_data option) list list ref Pred_tbl.t;
+type 'a batch = {
+  b_conv: (string * (string * tcst) list) -> string list -> 'a;
+  b_tbl: 'a list ref Pred_tbl.t;
   mutable b_live: bool;
   mutable b_tl: (string * tcst) list;
   mutable b_name: string;
-  mutable b_last: (event_data option) list list ref;
+  mutable b_last: 'a list ref;
 }
 
-let empty_batch () : batch =
-  { b_tbl = Pred_tbl.create 16; b_live = false; b_tl = []; b_name = ""; b_last = ref [] }
+(* The batch collects the tuples in the representation the monitor in use reads; only the
+   conversion differs, so the collection itself is written once. *)
+type batches = WB of (event_data option) list batch | UB of event_data list batch
 
-let add_to_batch (b: batch) ((pname, tl) as schema) sl =
-  let t = convert_tuple schema sl in
+let empty_batch () : batches =
+  let mk conv = { b_conv = conv; b_tbl = Pred_tbl.create 16; b_live = false; b_tl = [];
+                  b_name = ""; b_last = ref [] } in
+  if !Misc.dense_cols then UB (mk uconvert_tuple) else WB (mk convert_tuple)
+
+let add_gen : 'a. 'a batch -> string * (string * tcst) list -> string list -> unit =
+  fun b ((pname, tl) as schema) sl ->
+  let t = b.b_conv schema sl in
   if b.b_live && b.b_tl == tl && String.equal b.b_name pname then
     b.b_last := t :: !(b.b_last)
   else begin
@@ -282,14 +334,25 @@ let add_to_batch (b: batch) ((pname, tl) as schema) sl =
     b.b_live <- true; b.b_tl <- tl; b.b_name <- pname; b.b_last <- r
   end
 
-let flush_batch (b: batch) db =
+let add_to_batch b schema sl = match b with
+  | WB b -> add_gen b schema sl
+  | UB b -> add_gen b schema sl
+
+let flush_gen cmp eq tbl_of ins b db =
   let db = Pred_tbl.fold (fun (pname, a) r db ->
-    let sorted = dedup_sorted (List.stable_sort compare_tuple !r) in
-    insert_table_into_db (pname, nat_of_int a) (table_of_list sorted) db) b.b_tbl db in
+    let sorted = dedup_sorted eq (List.stable_sort cmp !r) in
+    ins (pname, nat_of_int a) (tbl_of sorted) db) b.b_tbl db in
   (* keep the bucket array; [reset] would reallocate it at every time point *)
   Pred_tbl.clear b.b_tbl;
   b.b_live <- false;
   db
+
+let flush_batch b db = match b, db with
+  | WB b, Wide db ->
+    Wide (flush_gen compare_tuple equal_tuple table_of_list insert_table_into_db b db)
+  | UB b, Short db ->
+    Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
+  | _ -> failwith "[flush_batch] batch and database disagree on the representation"
 
 let convert_into_tysym ty = 
   match ty with
@@ -422,17 +485,36 @@ let set_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
   | _ -> failwith "[set_fold] unexpected set representation"
 
-(* Verdicts are kept in the kernel's representation; [show_results] below prints them without
-   converting to [Tuple.tuple] first. *)
-type verdict = (event_data option) list set
+(* The same over a table of short tuples; [rbt_fold] is fixed to the wide ones. *)
+let uset_fold f s x = match s with
+  | RBT_set r -> urbt_fold f r x
+  | _ -> failwith "[uset_fold] unexpected set representation"
 
-let annotate vs = List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs
+(* Verdicts are kept in the kernel's representation; [show_results] below prints them without
+   converting to [Tuple.tuple] first.  The monitor over the short tuples produces them without
+   the option around the fields. *)
+type verdict = WV of (event_data option) list set | UV of event_data list set
+
+let annotate wrap vs =
+  List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
+
+let wide_db_only = function
+  | Wide db -> db
+  | Short _ -> failwith "[step] the wide monitor was given the short database"
+
+let short_db_only = function
+  | Short db -> db
+  | Wide _ -> failwith "[step] the short monitor was given the wide database"
 
 let step t db = function
-  | Pure st -> let (vs, st') = mstep (db, nat_of_integer t) st in (annotate vs, Pure st')
-  | Heap st -> let (vs, st') = mstep_imp (db, nat_of_integer t) st () in (annotate vs, Heap st')
-  | JHeap st -> let (vs, st') = mstep_j (db, nat_of_integer t) st () in (annotate vs, JHeap st')
-  | Dense st -> let (vs, st') = mstep_d (db, nat_of_integer t) st () in (annotate vs, Dense st')
+  | Pure st ->
+    let (vs, st') = mstep (wide_db_only db, nat_of_integer t) st in (annotate (fun v -> WV v) vs, Pure st')
+  | Heap st ->
+    let (vs, st') = mstep_imp (wide_db_only db, nat_of_integer t) st () in (annotate (fun v -> WV v) vs, Heap st')
+  | JHeap st ->
+    let (vs, st') = mstep_j (wide_db_only db, nat_of_integer t) st () in (annotate (fun v -> WV v) vs, JHeap st')
+  | Dense st ->
+    let (vs, st') = mstep_d (short_db_only db, nat_of_integer t) st () in (annotate (fun v -> UV v) vs, Dense st')
 
 (* Direct output of verdicts.
 
@@ -507,11 +589,9 @@ let rec is_enum_list n = function
   | [] -> true
   | x :: l -> x = n && is_enum_list (n + 1) l
 
-let show_results_slow posl q tsq (table: verdict) =
-  let defined t = List.filter_map (fun x -> x) t in
-  let proj = if is_enum_list 0 posl then defined
-    else fun t -> Misc.get_positions posl (defined t) in
-  let tuples = List.rev (set_fold (fun t acc -> proj t :: acc) table []) in
+let show_results_slow_gen posl q tsq rows =
+  let tuples = if is_enum_list 0 posl then rows
+    else List.map (fun t -> Misc.get_positions posl t) rows in
   let rec strictly_sorted = function
     | x :: (y :: _ as rest) -> compare_tuple_mp x y < 0 && strictly_sorted rest
     | _ -> true
@@ -550,6 +630,13 @@ let show_results_slow posl q tsq (table: verdict) =
   end;
   tuples <> []
 
+let show_results_slow posl q tsq v =
+  let rows = match v with
+    | WV table ->
+      List.rev (set_fold (fun t acc -> List.filter_map (fun x -> x) t :: acc) table [])
+    | UV table -> List.rev (uset_fold (fun t acc -> t :: acc) table []) in
+  show_results_slow_gen posl q tsq rows
+
 exception Slow_path
 
 (* MonPoly's tuple order on the kernel's tuples; an undefined column leaves the fast path. *)
@@ -575,10 +662,13 @@ let rec add_otuple b first = function
   | Some v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_otuple b false r
   | None :: _ -> raise Slow_path
 
-let show_results posl _i q tsq (table: verdict) =
-  if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
-    show_results_slow posl q tsq table
-  else begin
+(* The same over the short tuples: there is no undefined column to leave the fast path for. *)
+let rec add_utuple b first = function
+  | [] -> ()
+  | v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_utuple b false r
+
+let show_results_gen fold add_row cmp_prev slow q tsq table =
+  begin
     (* Most time points have no verdict, so nothing is built until the first tuple arrives:
        the header costs a [Printf.sprintf], which interprets its format at run time and was
        1.7% of P2 on its own, and the buffer is reused across time points rather than
@@ -589,18 +679,18 @@ let show_results posl _i q tsq (table: verdict) =
     let prev = ref None in
     let ok =
       try
-        set_fold (fun t () ->
+        fold (fun t () ->
             (match !prev with
-             | Some p -> if compare_otuple_mp p t >= 0 then raise Slow_path; Buffer.add_char b ' '
+             | Some p -> if cmp_prev p t >= 0 then raise Slow_path; Buffer.add_char b ' '
              | None -> ());
             Buffer.add_char b '(';
-            add_otuple b true t;
+            add_row b true t;
             Buffer.add_char b ')';
             prev := Some t) table ();
         true
       with Slow_path -> false
     in
-    if not ok then show_results_slow posl q tsq table
+    if not ok then slow ()
     else begin
       if Misc.debugging Dbg_perf then Perf.show_results q tsq;
       if !prev <> None then begin
@@ -616,6 +706,17 @@ let show_results posl _i q tsq (table: verdict) =
       !prev <> None
     end
   end
+
+let show_results posl _i q tsq (v: verdict) =
+  if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
+    show_results_slow posl q tsq v
+  else match v with
+    | WV table ->
+      show_results_gen set_fold add_otuple compare_otuple_mp
+        (fun () -> show_results_slow posl q tsq v) q tsq table
+    | UV table ->
+      show_results_gen uset_fold add_utuple compare_tuple_mp
+        (fun () -> show_results_slow posl q tsq v) q tsq table
 
 let is_monitorable dbschema f =
   let s = mmonitorable_exec (convert_formula dbschema f) in

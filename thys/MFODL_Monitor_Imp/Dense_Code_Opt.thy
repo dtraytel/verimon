@@ -4,6 +4,33 @@ theory Dense_Code_Opt
 begin
 (*>*)
 
+section \<open>The input tables of the monitor over the short tuples\<close>
+
+text \<open>
+  The front end builds the tables of a time point itself, sorted, and hands them to
+  @{const table_of_list}, which checks the sortedness in linear time and builds the tree in one
+  pass.  The monitor over the short tuples reads the same tables with nothing around the fields,
+  so it needs the same three entry points at its own tuple type; the bodies are those of
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and
+  @{theory MFODL_Monitor_Devel.Monitor_Impl} with the option gone.
+\<close>
+
+definition utable_of_list :: "event_data list list \<Rightarrow> utable" where
+  "utable_of_list xs = set xs"
+
+lemma utable_of_list_code[code]: "utable_of_list xs = RBT_set (rbt_of_sorted_list xs)"
+  by (simp add: utable_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_ed)
+
+definition uempty_db :: udatabase where "uempty_db = Mapping.empty"
+
+text \<open>And the fold the front end prints a verdict with, at the short tuples.\<close>
+
+definition urbt_fold :: "_ \<Rightarrow> event_data list set_rbt \<Rightarrow> _ \<Rightarrow> _" where
+  "urbt_fold = RBT_Set2.fold"
+
+definition uinsert_table_into_db :: "string8 \<times> nat \<Rightarrow> utable \<Rightarrow> udatabase \<Rightarrow> udatabase" where
+  "uinsert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"
+
 section \<open>The dictionaries and the comparator of the dense inner loops\<close>
 
 text \<open>
@@ -233,6 +260,220 @@ setup \<open>Monomorphize.monomorphize_cmd
      ("RBT_Set2.minus", "ed_rbt_set_minus", [etuple]),
      ("RBT_Set2.inter_list", "ed_rbt_inter_list", [etuple])] end)
   ["etuple_dict_simps"]\<close>
+
+section \<open>The same, for the short tuples\<close>
+
+text \<open>
+  Everything above is about @{typ "event_data tuple"}, which is what the monitor over the wide
+  tuples uses and what @{theory MFODL_Monitor_Devel.Monomorphic_Code} was written for.  The
+  monitor over the short tuples keys its sets and mappings on @{typ "event_data list"}, which
+  that theory does not mention at all, so without this section every set operation and every
+  mapping operation of the dense evaluator builds its dictionaries per call and reaches the tree
+  through @{text "comparator_list comparator_event_data"} rather than through a comparator that
+  knows the type.  The section is the one above with the option gone.
+\<close>
+
+subsection \<open>A direct comparator on the short tuples\<close>
+
+fun edl_comparator :: "event_data list comparator" where
+  "edl_comparator [] [] = Eq"
+| "edl_comparator [] (y # ys) = Lt"
+| "edl_comparator (x # xs) [] = Gt"
+| "edl_comparator (x # xs) (y # ys) =
+    (case comparator_event_data x y of Eq \<Rightarrow> edl_comparator xs ys | r \<Rightarrow> r)"
+
+lemma edl_comparator_eq: "edl_comparator xs ys = comparator_list comparator_event_data xs ys"
+  by (induction xs ys rule: edl_comparator.induct) (auto split: order.splits)
+
+lemma ccompare_edl: "CCOMPARE(event_data list) = Some edl_comparator"
+  by (simp add: ccompare_list_def ccompare_event_data_def ID_def edl_comparator_eq[abs_def])
+
+lemma ID_ccompare_edl: "ID CCOMPARE(event_data list) = Some edl_comparator"
+  by (simp add: ccompare_edl ID_def)
+
+lemma ccomp_edl: "(ccomp :: event_data list comparator) = edl_comparator"
+  by (simp add: ID_ccompare_edl)
+
+lemma ceq_edl: "CEQ(event_data list) = Some (equality_list (=))"
+  by (simp add: ceq_list_def ceq_event_data_def ID_def)
+
+lemma ID_ceq_edl: "ID CEQ(event_data list) = Some (equality_list (=))"
+  by (simp add: ceq_edl ID_def)
+
+lemmas edl_dict_simps = ccompare_edl ID_ccompare_edl ccomp_edl ceq_edl ID_ceq_edl
+  option.case option.sel ID_def id_apply
+
+subsection \<open>The empty table as a value\<close>
+
+definition edl_bot :: utable where "edl_bot = {}"
+
+lemma edl_bot_code[code]: "edl_bot = RBT_set RBT_Set2.empty"
+  by (simp add: edl_bot_def)
+
+lemma edl_bot_unfold[code_unfold]:
+  "(bot :: utable) = edl_bot"
+  "set_empty (of_phantom SET_IMPL(event_data list)) = edl_bot"
+  by (simp_all add: edl_bot_def)
+
+lemma edl_bot_compat[code_unfold]:
+  "(A = edl_bot) = Set.is_empty A"
+  "(edl_bot = A) = Set.is_empty A"
+  "set_eq A edl_bot = Set.is_empty A"
+  "set_eq edl_bot A = Set.is_empty A"
+  by (auto simp: edl_bot_def)
+
+subsection \<open>The set and mapping operations at the short tuples\<close>
+
+ML \<open>
+val edl = "event_data list"
+val edl_value_types =
+  [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data list set"),
+   ("tuples", "event_data list list")]
+\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  ([("Set.member", "edl_member", [edl]),
+    ("Set.insert", "edl_insert", [edl]),
+    ("Set.remove", "edl_remove", [edl]),
+    ("sup :: _ set \<Rightarrow> _", "edl_union", [edl]),
+    ("inf :: _ set \<Rightarrow> _", "edl_inter", [edl]),
+    ("minus :: _ set \<Rightarrow> _", "edl_minus", [edl]),
+    ("Set.filter", "edl_filter", [edl]),
+    ("image", "edl_image", [edl, edl]),
+    ("RBT_Set2.minus", "edl_rbt_set_minus", [edl]),
+    ("RBT_Set2.inter_list", "edl_rbt_inter_list", [edl]),
+    ("RBT_Mapping2.join", "edl_rbt_join_unit", [edl, "unit"]),
+    ("RBT_Mapping2.meet", "edl_rbt_meet_unit", [edl, "unit"])]
+   @ maps (fn (tn, ty) =>
+       [("Mapping.lookup", "edl_lookup_" ^ tn, [edl, ty]),
+        ("Mapping.update", "edl_update_" ^ tn, [edl, ty]),
+        ("Mapping.delete", "edl_delete_" ^ tn, [edl, ty]),
+        ("RBT_Mapping2.lookup", "edl_rbt_lookup_" ^ tn, [edl, ty]),
+        ("RBT_Mapping2.insert", "edl_rbt_insert_" ^ tn, [edl, ty]),
+        ("RBT_Mapping2.delete", "edl_rbt_delete_" ^ tn, [edl, ty]),
+        ("RBT_Mapping2.join", "edl_rbt_join_" ^ tn, [edl, ty])]) edl_value_types)
+  ["edl_dict_simps"]\<close>
+
+text \<open>As above, the projection out of a mapping's tree has to be boxed at every value type, or
+  the monomorphised lookup moves the per-call dictionary build one frame down into it.\<close>
+
+setup \<open>Monomorphize.box_cmd
+  (("RBT_Mapping2.impl_of", "edl_impl_of_unit_v", [edl, "unit"]) ::
+   map (fn (tn, ty) => ("RBT_Mapping2.impl_of", "edl_impl_of_" ^ tn ^ "_v", [edl, ty]))
+     edl_value_types)\<close>
+
+subsection \<open>The tree primitives with the short tuples' comparator called directly\<close>
+
+definition edl_rbtc_lookup :: "(event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow> 'v option" where
+  "edl_rbtc_lookup = rbt_comp_lookup edl_comparator"
+
+lemma edl_rbtc_lookup_simps[code]:
+  "edl_rbtc_lookup RBT_Impl.Empty k = None"
+  "edl_rbtc_lookup (RBT_Impl.Branch cc l x y r) k =
+     (case edl_comparator k x of Lt \<Rightarrow> edl_rbtc_lookup l k | Gt \<Rightarrow> edl_rbtc_lookup r k
+        | Eq \<Rightarrow> Some y)"
+  unfolding edl_rbtc_lookup_def by simp_all
+
+lemma edl_rbtc_lookup_unfold[code_unfold]: "rbt_comp_lookup edl_comparator = edl_rbtc_lookup"
+  by (simp add: edl_rbtc_lookup_def)
+
+definition edl_rbtc_ins :: "(event_data list \<Rightarrow> 'v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow> 'v \<Rightarrow>
+    (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_ins = rbt_comp_ins edl_comparator"
+
+lemma edl_rbtc_ins_simps[code]:
+  "edl_rbtc_ins f k v RBT_Impl.Empty =
+     RBT_Impl.Branch RBT_Impl.R RBT_Impl.Empty k v RBT_Impl.Empty"
+  "edl_rbtc_ins f k v (RBT_Impl.Branch RBT_Impl.B l x y r) =
+     (case edl_comparator k x of Lt \<Rightarrow> balance (edl_rbtc_ins f k v l) x y r
+        | Gt \<Rightarrow> balance l x y (edl_rbtc_ins f k v r)
+        | Eq \<Rightarrow> RBT_Impl.Branch RBT_Impl.B l x (f k y v) r)"
+  "edl_rbtc_ins f k v (RBT_Impl.Branch RBT_Impl.R l x y r) =
+     (case edl_comparator k x of Lt \<Rightarrow> RBT_Impl.Branch RBT_Impl.R (edl_rbtc_ins f k v l) x y r
+        | Gt \<Rightarrow> RBT_Impl.Branch RBT_Impl.R l x y (edl_rbtc_ins f k v r)
+        | Eq \<Rightarrow> RBT_Impl.Branch RBT_Impl.R l x (f k y v) r)"
+  unfolding edl_rbtc_ins_def by simp_all
+
+lemma edl_rbtc_ins_unfold[code_unfold]: "rbt_comp_ins edl_comparator = edl_rbtc_ins"
+  by (simp add: edl_rbtc_ins_def)
+
+definition edl_rbtc_insert_with_key :: "(event_data list \<Rightarrow> 'v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>
+    'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_insert_with_key = rbt_comp_insert_with_key edl_comparator"
+
+lemma edl_rbtc_insert_with_key_code[code]:
+  "edl_rbtc_insert_with_key f k v t = paint RBT_Impl.B (edl_rbtc_ins f k v t)"
+  by (simp add: edl_rbtc_insert_with_key_def edl_rbtc_ins_def rbt_comp_insert_with_key_def)
+
+lemma edl_rbtc_insert_with_key_unfold[code_unfold]:
+  "rbt_comp_insert_with_key edl_comparator = edl_rbtc_insert_with_key"
+  by (simp add: edl_rbtc_insert_with_key_def)
+
+definition edl_rbtc_insert :: "event_data list \<Rightarrow> 'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    (event_data list, 'v) rbt" where
+  "edl_rbtc_insert = rbt_comp_insert edl_comparator"
+
+lemma edl_rbtc_insert_code[code]:
+  "edl_rbtc_insert k v t = edl_rbtc_insert_with_key (\<lambda>_ _ nv. nv) k v t"
+  by (simp add: edl_rbtc_insert_def edl_rbtc_insert_with_key_def rbt_comp_insert_def)
+
+lemma edl_rbtc_insert_unfold[code_unfold]: "rbt_comp_insert edl_comparator = edl_rbtc_insert"
+  by (simp add: edl_rbtc_insert_def)
+
+definition edl_rbtc_del :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    (event_data list, 'v) rbt" where
+  "edl_rbtc_del = rbt_comp_del edl_comparator"
+
+definition edl_rbtc_del_from_left :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    event_data list \<Rightarrow> 'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_del_from_left = rbt_comp_del_from_left edl_comparator"
+
+definition edl_rbtc_del_from_right :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    event_data list \<Rightarrow> 'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_del_from_right = rbt_comp_del_from_right edl_comparator"
+
+lemma edl_rbtc_del_simps[code]:
+  "edl_rbtc_del x RBT_Impl.Empty = RBT_Impl.Empty"
+  "edl_rbtc_del x (RBT_Impl.Branch cc a y s b) =
+     (case edl_comparator x y of Lt \<Rightarrow> edl_rbtc_del_from_left x a y s b
+        | Gt \<Rightarrow> edl_rbtc_del_from_right x a y s b | Eq \<Rightarrow> RBT_Impl.combine a b)"
+  unfolding edl_rbtc_del_def edl_rbtc_del_from_left_def edl_rbtc_del_from_right_def by simp_all
+
+lemma edl_rbtc_del_from_left_simps[code]:
+  "edl_rbtc_del_from_left x (RBT_Impl.Branch RBT_Impl.B lt z v rt) y s b =
+     balance_left (edl_rbtc_del x (RBT_Impl.Branch RBT_Impl.B lt z v rt)) y s b"
+  "edl_rbtc_del_from_left x RBT_Impl.Empty y s b =
+     RBT_Impl.Branch RBT_Impl.R (edl_rbtc_del x RBT_Impl.Empty) y s b"
+  "edl_rbtc_del_from_left x (RBT_Impl.Branch RBT_Impl.R va vb vc vd) y s b =
+     RBT_Impl.Branch RBT_Impl.R
+       (edl_rbtc_del x (RBT_Impl.Branch RBT_Impl.R va vb vc vd)) y s b"
+  unfolding edl_rbtc_del_def edl_rbtc_del_from_left_def by simp_all
+
+lemma edl_rbtc_del_from_right_simps[code]:
+  "edl_rbtc_del_from_right x a y s (RBT_Impl.Branch RBT_Impl.B lt z v rt) =
+     balance_right a y s (edl_rbtc_del x (RBT_Impl.Branch RBT_Impl.B lt z v rt))"
+  "edl_rbtc_del_from_right x a y s RBT_Impl.Empty =
+     RBT_Impl.Branch RBT_Impl.R a y s (edl_rbtc_del x RBT_Impl.Empty)"
+  "edl_rbtc_del_from_right x a y s (RBT_Impl.Branch RBT_Impl.R va vb vc vd) =
+     RBT_Impl.Branch RBT_Impl.R a y s
+       (edl_rbtc_del x (RBT_Impl.Branch RBT_Impl.R va vb vc vd))"
+  unfolding edl_rbtc_del_def edl_rbtc_del_from_right_def by simp_all
+
+lemma edl_rbtc_del_unfold[code_unfold]:
+  "rbt_comp_del edl_comparator = edl_rbtc_del"
+  "rbt_comp_del_from_left edl_comparator = edl_rbtc_del_from_left"
+  "rbt_comp_del_from_right edl_comparator = edl_rbtc_del_from_right"
+  by (simp_all add: edl_rbtc_del_def edl_rbtc_del_from_left_def edl_rbtc_del_from_right_def)
+
+definition edl_rbtc_delete :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    (event_data list, 'v) rbt" where
+  "edl_rbtc_delete = rbt_comp_delete edl_comparator"
+
+lemma edl_rbtc_delete_code[code]: "edl_rbtc_delete k t = paint RBT_Impl.B (edl_rbtc_del k t)"
+  by (simp add: edl_rbtc_delete_def edl_rbtc_del_def rbt_comp_delete_def)
+
+lemma edl_rbtc_delete_unfold[code_unfold]: "rbt_comp_delete edl_comparator = edl_rbtc_delete"
+  by (simp add: edl_rbtc_delete_def)
 
 (*<*)
 end
