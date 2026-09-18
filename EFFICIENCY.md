@@ -3750,3 +3750,126 @@ than for a speed-up that is there in general. The flag stays off by default, whi
 The sub-second table of 20.11 was re-run too and agrees with itself within its own noise; nothing
 regressed from the revert or from adding two theories of lemmas.
 
+
+### 20.19 Profiling the dense code against MonPoly
+
+Callgrind, `complex` on the 2.1 MB synthetic log, output to `/dev/null` in both cases. `perf` is
+unavailable for this kernel, so all instruction figures are Valgrind's and therefore exact and
+reproducible rather than sampled.
+
+| | MonPoly | dense | ratio |
+|---|---:|---:|---:|
+| instructions | 6.876 G | 7.194 G | 1.05x |
+| ... of which output | 817 M (11.9%) | 2 M (0.03%) | |
+| ... of which lexing | 125 M | 125 M | 1.00x |
+| ... of which GC | 445 M (6.5%) | 789 M (11.0%) | 1.77x |
+| ... of which `caml_apply*` | 95 M (1.4%) | 490 M (6.8%) | 5.2x |
+| data refs | 2.619 G | 2.861 G | 1.09x |
+| **D1 misses** | 40.2 M (1.5%) | **95.1 M (3.3%)** | **2.37x** |
+| ... of which writes | 17.8 M | 56.8 M | **3.19x** |
+| **minor words allocated** | 132.9 M | **423.8 M** | **3.19x** |
+| promoted words | 5.56 M | 13.00 M | 2.34x |
+| peak major heap | 188 Kwords | 373 Kwords | 1.98x |
+
+**The instruction counts are nearly equal; the miss counts are not.** Discounting the parts that
+are not monitoring -- MonPoly's output costs 817 M because it prints through `printf`, where the
+verified path has the direct printer of Section 12 and costs 2 M -- the monitoring work itself is
+5.934 G against 7.067 G, or 1.19x. But the dense monitor takes 2.37x the D1 misses, and its
+*write* misses are 3.19x, which is exactly its allocation ratio. That equality is the finding:
+every allocated word is a write into a cold minor-heap line, so the remaining gap is allocation
+traffic and nothing else.
+
+A larger minor heap does not recover it. On the 8.6 MB log, `complex` at 3.589 s runs in 3.752 s
+at `s=8M`, 3.673 s at `s=32M`, 3.630 s at `s=64M` and 3.733 s at `s=32M,o=200` -- all within 5%,
+none an improvement worth the name. So the cost is not collection work, which a bigger nursery
+would defer; it is the allocation stores themselves. That also explains why 20.18 finds the heap
+index no faster than the pure dense code: a hash table removes comparisons and indirections,
+which are not what is short.
+
+**Where the dense monitor's instructions go** (share of 7.194 G, with call counts):
+
+| function | Ir | share | calls |
+|---|---:|---:|---:|
+| `comparator_event_data` | 574 M | 7.98% | 27.1 M |
+| `caml_apply2` | 462 M | 6.43% | 57.4 M |
+| `comparator_list` (generic) | 354 M | 4.93% | 15.1 M |
+| `balance` | 347 M | 4.82% | 5.0 M |
+| `rbt_comp_lookup` | 345 M | 4.80% | 2.9 M |
+| `ed_comparator` (monomorphic) | 296 M | 4.12% | 8.7 M |
+| `rbt_comp_ins` | 239 M | 3.32% | 6.4 M |
+| `comparator_option` | 215 M | 2.99% | 15.3 M |
+| `gen_keys` | 193 M | 2.68% | 4.5 M |
+| GC, all together | 789 M | 11.0% | |
+
+Comparison is 20% and the red-black tree another 13%, which is the same split MonPoly has
+(`do_compare_val` + `caml_compare` + `Tuple.compare` + `Tuple.compare_cst` + `ml_z_compare` =
+19.5%, `Set.bal` + `Set.add` = 5.5%, and on top of that `caml_hash` + `caml_page_table_lookup` =
+15% that the verified monitor does not pay at all). Per operation the verified kernel is not
+behind. It just does far more of them against memory.
+
+### 20.20 What is left that does not need imperative code
+
+Four things, in the order the profile sizes them. None of them is an imperative refinement; all
+four are representation or code-equation work of the kind Sections 7-19 already did.
+
+**1. The `option` in a dense tuple is provably dead weight.** A dense tuple has type
+`event_data option list`, but `Dense.thy` already carries
+
+```isabelle
+definition dwf_tuple :: "nat ⇒ 'a tuple ⇒ bool" where
+  "dwf_tuple k d ⟷ length d = k ∧ (∀i < k. d ! i ≠ None)"
+definition dtable where "dtable cs D ⟷ (∀d ∈ D. dwf_tuple (length cs) d)"
+```
+
+as an invariant of every dense table, in every theorem of the development. So every element of
+every dense tuple is a `Some`: two words of allocation and one dereference per element, for a
+constructor that cannot be anything else. Changing the dense representation to `event_data list`
+is a pure representation change with the invariant needed to justify it already proved. It is the
+one change that attacks the allocation ratio directly, and it touches every dense operation,
+which is why it is worth doing as its own step rather than folded into another.
+
+**2. The red-black tree primitives take the comparator as an argument, so every use of it is an
+indirect call.** Section 8's monomorphisation baked `ed_comparator` into the *call sites* --
+`rbt_comp_lookup ed_comparator t k` -- but inside `rbt_comp_lookup` the comparator is a
+parameter, so OCaml compiles `c k kk` as `caml_apply2` and cannot inline it. The callers of the
+57.4 M `caml_apply2` calls are
+
+| caller | calls |
+|---|---:|
+| `rbt_comp_lookup` | 15.5 M |
+| `comparator_option` | 15.3 M |
+| `comparator_list` | 15.3 M |
+| `rbt_comp_ins` | 6.5 M |
+| `fold` | 2.9 M |
+| `rbt_comp_del` | 1.7 M |
+| `rbt_fold_key` | 0.5 M |
+
+so 24.2 M of them are the tree calling its comparator. Generating specialised copies of the
+primitives -- an `ed_rbt_lookup` whose own recursion calls `ed_comparator` directly -- removes
+those and lets the comparator's first cases inline. At the measured 8 instructions per
+`caml_apply2` that is about 194 M instructions, 2.7%, before any inlining benefit.
+
+**3. The generic comparator chain is still the one mostly used.** `comparator_list` runs 15.1 M
+cons steps against `ed_comparator`'s 8.7 M, so most tuple comparisons still go through
+`comparator_list (comparator_option comparator_event_data)`: three frames and two indirect calls
+per element where the monomorphic one is a single frame and a direct call. The reason is visible
+in the generated code -- `ed_comparator` reached `rbt_comp_lookup`, `rbt_comp_insert`,
+`rbt_comp_delete` and `rbt_comp_union_with_key`, but `rbt_comp_union_swap_rec`,
+`rbt_comp_inter_swap_rec`, `rbt_comp_minus`, `rbt_comp_bulkload`, `rbt_comp_insert_with_key` and
+`rbt_comp_inter_with_key` still receive `the (ccompare _A)`. Those are the set operations, which
+is what the join and the window structures spend their time in. Finishing Section 8's job over
+them is the same ML pass applied to more constants.
+
+**4. The join materialises both operands as lists.** `dgen_join` takes
+`csorted_list_of_set A` and `csorted_list_of_set B`, and `gen_keys` -- the in-order traversal that
+builds them -- runs 4.5 M times, allocating a cons per key and a pair-and-cons per branch.
+MonPoly folds over its sets in place and allocates neither. A fold-based `dgen_join`, which is
+what `dprobe_fold` and `dindex_fold_lookup` are already stated in terms of, would drop that.
+
+**The answer to whether one can get ahead without the imperative refinement is that on five of
+the six multi-second benchmarks of 20.18 the dense monitor already is**, and the profile says the
+remaining row is an allocation problem rather than a dispatch problem. Imperative structures were
+the right tool for the Since and Until windows, where the same map is updated in place many times
+and the pure version copied a tree per update. They are the wrong tool for the join, where the
+tables are built once and read once, and 20.18's timings bear that out. What is left to win is in
+the representation, and items 1 to 4 are all provable in HOL.
