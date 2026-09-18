@@ -90,9 +90,9 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
      (let cs_L = set_cols (args_L args) in
       if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
          set cs_L \<subseteq> set cs \<and> buf = ([], []) \<and> nts = [] \<and> t = 0
-      then DUntil (dargs cs cs_L args) (emb_plan cs cs_L)
+      then DUntil (dargs cs cs_L args) (dmsk cs cs_L)
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] 0
-             (init_muaux_dq (dargs cs cs_L args))
+             (init_dq (dargs cs cs_L args))
       else DPure (mformula.MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs))"
 | "dof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
@@ -547,16 +547,17 @@ qed
 
 lemma duntil_rel_init:
   assumes a: "args = init_args I n L R pos None"
+    and sR: "sorted_wrt (<) cs_R" and sL: "sorted_wrt (<) cs_L"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "duntil_rel n cs_R cs_L args tw 0 (init_muaux_dq args)
-     (init_muaux_dq (dargs cs_R cs_L args)) ([], []) ([], []) []"
+     (init_dq (dargs cs_R cs_L args)) ([], []) ([], []) []"
 proof -
   have v: "valid_muaux_dq args 0 (init_muaux_dq args) []"
     unfolding a by (rule valid_init_muaux_dq[OF sub])
-  have s: "duaux n cs_R cs_L args 0 (init_muaux_dq (dargs cs_R cs_L args)) []"
-    by (rule duaux_init) (use sub cL cR in simp)
+  have s: "duaux' n cs_R cs_L args 0 (init_dq (dargs cs_R cs_L args)) []"
+    by (rule duaux'_init[OF sR sL]) (use sub cL cR in simp)
   have r: "duaux_rel n cs_R cs_L args 0 (init_muaux_dq args)
-      (init_muaux_dq (dargs cs_R cs_L args))"
+      (init_dq (dargs cs_R cs_L args))"
     unfolding duaux_rel_def using v s by blast
   show ?thesis unfolding duntil_rel_def using r by auto
 qed
@@ -624,13 +625,13 @@ proof -
   have cLa: "set_cols (args_L args) = ?cL" unfolding aL using wL by simp
   have d: "dof n ?cs
         (mformula.MUntil args (minit0 n \<chi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux_dq args))
-      = DUntil (dargs ?cs ?cL args) (emb_plan ?cs ?cL)
+      = DUntil (dargs ?cs ?cL args) (dmsk ?cs ?cL)
           (dof n ?cL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<psi>)) ([], []) [] 0
-          (init_muaux_dq (dargs ?cs ?cL args))"
+          (init_dq (dargs ?cs ?cL args))"
     using ag an aR sb by (simp add: Let_def cLa)
   have rl: "duntil_rel n ?cs ?cL args tw 0 (init_muaux_dq args)
-      (init_muaux_dq (dargs ?cs ?cL args)) ([], []) ([], []) []"
-    by (rule duntil_rel_init[OF a]) (use sub A in auto)
+      (init_dq (dargs ?cs ?cL args)) ([], []) ([], []) []"
+    by (rule duntil_rel_init[OF a]) (use sub A b bL in \<open>auto simp: finite_fvi\<close>)
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
     using i2 unfolding A[symmetric] .
   show ?thesis unfolding m d

@@ -4944,10 +4944,54 @@ the left operand's own width -- and the four operations preserve it. The finiten
 the only one that is not free: `add_new_dq` has a fallback for infinite right-hand tables that the
 evaluator never reaches, since the operand tables are `ftable`, i.e. finite by construction.
 
-**What is left.** Both structures are in place and verified; what is not yet done is the
-rewiring. `deval`'s `DSince` and `DUntil` still embed their left operand and still carry the
-verified structures, so `src/verified.ml` is byte-identical and the measured fallback-node count is
-unchanged. Wiring them in means changing the `dformula` constructors, `dsim`'s two cases, `dof`'s
-two clauses, and -- for the win to reach the generated code -- the executable dense evaluator in
-`Dense_Imp.thy` and its heap-resident Since structure. That is the next step, and it is the first
-one after which the embedding can be measured away.
+**The rewiring.** Both structures are now wired into the verified dense evaluator. The two
+`dformula` constructors lost their embedding plan and gained the dense state:
+
+```isabelle
+  | DSince args dformula dformula "event_data mbuf2S" "event_data dmsaux"
+  | DUntil args "bool list" dformula dformula "event_data mbuf2" "ts list" ts
+      "event_data mmuaux_dq"
+```
+
+The `nat option list` the `DUntil` node used to carry was the embedding plan, applied to every
+table the left operand produced; the `bool list` that replaced it is the frame mask `dmsk cs cs_L`,
+which is not applied to anything -- it is read by `dadd_new_dq` to key one lookup. `deval`'s two
+clauses drop `dembedp` entirely and run `deval_since` and `dadd_new_dq`/`eval_dq` instead of
+`meval_since` and `add_new_muaux_dq`/`eval_muaux_dq`, and `dof`'s two clauses build the dense
+states with `dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L)` and `init_dq (dargs cs cs_L args)`.
+
+On the relation side the change is that the left buffer stays narrow. Where `dsince_rel` and
+`duntil_rel` used to demand
+
+```isabelle
+    dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf))
+```
+
+they now demand `map (dtabc n cs_L)` on the left component: the left operand's tables never reach
+the right operand's frame at all, neither in the buffer nor in the structure. What makes that
+typecheck against the verified lemmas is `dwiden_image_dtabc`, which says the mask widens the left
+frame to the right one exactly as `dtabc` at the wider column list would have:
+
+```isabelle
+lemma dwiden_image_dtabc:
+  assumes "sorted_wrt (<) cs_R" "sorted_wrt (<) cs_L" "set cs_L ⊆ set cs_R"
+    "∀c ∈ set cs_R. c < n" "table n (set cs_L) T"
+  shows "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) ` dtabc n cs_L T = dtabc n cs_R T"
+```
+
+so every step lemma discharges its verified counterpart's hypothesis by rewriting with it and
+never actually builds the wide table. The two step lemmas -- `eval_since_rel` and `until_step_rel`
+-- gained the sortedness of `cs_L` as their only new hypothesis, which the simulation supplies
+from `wf_cols n cs_L` and the initialiser from `set_cols`. `duaux'` mirrors `dsaux'` for the
+Until, relating a raw `event_data mmuaux_dq` at the dense frame to the narrowed auxiliary list
+through `dvalid_muaux`, with `duaux'_init`, `duaux'_add_new`, `duaux'_eval` and `duaux'_length`
+the four operations the evaluator needs.
+
+**What is left.** The verified fragment is done: the whole dense chain -- `Dense_Eval`,
+`Dense_Produces`, `Dense_Match`, `Dense_Let`, `Dense_Agg`, `Dense_Correct`, `Dense_Compile`,
+`Dense_Init`, `Dense_Descend` -- reprocesses green with no embedding on either temporal node. For
+the win to reach the generated code, the same has to happen in `Dense_Imp.thy`, which declares its
+own `dformula` and its own heap-resident Since structure (`msaux_j = MSJ_imp msaux2 | MSJ_pure
+mmasaux | MSJ_evt sevtaux`) and is what `verified.ml` is actually exported from. Until that is
+rewired `src/verified.ml` stays byte-identical and the measured fallback-node count is unchanged.
+That is the next step, and it is the first one after which the embedding can be measured away.

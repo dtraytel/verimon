@@ -1570,6 +1570,107 @@ lemma dvalid_length_muaux:
   using valid_length_muaux_dq[of args cur "MU_dq (wkeys_uaux msk daux)" auxlist]
   by (simp add: dvalid_muaux_def length_dq_wkeys)
 
+section \<open>The dense Until structure at the dense frame\<close>
+
+text \<open>
+  The same relation the wide structure has to the narrowed auxiliary list (20.8), now for the
+  dense structure.  Only the addition reads differently: it takes the left operand's table at the
+  left operand's own frame, so the node need not embed it.
+\<close>
+
+definition duaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow>
+    event_data muaux \<Rightarrow> bool" where
+  "duaux' n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2) \<and>
+     dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux (dauxlist3 n cs_R auxlist)"
+
+lemma duaux'_init:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and sub: "set cs_L \<subseteq> set cs_R"
+  shows "duaux' n cs_R cs_L args 0 (init_dq (dargs cs_R cs_L args)) []"
+proof -
+  have LR: "cpos cs_R (set cs_L) \<subseteq> {0..<length cs_R}" by (auto simp: cpos_def)
+  have dm: "dmsk_args (dargs cs_R cs_L args) (dmsk cs_R cs_L)"
+    unfolding dmsk_def by (rule dmsk_args_dargs[OF s_R s_L sub])
+  have "dvalid_muaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+      {0..<length cs_R} (args_pos args) None) (dmsk cs_R cs_L) 0
+      (init_dq (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+        {0..<length cs_R} (args_pos args) None)) []"
+    by (rule dvalid_init_muaux[OF LR refl]) (use dm in \<open>simp add: dargs_def\<close>)
+  then show ?thesis by (simp add: duaux'_def dargs_def dauxlist3_def)
+qed
+
+lemma duaux'_add_new:
+  assumes v: "duaux' n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and b_R: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
+    and t1: "table n (set cs_L) rel1" and t2: "table n (set cs_R) rel2"
+    and f2: "finite rel2" and nt: "cur \<le> nt"
+  shows "duaux' n cs_R cs_L args nt
+      (dadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L)
+        (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt daux)
+      (update_until args rel1 rel2 nt auxlist)"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and d: "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: duaux'_def)
+  have b_L: "\<forall>c \<in> set cs_L. c < n" using sub b_R by auto
+  have fin: "finite (dtabc n cs_R rel2)" using f2 by (simp add: dtabc_def)
+  have lf: "length (filter id (dmsk cs_R cs_L)) = length cs_L"
+    unfolding dmsk_def by (rule length_filter_mrg_left_key[OF s_R s_L sub])
+  have lm: "length (dmsk cs_R cs_L) = length cs_R"
+    unfolding dmsk_def by (rule length_mrg_left_key[OF s_R s_L sub])
+  have r1: "\<And>y. y \<in> dtabc n cs_L rel1 \<Longrightarrow> dnarrow_tuple (dmsk cs_R cs_L) y"
+    unfolding lf using dwf_tuple_dtabc[OF s_L b_L t1] by (simp add: dwf_tuple_def)
+  have r2: "\<And>as. as \<in> dtabc n cs_R rel2 \<Longrightarrow> length as = length (dmsk cs_R cs_L)"
+    unfolding lm using dwf_tuple_dtabc[OF s_R b_R t2] by (simp add: dwf_tuple_def)
+  have wi: "dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1 = dtabc n cs_R rel1"
+    unfolding dmsk_def by (rule dwiden_image_dtabc[OF s_R s_L sub b_R t1])
+  have tt1: "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
+      (dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1)"
+    unfolding wi by (simp add: table_dtabc_cpos[OF s_R b_R sub t1])
+  have tt2: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R rel2)"
+    using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
+  have "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) nt
+      (dadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L)
+        (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt daux)
+      (update_until (dargs cs_R cs_L args) (dtabc n cs_R rel1) (dtabc n cs_R rel2) nt
+        (dauxlist3 n cs_R auxlist))"
+    unfolding wi[symmetric]
+    by (rule dvalid_add_new_muaux[OF d fin r1 tt1 tt2 r2 nt])
+  then show ?thesis using dauxlist3_wf_update_until[OF w sub t1 t2]
+    by (simp add: duaux'_def dauxlist3_update_until[OF s_R b_R sub w t1 t2, symmetric])
+qed
+
+lemma duaux'_eval:
+  assumes v: "duaux' n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
+    and de: "eval_dq (dargs cs_R cs_L args) nt daux = (dres, daux')"
+    and we: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+  shows "dres = map (dtabc n cs_R) res \<and> duaux' n cs_R cs_L args cur daux' auxlist'"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and d: "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: duaux'_def)
+  have de': "eval_until (args_ivl (dargs cs_R cs_L args)) nt (dauxlist3 n cs_R auxlist)
+      = (map (dtabc n cs_R) res, dauxlist3 n cs_R auxlist')"
+    using dauxlist3_eval_until[OF we] by simp
+  have vd: "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux'
+      (dauxlist3 n cs_R auxlist')"
+    and r: "dres = map (eval_args_agg (dargs cs_R cs_L args)) (map (dtabc n cs_R) res)"
+    using dvalid_eval_muaux[OF d nt de de'] by simp_all
+  have "set auxlist' \<subseteq> set auxlist"
+    using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
+  then show ?thesis using vd r w by (auto simp: duaux'_def)
+qed
+
+lemma duaux'_length:
+  "duaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
+     length_dq (dargs cs_R cs_L args) daux = length auxlist"
+  using dvalid_length_muaux by (fastforce simp: duaux'_def dauxlist3_def)
+
 (*<*)
 end
 (*>*)
