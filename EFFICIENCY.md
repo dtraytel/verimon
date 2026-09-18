@@ -320,7 +320,8 @@ the general dictionary/comparator/GC overheads quantified in Section 2.
 ## 5. Regenerating the verified kernel
 
 ```
-cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 35 min, needs ~8 GB RAM
+cd thys && isabelle build -b -e -d . -o parallel_proofs=0 -o threads=2 \
+      MFODL_Monitor_Devel                                     # about 55 min, peaks under 9 GB
 isabelle build -b -e -d . MFODL_Monitor_Imp                  # about 2 min on top of it
 cp MFODL_Monitor_Imp/verified.ocaml ../src/verified.ml
 cd .. && dune build --profile=release && dune test
@@ -3350,8 +3351,7 @@ that currently get none.
    Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
    The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
-4. **Then** `Dense.thy`, `Dense_Eval.thy`, `Dense_Produces.thy`, `Dense_Match.thy`,
-   `Dense_Let.thy` and `Dense_Correct.thy` move to the base session.
+4. **The session layout.** Done: 20.16 moves the ten `Dense` theories to the base session.
 
 ### 20.13 Closing the chain: the criterion and the initial state
 
@@ -3594,4 +3594,26 @@ every benchmark in the table, `since` and `until` included, and they sit at a wa
 
 The cram suites are green and all 537 `-verified` invocations agree between `-dense` and the plain
 verified kernel.
+
+### 20.16 The session layout
+
+The ten theories `Dense`, `Dense_Eval`, `Dense_Produces`, `Dense_Match`, `Dense_Let`,
+`Dense_Agg`, `Dense_Correct`, `Dense_Compile`, `Dense_Init` and `Dense_Descend` are pure HOL
+developments about the verified kernel: a representation, an evaluator over it, a simulation
+relation, and the theorems that transfer the kernel's correctness across it. None of them is an
+imperative refinement, and none of them imports anything from `MFODL_Monitor_Imp`. They now live
+in `MFODL_Monitor_Devel` beside the kernel they are about, and `MFODL_Monitor_Imp` keeps only
+what it was created for -- `Table_Imp`, the imperative Since and Until, the imperative join, the
+monadic evaluator, and `Dense_Imp`, which is the short-tuple monitor's *imperative* part and
+imports `MFODL_Monitor_Devel.Dense`.
+
+The exported OCaml is byte-identical, the cram suites are green, and the imperative session,
+which is what changes when the refinement changes, drops from 4:20 to 2:22.
+
+**A note on building it here.** The base session's heap is saved by a step whose peak memory is
+proportional to everything the session accumulated, and this container caps a process group at
+about 9.5 GB. With `parallel_proofs` at its default the base session with these ten theories is
+killed at exactly that step; with `-o parallel_proofs=0 -o threads=2` it fits, at 55 minutes
+instead of 35. The theories are unchanged either way -- this is a property of the machine, not of
+the development, and it is recorded here because Section 5's recipe does not otherwise mention it.
 

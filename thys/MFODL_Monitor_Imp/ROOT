@@ -12,16 +12,6 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
     Join_Imp2
     Until_Imp2
     Monitor_Imp2
-    Dense
-    Dense_Eval
-    Dense_Produces
-    Dense_Match
-    Dense_Let
-    Dense_Agg
-    Dense_Correct
-    Dense_Compile
-    Dense_Init
-    Dense_Descend
     Dense_Imp
     Monitor_Imp
   theories [document=false]

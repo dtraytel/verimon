@@ -242,7 +242,7 @@ qed
 section \<open>Closing the chain\<close>
 
 text \<open>
-  The transferred correctness theorems of @{theory MFODL_Monitor_Imp.Dense_Correct} all ask the
+  The transferred correctness theorems of @{theory MFODL_Monitor_Devel.Dense_Correct} all ask the
   caller for a related initial state, @{term "dmsim_state n cs 0 (minit_safe \<phi>) dst"}, and
   until one is produced they say nothing about any concrete monitor.  @{thm [source] DsPure} is the
   cheapest way to produce one: it relates @{term "DPure \<phi> n (wide_mask n cs)"} to

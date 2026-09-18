@@ -7,7 +7,7 @@ begin
 section \<open>The dense evaluator simulates the kernel's\<close>
 
 text \<open>
-  Every theorem of @{theory MFODL_Monitor_Imp.Dense} needs its operand tables to be finite and
+  Every theorem of @{theory MFODL_Monitor_Devel.Dense} needs its operand tables to be finite and
   well formed over the node's columns.  That is not a property of a single call but of a
   formula's whole future, so it is stated coinductively: @{term "produces n A tw \<phi>"} says that
   @{const meval} on @{term \<phi>} only ever yields finite tables over @{term A}, and that its
@@ -178,7 +178,7 @@ text \<open>
   @{term "dsim n cs \<phi>d \<phi>"} relates a dense formula to a kernel one at a frame of width
   @{term n} whose live columns are @{term cs}.  Every rule carries the node's own
   @{const produces}, so the relation alone gives the operand well-formedness that the
-  @{theory MFODL_Monitor_Imp.Dense} theorems ask for, at every node and after every step.
+  @{theory MFODL_Monitor_Devel.Dense} theorems ask for, at every node and after every step.
 \<close>
 
 abbreviation (input) wf_cols :: "nat \<Rightarrow> cols \<Rightarrow> bool" where
@@ -894,7 +894,7 @@ next
 qed ((frule dsince_relD_buf, simp add: rev_map)+)
 
 text \<open>
-  The simulation itself.  Every case is one theorem of @{theory MFODL_Monitor_Imp.Dense}
+  The simulation itself.  Every case is one theorem of @{theory MFODL_Monitor_Devel.Dense}
   applied pointwise to the operand's output list, with @{const produces} supplying the
   operand well-formedness and @{thm produces_next} re-establishing it for the successor.
 \<close>
