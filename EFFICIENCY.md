@@ -4509,3 +4509,101 @@ One incidental fix: `dsim_wf_cols` was proved by induction over the simulation, 
 over nineteen cases took 120 seconds -- most of `Dense_Eval.thy`'s build. Every rule either
 carries `wf_cols` as a premise or has `cs = []`, so case analysis suffices, and it now takes
 under a second.
+
+### 20.28 Coverage, step 2: the let, and why the freeze needs more
+
+20.27's measurement pointed at `FRZ`, `LET` and `LETPAST`. Of the three, the plain let turns out
+to need nothing new at all, and the other two need a change to the dense evaluator's recursion.
+
+**The let needs no conversion.** A let-bound formula satisfies the safety side condition
+`{0..<nfv φ} ⊆ fv φ`, and `fv φ ⊆ {0..<nfv φ}` holds for every formula, so `fv φ = {0..<m}` with
+`m = nfv φ`: its own frame has *every* column live. Its tables are therefore `table m {0..<m}`
+-- full width, no holes -- and a table of that shape is its own dense form, which is
+`dtabc_upt`:
+
+```isabelle
+lemma dtabc_upt: "table n {0..<n} T ⟹ dtabc n [0..<n] T = T"
+```
+
+So the dense let evaluates its bound formula densely at `cs = [0..<m]`, gets back exactly the
+tables the kernel's evaluator would have produced, and puts them into the database unchanged.
+The database well-formedness the dense predicate nodes rely on -- `wf_db`, which asks for
+`table ar {0..<ar}` and finiteness -- is preserved by that update, which is what
+`wf_db_update'` says. There is no conversion at the binding, in either direction.
+
+```isabelle
+| "deval j ts db (DLet p m φ ψ) =
+     (let (xs, φ') = deval j ts db φ;
+          (ys, ψ') = deval j ts (Mapping.update (p, m) xs db) ψ
+      in (ys, DLet p m φ' ψ'))"
+
+| DsLet: "wf_cols n cs ⟹ produces n (set cs) tw (mformula.MLet p m φ ψ) ⟹
+    dsim m [0..<m] tw φd φ ⟹ dsim n cs tw ψd ψ ⟹
+    dsim n cs tw (DLet p m φd ψd) (mformula.MLet p m φ ψ)"
+```
+
+`dof` emits it unconditionally -- no guard to discharge.
+
+**The freeze and the recursive let need the evaluator to be a `function`.** Both re-enter the
+evaluator on a formula that is not a syntactic subterm of the node: the freeze runs its body
+once per frozen tuple,
+
+```isabelle
+freeze_meval0 (λα. meval n [] (Mapping.update (p, m) (replicate j α)
+                     (Mapping.map_values (λ_ _. []) db)) ψ) (jfrz - jpsi0) αs
+```
+
+where the `ψ` inside the closure is the body's state *after* this batch, and the recursive let
+feeds its body its own previous output until a fixpoint. The kernel handles this by defining
+`meval` with `function (sequential)` and a termination measure on the formula's size, with
+`psize_snd_meval` -- evaluation preserves size -- as the fact that makes the measure decrease.
+`deval` is currently a plain `fun` whose recursion is structural, so covering either node means
+mirroring that construction: `function (sequential)`, a size-preservation lemma by partial
+induction, and termination by the size measure. That is the same work the kernel already did,
+and it is shared between the two nodes, which is why they are one step rather than two.
+
+Good news for both: `freeze_meval0` and `letpast_meval0` are polymorphic in the evaluator and
+in the state type, so the dense side reuses them rather than defining counterparts; only a
+relation lemma (dense output equals the narrowing of the sparse output, and the recursions take
+the same branches) is needed. For the recursive let that lemma also has to show the two
+size guards agree, which is where `psize_snd_deval` is used a second time.
+
+#### What the freeze actually costs, measured by trying it
+
+The evaluator side of that is done and works: `deval` becomes
+`function (sequential)` with
+
+```isabelle
+lemma psize_snd_deval:
+  "deval_deval_list_dom (Inl (j, ts, db, φ)) ⟹ size (snd (deval j ts db φ)) = size φ"
+  "deval_deval_list_dom (Inr (j, ts, db, L)) ⟹
+     map (size ∘ snd) (deval_list j ts db L) = map size L"
+```
+
+proved by partial induction in one `auto` plus two one-line cases, and termination by the sum
+measure `size` / `size_list size`. The `DFrz` equation mirrors the kernel's clause verbatim,
+reusing `freeze_meval0` itself because it is polymorphic in the evaluator and the state.
+
+**The obstacle is not there; it is in the simulation proof's induction principle.** The freeze's
+closure evaluates the body at its state *after* the current batch, `ψ'`, and the simulation
+theorem is proved `by (induct rule: dsim.induct)` -- an induction over the derivation of
+`dsim n cs tw φd φ`. That gives the statement for the operands' own derivations, so for `ψd`
+and `ψ`; it does not give it for `ψd'` and `ψ'`, which are related by a *new* derivation the
+body's induction hypothesis produces, not by a sub-derivation. So the freeze case cannot be
+closed in that induction at all.
+
+The fix is the same one the kernel needed for the same reason: induct on the formula's `size`
+rather than on the derivation, with `size ψ' = size ψ < size (MFrz …)` supplying the decrease.
+Concretely, `dsim_deval` takes an extra premise `size φ ≤ N`, every one of its fifteen
+induction-hypothesis uses gains that obligation, the multi-way conjunction's list lemma has to
+thread it too, and an outer `less_induct` on `size φ` discharges the freeze case from the
+strengthened hypothesis. That is a mechanical but wide edit of a six-hundred-line proof, so it
+is its own step rather than a rider on this one; the evaluator-side work above is kept as a
+patch rather than committed, since a `dformula` constructor no rule can build is worse than
+none.
+
+The same induction principle is what the recursive let needs, and its size guard
+(`letpast_meval0` gives up when evaluation changes the formula's size) needs `psize_snd_deval`
+a second time, to show the dense and sparse recursions take the same branch. So the two nodes
+share both pieces of work, which is the argument for doing them together and after the
+induction is converted.
