@@ -3198,6 +3198,257 @@ proof -
   then show ?thesis using vd r w by (auto simp: duaux_def)
 qed
 
+section \<open>The verified Trigger structure at the dense frame\<close>
+
+text \<open>
+  The trigger's auxiliary list carries two tables per time point, like the Until's, but the
+  structure reads its answer off that list rather than accumulating it, so what has to transport
+  is @{const trigger_results} itself.  Its \<^emph>\<open>then\<close> branch is a set comprehension over tuples of
+  the right operand's frame, and the two conditions it puts on a tuple -- membership in a stored
+  right table, and a join against a stored left table -- are the two the join at @{const cpos}
+  already transports.  Both are stated here on their own, because the comprehension needs them
+  pointwise rather than as an image.
+\<close>
+
+lemma dtabc_in_iff:
+  assumes s: "sorted_wrt (<) cs" and t: "table n (set cs) T" and w: "wf_tuple n (set cs) a"
+  shows "(dproj (wide_mask n cs) a \<in> dtabc n cs T) = (a \<in> T)"
+  unfolding dtabc_eq_dtab[OF s] wide_mask_eq_join_mask[OF s] by (rule dtab_in_iff[OF t w])
+
+lemma proj_tuple_dtabc_in_iff:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and sub: "L \<subseteq> set cs"
+    and t: "table n L T" and w: "wf_tuple n (set cs) a"
+  shows "(proj_tuple (join_mask (length cs) (cpos cs L)) (dproj (wide_mask n cs) a)
+            \<in> dtabc n cs T)
+       = (proj_tuple (join_mask n L) a \<in> T)"
+proof -
+  have l: "length a = n" using w by (simp add: wf_tuple_def)
+  have wp: "wf_tuple n L (proj_tuple (join_mask n L) a)" using wf_tuple_proj_tuple[OF w sub] .
+  show ?thesis
+    unfolding proj_tuple_dproj[OF s b sub l] dtabc_def
+    using dproj_inj_sub[OF s b sub] wp t by (auto simp: table_def inj_on_def)
+qed
+
+text \<open>The comprehension, with the pattern matches and the bounded quantifier written out, so
+  that the two frames can be compared position by position.\<close>
+
+lemma trigger_results_snd:
+  "snd (trigger_results args cur auxlist) =
+     (if 0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)
+      then {tuple. wf_tuple (args_n args) (args_R args) tuple \<and>
+        (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (auxlist ! i)) \<longrightarrow>
+           (tuple \<in> snd (snd (auxlist ! i)) \<or>
+            (\<exists>j. i < j \<and> j < length auxlist \<and>
+               join_cond (args_pos args) (fst (snd (auxlist ! j)))
+                 (proj_tuple (join_mask (args_n args) (args_L args)) tuple))))}
+      else {replicate (args_n args) None})"
+  by (auto simp: Let_def case_prod_beta)
+
+lemma length_filter_dauxlist3:
+  "length (filter (\<lambda>(t, _, _). P t) (dauxlist3 n cs auxlist))
+     = length (filter (\<lambda>(t, _, _). P t) auxlist)"
+  by (induct auxlist) (auto simp: dauxlist3_def)
+
+lemma nth_dauxlist3:
+  "i < length auxlist \<Longrightarrow> dauxlist3 n cs auxlist ! i =
+     (fst (auxlist ! i), dtabc n cs (fst (snd (auxlist ! i))),
+      dtabc n cs (snd (snd (auxlist ! i))))"
+  by (simp add: dauxlist3_def case_prod_beta)
+
+text \<open>A tuple of the right operand's frame and its short form correspond one for one, in both
+  directions: the short form of a well-formed tuple is a hole-free tuple of the dense frame, and
+  widening a hole-free one gets the original back.\<close>
+
+lemma wf_tuple_dproj_full:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and w: "wf_tuple n (set cs) a"
+  shows "wf_tuple (length cs) {0..<length cs} (dproj (wide_mask n cs) a)"
+proof -
+  have "table (length cs) (cpos cs (set cs)) (dtabc n cs {a})"
+    by (rule table_dtabc_cpos[OF s b order.refl]) (use w in \<open>simp add: table_def\<close>)
+  then show ?thesis by (simp add: cpos_all dtabc_def table_def)
+qed
+
+lemma wf_tuple_dwiden_full:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and d: "wf_tuple (length cs) {0..<length cs} d"
+  shows "wf_tuple n (set cs) (dwiden (wide_mask n cs) d)"
+    and "dproj (wide_mask n cs) (dwiden (wide_mask n cs) d) = d"
+proof -
+  have dw: "dwf_tuple (length cs) d" using d by (simp add: dwf_tuple_def wf_tuple_def)
+  show "wf_tuple n (set cs) (dwiden (wide_mask n cs) d)" by (rule wf_tuple_dwiden[OF s b dw])
+  show "dproj (wide_mask n cs) (dwiden (wide_mask n cs) d) = d"
+    by (rule dproj_dwiden) (use dw in \<open>simp add: dwf_tuple_def length_filter_wide_mask[OF s b]\<close>)
+qed
+
+text \<open>The transfer itself.  The node's interval contains zero and the structure is asked for its
+  answer right after a time point was entered, so the \<^emph>\<open>else\<close> branch is out of reach; it is
+  assumed away, and the caller discharges it from the update it just did.\<close>
+
+theorem dtabc_trigger_results:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and sub: "set cs_L \<subseteq> set cs"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs"
+    and wf: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs) r"
+    and ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
+  shows "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist))
+       = dtabc n cs (snd (trigger_results args cur auxlist))"
+proof -
+  have len: "length (dauxlist3 n cs auxlist) = length auxlist" by (simp add: dauxlist3_def)
+  have tl: "\<And>i. i < length auxlist \<Longrightarrow> table n (set cs_L) (fst (snd (auxlist ! i)))"
+    using wf by (fastforce simp: case_prod_beta dest: nth_mem)
+  have tr: "\<And>i. i < length auxlist \<Longrightarrow> table n (set cs) (snd (snd (auxlist ! i)))"
+    using wf by (fastforce simp: case_prod_beta dest: nth_mem)
+  \<comment> \<open>the two conditions the comprehension puts on a tuple, one position at a time\<close>
+  have cond: "\<And>a :: event_data tuple. wf_tuple n (set cs) a \<Longrightarrow>
+      (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (dauxlist3 n cs auxlist ! i)) \<longrightarrow>
+         (dproj (wide_mask n cs) a \<in> snd (snd (dauxlist3 n cs auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (dauxlist3 n cs auxlist ! j)))
+               (proj_tuple (join_mask (length cs) (cpos cs (set cs_L)))
+                 (dproj (wide_mask n cs) a)))))
+    = (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (auxlist ! i)) \<longrightarrow>
+         (a \<in> snd (snd (auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (auxlist ! j)))
+               (proj_tuple (join_mask n (set cs_L)) a))))"
+  proof -
+    fix a :: "event_data tuple" assume w: "wf_tuple n (set cs) a"
+    have inR: "\<And>i. i < length auxlist \<Longrightarrow>
+        (dproj (wide_mask n cs) a \<in> dtabc n cs (snd (snd (auxlist ! i))))
+          = (a \<in> snd (snd (auxlist ! i)))"
+      by (rule dtabc_in_iff[OF s tr w])
+    have inL: "\<And>j. j < length auxlist \<Longrightarrow>
+        (proj_tuple (join_mask (length cs) (cpos cs (set cs_L))) (dproj (wide_mask n cs) a)
+            \<in> dtabc n cs (fst (snd (auxlist ! j))))
+          = (proj_tuple (join_mask n (set cs_L)) a \<in> fst (snd (auxlist ! j)))"
+      by (rule proj_tuple_dtabc_in_iff[OF s b sub tl w])
+    show "(\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (dauxlist3 n cs auxlist ! i)) \<longrightarrow>
+         (dproj (wide_mask n cs) a \<in> snd (snd (dauxlist3 n cs auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (dauxlist3 n cs auxlist ! j)))
+               (proj_tuple (join_mask (length cs) (cpos cs (set cs_L)))
+                 (dproj (wide_mask n cs) a)))))
+    = (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (auxlist ! i)) \<longrightarrow>
+         (a \<in> snd (snd (auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (auxlist ! j)))
+               (proj_tuple (join_mask n (set cs_L)) a))))"
+      by (auto simp: nth_dauxlist3 join_cond_eq inR inL)
+  qed
+  \<comment> \<open>and the two frames a tuple can live in\<close>
+  let ?S = "{a. wf_tuple n (set cs) a \<and>
+      (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (auxlist ! i)) \<longrightarrow>
+         (a \<in> snd (snd (auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (auxlist ! j)))
+               (proj_tuple (join_mask n (set cs_L)) a))))}"
+  let ?D = "{d. wf_tuple (length cs) {0..<length cs} d \<and>
+      (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (dauxlist3 n cs auxlist ! i)) \<longrightarrow>
+         (d \<in> snd (snd (dauxlist3 n cs auxlist ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length auxlist \<and>
+             join_cond (args_pos args) (fst (snd (dauxlist3 n cs auxlist ! j)))
+               (proj_tuple (join_mask (length cs) (cpos cs (set cs_L))) d))))}"
+  have DS: "?D = dtabc n cs ?S"
+  proof (intro set_eqI iffI)
+    fix d :: "event_data tuple" assume d: "d \<in> ?D"
+    then have wd: "wf_tuple (length cs) {0..<length cs} d" by simp
+    have wa: "wf_tuple n (set cs) (dwiden (wide_mask n cs) d)"
+      by (rule wf_tuple_dwiden_full(1)[OF s b wd])
+    have pd: "dproj (wide_mask n cs) (dwiden (wide_mask n cs) d) = d"
+      by (rule wf_tuple_dwiden_full(2)[OF s b wd])
+    have inS: "dwiden (wide_mask n cs) d \<in> ?S"
+      using d wa cond[OF wa] unfolding pd by simp
+    have im: "dproj (wide_mask n cs) (dwiden (wide_mask n cs) d) \<in> dproj (wide_mask n cs) ` ?S"
+      by (rule imageI[OF inS])
+    show "d \<in> dtabc n cs ?S" using im[unfolded pd] by (simp add: dtabc_def)
+  next
+    fix d :: "event_data tuple" assume "d \<in> dtabc n cs ?S"
+    then obtain a where a: "a \<in> ?S" and de: "d = dproj (wide_mask n cs) a"
+      unfolding dtabc_def by auto
+    have wa: "wf_tuple n (set cs) a" using a by simp
+    show "d \<in> ?D" using a cond[OF wa] wf_tuple_dproj_full[OF s b wa] unfolding de by simp
+  qed
+  have ne': "0 < length
+      (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) (dauxlist3 n cs auxlist))"
+    using ne unfolding length_filter_dauxlist3 .
+  have dsimp: "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist)) = ?D"
+    unfolding trigger_results_snd using ne' by (simp add: len)
+  have ssimp: "snd (trigger_results args cur auxlist) = ?S"
+    unfolding trigger_results_snd using ne by (simp add: an aL aR)
+  show ?thesis unfolding dsimp ssimp by (rule DS)
+qed
+
+text \<open>The structure at the dense frame, related to the kernel's through the abstract auxiliary
+  list they are both valid for, exactly as for the Since and the Until.\<close>
+
+lemma dauxlist3_filter_append:
+  "dauxlist3 n cs (filter (\<lambda>(t, _). P t) auxlist @ [(nt, l, r)])
+     = filter (\<lambda>(t, _). P t) (dauxlist3 n cs auxlist) @ [(nt, dtabc n cs l, dtabc n cs r)]"
+  by (induct auxlist) (auto simp: dauxlist3_def)
+
+definition dtaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmtaux \<Rightarrow>
+    event_data mtaux \<Rightarrow> bool" where
+  "dtaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r) \<and>
+     valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+
+lemma dtaux_init:
+  assumes sub: "set cs_L \<subseteq> set cs_R" and m0: "mem (args_ivl args) 0"
+  shows "dtaux n cs_R cs_L args 0 (init_mmtaux (dargs cs_R cs_L args)) []"
+proof -
+  have sub': "cpos cs_R (set cs_L) \<subseteq> {0..<length cs_R}"
+    by (auto simp: cpos_def)
+  have "valid_mmtaux (dargs cs_R cs_L args) 0 (init_mmtaux (dargs cs_R cs_L args)) []"
+    using valid_init_mmtaux[where I = "args_ivl args" and n = "length cs_R"
+        and L = "cpos cs_R (set cs_L)" and R = "{0..<length cs_R}"
+        and pos = "args_pos args" and agg = None]
+      m0 sub'
+    by (simp add: dargs_def Let_def)
+  then show ?thesis by (simp add: dtaux_def dauxlist3_def)
+qed
+
+lemma dtaux_update:
+  assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
+    and s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
+    and tl: "table n (set cs_L) l" and tr: "table n (set cs_R) r"
+  shows "dtaux n cs_R cs_L args nt
+      (update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) daux)
+      (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])"
+proof -
+  have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
+    and d: "valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: dtaux_def)
+  have tl': "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
+      (dtabc n cs_R l)"
+    using table_dtabc_cpos[OF s b sub tl] by simp
+  have tr': "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R r)"
+    using table_dtabc_cpos[OF s b order.refl tr] by (simp add: cpos_all)
+  have "valid_mmtaux (dargs cs_R cs_L args) nt
+      (update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) daux)
+      (filter (\<lambda>(t, _). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
+         (dauxlist3 n cs_R auxlist) @ [(nt, dtabc n cs_R l, dtabc n cs_R r)])"
+    by (rule valid_update_mmtaux[OF nt tl' tr' d])
+  then show ?thesis using w tl tr by (auto simp: dtaux_def dauxlist3_filter_append)
+qed
+
+lemma dtaux_result:
+  assumes v: "dtaux n cs_R cs_L args cur daux auxlist"
+    and s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
+    and ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
+  shows "snd (result_mmtaux (dargs cs_R cs_L args) daux)
+       = dtabc n cs_R (snd (trigger_results args cur auxlist))"
+proof -
+  have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
+    and d: "valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: dtaux_def)
+  have res: "result_mmtaux (dargs cs_R cs_L args) daux
+      = trigger_results (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist)"
+    by (rule valid_result_mmtaux[OF d])
+  show ?thesis unfolding res by (rule dtabc_trigger_results[OF s b sub an aL aR w ne])
+qed
+
 (*<*)
 end
 (*>*)
