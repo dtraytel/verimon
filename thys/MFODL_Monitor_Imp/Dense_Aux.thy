@@ -835,6 +835,113 @@ proof -
   qed
 qed
 
+subsection \<open>The dense mask at the dense frame\<close>
+
+text \<open>
+  At the frame @{const dargs} sets up, the mask is the one the dense join of 20.8 already uses,
+  and widening a table of the left operand's frame by it is the same as narrowing the wide table
+  to the right operand's columns -- which is what the evaluator computes today by embedding.
+\<close>
+
+lemma length_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     length (mrg_left_key (mrg_plan cs1 cs2)) = length cs1"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+lemma length_filter_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     length (filter id (mrg_left_key (mrg_plan cs1 cs2))) = length cs2"
+  by (induct cs1 cs2 rule: mrg_plan.induct) auto
+
+lemma dwiden_mrg_left_key:
+  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
+     dwiden (mrg_left_key (mrg_plan cs1 cs2)) (map f cs2)
+     = map (\<lambda>c. if c \<in> set cs2 then f c else None) cs1"
+proof (induct cs1 cs2 rule: mrg_plan.induct)
+  case (3 c cs d ds)
+  from 3 have nc: "c \<notin> set cs" by auto
+  have aux: "map (\<lambda>ca. if ca = c \<or> ca \<in> set ds then f ca else None) cs
+      = map (\<lambda>ca. if ca \<in> set ds then f ca else None) cs"
+    using nc by (intro map_cong[OF refl]) auto
+  show ?case
+  proof (cases "c = d")
+    case True
+    from 3 True have sub: "set ds \<subseteq> set cs" by auto
+    from 3 True sub show ?thesis by (auto simp: aux)
+  next
+    case False
+    from 3 False show ?thesis by (auto dest: order.asym)
+  qed
+qed auto
+
+lemma nth_mrg_left_key:
+  assumes s1: "sorted_wrt (<) cs1" and s2: "sorted_wrt (<) cs2"
+    and sub: "set cs2 \<subseteq> set cs1" and i: "i < length cs1"
+  shows "mrg_left_key (mrg_plan cs1 cs2) ! i = (cs1 ! i \<in> set cs2)"
+proof -
+  let ?msk = "mrg_left_key (mrg_plan cs1 cs2)"
+  have l: "length ?msk = length cs1" by (rule length_mrg_left_key[OF s1 s2 sub])
+  have lf: "length (map Some cs2) = length (filter id ?msk)"
+    by (simp add: length_filter_mrg_left_key[OF s1 s2 sub])
+  have ns: "\<forall>x \<in> set (map Some cs2). x \<noteq> None" by auto
+  have "dwiden ?msk (map Some cs2) = map (\<lambda>c. if c \<in> set cs2 then Some c else None) cs1"
+    by (rule dwiden_mrg_left_key[OF s1 s2 sub])
+  then have "(map (\<lambda>c. if c \<in> set cs2 then Some c else None) cs1 ! i = None) = (\<not> ?msk ! i)"
+    using dwiden_props[OF lf ns] i l by simp
+  then show ?thesis using i by (simp split: if_splits)
+qed
+
+lemma dmsk_args_dargs:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and sub: "set cs_L \<subseteq> set cs_R"
+  shows "dmsk_args (dargs cs_R cs_L args) (mrg_left_key (mrg_plan cs_R cs_L))"
+  unfolding dmsk_args_def dargs_simps length_mrg_left_key[OF s_R s_L sub]
+  by (auto simp: cpos_def nth_mrg_left_key[OF s_R s_L sub])
+
+lemma dwiden_dtabc:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and sub: "set cs_L \<subseteq> set cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and w: "wf_tuple n (set cs_L) x"
+  shows "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) (dproj (wide_mask n cs_L) x)
+       = dproj (wide_mask n cs_R) x"
+proof -
+  have l: "length x = n" using w by (simp add: wf_tuple_def)
+  have b_L: "\<forall>c \<in> set cs_L. c < n" using sub b_R by auto
+  have none: "\<And>c. c \<in> set cs_R \<Longrightarrow> c \<notin> set cs_L \<Longrightarrow> x ! c = None"
+    using w b_R by (auto simp: wf_tuple_def)
+  have "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) (map (\<lambda>c. x ! c) cs_L)
+      = map (\<lambda>c. if c \<in> set cs_L then x ! c else None) cs_R"
+    by (rule dwiden_mrg_left_key[OF s_R s_L sub])
+  also have "\<dots> = map (\<lambda>c. x ! c) cs_R" using none by (intro map_cong[OF refl]) auto
+  finally show ?thesis
+    unfolding dproj_wide_mask_eq_map_nth[OF s_L b_L l] dproj_wide_mask_eq_map_nth[OF s_R b_R l] .
+qed
+
+lemma dwiden_image_dtabc:
+  assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and sub: "set cs_L \<subseteq> set cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and t: "table n (set cs_L) T"
+  shows "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) ` dtabc n cs_L T = dtabc n cs_R T"
+proof -
+  have key: "dwiden (mrg_left_key (mrg_plan cs_R cs_L)) (dproj (wide_mask n cs_L) x)
+      = dproj (wide_mask n cs_R) x" if "x \<in> T" for x
+    using t that dwiden_dtabc[OF s_R s_L sub b_R] by (auto simp: table_def)
+  show ?thesis unfolding dtabc_def image_image by (intro image_cong[OF refl]) (simp add: key)
+qed
+
+lemma dwf_tuple_dtabc:
+  assumes s_L: "sorted_wrt (<) cs_L" and b_L: "\<forall>c \<in> set cs_L. c < n"
+    and t: "table n (set cs_L) T" and y: "y \<in> dtabc n cs_L T"
+  shows "dwf_tuple (length cs_L) y"
+proof -
+  obtain x where x: "x \<in> T" "y = dproj (wide_mask n cs_L) x" using y by (auto simp: dtabc_def)
+  then have w: "wf_tuple n (set cs_L) x" using t by (simp add: table_def)
+  then have l: "length x = n" by (simp add: wf_tuple_def)
+  have "y = map (\<lambda>c. x ! c) cs_L"
+    unfolding x(2) by (rule dproj_wide_mask_eq_map_nth[OF s_L b_L l])
+  then show ?thesis using w b_L by (auto simp: dwf_tuple_def wf_tuple_def)
+qed
+
 (*<*)
 end
 (*>*)
