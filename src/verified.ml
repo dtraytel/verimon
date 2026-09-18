@@ -7549,6 +7549,16 @@ let rec eval_since_d
 let rec umebufn_add
   xsa xs = mapa (fun (a, b) -> mbuf_t_append a b) (zip xs xsa);;
 
+let djidx_new_v :
+  (Z.t ->
+    (unit ->
+      (Z.t *
+        (Z.t *
+          ((Z.t * (event_data list * (event_data list) list)) list) array))))
+    boxed
+  = Box (im_new (heap_list heap_event_data)
+          (heap_list (heap_list heap_event_data)));;
+
 let rec heap_join_ok
   idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
           (integer_of_nat (size_lista idx));;
@@ -7636,13 +7646,21 @@ let rec gbin_join (_A1, _A2, _A3)
                     else a)
              else gbin_join0 (_A1, _A2, _A3) pl a pos b));;
 
+let djidx_lookup_h_v :
+  ((event_data list -> event_data list -> bool) ->
+    Z.t * (Z.t *
+            ((Z.t * (event_data list * (event_data list) list)) list) array) ->
+      Z.t -> event_data list -> (unit -> (((event_data list) list) option)))
+    boxed
+  = Box (im_lookup_h (heap_list heap_event_data)
+          (heap_list (heap_list heap_event_data)));;
+
 let rec dprobe_r
   p lk q xs acc =
     (match xs with [] -> (fun () -> acc)
       | x :: r ->
         (let k = dproj lk x in
-          binda (im_lookup_h (heap_list heap_event_data)
-                  (heap_list (heap_list heap_event_data)) ueq q
+          binda (unbox djidx_lookup_h_v ueq q
                   ((fun t -> let rec go h l = (match l with [] -> h | EInt z :: r -> go (h * 31 + Z.hash z) r | EFloat f :: r -> go (h * 31 + Hashtbl.hash f) r | EString s :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
                     k)
                   k)
@@ -7657,8 +7675,7 @@ let rec dprobe_l
     (match ys with [] -> (fun () -> acc)
       | y :: r ->
         (let k = dproj rk y in
-          binda (im_lookup_h (heap_list heap_event_data)
-                  (heap_list (heap_list heap_event_data)) ueq q
+          binda (unbox djidx_lookup_h_v ueq q
                   ((fun t -> let rec go h l = (match l with [] -> h | EInt z :: r -> go (h * 31 + Z.hash z) r | EFloat f :: r -> go (h * 31 + Hashtbl.hash f) r | EString s :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
                     k)
                   k)
@@ -7667,6 +7684,22 @@ let rec dprobe_l
                 (match v with None -> acc
                   | Some l ->
                     fold (fun x -> edl_insert (dmerge p x y)) l acc))));;
+
+let djidx_update_h_v :
+  ((event_data list -> event_data list -> bool) ->
+    Z.t * (Z.t *
+            ((Z.t * (event_data list * (event_data list) list)) list) array) ->
+      Z.t ->
+        event_data list ->
+          (event_data list) list ->
+            (unit ->
+              (Z.t *
+                (Z.t *
+                  ((Z.t * (event_data list * (event_data list) list)) list)
+                    array))))
+    boxed
+  = Box (im_update_h (heap_list heap_event_data)
+          (heap_list (heap_list heap_event_data)));;
 
 let rec didx_ins
   msk xs q =
@@ -7677,11 +7710,9 @@ let rec didx_ins
            (fun t -> let rec go h l = (match l with [] -> h | EInt z :: r -> go (h * 31 + Z.hash z) r | EFloat f :: r -> go (h * 31 + Hashtbl.hash f) r | EString s :: r -> go (h * 31 + Hashtbl.hash s) r) in Z.of_int ((go 17 t) land 1073741823))
              k
            in
-          binda (im_lookup_h (heap_list heap_event_data)
-                  (heap_list (heap_list heap_event_data)) ueq q h k)
+          binda (unbox djidx_lookup_h_v ueq q h k)
             (fun v ->
-              binda (im_update_h (heap_list heap_event_data)
-                      (heap_list (heap_list heap_event_data)) ueq q h k
+              binda (unbox djidx_update_h_v ueq q h k
                       (match v with None -> [x] | Some a -> x :: a))
                 (didx_ins msk r))));;
 
@@ -7721,8 +7752,7 @@ let rec dbin_join_h
                                  (ceq_event_data, ccompare_event_data,
                                    equal_event_data)
                                  (DJGen (p, lk, rk)) a pos b))
-                        else binda (im_new (heap_list heap_event_data)
-                                     (heap_list (heap_list heap_event_data))
+                        else binda (unbox djidx_new_v
                                      (Z.mul (Z.of_int 2)
                                        (integer_of_nat (size_lista ys))))
                                (fun q ->
@@ -7734,8 +7764,7 @@ let rec dbin_join_h
                                  (ceq_event_data, ccompare_event_data,
                                    equal_event_data)
                                  (DJGen (p, lk, rk)) a pos b))
-                        else binda (im_new (heap_list heap_event_data)
-                                     (heap_list (heap_list heap_event_data))
+                        else binda (unbox djidx_new_v
                                      (Z.mul (Z.of_int 2)
                                        (integer_of_nat (size_lista xs))))
                                (fun q ->

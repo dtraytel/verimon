@@ -362,6 +362,22 @@ setup \<open>Monomorphize.box_cmd
    map (fn (tn, ty) => ("RBT_Mapping2.impl_of", "edl_impl_of_" ^ tn ^ "_v", [edl, ty]))
      edl_value_types)\<close>
 
+subsection \<open>The heap index of the dense join\<close>
+
+text \<open>
+  The operations of @{theory MFODL_Monitor_Imp.Table_Imp} take the @{class heap} dictionary of
+  the key type and of the value type, and the code generator builds both at every call.  The
+  index of the join over the wide tuples is boxed for that reason in
+  @{theory MFODL_Monitor_Imp.Join_Imp2}; the one over the short tuples is entered once per
+  indexed and once per probed tuple, so it needs the same.
+\<close>
+
+setup \<open>Monomorphize.box_cmd
+  (let val edl = "event_data list"; val edll = "event_data list list" in
+    [("im_lookup_h", "djidx_lookup_h_v", [edl, edll]),
+     ("im_update_h", "djidx_update_h_v", [edl, edll]),
+     ("im_new", "djidx_new_v", [edl, edll])] end)\<close>
+
 subsection \<open>The tree primitives with the short tuples' comparator called directly\<close>
 
 definition edl_rbtc_lookup :: "(event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow> 'v option" where
