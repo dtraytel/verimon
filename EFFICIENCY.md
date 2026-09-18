@@ -320,8 +320,8 @@ the general dictionary/comparator/GC overheads quantified in Section 2.
 ## 5. Regenerating the verified kernel
 
 ```
-cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 35 min, needs ~8 GB RAM
-isabelle build -b -e -d . MFODL_Monitor_Imp                  # about 2 min on top of it
+cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 55 min, needs ~8 GB RAM
+isabelle build -b -e -d . MFODL_Monitor_Imp                  # about 5 min on top of it
 cp MFODL_Monitor_Imp/verified.ocaml ../src/verified.ml
 cd .. && dune build --profile=release && dune test
 ```
