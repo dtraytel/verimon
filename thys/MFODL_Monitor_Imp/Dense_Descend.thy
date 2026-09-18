@@ -102,6 +102,8 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
 | "dof n cs (mformula.MLet p m \<phi> \<psi>) = DLet p m (dof m [0..<m] \<phi>) (dof n cs \<psi>)"
 | "dof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
      DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi \<alpha>s"
+| "dof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
+     DLetPast p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) i buf"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
       else DPure (mformula.MTP mt i) n (wide_mask n cs))"
@@ -918,6 +920,28 @@ proof -
   show ?thesis unfolding m d by (rule dsim.DsFrz[OF w pr s1 s2]) simp
 qed
 
+text \<open>The recursive let starts with an empty buffer, which is trivially a table over the
+  bound formula's frame.\<close>
+
+lemma dsim_dof_minit0_LetPast:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MLetPast p k (minit0 k \<chi>) (minit0 n \<eta>) 0 None"
+    and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
+    and i1: "dofc k tw \<chi>" and i2: "dofc n tw \<eta>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have pr: "produces n (set ?cs) tw (mformula.MLetPast p k (minit0 k \<chi>) (minit0 n \<eta>) 0 None)"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MLetPast p k (minit0 k \<chi>) (minit0 n \<eta>) 0 None)
+      = DLetPast p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>)) 0 None" by simp
+  have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
+    using i1 unfolding A set_cols_upt .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+  show ?thesis unfolding m d by (rule dsim.DsLetPast[OF w pr s1 s2]) simp
+qed
+
 lemma dsim_dof_minit0_TP:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MTP mt i"
@@ -993,7 +1017,17 @@ next
       simp
 next
   case (LetPast p \<phi> \<psi>)
-  show ?case by (rule dsim_dof_minit0_pure) (use LetPast.hyps LetPast.prems in simp_all)
+  have sfa: "safe_formula (Formula.LetPast p \<phi> \<psi>)" using LetPast.hyps by simp
+  have b1: "\<forall>x \<in> Formula.fv \<phi>. x < Formula.nfv \<phi>" by (rule fvi_less_nfv)
+  have b2: "\<forall>x \<in> Formula.fv \<psi>. x < n" using LetPast.prems by simp
+  have A: "Formula.fv \<phi> = {0..<Formula.nfv \<phi>}"
+    using LetPast.hyps(2) fvi_less_nfv[of \<phi>] by auto
+  have m: "minit0 n (Formula.LetPast p \<phi> \<psi>)
+      = mformula.MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
+    by simp
+  show ?case
+    by (rule dsim_dof_minit0_LetPast[OF sfa LetPast.prems m A _
+          LetPast.IH(1)[OF b1] LetPast.IH(2)[OF b2]]) simp
 next
   case (And_assign \<phi> \<psi>)
   obtain y t where sp: "split_assignment (Formula.fv \<phi>) \<psi> = (y, t)"

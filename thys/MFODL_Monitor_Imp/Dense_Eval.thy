@@ -126,6 +126,7 @@ datatype dformula =
   | DTS mtrm
   | DLet Formula.name nat dformula dformula
   | DFrz Formula.name nat dformula dformula nat nat nat "event_data table list"
+  | DLetPast Formula.name nat dformula dformula nat "event_data table option"
 
 function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow>
     event_data table list \<times> dformula"
@@ -211,6 +212,11 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
           jphi = jphi + length xs;
           jfrz = jfrz + length zs0_out + length ys
       in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
+| "deval j ts db (DLetPast p m \<phi> \<psi> i buf) =
+     (let (xs, i, buf, \<phi>) =
+            letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
+          (ys, \<psi>) = deval j ts (Mapping.update (p, m) xs db) \<psi>
+      in (ys, DLetPast p m \<phi> \<psi> i buf))"
   by pat_completeness auto
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
@@ -231,6 +237,7 @@ lemma psize_snd_deval:
    apply simp
   apply (drule size_list_map_cong)
   apply simp
+  apply (metis snd_conv size_letpast_meval)
   done
 
 lemma total_deval: "All deval_deval_list_dom"
@@ -679,6 +686,11 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow>
     dsim n cs tw (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s)
       (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)"
+| DsLetPast: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MLetPast p m \<phi> \<psi> i buf) \<Longrightarrow>
+    dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    \<forall>y. buf = Some y \<longrightarrow> ftable m {0..<m} y \<Longrightarrow>
+    dsim n cs tw (DLetPast p m \<phi>d \<psi>d i buf) (mformula.MLetPast p m \<phi> \<psi> i buf)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -1060,6 +1072,86 @@ text \<open>
   it below that bound.  \<open>dsim_deval_bound\<close> closes the loop by induction on the
   bound, and \<open>dsim_deval\<close> instantiates it.
 \<close>
+
+text \<open>
+  The recursive let runs its bound formula against databases it builds itself, feeding the
+  previous round's output back under the bound predicate.  That operand sits at its own full
+  frame, where a dense table \<^emph>\<open>is\<close> the sparse one, so the two runs produce literally the same
+  lists and their states stay in step round by round.  The guard that rejects a round in which
+  the formula's size changed never fires on either side, because neither evaluator changes its
+  formula's size.
+\<close>
+
+lemma letpast_meval0_rel:
+  assumes Q: "\<And>tw' \<chi>d \<chi> ts' db' zs' \<chi>'. size \<chi> < NN \<Longrightarrow> dsim m [0..<m] tw' \<chi>d \<chi> \<Longrightarrow>
+      wf_db db' \<Longrightarrow> sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
+      meval j m ts' db' \<chi> = (zs', \<chi>') \<Longrightarrow>
+      \<exists>\<chi>d'. deval j ts' db' \<chi>d = (zs', \<chi>d') \<and> dsim m [0..<m] (dnext tw' ts') \<chi>d' \<chi>'"
+  shows "letpast_meval0 (meval j m) J i ys xs q ts db \<phi> = (zs, i', bo, \<phi>') \<Longrightarrow>
+    snd q = m \<Longrightarrow> size \<phi> < NN \<Longrightarrow> dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> list_all (ftable m {0..<m}) ys \<Longrightarrow>
+    list_all (ftable m {0..<m}) xs \<Longrightarrow>
+    list_all (ftable m {0..<m}) zs \<and> (\<forall>y. bo = Some y \<longrightarrow> ftable m {0..<m} y) \<and>
+      (\<exists>\<phi>d'. letpast_meval0 (deval j) J i ys xs q ts db \<phi>d = (zs, i', bo, \<phi>d')
+        \<and> dsim m [0..<m] (dnext tw ts) \<phi>d' \<phi>')"
+proof (induct "meval j m" J i ys xs q ts db \<phi> arbitrary: zs i' bo \<phi>' tw \<phi>d
+    rule: letpast_meval0.induct)
+  case (1 J i ys xs q ts db \<phi>)
+  note IH = 1(1) and E = 1(2) and SQ = 1(3) and SZ = 1(4) and SIM = 1(5) and W = 1(6)
+    and S = 1(7) and B = 1(8) and LY = 1(9) and LX = 1(10)
+  obtain ys' \<phi>2 where ev: "meval j m ts (Mapping.update q xs db) \<phi> = (ys', \<phi>2)"
+    by (cases "meval j m ts (Mapping.update q xs db) \<phi>")
+  have wu: "wf_db (Mapping.update q xs db)"
+    by (rule wf_db_update'[OF W]) (use LX SQ in simp)
+  obtain \<phi>d2 where dv: "deval j ts (Mapping.update q xs db) \<phi>d = (ys', \<phi>d2)"
+    and s2: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2"
+    using Q[OF SZ SIM wu S B ev] by blast
+  have ty: "list_all (ftable m {0..<m}) ys'"
+    using dsim_produces[OF SIM] by (intro produces_tables[OF _ wu S B ev]) simp
+  have same: "\<not> size \<phi>2 \<noteq> size \<phi>"
+    using default_maux.size_snd_meval[of j m ts "Mapping.update q xs db" \<phi>] ev by simp
+  have dsame: "\<not> size \<phi>d2 \<noteq> size \<phi>d"
+    using size_snd_deval[of j ts "Mapping.update q xs db" \<phi>d] dv by simp
+  have szp: "size \<phi>2 < NN" using same SZ by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    have "zs = ys @ ys' \<and> i' = i + length xs \<and> bo = None \<and> \<phi>' = \<phi>2"
+      using E ev same Nil by (simp add: letpast_meval0.simps)
+    moreover have "letpast_meval0 (deval j) J i ys xs q ts db \<phi>d
+        = (ys @ ys', i + length xs, None, \<phi>d2)"
+      using dv dsame Nil by (simp add: letpast_meval0.simps)
+    ultimately show ?thesis using s2 LY ty by auto
+  next
+    case (Cons y r)
+    show ?thesis
+    proof (cases "J \<le> Suc (i + length xs)")
+      case True
+      have "zs = ys @ ys' \<and> i' = i + length xs \<and> bo = Some y \<and> \<phi>' = \<phi>2"
+        using E ev same Cons True by (simp add: letpast_meval0.simps)
+      moreover have "letpast_meval0 (deval j) J i ys xs q ts db \<phi>d
+          = (ys @ ys', i + length xs, Some y, \<phi>d2)"
+        using dv dsame Cons True by (simp add: letpast_meval0.simps)
+      ultimately show ?thesis using s2 LY ty Cons by auto
+    next
+      case cont: False
+      have e': "letpast_meval0 (meval j m) J (i + length xs) (ys @ ys') ys' q []
+          (Mapping.map_values (\<lambda>_ _. []) db) \<phi>2 = (zs, i', bo, \<phi>')"
+        using E ev same Cons cont by (simp add: letpast_meval0.simps)
+      have d': "letpast_meval0 (deval j) J i ys xs q ts db \<phi>d
+          = letpast_meval0 (deval j) J (i + length xs) (ys @ ys') ys' q []
+              (Mapping.map_values (\<lambda>_ _. []) db) \<phi>d2"
+        using dv dsame Cons cont by (simp add: letpast_meval0.simps)
+      have "list_all (ftable m {0..<m}) zs \<and> (\<forall>y. bo = Some y \<longrightarrow> ftable m {0..<m} y) \<and>
+          (\<exists>\<phi>d''. letpast_meval0 (deval j) J (i + length xs) (ys @ ys') ys' q []
+            (Mapping.map_values (\<lambda>_ _. []) db) \<phi>d2 = (zs, i', bo, \<phi>d'')
+          \<and> dsim m [0..<m] (dnext (dnext tw ts) []) \<phi>d'' \<phi>')"
+        by (rule IH[OF ev[symmetric] refl same Cons cont e' SQ szp s2
+              wf_db_map_values_empty]) (use LY ty in auto)
+      then show ?thesis using d' by (auto simp: dnext_def)
+    qed
+  qed
+qed
 
 theorem dsim_deval_N:
   assumes Q: "\<And>n' cs' tw' \<phi>d' \<chi> j' ts' db' xs' \<chi>'. size \<chi> < NN \<Longrightarrow> dsim n' cs' tw' \<phi>d' \<chi> \<Longrightarrow>
@@ -1877,6 +1969,66 @@ next
              (jpsi0 + length zs0) (jphi + length as) as') \<phi>'"
       unfolding f
       by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas'])
+  qed
+next
+  case (DsLetPast n cs tw p m \<phi> \<psi> i buf \<phi>d \<psi>d)
+  note wf = DsLetPast.hyps(1) and pr = DsLetPast.hyps(2) and sim1 = DsLetPast.hyps(3)
+    and IH1 = DsLetPast.hyps(4) and sim2 = DsLetPast.hyps(5) and IH2 = DsLetPast.hyps(6)
+    and lbo = DsLetPast.hyps(7)
+    and w = DsLetPast.prems(1) and sts = DsLetPast.prems(2)
+    and mts = DsLetPast.prems(3) and mv = DsLetPast.prems(4) and le = DsLetPast.prems(5)
+  have sz2: "size \<psi> \<le> NN" by (rule order_trans[OF _ le]) simp
+  have szs: "size \<phi> < NN" by (rule order.strict_trans2[OF _ le]) simp
+  have lbl: "list_all (ftable m {0..<m}) (list_of_option buf)" using lbo by (cases buf) auto
+  \<comment> \<open>the rounds of the bound formula, which sits at its own full frame\<close>
+  obtain as i2 buf2 \<phi>2 where e1: "letpast_meval m j i [] (list_of_option buf) (p, m) ts db \<phi>
+      = (as, i2, buf2, \<phi>2)"
+    by (cases "letpast_meval m j i [] (list_of_option buf) (p, m) ts db \<phi>") auto
+  have e1': "letpast_meval0 (meval j m) j i [] (list_of_option buf) (p, m) ts db \<phi>
+      = (as, i2, buf2, \<phi>2)" using e1 by (simp add: default_maux.letpast_meval_def)
+  have lnil: "list_all (ftable m {0..<m}) []" by simp
+  \<comment> \<open>at that frame a dense table is the sparse one, so the two runs agree literally\<close>
+  have Q': "\<And>tw' \<chi>d \<chi> ts' db' zs' \<chi>'. size \<chi> < NN \<Longrightarrow> dsim m [0..<m] tw' \<chi>d \<chi> \<Longrightarrow>
+      wf_db db' \<Longrightarrow> sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
+      meval j m ts' db' \<chi> = (zs', \<chi>') \<Longrightarrow>
+      \<exists>\<chi>d'. deval j ts' db' \<chi>d = (zs', \<chi>d') \<and> dsim m [0..<m] (dnext tw' ts') \<chi>d' \<chi>'"
+  proof -
+    fix tw' :: ts and \<chi>d \<chi> ts' db' zs' \<chi>'
+    assume a1: "size \<chi> < NN" and a2: "dsim m [0..<m] tw' \<chi>d \<chi>" and a3: "wf_db db'"
+      and a4: "sorted ts'" and a5: "\<forall>t \<in> set ts'. tw' \<le> t"
+      and a6: "meval j m ts' db' \<chi> = (zs', \<chi>')"
+    have t: "list_all (ftable m {0..<m}) zs'"
+      using dsim_produces[OF a2] by (intro produces_tables[OF _ a3 a4 a5 a6]) simp
+    have dt: "map (dtabc m [0..<m]) zs' = zs'" using t by (induct zs') (auto simp: dtabc_upt)
+    show "\<exists>\<chi>d'. deval j ts' db' \<chi>d = (zs', \<chi>d') \<and> dsim m [0..<m] (dnext tw' ts') \<chi>d' \<chi>'"
+      using Q[OF a1 a2 a3 a4 a5 a6] unfolding dt by blast
+  qed
+  have lr: "list_all (ftable m {0..<m}) as \<and> (\<forall>y. buf2 = Some y \<longrightarrow> ftable m {0..<m} y) \<and>
+      (\<exists>\<phi>d'. letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
+        = (as, i2, buf2, \<phi>d') \<and> dsim m [0..<m] (dnext tw ts) \<phi>d' \<phi>2)"
+    by (rule letpast_meval0_rel[OF _ e1' snd_conv szs sim1 w sts mts lnil lbl])
+      (blast intro: Q')
+  have ta: "list_all (ftable m {0..<m}) as" using lr by simp
+  have lbo2: "\<forall>y. buf2 = Some y \<longrightarrow> ftable m {0..<m} y" using lr by simp
+  obtain \<phi>d2 where d1: "letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
+        = (as, i2, buf2, \<phi>d2)"
+    and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2" using lr by blast
+  \<comment> \<open>the body, against the database in which the bound predicate holds the rounds' output\<close>
+  have w2: "wf_db (Mapping.update (p, m) as db)" by (rule wf_db_update'[OF w]) (use ta in simp)
+  obtain bs \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) as db) \<psi> = (bs, \<psi>2)"
+    by (cases "meval j n ts (Mapping.update (p, m) as db) \<psi>")
+  obtain \<psi>d2 where d2: "deval j ts (Mapping.update (p, m) as db) \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w2 sts mts e2 sz2] by blast
+  have x: "xs = bs" and f: "\<phi>' = mformula.MLetPast p m \<phi>2 \<psi>2 i2 buf2"
+    using mv e1 e2 by simp_all
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DLetPast p m \<phi>d \<psi>d i buf)
+        = (map (dtabc n cs) xs, DLetPast p m \<phi>d2 \<psi>d2 i2 buf2)"
+      using d1 d2 unfolding x by simp
+    show "dsim n cs (dnext tw ts) (DLetPast p m \<phi>d2 \<psi>d2 i2 buf2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsLetPast[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 lbo2])
   qed
 qed
 

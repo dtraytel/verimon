@@ -4666,3 +4666,66 @@ so a plain `fun`.
 
 Session builds green in 2:48; `src/verified.ml` is byte-identical, as it must be, since nothing
 that is code-generated changed.
+
+### 20.30 The recursive let, in the verified fragment
+
+`MLetPast` is the last of the three binding nodes. It evaluates its bound formula repeatedly,
+feeding each round's output back under the bound predicate until the output dries up or the step
+budget runs out, and then evaluates its body against the database that holds the accumulated
+output. The rounds are driven by `letpast_meval0`, which -- like `freeze_meval0` before it -- is
+polymorphic in the evaluator, so the dense side reuses it rather than defining a counterpart:
+
+```isabelle
+| "deval j ts db (DLetPast p m φ ψ i buf) =
+     (let (xs, i, buf, φ) =
+            letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db φ;
+          (ys, ψ) = deval j ts (Mapping.update (p, m) xs db) ψ
+      in (ys, DLetPast p m φ ψ i buf))"
+```
+
+`psize_snd_deval` gains exactly one goal from this clause, and the kernel closes the identical
+goal for `meval` with `size_letpast_meval`, so the same step works here.
+
+**The rounds agree literally.** The bound formula sits at its own full frame `[0..<m]`, where
+`dtabc m [0..<m]` is the identity on well-formed tables, so the dense and the sparse run do not
+merely correspond -- they produce the same lists. `letpast_meval0_rel` says so by induction on
+`letpast_meval0.induct` instantiated at `eval = meval j m`:
+
+```isabelle
+lemma letpast_meval0_rel:
+  assumes Q: "⋀tw' χd χ ts' db' zs' χ'. size χ < NN ⟹ dsim m [0..<m] tw' χd χ ⟹ … ⟹
+      meval j m ts' db' χ = (zs', χ') ⟹
+      ∃χd'. deval j ts' db' χd = (zs', χd') ∧ dsim m [0..<m] (dnext tw' ts') χd' χ'"
+  shows "letpast_meval0 (meval j m) J i ys xs q ts db φ = (zs, i', bo, φ') ⟹ … ⟹
+    list_all (ftable m {0..<m}) zs ∧ (∀y. bo = Some y ⟶ ftable m {0..<m} y) ∧
+      (∃φd'. letpast_meval0 (deval j) J i ys xs q ts db φd = (zs, i', bo, φd')
+        ∧ dsim m [0..<m] (dnext tw ts) φd' φ')"
+```
+
+Two things make the induction go through. The guard that rejects a round in which the formula's
+size changed never fires -- on the sparse side by `size_snd_meval`, on the dense side by
+`size_snd_deval` -- so the two runs take the same branch at every round without a case analysis.
+And the rounds re-enter the evaluator on the *successor* state, not on a sub-derivation, which is
+exactly what the size induction of 20.29 was introduced for: `Q` at `size φ < NN` supplies the
+step, and `size φ' = size φ` keeps the bound as the rounds go.
+
+The ftable conjuncts are folded into this lemma rather than taken from `letpast_meval0_ftable`,
+which proves the same invariant for the `produces` side: that lemma lives in `Dense_Let`, which
+sits *after* `Dense_Eval` in the import chain. Proving it again costs three lines inside an
+induction that already has the facts in hand; moving it would have meant moving `produces_mono`
+with it.
+
+**The relation and the compiler.** `DsLetPast` carries one invariant beyond the two operand
+simulations: `∀y. buf = Some y ⟶ ftable m {0..<m} y`, the carried-over table from the previous
+round. `letpast_meval0_rel` re-establishes it for the successor. `dof` emits `DLetPast`
+unconditionally, and `dsim_dof_minit0_LetPast` reads `fv φ = {0..<nfv φ}` off the safety side
+condition `{0..<nfv φ} ⊆ fv φ` exactly as the let's and the freeze's lemmas do; at `minit0` the
+buffer is `None`, so the new invariant is trivial there.
+
+**Where this leaves coverage.** All three binding nodes -- `MLet`, `MFrz`, `MLetPast` -- are now
+in the verified dense fragment, and `DPure` is left for `MTrigger`/`MAndTrigger`,
+`MMatchP`/`MMatchF`, and the aggregating `MSince`/`MUntil`. The *executable* fragment still stops
+at `MLet`: `Dense_Imp`'s evaluator is monadic, and the size argument that licenses `DFrz` and
+`DLetPast` in the pure evaluator cannot be made in the `Heap` monad, as 20.29 records. So the
+measured fallback-node count over the cram suites is unchanged, and `src/verified.ml` is again
+byte-identical -- nothing code-generated changed.
