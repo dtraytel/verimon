@@ -7,6 +7,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
      rebuilt when the refinement changes."
   theories
     Table_Imp
+    Imap_Correct
     Optimized_Since_Imp
     Since_Imp2
     Join_Imp2
