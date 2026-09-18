@@ -22,7 +22,7 @@ text \<open>
 
 type_synonym cols = "nat list"
 
-fun dproj :: "bool list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+fun dproj :: "bool list \<Rightarrow> 'b list \<Rightarrow> 'b list" where
   "dproj [] xs = []"
 | "dproj (True # bs) (x # xs) = x # dproj bs xs"
 | "dproj (False # bs) (x # xs) = dproj bs xs"
@@ -188,7 +188,7 @@ fun merge_cols :: "cols \<Rightarrow> cols \<Rightarrow> cols" where
      else if d < c then d # merge_cols (c # cs) ds
      else c # merge_cols cs ds)"
 
-fun djoin1 :: "mrg list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple option" where
+fun djoin1 :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow> 'b list option" where
   "djoin1 [] xs ys = Some []"
 | "djoin1 (MLft # p) (x # xs) ys = map_option (Cons x) (djoin1 p xs ys)"
 | "djoin1 (MRgt # p) xs (y # ys) = map_option (Cons y) (djoin1 p xs ys)"
@@ -358,7 +358,7 @@ qed
 
 subsection \<open>Tables of short tuples\<close>
 
-definition dtabc :: "nat \<Rightarrow> cols \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+definition dtabc :: "nat \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "dtabc n cs T = dproj (wide_mask n cs) ` T"
 
 lemma dtabc_eq_dtab: "sorted_wrt (<) cs \<Longrightarrow> dtabc n cs T = dtab n (set cs) T"
@@ -440,7 +440,7 @@ qed
 
 subsection \<open>The join when one operand's columns are among the other's\<close>
 
-definition dsemi :: "bool list \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+definition dsemi :: "bool list \<Rightarrow> bool \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "dsemi msk pos A B = Set.filter (\<lambda>a. (dproj msk a \<in> B) = pos) A"
 
 lemma wf_tuple_proj_tuple:
@@ -910,7 +910,7 @@ text \<open>
   on the shared columns, so the merge needs no test at all.
 \<close>
 
-fun dmerge :: "mrg list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+fun dmerge :: "mrg list \<Rightarrow> 'b list \<Rightarrow> 'b list \<Rightarrow> 'b list" where
   "dmerge [] xs ys = []"
 | "dmerge (MLft # p) (x # xs) ys = x # dmerge p xs ys"
 | "dmerge (MRgt # p) xs (y # ys) = y # dmerge p xs ys"
@@ -1867,7 +1867,7 @@ definition all_true :: "bool list \<Rightarrow> bool" where
 lemma dproj_all_true: "all_true bs \<Longrightarrow> length xs = length bs \<Longrightarrow> dproj bs xs = xs"
   by (induct bs xs rule: dproj.induct) (auto simp: all_true_def)
 
-definition dnarrow :: "bool list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+definition dnarrow :: "bool list \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "dnarrow msk r = (if all_true msk then r else dproj msk ` r)"
 
 text \<open>When every column is present the mask is the identity, so the narrowing of a table that
@@ -2131,7 +2131,7 @@ lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_arg
 
 subsection \<open>The Since structure's auxiliary list\<close>
 
-definition dauxlist :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'a table) list \<Rightarrow> (ts \<times> 'a table) list" where
+definition dauxlist :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set) list" where
   "dauxlist n cs aux = map (\<lambda>(t, rel). (t, dtabc n cs rel)) aux"
 
 lemma dauxlist_filter:
@@ -2179,8 +2179,8 @@ lemma dauxlist_wf_add_new_table:
 
 subsection \<open>The Until structure's auxiliary list\<close>
 
-definition dauxlist3 :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'a table \<times> 'a table) list \<Rightarrow>
-    (ts \<times> 'a table \<times> 'a table) list" where
+definition dauxlist3 :: "nat \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow>
+    (ts \<times> 'b list set \<times> 'b list set) list" where
   "dauxlist3 n cs aux = map (\<lambda>(t, a1, a2). (t, dtabc n cs a1, dtabc n cs a2)) aux"
 
 lemma dauxlist3_update_until:
