@@ -42,6 +42,18 @@ lemma wf_dbD_finite:
   "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow> finite T"
   by (auto simp: wf_db_def list_all_iff)
 
+text \<open>A let-bound formula has every column of its own frame live, so the tables it binds into
+  the database are exactly what a well-formed database holds -- which is what makes the dense
+  let need no conversion at the binding at all.\<close>
+
+lemma wf_db_map_values_empty: "wf_db (Mapping.map_values (\<lambda>_ _. []) db)"
+  by (auto simp: wf_db_def Mapping.lookup_map_values split: option.splits)
+
+lemma wf_db_update':
+  "wf_db db \<Longrightarrow> list_all (\<lambda>T. table (snd q) {0..<snd q} T \<and> finite T) xs \<Longrightarrow>
+     wf_db (Mapping.update q xs db)"
+  by (auto simp: wf_db_def lookup_update' split: if_splits)
+
 definition dnext :: "ts \<Rightarrow> ts list \<Rightarrow> ts" where
   "dnext tw ts = (if ts = [] then tw else last ts)"
 
@@ -112,6 +124,7 @@ datatype dformula =
   | DAndAssign nat Formula.trm dformula
   | DTP mtrm nat
   | DTS mtrm
+  | DLet Formula.name nat dformula dformula
 
 fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> event_data table list \<times> dformula"
   and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
@@ -179,6 +192,10 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
 | "deval j ts db (DTP mt i) =
      (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
 | "deval j ts db (DTS mt) = (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
+| "deval j ts db (DLet p m \<phi> \<psi>) =
+     (let (xs, \<phi>') = deval j ts db \<phi>;
+          (ys, \<psi>') = deval j ts (Mapping.update (p, m) xs db) \<psi>
+      in (ys, DLet p m \<phi>' \<psi>'))"
 
 section \<open>The simulation relation\<close>
 
@@ -547,6 +564,9 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
 | DsTS: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MTS mt) \<Longrightarrow>
     cs = mtrm_dcols mt \<Longrightarrow>
     dsim n cs tw (DTS mt) (mformula.MTS mt)"
+| DsLet: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MLet p m \<phi> \<psi>) \<Longrightarrow>
+    dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    dsim n cs tw (DLet p m \<phi>d \<psi>d) (mformula.MLet p m \<phi> \<psi>)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -1587,6 +1607,34 @@ next
     show "dsim n cs (dnext tw ts) (DTS mt) \<phi>'"
       unfolding f
       by (rule dsim.DsTS[OF wf produces_next[OF pr w sts mts m, unfolded f] cse])
+  qed
+next
+  case (DsLet n cs tw p m \<phi> \<psi> \<phi>d \<psi>d)
+  note wf = DsLet.hyps(1) and pr = DsLet.hyps(2) and sim1 = DsLet.hyps(3)
+    and IH1 = DsLet.hyps(4) and sim2 = DsLet.hyps(5) and IH2 = DsLet.hyps(6)
+    and w = DsLet.prems(1) and sts = DsLet.prems(2)
+    and mts = DsLet.prems(3) and mv = DsLet.prems(4)
+  obtain as \<phi>2 where e1: "meval j m ts db \<phi> = (as, \<phi>2)" by (cases "meval j m ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) as db) \<psi> = (bs, \<psi>2)"
+    by (cases "meval j n ts (Mapping.update (p, m) as db) \<psi>")
+  have x: "xs = bs" and f: "\<phi>' = mformula.MLet p m \<phi>2 \<psi>2" using mv e1 e2 by simp_all
+  have ta: "list_all (ftable m {0..<m}) as"
+    using dsim_produces[OF sim1] by (intro produces_tables[OF _ w sts mts e1]) simp
+  have dt: "map (dtabc m [0..<m]) as = as" using ta by (induct as) (auto simp: dtabc_upt)
+  have w': "wf_db (Mapping.update (p, m) as db)"
+    by (rule wf_db_update'[OF w]) (use ta in simp)
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc m [0..<m]) as, \<phi>d2)"
+    and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1] by blast
+  obtain \<psi>d2 where d2: "deval j ts (Mapping.update (p, m) as db) \<psi>d
+        = (map (dtabc n cs) bs, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w' sts mts e2] by blast
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DLet p m \<phi>d \<psi>d) = (map (dtabc n cs) xs, DLet p m \<phi>d2 \<psi>d2)"
+      using d1 d2 unfolding x dt by simp
+    show "dsim n cs (dnext tw ts) (DLet p m \<phi>d2 \<psi>d2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsLet[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2])
   qed
 qed
 

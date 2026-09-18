@@ -99,6 +99,7 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
       then DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (dof n cs0 \<phi>)
       else DPure (mformula.MAndAssign \<phi> conf) n (wide_mask n cs))"
+| "dof n cs (mformula.MLet p m \<phi> \<psi>) = DLet p m (dof m [0..<m] \<phi>) (dof n cs \<psi>)"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
       else DPure (mformula.MTP mt i) n (wide_mask n cs))"
@@ -872,6 +873,28 @@ proof -
   show ?thesis unfolding m d by (rule dsim.DsAndAssign[OF w pr i1 yb ynn fvs mc])
 qed
 
+text \<open>A let-bound formula's frame has every column live, so its own dense column list is
+  @{term "[0..<m]"} and the tables it binds into the database need no conversion.\<close>
+
+lemma dsim_dof_minit0_Let:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MLet p k (minit0 k \<chi>) (minit0 n \<eta>)"
+    and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
+    and i1: "dofc k tw \<chi>" and i2: "dofc n tw \<eta>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have pr: "produces n (set ?cs) tw (mformula.MLet p k (minit0 k \<chi>) (minit0 n \<eta>))"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MLet p k (minit0 k \<chi>) (minit0 n \<eta>))
+      = DLet p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>))" by simp
+  have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
+    using i1 unfolding A set_cols_upt .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+  show ?thesis unfolding m d by (rule dsim.DsLet[OF w pr s1 s2])
+qed
+
 lemma dsim_dof_minit0_TP:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MTP mt i"
@@ -922,7 +945,16 @@ next
       (use Pred.hyps Pred.prems in simp_all)
 next
   case (Let p \<phi> \<psi>)
-  show ?case by (rule dsim_dof_minit0_pure) (use Let.hyps Let.prems in simp_all)
+  have sfa: "safe_formula (Formula.Let p \<phi> \<psi>)" using Let.hyps by simp
+  have b1: "\<forall>x \<in> Formula.fv \<phi>. x < Formula.nfv \<phi>" by (rule fvi_less_nfv)
+  have b2: "\<forall>x \<in> Formula.fv \<psi>. x < n" using Let.prems by simp
+  have A: "Formula.fv \<phi> = {0..<Formula.nfv \<phi>}"
+    using Let.hyps(1) fvi_less_nfv[of \<phi>] by auto
+  have m: "minit0 n (Formula.Let p \<phi> \<psi>)
+      = mformula.MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)" by simp
+  show ?case
+    by (rule dsim_dof_minit0_Let[OF sfa Let.prems m A _ Let.IH(1)[OF b1] Let.IH(2)[OF b2]])
+      simp
 next
   case (Frz p \<phi> \<psi>)
   show ?case by (rule dsim_dof_minit0_pure) (use Frz.hyps Frz.prems in simp_all)

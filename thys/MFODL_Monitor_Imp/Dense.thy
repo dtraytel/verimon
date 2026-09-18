@@ -1876,6 +1876,9 @@ lemma set_cols_empty: "set_cols {} = []"
 lemma set_cols_singleton: "set_cols {x} = [x]"
   by (rule set_cols_eqI[symmetric]) simp_all
 
+lemma set_cols_upt: "set_cols {0..<m} = [0..<m]"
+  by (rule set_cols_eqI[symmetric]) (simp_all add: strict_sorted_iff)
+
 subsection \<open>Narrowing at the boundary with the unmodified evaluator\<close>
 
 definition all_true :: "bool list \<Rightarrow> bool" where

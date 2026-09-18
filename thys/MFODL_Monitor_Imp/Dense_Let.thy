@@ -14,14 +14,6 @@ text \<open>
   @{const wf_db} asks of a stored relation, and because emptying a database keeps it well formed.
 \<close>
 
-lemma wf_db_map_values_empty: "wf_db (Mapping.map_values (\<lambda>_ _. []) db)"
-  by (auto simp: wf_db_def Mapping.lookup_map_values split: option.splits)
-
-lemma wf_db_update':
-  "wf_db db \<Longrightarrow> list_all (ftable (snd q) {0..<snd q}) xs \<Longrightarrow>
-     wf_db (Mapping.update q xs db)"
-  by (auto simp: wf_db_def lookup_update' split: if_splits)
-
 text \<open>
   The recursive let feeds the bound formula its own output until the fixpoint is reached or the
   step budget runs out.  Each round evaluates against a database in which the bound predicate

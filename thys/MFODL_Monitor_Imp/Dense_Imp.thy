@@ -166,6 +166,7 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
 | "mcols n (MAndAssign \<phi> conf) = (case mcols n \<phi> of None \<Rightarrow> None
     | Some cs \<Rightarrow> (if fst conf \<in> set cs \<or> \<not> Formula.fv_trm (snd conf) \<subseteq> set cs then None
                  else Some (merge_cols cs [fst conf])))"
+| "mcols n (MLet p m \<phi> \<psi>) = mcols n \<psi>"
 | "mcols n (MTP mt i) = Some (mtrm_dcols mt)"
 | "mcols n (MTS mt) = Some (mtrm_dcols mt)"
 | "mcols n \<phi> = None"
@@ -189,6 +190,7 @@ datatype dformula =
   | DAndAssign nat Formula.trm dformula
   | DTP mtrm nat
   | DTS mtrm
+  | DLet Formula.name nat dformula dformula
 
 subsection \<open>Building it\<close>
 
@@ -280,6 +282,10 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         \<phi>d \<leftarrow> dformula_of n cs0 \<phi>;
         return (DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) \<phi>d) }
       else return (DPure (MAndAssign \<phi> conf) n (wide_mask n cs)))"
+| "dformula_of n cs (MLet p m \<phi> \<psi>) = do {
+     \<phi>d \<leftarrow> dformula_of m [0..<m] \<phi>;
+     \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+     return (DLet p m \<phi>d \<psi>d) }"
 | "dformula_of n cs (MTP mt i) =
      return (if cs = mtrm_dcols mt then DTP mt i
              else DPure (MTP mt i) n (wide_mask n cs))"
@@ -364,6 +370,10 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
 | "deval j ts db (DTS mt) =
      return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
+| "deval j ts db (DLet p m \<phi> \<psi>) = do {
+     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> deval j ts (Mapping.update (p, m) xs db) \<psi>;
+     return (ys, DLet p m \<phi> \<psi>) }"
 
 subsection \<open>The state\<close>
 
@@ -383,6 +393,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DSince args pl \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DUntil args pl \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DAndAssign p t \<phi>) = dpure_nodes \<phi>"
+| "dpure_nodes (DLet p m \<phi> \<psi>) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
