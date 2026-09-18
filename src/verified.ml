@@ -4540,8 +4540,6 @@ let ed_impl_of_table_v :
     boxed
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec unbox (Box x) = x;;
-
 let rec ed_comparator
   x0 x1 = match x0, x1 with [], [] -> Eqa
     | [], y :: ys -> Lt
@@ -4553,13 +4551,16 @@ let rec ed_comparator
         (match comparator_event_data a b with Eqa -> ed_comparator xs ys
           | Lt -> Lt | Gt -> Gt);;
 
-let rec ed_rbt_lookup
+let rec ed_rbtc_lookup
   x0 k = match x0, k with Empty, k -> None
     | Branch (cc, l, x, y, r), k ->
-        (match ed_comparator k x with Eqa -> Some y | Lt -> ed_rbt_lookup l k
-          | Gt -> ed_rbt_lookup r k);;
+        (match ed_comparator k x with Eqa -> Some y | Lt -> ed_rbtc_lookup l k
+          | Gt -> ed_rbtc_lookup r k);;
 
-let rec ed_rbt_lookup_table t k = ed_rbt_lookup (unbox ed_impl_of_table_v t) k;;
+let rec unbox (Box x) = x;;
+
+let rec ed_rbt_lookup_table
+  t k = ed_rbtc_lookup (unbox ed_impl_of_table_v t) k;;
 
 let rec impl_of (Alist x) = x;;
 
@@ -4728,41 +4729,31 @@ let ed_cluster_v :
             set_impl_list)
           (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let ed_image_v :
-  (((event_data option) list -> (event_data option) list) ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (image
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data)))
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data)),
-            set_impl_list));;
-
 let ed_impl_of_v :
   ((((event_data option) list), unit) mapping_rbt ->
     (((event_data option) list), unit) rbt)
     boxed
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_ins
+let rec ed_rbtc_ins
   f k v x3 = match f, k, v, x3 with
     f, k, v, Empty -> Branch (R, Empty, k, v, Empty)
     | f, k, v, Branch (B, l, x, y, r) ->
         (match ed_comparator k x with Eqa -> Branch (B, l, x, f k y v, r)
-          | Lt -> balance (ed_rbt_ins f k v l) x y r
-          | Gt -> balance l x y (ed_rbt_ins f k v r))
+          | Lt -> balance (ed_rbtc_ins f k v l) x y r
+          | Gt -> balance l x y (ed_rbtc_ins f k v r))
     | f, k, v, Branch (R, l, x, y, r) ->
         (match ed_comparator k x with Eqa -> Branch (R, l, x, f k y v, r)
-          | Lt -> Branch (R, ed_rbt_ins f k v l, x, y, r)
-          | Gt -> Branch (R, l, x, y, ed_rbt_ins f k v r));;
+          | Lt -> Branch (R, ed_rbtc_ins f k v l, x, y, r)
+          | Gt -> Branch (R, l, x, y, ed_rbtc_ins f k v r));;
 
-let rec ed_rbt_insert_with_key f k v t = paint B (ed_rbt_ins f k v t);;
+let rec ed_rbtc_insert_with_key f k v t = paint B (ed_rbtc_ins f k v t);;
 
-let rec ed_rbt_insert k v t = ed_rbt_insert_with_key (fun _ _ nv -> nv) k v t;;
+let rec ed_rbtc_insert
+  k v t = ed_rbtc_insert_with_key (fun _ _ nv -> nv) k v t;;
 
-let rec ed_rbt_inserta
-  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_v xe));;
+let rec ed_rbt_insert
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_v xe));;
 
 let ed_remove_v :
   ((event_data option) list ->
@@ -4775,7 +4766,7 @@ let ed_remove_v :
 let rec ed_insert
   xa x1 = match xa, x1 with
     xa, Complement x -> Complement (unbox ed_remove_v xa x)
-    | x, RBT_set rbt -> RBT_set (ed_rbt_inserta x () rbt)
+    | x, RBT_set rbt -> RBT_set (ed_rbt_insert x () rbt)
     | x, DList_set dxs ->
         DList_set (inserta (ceq_list (ceq_option ceq_event_data)) x dxs)
     | x, Set_Monad xs -> Set_Monad (x :: xs)
@@ -4786,6 +4777,35 @@ let rec ed_insert
 
 let ed_bot : ((event_data option) list) set
   = RBT_set (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
+
+let ed_rbt_fold_table_v :
+  (((event_data option) list ->
+     ((event_data option) list) set -> ((event_data option) list) set) ->
+    (((event_data option) list), unit) mapping_rbt ->
+      ((event_data option) list) set -> ((event_data option) list) set)
+    boxed
+  = Box (foldb (ccompare_list (ccompare_option ccompare_event_data)));;
+
+let rec ed_image
+  h x1 = match h, x1 with
+    h, RBT_set rbt ->
+      unbox ed_rbt_fold_table_v
+        (comp (insert
+                ((ceq_list (ceq_option ceq_event_data)),
+                  (ccompare_list (ccompare_option ccompare_event_data))))
+          h)
+        rbt ed_bot
+    | g, DList_set dxs ->
+        foldc (ceq_list (ceq_option ceq_event_data))
+          (comp (insert
+                  ((ceq_list (ceq_option ceq_event_data)),
+                    (ccompare_list (ccompare_option ccompare_event_data))))
+            g)
+          dxs ed_bot
+    | f, Complement (Complement b) -> ed_image f b
+    | f, Collect_set a ->
+        failwith "image Collect_set" (fun _ -> ed_image f (Collect_set a))
+    | f, Set_Monad xs -> Set_Monad (mapa f xs);;
 
 let rec plus_event_data
   uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.add x y)
@@ -5071,7 +5091,7 @@ let rec dagg
              ed_bot
       else (let groups =
               unbox ed_cluster_v (comp (fun a -> Some a) (drop k)) rel in
-             unbox ed_image_v
+             ed_image
                (fun g ->
                  (match ed_lookup_table groups g with None -> g
                    | Some ga ->
@@ -5512,11 +5532,16 @@ let rec mapping_empty _A = function Mapping_RBT -> RBT_Mapping (emptyc _A)
                            | Mapping_Mapping -> Mapping (fun _ -> None)
                            | Mapping_Choose -> mapping_empty_choose _A;;
 
+let ed_impl_of_tuples_v :
+  ((((event_data option) list), (((event_data option) list) list))
+     mapping_rbt ->
+    (((event_data option) list), (((event_data option) list) list)) rbt)
+    boxed
+  = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
+
 let rec ed_rbt_insert_tuples
   xc xd xe =
-    Mapping_RBTa
-      (ed_rbt_insert xc xd
-        (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)) xe));;
+    Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_tuples_v xe));;
 
 let rec updatea _A xc xd xe = Alist (update _A xc xd (impl_of xe));;
 
@@ -5531,8 +5556,7 @@ let rec ed_update_tuples
           (fun_upd (equal_list (equal_option equal_event_data)) m k (Some v));;
 
 let rec ed_rbt_lookup_tuples
-  t k = ed_rbt_lookup
-          (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)) t) k;;
+  t k = ed_rbtc_lookup (unbox ed_impl_of_tuples_v t) k;;
 
 let rec ed_lookup_tuples
   = function RBT_Mapping t -> ed_rbt_lookup_tuples t
@@ -6217,15 +6241,7 @@ let rec tl_queue_t
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
 
-let ed_union_v :
-  (((event_data option) list) set ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (sup_seta
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let rec ed_rbt_lookup_unit t k = ed_rbt_lookup (unbox ed_impl_of_v t) k;;
+let rec ed_rbt_lookup_unit t k = ed_rbtc_lookup (unbox ed_impl_of_v t) k;;
 
 let rec ed_rbt_member
   t x = equal_optiona equal_unit (ed_rbt_lookup_unit t x) (Some ());;
@@ -6238,6 +6254,284 @@ let rec ed_member
     | x, RBT_set rbt -> ed_rbt_member rbt x
     | x, DList_set dxs -> memberc (ceq_list (ceq_option ceq_event_data)) dxs x
     | x, Collect_set a -> a x;;
+
+let rec rbt_baliR
+  t1 ab bb x3 = match t1, ab, bb, x3 with
+    t1, ab, bb, Branch (R, t2, aa, ba, Branch (R, t3, a, b, t4)) ->
+      Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+    | t1, ab, bb, Branch (R, Branch (R, t2, aa, ba, t3), a, b, Empty) ->
+        Branch
+          (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, Empty))
+    | t1, ab, bb,
+        Branch (R, Branch (R, t2, aa, ba, t3), a, b, Branch (B, va, vb, vc, vd))
+        -> Branch
+             (R, Branch (B, t1, ab, bb, t2), aa, ba,
+               Branch (B, t3, a, b, Branch (B, va, vb, vc, vd)))
+    | t1, a, b, Empty -> Branch (B, t1, a, b, Empty)
+    | t1, a, b, Branch (B, va, vb, vc, vd) ->
+        Branch (B, t1, a, b, Branch (B, va, vb, vc, vd))
+    | t1, a, b, Branch (v, Empty, vb, vc, Empty) ->
+        Branch (B, t1, a, b, Branch (v, Empty, vb, vc, Empty))
+    | t1, a, b, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty) ->
+        Branch
+          (B, t1, a, b, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty))
+    | t1, a, b, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)) ->
+        Branch
+          (B, t1, a, b, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)))
+    | t1, a, b,
+        Branch
+          (v, Branch (B, ve, vj, vk, vl), vb, vc, Branch (B, vf, vg, vh, vi))
+        -> Branch
+             (B, t1, a, b,
+               Branch
+                 (v, Branch (B, ve, vj, vk, vl), vb, vc,
+                   Branch (B, vf, vg, vh, vi)));;
+
+let rec bheight
+  = function Empty -> zero_nata
+    | Branch (c, lt, k, v, rt) ->
+        (if equal_color c B then suc (bheight lt) else bheight lt);;
+
+let rec rbt_joinR
+  l a b r =
+    (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, a, b, r)
+      else (match l
+             with Branch (R, la, ab, ba, ra) ->
+               Branch (R, la, ab, ba, rbt_joinR ra a b r)
+             | Branch (B, la, ab, ba, ra) ->
+               rbt_baliR la ab ba (rbt_joinR ra a b r)));;
+
+let rec rbt_baliL
+  x0 a b t4 = match x0, a, b, t4 with
+    Branch (R, Branch (R, t1, ab, bb, t2), aa, ba, t3), a, b, t4 ->
+      Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+    | Branch (R, Empty, ab, bb, Branch (R, t2, aa, ba, t3)), a, b, t4 ->
+        Branch
+          (R, Branch (B, Empty, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+    | Branch
+        (R, Branch (B, va, vb, vc, vd), ab, bb, Branch (R, t2, aa, ba, t3)),
+        a, b, t4
+        -> Branch
+             (R, Branch (B, Branch (B, va, vb, vc, vd), ab, bb, t2), aa, ba,
+               Branch (B, t3, a, b, t4))
+    | Empty, a, b, t2 -> Branch (B, Empty, a, b, t2)
+    | Branch (B, va, vb, vc, vd), a, b, t2 ->
+        Branch (B, Branch (B, va, vb, vc, vd), a, b, t2)
+    | Branch (v, Empty, vb, vc, Empty), a, b, t2 ->
+        Branch (B, Branch (v, Empty, vb, vc, Empty), a, b, t2)
+    | Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), a, b, t2 ->
+        Branch
+          (B, Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), a, b, t2)
+    | Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), a, b, t2 ->
+        Branch
+          (B, Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), a, b, t2)
+    | Branch
+        (v, Branch (B, vf, vg, vh, vi), vb, vc, Branch (B, ve, vj, vk, vl)),
+        a, b, t2
+        -> Branch
+             (B, Branch
+                   (v, Branch (B, vf, vg, vh, vi), vb, vc,
+                     Branch (B, ve, vj, vk, vl)),
+               a, b, t2);;
+
+let rec rbt_joinL
+  l a b r =
+    (if less_eq_nat (bheight r) (bheight l) then Branch (R, l, a, b, r)
+      else (match r
+             with Branch (R, la, ab, ba, ra) ->
+               Branch (R, rbt_joinL l a b la, ab, ba, ra)
+             | Branch (B, la, ab, ba, ra) ->
+               rbt_baliL (rbt_joinL l a b la) ab ba ra));;
+
+let rec rbt_join
+  l a b r =
+    (let bhl = bheight l in
+     let bhr = bheight r in
+      (if less_nat bhr bhl then paint B (rbt_joinR l a b r)
+        else (if less_nat bhl bhr then paint B (rbt_joinL l a b r)
+               else Branch (B, l, a, b, r))));;
+
+let rec rbt_split_comp
+  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
+    | c, Branch (uu, l, a, b, r), x ->
+        (match c x a with Eqa -> (l, (Some b, r))
+          | Lt ->
+            (let (l1, (beta, l2)) = rbt_split_comp c l x in
+              (l1, (beta, rbt_join l2 a b r)))
+          | Gt ->
+            (let (r1, (beta, r2)) = rbt_split_comp c r x in
+              (rbt_join l a b r1, (beta, r2))));;
+
+let rec rbt_comp_union_swap_rec
+  c f gamma t1 t2 =
+    (let bh1 = bheight t1 in
+     let bh2 = bheight t2 in
+     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
+       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
+         else (gamma, (t2, (bh2, (t1, bh1)))))
+       in
+     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
+      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
+        then folda (rbt_comp_insert_with_key c fa) t2a t1a
+        else (match t1a with Empty -> t2a
+               | Branch (_, l1, a, b, r1) ->
+                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
+                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
+                     (match beta with None -> b | Some ca -> fa a b ca)
+                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
+
+let rec rbt_comp_union_with_key
+  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
+
+let rec ed_rbt_join_unit
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_union_with_key ed_comparator xc (unbox ed_impl_of_v xd)
+        (unbox ed_impl_of_v xe));;
+
+let rec ed_rbt_inter_list
+  xb xc =
+    Mapping_RBTa
+      (fold (fun k -> ed_rbtc_insert k ())
+        (filtera
+          (fun x -> not (is_none (ed_rbtc_lookup (unbox ed_impl_of_v xb) x)))
+          xc)
+        Empty);;
+
+let rec map_filter_comp_inter
+  c f t1 t2 =
+    map_filter
+      (fun (k, v) ->
+        (match rbt_comp_lookup c t1 k with None -> None
+          | Some va -> Some (k, f k va v)))
+      (entries t2);;
+
+let rec is_rbt_empty
+  t = (match t with Empty -> true | Branch (_, _, _, _, _) -> false);;
+
+let rec rbt_split_min
+  = function Empty -> failwith "undefined"
+    | Branch (uu, l, a, b, r) ->
+        (if is_rbt_empty l then (a, (b, r))
+          else (let (aa, (ba, la)) = rbt_split_min l in
+                 (aa, (ba, rbt_join la a b r))));;
+
+let rec rbt_join2
+  l r = (if is_rbt_empty r then l
+          else (let (a, (b, c)) = rbt_split_min r in rbt_join l a b c));;
+
+let rec rbt_comp_inter_swap_rec
+  c f gamma t1 t2 =
+    (let bh1 = bheight t1 in
+     let bh2 = bheight t2 in
+     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
+       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
+         else (gamma, (t2, (bh2, (t1, bh1)))))
+       in
+     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
+      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
+        then rbtreeify (map_filter_comp_inter c fa t1a t2a)
+        else (match t1a with Empty -> Empty
+               | Branch (_, l1, a, b, r1) ->
+                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
+                  let l = rbt_comp_inter_swap_rec c f gammaa l1 l2 in
+                  let r = rbt_comp_inter_swap_rec c f gammaa r1 r2 in
+                   (match beta with None -> rbt_join2 l r
+                     | Some ba -> rbt_join l a (fa a b ba) r)))));;
+
+let rec rbt_comp_inter_with_key
+  c f t1 t2 = paint B (rbt_comp_inter_swap_rec c f false t1 t2);;
+
+let rec ed_rbt_meet_unit
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_inter_with_key ed_comparator xc (unbox ed_impl_of_v xd)
+        (unbox ed_impl_of_v xe));;
+
+let rec ed_union
+  ba b = match ba, b with
+    ba, Complement b -> Complement (ed_inter (uminus_set ba) b)
+    | Complement ba, b -> Complement (ed_inter ba (uminus_set b))
+    | RBT_set rbt1, RBT_set rbt2 ->
+        RBT_set (ed_rbt_join_unit (fun _ _ -> id) rbt1 rbt2)
+    | RBT_set rbt, DList_set dxs ->
+        RBT_set
+          (foldc (ceq_list (ceq_option ceq_event_data))
+            (fun k -> ed_rbt_insert k ()) dxs rbt)
+    | DList_set dxs, RBT_set rbt ->
+        RBT_set
+          (foldc (ceq_list (ceq_option ceq_event_data))
+            (fun k -> ed_rbt_insert k ()) dxs rbt)
+    | DList_set dxs1, DList_set dxs2 ->
+        DList_set (union (ceq_list (ceq_option ceq_event_data)) dxs1 dxs2)
+    | Set_Monad zs, RBT_set rbt2 ->
+        RBT_set (fold (fun k -> ed_rbt_insert k ()) zs rbt2)
+    | RBT_set rbt1, Set_Monad zs ->
+        RBT_set (fold (fun k -> ed_rbt_insert k ()) zs rbt1)
+    | Set_Monad ws, DList_set dxs2 ->
+        DList_set
+          (fold (inserta (ceq_list (ceq_option ceq_event_data))) ws dxs2)
+    | DList_set dxs1, Set_Monad ws ->
+        DList_set
+          (fold (inserta (ceq_list (ceq_option ceq_event_data))) ws dxs1)
+    | Set_Monad xs, Set_Monad ys -> Set_Monad (xs @ ys)
+    | b, Collect_set a -> Collect_set (fun x -> a x || ed_member x b)
+    | Collect_set a, b -> Collect_set (fun x -> a x || ed_member x b)
+and ed_inter
+  g ga = match g, ga with
+    RBT_set rbt1, Set_Monad xs -> RBT_set (ed_rbt_inter_list rbt1 xs)
+    | Set_Monad xs, RBT_set rbt1 -> RBT_set (ed_rbt_inter_list rbt1 xs)
+    | Set_Monad xs, DList_set dxs2 ->
+        DList_set
+          (filterd (ceq_list (ceq_option ceq_event_data))
+            (list_member (equality_list (equality_option equal_event_dataa)) xs)
+            dxs2)
+    | Set_Monad xs1, Set_Monad xs2 ->
+        Set_Monad
+          (filtera
+            (list_member (equality_list (equality_option equal_event_dataa))
+              xs2)
+            xs1)
+    | RBT_set rbt, DList_set dxs ->
+        RBT_set
+          (ed_rbt_inter_list rbt
+            (list_of_dlist (ceq_list (ceq_option ceq_event_data)) dxs))
+    | RBT_set rbt1, RBT_set rbt2 ->
+        RBT_set (ed_rbt_meet_unit (fun _ _ -> id) rbt1 rbt2)
+    | DList_set dxs1, Set_Monad xs ->
+        DList_set
+          (filterd (ceq_list (ceq_option ceq_event_data))
+            (list_member (equality_list (equality_option equal_event_dataa)) xs)
+            dxs1)
+    | DList_set dxs1, DList_set dxs2 ->
+        DList_set
+          (filterd (ceq_list (ceq_option ceq_event_data))
+            (memberc (ceq_list (ceq_option ceq_event_data)) dxs2) dxs1)
+    | DList_set dxs, RBT_set rbt ->
+        RBT_set
+          (ed_rbt_inter_list rbt
+            (list_of_dlist (ceq_list (ceq_option ceq_event_data)) dxs))
+    | Complement ba, Complement b -> Complement (ed_union ba b)
+    | g, RBT_set rbt2 ->
+        RBT_set
+          (filtere (ccompare_list (ccompare_option ccompare_event_data))
+            (comp (fun x -> ed_member x g) fst) rbt2)
+    | RBT_set rbt1, g ->
+        RBT_set
+          (filtere (ccompare_list (ccompare_option ccompare_event_data))
+            (comp (fun x -> ed_member x g) fst) rbt1)
+    | h, DList_set dxs2 ->
+        DList_set
+          (filterd (ceq_list (ceq_option ceq_event_data))
+            (fun x -> ed_member x h) dxs2)
+    | DList_set dxs1, h ->
+        DList_set
+          (filterd (ceq_list (ceq_option ceq_event_data))
+            (fun x -> ed_member x h) dxs1)
+    | i, Set_Monad xs -> Set_Monad (filtera (fun x -> ed_member x i) xs)
+    | Set_Monad xs, i -> Set_Monad (filtera (fun x -> ed_member x i) xs)
+    | j, Collect_set a -> Collect_set (fun x -> a x && ed_member x j)
+    | Collect_set a, j -> Collect_set (fun x -> a x && ed_member x j);;
 
 let rec im_count b = integer_of_nat (size_lista b);;
 
@@ -6264,8 +6558,7 @@ let rec linearize x = (let (fs, ls) = rep_queue x in fs @ rev ls);;
 let rec gc2
   q = (let ((t, (_, (mL, (mR, (dp, (di, tin)))))), (hin, hsince)) = q in
        let all =
-         fold (fun p -> unbox ed_union_v (snd p)) (linearize dp @ linearize di)
-           ed_bot
+         fold (fun p -> ed_union (snd p)) (linearize dp @ linearize di) ed_bot
          in
         binda (im_filter heap_nat (fun k -> ed_member k all) hsince)
           (fun hsincea ->
@@ -6304,58 +6597,36 @@ let rec wf_tuple
                  zero_nata d
           else true));;
 
-let ed_filter_v :
-  (((event_data option) list -> bool) ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (filter
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
+let rec ed_filter p a = ed_inter a (Collect_set p);;
 
-let rec minus_comp
-  comp t1 t2 =
-    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
-      else (if small_rbta t1
-             then rbtreeify
-                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
-                      (entries t1))
+let rec filter_comp_minus
+  c t1 t2 =
+    filtera (fun (k, _) -> is_none (rbt_comp_lookup c t2 k)) (entries t1);;
+
+let rec small_rbt t = less_nat (bheight t) (nat_of_integer (Z.of_int 4));;
+
+let rec comp_minus
+  c t1 t2 =
+    (if small_rbt t2 then folda (fun k _ -> rbt_comp_delete c k) t2 t1
+      else (if small_rbt t1 then rbtreeify (filter_comp_minus c t1 t2)
              else (match t2 with Empty -> t1
-                    | Branch (_, l2, a, (), r2) ->
-                      (let (l1, (_, r1)) = split_comp comp t1 a in
-                        rbt_join2a (minus_comp comp l1 l2)
-                          (minus_comp comp r1 r2)))));;
+                    | Branch (_, l2, a, _, r2) ->
+                      (let (l1, (_, r1)) = rbt_split_comp c t1 a in
+                        rbt_join2 (comp_minus c l1 l2)
+                          (comp_minus c r1 r2)))));;
 
-let rec rbt_minus_rbt_join2 _A
+let rec rbt_comp_minus c t1 t2 = paint B (comp_minus c t1 t2);;
+
+let rec ed_rbt_set_minus
   xb xc =
     Mapping_RBTa
-      (rbt_recolor
-        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+      (rbt_comp_minus ed_comparator (unbox ed_impl_of_v xb)
+        (unbox ed_impl_of_v xc));;
 
-let rec minus_set (_A1, _A2)
+let rec ed_minus
   a b = match a, b with
-    RBT_set t1, RBT_set t2 ->
-      (match ccompare _A2
-        with None ->
-          failwith "minus RBT_set RBT_set: ccompare = None"
-            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
-        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
-    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
-
-let ed_minus_v :
-  (((event_data option) list) set ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (minus_set
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let ed_inter_v :
-  (((event_data option) list) set ->
-    ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (inf_seta
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
+    RBT_set rbt1, RBT_set rbt2 -> RBT_set (ed_rbt_set_minus rbt1 rbt2)
+    | a, b -> ed_inter a (uminus_set b);;
 
 let ed_card_v : (((event_data option) list) set -> nat) boxed
   = Box (card (card_UNIV_list, (ceq_list (ceq_option ceq_event_data)),
@@ -6383,15 +6654,13 @@ let rec dgen_join
 
 let rec dbin_join0
   x0 a pos b = match x0, a, pos, b with
-    DJEq, a, pos, b ->
-      (if pos then unbox ed_inter_v a b else unbox ed_minus_v a b)
+    DJEq, a, pos, b -> (if pos then ed_inter a b else ed_minus a b)
     | DJEmp, a, pos, b ->
         (if equal_boola pos (ed_member [] b) then a else ed_bot)
     | DJSub msk, a, pos, b ->
         dsemi (ceq_event_data, ccompare_event_data) msk pos a b
     | DJSup msk, a, pos, b ->
-        (if pos then unbox ed_filter_v (fun ba -> ed_member (dproj msk ba) a) b
-          else a)
+        (if pos then ed_filter (fun ba -> ed_member (dproj msk ba) a) b else a)
     | DJGen (p, lk, rk), a, pos, b ->
         (if pos then dgen_join p lk rk a b else a);;
 
@@ -6618,134 +6887,6 @@ let rec idx_reindex (_A1, _A2)
                t)
              ia);;
 
-let rec rbt_baliR
-  t1 ab bb x3 = match t1, ab, bb, x3 with
-    t1, ab, bb, Branch (R, t2, aa, ba, Branch (R, t3, a, b, t4)) ->
-      Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
-    | t1, ab, bb, Branch (R, Branch (R, t2, aa, ba, t3), a, b, Empty) ->
-        Branch
-          (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, Empty))
-    | t1, ab, bb,
-        Branch (R, Branch (R, t2, aa, ba, t3), a, b, Branch (B, va, vb, vc, vd))
-        -> Branch
-             (R, Branch (B, t1, ab, bb, t2), aa, ba,
-               Branch (B, t3, a, b, Branch (B, va, vb, vc, vd)))
-    | t1, a, b, Empty -> Branch (B, t1, a, b, Empty)
-    | t1, a, b, Branch (B, va, vb, vc, vd) ->
-        Branch (B, t1, a, b, Branch (B, va, vb, vc, vd))
-    | t1, a, b, Branch (v, Empty, vb, vc, Empty) ->
-        Branch (B, t1, a, b, Branch (v, Empty, vb, vc, Empty))
-    | t1, a, b, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty) ->
-        Branch
-          (B, t1, a, b, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty))
-    | t1, a, b, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)) ->
-        Branch
-          (B, t1, a, b, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)))
-    | t1, a, b,
-        Branch
-          (v, Branch (B, ve, vj, vk, vl), vb, vc, Branch (B, vf, vg, vh, vi))
-        -> Branch
-             (B, t1, a, b,
-               Branch
-                 (v, Branch (B, ve, vj, vk, vl), vb, vc,
-                   Branch (B, vf, vg, vh, vi)));;
-
-let rec bheight
-  = function Empty -> zero_nata
-    | Branch (c, lt, k, v, rt) ->
-        (if equal_color c B then suc (bheight lt) else bheight lt);;
-
-let rec rbt_joinR
-  l a b r =
-    (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, a, b, r)
-      else (match l
-             with Branch (R, la, ab, ba, ra) ->
-               Branch (R, la, ab, ba, rbt_joinR ra a b r)
-             | Branch (B, la, ab, ba, ra) ->
-               rbt_baliR la ab ba (rbt_joinR ra a b r)));;
-
-let rec rbt_baliL
-  x0 a b t4 = match x0, a, b, t4 with
-    Branch (R, Branch (R, t1, ab, bb, t2), aa, ba, t3), a, b, t4 ->
-      Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
-    | Branch (R, Empty, ab, bb, Branch (R, t2, aa, ba, t3)), a, b, t4 ->
-        Branch
-          (R, Branch (B, Empty, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
-    | Branch
-        (R, Branch (B, va, vb, vc, vd), ab, bb, Branch (R, t2, aa, ba, t3)),
-        a, b, t4
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), ab, bb, t2), aa, ba,
-               Branch (B, t3, a, b, t4))
-    | Empty, a, b, t2 -> Branch (B, Empty, a, b, t2)
-    | Branch (B, va, vb, vc, vd), a, b, t2 ->
-        Branch (B, Branch (B, va, vb, vc, vd), a, b, t2)
-    | Branch (v, Empty, vb, vc, Empty), a, b, t2 ->
-        Branch (B, Branch (v, Empty, vb, vc, Empty), a, b, t2)
-    | Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), a, b, t2 ->
-        Branch
-          (B, Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), a, b, t2)
-    | Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), a, b, t2 ->
-        Branch
-          (B, Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), a, b, t2)
-    | Branch
-        (v, Branch (B, vf, vg, vh, vi), vb, vc, Branch (B, ve, vj, vk, vl)),
-        a, b, t2
-        -> Branch
-             (B, Branch
-                   (v, Branch (B, vf, vg, vh, vi), vb, vc,
-                     Branch (B, ve, vj, vk, vl)),
-               a, b, t2);;
-
-let rec rbt_joinL
-  l a b r =
-    (if less_eq_nat (bheight r) (bheight l) then Branch (R, l, a, b, r)
-      else (match r
-             with Branch (R, la, ab, ba, ra) ->
-               Branch (R, rbt_joinL l a b la, ab, ba, ra)
-             | Branch (B, la, ab, ba, ra) ->
-               rbt_baliL (rbt_joinL l a b la) ab ba ra));;
-
-let rec rbt_join
-  l a b r =
-    (let bhl = bheight l in
-     let bhr = bheight r in
-      (if less_nat bhr bhl then paint B (rbt_joinR l a b r)
-        else (if less_nat bhl bhr then paint B (rbt_joinL l a b r)
-               else Branch (B, l, a, b, r))));;
-
-let rec rbt_split_comp
-  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
-    | c, Branch (uu, l, a, b, r), x ->
-        (match c x a with Eqa -> (l, (Some b, r))
-          | Lt ->
-            (let (l1, (beta, l2)) = rbt_split_comp c l x in
-              (l1, (beta, rbt_join l2 a b r)))
-          | Gt ->
-            (let (r1, (beta, r2)) = rbt_split_comp c r x in
-              (rbt_join l a b r1, (beta, r2))));;
-
-let rec rbt_comp_union_swap_rec
-  c f gamma t1 t2 =
-    (let bh1 = bheight t1 in
-     let bh2 = bheight t2 in
-     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
-       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
-         else (gamma, (t2, (bh2, (t1, bh1)))))
-       in
-     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
-        then folda (rbt_comp_insert_with_key c fa) t2a t1a
-        else (match t1a with Empty -> t2a
-               | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
-                     (match beta with None -> b | Some ca -> fa a b ca)
-                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
-
-let rec rbt_comp_union_with_key
-  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
-
 let rec joina _A
   xc xd xe =
     Mapping_RBTa
@@ -6844,7 +6985,7 @@ let rec ed_add_new_table_mmsaux
                             (maskR,
                               (data_prev,
                                 (append_queue (t, x) data_in,
-                                  (unbox ed_union_v table_in x,
+                                  (ed_union table_in x,
                                     (wf_table_upd args tuple_ina
                                        (fun _ ->
  wf_table_union (ceq_event_data, ccompare_event_data) wf_table_in
@@ -6933,7 +7074,7 @@ let ed_impl_of_rank_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_rank
-  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_rank_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_rank_v xe));;
 
 let rec ed_update_rank
   k v x2 = match k, v, x2 with
@@ -6948,7 +7089,7 @@ let rec ed_update_rank
 let ed_mempty_rank : (((event_data option) list), list_aux) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_rank t k = ed_rbt_lookup (unbox ed_impl_of_rank_v t) k;;
+let rec ed_rbt_lookup_rank t k = ed_rbtc_lookup (unbox ed_impl_of_rank_v t) k;;
 
 let rec ed_lookup_rank
   = function RBT_Mapping t -> ed_rbt_lookup_rank t
@@ -7085,7 +7226,7 @@ let ed_impl_of_sum_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_sum
-  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_sum_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_sum_v xe));;
 
 let rec ed_update_sum
   k v x2 = match k, v, x2 with
@@ -7100,7 +7241,7 @@ let rec ed_update_sum
 let ed_mempty_sum : (((event_data option) list), (nat * Z.t)) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_sum t k = ed_rbt_lookup (unbox ed_impl_of_sum_v t) k;;
+let rec ed_rbt_lookup_sum t k = ed_rbtc_lookup (unbox ed_impl_of_sum_v t) k;;
 
 let rec ed_lookup_sum
   = function RBT_Mapping t -> ed_rbt_lookup_sum t
@@ -7133,7 +7274,7 @@ let ed_impl_of_nat_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_nat
-  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_nat_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_nat_v xe));;
 
 let rec ed_update_nat
   k v x2 = match k, v, x2 with
@@ -7145,7 +7286,7 @@ let rec ed_update_nat
         Mapping
           (fun_upd (equal_list (equal_option equal_event_data)) m k (Some v));;
 
-let rec ed_rbt_lookup_nat t k = ed_rbt_lookup (unbox ed_impl_of_nat_v t) k;;
+let rec ed_rbt_lookup_nat t k = ed_rbtc_lookup (unbox ed_impl_of_nat_v t) k;;
 
 let rec ed_lookup_nat
   = function RBT_Mapping t -> ed_rbt_lookup_nat t
@@ -7190,6 +7331,13 @@ let rec insert_maggauxa
         (let (v, auxa) = insert_maggaux args x aux in
           (if v && unbox ed_finite_v x then Some auxa else None));;
 
+let ed_keys_nat_v :
+  ((((event_data option) list), nat) mapping -> ((event_data option) list) set)
+    boxed
+  = Box (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
+                (ccompare_list (ccompare_option ccompare_event_data)),
+                set_impl_list));;
+
 let rec args_agg
   (Args_ext (args_ivl, args_n, args_L, args_R, args_pos, args_agg, more)) =
     args_agg;;
@@ -7220,9 +7368,7 @@ let rec add_new_table_mmasaux
             (msaux,
               (if memL (args_ivl args) zero_nata
                 then insert_maggauxa aggargs
-                       (unbox ed_filter_v
-                         (fun k -> is_none (ed_lookup_nat tuple_in k)) x)
-                       aggaux
+                       (ed_minus x (unbox ed_keys_nat_v tuple_in)) aggaux
                 else aggaux))));;
 
 let rec evt_add
@@ -7357,7 +7503,7 @@ let rec add_new_table2
                    (fun hina ->
                      (fun () ->
                        ((t, (gc, (mL, (mR,
-(dp, (append_queue (t, x) di, unbox ed_union_v tin x)))))),
+(dp, (append_queue (t, x) di, ed_union tin x)))))),
                          (hina, hsincea))))
             else (fun () ->
                    ((t, (gc, (mL, (mR, (append_queue (t, x) dp, (di, tin)))))),
@@ -7540,7 +7686,7 @@ let rec add_new_ts_mmasauxa
            let (tuple_ina, add) =
              fold (unbox ed_upd_set_keys_v
                     (fun x ta ->
-                      unbox ed_filter_v
+                      ed_filter
                         (fun asa -> ed_valid_tuple tuple_since (ta, asa)) x))
                move (tuple_in, ed_bot)
              in
@@ -7548,7 +7694,7 @@ let rec add_new_ts_mmasauxa
                          (maskR,
                            (data_preva,
                              (data_ina,
-                               (unbox ed_union_v table_in add,
+                               (ed_union table_in add,
                                  (wf_table_upd args tuple_ina
                                     (fun _ ->
                                       wf_table_union
@@ -7557,9 +7703,7 @@ let rec add_new_ts_mmasauxa
                                    (tuple_ina,
                                      (wf_table_since, tuple_since)))))))))),
               insert_maggauxa aggargs
-                (unbox ed_filter_v (fun k -> is_none (ed_lookup_nat tuple_in k))
-                  add)
-                aggaux)));;
+                (ed_minus add (unbox ed_keys_nat_v tuple_in)) aggaux)));;
 
 let rec equal_tree _A
   x0 x1 = match x0, x1 with Leaf, Node (x21, x22, x23) -> false
@@ -7581,31 +7725,31 @@ let rec equal_treelist (_A1, _A2)
       then equal_wf_wbt (_A1, _A2) y1 (empty_tree _A2)
       else equal_lista _A1 (tree_inorder _A2 y1) (tree_inorder _A2 y2));;
 
-let rec ed_rbt_del
+let rec ed_rbtc_del
   x xa1 = match x, xa1 with x, Empty -> Empty
     | x, Branch (cc, a, y, s, b) ->
         (match ed_comparator x y with Eqa -> combinea a b
-          | Lt -> ed_rbt_del_from_left x a y s b
-          | Gt -> ed_rbt_del_from_right x a y s b)
-and ed_rbt_del_from_left
+          | Lt -> ed_rbtc_del_from_left x a y s b
+          | Gt -> ed_rbtc_del_from_right x a y s b)
+and ed_rbtc_del_from_left
   x xa1 y s b = match x, xa1, y, s, b with
     x, Branch (B, lt, z, v, rt), y, s, b ->
-      balance_left (ed_rbt_del x (Branch (B, lt, z, v, rt))) y s b
-    | x, Empty, y, s, b -> Branch (R, ed_rbt_del x Empty, y, s, b)
+      balance_left (ed_rbtc_del x (Branch (B, lt, z, v, rt))) y s b
+    | x, Empty, y, s, b -> Branch (R, ed_rbtc_del x Empty, y, s, b)
     | x, Branch (R, va, vb, vc, vd), y, s, b ->
-        Branch (R, ed_rbt_del x (Branch (R, va, vb, vc, vd)), y, s, b)
-and ed_rbt_del_from_right
+        Branch (R, ed_rbtc_del x (Branch (R, va, vb, vc, vd)), y, s, b)
+and ed_rbtc_del_from_right
   x a y s xa4 = match x, a, y, s, xa4 with
     x, a, y, s, Branch (B, lt, z, v, rt) ->
-      balance_right a y s (ed_rbt_del x (Branch (B, lt, z, v, rt)))
-    | x, a, y, s, Empty -> Branch (R, a, y, s, ed_rbt_del x Empty)
+      balance_right a y s (ed_rbtc_del x (Branch (B, lt, z, v, rt)))
+    | x, a, y, s, Empty -> Branch (R, a, y, s, ed_rbtc_del x Empty)
     | x, a, y, s, Branch (R, va, vb, vc, vd) ->
-        Branch (R, a, y, s, ed_rbt_del x (Branch (R, va, vb, vc, vd)));;
+        Branch (R, a, y, s, ed_rbtc_del x (Branch (R, va, vb, vc, vd)));;
 
-let rec ed_rbt_delete k t = paint B (ed_rbt_del k t);;
+let rec ed_rbtc_delete k t = paint B (ed_rbtc_del k t);;
 
 let rec ed_rbt_delete_rank
-  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_rank_v xc));;
+  xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_rank_v xc));;
 
 let rec ed_delete_rank
   k x1 = match k, x1 with
@@ -7705,7 +7849,7 @@ let rec delete_rank
 let rec delete_rank_cfc xb xc = Abs_comp_fun_commute (delete_rank xb xc);;
 
 let rec ed_rbt_delete_sum
-  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_sum_v xc));;
+  xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_sum_v xc));;
 
 let rec ed_delete_sum
   k x1 = match k, x1 with
@@ -7735,7 +7879,7 @@ let rec delete_sum
 let rec delete_sum_cfc xa = Abs_comp_fun_commute (delete_sum xa);;
 
 let rec ed_rbt_delete_nat
-  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_nat_v xc));;
+  xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_nat_v xc));;
 
 let rec ed_delete_nat
   k x1 = match k, x1 with
@@ -7817,6 +7961,35 @@ let rec proj_tuple_in_join (_A1, _A2)
                  ((ceq_list (ceq_option _A1)),
                    (ccompare_list (ccompare_option _A2)))
                  (proj_tuple bs asa) t));;
+
+let rec minus_comp
+  comp t1 t2 =
+    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
+      else (if small_rbta t1
+             then rbtreeify
+                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
+                      (entries t1))
+             else (match t2 with Empty -> t1
+                    | Branch (_, l2, a, (), r2) ->
+                      (let (l1, (_, r1)) = split_comp comp t1 a in
+                        rbt_join2a (minus_comp comp l1 l2)
+                          (minus_comp comp r1 r2)))));;
+
+let rec rbt_minus_rbt_join2 _A
+  xb xc =
+    Mapping_RBTa
+      (rbt_recolor
+        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+
+let rec minus_set (_A1, _A2)
+  a b = match a, b with
+    RBT_set t1, RBT_set t2 ->
+      (match ccompare _A2
+        with None ->
+          failwith "minus RBT_set RBT_set: ccompare = None"
+            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
+        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
+    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
 
 let rec bucket_list = function None -> []
                       | Some l -> l;;
@@ -8270,38 +8443,6 @@ let rec wf_set_antijoin (_A1, _A2, _A3, _A4, _A5)
              else (n, (a, t)))))
         (rep_wf_set xc));;
 
-let rec filter_comp_minus
-  c t1 t2 =
-    filtera (fun (k, _) -> is_none (rbt_comp_lookup c t2 k)) (entries t1);;
-
-let rec small_rbt t = less_nat (bheight t) (nat_of_integer (Z.of_int 4));;
-
-let rec is_rbt_empty
-  t = (match t with Empty -> true | Branch (_, _, _, _, _) -> false);;
-
-let rec rbt_split_min
-  = function Empty -> failwith "undefined"
-    | Branch (uu, l, a, b, r) ->
-        (if is_rbt_empty l then (a, (b, r))
-          else (let (aa, (ba, la)) = rbt_split_min l in
-                 (aa, (ba, rbt_join la a b r))));;
-
-let rec rbt_join2
-  l r = (if is_rbt_empty r then l
-          else (let (a, (b, c)) = rbt_split_min r in rbt_join l a b c));;
-
-let rec comp_minus
-  c t1 t2 =
-    (if small_rbt t2 then folda (fun k _ -> rbt_comp_delete c k) t2 t1
-      else (if small_rbt t1 then rbtreeify (filter_comp_minus c t1 t2)
-             else (match t2 with Empty -> t1
-                    | Branch (_, l2, a, _, r2) ->
-                      (let (l1, (_, r1)) = rbt_split_comp c t1 a in
-                        rbt_join2 (comp_minus c l1 l2)
-                          (comp_minus c r1 r2)))));;
-
-let rec rbt_comp_minus c t1 t2 = paint B (comp_minus c t1 t2);;
-
 let rec diff _A
   xb xc =
     Mapping_RBTa
@@ -8314,36 +8455,6 @@ let rec mapping_antijoin _A
         failwith "mapping_antijoin RBT_Mapping: ccompare = None"
           (fun _ -> mapping_antijoin _A (RBT_Mapping t) (RBT_Mapping u))
       | Some _ -> RBT_Mapping (diff _A t u));;
-
-let rec map_filter_comp_inter
-  c f t1 t2 =
-    map_filter
-      (fun (k, v) ->
-        (match rbt_comp_lookup c t1 k with None -> None
-          | Some va -> Some (k, f k va v)))
-      (entries t2);;
-
-let rec rbt_comp_inter_swap_rec
-  c f gamma t1 t2 =
-    (let bh1 = bheight t1 in
-     let bh2 = bheight t2 in
-     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
-       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
-         else (gamma, (t2, (bh2, (t1, bh1)))))
-       in
-     let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
-        then rbtreeify (map_filter_comp_inter c fa t1a t2a)
-        else (match t1a with Empty -> Empty
-               | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                  let l = rbt_comp_inter_swap_rec c f gammaa l1 l2 in
-                  let r = rbt_comp_inter_swap_rec c f gammaa r1 r2 in
-                   (match beta with None -> rbt_join2 l r
-                     | Some ba -> rbt_join l a (fa a b ba) r)))));;
-
-let rec rbt_comp_inter_with_key
-  c f t1 t2 = paint B (rbt_comp_inter_swap_rec c f false t1 t2);;
 
 let rec meet _A
   xc xd xe =
@@ -8465,7 +8576,7 @@ let rec ed_shift_end
                    (maskR,
                      (data_preva,
                        (data_ina,
-                         (unbox ed_minus_v table_in del,
+                         (ed_minus table_in del,
                            (wf_table_upd args tuple_ina
                               (fun _ ->
                                 wf_table_antijoin
@@ -8523,7 +8634,7 @@ let rec shift_end_mmasaux
                         (maskR,
                           (data_preva,
                             (data_ina,
-                              (unbox ed_minus_v table_in del,
+                              (ed_minus table_in del,
                                 (wf_table_upd args tuple_ina
                                    (fun _ ->
                                      wf_table_antijoin
@@ -8610,8 +8721,7 @@ let rec add_new_ts2a
       binda (move_loop2 (snd p) hsince hin ed_bot)
         (fun r ->
           (fun () ->
-            ((nt, (gc, (mL, (mR, (fst p,
-                                   (dia, unbox ed_union_v tin (snd r))))))),
+            ((nt, (gc, (mL, (mR, (fst p, (dia, ed_union tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec im_delete_h _A
@@ -8660,8 +8770,7 @@ let rec shift_end2
       binda (expire_loop2 (snd p) hin ed_bot)
         (fun r ->
           (fun () ->
-            ((t, (gc, (mL, (mR, (dpa, (fst p,
-unbox ed_minus_v tin (snd r))))))),
+            ((t, (gc, (mL, (mR, (dpa, (fst p, ed_minus tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec add_new_ts2
@@ -8683,7 +8792,7 @@ let rec list_update
 
 let rec ed_get_map_result
   m y f =
-    unbox ed_image_v
+    ed_image
       (fun k ->
         (match
           lookupa
@@ -8707,13 +8816,6 @@ let ed_keys_rank_v :
 let ed_keys_sum_v :
   ((((event_data option) list), (nat * Z.t)) mapping ->
     ((event_data option) list) set)
-    boxed
-  = Box (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
-                (ccompare_list (ccompare_option ccompare_event_data)),
-                set_impl_list));;
-
-let ed_keys_nat_v :
-  ((((event_data option) list), nat) mapping -> ((event_data option) list) set)
     boxed
   = Box (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
                 (ccompare_list (ccompare_option ccompare_event_data)),
@@ -8854,7 +8956,7 @@ let rec eval_agg
               unbox ed_cluster_v
                 (comp (fun a -> Some a) (drop (size_lista tys))) rel
               in
-             unbox ed_image_v
+             ed_image
                (fun k ->
                  (let Some g = ed_lookup_table groups k in
                    list_update k y (Some (eval_agg_op omega (agg_values f g)))))
@@ -9075,8 +9177,8 @@ let rec ed_join_mmsaux
           else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args)
                      (args_R args)
                  then (let in_del =
-                         (if pos then unbox ed_minus_v table_in x
-                           else unbox ed_inter_v table_in x)
+                         (if pos then ed_minus table_in x
+                           else ed_inter table_in x)
                          in
                        let tuple_ina =
                          mapping_delete_set
@@ -9087,7 +9189,7 @@ let rec ed_join_mmsaux
                              (equal_list (equal_option equal_event_data)))
                            tuple_in in_del
                          in
-                       let table_ina = unbox ed_minus_v table_in in_del in
+                       let table_ina = ed_minus table_in in_del in
                        let wf_table_ina =
                          wf_table_upd args tuple_ina
                            (fun _ ->
@@ -9146,7 +9248,7 @@ let rec ed_join_mmsaux
                              (equal_list (equal_option equal_event_data)))
                            tuple_in in_del
                          in
-                       let table_ina = unbox ed_minus_v table_in in_del in
+                       let table_ina = ed_minus table_in in_del in
                        let wf_table_ina =
                          wf_table_antijoin
                            (ceq_event_data, ccompare_event_data,
@@ -9250,8 +9352,8 @@ let rec join_mmasaux
               else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_L args)
                          (args_R args)
                      then (let in_del =
-                             (if pos then unbox ed_minus_v table_in x
-                               else unbox ed_inter_v table_in x)
+                             (if pos then ed_minus table_in x
+                               else ed_inter table_in x)
                              in
                            let tuple_ina =
                              mapping_delete_set
@@ -9262,7 +9364,7 @@ let rec join_mmasaux
                                  (equal_list (equal_option equal_event_data)))
                                tuple_in in_del
                              in
-                           let table_ina = unbox ed_minus_v table_in in_del in
+                           let table_ina = ed_minus table_in in_del in
                            let wf_table_ina =
                              wf_table_upd args tuple_ina
                                (fun _ ->
@@ -9321,7 +9423,7 @@ equal_event_data, hashable_event_data, heap_event_data))
                                  (equal_list (equal_option equal_event_data)))
                                tuple_in in_del
                              in
-                           let table_ina = unbox ed_minus_v table_in in_del in
+                           let table_ina = ed_minus table_in in_del in
                            let wf_table_ina =
                              wf_table_antijoin
                                (ceq_event_data, ccompare_event_data,
@@ -9377,7 +9479,7 @@ let rec ed_gc_mmsaux
                            (wf_table_in,
                              (tuple_in, (wf_table_since, tuple_since))))))))))
     = (let all_tuples =
-         fold (fun p -> unbox ed_union_v (snd p))
+         fold (fun p -> ed_union (snd p))
            (linearize data_prev @ linearize data_in) ed_bot
          in
        let tuple_sincea =
@@ -9478,9 +9580,7 @@ let rec join2
                             (fun () ->
                               ((t, (gc, (mL, (mR, (dp, (di, ed_bot)))))),
                                 (hina, hsincea))))))
-        else (let in_del =
-                (if pos then unbox ed_minus_v tin x else unbox ed_inter_v tin x)
-                in
+        else (let in_del = (if pos then ed_minus tin x else ed_inter tin x) in
                binda (del_loop2 (fun k -> not (ed_member k in_del))
                        (unbox ed_csorted_list_of_set_v in_del) hin)
                  (fun hina ->
@@ -9490,7 +9590,7 @@ let rec join2
                      (fun hsincea ->
                        (fun () ->
                          ((t, (gc, (mL, (mR,
-  (dp, (di, unbox ed_minus_v tin in_del)))))),
+  (dp, (di, ed_minus tin in_del)))))),
                            (hina, hsincea))))))));;
 
 let rec gc_join2
@@ -9724,7 +9824,7 @@ let rec ed_combine_tstp
 let ed_mempty_tstp : (((event_data option) list), (nat, nat) sum) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_tstp t k = ed_rbt_lookup (unbox ed_impl_of_tstp_v t) k;;
+let rec ed_rbt_lookup_tstp t k = ed_rbtc_lookup (unbox ed_impl_of_tstp_v t) k;;
 
 let rec ed_lookup_tstp
   = function RBT_Mapping t -> ed_rbt_lookup_tstp t
@@ -9771,7 +9871,7 @@ let rec eval_step_mmuaux
            taken ed_bot
          in
        let to_del =
-         unbox ed_filter_v
+         ed_filter
            (fun x ->
              (match ed_lookup_tstp m x with None -> false
                | Some tstp ->
@@ -9782,7 +9882,7 @@ let rec eval_step_mmuaux
        let ma = unbox ed_mapping_delete_set_tstp_v m to_del in
        let resulta =
          (if equal_nata len one_nata then ed_bot
-           else unbox ed_union_v (unbox ed_minus_v result to_del)
+           else ed_union (ed_minus result to_del)
                   (let Some a =
                      lookupa (ccompare_nat, equal_nat) a2_map
                        (plus_nata (minus_nata tp len) one_nata)
@@ -9867,7 +9967,7 @@ let rec eval_step_mmauaux
                  taken ed_bot
                in
              let to_del =
-               unbox ed_filter_v
+               ed_filter
                  (fun x ->
                    (match ed_lookup_tstp m x with None -> false
                      | Some tstp ->
@@ -9878,7 +9978,7 @@ let rec eval_step_mmauaux
              let ma = unbox ed_mapping_delete_set_tstp_v m to_del in
              let resulta =
                (if equal_nata len one_nata then ed_bot
-                 else unbox ed_union_v (unbox ed_minus_v result to_del)
+                 else ed_union (ed_minus result to_del)
                         (let Some a =
                            lookupa (ccompare_nat, equal_nat) a2_map
                              (plus_nata (minus_nata tp len) one_nata)
@@ -10323,7 +10423,7 @@ ccompare_event_data))).ccompare_cproper_interval)),
                      in
                     (unbox ed_image_pair_snd_v snd tmp,
                       (unbox ed_upd_nested_max_tstp_v a2_map new_tstp tmp,
-                        unbox ed_union_v result
+                        ed_union result
                           (unbox ed_image_pair_snd_v snd
                             (unbox ed_filter_pair_v
                               (fun (t, _) -> equal_nata t (minus_nata tp len))
@@ -10340,8 +10440,7 @@ ccompare_event_data))).ccompare_cproper_interval)),
        (if pos
          then unbox ed_mfilter_nat_v (fun asa _ -> ed_member asa rel1)
                 (unbox ed_upd_set_nat_v a1_map (fun _ -> tp)
-                  (unbox ed_filter_v (fun k -> is_none (ed_lookup_nat a1_map k))
-                    rel1))
+                  (ed_minus rel1 (unbox ed_keys_nat_v a1_map)))
          else unbox ed_upd_set_nat_v a1_map (fun _ -> tp) rel1)
        in
      let tssa = append_queue nt tss in
@@ -10568,8 +10667,7 @@ let rec add_new_mmauaux
                  (if pos
                    then unbox ed_mfilter_nat_v (fun asa _ -> ed_member asa rel1)
                           (unbox ed_upd_set_nat_v a1_map (fun _ -> tp)
-                            (unbox ed_filter_v
-                              (fun k -> is_none (ed_lookup_nat a1_map k)) rel1))
+                            (ed_minus rel1 (unbox ed_keys_nat_v a1_map)))
                    else unbox ed_upd_set_nat_v a1_map (fun _ -> tp) rel1)
                  in
                let to_add =
@@ -10588,7 +10686,7 @@ let rec add_new_mmauaux
                        (plus_nata len one_nata,
                          (maskL,
                            (maskR,
-                             (unbox ed_union_v result
+                             (ed_union result
                                 (unbox ed_image_pair_snd_v snd
                                   (unbox ed_filter_pair_v
                                     (fun (t, _) ->
@@ -10599,7 +10697,7 @@ let rec add_new_mmauaux
             b));;
 
 let rec ed_rbt_insert_tstp
-  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_tstp_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_tstp_v xe));;
 
 let rec ed_update_tstp
   k v x2 = match k, v, x2 with
@@ -10780,7 +10878,7 @@ let rec eval_step_dq
            taken ed_bot
          in
        let to_del =
-         unbox ed_filter_v
+         ed_filter
            (fun x ->
              (match ed_lookup_tstp m x with None -> false
                | Some tstp ->
@@ -10793,8 +10891,7 @@ let rec eval_step_dq
        let maa = dq_nth a2_dqa zero_nata in
        let resulta =
          (if equal_nata len one_nata then ed_bot
-           else unbox ed_union_v (unbox ed_minus_v result to_del)
-                  (unbox ed_keys_tstp_v maa))
+           else ed_union (ed_minus result to_del) (unbox ed_keys_tstp_v maa))
          in
        let a2_dqb =
          dq_upd a2_dqa zero_nata
@@ -10866,8 +10963,7 @@ let rec add_new_dq
               (if pos
                 then unbox ed_mfilter_nat_v (fun asa _ -> ed_member asa rel1)
                        (unbox ed_upd_set_nat_v a1_map (fun _ -> tp)
-                         (unbox ed_filter_v
-                           (fun k -> is_none (ed_lookup_nat a1_map k)) rel1))
+                         (ed_minus rel1 (unbox ed_keys_nat_v a1_map)))
                 else unbox ed_upd_set_nat_v a1_map (fun _ -> tp) rel1)
               in
             let tssa = append_queue nt tss in
@@ -11107,8 +11203,7 @@ let rec eval_step_dq2
            not (ts_tp_lt i ts (plus_nata (minus_nata tp len) one_nata) tstp))
          tables
        in
-     let to_del_approx = fold (fun p -> unbox ed_union_v (fst p)) taken ed_bot
-       in
+     let to_del_approx = fold (fun p -> ed_union (fst p)) taken ed_bot in
       binda (im_keep_list
               (ts_tp_lt i ts (plus_nata (minus_nata tp len) one_nata))
               (unbox ed_csorted_list_of_set_v to_del_approx) m ed_bot)
@@ -11139,7 +11234,7 @@ let rec eval_step_dq2
   (minus_nata len one_nata,
     (maskL,
       (maskR,
-        (unbox ed_union_v (unbox ed_minus_v result to_del) ks,
+        (ed_union (ed_minus result to_del) ks,
           (a1, (dq_tl (dq_upd a2 one_nata mb),
                  (dq_tl tstp_dq, t :: donea))))))))))))))))));;
 
@@ -11580,11 +11675,10 @@ let rec ed_update_mmtaux
                                        (tuple_in_oncea,
  (tuple_in_once_keysa,
    (unbox ed_upd_set_nat_v tuple_since_histb (fun _ -> idx_mida)
-      (unbox ed_filter_v (fun k -> is_none (ed_lookup_nat tuple_since_histb k))
-        r),
-     ((if is_emptya data_ina then r else unbox ed_inter_v hist_sata r),
-       unbox ed_union_v (unbox ed_inter_v since_sata r)
-         (unbox ed_filter_v
+      (ed_filter (fun k -> is_none (ed_lookup_nat tuple_since_histb k)) r),
+     ((if is_emptya data_ina then r else ed_inter hist_sata r),
+       ed_union (ed_inter since_sata r)
+         (ed_filter
            (fun asa -> ed_proj_tuple_in_join (args_pos args) maskL asa l)
            r))))))))))))))
              else (nt, (plus_nata idx_next one_nata,
@@ -11596,7 +11690,7 @@ let rec ed_update_mmtaux
                                    (data_ina,
                                      (unbox ed_upd_set_nat_v tuple_in_oncea
 (fun _ -> nt) l,
-                                       (unbox ed_union_v tuple_in_once_keysa l,
+                                       (ed_union tuple_in_once_keysa l,
  (tuple_since_hista, (hist_sata, since_sata)))))))))))))));;
 
 let rec result_mmtaux
@@ -11615,16 +11709,7 @@ let rec result_mmtaux
         then (set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata),
                ed_insert (replicate (args_n args) None) ed_bot)
         else (args_R args,
-               unbox ed_union_v (unbox ed_union_v tuple_in_once_keys hist_sat)
-                 since_sat));;
-
-let ed_rbt_fold_table_v :
-  (((event_data option) list ->
-     ((event_data option) list) set -> ((event_data option) list) set) ->
-    (((event_data option) list), unit) mapping_rbt ->
-      ((event_data option) list) set -> ((event_data option) list) set)
-    boxed
-  = Box (foldb (ccompare_list (ccompare_option ccompare_event_data)));;
+               ed_union (ed_union tuple_in_once_keys hist_sat) since_sat));;
 
 let ed_fold_cfi_table_v :
   ((((event_data option) list), ((event_data option) list) set) comp_fun_idem ->
@@ -11759,7 +11844,7 @@ let rec ed_join
                ed_bot a
         else failwith "join: infinite table" (fun _ -> ed_join a true b))
     | a, false, b ->
-        unbox ed_filter_v
+        ed_filter
           (fun aa ->
             unbox ed_Ball_v b
               (fun ba ->
@@ -11775,17 +11860,16 @@ let rec ed_bin_join
                     then (if equal_boola pos (ed_member (replicate n None) t)
                            then ta else ed_bot)
                     else (if set_eq (cenum_nat, ceq_nat, ccompare_nat) a aa
-                           then (if pos then unbox ed_inter_v ta t
-                                  else unbox ed_minus_v ta t)
+                           then (if pos then ed_inter ta t else ed_minus ta t)
                            else (if less_eq_set
                                       (cenum_nat, ceq_nat, ccompare_nat) a aa
                                   then (let m = join_mask n a in
- unbox ed_filter_v (fun asa -> ed_proj_tuple_in_join pos m asa t) ta)
+ ed_filter (fun asa -> ed_proj_tuple_in_join pos m asa t) ta)
                                   else (if less_eq_set
      (cenum_nat, ceq_nat, ccompare_nat) aa a &&
      pos
  then (let m = join_mask n aa in
-        unbox ed_filter_v (fun asa -> ed_proj_tuple_in_join pos m asa ta) t)
+        ed_filter (fun asa -> ed_proj_tuple_in_join pos m asa ta) t)
  else (if pos &&
             (unbox ed_finite_v ta &&
               (unbox ed_finite_v t &&
@@ -13227,7 +13311,7 @@ let rec update_matchP
                 (if memR i (minus_nata nt t)
                   then [(t, ed_mrtabulate mrs
                               (fun mra ->
-                                unbox ed_union_v
+                                ed_union
                                   (r_delta
                                     (ceq_event_data, ccompare_event_data,
                                       equal_event_data)
@@ -13312,7 +13396,7 @@ let rec ed_update_matchF_step
          in
         ((t, (rels,
                (if memL i (minus_nata nt t) && memR i (minus_nata nt t)
-                 then unbox ed_union_v rel
+                 then ed_union rel
                         (lookupb (ccompare_mregex, equal_mregex)
                           ((ceq_list (ceq_option ceq_event_data)),
                             (ccompare_list
@@ -13426,8 +13510,7 @@ let rec meeval
            with None -> replicate (size_lista ts) ed_bot
            | Some xs ->
              (match mode with Copy -> xs
-               | Simple ->
-                 mapa (unbox ed_image_v (simple_match n zero_nata tms)) xs
+               | Simple -> mapa (ed_image (simple_match n zero_nata tms)) xs
                | Match ->
                  mapa (fun x ->
                         these ((ceq_list (ceq_option ceq_event_data)),
@@ -13521,12 +13604,10 @@ let rec meeval
           (zs, MAnd (a_phi, phia, pos, a_psi, psia, buf)))
     | j, n, ts, db, MAndAssign (phi, conf) ->
         (let (xs, phia) = meeval j n ts db phi in
-          (mapa (unbox ed_image_v (eval_assignment conf)) xs,
-            MAndAssign (phia, conf)))
+          (mapa (ed_image (eval_assignment conf)) xs, MAndAssign (phia, conf)))
     | j, n, ts, db, MAndRel (phi, confa) ->
         (let (xs, phia) = meeval j n ts db phi in
-          (mapa (unbox ed_filter_v (eval_constraint confa)) xs,
-            MAndRel (phia, confa)))
+          (mapa (ed_filter (eval_constraint confa)) xs, MAndRel (phia, confa)))
     | j, n, ts, db,
         MAndTrigger (v_phi, phia, buf1, args, phi, psi, buf2, nts, auxb)
         -> (let (asa, phiaa) = meeval j n ts db phia in
@@ -13580,7 +13661,7 @@ let rec meeval
             MNeg phia))
     | j, n, ts, db, MExists phi ->
         (let (xs, phia) = meeval j (suc n) ts db phi in
-          (mapa (unbox ed_image_v tla) xs, MExists phia))
+          (mapa (ed_image tla) xs, MExists phia))
     | j, n, ts, db, MAgg (argsa, phi) ->
         (let (xs, phia) =
            meeval j (plus_nata (size_lista (aggargs_tys argsa)) n) ts db phi in
@@ -13828,13 +13909,13 @@ let rec meval_j
         binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (unbox ed_image_v (eval_assignment conf)) xs,
+              (mapa (ed_image (eval_assignment conf)) xs,
                 MAndAssign (phia, conf))))
     | j, n, ts, db, MAndRel (phi, conf) ->
         binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (unbox ed_filter_v (eval_constraint conf)) xs,
+              (mapa (ed_filter (eval_constraint conf)) xs,
                 MAndRel (phia, conf))))
     | j, n, ts, db, MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux)
         -> binda (meval_j j n ts db phia)
@@ -13891,8 +13972,7 @@ let rec meval_j
                 MNeg phia)))
     | j, n, ts, db, MExists phi ->
         binda (meval_j j (suc n) ts db phi)
-          (fun (xs, phia) ->
-            (fun () -> (mapa (unbox ed_image_v tla) xs, MExists phia)))
+          (fun (xs, phia) -> (fun () -> (mapa (ed_image tla) xs, MExists phia)))
     | j, n, ts, db, MAgg (args, phi) ->
         binda (meval_j j (plus_nata (size_lista (aggargs_tys args)) n) ts db
                 phi)
@@ -14072,7 +14152,7 @@ let rec deval
         binda (deval j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (unbox ed_filter_v (eval_constraint conf)) xs,
+              (mapa (ed_filter (eval_constraint conf)) xs,
                 DAndRel (phia, conf))))
     | j, ts, db, DOr (phi, psi, buf) ->
         binda (deval j ts db phi)
@@ -14102,7 +14182,7 @@ let rec deval
         binda (deval j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              ((if drop0 then mapa (unbox ed_image_v tla) xs else xs),
+              ((if drop0 then mapa (ed_image tla) xs else xs),
                 DExists (phia, drop0))))
     | j, ts, db, DAgg (g0, omega, f, k, pos, phi) ->
         binda (deval j ts db phi)
@@ -15708,10 +15788,10 @@ let rec update_until
   args rel1 rel2 nt aux =
     mapa (fun (t, (a1, a2)) ->
            (t, ((if args_pos args then ed_join a1 true rel1
-                  else unbox ed_union_v a1 rel1),
+                  else ed_union a1 rel1),
                  (if memL (args_ivl args) (minus_nata nt t) &&
                        memR (args_ivl args) (minus_nata nt t)
-                   then unbox ed_union_v a2 (ed_join rel2 (args_pos args) a1)
+                   then ed_union a2 (ed_join rel2 (args_pos args) a1)
                    else a2))))
       aux @
       [(nt, (rel1,
@@ -15726,7 +15806,7 @@ let rec add_new_table_vmsaux
   x = (fun _ rel2 (cur, auxlist) ->
         (cur, (match auxlist with [] -> [(cur, rel2)]
                 | (t, y) :: ts ->
-                  (if equal_nata t cur then (t, unbox ed_union_v y rel2) :: ts
+                  (if equal_nata t cur then (t, ed_union y rel2) :: ts
                     else (cur, rel2) :: auxlist))))
         x;;
 
@@ -15815,8 +15895,7 @@ let rec vmeeval
            with None -> replicate (size_lista ts) ed_bot
            | Some xs ->
              (match mode with Copy -> xs
-               | Simple ->
-                 mapa (unbox ed_image_v (simple_match n zero_nata tms)) xs
+               | Simple -> mapa (ed_image (simple_match n zero_nata tms)) xs
                | Match ->
                  mapa (fun x ->
                         these ((ceq_list (ceq_option ceq_event_data)),
@@ -15910,12 +15989,10 @@ let rec vmeeval
           (zs, MAnd (a_phi, phia, pos, a_psi, psia, buf)))
     | j, n, ts, db, MAndAssign (phi, conf) ->
         (let (xs, phia) = vmeeval j n ts db phi in
-          (mapa (unbox ed_image_v (eval_assignment conf)) xs,
-            MAndAssign (phia, conf)))
+          (mapa (ed_image (eval_assignment conf)) xs, MAndAssign (phia, conf)))
     | j, n, ts, db, MAndRel (phi, confa) ->
         (let (xs, phia) = vmeeval j n ts db phi in
-          (mapa (unbox ed_filter_v (eval_constraint confa)) xs,
-            MAndRel (phia, confa)))
+          (mapa (ed_filter (eval_constraint confa)) xs, MAndRel (phia, confa)))
     | j, n, ts, db,
         MAndTrigger (v_phi, phia, buf1, args, phi, psi, buf2, nts, auxd)
         -> (let (asa, phiaa) = vmeeval j n ts db phia in
@@ -15969,7 +16046,7 @@ let rec vmeeval
             MNeg phia))
     | j, n, ts, db, MExists phi ->
         (let (xs, phia) = vmeeval j (suc n) ts db phi in
-          (mapa (unbox ed_image_v tla) xs, MExists phia))
+          (mapa (ed_image tla) xs, MExists phia))
     | j, n, ts, db, MAgg (argsa, phi) ->
         (let (xs, phia) =
            vmeeval j (plus_nata (size_lista (aggargs_tys argsa)) n) ts db phi in
@@ -16771,7 +16848,7 @@ let rec add_new_table_imp
                    (fun hina ->
                      (fun () ->
                        ((t, (gc, (mL, (mR,
-(dp, (append_queue (t, x) di, unbox ed_union_v tin x)))))),
+(dp, (append_queue (t, x) di, ed_union tin x)))))),
                          (hina, fst r))))
             else (fun () ->
                    ((t, (gc, (mL, (mR, (append_queue (t, x) dp, (di, tin)))))),
@@ -16881,8 +16958,7 @@ let rec add_new_ts_impa
       binda (move_loop (snd p) hsince hin ed_bot)
         (fun r ->
           (fun () ->
-            ((nt, (gc, (mL, (mR, (fst p,
-                                   (dia, unbox ed_union_v tin (snd r))))))),
+            ((nt, (gc, (mL, (mR, (fst p, (dia, ed_union tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec filter_loop (_A1, _A2) (_B1, _B2, _B3, _B4, _B5)
@@ -16921,8 +16997,7 @@ let rec shift_end_imp
       binda (expire_loop (snd p) hin ed_bot)
         (fun r ->
           (fun () ->
-            ((t, (gc, (mL, (mR, (dpa, (fst p,
-unbox ed_minus_v tin (snd r))))))),
+            ((t, (gc, (mL, (mR, (dpa, (fst p, ed_minus tin (snd r))))))),
               (fst r, hsince)))));;
 
 let rec add_new_ts_imp
@@ -16970,9 +17045,7 @@ let rec join_imp
                             (fun () ->
                               ((t, (gc, (mL, (mR, (dp, (di, ed_bot)))))),
                                 (hina, hsincea))))))
-        else (let in_del =
-                (if pos then unbox ed_minus_v tin x else unbox ed_inter_v tin x)
-                in
+        else (let in_del = (if pos then ed_minus tin x else ed_inter tin x) in
                binda (del_loop
                        ((equal_list (equal_option equal_event_data)),
                          (hashable_list (hashable_option hashable_event_data)),
@@ -16997,14 +17070,13 @@ let rec join_imp
                          (fun hsincea ->
                            (fun () ->
                              ((t, (gc, (mL,
- (mR, (dp, (di, unbox ed_minus_v tin in_del)))))),
+ (mR, (dp, (di, ed_minus tin in_del)))))),
                                (hina, hsincea)))))))));;
 
 let rec gc_imp
   q = (let ((t, (_, (mL, (mR, (dp, (di, tin)))))), (hin, hsince)) = q in
        let all =
-         fold (fun p -> unbox ed_union_v (snd p)) (linearize dp @ linearize di)
-           ed_bot
+         fold (fun p -> ed_union (snd p)) (linearize dp @ linearize di) ed_bot
          in
         binda (hm_to_list
                 ((hashable_list (hashable_option hashable_event_data)),
@@ -17110,13 +17182,13 @@ let rec meval_imp
         binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (unbox ed_image_v (eval_assignment conf)) xs,
+              (mapa (ed_image (eval_assignment conf)) xs,
                 MAndAssign (phia, conf))))
     | j, n, ts, db, MAndRel (phi, conf) ->
         binda (meval_imp j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (unbox ed_filter_v (eval_constraint conf)) xs,
+              (mapa (ed_filter (eval_constraint conf)) xs,
                 MAndRel (phia, conf))))
     | j, n, ts, db, MAndTrigger (v, phia, buf1, args, phi, psi, buf2, nts, aux)
         -> binda (meval_imp j n ts db phia)
@@ -17173,8 +17245,7 @@ let rec meval_imp
                 MNeg phia)))
     | j, n, ts, db, MExists phi ->
         binda (meval_imp j (suc n) ts db phi)
-          (fun (xs, phia) ->
-            (fun () -> (mapa (unbox ed_image_v tla) xs, MExists phia)))
+          (fun (xs, phia) -> (fun () -> (mapa (ed_image tla) xs, MExists phia)))
     | j, n, ts, db, MAgg (args, phi) ->
         binda (meval_imp j (plus_nata (size_lista (aggargs_tys args)) n) ts db
                 phi)
@@ -17966,7 +18037,6 @@ let rec table_of_list xs = RBT_set (unbox ed_rbt_of_sorted_list_v xs);;
 
 let rec insert_table_into_db
   p x db =
-    unbox db_update_with_v (fun _ tbl _ -> mapa (unbox ed_union_v x) tbl) p [x]
-      db;;
+    unbox db_update_with_v (fun _ tbl _ -> mapa (ed_union x) tbl) p [x] db;;
 
 end;; (*struct Monitor*)
