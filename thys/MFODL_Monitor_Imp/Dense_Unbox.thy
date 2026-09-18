@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Unbox
-  imports Dense_Aux
+  imports Dense_Aux Since_Imp2 Until_Imp2
 begin
 (*>*)
 
@@ -404,6 +404,237 @@ lemma gadd_new_dq_eq:
        = dadd_new_dq args msk rel1 rel2 nt d"
   by (simp add: gadd_new_dq_def dadd_new_dq_def gshift_dq_eq[OF assms]
       guntil_elem_step_dq_eq[abs_def] split: prod.splits)
+
+subsection \<open>The closed-left-operand structures, over a bare element type\<close>
+
+text \<open>
+  The two structures for a closed left operand -- the Since's sliding window of
+  @{theory MFODL_Monitor_Imp.Since_Imp2} and the Until's of
+  @{theory MFODL_Monitor_Imp.Until_Imp2} -- are queues of tables and a multiset of tuples held
+  as a count mapping.  They touch no field, so they generalise as the others did.
+\<close>
+
+definition gevt_add :: "'b :: ccompare list set \<Rightarrow> ('b list, nat) mapping \<times> 'b list set \<Rightarrow>
+    ('b list, nat) mapping \<times> 'b list set" where
+  "gevt_add T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
+       None \<Rightarrow> (Mapping.update t 1 c, Set.insert t s)
+     | Some k \<Rightarrow> (Mapping.update t (k + 1) c, s)) (csorted_list_of_set T) cc"
+
+definition gevt_del :: "'b :: ccompare list set \<Rightarrow> ('b list, nat) mapping \<times> 'b list set \<Rightarrow>
+    ('b list, nat) mapping \<times> 'b list set" where
+  "gevt_del T cc = fold (\<lambda>t (c, s). case Mapping.lookup c t of
+       None \<Rightarrow> (c, s)
+     | Some k \<Rightarrow> (if k \<le> 1 then (Mapping.delete t c, Set.remove t s)
+                  else (Mapping.update t (k - 1) c, s))) (csorted_list_of_set T) cc"
+
+lemma gevt_add_eq: "gevt_add (T :: event_data table) cc = evt_add T cc"
+  by (simp add: gevt_add_def evt_add_def)
+
+lemma gevt_del_eq: "gevt_del (T :: event_data table) cc = evt_del T cc"
+  by (simp add: gevt_del_def evt_del_def)
+
+type_synonym 'b gsevtaux = "ts \<times> (ts \<times> 'b list set) queue \<times> (ts \<times> 'b list set) queue \<times>
+  ('b list, nat) mapping \<times> 'b list set"
+
+function gsevt_move :: "args \<Rightarrow> ts \<Rightarrow> (ts \<times> 'b :: ccompare list set) queue \<Rightarrow>
+    (ts \<times> 'b list set) queue \<Rightarrow> ('b list, nat) mapping \<Rightarrow> 'b list set \<Rightarrow>
+    (ts \<times> 'b list set) queue \<times> (ts \<times> 'b list set) queue \<times>
+    ('b list, nat) mapping \<times> 'b list set" where
+  "gsevt_move args nt pend win cnt cur =
+     (case safe_hd pend of
+        (None, pend') \<Rightarrow> (pend', win, cnt, cur)
+      | (Some e, pend') \<Rightarrow>
+        (if memL (args_ivl args) (nt - fst e)
+         then (if memR (args_ivl args) (nt - fst e)
+               then (case gevt_add (snd e) (cnt, cur) of (cnt', cur') \<Rightarrow>
+                       gsevt_move args nt (tl_queue pend') (append_queue e win) cnt' cur')
+               else gsevt_move args nt (tl_queue pend') win cnt cur)
+         else (pend', win, cnt, cur)))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, nt, pend, win, cnt, cur). length (linearize pend))")
+     (fastforce split: prod.splits)+
+
+declare gsevt_move.simps[simp del]
+
+function gsevt_expire :: "args \<Rightarrow> ts \<Rightarrow> (ts \<times> 'b :: ccompare list set) queue \<Rightarrow>
+    ('b list, nat) mapping \<Rightarrow> 'b list set \<Rightarrow>
+    (ts \<times> 'b list set) queue \<times> ('b list, nat) mapping \<times> 'b list set" where
+  "gsevt_expire args nt win cnt cur =
+     (case safe_hd win of
+        (None, win') \<Rightarrow> (win', cnt, cur)
+      | (Some e, win') \<Rightarrow>
+        (if memR (args_ivl args) (nt - fst e) then (win', cnt, cur)
+         else (case gevt_del (snd e) (cnt, cur) of (cnt', cur') \<Rightarrow>
+                 gsevt_expire args nt (tl_queue win') cnt' cur')))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, nt, win, cnt, cur). length (linearize win))")
+     (fastforce split: prod.splits)+
+
+declare gsevt_expire.simps[simp del]
+
+definition ginit_sevt :: "args \<Rightarrow> 'b gsevtaux" where
+  "ginit_sevt args = (0, empty_queue, empty_queue, Mapping.empty, {})"
+
+definition gadd_new_ts_sevt :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gsevtaux \<Rightarrow> 'b gsevtaux" where
+  "gadd_new_ts_sevt args nt aux = (case aux of (t, pend, win, cnt, cur) \<Rightarrow>
+     (case gsevt_move args nt pend win cnt cur of (pend', win', cnt', cur') \<Rightarrow>
+      (case gsevt_expire args nt win' cnt' cur' of (win'', cnt'', cur'') \<Rightarrow>
+        (nt, pend', win'', cnt'', cur''))))"
+
+definition gjoin_sevt :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gsevtaux \<Rightarrow> 'b gsevtaux" where
+  "gjoin_sevt args X aux = (case aux of (t, pend, win, cnt, cur) \<Rightarrow>
+     (if (if args_pos args then \<not> Set.is_empty X else Set.is_empty X) then aux
+      else (t, empty_queue, empty_queue, Mapping.empty, {})))"
+
+definition gadd_new_table_sevt :: "args \<Rightarrow> 'b :: ccompare list set \<Rightarrow> 'b gsevtaux \<Rightarrow>
+    'b gsevtaux" where
+  "gadd_new_table_sevt args X aux = (case aux of (t, pend, win, cnt, cur) \<Rightarrow>
+     (if memL (args_ivl args) 0
+      then (case gevt_add X (cnt, cur) of (cnt', cur') \<Rightarrow>
+              (t, pend, append_queue (t, X) win, cnt', cur'))
+      else (t, append_queue (t, X) pend, win, cnt, cur)))"
+
+definition gresult_sevt :: "args \<Rightarrow> 'b gsevtaux \<Rightarrow> 'b list set" where
+  "gresult_sevt args aux = (case aux of (t, pend, win, cnt, cur) \<Rightarrow> cur)"
+
+lemma gsevt_move_eq:
+  "gsevt_move args nt (pend :: (ts \<times> event_data table) queue) win cnt cur
+   = sevt_move args nt pend win cnt cur"
+  by (induct args nt pend win cnt cur rule: gsevt_move.induct)
+    (simp add: gsevt_move.simps sevt_move.simps gevt_add_eq split: prod.splits option.splits)
+
+lemma gsevt_expire_eq:
+  "gsevt_expire args nt (win :: (ts \<times> event_data table) queue) cnt cur
+   = sevt_expire args nt win cnt cur"
+  by (induct args nt win cnt cur rule: gsevt_expire.induct)
+    (simp add: gsevt_expire.simps sevt_expire.simps gevt_del_eq split: prod.splits option.splits)
+
+lemma ginit_sevt_eq: "ginit_sevt args = (init_sevt args :: sevtaux)"
+  by (simp add: ginit_sevt_def init_sevt_def)
+
+lemma gadd_new_ts_sevt_eq:
+  "gadd_new_ts_sevt args nt (aux :: sevtaux) = add_new_ts_sevt args nt aux"
+  by (simp add: gadd_new_ts_sevt_def add_new_ts_sevt_def gsevt_move_eq gsevt_expire_eq
+      split: prod.splits)
+
+lemma gjoin_sevt_eq: "gjoin_sevt args X (aux :: sevtaux) = join_sevt args X aux"
+  by (simp add: gjoin_sevt_def join_sevt_def split: prod.splits)
+
+lemma gadd_new_table_sevt_eq:
+  "gadd_new_table_sevt args X (aux :: sevtaux) = add_new_table_sevt args X aux"
+  by (simp add: gadd_new_table_sevt_def add_new_table_sevt_def gevt_add_eq split: prod.splits)
+
+lemma gresult_sevt_eq: "gresult_sevt args (aux :: sevtaux) = result_sevt args aux"
+  by (simp add: gresult_sevt_def result_sevt_def split: prod.splits)
+
+type_synonym 'b gevt_entry = "ts \<times> 'b list set \<times> bool"
+
+type_synonym 'b gevtaux = "ts queue \<times> 'b gevt_entry queue \<times> 'b gevt_entry queue \<times> nat \<times> bool \<times>
+  ('b list, nat) mapping \<times> 'b list set \<times> 'b list set list"
+
+function gevt_extend :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevt_entry queue \<Rightarrow> 'b gevt_entry queue \<Rightarrow>
+    bool \<Rightarrow> ('b list, nat) mapping \<Rightarrow> 'b list set \<Rightarrow>
+    'b gevt_entry queue \<times> 'b gevt_entry queue \<times> bool \<times> ('b list, nat) mapping \<times> 'b list set" where
+  "gevt_extend args ts0 win rest bend cnt cur =
+     (if \<not> bend then (win, rest, bend, cnt, cur)
+      else (case safe_hd rest of
+              (None, rest') \<Rightarrow> (win, rest', bend, cnt, cur)
+            | (Some e, rest') \<Rightarrow>
+                (if memR (args_ivl args) (fst e - ts0)
+                 then (case gevt_add (fst (snd e)) (cnt, cur) of (cnt', cur') \<Rightarrow>
+                         gevt_extend args ts0 (append_queue e win) (tl_queue rest')
+                           (snd (snd e)) cnt' cur')
+                 else (win, rest', bend, cnt, cur))))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, ts0, win, rest, bend, cnt, cur). length (linearize rest))")
+     (fastforce split: prod.splits)+
+
+declare gevt_extend.simps[simp del]
+
+definition ginit_evt :: "args \<Rightarrow> 'b gevtaux" where
+  "ginit_evt args = (empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, {}, [])"
+
+definition glength_evt :: "args \<Rightarrow> 'b gevtaux \<Rightarrow> nat" where
+  "glength_evt args aux = (case aux of (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow>
+     length dn + len)"
+
+definition gevt_step :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevtaux \<Rightarrow> 'b gevtaux" where
+  "gevt_step args ts0 aux = (case aux of (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow>
+     (case gevt_extend args ts0 win rest bend cnt cur of (win, rest, bend, cnt, cur) \<Rightarrow>
+        (case safe_hd win of
+           (None, win') \<Rightarrow>
+             (case safe_hd rest of
+                (None, rest') \<Rightarrow>
+                  (tl_queue nts, win', rest', len - 1, bend, cnt, cur, {} # dn)
+              | (Some uu, rest') \<Rightarrow>
+                  (tl_queue nts, win', tl_queue rest', len - 1, bend, cnt, cur, {} # dn))
+         | (Some e, win') \<Rightarrow>
+           (let win'' = tl_queue win';
+                (cnt', cur') = gevt_del (fst (snd e)) (cnt, cur);
+                bend' = (if Queue.is_empty win'' then True else bend)
+            in (tl_queue nts, win'', rest, len - 1, bend', cnt', cur', cur # dn)))))"
+
+function gevt_shift :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevtaux \<Rightarrow> 'b gevtaux" where
+  "gevt_shift args nt aux = (case aux of (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow>
+     (case safe_hd nts of
+        (None, nts') \<Rightarrow> (nts', win, rest, len, bend, cnt, cur, dn)
+      | (Some ts0, nts') \<Rightarrow>
+        (if memR (args_ivl args) (nt - ts0) \<or> len = 0
+         then (nts', win, rest, len, bend, cnt, cur, dn)
+         else gevt_shift args nt (gevt_step args ts0 (nts', win, rest, len, bend, cnt, cur, dn)))))"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, dn)). len)")
+     (auto simp: gevt_step_def Let_def split: prod.splits option.splits)
+
+declare gevt_shift.simps[simp del]
+
+definition gadd_new_evt :: "args \<Rightarrow> 'b :: ccompare list set \<Rightarrow> 'b list set \<Rightarrow> ts \<Rightarrow>
+    'b gevtaux \<Rightarrow> 'b gevtaux" where
+  "gadd_new_evt args rel1 rel2 nt aux =
+     (case gevt_shift args nt aux of (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow>
+       (let b = (if args_pos args then \<not> Set.is_empty rel1 else Set.is_empty rel1)
+        in (append_queue nt nts, win, append_queue (nt, rel2, b) rest,
+            len + 1, bend, cnt, cur, dn)))"
+
+definition geval_evt :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevtaux \<Rightarrow> 'b list set list \<times> 'b gevtaux" where
+  "geval_evt args nt aux =
+     (case gevt_shift args nt aux of (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow>
+       (rev dn, (nts, win, rest, len, bend, cnt, cur, [])))"
+
+lemma gevt_extend_eq:
+  "gevt_extend args ts0 (win :: evt_entry queue) rest bend cnt cur
+   = evt_extend args ts0 win rest bend cnt cur"
+  by (induct args ts0 win rest bend cnt cur rule: gevt_extend.induct)
+    (subst gevt_extend.simps, subst evt_extend.simps,
+     auto simp: gevt_add_eq split: prod.splits option.splits)
+
+lemma ginit_evt_eq: "ginit_evt args = (init_evt args :: evtaux)"
+  by (simp add: ginit_evt_def init_evt_def)
+
+lemma gevt_step_eq: "gevt_step args ts0 (aux :: evtaux) = evt_step args ts0 aux"
+  by (simp add: gevt_step_def evt_step_def gevt_extend_eq gevt_del_eq Let_def
+      split: prod.splits option.splits)
+
+lemma gevt_shift_eq: "gevt_shift args nt (aux :: evtaux) = evt_shift args nt aux"
+  by (induct args nt aux rule: gevt_shift.induct)
+    (simp add: gevt_shift.simps evt_shift.simps gevt_step_eq split: prod.splits option.splits)
+
+lemma gadd_new_evt_eq:
+  "gadd_new_evt args rel1 rel2 nt (aux :: evtaux) = add_new_evt args rel1 rel2 nt aux"
+  by (simp add: gadd_new_evt_def add_new_evt_def gevt_shift_eq Let_def split: prod.splits)
+
+lemma geval_evt_eq: "geval_evt args nt (aux :: evtaux) = eval_evt args nt aux"
+  by (simp add: geval_evt_def eval_evt_def gevt_shift_eq split: prod.splits)
+
+lemma glength_evt_eq: "glength_evt args (aux :: evtaux) = length_evt args aux"
+  by (simp add: glength_evt_def length_evt_def split: prod.splits)
 
 subsection \<open>The operations that read a field\<close>
 
