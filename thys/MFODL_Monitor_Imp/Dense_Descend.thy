@@ -82,9 +82,9 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
      (let cs_L = set_cols (args_L args) in
       if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
          set cs_L \<subseteq> set cs \<and> buf = init_mbuf2S
-      then DSince (dargs cs cs_L args) (emb_plan cs cs_L)
+      then DSince (dargs cs cs_L args)
              (dof n cs_L \<phi>) (dof n cs \<psi>) init_mbuf2S
-             (init_mmasaux (dargs cs cs_L args))
+             (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
       else DPure (mformula.MSince args \<phi> \<psi> buf aux) n (wide_mask n cs))"
 | "dof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
@@ -531,15 +531,16 @@ lemma dsince_rel_init:
   assumes a: "args = init_args I n L R pos None"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
-     (init_mmasaux (dargs cs_R cs_L args)) init_mbuf2S init_mbuf2S"
+     (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) init_mbuf2S init_mbuf2S"
 proof -
   have v: "valid_mmasaux args 0 (init_mmasaux args) []"
     unfolding a by (rule valid_init_mmasaux[OF sub])
-  have s: "dsaux n cs_R cs_L args 0 (init_mmasaux (dargs cs_R cs_L args)) []"
-    by (rule dsaux_init) (use sub cL cR in simp)
+  have s: "dsaux' n cs_R cs_L args 0
+      (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
+    by (rule dsaux'_init) (use sub cL cR in simp)
   have "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
-      (init_mmasaux (dargs cs_R cs_L args)) ([], [], [], False)
-      (map (dtabc n cs_R) [], map (dtabc n cs_R) [], [], False)"
+      (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) ([], [], [], False)
+      (map (dtabc n cs_L) [], map (dtabc n cs_R) [], [], False)"
     by (rule dsince_relI[OF v s]) simp_all
   then show ?thesis by simp
 qed
@@ -585,17 +586,17 @@ proof -
   have cLa: "set_cols (args_L args) = ?cL" unfolding aL using wL by simp
   have d: "dof n ?cs
         (mformula.MSince args (minit0 n \<chi>) (minit0 n \<psi>) init_mbuf2S (init_mmasaux args))
-      = DSince (dargs ?cs ?cL args) (emb_plan ?cs ?cL)
+      = DSince (dargs ?cs ?cL args)
           (dof n ?cL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<psi>)) init_mbuf2S
-          (init_mmasaux (dargs ?cs ?cL args))"
+          (dinit_msaux (dargs ?cs ?cL args) (dmsk ?cs ?cL))"
     using ag an aR sb by (simp add: Let_def cLa)
   have rl: "dsince_rel n ?cs ?cL args tw (init_mmasaux args)
-      (init_mmasaux (dargs ?cs ?cL args)) init_mbuf2S init_mbuf2S"
+      (dinit_msaux (dargs ?cs ?cL args) (dmsk ?cs ?cL)) init_mbuf2S init_mbuf2S"
     by (rule dsince_rel_init[OF a]) (use sub A in auto)
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
     using i2 unfolding A[symmetric] .
   show ?thesis unfolding m d
-    by (rule dsim.DsSince[OF w pr i1 s2 wL sb ag an aL aR refl refl rl])
+    by (rule dsim.DsSince[OF w pr i1 s2 wL sb ag an aL aR refl rl])
 qed
 
 lemma dsim_dof_minit0_MUntil:
