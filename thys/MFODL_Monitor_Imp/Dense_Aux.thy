@@ -1297,6 +1297,155 @@ lemma length_dq_wkeys: "length_dq args (wkeys_uaux msk d) = length_dq args d"
 lemma wkeys_uaux_init: "wkeys_uaux msk (init_dq args) = init_dq args"
   by (simp add: init_dq_def wkeys.abs_eq Mapping.empty_def)
 
-(*<*)
-end
+fun lft_of :: "event_data mmuaux_dq \<Rightarrow> bool list \<times> (event_data tuple, nat) mapping" where
+  "lft_of (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn) = (mL, a1_map)"
+
+lemma a1_of_eval_step_dq:
+  assumes ne: "linearize (fst (snd d)) \<noteq> []"
+  shows "lft_of (eval_step_dq args d) = lft_of d"
+proof (cases d rule: mmuaux_dq_cases)
+  case (1 tp tss tables len mL mR result a1_map a2_dq tstp_dq dn)
+  obtain a q' where hd: "safe_hd tss = (Some a, q')"
+    using ne unfolding 1
+    by (cases "safe_hd tss") (auto dest!: safe_hd_rep split: option.splits)
+  show ?thesis unfolding 1 eval_step_dq.simps hd
+    by (simp add: Let_def split: prod.splits option.splits)
+qed
+
+lemma a1_of_foldl_eval_step_dq:
+  "length xs \<le> length (linearize (fst (snd d))) \<Longrightarrow>
+     lft_of (foldl (\<lambda>aux _. eval_step_dq args aux) d xs) = lft_of d"
+proof (induct xs arbitrary: d)
+  case (Cons x xs)
+  then have ne: "linearize (fst (snd d)) \<noteq> []" by auto
+  have "length xs \<le> length (linearize (fst (snd (eval_step_dq args d))))"
+    using Cons(2) linearize_eval_step_dq[OF ne] by simp
+  then show ?case using Cons(1) a1_of_eval_step_dq[OF ne] by simp
+qed simp
+
+lemma a1_of_shift_dq: "lft_of (shift_dq args nt d) = lft_of d"
+proof (cases d rule: mmuaux_dq_cases)
+  case (1 tp tss tables len mL mR result a1_map a2_dq tstp_dq dn)
+  obtain q0 q1 where tw: "takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss = (q0, q1)"
+    by fastforce
+  have le: "length (linearize q0) \<le> length (linearize q1)"
+    using takeWhile_queue_rep_fst[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+      takeWhile_queue_rep_snd[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+    unfolding tw by (simp add: length_takeWhile_le)
+  have key: "lft_of (foldl (\<lambda>aux _. eval_step_dq args aux)
+      (tp, q1, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn) (linearize q0))
+    = (mL, a1_map)"
+    using a1_of_foldl_eval_step_dq[where xs = "linearize q0"
+      and d = "(tp, q1, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"] le by simp
+  show ?thesis unfolding 1 shift_dq.simps tw by (simp add: key)
+qed
+
+subsection \<open>The one operation that reads the left operand\<close>
+
+text \<open>
+  The verified operation looks the stored tuple's masked projection up in @{text a1_map}; the dense
+  one looks up its dense projection.  Everything else it does -- the accumulation over the right
+  operand's table, the window's tables and timestamps -- is unchanged.
+\<close>
+
+definition duntil_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+    (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc_dq \<Rightarrow> 'a until_acc_dq" where
+  "duntil_elem_step_dq a1_map msk pos tp len inz P d as acc =
+    (let acc' = (if inz then until_step_dq P d (tp - len) (tp, as) acc else acc) in
+     case Mapping.lookup a1_map (dproj msk as) of
+        None \<Rightarrow> (if \<not>pos then until_step_dq P d (tp - len) (tp - len, as) acc' else acc')
+      | Some tp' \<Rightarrow> until_step_dq P d (tp - len) (if pos then (max (tp - len) tp', as)
+          else (max (tp - len) (tp' + 1), as)) acc')"
+
+lemma duntil_elem_step_dq_eq:
+  "length as = length msk \<Longrightarrow>
+     duntil_elem_step_dq a1_map msk pos tp len inz P d as acc
+     = until_elem_step_dq (wkeys msk a1_map) msk pos tp len inz P d as acc"
+  by (simp add: duntil_elem_step_dq_def until_elem_step_dq_def lookup_wkeys_proj_tuple)
+
+lemma fold_duntil_elem_step_dq:
+  "(\<And>as. as \<in> set xs \<Longrightarrow> length as = length msk) \<Longrightarrow>
+     fold (duntil_elem_step_dq a1_map msk pos tp len inz P d) xs acc
+     = fold (until_elem_step_dq (wkeys msk a1_map) msk pos tp len inz P d) xs acc"
+  by (induct xs arbitrary: acc) (simp_all add: duntil_elem_step_dq_eq)
+
+definition dadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
+    event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
+  "dadd_new_dq args msk rel1 rel2 nt aux = (if finite rel2 then
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
+       shift_dq args nt aux;
+     I = args_ivl args; pos = args_pos args; inz = memL I 0;
+     new_tstp = (if inz then Inr tp else Inl nt);
+     tstp_dq = dq_push nt tstp_dq;
+     P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
+     (tbl, a2_dq', result') = fold (duntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+       (csorted_list_of_set rel2) ({}, a2_dq, result);
+     tables = append_queue (tbl, new_tstp) tables;
+     a2_dq = dq_push Mapping.empty a2_dq';
+     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+     tss = append_queue nt tss in
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn))
+   else nkeys_uaux msk (add_new_dq args (dwiden msk ` rel1) rel2 nt (wkeys_uaux msk aux)))"
+
+text \<open>
+  The dense operation is the verified one against the widened table of the left operand, so the
+  node need not widen it.  Only the right operand's table has to be finite, which is all the
+  evaluator ever produces.
+\<close>
+
+lemma wkeys_a1_update:
+  assumes narrow: "\<And>k. k \<in> Mapping.keys m \<Longrightarrow> dnarrow_tuple msk k"
+    and r1: "\<And>y. y \<in> rel1 \<Longrightarrow> dnarrow_tuple msk y"
+  shows "wkeys msk (Mapping.filter (\<lambda>as _. as \<in> rel1)
+       (upd_set m (\<lambda>_. tp) (rel1 - Mapping.keys m)))
+     = Mapping.filter (\<lambda>as _. as \<in> dwiden msk ` rel1)
+       (upd_set (wkeys msk m) (\<lambda>_. tp) (dwiden msk ` rel1 - Mapping.keys (wkeys msk m)))"
+proof -
+  have kw: "Mapping.keys (wkeys msk m) = dwiden msk ` Mapping.keys m"
+    by (rule keys_wkeys[OF narrow])
+  have inj: "\<And>x y. dnarrow_tuple msk x \<Longrightarrow> dnarrow_tuple msk y \<Longrightarrow> dwiden msk x = dwiden msk y \<Longrightarrow> x = y"
+    using inj_on_dwiden[of msk] by (auto simp: inj_on_def)
+  have d: "dwiden msk ` (rel1 - Mapping.keys m) = dwiden msk ` rel1 - Mapping.keys (wkeys msk m)"
+    unfolding kw using narrow r1 by (blast dest: inj)
+  have sub: "\<And>y. y \<in> rel1 - Mapping.keys m \<Longrightarrow> dnarrow_tuple msk y" using r1 by auto
+  have e1: "wkeys msk (upd_set m (\<lambda>_. tp) (rel1 - Mapping.keys m))
+      = upd_set (wkeys msk m) (\<lambda>_. tp) (dwiden msk ` rel1 - Mapping.keys (wkeys msk m))"
+    by (simp only: wkeys_upd_set[OF sub] d)
+  show ?thesis by (simp only: wkeys_filter[OF r1] e1)
+qed
+
+theorem wkeys_uaux_dadd_new_dq:
+  assumes fin: "finite rel2"
+    and mk: "fst (lft_of aux) = msk"
+    and narrow: "\<And>k. k \<in> Mapping.keys (snd (lft_of aux)) \<Longrightarrow> dnarrow_tuple msk k"
+    and r1: "\<And>y. y \<in> rel1 \<Longrightarrow> dnarrow_tuple msk y"
+    and r2: "\<And>as. as \<in> rel2 \<Longrightarrow> length as = length msk"
+  shows "wkeys_uaux msk (dadd_new_dq args msk rel1 rel2 nt aux)
+       = add_new_dq args (dwiden msk ` rel1) rel2 nt (wkeys_uaux msk aux)"
+proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
+  case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
+  have sh: "shift_dq args nt (wkeys_uaux msk aux)
+      = (tp, tss, tables, len, maskL, maskR, result, wkeys msk a1_map, a2_dq, tstp_dq, dn)"
+    unfolding shift_dq_wkeys 1 by simp
+  have lf: "(maskL, a1_map) = lft_of aux"
+    using a1_of_shift_dq[of args nt aux] unfolding 1 by simp
+  have mm: "maskL = msk" using mk lf by (metis fst_conv)
+  have na: "\<And>k. k \<in> Mapping.keys a1_map \<Longrightarrow> dnarrow_tuple msk k"
+    using narrow lf by (metis snd_conv)
+  have rs: "set (csorted_list_of_set rel2) = rel2" by (rule set_csorted_list_of_set_etuple[OF fin])
+  have fl: "fold (duntil_elem_step_dq a1_map msk (args_pos args) tp len (memL (args_ivl args) 0)
+        (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len))))
+        (if memL (args_ivl args) 0 then Inr tp else Inl nt))
+      (csorted_list_of_set rel2) ({}, a2_dq, result)
+    = fold (until_elem_step_dq (wkeys msk a1_map) msk (args_pos args) tp len
+        (memL (args_ivl args) 0)
+        (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len))))
+        (if memL (args_ivl args) 0 then Inr tp else Inl nt))
+      (csorted_list_of_set rel2) ({}, a2_dq, result)"
+    by (rule fold_duntil_elem_step_dq) (use rs r2 in auto)
+  show ?thesis
+    unfolding dadd_new_dq_def add_new_dq_def if_P[OF fin] 1 sh mm
+    by (simp add: Let_def fl wkeys_a1_update[OF na r1] wkeys_upd_set[OF r1] split: prod.splits)
+qed
 (*>*)
