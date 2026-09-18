@@ -4419,7 +4419,7 @@ implementation consults the structure's index on the join columns so that it doe
 window. A rescan specified by `dsemi_join` would be correct and slower. The work is therefore a
 *narrow-input variant of `join_mmsaux`*: one operation rather than a new structure, pushing the
 mask `cpos cs_R (set cs_L)` into the internals so the index is still used, with its validity
-lemma restated through `dsemi_join`. `join_mmsaux` lives in `Optimized_Agg_Temporal.thy` in the
+lemma restated through `dsemi_join`. `join_mmsaux` lives in `Optimized_Since.thy` in the
 base session, so this is a base-session change and each iteration costs a ~52-minute rebuild of
 `MFODL_Monitor_Devel` plus ~5 minutes for the child.
 
