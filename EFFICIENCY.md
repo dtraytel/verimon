@@ -5151,7 +5151,7 @@ the sub-frame Since rows are new territory for it, and it gains on both.
 remaining dense work is elsewhere: `MAndTrigger` and the two `MatchP`/`MatchF` operators still
 fall back to the sparse evaluator (20.21), and the dense tables are still `event_data option
 list` rather than `event_data list` (the unboxing of 20.31, which the hole-free discipline this
-section establishes is the precondition for).
+section establishes is the precondition for, and which 20.36 carries out).
 
 ### 20.36 The option around every field, removed
 
