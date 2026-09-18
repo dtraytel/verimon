@@ -104,6 +104,13 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
      DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi \<alpha>s"
 | "dof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
      DLetPast p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) i buf"
+| "dof n cs (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
+     (let cs_L = set_cols (args_L args) in
+      if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
+         mem (args_ivl args) 0 \<and> buf = ([], []) \<and> nts = []
+      then DTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
+             (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] (init_mmtaux (dargs cs cs_L args))
+      else DPure (mformula.MTrigger args \<phi> \<psi> buf nts aux) n (wide_mask n cs))"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
       else DPure (mformula.MTP mt i) n (wide_mask n cs))"
@@ -942,6 +949,109 @@ proof -
   show ?thesis unfolding m d by (rule dsim.DsLetPast[OF w pr s1 s2]) simp
 qed
 
+text \<open>The trigger's left operand's columns are among its right operand's, which is what makes
+  the structure at @{const dargs} the right one; its interval contains zero, which is what keeps
+  the second branch of @{const trigger_results} out of reach.\<close>
+
+lemma dsim_dof_minit0_Trigger:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MTrigger args (minit0 n \<chi>) (minit0 n \<eta>) ([], []) []
+              (init_mmtaux args)"
+    and ai: "args = init_args I n (Formula.fv \<chi>) (Formula.fv \<eta>) pos None"
+    and m0: "mem I 0" and sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<eta>"
+    and B: "Formula.fv \<phi> = Formula.fv \<eta>"
+    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<eta>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  let ?csL = "set_cols (Formula.fv \<chi>)"
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have bL: "\<forall>x \<in> Formula.fv \<chi>. x < n" using sub b B by auto
+  have wL: "wf_cols n ?csL" by (rule wf_cols_set_cols[OF finite_fvi bL])
+  have sc: "set ?cs = Formula.fv \<eta>" using B by (simp add: finite_fvi)
+  have scL: "set ?csL = Formula.fv \<chi>" by (simp add: finite_fvi)
+  have subc: "set ?csL \<subseteq> set ?cs" using sub sc scL by simp
+  have an: "args_n args = n" and aL: "args_L args = set ?csL"
+    and aR: "args_R args = set ?cs" and aI: "args_ivl args = I"
+    using sc scL by (simp_all add: ai init_args_def)
+  have pr: "produces n (set ?cs) tw (mformula.MTrigger args (minit0 n \<chi>) (minit0 n \<eta>)
+      ([], []) [] (init_mmtaux args))"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have d: "dof n ?cs (mformula.MTrigger args (minit0 n \<chi>) (minit0 n \<eta>)
+        ([], []) [] (init_mmtaux args))
+      = DTrigger (dargs ?cs ?csL args) (emb_plan ?cs ?csL)
+          (dof n ?csL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<eta>)) ([], []) []
+          (init_mmtaux (dargs ?cs ?csL args))"
+    using an aR subc m0 aI aL by (simp add: Let_def)
+  have s1: "dsim n ?csL tw (dof n ?csL (minit0 n \<chi>)) (minit0 n \<chi>)" using i1 .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+  have vi: "valid_mmtaux args 0 (init_mmtaux args) []"
+    using valid_init_mmtaux[where I = I and n = n and L = "Formula.fv \<chi>"
+        and R = "Formula.fv \<eta>" and pos = pos and agg = None] m0 sub
+    unfolding ai by (simp add: Let_def)
+  have di: "dtaux n ?cs ?csL args 0 (init_mmtaux (dargs ?cs ?csL args)) []"
+    by (rule dtaux_init[OF subc]) (use m0 aI in simp)
+  have rel: "dtrigger_rel n ?cs ?csL args tw (init_mmtaux args)
+      (init_mmtaux (dargs ?cs ?csL args)) ([], []) ([], []) []"
+    unfolding dtrigger_rel_def
+    by (intro exI[where x = 0] exI[where x = "[]"] conjI) (use vi di in simp_all)
+  show ?thesis unfolding m d
+    by (rule dsim.DsTrigger[OF w pr s1 s2 wL subc an aL aR _ refl refl rel]) (use m0 aI in simp)
+qed
+
+text \<open>The safe trigger's left operand is either safe itself or a negation whose body is; the two
+  cases differ only in the polarity the arguments record, which the relation does not read.\<close>
+
+lemma dsim_dof_minit0_Trigger_fml:
+  assumes m0: "mem I 0" and sp: "safe_formula \<psi>" and sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>"
+    and dj: "(safe_formula \<phi> \<and> dofc n tw \<phi>) \<or>
+      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
+    and i2: "dofc n tw \<psi>" and b: "\<forall>x \<in> Formula.fv (Formula.Trigger \<phi> I \<psi>). x < n"
+  shows "dofc n tw (Formula.Trigger \<phi> I \<psi>)"
+proof -
+  have dj': "safe_formula \<phi> \<or> (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> | _ \<Rightarrow> False)"
+    using dj by (cases \<phi>) auto
+  have st: "safe_formula (Formula.Trigger \<phi> I \<psi>)"
+    using m0 sp sub dj' by (simp add: safe_dual_def)
+  have B: "Formula.fv (Formula.Trigger \<phi> I \<psi>) = Formula.fv \<psi>" using sub by auto
+  show ?thesis
+  proof (cases "safe_formula \<phi>")
+    case True
+    note sfp = True
+    have i1: "dofc n tw \<phi>"
+    proof (cases "safe_formula \<phi> \<and> dofc n tw \<phi>")
+      case True then show ?thesis by simp
+    next
+      case False
+      then have "case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False"
+        using dj by blast
+      then obtain \<chi> where fc: "\<phi> = Formula.Neg \<chi>" and ic: "dofc n tw \<chi>"
+        by (cases \<phi>) auto
+      have fvc: "Formula.fv \<chi> = {}" using sfp fc by simp
+      show ?thesis
+        by (rule dsim_dof_minit0_Neg[OF sfp _ _ _ fvc ic]) (use fc fvc in simp_all)
+    qed
+    have mi: "minit0 n (Formula.Trigger \<phi> I \<psi>)
+        = mformula.MTrigger (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None)
+            (minit0 n \<phi>) (minit0 n \<psi>) ([], []) []
+            (init_mmtaux (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None))"
+      using True by (simp add: verimon_maux.init_trigger_def)
+    show ?thesis by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 sub B i1 i2])
+  next
+    case False
+    then obtain \<chi> where fc: "\<phi> = Formula.Neg \<chi>" using dj' by (cases \<phi>) auto
+    have i1: "dofc n tw \<chi>" using dj False fc by auto
+    have fvc: "Formula.fv \<chi> = Formula.fv \<phi>" using fc by simp
+    have mi: "minit0 n (Formula.Trigger \<phi> I \<psi>)
+        = mformula.MTrigger (init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) False None)
+            (minit0 n \<chi>) (minit0 n \<psi>) ([], []) []
+            (init_mmtaux (init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) False None))"
+      using False unfolding fc by (simp add: verimon_maux.init_trigger_def)
+    show ?thesis
+      by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 _ B i1 i2]) (use sub fvc in simp)
+  qed
+qed
+
 lemma dsim_dof_minit0_TP:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MTP mt i"
@@ -1097,13 +1207,12 @@ next
     have sfa: "safe_formula (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))"
       using And_Trigger.hyps st by simp
     have bt: "\<forall>x \<in> Formula.fv (Formula.Trigger \<phi>' I \<psi>'). x < n" using bR fvt by simp
-    have mt: "dof n (set_cols (Formula.fv (Formula.Trigger \<phi>' I \<psi>')))
-          (minit0 n (Formula.Trigger \<phi>' I \<psi>'))
-        = DPure (minit0 n (Formula.Trigger \<phi>' I \<psi>')) n
-          (wide_mask n (set_cols (Formula.fv (Formula.Trigger \<phi>' I \<psi>'))))"
-      using sp' by (simp add: verimon_maux.init_trigger_def)
+    have sr: "safe_formula \<psi>'" using sd sp' True by (simp add: safe_dual_def)
+    have djt: "(safe_formula \<phi>' \<and> dofc n tw \<phi>') \<or>
+        (case \<phi>' of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
+      using sp' And_Trigger.IH(2)[OF bL] by simp
     have i2: "dofc n tw (Formula.Trigger \<phi>' I \<psi>')"
-      by (rule dsim_dof_minit0_pure[OF st bt mt])
+      by (rule dsim_dof_minit0_Trigger_fml[OF True sr sub djt And_Trigger.IH(3)[OF bR] bt])
     have m: "minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))
         = mformula.MAnd (set (set_cols (Formula.fv \<phi>))) (minit0 n \<phi>) True
             (set (set_cols (Formula.fv (Formula.Trigger \<phi>' I \<psi>'))))
@@ -1374,22 +1483,14 @@ next
         Not_Until.IH(1)[OF b1] Not_Until.IH(2)[OF b2]]) (use sub in simp)
 next
   case (Trigger_0 \<phi> I \<psi>)
-  have dj: "safe_formula \<phi> \<or> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' | _ \<Rightarrow> False)"
-    using Trigger_0(4) by (cases \<phi>) auto
-  have st: "safe_formula (Formula.Trigger \<phi> I \<psi>)"
-    using Trigger_0.hyps dj by (simp add: safe_dual_def)
-  have m: "dof n (set_cols (Formula.fv (Formula.Trigger \<phi> I \<psi>)))
-        (minit0 n (Formula.Trigger \<phi> I \<psi>))
-      = DPure (minit0 n (Formula.Trigger \<phi> I \<psi>)) n
-        (wide_mask n (set_cols (Formula.fv (Formula.Trigger \<phi> I \<psi>))))"
-  proof (cases "safe_formula \<phi>")
-    case True then show ?thesis by (simp add: verimon_maux.init_trigger_def)
-  next
-    case False
-    then obtain \<chi> where "\<phi> = Formula.Neg \<chi>" using dj by (cases \<phi>) auto
-    then show ?thesis by (simp add: verimon_maux.init_trigger_def)
-  qed
-  show ?case by (rule dsim_dof_minit0_pure[OF st Trigger_0.prems m])
+  have b2: "\<forall>x \<in> Formula.fv \<psi>. x < n" using Trigger_0.prems by simp
+  have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using Trigger_0.hyps(3) b2 by auto
+  have dj: "(safe_formula \<phi> \<and> dofc n tw \<phi>) \<or>
+      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
+    using Trigger_0.IH(1) b1 by (cases \<phi>) auto
+  show ?case
+    by (rule dsim_dof_minit0_Trigger_fml[OF Trigger_0.hyps(1) Trigger_0.hyps(2)
+          Trigger_0.hyps(3) dj Trigger_0.IH(2)[OF b2] Trigger_0.prems])
 next
   case (Trigger \<phi> I \<psi>) then show ?case by simp
 next

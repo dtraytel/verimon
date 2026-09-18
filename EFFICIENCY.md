@@ -4729,3 +4729,55 @@ at `MLet`: `Dense_Imp`'s evaluator is monadic, and the size argument that licens
 `DLetPast` in the pure evaluator cannot be made in the `Heap` monad, as 20.29 records. So the
 measured fallback-node count over the cram suites is unchanged, and `src/verified.ml` is again
 byte-identical -- nothing code-generated changed.
+
+### 20.31 The trigger, in the verified fragment
+
+The trigger differs from the Since and the Until in where its answer comes from. Those two
+accumulate it in the structure and read it out with `result_msaux` / `eval_muaux`, so what has to
+transport is an operation. The trigger's structure only stores the auxiliary list; the answer is
+`trigger_results` applied to that list, so what has to transport is a set comprehension:
+
+```isabelle
+theorem dtabc_trigger_results:
+  assumes … and ne: "0 < length (filter (λ(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
+  shows "snd (trigger_results (dargs cs cs_L args) cur (dauxlist3 n cs auxlist))
+       = dtabc n cs (snd (trigger_results args cur auxlist))"
+```
+
+Its *then* branch puts two conditions on a tuple of the right operand's frame -- membership in a
+stored right table, and a join against a stored left table -- and those are exactly the two the
+join at `cpos` already transports. `proj_tuple_dproj`, `dproj_inj_sub` and `table_dtabc_cpos`
+supply them *pointwise* rather than as an image, which is the only new thing needed;
+`wf_tuple_dproj_full` and `wf_tuple_dwiden_full` make the frames correspond in both directions, so
+the comprehension can be matched term for term.
+
+The *else* branch does not transport: it answers `unit_table (args_n args)`, a table over no
+columns rather than over the node's own, and narrowing that at a non-empty column list is not
+meaningful. It is also unreachable: the node's interval contains zero (`Trigger_0` is the only
+safe shape) and the structure is read immediately after an update that appended an entry carrying
+the current timestamp, so the filter is non-empty -- `filter_mem_last_nonempty`. The theorem
+assumes `ne` and the caller discharges it from the update it just did.
+
+On top of that, `dtaux` relates the two structures through the abstract auxiliary list they are
+both valid for, with `dtaux_init`, `dtaux_update` and `dtaux_result` in the shape `dsaux` and
+`duaux` already have, and `mbuf2T_take_rel` steps the node's buffer traversal at both frames at
+once -- `mbuf2t_take_rel_ts` without the timestamp bookkeeping, since the two runs consume the
+same number of entries.
+
+**The node.** `DTrigger` carries the arguments at `dargs`, the embedding plan, the two operands,
+the two buffers and the pending timestamps; `deval`'s clause is the kernel's, with the left
+operand's tables embedded by `dembedp` as the Since's are. `dtrigger_rel` and `dtrigger_step_rel`
+give the simulation case its step; `dof` emits `DTrigger` when the arguments fit the frame and the
+interval contains zero, and `dsim_dof_minit0_Trigger_fml` covers both shapes the safe trigger's
+left operand can take -- safe itself, or a negation whose body is safe. The two differ only in the
+polarity recorded in the arguments, which the relation never reads.
+
+That last lemma is used twice: by the `Trigger_0` case of the compiler's induction, and by the
+`mem I 0` branch of `And_Trigger`, where `minit0` builds a plain `MAnd` whose right operand *is* a
+standalone trigger node. That branch previously went to `DPure`; it does not any more.
+
+**What is left.** `MAndTrigger` -- the fused node `minit0` builds when the interval does not
+contain zero -- is still `DPure`, and so are `MMatchP`/`MMatchF` and the aggregating
+`MSince`/`MUntil`. The *executable* fragment is untouched, so the measured fallback-node count over
+the cram suites is still 83 and `src/verified.ml` is byte-identical. Session builds green in 3:07;
+both cram suites pass.

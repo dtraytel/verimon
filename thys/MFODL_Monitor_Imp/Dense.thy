@@ -3386,6 +3386,67 @@ lemma dauxlist3_filter_append:
      = filter (\<lambda>(t, _). P t) (dauxlist3 n cs auxlist) @ [(nt, dtabc n cs l, dtabc n cs r)]"
   by (induct auxlist) (auto simp: dauxlist3_def)
 
+text \<open>The trigger's buffer traversal, stepped at both frames at once.  It is
+  @{thm [source] mbuf2t_take_rel_ts} without the timestamp bookkeeping: the two runs consume the
+  same number of entries, because narrowing a list of tables preserves its length.\<close>
+
+lemma mbuf2T_take_rel:
+  "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
+      R t (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R u0 z z' \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>t \<in> set ts. u0 \<le> t) \<Longrightarrow> (\<forall>t \<in> set ts. t \<le> tb) \<Longrightarrow> u0 \<le> tb \<Longrightarrow>
+   mbuf2T_take f z (xs, ys) ts = (w, (xs', ys'), ts') \<Longrightarrow>
+   mbuf2T_take g z' (map h xs, map k ys) ts = (w2, buf2, ts2) \<Longrightarrow>
+   (\<exists>u. R u w w2 \<and> u \<le> tb \<and> (\<forall>t \<in> set ts'. u \<le> t)) \<and> sorted ts' \<and>
+     set ts' \<subseteq> set ts \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys \<and>
+     buf2 = (map h xs', map k ys') \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' u0 ts w xs' ys' ts' w2 buf2 ts2)
+  case Nil
+  then show ?case by (cases ts) (auto intro!: exI[of _ u0])
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4)
+    and P4 = Cons(5) and P5 = Cons(6) and P6 = Cons(7) and P7 = Cons(8) and P8 = Cons(9)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 P6 P7 P8 by (cases ts) (auto intro!: exI[of _ u0])
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P6 P7 P8 ysC by (auto intro!: exI[of _ u0])
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have ut: "u0 \<le> t" using P4 tsC by simp
+      have r: "R t (f x y t z) (g (h x) (k y) t z')"
+        using P1[of x y u0 z z' t] P2 ut ysC by simp
+      have p1: "\<And>a b t' u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t' \<Longrightarrow>
+          R t' (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2T_take f (f x y t z) (xs, ys2) ts3 = (w, (xs', ys'), ts')"
+        using P7 ysC tsC by simp
+      have s2: "mbuf2T_take g (g (h x) (k y) t z') (map h xs, map k ys2) ts3
+          = (w2, buf2, ts2)"
+        using P8 ysC tsC by simp
+      have "(\<exists>u. R u w w2 \<and> u \<le> tb \<and> (\<forall>t' \<in> set ts'. u \<le> t')) \<and> sorted ts' \<and>
+          set ts' \<subseteq> set ts3 \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys2 \<and>
+          buf2 = (map h xs', map k ys') \<and> ts2 = ts'"
+        by (rule IH[OF p1 r _ _ _ _ s1 s2]) (use P3 P5 P6 tsC in auto)
+      then show ?thesis using tsC ysC by auto
+    qed
+  qed
+qed
+
+text \<open>The second branch of @{const trigger_results} is out of reach right after a time
+  point was entered, because the entry the update just appended carries the current timestamp and
+  the node's interval contains zero.\<close>
+
+lemma filter_mem_last_nonempty:
+  "mem I 0 \<Longrightarrow> 0 < length (filter (\<lambda>(t, _, _). mem I (nt - t)) (al @ [(nt, l, r)]))"
+  by simp
+
 definition dtaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmtaux \<Rightarrow>
     event_data mtaux \<Rightarrow> bool" where
   "dtaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>

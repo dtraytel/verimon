@@ -127,6 +127,8 @@ datatype dformula =
   | DLet Formula.name nat dformula dformula
   | DFrz Formula.name nat dformula dformula nat nat nat "event_data table list"
   | DLetPast Formula.name nat dformula dformula nat "event_data table option"
+  | DTrigger args "nat option list" dformula dformula "event_data mbuf2" "ts list"
+      "event_data mmtaux"
 
 function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow>
     event_data table list \<times> dformula"
@@ -217,6 +219,12 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
           (ys, \<psi>) = deval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, DLetPast p m \<phi> \<psi> i buf))"
+| "deval j ts db (DTrigger dags pl \<phi> \<psi> dbuf nts daux) =
+     (let (xs, \<phi>') = deval j ts db \<phi>; (ys, \<psi>') = deval j ts db \<psi>;
+          ((zs, daux'), dbuf', nts') = mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+            let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
+            in (zs @ [z], ax)) ([], daux) (mbuf2_add (map (dembedp pl) xs) ys dbuf) (nts @ ts)
+      in (zs, DTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
   by pat_completeness auto
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
@@ -573,6 +581,190 @@ proof -
   then show ?thesis using ev dn dns dbf bfs by simp
 qed
 
+subsection \<open>The Trigger structure at the dense frame, and its buffer\<close>
+
+text \<open>
+  The trigger node carries the pair of structures, related through the abstract auxiliary list
+  they are both valid for, together with the two buffers and the pending timestamps.  Unlike the
+  Since and the Until, the structure is stepped and read in the same traversal, so the output
+  list is part of what the step relates.  Both operands' tables enter the buffer narrowed at the
+  right operand's column list; for the left one that is the embedding, by
+  @{thm [source] dembed_dtabc}.
+\<close>
+
+definition dtrigger_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
+    event_data mmtaux \<Rightarrow> event_data mmtaux \<Rightarrow> event_data mbuf2 \<Rightarrow> event_data mbuf2 \<Rightarrow>
+    ts list \<Rightarrow> bool" where
+  "dtrigger_rel n cs_R cs_L args tw aux daux buf dbuf nts \<longleftrightarrow>
+     (\<exists>cur auxlist. valid_mmtaux args cur aux auxlist \<and>
+        (\<forall>(t, l, r) \<in> set auxlist. ftable n (set cs_L) l \<and> ftable n (set cs_R) r) \<and>
+        dtaux n cs_R cs_L args cur daux auxlist \<and> cur \<le> tw \<and>
+        list_all (ftable n (set cs_L)) (fst buf) \<and>
+        list_all (ftable n (set cs_R)) (snd buf) \<and>
+        sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw) \<and>
+        dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf)))"
+
+lemma dtrigger_relI:
+  "valid_mmtaux args cur aux auxlist \<Longrightarrow>
+   (\<forall>(t, l, r) \<in> set auxlist. ftable n (set cs_L) l \<and> ftable n (set cs_R) r) \<Longrightarrow>
+   dtaux n cs_R cs_L args cur daux auxlist \<Longrightarrow> cur \<le> tw \<Longrightarrow>
+   list_all (ftable n (set cs_L)) xs \<Longrightarrow> list_all (ftable n (set cs_R)) ys \<Longrightarrow>
+   sorted nts \<Longrightarrow> \<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw \<Longrightarrow>
+   dtrigger_rel n cs_R cs_L args tw aux daux (xs, ys)
+     (map (dtabc n cs_R) xs, map (dtabc n cs_R) ys) nts"
+  unfolding dtrigger_rel_def
+  by (intro exI[where x = cur] exI[where x = auxlist] conjI) simp_all
+
+lemma dtrigger_relE:
+  assumes "dtrigger_rel n cs_R cs_L args tw aux daux buf dbuf nts"
+  obtains cur auxlist where "valid_mmtaux args cur aux auxlist"
+    and "\<forall>(t, l, r) \<in> set auxlist. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+    and "dtaux n cs_R cs_L args cur daux auxlist" and "cur \<le> tw"
+    and "list_all (ftable n (set cs_L)) (fst buf)"
+    and "list_all (ftable n (set cs_R)) (snd buf)"
+    and "sorted nts" and "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
+    and "dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf))"
+  using assms unfolding dtrigger_rel_def by (elim exE conjE) (rule that)
+
+text \<open>One firing of the trigger structure: the buffer traversal that steps it once per pending
+  timestamp and collects what it answers.  The two runs stay in step by
+  @{thm [source] mbuf2T_take_rel}, and each individual step is @{thm [source] dtaux_update}
+  followed by @{thm [source] dtaux_result}.\<close>
+
+lemma dtrigger_step_rel:
+  assumes s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
+    and m0: "mem (args_ivl args) 0"
+    and rel: "dtrigger_rel n cs_R cs_L args tw aux daux buf dbuf nts"
+    and ta: "list_all (ftable n (set cs_L)) as" and tb: "list_all (ftable n (set cs_R)) bs"
+    and st: "sorted tss" and bnd: "\<forall>v \<in> set tss. tw \<le> v"
+    and we: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+        in (zs @ [z], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
+      = ((zs, aux1), buf1, nts1)"
+    and de: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = update_mmtaux (dargs cs_R cs_L args) t r1 r2 ax;
+            (fv_z, z) = result_mmtaux (dargs cs_R cs_L args) ax
+        in (zs @ [z], ax)) ([], daux)
+        (mbuf2_add (map (dtabc n cs_R) as) (map (dtabc n cs_R) bs) dbuf) (nts @ tss)
+      = ((dzs, daux1), dbuf1, dnts1)"
+  shows "dzs = map (dtabc n cs_R) zs \<and> dnts1 = nts1 \<and>
+     dtrigger_rel n cs_R cs_L args (dnext tw tss) aux1 daux1 buf1 dbuf1 nts1"
+proof -
+  obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
+    and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+    and vd: "dtaux n cs_R cs_L args cur daux auxlist" and ctw: "cur \<le> tw"
+    and lu: "list_all (ftable n (set cs_L)) (fst buf)"
+    and lv: "list_all (ftable n (set cs_R)) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
+    and dbf: "dbuf = (map (dtabc n cs_R) (fst buf), map (dtabc n cs_R) (snd buf))"
+    using rel by (rule dtrigger_relE)
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  define g where "g = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
+    let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+    in (zs @ [z], ax))"
+  define gd where "gd = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
+    let ax = update_mmtaux (dargs cs_R cs_L args) t r1 r2 ax;
+        (fv_z, z) = result_mmtaux (dargs cs_R cs_L args) ax
+    in (zs @ [z], ax))"
+  define R where "R = (\<lambda>v (pr :: event_data table list \<times> event_data mmtaux)
+      (dpr :: event_data table list \<times> event_data mmtaux).
+    (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
+       (\<forall>(t, l, r) \<in> set al. ftable n (set cs_L) l \<and> ftable n (set cs_R) r) \<and>
+       dtaux n cs_R cs_L args v (snd dpr) al) \<and>
+     fst dpr = map (dtabc n cs_R) (fst pr))"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have mad: "mbuf2_add (map (dtabc n cs_R) as) (map (dtabc n cs_R) bs) dbuf
+      = (map (dtabc n cs_R) us, map (dtabc n cs_R) vs)"
+    using dbf by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable n (set cs_L)) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable n (set cs_R)) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a c v w z z'. a \<in> set us \<Longrightarrow> c \<in> set vs \<Longrightarrow> R w z z' \<Longrightarrow> w \<le> v \<Longrightarrow>
+      R v (g a c v z) (gd (dtabc n cs_R a) (dtabc n cs_R c) v z')"
+  proof -
+    fix a c v w and z z' :: "event_data table list \<times> event_data mmtaux"
+    assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
+    have t1: "ftable n (set cs_L) a" using au lus by (simp add: list_all_iff)
+    have t2: "ftable n (set cs_R) c" using cv lvs by (simp add: list_all_iff)
+    obtain al where vwz: "valid_mmtaux args w (snd z) al"
+      and wfz: "\<forall>(t, l, r) \<in> set al. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+      and vdz: "dtaux n cs_R cs_L args w (snd z') al"
+      using q unfolding R_def by blast
+    have fz: "fst z' = map (dtabc n cs_R) (fst z)" using q unfolding R_def by blast
+    define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
+    have vw': "valid_mmtaux args v (update_mmtaux args v a c (snd z)) al'"
+      unfolding al'_def
+      by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 an aL aR in simp_all)
+    have wf': "\<forall>(t, l, r) \<in> set al'. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+      using wfz t1 t2 unfolding al'_def by auto
+    have vd': "dtaux n cs_R cs_L args v
+        (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')) al'"
+      unfolding al'_def by (rule dtaux_update[OF vdz wv s b sub]) (use t1 t2 in simp_all)
+    have ne: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (v - t)) al')"
+      unfolding al'_def by (rule filter_mem_last_nonempty[OF m0])
+    have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
+        = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
+    have dres: "snd (result_mmtaux (dargs cs_R cs_L args)
+          (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')))
+        = dtabc n cs_R (snd (trigger_results args v al'))"
+      by (rule dtaux_result[OF vd' s b sub an aL aR ne])
+    have dres': "snd (result_mmtaux (dargs cs_R cs_L args)
+          (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z')))
+        = dtabc n cs_R (snd (result_mmtaux args (update_mmtaux args v a c (snd z))))"
+      unfolding res by (rule dres)
+    have gz: "g a c v z
+        = (fst z @ [snd (result_mmtaux args (update_mmtaux args v a c (snd z)))],
+           update_mmtaux args v a c (snd z))"
+      by (cases z) (simp add: g_def Let_def case_prod_beta)
+    have gdz: "gd (dtabc n cs_R a) (dtabc n cs_R c) v z'
+        = (fst z' @ [snd (result_mmtaux (dargs cs_R cs_L args)
+             (update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c)
+               (snd z')))],
+           update_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_R a) (dtabc n cs_R c) (snd z'))"
+      by (cases z') (simp add: gd_def Let_def case_prod_beta)
+    show "R v (g a c v z) (gd (dtabc n cs_R a) (dtabc n cs_R c) v z')"
+      unfolding R_def gz gdz fst_conv snd_conv
+      using vw' wf' vd' fz dres' by (intro conjI exI[where x = al']) simp_all
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn st cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ctw by fastforce
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext tw tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF st] by fastforce
+  have cdn: "cur \<le> dnext tw tss" using ctw dnext_ge[OF bnd] by simp
+  have r0: "R cur ([], aux) ([], daux)" unfolding R_def
+    by (intro conjI exI[where x = auxlist]) (use vw wf vd in simp_all)
+  have we': "mbuf2T_take g ([], aux) (us, vs) (nts @ tss) = ((zs, aux1), (b1, b2), nts1)"
+    using we unfolding ma bfs g_def by simp
+  have de': "mbuf2T_take gd ([], daux) (map (dtabc n cs_R) us, map (dtabc n cs_R) vs)
+      (nts @ tss) = ((dzs, daux1), dbuf1, dnts1)"
+    using de unfolding mad gd_def by simp
+  have Rr: "(\<exists>u. R u (zs, aux1) (dzs, daux1) \<and> u \<le> dnext tw tss \<and> (\<forall>t \<in> set nts1. u \<le> t)) \<and>
+      sorted nts1 \<and> set nts1 \<subseteq> set (nts @ tss) \<and> set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs \<and>
+      dbuf1 = (map (dtabc n cs_R) b1, map (dtabc n cs_R) b2) \<and> dnts1 = nts1"
+    by (rule mbuf2T_take_rel[where R = R and f = g and g = gd and h = "dtabc n cs_R"
+        and k = "dtabc n cs_R", OF step r0 sts cts bound cdn we' de'])
+  obtain u where ru: "R u (zs, aux1) (dzs, daux1)" and ub: "u \<le> dnext tw tss"
+    and un: "\<forall>t \<in> set nts1. u \<le> t" using Rr by blast
+  have sn1: "sorted nts1" and sb1: "set b1 \<subseteq> set us" and sb2: "set b2 \<subseteq> set vs"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)"
+    and dbf1: "dbuf1 = (map (dtabc n cs_R) b1, map (dtabc n cs_R) b2)"
+    and dn1: "dnts1 = nts1" using Rr by blast+
+  have lb1: "list_all (ftable n (set cs_L)) b1" using sb1 lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable n (set cs_R)) b2" using sb2 lvs by (auto simp: list_all_iff)
+  obtain al1 where v1: "valid_mmtaux args u aux1 al1"
+    and w1: "\<forall>(t, l, r) \<in> set al1. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+    and d1: "dtaux n cs_R cs_L args u daux1 al1" using ru unfolding R_def by auto
+  have dz: "dzs = map (dtabc n cs_R) zs" using ru unfolding R_def by simp
+  have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> dnext tw tss" using un sub1 bound by auto
+  have "dtrigger_rel n cs_R cs_L args (dnext tw tss) aux1 daux1 (b1, b2)
+      (map (dtabc n cs_R) b1, map (dtabc n cs_R) b2) nts1"
+    by (rule dtrigger_relI[OF v1 w1 d1 ub lb1 lb2 sn1 bnd1])
+  then show ?thesis using dz dn1 bfs dbf1 by simp
+qed
+
 subsection \<open>The relation itself\<close>
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformula \<Rightarrow>
@@ -691,6 +883,16 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
     \<forall>y. buf = Some y \<longrightarrow> ftable m {0..<m} y \<Longrightarrow>
     dsim n cs tw (DLetPast p m \<phi>d \<psi>d i buf) (mformula.MLetPast p m \<phi> \<psi> i buf)"
+| DsTrigger: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MTrigger args \<phi> \<psi> buf nts aux) \<Longrightarrow>
+    dsim n cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols n cs_L \<Longrightarrow> set cs_L \<subseteq> set cs \<Longrightarrow>
+    args_n args = n \<Longrightarrow> args_L args = set cs_L \<Longrightarrow> args_R args = set cs \<Longrightarrow>
+    mem (args_ivl args) 0 \<Longrightarrow>
+    dags = dargs cs cs_L args \<Longrightarrow> pl = emb_plan cs cs_L \<Longrightarrow>
+    dtrigger_rel n cs cs_L args tw aux daux buf dbuf nts \<Longrightarrow>
+    dsim n cs tw (DTrigger dags pl \<phi>d \<psi>d dbuf nts daux)
+      (mformula.MTrigger args \<phi> \<psi> buf nts aux)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -2029,6 +2231,69 @@ next
     show "dsim n cs (dnext tw ts) (DLetPast p m \<phi>d2 \<psi>d2 i2 buf2) \<phi>'"
       unfolding f
       by (rule dsim.DsLetPast[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 lbo2])
+  qed
+next
+  case (DsTrigger n cs tw args \<phi> \<psi> buf nts aux cs_L \<phi>d \<psi>d dags pl daux dbuf)
+  note wf = DsTrigger.hyps(1) and pr = DsTrigger.hyps(2)
+    and sim1 = DsTrigger.hyps(3) and IH1 = DsTrigger.hyps(4)
+    and sim2 = DsTrigger.hyps(5) and IH2 = DsTrigger.hyps(6)
+    and wfL = DsTrigger.hyps(7) and sub = DsTrigger.hyps(8)
+    and an = DsTrigger.hyps(9) and aL = DsTrigger.hyps(10) and aR = DsTrigger.hyps(11)
+    and m0 = DsTrigger.hyps(12) and dag = DsTrigger.hyps(13) and pe = DsTrigger.hyps(14)
+    and rel = DsTrigger.hyps(15)
+    and w = DsTrigger.prems(1) and sts = DsTrigger.prems(2)
+    and mts = DsTrigger.prems(3) and m = DsTrigger.prems(4)
+  have cwf: "sorted_wrt (<) cs" and cb: "\<forall>c \<in> set cs. c < n" using wf by auto
+  obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain zs aux2 buf2 nts2 where e3: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+      in (zs @ [z], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ ts)
+      = ((zs, aux2), buf2, nts2)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+      in (zs @ [z], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ ts)") auto
+  have x: "xs = zs" and f: "\<phi>' = mformula.MTrigger args \<phi>2 \<psi>2 buf2 nts2 aux2"
+    using m e1 e2 e3 by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsTrigger.prems(5)], simp)+
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) as, \<phi>d2)"
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs) bs, \<psi>d2)"
+    and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
+  have ta: "list_all (ftable n (set cs_L)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
+  have tb: "list_all (ftable n (set cs)) bs"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w sts mts e2])
+  have emb: "map (dembedp pl \<circ> dtabc n cs_L) as = map (dtabc n cs) as"
+  proof (intro map_cong refl)
+    fix a assume "a \<in> set as"
+    then have "table n (set cs_L) a" using ta by (simp add: list_all_iff)
+    then show "(dembedp pl \<circ> dtabc n cs_L) a = dtabc n cs a"
+      unfolding pe o_def using wf wfL by (intro dembedp_dtabc) auto
+  qed
+  obtain dzs daux2 dbuf2 dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
+      in (zs @ [z], ax)) ([], daux)
+      (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf) (nts @ ts)
+      = ((dzs, daux2), dbuf2, dnts2)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
+      in (zs @ [z], ax)) ([], daux)
+      (mbuf2_add (map (dtabc n cs) as) (map (dtabc n cs) bs) dbuf) (nts @ ts)") auto
+  have step: "dzs = map (dtabc n cs) zs \<and> dnts2 = nts2 \<and>
+      dtrigger_rel n cs cs_L args (dnext tw ts) aux2 daux2 buf2 dbuf2 nts2"
+    by (rule dtrigger_step_rel[OF cwf cb sub an aL aR m0 rel ta tb sts mts e3
+          d3[unfolded dag]])
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DTrigger dags pl \<phi>d \<psi>d dbuf nts daux)
+        = (map (dtabc n cs) xs, DTrigger dags pl \<phi>d2 \<psi>d2 dbuf2 nts2 daux2)"
+      using d1 d2 d3 step x by (simp add: emb)
+    show "dsim n cs (dnext tw ts) (DTrigger dags pl \<phi>d2 \<psi>d2 dbuf2 nts2 daux2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsTrigger[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
+            an aL aR m0 dag pe]) (use step in simp)
   qed
 qed
 
