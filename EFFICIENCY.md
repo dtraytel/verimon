@@ -5152,3 +5152,115 @@ remaining dense work is elsewhere: `MAndTrigger` and the two `MatchP`/`MatchF` o
 fall back to the sparse evaluator (20.21), and the dense tables are still `event_data option
 list` rather than `event_data list` (the unboxing of 20.31, which the hole-free discipline this
 section establishes is the precondition for).
+
+### 20.36 The option around every field, removed
+
+20.35 closed with what was left: "the dense tables are still `event_data option list` rather than
+`event_data list`". A dense tuple has no holes -- `dwf_tuple` says so, and after 20.32--20.33 no
+dense operation constructs one, since `dwiden`, the only one that ever did, does not occur in the
+generated code any more. So the `option` around every field paid for a possibility that cannot
+arise: one indirection on every read, two pattern tests per field in the tuple comparator, and two
+words of every field's footprint. This section removes it.
+
+**The generic layer.** `Dense_Unbox.thy` restates the dense operations over a bare element type
+`'b` where the existing ones are over `'a option`, and proves each generic operation equal to the
+one it generalises *at the option instance*:
+
+```isabelle
+lemma gbin_join_eq: "gbin_join pl (A :: event_data table) pos B = dbin_join pl A pos B"
+lemma gadd_new_dq_eq:
+  assumes "args_agg args = None"
+  shows "gadd_new_dq args msk rel1 rel2 nt (d :: event_data mmuaux_dq)
+       = dadd_new_dq args msk rel1 rel2 nt d"
+```
+
+Every theorem of `Dense.thy` and `Dense_Aux.thy` therefore continues to say what it said, and the
+executable evaluator instantiates the same definitions at `event_data`. The layer covers the join,
+the dense Since structure, the Until deque, both closed-left-operand structures and the multi-way
+conjunction. The operations that *read* a field rather than move it -- the assignment, the
+time-point and time-stamp terms, the match, the constraint, the aggregation -- cannot be
+generalised, because they go through `meval_trm`, which reads `the (v ! x)`; they get unboxed
+twins, each proved to agree with the original on hole-free tuples, e.g.
+
+```isabelle
+lemma umatch_reopt: "umatch tms xs = match tms (reopt xs)"
+```
+
+An equality at the option instance says nothing at `event_data`, so the join's *specification* had
+to be redone generically as well -- the index lookup, the two probe folds and
+
+```isabelle
+lemma ggen_join_spec:
+  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
+  shows "ggen_join p lk rk A B
+       = {dmerge p a b | a b. a \<in> A \<and> b \<in> B \<and> dproj lk a = dproj rk b}"
+```
+
+which is what carries `Dense_Join_Correct.thy`'s Hoare triples over.
+
+**The heap maps.** The imperative hash table of `Table_Imp.thy` was keyed on `event_data tuple`
+throughout. Retyping the dense structures means the same table has to serve two key types, so it
+is generalised: `('k, 'v) ientry`, `('k, 'v) imap`, and the key equality passed to the operations
+that compare two keys as an argument rather than taken from `class equal`, which the code
+generator would turn into a structural comparison assembled from dictionaries. The argument is
+applied at most once per operation, behind the comparison of the two stored hashes, so it costs
+nothing next to the hash itself. `ueq` and `uihash` are the two primitives at the short tuples,
+the second printed as OCaml that walks one constructor less per element.
+
+`Imap_Correct.thy` becomes a locale:
+
+```isabelle
+locale imap_ops =
+  fixes khash :: "'k :: heap \<Rightarrow> integer" and keq :: "'k \<Rightarrow> 'k \<Rightarrow> bool"
+  assumes keq_eq[simp]: "keq x y \<longleftrightarrow> x = y"
+```
+
+Its 1272 commands are unchanged apart from the two names: the hash is only ever required to be a
+function and the equality to be the one of the key type, which is all the proofs ever used of
+`ihash` and `teq`. The theory ends with the two interpretations, so every Hoare triple it proves
+holds for both maps. `Since_Imp2.thy`'s heap-resident Since is generalised the same way, over the
+tuple type, with the all-holes tuple of `join2`'s no-join-column branch as a parameter, since
+which tuple that is depends on the representation. The Until's heap-resident branch, which
+`use_heap_until` switched off, is dropped from the dense monitor rather than retyped.
+
+**The executable evaluator.** `Dense_Imp.thy` is retyped from `event_data table` to
+`event_data list set`: the formula, the evaluation function, the heap join index, the three Since
+structures and the two Until ones. The subformulas the dense fragment does not cover yet (20.21:
+`MAndTrigger`, `MMatchP`, `MMatchF`) still go through the evaluation function over the wide
+tuples, which reads its input tables from the database itself, so `wide_db` puts the database
+back into the wide representation for them and their results are narrowed and unboxed as before.
+A formula with no such subformula -- which `-dense`'s `MONPOLY_DENSE_STATS` counter reports as
+zero -- never reaches that conversion.
+
+**The code setup.** The dense monitor's sets and mappings are keyed on `event_data list`, which
+`Monomorphic_Code.thy` does not mention at all, so without a counterpart every set and mapping
+operation of the dense evaluator would build its dictionaries per call and reach the red-black
+tree through `comparator_list comparator_event_data`. `Dense_Code_Opt.thy` gains the section it
+has for the wide tuples at the short ones: the direct comparator
+
+```isabelle
+fun edl_comparator :: "event_data list comparator" where
+  "edl_comparator (x # xs) (y # ys) =
+    (case comparator_event_data x y of Eq \<Rightarrow> edl_comparator xs ys | r \<Rightarrow> r)"
+```
+
+two frames fewer per element than the composite one; the dictionary rules; the empty table as a
+value; the monomorphised set and mapping operations at the four value types the dense structures
+use (`nat`, the timestamp sum, the dense table, the dense tuple list); the boxed projections out
+of a mapping's tree; the tree primitives with the comparator called directly; and the boxed
+dictionaries of the join index, which is entered once per indexed and once per probed tuple.
+
+**The interface.** The front end reads and writes whichever representation the monitor in use
+holds. The database and the batch of a time point are now the wide ones or the short ones, chosen
+by `-dense`; the conversion of an event is the one for the wide tuples without the `Some` rather
+than a second pass over its result, because that is the hottest path there is; and a verdict is
+printed from whichever it is, with the fast path over the short tuples losing the
+undefined-column case that could send it to the slow one.
+
+**What holds.** `isabelle build -e -d . MFODL_Monitor_Imp` goes through in 3:00, the 844 cram
+tests of `tests/` and the 284 of `verimon_tests/` all pass, and the four configurations --
+MonPoly, `-verified`, `-verified -dense` and `-verified -dense -heap_maps` -- agree byte for byte
+on the fourteen synthetic formulas of 20.35's table that the smaller log covers.
+
+**Not yet measured.** What this is worth is a question for the next section; nothing here has been
+timed.
