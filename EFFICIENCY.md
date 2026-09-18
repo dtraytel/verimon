@@ -4217,3 +4217,57 @@ walks both trees and so makes O(n) indirect calls. Item 4 of 20.20, the join mat
 operands as lists, is untouched: `gen_keys` is still 193 M instructions and 6.7% of allocation.
 And the 34% of allocation that is red-black tree node churn is unchanged, because it is the price
 of a persistent tree rather than anything the code generator is doing.
+
+### 20.24 The option is load-bearing after all: the Since and Until embedding
+
+Step 1 of 20.22 was started and stopped. The pilot worked and the premise did not.
+
+**The pilot worked.** Generalising an option-agnostic dense operation in its element type is a
+transparent retyping, not a rewrite: changing
+
+```isabelle
+fun dproj :: "bool list ⇒ 'a tuple ⇒ 'a tuple"   to   fun dproj :: "bool list ⇒ 'b list ⇒ 'b list"
+```
+
+leaves `Dense.thy` green -- 5369 commands, no errors and no new failures -- because every
+existing theorem about `dproj` at `'a tuple` is an instance of the more general one. That is what
+step 1 predicted, and it would have carried `dmerge`, `djoin1`, `dtabc`, `dsemi`, `dnarrow`,
+`dauxlist` and the rest with it.
+
+**The premise did not.** 20.22 said, quoting `dwf_tuple` and `dtable`, that every element of every
+dense tuple is a `Some`. That is true of a table whose column set matches its subformula's free
+variables. It is false of the left operand of a Since or an Until whose columns are a proper
+subset, which is embedded into the wider set:
+
+```isabelle
+definition dembed1 :: "nat option list ⇒ 'a tuple ⇒ 'a tuple" where
+  "dembed1 p d = map (λq. case q of None ⇒ None | Some i ⇒ d ! i) p"
+```
+
+`DsSince` has `set cs_L ⊆ set cs` and `pl = emb_plan cs cs_L`, the compiler emits
+`if cs_L = cs then None else Some (emb_plan cs cs_L)`, and `deval` applies `dembedp pl` to the
+left operand's tables before they reach the buffer:
+
+```isabelle
+meval_since dags [] (mbuf2S_add (map (dembedp pl) xs) ys ts buf) aux
+```
+
+So at every Since or Until whose left operand is narrower than the node -- `B(x) SINCE A(x,y)`
+and anything like it -- the dense tables that go into the buffer and into the auxiliary structure
+carry a `None` at each column the left operand does not have. They are stored there, and they are
+compared with `ed_comparator`, so the holes are read. The `option` is not dead weight on that
+path; it is what the embedding is made of. 20.15's whole point was that emitting a plan rather
+than the identity is what made the general Since and Until pay off, so this is the common case
+for exactly the operators that section was about.
+
+**What that costs the plan.** Unboxing the dense representation is therefore not a retyping plus a
+boundary conversion. It needs the embedding replaced, and the natural replacement is not to embed
+at all: keep the left operand at `cs_L` and let the Since and Until project onto the common
+columns as they go, which the structure is already parameterised for -- it carries
+`dargs cs cs_L args` and `dsince_rel n cs cs_L args`. But that is an algorithmic change to the two
+operators and their auxiliary structures, with their correctness re-proved, not a change of
+representation. It is a larger piece of work than 20.22 estimated, and it should be costed on its
+own rather than as a step towards the unboxing.
+
+The `dproj` generalisation is reverted, since on its own it buys nothing; what is worth keeping is
+the measurement that it is free, which is recorded here.
