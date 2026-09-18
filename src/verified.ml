@@ -5250,13 +5250,10 @@ let rec dproj x0 xs = match x0, xs with [], xs -> []
 
 let rec dsemi (_A1, _A2)
   msk pos a b =
-    filter ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
+    filter ((ceq_list _A1), (ccompare_list _A2))
       (fun aa ->
         equal_boola
-          (member
-            ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-            (dproj msk aa) b)
-          pos)
+          (member ((ceq_list _A1), (ccompare_list _A2)) (dproj msk aa) b) pos)
       a;;
 
 let rec sup_cfi _A
@@ -6011,11 +6008,9 @@ let rec all_true bs = list_all id bs;;
 let rec dnarrow (_A1, _A2)
   msk r =
     (if all_true msk then r
-      else image ((ceq_list (ceq_option _A1)),
-                   (ccompare_list (ccompare_option _A2)))
-             ((ceq_list (ceq_option _A1)),
-               (ccompare_list (ccompare_option _A2)), set_impl_list)
-             (dproj msk) r);;
+      else image ((ceq_list _A1), (ccompare_list _A2))
+             ((ceq_list _A1), (ccompare_list _A2), set_impl_list) (dproj msk)
+             r);;
 
 let rec equal_mrg x0 x1 = match x0, x1 with MRgt, MBth -> false
                     | MBth, MRgt -> false
@@ -6658,7 +6653,9 @@ let rec dbin_join0
     | DJEmp, a, pos, b ->
         (if equal_boola pos (ed_member [] b) then a else ed_bot)
     | DJSub msk, a, pos, b ->
-        dsemi (ceq_event_data, ccompare_event_data) msk pos a b
+        dsemi ((ceq_option ceq_event_data),
+                (ccompare_option ccompare_event_data))
+          msk pos a b
     | DJSup msk, a, pos, b ->
         (if pos then ed_filter (fun ba -> ed_member (dproj msk ba) a) b else a)
     | DJGen (p, lk, rk), a, pos, b ->
@@ -14124,7 +14121,11 @@ let rec deval
         binda (meval_j j n ts db phi)
           (fun (xs, phia) ->
             (fun () ->
-              (mapa (dnarrow (ceq_event_data, ccompare_event_data) msk) xs,
+              (mapa (dnarrow
+                      ((ceq_option ceq_event_data),
+                        (ccompare_option ccompare_event_data))
+                      msk)
+                 xs,
                 DPure (phia, n, msk))))
     | j, ts, db, DRel rel ->
         (fun () -> (replicate (size_lista ts) rel, DRel rel))
@@ -16637,8 +16638,10 @@ let rec dformula_of
             else DPredM (e, size_lista tms, tms, cs)))
     | n, cs, MRel rel ->
         (fun () ->
-          (DRel (dnarrow (ceq_event_data, ccompare_event_data) (wide_mask n cs)
-                  rel)))
+          (DRel (dnarrow
+                  ((ceq_option ceq_event_data),
+                    (ccompare_option ccompare_event_data))
+                  (wide_mask n cs) rel)))
     | n, cs, MAnd (a, phi, pos, b, psi, buf) ->
         binda (dformula_of n (set_cols a) phi)
           (fun phi_d ->
