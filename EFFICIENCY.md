@@ -4271,3 +4271,48 @@ own rather than as a step towards the unboxing.
 
 The `dproj` generalisation is reverted, since on its own it buys nothing; what is worth keeping is
 the measurement that it is free, which is recorded here.
+
+### 20.25 What getting rid of `DPure` would take
+
+`DPure` is the dense evaluator's escape hatch:
+
+```isabelle
+| "deval j ts db (DPure φ m msk) =
+     (let (xs, φ') = meval j m ts db φ in (map (dnarrow msk) xs, DPure φ' m msk))"
+```
+
+It runs the kernel's own evaluator on a subformula and narrows the result. Removing it means the
+dense fragment has to be total, and that is two jobs, not one.
+
+**Ten constructors have no dense case at all.** The `mformula` datatype has 23; `dof` handles 13
+and sends the rest to the catch-all `dof n cs φ = DPure φ n (wide_mask n cs)`. In rough order of
+size: `MTP` and `MTS` produce a one-column table from the time point or the timestamp and are
+small; `MAndAssign` is an image under an assignment and has a template in `DAndRel`'s
+`reindex_constraint`; `MFrz` is a two-formula construct with its own state; `MLet` and `MLetPast`
+bind a table into `db`, so a dense body's table has to be widened back or `db` has to carry dense
+tables, which is where this meets the interface question; `MTrigger` and `MAndTrigger` need a dense
+counterpart of the `mmtaux` structure, for which `Dense_Agg.thy`'s fused trigger work is a start;
+`MMatchP` and `MMatchF` need the regex matcher and its auxiliary structure, and are the largest.
+
+**Eight guards on the covered constructors send the general case to `DPure` too** -- `MPred` when
+neither `Copy` nor `Simple` nor `Match` applies, `MAndRel` when the constraint's variables escape
+the column set, `MNeg` when `cs ≠ []`, `MAnd` when the merge does not match, `MAnds` when the
+positive list is empty or the lengths disagree, `MAgg` on the column shape, and `MSince` and
+`MUntil` on the argument record. **Some of these are not incidental.** `MNeg` at `cs ≠ []` returns
+`unit_table n`, whose single tuple is `replicate n None`; densely that is a tuple of holes, exactly
+like 20.24's embedding. The guard is not marking work nobody got round to, it is marking a case the
+hole-free reading of the dense representation does not cover.
+
+**What it would buy.** Coverage, not speed on the current benchmarks: 20.15 already measured zero
+subformulas evaluated by the sparse function on every benchmark in its table. Across the two cram
+suites, of 302 files carrying formulas, 21 mention `LET`, 24 an assignment, 4 `MATCHF`, 3
+`MATCHP`, 1 `TRIGGER` and 1 `LETPAST` -- so on the order of one formula file in six touches a
+construct that currently falls back. Those are the formulas the dense monitor does not really
+monitor.
+
+**It does not unblock the unboxing.** `DPure` is a boundary, and a boundary is what an unboxed
+dense representation wants: it runs `meval`, and instead of narrowing it would narrow and strip the
+wrappers in the same pass, at the cost of one traversal of the fallback subformula's output. The
+blocker for unboxing is 20.24's embedding, and `MNeg` above is a second instance of the same
+thing. Removing `DPure` and unboxing the representation are two separate projects, and the first
+is the larger of the two.
