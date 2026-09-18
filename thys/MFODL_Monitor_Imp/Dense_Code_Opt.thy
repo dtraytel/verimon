@@ -343,7 +343,12 @@ setup \<open>Monomorphize.monomorphize_cmd
     ("RBT_Set2.minus", "edl_rbt_set_minus", [edl]),
     ("RBT_Set2.inter_list", "edl_rbt_inter_list", [edl]),
     ("RBT_Mapping2.join", "edl_rbt_join_unit", [edl, "unit"]),
-    ("RBT_Mapping2.meet", "edl_rbt_meet_unit", [edl, "unit"])]
+    ("RBT_Mapping2.meet", "edl_rbt_meet_unit", [edl, "unit"]),
+    ("RBT_Mapping2.insert", "edl_rbt_insert_unit", [edl, "unit"]),
+    ("RBT_Mapping2.lookup", "edl_rbt_lookup_unit", [edl, "unit"]),
+    ("RBT_Mapping2.delete", "edl_rbt_delete_unit", [edl, "unit"]),
+    ("RBT_Set2.member", "edl_rbt_member", [edl]),
+    ("upd_nested_step_dq", "edl_upd_nested_step_dq", ["nat + nat", edl])]
    @ maps (fn (tn, ty) =>
        [("Mapping.lookup", "edl_lookup_" ^ tn, [edl, ty]),
         ("Mapping.update", "edl_update_" ^ tn, [edl, ty]),
@@ -490,6 +495,135 @@ lemma edl_rbtc_delete_code[code]: "edl_rbtc_delete k t = paint RBT_Impl.B (edl_r
 
 lemma edl_rbtc_delete_unfold[code_unfold]: "rbt_comp_delete edl_comparator = edl_rbtc_delete"
   by (simp add: edl_rbtc_delete_def)
+
+subsection \<open>The dense operations, at the element type the evaluator uses\<close>
+
+text \<open>
+  20.31's generic layer is polymorphic in the element type, so the code generator gives every
+  operation of it a dictionary argument and rebuilds the composite comparator from that argument
+  at every call -- which is exactly what the two sections above remove for the wide tuples, and
+  what the dense evaluator used to have for free when its operations were stated at
+  @{typ "event_data tuple"} outright.  Without this section the generated probe reads
+
+  @{verbatim \<open>let rec gprobe_step_l (_A1, _A2, _A3) p rk m y acc =
+    (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (dproj rk y)
+     with None -> acc
+     | Some l -> fold (fun x -> insert ((ceq_list _A1), (ccompare_list _A2)) (dmerge p x y)) l acc)\<close>}
+
+  and the generality is paid for once per probed tuple.  Specialising each operation at
+  @{typ event_data} lets @{thm [source] edl_dict_simps} fix the dictionaries and the rules above
+  pick up @{const edl_comparator} and the specialised tree primitives.
+
+  The heap-resident Since is generic in its tuple type rather than its element type, and is used
+  at both, so it is specialised twice.
+\<close>
+
+ML \<open>
+val dense_elem_consts =
+  ["gbin_join", "gbin_join0", "ggen_join", "gindex", "gindex_step",
+   "gprobe_step", "gprobe_step_l", "gands_pos", "gands_neg", "gmulti_join",
+   "dsemi", "dsemi_idx",
+   "ginit_msaux", "gvalid_tuple", "gidx_upd", "gshift_end",
+   "gadd_new_ts_msaux'", "gadd_new_ts_msaux", "ggc_msaux",
+   "gadd_new_table_msaux", "gresult_msaux", "gjoin_msaux", "ggc_join_msaux",
+   "ginit_dq", "geval_step_dq", "gshift_dq", "geval_dq",
+   "guntil_step_dq", "guntil_elem_step_dq", "gadd_new_dq",
+   "gevt_add", "gevt_del", "gsevt_move", "gsevt_expire", "ginit_sevt",
+   "gadd_new_ts_sevt", "gjoin_sevt", "gadd_new_table_sevt", "gresult_sevt",
+   "gevt_extend", "ginit_evt", "glength_evt", "gevt_step", "gevt_shift",
+   "gadd_new_evt", "geval_evt"]
+
+val heap_since_consts =
+  ["gjc", "filter_loop2", "expire_loop2", "upd_loop2", "move_loop2",
+   "del_loop2", "ins_loop2", "since_loop2", "init2", "shift_end2",
+   "add_new_ts2'", "add_new_ts2", "gc2", "join2", "gc_join2",
+   "add_new_table2", "result2"]
+
+fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
+\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  (map (fn c => (c, mono_name "de_" c, ["event_data"])) dense_elem_consts
+   @ map (fn c => (c, mono_name "hsd_" c, ["event_data list"])) heap_since_consts
+   @ map (fn c => (c, mono_name "hsw_" c, ["event_data tuple"])) heap_since_consts)
+  ["edl_dict_simps", "etuple_dict_simps"]\<close>
+
+subsection \<open>The set and mapping operations whose dictionaries are built once\<close>
+
+text \<open>
+  Monomorphising the dense operations fixes the type but does not by itself remove every
+  dictionary: the operations they call that are not themselves specialised -- the emptiness and
+  cardinality tests, the sorted list of a table, the folds, the mapping projections -- still take
+  one, and a monomorphic caller builds it on the spot rather than receiving it.
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code} boxes exactly those for the wide tuples, so that
+  the dictionary is built once when the module is initialised; the same list at the short ones.
+\<close>
+
+definition edl_mempty_nat :: "(event_data list, nat) mapping" where
+  "edl_mempty_nat = Mapping.empty"
+lemma edl_mempty_nat_code[code]: "edl_mempty_nat = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: edl_mempty_nat_def RBT_Mapping_empty)
+lemma edl_mempty_nat_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data list, nat) mapping) = edl_mempty_nat"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data list)) :: (event_data list, nat) mapping)
+     = edl_mempty_nat"
+  by (simp_all add: edl_mempty_nat_def)
+
+definition edl_mempty_tstp :: "(event_data list, nat + nat) mapping" where
+  "edl_mempty_tstp = Mapping.empty"
+lemma edl_mempty_tstp_code[code]: "edl_mempty_tstp = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: edl_mempty_tstp_def RBT_Mapping_empty)
+lemma edl_mempty_tstp_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data list, nat + nat) mapping) = edl_mempty_tstp"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data list))
+      :: (event_data list, nat + nat) mapping) = edl_mempty_tstp"
+  by (simp_all add: edl_mempty_tstp_def)
+
+definition edl_mempty_table :: "(event_data list, utable) mapping" where
+  "edl_mempty_table = Mapping.empty"
+lemma edl_mempty_table_code[code]: "edl_mempty_table = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: edl_mempty_table_def RBT_Mapping_empty)
+lemma edl_mempty_table_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data list, utable) mapping) = edl_mempty_table"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data list))
+      :: (event_data list, utable) mapping) = edl_mempty_table"
+  by (simp_all add: edl_mempty_table_def)
+
+definition edl_mempty_tuples :: "(event_data list, event_data list list) mapping" where
+  "edl_mempty_tuples = Mapping.empty"
+lemma edl_mempty_tuples_code[code]: "edl_mempty_tuples = RBT_Mapping RBT_Mapping2.empty"
+  by (simp only: edl_mempty_tuples_def RBT_Mapping_empty)
+lemma edl_mempty_tuples_unfold[code_unfold]:
+  "(Mapping.empty :: (event_data list, event_data list list) mapping) = edl_mempty_tuples"
+  "(mapping_empty (of_phantom MAPPING_IMPL(event_data list))
+      :: (event_data list, event_data list list) mapping) = edl_mempty_tuples"
+  by (simp_all add: edl_mempty_tuples_def)
+
+setup \<open>Monomorphize.box_cmd
+  (let val edl = "event_data list"; val tbl = "event_data list set" in
+    [("Set.remove", "edl_remove_v", [edl]),
+     ("Ball", "edl_Ball_v", [edl]),
+     ("Bex", "edl_Bex_v", [edl]),
+     ("finite", "edl_finite_v", [edl]),
+     ("card", "edl_card_v", [edl]),
+     ("set_eq", "edl_set_eq_v", [edl]),
+     ("Set.is_empty", "edl_is_empty_v", [edl]),
+     ("less_eq :: _ set \<Rightarrow> _", "edl_subset_v", [edl]),
+     ("csorted_list_of_set", "edl_csorted_list_of_set_v", [edl]),
+     ("rbt_of_sorted_list", "edl_rbt_of_sorted_list_v", [edl]),
+     ("RBT_Set2.fold", "edl_rbt_fold_table_v", [edl, tbl]),
+     ("set_fold_cfi", "edl_fold_cfi_table_v", [edl, tbl]),
+     ("cluster", "edl_cluster_v", [edl, edl]),
+     ("set_of_idx", "edl_set_of_idx_v", [edl, edl]),
+     ("mapping_join", "edl_mapping_join_v", [edl, tbl]),
+     ("mapping_antijoin", "edl_mapping_antijoin_v", [edl, tbl]),
+     ("upd_set", "edl_upd_set_nat_v", [edl, "nat"]),
+     ("minus_keys", "edl_minus_keys_v", [edl, "nat"])]
+    @ maps (fn (c, nm) => map (fn (tn, ty) => (c, "edl_" ^ nm ^ "_" ^ tn ^ "_v", [edl, ty]))
+              edl_value_types)
+        [("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"),
+         ("Mapping.is_empty", "mis_empty"), ("Mapping.combine", "combine")]
+   end)\<close>
 
 (*<*)
 end
