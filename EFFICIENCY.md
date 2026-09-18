@@ -5028,7 +5028,57 @@ and `deval`'s two clauses drop the `case pl of None ⇒ xs | Some p ⇒ map (dem
 to sit in front of each buffer add. What the Until keeps is the mask, which is read once per
 `dadd_new_dq` to key a lookup rather than applied to every tuple of every table.
 
-**What is left.** `Dense_Imp.thy` carries no proofs -- it is the executable layer, and its
-correspondence with the verified fragment is a matter of building the same thing, which is why
-that fragment was done first. The remaining work is the measurement: a full session rebuild, the
-export, the two cram suites, and the benchmark numbers with and without the embedding.
+`Dense_Imp.thy` carries no proofs -- it is the executable layer, and its correspondence with the
+verified fragment is a matter of building the same thing, which is why that fragment was done
+first.
+
+One definition had to change to get through the code generator. `dadd_new_dq` guarded its fold
+with `finite rel2` and fell back, on an infinite table, on the verified operation against the
+widened one -- which renames the keys of a mapping, and `wkeys`/`nkeys` do that over the whole
+function space and therefore do not execute. The guard is gone: the fold is over
+`csorted_list_of_set rel2`, which is unspecified for an infinite table anyway, and every theorem
+about the operation assumes the table finite. Its three consequences lose the hypothesis they no
+longer use.
+
+`isabelle build -b -e -d . MFODL_Monitor_Imp` goes through in 3:25 and `dembedp` does not occur
+in the exported kernel at all. The 844 cram tests of `tests/` and the 284 of `verimon_tests/` all
+pass, `dense_nodes.t` among them, so the fallback-node count is unchanged.
+
+### 20.34 What the embedding cost (measurements)
+
+The two kernels -- the one exported before 20.33 and the one after -- agree byte for byte on
+every formula below, so this is a pure timing comparison. Synthetic log, 8000 time points, 50
+tuples per predicate per time point over a domain of 200 (9.4 MB); `-verified -dense`, output to
+`/dev/null`; nine repetitions, medians.
+
+| formula | with embedding | without | speed-up |
+|---|---:|---:|---:|
+| `C(x) SINCE[0,50] B(x,y)` | 2.52s | **1.86s** | 1.35x |
+| `C(x) SINCE[0,50] (B(x,y) AND A(y,z))` | 1.29s | **0.90s** | 1.43x |
+| `C(x) UNTIL[0,20] B(x,y)` | 1.33s | 1.35s | 1.00x |
+
+The ranges do not overlap on the two Since rows (2.16--2.66 against 1.74--1.93, and 1.15--1.32
+against 0.77--0.92), and overlap almost entirely on the Until row.
+
+**The Since gains and the Until does not, and the reason is where the left operand's table sits
+in each operator's per-step work.** The Since's per-step work *is* the join: the left operand's
+table is the probe, and the embedding built a fresh red-black tree of widened tuples for it at
+every time point, so removing it removes a constant fraction of the whole operation. The Until's
+per-step work is the fold over the *right* operand's table and the accumulation into the deque;
+the left operand's table only feeds `upd_set a1_map`, which is one of several O(|rel1|) passes
+among much larger ones, so removing its widening disappears into them. The mapping's keys are
+narrower now, which makes its comparisons cheaper, and that is worth about as much as nothing.
+
+The wide controls -- `C(z) AND (B(x,y) SINCE[0,50] A(x,y))` and
+`C(z) AND (A(x,y) UNTIL[0,20] B(x,y))`, where the two frames coincide and there never was an
+embedding -- are a wash, as they must be: they take the `MSD_imp`/`MUD_dns` branches unchanged.
+Their runs write 55 MB of output and scatter over 7.4--9.5s on this container, which is a 25%
+band and too wide to read anything finer out of. That is also why the table above uses formulas
+whose output is small: at 1--3s with a 10% spread they discriminate, and the 8s output-bound rows
+do not.
+
+**What is left.** The embedding is gone from both the verified and the executable evaluator. The
+remaining dense work is elsewhere: `MAndTrigger` and the two `MatchP`/`MatchF` operators still
+fall back to the sparse evaluator (20.21), and the dense tables are still `event_data option
+list` rather than `event_data list` (the unboxing of 20.31, which the hole-free discipline this
+section establishes is the precondition for).
