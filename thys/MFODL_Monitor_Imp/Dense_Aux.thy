@@ -942,6 +942,128 @@ proof -
   then show ?thesis using w b_L by (auto simp: dwf_tuple_def wf_tuple_def)
 qed
 
+section \<open>The dense Since structure at the dense frame\<close>
+
+text \<open>
+  The same relation the wide structure has to the narrowed auxiliary list (20.6), now for the
+  dense structure.  Only the join reads differently: it takes the left operand's table at the left
+  operand's own frame, so the node need not embed it.
+\<close>
+
+definition dmsk :: "cols \<Rightarrow> cols \<Rightarrow> bool list" where
+  "dmsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L)"
+
+definition dsaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data dmsaux \<Rightarrow>
+    (ts \<times> event_data table) list \<Rightarrow> bool" where
+  "dsaux' n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel) \<and>
+     valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux (dauxlist n cs_R auxlist)"
+
+lemma dsaux'_init:
+  assumes sub: "set cs_L \<subseteq> set cs_R"
+  shows "dsaux' n cs_R cs_L args 0 (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
+proof -
+  have "valid_dmsaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+      {0..<length cs_R} (args_pos args) None) (dmsk cs_R cs_L) 0
+      (dinit_msaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+        {0..<length cs_R} (args_pos args) None) (dmsk cs_R cs_L)) []"
+    by (rule valid_dinit_msaux) (use sub in \<open>auto simp: cpos_def\<close>)
+  then show ?thesis by (simp add: dsaux'_def dargs_def dauxlist_def)
+qed
+
+lemma dsaux'_add_new_ts:
+  assumes v: "dsaux' n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
+  shows "dsaux' n cs_R cs_L args nt (dadd_new_ts_msaux (dargs cs_R cs_L args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux'_def)
+  have "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) nt
+      (dadd_new_ts_msaux (dargs cs_R cs_L args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
+        (dauxlist n cs_R auxlist))"
+    by (rule valid_dadd_new_ts[OF d nt])
+  then show ?thesis using w by (simp add: dsaux'_def dauxlist_filter)
+qed
+
+lemma dsaux'_join:
+  assumes v: "dsaux' n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
+    and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and sub: "set cs_L \<subseteq> set cs_R" and t1: "table n (set cs_L) rel1"
+  shows "dsaux' n cs_R cs_L args cur
+      (dgc_join_msaux (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
+      (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux'_def)
+  have b_L: "\<forall>c \<in> set cs_L. c < n" using sub b_R by auto
+  have dm: "dmsk_args (dargs cs_R cs_L args) (dmsk cs_R cs_L)"
+    unfolding dmsk_def by (rule dmsk_args_dargs[OF s_R s_L sub])
+  have lf: "length (filter id (dmsk cs_R cs_L)) = length cs_L"
+    unfolding dmsk_def by (rule length_filter_mrg_left_key[OF s_R s_L sub])
+  have Yw: "\<And>y. y \<in> dtabc n cs_L rel1 \<Longrightarrow> dwf_tuple (length (filter id (dmsk cs_R cs_L))) y"
+    unfolding lf by (rule dwf_tuple_dtabc[OF s_L b_L t1])
+  have wi: "dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1 = dtabc n cs_R rel1"
+    unfolding dmsk_def by (rule dwiden_image_dtabc[OF s_R s_L sub b_R t1])
+  have jj: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
+      (dgc_join_msaux (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
+      (map (\<lambda>(t, rel). (t, join rel (args_pos (dargs cs_R cs_L args))
+        (dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1))) (dauxlist n cs_R auxlist))"
+    by (rule valid_dgc_join[OF d dm]) (rule Yw)
+  from jj[unfolded wi] show ?thesis using w
+    by (simp add: dsaux'_def dauxlist_join[OF s_R b_R sub w t1]
+        dauxlist_wf_join[OF w sub t1])
+qed
+
+lemma dsaux'_add_new_table:
+  assumes v: "dsaux' n cs_R cs_L args cur daux auxlist"
+    and s_R: "sorted_wrt (<) cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
+    and t2: "table n (set cs_R) rel2"
+  shows "dsaux' n cs_R cs_L args cur
+      (dadd_new_table_msaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+      (case auxlist of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux'_def)
+  have tt: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R rel2)"
+    using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
+  have "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
+      (dadd_new_table_msaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+      (case dauxlist n cs_R auxlist of [] \<Rightarrow> [(cur, dtabc n cs_R rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc n cs_R rel2) # r
+                         else (cur, dtabc n cs_R rel2) # dauxlist n cs_R auxlist)"
+    by (rule valid_dadd_new_table[OF d tt])
+  then show ?thesis using w t2
+    by (simp add: dsaux'_def dauxlist_add_new_table[symmetric]
+        dauxlist_wf_add_new_table[OF w t2])
+qed
+
+lemma dsaux'_result:
+  assumes v: "dsaux' n cs_R cs_L args cur daux auxlist"
+  shows "dresult_msaux (dargs cs_R cs_L args) daux
+      = dtabc n cs_R (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist,
+          memL (args_ivl args) (cur - t)] {})"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
+    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist n cs_R auxlist)"
+    using v by (auto simp: dsaux'_def)
+  have "dresult_msaux (dargs cs_R cs_L args) daux
+      = foldr (\<union>) [rel. (t, rel) \<leftarrow> dauxlist n cs_R auxlist,
+          memL (args_ivl (dargs cs_R cs_L args)) (cur - t)] {}"
+    by (rule valid_dresult_msaux[OF d])
+  then show ?thesis by (simp add: dtabc_result[OF w])
+qed
+
 (*<*)
 end
 (*>*)
