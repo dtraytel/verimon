@@ -3347,9 +3347,12 @@ that currently get none.
    hatch by a descending compiler.
 2. **The Since and Until cases.** Done: 20.15 rebuilds the running fragment on 20.6-20.8, so a
    genuine two-sided Since or Until is a dense node rather than a `DPure` one, and re-measures.
-3. **The heap index.** `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l` it calls are
-   Imperative HOL with no Hoare triples, exactly as `hprobe_join` was before Section 8 proved it.
-   The pure `dgen_join` it falls back to *is* proved, so `-dense` alone is covered by 20.2 and
+3. **The heap index.** In progress; 20.17 says where. `dbin_join_h` and the `didx_ins` /
+   `dprobe_r` / `dprobe_l` it calls are Imperative HOL with no Hoare triples, and unlike
+   `hprobe_join`, which Section 8 could prove because it was built on the AFP's verified
+   `Hash_Map`, they are built on the bespoke table of `Table_Imp`, which has to be verified first.
+   `Imap_Correct.thy` is that: the assertion and two of the three triples the join needs. The pure
+   `dgen_join` the index falls back to *is* proved, so `-dense` alone is covered by 20.2 and
    `-dense -heap_maps` is not.
 4. **The session layout.** Done: 20.16 moves the ten `Dense` theories to the base session.
 
@@ -3616,4 +3619,47 @@ about 9.5 GB. With `parallel_proofs` at its default the base session with these 
 killed at exactly that step; with `-o parallel_proofs=0 -o threads=2` it fits, at 55 minutes
 instead of 35. The theories are unchanged either way -- this is a property of the machine, not of
 the development, and it is recorded here because Section 5's recipe does not otherwise mention it.
+
+### 20.17 The table the heap index is built on
+
+Section 8 could prove `hprobe_join` in a page because it was built on `Hash_Map` from
+`Separation_Logic_Imperative_HOL`, which comes verified. The dense index is not: it is built on
+the table of `Table_Imp`, which Sections 10-13 wrote directly on an array for the reasons that
+theory gives -- the hash stored beside the key so that growing redistributes without rehashing, a
+power-of-two capacity so that the bucket index is a mask, and a hash-taking variant of every
+operation so that a lookup followed by an update hashes once. That table has no correctness
+property at all, and neither do the sparse join, the imperative Since and the imperative Until
+that also use it. So the triples this item asks for need the table verified first, and that is
+the bulk of the work.
+
+`Imap_Correct.thy` starts it.
+
+```isabelle
+definition is_imap :: "(event_data tuple ⇒ 'v option) ⇒ ('v::heap) imap ⇒ assn"
+```
+
+relates a table on the heap to the partial function its entries give. The invariant is that the
+array has the capacity the record carries, that every entry sits in the bucket its stored hash
+selects and stores the hash of its own key, and that no key occurs twice. The entry count the
+record carries is deliberately left unconstrained: it only decides when the table grows, and
+correctness does not depend on it.
+
+**`ihash` and `ibkt` stay folded.** Both are `code_printing`-replaced at code generation -- in HOL
+they are the constant `0`, and the OCaml is the hash and the mask `Table_Imp` documents. A proof
+that unfolded them would be a proof about a table with a single bucket, and would say nothing
+about the program that runs. All the proof uses of them is that `ihash` is a function, which it
+is, and that a bucket index is in range; `ibkt_in_range` is the only lemma that looks at `ibkt`,
+and it is what the OCaml `h land (n-1)` satisfies for a power-of-two capacity.
+
+Proved: `im_new_rule` and `im_lookup_h_rule`, on the abstraction above, together with the bucket
+lemma they rest on -- that a key can only be found in the bucket its hash selects, so a lookup
+that reads one bucket answers for the whole table.
+
+Left: `im_update_h_rule`, which is where the work is, because an update that finds no entry may
+grow the table, and growth is three loops -- `im_entries` over the buckets, `im_new` for the
+larger array and `im_fill` re-inserting with the stored hashes -- each of which needs its own
+invariant, and all of which are `partial_function (heap)` and so want an explicit measure
+induction rather than a structural one. With that in hand `didx_ins`, `dprobe_r` and `dprobe_l`
+are ordinary list inductions over the same assertion, and `dbin_join_h` is the case distinction
+its definition already makes, with the two fallback branches immediate.
 
