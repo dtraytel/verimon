@@ -3712,3 +3712,41 @@ The generated OCaml is byte-identical -- the two theories add lemmas and no code
 both cram suites are green. Differentially, all 537 `-verified` invocations of the suites agree
 between `-dense` and the plain verified kernel, and all 537 agree between `-dense` and
 `-dense -heap_maps`, which is the branch this section proves.
+
+### 20.18 Timings on the current build
+
+Re-measured after 20.16's revert and 20.17's theories. The exported OCaml is byte-identical to
+what 20.15 measured, so this is a re-measurement, not a new measurement; it is here because the
+sub-second rows of 20.11's table are too noisy to read and because the wide Since and Until have
+never been placed against MonPoly.
+
+Nine repetitions each, medians, on the 8.6 MB synthetic log -- every row runs for seconds, which
+is where the numbers mean something. Multipliers are relative to MonPoly, lower is better.
+
+| formula | MonPoly | pure | dense | dense+h | pure/dense |
+|---|---:|---:|---:|---:|---:|
+| sincewide | 3.12s | 1.13x | **0.93x** | 0.95x | 1.21x |
+| untilwide | 3.13s | 1.14x | **0.99x** | 1.01x | 1.15x |
+| aggwide | 12.51s | 1.06x | **0.80x** | 0.80x | 1.34x |
+| once | 2.45s | 1.15x | **0.76x** | 0.77x | 1.51x |
+| eventually | 1.64s | 1.27x | **0.88x** | 0.88x | 1.45x |
+| complex | 2.96s | 1.81x | 1.25x | **1.10x** | 1.45x |
+
+**The short tuples put the verified monitor ahead of MonPoly on five of these six.** That is the
+headline of the whole dense line of work, and it is the first time the wide Since and Until are
+in it: 20.15 reported them only as pure-against-dense ratios, so their standing against MonPoly
+was not on record. `sincewide` at 0.93x and `untilwide` at 0.99x are small margins on a three
+second run, but they are medians of nine, and the direction is consistent with the 1.21x and
+1.15x that 20.15's rebuild bought.
+
+**The heap index does not pay on them.** `dense+h` is a hair *behind* `dense` on `sincewide`
+(0.95x vs 0.93x) and `untilwide` (1.01x vs 0.99x), and identical on `aggwide`, `once` and
+`eventually`; it earns its keep only on `complex` (1.10x vs 1.25x), which is the one row with a
+genuine multi-way join on wide operands. So 20.17's triples are worth having for what they
+license -- `-dense -heap_maps` is now proved, where before it was the one unproved path -- rather
+than for a speed-up that is there in general. The flag stays off by default, which is what
+`dense_heap_join` being `False` in HOL and a mutable OCaml flag arranges.
+
+The sub-second table of 20.11 was re-run too and agrees with itself within its own noise; nothing
+regressed from the revert or from adding two theories of lemmas.
+
