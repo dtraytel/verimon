@@ -4337,3 +4337,88 @@ and Until: the left tables stored at `cs_L`, and the filtering step done with th
 join of `mk_djoin` and `dgen_join`, which is already proved. That is a new auxiliary structure
 with its own validity invariant and correctness proof for each of the two operators, and it is the
 largest single item in the unboxing.
+
+### 20.26 Coverage and unboxing: the plan, and the first step
+
+20.24 and 20.25 together settle what the two remaining projects are and that they are separate:
+**unboxing** (dense tables holding `event_data list` rather than `event_data option list`) and
+**coverage** (a dense case for every operator, so `DPure` can go). The instruction is to do both.
+This section records the decomposition and the first completed step.
+
+**Unboxing, in four steps.**
+
+1. *Generalise the option-agnostic operations in their element type.* Most of the dense algebra
+   never looks inside an element: it permutes, projects, merges and compares positions. Those
+   operations can be stated at `'b list` and instantiated at either `event_data option` or
+   `event_data`, so that the retyping of the tables in step 4 is a change of instance rather than
+   a rewrite of the proofs.
+2. *A dense-native Since and Until,* without 20.24's embedding. This is the large item and the
+   reason the other three are worth doing first.
+3. *Discharge the `MNeg` guard,* which is the second hole source: `unit_table n` is a wide tuple
+   of `None`s, and it only exists because `dof` permits `cs ≠ []` at an `MNeg`. 20.25 established
+   the guard is provable from safety, so the hole disappears with it.
+4. *Retype the dense tables* and place the conversions at the boundary: `dtabc` strips the
+   wrappers where a sparse table enters, `dtabw` puts them back where one leaves, `DPure` narrows
+   and strips in one pass, and the adapter builds `event_data list` tables directly.
+
+**Coverage, in four steps,** in increasing size: `MTP`, `MTS`, `MAndAssign`; then `MLet`,
+`MLetPast`, `MFrz`; then `MTrigger` and `MAndTrigger` with a dense `mmtaux`; then `MMatchP` and
+`MMatchF`, the remaining `dof` guards (the real work being `MSince`/`MUntil` with
+`args_agg ≠ None`), and the removal of `DPure` and the `DsPure` simulation rule.
+
+#### Step 1 is done
+
+Seven definitions and two auxiliaries in `Dense.thy` now have element-generic types:
+
+```isabelle
+fun dproj    :: "bool list ⇒ 'b list ⇒ 'b list"
+fun djoin1   :: "mrg list ⇒ 'b list ⇒ 'b list ⇒ 'b list option"
+fun dmerge   :: "mrg list ⇒ 'b list ⇒ 'b list ⇒ 'b list"
+definition dtabc   :: "nat ⇒ cols ⇒ 'b list set ⇒ 'b list set"
+definition dsemi   :: "bool list ⇒ bool ⇒ 'b list set ⇒ 'b list set ⇒ 'b list set"
+definition dnarrow :: "bool list ⇒ 'b list set ⇒ 'b list set"
+definition dauxlist  :: "nat ⇒ cols ⇒ (ts × 'b list set) list ⇒ (ts × 'b list set) list"
+definition dauxlist3 :: "nat ⇒ cols ⇒ (ts × 'b list set × 'b list set) list ⇒
+    (ts × 'b list set × 'b list set) list"
+```
+
+Deliberately left at `'a tuple`: `dwiden` and `dtabw`, which insert `None`; `dwf_tuple` and
+`dtable`, which are about well-formedness of sparse tuples; and `dembed1`, which is 20.24's hole
+source and is the thing step 2 removes rather than generalises. `kands_pos` and `kands_neg` stay
+too, since they call the sparse `join`.
+
+The gate was not a byte-identical export -- generalising an element type necessarily moves the
+element's comparator dictionary from inside the definition to its call sites, so the generated
+code *must* differ. The gates were behaviour and performance instead: `MFODL_Monitor_Imp` builds
+green (5369 commands in `Dense.thy`, 0 errors, 4:34 for the session), both cram suites pass, and
+the differential checker reports 537/537 agreement on three comparisons -- dense against pure,
+dense+heap against dense, and the new binary against the pre-generalisation oracle binary of
+20.24. Performance moved slightly the right way on `complex`: instructions
+5,971,876,295 → 5,908,597,394 and minor words allocated 327,660,658 → 317,338,818, the second
+because a few dictionary projections that were being rebuilt per call are now shared at the call
+site.
+
+#### Step 2, scoped
+
+The specification for a narrow-input Since filter already exists. `dsemi_join` in `Dense.thy`
+says, read with `cs1 = cs_R` and `cs2 = cs_L`:
+
+```isabelle
+dsemi (mrg_left_key (mrg_plan cs_R cs_L)) pos (dtabc n cs_R T) (dtabc n cs_L T')
+  = dtabc n cs_R (join T pos T')
+```
+
+-- the masked semi-join of a dense window against a **narrow, hole-free** left table equals the
+dense image of the sparse `join`. So correctness of a dense-native filtering step is in hand and
+no new specification is needed.
+
+What is missing is efficiency. The operation the Since structure actually performs is
+`join_mmsaux`, whose validity lemma `valid_join_mmasaux_unfolded` requires
+`table (args_n args) (args_L args) rel1` -- the wide, hole-carrying form -- and whose
+implementation consults the structure's index on the join columns so that it does not rescan the
+window. A rescan specified by `dsemi_join` would be correct and slower. The work is therefore a
+*narrow-input variant of `join_mmsaux`*: one operation rather than a new structure, pushing the
+mask `cpos cs_R (set cs_L)` into the internals so the index is still used, with its validity
+lemma restated through `dsemi_join`. `join_mmsaux` lives in `Optimized_Agg_Temporal.thy` in the
+base session, so this is a base-session change and each iteration costs a ~52-minute rebuild of
+`MFODL_Monitor_Devel` plus ~5 minutes for the child.
