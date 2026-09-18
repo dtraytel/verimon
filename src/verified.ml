@@ -4540,6 +4540,8 @@ let ed_impl_of_table_v :
     boxed
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
+let rec unbox (Box x) = x;;
+
 let rec ed_comparator
   x0 x1 = match x0, x1 with [], [] -> Eqa
     | [], y :: ys -> Lt
@@ -4551,10 +4553,13 @@ let rec ed_comparator
         (match comparator_event_data a b with Eqa -> ed_comparator xs ys
           | Lt -> Lt | Gt -> Gt);;
 
-let rec unbox (Box x) = x;;
+let rec ed_rbt_lookup
+  x0 k = match x0, k with Empty, k -> None
+    | Branch (cc, l, x, y, r), k ->
+        (match ed_comparator k x with Eqa -> Some y | Lt -> ed_rbt_lookup l k
+          | Gt -> ed_rbt_lookup r k);;
 
-let rec ed_rbt_lookup_table
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_table_v t) k;;
+let rec ed_rbt_lookup_table t k = ed_rbt_lookup (unbox ed_impl_of_table_v t) k;;
 
 let rec impl_of (Alist x) = x;;
 
@@ -4740,9 +4745,24 @@ let ed_impl_of_v :
     boxed
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_insert
-  xc xd xe =
-    Mapping_RBTa (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_v xe));;
+let rec ed_rbt_ins
+  f k v x3 = match f, k, v, x3 with
+    f, k, v, Empty -> Branch (R, Empty, k, v, Empty)
+    | f, k, v, Branch (B, l, x, y, r) ->
+        (match ed_comparator k x with Eqa -> Branch (B, l, x, f k y v, r)
+          | Lt -> balance (ed_rbt_ins f k v l) x y r
+          | Gt -> balance l x y (ed_rbt_ins f k v r))
+    | f, k, v, Branch (R, l, x, y, r) ->
+        (match ed_comparator k x with Eqa -> Branch (R, l, x, f k y v, r)
+          | Lt -> Branch (R, ed_rbt_ins f k v l, x, y, r)
+          | Gt -> Branch (R, l, x, y, ed_rbt_ins f k v r));;
+
+let rec ed_rbt_insert_with_key f k v t = paint B (ed_rbt_ins f k v t);;
+
+let rec ed_rbt_insert k v t = ed_rbt_insert_with_key (fun _ _ nv -> nv) k v t;;
+
+let rec ed_rbt_inserta
+  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_v xe));;
 
 let ed_remove_v :
   ((event_data option) list ->
@@ -4755,7 +4775,7 @@ let ed_remove_v :
 let rec ed_insert
   xa x1 = match xa, x1 with
     xa, Complement x -> Complement (unbox ed_remove_v xa x)
-    | x, RBT_set rbt -> RBT_set (ed_rbt_insert x () rbt)
+    | x, RBT_set rbt -> RBT_set (ed_rbt_inserta x () rbt)
     | x, DList_set dxs ->
         DList_set (inserta (ceq_list (ceq_option ceq_event_data)) x dxs)
     | x, Set_Monad xs -> Set_Monad (x :: xs)
@@ -5492,37 +5512,38 @@ let rec mapping_empty _A = function Mapping_RBT -> RBT_Mapping (emptyc _A)
                            | Mapping_Mapping -> Mapping (fun _ -> None)
                            | Mapping_Choose -> mapping_empty_choose _A;;
 
+let rec ed_rbt_insert_tuples
+  xc xd xe =
+    Mapping_RBTa
+      (ed_rbt_insert xc xd
+        (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)) xe));;
+
 let rec updatea _A xc xd xe = Alist (update _A xc xd (impl_of xe));;
 
-let rec updateb (_A1, _A2)
+let rec ed_update_tuples
   k v x2 = match k, v, x2 with
-    k, v, RBT_Mapping t ->
-      (match ccompare _A1
-        with None ->
-          failwith "update RBT_Mapping: ccompare = None"
-            (fun _ -> updateb (_A1, _A2) k v (RBT_Mapping t))
-        | Some _ -> RBT_Mapping (insertb _A1 k v t))
-    | k, v, Assoc_List_Mapping al -> Assoc_List_Mapping (updatea _A2 k v al)
-    | k, v, Mapping m -> Mapping (fun_upd _A2 m k (Some v));;
+    k, v, RBT_Mapping t -> RBT_Mapping (ed_rbt_insert_tuples k v t)
+    | k, v, Assoc_List_Mapping al ->
+        Assoc_List_Mapping
+          (updatea (equal_list (equal_option equal_event_data)) k v al)
+    | k, v, Mapping m ->
+        Mapping
+          (fun_upd (equal_list (equal_option equal_event_data)) m k (Some v));;
+
+let rec ed_rbt_lookup_tuples
+  t k = ed_rbt_lookup
+          (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)) t) k;;
+
+let rec ed_lookup_tuples
+  = function RBT_Mapping t -> ed_rbt_lookup_tuples t
+    | Assoc_List_Mapping al ->
+        lookup (equal_list (equal_option equal_event_data)) al;;
 
 let rec dindex_step
   msk b m =
     (let k = dproj msk b in
-      (match
-        lookupa
-          ((ccompare_list (ccompare_option ccompare_event_data)),
-            (equal_list (equal_option equal_event_data)))
-          m k
-        with None ->
-          updateb
-            ((ccompare_list (ccompare_option ccompare_event_data)),
-              (equal_list (equal_option equal_event_data)))
-            k [b] m
-        | Some l ->
-          updateb
-            ((ccompare_list (ccompare_option ccompare_event_data)),
-              (equal_list (equal_option equal_event_data)))
-            k (b :: l) m));;
+      (match ed_lookup_tuples m k with None -> ed_update_tuples k [b] m
+        | Some l -> ed_update_tuples k (b :: l) m));;
 
 let rec dindex
   msk b =
@@ -6125,6 +6146,17 @@ let rec filterc _A
             (match m k with None -> None
               | Some v -> (if p k v then Some v else None)));;
 
+let rec updateb (_A1, _A2)
+  k v x2 = match k, v, x2 with
+    k, v, RBT_Mapping t ->
+      (match ccompare _A1
+        with None ->
+          failwith "update RBT_Mapping: ccompare = None"
+            (fun _ -> updateb (_A1, _A2) k v (RBT_Mapping t))
+        | Some _ -> RBT_Mapping (insertb _A1 k v t))
+    | k, v, Assoc_List_Mapping al -> Assoc_List_Mapping (updatea _A2 k v al)
+    | k, v, Mapping m -> Mapping (fun_upd _A2 m k (Some v));;
+
 let rec ed_singleton_table
   n i x =
     ed_insert
@@ -6193,8 +6225,7 @@ let ed_union_v :
           ((ceq_list (ceq_option ceq_event_data)),
             (ccompare_list (ccompare_option ccompare_event_data))));;
 
-let rec ed_rbt_lookup_unit
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_v t) k;;
+let rec ed_rbt_lookup_unit t k = ed_rbt_lookup (unbox ed_impl_of_v t) k;;
 
 let rec ed_rbt_member
   t x = equal_optiona equal_unit (ed_rbt_lookup_unit t x) (Some ());;
@@ -6332,22 +6363,12 @@ let ed_card_v : (((event_data option) list) set -> nat) boxed
 
 let rec dprobe_step_l
   p rk m y acc =
-    (match
-      lookupa
-        ((ccompare_list (ccompare_option ccompare_event_data)),
-          (equal_list (equal_option equal_event_data)))
-        m (dproj rk y)
-      with None -> acc
+    (match ed_lookup_tuples m (dproj rk y) with None -> acc
       | Some l -> fold (fun x -> ed_insert (dmerge p x y)) l acc);;
 
 let rec dprobe_step
   p msk m a acc =
-    (match
-      lookupa
-        ((ccompare_list (ccompare_option ccompare_event_data)),
-          (equal_list (equal_option equal_event_data)))
-        m (dproj msk a)
-      with None -> acc
+    (match ed_lookup_tuples m (dproj msk a) with None -> acc
       | Some l -> fold (fun b -> ed_insert (dmerge p a b)) l acc);;
 
 let rec dgen_join
@@ -6912,9 +6933,7 @@ let ed_impl_of_rank_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_rank
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_rank_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_rank_v xe));;
 
 let rec ed_update_rank
   k v x2 = match k, v, x2 with
@@ -6929,8 +6948,7 @@ let rec ed_update_rank
 let ed_mempty_rank : (((event_data option) list), list_aux) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_rank
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_rank_v t) k;;
+let rec ed_rbt_lookup_rank t k = ed_rbt_lookup (unbox ed_impl_of_rank_v t) k;;
 
 let rec ed_lookup_rank
   = function RBT_Mapping t -> ed_rbt_lookup_rank t
@@ -7067,9 +7085,7 @@ let ed_impl_of_sum_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_sum
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_sum_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_sum_v xe));;
 
 let rec ed_update_sum
   k v x2 = match k, v, x2 with
@@ -7084,8 +7100,7 @@ let rec ed_update_sum
 let ed_mempty_sum : (((event_data option) list), (nat * Z.t)) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_sum
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_sum_v t) k;;
+let rec ed_rbt_lookup_sum t k = ed_rbt_lookup (unbox ed_impl_of_sum_v t) k;;
 
 let rec ed_lookup_sum
   = function RBT_Mapping t -> ed_rbt_lookup_sum t
@@ -7118,9 +7133,7 @@ let ed_impl_of_nat_v :
   = Box (impl_ofa (ccompare_list (ccompare_option ccompare_event_data)));;
 
 let rec ed_rbt_insert_nat
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_nat_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_nat_v xe));;
 
 let rec ed_update_nat
   k v x2 = match k, v, x2 with
@@ -7132,8 +7145,7 @@ let rec ed_update_nat
         Mapping
           (fun_upd (equal_list (equal_option equal_event_data)) m k (Some v));;
 
-let rec ed_rbt_lookup_nat
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_nat_v t) k;;
+let rec ed_rbt_lookup_nat t k = ed_rbt_lookup (unbox ed_impl_of_nat_v t) k;;
 
 let rec ed_lookup_nat
   = function RBT_Mapping t -> ed_rbt_lookup_nat t
@@ -7569,10 +7581,31 @@ let rec equal_treelist (_A1, _A2)
       then equal_wf_wbt (_A1, _A2) y1 (empty_tree _A2)
       else equal_lista _A1 (tree_inorder _A2 y1) (tree_inorder _A2 y2));;
 
+let rec ed_rbt_del
+  x xa1 = match x, xa1 with x, Empty -> Empty
+    | x, Branch (cc, a, y, s, b) ->
+        (match ed_comparator x y with Eqa -> combinea a b
+          | Lt -> ed_rbt_del_from_left x a y s b
+          | Gt -> ed_rbt_del_from_right x a y s b)
+and ed_rbt_del_from_left
+  x xa1 y s b = match x, xa1, y, s, b with
+    x, Branch (B, lt, z, v, rt), y, s, b ->
+      balance_left (ed_rbt_del x (Branch (B, lt, z, v, rt))) y s b
+    | x, Empty, y, s, b -> Branch (R, ed_rbt_del x Empty, y, s, b)
+    | x, Branch (R, va, vb, vc, vd), y, s, b ->
+        Branch (R, ed_rbt_del x (Branch (R, va, vb, vc, vd)), y, s, b)
+and ed_rbt_del_from_right
+  x a y s xa4 = match x, a, y, s, xa4 with
+    x, a, y, s, Branch (B, lt, z, v, rt) ->
+      balance_right a y s (ed_rbt_del x (Branch (B, lt, z, v, rt)))
+    | x, a, y, s, Empty -> Branch (R, a, y, s, ed_rbt_del x Empty)
+    | x, a, y, s, Branch (R, va, vb, vc, vd) ->
+        Branch (R, a, y, s, ed_rbt_del x (Branch (R, va, vb, vc, vd)));;
+
+let rec ed_rbt_delete k t = paint B (ed_rbt_del k t);;
+
 let rec ed_rbt_delete_rank
-  xb xc =
-    Mapping_RBTa
-      (rbt_comp_delete ed_comparator xb (unbox ed_impl_of_rank_v xc));;
+  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_rank_v xc));;
 
 let rec ed_delete_rank
   k x1 = match k, x1 with
@@ -7672,9 +7705,7 @@ let rec delete_rank
 let rec delete_rank_cfc xb xc = Abs_comp_fun_commute (delete_rank xb xc);;
 
 let rec ed_rbt_delete_sum
-  xb xc =
-    Mapping_RBTa
-      (rbt_comp_delete ed_comparator xb (unbox ed_impl_of_sum_v xc));;
+  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_sum_v xc));;
 
 let rec ed_delete_sum
   k x1 = match k, x1 with
@@ -7704,9 +7735,7 @@ let rec delete_sum
 let rec delete_sum_cfc xa = Abs_comp_fun_commute (delete_sum xa);;
 
 let rec ed_rbt_delete_nat
-  xb xc =
-    Mapping_RBTa
-      (rbt_comp_delete ed_comparator xb (unbox ed_impl_of_nat_v xc));;
+  xb xc = Mapping_RBTa (ed_rbt_delete xb (unbox ed_impl_of_nat_v xc));;
 
 let rec ed_delete_nat
   k x1 = match k, x1 with
@@ -9695,8 +9724,7 @@ let rec ed_combine_tstp
 let ed_mempty_tstp : (((event_data option) list), (nat, nat) sum) mapping
   = RBT_Mapping (emptyc (ccompare_list (ccompare_option ccompare_event_data)));;
 
-let rec ed_rbt_lookup_tstp
-  t k = rbt_comp_lookup ed_comparator (unbox ed_impl_of_tstp_v t) k;;
+let rec ed_rbt_lookup_tstp t k = ed_rbt_lookup (unbox ed_impl_of_tstp_v t) k;;
 
 let rec ed_lookup_tstp
   = function RBT_Mapping t -> ed_rbt_lookup_tstp t
@@ -10571,9 +10599,7 @@ let rec add_new_mmauaux
             b));;
 
 let rec ed_rbt_insert_tstp
-  xc xd xe =
-    Mapping_RBTa
-      (rbt_comp_insert ed_comparator xc xd (unbox ed_impl_of_tstp_v xe));;
+  xc xd xe = Mapping_RBTa (ed_rbt_insert xc xd (unbox ed_impl_of_tstp_v xe));;
 
 let rec ed_update_tstp
   k v x2 = match k, v, x2 with
