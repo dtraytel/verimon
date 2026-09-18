@@ -320,8 +320,7 @@ the general dictionary/comparator/GC overheads quantified in Section 2.
 ## 5. Regenerating the verified kernel
 
 ```
-cd thys && isabelle build -b -e -d . -o parallel_proofs=0 -o threads=2 \
-      MFODL_Monitor_Devel                                     # about 55 min, peaks under 9 GB
+cd thys && isabelle build -b -e -d . MFODL_Monitor_Devel      # about 35 min, needs ~8 GB RAM
 isabelle build -b -e -d . MFODL_Monitor_Imp                  # about 2 min on top of it
 cp MFODL_Monitor_Imp/verified.ocaml ../src/verified.ml
 cd .. && dune build --profile=release && dune test
@@ -3351,10 +3350,12 @@ that currently get none.
    `dprobe_r` / `dprobe_l` it calls are Imperative HOL with no Hoare triples, and unlike
    `hprobe_join`, which Section 8 could prove because it was built on the AFP's verified
    `Hash_Map`, they are built on the bespoke table of `Table_Imp`, which has to be verified first.
-   `Imap_Correct.thy` is that: the assertion and two of the three triples the join needs. The pure
-   `dgen_join` the index falls back to *is* proved, so `-dense` alone is covered by 20.2 and
-   `-dense -heap_maps` is not.
-4. **The session layout.** Done: 20.16 moves the ten `Dense` theories to the base session.
+   `Imap_Correct.thy` is that, and it is now done: every table operation the join uses --
+   `im_new`, `im_lookup_h` and `im_update_h` with its growth step -- has a Hoare triple. What is
+   left is the three join loops on top of it. The pure `dgen_join` the index falls back to *is*
+   proved, so `-dense` alone is covered by 20.2 and `-dense -heap_maps` is not.
+4. **The session layout.** Settled, the other way round: 20.16 says why the Dense theories stay
+   in `MFODL_Monitor_Imp`.
 
 ### 20.13 Closing the chain: the criterion and the initial state
 
@@ -3598,27 +3599,19 @@ every benchmark in the table, `since` and `until` included, and they sit at a wa
 The cram suites are green and all 537 `-verified` invocations agree between `-dense` and the plain
 verified kernel.
 
-### 20.16 The session layout
+### 20.16 Where the Dense theories live
 
-The ten theories `Dense`, `Dense_Eval`, `Dense_Produces`, `Dense_Match`, `Dense_Let`,
-`Dense_Agg`, `Dense_Correct`, `Dense_Compile`, `Dense_Init` and `Dense_Descend` are pure HOL
-developments about the verified kernel: a representation, an evaluator over it, a simulation
-relation, and the theorems that transfer the kernel's correctness across it. None of them is an
-imperative refinement, and none of them imports anything from `MFODL_Monitor_Imp`. They now live
-in `MFODL_Monitor_Devel` beside the kernel they are about, and `MFODL_Monitor_Imp` keeps only
-what it was created for -- `Table_Imp`, the imperative Since and Until, the imperative join, the
-monadic evaluator, and `Dense_Imp`, which is the short-tuple monitor's *imperative* part and
-imports `MFODL_Monitor_Devel.Dense`.
+They stay in `MFODL_Monitor_Imp`. Moving the ten pure-HOL ones -- `Dense`, `Dense_Eval`,
+`Dense_Produces`, `Dense_Match`, `Dense_Let`, `Dense_Agg`, `Dense_Correct`, `Dense_Compile`,
+`Dense_Init` and `Dense_Descend` -- down into `MFODL_Monitor_Devel` is tidy on paper, since none
+of them is an imperative refinement and none imports anything from the imperative session, and it
+does cut the imperative session from 4:20 to 2:22. It was tried and reverted, because it pays for
+that with the wrong thing: every change to a Dense theory then rebuilds the base session, which
+is the expensive one, instead of the cheap one. The dense development is still being worked on,
+and 20.17's Hoare triples will keep it that way for a while; the split that matters is between
+what is finished and what is not, not between what is pure and what is imperative.
 
-The exported OCaml is byte-identical, the cram suites are green, and the imperative session,
-which is what changes when the refinement changes, drops from 4:20 to 2:22.
-
-**A note on building it here.** The base session's heap is saved by a step whose peak memory is
-proportional to everything the session accumulated, and this container caps a process group at
-about 9.5 GB. With `parallel_proofs` at its default the base session with these ten theories is
-killed at exactly that step; with `-o parallel_proofs=0 -o threads=2` it fits, at 55 minutes
-instead of 35. The theories are unchanged either way -- this is a property of the machine, not of
-the development, and it is recorded here because Section 5's recipe does not otherwise mention it.
+The base session's build is unchanged by this, and Section 5's recipe stands as it was.
 
 ### 20.17 The table the heap index is built on
 
@@ -3627,22 +3620,22 @@ Section 8 could prove `hprobe_join` in a page because it was built on `Hash_Map`
 the table of `Table_Imp`, which Sections 10-13 wrote directly on an array for the reasons that
 theory gives -- the hash stored beside the key so that growing redistributes without rehashing, a
 power-of-two capacity so that the bucket index is a mask, and a hash-taking variant of every
-operation so that a lookup followed by an update hashes once. That table has no correctness
+operation so that a lookup followed by an update hashes once. That table had no correctness
 property at all, and neither do the sparse join, the imperative Since and the imperative Until
-that also use it. So the triples this item asks for need the table verified first, and that is
-the bulk of the work.
+that also use it. So the triples item 3 asks for need the table verified first, and that is the
+bulk of the work.
 
-`Imap_Correct.thy` starts it.
+`Imap_Correct.thy` does it.
 
 ```isabelle
 definition is_imap :: "(event_data tuple ⇒ 'v option) ⇒ ('v::heap) imap ⇒ assn"
 ```
 
-relates a table on the heap to the partial function its entries give. The invariant is that the
-array has the capacity the record carries, that every entry sits in the bucket its stored hash
-selects and stores the hash of its own key, and that no key occurs twice. The entry count the
-record carries is deliberately left unconstrained: it only decides when the table grows, and
-correctness does not depend on it.
+relates a table on the heap to a partial function. The invariant is that the array has the
+capacity the record carries, that every entry sits in the bucket its stored hash selects and
+stores the hash of its own key, and that no key occurs twice. The entry count the record carries
+is deliberately left unconstrained: it only decides when the table grows, and correctness does
+not depend on it.
 
 **`ihash` and `ibkt` stay folded.** Both are `code_printing`-replaced at code generation -- in HOL
 they are the constant `0`, and the OCaml is the hash and the mask `Table_Imp` documents. A proof
@@ -3651,15 +3644,43 @@ about the program that runs. All the proof uses of them is that `ihash` is a fun
 is, and that a bucket index is in range; `ibkt_in_range` is the only lemma that looks at `ibkt`,
 and it is what the OCaml `h land (n-1)` satisfies for a power-of-two capacity.
 
-Proved: `im_new_rule` and `im_lookup_h_rule`, on the abstraction above, together with the bucket
-lemma they rest on -- that a key can only be found in the bucket its hash selects, so a lookup
-that reads one bucket answers for the whole table.
+**The map is read off the key's own bucket.**
 
-Left: `im_update_h_rule`, which is where the work is, because an update that finds no entry may
-grow the table, and growth is three loops -- `im_entries` over the buckets, `im_new` for the
-larger array and `im_fill` re-inserting with the stored hashes -- each of which needs its own
-invariant, and all of which are `partial_function (heap)` and so want an explicit measure
-induction rather than a structural one. With that in hand `didx_ins`, `dprobe_r` and `dprobe_l`
-are ordinary list inductions over the same assertion, and `dbin_join_h` is the case distinction
-its definition already makes, with the two fallback branches immediate.
+```isabelle
+definition imap_map where "imap_map n bs x = hm_look_list (ihash x) x (bs ! ibucket n x)"
+```
 
+The first attempt said instead that the map of a bucket list is `map_of` of all its entries. That
+is the true statement globally, but every operation changes exactly one bucket, and each change
+then had to be re-proved against the whole concatenation. Reading the map off the bucket the key
+belongs to -- which is what the lookup does -- makes an update of one bucket a local change of
+the map, and of the invariant too: a key can only ever sit in the bucket its hash selects, so
+keys of different buckets are automatically distinct and the global distinctness is exactly
+distinctness inside each bucket. The two readings are identified once, in `imap_map_global`, and
+that one lemma is what lets a map be compared across two different capacities -- which is the
+whole of what growth needs.
+
+**What is proved.** `im_new_rule`, `im_lookup_h_rule`, `im_lookup_rule`, `im_update_h_rule` and
+`im_update_rule`:
+
+```isabelle
+lemma im_update_h_rule:
+  "<is_imap m q> im_update_h q (ihash x) x v <λq'. is_imap (m(x ↦ v)) q'>⇩t"
+```
+
+with, underneath it, the growth step in full: `im_entries_rule` for the fold over the buckets,
+`im_fill_rule` for the re-insertion into the larger array, and `im_grow_rule` tying them
+together. Both loops are `partial_function (heap)`, so neither gets a structural induction: the
+fold is an induction on how many buckets are left and the fill an induction on the list of
+entries still to place. The `⇩t` is what lets the old array be left behind.
+
+Growth does not change the map because it does not change the entries -- only their order and
+their buckets -- and the map of a table is the map of its entries. An update puts the new entry
+at the head of the key's bucket in both of its branches, and they differ only in what stays
+behind it, the bucket as it was when the key is new and the bucket without that key's entry when
+it is not, so one lemma about the bucket serves both.
+
+**Left.** `didx_ins`, `dprobe_r` and `dprobe_l` are ordinary list inductions over `is_imap`, and
+`dbin_join_h` is the case distinction its definition already makes, with the two fallback
+branches immediate from 20.2. `im_delete_h` and `im_filter`, which the Since and Until structures
+use but the join does not, are untouched.

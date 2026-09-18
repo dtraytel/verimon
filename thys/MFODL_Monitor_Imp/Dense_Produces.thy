@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Produces
-  imports Dense_Eval Correctness
+  imports Dense_Eval "MFODL_Monitor_Devel.Correctness"
 begin
 (*>*)
 
@@ -1084,7 +1084,7 @@ subsection \<open>The Until node\<close>
 
 text \<open>
   The Until node's invariant is again the wide half of the relation
-  @{theory MFODL_Monitor_Devel.Dense_Eval} carries: the verified structure is valid for an abstract
+  @{theory MFODL_Monitor_Imp.Dense_Eval} carries: the verified structure is valid for an abstract
   auxiliary list whose two table components are finite tables over the operands' columns.  The
   structure is stepped from inside a buffer traversal, so the traversal gets its own invariant
   lemma first.
