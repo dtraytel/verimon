@@ -3346,14 +3346,12 @@ that currently get none.
    hatch by a descending compiler.
 2. **The Since and Until cases.** Done: 20.15 rebuilds the running fragment on 20.6-20.8, so a
    genuine two-sided Since or Until is a dense node rather than a `DPure` one, and re-measures.
-3. **The heap index.** In progress; 20.17 says where. `dbin_join_h` and the `didx_ins` /
-   `dprobe_r` / `dprobe_l` it calls are Imperative HOL with no Hoare triples, and unlike
-   `hprobe_join`, which Section 8 could prove because it was built on the AFP's verified
-   `Hash_Map`, they are built on the bespoke table of `Table_Imp`, which has to be verified first.
-   `Imap_Correct.thy` is that, and it is now done: every table operation the join uses --
-   `im_new`, `im_lookup_h` and `im_update_h` with its growth step -- has a Hoare triple. What is
-   left is the three join loops on top of it. The pure `dgen_join` the index falls back to *is*
-   proved, so `-dense` alone is covered by 20.2 and `-dense -heap_maps` is not.
+3. **The heap index.** Done: 20.17. `dbin_join_h` and the `didx_ins` / `dprobe_r` / `dprobe_l`
+   it calls were Imperative HOL with no Hoare triples, and unlike `hprobe_join`, which Section 8
+   could prove because it was built on the AFP's verified `Hash_Map`, they are built on the
+   bespoke table of `Table_Imp`, which had to be verified first. `Imap_Correct.thy` does that and
+   `Dense_Join_Correct.thy` the join on top of it, up to `dmulti_join`, which is the shape the
+   evaluator calls.
 4. **The session layout.** Settled, the other way round: 20.16 says why the Dense theories stay
    in `MFODL_Monitor_Imp`.
 
@@ -3680,7 +3678,32 @@ at the head of the key's bucket in both of its branches, and they differ only in
 behind it, the bucket as it was when the key is new and the bucket without that key's entry when
 it is not, so one lemma about the bucket serves both.
 
-**Left.** `didx_ins`, `dprobe_r` and `dprobe_l` are ordinary list inductions over `is_imap`, and
-`dbin_join_h` is the case distinction its definition already makes, with the two fallback
-branches immediate from 20.2. `im_delete_h` and `im_filter`, which the Since and Until structures
-use but the join does not, are untouched.
+**The join itself**, in `Dense_Join_Correct.thy`, is then what that description promised:
+`didx_ins`, `dprobe_r` and `dprobe_l` are list inductions over `is_imap`, each saying that the
+loop computes what the pure `dindex`, `dprobe_step` and `dprobe_step_l` compute, and
+
+```isabelle
+lemma dbin_join_h_rule:
+  "set (csorted_list_of_set A) = A ⟹ set (csorted_list_of_set B) = B ⟹
+   <emp> dbin_join_h pl A pos B <λr. ↑(r = dbin_join pl A pos B)>⇩t"
+```
+
+is the case distinction its definition already makes. One thing had to be noticed there: the
+index picks the side to build on by list length, while `dgen_join` picks by cardinality, and on
+a tie they pick differently. It does not matter, because `dgen_join_eq` already says that either
+choice computes the pairs that agree on the shared columns, merged; the two loops are proved
+against that set, not against each other.
+
+`dands_pos_h`, `dands_neg_h` and `dmulti_join` follow, since nearly every conjunction is
+compiled to a multi-way one and the join is reached through them rather than directly; their
+loops carry the finiteness `dbin_join_h_rule` asks for from one operand to the next.
+
+```isabelle
+theorem dmulti_join_rule:
+  "∀u ∈ set us. finite u ⟹
+   <emp> Dense_Imp.dmulti_join ps ns us <λr. ↑(r = Dense.dmulti_join ps ns us)>⇩t"
+```
+
+So `-dense -heap_maps` now computes what `-dense` computes, which 20.2 in turn relates to the
+kernel. `im_delete_h` and `im_filter`, which the Since and Until structures use but the join does
+not, are untouched; `Table_Imp` still has no correctness property beyond what the join needed.
