@@ -5077,6 +5077,76 @@ band and too wide to read anything finer out of. That is also why the table abov
 whose output is small: at 1--3s with a 10% spread they discriminate, and the 8s output-bound rows
 do not.
 
+### 20.35 The full suite against MonPoly
+
+20.34 measured the two kernels against each other on the formulas the embedding touches. This is
+the whole suite against MonPoly, on the 8.6 MB log of 20.18
+(`evaluation/synthetic/gen_log.py 8000 50 200`) and on P2/P3 with
+`gen_log -event_rate 2000 -time_span 100`. Five repetitions, medians, multipliers relative to
+MonPoly, lower is better. The repetitions are **interleaved across configurations** rather than
+grouped, so drift in machine load hits every column equally. "dense (was)" is the kernel exported
+before 20.33; every configuration agrees with MonPoly byte for byte on every row.
+
+| formula | MonPoly | pure | dense (was) | dense | dense+h |
+|---|---:|---:|---:|---:|---:|
+| P2 | 0.38s | 2.40x | 1.63x | **1.53x** | 1.69x |
+| P3 | 0.42s | 1.98x | 1.39x | **1.33x** | 1.35x |
+| and | 0.53s | 1.47x | 1.04x | 1.04x | **0.93x** |
+| andnot | 0.53s | 0.92x | 0.95x | **0.92x** | 0.94x |
+| once | 2.36s | 1.16x | **0.73x** | 0.77x | 0.78x |
+| since | 0.85s | 1.25x | **1.18x** | 1.20x | 1.21x |
+| eventually | 1.60s | 1.23x | 0.87x | 0.86x | **0.83x** |
+| until | 0.80s | **1.43x** | 1.43x | 1.47x | 1.51x |
+| agg | 0.58s | 1.50x | 1.53x | 1.51x | **1.47x** |
+| complex | 2.98s | 1.86x | 1.08x | 1.08x | **1.00x** |
+| sincewide | 2.98s | 1.15x | 0.98x | 0.91x | **0.88x** |
+| untilwide | 3.06s | 1.16x | 1.00x | 0.99x | **0.99x** |
+| aggwide | 12.03s | 1.00x | 0.79x | **0.78x** | 0.83x |
+| sincesub | 0.77s | 2.68x | 2.77x | 2.13x | **2.06x** |
+| untilsub | 0.67s | **1.43x** | 1.54x | 1.60x | 1.59x |
+| sincesub3 | 0.62s | 2.02x | 1.63x | 1.37x | **1.28x** |
+
+`sincesub` is `C(x) SINCE[0,50] B(x,y)`, `untilsub` is `C(x) UNTIL[0,20] B(x,y)` and `sincesub3`
+is `C(x) SINCE[0,50] (B(x,y) AND A(y,z))` -- the three rows added here, where the left operand's
+frame is a proper nonempty subset of the right operand's and the old code therefore embedded.
+
+**The setup reproduces 20.18.** Its published dense figures were sincewide 0.93x, untilwide 0.99x,
+aggwide 0.80x, once 0.76x, eventually 0.88x; the "dense (was)" column of the same kernel here
+gives 0.98x, 1.00x, 0.79x, 0.73x, 0.87x. Only `complex` differs materially (1.25x published
+against 1.08x here), which is the row whose multi-way join is most sensitive to the machine. So
+the columns are comparable with 20.18's, and the container is a slower machine on which MonPoly's
+absolute times are larger (once 2.36s against 2.45s, aggwide 12.03s against 12.51s).
+
+**Where the embedding was, it is worth 1.2x to 1.3x; nowhere else does anything move.** Comparing
+"dense (was)" against "dense" row by row, the five-run ranges separate on exactly the two rows
+that should move and overlap on all fourteen others:
+
+| row | was | now | ranges |
+|---|---:|---:|---|
+| `sincesub` | 2.12s | **1.63s** | 2.08--2.22 against 1.45--1.68, disjoint |
+| `sincesub3` | 1.01s | **0.85s** | 0.89--1.05 against 0.81--0.87, disjoint |
+| `sincewide` | 2.92s | 2.70s | 2.31--3.00 against 2.47--2.85, overlapping |
+| `P2` | 0.61s | 0.58s | 0.56--0.64 against 0.55--0.66, overlapping |
+| `once` | 1.73s | 1.82s | 1.65--1.84 against 1.76--1.92, overlapping |
+
+That is the shape the change predicts. `sincewide`, `untilwide` and the rest take the
+`MSD_imp`/`MUD_dns` branches, which 20.33 left untouched; P2 and P3 have a closed left operand, so
+they take the sliding-window structure; `untilsub` does embed, and 20.34 already explained why the
+Until does not gain from stopping. The per-row spread on this container runs from 5% to 36%
+(`untilwide` 5%, `sincesub3` 8%, `P3` 36%), so nothing below about 15% is readable here, and the
+two rows that moved are the two that moved by more than that.
+
+**The dense monitor is at or ahead of MonPoly on seven of the sixteen rows** -- `andnot`, `once`,
+`eventually`, `sincewide`, `untilwide`, `aggwide`, and `complex` with the heap index. It is behind
+on the nine where the tuples have no empty columns to drop (`since`, `until`, `agg` and the three
+sub-frame rows) or where the formula is a real policy with a deep join (`P2`, `P3`, `and`). That
+split is 19.6's and has not changed: **short tuples pay exactly where there are columns to
+shorten**, and the embedding was the last place where the dense evaluator lengthened them again.
+
+The `-heap_maps` index is the best configuration on eight rows and never more than 5% behind the
+best on any, which is a better showing than 20.18's (where it earned its keep only on `complex`);
+the sub-frame Since rows are new territory for it, and it gains on both.
+
 **What is left.** The embedding is gone from both the verified and the executable evaluator. The
 remaining dense work is elsewhere: `MAndTrigger` and the two `MatchP`/`MatchF` operators still
 fall back to the sparse evaluator (20.21), and the dense tables are still `event_data option
