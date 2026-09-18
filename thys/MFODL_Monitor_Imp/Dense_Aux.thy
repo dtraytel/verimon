@@ -1448,4 +1448,128 @@ proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
     unfolding dadd_new_dq_def add_new_dq_def if_P[OF fin] 1 sh mm
     by (simp add: Let_def fl wkeys_a1_update[OF na r1] wkeys_upd_set[OF r1] split: prod.splits)
 qed
+
+subsection \<open>The dense Until structure's validity\<close>
+
+text \<open>
+  A dense state is valid when the verified state it stands for is, the mask it carries is the
+  frame's, and every key of the mapping the left operand fills is a tuple of the left operand's
+  own width.
+\<close>
+
+definition dvalid_muaux :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data muaux \<Rightarrow>
+    bool" where
+  "dvalid_muaux args msk cur daux auxlist \<longleftrightarrow>
+     valid_muaux_dq args cur (MU_dq (wkeys_uaux msk daux)) auxlist \<and>
+     fst (lft_of daux) = msk \<and> (\<forall>k \<in> Mapping.keys (snd (lft_of daux)). dnarrow_tuple msk k)"
+
+lemma lft_of_init_dq: "lft_of (init_dq args)
+    = (join_mask (args_n args) (args_L args), Mapping.empty)"
+  by (simp add: init_dq_def)
+
+lemma dvalid_init_muaux:
+  assumes LR: "L \<subseteq> R" and ag: "aggargs = None"
+    and dm: "dmsk_args (init_args I n L R pos aggargs) msk"
+  shows "dvalid_muaux (init_args I n L R pos aggargs) msk 0
+     (init_dq (init_args I n L R pos aggargs)) []"
+proof -
+  have a: "args_agg (init_args I n L R pos aggargs) = None" using ag by (simp add: init_args_def)
+  have "valid_muaux_dq (init_args I n L R pos aggargs) 0
+      (init_muaux_dq (init_args I n L R pos aggargs)) []"
+    by (rule valid_init_muaux_dq[OF LR])
+  then show ?thesis
+    unfolding dvalid_muaux_def init_muaux_dq_def if_P[OF a]
+    by (simp add: wkeys_uaux_init lft_of_init_dq dmsk_args_maskL[OF dm])
+qed
+
+lemma fst_lft_of_dadd_new_dq:
+  assumes fin: "finite rel2"
+  shows "fst (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)) = fst (lft_of daux)"
+proof (cases "shift_dq args nt daux" rule: mmuaux_dq_cases)
+  case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
+  have lf: "(maskL, a1_map) = lft_of daux"
+    using a1_of_shift_dq[of args nt daux] unfolding 1 by simp
+  show ?thesis unfolding dadd_new_dq_def if_P[OF fin] 1
+    by (simp add: Let_def lf[symmetric] split: prod.splits)
+qed
+
+lemma keys_snd_lft_of_dadd_new_dq:
+  assumes fin: "finite rel2"
+  shows "Mapping.keys (snd (lft_of (dadd_new_dq args msk rel1 rel2 nt daux)))
+     \<subseteq> Mapping.keys (snd (lft_of daux)) \<union> rel1"
+proof (cases "shift_dq args nt daux" rule: mmuaux_dq_cases)
+  case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
+  have lf: "(maskL, a1_map) = lft_of daux"
+    using a1_of_shift_dq[of args nt daux] unfolding 1 by simp
+  show ?thesis unfolding dadd_new_dq_def if_P[OF fin] 1
+    by (auto simp: Let_def lf[symmetric] Mapping_upd_set_keys Mapping_keys_filter
+        split: prod.splits)
+qed
+
+lemma dvalid_add_new_muaux:
+  assumes v: "dvalid_muaux args msk cur daux auxlist"
+    and fin: "finite rel2"
+    and r1: "\<And>y. y \<in> rel1 \<Longrightarrow> dnarrow_tuple msk y"
+    and tw: "table (args_n args) (args_L args) (dwiden msk ` rel1)"
+    and t2: "table (args_n args) (args_R args) rel2"
+    and r2: "\<And>as. as \<in> rel2 \<Longrightarrow> length as = length msk"
+    and nt: "nt \<ge> cur"
+  shows "dvalid_muaux args msk nt (dadd_new_dq args msk rel1 rel2 nt daux)
+     (update_until args (dwiden msk ` rel1) rel2 nt auxlist)"
+proof -
+  have vm: "valid_muaux_dq args cur (MU_dq (wkeys_uaux msk daux)) auxlist"
+    and mk: "fst (lft_of daux) = msk"
+    and na: "\<And>k. k \<in> Mapping.keys (snd (lft_of daux)) \<Longrightarrow> dnarrow_tuple msk k"
+    using v by (auto simp: dvalid_muaux_def)
+  have "valid_muaux_dq args nt
+      (add_new_muaux_dq args (dwiden msk ` rel1) rel2 nt (MU_dq (wkeys_uaux msk daux)))
+      (update_until args (dwiden msk ` rel1) rel2 nt auxlist)"
+    by (rule valid_add_new_muaux_dq[OF vm tw t2 nt])
+  then have vv: "valid_muaux_dq args nt
+      (MU_dq (wkeys_uaux msk (dadd_new_dq args msk rel1 rel2 nt daux)))
+      (update_until args (dwiden msk ` rel1) rel2 nt auxlist)"
+    by (simp add: wkeys_uaux_dadd_new_dq[OF fin mk na r1 r2])
+  show ?thesis
+    unfolding dvalid_muaux_def
+    using vv mk na r1 fst_lft_of_dadd_new_dq[OF fin] keys_snd_lft_of_dadd_new_dq[OF fin] by blast
+qed
+
+lemma lft_of_eval_dq: "lft_of (snd (eval_dq args nt d)) = lft_of d"
+proof (cases "shift_dq args nt d" rule: mmuaux_dq_cases)
+  case (1 tp tss tables len maskL maskR result a1_map a2_dq tstp_dq dn)
+  have lf: "(maskL, a1_map) = lft_of d"
+    using a1_of_shift_dq[of args nt d] unfolding 1 by simp
+  show ?thesis unfolding eval_dq.simps 1 by (simp add: lf[symmetric])
+qed
+
+lemma dvalid_eval_muaux:
+  assumes v: "dvalid_muaux args msk cur daux auxlist" and nt: "nt \<ge> cur"
+    and ev: "eval_dq args nt daux = (res, daux')"
+    and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
+  shows "dvalid_muaux args msk cur daux' auxlist' \<and> res = map (eval_args_agg args) res'"
+proof -
+  have vm: "valid_muaux_dq args cur (MU_dq (wkeys_uaux msk daux)) auxlist"
+    and mk: "fst (lft_of daux) = msk"
+    and na: "\<And>k. k \<in> Mapping.keys (snd (lft_of daux)) \<Longrightarrow> dnarrow_tuple msk k"
+    using v by (auto simp: dvalid_muaux_def)
+  have e0: "eval_dq args nt (wkeys_uaux msk daux) = (res, wkeys_uaux msk daux')"
+    using eval_dq_wkeys[where args = args and nt = nt and msk = msk and d = daux] ev
+    by (simp del: eval_dq.simps)
+  have e: "eval_muaux_dq args nt (MU_dq (wkeys_uaux msk daux))
+      = (res, MU_dq (wkeys_uaux msk daux'))"
+    by (simp add: e0 del: eval_dq.simps)
+  have vv: "valid_muaux_dq args cur (MU_dq (wkeys_uaux msk daux')) auxlist'
+      \<and> res = map (eval_args_agg args) res'"
+    by (rule valid_eval_muaux_dq[OF vm nt e eu])
+  have lf: "lft_of daux' = lft_of daux" using ev lft_of_eval_dq[of args nt daux] by simp
+  show ?thesis using vv mk na unfolding dvalid_muaux_def lf by blast
+qed
+
+lemma dvalid_length_muaux:
+  "dvalid_muaux args msk cur daux auxlist \<Longrightarrow> length_dq args daux = length auxlist"
+  using valid_length_muaux_dq[of args cur "MU_dq (wkeys_uaux msk daux)" auxlist]
+  by (simp add: dvalid_muaux_def length_dq_wkeys)
+
+(*<*)
+end
 (*>*)
