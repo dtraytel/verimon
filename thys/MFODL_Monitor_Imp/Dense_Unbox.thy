@@ -115,6 +115,64 @@ lemma gands_pos_eq: "gands_pos ps (t :: event_data table) us = dands_pos ps t us
 lemma gands_neg_eq: "gands_neg ps (t :: event_data table) us = dands_neg ps t us"
   by (induct ps t us rule: gands_neg.induct) (simp_all add: gbin_join_eq)
 
+definition gmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow> 'b :: ccompare list set list \<Rightarrow>
+    'b list set" where
+  "gmulti_join ps ns us = (case us of [] \<Rightarrow> {}
+     | t # r \<Rightarrow> gands_neg ns (gands_pos ps t (take (length ps) r)) (drop (length ps) r))"
+
+lemma gmulti_join_eq: "gmulti_join ps ns (us :: event_data table list) = dmulti_join ps ns us"
+  by (simp add: gmulti_join_def dmulti_join_def gands_pos_eq gands_neg_eq empty_table_def
+      split: list.splits)
+
+text \<open>What the join computes, over a bare element type.  The proofs are those of
+  @{theory MFODL_Monitor_Imp.Dense} with the option gone; they are needed at the element type
+  the executable evaluator uses, where an equality with the option instance says nothing.\<close>
+
+lemma ID_ccompare_ed: "ID CCOMPARE(event_data list) \<noteq> None"
+  by (simp add: ccompare_list_def ccompare_event_data_def ID_def split: option.splits)
+
+lemma set_csorted_list_of_set_ed:
+  "finite (X :: event_data list set) \<Longrightarrow> set (csorted_list_of_set X) = X"
+  using ID_ccompare_ed by (subst csorted_list_of_set_split) auto
+
+definition gbucket :: "('b list, 'b list list) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list list" where
+  "gbucket m k = (case Mapping.lookup m k of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
+
+lemma gbucket_gindex_step:
+  "gbucket (gindex_step msk x m) k = (if dproj msk x = k then x # gbucket m k else gbucket m k)"
+  by (auto simp: gbucket_def gindex_step_def Let_def Mapping.lookup_update'
+      split: option.splits)
+
+lemma gindex_fold_lookup:
+  "set (gbucket (fold (gindex_step msk) xs m) k)
+   = {b \<in> set xs. dproj msk b = k} \<union> set (gbucket m k)"
+  by (induct xs arbitrary: m) (auto simp: gbucket_gindex_step)
+
+lemma gindex_lookup:
+  assumes "set (csorted_list_of_set B) = B"
+  shows "set (gbucket (gindex msk B) k) = {b \<in> B. dproj msk b = k}"
+  using gindex_fold_lookup[of msk "csorted_list_of_set B" Mapping.empty k] assms
+  by (simp add: gindex_def gbucket_def Mapping.lookup_empty)
+
+lemma gprobe_fold:
+  "fold (gprobe_step p lk m) xs acc
+   = acc \<union> (\<Union>a \<in> set xs. (\<lambda>b. dmerge p a b) ` set (gbucket m (dproj lk a)))"
+  by (induct xs arbitrary: acc)
+    (auto simp: gprobe_step_def gbucket_def fold_insert_image split: option.splits)
+
+lemma gprobe_l_fold:
+  "fold (gprobe_step_l p rk m) ys acc
+   = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. dmerge p x y) ` set (gbucket m (dproj rk y)))"
+  by (induct ys arbitrary: acc)
+    (auto simp: gprobe_step_l_def gbucket_def fold_insert_image split: option.splits)
+
+lemma ggen_join_spec:
+  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
+  shows "ggen_join p lk rk A B
+       = {dmerge p a b | a b. a \<in> A \<and> b \<in> B \<and> dproj lk a = dproj rk b}"
+  by (auto simp: ggen_join_def Let_def gprobe_fold gprobe_l_fold
+      gindex_lookup[OF cA] gindex_lookup[OF cB] cA cB) force
+
 subsection \<open>The Since structure, over a bare element type\<close>
 
 text \<open>

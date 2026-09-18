@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Imp
-  imports Monitor_Imp2 Dense_Aux
+  imports Monitor_Imp2 Dense_Unbox
 begin
 (*>*)
 
@@ -25,55 +25,61 @@ text \<open>
   the formula is wide, so it is cheaper both to build and to hash.
 \<close>
 
-partial_function (heap) didx_ins :: "bool list \<Rightarrow> event_data tuple list \<Rightarrow> jidx \<Rightarrow> jidx Heap" where
+type_synonym utable = "event_data list set"
+
+type_synonym udatabase = "(Formula.name \<times> nat, utable list) mapping"
+
+type_synonym djidx = "(event_data list, event_data list list) imap"
+
+partial_function (heap) didx_ins :: "bool list \<Rightarrow> event_data list list \<Rightarrow> djidx \<Rightarrow>
+    djidx Heap" where
   [code]:
   "didx_ins msk xs q = (case xs of [] \<Rightarrow> return q
-     | x # r \<Rightarrow> (let k = dproj msk x; h = ihash k in
-         do { v \<leftarrow> im_lookup_h q h k;
-              q \<leftarrow> im_update_h q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
+     | x # r \<Rightarrow> (let k = dproj msk x; h = uihash k in
+         do { v \<leftarrow> im_lookup_h ueq q h k;
+              q \<leftarrow> im_update_h ueq q h k (case v of None \<Rightarrow> [x] | Some l \<Rightarrow> x # l);
               didx_ins msk r q }))"
 
 text \<open>The index holds the right operand and the left probes it.\<close>
 
-partial_function (heap) dprobe_r :: "mrg list \<Rightarrow> bool list \<Rightarrow> jidx \<Rightarrow>
-    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+partial_function (heap) dprobe_r :: "mrg list \<Rightarrow> bool list \<Rightarrow> djidx \<Rightarrow>
+    event_data list list \<Rightarrow> utable \<Rightarrow> utable Heap" where
   [code]:
   "dprobe_r p lk q xs acc = (case xs of [] \<Rightarrow> return acc
      | x # r \<Rightarrow> (let k = dproj lk x in
-         do { v \<leftarrow> im_lookup_h q (ihash k) k;
+         do { v \<leftarrow> im_lookup_h ueq q (uihash k) k;
               dprobe_r p lk q r (case v of None \<Rightarrow> acc
                 | Some l \<Rightarrow> fold (\<lambda>y acc. Set.insert (dmerge p x y) acc) l acc) }))"
 
 text \<open>The index holds the left operand and the right probes it; the merge keeps its sides.\<close>
 
-partial_function (heap) dprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> jidx \<Rightarrow>
-    event_data tuple list \<Rightarrow> event_data table \<Rightarrow> event_data table Heap" where
+partial_function (heap) dprobe_l :: "mrg list \<Rightarrow> bool list \<Rightarrow> djidx \<Rightarrow>
+    event_data list list \<Rightarrow> utable \<Rightarrow> utable Heap" where
   [code]:
   "dprobe_l p rk q ys acc = (case ys of [] \<Rightarrow> return acc
      | y # r \<Rightarrow> (let k = dproj rk y in
-         do { v \<leftarrow> im_lookup_h q (ihash k) k;
+         do { v \<leftarrow> im_lookup_h ueq q (uihash k) k;
               dprobe_l p rk q r (case v of None \<Rightarrow> acc
                 | Some l \<Rightarrow> fold (\<lambda>x acc. Set.insert (dmerge p x y) acc) l acc) }))"
 
 text \<open>As in the sparse code, the smaller side is indexed and the larger probes it, and only the
   case in which neither operand's columns contain the other's is taken away from the tree.\<close>
 
-fun dbin_join_h :: "djoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
-    event_data table Heap" where
+fun dbin_join_h :: "djoin_plan \<Rightarrow> utable \<Rightarrow> bool \<Rightarrow> utable \<Rightarrow> utable Heap" where
   "dbin_join_h (DJGen p lk rk) A pos B =
      (if \<not> dense_heap_join \<or> \<not> pos \<or> Set.is_empty A \<or> Set.is_empty B
-      then return (dbin_join (DJGen p lk rk) A pos B)
+      then return (gbin_join (DJGen p lk rk) A pos B)
       else (let xs = csorted_list_of_set A; ys = csorted_list_of_set B in
         if length ys \<le> length xs
-        then (if \<not> heap_join_ok ys then return (dbin_join (DJGen p lk rk) A pos B)
+        then (if \<not> heap_join_ok ys then return (gbin_join (DJGen p lk rk) A pos B)
               else do { q \<leftarrow> im_new (2 * integer_of_nat (length ys));
                         q \<leftarrow> didx_ins rk ys q;
-                        dprobe_r p lk q xs empty_table })
-        else (if \<not> heap_join_ok xs then return (dbin_join (DJGen p lk rk) A pos B)
+                        dprobe_r p lk q xs {} })
+        else (if \<not> heap_join_ok xs then return (gbin_join (DJGen p lk rk) A pos B)
               else do { q \<leftarrow> im_new (2 * integer_of_nat (length xs));
                         q \<leftarrow> didx_ins lk xs q;
-                        dprobe_l p rk q ys empty_table })))"
-| "dbin_join_h pl A pos B = return (dbin_join pl A pos B)"
+                        dprobe_l p rk q ys {} })))"
+| "dbin_join_h pl A pos B = return (gbin_join pl A pos B)"
 
 subsection \<open>The multi-way conjunction\<close>
 
@@ -85,21 +91,19 @@ text \<open>
   every intermediate result are known at build time, so all the plans are made once.
 \<close>
 
-fun dands_pos_h :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
-    event_data table Heap" where
+fun dands_pos_h :: "djoin_plan list \<Rightarrow> utable \<Rightarrow> utable list \<Rightarrow> utable Heap" where
   "dands_pos_h [] t us = return t"
 | "dands_pos_h (p # ps) t [] = return t"
 | "dands_pos_h (p # ps) t (u # us) = do { t \<leftarrow> dbin_join_h p t True u; dands_pos_h ps t us }"
 
-fun dands_neg_h :: "djoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
-    event_data table Heap" where
+fun dands_neg_h :: "djoin_plan list \<Rightarrow> utable \<Rightarrow> utable list \<Rightarrow> utable Heap" where
   "dands_neg_h [] t us = return t"
 | "dands_neg_h (p # ps) t [] = return t"
 | "dands_neg_h (p # ps) t (u # us) = do { t \<leftarrow> dbin_join_h p t False u; dands_neg_h ps t us }"
 
-definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow> event_data table list \<Rightarrow>
-    event_data table Heap" where
-  "dmulti_join ps ns us = (case us of [] \<Rightarrow> return empty_table
+definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow> utable list \<Rightarrow>
+    utable Heap" where
+  "dmulti_join ps ns us = (case us of [] \<Rightarrow> return {}
      | t # r \<Rightarrow> do { t \<leftarrow> dands_pos_h ps t (take (length ps) r);
                      dands_neg_h ns t (drop (length ps) r) })"
 
@@ -117,6 +121,43 @@ definition dagg_cols :: "aggargs \<Rightarrow> cols" where
 
 definition dagg_pos :: "aggargs \<Rightarrow> nat" where
   "dagg_pos args = length (filter (\<lambda>c. c < aggargs_y args) (dagg_group_cols args))"
+
+subsection \<open>Buffers over the short tables\<close>
+
+text \<open>
+  The buffer operations of @{theory MFODL_Monitor_Devel.Monitor_Impl} that are stated at
+  @{typ "event_data table"} rather than at a table type of their own, in the one form the
+  evaluation function below needs.  Only the type changes; @{const empty_table} becomes the
+  empty set of the short tables.
+\<close>
+
+type_synonym umebuf2 = "utable mbuf_t \<times> utable mbuf_t"
+
+type_synonym umebufn = "utable mbuf_t list"
+
+type_synonym umebuf2S = "utable mbuf_t \<times> utable mbuf_t \<times> ts mbuf_t \<times> bool"
+
+fun umebufn_add :: "utable list list \<Rightarrow> umebufn \<Rightarrow> umebufn" where
+  "umebufn_add xs' xs = List.map2 (@@) xs xs'"
+
+fun umebuf2S_add :: "utable list \<Rightarrow> utable list \<Rightarrow> ts list \<Rightarrow> umebuf2S \<Rightarrow> umebuf2S" where
+  "umebuf2S_add xs' ys' ts' (xs, ys, ts, skew) = (xs @@ xs', ys @@ ys', ts @@ ts', skew)"
+
+fun umeprev_next :: "\<I> \<Rightarrow> utable mbuf_t \<Rightarrow> ts mbuf_t
+  \<Rightarrow> utable list \<times> utable mbuf_t \<times> ts mbuf_t"
+  where "umeprev_next I xs ts = (case mbuf_t_cases xs of (None, xs') \<Rightarrow> ([], mbuf_t_empty, ts)
+  | (Some x, xs') \<Rightarrow> (case mbuf_t_cases ts of (None, ts') \<Rightarrow> ([], x ## xs', mbuf_t_empty)
+  | (Some t, ts') \<Rightarrow> (case mbuf_t_cases ts' of (None, ts'') \<Rightarrow> ([], x ## xs', t ## mbuf_t_empty)
+  | (Some t', ts'') \<Rightarrow> (let (ys, zs) = umeprev_next I xs' (t' ## ts'')
+    in ((if mem I ((t' - t)) then x else {}) # ys, zs)))))"
+
+text \<open>The subformulas the dense fragment does not cover yet are evaluated by the function
+  over the wide tuples, which reads the input tables from the database itself; the database is
+  put back into the wide representation for them.  A formula with no such subformula -- which
+  the count of @{term DPure} nodes below reports -- never reaches this.\<close>
+
+definition wide_db :: "udatabase \<Rightarrow> database" where
+  "wide_db db = Mapping.map_values (\<lambda>_ xs. map reopt_table xs) db"
 
 section \<open>A monitor over the short tuples\<close>
 
@@ -188,39 +229,43 @@ text \<open>
   the dense node keeps them unchanged and swaps the pure structure for the dense one.
 \<close>
 
-datatype msaux_d = MSD_imp msaux2 | MSD_dns "event_data dmsaux" | MSD_evt sevtaux
+datatype msaux_d = MSD_imp "event_data list msaux2" | MSD_dns "event_data gmsaux"
+  | MSD_evt "event_data gsevtaux"
 
 definition init_d :: "args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
-  "init_d args msk = (if sevt_applies args then return (MSD_evt (init_sevt args))
+  "init_d args msk = (if sevt_applies args then return (MSD_evt (ginit_sevt args))
      else if args_agg args = None \<and> special_args args
      then do { q \<leftarrow> init2 args; return (MSD_imp q) }
-     else return (MSD_dns (dinit_msaux args msk)))"
+     else return (MSD_dns (ginit_msaux args msk)))"
 
 fun add_new_ts_d :: "args \<Rightarrow> ts \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
-  "add_new_ts_d args nt (MSD_imp q) = do { q \<leftarrow> add_new_ts2 args nt q; return (MSD_imp q) }"
-| "add_new_ts_d args nt (MSD_dns s) = return (MSD_dns (dadd_new_ts_msaux args nt s))"
-| "add_new_ts_d args nt (MSD_evt a) = return (MSD_evt (add_new_ts_sevt args nt a))"
+  "add_new_ts_d args nt (MSD_imp q) =
+     do { q \<leftarrow> add_new_ts2 uihash ueq args nt q; return (MSD_imp q) }"
+| "add_new_ts_d args nt (MSD_dns s) = return (MSD_dns (gadd_new_ts_msaux args nt s))"
+| "add_new_ts_d args nt (MSD_evt a) = return (MSD_evt (gadd_new_ts_sevt args nt a))"
 
 text \<open>The table this takes is the left operand's, at the left operand's frame in the dense
   branch and at the common frame in the other two.\<close>
 
-fun join_d :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
-  "join_d args X (MSD_imp q) = do { q \<leftarrow> gc_join2 args X q; return (MSD_imp q) }"
-| "join_d args X (MSD_dns s) = return (MSD_dns (dgc_join_msaux args X s))"
-| "join_d args X (MSD_evt a) = return (MSD_evt (join_sevt args X a))"
+fun join_d :: "args \<Rightarrow> utable \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
+  "join_d args X (MSD_imp q) =
+     do { q \<leftarrow> gc_join2 uihash ueq [] args X q; return (MSD_imp q) }"
+| "join_d args X (MSD_dns s) = return (MSD_dns (ggc_join_msaux args X s))"
+| "join_d args X (MSD_evt a) = return (MSD_evt (gjoin_sevt args X a))"
 
-fun add_new_table_d :: "args \<Rightarrow> event_data table \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
-  "add_new_table_d args X (MSD_imp q) = do { q \<leftarrow> add_new_table2 args X q; return (MSD_imp q) }"
-| "add_new_table_d args X (MSD_dns s) = return (MSD_dns (dadd_new_table_msaux args X s))"
-| "add_new_table_d args X (MSD_evt a) = return (MSD_evt (add_new_table_sevt args X a))"
+fun add_new_table_d :: "args \<Rightarrow> utable \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
+  "add_new_table_d args X (MSD_imp q) =
+     do { q \<leftarrow> add_new_table2 uihash ueq args X q; return (MSD_imp q) }"
+| "add_new_table_d args X (MSD_dns s) = return (MSD_dns (gadd_new_table_msaux args X s))"
+| "add_new_table_d args X (MSD_evt a) = return (MSD_evt (gadd_new_table_sevt args X a))"
 
-fun result_d :: "args \<Rightarrow> msaux_d \<Rightarrow> event_data table Heap" where
+fun result_d :: "args \<Rightarrow> msaux_d \<Rightarrow> utable Heap" where
   "result_d args (MSD_imp q) = result2 q"
-| "result_d args (MSD_dns s) = return (dresult_msaux args s)"
-| "result_d args (MSD_evt a) = return (result_sevt args a)"
+| "result_d args (MSD_dns s) = return (gresult_msaux args s)"
+| "result_d args (MSD_evt a) = return (gresult_sevt args a)"
 
-partial_function (heap) eval_since_d :: "args \<Rightarrow> event_data table list \<Rightarrow> event_data mebuf2S \<Rightarrow>
-    msaux_d \<Rightarrow> (event_data table list \<times> event_data mebuf2S \<times> msaux_d) Heap" where
+partial_function (heap) eval_since_d :: "args \<Rightarrow> utable list \<Rightarrow> umebuf2S \<Rightarrow>
+    msaux_d \<Rightarrow> (utable list \<times> umebuf2S \<times> msaux_d) Heap" where
   [code]:
   "eval_since_d args rs buf aux = (case buf of (xs, ys, ts, skew) \<Rightarrow>
     (case mbuf_t_cases ys of (None, ys') \<Rightarrow>
@@ -250,50 +295,49 @@ text \<open>
   @{const dadd_new_dq} reads it at the left operand's frame, keyed by the mask the node carries.
 \<close>
 
-datatype muaux_d = MUD_imp muaux2 | MUD_dns "event_data mmuaux_dq" | MUD_evt evtaux
+datatype muaux_d = MUD_dns "event_data gmuaux" | MUD_evt "event_data gevtaux"
 
 definition init_u_d :: "args \<Rightarrow> bool list \<Rightarrow> muaux_d Heap" where
-  "init_u_d args msk = (if args_agg args = None \<and> use_heap_until
-     then do { d \<leftarrow> init_dq2 args; return (MUD_imp d) }
-     else if evt_applies args then return (MUD_evt (init_evt args))
-     else return (MUD_dns (init_dq args)))"
+  "init_u_d args msk = (if evt_applies args then return (MUD_evt (ginit_evt args))
+     else return (MUD_dns (ginit_dq args)))"
 
-fun add_new_u_d :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
+fun add_new_u_d :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow>
     muaux_d \<Rightarrow> muaux_d Heap" where
-  "add_new_u_d args msk rel1 rel2 nt (MUD_imp d) =
-     do { d \<leftarrow> add_new_dq2 args rel1 rel2 nt d; return (MUD_imp d) }"
-| "add_new_u_d args msk rel1 rel2 nt (MUD_dns a) =
-     return (MUD_dns (dadd_new_dq args msk rel1 rel2 nt a))"
+  "add_new_u_d args msk rel1 rel2 nt (MUD_dns a) =
+     return (MUD_dns (gadd_new_dq args msk rel1 rel2 nt a))"
 | "add_new_u_d args msk rel1 rel2 nt (MUD_evt a) =
-     return (MUD_evt (add_new_evt args rel1 rel2 nt a))"
+     return (MUD_evt (gadd_new_evt args rel1 rel2 nt a))"
 
-fun eval_u_d :: "args \<Rightarrow> ts \<Rightarrow> muaux_d \<Rightarrow> (event_data table list \<times> muaux_d) Heap" where
-  "eval_u_d args nt (MUD_imp d) = do { r \<leftarrow> eval_dq2 args nt d; return (fst r, MUD_imp (snd r)) }"
-| "eval_u_d args nt (MUD_dns a) = return (case eval_dq args nt a of (zs, a') \<Rightarrow> (zs, MUD_dns a'))"
-| "eval_u_d args nt (MUD_evt a) = return (case eval_evt args nt a of (zs, a') \<Rightarrow> (zs, MUD_evt a'))"
+fun eval_u_d :: "args \<Rightarrow> ts \<Rightarrow> muaux_d \<Rightarrow> (utable list \<times> muaux_d) Heap" where
+  "eval_u_d args nt (MUD_dns a) = return (case geval_dq args nt a of (zs, a') \<Rightarrow> (zs, MUD_dns a'))"
+| "eval_u_d args nt (MUD_evt a) = return (case geval_evt args nt a of (zs, a') \<Rightarrow> (zs, MUD_evt a'))"
 
 datatype dformula =
     DPure mformula_j nat "bool list"
-  | DRel "event_data table"
+  | DRel utable
   | DPredS Formula.name nat
   | DPredM Formula.name nat "Formula.trm list" cols
-  | DAnd djoin_plan dformula bool dformula "event_data mebuf2"
-  | DAnds "djoin_plan list" "djoin_plan list" "dformula list" "event_data mebufn"
+  | DAnd djoin_plan dformula bool dformula umebuf2
+  | DAnds "djoin_plan list" "djoin_plan list" "dformula list" umebufn
   | DAndRel dformula "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
-  | DOr dformula dformula "event_data mebuf2"
+  | DOr dformula dformula umebuf2
   | DNeg dformula
   | DExists dformula bool
   | DAgg bool "ty Formula.agg_op" Formula.trm nat nat dformula
-  | DPrev \<I> dformula bool "event_data table mbuf_t" "ts mbuf_t"
+  | DPrev \<I> dformula bool "utable mbuf_t" "ts mbuf_t"
   | DNext \<I> dformula bool "ts mbuf_t"
-  | DSince args dformula dformula "event_data mebuf2S" msaux_d
-  | DUntil args "bool list" dformula dformula "event_data mebuf2" "ts mbuf_t" ts muaux_d
+  | DSince args dformula dformula umebuf2S msaux_d
+  | DUntil args "bool list" dformula dformula umebuf2 "ts mbuf_t" ts muaux_d
   | DAndAssign nat Formula.trm dformula
   | DTP mtrm nat
   | DTS mtrm
   | DLet Formula.name nat dformula dformula
 
 subsection \<open>Building it\<close>
+
+text \<open>The buffers of the node being compiled hold the wide tables, so they are not carried
+  over; they are empty, because this runs on the freshly built formula and nothing has been
+  evaluated yet.\<close>
 
 fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap"
   and dformula_of_list :: "nat \<Rightarrow> cols list \<Rightarrow> mformula_j list \<Rightarrow> dformula list Heap" where
@@ -313,21 +357,22 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
          else do {
            Ld \<leftarrow> dformula_of_list n (cs_pos @ cs_neg) L;
            return (DAnds (dands_plans (set_cols A) (map set_cols As))
-                     (map (mk_djoin fin) cs_neg) Ld buf) }))"
+                     (map (mk_djoin fin) cs_neg) Ld (map (\<lambda>_. mbuf_t_empty) Ld)) }))"
 | "dformula_of n cs (MPred e tms mode) =
      return (if mode \<noteq> Match \<and> cs = tms_cols tms then DPredS e (length tms)
              else DPredM e (length tms) tms cs)"
-| "dformula_of n cs (MRel rel) = return (DRel (dnarrow (wide_mask n cs) rel))"
+| "dformula_of n cs (MRel rel) = return (DRel (deopt_table (dnarrow (wide_mask n cs) rel)))"
 | "dformula_of n cs (MAnd A \<phi> pos B \<psi> buf) = do {
      \<phi>d \<leftarrow> dformula_of n (set_cols A) \<phi>;
      \<psi>d \<leftarrow> dformula_of n (set_cols B) \<psi>;
-     return (DAnd (mk_djoin (set_cols A) (set_cols B)) \<phi>d pos \<psi>d buf) }"
+     return (DAnd (mk_djoin (set_cols A) (set_cols B)) \<phi>d pos \<psi>d
+                (mbuf_t_empty, mbuf_t_empty)) }"
 | "dformula_of n cs (MAndRel \<phi> conf) = do {
      \<phi>d \<leftarrow> dformula_of n cs \<phi>;
      return (DAndRel \<phi>d (reindex_constraint cs conf)) }"
 | "dformula_of n cs (MOr \<phi> \<psi> buf) = do {
      \<phi>d \<leftarrow> dformula_of n cs \<phi>; \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-     return (DOr \<phi>d \<psi>d buf) }"
+     return (DOr \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)) }"
 | "dformula_of n cs (MNeg \<phi>) = do {
      \<phi>d \<leftarrow> dformula_of n [] \<phi>; return (DNeg \<phi>d) }"
 | "dformula_of n cs (MExists \<phi>) = (case mcols (Suc n) \<phi> of
@@ -341,7 +386,7 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
                (reindex_trm (dagg_child_cols args) (aggargs_f args))
                (length (aggargs_tys args)) (dagg_pos args) \<phi>d) }"
 | "dformula_of n cs (MPrev I \<phi> first buf nts) = do {
-     \<phi>d \<leftarrow> dformula_of n cs \<phi>; return (DPrev I \<phi>d first buf nts) }"
+     \<phi>d \<leftarrow> dformula_of n cs \<phi>; return (DPrev I \<phi>d first mbuf_t_empty nts) }"
 | "dformula_of n cs (MNext I \<phi> first nts) = do {
      \<phi>d \<leftarrow> dformula_of n cs \<phi>; return (DNext I \<phi>d first nts) }"
 | "dformula_of n cs (MSince args \<phi> \<psi> buf aux) =
@@ -350,29 +395,30 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
         q \<leftarrow> init_d args (dmsk (set_cols (args_R args)) cs_L);
-        return (DSince args \<phi>d \<psi>d buf q) }
+        return (DSince args \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
         q \<leftarrow> init_d dags (dmsk cs cs_L);
-        return (DSince dags \<phi>d \<psi>d buf q) })
+        return (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) })
       else return (DPure (MSince args \<phi> \<psi> buf aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
-      if evt_applies args \<and> \<not> use_heap_until then do {
+      if evt_applies args then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
         d \<leftarrow> init_u_d args (dmsk (set_cols (args_R args)) cs_L);
-        return (DUntil args (dmsk (set_cols (args_R args)) cs_L) \<phi>d \<psi>d buf nts t d) }
+        return (DUntil args (dmsk (set_cols (args_R args)) cs_L) \<phi>d \<psi>d
+                   (mbuf_t_empty, mbuf_t_empty) nts t d) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
         d \<leftarrow> init_u_d dags (dmsk cs cs_L);
-        return (DUntil dags (dmsk cs cs_L) \<phi>d \<psi>d buf nts t d) })
+        return (DUntil dags (dmsk cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d) })
       else return (DPure (MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
@@ -395,26 +441,26 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
 
 subsection \<open>Evaluating it\<close>
 
-fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow> (event_data table list \<times> dformula) Heap"
-  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
-    ((event_data table list \<times> dformula) list) Heap" where
+fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow> (utable list \<times> dformula) Heap"
+  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula list \<Rightarrow>
+    ((utable list \<times> dformula) list) Heap" where
   "deval_list j ts db [] = return []"
 | "deval_list j ts db (\<phi> # r) = do {
      x \<leftarrow> deval j ts db \<phi>; xs \<leftarrow> deval_list j ts db r; return (x # xs) }"
 | "deval j ts db (DAnds ps ns L buf) = do {
      R \<leftarrow> deval_list j ts db L;
-     p \<leftarrow> mebufn_take_j (dmulti_join ps ns) mbuf_t_empty (mebufn_add (map fst R) buf);
+     p \<leftarrow> mebufn_take_j (dmulti_join ps ns) mbuf_t_empty (umebufn_add (map fst R) buf);
      return (Rep_mbuf_t (fst p), DAnds ps ns (map snd R) (snd p)) }"
 | "deval j ts db (DPure \<phi> n msk) = do {
-     (xs, \<phi>) \<leftarrow> meval_j j n ts db \<phi>;
-     return (map (dnarrow msk) xs, DPure \<phi> n msk) }"
+     (xs, \<phi>) \<leftarrow> meval_j j n ts (wide_db db) \<phi>;
+     return (map (deopt_table \<circ> dnarrow msk) xs, DPure \<phi> n msk) }"
 | "deval j ts db (DRel rel) = return (replicate (length ts) rel, DRel rel)"
 | "deval j ts db (DPredS e ar) = return
-     ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) empty_table | Some xs \<Rightarrow> xs),
+     ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) {} | Some xs \<Rightarrow> xs),
       DPredS e ar)"
 | "deval j ts db (DPredM e ar tms cs) = return
-     ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) empty_table
-       | Some xs \<Rightarrow> map (dmatch_table tms cs) xs),
+     ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) {}
+       | Some xs \<Rightarrow> map (umatch_table tms cs) xs),
       DPredM e ar tms cs)"
 | "deval j ts db (DAnd pl \<phi> pos \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
@@ -423,7 +469,7 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
      return (fst r, DAnd pl \<phi> pos \<psi> (snd r)) }"
 | "deval j ts db (DAndRel \<phi> conf) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     return (map (Set.filter (eval_constraint conf)) xs, DAndRel \<phi> conf) }"
+     return (map (Set.filter (ueval_constraint conf)) xs, DAndRel \<phi> conf) }"
 | "deval j ts db (DOr \<phi> \<psi> buf) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
@@ -431,27 +477,27 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
        in (zs, DOr \<phi> \<psi> buf)) }"
 | "deval j ts db (DNeg \<phi>) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     return (map (\<lambda>r. if r = empty_table then unit_table 0 else empty_table) xs, DNeg \<phi>) }"
+     return (map (\<lambda>r. if r = {} then {[]} else {}) xs, DNeg \<phi>) }"
 | "deval j ts db (DExists \<phi> drop0) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (if drop0 then map (\<lambda>r. tl ` r) xs else xs, DExists \<phi> drop0) }"
 | "deval j ts db (DAgg g0 \<omega> f k pos \<phi>) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     return (map (dagg g0 \<omega> f k pos) xs, DAgg g0 \<omega> f k pos \<phi>) }"
+     return (map (uagg g0 \<omega> f k pos) xs, DAgg g0 \<omega> f k pos \<phi>) }"
 | "deval j ts db (DPrev I \<phi> first buf nts) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (if first \<and> ts = [] then ([], DPrev I \<phi> True (buf @@ xs) (nts @@ ts))
-       else let (zs, buf, nts) = meprev_next I (buf @@ xs) (nts @@ ts)
-         in (if first then empty_table # zs else zs, DPrev I \<phi> False buf nts)) }"
+       else let (zs, buf, nts) = umeprev_next I (buf @@ xs) (nts @@ ts)
+         in (if first then {} # zs else zs, DPrev I \<phi> False buf nts)) }"
 | "deval j ts db (DNext I \<phi> first nts) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      return (let (xs, first) = (case (xs, first) of (_ # xs, True) \<Rightarrow> (xs, False) | a \<Rightarrow> a);
-       (zs, buf, nts) = meprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
+       (zs, buf, nts) = umeprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
        in (zs, DNext I \<phi> first nts)) }"
 | "deval j ts db (DSince args \<phi> \<psi> buf aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
-     (zs, buf, aux) \<leftarrow> eval_since_d args [] (mebuf2S_add xs ys ts buf) aux;
+     (zs, buf, aux) \<leftarrow> eval_since_d args [] (umebuf2S_add xs ys ts buf) aux;
      return (zs, DSince args \<phi> \<psi> buf aux) }"
 | "deval j ts db (DUntil args msk \<phi> \<psi> buf nts t aux) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
@@ -462,11 +508,11 @@ fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dfo
            return (fst z, DUntil args msk \<phi> \<psi> buf nts' nt (snd z)) }) }"
 | "deval j ts db (DAndAssign p t \<phi>) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     return (map (dassign p t) xs, DAndAssign p t \<phi>) }"
+     return (map (uassign p t) xs, DAndAssign p t \<phi>) }"
 | "deval j ts db (DTP mt i) =
-     return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
+     return (map (\<lambda>x. umtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
 | "deval j ts db (DTS mt) =
-     return (map (\<lambda>x. dmtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
+     return (map (\<lambda>x. umtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
 | "deval j ts db (DLet p m \<phi> \<psi>) = do {
      (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> deval j ts (Mapping.update (p, m) xs db) \<psi>;
@@ -495,7 +541,8 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
 
-definition mstep_d :: "database \<times> ts \<Rightarrow> dstate \<Rightarrow> ((nat \<times> ts \<times> event_data table) list \<times> dstate) Heap" where
+definition mstep_d :: "udatabase \<times> ts \<Rightarrow> dstate \<Rightarrow>
+    ((nat \<times> ts \<times> utable) list \<times> dstate) Heap" where
   "mstep_d tdb sti = (case sti of (i, j, m, n, tq) \<Rightarrow> do {
      (vs, m') \<leftarrow> deval (j + 1) [snd tdb] (fst tdb) m;
      return (case annotate_verdicts_j i (append_queue (snd tdb) tq) vs [] of

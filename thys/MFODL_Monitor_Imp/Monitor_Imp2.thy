@@ -95,8 +95,8 @@ partial_function (heap) eval_since_j :: "args \<Rightarrow> event_data table lis
         | (None, ts') \<Rightarrow> return (rev rs, (x ## xs', y ## ys', ts', skew), aux))
       | (None, xs') \<Rightarrow> return (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux))))"
 
-partial_function (heap) mebuf2t_take_j :: "(event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b Heap) \<Rightarrow> 'b \<Rightarrow>
-    event_data mebuf2 \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow> ('b \<times> event_data mebuf2 \<times> ts \<times> ts mbuf_t) Heap" where
+partial_function (heap) mebuf2t_take_j :: "('a \<Rightarrow> 'a \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b Heap) \<Rightarrow> 'b \<Rightarrow>
+    'a mbuf_t \<times> 'a mbuf_t \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow> ('b \<times> ('a mbuf_t \<times> 'a mbuf_t) \<times> ts \<times> ts mbuf_t) Heap" where
   [code]:
   "mebuf2t_take_j f z buf t0 ts = (case buf of (xs, ys) \<Rightarrow>
     (case mbuf_t_cases ts of (None, ts') \<Rightarrow> return (z, (xs, ys), t0, ts') | (Some t, ts') \<Rightarrow>
@@ -229,8 +229,8 @@ fun mformula_j_of :: "mformula_p \<Rightarrow> mformula_j Heap"
      \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; return (MTrigger args \<phi>i \<psi>i buf nts aux) }"
 | "mformula_j_of \<phi> = return (embed \<phi>)"
 
-fun annotate_verdicts_j :: "nat \<Rightarrow> ts queue \<Rightarrow> event_data table list \<Rightarrow>
-    (nat \<times> ts \<times> event_data table) list \<Rightarrow> nat \<times> ts queue \<times> (nat \<times> ts \<times> event_data table) list" where
+fun annotate_verdicts_j :: "nat \<Rightarrow> ts queue \<Rightarrow> 'a list \<Rightarrow>
+    (nat \<times> ts \<times> 'a) list \<Rightarrow> nat \<times> ts queue \<times> (nat \<times> ts \<times> 'a) list" where
   "annotate_verdicts_j i tq [] acc = (i, tq, rev acc)"
 | "annotate_verdicts_j i tq (v # vs) acc = (case pop tq of
       (None, tq') \<Rightarrow> (i + 1 + length vs, (tl_queue ^^ (1 + length vs)) tq', rev acc)

@@ -42,7 +42,7 @@ text \<open>
   benchmark measured.
 \<close>
 
-definition heap_join_ok :: "event_data tuple list \<Rightarrow> bool" where
+definition heap_join_ok :: "'a list \<Rightarrow> bool" where
   "heap_join_ok idx = (heap_join_min \<le> integer_of_nat (length idx))"
 
 text \<open>
@@ -143,15 +143,15 @@ definition mmulti_join_j :: "nat \<Rightarrow> nat set list \<Rightarrow> nat se
             do { p \<leftarrow> mmulti_join_pos_j n A t Lpos;
                  mmulti_join_neg_j n (fst p) (snd p) (zip A_neg (drop (length A_pos) L)) }))"
 
-partial_function (heap) mebufn_take_j :: "(event_data table list \<Rightarrow> event_data table Heap) \<Rightarrow>
-    event_data table mbuf_t \<Rightarrow> event_data mebufn \<Rightarrow> (event_data table mbuf_t \<times> event_data mebufn) Heap" where
+partial_function (heap) mebufn_take_j :: "('a list \<Rightarrow> 'a Heap) \<Rightarrow>
+    'a mbuf_t \<Rightarrow> 'a mbuf_t list \<Rightarrow> ('a mbuf_t \<times> 'a mbuf_t list) Heap" where
   [code]:
   "mebufn_take_j f z buf = (if buf = [] \<or> (\<exists>x \<in> set buf. mbuf_t_is_empty x) then return (z, buf)
      else do { x \<leftarrow> f (map (the \<circ> fst \<circ> mbuf_t_cases) buf);
                mebufn_take_j f (z @@ [x]) (map (snd \<circ> mbuf_t_cases) buf) })"
 
-partial_function (heap) mebuf2_take_j :: "(event_data table \<Rightarrow> event_data table \<Rightarrow> event_data table Heap) \<Rightarrow>
-    event_data mebuf2 \<Rightarrow> (event_data table list \<times> event_data mebuf2) Heap" where
+partial_function (heap) mebuf2_take_j :: "('a \<Rightarrow> 'a \<Rightarrow> 'a Heap) \<Rightarrow>
+    'a mbuf_t \<times> 'a mbuf_t \<Rightarrow> ('a list \<times> ('a mbuf_t \<times> 'a mbuf_t)) Heap" where
   [code]:
   "mebuf2_take_j f buf = (case buf of (xs, ys) \<Rightarrow>
     (case mbuf_t_cases xs of (None, xs') \<Rightarrow> return ([], (xs', ys)) | (Some x, xs') \<Rightarrow>
