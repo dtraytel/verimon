@@ -475,6 +475,188 @@ next
        (sep_auto simp: ib Array.nth'_def Array.upd'_def lt ms heap: ih)
 qed
 
+subsection \<open>Growing a table\<close>
+
+text \<open>
+  Growing redistributes the entries of the old array into a fresh one twice its size.  The
+  entries are the same, only their order and their buckets change, and the map of a table is
+  the map of its entries, so the map is unchanged.  The old array is left behind, which is what
+  the @{text \<open>\<^sub>t\<close>} of the triple allows.
+\<close>
+
+lemma imap_map_mset_cong:
+  assumes inv: "imap_inv n bs" and inv': "imap_inv n' bs'"
+    and ms: "mset (concat bs') = mset (concat bs)"
+  shows "imap_map n' bs' = imap_map n bs"
+proof -
+  have "distinct (map fst (map snd (concat bs')))" using inv' by (simp add: imap_inv_def o_def)
+  moreover have "set (map snd (concat bs')) = set (map snd (concat bs))"
+    using ms by (metis mset_map set_mset_mset)
+  ultimately have "map_of (map snd (concat bs')) = map_of (map snd (concat bs))"
+    by (rule map_of_perm)
+  then show ?thesis using imap_map_global[OF inv] imap_map_global[OF inv'] by simp
+qed
+
+lemma mset_concat_rev[simp]: "mset (concat (rev xs)) = mset (concat xs)"
+  by (induct xs) simp_all
+
+lemma set_concat_rev[simp]: "set (concat (rev xs)) = set (concat xs)"
+  by (induct xs) auto
+
+lemma im_grow_rule:
+  assumes inv: "imap_inv n bs"
+  shows "<a \<mapsto>\<^sub>a bs> im_grow (n, c, a) <\<lambda>q'. is_imap (imap_map n bs) q'>\<^sub>t"
+proof -
+  let ?k = "\<lambda>e. fst (snd e)"
+  have hsh0: "\<forall>e \<in> set (concat bs). fst e = ihash (?k e)"
+  proof
+    fix e assume "e \<in> set (concat bs)"
+    from in_concat_nth[OF this] obtain j where "j < length bs" and "e \<in> set (bs ! j)" by blast
+    then show "fst e = ihash (?k e)" using inv by (auto simp: imap_inv_def ientry_ok_def)
+  qed
+  have hsh: "\<forall>e \<in> set (concat (rev bs)). fst e = ihash (?k e)" using hsh0 by simp
+  have dst: "distinct (map ?k (concat (rev bs)))"
+    by (rule distinct_map_mset_cong[OF mset_concat_rev]) (use inv in \<open>simp add: imap_inv_def\<close>)
+  define n' where "n' = im_cap (2 * n)"
+  define bs0 where "bs0 = replicate (nat_of_integer n') ([] :: 'a ientry list)"
+  have p': "0 < n'" unfolding n'_def by (rule im_cap_pos)
+  have l': "integer_of_nat (length bs0) = n'"
+    unfolding bs0_def by (simp add: integer_of_nat_nat_of_integer[OF less_imp_le[OF p']])
+  have inv0: "imap_inv n' bs0" using p' l' by (simp add: imap_inv_def bs0_def)
+  have c0: "concat bs0 = []" by (simp add: bs0_def)
+  have d0: "distinct (map ?k (concat bs0 @ concat (rev bs)))"
+    using dst unfolding c0 by simp
+  have fill: "\<And>a'. <a' \<mapsto>\<^sub>a bs0> im_fill (n', 0, a') (concat (rev bs))
+    <\<lambda>q'. \<exists>\<^sub>Abs'. a' \<mapsto>\<^sub>a bs' * \<up>(fst q' = n' \<and> snd (snd q') = a' \<and> imap_inv n' bs' \<and>
+       mset (concat bs') = mset (concat bs0 @ concat (rev bs)))>"
+    by (rule im_fill_rule[OF inv0 hsh d0])
+  have eq: "\<And>bs'. imap_inv n' bs' \<Longrightarrow>
+      mset (concat bs') = mset (concat bs0 @ concat (rev bs)) \<Longrightarrow>
+      imap_map n' bs' = imap_map n bs"
+    by (rule imap_map_mset_cong[OF inv]) (simp_all add: c0)
+  show ?thesis
+    unfolding im_grow_def im_new_def Array.new'_def
+    by (sep_auto simp: is_imap_def n'_def[symmetric] bs0_def[symmetric] eq
+        heap: im_entries_rule[OF imap_inv_len[OF inv]] fill)
+qed
+
+subsection \<open>Adding or replacing a key\<close>
+
+lemma hm_look_list_del:
+  "\<forall>e \<in> set b. fst e = ihash (fst (snd e)) \<Longrightarrow> y \<noteq> x \<Longrightarrow>
+   hm_look_list (ihash y) y (hm_del_list (ihash x) x b) = hm_look_list (ihash y) y b"
+  by (induct b) auto
+
+lemma hm_look_list_None_key:
+  "hm_look_list (ihash x) x b = None \<Longrightarrow> \<forall>e \<in> set b. fst e = ihash (fst (snd e)) \<Longrightarrow>
+   x \<notin> set (map (\<lambda>e. fst (snd e)) b)"
+  by (induct b) (auto split: if_splits)
+
+lemma imap_map_insert:
+  assumes inv: "imap_inv n bs"
+    and rest: "\<And>y. y \<noteq> x \<Longrightarrow> hm_look_list (ihash y) y rest
+                 = hm_look_list (ihash y) y (bs ! ibucket n x)"
+  shows "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # rest))
+       = (imap_map n bs)(x \<mapsto> v)"
+proof
+  fix y
+  have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
+  note upd = imap_map_list_update[OF inv lt, of "(ihash x, x, v) # rest" y]
+  consider (eq) "y = x" | (same) "y \<noteq> x" "ibucket n x = ibucket n y"
+    | (other) "y \<noteq> x" "ibucket n x \<noteq> ibucket n y" by blast
+  then show "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # rest)) y
+      = ((imap_map n bs)(x \<mapsto> v)) y"
+  proof cases
+    case eq
+    then show ?thesis using upd by simp
+  next
+    case same
+    then show ?thesis using upd rest[OF same(1)] by (simp add: imap_map_def)
+  next
+    case other
+    then show ?thesis using upd by simp
+  qed
+qed
+
+text \<open>
+  Both branches of an update put the new entry at the head of the key's bucket; they differ
+  only in what they keep behind it -- the bucket as it was, when the key is new, and the bucket
+  without its entry for that key, when the key is already there.  What the rest has to satisfy
+  is the same in both cases.
+\<close>
+
+lemma im_update_bucket_inv:
+  assumes inv: "imap_inv n bs"
+    and sub: "set rest \<subseteq> set (bs ! ibucket n x)"
+    and dk: "distinct (map (\<lambda>e. fst (snd e)) rest)"
+    and nk: "x \<notin> set (map (\<lambda>e. fst (snd e)) rest)"
+  shows "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # rest))"
+proof (rule imap_inv_list_update[OF inv imap_inv_bucket_lt[OF inv]])
+  fix e assume "e \<in> set ((ihash x, x, v) # rest)"
+  then show "ientry_ok n (ibucket n x) e"
+    using sub inv imap_inv_bucket_lt[OF inv] by (auto simp: ientry_ok_def imap_inv_def)
+next
+  show "distinct (map (\<lambda>e. fst (snd e)) ((ihash x, x, v) # rest))" using dk nk by simp
+qed
+
+lemma im_update_None:
+  assumes inv: "imap_inv n bs" and lk: "hm_look_list (ihash x) x (bs ! ibucket n x) = None"
+  shows "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))"
+    and "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))
+       = (imap_map n bs)(x \<mapsto> v)"
+proof -
+  have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
+  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = ihash (fst (snd e))"
+    by (rule imap_inv_hash[OF inv lt])
+  show "imap_inv n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))"
+    by (rule im_update_bucket_inv[OF inv subset_refl imap_inv_bucket_distinct[OF inv lt]
+        hm_look_list_None_key[OF lk hb]])
+  show "imap_map n (list_update bs (ibucket n x) ((ihash x, x, v) # bs ! ibucket n x))
+      = (imap_map n bs)(x \<mapsto> v)"
+    by (rule imap_map_insert[OF inv]) simp
+qed
+
+lemma im_update_Some:
+  assumes inv: "imap_inv n bs" and lk: "hm_look_list (ihash x) x (bs ! ibucket n x) = Some u"
+  shows "imap_inv n (list_update bs (ibucket n x)
+            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))"
+    and "imap_map n (list_update bs (ibucket n x)
+            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))
+       = (imap_map n bs)(x \<mapsto> v)"
+proof -
+  have lt: "ibucket n x < length bs" by (rule imap_inv_bucket_lt[OF inv])
+  have hb: "\<forall>e \<in> set (bs ! ibucket n x). fst e = ihash (fst (snd e))"
+    by (rule imap_inv_hash[OF inv lt])
+  have db: "distinct (map (\<lambda>e. fst (snd e)) (bs ! ibucket n x))"
+    by (rule imap_inv_bucket_distinct[OF inv lt])
+  have km: "map (\<lambda>e. fst (snd e)) (hm_del_list (ihash x) x (bs ! ibucket n x))
+      = removeAll x (map (\<lambda>e. fst (snd e)) (bs ! ibucket n x))"
+    by (rule hm_del_list_eq[OF hb db])
+  show "imap_inv n (list_update bs (ibucket n x)
+            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))"
+    by (rule im_update_bucket_inv[OF inv hm_del_list_set])
+       (simp_all add: km db distinct_removeAll)
+  show "imap_map n (list_update bs (ibucket n x)
+            ((ihash x, x, v) # hm_del_list (ihash x) x (bs ! ibucket n x)))
+      = (imap_map n bs)(x \<mapsto> v)"
+    by (rule imap_map_insert[OF inv]) (rule hm_look_list_del[OF hb])
+qed
+
+lemma im_update_h_rule:
+  "<is_imap m q> im_update_h q (ihash x) x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
+proof (cases q)
+  case (fields n c a)
+  have pre: "is_imap m (n, c, a) = (\<exists>\<^sub>Abs. a \<mapsto>\<^sub>a bs * \<up>(imap_inv n bs \<and> m = imap_map n bs))"
+    by (simp add: is_imap_def)
+  show ?thesis
+    unfolding fields pre im_update_h_def Array.nth'_def Array.upd'_def
+    by (sep_auto simp: ibucket_def[symmetric] imap_inv_bucket_lt is_imap_def
+        im_update_None im_update_Some split: option.splits heap: im_grow_rule)
+qed
+
+lemma im_update_rule: "<is_imap m q> im_update q x v <\<lambda>q'. is_imap (m(x \<mapsto> v)) q'>\<^sub>t"
+  unfolding im_update_def by (rule im_update_h_rule)
+
 (*<*)
 end
 (*>*)
