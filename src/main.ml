@@ -234,6 +234,7 @@ let _ =
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
     "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
     "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
+    "-vdense", Arg.Set Misc.verified_dense, "\tRun the verified dense evaluator (Dense_Eval.thy) rather than the shipping one; for measurement, it keeps the kernel's wide tuples";
     "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tSmallest table size for which a join builds a heap-resident index (default 0, i.e. always; only with -heap_maps)";
     "-bulk_min", Arg.Set_int Misc.bulk_min, "\tSmallest table built in one pass from a sorted list rather than by repeated insertion (default 64)";
     "-heap_since", Arg.Set Misc.heap_since, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";

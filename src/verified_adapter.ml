@@ -150,8 +150,39 @@ and convert_re_vars fvl bvl lets = function
   | Star r -> Star (convert_re_vars fvl bvl lets r)
   in convert_formula_vars free_vars [] [] f
 
-(* The monitor reads its input with nothing around the fields: a tuple of the database is an
-   [event_data list], one field per argument of the predicate. *)
+(* The verified dense evaluator of thys/MFODL_Monitor_Imp/Dense_Eval.thy reads and writes the
+   kernel's wide tables, so [-vdense] needs the conversion into them -- and, below, a database,
+   a batch and a verdict in that representation.  Nothing else in this file does. *)
+let convert_tuple (pname, tl) sl =
+  let pos = ref 0 in
+  let type_error tname =
+    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for\
+      \ predicate %s, field number %d") tname pname !pos in
+    failwith msg
+  in
+  try List.map2
+    (fun (_, t) s ->
+      incr pos;
+      Some (match t with
+      | TInt ->
+        (try EInt (Z.of_string s)
+         with Invalid_argument _ -> type_error "int")
+      | TStr -> EString s
+      | TFloat ->
+        (try EFloat (float_of_string s)
+         with Failure _ -> type_error "float")
+      | TRegexp -> unsupported "Regular expressions constants are not supported"
+      )
+    )
+    tl sl
+  with Invalid_argument _ ->
+    let msg = Printf.sprintf "[convert_tuple] Wrong tuple length for\
+      \ predicate %s (expected: %d, actual: %d)"
+      pname (List.length tl) (List.length sl) in
+    failwith msg
+
+(* The shipping monitor reads its input with nothing around the fields: a tuple of the database
+   is an [event_data list], one field per argument of the predicate. *)
 let uconvert_tuple (pname, tl) sl =
   let pos = ref 0 in
   let type_error tname =
@@ -180,12 +211,15 @@ let uconvert_tuple (pname, tl) sl =
       pname (List.length tl) (List.length sl) in
     failwith msg
 
-(* The database of one time point. *)
-type db = ((string * nat), ((event_data list) set list)) mapping
+type wdb = ((string * nat), (((event_data option) list) set list)) mapping
+type udb = ((string * nat), ((event_data list) set list)) mapping
+
+(* The database of one time point, in the representation the monitor in use reads. *)
+type db = Short of udb | Wide of wdb
 
 type tyssig = string * nat -> (tysym list) option
 
-let empty_db () = uempty_db
+let empty_db () = if !Misc.verified_dense then Wide empty_db else Short uempty_db
 
 (* Bulk construction of the tables of a time point.
 
@@ -210,11 +244,29 @@ let compare_event_data a b = match a, b with
   | _, EFloat _ -> 1
   | EString x, EString y -> String.compare x y
 
+let rec compare_tuple a b = match a, b with
+  | [], [] -> 0
+  | [], _ -> -1
+  | _, [] -> 1
+  | None :: xs, None :: ys -> compare_tuple xs ys
+  | None :: _, Some _ :: _ -> -1
+  | Some _ :: _, None :: _ -> 1
+  | Some x :: xs, Some y :: ys ->
+    let c = compare_event_data x y in
+    if c <> 0 then c else compare_tuple xs ys
+
 let equal_event_data a b = match a, b with
   | EInt x, EInt y -> Z.equal x y
   | EFloat x, EFloat y -> Int64.equal (Int64.bits_of_float x) (Int64.bits_of_float y)
   | EString x, EString y -> String.equal x y
   | _ -> false
+
+let equal_tuple a b =
+  List.length a = List.length b &&
+  List.for_all2 (fun x y -> match x, y with
+    | None, None -> true
+    | Some x, Some y -> equal_event_data x y
+    | _ -> false) a b
 
 let rec compare_utuple a b = match a, b with
   | [], [] -> 0
@@ -259,11 +311,12 @@ type 'a batch = {
   mutable b_last: 'a list ref;
 }
 
-type batches = event_data list batch
+type batches = WB of (event_data option) list batch | UB of event_data list batch
 
 let empty_batch () : batches =
-  { b_conv = uconvert_tuple; b_tbl = Pred_tbl.create 16; b_live = false; b_tl = [];
-    b_name = ""; b_last = ref [] }
+  let mk conv = { b_conv = conv; b_tbl = Pred_tbl.create 16; b_live = false; b_tl = [];
+                  b_name = ""; b_last = ref [] } in
+  if !Misc.verified_dense then WB (mk convert_tuple) else UB (mk uconvert_tuple)
 
 let add_gen : 'a. 'a batch -> string * (string * tcst) list -> string list -> unit =
   fun b ((pname, tl) as schema) sl ->
@@ -280,7 +333,9 @@ let add_gen : 'a. 'a batch -> string * (string * tcst) list -> string list -> un
     b.b_live <- true; b.b_tl <- tl; b.b_name <- pname; b.b_last <- r
   end
 
-let add_to_batch b schema sl = add_gen b schema sl
+let add_to_batch b schema sl = match b with
+  | WB b -> add_gen b schema sl
+  | UB b -> add_gen b schema sl
 
 let flush_gen cmp eq tbl_of ins b db =
   let db = Pred_tbl.fold (fun (pname, a) r db ->
@@ -291,8 +346,12 @@ let flush_gen cmp eq tbl_of ins b db =
   b.b_live <- false;
   db
 
-let flush_batch b db =
-  flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db
+let flush_batch b db = match b, db with
+  | UB b, Short db ->
+    Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
+  | WB b, Wide db ->
+    Wide (flush_gen compare_tuple equal_tuple table_of_list insert_table_into_db b db)
+  | _ -> failwith "[flush_batch] batch and database disagree on the representation"
 
 let convert_into_tysym ty = 
   match ty with
@@ -320,15 +379,37 @@ let type_check_formula dbschema f =
    [minit_safe_d] fails when the compiler cannot place a node -- there is no wide evaluation
    left to fall back to -- and [dfail_nodes] counts those nodes; on a state it returned the
    count is 0 by construction. *)
-type state = nat * (nat * (dformula * (nat * nat queue)))
+type dense_state = nat * (nat * (dformula * (nat * nat queue)))
+
+(* The verified dense evaluator, for [-vdense]: the algorithm of Dense_Eval.thy, which drops the
+   empty columns but keeps the kernel's wide tuples, and which the simulation theorem of that
+   theory covers.  It sits between the kernel's own evaluator and the shipping one. *)
+type vdense_state = unit dmstate_ext
+
+type state = Dense of dense_state | VDense of vdense_state
 
 let init cf =
-  let st = minit_safe_d cf () in
-  (match st with (_, (_, (m, _))) ->
+  if !Misc.verified_dense then begin
+    let st = dminit_safe cf in
+    let nf = int_of_nat (vdfail_nodes (dmstate_m st)) in
     if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
-      Printf.eprintf "[dense] subformulas outside the dense fragment: %d\n%!"
-        (int_of_nat (dfail_nodes m)));
-  st
+      Printf.eprintf "[vdense] nodes outside the verified dense fragment: %d\n%!" nf;
+    if nf <> 0 then
+      failwith "the formula is outside the verified dense fragment";
+    VDense st
+  end
+  else begin
+    let st = minit_safe_d cf () in
+    (match st with (_, (_, (m, _))) ->
+      if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
+        Printf.eprintf "[dense] subformulas outside the dense fragment: %d\n%!"
+          (int_of_nat (dfail_nodes m)));
+    Dense st
+  end
+
+let set_fold f s x = match s with
+  | RBT_set r -> rbt_fold f r x
+  | _ -> failwith "[set_fold] unexpected set representation"
 
 let uset_fold f s x = match s with
   | RBT_set r -> urbt_fold f r x
@@ -337,13 +418,26 @@ let uset_fold f s x = match s with
 (* Verdicts are kept in the kernel's representation; [show_results] below prints them without
    converting to [Tuple.tuple] first.  The monitor over the short tuples produces them without
    the option around the fields. *)
-type verdict = event_data list set
+type verdict = UV of event_data list set | WV of (event_data option) list set
 
-let annotate vs =
-  List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs
+let annotate wrap vs =
+  List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
 
-let step t db st =
-  let (vs, st') = mstep_d (db, nat_of_integer t) st () in (annotate vs, st')
+let short_db_only = function
+  | Short db -> db
+  | Wide _ -> failwith "[step] the short monitor was given the wide database"
+
+let wide_db_only = function
+  | Wide db -> db
+  | Short _ -> failwith "[step] the wide monitor was given the short database"
+
+let step t db = function
+  | Dense st ->
+    let (vs, st') = mstep_d (short_db_only db, nat_of_integer t) st () in
+    (annotate (fun v -> UV v) vs, Dense st')
+  | VDense st ->
+    let (vs, st') = dmstep (wide_db_only db, nat_of_integer t) st in
+    (annotate (fun v -> WV v) vs, VDense st')
 
 (* Direct output of verdicts.
 
@@ -460,7 +554,11 @@ let show_results_slow_gen posl q tsq rows =
   tuples <> []
 
 let show_results_slow posl q tsq v =
-  show_results_slow_gen posl q tsq (List.rev (uset_fold (fun t acc -> t :: acc) v []))
+  let rows = match v with
+    | UV table -> List.rev (uset_fold (fun t acc -> t :: acc) table [])
+    | WV table ->
+      List.rev (set_fold (fun t acc -> List.filter_map (fun x -> x) t :: acc) table []) in
+  show_results_slow_gen posl q tsq rows
 
 exception Slow_path
 
@@ -469,6 +567,21 @@ exception Slow_path
    tuple lists; the order is checked against the previous tuple on the way. If the tree order
    is not MonPoly's (mixed-type columns) or a column is undefined, the general path is taken. *)
 let out_buf = Buffer.create 4096
+
+(* MonPoly's tuple order on the kernel's wide tuples; an undefined column leaves the fast path. *)
+let rec compare_otuple_mp t1 t2 = match t1, t2 with
+  | [], [] -> 0
+  | [], _ :: _ -> -1
+  | _ :: _, [] -> 1
+  | Some x :: xs, Some y :: ys ->
+    let c = compare_event_data_mp x y in
+    if c <> 0 then c else compare_otuple_mp xs ys
+  | _ -> raise Slow_path
+
+let rec add_otuple b first = function
+  | [] -> ()
+  | Some v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_otuple b false r
+  | None :: _ -> raise Slow_path
 
 (* The columns of one tuple, as a top-level function rather than a closure passed to
    [List.iteri]: the closure was allocated once per tuple of every verdict. *)
@@ -519,9 +632,13 @@ let show_results_gen fold add_row cmp_prev slow q tsq table =
 let show_results posl _i q tsq (v: verdict) =
   if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
     show_results_slow posl q tsq v
-  else
-    show_results_gen uset_fold add_utuple compare_tuple_mp
-      (fun () -> show_results_slow posl q tsq v) q tsq v
+  else match v with
+    | UV table ->
+      show_results_gen uset_fold add_utuple compare_tuple_mp
+        (fun () -> show_results_slow posl q tsq v) q tsq table
+    | WV table ->
+      show_results_gen set_fold add_otuple compare_otuple_mp
+        (fun () -> show_results_slow posl q tsq v) q tsq table
 
 let is_monitorable dbschema f =
   let s = mmonitorable_exec (convert_formula dbschema f) in

@@ -21,9 +21,8 @@ abbreviation (input) ftable :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table
 text \<open>
   A database is well formed when the table stored at a name of arity @{term ar} holds tuples of
   that width with no holes -- which is what the trace's own databases look like.  The dense
-  formula only ever reads a database at a genuine input predicate (a let-bound one is always
-  inside a @{term DPure} node, where the kernel's own evaluator handles it), so this is exactly
-  the condition its predicate nodes need.  The tables are also required to be finite: the dense
+  formula's predicate nodes read the database at the width the name was declared with, so this is
+  exactly the condition they need.  The tables are also required to be finite: the dense
   multi-way join and the dense aggregation need it, and it cannot come from anywhere else -- the
   kernel's own invariant does not carry finiteness (@{term qtable} does not), and the trace does
   not either.  It is a property of the input, and a real log has it.
@@ -100,13 +99,15 @@ text \<open>
   A dense formula mirrors the kernel's @{typ "('msaux, 'muaux, 'mtaux) mformula"} node by node,
   but every node carries the data the short representation needs instead of the data the wide
   one needs: a join plan instead of two variable sets, a term already reindexed against the
-  operand's column list, a mask at the boundary.  @{term "DPure \<phi> m msk"} is the escape hatch:
-  it runs the kernel's own evaluator on a subformula and narrows its output, so a dense formula
-  need not cover every node of the kernel's language to be usable.
+  operand's column list, a mask at the boundary.  @{term DFail} stands for a node the dense
+  fragment does not cover: it evaluates to nothing and no simulation rule relates it to a kernel
+  formula, so a dense formula containing one proves nothing and the compiler's caller must check
+  that it produced none.  Nothing in the type mentions the kernel's formula type, which is what
+  makes the dense evaluator exportable on its own.
 \<close>
 
 datatype dformula =
-    DPure "(mmasaux, muaux_dq, event_data mmtaux) mformula" nat "bool list"
+    DFail
   | DRel "event_data table"
   | DPredS Formula.name nat
   | DPredM Formula.name nat "Formula.trm list" cols
@@ -131,14 +132,33 @@ datatype dformula =
   | DTrigger args "nat option list" dformula dformula "event_data mbuf2" "ts list"
       "event_data mmtaux"
 
+text \<open>The compiler is total on the kernel's formulas, so it answers @{const DFail} at a node it
+  does not cover rather than failing.  Its caller checks that the compiled formula has none: this
+  counts them.\<close>
+
+fun vdfail_nodes :: "dformula \<Rightarrow> nat" where
+  "vdfail_nodes DFail = 1"
+| "vdfail_nodes (DAndRel \<phi> conf) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DNeg \<phi>) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DExists \<phi> b) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DAgg g0 \<omega> f k pos \<phi>) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DOr \<phi> \<psi> buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DAnd pl \<phi> pos \<psi> buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DPrev I \<phi> f buf nts) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DNext I \<phi> f nts) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DAnds ps ns L buf) = sum_list (map vdfail_nodes L)"
+| "vdfail_nodes (DSince args \<phi> \<psi> buf aux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DUntil args msk \<phi> \<psi> buf nts t aux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DAndAssign p t \<phi>) = vdfail_nodes \<phi>"
+| "vdfail_nodes (DLet p m \<phi> \<psi>) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DLetPast p m \<phi> \<psi> i buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DTrigger dags pl \<phi> \<psi> dbuf nts daux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes \<phi> = 0"
+
 function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow>
-    event_data table list \<times> dformula"
-  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula list \<Rightarrow>
-    (event_data table list \<times> dformula) list" where
-  "deval_list j ts db [] = []"
-| "deval_list j ts db (\<phi> # r) = deval j ts db \<phi> # deval_list j ts db r"
-| "deval j ts db (DPure \<phi> m msk) =
-     (let (xs, \<phi>') = meval j m ts db \<phi> in (map (dnarrow msk) xs, DPure \<phi>' m msk))"
+    event_data table list \<times> dformula" where
+  "deval j ts db DFail = ([], DFail)"
 | "deval j ts db (DRel rel) = (replicate (length ts) rel, DRel rel)"
 | "deval j ts db (DPredS e ar) =
      ((case Mapping.lookup db (e, ar) of
@@ -178,7 +198,7 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
           (zs, _, nts') = mprev_next I xs (nts @ ts)
       in (zs, DNext I \<phi>' first' nts'))"
 | "deval j ts db (DAnds ps ns Ld dbuf) =
-     (let R = deval_list j ts db Ld;
+     (let R = map (deval j ts db) Ld;
           (zs, dbuf') = mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as]) []
             (mbufn_add (map fst R) dbuf)
       in (zs, DAnds ps ns (map snd R) dbuf'))"
@@ -232,29 +252,21 @@ text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open
   formula's size -- exactly as the kernel's own evaluator does it.  Evaluation preserves that
   size, which is the fact that makes the measure decrease.\<close>
 
-lemma size_list_map_cong: "map f xs = map g ys \<Longrightarrow> size_list f xs = size_list g ys"
-  by (metis length_map size_list_conv_sum_list)
-
 lemma psize_snd_deval:
-  "deval_deval_list_dom (Inl (j, ts, db, \<phi>)) \<Longrightarrow> size (snd (deval j ts db \<phi>)) = size \<phi>"
-  "deval_deval_list_dom (Inr (j, ts, db, L)) \<Longrightarrow>
-     map (size \<circ> snd) (deval_list j ts db L) = map size L"
-  apply (induct rule: deval_deval_list.pinduct)
-  apply (auto simp only: prod.inject deval.psimps deval_list.psimps Let_def snd_conv fst_conv
-      dformula.size list.map o_apply size_list_map cong: size_list_cong split: prod.splits)
+  "deval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (deval j ts db \<phi>)) = size \<phi>"
+  apply (induct rule: deval.pinduct)
+  apply (auto simp only: prod.inject deval.psimps Let_def snd_conv fst_conv
+      dformula.size list.map map_map o_apply size_list_map cong: size_list_cong
+      split: prod.splits)
    apply simp
-  apply (drule size_list_map_cong)
-  apply simp
   apply (metis snd_conv size_letpast_meval)
   done
 
-lemma total_deval: "All deval_deval_list_dom"
-  by (relation "measure (\<lambda>x. case x of Inl (j, ts, db, \<phi>) \<Rightarrow> size \<phi>
-      | Inr (j, ts, db, L) \<Rightarrow> size_list size L)")
-    (auto simp: termination_simp dest!: psize_snd_deval(1) dest: sym)
+lemma total_deval: "All deval_dom"
+  by (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)")
+    (auto simp: termination_simp dest!: psize_snd_deval dest: sym)
 
-lemmas size_snd_deval = psize_snd_deval(1)[OF total_deval[THEN spec]]
-lemmas map_size_snd_deval_list = psize_snd_deval(2)[OF total_deval[THEN spec]]
+lemmas size_snd_deval = psize_snd_deval[OF total_deval[THEN spec]]
 
 termination deval by (rule total_deval)
 
@@ -772,9 +784,7 @@ subsection \<open>The relation itself\<close>
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformula \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> bool" where
-  DsPure: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw \<phi> \<Longrightarrow>
-    dsim n cs tw (DPure \<phi> n (wide_mask n cs)) \<phi>"
-| DsRel: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MRel rel) \<Longrightarrow>
+  DsRel: "wf_cols n cs \<Longrightarrow> produces n (set cs) tw (mformula.MRel rel) \<Longrightarrow>
     table n (set cs) rel \<Longrightarrow>
     dsim n cs tw (DRel (dtabc n cs rel)) (mformula.MRel rel)"
 | DsPredC: "wf_cols n cs \<Longrightarrow>
@@ -1070,10 +1080,10 @@ lemma deval_list_rel:
        (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
           (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (css ! i)) as, \<psi>d')
              \<and> dsim n (css ! i) tw' \<psi>d' \<psi>'))) \<Longrightarrow>
-   length (deval_list j ts db Ld) = length L \<and>
-   map fst (deval_list j ts db Ld)
+   length (map (deval j ts db) Ld) = length L \<and>
+   map fst (map (deval j ts db) Ld)
        = map2 (\<lambda>c x. map (dtabc n c) x) css (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
-   (\<forall>i < length L. dsim n (css ! i) tw' (map snd (deval_list j ts db Ld) ! i)
+   (\<forall>i < length L. dsim n (css ! i) tw' (map snd (map (deval j ts db) Ld) ! i)
        (snd (meval j n ts db (L ! i))))"
 proof (induct L arbitrary: css Ld)
   case (Cons \<psi> L')
@@ -1091,11 +1101,11 @@ proof (induct L arbitrary: css Ld)
   obtain as \<psi>2 where e: "meval j n ts db \<psi> = (as, \<psi>2)" by (cases "meval j n ts db \<psi>")
   obtain \<psi>d2 where dv: "deval j ts db \<psi>d = (map (dtabc n c) as, \<psi>d2)"
     and sm: "dsim n c tw' \<psi>d2 \<psi>2" using h e by blast
-  have rest: "length (deval_list j ts db Ld') = length L' \<and>
-      map fst (deval_list j ts db Ld')
+  have rest: "length (map (deval j ts db) Ld') = length L' \<and>
+      map fst (map (deval j ts db) Ld')
         = map2 (\<lambda>c x. map (dtabc n c) x) css'
             (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L') \<and>
-      (\<forall>k < length L'. dsim n (css' ! k) tw' (map snd (deval_list j ts db Ld') ! k)
+      (\<forall>k < length L'. dsim n (css' ! k) tw' (map snd (map (deval j ts db) Ld') ! k)
           (snd (meval j n ts db (L' ! k))))"
   proof (rule IH)
     show "length Ld' = length L'" using l1 unfolding d by simp
@@ -1370,15 +1380,6 @@ theorem dsim_deval_N:
    \<exists>\<phi>d'. deval j ts db \<phi>d = (map (dtabc n cs) xs, \<phi>d')
      \<and> dsim n cs (dnext tw ts) \<phi>d' \<phi>'"
 proof (induct arbitrary: j ts db xs \<phi>' rule: dsim.induct)
-  case (DsPure n cs tw \<phi>)
-  note wf = DsPure.hyps(1) and p = DsPure.hyps(2)
-    and w = DsPure.prems(1) and sts = DsPure.prems(2)
-    and mts = DsPure.prems(3) and m = DsPure.prems(4)
-  have t: "list_all (ftable n (set cs)) xs" by (rule produces_tables[OF p w sts mts m])
-  have "map (dnarrow (wide_mask n cs)) xs = map (dtabc n cs) xs"
-    using t by (intro map_cong refl dnarrow_dtabc) (auto simp: list_all_iff)
-  then show ?case using m wf produces_next[OF p w sts mts m] by (auto intro!: dsim.DsPure)
-next
   case (DsRel n cs tw rel)
   note wf = DsRel.hyps(1) and p = DsRel.hyps(2) and t = DsRel.hyps(3)
     and w = DsRel.prems(1) and sts = DsRel.prems(2)
@@ -1734,22 +1735,22 @@ next
          (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (?cs' ! i)) as, \<psi>d')
             \<and> dsim n (?cs' ! i) (dnext tw ts) \<psi>d' \<psi>'))"
     using la w sts mts szL by blast
-  have dlr: "length (deval_list j ts db Ld) = length L \<and>
-      map fst (deval_list j ts db Ld)
+  have dlr: "length (map (deval j ts db) Ld) = length L \<and>
+      map fst (map (deval j ts db) Ld)
         = map2 (\<lambda>c y. map (dtabc n c) y) ?cs'
             (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
-      (\<forall>i < length L. dsim n (?cs' ! i) (dnext tw ts) (map snd (deval_list j ts db Ld) ! i)
+      (\<forall>i < length L. dsim n (?cs' ! i) (dnext tw ts) (map snd (map (deval j ts db) Ld) ! i)
           (snd (meval j n ts db (L ! i))))"
     by (rule deval_list_rel[OF l1 l2 la1])
-  have dl0: "length (deval_list j ts db Ld) = length L" using dlr by blast
-  have dl: "map fst (deval_list j ts db Ld)
+  have dl0: "length (map (deval j ts db) Ld) = length L" using dlr by blast
+  have dl: "map fst (map (deval j ts db) Ld)
       = map2 (\<lambda>c y. map (dtabc n c) y) ?cs' (map fst ?R)"
     using dlr by (simp add: comp_def)
-  have dl2: "\<forall>i < length L. dsim n (?cs' ! i) (dnext tw ts) (map snd (deval_list j ts db Ld) ! i)
+  have dl2: "\<forall>i < length L. dsim n (?cs' ! i) (dnext tw ts) (map snd (map (deval j ts db) Ld) ! i)
       (snd (meval j n ts db (L ! i)))" using dlr by blast
   \<comment> \<open>the buffer\<close>
   have badd: "dbufn n ?cs' (mbufn_add (map fst ?R) buf)
-      (mbufn_add (map fst (deval_list j ts db Ld)) dbuf)"
+      (mbufn_add (map fst (map (deval j ts db) Ld)) dbuf)"
     unfolding dl by (rule dbufn_add[OF bf _ tabs]) (use l2 in simp)
   \<comment> \<open>the join at each firing\<close>
   have step: "\<And>as :: event_data table list. length as = length ?cs' \<Longrightarrow>
@@ -1802,14 +1803,14 @@ next
       using DJ unfolding cse pse nse a0 uv by simp
   qed
   obtain dbuf' where dt: "mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as])
-        ([] :: event_data table list) (mbufn_add (map fst (deval_list j ts db Ld)) dbuf)
+        ([] :: event_data table list) (mbufn_add (map fst (map (deval j ts db) Ld)) dbuf)
       = (map (dtabc n cs) zs, dbuf')"
     and bf': "dbufn n ?cs' buf' dbuf'"
     using dbufn_take[OF badd step g0] by blast
   have dv: "deval j ts db (DAnds ps ns Ld dbuf)
-      = (map (dtabc n cs) xs, DAnds ps ns (map snd (deval_list j ts db Ld)) dbuf')"
+      = (map (dtabc n cs) xs, DAnds ps ns (map snd (map (deval j ts db) Ld)) dbuf')"
     using dt x by (simp add: Let_def del: mbufn_take.simps)
-  have s2: "dsim n cs (dnext tw ts) (DAnds ps ns (map snd (deval_list j ts db Ld)) dbuf')
+  have s2: "dsim n cs (dnext tw ts) (DAnds ps ns (map snd (map (deval j ts db) Ld)) dbuf')
       (mformula.MAnds (set c0 # map set css) (map set nss) (map snd ?R) buf')"
   proof (rule dsim.DsAnds)
     show "wf_cols n cs" by (rule wf)
@@ -1817,14 +1818,14 @@ next
         (mformula.MAnds (set c0 # map set css) (map set nss) (map snd ?R) buf')"
       using produces_next[OF pr w sts mts m] fe by simp
     show "\<forall>i < length (map snd ?R). dsim n (?cs' ! i) (dnext tw ts)
-        (map snd (deval_list j ts db Ld) ! i) (map snd ?R ! i)"
+        (map snd (map (deval j ts db) Ld) ! i) (map snd ?R ! i)"
     proof (intro allI impI)
       fix i assume "i < length (map snd ?R)"
       then have iL: "i < length L" by simp
-      show "dsim n (?cs' ! i) (dnext tw ts) (map snd (deval_list j ts db Ld) ! i) (map snd ?R ! i)"
+      show "dsim n (?cs' ! i) (dnext tw ts) (map snd (map (deval j ts db) Ld) ! i) (map snd ?R ! i)"
         using dl2 iL by simp
     qed
-    show "length (map snd (deval_list j ts db Ld)) = length (map snd ?R)"
+    show "length (map snd (map (deval j ts db) Ld)) = length (map snd ?R)"
       using dl0 by simp
     show "length ?cs' = length (map snd ?R)" using l2 by simp
     show "\<forall>c \<in> set ?cs'. wf_cols n c" by (rule wc)

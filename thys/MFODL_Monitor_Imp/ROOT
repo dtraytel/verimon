@@ -24,6 +24,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
     Dense_Compile
     Dense_Init
     Dense_Descend
+    Dense_Descend_Code
     Dense_Unbox
     Dense_Imp
     Dense_Join_Correct

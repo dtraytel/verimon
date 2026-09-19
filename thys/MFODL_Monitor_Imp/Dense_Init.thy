@@ -10,9 +10,8 @@ text \<open>
   @{text mok_minit0} says that the kernel's initial state for a safe formula satisfies the
   structural criterion \<open>mok\<close> of the preceding theory, with the formula's free
   variables as its column set.  It is the last open hypothesis of
-  @{text dmonitor_mverdicts_pure}, so with it the dense monitor's transferred
-  correctness theorems hold outright for every monitorable formula --
-  @{text dmonitor_mverdicts_dense} at the end of this theory states them in that form.
+  @{text dmonitor_mverdicts_dof}, so with it the dense monitor's transferred
+  correctness theorems hold for every monitorable formula the compiler covers.
 
   The proof is by @{thm [source] safe_formula_induct}, one case per constructor.  What each case
   has to supply beyond the induction hypotheses is the initial auxiliary structure's invariant,
@@ -752,13 +751,11 @@ next
   then show ?case by (cases t) (auto intro!: MokTS)
 qed
 
-section \<open>The dense monitor's correctness theorem, without hypotheses\<close>
+section \<open>The kernel's initial state, read off\<close>
 
 text \<open>
-  Putting @{text mok_minit0} into @{text dmonitor_mverdicts_pure} closes the chain: for a
-  monitorable formula, the dense monitor started from the kernel's own initial state, viewed
-  through @{const dpure_state} with the formula's free columns, reports exactly the specified
-  verdicts.  Nothing is left to discharge at the call site.
+  @{text mok_minit0} discharges the criterion for the state the kernel itself starts from; what
+  remains for the theory that follows is to read that state's two fields off @{const minit_safe}.
 \<close>
 
 lemma minit_safe_state:
@@ -767,32 +764,6 @@ lemma minit_safe_state:
     and "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
   using assms[unfolded monitorable_formula_code]
   by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
-
-context verimon_spec
-begin
-
-theorem dmonitor_mverdicts_dense:
-  assumes f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
-  shows "flatten_verdicts (map (\<lambda>(i, t, X).
-      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
-      (dmonitor (dpure_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
-         (minit_safe \<phi>)) \<pi>)) = Mt \<pi>"
-proof -
-  have mm: "mmonitorable \<phi>" by (rule monitorable)
-  then have s: "safe_formula \<phi>" by (simp add: mmonitorable_def)
-  have fin: "finite (Formula.fv \<phi>)" by simp
-  have b: "\<forall>x \<in> Formula.fv \<phi>. x < Formula.nfv \<phi>" by (rule fvi_less_nfv)
-  have w: "wf_cols (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))"
-    using set_cols[OF fin] b by auto
-  have ni: "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>" by (rule minit_safe_state(1)[OF mm])
-  have mm0: "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
-    by (rule minit_safe_state(2)[OF mm])
-  have p: "mok (Formula.nfv \<phi>) (set (set_cols (Formula.fv \<phi>))) 0 (mstate_m (minit_safe \<phi>))"
-    unfolding mm0 set_cols(2)[OF fin] by (rule mok_minit0[OF s b])
-  show ?thesis by (rule dmonitor_mverdicts_pure[OF w ni p f wty])
-qed
-
-end
 
 (*<*)
 end

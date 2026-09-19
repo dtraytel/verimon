@@ -112,6 +112,9 @@ let gc_minor_heap = ref 0
    the column list in the formula (see thys/MFODL_Monitor_Imp/Dense_Imp.thy). *)
 let dense_cols = ref false
 
+(* Run the verified dense evaluator of Dense_Eval.thy instead of the shipping one. *)
+let verified_dense = ref false
+
 let new_last_ts = ref true
 
 let ignore_parse_errors = ref false

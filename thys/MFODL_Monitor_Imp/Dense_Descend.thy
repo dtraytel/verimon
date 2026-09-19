@@ -7,11 +7,11 @@ begin
 section \<open>The descending compiler\<close>
 
 text \<open>
-  The state built in the preceding theory relates to the kernel's through one \<open>DPure\<close>
-  node at the root: honest, but it runs the kernel's evaluator and narrows its output, so nothing
-  of the dense representation is used.  This theory replaces it by a compiler that descends into
-  the formula and emits a dense node wherever the simulation has a rule for one, falling back to
-  \<open>DPure\<close> only at the constructors the dense fragment does not cover.
+  The dense evaluator's formula has a node for most, but not all, of the kernel's.  This theory
+  builds the compiler that descends into a kernel formula and emits a dense node wherever the
+  simulation has a rule for one, answering \<open>DFail\<close> at the constructors the dense fragment does
+  not cover.  Nothing relates \<open>DFail\<close> to a kernel formula, so the theorems below hold of a
+  compiled formula that has none -- which the caller checks with @{const vdfail_nodes}.
 
   The compiler is a plain function of the kernel's formula and the column list its result is to
   have.  It needs no separate pass computing a node's columns: at every recursive call the column
@@ -28,27 +28,21 @@ definition dagg_gcols :: "aggargs \<Rightarrow> cols" where
   "dagg_gcols args = map (\<lambda>c. c - length (aggargs_tys args))
      (drop (length (aggargs_tys args)) (set_cols (aggargs_cols args)))"
 
-fun dof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula"
-and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
-    (mmasaux, muaux_dq, event_data mmtaux) mformula list \<Rightarrow> dformula list" where
-  "dof_list n css [] = []"
-| "dof_list n css (\<phi> # L) =
-     dof n (case css of [] \<Rightarrow> [] | c # _ \<Rightarrow> c) \<phi> #
-     dof_list n (case css of [] \<Rightarrow> [] | _ # r \<Rightarrow> r) L"
-| "dof n cs (mformula.MRel rel) = DRel (dtabc n cs rel)"
+fun dof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
+  "dof n cs (mformula.MRel rel) = DRel (dtabc n cs rel)"
 | "dof n cs (mformula.MPred e tms mode) =
      (if mode = Match then DPredM e (length tms) tms cs
       else if (mode = Copy \<and> tms = map Formula.Var [0..<n] \<and> cs = [0..<n])
            \<or> (mode = Simple \<and> is_simple_pattern tms 0 \<and> cs = smp_cols tms)
       then DPredS e (length tms)
-      else DPure (mformula.MPred e tms mode) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MAndRel \<phi> conf) =
      (if Formula.fv_trm (fst conf) \<subseteq> set cs \<and> Formula.fv_trm (snd (snd (snd conf))) \<subseteq> set cs
       then DAndRel (dof n cs \<phi>) (reindex_constraint cs conf)
-      else DPure (mformula.MAndRel \<phi> conf) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MNeg \<phi>) =
      (if cs = [] then DNeg (dof n [] \<phi>)
-      else DPure (mformula.MNeg \<phi>) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MExists \<phi>) = DExists (dof (Suc n) (0 # map Suc cs) \<phi>) True"
 | "dof n cs (mformula.MOr \<phi> \<psi> buf) =
      DOr (dof n cs \<phi>) (dof n cs \<psi>)
@@ -58,26 +52,26 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
       if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A)
       then DAnd (mk_djoin cs1 cs2) (dof n cs1 \<phi>) pos (dof n cs2 \<psi>)
              (map (dtabc n cs1) (fst buf), map (dtabc n cs2) (snd buf))
-      else DPure (mformula.MAnd A \<phi> pos B \<psi> buf) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MPrev I \<phi> first buf nts) =
      DPrev I (dof n cs \<phi>) first (map (dtabc n cs) buf) nts"
 | "dof n cs (mformula.MNext I \<phi> first nts) = DNext I (dof n cs \<phi>) first nts"
 | "dof n cs (mformula.MAnds A_pos A_neg L buf) =
-     (case A_pos of [] \<Rightarrow> DPure (mformula.MAnds A_pos A_neg L buf) n (wide_mask n cs)
+     (case A_pos of [] \<Rightarrow> DFail
       | A # As \<Rightarrow>
         (let c0 = set_cols A; css = map set_cols As; nss = map set_cols A_neg in
          if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg
          then DAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-                (dof_list n (c0 # css @ nss) L)
+                (map2 (dof n) (c0 # css @ nss) L)
                 (map2 map (map (dtabc n) (c0 # css @ nss)) buf)
-         else DPure (mformula.MAnds A_pos A_neg L buf) n (wide_mask n cs)))"
+         else DFail))"
 | "dof n cs (mformula.MAgg args \<phi>) =
      (let m = length (aggargs_tys args); g = dagg_gcols args; y = aggargs_y args in
       if cs = merge_cols g [y] \<and> set_cols (aggargs_cols args) = agg_cols m g
       then DAgg (aggargs_g0 args) (aggargs_\<omega> args)
              (reindex_trm (agg_cols m g) (aggargs_f args)) m (ins_pos g y)
              (dof (m + n) (agg_cols m g) \<phi>)
-      else DPure (mformula.MAgg args \<phi>) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MSince args \<phi> \<psi> buf aux) =
      (let cs_L = set_cols (args_L args) in
       if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
@@ -85,7 +79,7 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
       then DSince (dargs cs cs_L args)
              (dof n cs_L \<phi>) (dof n cs \<psi>) init_mbuf2S
              (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
-      else DPure (mformula.MSince args \<phi> \<psi> buf aux) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
       if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
@@ -93,12 +87,12 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
       then DUntil (dargs cs cs_L args) (dmsk cs cs_L)
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] 0
              (init_dq (dargs cs cs_L args))
-      else DPure (mformula.MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
       then DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (dof n cs0 \<phi>)
-      else DPure (mformula.MAndAssign \<phi> conf) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MLet p m \<phi> \<psi>) = DLet p m (dof m [0..<m] \<phi>) (dof n cs \<psi>)"
 | "dof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
      DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi \<alpha>s"
@@ -110,14 +104,14 @@ and dof_list :: "nat \<Rightarrow> cols list \<Rightarrow>
          mem (args_ivl args) 0 \<and> buf = ([], []) \<and> nts = []
       then DTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] (init_mmtaux (dargs cs cs_L args))
-      else DPure (mformula.MTrigger args \<phi> \<psi> buf nts aux) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
-      else DPure (mformula.MTP mt i) n (wide_mask n cs))"
+      else DFail)"
 | "dof n cs (mformula.MTS mt) =
      (if cs = mtrm_dcols mt then DTS mt
-      else DPure (mformula.MTS mt) n (wide_mask n cs))"
-| "dof n cs \<phi> = DPure \<phi> n (wide_mask n cs)"
+      else DFail)"
+| "dof n cs \<phi> = DFail"
 
 subsection \<open>Column lists from column sets\<close>
 
@@ -150,40 +144,39 @@ lemma set_cols_merge:
   by (rule set_cols_eq)
     (use assms in \<open>auto simp: sorted_merge_cols set_merge_cols\<close>)
 
-subsection \<open>The escape hatch, as a step of the compiler\<close>
-
-lemma dsim_dof_pure:
-  assumes w: "wf_cols n cs" and p: "produces n (set cs) tw \<phi>"
-    and d: "dof n cs \<phi> = DPure \<phi> n (wide_mask n cs)"
-  shows "dsim n cs tw (dof n cs \<phi>) \<phi>"
-  unfolding d by (rule dsim.DsPure[OF w p])
+subsection \<open>The nodes the dense fragment does not cover\<close>
 
 lemma produces_minit0:
   assumes "safe_formula \<phi>" and "\<forall>x \<in> Formula.fv \<phi>. x < n"
   shows "produces n (Formula.fv \<phi>) tw (minit0 n \<phi>)"
   by (rule mok_produces[OF mok_minit0[OF assms]])
 
-lemma dsim_dof_minit0_pure:
-  assumes s: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
-    and d: "dof n (set_cols (Formula.fv \<phi>)) (minit0 n \<phi>)
-        = DPure (minit0 n \<phi>) n (wide_mask n (set_cols (Formula.fv \<phi>)))"
-  shows "dsim n (set_cols (Formula.fv \<phi>)) tw
-     (dof n (set_cols (Formula.fv \<phi>)) (minit0 n \<phi>)) (minit0 n \<phi>)"
-  by (rule dsim_dof_pure[OF wf_cols_set_cols[OF finite_fvi b] _ d])
-    (use produces_minit0[OF s b] in simp)
-
-subsection \<open>One lemma per constructor\<close>
-
 text \<open>
-  The induction that follows has thirty-two cases, so each is proved on its own first, with the
-  induction hypotheses as assumptions.  A case whose constructor the dense fragment does not
-  cover needs no lemma: it is @{thm [source] dsim_dof_minit0_pure} with the equation that the
-  compiler falls back at that node.
+  @{const dof} is total, and answers @{const DFail} where it has no dense node.  Nothing relates
+  @{const DFail} to a kernel formula, so every statement below is conditional on the compiled
+  formula containing none of them -- @{term "dofz n \<phi>"} -- and a node the fragment does not cover
+  makes its own case vacuous rather than needing a lemma.
 \<close>
 
 abbreviation (input) dofc :: "nat \<Rightarrow> ts \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
   "dofc n tw \<phi> \<equiv> dsim n (set_cols (Formula.fv \<phi>)) tw
      (dof n (set_cols (Formula.fv \<phi>)) (minit0 n \<phi>)) (minit0 n \<phi>)"
+
+abbreviation (input) dofz :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
+  "dofz n \<phi> \<equiv> vdfail_nodes (dof n (set_cols (Formula.fv \<phi>)) (minit0 n \<phi>)) = 0"
+
+lemma dsim_dof_minit0_fail:
+  assumes d: "dof n (set_cols (Formula.fv \<phi>)) (minit0 n \<phi>) = DFail" and z: "dofz n \<phi>"
+  shows "dofc n tw \<phi>"
+  using z unfolding d by simp
+
+subsection \<open>One lemma per constructor\<close>
+
+text \<open>
+  The induction that follows has thirty-two cases, so each is proved on its own first, with the
+  induction hypotheses as assumptions.  Each takes the parent's @{term dofz} and hands its
+  operands theirs, which the node's own compilation equation splits off.
+\<close>
 
 lemma dsim_dof_minit0_rel:
   assumes s: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
@@ -239,7 +232,7 @@ qed
 
 lemma dsim_dof_minit0_Pred:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
-    and e: "\<phi> = Formula.Pred pn ts"
+    and e: "\<phi> = Formula.Pred pn ts" and z: "dofz n \<phi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -269,9 +262,9 @@ proof -
       show ?thesis unfolding m Simple d by (rule dsim.DsPredS[OF w pr' sp True])
     next
       case False
-      have d: "dof n ?cs (minit0 n \<phi>) = DPure (minit0 n \<phi>) n (wide_mask n ?cs)"
+      have d: "dof n ?cs (minit0 n \<phi>) = DFail"
         unfolding m Simple using False by simp
-      show ?thesis by (rule dsim_dof_pure[OF w pr d])
+      show ?thesis by (rule dsim_dof_minit0_fail[OF d z])
     qed
   next
     case Match
@@ -286,7 +279,8 @@ lemma dsim_dof_minit0_Or:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MOr (minit0 n \<chi>) (minit0 n \<psi>) ([], [])"
     and A: "Formula.fv \<phi> = Formula.fv \<chi>" and A': "Formula.fv \<phi> = Formula.fv \<psi>"
-    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<psi>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -295,10 +289,12 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MOr (minit0 n \<chi>) (minit0 n \<psi>) ([], []))
       = DOr (dof n ?cs (minit0 n \<chi>)) (dof n ?cs (minit0 n \<psi>)) ([], [])" by simp
+  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
+    using z unfolding m d A[symmetric] A'[symmetric] by simp_all
   have s1: "dsim n ?cs tw (dof n ?cs (minit0 n \<chi>)) (minit0 n \<chi>)"
-    using i1 unfolding A[symmetric] .
+    using i1[OF z1] unfolding A[symmetric] .
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
-    using i2 unfolding A'[symmetric] .
+    using i2[OF z2] unfolding A'[symmetric] .
   have bf: "dbuf2 n ?cs ?cs ([], []) ([], [])" by (simp add: dbuf2_def)
   show ?thesis unfolding m d by (rule dsim.DsOr[OF w pr s1 s2 bf])
 qed
@@ -307,22 +303,24 @@ lemma dsim_dof_minit0_Neg:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MNeg (minit0 n \<chi>)"
     and A: "Formula.fv \<phi> = {}" and A': "Formula.fv \<chi> = {}"
-    and i1: "dofc n tw \<chi>"
+    and z: "dofz n \<phi>" and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   have cs: "set_cols (Formula.fv \<phi>) = []" unfolding A by simp
   have pr: "produces n {} tw (mformula.MNeg (minit0 n \<chi>))"
     using produces_minit0[OF sf b] unfolding m A .
   have d: "dof n [] (mformula.MNeg (minit0 n \<chi>)) = DNeg (dof n [] (minit0 n \<chi>))" by simp
+  have z1: "dofz n \<chi>" using z unfolding cs m d A' by simp
   have s1: "dsim n [] tw (dof n [] (minit0 n \<chi>)) (minit0 n \<chi>)"
-    using i1 unfolding A' by simp
+    using i1[OF z1] unfolding A' by simp
   show ?thesis unfolding cs m d by (rule dsim.DsNeg[OF pr s1])
 qed
 
 lemma dsim_dof_minit0_Prev:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MPrev I (minit0 n \<chi>) True [] []"
-    and A: "Formula.fv \<phi> = Formula.fv \<chi>" and i1: "dofc n tw \<chi>"
+    and A: "Formula.fv \<phi> = Formula.fv \<chi>"
+    and z: "dofz n \<phi>" and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -331,15 +329,17 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MPrev I (minit0 n \<chi>) True [] [])
       = DPrev I (dof n ?cs (minit0 n \<chi>)) True [] []" by simp
+  have z1: "dofz n \<chi>" using z unfolding m d A[symmetric] by simp
   have s1: "dsim n ?cs tw (dof n ?cs (minit0 n \<chi>)) (minit0 n \<chi>)"
-    using i1 unfolding A[symmetric] .
+    using i1[OF z1] unfolding A[symmetric] .
   show ?thesis unfolding m d by (rule dsim.DsPrev[OF w pr s1]) simp_all
 qed
 
 lemma dsim_dof_minit0_Next:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MNext I (minit0 n \<chi>) True []"
-    and A: "Formula.fv \<phi> = Formula.fv \<chi>" and i1: "dofc n tw \<chi>"
+    and A: "Formula.fv \<phi> = Formula.fv \<chi>"
+    and z: "dofz n \<phi>" and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -348,8 +348,9 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MNext I (minit0 n \<chi>) True [])
       = DNext I (dof n ?cs (minit0 n \<chi>)) True []" by simp
+  have z1: "dofz n \<chi>" using z unfolding m d A[symmetric] by simp
   have s1: "dsim n ?cs tw (dof n ?cs (minit0 n \<chi>)) (minit0 n \<chi>)"
-    using i1 unfolding A[symmetric] .
+    using i1[OF z1] unfolding A[symmetric] .
   show ?thesis unfolding m d by (rule dsim.DsNext[OF w pr s1])
 qed
 
@@ -357,7 +358,7 @@ lemma dsim_dof_minit0_Exists:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MExists (minit0 (Suc n) \<chi>)"
     and A: "Formula.fv \<phi> = Formula.fvi (Suc 0) \<chi>" and z: "0 \<in> Formula.fv \<chi>"
-    and i1: "dofc (Suc n) tw \<chi>"
+    and zf: "dofz n \<phi>" and i1: "dofz (Suc n) \<chi> \<Longrightarrow> dofc (Suc n) tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -368,8 +369,9 @@ proof -
   have cc: "?ccs = 0 # map Suc ?cs" unfolding A by (rule set_cols_fvi_Suc[OF z])
   have d: "dof n ?cs (mformula.MExists (minit0 (Suc n) \<chi>))
       = DExists (dof (Suc n) ?ccs (minit0 (Suc n) \<chi>)) True" unfolding cc by simp
+  have zf1: "dofz (Suc n) \<chi>" using zf unfolding m d by simp
   show ?thesis unfolding m d
-    by (rule dsim.DsExists[OF w pr i1]) (simp_all add: cc)
+    by (rule dsim.DsExists[OF w pr i1[OF zf1]]) (simp_all add: cc)
 qed
 
 lemma dsim_dof_minit0_MAnd:
@@ -379,7 +381,8 @@ lemma dsim_dof_minit0_MAnd:
     and c1: "c1 = set_cols (Formula.fv \<chi>)" and c2: "c2 = set_cols (Formula.fv \<psi>)"
     and A: "Formula.fv \<phi> = Formula.fv \<chi> \<union> Formula.fv \<psi>"
     and np: "\<not> pos \<Longrightarrow> Formula.fv \<psi> \<subseteq> Formula.fv \<chi>"
-    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<psi>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -398,35 +401,38 @@ proof -
       = DAnd (mk_djoin c1 c2) (dof n c1 (minit0 n \<chi>)) pos (dof n c2 (minit0 n \<psi>)) ([], [])"
     using g by (simp add: Let_def sc1' sc2' mc)
   have bf: "dbuf2 n c1 c2 ([], []) ([], [])" by (simp add: dbuf2_def)
+  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>" using z unfolding m d c1 c2 by simp_all
   show ?thesis unfolding m d
-    by (rule dsim.DsAnd[OF w pr i1[folded c1] i2[folded c2] mc refl g2 bf])
+    by (rule dsim.DsAnd[OF w pr i1[OF z1, folded c1] i2[OF z2, folded c2] mc refl g2 bf])
 qed
 
 lemma dsim_dof_minit0_MAndRel:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MAndRel (minit0 n \<chi>) (t1, pp, c, t2)"
-    and A: "Formula.fv \<phi> = Formula.fv \<chi>" and i1: "dofc n tw \<chi>"
+    and A: "Formula.fv \<phi> = Formula.fv \<chi>"
+    and z: "dofz n \<phi>" and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
   have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
   have pr: "produces n (set ?cs) tw (mformula.MAndRel (minit0 n \<chi>) (t1, pp, c, t2))"
     using produces_minit0[OF sf b] unfolding m by simp
-  have s1: "dsim n ?cs tw (dof n ?cs (minit0 n \<chi>)) (minit0 n \<chi>)"
-    using i1 unfolding A[symmetric] .
   show ?thesis
   proof (cases "Formula.fv_trm t1 \<subseteq> set ?cs \<and> Formula.fv_trm t2 \<subseteq> set ?cs")
     case True
     have d: "dof n ?cs (mformula.MAndRel (minit0 n \<chi>) (t1, pp, c, t2))
         = DAndRel (dof n ?cs (minit0 n \<chi>)) (reindex_constraint ?cs (t1, pp, c, t2))"
       using True by simp
+    have z1: "dofz n \<chi>" using z unfolding m d A[symmetric] by simp
+    have s1: "dsim n ?cs tw (dof n ?cs (minit0 n \<chi>)) (minit0 n \<chi>)"
+      using i1[OF z1] unfolding A[symmetric] .
     show ?thesis unfolding m d
       by (rule dsim.DsAndRel[OF w pr s1]) (use True in simp_all)
   next
     case False
-    have d: "dof n ?cs (minit0 n \<phi>) = DPure (minit0 n \<phi>) n (wide_mask n ?cs)"
+    have d: "dof n ?cs (minit0 n \<phi>) = DFail"
       unfolding m using False by simp
-    show ?thesis by (rule dsim_dof_pure[OF w pr[folded m] d])
+    show ?thesis by (rule dsim_dof_minit0_fail[OF d z])
   qed
 qed
 
@@ -568,7 +574,8 @@ lemma dsim_dof_minit0_MSince:
         = mformula.MSince args (minit0 n \<chi>) (minit0 n \<psi>) init_mbuf2S (init_mmasaux args)"
     and a: "args = init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) pos None"
     and A: "Formula.fv \<phi> = Formula.fv \<psi>" and sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<psi>"
-    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<psi>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -594,10 +601,12 @@ proof -
   have rl: "dsince_rel n ?cs ?cL args tw (init_mmasaux args)
       (dinit_msaux (dargs ?cs ?cL args) (dmsk ?cs ?cL)) init_mbuf2S init_mbuf2S"
     by (rule dsince_rel_init[OF a]) (use sub A in auto)
+  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
+    using z unfolding m d A[symmetric] by simp_all
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
-    using i2 unfolding A[symmetric] .
+    using i2[OF z2] unfolding A[symmetric] .
   show ?thesis unfolding m d
-    by (rule dsim.DsSince[OF w pr i1 s2 wL sb ag an aL aR refl rl])
+    by (rule dsim.DsSince[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl rl])
 qed
 
 lemma dsim_dof_minit0_MUntil:
@@ -606,7 +615,8 @@ lemma dsim_dof_minit0_MUntil:
         = mformula.MUntil args (minit0 n \<chi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux_dq args)"
     and a: "args = init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) pos None"
     and A: "Formula.fv \<phi> = Formula.fv \<psi>" and sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<psi>"
-    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<psi>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -632,10 +642,12 @@ proof -
   have rl: "duntil_rel n ?cs ?cL args tw 0 (init_muaux_dq args)
       (init_dq (dargs ?cs ?cL args)) ([], []) ([], []) []"
     by (rule duntil_rel_init[OF a]) (use sub A b bL in \<open>auto simp: finite_fvi\<close>)
+  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
+    using z unfolding m d A[symmetric] by simp_all
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
-    using i2 unfolding A[symmetric] .
+    using i2[OF z2] unfolding A[symmetric] .
   show ?thesis unfolding m d
-    by (rule dsim.DsUntil[OF w pr i1 s2 wL sb ag an aL aR refl refl rl])
+    by (rule dsim.DsUntil[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl refl rl])
 qed
 
 lemma dsim_dof_minit0_MAgg:
@@ -648,7 +660,8 @@ lemma dsim_dof_minit0_MAgg:
     and A: "Formula.fv \<phi>
         = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<chi> - {0..<length tys}))"
     and bc: "\<forall>x \<in> Formula.fv \<chi>. x < length tys + n"
-    and i1: "dofc (length tys + n) tw \<chi>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz (length tys + n) \<chi> \<Longrightarrow> dofc (length tys + n) tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?k = "length (aggargs_tys args)"
@@ -696,31 +709,22 @@ proof -
       = DAgg (aggargs_g0 args) (aggargs_\<omega> args) (reindex_trm (agg_cols ?k ?g) (aggargs_f args))
           ?k (ins_pos ?g y) (dof (?k + n) (agg_cols ?k ?g) (minit0 (?k + n) \<chi>))"
     using cse gd2 by (simp add: Let_def dg ay)
+  have i1': "vdfail_nodes (dof (?k + n) (agg_cols ?k ?g) (minit0 (?k + n) \<chi>)) = 0 \<Longrightarrow>
+      dsim (?k + n) (agg_cols ?k ?g) tw
+        (dof (?k + n) (agg_cols ?k ?g) (minit0 (?k + n) \<chi>)) (minit0 (?k + n) \<chi>)"
+    using i1 unfolding kt[symmetric] cc[symmetric] .
+  have z1: "vdfail_nodes (dof (?k + n) (agg_cols ?k ?g) (minit0 (?k + n) \<chi>)) = 0"
+    using z unfolding m' d by simp
   have s1: "dsim (?k + n) (agg_cols ?k ?g) tw
       (dof (?k + n) (agg_cols ?k ?g) (minit0 (?k + n) \<chi>)) (minit0 (?k + n) \<chi>)"
-    using i1 unfolding kt[symmetric] cc[symmetric] .
+    by (rule i1'[OF z1])
   show ?thesis unfolding m' d
     by (rule dsim.DsAgg[OF w pr s1 wg an ay yn ynotg g0 fs cse])
 qed
 
-lemma length_dof_list[simp]: "length (dof_list n css L) = length L"
-  by (induct L arbitrary: css) auto
-
-lemma dof_list_nth:
-  "i < length L \<Longrightarrow> i < length css \<Longrightarrow> dof_list n css L ! i = dof n (css ! i) (L ! i)"
-proof (induct L arbitrary: css i)
-  case Nil then show ?case by simp
-next
-  case (Cons a L)
-  then obtain c cs' where css: "css = c # cs'" by (cases css) auto
-  show ?case
-  proof (cases i)
-    case 0 then show ?thesis using css by simp
-  next
-    case (Suc j)
-    then show ?thesis using Cons css by simp
-  qed
-qed
+lemma map2_nth:
+  "i < length xs \<Longrightarrow> i < length ys \<Longrightarrow> map2 f xs ys ! i = f (xs ! i) (ys ! i)"
+  by simp
 
 lemma map_set_cols_set:
   assumes "\<forall>c \<in> set css. wf_cols n c"
@@ -735,8 +739,10 @@ lemma dsim_dof_minit0_MAnds:
     and wfc: "\<forall>c \<in> set (c0 # css @ nss). wf_cols n c"
     and A: "Formula.fv \<phi> = set c0 \<union> (\<Union>c \<in> set css. set c)"
     and sub: "\<forall>c \<in> set nss. set c \<subseteq> Formula.fv \<phi>"
-    and ih: "\<forall>i < length L. dsim n ((c0 # css @ nss) ! i) tw
-        (dof n ((c0 # css @ nss) ! i) (L ! i)) (L ! i)"
+    and z: "dofz n \<phi>"
+    and ih: "\<forall>i < length L. vdfail_nodes (dof n ((c0 # css @ nss) ! i) (L ! i)) = 0 \<longrightarrow>
+        dsim n ((c0 # css @ nss) ! i) tw
+          (dof n ((c0 # css @ nss) ! i) (L ! i)) (L ! i)"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -758,14 +764,27 @@ proof -
   have d: "dof n ?cs (mformula.MAnds (set c0 # map set css) (map set nss) L
         (replicate (length L) []))
       = DAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-          (dof_list n ?css L) (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
+          (map2 (dof n) ?css L) (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
     using dc lenL by (simp add: Let_def sc0 scss scnss)
-  have ld: "\<forall>i < length L. dsim n (?css ! i) tw (dof_list n ?css L ! i) (L ! i)"
+  have zs: "sum_list (map vdfail_nodes (map2 (dof n) ?css L)) = 0"
+    using z unfolding m d by simp
+  have zl: "\<forall>i < length L. vdfail_nodes (dof n (?css ! i) (L ! i)) = 0"
   proof (intro allI impI)
     fix i assume i: "i < length L"
     then have i': "i < length ?css" using lenL by simp
-    have "dof_list n ?css L ! i = dof n (?css ! i) (L ! i)" by (rule dof_list_nth[OF i i'])
-    then show "dsim n (?css ! i) tw (dof_list n ?css L ! i) (L ! i)" using ih i by simp
+    have "i < length (map2 (dof n) ?css L)" using i i' by simp
+    then have "map2 (dof n) ?css L ! i \<in> set (map2 (dof n) ?css L)" by (rule nth_mem)
+    then have "vdfail_nodes (map2 (dof n) ?css L ! i) = 0" using zs by auto
+    then show "vdfail_nodes (dof n (?css ! i) (L ! i)) = 0"
+      unfolding map2_nth[OF i' i] .
+  qed
+  have ld: "\<forall>i < length L. dsim n (?css ! i) tw (map2 (dof n) ?css L ! i) (L ! i)"
+  proof (intro allI impI)
+    fix i assume i: "i < length L"
+    then have i': "i < length ?css" using lenL by simp
+    have "map2 (dof n) ?css L ! i = dof n (?css ! i) (L ! i)" by (rule map2_nth[OF i' i])
+    then show "dsim n (?css ! i) tw (map2 (dof n) ?css L ! i) (L ! i)"
+      using ih zl i by simp
   qed
   have bf: "dbufn n ?css (replicate (length L) [])
       (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
@@ -864,7 +883,7 @@ lemma dsim_dof_minit0_AndAssign:
     and m: "minit0 n \<phi> = mformula.MAndAssign (minit0 n \<chi>) (y, t)"
     and yn: "y \<notin> Formula.fv \<chi>" and fvt: "Formula.fv_trm t \<subseteq> Formula.fv \<chi>"
     and A: "Formula.fv \<phi> = Set.insert y (Formula.fv \<chi>)"
-    and i1: "dofc n tw \<chi>"
+    and z: "dofz n \<phi>" and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -883,7 +902,8 @@ proof -
     using ymem fvs cs0 by (simp add: Let_def)
   have mc: "?cs = merge_cols ?csc [y]"
     using merge_rem_col[OF conjunct1[OF w] ymem] unfolding cs0 by simp
-  show ?thesis unfolding m d by (rule dsim.DsAndAssign[OF w pr i1 yb ynn fvs mc])
+  have z1: "dofz n \<chi>" using z unfolding m d by simp
+  show ?thesis unfolding m d by (rule dsim.DsAndAssign[OF w pr i1[OF z1] yb ynn fvs mc])
 qed
 
 text \<open>A let-bound formula's frame has every column live, so its own dense column list is
@@ -893,7 +913,8 @@ lemma dsim_dof_minit0_Let:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MLet p k (minit0 k \<chi>) (minit0 n \<eta>)"
     and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
-    and i1: "dofc k tw \<chi>" and i2: "dofc n tw \<eta>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz k \<chi> \<Longrightarrow> dofc k tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -902,9 +923,11 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MLet p k (minit0 k \<chi>) (minit0 n \<eta>))
       = DLet p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>))" by simp
+  have z1: "dofz k \<chi>" and z2: "dofz n \<eta>"
+    using z unfolding m d A set_cols_upt B[symmetric] by simp_all
   have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
-    using i1 unfolding A set_cols_upt .
-  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+    using i1[OF z1] unfolding A set_cols_upt .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] unfolding B .
   show ?thesis unfolding m d by (rule dsim.DsLet[OF w pr s1 s2])
 qed
 
@@ -914,7 +937,8 @@ lemma dsim_dof_minit0_Frz:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 []"
     and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
-    and i1: "dofc k tw \<chi>" and i2: "dofc n tw \<eta>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz k \<chi> \<Longrightarrow> dofc k tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -923,9 +947,11 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 [])
       = DFrz p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>)) 0 0 0 []" by simp
+  have z1: "dofz k \<chi>" and z2: "dofz n \<eta>"
+    using z unfolding m d A set_cols_upt B[symmetric] by simp_all
   have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
-    using i1 unfolding A set_cols_upt .
-  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+    using i1[OF z1] unfolding A set_cols_upt .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] unfolding B .
   show ?thesis unfolding m d by (rule dsim.DsFrz[OF w pr s1 s2]) simp
 qed
 
@@ -936,7 +962,8 @@ lemma dsim_dof_minit0_LetPast:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MLetPast p k (minit0 k \<chi>) (minit0 n \<eta>) 0 None"
     and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
-    and i1: "dofc k tw \<chi>" and i2: "dofc n tw \<eta>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz k \<chi> \<Longrightarrow> dofc k tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -945,9 +972,11 @@ proof -
     using produces_minit0[OF sf b] unfolding m by simp
   have d: "dof n ?cs (mformula.MLetPast p k (minit0 k \<chi>) (minit0 n \<eta>) 0 None)
       = DLetPast p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>)) 0 None" by simp
+  have z1: "dofz k \<chi>" and z2: "dofz n \<eta>"
+    using z unfolding m d A set_cols_upt B[symmetric] by simp_all
   have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
-    using i1 unfolding A set_cols_upt .
-  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+    using i1[OF z1] unfolding A set_cols_upt .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] unfolding B .
   show ?thesis unfolding m d by (rule dsim.DsLetPast[OF w pr s1 s2]) simp
 qed
 
@@ -962,7 +991,8 @@ lemma dsim_dof_minit0_Trigger:
     and ai: "args = init_args I n (Formula.fv \<chi>) (Formula.fv \<eta>) pos None"
     and m0: "mem I 0" and sub: "Formula.fv \<chi> \<subseteq> Formula.fv \<eta>"
     and B: "Formula.fv \<phi> = Formula.fv \<eta>"
-    and i1: "dofc n tw \<chi>" and i2: "dofc n tw \<eta>"
+    and z: "dofz n \<phi>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
   shows "dofc n tw \<phi>"
 proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
@@ -985,8 +1015,9 @@ proof -
           (dof n ?csL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<eta>)) ([], []) []
           (init_mmtaux (dargs ?cs ?csL args))"
     using an aR subc m0 aI aL by (simp add: Let_def)
-  have s1: "dsim n ?csL tw (dof n ?csL (minit0 n \<chi>)) (minit0 n \<chi>)" using i1 .
-  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2 unfolding B .
+  have z1: "dofz n \<chi>" and z2: "dofz n \<eta>" using z unfolding m d B[symmetric] by simp_all
+  have s1: "dsim n ?csL tw (dof n ?csL (minit0 n \<chi>)) (minit0 n \<chi>)" using i1[OF z1] .
+  have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] unfolding B .
   have vi: "valid_mmtaux args 0 (init_mmtaux args) []"
     using valid_init_mmtaux[where I = I and n = n and L = "Formula.fv \<chi>"
         and R = "Formula.fv \<eta>" and pos = pos and agg = None] m0 sub
@@ -1006,9 +1037,11 @@ text \<open>The safe trigger's left operand is either safe itself or a negation 
 
 lemma dsim_dof_minit0_Trigger_fml:
   assumes m0: "mem I 0" and sp: "safe_formula \<psi>" and sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>"
-    and dj: "(safe_formula \<phi> \<and> dofc n tw \<phi>) \<or>
-      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
-    and i2: "dofc n tw \<psi>" and b: "\<forall>x \<in> Formula.fv (Formula.Trigger \<phi> I \<psi>). x < n"
+    and dj: "(safe_formula \<phi> \<and> (dofz n \<phi> \<longrightarrow> dofc n tw \<phi>)) \<or>
+      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> (dofz n \<chi> \<longrightarrow> dofc n tw \<chi>) | _ \<Rightarrow> False)"
+    and i2: "dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
+    and z: "dofz n (Formula.Trigger \<phi> I \<psi>)"
+    and b: "\<forall>x \<in> Formula.fv (Formula.Trigger \<phi> I \<psi>). x < n"
   shows "dofc n tw (Formula.Trigger \<phi> I \<psi>)"
 proof -
   have dj': "safe_formula \<phi> \<or> (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> | _ \<Rightarrow> False)"
@@ -1020,29 +1053,34 @@ proof -
   proof (cases "safe_formula \<phi>")
     case True
     note sfp = True
-    have i1: "dofc n tw \<phi>"
-    proof (cases "safe_formula \<phi> \<and> dofc n tw \<phi>")
-      case True then show ?thesis by simp
-    next
-      case False
-      then have "case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False"
-        using dj by blast
-      then obtain \<chi> where fc: "\<phi> = Formula.Neg \<chi>" and ic: "dofc n tw \<chi>"
-        by (cases \<phi>) auto
-      have fvc: "Formula.fv \<chi> = {}" using sfp fc by simp
-      show ?thesis
-        by (rule dsim_dof_minit0_Neg[OF sfp _ _ _ fvc ic]) (use fc fvc in simp_all)
+    have i1: "dofz n \<phi> \<Longrightarrow> dofc n tw \<phi>"
+    proof -
+      assume zp: "dofz n \<phi>"
+      show "dofc n tw \<phi>"
+      proof (cases "safe_formula \<phi> \<and> (dofz n \<phi> \<longrightarrow> dofc n tw \<phi>)")
+        case True then show ?thesis using zp by simp
+      next
+        case False
+        then have "case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> (dofz n \<chi> \<longrightarrow> dofc n tw \<chi>)
+            | _ \<Rightarrow> False" using dj by blast
+        then obtain \<chi> where fc: "\<phi> = Formula.Neg \<chi>" and ic: "dofz n \<chi> \<longrightarrow> dofc n tw \<chi>"
+          by (cases \<phi>) auto
+        have fvc: "Formula.fv \<chi> = {}" using sfp fc by simp
+        show ?thesis
+          by (rule dsim_dof_minit0_Neg[OF sfp _ _ _ fvc zp ic[rule_format]])
+            (use fc fvc in simp_all)
+      qed
     qed
     have mi: "minit0 n (Formula.Trigger \<phi> I \<psi>)
         = mformula.MTrigger (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None)
             (minit0 n \<phi>) (minit0 n \<psi>) ([], []) []
             (init_mmtaux (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None))"
       using True by (simp add: verimon_maux.init_trigger_def)
-    show ?thesis by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 sub B i1 i2])
+    show ?thesis by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 sub B z i1 i2])
   next
     case False
     then obtain \<chi> where fc: "\<phi> = Formula.Neg \<chi>" using dj' by (cases \<phi>) auto
-    have i1: "dofc n tw \<chi>" using dj False fc by auto
+    have i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" using dj False fc by auto
     have fvc: "Formula.fv \<chi> = Formula.fv \<phi>" using fc by simp
     have mi: "minit0 n (Formula.Trigger \<phi> I \<psi>)
         = mformula.MTrigger (init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) False None)
@@ -1050,7 +1088,7 @@ proof -
             (init_mmtaux (init_args I n (Formula.fv \<chi>) (Formula.fv \<psi>) False None))"
       using False unfolding fc by (simp add: verimon_maux.init_trigger_def)
     show ?thesis
-      by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 _ B i1 i2]) (use sub fvc in simp)
+      by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 _ B z i1 i2]) (use sub fvc in simp)
   qed
 qed
 
@@ -1085,7 +1123,7 @@ qed
 subsection \<open>The compiler produces a simulation\<close>
 
 theorem dsim_dof_minit0:
-  "safe_formula \<phi> \<Longrightarrow> \<forall>x \<in> Formula.fv \<phi>. x < n \<Longrightarrow> dofc n tw \<phi>"
+  "safe_formula \<phi> \<Longrightarrow> \<forall>x \<in> Formula.fv \<phi>. x < n \<Longrightarrow> dofz n \<phi> \<Longrightarrow> dofc n tw \<phi>"
 proof (induction arbitrary: n rule: safe_formula_induct)
   case (Eq_Const c d)
   show ?case by (rule dsim_dof_minit0_rel)
@@ -1112,8 +1150,8 @@ next
   have m: "minit0 n (Formula.Let p \<phi> \<psi>)
       = mformula.MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)" by simp
   show ?case
-    by (rule dsim_dof_minit0_Let[OF sfa Let.prems m A _ Let.IH(1)[OF b1] Let.IH(2)[OF b2]])
-      simp
+    by (rule dsim_dof_minit0_Let[OF sfa Let.prems(1) m A _ Let.prems(2)
+          Let.IH(1)[OF b1] Let.IH(2)[OF b2]]) simp
 next
   case (Frz p \<phi> \<psi>)
   have sfa: "safe_formula (Formula.Frz p \<phi> \<psi>)" using Frz.hyps by simp
@@ -1125,8 +1163,8 @@ next
       = mformula.MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []"
     by simp
   show ?case
-    by (rule dsim_dof_minit0_Frz[OF sfa Frz.prems m A _ Frz.IH(1)[OF b1] Frz.IH(2)[OF b2]])
-      simp
+    by (rule dsim_dof_minit0_Frz[OF sfa Frz.prems(1) m A _ Frz.prems(2)
+          Frz.IH(1)[OF b1] Frz.IH(2)[OF b2]]) simp
 next
   case (LetPast p \<phi> \<psi>)
   have sfa: "safe_formula (Formula.LetPast p \<phi> \<psi>)" using LetPast.hyps by simp
@@ -1138,7 +1176,7 @@ next
       = mformula.MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
     by simp
   show ?case
-    by (rule dsim_dof_minit0_LetPast[OF sfa LetPast.prems m A _
+    by (rule dsim_dof_minit0_LetPast[OF sfa LetPast.prems(1) m A _ LetPast.prems(2)
           LetPast.IH(1)[OF b1] LetPast.IH(2)[OF b2]]) simp
 next
   case (And_assign \<phi> \<psi>)
@@ -1152,8 +1190,8 @@ next
   have A: "Formula.fv (Formula.And \<phi> \<psi>) = Set.insert y (Formula.fv \<phi>)"
     using props by auto
   show ?case
-    by (rule dsim_dof_minit0_AndAssign[OF sfa And_assign.prems m _ _ A
-          And_assign.IH[OF b1]]) (use props in auto)
+    by (rule dsim_dof_minit0_AndAssign[OF sfa And_assign.prems(1) m _ _ A
+          And_assign.prems(2) And_assign.IH[OF b1]]) (use props in auto)
 next
   case (And_safe \<phi> \<psi>)
   have sfa: "safe_formula (Formula.And \<phi> \<psi>)" using And_safe.hyps by simp
@@ -1164,8 +1202,8 @@ next
           (set (set_cols (Formula.fv \<psi>))) (minit0 n \<psi>) ([], [])"
     using And_safe.hyps by simp
   show ?case
-    by (rule dsim_dof_minit0_MAnd[OF sfa And_safe.prems m refl refl])
-      (use And_safe.IH(1)[OF b1] And_safe.IH(2)[OF b2] in simp_all)
+    by (rule dsim_dof_minit0_MAnd[OF sfa And_safe.prems(1) m refl refl _ _
+          And_safe.prems(2) And_safe.IH(1)[OF b1] And_safe.IH(2)[OF b2]]) simp_all
 next
   case (And_constraint \<phi> \<psi>)
   have sfa: "safe_formula (Formula.And \<phi> \<psi>)" using And_constraint.hyps by simp
@@ -1176,8 +1214,8 @@ next
   have m: "minit0 n (Formula.And \<phi> \<psi>) = mformula.MAndRel (minit0 n \<phi>) (t1, pp, c, t2)"
     using And_constraint.hyps cf by simp
   show ?case
-    by (rule dsim_dof_minit0_MAndRel[OF sfa And_constraint.prems m A
-        And_constraint.IH[OF b1]])
+    by (rule dsim_dof_minit0_MAndRel[OF sfa And_constraint.prems(1) m A
+        And_constraint.prems(2) And_constraint.IH[OF b1]])
 next
   case (And_Not \<phi> \<psi>)
   have sfa: "safe_formula (Formula.And \<phi> (Formula.Neg \<psi>))" using And_Not.hyps by simp
@@ -1189,8 +1227,9 @@ next
           (set (set_cols (Formula.fv \<psi>))) (minit0 n \<psi>) ([], [])"
     using And_Not.hyps by simp
   show ?case
-    by (rule dsim_dof_minit0_MAnd[OF sfa And_Not.prems m refl refl])
-      (use sub And_Not.IH(1)[OF b1] And_Not.IH(2)[OF b2] in \<open>simp_all add: Un_absorb2\<close>)
+    by (rule dsim_dof_minit0_MAnd[OF sfa And_Not.prems(1) m refl refl _ _ And_Not.prems(2)
+          And_Not.IH(1)[OF b1] And_Not.IH(2)[OF b2]])
+      (use sub in \<open>simp_all add: Un_absorb2\<close>)
 next
   case (And_Trigger \<phi> \<phi>' I \<psi>')
   note sp' = \<open>safe_formula \<phi>'\<close> and sd = \<open>safe_dual True safe_formula \<phi>' I \<psi>'\<close>
@@ -1210,19 +1249,27 @@ next
       using And_Trigger.hyps st by simp
     have bt: "\<forall>x \<in> Formula.fv (Formula.Trigger \<phi>' I \<psi>'). x < n" using bR fvt by simp
     have sr: "safe_formula \<psi>'" using sd sp' True by (simp add: safe_dual_def)
-    have djt: "(safe_formula \<phi>' \<and> dofc n tw \<phi>') \<or>
-        (case \<phi>' of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
-      using sp' And_Trigger.IH(2)[OF bL] by simp
-    have i2: "dofc n tw (Formula.Trigger \<phi>' I \<psi>')"
-      by (rule dsim_dof_minit0_Trigger_fml[OF True sr sub djt And_Trigger.IH(3)[OF bR] bt])
+    have djt: "(safe_formula \<phi>' \<and> (dofz n \<phi>' \<longrightarrow> dofc n tw \<phi>')) \<or>
+        (case \<phi>' of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> (dofz n \<chi> \<longrightarrow> dofc n tw \<chi>)
+          | _ \<Rightarrow> False)"
+      using sp' And_Trigger.IH(2)[OF bL] by auto
+    have i2: "dofz n (Formula.Trigger \<phi>' I \<psi>')
+        \<Longrightarrow> dofc n tw (Formula.Trigger \<phi>' I \<psi>')"
+    proof -
+      assume zt: "dofz n (Formula.Trigger \<phi>' I \<psi>')"
+      show "dofc n tw (Formula.Trigger \<phi>' I \<psi>')"
+        by (rule dsim_dof_minit0_Trigger_fml[OF True sr sub djt
+              And_Trigger.IH(3)[OF bR] zt bt])
+    qed
     have m: "minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))
         = mformula.MAnd (set (set_cols (Formula.fv \<phi>))) (minit0 n \<phi>) True
             (set (set_cols (Formula.fv (Formula.Trigger \<phi>' I \<psi>'))))
             (minit0 n (Formula.Trigger \<phi>' I \<psi>')) ([], [])"
       using st by (simp add: no_safe_assign_trigger)
     show ?thesis
-      by (rule dsim_dof_minit0_MAnd[OF sfa And_Trigger.prems m refl refl])
-        (use subf i2 And_Trigger.IH(1)[OF bA] in \<open>simp_all add: Un_absorb2\<close>)
+      by (rule dsim_dof_minit0_MAnd[OF sfa And_Trigger.prems(1) m refl refl _ _
+            And_Trigger.prems(2) And_Trigger.IH(1)[OF bA] i2])
+        (use subf in \<open>simp_all add: Un_absorb2\<close>)
   next
     case False
     have nst: "\<not> safe_formula (Formula.Trigger \<phi>' I \<psi>')"
@@ -1230,11 +1277,9 @@ next
     have sfa: "safe_formula (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))"
       using And_Trigger.hyps subf by simp
     have m: "dof n (set_cols (Formula.fv (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))))
-          (minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')))
-        = DPure (minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))) n
-          (wide_mask n (set_cols (Formula.fv (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')))))"
+          (minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))) = DFail"
       using nst sp' by (simp add: no_safe_assign_trigger verimon_maux.init_and_trigger_def)
-    show ?thesis by (rule dsim_dof_minit0_pure[OF sfa And_Trigger.prems m])
+    show ?thesis by (rule dsim_dof_minit0_fail[OF m And_Trigger.prems(2)])
   qed
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
@@ -1274,10 +1319,12 @@ next
     unfolding e using pl by auto
   have sub: "\<forall>c \<in> set ?nss. set c \<subseteq> Formula.fv (Formula.Ands l)"
     unfolding e using Ands.hyps(5) by auto
-  have ih: "\<forall>i < length ?L. dsim n ((?c0 # ?css @ ?nss) ! i) tw
-      (dof n ((?c0 # ?css @ ?nss) ! i) (?L ! i)) (?L ! i)"
+  have ih: "\<forall>i < length ?L. vdfail_nodes (dof n ((?c0 # ?css @ ?nss) ! i) (?L ! i)) = 0
+      \<longrightarrow> dsim n ((?c0 # ?css @ ?nss) ! i) tw
+        (dof n ((?c0 # ?css @ ?nss) ! i) (?L ! i)) (?L ! i)"
   proof (intro allI impI)
     fix i assume i: "i < length ?L"
+      and zi: "vdfail_nodes (dof n ((?c0 # ?css @ ?nss) ! i) (?L ! i)) = 0"
     show "dsim n ((?c0 # ?css @ ?nss) ! i) tw
         (dof n ((?c0 # ?css @ ?nss) ! i) (?L ! i)) (?L ! i)"
     proof (cases "i < length pos")
@@ -1288,7 +1335,7 @@ next
       have ip: "pos ! i \<in> set pos" using True by simp
       have bi: "\<forall>x \<in> Formula.fv (pos ! i). x < n" using bb ip by auto
       show ?thesis unfolding c l'
-        using Ands.IH(1)[unfolded list_all_iff] ip bi by blast
+        using Ands.IH(1)[unfolded list_all_iff] ip bi zi[unfolded c l'] by blast
     next
       case False
       let ?j = "i - length pos"
@@ -1300,21 +1347,23 @@ next
       have ip: "remove_neg (neg ! ?j) \<in> set (map remove_neg neg)" using j by simp
       have bi: "\<forall>x \<in> Formula.fv (remove_neg (neg ! ?j)). x < n"
         using bn j by (auto simp: fv_remove_neg[symmetric])
+      have zj: "dofz n (remove_neg (neg ! ?j))"
+        using zi unfolding c l' by (simp add: fv_remove_neg)
       have "dofc n tw (remove_neg (neg ! ?j))"
-        using Ands.IH(2)[unfolded list_all_iff] ip bi by blast
+        using Ands.IH(2)[unfolded list_all_iff] ip bi zj by blast
       then show ?thesis unfolding c l' by (simp add: fv_remove_neg[symmetric])
     qed
   qed
   show ?case
-    by (rule dsim_dof_minit0_MAnds[OF sfa Ands.prems m lenL wfc A sub ih])
+    by (rule dsim_dof_minit0_MAnds[OF sfa Ands.prems(1) m lenL wfc A sub Ands.prems(2) ih])
 next
   case (Neg \<phi>)
   have sfa: "safe_formula (Formula.Neg \<phi>)" using Neg.hyps by simp
   have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using Neg.hyps(1) by simp
   have m: "minit0 n (Formula.Neg \<phi>) = mformula.MNeg (minit0 n \<phi>)" using Neg.hyps(1) by simp
   show ?case
-    by (rule dsim_dof_minit0_Neg[OF sfa Neg.prems m _ Neg.hyps(1) Neg.IH[OF b1]])
-      (use Neg.hyps(1) in simp)
+    by (rule dsim_dof_minit0_Neg[OF sfa Neg.prems(1) m _ Neg.hyps(1) Neg.prems(2)
+          Neg.IH[OF b1]]) (use Neg.hyps(1) in simp)
 next
   case (Or \<phi> \<psi>)
   have sfa: "safe_formula (Formula.Or \<phi> \<psi>)" using Or.hyps by simp
@@ -1323,8 +1372,8 @@ next
   have m: "minit0 n (Formula.Or \<phi> \<psi>) = mformula.MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
     by simp
   show ?case
-    by (rule dsim_dof_minit0_Or[OF sfa Or.prems m _ _ Or.IH(1)[OF b1] Or.IH(2)[OF b2]])
-      (use Or.hyps(1) in simp_all)
+    by (rule dsim_dof_minit0_Or[OF sfa Or.prems(1) m _ _ Or.prems(2)
+          Or.IH(1)[OF b1] Or.IH(2)[OF b2]]) (use Or.hyps(1) in simp_all)
 next
   case (Exists t \<phi>)
   have sfa: "safe_formula (Formula.Exists t \<phi>)" using Exists.hyps by simp
@@ -1332,8 +1381,8 @@ next
     using fvi_Suc_bound[where b = 0 and \<phi> = \<phi> and n = n] Exists.prems by simp
   have m: "minit0 n (Formula.Exists t \<phi>) = mformula.MExists (minit0 (Suc n) \<phi>)" by simp
   show ?case
-    by (rule dsim_dof_minit0_Exists[OF sfa Exists.prems m _ Exists.hyps(2)
-        Exists.IH[OF b1]]) simp
+    by (rule dsim_dof_minit0_Exists[OF sfa Exists.prems(1) m _ Exists.hyps(2)
+        Exists.prems(2) Exists.IH[OF b1]]) simp
 next
   case (Agg y \<omega> tys f \<chi>)
   note tsub = \<open>{0..<length tys} \<subseteq> Formula.fv \<chi>\<close> and fsub = \<open>Formula.fv_trm f \<subseteq> Formula.fv \<chi>\<close>
@@ -1362,9 +1411,11 @@ next
     if mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>)
         = mformula.MAgg ?ag (minit0 (length tys + n) \<chi>)"
   proof -
-    have i1: "dofc (length tys + n) tw \<chi>" by (rule Agg.IH[OF order_refl sc bp])
+    have i1: "dofz (length tys + n) \<chi> \<Longrightarrow> dofc (length tys + n) tw \<chi>"
+      by (rule Agg.IH[OF order_refl sc bp])
     show ?thesis
-      by (rule dsim_dof_minit0_MAgg[OF sfa Agg.prems mm refl ynot tsub fsub A bp i1])
+      by (rule dsim_dof_minit0_MAgg[OF sfa Agg.prems(1) mm refl ynot tsub fsub A bp
+            Agg.prems(2) i1])
   qed
   have shape: "(\<exists>args \<xi> \<eta> bf aux. args_agg args \<noteq> None \<and>
           minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MSince args \<xi> \<eta> bf aux)
@@ -1386,22 +1437,21 @@ next
     fix args \<xi> \<eta> bf aux
     assume ag: "args_agg args \<noteq> None"
       and mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MSince args \<xi> \<eta> bf aux"
-    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>))
-        = DPure (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) n (wide_mask n ?cs)"
+    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) = DFail"
       unfolding mm using ag by (simp add: Let_def)
-    show ?thesis by (rule dsim_dof_minit0_pure[OF sfa Agg.prems m])
+    show ?thesis by (rule dsim_dof_minit0_fail[OF m Agg.prems(2)])
   next
     fix args \<xi> \<eta> bf ns t aux
     assume ag: "args_agg args \<noteq> None"
       and mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MUntil args \<xi> \<eta> bf ns t aux"
-    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>))
-        = DPure (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) n (wide_mask n ?cs)"
+    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) = DFail"
       unfolding mm using ag by (simp add: Let_def)
-    show ?thesis by (rule dsim_dof_minit0_pure[OF sfa Agg.prems m])
+    show ?thesis by (rule dsim_dof_minit0_fail[OF m Agg.prems(2)])
   next
     assume mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MRel empty_table"
     show ?thesis
-      by (rule dsim_dof_minit0_rel[OF sfa Agg.prems mm]) (simp add: table_def empty_table_def)
+      by (rule dsim_dof_minit0_rel[OF sfa Agg.prems(1) mm])
+        (simp add: table_def empty_table_def)
   qed
   show ?case
   proof (cases \<chi>)
@@ -1414,13 +1464,15 @@ next
   have sfa: "safe_formula (Formula.Prev I \<phi>)" using Prev.hyps by simp
   have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using Prev.prems by simp
   have m: "minit0 n (Formula.Prev I \<phi>) = mformula.MPrev I (minit0 n \<phi>) True [] []" by simp
-  show ?case by (rule dsim_dof_minit0_Prev[OF sfa Prev.prems m _ Prev.IH[OF b1]]) simp
+  show ?case
+    by (rule dsim_dof_minit0_Prev[OF sfa Prev.prems(1) m _ Prev.prems(2) Prev.IH[OF b1]]) simp
 next
   case (Next I \<phi>)
   have sfa: "safe_formula (Formula.Next I \<phi>)" using Next.hyps by simp
   have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using Next.prems by simp
   have m: "minit0 n (Formula.Next I \<phi>) = mformula.MNext I (minit0 n \<phi>) True []" by simp
-  show ?case by (rule dsim_dof_minit0_Next[OF sfa Next.prems m _ Next.IH[OF b1]]) simp
+  show ?case
+    by (rule dsim_dof_minit0_Next[OF sfa Next.prems(1) m _ Next.prems(2) Next.IH[OF b1]]) simp
 next
   case (Since \<phi> I \<psi>)
   note sub = \<open>Formula.fv \<phi> \<subseteq> Formula.fv \<psi>\<close> and s1 = \<open>safe_formula \<phi>\<close> and s2 = \<open>safe_formula \<psi>\<close>
@@ -1434,7 +1486,7 @@ next
           (init_mmasaux (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None))"
     using s1 by (simp add: default_mmasaux.init_since_def)
   show ?case
-    by (rule dsim_dof_minit0_MSince[OF sfa Since.prems m refl A sub
+    by (rule dsim_dof_minit0_MSince[OF sfa Since.prems(1) m refl A sub Since.prems(2)
         Since.IH(1)[OF b1] Since.IH(2)[OF b2]])
 next
   case (Not_Since \<phi> I \<psi>)
@@ -1450,7 +1502,7 @@ next
           (init_mmasaux (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) False None))"
     using ns by (simp add: default_mmasaux.init_since_def)
   show ?case
-    by (rule dsim_dof_minit0_MSince[OF sfa Not_Since.prems m refl A _
+    by (rule dsim_dof_minit0_MSince[OF sfa Not_Since.prems(1) m refl A _ Not_Since.prems(2)
         Not_Since.IH(1)[OF b1] Not_Since.IH(2)[OF b2]]) (use sub in simp)
 next
   case (Until \<phi> I \<psi>)
@@ -1465,7 +1517,7 @@ next
           (init_muaux_dq (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) True None))"
     using s1 by (simp add: dq_muaux.init_until_def)
   show ?case
-    by (rule dsim_dof_minit0_MUntil[OF sfa Until.prems m refl A sub
+    by (rule dsim_dof_minit0_MUntil[OF sfa Until.prems(1) m refl A sub Until.prems(2)
         Until.IH(1)[OF b1] Until.IH(2)[OF b2]])
 next
   case (Not_Until \<phi> I \<psi>)
@@ -1481,18 +1533,19 @@ next
           (init_muaux_dq (init_args I n (Formula.fv \<phi>) (Formula.fv \<psi>) False None))"
     using ns by (simp add: dq_muaux.init_until_def)
   show ?case
-    by (rule dsim_dof_minit0_MUntil[OF sfa Not_Until.prems m refl A _
+    by (rule dsim_dof_minit0_MUntil[OF sfa Not_Until.prems(1) m refl A _ Not_Until.prems(2)
         Not_Until.IH(1)[OF b1] Not_Until.IH(2)[OF b2]]) (use sub in simp)
 next
   case (Trigger_0 \<phi> I \<psi>)
   have b2: "\<forall>x \<in> Formula.fv \<psi>. x < n" using Trigger_0.prems by simp
   have b1: "\<forall>x \<in> Formula.fv \<phi>. x < n" using Trigger_0.hyps(3) b2 by auto
-  have dj: "(safe_formula \<phi> \<and> dofc n tw \<phi>) \<or>
-      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> dofc n tw \<chi> | _ \<Rightarrow> False)"
+  have dj: "(safe_formula \<phi> \<and> (dofz n \<phi> \<longrightarrow> dofc n tw \<phi>)) \<or>
+      (case \<phi> of Formula.Neg \<chi> \<Rightarrow> safe_formula \<chi> \<and> (dofz n \<chi> \<longrightarrow> dofc n tw \<chi>)
+        | _ \<Rightarrow> False)"
     using Trigger_0.IH(1) b1 by (cases \<phi>) auto
   show ?case
     by (rule dsim_dof_minit0_Trigger_fml[OF Trigger_0.hyps(1) Trigger_0.hyps(2)
-          Trigger_0.hyps(3) dj Trigger_0.IH(2)[OF b2] Trigger_0.prems])
+          Trigger_0.hyps(3) dj Trigger_0.IH(2)[OF b2] Trigger_0.prems(2) Trigger_0.prems(1)])
 next
   case (Trigger \<phi> I \<psi>) then show ?case by simp
 next
@@ -1504,11 +1557,11 @@ next
   case (Release \<phi> I \<psi>) then show ?case by simp
 next
   case (MatchP I r)
-  show ?case by (rule dsim_dof_minit0_pure)
+  show ?case by (rule dsim_dof_minit0_fail)
       (use MatchP.hyps MatchP.prems in \<open>simp_all split: prod.split\<close>)
 next
   case (MatchF I r)
-  show ?case by (rule dsim_dof_minit0_pure)
+  show ?case by (rule dsim_dof_minit0_fail)
       (use MatchF.hyps MatchF.prems in \<open>simp_all split: prod.split\<close>)
 next
   case (TP t)
@@ -1517,7 +1570,7 @@ next
   have cse: "set_cols (Formula.fv (Formula.TP t)) = mtrm_dcols (mtrm_of_trm t)"
     using TP.hyps by (auto simp: Formula.is_Var_def Formula.is_Const_def
         mtrm_dcols_def set_cols_singleton)
-  show ?case by (rule dsim_dof_minit0_TP[OF sfa TP.prems m cse])
+  show ?case by (rule dsim_dof_minit0_TP[OF sfa TP.prems(1) m cse])
 next
   case (TS t)
   have sfa: "safe_formula (Formula.TS t)" using TS.hyps by simp
@@ -1525,16 +1578,15 @@ next
   have cse: "set_cols (Formula.fv (Formula.TS t)) = mtrm_dcols (mtrm_of_trm t)"
     using TS.hyps by (auto simp: Formula.is_Var_def Formula.is_Const_def
         mtrm_dcols_def set_cols_singleton)
-  show ?case by (rule dsim_dof_minit0_TS[OF sfa TS.prems m cse])
+  show ?case by (rule dsim_dof_minit0_TS[OF sfa TS.prems(1) m cse])
 qed
 
 section \<open>The dense monitor's correctness theorem, on the compiled state\<close>
 
 text \<open>
-  The state the compiler produces relates to the kernel's the same way the escape hatch's did,
-  so the transferred theorems of the preceding theories apply to it unchanged -- but now every
-  node the dense fragment covers is a dense node, and the kernel's evaluator runs only under the
-  constructors it does not.
+  The state the compiler produces relates to the kernel's whenever the compilation covered every
+  node, so the transferred theorems of the preceding theories apply to it under that one check.
+  It is a check on the formula alone, made once, before the monitor runs.
 \<close>
 
 definition dof_state :: "nat \<Rightarrow> cols \<Rightarrow>
@@ -1553,7 +1605,9 @@ context verimon_spec
 begin
 
 theorem dmonitor_mverdicts_dof:
-  assumes f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
+  assumes zf: "vdfail_nodes (dmstate_m (dof_state (Formula.nfv \<phi>)
+      (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>))) = 0"
+    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
       (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
@@ -1568,10 +1622,12 @@ proof -
   have ni: "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>" by (rule minit_safe_state(1)[OF mm])
   have mm0: "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
     by (rule minit_safe_state(2)[OF mm])
+  have zf': "dofz (Formula.nfv \<phi>) \<phi>"
+    using zf unfolding dof_state_def mm0 by simp
   have p: "dsim (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) 0
       (dof (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (mstate_m (minit_safe \<phi>)))
       (mstate_m (minit_safe \<phi>))"
-    unfolding mm0 by (rule dsim_dof_minit0[OF s b])
+    unfolding mm0 by (rule dsim_dof_minit0[OF s b zf'])
   have r: "dmsim_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) 0 (minit_safe \<phi>)
       (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>))"
     by (rule dmsim_state_dof_state[OF ni p])
