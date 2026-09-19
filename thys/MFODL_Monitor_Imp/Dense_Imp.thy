@@ -154,6 +154,13 @@ text \<open>
 
 type_synonym umebuf2 = "utable mbuf_t \<times> utable mbuf_t"
 
+text \<open>One buffer holds tables that may stand for "every valuation": the one between a
+  conjunction and the trigger below it, whose window can be empty.  Both sides carry the option
+  so that the buffer stays homogeneous and @{const mebuf2_take_j} can be used unchanged; the
+  left side is always @{term Some}.\<close>
+
+type_synonym umebuf2O = "utable option mbuf_t \<times> utable option mbuf_t"
+
 type_synonym umebufn = "utable mbuf_t list"
 
 type_synonym umebuf2S = "utable mbuf_t \<times> utable mbuf_t \<times> ts mbuf_t \<times> bool"
@@ -389,7 +396,7 @@ datatype dformula =
   | DFrz Formula.name nat dformula dformula nat nat nat "utable list"
   | DLetPast Formula.name nat dformula dformula nat "utable option"
   | DTrigger args dformula dformula umebuf2 "ts mbuf_t" "event_data gmmtaux"
-  | DAndTrigger djoin_plan dformula umebuf2 args dformula dformula umebuf2 "ts mbuf_t"
+  | DAndTrigger djoin_plan dformula umebuf2O args dformula dformula umebuf2 "ts mbuf_t"
       "event_data gmmtaux"
   | DMatchP \<I> mregex "mregex list" "bool list list" "dformula list" umebufn "ts mbuf_t"
       "event_data gmrdaux"
@@ -556,7 +563,7 @@ function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mform
       else return DFail)"
 | "dformula_of n cs (MAndTrigger V \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
      (let cs_V = set_cols V; cs_R = set_cols (args_R args); cs_L = set_cols (args_L args) in
-      if args_n args = n \<and> cs = merge_cols cs_V cs_R \<and> set cs_L \<subseteq> set cs_R \<and> mem (args_ivl args) 0
+      if args_n args = n \<and> cs = merge_cols cs_V cs_R \<and> set cs_R \<subseteq> set cs_V \<and> set cs_L \<subseteq> set cs_R
       then (let dags = dargs cs_R cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_V \<phi>;
         \<phi>d' \<leftarrow> dformula_of n cs_L \<phi>';
@@ -833,9 +840,13 @@ fun deval_step :: "(nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarr
      (ys, \<psi>') \<leftarrow> rc j ts db \<psi>';
      ((zs_trigger, daux), buf2, nts) \<leftarrow> return (umebuf2T_take (\<lambda>r1 r2 t (zs, ax).
          let ax = gupdate_mmtaux dags t r1 r2 ax
-         in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) (mebuf2_add xs ys buf2) (nts @@ ts));
-     r \<leftarrow> mebuf2_take_j (\<lambda>r1 r2. dbin_join_h pl r1 True r2) (mebuf2_add as zs_trigger buf1);
-     return (fst r, DAndTrigger pl \<phi> (snd r) dags \<phi>' \<psi>' buf2 nts daux) }"
+         in (zs @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+         ([], daux) (mebuf2_add xs ys buf2) (nts @@ ts));
+     r \<leftarrow> mebuf2_take_j (\<lambda>r1 r2. case r2 of None \<Rightarrow> return r1
+           | Some z \<Rightarrow> (case r1 of None \<Rightarrow> return None
+              | Some a \<Rightarrow> do { c \<leftarrow> dbin_join_h pl a True z; return (Some c) }))
+           (mebuf2_add (map Some as) zs_trigger buf1);
+     return (map the (fst r), DAndTrigger pl \<phi> (snd r) dags \<phi>' \<psi>' buf2 nts daux) }"
 | "deval_step rc j ts db (DLetPast p m \<phi> \<psi> i buf) = do {
      r \<leftarrow> letpast_meval0_h (\<lambda>ts' db' \<chi>. rc j ts' db' \<chi>) j i [] (list_of_option buf) (p, m) ts db \<phi>;
      (case r of (xs, i, buf, \<phi>) \<Rightarrow> do {

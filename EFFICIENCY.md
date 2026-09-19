@@ -5363,4 +5363,228 @@ the flag's default is considered.
 
 **What is left.** `MAndTrigger` and the two `MatchP`/`MatchF` operators still fall back to the
 evaluation function over the wide tuples (20.21), which is also the only thing that still converts
-a database between the two representations.
+a database between the two representations. 20.38 to 20.43 close that: every constructor gets a
+dense node, the fallback node loses its payload, and the export list drops the wide evaluator
+altogether.
+
+### 20.38 A node that widens its operands is not a dense node
+
+The three operators 20.37 left over -- the trigger, the two match operators, and the Since and
+the Until whose shape the compiler's guard rejects -- all have the same structure in the kernel:
+a subtree that is easy to compile, and an auxiliary structure whose operations are stated over
+wide tuples. The first attempt took the cheap way out and gave each of them a node that keeps
+the kernel's structure inside and converts at the boundary: widen the operands coming up from
+the dense children, run `update_mmtaux`/`update_matchP`/`add_new_table_mmsaux` unchanged, narrow
+the result on the way out.
+
+It worked, it removed every fallback node from the corpus, and it was wrong for the purpose.
+`grep -c '(event_data option) list' src/verified.ml` did not move, because the wide operations
+were still there and still reachable; the tuples were being unboxed by the children and boxed
+again by the parent, once per tuple per time point, and the only thing the exercise bought was a
+smaller count of nodes labelled "fallback". The right reading of that count is the one the code
+gives, not the one the label gives.
+
+So the three nodes were reverted (`d6e8b48`) and rebuilt on structures of their own. What
+follows is the three pieces: the aggregation the Since and the Until carry (20.39), the trigger
+(20.40), the two match operators (20.41), then the conjunction with a trigger and the removal of
+the fallback (20.42).
+
+### 20.39 The aggregation, taken out of the Since and the Until
+
+`meinit0` fuses an aggregation over a temporal operator into the operator: `Agg (Since φ I ψ)`
+becomes a single `MSince` whose `args_agg` is `Some aggargs`, and `result_mmasaux` applies the
+aggregation to the window's table instead of returning it. That is why the dense compiler could
+not place such a node: the columns it produces are the aggregation's group-by columns plus the
+result variable, not `args_R args`, and the guard `args_R args = set cs` fails.
+
+Nothing about the window itself needs the aggregation. So the compiler un-fuses it:
+
+```isabelle
+definition dagg_fused :: "nat ⇒ cols ⇒ args ⇒ bool" where
+  "dagg_fused n cs args = (case args_agg args of None ⇒ False | Some ag ⇒
+     cs = dagg_cols ag ∧ set_cols (args_R args) = dagg_child_cols ag ∧
+     set (set_cols (args_L args)) ⊆ set (dagg_child_cols ag) ∧ n = aggargs_n ag ∧
+     args_n args = length (aggargs_tys ag) + aggargs_n ag)"
+```
+
+recognises the fused shape, `dunfuse` drops the aggregation from the arguments, and `dwrap_agg`
+puts a `DAgg` node back on top of the `DSince`/`DUntil` that is left. Both are then ordinary
+dense nodes running at the child's frame, with no new structure and no new trust.
+
+**What it costs.** The fused node maintains the aggregate incrementally: `result_mmasaux` reads
+`result_maggaux aggargs aux` off a structure that the window's insertions and deletions keep up
+to date, and only falls back to `eval_aggargs aggargs table_in` when there is no such structure
+for the aggregation in question. The un-fused pair recomputes the aggregate from the whole
+window at every time point. On `z <- CNT x ONCE[0,10] C(x)` over the 8.6 MB log that is the
+difference between 0.85s and 1.48s (20.43) -- the largest single regression in this series, and
+the one thing in it that a dense `maggaux` would buy back.
+
+### 20.40 The trigger structure over short tuples
+
+`Optimized_Trigger.thy`'s `mmtaux` is a thirteen-tuple: a timestamp, three indices, the two
+masks, the queue of tuples still in the lookahead, the queue of tuples in the window, the
+mapping from a tuple to the timestamp at which it last appeared on the left, the set of keys of
+that mapping, the mapping from a tuple to the index since which it has held, and the two sets of
+tuples that are historically satisfied and since-satisfied respectively. Seven of the thirteen
+carry tables or tuple-keyed mappings, and those carry over to short tuples by retyping; two
+things in the operations do not.
+
+The first is `proj_tuple_in_join_optim`, the masked semi-join that decides whether a tuple of
+the window joins with the left operand's table. Over wide tuples it projects the tuple to the
+join columns by overwriting the others with `None`; over short ones the dense layer already has
+`dsemi`, which tests membership of the projection under the compile-time mask, so `gsemi_join`
+is the same three cases with `dsemi` in place of the projection.
+
+The second is the stored `maskR`. The kernel keeps it to rebuild a right-operand tuple from a
+wide one; at the dense frame every column of the node is a column of the right operand, so there
+is nothing to rebuild and the field goes away. What is left is `'b gmmtaux` and the four
+operations `ginit_mmtaux`, `gupdate_mmtaux'`, `gupdate_mmtaux` and `gresult_mmtaux`, generic in
+the element type like the rest of `Dense_Unbox`, and specialised at `event_data` by
+`Dense_Code_Opt` with everything else.
+
+`gresult_mmtaux` returns `tuple_in_once_keys ∪ hist_sat ∪ since_sat`, which is the kernel's
+result *on a non-empty window*. On an empty one the kernel returns `{replicate n None}` -- "every
+valuation" -- which a short tuple cannot express at all. That case is unreachable: the compiler's
+guard requires `mem (args_ivl args) 0`, so the current time point is always in the window, and
+the window is never empty. The guard is what makes the node sound, and a formula that does not
+satisfy it is refused rather than mis-evaluated (20.42).
+
+### 20.41 The match structures over short tuples
+
+The two match structures are lists of tables indexed by a timestamp and, for the past one, by a
+marked regular expression, so they carry over on their own. The derivative operations that fill
+them do not, in two places.
+
+The first is the join against an atom inside `ε_lax`: the guard is a table over the node's
+columns, the atom's table is over a subset of them, and over wide tuples that is `join`. Over
+short tuples it is a semi-join against the atom's mask -- and the masks are computed once, at
+compile time, one per atom, which is what the `bool list list` field of `DMatchP`/`DMatchF`
+holds. Where both sides are results of the lax epsilon, `MTimes` becomes plain intersection,
+because both are already at the node's frame.
+
+The second is the unit table of `rε_strict`/`lε_strict` at `Skip 0` and `Star`: over wide tuples
+`{replicate n None}`, over short ones `{[]}`, which is the right answer only when the node has no
+columns. Safety forces exactly that -- a `Skip 0` or a `Star` contributes no free variable -- so
+the two agree wherever the compiler places the node.
+
+One thing had to be added that is not a refinement at all. `mrtabulate` builds a mapping from
+marked regexes to tables, and its `RBT_Mapping` code equation is stated for the kernel's own
+table type. Without a matching equation for the generic `gmrtabulate` the code generator falls
+back to the function-backed `Mapping`, whose `lookup` then aborts at the first `Mapping.lookup`
+on an `RBT_Mapping` -- 21 failures in `cov_regex.t`, all with `Pattern matching failed`. The
+equation is the one line
+
+```isabelle
+lemma gmrtabulate_rbt_code[code]: "gmrtabulate (xs :: mregex list) f =
+  (case ID CCOMPARE(mregex) of
+     None ⇒ Code.abort (STR ''gmrtabulate RBT_Mapping: ccompare = None'') (λ_. gmrtabulate xs f)
+   | _ ⇒ RBT_Mapping (RBT_Mapping2.bulkload
+       (List.map_filter (λk. let fk = f k in if fk = {} then None else Some (k, fk)) xs)))"
+```
+
+and it is worth recording as a failure mode: a missing code equation on a `Mapping` does not
+produce slow code, it produces code that raises.
+
+### 20.42 The conjunction with a trigger, and the end of the fallback
+
+`MAndTrigger` is the kernel's fused node for `φ ∧ (γ TRIGGER[I] β)`: it evaluates the three
+operands, runs the trigger structure over the second and the third, and joins the first with the
+result. The join is `bin_join n V r1 True fv_z r2`, where `fv_z` is the column set the trigger
+structure reports alongside its table -- `{}` when the window is empty, `args_R args` otherwise.
+
+**The first version of this node copied 20.40's `mem I 0` guard, and that was exactly backwards.**
+Read `safe_dual`: with `mem I 0` it ignores whether the trigger is conjoined, so a trigger the
+`And` case would accept is also accepted standing alone, and `meinit0`'s `safe_formula ψ` branch
+fires first and builds a plain `MAnd`. `MAndTrigger` is therefore built *only* when the trigger is
+unsafe on its own, which -- given the `And` is safe -- means exactly `¬ mem I 0`. The guard never
+fired, and after 20.42 removed the fallback, every `φ AND (γ TRIGGER[1,3] β)` died at
+initialisation with *"the formula is outside the dense fragment"*. The whole corpus passed anyway,
+because it contains no conjoined trigger at all: `verimon_tests/cov_verified.t` has six `TRIGGER`
+formulas and every one of them is standalone. A count of passing invocations is not coverage of a
+guard nobody exercises.
+
+So the node handles the empty window instead of excluding it. `safe_dual` at `¬ mem I 0` forces
+`fv γ = fv β`, and `safe_formula` for the conjunction forces `fv ψ ⊆ fv φ`, so `args_R ⊆ V` and the
+node's columns are `V`: on a non-empty window the join `mk_djoin (set_cols V) (set_cols (args_R
+args))` is a semi-join into `V`, and on an empty one the kernel's join with the wildcard tuple is
+the identity, so the answer is the left operand unchanged. `gmmtaux_empty` tells the two apart,
+the trigger's output list becomes a `utable option` list with `None` for "every valuation", and
+the buffer between the two carries the option on both sides so that `mebuf2_take_j` can be used
+unchanged. The guard that is left is `args_n args = n`, `cs = merge_cols cs_V cs_R`,
+`set cs_R ⊆ set cs_V` and `set cs_L ⊆ set cs_R` -- shape conditions, no interval condition --
+and `mcols` reports `merge_cols (set_cols V) (set_cols (args_R args))`, which is what `MAnd`
+reports for a positive conjunction.
+
+Six conjoined-trigger formulas are now in `cov_verified.t`, and a sweep of 113 formulas around
+every guard in the compiler -- triggers and releases at five intervals, standalone and conjoined,
+both polarities, under `EXISTS`, under `ONCE`, under a further conjunct; the match operators; the
+aggregations over temporal operators -- agrees with the pre-series kernel on all 113, with no
+formula refused.
+
+With that clause in place the compiler's catch-all became redundant -- Isabelle said so, in the
+form of *"Equation is redundant (covered by preceding clauses)"* on the last line of
+`dformula_of`. Every constructor of the sparse formula now has a dense clause.
+
+So the fallback node loses its payload. `DPure mformula_j nat "bool list"` becomes `DFail`, the
+guarded branches return it instead of packing up a sparse subformula, `dpure_nodes` becomes
+`dfail_nodes`, and `minit_safe_d` refuses a formula that has one:
+
+```isabelle
+definition minit_safe_d :: "ty Formula.formula ⇒ dstate Heap" where
+  "minit_safe_d φ = do {
+     m ← mformula_j_of (meinit0 (Formula.nfv φ) φ);
+     d ← dformula_of (Formula.nfv φ) [0..<Formula.nfv φ] m;
+     if dfail_nodes d = 0 then return (0, 0, d, Formula.nfv φ, empty_queue)
+     else raise (STR ''minit_safe_d: the formula is outside the dense fragment'') }"
+```
+
+This is the substantive change of the series, and it is a change of contract. Before it, a shape
+the guards reject was evaluated by the wide function and the user saw correct output, slowly.
+After it, such a shape is a loud failure at initialisation. That makes every guard load-bearing,
+and the corpus is not enough to check them -- the conjoined trigger above is the proof. The
+guards are the shape conditions of 20.14, `mem I 0` for the standalone trigger (which `safe_dual`
+guarantees), and for the rest the ones no safe formula reaches: `MAnds` with an empty positive
+list, `MExists` over a subtree whose columns are unknown, and a `MatchP`/`MatchF` whose operands'
+columns do not union to the node's.
+
+### 20.43 Exporting only the dense monitor
+
+With the fallback unreachable, nothing in the dense evaluator calls the evaluation function over
+the wide tuples any more, and the export list can say so. `Monitor_Code_Imp.thy` drops
+`minit_safe`/`mstep` (the pure kernel), `vminit_safe`/`vmstep`, `minit_safe_imp`/`mstep_imp` and
+`minit_safe_j`/`mstep_j` (the two heap-resident kernels), the wide database operations, and the
+hash-table and map primitives that only the micro-benchmarks used. What is left is
+`minit_safe_d`, `mstep_d`, `dfail_nodes`, the four operations on the database of short tuples,
+and the front end's own view of a formula (`convert_multiway`, `mmonitorable_exec`,
+`type_check`).
+
+The code generator does the rest:
+
+| | before | after |
+|---|---:|---:|
+| `src/verified.ml`, lines | 20390 | **10530** |
+| occurrences of `(event_data option) list` | 362 | **70** |
+| evaluation functions over wide tuples | 3 | **0** |
+
+`meval`, `meeval`, `meval_imp`, `meval_j`, `bin_join`, `mmulti_join`, `proj_tuple`, the wide
+`mmsaux`/`mmuaux`/`mmtaux` updates, the wide match derivatives and `eval_matchF` are all gone.
+The 70 remaining occurrences of the wide tuple type are all in *type declarations*: `meinit0`
+still builds the sparse formula the compiler descends, and that formula's type carries the
+kernel's auxiliary structures in its parameters even though the compiler reads nothing out of
+them but the Since representation flag. One empty structure is allocated per temporal node at
+initialisation and never touched again.
+
+The adapter loses its dispatch with the same stroke: one database type instead of
+`Wide | Short`, one batch, one state, one verdict type, and `step` is a single call to `mstep_d`.
+`-dense`, `-heap_maps` and `-heap_since` are accepted and ignored, so existing command lines keep
+working; the monitor they used to select is now the only one.
+
+**The suite.** Seven interleaved repetitions, medians, multipliers relative to MonPoly where
+MonPoly can monitor the formula, lower is better. "verimon (was)" and "dense (was)" are the
+kernel this series started from, run as `-verified` and `-verified -dense`; "verimon" is the
+kernel after it, where `-verified` *is* the dense monitor. The five rows below the rule exercise
+the operators this series added: `trigger`, `andtrigger` and `matchp` used to be evaluated by the
+wide function even under `-dense`, `frz*` runs on a 400-time-point log because the freeze
+operator is quadratic in the log on all three kernels, and `aggonce` is the un-fused aggregation
+of 20.39.
+

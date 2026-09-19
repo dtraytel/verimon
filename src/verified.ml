@@ -3037,7 +3037,8 @@ type dformula = DFail | DRel of (event_data list) set | DPredS of string * nat |
                               (event_data list) set)))))))))))
   | DAndTrigger of
       djoin_plan * dformula *
-        ((event_data list) set mbuf_t * (event_data list) set mbuf_t) *
+        (((event_data list) set option) mbuf_t *
+          ((event_data list) set option) mbuf_t) *
         unit args_ext * dformula * dformula *
         ((event_data list) set mbuf_t * (event_data list) set mbuf_t) *
         nat mbuf_t *
@@ -5530,6 +5531,11 @@ let rec de_gresult_mmtaux
    (_, (hist_sat, a)))))))))))
       -> edl_union (edl_union tuple_in_once_keys hist_sat) a);;
 
+let rec de_gmmtaux_empty
+  x = (fun (_, (_, (_, (_, (_, (_, (data_in, (_, (_, (_, (_, _))))))))))) ->
+        is_emptya data_in)
+        x;;
+
 let rec linearize x = (let (fs, ls) = rep_queue x in fs @ rev ls);;
 
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
@@ -7873,18 +7879,26 @@ let rec deval_step
                                  (fun r1 r2 t (zs, ax) ->
                                    (let axa = de_gupdate_mmtaux dags t r1 r2 ax
                                       in
-                                     (zs @ [de_gresult_mmtaux dags axa], axa)))
+                                     (zs @
+[(if de_gmmtaux_empty axa then None else Some (de_gresult_mmtaux dags axa))],
+                                       axa)))
                                  ([], daux) (mebuf2_add xs ys buf2)
                                  (mbuf_t_append nts ts)))
                          (fun (a, b) ->
                            (let (zs_trigger, dauxa) = a in
                              (fun (buf2a, ntsa) ->
                                binda (mebuf2_take_j
-                                       (fun r1 -> dbin_join_h pl r1 true)
-                                       (mebuf2_add asa zs_trigger buf1))
+                                       (fun r1 aa ->
+ (match aa with None -> (fun () -> r1)
+   | Some z ->
+     (match r1 with None -> (fun () -> None)
+       | Some ab ->
+         binda (dbin_join_h pl ab true z) (fun c -> (fun () -> (Some c))))))
+                                       (mebuf2_add
+ (mapa (fun aa -> Some aa) asa) zs_trigger buf1))
                                  (fun r ->
                                    (fun () ->
-                                     (fst r,
+                                     (mapa the (fst r),
                                        DAndTrigger
  (pl, phiaa, snd r, dags, phib, psia, buf2a, ntsa, dauxa))))))
                              b))))
@@ -10054,9 +10068,8 @@ let rec dformula_of
          let cs_L = set_cols (args_L args) in
           (if equal_nata (args_n args) n &&
                 (equal_lista equal_nat cs (merge_cols cs_V cs_R) &&
-                  (superset equal_nat cs_R cs_L &&
-                    (memL (args_ivl args) zero_nata &&
-                      memR (args_ivl args) zero_nata)))
+                  (superset equal_nat cs_V cs_R &&
+                    superset equal_nat cs_R cs_L))
             then (let dags = dargs cs_R cs_L args in
                    binda (dformula_of n cs_V phia)
                      (fun phi_d ->

@@ -715,10 +715,13 @@ text \<open>
 
   The third is the result at an empty window, where the kernel returns the wildcard tuple -- the
   one tuple with every column blank -- to say that every valuation satisfies the node.  A short
-  tuple cannot say that.  It does not have to: the compiler only builds this node when the
-  interval contains zero, and then the update always appends to the window, so the window is
-  never empty when the result is read.  The operation below therefore returns the union of the
-  three sets, and the lemma relating it to the kernel's carries that assumption.
+  tuple cannot say that, so the result is split in two: @{term gresult_mmtaux} returns the union
+  of the three sets, which is the kernel's answer on a non-empty window, and
+  @{term gmmtaux_empty} says whether the window is empty, so that a node which can face an empty
+  one recognises the case rather than reading a wrong table.  The standalone trigger cannot face
+  it -- its interval contains zero, so the update always appends to the window -- and reads the
+  result directly; the conjunction with a trigger can, and treats the empty window as the
+  identity on its other operand, which is what the kernel's join with the wildcard tuple does.
 \<close>
 
 type_synonym 'b gmmtaux = "
@@ -806,6 +809,11 @@ definition gresult_mmtaux :: "args \<Rightarrow> 'b gmmtaux \<Rightarrow> 'b lis
   "gresult_mmtaux args = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
       tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
     tuple_in_once_keys \<union> hist_sat \<union> since_sat)"
+
+definition gmmtaux_empty :: "'b gmmtaux \<Rightarrow> bool" where
+  "gmmtaux_empty = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
+      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
+    Queue.is_empty data_in)"
 
 subsection \<open>The match structures over short tuples\<close>
 

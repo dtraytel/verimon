@@ -533,6 +533,7 @@ val dense_elem_consts =
    "gevt_extend", "ginit_evt", "glength_evt", "gevt_step", "gevt_shift",
    "gadd_new_evt", "geval_evt",
    "gsemi_join", "ginit_mmtaux", "gupdate_mmtaux'", "gupdate_mmtaux", "gresult_mmtaux",
+   "gmmtaux_empty",
    "glookup", "gmrtabulate", "geps_lax", "greps_strict", "gleps_strict",
    "grdelta", "gldelta", "gupdate_matchP", "gupdate_matchF_base", "gupdate_matchF_step",
    "gupdate_matchF", "geval_matchF"]
