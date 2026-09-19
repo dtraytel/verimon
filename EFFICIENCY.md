@@ -5846,3 +5846,106 @@ benchmark formulas, at 0.93x the wide kernel it is proved to simulate. The 0.87x
 the shipping monitor is the gap the verification has yet to cross, and the `P2` row says what the
 first item in it is: not the representation, but the operator specialisations that the compiler
 chooses and `dof` does not.
+
+### 20.46 `DPure` removed, and the list recursions folded into `map`
+
+20.45 built the verified dense evaluator a second time in order to measure it, and in doing so
+named the one thing that still tied it to the kernel: `DPure`. This section removes it, and
+replaces the hand-written list recursions by `map`.
+
+**What `DPure` was.** One constructor of `dformula` carrying a kernel formula:
+
+```isabelle
+datatype dformula = DPure "(mmasaux, muaux_dq, event_data mmtaux) mformula" nat "bool list" | ...
+| "deval j ts db (DPure φ m msk) =
+     (let (xs, φ') = meval j m ts db φ in (map (dnarrow msk) xs, DPure φ' m msk))"
+```
+
+It made `dof` total on the kernel's formula language and `dsim_dof_minit0` unconditional: a node
+the dense fragment did not cover was related to the kernel by `DsPure` and evaluated by the
+kernel's own `meval`. That is why exporting `deval` dragged in the whole wide-tuple evaluator,
+and why 20.45's `Dense_Descend_Code.thy` had to write its fallbacks as `DPure (Rep_meformula
+(meformula.MTrigger …)) …` -- the generated code cannot *construct* a value of the specification
+type.
+
+**What replaces it.** A nullary `DFail`, the same shape the executable evaluator has used since
+20.42, with `deval j ts db DFail = ([], DFail)` and no `dsim` rule; `vdfail_nodes` counts them.
+Nothing in `dformula` mentions `mformula` any more, and `deval` calls nothing of the kernel's
+evaluator. In the generated code `meeval` now occurs zero times.
+
+**The price is one hypothesis, in one place.** Every statement of `Dense_Descend.thy` that read
+`dofc n tw φ` now reads `dofz n φ ⟹ dofc n tw φ`, where
+
+```isabelle
+dofz n φ ≡ vdfail_nodes (dof n (set_cols (Formula.fv φ)) (minit0 n φ)) = 0
+```
+
+and each per-constructor lemma splits the parent's `dofz` into its operands' with the node's own
+compilation equation -- one `simp` each, because `vdfail_nodes` adds. A constructor the fragment
+does not cover no longer needs a lemma at all: its case is vacuous and `dsim_dof_minit0_fail` is
+`by simp`. `dsim_dof_pure`, `dsim_dof_minit0_pure`, `dpure_state`, `dmonitor_mverdicts_pure` and
+`dmonitor_mverdicts_dense` are gone. What remains is `dmonitor_mverdicts_dof`, with
+
+```isabelle
+vdfail_nodes (dmstate_m (dof_state (Formula.nfv φ) (set_cols (Formula.fv φ)) (minit_safe φ))) = 0
+```
+
+as its one added assumption. The front end checks it once, before the first time point, and
+**refuses the formula** when it fails -- with no fallback left, a `DFail` node would report
+nothing and say nothing about it.
+
+**This is the honest statement of what the verified monitor covers**, and it is the statement the
+executable one has made since 20.42. Before, a formula outside the fragment was monitored
+correctly by a *different* algorithm and the theorem said nothing about which one had run. Now
+the theorem covers the whole run, or the run does not start. Concretely, `-verified -vdense` now
+rejects the two benchmark formulas 20.45 reported a fallback node for: `matchp` (no `DMatchP` in
+the verified fragment) and `aggonce` (a fused aggregation). Those two rows of 20.45's table can
+no longer be produced; the other nineteen are unaffected, because the algorithm that ran them is
+unchanged.
+
+**The list recursions.** `deval` was defined mutually with `deval_list`, `dof` with `dof_list`
+and `edof` with `edof_list`, each a hand-written map:
+
+```isabelle
+  "deval_list j ts db [] = []"
+| "deval_list j ts db (φ # r) = deval j ts db φ # deval_list j ts db r"
+```
+
+`map_cong` is a `fundef_cong` rule, so the mutual definitions bought nothing: `map (deval j ts
+db) Ld` and `map2 (dof n) (c0 # css @ nss) L` are accepted directly. For `deval` the termination
+argument gets *simpler* -- one measure `size φ` instead of a sum type, and `psize_snd_deval`
+loses its second conjunct and the `size_list_map_cong` lemma that carried it. `deval_list_rel`
+and the `DAnds` case of `dsim_deval` needed no proof change at all: `list.map`'s simp rules are
+the ones `deval_list.simps` used to be. `length_dof_list` and `dof_list_nth` become `min` (which
+the simplifier knows) and a three-line `map2_nth`.
+
+**Two things `map2` costs that `map` does not.** `fun`'s automatic termination proof cannot see
+through `map2 (dof n) css L`: the congruence hands it `x ∈ set (zip css L)` and it has no way
+from there to `snd x ∈ set L`. So `dof` and `edof` become explicit function definitions:
+
+```isabelle
+termination dof
+  by (relation "measure (λ(n, cs, φ). size φ)")
+    (auto simp: termination_simp dest!: set_zip_rightD)
+```
+
+And `edof_dof`'s `DAnds` case needs `map2 (edof n) css L = map2 (dof n) css (map Rep_meformula
+L)`, which is not a `map_cong` away because the two `zip`s differ. `zip_map2` brings them to the
+same shape -- `zip xs (map h ys) = map (λ(x, y). (x, h y)) (zip xs ys)` -- and then `map_cong`
+reduces the goal to the induction hypothesis, one element at a time.
+
+**One trap, worth recording.** `fv_remove_neg` is stated `fv φ = fv (remove_neg φ)`, so adding it
+to a simp set rewrites in the expanding direction and does not terminate; every use needs
+`[symmetric]`. Under PIDE this presents as a command that stays "running" with a tiny elapsed
+time and an `Interrupt_Breakdown` that moves to a different command on each poll -- easy to read
+as a stale marker rather than as a loop. The batch build says what it is in one line: `Warning -
+Unable to increase stack - interrupting thread`.
+
+**What it costs and what it buys.** `MFODL_Monitor_Imp` builds in 5:37 and the cram suite passes.
+Of the twenty-two formulas checked differentially, twenty-one give identical verdicts under
+`-verified` and `-verified -vdense` and one (`aggonce`) is refused; none differ.
+`src/verified.ml` is 13679 lines against the 19299 of 20.45's measurement export, and 11415 for
+the shipping monitor alone: the 2264-line difference is the verified dense evaluator and the wide
+*tables* it holds, not the wide *evaluator*, which is gone. The 143 occurrences of `(event_data
+option) list`, against 46 in the shipping-only export, are that evaluator's tuple type -- which
+is the point of 20.45's measurement and the reason it is still exported.
