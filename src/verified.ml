@@ -158,6 +158,7 @@ module Monitor : sig
     Minus of trm * trm | UMinus of trm | Mult of trm * trm | Div of trm * trm |
     Mod of trm * trm | F2i of trm | I2f of trm
   type ('a, 'b) sum = Inl of 'a | Inr of 'b
+  type mregex
   type enat = Enat of nat | Infinity_enat
   type rec_safety
   type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med
@@ -4207,7 +4208,15 @@ type dformula =
                         ((event_data list) set *
                           (((event_data list), nat) mapping *
                             ((event_data list) set *
-                              (event_data list) set)))))))))));;
+                              (event_data list) set)))))))))))
+  | DMatchP of
+      i * mregex * mregex list * (bool list) list * dformula list *
+        (event_data list) set mbuf_t list * nat mbuf_t *
+        (nat * (mregex, (event_data list) set) mapping) list
+  | DMatchF of
+      i * mregex * mregex list * (bool list) list * dformula list *
+        (event_data list) set mbuf_t list * nat mbuf_t * nat *
+        (nat * ((event_data list) set list * (event_data list) set)) list;;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -6555,6 +6564,174 @@ let rec de_gupdate_mmtaux
  (edl_union tuple_in_once_keysa l,
    (tuple_since_hista, (hist_sata, since_sata))))))))))))));;
 
+let edl_is_empty_v : ((event_data list) set -> bool) boxed
+  = Box (is_empty
+          (card_UNIV_list, (ceq_list ceq_event_data),
+            (cproper_interval_list ccompare_event_data)));;
+
+let rec de_geps_lax
+  msks guard phi_s x3 = match msks, guard, phi_s, x3 with
+    msks, guard, phi_s, MSkip n ->
+      (if equal_nata n zero_nata then guard else edl_bot)
+    | msks, guard, phi_s, MTestPos i ->
+        de_dsemi (nth msks i) true guard (nth phi_s i)
+    | msks, guard, phi_s, MTestNeg i ->
+        de_dsemi (nth msks i) false guard (nth phi_s i)
+    | msks, guard, phi_s, MPlus (r, s) ->
+        edl_union (de_geps_lax msks guard phi_s r)
+          (de_geps_lax msks guard phi_s s)
+    | msks, guard, phi_s, MTimes (r, s) ->
+        edl_inter (de_geps_lax msks guard phi_s r)
+          (de_geps_lax msks guard phi_s s)
+    | msks, guard, phi_s, MStar r -> guard;;
+
+let edl_remove_v :
+  (event_data list -> (event_data list) set -> (event_data list) set) boxed
+  = Box (remove
+          ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data)));;
+
+let rec edl_insert
+  xa x1 = match xa, x1 with
+    xa, Complement x -> Complement (unbox edl_remove_v xa x)
+    | x, RBT_set rbt -> RBT_set (edl_rbt_insert_unit x () rbt)
+    | x, DList_set dxs -> DList_set (inserta (ceq_list ceq_event_data) x dxs)
+    | x, Set_Monad xs -> Set_Monad (x :: xs)
+    | x, Collect_set a ->
+        Collect_set (fun_upda (equality_list equal_event_dataa) a x true);;
+
+let rec de_greps_strict
+  msks phi_s x2 = match msks, phi_s, x2 with
+    msks, phi_s, MSkip m ->
+      (if equal_nata m zero_nata then edl_insert [] edl_bot else edl_bot)
+    | msks, phi_s, MTestPos i -> nth phi_s i
+    | msks, phi_s, MTestNeg i ->
+        (if unbox edl_is_empty_v (nth phi_s i) then edl_insert [] edl_bot
+          else edl_bot)
+    | msks, phi_s, MPlus (r, s) ->
+        edl_union (de_greps_strict msks phi_s r) (de_greps_strict msks phi_s s)
+    | msks, phi_s, MTimes (r, s) ->
+        de_geps_lax msks (de_greps_strict msks phi_s r) phi_s s
+    | msks, phi_s, MStar r -> edl_insert [] edl_bot;;
+
+let rec rbt_comp_bulkload
+  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
+
+let rec bulkload _A
+  xa = Mapping_RBTa (rbt_comp_bulkload (the (ccompare _A)) xa);;
+
+let rec de_gmrtabulate
+  xs f =
+    (match ccompare_mregexa
+      with None ->
+        failwith "gmrtabulate RBT_Mapping: ccompare = None"
+          (fun _ -> de_gmrtabulate xs f)
+      | Some _ ->
+        RBT_Mapping
+          (bulkload ccompare_mregex
+            (map_filter
+              (fun k ->
+                (let fk = f k in
+                  (if unbox edl_is_empty_v fk then None else Some (k, fk))))
+              xs)));;
+
+let rec de_glookup
+  x = lookup_default (ccompare_mregex, equal_mregex) edl_bot x;;
+
+let rec de_grdelta
+  msks kappa x phi_s xa4 = match msks, kappa, x, phi_s, xa4 with
+    msks, kappa, x, phi_s, MSkip n ->
+      (if equal_nata n zero_nata then edl_bot
+        else de_glookup x (kappa (MSkip (minus_nata n one_nata))))
+    | msks, kappa, x, phi_s, MTestPos i -> edl_bot
+    | msks, kappa, x, phi_s, MTestNeg i -> edl_bot
+    | msks, kappa, x, phi_s, MPlus (r, s) ->
+        edl_union (de_grdelta msks kappa x phi_s r)
+          (de_grdelta msks kappa x phi_s s)
+    | msks, kappa, x, phi_s, MTimes (r, s) ->
+        edl_union (de_grdelta msks (fun t -> kappa (MTimes (r, t))) x phi_s s)
+          (de_geps_lax msks (de_grdelta msks kappa x phi_s r) phi_s s)
+    | msks, kappa, x, phi_s, MStar r ->
+        de_grdelta msks (fun t -> kappa (MTimes (MStar r, t))) x phi_s r;;
+
+let rec de_gupdate_matchP
+  msks i mr mrs rels nt aux =
+    (let auxa =
+       (match
+         maps (fun (t, rel) ->
+                (if memR i (minus_nata nt t)
+                  then [(t, de_gmrtabulate mrs
+                              (fun mra ->
+                                edl_union (de_grdelta msks id rel rels mra)
+                                  (if equal_nata t nt
+                                    then de_greps_strict msks rels mra
+                                    else edl_bot)))]
+                  else []))
+           aux
+         with [] -> [(nt, de_gmrtabulate mrs (de_greps_strict msks rels))]
+         | x :: auxa ->
+           (if equal_nata (fst x) nt then x :: auxa
+             else (nt, de_gmrtabulate mrs (de_greps_strict msks rels)) ::
+                    x :: auxa))
+       in
+      (foldr (sup_seta
+               ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data)))
+         (maps (fun (t, rel) ->
+                 (if memL i (minus_nata nt t) then [de_glookup rel mr] else []))
+           auxa)
+         edl_bot,
+        auxa));;
+
+let rec de_gldelta
+  msks kappa x phi_s xa4 = match msks, kappa, x, phi_s, xa4 with
+    msks, kappa, x, phi_s, MSkip n ->
+      (if equal_nata n zero_nata then edl_bot
+        else de_glookup x (kappa (MSkip (minus_nata n one_nata))))
+    | msks, kappa, x, phi_s, MTestPos i -> edl_bot
+    | msks, kappa, x, phi_s, MTestNeg i -> edl_bot
+    | msks, kappa, x, phi_s, MPlus (r, s) ->
+        edl_union (de_gldelta msks kappa x phi_s r)
+          (de_gldelta msks kappa x phi_s s)
+    | msks, kappa, x, phi_s, MTimes (r, s) ->
+        edl_union (de_gldelta msks (fun t -> kappa (MTimes (t, s))) x phi_s r)
+          (de_geps_lax msks (de_gldelta msks kappa x phi_s s) phi_s r)
+    | msks, kappa, x, phi_s, MStar r ->
+        de_gldelta msks (fun t -> kappa (MTimes (t, MStar r))) x phi_s r;;
+
+let rec de_gupdate_matchF_step
+  msks i mr mrs nt =
+    (fun (t, (rels, rel)) (aux, x) ->
+      (let y = de_gmrtabulate mrs (de_gldelta msks id x rels) in
+        ((t, (rels,
+               (if memL i (minus_nata nt t) && memR i (minus_nata nt t)
+                 then edl_union rel (de_glookup y mr) else rel))) ::
+           aux,
+          y)));;
+
+let rec de_gleps_strict
+  msks phi_s x2 = match msks, phi_s, x2 with
+    msks, phi_s, MSkip m ->
+      (if equal_nata m zero_nata then edl_insert [] edl_bot else edl_bot)
+    | msks, phi_s, MTestPos i -> nth phi_s i
+    | msks, phi_s, MTestNeg i ->
+        (if unbox edl_is_empty_v (nth phi_s i) then edl_insert [] edl_bot
+          else edl_bot)
+    | msks, phi_s, MPlus (r, s) ->
+        edl_union (de_gleps_strict msks phi_s r) (de_gleps_strict msks phi_s s)
+    | msks, phi_s, MTimes (r, s) ->
+        de_geps_lax msks (de_gleps_strict msks phi_s s) phi_s r
+    | msks, phi_s, MStar r -> edl_insert [] edl_bot;;
+
+let rec de_gupdate_matchF_base
+  msks i mr mrs rels nt =
+    (let x = de_gmrtabulate mrs (de_gleps_strict msks rels) in
+      ([(nt, (rels, (if memL i zero_nata then de_glookup x mr else edl_bot)))],
+        x));;
+
+let rec de_gupdate_matchF
+  msks i mr mrs rels nt aux =
+    fst (foldr (de_gupdate_matchF_step msks i mr mrs nt) aux
+          (de_gupdate_matchF_base msks i mr mrs rels nt));;
+
 let rec de_gresult_mmtaux
   args =
     (fun (_, (_, (_, (_, (_, (_, (_, (_, (tuple_in_once_keys,
@@ -6564,6 +6741,13 @@ let rec de_gresult_mmtaux
 let rec linearize x = (let (fs, ls) = rep_queue x in fs @ rev ls);;
 
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
+
+let rec de_geval_matchF
+  i mr nt x3 = match i, mr, nt, x3 with i, mr, nt, [] -> ([], [])
+    | i, mr, nt, (t, (rels, rel)) :: aux ->
+        (if not (memR i (minus_nata nt t))
+          then (let (xs, a) = de_geval_matchF i mr nt aux in (rel :: xs, a))
+          else ([], (t, (rels, rel)) :: aux));;
 
 let rec eval_constraint0
   xa0 x y = match xa0, x, y with MEq, x, y -> equal_event_dataa x y
@@ -6755,7 +6939,11 @@ let rec size_dformula
           (suc zero_nata)
     | DTrigger (x221, x222, x223, x224, x225, x226) ->
         plus_nata (plus_nata (size_dformula x222) (size_dformula x223))
-          (suc zero_nata);;
+          (suc zero_nata)
+    | DMatchP (x231, x232, x233, x234, x235, x236, x237, x238) ->
+        plus_nata (size_list size_dformula x235) (suc zero_nata)
+    | DMatchF (x241, x242, x243, x244, x245, x246, x247, x248, x249) ->
+        plus_nata (size_list size_dformula x245) (suc zero_nata);;
 
 let rec map_valuesa
   xb xc = Alist (mapa (fun (x, y) -> (x, xb x y)) (impl_of xc));;
@@ -6809,20 +6997,6 @@ let rec freeze_meval0_h
               | y :: _ ->
                 binda (freeze_meval0_h eval (suc k) alpha_s)
                   (fun z -> (fun () -> (y :: fst z, snd z)))));;
-
-let edl_remove_v :
-  (event_data list -> (event_data list) set -> (event_data list) set) boxed
-  = Box (remove
-          ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data)));;
-
-let rec edl_insert
-  xa x1 = match xa, x1 with
-    xa, Complement x -> Complement (unbox edl_remove_v xa x)
-    | x, RBT_set rbt -> RBT_set (edl_rbt_insert_unit x () rbt)
-    | x, DList_set dxs -> DList_set (inserta (ceq_list ceq_event_data) x dxs)
-    | x, Set_Monad xs -> Set_Monad (x :: xs)
-    | x, Collect_set a ->
-        Collect_set (fun_upda (equality_list equal_event_dataa) a x true);;
 
 let rec mebuf2_take
   f (xs, ys) =
@@ -6925,6 +7099,15 @@ let rec deopt x = mapa the x;;
 let rec deopt_table (_A1, _A2)
   x = image ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
         ((ceq_list _A1), (ccompare_list _A2), set_impl_list) deopt x;;
+
+let rec umebufnt_take
+  f z buf t0 ts =
+    (match mbuf_t_cases ts with (None, _) -> (z, (buf, (t0, ts)))
+      | (Some t, tsa) ->
+        (if list_ex mbuf_t_is_empty buf then (z, (buf, (t, mbuf_t_Cons t tsa)))
+          else umebufnt_take f
+                 (f (mapa (comp (comp the fst) mbuf_t_cases) buf) t z)
+                 (mapa (comp snd mbuf_t_cases) buf) t tsa));;
 
 let rec umebuf2T_take
   f z (xs, ys) ts =
@@ -7732,11 +7915,6 @@ let rec de_ggc_join_msaux
                                     (idx_in,
                                       (tuple_in,
 (idx_since, tuple_since))))))))));;
-
-let edl_is_empty_v : ((event_data list) set -> bool) boxed
-  = Box (is_empty
-          (card_UNIV_list, (ceq_list ceq_event_data),
-            (cproper_interval_list ccompare_event_data)));;
 
 let rec de_gjoin_sevt
   args x aux =
@@ -14849,12 +15027,6 @@ let rec mebufn_take
       else mebufn_take f (f (mapa (comp (comp the fst) mbuf_t_cases) buf) z)
              (mapa (comp snd mbuf_t_cases) buf));;
 
-let rec rbt_comp_bulkload
-  c xs = foldr (fun (a, b) -> rbt_comp_insert c a b) xs Empty;;
-
-let rec bulkload _A
-  xa = Mapping_RBTa (rbt_comp_bulkload (the (ccompare _A)) xa);;
-
 let rec ed_mrtabulate
   xs f =
     (match ccompare_mregexa
@@ -16034,6 +16206,35 @@ let rec deval_step
                        (p, m) xs db)
                     psi)
               (fun (ys, psia) -> (fun () -> (ys, DLet (p, m, phia, psia)))))
+    | rc, j, ts, db, DMatchP (i, mr, mrs, msks, phi_s, buf, nts, aux) ->
+        binda (hmap (rc j ts db) phi_s)
+          (fun r ->
+            (fun () ->
+              (let (a, b) =
+                 umebufnt_take
+                   (fun rels t (zs, ax) ->
+                     (let (z, a) = de_gupdate_matchP msks i mr mrs rels t ax in
+                       (mbuf_t_append zs [z], a)))
+                   (mbuf_t_empty, aux) (umebufn_add (mapa fst r) buf) zero_nata
+                   (mbuf_t_append nts ts)
+                 in
+                (let (zs, auxa) = a in
+                  (fun (bufa, (_, ntsa)) ->
+                    (rep_mbuf_t zs,
+                      DMatchP
+                        (i, mr, mrs, msks, mapa snd r, bufa, ntsa, auxa))))
+                  b)))
+    | rc, j, ts, db, DMatchF (i, mr, mrs, msks, phi_s, buf, nts, t, aux) ->
+        binda (hmap (rc j ts db) phi_s)
+          (fun r ->
+            (fun () ->
+              (let (auxa, (bufa, (nt, ntsa))) =
+                 umebufnt_take (de_gupdate_matchF msks i mr mrs) aux
+                   (umebufn_add (mapa fst r) buf) t (mbuf_t_append nts ts)
+                 in
+               let (zs, auxb) = de_geval_matchF i mr nt auxa in
+                (zs, DMatchF
+                       (i, mr, mrs, msks, mapa snd r, bufa, ntsa, nt, auxb)))))
     | rc, j, ts, db, DTrigger (dags, phi, psi, dbuf, nts, daux) ->
         binda (rc j ts db phi)
           (fun (xs, phia) ->
@@ -18784,6 +18985,46 @@ let rec dformula_of
         (fun () ->
           (if equal_lista equal_nat cs (mtrm_dcols mt) then DTS mt
             else DPure (MTS mt, n, wide_mask n cs)))
+    | n, cs, MMatchP (i, mr, mrs, phi_s, buf, nts, aux) ->
+        (match those (mapa (mcols n) phi_s)
+          with None ->
+            (fun () ->
+              (DPure
+                (MMatchP (i, mr, mrs, phi_s, buf, nts, aux), n,
+                  wide_mask n cs)))
+          | Some css ->
+            (if equal_lista equal_nat cs (fold merge_cols css [])
+              then binda (dformula_of_list n css phi_s)
+                     (fun ld ->
+                       (fun () ->
+                         (DMatchP
+                           (i, mr, mrs, mapa (dmsk cs) css, ld,
+                             mapa (fun _ -> mbuf_t_empty) ld, mbuf_t_empty,
+                             []))))
+              else (fun () ->
+                     (DPure
+                       (MMatchP (i, mr, mrs, phi_s, buf, nts, aux), n,
+                         wide_mask n cs)))))
+    | n, cs, MMatchF (i, mr, mrs, phi_s, buf, nts, t, aux) ->
+        (match those (mapa (mcols n) phi_s)
+          with None ->
+            (fun () ->
+              (DPure
+                (MMatchF (i, mr, mrs, phi_s, buf, nts, t, aux), n,
+                  wide_mask n cs)))
+          | Some css ->
+            (if equal_lista equal_nat cs (fold merge_cols css [])
+              then binda (dformula_of_list n css phi_s)
+                     (fun ld ->
+                       (fun () ->
+                         (DMatchF
+                           (i, mr, mrs, mapa (dmsk cs) css, ld,
+                             mapa (fun _ -> mbuf_t_empty) ld, mbuf_t_empty, t,
+                             []))))
+              else (fun () ->
+                     (DPure
+                       (MMatchF (i, mr, mrs, phi_s, buf, nts, t, aux), n,
+                         wide_mask n cs)))))
     | n, cs, MTrigger (args, phi, psi, buf, nts, aux) ->
         (let cs_L = set_cols (args_L args) in
           (if equal_nata (args_n args) n &&
@@ -18841,12 +19082,6 @@ let rec dformula_of
           (DPure
             (MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh), n,
               wide_mask n cs)))
-    | n, cs, MMatchP (v, va, vb, vc, vd, ve, vf) ->
-        (fun () ->
-          (DPure (MMatchP (v, va, vb, vc, vd, ve, vf), n, wide_mask n cs)))
-    | n, cs, MMatchF (v, va, vb, vc, vd, ve, vf, vg) ->
-        (fun () ->
-          (DPure (MMatchF (v, va, vb, vc, vd, ve, vf, vg), n, wide_mask n cs)))
 and dformula_of_list
   n cs x2 = match n, cs, x2 with n, cs, [] -> (fun () -> [])
     | n, cs, phi :: r ->
@@ -18880,6 +19115,9 @@ let rec dpure_nodes
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DTrigger (dags, phi, psi, dbuf, nts, daux) ->
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DMatchP (i, mr, mrs, msks, phi_s, buf, nts, aux) -> dpure_nodes_list phi_s
+    | DMatchF (i, mr, mrs, msks, phi_s, buf, nts, t, aux) ->
+        dpure_nodes_list phi_s
     | DRel v -> zero_nata
     | DPredS (v, va) -> zero_nata
     | DPredM (v, va, vb, vc) -> zero_nata

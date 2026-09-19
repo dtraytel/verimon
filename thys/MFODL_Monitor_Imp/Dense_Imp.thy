@@ -180,6 +180,14 @@ fun umebuf2T_take :: "(utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow
     (case mbuf_t_cases ys of (None, ys') \<Rightarrow> (z, (x ## xs', ys'), t ## ts') | (Some y, ys') \<Rightarrow>
     umebuf2T_take f (f x y t z) (xs', ys') ts')))"
 
+fun umebufnt_take :: "(utable list \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow> umebufn \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow>
+    'b \<times> umebufn \<times> ts \<times> ts mbuf_t" where
+  "umebufnt_take f z buf t0 ts =
+    (case mbuf_t_cases ts of (None, ts') \<Rightarrow> (z, buf, t0, ts) | (Some t, ts') \<Rightarrow>
+    (if (\<exists>x \<in> set buf. mbuf_t_is_empty x) then (z, buf, t, t ## ts')
+     else umebufnt_take f (f (map (the \<circ> fst \<circ> mbuf_t_cases) buf) t z)
+       (map (snd \<circ> mbuf_t_cases) buf) t ts'))"
+
 text \<open>The subformulas the dense fragment does not cover yet are evaluated by the function
   over the wide tuples, which reads the input tables from the database itself; the database is
   put back into the wide representation for them.  A formula with no such subformula -- which
@@ -386,6 +394,10 @@ datatype dformula =
   | DFrz Formula.name nat dformula dformula nat nat nat "utable list"
   | DLetPast Formula.name nat dformula dformula nat "utable option"
   | DTrigger args dformula dformula umebuf2 "ts mbuf_t" "event_data gmmtaux"
+  | DMatchP \<I> mregex "mregex list" "bool list list" "dformula list" umebufn "ts mbuf_t"
+      "event_data gmrdaux"
+  | DMatchF \<I> mregex "mregex list" "bool list list" "dformula list" umebufn "ts mbuf_t" ts
+      "event_data gmldaux"
 
 definition dwrap_agg :: "aggargs \<Rightarrow> dformula \<Rightarrow> dformula" where
   "dwrap_agg ag \<phi> = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
@@ -520,6 +532,24 @@ function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mform
 | "dformula_of n cs (MTS mt) =
      return (if cs = mtrm_dcols mt then DTS mt
              else DPure (MTS mt) n (wide_mask n cs))"
+| "dformula_of n cs (MMatchP I mr mrs \<phi>s buf nts aux) =
+     (case those (map (mcols n) \<phi>s) of
+        None \<Rightarrow> return (DPure (MMatchP I mr mrs \<phi>s buf nts aux) n (wide_mask n cs))
+      | Some css \<Rightarrow>
+        (if cs = fold merge_cols css [] then do {
+           Ld \<leftarrow> dformula_of_list n css \<phi>s;
+           return (DMatchP I mr mrs (map (dmsk cs) css) Ld
+                     (map (\<lambda>_. mbuf_t_empty) Ld) mbuf_t_empty []) }
+         else return (DPure (MMatchP I mr mrs \<phi>s buf nts aux) n (wide_mask n cs))))"
+| "dformula_of n cs (MMatchF I mr mrs \<phi>s buf nts t aux) =
+     (case those (map (mcols n) \<phi>s) of
+        None \<Rightarrow> return (DPure (MMatchF I mr mrs \<phi>s buf nts t aux) n (wide_mask n cs))
+      | Some css \<Rightarrow>
+        (if cs = fold merge_cols css [] then do {
+           Ld \<leftarrow> dformula_of_list n css \<phi>s;
+           return (DMatchF I mr mrs (map (dmsk cs) css) Ld
+                     (map (\<lambda>_. mbuf_t_empty) Ld) mbuf_t_empty t []) }
+         else return (DPure (MMatchF I mr mrs \<phi>s buf nts t aux) n (wide_mask n cs))))"
 | "dformula_of n cs (MTrigger args \<phi> \<psi> buf nts aux) =
      (let cs_L = set_cols (args_L args) in
       if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and> mem (args_ivl args) 0
@@ -774,6 +804,18 @@ fun deval_step :: "(nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarr
      (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) xs db) \<psi>;
      return (ys, DLet p m \<phi> \<psi>) }"
+| "deval_step rc j ts db (DMatchP I mr mrs msks \<phi>s buf nts aux) = do {
+     R \<leftarrow> hmap (\<lambda>\<phi>. rc j ts db \<phi>) \<phi>s;
+     return (let ((zs, aux), buf, _, nts) = umebufnt_take (\<lambda>rels t (zs, ax).
+          let (z, ax) = gupdate_matchP msks I mr mrs rels t ax in (zs @@ [z], ax))
+          (mbuf_t_empty, aux) (umebufn_add (map fst R) buf) 0 (nts @@ ts)
+       in (Rep_mbuf_t zs, DMatchP I mr mrs msks (map snd R) buf nts aux)) }"
+| "deval_step rc j ts db (DMatchF I mr mrs msks \<phi>s buf nts t aux) = do {
+     R \<leftarrow> hmap (\<lambda>\<phi>. rc j ts db \<phi>) \<phi>s;
+     return (let (aux, buf, nt, nts) = umebufnt_take (gupdate_matchF msks I mr mrs) aux
+             (umebufn_add (map fst R) buf) t (nts @@ ts);
+          (zs, aux) = geval_matchF I mr nt aux
+       in (zs, DMatchF I mr mrs msks (map snd R) buf nts nt aux)) }"
 | "deval_step rc j ts db (DTrigger dags \<phi> \<psi> dbuf nts daux) = do {
      (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
@@ -830,6 +872,8 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DLetPast p m \<phi> \<psi> i buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DTrigger dags \<phi> \<psi> dbuf nts daux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DMatchP I mr mrs msks \<phi>s buf nts aux) = dpure_nodes_list \<phi>s"
+| "dpure_nodes (DMatchF I mr mrs msks \<phi>s buf nts t aux) = dpure_nodes_list \<phi>s"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"

@@ -807,6 +807,131 @@ definition gresult_mmtaux :: "args \<Rightarrow> 'b gmmtaux \<Rightarrow> 'b lis
       tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
     tuple_in_once_keys \<union> hist_sat \<union> since_sat)"
 
+subsection \<open>The match structures over short tuples\<close>
+
+text \<open>
+  The two match structures are lists of tables indexed by a time stamp and, for the past one, by
+  a marked regular expression, so they carry over to short tuples on their own.  The derivative
+  operations that fill them do not, in two places.
+
+  The first is the join against an atom.  The kernel's lax epsilon joins the guard -- a table over
+  the node's columns -- with an atom's table, whose columns are a subset of them; over wide tuples
+  that is @{const join}, over short ones it is the semi-join against the atom's mask, and the
+  masks are computed once, at compile time, one per atom.  Where both sides are results of the lax
+  epsilon they are both over the node's columns, so the join is an intersection.
+
+  The second is the unit table that the two strict epsilons return at a
+  @{term "Regex.Skip 0"} and at a star: the tuple with every column blank, which stands for every
+  valuation.  A short tuple cannot stand for every valuation.  It does not have to: as the
+  well-formedness argument for the match nodes observes, that table is a table over the node's
+  columns only because the safety condition forces those columns to be empty where it arises -- a star or
+  an empty skip that could match the empty word while the node still binds a variable would make
+  the formula unsafe.  With no columns the unit table is the one empty tuple, which is what the
+  operations below return.
+\<close>
+
+definition glookup :: "(mregex, 'b list set) mapping \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "glookup = Mapping.lookup_default {}"
+
+lift_definition gmrtabulate :: "mregex list \<Rightarrow> (mregex \<Rightarrow> 'b list set) \<Rightarrow>
+    (mregex, 'b list set) mapping"
+  is "\<lambda>ks f. map_of (List.map_filter (\<lambda>k. let fk = f k in if fk = {} then None else Some (k, fk)) ks)" .
+
+text \<open>The lifted definition on its own would build the function-backed mapping, which the
+  mapping operations cannot look a key up in; it needs the same tree code equation the kernel's
+  tabulation has.\<close>
+
+lemma gmrtabulate_rbt_code[code]: "gmrtabulate (xs :: mregex list) f =
+  (case ID CCOMPARE(mregex) of
+     None \<Rightarrow> Code.abort (STR ''gmrtabulate RBT_Mapping: ccompare = None'') (\<lambda>_. gmrtabulate xs f)
+   | _ \<Rightarrow> RBT_Mapping (RBT_Mapping2.bulkload
+       (List.map_filter (\<lambda>k. let fk = f k in if fk = {} then None else Some (k, fk)) xs)))"
+  unfolding gmrtabulate.abs_eq RBT_Mapping_def
+  by (auto split: option.splits)
+
+fun geps_lax :: "bool list list \<Rightarrow> 'b list set \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "geps_lax msks guard \<phi>s (MSkip n) = (if n = 0 then guard else {})"
+| "geps_lax msks guard \<phi>s (MTestPos i) = dsemi (msks ! i) True guard (\<phi>s ! i)"
+| "geps_lax msks guard \<phi>s (MTestNeg i) = dsemi (msks ! i) False guard (\<phi>s ! i)"
+| "geps_lax msks guard \<phi>s (MPlus r s) = geps_lax msks guard \<phi>s r \<union> geps_lax msks guard \<phi>s s"
+| "geps_lax msks guard \<phi>s (MTimes r s) = geps_lax msks guard \<phi>s r \<inter> geps_lax msks guard \<phi>s s"
+| "geps_lax msks guard \<phi>s (MStar r) = guard"
+
+fun greps_strict :: "bool list list \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "greps_strict msks \<phi>s (MSkip m) = (if m = 0 then {[]} else {})"
+| "greps_strict msks \<phi>s (MTestPos i) = \<phi>s ! i"
+| "greps_strict msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = {} then {[]} else {})"
+| "greps_strict msks \<phi>s (MPlus r s) = greps_strict msks \<phi>s r \<union> greps_strict msks \<phi>s s"
+| "greps_strict msks \<phi>s (MTimes r s) = geps_lax msks (greps_strict msks \<phi>s r) \<phi>s s"
+| "greps_strict msks \<phi>s (MStar r) = {[]}"
+
+fun gleps_strict :: "bool list list \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "gleps_strict msks \<phi>s (MSkip m) = (if m = 0 then {[]} else {})"
+| "gleps_strict msks \<phi>s (MTestPos i) = \<phi>s ! i"
+| "gleps_strict msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = {} then {[]} else {})"
+| "gleps_strict msks \<phi>s (MPlus r s) = gleps_strict msks \<phi>s r \<union> gleps_strict msks \<phi>s s"
+| "gleps_strict msks \<phi>s (MTimes r s) = geps_lax msks (gleps_strict msks \<phi>s s) \<phi>s r"
+| "gleps_strict msks \<phi>s (MStar r) = {[]}"
+
+fun grdelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'b list set) mapping \<Rightarrow>
+    'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "grdelta msks \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> {} | Suc m \<Rightarrow> glookup X (\<kappa> (MSkip m)))"
+| "grdelta msks \<kappa> X \<phi>s (MTestPos i) = {}"
+| "grdelta msks \<kappa> X \<phi>s (MTestNeg i) = {}"
+| "grdelta msks \<kappa> X \<phi>s (MPlus r s) = grdelta msks \<kappa> X \<phi>s r \<union> grdelta msks \<kappa> X \<phi>s s"
+| "grdelta msks \<kappa> X \<phi>s (MTimes r s) =
+     grdelta msks (\<lambda>t. \<kappa> (MTimes r t)) X \<phi>s s \<union> geps_lax msks (grdelta msks \<kappa> X \<phi>s r) \<phi>s s"
+| "grdelta msks \<kappa> X \<phi>s (MStar r) = grdelta msks (\<lambda>t. \<kappa> (MTimes (MStar r) t)) X \<phi>s r"
+
+fun gldelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'b list set) mapping \<Rightarrow>
+    'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
+  "gldelta msks \<kappa> X \<phi>s (MSkip n) = (case n of 0 \<Rightarrow> {} | Suc m \<Rightarrow> glookup X (\<kappa> (MSkip m)))"
+| "gldelta msks \<kappa> X \<phi>s (MTestPos i) = {}"
+| "gldelta msks \<kappa> X \<phi>s (MTestNeg i) = {}"
+| "gldelta msks \<kappa> X \<phi>s (MPlus r s) = gldelta msks \<kappa> X \<phi>s r \<union> gldelta msks \<kappa> X \<phi>s s"
+| "gldelta msks \<kappa> X \<phi>s (MTimes r s) =
+     gldelta msks (\<lambda>t. \<kappa> (MTimes t s)) X \<phi>s r \<union> geps_lax msks (gldelta msks \<kappa> X \<phi>s s) \<phi>s r"
+| "gldelta msks \<kappa> X \<phi>s (MStar r) = gldelta msks (\<lambda>t. \<kappa> (MTimes t (MStar r))) X \<phi>s r"
+
+type_synonym 'b gmrdaux = "(ts \<times> (mregex, 'b list set) mapping) list"
+type_synonym 'b gmldaux = "(ts \<times> 'b list set list \<times> 'b list set) list"
+
+definition gupdate_matchP :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> 'b list set list \<Rightarrow>
+    ts \<Rightarrow> 'b gmrdaux \<Rightarrow> 'b list set \<times> 'b gmrdaux" where
+  "gupdate_matchP msks I mr mrs rels nt aux =
+    (let aux = (case [(t, gmrtabulate mrs (\<lambda>mr.
+        grdelta msks id rel rels mr \<union> (if t = nt then greps_strict msks rels mr else {}))).
+      (t, rel) \<leftarrow> aux, memR I (nt - t)]
+      of [] \<Rightarrow> [(nt, gmrtabulate mrs (greps_strict msks rels))]
+      | x # aux' \<Rightarrow> (if fst x = nt then x # aux'
+                    else (nt, gmrtabulate mrs (greps_strict msks rels)) # x # aux'))
+    in (foldr (\<union>) [glookup rel mr. (t, rel) \<leftarrow> aux, memL I (nt - t)] {}, aux))"
+
+definition gupdate_matchF_base :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
+    'b list set list \<Rightarrow> ts \<Rightarrow> 'b gmldaux \<times> (mregex, 'b list set) mapping" where
+  "gupdate_matchF_base msks I mr mrs rels nt =
+     (let X = gmrtabulate mrs (gleps_strict msks rels)
+      in ([(nt, rels, if memL I 0 then glookup X mr else {})], X))"
+
+definition gupdate_matchF_step :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> ts \<Rightarrow>
+    ts \<times> 'b list set list \<times> 'b list set \<Rightarrow> 'b gmldaux \<times> (mregex, 'b list set) mapping \<Rightarrow>
+    'b gmldaux \<times> (mregex, 'b list set) mapping" where
+  "gupdate_matchF_step msks I mr mrs nt = (\<lambda>(t, rels', rel) (aux', X).
+     (let Y = gmrtabulate mrs (gldelta msks id X rels')
+      in ((t, rels', if mem I (nt - t) then rel \<union> glookup Y mr else rel) # aux', Y)))"
+
+definition gupdate_matchF :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> 'b list set list \<Rightarrow>
+    ts \<Rightarrow> 'b gmldaux \<Rightarrow> 'b gmldaux" where
+  "gupdate_matchF msks I mr mrs rels nt aux =
+     fst (foldr (gupdate_matchF_step msks I mr mrs nt) aux
+       (gupdate_matchF_base msks I mr mrs rels nt))"
+
+fun geval_matchF :: "\<I> \<Rightarrow> mregex \<Rightarrow> ts \<Rightarrow> 'b gmldaux \<Rightarrow> 'b list set list \<times> 'b gmldaux" where
+  "geval_matchF I mr nt [] = ([], [])"
+| "geval_matchF I mr nt ((t, rels, rel) # aux) = (if \<not> memR I (nt - t)
+    then (let (xs, aux) = geval_matchF I mr nt aux in (rel # xs, aux))
+    else ([], (t, rels, rel) # aux))"
+
 subsection \<open>The operations that read a field\<close>
 
 text \<open>
