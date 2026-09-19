@@ -232,11 +232,11 @@ let _ =
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
     "-verified", Arg.Set Misc.verified, "\tRun the Monpoly's verified kernel";
-    "-dense", Arg.Set Misc.dense_cols, "\tRepresent tuples without the columns that are empty for the whole table (only with the verified kernel; not proved)";
-    "-heap_maps", Arg.Set Misc.heap_all, "\tKeep the auxiliary structures of Since operators on heap-resident hash maps (only with the verified kernel; not proved)";
+    "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
+    "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tSmallest table size for which a join builds a heap-resident index (default 0, i.e. always; only with -heap_maps)";
     "-bulk_min", Arg.Set_int Misc.bulk_min, "\tSmallest table built in one pass from a sorted list rather than by repeated insertion (default 64)";
-    "-heap_since", Arg.Set Misc.heap_since, "\tKeep the auxiliary structures of Since operators without join columns on the heap (only with the verified kernel)";
+    "-heap_since", Arg.Set Misc.heap_since, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 500 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
     "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default: 768k with the verified kernel, otherwise the OCaml default of 256k)";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";

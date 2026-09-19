@@ -150,38 +150,8 @@ and convert_re_vars fvl bvl lets = function
   | Star r -> Star (convert_re_vars fvl bvl lets r)
   in convert_formula_vars free_vars [] [] f
 
-let convert_tuple (pname, tl) sl =
-  let pos = ref 0 in
-  let type_error tname =
-    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for\
-      \ predicate %s, field number %d") tname pname !pos in
-    failwith msg
-  in
-  try List.map2
-    (fun (_, t) s ->
-      incr pos;
-      Some (match t with
-      | TInt ->
-        (try EInt (Z.of_string s)
-         with Invalid_argument _ -> type_error "int")
-      | TStr -> EString s
-      | TFloat ->
-        (try EFloat (float_of_string s)
-         with Failure _ -> type_error "float")
-      | TRegexp -> unsupported "Regular expressions constants are not supported"
-      )
-    )
-    tl sl
-  with Invalid_argument _ ->
-    let msg = Printf.sprintf "[convert_tuple] Wrong tuple length for\
-      \ predicate %s (expected: %d, actual: %d)"
-      pname (List.length tl) (List.length sl) in
-    failwith msg
-
-(* The monitor over the short tuples reads its input with nothing around the fields, so the
-   conversion is the one above without the [Some].  Wrapping the result of one in the other
-   would allocate a second spine per event on whichever path did not get it first, and this is
-   the hottest path there is. *)
+(* The monitor reads its input with nothing around the fields: a tuple of the database is an
+   [event_data list], one field per argument of the predicate. *)
 let uconvert_tuple (pname, tl) sl =
   let pos = ref 0 in
   let type_error tname =
@@ -210,20 +180,17 @@ let uconvert_tuple (pname, tl) sl =
       pname (List.length tl) (List.length sl) in
     failwith msg
 
-type wdb = ((string * nat), (((event_data option) list) set list)) mapping
-type udb = ((string * nat), ((event_data list) set list)) mapping
-
-(* The database of one time point, in the representation the monitor in use reads. *)
-type db = Wide of wdb | Short of udb
+(* The database of one time point. *)
+type db = ((string * nat), ((event_data list) set list)) mapping
 
 type tyssig = string * nat -> (tysym list) option
 
-let empty_db () = if !Misc.dense_cols then Short uempty_db else Wide empty_db
+let empty_db () = uempty_db
 
 (* Bulk construction of the tables of a time point.
 
-   The tuples of each predicate are collected, sorted with [compare_tuple] (which mirrors the
-   verified comparator on [event_data option list]) and handed to the verified [table_of_list],
+   The tuples of each predicate are collected, sorted with [compare_utuple] (which mirrors the
+   verified comparator on [event_data list]) and handed to the verified [utable_of_list],
    which checks the sortedness in linear time and then builds the red-black tree in linear
    time; if the check fails (the comparators disagree), it falls back to repeated insertion,
    so the result is [set xs] either way. Duplicates are removed only when they are equal as
@@ -243,29 +210,11 @@ let compare_event_data a b = match a, b with
   | _, EFloat _ -> 1
   | EString x, EString y -> String.compare x y
 
-let rec compare_tuple a b = match a, b with
-  | [], [] -> 0
-  | [], _ -> -1
-  | _, [] -> 1
-  | None :: xs, None :: ys -> compare_tuple xs ys
-  | None :: _, Some _ :: _ -> -1
-  | Some _ :: _, None :: _ -> 1
-  | Some x :: xs, Some y :: ys ->
-    let c = compare_event_data x y in
-    if c <> 0 then c else compare_tuple xs ys
-
 let equal_event_data a b = match a, b with
   | EInt x, EInt y -> Z.equal x y
   | EFloat x, EFloat y -> Int64.equal (Int64.bits_of_float x) (Int64.bits_of_float y)
   | EString x, EString y -> String.equal x y
   | _ -> false
-
-let equal_tuple a b =
-  List.length a = List.length b &&
-  List.for_all2 (fun x y -> match x, y with
-    | None, None -> true
-    | Some x, Some y -> equal_event_data x y
-    | _ -> false) a b
 
 let rec compare_utuple a b = match a, b with
   | [], [] -> 0
@@ -310,14 +259,11 @@ type 'a batch = {
   mutable b_last: 'a list ref;
 }
 
-(* The batch collects the tuples in the representation the monitor in use reads; only the
-   conversion differs, so the collection itself is written once. *)
-type batches = WB of (event_data option) list batch | UB of event_data list batch
+type batches = event_data list batch
 
 let empty_batch () : batches =
-  let mk conv = { b_conv = conv; b_tbl = Pred_tbl.create 16; b_live = false; b_tl = [];
-                  b_name = ""; b_last = ref [] } in
-  if !Misc.dense_cols then UB (mk uconvert_tuple) else WB (mk convert_tuple)
+  { b_conv = uconvert_tuple; b_tbl = Pred_tbl.create 16; b_live = false; b_tl = [];
+    b_name = ""; b_last = ref [] }
 
 let add_gen : 'a. 'a batch -> string * (string * tcst) list -> string list -> unit =
   fun b ((pname, tl) as schema) sl ->
@@ -334,9 +280,7 @@ let add_gen : 'a. 'a batch -> string * (string * tcst) list -> string list -> un
     b.b_live <- true; b.b_tl <- tl; b.b_name <- pname; b.b_last <- r
   end
 
-let add_to_batch b schema sl = match b with
-  | WB b -> add_gen b schema sl
-  | UB b -> add_gen b schema sl
+let add_to_batch b schema sl = add_gen b schema sl
 
 let flush_gen cmp eq tbl_of ins b db =
   let db = Pred_tbl.fold (fun (pname, a) r db ->
@@ -347,12 +291,8 @@ let flush_gen cmp eq tbl_of ins b db =
   b.b_live <- false;
   db
 
-let flush_batch b db = match b, db with
-  | WB b, Wide db ->
-    Wide (flush_gen compare_tuple equal_tuple table_of_list insert_table_into_db b db)
-  | UB b, Short db ->
-    Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
-  | _ -> failwith "[flush_batch] batch and database disagree on the representation"
+let flush_batch b db =
+  flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db
 
 let convert_into_tysym ty = 
   match ty with
@@ -371,121 +311,25 @@ let rec convert_schema_into_sig sch =
 let type_check_formula dbschema f =
   type_check (convert_schema_into_sig dbschema) f
 
-(* Two verified kernels are available. The default keeps the Since structures as pure values
-   ([minit_safe]/[mstep]); with [-heap_since] the structures of Since operators without join
-   columns live on the heap as hash tables ([minit_safe_imp]/[mstep_imp], see
-   thys/MFODL_Monitor_Imp). Both are exported from the same formalization and, by the
-   refinement theorem, produce the same verdicts. *)
+(* The only monitor is the one over the tuples without their empty columns
+   (thys/MFODL_Monitor_Imp/Dense_Imp.thy): [minit_safe_d] compiles the formula the kernel's
+   [meinit0] builds into the dense one and allocates the heap-resident structures it asks for,
+   [mstep_d] performs one step.  Both are heap computations, so the generated OCaml represents
+   them as thunks and the unit argument runs them.
 
-type pure_state =
-  (((nat *
-      (nat *
-        (bool list *
-          (bool list *
-            ((nat * ((event_data option) list) set) queue *
-              ((nat * ((event_data option) list) set) queue *
-                (((event_data option) list) set *
-                  (event_data wf_table *
-                    ((((event_data option) list), nat) mapping *
-                      (event_data wf_table *
-                        (((event_data option) list), nat)
-                          mapping)))))))))) *
-     aggaux option),
-    muaux_dq,
-      (nat *
-          (nat *
-            (nat *
-              (nat *
-                (bool list *
-                  (bool list *
-                    ((nat *
-                       (((event_data option) list) set *
-                         ((event_data option) list) set))
-                       queue *
-                      ((nat * ((event_data option) list) set) queue *
-                        ((((event_data option) list), nat) mapping *
-                          (((event_data option) list) set *
-                            ((((event_data option) list), nat) mapping *
-                              (((event_data option) list) set *
-                                ((event_data option) list) set)))))))))))),
-    unit)
-    mstate_ext
-
-type heap_state =
-  (nat *
-    (nat *
-      ((msaux_h, muaux_dq,
-         (nat *
-           (nat *
-             (nat *
-               (nat *
-                 (bool list *
-                   (bool list *
-                     ((nat *
-                        (((event_data option) list) set *
-                          ((event_data option) list) set))
-                        queue *
-                       ((nat * ((event_data option) list) set) queue *
-                         ((((event_data option) list), nat) mapping *
-                           (((event_data option) list) set *
-                             ((((event_data option) list), nat) mapping *
-                               (((event_data option) list) set *
-                                 ((event_data option) list) set)))))))))))))
-         meformula *
-        (nat * nat queue))))
-
-type jheap_state =
-        (nat *
-          (nat *
-            ((msaux_j, muaux_j,
-               (nat *
-                 (nat *
-                   (nat *
-                     (nat *
-                       (bool list *
-                         (bool list *
-                           ((nat *
-                              (((event_data option) list) set *
-                                ((event_data option) list) set))
-                              queue *
-                             ((nat * ((event_data option) list) set) queue *
-                               ((((event_data option) list), nat) mapping *
-                                 (((event_data option) list) set *
-                                   ((((event_data option) list), nat) mapping *
-                                     (((event_data option) list) set *
-                                       ((event_data option) list)
- set)))))))))))))
-               meformula *
-              (nat * nat queue))))
-
-(* Tuples without their empty columns (thys/MFODL_Monitor_Imp/Dense_Imp.thy). *)
-type dense_state = nat * (nat * (dformula * (nat * nat queue)))
-
-type state =
-  | Pure of pure_state
-  | Heap of heap_state
-  | JHeap of jheap_state
-  | Dense of dense_state
+   [minit_safe_d] fails when the compiler cannot place a node -- there is no wide evaluation
+   left to fall back to -- and [dfail_nodes] counts those nodes; on a state it returned the
+   count is 0 by construction. *)
+type state = nat * (nat * (dformula * (nat * nat queue)))
 
 let init cf =
-  if !Misc.dense_cols then begin
-    let st = minit_safe_d cf () in
-    (match st with (_, (_, (m, _))) ->
-      if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
-        Printf.eprintf "[dense] subformulas still evaluated by the sparse function: %d\n%!"
-          (int_of_nat (dpure_nodes m)));
-    Dense st
-  end
-  else if !Misc.heap_all then JHeap (minit_safe_j cf ())
-  else if !Misc.heap_since then Heap (minit_safe_imp cf ())
-  else Pure (minit_safe cf)
+  let st = minit_safe_d cf () in
+  (match st with (_, (_, (m, _))) ->
+    if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
+      Printf.eprintf "[dense] subformulas outside the dense fragment: %d\n%!"
+        (int_of_nat (dfail_nodes m)));
+  st
 
-
-let set_fold f s x = match s with
-  | RBT_set r -> rbt_fold f r x
-  | _ -> failwith "[set_fold] unexpected set representation"
-
-(* The same over a table of short tuples; [rbt_fold] is fixed to the wide ones. *)
 let uset_fold f s x = match s with
   | RBT_set r -> urbt_fold f r x
   | _ -> failwith "[uset_fold] unexpected set representation"
@@ -493,28 +337,13 @@ let uset_fold f s x = match s with
 (* Verdicts are kept in the kernel's representation; [show_results] below prints them without
    converting to [Tuple.tuple] first.  The monitor over the short tuples produces them without
    the option around the fields. *)
-type verdict = WV of (event_data option) list set | UV of event_data list set
+type verdict = event_data list set
 
-let annotate wrap vs =
-  List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
+let annotate vs =
+  List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, v)) vs
 
-let wide_db_only = function
-  | Wide db -> db
-  | Short _ -> failwith "[step] the wide monitor was given the short database"
-
-let short_db_only = function
-  | Short db -> db
-  | Wide _ -> failwith "[step] the short monitor was given the wide database"
-
-let step t db = function
-  | Pure st ->
-    let (vs, st') = mstep (wide_db_only db, nat_of_integer t) st in (annotate (fun v -> WV v) vs, Pure st')
-  | Heap st ->
-    let (vs, st') = mstep_imp (wide_db_only db, nat_of_integer t) st () in (annotate (fun v -> WV v) vs, Heap st')
-  | JHeap st ->
-    let (vs, st') = mstep_j (wide_db_only db, nat_of_integer t) st () in (annotate (fun v -> WV v) vs, JHeap st')
-  | Dense st ->
-    let (vs, st') = mstep_d (short_db_only db, nat_of_integer t) st () in (annotate (fun v -> UV v) vs, Dense st')
+let step t db st =
+  let (vs, st') = mstep_d (db, nat_of_integer t) st () in (annotate vs, st')
 
 (* Direct output of verdicts.
 
@@ -631,23 +460,9 @@ let show_results_slow_gen posl q tsq rows =
   tuples <> []
 
 let show_results_slow posl q tsq v =
-  let rows = match v with
-    | WV table ->
-      List.rev (set_fold (fun t acc -> List.filter_map (fun x -> x) t :: acc) table [])
-    | UV table -> List.rev (uset_fold (fun t acc -> t :: acc) table []) in
-  show_results_slow_gen posl q tsq rows
+  show_results_slow_gen posl q tsq (List.rev (uset_fold (fun t acc -> t :: acc) v []))
 
 exception Slow_path
-
-(* MonPoly's tuple order on the kernel's tuples; an undefined column leaves the fast path. *)
-let rec compare_otuple_mp t1 t2 = match t1, t2 with
-  | [], [] -> 0
-  | [], _ :: _ -> -1
-  | _ :: _, [] -> 1
-  | Some x :: xs, Some y :: ys ->
-    let c = compare_event_data_mp x y in
-    if c <> 0 then c else compare_otuple_mp xs ys
-  | _ -> raise Slow_path
 
 (* Fast path for the common case (no projection, not verbose, all violations wanted): the
    tuples are streamed from the tree in its order straight into the buffer, without building
@@ -657,12 +472,6 @@ let out_buf = Buffer.create 4096
 
 (* The columns of one tuple, as a top-level function rather than a closure passed to
    [List.iteri]: the closure was allocated once per tuple of every verdict. *)
-let rec add_otuple b first = function
-  | [] -> ()
-  | Some v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_otuple b false r
-  | None :: _ -> raise Slow_path
-
-(* The same over the short tuples: there is no undefined column to leave the fast path for. *)
 let rec add_utuple b first = function
   | [] -> ()
   | v :: r -> if not first then Buffer.add_char b ','; add_event_data b v; add_utuple b false r
@@ -710,13 +519,9 @@ let show_results_gen fold add_row cmp_prev slow q tsq table =
 let show_results posl _i q tsq (v: verdict) =
   if !Misc.verbose || !Misc.stop_at_first_viol || posl = [] || not (is_enum_list 0 posl) then
     show_results_slow posl q tsq v
-  else match v with
-    | WV table ->
-      show_results_gen set_fold add_otuple compare_otuple_mp
-        (fun () -> show_results_slow posl q tsq v) q tsq table
-    | UV table ->
-      show_results_gen uset_fold add_utuple compare_tuple_mp
-        (fun () -> show_results_slow posl q tsq v) q tsq table
+  else
+    show_results_gen uset_fold add_utuple compare_tuple_mp
+      (fun () -> show_results_slow posl q tsq v) q tsq v
 
 let is_monitorable dbschema f =
   let s = mmonitorable_exec (convert_formula dbschema f) in

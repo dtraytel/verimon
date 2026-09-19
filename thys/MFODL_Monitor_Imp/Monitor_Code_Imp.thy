@@ -6,11 +6,21 @@ begin
 (*>*)
 
 text \<open>
-  The code export of @{theory MFODL_Monitor_Devel.Monitor_Code} extended by the entry points of
-  the imperative monitor: @{const minit_safe_imp} builds the initial state, allocating a hash
-  table for every Since structure of the fragment, and @{const mstep_imp} performs one step on
-  it. Both are heap computations; the generated OCaml represents them as thunks that the front
-  end applies once per time point, in order (see @{theory MFODL_Monitor_Imp.Monitor_Imp}).
+  The code export replaces the one of @{theory MFODL_Monitor_Devel.Monitor_Code}: the only
+  monitor exported is the one over the tuples without their empty columns.
+  @{const minit_safe_d} builds its initial state -- compiling the sparse formula into the dense
+  one and allocating a hash table for every Since structure that takes one -- and
+  @{const mstep_d} performs one step on it.  Both are heap computations; the generated OCaml
+  represents them as thunks that the front end applies once per time point, in order (see
+  @{theory MFODL_Monitor_Imp.Monitor_Imp}).
+
+  Nothing else is exported, so the evaluation functions over the wide tuples -- the pure one of
+  @{theory MFODL_Monitor_Devel.Monitor_Impl} and the two heap-resident ones of
+  @{theory MFODL_Monitor_Imp.Monitor_Imp} and @{theory MFODL_Monitor_Imp.Monitor_Imp2} -- are
+  unreachable, and the code generator drops them together with the operations on wide tables
+  that only they used.  What the front end still shares with them is its own view of a formula
+  (@{const convert_multiway}, @{const mmonitorable_exec}, @{const type_check}) and the sparse
+  formula @{const meinit0} builds, which is what the dense compiler descends.
 \<close>
 
 text \<open>
@@ -34,22 +44,14 @@ declare bind_flip_code[code]
 export_code
   (*basic types*)
   nat_of_integer integer_of_nat int_of_integer integer_of_int enat
-  interval empty_db insert_into_db table_of_list insert_table_into_db RBT_set rbt_fold Sum_Type.Inl
+  interval RBT_set Sum_Type.Inl
   (*term, formula, and regex constructors*)
   EInt Formula.Var Formula.Agg_Cnt Formula.Pred Regex.Skip Regex.Wild Typing.TAny Formula.TInt
-  (*main functions*)
-  convert_multiway mmonitorable_exec minit_safe mstep type_check vminit_safe vmstep
-  minit_safe_imp mstep_imp
-  (*heap-resident tables, for the micro-benchmark*)
-  minit_safe_j mstep_j
-  (*tuples without their empty columns*)
-  minit_safe_d mstep_d dpure_nodes
+  (*the front end's own functions on formulas*)
+  convert_multiway mmonitorable_exec type_check
+  (*the monitor and its database, both over the tuples without their empty columns*)
+  minit_safe_d mstep_d dfail_nodes
   utable_of_list uempty_db uinsert_table_into_db urbt_fold
-  (*heap-resident tables and maps, for the micro-benchmarks*)
-  ht_new ht_ins ht_mem ht_of_list ht_to_list
-  im_new im_lookup im_update im_delete im_to_list
-  (*rewrite functions*)
-  rewrite_trigger
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)

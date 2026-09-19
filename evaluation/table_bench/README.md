@@ -16,3 +16,10 @@ behind its signature. To run them:
 
 (the directory has no `dune` file of its own so that the ordinary build does not depend on
 the generated copy).
+
+Since the export list of `thys/MFODL_Monitor_Imp/Monitor_Code_Imp.thy` was trimmed to the
+monitor over the short tuples (Section 20.38 of `EFFICIENCY.md`), the kernel no longer
+contains the hash set over the wide tuples nor the map operations these drivers call
+(`table_of_list`, `ht_mem`, `ht_of_list`, `im_lookup`).  To run them, add those constants
+back to the `export_code` command, rebuild the session and regenerate `src/verified.ml`; the
+drivers themselves are unchanged.

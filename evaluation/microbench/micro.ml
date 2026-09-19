@@ -1,4 +1,9 @@
 open Verified_open.Monitor
+
+(* The kernel used to export a fold over the tables of wide tuples under this name; it now
+   exports only the one over the short tuples the monitor works with, so the benchmark
+   instantiates the generic fold itself, at the same dictionary as before. *)
+let rbt_fold x = foldb (ccompare_list (ccompare_option ccompare_event_data)) x
 let time name f =
   Gc.compact ();
   let t0 = Unix.gettimeofday () in
