@@ -5588,3 +5588,72 @@ wide function even under `-dense`, `frz*` runs on a 400-time-point log because t
 operator is quadratic in the log on all three kernels, and `aggonce` is the un-fused aggregation
 of 20.39.
 
+| formula | MonPoly | verimon (was) | dense (was) | verimon |
+|---|---:|---:|---:|---:|
+| `P2` | 0.49s | 2.54x | 1.71x | **1.67x** |
+| `P3` | 0.52s | 2.13x | 1.45x | **1.44x** |
+| `and` | 0.73s | 1.48x | **1.00x** | 1.01x |
+| `andnot` | 0.72s | 0.96x | 0.93x | **0.92x** |
+| `once` | 3.42s | 1.11x | **0.71x** | 0.72x |
+| `since` | 1.14s | 1.30x | 1.18x | 1.18x |
+| `eventually` | 2.20s | 1.28x | 0.83x | **0.82x** |
+| `until` | 1.08s | 1.47x | 1.39x | 1.39x |
+| `agg` | 0.78s | 1.56x | 1.48x | **1.44x** |
+| `complex` | 3.93s | 1.80x | **1.01x** | 1.02x |
+| `sincewide` | 4.28s | 1.05x | **0.85x** | 0.86x |
+| `untilwide` | 4.31s | 1.10x | 0.90x | **0.88x** |
+| `aggwide` | 17.06s | 1.00x | **0.74x** | 0.75x |
+| `sincesub` | 1.06s | 2.60x | 1.93x | 1.93x |
+| `untilsub` | 0.90s | 1.55x | 1.45x | **1.43x** |
+| `sincesub3` | 0.89s | 1.99x | 1.22x | **1.21x** |
+| `trigger` | -- | 0.92s | 1.11s | **0.86s** |
+| `andtrigger` | -- | 0.95s | 1.17s | **0.86s** |
+| `matchp` | -- | 0.64s | 0.89s | **0.61s** |
+| `frz*` | -- | 1.28s | 1.41s | **1.05s** |
+| `aggonce` | 0.43s | **2.02x** | 2.52x | 3.54x |
+
+The per-cell spread is 6% of the median (3% to 18%), a good deal tighter than 20.37's 21%; the
+container is slower than it was there, so the absolute seconds are not comparable across sections
+and the multipliers within a row are.
+
+**On the sixteen rows that were already dense, removing the wide evaluator changes nothing.** The
+geometric mean of `dense (was)` over `verimon` is 1.004 on the medians and 1.008 on the minima,
+and no row moves by more than 4%. That is the expected answer and the reassuring one: those rows
+never entered the fallback, so deleting it could only have hurt. What this series buys on them is
+not time, it is the 9860 lines of kernel that no longer exist.
+
+**On the four rows that used to fall back, it is worth 1.36x.**
+
+| row | wide (was) | dense (was) | verimon | against `dense (was)` |
+|---|---:|---:|---:|---:|
+| `matchp` | 0.64s | 0.89s | **0.61s** | 1.46x |
+| `andtrigger` | 0.95s | 1.17s | **0.86s** | 1.36x |
+| `frz*` | 1.28s | 1.41s | **1.05s** | 1.34x |
+| `trigger` | 0.92s | 1.11s | **0.86s** | 1.29x |
+
+Note the middle column: under `-dense`, these four were *slower* than the plain wide kernel, by
+16% to 39%. That is the fallback's own cost -- the database widened for the node, its result
+narrowed again, once per time point -- and it is what 20.38 said a widening node buys you. With
+the nodes dense throughout, all four are ahead of the wide kernel as well (1.11x geometric mean),
+which is the first time the trigger and the match operators have been.
+
+**`aggonce` is a regression, and the only one.** `z <- CNT x ONCE[0,10] C(x)` is 3.54x MonPoly
+where the wide kernel is 2.02x: 1.41x slower than the old `-dense` (which fell back for it) and
+1.76x slower than the old wide kernel. 20.39 explains it -- the fused node maintains the count
+incrementally, the un-fused pair recomputes it from the window at every time point -- and it is
+worth being blunt about the trade: for an aggregation over a temporal operator, un-fusing is
+worse than falling back was. The fix is a `maggaux` at the dense frame, which would let
+`dagg_fused` compile the fused node as one dense node instead of two. Until that exists, this
+shape is the dense monitor's weak spot.
+
+**Against MonPoly the split is 20.35's, unchanged.** The dense monitor is at or ahead on six of
+the sixteen comparable rows (`andnot`, `once`, `eventually`, `sincewide`, `untilwide`, `aggwide`,
+and level on `and` and `complex`), and behind where there are no empty columns to drop --
+`P2`/`P3`, whose left operands are closed, and the sub-frame Since. The rows MonPoly cannot
+monitor at all are now dense throughout.
+
+**What is left.** A dense `maggaux`, for the row above. The freeze operator is quadratic in the
+log on every kernel -- 400 time points take a second, 8000 take more than ten minutes -- which is
+an algorithmic problem in `freeze_meval0`, not a representation one, and is untouched by any of
+this. And the dense evaluator is still unverified: `Dense_Imp` is the executable layer, and the
+simulation theorem of 20.9 covers the pure dense algorithm, not `deval`.
