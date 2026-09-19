@@ -66,23 +66,48 @@ function (sequential) edof ::
              (edof (m + n) (agg_cols m g) \<phi>)
       else DFail)"
 | "edof n cs (meformula.MSince args \<phi> \<psi> buf aux) =
-     (let cs_L = set_cols (args_L args) in
-      if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
-         set cs_L \<subseteq> set cs \<and>
-         (case buf of (a, b, c, d) \<Rightarrow> (Rep_mbuf_t a, Rep_mbuf_t b, Rep_mbuf_t c, d)) = init_mbuf2S
-      then DSince (dargs cs cs_L args)
-             (edof n cs_L \<phi>) (edof n cs \<psi>) init_mbuf2S
-             (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
-      else DFail)"
+     (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
+          \<phi>d = edof (dnode_n n args) cs_L \<phi>; \<psi>d = edof (dnode_n n args) cs_R \<psi>;
+          bf = (case buf of (a, b, c, d) \<Rightarrow> (Rep_mbuf_t a, Rep_mbuf_t b, Rep_mbuf_t c, d)) in
+      case args_agg args of
+        None \<Rightarrow>
+          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> bf = init_mbuf2S
+           then DSince (dargs cs cs_L args) \<phi>d \<psi>d init_mbuf2S
+                  (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
+           else DFail)
+      | Some ag \<Rightarrow>
+          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
+           if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
+              bf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
+              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
+              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
+           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                  m (ins_pos g y)
+                  (DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
+                    (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+           else DFail))"
 | "edof n cs (meformula.MUntil args \<phi> \<psi> buf nts t aux) =
-     (let cs_L = set_cols (args_L args) in
-      if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
-         set cs_L \<subseteq> set cs \<and> map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and>
-         Rep_mbuf_t nts = [] \<and> t = 0
-      then DUntil (dargs cs cs_L args) (dmsk cs cs_L)
-             (edof n cs_L \<phi>) (edof n cs \<psi>) ([], []) [] 0
-             (init_dq (dargs cs cs_L args))
-      else DFail)"
+     (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
+          \<phi>d = edof (dnode_n n args) cs_L \<phi>; \<psi>d = edof (dnode_n n args) cs_R \<psi> in
+      case args_agg args of
+        None \<Rightarrow>
+          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and>
+              map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and> Rep_mbuf_t nts = [] \<and> t = 0
+           then DUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d ([], []) [] 0
+                  (init_dq (dargs cs cs_L args))
+           else DFail)
+      | Some ag \<Rightarrow>
+          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
+           if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
+              map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and> Rep_mbuf_t nts = [] \<and> t = 0 \<and>
+              agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
+              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
+              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
+           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                  m (ins_pos g y)
+                  (DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d ([], []) [] 0
+                    (init_dq (dargs cs_R cs_L args)))
+           else DFail))"
 | "edof n cs (meformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
@@ -115,9 +140,14 @@ termination edof
     (auto simp: termination_simp dest!: set_zip_rightD)
 
 lemma edof_dof: "edof n cs e = dof n cs (Rep_meformula e)"
-  by (induct n cs e rule: edof.induct)
-    (simp_all add: Let_def zip_map2 o_def split: list.splits prod.splits
-      cong: map_cong)
+proof (induct n cs e rule: edof.induct)
+  case (12 n cs args \<phi> \<psi> buf aux)
+  then show ?case by (cases "args_agg args") (simp_all add: Let_def)
+next
+  case (13 n cs args \<phi> \<psi> buf nts t aux)
+  then show ?case by (cases "args_agg args") (simp_all add: Let_def)
+qed (simp_all add: Let_def zip_map2 o_def
+      split: list.splits prod.splits cong: map_cong)
 
 lemma dof_code[code]: "dof n cs (Rep_meformula e) = edof n cs e"
   by (simp add: edof_dof)
