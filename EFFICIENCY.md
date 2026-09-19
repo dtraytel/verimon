@@ -5387,37 +5387,71 @@ gives, not the one the label gives.
 So the three nodes were reverted (`d6e8b48`) and rebuilt on structures of their own. What
 follows is the three pieces: the aggregation the Since and the Until carry (20.39), the trigger
 (20.40), the two match operators (20.41), then the conjunction with a trigger and the removal of
-the fallback (20.42).
+the fallback (20.42), the measurements (20.43), and what is left of the wide tuple type (20.44).
 
-### 20.39 The aggregation, taken out of the Since and the Until
+### 20.39 The aggregation, kept fused
 
 `meinit0` fuses an aggregation over a temporal operator into the operator: `Agg (Since φ I ψ)`
 becomes a single `MSince` whose `args_agg` is `Some aggargs`, and `result_mmasaux` applies the
-aggregation to the window's table instead of returning it. That is why the dense compiler could
-not place such a node: the columns it produces are the aggregation's group-by columns plus the
-result variable, not `args_R args`, and the guard `args_R args = set cs` fails.
+aggregation to the window's table instead of returning it -- incrementally, off a structure that
+the window's insertions and deletions keep up to date, falling back to `eval_aggargs` over the
+whole window only where no such structure exists for the aggregation in question.
 
-Nothing about the window itself needs the aggregation. So the compiler un-fuses it:
+The dense compiler could not place such a node, because the columns it produces are the
+aggregation's group-by columns plus the result variable, not `args_R args`, and the guard
+`args_R args = set cs` fails.
+
+**The first attempt un-fused it**, compiling the node as a dense `DAgg` over a dense `DSince`:
+`dagg_fused` recognised the shape, `dunfuse` dropped the aggregation from the arguments, and
+`dwrap_agg` put an aggregation node back on top. Both halves were then ordinary dense nodes with
+no new structure and no new trust -- and the aggregate was recomputed from the whole window at
+every time point, because the dense layer had nothing to maintain it with. On
+`z <- CNT x ONCE[0,10] C(x)` that cost 1.41x against falling back to the wide evaluator and 1.76x
+against the wide kernel itself. It was a substitution of a cheaper thing for the thing asked for,
+and the measurement is what made it visible.
+
+**So the structure exists.** `Optimized_Agg`'s is a mapping from the group tuple to what the
+aggregation needs -- a count, a count and a sum, or the sorted multiset of the values for the
+rank aggregations -- and only three things in it read a tuple:
+
+- the group key, `drop (length tys) t`, which over short tuples is the same `drop`, because
+  safety makes the bound variables the first columns of the operand's frame;
+- the aggregated value, `meval_trm f t`, which over short tuples is `umeval_trm` of the term
+  reindexed to the operand's frame -- the same term the non-incremental `uagg` evaluates;
+- the result, which writes the aggregate into the group tuple: over wide tuples by overwriting
+  the result variable's column, over short ones by inserting it at the position that variable has
+  among the node's columns.
+
+Everything else -- the three aggregate kinds, the treelists of the rank aggregations, the types
+they are restricted to -- is about the values, not the tuples, and is reused unchanged. What
+replaces the parameters is five numbers, `dagg_of`: the two flags of the aggregation, the
+reindexed term, how many columns come before the groups, and where the result goes.
+
+**Maintaining it needs the window's deltas.** Three operations of the dense Since move tuples in
+or out -- the shift at the window's far end, the move into the window, the join -- and each
+already computes the set that moved. They get variants that return it, each with a lemma that
+dropping it gives the original operation back:
 
 ```isabelle
-definition dagg_fused :: "nat ⇒ cols ⇒ args ⇒ bool" where
-  "dagg_fused n cs args = (case args_agg args of None ⇒ False | Some ag ⇒
-     cs = dagg_cols ag ∧ set_cols (args_R args) = dagg_child_cols ag ∧
-     set (set_cols (args_L args)) ⊆ set (dagg_child_cols ag) ∧ n = aggargs_n ag ∧
-     args_n args = length (aggargs_tys ag) + aggargs_n ag)"
+lemma gshift_end_del_fst: "fst (gshift_end_del args nt s) = gshift_end args nt s"
+  by (cases s rule: gmsaux_cases) (simp add: Let_def split_beta)
 ```
 
-recognises the fused shape, `dunfuse` drops the aggregation from the arguments, and `dwrap_agg`
-puts a `DAgg` node back on top of the `DSince`/`DUntil` that is left. Both are then ordinary
-dense nodes running at the child's frame, with no new structure and no new trust.
+so the aggregating path runs the same body rather than a copy of it. The join's answer is not a
+set: where the node has no join columns it either keeps its window or empties it, and emptying it
+is a reset of the structure rather than a deletion of known tuples, which `None` says.
 
-**What it costs.** The fused node maintains the aggregate incrementally: `result_mmasaux` reads
-`result_maggaux aggargs aux` off a structure that the window's insertions and deletions keep up
-to date, and only falls back to `eval_aggargs aggargs table_in` when there is no such structure
-for the aggregation in question. The un-fused pair recomputes the aggregate from the whole
-window at every time point. On `z <- CNT x ONCE[0,10] C(x)` over the 8.6 MB log that is the
-difference between 0.85s and 1.48s (20.43) -- the largest single regression in this series, and
-the one thing in it that a dense `maggaux` would buy back.
+The Until's deltas are the front map of its deque. A step drops the time point at the front, which
+deletes what expired with it and inserts the map that becomes the front; adding a time point
+inserts what it puts at the front, and that is exactly the difference between the two results,
+because `result` is the front map's key set -- the kernel computes the same set the long way, as
+`to_add`.
+
+Both structures become one more representation of the corresponding operator, picked exactly when
+the node carries an aggregation. One deviation from the kernel: it folds its update over the
+table with `Finite_Set.fold`, which the code generator needs a `comp_fun_commute` witness for, one
+per aggregate kind; folding the sorted list of the table instead needs none and generates the same
+loop.
 
 ### 20.40 The trigger structure over short tuples
 
@@ -5563,16 +5597,12 @@ The code generator does the rest:
 | | before | after |
 |---|---:|---:|
 | `src/verified.ml`, lines | 20390 | **10530** |
-| occurrences of `(event_data option) list` | 362 | **70** |
+| occurrences of `(event_data option) list` | 362 | **71** |
 | evaluation functions over wide tuples | 3 | **0** |
 
 `meval`, `meeval`, `meval_imp`, `meval_j`, `bin_join`, `mmulti_join`, `proj_tuple`, the wide
 `mmsaux`/`mmuaux`/`mmtaux` updates, the wide match derivatives and `eval_matchF` are all gone.
-The 70 remaining occurrences of the wide tuple type are all in *type declarations*: `meinit0`
-still builds the sparse formula the compiler descends, and that formula's type carries the
-kernel's auxiliary structures in its parameters even though the compiler reads nothing out of
-them but the Since representation flag. One empty structure is allocated per temporal node at
-initialisation and never touched again.
+What the remaining occurrences of the wide tuple type are, and which of them can go, is 20.44.
 
 The adapter loses its dispatch with the same stroke: one database type instead of
 `Wide | Short`, one batch, one state, one verdict type, and `step` is a single call to `mstep_d`.
@@ -5582,69 +5612,66 @@ working; the monitor they used to select is now the only one.
 **The suite.** Seven interleaved repetitions, medians, multipliers relative to MonPoly where
 MonPoly can monitor the formula, lower is better. "verimon (was)" and "dense (was)" are the
 kernel this series started from, run as `-verified` and `-verified -dense`; "verimon" is the
-kernel after it, where `-verified` *is* the dense monitor. The five rows below the rule exercise
-the operators this series added: `trigger`, `andtrigger` and `matchp` used to be evaluated by the
-wide function even under `-dense`, `frz*` runs on a 400-time-point log because the freeze
-operator is quadratic in the log on all three kernels, and `aggonce` is the un-fused aggregation
-of 20.39.
+kernel after it, where `-verified` *is* the dense monitor. The five rows below the rule are the
+ones that used to fall back: `trigger`, `andtrigger`, `matchp` and `frz*` were evaluated by the
+wide function even under `-dense`, and `aggonce` is the aggregating temporal operator of 20.39,
+which the old `-dense` also fell back for. `frz*` runs on a 400-time-point log because the freeze
+operator is quadratic in the log on all three kernels.
 
 | formula | MonPoly | verimon (was) | dense (was) | verimon |
 |---|---:|---:|---:|---:|
-| `P2` | 0.49s | 2.54x | 1.71x | **1.67x** |
-| `P3` | 0.52s | 2.13x | 1.45x | **1.44x** |
-| `and` | 0.73s | 1.48x | **1.00x** | 1.01x |
-| `andnot` | 0.72s | 0.96x | 0.93x | **0.92x** |
-| `once` | 3.42s | 1.11x | **0.71x** | 0.72x |
-| `since` | 1.14s | 1.30x | 1.18x | 1.18x |
-| `eventually` | 2.20s | 1.28x | 0.83x | **0.82x** |
-| `until` | 1.08s | 1.47x | 1.39x | 1.39x |
-| `agg` | 0.78s | 1.56x | 1.48x | **1.44x** |
-| `complex` | 3.93s | 1.80x | **1.01x** | 1.02x |
-| `sincewide` | 4.28s | 1.05x | **0.85x** | 0.86x |
-| `untilwide` | 4.31s | 1.10x | 0.90x | **0.88x** |
-| `aggwide` | 17.06s | 1.00x | **0.74x** | 0.75x |
-| `sincesub` | 1.06s | 2.60x | 1.93x | 1.93x |
-| `untilsub` | 0.90s | 1.55x | 1.45x | **1.43x** |
-| `sincesub3` | 0.89s | 1.99x | 1.22x | **1.21x** |
-| `trigger` | -- | 0.92s | 1.11s | **0.86s** |
-| `andtrigger` | -- | 0.95s | 1.17s | **0.86s** |
-| `matchp` | -- | 0.64s | 0.89s | **0.61s** |
-| `frz*` | -- | 1.28s | 1.41s | **1.05s** |
-| `aggonce` | 0.43s | **2.02x** | 2.52x | 3.54x |
+| `P2` | 0.49s | 2.57x | 1.76x | **1.64x** |
+| `P3` | 0.53s | 2.20x | 1.48x | **1.46x** |
+| `and` | 0.73s | 1.47x | 1.02x | **1.00x** |
+| `andnot` | 0.74s | 0.93x | **0.89x** | 0.89x |
+| `once` | 3.38s | 1.12x | 0.73x | **0.73x** |
+| `since` | 1.15s | 1.26x | **1.17x** | 1.18x |
+| `eventually` | 2.21s | 1.30x | 0.82x | **0.81x** |
+| `until` | 1.08s | 1.48x | **1.38x** | 1.41x |
+| `agg` | 0.79s | 1.57x | 1.45x | **1.44x** |
+| `complex` | 3.99s | 1.82x | 1.02x | **1.01x** |
+| `sincewide` | 4.36s | 1.05x | **0.86x** | 0.87x |
+| `untilwide` | 4.30s | 1.10x | **0.90x** | 0.90x |
+| `aggwide` | 17.04s | 1.00x | **0.75x** | 0.76x |
+| `sincesub` | 1.06s | 2.65x | **1.94x** | 1.94x |
+| `untilsub` | 0.91s | 1.54x | **1.43x** | 1.48x |
+| `sincesub3` | 0.88s | 1.98x | 1.24x | **1.22x** |
+| `trigger` | -- | 0.92s | 1.13s | **0.84s** |
+| `andtrigger` | -- | 0.98s | 1.18s | **0.89s** |
+| `matchp` | -- | 0.64s | 0.88s | **0.61s** |
+| `frz*` | -- | 1.32s | 1.49s | **1.09s** |
+| `aggonce` | 0.42s | 2.08x | 2.56x | **1.89x** |
 
-The per-cell spread is 6% of the median (3% to 18%), a good deal tighter than 20.37's 21%; the
+The per-cell spread is 7% of the median (4% to 12%), a good deal tighter than 20.37's 21%; the
 container is slower than it was there, so the absolute seconds are not comparable across sections
 and the multipliers within a row are.
 
 **On the sixteen rows that were already dense, removing the wide evaluator changes nothing.** The
-geometric mean of `dense (was)` over `verimon` is 1.004 on the medians and 1.008 on the minima,
+geometric mean of `dense (was)` over `verimon` is 1.005 on the medians and 1.007 on the minima,
 and no row moves by more than 4%. That is the expected answer and the reassuring one: those rows
 never entered the fallback, so deleting it could only have hurt. What this series buys on them is
-not time, it is the 9860 lines of kernel that no longer exist.
+not time, it is the 9000 lines of kernel that no longer exist.
 
-**On the four rows that used to fall back, it is worth 1.36x.**
+**On the five rows that used to fall back, it is worth 1.37x.**
 
 | row | wide (was) | dense (was) | verimon | against `dense (was)` |
 |---|---:|---:|---:|---:|
-| `matchp` | 0.64s | 0.89s | **0.61s** | 1.46x |
-| `andtrigger` | 0.95s | 1.17s | **0.86s** | 1.36x |
-| `frz*` | 1.28s | 1.41s | **1.05s** | 1.34x |
-| `trigger` | 0.92s | 1.11s | **0.86s** | 1.29x |
+| `matchp` | 0.64s | 0.88s | **0.61s** | 1.44x |
+| `aggonce` | 0.87s | 1.07s | **0.79s** | 1.36x |
+| `frz*` | 1.32s | 1.49s | **1.09s** | 1.37x |
+| `trigger` | 0.92s | 1.13s | **0.84s** | 1.35x |
+| `andtrigger` | 0.98s | 1.18s | **0.89s** | 1.33x |
 
-Note the middle column: under `-dense`, these four were *slower* than the plain wide kernel, by
-16% to 39%. That is the fallback's own cost -- the database widened for the node, its result
+Note the middle column: under `-dense`, these five were *slower* than the plain wide kernel, by
+20% to 38%. That is the fallback's own cost -- the database widened for the node, its result
 narrowed again, once per time point -- and it is what 20.38 said a widening node buys you. With
-the nodes dense throughout, all four are ahead of the wide kernel as well (1.11x geometric mean),
-which is the first time the trigger and the match operators have been.
+the nodes dense throughout, all five are ahead of the wide kernel as well (1.11x geometric mean
+over the four operator rows, 1.10x on `aggonce`), which is the first time the trigger, the match
+operators and the aggregating temporal operators have been.
 
-**`aggonce` is a regression, and the only one.** `z <- CNT x ONCE[0,10] C(x)` is 3.54x MonPoly
-where the wide kernel is 2.02x: 1.41x slower than the old `-dense` (which fell back for it) and
-1.76x slower than the old wide kernel. 20.39 explains it -- the fused node maintains the count
-incrementally, the un-fused pair recomputes it from the window at every time point -- and it is
-worth being blunt about the trade: for an aggregation over a temporal operator, un-fusing is
-worse than falling back was. The fix is a `maggaux` at the dense frame, which would let
-`dagg_fused` compile the fused node as one dense node instead of two. Until that exists, this
-shape is the dense monitor's weak spot.
+`aggonce` is the row this series got wrong once and then right: 3.54x MonPoly with the
+aggregation un-fused (20.39), 1.89x with it fused and maintained at the dense frame, against
+2.08x for the wide kernel and 2.56x for the old fallback.
 
 **Against MonPoly the split is 20.35's, unchanged.** The dense monitor is at or ahead on six of
 the sixteen comparable rows (`andnot`, `once`, `eventually`, `sincewide`, `untilwide`, `aggwide`,
@@ -5652,8 +5679,55 @@ and level on `and` and `complex`), and behind where there are no empty columns t
 `P2`/`P3`, whose left operands are closed, and the sub-frame Since. The rows MonPoly cannot
 monitor at all are now dense throughout.
 
-**What is left.** A dense `maggaux`, for the row above. The freeze operator is quadratic in the
-log on every kernel -- 400 time points take a second, 8000 take more than ten minutes -- which is
-an algorithmic problem in `freeze_meval0`, not a representation one, and is untouched by any of
-this. And the dense evaluator is still unverified: `Dense_Imp` is the executable layer, and the
-simulation theorem of 20.9 covers the pure dense algorithm, not `deval`.
+**What is left.** The freeze operator is quadratic in the log on every kernel -- 400 time points
+take a second, 8000 take more than ten minutes -- which is an algorithmic problem in
+`freeze_meval0`, not a representation one, and is untouched by any of this. And the dense
+evaluator is still unverified: `Dense_Imp` is the executable layer, and the simulation theorem of
+20.9 covers the pure dense algorithm, not `deval`.
+
+### 20.44 What is left of the wide tuple type
+
+After 20.43 the generated kernel had 71 occurrences of `(event_data option) list`, all of them in
+declarations rather than in anything the monitor evaluates. They fall into four groups:
+
+| where | occurrences | what it is |
+|---|---:|---|
+| `meformula` | 24 | the sparse formula's own fields: `MRel`'s table, the buffers of the binary and temporal nodes, the tables of the let and the freeze |
+| `msaux_j`, `muaux_j` | 24 | the auxiliary structures of an *intermediate* formula the compiler descended |
+| `muaux_dq`, `aggaux` | 13 | the kernel's Until deque and aggregation structures, which `meinit0` fills the sparse formula with |
+| `ed_bot`, `ed_mempty_*`, ... | 10 | the empty values those initialisations need |
+
+**The second group was removable, and is gone.** The compiler read exactly one thing out of the
+sparse formula's auxiliary fields: whether a Since node's structure was the heap-resident one,
+because a subtree the freeze node replays cannot keep anything on the heap. It read it off an
+intermediate formula built for the purpose (`mformula_j_of`), which allocated a Since structure at
+every such node only for the compiler to discard it and allocate its own.
+
+But that condition is the compiler's own. `mformula_j_of` puts a subtree into the pure
+representation exactly under the let, the recursive let, the freeze and the two match operators --
+its explicit clauses cover everything else, and its catch-all is `embed`. So the compiler carries
+a flag instead: true at the root, false under those five constructors, and passed to `init_d` in
+place of the field it used to read. `dformula_of` now descends the formula `meinit0` builds, and
+`mformula_j`, `msaux_j`, `muaux_j`, `embed`, `purify`, `init_j` and `init_u_j` are gone from the
+generated code along with the double allocation. `src/verified.ml` loses another 274 lines and
+the count goes 71 → 47.
+
+**The other three groups are not removable without changing the verified kernel.** They are all
+`meinit0`'s doing: it builds the sparse formula, and that formula's type is the kernel's, with
+tables in its own fields and the kernel's auxiliary structures in its parameters. Two ways out
+were considered and rejected:
+
+- *Descend the formula rather than the sparse formula.* A `dinit0 :: ty formula ⇒ dformula` would
+  never mention `meformula` at all -- and would duplicate `meinit0`'s dispatch, including which
+  node shape each safe formula gets and the rewrites that precede it. That dispatch is precisely
+  what the dense compiler exists to follow rather than to re-decide; duplicating it would make the
+  dense monitor a second compiler that has to be kept in step with the kernel's by hand.
+- *Instantiate `meinit0` at a trivial auxiliary type.* `meinit0` is defined `(in maux)`, and
+  `maux` is a locale whose assumptions say the structures represent their windows. `unit` does not
+  satisfy them, so there is no interpretation to instantiate at, and the in-locale equations are
+  not available for code generation outside one.
+
+What the remaining 47 cost at run time is one empty structure per node at initialisation, read
+never again: no wide tuple is constructed, compared, hashed or stored while the monitor runs. The
+count is a useful proxy for "is the wide representation still in the loop", and it has done its
+job; past this point it measures the kernel's own formula type, not the monitor's data.
