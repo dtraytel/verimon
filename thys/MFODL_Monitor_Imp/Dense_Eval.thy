@@ -955,6 +955,40 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     duntil_rel n cs cs_L args tw t aux daux buf dbuf nts \<Longrightarrow>
     dsim n cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
       (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
+| DsSinceAgg: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MSince args \<phi> \<psi> buf aux) \<Longrightarrow>
+    dsim nn cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim nn cs_R tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols nn cs_L \<Longrightarrow> set cs_L \<subseteq> set cs_R \<Longrightarrow>
+    args_agg args = Some ag \<Longrightarrow> args_n args = nn \<Longrightarrow>
+    args_L args = set cs_L \<Longrightarrow> args_R args = set cs_R \<Longrightarrow>
+    dags = dargs cs_R cs_L args \<Longrightarrow>
+    dsince_rel nn cs_R cs_L args tw aux daux buf dbuf \<Longrightarrow>
+    wf_cols n gcols \<Longrightarrow> aggargs_n ag = n \<Longrightarrow> aggargs_y ag = y \<Longrightarrow>
+    y < n \<Longrightarrow> y \<notin> set gcols \<Longrightarrow> (aggargs_g0 ag \<Longrightarrow> gcols = []) \<Longrightarrow>
+    Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R \<Longrightarrow>
+    nn = length (aggargs_tys ag) + n \<Longrightarrow>
+    cs_R = agg_cols (length (aggargs_tys ag)) gcols \<Longrightarrow>
+    cs = merge_cols gcols [y] \<Longrightarrow>
+    dsim n cs tw (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+        (length (aggargs_tys ag)) (ins_pos gcols y) (DSince dags \<phi>d \<psi>d dbuf daux))
+      (mformula.MSince args \<phi> \<psi> buf aux)"
+| DsUntilAgg: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MUntil args \<phi> \<psi> buf nts t aux) \<Longrightarrow>
+    dsim nn cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim nn cs_R tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols nn cs_L \<Longrightarrow> set cs_L \<subseteq> set cs_R \<Longrightarrow>
+    args_agg args = Some ag \<Longrightarrow> args_n args = nn \<Longrightarrow>
+    args_L args = set cs_L \<Longrightarrow> args_R args = set cs_R \<Longrightarrow>
+    dags = dargs cs_R cs_L args \<Longrightarrow> msk = dmsk cs_R cs_L \<Longrightarrow>
+    duntil_rel nn cs_R cs_L args tw t aux daux buf dbuf nts \<Longrightarrow>
+    wf_cols n gcols \<Longrightarrow> aggargs_n ag = n \<Longrightarrow> aggargs_y ag = y \<Longrightarrow>
+    y < n \<Longrightarrow> y \<notin> set gcols \<Longrightarrow> (aggargs_g0 ag \<Longrightarrow> gcols = []) \<Longrightarrow>
+    Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R \<Longrightarrow>
+    nn = length (aggargs_tys ag) + n \<Longrightarrow>
+    cs_R = agg_cols (length (aggargs_tys ag)) gcols \<Longrightarrow>
+    cs = merge_cols gcols [y] \<Longrightarrow>
+    dsim n cs tw (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+        (length (aggargs_tys ag)) (ins_pos gcols y) (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux))
+      (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
 | DsAndAssign: "wf_cols n cs \<Longrightarrow>
     produces n (set cs) tw (mformula.MAndAssign \<phi> (y, t)) \<Longrightarrow>
     dsim n cs0 tw \<phi>d \<phi> \<Longrightarrow>
@@ -2057,6 +2091,156 @@ next
       unfolding f
       by (rule dsim.DsUntil[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub agg an aL aR
             dag pe rel'])
+  qed
+next
+  case (DsSinceAgg n cs tw args \<phi> \<psi> buf aux nn cs_L \<phi>d cs_R \<psi>d ag dags daux dbuf gcols y)
+  note wf = DsSinceAgg.hyps(1) and pr = DsSinceAgg.hyps(2)
+    and sim1 = DsSinceAgg.hyps(3) and IH1 = DsSinceAgg.hyps(4)
+    and sim2 = DsSinceAgg.hyps(5) and IH2 = DsSinceAgg.hyps(6)
+    and wfL = DsSinceAgg.hyps(7) and sub = DsSinceAgg.hyps(8) and agg = DsSinceAgg.hyps(9)
+    and an = DsSinceAgg.hyps(10) and aL = DsSinceAgg.hyps(11) and aR = DsSinceAgg.hyps(12)
+    and dag = DsSinceAgg.hyps(13) and rel = DsSinceAgg.hyps(14)
+    and wg = DsSinceAgg.hyps(15) and agn = DsSinceAgg.hyps(16) and ye = DsSinceAgg.hyps(17)
+    and yn = DsSinceAgg.hyps(18) and yg = DsSinceAgg.hyps(19) and g0 = DsSinceAgg.hyps(20)
+    and fv = DsSinceAgg.hyps(21) and nne = DsSinceAgg.hyps(22) and cRe = DsSinceAgg.hyps(23)
+    and cse = DsSinceAgg.hyps(24)
+    and w = DsSinceAgg.prems(1) and sts = DsSinceAgg.prems(2)
+    and mts = DsSinceAgg.prems(3) and m = DsSinceAgg.prems(4)
+  let ?ag = "dagg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+      (length (aggargs_tys ag)) (ins_pos gcols y)"
+  obtain as \<phi>2 where e1: "meval j nn ts db \<phi> = (as, \<phi>2)" by (cases "meval j nn ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j nn ts db \<psi> = (bs, \<psi>2)" by (cases "meval j nn ts db \<psi>")
+  obtain zs buf2 aux2 where e3: "meval_since args [] (mbuf2S_add as bs ts buf) aux
+      = (zs, buf2, aux2)" by (cases "meval_since args [] (mbuf2S_add as bs ts buf) aux")
+  have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
+    using m e1 e2 e3 an by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsSinceAgg.prems(5)], simp)+
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc nn cs_L) as, \<phi>d2)"
+    and s1: "dsim nn cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc nn cs_R) bs, \<psi>d2)"
+    and s2: "dsim nn cs_R (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
+  have ta: "list_all (ftable nn (set cs_L)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
+  have tb: "list_all (ftable nn (set cs_R)) bs"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w sts mts e2])
+  obtain dzs dbuf2 daux2 where d3: "deval_since dags []
+      (mbuf2S_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) ts dbuf) daux
+      = (dzs, dbuf2, daux2)"
+    by (cases "deval_since dags []
+      (mbuf2S_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) ts dbuf) daux")
+  have radd: "dsince_rel nn cs_R cs_L args (dnext tw ts) aux daux (mbuf2S_add as bs ts buf)
+      (mbuf2S_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) ts dbuf)"
+    by (rule dsince_rel_add[OF rel ta tb sts mts])
+  have d3': "deval_since (dargs cs_R cs_L args) (map (dtabc nn cs_R) [])
+      (mbuf2S_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) ts dbuf) daux
+      = (dzs, dbuf2, daux2)" using d3 unfolding dag by simp
+  have wfR: "wf_cols nn cs_R" by (rule dsim_wf_cols[OF sim2])
+  have step: "dsres nn cs_R args zs dzs \<and>
+      dsince_rel nn cs_R cs_L args (dnext tw ts) aux2 daux2 buf2 dbuf2"
+    using eval_since_rel[OF _ _ _ sub an aL aR e3 d3' radd] wfR wfL by simp
+  have agc: "map ?ag dzs = map (dtabc n cs) xs"
+  proof -
+    obtain vs where v: "list_all (table nn (set cs_R)) vs"
+      "zs = map (eval_args_agg args) vs" "dzs = map (dtabc nn cs_R) vs"
+      using step unfolding dsres_def by blast
+    show ?thesis unfolding x v(2) v(3)
+      using v(1) wg yn yg fv g0 agn ye
+      by (intro nth_equalityI)
+        (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg cse cRe nne dagg_eval_agg)
+  qed
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+          (length (aggargs_tys ag)) (ins_pos gcols y) (DSince dags \<phi>d \<psi>d dbuf daux))
+        = (map (dtabc n cs) xs, DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
+            (reindex_trm cs_R (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
+            (DSince dags \<phi>d2 \<psi>d2 dbuf2 daux2))"
+      using d1 d2 d3 agc by simp
+    show "dsim n cs (dnext tw ts) (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
+          (reindex_trm cs_R (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
+          (DSince dags \<phi>d2 \<psi>d2 dbuf2 daux2)) \<phi>'"
+      unfolding f
+      by (rule dsim.DsSinceAgg[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
+            agg an aL aR dag _ wg agn ye yn yg g0 fv nne cRe cse]) (use step in simp)
+  qed
+next
+  case (DsUntilAgg n cs tw args \<phi> \<psi> buf nts t aux nn cs_L \<phi>d cs_R \<psi>d ag dags msk daux dbuf
+      gcols y)
+  note wf = DsUntilAgg.hyps(1) and pr = DsUntilAgg.hyps(2)
+    and sim1 = DsUntilAgg.hyps(3) and IH1 = DsUntilAgg.hyps(4)
+    and sim2 = DsUntilAgg.hyps(5) and IH2 = DsUntilAgg.hyps(6)
+    and wfL = DsUntilAgg.hyps(7) and sub = DsUntilAgg.hyps(8) and agg = DsUntilAgg.hyps(9)
+    and an = DsUntilAgg.hyps(10) and aL = DsUntilAgg.hyps(11) and aR = DsUntilAgg.hyps(12)
+    and dag = DsUntilAgg.hyps(13) and pe = DsUntilAgg.hyps(14) and rel = DsUntilAgg.hyps(15)
+    and wg = DsUntilAgg.hyps(16) and agn = DsUntilAgg.hyps(17) and ye = DsUntilAgg.hyps(18)
+    and yn = DsUntilAgg.hyps(19) and yg = DsUntilAgg.hyps(20) and g0 = DsUntilAgg.hyps(21)
+    and fv = DsUntilAgg.hyps(22) and nne = DsUntilAgg.hyps(23) and cRe = DsUntilAgg.hyps(24)
+    and cse = DsUntilAgg.hyps(25)
+    and w = DsUntilAgg.prems(1) and sts = DsUntilAgg.prems(2)
+    and mts = DsUntilAgg.prems(3) and m = DsUntilAgg.prems(4)
+  let ?ag = "dagg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+      (length (aggargs_tys ag)) (ins_pos gcols y)"
+  obtain as \<phi>2 where e1: "meval j nn ts db \<phi> = (as, \<phi>2)" by (cases "meval j nn ts db \<phi>")
+  obtain bs \<psi>2 where e2: "meval j nn ts db \<psi> = (bs, \<psi>2)" by (cases "meval j nn ts db \<psi>")
+  obtain aux1 buf1 nt nts1 where e3: "mbuf2t_take (add_new_muaux_dq args) aux
+      (mbuf2_add as bs buf) t (nts @ ts) = (aux1, buf1, nt, nts1)"
+    by (cases "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ ts)")
+  obtain zs aux2 where e4: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+    by (cases "eval_muaux_dq args nt aux1")
+  have x: "xs = zs"
+    and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
+    using m e1 e2 e3 e4 an by simp_all
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsUntilAgg.prems(5)], simp)+
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc nn cs_L) as, \<phi>d2)"
+    and s1: "dsim nn cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc nn cs_R) bs, \<psi>d2)"
+    and s2: "dsim nn cs_R (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
+  have ta: "list_all (ftable nn (set cs_L)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
+  have tb: "list_all (ftable nn (set cs_R)) bs"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w sts mts e2])
+  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (dadd_new_dq dags msk) daux
+      (mbuf2_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) dbuf) t (nts @ ts)
+      = (daux1, dbuf1, dnt, dnts1)"
+    by (cases "mbuf2t_take (dadd_new_dq dags msk) daux
+      (mbuf2_add (map (dtabc nn cs_L) as) (map (dtabc nn cs_R) bs) dbuf) t (nts @ ts)")
+  obtain dzs daux2 where d4: "eval_dq dags dnt daux1 = (dzs, daux2)"
+    by (cases "eval_dq dags dnt daux1")
+  have wfR: "wf_cols nn cs_R" by (rule dsim_wf_cols[OF sim2])
+  have step: "dsres nn cs_R args zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+      dbuf1 = (map (dtabc nn cs_L) (fst buf1), map (dtabc nn cs_R) (snd buf1)) \<and>
+      duntil_rel nn cs_R cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    by (rule until_step_rel[OF _ _ _ sub an aL aR rel ta tb sts mts e3
+        d3[unfolded dag pe] e4 d4[unfolded dag]]) (use wfR wfL in auto)
+  have dn: "dnt = nt" and dns: "dnts1 = nts1"
+    and rel': "duntil_rel nn cs_R cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    using step by blast+
+  have agc: "map ?ag dzs = map (dtabc n cs) xs"
+  proof -
+    obtain vs where v: "list_all (table nn (set cs_R)) vs"
+      "zs = map (eval_args_agg args) vs" "dzs = map (dtabc nn cs_R) vs"
+      using step unfolding dsres_def by blast
+    show ?thesis unfolding x v(2) v(3)
+      using v(1) wg yn yg fv g0 agn ye
+      by (intro nth_equalityI)
+        (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg cse cRe nne dagg_eval_agg)
+  qed
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+          (length (aggargs_tys ag)) (ins_pos gcols y) (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux))
+        = (map (dtabc n cs) xs, DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
+            (reindex_trm cs_R (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
+            (DUntil dags msk \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2))"
+      using d1 d2 d3 d4 agc dn dns by simp
+    show "dsim n cs (dnext tw ts) (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
+          (reindex_trm cs_R (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
+          (DUntil dags msk \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2)) \<phi>'"
+      unfolding f
+      by (rule dsim.DsUntilAgg[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
+            agg an aL aR dag pe rel' wg agn ye yn yg g0 fv nne cRe cse])
   qed
 next
   case (DsAndAssign n cs tw \<phi> y t cs0 \<phi>d)
