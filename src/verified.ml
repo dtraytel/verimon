@@ -4185,7 +4185,10 @@ type dformula =
         ((event_data list) set mbuf_t * (event_data list) set mbuf_t) *
         nat mbuf_t * nat * muaux_d
   | DAndAssign of nat * trm * dformula | DTP of mtrm * nat | DTS of mtrm |
-  DLet of string * nat * dformula * dformula;;
+  DLet of string * nat * dformula * dformula |
+  DFrz of
+    string * nat * dformula * dformula * nat * nat * nat *
+      (event_data list) set list;;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -5725,6 +5728,12 @@ let rec set_cols a = csorted_list_of_set (ceq_nat, ccompare_nat) a;;
 
 let rec dmsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L);;
 
+let rec hmap
+  f x1 = match f, x1 with f, [] -> (fun () -> [])
+    | f, x :: xs ->
+        binda (f x)
+          (fun y -> binda (hmap f xs) (fun ys -> (fun () -> (y :: ys))));;
+
 let rec partition
   p x1 = match p, x1 with p, [] -> ([], [])
     | p, x :: xs ->
@@ -6104,6 +6113,16 @@ let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
 let empty_queue : 'a queue = Abs_queue ([], []);;
 
 let mbuf_t_empty : 'a mbuf_t = MBuf2_t empty_queue;;
+
+let rec freeze_meval0_h
+  eval k x2 = match eval, k, x2 with eval, k, [] -> (fun () -> ([], []))
+    | eval, k, alpha :: alpha_s ->
+        binda (eval alpha)
+          (fun r ->
+            (match drop k (fst r) with [] -> (fun () -> ([], alpha :: alpha_s))
+              | y :: _ ->
+                binda (freeze_meval0_h eval (suc k) alpha_s)
+                  (fun z -> (fun () -> (y :: fst z, snd z)))));;
 
 let edl_impl_of_unit_v :
   (((event_data list), unit) mapping_rbt -> ((event_data list), unit) rbt) boxed
@@ -15614,17 +15633,17 @@ let rec uagg
                        eval_agg_op omega (uagg_values f ga) :: drop pos g))
                (unbox edl_keys_table_v groups)));;
 
-let rec deval
-  j ts db x3 = match j, ts, db, x3 with
-    j, ts, db, DAnds (ps, ns, l, buf) ->
-      binda (deval_list j ts db l)
+let rec deval_step
+  rc j ts db x4 = match rc, j, ts, db, x4 with
+    rc, j, ts, db, DAnds (ps, ns, l, buf) ->
+      binda (hmap (rc j ts db) l)
         (fun r ->
           binda (mebufn_take_j (dmulti_join ps ns) mbuf_t_empty
                   (umebufn_add (mapa fst r) buf))
             (fun p ->
               (fun () ->
                 (rep_mbuf_t (fst p), DAnds (ps, ns, mapa snd r, snd p)))))
-    | j, ts, db, DPure (phi, n, msk) ->
+    | rc, j, ts, db, DPure (phi, n, msk) ->
         binda (meval_j j n ts (wide_db db) phi)
           (fun (xs, phia) ->
             (fun () ->
@@ -15635,9 +15654,9 @@ let rec deval
                         msk))
                  xs,
                 DPure (phia, n, msk))))
-    | j, ts, db, DRel rel ->
+    | rc, j, ts, db, DRel rel ->
         (fun () -> (replicate (size_lista ts) rel, DRel rel))
-    | j, ts, db, DPredS (e, ar) ->
+    | rc, j, ts, db, DPredS (e, ar) ->
         (fun () ->
           ((match
              lookupa
@@ -15646,7 +15665,7 @@ let rec deval
                db (e, ar)
              with None -> replicate (size_lista ts) edl_bot | Some xs -> xs),
             DPredS (e, ar)))
-    | j, ts, db, DPredM (e, ar, tms, cs) ->
+    | rc, j, ts, db, DPredM (e, ar, tms, cs) ->
         (fun () ->
           ((match
              lookupa
@@ -15656,25 +15675,25 @@ let rec deval
              with None -> replicate (size_lista ts) edl_bot
              | Some a -> mapa (umatch_table tms cs) a),
             DPredM (e, ar, tms, cs)))
-    | j, ts, db, DAnd (pl, phi, pos, psi, buf) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DAnd (pl, phi, pos, psi, buf) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
-            binda (deval j ts db psi)
+            binda (rc j ts db psi)
               (fun (ys, psia) ->
                 binda (mebuf2_take_j (fun r1 -> dbin_join_h pl r1 pos)
                         (mebuf2_add xs ys buf))
                   (fun r ->
                     (fun () -> (fst r, DAnd (pl, phia, pos, psia, snd r))))))
-    | j, ts, db, DAndRel (phi, conf) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DAndRel (phi, conf) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (edl_filter (ueval_constraint conf)) xs,
                 DAndRel (phia, conf))))
-    | j, ts, db, DOr (phi, psi, buf) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DOr (phi, psi, buf) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
-            binda (deval j ts db psi)
+            binda (rc j ts db psi)
               (fun (ys, psia) ->
                 (fun () ->
                   (let (zs, bufa) =
@@ -15685,8 +15704,8 @@ let rec deval
                        (mebuf2_add xs ys buf)
                      in
                     (zs, DOr (phia, psia, bufa))))))
-    | j, ts, db, DNeg phi ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DNeg phi ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (fun r ->
@@ -15694,20 +15713,20 @@ let rec deval
                         then edl_insert [] edl_bot else edl_bot))
                  xs,
                 DNeg phia)))
-    | j, ts, db, DExists (phi, drop0) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DExists (phi, drop0) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               ((if drop0 then mapa (edl_image tla) xs else xs),
                 DExists (phia, drop0))))
-    | j, ts, db, DAgg (g0, omega, f, k, pos, phi) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DAgg (g0, omega, f, k, pos, phi) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (mapa (uagg g0 omega f k pos) xs,
                 DAgg (g0, omega, f, k, pos, phia))))
-    | j, ts, db, DPrev (i, phi, first, buf, nts) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DPrev (i, phi, first, buf, nts) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (if first && null ts
@@ -15719,8 +15738,8 @@ let rec deval
                         in
                        ((if first then edl_bot :: zs else zs),
                          DPrev (i, phia, false, bufa, ntsa))))))
-    | j, ts, db, DNext (i, phi, first, nts) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DNext (i, phi, first, nts) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () ->
               (let (xsa, firsta) =
@@ -15733,18 +15752,18 @@ let rec deval
                    (mbuf_t_append nts ts)
                  in
                 (zs, DNext (i, phia, firsta, ntsa)))))
-    | j, ts, db, DSince (args, phi, psi, buf, aux) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DSince (args, phi, psi, buf, aux) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
-            binda (deval j ts db psi)
+            binda (rc j ts db psi)
               (fun (ys, psia) ->
                 binda (eval_since_d args [] (umebuf2S_add xs ys ts buf) aux)
                   (fun (zs, (bufa, auxa)) ->
                     (fun () -> (zs, DSince (args, phia, psia, bufa, auxa))))))
-    | j, ts, db, DUntil (args, msk, phi, psi, buf, nts, t, aux) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DUntil (args, msk, phi, psi, buf, nts, t, aux) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
-            binda (deval j ts db psi)
+            binda (rc j ts db psi)
               (fun (ys, psia) ->
                 binda (mebuf2t_take_j (add_new_u_d args msk) aux
                         (mebuf2_add xs ys buf) t (mbuf_t_append nts ts))
@@ -15756,33 +15775,65 @@ let rec deval
                             DUntil
                               (args, msk, phia, psia, bufa, ntsa, nt,
                                 snd z)))))))
-    | j, ts, db, DAndAssign (p, t, phi) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DAndAssign (p, t, phi) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
             (fun () -> (mapa (uassign p t) xs, DAndAssign (p, t, phia))))
-    | j, ts, db, DTP (mt, i) ->
+    | rc, j, ts, db, DTP (mt, i) ->
         (fun () ->
           (mapa (fun x -> umtrm mt (EInt (integer_of_nat x))) (upt i j),
             DTP (mt, j)))
-    | j, ts, db, DTS mt ->
+    | rc, j, ts, db, DTS mt ->
         (fun () ->
           (mapa (fun x -> umtrm mt (EInt (integer_of_nat x))) ts, DTS mt))
-    | j, ts, db, DLet (p, m, phi, psi) ->
-        binda (deval j ts db phi)
+    | rc, j, ts, db, DLet (p, m, phi, psi) ->
+        binda (rc j ts db phi)
           (fun (xs, phia) ->
-            binda (deval j ts
-                    (updateb
-                      ((ccompare_prod ccompare_string8 ccompare_nat),
-                        (equal_prod equal_string8 equal_nat))
-                      (p, m) xs db)
+            binda (rc j ts
+                     (updateb
+                       ((ccompare_prod ccompare_string8 ccompare_nat),
+                         (equal_prod equal_string8 equal_nat))
+                       (p, m) xs db)
                     psi)
               (fun (ys, psia) -> (fun () -> (ys, DLet (p, m, phia, psia)))))
-and deval_list
-  j ts db x3 = match j, ts, db, x3 with j, ts, db, [] -> (fun () -> [])
-    | j, ts, db, phi :: r ->
-        binda (deval j ts db phi)
-          (fun x ->
-            binda (deval_list j ts db r) (fun xs -> (fun () -> (x :: xs))));;
+    | rc, j, ts, db, DFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
+        binda (rc j ts db phi)
+          (fun (xs, phia) ->
+            binda (rc j ts
+                     (updateb
+                       ((ccompare_prod ccompare_string8 ccompare_nat),
+                         (equal_prod equal_string8 equal_nat))
+                       (p, m) [] db)
+                    psi)
+              (fun (zs0, psia) ->
+                (let zs0_out = drop (minus_nata jfrz jpsi0) zs0 in
+                 let jpsi0a = plus_nata jpsi0 (size_lista zs0) in
+                 let alpha_sa =
+                   drop (plus_nata (minus_nata jfrz jphi) (size_lista zs0_out))
+                     (alpha_s @ xs)
+                   in
+                  binda (freeze_meval0_h
+                          (fun alpha ->
+                            rc j []
+                              (updateb
+                                ((ccompare_prod ccompare_string8 ccompare_nat),
+                                  (equal_prod equal_string8 equal_nat))
+                                (p, m) (replicate j alpha)
+                                (map_values
+                                  (ccompare_prod ccompare_string8 ccompare_nat)
+                                  (fun _ _ -> []) db))
+                              psia)
+                          (minus_nata jfrz jpsi0a) alpha_sa)
+                    (fun r ->
+                      (fun () ->
+                        (zs0_out @ fst r,
+                          DFrz (p, m, phia, psia,
+                                 plus_nata (plus_nata jfrz (size_lista zs0_out))
+                                   (size_lista (fst r)),
+                                 jpsi0a, plus_nata jphi (size_lista xs),
+                                 snd r)))))));;
+
+let rec deval j ts db phi_0 = deval_step deval j ts db phi_0;;
 
 let rec aggargs_cols
   (Aggargs_ext
@@ -15909,9 +15960,9 @@ let rec sevt_applies
       is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args);;
 
 let rec init_d
-  args msk =
+  hp args msk =
     (if sevt_applies args then (fun () -> (MSD_evt (de_ginit_sevt args)))
-      else (if is_none (args_agg args) && special_args args
+      else (if hp && (is_none (args_agg args) && special_args args)
              then binda (hsd_init2 args) (fun q -> (fun () -> (MSD_imp q)))
              else (fun () -> (MSD_dns (de_ginit_msaux args msk)))));;
 
@@ -16810,6 +16861,10 @@ let rec init_u_d
   args msk =
     (if evt_applies args then (fun () -> (MUD_evt (de_ginit_evt args)))
       else (fun () -> (MUD_dns (de_ginit_dq args))));;
+
+let rec msj_heap = function MSJ_imp q -> true
+                   | MSJ_pure v -> false
+                   | MSJ_evt v -> false;;
 
 let rec eval_until
   i nt x2 = match i, nt, x2 with i, nt, [] -> ([], [])
@@ -18295,7 +18350,7 @@ let rec dformula_of
                    (fun phi_d ->
                      binda (dformula_of n (set_cols (args_R args)) psi)
                        (fun psi_d ->
-                         binda (init_d args
+                         binda (init_d (msj_heap aux) args
                                  (dmsk (set_cols (args_R args)) cs_L))
                            (fun q ->
                              (fun () ->
@@ -18315,7 +18370,8 @@ let rec dformula_of
                             (fun phi_d ->
                               binda (dformula_of n cs psi)
                                 (fun psi_d ->
-                                  binda (init_d dags (dmsk cs cs_L))
+                                  binda (init_d (msj_heap aux) dags
+  (dmsk cs cs_L))
                                     (fun q ->
                                       (fun () ->
 (DSince
@@ -18388,9 +18444,20 @@ let rec dformula_of
         (fun () ->
           (if equal_lista equal_nat cs (mtrm_dcols mt) then DTS mt
             else DPure (MTS mt, n, wide_mask n cs)))
-    | n, cs, MFrz (v, va, vb, vc, vd, ve, vf, vg) ->
-        (fun () ->
-          (DPure (MFrz (v, va, vb, vc, vd, ve, vf, vg), n, wide_mask n cs)))
+    | n, cs, MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
+        binda (dformula_of m (upt zero_nata m) phi)
+          (fun phi_d ->
+            binda (dformula_of n cs psi)
+              (fun psi_d ->
+                (fun () ->
+                  (DFrz (p, m, phi_d, psi_d, jfrz, jpsi0, jphi,
+                          mapa (comp (deopt_table
+                                       (ceq_event_data, ccompare_event_data))
+                                 (dnarrow
+                                   ((ceq_option ceq_event_data),
+                                     (ccompare_option ccompare_event_data))
+                                   (wide_mask m (upt zero_nata m))))
+                            alpha_s)))))
     | n, cs, MLetPast (v, va, vb, vc, vd, ve) ->
         (fun () ->
           (DPure (MLetPast (v, va, vb, vc, vd, ve), n, wide_mask n cs)))
@@ -18435,6 +18502,8 @@ let rec dpure_nodes
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DAndAssign (p, t, phi) -> dpure_nodes phi
     | DLet (p, m, phi, psi) -> plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
+        plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DRel v -> zero_nata
     | DPredS (v, va) -> zero_nata
     | DPredM (v, va, vb, vc) -> zero_nata

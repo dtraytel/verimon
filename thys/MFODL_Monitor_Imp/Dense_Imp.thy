@@ -232,9 +232,20 @@ text \<open>
 datatype msaux_d = MSD_imp "event_data list msaux2" | MSD_dns "event_data gmsaux"
   | MSD_evt "event_data gsevtaux"
 
-definition init_d :: "args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
-  "init_d args msk = (if sevt_applies args then return (MSD_evt (ginit_sevt args))
-     else if args_agg args = None \<and> special_args args
+text \<open>Of the three representations only @{const MSD_imp} lives on the heap.  The freeze node
+  replays its body from a fixed state, which a heap-resident structure cannot do, so the
+  compiler has to be able to rule that representation out for the subtree it replays.  It says
+  so through the flag below, which it reads off the representation the sparse monitor picked
+  for the same node -- the two conditions are the same one, so nothing changes for a node
+  outside a freeze.\<close>
+
+fun msj_heap :: "msaux_j \<Rightarrow> bool" where
+  "msj_heap (MSJ_imp q) = True"
+| "msj_heap _ = False"
+
+definition init_d :: "bool \<Rightarrow> args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
+  "init_d hp args msk = (if sevt_applies args then return (MSD_evt (ginit_sevt args))
+     else if hp \<and> args_agg args = None \<and> special_args args
      then do { q \<leftarrow> init2 args; return (MSD_imp q) }
      else return (MSD_dns (ginit_msaux args msk)))"
 
@@ -332,12 +343,22 @@ datatype dformula =
   | DTP mtrm nat
   | DTS mtrm
   | DLet Formula.name nat dformula dformula
+  | DFrz Formula.name nat dformula dformula nat nat nat "utable list"
 
 subsection \<open>Building it\<close>
 
 text \<open>The buffers of the node being compiled hold the wide tables, so they are not carried
   over; they are empty, because this runs on the freshly built formula and nothing has been
   evaluated yet.\<close>
+
+text \<open>
+  The freeze node's body is replayed from a fixed state, so nothing below it may keep anything
+  on the heap.  It does not: the only heap-resident representation is @{const MSD_imp}, which
+  @{const init_d} picks only where the sparse monitor picked @{const MSJ_imp} for the same node,
+  and @{const mformula_j_of} leaves the freeze node to @{const embed}, which puts every Since
+  and Until structure below it into its pure representation.  That is the same invariant the
+  sparse monitor relies on, which evaluates a freeze node by purifying it.
+\<close>
 
 fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap"
   and dformula_of_list :: "nat \<Rightarrow> cols list \<Rightarrow> mformula_j list \<Rightarrow> dformula list Heap" where
@@ -394,14 +415,14 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
       if sevt_applies args then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
-        q \<leftarrow> init_d args (dmsk (set_cols (args_R args)) cs_L);
+        q \<leftarrow> init_d (msj_heap aux) args (dmsk (set_cols (args_R args)) cs_L);
         return (DSince args \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-        q \<leftarrow> init_d dags (dmsk cs cs_L);
+        q \<leftarrow> init_d (msj_heap aux) dags (dmsk cs cs_L);
         return (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) })
       else return (DPure (MSince args \<phi> \<psi> buf aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
@@ -437,86 +458,169 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
 | "dformula_of n cs (MTS mt) =
      return (if cs = mtrm_dcols mt then DTS mt
              else DPure (MTS mt) n (wide_mask n cs))"
+| "dformula_of n cs (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = do {
+     \<phi>d \<leftarrow> dformula_of m [0..<m] \<phi>;
+     \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+     return (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi
+               (map (deopt_table \<circ> dnarrow (wide_mask m [0..<m])) \<alpha>s)) }"
 | "dformula_of n cs \<phi> = return (DPure \<phi> n (wide_mask n cs))"
 
 subsection \<open>Evaluating it\<close>
 
-fun deval :: "nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow> (utable list \<times> dformula) Heap"
-  and deval_list :: "nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula list \<Rightarrow>
-    ((utable list \<times> dformula) list) Heap" where
-  "deval_list j ts db [] = return []"
-| "deval_list j ts db (\<phi> # r) = do {
-     x \<leftarrow> deval j ts db \<phi>; xs \<leftarrow> deval_list j ts db r; return (x # xs) }"
-| "deval j ts db (DAnds ps ns L buf) = do {
-     R \<leftarrow> deval_list j ts db L;
+text \<open>
+  The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is not a
+  subterm of the node.  The pure evaluator settles that with a termination proof over the
+  formula's size; here the result sits inside the heap monad, where the size of the updated
+  state is not a term a termination prover can reach.  So the evaluator below is a least fixed
+  point in the heap monad's own partial order, which asks for no termination argument at all.
+  What it asks for instead is that the body be monotone in the recursive call, and the two
+  combinators the body passes that call to carry the obligation themselves.
+\<close>
+
+fun hmap :: "('a \<Rightarrow> 'b Heap) \<Rightarrow> 'a list \<Rightarrow> 'b list Heap" where
+  "hmap f [] = return []"
+| "hmap f (x # xs) = do { y \<leftarrow> f x; ys \<leftarrow> hmap f xs; return (y # ys) }"
+
+lemma hmap_mono[partial_function_mono]:
+  assumes "\<And>x. mono_Heap (F x)"
+  shows "mono_Heap (\<lambda>f. hmap (\<lambda>x. F x f) xs)"
+  using assms by (induct xs) (auto intro!: partial_function_mono)
+
+text \<open>
+  The freeze node's replay loop, the heap counterpart of the kernel's @{const freeze_meval0}.
+  Each round evaluates the body from the state the loop began in -- the round's own updated
+  state is discarded -- so nothing below the body may be heap-resident, which is what the
+  compiler arranges.
+\<close>
+
+fun freeze_meval0_h :: "(utable \<Rightarrow> (utable list \<times> 'a) Heap) \<Rightarrow> nat \<Rightarrow> utable list \<Rightarrow>
+    (utable list \<times> utable list) Heap" where
+  "freeze_meval0_h eval k [] = return ([], [])"
+| "freeze_meval0_h eval k (\<alpha> # \<alpha>s) = do {
+     r \<leftarrow> eval \<alpha>;
+     (case drop k (fst r) of [] \<Rightarrow> return ([], \<alpha> # \<alpha>s)
+      | y # _ \<Rightarrow> do { z \<leftarrow> freeze_meval0_h eval (Suc k) \<alpha>s;
+                     return (y # fst z, snd z) }) }"
+
+lemma freeze_meval0_h_mono[partial_function_mono]:
+  assumes E: "\<And>x. mono_Heap (E x)"
+  shows "mono_Heap (\<lambda>f. freeze_meval0_h (\<lambda>x. E x f) k \<alpha>s)"
+proof (induct \<alpha>s arbitrary: k)
+  case Nil
+  show ?case by (auto intro!: partial_function_mono)
+next
+  case (Cons \<alpha> \<alpha>s)
+  have "mono_Heap (\<lambda>f. E \<alpha> f \<bind>
+      (\<lambda>r. case drop k (fst r) of [] \<Rightarrow> return ([], \<alpha> # \<alpha>s)
+           | y # _ \<Rightarrow> freeze_meval0_h (\<lambda>x. E x f) (Suc k) \<alpha>s \<bind>
+                     (\<lambda>z. return (y # fst z, snd z))))"
+  proof (rule bind_mono[OF E], goal_cases)
+    case (1 r)
+    show ?case
+      by (cases "drop k (fst r)") (auto intro!: partial_function_mono Cons.hyps)
+  qed
+  then show ?case by simp
+qed
+
+text \<open>
+  One step of the evaluator, with the recursive call left open as the parameter @{term rc}.
+  Writing it this way keeps the node-by-node reading of the equations and turns the fixed
+  point's monotonicity obligation into a lemma that can be proved node by node.
+\<close>
+
+fun deval_step :: "(nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow> (utable list \<times> dformula) Heap) \<Rightarrow>
+    nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow> (utable list \<times> dformula) Heap" where
+  "deval_step rc j ts db (DAnds ps ns L buf) = do {
+     R \<leftarrow> hmap (\<lambda>\<phi>. rc j ts db \<phi>) L;
      p \<leftarrow> mebufn_take_j (dmulti_join ps ns) mbuf_t_empty (umebufn_add (map fst R) buf);
      return (Rep_mbuf_t (fst p), DAnds ps ns (map snd R) (snd p)) }"
-| "deval j ts db (DPure \<phi> n msk) = do {
+| "deval_step rc j ts db (DPure \<phi> n msk) = do {
      (xs, \<phi>) \<leftarrow> meval_j j n ts (wide_db db) \<phi>;
      return (map (deopt_table \<circ> dnarrow msk) xs, DPure \<phi> n msk) }"
-| "deval j ts db (DRel rel) = return (replicate (length ts) rel, DRel rel)"
-| "deval j ts db (DPredS e ar) = return
+| "deval_step rc j ts db (DRel rel) = return (replicate (length ts) rel, DRel rel)"
+| "deval_step rc j ts db (DPredS e ar) = return
      ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) {} | Some xs \<Rightarrow> xs),
       DPredS e ar)"
-| "deval j ts db (DPredM e ar tms cs) = return
+| "deval_step rc j ts db (DPredM e ar tms cs) = return
      ((case Mapping.lookup db (e, ar) of None \<Rightarrow> replicate (length ts) {}
        | Some xs \<Rightarrow> map (umatch_table tms cs) xs),
       DPredM e ar tms cs)"
-| "deval j ts db (DAnd pl \<phi> pos \<psi> buf) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
+| "deval_step rc j ts db (DAnd pl \<phi> pos \<psi> buf) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
      r \<leftarrow> mebuf2_take_j (\<lambda>r1 r2. dbin_join_h pl r1 pos r2) (mebuf2_add xs ys buf);
      return (fst r, DAnd pl \<phi> pos \<psi> (snd r)) }"
-| "deval j ts db (DAndRel \<phi> conf) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DAndRel \<phi> conf) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (map (Set.filter (ueval_constraint conf)) xs, DAndRel \<phi> conf) }"
-| "deval j ts db (DOr \<phi> \<psi> buf) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
+| "deval_step rc j ts db (DOr \<phi> \<psi> buf) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
      return (let (zs, buf) = mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mebuf2_add xs ys buf)
        in (zs, DOr \<phi> \<psi> buf)) }"
-| "deval j ts db (DNeg \<phi>) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DNeg \<phi>) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (map (\<lambda>r. if r = {} then {[]} else {}) xs, DNeg \<phi>) }"
-| "deval j ts db (DExists \<phi> drop0) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DExists \<phi> drop0) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (if drop0 then map (\<lambda>r. tl ` r) xs else xs, DExists \<phi> drop0) }"
-| "deval j ts db (DAgg g0 \<omega> f k pos \<phi>) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DAgg g0 \<omega> f k pos \<phi>) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (map (uagg g0 \<omega> f k pos) xs, DAgg g0 \<omega> f k pos \<phi>) }"
-| "deval j ts db (DPrev I \<phi> first buf nts) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DPrev I \<phi> first buf nts) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (if first \<and> ts = [] then ([], DPrev I \<phi> True (buf @@ xs) (nts @@ ts))
        else let (zs, buf, nts) = umeprev_next I (buf @@ xs) (nts @@ ts)
          in (if first then {} # zs else zs, DPrev I \<phi> False buf nts)) }"
-| "deval j ts db (DNext I \<phi> first nts) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DNext I \<phi> first nts) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (let (xs, first) = (case (xs, first) of (_ # xs, True) \<Rightarrow> (xs, False) | a \<Rightarrow> a);
        (zs, buf, nts) = umeprev_next I (mbuf_t_empty @@ xs) (nts @@ ts)
        in (zs, DNext I \<phi> first nts)) }"
-| "deval j ts db (DSince args \<phi> \<psi> buf aux) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
+| "deval_step rc j ts db (DSince args \<phi> \<psi> buf aux) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
      (zs, buf, aux) \<leftarrow> eval_since_d args [] (umebuf2S_add xs ys ts buf) aux;
      return (zs, DSince args \<phi> \<psi> buf aux) }"
-| "deval j ts db (DUntil args msk \<phi> \<psi> buf nts t aux) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     (ys, \<psi>) \<leftarrow> deval j ts db \<psi>;
+| "deval_step rc j ts db (DUntil args msk \<phi> \<psi> buf nts t aux) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
      r \<leftarrow> mebuf2t_take_j (add_new_u_d args msk) aux (mebuf2_add xs ys buf) t (nts @@ ts);
      (case r of (aux, buf, nt, nts') \<Rightarrow>
       do { z \<leftarrow> eval_u_d args nt aux;
            return (fst z, DUntil args msk \<phi> \<psi> buf nts' nt (snd z)) }) }"
-| "deval j ts db (DAndAssign p t \<phi>) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
+| "deval_step rc j ts db (DAndAssign p t \<phi>) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      return (map (uassign p t) xs, DAndAssign p t \<phi>) }"
-| "deval j ts db (DTP mt i) =
+| "deval_step rc j ts db (DTP mt i) =
      return (map (\<lambda>x. umtrm mt (EInt (integer_of_nat x))) [i..<j], DTP mt j)"
-| "deval j ts db (DTS mt) =
+| "deval_step rc j ts db (DTS mt) =
      return (map (\<lambda>x. umtrm mt (EInt (integer_of_nat x))) ts, DTS mt)"
-| "deval j ts db (DLet p m \<phi> \<psi>) = do {
-     (xs, \<phi>) \<leftarrow> deval j ts db \<phi>;
-     (ys, \<psi>) \<leftarrow> deval j ts (Mapping.update (p, m) xs db) \<psi>;
+| "deval_step rc j ts db (DLet p m \<phi> \<psi>) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) xs db) \<psi>;
      return (ys, DLet p m \<phi> \<psi>) }"
+| "deval_step rc j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (zs0, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) [] db) \<psi>;
+     (let zs0_out = drop (jfrz - jpsi0) zs0;
+          jpsi0' = jpsi0 + length zs0;
+          \<alpha>s' = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs) in
+      do { r \<leftarrow> freeze_meval0_h (\<lambda>\<alpha>. rc j []
+                 (Mapping.update (p, m) (replicate j \<alpha>)
+                   (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0') \<alpha>s';
+           return (zs0_out @ fst r,
+             DFrz p m \<phi> \<psi> (jfrz + length zs0_out + length (fst r)) jpsi0'
+               (jphi + length xs) (snd r)) }) }"
+
+lemma deval_step_mono[partial_function_mono]:
+  assumes rc: "\<And>j ts db \<phi>. mono_Heap (\<lambda>f. RC f j ts db \<phi>)"
+  shows "mono_Heap (\<lambda>f. deval_step (RC f) j ts db \<phi>0)"
+  by (cases \<phi>0) (auto intro!: partial_function_mono rc)
+
+partial_function (heap) deval :: "nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow>
+    (utable list \<times> dformula) Heap" where
+  [code]: "deval j ts db \<phi>0 = deval_step deval j ts db \<phi>0"
 
 subsection \<open>The state\<close>
 
@@ -537,6 +641,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DUntil args msk \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DAndAssign p t \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DLet p m \<phi> \<psi>) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
