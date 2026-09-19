@@ -4233,7 +4233,9 @@ type dformula =
         dformula * dformula *
         (((event_data option) list) set mbuf_t *
           ((event_data option) list) set mbuf_t) *
-        nat mbuf_t * nat * muaux_j;;
+        nat mbuf_t * nat * muaux_j
+  | DLetPast of
+      string * nat * dformula * dformula * nat * (event_data list) set option;;
 
 type ('a, 'b) hashtable = HashTable of (('a * 'b) list) array * nat;;
 
@@ -6850,6 +6852,103 @@ let rec append_queue_list
   xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
 
 let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
+
+let rec size_dformula
+  = function DPure (x11, x12, x13) -> zero_nata
+    | DRel x2 -> zero_nata
+    | DPredS (x31, x32) -> zero_nata
+    | DPredM (x41, x42, x43, x44) -> zero_nata
+    | DAnd (x51, x52, x53, x54, x55) ->
+        plus_nata (plus_nata (size_dformula x52) (size_dformula x54))
+          (suc zero_nata)
+    | DAnds (x61, x62, x63, x64) ->
+        plus_nata (size_list size_dformula x63) (suc zero_nata)
+    | DAndRel (x71, x72) -> plus_nata (size_dformula x71) (suc zero_nata)
+    | DOr (x81, x82, x83) ->
+        plus_nata (plus_nata (size_dformula x81) (size_dformula x82))
+          (suc zero_nata)
+    | DNeg x9 -> plus_nata (size_dformula x9) (suc zero_nata)
+    | DExists (x101, x102) -> plus_nata (size_dformula x101) (suc zero_nata)
+    | DAgg (x111, x112, x113, x114, x115, x116) ->
+        plus_nata (size_dformula x116) (suc zero_nata)
+    | DPrev (x121, x122, x123, x124, x125) ->
+        plus_nata (size_dformula x122) (suc zero_nata)
+    | DNext (x131, x132, x133, x134) ->
+        plus_nata (size_dformula x132) (suc zero_nata)
+    | DSince (x141, x142, x143, x144, x145) ->
+        plus_nata (plus_nata (size_dformula x142) (size_dformula x143))
+          (suc zero_nata)
+    | DUntil (x151, x152, x153, x154, x155, x156, x157, x158) ->
+        plus_nata (plus_nata (size_dformula x153) (size_dformula x154))
+          (suc zero_nata)
+    | DAndAssign (x161, x162, x163) ->
+        plus_nata (size_dformula x163) (suc zero_nata)
+    | DTP (x171, x172) -> zero_nata
+    | DTS x18 -> zero_nata
+    | DLet (x191, x192, x193, x194) ->
+        plus_nata (plus_nata (size_dformula x193) (size_dformula x194))
+          (suc zero_nata)
+    | DFrz (x201, x202, x203, x204, x205, x206, x207, x208) ->
+        plus_nata (plus_nata (size_dformula x203) (size_dformula x204))
+          (suc zero_nata)
+    | DTrigger (x211, x212, x213, x214, x215, x216, x217) ->
+        plus_nata (plus_nata (size_dformula x213) (size_dformula x214))
+          (suc zero_nata)
+    | DMatchP (x221, x222, x223, x224, x225, x226, x227, x228, x229, x2210) ->
+        plus_nata (size_list size_dformula x227) (suc zero_nata)
+    | DMatchF
+        (x231, x232, x233, x234, x235, x236, x237, x238, x239, x2310, x2311)
+        -> plus_nata (size_list size_dformula x237) (suc zero_nata)
+    | DSinceW (x241, x242, x243, x244, x245, x246, x247, x248) ->
+        plus_nata (plus_nata (size_dformula x245) (size_dformula x246))
+          (suc zero_nata)
+    | DUntilW (x251, x252, x253, x254, x255, x256, x257, x258, x259, x2510) ->
+        plus_nata (plus_nata (size_dformula x255) (size_dformula x256))
+          (suc zero_nata)
+    | DLetPast (x261, x262, x263, x264, x265, x266) ->
+        plus_nata (plus_nata (size_dformula x263) (size_dformula x264))
+          (suc zero_nata);;
+
+let rec map_valuesa
+  xb xc = Alist (mapa (fun (x, y) -> (x, xb x y)) (impl_of xc));;
+
+let rec map_values _A
+  f x1 = match f, x1 with
+    f, RBT_Mapping t ->
+      (match ccompare _A
+        with None ->
+          failwith "map_values RBT_Mapping: ccompare = None"
+            (fun _ -> map_values _A f (RBT_Mapping t))
+        | Some _ -> RBT_Mapping (mapb _A f t))
+    | f, Assoc_List_Mapping al -> Assoc_List_Mapping (map_valuesa f al)
+    | f, Mapping m -> Mapping (fun k -> map_option (f k) (m k));;
+
+let rec letpast_meval0_h
+  eval j i ys xs p ts db phi =
+    binda (eval ts
+             (updateb
+               ((ccompare_prod ccompare_string8 ccompare_nat),
+                 (equal_prod equal_string8 equal_nat))
+               p xs db)
+            phi)
+      (fun r ->
+        (if not (equal_nata (size_dformula (snd r)) (size_dformula phi))
+          then (fun () -> ([], (zero_nata, (None, phi))))
+          else (match fst r
+                 with [] ->
+                   (fun () ->
+                     (ys @ fst r, (plus_nata i (size_lista xs), (None, snd r))))
+                 | y :: _ ->
+                   (if less_eq_nat j (suc (plus_nata i (size_lista xs)))
+                     then (fun () ->
+                            (ys @ fst r,
+                              (plus_nata i (size_lista xs), (Some y, snd r))))
+                     else letpast_meval0_h eval j (plus_nata i (size_lista xs))
+                            (ys @ fst r) (fst r) p []
+                            (map_values
+                              (ccompare_prod ccompare_string8 ccompare_nat)
+                              (fun _ _ -> []) db)
+                            (snd r)))));;
 
 let rec mbuf_t_is_empty (MBuf2_t xs) = is_emptya xs;;
 
@@ -11869,6 +11968,9 @@ let rec add_new_u_j
     | args, rel1, rel2, nt, MUJ_evt a ->
         (fun () -> (MUJ_evt (add_new_evt args rel1 rel2 nt a)));;
 
+let rec list_of_option = function None -> []
+                         | Some x -> [x];;
+
 let rec umeprev_next
   i xs ts =
     (match mbuf_t_cases xs with (None, _) -> ([], (mbuf_t_empty, ts))
@@ -12099,20 +12201,6 @@ let rec edl_minus
   a b = match a, b with
     RBT_set rbt1, RBT_set rbt2 -> RBT_set (edl_rbt_set_minus rbt1 rbt2)
     | a, b -> edl_inter a (uminus_set b);;
-
-let rec map_valuesa
-  xb xc = Alist (mapa (fun (x, y) -> (x, xb x y)) (impl_of xc));;
-
-let rec map_values _A
-  f x1 = match f, x1 with
-    f, RBT_Mapping t ->
-      (match ccompare _A
-        with None ->
-          failwith "map_values RBT_Mapping: ccompare = None"
-            (fun _ -> map_values _A f (RBT_Mapping t))
-        | Some _ -> RBT_Mapping (mapb _A f t))
-    | f, Assoc_List_Mapping al -> Assoc_List_Mapping (map_valuesa f al)
-    | f, Mapping m -> Mapping (fun k -> map_option (f k) (m k));;
 
 let rec dbucket (_A1, _A2, _A3)
   d k = (match lookupa ((ccompare_list _A2), (equal_list _A3)) d k
@@ -14947,9 +15035,6 @@ let rec mebufn_take
       else mebufn_take f (f (mapa (comp (comp the fst) mbuf_t_cases) buf) z)
              (mapa (comp snd mbuf_t_cases) buf));;
 
-let rec list_of_option = function None -> []
-                         | Some x -> [x];;
-
 let rec freeze_meval0
   eval k x2 = match eval, k, x2 with eval, k, [] -> ([], [])
     | eval, k, alpha :: alpha_s ->
@@ -15996,6 +16081,18 @@ let rec deval_step
                         (zs, DTrigger
                                (dags, pl, phia, psia, dbufa, ntsa, dauxa))))
                       b))))
+    | rc, j, ts, db, DLetPast (p, m, phi, psi, i, buf) ->
+        binda (letpast_meval0_h (rc j) j i [] (list_of_option buf) (p, m) ts db
+                phi)
+          (fun (xs, (ia, (bufa, phia))) ->
+            binda (rc j ts
+                     (updateb
+                       ((ccompare_prod ccompare_string8 ccompare_nat),
+                         (equal_prod equal_string8 equal_nat))
+                       (p, m) xs db)
+                    psi)
+              (fun (ys, psia) ->
+                (fun () -> (ys, DLetPast (p, m, phia, psia, ia, bufa)))))
     | rc, j, ts, db, DFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
         binda (rc j ts db phi)
           (fun (xs, phia) ->
@@ -16108,6 +16205,7 @@ let rec mcols
     | n, MTrigger (args, phi, psi, buf, nts, aux) ->
         Some (set_cols (args_R args))
     | n, MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) -> mcols n psi
+    | n, MLetPast (p, m, phi, psi, i, buf) -> mcols n psi
     | n, MMatchP (i, mr, mrs, phi_s, buf, nts, aux) ->
         map_option (fun css -> fold merge_cols css [])
           (those (mapa (mcols n) phi_s))
@@ -16126,7 +16224,6 @@ let rec mcols
     | n, MTP (mt, i) -> Some (mtrm_dcols mt)
     | n, MTS mt -> Some (mtrm_dcols mt)
     | n, MRel v -> None
-    | n, MLetPast (v, va, vb, vc, vd, ve) -> None
     | n, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None;;
 
 let rec special_args
@@ -18722,6 +18819,22 @@ let rec dformula_of
                    (DPure
                      (MTrigger (args, phi, psi, buf, nts, aux), n,
                        wide_mask n cs)))))
+    | n, cs, MLetPast (p, m, phi, psi, i, buf) ->
+        binda (dformula_of m (upt zero_nata m) phi)
+          (fun phi_d ->
+            binda (dformula_of n cs psi)
+              (fun psi_d ->
+                (fun () ->
+                  (DLetPast
+                    (p, m, phi_d, psi_d, i,
+                      map_option
+                        (comp (deopt_table
+                                (ceq_event_data, ccompare_event_data))
+                          (dnarrow
+                            ((ceq_option ceq_event_data),
+                              (ccompare_option ccompare_event_data))
+                            (wide_mask m (upt zero_nata m))))
+                        buf)))))
     | n, cs, MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
         binda (dformula_of m (upt zero_nata m) phi)
           (fun phi_d ->
@@ -18736,9 +18849,6 @@ let rec dformula_of
                                      (ccompare_option ccompare_event_data))
                                    (wide_mask m (upt zero_nata m))))
                             alpha_s)))))
-    | n, cs, MLetPast (v, va, vb, vc, vd, ve) ->
-        (fun () ->
-          (DPure (MLetPast (v, va, vb, vc, vd, ve), n, wide_mask n cs)))
     | n, cs, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) ->
         (fun () ->
           (DPure
@@ -18772,6 +18882,8 @@ let rec dpure_nodes
     | DAndAssign (p, t, phi) -> dpure_nodes phi
     | DLet (p, m, phi, psi) -> plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
+        plus_nata (dpure_nodes phi) (dpure_nodes psi)
+    | DLetPast (p, m, phi, psi, i, buf) ->
         plus_nata (dpure_nodes phi) (dpure_nodes psi)
     | DTrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
         plus_nata (dpure_nodes phi) (dpure_nodes psi)

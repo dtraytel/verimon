@@ -237,6 +237,7 @@ fun mcols :: "nat \<Rightarrow> mformula_j \<Rightarrow> cols option" where
      | Some aggargs \<Rightarrow> Some (dagg_cols aggargs))"
 | "mcols n (MTrigger args \<phi> \<psi> buf nts aux) = Some (set_cols (args_R args))"
 | "mcols n (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = mcols n \<psi>"
+| "mcols n (MLetPast p m \<phi> \<psi> i buf) = mcols n \<psi>"
 | "mcols n (MMatchP I mr mrs \<phi>s buf nts aux) =
     map_option (\<lambda>css. fold merge_cols css []) (those (map (mcols n) \<phi>s))"
 | "mcols n (MMatchF I mr mrs \<phi>s buf nts t aux) =
@@ -390,6 +391,7 @@ datatype dformula =
       "event_data mebuf2S" msaux_j
   | DUntilW args "nat option list" "nat option list" "bool list" dformula dformula
       "event_data mebuf2" "ts mbuf_t" ts muaux_j
+  | DLetPast Formula.name nat dformula dformula nat "utable option"
 
 subsection \<open>Building it\<close>
 
@@ -537,6 +539,11 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         return (DTrigger dags (emb_plan cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
                   mbuf_t_empty (init_mmtaux dags)) })
       else return (DPure (MTrigger args \<phi> \<psi> buf nts aux) n (wide_mask n cs)))"
+| "dformula_of n cs (MLetPast p m \<phi> \<psi> i buf) = do {
+     \<phi>d \<leftarrow> dformula_of m [0..<m] \<phi>;
+     \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+     return (DLetPast p m \<phi>d \<psi>d i
+               (map_option (deopt_table \<circ> dnarrow (wide_mask m [0..<m])) buf)) }"
 | "dformula_of n cs (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = do {
      \<phi>d \<leftarrow> dformula_of m [0..<m] \<phi>;
      \<psi>d \<leftarrow> dformula_of n cs \<psi>;
@@ -580,6 +587,96 @@ fun freeze_meval0_h :: "(utable \<Rightarrow> (utable list \<times> 'a) Heap) \<
      (case drop k (fst r) of [] \<Rightarrow> return ([], \<alpha> # \<alpha>s)
       | y # _ \<Rightarrow> do { z \<leftarrow> freeze_meval0_h eval (Suc k) \<alpha>s;
                      return (y # fst z, snd z) }) }"
+
+text \<open>
+  The recursive let's loop, the heap counterpart of the kernel's @{const letpast_meval0}.  It
+  carries the body's state from round to round, so unlike the freeze node's loop it puts no
+  demand on the body.  Its own recursion is bounded by the number of time points whatever the
+  body does, which is why it is a total function of its own rather than part of the fixed
+  point; only the evaluator it is handed is one.
+\<close>
+
+function letpast_meval0_h ::
+  "(ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow> (utable list \<times> dformula) Heap) \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+   utable list \<Rightarrow> utable list \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarrow> dformula \<Rightarrow>
+   (utable list \<times> nat \<times> utable option \<times> dformula) Heap" where
+  "letpast_meval0_h eval j i ys xs p ts db \<phi> = do {
+     r \<leftarrow> eval ts (Mapping.update p xs db) \<phi>;
+     (if size (snd r) \<noteq> size \<phi> then return ([], 0, None, \<phi>)
+      else case fst r of
+        [] \<Rightarrow> return (ys @ fst r, i + length xs, None, snd r)
+      | y # _ \<Rightarrow> (if Suc (i + length xs) \<ge> j
+          then return (ys @ fst r, i + length xs, Some y, snd r)
+          else letpast_meval0_h eval j (i + length xs) (ys @ fst r) (fst r) p []
+                 (Mapping.map_values (\<lambda>_ _. []) db) (snd r))) }"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(_, j, i, _, xs, _). j - (i + length xs))")
+     (auto simp: not_le min_def diff_less_mono2)
+
+declare letpast_meval0_h.simps[simp del]
+
+lemma letpast_meval0_h_mono_aux:
+  assumes E: "\<And>ts db \<chi>. mono_Heap (\<lambda>f. E ts db \<chi> f)"
+  shows "j - (i + length xs) \<le> n \<Longrightarrow>
+    mono_Heap (\<lambda>f. letpast_meval0_h (\<lambda>ts db \<chi>. E ts db \<chi> f) j i ys xs p ts0 db0 \<phi>)"
+proof (induct n arbitrary: i ys xs ts0 db0 \<phi>)
+  case (0 i ys xs ts0 db0 \<phi>)
+  have "mono_Heap (\<lambda>f. E ts0 (Mapping.update p xs db0) \<phi> f \<bind>
+    (\<lambda>r. if size (snd r) \<noteq> size \<phi> then return ([], 0, None, \<phi>)
+         else case fst r of
+           [] \<Rightarrow> return (ys @ fst r, i + length xs, None, snd r)
+         | y # _ \<Rightarrow> (if Suc (i + length xs) \<ge> j
+             then return (ys @ fst r, i + length xs, Some y, snd r)
+             else letpast_meval0_h (\<lambda>ts db \<chi>. E ts db \<chi> f) j (i + length xs) (ys @ fst r)
+                    (fst r) p [] (Mapping.map_values (\<lambda>_ _. []) db0) (snd r))))"
+  proof (rule bind_mono[OF E], goal_cases)
+    case (1 r)
+    have "Suc (i + length xs) \<ge> j" using "0.prems" by arith
+    then show ?case by (cases "fst r") (auto intro!: partial_function_mono)
+  qed
+  then show ?case by (subst letpast_meval0_h.simps) simp
+next
+  case (Suc n i ys xs ts0 db0 \<phi>)
+  have "mono_Heap (\<lambda>f. E ts0 (Mapping.update p xs db0) \<phi> f \<bind>
+    (\<lambda>r. if size (snd r) \<noteq> size \<phi> then return ([], 0, None, \<phi>)
+         else case fst r of
+           [] \<Rightarrow> return (ys @ fst r, i + length xs, None, snd r)
+         | y # _ \<Rightarrow> (if Suc (i + length xs) \<ge> j
+             then return (ys @ fst r, i + length xs, Some y, snd r)
+             else letpast_meval0_h (\<lambda>ts db \<chi>. E ts db \<chi> f) j (i + length xs) (ys @ fst r)
+                    (fst r) p [] (Mapping.map_values (\<lambda>_ _. []) db0) (snd r))))"
+  proof (rule bind_mono[OF E], goal_cases)
+    case (1 r)
+    show ?case
+    proof (cases "fst r")
+      case Nil
+      then show ?thesis by (auto intro!: partial_function_mono)
+    next
+      case (Cons y r')
+      show ?thesis
+      proof (cases "Suc (i + length xs) \<ge> j")
+        case True
+        with Cons show ?thesis by (auto intro!: partial_function_mono)
+      next
+        case False
+        have "1 \<le> length (fst r)" using Cons by simp
+        then have le: "j - (i + length xs + length (fst r)) \<le> n"
+          using False Suc.prems by arith
+        have IH: "mono_Heap (\<lambda>f. letpast_meval0_h (\<lambda>ts db \<chi>. E ts db \<chi> f) j (i + length xs)
+                    (ys @ fst r) (fst r) p [] (Mapping.map_values (\<lambda>_ _. []) db0) (snd r))"
+          by (rule Suc.hyps[OF le])
+        from Cons False IH show ?thesis by (auto intro!: partial_function_mono)
+      qed
+    qed
+  qed
+  then show ?case by (subst letpast_meval0_h.simps) simp
+qed
+
+lemma letpast_meval0_h_mono[partial_function_mono]:
+  assumes "\<And>ts db \<chi>. mono_Heap (\<lambda>f. E ts db \<chi> f)"
+  shows "mono_Heap (\<lambda>f. letpast_meval0_h (\<lambda>ts db \<chi>. E ts db \<chi> f) j i ys xs p ts0 db0 \<phi>)"
+  by (rule letpast_meval0_h_mono_aux[OF assms le_refl])
 
 lemma freeze_meval0_h_mono[partial_function_mono]:
   assumes E: "\<And>x. mono_Heap (E x)"
@@ -718,6 +815,11 @@ fun deval_step :: "(nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarr
              (fv_z, z) = result_mmtaux dags ax
          in (zs @ [deopt_table z], ax)) ([], daux) (mebuf2_add xs ys dbuf) (nts @@ ts)
        in (zs, DTrigger dags pl \<phi> \<psi> dbuf nts daux)) }"
+| "deval_step rc j ts db (DLetPast p m \<phi> \<psi> i buf) = do {
+     r \<leftarrow> letpast_meval0_h (\<lambda>ts' db' \<chi>. rc j ts' db' \<chi>) j i [] (list_of_option buf) (p, m) ts db \<phi>;
+     (case r of (xs, i, buf, \<phi>) \<Rightarrow> do {
+        (ys, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) xs db) \<psi>;
+        return (ys, DLetPast p m \<phi> \<psi> i buf) }) }"
 | "deval_step rc j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = do {
      (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      (zs0, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) [] db) \<psi>;
@@ -760,6 +862,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DAndAssign p t \<phi>) = dpure_nodes \<phi>"
 | "dpure_nodes (DLet p m \<phi> \<psi>) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DLetPast p m \<phi> \<psi> i buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DTrigger dags pl \<phi> \<psi> dbuf nts daux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DSinceW args plL plR msk \<phi> \<psi> buf aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DUntilW args plL plR msk \<phi> \<psi> buf nts t aux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
