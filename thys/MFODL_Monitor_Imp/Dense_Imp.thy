@@ -172,6 +172,14 @@ fun umeprev_next :: "\<I> \<Rightarrow> utable mbuf_t \<Rightarrow> ts mbuf_t
   | (Some t', ts'') \<Rightarrow> (let (ys, zs) = umeprev_next I xs' (t' ## ts'')
     in ((if mem I ((t' - t)) then x else {}) # ys, zs)))))"
 
+fun umebuf2T_take :: "(utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow>
+    umebuf2 \<Rightarrow> ts mbuf_t \<Rightarrow> 'b \<times> umebuf2 \<times> ts mbuf_t" where
+  "umebuf2T_take f z (xs, ys) ts =
+    (case mbuf_t_cases ts of (None, ts') \<Rightarrow> (z, (xs, ys), ts') | (Some t, ts') \<Rightarrow>
+    (case mbuf_t_cases xs of (None, xs') \<Rightarrow> (z, (xs', ys), t ## ts') | (Some x, xs') \<Rightarrow>
+    (case mbuf_t_cases ys of (None, ys') \<Rightarrow> (z, (x ## xs', ys'), t ## ts') | (Some y, ys') \<Rightarrow>
+    umebuf2T_take f (f x y t z) (xs', ys') ts')))"
+
 text \<open>The subformulas the dense fragment does not cover yet are evaluated by the function
   over the wide tuples, which reads the input tables from the database itself; the database is
   put back into the wide representation for them.  A formula with no such subformula -- which
@@ -377,6 +385,7 @@ datatype dformula =
   | DLet Formula.name nat dformula dformula
   | DFrz Formula.name nat dformula dformula nat nat nat "utable list"
   | DLetPast Formula.name nat dformula dformula nat "utable option"
+  | DTrigger args dformula dformula umebuf2 "ts mbuf_t" "event_data gmmtaux"
 
 definition dwrap_agg :: "aggargs \<Rightarrow> dformula \<Rightarrow> dformula" where
   "dwrap_agg ag \<phi> = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
@@ -511,6 +520,15 @@ function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mform
 | "dformula_of n cs (MTS mt) =
      return (if cs = mtrm_dcols mt then DTS mt
              else DPure (MTS mt) n (wide_mask n cs))"
+| "dformula_of n cs (MTrigger args \<phi> \<psi> buf nts aux) =
+     (let cs_L = set_cols (args_L args) in
+      if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and> mem (args_ivl args) 0
+      then (let dags = dargs cs cs_L args in do {
+        \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
+        \<psi>d \<leftarrow> dformula_of n cs \<psi>;
+        return (DTrigger dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
+                  (ginit_mmtaux dags (dmsk cs cs_L))) })
+      else return (DPure (MTrigger args \<phi> \<psi> buf nts aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MLetPast p m \<phi> \<psi> i buf) = do {
      \<phi>d \<leftarrow> dformula_of m [0..<m] \<phi>;
      \<psi>d \<leftarrow> dformula_of n cs \<psi>;
@@ -756,6 +774,13 @@ fun deval_step :: "(nat \<Rightarrow> ts list \<Rightarrow> udatabase \<Rightarr
      (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
      (ys, \<psi>) \<leftarrow> rc j ts (Mapping.update (p, m) xs db) \<psi>;
      return (ys, DLet p m \<phi> \<psi>) }"
+| "deval_step rc j ts db (DTrigger dags \<phi> \<psi> dbuf nts daux) = do {
+     (xs, \<phi>) \<leftarrow> rc j ts db \<phi>;
+     (ys, \<psi>) \<leftarrow> rc j ts db \<psi>;
+     return (let ((zs, daux), dbuf, nts) = umebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+         let ax = gupdate_mmtaux dags t r1 r2 ax
+         in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) (mebuf2_add xs ys dbuf) (nts @@ ts)
+       in (zs, DTrigger dags \<phi> \<psi> dbuf nts daux)) }"
 | "deval_step rc j ts db (DLetPast p m \<phi> \<psi> i buf) = do {
      r \<leftarrow> letpast_meval0_h (\<lambda>ts' db' \<chi>. rc j ts' db' \<chi>) j i [] (list_of_option buf) (p, m) ts db \<phi>;
      (case r of (xs, i, buf, \<phi>) \<Rightarrow> do {
@@ -804,6 +829,7 @@ fun dpure_nodes :: "dformula \<Rightarrow> nat" and dpure_nodes_list :: "dformul
 | "dpure_nodes (DLet p m \<phi> \<psi>) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes (DLetPast p m \<phi> \<psi> i buf) = dpure_nodes \<phi> + dpure_nodes \<psi>"
+| "dpure_nodes (DTrigger dags \<phi> \<psi> dbuf nts daux) = dpure_nodes \<phi> + dpure_nodes \<psi>"
 | "dpure_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
