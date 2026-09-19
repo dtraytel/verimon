@@ -5731,3 +5731,118 @@ What the remaining 47 cost at run time is one empty structure per node at initia
 never again: no wide tuple is constructed, compared, hashed or stored while the monitor runs. The
 count is a useful proxy for "is the wide representation still in the loop", and it has done its
 job; past this point it measures the kernel's own formula type, not the monitor's data.
+
+### 20.45 The verified dense evaluator, measured
+
+20.43 ended by saying the shipping dense monitor is not the one the simulation theorem is about:
+`Dense_Imp.deval` is the executable layer, and `dsim_deval` covers `Dense_Eval.deval`, the pure
+dense algorithm, which nothing had ever run. This section runs it.
+
+**What had to be built.** `Dense_Eval.deval` is a `function (sequential)` over a `dformula` whose
+escape hatch carries a kernel formula, so exporting it drags the wide kernel back in; and
+`Dense_Descend.dof`, the verified compiler, pattern-matches on `mformula` constructors, which are
+not code constructors (`code_datatype Rep_meformula`). Two pieces closed the gap:
+
+- `Dense_Descend_Code.thy`, an `edof` over `meformula` that mirrors `dof` clause for clause, with
+  `edof_dof: edof n cs e = dof n cs (Rep_meformula e)` and `dof_code[code]` the other way round.
+  Its fallbacks have to be written `DPure (Rep_meformula (meformula.MTrigger …)) n msk` rather
+  than `DPure (mformula.MTrigger …) n msk` -- *constructing* a kernel formula has no code
+  equation. That is the sharpest statement of what `DPure` costs: it is the one place where the
+  verified dense fragment still needs the kernel's formula type as data.
+- `mstate_sel_code[code]` for the five `mstate` selectors against `mestate`, since `dof_state`
+  reads them and the record constructor is likewise not a code constructor.
+
+With `dminit_safe φ = dof_state (nfv φ) (set_cols (fv φ)) (minit_safe φ)`, `dmstep` and
+`vdpure_nodes` exported, and the adapter's wide path restored behind a `-vdense` flag, the binary
+runs three evaluators: `-verified` (shipping dense), `-verified -vdense` (the verified dense
+algorithm, wide tuples, dense columns), and `monpoly_was -verified` (the wide kernel from before
+the series, at `431a1da`).
+
+**Coverage and correctness first.** `vdpure_nodes` reports how many subformulas the compiler left
+to the kernel's evaluator. On 19 of the 21 benchmark formulas it is 0 -- the verified dense
+algorithm evaluates the whole formula. The two that are not are `matchp` (the verified fragment
+has no `DMatchP`) and `aggonce` (a fused aggregation; `dof` requires `args_agg args = None`), each
+with one fallback node. All 37 monitorable formulas of `cov_verified.t` give identical verdicts
+under `-verified` and `-verified -vdense`.
+
+**The measurement.** Seven interleaved repetitions, median reported, spread (max-min)/median 6%
+median and 20% worst.
+
+| formula | MonPoly | wide kernel | verified dense | shipping dense |
+|---|---:|---:|---:|---:|
+| `P2` | 0.50s | 2.59x | 205.34x | 1.66x |
+| `P3` | 0.53s | 2.19x | 2.42x | 1.42x |
+| `and` | 0.76s | 1.39x | 0.99x | 0.97x |
+| `andnot` | 0.77s | 0.91x | 0.89x | 0.89x |
+| `once` | 3.46s | 1.10x | 1.10x | 0.73x |
+| `since` | 1.22s | 1.21x | 1.21x | 1.13x |
+| `eventually` | 2.29s | 1.23x | 1.34x | 0.81x |
+| `until` | 1.12s | 1.42x | 1.53x | 1.36x |
+| `agg` | 0.82s | 1.49x | 1.43x | 1.40x |
+| `complex` | 4.09s | 1.74x | 1.34x | 0.97x |
+| `sincewide` | 4.45s | 1.02x | 0.88x | 0.84x |
+| `untilwide` | 4.43s | 1.07x | 0.93x | 0.88x |
+| `aggwide` | 17.58s | 0.97x | 0.75x | 0.72x |
+| `sincesub` | 1.10s | 2.52x | 2.06x | 1.85x |
+| `untilsub` | 0.96s | 1.44x | 1.49x | 1.39x |
+| `sincesub3` | 0.92s | 1.88x | 1.24x | 1.20x |
+| `trigger` | -- | 0.91s | 1.02s | 0.87s |
+| `andtrigger` | -- | 0.95s | 0.95s | 0.89s |
+| `matchp` | -- | 0.65s | 0.64s | 0.63s |
+| `frz*` | -- | 1.28s | 1.30s | 1.05s |
+| `aggonce` | 0.44s | 1.99x | 2.00x | 1.82x |
+
+Over the twenty rows other than `P2` -- see below for why `P2` is excluded rather than averaged --
+the geometric means split the series in two:
+
+| step | what it is | factor |
+|---|---|---:|
+| wide kernel -> verified dense | the dense columns alone, on wide tuples, in pure HOL | 0.931 |
+| verified dense -> shipping dense | unboxing, the heap structures, the operator specialisations | 0.865 |
+| wide kernel -> shipping dense | both | 0.805 |
+
+**So the columns are worth 7%, and everything after them 14%.** That is the first honest split of
+the series, and it is not the split 20.37 guessed at: the dense columns, which is all the verified
+algorithm does, are the smaller half. The reason is visible row by row. Where the formula has
+empty columns to drop the verified algorithm already gets most of the win (`aggwide` 0.97 -> 0.75,
+`sincesub3` 1.88 -> 1.24, `complex` 1.74 -> 1.34, `and` 1.39 -> 0.99); where it does not, it is
+level with the wide kernel or slightly behind, because it still allocates an `event_data option
+list` per tuple and still runs the pure deque structures. The shipping monitor's extra 14% is
+almost entirely the short tuple and the heap-resident Since -- it is a uniform small factor on
+nearly every row rather than a large factor on a few.
+
+**`P2` is a real pathology, not noise.** 1.31s in the wide kernel, 103.5s in the verified dense
+algorithm. Bisecting the formula:
+
+| subformula | wide kernel | verified dense |
+|---|---:|---:|
+| `trans(c,t,a) AND 2000 < a` | 0.39s | 0.33s |
+| `EVENTUALLY[0,6) report(t)` | 17.06s | 73.15s |
+| `trans(c,t,a) AND NOT EVENTUALLY[0,6) report(t)` | 1.08s | 105.67s |
+
+The `EVENTUALLY` node is the whole of it, and the cause is 20.34's specialisation. `evt_applies
+args = (args_agg args = None ∧ args_L args = {} ∧ memL (args_ivl args) 0)` -- a closed left operand
+and an interval containing 0, which is exactly `EVENTUALLY` -- selects a structure that answers
+"does some later time point in the window satisfy the operand" with a running suffix union, linear
+in the number of pending time points. Without it the general Until updates every pending time
+point's table at every step, which is quadratic in the number of time points inside the window.
+`dof` has no such case, so the verified dense algorithm always takes the general path.
+
+Whether that is visible depends entirely on the log, which is why `eventually` on `syn.log` shows
+nothing (2.83s -> 3.07s) while `P2` shows a factor of 79. `syn.log` has 8000 time points and 8000
+distinct timestamps, so `[0,10]` holds about ten time points at once. `P2.log` has 201157 time
+points and **106** distinct timestamps -- about 1900 events per timestamp, each its own time point
+-- so `[0,6)` holds thousands, and the quadratic term is the whole run. The wide kernel's 17.06s
+on the subformula alone, against 1.08s inside the conjunction, is verdict printing: as a top-level
+formula it reports every satisfying `t` at every time point.
+
+This is worth recording as a general point about the benchmark suite. A specialisation whose
+benefit is quadratic in the window's time-point count is invisible on a log with one time point
+per timestamp, and dominant on a log without. `syn.log` is the former; the `P2`/`P3` logs are the
+latter, and they are the realistic shape.
+
+**What this settles.** The verified dense algorithm runs, on the whole of nineteen of twenty-one
+benchmark formulas, at 0.93x the wide kernel it is proved to simulate. The 0.87x between it and
+the shipping monitor is the gap the verification has yet to cross, and the `P2` row says what the
+first item in it is: not the representation, but the operator specialisations that the compiler
+chooses and `dof` does not.
