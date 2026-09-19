@@ -5949,3 +5949,38 @@ the shipping monitor alone: the 2264-line difference is the verified dense evalu
 *tables* it holds, not the wide *evaluator*, which is gone. The 143 occurrences of `(event_data
 option) list`, against 46 in the shipping-only export, are that evaluator's tuple type -- which
 is the point of 20.45's measurement and the reason it is still exported.
+
+**The rest of them.** Four more mutual definitions of that shape were left elsewhere in the
+session: `dfail_nodes`/`dfail_nodes_list` and `dformula_of`/`dformula_of_list` in `Dense_Imp`,
+and `meval_j`/`meval_j_list` and `mformula_j_of`/`mformula_j_of_list` in `Monitor_Imp2`. The
+first is pure and becomes `sum_list (map dfail_nodes L)`. The other three are in the heap monad,
+where `map` does not apply -- but `hmap`, the heap monad's own map, was already there:
+
+```isabelle
+fun hmap :: "('a ⇒ 'b Heap) ⇒ 'a list ⇒ 'b list Heap" where
+  "hmap f [] = return []"
+| "hmap f (x # xs) = do { y ← f x; ys ← hmap f xs; return (y # ys) }"
+```
+
+20.33 introduced it with `hmap_mono[partial_function_mono]`, which is what lets the executable
+evaluator's `DAnds` clause call the fixed point through it. What was missing was the other half,
+the exact analogue of `map_cong`:
+
+```isabelle
+lemma hmap_cong[fundef_cong]:
+  "xs = ys ⟹ (⋀x. x ∈ set ys ⟹ f x = g x) ⟹ hmap f xs = hmap g ys"
+  by (induct ys arbitrary: xs) auto
+```
+
+With both attributes `hmap` is a combinator that the function package descends through *and*
+that `partial_function` accepts in a recursive position, so it serves a total definition and a
+fixed point equally well. It moves up to `Monitor_Imp2`, the earliest theory that needs it, and
+the three heap definitions collapse to single functions. `dformula_of` walks two lists, so its
+`DAnds`, `DMatchP` and `DMatchF` clauses read `hmap (case_prod (dformula_of hp n)) (zip css L)`,
+and its termination argument loses the sum type exactly as the pure evaluator's did.
+
+No function in either session is now defined mutually with a hand-written recursion over a list.
+The session builds in 5:22 (5:47 with the export) and the cram suite passes; in the generated
+code `dfail_nodes_list` and `dformula_of_list` are gone and `hmap`, `zip` and `sum_list` stand
+where they were. The two `Monitor_Imp2` functions were already unreachable from the export
+(20.44), so the generated code does not change for them.

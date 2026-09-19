@@ -104,16 +104,31 @@ partial_function (heap) mebuf2t_take_j :: "('a \<Rightarrow> 'a \<Rightarrow> ts
     (case mbuf_t_cases ys of (None, ys') \<Rightarrow> return (z, (x ## xs', ys'), t, t ## ts') | (Some y, ys') \<Rightarrow>
     do { z \<leftarrow> f x y t z; mebuf2t_take_j f z (xs', ys') t ts' }))))"
 
-fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_j \<Rightarrow> (event_data table list \<times> mformula_j) Heap"
-  and meval_j_list :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_j list \<Rightarrow>
-    ((event_data table list \<times> mformula_j) list) Heap" where
-  "meval_j_list j n ts db [] = return []"
-| "meval_j_list j n ts db (\<phi> # r) = do {
-     x \<leftarrow> meval_j j n ts db \<phi>;
-     xs \<leftarrow> meval_j_list j n ts db r;
-     return (x # xs) }"
-| "meval_j j n ts db (MAnds A_pos A_neg L buf) = do {
-     R \<leftarrow> meval_j_list j n ts db L;
+text \<open>
+  The heap monad's @{const map}.  A function that descends a formula and hits a node holding a
+  list of operands would otherwise have to be defined mutually with a hand-written recursion over
+  that list; with the congruence rule below it is a combinator the function package descends
+  through instead, and with the monotonicity rule it is one @{command partial_function} accepts
+  in a recursive position as well.
+\<close>
+
+fun hmap :: "('a \<Rightarrow> 'b Heap) \<Rightarrow> 'a list \<Rightarrow> 'b list Heap" where
+  "hmap f [] = return []"
+| "hmap f (x # xs) = do { y \<leftarrow> f x; ys \<leftarrow> hmap f xs; return (y # ys) }"
+
+lemma hmap_cong[fundef_cong]:
+  "xs = ys \<Longrightarrow> (\<And>x. x \<in> set ys \<Longrightarrow> f x = g x) \<Longrightarrow> hmap f xs = hmap g ys"
+  by (induct ys arbitrary: xs) auto
+
+lemma hmap_mono[partial_function_mono]:
+  assumes "\<And>x. mono_Heap (F x)"
+  shows "mono_Heap (\<lambda>f. hmap (\<lambda>x. F x f) xs)"
+  using assms by (induct xs) (auto intro!: partial_function_mono)
+
+fun meval_j :: "nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> mformula_j \<Rightarrow>
+    (event_data table list \<times> mformula_j) Heap" where
+  "meval_j j n ts db (MAnds A_pos A_neg L buf) = do {
+     R \<leftarrow> hmap (meval_j j n ts db) L;
      p \<leftarrow> mebufn_take_j (mmulti_join_j n A_pos A_neg) mbuf_t_empty (mebufn_add (map fst R) buf);
      return (Rep_mbuf_t (fst p), MAnds A_pos A_neg (map snd R) (snd p)) }"
 | "meval_j j n ts db (MAnd A \<phi> pos B \<psi> buf) = do {
@@ -198,13 +213,9 @@ fun reset :: "mformula_p \<Rightarrow> mformula_p" where
 | "reset (MTrigger args \<phi> \<psi> buf nts aux) = MTrigger args (reset \<phi>) (reset \<psi>) buf nts aux"
 | "reset \<phi> = \<phi>"
 
-fun mformula_j_of :: "mformula_p \<Rightarrow> mformula_j Heap"
-  and mformula_j_of_list :: "mformula_p list \<Rightarrow> mformula_j list Heap" where
-  "mformula_j_of_list [] = return []"
-| "mformula_j_of_list (\<phi> # r) = do {
-     \<phi>i \<leftarrow> mformula_j_of \<phi>; \<phi>s \<leftarrow> mformula_j_of_list r; return (\<phi>i # \<phi>s) }"
-| "mformula_j_of (MAnds A_pos A_neg L buf) = do {
-     Li \<leftarrow> mformula_j_of_list L; return (MAnds A_pos A_neg Li buf) }"
+fun mformula_j_of :: "mformula_p \<Rightarrow> mformula_j Heap" where
+  "mformula_j_of (MAnds A_pos A_neg L buf) = do {
+     Li \<leftarrow> hmap mformula_j_of L; return (MAnds A_pos A_neg Li buf) }"
 | "mformula_j_of (MAnd A \<phi> pos B \<psi> buf) = do {
      \<phi>i \<leftarrow> mformula_j_of \<phi>; \<psi>i \<leftarrow> mformula_j_of \<psi>; return (MAnd A \<phi>i pos B \<psi>i buf) }"
 | "mformula_j_of (MAndAssign \<phi> conf) = do { \<phi>i \<leftarrow> mformula_j_of \<phi>; return (MAndAssign \<phi>i conf) }"

@@ -5259,14 +5259,6 @@ let rec smp_cols = function [] -> []
 
 let rec dmsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L);;
 
-let rec binda m f = (fun () -> f (m ()) ());;
-
-let rec hmap
-  f x1 = match f, x1 with f, [] -> (fun () -> [])
-    | f, x :: xs ->
-        binda (f x)
-          (fun y -> binda (hmap f xs) (fun ys -> (fun () -> (y :: ys))));;
-
 let rec enumerate n x1 = match n, x1 with n, [] -> []
                     | n, x :: xs -> (n, x) :: enumerate (suc n) xs;;
 
@@ -6420,6 +6412,8 @@ let rec prepend_queue_t
 let rec prepend_queue xb xc = Abs_queue (prepend_queue_t xb (rep_queue xc));;
 
 let rec mbuf_t_Cons x (MBuf2_t xs) = MBuf2_t (prepend_queue x xs);;
+
+let rec binda m f = (fun () -> f (m ()) ());;
 
 let rec mebuf2t_take_j
   f z buf t0 ts =
@@ -9350,6 +9344,12 @@ let rec eval_u_d
     | args, nt, MUD_agg (ag, a) ->
         (fun () ->
           (let (zs, aa) = gaeval_dq args ag nt a in (zs, MUD_agg (ag, aa))));;
+
+let rec hmap
+  f x1 = match f, x1 with f, [] -> (fun () -> [])
+    | f, x :: xs ->
+        binda (f x)
+          (fun y -> binda (hmap f xs) (fun ys -> (fun () -> (y :: ys))));;
 
 let rec umtrm
   xa0 x = match xa0, x with MVar v, x -> edl_insert [x] edl_bot
@@ -12905,9 +12905,13 @@ let rec is_simple_eq
   t1 t2 =
     is_Const t1 && (is_Const t2 || is_Var t2) || is_Var t1 && is_Const t2;;
 
+let rec sum_list _A
+  xs = foldr (plus _A.semigroup_add_monoid_add.plus_semigroup_add) xs
+         (zero _A.zero_monoid_add);;
+
 let rec dfail_nodes
   = function DFail -> one_nata
-    | DAnds (ps, ns, l, buf) -> dfail_nodes_list l
+    | DAnds (ps, ns, l, buf) -> sum_list monoid_add_nat (mapa dfail_nodes l)
     | DAnd (pl, phi, pos, psi, buf) ->
         plus_nata (dfail_nodes phi) (dfail_nodes psi)
     | DAndRel (phi, conf) -> dfail_nodes phi
@@ -12932,17 +12936,15 @@ let rec dfail_nodes
     | DAndTrigger (pl, phia, buf1, dags, phi, psi, buf2, nts, daux) ->
         plus_nata (plus_nata (dfail_nodes phia) (dfail_nodes phi))
           (dfail_nodes psi)
-    | DMatchP (i, mr, mrs, msks, phi_s, buf, nts, aux) -> dfail_nodes_list phi_s
+    | DMatchP (i, mr, mrs, msks, phi_s, buf, nts, aux) ->
+        sum_list monoid_add_nat (mapa dfail_nodes phi_s)
     | DMatchF (i, mr, mrs, msks, phi_s, buf, nts, t, aux) ->
-        dfail_nodes_list phi_s
+        sum_list monoid_add_nat (mapa dfail_nodes phi_s)
     | DRel v -> zero_nata
     | DPredS (v, va) -> zero_nata
     | DPredM (v, va, vb, vc) -> zero_nata
     | DTP (v, va) -> zero_nata
-    | DTS v -> zero_nata
-and dfail_nodes_list
-  = function [] -> zero_nata
-    | phi :: r -> plus_nata (dfail_nodes phi) (dfail_nodes_list r);;
+    | DTS v -> zero_nata;;
 
 let rec de_ginit_mmtaux
   args msk =
@@ -12971,7 +12973,8 @@ let rec dformula_of
             (if not (equal_nata (size_lista l)
                       (plus_nata (size_lista a_pos) (size_lista a_neg)))
               then (fun () -> DFail)
-              else binda (dformula_of_list hp n (cs_pos @ cs_neg) l)
+              else binda (hmap (fun (aa, b) -> dformula_of hp n aa b)
+                           (zip (cs_pos @ cs_neg) l))
                      (fun ld ->
                        (fun () ->
                          (DAnds
@@ -13162,7 +13165,8 @@ let rec dformula_of
         (match those (mapa (mcols n) phi_s) with None -> (fun () -> DFail)
           | Some css ->
             (if equal_lista equal_nat cs (fold merge_cols css [])
-              then binda (dformula_of_list false n css phi_s)
+              then binda (hmap (fun (a, b) -> dformula_of false n a b)
+                           (zip css phi_s))
                      (fun ld ->
                        (fun () ->
                          (DMatchP
@@ -13174,7 +13178,8 @@ let rec dformula_of
         (match those (mapa (mcols n) phi_s) with None -> (fun () -> DFail)
           | Some css ->
             (if equal_lista equal_nat cs (fold merge_cols css [])
-              then binda (dformula_of_list false n css phi_s)
+              then binda (hmap (fun (a, b) -> dformula_of false n a b)
+                           (zip css phi_s))
                      (fun ld ->
                        (fun () ->
                          (DMatchF
@@ -13254,15 +13259,7 @@ let rec dformula_of
                                    ((ceq_option ceq_event_data),
                                      (ccompare_option ccompare_event_data))
                                    (wide_mask m (upt zero_nata m))))
-                            alpha_s)))))
-and dformula_of_list
-  hp n cs x3 = match hp, n, cs, x3 with hp, n, cs, [] -> (fun () -> [])
-    | hp, n, cs, phi :: r ->
-        binda (dformula_of hp n (match cs with [] -> [] | c :: _ -> c) phi)
-          (fun phi_d ->
-            binda (dformula_of_list hp n
-                    (match cs with [] -> [] | _ :: ra -> ra) r)
-              (fun phi_s -> (fun () -> (phi_d :: phi_s))));;
+                            alpha_s)))));;
 
 let rec mapping_impl_choose2
   x y = match x, y with Mapping_RBT, Mapping_RBT -> Mapping_RBT
@@ -13304,10 +13301,6 @@ let rec dof_state
     Dmstate_ext
       (mstate_i st, mstate_j st, dof n cs (mstate_m st), n, cs, mstate_t st,
         ());;
-
-let rec sum_list _A
-  xs = foldr (plus _A.semigroup_add_monoid_add.plus_semigroup_add) xs
-         (zero _A.zero_monoid_add);;
 
 let rec vdfail_nodes
   = function DFaila -> one_nata

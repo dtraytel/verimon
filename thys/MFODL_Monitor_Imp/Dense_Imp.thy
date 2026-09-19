@@ -444,14 +444,9 @@ text \<open>
   constructors into the pure representation.
 \<close>
 
-function (sequential) dformula_of :: "bool \<Rightarrow> nat \<Rightarrow> cols \<Rightarrow> mformula_p \<Rightarrow> dformula Heap"
-  and dformula_of_list :: "bool \<Rightarrow> nat \<Rightarrow> cols list \<Rightarrow> mformula_p list \<Rightarrow> dformula list Heap" where
-  "dformula_of_list hp n cs [] = return []"
-| "dformula_of_list hp n cs (\<phi> # r) = do {
-     \<phi>d \<leftarrow> dformula_of hp n (case cs of [] \<Rightarrow> [] | c # _ \<Rightarrow> c) \<phi>;
-     \<phi>s \<leftarrow> dformula_of_list hp n (case cs of [] \<Rightarrow> [] | _ # r' \<Rightarrow> r') r;
-     return (\<phi>d # \<phi>s) }"
-| "dformula_of hp n cs (MAnds A_pos A_neg L buf) =
+function (sequential) dformula_of ::
+    "bool \<Rightarrow> nat \<Rightarrow> cols \<Rightarrow> mformula_p \<Rightarrow> dformula Heap" where
+  "dformula_of hp n cs (MAnds A_pos A_neg L buf) =
      (case A_pos of [] \<Rightarrow> return DFail
       | A # As \<Rightarrow>
         (let cs_pos = set_cols A # map set_cols As;
@@ -460,7 +455,7 @@ function (sequential) dformula_of :: "bool \<Rightarrow> nat \<Rightarrow> cols 
          if length L \<noteq> length A_pos + length A_neg
          then return DFail
          else do {
-           Ld \<leftarrow> dformula_of_list hp n (cs_pos @ cs_neg) L;
+           Ld \<leftarrow> hmap (case_prod (dformula_of hp n)) (zip (cs_pos @ cs_neg) L);
            return (DAnds (dands_plans (set_cols A) (map set_cols As))
                      (map (mk_djoin fin) cs_neg) Ld (map (\<lambda>_. mbuf_t_empty) Ld)) }))"
 | "dformula_of hp n cs (MPred e tms mode) =
@@ -561,7 +556,7 @@ function (sequential) dformula_of :: "bool \<Rightarrow> nat \<Rightarrow> cols 
         None \<Rightarrow> return DFail
       | Some css \<Rightarrow>
         (if cs = fold merge_cols css [] then do {
-           Ld \<leftarrow> dformula_of_list False n css \<phi>s;
+           Ld \<leftarrow> hmap (case_prod (dformula_of False n)) (zip css \<phi>s);
            return (DMatchP I mr mrs (map (dmsk cs) css) Ld
                      (map (\<lambda>_. mbuf_t_empty) Ld) mbuf_t_empty []) }
          else return DFail))"
@@ -570,7 +565,7 @@ function (sequential) dformula_of :: "bool \<Rightarrow> nat \<Rightarrow> cols 
         None \<Rightarrow> return DFail
       | Some css \<Rightarrow>
         (if cs = fold merge_cols css [] then do {
-           Ld \<leftarrow> dformula_of_list False n css \<phi>s;
+           Ld \<leftarrow> hmap (case_prod (dformula_of False n)) (zip css \<phi>s);
            return (DMatchF I mr mrs (map (dmsk cs) css) Ld
                      (map (\<lambda>_. mbuf_t_empty) Ld) mbuf_t_empty t []) }
          else return DFail))"
@@ -611,8 +606,8 @@ text \<open>Every recursive call descends into a subformula; the compiler's own 
   rather than leaving it to be searched for.\<close>
 
 termination
-  by (relation "measure (case_sum (\<lambda>(hp, n, cs, \<phi>). size \<phi>)
-      (\<lambda>(hp, n, cs, L). size_list size L))") auto
+  by (relation "measure (\<lambda>(hp, n, cs, \<phi>). size \<phi>)")
+    (auto simp: termination_simp dest!: set_zip_rightD)
 
 subsection \<open>Evaluating it\<close>
 
@@ -625,15 +620,6 @@ text \<open>
   What it asks for instead is that the body be monotone in the recursive call, and the two
   combinators the body passes that call to carry the obligation themselves.
 \<close>
-
-fun hmap :: "('a \<Rightarrow> 'b Heap) \<Rightarrow> 'a list \<Rightarrow> 'b list Heap" where
-  "hmap f [] = return []"
-| "hmap f (x # xs) = do { y \<leftarrow> f x; ys \<leftarrow> hmap f xs; return (y # ys) }"
-
-lemma hmap_mono[partial_function_mono]:
-  assumes "\<And>x. mono_Heap (F x)"
-  shows "mono_Heap (\<lambda>f. hmap (\<lambda>x. F x f) xs)"
-  using assms by (induct xs) (auto intro!: partial_function_mono)
 
 text \<open>
   The freeze node's replay loop, the heap counterpart of the kernel's @{const freeze_meval0}.
@@ -899,11 +885,9 @@ partial_function (heap) deval :: "nat \<Rightarrow> ts list \<Rightarrow> udatab
 
 subsection \<open>The state\<close>
 
-fun dfail_nodes :: "dformula \<Rightarrow> nat" and dfail_nodes_list :: "dformula list \<Rightarrow> nat" where
-  "dfail_nodes_list [] = 0"
-| "dfail_nodes_list (\<phi> # r) = dfail_nodes \<phi> + dfail_nodes_list r"
-| "dfail_nodes DFail = 1"
-| "dfail_nodes (DAnds ps ns L buf) = dfail_nodes_list L"
+fun dfail_nodes :: "dformula \<Rightarrow> nat" where
+  "dfail_nodes DFail = 1"
+| "dfail_nodes (DAnds ps ns L buf) = sum_list (map dfail_nodes L)"
 | "dfail_nodes (DAnd pl \<phi> pos \<psi> buf) = dfail_nodes \<phi> + dfail_nodes \<psi>"
 | "dfail_nodes (DAndRel \<phi> conf) = dfail_nodes \<phi>"
 | "dfail_nodes (DOr \<phi> \<psi> buf) = dfail_nodes \<phi> + dfail_nodes \<psi>"
@@ -921,8 +905,8 @@ fun dfail_nodes :: "dformula \<Rightarrow> nat" and dfail_nodes_list :: "dformul
 | "dfail_nodes (DTrigger dags \<phi> \<psi> dbuf nts daux) = dfail_nodes \<phi> + dfail_nodes \<psi>"
 | "dfail_nodes (DAndTrigger pl \<phi> buf1 dags \<phi>' \<psi>' buf2 nts daux) =
     dfail_nodes \<phi> + dfail_nodes \<phi>' + dfail_nodes \<psi>'"
-| "dfail_nodes (DMatchP I mr mrs msks \<phi>s buf nts aux) = dfail_nodes_list \<phi>s"
-| "dfail_nodes (DMatchF I mr mrs msks \<phi>s buf nts t aux) = dfail_nodes_list \<phi>s"
+| "dfail_nodes (DMatchP I mr mrs msks \<phi>s buf nts aux) = sum_list (map dfail_nodes \<phi>s)"
+| "dfail_nodes (DMatchF I mr mrs msks \<phi>s buf nts t aux) = sum_list (map dfail_nodes \<phi>s)"
 | "dfail_nodes \<phi> = 0"
 
 type_synonym dstate = "nat \<times> nat \<times> dformula \<times> nat \<times> ts queue"
