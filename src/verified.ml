@@ -16169,6 +16169,11 @@ let rec reindex_trm
     | cs, F2i a -> F2i (reindex_trm cs a)
     | cs, I2f a -> I2f (reindex_trm cs a);;
 
+let rec dunfuse
+  args =
+    init_args (args_ivl args) (args_n args) (args_L args) (args_R args)
+      (args_pos args) None;;
+
 let rec annotate_verdicts_j
   i tq x2 acc = match i, tq, x2, acc with i, tq, [], acc -> (i, (tq, rev acc))
     | i, tq, v :: vs, acc ->
@@ -17497,6 +17502,12 @@ let rec mstep
      let (ia, (ts, vsa)) = annotate_verdicts i (append_queue t tq) vs [] in
       (vsa, Mestate (ia, plus_nata j one_nata, ma, n, ts, zeta)));;
 
+let rec dwrap_agg
+  ag phi =
+    DAgg (aggargs_g0 ag, aggargs_omega ag,
+           reindex_trm (dagg_child_cols ag) (aggargs_f ag),
+           size_lista (aggargs_tys ag), dagg_pos ag, phi);;
+
 let rec hm_it_adjust (_A1, _A2) _B
   v ht =
     (if equal_nata v zero_nata then (fun () -> zero_nata)
@@ -18292,6 +18303,18 @@ let rec init_u_j
       else (if evt_applies args then (fun () -> (MUJ_evt (init_evt args)))
              else (fun () -> (MUJ_pure (init_muaux_dq args)))));;
 
+let rec dagg_fused
+  n cs args =
+    (match args_agg args with None -> false
+      | Some ag ->
+        equal_lista equal_nat cs (dagg_cols ag) &&
+          (equal_lista equal_nat (set_cols (args_R args))
+             (dagg_child_cols ag) &&
+            (superset equal_nat (dagg_child_cols ag) (set_cols (args_L args)) &&
+              (equal_nata n (aggargs_n ag) &&
+                equal_nata (args_n args)
+                  (plus_nata (size_lista (aggargs_tys ag)) (aggargs_n ag))))));;
+
 let rec ls_delete _A
   k x1 = match k, x1 with k, [] -> ([], false)
     | k, (l, w) :: ls ->
@@ -18474,10 +18497,25 @@ let rec dformula_of
 (DSince
   (dags, phi_d, psi_d, (mbuf_t_empty, (mbuf_t_empty, (mbuf_t_empty, false))),
     q)))))))
-                   else (fun () ->
-                          (DPure
-                            (MSince (args, phi, psi, buf, aux), n,
-                              wide_mask n cs))))))
+                   else (if dagg_fused n cs args
+                          then (let ccs = dagg_child_cols (the (args_agg args))
+                                  in
+                                let dags = dargs ccs cs_L (dunfuse args) in
+                                 binda (dformula_of (args_n args) cs_L phi)
+                                   (fun phi_d ->
+                                     binda (dformula_of (args_n args) ccs psi)
+                                       (fun psi_d ->
+ binda (init_d (msj_heap aux) dags (dmsk ccs cs_L))
+   (fun q ->
+     (fun () ->
+       (dwrap_agg (the (args_agg args))
+         (DSince
+           (dags, phi_d, psi_d,
+             (mbuf_t_empty, (mbuf_t_empty, (mbuf_t_empty, false))), q))))))))
+                          else (fun () ->
+                                 (DPure
+                                   (MSince (args, phi, psi, buf, aux), n,
+                                     wide_mask n cs)))))))
     | n, cs, MUntil (args, phi, psi, buf, nts, t, aux) ->
         (let cs_L = set_cols (args_L args) in
           (if evt_applies args
@@ -18510,10 +18548,25 @@ let rec dformula_of
 (DUntil
   (dags, dmsk cs cs_L, phi_d, psi_d, (mbuf_t_empty, mbuf_t_empty), nts, t,
     d)))))))
-                   else (fun () ->
-                          (DPure
-                            (MUntil (args, phi, psi, buf, nts, t, aux), n,
-                              wide_mask n cs))))))
+                   else (if dagg_fused n cs args
+                          then (let ccs = dagg_child_cols (the (args_agg args))
+                                  in
+                                let dags = dargs ccs cs_L (dunfuse args) in
+                                 binda (dformula_of (args_n args) cs_L phi)
+                                   (fun phi_d ->
+                                     binda (dformula_of (args_n args) ccs psi)
+                                       (fun psi_d ->
+ binda (init_u_d dags (dmsk ccs cs_L))
+   (fun d ->
+     (fun () ->
+       (dwrap_agg (the (args_agg args))
+         (DUntil
+           (dags, dmsk ccs cs_L, phi_d, psi_d, (mbuf_t_empty, mbuf_t_empty),
+             nts, t, d))))))))
+                          else (fun () ->
+                                 (DPure
+                                   (MUntil (args, phi, psi, buf, nts, t, aux),
+                                     n, wide_mask n cs)))))))
     | n, cs, MAndAssign (phi, conf) ->
         (let y = fst conf in
          let t = snd conf in

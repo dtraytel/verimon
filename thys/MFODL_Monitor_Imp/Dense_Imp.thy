@@ -122,6 +122,27 @@ definition dagg_cols :: "aggargs \<Rightarrow> cols" where
 definition dagg_pos :: "aggargs \<Rightarrow> nat" where
   "dagg_pos args = length (filter (\<lambda>c. c < aggargs_y args) (dagg_group_cols args))"
 
+text \<open>
+  An aggregation over a Since or an Until is fused into the temporal operator's own arguments,
+  so that its structure can keep the aggregate up to date instead of recomputing it.  The dense
+  Since and Until do not do that, and the dense aggregation node is a node of its own, so the
+  compiler takes the fusion apart again: the arguments below are the operator's with the
+  aggregation removed, and the node it builds is the dense aggregation over the dense operator.
+  What that costs is the incremental maintenance; what it buys is that both halves are already
+  short-tuple operations.
+\<close>
+
+definition dunfuse :: "args \<Rightarrow> args" where
+  "dunfuse args = init_args (args_ivl args) (args_n args) (args_L args) (args_R args)
+     (args_pos args) None"
+
+definition dagg_fused :: "nat \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
+  "dagg_fused n cs args = (case args_agg args of None \<Rightarrow> False | Some ag \<Rightarrow>
+     cs = dagg_cols ag \<and> set_cols (args_R args) = dagg_child_cols ag \<and>
+     set (set_cols (args_L args)) \<subseteq> set (dagg_child_cols ag) \<and> n = aggargs_n ag \<and>
+     args_n args = length (aggargs_tys ag) + aggargs_n ag)"
+
+
 subsection \<open>Buffers over the short tables\<close>
 
 text \<open>
@@ -357,6 +378,10 @@ datatype dformula =
   | DFrz Formula.name nat dformula dformula nat nat nat "utable list"
   | DLetPast Formula.name nat dformula dformula nat "utable option"
 
+definition dwrap_agg :: "aggargs \<Rightarrow> dformula \<Rightarrow> dformula" where
+  "dwrap_agg ag \<phi> = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
+     (reindex_trm (dagg_child_cols ag) (aggargs_f ag)) (length (aggargs_tys ag)) (dagg_pos ag) \<phi>"
+
 subsection \<open>Building it\<close>
 
 text \<open>The buffers of the node being compiled hold the wide tables, so they are not carried
@@ -372,7 +397,7 @@ text \<open>
   sparse monitor relies on, which evaluates a freeze node by purifying it.
 \<close>
 
-fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap"
+function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow> dformula Heap"
   and dformula_of_list :: "nat \<Rightarrow> cols list \<Rightarrow> mformula_j list \<Rightarrow> dformula list Heap" where
   "dformula_of_list n cs [] = return []"
 | "dformula_of_list n cs (\<phi> # r) = do {
@@ -436,6 +461,14 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
         q \<leftarrow> init_d (msj_heap aux) dags (dmsk cs cs_L);
         return (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) })
+      else if dagg_fused n cs args
+      then (let ccs = dagg_child_cols (the (args_agg args));
+                dags = dargs ccs cs_L (dunfuse args) in do {
+        \<phi>d \<leftarrow> dformula_of (args_n args) cs_L \<phi>;
+        \<psi>d \<leftarrow> dformula_of (args_n args) ccs \<psi>;
+        q \<leftarrow> init_d (msj_heap aux) dags (dmsk ccs cs_L);
+        return (dwrap_agg (the (args_agg args))
+                  (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q)) })
       else return (DPure (MSince args \<phi> \<psi> buf aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
@@ -452,6 +485,14 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
         d \<leftarrow> init_u_d dags (dmsk cs cs_L);
         return (DUntil dags (dmsk cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d) })
+      else if dagg_fused n cs args
+      then (let ccs = dagg_child_cols (the (args_agg args));
+                dags = dargs ccs cs_L (dunfuse args) in do {
+        \<phi>d \<leftarrow> dformula_of (args_n args) cs_L \<phi>;
+        \<psi>d \<leftarrow> dformula_of (args_n args) ccs \<psi>;
+        d \<leftarrow> init_u_d dags (dmsk ccs cs_L);
+        return (dwrap_agg (the (args_agg args))
+                  (DUntil dags (dmsk ccs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d)) })
       else return (DPure (MUntil args \<phi> \<psi> buf nts t aux) n (wide_mask n cs)))"
 | "dformula_of n cs (MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
@@ -481,6 +522,14 @@ fun dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mformula_j \<Rightarrow
      return (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi
                (map (deopt_table \<circ> dnarrow (wide_mask m [0..<m])) \<alpha>s)) }"
 | "dformula_of n cs \<phi> = return (DPure \<phi> n (wide_mask n cs))"
+  by pat_completeness auto
+
+text \<open>Every recursive call descends into a subformula; the compiler's own arguments -- the frame
+  and the column list -- move in both directions, so the measure names the subformula outright
+  rather than leaving it to be searched for.\<close>
+
+termination
+  by (relation "measure (case_sum (\<lambda>(n, cs, \<phi>). size \<phi>) (\<lambda>(n, cs, L). size_list size L))") auto
 
 subsection \<open>Evaluating it\<close>
 
