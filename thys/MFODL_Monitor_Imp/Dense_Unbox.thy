@@ -26,6 +26,10 @@ text \<open>
   unboxed twins here, each proved to agree with the original on hole-free tuples.
 \<close>
 
+text \<open>The executable monitor runs at @{typ event_data}, and a table of it is this.\<close>
+
+type_synonym utable = "event_data list set"
+
 subsection \<open>The join, over a bare element type\<close>
 
 definition gindex_step :: "bool list \<Rightarrow> 'b list \<Rightarrow>
@@ -1066,6 +1070,394 @@ definition uagg :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.t
                 None \<Rightarrow> g
               | Some G \<Rightarrow> take pos g @ eval_agg_op \<omega> (uagg_values f G) # drop pos g)
           ` Mapping.keys groups))"
+
+subsection \<open>The aggregation structure over short tuples\<close>
+
+text \<open>
+  An aggregation over a Since or an Until is fused into the temporal operator's arguments, and
+  the kernel's structure keeps the aggregate up to date as tuples enter and leave the window
+  instead of recomputing it from the window at every time point.  The structure is a mapping
+  from the group tuple to whatever the aggregation needs: a count, a count and a sum, or the
+  sorted multiset of the values for the rank aggregations.
+
+  Only three things in it read a tuple.  The group key is the kernel's @{term "drop (length tys) t"},
+  and over short tuples it is the same @{const drop}: safety makes the bound variables the first
+  columns of the operand's frame, so the group is the suffix.  The value is
+  @{term "meval_trm f t"}, which over short tuples is @{const umeval_trm} of the term reindexed
+  to the operand's frame -- the same term the non-incremental @{const uagg} evaluates.  And the
+  result writes the aggregate into the group tuple: over wide tuples by overwriting the column
+  of the result variable, over short ones by inserting it at the position that variable has
+  among the node's columns.
+
+  Everything else -- the three aggregate kinds, the treelists of the rank aggregations, the
+  types they are restricted to -- is about the values and carries over unchanged, so this
+  transcribes @{theory MFODL_Monitor_Devel.Optimized_Agg} with those three replacements and
+  reuses the rest of it.
+\<close>
+
+record daggargs =
+  dgg_g0 :: bool
+  dgg_op :: "ty Formula.agg_op"
+  dgg_trm :: Formula.trm
+  dgg_k :: nat
+  dgg_p :: nat
+
+type_synonym 'a dagg_map = "(event_data list, 'a) mapping"
+
+datatype daggaux = DCntAux "nat dagg_map" | DSumAux "(nat \<times> integer) dagg_map"
+  | DRankAux "list_aux dagg_map \<times> type"
+
+definition dinit_maggaux :: "daggargs \<Rightarrow> bool \<times> daggaux" where
+  "dinit_maggaux args = (case (fst (dgg_op args), snd (dgg_op args)) of
+      (Formula.Agg_Cnt, _) \<Rightarrow> (True, DCntAux Mapping.empty)
+    | (Formula.Agg_Sum, TInt) \<Rightarrow> (True, DSumAux Mapping.empty)
+    | (Formula.Agg_Min, TInt) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
+    | (Formula.Agg_Max, TInt) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
+    | (Formula.Agg_Avg, TInt) \<Rightarrow> (True, DSumAux Mapping.empty)
+    | (Formula.Agg_Med, TFloat) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
+    | (Formula.Agg_Min, TString) \<Rightarrow> (True, DRankAux (Mapping.empty, StringT))
+    | (Formula.Agg_Max, TString) \<Rightarrow> (True, DRankAux (Mapping.empty, StringT))
+    | _ \<Rightarrow> (False, DCntAux Mapping.empty))"
+
+fun dinsert_cnt :: "daggargs \<Rightarrow> event_data list \<Rightarrow> bool \<times> nat dagg_map \<Rightarrow> bool \<times> nat dagg_map" where
+  "dinsert_cnt args t (v, m) =
+     (if v then (v, (let g = drop (dgg_k args) t in case Mapping.lookup m g of
+        Some i \<Rightarrow> Mapping.update g (i + 1) m | None \<Rightarrow> Mapping.update g 1 m))
+      else (v, m))"
+
+fun ddelete_cnt :: "daggargs \<Rightarrow> event_data list \<Rightarrow> bool \<times> nat dagg_map \<Rightarrow> bool \<times> nat dagg_map" where
+  "ddelete_cnt args t (v, m) =
+     (if v then (v, (let g = drop (dgg_k args) t in case Mapping.lookup m g of
+        Some i \<Rightarrow> (if i = 1 then Mapping.delete g m else Mapping.update g (i - 1) m)
+      | None \<Rightarrow> m))
+      else (v, m))"
+
+fun dinsert_sum :: "daggargs \<Rightarrow> event_data list \<Rightarrow> bool \<times> (nat \<times> integer) dagg_map \<Rightarrow>
+    bool \<times> (nat \<times> integer) dagg_map" where
+  "dinsert_sum args t (v, m) =
+     (if v then (let g = drop (dgg_k args) t; e = umeval_trm (dgg_trm args) t in
+        case (Mapping.lookup m g, e) of
+          (Some (cnt, s), EInt i) \<Rightarrow> (True, Mapping.update g (cnt + 1, s + i) m)
+        | (None, EInt i) \<Rightarrow> (True, Mapping.update g (1, i) m)
+        | _ \<Rightarrow> (False, Mapping.empty))
+      else (v, m))"
+
+fun ddelete_sum :: "daggargs \<Rightarrow> event_data list \<Rightarrow> bool \<times> (nat \<times> integer) dagg_map \<Rightarrow>
+    bool \<times> (nat \<times> integer) dagg_map" where
+  "ddelete_sum args t (v, m) =
+     (if v then (let g = drop (dgg_k args) t; e = umeval_trm (dgg_trm args) t in
+        case (Mapping.lookup m g, e) of
+          (Some (cnt, s), EInt i) \<Rightarrow> (True, (if cnt = 1 then Mapping.delete g m
+             else Mapping.update g (cnt - 1, s - i) m))
+        | _ \<Rightarrow> (False, Mapping.empty))
+      else (v, m))"
+
+fun dinsert_rank :: "daggargs \<Rightarrow> type \<Rightarrow> event_data list \<Rightarrow> bool \<times> list_aux dagg_map \<Rightarrow>
+    bool \<times> list_aux dagg_map" where
+  "dinsert_rank args ty t (v, m) =
+     (if v then (let g = drop (dgg_k args) t; e = umeval_trm (dgg_trm args) t;
+        (v', l') = (case (Mapping.lookup m g, e, ty) of
+            (Some (LInt s), EInt c, IntT) \<Rightarrow> (True, LInt (insert_treelist c s))
+          | (Some (LString s), EString c, StringT) \<Rightarrow> (True, LString (insert_treelist c s))
+          | (None, EInt c, IntT) \<Rightarrow> (True, LInt (insert_treelist c empty_treelist))
+          | (None, EString c, StringT) \<Rightarrow> (True, LString (insert_treelist c empty_treelist))
+          | _ \<Rightarrow> (False, LInt empty_treelist))
+        in (v', (if v' then Mapping.update g l' m else Mapping.empty)))
+      else (v, m))"
+
+fun ddelete_rank :: "daggargs \<Rightarrow> type \<Rightarrow> event_data list \<Rightarrow> bool \<times> list_aux dagg_map \<Rightarrow>
+    bool \<times> list_aux dagg_map" where
+  "ddelete_rank args ty t (v, m) =
+     (if v then (let g = drop (dgg_k args) t; e = umeval_trm (dgg_trm args) t;
+        (v', m') = (case (Mapping.lookup m g, e, ty) of
+            (Some (LString s), EString c, StringT) \<Rightarrow> (True, let l' = remove_treelist c s in
+               if l' = empty_treelist then Mapping.delete g m else Mapping.update g (LString l') m)
+          | (Some (LInt s), EInt c, IntT) \<Rightarrow> (True, let l' = remove_treelist c s in
+               if l' = empty_treelist then Mapping.delete g m else Mapping.update g (LInt l') m)
+          | (None, EString c, StringT) \<Rightarrow> (True, m)
+          | (None, EInt c, IntT) \<Rightarrow> (True, m)
+          | _ \<Rightarrow> (False, Mapping.empty))
+        in (v', m'))
+      else (v, m))"
+
+text \<open>The kernel folds its update over the table with @{const Finite_Set.fold}, which the code
+  generator needs a commutativity witness for, one per aggregate kind.  Folding the sorted list
+  of the table instead needs none and generates the same loop; the two agree because the update
+  is commutative, which is what those witnesses say.\<close>
+
+fun dinsert_maggaux :: "daggargs \<Rightarrow> utable \<Rightarrow> daggaux \<Rightarrow> bool \<times> daggaux" where
+  "dinsert_maggaux args X aux = (let xs = csorted_list_of_set X in case aux of
+     DCntAux m \<Rightarrow> (case fold (dinsert_cnt args) xs (True, m) of (v, m') \<Rightarrow> (v, DCntAux m'))
+   | DSumAux m \<Rightarrow> (case fold (dinsert_sum args) xs (True, m) of (v, m') \<Rightarrow> (v, DSumAux m'))
+   | DRankAux (m, ty) \<Rightarrow> (case fold (dinsert_rank args ty) xs (True, m) of (v, m') \<Rightarrow>
+       (v, DRankAux (m', ty))))"
+
+fun ddelete_maggaux :: "daggargs \<Rightarrow> utable \<Rightarrow> daggaux \<Rightarrow> bool \<times> daggaux" where
+  "ddelete_maggaux args X aux = (let xs = csorted_list_of_set X in case aux of
+     DCntAux m \<Rightarrow> (case fold (ddelete_cnt args) xs (True, m) of (v, m') \<Rightarrow> (v, DCntAux m'))
+   | DSumAux m \<Rightarrow> (case fold (ddelete_sum args) xs (True, m) of (v, m') \<Rightarrow> (v, DSumAux m'))
+   | DRankAux (m, ty) \<Rightarrow> (case fold (ddelete_rank args ty) xs (True, m) of (v, m') \<Rightarrow>
+       (v, DRankAux (m', ty))))"
+
+text \<open>The result writes the aggregate into the group tuple at the position the node's columns
+  give @{term y}; with no group variables the tuple is the aggregate alone.\<close>
+
+definition dmap_result :: "nat \<Rightarrow> ('a \<Rightarrow> event_data) \<Rightarrow> 'a dagg_map \<Rightarrow> utable" where
+  "dmap_result p f m = (\<lambda>g. case Mapping.lookup m g of
+      Some i \<Rightarrow> take p g @ f i # drop p g | None \<Rightarrow> g) ` Mapping.keys m"
+
+fun dresult_maggaux :: "daggargs \<Rightarrow> daggaux \<Rightarrow> utable" where
+  "dresult_maggaux args aux = (let g0 = dgg_g0 args; \<omega> = dgg_op args; p = dgg_p args in
+    (case aux of
+      DCntAux m \<Rightarrow> (if g0 \<and> Mapping.keys m = {} then {[eval_agg_op \<omega> {}]}
+        else dmap_result p (\<lambda>k. EInt (integer_of_int k)) m)
+    | DSumAux m \<Rightarrow> (if g0 \<and> Mapping.keys m = {} then {[eval_agg_op \<omega> {}]}
+        else (case fst \<omega> of
+            Formula.Agg_Sum \<Rightarrow> dmap_result p (\<lambda>k. EInt (snd k)) m
+          | Formula.Agg_Avg \<Rightarrow> dmap_result p (\<lambda>k. EFloat (double_of_event_data (EInt (snd k)) /
+              double_of_int (fst k))) m))
+    | DRankAux (m, ty) \<Rightarrow> (if g0 \<and> Mapping.keys m = {} then {[eval_agg_op \<omega> {}]}
+        else (case fst \<omega> of
+            Formula.Agg_Min \<Rightarrow> dmap_result p (\<lambda>k. get_edata_list k 0) m
+          | Formula.Agg_Max \<Rightarrow> dmap_result p (\<lambda>k. get_edata_list k (get_length k - 1)) m
+          | Formula.Agg_Med \<Rightarrow> dmap_result p (\<lambda>k. let u = get_length k; u' = u div 2 in
+              EFloat (if even u
+                then (double_of_event_data_agg (get_edata_list k (u' - 1)) +
+                      double_of_event_data_agg (get_edata_list k u')) / double_of_int 2
+                else double_of_event_data_agg (get_edata_list k u'))) m))))"
+
+text \<open>The structure is dropped when it cannot represent what it is asked to, and then the
+  aggregate is recomputed from the window as @{const uagg} does.  That is the kernel's
+  arrangement, and the four operations below are its four primed ones.\<close>
+
+definition dinit_maggaux' :: "daggargs \<Rightarrow> daggaux option" where
+  "dinit_maggaux' args = (case dinit_maggaux args of (v, aux) \<Rightarrow> if v then Some aux else None)"
+
+fun dinsert_maggaux' :: "daggargs \<Rightarrow> utable \<Rightarrow> daggaux option \<Rightarrow> daggaux option" where
+  "dinsert_maggaux' args X None = None"
+| "dinsert_maggaux' args X (Some aux) =
+     (case dinsert_maggaux args X aux of (v, aux') \<Rightarrow> if v then Some aux' else None)"
+
+fun ddelete_maggaux' :: "daggargs \<Rightarrow> utable \<Rightarrow> daggaux option \<Rightarrow> daggaux option" where
+  "ddelete_maggaux' args X None = None"
+| "ddelete_maggaux' args X (Some aux) =
+     (case ddelete_maggaux args X aux of (v, aux') \<Rightarrow> if v then Some aux' else None)"
+
+definition dagg_fallback :: "daggargs \<Rightarrow> utable \<Rightarrow> utable" where
+  "dagg_fallback args X = uagg (dgg_g0 args) (dgg_op args) (dgg_trm args) (dgg_k args)
+     (dgg_p args) X"
+
+fun dresult_maggaux' :: "daggargs \<Rightarrow> daggaux option \<Rightarrow> utable \<Rightarrow> utable" where
+  "dresult_maggaux' args None X = dagg_fallback args X"
+| "dresult_maggaux' args (Some aux) X = dresult_maggaux args aux"
+
+subsection \<open>The aggregating Since over short tuples\<close>
+
+text \<open>
+  To keep the aggregate up to date the structure has to say which tuples entered and which left
+  its window.  Three of its operations move tuples in or out, and each already computes the set
+  that moved; the three below return it alongside the new structure, and the lemma after each
+  says that dropping it gives the operation of the previous subsection back.  Nothing is
+  duplicated silently: what the aggregating path runs is the same body, proved equal.
+
+  The join is the one whose answer is not a set.  Where the node has no join columns at all it
+  either keeps its window or empties it, and emptying it is not a deletion of known tuples but a
+  reset of the structure, which @{term None} says.
+\<close>
+
+lemma gmsaux_cases:
+  fixes s :: "'b gmsaux"
+  obtains t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since
+  where "s = (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+    idx_since, tuple_since)"
+  by (metis prod.collapse)
+
+definition gmsaux_in :: "'b gmsaux \<Rightarrow> 'b list set" where
+  "gmsaux_in = (\<lambda>(t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+     idx_since, tuple_since). table_in)"
+
+fun gshift_end_del :: "args \<Rightarrow> ts \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set" where
+  "gshift_end_del args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let I = args_ivl args;
+     data_prev' = dropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_prev;
+     (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
+     (tuple_in, del) = fold filter_set discard (tuple_in, {}) in
+     ((t, gc, msk, data_prev', data_in, table_in - del,
+       gidx_upd args (\<lambda>_. didx_minus idx_in (didx msk del)), tuple_in, idx_since, tuple_since),
+      del))"
+
+lemma gshift_end_del_fst: "fst (gshift_end_del args nt s) = gshift_end args nt s"
+  by (cases s rule: gmsaux_cases) (simp add: Let_def split_beta)
+
+fun gadd_new_ts_msaux'_add :: "args \<Rightarrow> ts \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set" where
+  "gadd_new_ts_msaux'_add args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let I = args_ivl args;
+     (data_prev, move) = takedropWhile_queue (\<lambda>(t, X). memL I (nt - t)) data_prev;
+     data_in = fold (\<lambda>(t, X) data_in. append_queue (t, X) data_in) move data_in;
+     (tuple_in', add) = fold (upd_set_keys (\<lambda>X t. {as \<in> X. gvalid_tuple tuple_since (t, as)}))
+        move (tuple_in, {}) in
+     ((nt, gc, msk, data_prev, data_in, table_in \<union> add,
+       gidx_upd args (\<lambda>_. didx_union idx_in (didx msk add)), tuple_in', idx_since, tuple_since),
+      add - Mapping.keys tuple_in))"
+
+lemma gadd_new_ts_msaux'_add_fst:
+  "fst (gadd_new_ts_msaux'_add args nt s) = gadd_new_ts_msaux' args nt s"
+  by (cases s rule: gmsaux_cases) (simp add: Let_def split_beta)
+
+fun gjoin_msaux_del :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set option" where
+  "gjoin_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let pos = args_pos args in
+     (if \<forall>i \<in> set msk. \<not> i then
+        (let take_all = (([] \<in> Y) = pos) in
+         ((t, gc, msk, data_prev, data_in,
+           if take_all then table_in else {},
+           if take_all then idx_in else Mapping.empty,
+           if take_all then tuple_in else Mapping.empty,
+           if take_all then idx_since else Mapping.empty,
+           if take_all then tuple_since else Mapping.empty),
+          if take_all then Some {} else None))
+      else if \<forall>i \<in> set msk. i then
+        (let in_del = (if pos then table_in - Y else table_in \<inter> Y);
+         tuple_in' = mapping_delete_set tuple_in in_del;
+         tuple_since' = Mapping.filter (\<lambda>as _. (as \<in> Y) = pos) tuple_since in
+         ((t, gc, msk, data_prev, data_in, table_in - in_del, Mapping.empty, tuple_in',
+           Mapping.empty, tuple_since'), Some in_del))
+      else
+        (let in_del = dsemi_idx msk (\<not> pos) idx_in Y;
+         since_del = dsemi_idx msk (\<not> pos) idx_since Y in
+         ((t, gc, msk, data_prev, data_in, table_in - in_del,
+           Mapping.filter (\<lambda>k _. (k \<in> Y) = pos) idx_in, mapping_delete_set tuple_in in_del,
+           Mapping.filter (\<lambda>k _. (k \<in> Y) = pos) idx_since,
+           mapping_delete_set tuple_since since_del), Some in_del))))"
+
+lemma gjoin_msaux_del_fst: "fst (gjoin_msaux_del args Y s) = gjoin_msaux args Y s"
+  by (cases s rule: gmsaux_cases) (auto simp: Let_def split_beta)
+
+fun ggc_join_msaux_del :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set option" where
+  "ggc_join_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (if \<not> memR (args_ivl args) (t - gc)
+     then gjoin_msaux_del args Y (ggc_msaux args (t, gc, msk, data_prev, data_in, table_in,
+       idx_in, tuple_in, idx_since, tuple_since))
+     else gjoin_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+       idx_since, tuple_since))"
+
+lemma ggc_join_msaux_del_fst: "fst (ggc_join_msaux_del args Y s) = ggc_join_msaux args Y s"
+  by (cases s rule: gmsaux_cases)
+    (simp del: gjoin_msaux_del.simps gjoin_msaux.simps add: gjoin_msaux_del_fst)
+
+text \<open>The structure the fused node runs, and its five operations.  They are the kernel's, with
+  the aggregate maintained on the deltas above; where the aggregation has no structure the
+  result falls back to recomputing it from the window, which is what the kernel does too.\<close>
+
+type_synonym dmasaux = "event_data gmsaux \<times> daggaux option"
+
+definition dainit_msaux :: "args \<Rightarrow> daggargs \<Rightarrow> bool list \<Rightarrow> dmasaux" where
+  "dainit_msaux args ag msk = (ginit_msaux args msk, dinit_maggaux' ag)"
+
+definition daadd_new_ts_msaux :: "args \<Rightarrow> daggargs \<Rightarrow> ts \<Rightarrow> dmasaux \<Rightarrow> dmasaux" where
+  "daadd_new_ts_msaux args ag nt sa = (case sa of (s, a) \<Rightarrow>
+     (case gshift_end_del args nt s of (s1, del) \<Rightarrow>
+      (case gadd_new_ts_msaux'_add args nt s1 of (s2, add) \<Rightarrow>
+        (s2, dinsert_maggaux' ag add (ddelete_maggaux' ag del a)))))"
+
+definition dajoin_msaux :: "args \<Rightarrow> daggargs \<Rightarrow> utable \<Rightarrow> dmasaux \<Rightarrow> dmasaux" where
+  "dajoin_msaux args ag Y sa = (case sa of (s, a) \<Rightarrow>
+     (case ggc_join_msaux_del args Y s of (s1, d) \<Rightarrow>
+       (s1, case d of None \<Rightarrow> dinit_maggaux' ag | Some D \<Rightarrow> ddelete_maggaux' ag D a)))"
+
+definition daadd_new_table_msaux :: "args \<Rightarrow> daggargs \<Rightarrow> utable \<Rightarrow> dmasaux \<Rightarrow> dmasaux" where
+  "daadd_new_table_msaux args ag X sa = (case sa of (s, a) \<Rightarrow>
+     (gadd_new_table_msaux args X s,
+      if memL (args_ivl args) 0 then dinsert_maggaux' ag (X - gmsaux_in s) a else a))"
+
+definition daresult_msaux :: "daggargs \<Rightarrow> dmasaux \<Rightarrow> utable" where
+  "daresult_msaux ag sa = (case sa of (s, a) \<Rightarrow> dresult_maggaux' ag a (gmsaux_in s))"
+
+subsection \<open>The aggregating Until over short tuples\<close>
+
+text \<open>
+  The Until is the same story with the deltas in different places.  Its window is the front map
+  of the deque, and @{term result} is that map's key set; a step drops the time point at the
+  front, which deletes the tuples that expired with it and inserts those of the map that becomes
+  the front, and adding a time point inserts what it puts at the front.  The kernel interleaves
+  the aggregate into the same two functions, and so does this: @{const geval_step_dq} and
+  @{const gadd_new_dq} with the aggregate carried alongside, and the verdict of a step read off
+  the aggregate rather than off the window.
+
+  One delta is not written out.  What a new time point adds to the front map is exactly what it
+  adds to @{term result}, because @{term result} is that map's key set, so the insertion is the
+  difference between the two -- which is what the kernel's @{term to_add} computes the long way.
+\<close>
+
+type_synonym dmauaux = "event_data gmuaux \<times> daggaux option"
+
+fun gaeval_step_dq :: "args \<Rightarrow> daggargs \<Rightarrow> dmauaux \<Rightarrow> dmauaux" where
+  "gaeval_step_dq args ag ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq,
+      tstp_dq, dn), a) =
+    (case safe_hd tss of (Some ts, tss') \<Rightarrow>
+      (let m = dq_nth a2_dq 0;
+        I = args_ivl args;
+        T = dresult_maggaux' ag a result;
+        tss' = tl_queue tss';
+        (ts', tss'') = case safe_hd tss' of
+              (Some ts', tss'') \<Rightarrow> (ts', tss'') |
+              (None, tss'') \<Rightarrow> (0, tss'');
+        (tables, taken) = takedropWhile_queue
+           (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables;
+        to_del_approx = \<Union>(set (map fst taken));
+        to_del = Set.filter (\<lambda>x. case Mapping.lookup m x of
+              Some tstp \<Rightarrow> (\<not> ts_tp_lt I ts' (tp - len + 1) tstp) | None \<Rightarrow> False) to_del_approx;
+        m'' = mapping_delete_set m to_del;
+        a2_dq' = dq_tl a2_dq;
+        m' = dq_nth a2_dq' 0;
+        result' = if len = 1 then {} else (result - to_del) \<union> Mapping.keys m';
+        a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
+          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
+        tstp_dq = dq_tl tstp_dq;
+        to_ins = Mapping.filter (\<lambda>k v. Mapping.lookup m'' k = None) m';
+        a' = (if len = 1 then dinit_maggaux' ag
+              else dinsert_maggaux' ag (Mapping.keys to_ins) (ddelete_maggaux' ag to_del a)) in
+        ((tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # dn),
+         a')))"
+
+fun gashift_dq :: "args \<Rightarrow> daggargs \<Rightarrow> ts \<Rightarrow> dmauaux \<Rightarrow> dmauaux" where
+  "gashift_dq args ag nt ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq,
+      tstp_dq, dn), a) =
+    (let (tss_queue, tss') = takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss in
+    foldl (\<lambda>aux _. gaeval_step_dq args ag aux) ((tp, tss', tables, len, maskL, maskR,
+      result, a1_map, a2_dq, tstp_dq, dn), a) (linearize tss_queue))"
+
+fun gaeval_dq :: "args \<Rightarrow> daggargs \<Rightarrow> ts \<Rightarrow> dmauaux \<Rightarrow> utable list \<times> dmauaux" where
+  "gaeval_dq args ag nt aux =
+    (case gashift_dq args ag nt aux of
+      ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn), a) \<Rightarrow>
+    (rev dn, ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, []), a)))"
+
+definition gainit_dq :: "args \<Rightarrow> daggargs \<Rightarrow> dmauaux" where
+  "gainit_dq args ag = (ginit_dq args, dinit_maggaux' ag)"
+
+definition gaadd_new_dq :: "args \<Rightarrow> daggargs \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow>
+    dmauaux \<Rightarrow> dmauaux" where
+  "gaadd_new_dq args ag msk rel1 rel2 nt aux =
+    (case gashift_dq args ag nt aux of
+      ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn), a) \<Rightarrow>
+     (let I = args_ivl args; pos = args_pos args; inz = memL I 0;
+      new_tstp = (if inz then Inr tp else Inl nt);
+      tstp_dq = dq_push nt tstp_dq;
+      P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
+      (tbl, a2_dq', result') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+        (csorted_list_of_set rel2) ({}, a2_dq, result);
+      tables = append_queue (tbl, new_tstp) tables;
+      a2_dq = dq_push Mapping.empty a2_dq';
+      a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
+        (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+      tss = append_queue nt tss in
+      ((tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn),
+       dinsert_maggaux' ag (result' - result) a)))"
 
 (*<*)
 end

@@ -25,8 +25,6 @@ text \<open>
   the formula is wide, so it is cheaper both to build and to hash.
 \<close>
 
-type_synonym utable = "event_data list set"
-
 type_synonym udatabase = "(Formula.name \<times> nat, utable list) mapping"
 
 type_synonym djidx = "(event_data list, event_data list list) imap"
@@ -122,14 +120,27 @@ definition dagg_cols :: "aggargs \<Rightarrow> cols" where
 definition dagg_pos :: "aggargs \<Rightarrow> nat" where
   "dagg_pos args = length (filter (\<lambda>c. c < aggargs_y args) (dagg_group_cols args))"
 
+text \<open>The five numbers the aggregation needs at the dense frame: whether it groups by nothing,
+  the operation, the term reindexed to the operand's columns, how many columns the operand has
+  in front of the groups, and where the result variable sits among the node's columns.  They are
+  what the aggregation node below carries, and what the structure of
+  @{theory MFODL_Monitor_Imp.Dense_Unbox} maintains the aggregate by.\<close>
+
+definition dagg_of :: "aggargs \<Rightarrow> daggargs" where
+  "dagg_of ag = \<lparr>dgg_g0 = aggargs_g0 ag, dgg_op = aggargs_\<omega> ag,
+     dgg_trm = reindex_trm (dagg_child_cols ag) (aggargs_f ag),
+     dgg_k = length (aggargs_tys ag), dgg_p = dagg_pos ag\<rparr>"
+
 text \<open>
   An aggregation over a Since or an Until is fused into the temporal operator's own arguments,
-  so that its structure can keep the aggregate up to date instead of recomputing it.  The dense
-  Since and Until do not do that, and the dense aggregation node is a node of its own, so the
-  compiler takes the fusion apart again: the arguments below are the operator's with the
-  aggregation removed, and the node it builds is the dense aggregation over the dense operator.
-  What that costs is the incremental maintenance; what it buys is that both halves are already
-  short-tuple operations.
+  so that its structure can keep the aggregate up to date instead of recomputing it from the
+  window at every time point.  The dense operators keep that fusion.  What the compiler does
+  take apart is the frame: the structure runs at the operand's columns, so the arguments it is
+  given are the operator's with the aggregation removed and narrowed to those columns, and the
+  aggregation travels separately, as the five numbers of @{const dagg_of}, to the structure that
+  maintains it.  The shape the compiler recognises is the one below: the node produces the
+  aggregation's columns, its right operand produces the aggregation's operand's, and the widths
+  agree.
 \<close>
 
 definition dunfuse :: "args \<Rightarrow> args" where
@@ -280,7 +291,7 @@ text \<open>
 \<close>
 
 datatype msaux_d = MSD_imp "event_data list msaux2" | MSD_dns "event_data gmsaux"
-  | MSD_evt "event_data gsevtaux"
+  | MSD_evt "event_data gsevtaux" | MSD_agg daggargs dmasaux
 
 text \<open>Of the three representations only @{const MSD_imp} lives on the heap.  The freeze node
   replays its body from a fixed state, which a heap-resident structure cannot do, so the
@@ -293,17 +304,27 @@ fun msj_heap :: "msaux_j \<Rightarrow> bool" where
   "msj_heap (MSJ_imp q) = True"
 | "msj_heap _ = False"
 
-definition init_d :: "bool \<Rightarrow> args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
-  "init_d hp args msk = (if sevt_applies args then return (MSD_evt (ginit_sevt args))
-     else if hp \<and> args_agg args = None \<and> special_args args
-     then do { q \<leftarrow> init2 args; return (MSD_imp q) }
-     else return (MSD_dns (ginit_msaux args msk)))"
+text \<open>A node whose aggregation is fused into it takes the fourth representation, which is the
+  window of the second with the aggregate maintained alongside.  It is not a choice between
+  representations: the other three produce the window itself, and only this one produces the
+  aggregate of it, so the compiler picks it exactly when the node carries an aggregation.\<close>
+
+definition init_d :: "bool \<Rightarrow> daggargs option \<Rightarrow> args \<Rightarrow> bool list \<Rightarrow> msaux_d Heap" where
+  "init_d hp ago args msk = (case ago of Some ag \<Rightarrow>
+       return (MSD_agg ag (dainit_msaux args ag msk))
+     | None \<Rightarrow>
+       (if sevt_applies args then return (MSD_evt (ginit_sevt args))
+        else if hp \<and> args_agg args = None \<and> special_args args
+        then do { q \<leftarrow> init2 args; return (MSD_imp q) }
+        else return (MSD_dns (ginit_msaux args msk))))"
 
 fun add_new_ts_d :: "args \<Rightarrow> ts \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
   "add_new_ts_d args nt (MSD_imp q) =
      do { q \<leftarrow> add_new_ts2 uihash ueq args nt q; return (MSD_imp q) }"
 | "add_new_ts_d args nt (MSD_dns s) = return (MSD_dns (gadd_new_ts_msaux args nt s))"
 | "add_new_ts_d args nt (MSD_evt a) = return (MSD_evt (gadd_new_ts_sevt args nt a))"
+| "add_new_ts_d args nt (MSD_agg ag s) =
+     return (MSD_agg ag (daadd_new_ts_msaux args ag nt s))"
 
 text \<open>The table this takes is the left operand's, at the left operand's frame in the dense
   branch and at the common frame in the other two.\<close>
@@ -313,17 +334,21 @@ fun join_d :: "args \<Rightarrow> utable \<Rightarrow> msaux_d \<Rightarrow> msa
      do { q \<leftarrow> gc_join2 uihash ueq [] args X q; return (MSD_imp q) }"
 | "join_d args X (MSD_dns s) = return (MSD_dns (ggc_join_msaux args X s))"
 | "join_d args X (MSD_evt a) = return (MSD_evt (gjoin_sevt args X a))"
+| "join_d args X (MSD_agg ag s) = return (MSD_agg ag (dajoin_msaux args ag X s))"
 
 fun add_new_table_d :: "args \<Rightarrow> utable \<Rightarrow> msaux_d \<Rightarrow> msaux_d Heap" where
   "add_new_table_d args X (MSD_imp q) =
      do { q \<leftarrow> add_new_table2 uihash ueq args X q; return (MSD_imp q) }"
 | "add_new_table_d args X (MSD_dns s) = return (MSD_dns (gadd_new_table_msaux args X s))"
 | "add_new_table_d args X (MSD_evt a) = return (MSD_evt (gadd_new_table_sevt args X a))"
+| "add_new_table_d args X (MSD_agg ag s) =
+     return (MSD_agg ag (daadd_new_table_msaux args ag X s))"
 
 fun result_d :: "args \<Rightarrow> msaux_d \<Rightarrow> utable Heap" where
   "result_d args (MSD_imp q) = result2 q"
 | "result_d args (MSD_dns s) = return (gresult_msaux args s)"
 | "result_d args (MSD_evt a) = return (gresult_sevt args a)"
+| "result_d args (MSD_agg ag s) = return (daresult_msaux ag s)"
 
 partial_function (heap) eval_since_d :: "args \<Rightarrow> utable list \<Rightarrow> umebuf2S \<Rightarrow>
     msaux_d \<Rightarrow> (utable list \<times> umebuf2S \<times> msaux_d) Heap" where
@@ -357,10 +382,12 @@ text \<open>
 \<close>
 
 datatype muaux_d = MUD_dns "event_data gmuaux" | MUD_evt "event_data gevtaux"
+  | MUD_agg daggargs dmauaux
 
-definition init_u_d :: "args \<Rightarrow> bool list \<Rightarrow> muaux_d Heap" where
-  "init_u_d args msk = (if evt_applies args then return (MUD_evt (ginit_evt args))
-     else return (MUD_dns (ginit_dq args)))"
+definition init_u_d :: "daggargs option \<Rightarrow> args \<Rightarrow> bool list \<Rightarrow> muaux_d Heap" where
+  "init_u_d ago args msk = (case ago of Some ag \<Rightarrow> return (MUD_agg ag (gainit_dq args ag))
+     | None \<Rightarrow> (if evt_applies args then return (MUD_evt (ginit_evt args))
+        else return (MUD_dns (ginit_dq args))))"
 
 fun add_new_u_d :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow>
     muaux_d \<Rightarrow> muaux_d Heap" where
@@ -368,10 +395,14 @@ fun add_new_u_d :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarr
      return (MUD_dns (gadd_new_dq args msk rel1 rel2 nt a))"
 | "add_new_u_d args msk rel1 rel2 nt (MUD_evt a) =
      return (MUD_evt (gadd_new_evt args rel1 rel2 nt a))"
+| "add_new_u_d args msk rel1 rel2 nt (MUD_agg ag a) =
+     return (MUD_agg ag (gaadd_new_dq args ag msk rel1 rel2 nt a))"
 
 fun eval_u_d :: "args \<Rightarrow> ts \<Rightarrow> muaux_d \<Rightarrow> (utable list \<times> muaux_d) Heap" where
   "eval_u_d args nt (MUD_dns a) = return (case geval_dq args nt a of (zs, a') \<Rightarrow> (zs, MUD_dns a'))"
 | "eval_u_d args nt (MUD_evt a) = return (case geval_evt args nt a of (zs, a') \<Rightarrow> (zs, MUD_evt a'))"
+| "eval_u_d args nt (MUD_agg ag a) =
+     return (case gaeval_dq args ag nt a of (zs, a') \<Rightarrow> (zs, MUD_agg ag a'))"
 
 datatype dformula =
     DFail
@@ -402,10 +433,6 @@ datatype dformula =
       "event_data gmrdaux"
   | DMatchF \<I> mregex "mregex list" "bool list list" "dformula list" umebufn "ts mbuf_t" ts
       "event_data gmldaux"
-
-definition dwrap_agg :: "aggargs \<Rightarrow> dformula \<Rightarrow> dformula" where
-  "dwrap_agg ag \<phi> = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
-     (reindex_trm (dagg_child_cols ag) (aggargs_f ag)) (length (aggargs_tys ag)) (dagg_pos ag) \<phi>"
 
 subsection \<open>Building it\<close>
 
@@ -477,30 +504,30 @@ function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mform
       if sevt_applies args then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
-        q \<leftarrow> init_d (msj_heap aux) args (dmsk (set_cols (args_R args)) cs_L);
+        q \<leftarrow> init_d (msj_heap aux) None args (dmsk (set_cols (args_R args)) cs_L);
         return (DSince args \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
               set cs_L \<subseteq> set cs
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-        q \<leftarrow> init_d (msj_heap aux) dags (dmsk cs cs_L);
+        q \<leftarrow> init_d (msj_heap aux) None dags (dmsk cs cs_L);
         return (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) })
       else if dagg_fused n cs args
-      then (let ccs = dagg_child_cols (the (args_agg args));
+      then (let ag = the (args_agg args);
+                ccs = dagg_child_cols ag;
                 dags = dargs ccs cs_L (dunfuse args) in do {
         \<phi>d \<leftarrow> dformula_of (args_n args) cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of (args_n args) ccs \<psi>;
-        q \<leftarrow> init_d (msj_heap aux) dags (dmsk ccs cs_L);
-        return (dwrap_agg (the (args_agg args))
-                  (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q)) })
+        q \<leftarrow> init_d (msj_heap aux) (Some (dagg_of ag)) dags (dmsk ccs cs_L);
+        return (DSince dags \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty, mbuf_t_empty, False) q) })
       else return DFail)"
 | "dformula_of n cs (MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
       if evt_applies args then do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n (set_cols (args_R args)) \<psi>;
-        d \<leftarrow> init_u_d args (dmsk (set_cols (args_R args)) cs_L);
+        d \<leftarrow> init_u_d None args (dmsk (set_cols (args_R args)) cs_L);
         return (DUntil args (dmsk (set_cols (args_R args)) cs_L) \<phi>d \<psi>d
                    (mbuf_t_empty, mbuf_t_empty) nts t d) }
       else if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
@@ -508,16 +535,16 @@ function (sequential) dformula_of :: "nat \<Rightarrow> cols \<Rightarrow> mform
       then (let dags = dargs cs cs_L args in do {
         \<phi>d \<leftarrow> dformula_of n cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of n cs \<psi>;
-        d \<leftarrow> init_u_d dags (dmsk cs cs_L);
+        d \<leftarrow> init_u_d None dags (dmsk cs cs_L);
         return (DUntil dags (dmsk cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d) })
       else if dagg_fused n cs args
-      then (let ccs = dagg_child_cols (the (args_agg args));
+      then (let ag = the (args_agg args);
+                ccs = dagg_child_cols ag;
                 dags = dargs ccs cs_L (dunfuse args) in do {
         \<phi>d \<leftarrow> dformula_of (args_n args) cs_L \<phi>;
         \<psi>d \<leftarrow> dformula_of (args_n args) ccs \<psi>;
-        d \<leftarrow> init_u_d dags (dmsk ccs cs_L);
-        return (dwrap_agg (the (args_agg args))
-                  (DUntil dags (dmsk ccs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d)) })
+        d \<leftarrow> init_u_d (Some (dagg_of ag)) dags (dmsk ccs cs_L);
+        return (DUntil dags (dmsk ccs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) nts t d) })
       else return DFail)"
 | "dformula_of n cs (MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
