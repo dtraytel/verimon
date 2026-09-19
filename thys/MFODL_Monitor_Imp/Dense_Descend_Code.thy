@@ -18,8 +18,8 @@ text \<open>
   needs.  Nothing new is decided here; every guard and every node is the one above.
 \<close>
 
-fun edof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow>
-    dformula" where
+function (sequential) edof ::
+    "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow> dformula" where
   "edof n cs (meformula.MRel rel) = DRel (dtabc n cs rel)"
 | "edof n cs (meformula.MPred e tms mode) =
      (if mode = Match then DPredM e (length tms) tms cs
@@ -108,10 +108,16 @@ fun edof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data
      (if cs = mtrm_dcols mt then DTS mt
       else DFail)"
 | "edof n cs \<phi> = DFail"
+  by pat_completeness auto
+
+termination edof
+  by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
+    (auto simp: termination_simp dest!: set_zip_rightD)
 
 lemma edof_dof: "edof n cs e = dof n cs (Rep_meformula e)"
   by (induct n cs e rule: edof.induct)
-    (simp_all add: Let_def split: list.splits prod.splits)
+    (simp_all add: Let_def zip_map2 o_def split: list.splits prod.splits
+      cong: map_cong)
 
 lemma dof_code[code]: "dof n cs (Rep_meformula e) = edof n cs e"
   by (simp add: edof_dof)

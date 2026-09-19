@@ -28,7 +28,8 @@ definition dagg_gcols :: "aggargs \<Rightarrow> cols" where
   "dagg_gcols args = map (\<lambda>c. c - length (aggargs_tys args))
      (drop (length (aggargs_tys args)) (set_cols (aggargs_cols args)))"
 
-fun dof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
+function (sequential) dof ::
+    "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
   "dof n cs (mformula.MRel rel) = DRel (dtabc n cs rel)"
 | "dof n cs (mformula.MPred e tms mode) =
      (if mode = Match then DPredM e (length tms) tms cs
@@ -112,6 +113,11 @@ fun dof :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data 
      (if cs = mtrm_dcols mt then DTS mt
       else DFail)"
 | "dof n cs \<phi> = DFail"
+  by pat_completeness auto
+
+termination dof
+  by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
+    (auto simp: termination_simp dest!: set_zip_rightD)
 
 subsection \<open>Column lists from column sets\<close>
 
@@ -401,7 +407,8 @@ proof -
       = DAnd (mk_djoin c1 c2) (dof n c1 (minit0 n \<chi>)) pos (dof n c2 (minit0 n \<psi>)) ([], [])"
     using g by (simp add: Let_def sc1' sc2' mc)
   have bf: "dbuf2 n c1 c2 ([], []) ([], [])" by (simp add: dbuf2_def)
-  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>" using z unfolding m d c1 c2 by simp_all
+  have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
+    using z[unfolded m d] unfolding c1 c2 by simp_all
   show ?thesis unfolding m d
     by (rule dsim.DsAnd[OF w pr i1[OF z1, folded c1] i2[OF z2, folded c2] mc refl g2 bf])
 qed
@@ -790,7 +797,7 @@ proof -
       (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
     using lenL by (auto simp: dbufn_def)
   show ?thesis unfolding m d
-    by (rule dsim.DsAnds[OF w pr ld _ lenL wfc sb dc refl refl bf]) simp
+    by (rule dsim.DsAnds[OF w pr ld _ lenL wfc sb dc refl refl bf]) (use lenL in simp)
 qed
 
 text \<open>
@@ -1283,8 +1290,12 @@ next
   qed
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
+  have e: "minit0 n (Formula.And \<phi> (Formula.Release \<phi>' I \<psi>'))
+      = minit0 n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')"
+    using And_Release.hyps(5,6) by (auto simp: safe_assignment_def)
   show ?case
-    using And_Release.IH(1)[OF And_Release.prems[unfolded release_fvi(3)]]
+    using And_Release.IH(1)[OF And_Release.prems(1)[unfolded release_fvi(3)]
+        And_Release.prems(2)[unfolded release_fvi(3) e]]
       And_Release.hyps(5,6)
     by (simp add: release_fvi(3) safe_assignment_def)
 next
@@ -1340,18 +1351,15 @@ next
       case False
       let ?j = "i - length pos"
       have j: "?j < length neg" using i False lenl by simp
-      have c: "(?c0 # ?css @ ?nss) ! i = set_cols (Formula.fv (neg ! ?j))"
-        using False j unfolding cssall by (simp add: nth_append)
+      have c: "(?c0 # ?css @ ?nss) ! i = set_cols (Formula.fv (remove_neg (neg ! ?j)))"
+        using False j unfolding cssall by (simp add: nth_append fv_remove_neg[symmetric])
       have l': "?L ! i = minit0 n (remove_neg (neg ! ?j))"
         using False j by (simp add: nth_append)
       have ip: "remove_neg (neg ! ?j) \<in> set (map remove_neg neg)" using j by simp
       have bi: "\<forall>x \<in> Formula.fv (remove_neg (neg ! ?j)). x < n"
         using bn j by (auto simp: fv_remove_neg[symmetric])
-      have zj: "dofz n (remove_neg (neg ! ?j))"
-        using zi unfolding c l' by (simp add: fv_remove_neg)
-      have "dofc n tw (remove_neg (neg ! ?j))"
-        using Ands.IH(2)[unfolded list_all_iff] ip bi zj by blast
-      then show ?thesis unfolding c l' by (simp add: fv_remove_neg[symmetric])
+      show ?thesis unfolding c l'
+        using Ands.IH(2)[unfolded list_all_iff] ip bi zi[unfolded c l'] by blast
     qed
   qed
   show ?case
@@ -1550,8 +1558,11 @@ next
   case (Trigger \<phi> I \<psi>) then show ?case by simp
 next
   case (Release_0 \<phi> I \<psi>)
+  have e: "minit0 n (Formula.Release \<phi> I \<psi>) = minit0 n (release_safe_0 \<phi> I \<psi>)"
+    using Release_0.hyps(1) by simp
   show ?case
-    using Release_0.IH[OF Release_0.prems[unfolded release_fvi(1)]] Release_0.hyps(1)
+    using Release_0.IH[OF Release_0.prems(1)[unfolded release_fvi(1)]
+        Release_0.prems(2)[unfolded release_fvi(1) e]] Release_0.hyps(1)
     by (simp add: release_fvi(1))
 next
   case (Release \<phi> I \<psi>) then show ?case by simp
