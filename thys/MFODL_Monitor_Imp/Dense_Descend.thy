@@ -75,20 +75,51 @@ function (sequential) dof ::
       else DFail)"
 | "dof n cs (mformula.MSince args \<phi> \<psi> buf aux) =
      (let cs_L = set_cols (args_L args) in
-      if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
-         set cs_L \<subseteq> set cs \<and> buf = init_mbuf2S
-      then DSince (dargs cs cs_L args)
-             (dof n cs_L \<phi>) (dof n cs \<psi>) init_mbuf2S
-             (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
-      else DFail)"
+      case args_agg args of
+        None \<Rightarrow>
+          (if args_n args = n \<and> args_R args = set cs \<and>
+              set cs_L \<subseteq> set cs \<and> buf = init_mbuf2S
+           then DSince (dargs cs cs_L args)
+                  (dof n cs_L \<phi>) (dof n cs \<psi>) init_mbuf2S
+                  (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
+           else DFail)
+      | Some ag \<Rightarrow>
+          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag;
+               nn = m + aggargs_n ag; cs_R = set_cols (args_R args) in
+           if args_n args = nn \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
+              buf = init_mbuf2S \<and> cs_R = agg_cols m g \<and> cs = merge_cols g [y] \<and>
+              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
+              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
+           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                  m (ins_pos g y)
+                  (DSince (dargs cs_R cs_L args)
+                    (dof nn cs_L \<phi>) (dof nn cs_R \<psi>) init_mbuf2S
+                    (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+           else DFail))"
 | "dof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args) in
-      if args_agg args = None \<and> args_n args = n \<and> args_R args = set cs \<and>
-         set cs_L \<subseteq> set cs \<and> buf = ([], []) \<and> nts = [] \<and> t = 0
-      then DUntil (dargs cs cs_L args) (dmsk cs cs_L)
-             (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] 0
-             (init_dq (dargs cs cs_L args))
-      else DFail)"
+      case args_agg args of
+        None \<Rightarrow>
+          (if args_n args = n \<and> args_R args = set cs \<and>
+              set cs_L \<subseteq> set cs \<and> buf = ([], []) \<and> nts = [] \<and> t = 0
+           then DUntil (dargs cs cs_L args) (dmsk cs cs_L)
+                  (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] 0
+                  (init_dq (dargs cs cs_L args))
+           else DFail)
+      | Some ag \<Rightarrow>
+          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag;
+               nn = m + aggargs_n ag; cs_R = set_cols (args_R args) in
+           if args_n args = nn \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
+              buf = ([], []) \<and> nts = [] \<and> t = 0 \<and>
+              cs_R = agg_cols m g \<and> cs = merge_cols g [y] \<and>
+              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
+              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
+           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                  m (ins_pos g y)
+                  (DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L)
+                    (dof nn cs_L \<phi>) (dof nn cs_R \<psi>) ([], []) [] 0
+                    (init_dq (dargs cs_R cs_L args)))
+           else DFail))"
 | "dof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
@@ -541,7 +572,7 @@ proof -
 qed
 
 lemma dsince_rel_init:
-  assumes a: "args = init_args I n L R pos None"
+  assumes a: "args = init_args I n L R pos agg"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
      (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) init_mbuf2S init_mbuf2S"
@@ -559,7 +590,7 @@ proof -
 qed
 
 lemma duntil_rel_init:
-  assumes a: "args = init_args I n L R pos None"
+  assumes a: "args = init_args I n L R pos agg"
     and sR: "sorted_wrt (<) cs_R" and sL: "sorted_wrt (<) cs_L"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "duntil_rel n cs_R cs_L args tw 0 (init_muaux_dq args)
@@ -729,6 +760,253 @@ proof -
     by (rule dsim.DsAgg[OF w pr s1 wg an ay yn ynotg g0 fs cse])
 qed
 
+text \<open>
+  The fused aggregating Since.  The kernel builds it from the very same operands as the unfused
+  one, so the unfused node's simulation -- which the induction hands out for the operand formula
+  -- can be read backwards and reused here.  Everything else is the aggregation's own bookkeeping,
+  exactly as at an @{const mformula.MAgg} node.
+\<close>
+
+lemma dsim_dof_minit0_MSinceAgg:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi>
+        = mformula.MSince args (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args)"
+    and mu: "minit0 nn \<chi>
+        = mformula.MSince args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args0)"
+    and a: "args = init_args J nn (Formula.fv \<alpha>) (Formula.fv \<beta>) pos (Some ag)"
+    and a0: "args0 = init_args J nn (Formula.fv \<alpha>) (Formula.fv \<beta>) pos None"
+    and sub: "Formula.fv \<alpha> \<subseteq> Formula.fv \<beta>" and X: "Formula.fv \<chi> = Formula.fv \<beta>"
+    and ag: "ag = init_aggargs (Formula.fv \<chi>) n (Formula.fv \<chi> \<subseteq> {0..<length tys}) y \<omega> tys f"
+    and nne: "nn = length tys + n"
+    and ynot: "y + length tys \<notin> Formula.fv \<chi>"
+    and tsub: "{0..<length tys} \<subseteq> Formula.fv \<chi>"
+    and fsub: "Formula.fv_trm f \<subseteq> Formula.fv \<chi>"
+    and A: "Formula.fv \<phi>
+        = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<chi> - {0..<length tys}))"
+    and bc: "\<forall>x \<in> Formula.fv \<chi>. x < nn"
+    and z: "dofz n \<phi>"
+    and iu: "dofz nn \<chi> \<Longrightarrow> dofc nn tw \<chi>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?k = "length (aggargs_tys ag)"
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  let ?cR = "set_cols (Formula.fv \<chi>)"
+  let ?cL = "set_cols (Formula.fv \<alpha>)"
+  let ?g = "map (\<lambda>c. c - ?k) (drop ?k ?cR)"
+  have ac: "aggargs_cols ag = Formula.fv \<chi>" and agn: "aggargs_n ag = n"
+    and ay: "aggargs_y ag = y" and aty: "aggargs_tys ag = tys"
+    and ag0: "aggargs_g0 ag = (Formula.fv \<chi> \<subseteq> {0..<length tys})" and af: "aggargs_f ag = f"
+    unfolding ag by (simp_all add: init_aggargs_def)
+  have kt: "?k = length tys" unfolding aty ..
+  have nne': "nn = ?k + n" unfolding kt by (rule nne)
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have wR: "wf_cols nn ?cR" by (rule wf_cols_set_cols[OF finite_fvi bc])
+  have bL: "\<forall>x \<in> Formula.fv \<alpha>. x < nn" using bc sub unfolding X by auto
+  have wL: "wf_cols nn ?cL" by (rule wf_cols_set_cols[OF finite_fvi bL])
+  have pr: "produces n (set ?cs) tw
+      (mformula.MSince args (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args))"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have aL: "args_L args = set ?cL" unfolding a by (simp add: init_args_def)
+  have aR: "args_R args = set ?cR" unfolding a X by (simp add: init_args_def)
+  have an: "args_n args = nn" unfolding a by (simp add: init_args_def)
+  have agS: "args_agg args = Some ag" unfolding a by (simp add: init_args_def)
+  have sb: "set ?cL \<subseteq> set ?cR" using sub unfolding X by simp
+  have cLa: "set_cols (args_L args) = ?cL" unfolding aL using wL by simp
+  have cRa: "set_cols (args_R args) = ?cR" unfolding aR using wR by simp
+  have aL0: "args_L args0 = set ?cL" unfolding a0 by (simp add: init_args_def)
+  have cLa0: "set_cols (args_L args0) = ?cL" unfolding aL0 using wL by simp
+  have aR0: "args_R args0 = set ?cR" unfolding a0 X by (simp add: init_args_def)
+  have an0: "args_n args0 = nn" unfolding a0 by (simp add: init_args_def)
+  have ag0': "args_agg args0 = None" unfolding a0 by (simp add: init_args_def)
+  have dae: "dargs ?cR ?cL args0 = dargs ?cR ?cL args"
+    unfolding a a0 by (simp add: dargs_def init_args_def)
+  have tsub': "{0..<?k} \<subseteq> Formula.fv \<chi>" unfolding kt by (rule tsub)
+  note sc = set_cols_agg_cols[OF finite_fvi tsub']
+  have cc: "?cR = agg_cols ?k ?g" by (rule sc(1))
+  have gs: "set ?g = (\<lambda>c. c - ?k) ` (Formula.fv \<chi> - {0..<?k})" by (rule sc(2))
+  have gsort: "sorted_wrt (<) ?g" by (rule sc(3))
+  have gb: "\<forall>c \<in> set ?g. c < n" using gs bc unfolding nne' by auto
+  have wg: "wf_cols n ?g" using gsort gb by simp
+  have ynotg: "y \<notin> set ?g"
+  proof
+    assume "y \<in> set ?g"
+    then obtain c where c: "c \<in> Formula.fv \<chi> - {0..<?k}" and yc: "y = c - ?k" using gs by auto
+    then have "c = y + ?k" by auto
+    then show False using c ynot unfolding kt by auto
+  qed
+  have dg: "dagg_gcols ag = ?g" unfolding dagg_gcols_def ac ..
+  have A': "Formula.fv \<phi> = Set.insert y (set ?g)" unfolding A kt[symmetric] gs[symmetric] ..
+  have cse: "?cs = merge_cols ?g [y]" unfolding A'
+    by (rule set_cols_eq) (use gsort ynotg in \<open>auto simp: sorted_merge_cols set_merge_cols\<close>)
+  have g0: "aggargs_g0 ag \<Longrightarrow> ?g = []"
+  proof -
+    assume "aggargs_g0 ag"
+    then have "Formula.fv \<chi> \<subseteq> {0..<?k}" using ag0 unfolding kt by simp
+    then have "set ?g = {}" using gs by auto
+    then show "?g = []" by simp
+  qed
+  have fs: "Formula.fv_trm (aggargs_f ag) \<subseteq> set ?cR" unfolding af using fsub by simp
+  have yn: "y < n" using A b by auto
+  have d: "dof n ?cs
+        (mformula.MSince args (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args))
+      = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
+          (DSince (dargs ?cR ?cL args)
+            (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
+            (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
+    using an agn sb cc cse wg yn ynotg g0 fs
+    by (simp add: Let_def agS cLa cRa dg ay nne')
+  have du: "dof nn ?cR
+        (mformula.MSince args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args0))
+      = DSince (dargs ?cR ?cL args)
+          (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
+          (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL))"
+    using an0 aR0 sb by (simp add: Let_def ag0' cLa0 dae)
+  have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
+  have su: "dsim nn ?cR tw
+      (DSince (dargs ?cR ?cL args)
+        (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
+        (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)))
+      (mformula.MSince args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args0))"
+    using iu[OF zu] unfolding mu du .
+  obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
+    and s2: "dsim nn ?cR tw (dof nn ?cR (minit0 nn \<beta>)) (minit0 nn \<beta>)"
+    and wcsL: "wf_cols nn csL" and aLc: "args_L args0 = set csL"
+    by (rule dsim_DSinceD[OF su])
+  have csLe: "csL = ?cL"
+  proof -
+    have "set csL = Formula.fv \<alpha>" using aLc[unfolded aL0] by simp
+    then show ?thesis using set_cols_set[OF wcsL] by simp
+  qed
+  have s1: "dsim nn ?cL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)" using sL unfolding csLe .
+  have rl: "dsince_rel nn ?cR ?cL args tw (init_mmasaux args)
+      (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)) init_mbuf2S init_mbuf2S"
+    by (rule dsince_rel_init[OF a]) (use sub X in auto)
+  show ?thesis unfolding m d
+    by (rule dsim.DsSinceAgg[OF w pr s1 s2 wL sb agS an aL aR refl rl wg agn ay yn ynotg g0 fs
+          nne' cc cse])
+qed
+
+text \<open>The fused aggregating Until, along the same lines.\<close>
+
+lemma dsim_dof_minit0_MUntilAgg:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi>
+        = mformula.MUntil args (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args)"
+    and mu: "minit0 nn \<chi>
+        = mformula.MUntil args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args0)"
+    and a: "args = init_args J nn (Formula.fv \<alpha>) (Formula.fv \<beta>) pos (Some ag)"
+    and a0: "args0 = init_args J nn (Formula.fv \<alpha>) (Formula.fv \<beta>) pos None"
+    and sub: "Formula.fv \<alpha> \<subseteq> Formula.fv \<beta>" and X: "Formula.fv \<chi> = Formula.fv \<beta>"
+    and ag: "ag = init_aggargs (Formula.fv \<chi>) n (Formula.fv \<chi> \<subseteq> {0..<length tys}) y \<omega> tys f"
+    and nne: "nn = length tys + n"
+    and ynot: "y + length tys \<notin> Formula.fv \<chi>"
+    and tsub: "{0..<length tys} \<subseteq> Formula.fv \<chi>"
+    and fsub: "Formula.fv_trm f \<subseteq> Formula.fv \<chi>"
+    and A: "Formula.fv \<phi>
+        = Set.insert y ((\<lambda>i. i - length tys) ` (Formula.fv \<chi> - {0..<length tys}))"
+    and bc: "\<forall>x \<in> Formula.fv \<chi>. x < nn"
+    and z: "dofz n \<phi>"
+    and iu: "dofz nn \<chi> \<Longrightarrow> dofc nn tw \<chi>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?k = "length (aggargs_tys ag)"
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  let ?cR = "set_cols (Formula.fv \<chi>)"
+  let ?cL = "set_cols (Formula.fv \<alpha>)"
+  let ?g = "map (\<lambda>c. c - ?k) (drop ?k ?cR)"
+  have ac: "aggargs_cols ag = Formula.fv \<chi>" and agn: "aggargs_n ag = n"
+    and ay: "aggargs_y ag = y" and aty: "aggargs_tys ag = tys"
+    and ag0: "aggargs_g0 ag = (Formula.fv \<chi> \<subseteq> {0..<length tys})" and af: "aggargs_f ag = f"
+    unfolding ag by (simp_all add: init_aggargs_def)
+  have kt: "?k = length tys" unfolding aty ..
+  have nne': "nn = ?k + n" unfolding kt by (rule nne)
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have wR: "wf_cols nn ?cR" by (rule wf_cols_set_cols[OF finite_fvi bc])
+  have bL: "\<forall>x \<in> Formula.fv \<alpha>. x < nn" using bc sub unfolding X by auto
+  have wL: "wf_cols nn ?cL" by (rule wf_cols_set_cols[OF finite_fvi bL])
+  have pr: "produces n (set ?cs) tw
+      (mformula.MUntil args (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args))"
+    using produces_minit0[OF sf b] unfolding m by simp
+  have aL: "args_L args = set ?cL" unfolding a by (simp add: init_args_def)
+  have aR: "args_R args = set ?cR" unfolding a X by (simp add: init_args_def)
+  have an: "args_n args = nn" unfolding a by (simp add: init_args_def)
+  have agS: "args_agg args = Some ag" unfolding a by (simp add: init_args_def)
+  have sb: "set ?cL \<subseteq> set ?cR" using sub unfolding X by simp
+  have cLa: "set_cols (args_L args) = ?cL" unfolding aL using wL by simp
+  have cRa: "set_cols (args_R args) = ?cR" unfolding aR using wR by simp
+  have aL0: "args_L args0 = set ?cL" unfolding a0 by (simp add: init_args_def)
+  have cLa0: "set_cols (args_L args0) = ?cL" unfolding aL0 using wL by simp
+  have aR0: "args_R args0 = set ?cR" unfolding a0 X by (simp add: init_args_def)
+  have an0: "args_n args0 = nn" unfolding a0 by (simp add: init_args_def)
+  have ag0': "args_agg args0 = None" unfolding a0 by (simp add: init_args_def)
+  have dae: "dargs ?cR ?cL args0 = dargs ?cR ?cL args"
+    unfolding a a0 by (simp add: dargs_def init_args_def)
+  have tsub': "{0..<?k} \<subseteq> Formula.fv \<chi>" unfolding kt by (rule tsub)
+  note sc = set_cols_agg_cols[OF finite_fvi tsub']
+  have cc: "?cR = agg_cols ?k ?g" by (rule sc(1))
+  have gs: "set ?g = (\<lambda>c. c - ?k) ` (Formula.fv \<chi> - {0..<?k})" by (rule sc(2))
+  have gsort: "sorted_wrt (<) ?g" by (rule sc(3))
+  have gb: "\<forall>c \<in> set ?g. c < n" using gs bc unfolding nne' by auto
+  have wg: "wf_cols n ?g" using gsort gb by simp
+  have ynotg: "y \<notin> set ?g"
+  proof
+    assume "y \<in> set ?g"
+    then obtain c where c: "c \<in> Formula.fv \<chi> - {0..<?k}" and yc: "y = c - ?k" using gs by auto
+    then have "c = y + ?k" by auto
+    then show False using c ynot unfolding kt by auto
+  qed
+  have dg: "dagg_gcols ag = ?g" unfolding dagg_gcols_def ac ..
+  have A': "Formula.fv \<phi> = Set.insert y (set ?g)" unfolding A kt[symmetric] gs[symmetric] ..
+  have cse: "?cs = merge_cols ?g [y]" unfolding A'
+    by (rule set_cols_eq) (use gsort ynotg in \<open>auto simp: sorted_merge_cols set_merge_cols\<close>)
+  have g0: "aggargs_g0 ag \<Longrightarrow> ?g = []"
+  proof -
+    assume "aggargs_g0 ag"
+    then have "Formula.fv \<chi> \<subseteq> {0..<?k}" using ag0 unfolding kt by simp
+    then have "set ?g = {}" using gs by auto
+    then show "?g = []" by simp
+  qed
+  have fs: "Formula.fv_trm (aggargs_f ag) \<subseteq> set ?cR" unfolding af using fsub by simp
+  have yn: "y < n" using A b by auto
+  have d: "dof n ?cs
+        (mformula.MUntil args (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args))
+      = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
+          (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
+            (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
+            (init_dq (dargs ?cR ?cL args)))"
+    using an agn sb cc cse wg yn ynotg g0 fs
+    by (simp add: Let_def agS cLa cRa dg ay nne')
+  have du: "dof nn ?cR
+        (mformula.MUntil args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args0))
+      = DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
+          (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
+          (init_dq (dargs ?cR ?cL args))"
+    using an0 aR0 sb by (simp add: Let_def ag0' cLa0 dae)
+  have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
+  have su: "dsim nn ?cR tw
+      (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
+        (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
+        (init_dq (dargs ?cR ?cL args)))
+      (mformula.MUntil args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args0))"
+    using iu[OF zu] unfolding mu du .
+  obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
+    and s2: "dsim nn ?cR tw (dof nn ?cR (minit0 nn \<beta>)) (minit0 nn \<beta>)"
+    and wcsL: "wf_cols nn csL" and aLc: "args_L args0 = set csL"
+    by (rule dsim_DUntilD[OF su])
+  have csLe: "csL = ?cL"
+  proof -
+    have "set csL = Formula.fv \<alpha>" using aLc[unfolded aL0] by simp
+    then show ?thesis using set_cols_set[OF wcsL] by simp
+  qed
+  have s1: "dsim nn ?cL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)" using sL unfolding csLe .
+  have rl: "duntil_rel nn ?cR ?cL args tw 0 (init_muaux_dq args)
+      (init_dq (dargs ?cR ?cL args)) ([], []) ([], []) []"
+    by (rule duntil_rel_init[OF a]) (use sub X wR wL in auto)
+  show ?thesis unfolding m d
+    by (rule dsim.DsUntilAgg[OF w pr s1 s2 wL sb agS an aL aR refl refl rl wg agn ay yn ynotg
+          g0 fs nne' cc cse])
+qed
+
 lemma map2_nth:
   "i < length xs \<Longrightarrow> i < length ys \<Longrightarrow> map2 f xs ys ! i = f (xs ! i) (ys ! i)"
   by simp
@@ -878,6 +1156,68 @@ qed
 
 text \<open>The assignment node's own column is the one the compiler removes, and it is the one the
   split of a safe assignment names.\<close>
+
+text \<open>
+  The aggregation's presence does not change which operands a Since or an Until node is built
+  from, nor its interval, its columns or its polarity: it only lands in the @{const args_agg}
+  field.  That is what lets the fused node reuse the unfused one's simulation.
+\<close>
+
+lemma init_since_shape2:
+  "(\<exists>\<alpha>' pos. Formula.fv \<alpha>' = Formula.fv \<alpha> \<and>
+      (\<forall>agg. default_mmasaux.init_since minit0 m agg \<alpha> J \<beta>
+        = mformula.MSince (init_args J m (Formula.fv \<alpha>') (Formula.fv \<beta>) pos agg)
+            (minit0 m \<alpha>') (minit0 m \<beta>) init_mbuf2S
+            (init_mmasaux (init_args J m (Formula.fv \<alpha>') (Formula.fv \<beta>) pos agg))))
+   \<or> (\<forall>agg. default_mmasaux.init_since minit0 m agg \<alpha> J \<beta> = mformula.MRel empty_table)"
+proof (cases "safe_formula \<alpha>")
+  case True
+  show ?thesis
+    by (intro disjI1 exI[of _ \<alpha>] exI[of _ True])
+      (use True in \<open>simp add: default_mmasaux.init_since_def\<close>)
+next
+  case ns: False
+  show ?thesis
+  proof (cases "\<exists>x. \<alpha> = Formula.Neg x")
+    case True
+    then obtain x where ax: "\<alpha> = Formula.Neg x" by blast
+    show ?thesis
+      by (intro disjI1 exI[of _ x] exI[of _ False])
+        (use ns ax in \<open>simp add: default_mmasaux.init_since_def\<close>)
+  next
+    case False
+    then show ?thesis
+      using ns by (simp add: default_mmasaux.init_since_def formula_not_Neg_case)
+  qed
+qed
+
+lemma init_until_shape2:
+  "(\<exists>\<alpha>' pos. Formula.fv \<alpha>' = Formula.fv \<alpha> \<and>
+      (\<forall>agg. dq_muaux.init_until minit0 m agg \<alpha> J \<beta>
+        = mformula.MUntil (init_args J m (Formula.fv \<alpha>') (Formula.fv \<beta>) pos agg)
+            (minit0 m \<alpha>') (minit0 m \<beta>) ([], []) [] 0
+            (init_muaux_dq (init_args J m (Formula.fv \<alpha>') (Formula.fv \<beta>) pos agg))))
+   \<or> (\<forall>agg. dq_muaux.init_until minit0 m agg \<alpha> J \<beta> = mformula.MRel empty_table)"
+proof (cases "safe_formula \<alpha>")
+  case True
+  show ?thesis
+    by (intro disjI1 exI[of _ \<alpha>] exI[of _ True])
+      (use True in \<open>simp add: dq_muaux.init_until_def\<close>)
+next
+  case ns: False
+  show ?thesis
+  proof (cases "\<exists>x. \<alpha> = Formula.Neg x")
+    case True
+    then obtain x where ax: "\<alpha> = Formula.Neg x" by blast
+    show ?thesis
+      by (intro disjI1 exI[of _ x] exI[of _ False])
+        (use ns ax in \<open>simp add: dq_muaux.init_until_def\<close>)
+  next
+    case False
+    then show ?thesis
+      using ns by (simp add: dq_muaux.init_until_def formula_not_Neg_case)
+  qed
+qed
 
 lemma split_assignment_props:
   assumes s: "safe_assignment X \<psi>" and sp: "split_assignment X \<psi> = (y, t)"
@@ -1425,43 +1765,78 @@ next
       by (rule dsim_dof_minit0_MAgg[OF sfa Agg.prems(1) mm refl ynot tsub fsub A bp
             Agg.prems(2) i1])
   qed
-  have shape: "(\<exists>args \<xi> \<eta> bf aux. args_agg args \<noteq> None \<and>
-          minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MSince args \<xi> \<eta> bf aux)
-      \<or> (\<exists>args \<xi> \<eta> bf ns t aux. args_agg args \<noteq> None \<and>
-          minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MUntil args \<xi> \<eta> bf ns t aux)
-      \<or> minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MRel empty_table"
-    if dj: "\<chi> = Formula.Since \<chi>1 J \<chi>2 \<or> \<chi> = Formula.Until \<chi>1 J \<chi>2" for \<chi>1 J \<chi>2
-  proof -
-    note S = init_since_shape[where agg = "Some ?ag" and m = "length tys + n"
-        and \<alpha> = \<chi>1 and J = J and \<beta> = \<chi>2]
-    note U = init_until_shape[where agg = "Some ?ag" and m = "length tys + n"
-        and \<alpha> = \<chi>1 and J = J and \<beta> = \<chi>2]
-    show ?thesis using dj S U by (auto simp: Let_def)
-  qed
   have E: "dofc n tw (Formula.Agg y \<omega> tys f \<chi>)"
     if dj: "\<chi> = Formula.Since \<chi>1 J \<chi>2 \<or> \<chi> = Formula.Until \<chi>1 J \<chi>2" for \<chi>1 J \<chi>2
-    using shape[OF dj]
-  proof (elim disjE exE conjE)
-    fix args \<xi> \<eta> bf aux
-    assume ag: "args_agg args \<noteq> None"
-      and mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MSince args \<xi> \<eta> bf aux"
-    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) = DFail"
-      unfolding mm using ag by (simp add: Let_def)
-    show ?thesis by (rule dsim_dof_minit0_fail[OF m Agg.prems(2)])
-  next
-    fix args \<xi> \<eta> bf ns t aux
-    assume ag: "args_agg args \<noteq> None"
-      and mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MUntil args \<xi> \<eta> bf ns t aux"
-    have m: "dof n ?cs (minit0 n (Formula.Agg y \<omega> tys f \<chi>)) = DFail"
-      unfolding mm using ag by (simp add: Let_def)
-    show ?thesis by (rule dsim_dof_minit0_fail[OF m Agg.prems(2)])
-  next
-    assume mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MRel empty_table"
-    show ?thesis
-      by (rule dsim_dof_minit0_rel[OF sfa Agg.prems(1) mm])
-        (simp add: table_def empty_table_def)
-  qed
-  show ?case
+  proof -
+    let ?nn = "length tys + n"
+    have iu: "dofz ?nn \<chi> \<Longrightarrow> dofc ?nn tw \<chi>" by (rule Agg.IH[OF order_refl sc bp])
+    from dj show ?thesis
+    proof (elim disjE)
+      assume X0: "\<chi> = Formula.Since \<chi>1 J \<chi>2"
+      have sub0: "Formula.fv \<chi>1 \<subseteq> Formula.fv \<chi>2" using sc unfolding X0 by simp
+      have X: "Formula.fv \<chi> = Formula.fv \<chi>2" using sub0 unfolding X0 by auto
+      have mS: "minit0 n (Formula.Agg y \<omega> tys f \<chi>)
+          = default_mmasaux.init_since minit0 ?nn (Some ?ag) \<chi>1 J \<chi>2"
+        unfolding X0 by (simp add: Let_def)
+      have mU: "minit0 ?nn \<chi> = default_mmasaux.init_since minit0 ?nn None \<chi>1 J \<chi>2"
+        unfolding X0 by simp
+      show ?thesis
+        using init_since_shape2[where \<alpha> = \<chi>1 and m = ?nn and J = J and \<beta> = \<chi>2]
+      proof (elim disjE exE conjE)
+        fix \<alpha>' and pos :: bool
+        assume fe: "Formula.fv \<alpha>' = Formula.fv \<chi>1"
+          and sh: "\<forall>agg. default_mmasaux.init_since minit0 ?nn agg \<chi>1 J \<chi>2
+              = mformula.MSince (init_args J ?nn (Formula.fv \<alpha>') (Formula.fv \<chi>2) pos agg)
+                  (minit0 ?nn \<alpha>') (minit0 ?nn \<chi>2) init_mbuf2S
+                  (init_mmasaux (init_args J ?nn (Formula.fv \<alpha>') (Formula.fv \<chi>2) pos agg))"
+        show ?thesis
+          by (rule dsim_dof_minit0_MSinceAgg[OF sfa Agg.prems(1)
+                mS[unfolded sh[rule_format]] mU[unfolded sh[rule_format]] refl refl _ X refl refl
+                ynot tsub fsub A bp Agg.prems(2) iu])
+            (use sub0 fe in simp)
+      next
+        assume "\<forall>agg. default_mmasaux.init_since minit0 ?nn agg \<chi>1 J \<chi>2
+            = mformula.MRel empty_table"
+        then have mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MRel empty_table"
+          unfolding mS by simp
+        show ?thesis
+          by (rule dsim_dof_minit0_rel[OF sfa Agg.prems(1) mm])
+            (simp add: table_def empty_table_def)
+      qed
+    next
+      assume X0: "\<chi> = Formula.Until \<chi>1 J \<chi>2"
+      have sub0: "Formula.fv \<chi>1 \<subseteq> Formula.fv \<chi>2" using sc unfolding X0 by simp
+      have X: "Formula.fv \<chi> = Formula.fv \<chi>2" using sub0 unfolding X0 by auto
+      have mS: "minit0 n (Formula.Agg y \<omega> tys f \<chi>)
+          = dq_muaux.init_until minit0 ?nn (Some ?ag) \<chi>1 J \<chi>2"
+        unfolding X0 by (simp add: Let_def)
+      have mU: "minit0 ?nn \<chi> = dq_muaux.init_until minit0 ?nn None \<chi>1 J \<chi>2"
+        unfolding X0 by simp
+      show ?thesis
+        using init_until_shape2[where \<alpha> = \<chi>1 and m = ?nn and J = J and \<beta> = \<chi>2]
+      proof (elim disjE exE conjE)
+        fix \<alpha>' and pos :: bool
+        assume fe: "Formula.fv \<alpha>' = Formula.fv \<chi>1"
+          and sh: "\<forall>agg. dq_muaux.init_until minit0 ?nn agg \<chi>1 J \<chi>2
+              = mformula.MUntil (init_args J ?nn (Formula.fv \<alpha>') (Formula.fv \<chi>2) pos agg)
+                  (minit0 ?nn \<alpha>') (minit0 ?nn \<chi>2) ([], []) [] 0
+                  (init_muaux_dq (init_args J ?nn (Formula.fv \<alpha>') (Formula.fv \<chi>2) pos agg))"
+        show ?thesis
+          by (rule dsim_dof_minit0_MUntilAgg[OF sfa Agg.prems(1)
+                mS[unfolded sh[rule_format]] mU[unfolded sh[rule_format]] refl refl _ X refl refl
+                ynot tsub fsub A bp Agg.prems(2) iu])
+            (use sub0 fe in simp)
+      next
+        assume "\<forall>agg. dq_muaux.init_until minit0 ?nn agg \<chi>1 J \<chi>2
+            = mformula.MRel empty_table"
+        then have mm: "minit0 n (Formula.Agg y \<omega> tys f \<chi>) = mformula.MRel empty_table"
+          unfolding mS by simp
+        show ?thesis
+          by (rule dsim_dof_minit0_rel[OF sfa Agg.prems(1) mm])
+            (simp add: table_def empty_table_def)
+      qed
+    qed
+  qed  show ?case
   proof (cases \<chi>)
     case (Since \<chi>1 J \<chi>2) show ?thesis by (rule E[of \<chi>1 J \<chi>2]) (use Since in blast)
   next

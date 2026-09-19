@@ -1036,6 +1036,23 @@ lemma dsim_wf_cols: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_cols n cs"
 lemma dsim_produces: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> produces n (set cs) tw \<phi>"
   by (erule dsim.cases) auto
 
+text \<open>The unfused Since and Until nodes are related by one rule each, so the relation can be read
+  backwards there: the operands are related at the node's own frame.  The compiler uses this to
+  reuse an unfused node's simulation for the fused one, whose operands are the very same.\<close>
+
+lemma dsim_DSinceD:
+  assumes "dsim n cs tw (DSince dags \<phi>d \<psi>d dbuf daux) (mformula.MSince args \<phi> \<psi> buf aux)"
+  obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
+    and "wf_cols n cs_L" and "args_L args = set cs_L"
+  using assms by (rule dsim.cases) auto
+
+lemma dsim_DUntilD:
+  assumes "dsim n cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
+      (mformula.MUntil args \<phi> \<psi> buf nts' t' aux)"
+  obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
+    and "wf_cols n cs_L" and "args_L args = set cs_L"
+  using assms by (rule dsim.cases) auto
+
 section \<open>The simulation\<close>
 
 lemma list_all_ftable_append:
