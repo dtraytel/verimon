@@ -6391,3 +6391,140 @@ it is within 10% of the shipping, unverified monitor on every formula of the sui
 ahead of MonPoly on the wide formulas, and behind MonPoly by up to 2x on the subformula-heavy
 ones. Every one of those changes is covered by the simulation theorem `dsim_deval`, whose
 statement did not change.
+
+### 21.6 The verified dense evaluator on short tuples (`Dense_Unbox_Eval.thy`, `Dense_Unbox_Exec.thy`)
+
+Section 21.4 left the verified dense evaluator on the kernel's boxed tuples, `event_data option
+list`, while the shipping monitor ran on `event_data list`, and put the remaining 5-15% gap on
+`since`, `until`, `sincesub` and `trigger` down to that.  This section removes the box from the
+verified evaluator: `-verified -vdense` now runs `udeval`, an evaluator over `event_data list`
+tables whose every node, buffer and temporal structure holds short tuples, and it is covered by
+the simulation theorem of `Dense_Eval.thy` through one refinement theorem.
+
+**The design: exact naturality, no invariants.** The shipping monitor's unboxing (20.31-20.37)
+argued from the hole-free discipline, `dwf_tuple`, that no dense operation constructs a `None`.
+Carrying such an invariant through a *verified* evaluator would have meant threading it through
+every case of `dsim_deval`.  The route taken instead is a refinement without any invariant: a
+map `reopt = map Some` from short tuples to boxed ones, lifted to tables (`reopt_table`), to the
+queues, deques, buffers and mappings the structures are built from, and to the formula
+(`Rep_udformula`), such that every operation of the boxed evaluator commutes with the map on
+*every* input -- not only on hole-free ones.  The theorem is then an equation,
+
+    edeval j ts (rdb db) (Rep_udformula φ) = (case udeval j ts db φ of (zs, φ') ⇒ (map reopt_table zs, Rep_udformula φ'))
+
+(`udeval_Rep`), with `rdb` the embedding of the database, and it composes with `edeval_Rep` and
+`dsim_deval` as is.  The step theorem `udmstep_Rep` says the same of the monitor step.
+
+Making every operation exactly natural took three preparatory changes to the verified
+evaluator, each a refactoring under the same simulation theorem (`Dense_Utuple.thy`,
+`Dense_Until_Gen.thy`; commit "state the field readers, the walks and the Until deque so that
+short tuples refine them exactly"):
+
+- *The field readers.* The operations that read a field -- the match, the constraint, the
+  assignment, the aggregation, the time-point and time-stamp terms -- are not natural: `the
+  (v ! x)` on a hole differs from anything a short tuple can produce.  They are now *defined*
+  on boxed tuples as the short-tuple twin read through `deopt = map the` and written back
+  through `reopt` (`dmatch_table tms cs X = reopt_table (umatch_table tms cs (deopt_table X))`,
+  and likewise `dagg`, `dassign1`, `deval_constraint`).  On hole-free tuples that is what they
+  were (`deopt_reopt`), so the simulation proofs did not change; on every input it is natural
+  by construction.
+- *The walks.* Every fold over a table goes through `csl X = (if finite X then
+  csorted_list_of_set X else [])`, whose commutation with `reopt_table` is a fact about the
+  comparators (`csl_reopt_table`: the list comparator on `Some`s is the list comparator).
+- *The Until deque.* The kernel's deque reads entries by counter-derived indices, which are
+  only meaningful under the deque invariant; a map over the entries of an inconsistent deque
+  need not commute with such a read.  The generic Until structure of `Dense_Until_Gen.thy`
+  reads its front entry and its indexed entries off the lists (`dq_hd_s`, `dq_nth_l`), and its
+  nested update (`gupd_nested_step_dq`) does the same; the agreement with the kernel's reads is
+  proved once, under the invariant the kernel maintains (`duaux'_ushape`), so that the
+  evaluator's proofs see the kernel's operations and the refinement sees natural ones.  The one
+  operation that cannot be made natural is the evaluation step's read of the time-stamp queue's
+  head, undefined on an empty queue: it is natural on every state it is applied to, and the
+  shift applies it once per time stamp it takes (`foldl_geval_step_dq_rmuaux`, with the length
+  of the queue as the side condition).
+- *The sanitiser.* Where a table enters from a kernel structure the evaluator does not
+  otherwise inspect -- the trigger's result, the fused aggregation's result, a `DRel` -- it
+  passes through `dsan = reopt_table ∘ deopt_table`, the identity on hole-free tables, so that
+  the unboxed evaluator reads the structure's result as `deopt_table` and the boxed one as its
+  embedding, exactly.  The trigger itself keeps its boxed buffers and structure: its left
+  operand is embedded into the columns of the right one *with holes*, which no short tuple has.
+
+`Dense_Unbox_Eval.thy` (1900 lines) states the naturality of every container -- `map_mbuf`,
+`map_queue`, `map_dq`, and `rmk`, which re-keys a mapping from short to boxed tuples through
+`those` -- and of every structure: the generic Since (`rmsaux`), the Since window (`gsw_*`,
+generic copies of `sw_*` with the generic count set), the fused aggregation window (`usa_*`,
+with `uag_ins`/`uag_del`/`uag_res` widening the short tuples into the kernel's aggregation
+structure in one pass, `udwiden`), the Until deque (`rmuaux`) and the Until window (`uuw_*`).
+`Dense_Unbox_Exec.thy` (1240 lines) has the dispatched structures, the buffers, the join, the
+formula `udformula`, `udeval`, the theorem, and the compiler `udof` with `udof_edof`, the state
+`udmstate` and the step `udmstep`.  The compiler is stated on the specification's formula through
+`Abs_meformula`, the inverse of the kernel's `Rep_meformula`, so that `udminit_safe` applies to
+`minit_safe`'s state and runs on the executable one.
+
+Things to record from the proofs:
+
+- The simplifier of this development unfolds `Set.filter` into a comprehension, so naturality
+  rules on filters must be stated in the shape the simplifier produces
+  (`Collect_lookup_rmk`, `filter_dproj_reopt_table`), and the default weak congruence rule for
+  `case` leaves branches unsimplified unless the case is split (`gupd_nested_step_dq_eq`).
+- A rule stated with `id` never matches, because the goal has `λa. a`; every map is written
+  `(λv. v)`.  Rules stated on an abstract pair (`rcc cc`) must have the pair's `simps` deleted,
+  or the simplifier splits the pair first and the rule never applies.
+- The recursive functions' `simps` loop as rewrite rules (`meprev_next`, `edsx_eval_since`,
+  the queue scans); the naturality proofs of the recursive structures use `subst` on both
+  sides and then the induction hypothesis, and the evaluator's proof deletes them.
+- A function-package induction over `letpast_meval0 eval …` generalises the evaluator
+  argument; an assumption about the evaluator stated outside the induction is then about a
+  different variable of the same name.  The assumption goes into the statement.
+- The bulk `auto` over the eighteen structural cases of `udeval_Rep` did not terminate; the
+  cases are proved one by one with the naturality rules each needs, in the shapes the
+  simplifier leaves the buffers in (`meprev_next_prev`, `meprev_next_next1-3`,
+  `edsx_eval_since_rdsx0`, `mebuf2T_take_acc0`).
+
+**The code.** `Monitor_Code_Imp.thy` exports `udminit_safe`, `udmstep`, `uvdfail_nodes` and
+`udmstate_m` in place of the boxed `dminit_safe`/`dmstep`, and the wide database and its
+functions are no longer exported; `verified_adapter.ml` runs `-vdense` on the short database and
+prints short verdicts, and the wide-tuple conversion, comparison and printing are gone (98
+lines).  The generic window and count set operations, `gupd_nested_step_dq`, `udtabw`,
+`deopt_table` and `reopt_table` join the monomorphisation list of `Dense_Code_Opt.thy`
+(which now imports `Dense_Unbox_Exec`: a constant that is not in scope there is read as a free
+variable and the monomorphiser reports "Illegal fixed variable").
+
+**Measured.** The suite of `evaluation/perf` (185 formulas; `report.md` and `ratios.svg` there are this
+run), against the run of 21.5 on the same machine, where MonPoly's own times moved by 1%:
+
+| family | vdense/monpoly (21.5) | vdense/monpoly (now) | vdense now/21.5 | vdense/dense (now) |
+|---|---|---|---|---|
+| join | 1.15 | 1.13 | 0.97 | 1.00 |
+| andnot | 1.11 | 1.08 | 0.95 | 0.99 |
+| rel | 1.17 | 1.13 | 0.96 | 1.00 |
+| once | 1.28 | 1.21 | 0.96 | 0.99 |
+| since | 1.85 | 1.68 | 0.89 | 0.99 |
+| eventually | 1.35 | 1.31 | 0.97 | 1.00 |
+| until | 1.53 | 1.58 | 1.02 | 1.00 |
+| burst | 1.22 | 1.29 | 1.06 | 1.01 |
+| nested | 1.24 | 1.19 | 0.95 | 1.00 |
+| agg | 1.39 | 1.36 | 0.97 | 1.00 |
+| agg_once | 2.28 | 2.44 | 1.05 | 1.08 |
+| agg_fut | 2.11 | 2.17 | 1.02 | 1.09 |
+| wide | 1.35 | 1.31 | 0.96 | 0.99 |
+| long | 1.38 | 1.33 | 0.96 | 0.97 |
+| policy | 1.87 | 2.06 | 0.99 | 1.01 |
+| all 21 families | 1.41 | 1.40 | 0.975 | 1.00 |
+
+The verified evaluator is now the shipping monitor's equal on every family but the two that
+aggregate over a window (8-9% behind there), and what remains to MonPoly it shares with the
+shipping monitor: MonPoly's mutable, unverified structures on the aggregations and the
+subformula-heavy policies.  The past window gained the most (`since` 11%, `once` 4%), as 21.4
+predicted; the bounded future operators did not move or lost a few percent (`burst` 6%), and
+the aggregation over a window lost 5%.  Those are the first items of the next round: the fused
+window's result is read from the kernel's structure through two images per time point
+(`dtabc`, then `deopt_table`) and its insertions widen the short tuples into the kernel's boxed
+ones through a third (`udtabw`); the Until deque now reads its entries through the range-checked
+`dq_nth_l`.
+
+BENCH_PLACEHOLDER
+
+The differential tests: identical verdicts on the benchmark formulas (with `matchp` refused),
+and 593 identical, 7 refused, 0 differing on the corpus.  `MFODL_Monitor_Imp` builds in 8:55
+on four threads with the export.
