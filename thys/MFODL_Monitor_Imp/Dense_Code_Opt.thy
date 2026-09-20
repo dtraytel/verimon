@@ -560,10 +560,10 @@ setup \<open>Monomorphize.monomorphize_cmd
 text \<open>The count set's fold passes its step unapplied, which the redirection above does not reach;
   the two folds get their specialised steps by hand.\<close>
 
-lemma de_gcnt_add_code[code]: "de_gcnt_add T cc = fold de_gcnt_add1 (csl T) cc"
+lemma de_gcnt_add_fold[code]: "de_gcnt_add T cc = fold de_gcnt_add1 (csl T) cc"
   by (simp add: de_gcnt_add_def de_gcnt_add1_def gcnt_add_def)
 
-lemma de_gcnt_del_code[code]: "de_gcnt_del T cc = fold de_gcnt_del1 (csl T) cc"
+lemma de_gcnt_del_fold[code]: "de_gcnt_del T cc = fold de_gcnt_del1 (csl T) cc"
   by (simp add: de_gcnt_del_def de_gcnt_del1_def gcnt_del_def)
 
 subsection \<open>The set and mapping operations whose dictionaries are built once\<close>
