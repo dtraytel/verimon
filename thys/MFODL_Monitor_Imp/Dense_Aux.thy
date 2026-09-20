@@ -1882,6 +1882,141 @@ next
   then show ?case by (simp add: dtabc_unit_table_len[OF s b] dtabc_unit_table)
 qed
 
+lemma dtabc_leps_strict:
+  fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+    and sub: "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs"
+  shows "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex mr \<psi>s) \<Longrightarrow>
+     ok (length \<psi>s) mr \<Longrightarrow> set cs = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
+     dtabc n cs (l\<epsilon>_strict n rels mr) = l\<epsilon>_strict (length cs) (map (dtabc n cs) rels) mr"
+proof (induct mr)
+  case (MSkip m)
+  then show ?case by (simp add: dtabc_unit_table_len[OF s b] dtabc_unit_table)
+next
+  case (MTestPos i)
+  then have i: "i < length rels" using ops by (simp add: list_all2_lengthD)
+  then show ?case by simp
+next
+  case (MTestNeg i)
+  then have i: "i < length rels" using ops by (simp add: list_all2_lengthD)
+  then show ?case by (simp add: dtabc_unit_table_len[OF s b])
+next
+  case (MPlus r t)
+  have fvr: "set cs = fv_regex (from_mregex r \<psi>s)"
+    and fvt: "set cs = fv_regex (from_mregex t \<psi>s)" using MPlus(3,5) by auto
+  show ?case
+    using MPlus(1)[OF _ _ fvr] MPlus(2)[OF _ _ fvt] MPlus(3,4)
+    by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have lr: "length \<psi>s = length rels" using ops by (simp add: list_all2_lengthD)
+  have o1: "ok (length \<psi>s) r" and o2: "ok (length \<psi>s) t" using MTimes(4) by simp_all
+  have sr2: "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex t \<psi>s)"
+    using MTimes(3) by simp
+  have fvt: "set cs = fv_regex (from_mregex t \<psi>s)" using MTimes(3,5) by auto
+  have tg: "table n (set cs) (l\<epsilon>_strict n rels t)"
+    by (rule table_leps_strict[OF sr2 o2 fvt ops])
+  have opsB: "\<And>i. i < length rels \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (rels ! i)"
+    using ops sub lr by (auto simp: list_all2_conv_all_nth)
+  show ?case
+    using MTimes(2)[OF sr2 o2 fvt]
+    by (simp add: dtabc_eps_lax[OF s b opsB o1[unfolded lr] tg])
+next
+  case (MStar r)
+  then show ?case by (simp add: dtabc_unit_table_len[OF s b] dtabc_unit_table)
+qed
+
+subsection \<open>The derivatives\<close>
+
+text \<open>
+  The two derivatives read the previous firing's tabulation, which the node keeps narrowed, and
+  join what they find against the atoms through the lax epsilon.  Narrowing a tabulation is
+  narrowing every entry, so the lookups agree; the rest is the lax epsilon again.  The guard the
+  lax epsilon sees here is a derivative's value, which is a table over the node's columns because
+  the tabulation's entries are.
+\<close>
+
+lemma table_rdelta:
+  assumes ops: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> A. table n B (\<phi>s ! i)"
+    and X: "\<And>ms. table n A (lookup X ms)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow> table n A (r\<delta> \<kappa> X \<phi>s mr)"
+proof (induct mr arbitrary: \<kappa>)
+  case (MSkip m)
+  then show ?case using X by (cases m) (auto simp: table_def empty_table_def)
+next
+  case (MPlus r t)
+  then show ?case by (simp add: table_Un)
+next
+  case (MTimes r t)
+  have o: "ok (length \<phi>s) r" "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have u: "table n A (r\<delta> (\<lambda>u. \<kappa> (MTimes r u)) X \<phi>s t)" and g: "table n A (r\<delta> \<kappa> X \<phi>s r)"
+    using MTimes(1,2) o by simp_all
+  show ?case using u by (simp add: table_Un table_eps_lax[OF ops o(2) g])
+qed (auto simp: table_def empty_table_def)
+
+lemma table_ldelta:
+  assumes ops: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> A. table n B (\<phi>s ! i)"
+    and X: "\<And>ms. table n A (lookup X ms)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow> table n A (l\<delta> \<kappa> X \<phi>s mr)"
+proof (induct mr arbitrary: \<kappa>)
+  case (MSkip m)
+  then show ?case using X by (cases m) (auto simp: table_def empty_table_def)
+next
+  case (MPlus r t)
+  then show ?case by (simp add: table_Un)
+next
+  case (MTimes r t)
+  have o: "ok (length \<phi>s) r" "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have u: "table n A (l\<delta> (\<lambda>u. \<kappa> (MTimes u t)) X \<phi>s r)" and g: "table n A (l\<delta> \<kappa> X \<phi>s t)"
+    using MTimes(1,2) o by simp_all
+  show ?case using u by (simp add: table_Un table_eps_lax[OF ops o(1) g])
+qed (auto simp: table_def empty_table_def)
+
+lemma dtabc_rdelta:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)"
+    and X: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dX: "\<And>ms. lookup dX ms = dtabc n cs (lookup X ms)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow>
+     dtabc n cs (r\<delta> \<kappa> X \<phi>s mr) = r\<delta> \<kappa> dX (map (dtabc n cs) \<phi>s) mr"
+proof (induct mr arbitrary: \<kappa>)
+  case (MSkip m)
+  then show ?case using dX by (cases m) simp_all
+next
+  case (MPlus r t)
+  then show ?case by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have o1: "ok (length \<phi>s) r" and o2: "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have opsA: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)" using css by auto
+  have tg: "table n (set cs) (r\<delta> \<kappa> X \<phi>s r)" by (rule table_rdelta[OF opsA X o1])
+  show ?case using MTimes(1)[OF o1] MTimes(2)[OF o2]
+    by (simp add: dtabc_Un_img dtabc_eps_lax[OF s b css o2 tg])
+qed simp_all
+
+lemma dtabc_ldelta:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)"
+    and X: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dX: "\<And>ms. lookup dX ms = dtabc n cs (lookup X ms)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow>
+     dtabc n cs (l\<delta> \<kappa> X \<phi>s mr) = l\<delta> \<kappa> dX (map (dtabc n cs) \<phi>s) mr"
+proof (induct mr arbitrary: \<kappa>)
+  case (MSkip m)
+  then show ?case using dX by (cases m) simp_all
+next
+  case (MPlus r t)
+  then show ?case by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have o1: "ok (length \<phi>s) r" and o2: "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have opsA: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)" using css by auto
+  have tg: "table n (set cs) (l\<delta> \<kappa> X \<phi>s t)" by (rule table_ldelta[OF opsA X o2])
+  show ?case using MTimes(1)[OF o1] MTimes(2)[OF o2]
+    by (simp add: dtabc_Un_img dtabc_eps_lax[OF s b css o1 tg])
+qed simp_all
+
 (*<*)
 end
 (*>*)
