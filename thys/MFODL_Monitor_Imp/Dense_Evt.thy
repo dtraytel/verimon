@@ -543,10 +543,11 @@ proof -
   have tf2: "takeWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter (\<lambda>e. \<not> ?Q e) (wl @ mvd)"
     and df2: "dropWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter ?Q (wl @ mvd)"
     using tfdf2 by simp_all
+  have fmvd: "filter ?Q mvd = mvd" unfolding mvd_def by (simp add: filter_id_conv)
   have w2: "linearize win2 = filter ?Q wl @ mvd"
-    using exr unfolding df2 mvd_def by (simp add: filter_filter conj_commute)
+    using exr[unfolded df2] by (simp add: fmvd)
   have c2: "cc2 = fold cnt_del (map snd (filter (\<lambda>e. \<not> ?Q e) (wl @ mvd))) cc1"
-    using exr unfolding tf2 by simp
+    using exr[unfolded tf2] by simp
   \<comment> \<open>the count set\<close>
   have fin_mvd: "\<forall>T \<in> set (map snd mvd). finite T" using mvd_sub ipl by auto
   have fin_wl: "\<forall>T \<in> set (map snd (wl @ mvd)). finite T" using fin_mvd iwl by auto
@@ -554,50 +555,58 @@ proof -
     unfolding c1 using cnt_inv_adds[OF cnt fin_mvd] by simp
   have split: "map snd (wl @ mvd) = map snd (filter (\<lambda>e. \<not> ?Q e) (wl @ mvd))
       @ map snd (filter ?Q (wl @ mvd))"
-    by (subst (1) takeWhile_dropWhile_id[symmetric, of "\<lambda>e. \<not> ?Q e"])
-      (simp add: tf2 df2 del: takeWhile_dropWhile_id)
+    unfolding tf2[symmetric] df2[symmetric] by (simp add: map_append[symmetric] del: map_append)
   have cnt2: "cnt_inv (map snd (filter ?Q (wl @ mvd))) cc2"
     unfolding c2 by (rule cnt_inv_dels) (use cnt1[unfolded split] fin_wl in auto)
-  have fmvd: "filter ?Q mvd = mvd" unfolding mvd_def by (simp add: filter_id_conv)
   have cnt2': "cnt_inv (map snd (linearize win2)) cc2"
     using cnt2 unfolding w2 by (simp add: fmvd)
   \<comment> \<open>the invariant on the queues\<close>
+  have ord2: "\<forall>e \<in> set (filter ?Q wl). \<forall>e' \<in> set mvd. fst e \<le> fst e'"
+  proof (intro ballI)
+    fix e e' assume "e \<in> set (filter ?Q wl)" and "e' \<in> set mvd"
+    then have "e \<in> set wl" and "e' \<in> set pl" using mvd_sub by auto
+    then show "fst e \<le> fst e'" using ord by blast
+  qed
   have inv': "sw_inv args nt (linearize pend1) (linearize win2)"
     unfolding sw_inv_def p1 w2
-  proof (intro conjI ballI)
+  proof (intro conjI)
     show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (filter (\<lambda>e. \<not> ?P e) pl)"
       by (intro sorted_wrt_filter spl)
     show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (filter ?Q wl @ mvd)"
-      unfolding sorted_wrt_append using sorted_wrt_filter[OF swl] smvd ord mvd_sub by auto
-  next
-    fix e assume "e \<in> set (filter (\<lambda>e. \<not> ?P e) pl)"
-    then show "fst e \<le> nt \<and> \<not> memL ?I (nt - fst e) \<and> finite (snd e)"
+      unfolding sorted_wrt_append using sorted_wrt_filter[OF swl, of ?Q] smvd ord2 by blast
+    show "\<forall>e \<in> set (filter (\<lambda>e. \<not> ?P e) pl). fst e \<le> nt \<and> \<not> memL ?I (nt - fst e) \<and> finite (snd e)"
       using ipl nt by auto
-  next
-    fix e assume e: "e \<in> set (filter ?Q wl @ mvd)"
-    then show "fst e \<le> nt \<and> memL ?I (nt - fst e) \<and> memR ?I (nt - fst e) \<and> finite (snd e)"
-    proof (cases "e \<in> set wl")
-      case True
-      then have "memL ?I (cur - fst e)" "fst e \<le> cur" "finite (snd e)" using iwl by auto
-      moreover have "cur - fst e \<le> nt - fst e" using nt by simp
-      ultimately show ?thesis using e nt by (auto intro: memL_mono)
-    next
-      case False
-      then have "e \<in> set mvd" using e by auto
-      then show ?thesis using ipl nt unfolding mvd_def by auto
+    show "\<forall>e \<in> set (filter ?Q wl @ mvd).
+        fst e \<le> nt \<and> memL ?I (nt - fst e) \<and> memR ?I (nt - fst e) \<and> finite (snd e)"
+    proof
+      fix e assume e: "e \<in> set (filter ?Q wl @ mvd)"
+      have Qe: "?Q e" using e unfolding mvd_def by auto
+      show "fst e \<le> nt \<and> memL ?I (nt - fst e) \<and> memR ?I (nt - fst e) \<and> finite (snd e)"
+      proof (cases "e \<in> set wl")
+        case True
+        then have "memL ?I (cur - fst e)" "fst e \<le> cur" "finite (snd e)" using iwl by auto
+        moreover have "cur - fst e \<le> nt - fst e" using nt by simp
+        ultimately show ?thesis using Qe nt by (auto intro: memL_mono)
+      next
+        case False
+        then have "e \<in> set mvd" using e by auto
+        then show ?thesis using ipl nt unfolding mvd_def by auto
+      qed
     qed
-  next
-    fix e e' assume e: "e \<in> set (filter ?Q wl @ mvd)" and e': "e' \<in> set (filter (\<lambda>e. \<not> ?P e) pl)"
-    show "fst e \<le> fst e'"
-    proof (cases "e \<in> set wl")
-      case True
-      then show ?thesis using ord e' by auto
-    next
-      case False
-      then have em: "e \<in> set mvd" using e by auto
-      then have "?P e" unfolding mvd_def by auto
-      moreover have "\<not> ?P e'" using e' by auto
-      ultimately show ?thesis using Pa[of e' e] by (auto simp: not_le)
+    show "\<forall>e \<in> set (filter ?Q wl @ mvd). \<forall>e' \<in> set (filter (\<lambda>e. \<not> ?P e) pl). fst e \<le> fst e'"
+    proof (intro ballI)
+      fix e e' assume e: "e \<in> set (filter ?Q wl @ mvd)" and e': "e' \<in> set (filter (\<lambda>e. \<not> ?P e) pl)"
+      show "fst e \<le> fst e'"
+      proof (cases "e \<in> set wl")
+        case True
+        then show ?thesis using ord e' by auto
+      next
+        case False
+        then have em: "e \<in> set mvd" using e by auto
+        then have "?P e" unfolding mvd_def by auto
+        moreover have "\<not> ?P e'" using e' by auto
+        ultimately show ?thesis using Pa[of e' e] linear[of "fst e'" "fst e"] by blast
+      qed
     qed
   qed
   \<comment> \<open>the tables at every timestamp\<close>
@@ -605,31 +614,41 @@ proof -
       = tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)"
   proof -
     fix u
-    have f: "filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist = filter (\<lambda>e. memR ?I (nt - fst e)) auxlist"
-      by (rule filter_cong) auto
-    have r: "tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)
-        = (if memR ?I (nt - u) then tbls_at u pl \<union> tbls_at u wl else {})"
-      unfolding f tbls_at_filter at[symmetric] tbls_at_append by simp
-    have l: "tbls_at u (linearize pend1 @ linearize win2)
-        = (if \<not> memL ?I (nt - u) then tbls_at u pl else {}) \<union>
-          (if memR ?I (nt - u) then tbls_at u wl else {}) \<union>
-          (if memR ?I (nt - u) \<and> memL ?I (nt - u) then tbls_at u pl else {})"
-      unfolding p1 w2 mvd_def tbls_at_append tbls_at_filter by simp
+    have A: "tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)
+        = (if memR ?I (nt - u) then tbls_at u auxlist else {})"
+      by (auto simp: tbls_at_def)
+    have B: "tbls_at u (filter (\<lambda>e. \<not> ?P e) pl) = (if memL ?I (nt - u) then {} else tbls_at u pl)"
+      by (auto simp: tbls_at_def)
+    have C: "tbls_at u (filter ?Q wl) = (if memR ?I (nt - u) then tbls_at u wl else {})"
+      by (auto simp: tbls_at_def)
+    have D: "tbls_at u mvd = (if memR ?I (nt - u) \<and> memL ?I (nt - u) then tbls_at u pl else {})"
+      by (auto simp: mvd_def tbls_at_def)
     show "tbls_at u (linearize pend1 @ linearize win2)
         = tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)"
     proof (cases "memR ?I (nt - u)")
       case True
-      then show ?thesis unfolding l r by auto
+      then show ?thesis unfolding p1 w2 tbls_at_append A B C D at[symmetric]
+        by (cases "memL ?I (nt - u)") auto
     next
       case False
       then have "memL ?I (nt - u)" by (rule not_memR_imp_memL)
-      then show ?thesis unfolding l r using False by simp
+      then show ?thesis unfolding p1 w2 tbls_at_append A B C D using False by simp
     qed
   qed
   have al': "\<forall>e \<in> set (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist).
       fst e \<le> nt \<and> memR ?I (nt - fst e) \<and> table (args_n args) (args_R args) (snd e)"
     using al nt by auto
-  show ?thesis unfolding res valid_sw_def using inv' cnt2' at' al' by simp
+  show ?thesis unfolding res valid_sw_def prod.case
+  proof (intro conjI)
+    show "nt = nt" by (rule refl)
+    show "sw_inv args nt (linearize pend1) (linearize win2)" by (rule inv')
+    show "cnt_inv (map snd (linearize win2)) cc2" by (rule cnt2')
+    show "\<forall>u. tbls_at u (linearize pend1 @ linearize win2)
+        = tbls_at u (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist)" using at' by blast
+    show "\<forall>e \<in> set (filter (\<lambda>(t, rel). memR ?I (nt - t)) auxlist).
+        fst e \<le> nt \<and> memR ?I (nt - fst e) \<and> table (args_n args) (args_R args) (snd e)"
+      by (rule al')
+  qed
 qed
 
 lemma valid_sw_join:
@@ -1256,8 +1275,8 @@ proof -
   then obtain e1 wl1 where wl1: "linearize win1 = e1 # wl1" by (cases "linearize win1") auto
   have e1: "e1 = e0" using es1 wl1 es by simp
   obtain ho win2 where sh2: "safe_hd win1 = (ho, win2)" by (cases "safe_hd win1")
-  have ho: "ho = Some e1" and lw2: "linearize win2 = e1 # wl1"
-    using safe_hd_rep[OF sh2] wl1 by (auto split: option.splits)
+  have lw2: "linearize win2 = e1 # wl1" using safe_hd_rep[OF sh2] wl1 by simp
+  have ho: "ho = Some e1" using safe_hd_rep[OF sh2] lw2 by (cases ho) auto
   have lw3: "linearize (tl_queue win2) = wl1" by (simp add: tl_queue_rep lw2)
   \<comment> \<open>the answer\<close>
   have ans: "snd cc1 = uw_a2 ?I ts0 es"
@@ -1287,14 +1306,14 @@ proof -
     have es'2: "es' = e2 # (wl2 @ linearize rest1)" using es'_eq Cons by simp
     have r: "\<forall>e \<in> set wl1. memR ?I (fst e - ts0)" and bl: "\<forall>e \<in> set (butlast wl1). snd (snd e)"
       and bd: "bend1 = (wl1 = [] \<or> snd (snd (last wl1)))"
-      using wi1 unfolding uw_win_def wl1 by (auto simp: butlast_append)
+      using wi1 unfolding uw_win_def wl1 by (simp_all add: Cons)
     have le: "ts0 \<le> fst e2" using srt unfolding es es'2 ts0 by simp
     have r': "\<forall>e \<in> set wl1. memR ?I (fst e - fst e2)"
       using r le memR_mono_ts by blast
     show ?thesis unfolding es'2 using ne2 r' bl bd by (simp add: uw_win_def)
   qed
   have sub: "set (uw_es res) \<subseteq> set (uw_es aux)"
-    unfolding res_def aux uw_es.simps lw3 es'_eq es_def[symmetric] es by simp
+    unfolding res_def aux uw_es.simps lw3 es'_eq es_def[symmetric] es by auto
   have "valid_uw args cur' res auxlist" unfolding res_def valid_uw_def
   proof (simp only: prod.case Let_def lw3, intro conjI)
     show "linearize (tl_queue nts') = map fst (wl1 @ linearize rest1)"
@@ -1364,6 +1383,12 @@ proof -
   qed
 qed
 
+fun uw_len :: "uwaux \<Rightarrow> nat" where
+  "uw_len (nts, win, rest, len, bend, cc, dn) = len"
+
+lemma uw_len_step: "uw_len (uw_step args ts0 (nts, win, rest, len, bend, cc, dn)) = len - 1"
+  by (simp add: uw_step_def Let_def split: prod.splits option.splits)
+
 text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
 
 lemma valid_uw_shift:
@@ -1372,9 +1397,9 @@ lemma valid_uw_shift:
     (\<forall>e \<in> set (uw_es (uw_shift args nt aux)). memR (args_ivl args) (nt - fst e)) \<and>
     set (uw_es (uw_shift args nt aux)) \<subseteq> set (uw_es aux)"
   using v cn
-proof (induct args nt aux rule: uw_shift.induct)
-  case (1 args nt aux)
-  note IH = 1(1) and v = 1(2) and cn = 1(3)
+proof (induct "uw_len aux" arbitrary: aux cur rule: less_induct)
+  case less
+  note IH = less.hyps and v = less.prems(1) and cn = less.prems(2)
   let ?I = "args_ivl args"
   obtain nts win rest len bend cc dn where aux: "aux = (nts, win, rest, len, bend, cc, dn)"
     by (cases aux)
@@ -1417,13 +1442,13 @@ proof (induct args nt aux rule: uw_shift.induct)
       case False
       have len_ne: "len \<noteq> 0" and old: "\<not> memR ?I (nt - ts0)" using False by auto
       have sh': "safe_hd nts = (Some ts0, nts')" using sh Some by simp
-      have st: "valid_uw args nt (uw_step args ts0 (nts', win, rest, len, bend, cc, dn)) auxlist"
-        and sub: "set (uw_es (uw_step args ts0 (nts', win, rest, len, bend, cc, dn))) \<subseteq> set (uw_es aux)"
+      let ?st = "uw_step args ts0 (nts', win, rest, len, bend, cc, dn)"
+      have st: "valid_uw args nt ?st auxlist" and sub: "set (uw_es ?st) \<subseteq> set (uw_es aux)"
         using valid_uw_step[OF v aux len_ne sh' old cn] by simp_all
-      have eq: "uw_shift args nt aux
-          = uw_shift args nt (uw_step args ts0 (nts', win, rest, len, bend, cc, dn))"
+      have lt: "uw_len ?st < uw_len aux" unfolding aux uw_len_step using len_ne by simp
+      have eq: "uw_shift args nt aux = uw_shift args nt ?st"
         using Some False by (subst uw_shift.simps) (simp add: aux sh)
-      show ?thesis unfolding eq using IH[OF aux sh[unfolded Some] refl refl False st cn] sub by auto
+      show ?thesis unfolding eq using IH[OF lt st order_refl] sub by auto
     qed
   qed
 qed
