@@ -87,7 +87,7 @@ function (sequential) dof ::
         None \<Rightarrow>
           (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> buf = init_mbuf2S
            then DSince (dargs cs cs_L args) \<phi>d \<psi>d init_mbuf2S
-                  (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
+                  (dsx_init (dargs cs cs_L args) (dmsk cs cs_L))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -98,7 +98,7 @@ function (sequential) dof ::
            then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
-                    (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+                    (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
            else DFail))"
 | "dof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
@@ -108,7 +108,7 @@ function (sequential) dof ::
           (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and>
               buf = ([], []) \<and> nts = [] \<and> t = 0
            then DUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d ([], []) [] 0
-                  (init_dq (dargs cs cs_L args))
+                  (dux_init (dargs cs cs_L args))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -120,7 +120,7 @@ function (sequential) dof ::
            then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d ([], []) [] 0
-                    (init_dq (dargs cs_R cs_L args)))
+                    (dux_init (dargs cs_R cs_L args)))
            else DFail))"| "dof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
@@ -576,15 +576,15 @@ lemma dsince_rel_init:
   assumes a: "args = init_args I n L R pos agg"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
-     (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) init_mbuf2S init_mbuf2S"
+     (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)) init_mbuf2S init_mbuf2S"
 proof -
   have v: "valid_mmasaux args 0 (init_mmasaux args) []"
     unfolding a by (rule valid_init_mmasaux[OF sub])
-  have s: "dsaux' n cs_R cs_L args 0
-      (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
-    by (rule dsaux'_init) (use sub cL cR in simp)
+  have s: "dsxaux' n cs_R cs_L args 0
+      (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
+    by (rule dsxaux'_init) (use sub cL cR in simp)
   have "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
-      (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) ([], [], [], False)
+      (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)) ([], [], [], False)
       (map (dtabc n cs_L) [], map (dtabc n cs_R) [], [], False)"
     by (rule dsince_relI[OF v s]) simp_all
   then show ?thesis by simp
@@ -595,14 +595,14 @@ lemma duntil_rel_init:
     and sR: "sorted_wrt (<) cs_R" and sL: "sorted_wrt (<) cs_L"
     and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
   shows "duntil_rel n cs_R cs_L args tw 0 (init_muaux_dq args)
-     (init_dq (dargs cs_R cs_L args)) ([], []) ([], []) []"
+     (dux_init (dargs cs_R cs_L args)) ([], []) ([], []) []"
 proof -
   have v: "valid_muaux_dq args 0 (init_muaux_dq args) []"
     unfolding a by (rule valid_init_muaux_dq[OF sub])
-  have s: "duaux' n cs_R cs_L args 0 (init_dq (dargs cs_R cs_L args)) []"
-    by (rule duaux'_init[OF sR sL]) (use sub cL cR in simp)
+  have s: "duxaux' n cs_R cs_L args 0 (dux_init (dargs cs_R cs_L args)) []"
+    by (rule duxaux'_init[OF sR sL]) (use sub cL cR in simp)
   have r: "duaux_rel n cs_R cs_L args 0 (init_muaux_dq args)
-      (init_dq (dargs cs_R cs_L args))"
+      (dux_init (dargs cs_R cs_L args))"
     unfolding duaux_rel_def using v s by blast
   show ?thesis unfolding duntil_rel_def using r by auto
 qed
@@ -636,10 +636,10 @@ proof -
         (mformula.MSince args (minit0 n \<chi>) (minit0 n \<psi>) init_mbuf2S (init_mmasaux args))
       = DSince (dargs ?cs ?cL args)
           (dof n ?cL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<psi>)) init_mbuf2S
-          (dinit_msaux (dargs ?cs ?cL args) (dmsk ?cs ?cL))"
+          (dsx_init (dargs ?cs ?cL args) (dmsk ?cs ?cL))"
     using an sb by (simp add: Let_def ag cLa cRa dnode_n_def)
   have rl: "dsince_rel n ?cs ?cL args tw (init_mmasaux args)
-      (dinit_msaux (dargs ?cs ?cL args) (dmsk ?cs ?cL)) init_mbuf2S init_mbuf2S"
+      (dsx_init (dargs ?cs ?cL args) (dmsk ?cs ?cL)) init_mbuf2S init_mbuf2S"
     by (rule dsince_rel_init[OF a]) (use sub A in auto)
   have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
     using z unfolding m d A[symmetric] by simp_all
@@ -678,10 +678,10 @@ proof -
         (mformula.MUntil args (minit0 n \<chi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux_dq args))
       = DUntil (dargs ?cs ?cL args) (dmsk ?cs ?cL)
           (dof n ?cL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<psi>)) ([], []) [] 0
-          (init_dq (dargs ?cs ?cL args))"
+          (dux_init (dargs ?cs ?cL args))"
     using an sb by (simp add: Let_def ag cLa cRa dnode_n_def)
   have rl: "duntil_rel n ?cs ?cL args tw 0 (init_muaux_dq args)
-      (init_dq (dargs ?cs ?cL args)) ([], []) ([], []) []"
+      (dux_init (dargs ?cs ?cL args)) ([], []) ([], []) []"
     by (rule duntil_rel_init[OF a]) (use sub A b bL in \<open>auto simp: finite_fvi\<close>)
   have z1: "dofz n \<chi>" and z2: "dofz n \<psi>"
     using z unfolding m d A[symmetric] by simp_all
@@ -856,20 +856,20 @@ proof -
       = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
           (DSince (dargs ?cR ?cL args)
             (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
-            (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
+            (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
     using an agn sb cc cse wg yn ynotg g0 fs
     by (simp add: Let_def agS cLa cRa dg ay nne' dnode_n_def)
   have du: "dof nn ?cR
         (mformula.MSince args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args0))
       = DSince (dargs ?cR ?cL args)
           (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
-          (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL))"
+          (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL))"
     using an0 sb by (simp add: Let_def ag0' cLa0 cRa0 dae dnode_n_def)
   have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
   have su: "dsim nn ?cR tw
       (DSince (dargs ?cR ?cL args)
         (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
-        (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)))
+        (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)))
       (mformula.MSince args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args0))"
     using iu[OF zu] unfolding mu du .
   obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
@@ -883,7 +883,7 @@ proof -
   qed
   have s1: "dsim nn ?cL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)" using sL unfolding csLe .
   have rl: "dsince_rel nn ?cR ?cL args tw (init_mmasaux args)
-      (dinit_msaux (dargs ?cR ?cL args) (dmsk ?cR ?cL)) init_mbuf2S init_mbuf2S"
+      (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)) init_mbuf2S init_mbuf2S"
     by (rule dsince_rel_init[OF a]) (use sub X in auto)
   show ?thesis unfolding m d
     by (rule dsim.DsSinceAgg[OF w pr s1 s2 wL sb agS an aL aR refl rl wg agn ay yn ynotg g0 fs
@@ -978,20 +978,20 @@ proof -
       = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
           (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
             (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
-            (init_dq (dargs ?cR ?cL args)))"
+            (dux_init (dargs ?cR ?cL args)))"
     using an agn sb cc cse wg yn ynotg g0 fs
     by (simp add: Let_def agS cLa cRa dg ay nne' dnode_n_def)
   have du: "dof nn ?cR
         (mformula.MUntil args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args0))
       = DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
           (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
-          (init_dq (dargs ?cR ?cL args))"
+          (dux_init (dargs ?cR ?cL args))"
     using an0 sb by (simp add: Let_def ag0' cLa0 cRa0 dae dnode_n_def)
   have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
   have su: "dsim nn ?cR tw
       (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
         (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
-        (init_dq (dargs ?cR ?cL args)))
+        (dux_init (dargs ?cR ?cL args)))
       (mformula.MUntil args0 (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args0))"
     using iu[OF zu] unfolding mu du .
   obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
@@ -1005,7 +1005,7 @@ proof -
   qed
   have s1: "dsim nn ?cL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)" using sL unfolding csLe .
   have rl: "duntil_rel nn ?cR ?cL args tw 0 (init_muaux_dq args)
-      (init_dq (dargs ?cR ?cL args)) ([], []) ([], []) []"
+      (dux_init (dargs ?cR ?cL args)) ([], []) ([], []) []"
     by (rule duntil_rel_init[OF a]) (use sub X wR wL in auto)
   show ?thesis unfolding m d
     by (rule dsim.DsUntilAgg[OF w pr s1 s2 wL sb agS an aL aR refl refl rl wg agn ay yn ynotg

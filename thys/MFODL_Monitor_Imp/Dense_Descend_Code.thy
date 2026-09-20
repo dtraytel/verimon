@@ -73,7 +73,7 @@ function (sequential) edof ::
         None \<Rightarrow>
           (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> bf = init_mbuf2S
            then DSince (dargs cs cs_L args) \<phi>d \<psi>d init_mbuf2S
-                  (dinit_msaux (dargs cs cs_L args) (dmsk cs cs_L))
+                  (dsx_init (dargs cs cs_L args) (dmsk cs cs_L))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -84,7 +84,7 @@ function (sequential) edof ::
            then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
-                    (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+                    (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
            else DFail))"
 | "edof n cs (meformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
@@ -94,7 +94,7 @@ function (sequential) edof ::
           (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and>
               map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and> Rep_mbuf_t nts = [] \<and> t = 0
            then DUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d ([], []) [] 0
-                  (init_dq (dargs cs cs_L args))
+                  (dux_init (dargs cs cs_L args))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -106,7 +106,7 @@ function (sequential) edof ::
            then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d ([], []) [] 0
-                    (init_dq (dargs cs_R cs_L args)))
+                    (dux_init (dargs cs_R cs_L args)))
            else DFail))"
 | "edof n cs (meformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
