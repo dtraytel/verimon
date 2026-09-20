@@ -89,7 +89,7 @@ for a in [1, 5, 20, 100, 500]:
     add("once_lb", "base", "C(x) AND ONCE[%d,%d] A(x,y)" % (a, a + 20), a=a)
 for f in ["A(x,y) AND ONCE[0,*) B(x,y)", "A(x,y) AND NOT ONCE[1,*) A(x,y)"]:
     add("once_inf", "base", f)
-for f in ["C(x) AND ONCE[10,*) B(x,y)", "C(x) AND NOT ONCE[10,*) B(x,y)"]:
+for f in ["C(x) AND ONCE[10,*) B(x,y)", "A(x,y) AND NOT ONCE[10,*) B(x,y)"]:
     add("once_inf", "rate10", f)
 for b in [5, 20, 50]:
     add("once_exists", "base", "C(x) AND (EXISTS y. ONCE[0,%d] A(x,y))" % b, b=b)

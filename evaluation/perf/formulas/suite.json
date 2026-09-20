@@ -834,7 +834,7 @@
   "name": "once_inf-04",
   "family": "once_inf",
   "log": "rate10",
-  "formula": "C(x) AND NOT ONCE[10,*) B(x,y)",
+  "formula": "A(x,y) AND NOT ONCE[10,*) B(x,y)",
   "params": {}
  },
  {
