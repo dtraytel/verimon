@@ -95,10 +95,15 @@ function (sequential) dof ::
               buf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
-                  m (ins_pos g y)
-                  (DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
-                    (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+           then (if cpos cs_R (set cs_L) = {}
+                 then DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
+                        (dsx_init_agg (dargs cs_R cs_L args)
+                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
+                           m, ins_pos g y))
+                 else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                        m (ins_pos g y)
+                        (DSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mbuf2S
+                          (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L))))
            else DFail))"
 | "dof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
@@ -590,6 +595,24 @@ proof -
   then show ?thesis by simp
 qed
 
+lemma dsince_rel_init_agg:
+  assumes a: "args = init_args I n L R pos agg"
+    and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
+    and c: "cpos cs_R (set cs_L) = {}" and ok: "dagg_ok p (length cs_R)"
+  shows "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
+     (dsx_init_agg (dargs cs_R cs_L args) p) init_mbuf2S init_mbuf2S"
+proof -
+  have v: "valid_mmasaux args 0 (init_mmasaux args) []"
+    unfolding a by (rule valid_init_mmasaux[OF sub])
+  have s: "dsxaux' n cs_R cs_L args 0 (dsx_init_agg (dargs cs_R cs_L args) p) []"
+    by (rule dsxaux'_init_agg[OF c ok])
+  have "dsince_rel n cs_R cs_L args tw (init_mmasaux args)
+      (dsx_init_agg (dargs cs_R cs_L args) p) ([], [], [], False)
+      (map (dtabc n cs_L) [], map (dtabc n cs_R) [], [], False)"
+    by (rule dsince_relI[OF v s]) simp_all
+  then show ?thesis by simp
+qed
+
 lemma duntil_rel_init:
   assumes a: "args = init_args I n L R pos agg"
     and sR: "sorted_wrt (<) cs_R" and sL: "sorted_wrt (<) cs_L"
@@ -646,7 +669,7 @@ proof -
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
     using i2[OF z2] unfolding A[symmetric] .
   show ?thesis unfolding m d
-    by (rule dsim.DsSince[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl rl])
+    by (rule dsim.DsSince[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl rl]) simp
 qed
 
 lemma dsim_dof_minit0_MUntil:
@@ -851,12 +874,17 @@ proof -
   qed
   have fs: "Formula.fv_trm (aggargs_f ag) \<subseteq> set ?cR" unfolding af using fsub by simp
   have yn: "y < n" using A b by auto
+  let ?p = "(aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm ?cR (aggargs_f ag), ?k, ins_pos ?g y)"
   have d: "dof n ?cs
         (mformula.MSince args (minit0 nn \<alpha>) (minit0 nn \<beta>) init_mbuf2S (init_mmasaux args))
-      = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
+      = (if cpos ?cR (set ?cL) = {}
+         then DSince (dargs ?cR ?cL args)
+            (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
+            (dsx_init_agg (dargs ?cR ?cL args) ?p)
+         else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
           (DSince (dargs ?cR ?cL args)
             (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
-            (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
+            (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL))))"
     using an agn sb cc cse wg yn ynotg g0 fs
     by (simp add: Let_def agS cLa cRa dg ay nne' dnode_n_def)
   have du: "dof nn ?cR
@@ -865,7 +893,7 @@ proof -
           (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
           (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL))"
     using an0 sb by (simp add: Let_def ag0' cLa0 cRa0 dae dnode_n_def)
-  have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
+  have zu: "dofz nn \<chi>" using z unfolding m d mu du by (simp split: if_split_asm)
   have su: "dsim nn ?cR tw
       (DSince (dargs ?cR ?cL args)
         (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) init_mbuf2S
@@ -875,7 +903,7 @@ proof -
   obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
     and s2: "dsim nn ?cR tw (dof nn ?cR (minit0 nn \<beta>)) (minit0 nn \<beta>)"
     and wcsL: "wf_cols nn csL" and aLc: "args_L args0 = set csL"
-    by (rule dsim_DSinceD[OF su])
+    by (rule dsim_DSinceD[OF su]) simp
   have csLe: "csL = ?cL"
   proof -
     have "set csL = Formula.fv \<alpha>" using aLc[unfolded aL0] by simp
@@ -885,9 +913,27 @@ proof -
   have rl: "dsince_rel nn ?cR ?cL args tw (init_mmasaux args)
       (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)) init_mbuf2S init_mbuf2S"
     by (rule dsince_rel_init[OF a]) (use sub X in auto)
-  show ?thesis unfolding m d
-    by (rule dsim.DsSinceAgg[OF w pr s1 s2 wL sb agS an aL aR refl rl wg agn ay yn ynotg g0 fs
-          nne' cc cse])
+  show ?thesis
+  proof (cases "cpos ?cR (set ?cL) = {}")
+    case False
+    show ?thesis unfolding m d if_not_P[OF False]
+      by (rule dsim.DsSinceAgg[OF w pr s1 s2 wL sb agS an aL aR refl rl wg agn ay yn ynotg g0 fs
+            nne' cc cse]) simp_all
+  next
+    case True
+    note c = True
+    have fs': "Formula.fv_trm (aggargs_f ag) \<subseteq> set (agg_cols ?k ?g)"
+      using fs unfolding cc[symmetric] .
+    have ok: "dagg_ok ?p (length ?cR)"
+      using dagg_ok_agg[of "aggargs_f ag" ?k ?g "aggargs_g0 ag" "aggargs_\<omega> ag" y] fs' g0
+      unfolding cc[symmetric] by blast
+    have rla: "dsince_rel nn ?cR ?cL args tw (init_mmasaux args)
+        (dsx_init_agg (dargs ?cR ?cL args) ?p) init_mbuf2S init_mbuf2S"
+      by (rule dsince_rel_init_agg[OF a _ _ _ c ok]) (use sub X in auto)
+    show ?thesis unfolding m d if_P[OF True]
+      by (rule dsim.DsSinceFused[OF w pr s1 s2 wL sb agS an aL aR refl rla wg agn ay yn ynotg g0 fs
+            nne' cc cse]) simp_all
+  qed
 qed
 
 text \<open>The fused aggregating Until, along the same lines.\<close>

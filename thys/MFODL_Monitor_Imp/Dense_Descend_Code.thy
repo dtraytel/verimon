@@ -86,10 +86,15 @@ function (sequential) edof ::
               bf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then EDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
-                  m (ins_pos g y)
-                  (EDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
-                    (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+           then (if cpos cs_R (set cs_L) = {}
+                 then EDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
+                        (dsx_init_agg (dargs cs_R cs_L args)
+                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
+                           m, ins_pos g y))
+                 else EDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+                        m (ins_pos g y)
+                        (EDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
+                          (dsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L))))
            else EDFail))"
 | "edof n cs (meformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);

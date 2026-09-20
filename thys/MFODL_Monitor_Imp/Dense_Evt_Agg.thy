@@ -44,6 +44,24 @@ text \<open>The kernel's frame: the group columns are all of the result's column
 fun dagg_gcols :: "daggp \<Rightarrow> nat \<Rightarrow> cols" where
   "dagg_gcols (g0, \<omega>, f, k, pos) w = [0..<pos] @ [Suc pos..<Suc (w - k)]"
 
+text \<open>The parameters the compiler builds from a fused node's aggregation are well formed at the
+  width of the node's operand.\<close>
+
+lemma col_pos_length: "c \<in> set cs \<Longrightarrow> col_pos cs c < length cs"
+  by (induct cs) auto
+
+lemma fv_reindex_trm:
+  "Formula.fv_trm t \<subseteq> set cs \<Longrightarrow> Formula.fv_trm (reindex_trm cs t) \<subseteq> {0..<length cs}"
+  by (induct t) (auto simp: col_pos_length)
+
+lemma ins_pos_le: "ins_pos cs y \<le> length cs"
+  by (simp add: ins_pos_def)
+
+lemma dagg_ok_agg:
+  assumes "Formula.fv_trm f \<subseteq> set (agg_cols k g)" and "g0 \<Longrightarrow> g = []"
+  shows "dagg_ok (g0, \<omega>, reindex_trm (agg_cols k g) f, k, ins_pos g y) (length (agg_cols k g))"
+  using fv_reindex_trm[OF assms(1)] assms(2) ins_pos_le[of g y] by auto
+
 fun shift_trm :: "nat \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm" where
   "shift_trm b (Formula.Var x) = Formula.Var (if x < b then x else Suc x)"
 | "shift_trm b (Formula.Const c) = Formula.Const c"

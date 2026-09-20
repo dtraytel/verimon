@@ -128,12 +128,12 @@ fun edsx_eval_since :: "args \<Rightarrow> event_data table list \<Rightarrow> e
     | (Some y, ys') \<Rightarrow>
       if skew then edsx_eval_since args rs (xs, ys', ts, False) (dsx_add_new_table args y aux)
       else
-      (case mbuf_t_cases xs of (Some x, xs') \<Rightarrow>
-        (case mbuf_t_cases ts of (Some t, ts') \<Rightarrow>
-          (let aux' = dsx_add_new_table args y (dsx_join args x (dsx_add_new_ts args t aux))
-           in edsx_eval_since args (dsx_result args aux' # rs) (xs', ys', ts', False) aux')
-        | (None, ts') \<Rightarrow> (rev rs, (x ## xs', y ## ys', ts', skew), aux))
-      | (None, xs') \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
+      (case mbuf_t_cases xs of (Some x1, xs1) \<Rightarrow>
+        (case mbuf_t_cases ts of (Some t1, ts1) \<Rightarrow>
+          (let aux1 = dsx_add_new_table args y (dsx_join args x1 (dsx_add_new_ts args t1 aux))
+           in edsx_eval_since args (dsx_result args aux1 # rs) (xs1, ys', ts1, False) aux1)
+        | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
+      | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
 
 lemma edsx_eval_since:
   "edsx_eval_since args rs (xs, ys, ts, skew) aux = (res, (xs', ys', ts', skew'), aux') \<Longrightarrow>
@@ -142,13 +142,28 @@ lemma edsx_eval_since:
 proof (induction args rs "(xs, ys, ts, skew)" aux arbitrary: xs ys ts skew res xs' ys' ts' skew' aux'
     rule: edsx_eval_since.induct)
   case (1 args rs xs ys ts skew aux)
+  note IH1 = 1(1) and IH2 = 1(2) and E = 1(3)
   obtain x xs'' where xs_def: "mbuf_t_cases xs = (x, xs'')" by fastforce
   obtain y ys'' where ys_def: "mbuf_t_cases ys = (y, ys'')" by fastforce
   obtain t ts'' where ts_def: "mbuf_t_cases ts = (t, ts'')" by fastforce
   show ?case
-    using 1 xs_def ys_def ts_def
-    by (cases x; cases y; cases t)
-      (auto simp: mbuf_t_empty.rep_eq mbuf_t_Cons.rep_eq Let_def split: if_splits)
+  proof (cases "y = None \<or> \<not> skew")
+    case True
+    then show ?thesis using IH2 E xs_def ys_def ts_def
+      by (cases x; cases y; cases t)
+        (auto simp: mbuf_t_empty.rep_eq mbuf_t_Cons.rep_eq Let_def split: if_splits)
+  next
+    case False
+    then obtain y2 where y: "y = Some y2" and sk: skew by (cases y) auto
+    have D: "edsx_eval_since args rs (xs, ys'', ts, False) (dsx_add_new_table args y2 aux)
+        = (res, (xs', ys', ts', skew'), aux')"
+      using E by (subst (asm) edsx_eval_since.simps) (simp add: ys_def y sk)
+    have "dsx_eval_since args rs (Rep_mbuf_t xs, Rep_mbuf_t ys'', Rep_mbuf_t ts, False)
+        (dsx_add_new_table args y2 aux)
+        = (res, (Rep_mbuf_t xs', Rep_mbuf_t ys', Rep_mbuf_t ts', skew'), aux')"
+      by (rule IH1[OF ys_def[symmetric] y sk D])
+    then show ?thesis using ys_def[unfolded y] sk by simp
+  qed
 qed
 
 subsection \<open>The evaluator\<close>
