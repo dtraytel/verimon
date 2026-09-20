@@ -1985,12 +1985,13 @@ definition dof_state :: "nat \<Rightarrow> cols \<Rightarrow>
   "dof_state n cs st =
      \<lparr> dmstate_i = mstate_i st, dmstate_j = mstate_j st,
        dmstate_m = dof n cs (mstate_m st),
-       dmstate_n = n, dmstate_cs = cs, dmstate_t = mstate_t st \<rparr>"
+       dmstate_n = n, dmstate_cs = cs, dmstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
 
 lemma dmsim_state_dof_state:
   assumes n: "mstate_n st = n" and p: "dsim n cs tw (dof n cs (mstate_m st)) (mstate_m st)"
   shows "dmsim_state n cs tw st (dof_state n cs st)"
-  by (simp add: dmsim_state_def dof_state_def n p)
+  by (simp add: dmsim_state_def dof_state_def n p
+      mbuf_t_append.rep_eq mbuf_t_empty.rep_eq)
 
 context verimon_spec
 begin

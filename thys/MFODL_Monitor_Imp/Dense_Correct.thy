@@ -52,19 +52,71 @@ record dmstate =
   dmstate_m :: dformula
   dmstate_n :: nat
   dmstate_cs :: cols
-  dmstate_t :: "ts list"
+  dmstate_t :: "ts mbuf_t"
+
+text \<open>
+  One field is not the kernel's.  The kernel keeps the timestamps whose verdict is still
+  outstanding in a list, and at every step appends the new one to its end and drops the ones it
+  has just reported.  Both are linear in the list, and the list is as long as the window of the
+  outermost future operator -- on \<open>P2\<close>, whose log carries about 1900 time points per timestamp, a
+  six-unit window spans some eleven thousand of them, and those two appends are the largest
+  single cost of the whole run.
+
+  The dense state keeps the same sequence in an @{typ "'a mbuf_t"}, which \<open>is\<close> a list -- the type
+  is a copy of @{typ "'a list"} and @{const Rep_mbuf_t} the copy's isomorphism -- so the state
+  relation and this theory's proofs say what they said before.  What changes is the code:
+  @{typ "'a mbuf_t"} is a code datatype over @{const MBuf2_t}, so the generated monitor holds a
+  queue, where an append and a head removal are amortised constant.  Reading the whole sequence
+  back with @{const Rep_mbuf_t} would cost what the list cost, so the step never does: it takes
+  the timestamps off the front one at a time, with @{const mbuf_t_cases}.
+\<close>
+
+text \<open>
+  Pairing one step's verdicts with the timestamps they belong to.  Where the buffer runs out the
+  index still advances by the number of verdicts, which is what the kernel's @{term "length xs"}
+  does.
+\<close>
+
+fun dannotate :: "nat \<Rightarrow> ts mbuf_t \<Rightarrow> 'a list \<Rightarrow> (nat \<times> ts \<times> 'a) list \<Rightarrow>
+    nat \<times> ts mbuf_t \<times> (nat \<times> ts \<times> 'a) list" where
+  "dannotate i tq [] acc = (i, tq, rev acc)"
+| "dannotate i tq (v # vs) acc = (case mbuf_t_cases tq of
+      (None, tq') \<Rightarrow> (i + 1 + length vs, tq', rev acc)
+    | (Some t, tq') \<Rightarrow> dannotate (i + 1) tq' vs ((i, t, v) # acc))"
+
+lemma dannotate_eq:
+  "dannotate i tq vs acc = (i', tq', vs') \<Longrightarrow>
+     i' = i + length vs \<and> Rep_mbuf_t tq' = drop (length vs) (Rep_mbuf_t tq) \<and>
+     vs' = rev acc @ List.enumerate i (zip (Rep_mbuf_t tq) vs)"
+proof (induct vs arbitrary: i tq acc i' tq' vs')
+  case (Cons v vs)
+  obtain a tq0 where h: "mbuf_t_cases tq = (a, tq0)" by (cases "mbuf_t_cases tq")
+  show ?case
+  proof (cases a)
+    case None
+    then show ?thesis using Cons(2) h by simp
+  next
+    case (Some t)
+    have lt: "Rep_mbuf_t tq = t # Rep_mbuf_t tq0" using h Some by simp
+    have step: "dannotate (i + 1) tq0 vs ((i, t, v) # acc) = (i', tq', vs')"
+      using Cons(2) h Some by simp
+    show ?thesis using Cons(1)[OF step] lt by simp
+  qed
+qed simp
 
 definition dmstep :: "database \<times> ts \<Rightarrow> dmstate \<Rightarrow>
     (nat \<times> ts \<times> event_data table) list \<times> dmstate" where
   "dmstep tdb st =
     (case deval (dmstate_j st + 1) [snd tdb] (fst tdb) (dmstate_m st) of
-      (xs, m) \<Rightarrow> (List.enumerate (dmstate_i st) (zip (dmstate_t st @ [snd tdb]) xs),
-        \<lparr> dmstate_i = dmstate_i st + length xs,
+      (xs, m) \<Rightarrow>
+      (case dannotate (dmstate_i st) (dmstate_t st @@ [snd tdb]) xs [] of
+        (i', tq, vs) \<Rightarrow> (vs,
+        \<lparr> dmstate_i = i',
           dmstate_j = dmstate_j st + 1,
           dmstate_m = m,
           dmstate_n = dmstate_n st,
           dmstate_cs = dmstate_cs st,
-          dmstate_t = drop (length xs) (dmstate_t st @ [snd tdb]) \<rparr>))"
+          dmstate_t = tq \<rparr>)))"
 
 primrec dmsteps0_stateless where
   "dmsteps0_stateless [] st = []"
@@ -90,7 +142,7 @@ definition dmsim_state :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow>
     dmstate \<Rightarrow> bool" where
   "dmsim_state n cs tw st dst \<longleftrightarrow>
      dmstate_i dst = mstate_i st \<and> dmstate_j dst = mstate_j st \<and>
-     dmstate_t dst = mstate_t st \<and> mstate_n st = n \<and> dmstate_n dst = n \<and>
+     Rep_mbuf_t (dmstate_t dst) = mstate_t st \<and> mstate_n st = n \<and> dmstate_n dst = n \<and>
      dmstate_cs dst = cs \<and> dsim n cs tw (dmstate_m dst) (mstate_m st)"
 
 lemma enumerate_zip_map:
@@ -108,7 +160,8 @@ lemma dmstep_mstep:
      \<and> (\<forall>(i, t, X) \<in> set (fst (mstep tdb st)). table n (set cs) X)"
 proof -
   have i: "dmstate_i dst = mstate_i st" and j: "dmstate_j dst = mstate_j st"
-    and t: "dmstate_t dst = mstate_t st" and mn: "mstate_n st = n" and dn: "dmstate_n dst = n"
+    and t: "Rep_mbuf_t (dmstate_t dst) = mstate_t st" and mn: "mstate_n st = n"
+    and dn: "dmstate_n dst = n"
     and dcs: "dmstate_cs dst = cs" and sim: "dsim n cs tw (dmstate_m dst) (mstate_m st)"
     using r unfolding dmsim_state_def by auto
   obtain xs m where e: "meval (mstate_j st + 1) n [snd tdb] (fst tdb) (mstate_m st) = (xs, m)"
@@ -124,15 +177,22 @@ proof -
       \<lparr> mstate_i = mstate_i st + length xs, mstate_j = mstate_j st + 1, mstate_m = m,
         mstate_n = n, mstate_t = drop (length xs) (mstate_t st @ [snd tdb]) \<rparr>)"
     unfolding default_maux.mstep_def using e mn by (simp del: drop_append)
-  have D: "dmstep tdb dst = (List.enumerate (mstate_i st)
-        (zip (mstate_t st @ [snd tdb]) (map (dtabc n cs) xs)),
-      \<lparr> dmstate_i = mstate_i st + length xs, dmstate_j = mstate_j st + 1, dmstate_m = dm,
-        dmstate_n = n, dmstate_cs = cs,
-        dmstate_t = drop (length xs) (mstate_t st @ [snd tdb]) \<rparr>)"
-    using d unfolding dmstep_def i j t dn dcs by simp
+  obtain i' tq vs where A: "dannotate (mstate_i st) (dmstate_t dst @@ [snd tdb])
+      (map (dtabc n cs) xs) [] = (i', tq, vs)"
+    by (cases "dannotate (mstate_i st) (dmstate_t dst @@ [snd tdb])
+      (map (dtabc n cs) xs) []")
+  have ie: "i' = mstate_i st + length xs"
+    and te: "Rep_mbuf_t tq = drop (length xs) (mstate_t st @ [snd tdb])"
+    and ve: "vs = List.enumerate (mstate_i st)
+      (zip (mstate_t st @ [snd tdb]) (map (dtabc n cs) xs))"
+    using dannotate_eq[OF A] by (simp_all add: mbuf_t_append.rep_eq t)
+  have D: "dmstep tdb dst = (vs,
+      \<lparr> dmstate_i = i', dmstate_j = mstate_j st + 1, dmstate_m = dm,
+        dmstate_n = n, dmstate_cs = cs, dmstate_t = tq \<rparr>)"
+    using d A unfolding dmstep_def i j dn dcs by simp
   show ?thesis
-    unfolding E D fst_conv snd_conv
-    using sim'[unfolded dnx] tb
+    unfolding E D fst_conv snd_conv ie ve
+    using sim'[unfolded dnx] tb te
     by (auto simp: dmsim_state_def enumerate_zip_map List.in_set_enumerate_eq list_all_iff
         set_zip)
 qed
