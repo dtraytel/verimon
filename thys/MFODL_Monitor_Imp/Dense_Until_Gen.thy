@@ -32,6 +32,16 @@ definition dq_nth_s :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> '
 lemma dq_nth_s_in: "k < dq_len d \<Longrightarrow> dq_nth_s d k z = dq_nth d k"
   by (simp add: dq_nth_s_def)
 
+text \<open>The front of a deque, read off its lists rather than its counters, so that it commutes with
+  a map over the elements on every deque and not only on a consistent one.\<close>
+
+definition dq_hd_s :: "'a dq \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "dq_hd_s d z = (case dq_f d of x # _ \<Rightarrow> x | [] \<Rightarrow> (case dq_b d of [] \<Rightarrow> z | _ \<Rightarrow> last (dq_b d)))"
+
+lemma dq_hd_s_nth: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq_hd_s d z = dq_nth d 0"
+  by (auto simp: dq_hd_s_def dq_nth_def dq_inv_def dq_len_def last_conv_nth hd_conv_nth
+      split: list.splits)
+
 type_synonym 'b gmuaux = "tp \<times> ts queue \<times> ('b list set \<times> (ts + tp)) queue \<times> nat \<times>
   bool list \<times> bool list \<times> 'b list set \<times> ('b list, tp) mapping \<times>
   ('b list, ts + tp) mapping dq \<times> ts dq \<times> 'b list set list"
@@ -46,7 +56,7 @@ definition ginit_dq :: "args \<Rightarrow> 'b gmuaux" where
 fun geval_step_dq :: "args \<Rightarrow> 'b gmuaux \<Rightarrow> 'b gmuaux" where
   "geval_step_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
     (case safe_hd tss of (Some ts, tss') \<Rightarrow>
-      (let m = dq_nth_s a2_dq 0 Mapping.empty;
+      (let m = dq_hd_s a2_dq Mapping.empty;
         I = args_ivl args;
         T = result;
         tss' = tl_queue tss';
@@ -60,7 +70,7 @@ fun geval_step_dq :: "args \<Rightarrow> 'b gmuaux \<Rightarrow> 'b gmuaux" wher
               Some tstp \<Rightarrow> (\<not> ts_tp_lt I ts' (tp - len + 1) tstp) | None \<Rightarrow> False) to_del_approx;
         m'' = mapping_delete_set m to_del;
         a2_dq' = dq_tl a2_dq;
-        m' = dq_nth_s a2_dq' 0 Mapping.empty;
+        m' = dq_hd_s a2_dq' Mapping.empty;
         result' = if len = 1 then {} else (result - to_del) \<union> Mapping.keys m';
         a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
           else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
@@ -158,11 +168,11 @@ proof -
     and lt: "dq_len tstp_dq = len" and ls: "length (linearize tss) = len"
     using sh unfolding d by simp_all
   have len: "1 \<le> len" using l unfolding d by simp
-  have n0: "dq_nth_s a2_dq 0 z = dq_nth a2_dq 0" for z :: "(event_data tuple, ts + tp) mapping"
-    by (simp add: dq_nth_s_in la2)
-  have n1: "dq_nth_s (dq_tl a2_dq) 0 z = dq_nth (dq_tl a2_dq) 0"
+  have n0: "dq_hd_s a2_dq z = dq_nth a2_dq 0" for z :: "(event_data tuple, ts + tp) mapping"
+    by (simp add: dq_hd_s_nth[OF inv] la2)
+  have n1: "dq_hd_s (dq_tl a2_dq) z = dq_nth (dq_tl a2_dq) 0"
     for z :: "(event_data tuple, ts + tp) mapping"
-    using len by (simp add: dq_nth_s_in dq_len_tl[OF inv] la2)
+    using len by (simp add: dq_hd_s_nth[OF dq_inv_tl[OF inv]] dq_len_tl[OF inv] la2)
   obtain h tss1 where sh1: "safe_hd tss = (h, tss1)" by (cases "safe_hd tss")
   have ne: "linearize tss \<noteq> []" using ls len by auto
   obtain t where h: "h = Some t" using safe_hd_rep[OF sh1] ne by (cases h) auto

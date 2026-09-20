@@ -86,6 +86,9 @@ lemma deopt_reopt[simp]: "deopt (reopt xs) = xs"
 lemma reopt_inj[simp]: "reopt x = reopt y \<longleftrightarrow> x = y"
   by (auto simp: reopt_def)
 
+lemma reopt_eq_Nil[simp]: "reopt x = [] \<longleftrightarrow> x = []" "[] = reopt x \<longleftrightarrow> x = []"
+  by (auto simp: reopt_def)
+
 lemma inj_reopt: "inj reopt"
   by (simp add: inj_def)
 
@@ -122,27 +125,37 @@ lemma nth_deopt: "i < length x \<Longrightarrow> deopt x ! i = the (x ! i)"
 lemma nth_reopt: "i < length x \<Longrightarrow> reopt x ! i = Some (x ! i)"
   by (simp add: reopt_def)
 
+text \<open>The simplifier's normal form pulls @{const reopt_table} outwards, so that a set built
+  from tables with the option put back is the table with the option put back: that is the form
+  in which the operations on the structures match.\<close>
+
 lemma reopt_table_simps[simp]:
   "reopt_table {} = {}"
-  "reopt_table (Set.insert x X) = Set.insert (reopt x) (reopt_table X)"
-  "reopt_table (X \<union> Y) = reopt_table X \<union> reopt_table Y"
-  "reopt_table (X \<inter> Y) = reopt_table X \<inter> reopt_table Y"
-  "reopt_table (X - Y) = reopt_table X - reopt_table Y"
-  "reopt_table (Set.remove x X) = Set.remove (reopt x) (reopt_table X)"
-  "reopt_table (Set.filter P X) = Set.filter (\<lambda>y. P (deopt y)) (reopt_table X)"
+  "Set.insert (reopt x) (reopt_table X) = reopt_table (Set.insert x X)"
+  "reopt_table X \<union> reopt_table Y = reopt_table (X \<union> Y)"
+  "reopt_table X \<inter> reopt_table Y = reopt_table (X \<inter> Y)"
+  "reopt_table X - reopt_table Y = reopt_table (X - Y)"
+  "Set.remove (reopt x) (reopt_table X) = reopt_table (Set.remove x X)"
+  "Set.filter (\<lambda>y. P (deopt y)) (reopt_table X) = reopt_table (Set.filter P X)"
   "reopt x \<in> reopt_table X \<longleftrightarrow> x \<in> X"
+  "[] \<in> reopt_table X \<longleftrightarrow> [] \<in> X"
   "reopt_table X = {} \<longleftrightarrow> X = {}"
+  "{} = reopt_table X \<longleftrightarrow> X = {}"
   "reopt_table X = reopt_table Y \<longleftrightarrow> X = Y"
   "Set.is_empty (reopt_table X) \<longleftrightarrow> Set.is_empty X"
   "finite (reopt_table X) \<longleftrightarrow> finite X"
   "card (reopt_table X) = card X"
-  "reopt_table (f ` X) = (reopt \<circ> f) ` X"
+  "(reopt \<circ> f) ` X = reopt_table (f ` X)"
+  "(if b then reopt_table X else reopt_table Y) = reopt_table (if b then X else Y)"
   unfolding reopt_table_def
   by (auto simp: image_Int image_set_diff inj_reopt Set.remove_eq Set.is_empty_iff
       card_image inj_on_def finite_image_iff image_iff inj_image_eq_iff[OF inj_reopt]
       intro!: inj_on_image_set_diff)
 
-lemma reopt_table_singleton[simp]: "reopt_table {x} = {reopt x}"
+lemma reopt_table_Un_iff[simp]: "reopt_table X = A \<union> B \<longleftrightarrow> A \<union> B = reopt_table X"
+  by auto
+
+lemma reopt_table_singleton[simp]: "{reopt x} = reopt_table {x}"
   by (simp add: reopt_table_def)
 
 
@@ -294,7 +307,7 @@ lemma uagg_deopt:
           ` Mapping.keys groups))"
 proof (cases "g0 \<and> Set.is_empty rel")
   case True
-  then show ?thesis by (simp add: uagg_def deopt_table_def Set.is_empty_iff)
+  then show ?thesis by (simp add: uagg_def deopt_table_def reopt_table_def Set.is_empty_iff)
 next
   case False
   have rd: "\<And>x. x \<in> rel \<Longrightarrow> reopt (deopt x) = x" using hf by (simp add: reopt_deopt_iff)
