@@ -2186,6 +2186,195 @@ qed
 
 end
 
+subsection \<open>The future-match structure\<close>
+
+text \<open>
+  A future-match structure keeps, per time stamp, the operands' tables at that time point and the
+  result accumulated for it so far.  The dense one keeps the same list with both narrowed.
+\<close>
+
+definition dmld_rel :: "nat \<Rightarrow> cols \<Rightarrow> ty Formula.formula list \<Rightarrow>
+    event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> bool" where
+  "dmld_rel n cs \<psi>s = list_all2 (\<lambda>(t, rls, rel) (t', drls, drel). t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<and>
+     drls = map (dtabc n cs) rls \<and> drel = dtabc n cs rel)"
+
+lemma dmld_rel_Nil[simp]: "dmld_rel n cs \<psi>s [] []"
+  by (simp add: dmld_rel_def)
+
+lemma dmld_rel_Cons[simp]:
+  "dmld_rel n cs \<psi>s ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<and>
+     drls = map (dtabc n cs) rls \<and> drel = dtabc n cs rel \<and> dmld_rel n cs \<psi>s aux daux"
+  by (simp add: dmld_rel_def)
+
+lemma dmld_rel_induct[consumes 1, case_names Nil Cons]:
+  assumes "dmld_rel n cs \<psi>s aux daux"
+    and "P [] []"
+    and "\<And>t rls rel aux daux. list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<Longrightarrow>
+       dmld_rel n cs \<psi>s aux daux \<Longrightarrow> P aux daux \<Longrightarrow>
+       P ((t, rls, rel) # aux) ((t, map (dtabc n cs) rls, dtabc n cs rel) # daux)"
+  shows "P aux daux"
+  using assms(1)[unfolded dmld_rel_def]
+  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: dmld_rel_def\<close>)
+
+text \<open>
+  The frame a future-match node runs at: the node's columns, the operand formulas and the marked
+  expressions the structure tabulates over.  Unlike the past-match node, the operands' tables are
+  not fixed -- the structure keeps one list per stored time point -- so they stay a parameter.
+\<close>
+
+locale dmatchF_frame =
+  fixes n :: nat and cs :: cols and \<psi>s :: "ty Formula.formula list" and mrs :: "mregex list"
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and sub: "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs"
+    and d: "distinct mrs"
+    and mrsok: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+       Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex ms \<psi>s) \<and> ok (length \<psi>s) ms \<and>
+       set cs = fv_regex (from_mregex ms \<psi>s)"
+begin
+
+abbreviation (input) wfrels :: "event_data table list \<Rightarrow> bool" where
+  "wfrels rels \<equiv> list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+
+lemma lr: "wfrels rels \<Longrightarrow> length \<psi>s = length rels"
+  by (simp add: list_all2_lengthD)
+
+lemma opsB:
+  assumes w: "wfrels rels" and i: "i < length rels"
+  shows "\<exists>B \<subseteq> set cs. table n B (rels ! i)"
+proof -
+  have i': "i < length \<psi>s" using lr[OF w] i by simp
+  then have "table n (Formula.fv (\<psi>s ! i)) (rels ! i)"
+    using w by (simp add: list_all2_conv_all_nth)
+  then show ?thesis using sub[OF i'] by blast
+qed
+
+lemma okms: "ms \<in> set mrs \<Longrightarrow> wfrels rels \<Longrightarrow> ok (length rels) ms"
+  using mrsok lr by auto
+
+lemma tabL: "wfrels rels \<Longrightarrow> ms \<in> set mrs \<Longrightarrow> table n (set cs) (l\<epsilon>_strict n rels ms)"
+  using mrsok by (intro table_leps_strict[where \<psi>s = \<psi>s]) auto
+
+lemma dtabL: "wfrels rels \<Longrightarrow> ms \<in> set mrs \<Longrightarrow>
+    dtabc n cs (l\<epsilon>_strict n rels ms) = l\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms"
+  using mrsok by (intro dtabc_leps_strict[OF s b _ sub]) auto
+
+lemma table_lookup_base:
+  "wfrels rels \<Longrightarrow> table n (set cs) (lookup (mrtabulate mrs (l\<epsilon>_strict n rels)) ms)"
+  using tabL by (simp add: lookup_tabulate[OF d])
+
+lemma dtabc_lookup_base:
+  "wfrels rels \<Longrightarrow>
+     lookup (mrtabulate mrs (l\<epsilon>_strict (length cs) (map (dtabc n cs) rels))) ms
+       = dtabc n cs (lookup (mrtabulate mrs (l\<epsilon>_strict n rels)) ms)"
+  by (intro lookup_mrtabulate_cong[OF d]) (rule dtabL)
+
+lemma table_lookup_step:
+  assumes rls: "wfrels rls" and X: "\<And>ms. table n (set cs) (lookup X ms)"
+  shows "table n (set cs) (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+  using table_ldelta[OF _ X] okms[OF _ rls] opsB[OF rls]
+  by (auto simp: lookup_tabulate[OF d])
+
+lemma dtabc_lookup_step:
+  assumes rls: "wfrels rls" and X: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dX: "\<And>ms. lookup dX ms = dtabc n cs (lookup X ms)"
+  shows "lookup (mrtabulate mrs (l\<delta> id dX (map (dtabc n cs) rls))) ms
+       = dtabc n cs (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+proof -
+  have dL: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+      dtabc n cs (l\<delta> id X rls ms) = l\<delta> id dX (map (dtabc n cs) rls) ms"
+    by (rule dtabc_ldelta[OF s b opsB[OF rls] X dX okms[OF _ rls]])
+  show ?thesis by (intro lookup_mrtabulate_cong[OF d]) (rule dL)
+qed
+
+text \<open>
+  The fold that steps the structure keeps two things related: the stored list, and the tabulation
+  the fold threads through it.  Both are proved at once.
+\<close>
+
+lemma dtabc_matchF_foldr:
+  assumes rels: "wfrels rels" and rel: "dmld_rel n cs \<psi>s aux daux"
+  shows "dmld_rel n cs \<psi>s
+       (fst (foldr (update_matchF_step I mr mrs nt) aux
+          (update_matchF_base n I mr mrs rels nt)))
+       (fst (foldr (update_matchF_step I mr mrs nt) daux
+          (update_matchF_base (length cs) I mr mrs (map (dtabc n cs) rels) nt)))
+     \<and> (\<forall>ms. table n (set cs)
+          (lookup (snd (foldr (update_matchF_step I mr mrs nt) aux
+             (update_matchF_base n I mr mrs rels nt))) ms))
+     \<and> (\<forall>ms. lookup (snd (foldr (update_matchF_step I mr mrs nt) daux
+             (update_matchF_base (length cs) I mr mrs (map (dtabc n cs) rels) nt))) ms
+          = dtabc n cs (lookup (snd (foldr (update_matchF_step I mr mrs nt) aux
+             (update_matchF_base n I mr mrs rels nt))) ms))"
+  using rel
+proof (induct rule: dmld_rel_induct)
+  case Nil
+  show ?case
+    using rels table_lookup_base[OF rels] dtabc_lookup_base[OF rels]
+    by (simp add: update_matchF_base_def Let_def)
+next
+  case (Cons t rls rel aux daux)
+  obtain A X where W: "foldr (update_matchF_step I mr mrs nt) aux
+      (update_matchF_base n I mr mrs rels nt) = (A, X)"
+    by (cases "foldr (update_matchF_step I mr mrs nt) aux
+      (update_matchF_base n I mr mrs rels nt)")
+  obtain DA DX where D: "foldr (update_matchF_step I mr mrs nt) daux
+      (update_matchF_base (length cs) I mr mrs (map (dtabc n cs) rels) nt) = (DA, DX)"
+    by (cases "foldr (update_matchF_step I mr mrs nt) daux
+      (update_matchF_base (length cs) I mr mrs (map (dtabc n cs) rels) nt)")
+  have IH: "dmld_rel n cs \<psi>s A DA" and tX: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dXe: "\<And>ms. lookup DX ms = dtabc n cs (lookup X ms)"
+    using Cons(3) unfolding W D by simp_all
+  have tY: "\<forall>ms. table n (set cs) (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+    using table_lookup_step[OF Cons(1) tX] by blast
+  have dLY: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+      dtabc n cs (l\<delta> id X rls ms) = l\<delta> id DX (map (dtabc n cs) rls) ms"
+    by (rule dtabc_ldelta[OF s b opsB[OF Cons(1)] tX dXe okms[OF _ Cons(1)]])
+  have dY: "\<forall>ms. lookup (mrtabulate mrs (l\<delta> id DX (map (dtabc n cs) rls))) ms
+      = dtabc n cs (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+    by (intro allI lookup_mrtabulate_cong[OF d, where f = "l\<delta> id X rls"
+        and g = "l\<delta> id DX (map (dtabc n cs) rls)"]) (rule dLY)
+  have E: "foldr (update_matchF_step I mr mrs nt) ((t, rls, rel) # aux)
+      (update_matchF_base n I mr mrs rels nt)
+      = update_matchF_step I mr mrs nt (t, rls, rel) (A, X)"
+    unfolding W[symmetric] by simp
+  have DE: "foldr (update_matchF_step I mr mrs nt)
+      ((t, map (dtabc n cs) rls, dtabc n cs rel) # daux)
+      (update_matchF_base (length cs) I mr mrs (map (dtabc n cs) rels) nt)
+      = update_matchF_step I mr mrs nt (t, map (dtabc n cs) rls, dtabc n cs rel) (DA, DX)"
+    unfolding D[symmetric] by simp
+  show ?case unfolding E DE
+    using IH tY dY Cons(1)
+    by (simp add: update_matchF_step_def Let_def dtabc_Un_img)
+qed
+
+lemma dtabc_update_matchF:
+  assumes rels: "wfrels rels" and rel: "dmld_rel n cs \<psi>s aux daux"
+  shows "dmld_rel n cs \<psi>s (update_matchF n I mr mrs rels nt aux)
+     (update_matchF (length cs) I mr mrs (map (dtabc n cs) rels) nt daux)"
+  using dtabc_matchF_foldr[OF rels rel] by (simp add: update_matchF_def)
+
+text \<open>Reading the structure hands out the entries that have left the window, narrowed.\<close>
+
+lemma dtabc_eval_matchF:
+  assumes "dmld_rel n cs \<psi>s aux daux"
+  shows "fst (eval_matchF I mr nt daux) = map (dtabc n cs) (fst (eval_matchF I mr nt aux)) \<and>
+     dmld_rel n cs \<psi>s (snd (eval_matchF I mr nt aux)) (snd (eval_matchF I mr nt daux))"
+  using assms
+proof (induct rule: dmld_rel_induct)
+  case (Cons t rls rel aux daux)
+  obtain ys ax where e: "eval_matchF I mr nt aux = (ys, ax)"
+    by (cases "eval_matchF I mr nt aux")
+  obtain dys dax where de: "eval_matchF I mr nt daux = (dys, dax)"
+    by (cases "eval_matchF I mr nt daux")
+  have i1: "dys = map (dtabc n cs) ys" and i2: "dmld_rel n cs \<psi>s ax dax"
+    using Cons(3) unfolding e de by simp_all
+  show ?case using Cons(1,2) i1 i2 by (simp add: e de)
+qed simp
+
+end
+
 (*<*)
 end
 (*>*)
