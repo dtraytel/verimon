@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Aux
-  imports Dense
+  imports Dense "MFODL_Monitor_Devel.Correctness"
 begin
 (*>*)
 
@@ -1678,95 +1678,27 @@ lemma duaux'_length:
 section \<open>The match structures at the dense frame\<close>
 
 text \<open>
-  The regular-expression nodes read their operands' tables in exactly one way: the lax epsilon
-  joins the guard -- a table over the node's own columns -- against an atom's table, whose columns
-  are among them.  At the dense frame that join is the semi-join against the mask the two column
-  lists determine (@{thm [source] dsemi_join}), and the mask is the same at every firing, so the
-  node carries one per atom.
+  The regular-expression nodes need no dense operations of their own.  Every table a match node
+  handles -- the operands', the derivatives', the structures' -- lives at the node's own columns,
+  and narrowing turns the kernel's operations at the wide frame into the very same operations at
+  the node's width: the joins are @{thm [source] dtabc_join_frame}, the unions are
+  @{thm [source] dtabc_Un_img}, and the unit table narrows to the unit table of the node's width,
+  which is what the section below shows first.  Only the operands arrive narrowed at their own
+  column lists, so the node embeds them once per firing, by @{thm [source] dembedp_dtabc}, exactly
+  as the trigger node embeds its left operand.
 
-  Everything else is the kernel's operation read at the node's own width: the unions, the
-  intersection the lax epsilon takes at a concatenation, the unit table the strict epsilons
-  return -- narrowing the wide one gives the short one of the node's width, so no emptiness
-  argument is needed here -- and the tabulation over the marked expressions with its lookups,
-  which are already polymorphic in the tuple.
+  The one thing that does not come for free is that the guards really are tables over the node's
+  columns: that is the regular expression's safety condition, and the lemmas below carry it.
 \<close>
-
-fun deps_lax :: "bool list list \<Rightarrow> 'a table \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "deps_lax msks guard \<phi>s (MSkip m) = (if m = 0 then guard else empty_table)"
-| "deps_lax msks guard \<phi>s (MTestPos i) = dsemi (msks ! i) True guard (\<phi>s ! i)"
-| "deps_lax msks guard \<phi>s (MTestNeg i) = dsemi (msks ! i) False guard (\<phi>s ! i)"
-| "deps_lax msks guard \<phi>s (MPlus r s) = deps_lax msks guard \<phi>s r \<union> deps_lax msks guard \<phi>s s"
-| "deps_lax msks guard \<phi>s (MTimes r s) = deps_lax msks guard \<phi>s r \<inter> deps_lax msks guard \<phi>s s"
-| "deps_lax msks guard \<phi>s (MStar r) = guard"
-
-fun dreps_strict :: "nat \<Rightarrow> bool list list \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "dreps_strict k msks \<phi>s (MSkip m) = (if m = 0 then unit_table k else empty_table)"
-| "dreps_strict k msks \<phi>s (MTestPos i) = \<phi>s ! i"
-| "dreps_strict k msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table k else empty_table)"
-| "dreps_strict k msks \<phi>s (MPlus r s) = dreps_strict k msks \<phi>s r \<union> dreps_strict k msks \<phi>s s"
-| "dreps_strict k msks \<phi>s (MTimes r s) = deps_lax msks (dreps_strict k msks \<phi>s r) \<phi>s s"
-| "dreps_strict k msks \<phi>s (MStar r) = unit_table k"
-
-fun dleps_strict :: "nat \<Rightarrow> bool list list \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "dleps_strict k msks \<phi>s (MSkip m) = (if m = 0 then unit_table k else empty_table)"
-| "dleps_strict k msks \<phi>s (MTestPos i) = \<phi>s ! i"
-| "dleps_strict k msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table k else empty_table)"
-| "dleps_strict k msks \<phi>s (MPlus r s) = dleps_strict k msks \<phi>s r \<union> dleps_strict k msks \<phi>s s"
-| "dleps_strict k msks \<phi>s (MTimes r s) = deps_lax msks (dleps_strict k msks \<phi>s s) \<phi>s r"
-| "dleps_strict k msks \<phi>s (MStar r) = unit_table k"
-
-fun drdelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow>
-    'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "drdelta msks \<kappa> X \<phi>s (MSkip m) = (case m of 0 \<Rightarrow> empty_table | Suc j \<Rightarrow> lookup X (\<kappa> (MSkip j)))"
-| "drdelta msks \<kappa> X \<phi>s (MTestPos i) = empty_table"
-| "drdelta msks \<kappa> X \<phi>s (MTestNeg i) = empty_table"
-| "drdelta msks \<kappa> X \<phi>s (MPlus r s) = drdelta msks \<kappa> X \<phi>s r \<union> drdelta msks \<kappa> X \<phi>s s"
-| "drdelta msks \<kappa> X \<phi>s (MTimes r s) =
-     drdelta msks (\<lambda>t. \<kappa> (MTimes r t)) X \<phi>s s \<union> deps_lax msks (drdelta msks \<kappa> X \<phi>s r) \<phi>s s"
-| "drdelta msks \<kappa> X \<phi>s (MStar r) = drdelta msks (\<lambda>t. \<kappa> (MTimes (MStar r) t)) X \<phi>s r"
-
-fun dldelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow>
-    'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
-  "dldelta msks \<kappa> X \<phi>s (MSkip m) = (case m of 0 \<Rightarrow> empty_table | Suc j \<Rightarrow> lookup X (\<kappa> (MSkip j)))"
-| "dldelta msks \<kappa> X \<phi>s (MTestPos i) = empty_table"
-| "dldelta msks \<kappa> X \<phi>s (MTestNeg i) = empty_table"
-| "dldelta msks \<kappa> X \<phi>s (MPlus r s) = dldelta msks \<kappa> X \<phi>s r \<union> dldelta msks \<kappa> X \<phi>s s"
-| "dldelta msks \<kappa> X \<phi>s (MTimes r s) =
-     dldelta msks (\<lambda>t. \<kappa> (MTimes t s)) X \<phi>s r \<union> deps_lax msks (dldelta msks \<kappa> X \<phi>s s) \<phi>s r"
-| "dldelta msks \<kappa> X \<phi>s (MStar r) = dldelta msks (\<lambda>t. \<kappa> (MTimes t (MStar r))) X \<phi>s r"
-
-definition dupdate_matchP :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
-    'a table list \<Rightarrow> ts \<Rightarrow> 'a mr\<delta>aux \<Rightarrow> 'a table \<times> 'a mr\<delta>aux" where
-  "dupdate_matchP k msks I mr mrs rels nt aux =
-    (let aux = (case [(t, mrtabulate mrs (\<lambda>mr.
-        drdelta msks id rel rels mr \<union> (if t = nt then dreps_strict k msks rels mr else {}))).
-      (t, rel) \<leftarrow> aux, memR I (nt - t)]
-      of [] \<Rightarrow> [(nt, mrtabulate mrs (dreps_strict k msks rels))]
-      | x # aux' \<Rightarrow> (if fst x = nt then x # aux'
-                    else (nt, mrtabulate mrs (dreps_strict k msks rels)) # x # aux'))
-    in (foldr (\<union>) [lookup rel mr. (t, rel) \<leftarrow> aux, memL I (nt - t)] {}, aux))"
-
-definition dupdate_matchF_base :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
-    'a table list \<Rightarrow> ts \<Rightarrow> 'a ml\<delta>aux \<times> (mregex, 'a table) mapping" where
-  "dupdate_matchF_base k msks I mr mrs rels nt =
-     (let X = mrtabulate mrs (dleps_strict k msks rels)
-      in ([(nt, rels, if memL I 0 then lookup X mr else empty_table)], X))"
-
-definition dupdate_matchF_step :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> ts \<Rightarrow>
-    ts \<times> 'a table list \<times> 'a table \<Rightarrow> 'a ml\<delta>aux \<times> (mregex, 'a table) mapping \<Rightarrow>
-    'a ml\<delta>aux \<times> (mregex, 'a table) mapping" where
-  "dupdate_matchF_step msks I mr mrs nt = (\<lambda>(t, rels', rel) (aux', X).
-     (let Y = mrtabulate mrs (dldelta msks id X rels')
-      in ((t, rels', if mem I (nt - t) then rel \<union> lookup Y mr else rel) # aux', Y)))"
-
-definition dupdate_matchF :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
-    'a table list \<Rightarrow> ts \<Rightarrow> 'a ml\<delta>aux \<Rightarrow> 'a ml\<delta>aux" where
-  "dupdate_matchF k msks I mr mrs rels nt aux =
-     fst (foldr (dupdate_matchF_step msks I mr mrs nt) aux
-       (dupdate_matchF_base k msks I mr mrs rels nt))"
 
 text \<open>Narrowing the wide unit table -- the tuple that is blank everywhere -- gives the short
   tuple that is blank everywhere, which is the unit table of the node's own width.\<close>
+
+lemma dtabc_empty_table[simp]: "dtabc n cs empty_table = empty_table"
+  by (simp add: dtabc_def empty_table_def)
+
+lemma dtabc_eq_empty_table[simp]: "dtabc n cs T = empty_table \<longleftrightarrow> T = empty_table"
+  by (simp add: dtabc_def empty_table_def)
 
 lemma dproj_replicate: "dproj bs (replicate (length bs) z) = replicate (length (filter id bs)) z"
   by (induct bs) auto
@@ -1809,33 +1741,31 @@ next
   then show ?case by simp
 qed
 
+text \<open>Narrowing turns the wide lax epsilon into the lax epsilon at the node's width, over the
+  narrowed operands.  Each join is @{thm [source] dtabc_join_frame} -- the guard's columns are
+  the node's, an atom's are among them -- and each union is @{thm [source] dtabc_Un_img}.\<close>
+
 lemma dtabc_eps_lax:
   assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
-    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) \<subseteq> set cs
-       \<and> table n (set (css ! i)) (\<phi>s ! i)"
-    and l: "length css = length \<phi>s" and msks: "msks = map (dmsk cs) css"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)"
   shows "ok (length \<phi>s) mr \<Longrightarrow> table n (set cs) guard \<Longrightarrow>
      dtabc n cs (\<epsilon>_lax guard \<phi>s mr)
-       = deps_lax msks (dtabc n cs guard) (map2 (dtabc n) css \<phi>s) mr"
+       = \<epsilon>_lax (dtabc n cs guard) (map (dtabc n cs) \<phi>s) mr"
 proof (induct mr arbitrary: guard)
   case (MSkip m)
   then show ?case by (simp add: dtabc_def empty_table_def)
 next
   case (MTestPos i)
   then have i: "i < length \<phi>s" by simp
-  have "dtabc n cs (join guard True (\<phi>s ! i))
-      = dsemi (dmsk cs (css ! i)) True (dtabc n cs guard) (dtabc n (css ! i) (\<phi>s ! i))"
-    unfolding dmsk_def
-    by (rule dsemi_join[symmetric]) (use s b css[OF i] MTestPos(2) in auto)
-  then show ?case using i l msks by simp
+  then obtain B where B: "B \<subseteq> set cs" "table n B (\<phi>s ! i)" using css by blast
+  show ?case using i
+    by (simp add: dtabc_join_frame[OF s b B(1) subset_refl MTestPos(2) B(2)])
 next
   case (MTestNeg i)
   then have i: "i < length \<phi>s" by simp
-  have "dtabc n cs (join guard False (\<phi>s ! i))
-      = dsemi (dmsk cs (css ! i)) False (dtabc n cs guard) (dtabc n (css ! i) (\<phi>s ! i))"
-    unfolding dmsk_def
-    by (rule dsemi_join[symmetric]) (use s b css[OF i] MTestNeg(2) in auto)
-  then show ?case using i l msks by simp
+  then obtain B where B: "B \<subseteq> set cs" "table n B (\<phi>s ! i)" using css by blast
+  show ?case using i
+    by (simp add: dtabc_join_frame[OF s b B(1) subset_refl MTestNeg(2) B(2)])
 next
   case (MPlus r t)
   then show ?case by (simp add: dtabc_Un_img)
@@ -1847,11 +1777,111 @@ next
     by (rule table_eps_lax[OF opsA o1 MTimes(4)])
   have t2: "table n (set cs) (\<epsilon>_lax guard \<phi>s t)"
     by (rule table_eps_lax[OF opsA o2 MTimes(4)])
-  have j: "join (\<epsilon>_lax guard \<phi>s r) True (\<epsilon>_lax guard \<phi>s t)
-      = \<epsilon>_lax guard \<phi>s r \<inter> \<epsilon>_lax guard \<phi>s t" by (simp add: join_eq[OF t2 t1])
   show ?case using MTimes(1)[OF o1 MTimes(4)] MTimes(2)[OF o2 MTimes(4)]
-    by (simp add: j dtabc_Int[OF s t1 t2])
+    by (simp add: dtabc_join_frame[OF s b subset_refl subset_refl t1 t2])
 qed simp
+
+lemma table_dtabc_eps_lax:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)"
+    and ok: "ok (length \<phi>s) mr" and g: "table n (set cs) guard"
+  shows "table n (set cs) (\<epsilon>_lax guard \<phi>s mr)"
+  using css by (intro table_eps_lax[OF _ ok g]) auto
+subsection \<open>The strict epsilons\<close>
+
+text \<open>
+  Unlike the lax one, a strict epsilon does not carry a guard, and its value is a table over the
+  node's columns only because the regular expression is safe: an empty skip and a star return the
+  tuple that stands for every valuation, which is a table over the node's columns only when there
+  are none, and safety is what rules the other case out.  The kernel's own correctness proof
+  establishes exactly that, so the lemma below reads it off @{thm [source] qtable_r\<epsilon>_strict} at the
+  empty restriction.
+\<close>
+
+lemma qtable_mem_restr_empty: "qtable n A (mem_restr {}) Q X \<longleftrightarrow> table n A X"
+  by (auto simp: qtable_def mem_restr_def)
+
+lemma table_reps_strict:
+  fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
+  assumes sr: "Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex mr \<psi>s)"
+    and ok: "ok (length \<psi>s) mr" and A: "A = fv_regex (from_mregex mr \<psi>s)"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+  shows "table n A (r\<epsilon>_strict n rels mr)"
+proof -
+  have q: "list_all2 (\<lambda>\<psi> rel. qtable n (Formula.fv \<psi>) (mem_restr {})
+      (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>) rel) \<psi>s rels"
+    using ops by (simp add: list_all2_conv_all_nth qtable_mem_restr_empty)
+  have "qtable n A (mem_restr {})
+      (\<lambda>v. Regex.eps (Formula.sat \<sigma> V (map the v)) i (from_mregex mr \<psi>s)) (r\<epsilon>_strict n rels mr)"
+    by (rule qtable_r\<epsilon>_strict[OF sr ok A q])
+  then show ?thesis by (simp add: qtable_mem_restr_empty)
+qed
+
+lemma table_leps_strict:
+  fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
+  assumes sr: "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex mr \<psi>s)"
+    and ok: "ok (length \<psi>s) mr" and A: "A = fv_regex (from_mregex mr \<psi>s)"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+  shows "table n A (l\<epsilon>_strict n rels mr)"
+proof -
+  have q: "list_all2 (\<lambda>\<psi> rel. qtable n (Formula.fv \<psi>) (mem_restr {})
+      (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>) rel) \<psi>s rels"
+    using ops by (simp add: list_all2_conv_all_nth qtable_mem_restr_empty)
+  have "qtable n A (mem_restr {})
+      (\<lambda>v. Regex.eps (Formula.sat \<sigma> V (map the v)) i (from_mregex mr \<psi>s)) (l\<epsilon>_strict n rels mr)"
+    by (rule qtable_l\<epsilon>_strict[OF sr ok A q])
+  then show ?thesis by (simp add: qtable_mem_restr_empty)
+qed
+
+text \<open>With that in hand the two strict epsilons narrow like everything else, by induction on the
+  safety of the regular expression.\<close>
+
+lemma dtabc_reps_strict:
+  fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+    and sub: "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs"
+  shows "Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex mr \<psi>s) \<Longrightarrow>
+     ok (length \<psi>s) mr \<Longrightarrow> set cs = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
+     dtabc n cs (r\<epsilon>_strict n rels mr) = r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) mr"
+proof (induct mr)
+  case (MSkip m)
+  then show ?case by (simp add: dtabc_unit_table_len[OF s b] dtabc_unit_table)
+next
+  case (MTestPos i)
+  then have i: "i < length rels" using ops by (simp add: list_all2_lengthD)
+  then show ?case by simp
+next
+  case (MTestNeg i)
+  then have i: "i < length rels" using ops by (simp add: list_all2_lengthD)
+  then show ?case
+    by (simp add: dtabc_unit_table_len[OF s b] dtabc_empty_iff)
+next
+  case (MPlus r t)
+  have fvr: "set cs = fv_regex (from_mregex r \<psi>s)"
+    and fvt: "set cs = fv_regex (from_mregex t \<psi>s)" using MPlus(3,5) by auto
+  show ?case
+    using MPlus(1)[OF _ _ fvr] MPlus(2)[OF _ _ fvt] MPlus(3,4)
+    by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have lr: "length \<psi>s = length rels" using ops by (simp add: list_all2_lengthD)
+  have o1: "ok (length \<psi>s) r" and o2: "ok (length \<psi>s) t" using MTimes(4) by simp_all
+  have sr1: "Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex r \<psi>s)"
+    using MTimes(3) by simp
+  have fvr: "set cs = fv_regex (from_mregex r \<psi>s)" using MTimes(3,5) by auto
+  have tg: "table n (set cs) (r\<epsilon>_strict n rels r)"
+    by (rule table_reps_strict[OF sr1 o1 fvr ops])
+  have opsB: "\<And>i. i < length rels \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (rels ! i)"
+    using ops sub lr by (auto simp: list_all2_conv_all_nth)
+  show ?case
+    using MTimes(1)[OF sr1 o1 fvr]
+    by (simp add: dtabc_eps_lax[OF s b opsB o2[unfolded lr] tg])
+next
+  case (MStar r)
+  then show ?case by (simp add: dtabc_unit_table_len[OF s b] dtabc_unit_table)
+qed
+
 (*<*)
 end
 (*>*)
