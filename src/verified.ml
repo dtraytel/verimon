@@ -12249,21 +12249,16 @@ let rec ed_update_mmtaux
                                        (ed_union tuple_in_once_keysa l,
  (tuple_since_hista, (hist_sata, since_sata)))))))))))))));;
 
-let rec gcnt_add1 (_A1, _A2, _A3)
+let rec de_gcnt_add1
   t cc =
     (let (c, s) = cc in
-      (match lookupa ((ccompare_list _A2), (equal_list _A3)) c t
-        with None ->
-          (updateb ((ccompare_list _A2), (equal_list _A3)) t one_nata c,
-            insert ((ceq_list _A1), (ccompare_list _A2)) t s)
-        | Some k ->
-          (updateb ((ccompare_list _A2), (equal_list _A3)) t
-             (plus_nata k one_nata) c,
-            s)));;
+      (match edl_lookup_nat c t
+        with None -> (edl_update_nat t one_nata c, edl_insert t s)
+        | Some k -> (edl_update_nat t (plus_nata k one_nata) c, s)));;
 
 let rec de_gcnt_add
   t cc =
-    fold (gcnt_add1 (ceq_event_data, ccompare_event_data, equal_event_data))
+    fold de_gcnt_add1
       (csl (finite_UNIV_list, (ceq_list ceq_event_data),
              (ccompare_list ccompare_event_data))
         t)
@@ -12516,22 +12511,18 @@ let rec udsx_add_new_table
     | args, x, UDSX_win w -> UDSX_win (de_gsw_add_new_table args x w)
     | args, x, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_add_new_table args p x a);;
 
-let rec gcnt_del1 (_A1, _A2, _A3)
+let rec de_gcnt_del1
   t cc =
     (let (c, s) = cc in
-      (match lookupa ((ccompare_list _A2), (equal_list _A3)) c t
-        with None -> (c, s)
+      (match edl_lookup_nat c t with None -> (c, s)
         | Some k ->
           (if less_eq_nat k one_nata
-            then (delete ((ccompare_list _A2), (equal_list _A3)) t c,
-                   remove ((ceq_list _A1), (ccompare_list _A2)) t s)
-            else (updateb ((ccompare_list _A2), (equal_list _A3)) t
-                    (minus_nata k one_nata) c,
-                   s))));;
+            then (edl_delete_nat t c, unbox edl_remove_v t s)
+            else (edl_update_nat t (minus_nata k one_nata) c, s))));;
 
 let rec de_gcnt_del
   t cc =
-    fold (gcnt_del1 (ceq_event_data, ccompare_event_data, equal_event_data))
+    fold de_gcnt_del1
       (csl (finite_UNIV_list, (ceq_list ceq_event_data),
              (ccompare_list ccompare_event_data))
         t)
