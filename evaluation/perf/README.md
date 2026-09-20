@@ -9,7 +9,12 @@ repetitions, in about 20 minutes on four cores.
 python3 gen_logs.py                 # eight synthetic logs (about 45 MB), a few seconds
 python3 gen_formulas.py             # formulas/*.mfotl and formulas/suite.json (committed)
 python3 run_suite.py                # results/{results.json,results.csv,report.md}
+python3 plot.py                     # results/ratios.svg, the ratios per family
 ```
+
+`report.md` and `ratios.svg` in this directory are the run of 2026-09-20 on the machine of
+EFFICIENCY.md Section 21 (four cores): 339 formulas, 801 s of wall time, no verdict
+disagreements.
 
 `run_suite.py` takes `--bin` (default: the tree's `_build/default/src/main.exe`), `--reps`
 (default 2, at most 3), `--timeout` (5 s), `--jobs` (2 workers), `--budget` (1800 s of wall
