@@ -22,11 +22,9 @@ text \<open>
   guard and every node is the one above.
 \<close>
 
-abbreviation (input) "dbuf_of n cs b \<equiv> mbuf_t_empty @@ map (dtabc n cs) (Rep_mbuf_t b)"
-
 function (sequential) edof ::
     "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow> edformula" where
-  "edof n cs (meformula.MRel rel) = EDRel (dtabc n cs rel)"
+  "edof n cs (meformula.MRel rel) = EDRel (dsan (dtabc n cs rel))"
 | "edof n cs (meformula.MPred e tms mode) =
      (if mode = Match then EDPredM e (length tms) tms cs
       else if (mode = Copy \<and> tms = map Formula.Var [0..<n] \<and> cs = [0..<n])
@@ -42,26 +40,27 @@ function (sequential) edof ::
       else EDFail)"
 | "edof n cs (meformula.MExists \<phi>) = EDExists (edof (Suc n) (0 # map Suc cs) \<phi>) True"
 | "edof n cs (meformula.MOr \<phi> \<psi> buf) =
-     EDOr (edof n cs \<phi>) (edof n cs \<psi>) (dbuf_of n cs (fst buf), dbuf_of n cs (snd buf))"
+     (if mbuf_t_is_empty (fst buf) \<and> mbuf_t_is_empty (snd buf)
+      then EDOr (edof n cs \<phi>) (edof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) else EDFail)"
 | "edof n cs (meformula.MAnd A \<phi> pos B \<psi> buf) =
      (let cs1 = set_cols A; cs2 = set_cols B in
-      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A)
+      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A) \<and>
+         mbuf_t_is_empty (fst buf) \<and> mbuf_t_is_empty (snd buf)
       then EDAnd (mk_djoin cs1 cs2) (edof n cs1 \<phi>) pos (edof n cs2 \<psi>)
-             (dbuf_of n cs1 (fst buf), dbuf_of n cs2 (snd buf))
+             (mbuf_t_empty, mbuf_t_empty)
       else EDFail)"
 | "edof n cs (meformula.MPrev I \<phi> first buf nts) =
-     EDPrev I (edof n cs \<phi>) first (dbuf_of n cs buf) nts"
+     (if mbuf_t_is_empty buf then EDPrev I (edof n cs \<phi>) first mbuf_t_empty nts else EDFail)"
 | "edof n cs (meformula.MNext I \<phi> first nts) =
      EDNext I (edof n cs \<phi>) first nts"
 | "edof n cs (meformula.MAnds A_pos A_neg L buf) =
      (case A_pos of [] \<Rightarrow> EDFail
       | A # As \<Rightarrow>
         (let c0 = set_cols A; css = map set_cols As; nss = map set_cols A_neg in
-         if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg
+         if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg \<and>
+            list_all mbuf_t_is_empty buf
          then EDAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-                (map2 (edof n) (c0 # css @ nss) L)
-                (map (\<lambda>b. mbuf_t_empty @@ b)
-                  (map2 map (map (dtabc n) (c0 # css @ nss)) (map Rep_mbuf_t buf)))
+                (map2 (edof n) (c0 # css @ nss) L) (map (\<lambda>_. mbuf_t_empty) L)
          else EDFail))"
 | "edof n cs (meformula.MAgg args \<phi>) =
      (let m = length (aggargs_tys args); g = dagg_gcols args; y = aggargs_y args in
@@ -126,9 +125,9 @@ function (sequential) edof ::
       else EDFail)"
 | "edof n cs (meformula.MLet p m \<phi> \<psi>) = EDLet p m (edof m [0..<m] \<phi>) (edof n cs \<psi>)"
 | "edof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
-     EDFrz p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) jfrz jpsi0 jphi \<alpha>s"
+     (if \<alpha>s = [] then EDFrz p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) jfrz jpsi0 jphi [] else EDFail)"
 | "edof n cs (meformula.MLetPast p m \<phi> \<psi> i buf) =
-     EDLetPast p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) i buf"
+     (if buf = None then EDLetPast p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) i None else EDFail)"
 | "edof n cs (meformula.MTrigger args \<phi> \<psi> buf nts aux) =
      (let cs_L = set_cols (args_L args) in
       if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
@@ -160,8 +159,14 @@ next
   case (13 n cs args \<phi> \<psi> buf nts t aux)
   then show ?case
     by (cases "args_agg args") (simp_all add: Let_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq)
+next
+  case (6 n cs \<phi> \<psi> buf)
+  then show ?case by (cases buf) (simp add: mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
+next
+  case (7 n cs A \<phi> pos B \<psi> buf)
+  then show ?case by (cases buf) (simp add: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
 qed (simp_all add: Let_def zip_map2 o_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
-      split: list.splits prod.splits cong: map_cong)
+      mbuf_t_is_empty.rep_eq list_all_iff split: list.splits prod.splits cong: map_cong)
 
 lemma dof_code[code]: "dof n cs (Rep_meformula e) = Rep_edformula (edof n cs e)"
   by (simp add: edof_dof)

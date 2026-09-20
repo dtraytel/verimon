@@ -1379,7 +1379,7 @@ definition dadd_new_dq :: "args \<Rightarrow> bool list \<Rightarrow> event_data
      tstp_dq = dq_push nt tstp_dq;
      P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
      (tbl, a2_dq', result') = fold (duntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
-       (csorted_list_of_set rel2) ({}, a2_dq, result);
+       (csl rel2) ({}, a2_dq, result);
      tables = append_queue (tbl, new_tstp) tables;
      a2_dq = dq_push Mapping.empty a2_dq';
      a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
@@ -1451,7 +1451,7 @@ proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
       (csorted_list_of_set rel2) ({}, a2_dq, result)"
     by (rule fold_duntil_elem_step_dq) (use rs r2 in auto)
   show ?thesis
-    unfolding dadd_new_dq_def add_new_dq_def if_P[OF fin] 1 sh mm
+    unfolding dadd_new_dq_def add_new_dq_def if_P[OF fin] 1 sh mm csl_finite[OF fin]
     by (simp add: Let_def fl wkeys_a1_update[OF na r1] wkeys_upd_set[OF r1] split: prod.splits)
 qed
 

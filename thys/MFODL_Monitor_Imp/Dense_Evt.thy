@@ -1,6 +1,7 @@
 (*<*)
 theory Dense_Evt
-  imports "MFODL_Monitor_Devel.Optimized_Until_Deque" "MFODL_Monitor_Devel.Optimized_Trigger"
+  imports Dense_Utuple "MFODL_Monitor_Devel.Optimized_Until_Deque"
+    "MFODL_Monitor_Devel.Optimized_Trigger"
 begin
 (*>*)
 
@@ -46,10 +47,10 @@ definition cnt_del1 :: "event_data tuple \<Rightarrow> cntset \<Rightarrow> cnts
                   else (Mapping.update t (k - 1) c, s))))"
 
 definition cnt_add :: "event_data table \<Rightarrow> cntset \<Rightarrow> cntset" where
-  "cnt_add T cc = fold cnt_add1 (csorted_list_of_set T) cc"
+  "cnt_add T cc = fold cnt_add1 (csl T) cc"
 
 definition cnt_del :: "event_data table \<Rightarrow> cntset \<Rightarrow> cntset" where
-  "cnt_del T cc = fold cnt_del1 (csorted_list_of_set T) cc"
+  "cnt_del T cc = fold cnt_del1 (csl T) cc"
 
 definition cnt_rep :: "(event_data tuple \<Rightarrow> nat) \<Rightarrow> cntset \<Rightarrow> bool" where
   "cnt_rep f cc \<longleftrightarrow>
@@ -161,14 +162,14 @@ lemma cnt_rep_add:
   shows "cnt_rep (\<lambda>x. if x \<in> T then f x + 1 else f x) (cnt_add T cc)"
   using cnt_rep_fold_add1[OF assms(1), of "csorted_list_of_set T"]
     csorted_list_of_set_etuple[OF assms(2)]
-  unfolding cnt_add_def by simp
+  unfolding cnt_add_def csl_finite[OF assms(2)] by simp
 
 lemma cnt_rep_del:
   assumes "cnt_rep f cc" and "finite T"
   shows "cnt_rep (\<lambda>x. if x \<in> T then f x - 1 else f x) (cnt_del T cc)"
   using cnt_rep_fold_del1[OF assms(1), of "csorted_list_of_set T"]
     csorted_list_of_set_etuple[OF assms(2)]
-  unfolding cnt_del_def by simp
+  unfolding cnt_del_def csl_finite[OF assms(2)] by simp
 
 text \<open>The count function of a list of tables: how many of them contain a tuple.\<close>
 

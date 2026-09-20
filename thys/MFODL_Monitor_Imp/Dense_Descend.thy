@@ -37,7 +37,7 @@ definition dnode_n :: "nat \<Rightarrow> args \<Rightarrow> nat" where
 
 function (sequential) dof ::
     "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
-  "dof n cs (mformula.MRel rel) = DRel (dtabc n cs rel)"
+  "dof n cs (mformula.MRel rel) = DRel (dsan (dtabc n cs rel))"
 | "dof n cs (mformula.MPred e tms mode) =
      (if mode = Match then DPredM e (length tms) tms cs
       else if (mode = Copy \<and> tms = map Formula.Var [0..<n] \<and> cs = [0..<n])
@@ -53,25 +53,23 @@ function (sequential) dof ::
       else DFail)"
 | "dof n cs (mformula.MExists \<phi>) = DExists (dof (Suc n) (0 # map Suc cs) \<phi>) True"
 | "dof n cs (mformula.MOr \<phi> \<psi> buf) =
-     DOr (dof n cs \<phi>) (dof n cs \<psi>)
-       (map (dtabc n cs) (fst buf), map (dtabc n cs) (snd buf))"
+     (if buf = ([], []) then DOr (dof n cs \<phi>) (dof n cs \<psi>) ([], []) else DFail)"
 | "dof n cs (mformula.MAnd A \<phi> pos B \<psi> buf) =
      (let cs1 = set_cols A; cs2 = set_cols B in
-      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A)
-      then DAnd (mk_djoin cs1 cs2) (dof n cs1 \<phi>) pos (dof n cs2 \<psi>)
-             (map (dtabc n cs1) (fst buf), map (dtabc n cs2) (snd buf))
+      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A) \<and> buf = ([], [])
+      then DAnd (mk_djoin cs1 cs2) (dof n cs1 \<phi>) pos (dof n cs2 \<psi>) ([], [])
       else DFail)"
 | "dof n cs (mformula.MPrev I \<phi> first buf nts) =
-     DPrev I (dof n cs \<phi>) first (map (dtabc n cs) buf) nts"
+     (if buf = [] then DPrev I (dof n cs \<phi>) first [] nts else DFail)"
 | "dof n cs (mformula.MNext I \<phi> first nts) = DNext I (dof n cs \<phi>) first nts"
 | "dof n cs (mformula.MAnds A_pos A_neg L buf) =
      (case A_pos of [] \<Rightarrow> DFail
       | A # As \<Rightarrow>
         (let c0 = set_cols A; css = map set_cols As; nss = map set_cols A_neg in
-         if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg
+         if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg \<and>
+            (\<forall>b \<in> set buf. b = [])
          then DAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-                (map2 (dof n) (c0 # css @ nss) L)
-                (map2 map (map (dtabc n) (c0 # css @ nss)) buf)
+                (map2 (dof n) (c0 # css @ nss) L) (map (\<lambda>_. []) L)
          else DFail))"
 | "dof n cs (mformula.MAgg args \<phi>) =
      (let m = length (aggargs_tys args); g = dagg_gcols args; y = aggargs_y args in
@@ -133,9 +131,9 @@ function (sequential) dof ::
       else DFail)"
 | "dof n cs (mformula.MLet p m \<phi> \<psi>) = DLet p m (dof m [0..<m] \<phi>) (dof n cs \<psi>)"
 | "dof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
-     DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi \<alpha>s"
+     (if \<alpha>s = [] then DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi [] else DFail)"
 | "dof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
-     DLetPast p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) i buf"
+     (if buf = None then DLetPast p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) i None else DFail)"
 | "dof n cs (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
      (let cs_L = set_cols (args_L args) in
       if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
@@ -231,7 +229,8 @@ proof -
   have sc: "set ?cs = Formula.fv \<phi>" by simp
   have p: "produces n (set ?cs) tw (mformula.MRel rel)"
     using produces_minit0[OF s b] unfolding m sc .
-  have d: "dof n ?cs (mformula.MRel rel) = DRel (dtabc n ?cs rel)" by simp
+  have d: "dof n ?cs (mformula.MRel rel) = DRel (dtabc n ?cs rel)"
+    using t sc w by (simp add: dsan_dtabc)
   show ?thesis unfolding m d by (rule dsim.DsRel[OF w p]) (use t sc in simp)
 qed
 
@@ -1100,7 +1099,7 @@ proof -
   have d: "dof n ?cs (mformula.MAnds (set c0 # map set css) (map set nss) L
         (replicate (length L) []))
       = DAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-          (map2 (dof n) ?css L) (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
+          (map2 (dof n) ?css L) (map (\<lambda>_. []) L)"
     using dc lenL by (simp add: Let_def sc0 scss scnss)
   have zs: "sum_list (map vdfail_nodes (map2 (dof n) ?css L)) = 0"
     using z unfolding m d by simp
@@ -1122,9 +1121,10 @@ proof -
     then show "dsim n (?css ! i) tw (map2 (dof n) ?css L ! i) (L ! i)"
       using ih zl i by simp
   qed
-  have bf: "dbufn n ?css (replicate (length L) [])
-      (map2 map (map (dtabc n) ?css) (replicate (length L) []))"
-    using lenL by (auto simp: dbufn_def)
+  have bf: "dbufn n ?css (replicate (length L) []) (map (\<lambda>_. []) L)"
+    unfolding dbufn_def using lenL[symmetric]
+    by (simp add: zip_replicate2 map_replicate_const comp_def replicate_add nth_Cons nth_append
+        split: nat.splits)
   show ?thesis unfolding m d
     by (rule dsim.DsAnds[OF w pr ld _ lenL wfc sb dc refl refl bf]) (use lenL in simp)
 qed

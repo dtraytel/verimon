@@ -32,6 +32,9 @@ type_synonym daggp = "bool \<times> ty Formula.agg_op \<times> Formula.trm \<tim
 fun dagg_p :: "daggp \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "dagg_p (g0, \<omega>, f, k, pos) = dagg g0 \<omega> f k pos"
 
+lemma dsan_dagg_p[simp]: "dsan (dagg_p p X) = dagg_p p X"
+  by (cases p) (simp add: dagg_def)
+
 text \<open>What the parameters must satisfy at a window over tuples of width @{text w}.\<close>
 
 fun dagg_ok :: "daggp \<Rightarrow> nat \<Rightarrow> bool" where
@@ -46,13 +49,6 @@ fun dagg_gcols :: "daggp \<Rightarrow> nat \<Rightarrow> cols" where
 
 text \<open>The parameters the compiler builds from a fused node's aggregation are well formed at the
   width of the node's operand.\<close>
-
-lemma col_pos_length: "c \<in> set cs \<Longrightarrow> col_pos cs c < length cs"
-  by (induct cs) auto
-
-lemma fv_reindex_trm:
-  "Formula.fv_trm t \<subseteq> set cs \<Longrightarrow> Formula.fv_trm (reindex_trm cs t) \<subseteq> {0..<length cs}"
-  by (induct t) (auto simp: col_pos_length)
 
 lemma ins_pos_le: "ins_pos cs y \<le> length cs"
   by (simp add: ins_pos_def)
@@ -227,10 +223,14 @@ definition ag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<R
 definition ag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> aggaux option" where
   "ag_del p w T cc ax = delete_maggaux' (dagg_args p w) (dagg_wide p w (cnt_leave T cc)) ax"
 
+text \<open>The kernel structure's result is sanitised on the way out: on the hole-free tables the
+  invariant below guarantees that is the identity, and it lets the unboxed evaluator read the
+  result without an invariant.\<close>
+
 definition ag_res :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> event_data table" where
   "ag_res p w cc ax = (case ax of
      None \<Rightarrow> dagg_p p (snd cc)
-   | Some a \<Rightarrow> dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a))"
+   | Some a \<Rightarrow> dsan (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
 
 definition ag_inv :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> bool" where
   "ag_inv p w cc ax \<longleftrightarrow> valid_maggaux' (dagg_args p w) ax (dagg_wide p w (snd cc))"
@@ -349,7 +349,8 @@ next
   case (Some a)
   have "result_maggaux (dagg_args p w) a = eval_aggargs (dagg_args p w) (dagg_wide p w (snd cc))"
     by (rule valid_result_maggaux) (use inv in \<open>simp add: ag_inv_def Some\<close>)
-  then show ?thesis unfolding ag_res_def Some option.case dagg_p_eval_aggargs[OF ok S] by simp
+  then show ?thesis
+    unfolding ag_res_def Some option.case by (simp add: dagg_p_eval_aggargs[OF ok S, symmetric])
 qed
 
 subsection \<open>The window, with the aggregate\<close>

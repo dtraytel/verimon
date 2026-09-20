@@ -67,7 +67,7 @@ fun dbin_join_h :: "djoin_plan \<Rightarrow> utable \<Rightarrow> bool \<Rightar
   "dbin_join_h (DJGen p lk rk) A pos B =
      (if \<not> dense_heap_join \<or> \<not> pos \<or> Set.is_empty A \<or> Set.is_empty B
       then return (gbin_join (DJGen p lk rk) A pos B)
-      else (let xs = csorted_list_of_set A; ys = csorted_list_of_set B in
+      else (let xs = csl A; ys = csl B in
         if length ys \<le> length xs
         then (if \<not> heap_join_ok ys then return (gbin_join (DJGen p lk rk) A pos B)
               else do { q \<leftarrow> im_new (2 * integer_of_nat (length ys));

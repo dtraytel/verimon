@@ -182,7 +182,7 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
        | Some xs \<Rightarrow> map (dmatch_table tms cs) xs), EDPredM e ar tms cs)"
 | "edeval j ts db (EDAndRel \<phi> conf) =
      (let (xs, \<phi>') = edeval j ts db \<phi>
-      in (map (Set.filter (eval_constraint conf)) xs, EDAndRel \<phi>' conf))"
+      in (map (Set.filter (deval_constraint conf)) xs, EDAndRel \<phi>' conf))"
 | "edeval j ts db (EDNeg \<phi>) =
      (let (xs, \<phi>') = edeval j ts db \<phi>
       in (map (\<lambda>r. if r = empty_table then unit_table 0 else empty_table) xs, EDNeg \<phi>'))"
@@ -255,7 +255,7 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
      (let (xs, \<phi>') = edeval j ts db \<phi>; (ys, \<psi>') = edeval j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
             let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-            in (zs @ [z], ax)) ([], daux) (mebuf2_add (map (dembedp pl) xs) ys dbuf) (nts @@ ts)
+            in (zs @ [dsan z], ax)) ([], daux) (mebuf2_add (map (dembedp pl) xs) ys dbuf) (nts @@ ts)
       in (zs, EDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
   by pat_completeness auto
 

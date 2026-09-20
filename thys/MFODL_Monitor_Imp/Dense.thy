@@ -1,6 +1,6 @@
 (*<*)
 theory Dense
-  imports "MFODL_Monitor_Devel.Code_Opt"
+  imports Dense_Utuple
 begin
 (*>*)
 
@@ -720,6 +720,22 @@ lemma dtable_dtabc:
   "sorted_wrt (<) cs \<Longrightarrow> \<forall>c \<in> set cs. c < n \<Longrightarrow> table n (set cs) T \<Longrightarrow> dtable cs (dtabc n cs T)"
   by (auto simp: dtable_def dtabc_def table_def dwf_tuple_dproj)
 
+text \<open>A table of hole-free tuples is left alone by the sanitiser.\<close>
+
+lemma dwf_tuple_no_None: "dwf_tuple k d \<Longrightarrow> \<forall>a \<in> set d. a \<noteq> None"
+  by (auto simp: dwf_tuple_def in_set_conv_nth)
+
+lemma dwf_tuple_reopt_deopt: "dwf_tuple k d \<Longrightarrow> reopt (deopt d) = d"
+  by (simp add: reopt_deopt_iff dwf_tuple_no_None)
+
+lemma dsan_dtable: "dtable cs D \<Longrightarrow> dsan D = D"
+  by (rule dsan_eq) (auto simp: dtable_def dwf_tuple_def in_set_conv_nth)
+
+lemma dsan_dtabc:
+  "sorted_wrt (<) cs \<Longrightarrow> \<forall>c \<in> set cs. c < n \<Longrightarrow> table n (set cs) T \<Longrightarrow>
+     dsan (dtabc n cs T) = dtabc n cs T"
+  by (rule dsan_dtable[OF dtable_dtabc])
+
 lemma dwiden_props:
   "length d = length (filter id bs) \<Longrightarrow> (\<forall>x \<in> set d. x \<noteq> None) \<Longrightarrow>
      length (dwiden bs d) = length bs \<and> (\<forall>i < length bs. (dwiden bs d ! i = None) = (\<not> bs ! i))"
@@ -959,7 +975,7 @@ definition dindex_step :: "bool list \<Rightarrow> event_data tuple \<Rightarrow
 
 definition dindex :: "bool list \<Rightarrow> event_data table \<Rightarrow>
     (event_data tuple, event_data tuple list) mapping" where
-  "dindex msk B = fold (dindex_step msk) (csorted_list_of_set B) Mapping.empty"
+  "dindex msk B = fold (dindex_step msk) (csl B) Mapping.empty"
 
 definition dprobe_step :: "mrg list \<Rightarrow> bool list \<Rightarrow>
     (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
@@ -983,8 +999,8 @@ definition dgen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool lis
     event_data table \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "dgen_join p lk rk A B =
      (if card A \<le> card B
-      then (let m = dindex lk A in fold (dprobe_step_l p rk m) (csorted_list_of_set B) empty_table)
-      else (let m = dindex rk B in fold (dprobe_step p lk m) (csorted_list_of_set A) empty_table))"
+      then (let m = dindex lk A in fold (dprobe_step_l p rk m) (csl B) empty_table)
+      else (let m = dindex rk B in fold (dprobe_step p lk m) (csl A) empty_table))"
 
 definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Rightarrow>
     event_data tuple \<Rightarrow> event_data tuple list" where
@@ -1004,9 +1020,9 @@ lemma dindex_fold_lookup:
   by (induct xs arbitrary: m) (auto simp: bucket_dindex_step)
 
 lemma dindex_lookup:
-  assumes "set (csorted_list_of_set B) = B"
+  assumes "set (csl B) = B"
   shows "set (bucket (dindex msk B) k) = {b \<in> B. dproj msk b = k}"
-  using dindex_fold_lookup[of msk "csorted_list_of_set B" Mapping.empty k] assms
+  using dindex_fold_lookup[of msk "csl B" Mapping.empty k] assms
   by (simp add: dindex_def bucket_def)
 
 lemma dprobe_fold:
@@ -1025,7 +1041,7 @@ text \<open>Both sides of the size test compute the same table: the pairs that a
   columns, merged.\<close>
 
 lemma dgen_join_eq:
-  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
+  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
   shows "dgen_join p lk rk A B
        = {dmerge p a b | a b. a \<in> A \<and> b \<in> B \<and> dproj lk a = dproj rk b}"
   by (auto simp: dgen_join_def Let_def dprobe_fold dprobe_l_fold empty_table_def
@@ -1048,9 +1064,9 @@ theorem dtabc_gen_join:
        = dtabc n (merge_cols cs1 cs2) (join T True T')"
 proof -
   let ?p = "mrg_plan cs1 cs2"
-  have cA: "set (csorted_list_of_set (dtabc n cs1 T)) = dtabc n cs1 T"
-    and cB: "set (csorted_list_of_set (dtabc n cs2 T')) = dtabc n cs2 T'"
-    using fT fT' by (auto simp: dtabc_def intro!: set_csorted_list_of_set_etuple)
+  have cA: "set (csl (dtabc n cs1 T)) = dtabc n cs1 T"
+    and cB: "set (csl (dtabc n cs2 T')) = dtabc n cs2 T'"
+    using fT fT' by (auto simp: dtabc_def csl_finite intro!: set_csorted_list_of_set_etuple)
   have la: "\<And>a. a \<in> dtabc n cs1 T \<Longrightarrow> length a = length (filter (\<lambda>m. m \<noteq> MRgt) ?p)"
     using t1 by (auto simp: dtabc_def table_def wf_tuple_def length_filter_mrg_plan_left
         dproj_wide_mask_eq_map_nth[OF s1 b1])
@@ -1548,6 +1564,13 @@ fun reindex_trm :: "cols \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm" wh
 lemma col_pos_nth: "c \<in> set cs \<Longrightarrow> map f cs ! col_pos cs c = f c"
   by (induct cs) auto
 
+lemma col_pos_length: "c \<in> set cs \<Longrightarrow> col_pos cs c < length cs"
+  by (induct cs) auto
+
+lemma fv_reindex_trm:
+  "Formula.fv_trm t \<subseteq> set cs \<Longrightarrow> Formula.fv_trm (reindex_trm cs t) \<subseteq> {0..<length cs}"
+  by (induct t) (auto simp: col_pos_length)
+
 text \<open>The re-indexed term read at the short tuple's positions is the original term read at the
   wide one's.\<close>
 
@@ -1758,15 +1781,42 @@ text \<open>
   position @{term y} occupies among the group's columns rather than at @{term y} itself.
 \<close>
 
+text \<open>It is the short aggregation of @{theory MFODL_Monitor_Imp.Dense_Utuple} read through
+  @{const deopt}; on hole-free tuples of a width that covers the term this is the aggregation
+  written directly on the kernel's tuples, which is the form the theorem below works with.\<close>
+
 definition dagg :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
     event_data table \<Rightarrow> event_data table" where
-  "dagg g0 \<omega> f k pos rel =
+  "dagg g0 \<omega> f k pos rel = reopt_table (uagg g0 \<omega> f k pos (deopt_table rel))"
+
+lemma dagg_wf:
+  assumes "\<And>x. x \<in> rel \<Longrightarrow> \<forall>a \<in> set x. a \<noteq> None"
+    and "\<And>x. x \<in> rel \<Longrightarrow> Formula.fv_trm f \<subseteq> {i. i < length x}"
+  shows "dagg g0 \<omega> f k pos rel =
      (if g0 \<and> Set.is_empty rel then {[Some (eval_agg_op \<omega> {})]}
       else (let groups = cluster (Some \<circ> drop k) rel in
         (\<lambda>g. case Mapping.lookup groups g of
                 None \<Rightarrow> g
               | Some G \<Rightarrow> take pos g @ Some (eval_agg_op \<omega> (agg_values f G)) # drop pos g)
           ` Mapping.keys groups))"
+  unfolding dagg_def by (rule uagg_deopt[OF assms])
+
+lemma dagg_dtable:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n" and t: "table n (set cs) rel"
+    and fv: "Formula.fv_trm f \<subseteq> {0..<length cs}"
+  shows "dagg g0 \<omega> f k pos (dtabc n cs rel) =
+     (if g0 \<and> Set.is_empty (dtabc n cs rel) then {[Some (eval_agg_op \<omega> {})]}
+      else (let groups = cluster (Some \<circ> drop k) (dtabc n cs rel) in
+        (\<lambda>g. case Mapping.lookup groups g of
+                None \<Rightarrow> g
+              | Some G \<Rightarrow> take pos g @ Some (eval_agg_op \<omega> (agg_values f G)) # drop pos g)
+          ` Mapping.keys groups))"
+proof (rule dagg_wf)
+  fix x assume "x \<in> dtabc n cs rel"
+  then have "dwf_tuple (length cs) x" using dtable_dtabc[OF s b t] by (auto simp: dtable_def)
+  then show "\<forall>a \<in> set x. a \<noteq> None" "Formula.fv_trm f \<subseteq> {i. i < length x}"
+    using fv by (auto simp: dwf_tuple_def in_set_conv_nth)
+qed
 
 theorem dagg_eval_agg:
   assumes sg: "sorted_wrt (<) gcols" and bg: "\<forall>c \<in> set gcols. c < n"
@@ -1801,7 +1851,7 @@ proof -
       using True by (simp add: eval_agg_def dtabc_def singleton_table_def mc)
     also have "\<dots> = {[Some ?z]}"
       using yn by (simp add: dproj_wide_mask_eq_map_nth[where cs="[y]"])
-    finally show ?thesis using e g by (simp add: dagg_def dtabc_def)
+    finally show ?thesis using e g by (simp add: dagg_def dtabc_def uagg_def deopt_table_def Set.is_empty_iff)
   next
     case False
     then have ne: "\<not> (g0 \<and> rel = empty_table)" by simp
@@ -1812,7 +1862,8 @@ proof -
                  None \<Rightarrow> k
                | Some G \<Rightarrow> take ?p k @ Some (eval_agg_op \<omega> (agg_values ?g G)) # drop ?p k)
           ` (drop ?m ` dproj ?M ` rel)"
-      unfolding dagg_def dtabc_def Let_def keys_cluster using ne' by simp
+      unfolding dagg_dtable[OF agg_cols_sorted[OF sg] agg_cols_bound[OF bg] rel fv_reindex_trm[OF fv]]
+      unfolding dtabc_def Let_def keys_cluster using ne' by simp
     also have "\<dots> = (\<lambda>k. take ?p k @ Some (eval_agg_op \<omega>
           (agg_values ?g (Set.filter (\<lambda>z. drop ?m z = k) (dproj ?M ` rel)))) # drop ?p k)
           ` (drop ?m ` dproj ?M ` rel)"
@@ -1905,17 +1956,20 @@ qed (simp add: dnarrow_def dtabc_def)
 
 subsection \<open>Matching a predicate's arguments\<close>
 
-definition dmatch_table :: "Formula.trm list \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> event_data table" where
-  "dmatch_table tms cs X = Option.these ((\<lambda>x. map_option (\<lambda>f. map f cs) (match tms x)) ` X)"
+text \<open>The short match of @{theory MFODL_Monitor_Imp.Dense_Utuple}, read through @{const deopt}.
+  On a table without holes whose matches bind every column read off, it is the kernel's match
+  written at the predicate's columns.\<close>
 
-lemma these_map_option_image: "Option.these (map_option g ` S) = g ` Option.these S"
-  by (force simp: Option.these_def image_iff)
+definition dmatch_table :: "Formula.trm list \<Rightarrow> cols \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dmatch_table tms cs X = reopt_table (umatch_table tms cs (deopt_table X))"
 
 text \<open>The kernel writes the matching assignment into a tuple of the full width; over short
   tuples it is read off at the predicate's columns.\<close>
 
 theorem dmatch_table_dtabc:
   assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and hf: "\<And>x. x \<in> X \<Longrightarrow> \<forall>a \<in> set x. a \<noteq> None"
+    and tot: "\<And>f. f \<in> Option.these (match tms ` X) \<Longrightarrow> \<forall>c \<in> set cs. f c \<noteq> None"
   shows "dmatch_table tms cs X
        = dtabc n cs ((\<lambda>f. Table.tabulate f 0 n) ` Option.these (match tms ` X))"
 proof -
@@ -1930,8 +1984,7 @@ proof -
     finally show "dproj (wide_mask n cs) (Table.tabulate f 0 n) = map f cs" .
   qed
   have "dmatch_table tms cs X = (\<lambda>f. map f cs) ` Option.these (match tms ` X)"
-    unfolding dmatch_table_def image_image[symmetric] these_map_option_image
-    by (rule refl)
+    unfolding dmatch_table_def by (rule umatch_table_deopt[OF hf tot])
   also have "\<dots> = dtabc n cs ((\<lambda>f. Table.tabulate f 0 n) ` Option.these (match tms ` X))"
     unfolding dtabc_def image_image by (simp add: t)
   finally show ?thesis .
@@ -2760,6 +2813,27 @@ proof -
   show ?thesis unfolding dtabc_def using pt by auto
 qed
 
+text \<open>The dense evaluator filters with @{const deval_constraint}, the short constraint read through
+  @{const deopt}; on the short form of a table it is the constraint written on the kernel's tuples.\<close>
+
+lemma deval_constraint_reindex:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
+    and t: "table n (set cs) T"
+  shows "dtabc n cs (Set.filter (eval_constraint (t1, p, c, t2)) T)
+       = Set.filter (deval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc n cs T)"
+proof -
+  have "deval_constraint (reindex_constraint cs (t1, p, c, t2)) x
+      = eval_constraint (reindex_constraint cs (t1, p, c, t2)) x" if "x \<in> dtabc n cs T" for x
+  proof -
+    have "dwf_tuple (length cs) x" using dtable_dtabc[OF s b t] that by (auto simp: dtable_def)
+    then show ?thesis
+      using fv_reindex_trm[OF fv1] fv_reindex_trm[OF fv2]
+      by (intro deval_constraint_eq) (auto simp: reindex_constraint_def dwf_tuple_def)
+  qed
+  then show ?thesis unfolding eval_constraint_reindex[OF s b fv1 fv2 t] by auto
+qed
+
 
 section \<open>Embedding a short tuple in a wider short frame\<close>
 
@@ -2862,8 +2936,16 @@ text \<open>
   the same insertion the aggregation's output does, at the same @{const ins_pos}.
 \<close>
 
+text \<open>As the other operations that read a field, it is the short assignment of
+  @{theory MFODL_Monitor_Imp.Dense_Utuple} read through @{const deopt}.\<close>
+
 definition dassign1 :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
-  "dassign1 p t d = take p d @ Some (meval_trm t d) # drop p d"
+  "dassign1 p t d = reopt (uassign1 p t (deopt d))"
+
+lemma dassign1_wf:
+  "\<forall>a \<in> set d. a \<noteq> None \<Longrightarrow> Formula.fv_trm t \<subseteq> {i. i < length d} \<Longrightarrow>
+     dassign1 p t d = take p d @ Some (meval_trm t d) # drop p d"
+  unfolding dassign1_def by (rule uassign1_deopt)
 
 definition dassign :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data table \<Rightarrow> event_data table" where
   "dassign p t D = dassign1 p t ` D"
@@ -2902,9 +2984,17 @@ proof -
         = map (\<lambda>c. x ! c) (take ?p cs) @ ?v # map (\<lambda>c. x ! c) (drop ?p cs)"
       unfolding cs' using nth_cs nth_y
       by (auto intro!: map_cong dest: in_set_takeD in_set_dropD)
+    have dw: "dwf_tuple (length cs) (dproj (wide_mask n cs) x)"
+      using tT x by (intro dwf_tuple_dproj[OF s b]) (simp add: table_def)
+    have a1: "dassign1 ?p (reindex_trm cs t) (dproj (wide_mask n cs) x)
+        = take ?p (dproj (wide_mask n cs) x) @
+          Some (meval_trm (reindex_trm cs t) (dproj (wide_mask n cs) x)) #
+          drop ?p (dproj (wide_mask n cs) x)"
+      using dw fv_reindex_trm[OF fv]
+      by (intro dassign1_wf) (auto simp: dwf_tuple_def in_set_conv_nth)
     show "dassign1 ?p (reindex_trm cs t) (dproj (wide_mask n cs) x)
         = dproj (wide_mask n ?cs') (eval_assignment (y, t) x)"
-      unfolding eval_assignment.simps d' mm dassign1_def d ev
+      unfolding a1 unfolding eval_assignment.simps d' mm d ev
       by (simp add: take_map drop_map)
   qed
   show ?thesis unfolding dassign_def dtabc_def image_image

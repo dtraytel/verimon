@@ -47,9 +47,9 @@ qed
 
 lemma didx_ins_empty_rule:
   "<ided.is_imap Map.empty q>
-     didx_ins msk (csorted_list_of_set T) q
+     didx_ins msk (csl T) q
    <\<lambda>q'. ided.is_imap (Mapping.lookup (gindex msk T)) q'>\<^sub>t"
-  using didx_ins_rule[where mp = Mapping.empty and msk = msk and xs = "csorted_list_of_set T"]
+  using didx_ins_rule[where mp = Mapping.empty and msk = msk and xs = "csl T"]
   by (simp add: gindex_def)
 
 subsection \<open>Probing it\<close>
@@ -92,21 +92,21 @@ text \<open>
 \<close>
 
 lemma dprobe_r_dgen_join:
-  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
-  shows "fold (gprobe_step p lk (gindex rk B)) (csorted_list_of_set A) {}
+  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
+  shows "fold (gprobe_step p lk (gindex rk B)) (csl A) {}
        = ggen_join p lk rk A B"
   unfolding ggen_join_spec[OF cA cB]
   by (auto simp: gprobe_fold gindex_lookup[OF cB] empty_table_def cA) force
 
 lemma dprobe_l_dgen_join:
-  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
-  shows "fold (gprobe_step_l p rk (gindex lk A)) (csorted_list_of_set B) {}
+  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
+  shows "fold (gprobe_step_l p rk (gindex lk A)) (csl B) {}
        = ggen_join p lk rk A B"
   unfolding ggen_join_spec[OF cA cB]
   by (auto simp: gprobe_l_fold gindex_lookup[OF cA] empty_table_def cB)
 
 lemma dbin_join_h_rule:
-  assumes cA: "set (csorted_list_of_set A) = A" and cB: "set (csorted_list_of_set B) = B"
+  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
   shows "<emp> dbin_join_h pl A pos B <\<lambda>r. \<up>(r = gbin_join pl A pos B)>\<^sub>t"
 proof (cases pl)
   case (DJGen p lk rk)
@@ -130,7 +130,7 @@ qed (sep_auto+)
 corollary dbin_join_h_finite_rule:
   assumes "finite A" and "finite B"
   shows "<emp> dbin_join_h pl A pos B <\<lambda>r. \<up>(r = gbin_join pl A pos B)>\<^sub>t"
-  by (rule dbin_join_h_rule) (simp_all add: set_csorted_list_of_set_ed assms)
+  by (rule dbin_join_h_rule) (simp_all add: set_csl_ed assms)
 
 text \<open>
   So the heap index computes what @{const gbin_join} computes, whatever the flag
@@ -153,8 +153,7 @@ lemma finite_dgen_join:
   shows "finite (ggen_join p lk rk A B)"
 proof -
   have "ggen_join p lk rk A B \<subseteq> (\<lambda>(a, b). dmerge p a b) ` (A \<times> B)"
-    unfolding ggen_join_spec[OF set_csorted_list_of_set_ed[OF A]
-        set_csorted_list_of_set_ed[OF B]]
+    unfolding ggen_join_spec[OF set_csl_ed[OF A] set_csl_ed[OF B]]
     by auto
   then show ?thesis using A B by (auto intro: finite_subset)
 qed

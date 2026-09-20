@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Evt_Aux
-  imports Dense_Aux Dense_Evt_Agg
+  imports Dense_Until_Gen Dense_Evt_Agg
 begin
 (*>*)
 
@@ -306,19 +306,19 @@ datatype duaux_x = DUX_gen "event_data mmuaux_dq" | DUX_win uwaux
 
 definition dux_init :: "args \<Rightarrow> duaux_x" where
   "dux_init args = (if args_L args = {} \<and> memL (args_ivl args) 0 then DUX_win (uw_init args)
-     else DUX_gen (init_dq args))"
+     else DUX_gen (ginit_dq args))"
 
 fun dux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow>
     duaux_x \<Rightarrow> duaux_x" where
-  "dux_add_new args msk rel1 rel2 nt (DUX_gen d) = DUX_gen (dadd_new_dq args msk rel1 rel2 nt d)"
+  "dux_add_new args msk rel1 rel2 nt (DUX_gen d) = DUX_gen (gadd_new_dq args msk rel1 rel2 nt d)"
 | "dux_add_new args msk rel1 rel2 nt (DUX_win w) = DUX_win (uw_add_new args rel1 rel2 nt w)"
 
 fun dux_eval :: "args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow> event_data table list \<times> duaux_x" where
-  "dux_eval args nt (DUX_gen d) = (let (zs, d') = eval_dq args nt d in (zs, DUX_gen d'))"
+  "dux_eval args nt (DUX_gen d) = (let (zs, d') = geval_dq args nt d in (zs, DUX_gen d'))"
 | "dux_eval args nt (DUX_win w) = (let (zs, w') = uw_eval args nt w in (zs, DUX_win w'))"
 
 fun dux_length :: "args \<Rightarrow> duaux_x \<Rightarrow> nat" where
-  "dux_length args (DUX_gen d) = length_dq args d"
+  "dux_length args (DUX_gen d) = glength_dq args d"
 | "dux_length args (DUX_win w) = uw_length args w"
 
 definition duxaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow>
@@ -339,7 +339,7 @@ lemma duxaux'_init:
     and sub: "set cs_L \<subseteq> set cs_R"
   shows "duxaux' n cs_R cs_L args 0 (dux_init (dargs cs_R cs_L args)) []"
   using duaux'_init[OF s_R s_L sub, of n args] valid_uw_init
-  by (auto simp: duxaux'_def dux_init_def dauxlist3_def)
+  by (auto simp: duxaux'_def dux_init_def dauxlist3_def ginit_dq_eq)
 
 lemma duxaux'_add_new:
   assumes v: "duxaux' n cs_R cs_L args cur daux auxlist"
@@ -353,9 +353,13 @@ lemma duxaux'_add_new:
       (update_until args rel1 rel2 nt auxlist)"
 proof (cases daux)
   case (DUX_gen d)
-  then show ?thesis
-    using duaux'_add_new[OF _ s_R s_L b_R sub t1 t2 f2 nt, of args d auxlist] v
-    by (simp add: duxaux'_def)
+  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
+  have g: "gadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt d
+      = dadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt d"
+    by (rule gadd_new_dq_eq[OF _ duaux'_ushape[OF vd]]) (simp add: dargs_def init_args_def)
+  show ?thesis
+    using duaux'_add_new[OF vd s_R s_L b_R sub t1 t2 f2 nt] unfolding DUX_gen
+    by (simp add: duxaux'_def g)
 next
   case (DUX_win w)
   have c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
@@ -387,11 +391,13 @@ lemma duxaux'_eval:
   shows "dres = map (dtabc n cs_R) res \<and> duxaux' n cs_R cs_L args cur daux' auxlist'"
 proof (cases daux)
   case (DUX_gen d)
+  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
+  have g: "geval_dq (dargs cs_R cs_L args) nt d = eval_dq (dargs cs_R cs_L args) nt d"
+    by (rule geval_dq_eq[OF _ duaux'_ushape(1)[OF vd]]) (simp add: dargs_def init_args_def)
   obtain dres0 d' where e: "eval_dq (dargs cs_R cs_L args) nt d = (dres0, d')"
     by (cases "eval_dq (dargs cs_R cs_L args) nt d")
   have r: "dres = dres0" and d': "daux' = DUX_gen d'"
-    using de unfolding DUX_gen by (simp_all add: e del: eval_dq.simps)
-  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
+    using de unfolding DUX_gen by (simp_all add: e g del: eval_dq.simps geval_dq.simps)
   show ?thesis unfolding r d' DUX_gen using duaux'_eval[OF vd nt e we] by (simp add: duxaux'_def)
 next
   case (DUX_win w)
@@ -418,7 +424,7 @@ lemma duxaux'_length:
   "duxaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
      dux_length (dargs cs_R cs_L args) daux = length auxlist"
   using duaux'_length valid_uw_length
-  by (cases daux) (auto simp: duxaux'_def dauxlist3_def)
+  by (cases daux) (auto simp: duxaux'_def dauxlist3_def glength_dq_eq)
 
 (*<*)
 end
