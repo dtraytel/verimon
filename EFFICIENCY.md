@@ -6523,7 +6523,35 @@ window's result is read from the kernel's structure through two images per time 
 ones through a third (`udtabw`); the Until deque now reads its entries through the range-checked
 `dq_nth_l`.
 
-BENCH_PLACEHOLDER
+On the benchmark formulas of 21.1 (seconds, best of three; `dense` the shipping monitor):
+
+| formula | monpoly | vdense (now) | dense |
+|---|---|---|---|
+| P2 | 0.47 | 0.77 | 0.81 |
+| P3 | 0.51 | 0.71 | 0.75 |
+| once | 3.38 | 2.36 | 2.39 |
+| since | 1.14 | 1.34 | 1.30 |
+| eventually | 2.22 | 1.80 | 1.76 |
+| until | 1.07 | 1.53 | 1.53 |
+| agg | 0.76 | 1.12 | 1.10 |
+| complex | 3.95 | 3.96 | 3.92 |
+| sincewide | 4.31 | 3.66 | 3.65 |
+| untilwide | 4.21 | 3.84 | 3.88 |
+| aggwide | 16.78 | 12.66 | 12.66 |
+| sincesub | 1.03 | 1.97 | 1.96 |
+| untilsub | 0.87 | 1.31 | 1.29 |
+| sincesub3 | 0.86 | 1.04 | 1.03 |
+| trigger | -- | 1.17 | 0.83 |
+| andtrigger | -- | 1.03 | 0.84 |
+| frz | -- | 1.08 | 1.03 |
+| aggonce | 0.40 | 0.71 | 0.75 |
+
+The one formula where the verified evaluator is clearly behind the shipping one is the
+trigger, by 25-40%: its structure stayed the kernel's boxed one, so every time point boxes both
+operands' tables on the way in (`reopt_table`, and the embedding with holes) and unboxes the
+result on the way out.  The shipping monitor runs the generic trigger structure of
+`Dense_Unbox.thy` at `event_data`; the verified evaluator can do the same once that structure
+has its agreement lemma with the kernel's, as the Since and Until structures have.
 
 The differential tests: identical verdicts on the benchmark formulas (with `matchp` refused),
 and 593 identical, 7 refused, 0 differing on the corpus.  `MFODL_Monitor_Imp` builds in 8:55
