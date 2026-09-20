@@ -88,8 +88,8 @@ lemma dsxaux'_join:
       (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
 proof (cases daux)
   case (DSX_gen d)
-  then show ?thesis using dsaux'_join[OF _ s_R s_L b_R sub t1, of n args d auxlist] v
-    by (simp add: dsxaux'_def)
+  have vd: "dsaux' n cs_R cs_L args cur d auxlist" using v unfolding DSX_gen by (simp add: dsxaux'_def)
+  show ?thesis unfolding DSX_gen by (simp add: dsxaux'_def dsaux'_join[OF vd s_R s_L b_R sub t1])
 next
   case (DSX_win w)
   have c: "cpos cs_R (set cs_L) = {}" and w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
@@ -117,8 +117,8 @@ lemma dsxaux'_add_new_table:
        | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # auxlist)"
 proof (cases daux)
   case (DSX_gen d)
-  then show ?thesis using dsaux'_add_new_table[OF _ s_R b_R t2, of cs_L args d auxlist] v
-    by (simp add: dsxaux'_def)
+  have vd: "dsaux' n cs_R cs_L args cur d auxlist" using v unfolding DSX_gen by (simp add: dsxaux'_def)
+  show ?thesis unfolding DSX_gen by (simp add: dsxaux'_def dsaux'_add_new_table[OF vd s_R b_R t2])
 next
   case (DSX_win w)
   have c: "cpos cs_R (set cs_L) = {}" and w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
@@ -265,15 +265,16 @@ proof (cases daux)
   case (DUX_gen d)
   obtain dres0 d' where e: "eval_dq (dargs cs_R cs_L args) nt d = (dres0, d')"
     by (cases "eval_dq (dargs cs_R cs_L args) nt d")
-  have r: "dres = dres0" and d': "daux' = DUX_gen d'" using de unfolding DUX_gen e by simp_all
-  show ?thesis unfolding r d'
-    using duaux'_eval[OF _ nt e we, of n cs_L args] v unfolding DUX_gen
-    by (simp add: duxaux'_def)
+  have r: "dres = dres0" and d': "daux' = DUX_gen d'"
+    using de unfolding DUX_gen by (simp_all add: e del: eval_dq.simps)
+  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
+  show ?thesis unfolding r d' DUX_gen using duaux'_eval[OF vd nt e we] by (simp add: duxaux'_def)
 next
   case (DUX_win w)
   obtain dres0 w' where e: "uw_eval (dargs cs_R cs_L args) nt w = (dres0, w')"
     by (cases "uw_eval (dargs cs_R cs_L args) nt w")
-  have r: "dres = dres0" and d': "daux' = DUX_win w'" using de unfolding DUX_win e by simp_all
+  have r: "dres = dres0" and d': "daux' = DUX_win w'"
+    using de unfolding DUX_win by (simp_all add: e)
   have c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
     and w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
     and vs: "valid_uw (dargs cs_R cs_L args) cur w (dauxlist3 n cs_R auxlist)"
