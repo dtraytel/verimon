@@ -42,6 +42,50 @@ lemma dq_hd_s_nth: "dq_inv d \<Longrightarrow> 0 < dq_len d \<Longrightarrow> dq
   by (auto simp: dq_hd_s_def dq_nth_def dq_inv_def dq_len_def last_conv_nth hd_conv_nth
       split: list.splits)
 
+text \<open>An indexed read off the lists, for the same reason.\<close>
+
+definition dq_nth_l :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "dq_nth_l d k z = (if k < dq_nf d then (if k < length (dq_f d) then dq_f d ! k else z)
+     else (let j = dq_nb d - 1 - (k - dq_nf d) in if j < length (dq_b d) then dq_b d ! j else z))"
+
+lemma dq_nth_l_in: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth_l d k z = dq_nth d k"
+  by (auto simp: dq_nth_l_def dq_nth_def dq_inv_def dq_len_def Let_def)
+
+text \<open>The kernel's update of the nested deque, reading the entry off the lists.\<close>
+
+definition gupd_nested_step_dq :: "nat \<Rightarrow> 'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> nat \<times> 'b \<Rightarrow> ('b, 'c) mapping dq \<Rightarrow>
+    ('b, 'c) mapping dq" where
+  "gupd_nested_step_dq base d f x dq = (case x of (k, k') \<Rightarrow>
+    if base \<le> k \<and> k - base < dq_len dq then
+      (let i = k - base; m' = dq_nth_l dq i Mapping.empty in
+       dq_upd dq i (case Mapping.lookup m' k' of Some v \<Rightarrow> Mapping.update k' (f v) m'
+         | None \<Rightarrow> Mapping.update k' d m'))
+    else dq)"
+
+lemma gupd_nested_step_dq_eq:
+  assumes inv: "dq_inv dq"
+  shows "gupd_nested_step_dq base d f x dq = upd_nested_step_dq base d f x dq"
+proof -
+  obtain k k' where x: "x = (k, k')" by (cases x)
+  show ?thesis
+  proof (cases "base \<le> k \<and> k - base < dq_len dq")
+    case True
+    then have "dq_nth_l dq (k - base) Mapping.empty = dq_nth dq (k - base)"
+      using inv by (simp add: dq_nth_l_in)
+    then show ?thesis unfolding gupd_nested_step_dq_def upd_nested_step_dq_def x Let_def
+      by (simp split: option.splits)
+  next
+    case False
+    then show ?thesis unfolding gupd_nested_step_dq_def upd_nested_step_dq_def x by auto
+  qed
+qed
+
+lemma dq_inv_upd_nested_step_dq: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_step_dq base d f x dq)"
+  by (auto simp: upd_nested_step_dq_def Let_def split: prod.splits)
+
+lemma dq_inv_gupd_nested_step_dq: "dq_inv dq \<Longrightarrow> dq_inv (gupd_nested_step_dq base d f x dq)"
+  by (auto simp: gupd_nested_step_dq_def Let_def split: prod.splits)
+
 type_synonym 'b gmuaux = "tp \<times> ts queue \<times> ('b list set \<times> (ts + tp)) queue \<times> nat \<times>
   bool list \<times> bool list \<times> 'b list set \<times> ('b list, tp) mapping \<times>
   ('b list, ts + tp) mapping dq \<times> ts dq \<times> 'b list set list"
@@ -96,7 +140,7 @@ fun glength_dq :: "args \<Rightarrow> 'b gmuaux \<Rightarrow> nat" where
 definition guntil_step_dq :: "(nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> nat \<Rightarrow> nat \<times> 'b list \<Rightarrow>
     'b guntil_acc \<Rightarrow> 'b guntil_acc" where
   "guntil_step_dq P d t0 p acc = (case acc of (tbl, a2, res) \<Rightarrow> if P (fst p) then
-     (Set.insert (snd p) tbl, upd_nested_step_dq t0 d (max_tstp d) p a2,
+     (Set.insert (snd p) tbl, gupd_nested_step_dq t0 d (max_tstp d) p a2,
       if fst p = t0 then Set.insert (snd p) res else res)
    else acc)"
 
@@ -246,23 +290,53 @@ lemma geval_dq_eq:
   by (simp add: gshift_dq_eq[OF assms] split: prod.splits)
 
 lemma guntil_step_dq_eq:
-  "P (fst p) = P' (fst p) \<Longrightarrow>
+  "P (fst p) = P' (fst p) \<Longrightarrow> dq_inv (fst (snd acc)) \<Longrightarrow>
      guntil_step_dq P d t0 (p :: nat \<times> event_data tuple) acc = until_step_dq P' d t0 p acc"
-  by (simp add: guntil_step_dq_def until_step_dq_def)
+  by (cases acc) (auto simp: guntil_step_dq_def until_step_dq_def gupd_nested_step_dq_eq)
+
+lemma dq_inv_guntil_step_dq:
+  "dq_inv (fst (snd acc)) \<Longrightarrow> dq_inv (fst (snd (guntil_step_dq P d t0 p acc)))"
+  by (cases acc) (auto simp: guntil_step_dq_def dq_inv_gupd_nested_step_dq)
+
+lemma dq_inv_until_step_dq:
+  "dq_inv (fst (snd acc)) \<Longrightarrow> dq_inv (fst (snd (until_step_dq P d t0 p acc)))"
+  by (cases acc) (auto simp: until_step_dq_def dq_inv_upd_nested_step_dq)
+
+lemma dq_inv_guntil_elem_step_dq:
+  "dq_inv (fst (snd acc)) \<Longrightarrow>
+     dq_inv (fst (snd (guntil_elem_step_dq a1_map msk pos tp len inz P d as acc)))"
+  by (simp add: guntil_elem_step_dq_def Let_def dq_inv_guntil_step_dq split: option.splits)
 
 lemma guntil_elem_step_dq_eq:
   assumes P: "\<And>t. t \<le> tp \<Longrightarrow> P t = P' t"
     and a1: "\<And>k v. Mapping.lookup a1_map k = Some v \<Longrightarrow> v < tp"
+    and inv: "dq_inv (fst (snd acc))"
   shows "guntil_elem_step_dq a1_map msk pos tp len inz P d (as :: event_data tuple) acc
        = duntil_elem_step_dq a1_map msk pos tp len inz P' d as acc"
 proof -
-  have s: "\<And>p acc. fst p \<le> tp \<Longrightarrow>
-      guntil_step_dq P d (tp - len) p acc = until_step_dq P' d (tp - len) p acc"
-    by (simp add: guntil_step_dq_def until_step_dq_def P)
+  have s: "fst p \<le> tp \<Longrightarrow> dq_inv (fst (snd acc)) \<Longrightarrow>
+      guntil_step_dq P d (tp - len) p acc = until_step_dq P' d (tp - len) p acc" for p acc
+    by (cases acc) (auto simp: guntil_step_dq_def until_step_dq_def P gupd_nested_step_dq_eq)
   show ?thesis
     unfolding guntil_elem_step_dq_def duntil_elem_step_dq_def Let_def
-    by (auto simp: s Suc_le_eq dest!: a1 split: option.splits)
+    by (auto simp: s inv dq_inv_until_step_dq Suc_le_eq dest!: a1 split: option.splits)
 qed
+
+lemma fold_guntil_elem_step_dq_eq:
+  assumes P: "\<And>t. t \<le> tp \<Longrightarrow> P t = P' t"
+    and a1: "\<And>k v. Mapping.lookup a1_map k = Some v \<Longrightarrow> v < tp"
+  shows "dq_inv (fst (snd acc)) \<Longrightarrow>
+    fold (guntil_elem_step_dq a1_map msk pos tp len inz P d) (xs :: event_data tuple list) acc
+    = fold (duntil_elem_step_dq a1_map msk pos tp len inz P' d) xs acc"
+proof (induct xs arbitrary: acc)
+  case (Cons a xs)
+  have e: "guntil_elem_step_dq a1_map msk pos tp len inz P d a acc
+      = duntil_elem_step_dq a1_map msk pos tp len inz P' d a acc"
+    by (rule guntil_elem_step_dq_eq[OF P a1 Cons.prems])
+  have i: "dq_inv (fst (snd (guntil_elem_step_dq a1_map msk pos tp len inz P d a acc)))"
+    by (rule dq_inv_guntil_elem_step_dq[OF Cons.prems])
+  show ?case using Cons.hyps[OF i] e by simp
+qed simp
 
 lemma gadd_new_dq_eq:
   assumes ag: "args_agg args = None" and sh: "ushape (d :: event_data mmuaux_dq)"
@@ -281,15 +355,10 @@ proof -
     by (simp add: dq_nth_s_in dq_len_push[OF invt] lt)
   have a1': "\<And>k v. Mapping.lookup a1_map k = Some v \<Longrightarrow> v < tp"
     using a1 unfolding tp a1m .
-  have fl: "fold (guntil_elem_step_dq a1_map msk (args_pos args) tp len (memL (args_ivl args) 0)
-        (\<lambda>t. memL (args_ivl args) (nt - dq_nth_s (dq_push nt tstp_dq) (t - (tp - len)) 0)) e)
-        xs acc
-      = fold (duntil_elem_step_dq a1_map msk (args_pos args) tp len (memL (args_ivl args) 0)
-        (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len)))) e)
-        xs acc" for e xs and acc :: "event_data until_acc_dq"
-    by (induct xs arbitrary: acc) (simp_all add: guntil_elem_step_dq_eq[OF P a1'])
+  have inva: "dq_inv a2_dq" using sh'(2) unfolding s by simp
   show ?thesis
-    unfolding gadd_new_dq_def dadd_new_dq_def sh'(1) s by (simp add: Let_def fl split: prod.splits)
+    unfolding gadd_new_dq_def dadd_new_dq_def sh'(1) s
+    by (simp add: Let_def fold_guntil_elem_step_dq_eq[OF P a1'] inva split: prod.splits)
 qed
 
 subsection \<open>The shape follows from the kernel's invariant\<close>

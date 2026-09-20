@@ -789,6 +789,632 @@ lemma gsw_add_new_table_rsw:
 lemma gsw_result_rsw: "gsw_result args (rsw w) = reopt_table (gsw_result args w)"
   by (cases w) (auto simp: gsw_result_def rsw.simps rcc.simps split: prod.splits)
 
+subsection \<open>The fused aggregation window\<close>
+
+text \<open>The kernel's incremental aggregation structure reads widened boxed tuples.  The unboxed
+  window produces them from its short tuples in one pass, and reads the structure's result back
+  as short tuples.  Both directions are exact: the widening of an embedded table is the widening
+  of the short one, and the sanitised result of the kernel is the embedding of its short reading.\<close>
+
+fun udwiden :: "bool list \<Rightarrow> 'a list \<Rightarrow> 'a tuple" where
+  "udwiden [] xs = []"
+| "udwiden (False # bs) xs = None # udwiden bs xs"
+| "udwiden (True # bs) (x # xs) = Some x # udwiden bs xs"
+| "udwiden (True # bs) [] = []"
+
+lemma udwiden_eq: "udwiden bs xs = dwiden bs (reopt xs)"
+  by (induct bs xs rule: udwiden.induct) (auto simp: reopt_def)
+
+definition udtabw :: "nat \<Rightarrow> cols \<Rightarrow> 'a list set \<Rightarrow> 'a table" where
+  "udtabw n cs D = udwiden (wide_mask n cs) ` D"
+
+lemma udtabw_eq: "udtabw n cs D = dtabw n cs (reopt_table D)"
+  by (simp add: udtabw_def dtabw_def reopt_table_def image_image udwiden_eq)
+
+definition udagg_wide :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data table" where
+  "udagg_wide p w D = udtabw (Suc w) (dagg_ccols p w) D"
+
+lemma udagg_wide_eq: "udagg_wide p w D = dagg_wide p w (reopt_table D)"
+  by (simp add: udagg_wide_def dagg_wide_def udtabw_eq)
+
+fun udagg_p :: "daggp \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
+  "udagg_p (g0, \<omega>, f, k, pos) = uagg g0 \<omega> f k pos"
+
+lemma udagg_p_eq: "reopt_table (udagg_p p X) = dagg_p p (reopt_table X)"
+  by (cases p) (simp add: dagg_def)
+
+definition uag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data gcntset \<Rightarrow>
+    aggaux option \<Rightarrow> aggaux option" where
+  "uag_ins p w T cc ax = insert_maggaux' (dagg_args p w) (udagg_wide p w (T - snd cc)) ax"
+
+definition uag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data gcntset \<Rightarrow>
+    aggaux option \<Rightarrow> aggaux option" where
+  "uag_del p w T cc ax = delete_maggaux' (dagg_args p w)
+     (udagg_wide p w (Set.filter (\<lambda>x. Mapping.lookup (fst cc) x = Some 1) T)) ax"
+
+definition uag_res :: "daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
+    event_data list set" where
+  "uag_res p w cc ax = (case ax of
+     None \<Rightarrow> udagg_p p (snd cc)
+   | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
+
+lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc cc) ax = uag_ins p w T cc ax"
+  by (cases cc) (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps udagg_wide_eq)
+
+lemma ag_del_rcc[simp]: "ag_del p w (reopt_table T) (rcc cc) ax = uag_del p w T cc ax"
+proof -
+  obtain c s where cc: "cc = (c, s)" by (cases cc)
+  have "cnt_leave (reopt_table T) (rcc cc)
+      = reopt_table (Set.filter (\<lambda>x. Mapping.lookup c x = Some 1) T)"
+    unfolding cc cnt_leave_def rcc.simps by (auto simp: reopt_table_def)
+  then show ?thesis by (simp add: uag_del_def ag_del_def cc udagg_wide_eq)
+qed
+
+lemma ag_res_rcc[simp]: "ag_res p w (rcc cc) ax = reopt_table (uag_res p w cc ax)"
+  by (cases cc) (simp add: uag_res_def ag_res_def rcc.simps udagg_p_eq dsan_def split: option.splits)
+
+lemma cnt_add_rcc[simp]: "cnt_add (reopt_table T) (rcc cc) = rcc (gcnt_add T cc)"
+  by (simp add: gcnt_add_eq[symmetric])
+
+lemma cnt_del_rcc[simp]: "cnt_del (reopt_table T) (rcc cc) = rcc (gcnt_del T cc)"
+  by (simp add: gcnt_del_eq[symmetric])
+
+type_synonym uswagg = "event_data gswaux \<times> aggaux option"
+
+function usa_move :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
+    (ts \<times> event_data list set) queue \<Rightarrow> event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue \<times>
+    event_data gcntset \<times> aggaux option" where
+  "usa_move args p nt pend win cc ax =
+     (case safe_hd pend of
+        (None, pend') \<Rightarrow> (pend', win, cc, ax)
+      | (Some e, pend') \<Rightarrow>
+        (if memL (args_ivl args) (nt - fst e)
+         then (if memR (args_ivl args) (nt - fst e)
+               then usa_move args p nt (tl_queue pend') (append_queue e win) (gcnt_add (snd e) cc)
+                      (uag_ins p (args_n args) (snd e) cc ax)
+               else usa_move args p nt (tl_queue pend') win cc ax)
+         else (pend', win, cc, ax)))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, p, nt, pend, win, cc, ax). length (linearize pend))")
+     (fastforce split: prod.splits)+
+
+declare usa_move.simps[simp del]
+
+function usa_expire :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
+    event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<times> event_data gcntset \<times> aggaux option" where
+  "usa_expire args p nt win cc ax =
+     (case safe_hd win of
+        (None, win') \<Rightarrow> (win', cc, ax)
+      | (Some e, win') \<Rightarrow>
+        (if memR (args_ivl args) (nt - fst e) then (win', cc, ax)
+         else usa_expire args p nt (tl_queue win') (gcnt_del (snd e) cc)
+                (uag_del p (args_n args) (snd e) cc ax)))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, p, nt, win, cc, ax). length (linearize win))")
+     (fastforce split: prod.splits)+
+
+declare usa_expire.simps[simp del]
+
+definition usa_init :: "args \<Rightarrow> daggp \<Rightarrow> uswagg" where
+  "usa_init args p = (gsw_init args, ag_init p (args_n args))"
+
+definition usa_add_new_ts :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> uswagg \<Rightarrow> uswagg" where
+  "usa_add_new_ts args p nt aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow>
+     (case usa_move args p nt pend win cc ax of (pend', win', cc', ax') \<Rightarrow>
+      (case usa_expire args p nt win' cc' ax' of (win'', cc'', ax'') \<Rightarrow>
+        ((nt, pend', win'', cc''), ax''))))"
+
+definition usa_join :: "args \<Rightarrow> daggp \<Rightarrow> event_data list set \<Rightarrow> uswagg \<Rightarrow> uswagg" where
+  "usa_join args p X aux = (case aux of (w, ax) \<Rightarrow>
+     (gsw_join args X w,
+      if (if args_pos args then \<not> Set.is_empty X else Set.is_empty X) then ax
+      else ag_init p (args_n args)))"
+
+definition usa_add_new_table :: "args \<Rightarrow> daggp \<Rightarrow> event_data list set \<Rightarrow> uswagg \<Rightarrow> uswagg" where
+  "usa_add_new_table args p X aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow>
+     (if memL (args_ivl args) 0
+      then ((t, pend, append_queue (t, X) win, gcnt_add X cc), uag_ins p (args_n args) X cc ax)
+      else ((t, append_queue (t, X) pend, win, cc), ax)))"
+
+definition usa_result :: "args \<Rightarrow> daggp \<Rightarrow> uswagg \<Rightarrow> event_data list set" where
+  "usa_result args p aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow> uag_res p (args_n args) cc ax)"
+
+text \<open>Its naturality, against the boxed window of the verified evaluator.\<close>
+
+fun rsa :: "uswagg \<Rightarrow> swagg" where
+  "rsa (w, ax) = (rsw w, ax)"
+
+declare rsa.simps[simp del]
+
+lemma sa_move_rsa:
+  "sa_move args p nt (rq pend) (rq win) (rcc cc) ax
+   = (case usa_move args p nt pend win cc ax of
+        (pend', win', cc', ax') \<Rightarrow> (rq pend', rq win', rcc cc', ax'))"
+proof (induct args p nt pend win cc ax rule: usa_move.induct)
+  case (1 args p nt pend win cc ax)
+  obtain h pend' where sh: "safe_hd pend = (h, pend')" by (cases "safe_hd pend")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis by (subst sa_move.simps, subst usa_move.simps) (simp add: sh)
+  next
+    case (Some e)
+    obtain te Xe where e: "e = (te, Xe)" by (cases e)
+    note IH = 1[OF sh[symmetric] Some, unfolded e, simplified]
+    show ?thesis
+      by (subst sa_move.simps, subst usa_move.simps)
+        (auto simp: sh Some e IH split: prod.splits)
+  qed
+qed
+
+lemma sa_expire_rsa:
+  "sa_expire args p nt (rq win) (rcc cc) ax
+   = (case usa_expire args p nt win cc ax of (win', cc', ax') \<Rightarrow> (rq win', rcc cc', ax'))"
+proof (induct args p nt win cc ax rule: usa_expire.induct)
+  case (1 args p nt win cc ax)
+  obtain h win' where sh: "safe_hd win = (h, win')" by (cases "safe_hd win")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis by (subst sa_expire.simps, subst usa_expire.simps) (simp add: sh)
+  next
+    case (Some e)
+    obtain te Xe where e: "e = (te, Xe)" by (cases e)
+    note IH = 1[OF sh[symmetric] Some, unfolded e, simplified]
+    show ?thesis
+      by (subst sa_expire.simps, subst usa_expire.simps)
+        (auto simp: sh Some e IH split: prod.splits)
+  qed
+qed
+
+lemma sa_init_rsa: "sa_init args p = rsa (usa_init args p)"
+  by (simp add: sa_init_def usa_init_def rsa.simps gsw_init_rsw[symmetric] gsw_init_eq)
+
+lemma sa_add_new_ts_rsa: "sa_add_new_ts args p nt (rsa aux) = rsa (usa_add_new_ts args p nt aux)"
+proof -
+  obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
+  obtain pend' win' cc' ax' where m: "usa_move args p nt pend win cc ax = (pend', win', cc', ax')"
+    by (metis prod_cases4)
+  obtain win'' cc'' ax'' where e: "usa_expire args p nt win' cc' ax' = (win'', cc'', ax'')"
+    by (metis prod_cases3)
+  show ?thesis unfolding aux
+    by (simp add: sa_add_new_ts_def usa_add_new_ts_def rsa.simps rsw.simps sa_move_rsa sa_expire_rsa m e)
+qed
+
+lemma sa_join_rsa: "sa_join args p (reopt_table X) (rsa aux) = rsa (usa_join args p X aux)"
+  by (cases aux) (simp add: sa_join_def usa_join_def rsa.simps gsw_join_rsw[symmetric] gsw_join_eq)
+
+lemma sa_add_new_table_rsa:
+  "sa_add_new_table args p (reopt_table X) (rsa aux) = rsa (usa_add_new_table args p X aux)"
+proof -
+  obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
+  show ?thesis unfolding aux
+    by (simp add: sa_add_new_table_def usa_add_new_table_def rsa.simps rsw.simps)
+qed
+
+lemma sa_result_rsa: "sa_result args p (rsa aux) = reopt_table (usa_result args p aux)"
+proof -
+  obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
+  show ?thesis unfolding aux by (simp add: sa_result_def usa_result_def rsa.simps rsw.simps)
+qed
+
+subsection \<open>The Until structure\<close>
+
+text \<open>The generic Until deque of @{theory MFODL_Monitor_Imp.Dense_Until_Gen} reads its deques
+  off their lists, so that every operation commutes with the embedding on every state.  The one
+  reading that cannot is the head of the time stamp queue in @{const geval_step_dq}, which is
+  undefined on an empty queue: the step is natural on the states it is ever applied to, those
+  with a pending time stamp, and the shift applies it once per time stamp it takes.\<close>
+
+lemma gmuaux_cases:
+  fixes d :: "'b gmuaux"
+  obtains tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+  where "d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+  by (metis prod.collapse)
+
+abbreviation rtt :: "event_data list set \<times> (ts + tp) \<Rightarrow> event_data table \<times> (ts + tp)" where
+  "rtt \<equiv> map_prod reopt_table (\<lambda>a. a)"
+
+abbreviation rtbl :: "(event_data list set \<times> (ts + tp)) queue \<Rightarrow>
+    (event_data table \<times> (ts + tp)) queue" where
+  "rtbl \<equiv> map_queue rtt"
+
+abbreviation ra2 :: "(event_data list, ts + tp) mapping dq \<Rightarrow>
+    (event_data tuple, ts + tp) mapping dq" where
+  "ra2 \<equiv> map_dq (rmk (\<lambda>v. v))"
+
+fun rmuaux :: "event_data gmuaux \<Rightarrow> event_data option gmuaux" where
+  "rmuaux (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn)
+   = (tp, tss, rtbl tables, len, maskL, maskR, reopt_table result, rmk (\<lambda>v. v) a1_map,
+      ra2 a2_dq, tstp_dq, map reopt_table dn)"
+
+fun utss :: "'b gmuaux \<Rightarrow> ts queue" where
+  "utss (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) = tss"
+
+lemma dq_hd_s_map_dq: "dq_hd_s (map_dq f d) (f z) = f (dq_hd_s d z)"
+  by (simp add: dq_hd_s_def last_map split: list.splits)
+
+lemma dq_hd_s_ra2[simp]:
+  "dq_hd_s (ra2 d) Mapping.empty = rmk (\<lambda>v. v) (dq_hd_s d Mapping.empty)"
+  using dq_hd_s_map_dq[of "rmk (\<lambda>v. v)" d Mapping.empty] by simp
+
+lemma dq_nth_l_map_dq: "dq_nth_l (map_dq f d) k (f z) = f (dq_nth_l d k z)"
+  by (simp add: dq_nth_l_def Let_def)
+
+lemma dq_nth_l_ra2[simp]:
+  "dq_nth_l (ra2 d) k Mapping.empty = rmk (\<lambda>v. v) (dq_nth_l d k Mapping.empty)"
+  using dq_nth_l_map_dq[of "rmk (\<lambda>v. v)" d k Mapping.empty] by simp
+
+lemma dq_push_empty_ra2[simp]: "dq_push Mapping.empty (ra2 d) = ra2 (dq_push Mapping.empty d)"
+  using map_dq_push[of "rmk (\<lambda>v. v)" Mapping.empty d] by simp
+
+lemma dq_upd_empty_ra2[simp]: "dq_upd (ra2 d) k Mapping.empty = ra2 (dq_upd d k Mapping.empty)"
+  using map_dq_upd[of "rmk (\<lambda>v. v)" d k Mapping.empty] by simp
+
+lemma rmk_combine_id[simp]:
+  "Mapping.combine g (rmk (\<lambda>v. v) m1) (rmk (\<lambda>v. v) m2) = rmk (\<lambda>v. v) (Mapping.combine g m1 m2)"
+  by (rule rmk_combine) simp
+
+lemma if_rmk[simp]: "(if b then rmk f X else rmk f Y) = rmk f (if b then X else Y)"
+  by simp
+
+lemma if_empty_rmk[simp]:
+  "(if b then Mapping.empty else rmk f m) = rmk f (if b then Mapping.empty else m)"
+  by simp
+
+lemma filter_lookup_rmk[simp]:
+  "Set.filter (\<lambda>x. case Mapping.lookup (rmk (\<lambda>v. v) m) x of Some v \<Rightarrow> Q v | None \<Rightarrow> False)
+     (reopt_table Y)
+   = reopt_table (Set.filter (\<lambda>x. case Mapping.lookup m x of Some v \<Rightarrow> Q v | None \<Rightarrow> False) Y)"
+  by (auto simp: reopt_table_def split: option.splits)
+
+text \<open>The same, in the shape the simplifier gives the expired tuples of a step.\<close>
+
+lemma Collect_lookup_rmk[simp]:
+  "{a. (\<exists>x \<in> set xs. a \<in> reopt_table (f x)) \<and>
+      (case Mapping.lookup (rmk (\<lambda>v. v) m) a of None \<Rightarrow> False | Some v \<Rightarrow> Q v)}
+   = reopt_table {a. (\<exists>x \<in> set xs. a \<in> f x) \<and>
+      (case Mapping.lookup m a of None \<Rightarrow> False | Some v \<Rightarrow> Q v)}"
+  by (auto simp: reopt_table_def split: option.splits intro!: imageI)
+
+lemma rtt_pred: "(\<lambda>x. (\<lambda>(X, s). P s) (rtt x)) = (\<lambda>(X, s). P s)"
+  by (auto simp: fun_eq_iff)
+
+lemma takedropWhile_queue_rtbl[simp]:
+  "takedropWhile_queue (\<lambda>(X, s). P s) (rtbl q)
+   = map_prod rtbl (map rtt) (takedropWhile_queue (\<lambda>(X, s). P s) q)"
+  unfolding takedropWhile_queue_map_queue rtt_pred ..
+
+lemma append_queue_rtbl[simp]:
+  "append_queue (reopt_table X, s) (rtbl q) = rtbl (append_queue (X, s) q)"
+  using append_queue_map_queue[of rtt "(X, s)" q] by simp
+
+lemma UN_fst_rtt[simp]:
+  "\<Union> (set (map fst (map rtt xs))) = reopt_table (\<Union> (set (map fst xs)))"
+  "\<Union> ((reopt_table \<circ> f) ` S) = reopt_table (\<Union> (f ` S))"
+  "\<Union> ((\<lambda>x. reopt_table (f x)) ` S) = reopt_table (\<Union> (f ` S))"
+  by (auto simp: reopt_table_def)
+
+lemma gupd_nested_step_dq_ra2[simp]:
+  "gupd_nested_step_dq base d g (t, reopt k) (ra2 dq)
+   = ra2 (gupd_nested_step_dq base d g (t, k) dq)"
+  by (auto simp: gupd_nested_step_dq_def Let_def split: option.splits)
+
+lemma guntil_step_dq_racc:
+  "guntil_step_dq P d t0 (t, reopt as) (reopt_table tbl, ra2 a2, reopt_table res)
+   = (case guntil_step_dq P d t0 (t, as) (tbl, a2, res) of
+        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+  by (simp add: guntil_step_dq_def)
+
+lemma guntil_elem_step_dq_racc:
+  "guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d (reopt as)
+     (reopt_table tbl, ra2 a2, reopt_table res)
+   = (case guntil_elem_step_dq a1 msk pos tp len inz P d as (tbl, a2, res) of
+        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+  by (auto simp: guntil_elem_step_dq_def Let_def guntil_step_dq_racc
+      split: option.splits prod.splits)
+
+lemma fold_guntil_elem_step_dq_racc:
+  "fold (guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d) (map reopt xs)
+     (reopt_table tbl, ra2 a2, reopt_table res)
+   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs (tbl, a2, res) of
+        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+proof (induct xs arbitrary: tbl a2 res)
+  case (Cons x xs)
+  obtain tbl' a2' res'
+    where s: "guntil_elem_step_dq a1 msk pos tp len inz P d x (tbl, a2, res) = (tbl', a2', res')"
+    by (metis prod_cases3)
+  show ?case by (simp add: guntil_elem_step_dq_racc s Cons)
+qed simp
+
+lemma fold_guntil_elem_step_dq_racc0:
+  "fold (guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d) (map reopt xs)
+     ({}, ra2 a2, reopt_table res)
+   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs ({}, a2, res) of
+        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+  using fold_guntil_elem_step_dq_racc[where tbl = "{}"] by simp
+
+lemma geval_step_dq_rmuaux:
+  assumes ne: "linearize (utss d) \<noteq> []"
+  shows "geval_step_dq args (rmuaux d) = rmuaux (geval_step_dq args d)"
+    and "linearize (utss (geval_step_dq args d)) = tl (linearize (utss d))"
+proof -
+  obtain tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+    where d: "d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+    by (cases d rule: gmuaux_cases)
+  obtain h tss' where sh: "safe_hd tss = (h, tss')" by (cases "safe_hd tss")
+  obtain ts where h: "h = Some ts"
+    using safe_hd_rep[OF sh] ne unfolding d by (cases h) auto
+  obtain h2 tss'' where sh2: "safe_hd (tl_queue tss') = (h2, tss'')" by (cases "safe_hd (tl_queue tss')")
+  have l: "linearize tss'' = tl (linearize tss)"
+    using safe_hd_rep[OF sh] safe_hd_rep[OF sh2] by (simp add: tl_queue_rep)
+  show "geval_step_dq args (rmuaux d) = rmuaux (geval_step_dq args d)"
+    unfolding d rmuaux.simps geval_step_dq.simps sh h
+    by (cases h2) (simp_all add: Let_def sh2 split: prod.splits)
+  show "linearize (utss (geval_step_dq args d)) = tl (linearize (utss d))"
+    unfolding d geval_step_dq.simps sh h
+    by (auto simp: Let_def sh2 l split: prod.splits option.splits)
+qed
+
+lemma foldl_geval_step_dq_rmuaux:
+  "length xs \<le> length (linearize (utss d)) \<Longrightarrow>
+   foldl (\<lambda>aux _. geval_step_dq args aux) (rmuaux d) xs
+   = rmuaux (foldl (\<lambda>aux _. geval_step_dq args aux) d xs)"
+proof (induct xs arbitrary: d)
+  case (Cons x xs)
+  have ne: "linearize (utss d) \<noteq> []" using Cons.prems by auto
+  have l: "length xs \<le> length (linearize (utss (geval_step_dq args d)))"
+    using Cons.prems geval_step_dq_rmuaux(2)[OF ne] by simp
+  show ?case by (simp add: geval_step_dq_rmuaux(1)[OF ne] Cons.hyps[OF l])
+qed simp
+
+lemma gshift_dq_rmuaux: "gshift_dq args nt (rmuaux d) = rmuaux (gshift_dq args nt d)"
+proof -
+  obtain tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+    where d: "d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+    by (cases d rule: gmuaux_cases)
+  obtain tq tss' where tw: "takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss = (tq, tss')"
+    by (cases "takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss")
+  have l: "length (linearize tq) \<le> length (linearize tss')"
+    using takeWhile_queue_rep_fst[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+      takeWhile_queue_rep_snd[of "\<lambda>t. \<not> memR (args_ivl args) (nt - t)" tss]
+    unfolding tw by (simp add: length_takeWhile_le)
+  let ?s = "(tp, tss', tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+  have "length (linearize tq) \<le> length (linearize (utss ?s))" using l by simp
+  note f = foldl_geval_step_dq_rmuaux[OF this, unfolded rmuaux.simps]
+  show ?thesis unfolding d gshift_dq.simps rmuaux.simps tw by (simp add: Let_def f)
+qed
+
+lemma geval_dq_rmuaux:
+  "geval_dq args nt (rmuaux d)
+   = (case geval_dq args nt d of (zs, d') \<Rightarrow> (map reopt_table zs, rmuaux d'))"
+proof -
+  obtain tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+    where s: "gshift_dq args nt d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+    by (cases "gshift_dq args nt d" rule: gmuaux_cases)
+  show ?thesis unfolding geval_dq.simps gshift_dq_rmuaux s by (simp add: Let_def rev_map)
+qed
+
+lemma glength_dq_rmuaux: "glength_dq args (rmuaux d) = glength_dq args d"
+  by (cases d rule: gmuaux_cases) simp
+
+lemma ginit_dq_rmuaux: "ginit_dq args = rmuaux (ginit_dq args)"
+  by (simp add: ginit_dq_def dq_push_def map_dq_def dq_empty_def)
+
+lemma gadd_new_dq_rmuaux:
+  "gadd_new_dq args msk (reopt_table rel1) (reopt_table rel2) nt (rmuaux d)
+   = rmuaux (gadd_new_dq args msk rel1 rel2 nt d)"
+proof -
+  obtain tp tss tables len mL mR result a1_map a2_dq tstp_dq dn
+    where s: "gshift_dq args nt d = (tp, tss, tables, len, mL, mR, result, a1_map, a2_dq, tstp_dq, dn)"
+    by (cases "gshift_dq args nt d" rule: gmuaux_cases)
+  show ?thesis
+    unfolding gadd_new_dq_def gshift_dq_rmuaux s
+    by (auto simp: Let_def csl_reopt_table fold_guntil_elem_step_dq_racc0 split: prod.splits)
+qed
+
+subsection \<open>The Until window\<close>
+
+text \<open>The window for a closed left operand, on short tuples, with the generic count set.\<close>
+
+type_synonym uuw_entry = "ts \<times> event_data list set \<times> bool"
+
+type_synonym uuwaux = "ts queue \<times> uuw_entry queue \<times> uuw_entry queue \<times> nat \<times> bool \<times>
+  event_data gcntset \<times> event_data list set list"
+
+function uuw_extend :: "args \<Rightarrow> ts \<Rightarrow> uuw_entry queue \<Rightarrow> uuw_entry queue \<Rightarrow> bool \<Rightarrow>
+    event_data gcntset \<Rightarrow> uuw_entry queue \<times> uuw_entry queue \<times> bool \<times> event_data gcntset" where
+  "uuw_extend args ts0 win rest bend cc =
+     (if \<not> bend then (win, rest, bend, cc)
+      else (case safe_hd rest of
+              (None, rest') \<Rightarrow> (win, rest', bend, cc)
+            | (Some e, rest') \<Rightarrow>
+                (if memR (args_ivl args) (fst e - ts0)
+                 then uuw_extend args ts0 (append_queue e win) (tl_queue rest')
+                        (snd (snd e)) (gcnt_add (fst (snd e)) cc)
+                 else (win, rest', bend, cc))))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, ts0, win, rest, bend, cc). length (linearize rest))")
+     (fastforce split: prod.splits)+
+
+declare uuw_extend.simps[simp del]
+
+definition uuw_init :: "args \<Rightarrow> uuwaux" where
+  "uuw_init args = (empty_queue, empty_queue, empty_queue, 0, True, (Mapping.empty, {}), [])"
+
+definition uuw_length :: "args \<Rightarrow> uuwaux \<Rightarrow> nat" where
+  "uuw_length args aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow> length dn + len)"
+
+definition uuw_step :: "args \<Rightarrow> ts \<Rightarrow> uuwaux \<Rightarrow> uuwaux" where
+  "uuw_step args ts0 aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+     (case uuw_extend args ts0 win rest bend cc of (win, rest, bend, cc) \<Rightarrow>
+        (case safe_hd win of
+           (None, win') \<Rightarrow> (tl_queue nts, win', rest, len - 1, bend, cc, {} # dn)
+         | (Some e, win') \<Rightarrow>
+           (let win'' = tl_queue win';
+                cc' = gcnt_del (fst (snd e)) cc;
+                bend' = (if Queue.is_empty win'' then True else bend)
+            in (tl_queue nts, win'', rest, len - 1, bend', cc', snd cc # dn)))))"
+
+function uuw_shift :: "args \<Rightarrow> ts \<Rightarrow> uuwaux \<Rightarrow> uuwaux" where
+  "uuw_shift args nt aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+     (case safe_hd nts of
+        (None, nts') \<Rightarrow> (nts', win, rest, len, bend, cc, dn)
+      | (Some ts0, nts') \<Rightarrow>
+        (if memR (args_ivl args) (nt - ts0) \<or> len = 0
+         then (nts', win, rest, len, bend, cc, dn)
+         else uuw_shift args nt (uuw_step args ts0 (nts', win, rest, len, bend, cc, dn)))))"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cc, dn)). len)")
+     (auto simp: uuw_step_def Let_def split: prod.splits option.splits)
+
+declare uuw_shift.simps[simp del]
+
+definition uuw_add_new :: "args \<Rightarrow> event_data list set \<Rightarrow> event_data list set \<Rightarrow> ts \<Rightarrow>
+    uuwaux \<Rightarrow> uuwaux" where
+  "uuw_add_new args rel1 rel2 nt aux =
+     (case uuw_shift args nt aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+       (let b = (if args_pos args then \<not> Set.is_empty rel1 else Set.is_empty rel1)
+        in (append_queue nt nts, win, append_queue (nt, rel2, b) rest, len + 1, bend, cc, dn)))"
+
+definition uuw_eval :: "args \<Rightarrow> ts \<Rightarrow> uuwaux \<Rightarrow> event_data list set list \<times> uuwaux" where
+  "uuw_eval args nt aux =
+     (case uuw_shift args nt aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+       (rev dn, (nts, win, rest, len, bend, cc, [])))"
+
+text \<open>Its naturality.\<close>
+
+abbreviation rte :: "uuw_entry \<Rightarrow> uw_entry" where
+  "rte \<equiv> map_prod (\<lambda>t. t) (map_prod reopt_table (\<lambda>b. b))"
+
+abbreviation rqe :: "uuw_entry queue \<Rightarrow> uw_entry queue" where
+  "rqe \<equiv> map_queue rte"
+
+fun ruw :: "uuwaux \<Rightarrow> uwaux" where
+  "ruw (nts, win, rest, len, bend, cc, dn)
+   = (nts, rqe win, rqe rest, len, bend, rcc cc, map reopt_table dn)"
+
+declare ruw.simps[simp del]
+
+lemma snd_rcc[simp]: "snd (rcc cc) = reopt_table (snd cc)"
+  by (cases cc) (simp add: rcc.simps)
+
+lemma append_queue_rqe[simp]:
+  "append_queue (t, reopt_table X, b) (rqe q) = rqe (append_queue (t, X, b) q)"
+  using append_queue_map_queue[of rte "(t, X, b)" q] by simp
+
+lemma uw_extend_ruw:
+  "uw_extend args ts0 (rqe win) (rqe rest) bend (rcc cc)
+   = (case uuw_extend args ts0 win rest bend cc of
+        (win', rest', bend', cc') \<Rightarrow> (rqe win', rqe rest', bend', rcc cc'))"
+proof (induct args ts0 win rest bend cc rule: uuw_extend.induct)
+  case (1 args ts0 win rest bend cc)
+  obtain h rest' where sh: "safe_hd rest = (h, rest')" by (cases "safe_hd rest")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis by (subst uw_extend.simps, subst uuw_extend.simps) (simp add: sh)
+  next
+    case (Some e)
+    obtain te Xe be where e: "e = (te, Xe, be)" by (metis prod_cases3)
+    note IH = 1[OF _ sh[symmetric] Some, unfolded e, simplified]
+    show ?thesis
+      by (subst uw_extend.simps, subst uuw_extend.simps)
+        (auto simp: sh Some e IH split: prod.splits)
+  qed
+qed
+
+lemma uw_step_ruw: "uw_step args ts0 (ruw w) = ruw (uuw_step args ts0 w)"
+proof -
+  obtain nts win rest len bend cc dn where w: "w = (nts, win, rest, len, bend, cc, dn)"
+    by (cases w) auto
+  obtain win' rest' bend' cc' where e: "uuw_extend args ts0 win rest bend cc = (win', rest', bend', cc')"
+    by (metis prod_cases4)
+  obtain h win'' where sh: "safe_hd win' = (h, win'')" by (cases "safe_hd win'")
+  show ?thesis
+  proof (cases h)
+    case None
+    then show ?thesis
+      unfolding w by (simp add: uw_step_def uuw_step_def ruw.simps uw_extend_ruw e sh)
+  next
+    case (Some x)
+    obtain tx Xx bx where x: "x = (tx, Xx, bx)" by (metis prod_cases3)
+    show ?thesis
+      unfolding w by (simp add: uw_step_def uuw_step_def ruw.simps uw_extend_ruw e sh Some x Let_def)
+  qed
+qed
+
+lemma uw_shift_ruw: "uw_shift args nt (ruw w) = ruw (uuw_shift args nt w)"
+proof (induct args nt w rule: uuw_shift.induct)
+  case (1 args nt w)
+  obtain nts win rest len bend cc dn where w: "w = (nts, win, rest, len, bend, cc, dn)"
+    by (cases w) auto
+  obtain h nts' where sh: "safe_hd nts = (h, nts')" by (cases "safe_hd nts")
+  show ?case
+  proof (cases h)
+    case None
+    then show ?thesis
+      unfolding w by (subst uw_shift.simps, subst uuw_shift.simps) (simp add: ruw.simps sh)
+  next
+    case (Some ts0)
+    show ?thesis
+    proof (cases "memR (args_ivl args) (nt - ts0) \<or> len = 0")
+      case True
+      then show ?thesis
+        unfolding w by (subst uw_shift.simps, subst uuw_shift.simps) (simp add: ruw.simps sh Some)
+    next
+      case False
+      note IH = 1[OF w[symmetric] refl refl refl refl refl sh[symmetric] Some False]
+      have "uw_shift args nt (ruw w)
+          = uw_shift args nt (uw_step args ts0 (ruw (nts', win, rest, len, bend, cc, dn)))"
+        unfolding w by (subst uw_shift.simps) (simp add: ruw.simps sh Some False)
+      also have "\<dots> = uw_shift args nt (ruw (uuw_step args ts0 (nts', win, rest, len, bend, cc, dn)))"
+        by (simp only: uw_step_ruw)
+      also have "\<dots> = ruw (uuw_shift args nt (uuw_step args ts0 (nts', win, rest, len, bend, cc, dn)))"
+        by (rule IH)
+      also have "\<dots> = ruw (uuw_shift args nt w)"
+        unfolding w by (subst (2) uuw_shift.simps) (simp add: sh Some False)
+      finally show ?thesis .
+    qed
+  qed
+qed
+
+lemma uw_init_ruw: "uw_init args = ruw (uuw_init args)"
+  by (simp add: uw_init_def uuw_init_def ruw.simps rcc.simps)
+
+lemma uw_length_ruw: "uw_length args (ruw w) = uuw_length args w"
+  by (cases w) (simp add: uw_length_def uuw_length_def ruw.simps)
+
+lemma uw_add_new_ruw:
+  "uw_add_new args (reopt_table rel1) (reopt_table rel2) nt (ruw w)
+   = ruw (uuw_add_new args rel1 rel2 nt w)"
+proof -
+  obtain nts win rest len bend cc dn
+    where s: "uuw_shift args nt w = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uuw_shift args nt w") auto
+  show ?thesis
+    unfolding uw_add_new_def uuw_add_new_def uw_shift_ruw s by (simp add: ruw.simps Let_def)
+qed
+
+lemma uw_eval_ruw:
+  "uw_eval args nt (ruw w) = (case uuw_eval args nt w of (zs, w') \<Rightarrow> (map reopt_table zs, ruw w'))"
+proof -
+  obtain nts win rest len bend cc dn
+    where s: "uuw_shift args nt w = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uuw_shift args nt w") auto
+  show ?thesis
+    unfolding uw_eval_def uuw_eval_def uw_shift_ruw s by (simp add: ruw.simps rev_map)
+qed
+
 (*<*)
 end
 (*>*)
