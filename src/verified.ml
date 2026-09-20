@@ -9754,6 +9754,9 @@ let rec mcols
     | n, MTS mt -> Some (mtrm_dcols mt)
     | n, MRel v -> None;;
 
+let rec sorted_wrt p x1 = match p, x1 with p, [] -> true
+                     | p, x :: ys -> list_all (p x) ys && sorted_wrt p ys;;
+
 let rec proj_tuple x0 x1 = match x0, x1 with [], [] -> []
                      | true :: bs, a :: asa -> a :: proj_tuple bs asa
                      | false :: bs, a :: asa -> None :: proj_tuple bs asa
@@ -11244,6 +11247,11 @@ let rec reindex_constraint
     (let (t1, (p, (c, t2))) = conf in
       (reindex_trm cs t1, (p, (c, reindex_trm cs t2))));;
 
+let rec dnode_n
+  n args =
+    (match args_agg args with None -> n
+      | Some ag -> plus_nata (size_lista (aggargs_tys ag)) (aggargs_n ag));;
+
 let rec dinit_msaux (_A1, _A2)
   args msk =
     (zero_nata,
@@ -11368,19 +11376,19 @@ let rec edof
             else DFaila))
     | n, cs, MSince (args, phi, psi, buf, aux) ->
         (let cs_L = set_cols (args_L args) in
-          (if is_none (args_agg args) &&
-                (equal_nata (args_n args) n &&
-                  (set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_R args)
-                     (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
-                    (superset equal_nat cs cs_L &&
-                      equal_proda
-                        (equal_list
-                          (equal_set
-                            (cenum_list, (ceq_list (ceq_option ceq_event_data)),
-                              (ccompare_list
-                                (ccompare_option ccompare_event_data)),
-                              (equal_list (equal_option equal_event_data)))))
-                        (equal_prod
+         let cs_R = set_cols (args_R args) in
+         let phi_d = edof (dnode_n n args) cs_L phi in
+         let psi_d = edof (dnode_n n args) cs_R psi in
+         let bf =
+           (let (a, (b, (c, d))) = buf in
+             (rep_mbuf_t a, (rep_mbuf_t b, (rep_mbuf_t c, d))))
+           in
+          (match args_agg args
+            with None ->
+              (if equal_nata (args_n args) n &&
+                    (equal_lista equal_nat cs cs_R &&
+                      (superset equal_nat cs_R cs_L &&
+                        equal_proda
                           (equal_list
                             (equal_set
                               (cenum_list,
@@ -11388,45 +11396,152 @@ let rec edof
                                 (ccompare_list
                                   (ccompare_option ccompare_event_data)),
                                 (equal_list (equal_option equal_event_data)))))
-                          (equal_prod (equal_list equal_nat) equal_bool))
-                        (let (a, (b, (c, d))) = buf in
-                          (rep_mbuf_t a, (rep_mbuf_t b, (rep_mbuf_t c, d))))
-                        ([], ([], ([], false))))))
-            then DSincea
-                   (dargs cs cs_L args, edof n cs_L phi, edof n cs psi,
-                     ([], ([], ([], false))),
-                     dinit_msaux (ceq_event_data, ccompare_event_data)
-                       (dargs cs cs_L args) (dmsk cs cs_L))
-            else DFaila))
+                          (equal_prod
+                            (equal_list
+                              (equal_set
+                                (cenum_list,
+                                  (ceq_list (ceq_option ceq_event_data)),
+                                  (ccompare_list
+                                    (ccompare_option ccompare_event_data)),
+                                  (equal_list
+                                    (equal_option equal_event_data)))))
+                            (equal_prod (equal_list equal_nat) equal_bool))
+                          bf ([], ([], ([], false)))))
+                then DSincea
+                       (dargs cs cs_L args, phi_d, psi_d,
+                         ([], ([], ([], false))),
+                         dinit_msaux (ceq_event_data, ccompare_event_data)
+                           (dargs cs cs_L args) (dmsk cs cs_L))
+                else DFaila)
+            | Some ag ->
+              (let m = size_lista (aggargs_tys ag) in
+               let g = dagg_gcols ag in
+               let y = aggargs_y ag in
+                (if equal_nata (args_n args) (plus_nata m (aggargs_n ag)) &&
+                      (equal_nata (aggargs_n ag) n &&
+                        (superset equal_nat cs_R cs_L &&
+                          (equal_proda
+                             (equal_list
+                               (equal_set
+                                 (cenum_list,
+                                   (ceq_list (ceq_option ceq_event_data)),
+                                   (ccompare_list
+                                     (ccompare_option ccompare_event_data)),
+                                   (equal_list
+                                     (equal_option equal_event_data)))))
+                             (equal_prod
+                               (equal_list
+                                 (equal_set
+                                   (cenum_list,
+                                     (ceq_list (ceq_option ceq_event_data)),
+                                     (ccompare_list
+                                       (ccompare_option ccompare_event_data)),
+                                     (equal_list
+                                       (equal_option equal_event_data)))))
+                               (equal_prod (equal_list equal_nat) equal_bool))
+                             bf ([], ([], ([], false))) &&
+                            (equal_lista equal_nat
+                               (upt zero_nata m @
+                                 mapa (fun c -> plus_nata c m) g)
+                               cs_R &&
+                              (equal_lista equal_nat cs (merge_cols g [y]) &&
+                                (sorted_wrt less_nat g &&
+                                   list_all (fun c -> less_nat c n) g &&
+                                  (less_nat y n &&
+                                    (not (membera equal_nat g y) &&
+                                      ((if aggargs_g0 ag then null g
+ else true) &&
+less_eq_set (cenum_nat, ceq_nat, ccompare_nat)
+  (fvi_trm zero_nata (aggargs_f ag))
+  (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R))))))))))
+                  then DAgga (aggargs_g0 ag, aggargs_omega ag,
+                               reindex_trm cs_R (aggargs_f ag), m, ins_pos g y,
+                               DSincea
+                                 (dargs cs_R cs_L args, phi_d, psi_d,
+                                   ([], ([], ([], false))),
+                                   dinit_msaux
+                                     (ceq_event_data, ccompare_event_data)
+                                     (dargs cs_R cs_L args) (dmsk cs_R cs_L)))
+                  else DFaila))))
     | n, cs, MUntil (args, phi, psi, buf, nts, t, aux) ->
         (let cs_L = set_cols (args_L args) in
-          (if is_none (args_agg args) &&
-                (equal_nata (args_n args) n &&
-                  (set_eq (cenum_nat, ceq_nat, ccompare_nat) (args_R args)
-                     (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
-                    (superset equal_nat cs cs_L &&
-                      (equal_proda
-                         (equal_list
-                           (equal_set
-                             (cenum_list,
-                               (ceq_list (ceq_option ceq_event_data)),
-                               (ccompare_list
-                                 (ccompare_option ccompare_event_data)),
-                               (equal_list (equal_option equal_event_data)))))
-                         (equal_list
-                           (equal_set
-                             (cenum_list,
-                               (ceq_list (ceq_option ceq_event_data)),
-                               (ccompare_list
-                                 (ccompare_option ccompare_event_data)),
-                               (equal_list (equal_option equal_event_data)))))
-                         (map_prod rep_mbuf_t rep_mbuf_t buf) ([], []) &&
-                        (null (rep_mbuf_t nts) && equal_nata t zero_nata)))))
-            then DUntila
-                   (dargs cs cs_L args, dmsk cs cs_L, edof n cs_L phi,
-                     edof n cs psi, ([], []), [], zero_nata,
-                     init_dq (dargs cs cs_L args))
-            else DFaila))
+         let cs_R = set_cols (args_R args) in
+         let phi_d = edof (dnode_n n args) cs_L phi in
+         let psi_d = edof (dnode_n n args) cs_R psi in
+          (match args_agg args
+            with None ->
+              (if equal_nata (args_n args) n &&
+                    (equal_lista equal_nat cs cs_R &&
+                      (superset equal_nat cs_R cs_L &&
+                        (equal_proda
+                           (equal_list
+                             (equal_set
+                               (cenum_list,
+                                 (ceq_list (ceq_option ceq_event_data)),
+                                 (ccompare_list
+                                   (ccompare_option ccompare_event_data)),
+                                 (equal_list (equal_option equal_event_data)))))
+                           (equal_list
+                             (equal_set
+                               (cenum_list,
+                                 (ceq_list (ceq_option ceq_event_data)),
+                                 (ccompare_list
+                                   (ccompare_option ccompare_event_data)),
+                                 (equal_list (equal_option equal_event_data)))))
+                           (map_prod rep_mbuf_t rep_mbuf_t buf) ([], []) &&
+                          (null (rep_mbuf_t nts) && equal_nata t zero_nata))))
+                then DUntila
+                       (dargs cs cs_L args, dmsk cs cs_L, phi_d, psi_d,
+                         ([], []), [], zero_nata, init_dq (dargs cs cs_L args))
+                else DFaila)
+            | Some ag ->
+              (let m = size_lista (aggargs_tys ag) in
+               let g = dagg_gcols ag in
+               let y = aggargs_y ag in
+                (if equal_nata (args_n args) (plus_nata m (aggargs_n ag)) &&
+                      (equal_nata (aggargs_n ag) n &&
+                        (superset equal_nat cs_R cs_L &&
+                          (equal_proda
+                             (equal_list
+                               (equal_set
+                                 (cenum_list,
+                                   (ceq_list (ceq_option ceq_event_data)),
+                                   (ccompare_list
+                                     (ccompare_option ccompare_event_data)),
+                                   (equal_list
+                                     (equal_option equal_event_data)))))
+                             (equal_list
+                               (equal_set
+                                 (cenum_list,
+                                   (ceq_list (ceq_option ceq_event_data)),
+                                   (ccompare_list
+                                     (ccompare_option ccompare_event_data)),
+                                   (equal_list
+                                     (equal_option equal_event_data)))))
+                             (map_prod rep_mbuf_t rep_mbuf_t buf) ([], []) &&
+                            (null (rep_mbuf_t nts) &&
+                              (equal_nata t zero_nata &&
+                                (equal_lista equal_nat
+                                   (upt zero_nata m @
+                                     mapa (fun c -> plus_nata c m) g)
+                                   cs_R &&
+                                  (equal_lista equal_nat cs
+                                     (merge_cols g [y]) &&
+                                    (sorted_wrt less_nat g &&
+                                       list_all (fun c -> less_nat c n) g &&
+                                      (less_nat y n &&
+(not (membera equal_nat g y) &&
+  ((if aggargs_g0 ag then null g else true) &&
+    less_eq_set (cenum_nat, ceq_nat, ccompare_nat)
+      (fvi_trm zero_nata (aggargs_f ag))
+      (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R))))))))))))
+                  then DAgga (aggargs_g0 ag, aggargs_omega ag,
+                               reindex_trm cs_R (aggargs_f ag), m, ins_pos g y,
+                               DUntila
+                                 (dargs cs_R cs_L args, dmsk cs_R cs_L, phi_d,
+                                   psi_d, ([], []), [], zero_nata,
+                                   init_dq (dargs cs_R cs_L args)))
+                  else DFaila))))
     | n, cs, MAndAssign (phi, conf) ->
         (let y = fst conf in
          let t = snd conf in

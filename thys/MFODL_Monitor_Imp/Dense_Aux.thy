@@ -1675,6 +1675,183 @@ lemma duaux'_length:
      length_dq (dargs cs_R cs_L args) daux = length auxlist"
   using dvalid_length_muaux by (fastforce simp: duaux'_def dauxlist3_def)
 
+section \<open>The match structures at the dense frame\<close>
+
+text \<open>
+  The regular-expression nodes read their operands' tables in exactly one way: the lax epsilon
+  joins the guard -- a table over the node's own columns -- against an atom's table, whose columns
+  are among them.  At the dense frame that join is the semi-join against the mask the two column
+  lists determine (@{thm [source] dsemi_join}), and the mask is the same at every firing, so the
+  node carries one per atom.
+
+  Everything else is the kernel's operation read at the node's own width: the unions, the
+  intersection the lax epsilon takes at a concatenation, the unit table the strict epsilons
+  return -- narrowing the wide one gives the short one of the node's width, so no emptiness
+  argument is needed here -- and the tabulation over the marked expressions with its lookups,
+  which are already polymorphic in the tuple.
+\<close>
+
+fun deps_lax :: "bool list list \<Rightarrow> 'a table \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "deps_lax msks guard \<phi>s (MSkip m) = (if m = 0 then guard else empty_table)"
+| "deps_lax msks guard \<phi>s (MTestPos i) = dsemi (msks ! i) True guard (\<phi>s ! i)"
+| "deps_lax msks guard \<phi>s (MTestNeg i) = dsemi (msks ! i) False guard (\<phi>s ! i)"
+| "deps_lax msks guard \<phi>s (MPlus r s) = deps_lax msks guard \<phi>s r \<union> deps_lax msks guard \<phi>s s"
+| "deps_lax msks guard \<phi>s (MTimes r s) = deps_lax msks guard \<phi>s r \<inter> deps_lax msks guard \<phi>s s"
+| "deps_lax msks guard \<phi>s (MStar r) = guard"
+
+fun dreps_strict :: "nat \<Rightarrow> bool list list \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "dreps_strict k msks \<phi>s (MSkip m) = (if m = 0 then unit_table k else empty_table)"
+| "dreps_strict k msks \<phi>s (MTestPos i) = \<phi>s ! i"
+| "dreps_strict k msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table k else empty_table)"
+| "dreps_strict k msks \<phi>s (MPlus r s) = dreps_strict k msks \<phi>s r \<union> dreps_strict k msks \<phi>s s"
+| "dreps_strict k msks \<phi>s (MTimes r s) = deps_lax msks (dreps_strict k msks \<phi>s r) \<phi>s s"
+| "dreps_strict k msks \<phi>s (MStar r) = unit_table k"
+
+fun dleps_strict :: "nat \<Rightarrow> bool list list \<Rightarrow> 'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "dleps_strict k msks \<phi>s (MSkip m) = (if m = 0 then unit_table k else empty_table)"
+| "dleps_strict k msks \<phi>s (MTestPos i) = \<phi>s ! i"
+| "dleps_strict k msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = empty_table then unit_table k else empty_table)"
+| "dleps_strict k msks \<phi>s (MPlus r s) = dleps_strict k msks \<phi>s r \<union> dleps_strict k msks \<phi>s s"
+| "dleps_strict k msks \<phi>s (MTimes r s) = deps_lax msks (dleps_strict k msks \<phi>s s) \<phi>s r"
+| "dleps_strict k msks \<phi>s (MStar r) = unit_table k"
+
+fun drdelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow>
+    'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "drdelta msks \<kappa> X \<phi>s (MSkip m) = (case m of 0 \<Rightarrow> empty_table | Suc j \<Rightarrow> lookup X (\<kappa> (MSkip j)))"
+| "drdelta msks \<kappa> X \<phi>s (MTestPos i) = empty_table"
+| "drdelta msks \<kappa> X \<phi>s (MTestNeg i) = empty_table"
+| "drdelta msks \<kappa> X \<phi>s (MPlus r s) = drdelta msks \<kappa> X \<phi>s r \<union> drdelta msks \<kappa> X \<phi>s s"
+| "drdelta msks \<kappa> X \<phi>s (MTimes r s) =
+     drdelta msks (\<lambda>t. \<kappa> (MTimes r t)) X \<phi>s s \<union> deps_lax msks (drdelta msks \<kappa> X \<phi>s r) \<phi>s s"
+| "drdelta msks \<kappa> X \<phi>s (MStar r) = drdelta msks (\<lambda>t. \<kappa> (MTimes (MStar r) t)) X \<phi>s r"
+
+fun dldelta :: "bool list list \<Rightarrow> (mregex \<Rightarrow> mregex) \<Rightarrow> (mregex, 'a table) mapping \<Rightarrow>
+    'a table list \<Rightarrow> mregex \<Rightarrow> 'a table" where
+  "dldelta msks \<kappa> X \<phi>s (MSkip m) = (case m of 0 \<Rightarrow> empty_table | Suc j \<Rightarrow> lookup X (\<kappa> (MSkip j)))"
+| "dldelta msks \<kappa> X \<phi>s (MTestPos i) = empty_table"
+| "dldelta msks \<kappa> X \<phi>s (MTestNeg i) = empty_table"
+| "dldelta msks \<kappa> X \<phi>s (MPlus r s) = dldelta msks \<kappa> X \<phi>s r \<union> dldelta msks \<kappa> X \<phi>s s"
+| "dldelta msks \<kappa> X \<phi>s (MTimes r s) =
+     dldelta msks (\<lambda>t. \<kappa> (MTimes t s)) X \<phi>s r \<union> deps_lax msks (dldelta msks \<kappa> X \<phi>s s) \<phi>s r"
+| "dldelta msks \<kappa> X \<phi>s (MStar r) = dldelta msks (\<lambda>t. \<kappa> (MTimes t (MStar r))) X \<phi>s r"
+
+definition dupdate_matchP :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
+    'a table list \<Rightarrow> ts \<Rightarrow> 'a mr\<delta>aux \<Rightarrow> 'a table \<times> 'a mr\<delta>aux" where
+  "dupdate_matchP k msks I mr mrs rels nt aux =
+    (let aux = (case [(t, mrtabulate mrs (\<lambda>mr.
+        drdelta msks id rel rels mr \<union> (if t = nt then dreps_strict k msks rels mr else {}))).
+      (t, rel) \<leftarrow> aux, memR I (nt - t)]
+      of [] \<Rightarrow> [(nt, mrtabulate mrs (dreps_strict k msks rels))]
+      | x # aux' \<Rightarrow> (if fst x = nt then x # aux'
+                    else (nt, mrtabulate mrs (dreps_strict k msks rels)) # x # aux'))
+    in (foldr (\<union>) [lookup rel mr. (t, rel) \<leftarrow> aux, memL I (nt - t)] {}, aux))"
+
+definition dupdate_matchF_base :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
+    'a table list \<Rightarrow> ts \<Rightarrow> 'a ml\<delta>aux \<times> (mregex, 'a table) mapping" where
+  "dupdate_matchF_base k msks I mr mrs rels nt =
+     (let X = mrtabulate mrs (dleps_strict k msks rels)
+      in ([(nt, rels, if memL I 0 then lookup X mr else empty_table)], X))"
+
+definition dupdate_matchF_step :: "bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow> ts \<Rightarrow>
+    ts \<times> 'a table list \<times> 'a table \<Rightarrow> 'a ml\<delta>aux \<times> (mregex, 'a table) mapping \<Rightarrow>
+    'a ml\<delta>aux \<times> (mregex, 'a table) mapping" where
+  "dupdate_matchF_step msks I mr mrs nt = (\<lambda>(t, rels', rel) (aux', X).
+     (let Y = mrtabulate mrs (dldelta msks id X rels')
+      in ((t, rels', if mem I (nt - t) then rel \<union> lookup Y mr else rel) # aux', Y)))"
+
+definition dupdate_matchF :: "nat \<Rightarrow> bool list list \<Rightarrow> \<I> \<Rightarrow> mregex \<Rightarrow> mregex list \<Rightarrow>
+    'a table list \<Rightarrow> ts \<Rightarrow> 'a ml\<delta>aux \<Rightarrow> 'a ml\<delta>aux" where
+  "dupdate_matchF k msks I mr mrs rels nt aux =
+     fst (foldr (dupdate_matchF_step msks I mr mrs nt) aux
+       (dupdate_matchF_base k msks I mr mrs rels nt))"
+
+text \<open>Narrowing the wide unit table -- the tuple that is blank everywhere -- gives the short
+  tuple that is blank everywhere, which is the unit table of the node's own width.\<close>
+
+lemma dproj_replicate: "dproj bs (replicate (length bs) z) = replicate (length (filter id bs)) z"
+  by (induct bs) auto
+
+lemma dtabc_unit_table_len:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+  shows "dtabc n cs (unit_table n) = unit_table (length cs)"
+  using dproj_replicate[of "wide_mask n cs" None]
+  by (simp add: dtabc_def unit_table_def length_filter_wide_mask[OF s b])
+
+subsection \<open>The lax epsilon\<close>
+
+text \<open>The lax epsilon's result lives at the node's own columns: the guard does, and every step
+  either joins an atom's table onto it, unions two such or intersects them.\<close>
+
+lemma table_eps_lax:
+  assumes ops: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> A. table n B (\<phi>s ! i)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow> table n A guard \<Longrightarrow> table n A (\<epsilon>_lax guard \<phi>s mr)"
+proof (induct mr arbitrary: guard)
+  case (MSkip m)
+  then show ?case by (simp add: table_def empty_table_def)
+next
+  case (MTestPos i)
+  then obtain B where "B \<subseteq> A" "table n B (\<phi>s ! i)" using ops by auto
+  then show ?case using MTestPos(2) by (auto intro!: join_table[where C = A])
+next
+  case (MTestNeg i)
+  then obtain B where "B \<subseteq> A" "table n B (\<phi>s ! i)" using ops by auto
+  then show ?case using MTestNeg(2) by (auto intro!: join_table[where C = A])
+next
+  case (MPlus r t)
+  have "table n A (\<epsilon>_lax guard \<phi>s r)" and "table n A (\<epsilon>_lax guard \<phi>s t)"
+    using MPlus(1,2)[OF _ MPlus(4)] MPlus(3) by simp_all
+  then show ?case by (simp add: table_Un)
+next
+  case (MTimes r t)
+  then show ?case by (auto intro!: join_table[where C = A])
+next
+  case (MStar r)
+  then show ?case by simp
+qed
+
+lemma dtabc_eps_lax:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) \<subseteq> set cs
+       \<and> table n (set (css ! i)) (\<phi>s ! i)"
+    and l: "length css = length \<phi>s" and msks: "msks = map (dmsk cs) css"
+  shows "ok (length \<phi>s) mr \<Longrightarrow> table n (set cs) guard \<Longrightarrow>
+     dtabc n cs (\<epsilon>_lax guard \<phi>s mr)
+       = deps_lax msks (dtabc n cs guard) (map2 (dtabc n) css \<phi>s) mr"
+proof (induct mr arbitrary: guard)
+  case (MSkip m)
+  then show ?case by (simp add: dtabc_def empty_table_def)
+next
+  case (MTestPos i)
+  then have i: "i < length \<phi>s" by simp
+  have "dtabc n cs (join guard True (\<phi>s ! i))
+      = dsemi (dmsk cs (css ! i)) True (dtabc n cs guard) (dtabc n (css ! i) (\<phi>s ! i))"
+    unfolding dmsk_def
+    by (rule dsemi_join[symmetric]) (use s b css[OF i] MTestPos(2) in auto)
+  then show ?case using i l msks by simp
+next
+  case (MTestNeg i)
+  then have i: "i < length \<phi>s" by simp
+  have "dtabc n cs (join guard False (\<phi>s ! i))
+      = dsemi (dmsk cs (css ! i)) False (dtabc n cs guard) (dtabc n (css ! i) (\<phi>s ! i))"
+    unfolding dmsk_def
+    by (rule dsemi_join[symmetric]) (use s b css[OF i] MTestNeg(2) in auto)
+  then show ?case using i l msks by simp
+next
+  case (MPlus r t)
+  then show ?case by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have o1: "ok (length \<phi>s) r" and o2: "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have opsA: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)" using css by auto
+  have t1: "table n (set cs) (\<epsilon>_lax guard \<phi>s r)"
+    by (rule table_eps_lax[OF opsA o1 MTimes(4)])
+  have t2: "table n (set cs) (\<epsilon>_lax guard \<phi>s t)"
+    by (rule table_eps_lax[OF opsA o2 MTimes(4)])
+  have j: "join (\<epsilon>_lax guard \<phi>s r) True (\<epsilon>_lax guard \<phi>s t)
+      = \<epsilon>_lax guard \<phi>s r \<inter> \<epsilon>_lax guard \<phi>s t" by (simp add: join_eq[OF t2 t1])
+  show ?case using MTimes(1)[OF o1 MTimes(4)] MTimes(2)[OF o2 MTimes(4)]
+    by (simp add: j dtabc_Int[OF s t1 t2])
+qed simp
 (*<*)
 end
 (*>*)
