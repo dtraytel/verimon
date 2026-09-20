@@ -838,6 +838,16 @@ definition uag_res :: "daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset 
      None \<Rightarrow> udagg_p p (snd cc)
    | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
 
+text \<open>The result is read off the kernel's structure in one pass: the projection to the node's
+  columns and the unboxing are one image.\<close>
+
+lemma uag_res_code[code]:
+  "uag_res p w cc ax = (case ax of
+     None \<Rightarrow> udagg_p p (snd cc)
+   | Some a \<Rightarrow> (\<lambda>x. deopt (dproj (wide_mask (sa_n p w) [0..<sa_n p w]) x))
+       ` result_maggaux (dagg_args p w) a)"
+  by (simp add: uag_res_def deopt_table_def dtabc_def image_image split: option.splits)
+
 lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc cc) ax = uag_ins p w T cc ax"
   by (cases cc) (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps udagg_wide_eq)
 
