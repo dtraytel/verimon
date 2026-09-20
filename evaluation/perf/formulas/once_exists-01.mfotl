@@ -1,1 +1,0 @@
-C(x) AND (EXISTS y. ONCE[0,5] A(x,y))

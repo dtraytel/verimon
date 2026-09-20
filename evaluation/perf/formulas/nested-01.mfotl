@@ -1,1 +1,0 @@
-A(x,y) AND ONCE[0,5] (B(y,z) AND ONCE[0,5] C(z))

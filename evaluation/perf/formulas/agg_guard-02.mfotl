@@ -1,1 +1,0 @@
-C(x) AND (r <- SUM y; x ONCE[0,20] A(x,y)) AND r < 500

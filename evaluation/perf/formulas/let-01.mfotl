@@ -1,1 +1,0 @@
-LET P(x) = ONCE[0,5] C(x) IN A(x,y) AND P(x)

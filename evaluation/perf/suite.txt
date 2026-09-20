@@ -1,0 +1,233 @@
+# The formulas of the performance suite, one per line:  name | log | formula | why it is here
+# A line "## family: description" opens a group; the report is organised by these groups.
+# Logs (gen_logs.py): base has 40 A(x,y), 40 B(x,y), 10 C(x), 10 D(x,y,z) per time point,
+# one time point per second, values in 0..199; rate10/rate80 change the events per time point,
+# dom50/dom1000 the range, burst has sixty time points per timestamp, long has 30000 thin time
+# points.  A window bound b on base covers about 40(b+1) A tuples.
+
+## join: what a conjunction costs by its shape, at one time point
+join-both     | base | A(x,y) AND B(x,y)                            | equi-join on both columns: a set intersection
+join-one      | base | A(x,y) AND B(y,z)                            | one shared column, the common case
+join-swap     | base | A(x,y) AND B(y,x)                            | both columns shared, permuted: the index must reorder
+join-first    | base | A(x,y) AND B(z,x)                            | shared column in different positions
+join-chain3   | base | A(x,y) AND B(y,z) AND C(z)                   | a chain closed by a unary filter
+join-chain4   | base | A(x,y) AND B(y,z) AND A(z,w) AND B(w,v)      | four-way chain: the multi-way join
+join-ternary  | base | A(x,y) AND D(y,z,w)                          | binary with ternary
+join-self3    | base | D(x,y,z) AND D(z,y,x)                        | ternary self-join, all columns permuted
+join-star     | base | A(x,y) AND B(x,y) AND C(x) AND C(y)          | intersection with unary filters on both columns
+
+## join_scale: the one-shared-column join as the rate and the domain grow
+join-rate10   | rate10  | A(x,y) AND B(y,z)  | 10 events per predicate per time point
+join-rate40   | base    | A(x,y) AND B(y,z)  | 40 (the base log)
+join-rate80   | rate80  | A(x,y) AND B(y,z)  | 80: result size grows with the square of the rate
+join-dom50    | dom50   | A(x,y) AND B(y,z)  | small domain: many matches per key
+join-dom1000  | dom1000 | A(x,y) AND B(y,z)  | large domain: few matches, more distinct keys
+
+## andnot: anti-joins
+andnot-both   | base | A(x,y) AND NOT B(x,y)                    | difference on both columns
+andnot-one    | base | A(x,y) AND NOT C(x)                      | anti-join on one column
+andnot-swap   | base | A(x,y) AND NOT B(y,x)                    | permuted
+andnot-exists | base | A(x,y) AND NOT (EXISTS z. B(x,z))        | projection, then anti-join
+andnot-wide   | base | D(x,y,z) AND NOT A(x,y)                  | ternary minus binary
+andnot-chain  | base | A(x,y) AND B(y,z) AND NOT A(z,x)         | anti-join after a join
+andnot-dom50  | dom50 | A(x,y) AND NOT B(x,y)                   | small domain: most tuples are removed
+andnot-dom1000 | dom1000 | A(x,y) AND NOT B(x,y)                | large domain: almost nothing is removed
+
+## rel: constraints and assignments
+rel-lt        | base | A(x,y) AND x < y                         | a filter that keeps half
+rel-eq        | base | A(x,y) AND x = y                         | a filter that keeps almost nothing
+rel-const     | base | A(x,y) AND x < 20                        | constant bound
+rel-notlt     | base | A(x,y) AND NOT x < y                     | negated constraint
+rel-assign    | base | A(x,y) AND z = x + y                     | an assignment adds a column
+rel-assign2   | base | A(x,y) AND B(y,z) AND w = x + z          | assignment after a join
+rel-joinlt    | base | A(x,y) AND B(y,z) AND x < z              | constraint across a join
+rel-two       | base | A(x,y) AND x < y AND y < 100             | two constraints
+
+## or_exists: disjunction and quantifiers
+or-plain      | base | A(x,y) OR B(x,y)                                  | union
+or-filtered   | base | (A(x,y) AND x < 100) OR (B(x,y) AND y < 100)      | union of filtered operands
+exists-one    | base | EXISTS y. A(x,y)                                  | projection
+exists-join   | base | (EXISTS x. A(x,y)) AND B(y,z)                     | projection feeding a join
+exists-guard  | base | C(x) AND (EXISTS y. A(x,y) AND B(y,x))            | quantifier over a join, guarded
+exists-wide   | base | (EXISTS z. D(x,y,z)) AND NOT A(x,y)               | projection of a ternary, then anti-join
+
+## prevnext: Prev and Next
+prev-unary    | base  | PREV[0,1] C(x)                                 | one time point back
+next-unary    | base  | NEXT[0,1] C(x)                                 | one time point ahead: a one-step buffer
+prev-join     | base  | A(x,y) AND PREV[0,1] B(x,y)                    | joined with the previous table
+next-join     | base  | A(x,y) AND NEXT[0,1] B(x,y)                    | joined with the next table
+prev-first    | base  | A(x,y) AND NOT PREV[0,1] A(x,y)                | tuples new since the previous time point
+prev-join3    | base  | A(x,y) AND PREV[0,1] (B(x,z) AND C(z))         | Prev of a join
+prev-burst    | burst | A(x,y) AND PREV[0,0] B(x,y)                    | previous time point with the same timestamp
+next-burst    | burst | A(x,y) AND NEXT[0,0] B(x,y)                    | next time point with the same timestamp
+
+## once: the past window, by its bound
+once-raw0     | base | ONCE[0,0] C(x)                             | the current time point only
+once-raw5     | base | ONCE[0,5] C(x)                             | unguarded, small predicate: the verdict is the window
+once-raw20    | base | ONCE[0,20] C(x)                            | window of 200 tuples, at most 200 distinct
+once-g1       | base | A(x,y) AND ONCE[0,1] B(x,y)                | guarded: the window is probed, not printed
+once-g5       | base | A(x,y) AND ONCE[0,5] B(x,y)                | 240 tuples in the window
+once-g50      | base | A(x,y) AND ONCE[0,50] B(x,y)               | 2000
+once-g500     | base | A(x,y) AND ONCE[0,500] B(x,y)              | 20000: half of the 40000 possible tuples
+once-g2000    | base | A(x,y) AND ONCE[0,2000] B(x,y)             | the window saturates: every tuple has been seen
+once-first5   | base | A(x,y) AND NOT ONCE[1,5] A(x,y)            | first occurrence within the window
+once-first50  | base | A(x,y) AND NOT ONCE[1,50] A(x,y)           |
+once-first500 | base | A(x,y) AND NOT ONCE[1,500] A(x,y)          |
+once-lb5      | base | C(x) AND ONCE[5,25] A(x,y)                 | positive lower bound: entries wait before they count
+once-lb500    | base | C(x) AND ONCE[500,520] A(x,y)              | a long wait, a short window
+once-inf      | base | A(x,y) AND ONCE[0,*) B(x,y)                | unbounded: the window only grows
+once-infnot   | base | A(x,y) AND NOT ONCE[1,*) A(x,y)            | first occurrence ever
+once-half     | base | A(x,y) AND ONCE[0,50) B(x,y)               | half-open interval
+
+## once_exists: a quantifier directly over the window, where the guard cannot be pushed in
+onceex-5      | base | C(x) AND (EXISTS y. ONCE[0,5] A(x,y))          | the window is projected before the guard applies
+onceex-20     | base | C(x) AND (EXISTS y. ONCE[0,20] A(x,y))         |
+onceex-50     | base | C(x) AND (EXISTS y. ONCE[0,50] A(x,y))         |
+onceex-not5   | base | C(x) AND NOT (EXISTS y. ONCE[1,5] A(x,y))      | negated
+onceex-not50  | base | C(x) AND NOT (EXISTS y. ONCE[1,50] A(x,y))     |
+
+## once_scale: the guarded window of 20 as the rate and the domain grow
+once-rate10   | rate10  | A(x,y) AND ONCE[0,20] B(x,y)  | 200 tuples in the window
+once-rate80   | rate80  | A(x,y) AND ONCE[0,20] B(x,y)  | 1600
+once-dom50    | dom50   | A(x,y) AND ONCE[0,20] B(x,y)  | 2500 possible tuples: the window nearly saturates
+once-dom1000  | dom1000 | A(x,y) AND ONCE[0,20] B(x,y)  | a million possible: every tuple new
+
+## since: the left operand and its shape
+since-bb5     | base | A(x,y) SINCE[0,5] B(x,y)                          | both binary: the left operand must hold at every time point
+since-bb50    | base | A(x,y) SINCE[0,50] B(x,y)                         |
+since-bb500   | base | A(x,y) SINCE[0,500] B(x,y)                        |
+since-u5      | base | B(x,y) AND (C(x) SINCE[0,5] A(x,y))               | unary left operand
+since-u50     | base | B(x,y) AND (C(x) SINCE[0,50] A(x,y))              |
+since-u500    | base | B(x,y) AND (C(x) SINCE[0,500] A(x,y))             |
+since-nu5     | base | B(x,y) AND ((NOT C(x)) SINCE[0,5] A(x,y))         | negated unary left operand
+since-nu50    | base | B(x,y) AND ((NOT C(x)) SINCE[0,50] A(x,y))        |
+since-nu500   | base | B(x,y) AND ((NOT C(x)) SINCE[0,500] A(x,y))       |
+since-nb5     | base | C(x) AND ((NOT B(x,y)) SINCE[0,5] A(x,y))         | negated binary left operand
+since-nb20    | base | C(x) AND ((NOT B(x,y)) SINCE[0,20] A(x,y))        |
+since-lb      | base | A(x,y) SINCE[2,500] B(x,y)                        | positive lower bound
+since-inf     | base | C(x) SINCE[5,*) A(x,y)                            | unbounded
+
+## eventually: the bounded future, one time point per second
+ev-g1         | base | A(x,y) AND EVENTUALLY[0,1] B(x,y)               | one time point of delay
+ev-g20        | base | A(x,y) AND EVENTUALLY[0,20] B(x,y)              | verdicts delayed by 20 time points
+ev-g500       | base | A(x,y) AND EVENTUALLY[0,500] B(x,y)             | 500 time points buffered
+ev-n1         | base | A(x,y) AND NOT EVENTUALLY[0,1] B(x,y)           | negated (the P2 shape)
+ev-n20        | base | A(x,y) AND NOT EVENTUALLY[0,20] B(x,y)          |
+ev-n500       | base | A(x,y) AND NOT EVENTUALLY[0,500] B(x,y)         |
+ev-raw5       | base | EVENTUALLY[0,5] C(x)                            | unguarded, small predicate
+ev-exists20   | base | C(x) AND (EXISTS y. EVENTUALLY[0,20] A(x,y))    | quantifier over the future window
+
+## until: the left operand and its shape
+until-bb5     | base | A(x,y) UNTIL[0,5] B(x,y)                          | both binary
+until-bb50    | base | A(x,y) UNTIL[0,50] B(x,y)                         |
+until-bb500   | base | A(x,y) UNTIL[0,500] B(x,y)                        |
+until-u5      | base | B(x,y) AND (C(x) UNTIL[0,5] A(x,y))               | unary left operand
+until-u50     | base | B(x,y) AND (C(x) UNTIL[0,50] A(x,y))              |
+until-nu20    | base | B(x,y) AND ((NOT C(x)) UNTIL[0,20] A(x,y))        | negated unary left operand
+
+## burst: sixty time points per timestamp, so a bound of b buffers 60(b+1) time points
+burst-n0      | burst | A(x,y) AND NOT EVENTUALLY[0,0] B(x,y)                     | the same timestamp only: 60 time points
+burst-n2      | burst | A(x,y) AND NOT EVENTUALLY[0,2] B(x,y)                     | 180
+burst-n10     | burst | A(x,y) AND NOT EVENTUALLY[0,10] B(x,y)                    | 660 time points buffered under the conjunction
+burst-p2      | burst | (A(x,y) AND x < 100) AND NOT EVENTUALLY[0,5] C(y)         | the P2 policy shape
+burst-u1      | burst | A(x,y) UNTIL[0,1] B(x,y)                                  | Until over 120 time points
+burst-u5      | burst | A(x,y) UNTIL[0,5] B(x,y)                                  |
+burst-uu5     | burst | B(x,y) AND (C(x) UNTIL[0,5] A(x,y))                       | unary left operand
+burst-once5   | burst | A(x,y) AND ONCE[0,5] B(x,y)                               | the past on the same log, for comparison
+burst-p3      | burst | A(x,y) AND x < 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y))  | the P3 policy shape
+
+## nested: temporal operators under temporal operators
+nest-oo5      | base   | A(x,y) AND ONCE[0,5] (B(y,z) AND ONCE[0,5] C(z))        | a window over a window
+nest-oo20     | base   | A(x,y) AND ONCE[0,20] (B(y,z) AND ONCE[0,20] C(z))      |
+nest-oo50     | base   | A(x,y) AND ONCE[0,50] (B(y,z) AND ONCE[0,20] C(z))      |
+nest-oo500    | rate10 | A(x,y) AND ONCE[0,500] (B(y,z) AND ONCE[0,20] C(z))     | a long outer window, on the thin log
+nest-eo       | base   | A(x,y) AND EVENTUALLY[0,20] (B(x,z) AND ONCE[0,20] C(z)) | future over past
+nest-oe       | base   | A(x,y) AND ONCE[0,20] (B(x,z) AND EVENTUALLY[0,20] C(z)) | past over future
+nest-so       | base   | C(x) AND ((ONCE[0,20] A(x,y)) SINCE[0,20] B(x,y))       | a window as the left operand of Since
+nest-notso    | base   | A(x,y) AND NOT ((B(x,y) SINCE[0,20] A(x,y)) AND ONCE[0,20] C(y)) | negated Since
+nest-notsince | base   | A(x,y) AND NOT (C(x) SINCE[0,20] B(x,y))                | anti-join with a Since
+nest-notuntil | base   | A(x,y) AND NOT (C(x) UNTIL[0,20] B(x,y))                | anti-join with an Until
+nest-pastfut  | base   | A(x,y) AND (ONCE[0,20] B(x,y)) AND NOT (EVENTUALLY[0,20] B(x,y)) | last occurrence: past and future together
+
+## agg: aggregations at one time point
+agg-cnt       | base | r <- CNT y; x A(x,y)                     | grouped count, about 200 groups
+agg-sum       | base | r <- SUM y; x A(x,y)                     |
+agg-min       | base | r <- MIN y; x A(x,y)                     |
+agg-max       | base | r <- MAX y; x A(x,y)                     |
+agg-avg       | base | r <- AVG y; x A(x,y)                     |
+agg-med       | base | r <- MED y; x A(x,y)                     | the median needs the whole group
+agg-nogroup   | base | r <- CNT y A(x,y)                        | one group
+agg-join      | base | r <- CNT z; x (A(x,y) AND B(y,z))        | aggregation of a join
+
+## agg_once: aggregations over a past window, where the aggregate can be kept incrementally
+aggonce-cnt5    | base | r <- CNT y; x ONCE[0,5] A(x,y)          | grouped count of the window
+aggonce-cnt50   | base | r <- CNT y; x ONCE[0,50] A(x,y)         |
+aggonce-cnt500  | base | r <- CNT y; x ONCE[0,500] A(x,y)        |
+aggonce-sum5    | base | r <- SUM y; x ONCE[0,5] A(x,y)          |
+aggonce-sum50   | base | r <- SUM y; x ONCE[0,50] A(x,y)         |
+aggonce-sum500  | base | r <- SUM y; x ONCE[0,500] A(x,y)        |
+aggonce-min5    | base | r <- MIN y; x ONCE[0,5] A(x,y)          | the extremum leaves with its tuple: an order per group
+aggonce-min50   | base | r <- MIN y; x ONCE[0,50] A(x,y)         |
+aggonce-max50   | base | r <- MAX y; x ONCE[0,50] A(x,y)         |
+aggonce-avg5    | base | r <- AVG y; x ONCE[0,5] A(x,y)          |
+aggonce-avg50   | base | r <- AVG y; x ONCE[0,50] A(x,y)         |
+aggonce-med5    | base | r <- MED y; x ONCE[0,5] A(x,y)          |
+aggonce-med20   | base | r <- MED y; x ONCE[0,20] A(x,y)         |
+aggonce-c5      | base | r <- CNT x ONCE[0,5] C(x)               | closed left operand, no group: the fused window
+aggonce-c50     | base | r <- CNT x ONCE[0,50] C(x)              |
+aggonce-c500    | base | r <- CNT x ONCE[0,500] C(x)             |
+aggonce-c2000   | base | r <- CNT x ONCE[0,2000] C(x)            |
+aggonce-wide    | base | r <- CNT z; x,y ONCE[0,5] D(x,y,z)      | two group columns over a ternary window
+aggonce-rate10  | rate10  | r <- SUM y; x ONCE[0,20] A(x,y)      | the same sum as the rate and the domain grow
+aggonce-rate80  | rate80  | r <- SUM y; x ONCE[0,20] A(x,y)      |
+aggonce-dom50   | dom50   | r <- SUM y; x ONCE[0,20] A(x,y)      | 50 groups, many tuples each
+aggonce-dom1000 | dom1000 | r <- SUM y; x ONCE[0,20] A(x,y)      | up to 840 groups of one or two tuples
+
+## agg_fut: aggregations over a future window, and aggregations under a guard
+aggev-cnt5    | base | r <- CNT y; x EVENTUALLY[0,5] A(x,y)                             | the window completes late
+aggev-sum20   | base | r <- SUM y; x EVENTUALLY[0,20] A(x,y)                            |
+aggguard-cnt  | base | A(x,y) AND (r <- CNT z; y B(y,z)) AND r < 3                      | aggregate joined and filtered
+aggguard-sum  | base | C(x) AND (r <- SUM y; x ONCE[0,20] A(x,y)) AND r < 500           | aggregate of a window, guarded
+aggguard-not  | base | (r <- CNT y; x ONCE[0,20] A(x,y)) AND NOT C(x)                   | aggregate of a window, anti-joined
+
+## let: Let-bound predicates
+let-once      | base | LET P(x) = ONCE[0,50] C(x) IN A(x,y) AND P(x)                                     | a window bound once, used as a predicate
+let-twice     | base | LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,50] Q(y,x)                    | one definition used twice, permuted
+let-neg       | base | LET P(x) = C(x) AND NOT (EXISTS y. A(x,y)) IN B(x,y) AND P(x)                     | a negated definition
+let-nested    | base | LET P(x,y) = A(x,y) AND NOT B(x,y) IN LET Q(x) = EXISTS y. P(x,y) IN C(x) AND Q(x) | two levels
+
+## wide: ternary predicates under the temporal operators
+wide-once5    | base | D(x,y,z) AND ONCE[0,5] D(x,y,z)              | three-column tuples in the window
+wide-once50   | base | D(x,y,z) AND ONCE[0,50] D(x,y,z)             |
+wide-once500  | base | D(x,y,z) AND ONCE[0,500] D(x,y,z)            |
+wide-first    | base | D(x,y,z) AND NOT ONCE[1,50] D(x,y,z)         | first occurrence of a ternary tuple
+wide-ev       | base | D(x,y,z) AND EVENTUALLY[0,20] D(x,y,z)       |
+wide-since    | base | D(x,y,z) SINCE[0,20] D(z,y,x)                | Since with permuted ternary operands
+wide-until    | base | D(x,y,z) UNTIL[0,20] D(z,y,x)                |
+wide-oncejoin | base | D(x,y,z) AND ONCE[0,50] (A(x,y) AND B(y,z))  | a join inside the window
+
+## long: long windows on the long thin log (30000 time points, 8 A and 8 B each)
+long-g10      | long | A(x,y) AND ONCE[0,10] B(x,y)                  | 88 tuples in the window
+long-g100     | long | A(x,y) AND ONCE[0,100] B(x,y)                 | 808
+long-g1000    | long | A(x,y) AND ONCE[0,1000] B(x,y)                | 8008
+long-g10000   | long | A(x,y) AND ONCE[0,10000] B(x,y)               | 80008: twice the 40000 possible tuples
+long-first100 | long | A(x,y) AND NOT ONCE[1,100] A(x,y)             |
+long-first10000 | long | A(x,y) AND NOT ONCE[1,10000] A(x,y)         |
+long-ev100    | long | A(x,y) AND NOT EVENTUALLY[0,100] B(x,y)       | 100 time points buffered
+long-ev1000   | long | A(x,y) AND NOT EVENTUALLY[0,1000] B(x,y)      | 1000
+long-since100 | long | C(x) SINCE[0,100] A(x,y)                      |
+long-cnt100   | long | r <- CNT x ONCE[0,100] C(x)                   | the fused count over 400 tuples
+long-cnt10000 | long | r <- CNT x ONCE[0,10000] C(x)                 | over 40000
+long-sum100   | long | r <- SUM y; x ONCE[0,100] A(x,y)              | grouped sum over 800 tuples
+
+## policy: formulas shaped like the policies of the MonPoly examples
+pol-p2        | base | (A(x,y) AND x < 100) AND NOT EVENTUALLY[0,6] C(y)                                | P2: no report within six seconds
+pol-p3        | base | A(x,y) AND x < 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y))                         | P3: no earlier authorisation
+pol-unmatched | base | C(x) AND NOT (EXISTS y. ONCE[0,30] A(x,y) AND NOT ONCE[0,30] B(y,x))              | an A without a matching B in the window
+pol-chain     | base | A(x,y) AND (EXISTS z. ONCE[0,10] (B(y,z) AND NOT ONCE[0,5] C(z)))                | a nested chain of conditions
+pol-threshold | base | (r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r                                     | a count over a window against a threshold
+pol-sumfilter | base | (r <- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 < r                      | a sum over a window, anti-joined and thresholded
+pol-repeat    | base | A(x,y) AND B(y,z) AND NOT ONCE[0,100] (A(x,y) AND B(y,z))                        | first occurrence of a joined pair
+pol-sincefut  | base | A(x,y) AND ((NOT C(x)) SINCE[0,100] B(x,y)) AND NOT EVENTUALLY[0,10] C(y)        | past and future conditions together
+pol-sincefutb | burst | A(x,y) AND ((NOT C(x)) SINCE[0,10] B(x,y)) AND NOT EVENTUALLY[0,3] C(y)         | the same on the bursty log
+pol-let       | base | LET Bad(x) = ONCE[0,50] (C(x) AND NOT PREV[0,1] C(x)) IN A(x,y) AND Bad(x) AND NOT Bad(y) | a Let-bound condition used positively and negatively

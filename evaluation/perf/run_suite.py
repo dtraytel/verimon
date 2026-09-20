@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Run the performance suite: every formula of formulas/suite.json under each system, with a
-timeout per run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
+"""Run the performance suite: every formula of suite.txt under each system, with a timeout per
+run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
 
-  python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 2] [--timeout 5]
+  python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 3] [--timeout 5]
                        [--jobs 2] [--budget 1800] [--systems monpoly,vdense[,dense]]
-                       [--families once_guard,since] [--out results]
+                       [--families once,since] [--out results]
 
 Systems: monpoly is the binary without flags; vdense is `-verified -vdense` (the verified dense
 evaluator of Dense_Eval.thy); dense is `-verified` (the shipping dense monitor).
@@ -23,6 +23,28 @@ import argparse, concurrent.futures, csv, hashlib, json, math, os, statistics, s
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SYSTEMS = {"monpoly": [], "vdense": ["-verified", "-vdense"], "dense": ["-verified"]}
+
+
+def read_suite(path):
+    """suite.txt: '## family: description' opens a group; 'name | log | formula | note' is an entry."""
+    suite, family, seen = [], None, set()
+    for ln in open(path, encoding="utf-8"):
+        ln = ln.rstrip("\n")
+        if ln.startswith("## "):
+            family = ln[3:].split(":")[0].strip()
+            continue
+        if not ln.strip() or ln.lstrip().startswith("#"):
+            continue
+        parts = [p.strip() for p in ln.split("|")]
+        if len(parts) < 3 or family is None:
+            sys.exit("suite.txt: bad line: " + ln)
+        name, log, formula = parts[:3]
+        note = parts[3] if len(parts) > 3 else ""
+        if name in seen:
+            sys.exit("suite.txt: duplicate name " + name)
+        seen.add(name)
+        suite.append({"name": name, "family": family, "log": log, "formula": formula, "note": note})
+    return suite
 
 
 def run_once(binary, flags, sig, formula, log, timeout):
@@ -50,7 +72,7 @@ def run_formula(entry, args, systems, reps_for):
     """All systems and repetitions of one formula, interleaved."""
     sig = os.path.join(args.logs, "perf.sig")
     log = os.path.join(args.logs, entry["log"] + ".log")
-    formula = os.path.join(args.formulas, entry["name"] + ".mfotl")
+    formula = os.path.join(args.out, "mfotl", entry["name"] + ".mfotl")
     res = {s: {"times": [], "status": None, "hash": None, "detail": None} for s in systems}
     reps = reps_for()
     for r in range(reps):
@@ -79,9 +101,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", default=os.path.join(HERE, "..", "..", "_build", "default", "src", "main.exe"))
     ap.add_argument("--logs", default=os.path.join(HERE, "logs"))
-    ap.add_argument("--formulas", default=os.path.join(HERE, "formulas"))
+    ap.add_argument("--suite", default=os.path.join(HERE, "suite.txt"))
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
-    ap.add_argument("--reps", type=int, default=2)
+    ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--timeout", type=float, default=5.0)
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--budget", type=float, default=1800.0, help="wall-clock budget in seconds")
@@ -91,7 +113,7 @@ def main():
     args = ap.parse_args()
     args.reps = max(1, min(3, args.reps))
     systems = args.systems.split(",")
-    suite = json.load(open(os.path.join(args.formulas, "suite.json")))
+    suite = read_suite(args.suite)
     if args.families:
         fams = set(args.families.split(","))
         suite = [e for e in suite if e["family"] in fams]
@@ -100,7 +122,10 @@ def main():
         suite = [e for e in suite if e["name"] in names]
     if not os.path.exists(os.path.join(args.logs, "perf.sig")):
         sys.exit("no logs: run gen_logs.py first")
-    os.makedirs(args.out, exist_ok=True)
+    os.makedirs(os.path.join(args.out, "mfotl"), exist_ok=True)
+    for e in suite:
+        with open(os.path.join(args.out, "mfotl", e["name"] + ".mfotl"), "w") as f:
+            f.write(e["formula"] + "\n")
 
     t_start = time.perf_counter()
     lock = threading.Lock()
@@ -157,7 +182,7 @@ def main():
         r = results.get(e["name"])
         if r is None:
             continue
-        rec = {"family": e["family"], "log": e["log"], "formula": e["formula"], "params": e["params"]}
+        rec = {"family": e["family"], "log": e["log"], "formula": e["formula"], "note": e["note"]}
         for s in systems:
             rec[s] = {"status": r[s]["status"], "min": min(r[s]["times"]) if r[s]["times"] else None,
                       "times": r[s]["times"], "hash": r[s]["hash"], "detail": r[s]["detail"]}
@@ -255,8 +280,8 @@ def write_report(out, suite, systems, args, path):
             L.append("")
     # full table
     L.append("## All formulas\n")
-    L.append("| name | log | formula | " + " | ".join("%s s" % s for s in systems) + " | ratio | agree |")
-    L.append("|---|---|---|" + "---|" * len(systems) + "---|---|")
+    L.append("| name | log | formula | " + " | ".join("%s s" % s for s in systems) + " | ratio | agree | why |")
+    L.append("|---|---|---|" + "---|" * len(systems) + "---|---|---|")
     for e in suite:
         r = R.get(e["name"])
         if r is None:
@@ -265,7 +290,7 @@ def write_report(out, suite, systems, args, path):
         for s in systems:
             cells.append("%.2f" % r[s]["min"] if r[s]["status"] == "ok" else r[s]["status"])
         ratio = ("%.2f" % (r[sysx[0]]["min"] / r[ref]["min"])) if sysx and r[ref]["status"] == "ok" and r[sysx[0]]["status"] == "ok" else "-"
-        L.append("| %s | %s | `%s` | %s | %s | %s |" % (e["name"], e["log"], e["formula"], " | ".join(cells), ratio, "yes" if r["agree"] else "NO"))
+        L.append("| %s | %s | `%s` | %s | %s | %s | %s |" % (e["name"], e["log"], e["formula"], " | ".join(cells), ratio, "yes" if r["agree"] else "NO", e["note"]))
     open(path, "w").write("\n".join(L) + "\n")
 
 

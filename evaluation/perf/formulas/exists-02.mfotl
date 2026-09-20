@@ -1,1 +1,0 @@
-(EXISTS x. A(x,y)) AND B(y,z)

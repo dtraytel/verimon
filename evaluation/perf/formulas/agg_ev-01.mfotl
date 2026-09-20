@@ -1,1 +1,0 @@
-r <- CNT y; x EVENTUALLY[0,5] A(x,y)

@@ -1,1 +1,0 @@
-C(x) AND ((ONCE[0,100] A(x,y)) SINCE[0,100] B(x,y))

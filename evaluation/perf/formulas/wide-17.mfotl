@@ -1,1 +1,0 @@
-D(x,y,z) UNTIL[0,20] D(z,y,x)

@@ -1,1 +1,0 @@
-(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,10] C(y)

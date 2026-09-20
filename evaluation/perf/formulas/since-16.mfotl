@@ -1,1 +1,0 @@
-C(x) AND ((NOT B(x,y)) SINCE[0,100] A(x,y))

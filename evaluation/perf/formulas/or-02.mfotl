@@ -1,1 +1,0 @@
-(A(x,y) AND x < 100) OR (B(x,y) AND y < 100)

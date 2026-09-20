@@ -1,1 +1,0 @@
-D(x,y,z) AND NOT ONCE[1,100] D(x,y,z)

@@ -1,27 +1,26 @@
 # Performance suite: the verified dense evaluator against MonPoly
 
-A few hundred formulas, organised in families with parameter sweeps, each run under MonPoly and
-under the verified dense evaluator (`-verified -vdense`, `Dense_Eval.thy` through the queue
-buffers of `Dense_Exec.thy`) on the same log, with a 5-second timeout per run, best of a few
-repetitions, in about 20 minutes on four cores.
+185 hand-picked formulas in 21 groups, each there for a stated reason (`suite.txt`, one
+annotated line per formula), run under MonPoly and under the verified dense evaluator
+(`-verified -vdense`, `Dense_Eval.thy` through the queue buffers of `Dense_Exec.thy`) on the
+same log, with a 5-second timeout per run, best of three repetitions, in about a quarter of an
+hour on four cores.
 
 ```
 python3 gen_logs.py                 # eight synthetic logs (about 45 MB), a few seconds
-python3 gen_formulas.py             # formulas/*.mfotl and formulas/suite.json (committed)
 python3 run_suite.py                # results/{results.json,results.csv,report.md}
-python3 plot.py                     # results/ratios.svg, the ratios per family
+python3 plot.py                     # results/ratios.svg, the ratios per group
 ```
 
-`report.md` and `ratios.svg` in this directory are the run of 2026-09-20 on the machine of
-EFFICIENCY.md Section 21 (four cores): 339 formulas, 801 s of wall time, no verdict
-disagreements.
+`run_suite.py` takes `--bin` (default: the tree's `_build/default/src/main.exe`), `--suite`
+(`suite.txt`), `--reps` (default 3, at most 3), `--timeout` (5 s), `--jobs` (2 workers),
+`--budget` (1800 s of wall time), `--systems` (`monpoly,vdense`; add `dense` for the shipping
+dense monitor) and `--families`/`--names` to run a subset.  Repetitions are interleaved across
+the systems.  When the projected wall time exceeds the budget the remaining formulas get one
+repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`run_suite.py` takes `--bin` (default: the tree's `_build/default/src/main.exe`), `--reps`
-(default 2, at most 3), `--timeout` (5 s), `--jobs` (2 workers), `--budget` (1800 s of wall
-time), `--systems` (`monpoly,vdense`; add `dense` for the shipping dense monitor) and
-`--families`/`--names` to run a subset.  Repetitions are interleaved across the systems.  When
-the projected wall time exceeds the budget the remaining formulas get one repetition, and if
-even that would exceed it they are skipped; the report says which happened.
+`report.md` and `ratios.svg` in this directory are the run of 2026-09-20 on the machine of
+EFFICIENCY.md Section 21 (four cores).
 
 ## The logs
 
@@ -32,22 +31,18 @@ domain (join selectivity, number of groups), `burst` sixty time points per times
 bounded future operator has to buffer), `long` 30000 time points with 8 A and B each (long
 windows).
 
-## The families
+## The groups
 
-| family | shape | sweep |
-|---|---|---|
-| join, join_rate, join_dom | conjunctions of 2-4 predicates | shared variables; rate; domain |
-| andnot, andnot_dom, rel, or, exists | negation, constraints, disjunction, quantifiers | |
-| prevnext | Prev and Next | |
-| once_raw, once_guard, once_first, once_lb, once_inf, once_exists, once_rate, once_dom | ONCE | window bound 0..2000, lower bound, unbounded; rate; domain |
-| since | SINCE, unary/binary/negated left operand | window bound |
-| eventually, eventually_raw, eventually_burst, until, until_burst | bounded futures | window bound, on one-per-second and bursty logs |
-| nested | temporal operators under temporal operators | bounds |
-| agg, agg_once, agg_once_cnt, agg_dom, agg_rate, agg_ev, agg_guard | aggregations, alone and over ONCE/EVENTUALLY | operator, window bound; rate; domain |
-| let | LET-bound predicates | |
-| wide | ternary predicates under the temporal operators | window bound |
-| long | long windows on the long thin log | 10..10000 |
-| policy | policy-shaped formulas (P2/P3 and relatives) | |
+`suite.txt` says, per formula, what it is there for.  The groups: joins by shape and as the
+rate and domain grow; anti-joins; constraints and assignments; disjunction and quantifiers;
+Prev and Next; the past window by its bound, with a positive lower bound, unbounded, and under
+a quantifier the guard cannot pass; Since by the shape of its left operand; the bounded future
+and Until likewise, and both on the bursty log; nested temporal operators; aggregations at a
+time point, over a past window (grouped, ungrouped, every operator), over a future window and
+under guards; Let; ternary predicates under the temporal operators; long windows on the long
+thin log; and policy-shaped formulas.  Bounds are chosen at the scales that matter on the log:
+a handful of time points, a few tens, a few hundreds (where a window of binary tuples over a
+domain of 200 by 200 saturates), and thousands on the thin log.
 
 Wide temporal subformulas are guarded (`A(x,y) AND ONCE[0,b] B(x,y)`, `A(x,y) AND NOT
 ONCE[1,b] A(x,y)`) so that the verdict stays a few tuples per time point and the measured time
@@ -58,5 +53,6 @@ is the operator's, not the printer's.
 `report.md` gives, per system: the counts of finished, timed-out, refused and erroneous runs;
 the geometric mean and median of the runtime ratio over the formulas both finish; the ratio per
 family with its extremes; the fifteen formulas where the verified evaluator is slowest relative
-to MonPoly and the ten where it is fastest; every timeout, refusal and error; and the full table.
+to MonPoly and the ten where it is fastest; every timeout, refusal and error; and the full table
+with each formula's reason.
 The verdicts of the two systems are hashed and compared, and disagreements are listed.

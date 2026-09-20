@@ -1,1 +1,0 @@
-A(x,y) AND NOT (C(x) SINCE[0,20] B(x,y))

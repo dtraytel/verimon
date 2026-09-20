@@ -1,1 +1,0 @@
-(r <- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 < r
