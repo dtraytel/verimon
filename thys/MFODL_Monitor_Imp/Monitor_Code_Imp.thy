@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Imp
-  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt Dense_Descend_Code
+  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt Dense_Descend_Code Dense_Unbox_Exec
     "MFODL_Monitor_Devel.Monitor_Code"
 begin
 (*>*)
@@ -71,8 +71,6 @@ export_code
   (*basic types*)
   nat_of_integer integer_of_nat int_of_integer integer_of_int enat
   interval RBT_set Sum_Type.Inl
-  (*the wide database, for the verified dense monitor below*)
-  empty_db insert_table_into_db table_of_list rbt_fold
   (*term, formula, and regex constructors*)
   EInt Formula.Var Formula.Agg_Cnt Formula.Pred Regex.Skip Regex.Wild Typing.TAny Formula.TInt
   (*the front end's own functions on formulas*)
@@ -80,8 +78,8 @@ export_code
   (*the monitor and its database, both over the tuples without their empty columns*)
   minit_safe_d mstep_d dfail_nodes
   utable_of_list uempty_db uinsert_table_into_db urbt_fold
-  (*the verified dense monitor, over the kernel's wide tables*)
-  dminit_safe dmstep vdfail_nodes dmstate_m
+  (*the verified dense monitor, over the short tuples*)
+  udminit_safe udmstep uvdfail_nodes udmstate_m
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)

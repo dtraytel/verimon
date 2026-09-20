@@ -1851,7 +1851,7 @@ proof -
       using True by (simp add: eval_agg_def dtabc_def singleton_table_def mc)
     also have "\<dots> = {[Some ?z]}"
       using yn by (simp add: dproj_wide_mask_eq_map_nth[where cs="[y]"])
-    finally show ?thesis using e g by (simp add: dagg_def dtabc_def uagg_def deopt_table_def Set.is_empty_iff)
+    finally show ?thesis using e g by (simp add: dagg_def dtabc_def uagg_def deopt_table_def reopt_table_def Set.is_empty_iff)
   next
     case False
     then have ne: "\<not> (g0 \<and> rel = empty_table)" by simp
