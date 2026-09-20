@@ -340,6 +340,7 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("image", "edl_image_to_wide", ["event_data list", "event_data option list"])]
   ["edl_dict_simps", "etuple_dict_simps"]\<close>
 
+
 setup \<open>Monomorphize.monomorphize_cmd
   ([("Set.member", "edl_member", [edl]),
     ("Set.insert", "edl_insert", [edl]),
@@ -367,6 +368,25 @@ setup \<open>Monomorphize.monomorphize_cmd
         ("RBT_Mapping2.delete", "edl_rbt_delete_" ^ tn, [edl, ty]),
         ("RBT_Mapping2.join", "edl_rbt_join_" ^ tn, [edl, ty])]) edl_value_types)
   ["edl_dict_simps"]\<close>
+
+text \<open>An image passes @{const Set.insert} to the tree's fold unapplied, where the redirection
+  to the specialised insertion does not reach it; the equations on a tree name it.\<close>
+
+lemma edl_image_of_wide_rbt[code]:
+  "edl_image_of_wide h (RBT_set rbt) = RBT_Set2.fold (\<lambda>x. edl_insert (h x)) rbt {}"
+  unfolding edl_image_of_wide_def edl_insert_def
+  by (simp add: Set_image_code(1) etuple_dict_simps comp_def)
+
+lemma edl_image_rbt[code]:
+  "edl_image h (RBT_set rbt) = RBT_Set2.fold (\<lambda>x. edl_insert (h x)) rbt {}"
+  unfolding edl_image_def edl_insert_def
+  by (simp add: Set_image_code(1) edl_dict_simps comp_def)
+
+lemma edl_image_to_wide_rbt[code]:
+  "edl_image_to_wide h (RBT_set rbt) = RBT_Set2.fold (\<lambda>x. ed_insert (h x)) rbt {}"
+  unfolding edl_image_to_wide_def ed_insert_def
+  by (simp add: Set_image_code(1) edl_dict_simps comp_def)
+
 
 text \<open>As above, the projection out of a mapping's tree has to be boxed at every value type, or
   the monomorphised lookup moves the per-call dictionary build one frame down into it.\<close>
