@@ -1,0 +1,1 @@
+A(x,y) AND B(y,z) AND NOT A(z,x)

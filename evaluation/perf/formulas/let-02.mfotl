@@ -1,0 +1,1 @@
+LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,5] Q(y,x)

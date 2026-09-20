@@ -1,0 +1,1 @@
+A(x,y) AND x < 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y))

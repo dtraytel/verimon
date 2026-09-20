@@ -1,0 +1,1 @@
+C(x) AND (EXISTS y. ONCE[0,20] A(x,y))

@@ -1,0 +1,1 @@
+B(x,y) AND (C(x) UNTIL[0,500] A(x,y))

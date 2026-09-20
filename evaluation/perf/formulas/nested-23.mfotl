@@ -1,0 +1,1 @@
+A(x,y) AND (ONCE[0,20] B(x,y)) AND (EVENTUALLY[0,20] B(x,y))

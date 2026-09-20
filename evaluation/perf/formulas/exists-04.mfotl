@@ -1,0 +1,1 @@
+C(x) AND (EXISTS y. A(x,y) AND B(y,x))

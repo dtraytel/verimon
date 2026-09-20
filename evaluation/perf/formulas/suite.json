@@ -1,0 +1,2923 @@
+[
+ {
+  "name": "join-01",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(x,y)",
+  "params": {
+   "shape": "2 preds, 2 shared"
+  }
+ },
+ {
+  "name": "join-02",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join-03",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,x)",
+  "params": {
+   "shape": "2 preds, swapped"
+  }
+ },
+ {
+  "name": "join-04",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(z,x)",
+  "params": {
+   "shape": "2 preds, 1 shared, first column"
+  }
+ },
+ {
+  "name": "join-05",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join-06",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND C(x)",
+  "params": {
+   "shape": "3 preds, chain + unary"
+  }
+ },
+ {
+  "name": "join-07",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND A(z,w)",
+  "params": {
+   "shape": "3 preds, chain, self-join"
+  }
+ },
+ {
+  "name": "join-08",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND A(z,w) AND B(w,v)",
+  "params": {
+   "shape": "4 preds, chain"
+  }
+ },
+ {
+  "name": "join-09",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND D(y,z,w)",
+  "params": {
+   "shape": "binary with ternary"
+  }
+ },
+ {
+  "name": "join-10",
+  "family": "join",
+  "log": "base",
+  "formula": "D(x,y,z) AND D(z,y,x)",
+  "params": {
+   "shape": "ternary self-join, permuted"
+  }
+ },
+ {
+  "name": "join-11",
+  "family": "join",
+  "log": "base",
+  "formula": "D(x,y,z) AND A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "ternary with two binaries"
+  }
+ },
+ {
+  "name": "join-12",
+  "family": "join",
+  "log": "base",
+  "formula": "A(x,y) AND B(x,y) AND C(x) AND C(y)",
+  "params": {
+   "shape": "4 preds, star"
+  }
+ },
+ {
+  "name": "join_rate-01",
+  "family": "join_rate",
+  "log": "rate10",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_rate-02",
+  "family": "join_rate",
+  "log": "rate10",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_rate-03",
+  "family": "join_rate",
+  "log": "rate20",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_rate-04",
+  "family": "join_rate",
+  "log": "rate20",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_rate-05",
+  "family": "join_rate",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_rate-06",
+  "family": "join_rate",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_rate-07",
+  "family": "join_rate",
+  "log": "rate80",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_rate-08",
+  "family": "join_rate",
+  "log": "rate80",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_dom-01",
+  "family": "join_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_dom-02",
+  "family": "join_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND B(x,y)",
+  "params": {
+   "shape": "2 preds, 2 shared"
+  }
+ },
+ {
+  "name": "join_dom-03",
+  "family": "join_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_dom-04",
+  "family": "join_dom",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_dom-05",
+  "family": "join_dom",
+  "log": "base",
+  "formula": "A(x,y) AND B(x,y)",
+  "params": {
+   "shape": "2 preds, 2 shared"
+  }
+ },
+ {
+  "name": "join_dom-06",
+  "family": "join_dom",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "join_dom-07",
+  "family": "join_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND B(y,z)",
+  "params": {
+   "shape": "2 preds, 1 shared"
+  }
+ },
+ {
+  "name": "join_dom-08",
+  "family": "join_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND B(x,y)",
+  "params": {
+   "shape": "2 preds, 2 shared"
+  }
+ },
+ {
+  "name": "join_dom-09",
+  "family": "join_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND B(y,z) AND C(z)",
+  "params": {
+   "shape": "3 preds, chain"
+  }
+ },
+ {
+  "name": "andnot-01",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND NOT B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "andnot-02",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND NOT C(x)",
+  "params": {}
+ },
+ {
+  "name": "andnot-03",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND NOT C(y)",
+  "params": {}
+ },
+ {
+  "name": "andnot-04",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND NOT B(y,x)",
+  "params": {}
+ },
+ {
+  "name": "andnot-05",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND NOT (EXISTS z. B(x,z))",
+  "params": {}
+ },
+ {
+  "name": "andnot-06",
+  "family": "andnot",
+  "log": "base",
+  "formula": "D(x,y,z) AND NOT A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "andnot-07",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND NOT C(z)",
+  "params": {}
+ },
+ {
+  "name": "andnot-08",
+  "family": "andnot",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND NOT A(z,x)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-01",
+  "family": "andnot_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND NOT B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-02",
+  "family": "andnot_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND NOT C(x)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-03",
+  "family": "andnot_dom",
+  "log": "base",
+  "formula": "A(x,y) AND NOT B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-04",
+  "family": "andnot_dom",
+  "log": "base",
+  "formula": "A(x,y) AND NOT C(x)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-05",
+  "family": "andnot_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND NOT B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "andnot_dom-06",
+  "family": "andnot_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND NOT C(x)",
+  "params": {}
+ },
+ {
+  "name": "rel-01",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND x < y",
+  "params": {}
+ },
+ {
+  "name": "rel-02",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND x < 20",
+  "params": {}
+ },
+ {
+  "name": "rel-03",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND x = y",
+  "params": {}
+ },
+ {
+  "name": "rel-04",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND NOT x < y",
+  "params": {}
+ },
+ {
+  "name": "rel-05",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND z = x + y",
+  "params": {}
+ },
+ {
+  "name": "rel-06",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND z = 2 * x",
+  "params": {}
+ },
+ {
+  "name": "rel-07",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND z = x - y",
+  "params": {}
+ },
+ {
+  "name": "rel-08",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND x < z",
+  "params": {}
+ },
+ {
+  "name": "rel-09",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND w = x + z",
+  "params": {}
+ },
+ {
+  "name": "rel-10",
+  "family": "rel",
+  "log": "base",
+  "formula": "A(x,y) AND x < y AND y < 100",
+  "params": {}
+ },
+ {
+  "name": "or-01",
+  "family": "or",
+  "log": "base",
+  "formula": "A(x,y) OR B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "or-02",
+  "family": "or",
+  "log": "base",
+  "formula": "(A(x,y) AND x < 100) OR (B(x,y) AND y < 100)",
+  "params": {}
+ },
+ {
+  "name": "or-03",
+  "family": "or",
+  "log": "base",
+  "formula": "A(x,y) OR B(y,x)",
+  "params": {}
+ },
+ {
+  "name": "or-04",
+  "family": "or",
+  "log": "base",
+  "formula": "(A(x,y) AND NOT C(x)) OR (B(x,y) AND NOT C(y))",
+  "params": {}
+ },
+ {
+  "name": "exists-01",
+  "family": "exists",
+  "log": "base",
+  "formula": "EXISTS y. A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "exists-02",
+  "family": "exists",
+  "log": "base",
+  "formula": "(EXISTS x. A(x,y)) AND B(y,z)",
+  "params": {}
+ },
+ {
+  "name": "exists-03",
+  "family": "exists",
+  "log": "base",
+  "formula": "EXISTS x. EXISTS y. A(x,y) AND B(y,z)",
+  "params": {}
+ },
+ {
+  "name": "exists-04",
+  "family": "exists",
+  "log": "base",
+  "formula": "C(x) AND (EXISTS y. A(x,y) AND B(y,x))",
+  "params": {}
+ },
+ {
+  "name": "exists-05",
+  "family": "exists",
+  "log": "base",
+  "formula": "EXISTS z. D(x,y,z)",
+  "params": {}
+ },
+ {
+  "name": "exists-06",
+  "family": "exists",
+  "log": "base",
+  "formula": "(EXISTS z. D(x,y,z)) AND NOT A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-01",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "PREV[0,1] C(x)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-02",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "NEXT[0,1] C(x)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-03",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "A(x,y) AND PREV[0,1] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-04",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "A(x,y) AND NEXT[0,1] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-05",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "A(x,y) AND PREV[0,1] (B(x,z) AND C(z))",
+  "params": {}
+ },
+ {
+  "name": "prevnext-06",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "PREV[0,1] PREV[0,1] C(x)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-07",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "A(x,y) AND NOT PREV[0,1] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-08",
+  "family": "prevnext",
+  "log": "base",
+  "formula": "A(x,y) AND NOT NEXT[0,1] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-09",
+  "family": "prevnext",
+  "log": "burst",
+  "formula": "A(x,y) AND PREV[0,0] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-10",
+  "family": "prevnext",
+  "log": "burst",
+  "formula": "A(x,y) AND NEXT[0,0] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "prevnext-11",
+  "family": "prevnext",
+  "log": "burst",
+  "formula": "A(x,y) AND PREV[1,1] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_raw-01",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,0] C(x)",
+  "params": {
+   "b": 0
+  }
+ },
+ {
+  "name": "once_raw-02",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,1] C(x)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "once_raw-03",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,2] C(x)",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "once_raw-04",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,5] C(x)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "once_raw-05",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,10] C(x)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "once_raw-06",
+  "family": "once_raw",
+  "log": "base",
+  "formula": "ONCE[0,20] C(x)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "once_guard-01",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,1] B(x,y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "once_guard-02",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,5] B(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "once_guard-03",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "once_guard-04",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,50] B(x,y)",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "once_guard-05",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,100] B(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "once_guard-06",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,200] B(x,y)",
+  "params": {
+   "b": 200
+  }
+ },
+ {
+  "name": "once_guard-07",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,500] B(x,y)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "once_guard-08",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,1000] B(x,y)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "once_guard-09",
+  "family": "once_guard",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,2000] B(x,y)",
+  "params": {
+   "b": 2000
+  }
+ },
+ {
+  "name": "once_first-01",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,5] A(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "once_first-02",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,20] A(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "once_first-03",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,50] A(x,y)",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "once_first-04",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "once_first-05",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,500] A(x,y)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "once_first-06",
+  "family": "once_first",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,2000] A(x,y)",
+  "params": {
+   "b": 2000
+  }
+ },
+ {
+  "name": "once_lb-01",
+  "family": "once_lb",
+  "log": "base",
+  "formula": "C(x) AND ONCE[1,21] A(x,y)",
+  "params": {
+   "a": 1
+  }
+ },
+ {
+  "name": "once_lb-02",
+  "family": "once_lb",
+  "log": "base",
+  "formula": "C(x) AND ONCE[5,25] A(x,y)",
+  "params": {
+   "a": 5
+  }
+ },
+ {
+  "name": "once_lb-03",
+  "family": "once_lb",
+  "log": "base",
+  "formula": "C(x) AND ONCE[20,40] A(x,y)",
+  "params": {
+   "a": 20
+  }
+ },
+ {
+  "name": "once_lb-04",
+  "family": "once_lb",
+  "log": "base",
+  "formula": "C(x) AND ONCE[100,120] A(x,y)",
+  "params": {
+   "a": 100
+  }
+ },
+ {
+  "name": "once_lb-05",
+  "family": "once_lb",
+  "log": "base",
+  "formula": "C(x) AND ONCE[500,520] A(x,y)",
+  "params": {
+   "a": 500
+  }
+ },
+ {
+  "name": "once_inf-01",
+  "family": "once_inf",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,*) B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_inf-02",
+  "family": "once_inf",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,*) A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_inf-03",
+  "family": "once_inf",
+  "log": "rate10",
+  "formula": "C(x) AND ONCE[10,*) B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_inf-04",
+  "family": "once_inf",
+  "log": "rate10",
+  "formula": "C(x) AND NOT ONCE[10,*) B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_exists-01",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND (EXISTS y. ONCE[0,5] A(x,y))",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "once_exists-02",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND NOT (EXISTS y. ONCE[1,5] A(x,y))",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "once_exists-03",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND (EXISTS y. ONCE[0,20] A(x,y))",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "once_exists-04",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND NOT (EXISTS y. ONCE[1,20] A(x,y))",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "once_exists-05",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND (EXISTS y. ONCE[0,50] A(x,y))",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "once_exists-06",
+  "family": "once_exists",
+  "log": "base",
+  "formula": "C(x) AND NOT (EXISTS y. ONCE[1,50] A(x,y))",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "once_rate-01",
+  "family": "once_rate",
+  "log": "rate10",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-02",
+  "family": "once_rate",
+  "log": "rate10",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-03",
+  "family": "once_rate",
+  "log": "rate20",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-04",
+  "family": "once_rate",
+  "log": "rate20",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-05",
+  "family": "once_rate",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-06",
+  "family": "once_rate",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-07",
+  "family": "once_rate",
+  "log": "rate80",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_rate-08",
+  "family": "once_rate",
+  "log": "rate80",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-01",
+  "family": "once_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-02",
+  "family": "once_dom",
+  "log": "dom50",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-03",
+  "family": "once_dom",
+  "log": "dom50",
+  "formula": "ONCE[0,5] C(x)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-04",
+  "family": "once_dom",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-05",
+  "family": "once_dom",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-06",
+  "family": "once_dom",
+  "log": "base",
+  "formula": "ONCE[0,5] C(x)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-07",
+  "family": "once_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND ONCE[0,20] B(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-08",
+  "family": "once_dom",
+  "log": "dom1000",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "once_dom-09",
+  "family": "once_dom",
+  "log": "dom1000",
+  "formula": "ONCE[0,5] C(x)",
+  "params": {}
+ },
+ {
+  "name": "since-01",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[0,5] B(x,y)",
+  "params": {
+   "b": 5,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "since-02",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[0,20] B(x,y)",
+  "params": {
+   "b": 20,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "since-03",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[0,100] B(x,y)",
+  "params": {
+   "b": 100,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "since-04",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[0,500] B(x,y)",
+  "params": {
+   "b": 500,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "since-05",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[0,2000] B(x,y)",
+  "params": {
+   "b": 2000,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "since-06",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) SINCE[0,5] A(x,y))",
+  "params": {
+   "b": 5,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "since-07",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) SINCE[0,20] A(x,y))",
+  "params": {
+   "b": 20,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "since-08",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) SINCE[0,100] A(x,y))",
+  "params": {
+   "b": 100,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "since-09",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) SINCE[0,500] A(x,y))",
+  "params": {
+   "b": 500,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "since-10",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) SINCE[0,5] A(x,y))",
+  "params": {
+   "b": 5,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "since-11",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) SINCE[0,20] A(x,y))",
+  "params": {
+   "b": 20,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "since-12",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) SINCE[0,100] A(x,y))",
+  "params": {
+   "b": 100,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "since-13",
+  "family": "since",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) SINCE[0,500] A(x,y))",
+  "params": {
+   "b": 500,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "since-14",
+  "family": "since",
+  "log": "base",
+  "formula": "C(x) AND ((NOT B(x,y)) SINCE[0,5] A(x,y))",
+  "params": {
+   "b": 5,
+   "shape": "negated binary left"
+  }
+ },
+ {
+  "name": "since-15",
+  "family": "since",
+  "log": "base",
+  "formula": "C(x) AND ((NOT B(x,y)) SINCE[0,20] A(x,y))",
+  "params": {
+   "b": 20,
+   "shape": "negated binary left"
+  }
+ },
+ {
+  "name": "since-16",
+  "family": "since",
+  "log": "base",
+  "formula": "C(x) AND ((NOT B(x,y)) SINCE[0,100] A(x,y))",
+  "params": {
+   "b": 100,
+   "shape": "negated binary left"
+  }
+ },
+ {
+  "name": "since-17",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[2,5] B(x,y)",
+  "params": {
+   "b": 5,
+   "shape": "positive lower bound"
+  }
+ },
+ {
+  "name": "since-18",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[2,100] B(x,y)",
+  "params": {
+   "b": 100,
+   "shape": "positive lower bound"
+  }
+ },
+ {
+  "name": "since-19",
+  "family": "since",
+  "log": "base",
+  "formula": "A(x,y) SINCE[2,500] B(x,y)",
+  "params": {
+   "b": 500,
+   "shape": "positive lower bound"
+  }
+ },
+ {
+  "name": "since-20",
+  "family": "since",
+  "log": "base",
+  "formula": "C(x) SINCE[5,*) A(x,y)",
+  "params": {
+   "b": 5,
+   "shape": "unbounded"
+  }
+ },
+ {
+  "name": "since-21",
+  "family": "since",
+  "log": "base",
+  "formula": "C(x) SINCE[100,*) A(x,y)",
+  "params": {
+   "b": 100,
+   "shape": "unbounded"
+  }
+ },
+ {
+  "name": "eventually-01",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,1] B(x,y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "eventually-02",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,5] B(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "eventually-03",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,20] B(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "eventually-04",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,100] B(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "eventually-05",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,500] B(x,y)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "eventually-06",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,1] B(x,y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "eventually-07",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,5] B(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "eventually-08",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,20] B(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "eventually-09",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,100] B(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "eventually-10",
+  "family": "eventually",
+  "log": "base",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,500] B(x,y)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "eventually_raw-01",
+  "family": "eventually_raw",
+  "log": "base",
+  "formula": "EVENTUALLY[0,0] C(x)",
+  "params": {
+   "b": 0
+  }
+ },
+ {
+  "name": "eventually_raw-02",
+  "family": "eventually_raw",
+  "log": "base",
+  "formula": "EVENTUALLY[0,1] C(x)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "eventually_raw-03",
+  "family": "eventually_raw",
+  "log": "base",
+  "formula": "EVENTUALLY[0,2] C(x)",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "eventually_raw-04",
+  "family": "eventually_raw",
+  "log": "base",
+  "formula": "EVENTUALLY[0,5] C(x)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "eventually_raw-05",
+  "family": "eventually_raw",
+  "log": "base",
+  "formula": "EVENTUALLY[0,10] C(x)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "eventually_burst-01",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,0] B(x,y)",
+  "params": {
+   "b": 0
+  }
+ },
+ {
+  "name": "eventually_burst-02",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,1] B(x,y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "eventually_burst-03",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,2] B(x,y)",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "eventually_burst-04",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,5] B(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "eventually_burst-05",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,10] B(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "eventually_burst-06",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,20] B(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "eventually_burst-07",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,0] C(y)",
+  "params": {
+   "b": 0
+  }
+ },
+ {
+  "name": "eventually_burst-08",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,1] C(y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "eventually_burst-09",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,2] C(y)",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "eventually_burst-10",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,5] C(y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "eventually_burst-11",
+  "family": "eventually_burst",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,10] C(y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "until-01",
+  "family": "until",
+  "log": "base",
+  "formula": "A(x,y) UNTIL[0,5] B(x,y)",
+  "params": {
+   "b": 5,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "until-02",
+  "family": "until",
+  "log": "base",
+  "formula": "A(x,y) UNTIL[0,20] B(x,y)",
+  "params": {
+   "b": 20,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "until-03",
+  "family": "until",
+  "log": "base",
+  "formula": "A(x,y) UNTIL[0,100] B(x,y)",
+  "params": {
+   "b": 100,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "until-04",
+  "family": "until",
+  "log": "base",
+  "formula": "A(x,y) UNTIL[0,500] B(x,y)",
+  "params": {
+   "b": 500,
+   "shape": "both binary"
+  }
+ },
+ {
+  "name": "until-05",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,5] A(x,y))",
+  "params": {
+   "b": 5,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "until-06",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,20] A(x,y))",
+  "params": {
+   "b": 20,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "until-07",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,100] A(x,y))",
+  "params": {
+   "b": 100,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "until-08",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,500] A(x,y))",
+  "params": {
+   "b": 500,
+   "shape": "unary left"
+  }
+ },
+ {
+  "name": "until-09",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) UNTIL[0,5] A(x,y))",
+  "params": {
+   "b": 5,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "until-10",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) UNTIL[0,20] A(x,y))",
+  "params": {
+   "b": 20,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "until-11",
+  "family": "until",
+  "log": "base",
+  "formula": "B(x,y) AND ((NOT C(x)) UNTIL[0,100] A(x,y))",
+  "params": {
+   "b": 100,
+   "shape": "negated unary left"
+  }
+ },
+ {
+  "name": "until_burst-01",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "A(x,y) UNTIL[0,1] B(x,y)",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "until_burst-02",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,1] A(x,y))",
+  "params": {
+   "b": 1
+  }
+ },
+ {
+  "name": "until_burst-03",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "A(x,y) UNTIL[0,2] B(x,y)",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "until_burst-04",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,2] A(x,y))",
+  "params": {
+   "b": 2
+  }
+ },
+ {
+  "name": "until_burst-05",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "A(x,y) UNTIL[0,5] B(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "until_burst-06",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,5] A(x,y))",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "until_burst-07",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "A(x,y) UNTIL[0,10] B(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "until_burst-08",
+  "family": "until_burst",
+  "log": "burst",
+  "formula": "B(x,y) AND (C(x) UNTIL[0,10] A(x,y))",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "nested-01",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,5] (B(y,z) AND ONCE[0,5] C(z))",
+  "params": {
+   "b": 5,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-02",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] (B(y,z) AND ONCE[0,5] C(z))",
+  "params": {
+   "b": 20,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-03",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] (B(y,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 20,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-04",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,50] (B(y,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 50,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-05",
+  "family": "nested",
+  "log": "rate10",
+  "formula": "A(x,y) AND ONCE[0,100] (B(y,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 100,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-06",
+  "family": "nested",
+  "log": "rate10",
+  "formula": "A(x,y) AND ONCE[0,100] (B(y,z) AND ONCE[0,100] C(z))",
+  "params": {
+   "b": 100,
+   "c": 100
+  }
+ },
+ {
+  "name": "nested-07",
+  "family": "nested",
+  "log": "rate10",
+  "formula": "A(x,y) AND ONCE[0,500] (B(y,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 500,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-08",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,5] (B(x,z) AND ONCE[0,5] C(z))",
+  "params": {
+   "b": 5,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-09",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,20] (B(x,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 20,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-10",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND EVENTUALLY[0,50] (B(x,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 50,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-11",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,5] (B(x,z) AND EVENTUALLY[0,5] C(z))",
+  "params": {
+   "b": 5,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-12",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,20] (B(x,z) AND EVENTUALLY[0,20] C(z))",
+  "params": {
+   "b": 20,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-13",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,50] (B(x,z) AND EVENTUALLY[0,20] C(z))",
+  "params": {
+   "b": 50,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-14",
+  "family": "nested",
+  "log": "rate10",
+  "formula": "A(x,y) AND EVENTUALLY[0,100] (B(x,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 100,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-15",
+  "family": "nested",
+  "log": "rate10",
+  "formula": "A(x,y) AND EVENTUALLY[0,500] (B(x,z) AND ONCE[0,20] C(z))",
+  "params": {
+   "b": 500,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-16",
+  "family": "nested",
+  "log": "base",
+  "formula": "C(x) AND ((ONCE[0,5] A(x,y)) SINCE[0,5] B(x,y))",
+  "params": {
+   "b": 5,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-17",
+  "family": "nested",
+  "log": "base",
+  "formula": "C(x) AND ((ONCE[0,20] A(x,y)) SINCE[0,20] B(x,y))",
+  "params": {
+   "b": 20,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-18",
+  "family": "nested",
+  "log": "base",
+  "formula": "C(x) AND ((ONCE[0,100] A(x,y)) SINCE[0,100] B(x,y))",
+  "params": {
+   "b": 100,
+   "c": 100
+  }
+ },
+ {
+  "name": "nested-19",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ((B(x,y) SINCE[0,5] A(x,y)) AND ONCE[0,5] C(y))",
+  "params": {
+   "b": 5,
+   "c": 5
+  }
+ },
+ {
+  "name": "nested-20",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND NOT ((B(x,y) SINCE[0,20] A(x,y)) AND ONCE[0,20] C(y))",
+  "params": {
+   "b": 20,
+   "c": 20
+  }
+ },
+ {
+  "name": "nested-21",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND NOT (C(x) SINCE[0,20] B(x,y))",
+  "params": {}
+ },
+ {
+  "name": "nested-22",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND NOT (C(x) UNTIL[0,20] B(x,y))",
+  "params": {}
+ },
+ {
+  "name": "nested-23",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND (ONCE[0,20] B(x,y)) AND (EVENTUALLY[0,20] B(x,y))",
+  "params": {}
+ },
+ {
+  "name": "nested-24",
+  "family": "nested",
+  "log": "base",
+  "formula": "A(x,y) AND (ONCE[0,20] B(x,y)) AND NOT (EVENTUALLY[0,20] B(x,y))",
+  "params": {}
+ },
+ {
+  "name": "agg-01",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- CNT y; x A(x,y)",
+  "params": {
+   "op": "CNT",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-02",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- SUM y; x A(x,y)",
+  "params": {
+   "op": "SUM",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-03",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- MIN y; x A(x,y)",
+  "params": {
+   "op": "MIN",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-04",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- MAX y; x A(x,y)",
+  "params": {
+   "op": "MAX",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-05",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- AVG y; x A(x,y)",
+  "params": {
+   "op": "AVG",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-06",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- MED y; x A(x,y)",
+  "params": {
+   "op": "MED",
+   "shape": "grouped, one time point"
+  }
+ },
+ {
+  "name": "agg-07",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- CNT y A(x,y)",
+  "params": {
+   "op": "CNT",
+   "shape": "no group"
+  }
+ },
+ {
+  "name": "agg-08",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- SUM y A(x,y)",
+  "params": {
+   "op": "SUM",
+   "shape": "no group"
+  }
+ },
+ {
+  "name": "agg-09",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- MAX y A(x,y)",
+  "params": {
+   "op": "MAX",
+   "shape": "no group"
+  }
+ },
+ {
+  "name": "agg-10",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- CNT z; x (A(x,y) AND B(y,z))",
+  "params": {
+   "op": "CNT",
+   "shape": "grouped join"
+  }
+ },
+ {
+  "name": "agg-11",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- SUM z; x (A(x,y) AND B(y,z))",
+  "params": {
+   "op": "SUM",
+   "shape": "grouped join"
+  }
+ },
+ {
+  "name": "agg-12",
+  "family": "agg",
+  "log": "base",
+  "formula": "r <- MAX z; x (A(x,y) AND B(y,z))",
+  "params": {
+   "op": "MAX",
+   "shape": "grouped join"
+  }
+ },
+ {
+  "name": "agg_once-01",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "CNT",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-02",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "CNT",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once-03",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,500] A(x,y)",
+  "params": {
+   "op": "CNT",
+   "b": 500
+  }
+ },
+ {
+  "name": "agg_once-04",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- SUM y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "SUM",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-05",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- SUM y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "SUM",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once-06",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- SUM y; x ONCE[0,500] A(x,y)",
+  "params": {
+   "op": "SUM",
+   "b": 500
+  }
+ },
+ {
+  "name": "agg_once-07",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MIN y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "MIN",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-08",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MIN y; x ONCE[0,20] A(x,y)",
+  "params": {
+   "op": "MIN",
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once-09",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MIN y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "MIN",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once-10",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MAX y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "MAX",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-11",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MAX y; x ONCE[0,20] A(x,y)",
+  "params": {
+   "op": "MAX",
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once-12",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MAX y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "MAX",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once-13",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- AVG y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "AVG",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-14",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- AVG y; x ONCE[0,20] A(x,y)",
+  "params": {
+   "op": "AVG",
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once-15",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- AVG y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "AVG",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once-16",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MED y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "op": "MED",
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once-17",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MED y; x ONCE[0,20] A(x,y)",
+  "params": {
+   "op": "MED",
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once-18",
+  "family": "agg_once",
+  "log": "base",
+  "formula": "r <- MED y; x ONCE[0,50] A(x,y)",
+  "params": {
+   "op": "MED",
+   "b": 50
+  }
+ },
+ {
+  "name": "agg_once_cnt-01",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,5] C(x)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once_cnt-02",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,20] C(x)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once_cnt-03",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "agg_once_cnt-04",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,500] C(x)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "agg_once_cnt-05",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,2000] C(x)",
+  "params": {
+   "b": 2000
+  }
+ },
+ {
+  "name": "agg_once_cnt-06",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,5] A(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once_cnt-07",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,20] A(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_once_cnt-08",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,100] A(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "agg_once_cnt-09",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT y; x ONCE[0,500] A(x,y)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "agg_once_cnt-10",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT z; x,y ONCE[0,5] D(x,y,z)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_once_cnt-11",
+  "family": "agg_once_cnt",
+  "log": "base",
+  "formula": "r <- CNT z; x,y ONCE[0,20] D(x,y,z)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_dom-01",
+  "family": "agg_dom",
+  "log": "dom50",
+  "formula": "r <- CNT y; x A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-02",
+  "family": "agg_dom",
+  "log": "dom50",
+  "formula": "r <- SUM y; x ONCE[0,5] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-03",
+  "family": "agg_dom",
+  "log": "dom50",
+  "formula": "r <- CNT x ONCE[0,20] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-04",
+  "family": "agg_dom",
+  "log": "base",
+  "formula": "r <- CNT y; x A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-05",
+  "family": "agg_dom",
+  "log": "base",
+  "formula": "r <- SUM y; x ONCE[0,5] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-06",
+  "family": "agg_dom",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,20] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-07",
+  "family": "agg_dom",
+  "log": "dom1000",
+  "formula": "r <- CNT y; x A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-08",
+  "family": "agg_dom",
+  "log": "dom1000",
+  "formula": "r <- SUM y; x ONCE[0,5] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_dom-09",
+  "family": "agg_dom",
+  "log": "dom1000",
+  "formula": "r <- CNT x ONCE[0,20] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-01",
+  "family": "agg_rate",
+  "log": "rate10",
+  "formula": "r <- SUM y; x ONCE[0,20] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-02",
+  "family": "agg_rate",
+  "log": "rate10",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-03",
+  "family": "agg_rate",
+  "log": "rate20",
+  "formula": "r <- SUM y; x ONCE[0,20] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-04",
+  "family": "agg_rate",
+  "log": "rate20",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-05",
+  "family": "agg_rate",
+  "log": "base",
+  "formula": "r <- SUM y; x ONCE[0,20] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-06",
+  "family": "agg_rate",
+  "log": "base",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-07",
+  "family": "agg_rate",
+  "log": "rate80",
+  "formula": "r <- SUM y; x ONCE[0,20] A(x,y)",
+  "params": {}
+ },
+ {
+  "name": "agg_rate-08",
+  "family": "agg_rate",
+  "log": "rate80",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {}
+ },
+ {
+  "name": "agg_ev-01",
+  "family": "agg_ev",
+  "log": "base",
+  "formula": "r <- CNT y; x EVENTUALLY[0,5] A(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_ev-02",
+  "family": "agg_ev",
+  "log": "base",
+  "formula": "r <- SUM y; x EVENTUALLY[0,5] A(x,y)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "agg_ev-03",
+  "family": "agg_ev",
+  "log": "base",
+  "formula": "r <- CNT y; x EVENTUALLY[0,20] A(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_ev-04",
+  "family": "agg_ev",
+  "log": "base",
+  "formula": "r <- SUM y; x EVENTUALLY[0,20] A(x,y)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "agg_guard-01",
+  "family": "agg_guard",
+  "log": "base",
+  "formula": "A(x,y) AND (r <- CNT z; y B(y,z)) AND r < 3",
+  "params": {}
+ },
+ {
+  "name": "agg_guard-02",
+  "family": "agg_guard",
+  "log": "base",
+  "formula": "C(x) AND (r <- SUM y; x ONCE[0,20] A(x,y)) AND r < 500",
+  "params": {}
+ },
+ {
+  "name": "agg_guard-03",
+  "family": "agg_guard",
+  "log": "base",
+  "formula": "(r <- CNT y; x ONCE[0,20] A(x,y)) AND NOT C(x)",
+  "params": {}
+ },
+ {
+  "name": "let-01",
+  "family": "let",
+  "log": "base",
+  "formula": "LET P(x) = ONCE[0,5] C(x) IN A(x,y) AND P(x)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "let-02",
+  "family": "let",
+  "log": "base",
+  "formula": "LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,5] Q(y,x)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "let-03",
+  "family": "let",
+  "log": "base",
+  "formula": "LET P(x) = ONCE[0,50] C(x) IN A(x,y) AND P(x)",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "let-04",
+  "family": "let",
+  "log": "base",
+  "formula": "LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,50] Q(y,x)",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "let-05",
+  "family": "let",
+  "log": "base",
+  "formula": "LET P(x) = ONCE[0,500] C(x) IN A(x,y) AND P(x)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "let-06",
+  "family": "let",
+  "log": "base",
+  "formula": "LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,500] Q(y,x)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "let-07",
+  "family": "let",
+  "log": "base",
+  "formula": "LET P(x) = C(x) AND NOT (EXISTS y. A(x,y)) IN B(x,y) AND P(x)",
+  "params": {}
+ },
+ {
+  "name": "let-08",
+  "family": "let",
+  "log": "base",
+  "formula": "LET P(x,y) = A(x,y) AND NOT B(x,y) IN LET Q(x) = EXISTS y. P(x,y) IN C(x) AND Q(x)",
+  "params": {}
+ },
+ {
+  "name": "wide-01",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,5] D(x,y,z)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "wide-02",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,20] D(x,y,z)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "wide-03",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,100] D(x,y,z)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "wide-04",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,500] D(x,y,z)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "wide-05",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND NOT ONCE[1,5] D(x,y,z)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "wide-06",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND NOT ONCE[1,20] D(x,y,z)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "wide-07",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND NOT ONCE[1,100] D(x,y,z)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "wide-08",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND NOT ONCE[1,500] D(x,y,z)",
+  "params": {
+   "b": 500
+  }
+ },
+ {
+  "name": "wide-09",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND EVENTUALLY[0,5] D(x,y,z)",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "wide-10",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND EVENTUALLY[0,20] D(x,y,z)",
+  "params": {
+   "b": 20
+  }
+ },
+ {
+  "name": "wide-11",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND EVENTUALLY[0,100] D(x,y,z)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "wide-12",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,5] (A(x,y) AND B(y,z))",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "wide-13",
+  "family": "wide",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,5] (EXISTS z. D(x,y,z))",
+  "params": {
+   "b": 5
+  }
+ },
+ {
+  "name": "wide-14",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) AND ONCE[0,50] (A(x,y) AND B(y,z))",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "wide-15",
+  "family": "wide",
+  "log": "base",
+  "formula": "A(x,y) AND ONCE[0,50] (EXISTS z. D(x,y,z))",
+  "params": {
+   "b": 50
+  }
+ },
+ {
+  "name": "wide-16",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) SINCE[0,20] D(z,y,x)",
+  "params": {}
+ },
+ {
+  "name": "wide-17",
+  "family": "wide",
+  "log": "base",
+  "formula": "D(x,y,z) UNTIL[0,20] D(z,y,x)",
+  "params": {}
+ },
+ {
+  "name": "long-01",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND ONCE[0,10] B(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-02",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND ONCE[0,100] B(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-03",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND ONCE[0,1000] B(x,y)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "long-04",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND ONCE[0,10000] B(x,y)",
+  "params": {
+   "b": 10000
+  }
+ },
+ {
+  "name": "long-05",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT ONCE[1,10] A(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-06",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT ONCE[1,100] A(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-07",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT ONCE[1,1000] A(x,y)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "long-08",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT ONCE[1,10000] A(x,y)",
+  "params": {
+   "b": 10000
+  }
+ },
+ {
+  "name": "long-09",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,10] B(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-10",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,100] B(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-11",
+  "family": "long",
+  "log": "long",
+  "formula": "A(x,y) AND NOT EVENTUALLY[0,1000] B(x,y)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "long-12",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- CNT x ONCE[0,10] C(x)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-13",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- CNT x ONCE[0,100] C(x)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-14",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- CNT x ONCE[0,1000] C(x)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "long-15",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- CNT x ONCE[0,10000] C(x)",
+  "params": {
+   "b": 10000
+  }
+ },
+ {
+  "name": "long-16",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- SUM y; x ONCE[0,10] A(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-17",
+  "family": "long",
+  "log": "long",
+  "formula": "r <- SUM y; x ONCE[0,100] A(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-18",
+  "family": "long",
+  "log": "long",
+  "formula": "C(x) SINCE[0,10] A(x,y)",
+  "params": {
+   "b": 10
+  }
+ },
+ {
+  "name": "long-19",
+  "family": "long",
+  "log": "long",
+  "formula": "C(x) SINCE[0,100] A(x,y)",
+  "params": {
+   "b": 100
+  }
+ },
+ {
+  "name": "long-20",
+  "family": "long",
+  "log": "long",
+  "formula": "C(x) SINCE[0,1000] A(x,y)",
+  "params": {
+   "b": 1000
+  }
+ },
+ {
+  "name": "policy-01",
+  "family": "policy",
+  "log": "base",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,6] C(y)",
+  "params": {}
+ },
+ {
+  "name": "policy-02",
+  "family": "policy",
+  "log": "burst",
+  "formula": "(A(x,y) AND x < 100) AND NOT EVENTUALLY[0,6] C(y)",
+  "params": {}
+ },
+ {
+  "name": "policy-03",
+  "family": "policy",
+  "log": "base",
+  "formula": "A(x,y) AND x < 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y))",
+  "params": {}
+ },
+ {
+  "name": "policy-04",
+  "family": "policy",
+  "log": "burst",
+  "formula": "A(x,y) AND x < 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y))",
+  "params": {}
+ },
+ {
+  "name": "policy-05",
+  "family": "policy",
+  "log": "base",
+  "formula": "C(x) AND NOT (EXISTS y. ONCE[0,30] A(x,y) AND NOT ONCE[0,30] B(y,x))",
+  "params": {}
+ },
+ {
+  "name": "policy-06",
+  "family": "policy",
+  "log": "base",
+  "formula": "A(x,y) AND (EXISTS z. ONCE[0,10] (B(y,z) AND NOT ONCE[0,5] C(z)))",
+  "params": {}
+ },
+ {
+  "name": "policy-07",
+  "family": "policy",
+  "log": "base",
+  "formula": "(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r",
+  "params": {}
+ },
+ {
+  "name": "policy-08",
+  "family": "policy",
+  "log": "base",
+  "formula": "(r <- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 < r",
+  "params": {}
+ },
+ {
+  "name": "policy-09",
+  "family": "policy",
+  "log": "base",
+  "formula": "A(x,y) AND B(y,z) AND NOT ONCE[0,100] (A(x,y) AND B(y,z))",
+  "params": {}
+ },
+ {
+  "name": "policy-10",
+  "family": "policy",
+  "log": "base",
+  "formula": "A(x,y) AND ((NOT C(x)) SINCE[0,100] B(x,y)) AND NOT EVENTUALLY[0,10] C(y)",
+  "params": {}
+ },
+ {
+  "name": "policy-11",
+  "family": "policy",
+  "log": "burst",
+  "formula": "A(x,y) AND ((NOT C(x)) SINCE[0,10] B(x,y)) AND NOT EVENTUALLY[0,3] C(y)",
+  "params": {}
+ },
+ {
+  "name": "policy-12",
+  "family": "policy",
+  "log": "base",
+  "formula": "LET Bad(x) = ONCE[0,50] (C(x) AND NOT PREV[0,1] C(x)) IN A(x,y) AND Bad(x) AND NOT Bad(y)",
+  "params": {}
+ }
+]

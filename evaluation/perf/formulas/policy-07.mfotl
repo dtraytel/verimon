@@ -1,0 +1,1 @@
+(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r

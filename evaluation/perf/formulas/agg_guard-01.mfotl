@@ -1,0 +1,1 @@
+A(x,y) AND (r <- CNT z; y B(y,z)) AND r < 3
