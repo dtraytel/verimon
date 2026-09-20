@@ -1184,8 +1184,9 @@ lemma Rep_udof_state: "Rep_udmstate (udof_state n cs st) = dof_state n cs st"
 definition udminit_safe :: "ty Formula.formula \<Rightarrow> udmstate" where
   "udminit_safe \<phi> = udof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
 
-lemma Rep_udminit_safe: "Rep_udmstate (udminit_safe \<phi>) = dminit_safe \<phi>"
-  by (simp add: udminit_safe_def dminit_safe_def Rep_udof_state)
+lemma Rep_udminit_safe:
+  "Rep_udmstate (udminit_safe \<phi>) = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
+  by (simp add: udminit_safe_def Rep_udof_state)
 
 lemma vdfail_nodes_Rep_udmstate:
   "vdfail_nodes (dmstate_m (Rep_udmstate st)) = uvdfail_nodes (udmstate_m st)"
@@ -1210,7 +1211,15 @@ lemma dannotate_map:
 proof (induct vs arbitrary: i tq acc)
   case (Cons v vs)
   obtain a tq0 where h: "mbuf_t_cases tq = (a, tq0)" by (cases "mbuf_t_cases tq")
-  show ?case by (cases a) (auto simp: h rev_map Cons split: prod.splits)
+  show ?case
+  proof (cases a)
+    case None
+    then show ?thesis by (simp add: h rev_map)
+  next
+    case (Some t)
+    show ?thesis
+      using Cons[of "i + 1" tq0 "(i, t, v) # acc"] by (simp add: h Some split: prod.splits)
+  qed
 qed (simp add: rev_map)
 
 theorem udmstep_Rep:
@@ -1218,8 +1227,8 @@ theorem udmstep_Rep:
    = (case udmstep (db, t) st of
         (vs, st') \<Rightarrow> (map (\<lambda>(i, t, X). (i, t, reopt_table X)) vs, Rep_udmstate st'))"
 proof -
-  obtain xs m where e: "udeval (udmstate_j st + 1) [t] db (udmstate_m st) = (xs, m)"
-    by (cases "udeval (udmstate_j st + 1) [t] db (udmstate_m st)")
+  obtain xs m where e: "udeval (Suc (udmstate_j st)) [t] db (udmstate_m st) = (xs, m)"
+    by (cases "udeval (Suc (udmstate_j st)) [t] db (udmstate_m st)")
   obtain i' tq vs where d: "dannotate (udmstate_i st) (udmstate_t st @@ [t]) xs [] = (i', tq, vs)"
     by (metis prod_cases3)
   show ?thesis
