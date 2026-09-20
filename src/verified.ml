@@ -11093,6 +11093,13 @@ let rec de_ginit_mmtaux
                         (edl_bot,
                           (edl_mempty_nat, (edl_bot, edl_bot)))))))))));;
 
+let rec de_deopt_table
+  x = image ((ceq_list (ceq_option ceq_event_data)),
+              (ccompare_list (ccompare_option ccompare_event_data)))
+        ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+          set_impl_list)
+        deopt x;;
+
 let rec deopt_table (_A1, _A2)
   x = image ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
         ((ceq_list _A1), (ccompare_list _A2), set_impl_list) deopt x;;
@@ -11129,7 +11136,7 @@ let rec dformula_of
             else DPredM (e, size_lista tms, tms, cs)))
     | hp, n, cs, MRel rel ->
         (fun () ->
-          (DRel (deopt_table (ceq_event_data, ccompare_event_data)
+          (DRel (de_deopt_table
                   (dnarrow
                     ((ceq_option ceq_event_data),
                       (ccompare_option ccompare_event_data))
@@ -11401,19 +11408,10 @@ let rec dformula_of
                                    (wide_mask m (upt zero_nata m))))
                             alpha_s)))));;
 
-let rec gsw_init (_A1, _A2)
-  args =
-    (zero_nata,
-      (empty_queue,
-        (empty_queue,
-          (mapping_empty (ccompare_list _A2) (of_phantom mapping_impl_lista),
-            set_empty ((ceq_list _A1), (ccompare_list _A2))
-              (of_phantom set_impl_lista)))));;
+let rec de_gsw_init
+  args = (zero_nata, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))));;
 
-let rec usa_init
-  args p =
-    (gsw_init (ceq_event_data, ccompare_event_data) args,
-      ag_init p (args_n args));;
+let rec usa_init args p = (de_gsw_init args, ag_init p (args_n args));;
 
 let rec udsx_init_agg args p = UDSX_wagg (p, usa_init args p);;
 
@@ -11432,7 +11430,7 @@ let rec udux_init
 let rec udsx_init
   args msk =
     (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args)
-      then UDSX_win (gsw_init (ceq_event_data, ccompare_event_data) args)
+      then UDSX_win (de_gsw_init args)
       else UDSX_gen (de_ginit_msaux args msk));;
 
 let rec dagg_gcols
@@ -11443,7 +11441,7 @@ let rec dagg_gcols
 let rec udof
   n cs x2 = match n, cs, x2 with
     n, cs, MRel rel ->
-      UDRel (deopt_table (ceq_event_data, ccompare_event_data)
+      UDRel (de_deopt_table
               (dtabc
                 ((ceq_option ceq_event_data),
                   (ccompare_option ccompare_event_data))
@@ -11987,18 +11985,6 @@ let rec dannotate
           | (Some t, tqa) ->
             dannotate (plus_nata i one_nata) tqa vs ((i, (t, v)) :: acc));;
 
-let rec udwiden x0 xs = match x0, xs with [], xs -> []
-                  | false :: bs, xs -> None :: udwiden bs xs
-                  | true :: bs, x :: xs -> Some x :: udwiden bs xs
-                  | true :: bs, [] -> [];;
-
-let rec udtabw (_A1, _A2)
-  n cs d =
-    image ((ceq_list _A1), (ccompare_list _A2))
-      ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-        set_impl_list)
-      (udwiden (wide_mask n cs)) d;;
-
 let rec proj_tuple x0 x1 = match x0, x1 with [], [] -> []
                      | true :: bs, a :: asa -> a :: proj_tuple bs asa
                      | false :: bs, a :: asa -> None :: proj_tuple bs asa
@@ -12275,10 +12261,20 @@ let rec gcnt_add1 (_A1, _A2, _A3)
              (plus_nata k one_nata) c,
             s)));;
 
-let rec gcnt_add (_A1, _A2, _A3)
+let rec de_gcnt_add
   t cc =
-    fold (gcnt_add1 (_A1, _A2, _A3))
-      (csl (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) t) cc;;
+    fold (gcnt_add1 (ceq_event_data, ccompare_event_data, equal_event_data))
+      (csl (finite_UNIV_list, (ceq_list ceq_event_data),
+             (ccompare_list ccompare_event_data))
+        t)
+      cc;;
+
+let rec de_gsw_add_new_table
+  args x aux =
+    (let (t, (pend, (win, cc))) = aux in
+      (if memL (args_ivl args) zero_nata
+        then (t, (pend, (append_queue (t, x) win, de_gcnt_add x cc)))
+        else (t, (append_queue (t, x) pend, (win, cc)))));;
 
 let ed_fold_cfc_agg5_v :
   ((((event_data option) list),
@@ -12488,9 +12484,19 @@ let rec insert_maggauxa
         (let (v, auxa) = insert_maggaux args x aux in
           (if v && unbox ed_finite_v x then Some auxa else None));;
 
-let rec udagg_wide
-  p w d =
-    udtabw (ceq_event_data, ccompare_event_data) (suc w) (dagg_ccols p w) d;;
+let rec udwiden x0 xs = match x0, xs with [], xs -> []
+                  | false :: bs, xs -> None :: udwiden bs xs
+                  | true :: bs, x :: xs -> Some x :: udwiden bs xs
+                  | true :: bs, [] -> [];;
+
+let rec de_udtabw
+  n cs d =
+    image ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
+      ((ceq_list (ceq_option ceq_event_data)),
+        (ccompare_list (ccompare_option ccompare_event_data)), set_impl_list)
+      (udwiden (wide_mask n cs)) d;;
+
+let rec udagg_wide p w d = de_udtabw (suc w) (dagg_ccols p w) d;;
 
 let rec uag_ins
   p w t cc ax =
@@ -12500,29 +12506,14 @@ let rec usa_add_new_table
   args p x aux =
     (let ((t, (pend, (win, cc))), ax) = aux in
       (if memL (args_ivl args) zero_nata
-        then ((t, (pend,
-                    (append_queue (t, x) win,
-                      gcnt_add
-                        (ceq_event_data, ccompare_event_data, equal_event_data)
-                        x cc))),
+        then ((t, (pend, (append_queue (t, x) win, de_gcnt_add x cc))),
                uag_ins p (args_n args) x cc ax)
         else ((t, (append_queue (t, x) pend, (win, cc))), ax)));;
-
-let rec gsw_add_new_table (_A1, _A2, _A3)
-  args x aux =
-    (let (t, (pend, (win, cc))) = aux in
-      (if memL (args_ivl args) zero_nata
-        then (t, (pend,
-                   (append_queue (t, x) win, gcnt_add (_A1, _A2, _A3) x cc)))
-        else (t, (append_queue (t, x) pend, (win, cc)))));;
 
 let rec udsx_add_new_table
   args x xa2 = match args, x, xa2 with
     args, x, UDSX_gen d -> UDSX_gen (de_gadd_new_table_msaux args x d)
-    | args, x, UDSX_win w ->
-        UDSX_win
-          (gsw_add_new_table
-            (ceq_event_data, ccompare_event_data, equal_event_data) args x w)
+    | args, x, UDSX_win w -> UDSX_win (de_gsw_add_new_table args x w)
     | args, x, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_add_new_table args p x a);;
 
 let rec gcnt_del1 (_A1, _A2, _A3)
@@ -12538,10 +12529,39 @@ let rec gcnt_del1 (_A1, _A2, _A3)
                     (minus_nata k one_nata) c,
                    s))));;
 
-let rec gcnt_del (_A1, _A2, _A3)
+let rec de_gcnt_del
   t cc =
-    fold (gcnt_del1 (_A1, _A2, _A3))
-      (csl (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) t) cc;;
+    fold (gcnt_del1 (ceq_event_data, ccompare_event_data, equal_event_data))
+      (csl (finite_UNIV_list, (ceq_list ceq_event_data),
+             (ccompare_list ccompare_event_data))
+        t)
+      cc;;
+
+let rec de_gsw_expire
+  args nt win cc =
+    (match safe_hd win with (None, wina) -> (wina, cc)
+      | (Some e, wina) ->
+        (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, cc)
+          else de_gsw_expire args nt (tl_queue wina)
+                 (de_gcnt_del (snd e) cc)));;
+
+let rec de_gsw_move
+  args nt pend win cc =
+    (match safe_hd pend with (None, penda) -> (penda, (win, cc))
+      | (Some e, penda) ->
+        (if memL (args_ivl args) (minus_nata nt (fst e))
+          then (if memR (args_ivl args) (minus_nata nt (fst e))
+                 then de_gsw_move args nt (tl_queue penda) (append_queue e win)
+                        (de_gcnt_add (snd e) cc)
+                 else de_gsw_move args nt (tl_queue penda) win cc)
+          else (penda, (win, cc))));;
+
+let rec de_gsw_add_new_ts
+  args nt aux =
+    (let (_, (pend, (win, cc))) = aux in
+     let (penda, (wina, cca)) = de_gsw_move args nt pend win cc in
+     let (winb, ccb) = de_gsw_expire args nt wina cca in
+      (nt, (penda, (winb, ccb))));;
 
 let rec ed_rbtc_del
   x xa1 = match x, xa1 with x, Empty -> Empty
@@ -12717,10 +12737,7 @@ let rec usa_expire
     (match safe_hd win with (None, wina) -> (wina, (cc, ax))
       | (Some e, wina) ->
         (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, (cc, ax))
-          else usa_expire args p nt (tl_queue wina)
-                 (gcnt_del
-                   (ceq_event_data, ccompare_event_data, equal_event_data)
-                   (snd e) cc)
+          else usa_expire args p nt (tl_queue wina) (de_gcnt_del (snd e) cc)
                  (uag_del p (args_n args) (snd e) cc ax)));;
 
 let rec usa_move
@@ -12730,10 +12747,7 @@ let rec usa_move
         (if memL (args_ivl args) (minus_nata nt (fst e))
           then (if memR (args_ivl args) (minus_nata nt (fst e))
                  then usa_move args p nt (tl_queue penda) (append_queue e win)
-                        (gcnt_add
-                          (ceq_event_data, ccompare_event_data,
-                            equal_event_data)
-                          (snd e) cc)
+                        (de_gcnt_add (snd e) cc)
                         (uag_ins p (args_n args) (snd e) cc ax)
                  else usa_move args p nt (tl_queue penda) win cc ax)
           else (penda, (win, (cc, ax)))));;
@@ -12745,41 +12759,13 @@ let rec usa_add_new_ts
      let (winb, (ccb, a)) = usa_expire args p nt wina cca axa in
       ((nt, (penda, (winb, ccb))), a));;
 
-let rec gsw_expire (_A1, _A2, _A3)
-  args nt win cc =
-    (match safe_hd win with (None, wina) -> (wina, cc)
-      | (Some e, wina) ->
-        (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, cc)
-          else gsw_expire (_A1, _A2, _A3) args nt (tl_queue wina)
-                 (gcnt_del (_A1, _A2, _A3) (snd e) cc)));;
-
-let rec gsw_move (_A1, _A2, _A3)
-  args nt pend win cc =
-    (match safe_hd pend with (None, penda) -> (penda, (win, cc))
-      | (Some e, penda) ->
-        (if memL (args_ivl args) (minus_nata nt (fst e))
-          then (if memR (args_ivl args) (minus_nata nt (fst e))
-                 then gsw_move (_A1, _A2, _A3) args nt (tl_queue penda)
-                        (append_queue e win)
-                        (gcnt_add (_A1, _A2, _A3) (snd e) cc)
-                 else gsw_move (_A1, _A2, _A3) args nt (tl_queue penda) win cc)
-          else (penda, (win, cc))));;
-
-let rec gsw_add_new_ts (_A1, _A2, _A3)
-  args nt aux =
-    (let (_, (pend, (win, cc))) = aux in
-     let (penda, (wina, cca)) = gsw_move (_A1, _A2, _A3) args nt pend win cc in
-     let (winb, ccb) = gsw_expire (_A1, _A2, _A3) args nt wina cca in
-      (nt, (penda, (winb, ccb))));;
-
 let rec udsx_add_new_ts
   args nt x2 = match args, nt, x2 with
     args, nt, UDSX_gen d -> UDSX_gen (de_gadd_new_ts_msaux args nt d)
-    | args, nt, UDSX_win w ->
-        UDSX_win
-          (gsw_add_new_ts
-            (ceq_event_data, ccompare_event_data, equal_event_data) args nt w)
+    | args, nt, UDSX_win w -> UDSX_win (de_gsw_add_new_ts args nt w)
     | args, nt, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_add_new_ts args p nt a);;
+
+let rec de_gsw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
 
 let rec ed_get_map_result
   m y f =
@@ -12903,7 +12889,7 @@ let rec uag_res
   p w cc ax =
     (match ax with None -> udagg_p p (snd cc)
       | Some a ->
-        deopt_table (ceq_event_data, ccompare_event_data)
+        de_deopt_table
           (dtabc
             ((ceq_option ceq_event_data), (ccompare_option ccompare_event_data))
             (aggargs_n (dagg_args p w))
@@ -12914,36 +12900,23 @@ let rec usa_result
   args p aux =
     (let ((_, (_, (_, cc))), ax) = aux in uag_res p (args_n args) cc ax);;
 
-let rec gsw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
-
 let rec udsx_result
   args x1 = match args, x1 with args, UDSX_gen d -> de_gresult_msaux args d
-    | args, UDSX_win w -> gsw_result args w
+    | args, UDSX_win w -> de_gsw_result args w
     | args, UDSX_wagg (p, a) -> usa_result args p a;;
 
-let rec gsw_join (_A1, _A2)
+let rec de_gsw_join
   args x aux =
     (let (t, (_, (_, _))) = aux in
-      (if (if args_pos args
-            then not (is_empty
-                       (card_UNIV_list, (ceq_list _A1),
-                         (cproper_interval_list _A2))
-                       x)
-            else is_empty
-                   (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
-                   x)
+      (if (if args_pos args then not (unbox edl_is_empty_v x)
+            else unbox edl_is_empty_v x)
         then aux
-        else (t, (empty_queue,
-                   (empty_queue,
-                     (mapping_empty (ccompare_list _A2)
-                        (of_phantom mapping_impl_lista),
-                       set_empty ((ceq_list _A1), (ccompare_list _A2))
-                         (of_phantom set_impl_lista)))))));;
+        else (t, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))))));;
 
 let rec usa_join
   args p x aux =
     (let (w, ax) = aux in
-      (gsw_join (ceq_event_data, ccompare_event_data) args x w,
+      (de_gsw_join args x w,
         (if (if args_pos args then not (unbox edl_is_empty_v x)
               else unbox edl_is_empty_v x)
           then ax else ag_init p (args_n args))));;
@@ -12951,8 +12924,7 @@ let rec usa_join
 let rec udsx_join
   args x xa2 = match args, x, xa2 with
     args, x, UDSX_gen d -> UDSX_gen (de_ggc_join_msaux args x d)
-    | args, x, UDSX_win w ->
-        UDSX_win (gsw_join (ceq_event_data, ccompare_event_data) args x w)
+    | args, x, UDSX_win w -> UDSX_win (de_gsw_join args x w)
     | args, x, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_join args p x a);;
 
 let rec uedsx_eval_since
@@ -13039,11 +13011,7 @@ let rec uuw_extend
              | (Some e, resta) ->
                (if memR (args_ivl args) (minus_nata (fst e) ts0)
                  then uuw_extend args ts0 (append_queue e win) (tl_queue resta)
-                        (snd (snd e))
-                        (gcnt_add
-                          (ceq_event_data, ccompare_event_data,
-                            equal_event_data)
-                          (fst (snd e)) cc)
+                        (snd (snd e)) (de_gcnt_add (fst (snd e)) cc)
                  else (win, (resta, (bend, cc))))));;
 
 let rec uuw_step
@@ -13058,10 +13026,7 @@ let rec uuw_step
                 (minus_nata len one_nata, (benda, (cca, edl_bot :: dn))))))
         | (Some e, winb) ->
           (let winc = tl_queue winb in
-           let ccaa =
-             gcnt_del (ceq_event_data, ccompare_event_data, equal_event_data)
-               (fst (snd e)) cca
-             in
+           let ccaa = de_gcnt_del (fst (snd e)) cca in
            let bendb = (if is_emptya winc then true else benda) in
             (tl_queue nts,
               (winc,
@@ -13356,8 +13321,7 @@ let rec udeval
              (fun r1 r2 t (zs, ax) ->
                (let axa = ed_update_mmtaux dags t r1 r2 ax in
                 let (_, z) = result_mmtaux dags axa in
-                 (zs @ [deopt_table (ceq_event_data, ccompare_event_data) z],
-                   axa)))
+                 (zs @ [de_deopt_table z], axa)))
              ([], daux)
              (mebuf2_add
                (mapa (comp (dembedp (ceq_event_data, ccompare_event_data) pl)
