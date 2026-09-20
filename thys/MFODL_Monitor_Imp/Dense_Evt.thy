@@ -16,9 +16,8 @@ text \<open>
   tables of the run in a queue, the union of the run as a count per tuple, and the answer as the
   set of tuples whose count is positive.
 
-  The executable monitor of @{theory MFODL_Monitor_Imp.Dense_Imp} has run these two structures
-  since 20.34, as definitions without proofs (@{theory MFODL_Monitor_Imp.Since_Imp2} and
-  @{theory MFODL_Monitor_Imp.Until_Imp2}).  This theory defines them again for the verified
+  The executable monitor of \<open>Dense_Imp\<close> has run these two structures since 20.34, as
+  definitions without proofs (\<open>Since_Imp2\<close> and \<open>Until_Imp2\<close>).  This theory defines them again for the verified
   dense evaluator and proves them against the abstract specification the kernel's own structures
   meet: the assumptions of the locales @{locale msaux} and @{locale muaux}, specialised to a
   closed left operand.  The verified dense evaluator then picks them where the executable one
@@ -57,6 +56,10 @@ definition cnt_rep :: "(event_data tuple \<Rightarrow> nat) \<Rightarrow> cntset
      (\<forall>x. Mapping.lookup (fst cc) x = (if f x = 0 then None else Some (f x))) \<and>
      snd cc = {x. 0 < f x}"
 
+lemma lookup_delete_if:
+  "Mapping.lookup (Mapping.delete t c) x = (if x = t then None else Mapping.lookup c x)"
+  by (cases "x = t") simp_all
+
 lemma cnt_rep_empty: "cnt_rep (\<lambda>_. 0) (Mapping.empty, {})"
   by (simp add: cnt_rep_def)
 
@@ -75,7 +78,7 @@ proof (cases cc)
       by (auto simp: Mapping.lookup_update' L S ft)
   next
     case (Some k)
-    then have ft: "f t = k" and k: "0 < k" using L[of t] by (auto split: if_splits)
+    then have ft: "f t = k" and k: "k \<noteq> 0" using L[of t] by (auto split: if_splits)
     show ?thesis unfolding cnt_rep_def cnt_add1_def Pair Some
       by (auto simp: Mapping.lookup_update' L S ft k)
   qed
@@ -92,17 +95,18 @@ proof (cases cc)
   proof (cases "Mapping.lookup c t")
     case None
     then have ft: "f t = 0" using L[of t] by (auto split: if_splits)
-    then have "f(t := f t - 1) = f" by (simp add: fun_upd_idem)
-    then show ?thesis using assms unfolding cnt_del1_def Pair None by simp
+    have "cnt_del1 t cc = cc" unfolding cnt_del1_def Pair by (simp add: None)
+    moreover have "f(t := f t - 1) = f" using ft by (simp add: fun_upd_idem_iff)
+    ultimately show ?thesis using assms by simp
   next
     case (Some k)
-    then have ft: "f t = k" and k: "0 < k" using L[of t] by (auto split: if_splits)
+    then have ft: "f t = k" and k: "k \<noteq> 0" using L[of t] by (auto split: if_splits)
     show ?thesis
     proof (cases "k \<le> 1")
       case True
       then have k1: "k = 1" using k by simp
       show ?thesis unfolding cnt_rep_def cnt_del1_def Pair Some
-        by (auto simp: Mapping.lookup_delete' L S ft k1 Set.remove_def True)
+        by (auto simp: lookup_delete_if L S ft k1 Set.remove_eq True)
     next
       case False
       show ?thesis unfolding cnt_rep_def cnt_del1_def Pair Some
@@ -220,6 +224,15 @@ lemma cnt_inv_set: "cnt_inv Ts cc \<Longrightarrow> snd cc = \<Union> (set Ts)"
 
 subsection \<open>Two facts about the closed left operand\<close>
 
+lemma not_memR_mono: "cur \<le> nt \<Longrightarrow> \<not> memR I (cur - a) \<Longrightarrow> \<not> memR I (nt - a)"
+  using memR_antimono[of I "nt - a" "cur - a"] diff_le_mono by blast
+
+lemma memR_mono_ts: "t0 \<le> t \<Longrightarrow> memR I (nt - t0) \<Longrightarrow> memR I (nt - t)"
+  using memR_antimono[of I "nt - t0" "nt - t"] diff_le_mono2 by blast
+
+lemma check_before_fst: "check_before I nt e \<longleftrightarrow> \<not> memR I (nt - fst e)"
+  by (cases e) simp
+
 text \<open>Joining a table with a table over no columns keeps it or empties it, depending only on
   whether that table is empty and on the polarity.\<close>
 
@@ -260,9 +273,20 @@ lemma tbls_at_filter: "tbls_at u (filter (\<lambda>e. P (fst e)) es) = (if P u t
 lemma tbls_at_map_empty: "tbls_at u (map (\<lambda>(t, rel). (t, {})) es) = {}"
   by (auto simp: tbls_at_def)
 
+lemma foldr_Un_set: "foldr (\<union>) ys {} = \<Union> (set ys)"
+  by (induct ys) auto
+
+lemma set_filter_comp:
+  "set [rel. (t, rel) \<leftarrow> xs, P t] = {rel. \<exists>t. (t, rel) \<in> set xs \<and> P t}"
+proof (induct xs)
+  case (Cons e xs)
+  obtain t rel where e: "e = (t, rel)" by (cases e)
+  show ?case unfolding e using Cons by (cases "P t") auto
+qed simp
+
 lemma foldr_Un_filter:
   "foldr (\<union>) [rel. (t, rel) \<leftarrow> xs, P t] {} = \<Union> {rel. \<exists>t. (t, rel) \<in> set xs \<and> P t}"
-  by (induct xs) auto
+  unfolding foldr_Un_set set_filter_comp ..
 
 text \<open>A predicate on timestamps that only fails further to the right cuts a sorted list into a
   prefix and a suffix, so the two scans coincide with the two filters.\<close>
@@ -377,8 +401,8 @@ proof (induct pl arbitrary: pend win cc pend' win' cc')
 next
   case (Cons e rest)
   obtain ho pend0 where sh: "safe_hd pend = (ho, pend0)" by (cases "safe_hd pend")
-  have ho: "ho = Some e" and l0: "linearize pend0 = e # rest"
-    using safe_hd_rep[OF sh] Cons(2) by (auto split: option.splits)
+  have l0: "linearize pend0 = e # rest" using safe_hd_rep[OF sh] Cons(2) by simp
+  have ho: "ho = Some e" using safe_hd_rep[OF sh] l0 by (cases ho) auto
   have lt: "linearize (tl_queue pend0) = rest" by (simp add: tl_queue_rep l0)
   show ?case
   proof (cases "memL (args_ivl args) (nt - fst e)")
@@ -417,8 +441,8 @@ proof (induct wl arbitrary: win cc win' cc')
 next
   case (Cons e rest)
   obtain ho win0 where sh: "safe_hd win = (ho, win0)" by (cases "safe_hd win")
-  have ho: "ho = Some e" and l0: "linearize win0 = e # rest"
-    using safe_hd_rep[OF sh] Cons(2) by (auto split: option.splits)
+  have l0: "linearize win0 = e # rest" using safe_hd_rep[OF sh] Cons(2) by simp
+  have ho: "ho = Some e" using safe_hd_rep[OF sh] l0 by (cases ho) auto
   have lt: "linearize (tl_queue win0) = rest" by (simp add: tl_queue_rep l0)
   show ?case
   proof (cases "memR (args_ivl args) (nt - fst e)")
@@ -499,22 +523,26 @@ proof -
   have res: "sw_add_new_ts args nt aux = (nt, pend1, win2, cc2)"
     by (simp add: sw_add_new_ts_def aux mv ex)
   note mvr = sw_move_rep[OF pl_def[symmetric] mv]
+  have tfdf: "takeWhile ?P pl = filter ?P pl \<and> dropWhile ?P pl = filter (\<lambda>e. \<not> ?P e) pl"
+    by (rule takeWhile_antitone[OF spl]) (rule Pa)
   have tf: "takeWhile ?P pl = filter ?P pl" and df: "dropWhile ?P pl = filter (\<lambda>e. \<not> ?P e) pl"
-    using takeWhile_antitone[OF spl Pa] by simp_all
+    using tfdf by simp_all
   define mvd where "mvd = filter ?Q (filter ?P pl)"
-  have p1: "linearize pend1 = filter (\<lambda>e. \<not> ?P e) pl"
-    and w1: "linearize win1 = wl @ mvd"
-    and c1: "cc1 = fold cnt_add (map snd mvd) cc"
-    using mvr unfolding tf df mvd_def by simp_all
+  have p1: "linearize pend1 = filter (\<lambda>e. \<not> ?P e) pl" using mvr df by simp
+  have w1: "linearize win1 = wl @ mvd" using mvr unfolding tf mvd_def wl_def by simp
+  have c1: "cc1 = fold cnt_add (map snd mvd) cc" using mvr unfolding tf mvd_def by simp
   have smvd: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') mvd"
     unfolding mvd_def by (intro sorted_wrt_filter spl)
   have mvd_sub: "set mvd \<subseteq> set pl" unfolding mvd_def by auto
   have sw1: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (wl @ mvd)"
     unfolding sorted_wrt_append using swl smvd ord mvd_sub by blast
   note exr = sw_expire_rep[OF w1 ex]
+  have tfdf2: "takeWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter (\<lambda>e. \<not> ?Q e) (wl @ mvd) \<and>
+      dropWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter (\<lambda>e. \<not> \<not> ?Q e) (wl @ mvd)"
+    by (rule takeWhile_antitone[OF sw1]) (rule Qa)
   have tf2: "takeWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter (\<lambda>e. \<not> ?Q e) (wl @ mvd)"
     and df2: "dropWhile (\<lambda>e. \<not> ?Q e) (wl @ mvd) = filter ?Q (wl @ mvd)"
-    using takeWhile_antitone[OF sw1 Qa] by simp_all
+    using tfdf2 by simp_all
   have w2: "linearize win2 = filter ?Q wl @ mvd"
     using exr unfolding df2 mvd_def by (simp add: filter_filter conj_commute)
   have c2: "cc2 = fold cnt_del (map snd (filter (\<lambda>e. \<not> ?Q e) (wl @ mvd))) cc1"
@@ -616,22 +644,35 @@ proof -
     using v unfolding valid_sw_def aux by auto
   have jc: "\<And>e. e \<in> set auxlist \<Longrightarrow> join (snd e) (args_pos args) rel1
       = (if (rel1 \<noteq> {}) = args_pos args then snd e else {})"
-    using al by (auto intro!: join_closed[OF _ t1])
+  proof -
+    fix e assume "e \<in> set auxlist"
+    then have "table (args_n args) (args_R args) (snd e)" using al by auto
+    then show "join (snd e) (args_pos args) rel1
+      = (if (rel1 \<noteq> {}) = args_pos args then snd e else {})" by (rule join_closed[OF _ t1])
+  qed
   show ?thesis
   proof (cases "(rel1 \<noteq> {}) = args_pos args")
     case True
     have m: "map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist = auxlist"
-      by (rule map_idI) (use jc True in auto)
+    proof (rule map_idI)
+      fix x assume x: "x \<in> set auxlist"
+      show "(case x of (t, rel) \<Rightarrow> (t, join rel (args_pos args) rel1)) = x"
+        using jc[OF x] True by (cases x) simp
+    qed
     have "sw_join args X aux = aux"
-      using True X by (auto simp: sw_join_def aux Set.is_empty_def)
+      using True X by (auto simp: sw_join_def aux Set.is_empty_iff)
     then show ?thesis using v unfolding m by simp
   next
     case False
     have m: "map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist
         = map (\<lambda>(t, rel). (t, {})) auxlist"
-      by (rule map_cong[OF refl]) (use jc False in auto)
+    proof (rule map_cong[OF refl])
+      fix x assume x: "x \<in> set auxlist"
+      show "(case x of (t, rel) \<Rightarrow> (t, join rel (args_pos args) rel1)) = (case x of (t, rel) \<Rightarrow> (t, {}))"
+        using jc[OF x] False by (cases x) simp
+    qed
     have "sw_join args X aux = (t, empty_queue, empty_queue, Mapping.empty, {})"
-      using False X by (auto simp: sw_join_def aux Set.is_empty_def)
+      using False X by (auto simp: sw_join_def aux Set.is_empty_iff)
     then show ?thesis using v unfolding m valid_sw_def aux
       by (auto simp: sw_inv_def empty_queue_rep cnt_inv_empty tbls_at_map_empty)
   qed
@@ -669,35 +710,35 @@ proof -
   show ?thesis
   proof (cases "memL ?I 0")
     case True
-    have res: "sw_add_new_table args rel2 aux = (t, pend, append_queue (t, rel2) win, cnt_add rel2 cc)"
-      by (simp add: sw_add_new_table_def aux True)
+    have res: "sw_add_new_table args rel2 aux = (cur, pend, append_queue (cur, rel2) win, cnt_add rel2 cc)"
+      by (simp add: sw_add_new_table_def aux True tc)
     have pl_Nil: "pl = []"
     proof (rule ccontr)
       assume "pl \<noteq> []"
-      then obtain e where "e \<in> set pl" by fastforce
+      then obtain e where "e \<in> set pl" by (cases pl) auto
       then show False using ipl memL_mono[OF True, of "cur - fst e"] by auto
     qed
-    have w': "linearize (append_queue (t, rel2) win) = wl @ [(cur, rel2)]"
-      by (simp add: append_queue_rep wl_def tc)
+    have w': "linearize (append_queue (cur, rel2) win) = wl @ [(cur, rel2)]"
+      by (simp add: append_queue_rep wl_def)
     have inv': "sw_inv args cur pl (wl @ [(cur, rel2)])"
       unfolding sw_inv_def pl_Nil sorted_wrt_append using swl iwl f2 True by auto
     have cnt': "cnt_inv (map snd (wl @ [(cur, rel2)])) (cnt_add rel2 cc)"
       using cnt_inv_snoc[OF cnt f2] by simp
     have at': "\<And>u. tbls_at u (pl @ wl @ [(cur, rel2)]) = tbls_at u ?al"
       unfolding at_al at[symmetric] by (auto simp: tbls_at_append tbls_at_Cons)
-    show ?thesis unfolding res valid_sw_def using tc inv' cnt' at' al'
+    show ?thesis unfolding res valid_sw_def using inv' cnt' at' al'
       by (simp add: pl_def[symmetric] w')
   next
     case False
-    have res: "sw_add_new_table args rel2 aux = (t, append_queue (t, rel2) pend, win, cc)"
-      by (simp add: sw_add_new_table_def aux False)
-    have p': "linearize (append_queue (t, rel2) pend) = pl @ [(cur, rel2)]"
-      by (simp add: append_queue_rep pl_def tc)
+    have res: "sw_add_new_table args rel2 aux = (cur, append_queue (cur, rel2) pend, win, cc)"
+      by (simp add: sw_add_new_table_def aux False tc)
+    have p': "linearize (append_queue (cur, rel2) pend) = pl @ [(cur, rel2)]"
+      by (simp add: append_queue_rep pl_def)
     have inv': "sw_inv args cur (pl @ [(cur, rel2)]) wl"
       unfolding sw_inv_def sorted_wrt_append using spl swl ipl iwl ord f2 False by auto
     have at': "\<And>u. tbls_at u ((pl @ [(cur, rel2)]) @ wl) = tbls_at u ?al"
       unfolding at_al at[symmetric] by (auto simp: tbls_at_append tbls_at_Cons)
-    show ?thesis unfolding res valid_sw_def using tc inv' cnt at' al'
+    show ?thesis unfolding res valid_sw_def using inv' cnt at' al'
       by (simp add: wl_def[symmetric] p')
   qed
 qed
@@ -872,7 +913,7 @@ next
   next
     case False
     have "\<not> memR I (nt - t0)"
-      using False memR_antimono[of I "nt - t0" "t - t0"] tnt by (auto intro: diff_le_mono)
+      using False tnt memR_antimono[of I "nt - t0" "t - t0"] diff_le_mono by blast
     then show ?thesis using False unfolding e by simp
   qed
 qed
@@ -886,14 +927,14 @@ proof -
   have r1: "rel1 = {} \<or> rel1 = unit_table n"
     using t1 by (auto simp: table_empty_vars_iff empty_table_def)
   have ne: "unit_table n \<noteq> {}" by (simp add: unit_table_def)
-  show ?thesis
-  proof (cases "args_pos args")
-    case True
-    show ?thesis using r1 ne True b
-      by (auto simp: uw_a1_def pn join_unit_table[OF unit_table[OF refl]])
+  from r1 show ?thesis
+  proof
+    assume E: "rel1 = {}"
+    show ?thesis unfolding b E by (cases "args_pos args") (auto simp: uw_a1_def pn)
   next
-    case False
-    show ?thesis using r1 ne False b by (auto simp: uw_a1_def pn)
+    assume U: "rel1 = unit_table n"
+    show ?thesis unfolding b U using ne
+      by (cases "args_pos args") (auto simp: uw_a1_def pn join_unit_unit)
   qed
 qed
 
@@ -905,14 +946,20 @@ lemma uw_abs_snoc:
     and b: "b = ((rel1 \<noteq> {}) = args_pos args)"
   shows "update_until args rel1 rel2 nt (uw_abs args es) = uw_abs args (es @ [(nt, rel2, b)])"
   using ts tbl
-proof (induct es rule: uw_abs.induct)
-  case (1 args)
+proof (induct es)
+  case Nil
   have a1: "uw_a1 args [b] = rel1"
-    using t1 b by (auto simp: uw_a1_def table_empty_vars_iff empty_table_def unit_table_def)
+  proof -
+    have r1: "rel1 = {} \<or> rel1 = unit_table (args_n args)"
+      using t1 by (auto simp: table_empty_vars_iff empty_table_def)
+    have ne: "unit_table (args_n args) \<noteq> {}" by (simp add: unit_table_def)
+    from r1 show ?thesis unfolding b uw_a1_def using ne by (cases "args_pos args") auto
+  qed
   show ?case using inz by (simp add: update_until_def a1 empty_table_def)
 next
-  case (2 args t R b' es)
-  note IH = 2(1) and ts = 2(2) and tbl = 2(3)
+  case (Cons e es)
+  obtain t R b' where e: "e = (t, R, b')" by (cases e)
+  note IH = Cons(1) and ts = Cons(2)[unfolded e] and tbl = Cons(3)[unfolded e]
   let ?I = "args_ivl args"
   have tnt: "t \<le> nt" using ts by simp
   have upd: "update_until args rel1 rel2 nt (uw_abs args ((t, R, b') # es))
@@ -936,14 +983,14 @@ next
       by (cases "args_pos args") (auto simp: uw_a1_def unit_table_def)
   qed
   have mem: "mem ?I (nt - t) = memR ?I (nt - t)" using memL_mono[OF inz] by auto
-  have a2: "uw_a2 ?I t (((t, R, b') # es) @ [(nt, rel2, b)])
-      = uw_a2 ?I t ((t, R, b') # es) \<union>
-        (if memR ?I (nt - t) \<and> b' \<and> (\<forall>e \<in> set es. snd (snd e)) then rel2 else {})"
-    using uw_a2_snoc[of "(t, R, b') # es" nt ?I t rel2 b] ts by simp
+  have a2: "uw_a2 ?I t (es @ [(nt, rel2, b)])
+      = uw_a2 ?I t es \<union> (if memR ?I (nt - t) \<and> (\<forall>e \<in> set es. snd (snd e)) then rel2 else {})"
+    using uw_a2_snoc[of es nt ?I t rel2 b] ts by simp
   have IH': "update_until args rel1 rel2 nt (uw_abs args es) = uw_abs args (es @ [(nt, rel2, b)])"
     by (rule IH) (use ts tbl in auto)
-  show ?case unfolding upd a1 IH' mem jc
-    by (simp add: a2 map_append)
+  show ?case unfolding e upd a1 IH' mem jc
+    by (cases b'; cases "memR ?I (nt - t)"; cases "\<forall>e \<in> set es. snd (snd e)")
+      (simp_all add: a2 map_append Un_ac)
 qed
 
 text \<open>The abstract list of the expired entries is what the kernel's evaluation pops.\<close>
@@ -979,10 +1026,20 @@ lemma uw_extend_rep:
 proof (induct rl arbitrary: win rest bend cc win' rest' bend' cc')
   case Nil
   obtain ho rest0 where sh: "safe_hd rest = (ho, rest0)" by (cases "safe_hd rest")
-  have "ho = None" and l0: "linearize rest0 = []"
+  have ho: "ho = None" and l0: "linearize rest0 = []"
     using safe_hd_rep[OF sh] Nil(1) by (auto split: option.splits)
-  then show ?case using Nil(2) l0
-    by (subst (asm) uw_extend.simps) (cases bend, auto simp: sh)
+  show ?case
+  proof (cases bend)
+    case False
+    then have "(win, rest, bend, cc) = (win', rest', bend', cc')"
+      using Nil(2) by (subst (asm) uw_extend.simps) simp
+    then show ?thesis using False Nil(1) by simp
+  next
+    case True
+    then have "(win, rest0, bend, cc) = (win', rest', bend', cc')"
+      using Nil(2) by (subst (asm) uw_extend.simps) (simp add: sh ho)
+    then show ?thesis using True l0 by simp
+  qed
 next
   case (Cons e rl)
   show ?case
@@ -992,8 +1049,8 @@ next
   next
     case True
     obtain ho rest0 where sh: "safe_hd rest = (ho, rest0)" by (cases "safe_hd rest")
-    have ho: "ho = Some e" and l0: "linearize rest0 = e # rl"
-      using safe_hd_rep[OF sh] Cons(2) by (auto split: option.splits)
+    have l0: "linearize rest0 = e # rl" using safe_hd_rep[OF sh] Cons(2) by simp
+    have ho: "ho = Some e" using safe_hd_rep[OF sh] l0 by (cases ho) auto
     have lt: "linearize (tl_queue rest0) = rl" by (simp add: tl_queue_rep l0)
     show ?thesis
     proof (cases "memR (args_ivl args) (fst e - ts0)")
@@ -1034,14 +1091,7 @@ lemma uw_a2_ext_True:
 proof (induct rl)
   case (Cons e rl)
   obtain t R b where e: "e = (t, R, b)" by (cases e)
-  show ?case
-  proof (cases b)
-    case True
-    then show ?thesis using Cons unfolding e by simp
-  next
-    case False
-    then show ?thesis unfolding e by simp
-  qed
+  show ?case unfolding e using Cons by (cases b; cases "memR I (t - ts0)") auto
 qed simp
 
 text \<open>After the extension the window is the whole run the answer is the union of.\<close>
@@ -1096,8 +1146,8 @@ next
         then show ?thesis using \<open>memR I (fst e - ts0)\<close> by simp
       next
         case False
-        then have "snd (snd e)" by (cases "snd (snd e)") simp_all
-        then show ?thesis using True 3(1)[of "snd (snd e)"] False by (simp add: butlast_append)
+        then have b: "snd (snd e)" by (cases "snd (snd e)") simp_all
+        then show ?thesis using True 3(1)[OF True b] False by simp
       qed
     qed simp
   qed simp_all
@@ -1168,20 +1218,27 @@ proof -
   have wi': "uw_win ?I ts0 (linearize win) bend" using wi unfolding es ts0 by simp
   obtain win1 rest1 bend1 cc1 where ext: "uw_extend args ts0 win rest bend cc = (win1, rest1, bend1, cc1)"
     by (cases "uw_extend args ts0 win rest bend cc")
-  note er = uw_extend_rep[OF refl ext]
   define ex1 where "ex1 = uw_ext ?I ts0 bend (linearize rest)"
+  have er: "linearize win1 = linearize win @ ex1 \<and>
+     linearize rest1 = drop (length ex1) (linearize rest) \<and>
+     bend1 = (if ex1 = [] then bend else snd (snd (last ex1))) \<and>
+     cc1 = fold cnt_add (map (fst \<circ> snd) ex1) cc \<and>
+     (bend1 \<longrightarrow> linearize rest1 = [] \<or> \<not> memR ?I (fst (hd (linearize rest1)) - ts0))"
+    using uw_extend_rep[OF refl ext] unfolding ex1_def .
   have w1: "linearize win1 = linearize win @ ex1"
     and r1: "linearize rest1 = drop (length ex1) (linearize rest)"
     and b1: "bend1 = (if ex1 = [] then bend else snd (snd (last ex1)))"
     and c1: "cc1 = fold cnt_add (map (fst \<circ> snd) ex1) cc"
-    and stop: "bend1 \<longrightarrow> linearize rest1 = [] \<or> \<not> memR ?I (fst (hd (linearize rest1)) - ts0)"
-    using er unfolding ex1_def by simp_all
+    using er by blast+
+  obtain sfx where sfx: "linearize rest = ex1 @ sfx"
+    using uw_ext_prefix[of "linearize rest" ?I ts0 bend] unfolding ex1_def by blast
   have ex1_pre: "linearize rest = ex1 @ drop (length ex1) (linearize rest)"
-    using uw_ext_prefix[of "linearize rest" ?I ts0 bend] unfolding ex1_def by auto
+    using sfx by simp
   have es1: "linearize win1 @ linearize rest1 = es"
     unfolding w1 r1 es_def using ex1_pre by simp
+  have sub1: "set ex1 \<subseteq> set (linearize rest)" using sfx by simp
   have fin_ex1: "\<forall>T \<in> set (map (fst \<circ> snd) ex1). finite T"
-    using wf ex1_pre unfolding es_def by (metis (no_types, lifting) Un_iff imageE in_set_conv_decomp list.set_map set_append)
+    using wf sub1 unfolding es_def by auto
   have cnt1: "cnt_inv (map (fst \<circ> snd) (linearize win1)) cc1"
     unfolding w1 c1 map_append by (rule cnt_inv_adds[OF cnt fin_ex1])
   have wi1: "uw_win ?I ts0 (linearize win1) bend1"
@@ -1233,7 +1290,7 @@ proof -
       using wi1 unfolding uw_win_def wl1 by (auto simp: butlast_append)
     have le: "ts0 \<le> fst e2" using srt unfolding es es'2 ts0 by simp
     have r': "\<forall>e \<in> set wl1. memR ?I (fst e - fst e2)"
-      using r le memR_antimono by (auto intro: diff_le_mono2)
+      using r le memR_mono_ts by blast
     show ?thesis unfolding es'2 using ne2 r' bl bd by (simp add: uw_win_def)
   qed
   have sub: "set (uw_es res) \<subseteq> set (uw_es aux)"
@@ -1262,10 +1319,49 @@ proof -
           = rev (snd cc1 # dn)" unfolding ans[symmetric] using exd by simp
       show "\<forall>e \<in> set (ex @ [(ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es)]).
           \<not> memR ?I (cur' - fst e)"
-        using exo old cc' memR_antimono by (auto intro: diff_le_mono)
+        using exo old not_memR_mono[OF cc'] by auto
     qed
   qed
   then show ?thesis using sub unfolding step by simp
+qed
+
+lemma valid_uw_mono:
+  assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"
+  shows "valid_uw args nt aux auxlist"
+proof -
+  obtain nts win rest len bend cc dn where aux: "aux = (nts, win, rest, len, bend, cc, dn)"
+    by (cases aux)
+  define es where "es = linearize win @ linearize rest"
+  have c1: "linearize nts = map fst es" and c2: "len = length es"
+    and c3: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    and c4: "\<forall>e \<in> set es. fst e \<le> cur \<and> table (args_n args) (args_R args) (fst (snd e)) \<and>
+        finite (fst (snd e))"
+    and c5: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and c6: "uw_win (args_ivl args) (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    using v unfolding valid_uw_def aux es_def by (auto simp: Let_def)
+  obtain ex where c7: "auxlist = ex @ uw_abs args es" and c8: "map proj_thd ex = rev dn"
+    and c9: "\<forall>e \<in> set ex. \<not> memR (args_ivl args) (cur - fst e)"
+    using v unfolding valid_uw_def aux es_def by (auto simp: Let_def)
+  have c4': "\<forall>e \<in> set es. fst e \<le> nt \<and> table (args_n args) (args_R args) (fst (snd e)) \<and>
+      finite (fst (snd e))" using c4 cn by auto
+  have c9': "\<forall>e \<in> set ex. \<not> memR (args_ivl args) (nt - fst e)"
+    using c9 not_memR_mono[OF cn] by blast
+  show ?thesis unfolding valid_uw_def aux
+  proof (simp only: prod.case Let_def, intro conjI)
+    show "linearize nts = map fst (linearize win @ linearize rest)" using c1 by (simp add: es_def)
+    show "len = length (linearize win @ linearize rest)" using c2 by (simp add: es_def)
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (linearize win @ linearize rest)"
+      using c3 by (simp add: es_def)
+    show "\<forall>e \<in> set (linearize win @ linearize rest). fst e \<le> nt \<and>
+        table (args_n args) (args_R args) (fst (snd e)) \<and> finite (fst (snd e))"
+      using c4' by (simp add: es_def)
+    show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule c5)
+    show "uw_win (args_ivl args) (case linearize win @ linearize rest of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e)
+        (linearize win) bend" using c6 by (simp add: es_def)
+    show "\<exists>ex. auxlist = ex @ uw_abs args (linearize win @ linearize rest) \<and>
+        map proj_thd ex = rev dn \<and> (\<forall>e \<in> set ex. \<not> memR (args_ivl args) (nt - fst e))"
+      using c7 c8 c9' unfolding es_def by blast
+  qed
 qed
 
 text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
@@ -1275,10 +1371,10 @@ lemma valid_uw_shift:
   shows "valid_uw args nt (uw_shift args nt aux) auxlist \<and>
     (\<forall>e \<in> set (uw_es (uw_shift args nt aux)). memR (args_ivl args) (nt - fst e)) \<and>
     set (uw_es (uw_shift args nt aux)) \<subseteq> set (uw_es aux)"
-  using v
+  using v cn
 proof (induct args nt aux rule: uw_shift.induct)
   case (1 args nt aux)
-  note IH = 1(1) and v = 1(2)
+  note IH = 1(1) and v = 1(2) and cn = 1(3)
   let ?I = "args_ivl args"
   obtain nts win rest len bend cc dn where aux: "aux = (nts, win, rest, len, bend, cc, dn)"
     by (cases aux)
@@ -1288,12 +1384,7 @@ proof (induct args nt aux rule: uw_shift.induct)
     using v unfolding valid_uw_def aux es_def by (auto simp: Let_def)
   obtain ho nts' where sh: "safe_hd nts = (ho, nts')" by (cases "safe_hd nts")
   have nts': "linearize nts' = linearize nts" using safe_hd_rep[OF sh] by simp
-  have v': "valid_uw args nt aux auxlist"
-  proof -
-    have "\<And>e. \<not> memR ?I (cur - fst e) \<Longrightarrow> \<not> memR ?I (nt - fst e)"
-      using cn memR_antimono by (auto intro: diff_le_mono)
-    then show ?thesis using v cn unfolding valid_uw_def aux by (auto simp: Let_def)
-  qed
+  have v': "valid_uw args nt aux auxlist" by (rule valid_uw_mono[OF v cn])
   have v'': "valid_uw args nt (nts', win, rest, len, bend, cc, dn) auxlist"
     using v' unfolding valid_uw_def aux by (simp add: Let_def nts')
   show ?case
@@ -1319,7 +1410,7 @@ proof (induct args nt aux rule: uw_shift.induct)
       proof
         fix e assume "e \<in> set es"
         then have "ts0 \<le> fst e" using srt es_ne ts0' by (cases es) auto
-        then show "memR ?I (nt - fst e)" using r memR_antimono by (auto intro: diff_le_mono2)
+        then show "memR ?I (nt - fst e)" using r memR_mono_ts by blast
       qed
       ultimately show ?thesis using v'' unfolding aux es_def by simp
     next
@@ -1332,7 +1423,7 @@ proof (induct args nt aux rule: uw_shift.induct)
       have eq: "uw_shift args nt aux
           = uw_shift args nt (uw_step args ts0 (nts', win, rest, len, bend, cc, dn))"
         using Some False by (subst uw_shift.simps) (simp add: aux sh)
-      show ?thesis unfolding eq using IH[OF aux sh[unfolded Some] refl refl False st] sub by auto
+      show ?thesis unfolding eq using IH[OF aux sh[unfolded Some] refl refl False st cn] sub by auto
     qed
   qed
 qed
@@ -1361,7 +1452,7 @@ proof -
     and exo: "\<forall>e \<in> set ex. \<not> memR ?I (nt - fst e)"
     using vs unfolding valid_uw_def es_def by (auto simp: Let_def)
   define b where "b = (if args_pos args then \<not> Set.is_empty X else Set.is_empty X)"
-  have b: "b = ((rel1 \<noteq> {}) = args_pos args)" unfolding b_def Set.is_empty_def using X by auto
+  have b: "b = ((rel1 \<noteq> {}) = args_pos args)" unfolding b_def Set.is_empty_iff using X by auto
   have res: "uw_add_new args X rel2 nt aux
       = (append_queue nt nts, win, append_queue (nt, rel2, b) rest, len + 1, bend, cc, dn)"
     unfolding uw_add_new_def sft b_def by (simp add: Let_def)
@@ -1386,7 +1477,14 @@ proof -
       using wf t2 f2 by auto
     show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule cnt)
     show "uw_win ?I (case es @ [(nt, rel2, b)] of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
-      using wi by (cases es) simp_all
+    proof (cases es)
+      case Nil
+      then have "linearize win = []" using es_def by simp
+      then show ?thesis using wi Nil by (simp add: uw_win_def)
+    next
+      case Cons
+      then show ?thesis using wi by simp
+    qed
     show "\<exists>ex'. update_until args rel1 rel2 nt auxlist = ex' @ uw_abs args (es @ [(nt, rel2, b)]) \<and>
         map proj_thd ex' = rev dn \<and> (\<forall>e \<in> set ex'. \<not> memR ?I (nt - fst e))"
     proof (intro exI conjI)
@@ -1395,7 +1493,8 @@ proof -
       show "update_until args rel1 rel2 nt auxlist = ?ex @ uw_abs args (es @ [(nt, rel2, b)])"
         unfolding upd abs' ..
       show "map proj_thd ?ex = rev dn"
-        unfolding exd[symmetric] using exo by (intro map_cong[OF refl]) (auto split: prod.splits)
+        unfolding exd[symmetric] map_map
+        by (intro map_cong[OF refl]) (use exo in \<open>auto split: prod.splits\<close>)
       show "\<forall>e \<in> set ?ex. \<not> memR ?I (nt - fst e)" using exo by (auto split: prod.splits)
     qed
   qed
@@ -1405,7 +1504,7 @@ lemma uw_abs_takeWhile:
   assumes srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
     and all: "\<forall>e \<in> set es. memR I (nt - fst e)"
   shows "takeWhile (check_before I nt) (uw_abs args es) = []"
-  using all by (cases es) (auto split: prod.splits)
+  using all by (cases es) (auto simp: check_before_fst split: prod.splits)
 
 lemma valid_uw_eval:
   assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"
@@ -1439,9 +1538,9 @@ proof -
   have r: "res = rev dn" and a': "aux' = (nts, win, rest, len, bend, cc, [])"
     using ev unfolding uw_eval_def sft by simp_all
   have tw1: "takeWhile (check_before ?I nt) ex = ex"
-    using exo by (simp add: takeWhile_eq_all_conv)
+    using exo by (simp add: takeWhile_eq_all_conv check_before_fst)
   have tw2: "takeWhile (check_before ?I nt) (uw_abs args es) = []"
-    using inr[folded es_def] by (cases es) (auto split: prod.splits)
+    using inr[folded es_def] by (cases es) (auto simp: check_before_fst split: prod.splits)
   have tw: "takeWhile (check_before ?I nt) auxlist = ex"
     unfolding al takeWhile_append tw1 tw2 by simp
   have res': "res' = rev dn" unfolding eval_until_res[OF eu] tw exd ..
@@ -1449,9 +1548,23 @@ proof -
   have al': "auxlist' = uw_abs args es"
     unfolding eval_until_auxlist'[OF eu] al lr by simp
   have "valid_uw args cur aux' auxlist'"
-    unfolding a' al' valid_uw_def
-    by (simp only: prod.case Let_def es_def[symmetric], intro conjI)
-      (use nl lenes srt wf' cnt wi in \<open>simp_all\<close>, rule exI[of _ "[]"], simp)
+    unfolding a' al'[unfolded es_def] valid_uw_def
+  proof (simp only: prod.case Let_def, intro conjI)
+    show "linearize nts = map fst (linearize win @ linearize rest)" using nl by (simp add: es_def)
+    show "len = length (linearize win @ linearize rest)" using lenes by (simp add: es_def)
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (linearize win @ linearize rest)"
+      using srt by (simp add: es_def)
+    show "\<forall>e \<in> set (linearize win @ linearize rest). fst e \<le> cur \<and>
+        table (args_n args) (args_R args) (fst (snd e)) \<and> finite (fst (snd e))"
+      using wf' by (simp add: es_def)
+    show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule cnt)
+    show "uw_win ?I (case linearize win @ linearize rest of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e)
+        (linearize win) bend" using wi by (simp add: es_def)
+    show "\<exists>ex. uw_abs args (linearize win @ linearize rest)
+        = ex @ uw_abs args (linearize win @ linearize rest) \<and>
+        map proj_thd ex = rev [] \<and> (\<forall>e \<in> set ex. \<not> memR ?I (cur - fst e))"
+      by (intro exI[of _ "[]"]) simp
+  qed
   then show ?thesis using r res' by simp
 qed
 
