@@ -112,7 +112,15 @@ lemma dux_add_new_rdux:
 
 lemma dux_eval_rdux:
   "dux_eval args nt (rdux d) = (case udux_eval args nt d of (zs, d') \<Rightarrow> (map reopt_table zs, rdux d'))"
-  by (cases d) (simp_all add: geval_dq_rmuaux uw_eval_ruw split: prod.splits)
+proof (cases d)
+  case (UDUX_gen x)
+  obtain zs x' where g: "geval_dq args nt x = (zs, x')" by (cases "geval_dq args nt x")
+  show ?thesis unfolding UDUX_gen dux_eval.simps udux_eval.simps rdux.simps geval_dq_rmuaux g by simp
+next
+  case (UDUX_win w)
+  obtain zs w' where g: "uuw_eval args nt w = (zs, w')" by (cases "uuw_eval args nt w")
+  show ?thesis unfolding UDUX_win dux_eval.simps udux_eval.simps rdux.simps uw_eval_ruw g by simp
+qed
 
 lemma dux_length_rdux: "dux_length args (rdux d) = udux_length args d"
   by (cases d) (simp_all add: glength_dq_rmuaux uw_length_ruw)
@@ -133,16 +141,14 @@ lemma mebuf2_add_map_mbuf:
   by simp
 
 lemma mebuf2_take_map_mbuf:
-  assumes "\<And>x y. f (g x) (g y) = g' (f' x y)"
-  shows "mebuf2_take f (map_mbuf g xs, map_mbuf g ys)
-    = (case mebuf2_take f' (xs, ys) of (zs, (xs', ys')) \<Rightarrow> (map g' zs, (map_mbuf g xs', map_mbuf g ys')))"
+  "(\<And>x y. f (g x) (g y) = g' (f' x y)) \<Longrightarrow>
+   mebuf2_take f (map_mbuf g xs, map_mbuf g ys)
+   = (case mebuf2_take f' (xs, ys) of (zs, (xs', ys')) \<Rightarrow> (map g' zs, (map_mbuf g xs', map_mbuf g ys')))"
 proof (induct f' "(xs, ys)" arbitrary: xs ys rule: mebuf2_take.induct)
-  case (1 xs ys)
+  case (1 f' xs ys)
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
-  show ?case
-    using 1[OF x[symmetric] _ y[symmetric]]
-    by (cases x; cases y) (auto simp: x y assms split: prod.splits)
+  show ?case using 1 x y by (cases x; cases y) (auto simp: x y split: prod.splits)
 qed
 
 fun ueprev_next :: "\<I> \<Rightarrow> utable mbuf_t \<Rightarrow> ts mbuf_t \<Rightarrow> utable list \<times> utable mbuf_t \<times> ts mbuf_t"
@@ -161,8 +167,7 @@ proof (induct I xs ts rule: ueprev_next.induct)
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
   obtain t' ts'' where t': "mbuf_t_cases ts' = (t', ts'')" by (cases "mbuf_t_cases ts'")
   show ?case
-    using 1[OF x[symmetric] _ t[symmetric] _ t'[symmetric]]
-    by (cases x; cases t; cases t') (auto simp: x t t' empty_table_def split: prod.splits)
+    using 1 x t t' by (cases x; cases t; cases t') (auto simp: x t t' empty_table_def split: prod.splits)
 qed
 
 fun uebufn_add :: "utable list list \<Rightarrow> uebufn \<Rightarrow> uebufn" where
@@ -175,6 +180,10 @@ lemma mebufn_add_map_mbuf:
 lemma mbuf_t_cases_None[simp]: "fst (mbuf_t_cases b) = None \<longleftrightarrow> mbuf_t_is_empty b"
   by transfer (auto split: list.splits)
 
+lemma the_map_option_fst_mbuf_t_cases:
+  "\<not> mbuf_t_is_empty b \<Longrightarrow> the (map_option g (fst (mbuf_t_cases b))) = g (the (fst (mbuf_t_cases b)))"
+  by (cases "fst (mbuf_t_cases b)") auto
+
 function uebufn_take :: "(utable list \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow> uebufn \<Rightarrow> 'b \<times> uebufn" where
   "uebufn_take f z buf = (if buf = [] \<or> (\<exists>x \<in> set buf. mbuf_t_is_empty x) then (z, buf)
     else uebufn_take f (f (map (the \<circ> fst \<circ> mbuf_t_cases) buf) z) (map (snd \<circ> mbuf_t_cases) buf))"
@@ -184,27 +193,34 @@ termination
   by (relation "measure (\<lambda>(_, _, buf). size_list size buf)")
     (auto simp: comp_def Suc_le_eq size_list_length_diff1)
 
+declare uebufn_take.simps[simp del]
+
 lemma mebufn_take_map_mbuf:
-  assumes "\<And>as z. f (map g as) (h z) = h (f' as z)"
-  shows "mebufn_take f (h z) (map (map_mbuf g) buf)
-    = (case uebufn_take f' z buf of (z', buf') \<Rightarrow> (h z', map (map_mbuf g) buf'))"
+  "(\<And>as z. f (map g as) (h z) = h (f' as z)) \<Longrightarrow>
+   mebufn_take f (h z) (map (map_mbuf g) buf)
+   = (case uebufn_take f' z buf of (z', buf') \<Rightarrow> (h z', map (map_mbuf g) buf'))"
 proof (induct f' z buf rule: uebufn_take.induct)
-  case (1 z buf)
+  case (1 f' z buf)
   show ?case
   proof (cases "buf = [] \<or> (\<exists>x \<in> set buf. mbuf_t_is_empty x)")
     case True
-    then show ?thesis by (subst mebufn_take.simps, subst uebufn_take.simps) auto
+    then have T: "map (map_mbuf g) buf = [] \<or> (\<exists>x \<in> set (map (map_mbuf g) buf). mbuf_t_is_empty x)"
+      by auto
+    show ?thesis
+      by (subst mebufn_take.simps, subst uebufn_take.simps) (simp only: T True if_True prod.case)
   next
     case False
+    then have F: "\<not> (map (map_mbuf g) buf = [] \<or> (\<exists>x \<in> set (map (map_mbuf g) buf). mbuf_t_is_empty x))"
+      by auto
     have m: "map (the \<circ> fst \<circ> mbuf_t_cases) (map (map_mbuf g) buf)
         = map g (map (the \<circ> fst \<circ> mbuf_t_cases) buf)"
-      using False by (auto simp: comp_def intro!: map_ext split: option.splits)
+      using False by (auto simp: comp_def the_map_option_fst_mbuf_t_cases intro!: map_ext)
     have s: "map (snd \<circ> mbuf_t_cases) (map (map_mbuf g) buf)
         = map (map_mbuf g) (map (snd \<circ> mbuf_t_cases) buf)"
       by (simp add: comp_def)
     show ?thesis
       by (subst mebufn_take.simps, subst uebufn_take.simps)
-        (simp add: False m s assms 1[OF False])
+        (simp only: F False if_False m s 1(2) 1(1)[OF False 1(2)])
   qed
 qed
 
@@ -227,32 +243,28 @@ fun uebuf2t_take :: "(utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow>
     uebuf2t_take f (f x y t z) (xs', ys') t ts')))"
 
 lemma mebuf2t_take_map_mbuf:
-  assumes "\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)"
-  shows "mebuf2t_take f (h z) (map_mbuf reopt_table xs, map_mbuf reopt_table ys) t ts
-    = (case uebuf2t_take f' z (xs, ys) t ts of
+  "(\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)) \<Longrightarrow>
+   mebuf2t_take f (h z) (map_mbuf reopt_table xs, map_mbuf reopt_table ys) t ts
+   = (case uebuf2t_take f' z (xs, ys) t ts of
         (z', (xs', ys'), t', ts') \<Rightarrow> (h z', (map_mbuf reopt_table xs', map_mbuf reopt_table ys'), t', ts'))"
 proof (induct f' z "(xs, ys)" t ts arbitrary: xs ys rule: uebuf2t_take.induct)
-  case (1 z xs ys t0 ts)
+  case (1 f' z xs ys t0 ts)
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
-  show ?case
-    using 1[OF t[symmetric] _ x[symmetric] _ y[symmetric]]
-    by (cases x; cases y; cases t) (auto simp: x y t assms split: prod.splits)
+  show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
 qed
 
 lemma mebuf2T_take_acc:
-  assumes "\<And>x y t z. f x y t (h z) = h (f' x y t z)"
-  shows "mebuf2T_take f (h z) buf ts
-    = (case mebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', buf', ts'))"
+  "(\<And>x y t z. f x y t (h z) = h (f' x y t z)) \<Longrightarrow>
+   mebuf2T_take f (h z) buf ts
+   = (case mebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', buf', ts'))"
 proof (induct f' z buf ts rule: mebuf2T_take.induct)
-  case (1 z xs ys ts)
+  case (1 f' z xs ys ts)
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
-  show ?case
-    using 1[OF t[symmetric] _ x[symmetric] _ y[symmetric]]
-    by (cases x; cases y; cases t) (auto simp: x y t assms split: prod.splits)
+  show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
 qed
 
 (*<*)
