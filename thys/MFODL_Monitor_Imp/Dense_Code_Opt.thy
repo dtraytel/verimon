@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Code_Opt
-  imports Dense_Imp
+  imports Dense_Imp Dense_Unbox_Exec
 begin
 (*>*)
 
@@ -536,7 +536,10 @@ val dense_elem_consts =
    "gmmtaux_empty",
    "glookup", "gmrtabulate", "geps_lax", "greps_strict", "gleps_strict",
    "grdelta", "gldelta", "gupdate_matchP", "gupdate_matchF_base", "gupdate_matchF_step",
-   "gupdate_matchF", "geval_matchF"]
+   "gupdate_matchF", "geval_matchF",
+   "gcnt_add1", "gcnt_del1", "gcnt_add", "gcnt_del",
+   "gsw_move", "gsw_expire", "gsw_init", "gsw_add_new_ts", "gsw_join", "gsw_add_new_table",
+   "gsw_result", "udtabw", "deopt_table", "reopt_table"]
 
 val heap_since_consts =
   ["gjc", "filter_loop2", "expire_loop2", "upd_loop2", "move_loop2",
@@ -549,6 +552,7 @@ fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str 
 
 setup \<open>Monomorphize.monomorphize_cmd
   (map (fn c => (c, mono_name "de_" c, ["event_data"])) dense_elem_consts
+   @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data"])]
    @ map (fn c => (c, mono_name "hsd_" c, ["event_data list"])) heap_since_consts
    @ map (fn c => (c, mono_name "hsw_" c, ["event_data tuple"])) heap_since_consts)
   ["edl_dict_simps", "etuple_dict_simps"]\<close>
