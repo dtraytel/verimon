@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Unbox_Exec
-  imports Dense_Unbox_Eval
+  imports Dense_Unbox_Eval Dense_Descend_Code
 begin
 (*>*)
 
@@ -404,6 +404,7 @@ lemma dassign_reopt_table: "dassign p t (reopt_table X) = reopt_table (uassign p
 
 lemma filter_deval_constraint_reopt_table:
   "Set.filter (deval_constraint conf) (reopt_table X) = reopt_table (Set.filter (ueval_constraint conf) X)"
+  "{a \<in> reopt_table X. deval_constraint conf a} = reopt_table {a \<in> X. ueval_constraint conf a}"
   by (auto simp: reopt_table_def)
 
 lemma dmtrm_umtrm: "dmtrm mt x = reopt_table (umtrm mt x)"
@@ -770,6 +771,54 @@ lemma mebuf2T_take_trigger:
       in (zs @ [deopt_table z], ax)" "([], daux)" buf ts]
   by (simp add: Let_def dsan_def split: prod.splits)
 
+text \<open>The buffer lemmas in the shapes the simplifier leaves the evaluator's buffers in.\<close>
+
+lemma meprev_next_prev:
+  "meprev_next I (map_mbuf reopt_table buf @@ map reopt_table xs) ts
+   = (case ueprev_next I (buf @@ xs) ts of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
+  using meprev_next_map_mbuf[of I "buf @@ xs" ts] unfolding map_mbuf_append .
+
+lemma meprev_next_next1:
+  "meprev_next I (mbuf_t_empty @@ map reopt_table xs) ts
+   = (case ueprev_next I (mbuf_t_empty @@ xs) ts of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
+  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ xs" ts] unfolding map_mbuf_append map_mbuf_empty .
+
+lemma meprev_next_next2:
+  "meprev_next I (mbuf_t_empty @@ []) ts
+   = (case ueprev_next I (mbuf_t_empty @@ []) ts of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
+  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ []" ts]
+  unfolding map_mbuf_append map_mbuf_empty list.map .
+
+lemma meprev_next_next3:
+  "meprev_next I (mbuf_t_empty @@ reopt_table x # map reopt_table xs) ts
+   = (case ueprev_next I (mbuf_t_empty @@ x # xs) ts of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
+  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ x # xs" ts]
+  unfolding map_mbuf_append map_mbuf_empty list.map .
+
+lemma edsx_eval_since_rdsx0:
+  "edsx_eval_since args [] (rbufS buf) (rdsx aux)
+   = (case uedsx_eval_since args [] buf aux of
+        (zs, buf', aux') \<Rightarrow> (map reopt_table zs, rbufS buf', rdsx aux'))"
+  using edsx_eval_since_rdsx[where rs = "[]"] unfolding list.map .
+
+lemma mebuf2T_take_acc0:
+  assumes "\<And>x y t zs ax. f x y t (map reopt_table zs, ax)
+    = map_prod (map reopt_table) (\<lambda>a. a) (f' x y t (zs, ax))"
+  shows "mebuf2T_take f ([], daux) buf ts
+    = (case mebuf2T_take f' ([], daux) buf ts of
+        (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) (\<lambda>a. a) z', buf', ts'))"
+proof -
+  have "f x y t (map_prod (map reopt_table) (\<lambda>a. a) z)
+      = map_prod (map reopt_table) (\<lambda>a. a) (f' x y t z)" for x y t z
+    by (cases z) (simp add: assms)
+  then show ?thesis
+    using mebuf2T_take_acc[of f "map_prod (map reopt_table) (\<lambda>a. a)" f' "([], daux)" buf ts] by simp
+qed
+
 lemma udeval_Rep:
   "edeval j ts (rdb db) (Rep_udformula \<phi>)
    = (case udeval j ts db \<phi> of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
@@ -829,12 +878,76 @@ next
     using 21(2)[OF refl _ refl refl]
     by (cases "letpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>")
       (auto simp: lp split: prod.splits)
-qed (auto simp: Let_def mebuf2_add_rbuf mebuf2_take_or mebuf2_take_and meprev_next_map_mbuf
-    mebuf2S_add_rbufS edsx_eval_since_rdsx mebuf2t_take_until dux_eval_rdux
-    mebuf2T_take_trigger dmatch_table_reopt_table filter_deval_constraint_reopt_table
-    neg_reopt_table dagg_reopt_table dassign_reopt_table dmtrm_umtrm empty_table_def
-    simp del: meprev_next.simps ueprev_next.simps edsx_eval_since.simps uedsx_eval_since.simps
-    split: prod.splits option.splits)
+next
+  case (1 j ts db)
+  then show ?case by simp
+next
+  case (2 j ts db rel)
+  then show ?case by simp
+next
+  case (3 j ts db e ar)
+  then show ?case by (simp add: empty_table_def split: option.splits)
+next
+  case (4 j ts db e ar tms cs)
+  then show ?case by (simp add: empty_table_def dmatch_table_reopt_table split: option.splits)
+next
+  case (5 j ts db \<phi> conf)
+  then show ?case by (simp add: filter_deval_constraint_reopt_table split: prod.splits)
+next
+  case (6 j ts db \<phi>)
+  then show ?case by (simp add: neg_reopt_table split: prod.splits)
+next
+  case (7 j ts db \<phi> drop0)
+  then show ?case by (simp split: prod.splits)
+next
+  case (8 j ts db g0 \<omega> f k pos \<phi>)
+  then show ?case by (simp add: dagg_reopt_table split: prod.splits)
+next
+  case (9 j ts db \<phi> \<psi> buf)
+  then show ?case by (simp add: mebuf2_add_rbuf mebuf2_take_or split: prod.splits)
+next
+  case (10 j ts db pl \<phi> pos \<psi> buf)
+  then show ?case by (simp add: mebuf2_add_rbuf mebuf2_take_and split: prod.splits)
+next
+  case (11 j ts db I \<phi> first buf nts)
+  then show ?case
+    by (simp add: meprev_next_prev empty_table_def
+        del: meprev_next.simps ueprev_next.simps split: prod.splits)
+next
+  case (12 j ts db I \<phi> first nts)
+  then show ?case
+    by (simp add: meprev_next_next1 meprev_next_next2 meprev_next_next3
+        del: meprev_next.simps ueprev_next.simps split: prod.splits list.splits bool.splits)
+next
+  case (14 j ts db dags \<phi> \<psi> buf aux)
+  then show ?case
+    by (simp add: mebuf2S_add_rbufS edsx_eval_since_rdsx0
+        del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
+next
+  case (15 j ts db dags msk \<phi> \<psi> buf nts t aux)
+  then show ?case
+    by (simp add: mebuf2_add_rbuf mebuf2t_take_until dux_eval_rdux split: prod.splits)
+next
+  case (16 j ts db p t \<phi>)
+  then show ?case by (simp add: dassign_reopt_table split: prod.splits)
+next
+  case (17 j ts db mt i)
+  then show ?case by (simp add: dmtrm_umtrm)
+next
+  case (18 j ts db mt)
+  then show ?case by (simp add: dmtrm_umtrm)
+next
+  case (19 j ts db p m \<phi> \<psi>)
+  then show ?case by (auto split: prod.splits)
+next
+  case (22 j ts db dags pl \<phi> \<psi> dbuf nts daux)
+  then show ?case
+    apply (simp only: Rep_udformula.simps edeval.simps udeval.simps)
+    apply (subst mebuf2T_take_acc0[where f' = "\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
+      in (zs @ [deopt_table z], ax)"])
+    by (auto simp: Let_def dsan_def split: prod.splits)
+qed
 
 subsection \<open>The compiler, the state and the step\<close>
 
