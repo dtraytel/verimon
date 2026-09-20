@@ -5984,3 +5984,296 @@ The session builds in 5:22 (5:47 with the export) and the cram suite passes; in 
 code `dfail_nodes_list` and `dformula_of_list` are gone and `hmap`, `zip` and `sum_list` stand
 where they were. The two `Monitor_Imp2` functions were already unreachable from the export
 (20.44), so the generated code does not change for them.
+
+## 21. The five evaluators against MonPoly, and two more optimizations of the verified dense evaluator
+
+The repository now runs five evaluators of the same fragment, and this section measures them
+against each other and against MonPoly before optimizing the one that is both verified and
+functional. The five, with the flags that select them:
+
+| name | binary | flags | what runs |
+|---|---|---|---|
+| `pure` | `431a1da` | `-verified` | the kernel of `MFODL_Monitor_Devel`, wide tuples, pure functional structures |
+| `heap_since` | `431a1da` | `-verified -heap_since` | the same kernel with the Since structure refined to Imperative HOL in `Monitor_Imp` (Section 12), verified |
+| `heap_maps` | `431a1da` | `-verified -heap_maps` | the same with the unverified heap-resident maps of `Monitor_Imp2` (Section 15.3) |
+| `dense` | this branch | `-verified` | the shipping monitor: `Dense_Imp.deval`, short tuples, heap structures, tested differentially, not verified |
+| `vdense` | this branch | `-verified -vdense` | `Dense_Eval.deval`, the verified dense evaluator of 20.45: pure, and `dsim_deval` is about it |
+
+`431a1da` is the commit before the dense series started; its binary is built in a worktree and
+its `-verified` is the wide kernel that 20.45 measured as `monpoly_was`. The three configurations
+of that binary differ only in their auxiliary structures, so the difference between them is the
+refinement hypothesis of Section 2 measured once more.
+
+### 21.1 The comparison
+
+Wall-clock seconds, best of three interleaved runs, on the synthetic suite of 20.35 (8000 time
+points, `syn.log`) and the two `P2`/`P3` formulas of Section 1 over their 201157-time-point log.
+A `-` is a formula MonPoly does not accept; `refused` is a formula outside the verified dense
+fragment.
+
+| formula | monpoly | vdense | dense | heap_since | heap_maps | pure |
+|---|---|---|---|---|---|---|
+| P2 | 0.40 | 15.06 | 0.65 | 1.02 | 0.70 | 1.00 |
+| P3 | 0.44 | 0.96 | 0.63 | 0.92 | 0.64 | 0.90 |
+| and | 0.57 | 0.59 | 0.56 | 0.79 | 0.69 | 0.80 |
+| andnot | 0.56 | 0.51 | 0.51 | 0.50 | 0.50 | 0.50 |
+| once | 2.44 | 2.88 | 1.80 | 2.94 | 1.86 | 2.89 |
+| since | 0.89 | 1.16 | 1.02 | 1.10 | 1.08 | 1.07 |
+| eventually | 1.63 | 2.28 | 1.38 | 2.16 | 1.43 | 2.10 |
+| until | 0.83 | 1.27 | 1.10 | 1.18 | 1.18 | 1.16 |
+| agg | 0.61 | 0.92 | 0.88 | 0.94 | 0.94 | 0.93 |
+| complex | 3.03 | 4.39 | 3.09 | 5.65 | 3.89 | 5.66 |
+| sincewide | 3.18 | 2.82 | 2.73 | 3.53 | 3.46 | 3.33 |
+| untilwide | 3.11 | 3.13 | 2.88 | 3.67 | 3.54 | 3.65 |
+| aggwide | 12.47 | 9.81 | 9.37 | 13.14 | 11.93 | 13.12 |
+| sincesub | 0.81 | 1.68 | 1.54 | 2.15 | 2.14 | 2.11 |
+| untilsub | 0.69 | 1.04 | 0.97 | 1.01 | 1.00 | 1.01 |
+| sincesub3 | 0.68 | 0.88 | 0.81 | 1.30 | 1.19 | 1.28 |
+| trigger | - | 0.77 | 0.65 | 0.70 | 0.67 | 0.68 |
+| andtrigger | - | 0.72 | 0.65 | 0.71 | 0.70 | 0.72 |
+| matchp | - | refused | 0.48 | 0.47 | 0.47 | 0.47 |
+| frz | - | 1.20 | 0.99 | 1.16 | 1.14 | 1.11 |
+| aggonce | 0.32 | 1.22 | 0.60 | 0.64 | 0.65 | 0.65 |
+
+Three things the table says.
+
+**The heap refinements bought little.** `heap_since` is within noise of `pure` everywhere, and
+slower on `and` and `complex`; `heap_maps` gains on `once`, `eventually` and `complex` and nothing
+elsewhere. That is the conclusion of Section 15.3 restated on the current suite: the time is in
+the operators and the allocation they do, not in the containers.
+
+**The dense representation is what closed the gap with MonPoly.** `dense` is within 20% of
+MonPoly on the wide formulas and ahead of it on the three widest, and its remaining deficit is
+on the subformula-heavy `sincesub` and on `P2`/`P3`, where MonPoly's Since/Until keep per-tuple
+timestamps in the mutable tables of Section 2.1.
+
+**The verified dense evaluator was the shipping one, except in three places.** `vdense` and
+`dense` agree within 10% on twelve of the twenty formulas. The three exceptions are `P2` (23x),
+`once`/`eventually`/`P3` (1.5x) and `aggonce` (2x), and the first two have one cause each:
+
+- `ONCE`, `EVENTUALLY` and the `NOT ONCE`/`NOT EVENTUALLY` of `P2`/`P3` have a closed left
+  operand. The shipping monitor has run the sliding windows of `Since_Imp2` and `Until_Imp2`
+  for those since 20.34; the verified evaluator ran the general structures, which keep a mapping
+  from every tuple of the right operand to the last time point at which the (constant) left
+  operand held.
+- `P2` is `EVENTUALLY[0,6)` under a conjunction on a log with 106 timestamps for 201157 time
+  points. The `EVENTUALLY` cannot answer for a time point until a timestamp six later arrives,
+  so the conjunction above it buffers the left operand's tables for about twelve thousand time
+  points, and `Dense_Eval.deval` buffers in lists with `@`. Twelve thousand appends to a list of
+  twelve thousand is the 15 seconds; the shipping monitor buffers in queues.
+
+The rest of this section removes both, keeping the theorem.
+
+### 21.2 The sliding windows, verified (`Dense_Evt.thy`, `Dense_Evt_Aux.thy`)
+
+`ONCE I φ` is `TT SINCE I φ` and `EVENTUALLY I φ` is `TT UNTIL I φ`; more generally the left
+operand of a Since or Until is *closed* when it has no free variables (`args_L args = {}`), and
+then it holds for every valuation or for none, and "the left operand held throughout" is a
+property of time points alone. The general structures keep a mapping from tuples to time points
+for the left operand; with a closed one the answer is the union of the right operand's tables
+over a contiguous run of time points, both ends of which only move forward. A sliding window
+suffices: the run's tables in a queue, the run's union as a count per tuple, and the answer as
+the set of tuples whose count is positive.
+
+**The count set.** Both windows share `cntset = (tuple, nat) mapping × table`: a multiset of
+tuples as a count mapping, with the set of tuples of positive count kept alongside so that the
+answer is a field rather than a scan. `cnt_add T` and `cnt_del T` fold over a table; the invariant
+`cnt_inv Ts cc` says the count is `cnt_of Ts x = length (filter (λT. x ∈ T) Ts)` and the set is
+`⋃ (set Ts)`, and the four lemmas `cnt_inv_snoc/tl/adds/dels` are what the window proofs use.
+
+**Since** (`swaux = ts × queue × queue × cntset`). Two queues of `(timestamp, table)`, oldest
+first: the tables whose timestamp is not yet old enough to be in the window (for a non-zero left
+bound of the interval, a table *waits* rather than being excluded), and the window itself; and
+the window's union as a count set. `sw_add_new_ts` moves the entries that have become old enough
+from the waiting queue into the window and expires the ones that have become too old
+(`sw_move`, `sw_expire`, each a scan from the front that stops at the first entry it keeps);
+`sw_add_new_table` appends the new table to the window or to the waiting queue according to
+`memL I 0`; `sw_join` -- the operation that in the general structure joins every stored tuple
+against the left operand -- resets the whole structure when the closed left operand fails and does
+nothing otherwise; `sw_result` is the count set's set. The invariant `valid_sw args cur aux
+auxlist` relates the structure to the abstract `msaux` list of the kernel's locale: both queues
+are sorted, the waiting entries are those not yet `memL`, the window's are those `memL ∧ memR`,
+the count set is `cnt_inv` of the window's tables, and for every timestamp `u` the union of the
+tables held at `u` in the two queues (`tbls_at u`) is the union of the tables at `u` in the
+abstract list. The last clause is the one that makes the `join` step provable: `join_closed` says
+that joining a table of width `n` over columns `R` with a closed table `rel1` (`table n {} rel1`)
+is the table itself or empty according to whether `rel1` is non-empty, so "the left operand
+failed" is exactly "every abstract entry becomes empty", which `tbls_at` on an empty pair of
+queues also says.
+
+**Until** (`uwaux = ts queue × entry queue × entry queue × nat × bool × cntset × table list`).
+One entry `(timestamp, table, left held)` per pending time point, oldest first, split into the
+entries already inside the window of the oldest pending time point and the rest; a length; a
+flag saying whether the window may still grow (it stops for good at the first entry after which
+the left operand fails, `bend`); the window's union as a count set; and the answers already
+determined, newest first. `uw_extend` grows the window lazily, one entry at a time, as far as the
+oldest time point's timestamp and the interval allow. When a new timestamp shows that the oldest
+pending time point can no longer be affected by the future (`uw_shift`, a scan that stops at the
+first time point still in range), `uw_step` extends its window as far as it will go, records the
+window's union as that time point's answer, drops the time point's own entry from the window and
+slides. `uw_add_new` shifts and appends; `uw_eval` shifts and hands over the accumulated answers.
+The abstract list the kernel's `muaux` locale specifies holds, for each pending time point, the
+accumulated left operand and the accumulated answer. `uw_abs args es` computes that list from the
+entries: the left operand's accumulation is the unit table or empty according to whether the
+left operand held at every pending time point from this one on (`uw_a1`), and the answer is the
+union of the right operand's tables over the run that starts at this time point and stops at the
+first one out of range or the first one after which the left operand fails (`uw_a2`). The
+invariant `valid_uw` says the structure's entries are sorted and in range, the count set is
+`cnt_inv` of the window, the window is a prefix of the entries closed under the extension order
+(`uw_win`), and the abstract list is `ex @ uw_abs args es` where `ex` are the time points already
+answered, whose answers are the reversed `dn`.
+
+The proofs are the five (Since) and six (Until) operations against the assumptions of the
+kernel's locales, specialised to a closed left operand: `valid_sw_init/add_new_ts/join/
+add_new_table/result` and `valid_uw_init/length/step/mono/shift/add_new/eval`. The `join` lemma
+takes `table (args_n args) {} rel1` and `(X = {}) = (rel1 = {})` as hypotheses -- the dense
+evaluator's left operand table and the kernel's wide one are empty together, which is what the
+simulation already knows -- and `valid_uw_shift` is proved by well-founded induction on the number
+of pending entries rather than by the function package's induction, whose hypotheses do not
+carry the count set through a step. 1598 lines.
+
+**The dispatch** (`Dense_Evt_Aux.thy`) is where the verified evaluator chooses:
+
+```isabelle
+datatype dsaux_x = DSX_gen "event_data dmsaux" | DSX_win swaux
+definition dsx_init args msk = (if args_L args = {} then DSX_win (sw_init args) else DSX_gen (dinit_msaux args msk))
+datatype duaux_x = DUX_gen "event_data mmuaux_dq" | DUX_win uwaux
+definition dux_init args = (if args_L args = {} ∧ memL (args_ivl args) 0 then DUX_win (uw_init args) else DUX_gen (init_dq args))
+```
+
+with `dsx_add_new_ts/join/add_new_table/result` and `dux_add_new/eval/length` dispatching on the
+constructor, and `dsxaux'`/`duxaux'` the invariant that is the general one in the `_gen` case and
+`valid_sw`/`valid_uw` in the `_win` case. `Dense_Eval`'s `DSince` and `DUntil` nodes carry
+`dsaux_x`/`duaux_x`, `dsim` uses the dispatching invariants, and `dof` and `edof` initialise with
+`dsx_init`/`dux_init`; the simulation theorem `dsim_deval` is unchanged in statement. The Until
+window is chosen only for `memL I 0`, where the shipping structure is also chosen; the Since
+window whenever the left operand is closed.
+
+**Measured** (same suite, `vdense_was` the verified evaluator before this section):
+
+| formula | monpoly | vdense_was | vdense (windows) | dense |
+|---|---|---|---|---|
+| P2 | 0.39 | 15.27 | 14.10 | 0.67 |
+| P3 | 0.42 | 1.04 | 0.57 | 0.61 |
+| once | 2.38 | 3.01 | 1.85 | 1.81 |
+| eventually | 1.62 | 2.28 | 1.43 | 1.35 |
+| complex | 2.96 | 4.36 | 3.27 | 3.03 |
+| aggonce | 0.32 | 1.26 | 1.11 | 0.61 |
+
+`once`, `eventually`, `P3` and `complex` are now the shipping monitor's; `P2` is untouched,
+as predicted, and `aggonce` moves only a little, because its cost is elsewhere (below).
+
+### 21.3 The buffers, in queues (`Dense_Exec.thy`)
+
+`Dense_Eval.deval` buffers a node's operand tables in lists, as the kernel's `meval` does: a
+batch is appended with `@`, a step of the traversal takes the head. That is the specification's
+shape, and it is quadratic in the number of tables a buffer holds. The kernel's executable layer
+(`Monitor_Impl`) solves this with `'a mbuf_t`, a copy of the list type (`typedef 'a mbuf_t =
+UNIV :: 'a list set`) whose code representation is a queue (`code_datatype MBuf2_t`), an
+evaluator `meeval` over a formula type `meformula` with `mbuf_t` buffers, and the theorem
+`meval_code: meval j n ts db (Rep_meformula φ) = (let (zs, φ') = meeval n ts db φ in (zs,
+Rep_meformula φ'))`, which is the code equation for `meval` once `code_datatype Rep_meformula`
+makes the specification type's code representation the implementation type.
+
+`Dense_Exec.thy` does the same for the dense evaluator, and nothing else. `edformula` is
+`dformula` with every buffer in `mbuf_t` -- `event_data mebuf2` for the binary nodes, `mebufn`
+for the multi-way conjunction, `mebuf2S` for Since, `table mbuf_t` and `ts mbuf_t` for Prev and
+Next -- and `Rep_edformula :: edformula ⇒ dformula` reads the buffers through `Rep_mbuf_t`.
+`edeval` is `deval` with the kernel's queue operations put in where `deval` has the list ones:
+`mebuf2_add`, `mebuf2_take`, `mebuf2t_take`, `mebuf2T_take`, `mebufn_take`, `meprev_next`,
+`mebuf2S_add`; the Since node's own traversal, `dsx_eval_since`, gets an `edsx_eval_since` over
+`mbuf_t_cases`. The theorem is
+
+```isabelle
+lemma edeval_Rep: "deval j ts db (Rep_edformula φ) = (let (zs, φ') = edeval j ts db φ in (zs, Rep_edformula φ'))"
+```
+
+by `edeval.induct`, every case but three by the kernel's own `Rep` lemmas about the buffer
+operations (`mebuf2_take`, `mebuf2t_take`, ..., as destruction rules) and the two `rep_eq`s of
+`mbuf_t_empty` and `mbuf_t_append`. The three are the recursive let, which needs
+`letpast_meval0_cong_f`, the freeze, which needs `default_maux.freeze_meval0_cong_fst` (the lemma
+lives in the `maux` locale, so its name in the dense session is the interpretation's), and the
+multi-way conjunction, whose induction hypothesis is over the zipped list. Then
+
+```isabelle
+code_datatype Rep_edformula
+declare [[code drop: deval vdfail_nodes]]
+lemma deval_code[code]:        "deval j ts db (Rep_edformula φ) = (let (zs, φ') = edeval j ts db φ in (zs, Rep_edformula φ'))"
+lemma vdfail_nodes_code[code]: "vdfail_nodes (Rep_edformula φ) = evdfail_nodes φ"
+```
+
+and the compiler follows: `Dense_Descend_Code.edof` now builds `edformula` (`EDOr`, `EDAnd`,
+... with the buffers `mbuf_t_empty @@ map (dtabc n cs) (Rep_mbuf_t b)` where `dof` writes `map
+(dtabc n cs) b`), `edof_dof: Rep_edformula (edof n cs e) = dof n cs (Rep_meformula e)`, and
+`dof_code[code]` the other way round. The multi-way conjunction's buffers are built from the
+specification's own expression, `map (λb. mbuf_t_empty @@ b) (map2 map (map (dtabc n) css) (map
+Rep_mbuf_t buf))`, because `dof` pushes `map (dtabc n)` into the column list `c0 # css @ nss` and
+the simplifier then normalises the two sides of `edof_dof` differently; building the same list
+and wrapping it lets both sides normalise to the same term. The generated code's `dminit_safe`,
+`dmstep` and `vdfail_nodes` keep their names and their types; what they run is `edeval`.
+
+The simulation theorem is untouched: `dsim_deval` is about `Dense_Eval.deval`, and by
+`edeval_Rep` that is what the generated code computes, up to the representation of the buffers.
+335 lines, plus the 166 of the retargeted compiler.
+
+### 21.4 Measured
+
+Best of three interleaved runs; `vdense_was` is the verified dense evaluator at the start of
+this section (20.46), `vdense_evt` with the windows only, `vdense` with the windows and the
+queue buffers, `dense` the shipping monitor, all from the same commit of the front end.
+
+| formula | monpoly | vdense_was | vdense_evt | vdense | dense |
+|---|---|---|---|---|---|
+| P2 | 0.38 | 15.16 | 13.72 | 0.61 | 0.64 |
+| P3 | 0.42 | 0.96 | 0.55 | 0.56 | 0.59 |
+| and | 0.57 | 0.58 | 0.57 | 0.58 | 0.55 |
+| andnot | 0.56 | 0.52 | 0.51 | 0.51 | 0.50 |
+| once | 2.43 | 3.02 | 1.87 | 1.85 | 1.74 |
+| since | 0.89 | 1.12 | 1.16 | 1.14 | 1.02 |
+| eventually | 1.64 | 2.34 | 1.42 | 1.42 | 1.37 |
+| until | 0.84 | 1.25 | 1.28 | 1.26 | 1.12 |
+| agg | 0.61 | 0.91 | 0.93 | 0.91 | 0.89 |
+| complex | 3.00 | 4.43 | 3.28 | 3.31 | 3.13 |
+| sincewide | 3.15 | 2.86 | 2.86 | 2.89 | 2.80 |
+| untilwide | 3.15 | 3.16 | 3.06 | 3.12 | 2.89 |
+| aggwide | 12.56 | 9.96 | 9.84 | 9.84 | 9.58 |
+| sincesub | 0.82 | 1.66 | 1.69 | 1.74 | 1.50 |
+| untilsub | 0.69 | 1.08 | 1.06 | 1.09 | 0.98 |
+| sincesub3 | 0.68 | 0.86 | 0.87 | 0.86 | 0.82 |
+| trigger | - | 0.76 | 0.78 | 0.76 | 0.64 |
+| andtrigger | - | 0.70 | 0.71 | 0.69 | 0.65 |
+| matchp | - | refused | refused | refused | 0.47 |
+| frz | - | 1.11 | 1.04 | 1.01 | 0.96 |
+| aggonce | 0.33 | 1.24 | 1.14 | 1.13 | 0.61 |
+
+`P2` is the queue buffers: 15.2 seconds to 0.61, the shipping monitor's 0.64. The rest of the
+table is the windows. Against the shipping monitor, the verified dense evaluator is now within
+10% on every formula but `aggonce`; against MonPoly it keeps the shipping monitor's profile --
+ahead on the wide formulas, behind by up to 2x on the subformula-heavy ones and on the two
+aggregations.
+
+**What is left, and where.** `aggonce` (`z <- CNT x ONCE[0,10] C(x)`) is the one formula where
+the shipping monitor is still nearly twice as fast, and the reason is a fusion the verified
+evaluator does not do. The kernel folds an aggregation over a Since into the Since node
+(`args_agg`), and its structure keeps the aggregate incrementally in `Optimized_Agg`'s `maggaux`
+-- a count, a sum or a rank tree per group, updated as tuples enter and leave the window. The
+shipping monitor keeps that fusion (20.39). The verified dense evaluator unfuses it: `dof` puts a
+`DAgg` node over a `DSince` whose window reports the plain union, and `dagg` recomputes the count
+per group from the whole union at every time point (the `DsSinceAgg` case of `dsim`). Since the
+window already maintains the union as a count set with the tuples' entries and exits explicit
+(`cnt_add`, `cnt_del`), attaching `maggaux` to those transitions is the next step, and
+`valid_insert_maggaux`/`valid_delete_maggaux`/`valid_result_maggaux` are its proof.
+
+The remaining 5-10% on `since`, `until`, `sincesub` and `trigger` is the representation of a
+tuple: the verified evaluator's tables hold `event_data option list`s with no `None` in them
+(20.45), the shipping monitor's the unboxed `event_data list` of 20.36. That is not an
+algorithmic difference and not one that the simulation theorem sees; it is a data refinement of
+the table type, and it would be done the way `mbuf_t` is done here -- a copy of the type with a
+different code representation -- if the kernel's table operations were not themselves stated on
+the boxed type.
+
+**The differential tests** are unchanged: on the twenty-one benchmark formulas `-verified
+-vdense` and `-verified` give identical verdicts (and MonPoly too where it accepts the formula),
+with `matchp` refused by the verified fragment as before; of the 600 single-line `-verified`
+commands of the cram corpus and the `cov_verified` formulas, 593 are identical, 7 refused, 0
+differ. `MFODL_Monitor_Imp` builds in 4:32 elapsed on four threads, export included.
