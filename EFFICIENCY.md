@@ -6254,14 +6254,14 @@ aggregations.
 
 **What is left, and where.** `aggonce` (`z <- CNT x ONCE[0,10] C(x)`) is the one formula where
 the shipping monitor is still nearly twice as fast, and the reason is a fusion the verified
-evaluator does not do. The kernel folds an aggregation over a Since into the Since node
+evaluator does not do (21.5 does it). The kernel folds an aggregation over a Since into the Since node
 (`args_agg`), and its structure keeps the aggregate incrementally in `Optimized_Agg`'s `maggaux`
 -- a count, a sum or a rank tree per group, updated as tuples enter and leave the window. The
 shipping monitor keeps that fusion (20.39). The verified dense evaluator unfuses it: `dof` puts a
 `DAgg` node over a `DSince` whose window reports the plain union, and `dagg` recomputes the count
 per group from the whole union at every time point (the `DsSinceAgg` case of `dsim`). Since the
 window already maintains the union as a count set with the tuples' entries and exits explicit
-(`cnt_add`, `cnt_del`), attaching `maggaux` to those transitions is the next step, and
+(`cnt_add`, `cnt_del`), attaching `maggaux` to those transitions is what 21.5 does, and
 `valid_insert_maggaux`/`valid_delete_maggaux`/`valid_result_maggaux` are its proof.
 
 The remaining 5-10% on `since`, `until`, `sincesub` and `trigger` is the representation of a
@@ -6277,3 +6277,117 @@ the boxed type.
 with `matchp` refused by the verified fragment as before; of the 600 single-line `-verified`
 commands of the cram corpus and the `cov_verified` formulas, 593 are identical, 7 refused, 0
 differ. `MFODL_Monitor_Imp` builds in 4:32 elapsed on four threads, export included.
+
+### 21.5 The aggregation over a ONCE, fused into the window (`Dense_Evt_Agg.thy`)
+
+21.4 left one formula where the shipping monitor was nearly twice as fast: `aggonce`,
+`z <- CNT x ONCE[0,10] C(x)`. The kernel folds the aggregation into the Since node and keeps the
+aggregate incrementally inside its structure; the verified dense evaluator compiled the same node
+to a `DAgg` over a `DSince` whose window reports the plain union, and recomputed the count per
+group from that union at every time point. This section fuses the two for the verified
+evaluator, keeping the theorem.
+
+**What the kernel already has.** `Optimized_Agg.thy` is a verified incremental aggregation
+structure: `aggaux` is a count, a sum or a rank tree per group, `insert_maggaux`/`delete_maggaux`
+take a set of tuples in or out (each returning a flag that says whether the structure could keep
+the aggregate, so that the caller can fall back), and
+
+```isabelle
+valid_insert_maggaux: valid_maggaux args aux X ⟹ finite Y ⟹ X ∩ Y = {} ⟹ let (v', aux') = insert_maggaux args Y aux in if v' then valid_maggaux args aux' (X ∪ Y) else True
+valid_delete_maggaux: valid_maggaux args aux X ⟹ Y ⊆ X ⟹ let (v', aux') = delete_maggaux args Y aux in if v' then valid_maggaux args aux' (X - Y) else True
+valid_result_maggaux: valid_maggaux args aux X ⟹ result_maggaux args aux = eval_aggargs args X
+```
+
+are its contract. The kernel's Since structure with an aggregation carries an `aggaux option`
+next to its tables and drives it with the tuples that enter and leave (`Optimized_Agg_Temporal`).
+The window of 21.2 has exactly those events: its count set makes a tuple's entry into the union
+(`cnt_enter T cc = T - snd cc`, the tuples of a new table not yet in the union) and its exit
+(`cnt_leave T cc`, the tuples of an expiring table that the union holds exactly once) explicit.
+So the fused window is the window plus an `aggaux option`, with `ag_ins`/`ag_del` called at every
+`cnt_add`/`cnt_del`, and the invariant `ag_inv` saying the structure is valid for the union.
+
+**The one real obstacle: the frame.** `valid_maggaux` is stated for the kernel's aggregation
+`eval_agg n g0 y ω tys f`, which reads and writes tuples that have a slot for the result column
+`y`. The dense aggregation `dagg g0 ω f k pos` (Section 20) reads tuples *without* that slot and
+inserts the result at position `pos`. The two are reconciled by `dagg_p_eval_aggargs`:
+
+```isabelle
+dagg_ok p w ⟹ (∀d ∈ D. dwf_tuple w d) ⟹
+  dagg_p p D = dtabc n' [0..<n'] (eval_aggargs (dagg_args p w) (dagg_wide p w D))
+```
+
+-- the dense aggregation of a table of width `w` is the kernel's aggregation, at a frame `n' = w
+- k + 1` whose group columns are all of the result's columns but `pos`, of the table widened by
+one `None` at position `k + pos` (`dagg_wide`, an instance of `dtabw`), with the term's variables
+above the slot shifted by one (`shift_trm`), and the result narrowed back. It is an instance of
+`dagg_eval_agg` (20.2) at that small frame, and it is what lets the fused window feed the kernel's
+structure `dagg_wide p w (cnt_enter T cc)` and report `dtabc n' [0..<n'] (result_maggaux …)`. The
+widening is injective on well-formed tuples (`inj_on_dwiden`), which is what turns the count set's
+set-level facts about entering and leaving tuples into the disjointness and subset side
+conditions of the kernel's lemmas.
+
+**The dispatch and the simulation.** `dsaux_x` gets a third constructor, `DSX_wagg p a`, and two
+projections that say what a structure reports relative to the union: `dsx_agg` (the parameters of
+the fused aggregation, if any) and `dsx_post` (`dagg_p p` or `id`), both preserved by every
+operation and by a firing of the node (`dsx_agg_eval_since`). The simulation's result relation
+`dsres` becomes `dsresh n cs args h`, with the post-function `h` applied to the dense side, and
+`eval_since_rel` is proved for it with `h = dsx_post daux` carried through the traversal. Then
+`dsim` gets one new rule, `DsSinceFused`: a `DSince` whose structure reports the aggregate
+simulates the kernel's fused `MSince` directly, with the same twenty-two side conditions as
+`DsSinceAgg` (the unfused pair) and `dsx_agg daux = Some (…)` in place of `dsx_agg daux = None`;
+its case in `dsim_deval_N` is the `DsSinceAgg` case with the `dagg_eval_agg` step moved from
+the `DAgg` node into the structure. `dof` and `edof` choose the fused window when the left
+operand has no join columns (`cpos cs_R (set cs_L) = {}`) -- the condition is stated on the
+column positions rather than on `cs_L = []` because an equation on `cs_L` is a rewrite rule the
+simplifier would use inside the branch, and `edof_dof`'s induction hypothesis is stated on
+`cs_L`. `dsim_dof_minit0_MSinceAgg` gets the corresponding case, with `dsince_rel_init_agg`
+supplying the initial state.
+
+One thing to record from the executable layer. After the datatype grew its constructor, the
+buffer lemma `edsx_eval_since` of `Dense_Exec` (unchanged in statement) failed inside `auto`
+with an internal `TYPE` exception, "Variable has two distinct types ?x1", whenever the first
+induction hypothesis was chained through the simplifier -- with the same hypothesis proved fine
+by explicit resolution. The hypothesis's binders are consistently typed (an ML check confirmed
+it), so the clash arises in the simplifier's conversion of the premise to a rewrite rule and I
+did not find its root; the proof now applies that hypothesis with `OF` in the one branch that
+needs it and leaves the rest to `auto`.
+
+Sizes: `Dense_Evt_Agg.thy` is 675 lines (the frame lemma with its column-list arithmetic, the
+aggregate alongside the count set, the two scans re-stated with the aggregate threaded through
+and proved against the plain ones, and the five validity lemmas); the dispatch grows by 130, the
+simulation by 210 and the two compilers by 80.
+
+**Measured** (same suite; `dense` the shipping monitor):
+
+| formula | monpoly | vdense (21.4) | vdense (fused) | dense |
+|---|---|---|---|---|
+| aggonce | 0.31 | 1.13 | 0.57 | 0.61 |
+| agg | 0.59 | 0.91 | 0.91 | 0.87 |
+| aggwide | 12.33 | 9.84 | 9.93 | 9.29 |
+| once | 2.37 | 1.85 | 1.85 | 1.74 |
+| since | 0.87 | 1.14 | 1.13 | 1.02 |
+| complex | 2.95 | 3.31 | 3.26 | 3.02 |
+
+`aggonce` is now the shipping monitor's; nothing else moved, as nothing else compiles to the
+fused window (the `agg` formulas aggregate a non-temporal operand and go through `DAgg` as
+before). The remaining gap to MonPoly on the two aggregations is MonPoly's own, unverified,
+mutable aggregation tables; the remaining 5-15% to the shipping monitor on `since`, `until`,
+`sincesub` and `trigger` is the boxed tuple representation of 21.4.
+
+The differential tests are as before: identical verdicts on the benchmark formulas (with
+`matchp` refused), and 593 identical, 7 refused, 0 differing on the corpus.
+`MFODL_Monitor_Imp` builds in 4:34 on four threads with the export.
+
+**Not done: the same for an EVENTUALLY.** The Until window of 21.2 has the same structure -- a
+count set with explicit entries and exits -- so an aggregation over an `EVENTUALLY` could be
+fused the same way, with the aggregate read at the moment a time point's window is complete
+(`uw_step`) rather than at every result. Nothing in the suite exercises it, and the kernel's
+own Until structure does not fuse its aggregation either, so it was left as it is.
+
+**Where the verified dense evaluator stands.** Against the pure kernel it started from
+(`vdense_was` in 21.2's table, itself the result of Sections 19-20), the three changes of this
+section are 1.7x on `once`, 1.6x on `eventually` and `P3`, 2.2x on `aggonce`, and 25x on `P2`;
+it is within 10% of the shipping, unverified monitor on every formula of the suite it accepts,
+ahead of MonPoly on the wide formulas, and behind MonPoly by up to 2x on the subformula-heavy
+ones. Every one of those changes is covered by the simulation theorem `dsim_deval`, whose
+statement did not change.
