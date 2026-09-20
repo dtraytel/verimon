@@ -3384,7 +3384,7 @@ type muaux_dq =
                           ((event_data option) list) set list))))))))));;
 
 type 'a dmstate_ext =
-  Dmstate_ext of nat * nat * dformulaa * nat * nat list * nat list * 'a;;
+  Dmstate_ext of nat * nat * dformulaa * nat * nat list * nat mbuf_t * 'a;;
 
 type 'a x_a_queue_x_a_option_prod_x_x_x_a_list_x_a_list_prod_x_a_option_prod =
   Abs_x_a_queue_x_a_option_prod_x_x_x_a_list_x_a_list_prod_x_a_option_prod of
@@ -5258,9 +5258,6 @@ let rec smp_cols = function [] -> []
                    | I2f v :: ts -> [];;
 
 let rec dmsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L);;
-
-let rec enumerate n x1 = match n, x1 with n, [] -> []
-                    | n, x :: xs -> (n, x) :: enumerate (suc n) xs;;
 
 let rec partition
   p x1 = match p, x1 with p, [] -> ([], [])
@@ -12992,17 +12989,27 @@ let rec dmstate_i
     (dmstate_i, dmstate_j, dmstate_m, dmstate_n, dmstate_cs, dmstate_t, more))
     = dmstate_i;;
 
+let rec dannotate
+  i tq x2 acc = match i, tq, x2, acc with i, tq, [], acc -> (i, (tq, rev acc))
+    | i, tq, v :: vs, acc ->
+        (match mbuf_t_cases tq
+          with (None, tqa) ->
+            (plus_nata (plus_nata i one_nata) (size_lista vs), (tqa, rev acc))
+          | (Some t, tqa) ->
+            dannotate (plus_nata i one_nata) tqa vs ((i, (t, v)) :: acc));;
+
 let rec dmstep
   tdb st =
     (let (xs, m) =
        devala (plus_nata (dmstate_j st) one_nata) [snd tdb] (fst tdb)
          (dmstate_m st)
        in
-      (enumerate (dmstate_i st) (zip (dmstate_t st @ [snd tdb]) xs),
-        Dmstate_ext
-          (plus_nata (dmstate_i st) (size_lista xs),
-            plus_nata (dmstate_j st) one_nata, m, dmstate_n st, dmstate_cs st,
-            drop (size_lista xs) (dmstate_t st @ [snd tdb]), ())));;
+     let (i, (tq, vs)) =
+       dannotate (dmstate_i st) (mbuf_t_append (dmstate_t st) [snd tdb]) xs []
+       in
+      (vs, Dmstate_ext
+             (i, plus_nata (dmstate_j st) one_nata, m, dmstate_n st,
+               dmstate_cs st, tq, ())));;
 
 let rec dagg_fused
   n cs args =
@@ -13414,8 +13421,8 @@ let rec mstate_i (Mestate (i, j, m, n, t, zeta)) = i;;
 let rec dof_state
   n cs st =
     Dmstate_ext
-      (mstate_i st, mstate_j st, dof n cs (mstate_m st), n, cs, mstate_t st,
-        ());;
+      (mstate_i st, mstate_j st, dof n cs (mstate_m st), n, cs,
+        mbuf_t_append mbuf_t_empty (mstate_t st), ());;
 
 let rec vdfail_nodes
   = function DFaila -> one_nata
