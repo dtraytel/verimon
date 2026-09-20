@@ -2017,6 +2017,175 @@ next
     by (simp add: dtabc_Un_img dtabc_eps_lax[OF s b css o1 tg])
 qed simp_all
 
+subsection \<open>The two structures\<close>
+
+text \<open>
+  A past-match structure is a list of tabulations indexed by a time stamp; the dense one is the
+  same list with every entry narrowed.  Since a tabulation is only ever read through
+  @{const lookup}, the relation below says just that, and adds the invariant the derivatives
+  need: every entry is a table over the node's columns.
+\<close>
+
+definition dmrd_rel :: "nat \<Rightarrow> cols \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> event_data mr\<delta>aux \<Rightarrow> bool" where
+  "dmrd_rel n cs = list_all2 (\<lambda>(t, X) (t', X'). t = t' \<and>
+     (\<forall>ms. table n (set cs) (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = dtabc n cs (lookup X ms)))"
+
+lemma dmrd_rel_Nil[simp]: "dmrd_rel n cs [] []"
+  by (simp add: dmrd_rel_def)
+
+lemma dmrd_rel_Cons[simp]:
+  "dmrd_rel n cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
+     (\<forall>ms. table n (set cs) (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = dtabc n cs (lookup X ms)) \<and>
+     dmrd_rel n cs aux daux"
+  by (simp add: dmrd_rel_def)
+
+lemma dmrd_rel_length: "dmrd_rel n cs aux daux \<Longrightarrow> length aux = length daux"
+  by (simp add: dmrd_rel_def list_all2_lengthD)
+
+lemma dmrd_rel_induct[consumes 1, case_names Nil Cons]:
+  assumes "dmrd_rel n cs aux daux"
+    and "P [] []"
+    and "\<And>t X X' aux daux. (\<forall>ms. table n (set cs) (lookup X ms)) \<Longrightarrow>
+       (\<forall>ms. lookup X' ms = dtabc n cs (lookup X ms)) \<Longrightarrow> dmrd_rel n cs aux daux \<Longrightarrow>
+       P aux daux \<Longrightarrow> P ((t, X) # aux) ((t, X') # daux)"
+  shows "P aux daux"
+  using assms(1)[unfolded dmrd_rel_def]
+  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: dmrd_rel_def\<close>)text \<open>Narrowing a tabulation entry by entry is narrowing what it tabulates.\<close>
+
+lemma lookup_mrtabulate_cong:
+  assumes d: "distinct mrs" and f: "\<And>ms. ms \<in> set mrs \<Longrightarrow> dtabc n cs (f ms) = g ms"
+  shows "lookup (mrtabulate mrs g) ms = dtabc n cs (lookup (mrtabulate mrs f) ms)"
+  using f by (simp add: lookup_tabulate[OF d])
+
+text \<open>Reading a structure is a union of lookups, which narrowing distributes over.\<close>
+
+lemma dtabc_foldr_lookup:
+  assumes "dmrd_rel n cs aux daux"
+  shows "dtabc n cs (foldr (\<union>) [lookup rel ms. (t, rel) \<leftarrow> aux, P t] {})
+       = foldr (\<union>) [lookup rel ms. (t, rel) \<leftarrow> daux, P t] {}"
+  using assms by (induct rule: dmrd_rel_induct) (auto simp: dtabc_Un_img dtabc_def)
+
+text \<open>
+  One firing of the past-match structure.  The entries the window keeps are stepped by the right
+  derivative and, at the current time stamp, joined with the strict epsilon; both narrow, so the
+  stepped structures stay related and the reported table is the narrowing of the kernel's.
+\<close>
+
+locale dmatchP_frame =
+  fixes n :: nat and cs :: cols and \<psi>s :: "ty Formula.formula list"
+    and rels :: "event_data table list" and mrs :: "mregex list"
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+    and sub: "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs"
+    and d: "distinct mrs"
+    and mrsok: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+       Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex ms \<psi>s) \<and> ok (length \<psi>s) ms \<and>
+       set cs = fv_regex (from_mregex ms \<psi>s)"
+begin
+
+lemma lr: "length \<psi>s = length rels"
+  using ops by (simp add: list_all2_lengthD)
+
+lemma opsB: "\<And>i. i < length rels \<Longrightarrow> \<exists>B \<subseteq> set cs. table n B (rels ! i)"
+  using ops sub lr by (auto simp: list_all2_conv_all_nth)
+
+lemma tabT: "ms \<in> set mrs \<Longrightarrow> table n (set cs) (r\<epsilon>_strict n rels ms)"
+  using mrsok by (intro table_reps_strict[OF _ _ _ ops]) auto
+
+lemma dtabT: "ms \<in> set mrs \<Longrightarrow>
+    dtabc n cs (r\<epsilon>_strict n rels ms) = r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms"
+  using mrsok by (intro dtabc_reps_strict[OF s b ops sub]) auto
+
+lemma table_lookup_head: "table n (set cs) (lookup (mrtabulate mrs (r\<epsilon>_strict n rels)) ms)"
+  using tabT by (simp add: lookup_tabulate[OF d])
+
+lemma dtabc_lookup_head:
+  "lookup (mrtabulate mrs (r\<epsilon>_strict (length cs) (map (dtabc n cs) rels))) ms
+     = dtabc n cs (lookup (mrtabulate mrs (r\<epsilon>_strict n rels)) ms)"
+  by (rule lookup_mrtabulate_cong[OF d dtabT])
+
+lemma dmrd_rel_head:
+  "dmrd_rel n cs [(nt, mrtabulate mrs (r\<epsilon>_strict n rels))]
+     [(nt, mrtabulate mrs (r\<epsilon>_strict (length cs) (map (dtabc n cs) rels)))]"
+  using table_lookup_head dtabc_lookup_head by simp
+
+lemma dmrd_rel_step:
+  assumes rel: "dmrd_rel n cs aux daux"
+  shows "dmrd_rel n cs
+     [(t, mrtabulate mrs (\<lambda>ms. r\<delta> id X rels ms \<union> (if t = nt then r\<epsilon>_strict n rels ms else {}))).
+        (t, X) \<leftarrow> aux, memR I (nt - t)]
+     [(t, mrtabulate mrs (\<lambda>ms. r\<delta> id X (map (dtabc n cs) rels) ms
+          \<union> (if t = nt then r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms else {}))).
+        (t, X) \<leftarrow> daux, memR I (nt - t)]"
+  using rel
+proof (induct rule: dmrd_rel_induct)
+  case (Cons t X X' aux daux)
+  have okms: "\<And>ms. ms \<in> set mrs \<Longrightarrow> ok (length rels) ms" using mrsok lr by auto
+  have tD: "\<And>ms. ms \<in> set mrs \<Longrightarrow> table n (set cs) (r\<delta> id X rels ms)"
+    using Cons(1) by (intro table_rdelta[OF _ _ okms]) (use opsB in auto)
+  have tE: "\<And>ms. table n (set cs)
+      (lookup (mrtabulate mrs (\<lambda>ms. r\<delta> id X rels ms
+         \<union> (if t = nt then r\<epsilon>_strict n rels ms else {}))) ms)"
+    using tD tabT by (auto simp: lookup_tabulate[OF d] table_Un)
+  have tX: "\<And>ms. table n (set cs) (lookup X ms)" using Cons(1) by blast
+  have dXe: "\<And>ms. lookup X' ms = dtabc n cs (lookup X ms)" using Cons(2) by blast
+  have dR: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+      dtabc n cs (r\<delta> id X rels ms) = r\<delta> id X' (map (dtabc n cs) rels) ms"
+    by (rule dtabc_rdelta[OF s b opsB tX dXe okms])
+  have dD: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+      dtabc n cs (r\<delta> id X rels ms \<union> (if t = nt then r\<epsilon>_strict n rels ms else {}))
+        = r\<delta> id X' (map (dtabc n cs) rels) ms
+          \<union> (if t = nt then r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms else {})"
+    by (simp add: dtabc_Un_img dR dtabT)
+  have dE: "\<And>ms. lookup (mrtabulate mrs (\<lambda>ms. r\<delta> id X' (map (dtabc n cs) rels) ms
+         \<union> (if t = nt then r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms else {}))) ms
+      = dtabc n cs (lookup (mrtabulate mrs (\<lambda>ms. r\<delta> id X rels ms
+         \<union> (if t = nt then r\<epsilon>_strict n rels ms else {}))) ms)"
+    by (rule lookup_mrtabulate_cong[OF d dD])
+  show ?case using Cons(4) tE dE by simp
+qed simp
+
+lemma dtabc_update_matchP:
+  assumes rel: "dmrd_rel n cs aux daux"
+  shows "dtabc n cs (fst (update_matchP n I mr mrs rels nt aux))
+       = fst (update_matchP (length cs) I mr mrs (map (dtabc n cs) rels) nt daux) \<and>
+     dmrd_rel n cs (snd (update_matchP n I mr mrs rels nt aux))
+       (snd (update_matchP (length cs) I mr mrs (map (dtabc n cs) rels) nt daux))"
+proof -
+  let ?W = "[(t, mrtabulate mrs (\<lambda>ms. r\<delta> id X rels ms
+       \<union> (if t = nt then r\<epsilon>_strict n rels ms else {}))). (t, X) \<leftarrow> aux, memR I (nt - t)]"
+  let ?D = "[(t, mrtabulate mrs (\<lambda>ms. r\<delta> id X (map (dtabc n cs) rels) ms
+       \<union> (if t = nt then r\<epsilon>_strict (length cs) (map (dtabc n cs) rels) ms else {}))).
+         (t, X) \<leftarrow> daux, memR I (nt - t)]"
+  have st: "dmrd_rel n cs ?W ?D" by (rule dmrd_rel_step[OF rel])
+  have both: "dmrd_rel n cs
+      (case ?W of [] \<Rightarrow> [(nt, mrtabulate mrs (r\<epsilon>_strict n rels))]
+       | x # w' \<Rightarrow> (if fst x = nt then x # w'
+                   else (nt, mrtabulate mrs (r\<epsilon>_strict n rels)) # x # w'))
+      (case ?D of [] \<Rightarrow> [(nt, mrtabulate mrs (r\<epsilon>_strict (length cs) (map (dtabc n cs) rels)))]
+       | x # w' \<Rightarrow> (if fst x = nt then x # w'
+                   else (nt, mrtabulate mrs (r\<epsilon>_strict (length cs) (map (dtabc n cs) rels)))
+                        # x # w'))"
+  proof (cases ?W)
+    case Nil
+    have DN: "?D = []" using dmrd_rel_length[OF st] unfolding Nil by simp
+    show ?thesis unfolding Nil DN using dmrd_rel_head by simp
+  next
+    case (Cons x w')
+    have "length ?D = Suc (length w')" using dmrd_rel_length[OF st] unfolding Cons by simp
+    then obtain y d' where D: "?D = y # d'" by (cases ?D) auto
+    have rel': "dmrd_rel n cs (x # w') (y # d')" using st unfolding Cons D .
+    show ?thesis unfolding Cons D
+      using rel' table_lookup_head dtabc_lookup_head
+      by (cases x; cases y) (auto simp: dmrd_rel_Cons)
+  qed
+  show ?thesis
+    using both dtabc_foldr_lookup[OF both]
+    by (simp add: update_matchP_def Let_def)
+qed
+
+end
+
 (*<*)
 end
 (*>*)
