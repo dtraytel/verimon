@@ -536,7 +536,10 @@ val dense_elem_consts =
    "gmmtaux_empty",
    "glookup", "gmrtabulate", "geps_lax", "greps_strict", "gleps_strict",
    "grdelta", "gldelta", "gupdate_matchP", "gupdate_matchF_base", "gupdate_matchF_step",
-   "gupdate_matchF", "geval_matchF"]
+   "gupdate_matchF", "geval_matchF",
+   "gcnt_add1", "gcnt_del1", "gcnt_add", "gcnt_del",
+   "gsw_move", "gsw_expire", "gsw_init", "gsw_add_new_ts", "gsw_join", "gsw_add_new_table",
+   "gsw_result", "gupd_nested_step_dq", "udtabw", "deopt_table", "reopt_table"]
 
 val heap_since_consts =
   ["gjc", "filter_loop2", "expire_loop2", "upd_loop2", "move_loop2",
