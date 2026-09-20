@@ -331,6 +331,15 @@ val edl_value_types =
    ("tuples", "event_data list list")]
 \<close>
 
+text \<open>The images between the short and the wide tables, at the boundary to the kernel's
+  aggregation structure: specialised with both dictionaries fixed, so that the tree of the
+  result and of the widened insertions is built with the specialised comparators.\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("image", "edl_image_of_wide", ["event_data option list", "event_data list"]),
+   ("image", "edl_image_to_wide", ["event_data list", "event_data option list"])]
+  ["edl_dict_simps", "etuple_dict_simps"]\<close>
+
 setup \<open>Monomorphize.monomorphize_cmd
   ([("Set.member", "edl_member", [edl]),
     ("Set.insert", "edl_insert", [edl]),
@@ -632,8 +641,6 @@ setup \<open>Monomorphize.box_cmd
      ("RBT_Set2.fold", "edl_rbt_fold_table_v", [edl, tbl]),
      ("set_fold_cfi", "edl_fold_cfi_table_v", [edl, tbl]),
      ("cluster", "edl_cluster_v", [edl, edl]),
-     ("Set.image", "edl_image_of_wide_v", ["event_data option list", edl]),
-     ("Set.image", "edl_image_to_wide_v", [edl, "event_data option list"]),
      ("set_of_idx", "edl_set_of_idx_v", [edl, edl]),
      ("mapping_join", "edl_mapping_join_v", [edl, tbl]),
      ("mapping_antijoin", "edl_mapping_antijoin_v", [edl, tbl]),
