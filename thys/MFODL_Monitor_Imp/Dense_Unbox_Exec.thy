@@ -277,7 +277,9 @@ lemma mebuf2_take_rbuf:
   shows "mebuf2_take f (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) (buf :: uebuf2))
    = (case mebuf2_take f' buf of
         (zs, buf') \<Rightarrow> (map reopt_table zs, map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf'))"
-  by (cases buf) (simp add: mebuf2_take_map_mbuf[OF assms] split: prod.splits)
+  by (cases buf)
+    (simp add: mebuf2_take_map_mbuf[where f = f and g = reopt_table and g' = reopt_table and f' = f',
+       OF assms] split: prod.splits del: mebuf2_take.simps)
 
 fun rbufS :: "uebuf2S \<Rightarrow> event_data mebuf2S" where
   "rbufS (a, b, c, d) = (map_mbuf reopt_table a, map_mbuf reopt_table b, c, d)"
@@ -291,7 +293,9 @@ lemma mebuf2t_take_rbuf:
   shows "mebuf2t_take f (h z) (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf) t ts
    = (case uebuf2t_take f' z buf t ts of
         (z', buf', t', ts') \<Rightarrow> (h z', map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf', t', ts'))"
-  by (cases buf) (simp add: mebuf2t_take_map_mbuf[OF assms] split: prod.splits)
+  by (cases buf)
+    (simp add: mebuf2t_take_map_mbuf[where f = f and h = h and f' = f', OF assms] split: prod.splits
+       del: mebuf2t_take.simps uebuf2t_take.simps)
 
 subsection \<open>The join\<close>
 
@@ -438,10 +442,10 @@ lemma rdb_map_values_Nil[simp]:
 subsection \<open>The recursive let operators\<close>
 
 lemma letpast_meval0_rdb:
-  assumes ev: "\<And>ts db \<psi>. size \<psi> = n \<Longrightarrow>
-      eval ts (rdb db) (R \<psi>) = (case eval' ts db \<psi> of (ys, \<psi>') \<Rightarrow> (map reopt_table ys, R \<psi>'))"
-    and sz: "\<And>\<psi>. size (R \<psi>) = size \<psi>"
-  shows "size \<phi> = n \<Longrightarrow>
+  assumes sz: "\<And>\<psi>. size (R \<psi>) = size \<psi>"
+  shows "(\<And>ts db \<psi>. size \<psi> = n \<Longrightarrow>
+      eval ts (rdb db) (R \<psi>) = (case eval' ts db \<psi> of (ys, \<psi>') \<Rightarrow> (map reopt_table ys, R \<psi>'))) \<Longrightarrow>
+    size \<phi> = n \<Longrightarrow>
     letpast_meval0 eval j i (map reopt_table ys) (map reopt_table xs) p ts (rdb db) (R \<phi>)
     = (case letpast_meval0 eval' j i ys xs p ts db \<phi> of
         (ys', i', b, \<phi>') \<Rightarrow> (map reopt_table ys', i', map_option reopt_table b, R \<phi>'))"
@@ -449,11 +453,20 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
   case (1 eval' j i ys xs p ts db \<phi>)
   obtain ys' \<phi>' where e: "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
     by (cases "eval' ts (Mapping.update p xs db) \<phi>")
-  have L: "eval ts (Mapping.update p (map reopt_table xs) (rdb db)) (R \<phi>) = (map reopt_table ys', R \<phi>')"
-    using ev[OF 1.prems, of ts "Mapping.update p xs db"] by (simp add: e)
+  have L: "eval ts (rdb (Mapping.update p xs db)) (R \<phi>) = (map reopt_table ys', R \<phi>')"
+    using "1.prems"(1)[OF "1.prems"(2), of ts "Mapping.update p xs db"] by (simp add: e)
   show ?case
-    apply (subst (1 2) letpast_meval0.simps)
-    using 1.hyps 1.prems by (auto simp: Let_def L e sz split: list.splits)
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      by (subst (1 2) letpast_meval0.simps) (auto simp: Let_def L e sz "1.prems"(2))
+  next
+    case (Cons y ys'')
+    note IH = "1.hyps"[OF refl e[symmetric] _ _ _ "1.prems"(1), unfolded map_append]
+    show ?thesis
+      apply (subst (1 2) letpast_meval0.simps)
+      using IH "1.prems"(2) by (auto simp: Let_def L e sz Cons)
+  qed
 qed
 
 lemma freeze_meval0_rdb:
@@ -465,7 +478,11 @@ proof (induct eval' k \<alpha>s rule: freeze_meval0.induct)
   obtain ys \<psi> where e: "eval' \<alpha> = (ys, \<psi>)" by (cases "eval' \<alpha>")
   obtain ys' \<psi>' where e': "eval (reopt_table \<alpha>) = (ys', \<psi>')" by (cases "eval (reopt_table \<alpha>)")
   have ys': "ys' = map reopt_table ys" using 2(2)[of \<alpha>] e e' by simp
-  show ?case using 2(1) by (auto simp: e e' ys' drop_map split: list.splits prod.splits)
+  have IH: "freeze_meval0 eval (Suc k) (map reopt_table \<alpha>s)
+      = (case freeze_meval0 eval' (Suc k) \<alpha>s of (ys, \<alpha>s') \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s'))"
+    if "drop k ys = y # ys''" for y ys''
+    by (rule 2(1)[OF refl e[symmetric] that]) (auto simp: 2(2))
+  show ?case by (cases "drop k ys") (auto simp: e e' ys' drop_map IH split: prod.splits)
 qed simp
 
 subsection \<open>The formula\<close>
@@ -594,9 +611,10 @@ proof (induct args rs buf aux rule: uedsx_eval_since.induct)
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
   show ?case
     using 1 x y t
-    by (cases y; cases x; cases t)
+    by (cases y; cases x; cases t; simp only: rbufS.simps;
+        subst edsx_eval_since.simps; subst uedsx_eval_since.simps)
       (auto simp: x y t Let_def rev_map dsx_join_rdsx dsx_add_new_ts_rdsx dsx_add_new_table_rdsx
-        dsx_result_rdsx split: prod.splits)
+        dsx_result_rdsx simp del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
 qed
 
 subsection \<open>The evaluator\<close>
@@ -783,11 +801,12 @@ next
      \<psi>' = (ys \<alpha>, \<psi>'' \<alpha>)" for \<alpha>
     by atomize_elim (unfold choice_iff)
   have fr: "freeze_meval0 (\<lambda>\<alpha>. edeval j []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) (rdb db)))
-        (Rep_udformula \<psi>')) k (map reopt_table \<beta>s)
+        (Mapping.update (p, m) (replicate j \<alpha>) (rdb (Mapping.map_values (\<lambda>_ _. []) db)))
+        (Rep_udformula \<psi>')) k (map reopt_table \<beta>s @ map reopt_table \<gamma>s)
       = (case freeze_meval0 (\<lambda>\<alpha>. udeval j []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>') k \<beta>s
-         of (ys, \<alpha>s') \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s'))" for k \<beta>s
+        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>') k (\<beta>s @ \<gamma>s)
+         of (ys, \<alpha>s') \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s'))" for k \<beta>s \<gamma>s
+    unfolding map_append[symmetric]
     by (rule freeze_meval0_rdb)
       (simp add: 20(3)[OF \<phi>[symmetric] refl refl \<psi>[symmetric] refl refl refl refl] \<psi>')
   show ?case
@@ -802,8 +821,9 @@ next
       (rdb db) (Rep_udformula \<phi>)
     = (case letpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> of
         (ys', i', b, \<phi>') \<Rightarrow> (map reopt_table ys', i', map_option reopt_table b, Rep_udformula \<phi>'))"
-    using letpast_meval0_rdb[of "size \<phi>" "edeval j" Rep_udformula "udeval j" \<phi> j i "[]"
-        "list_of_option buf" "(p, m)" ts db, OF IH]
+    using letpast_meval0_rdb[where R = Rep_udformula and n = "size \<phi>" and eval = "edeval j"
+        and eval' = "udeval j" and j = j and i = i and ys = "[]" and xs = "list_of_option buf"
+        and p = "(p, m)" and ts = ts and db = db and \<phi> = \<phi>, OF size_Rep_udformula IH refl]
     by (cases buf) simp_all
   show ?case
     using 21(2)[OF refl _ refl refl]
