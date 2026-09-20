@@ -11093,17 +11093,29 @@ let rec de_ginit_mmtaux
                         (edl_bot,
                           (edl_mempty_nat, (edl_bot, edl_bot)))))))))));;
 
-let edl_image_of_wide_v :
-  (((event_data option) list -> event_data list) ->
-    ((event_data option) list) set -> (event_data list) set)
-    boxed
-  = Box (image
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data)))
-          ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
-            set_impl_list));;
+let rec edl_image_of_wide
+  h x1 = match h, x1 with
+    h, RBT_set rbt ->
+      foldb (ccompare_list (ccompare_option ccompare_event_data))
+        (comp (insert
+                ((ceq_list ceq_event_data),
+                  (ccompare_list ccompare_event_data)))
+          h)
+        rbt edl_bot
+    | g, DList_set dxs ->
+        foldc (ceq_list (ceq_option ceq_event_data))
+          (comp (insert
+                  ((ceq_list ceq_event_data),
+                    (ccompare_list ccompare_event_data)))
+            g)
+          dxs edl_bot
+    | f, Complement (Complement b) -> edl_image_of_wide f b
+    | f, Collect_set a ->
+        failwith "image Collect_set"
+          (fun _ -> edl_image_of_wide f (Collect_set a))
+    | f, Set_Monad xs -> Set_Monad (mapa f xs);;
 
-let rec de_deopt_table x = unbox edl_image_of_wide_v deopt x;;
+let rec de_deopt_table x = edl_image_of_wide deopt x;;
 
 let rec deopt_table (_A1, _A2)
   x = image ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
@@ -12484,22 +12496,34 @@ let rec insert_maggauxa
         (let (v, auxa) = insert_maggaux args x aux in
           (if v && unbox ed_finite_v x then Some auxa else None));;
 
-let edl_image_to_wide_v :
-  ((event_data list -> (event_data option) list) ->
-    (event_data list) set -> ((event_data option) list) set)
-    boxed
-  = Box (image ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data)),
-            set_impl_list));;
+let rec edl_image_to_wide
+  h x1 = match h, x1 with
+    h, RBT_set rbt ->
+      foldb (ccompare_list ccompare_event_data)
+        (comp (insert
+                ((ceq_list (ceq_option ceq_event_data)),
+                  (ccompare_list (ccompare_option ccompare_event_data))))
+          h)
+        rbt ed_bot
+    | g, DList_set dxs ->
+        foldc (ceq_list ceq_event_data)
+          (comp (insert
+                  ((ceq_list (ceq_option ceq_event_data)),
+                    (ccompare_list (ccompare_option ccompare_event_data))))
+            g)
+          dxs ed_bot
+    | f, Complement (Complement b) -> edl_image_to_wide f b
+    | f, Collect_set a ->
+        failwith "image Collect_set"
+          (fun _ -> edl_image_to_wide f (Collect_set a))
+    | f, Set_Monad xs -> Set_Monad (mapa f xs);;
 
 let rec udwiden x0 xs = match x0, xs with [], xs -> []
                   | false :: bs, xs -> None :: udwiden bs xs
                   | true :: bs, x :: xs -> Some x :: udwiden bs xs
                   | true :: bs, [] -> [];;
 
-let rec de_udtabw
-  n cs d = unbox edl_image_to_wide_v (udwiden (wide_mask n cs)) d;;
+let rec de_udtabw n cs d = edl_image_to_wide (udwiden (wide_mask n cs)) d;;
 
 let rec udagg_wide p w d = de_udtabw (suc w) (dagg_ccols p w) d;;
 
@@ -12890,7 +12914,7 @@ let rec uag_res
   p w cc ax =
     (match ax with None -> udagg_p p (snd cc)
       | Some a ->
-        unbox edl_image_of_wide_v
+        edl_image_of_wide
           (fun x ->
             deopt (dproj
                     (wide_mask (aggargs_n (dagg_args p w))
