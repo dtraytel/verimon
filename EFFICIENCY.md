@@ -6643,3 +6643,108 @@ shipping, unverified monitor stands at 1.40x.  What remains to MonPoly is the sa
 the aggregations over a window (2.0-2.3x, the kernel's structure rebuilding its result), the
 Since with an anti-join left operand (1.7x, the index rebuilt per time point, 21.7's first
 profile) and the policy formulas that combine them.
+
+### 21.8 The Since index maintained by its keys (`Dense_Idx_Code.thy`)
+
+21.7's first profile of `since-nu50` put 63% of the run into the Since structure's index: the
+`gc_join` deleting the left operand's keys from the stored tables (37%) and the `add_new_table`
+merging the new tuples into the index (27%, of which the index update was 26%).  The reason is
+in 20.31's index algebra (`Dense_Aux.thy`): the index is a clustering of the stored table by
+the join columns, and the three operations that maintain it are stated over the whole index.
+The tuples that enter the window are clustered on their own and merged in (`didx_union`, a
+linear merge of two trees), the tuples that leave it are clustered and subtracted
+(`didx_minus`, a `map_values` and a `filter` over every bucket), and the probe by the left
+operand's table restricts the index with a `Mapping.filter` over every key.  Each of these
+walks the whole index at every time point, while the tuples that actually move -- one time
+point's worth -- are typically a small fraction of the window.
+
+**Key-driven forms.** `Dense_Idx_Code.thy` gives the three operations executable forms whose
+cost is proportional to what moves, each an equality with the abstract operation:
+
+- `didx_add msk X i = didx_union i (didx msk X)`, computed as a fold of `didx_add1` over `X`,
+  where `didx_add1` inserts one tuple into its bucket (`lookup_didx_add`,
+  `lookup_fold_didx_add1`, `didx_add_fold`; a `comp_fun_idem` instance makes the fold
+  well-defined).
+- `didx_del msk D i = didx_minus i (didx msk D)`, a fold of `didx_del1` over `D`, which removes
+  one tuple from its bucket and drops the bucket when it empties.
+- `mfilter_keys pos Y m = Mapping.filter (λk _. (k ∈ Y) = pos) m`: for the anti-join
+  (`pos = False`) it is `mapping_delete_set m Y`, a fold of the deletion over `Y`; for the
+  join it is a fold over `Y` that looks each key up and keeps what it finds
+  (`mrestrict1`, `lookup_fold_mrestrict1`, `mfilter_keys_True_fold`).
+
+The costs: `|X| log |i|` and `|D| log |i|` for the two index updates instead of `|i|`, and
+`|Y| log |m|` for the probe instead of `|m| log |Y|` -- and since `Y` is the left operand's
+table at one time point, whose construction already cost `|Y| log |Y|`, the key-driven probe is
+never asymptotically worse than the work the time point costs anyway, where the walk over the
+index was unbounded relative to it.
+
+**One abstract definition changed.** `didx_minus` dropped every bucket that ended up empty.  A
+fold over the subtrahend's tuples cannot reach a bucket at a key the subtrahend does not have,
+so it cannot drop such a bucket if it was empty to begin with -- and an exact, invariant-free
+equality was wanted, as everywhere in 21.6.  `didx_minus` now drops a bucket only when the
+subtrahend touches it: `Mapping.filter (λk Y. Mapping.lookup d k = None ∨ Y ≠ {})`.  On a
+clustering, which has no empty buckets, the two readings agree, and `didx_minus_eq` (the
+correctness of the subtraction against `didx msk (S - D)`) and `didx_minus_rmk` (its
+naturality under the unboxing) proved as before.
+
+**Installing them, and a limit of the rewriting.** The two index updates are installed as
+`code_unfold` rules on the applied patterns, `didx_union i (didx msk X) = didx_add msk X i` and
+`didx_minus i (didx msk D) = didx_del msk D i`; the generated `de_gshift_end`,
+`de_gadd_new_ts_msaux'` and `de_gadd_new_table_msaux` call `de_didx_del` and `de_didx_add`
+without a change to the verified definitions.  The probe could not be installed the same way:
+`Mapping.filter` is boxed at the monitor's types (20.33), and the boxing rewrites the bare
+constant before a rule on the applied pattern with the `λ` can match.  So `dsemi_idx` and
+`gjoin_msaux` get restated code equations (`dsemi_idx_code`, `gjoin_msaux_code`), proved by
+unfolding `mfilter_keys`; the definitions are untouched.
+
+**The dictionary comparator, again.** The first build with the index alone brought
+`since-nu50` from 3.87 to 2.72 billion instructions (-30%), and its profile had the generic
+list comparator at 12% inclusive against 3% for the specialised one: the operations around the
+index -- `mapping_delete_set`, `upd_set`, `minus_keys`, `filter_set`, `upd_set_keys` and the
+folds inside `mfilter_keys` -- were still generic or *boxed*, and a boxed operation (20.33)
+fixes the dictionaries but still runs the generic tree code with the dictionary's comparator
+inside.  Monomorphising them (21.1's `de_` copies) reaches the specialised tree primitives, with
+two more of Section 21.7's unapplied-step cases on the way: `mapping_delete_set` passes
+`Mapping.delete` to the tree's fold unapplied, and an eta-expanded `λk. Mapping.delete k` in
+the code equation does not survive the preprocessing, so the two instances get their tree
+equations by hand (`de_mapping_delete_set_nat_rbt`, `de_mapping_delete_set_table_rbt`); and
+`gshift_end` folds `filter_set` over the expired time points unapplied, so the fold gets a name
+(`fold_filter_set`) whose code equation applies the step, and `gshift_end` a restated code
+equation.  `upd_set`'s step applies the update to the key and the value, so it stays applied
+and needs only a tree equation (`upd_set_RBT_code`).
+
+**Measured.** `since-nu50` under callgrind, instructions in billions: 3.87 (21.6) → 2.72
+(the key-driven index) → 2.58 (the operations around it specialised), -33%, against MonPoly's
+1.53.  What is left in the Since structure: the insertions into the index and into `tuple_in`
+themselves (`didx_add` 11%, `upd_set` 11%), the deletions of the anti-join (`mapping_delete_set`
+9%, `dsemi_idx` 6%) and the garbage collection (`ggc_msaux` 11%: the union of every table of
+the window, taken once per window length, and the index over `tuple_since` rebuilt from it).
+The suite (`evaluation/perf/report.md` and `ratios.svg` are this run; the ratios are the
+measure, since the machine's absolute times drift between runs -- MonPoly itself ran 13% faster
+than in 21.7's run):
+
+| family | vdense/monpoly 21.7 | vdense/monpoly | vdense/dense |
+|---|---|---|---|
+| since | 1.70 | 1.41 | 0.95 |
+| until | 1.59 | 1.47 | 0.99 |
+| burst | 1.28 | 1.18 | 1.00 |
+| policy | 1.98 | 1.82 | 0.99 |
+| agg_fut | 2.03 | 1.91 | 1.03 |
+| all 21 families | 1.39 | 1.36 | 0.99 |
+
+| formula | 21.7 | now |
+|---|---|---|
+| since-nu5 (`B(x,y) AND ((NOT C(x)) SINCE[0,5] A(x,y))`) | 3.18 | 1.96 |
+| since-nu50 | 2.94 | 2.03 |
+| since-nu500 | 2.89 | 2.14 |
+| since-nb20 (`C(x) AND ((NOT B(x,y)) SINCE[0,20] A(x,y))`) | 2.30 | 1.48 |
+| since-u50 (`B(x,y) AND (C(x) SINCE[0,50] A(x,y))`) | 1.94 | 1.57 |
+| pol-sincefutb | 4.13 | 2.62 |
+
+(the ratios of vdense to MonPoly.)  The Since family goes from 1.70x to 1.41x MonPoly, the
+suite from 1.39x to 1.36x, with 4 timeouts against 21.7's 8 (the four that remain are the
+aggregations over a window, 21.7's next item), identical verdicts throughout, and the shipping
+dense monitor -- which runs the same generic Since structure -- gains the same, so the two stay
+at 0.99.  The Since with a negated left operand stands at 2.0x MonPoly; the next profile puts the
+remaining gap in the tree insertions and deletions themselves, which MonPoly does with hash
+tables.
