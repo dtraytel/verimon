@@ -6556,3 +6556,64 @@ has its agreement lemma with the kernel's, as the Since and Until structures hav
 The differential tests: identical verdicts on the benchmark formulas (with `matchp` refused),
 and 593 identical, 7 refused, 0 differing on the corpus.  `MFODL_Monitor_Imp` builds in 8:55
 on four threads with the export.
+
+### 21.7 Reprofiled, and the first item of the next round
+
+Callgrind on the eight suite formulas of 21.1's profiles, `vdense` before (21.5) and after the
+unboxing (21.6), instructions in billions, MonPoly alongside:
+
+| formula | vdense 21.5 | vdense 21.6 | change | monpoly |
+|---|---|---|---|---|
+| since-nu50 | 4.60 | 3.87 | -16% | 1.53 |
+| once-g50 | 1.70 | 1.60 | -6% | 1.45 |
+| ev-n20 | 1.70 | 1.58 | -7% | 1.65 |
+| until-bb50 | 1.71 | 1.66 | -3% | 1.30 |
+| join-swap | 0.97 | 0.94 | -3% | 0.81 |
+| aggonce-sum50 | 4.39 | 4.86 | +11% | 2.27 |
+
+Where the instructions go now:
+
+- `since-nu50` (`B(x,y) AND ((NOT C(x)) SINCE[0,50] A(x,y))`): the anti-join structure's
+  `gc_join` is 37% of the run (the deletion from the tables of every time point the left
+  operand no longer covers, `rbt_comp_del` 34%), `add_new_table` 27%, of which the index
+  update `gidx_upd` is 26%.  That is the "index-driven Since anti-join" item: the index is
+  rebuilt over the whole table per time point where a per-key update would do.
+- `aggonce-sum50`: the fused window's result is 50% of the run (`uag_res`: the kernel's
+  `result_maggaux` 21%, then the projection to the node's columns and the unboxing as two
+  images, 29%), the insertions into the kernel's structure 43%.  The result read got 0.66
+  billion instructions worse than 21.5's `ag_res`, because the second image now targets the
+  short tables through the generic `image` -- an RBT built with the dictionary comparator --
+  where 21.5's `dsan` targeted the wide ones through the boxed `ed_image`.  Fixed below.
+- `once-g50`, `until-bb50`, `ev-n20`: no single operation above 8%; the comparators and the
+  tree balancing are the top entries, as for MonPoly, whose instruction count these three are
+  within 10-30% of.
+
+**C1: the fused window's result in one image.** `uag_res` now reads the kernel's result
+through one image, `(λx. deopt (dproj mask x)) ` R` (the code equation `uag_res_code`, an
+`image_image` step from the definition), and `Set.image` between the short and the wide tables
+is boxed in both directions (`edl_image_of_wide_v`, `edl_image_to_wide_v`), so that the RBT of
+the result and of the widened insertions is built with the specialised comparators.
+Three rounds were needed, each a rebuild and a profile, and each is a general finding:
+
+1. Reading the result in one image did not move the instruction count (5.40 billion against
+   4.86): the image's insertions still went through the generic tree insertion.  `Set.image`
+   is boxed (`ed_image`) and monomorphised (`edl_image`) already, but an image passes
+   `Set.insert` to the tree's fold *unapplied*, and the redirection to the specialised
+   insertion (`edl_insert`, `edl_rbtc_ins`) only reaches applied occurrences (Section 21.1's
+   `unfold` rules are `c x = c' x`).  So every image of the dense evaluator, the shipping
+   monitor's included, built its tree with the dictionary comparator.  `edl_image_rbt`,
+   `edl_image_of_wide_rbt` and `edl_image_to_wide_rbt` are code equations on a tree that name
+   the specialised insertion.
+2. That did not move it either (5.25 billion).  The code equation `uag_res_code` had the
+   projection mask, `wide_mask (aggargs_n (dagg_args p w)) [0..<…]`, inside the image's
+   function, so `dagg_args` -- a record with a column set, a replicated type list and a shifted
+   term -- was rebuilt for every tuple of every result (`dagg_args` was 21% of the run).  The
+   mask is now bound once per result.  The same trap is worth a look wherever a code equation
+   is written by hand with a `λ` under an image or a fold.
+3. 4.11 billion: 6% below 21.5's boxed fused window and 15% below 21.6's, with `uag_res` at
+   40% of the run (the kernel's `result_maggaux` 26%, the one image 14%).  The next step for
+   the aggregation over a window is the kernel structure's own result, which is rebuilt as a
+   table at every time point; a verified incremental result would be a change to
+   `Optimized_Agg_Temporal.thy`.
+
+SUITE_C1
