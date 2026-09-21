@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Code_Opt
-  imports Dense_Imp Dense_Unbox_Exec
+  imports Dense_Imp Dense_Unbox_Exec Dense_Idx_Code
 begin
 (*>*)
 
@@ -568,7 +568,8 @@ val dense_elem_consts =
    "gupdate_matchF", "geval_matchF",
    "gcnt_add1", "gcnt_del1", "gcnt_add", "gcnt_del",
    "gsw_move", "gsw_expire", "gsw_init", "gsw_add_new_ts", "gsw_join", "gsw_add_new_table",
-   "gsw_result", "udtabw", "deopt_table", "reopt_table"]
+   "gsw_result", "udtabw", "deopt_table", "reopt_table",
+   "didx_add1", "didx_add", "didx_del1", "didx_del", "dbucket", "fold_filter_set"]
 
 val heap_since_consts =
   ["gjc", "filter_loop2", "expire_loop2", "upd_loop2", "move_loop2",
@@ -581,7 +582,19 @@ fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str 
 
 setup \<open>Monomorphize.monomorphize_cmd
   (map (fn c => (c, mono_name "de_" c, ["event_data"])) dense_elem_consts
-   @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data"])]
+   @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data"]),
+      ("mrestrict1", "de_mrestrict1_nat", ["event_data list", "nat"]),
+      ("mrestrict1", "de_mrestrict1_table", ["event_data list", "event_data list set"]),
+      ("mfilter_keys", "de_mfilter_keys_nat", ["event_data list", "nat"]),
+      ("mfilter_keys", "de_mfilter_keys_table", ["event_data list", "event_data list set"]),
+      ("upd_set", "de_upd_set_nat", ["event_data list", "nat"]),
+      ("upd_set_keys", "de_upd_set_keys", ["event_data list set", "nat", "event_data list"]),
+      ("minus_keys", "de_minus_keys", ["event_data list", "nat"]),
+      ("filter_set", "de_filter_set", ["nat", "event_data list"]),
+      ("filter_cfi", "de_filter_cfi", ["nat", "event_data list"]),
+      ("mapping_delete_set", "de_mapping_delete_set_nat", ["event_data list", "nat"]),
+      ("mapping_delete_set", "de_mapping_delete_set_table",
+        ["event_data list", "event_data list set"])]
    @ map (fn c => (c, mono_name "hsd_" c, ["event_data list"])) heap_since_consts
    @ map (fn c => (c, mono_name "hsw_" c, ["event_data tuple"])) heap_since_consts)
   ["edl_dict_simps", "etuple_dict_simps"]\<close>
@@ -594,6 +607,19 @@ lemma de_gcnt_add_fold[code]: "de_gcnt_add T cc = fold de_gcnt_add1 (csl T) cc"
 
 lemma de_gcnt_del_fold[code]: "de_gcnt_del T cc = fold de_gcnt_del1 (csl T) cc"
   by (simp add: de_gcnt_del_def de_gcnt_del1_def gcnt_del_def)
+
+text \<open>The deletion of a key set passes the deletion to the tree's fold unapplied; at the two
+  value types of the Since structure it gets the specialised deletion by hand.\<close>
+
+lemma de_mapping_delete_set_nat_rbt[code]:
+  "de_mapping_delete_set_nat m (RBT_set rbt) = RBT_Set2.fold edl_delete_nat rbt m"
+  by (simp add: de_mapping_delete_set_nat_def edl_delete_nat_def mapping_delete_set_RBT_code
+      edl_dict_simps)
+
+lemma de_mapping_delete_set_table_rbt[code]:
+  "de_mapping_delete_set_table m (RBT_set rbt) = RBT_Set2.fold edl_delete_table rbt m"
+  by (simp add: de_mapping_delete_set_table_def edl_delete_table_def mapping_delete_set_RBT_code
+      edl_dict_simps)
 
 subsection \<open>The set and mapping operations whose dictionaries are built once\<close>
 
@@ -663,9 +689,7 @@ setup \<open>Monomorphize.box_cmd
      ("cluster", "edl_cluster_v", [edl, edl]),
      ("set_of_idx", "edl_set_of_idx_v", [edl, edl]),
      ("mapping_join", "edl_mapping_join_v", [edl, tbl]),
-     ("mapping_antijoin", "edl_mapping_antijoin_v", [edl, tbl]),
-     ("upd_set", "edl_upd_set_nat_v", [edl, "nat"]),
-     ("minus_keys", "edl_minus_keys_v", [edl, "nat"])]
+     ("mapping_antijoin", "edl_mapping_antijoin_v", [edl, tbl])]
     @ maps (fn (c, nm) => map (fn (tn, ty) => (c, "edl_" ^ nm ^ "_" ^ tn ^ "_v", [edl, ty]))
               edl_value_types)
         [("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"),

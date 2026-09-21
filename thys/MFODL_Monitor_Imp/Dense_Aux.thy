@@ -123,7 +123,13 @@ definition dbucket :: "('b list, 'b list set) mapping \<Rightarrow> 'b list \<Ri
 
 definition didx_minus :: "('b list, 'b list set) mapping \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow>
     ('b list, 'b list set) mapping" where
-  "didx_minus i d = Mapping.filter (\<lambda>_ Y. Y \<noteq> {}) (Mapping.map_values (\<lambda>k Y. Y - dbucket d k) i)"
+  "didx_minus i d = Mapping.filter (\<lambda>k Y. Mapping.lookup d k = None \<or> Y \<noteq> {})
+     (Mapping.map_values (\<lambda>k Y. Y - dbucket d k) i)"
+
+text \<open>Only the buckets that the subtrahend touches are dropped when they empty: a bucket at a key
+  the subtrahend does not have is left as it is.  On a clustering, which has no empty buckets, the
+  two readings agree; the executable version of the subtraction, which only visits the
+  subtrahend's keys, realises this one exactly.\<close>
 
 lemma didx_minus_eq: "didx msk (S - D) = didx_minus (didx msk S) (didx msk D)"
 proof -
@@ -134,7 +140,7 @@ proof -
       by (auto simp: dbucket_def lookup_didx split: if_splits)
     show ?thesis
       by (auto simp: didx_minus_def Mapping.lookup_filter Mapping.lookup_map_values lookup_didx b
-          split: option.splits if_splits)
+          split: option.splits if_splits intro: rev_image_eqI)
   qed
   then show ?thesis by (simp add: mapping_eqI)
 qed
