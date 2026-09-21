@@ -1838,6 +1838,253 @@ proof -
     by simp
 qed
 
+subsection \<open>The trigger structure at the short element type\<close>
+
+text \<open>
+  The second half of the trigger's naturality, and the one the evaluator's own state needs.
+  @{const tmm} widens the left operand's frame, and is a statement about a state that is narrow;
+  this map only puts the option back on every tuple the structure holds.  It is a relabelling,
+  so it commutes with the operations on every input, with no invariant at all -- as the other
+  structures of this theory do, and as @{text udeval_Rep} needs, being unconditional itself.
+\<close>
+
+abbreviation rtq3 :: "ts \<times> event_data list set \<times> event_data list set \<Rightarrow>
+    ts \<times> event_data table \<times> event_data table" where
+  "rtq3 \<equiv> (\<lambda>(t, l, r). (t, reopt_table l, reopt_table r))"
+
+abbreviation rq3 :: "(ts \<times> event_data list set \<times> event_data list set) queue \<Rightarrow>
+    (ts \<times> event_data table \<times> event_data table) queue" where
+  "rq3 \<equiv> map_queue rtq3"
+
+fun bmm :: "event_data gmmtaux \<Rightarrow> event_data option gmmtaux" where
+  "bmm (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tuple_in_once,
+        tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat)
+   = (cur, idx_next, idx_mid, idx_oldest, msk, rq3 data_prev, rq data_in,
+      rmk (\<lambda>v. v) tuple_in_once, reopt_table tuple_in_once_keys,
+      rmk (\<lambda>v. v) tuple_since_hist, reopt_table hist_sat, reopt_table since_sat)"
+
+declare bmm.simps[simp del]
+
+lemma rtq3_pred: "(\<lambda>x. (\<lambda>(t, _). P t) (rtq3 x)) = (\<lambda>(t, _). P t)"
+  by (auto simp: fun_eq_iff)
+
+lemma takedropWhile_queue_rq3[simp]:
+  "takedropWhile_queue (\<lambda>(t, _). P t) (rq3 q)
+   = map_prod rq3 (map rtq3) (takedropWhile_queue (\<lambda>(t, _). P t) q)"
+  unfolding takedropWhile_queue_map_queue rtq3_pred ..
+
+lemma append_queue_rq3[simp]:
+  "append_queue (t, reopt_table l, reopt_table r) (rq3 q) = rq3 (append_queue (t, l, r) q)"
+  using append_queue_map_queue[of rtq3 "(t, l, r)" q] by simp
+
+lemma filter_rtq3: "filter (\<lambda>(t, _). P t) (map rtq3 xs) = map rtq3 (filter (\<lambda>(t, _). P t) xs)"
+  by (induct xs) (auto split: prod.splits)
+
+lemma fold_append_r_rtq3:
+  "fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) (map rtq3 xs) (rq q)
+   = rq (fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) xs q)"
+  by (induct xs arbitrary: q) (auto split: prod.splits)
+
+text \<open>The semi-join is a filter on a projection, and both commute with the relabelling.\<close>
+
+lemma gsemi_join_reopt[simp]:
+  "gsemi_join msk pos (reopt_table r) (reopt_table l) = reopt_table (gsemi_join msk pos r l)"
+proof (cases "\<forall>i \<in> set msk. i")
+  case True
+  show ?thesis unfolding gsemi_join_def if_P[OF True] by simp
+next
+  case f1: False
+  show ?thesis
+  proof (cases "\<forall>i \<in> set msk. \<not> i")
+    case True
+    show ?thesis unfolding gsemi_join_def if_not_P[OF f1] if_P[OF True] by simp
+  next
+    case f2: False
+    have ds: "dsemi msk pos (reopt_table r) (reopt_table l) = reopt_table (dsemi msk pos r l)"
+      by (auto simp: dsemi_def reopt_table_def image_iff)
+    show ?thesis
+      unfolding gsemi_join_def if_not_P[OF f1] if_not_P[OF f2] ds ..
+  qed
+qed
+
+text \<open>The fold that expires the left operand's records, relabelled.\<close>
+
+lemma fold_filter_once_bmm:
+  "fold (\<lambda>(t, X) (tuple_in, tuple_in_keys).
+      (Mapping.filter (filter_cond (fst X) tuple_in t) tuple_in,
+       {as \<in> tuple_in_keys. filter_cond' (fst X) tuple_in t as}))
+      (map rtq3 ds) (rmk (\<lambda>v. v) tio, reopt_table keys)
+    = map_prod (rmk (\<lambda>v. v)) reopt_table (fold (\<lambda>(t, X) (tuple_in, tuple_in_keys).
+      (Mapping.filter (filter_cond (fst X) tuple_in t) tuple_in,
+       {as \<in> tuple_in_keys. filter_cond' (fst X) tuple_in t as})) ds (tio, keys))"
+proof (induction ds arbitrary: tio keys)
+  case (Cons d ds)
+  obtain t l r where d: "d = (t, l, r)" by (cases d) auto
+  have pc: "filter_cond (reopt_table l) (rmk (\<lambda>v. v) tio) t (reopt k) v = filter_cond l tio t k v"
+    for k v by (simp add: option.map_ident)
+  have f1: "Mapping.filter (filter_cond (reopt_table l) (rmk (\<lambda>v. v) tio) t) (rmk (\<lambda>v. v) tio)
+      = rmk (\<lambda>v. v) (Mapping.filter (filter_cond l tio t) tio)"
+    by (simp only: rmk_filter) (simp add: pc)
+  have f2: "{as \<in> reopt_table keys. filter_cond' (reopt_table l) (rmk (\<lambda>v. v) tio) t as}
+      = reopt_table {as \<in> keys. filter_cond' l tio t as}"
+    by (auto simp: reopt_table_def image_iff option.map_ident)
+  show ?case
+    unfolding d list.map fold.simps comp_apply prod.case fst_conv f1 f2
+    by (rule Cons.IH)
+qed simp
+
+lemma shift_end'_bmm:
+  "(case shift_end' I nt fst (empty_queue :: (ts \<times> event_data table \<times> event_data table) queue,
+        rq3 data_prev, rmk (\<lambda>v. v) tio, reopt_table keys) of
+      (q0, dp', move, tio', keys') \<Rightarrow> (dp', move, tio', keys'))
+   = (case shift_end' I nt fst
+        (empty_queue :: (ts \<times> event_data list set \<times> event_data list set) queue,
+         data_prev, tio, keys) of
+      (q0, dp', move, tio', keys') \<Rightarrow>
+        (rq3 dp', map rtq3 move, rmk (\<lambda>v. v) tio', reopt_table keys'))"
+proof -
+  obtain dp' move where tdq: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_prev
+      = (dp', move)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_prev")
+  have td: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) (rq3 data_prev)
+      = (rq3 dp', map rtq3 move)"
+    by (simp only: takedropWhile_queue_rq3 tdq map_prod_simp)
+  show ?thesis
+    by (auto simp only: shift_end'.simps Let_def td tdq fold_filter_once_bmm
+        map_prod_simp prod.case split: prod.splits)
+qed
+
+text \<open>The fold over the time points that enter the interval, relabelled.\<close>
+
+lemma fold_hist_bmm:
+  "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r;
+          since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1, since_sat \<union> gsemi_join msk pos r l))
+      (map rtq3 move) (rmk (\<lambda>v. v) tsh, reopt_table hs, idx, reopt_table ss)
+   = (case fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r;
+          since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1, since_sat \<union> gsemi_join msk pos r l))
+      move (tsh, hs, idx, ss) of
+        (tsh', hs', i', ss') \<Rightarrow> (rmk (\<lambda>v. v) tsh', reopt_table hs', i', reopt_table ss'))"
+proof (induction move arbitrary: tsh hs idx ss)
+  case (Cons m move)
+  then show ?case
+    by (cases m) (simp add: Cons.IH rmk_filter Let_def split: prod.splits)
+qed simp
+
+text \<open>The read that closes the update: the new @{text hist_sat} is read off the head of the
+  in-window queue, whose tuples the relabelling has already put the option back on.\<close>
+
+lemma hist_sat_bmm:
+  "(case fst (safe_hd (rq q)) of None \<Rightarrow> {}
+      | Some db \<Rightarrow> reopt_table hs \<union> {tuple \<in> snd db.
+          case Mapping.lookup (rmk (\<lambda>v. v) m) tuple of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> i})
+   = reopt_table (case fst (safe_hd q) of None \<Rightarrow> {}
+      | Some db \<Rightarrow> hs \<union> {tuple \<in> snd db.
+          case Mapping.lookup m tuple of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> i})"
+proof (cases "fst (safe_hd q)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some db)
+  have "{tuple \<in> reopt_table (snd db). case Mapping.lookup (rmk (\<lambda>v. v) m) tuple of
+        None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> i}
+      = reopt_table {tuple \<in> snd db.
+        case Mapping.lookup m tuple of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> i}"
+    by (auto simp: reopt_table_def image_iff option.map_ident)
+  with Some show ?thesis by simp
+qed
+
+lemma gupdate_mmtaux'_bmm:
+  "gupdate_mmtaux' args nt idx_mid idx_oldest msk (rq3 data_prev) (rq data_in)
+      (rmk (\<lambda>v. v) tio) (reopt_table keys) (rmk (\<lambda>v. v) tsh) (reopt_table hs) (reopt_table ss)
+   = (case gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss of
+       (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss') \<Rightarrow>
+         (idx_mid', idx_oldest', rq3 data_prev', rq data_in', rmk (\<lambda>v. v) tio',
+          reopt_table keys', rmk (\<lambda>v. v) tsh', reopt_table hs', reopt_table ss'))"
+proof -
+  obtain q0 dp' move tio' keys' where se:
+    "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> event_data list set \<times> event_data list set) queue,
+         data_prev, tio, keys) = (q0, dp', move, tio', keys')"
+    by (metis surj_pair)
+  obtain q0b where seb:
+    "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> event_data table \<times> event_data table) queue,
+         rq3 data_prev, rmk (\<lambda>v. v) tio, reopt_table keys)
+      = (q0b, rq3 dp', map rtq3 move, rmk (\<lambda>v. v) tio', reopt_table keys')"
+  proof -
+    obtain q0b dpb moveb tiob keysb where b:
+      "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+          (empty_queue :: (ts \<times> event_data table \<times> event_data table) queue,
+           rq3 data_prev, rmk (\<lambda>v. v) tio, reopt_table keys)
+        = (q0b, dpb, moveb, tiob, keysb)"
+      by (metis surj_pair)
+    have "(dpb, moveb, tiob, keysb)
+        = (rq3 dp', map rtq3 move, rmk (\<lambda>v. v) tio', reopt_table keys')"
+      using shift_end'_bmm[of "flip_int_less_lower (args_ivl args)" nt data_prev tio keys]
+      by (simp only: se b prod.case)
+    with b show thesis by (auto intro: that)
+  qed
+  obtain di' drop where td:
+    "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in = (di', drop)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in")
+  have tdb: "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) (rq data_in)
+      = (rq di', map rtq drop)"
+    by (simp only: takedropWhile_queue_rq td map_prod_simp)
+  obtain tsh2 hs2 idx2 ss2 where fh:
+    "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tsh, hs, idx_mid, ss) = (tsh2, hs2, idx2, ss2)"
+    by (cases "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tsh, hs, idx_mid, ss)") auto
+  show ?thesis
+    by (simp only: gupdate_mmtaux'_def Let_def se seb td tdb prod.case
+        filter_rtq3 length_map fold_append_r_rtq3 fold_hist_bmm[unfolded Let_def] fh
+        reopt_table_simps if_empty_rmk hist_sat_bmm)
+      simp
+qed
+
+lemma gupdate_mmtaux_bmm:
+  "gupdate_mmtaux args nt (reopt_table l) (reopt_table r) (bmm ax)
+   = bmm (gupdate_mmtaux args nt l r ax)"
+proof -
+  obtain cur idx_next idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
+    where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tio, keys,
+      tsh, hs, ss)"
+    by (metis surj_pair)
+  obtain idx_mid' idx_oldest' dp' di' tio' keys' tsh' hs' ss' where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
+      = (idx_mid', idx_oldest', dp', di', tio', keys', tsh', hs', ss')"
+    by (metis surj_pair)
+  show ?thesis
+    unfolding ax bmm.simps gupdate_mmtaux_def prod.case
+    by (simp only: gupdate_mmtaux'_bmm g prod.case Let_def
+        append_queue_rq append_queue_rq3 rmk_filter keys_rmk rmk_upd_set_id
+        reopt_table_simps gsemi_join_reopt is_empty_map_queue)
+      (simp add: bmm.simps)
+qed
+
+lemma gresult_mmtaux_bmm: "gresult_mmtaux args (bmm ax) = reopt_table (gresult_mmtaux args ax)"
+  by (cases ax rule: bmm.cases) (simp add: gresult_mmtaux_def bmm.simps)
+
+lemma gmmtaux_empty_bmm: "gmmtaux_empty (bmm ax) = gmmtaux_empty ax"
+  by (cases ax rule: bmm.cases) (simp add: gmmtaux_empty_def bmm.simps)
+
+lemma ginit_mmtaux_bmm: "ginit_mmtaux args msk = bmm (ginit_mmtaux args msk)"
+  by (simp add: ginit_mmtaux_def bmm.simps)
+
 (*<*)
 end
 (*>*)
