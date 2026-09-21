@@ -6616,4 +6616,30 @@ Three rounds were needed, each a rebuild and a profile, and each is a general fi
    table at every time point; a verified incremental result would be a change to
    `Optimized_Agg_Temporal.thy`.
 
-SUITE_C1
+**Measured.** The suite once more on the final binary (`evaluation/perf/report.md` and
+`ratios.svg` are this run):
+
+| family | vdense/monpoly | vdense/dense |
+|---|---|---|
+| join | 1.13 | 0.99 |
+| once | 1.23 | 1.00 |
+| since | 1.70 | 0.99 |
+| eventually | 1.31 | 1.00 |
+| until | 1.59 | 1.01 |
+| burst | 1.28 | 0.99 |
+| agg | 1.34 | 0.99 |
+| agg_once | 2.26 | 1.00 |
+| agg_fut | 2.03 | 1.02 |
+| wide | 1.31 | 0.98 |
+| long | 1.32 | 0.98 |
+| policy | 1.98 | 0.99 |
+| all 21 families | 1.39 | 0.99 |
+
+The verified dense evaluator is now the shipping monitor's equal on every family of the suite
+(geometric mean 0.99, no family above 1.02; 8 timeouts against the shipping monitor's 7, all on
+the same formulas), with identical verdicts on every formula, and 1.39x MonPoly overall, where
+21.1 started at 1.41x for the pure kernel's evaluator with the queue buffers -- and where the
+shipping, unverified monitor stands at 1.40x.  What remains to MonPoly is the same for both:
+the aggregations over a window (2.0-2.3x, the kernel's structure rebuilding its result), the
+Since with an anti-join left operand (1.7x, the index rebuilt per time point, 21.7's first
+profile) and the policy formulas that combine them.
