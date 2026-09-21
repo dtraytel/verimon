@@ -63,27 +63,20 @@ lemma bind_flip_code[code]: "Heap_Monad.bind m f = bind_flip f m"
 code_printing constant Heap_Monad.bind \<rightharpoonup> (OCaml)
 | constant bind_flip \<rightharpoonup> (OCaml) "(fun/ ()/ ->/ (_)/ ((_)/ ())/ ())"
 
-code_printing code_module ConfigImp \<rightharpoonup> (OCaml)
-\<open>module ConfigImp : sig
-  val heap_join_min : int ref
-  val dense_heap_join : bool ref
-end = struct
-  let heap_join_min = ref 0
-  let dense_heap_join = ref false
-end\<close>
-
 definition heap_join_min :: integer where
   "heap_join_min = 0"
-
-text \<open>Whether the monitor over the short tuples indexes a join on the heap; the front end
-  exposes it as @{text "-dense -heap_maps"}.\<close>
 
 definition dense_heap_join :: bool where
   "dense_heap_join = False"
 
-code_printing
-  constant heap_join_min \<rightharpoonup> (OCaml) "(Z.of'_int '!ConfigImp.heap'_join'_min)"
-| constant dense_heap_join \<rightharpoonup> (OCaml) "'!ConfigImp.dense'_heap'_join"
+text \<open>
+  Two former mutable flags, exposed as @{text "-heap_join_min"} and (together with the already
+  deprecated-and-ignored @{text "-dense"}/@{text "-heap_maps"}) @{text "dense_heap_join"}: the
+  size threshold for indexing a join on the heap, and whether the monitor over the short tuples
+  does so at all.  Measurement never turned @{const dense_heap_join} on by default, so every use
+  of @{const heap_join_min} sat behind a branch nothing ever took; both are fixed constants now,
+  not a runtime configuration surface.
+\<close>
 
 text \<open>
   Equality of two tuples.  Stated as @{text "x = y"} it becomes OCaml's polymorphic comparison,

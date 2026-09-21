@@ -35,3 +35,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Unbox_Exec
     Dense_Unbox
     Dense_Idx_Code
+  theories [document=false]
+    Monitor_Code_Dense
+  export_files (in ".") [2]
+    "MFODL_Monitor_Dense.Monitor_Code_Dense:code/**"

@@ -19,5 +19,7 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Dense +
     Monitor_Imp
   theories [document=false]
     Monitor_Code_Imp
+    Monitor_Code_Imp_Only
   export_files (in ".") [2]
     "MFODL_Monitor_Imp.Monitor_Code_Imp:code/**"
+    "MFODL_Monitor_Imp.Monitor_Code_Imp_Only:code/**"

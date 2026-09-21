@@ -6858,3 +6858,86 @@ Both sessions check clean (0 errors, 0 sorries: `MFODL_Monitor_Dense`'s 25 theor
 byte-for-byte identical to the pre-split file -- expected, since nothing was proved or defined
 differently, only moved and re-qualified -- and the differential corpus is unchanged (593
 identical, 7 refused, 0 differing).
+
+### 21.11 Two exports, one per session, and the flags that measured nothing
+
+A worry surfaced after the split: with the shipping `src/verified.ml` built from one combined
+`export_code` naming both the imperative dense mode's entry points and `vdense`'s, could something
+about that -- shared code, a shared runtime flag -- make one mode's measurement depend on the
+other's? The way to settle it is to export each mode from its own session, with nothing else in
+the request list, and read what actually comes out.
+
+`MFODL_Monitor_Dense.Monitor_Code_Dense` is a new theory, entirely within that session, exporting
+`udminit_safe`/`udmstep`/`uvdfail_nodes`/`udmstate_m` plus the front end and the short-tuple
+database helpers (its own copies of `utable_of_list`/`uempty_db`/`uinsert_table_into_db`/
+`urbt_fold`, since these were previously only defined in `Dense_Code_Opt.thy` on the imperative
+side; duplicating four pure one-line definitions across two sessions is simpler than the
+extraction `Table_Evt`/`Since_Evt`/`Until_Evt` needed, and there is no `Heap` dependency to cut
+here). `MFODL_Monitor_Imp.Monitor_Code_Imp_Only` is a second, sibling theory next to the existing
+`Monitor_Code_Imp` (which the shipping binary still builds from, unchanged), exporting only
+`minit_safe_d`/`mstep_d`/`dfail_nodes` and the same database helpers, with no `vdense` symbol
+named at all. Both produce self-contained files (`thys/MFODL_Monitor_Dense/verified.ocaml` and
+`thys/MFODL_Monitor_Imp/verified_imp.ocaml`); each compiles standalone with
+`ocamlfind ocamlopt -package zarith`, confirming each is independently well-formed.
+
+The two files are not, and cannot be, linked into one running binary as a drop-in replacement for
+the combined `src/verified.ml`: every `export_code` command regenerates its own copy of every
+datatype it touches -- `event_data`, `Formula.formula`, `mapping`, `set`, all of it -- from
+scratch, so `Monitor.event_data` in one file and `Monitor.event_data` in the other are two
+distinct OCaml types with identical shapes, and a value built by one file's functions cannot be
+handed to the other's without a conversion layer neither file provides. Isabelle's code generator
+has no notion of one export reusing another's generated module. Turning this pair into an actual
+dual-module (or dual-binary) shipping build -- functorising `verified_adapter.ml`'s ~560 lines of
+formula/term/table conversions over the two structurally-identical-but-nominally-distinct
+`Monitor` signatures -- is a separate, larger piece of work not done here.
+
+What reading the two files answered directly:
+
+- **No cross-contamination.** `grep` for `dense_heap_join`/`heap_join_min`/`ConfigImp`/
+  `heap_join_ok` against `MFODL_Monitor_Dense`'s export returns nothing: none of the imperative
+  refinement's machinery is reachable from `vdense`'s own symbols, confirming on the generated
+  code -- not just on the import graph -- that the two are independent.
+
+- **A genuine, previously live footgun.** `dense_heap_join` (whether the short-tuple join indexes
+  on the heap) and `heap_join_min` (the size threshold for doing so) were mutable OCaml refs in a
+  `ConfigImp` module, written on every run from `-dense`/`-heap_maps`/`-heap_join_min`. But
+  `-dense` and `-heap_maps` were *already* documented as "deprecated, accepted and ignored" --
+  meaning `dense_heap_join` was `!Misc.dense_cols && !Misc.heap_all`, which is `false` unless a
+  user passed two flags whose own help text said they did nothing. So every benchmark that never
+  passed those two flags together ran with the heap-resident dense join permanently off, silently:
+  `Dense_Imp.thy`'s `dbin_join_h` always fell back to the pure `gbin_join`. Whatever the
+  imperative session's dense join has been measured at, it was measured with its own heap index
+  never exercised. `ConfigImp` (both fields) is now gone; `dense_heap_join` and `heap_join_min`
+  are fixed HOL constants (`False` and `0`, i.e. the values every real run already had), with no
+  `code_printing` override, so they compile to plain immutable OCaml `let`s -- confirmed in both
+  new exports (`let dense_heap_join : bool = false;; let heap_join_min : Z.t = Z.zero;;`) and, via
+  a rebuild, in the shipping `verified.ml` too. The dead branch its guard was skipping stays in
+  the generated code (Isabelle's code generator does not eliminate `if` branches on constant
+  conditions), so `heap_join_ok` and the heap-indexed path of `dbin_join_h` are still present --
+  just no longer switchable by anything, and unchanged from what every run already computed.
+
+- **A second flag that has measured nothing for longer.** `Config.generic_join`,
+  `Config.imperative_join` and `Config.bulk_min` -- three more mutable refs, from the base
+  session's `Code_Opt.thy`, written from `-generic_join`/`-imperative_join`/`-bulk_min` on every
+  run -- appear in *every* export checked, old and new: declared, and never once read anywhere in
+  14000-plus lines of generated code. `-generic_join`/`-imperative_join` gate `use_generic_join`
+  inside `Join_Imp2.thy`'s multi-way join dispatcher, which belongs to the wide-tuple imperative
+  monitor (`Monitor_Imp`/`Monitor_Imp2`); that monitor's own top-level step function has not been
+  in the export's request list since the switch to dense-only exports (`Monitor_Code_Imp.thy`
+  already documented these evaluators as unreachable), and `Dense_Imp.thy`'s own multi-way
+  conjunction is a separate, un-gated implementation that never calls into it. `bulk_min` (the
+  build-in-one-pass-from-a-sorted-list threshold) is equally unreferenced everywhere checked. The
+  three CLI flags' own help text claimed an effect on "the verified kernel" that, empirically, it
+  has not had since dense-only export became the shipping default. The OCaml-side wiring
+  (`Verified.Config.* := ...` in `algorithm_verified.ml`, run unconditionally on every verified-
+  kernel invocation) is removed; the three flags are still accepted, now marked deprecated and
+  ignored like `-dense`/`-heap_maps` already were, rather than silently doing nothing while
+  claiming otherwise. The base session's own `Config`/`bulk_min` definitions in `Code_Opt.thy` are
+  untouched, since that theory is shared infrastructure this change did not audit for other
+  consumers.
+
+None of this changes what the shipping binary computes: every fixed constant above is fixed at
+the value every real invocation already had, and the differential corpus and `dune build` are
+unchanged (593 identical, 7 refused, 0 differing; the pre-existing `matchp` `difftest.sh`
+mismatch, present before any of this round's changes, is unaffected). What changes is that the
+five flags this section describes can no longer be mistaken for switches that do something.

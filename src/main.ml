@@ -235,14 +235,14 @@ let _ =
     "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
     "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-vdense", Arg.Set Misc.verified_dense, "\tRun the verified dense evaluator (Dense_Eval.thy) rather than the shipping one; for measurement, it keeps the kernel's wide tuples";
-    "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tSmallest table size for which a join builds a heap-resident index (default 0, i.e. always; only with -heap_maps)";
-    "-bulk_min", Arg.Set_int Misc.bulk_min, "\tSmallest table built in one pass from a sorted list rather than by repeated insertion (default 64)";
+    "-heap_join_min", Arg.Set_int Misc.heap_join_min, "\tDeprecated, accepted and ignored: whether the short-tuple join indexes on the heap is now a fixed choice, not a runtime one";
+    "-bulk_min", Arg.Set_int Misc.bulk_min, "\tDeprecated, accepted and ignored: not reachable from the monitor the verified kernel now ships (dense tuples only)";
     "-heap_since", Arg.Set Misc.heap_since, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 500 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
     "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default: 768k with the verified kernel, otherwise the OCaml default of 256k)";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
-    "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tEvaluate multi-way joins with the worst-case optimal generic join instead of pairwise binary joins (only with the verified kernel)";
-    "-imperative_join", Arg.Set Algorithm_verified.imperative_join, "\tUse the imperative (Imperative HOL) hash index for binary joins (only with the verified kernel)";
+    "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tDeprecated, accepted and ignored: gated the wide-tuple monitor's own multi-way join, which the verified kernel no longer exports";
+    "-imperative_join", Arg.Set Algorithm_verified.imperative_join, "\tDeprecated, accepted and ignored: gated the wide-tuple monitor's own multi-way join, which the verified kernel no longer exports";
     "-unfold_let", Arg.Symbol (["no"; "full"; "smart"], set_unfold_let),
       "\tWhether and how LET expressions in the formula should be unfolded (default 'no')";
     "-strcache", Arg.Set Misc.str_cache, "\tUse string cache to reduce memory usage";

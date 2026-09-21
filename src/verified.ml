@@ -43,14 +43,6 @@ let test_bit x n =
 
 end;; (*struct Uint32*)
 
-module ConfigImp : sig
-  val heap_join_min : int ref
-  val dense_heap_join : bool ref
-end = struct
-  let heap_join_min = ref 0
-  let dense_heap_join = ref false
-end
-
 module FloatUtil : sig
   val iszero : float -> bool
   val isinfinite : float -> bool
@@ -8725,9 +8717,12 @@ let djidx_new_v :
   = Box (im_new (heap_list heap_event_data)
           (heap_list (heap_list heap_event_data)));;
 
+let dense_heap_join : bool = false;;
+
+let heap_join_min : Z.t = Z.zero;;
+
 let rec heap_join_ok
-  idx = Z.leq (Z.of_int !ConfigImp.heap_join_min)
-          (integer_of_nat (size_lista idx));;
+  idx = Z.leq heap_join_min (integer_of_nat (size_lista idx));;
 
 let djidx_lookup_h_v :
   ((event_data list -> event_data list -> bool) ->
@@ -8802,7 +8797,7 @@ let rec didx_ins
 let rec dbin_join_h
   x0 a pos b = match x0, a, pos, b with
     DJGen (p, lk, rk), a, pos, b ->
-      (if not !ConfigImp.dense_heap_join ||
+      (if not dense_heap_join ||
             (not pos || (unbox edl_is_empty_v a || unbox edl_is_empty_v b))
         then (fun () -> (de_gbin_join (DJGen (p, lk, rk)) a pos b))
         else (let xs =
