@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Unbox
-  imports Dense_Until_Gen Since_Imp2 Until_Imp2
+  imports Dense_Until_Gen Since_Evt Until_Evt
 begin
 (*>*)
 
@@ -16,7 +16,7 @@ text \<open>
   This theory removes it.  The dense operations are restated over a bare element type \<open>'b\<close>,
   where the existing ones are over @{typ "'a option"}; each generic operation is then proved
   equal to the one it generalises at the option instance, so every theorem of
-  @{theory MFODL_Monitor_Imp.Dense} and @{theory MFODL_Monitor_Imp.Dense_Aux} continues to say
+  @{theory MFODL_Monitor_Dense.Dense} and @{theory MFODL_Monitor_Dense.Dense_Aux} continues to say
   what it said, and the executable evaluator instantiates the same definitions at
   @{typ event_data} instead.
 
@@ -87,7 +87,7 @@ fun gands_neg :: "djoin_plan list \<Rightarrow> 'b :: ccompare list set \<Righta
 | "gands_neg (p # ps) t (u # us) = gands_neg ps (gbin_join p t False u) us"
 
 text \<open>At the option instance these are the operations of
-  @{theory MFODL_Monitor_Imp.Dense}, so the join's correctness theorems there are theorems
+  @{theory MFODL_Monitor_Dense.Dense}, so the join's correctness theorems there are theorems
   about these.\<close>
 
 lemma gindex_step_eq: "gindex_step msk = (dindex_step msk :: event_data tuple \<Rightarrow> _)"
@@ -129,7 +129,7 @@ lemma gmulti_join_eq: "gmulti_join ps ns (us :: event_data table list) = dmulti_
       split: list.splits)
 
 text \<open>What the join computes, over a bare element type.  The proofs are those of
-  @{theory MFODL_Monitor_Imp.Dense} with the option gone; they are needed at the element type
+  @{theory MFODL_Monitor_Dense.Dense} with the option gone; they are needed at the element type
   the executable evaluator uses, where an equality with the option instance says nothing.\<close>
 
 lemma ID_ccompare_ed: "ID CCOMPARE(event_data list) \<noteq> None"
@@ -183,7 +183,7 @@ lemma ggen_join_spec:
 subsection \<open>The Since structure, over a bare element type\<close>
 
 text \<open>
-  The index algebra of @{theory MFODL_Monitor_Imp.Dense_Aux} -- @{const didx}, @{const didx_union},
+  The index algebra of @{theory MFODL_Monitor_Dense.Dense_Aux} -- @{const didx}, @{const didx_union},
   @{const didx_minus}, @{const dsemi_idx} -- is already stated over @{typ "'b list"}; only the
   state itself, the operation that consults the arguments to decide whether the index is live,
   and @{const valid_tuple} carry the option, and only in their signatures.  They are restated here
@@ -292,7 +292,7 @@ fun ggc_join_msaux :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<
        idx_since, tuple_since))"
 
 text \<open>At the option instance, the six operations are the ones whose validity
-  @{theory MFODL_Monitor_Imp.Dense_Aux} establishes.\<close>
+  @{theory MFODL_Monitor_Dense.Dense_Aux} establishes.\<close>
 
 lemma gvalid_tuple_eq: "gvalid_tuple (m :: (event_data tuple, ts) mapping) = valid_tuple m"
   by (intro ext) (simp add: gvalid_tuple_def valid_tuple_def)
@@ -334,16 +334,16 @@ lemma ggc_join_msaux_eq: "ggc_join_msaux args Y (d :: event_data dmsaux) = dgc_j
 
 subsection \<open>The Until structure, over a bare element type\<close>
 
-text \<open>The generic Until structure lives in @{theory MFODL_Monitor_Imp.Dense_Until_Gen}, where the
+text \<open>The generic Until structure lives in @{theory MFODL_Monitor_Dense.Dense_Until_Gen}, where the
   verified dense evaluator runs it too.\<close>
 
 subsection \<open>The closed-left-operand structures, over a bare element type\<close>
 
 text \<open>
   The two structures for a closed left operand -- the Since's sliding window of
-  @{theory MFODL_Monitor_Imp.Since_Imp2} and the Until's of
-  @{theory MFODL_Monitor_Imp.Until_Imp2} -- are queues of tables and a multiset of tuples held
-  as a count mapping.  They touch no field, so they generalise as the others did.
+  @{theory MFODL_Monitor_Dense.Since_Evt} and the Until's of @{theory MFODL_Monitor_Dense.Until_Evt} -- are queues of tables and a
+  multiset of tuples held as a count mapping.  They touch no field, so they generalise as the
+  others did.
 \<close>
 
 definition gevt_add :: "'b :: ccompare list set \<Rightarrow> ('b list, nat) mapping \<times> 'b list set \<Rightarrow>
@@ -818,7 +818,7 @@ subsection \<open>The operations that read a field\<close>
 
 text \<open>
   These cannot be generalised, because they look inside a field.  Their twins over short tuples
-  are in @{theory MFODL_Monitor_Imp.Dense_Utuple}, and the verified evaluator's versions are
+  are in @{theory MFODL_Monitor_Dense.Dense_Utuple}, and the verified evaluator's versions are
   those twins read through @{const deopt}, so the agreement is by definition; what remains is
   the direction the executable monitor's compiler uses, from the kernel's tuples down.
 \<close>

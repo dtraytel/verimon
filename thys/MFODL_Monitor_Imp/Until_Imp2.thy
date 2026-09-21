@@ -1,6 +1,6 @@
 (*<*)
 theory Until_Imp2
-  imports Table_Imp "MFODL_Monitor_Devel.Optimized_Until_Deque"
+  imports Table_Imp "MFODL_Monitor_Devel.Optimized_Until_Deque" "MFODL_Monitor_Dense.Until_Evt"
 begin
 (*>*)
 
@@ -226,102 +226,10 @@ text \<open>
 
   Definitions only, no proofs; the structure is selected only where the conditions above hold
   and the general one is used otherwise.
+
+  This structure -- @{typ evtaux} and its operations -- touches no array or reference, so it now
+  lives in @{theory MFODL_Monitor_Dense.Until_Evt}, which this theory imports.
 \<close>
-
-type_synonym evt_entry = "ts \<times> event_data table \<times> bool"
-
-type_synonym evtaux = "ts queue \<times> evt_entry queue \<times> evt_entry queue \<times> nat \<times> bool \<times>
-  (event_data tuple, nat) mapping \<times> event_data table \<times> event_data table list"
-
-text \<open>The window is extended one time point at a time, and stops at the first one whose
-timestamp is out of range or at the one after which the left operand fails.  Both bounds only
-move to the right as the structure advances, so over a run each time point enters the window
-once, and a step that extends it by nothing touches nothing.\<close>
-
-function evt_extend :: "args \<Rightarrow> ts \<Rightarrow> evt_entry queue \<Rightarrow> evt_entry queue \<Rightarrow> bool \<Rightarrow>
-    (event_data tuple, nat) mapping \<Rightarrow> event_data table \<Rightarrow>
-    evt_entry queue \<times> evt_entry queue \<times> bool \<times> (event_data tuple, nat) mapping \<times> event_data table" where
-  "evt_extend args ts0 win rest bend cnt cur =
-     (if \<not> bend then (win, rest, bend, cnt, cur)
-      else (case safe_hd rest of
-              (None, rest') \<Rightarrow> (win, rest', bend, cnt, cur)
-            | (Some e, rest') \<Rightarrow>
-                (if memR (args_ivl args) (fst e - ts0)
-                 then (case evt_add (fst (snd e)) (cnt, cur) of (cnt', cur') \<Rightarrow>
-                         evt_extend args ts0 (append_queue e win) (tl_queue rest')
-                           (snd (snd e)) cnt' cur')
-                 else (win, rest', bend, cnt, cur))))"
-  by pat_completeness auto
-termination
-  using length_tl_queue_safe_hd[OF sym]
-  by (relation "measure (\<lambda>(args, ts0, win, rest, bend, cnt, cur). length (linearize rest))")
-     (fastforce split: prod.splits)+
-
-declare evt_extend.simps[simp del]
-
-subsection \<open>Operations\<close>
-
-definition init_evt :: "args \<Rightarrow> evtaux" where
-  "init_evt args = (empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, {}, [])"
-
-definition length_evt :: "args \<Rightarrow> evtaux \<Rightarrow> nat" where
-  "length_evt args aux = (case aux of (nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
-     length done + len)"
-
-text \<open>One time point leaves the structure: the window is extended as far as its timestamp
-  allows, the union of the window is the verdict, and the time point itself is dropped.\<close>
-
-definition evt_step :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> evtaux" where
-  "evt_step args ts0 aux = (case aux of (nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
-     (case evt_extend args ts0 win rest bend cnt cur of (win, rest, bend, cnt, cur) \<Rightarrow>
-        (case safe_hd win of
-           (None, win') \<Rightarrow>
-             (case safe_hd rest of
-                (None, rest') \<Rightarrow>
-                  (tl_queue nts, win', rest', len - 1, bend, cnt, cur, {} # done)
-              | (Some _, rest') \<Rightarrow>
-                  (tl_queue nts, win', tl_queue rest', len - 1, bend, cnt, cur, {} # done))
-         | (Some e, win') \<Rightarrow>
-           (let win'' = tl_queue win';
-                (cnt', cur') = evt_del (fst (snd e)) (cnt, cur);
-                bend' = (if Queue.is_empty win'' then True else bend)
-            in (tl_queue nts, win'', rest, len - 1, bend', cnt', cur', cur # done)))))"
-
-text \<open>A time point leaves the structure as soon as no later one can contribute to it.  Walking
-the pending timestamps directly avoids building a queue and a list only to take their length.\<close>
-
-function evt_shift :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> evtaux" where
-  "evt_shift args nt aux = (case aux of (nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
-     (case safe_hd nts of
-        (None, nts') \<Rightarrow> (nts', win, rest, len, bend, cnt, cur, done)
-      | (Some ts0, nts') \<Rightarrow>
-        (if memR (args_ivl args) (nt - ts0) \<or> len = 0
-         then (nts', win, rest, len, bend, cnt, cur, done)
-         else evt_shift args nt (evt_step args ts0 (nts', win, rest, len, bend, cnt, cur, done)))))"
-  by pat_completeness auto
-termination
-  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, done)). len)")
-     (auto simp: evt_step_def Let_def split: prod.splits option.splits)
-
-declare evt_shift.simps[simp del]
-
-definition add_new_evt :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> evtaux" where
-  "add_new_evt args rel1 rel2 nt aux =
-     (case evt_shift args nt aux of (nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
-       (let b = (if args_pos args then \<not> Set.is_empty rel1 else Set.is_empty rel1)
-        in (append_queue nt nts, win, append_queue (nt, rel2, b) rest,
-            len + 1, bend, cnt, cur, done)))"
-
-definition eval_evt :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> event_data table list \<times> evtaux" where
-  "eval_evt args nt aux =
-     (case evt_shift args nt aux of (nts, win, rest, len, bend, cnt, cur, done) \<Rightarrow>
-       (rev done, (nts, win, rest, len, bend, cnt, cur, [])))"
-
-text \<open>The structure applies when the left operand is closed, the interval starts at zero so that
-  every time point of the window contributes, and there is no aggregation.\<close>
-
-definition evt_applies :: "args \<Rightarrow> bool" where
-  "evt_applies args \<longleftrightarrow> args_agg args = None \<and> args_L args = {} \<and> memL (args_ivl args) 0"
 
 subsection \<open>Heap structure or pure structure\<close>
 

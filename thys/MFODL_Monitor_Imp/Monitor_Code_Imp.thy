@@ -1,6 +1,7 @@
 (*<*)
 theory Monitor_Code_Imp
-  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt Dense_Descend_Code Dense_Unbox_Exec
+  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt
+    "MFODL_Monitor_Dense.Dense_Descend_Code" "MFODL_Monitor_Dense.Dense_Unbox_Exec"
     "MFODL_Monitor_Devel.Monitor_Code"
 begin
 (*>*)
@@ -42,7 +43,7 @@ code_printing constant Heap_Monad.bind \<rightharpoonup> (OCaml)
 declare bind_flip_code[code]
 
 text \<open>
-  The verified dense evaluator of @{theory MFODL_Monitor_Imp.Dense_Eval}, wrapped in the same
+  The verified dense evaluator of @{theory MFODL_Monitor_Dense.Dense_Eval}, wrapped in the same
   online interface the kernel has, so that it can be measured next to the two it sits between:
   the kernel's own evaluator, which it is proved to simulate, and the executable dense one,
   which refines it further with short tuples and heap-resident structures.  It is a pure

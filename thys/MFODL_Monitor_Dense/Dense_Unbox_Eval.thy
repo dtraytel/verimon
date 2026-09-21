@@ -7,19 +7,19 @@ begin
 section \<open>The verified dense evaluator, without the option\<close>
 
 text \<open>
-  @{const edeval} of @{theory MFODL_Monitor_Imp.Dense_Exec} is the verified dense evaluator with
+  @{const edeval} of @{theory MFODL_Monitor_Dense.Dense_Exec} is the verified dense evaluator with
   its buffers in queues; its tables are the kernel's, @{typ "event_data option list set"}, and a
   dense tuple never has a hole.  This theory states the evaluator once more over
   @{typ "event_data list set"} and proves that on a formula whose tables are the short ones with
   the option put back, @{const edeval} computes what the short evaluator computes with the option
   put back.  The proof is a naturality argument, node by node: every operation the evaluator
   runs commutes with @{const reopt_table}.  The operations that read a field are
-  @{theory MFODL_Monitor_Imp.Dense_Utuple}'s twins read through @{const deopt}, so for them the
+  @{theory MFODL_Monitor_Dense.Dense_Utuple}'s twins read through @{const deopt}, so for them the
   commutation is by definition; the ones that move fields are the generic ones of
-  @{theory MFODL_Monitor_Imp.Dense_Unbox} and @{theory MFODL_Monitor_Imp.Dense_Until_Gen}, whose
+  @{theory MFODL_Monitor_Dense.Dense_Unbox} and @{theory MFODL_Monitor_Dense.Dense_Until_Gen}, whose
   commutation is proved here from that of the containers they are built from.  No invariant is
-  needed: the operations were stated in @{theory MFODL_Monitor_Imp.Dense_Utuple} and
-  @{theory MFODL_Monitor_Imp.Dense_Until_Gen} precisely so that the commutation holds on every
+  needed: the operations were stated in @{theory MFODL_Monitor_Dense.Dense_Utuple} and
+  @{theory MFODL_Monitor_Dense.Dense_Until_Gen} precisely so that the commutation holds on every
   input.
 \<close>
 
@@ -340,7 +340,7 @@ proof
   qed
 qed simp
 
-text \<open>The index algebra of @{theory MFODL_Monitor_Imp.Dense_Aux}.\<close>
+text \<open>The index algebra of @{theory MFODL_Monitor_Dense.Dense_Aux}.\<close>
 
 lemma cluster_reopt_table:
   "cluster (Some \<circ> dproj msk) (reopt_table X) = rmk reopt_table (cluster (Some \<circ> dproj msk) X)"
@@ -562,7 +562,7 @@ lemma ggc_join_msaux_rmsaux:
 
 subsection \<open>The Since window\<close>
 
-text \<open>The window of @{theory MFODL_Monitor_Imp.Dense_Evt}, over a bare element type.  It is the
+text \<open>The window of @{theory MFODL_Monitor_Dense.Dense_Evt}, over a bare element type.  It is the
   verified one clause for clause; at the option instance it \<^emph>\<open>is\<close> the verified one.\<close>
 
 type_synonym 'b gcntset = "('b list, nat) mapping \<times> 'b list set"
@@ -1016,7 +1016,7 @@ qed
 
 subsection \<open>The Until structure\<close>
 
-text \<open>The generic Until deque of @{theory MFODL_Monitor_Imp.Dense_Until_Gen} reads its deques
+text \<open>The generic Until deque of @{theory MFODL_Monitor_Dense.Dense_Until_Gen} reads its deques
   off their lists, so that every operation commutes with the embedding on every state.  The one
   reading that cannot is the head of the time stamp queue in @{const geval_step_dq}, which is
   undefined on an empty queue: the step is natural on the states it is ever applied to, those
@@ -1428,7 +1428,7 @@ qed
 section \<open>The kernel's trigger structure over short tuples\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Imp.Dense_Unbox}'s generic @{typ "'b gmmtaux"} is already stated over a
+  @{theory MFODL_Monitor_Dense.Dense_Unbox}'s generic @{typ "'b gmmtaux"} is already stated over a
   bare element type, at the two shapes the file's own text works out: the left operand's tuples
   stay at their own frame (narrow, the width of the mask's true positions) throughout the window,
   and only the probe compares them against a projection of the right operand's frame (full

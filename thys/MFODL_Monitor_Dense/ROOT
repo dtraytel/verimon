@@ -1,0 +1,37 @@
+chapter AFP
+
+session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
+  description
+    "The dense (short-tuple) representation of the monitor's evaluation function, and the pure
+     window-union structures shared with the heap-resident Since/Until refinement of
+     MFODL_Monitor_Imp: all of it definitions and proofs over plain HOL functions, with no
+     Imperative_HOL. Separate from MFODL_Monitor_Imp so that this material -- including the
+     vdense evaluator udmstep/udeval -- can be checked and reused without ever touching the Heap
+     monad, and so that a change to the imperative refinement does not force this session to be
+     rebuilt."
+  theories
+    Table_Evt
+    Since_Evt
+    Until_Evt
+    Dense_Utuple
+    Dense
+    Dense_Aux
+    Dense_Until_Gen
+    Dense_Evt
+    Dense_Evt_Agg
+    Dense_Evt_Aux
+    Dense_Eval
+    Dense_Produces
+    Dense_Match
+    Dense_Let
+    Dense_Agg
+    Dense_Correct
+    Dense_Compile
+    Dense_Init
+    Dense_Descend
+    Dense_Exec
+    Dense_Descend_Code
+    Dense_Unbox_Eval
+    Dense_Unbox_Exec
+    Dense_Unbox
+    Dense_Idx_Code

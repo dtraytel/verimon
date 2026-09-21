@@ -18,7 +18,7 @@ text \<open>
   representation.  This theory does the same for the dense evaluator: @{text edformula} is
   @{typ dformula} with its buffers in @{typ "'a mbuf_t"}, @{text edeval} is @{const deval}
   with the queue operations put in, and the lemma @{text edeval_Rep} at the end says the two
-  agree.  Nothing else changes: the simulation of @{theory MFODL_Monitor_Imp.Dense_Eval} is
+  agree.  Nothing else changes: the simulation of @{theory MFODL_Monitor_Dense.Dense_Eval} is
   about @{const deval}, and @{const deval} on a represented formula is, by that theorem, what
   the generated code runs.
 \<close>

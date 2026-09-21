@@ -8,8 +8,8 @@ section \<open>Choosing the structure at the dense frame\<close>
 
 text \<open>
   The dense Since and Until nodes carry one of two structures: the general one of
-  @{theory MFODL_Monitor_Imp.Dense_Aux}, or the sliding window of
-  @{theory MFODL_Monitor_Imp.Dense_Evt} where the left operand is closed (and, for the Until,
+  @{theory MFODL_Monitor_Dense.Dense_Aux}, or the sliding window of
+  @{theory MFODL_Monitor_Dense.Dense_Evt} where the left operand is closed (and, for the Until,
   the interval contains zero).  The choice is made once, when the node is built, from the
   arguments alone; the operations dispatch on it, and the relation to the kernel's abstract
   auxiliary list is the disjunction of the two structures' relations.  The five Since lemmas and

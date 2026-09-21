@@ -11,11 +11,11 @@ text \<open>
   option that never holds @{const None}.  This theory states the same evaluator over tables of
   @{typ "event_data list"}: every node keeps its tables and structures on short tuples, and
   every operation is the generic one at @{typ event_data}, or the twin of the field reader of
-  @{theory MFODL_Monitor_Imp.Dense_Utuple}.  The theorem @{text udeval_Rep} at the end says
+  @{theory MFODL_Monitor_Dense.Dense_Utuple}.  The theorem @{text udeval_Rep} at the end says
   that the two evaluators agree exactly: embedding the state and the database, running
   @{const edeval}, is running @{text udeval} and embedding its results.  No invariant is needed,
   because every operation commutes with the embedding on every input (the naturality lemmas of
-  @{theory MFODL_Monitor_Imp.Dense_Unbox_Eval}).  So the simulation of the specification by
+  @{theory MFODL_Monitor_Dense.Dense_Unbox_Eval}).  So the simulation of the specification by
   @{const edeval} is a simulation by @{text udeval}, on the embedded database, and the
   generated code runs the latter.
 \<close>
@@ -951,7 +951,7 @@ qed
 
 subsection \<open>The compiler, the state and the step\<close>
 
-text \<open>The compiler of @{theory MFODL_Monitor_Imp.Dense_Descend_Code} into the short formula: the
+text \<open>The compiler of @{theory MFODL_Monitor_Dense.Dense_Descend_Code} into the short formula: the
   same placement, with the structures initialised on short tuples.\<close>
 
 function (sequential) udof ::

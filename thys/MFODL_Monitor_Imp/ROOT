@@ -1,6 +1,6 @@
 chapter AFP
 
-session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
+session MFODL_Monitor_Imp = MFODL_Monitor_Dense +
   description
     "Imperative refinement of the Since structure and of the monitor's evaluation function.
      Separate session so that the base session, whose heap image it reuses, does not have to be
@@ -13,28 +13,6 @@ session MFODL_Monitor_Imp = MFODL_Monitor_Devel +
     Join_Imp2
     Until_Imp2
     Monitor_Imp2
-    Dense_Utuple
-    Dense
-    Dense_Aux
-    Dense_Until_Gen
-    Dense_Evt
-    Dense_Evt_Agg
-    Dense_Evt_Aux
-    Dense_Eval
-    Dense_Produces
-    Dense_Match
-    Dense_Let
-    Dense_Agg
-    Dense_Correct
-    Dense_Compile
-    Dense_Init
-    Dense_Descend
-    Dense_Exec
-    Dense_Descend_Code
-    Dense_Unbox_Eval
-    Dense_Unbox_Exec
-    Dense_Unbox
-    Dense_Idx_Code
     Dense_Imp
     Dense_Join_Correct
     Dense_Code_Opt

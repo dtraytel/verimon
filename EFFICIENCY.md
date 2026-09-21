@@ -6797,3 +6797,64 @@ remaining, larger half of this item; nothing in `verified.ml` changes from this 
 `src/verified.ml` came out byte-identical from the rebuild) since only lemmas, no code
 equations, were added.  Differential tests unchanged (corpus 593 identical, 7 refused, 0
 differing; the whole session's 23 theories check clean, 0 errors).
+
+### 21.10 The imperative bits, in their own session
+
+The `MFODL_Monitor_Imp` session mixed two things that do not need each other's heap image: the
+dense (short-tuple) monitor -- `Dense`, `Dense_Eval`, the `Dense_Unbox*` chain and their proofs,
+none of it touching `Imperative_HOL` -- and the genuinely imperative refinement of the Since and
+Until structures (`Table_Imp`, `Since_Imp2`, `Until_Imp2`, `Monitor_Imp2`, `Dense_Imp`, ...),
+which does.  A grep for `Heap`/`Imperative_HOL`/`Array.`/`Ref.`/`sep_auto` across the session's 32
+theories gave a clean split on paper: 10 files with the pattern, 22 without, including the whole
+dense chain -- so it looked, at first, like moving the 10 into their own session would be a matter
+of editing the `ROOT` file.
+
+It was not quite: three of the "pure" files (`Dense_Unbox.thy`'s Since/Until dispatch structures
+for a closed left operand, `sevtaux` and `evtaux`) turned out to be *stated* with zero Heap
+mentions but *housed* inside `Since_Imp2.thy` and `Until_Imp2.thy`, alongside those theories'
+genuinely imperative `msaux2`/`muaux2` structures and the `msaux_j`/`muaux_j` dispatch datatypes
+that select between them -- so `Dense_Unbox.thy`, at the root of the whole dense chain, imported
+two Heap-heavy theories for two pure type synonyms and nine pure definitions.  Likewise
+`Table_Imp.thy` carried `evt_add`/`evt_del`, the pure window-union two structures share, at the
+end of an otherwise entirely imperative file.
+
+The fix pulled those pure pieces out into three small theories -- `Table_Evt.thy` (`evt_add`,
+`evt_del`), `Since_Evt.thy` (`sevtaux` and its operations) and `Until_Evt.thy` (`evtaux` and its
+operations), each importing only `MFODL_Monitor_Devel.Optimized_Until_Deque` for `queue`/`args`/
+`memL`/`memR` -- and rewired `Table_Imp.thy`, `Since_Imp2.thy` and `Until_Imp2.thy` to import them
+back for their heap/pure dispatch, while `Dense_Unbox.thy` now imports `Since_Evt`/`Until_Evt`
+directly instead of the two heap-tainted theories that used to carry them.  With that cut made,
+the dense chain's dependency graph no longer touches `Imperative_HOL` anywhere, and the session
+splits cleanly along the file boundary that the original grep suggested.
+
+`MFODL_Monitor_Imp` is now two sessions: `MFODL_Monitor_Dense` (built directly on
+`MFODL_Monitor_Devel`, holding `Table_Evt`, `Since_Evt`, `Until_Evt` and the entire `Dense*`/
+`Dense_Unbox*`/`Dense_Idx_Code` chain -- 25 theories, no `Imperative_HOL`, no `Heap`) and
+`MFODL_Monitor_Imp` (built on `MFODL_Monitor_Dense`, holding the imperative refinement and the
+final `export_code` -- `Table_Imp`, `Imap_Correct`, `Optimized_Since_Imp`, `Since_Imp2`,
+`Join_Imp2`, `Until_Imp2`, `Monitor_Imp2`, `Dense_Imp`, `Dense_Join_Correct`, `Dense_Code_Opt`,
+`Monitor_Imp`, `Monitor_Code_Imp` -- 12 theories).  `Dense_Code_Opt.thy` stays in the imperative
+session: its `heap_since_consts` monomorphisation is over genuinely `Heap`-typed constants of
+`Since_Imp2.thy`, used by the plain (non-`vdense`) dense mode, and it directly imports `Dense_Imp`
+for the heap-resident join index; only its `dense_elem_consts`/`edl_*` sections serve `vdense`,
+and splitting those out of the file was not needed to reach the goal (the vdense evaluator itself,
+`udmstep`/`udeval`, lives entirely in `MFODL_Monitor_Dense` regardless of where its code-generation
+tuning lives).  `Monitor_Code_Imp.thy` -- the one place that exports both the heap-based dense
+mode's symbols and `vdense`'s -- stays where it always was, so `postbuild.sh`'s
+`MFODL_Monitor_Imp.Monitor_Code_Imp:code/**` export path and `src/verified.ml` location are
+unchanged.
+
+Every theory-name antiquotation moved with its theory (`@{theory MFODL_Monitor_Imp.Dense_X}`
+became `@{theory MFODL_Monitor_Dense.Dense_X}` for the 25 theories that moved; a first attempt
+using bare unqualified names -- `@{theory Dense_X}` -- checked the theories fine but failed
+`isabelle build`'s later document/browser-info pass with "Unknown ancestor theory", so this
+codebase's convention of writing the full session-qualified name even for a same-session
+antiquotation is load-bearing, not decorative).  The new session also needed adding to
+`thys/ROOTS`, which lists session directories explicitly rather than having `isabelle build -d`
+discover them by recursive scan.
+
+Both sessions check clean (0 errors, 0 sorries: `MFODL_Monitor_Dense`'s 25 theories then
+`MFODL_Monitor_Imp`'s 12, `4:32`/`2:15` elapsed respectively).  `src/verified.ml` came out
+byte-for-byte identical to the pre-split file -- expected, since nothing was proved or defined
+differently, only moved and re-qualified -- and the differential corpus is unchanged (593
+identical, 7 refused, 0 differing).

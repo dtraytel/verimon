@@ -23,7 +23,7 @@ text \<open>
   with a trigger, which splits on whether the interval contains \<open>0\<close>: when it does,
   the trigger itself is safe and the kernel builds an ordinary conjunction node; when it does
   not, the kernel builds the fused node and the weakened trigger lemmas of
-  @{theory MFODL_Monitor_Imp.Dense_Agg} apply.
+  @{theory MFODL_Monitor_Dense.Dense_Agg} apply.
 \<close>
 
 lemma ftable_eval_agg':

@@ -1781,7 +1781,7 @@ text \<open>
   position @{term y} occupies among the group's columns rather than at @{term y} itself.
 \<close>
 
-text \<open>It is the short aggregation of @{theory MFODL_Monitor_Imp.Dense_Utuple} read through
+text \<open>It is the short aggregation of @{theory MFODL_Monitor_Dense.Dense_Utuple} read through
   @{const deopt}; on hole-free tuples of a width that covers the term this is the aggregation
   written directly on the kernel's tuples, which is the form the theorem below works with.\<close>
 
@@ -1956,7 +1956,7 @@ qed (simp add: dnarrow_def dtabc_def)
 
 subsection \<open>Matching a predicate's arguments\<close>
 
-text \<open>The short match of @{theory MFODL_Monitor_Imp.Dense_Utuple}, read through @{const deopt}.
+text \<open>The short match of @{theory MFODL_Monitor_Dense.Dense_Utuple}, read through @{const deopt}.
   On a table without holes whose matches bind every column read off, it is the kernel's match
   written at the predicate's columns.\<close>
 
@@ -2937,7 +2937,7 @@ text \<open>
 \<close>
 
 text \<open>As the other operations that read a field, it is the short assignment of
-  @{theory MFODL_Monitor_Imp.Dense_Utuple} read through @{const deopt}.\<close>
+  @{theory MFODL_Monitor_Dense.Dense_Utuple} read through @{const deopt}.\<close>
 
 definition dassign1 :: "nat \<Rightarrow> Formula.trm \<Rightarrow> event_data tuple \<Rightarrow> event_data tuple" where
   "dassign1 p t d = reopt (uassign1 p t (deopt d))"

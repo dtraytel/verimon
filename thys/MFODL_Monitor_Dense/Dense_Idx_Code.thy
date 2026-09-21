@@ -8,7 +8,7 @@ section \<open>The Since index maintained by its keys\<close>
 
 text \<open>
   The dense Since keeps its stored tables clustered by the join columns (@{const didx}), and
-  @{theory MFODL_Monitor_Imp.Dense_Aux} maintains that index by whole-index operations: the tuples
+  @{theory MFODL_Monitor_Dense.Dense_Aux} maintains that index by whole-index operations: the tuples
   that enter the window are clustered and merged in (@{const didx_union}), the tuples that leave
   it are clustered and subtracted (@{const didx_minus}), and the probe by the left operand's table
   restricts the index by a filter over all its keys.  Each of these walks the whole index at every

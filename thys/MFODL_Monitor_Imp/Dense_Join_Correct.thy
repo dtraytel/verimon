@@ -136,7 +136,7 @@ text \<open>
   So the heap index computes what @{const gbin_join} computes, whatever the flag
   @{const dense_heap_join} is set to and whichever side the length test picks -- which is what
   @{text \<open>-dense -heap_maps\<close>} needed and did not have.  The tables it is applied to are finite:
-  every table the dense evaluator handles is, as @{theory MFODL_Monitor_Imp.Dense} establishes
+  every table the dense evaluator handles is, as @{theory MFODL_Monitor_Dense.Dense} establishes
   for the representation.
 \<close>
 

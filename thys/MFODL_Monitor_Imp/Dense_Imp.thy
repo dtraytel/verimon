@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Imp
-  imports Monitor_Imp2 Dense_Unbox
+  imports Monitor_Imp2 "MFODL_Monitor_Dense.Dense_Unbox"
 begin
 (*>*)
 
@@ -8,7 +8,7 @@ section \<open>Tuples without their empty columns\<close>
 
 text \<open>
   The short-tuple representation, its operations and their agreement with the kernel's live in
-  @{theory MFODL_Monitor_Imp.Dense}.  What is left here is the part that is not a pure
+  @{theory MFODL_Monitor_Dense.Dense}.  What is left here is the part that is not a pure
   refinement: the heap-resident join index, the monadic evaluation function, and the
   compilation of the sparse formula into the dense fragment.
 \<close>
@@ -124,7 +124,7 @@ text \<open>The five numbers the aggregation needs at the dense frame: whether i
   the operation, the term reindexed to the operand's columns, how many columns the operand has
   in front of the groups, and where the result variable sits among the node's columns.  They are
   what the aggregation node below carries, and what the structure of
-  @{theory MFODL_Monitor_Imp.Dense_Unbox} maintains the aggregate by.\<close>
+  @{theory MFODL_Monitor_Dense.Dense_Unbox} maintains the aggregate by.\<close>
 
 definition dagg_of :: "aggargs \<Rightarrow> daggargs" where
   "dagg_of ag = \<lparr>dgg_g0 = aggargs_g0 ag, dgg_op = aggargs_\<omega> ag,
@@ -279,7 +279,7 @@ text \<open>
   The Since and the Until of @{theory MFODL_Monitor_Imp.Since_Imp2} and
   @{theory MFODL_Monitor_Imp.Until_Imp2} take the left operand's table at the right operand's
   frame, which is why the node had to embed it first.  The structures of
-  @{theory MFODL_Monitor_Imp.Dense_Aux} take it at the left operand's own frame, so the
+  @{theory MFODL_Monitor_Dense.Dense_Aux} take it at the left operand's own frame, so the
   embedding disappears.
 
   They replace exactly one branch each.  Where @{const init_j} picks @{const MSJ_pure} it is

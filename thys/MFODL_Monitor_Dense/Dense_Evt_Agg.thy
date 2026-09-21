@@ -356,7 +356,7 @@ qed
 subsection \<open>The window, with the aggregate\<close>
 
 text \<open>
-  The window of @{theory MFODL_Monitor_Imp.Dense_Evt} again, with the aggregate carried along:
+  The window of @{theory MFODL_Monitor_Dense.Dense_Evt} again, with the aggregate carried along:
   the two scans update it with every table that enters or leaves, the reset on a failed left
   operand starts it afresh, and the result is the aggregate's rather than the union.  The
   structure's validity is the window's, at a frame whose columns are all of the node's, together

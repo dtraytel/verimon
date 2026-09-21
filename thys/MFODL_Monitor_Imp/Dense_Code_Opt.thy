@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Code_Opt
-  imports Dense_Imp Dense_Unbox_Exec Dense_Idx_Code
+  imports Dense_Imp "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Idx_Code"
 begin
 (*>*)
 
