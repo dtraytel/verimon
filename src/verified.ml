@@ -12863,13 +12863,11 @@ let rec uag_res
   p w cc ax =
     (match ax with None -> udagg_p p (snd cc)
       | Some a ->
-        edl_image_of_wide
-          (fun x ->
-            deopt (dproj
-                    (wide_mask (aggargs_n (dagg_args p w))
-                      (upt zero_nata (aggargs_n (dagg_args p w))))
-                    x))
-          (result_maggaux (dagg_args p w) a));;
+        (let args = dagg_args p w in
+         let msk = wide_mask (aggargs_n args) (upt zero_nata (aggargs_n args))
+           in
+          edl_image_of_wide (fun x -> deopt (dproj msk x))
+            (result_maggaux args a)));;
 
 let rec usa_result
   args p aux =
