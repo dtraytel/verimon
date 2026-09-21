@@ -1425,6 +1425,419 @@ proof -
     unfolding uw_eval_def uuw_eval_def uw_shift_ruw s by (simp add: ruw.simps rev_map)
 qed
 
+section \<open>The kernel's trigger structure over short tuples\<close>
+
+text \<open>
+  @{theory MFODL_Monitor_Imp.Dense_Unbox}'s generic @{typ "'b gmmtaux"} is already stated over a
+  bare element type, at the two shapes the file's own text works out: the left operand's tuples
+  stay at their own frame (narrow, the width of the mask's true positions) throughout the window,
+  and only the probe compares them against a projection of the right operand's frame (full
+  width).  What is proved here is that this generic structure, at the short element type, stands
+  for the kernel's own @{typ "event_data option mmtaux"} exactly as this theory's other
+  structures do: by a widening map on the state
+  (@{term tmm} below) under which the two step and read the same, no invariant required beyond
+  the two frames' widths.  The naturality reaches the update at the interval containing zero,
+  which is the only case a standalone trigger node ever takes.
+\<close>
+
+subsection \<open>The kernel's state a dense state stands for\<close>
+
+text \<open>
+  The kernel keeps the left operand's tuples at the frame of the right one, with the columns
+  outside the left operand's blank; the dense structure keeps them narrow.  The two differ by
+  @{const dwiden} at the mask, in the left tables of the queue, in the keys of the mapping that
+  records when a left tuple last held (@{const wkeys}) and in the set of those keys.  Everything
+  else is the same object, and the two masks the kernel stores are the dense mask and the
+  all-true one.  @{term tmm} is a specification device: the generated code never builds it.
+\<close>
+
+fun tmm :: "'a option gmmtaux \<Rightarrow> 'a mmtaux" where
+  "tmm (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tuple_in_once,
+      tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) =
+    (cur, idx_next, idx_mid, idx_oldest, msk, replicate (length msk) True,
+     map_queue (\<lambda>(t, l, r). (t, dwiden msk ` l, r)) data_prev, data_in,
+     wkeys msk tuple_in_once, dwiden msk ` tuple_in_once_keys, tuple_since_hist, hist_sat,
+     since_sat)"
+
+text \<open>The dense state is narrow: its left tuples have the width of the mask's true positions,
+  its right ones the width of the mask, and its mask is the given one.\<close>
+
+fun tnar :: "bool list \<Rightarrow> 'a option gmmtaux \<Rightarrow> bool" where
+  "tnar msk (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tuple_in_once,
+      tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) \<longleftrightarrow>
+    msk' = msk \<and>
+    (\<forall>(t, l, r) \<in> set (linearize data_prev).
+       (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)) \<and>
+    (\<forall>k \<in> Mapping.keys tuple_in_once. dnarrow_tuple msk k) \<and>
+    (\<forall>y \<in> tuple_in_once_keys. dnarrow_tuple msk y)"
+
+subsection \<open>Widened keys\<close>
+
+lemma wkeys_empty[simp]: "wkeys msk Mapping.empty = Mapping.empty"
+  by transfer simp
+
+lemma wkeys_filter:
+  "Mapping.filter P (wkeys msk m) = wkeys msk (Mapping.filter (\<lambda>k v. P (dwiden msk k) v) m)"
+  by (intro mapping_eqI) (auto simp: Mapping.lookup_filter lookup_wkeys split: option.splits)
+
+lemma wkeys_upd_set:
+  assumes X: "\<And>y. y \<in> X \<Longrightarrow> dnarrow_tuple msk y"
+  shows "upd_set (wkeys msk m) f (dwiden msk ` X) = wkeys msk (upd_set m (f \<circ> dwiden msk) X)"
+proof (intro mapping_eqI)
+  fix k
+  show "Mapping.lookup (upd_set (wkeys msk m) f (dwiden msk ` X)) k
+      = Mapping.lookup (wkeys msk (upd_set m (f \<circ> dwiden msk) X)) k"
+  proof (cases "k = dwiden msk (dproj msk k)")
+    case True
+    then show ?thesis
+      by (simp add: Mapping_lookup_upd_set lookup_wkeys dwiden_image_iff[OF X True])
+  next
+    case False
+    then show ?thesis
+      by (simp add: Mapping_lookup_upd_set lookup_wkeys dwiden_image_not[OF X False])
+  qed
+qed
+
+lemma Mapping_filter_cong:
+  assumes "\<And>k v. Mapping.lookup m k = Some v \<Longrightarrow> P k v = Q k v"
+  shows "Mapping.filter P m = Mapping.filter Q m"
+  using assms by (intro mapping_eqI) (auto simp: Mapping.lookup_filter split: option.splits)
+
+lemma filter_cond_wkeys:
+  assumes l: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" and y: "dnarrow_tuple msk y"
+  shows "(dwiden msk y \<in> dwiden msk ` l \<and> Mapping.lookup (wkeys msk m) (dwiden msk y) = Some t)
+       = (y \<in> l \<and> Mapping.lookup m y = Some t)"
+  by (simp add: lookup_wkeys_dwiden[OF y]
+      dwiden_image_iff[OF l dwiden_dproj_dwiden[OF y, symmetric]] dproj_dwiden[OF y])
+
+subsection \<open>The semi-join\<close>
+
+lemma dwiden_all_true: "length y = length msk \<Longrightarrow> \<forall>b \<in> set msk. b \<Longrightarrow> dwiden msk y = y"
+  by (induct msk y rule: dwiden.induct) auto
+
+lemma dwiden_all_false: "\<forall>b \<in> set msk. \<not> b \<Longrightarrow> dwiden msk [] = replicate (length msk) None"
+  by (induct msk) auto
+
+lemma dproj_all_true: "length y = length msk \<Longrightarrow> \<forall>b \<in> set msk. b \<Longrightarrow> dproj msk y = y"
+  by (induct msk y rule: dproj.induct) auto
+
+lemma dproj_all_false: "\<forall>b \<in> set msk. \<not> b \<Longrightarrow> dproj msk y = []"
+  by (induct msk y rule: dproj.induct) auto
+
+lemma gsemi_join_dsemi:
+  assumes r: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
+  shows "gsemi_join msk pos r l = dsemi msk pos r l"
+proof (cases "\<forall>i \<in> set msk. i")
+  case True
+  then show ?thesis using r by (auto simp: gsemi_join_def dsemi_def dproj_all_true)
+next
+  case False
+  then show ?thesis by (auto simp: gsemi_join_def dsemi_def dproj_all_false)
+qed
+
+lemma proj_tuple_in_join_dsemi:
+  assumes r: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
+    and l: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y"
+  shows "{as \<in> r. proj_tuple_in_join pos msk as (dwiden msk ` l)} = dsemi msk pos r l"
+proof -
+  have "proj_tuple_in_join pos msk as (dwiden msk ` l) = ((dproj msk as \<in> l) = pos)"
+    if "as \<in> r" for as
+    using proj_tuple_dwiden_image_iff[OF r[OF that] l] by (auto simp: proj_tuple_in_join_def)
+  then show ?thesis by (auto simp: dsemi_def)
+qed
+
+lemma proj_tuple_in_join_optim_dsemi:
+  assumes r: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
+    and l: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y"
+  shows "proj_tuple_in_join_optim pos r (replicate (length msk) True) (dwiden msk ` l) msk
+     = dsemi msk pos r l"
+proof (cases "msk = replicate (length msk) True")
+  case True
+  then have all: "\<forall>b \<in> set msk. b" by (metis in_set_replicate)
+  have "dwiden msk ` l = l"
+    using l all by (auto simp: dwiden_all_true filter_id_conv intro!: image_cong[OF refl])
+  then show ?thesis
+    using True r all by (auto simp: dsemi_def dproj_all_true)
+next
+  case False
+  note ne = False
+  show ?thesis
+  proof (cases "\<forall>b \<in> set msk. \<not> b")
+    case True
+    have ln: "\<And>y. y \<in> l \<Longrightarrow> y = []" using l True by (auto simp: filter_empty_conv)
+    have "(replicate (length msk) None \<in> dwiden msk ` l) = ([] \<in> l)"
+      using ln by (auto simp: dwiden_all_false[OF True, symmetric])
+    then show ?thesis
+      using ne True by (auto simp: dsemi_def dproj_all_false Let_def)
+  next
+    case False
+    then have nf: "(\<forall>b \<in> set msk. \<not> b) = False" by simp
+    show ?thesis
+      using ne by (simp add: nf proj_tuple_in_join_dsemi[OF r l])
+  qed
+qed
+
+subsection \<open>The expiry of the left operand's records\<close>
+
+text \<open>The fold that drops, from the mapping of last occurrences and its key set, the left tuples
+  of the time points that leave the interval, is natural in the widening.\<close>
+
+abbreviation (input) temb :: "bool list \<Rightarrow> ts \<times> 'a table \<times> 'a table \<Rightarrow>
+    ts \<times> 'a table \<times> 'a table" where
+  "temb msk \<equiv> (\<lambda>(t, l, r). (t, dwiden msk ` l, r))"
+
+lemma dwiden_in_image_iff:
+  assumes l: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" and y: "dnarrow_tuple msk y"
+  shows "(dwiden msk y \<in> dwiden msk ` l) = (y \<in> l)"
+  by (simp add: dwiden_image_iff[OF l dwiden_dproj_dwiden[OF y, symmetric]] dproj_dwiden[OF y])
+
+lemma Collect_image_pred: "{x \<in> f ` A. P x} = f ` {a \<in> A. P (f a)}"
+  by auto
+
+lemma fold_filter_once_tmm:
+  assumes ds: "\<And>t l r. (t, l, r) \<in> set ds \<Longrightarrow> \<forall>y \<in> l. dnarrow_tuple msk y"
+    and tio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
+    and keys: "\<And>y. y \<in> keys \<Longrightarrow> dnarrow_tuple msk y"
+  shows "fold (\<lambda>(t, X) (tuple_in, tuple_in_keys).
+      (Mapping.filter (filter_cond (fst X) tuple_in t) tuple_in,
+       {as \<in> tuple_in_keys. filter_cond' (fst X) tuple_in t as}))
+      (map (temb msk) ds) (wkeys msk tio, dwiden msk ` keys)
+    = map_prod (wkeys msk) (image (dwiden msk)) (fold (\<lambda>(t, X) (tuple_in, tuple_in_keys).
+      (Mapping.filter (filter_cond (fst X) tuple_in t) tuple_in,
+       {as \<in> tuple_in_keys. filter_cond' (fst X) tuple_in t as})) ds (tio, keys))"
+  using assms
+proof (induction ds arbitrary: tio keys)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons d ds)
+  obtain t l r where d: "d = (t, l, r)" by (cases d) auto
+  have ln: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" using Cons.prems(1)[of t l r] by (simp add: d id_def)
+  have f1: "Mapping.filter (filter_cond (dwiden msk ` l) (wkeys msk tio) t) (wkeys msk tio)
+      = wkeys msk (Mapping.filter (filter_cond l tio t) tio)"
+    unfolding wkeys_filter
+    by (intro arg_cong[where f = "wkeys msk"] Mapping_filter_cong)
+      (simp add: dwiden_in_image_iff[OF ln Cons.prems(2)[OF Mapping_keys_intro]]
+        lookup_wkeys_dwiden[OF Cons.prems(2)[OF Mapping_keys_intro]])
+  have f2: "{as \<in> dwiden msk ` keys. filter_cond' (dwiden msk ` l) (wkeys msk tio) t as}
+      = dwiden msk ` {as \<in> keys. filter_cond' l tio t as}"
+    unfolding Collect_image_pred
+  proof (intro arg_cong[where f = "(`) (dwiden msk)"] Collect_cong)
+    fix a
+    show "(a \<in> keys \<and> filter_cond' (dwiden msk ` l) (wkeys msk tio) t (dwiden msk a))
+        = (a \<in> keys \<and> filter_cond' l tio t a)"
+    proof (cases "a \<in> keys")
+      case True
+      then show ?thesis
+        by (simp add: dwiden_in_image_iff[OF ln Cons.prems(3)[OF True]]
+            lookup_wkeys_dwiden[OF Cons.prems(3)[OF True]])
+    qed simp
+  qed
+  have k1: "\<And>k. k \<in> Mapping.keys (Mapping.filter (filter_cond l tio t) tio) \<Longrightarrow>
+      dnarrow_tuple msk k"
+    by (rule Cons.prems(2)) (auto simp: Mapping.keys_dom_lookup Mapping.lookup_filter dom_def
+        split: option.splits)
+  have k2: "\<And>y. y \<in> {as \<in> keys. filter_cond' l tio t as} \<Longrightarrow> dnarrow_tuple msk y"
+    by (rule Cons.prems(3)) simp
+  show ?case
+    unfolding d list.map fold.simps comp_apply prod.case fst_conv f1 f2
+    by (rule Cons.IH[OF _ k1 k2]) (use Cons.prems(1) in \<open>auto simp: d\<close>)
+qed
+
+lemma shift_end'_tmm:
+  assumes dp: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow> \<forall>y \<in> l. dnarrow_tuple msk y"
+    and tio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
+    and keys: "\<And>y. y \<in> keys \<Longrightarrow> dnarrow_tuple msk y"
+  shows "shift_end' I nt fst (empty_queue, map_queue (temb msk) data_prev, wkeys msk tio,
+      dwiden msk ` keys)
+    = (case shift_end' I nt fst (empty_queue, data_prev, tio, keys) of
+        (q0, dp', move, tio', keys') \<Rightarrow>
+          (q0, map_queue (temb msk) dp', map (temb msk) move, wkeys msk tio', dwiden msk ` keys'))"
+proof -
+  have pe: "(\<lambda>x. (\<lambda>(t, _). \<not> memR I (nt - t)) (temb msk x)) = (\<lambda>(t, _). \<not> memR I (nt - t))"
+    by (rule ext) (auto split: prod.splits)
+  obtain dp' move where tdq: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_prev
+      = (dp', move)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_prev")
+  have td: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) (map_queue (temb msk) data_prev)
+      = (map_queue (temb msk) dp', map (temb msk) move)"
+    by (simp only: takedropWhile_queue_map_queue pe tdq map_prod_simp)
+  have mv: "move = takeWhile (\<lambda>(t, _). \<not> memR I (nt - t)) (linearize data_prev)"
+    using takedropWhile_queue_snd[of "\<lambda>(t, _). \<not> memR I (nt - t)" data_prev]
+    by (simp add: tdq del: takedropWhile_queue.simps)
+  have m: "\<And>t l r. (t, l, r) \<in> set move \<Longrightarrow> \<forall>y \<in> l. dnarrow_tuple msk y"
+    using dp by (auto simp: mv dest!: set_takeWhileD)
+  show ?thesis
+    by (auto simp only: shift_end'.simps Let_def td tdq fold_filter_once_tmm[OF m tio keys]
+        map_prod_simp prod.case split: prod.splits)
+qed
+
+subsection \<open>The update\<close>
+
+lemma join_mask_all: "join_mask n {0..<n} = replicate n True"
+  by (auto simp: join_mask_def intro!: nth_equalityI)
+
+lemma dmsk_args_maskR:
+  "dmsk_args args msk \<Longrightarrow> join_mask (args_n args) (args_R args) = replicate (length msk) True"
+  by (simp add: dmsk_args_def join_mask_all)
+
+text \<open>The fold over the time points that enter the interval differs between the kernel and the
+  dense structure in the semi-join alone, which agree on narrow tables.\<close>
+
+lemma fold_hist_tmm:
+  assumes mv: "\<And>t l r. (t, l, r) \<in> set move \<Longrightarrow>
+      (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)"
+  shows "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r;
+          since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1,
+          since_sat \<union> proj_tuple_in_join_optim pos r (replicate (length msk) True) l msk))
+      (map (temb msk) move) acc
+    = fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r;
+          since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1,
+          since_sat \<union> gsemi_join msk pos r l)) move acc"
+  unfolding fold_map
+proof (rule fold_cong[OF refl refl], rule ext)
+  fix x acc
+  assume x: "x \<in> set move"
+  obtain t l r where xe: "x = (t, l, r)" by (cases x)
+  have sj: "proj_tuple_in_join_optim pos r (replicate (length msk) True) (dwiden msk ` l) msk
+      = gsemi_join msk pos r l"
+    using mv[OF x[unfolded xe]]
+    by (subst proj_tuple_in_join_optim_dsemi) (auto simp: gsemi_join_dsemi)
+  show "((\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r; since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1,
+          since_sat \<union> proj_tuple_in_join_optim pos r (replicate (length msk) True) l msk))
+      \<circ> temb msk) x acc
+    = (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+      let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+          hist_sat = hist_sat \<inter> r; since_sat = since_sat \<inter> r
+      in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+          hist_sat, idx_move + 1, since_sat \<union> gsemi_join msk pos r l)) x acc"
+    by (cases acc) (simp add: xe sj del: proj_tuple_in_join_optim.simps)
+qed
+
+lemma fold_append_r_temb:
+  "fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) (map (temb msk) move) data_in
+   = fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) move data_in"
+  unfolding fold_map by (rule fold_cong[OF refl refl]) (auto split: prod.splits)
+
+lemma filter_temb:
+  "filter (\<lambda>(t, _). P t) (map (temb msk) move) = map (temb msk) (filter (\<lambda>(t, _). P t) move)"
+  by (induct move) (auto split: prod.splits)
+
+lemma update_mmtaux'_tmm:
+  assumes dm: "dmsk_args args msk"
+    and dp: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow>
+      (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)"
+    and tio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
+    and keys: "\<And>y. y \<in> keys \<Longrightarrow> dnarrow_tuple msk y"
+  shows "update_mmtaux' args nt idx_mid idx_oldest msk (replicate (length msk) True)
+      (map_queue (temb msk) data_prev) data_in (wkeys msk tio) (dwiden msk ` keys)
+      tuple_since_hist hist_sat since_sat
+    = (case gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat of
+        (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss') \<Rightarrow>
+          (idx_mid', idx_oldest', map_queue (temb msk) data_prev', data_in', wkeys msk tio',
+           dwiden msk ` keys', tsh', hs', ss'))"
+proof -
+  obtain q0 dp' move tio' keys' where se:
+    "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'a table \<times> 'a table) queue, data_prev, tio, keys)
+      = (q0, dp', move, tio', keys')"
+    by (cases "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'a table \<times> 'a table) queue, data_prev, tio, keys)") auto
+  have dpl: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow> \<forall>y \<in> l. dnarrow_tuple msk y"
+    using dp by blast
+  have se': "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+      (empty_queue :: (ts \<times> 'a table \<times> 'a table) queue,
+       map_queue (temb msk) data_prev, wkeys msk tio, dwiden msk ` keys)
+    = (q0, map_queue (temb msk) dp', map (temb msk) move, wkeys msk tio', dwiden msk ` keys')"
+    by (simp only: shift_end'_tmm[OF dpl tio keys] se prod.case)
+  have mv: "set move \<subseteq> set (linearize data_prev)"
+    using se by (auto simp add: shift_end'.simps Let_def takedropWhile_queue_snd case_prod_beta
+        simp del: takedropWhile_queue.simps dest: set_takeWhileD)
+  have mvm: "\<And>t l r. (t, l, r) \<in> set move \<Longrightarrow>
+      (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)"
+    by (rule dp[OF subsetD[OF mv]])
+  obtain di' drop where td:
+    "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in = (di', drop)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in") auto
+  obtain tsh' hs' idx ss' where fh:
+    "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tuple_since_hist, hist_sat, idx_mid, since_sat) = (tsh', hs', idx, ss')"
+    by (cases "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tuple_since_hist, hist_sat, idx_mid, since_sat)") auto
+  show ?thesis
+    by (simp only: update_mmtaux'_def gupdate_mmtaux'_def Let_def se se' prod.case
+      dmsk_args_maskL[OF dm] dmsk_args_maskR[OF dm] filter_temb length_map fold_append_r_temb
+      fold_hist_tmm[OF mvm, unfolded Let_def] td fh)
+qed
+
+text \<open>The standalone trigger always has @{term "mem (args_ivl args) 0"}, so only that branch of
+  @{const update_mmtaux} is ever taken; the other reads @{term tuple_in_once} at the left
+  operand's own tuples in either structure and needs no widening lemma.\<close>
+
+lemma update_mmtaux_tmm:
+  assumes dm: "dmsk_args args msk" and m0: "mem (args_ivl args) 0"
+    and adp: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow>
+      (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)"
+    and atio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
+    and akeys: "\<And>y. y \<in> keys \<Longrightarrow> dnarrow_tuple msk y"
+    and lw: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" and rw: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
+  shows "update_mmtaux args nt (dwiden msk ` l) r
+      (cur, idx_next, idx_mid, idx_oldest, msk, replicate (length msk) True,
+       map_queue (temb msk) data_prev, data_in, wkeys msk tio, dwiden msk ` keys,
+       tuple_since_hist, hist_sat, since_sat)
+    = tmm (gupdate_mmtaux args nt l r
+        (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tio, keys,
+         tuple_since_hist, hist_sat, since_sat))"
+proof -
+  obtain idx_mid' idx_oldest' data_prev' data_in' tio' keys' tsh' hs' ss' where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat
+      = (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss')"
+    by (metis surj_pair)
+  have u0: "update_mmtaux' args nt idx_mid idx_oldest msk (replicate (length msk) True)
+      (map_queue (temb msk) data_prev) data_in (wkeys msk tio) (dwiden msk ` keys)
+      tuple_since_hist hist_sat since_sat
+    = (case gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat of
+        (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss') \<Rightarrow>
+          (idx_mid', idx_oldest', map_queue (temb msk) data_prev', data_in', wkeys msk tio',
+           dwiden msk ` keys', tsh', hs', ss'))"
+    by (rule update_mmtaux'_tmm[OF dm adp atio akeys])
+  have u: "update_mmtaux' args nt idx_mid idx_oldest msk (replicate (length msk) True)
+      (map_queue (temb msk) data_prev) data_in (wkeys msk tio) (dwiden msk ` keys)
+      tuple_since_hist hist_sat since_sat
+    = (idx_mid', idx_oldest', map_queue (temb msk) data_prev', data_in', wkeys msk tio',
+       dwiden msk ` keys', tsh', hs', ss')"
+    unfolding u0 g by simp
+  note pj = proj_tuple_in_join_dsemi[OF rw lw]
+  have sj: "{as \<in> r. proj_tuple_in_join (args_pos args) msk as (dwiden msk ` l)}
+      = gsemi_join msk (args_pos args) r l"
+    by (simp only: pj gsemi_join_dsemi[OF rw])
+  show ?thesis
+    unfolding update_mmtaux_def gupdate_mmtaux_def Let_def prod.case u g
+      dmsk_args_maskL[OF dm] dmsk_args_maskR[OF dm] if_P[OF m0] sj
+    by simp
+qed
+
 (*<*)
 end
 (*>*)

@@ -6748,3 +6748,52 @@ dense monitor -- which runs the same generic Since structure -- gains the same, 
 at 0.99.  The Since with a negated left operand stands at 2.0x MonPoly; the next profile puts the
 remaining gap in the tree insertions and deletions themselves, which MonPoly does with hash
 tables.
+
+### 21.9 The trigger structure over short tuples, the naturality half (`Dense_Unbox_Eval.thy`)
+
+`Dense_Unbox.thy` (20.44 in the prior round) already sketched a generic short-tuple trigger
+structure, `'b gmmtaux`, alongside its own operations (`gsemi_join`, `ginit_mmtaux`,
+`gupdate_mmtaux'`, `gupdate_mmtaux`, `gresult_mmtaux`, `gmmtaux_empty`) and the design notes
+explaining why it is possible: unlike the Since and Until, the trigger's kernel structure
+(`Optimized_Trigger.thy`) keeps the left operand's tuples at their *own* frame internally --
+narrow, the width of the mask's true positions -- and only widens them at the one place they are
+compared against the right operand's projected frame.  What was missing, and is added here, is
+the proof that this generic structure, instantiated at the short element type, is a verified
+refinement of the kernel's own `event_data option mmtaux`: a widening map on the state (`tmm`)
+under which the two structures step and read alike, exact equality, no invariant beyond the two
+frames' widths (`dnarrow_tuple`).
+
+The naturality chain, each a lemma proved against the kernel's real, already-committed
+definitions (`update_mmtaux`, `update_mmtaux'`, `proj_tuple_in_join[_optim]`), landed in
+`Dense_Unbox_Eval.thy` right after its window-naturality sections, since that is the first file
+downstream of both `Dense_Unbox` (for `gmmtaux`) and `Dense_Aux` (for `wkeys`, `dmsk_args`,
+`dwiden`/`dproj`, `dnarrow_tuple`) that this material needs:
+
+- `tmm`/`tnar`: the widening map on the state and the narrowness invariant on a dense one.
+- The semi-join: `gsemi_join_dsemi`, `proj_tuple_in_join_dsemi`, `proj_tuple_in_join_optim_dsemi`
+  -- the kernel's three-way case split on the mask (all-true, all-false, mixed) agrees with the
+  dense `dsemi` at every branch, given the two tables' widths.
+- The expiry fold (`fold_filter_once_tmm`, `shift_end'_tmm`): the mapping of last occurrences and
+  its key set are widened/narrowed by `wkeys`/`dwiden` throughout the same fold.
+- The update (`fold_hist_tmm`, `update_mmtaux'_tmm`, `update_mmtaux_tmm`): the fold over the
+  entering time points differs from the kernel's only in the semi-join, already covered above;
+  `update_mmtaux_tmm` is stated at `mem (args_ivl args) 0`, the only case a *standalone* trigger
+  node ever takes (its own guard in `udof` already requires it), so the other branch of
+  `update_mmtaux` -- which only touches the left operand's own tuples, unwidened either side --
+  needs no lemma here.
+
+**What this is not yet.** The chain reaches `update_mmtaux`, not yet `result_mmtaux`: the
+kernel's result unions the left operand's once-keys (kept *wide*, i.e. embedded into the right
+operand's frame with holes) with `hist_sat`/`since_sat`, while the generic structure's own
+`tuple_in_once_keys` is narrow throughout, so the correct read is *embed the once-keys, once,
+right before returning them* -- a cold, once-per-time-point operation, unlike the semi-join's hot
+path, which never widens at all.  `UDTrigger`'s state in `Dense_Unbox_Exec.thy` still carries the
+boxed `event_data mmtaux` (the `nat option list` embedding plan, `pl`, applied to every left
+tuple via `dembedp` on the way in): switching it to `event_data gmmtaux` needs this embedding
+lemma at the result, then rewriting `udof`'s and `udeval`'s `UDTrigger` cases, then a
+`dtrigger_step_rel`-style theorem (mirroring the one already proved for the boxed path in
+`Dense_Eval.thy`) inside `Dense_Unbox_Eval.thy`'s own induction for `udeval_Rep`.  That is the
+remaining, larger half of this item; nothing in `verified.ml` changes from this round (confirmed:
+`src/verified.ml` came out byte-identical from the rebuild) since only lemmas, no code
+equations, were added.  Differential tests unchanged (corpus 593 identical, 7 refused, 0
+differing; the whole session's 23 theories check clean, 0 errors).
