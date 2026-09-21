@@ -139,7 +139,8 @@ function (sequential) dof ::
       if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
          mem (args_ivl args) 0 \<and> buf = ([], []) \<and> nts = []
       then DTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
-             (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) [] (init_mmtaux (dargs cs cs_L args))
+             (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) []
+             (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else DFail)"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
@@ -1411,7 +1412,7 @@ proof -
         ([], []) [] (init_mmtaux args))
       = DTrigger (dargs ?cs ?csL args) (emb_plan ?cs ?csL)
           (dof n ?csL (minit0 n \<chi>)) (dof n ?cs (minit0 n \<eta>)) ([], []) []
-          (init_mmtaux (dargs ?cs ?csL args))"
+          (ginit_mmtaux (dargs ?cs ?csL args) (dmsk ?cs ?csL))"
     using an aR subc m0 aI aL by (simp add: Let_def)
   have z1: "dofz n \<chi>" and z2: "dofz n \<eta>" using z unfolding m d B[symmetric] by simp_all
   have s1: "dsim n ?csL tw (dof n ?csL (minit0 n \<chi>)) (minit0 n \<chi>)" using i1[OF z1] .
@@ -1420,10 +1421,10 @@ proof -
     using valid_init_mmtaux[where I = I and n = n and L = "Formula.fv \<chi>"
         and R = "Formula.fv \<eta>" and pos = pos and agg = None] m0 sub
     unfolding ai by (simp add: Let_def)
-  have di: "dtaux n ?cs ?csL args 0 (init_mmtaux (dargs ?cs ?csL args)) []"
-    by (rule dtaux_init[OF subc]) (use m0 aI in simp)
+  have di: "dtaux n ?cs ?csL args 0 (ginit_mmtaux (dargs ?cs ?csL args) (dmsk ?cs ?csL)) []"
+    by (rule dtaux_init[OF _ _ subc]) (use w wL m0 aI in simp_all)
   have rel: "dtrigger_rel n ?cs ?csL args tw (init_mmtaux args)
-      (init_mmtaux (dargs ?cs ?csL args)) ([], []) ([], []) []"
+      (ginit_mmtaux (dargs ?cs ?csL args) (dmsk ?cs ?csL)) ([], []) ([], []) []"
     unfolding dtrigger_rel_def
     by (intro exI[where x = 0] exI[where x = "[]"] conjI) (use vi di in simp_all)
   show ?thesis unfolding m d

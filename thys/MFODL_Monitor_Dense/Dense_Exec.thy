@@ -45,7 +45,7 @@ datatype edformula =
   | EDFrz Formula.name nat edformula edformula nat nat nat "event_data table list"
   | EDLetPast Formula.name nat edformula edformula nat "event_data table option"
   | EDTrigger args "nat option list" edformula edformula "event_data mebuf2" "ts mbuf_t"
-      "event_data mmtaux"
+      "event_data option gmmtaux"
 
 fun Rep_edformula :: "edformula \<Rightarrow> dformula" where
   "Rep_edformula EDFail = DFail"
@@ -254,8 +254,9 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
 | "edeval j ts db (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = edeval j ts db \<phi>; (ys, \<psi>') = edeval j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-            let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-            in (zs @ [dsan z], ax)) ([], daux) (mebuf2_add (map (dembedp pl) xs) ys dbuf) (nts @@ ts)
+            let ax = gupdate_mmtaux dags t r1 r2 ax
+            in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux)
+            (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, EDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
   by pat_completeness auto
 

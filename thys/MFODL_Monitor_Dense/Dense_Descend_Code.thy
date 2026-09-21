@@ -135,7 +135,7 @@ function (sequential) edof ::
          Rep_mbuf_t nts = []
       then EDTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
              (edof n cs_L \<phi>) (edof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (init_mmtaux (dargs cs cs_L args))
+             (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else EDFail)"
 | "edof n cs (meformula.MTP mt i) =
      (if cs = mtrm_dcols mt then EDTP mt i

@@ -20,6 +20,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Evt
     Dense_Evt_Agg
     Dense_Evt_Aux
+    Dense_Trigger_Nar
     Dense_Eval
     Dense_Produces
     Dense_Match

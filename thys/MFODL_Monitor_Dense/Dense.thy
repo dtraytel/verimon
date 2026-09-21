@@ -3559,68 +3559,6 @@ next
   qed
 qed
 
-definition dtaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmtaux \<Rightarrow>
-    event_data mtaux \<Rightarrow> bool" where
-  "dtaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
-     (\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r) \<and>
-     valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
-
-lemma dtaux_init:
-  assumes sub: "set cs_L \<subseteq> set cs_R" and m0: "mem (args_ivl args) 0"
-  shows "dtaux n cs_R cs_L args 0 (init_mmtaux (dargs cs_R cs_L args)) []"
-proof -
-  have sub': "cpos cs_R (set cs_L) \<subseteq> {0..<length cs_R}"
-    by (auto simp: cpos_def)
-  have "valid_mmtaux (dargs cs_R cs_L args) 0 (init_mmtaux (dargs cs_R cs_L args)) []"
-    using valid_init_mmtaux[where I = "args_ivl args" and n = "length cs_R"
-        and L = "cpos cs_R (set cs_L)" and R = "{0..<length cs_R}"
-        and pos = "args_pos args" and agg = None]
-      m0 sub'
-    by (simp add: dargs_def Let_def)
-  then show ?thesis by (simp add: dtaux_def dauxlist3_def)
-qed
-
-lemma dtaux_update:
-  assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
-    and s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
-    and tl: "table n (set cs_L) l" and tr: "table n (set cs_R) r"
-  shows "dtaux n cs_R cs_L args nt
-      (update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) daux)
-      (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])"
-proof -
-  have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
-    and d: "valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
-    using v by (auto simp: dtaux_def)
-  have tl': "table (args_n (dargs cs_R cs_L args)) (args_L (dargs cs_R cs_L args))
-      (dtabc n cs_R l)"
-    using table_dtabc_cpos[OF s b sub tl] by simp
-  have tr': "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
-      (dtabc n cs_R r)"
-    using table_dtabc_cpos[OF s b order.refl tr] by (simp add: cpos_all)
-  have "valid_mmtaux (dargs cs_R cs_L args) nt
-      (update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) daux)
-      (filter (\<lambda>(t, _). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
-         (dauxlist3 n cs_R auxlist) @ [(nt, dtabc n cs_R l, dtabc n cs_R r)])"
-    by (rule valid_update_mmtaux[OF nt tl' tr' d])
-  then show ?thesis using w tl tr by (auto simp: dtaux_def dauxlist3_filter_append)
-qed
-
-lemma dtaux_result:
-  assumes v: "dtaux n cs_R cs_L args cur daux auxlist"
-    and s: "sorted_wrt (<) cs_R" and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
-    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
-  shows "snd (result_mmtaux (dargs cs_R cs_L args) daux)
-       = dtabc n cs_R (snd (trigger_results args cur auxlist))"
-proof -
-  have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
-    and d: "valid_mmtaux (dargs cs_R cs_L args) cur daux (dauxlist3 n cs_R auxlist)"
-    using v by (auto simp: dtaux_def)
-  have res: "result_mmtaux (dargs cs_R cs_L args) daux
-      = trigger_results (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist)"
-    by (rule valid_result_mmtaux[OF d])
-  show ?thesis unfolding res by (rule dtabc_trigger_results[OF s b sub an aL aR w])
-qed
-
 section \<open>An index for the dense semi-join\<close>
 
 text \<open>

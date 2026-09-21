@@ -511,7 +511,7 @@ datatype udformula =
   | UDFrz Formula.name nat udformula udformula nat nat nat "utable list"
   | UDLetPast Formula.name nat udformula udformula nat "utable option"
   | UDTrigger args "nat option list" udformula udformula "event_data mebuf2" "ts mbuf_t"
-      "event_data mmtaux"
+      "event_data option gmmtaux"
 
 abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
   "rbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
@@ -706,9 +706,9 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
 | "udeval j ts db (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = udeval j ts db \<phi>; (ys, \<psi>') = udeval j ts db \<psi>;
           ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-            let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-            in (zs @ [deopt_table z], ax)) ([], daux)
-            (mebuf2_add (map (dembedp pl \<circ> reopt_table) xs) (map reopt_table ys) dbuf) (nts @@ ts)
+            let ax = gupdate_mmtaux dags t r1 r2 ax
+            in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)) ([], daux)
+            (mebuf2_add (map reopt_table xs) (map reopt_table ys) dbuf) (nts @@ ts)
       in (zs, UDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
   by pat_completeness auto
 
@@ -757,18 +757,18 @@ lemma mebuf2t_take_until:
 
 lemma mebuf2T_take_trigger:
   "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-      in (zs @ [dsan z], ax)) ([], daux) buf ts
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux) buf ts
    = (case mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-      in (zs @ [deopt_table z], ax)) ([], daux) buf ts of
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)) ([], daux) buf ts of
         (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) (\<lambda>a. a) z', buf', ts'))"
   using mebuf2T_take_acc[of "\<lambda>r1 r2 t (zs, ax).
-      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-      in (zs @ [dsan z], ax)" "map_prod (map reopt_table) (\<lambda>a. a)"
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [dsan (gresult_mmtaux dags ax)], ax)" "map_prod (map reopt_table) (\<lambda>a. a)"
       "\<lambda>r1 r2 t (zs, ax).
-      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-      in (zs @ [deopt_table z], ax)" "([], daux)" buf ts]
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)" "([], daux)" buf ts]
   by (simp add: Let_def dsan_def split: prod.splits)
 
 text \<open>The buffer lemmas in the shapes the simplifier leaves the evaluator's buffers in.\<close>
@@ -944,8 +944,8 @@ next
   then show ?case
     apply (simp only: Rep_udformula.simps edeval.simps udeval.simps)
     apply (subst mebuf2T_take_acc0[where f' = "\<lambda>r1 r2 t (zs, ax).
-      let ax = update_mmtaux dags t r1 r2 ax; (fv_z, z) = result_mmtaux dags ax
-      in (zs @ [deopt_table z], ax)"])
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)"])
     by (auto simp: Let_def dsan_def split: prod.splits)
 qed
 
@@ -1067,7 +1067,7 @@ function (sequential) udof ::
          Rep_mbuf_t nts = []
       then UDTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
              (udof n cs_L \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (init_mmtaux (dargs cs cs_L args))
+             (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else UDFail)"
 | "udof n cs (meformula.MTP mt i) =
      (if cs = mtrm_dcols mt then UDTP mt i
