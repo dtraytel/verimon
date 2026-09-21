@@ -267,6 +267,31 @@ proof (induct f' z buf ts rule: mebuf2T_take.induct)
   show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
 qed
 
+text \<open>The buffer traversal the trigger node runs, at the short tables: the same scan as
+  @{const mebuf2T_take}, and natural in the relabelling of both the buffer and the accumulator.\<close>
+
+fun uebuf2T_take :: "(utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow>
+    uebuf2 \<Rightarrow> ts mbuf_t \<Rightarrow> 'b \<times> uebuf2 \<times> ts mbuf_t" where
+  "uebuf2T_take f z (xs, ys) ts =
+    (case mbuf_t_cases ts of (None, ts') \<Rightarrow> (z, (xs, ys), ts') | (Some t, ts') \<Rightarrow>
+    (case mbuf_t_cases xs of (None, xs') \<Rightarrow> (z, (xs', ys), t ## ts') | (Some x, xs') \<Rightarrow>
+    (case mbuf_t_cases ys of (None, ys') \<Rightarrow> (z, (x ## xs', ys'), t ## ts') | (Some y, ys') \<Rightarrow>
+    uebuf2T_take f (f x y t z) (xs', ys') ts')))"
+
+lemma mebuf2T_take_map_mbuf:
+  "(\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)) \<Longrightarrow>
+   mebuf2T_take f (h z) (map_mbuf reopt_table xs, map_mbuf reopt_table ys) ts
+   = (case uebuf2T_take f' z (xs, ys) ts of
+        (z', (xs', ys'), ts') \<Rightarrow>
+          (h z', (map_mbuf reopt_table xs', map_mbuf reopt_table ys'), ts'))"
+proof (induct f' z "(xs, ys)" ts arbitrary: xs ys rule: uebuf2T_take.induct)
+  case (1 f' z xs ys ts)
+  obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
+  obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
+  obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
+  show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
+qed
+
 lemma mebuf2_add_rbuf:
   "mebuf2_add (map reopt_table xs) (map reopt_table ys) (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf)
    = map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) (mebuf2_add xs ys buf)"
@@ -510,14 +535,14 @@ datatype udformula =
   | UDLet Formula.name nat udformula udformula
   | UDFrz Formula.name nat udformula udformula nat nat nat "utable list"
   | UDLetPast Formula.name nat udformula udformula nat "utable option"
-  | UDTrigger args "nat option list" udformula udformula "event_data mebuf2" "ts mbuf_t"
-      "event_data option gmmtaux"
+  | UDTrigger args "nat option list" udformula udformula uebuf2 "ts mbuf_t"
+      "event_data gmmtaux"
 
 abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
   "rbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
 
-text \<open>The trigger's buffers stay boxed: its left operand is embedded into the columns of the
-  right one with holes, which no short tuple has, and the kernel's structure reads them.\<close>
+text \<open>The trigger's buffers are the short ones like every other node's: its left operand stays
+  at its own frame, so nothing it holds has a hole, and @{const bmm} relabels the structure.\<close>
 
 fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
   "Rep_udformula UDFail = EDFail"
@@ -549,7 +574,7 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
 | "Rep_udformula (UDLetPast p m \<phi> \<psi> i buf) =
      EDLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
 | "Rep_udformula (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
-     EDTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) dbuf nts daux"
+     EDTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbuf) nts (bmm daux)"
 
 lemma size_Rep_udformula[simp]: "size (Rep_udformula \<phi>) = size \<phi>"
   by (induct \<phi>) (auto simp: comp_def size_list_map cong: size_list_cong)
@@ -705,10 +730,10 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
       in (ys, UDLetPast p m \<phi> \<psi> i buf))"
 | "udeval j ts db (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      (let (xs, \<phi>') = udeval j ts db \<phi>; (ys, \<psi>') = udeval j ts db \<psi>;
-          ((zs, daux'), dbuf', nts') = mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+          ((zs, daux'), dbuf', nts') = uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
             let ax = gupdate_mmtaux dags t r1 r2 ax
-            in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)) ([], daux)
-            (mebuf2_add (map reopt_table xs) (map reopt_table ys) dbuf) (nts @@ ts)
+            in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
+            (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, UDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
   by pat_completeness auto
 
@@ -755,21 +780,40 @@ lemma mebuf2t_take_until:
         (aux', buf', t', ts') \<Rightarrow> (rdux aux', rbuf2 buf', t', ts'))"
   by (rule mebuf2t_take_rbuf) (simp add: dux_add_new_rdux)
 
+lemma mebuf2T_take_rbuf:
+  assumes "\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)"
+  shows "mebuf2T_take f (h z) (rbuf2 buf) ts
+   = (case uebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', rbuf2 buf', ts'))"
+  by (cases buf)
+    (simp add: mebuf2T_take_map_mbuf[where f = f and h = h and f' = f', OF assms]
+       split: prod.splits del: mebuf2T_take.simps uebuf2T_take.simps)
+
+text \<open>The trigger's buffer traversal, relabelled: the structure by @{const bmm} and the output
+  list tablewise.  The step commutes with the pair of them by @{thm [source] gupdate_mmtaux_bmm}
+  and @{thm [source] gresult_mmtaux_bmm}, with no invariant.\<close>
+
 lemma mebuf2T_take_trigger:
   "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
       let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux) buf ts
-   = (case mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
+     ([], bmm daux) (rbuf2 buf) ts
+   = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
       let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)) ([], daux) buf ts of
-        (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) (\<lambda>a. a) z', buf', ts'))"
-  using mebuf2T_take_acc[of "\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [dsan (gresult_mmtaux dags ax)], ax)" "map_prod (map reopt_table) (\<lambda>a. a)"
-      "\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)" "([], daux)" buf ts]
-  by (simp add: Let_def dsan_def split: prod.splits)
+      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf ts of
+        (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', ts'))"
+proof -
+  have "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
+        (map_prod (map reopt_table) bmm ([], daux)) (rbuf2 buf) ts
+      = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf ts of
+          (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', ts'))"
+    by (rule mebuf2T_take_rbuf)
+      (simp add: Let_def case_prod_beta map_prod_def gupdate_mmtaux_bmm gresult_mmtaux_bmm)
+  then show ?thesis by simp
+qed
 
 text \<open>The buffer lemmas in the shapes the simplifier leaves the evaluator's buffers in.\<close>
 
@@ -942,11 +986,8 @@ next
 next
   case (22 j ts db dags pl \<phi> \<psi> dbuf nts daux)
   then show ?case
-    apply (simp only: Rep_udformula.simps edeval.simps udeval.simps)
-    apply (subst mebuf2T_take_acc0[where f' = "\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [deopt_table (gresult_mmtaux dags ax)], ax)"])
-    by (auto simp: Let_def dsan_def split: prod.splits)
+    by (simp add: mebuf2_add_rbuf mebuf2T_take_trigger
+        del: mebuf2T_take.simps uebuf2T_take.simps split: prod.splits)
 qed
 
 subsection \<open>The compiler, the state and the step\<close>
@@ -1091,8 +1132,8 @@ next
   case (13 n cs args \<phi> \<psi> buf nts t aux)
   then show ?case
     by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux)
-qed (simp_all add: Let_def dsan_def dsx_init_rdsx zip_map2 o_def split: list.splits prod.splits
-      cong: map_cong)
+qed (simp_all add: Let_def dsan_def dsx_init_rdsx ginit_mmtaux_bmm[symmetric] zip_map2 o_def
+      split: list.splits prod.splits cong: map_cong)
 
 text \<open>The kernel's executable formula, rebuilt from the specification's: the inverse of
   @{const Rep_meformula}, so that the compiler can be stated on the specification's state and
