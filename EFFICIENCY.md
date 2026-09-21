@@ -6941,3 +6941,126 @@ the value every real invocation already had, and the differential corpus and `du
 unchanged (593 identical, 7 refused, 0 differing; the pre-existing `matchp` `difftest.sh`
 mismatch, present before any of this round's changes, is unaffected). What changes is that the
 five flags this section describes can no longer be mistaken for switches that do something.
+
+### 21.12 The trigger node over short tuples, the wiring half (`Dense_Trigger_Nar.thy`)
+
+21.9 proved the naturality and stopped there: `UDTrigger` still carried the kernel's own
+`event_data mmtaux`, with the left operand embedded into the right one's frame by `dembedp` on
+the way into the buffer, and the answer taken out of the option by `deopt_table` on the way out,
+once per time point. This round wires the node onto the short structure. It took two steps,
+because the two halves of the change have very different characters.
+
+**Where the conditional step belongs.** The gap 21.9 described is real but it is not where that
+section guessed. `update_mmtaux_tmm` is *conditional* -- it needs `dmsk_args args msk`, the
+interval containing zero, and narrowness of everything the state holds -- while `udeval_Rep` is
+*unconditional*: it relates the short evaluator to the boxed one on every input, with no
+invariant threaded through its induction. Hanging a conditional naturality off `Rep_udformula`
+would have forced an invariant onto all thirty-odd constructors of `udformula` and onto every
+case of that induction.
+
+The way out is that the two halves of the trigger's change are at different levels, and only one
+of them is conditional:
+
+- **Narrowing the frame** (the left operand's tuples stay at their own column list rather than
+  being embedded into the right one's) is conditional, and belongs at the *boxed* level, in
+  `Dense_Eval.thy`, where `dsim`'s `DsTrigger` rule already carries `mem (args_ivl args) 0`,
+  `wf_cols n cs_L`, `set cs_L ⊆ set cs` and the whole `dtrigger_rel`. There the hypotheses are
+  free.
+- **Removing the option** is unconditional -- it is a relabelling, exactly like every other
+  structure in `Dense_Unbox_Eval.thy` -- and belongs at the short level, where `udeval_Rep` needs
+  it.
+
+So the wiring is: `DTrigger`/`EDTrigger` carry `event_data option gmmtaux` (boxed, narrow left
+frame), `UDTrigger` carries `event_data gmmtaux` (short, narrow left frame), and the two maps
+compose, `tmm ∘ bmm`, with the conditional one applied a level below the unconditional one.
+
+**`Dense_Trigger_Nar.thy`** is a new theory holding the conditional half. It has to sit upstream
+of `Dense_Eval` (which now carries the narrow structure) and downstream of `Dense_Unbox` (which
+defines it), so the `tmm` package moved there out of `Dense_Unbox_Eval`, together with the
+`map_queue` functor it is stated over and `dtaux`, moved out of `Dense.thy` and restated. What
+it adds beyond 21.9:
+
+- `tvoid`: the invariant the standalone trigger keeps. With `mem (args_ivl args) 0` the update
+  never takes the branch that records a left tuple, so the queue of the time points still outside
+  the interval, the mapping of last occurrences and its key set stay at their initial *empty*
+  values for the node's whole life (`gupdate_mmtaux_tvoid`). This is what makes the widening map's
+  hypotheses free (`tvoid_tnar`, `update_mmtaux_tmm'`) -- and it is also what closes the gap 21.9
+  left open at the result: the kernel unions the (wide) once-keys into its answer, the short
+  structure unions the (narrow) ones, and on a state where that set is empty the two agree with no
+  embedding at all (`result_mmtaux_tmm`). The "cold, once-per-time-point embedding" 21.9 expected
+  to need turns out not to be needed.
+- `init_mmtaux_tmm`, `gupdate_mmtaux_not_empty` (with the interval containing zero the window is
+  never empty after a step, so the kernel's empty-window answer -- the wildcard tuple -- is never
+  the one being read), and `dtaux`/`dtaux_init`/`dtaux_update`/`dtaux_result` restated over the
+  narrow structure.
+
+**`Dense_Unbox_Eval.thy`** gains the unconditional half: `bmm`, the relabelling from the short
+element type to the boxed one, and its naturality through the whole update -- the queue scans
+(`takedropWhile_queue_rq3`, `append_queue_rq3`), the expiry fold over the left operand's records
+(`fold_filter_once_bmm`, `shift_end'_bmm`), the semi-join (`gsemi_join_reopt`), the fold over the
+entering time points (`fold_hist_bmm`), and the read of `hist_sat` off the head of the in-window
+queue (`hist_sat_bmm`), ending at `gupdate_mmtaux_bmm`, `gresult_mmtaux_bmm`,
+`gmmtaux_empty_bmm`, `ginit_mmtaux_bmm`. No invariant anywhere.
+
+**What the node does now.** `deval`/`edeval`'s `DTrigger`/`EDTrigger` case calls
+`gupdate_mmtaux`/`gresult_mmtaux` and adds the left operand's table to the buffer *unembedded*;
+`dtrigger_rel` accordingly holds `map (dtabc n cs_L) (fst buf)` where it held
+`map (dtabc n cs_R) (fst buf)`, and `dtrigger_step_rel` runs `mbuf2T_take_rel` with
+`h = dtabc n cs_L`. `udeval`'s `UDTrigger` case runs the same two operations on raw short tables
+through a new `uebuf2T_take`, with no `reopt_table` on either operand and no `deopt_table` on the
+answer; `Rep_udformula` applies `rbuf2` and `bmm`, and the correspondence is
+`mebuf2T_take_rbuf`/`mebuf2T_take_trigger`. The embedding plan `pl` is now dead in the node --
+kept as a field, since the compiler still computes it once and it costs nothing at run time.
+
+**What this is worth.** Per time point the trigger no longer pays for: embedding every left tuple
+into the wider frame (`dembedp`, a per-field list walk), putting the option back on both
+operands' tables (`reopt_table`, two full table rebuilds), or taking it off the answer
+(`deopt_table`, a third). What is left is the semi-join and the window bookkeeping, on tuples of
+the width each operand actually binds. The win is largest where the left operand is strictly
+narrower than the right one -- `andtrigger` (`A(x,y) AND (C(x) TRIGGER[0,10] A(x,y))`), whose
+left operand binds one of the two columns -- and is the unboxing alone where the two frames
+coincide (`trigger`, `A(x,y) TRIGGER[0,10] B(x,y)`).
+
+**Measured.** The benchmark logs are 8000 time points of `syn.log` (50 `A`, 50 `B`, 13 `C` tuples
+per time point), the binaries are the one at the previous commit and the one built from this
+export, run interleaved, 15 repetitions; the table gives the median (the minimum agrees to within
+a percent of the ratios).
+
+| formula | left / right frame | vdense before | after | ratio | dense before | after | ratio |
+|---|---|---|---|---|---|---|---|
+| `trigger` `A(x,y) TRIGGER[0,10] B(x,y)` | `{x,y}` / `{x,y}` | 0.896 | 0.598 | **0.667** | 0.618 | 0.614 | 0.993 |
+| `trignar` `C(x) TRIGGER[0,10] A(x,y)` | `{x}` / `{x,y}` | 0.774 | 0.594 | **0.768** | 0.622 | 0.618 | 0.994 |
+| `andtrigger` `A(x,y) AND (C(x) TRIGGER[0,10] A(x,y))` | `{x}` / `{x,y}` | 0.758 | 0.617 | **0.814** | 0.619 | 0.616 | 0.996 |
+| `since` (control) | | 0.988 | 0.987 | 0.999 | 0.962 | 0.967 | 1.005 |
+| `and` (control) | | 0.538 | 0.536 | 0.996 | 0.552 | 0.547 | 0.993 |
+| `until` (control) | | 1.148 | 1.093 | 0.952 | 1.129 | 1.111 | 0.984 |
+
+Two things in that table are worth saying plainly.
+
+**The frame narrowing, by itself, measures nothing.** The `dense` columns -- the boxed evaluator,
+which is where `DTrigger` moved from the kernel's structure to the narrow one -- are 0.993, 0.994
+and 0.996, i.e. inside the noise, on all three trigger formulas, including the two whose left
+operand is strictly narrower than their right. Dropping `dembedp` from the hot path buys nothing
+you can see at that level: it is one list walk per left table per time point, against a semi-join
+and a window update on fifty tuples. The narrowing earns its place not by being faster but by
+being what makes the *next* step possible: with the left operand already at its own frame, the
+short-tuple node is a plain relabelling of the boxed one, and the relabelling is what
+`udeval_Rep` can carry unconditionally.
+
+**The trigger was the node where the short-tuple evaluator was losing.** Before this round the
+`vdense` column ran *slower* than the boxed `dense` one on every trigger formula -- 0.896 against
+0.618 on `trigger`, 45% worse -- because it paid for two `reopt_table`s and a `deopt_table` per
+time point that the boxed evaluator, already holding boxed tables, did not. It is the only node
+where that was true after 21.6 unboxed the rest. It is no longer true: 0.598 against 0.614, now
+marginally ahead, which is what the other nodes look like. The gain is largest on `trigger`
+(0.667), where both operands carry fifty two-column tuples per time point and so there is the
+most table material to stop relabelling, and smallest on `andtrigger` (0.814), where the trigger
+shares its work with a conjunction that this change does not touch.
+
+**Correctness.** Both sessions build clean (`MFODL_Monitor_Dense` 4:09, `MFODL_Monitor_Imp` 2:13,
+0 errors), the differential corpus is unchanged at 593 identical / 7 refused / 0 differing, and
+`difftest.sh` has the short and boxed evaluators agreeing on `trigger`, `trignar` and
+`andtrigger` (the one `matchp` mismatch it reports predates this round and is unaffected). The
+regenerated `src/verified.ml` is 419 lines shorter: with `UDTrigger` no longer mentioning
+`update_mmtaux`/`result_mmtaux`, the kernel's wide-tuple trigger structure drops out of the
+export's reachable set entirely.
