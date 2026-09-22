@@ -51,6 +51,24 @@ definition dq_nth_l :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> '
 lemma dq_nth_l_in: "dq_inv d \<Longrightarrow> k < dq_len d \<Longrightarrow> dq_nth_l d k z = dq_nth d k"
   by (auto simp: dq_nth_l_def dq_nth_def dq_inv_def dq_len_def Let_def)
 
+text \<open>Read as written, the bound check walks the list to its end and the indexing walks it again
+  to the index; the deques the Until structure indexes are as long as its window, so that is two
+  traversals per entry read where one does.  @{text nth_def} is the single walk, and the
+  equation below is unconditional -- the default past the end is the same one.\<close>
+
+fun nth_def :: "'a list \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "nth_def [] k z = z"
+| "nth_def (x # xs) 0 z = x"
+| "nth_def (x # xs) (Suc k) z = nth_def xs k z"
+
+lemma nth_def_eq: "nth_def xs k z = (if k < length xs then xs ! k else z)"
+  by (induct xs k z rule: nth_def.induct) auto
+
+lemma dq_nth_l_code[code]:
+  "dq_nth_l d k z = (if k < dq_nf d then nth_def (dq_f d) k z
+     else nth_def (dq_b d) (dq_nb d - 1 - (k - dq_nf d)) z)"
+  by (simp add: dq_nth_l_def nth_def_eq Let_def)
+
 text \<open>The kernel's update of the nested deque, reading the entry off the lists.\<close>
 
 definition gupd_nested_step_dq :: "nat \<Rightarrow> 'c \<Rightarrow> ('c \<Rightarrow> 'c) \<Rightarrow> nat \<times> 'b \<Rightarrow> ('b, 'c) mapping dq \<Rightarrow>

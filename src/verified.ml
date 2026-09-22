@@ -8935,16 +8935,19 @@ let rec dq_upd
 
 let rec dq_len d = plus_nata (dq_nf d) (dq_nb d);;
 
+let rec nth_def
+  x0 k z = match x0, k, z with [], k, z -> z
+    | x :: xs, k, z ->
+        (if equal_nata k zero_nata then x
+          else nth_def xs (minus_nata k one_nata) z);;
+
 let rec dq_nth_l
   d k z =
-    (if less_nat k (dq_nf d)
-      then (if less_nat k (size_lista (dq_f d)) then nth (dq_f d) k else z)
-      else (let j =
-              minus_nata (minus_nata (dq_nb d) one_nata)
-                (minus_nata k (dq_nf d))
-              in
-             (if less_nat j (size_lista (dq_b d)) then nth (dq_b d) j
-               else z)));;
+    (if less_nat k (dq_nf d) then nth_def (dq_f d) k z
+      else nth_def (dq_b d)
+             (minus_nata (minus_nata (dq_nb d) one_nata)
+               (minus_nata k (dq_nf d)))
+             z);;
 
 let rec gupd_nested_step_dq (_B1, _B2, _B3)
   base d f x dq =
