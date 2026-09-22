@@ -46,6 +46,10 @@ datatype edformula =
   | EDLetPast Formula.name nat edformula edformula nat "event_data table option"
   | EDTrigger args "nat option list" edformula edformula "event_data mebuf2" "ts mbuf_t"
       "event_data option gmmtaux"
+  | EDMatchP nat \<I> mregex "mregex list" "nat option list list" "edformula list"
+      "event_data mebufn" "ts mbuf_t" "event_data mr\<delta>aux"
+  | EDMatchF nat \<I> mregex "mregex list" "nat option list list" "edformula list"
+      "event_data mebufn" "ts mbuf_t" ts "event_data ml\<delta>aux"
 
 fun Rep_edformula :: "edformula \<Rightarrow> dformula" where
   "Rep_edformula EDFail = DFail"
@@ -82,6 +86,10 @@ fun Rep_edformula :: "edformula \<Rightarrow> dformula" where
 | "Rep_edformula (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      DTrigger dags pl (Rep_edformula \<phi>) (Rep_edformula \<psi>) (map_prod Rep_mbuf_t Rep_mbuf_t dbuf)
        (Rep_mbuf_t nts) daux"
+| "Rep_edformula (EDMatchP m I mr mrs pls Ld dbuf nts daux) =
+     DMatchP m I mr mrs pls (map Rep_edformula Ld) (map Rep_mbuf_t dbuf) (Rep_mbuf_t nts) daux"
+| "Rep_edformula (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =
+     DMatchF m I mr mrs pls (map Rep_edformula Ld) (map Rep_mbuf_t dbuf) (Rep_mbuf_t nts) t daux"
 
 lemma size_Rep_edformula[simp]: "size (Rep_edformula \<phi>) = size \<phi>"
   by (induct \<phi>) (auto simp: comp_def size_list_map cong: size_list_cong)
@@ -104,6 +112,8 @@ fun evdfail_nodes :: "edformula \<Rightarrow> nat" where
 | "evdfail_nodes (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDLetPast p m \<phi> \<psi> i buf) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
+| "evdfail_nodes (EDMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map evdfail_nodes L)"
+| "evdfail_nodes (EDMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map evdfail_nodes L)"
 | "evdfail_nodes \<phi> = 0"
 
 lemma vdfail_nodes_Rep: "vdfail_nodes (Rep_edformula \<phi>) = evdfail_nodes \<phi>"
@@ -258,6 +268,19 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
             in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux)
             (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, EDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
+| "edeval j ts db (EDMatchP m I mr mrs pls Ld dbuf nts daux) =
+     (let R = map (edeval j ts db) Ld;
+          ((zs, daux'), dbuf', _, nts') = mebufnt_take (\<lambda>rels t (zs, ax).
+             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
+             in (zs @@ [z], ax)) (mbuf_t_empty, daux) (mebufn_add (map fst R) dbuf) 0 (nts @@ ts)
+      in (Rep_mbuf_t zs, EDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
+| "edeval j ts db (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =
+     (let R = map (edeval j ts db) Ld;
+          (daux', dbuf', nt, nts') = mebufnt_take
+             (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+             daux (mebufn_add (map fst R) dbuf) t (nts @@ ts);
+          (zs, daux'') = eval_matchF I mr nt daux'
+      in (zs, EDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
 lemma psize_snd_edeval:
@@ -325,6 +348,28 @@ next
        (auto split: prod.splits
         dest!: letpast_meval0_cong_f[where ?eval="deval j" and ?eval'="edeval j" and \<phi>=\<phi>,
           OF IH size_Rep_edformula, simplified])
+next
+  case (23 j ts db m I mr mrs pls Ld dbuf nts daux)
+  have "map fst (map (edeval j ts db) Ld) = map fst (map (deval j ts db) (map Rep_edformula Ld))"
+    "map snd (map (deval j ts db) (map Rep_edformula Ld))
+      = map Rep_edformula (map snd (map (edeval j ts db) Ld))"
+    by (auto dest: 23 split: prod.splits)
+  then show ?case
+    using 23
+    by (auto simp only: Let_def deval.simps edeval.simps mbufn_add Rep_edformula.simps
+        mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
+        split: prod.splits dest!: mebufnt_take dest: mbufnt_take_app)
+next
+  case (24 j ts db m I mr mrs pls Ld dbuf nts t daux)
+  have "map fst (map (edeval j ts db) Ld) = map fst (map (deval j ts db) (map Rep_edformula Ld))"
+    "map snd (map (deval j ts db) (map Rep_edformula Ld))
+      = map Rep_edformula (map snd (map (edeval j ts db) Ld))"
+    by (auto dest: 24 split: prod.splits)
+  then show ?case
+    using 24
+    by (auto simp only: Let_def deval.simps edeval.simps mbufn_add Rep_edformula.simps
+        mbuf_t_append.rep_eq
+        split: prod.splits dest!: mebufnt_take)
 qed (auto simp: mbuf2_add mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
     simp del: mprev_next.simps meprev_next.simps dsx_eval_since.simps edsx_eval_since.simps
     split: prod.splits dest!: mebuf2_take mebuf2t_take mebuf2T_take meprev_next edsx_eval_since)

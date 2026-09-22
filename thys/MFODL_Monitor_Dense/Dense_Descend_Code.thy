@@ -22,6 +22,68 @@ text \<open>
   guard and every node is the one above.
 \<close>
 
+text \<open>
+  The match nodes recover their operands' frames with @{const mfcols}, which descends the
+  specification type for the same reason @{const dof} does.  Here is its transcription to the
+  implementation type; nothing about it changes but the constructors it matches on.
+\<close>
+
+function (sequential) emfcols ::
+    "nat \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow> cols option" where
+  "emfcols n (meformula.MRel rel) = None"
+| "emfcols n (meformula.MPred e tms mode) =
+     (case mode of Copy \<Rightarrow> Some [0..<n]
+      | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set tms. Formula.fv_trm t)))"
+| "emfcols n (meformula.MLet p m \<phi> \<psi>) = emfcols n \<psi>"
+| "emfcols n (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = emfcols n \<psi>"
+| "emfcols n (meformula.MLetPast p m \<phi> \<psi> i buf) = emfcols n \<psi>"
+| "emfcols n (meformula.MAnd A1 \<phi> pos A2 \<psi> buf) =
+     (case (emfcols n \<phi>, emfcols n \<psi>) of
+        (Some c1, Some c2) \<Rightarrow> Some (if pos then merge_cols c1 c2 else c1)
+      | _ \<Rightarrow> None)"
+| "emfcols n (meformula.MAndAssign \<phi> conf) =
+     map_option (\<lambda>c. merge_cols c [fst conf]) (emfcols n \<phi>)"
+| "emfcols n (meformula.MAndRel \<phi> conf) = emfcols n \<phi>"
+| "emfcols n (meformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) = emfcols n \<alpha>"
+| "emfcols n (meformula.MAnds A_pos A_neg L buf) =
+     (case those (map (emfcols n) (take (length A_pos) L)) of
+        Some (c0 # cs') \<Rightarrow> Some (dands_cols c0 cs')
+      | _ \<Rightarrow> None)"
+| "emfcols n (meformula.MOr \<phi> \<psi> buf) = emfcols n \<phi>"
+| "emfcols n (meformula.MNeg \<phi>) = Some []"
+| "emfcols n (meformula.MExists \<phi>) = map_option (ungroup_cols (Suc 0)) (emfcols (Suc n) \<phi>)"
+| "emfcols n (meformula.MAgg args \<phi>) =
+     map_option (\<lambda>g. merge_cols (ungroup_cols (length (aggargs_tys args)) g)
+         [aggargs_y args])
+       (emfcols (length (aggargs_tys args) + n) \<phi>)"
+| "emfcols n (meformula.MPrev I \<phi> first buf nts) = emfcols n \<phi>"
+| "emfcols n (meformula.MNext I \<phi> first nts) = emfcols n \<phi>"
+| "emfcols n (meformula.MSince args \<phi> \<psi> buf aux) =
+     (case args_agg args of None \<Rightarrow> emfcols n \<psi>
+      | Some ag \<Rightarrow> map_option (\<lambda>r. merge_cols (ungroup_cols (length (aggargs_tys ag)) r)
+            [aggargs_y ag])
+          (emfcols (dnode_n n args) \<psi>))"
+| "emfcols n (meformula.MUntil args \<phi> \<psi> buf nts t aux) =
+     (case args_agg args of None \<Rightarrow> emfcols n \<psi>
+      | Some ag \<Rightarrow> map_option (\<lambda>r. merge_cols (ungroup_cols (length (aggargs_tys ag)) r)
+            [aggargs_y ag])
+          (emfcols (dnode_n n args) \<psi>))"
+| "emfcols n (meformula.MTrigger args \<phi> \<psi> buf nts aux) = emfcols n \<psi>"
+| "emfcols n (meformula.MMatchP I mr mrs L buf nts aux) = None"
+| "emfcols n (meformula.MMatchF I mr mrs L buf nts t aux) = None"
+| "emfcols n (meformula.MTP mt i) = Some (mtrm_dcols mt)"
+| "emfcols n (meformula.MTS mt) = Some (mtrm_dcols mt)"
+  by pat_completeness auto
+
+termination
+  by (relation "measure (\<lambda>(n, \<phi>). size \<phi>)")
+    (auto dest!: in_set_takeD intro!: le_imp_less_Suc size_list_estimation')
+
+lemma emfcols_mfcols: "emfcols n e = mfcols n (Rep_meformula e)"
+  by (induct n e rule: emfcols.induct)
+    (auto simp: take_map o_def split: option.splits list.splits pred_mode.splits
+      cong: map_cong)
+
 function (sequential) edof ::
     "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow> edformula" where
   "edof n cs (meformula.MRel rel) = EDRel (dsan (dtabc n cs rel))"
@@ -148,6 +210,22 @@ function (sequential) edof ::
 | "edof n cs (meformula.MTS mt) =
      (if cs = mtrm_dcols mt then EDTS mt
       else EDFail)"
+| "edof n cs (meformula.MMatchP I mr mrs L buf nts aux) =
+     (case those (map (emfcols n) L) of None \<Rightarrow> EDFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then EDMatchP (length cs) I mr mrs (map (emb_plan cs) css) (map2 (edof n) css L)
+                (map (\<lambda>_. mbuf_t_empty) L) nts []
+         else EDFail))"
+| "edof n cs (meformula.MMatchF I mr mrs L buf nts t aux) =
+     (case those (map (emfcols n) L) of None \<Rightarrow> EDFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then EDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (edof n) css L)
+                (map (\<lambda>_. mbuf_t_empty) L) nts t []
+         else EDFail))"
 | "edof n cs \<phi> = EDFail"
   by pat_completeness auto
 
@@ -171,7 +249,8 @@ next
   case (7 n cs A \<phi> pos B \<psi> buf)
   then show ?case by (cases buf) (simp add: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
 qed (simp_all add: Let_def zip_map2 o_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
-      mbuf_t_is_empty.rep_eq list_all_iff split: list.splits prod.splits cong: map_cong)
+      mbuf_t_is_empty.rep_eq list_all_iff emfcols_mfcols
+      split: list.splits option.splits prod.splits cong: map_cong)
 
 lemma dof_code[code]: "dof n cs (Rep_meformula e) = Rep_edformula (edof n cs e)"
   by (simp add: edof_dof)
