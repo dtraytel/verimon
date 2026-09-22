@@ -7312,3 +7312,42 @@ their consumers do), then `equal_set` at a set of tables, `csl`, `mrestrict1_cfi
 the three heap-index operations `im_new`/`im_lookup_h`/`im_update_h` at a second value type, the
 two index-fold combinators `didx_add1_cfi`/`didx_del1_cfi`, and `safe_regex`.  These are all the
 same shape as the thirty-two above and need no new technique, only the next pass.
+
+### 21.17 The suite after 21.15 and 21.16
+
+The 185 formulas once more, all three systems in one run; `evaluation/perf/report.md` and
+`ratios.svg` are it.
+
+| | 21.14 | now |
+|---|---|---|
+| vdense/monpoly, all 21 families | 1.34 | **1.33** |
+| dense/monpoly | 1.39 | 1.38 |
+| vdense/dense | 0.96 | 0.96 |
+| vdense timeouts | 2 | **1** |
+| dense timeouts | 2 | **0** |
+| vdense formulas above 4x MonPoly | 0 | 0 |
+| dense formulas above 4x MonPoly | 3 | 3 |
+
+`aggonce-avg50` is the change: 2.66 s under vdense and 3.38 s under dense against MonPoly's
+1.45 s, where both were over the 5 s budget in 21.14's run, and `aggonce-avg5` 1.79 s against
+2.55 s.  `dense` now finishes all 185.  The one vdense timeout left is `aggev-sum20`, an
+aggregation over a *future* window, which `dense` runs in 2.68 s -- so what costs there is the
+unboxed refinement of the Until-side structure, not the aggregation, and it is the next item
+rather than this one.
+
+The monomorphisation sweep is invisible here, as expected: every difftest hash is identical to
+the pre-sweep binary's and no family moves beyond the machine's own drift (the families that
+this round did not touch move by up to 0.2 in the `vdense/monpoly` column between the two runs,
+which is the size of that drift and the reason the within-run `vdense/dense` column is the one
+to read).
+
+The `agg_once` family is now 1.94x MonPoly and 0.84 of the boxed evaluator.  What is left in it
+is the space item 21.15's profiling turned up and did not touch: instruction counts across the
+family are flat in the window length at about 1.35x MonPoly, but wall time is not (1.74x at
+window 5, 2.34x at window 500) and it tracks peak resident memory almost exactly (1.50x to
+2.29x), with the garbage collector's share of the run going 11.5% -> 23.3% where MonPoly's goes
+11.4% -> 13.6%.  The Since/Once window stores each in-window tuple three times -- once per
+occurrence in `data_in`, once in `table_in`, and once as a key of `tuple_in`, with `table_in` an
+exact parallel copy of `Mapping.keys tuple_in` kept so that the result read is O(1).  That is
+`mmsaux` in the shared kernel, so it is a datatype change to `Optimized_Since.thy` and a larger
+piece of work than anything in 21.8-21.16; it is recorded here rather than started.
