@@ -11857,6 +11857,18 @@ let rec dformula_of
                                    (wide_mask m (upt zero_nata m))))
                             alpha_s)))));;
 
+let rec ugmr
+  h (RBT_Mapping t) y f =
+    (match ccompare_lista (ccompare_option ccompare_event_data)
+      with None ->
+        failwith "ugmr RBT_Mapping: ccompare = None"
+          (fun _ -> ugmr h (RBT_Mapping t) y f)
+      | Some _ ->
+        fold (fun p ->
+               edl_insert (h (list_update (fst p) y (Some (f (snd p))))))
+          (entriesa (ccompare_list (ccompare_option ccompare_event_data)) t)
+          edl_bot);;
+
 let rec de_gsw_init
   args = (zero_nata, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))));;
 
@@ -12836,21 +12848,6 @@ let rec udsx_add_new_ts
 
 let rec de_gsw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
 
-let rec ed_get_map_result
-  m y f =
-    ed_image
-      (fun k ->
-        (match
-          lookupa
-            ((ccompare_list (ccompare_option ccompare_event_data)),
-              (equal_list (equal_option equal_event_data)))
-            m k
-          with None -> k | Some i -> list_update k y (Some (f i))))
-      (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
-              (ccompare_list (ccompare_option ccompare_event_data)),
-              set_impl_list)
-        m);;
-
 let ed_keys_rank_v :
   ((((event_data option) list), list_aux) mapping ->
     ((event_data option) list) set)
@@ -12873,6 +12870,21 @@ let ed_keys_nat_v :
   = Box (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
                 (ccompare_list (ccompare_option ccompare_event_data)),
                 set_impl_list));;
+
+let rec ed_get_map_result
+  m y f =
+    ed_image
+      (fun k ->
+        (match
+          lookupa
+            ((ccompare_list (ccompare_option ccompare_event_data)),
+              (equal_list (equal_option equal_event_data)))
+            m k
+          with None -> k | Some i -> list_update k y (Some (f i))))
+      (keys (cenum_list, (ceq_list (ceq_option ceq_event_data)),
+              (ccompare_list (ccompare_option ccompare_event_data)),
+              set_impl_list)
+        m);;
 
 let ed_set_eq_v :
   (((event_data option) list) set -> ((event_data option) list) set -> bool)
@@ -12952,6 +12964,95 @@ let rec result_maggaux
                           in
                          EFloat a)))));;
 
+let rec ures_maggaux
+  h args a =
+    (let n = aggargs_n args in
+     let y = aggargs_y args in
+     let g0 = aggargs_g0 args in
+     let omega = aggargs_omega args in
+      (match a
+        with CntAux m ->
+          (if g0 && unbox ed_set_eq_v (unbox ed_keys_nat_v m) ed_bot
+            then edl_image_of_wide h
+                   (ed_singleton_table n y
+                     (eval_agg_op omega
+                       (set_empty
+                         ((ceq_prod ceq_event_data ceq_enat),
+                           (ccompare_prod ccompare_event_data ccompare_enat))
+                         (of_phantom
+                           (set_impl_proda set_impl_event_data
+                             set_impl_enat)))))
+            else ugmr h m y (fun x -> EInt (integer_of_int (int_of_nat x))))
+        | SumAux m ->
+          (if g0 && unbox ed_set_eq_v (unbox ed_keys_sum_v m) ed_bot
+            then edl_image_of_wide h
+                   (ed_singleton_table n y
+                     (eval_agg_op omega
+                       (set_empty
+                         ((ceq_prod ceq_event_data ceq_enat),
+                           (ccompare_prod ccompare_event_data ccompare_enat))
+                         (of_phantom
+                           (set_impl_proda set_impl_event_data
+                             set_impl_enat)))))
+            else (match fst omega
+                   with Agg_Cnt -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Min -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Max -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Sum -> ugmr h m y (fun k -> EInt (snd k))
+                   | Agg_Avg ->
+                     ugmr h m y
+                       (fun x ->
+                         EFloat
+                           (Stdlib.(/.)
+                             (double_of_event_data
+                               (EInt (snd (let (xa, aa) = x in
+    (int_of_nat xa, aa)))))
+                             (double_of_int
+                               (fst (let (xa, aa) = x in
+                                      (int_of_nat xa, aa))))))
+                   | Agg_Med -> edl_image_of_wide h (result_maggaux args a)))
+        | RankAux (m, _) ->
+          (if g0 && unbox ed_set_eq_v (unbox ed_keys_rank_v m) ed_bot
+            then edl_image_of_wide h
+                   (ed_singleton_table n y
+                     (eval_agg_op omega
+                       (set_empty
+                         ((ceq_prod ceq_event_data ceq_enat),
+                           (ccompare_prod ccompare_event_data ccompare_enat))
+                         (of_phantom
+                           (set_impl_proda set_impl_event_data
+                             set_impl_enat)))))
+            else (match fst omega
+                   with Agg_Cnt -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Min -> ugmr h m y (fun k -> get_edata_list k zero_nata)
+                   | Agg_Max ->
+                     ugmr h m y
+                       (fun k ->
+                         get_edata_list k (minus_nata (get_length k) one_nata))
+                   | Agg_Sum -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Avg -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Med ->
+                     ugmr h m y
+                       (fun k ->
+                         (let u = get_length k in
+                          let ua = divide_nata u (nat_of_integer (Z.of_int 2))
+                            in
+                          let aa =
+                            (if dvd (equal_nat, semidom_modulo_nat)
+                                  (nat_of_integer (Z.of_int 2)) u
+                              then Stdlib.(/.)
+                                     (Stdlib.(+.)
+                                       (double_of_event_data_agg
+ (get_edata_list k (minus_nata ua one_nata)))
+                                       (double_of_event_data_agg
+ (get_edata_list k ua)))
+                                     (double_of_int
+                                       (Int_of_integer (Z.of_int 2)))
+                              else double_of_event_data_agg
+                                     (get_edata_list k ua))
+                            in
+                           EFloat aa))))));;
+
 let rec udagg_p (g0, (omega, (f, (k, pos)))) = uagg g0 omega f k pos;;
 
 let rec uag_res
@@ -12961,8 +13062,7 @@ let rec uag_res
         (let args = dagg_args p w in
          let msk = wide_mask (aggargs_n args) (upt zero_nata (aggargs_n args))
            in
-          edl_image_of_wide (fun x -> deopt (dproj msk x))
-            (result_maggaux args a)));;
+          ures_maggaux (fun x -> deopt (dproj msk x)) args a));;
 
 let rec usa_result
   args p aux =
