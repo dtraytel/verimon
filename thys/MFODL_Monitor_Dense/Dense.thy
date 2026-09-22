@@ -2678,6 +2678,103 @@ proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
   qed
 qed
 
+text \<open>The same two facts for the timestamped take: what it leaves in the buffers is a
+  sublist of what it found there, and two runs whose buffers differ by a map on each operand
+  step together, consume the same timestamps and leave buffers that differ by the same map.
+  The past and future match nodes need them, as the conjunction nodes need the untimed ones.\<close>
+
+lemma mbufnt_take_sub:
+  "mbufnt_take f z buf t0 ts = (w, buf', t', ts') \<Longrightarrow>
+     length buf' = length buf \<and> (\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i))"
+proof (induct f z buf t0 ts arbitrary: w buf' t' ts' rule: mbufnt_take.induct)
+  case (1 f z buf t0 ts)
+  note IH = 1(1) and E = 1(2)
+  show ?case
+  proof (cases "[] \<in> set buf \<or> ts = []")
+    case True
+    have q: "mbufnt_take f z buf t0 ts = (z, buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using True by (subst mbufnt_take.simps) simp
+    show ?thesis using E unfolding q by auto
+  next
+    case False
+    have e: "mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts)
+        = (w, buf', t', ts')"
+      using E by (subst (asm) mbufnt_take.simps) (simp add: False)
+    have "length buf' = length (map tl buf) \<and>
+        (\<forall>i < length (map tl buf). set (buf' ! i) \<subseteq> set (map tl buf ! i))"
+      by (rule IH[OF False e])
+    then show ?thesis using set_tl_sub by fastforce
+  qed
+qed
+
+lemma mbufnt_take_rel:
+  "length hs = length buf \<Longrightarrow> length Ss = length buf \<Longrightarrow>
+   (\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i) \<Longrightarrow>
+   (\<And>as t u u'. length as = length hs \<Longrightarrow> (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+      R (f as t u) (g (map2 (\<lambda>h a. h a) hs as) t u')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbufnt_take f z buf t0 ts = (w, buf', t', ts') \<Longrightarrow>
+   mbufnt_take g z' (map2 map hs buf) t0 ts = (w2, buf2, t2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = map2 map hs buf' \<and> t2 = t' \<and> ts2 = ts'"
+proof (induct f z buf t0 ts arbitrary: z' w buf' t' ts' w2 buf2 t2 ts2
+    rule: mbufnt_take.induct)
+  case (1 f z buf t0 ts)
+  note IH = 1(1) and L1 = 1(2) and L2 = 1(3) and SUB = 1(4)
+    and STEP = 1(5) and RZ = 1(6) and E1 = 1(7) and E2 = 1(8)
+  show ?case
+  proof (cases "[] \<in> set buf \<or> ts = []")
+    case True
+    then have ne': "[] \<in> set (map2 map hs buf) \<or> ts = []"
+      by (simp only: map2_map_empty_iff[OF L1])
+    have q1: "mbufnt_take f z buf t0 ts = (z, buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using True by (subst mbufnt_take.simps) simp
+    have q2: "mbufnt_take g z' (map2 map hs buf) t0 ts
+        = (z', map2 map hs buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using ne' by (subst mbufnt_take.simps) simp
+    show ?thesis using E1 E2 RZ unfolding q1 q2 by auto
+  next
+    case False
+    then have ne: "\<not> ([] \<in> set (map2 map hs buf) \<or> ts = [])"
+      by (simp only: map2_map_empty_iff[OF L1]) simp
+    have las: "length (map hd buf) = length hs" using L1 by simp
+    have mem: "\<forall>i < length (map hd buf). map hd buf ! i \<in> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map hd buf)"
+      then have i': "i < length buf" by simp
+      then have "buf ! i \<noteq> []" using False by (auto simp: in_set_conv_nth)
+      then have "hd (buf ! i) \<in> set (buf ! i)" by simp
+      then show "map hd buf ! i \<in> Ss ! i" using SUB i' by auto
+    qed
+    have r: "R (f (map hd buf) (hd ts) z) (g (map2 (\<lambda>h a. h a) hs (map hd buf)) (hd ts) z')"
+      by (rule STEP[OF las mem RZ])
+    have sub': "\<forall>i < length (map tl buf). set (map tl buf ! i) \<subseteq> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map tl buf)"
+      then have i': "i < length buf" by simp
+      have "set (tl (buf ! i)) \<subseteq> set (buf ! i)" by (cases "buf ! i") auto
+      then show "set (map tl buf ! i) \<subseteq> Ss ! i" using SUB i' by auto
+    qed
+    have e1: "mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts)
+        = (w, buf', t', ts')"
+      using E1 False by simp
+    have e2: "mbufnt_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) (hd ts) z')
+        (map2 map hs (map tl buf)) (hd ts) (tl ts) = (w2, buf2, t2, ts2)"
+    proof -
+      have u: "mbufnt_take g z' (map2 map hs buf) t0 ts
+          = mbufnt_take g (g (map hd (map2 map hs buf)) (hd ts) z')
+              (map tl (map2 map hs buf)) (hd ts) (tl ts)"
+        using ne by (subst mbufnt_take.simps) simp
+      have hd': "map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+        by (rule map2_map_hd[OF L1]) (use False in simp)
+      have tl': "map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+        by (rule map2_map_tl[OF L1]) (use False in simp)
+      show ?thesis using E2 unfolding u hd' tl' .
+    qed
+    show ?thesis
+      by (rule IH[OF False _ _ sub' STEP r e1 e2]) (use L1 L2 in simp_all)
+  qed
+qed
+
 subsection \<open>The multi-way join as one function of the operand list\<close>
 
 text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for

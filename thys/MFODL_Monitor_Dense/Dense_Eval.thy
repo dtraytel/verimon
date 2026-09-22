@@ -1170,6 +1170,7 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     distinct mrs \<Longrightarrow> set mrs = RPDs mr \<Longrightarrow>
     length css = length \<psi>s \<Longrightarrow> length L = length \<psi>s \<Longrightarrow> length Ld = length L \<Longrightarrow>
     (\<forall>i < length \<psi>s. set (css ! i) = Formula.fv (\<psi>s ! i)) \<Longrightarrow>
+    (\<forall>i < length \<psi>s. set (css ! i) \<subseteq> set cs) \<Longrightarrow>
     (\<forall>c \<in> set css. wf_cols n c) \<Longrightarrow>
     (\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)) \<Longrightarrow>
     pls = map (emb_plan cs) css \<Longrightarrow>
@@ -1185,6 +1186,7 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     distinct mrs \<Longrightarrow> set mrs = LPDs mr \<Longrightarrow>
     length css = length \<psi>s \<Longrightarrow> length L = length \<psi>s \<Longrightarrow> length Ld = length L \<Longrightarrow>
     (\<forall>i < length \<psi>s. set (css ! i) = Formula.fv (\<psi>s ! i)) \<Longrightarrow>
+    (\<forall>i < length \<psi>s. set (css ! i) \<subseteq> set cs) \<Longrightarrow>
     (\<forall>c \<in> set css. wf_cols n c) \<Longrightarrow>
     (\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)) \<Longrightarrow>
     pls = map (emb_plan cs) css \<Longrightarrow>
@@ -1345,6 +1347,66 @@ proof -
   have ls: "length buf' = length buf"
     and ss: "\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i)"
     using mbufn_take_sub[OF t] by auto
+  have "dbufn n css buf' buf2"
+    using lt lb ls ss r by (fastforce simp: dbufn_def hs_def list_all_iff)
+  then show ?thesis using e2 r by auto
+qed
+
+text \<open>The timestamped take, which the two match nodes use, keeps the buffers related in the same
+  way; the accumulator is a parameter here because the past node threads a pair of the reported
+  tables and the structure, and the future node the structure alone.\<close>
+
+lemma dbufn_nt_take:
+  assumes b: "dbufn n css buf dbuf"
+    and st: "\<And>as u u' t. length as = length css \<Longrightarrow>
+        (\<forall>i < length css. ftable n (set (css ! i)) (as ! i)) \<Longrightarrow> R u u' \<Longrightarrow>
+        R (f as t u) (g (map2 (dtabc n) css as) t u')"
+    and rz: "R z z'"
+    and e: "mbufnt_take f z buf t0 tss = (w, buf', t', tss')"
+  shows "\<exists>w2 dbuf'. mbufnt_take g z' dbuf t0 tss = (w2, dbuf', t', tss')
+      \<and> R w w2 \<and> dbufn n css buf' dbuf'"
+proof -
+  have lb: "length buf = length css"
+    and lt: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (buf ! i)"
+    and d: "dbuf = map2 map (map (dtabc n) css) buf"
+    using b by (auto simp: dbufn_def)
+  define hs :: "(event_data table \<Rightarrow> event_data table) list"
+    where "hs = map (dtabc n) css"
+  define Ss :: "event_data table set list"
+    where "Ss = map (\<lambda>c. {T. ftable n (set c) T}) css"
+  obtain w2 buf2 t2 tss2 where e2: "mbufnt_take g z' dbuf t0 tss = (w2, buf2, t2, tss2)"
+    by (cases "mbufnt_take g z' dbuf t0 tss") auto
+  have sub: "\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i"
+    using lt lb by (auto simp: Ss_def list_all_iff)
+  have step: "\<And>as u u' t. length as = length hs \<Longrightarrow>
+      (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+      R (f as t u) (g (map2 (\<lambda>h a. h a) hs as) t u')"
+  proof -
+    fix as :: "event_data table list" and u u' t
+    assume la: "length as = length hs" and ma: "\<forall>i < length as. as ! i \<in> Ss ! i"
+      and ru: "R u u'"
+    have la': "length as = length css" using la by (simp add: hs_def)
+    have ma': "\<forall>i < length css. ftable n (set (css ! i)) (as ! i)"
+      using ma la' by (auto simp: Ss_def)
+    show "R (f as t u) (g (map2 (\<lambda>h a. h a) hs as) t u')"
+      using st[OF la' ma' ru] by (simp add: hs_def map2_apply_map)
+  qed
+  have r: "R w w2 \<and> buf2 = map2 map hs buf' \<and> t2 = t' \<and> tss2 = tss'"
+  proof (rule mbufnt_take_rel[where R = R and Ss = Ss and hs = hs and f = f and g = g
+        and z = z and z' = z' and buf = buf and buf' = buf' and w = w])
+    show "length hs = length buf" using lb by (simp add: hs_def)
+    show "length Ss = length buf" using lb by (simp add: Ss_def)
+    show "\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i" by (rule sub)
+    show "\<And>as t u u'. length as = length hs \<Longrightarrow> (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+        R (f as t u) (g (map2 (\<lambda>h a. h a) hs as) t u')" by (rule step)
+    show "R z z'" by (rule rz)
+    show "mbufnt_take f z buf t0 tss = (w, buf', t', tss')" by (rule e)
+    show "mbufnt_take g z' (map2 map hs buf) t0 tss = (w2, buf2, t2, tss2)"
+      using e2 d by (simp add: hs_def)
+  qed
+  have ls: "length buf' = length buf"
+    and ss: "\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i)"
+    using mbufnt_take_sub[OF e] by auto
   have "dbufn n css buf' buf2"
     using lt lb ls ss r by (fastforce simp: dbufn_def hs_def list_all_iff)
   then show ?thesis using e2 r by auto
@@ -2933,10 +2995,248 @@ next
   qed
 next
   case (DsMatchP n cs tw I mr mrs L buf nts aux \<psi>s css Ld pls dbuf daux)
-  show ?case sorry
+  note wf = DsMatchP.hyps(1) and pr = DsMatchP.hyps(2) and sr = DsMatchP.hyps(3)
+    and okm = DsMatchP.hyps(4) and fvA = DsMatchP.hyps(5) and dm = DsMatchP.hyps(6)
+    and mrsd = DsMatchP.hyps(7) and lc = DsMatchP.hyps(8) and lL = DsMatchP.hyps(9)
+    and lLd = DsMatchP.hyps(10) and cfv = DsMatchP.hyps(11) and csub = DsMatchP.hyps(12)
+    and wc = DsMatchP.hyps(13) and la = DsMatchP.hyps(14) and pe = DsMatchP.hyps(15)
+    and bf = DsMatchP.hyps(16) and rel = DsMatchP.hyps(17)
+    and w = DsMatchP.prems(1) and sts = DsMatchP.prems(2)
+    and mts = DsMatchP.prems(3) and m = DsMatchP.prems(4)
+  let ?R = "map (meval j n ts db) L"
+  let ?dR = "map (deval j ts db) Ld"
+  let ?F = "\<lambda>rels t (zs, ax).
+      let (z, ax) = update_matchP n I mr mrs rels t ax in (zs @ [z], ax)"
+  let ?G = "\<lambda>rels t (zs, ax).
+      let (z, ax) = update_matchP (length cs) I mr mrs (map2 dembedp pls rels) t ax
+      in (zs @ [z], ax)"
+  obtain zs aux2 buf2 tt2 nts2 where g0:
+    "mbufnt_take ?F ([], aux) (mbufn_add (map fst ?R) buf) 0 (nts @ ts)
+       = ((zs, aux2), buf2, tt2, nts2)"
+    by (cases "mbufnt_take ?F ([], aux) (mbufn_add (map fst ?R) buf) 0 (nts @ ts)") auto
+  have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchP I mr mrs (map snd ?R) buf2 nts2 aux2"
+    using m g0 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
+  \<comment> \<open>the operands, and their narrowing\<close>
+  have la0: "\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)" using la by blast
+  have lcL: "length css = length L" using lc lL by simp
+  have tabs: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (map fst ?R ! i)"
+  proof (intro allI impI)
+    fix i assume i: "i < length css"
+    then have iL: "i < length L" using lcL by simp
+    have "list_all (ftable n (set (css ! i))) (fst (meval j n ts db (L ! i)))"
+      by (rule dsims_tables[OF la0 lLd lcL w sts mts iL])
+    then show "list_all (ftable n (set (css ! i))) (map fst ?R ! i)" using iL by simp
+  qed
+  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
+  proof -
+    fix i assume i: "i < length L"
+    have "size (L ! i) \<le> size_list size L"
+      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ DsMatchP.prems(5)]) simp
+    finally show "size (L ! i) \<le> NN" .
+  qed
+  have la1: "\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i) \<and>
+      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
+         (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (css ! i)) as, \<psi>d')
+            \<and> dsim n (css ! i) (dnext tw ts) \<psi>d' \<psi>'))"
+    using la w sts mts szL by blast
+  have dlr: "length ?dR = length L \<and>
+      map fst ?dR = map2 (\<lambda>c y. map (dtabc n c) y) css (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
+      (\<forall>i < length L. dsim n (css ! i) (dnext tw ts) (map snd ?dR ! i)
+          (snd (meval j n ts db (L ! i))))"
+    by (rule deval_list_rel[OF lLd lcL la1])
+  have dl: "map fst ?dR = map2 (\<lambda>c y. map (dtabc n c) y) css (map fst ?R)"
+    using dlr by (simp add: comp_def)
+  have dl2: "\<forall>i < length L. dsim n (css ! i) (dnext tw ts) (map snd ?dR ! i)
+      (snd (meval j n ts db (L ! i)))" using dlr by blast
+  \<comment> \<open>the buffer\<close>
+  have badd: "dbufn n css (mbufn_add (map fst ?R) buf) (mbufn_add (map fst ?dR) dbuf)"
+    unfolding dl by (rule dbufn_add[OF bf _ tabs]) (use lcL in simp)
+  \<comment> \<open>one firing of the window\<close>
+  define Rel where "Rel = (\<lambda>(zs :: event_data table list, ax) (dzs :: event_data table list, dax).
+      dzs = map (dtabc n cs) zs \<and> dmrd_rel n cs ax dax)"
+  have step: "Rel (?F as t u) (?G (map2 (dtabc n) css as) t u')"
+    if las: "length as = length css"
+      and mas: "\<forall>i < length css. ftable n (set (css ! i)) (as ! i)"
+      and ru: "Rel u u'" for as u u' t
+  proof -
+    obtain zs0 ax where u: "u = (zs0, ax)" by (cases u)
+    obtain dzs0 dax where u': "u' = (dzs0, dax)" by (cases u')
+    have dz: "dzs0 = map (dtabc n cs) zs0" and rax: "dmrd_rel n cs ax dax"
+      using ru by (simp_all add: Rel_def u u')
+    have emb: "map2 dembedp pls (map2 (dtabc n) css as) = map (dtabc n cs) as"
+      unfolding list_eq_iff_nth_eq
+    proof (intro conjI allI impI)
+      show "length (map2 dembedp pls (map2 (dtabc n) css as)) = length (map (dtabc n cs) as)"
+        using pe las by simp
+    next
+      fix i assume i: "i < length (map2 dembedp pls (map2 (dtabc n) css as))"
+      then have i': "i < length css" using pe las by simp
+      have "dembedp (emb_plan cs (css ! i)) (dtabc n (css ! i) (as ! i)) = dtabc n cs (as ! i)"
+        by (rule dembedp_dtabc[OF conjunct1[OF wf] _ conjunct2[OF wf]])
+          (use i' wc mas in \<open>fastforce intro: nth_mem\<close>)+
+      then show "map2 dembedp pls (map2 (dtabc n) css as) ! i = map (dtabc n cs) as ! i"
+        using i' pe las by simp
+    qed
+    interpret dmatchP_frame n cs \<psi>s as mrs
+    proof
+      show "sorted_wrt (<) cs" using wf by simp
+      show "\<forall>c \<in> set cs. c < n" using wf by simp
+      show "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s as"
+        using las lc cfv mas by (fastforce simp: list_all2_conv_all_nth)
+      show "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs" using cfv csub by auto
+      show "distinct mrs" by (rule dm)
+      show "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+          Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex ms \<psi>s) \<and>
+          ok (length \<psi>s) ms \<and> set cs = fv_regex (from_mregex ms \<psi>s)"
+        using mrsd sr okm fvA
+        by (auto simp: RPDs_safe RPDs_ok RPDs_safe_fv_regex)
+    qed
+    have uu: "dtabc n cs (fst (update_matchP n I mr mrs as t ax))
+        = fst (update_matchP (length cs) I mr mrs (map (dtabc n cs) as) t dax) \<and>
+      dmrd_rel n cs (snd (update_matchP n I mr mrs as t ax))
+        (snd (update_matchP (length cs) I mr mrs (map (dtabc n cs) as) t dax))"
+      by (rule dtabc_update_matchP[OF rax])
+    show ?thesis using dz uu by (simp add: Rel_def u u' emb Let_def split_beta)
+  qed
+  have rz: "Rel ([], aux) ([], daux)" using rel by (simp add: Rel_def)
+  obtain w2 dbuf2 where dt:
+    "mbufnt_take ?G ([], daux) (mbufn_add (map fst ?dR) dbuf) 0 (nts @ ts)
+       = (w2, dbuf2, tt2, nts2)"
+    and rw: "Rel (zs, aux2) w2" and bf2: "dbufn n css buf2 dbuf2"
+    using dbufn_nt_take[where R = Rel and f = "?F" and g = "?G", OF badd step rz g0] by blast
+  obtain dzs daux2 where w2: "w2 = (dzs, daux2)" by (cases w2)
+  have dzs: "dzs = map (dtabc n cs) zs" and rel2: "dmrd_rel n cs aux2 daux2"
+    using rw by (simp_all add: Rel_def w2)
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DMatchP (length cs) I mr mrs pls Ld dbuf nts daux)
+        = (map (dtabc n cs) xs, DMatchP (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 daux2)"
+      using dt x dzs unfolding w2 by (simp add: Let_def del: mbufnt_take.simps)
+    show "dsim n cs (dnext tw ts) (DMatchP (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 daux2)
+        \<phi>'"
+      unfolding fe
+      by (rule dsim.DsMatchP[OF wf produces_next[OF pr w sts mts m, unfolded fe] sr okm fvA dm
+            mrsd lc _ _ cfv csub wc _ pe bf2 rel2])
+        (use lL lLd dl2 dlr in auto)
+  qed
 next
   case (DsMatchF n cs tw I mr mrs L buf nts t aux \<psi>s css Ld pls dbuf daux)
-  show ?case sorry
+  note wf = DsMatchF.hyps(1) and pr = DsMatchF.hyps(2) and sr = DsMatchF.hyps(3)
+    and okm = DsMatchF.hyps(4) and fvA = DsMatchF.hyps(5) and dm = DsMatchF.hyps(6)
+    and mrsd = DsMatchF.hyps(7) and lc = DsMatchF.hyps(8) and lL = DsMatchF.hyps(9)
+    and lLd = DsMatchF.hyps(10) and cfv = DsMatchF.hyps(11) and csub = DsMatchF.hyps(12)
+    and wc = DsMatchF.hyps(13) and la = DsMatchF.hyps(14) and pe = DsMatchF.hyps(15)
+    and bf = DsMatchF.hyps(16) and rel = DsMatchF.hyps(17)
+    and w = DsMatchF.prems(1) and sts = DsMatchF.prems(2)
+    and mts = DsMatchF.prems(3) and m = DsMatchF.prems(4)
+  let ?R = "map (meval j n ts db) L"
+  let ?dR = "map (deval j ts db) Ld"
+  let ?F = "update_matchF n I mr mrs"
+  let ?G = "\<lambda>rels. update_matchF (length cs) I mr mrs (map2 dembedp pls rels)"
+  obtain aux2 buf2 nt2 nts2 where g0:
+    "mbufnt_take ?F aux (mbufn_add (map fst ?R) buf) t (nts @ ts) = (aux2, buf2, nt2, nts2)"
+    by (cases "mbufnt_take ?F aux (mbufn_add (map fst ?R) buf) t (nts @ ts)") auto
+  obtain zs aux3 where g1: "eval_matchF I mr nt2 aux2 = (zs, aux3)"
+    by (cases "eval_matchF I mr nt2 aux2") auto
+  have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchF I mr mrs (map snd ?R) buf2 nts2 nt2 aux3"
+    using m g0 g1 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
+  \<comment> \<open>the operands, and their narrowing\<close>
+  have la0: "\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)" using la by blast
+  have lcL: "length css = length L" using lc lL by simp
+  have tabs: "\<forall>i < length css. list_all (ftable n (set (css ! i))) (map fst ?R ! i)"
+  proof (intro allI impI)
+    fix i assume i: "i < length css"
+    then have iL: "i < length L" using lcL by simp
+    have "list_all (ftable n (set (css ! i))) (fst (meval j n ts db (L ! i)))"
+      by (rule dsims_tables[OF la0 lLd lcL w sts mts iL])
+    then show "list_all (ftable n (set (css ! i))) (map fst ?R ! i)" using iL by simp
+  qed
+  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
+  proof -
+    fix i assume i: "i < length L"
+    have "size (L ! i) \<le> size_list size L"
+      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ DsMatchF.prems(5)]) simp
+    finally show "size (L ! i) \<le> NN" .
+  qed
+  have la1: "\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i) \<and>
+      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
+         (\<exists>\<psi>d'. deval j ts db (Ld ! i) = (map (dtabc n (css ! i)) as, \<psi>d')
+            \<and> dsim n (css ! i) (dnext tw ts) \<psi>d' \<psi>'))"
+    using la w sts mts szL by blast
+  have dlr: "length ?dR = length L \<and>
+      map fst ?dR = map2 (\<lambda>c y. map (dtabc n c) y) css (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
+      (\<forall>i < length L. dsim n (css ! i) (dnext tw ts) (map snd ?dR ! i)
+          (snd (meval j n ts db (L ! i))))"
+    by (rule deval_list_rel[OF lLd lcL la1])
+  have dl: "map fst ?dR = map2 (\<lambda>c y. map (dtabc n c) y) css (map fst ?R)"
+    using dlr by (simp add: comp_def)
+  have dl2: "\<forall>i < length L. dsim n (css ! i) (dnext tw ts) (map snd ?dR ! i)
+      (snd (meval j n ts db (L ! i)))" using dlr by blast
+  \<comment> \<open>the buffer\<close>
+  have badd: "dbufn n css (mbufn_add (map fst ?R) buf) (mbufn_add (map fst ?dR) dbuf)"
+    unfolding dl by (rule dbufn_add[OF bf _ tabs]) (use lcL in simp)
+  \<comment> \<open>one firing of the window\<close>
+  interpret dmatchF_frame n cs \<psi>s mrs
+  proof
+    show "sorted_wrt (<) cs" using wf by simp
+    show "\<forall>c \<in> set cs. c < n" using wf by simp
+    show "\<And>i. i < length \<psi>s \<Longrightarrow> Formula.fv (\<psi>s ! i) \<subseteq> set cs" using cfv csub by auto
+    show "distinct mrs" by (rule dm)
+    show "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+        Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex ms \<psi>s) \<and>
+        ok (length \<psi>s) ms \<and> set cs = fv_regex (from_mregex ms \<psi>s)"
+      using mrsd sr okm fvA by (auto simp: LPDs_safe LPDs_ok LPDs_safe_fv_regex)
+  qed
+  have step: "dmld_rel n cs \<psi>s (?F as tt u) (?G (map2 (dtabc n) css as) tt u')"
+    if las: "length as = length css"
+      and mas: "\<forall>i < length css. ftable n (set (css ! i)) (as ! i)"
+      and ru: "dmld_rel n cs \<psi>s u u'" for as u u' tt
+  proof -
+    have emb: "map2 dembedp pls (map2 (dtabc n) css as) = map (dtabc n cs) as"
+      unfolding list_eq_iff_nth_eq
+    proof (intro conjI allI impI)
+      show "length (map2 dembedp pls (map2 (dtabc n) css as)) = length (map (dtabc n cs) as)"
+        using pe las by simp
+    next
+      fix i assume i: "i < length (map2 dembedp pls (map2 (dtabc n) css as))"
+      then have i': "i < length css" using pe las by simp
+      have "dembedp (emb_plan cs (css ! i)) (dtabc n (css ! i) (as ! i)) = dtabc n cs (as ! i)"
+        by (rule dembedp_dtabc[OF conjunct1[OF wf] _ conjunct2[OF wf]])
+          (use i' wc mas in \<open>fastforce intro: nth_mem\<close>)+
+      then show "map2 dembedp pls (map2 (dtabc n) css as) ! i = map (dtabc n cs) as ! i"
+        using i' pe las by simp
+    qed
+    have wfr: "list_all2 (\<lambda>\<psi> rl. table n (Formula.fv \<psi>) rl) \<psi>s as"
+      using las lc cfv mas by (fastforce simp: list_all2_conv_all_nth)
+    show ?thesis using dtabc_update_matchF[OF wfr ru] by (simp add: emb)
+  qed
+  obtain daux2 dbuf2 where dt:
+    "mbufnt_take ?G daux (mbufn_add (map fst ?dR) dbuf) t (nts @ ts) = (daux2, dbuf2, nt2, nts2)"
+    and rw: "dmld_rel n cs \<psi>s aux2 daux2" and bf2: "dbufn n css buf2 dbuf2"
+    using dbufn_nt_take[where R = "dmld_rel n cs \<psi>s" and f = "?F" and g = "?G",
+        OF badd step rel g0] by blast
+  obtain dzs daux3 where g2: "eval_matchF I mr nt2 daux2 = (dzs, daux3)"
+    by (cases "eval_matchF I mr nt2 daux2") auto
+  have evb: "fst (eval_matchF I mr nt2 daux2) = map (dtabc n cs) (fst (eval_matchF I mr nt2 aux2))
+      \<and> dmld_rel n cs \<psi>s (snd (eval_matchF I mr nt2 aux2)) (snd (eval_matchF I mr nt2 daux2))"
+    by (rule dtabc_eval_matchF[OF rw])
+  have ev: "dzs = map (dtabc n cs) zs" using evb g1 g2 by simp
+  have rel3: "dmld_rel n cs \<psi>s aux3 daux3" using evb g1 g2 by simp
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DMatchF (length cs) I mr mrs pls Ld dbuf nts t daux)
+        = (map (dtabc n cs) xs,
+           DMatchF (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 nt2 daux3)"
+      using dt g2 x ev by (simp add: Let_def del: mbufnt_take.simps)
+    show "dsim n cs (dnext tw ts)
+        (DMatchF (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 nt2 daux3) \<phi>'"
+      unfolding fe
+      by (rule dsim.DsMatchF[OF wf produces_next[OF pr w sts mts m, unfolded fe] sr okm fvA dm
+            mrsd lc _ _ cfv csub wc _ pe bf2 rel3])
+        (use lL lLd dl2 dlr in auto)
+  qed
 qed
 
 text \<open>Induction on the bound discharges the assumption the theorem above carries, and
