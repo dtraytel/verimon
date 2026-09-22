@@ -231,18 +231,153 @@ qed
 
 text \<open>The two recursions in step, and the shift that drives them, keep the relation.\<close>
 
+text \<open>What the plain window's validity gives about the tables it holds, in the form
+  @{thm [source] ag_inv_ins} and @{thm [source] ag_inv_del} want them.\<close>
+
+lemma valid_uw_tables:
+  assumes v: "valid_uw args cur (nts, win, rest, len, bend, cc, dn) auxlist"
+    and R: "args_R args = {0..<args_n args}"
+  shows "\<forall>e \<in> set (linearize win @ linearize rest).
+           finite (fst (snd e)) \<and> dwf_table (args_n args) (fst (snd e))"
+    and "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+proof -
+  have wf: "\<forall>e \<in> set (linearize win @ linearize rest).
+      table (args_n args) (args_R args) (fst (snd e)) \<and> finite (fst (snd e))"
+    using v by (auto simp: valid_uw_def Let_def)
+  then show "\<forall>e \<in> set (linearize win @ linearize rest).
+      finite (fst (snd e)) \<and> dwf_table (args_n args) (fst (snd e))"
+    unfolding R by (auto simp: table_def wf_tuple_dwf)
+  show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    using v by (auto simp: valid_uw_def Let_def)
+qed
+
+text \<open>The step needs only what @{thm [source] valid_uw_tables} extracts, not the whole of
+  @{const valid_uw}: the shift below applies it to states whose queue of pending time stamps has
+  already had its head taken off.\<close>
+
 lemma ua_step_rel:
-  assumes "ua_rel p (args_n args) a u" and "valid_uw args cur u auxlist"
-    and "dagg_ok p (args_n args)" and "args_R args = {0..<args_n args}"
-    and "fst a = (nts, win, rest, len, bend, cc, dn)" and "len \<noteq> 0"
+  assumes rel: "ua_rel p (args_n args) a u"
+    and u: "u = (nts, win, rest, len, bend, cc, dn)"
+    and tbw: "\<forall>e \<in> set (linearize win @ linearize rest).
+                finite (fst (snd e)) \<and> dwf_table (args_n args) (fst (snd e))"
+    and cnt: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and ok: "dagg_ok p (args_n args)" and R: "args_R args = {0..<args_n args}"
   shows "ua_rel p (args_n args) (ua_step args p (args_n args) ts0 a) (uw_step args ts0 u)"
-  sorry
+proof -
+  let ?n = "args_n args"
+  obtain ax where a: "a = ((nts, win, rest, len, bend, cc, map (dagg_p p) dn), ax)"
+    and inv: "ag_inv p ?n cc ax"
+    using rel by (auto simp: ua_rel_def u split: prod.splits)
+  note tb = tbw cnt
+  obtain win1 rest1 bend1 cc1 ax1 where
+    aext: "ua_extend args p ?n ts0 win rest bend cc ax = (win1, rest1, bend1, cc1, ax1)"
+    by (cases "ua_extend args p ?n ts0 win rest bend cc ax") auto
+  have ext: "uw_extend args ts0 win rest bend cc = (win1, rest1, bend1, cc1)"
+    by (rule ua_extend_fst4[OF aext])
+  define ex1 where "ex1 = uw_ext (args_ivl args) ts0 bend (linearize rest)"
+  have w1: "linearize win1 = linearize win @ ex1"
+    and c1: "cc1 = fold cnt_add (map (fst \<circ> snd) ex1) cc"
+    using uw_extend_rep[OF refl ext] unfolding ex1_def by blast+
+  have sub1: "set ex1 \<subseteq> set (linearize rest)"
+    using uw_ext_prefix[of "linearize rest" "args_ivl args" ts0 bend] unfolding ex1_def
+    by (metis Un_iff set_append subsetI)
+  have tb1: "\<forall>e \<in> set (linearize win1). finite (fst (snd e)) \<and> dwf_table ?n (fst (snd e))"
+    using tb(1) sub1 unfolding w1 by auto
+  have cnt1: "cnt_inv (map (fst \<circ> snd) (linearize win1)) cc1"
+  proof -
+    have fm: "\<forall>T \<in> set (map (fst \<circ> snd) ex1). finite T" using tb(1) sub1 by auto
+    show ?thesis unfolding w1 c1 using cnt_inv_adds[OF tb(2) fm] by simp
+  qed
+  have S1: "dwf_table ?n (snd cc1)" using cnt_inv_set[OF cnt1] tb1 by auto
+  have inv1: "ag_inv p ?n cc1 ax1"
+    using ua_extend_rep[OF refl aext, of "cnt_of (map (fst \<circ> snd) (linearize win))"]
+      tb(1) tb(2) ok cnt_inv_set[OF tb(2)] inv by auto
+  have res1: "ag_res p ?n cc1 ax1 = dagg_p p (snd cc1)"
+    by (rule ag_res_inv[OF inv1 ok S1])
+  show ?thesis
+  proof (cases "safe_hd win1")
+    case (Pair ho win')
+    show ?thesis
+    proof (cases ho)
+      case None
+      then have "linearize win1 = []" using safe_hd_rep[OF Pair] by (auto split: option.splits)
+      then have e: "snd cc1 = {}" using cnt_inv_set[OF cnt1] by simp
+      show ?thesis
+        using inv1 res1 e
+        by (simp add: ua_rel_def ua_step_def uw_step_def a u aext ext Pair None)
+    next
+      case (Some e)
+      have ne: "linearize win1 \<noteq> []" and hd: "e = hd (linearize win1)"
+        using safe_hd_rep[OF Pair] Some by auto
+      have mem: "e \<in> set (linearize win1)" unfolding hd by (rule hd_in_set[OF ne])
+      have fe: "finite (fst (snd e))" and de: "dwf_table ?n (fst (snd e))"
+        using tb1 mem by auto
+      have inv2: "ag_inv p ?n (cnt_del (fst (snd e)) cc1) (ag_del p ?n (fst (snd e)) cc1 ax1)"
+        by (rule ag_inv_del[OF cnt1 fe ok de S1 inv1])
+      show ?thesis
+        using inv2 res1
+        by (simp add: ua_rel_def ua_step_def uw_step_def Let_def a u aext ext Pair Some)
+    qed
+  qed
+qed
+
+lemma ua_shift_rel_gen:
+  "w = args_n args \<Longrightarrow> ua_rel p w a u \<Longrightarrow> valid_uw args cur u auxlist \<Longrightarrow> cur \<le> nt \<Longrightarrow>
+   dagg_ok p w \<Longrightarrow> args_R args = {0..<w} \<Longrightarrow>
+   ua_rel p w (ua_shift args p w nt a) (uw_shift args nt u)"
+proof (induct args p w nt a arbitrary: u cur auxlist rule: ua_shift.induct)
+  case (1 args p w nt a)
+  obtain nts win rest len bend cc dn where u: "u = (nts, win, rest, len, bend, cc, dn)"
+    by (cases u) auto
+  obtain ax where a: "a = ((nts, win, rest, len, bend, cc, map (dagg_p p) dn), ax)"
+    and inv: "ag_inv p w cc ax"
+    using 1(3) by (auto simp: ua_rel_def u split: prod.splits)
+  note W = 1(2)
+  obtain ho nts' where sh: "safe_hd nts = (ho, nts')" by (cases "safe_hd nts")
+  show ?case
+  proof (cases ho)
+    case None
+    then show ?thesis
+      using inv
+      by (subst ua_shift.simps, subst uw_shift.simps) (simp add: ua_rel_def a u sh)
+  next
+    case (Some ts0)
+    show ?thesis
+    proof (cases "memR (args_ivl args) (nt - ts0) \<or> len = 0")
+      case True
+      then show ?thesis
+        using inv
+        by (subst ua_shift.simps, subst uw_shift.simps) (simp add: ua_rel_def a u sh Some)
+    next
+      case f: False
+      let ?u' = "(nts', win, rest, len, bend, cc, dn)"
+      let ?a' = "((nts', win, rest, len, bend, cc, map (dagg_p p) dn), ax)"
+      have rel': "ua_rel p w ?a' ?u'" using inv by (simp add: ua_rel_def)
+      note tb = valid_uw_tables[OF 1(4)[unfolded u] 1(7)[unfolded W]]
+      have step: "ua_rel p w (ua_step args p w ts0 ?a') (uw_step args ts0 ?u')"
+        unfolding W
+        by (rule ua_step_rel[OF rel'[unfolded W] refl tb(1) tb(2) 1(6)[unfolded W] 1(7)[unfolded W]])
+      have vstep: "valid_uw args nt (uw_step args ts0 ?u') auxlist"
+        using valid_uw_step[OF 1(4)[unfolded u] refl _ sh[unfolded Some] _ 1(5)] f by auto
+      have "ua_rel p w (ua_shift args p w nt (ua_step args p w ts0 ?a'))
+              (uw_shift args nt (uw_step args ts0 ?u'))"
+        by (rule 1(1)) (use u a sh Some f W step vstep 1(6) 1(7) in auto)
+      then show ?thesis
+        by (subst ua_shift.simps, subst uw_shift.simps) (simp add: a u sh Some f)
+    qed
+  qed
+qed
 
 lemma ua_shift_rel:
   assumes "ua_rel p (args_n args) a u" and "valid_uw args cur u auxlist" and "cur \<le> nt"
     and "dagg_ok p (args_n args)" and "args_R args = {0..<args_n args}"
   shows "ua_rel p (args_n args) (ua_shift args p (args_n args) nt a) (uw_shift args nt u)"
-  sorry
+  by (rule ua_shift_rel_gen[OF refl assms])
+
+text \<open>The two entry points.  Both shift first, and the relation is preserved by everything they
+  do afterwards: appending to the queues touches neither the count set, nor the aggregate, nor
+  the finished answers, and handing the answers over reverses a list the relation maps
+  pointwise.\<close>
 
 lemma valid_ua_add_new:
   assumes v: "valid_ua args p cur a auxlist"
@@ -251,14 +386,61 @@ lemma valid_ua_add_new:
     and inz: "memL (args_ivl args) 0" and cn: "cur \<le> nt"
   shows "valid_ua args p nt (ua_add_new args p (args_n args) X rel2 nt a)
            (update_until args rel1 rel2 nt auxlist)"
-  sorry
+proof -
+  let ?n = "args_n args"
+  obtain u where rel: "ua_rel p ?n a u" and vu: "valid_uw args cur u auxlist"
+    and R: "args_R args = {0..<?n}" and ok: "dagg_ok p ?n"
+    using v by (auto simp: valid_ua_def)
+  have rs: "ua_rel p ?n (ua_shift args p ?n nt a) (uw_shift args nt u)"
+    by (rule ua_shift_rel[OF rel vu cn ok R])
+  obtain nts win rest len bend cc dn where s: "uw_shift args nt u = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uw_shift args nt u") auto
+  obtain ax where as: "ua_shift args p ?n nt a
+      = ((nts, win, rest, len, bend, cc, map (dagg_p p) dn), ax)" and inv: "ag_inv p ?n cc ax"
+    using rs by (auto simp: ua_rel_def s split: prod.splits)
+  have "ua_rel p ?n (ua_add_new args p ?n X rel2 nt a) (uw_add_new args X rel2 nt u)"
+    using inv by (simp add: ua_rel_def ua_add_new_def uw_add_new_def as s Let_def)
+  then show ?thesis
+    unfolding valid_ua_def
+    using valid_uw_add_new[OF vu t1 X t2 f2 inz cn] R ok by blast
+qed
 
 lemma valid_ua_eval:
   assumes v: "valid_ua args p cur a auxlist" and cn: "cur \<le> nt"
     and ev: "ua_eval args p (args_n args) nt a = (res, a')"
     and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
   shows "valid_ua args p cur a' auxlist' \<and> res = map (dagg_p p) res'"
-  sorry
+proof -
+  let ?n = "args_n args"
+  obtain u where rel: "ua_rel p ?n a u" and vu: "valid_uw args cur u auxlist"
+    and R: "args_R args = {0..<?n}" and ok: "dagg_ok p ?n"
+    using v by (auto simp: valid_ua_def)
+  have rs: "ua_rel p ?n (ua_shift args p ?n nt a) (uw_shift args nt u)"
+    by (rule ua_shift_rel[OF rel vu cn ok R])
+  obtain nts win rest len bend cc dn where s: "uw_shift args nt u = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uw_shift args nt u") auto
+  obtain ax where as: "ua_shift args p ?n nt a
+      = ((nts, win, rest, len, bend, cc, map (dagg_p p) dn), ax)" and inv: "ag_inv p ?n cc ax"
+    using rs by (auto simp: ua_rel_def s split: prod.splits)
+  obtain u' where uev: "uw_eval args nt u = (rev dn, u')"
+    and u': "u' = (nts, win, rest, len, bend, cc, [])"
+    by (simp add: uw_eval_def s)
+  have aev: "ua_eval args p ?n nt a = (rev (map (dagg_p p) dn), ((nts, win, rest, len, bend, cc, []), ax))"
+    by (simp add: ua_eval_def as)
+  have vres: "valid_uw args cur u' auxlist' \<and> rev dn = res'"
+    by (rule valid_uw_eval[OF vu cn uev eu])
+  have rel': "ua_rel p ?n ((nts, win, rest, len, bend, cc, []), ax) u'"
+    using inv by (simp add: ua_rel_def u')
+  have a'eq: "a' = ((nts, win, rest, len, bend, cc, []), ax)"
+    and reseq: "res = rev (map (dagg_p p) dn)"
+    using ev[unfolded aev] by auto
+  show ?thesis
+  proof
+    show "valid_ua args p cur a' auxlist'"
+      unfolding valid_ua_def a'eq using rel' vres R ok by blast
+    show "res = map (dagg_p p) res'" using vres unfolding reseq by (simp add: rev_map)
+  qed
+qed
 
 (*<*)
 end
