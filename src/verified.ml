@@ -2781,7 +2781,7 @@ type uduaux_x =
              ((nat * ((event_data list) set * bool)) queue *
                (nat *
                  (bool *
-                   ((((event_data list), nat) mapping * (event_data list) set) *
+                   (((event_data list), nat) mapping *
                      (event_data list) set list)))))) *
           aggaux option);;
 
@@ -2810,7 +2810,7 @@ type udsaux_x =
         ((nat *
            ((nat * (event_data list) set) queue *
              ((nat * (event_data list) set) queue *
-               (((event_data list), nat) mapping * (event_data list) set)))) *
+               ((event_data list), nat) mapping))) *
           aggaux option);;
 
 type 'a aggargs_ext =
@@ -11619,28 +11619,36 @@ let rec ugmr
 let rec uqok
   q = (match q with None -> (fun _ -> true) | Some a -> ueval_constraint a);;
 
+let rec uuwm_init
+  args =
+    (empty_queue,
+      (empty_queue, (empty_queue, (zero_nata, (true, (edl_mempty_nat, []))))));;
+
+let rec uua_init args p = (uuwm_init args, ag_init p (args_n args));;
+
+let rec udux_init_agg args p = UDUX_wagg (p, uua_init args p);;
+
+let rec usw_init
+  args = (zero_nata, (empty_queue, (empty_queue, edl_mempty_nat)));;
+
+let rec usa_init args p = (usw_init args, ag_init p (args_n args));;
+
+let rec udsx_init_agg args p q = UDSX_wagg (p, q, usa_init args p);;
+
 let rec uuw_init
   args =
     (empty_queue,
       (empty_queue,
         (empty_queue, (zero_nata, (true, ((edl_mempty_nat, edl_bot), []))))));;
 
-let rec uua_init args p = (uuw_init args, ag_init p (args_n args));;
-
-let rec udux_init_agg args p = UDUX_wagg (p, uua_init args p);;
-
-let rec de_gsw_init
-  args = (zero_nata, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))));;
-
-let rec usa_init args p = (de_gsw_init args, ag_init p (args_n args));;
-
-let rec udsx_init_agg args p q = UDSX_wagg (p, q, usa_init args p);;
-
 let rec udux_init
   args =
     (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat) (args_L args) &&
           memL (args_ivl args) zero_nata
       then UDUX_win (uuw_init args) else UDUX_gen (de_ginit_dq args));;
+
+let rec de_gsw_init
+  args = (zero_nata, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))));;
 
 let rec udsx_init
   args msk =
@@ -12113,6 +12121,12 @@ let rec de_gsw_add_new_table
         then (t, (pend, (append_queue (t, x) win, de_gcnt_add x cc)))
         else (t, (append_queue (t, x) pend, (win, cc)))));;
 
+let rec ucnt_add1
+  t c = (match edl_lookup_nat c t with None -> edl_update_nat t one_nata c
+          | Some k -> edl_update_nat t (plus_nata k one_nata) c);;
+
+let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
+
 let ed_fold_cfc_agg5_v :
   ((((event_data option) list),
      (bool * (((event_data option) list), list_aux) mapping))
@@ -12345,15 +12359,17 @@ let rec de_udtabw n cs d = edl_image_to_wide (udwiden (wide_mask n cs)) d;;
 
 let rec udagg_wide p w d = de_udtabw (suc w) (dagg_ccols p w) d;;
 
+let rec ucnt_enter t c = edl_filter (fun x -> is_none (edl_lookup_nat c x)) t;;
+
 let rec uag_ins
-  p w t cc ax =
-    insert_maggauxa (dagg_args p w) (udagg_wide p w (edl_minus t (snd cc))) ax;;
+  p w t c ax =
+    insert_maggauxa (dagg_args p w) (udagg_wide p w (ucnt_enter t c)) ax;;
 
 let rec usa_add_new_table
   args p x aux =
     (let ((t, (pend, (win, cc))), ax) = aux in
       (if memL (args_ivl args) zero_nata
-        then ((t, (pend, (append_queue (t, x) win, de_gcnt_add x cc))),
+        then ((t, (pend, (append_queue (t, x) win, ucnt_add x cc))),
                uag_ins p (args_n args) x cc ax)
         else ((t, (append_queue (t, x) pend, (win, cc))), ax)));;
 
@@ -12400,6 +12416,14 @@ let rec de_gsw_add_new_ts
      let (penda, (wina, cca)) = de_gsw_move args nt pend win cc in
      let (winb, ccb) = de_gsw_expire args nt wina cca in
       (nt, (penda, (winb, ccb))));;
+
+let rec ucnt_del1
+  t c = (match edl_lookup_nat c t with None -> c
+          | Some k ->
+            (if less_eq_nat k one_nata then edl_delete_nat t c
+              else edl_update_nat t (minus_nata k one_nata) c));;
+
+let rec ucnt_del t c = fold ucnt_del1 (edl_csl t) c;;
 
 let rec ed_rbtc_del
   x xa1 = match x, xa1 with x, Empty -> Empty
@@ -12554,22 +12578,22 @@ let rec delete_maggauxa
         (match delete_maggaux args x aux with (true, auxa) -> Some auxa
           | (false, _) -> None);;
 
-let rec uag_del
-  p w t cc ax =
-    delete_maggauxa (dagg_args p w)
-      (udagg_wide p w
-        (edl_filter
+let rec ucnt_leave
+  t c = edl_filter
           (fun x ->
-            equal_optiona equal_nat (edl_lookup_nat (fst cc) x) (Some one_nata))
-          t))
-      ax;;
+            equal_optiona equal_nat (edl_lookup_nat c x) (Some one_nata))
+          t;;
+
+let rec uag_del
+  p w t c ax =
+    delete_maggauxa (dagg_args p w) (udagg_wide p w (ucnt_leave t c)) ax;;
 
 let rec usa_expire
   args p nt win cc ax =
     (match safe_hd win with (None, wina) -> (wina, (cc, ax))
       | (Some e, wina) ->
         (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, (cc, ax))
-          else usa_expire args p nt (tl_queue wina) (de_gcnt_del (snd e) cc)
+          else usa_expire args p nt (tl_queue wina) (ucnt_del (snd e) cc)
                  (uag_del p (args_n args) (snd e) cc ax)));;
 
 let rec usa_move
@@ -12579,7 +12603,7 @@ let rec usa_move
         (if memL (args_ivl args) (minus_nata nt (fst e))
           then (if memR (args_ivl args) (minus_nata nt (fst e))
                  then usa_move args p nt (tl_queue penda) (append_queue e win)
-                        (de_gcnt_add (snd e) cc)
+                        (ucnt_add (snd e) cc)
                         (uag_ins p (args_n args) (snd e) cc ax)
                  else usa_move args p nt (tl_queue penda) win cc ax)
           else (penda, (win, (cc, ax)))));;
@@ -12817,8 +12841,8 @@ let rec ures_maggaux
 let rec udagg_p (g0, (omega, (f, (k, pos)))) = uagg g0 omega f k pos;;
 
 let rec uag_res
-  q p w cc ax =
-    (match ax with None -> ufilt q (udagg_p p (snd cc))
+  q p w c ax =
+    (match ax with None -> ufilt q (udagg_p p (unbox edl_keys_nat_v c))
       | Some a ->
         (let args = dagg_args p w in
          let msk = wide_mask (aggargs_n args) (upt zero_nata (aggargs_n args))
@@ -12842,10 +12866,17 @@ let rec de_gsw_join
         then aux
         else (t, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))))));;
 
+let rec usw_join
+  args x aux =
+    (let (t, (_, (_, _))) = aux in
+      (if (if args_pos args then not (unbox edl_is_empty_v x)
+            else unbox edl_is_empty_v x)
+        then aux else (t, (empty_queue, (empty_queue, edl_mempty_nat)))));;
+
 let rec usa_join
   args p x aux =
     (let (w, ax) = aux in
-      (de_gsw_join args x w,
+      (usw_join args x w,
         (if (if args_pos args then not (unbox edl_is_empty_v x)
               else unbox edl_is_empty_v x)
           then ax else ag_init p (args_n args))));;
@@ -12936,7 +12967,7 @@ let rec uua_extend
                (if memR (args_ivl args) (minus_nata (fst e) ts0)
                  then uua_extend args p w ts0 (append_queue e win)
                         (tl_queue resta) (snd (snd e))
-                        (de_gcnt_add (fst (snd e)) cc)
+                        (ucnt_add (fst (snd e)) cc)
                         (uag_ins p w (fst (snd e)) cc ax)
                  else (win, (resta, (bend, (cc, ax)))))));;
 
@@ -12956,7 +12987,7 @@ let rec uua_step
         | (Some e, winb) ->
           (let winc = tl_queue winb in
            let r = uag_res None p w cca axa in
-           let ccaa = de_gcnt_del (fst (snd e)) cca in
+           let ccaa = ucnt_del (fst (snd e)) cca in
            let axb = uag_del p w (fst (snd e)) cca axa in
            let bendb = (if is_emptya winc then true else benda) in
             ((tl_queue nts,

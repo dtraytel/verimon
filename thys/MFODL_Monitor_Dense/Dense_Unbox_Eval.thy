@@ -754,14 +754,95 @@ fun udagg_p :: "daggp \<Rightarrow> event_data list set \<Rightarrow> event_data
 lemma udagg_p_eq: "reopt_table (udagg_p p X) = dagg_p p (reopt_table X)"
   by (cases p) (simp add: dagg_def)
 
-definition uag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data gcntset \<Rightarrow>
-    aggaux option \<Rightarrow> aggaux option" where
-  "uag_ins p w T cc ax = insert_maggaux' (dagg_args p w) (udagg_wide p w (T - snd cc)) ax"
+text \<open>
+  The count structure of @{theory MFODL_Monitor_Dense.Dense_Evt} keeps the tuples' counts in a
+  mapping and their keys in a set beside it, so that the plain window can hand out its union in
+  one step.  The fused window never hands out that union -- it hands out the aggregate, and reads
+  the count structure only to learn which tuples enter the window and which leave it.  The
+  mapping answers both, so the fused window keeps the mapping alone and pays one tree operation
+  per tuple where the plain window pays two.  @{text ucc} reads the count structure off it: the
+  key set is the mapping's domain, which is what the plain window's second half always was.
+\<close>
 
-definition uag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data gcntset \<Rightarrow>
+type_synonym ucnt = "(event_data list, nat) mapping"
+
+definition ucnt_add1 :: "event_data list \<Rightarrow> ucnt \<Rightarrow> ucnt" where
+  "ucnt_add1 t c = (case Mapping.lookup c t of
+     None \<Rightarrow> Mapping.update t 1 c
+   | Some k \<Rightarrow> Mapping.update t (k + 1) c)"
+
+definition ucnt_del1 :: "event_data list \<Rightarrow> ucnt \<Rightarrow> ucnt" where
+  "ucnt_del1 t c = (case Mapping.lookup c t of
+     None \<Rightarrow> c
+   | Some k \<Rightarrow> (if k \<le> 1 then Mapping.delete t c else Mapping.update t (k - 1) c))"
+
+definition ucnt_add :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> ucnt" where
+  "ucnt_add T c = fold ucnt_add1 (csl T) c"
+
+definition ucnt_del :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> ucnt" where
+  "ucnt_del T c = fold ucnt_del1 (csl T) c"
+
+fun ucc :: "ucnt \<Rightarrow> event_data gcntset" where
+  "ucc c = (c, Mapping.keys c)"
+
+declare ucc.simps[simp del]
+
+lemma lookup_None_keys: "(Mapping.lookup c t = None) = (t \<notin> Mapping.keys c)"
+  by (simp add: Mapping.keys_dom_lookup domIff)
+
+lemma gcnt_add1_ucc: "gcnt_add1 t (ucc c) = ucc (ucnt_add1 t c)"
+proof (cases "Mapping.lookup c t")
+  case None
+  then show ?thesis by (simp add: gcnt_add1_def ucnt_add1_def ucc.simps)
+next
+  case (Some k)
+  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
+  with Some show ?thesis by (simp add: gcnt_add1_def ucnt_add1_def ucc.simps insert_absorb)
+qed
+
+lemma gcnt_del1_ucc: "gcnt_del1 t (ucc c) = ucc (ucnt_del1 t c)"
+proof (cases "Mapping.lookup c t")
+  case None
+  then show ?thesis by (simp add: gcnt_del1_def ucnt_del1_def ucc.simps)
+next
+  case (Some k)
+  have "t \<in> Mapping.keys c" using Some lookup_None_keys[of c t] by simp
+  with Some show ?thesis
+    by (simp add: gcnt_del1_def ucnt_del1_def ucc.simps insert_absorb)
+qed
+
+lemma fold_gcnt_add1_ucc: "fold gcnt_add1 xs (ucc c) = ucc (fold ucnt_add1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: gcnt_add1_ucc)
+
+lemma fold_gcnt_del1_ucc: "fold gcnt_del1 xs (ucc c) = ucc (fold ucnt_del1 xs c)"
+  by (induct xs arbitrary: c) (simp_all add: gcnt_del1_ucc)
+
+lemma gcnt_add_ucc[simp]: "gcnt_add T (ucc c) = ucc (ucnt_add T c)"
+  by (simp add: gcnt_add_def ucnt_add_def fold_gcnt_add1_ucc)
+
+lemma gcnt_del_ucc[simp]: "gcnt_del T (ucc c) = ucc (ucnt_del T c)"
+  by (simp add: gcnt_del_def ucnt_del_def fold_gcnt_del1_ucc)
+
+text \<open>What enters the window is what the mapping does not hold yet, and what leaves it is what
+  it holds exactly once: both are read off the mapping, one lookup per tuple.\<close>
+
+definition ucnt_enter :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> event_data list set" where
+  "ucnt_enter T c = Set.filter (\<lambda>x. Mapping.lookup c x = None) T"
+
+definition ucnt_leave :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> event_data list set" where
+  "ucnt_leave T c = Set.filter (\<lambda>x. Mapping.lookup c x = Some 1) T"
+
+lemma ucnt_enter_ucc: "ucnt_enter T c = T - snd (ucc c)"
+  by (auto simp: ucnt_enter_def ucc.simps lookup_None_keys)
+
+definition uag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
     aggaux option \<Rightarrow> aggaux option" where
-  "uag_del p w T cc ax = delete_maggaux' (dagg_args p w)
-     (udagg_wide p w (Set.filter (\<lambda>x. Mapping.lookup (fst cc) x = Some 1) T)) ax"
+  "uag_ins p w T c ax = insert_maggaux' (dagg_args p w) (udagg_wide p w (ucnt_enter T c)) ax"
+
+definition uag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
+    aggaux option \<Rightarrow> aggaux option" where
+  "uag_del p w T c ax = delete_maggaux' (dagg_args p w)
+     (udagg_wide p w (ucnt_leave T c)) ax"
 
 text \<open>
   The kernel's aggregation structure answers with a table of the node's frame, one tuple per
@@ -902,10 +983,10 @@ lemma ures_maggaux_code[code]:
   by (cases args) (simp add: ures_maggaux_def ugmr_def Let_def
       split: aggaux.splits Formula.agg_type.splits)
 
-definition uag_res :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset \<Rightarrow>
+definition uag_res :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ucnt \<Rightarrow>
     aggaux option \<Rightarrow> event_data list set" where
-  "uag_res q p w cc ax = ufilt q (case ax of
-     None \<Rightarrow> udagg_p p (snd cc)
+  "uag_res q p w c ax = ufilt q (case ax of
+     None \<Rightarrow> udagg_p p (Mapping.keys c)
    | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
 
 text \<open>The result is read off the kernel's structure in one pass: the projection to the node's
@@ -913,41 +994,37 @@ text \<open>The result is read off the kernel's structure in one pass: the proje
   kernel's own read.\<close>
 
 lemma uag_res_code[code]:
-  "uag_res q p w cc ax = (case ax of
-     None \<Rightarrow> ufilt q (udagg_p p (snd cc))
+  "uag_res q p w c ax = (case ax of
+     None \<Rightarrow> ufilt q (udagg_p p (Mapping.keys c))
    | Some a \<Rightarrow> (let args = dagg_args p w; msk = wide_mask (aggargs_n args) [0..<aggargs_n args]
        in ures_maggaux (uqok q) (\<lambda>x. deopt (dproj msk x)) args a))"
   by (simp add: uag_res_def ures_maggaux_def ufilt_def deopt_table_def dtabc_def image_image
       Let_def split: option.splits)
 
-lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc cc) ax = uag_ins p w T cc ax"
-  by (cases cc) (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps udagg_wide_eq)
+lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc (ucc c)) ax = uag_ins p w T c ax"
+  by (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps ucc.simps udagg_wide_eq
+      ucnt_enter_ucc ucc.simps)
 
-lemma ag_del_rcc[simp]: "ag_del p w (reopt_table T) (rcc cc) ax = uag_del p w T cc ax"
+lemma ag_del_rcc[simp]: "ag_del p w (reopt_table T) (rcc (ucc c)) ax = uag_del p w T c ax"
 proof -
-  obtain c s where cc: "cc = (c, s)" by (cases cc)
-  have "cnt_leave (reopt_table T) (rcc cc)
-      = reopt_table (Set.filter (\<lambda>x. Mapping.lookup c x = Some 1) T)"
-    unfolding cc cnt_leave_def rcc.simps by (auto simp: reopt_table_def)
-  then show ?thesis by (simp add: uag_del_def ag_del_def cc udagg_wide_eq)
+  have "cnt_leave (reopt_table T) (rcc (ucc c)) = reopt_table (ucnt_leave T c)"
+    unfolding cnt_leave_def rcc.simps ucc.simps ucnt_leave_def by (auto simp: reopt_table_def)
+  then show ?thesis by (simp add: uag_del_def ag_del_def udagg_wide_eq)
 qed
 
-lemma ag_res_rcc: "dfilt q (ag_res p w (rcc cc) ax) = reopt_table (uag_res q p w cc ax)"
-proof (cases cc)
-  case (Pair c S)
-  show ?thesis
-  proof (cases ax)
-    case None
-    show ?thesis unfolding Pair None
-      by (simp add: uag_res_def ag_res_def rcc.simps udagg_p_eq[symmetric] dfilt_reopt_table)
-  next
-    case (Some a)
-    show ?thesis unfolding Pair Some
-      by (simp add: uag_res_def ag_res_def rcc.simps dsan_def dfilt_reopt_table)
-  qed
+lemma ag_res_rcc: "dfilt q (ag_res p w (rcc (ucc c)) ax) = reopt_table (uag_res q p w c ax)"
+proof (cases ax)
+  case None
+  show ?thesis unfolding None
+    by (simp add: uag_res_def ag_res_def rcc.simps ucc.simps udagg_p_eq[symmetric]
+        dfilt_reopt_table)
+next
+  case (Some a)
+  show ?thesis unfolding Some
+    by (simp add: uag_res_def ag_res_def rcc.simps ucc.simps dsan_def dfilt_reopt_table)
 qed
 
-lemma ag_res_rcc_None[simp]: "ag_res p w (rcc cc) ax = reopt_table (uag_res None p w cc ax)"
+lemma ag_res_rcc_None[simp]: "ag_res p w (rcc (ucc c)) ax = reopt_table (uag_res None p w c ax)"
   using ag_res_rcc[of None] by simp
 
 lemma cnt_add_rcc[simp]: "cnt_add (reopt_table T) (rcc cc) = rcc (gcnt_add T cc)"
@@ -956,19 +1033,22 @@ lemma cnt_add_rcc[simp]: "cnt_add (reopt_table T) (rcc cc) = rcc (gcnt_add T cc)
 lemma cnt_del_rcc[simp]: "cnt_del (reopt_table T) (rcc cc) = rcc (gcnt_del T cc)"
   by (simp add: gcnt_del_eq[symmetric])
 
-type_synonym uswagg = "event_data gswaux \<times> aggaux option"
+type_synonym uswaux =
+  "ts \<times> (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue \<times> ucnt"
+
+type_synonym uswagg = "uswaux \<times> aggaux option"
 
 function usa_move :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
-    (ts \<times> event_data list set) queue \<Rightarrow> event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<Rightarrow> ucnt \<Rightarrow> aggaux option \<Rightarrow>
     (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue \<times>
-    event_data gcntset \<times> aggaux option" where
+    ucnt \<times> aggaux option" where
   "usa_move args p nt pend win cc ax =
      (case safe_hd pend of
         (None, pend') \<Rightarrow> (pend', win, cc, ax)
       | (Some e, pend') \<Rightarrow>
         (if memL (args_ivl args) (nt - fst e)
          then (if memR (args_ivl args) (nt - fst e)
-               then usa_move args p nt (tl_queue pend') (append_queue e win) (gcnt_add (snd e) cc)
+               then usa_move args p nt (tl_queue pend') (append_queue e win) (ucnt_add (snd e) cc)
                       (uag_ins p (args_n args) (snd e) cc ax)
                else usa_move args p nt (tl_queue pend') win cc ax)
          else (pend', win, cc, ax)))"
@@ -981,14 +1061,14 @@ termination
 declare usa_move.simps[simp del]
 
 function usa_expire :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
-    event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
-    (ts \<times> event_data list set) queue \<times> event_data gcntset \<times> aggaux option" where
+    ucnt \<Rightarrow> aggaux option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<times> ucnt \<times> aggaux option" where
   "usa_expire args p nt win cc ax =
      (case safe_hd win of
         (None, win') \<Rightarrow> (win', cc, ax)
       | (Some e, win') \<Rightarrow>
         (if memR (args_ivl args) (nt - fst e) then (win', cc, ax)
-         else usa_expire args p nt (tl_queue win') (gcnt_del (snd e) cc)
+         else usa_expire args p nt (tl_queue win') (ucnt_del (snd e) cc)
                 (uag_del p (args_n args) (snd e) cc ax)))"
   by pat_completeness auto
 termination
@@ -998,8 +1078,16 @@ termination
 
 declare usa_expire.simps[simp del]
 
+definition usw_init :: "args \<Rightarrow> uswaux" where
+  "usw_init args = (0, empty_queue, empty_queue, Mapping.empty)"
+
+definition usw_join :: "args \<Rightarrow> event_data list set \<Rightarrow> uswaux \<Rightarrow> uswaux" where
+  "usw_join args X aux = (case aux of (t, pend, win, cc) \<Rightarrow>
+     (if (if args_pos args then \<not> Set.is_empty X else Set.is_empty X) then aux
+      else (t, empty_queue, empty_queue, Mapping.empty)))"
+
 definition usa_init :: "args \<Rightarrow> daggp \<Rightarrow> uswagg" where
-  "usa_init args p = (gsw_init args, ag_init p (args_n args))"
+  "usa_init args p = (usw_init args, ag_init p (args_n args))"
 
 definition usa_add_new_ts :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> uswagg \<Rightarrow> uswagg" where
   "usa_add_new_ts args p nt aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow>
@@ -1009,14 +1097,14 @@ definition usa_add_new_ts :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Righta
 
 definition usa_join :: "args \<Rightarrow> daggp \<Rightarrow> event_data list set \<Rightarrow> uswagg \<Rightarrow> uswagg" where
   "usa_join args p X aux = (case aux of (w, ax) \<Rightarrow>
-     (gsw_join args X w,
+     (usw_join args X w,
       if (if args_pos args then \<not> Set.is_empty X else Set.is_empty X) then ax
       else ag_init p (args_n args)))"
 
 definition usa_add_new_table :: "args \<Rightarrow> daggp \<Rightarrow> event_data list set \<Rightarrow> uswagg \<Rightarrow> uswagg" where
   "usa_add_new_table args p X aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow>
      (if memL (args_ivl args) 0
-      then ((t, pend, append_queue (t, X) win, gcnt_add X cc), uag_ins p (args_n args) X cc ax)
+      then ((t, pend, append_queue (t, X) win, ucnt_add X cc), uag_ins p (args_n args) X cc ax)
       else ((t, append_queue (t, X) pend, win, cc), ax)))"
 
 definition usa_result :: "uconstr option \<Rightarrow> args \<Rightarrow> daggp \<Rightarrow> uswagg \<Rightarrow> event_data list set" where
@@ -1025,15 +1113,24 @@ definition usa_result :: "uconstr option \<Rightarrow> args \<Rightarrow> daggp 
 
 text \<open>Its naturality, against the boxed window of the verified evaluator.\<close>
 
-fun rsa :: "uswagg \<Rightarrow> swagg" where
-  "rsa (w, ax) = (rsw w, ax)"
+fun usw :: "uswaux \<Rightarrow> event_data gswaux" where
+  "usw (t, pend, win, cc) = (t, pend, win, ucc cc)"
 
-declare rsa.simps[simp del]
+fun rsa :: "uswagg \<Rightarrow> swagg" where
+  "rsa (w, ax) = (rsw (usw w), ax)"
+
+declare usw.simps[simp del] rsa.simps[simp del]
+
+lemma usw_init_ucc: "gsw_init args = usw (usw_init args)"
+  by (simp add: gsw_init_def usw_init_def usw.simps ucc.simps)
+
+lemma usw_join_ucc: "gsw_join args X (usw w) = usw (usw_join args X w)"
+  by (cases w) (simp add: gsw_join_def usw_join_def usw.simps ucc.simps)
 
 lemma sa_move_rsa:
-  "sa_move args p nt (rq pend) (rq win) (rcc cc) ax
+  "sa_move args p nt (rq pend) (rq win) (rcc (ucc cc)) ax
    = (case usa_move args p nt pend win cc ax of
-        (pend', win', cc', ax') \<Rightarrow> (rq pend', rq win', rcc cc', ax'))"
+        (pend', win', cc', ax') \<Rightarrow> (rq pend', rq win', rcc (ucc cc'), ax'))"
 proof (induct args p nt pend win cc ax rule: usa_move.induct)
   case (1 args p nt pend win cc ax)
   obtain h pend' where sh: "safe_hd pend = (h, pend')" by (cases "safe_hd pend")
@@ -1052,8 +1149,8 @@ proof (induct args p nt pend win cc ax rule: usa_move.induct)
 qed
 
 lemma sa_expire_rsa:
-  "sa_expire args p nt (rq win) (rcc cc) ax
-   = (case usa_expire args p nt win cc ax of (win', cc', ax') \<Rightarrow> (rq win', rcc cc', ax'))"
+  "sa_expire args p nt (rq win) (rcc (ucc cc)) ax
+   = (case usa_expire args p nt win cc ax of (win', cc', ax') \<Rightarrow> (rq win', rcc (ucc cc'), ax'))"
 proof (induct args p nt win cc ax rule: usa_expire.induct)
   case (1 args p nt win cc ax)
   obtain h win' where sh: "safe_hd win = (h, win')" by (cases "safe_hd win")
@@ -1072,7 +1169,8 @@ proof (induct args p nt win cc ax rule: usa_expire.induct)
 qed
 
 lemma sa_init_rsa: "sa_init args p = rsa (usa_init args p)"
-  by (simp add: sa_init_def usa_init_def rsa.simps gsw_init_rsw[symmetric] gsw_init_eq)
+  by (simp add: sa_init_def usa_init_def rsa.simps usw_init_ucc[symmetric]
+      gsw_init_rsw[symmetric] gsw_init_eq)
 
 lemma sa_add_new_ts_rsa: "sa_add_new_ts args p nt (rsa aux) = rsa (usa_add_new_ts args p nt aux)"
 proof -
@@ -1082,18 +1180,20 @@ proof -
   obtain win'' cc'' ax'' where e: "usa_expire args p nt win' cc' ax' = (win'', cc'', ax'')"
     by (metis prod_cases3)
   show ?thesis unfolding aux
-    by (simp add: sa_add_new_ts_def usa_add_new_ts_def rsa.simps rsw.simps sa_move_rsa sa_expire_rsa m e)
+    by (simp add: sa_add_new_ts_def usa_add_new_ts_def rsa.simps rsw.simps usw.simps
+        sa_move_rsa sa_expire_rsa m e)
 qed
 
 lemma sa_join_rsa: "sa_join args p (reopt_table X) (rsa aux) = rsa (usa_join args p X aux)"
-  by (cases aux) (simp add: sa_join_def usa_join_def rsa.simps gsw_join_rsw[symmetric] gsw_join_eq)
+  by (cases aux) (simp add: sa_join_def usa_join_def rsa.simps usw_join_ucc[symmetric]
+      gsw_join_rsw[symmetric] gsw_join_eq)
 
 lemma sa_add_new_table_rsa:
   "sa_add_new_table args p (reopt_table X) (rsa aux) = rsa (usa_add_new_table args p X aux)"
 proof -
   obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
   show ?thesis unfolding aux
-    by (simp add: sa_add_new_table_def usa_add_new_table_def rsa.simps rsw.simps)
+    by (simp add: sa_add_new_table_def usa_add_new_table_def rsa.simps rsw.simps usw.simps)
 qed
 
 lemma sa_result_rsa:
@@ -1101,7 +1201,7 @@ lemma sa_result_rsa:
 proof -
   obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
   show ?thesis unfolding aux
-    by (simp add: sa_result_def usa_result_def rsa.simps rsw.simps ag_res_rcc
+    by (simp add: sa_result_def usa_result_def rsa.simps rsw.simps usw.simps ag_res_rcc
         del: ag_res_rcc_None)
 qed
 

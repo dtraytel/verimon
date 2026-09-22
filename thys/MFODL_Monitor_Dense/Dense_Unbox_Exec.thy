@@ -172,7 +172,7 @@ qed
 lemma dux_length_rdux: "dux_length args (rdux d) = udux_length args d"
   by (cases d)
     (simp_all add: glength_dq_rmuaux uw_length_ruw rdux.simps rua.simps
-      ua_length_def uua_length_def)
+      ua_length_def uua_length_def uuwm_length_ucc)
 
 subsection \<open>The buffers\<close>
 

@@ -15,11 +15,34 @@ text \<open>
   @{const valid_ua}.
 \<close>
 
-type_synonym uuwagg = "uuwaux \<times> aggaux option"
+text \<open>The window keeps the count structure without its key set, as the fused Since window does:
+  it reports the aggregate rather than the union, so the mapping answers everything it asks.\<close>
+
+type_synonym uuwauxm = "ts queue \<times> uuw_entry queue \<times> uuw_entry queue \<times> nat \<times> bool \<times>
+  ucnt \<times> event_data list set list"
+
+type_synonym uuwagg = "uuwauxm \<times> aggaux option"
+
+definition uuwm_init :: "args \<Rightarrow> uuwauxm" where
+  "uuwm_init args = (empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, [])"
+
+definition uuwm_length :: "args \<Rightarrow> uuwauxm \<Rightarrow> nat" where
+  "uuwm_length args aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow> length dn + len)"
+
+fun uuwm :: "uuwauxm \<Rightarrow> uuwaux" where
+  "uuwm (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, ucc cc, dn)"
+
+declare uuwm.simps[simp del]
+
+lemma uuwm_init_ucc: "uuw_init args = uuwm (uuwm_init args)"
+  by (simp add: uuw_init_def uuwm_init_def uuwm.simps ucc.simps)
+
+lemma uuwm_length_ucc: "uuw_length args (uuwm w) = uuwm_length args w"
+  by (cases w) (simp add: uuw_length_def uuwm_length_def uuwm.simps)
 
 function uua_extend :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uuw_entry queue \<Rightarrow> uuw_entry queue \<Rightarrow> bool \<Rightarrow>
-    event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
-    uuw_entry queue \<times> uuw_entry queue \<times> bool \<times> event_data gcntset \<times> aggaux option" where
+    ucnt \<Rightarrow> aggaux option \<Rightarrow>
+    uuw_entry queue \<times> uuw_entry queue \<times> bool \<times> ucnt \<times> aggaux option" where
   "uua_extend args p w ts0 win rest bend cc ax =
      (if \<not> bend then (win, rest, bend, cc, ax)
       else (case safe_hd rest of
@@ -27,7 +50,7 @@ function uua_extend :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow>
             | (Some e, rest') \<Rightarrow>
                 (if memR (args_ivl args) (fst e - ts0)
                  then uua_extend args p w ts0 (append_queue e win) (tl_queue rest')
-                        (snd (snd e)) (gcnt_add (fst (snd e)) cc)
+                        (snd (snd e)) (ucnt_add (fst (snd e)) cc)
                         (uag_ins p w (fst (snd e)) cc ax)
                  else (win, rest', bend, cc, ax))))"
   by pat_completeness auto
@@ -39,10 +62,10 @@ termination
 declare uua_extend.simps[simp del]
 
 definition uua_init :: "args \<Rightarrow> daggp \<Rightarrow> uuwagg" where
-  "uua_init args p = (uuw_init args, ag_init p (args_n args))"
+  "uua_init args p = (uuwm_init args, ag_init p (args_n args))"
 
 definition uua_length :: "args \<Rightarrow> uuwagg \<Rightarrow> nat" where
-  "uua_length args a = uuw_length args (fst a)"
+  "uua_length args a = uuwm_length args (fst a)"
 
 definition uua_step :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uuwagg \<Rightarrow> uuwagg" where
   "uua_step args p w ts0 a = (case a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
@@ -53,7 +76,7 @@ definition uua_step :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow>
          | (Some e, win') \<Rightarrow>
            (let win'' = tl_queue win';
                 r = uag_res None p w cc ax;
-                cc' = gcnt_del (fst (snd e)) cc;
+                cc' = ucnt_del (fst (snd e)) cc;
                 ax' = uag_del p w (fst (snd e)) cc ax;
                 bend' = (if Queue.is_empty win'' then True else bend)
             in ((tl_queue nts, win'', rest, len - 1, bend', cc', r # dn), ax')))))"
@@ -90,20 +113,20 @@ definition uua_eval :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow>
 subsection \<open>Its naturality\<close>
 
 fun rua :: "uuwagg \<Rightarrow> uwagg" where
-  "rua (w, ax) = (ruw w, ax)"
+  "rua (w, ax) = (ruw (uuwm w), ax)"
 
 declare rua.simps[simp del]
 
-lemma fst_rua[simp]: "fst (rua a) = ruw (fst a)"
+lemma fst_rua[simp]: "fst (rua a) = ruw (uuwm (fst a))"
   by (cases a) (simp add: rua.simps)
 
 lemma snd_rua[simp]: "snd (rua a) = snd a"
   by (cases a) (simp add: rua.simps)
 
 lemma ua_extend_rua:
-  "ua_extend args p w ts0 (rqe win) (rqe rest) bend (rcc cc) ax
+  "ua_extend args p w ts0 (rqe win) (rqe rest) bend (rcc (ucc cc)) ax
    = (case uua_extend args p w ts0 win rest bend cc ax of
-        (win', rest', bend', cc', ax') \<Rightarrow> (rqe win', rqe rest', bend', rcc cc', ax'))"
+        (win', rest', bend', cc', ax') \<Rightarrow> (rqe win', rqe rest', bend', rcc (ucc cc'), ax'))"
 proof (induct args p w ts0 win rest bend cc ax rule: uua_extend.induct)
   case (1 args p w ts0 win rest bend cc ax)
   obtain h rest' where sh: "safe_hd rest = (h, rest')" by (cases "safe_hd rest")
@@ -134,13 +157,13 @@ proof -
     case None
     then show ?thesis
       unfolding a
-      by (simp add: ua_step_def uua_step_def rua.simps ruw.simps ua_extend_rua e sh)
+      by (simp add: ua_step_def uua_step_def rua.simps ruw.simps uuwm.simps ua_extend_rua e sh)
   next
     case (Some x)
     obtain tx Xx bx where x: "x = (tx, Xx, bx)" by (metis prod_cases3)
     show ?thesis
       unfolding a
-      by (simp add: ua_step_def uua_step_def rua.simps ruw.simps ua_extend_rua e sh Some x Let_def)
+      by (simp add: ua_step_def uua_step_def rua.simps ruw.simps uuwm.simps ua_extend_rua e sh Some x Let_def)
   qed
 qed
 
@@ -155,7 +178,7 @@ proof (induct args p w nt a rule: uua_shift.induct)
     case None
     then show ?thesis
       unfolding a
-      by (subst ua_shift.simps, subst uua_shift.simps) (simp add: rua.simps ruw.simps sh)
+      by (subst ua_shift.simps, subst uua_shift.simps) (simp add: rua.simps ruw.simps uuwm.simps sh)
   next
     case (Some ts0)
     show ?thesis
@@ -163,14 +186,14 @@ proof (induct args p w nt a rule: uua_shift.induct)
       case True
       then show ?thesis
         unfolding a
-        by (subst ua_shift.simps, subst uua_shift.simps) (simp add: rua.simps ruw.simps sh Some)
+        by (subst ua_shift.simps, subst uua_shift.simps) (simp add: rua.simps ruw.simps uuwm.simps sh Some)
     next
       case f: False
       have "ua_shift args p w nt (rua a)
           = ua_shift args p w nt (ua_step args p w ts0
               (rua ((nts', win, rest, len, bend, cc, dn), ax)))"
         unfolding a
-        by (subst ua_shift.simps) (simp add: rua.simps ruw.simps sh Some f)
+        by (subst ua_shift.simps) (simp add: rua.simps ruw.simps uuwm.simps sh Some f)
       also have "\<dots> = ua_shift args p w nt
           (rua (uua_step args p w ts0 ((nts', win, rest, len, bend, cc, dn), ax)))"
         by (simp add: ua_step_rua)
@@ -193,7 +216,7 @@ proof -
     by (cases "uua_shift args p w nt a") auto
   show ?thesis
     unfolding ua_add_new_def uua_add_new_def ua_shift_rua s
-    by (simp add: rua.simps ruw.simps Let_def)
+    by (simp add: rua.simps ruw.simps uuwm.simps Let_def)
 qed
 
 lemma ua_eval_rua:
@@ -205,12 +228,12 @@ proof -
     by (cases "uua_shift args p w nt a") auto
   show ?thesis
     using ua_shift_rua[of args p w nt a]
-    by (simp add: ua_eval_def uua_eval_def rua.simps ruw.simps s rev_map)
+    by (simp add: ua_eval_def uua_eval_def rua.simps ruw.simps uuwm.simps s rev_map)
 qed
 
 lemma rua_init: "rua (uua_init args p) = ua_init args p"
-  by (simp add: rua.simps uua_init_def ua_init_def uuw_init_def uw_init_def ruw.simps
-      empty_queue_rep rcc.simps)
+  by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc[symmetric] uuw_init_def
+      uw_init_def ruw.simps empty_queue_rep rcc.simps)
 
 (*<*)
 end
