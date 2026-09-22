@@ -273,6 +273,57 @@ proof (induct f' z buf rule: uebufn_take.induct)
   qed
 qed
 
+text \<open>The same traversal with the time stamps alongside, which the match nodes step.\<close>
+
+fun uebufnt_take :: "(utable list \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow>
+    'b \<Rightarrow> uebufn \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow> 'b \<times> uebufn \<times> ts \<times> ts mbuf_t" where
+  "uebufnt_take f z buf t0 ts =
+    (case mbuf_t_cases ts of (None, ts') \<Rightarrow> (z, buf, t0, ts) | (Some t, ts') \<Rightarrow>
+    (if (\<exists>x \<in> set buf. mbuf_t_is_empty x) then (z, buf, t, mbuf_t_Cons t ts')
+    else uebufnt_take f (f (map (the \<circ> fst \<circ> mbuf_t_cases) buf) t z)
+      (map (snd \<circ> mbuf_t_cases) buf) t ts'))"
+
+lemma mebufnt_take_map_mbuf:
+  "(\<And>as t z. f (map g as) t (h z) = h (f' as t z)) \<Longrightarrow>
+   mebufnt_take f (h z) (map (map_mbuf g) buf) t0 ts
+   = (case uebufnt_take f' z buf t0 ts of
+        (z', buf', t', ts') \<Rightarrow> (h z', map (map_mbuf g) buf', t', ts'))"
+proof (induct f' z buf t0 ts rule: uebufnt_take.induct)
+  case (1 f' z buf t0 ts)
+  obtain to ts'' where T: "mbuf_t_cases ts = (to, ts'')" by fastforce
+  have m: "\<forall>x \<in> set buf. \<not> mbuf_t_is_empty x \<Longrightarrow>
+      map (\<lambda>x. the (map_option g (fst (mbuf_t_cases x)))) buf
+        = map g (map (\<lambda>x. the (fst (mbuf_t_cases x))) buf)"
+    by (auto simp: the_map_option_fst_mbuf_t_cases intro!: map_ext)
+  show ?case
+  proof (cases to)
+    case None
+    then show ?thesis
+      unfolding uebufnt_take.simps[of _ _ buf] mebufnt_take.simps[of _ _ "map (map_mbuf g) buf"]
+      by (simp add: T)
+  next
+    case (Some a)
+    show ?thesis
+    proof (cases "\<exists>x \<in> set buf. mbuf_t_is_empty x")
+      case True
+      then show ?thesis
+        unfolding uebufnt_take.simps[of _ _ buf] mebufnt_take.simps[of _ _ "map (map_mbuf g) buf"]
+        by (simp add: T Some)
+    next
+      case False
+      then have ne: "\<forall>x \<in> set buf. \<not> mbuf_t_is_empty x" by simp
+      have S: "f (map (\<lambda>x. g (the (fst (mbuf_t_cases x)))) buf) a (h z)
+          = h (f' (map (\<lambda>x. the (fst (mbuf_t_cases x))) buf) a z)"
+        using 1(2)[of "map (\<lambda>x. the (fst (mbuf_t_cases x))) buf" a z] by (simp add: comp_def)
+      show ?thesis
+        using 1(1)[OF T[symmetric] Some False 1(2)]
+        unfolding uebufnt_take.simps[of _ _ buf] mebufnt_take.simps[of _ _ "map (map_mbuf g) buf"]
+        by (simp add: T Some comp_def m[OF ne] S
+            del: mebufnt_take.simps uebufnt_take.simps)
+    qed
+  qed
+qed
+
 fun uebuf2S_add :: "utable list \<Rightarrow> utable list \<Rightarrow> ts list \<Rightarrow> uebuf2S \<Rightarrow> uebuf2S" where
   "uebuf2S_add xs' ys' ts' (xs, ys, ts, skew) = (xs @@ xs', ys @@ ys', ts @@ ts', skew)"
 
@@ -596,6 +647,10 @@ datatype udformula =
   | UDLetPast Formula.name nat udformula udformula nat "utable option"
   | UDTrigger args "nat option list" udformula udformula uebuf2 "ts mbuf_t"
       "event_data gmmtaux"
+  | UDMatchP nat \<I> mregex "mregex list" "nat option list list" "udformula list"
+      uebufn "ts mbuf_t" "event_data mr\<delta>aux"
+  | UDMatchF nat \<I> mregex "mregex list" "nat option list list" "udformula list"
+      uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
 
 abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
   "rbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
@@ -653,6 +708,10 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
      EDLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
 | "Rep_udformula (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      EDTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbuf) nts (bmm daux)"
+| "Rep_udformula (UDMatchP m I mr mrs pls Ld dbuf nts daux) =
+     EDMatchP m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts daux"
+| "Rep_udformula (UDMatchF m I mr mrs pls Ld dbuf nts t daux) =
+     EDMatchF m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts t daux"
 
 fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
   "uvdfail_nodes UDFail = 1"
@@ -672,6 +731,8 @@ fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
 | "uvdfail_nodes (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
 | "uvdfail_nodes (UDLetPast p m \<phi> \<psi> i buf) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
 | "uvdfail_nodes (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
+| "uvdfail_nodes (UDMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map uvdfail_nodes L)"
+| "uvdfail_nodes (UDMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map uvdfail_nodes L)"
 | "uvdfail_nodes \<phi> = 0"
 
 lemma evdfail_nodes_Rep: "evdfail_nodes (Rep_udformula \<phi>) = uvdfail_nodes \<phi>"
@@ -834,6 +895,22 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
             in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux)
             (mebuf2_add xs ys dbuf) (nts @@ ts)
       in (zs, UDTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
+| "udeval j ts db (UDMatchP m I mr mrs pls Ld dbuf nts daux) =
+     (let R = map (udeval j ts db) Ld;
+          ((zs, daux'), dbuf', _, nts') = uebufnt_take (\<lambda>rels t (zs, ax).
+             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax
+             in (zs @@ [z], ax)) (mbuf_t_empty, daux)
+             (uebufn_add (map fst R) dbuf) 0 (nts @@ ts)
+      in (map deopt_table (Rep_mbuf_t zs),
+          UDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
+| "udeval j ts db (UDMatchF m I mr mrs pls Ld dbuf nts t daux) =
+     (let R = map (udeval j ts db) Ld;
+          (daux', dbuf', nt, nts') = uebufnt_take
+             (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls (map reopt_table rels)))
+             daux (uebufn_add (map fst R) dbuf) t (nts @@ ts);
+          (zs, daux'') = eval_matchF I mr nt daux'
+      in (map deopt_table zs,
+          UDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
 lemma psize_snd_udeval:
@@ -875,6 +952,51 @@ lemma mebufn_take_ands:
   using mebufn_take_map_mbuf[of "\<lambda>as zs. zs @@ [dmulti_join ps ns as]" reopt_table
       "map_mbuf reopt_table" "\<lambda>as zs. zs @@ [gmulti_join ps ns as]" mbuf_t_empty buf]
   by (simp add: dmulti_join_reopt_table)
+
+text \<open>The match nodes keep the kernel's window, so the accumulator they carry is the boxed one
+  and the relabelling is on the buffers alone.\<close>
+
+lemma mebufnt_take_matchP:
+  "mebufnt_take (\<lambda>rels t (zs, ax).
+       (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
+          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+     z0 (map (map_mbuf reopt_table) buf) t0 ts
+   = (case uebufnt_take (\<lambda>rels t (zs, ax).
+       (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
+          (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts of
+        (z', buf', t', ts') \<Rightarrow> (z', map (map_mbuf reopt_table) buf', t', ts'))"
+  by (rule mebufnt_take_map_mbuf[where h = "\<lambda>a. a"]) simp
+
+lemma mebufnt_take_matchF:
+  "mebufnt_take (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+     z0 (map (map_mbuf reopt_table) buf) t0 ts
+   = (case uebufnt_take
+        (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls (map reopt_table rels)))
+        z0 buf t0 ts of
+        (z', buf', t', ts') \<Rightarrow> (z', map (map_mbuf reopt_table) buf', t', ts'))"
+  by (rule mebufnt_take_map_mbuf[where h = "\<lambda>a. a"]) simp
+
+lemma mebufnt_take_matchP':
+  assumes "uebufnt_take (\<lambda>rels t (zs, ax).
+       (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
+          (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts = (z', buf', t', ts')"
+  shows "mebufnt_take (\<lambda>rels t (zs, ax).
+       (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
+          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+     z0 (map (map_mbuf reopt_table) buf) t0 ts = (z', map (map_mbuf reopt_table) buf', t', ts')"
+  using assms unfolding mebufnt_take_matchP by simp
+
+lemma mebufnt_take_matchF':
+  assumes "uebufnt_take
+      (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls (map reopt_table rels)))
+      z0 buf t0 ts = (z', buf', t', ts')"
+  shows "mebufnt_take (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+     z0 (map (map_mbuf reopt_table) buf) t0 ts = (z', map (map_mbuf reopt_table) buf', t', ts')"
+  using assms
+  by (simp add: mebufnt_take_matchF del: mebufnt_take.simps uebufnt_take.simps)
+
+lemma map_dsan_reopt_deopt: "map dsan xs = map reopt_table (map deopt_table xs)"
+  by (simp add: dsan_def)
 
 lemma mebuf2t_take_until:
   "mebuf2t_take (dux_add_new dags msk) (rdux aux) (rbuf2 buf) t ts
@@ -1105,6 +1227,50 @@ next
   then show ?case
     by (simp add: mebuf2_add_rbuf mebuf2T_take_trigger
         del: mebuf2T_take.simps uebuf2T_take.simps split: prod.splits)
+next
+  case (23 j ts db m I mr mrs pls Ld dbuf nts daux)
+  have R: "map fst (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+      = map (map reopt_table) (map fst (map (udeval j ts db) Ld))"
+    "map snd (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+      = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
+    by (auto simp: 23 split: prod.splits)
+  let ?F = "\<lambda>rels t (zs, ax).
+      (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
+         (z, ax) \<Rightarrow> (zs @@ [z], ax))"
+  let ?B = "uebufn_add (map fst (map (udeval j ts db) Ld)) dbuf"
+  obtain zs daux' dbuf' tt nts' where U:
+    "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts) = ((zs, daux'), dbuf', tt, nts')"
+    by (cases "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts)") auto
+  have E: "mebufnt_take (\<lambda>rels t (zs, ax).
+        (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
+          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+      (mbuf_t_empty, daux) (map (map_mbuf reopt_table) ?B) 0 (nts @@ ts)
+      = ((zs, daux'), map (map_mbuf reopt_table) dbuf', tt, nts')"
+    by (rule mebufnt_take_matchP'[OF U])
+  show ?case
+    by (simp only: Let_def edeval.simps udeval.simps R mebufn_add_map_mbuf U E
+        prod.case map_dsan_reopt_deopt Rep_udformula.simps)
+next
+  case (24 j ts db m I mr mrs pls Ld dbuf nts t daux)
+  have R: "map fst (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+      = map (map reopt_table) (map fst (map (udeval j ts db) Ld))"
+    "map snd (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+      = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
+    by (auto simp: 24 split: prod.splits)
+  let ?F = "\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls (map reopt_table rels))"
+  let ?B = "uebufn_add (map fst (map (udeval j ts db) Ld)) dbuf"
+  obtain daux' dbuf' nt nts' where U:
+    "uebufnt_take ?F daux ?B t (nts @@ ts) = (daux', dbuf', nt, nts')"
+    by (cases "uebufnt_take ?F daux ?B t (nts @@ ts)") auto
+  have E: "mebufnt_take (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+      daux (map (map_mbuf reopt_table) ?B) t (nts @@ ts)
+      = (daux', map (map_mbuf reopt_table) dbuf', nt, nts')"
+    by (rule mebufnt_take_matchF'[OF U])
+  obtain zs daux'' where V: "eval_matchF I mr nt daux' = (zs, daux'')"
+    by (cases "eval_matchF I mr nt daux'") auto
+  show ?case
+    by (simp only: Let_def edeval.simps udeval.simps R mebufn_add_map_mbuf U E V
+        prod.case map_dsan_reopt_deopt Rep_udformula.simps)
 qed
 
 subsection \<open>The compiler, the state and the step\<close>
@@ -1258,6 +1424,22 @@ function (sequential) udof ::
 | "udof n cs (meformula.MTS mt) =
      (if cs = mtrm_dcols mt then UDTS mt
       else UDFail)"
+| "udof n cs (meformula.MMatchP I mr mrs L buf nts aux) =
+     (case those (map (emfcols n) L) of None \<Rightarrow> UDFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then UDMatchP (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
+                (map (\<lambda>_. mbuf_t_empty) L) nts []
+         else UDFail))"
+| "udof n cs (meformula.MMatchF I mr mrs L buf nts t aux) =
+     (case those (map (emfcols n) L) of None \<Rightarrow> UDFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then UDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
+                (map (\<lambda>_. mbuf_t_empty) L) nts t []
+         else UDFail))"
 | "udof n cs \<phi> = UDFail"
   by pat_completeness auto
 
@@ -1279,7 +1461,7 @@ next
   then show ?case
     by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux dux_init_agg_rdux)
 qed (simp_all add: Let_def dsan_def dsx_init_rdsx ginit_mmtaux_bmm[symmetric] zip_map2 o_def
-      split: list.splits prod.splits cong: map_cong)
+      split: list.splits option.splits prod.splits cong: map_cong)
 
 text \<open>The kernel's executable formula, rebuilt from the specification's: the inverse of
   @{const Rep_meformula}, so that the compiler can be stated on the specification's state and
