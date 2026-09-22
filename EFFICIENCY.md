@@ -7620,3 +7620,39 @@ the same count -- and saves only the rebalancing, so it is not worth its own cod
 
 The remaining gap to MonPoly on these three formulas is what 21.20 measured: it does this with
 hash tables and we do it with red-black trees, and Containers offers no hashed set.
+
+## 21.23 The suite after the two
+
+The 185-formula suite, re-run in the configuration the published report was produced in (three
+systems, three repetitions, two workers; 866 s of wall time against the earlier 869 s, so the
+contention is the same):
+
+| | before 21.21 | after |
+|---|---|---|
+| geometric mean vdense/monpoly | 1.35 | **1.31** |
+| median | 1.26 | 1.26 |
+| vdense faster | 20 | **25** |
+| within 10% | 45 | **50** |
+| more than 2x slower | 22 | **16** |
+| worst ratio | 3.85 | **2.85** |
+
+The two families the work was aimed at move, and nothing else does:
+
+| family | before | after |
+|---|---|---|
+| `agg_once` (22) | 1.98 | **1.70** |
+| `policy` (10) | 1.79 | **1.67** |
+| `agg_fut` (5) | 1.50 | **1.30** |
+| `since` (13) | 1.45 | 1.46 |
+| `join` (9) | 1.13 | 1.11 |
+| `once` (16) | 1.21 | 1.21 |
+
+`pol-threshold`, the suite's worst formula before, is no longer in the first eight: 3.85x and
+1.98 s became **2.37x and 1.28 s**.  `aggonce-min50` and `aggonce-max50` went from 3.29x and 3.24x
+to 2.66x and 2.64x.  The slowest four are now `onceex-50`, `pol-sincefutb`, `pol-unmatched` and
+`aggonce-min50`, all between 2.66x and 2.85x -- the first three are the `EXISTS`-under-`ONCE`
+shape, which is a different item from this section's three, and no formula in the suite is more
+than 2.9x.
+
+Verdicts agree with MonPoly on all 185, as before, and the differential tests and the 593-formula
+corpus are unchanged (593 same, 7 refused, 0 differing).

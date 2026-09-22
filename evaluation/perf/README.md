@@ -20,7 +20,7 @@ the systems.  When the projected wall time exceeds the budget the remaining form
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
 `report.md` and `ratios.svg` in this directory are the run of 2026-09-22 on the machine of
-EFFICIENCY.md Section 21 (four cores).
+EFFICIENCY.md Section 21 (four cores), after 21.21.
 
 ## The logs
 
