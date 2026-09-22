@@ -7433,3 +7433,77 @@ in-window tuple three times -- once per occurrence in `data_in`, once in `table_
 a key of `tuple_in`, with `table_in` an exact parallel copy of `Mapping.keys tuple_in` kept so
 that the result read is O(1).  That is `mmsaux` in the shared kernel, and a datatype change to
 `Optimized_Since.thy`: the next item, and a larger one than anything in 21.8-21.18.
+
+### 21.20 The three slowest formulas, and what is actually left
+
+`pol-threshold` (3.85x MonPoly), `aggonce-min50` (3.29x) and `aggonce-max50` (3.24x) are the
+suite's worst, and `aggonce-cnt50` is the right control: the same shape as the other two, at
+2.1x.  Under callgrind on `base1500.log`:
+
+| formula | vdense | monpoly | Ir ratio | wall ratio |
+|---|---|---|---|---|
+| `pol-threshold` | 2.995 Gi | 1.267 Gi | 2.36 | 3.85 |
+| `aggonce-min50` | 3.711 Gi | 1.937 Gi | 1.92 | 3.29 |
+| `aggonce-cnt50` | 3.092 Gi | 2.267 Gi | 1.36 | ~2.1 |
+
+**The ratios flatter us.**  Where the instructions go:
+
+| | tree and comparators | GC | output | hashing |
+|---|---|---|---|---|
+| `pol-threshold` vdense | **33.1%** | 19.2% | 0.0% | -- |
+| `pol-threshold` monpoly | 0% | 23.0% | 0.0% | 26.9% |
+| `aggonce-min50` vdense | **24.6%** | 23.4% | 0.7% | -- |
+| `aggonce-min50` monpoly | 0% | 8.1% | **20.9%** | 6.2% |
+| `aggonce-cnt50` vdense | **30.9%** | 18.9% | 0.7% | -- |
+| `aggonce-cnt50` monpoly | 0% | 12.2% | **17.8%** | 15.0% |
+
+MonPoly spends a fifth of the two printing formulas in `printf` and `memcpy`, which our front end
+does in 0.7%.  Net of output its monitoring work on `aggonce-min50` is about 1.53 Gi, so the
+honest ratio there is **2.4x**, not 1.92 -- and the three then agree at about 2.4x.  A quarter to
+a third of each of our runs is red-black tree balancing, insertion and comparison, against
+MonPoly's nothing: it does the same job with hash tables.  That is the whole structural gap, and
+it is the same root as the space finding of 21.15.
+
+**`pol-threshold` computes an answer it then throws away.**  Over 1500 time points it emits
+\<^bold>‹zero› verdicts: with a window of 60 and 40 events per time point over a domain of 200,
+a group holds about twelve tuples and `40 < r` never fires.  We nevertheless build the full
+~200-row aggregate table at every time point -- `uag_res` into `ures_maggaux`, **21.2%** of the
+run -- and the constraint node then filters all of it away.  MonPoly's computation is
+correspondingly cheaper than its own on `aggonce-cnt50` (1.27 Gi against 1.9 Gi net of output),
+which is the whole of its advantage here.
+
+**MIN and MAX: 21.15 was wrong about the rank structure.**  That section read the treelists off
+the \<^emph>‹exclusive› profile, where `insert_treelist` is 0.03%, and concluded the rank path was
+cold.  Inclusively it is not:
+
+| | `aggonce-cnt50` | `aggonce-min50` |
+|---|---|---|
+| `insert_maggaux` | 127.1 Mi (4.1%) | 296.8 Mi (8.0%) |
+| `delete_maggaux` | 129.7 Mi (4.2%) | 295.6 Mi (8.0%) |
+| `set_fold_cfc` over them | 256.5 Mi | 592.2 Mi |
+| GC | 18.9% | 23.4% |
+
+The rank insert and delete cost **2.3x** the count's, and that +336 Mi is more than half of
+`aggonce-min50`'s +619 Mi over `aggonce-cnt50`; the rest is the bigger per-group state
+(`usa_add_new_table` +279 Mi, `usa_expire` +192 Mi) and the GC that state costs.  Per tuple the
+rank path does the same map lookup and update as the count, plus a treelist insertion and a fresh
+`LInt` wrapper -- allocation the count avoids by storing a `nat`.
+
+**Three items, priced.**
+
+1. *Push a result-column constraint into the aggregate's read.*  On `pol-threshold` this turns a
+   21.2% table build, and the filter pass after it, into almost nothing, and it is the whole
+   `policy` family's shape -- an aggregate compared against a threshold.  It is C3's fold with a
+   guard, plus a `udof` branch recognising a constraint that mentions only the result column, and
+   a `dsim` case: about the size of 21.18.
+2. *An incremental result for the window's aggregate.*  Measured on this log, **36 of 200 groups
+   change per time point**, so rebuilding only those would cut the 21% result build by about five
+   times, on every windowed aggregation.  21.13 declined this on an estimate of "about half the
+   groups"; the measurement says 18%, which makes it materially better than recorded.  It still
+   costs a datatype change to `aggaux` in the shared kernel.
+3. *Drop the count set's second half where the aggregation is fused.*  `gcnt_add1` and `gcnt_del1`
+   keep a mapping from tuple to count \<^emph>‹and› the set of tuples with a positive count, but with
+   the aggregation fused `ag_res` reads `result_maggaux` and never `snd cc`.  That is one set
+   insertion and one set removal per tuple of dead work -- about 80 tree operations per time point
+   against the result's 200, so on the order of 5%.  Self-contained, and the same redundancy as
+   `table_in` against `tuple_in` in `mmsaux`, one level down.
