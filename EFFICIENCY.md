@@ -7147,3 +7147,51 @@ and their naturality lemmas, for 3.9% of one family. Recorded, not built.
 Differential tests unchanged throughout: corpus 593 identical, 7 refused, 0 differing after each
 of the two changes, and `difftest.sh` agreeing on every benchmark formula (the `matchp` mismatch
 it reports predates this round).
+
+### 21.14 The suite on the binary of the round
+
+The 185 formulas once more, all three systems in one run (`evaluation/perf/report.md` and
+`ratios.svg` are it).  The shipping dense monitor is the control here: of this round's four
+changes, only the Since index (21.8) is in code it shares, so its numbers are the machine's
+drift rather than a result, and the within-run `vdense/dense` column is the measure.  (It drifted
+by a fair amount: `dense` moved from 1.37 to 1.39 against MonPoly on formulas it runs the same
+code for, which is roughly the size of the differences in the middle of the first two columns.)
+
+| family | vdense/monpoly 21.8 | vdense/monpoly | vdense/dense |
+|---|---|---|---|
+| agg_once | 2.23 | 2.00 | **0.82** |
+| agg_fut | 1.91 | 1.77 | 0.90 |
+| long | 1.31 | 1.31 | 0.92 |
+| policy | 1.82 | 1.74 | 0.93 |
+| once_scale | 1.21 | 1.15 | 0.95 |
+| eventually | 1.29 | 1.35 | 0.96 |
+| since | 1.41 | 1.48 | 0.99 |
+| until | 1.47 | 1.39 | 0.99 |
+| once | 1.21 | 1.21 | 1.00 |
+| join | 1.11 | 1.08 | 1.01 |
+| wide | 1.29 | 1.34 | 1.02 |
+| once_exists | 1.92 | 2.06 | 1.06 |
+| all 21 families | 1.36 | 1.34 | **0.96** |
+
+The unboxed evaluator was the boxed one's equal at 21.8 (0.99, no family above 1.02); it is now
+ahead of it by 4% overall and by 18% on the twenty-two aggregations over a window, which is the
+family 21.13's fused result was aimed at, and it is ahead on every family the round touched.
+The formulas that gained most, head to head: `since-nb20` 0.61, `aggonce-min50` 0.67,
+`aggonce-cnt50` 0.73, `aggonce-sum50` 0.74, `pol-sumfilter` 0.75, `pol-threshold` 0.75,
+`aggonce-max50` 0.75, `long-sum100` 0.76.  The families that lost are the ones with no nested
+structure to gain anything (`join` 1.01, `wide` 1.02, `once_exists` 1.06), where the unboxing's
+own per-node cost is all there is and nothing this round touched applies; no family was above
+1.02 before, so only `once_exists` moved at all, and by less than the drift above.
+
+Two vdense timeouts remain against MonPoly's none, down from four: `aggonce-avg50` and
+`aggev-sum20`, both the kernel aggregation structure rebuilding its result over a window
+(`aggonce-dom1000` and `long-sum100` now finish, the latter at 0.76 of the boxed evaluator).
+The boxed monitor times out on two as well.  Verdicts identical on every formula, for both
+evaluators, as in every run of this section.
+
+What is left between the verified evaluator and MonPoly is unchanged in kind from 21.7's list
+and is now concentrated rather than spread: the aggregation over a window (2.0x, the kernel's
+`Optimized_Agg_Temporal` structure rebuilding its result at every time point -- 21.13 fused the
+*read* of that result into one pass and declined the incremental version with numbers), the
+Since with an anti-join left operand (1.5x, 21.8's remaining tree insertions and deletions, which
+MonPoly does with hash tables) and the policy formulas that combine the two.

@@ -19,7 +19,7 @@ dense monitor) and `--families`/`--names` to run a subset.  Repetitions are inte
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are the run of 2026-09-20 on the machine of
+`report.md` and `ratios.svg` in this directory are the run of 2026-09-22 on the machine of
 EFFICIENCY.md Section 21 (four cores).
 
 ## The logs
