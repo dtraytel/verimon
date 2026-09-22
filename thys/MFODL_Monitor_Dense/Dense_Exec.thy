@@ -273,14 +273,14 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
           ((zs, daux'), dbuf', _, nts') = mebufnt_take (\<lambda>rels t (zs, ax).
              let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
              in (zs @@ [z], ax)) (mbuf_t_empty, daux) (mebufn_add (map fst R) dbuf) 0 (nts @@ ts)
-      in (Rep_mbuf_t zs, EDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
+      in (map dsan (Rep_mbuf_t zs), EDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
 | "edeval j ts db (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =
      (let R = map (edeval j ts db) Ld;
           (daux', dbuf', nt, nts') = mebufnt_take
              (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
              daux (mebufn_add (map fst R) dbuf) t (nts @@ ts);
           (zs, daux'') = eval_matchF I mr nt daux'
-      in (zs, EDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
+      in (map dsan zs, EDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
 lemma psize_snd_edeval:

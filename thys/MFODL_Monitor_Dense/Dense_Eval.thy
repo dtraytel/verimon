@@ -257,14 +257,14 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
           ((zs, daux'), dbuf', _, nts') = mbufnt_take (\<lambda>rels t (zs, ax).
              let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
              in (zs @ [z], ax)) ([], daux) (mbufn_add (map fst R) dbuf) 0 (nts @ ts)
-      in (zs, DMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
+      in (map dsan zs, DMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
 | "deval j ts db (DMatchF m I mr mrs pls Ld dbuf nts t daux) =
      (let R = map (deval j ts db) Ld;
           (daux', dbuf', nt, nts') = mbufnt_take
              (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
              daux (mbufn_add (map fst R) dbuf) t (nts @ ts);
           (zs, daux'') = eval_matchF I mr nt daux'
-      in (zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
+      in (map dsan zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
@@ -3108,11 +3108,15 @@ next
   obtain dzs daux2 where w2: "w2 = (dzs, daux2)" by (cases w2)
   have dzs: "dzs = map (dtabc n cs) zs" and rel2: "dmrd_rel n cs aux2 daux2"
     using rw by (simp_all add: Rel_def w2)
+  have tx: "list_all (ftable n (set cs)) zs"
+    using produces_tables[OF pr w sts mts m] unfolding x .
+  have sz: "\<forall>x \<in> set zs. dsan (dtabc n cs x) = dtabc n cs x"
+    using tx by (auto simp: list_all_iff dsan_dtabc[OF conjunct1[OF wf] conjunct2[OF wf]])
   show ?case
   proof (intro exI conjI)
     show "deval j ts db (DMatchP (length cs) I mr mrs pls Ld dbuf nts daux)
         = (map (dtabc n cs) xs, DMatchP (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 daux2)"
-      using dt x dzs unfolding w2 by (simp add: Let_def del: mbufnt_take.simps)
+      using dt x dzs sz unfolding w2 by (simp add: Let_def del: mbufnt_take.simps)
     show "dsim n cs (dnext tw ts) (DMatchP (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 daux2)
         \<phi>'"
       unfolding fe
@@ -3224,12 +3228,16 @@ next
     by (rule dtabc_eval_matchF[OF rw])
   have ev: "dzs = map (dtabc n cs) zs" using evb g1 g2 by simp
   have rel3: "dmld_rel n cs \<psi>s aux3 daux3" using evb g1 g2 by simp
+  have tx: "list_all (ftable n (set cs)) zs"
+    using produces_tables[OF pr w sts mts m] unfolding x .
+  have sz: "\<forall>x \<in> set zs. dsan (dtabc n cs x) = dtabc n cs x"
+    using tx by (auto simp: list_all_iff dsan_dtabc[OF conjunct1[OF wf] conjunct2[OF wf]])
   show ?case
   proof (intro exI conjI)
     show "deval j ts db (DMatchF (length cs) I mr mrs pls Ld dbuf nts t daux)
         = (map (dtabc n cs) xs,
            DMatchF (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 nt2 daux3)"
-      using dt g2 x ev by (simp add: Let_def del: mbufnt_take.simps)
+      using dt g2 x ev sz by (simp add: Let_def del: mbufnt_take.simps)
     show "dsim n cs (dnext tw ts)
         (DMatchF (length cs) I mr mrs pls (map snd ?dR) dbuf2 nts2 nt2 daux3) \<phi>'"
       unfolding fe
