@@ -626,7 +626,7 @@ proof -
     by (rule duxaux'_init[OF sR sL]) (use sub cL cR in simp)
   have r: "duaux_rel n cs_R cs_L args 0 (init_muaux_dq args)
       (dux_init (dargs cs_R cs_L args))"
-    unfolding duaux_rel_def using v s by blast
+    unfolding duaux_rel_def using v s by simp blast
   show ?thesis unfolding duntil_rel_def using r by auto
 qed
 

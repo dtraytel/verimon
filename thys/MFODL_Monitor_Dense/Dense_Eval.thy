@@ -583,6 +583,7 @@ text \<open>
 definition duaux_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
     muaux_dq \<Rightarrow> duaux_x \<Rightarrow> bool" where
   "duaux_rel n cs_R cs_L args cur aux daux \<longleftrightarrow>
+     dux_agg daux = None \<and>
      (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
         duxaux' n cs_R cs_L args cur daux auxlist)"
 
@@ -600,6 +601,7 @@ lemma duaux_rel_step:
 proof -
   obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
     and vd: "duxaux' n cs_R cs_L args u daux auxlist"
+    and ag: "dux_agg daux = None"
     using v unfolding duaux_rel_def by blast
   have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux) (update_until args a b t auxlist)"
     by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 an aL aR in simp_all)
@@ -608,7 +610,7 @@ proof -
         (dtabc n cs_L a) (dtabc n cs_R b) t daux)
       (update_until args a b t auxlist)"
     by (rule duxaux'_add_new[OF vd sR sL bR sub t1 t2 f2 ut])
-  ultimately show ?thesis unfolding duaux_rel_def by blast
+  ultimately show ?thesis using ag unfolding duaux_rel_def by simp blast
 qed
 
 lemma duaux_rel_eval:
@@ -619,13 +621,14 @@ lemma duaux_rel_eval:
 proof -
   obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
     and vd: "duxaux' n cs_R cs_L args cur daux auxlist"
+    and ag: "dux_agg daux = None"
     using v unfolding duaux_rel_def by blast
   obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
     by (cases "eval_until (args_ivl args) nt auxlist")
   have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
     by (rule valid_eval_muaux_dq[OF vw nt we eu])
   have d: "dzs = map (dtabc n cs_R) res \<and> duxaux' n cs_R cs_L args cur daux' auxlist'"
-    by (rule duxaux'_eval[OF vd nt de eu])
+    using duxaux'_eval[OF vd nt de eu] ag by (simp add: dux_post_eq)
   have tr: "list_all (table n (set cs_R)) res"
   proof (unfold list_all_iff, safe)
     fix x assume "x \<in> set res"
@@ -633,7 +636,8 @@ proof -
       unfolding eval_until_res[OF eu] by (auto dest!: set_takeWhileD)
     then show "table n (set cs_R) x" using duxaux'_tables[OF vd] by auto
   qed
-  show ?thesis using w d tr unfolding duaux_rel_def dsres_def by blast
+  have ag': "dux_agg daux' = None" using ag de by (metis dux_agg_eval snd_conv)
+  show ?thesis using w d tr ag' unfolding duaux_rel_def dsres_def by blast
 qed
 
 text \<open>The node relation.  The stored timestamp is at or after the structure's current one and

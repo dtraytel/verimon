@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Evt_Aux
-  imports Dense_Until_Gen Dense_Evt_Agg
+  imports Dense_Until_Gen Dense_Evt_UAgg
 begin
 (*>*)
 
@@ -302,7 +302,7 @@ lemma dsx_agg_eval_since:
 
 subsection \<open>The Until structure\<close>
 
-datatype duaux_x = DUX_gen "event_data mmuaux_dq" | DUX_win uwaux
+datatype duaux_x = DUX_gen "event_data mmuaux_dq" | DUX_win uwaux | DUX_wagg daggp uwagg
 
 definition dux_init :: "args \<Rightarrow> duaux_x" where
   "dux_init args = (if args_L args = {} \<and> memL (args_ivl args) 0 then DUX_win (uw_init args)
@@ -312,14 +312,63 @@ fun dux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> event_data table 
     duaux_x \<Rightarrow> duaux_x" where
   "dux_add_new args msk rel1 rel2 nt (DUX_gen d) = DUX_gen (gadd_new_dq args msk rel1 rel2 nt d)"
 | "dux_add_new args msk rel1 rel2 nt (DUX_win w) = DUX_win (uw_add_new args rel1 rel2 nt w)"
+| "dux_add_new args msk rel1 rel2 nt (DUX_wagg p a) =
+     DUX_wagg p (ua_add_new args p (args_n args) rel1 rel2 nt a)"
 
 fun dux_eval :: "args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow> event_data table list \<times> duaux_x" where
   "dux_eval args nt (DUX_gen d) = (let (zs, d') = geval_dq args nt d in (zs, DUX_gen d'))"
 | "dux_eval args nt (DUX_win w) = (let (zs, w') = uw_eval args nt w in (zs, DUX_win w'))"
+| "dux_eval args nt (DUX_wagg p a) =
+     (let (zs, a') = ua_eval args p (args_n args) nt a in (zs, DUX_wagg p a'))"
 
 fun dux_length :: "args \<Rightarrow> duaux_x \<Rightarrow> nat" where
   "dux_length args (DUX_gen d) = glength_dq args d"
 | "dux_length args (DUX_win w) = uw_length args w"
+| "dux_length args (DUX_wagg p a) = ua_length args a"
+
+definition dux_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> duaux_x" where
+  "dux_init_agg args p = DUX_wagg p (ua_init args p)"
+
+text \<open>What a structure reports for each finished time point, relative to the window's union at
+  it: the union itself, or its aggregate.  As on the Since side the choice is fixed with the
+  structure and no operation changes it.\<close>
+
+fun dux_post :: "duaux_x \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dux_post (DUX_gen d) = id"
+| "dux_post (DUX_win w) = id"
+| "dux_post (DUX_wagg p a) = dagg_p p"
+
+fun dux_agg :: "duaux_x \<Rightarrow> daggp option" where
+  "dux_agg (DUX_gen d) = None"
+| "dux_agg (DUX_win w) = None"
+| "dux_agg (DUX_wagg p a) = Some p"
+
+lemma dux_post_eq: "dux_post d = (case dux_agg d of None \<Rightarrow> id | Some p \<Rightarrow> dagg_p p)"
+  by (cases d) simp_all
+
+lemma dux_post_add_new[simp]: "dux_post (dux_add_new args msk rel1 rel2 nt d) = dux_post d"
+  by (cases d) simp_all
+
+lemma dux_agg_add_new[simp]: "dux_agg (dux_add_new args msk rel1 rel2 nt d) = dux_agg d"
+  by (cases d) simp_all
+
+lemma dux_post_init[simp]: "dux_post (dux_init args) = id"
+  by (simp add: dux_init_def)
+
+lemma dux_agg_init[simp]: "dux_agg (dux_init args) = None"
+  by (simp add: dux_init_def)
+
+lemma dux_post_init_agg[simp]: "dux_post (dux_init_agg args p) = dagg_p p"
+  by (simp add: dux_init_agg_def)
+
+lemma dux_agg_init_agg[simp]: "dux_agg (dux_init_agg args p) = Some p"
+  by (simp add: dux_init_agg_def)
+
+lemma dux_post_eval[simp]: "dux_post (snd (dux_eval args nt d)) = dux_post d"
+  by (cases d) (simp_all split: prod.splits)
+
+lemma dux_agg_eval[simp]: "dux_agg (snd (dux_eval args nt d)) = dux_agg d"
+  by (cases d) (simp_all split: prod.splits)
 
 definition duxaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow>
     event_data muaux \<Rightarrow> bool" where
@@ -327,7 +376,10 @@ definition duxaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> a
      DUX_gen d \<Rightarrow> duaux' n cs_R cs_L args cur d auxlist
    | DUX_win w \<Rightarrow> cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0 \<and>
        (\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2) \<and>
-       valid_uw (dargs cs_R cs_L args) cur w (dauxlist3 n cs_R auxlist))"
+       valid_uw (dargs cs_R cs_L args) cur w (dauxlist3 n cs_R auxlist)
+   | DUX_wagg p a \<Rightarrow> cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0 \<and>
+       (\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2) \<and>
+       valid_ua (dargs cs_R cs_L args) p cur a (dauxlist3 n cs_R auxlist))"
 
 lemma duxaux'_tables:
   "duxaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
@@ -340,6 +392,13 @@ lemma duxaux'_init:
   shows "duxaux' n cs_R cs_L args 0 (dux_init (dargs cs_R cs_L args)) []"
   using duaux'_init[OF s_R s_L sub, of n args] valid_uw_init
   by (auto simp: duxaux'_def dux_init_def dauxlist3_def ginit_dq_eq)
+
+lemma duxaux'_init_agg:
+  assumes c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
+    and ok: "dagg_ok p (length cs_R)"
+  shows "duxaux' n cs_R cs_L args 0 (dux_init_agg (dargs cs_R cs_L args) p) []"
+  using valid_ua_init[of "dargs cs_R cs_L args" p] c inz ok
+  by (auto simp: duxaux'_def dux_init_agg_def dauxlist3_def)
 
 lemma duxaux'_add_new:
   assumes v: "duxaux' n cs_R cs_L args cur daux auxlist"
@@ -382,13 +441,37 @@ next
   then show ?thesis using c inz dauxlist3_wf_update_until[OF w sub t1 t2, of args nt]
     unfolding DUX_win
     by (simp add: duxaux'_def dauxlist3_update_until[OF s_R b_R sub w t1 t2, symmetric])
+next
+  case (DUX_wagg p a)
+  have c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
+    and w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and vs: "valid_ua (dargs cs_R cs_L args) p cur a (dauxlist3 n cs_R auxlist)"
+    using v unfolding DUX_wagg duxaux'_def by auto
+  have t1': "table (args_n (dargs cs_R cs_L args)) {} (dtabc n cs_R rel1)"
+    using table_dtabc_cpos[OF s_R b_R sub t1] c by simp
+  have X: "(dtabc n cs_L rel1 = {}) = (dtabc n cs_R rel1 = {})"
+    by (simp add: dtabc_empty_iff)
+  have tt: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
+      (dtabc n cs_R rel2)"
+    using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
+  have ff: "finite (dtabc n cs_R rel2)" using f2 by (simp add: dtabc_def)
+  have "valid_ua (dargs cs_R cs_L args) p nt
+      (ua_add_new (dargs cs_R cs_L args) p (args_n (dargs cs_R cs_L args))
+        (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt a)
+      (update_until (dargs cs_R cs_L args) (dtabc n cs_R rel1) (dtabc n cs_R rel2) nt
+        (dauxlist3 n cs_R auxlist))"
+    by (rule valid_ua_add_new[OF vs t1' X tt ff _ nt]) (simp add: inz)
+  then show ?thesis using c inz dauxlist3_wf_update_until[OF w sub t1 t2, of args nt]
+    unfolding DUX_wagg
+    by (simp add: duxaux'_def dauxlist3_update_until[OF s_R b_R sub w t1 t2, symmetric])
 qed
 
 lemma duxaux'_eval:
   assumes v: "duxaux' n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
     and de: "dux_eval (dargs cs_R cs_L args) nt daux = (dres, daux')"
     and we: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
-  shows "dres = map (dtabc n cs_R) res \<and> duxaux' n cs_R cs_L args cur daux' auxlist'"
+  shows "dres = map (dux_post daux \<circ> dtabc n cs_R) res \<and>
+    duxaux' n cs_R cs_L args cur daux' auxlist'"
 proof (cases daux)
   case (DUX_gen d)
   have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
@@ -418,12 +501,33 @@ next
   have "set auxlist' \<subseteq> set auxlist"
     using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
   then show ?thesis unfolding r d' DUX_win using vw rr c inz w by (auto simp: duxaux'_def)
+next
+  case (DUX_wagg p a)
+  have ne: "args_n (dargs cs_R cs_L args) = length cs_R" by simp
+  obtain dres0 a' where e: "ua_eval (dargs cs_R cs_L args) p (length cs_R) nt a = (dres0, a')"
+    by (cases "ua_eval (dargs cs_R cs_L args) p (length cs_R) nt a")
+  have r: "dres = dres0" and d': "daux' = DUX_wagg p a'"
+    using de unfolding DUX_wagg by (simp_all add: e)
+  have c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
+    and w: "\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2"
+    and vs: "valid_ua (dargs cs_R cs_L args) p cur a (dauxlist3 n cs_R auxlist)"
+    using v unfolding DUX_wagg duxaux'_def by auto
+  have we': "eval_until (args_ivl (dargs cs_R cs_L args)) nt (dauxlist3 n cs_R auxlist)
+      = (map (dtabc n cs_R) res, dauxlist3 n cs_R auxlist')"
+    using dauxlist3_eval_until[OF we] by simp
+  have vw: "valid_ua (dargs cs_R cs_L args) p cur a' (dauxlist3 n cs_R auxlist')"
+    and rr: "dres0 = map (dagg_p p) (map (dtabc n cs_R) res)"
+    using valid_ua_eval[OF vs nt e[folded ne] we'] by simp_all
+  have "set auxlist' \<subseteq> set auxlist"
+    using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
+  then show ?thesis unfolding r d' DUX_wagg using vw rr c inz w
+    by (auto simp: duxaux'_def)
 qed
 
 lemma duxaux'_length:
   "duxaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
      dux_length (dargs cs_R cs_L args) daux = length auxlist"
-  using duaux'_length valid_uw_length
+  using duaux'_length valid_uw_length valid_ua_length
   by (cases daux) (auto simp: duxaux'_def dauxlist3_def glength_dq_eq)
 
 (*<*)

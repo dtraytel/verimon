@@ -19,6 +19,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Until_Gen
     Dense_Evt
     Dense_Evt_Agg
+    Dense_Evt_UAgg
     Dense_Evt_Aux
     Dense_Trigger_Nar
     Dense_Eval
@@ -33,6 +34,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Exec
     Dense_Descend_Code
     Dense_Unbox_Eval
+    Dense_Unbox_UAgg
     Dense_Unbox_Exec
     Dense_Unbox
     Dense_Idx_Code
