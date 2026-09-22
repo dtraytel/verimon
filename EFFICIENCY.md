@@ -7064,3 +7064,86 @@ shares its work with a conjunction that this change does not touch.
 regenerated `src/verified.ml` is 419 lines shorter: with `UDTrigger` no longer mentioning
 `update_mmtaux`/`result_mmtaux`, the kernel's wide-tuple trigger structure drops out of the
 export's reachable set entirely.
+
+### 21.13 The fused window's result and the Until deque's read (`Dense_Unbox_Eval.thy`, `Dense_Until_Gen.thy`)
+
+21.7 named the next two items from its profiles and guessed at their shape. Reprofiled on the
+binary this round starts from (callgrind, `base1500.log`, 1500 time points), the guesses needed
+correcting in both directions, so this section records the measurements that decided each one
+rather than only what was built.
+
+**The result, read in one pass.** On `aggonce-sum50` (`r <- SUM y; x ONCE[0,50] A(x,y)`,
+4.085 Gi) the fused window's result was 39.2% of the run, split 25.6% for the kernel's
+`result_maggaux` and 13.6% for the node's own read of it. The kernel answers with a table of the
+node's frame, one tuple per group; the node then reads that table again at its own frame and
+without the option. Two tables of the same size, built one after the other, once per time point.
+On top of that the kernel's read goes through `get_map_result`, which walks the *keys* of
+its mapping and looks each one up -- a second descent of the tree per group.
+
+`ures_maggaux h args a = h ` result_maggaux args a` is the composite, true by definition, so no
+correctness proof changed; the fusion lives entirely in the code equations. `ugmr` walks
+`RBT_Mapping2.entries` instead, where the key and its value arrive together, and folds the
+node's own short tuple straight into the answer. One tree, no lookups.
+
+| formula | before | after | change |
+|---|---|---|---|
+| `aggonce-sum50` | 4.085 Gi | 3.038 Gi | **-25.6%** |
+| `agg-cnt` | 1.2534 Gi | 1.2535 Gi | 0.0% |
+
+`uag_res` itself went from 39.2% (1602 Mi) to 18.0% (546 Mi), and `result_maggaux`,
+`ed_get_map_result` and `ed_image` left the profile entirely. `agg-cnt` is unchanged and should
+be: it is a plain aggregation with no window, so it never reaches the fused result at all.
+
+Two things worth keeping from this one. `edl_insert` at 18.2% of the new profile confirms the
+fold reaches the monomorphised short insertion: 21.7's trap -- an image hands `Set.insert` to the
+tree's fold *unapplied*, where the redirection does not reach it -- does not bite here, because
+the fold applies it to an argument. And the equation had to keep `h ` result_maggaux args a` on
+the branches the aggregation type makes unreachable: `result_maggaux`'s inner case is partial, so
+both sides are `undefined` there, at different types, and pushing the image inside would have
+demanded `h ` undefined = undefined`.
+
+**Not the incremental result.** 21.7 proposed instead that the kernel's structure maintain its
+result incrementally, as a change to `Optimized_Agg_Temporal.thy`. Measured, that is the worse
+trade on this workload: the log has about 50 `A` tuples per time point over 200 distinct groups
+and a window of 51 time points, so roughly 50 groups gain a tuple and 50 lose one per step --
+about half the groups change, and incrementality would save about half of the result's cost where
+the fusion saves two thirds of it, in exchange for a datatype change to `aggaux` and its
+correctness proofs in the shared verified kernel. It stays unbuilt, with the numbers recorded.
+
+**The Until deque's indexed read.** 21.6 flagged this as a cost this refinement had added:
+`dq_nth_l` reads an entry off the deque's lists rather than by the kernel's counters, so that a
+map over the entries commutes with the read on every deque and not only on a consistent one. It
+was written as `if k < length (dq_f d) then dq_f d ! k else z`, and the generated code does
+exactly that -- `size_lista` walks the list to its end, then `nth` walks it again to the index --
+where the kernel's own `dq_nth` does only the index. The deques the Until structure indexes are
+as long as its window.
+
+`nth_def` walks once and returns the default when it runs out, and `dq_nth_l_code` is
+*unconditional*: the default past the end is the same one, so the naturality `dq_nth_l` exists
+for is untouched and no invariant is needed.
+
+| formula | before | after | change |
+|---|---|---|---|
+| `until-bb50` | 1.6398 Gi | 1.5391 Gi | **-6.1%** |
+| `ev-n20` | 1.5810 Gi | 1.5808 Gi | 0.0% |
+
+`dq_nth_l` was 7.6% of `until-bb50` and has left the profile; what remains of the deque's reads
+is `dq_nth_s` at 1.3% and `dq_nth` at 1.1%. `ev-n20` is unchanged, as an eventually with no
+nested deque should be.
+
+**Not the fused insertions.** The other half of 21.6's note -- the insertions widen the short
+tuples into the kernel's boxed ones through a third image -- was measured and declined. The
+headline looked large (`usa_add_new_table` 22.1% and `usa_add_new_ts`/`usa_expire` 19.7% of the
+post-fusion `aggonce-sum50`), but most of that is the window's own bookkeeping, and what fusing
+the widening into the kernel's fold would remove is the boxed *tree build*, `ed_insert`, at
+118 Mi of 3038 Mi -- 3.9%. The per-tuple widening stays either way. And it is not a code
+equation: `Finite_Set.fold f z (g ` T) = Finite_Set.fold (f ∘ g) z T` needs `inj_on g T`, and
+`udwiden` is not injective on arbitrary lists (`udwiden [True] [x] = udwiden [True] [x,y]
+= [Some x]`) -- only on tuples of the node's own width, which is an invariant the evaluator
+maintains and a code equation cannot state. It would need the two-level treatment 21.12 gave the
+trigger, threading the width invariant through `usa_move`, `usa_add_new_table` and `usa_expire`
+and their naturality lemmas, for 3.9% of one family. Recorded, not built.
+
+Differential tests unchanged throughout: corpus 593 identical, 7 refused, 0 differing after each
+of the two changes, and `difftest.sh` agreeing on every benchmark formula (the `matchp` mismatch
+it reports predates this round).
