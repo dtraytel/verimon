@@ -871,6 +871,20 @@ type_synonym 'a dagg_map = "(event_data list, 'a) mapping"
 datatype daggaux = DCntAux "nat dagg_map" | DSumAux "(nat \<times> integer) dagg_map"
   | DRankAux "list_aux dagg_map \<times> type"
 
+text \<open>
+  The second component of @{term "dgg_op args"} is the aggregation's \<^emph>\<open>result\<close> type, not
+  the type of the values it aggregates.  For @{const Formula.Agg_Min}, @{const Formula.Agg_Max}
+  and @{const Formula.Agg_Sum} the two coincide, but @{const Formula.Agg_Avg} and
+  @{const Formula.Agg_Med} always return a float, so they arrive here as @{const TFloat} whatever
+  their values are, and admitting them on @{const TInt} admits nothing at all.  The value type is
+  therefore not available at initialisation.  Both are admitted on the float result type instead,
+  and the insertion rejects a non-integer value at the first tuple it meets, which drops the
+  structure and falls back to the generic evaluation of the aggregation.  That fallback is what
+  keeps this sound: addition of floats is not associative, so an incremental sum must never see
+  one -- which is why the accumulator is an @{typ integer} and the insertion accepts
+  @{const EInt} alone.
+\<close>
+
 definition dinit_maggaux :: "daggargs \<Rightarrow> bool \<times> daggaux" where
   "dinit_maggaux args = (case (fst (dgg_op args), snd (dgg_op args)) of
       (Formula.Agg_Cnt, _) \<Rightarrow> (True, DCntAux Mapping.empty)
@@ -878,6 +892,7 @@ definition dinit_maggaux :: "daggargs \<Rightarrow> bool \<times> daggaux" where
     | (Formula.Agg_Min, TInt) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
     | (Formula.Agg_Max, TInt) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
     | (Formula.Agg_Avg, TInt) \<Rightarrow> (True, DSumAux Mapping.empty)
+    | (Formula.Agg_Avg, TFloat) \<Rightarrow> (True, DSumAux Mapping.empty)
     | (Formula.Agg_Med, TFloat) \<Rightarrow> (True, DRankAux (Mapping.empty, IntT))
     | (Formula.Agg_Min, TString) \<Rightarrow> (True, DRankAux (Mapping.empty, StringT))
     | (Formula.Agg_Max, TString) \<Rightarrow> (True, DRankAux (Mapping.empty, StringT))

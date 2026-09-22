@@ -7195,3 +7195,63 @@ and is now concentrated rather than spread: the aggregation over a window (2.0x,
 *read* of that result into one pass and declined the incremental version with numbers), the
 Since with an anti-join left operand (1.5x, 21.8's remaining tree insertions and deletions, which
 MonPoly does with hash tables) and the policy formulas that combine the two.
+
+### 21.15 The average over a window, which was never incremental (`Optimized_Agg.thy`)
+
+21.14's suite left two vdense timeouts, both aggregations over a window, and 21.7 had put the
+whole `agg_once` family down to "the kernel structure rebuilding its result at every time
+point".  Profiling the family formula by formula says otherwise.  Where `uag_res` goes, on
+`base1500.log`:
+
+| formula | reads the aggregate through | share of the run | total | MonPoly |
+|---|---|---|---|---|
+| `aggonce-sum50` | `ures_maggaux` | 17.9% | 3.038 Gi | 2.270 Gi |
+| `aggonce-cnt50` | `ures_maggaux` | 20.5% | 3.068 Gi | 2.268 Gi |
+| `aggonce-min50` | `ures_maggaux` | 20.4% | 3.708 Gi | 1.937 Gi |
+| `aggonce-avg50` | **`uagg`**, the generic `eval_agg` | **85.7%** | **21.955 Gi** | 3.259 Gi |
+
+`AVG` was not using the incremental structure at all.  It was clustering the whole window's
+table into groups at every time point, for 6.7x MonPoly and a timeout, while the neighbouring
+aggregations were at 1.3x.
+
+**Why.**  `init_maggaux` matched `(Agg_Avg, TInt)`.  The second component of `aggargs_ω` is the
+aggregation's *result* type, not the type of the values: for `Agg_Min`, `Agg_Max` and `Agg_Sum`
+the two coincide, but `t_res Agg_Avg _ = TFloat` (`Typing.thy`, and `rewriting.ml`'s
+`type_check_aggregation (TCst TFloat) exp_num_typ` agrees), so an `Agg_Avg` node never arrives
+with `TInt` and that branch was unreachable.  `AVG` fell through to the catch-all and got no
+structure.  `Agg_Med` is typed `TFloat` the same way and *is* listed at `TFloat`, so this reads
+as a line that was corrected for the result-type slot once and missed the other case.
+
+Everything the incremental version needs was already there and already proved:
+`result_maggaux`'s `SumAux` branch handles `Agg_Avg` (sum over count, converted once), and
+`valid_maggaux` admits `aggtype = Agg_Sum ∨ aggtype = Agg_Avg` for `SumAux` without mentioning
+the result type at all -- so `valid_insert_maggaux`, `valid_delete_maggaux` and
+`valid_result_maggaux`, which are stated over `valid_maggaux`, cover the combination as they
+stand.  The change is one branch in `init_maggaux` and one in `dinit_maggaux`, and
+`valid_init_maggaux_unfolded`'s blanket `cases; cases; auto` discharges the new case exactly as
+it discharged the unreachable one.
+
+**Why this is sound over floats.**  Addition of floats is not associative, so an incremental sum
+must never see one.  It does not: `SumAux` accumulates an `integer`, `insert_sum` and
+`delete_sum` match `EInt` alone and answer `(False, Mapping.empty)` on anything else, and
+`insert_maggaux'` turns that into `None`, which is a one-way latch -- the node then evaluates
+the aggregation generically for the rest of the run.  So `AVG` over floats keeps the behaviour
+it has today (at the cost of one build and discard at the first tuple), and `AVG` over integers
+computes the reference's own value: `eval_agg_op (Agg_Avg, ty)` folds `plus` over the flattened
+multiset, which on `EInt` elements is exact integer addition, then converts once and divides
+once -- and `double_of_event_data (EInt x) = double_of_event_data_agg (EInt x) =
+double_of_integer x`.  The same argument is what already carries `(Agg_Med, TFloat)` over
+integer values.
+
+**Measured.**  `aggonce-avg50` under callgrind: 21.955 Gi → 4.594 Gi, **-79%**, against MonPoly's
+3.259 Gi -- from 6.7x to 1.41x, in line with the rest of the family.  `uagg` has left its
+profile; `uag_res` now reaches `ures_maggaux` like the others.  On the suite's own log both
+evaluators stop timing out: `aggonce-avg50` 2.80 s under vdense and 3.65 s under dense against
+MonPoly's 1.36 s, where both were over the 5 s budget; `aggonce-avg5` 1.71 s against 2.55 s in
+21.14's run.  The differential corpus is unchanged at 593 identical / 7 refused / 0 differing,
+and `difftest.sh` has vdense, dense and MonPoly agreeing on `agg`, `aggwide` and `aggonce` (the
+`matchp` mismatch it reports predates this round).
+
+The remaining vdense timeout, `aggev-sum20`, is an aggregation over a *future* window: it runs
+5.3 s under vdense but 2.8 s under dense, so it is the unboxed refinement of the Until-side
+structure that costs there, not the aggregation.  That is its own item.

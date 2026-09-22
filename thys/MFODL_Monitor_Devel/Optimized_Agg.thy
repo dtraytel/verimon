@@ -86,6 +86,20 @@ fun valid_maggaux :: "aggargs \<Rightarrow> aggaux \<Rightarrow> event_data tabl
                                      None \<Rightarrow> False)) 
                    (length tys) f m X))"
 
+text \<open>
+  The second component of @{term "aggargs_\<omega> args"} is the aggregation's \<^emph>\<open>result\<close> type, not
+  the type of the values it aggregates.  For @{const Formula.Agg_Min}, @{const Formula.Agg_Max}
+  and @{const Formula.Agg_Sum} the two coincide, but @{const Formula.Agg_Avg} and
+  @{const Formula.Agg_Med} always return a float, so they arrive here as @{const TFloat} whatever
+  their values are, and admitting them on @{const TInt} admits nothing at all.  The value type is
+  therefore not available at initialisation.  Both are admitted on the float result type instead,
+  and the insertion rejects a non-integer value at the first tuple it meets, which drops the
+  structure and falls back to the generic evaluation of the aggregation.  That fallback is what
+  keeps this sound: addition of floats is not associative, so an incremental sum must never see
+  one -- which is why the accumulator is an @{typ integer} and the insertion accepts
+  @{const EInt} alone.
+\<close>
+
 fun init_maggaux :: "aggargs \<Rightarrow> (bool \<times> aggaux)" where
   "init_maggaux args = (let aggtype = fst (aggargs_\<omega> args);
        y0 = snd (aggargs_\<omega> args) in case (aggtype, y0) of
@@ -94,6 +108,7 @@ fun init_maggaux :: "aggargs \<Rightarrow> (bool \<times> aggaux)" where
     | (Formula.Agg_Min, TInt) \<Rightarrow> (True, RankAux (Mapping.empty, IntT))
     | (Formula.Agg_Max, TInt) \<Rightarrow> (True, RankAux (Mapping.empty, IntT))
     | (Formula.Agg_Avg, TInt) \<Rightarrow> (True, SumAux Mapping.empty)
+    | (Formula.Agg_Avg, TFloat) \<Rightarrow> (True, SumAux Mapping.empty)
     | (Formula.Agg_Med, TFloat) \<Rightarrow> (True, RankAux (Mapping.empty, IntT))
     | (Formula.Agg_Min, TString) \<Rightarrow> (True, RankAux (Mapping.empty, StringT))
     | (Formula.Agg_Max, TString) \<Rightarrow> (True, RankAux (Mapping.empty, StringT))

@@ -8496,7 +8496,11 @@ let rec dinit_maggaux
           DSumAux
             (mapping_empty (ccompare_list ccompare_event_data)
               (of_phantom mapping_impl_lista)))
-      | (Agg_Avg, TFloat) -> (false, DCntAux edl_mempty_nat)
+      | (Agg_Avg, TFloat) ->
+        (true,
+          DSumAux
+            (mapping_empty (ccompare_list ccompare_event_data)
+              (of_phantom mapping_impl_lista)))
       | (Agg_Avg, TString) -> (false, DCntAux edl_mempty_nat)
       | (Agg_Med, TInt) -> (false, DCntAux edl_mempty_nat)
       | (Agg_Med, TFloat) ->
@@ -10829,7 +10833,7 @@ let rec init_maggaux
         | (Agg_Sum, TFloat) -> (false, CntAux ed_mempty_nat)
         | (Agg_Sum, TString) -> (false, CntAux ed_mempty_nat)
         | (Agg_Avg, TInt) -> (true, SumAux ed_mempty_sum)
-        | (Agg_Avg, TFloat) -> (false, CntAux ed_mempty_nat)
+        | (Agg_Avg, TFloat) -> (true, SumAux ed_mempty_sum)
         | (Agg_Avg, TString) -> (false, CntAux ed_mempty_nat)
         | (Agg_Med, TInt) -> (false, CntAux ed_mempty_nat)
         | (Agg_Med, TFloat) -> (true, RankAux (ed_mempty_rank, IntT))
