@@ -1,243 +1,256 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="416" font-family="sans-serif" font-size="11">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="432" font-family="sans-serif" font-size="11">
 <rect width="100%" height="100%" fill="white"/>
 <text x="130" y="18" font-size="13">runtime ratio vdense / monpoly per formula (best of repetitions); x = timeout of vdense, o = timeout of monpoly</text>
-<line x1="130.0" y1="32" x2="130.0" y2="386" stroke="#ccc" stroke-width="0.6"/>
-<text x="130.0" y="400" text-anchor="middle" fill="#333">0.25x</text>
-<line x1="276.0" y1="32" x2="276.0" y2="386" stroke="#ccc" stroke-width="0.6"/>
-<text x="276.0" y="400" text-anchor="middle" fill="#333">0.5x</text>
-<line x1="422.0" y1="32" x2="422.0" y2="386" stroke="#333" stroke-width="1.2"/>
-<text x="422.0" y="400" text-anchor="middle" fill="#333">1x</text>
-<line x1="568.0" y1="32" x2="568.0" y2="386" stroke="#ccc" stroke-width="0.6"/>
-<text x="568.0" y="400" text-anchor="middle" fill="#333">2x</text>
-<line x1="714.0" y1="32" x2="714.0" y2="386" stroke="#ccc" stroke-width="0.6"/>
-<text x="714.0" y="400" text-anchor="middle" fill="#333">4x</text>
-<line x1="860.0" y1="32" x2="860.0" y2="386" stroke="#ccc" stroke-width="0.6"/>
-<text x="860.0" y="400" text-anchor="middle" fill="#333">8x</text>
+<line x1="130.0" y1="32" x2="130.0" y2="402" stroke="#ccc" stroke-width="0.6"/>
+<text x="130.0" y="416" text-anchor="middle" fill="#333">0.25x</text>
+<line x1="276.0" y1="32" x2="276.0" y2="402" stroke="#ccc" stroke-width="0.6"/>
+<text x="276.0" y="416" text-anchor="middle" fill="#333">0.5x</text>
+<line x1="422.0" y1="32" x2="422.0" y2="402" stroke="#333" stroke-width="1.2"/>
+<text x="422.0" y="416" text-anchor="middle" fill="#333">1x</text>
+<line x1="568.0" y1="32" x2="568.0" y2="402" stroke="#ccc" stroke-width="0.6"/>
+<text x="568.0" y="416" text-anchor="middle" fill="#333">2x</text>
+<line x1="714.0" y1="32" x2="714.0" y2="402" stroke="#ccc" stroke-width="0.6"/>
+<text x="714.0" y="416" text-anchor="middle" fill="#333">4x</text>
+<line x1="860.0" y1="32" x2="860.0" y2="402" stroke="#ccc" stroke-width="0.6"/>
+<text x="860.0" y="416" text-anchor="middle" fill="#333">8x</text>
 <text x="122" y="48.0" text-anchor="end" dominant-baseline="middle">join</text>
 <line x1="130" y1="48.0" x2="860" y2="48.0" stroke="#eee"/>
-<circle cx="417.8" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(x,y): 0.33 s vs 0.32 s (0.98x) base</title></circle>
-<circle cx="425.0" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.46 s vs 0.47 s (1.01x) base</title></circle>
-<circle cx="465.5" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,x): 0.34 s vs 0.41 s (1.23x) base</title></circle>
-<circle cx="466.9" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(z,x): 0.46 s vs 0.57 s (1.24x) base</title></circle>
-<circle cx="435.1" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND C(z): 0.39 s vs 0.42 s (1.06x) base</title></circle>
-<circle cx="413.5" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND A(z,w) AND B(w,v): 0.46 s vs 0.44 s (0.96x) base</title></circle>
-<circle cx="447.6" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND D(y,z,w): 0.38 s vs 0.42 s (1.13x) base</title></circle>
-<circle cx="514.6" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND D(z,y,x): 0.21 s vs 0.33 s (1.55x) base</title></circle>
-<circle cx="416.0" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(x,y) AND C(x) AND C(y): 0.34 s vs 0.33 s (0.97x) base</title></circle>
+<circle cx="406.5" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(x,y): 0.35 s vs 0.33 s (0.93x) base</title></circle>
+<circle cx="441.4" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.49 s vs 0.54 s (1.10x) base</title></circle>
+<circle cx="474.6" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,x): 0.42 s vs 0.54 s (1.28x) base</title></circle>
+<circle cx="457.7" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(z,x): 0.64 s vs 0.76 s (1.18x) base</title></circle>
+<circle cx="412.3" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND C(z): 0.50 s vs 0.48 s (0.95x) base</title></circle>
+<circle cx="409.7" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND A(z,w) AND B(w,v): 0.48 s vs 0.46 s (0.94x) base</title></circle>
+<circle cx="451.0" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND D(y,z,w): 0.38 s vs 0.44 s (1.15x) base</title></circle>
+<circle cx="500.3" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND D(z,y,x): 0.23 s vs 0.33 s (1.45x) base</title></circle>
+<circle cx="413.1" cy="48.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(x,y) AND C(x) AND C(y): 0.34 s vs 0.33 s (0.96x) base</title></circle>
 <text x="122" y="64.0" text-anchor="end" dominant-baseline="middle">join_scale</text>
 <line x1="130" y1="64.0" x2="860" y2="64.0" stroke="#eee"/>
-<circle cx="431.4" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.13 s vs 0.14 s (1.05x) rate10</title></circle>
-<circle cx="433.1" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.46 s vs 0.48 s (1.05x) base</title></circle>
-<circle cx="429.5" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.87 s vs 0.90 s (1.04x) rate80</title></circle>
-<circle cx="414.5" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.51 s vs 0.49 s (0.97x) dom50</title></circle>
-<circle cx="434.9" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.40 s vs 0.43 s (1.06x) dom1000</title></circle>
+<circle cx="475.8" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.11 s vs 0.14 s (1.29x) rate10</title></circle>
+<circle cx="429.1" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.47 s vs 0.49 s (1.03x) base</title></circle>
+<circle cx="409.0" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.95 s vs 0.90 s (0.94x) rate80</title></circle>
+<circle cx="416.1" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.52 s vs 0.50 s (0.97x) dom50</title></circle>
+<circle cx="424.2" cy="64.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z): 0.42 s vs 0.42 s (1.01x) dom1000</title></circle>
 <text x="122" y="80.0" text-anchor="end" dominant-baseline="middle">andnot</text>
 <line x1="130" y1="80.0" x2="860" y2="80.0" stroke="#eee"/>
-<circle cx="412.8" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.46 s vs 0.44 s (0.96x) base</title></circle>
-<circle cx="436.6" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT C(x): 0.41 s vs 0.44 s (1.07x) base</title></circle>
-<circle cx="451.1" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(y,x): 0.47 s vs 0.54 s (1.15x) base</title></circle>
-<circle cx="456.5" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (EXISTS z. B(x,z)): 0.47 s vs 0.55 s (1.18x) base</title></circle>
-<circle cx="445.5" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND NOT A(x,y): 0.37 s vs 0.41 s (1.12x) base</title></circle>
-<circle cx="469.9" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND NOT A(z,x): 0.45 s vs 0.57 s (1.26x) base</title></circle>
-<circle cx="424.4" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.44 s vs 0.45 s (1.01x) dom50</title></circle>
-<circle cx="411.3" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.46 s vs 0.43 s (0.95x) dom1000</title></circle>
+<circle cx="410.2" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.48 s vs 0.45 s (0.95x) base</title></circle>
+<circle cx="426.3" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT C(x): 0.42 s vs 0.43 s (1.02x) base</title></circle>
+<circle cx="456.4" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(y,x): 0.48 s vs 0.57 s (1.18x) base</title></circle>
+<circle cx="448.8" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (EXISTS z. B(x,z)): 0.47 s vs 0.54 s (1.14x) base</title></circle>
+<circle cx="411.0" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND NOT A(x,y): 0.41 s vs 0.39 s (0.95x) base</title></circle>
+<circle cx="470.5" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND NOT A(z,x): 0.46 s vs 0.58 s (1.26x) base</title></circle>
+<circle cx="419.1" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.45 s vs 0.44 s (0.99x) dom50</title></circle>
+<circle cx="414.1" cy="80.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT B(x,y): 0.46 s vs 0.44 s (0.96x) dom1000</title></circle>
 <text x="122" y="96.0" text-anchor="end" dominant-baseline="middle">rel</text>
 <line x1="130" y1="96.0" x2="860" y2="96.0" stroke="#eee"/>
-<circle cx="436.8" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; y: 0.38 s vs 0.41 s (1.07x) base</title></circle>
-<circle cx="462.5" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x = y: 0.27 s vs 0.33 s (1.21x) base</title></circle>
-<circle cx="455.7" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; 20: 0.34 s vs 0.40 s (1.17x) base</title></circle>
-<circle cx="452.1" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT x &lt; y: 0.37 s vs 0.43 s (1.15x) base</title></circle>
-<circle cx="439.2" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND z = x + y: 0.42 s vs 0.46 s (1.09x) base</title></circle>
-<circle cx="431.3" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND w = x + z: 0.48 s vs 0.50 s (1.05x) base</title></circle>
-<circle cx="440.7" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND x &lt; z: 0.44 s vs 0.49 s (1.09x) base</title></circle>
-<circle cx="457.6" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; y AND y &lt; 100: 0.35 s vs 0.41 s (1.18x) base</title></circle>
+<circle cx="432.2" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; y: 0.37 s vs 0.39 s (1.05x) base</title></circle>
+<circle cx="454.2" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x = y: 0.28 s vs 0.33 s (1.17x) base</title></circle>
+<circle cx="443.9" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; 20: 0.35 s vs 0.39 s (1.11x) base</title></circle>
+<circle cx="446.0" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT x &lt; y: 0.39 s vs 0.43 s (1.12x) base</title></circle>
+<circle cx="459.4" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND z = x + y: 0.40 s vs 0.48 s (1.19x) base</title></circle>
+<circle cx="429.0" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND w = x + z: 0.47 s vs 0.48 s (1.03x) base</title></circle>
+<circle cx="429.9" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND x &lt; z: 0.46 s vs 0.47 s (1.04x) base</title></circle>
+<circle cx="465.2" cy="96.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; y AND y &lt; 100: 0.34 s vs 0.42 s (1.23x) base</title></circle>
 <text x="122" y="112.0" text-anchor="end" dominant-baseline="middle">or_exists</text>
 <line x1="130" y1="112.0" x2="860" y2="112.0" stroke="#eee"/>
-<circle cx="414.8" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) OR B(x,y): 0.50 s vs 0.48 s (0.97x) base</title></circle>
-<circle cx="418.8" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) OR (B(x,y) AND y &lt; 100): 0.46 s vs 0.46 s (0.98x) base</title></circle>
-<circle cx="497.8" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>EXISTS y. A(x,y): 0.37 s vs 0.52 s (1.43x) base</title></circle>
-<circle cx="417.5" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(EXISTS x. A(x,y)) AND B(y,z): 0.47 s vs 0.46 s (0.98x) base</title></circle>
-<circle cx="456.4" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (EXISTS y. A(x,y) AND B(y,x)): 0.33 s vs 0.39 s (1.18x) base</title></circle>
-<circle cx="458.2" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(EXISTS z. D(x,y,z)) AND NOT A(x,y): 0.38 s vs 0.45 s (1.19x) base</title></circle>
+<circle cx="408.7" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) OR B(x,y): 0.49 s vs 0.46 s (0.94x) base</title></circle>
+<circle cx="407.9" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) OR (B(x,y) AND y &lt; 100): 0.49 s vs 0.45 s (0.94x) base</title></circle>
+<circle cx="506.2" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>EXISTS y. A(x,y): 0.34 s vs 0.50 s (1.49x) base</title></circle>
+<circle cx="419.1" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(EXISTS x. A(x,y)) AND B(y,z): 0.47 s vs 0.46 s (0.99x) base</title></circle>
+<circle cx="438.3" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (EXISTS y. A(x,y) AND B(y,x)): 0.35 s vs 0.38 s (1.08x) base</title></circle>
+<circle cx="444.9" cy="112.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(EXISTS z. D(x,y,z)) AND NOT A(x,y): 0.38 s vs 0.42 s (1.11x) base</title></circle>
 <text x="122" y="128.0" text-anchor="end" dominant-baseline="middle">prevnext</text>
 <line x1="130" y1="128.0" x2="860" y2="128.0" stroke="#eee"/>
-<circle cx="492.6" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>PREV[0,1] C(x): 0.28 s vs 0.40 s (1.40x) base</title></circle>
-<circle cx="484.4" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>NEXT[0,1] C(x): 0.29 s vs 0.39 s (1.34x) base</title></circle>
-<circle cx="412.3" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND PREV[0,1] B(x,y): 0.34 s vs 0.33 s (0.95x) base</title></circle>
-<circle cx="416.9" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NEXT[0,1] B(x,y): 0.33 s vs 0.32 s (0.98x) base</title></circle>
-<circle cx="431.1" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT PREV[0,1] A(x,y): 0.43 s vs 0.45 s (1.04x) base</title></circle>
-<circle cx="380.5" cy="128.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) AND PREV[0,1] (B(x,z) AND C(z)): 0.44 s vs 0.36 s (0.82x) base</title></circle>
-<circle cx="405.0" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND PREV[0,0] B(x,y): 0.35 s vs 0.33 s (0.92x) burst</title></circle>
-<circle cx="422.2" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NEXT[0,0] B(x,y): 0.31 s vs 0.31 s (1.00x) burst</title></circle>
+<circle cx="482.3" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>PREV[0,1] C(x): 0.29 s vs 0.39 s (1.33x) base</title></circle>
+<circle cx="492.1" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>NEXT[0,1] C(x): 0.29 s vs 0.40 s (1.39x) base</title></circle>
+<circle cx="406.3" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND PREV[0,1] B(x,y): 0.37 s vs 0.35 s (0.93x) base</title></circle>
+<circle cx="437.0" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NEXT[0,1] B(x,y): 0.30 s vs 0.32 s (1.07x) base</title></circle>
+<circle cx="439.9" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT PREV[0,1] A(x,y): 0.43 s vs 0.46 s (1.09x) base</title></circle>
+<circle cx="356.2" cy="128.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) AND PREV[0,1] (B(x,z) AND C(z)): 0.50 s vs 0.37 s (0.73x) base</title></circle>
+<circle cx="381.7" cy="128.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) AND PREV[0,0] B(x,y): 0.42 s vs 0.35 s (0.83x) burst</title></circle>
+<circle cx="413.6" cy="128.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NEXT[0,0] B(x,y): 0.34 s vs 0.32 s (0.96x) burst</title></circle>
 <text x="122" y="144.0" text-anchor="end" dominant-baseline="middle">once</text>
 <line x1="130" y1="144.0" x2="860" y2="144.0" stroke="#eee"/>
-<circle cx="485.5" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,0] C(x): 0.30 s vs 0.41 s (1.35x) base</title></circle>
-<circle cx="477.0" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,5] C(x): 0.35 s vs 0.46 s (1.30x) base</title></circle>
-<circle cx="458.7" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,20] C(x): 0.40 s vs 0.47 s (1.19x) base</title></circle>
-<circle cx="440.3" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,1] B(x,y): 0.48 s vs 0.53 s (1.09x) base</title></circle>
-<circle cx="456.0" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] B(x,y): 0.56 s vs 0.65 s (1.17x) base</title></circle>
-<circle cx="483.9" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50] B(x,y): 0.88 s vs 1.18 s (1.34x) base</title></circle>
-<circle cx="522.5" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,500] B(x,y): 1.53 s vs 2.47 s (1.61x) base</title></circle>
-<circle cx="507.2" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,2000] B(x,y): 1.51 s vs 2.26 s (1.50x) base</title></circle>
-<circle cx="423.1" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,5] A(x,y): 0.75 s vs 0.76 s (1.01x) base</title></circle>
-<circle cx="417.5" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,50] A(x,y): 1.19 s vs 1.17 s (0.98x) base</title></circle>
-<circle cx="441.3" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,500] A(x,y): 2.12 s vs 2.32 s (1.10x) base</title></circle>
-<circle cx="403.8" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ONCE[5,25] A(x,y): 1.25 s vs 1.15 s (0.92x) base</title></circle>
-<circle cx="329.3" cy="144.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>C(x) AND ONCE[500,520] A(x,y): 1.67 s vs 1.07 s (0.64x) base</title></circle>
-<circle cx="547.1" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,*) B(x,y): 0.92 s vs 1.67 s (1.81x) base</title></circle>
-<circle cx="517.8" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,*) A(x,y): 0.89 s vs 1.40 s (1.58x) base</title></circle>
-<circle cx="482.3" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50) B(x,y): 0.87 s vs 1.15 s (1.33x) base</title></circle>
+<circle cx="474.0" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,0] C(x): 0.32 s vs 0.42 s (1.28x) base</title></circle>
+<circle cx="460.4" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,5] C(x): 0.35 s vs 0.42 s (1.20x) base</title></circle>
+<circle cx="450.2" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>ONCE[0,20] C(x): 0.41 s vs 0.47 s (1.14x) base</title></circle>
+<circle cx="462.4" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,1] B(x,y): 0.47 s vs 0.57 s (1.21x) base</title></circle>
+<circle cx="466.2" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] B(x,y): 0.57 s vs 0.70 s (1.23x) base</title></circle>
+<circle cx="488.9" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50] B(x,y): 0.89 s vs 1.22 s (1.37x) base</title></circle>
+<circle cx="518.7" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,500] B(x,y): 1.55 s vs 2.46 s (1.58x) base</title></circle>
+<circle cx="513.7" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,2000] B(x,y): 1.44 s vs 2.22 s (1.55x) base</title></circle>
+<circle cx="410.5" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,5] A(x,y): 0.78 s vs 0.74 s (0.95x) base</title></circle>
+<circle cx="414.4" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,50] A(x,y): 1.17 s vs 1.13 s (0.96x) base</title></circle>
+<circle cx="427.6" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,500] A(x,y): 2.09 s vs 2.15 s (1.03x) base</title></circle>
+<circle cx="403.9" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ONCE[5,25] A(x,y): 1.30 s vs 1.20 s (0.92x) base</title></circle>
+<circle cx="320.1" cy="144.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>C(x) AND ONCE[500,520] A(x,y): 1.67 s vs 1.03 s (0.62x) base</title></circle>
+<circle cx="538.8" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,*) B(x,y): 0.86 s vs 1.50 s (1.74x) base</title></circle>
+<circle cx="522.7" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,*) A(x,y): 0.86 s vs 1.39 s (1.61x) base</title></circle>
+<circle cx="472.5" cy="144.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50) B(x,y): 0.87 s vs 1.10 s (1.27x) base</title></circle>
 <text x="122" y="160.0" text-anchor="end" dominant-baseline="middle">once_exists</text>
 <line x1="130" y1="160.0" x2="860" y2="160.0" stroke="#eee"/>
-<circle cx="512.1" cy="160.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,5] A(x,y)): 0.70 s vs 1.07 s (1.53x) base</title></circle>
-<circle cx="579.5" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,20] A(x,y)): 1.06 s vs 2.24 s (2.11x) base</title></circle>
-<circle cx="642.8" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,50] A(x,y)): 1.54 s vs 4.39 s (2.85x) base</title></circle>
-<circle cx="474.8" cy="160.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[1,5] A(x,y)): 0.77 s vs 0.99 s (1.28x) base</title></circle>
-<circle cx="614.2" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[1,50] A(x,y)): 1.66 s vs 4.15 s (2.49x) base</title></circle>
+<circle cx="507.1" cy="160.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,5] A(x,y)): 0.71 s vs 1.07 s (1.50x) base</title></circle>
+<circle cx="569.2" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,20] A(x,y)): 1.09 s vs 2.19 s (2.01x) base</title></circle>
+<circle cx="658.6" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND (EXISTS y. ONCE[0,50] A(x,y)): 1.59 s vs 4.90 s (3.08x) base</title></circle>
+<circle cx="472.3" cy="160.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[1,5] A(x,y)): 0.83 s vs 1.05 s (1.27x) base</title></circle>
+<circle cx="614.6" cy="160.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[1,50] A(x,y)): 1.69 s vs 4.23 s (2.50x) base</title></circle>
 <text x="122" y="176.0" text-anchor="end" dominant-baseline="middle">once_scale</text>
 <line x1="130" y1="176.0" x2="860" y2="176.0" stroke="#eee"/>
-<circle cx="464.1" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.16 s vs 0.19 s (1.22x) rate10</title></circle>
-<circle cx="485.1" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 1.56 s vs 2.10 s (1.35x) rate80</title></circle>
-<circle cx="448.7" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.76 s vs 0.86 s (1.13x) dom50</title></circle>
-<circle cx="455.3" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.65 s vs 0.76 s (1.17x) dom1000</title></circle>
+<circle cx="453.6" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.16 s vs 0.18 s (1.16x) rate10</title></circle>
+<circle cx="463.1" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 1.66 s vs 2.02 s (1.22x) rate80</title></circle>
+<circle cx="447.5" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.78 s vs 0.88 s (1.13x) dom50</title></circle>
+<circle cx="459.3" cy="176.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] B(x,y): 0.66 s vs 0.78 s (1.19x) dom1000</title></circle>
 <text x="122" y="192.0" text-anchor="end" dominant-baseline="middle">since</text>
 <line x1="130" y1="192.0" x2="860" y2="192.0" stroke="#eee"/>
-<circle cx="437.2" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,5] B(x,y): 0.62 s vs 0.66 s (1.07x) base</title></circle>
-<circle cx="459.9" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,50] B(x,y): 0.63 s vs 0.76 s (1.20x) base</title></circle>
-<circle cx="476.0" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,500] B(x,y): 0.65 s vs 0.84 s (1.29x) base</title></circle>
-<circle cx="514.1" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,5] A(x,y)): 0.51 s vs 0.79 s (1.55x) base</title></circle>
-<circle cx="537.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,50] A(x,y)): 0.49 s vs 0.85 s (1.73x) base</title></circle>
-<circle cx="537.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,500] A(x,y)): 0.54 s vs 0.93 s (1.73x) base</title></circle>
-<circle cx="564.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,5] A(x,y)): 0.71 s vs 1.39 s (1.97x) base</title></circle>
-<circle cx="591.0" cy="192.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,50] A(x,y)): 0.85 s vs 1.89 s (2.23x) base</title></circle>
-<circle cx="589.0" cy="192.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,500] A(x,y)): 0.95 s vs 2.09 s (2.21x) base</title></circle>
-<circle cx="512.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((NOT B(x,y)) SINCE[0,5] A(x,y)): 0.78 s vs 1.20 s (1.54x) base</title></circle>
-<circle cx="505.2" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((NOT B(x,y)) SINCE[0,20] A(x,y)): 1.24 s vs 1.84 s (1.48x) base</title></circle>
-<circle cx="319.9" cy="192.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) SINCE[2,500] B(x,y): 1.07 s vs 0.66 s (0.62x) base</title></circle>
-<circle cx="478.7" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) SINCE[5,*) A(x,y): 0.42 s vs 0.55 s (1.31x) base</title></circle>
+<circle cx="427.3" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,5] B(x,y): 0.68 s vs 0.70 s (1.03x) base</title></circle>
+<circle cx="443.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,50] B(x,y): 0.69 s vs 0.76 s (1.11x) base</title></circle>
+<circle cx="478.6" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) SINCE[0,500] B(x,y): 0.65 s vs 0.85 s (1.31x) base</title></circle>
+<circle cx="504.6" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,5] A(x,y)): 0.53 s vs 0.79 s (1.48x) base</title></circle>
+<circle cx="507.4" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,50] A(x,y)): 0.54 s vs 0.81 s (1.50x) base</title></circle>
+<circle cx="545.2" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) SINCE[0,500] A(x,y)): 0.55 s vs 0.98 s (1.79x) base</title></circle>
+<circle cx="584.0" cy="192.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,5] A(x,y)): 0.70 s vs 1.50 s (2.16x) base</title></circle>
+<circle cx="584.4" cy="192.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,50] A(x,y)): 0.90 s vs 1.96 s (2.16x) base</title></circle>
+<circle cx="586.2" cy="192.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) SINCE[0,500] A(x,y)): 1.00 s vs 2.18 s (2.18x) base</title></circle>
+<circle cx="488.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((NOT B(x,y)) SINCE[0,5] A(x,y)): 0.86 s vs 1.19 s (1.37x) base</title></circle>
+<circle cx="500.8" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((NOT B(x,y)) SINCE[0,20] A(x,y)): 1.29 s vs 1.88 s (1.45x) base</title></circle>
+<circle cx="317.2" cy="192.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) SINCE[2,500] B(x,y): 1.05 s vs 0.64 s (0.61x) base</title></circle>
+<circle cx="471.9" cy="192.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) SINCE[5,*) A(x,y): 0.45 s vs 0.57 s (1.27x) base</title></circle>
 <text x="122" y="208.0" text-anchor="end" dominant-baseline="middle">eventually</text>
 <line x1="130" y1="208.0" x2="860" y2="208.0" stroke="#eee"/>
-<circle cx="430.7" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,1] B(x,y): 0.53 s vs 0.55 s (1.04x) base</title></circle>
-<circle cx="443.3" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,20] B(x,y): 0.86 s vs 0.95 s (1.11x) base</title></circle>
-<circle cx="511.1" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,500] B(x,y): 1.71 s vs 2.61 s (1.53x) base</title></circle>
-<circle cx="417.5" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,1] B(x,y): 0.66 s vs 0.65 s (0.98x) base</title></circle>
-<circle cx="435.4" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,20] B(x,y): 0.93 s vs 1.00 s (1.07x) base</title></circle>
-<circle cx="522.3" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,500] B(x,y): 1.69 s vs 2.72 s (1.61x) base</title></circle>
-<circle cx="474.4" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>EVENTUALLY[0,5] C(x): 0.34 s vs 0.44 s (1.28x) base</title></circle>
-<circle cx="573.9" cy="208.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND (EXISTS y. EVENTUALLY[0,20] A(x,y)): 1.09 s vs 2.24 s (2.06x) base</title></circle>
+<circle cx="432.5" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,1] B(x,y): 0.51 s vs 0.54 s (1.05x) base</title></circle>
+<circle cx="451.6" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,20] B(x,y): 0.86 s vs 0.99 s (1.15x) base</title></circle>
+<circle cx="525.9" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,500] B(x,y): 1.74 s vs 2.84 s (1.64x) base</title></circle>
+<circle cx="422.5" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,1] B(x,y): 0.68 s vs 0.68 s (1.00x) base</title></circle>
+<circle cx="442.0" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,20] B(x,y): 0.94 s vs 1.03 s (1.10x) base</title></circle>
+<circle cx="514.7" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,500] B(x,y): 1.71 s vs 2.66 s (1.55x) base</title></circle>
+<circle cx="456.7" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>EVENTUALLY[0,5] C(x): 0.38 s vs 0.45 s (1.18x) base</title></circle>
+<circle cx="552.4" cy="208.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (EXISTS y. EVENTUALLY[0,20] A(x,y)): 1.23 s vs 2.28 s (1.86x) base</title></circle>
 <text x="122" y="224.0" text-anchor="end" dominant-baseline="middle">until</text>
 <line x1="130" y1="224.0" x2="860" y2="224.0" stroke="#eee"/>
-<circle cx="478.3" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,5] B(x,y): 0.57 s vs 0.75 s (1.31x) base</title></circle>
-<circle cx="485.9" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,50] B(x,y): 0.60 s vs 0.81 s (1.35x) base</title></circle>
-<circle cx="476.3" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,500] B(x,y): 0.63 s vs 0.82 s (1.29x) base</title></circle>
-<circle cx="465.8" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,5] A(x,y)): 0.48 s vs 0.59 s (1.23x) base</title></circle>
-<circle cx="480.5" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,50] A(x,y)): 0.54 s vs 0.72 s (1.32x) base</title></circle>
-<circle cx="538.3" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) UNTIL[0,20] A(x,y)): 0.87 s vs 1.51 s (1.74x) base</title></circle>
+<circle cx="479.0" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,5] B(x,y): 0.60 s vs 0.78 s (1.31x) base</title></circle>
+<circle cx="486.2" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,50] B(x,y): 0.63 s vs 0.85 s (1.36x) base</title></circle>
+<circle cx="470.8" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,500] B(x,y): 0.67 s vs 0.85 s (1.26x) base</title></circle>
+<circle cx="471.7" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,5] A(x,y)): 0.49 s vs 0.62 s (1.27x) base</title></circle>
+<circle cx="472.3" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,50] A(x,y)): 0.56 s vs 0.71 s (1.27x) base</title></circle>
+<circle cx="534.8" cy="224.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND ((NOT C(x)) UNTIL[0,20] A(x,y)): 0.91 s vs 1.55 s (1.71x) base</title></circle>
 <text x="122" y="240.0" text-anchor="end" dominant-baseline="middle">burst</text>
 <line x1="130" y1="240.0" x2="860" y2="240.0" stroke="#eee"/>
-<circle cx="411.6" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,0] B(x,y): 0.90 s vs 0.86 s (0.95x) burst</title></circle>
-<circle cx="439.3" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,2] B(x,y): 1.21 s vs 1.31 s (1.09x) burst</title></circle>
-<circle cx="469.2" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,10] B(x,y): 1.64 s vs 2.06 s (1.25x) burst</title></circle>
-<circle cx="466.6" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) AND NOT EVENTUALLY[0,5] C(y): 0.34 s vs 0.43 s (1.24x) burst</title></circle>
-<circle cx="458.6" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,1] B(x,y): 0.58 s vs 0.68 s (1.19x) burst</title></circle>
-<circle cx="463.8" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,5] B(x,y): 0.56 s vs 0.69 s (1.22x) burst</title></circle>
-<circle cx="488.5" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,5] A(x,y)): 0.51 s vs 0.70 s (1.37x) burst</title></circle>
-<circle cx="500.9" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] B(x,y): 1.28 s vs 1.86 s (1.45x) burst</title></circle>
-<circle cx="418.9" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y)): 0.53 s vs 0.52 s (0.99x) burst</title></circle>
+<circle cx="416.6" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,0] B(x,y): 0.94 s vs 0.92 s (0.97x) burst</title></circle>
+<circle cx="433.0" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,2] B(x,y): 1.19 s vs 1.26 s (1.05x) burst</title></circle>
+<circle cx="460.1" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,10] B(x,y): 1.61 s vs 1.93 s (1.20x) burst</title></circle>
+<circle cx="458.2" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) AND NOT EVENTUALLY[0,5] C(y): 0.36 s vs 0.43 s (1.19x) burst</title></circle>
+<circle cx="444.6" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,1] B(x,y): 0.62 s vs 0.69 s (1.11x) burst</title></circle>
+<circle cx="459.5" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) UNTIL[0,5] B(x,y): 0.59 s vs 0.70 s (1.19x) burst</title></circle>
+<circle cx="462.7" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>B(x,y) AND (C(x) UNTIL[0,5] A(x,y)): 0.52 s vs 0.63 s (1.21x) burst</title></circle>
+<circle cx="501.9" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] B(x,y): 1.26 s vs 1.84 s (1.46x) burst</title></circle>
+<circle cx="412.9" cy="240.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y)): 0.56 s vs 0.54 s (0.96x) burst</title></circle>
 <text x="122" y="256.0" text-anchor="end" dominant-baseline="middle">nested</text>
 <line x1="130" y1="256.0" x2="860" y2="256.0" stroke="#eee"/>
-<circle cx="438.5" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] (B(y,z) AND ONCE[0,5] C(z)): 0.60 s vs 0.65 s (1.08x) base</title></circle>
-<circle cx="422.9" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] (B(y,z) AND ONCE[0,20] C(z)): 1.32 s vs 1.33 s (1.00x) base</title></circle>
-<circle cx="431.2" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50] (B(y,z) AND ONCE[0,20] C(z)): 2.28 s vs 2.38 s (1.04x) base</title></circle>
-<circle cx="408.8" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,500] (B(y,z) AND ONCE[0,20] C(z)): 0.87 s vs 0.82 s (0.94x) rate10</title></circle>
-<circle cx="428.2" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,20] (B(x,z) AND ONCE[0,20] C(z)): 1.35 s vs 1.39 s (1.03x) base</title></circle>
-<circle cx="417.6" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] (B(x,z) AND EVENTUALLY[0,20] C(z)): 1.45 s vs 1.42 s (0.98x) base</title></circle>
-<circle cx="529.3" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((ONCE[0,20] A(x,y)) SINCE[0,20] B(x,y)): 1.06 s vs 1.76 s (1.66x) base</title></circle>
-<circle cx="465.7" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ((B(x,y) SINCE[0,20] A(x,y)) AND ONCE[0,20] C(y)): 0.72 s vs 0.89 s (1.23x) base</title></circle>
-<circle cx="497.1" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (C(x) SINCE[0,20] B(x,y)): 0.66 s vs 0.94 s (1.43x) base</title></circle>
-<circle cx="469.7" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (C(x) UNTIL[0,20] B(x,y)): 0.66 s vs 0.83 s (1.25x) base</title></circle>
-<circle cx="486.5" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (ONCE[0,20] B(x,y)) AND NOT (EVENTUALLY[0,20] B(x,y)): 1.20 s vs 1.63 s (1.36x) base</title></circle>
+<circle cx="420.7" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,5] (B(y,z) AND ONCE[0,5] C(z)): 0.63 s vs 0.63 s (0.99x) base</title></circle>
+<circle cx="419.7" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] (B(y,z) AND ONCE[0,20] C(z)): 1.35 s vs 1.34 s (0.99x) base</title></circle>
+<circle cx="427.1" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,50] (B(y,z) AND ONCE[0,20] C(z)): 2.42 s vs 2.48 s (1.02x) base</title></circle>
+<circle cx="398.6" cy="256.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,500] (B(y,z) AND ONCE[0,20] C(z)): 0.89 s vs 0.79 s (0.89x) rate10</title></circle>
+<circle cx="402.7" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND EVENTUALLY[0,20] (B(x,z) AND ONCE[0,20] C(z)): 1.50 s vs 1.37 s (0.91x) base</title></circle>
+<circle cx="412.6" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,20] (B(x,z) AND EVENTUALLY[0,20] C(z)): 1.54 s vs 1.47 s (0.96x) base</title></circle>
+<circle cx="513.2" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND ((ONCE[0,20] A(x,y)) SINCE[0,20] B(x,y)): 1.15 s vs 1.77 s (1.54x) base</title></circle>
+<circle cx="448.5" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ((B(x,y) SINCE[0,20] A(x,y)) AND ONCE[0,20] C(y)): 0.80 s vs 0.90 s (1.13x) base</title></circle>
+<circle cx="491.6" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (C(x) SINCE[0,20] B(x,y)): 0.69 s vs 0.96 s (1.39x) base</title></circle>
+<circle cx="469.6" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT (C(x) UNTIL[0,20] B(x,y)): 0.67 s vs 0.84 s (1.25x) base</title></circle>
+<circle cx="469.6" cy="256.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (ONCE[0,20] B(x,y)) AND NOT (EVENTUALLY[0,20] B(x,y)): 1.32 s vs 1.66 s (1.25x) base</title></circle>
 <text x="122" y="272.0" text-anchor="end" dominant-baseline="middle">agg</text>
 <line x1="130" y1="272.0" x2="860" y2="272.0" stroke="#eee"/>
-<circle cx="480.6" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x A(x,y): 0.50 s vs 0.66 s (1.32x) base</title></circle>
-<circle cx="481.5" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x A(x,y): 0.48 s vs 0.64 s (1.33x) base</title></circle>
-<circle cx="483.4" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MIN y; x A(x,y): 0.49 s vs 0.65 s (1.34x) base</title></circle>
-<circle cx="487.4" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MAX y; x A(x,y): 0.48 s vs 0.66 s (1.36x) base</title></circle>
-<circle cx="478.6" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x A(x,y): 0.57 s vs 0.74 s (1.31x) base</title></circle>
-<circle cx="479.5" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x A(x,y): 0.57 s vs 0.75 s (1.31x) base</title></circle>
-<circle cx="503.4" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y A(x,y): 0.36 s vs 0.53 s (1.47x) base</title></circle>
-<circle cx="464.3" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT z; x (A(x,y) AND B(y,z)): 0.47 s vs 0.58 s (1.22x) base</title></circle>
+<circle cx="468.5" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x A(x,y): 0.56 s vs 0.70 s (1.25x) base</title></circle>
+<circle cx="466.9" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x A(x,y): 0.52 s vs 0.64 s (1.24x) base</title></circle>
+<circle cx="487.0" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MIN y; x A(x,y): 0.46 s vs 0.63 s (1.36x) base</title></circle>
+<circle cx="502.4" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MAX y; x A(x,y): 0.48 s vs 0.71 s (1.46x) base</title></circle>
+<circle cx="485.4" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x A(x,y): 0.54 s vs 0.73 s (1.35x) base</title></circle>
+<circle cx="475.1" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x A(x,y): 0.59 s vs 0.76 s (1.29x) base</title></circle>
+<circle cx="505.9" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y A(x,y): 0.37 s vs 0.54 s (1.49x) base</title></circle>
+<circle cx="476.7" cy="272.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT z; x (A(x,y) AND B(y,z)): 0.46 s vs 0.60 s (1.30x) base</title></circle>
 <text x="122" y="288.0" text-anchor="end" dominant-baseline="middle">agg_once</text>
 <line x1="130" y1="288.0" x2="860" y2="288.0" stroke="#eee"/>
-<circle cx="521.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,5] A(x,y): 0.80 s vs 1.28 s (1.61x) base</title></circle>
-<circle cx="532.6" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,50] A(x,y): 1.05 s vs 1.78 s (1.69x) base</title></circle>
-<circle cx="575.6" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,500] A(x,y): 1.21 s vs 2.50 s (2.07x) base</title></circle>
-<circle cx="514.9" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,5] A(x,y): 0.78 s vs 1.21 s (1.55x) base</title></circle>
-<circle cx="539.6" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,50] A(x,y): 0.97 s vs 1.69 s (1.75x) base</title></circle>
-<circle cx="569.1" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,500] A(x,y): 1.24 s vs 2.49 s (2.01x) base</title></circle>
-<circle cx="569.1" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- MIN y; x ONCE[0,5] A(x,y): 0.68 s vs 1.37 s (2.01x) base</title></circle>
-<circle cx="627.8" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- MIN y; x ONCE[0,50] A(x,y): 0.88 s vs 2.35 s (2.66x) base</title></circle>
-<circle cx="626.8" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- MAX y; x ONCE[0,50] A(x,y): 0.90 s vs 2.38 s (2.64x) base</title></circle>
-<circle cx="511.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x ONCE[0,5] A(x,y): 1.07 s vs 1.64 s (1.53x) base</title></circle>
-<circle cx="529.2" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x ONCE[0,50] A(x,y): 1.40 s vs 2.33 s (1.66x) base</title></circle>
-<circle cx="529.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x ONCE[0,5] A(x,y): 1.12 s vs 1.86 s (1.66x) base</title></circle>
-<circle cx="522.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x ONCE[0,20] A(x,y): 1.58 s vs 2.54 s (1.61x) base</title></circle>
-<circle cx="508.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,5] C(x): 0.31 s vs 0.46 s (1.51x) base</title></circle>
-<circle cx="507.4" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,50] C(x): 0.31 s vs 0.46 s (1.50x) base</title></circle>
-<circle cx="508.6" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,500] C(x): 0.31 s vs 0.47 s (1.51x) base</title></circle>
-<circle cx="507.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,2000] C(x): 0.30 s vs 0.45 s (1.50x) base</title></circle>
-<circle cx="478.0" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT z; x,y ONCE[0,5] D(x,y,z): 0.48 s vs 0.63 s (1.30x) base</title></circle>
-<circle cx="458.5" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 0.49 s vs 0.58 s (1.19x) rate10</title></circle>
-<circle cx="561.6" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 1.56 s vs 3.03 s (1.94x) rate80</title></circle>
-<circle cx="557.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 0.62 s vs 1.17 s (1.90x) dom50</title></circle>
-<circle cx="484.9" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 2.06 s vs 2.77 s (1.35x) dom1000</title></circle>
+<circle cx="514.2" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,5] A(x,y): 0.82 s vs 1.28 s (1.55x) base</title></circle>
+<circle cx="535.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,50] A(x,y): 1.11 s vs 1.91 s (1.72x) base</title></circle>
+<circle cx="590.5" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- CNT y; x ONCE[0,500] A(x,y): 1.20 s vs 2.66 s (2.23x) base</title></circle>
+<circle cx="536.5" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,5] A(x,y): 0.79 s vs 1.37 s (1.72x) base</title></circle>
+<circle cx="527.3" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,50] A(x,y): 1.08 s vs 1.78 s (1.65x) base</title></circle>
+<circle cx="591.2" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,500] A(x,y): 1.23 s vs 2.75 s (2.23x) base</title></circle>
+<circle cx="546.6" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MIN y; x ONCE[0,5] A(x,y): 0.77 s vs 1.38 s (1.81x) base</title></circle>
+<circle cx="617.7" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- MIN y; x ONCE[0,50] A(x,y): 0.94 s vs 2.37 s (2.53x) base</title></circle>
+<circle cx="626.7" cy="288.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>r &lt;- MAX y; x ONCE[0,50] A(x,y): 0.90 s vs 2.39 s (2.64x) base</title></circle>
+<circle cx="514.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x ONCE[0,5] A(x,y): 1.14 s vs 1.77 s (1.55x) base</title></circle>
+<circle cx="520.3" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- AVG y; x ONCE[0,50] A(x,y): 1.55 s vs 2.48 s (1.59x) base</title></circle>
+<circle cx="514.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x ONCE[0,5] A(x,y): 1.18 s vs 1.83 s (1.55x) base</title></circle>
+<circle cx="515.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- MED y; x ONCE[0,20] A(x,y): 1.71 s vs 2.67 s (1.56x) base</title></circle>
+<circle cx="510.7" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,5] C(x): 0.29 s vs 0.44 s (1.52x) base</title></circle>
+<circle cx="498.0" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,50] C(x): 0.32 s vs 0.47 s (1.43x) base</title></circle>
+<circle cx="513.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,500] C(x): 0.31 s vs 0.47 s (1.54x) base</title></circle>
+<circle cx="516.4" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,2000] C(x): 0.30 s vs 0.47 s (1.57x) base</title></circle>
+<circle cx="466.9" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT z; x,y ONCE[0,5] D(x,y,z): 0.50 s vs 0.62 s (1.24x) base</title></circle>
+<circle cx="447.8" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 0.50 s vs 0.57 s (1.13x) rate10</title></circle>
+<circle cx="563.3" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 1.63 s vs 3.18 s (1.96x) rate80</title></circle>
+<circle cx="549.7" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 0.62 s vs 1.14 s (1.83x) dom50</title></circle>
+<circle cx="491.1" cy="288.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,20] A(x,y): 2.16 s vs 3.00 s (1.39x) dom1000</title></circle>
 <text x="122" y="304.0" text-anchor="end" dominant-baseline="middle">agg_fut</text>
 <line x1="130" y1="304.0" x2="860" y2="304.0" stroke="#eee"/>
-<circle cx="442.3" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x EVENTUALLY[0,5] A(x,y): 1.16 s vs 1.28 s (1.10x) base</title></circle>
-<circle cx="397.3" cy="304.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>r &lt;- SUM y; x EVENTUALLY[0,20] A(x,y): 1.80 s vs 1.60 s (0.89x) base</title></circle>
-<circle cx="483.8" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (r &lt;- CNT z; y B(y,z)) AND r &lt; 3: 0.53 s vs 0.72 s (1.34x) base</title></circle>
-<circle cx="552.0" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (r &lt;- SUM y; x ONCE[0,20] A(x,y)) AND r &lt; 500: 0.87 s vs 1.61 s (1.85x) base</title></circle>
-<circle cx="507.2" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(r &lt;- CNT y; x ONCE[0,20] A(x,y)) AND NOT C(x): 1.12 s vs 1.67 s (1.50x) base</title></circle>
+<circle cx="444.6" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT y; x EVENTUALLY[0,5] A(x,y): 1.20 s vs 1.33 s (1.11x) base</title></circle>
+<circle cx="387.6" cy="304.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>r &lt;- SUM y; x EVENTUALLY[0,20] A(x,y): 1.90 s vs 1.61 s (0.85x) base</title></circle>
+<circle cx="466.1" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (r &lt;- CNT z; y B(y,z)) AND r &lt; 3: 0.58 s vs 0.72 s (1.23x) base</title></circle>
+<circle cx="545.3" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND (r &lt;- SUM y; x ONCE[0,20] A(x,y)) AND r &lt; 500: 0.91 s vs 1.63 s (1.80x) base</title></circle>
+<circle cx="528.2" cy="304.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(r &lt;- CNT y; x ONCE[0,20] A(x,y)) AND NOT C(x): 1.13 s vs 1.88 s (1.66x) base</title></circle>
 <text x="122" y="320.0" text-anchor="end" dominant-baseline="middle">let</text>
 <line x1="130" y1="320.0" x2="860" y2="320.0" stroke="#eee"/>
-<circle cx="453.2" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x) = ONCE[0,50] C(x) IN A(x,y) AND P(x): 0.45 s vs 0.52 s (1.16x) base</title></circle>
-<circle cx="486.4" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,50] Q(y,x): 0.27 s vs 0.37 s (1.36x) base</title></circle>
-<circle cx="457.2" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x) = C(x) AND NOT (EXISTS y. A(x,y)) IN B(x,y) AND P(x): 0.43 s vs 0.51 s (1.18x) base</title></circle>
-<circle cx="471.1" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x,y) = A(x,y) AND NOT B(x,y) IN LET Q(x) = EXISTS y. P(x,y) IN C(x) AND Q(x): 0.42 s vs 0.53 s (1.26x) base</title></circle>
+<circle cx="434.7" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x) = ONCE[0,50] C(x) IN A(x,y) AND P(x): 0.50 s vs 0.53 s (1.06x) base</title></circle>
+<circle cx="467.0" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET Q(x,y) = A(x,y) AND B(y,x) IN Q(x,y) AND ONCE[0,50] Q(y,x): 0.33 s vs 0.40 s (1.24x) base</title></circle>
+<circle cx="453.0" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x) = C(x) AND NOT (EXISTS y. A(x,y)) IN B(x,y) AND P(x): 0.45 s vs 0.52 s (1.16x) base</title></circle>
+<circle cx="470.6" cy="320.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET P(x,y) = A(x,y) AND NOT B(x,y) IN LET Q(x) = EXISTS y. P(x,y) IN C(x) AND Q(x): 0.46 s vs 0.57 s (1.26x) base</title></circle>
 <text x="122" y="336.0" text-anchor="end" dominant-baseline="middle">wide</text>
 <line x1="130" y1="336.0" x2="860" y2="336.0" stroke="#eee"/>
-<circle cx="482.8" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,5] D(x,y,z): 0.36 s vs 0.48 s (1.33x) base</title></circle>
-<circle cx="484.5" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,50] D(x,y,z): 0.41 s vs 0.56 s (1.35x) base</title></circle>
-<circle cx="502.5" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,500] D(x,y,z): 0.52 s vs 0.76 s (1.47x) base</title></circle>
-<circle cx="450.1" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND NOT ONCE[1,50] D(x,y,z): 0.48 s vs 0.55 s (1.14x) base</title></circle>
-<circle cx="479.0" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND EVENTUALLY[0,20] D(x,y,z): 0.39 s vs 0.52 s (1.31x) base</title></circle>
-<circle cx="496.2" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) SINCE[0,20] D(z,y,x): 0.35 s vs 0.50 s (1.42x) base</title></circle>
-<circle cx="498.8" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) UNTIL[0,20] D(z,y,x): 0.35 s vs 0.50 s (1.44x) base</title></circle>
-<circle cx="440.3" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,50] (A(x,y) AND B(y,z)): 0.43 s vs 0.47 s (1.09x) base</title></circle>
+<circle cx="484.6" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,5] D(x,y,z): 0.38 s vs 0.51 s (1.35x) base</title></circle>
+<circle cx="482.5" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,50] D(x,y,z): 0.41 s vs 0.55 s (1.33x) base</title></circle>
+<circle cx="513.2" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,500] D(x,y,z): 0.53 s vs 0.81 s (1.54x) base</title></circle>
+<circle cx="444.5" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND NOT ONCE[1,50] D(x,y,z): 0.51 s vs 0.57 s (1.11x) base</title></circle>
+<circle cx="468.5" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND EVENTUALLY[0,20] D(x,y,z): 0.42 s vs 0.52 s (1.25x) base</title></circle>
+<circle cx="497.0" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) SINCE[0,20] D(z,y,x): 0.33 s vs 0.48 s (1.43x) base</title></circle>
+<circle cx="502.4" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) UNTIL[0,20] D(z,y,x): 0.36 s vs 0.52 s (1.46x) base</title></circle>
+<circle cx="433.7" cy="336.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>D(x,y,z) AND ONCE[0,50] (A(x,y) AND B(y,z)): 0.48 s vs 0.51 s (1.06x) base</title></circle>
 <text x="122" y="352.0" text-anchor="end" dominant-baseline="middle">long</text>
 <line x1="130" y1="352.0" x2="860" y2="352.0" stroke="#eee"/>
-<circle cx="460.6" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,10] B(x,y): 0.56 s vs 0.67 s (1.20x) long</title></circle>
-<circle cx="460.4" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,100] B(x,y): 0.83 s vs 0.99 s (1.20x) long</title></circle>
-<circle cx="492.5" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,1000] B(x,y): 1.58 s vs 2.21 s (1.40x) long</title></circle>
-<circle cx="496.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,10000] B(x,y): 1.87 s vs 2.66 s (1.42x) long</title></circle>
-<circle cx="415.6" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,100] A(x,y): 1.44 s vs 1.40 s (0.97x) long</title></circle>
-<circle cx="466.4" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,10000] A(x,y): 1.90 s vs 2.35 s (1.23x) long</title></circle>
-<circle cx="439.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,100] B(x,y): 1.40 s vs 1.52 s (1.09x) long</title></circle>
-<circle cx="495.1" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,1000] B(x,y): 1.88 s vs 2.67 s (1.41x) long</title></circle>
-<circle cx="504.2" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) SINCE[0,100] A(x,y): 0.87 s vs 1.28 s (1.48x) long</title></circle>
-<circle cx="526.5" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,100] C(x): 0.61 s vs 1.00 s (1.64x) long</title></circle>
-<circle cx="491.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,10000] C(x): 0.57 s vs 0.80 s (1.39x) long</title></circle>
-<circle cx="433.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,100] A(x,y): 3.27 s vs 3.45 s (1.06x) long</title></circle>
+<circle cx="464.6" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,10] B(x,y): 0.57 s vs 0.70 s (1.22x) long</title></circle>
+<circle cx="467.4" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,100] B(x,y): 0.85 s vs 1.05 s (1.24x) long</title></circle>
+<circle cx="500.9" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,1000] B(x,y): 1.64 s vs 2.38 s (1.45x) long</title></circle>
+<circle cx="498.1" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND ONCE[0,10000] B(x,y): 1.88 s vs 2.70 s (1.44x) long</title></circle>
+<circle cx="424.9" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,100] A(x,y): 1.49 s vs 1.51 s (1.01x) long</title></circle>
+<circle cx="475.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT ONCE[1,10000] A(x,y): 1.91 s vs 2.45 s (1.29x) long</title></circle>
+<circle cx="442.7" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,100] B(x,y): 1.42 s vs 1.57 s (1.10x) long</title></circle>
+<circle cx="489.8" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND NOT EVENTUALLY[0,1000] B(x,y): 2.04 s vs 2.81 s (1.38x) long</title></circle>
+<circle cx="499.4" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) SINCE[0,100] A(x,y): 0.91 s vs 1.31 s (1.44x) long</title></circle>
+<circle cx="491.2" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,100] C(x): 0.64 s vs 0.88 s (1.39x) long</title></circle>
+<circle cx="482.3" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x ONCE[0,10000] C(x): 0.61 s vs 0.82 s (1.33x) long</title></circle>
+<circle cx="438.0" cy="352.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- SUM y; x ONCE[0,100] A(x,y): 3.01 s vs 3.24 s (1.08x) long</title></circle>
 <text x="122" y="368.0" text-anchor="end" dominant-baseline="middle">policy</text>
 <line x1="130" y1="368.0" x2="860" y2="368.0" stroke="#eee"/>
-<circle cx="452.7" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) AND NOT EVENTUALLY[0,6] C(y): 0.43 s vs 0.50 s (1.16x) base</title></circle>
-<circle cx="405.2" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND x &lt; 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y)): 0.58 s vs 0.54 s (0.92x) base</title></circle>
-<circle cx="629.3" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[0,30] A(x,y) AND NOT ONCE[0,30] B(y,x)): 1.54 s vs 4.12 s (2.68x) base</title></circle>
-<circle cx="504.3" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (EXISTS z. ONCE[0,10] (B(y,z) AND NOT ONCE[0,5] C(z))): 0.89 s vs 1.32 s (1.48x) base</title></circle>
-<circle cx="603.6" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>(r &lt;- CNT y; x ONCE[0,60] A(x,y)) AND 40 &lt; r: 0.54 s vs 1.28 s (2.37x) base</title></circle>
-<circle cx="569.1" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>(r &lt;- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 &lt; r: 0.87 s vs 1.75 s (2.01x) base</title></circle>
-<circle cx="456.0" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND NOT ONCE[0,100] (A(x,y) AND B(y,z)): 0.49 s vs 0.58 s (1.18x) base</title></circle>
-<circle cx="607.1" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>A(x,y) AND ((NOT C(x)) SINCE[0,100] B(x,y)) AND NOT EVENTUALLY[0,10] C(y): 0.98 s vs 2.36 s (2.41x) base</title></circle>
-<circle cx="636.3" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>A(x,y) AND ((NOT C(x)) SINCE[0,10] B(x,y)) AND NOT EVENTUALLY[0,3] C(y): 0.93 s vs 2.58 s (2.77x) burst</title></circle>
-<circle cx="440.2" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET Bad(x) = ONCE[0,50] (C(x) AND NOT PREV[0,1] C(x)) IN A(x,y) AND Bad(x) AND NOT Bad(y): 0.47 s vs 0.51 s (1.09x) base</title></circle>
+<circle cx="391.5" cy="368.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>(A(x,y) AND x &lt; 100) AND NOT EVENTUALLY[0,6] C(y): 0.47 s vs 0.41 s (0.87x) base</title></circle>
+<circle cx="369.6" cy="368.0" r="3.2" fill="#2e7d32" fill-opacity="0.75"><title>A(x,y) AND x &lt; 100 AND NOT ONCE[2,21] (EXISTS z. B(z,y)): 0.60 s vs 0.47 s (0.78x) base</title></circle>
+<circle cx="617.8" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>C(x) AND NOT (EXISTS y. ONCE[0,30] A(x,y) AND NOT ONCE[0,30] B(y,x)): 1.50 s vs 3.81 s (2.53x) base</title></circle>
+<circle cx="492.7" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND (EXISTS z. ONCE[0,10] (B(y,z) AND NOT ONCE[0,5] C(z))): 0.79 s vs 1.11 s (1.40x) base</title></circle>
+<circle cx="617.1" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>(r &lt;- CNT y; x ONCE[0,60] A(x,y)) AND 40 &lt; r: 0.53 s vs 1.34 s (2.53x) base</title></circle>
+<circle cx="586.0" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>(r &lt;- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 &lt; r: 0.80 s vs 1.75 s (2.18x) base</title></circle>
+<circle cx="470.7" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND B(y,z) AND NOT ONCE[0,100] (A(x,y) AND B(y,z)): 0.48 s vs 0.60 s (1.26x) base</title></circle>
+<circle cx="575.1" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>A(x,y) AND ((NOT C(x)) SINCE[0,100] B(x,y)) AND NOT EVENTUALLY[0,10] C(y): 1.03 s vs 2.13 s (2.07x) base</title></circle>
+<circle cx="647.7" cy="368.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>A(x,y) AND ((NOT C(x)) SINCE[0,10] B(x,y)) AND NOT EVENTUALLY[0,3] C(y): 0.89 s vs 2.58 s (2.92x) burst</title></circle>
+<circle cx="415.0" cy="368.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>LET Bad(x) = ONCE[0,50] (C(x) AND NOT PREV[0,1] C(x)) IN A(x,y) AND Bad(x) AND NOT Bad(y): 0.51 s vs 0.49 s (0.97x) base</title></circle>
+<text x="122" y="384.0" text-anchor="end" dominant-baseline="middle">match</text>
+<line x1="130" y1="384.0" x2="860" y2="384.0" stroke="#eee"/>
+<circle cx="479.6" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHP[0,10] B(x,y)?: 0.35 s vs 0.46 s (1.31x) base</title></circle>
+<circle cx="492.4" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHP[0,50] B(x,y)?: 0.36 s vs 0.50 s (1.40x) base</title></circle>
+<circle cx="516.9" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHP[0,10] (A(x,y)? + B(x,y)?): 0.47 s vs 0.74 s (1.57x) base</title></circle>
+<circle cx="568.6" cy="384.0" r="3.2" fill="#c0392b" fill-opacity="0.75"><title>A(x,y) AND MATCHP[0,10] (A(x,y)? . B(x,y)?): 0.37 s vs 0.75 s (2.01x) base</title></circle>
+<circle cx="559.4" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHP[0,10] (B(x,y)? . (A(x,y)? . B(x,y)?)*): 0.56 s vs 1.08 s (1.92x) base</title></circle>
+<circle cx="453.8" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHF[0,10] B(x,y)?: 0.41 s vs 0.47 s (1.16x) base</title></circle>
+<circle cx="516.8" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHF[0,10] (A(x,y)? + B(x,y)?): 0.61 s vs 0.96 s (1.57x) base</title></circle>
+<circle cx="529.2" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHF[0,10] (A(x,y)? . B(x,y)?): 0.42 s vs 0.69 s (1.66x) base</title></circle>
+<circle cx="534.4" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>A(x,y) AND MATCHF[0,3] B(x,y)?: 0.61 s vs 1.04 s (1.71x) burst</title></circle>
+<circle cx="515.1" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>C(x) AND MATCHP[0,20] (EXISTS y. A(x,y))?: 0.40 s vs 0.62 s (1.56x) base</title></circle>
+<circle cx="488.6" cy="384.0" r="3.2" fill="#1f77b4" fill-opacity="0.75"><title>r &lt;- CNT x MATCHP[0,20] C(x)?: 0.36 s vs 0.50 s (1.37x) base</title></circle>
 </svg>

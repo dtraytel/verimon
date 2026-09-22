@@ -7656,3 +7656,82 @@ than 2.9x.
 
 Verdicts agree with MonPoly on all 185, as before, and the differential tests and the 593-formula
 corpus are unchanged (593 same, 7 refused, 0 differing).
+
+## 21.24 The temporal regex nodes, in the verified dense evaluator
+
+`MATCHP` and `MATCHF` were the last two operators the dense compiler refused: `dof` answered
+`DFail` at them, so `-vdense` refused every formula that contained one, and the shipping monitor
+(`-verified`, the heap-resident dense monitor of `Dense_Imp.thy`) was the only one that ran them.
+They are now dense nodes like the rest.
+
+### The node
+
+The kernel's match nodes keep a window of tabulated regex derivatives -- `mrδaux` for the past,
+`mlδaux` for the future -- over tuples of the kernel's width, and hand each operand's table to
+`update_matchP`/`update_matchF` unchanged.  The dense node keeps that window at its own frame:
+`cs` is the regex's free variables, the window runs at width `length cs`, and each operand's
+table, which sits at the operand's own narrower frame, is widened into the node's frame on the
+way in by `dembedp` through the plan `emb_plan cs (css ! i)` -- the device the trigger node
+already used.  `Dense_Aux.thy` already had the narrowing layer for both windows (`dmrd_rel`,
+`dmld_rel`, the two locales and `dtabc_update_matchP`/`dtabc_update_matchF`/`dtabc_eval_matchF`),
+written for exactly this and unused until now; the node is those lemmas plus the buffer.
+
+`dsim` gains `DsMatchP` and `DsMatchF`, and the simulation theorem their two cases.  The buffer
+side is `dbufn_nt_take`, the `dbufn`-level wrapper of a new `mbufnt_take_rel` in `Dense.thy`:
+stepping the kernel's buffered traversal and the dense one in lockstep preserves any relation the
+step function preserves, which is how the trigger's and the multi-way join's buffers were already
+handled.
+
+### What the compiler needed
+
+Every other dense node recovers its operands' frames from what the kernel node stores -- `MAnd`
+from `A`/`B`, `MAnds` from `A_pos`/`A_neg`, the temporal nodes from `args_L`/`args_R`, `MAgg` from
+`aggargs_cols`.  A match node stores nothing of the kind: its operand list is just the atoms of
+the regex.  So the compiler now carries `mfcols`, which descends an `mformula` and answers the
+columns its result has, or `None` where it cannot tell.  It has to descend rather than read a
+stored set, because `mok n A tw (MRel {})` holds for every `A`: a node that produces the empty
+table is well formed at any frame, so the criterion alone does not pin the frame down.  `mfcols`
+answers `None` at `MRel` and at a nested match node, and `dof` then answers `DFail` there, which
+the caller's own criterion (`dofz`, the count of fail nodes) rejects -- sound, if not complete.
+
+### The sanitiser
+
+The unboxed evaluator (`Dense_Unbox_Exec.thy`) runs on tuples without the option around the
+fields.  The match nodes are the one place where it does not have its own structure: they keep
+the kernel's window, so the tables inside stay boxed, and the node widens its operands on the way
+in and strips the option off the result on the way out.  Stripping and restoring is `dsan`, the
+identity exactly on hole-free tables, so the boxed node had to apply it too -- as the trigger node
+already did.  It is the identity there: the node's frame is the regex's free variables, so the
+table the window hands back is full, which the two simulation cases show from the tables the
+kernel's own node produces (`produces_tables` at the node, then `dsan_dtabc`).
+
+### The suite
+
+Eleven formulas, one group: the two operators with one test, with a choice, with a concatenation
+and with a star; the future one on the bursty log; an operand narrower than the node's frame; and
+an aggregate over a past regex.
+
+| geomean over the 11 | ratio |
+|---|---|
+| vdense / monpoly | **1.55** |
+| dense / monpoly | 1.01 |
+| vdense / dense | **1.54** (1.12 to 2.62) |
+
+MonPoly monitors the temporal regex operators after all, and on this group the shipping monitor
+is level with it.  The verified dense evaluator pays 1.55x, which is the suite's second-worst
+family after `once_exists` -- the same ratio as `policy`.  The gap is the window itself: the node
+runs the kernel's `update_matchP`/`update_matchF` over the kernel's boxed tuples, so a match node
+is the one place where the short-tuple evaluator widens its operands on the way in and strips the
+option off on the way out, and the tabulated derivatives are the kernel's structure rather than
+one written for the dense frame.  Nothing here narrows that: the point of the item is that the
+operators are in the fragment at all.  A dense window over short tuples is the obvious next item
+for this family, in the shape of the Since and Until structures of sections 13 and 16.
+
+The whole suite, now 196 formulas in 22 families, is unchanged where it was not touched: geomean
+vdense/monpoly 1.29 against 1.31 before, median 1.26, 33 formulas where the verified evaluator is
+faster, 16 more than 2x slower, none more than 4x.
+
+`match-pcnt` (`r <- CNT x MATCHP[0,20] C(x)?`) is the suite's one verdict disagreement, and it is
+not the regex: both verified monitors print a final `@MaxTS (time point 6000): (0)` that MonPoly
+does not, which is the end-of-stream behaviour of a count over an empty group.  The two verified
+evaluators agree on it tuple for tuple, as they do on the other ten.

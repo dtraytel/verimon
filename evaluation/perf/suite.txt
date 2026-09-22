@@ -231,3 +231,16 @@ pol-repeat    | base | A(x,y) AND B(y,z) AND NOT ONCE[0,100] (A(x,y) AND B(y,z))
 pol-sincefut  | base | A(x,y) AND ((NOT C(x)) SINCE[0,100] B(x,y)) AND NOT EVENTUALLY[0,10] C(y)        | past and future conditions together
 pol-sincefutb | burst | A(x,y) AND ((NOT C(x)) SINCE[0,10] B(x,y)) AND NOT EVENTUALLY[0,3] C(y)         | the same on the bursty log
 pol-let       | base | LET Bad(x) = ONCE[0,50] (C(x) AND NOT PREV[0,1] C(x)) IN A(x,y) AND Bad(x) AND NOT Bad(y) | a Let-bound condition used positively and negatively
+
+## match: the temporal regex nodes, by the shape of the regex, past and future
+match-p1      | base | A(x,y) AND MATCHP[0,10] B(x,y)?                                | a one-test past regex, guarded
+match-p50     | base | A(x,y) AND MATCHP[0,50] B(x,y)?                                | the same over a longer window
+match-palt    | base | A(x,y) AND MATCHP[0,10] (A(x,y)? + B(x,y)?)                    | a choice: two tables per step
+match-pseq    | base | A(x,y) AND MATCHP[0,10] (A(x,y)? . B(x,y)?)                    | a concatenation: the derivative walks two states
+match-pstar   | base | A(x,y) AND MATCHP[0,10] (B(x,y)? . (A(x,y)? . B(x,y)?)*)       | a star: the derivative set grows
+match-f1      | base | A(x,y) AND MATCHF[0,10] B(x,y)?                                | the future twin, which buffers the window
+match-falt    | base | A(x,y) AND MATCHF[0,10] (A(x,y)? + B(x,y)?)                    | a choice in the future
+match-fseq    | base | A(x,y) AND MATCHF[0,10] (A(x,y)? . B(x,y)?)                    | a concatenation in the future
+match-fburst  | burst | A(x,y) AND MATCHF[0,3] B(x,y)?                                | the future regex on the bursty log
+match-pnarrow | base | C(x) AND MATCHP[0,20] (EXISTS y. A(x,y))?                      | the operand is narrower than the node's frame
+match-pcnt    | base | r <- CNT x MATCHP[0,20] C(x)?                                  | an aggregate over a past regex
