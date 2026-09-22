@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Unbox_Exec
-  imports Dense_Unbox_Eval Dense_Descend_Code
+  imports Dense_Unbox_UAgg Dense_Descend_Code
 begin
 (*>*)
 
@@ -80,35 +80,47 @@ lemma dsx_result_rdsx: "dsx_result args (rdsx d) = reopt_table (udsx_result args
   by (cases d) (simp_all add: gresult_msaux_eq[symmetric] gresult_msaux_rmsaux
       gsw_result_eq[symmetric] gsw_result_rsw sa_result_rsa)
 
-datatype uduaux_x = UDUX_gen "event_data gmuaux" | UDUX_win uuwaux
+datatype uduaux_x = UDUX_gen "event_data gmuaux" | UDUX_win uuwaux | UDUX_wagg daggp uuwagg
 
 fun rdux :: "uduaux_x \<Rightarrow> duaux_x" where
   "rdux (UDUX_gen d) = DUX_gen (rmuaux d)"
 | "rdux (UDUX_win w) = DUX_win (ruw w)"
+| "rdux (UDUX_wagg p a) = DUX_wagg p (rua a)"
 
 definition udux_init :: "args \<Rightarrow> uduaux_x" where
   "udux_init args = (if args_L args = {} \<and> memL (args_ivl args) 0 then UDUX_win (uuw_init args)
      else UDUX_gen (ginit_dq args))"
 
+definition udux_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> uduaux_x" where
+  "udux_init_agg args p = UDUX_wagg p (uua_init args p)"
+
 fun udux_add_new :: "args \<Rightarrow> bool list \<Rightarrow> utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uduaux_x" where
   "udux_add_new args msk rel1 rel2 nt (UDUX_gen d) = UDUX_gen (gadd_new_dq args msk rel1 rel2 nt d)"
 | "udux_add_new args msk rel1 rel2 nt (UDUX_win w) = UDUX_win (uuw_add_new args rel1 rel2 nt w)"
+| "udux_add_new args msk rel1 rel2 nt (UDUX_wagg p a) =
+     UDUX_wagg p (uua_add_new args p (args_n args) rel1 rel2 nt a)"
 
 fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> utable list \<times> uduaux_x" where
   "udux_eval args nt (UDUX_gen d) = (let (zs, d') = geval_dq args nt d in (zs, UDUX_gen d'))"
 | "udux_eval args nt (UDUX_win w) = (let (zs, w') = uuw_eval args nt w in (zs, UDUX_win w'))"
+| "udux_eval args nt (UDUX_wagg p a) =
+     (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
 
 fun udux_length :: "args \<Rightarrow> uduaux_x \<Rightarrow> nat" where
   "udux_length args (UDUX_gen d) = glength_dq args d"
 | "udux_length args (UDUX_win w) = uuw_length args w"
+| "udux_length args (UDUX_wagg p a) = uua_length args a"
 
 lemma dux_init_rdux: "dux_init args = rdux (udux_init args)"
   by (simp add: dux_init_def udux_init_def ginit_dq_rmuaux[symmetric] uw_init_ruw[symmetric])
 
+lemma dux_init_agg_rdux: "dux_init_agg args p = rdux (udux_init_agg args p)"
+  by (simp add: dux_init_agg_def udux_init_agg_def rdux.simps rua_init)
+
 lemma dux_add_new_rdux:
   "dux_add_new args msk (reopt_table rel1) (reopt_table rel2) nt (rdux d)
    = rdux (udux_add_new args msk rel1 rel2 nt d)"
-  by (cases d) (simp_all add: gadd_new_dq_rmuaux uw_add_new_ruw)
+  by (cases d) (simp_all add: gadd_new_dq_rmuaux uw_add_new_ruw ua_add_new_rua rdux.simps)
 
 lemma dux_eval_rdux:
   "dux_eval args nt (rdux d) = (case udux_eval args nt d of (zs, d') \<Rightarrow> (map reopt_table zs, rdux d'))"
@@ -120,10 +132,18 @@ next
   case (UDUX_win w)
   obtain zs w' where g: "uuw_eval args nt w = (zs, w')" by (cases "uuw_eval args nt w")
   show ?thesis unfolding UDUX_win dux_eval.simps udux_eval.simps rdux.simps uw_eval_ruw g by simp
+next
+  case (UDUX_wagg p a)
+  obtain zs a' where g: "uua_eval args p (args_n args) nt a = (zs, a')"
+    by (cases "uua_eval args p (args_n args) nt a")
+  show ?thesis
+    unfolding UDUX_wagg dux_eval.simps udux_eval.simps rdux.simps ua_eval_rua g by simp
 qed
 
 lemma dux_length_rdux: "dux_length args (rdux d) = udux_length args d"
-  by (cases d) (simp_all add: glength_dq_rmuaux uw_length_ruw)
+  by (cases d)
+    (simp_all add: glength_dq_rmuaux uw_length_ruw rdux.simps rua.simps
+      ua_length_def uua_length_def)
 
 subsection \<open>The buffers\<close>
 
@@ -1085,11 +1105,16 @@ function (sequential) udof ::
               agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then UDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+           then (if cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0
+                 then UDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
+                        (udux_init_agg (dargs cs_R cs_L args)
+                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
+                           m, ins_pos g y))
+                 else UDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (UDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d
                     (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
-                    (udux_init (dargs cs_R cs_L args)))
+                    (udux_init (dargs cs_R cs_L args))))
            else UDFail))"
 | "udof n cs (meformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
@@ -1131,7 +1156,7 @@ proof (induct n cs e rule: udof.induct)
 next
   case (13 n cs args \<phi> \<psi> buf nts t aux)
   then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux)
+    by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux dux_init_agg_rdux)
 qed (simp_all add: Let_def dsan_def dsx_init_rdsx ginit_mmtaux_bmm[symmetric] zip_map2 o_def
       split: list.splits prod.splits cong: map_cong)
 

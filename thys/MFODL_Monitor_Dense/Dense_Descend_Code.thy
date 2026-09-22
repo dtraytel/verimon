@@ -112,11 +112,16 @@ function (sequential) edof ::
               agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then EDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+           then (if cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0
+                 then EDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
+                        (dux_init_agg (dargs cs_R cs_L args)
+                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
+                           m, ins_pos g y))
+                 else EDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (EDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d
                     (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
-                    (dux_init (dargs cs_R cs_L args)))
+                    (dux_init (dargs cs_R cs_L args))))
            else EDFail))"
 | "edof n cs (meformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in

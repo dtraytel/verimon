@@ -120,10 +120,15 @@ function (sequential) dof ::
               agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
+           then (if cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0
+                 then DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d ([], []) [] 0
+                        (dux_init_agg (dargs cs_R cs_L args)
+                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
+                           m, ins_pos g y))
+                 else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                   m (ins_pos g y)
                   (DUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d ([], []) [] 0
-                    (dux_init (dargs cs_R cs_L args)))
+                    (dux_init (dargs cs_R cs_L args))))
            else DFail))"| "dof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
@@ -630,6 +635,24 @@ proof -
   show ?thesis unfolding duntil_rel_def using r by auto
 qed
 
+lemma duntil_rel_init_agg:
+  assumes a: "args = init_args I n L R pos agg"
+    and sub: "L \<subseteq> R" and cL: "set cs_L = L" and cR: "set cs_R = R"
+    and c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
+    and ok: "dagg_ok p (length cs_R)"
+  shows "duntil_rel n cs_R cs_L args tw 0 (init_muaux_dq args)
+     (dux_init_agg (dargs cs_R cs_L args) p) ([], []) ([], []) []"
+proof -
+  have v: "valid_muaux_dq args 0 (init_muaux_dq args) []"
+    unfolding a by (rule valid_init_muaux_dq[OF sub])
+  have s: "duxaux' n cs_R cs_L args 0 (dux_init_agg (dargs cs_R cs_L args) p) []"
+    by (rule duxaux'_init_agg[OF c inz ok])
+  have r: "duaux_rel n cs_R cs_L args 0 (init_muaux_dq args)
+      (dux_init_agg (dargs cs_R cs_L args) p)"
+    unfolding duaux_rel_def using v s by blast
+  show ?thesis unfolding duntil_rel_def using r by auto
+qed
+
 lemma dsim_dof_minit0_MSince:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi>
@@ -1019,12 +1042,17 @@ proof -
   qed
   have fs: "Formula.fv_trm (aggargs_f ag) \<subseteq> set ?cR" unfolding af using fsub by simp
   have yn: "y < n" using A b by auto
+  let ?p = "(aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm ?cR (aggargs_f ag), ?k, ins_pos ?g y)"
   have d: "dof n ?cs
         (mformula.MUntil args (minit0 nn \<alpha>) (minit0 nn \<beta>) ([], []) [] 0 (init_muaux_dq args))
-      = DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
+      = (if cpos ?cR (set ?cL) = {} \<and> memL (args_ivl args) 0
+         then DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
+            (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
+            (dux_init_agg (dargs ?cR ?cL args) ?p)
+         else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?k (ins_pos ?g y)
           (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
             (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
-            (dux_init (dargs ?cR ?cL args)))"
+            (dux_init (dargs ?cR ?cL args))))"
     using an agn sb cc cse wg yn ynotg g0 fs
     by (simp add: Let_def agS cLa cRa dg ay nne' dnode_n_def)
   have du: "dof nn ?cR
@@ -1033,7 +1061,7 @@ proof -
           (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
           (dux_init (dargs ?cR ?cL args))"
     using an0 sb by (simp add: Let_def ag0' cLa0 cRa0 dae dnode_n_def)
-  have zu: "dofz nn \<chi>" using z unfolding m d mu du by simp
+  have zu: "dofz nn \<chi>" using z unfolding m d mu du by (simp split: if_split_asm)
   have su: "dsim nn ?cR tw
       (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL)
         (dof nn ?cL (minit0 nn \<alpha>)) (dof nn ?cR (minit0 nn \<beta>)) ([], []) [] 0
@@ -1053,9 +1081,27 @@ proof -
   have rl: "duntil_rel nn ?cR ?cL args tw 0 (init_muaux_dq args)
       (dux_init (dargs ?cR ?cL args)) ([], []) ([], []) []"
     by (rule duntil_rel_init[OF a]) (use sub X wR wL in auto)
-  show ?thesis unfolding m d
-    by (rule dsim.DsUntilAgg[OF w pr s1 s2 wL sb agS an aL aR refl refl rl wg agn ay yn ynotg
-          g0 fs nne' cc cse dux_agg_init])
+  show ?thesis
+  proof (cases "cpos ?cR (set ?cL) = {} \<and> memL (args_ivl args) 0")
+    case False
+    show ?thesis unfolding m d if_not_P[OF False]
+      by (rule dsim.DsUntilAgg[OF w pr s1 s2 wL sb agS an aL aR refl refl rl wg agn ay yn ynotg
+            g0 fs nne' cc cse dux_agg_init])
+  next
+    case True
+    have c: "cpos ?cR (set ?cL) = {}" and inz: "memL (args_ivl args) 0" using True by simp_all
+    have fs': "Formula.fv_trm (aggargs_f ag) \<subseteq> set (agg_cols ?k ?g)"
+      using fs unfolding cc[symmetric] .
+    have ok: "dagg_ok ?p (length ?cR)"
+      using dagg_ok_agg[of "aggargs_f ag" ?k ?g "aggargs_g0 ag" "aggargs_\<omega> ag" y] fs' g0
+      unfolding cc[symmetric] by blast
+    have rla: "duntil_rel nn ?cR ?cL args tw 0 (init_muaux_dq args)
+        (dux_init_agg (dargs ?cR ?cL args) ?p) ([], []) ([], []) []"
+      by (rule duntil_rel_init_agg[OF a _ _ _ c inz ok]) (use sub X wR wL in auto)
+    show ?thesis unfolding m d if_P[OF True]
+      by (rule dsim.DsUntilFused[OF w pr s1 s2 wL sb agS an aL aR refl refl rla wg agn ay yn ynotg
+            g0 fs nne' cc cse dux_agg_init_agg])
+  qed
 qed
 
 lemma map2_nth:

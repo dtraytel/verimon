@@ -94,6 +94,12 @@ fun rua :: "uuwagg \<Rightarrow> uwagg" where
 
 declare rua.simps[simp del]
 
+lemma fst_rua[simp]: "fst (rua a) = ruw (fst a)"
+  by (cases a) (simp add: rua.simps)
+
+lemma snd_rua[simp]: "snd (rua a) = snd a"
+  by (cases a) (simp add: rua.simps)
+
 lemma ua_extend_rua:
   "ua_extend args p w ts0 (rqe win) (rqe rest) bend (rcc cc) ax
    = (case uua_extend args p w ts0 win rest bend cc ax of
