@@ -1043,7 +1043,7 @@ proof -
   obtain csL where sL: "dsim nn csL tw (dof nn ?cL (minit0 nn \<alpha>)) (minit0 nn \<alpha>)"
     and s2: "dsim nn ?cR tw (dof nn ?cR (minit0 nn \<beta>)) (minit0 nn \<beta>)"
     and wcsL: "wf_cols nn csL" and aLc: "args_L args0 = set csL"
-    by (rule dsim_DUntilD[OF su])
+    by (rule dsim_DUntilD[OF su dux_agg_init])
   have csLe: "csL = ?cL"
   proof -
     have "set csL = Formula.fv \<alpha>" using aLc[unfolded aL0] by simp
