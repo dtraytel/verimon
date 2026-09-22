@@ -82,11 +82,11 @@ module Monitor : sig
   type 'a queue
   type ty = TInt | TFloat | TString
   type uduaux_x
+  type mconstraint
   type udsaux_x
   type i
   type 'a args_ext
   type 'a mbuf_t
-  type mconstraint
   type djoin_plan
   type mtrm
   type udformula
@@ -2785,6 +2785,8 @@ type uduaux_x =
                      (event_data list) set list)))))) *
           aggaux option);;
 
+type mconstraint = MEq | MLess | MLessEq;;
+
 type udsaux_x =
   UDSX_gen of
     (nat *
@@ -2804,6 +2806,7 @@ type udsaux_x =
             (((event_data list), nat) mapping * (event_data list) set))))
   | UDSX_wagg of
       (bool * ((agg_type * ty) * (trm * (nat * nat)))) *
+        (trm * (bool * (mconstraint * trm))) option *
         ((nat *
            ((nat * (event_data list) set) queue *
              ((nat * (event_data list) set) queue *
@@ -2821,8 +2824,6 @@ type 'a args_ext =
     i * nat * nat set * nat set * bool * unit aggargs_ext option * 'a;;
 
 type 'a mbuf_t = MBuf2_t of 'a queue;;
-
-type mconstraint = MEq | MLess | MLessEq;;
 
 type mrg = MLft | MRgt | MBth;;
 
@@ -11603,16 +11604,20 @@ let rec dformula_of
                             alpha_s)))));;
 
 let rec ugmr
-  h (RBT_Mapping t) y f =
+  q h (RBT_Mapping t) y f =
     (match ccompare_lista (ccompare_option ccompare_event_data)
       with None ->
         failwith "ugmr RBT_Mapping: ccompare = None"
-          (fun _ -> ugmr h (RBT_Mapping t) y f)
+          (fun _ -> ugmr q h (RBT_Mapping t) y f)
       | Some _ ->
-        fold (fun p ->
-               edl_insert (h (list_update (fst p) y (Some (f (snd p))))))
+        fold (fun p a ->
+               (let v = h (list_update (fst p) y (Some (f (snd p)))) in
+                 (if q v then edl_insert v a else a)))
           (entriesa (ccompare_list (ccompare_option ccompare_event_data)) t)
           edl_bot);;
+
+let rec uqok
+  q = (match q with None -> (fun _ -> true) | Some a -> ueval_constraint a);;
 
 let rec uuw_init
   args =
@@ -11629,7 +11634,7 @@ let rec de_gsw_init
 
 let rec usa_init args p = (de_gsw_init args, ag_init p (args_n args));;
 
-let rec udsx_init_agg args p = UDSX_wagg (p, usa_init args p);;
+let rec udsx_init_agg args p q = UDSX_wagg (p, q, usa_init args p);;
 
 let rec udux_init
   args =
@@ -11650,6 +11655,35 @@ let rec dagg_gcols
     mapa (fun c -> minus_nata c (size_lista (aggargs_tys args)))
       (drop (size_lista (aggargs_tys args)) (set_cols (aggargs_cols args)));;
 
+let rec uset_q
+  c x1 = match c, x1 with
+    c, UDSince (args, phi, psi, buf, aux) ->
+      (match aux with UDSX_gen _ -> None | UDSX_win _ -> None
+        | UDSX_wagg (p, None, a) ->
+          Some (UDSince (args, phi, psi, buf, UDSX_wagg (p, Some c, a)))
+        | UDSX_wagg (_, Some _, _) -> None)
+    | c, UDFail -> None
+    | c, UDRel v -> None
+    | c, UDPredS (v, va) -> None
+    | c, UDPredM (v, va, vb, vc) -> None
+    | c, UDAndRel (v, va) -> None
+    | c, UDNeg v -> None
+    | c, UDExists (v, va) -> None
+    | c, UDAgg (v, va, vb, vc, vd, ve) -> None
+    | c, UDOr (v, va, vb) -> None
+    | c, UDAnd (v, va, vb, vc, vd) -> None
+    | c, UDPrev (v, va, vb, vc, vd) -> None
+    | c, UDNext (v, va, vb, vc) -> None
+    | c, UDAnds (v, va, vb, vc) -> None
+    | c, UDUntil (v, va, vb, vc, vd, ve, vf, vg) -> None
+    | c, UDAndAssign (v, va, vb) -> None
+    | c, UDTP (v, va) -> None
+    | c, UDTS v -> None
+    | c, UDLet (v, va, vb, vc) -> None
+    | c, UDFrz (v, va, vb, vc, vd, ve, vf, vg) -> None
+    | c, UDLetPast (v, va, vb, vc, vd, ve) -> None
+    | c, UDTrigger (v, va, vb, vc, vd, ve, vf) -> None;;
+
 let rec udof
   n cs x2 = match n, cs, x2 with
     n, cs, MRel rel -> UDRel (ed_deopt_table (eo_dtabc n cs rel))
@@ -11668,7 +11702,11 @@ let rec udof
               (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
               nat_subset (fvi_trm zero_nata (snd (snd (snd conf))))
                 (set (ceq_nat, ccompare_nat, set_impl_nat) cs)
-          then UDAndRel (udof n cs phi, reindex_constraint cs conf) else UDFail)
+          then (let d = udof n cs phi in
+                let c = reindex_constraint cs conf in
+                 (match uset_q c d with None -> UDAndRel (d, c)
+                   | Some da -> da))
+          else UDFail)
     | n, cs, MNeg phi -> (if null cs then UDNeg (udof n [] phi) else UDFail)
     | n, cs, MExists phi ->
         UDExists (udof (suc n) (zero_nata :: mapa suc cs) phi, true)
@@ -11815,7 +11853,8 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
                                   udsx_init_agg (dargs cs_R cs_L args)
                                     (aggargs_g0 ag,
                                       (aggargs_omega ag,
-(reindex_trm cs_R (aggargs_f ag), (m, ins_pos g y)))))
+(reindex_trm cs_R (aggargs_f ag), (m, ins_pos g y))))
+                                    None)
                          else UDAgg (aggargs_g0 ag, aggargs_omega ag,
                                       reindex_trm cs_R (aggargs_f ag), m,
                                       ins_pos g y,
@@ -12030,6 +12069,8 @@ let rec minit_safe_d
                      (zero_nata, (zero_nata, (d, (nfv phi, empty_queue)))))
               else failwith
                      "minit_safe_d: the formula is outside the dense fragment"));;
+
+let rec ufilt q x = edl_filter (uqok q) x;;
 
 let rec letpast_meval0 (_B1, _B2) _D
   eval j i ys xs p ts db phi =
@@ -12320,7 +12361,8 @@ let rec udsx_add_new_table
   args x xa2 = match args, x, xa2 with
     args, x, UDSX_gen d -> UDSX_gen (de_gadd_new_table_msaux args x d)
     | args, x, UDSX_win w -> UDSX_win (de_gsw_add_new_table args x w)
-    | args, x, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_add_new_table args p x a);;
+    | args, x, UDSX_wagg (p, q, a) ->
+        UDSX_wagg (p, q, usa_add_new_table args p x a);;
 
 let rec de_gcnt_del1
   t cc =
@@ -12553,7 +12595,8 @@ let rec udsx_add_new_ts
   args nt x2 = match args, nt, x2 with
     args, nt, UDSX_gen d -> UDSX_gen (de_gadd_new_ts_msaux args nt d)
     | args, nt, UDSX_win w -> UDSX_win (de_gsw_add_new_ts args nt w)
-    | args, nt, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_add_new_ts args p nt a);;
+    | args, nt, UDSX_wagg (p, q, a) ->
+        UDSX_wagg (p, q, usa_add_new_ts args p nt a);;
 
 let rec de_gsw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
 
@@ -12673,7 +12716,7 @@ let rec result_maggaux
                          EFloat a)))));;
 
 let rec ures_maggaux
-  h args a =
+  q h args a =
     (let n = aggargs_n args in
      let y = aggargs_y args in
      let g0 = aggargs_g0 args in
@@ -12681,34 +12724,39 @@ let rec ures_maggaux
       (match a
         with CntAux m ->
           (if g0 && unbox ed_set_eq_v (unbox ed_keys_nat_v m) ed_bot
-            then edl_image_of_wide h
-                   (ed_singleton_table n y
-                     (eval_agg_op omega
-                       (set_empty
-                         ((ceq_prod ceq_event_data ceq_enat),
-                           (ccompare_prod ccompare_event_data ccompare_enat))
-                         (of_phantom
-                           (set_impl_proda set_impl_event_data
-                             set_impl_enat)))))
-            else ugmr h m y (fun x -> EInt (integer_of_int (int_of_nat x))))
+            then edl_filter q
+                   (edl_image_of_wide h
+                     (ed_singleton_table n y
+                       (eval_agg_op omega
+                         (set_empty
+                           ((ceq_prod ceq_event_data ceq_enat),
+                             (ccompare_prod ccompare_event_data ccompare_enat))
+                           (of_phantom
+                             (set_impl_proda set_impl_event_data
+                               set_impl_enat))))))
+            else ugmr q h m y (fun x -> EInt (integer_of_int (int_of_nat x))))
         | SumAux m ->
           (if g0 && unbox ed_set_eq_v (unbox ed_keys_sum_v m) ed_bot
-            then edl_image_of_wide h
-                   (ed_singleton_table n y
-                     (eval_agg_op omega
-                       (set_empty
-                         ((ceq_prod ceq_event_data ceq_enat),
-                           (ccompare_prod ccompare_event_data ccompare_enat))
-                         (of_phantom
-                           (set_impl_proda set_impl_event_data
-                             set_impl_enat)))))
+            then edl_filter q
+                   (edl_image_of_wide h
+                     (ed_singleton_table n y
+                       (eval_agg_op omega
+                         (set_empty
+                           ((ceq_prod ceq_event_data ceq_enat),
+                             (ccompare_prod ccompare_event_data ccompare_enat))
+                           (of_phantom
+                             (set_impl_proda set_impl_event_data
+                               set_impl_enat))))))
             else (match fst omega
-                   with Agg_Cnt -> edl_image_of_wide h (result_maggaux args a)
-                   | Agg_Min -> edl_image_of_wide h (result_maggaux args a)
-                   | Agg_Max -> edl_image_of_wide h (result_maggaux args a)
-                   | Agg_Sum -> ugmr h m y (fun k -> EInt (snd k))
+                   with Agg_Cnt ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
+                   | Agg_Min ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
+                   | Agg_Max ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
+                   | Agg_Sum -> ugmr q h m y (fun k -> EInt (snd k))
                    | Agg_Avg ->
-                     ugmr h m y
+                     ugmr q h m y
                        (fun x ->
                          EFloat
                            (Stdlib.(/.)
@@ -12718,29 +12766,36 @@ let rec ures_maggaux
                              (double_of_int
                                (fst (let (xa, aa) = x in
                                       (int_of_nat xa, aa))))))
-                   | Agg_Med -> edl_image_of_wide h (result_maggaux args a)))
+                   | Agg_Med ->
+                     edl_filter q
+                       (edl_image_of_wide h (result_maggaux args a))))
         | RankAux (m, _) ->
           (if g0 && unbox ed_set_eq_v (unbox ed_keys_rank_v m) ed_bot
-            then edl_image_of_wide h
-                   (ed_singleton_table n y
-                     (eval_agg_op omega
-                       (set_empty
-                         ((ceq_prod ceq_event_data ceq_enat),
-                           (ccompare_prod ccompare_event_data ccompare_enat))
-                         (of_phantom
-                           (set_impl_proda set_impl_event_data
-                             set_impl_enat)))))
+            then edl_filter q
+                   (edl_image_of_wide h
+                     (ed_singleton_table n y
+                       (eval_agg_op omega
+                         (set_empty
+                           ((ceq_prod ceq_event_data ceq_enat),
+                             (ccompare_prod ccompare_event_data ccompare_enat))
+                           (of_phantom
+                             (set_impl_proda set_impl_event_data
+                               set_impl_enat))))))
             else (match fst omega
-                   with Agg_Cnt -> edl_image_of_wide h (result_maggaux args a)
-                   | Agg_Min -> ugmr h m y (fun k -> get_edata_list k zero_nata)
+                   with Agg_Cnt ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
+                   | Agg_Min ->
+                     ugmr q h m y (fun k -> get_edata_list k zero_nata)
                    | Agg_Max ->
-                     ugmr h m y
+                     ugmr q h m y
                        (fun k ->
                          get_edata_list k (minus_nata (get_length k) one_nata))
-                   | Agg_Sum -> edl_image_of_wide h (result_maggaux args a)
-                   | Agg_Avg -> edl_image_of_wide h (result_maggaux args a)
+                   | Agg_Sum ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
+                   | Agg_Avg ->
+                     edl_filter q (edl_image_of_wide h (result_maggaux args a))
                    | Agg_Med ->
-                     ugmr h m y
+                     ugmr q h m y
                        (fun k ->
                          (let u = get_length k in
                           let ua = divide_nat u (nat_of_integer (Z.of_int 2)) in
@@ -12762,22 +12817,22 @@ let rec ures_maggaux
 let rec udagg_p (g0, (omega, (f, (k, pos)))) = uagg g0 omega f k pos;;
 
 let rec uag_res
-  p w cc ax =
-    (match ax with None -> udagg_p p (snd cc)
+  q p w cc ax =
+    (match ax with None -> ufilt q (udagg_p p (snd cc))
       | Some a ->
         (let args = dagg_args p w in
          let msk = wide_mask (aggargs_n args) (upt zero_nata (aggargs_n args))
            in
-          ures_maggaux (fun x -> deopt (dproj msk x)) args a));;
+          ures_maggaux (uqok q) (fun x -> deopt (dproj msk x)) args a));;
 
 let rec usa_result
-  args p aux =
-    (let ((_, (_, (_, cc))), ax) = aux in uag_res p (args_n args) cc ax);;
+  q args p aux =
+    (let ((_, (_, (_, cc))), ax) = aux in uag_res q p (args_n args) cc ax);;
 
 let rec udsx_result
   args x1 = match args, x1 with args, UDSX_gen d -> de_gresult_msaux args d
     | args, UDSX_win w -> de_gsw_result args w
-    | args, UDSX_wagg (p, a) -> usa_result args p a;;
+    | args, UDSX_wagg (p, q, a) -> usa_result q args p a;;
 
 let rec de_gsw_join
   args x aux =
@@ -12799,7 +12854,7 @@ let rec udsx_join
   args x xa2 = match args, x, xa2 with
     args, x, UDSX_gen d -> UDSX_gen (de_ggc_join_msaux args x d)
     | args, x, UDSX_win w -> UDSX_win (de_gsw_join args x w)
-    | args, x, UDSX_wagg (p, a) -> UDSX_wagg (p, usa_join args p x a);;
+    | args, x, UDSX_wagg (p, q, a) -> UDSX_wagg (p, q, usa_join args p x a);;
 
 let rec uedsx_eval_since
   args rs (xs, (ys, (ts, skew))) aux =
@@ -12896,11 +12951,11 @@ let rec uua_step
              (winb,
                (resta,
                  (minus_nata len one_nata,
-                   (benda, (cca, uag_res p w cca axa :: dn)))))),
+                   (benda, (cca, uag_res None p w cca axa :: dn)))))),
             axa)
         | (Some e, winb) ->
           (let winc = tl_queue winb in
-           let r = uag_res p w cca axa in
+           let r = uag_res None p w cca axa in
            let ccaa = de_gcnt_del (fst (snd e)) cca in
            let axb = uag_del p w (fst (snd e)) cca axa in
            let bendb = (if is_emptya winc then true else benda) in

@@ -22,46 +22,71 @@ text \<open>
 
 subsection \<open>The Since and Until structures, dispatched\<close>
 
-datatype udsaux_x = UDSX_gen "event_data gmsaux" | UDSX_win "event_data gswaux" | UDSX_wagg daggp uswagg
+text \<open>The structure of a fused aggregating window carries the node's guard: the constraint the
+  node's own result is read through, if it has one (@{theory MFODL_Monitor_Dense.Dense_Unbox_Eval}).
+  Only the read looks at it; every other operation passes it along, and the boxed structure it
+  stands for does not have it at all -- there the constraint stays a filter over the node.\<close>
+
+datatype udsaux_x = UDSX_gen "event_data gmsaux" | UDSX_win "event_data gswaux"
+  | UDSX_wagg daggp "uconstr option" uswagg
 
 fun rdsx :: "udsaux_x \<Rightarrow> dsaux_x" where
   "rdsx (UDSX_gen d) = DSX_gen (rmsaux d)"
 | "rdsx (UDSX_win w) = DSX_win (rsw w)"
-| "rdsx (UDSX_wagg p a) = DSX_wagg p (rsa a)"
+| "rdsx (UDSX_wagg p q a) = DSX_wagg p (rsa a)"
+
+fun usx_q :: "udsaux_x \<Rightarrow> uconstr option" where
+  "usx_q (UDSX_wagg p q a) = q"
+| "usx_q _ = None"
 
 definition udsx_init :: "args \<Rightarrow> bool list \<Rightarrow> udsaux_x" where
   "udsx_init args msk = (if args_L args = {} then UDSX_win (gsw_init args)
      else UDSX_gen (ginit_msaux args msk))"
 
-definition udsx_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> udsaux_x" where
-  "udsx_init_agg args p = UDSX_wagg p (usa_init args p)"
+definition udsx_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> uconstr option \<Rightarrow> udsaux_x" where
+  "udsx_init_agg args p q = UDSX_wagg p q (usa_init args p)"
 
 fun udsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_add_new_ts args nt (UDSX_gen d) = UDSX_gen (gadd_new_ts_msaux args nt d)"
 | "udsx_add_new_ts args nt (UDSX_win w) = UDSX_win (gsw_add_new_ts args nt w)"
-| "udsx_add_new_ts args nt (UDSX_wagg p a) = UDSX_wagg p (usa_add_new_ts args p nt a)"
+| "udsx_add_new_ts args nt (UDSX_wagg p q a) = UDSX_wagg p q (usa_add_new_ts args p nt a)"
 
 fun udsx_join :: "args \<Rightarrow> utable \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_join args X (UDSX_gen d) = UDSX_gen (ggc_join_msaux args X d)"
 | "udsx_join args X (UDSX_win w) = UDSX_win (gsw_join args X w)"
-| "udsx_join args X (UDSX_wagg p a) = UDSX_wagg p (usa_join args p X a)"
+| "udsx_join args X (UDSX_wagg p q a) = UDSX_wagg p q (usa_join args p X a)"
 
 fun udsx_add_new_table :: "args \<Rightarrow> utable \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_add_new_table args X (UDSX_gen d) = UDSX_gen (gadd_new_table_msaux args X d)"
 | "udsx_add_new_table args X (UDSX_win w) = UDSX_win (gsw_add_new_table args X w)"
-| "udsx_add_new_table args X (UDSX_wagg p a) = UDSX_wagg p (usa_add_new_table args p X a)"
+| "udsx_add_new_table args X (UDSX_wagg p q a) = UDSX_wagg p q (usa_add_new_table args p X a)"
 
 fun udsx_result :: "args \<Rightarrow> udsaux_x \<Rightarrow> utable" where
   "udsx_result args (UDSX_gen d) = gresult_msaux args d"
 | "udsx_result args (UDSX_win w) = gsw_result args w"
-| "udsx_result args (UDSX_wagg p a) = usa_result args p a"
+| "udsx_result args (UDSX_wagg p q a) = usa_result q args p a"
+
+lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_join[simp]: "usx_q (udsx_join args X d) = usx_q d"
+  by (cases d) simp_all
+
+lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
+  by (cases d) simp_all
 
 lemma dsx_init_rdsx: "dsx_init args msk = rdsx (udsx_init args msk)"
   by (simp add: dsx_init_def udsx_init_def gsw_init_rsw[symmetric] gsw_init_eq
       ginit_msaux_rmsaux[symmetric] ginit_msaux_eq)
 
-lemma dsx_init_agg_rdsx: "dsx_init_agg args p = rdsx (udsx_init_agg args p)"
+lemma dsx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = dsx_init_agg args p"
   by (simp add: dsx_init_agg_def udsx_init_agg_def sa_init_rsa)
+
+lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
+  by (simp add: udsx_init_agg_def)
+
+lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
+  by (simp add: udsx_init_def)
 
 lemma dsx_add_new_ts_rdsx: "dsx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
   by (cases d) (simp_all add: gadd_new_ts_msaux_eq[symmetric] gadd_new_ts_msaux_rmsaux
@@ -76,7 +101,11 @@ lemma dsx_add_new_table_rdsx:
   by (cases d) (simp_all add: gadd_new_table_msaux_eq[symmetric] gadd_new_table_msaux_rmsaux
       gsw_add_new_table_eq[symmetric] gsw_add_new_table_rsw sa_add_new_table_rsa)
 
-lemma dsx_result_rdsx: "dsx_result args (rdsx d) = reopt_table (udsx_result args d)"
+text \<open>The boxed structure reports the node's whole result and the node filters it; the short
+  one reports the filtered result straight away.\<close>
+
+lemma dsx_result_rdsx:
+  "usx_q d = q \<Longrightarrow> dfilt q (dsx_result args (rdsx d)) = reopt_table (udsx_result args d)"
   by (cases d) (simp_all add: gresult_msaux_eq[symmetric] gresult_msaux_rmsaux
       gsw_result_eq[symmetric] gsw_result_rsw sa_result_rsa)
 
@@ -487,9 +516,14 @@ lemma rdb_map_values_Nil[simp]:
 
 subsection \<open>The recursive let operators\<close>
 
+text \<open>The size guard of @{const letpast_meval0} never fires on either side: both evaluators
+  return a formula of the size they were given, so the two runs take the same branch whatever
+  the embedding does to the size.\<close>
+
 lemma letpast_meval0_rdb:
-  assumes sz: "\<And>\<psi>. size (R \<psi>) = size \<psi>"
-  shows "(\<And>ts db \<psi>. size \<psi> = n \<Longrightarrow>
+  assumes sz': "\<And>ts db e. size (snd (eval ts db e)) = size e"
+  shows "(\<And>ts db \<psi>. size (snd (eval' ts db \<psi>)) = size \<psi>) \<Longrightarrow>
+    (\<And>ts db \<psi>. size \<psi> = n \<Longrightarrow>
       eval ts (rdb db) (R \<psi>) = (case eval' ts db \<psi> of (ys, \<psi>') \<Rightarrow> (map reopt_table ys, R \<psi>'))) \<Longrightarrow>
     size \<phi> = n \<Longrightarrow>
     letpast_meval0 eval j i (map reopt_table ys) (map reopt_table xs) p ts (rdb db) (R \<phi>)
@@ -500,18 +534,23 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
   obtain ys' \<phi>' where e: "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
     by (cases "eval' ts (Mapping.update p xs db) \<phi>")
   have L: "eval ts (rdb (Mapping.update p xs db)) (R \<phi>) = (map reopt_table ys', R \<phi>')"
-    using "1.prems"(1)[OF "1.prems"(2), of ts "Mapping.update p xs db"] by (simp add: e)
+    using "1.prems"(2)[OF "1.prems"(3), of ts "Mapping.update p xs db"] by (simp add: e)
+  have s1: "size \<phi>' = size \<phi>"
+    using "1.prems"(1)[of ts "Mapping.update p xs db" \<phi>] by (simp add: e)
+  have s2: "size (R \<phi>') = size (R \<phi>)"
+    using sz'[of ts "rdb (Mapping.update p xs db)" "R \<phi>"] by (simp add: L)
   show ?case
   proof (cases ys')
     case Nil
     then show ?thesis
-      by (subst (1 2) letpast_meval0.simps) (auto simp: Let_def L e sz "1.prems"(2))
+      by (subst (1 2) letpast_meval0.simps) (auto simp: Let_def L e s1 s2 "1.prems"(3))
   next
     case (Cons y ys'')
-    note IH = "1.hyps"[OF refl e[symmetric] _ _ _ "1.prems"(1), unfolded map_append]
+    note IH = "1.hyps"[OF refl e[symmetric] _ _ _ "1.prems"(1) "1.prems"(2),
+        unfolded map_append]
     show ?thesis
       apply (subst (1 2) letpast_meval0.simps)
-      using IH "1.prems"(2) by (auto simp: Let_def L e sz Cons)
+      using IH "1.prems"(3) by (auto simp: Let_def L e s1 s2 Cons)
   qed
 qed
 
@@ -564,6 +603,24 @@ abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
 text \<open>The trigger's buffers are the short ones like every other node's: its left operand stays
   at its own frame, so nothing it holds has a hole, and @{const bmm} relabels the structure.\<close>
 
+text \<open>A guarded Since node stands for the boxed node read through the constraint: the guard is
+  the short evaluator's alone, and the two agree because filtering the whole result is filtering
+  the groups as they are read.\<close>
+
+definition edandrel :: "uconstr option \<Rightarrow> edformula \<Rightarrow> edformula" where
+  "edandrel q e = (case q of None \<Rightarrow> e | Some c \<Rightarrow> EDAndRel e c)"
+
+lemma edandrel_None[simp]: "edandrel None e = e"
+  by (simp add: edandrel_def)
+
+lemma edeval_edandrel:
+  "edeval j ts db (edandrel q e)
+   = (case edeval j ts db e of (zs, e') \<Rightarrow> (map (dfilt q) zs, edandrel q e'))"
+  by (simp add: edandrel_def dfilt_Some split: option.splits prod.splits)
+
+lemma evdfail_nodes_edandrel[simp]: "evdfail_nodes (edandrel q e) = evdfail_nodes e"
+  by (simp add: edandrel_def split: option.splits)
+
 fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
   "Rep_udformula UDFail = EDFail"
 | "Rep_udformula (UDRel rel) = EDRel (reopt_table rel)"
@@ -582,7 +639,8 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
 | "Rep_udformula (UDAnds ps ns L buf) =
      EDAnds ps ns (map Rep_udformula L) (map (map_mbuf reopt_table) buf)"
 | "Rep_udformula (UDSince args \<phi> \<psi> buf aux) =
-     EDSince args (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbufS buf) (rdsx aux)"
+     edandrel (usx_q aux)
+       (EDSince args (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbufS buf) (rdsx aux))"
 | "Rep_udformula (UDUntil args msk \<phi> \<psi> buf nts t aux) =
      EDUntil args msk (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 buf) nts t (rdux aux)"
 | "Rep_udformula (UDAndAssign p t \<phi>) = EDAndAssign p t (Rep_udformula \<phi>)"
@@ -595,9 +653,6 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
      EDLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
 | "Rep_udformula (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      EDTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbuf) nts (bmm daux)"
-
-lemma size_Rep_udformula[simp]: "size (Rep_udformula \<phi>) = size \<phi>"
-  by (induct \<phi>) (auto simp: comp_def size_list_map cong: size_list_cong)
 
 fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
   "uvdfail_nodes UDFail = 1"
@@ -646,11 +701,34 @@ fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<
         | (None, ts1) \<Rightarrow> (rev rs, (x1 ## xs1, y ## ys', ts1, skew), aux))
       | (None, xs1) \<Rightarrow> (rev rs, (mbuf_t_empty, y ## ys', ts, skew), aux)))"
 
+lemma usx_q_uedsx_eval_since:
+  "usx_q (snd (snd (uedsx_eval_since args rs buf aux))) = usx_q aux"
+proof (induct args rs buf aux rule: uedsx_eval_since.induct)
+  case (1 args rs xs ys ts skew aux)
+  obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
+  obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
+  obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
+  show ?case
+    using 1 x y t
+    by (cases y; cases x; cases t; subst uedsx_eval_since.simps)
+      (auto simp: x y t Let_def simp del: uedsx_eval_since.simps split: prod.splits)
+qed
+
+lemma usx_q_uedsx_eval_since':
+  "uedsx_eval_since args rs buf aux = (zs, buf', aux') \<Longrightarrow> usx_q aux' = usx_q aux"
+  using usx_q_uedsx_eval_since[of args rs buf aux] by simp
+
+text \<open>The two agree on the whole run: the boxed evaluator's results, read through the node's
+  guard, are the short evaluator's.  The accumulator is carried the same way, so the statement
+  relates the two lists it is started with.\<close>
+
 lemma edsx_eval_since_rdsx:
-  "edsx_eval_since args (map reopt_table rs) (rbufS buf) (rdsx aux)
+  "map (dfilt (usx_q aux)) Rs = map reopt_table rs \<Longrightarrow>
+   (case edsx_eval_since args Rs (rbufS buf) (rdsx aux) of
+      (Zs, bf, a) \<Rightarrow> (map (dfilt (usx_q aux)) Zs, bf, a))
    = (case uedsx_eval_since args rs buf aux of
         (zs, buf', aux') \<Rightarrow> (map reopt_table zs, rbufS buf', rdsx aux'))"
-proof (induct args rs buf aux rule: uedsx_eval_since.induct)
+proof (induct args rs buf aux arbitrary: Rs rule: uedsx_eval_since.induct)
   case (1 args rs xs ys ts skew aux)
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
@@ -659,8 +737,9 @@ proof (induct args rs buf aux rule: uedsx_eval_since.induct)
     using 1 x y t
     by (cases y; cases x; cases t; simp only: rbufS.simps;
         subst edsx_eval_since.simps; subst uedsx_eval_since.simps)
-      (auto simp: x y t Let_def rev_map dsx_join_rdsx dsx_add_new_ts_rdsx dsx_add_new_table_rdsx
-        dsx_result_rdsx simp del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
+      (auto simp: x y t Let_def rev_map[symmetric] dsx_join_rdsx dsx_add_new_ts_rdsx
+        dsx_add_new_table_rdsx dsx_result_rdsx
+        simp del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
 qed
 
 subsection \<open>The evaluator\<close>
@@ -773,6 +852,9 @@ lemma total_udeval: "All udeval_dom"
 
 termination udeval by (rule total_udeval)
 
+lemma size_snd_udeval[simp]: "size (snd (udeval j ts db \<phi>)) = size \<phi>"
+  by (rule psize_snd_udeval[OF total_udeval[THEN spec]])
+
 subsection \<open>The two evaluators agree\<close>
 
 lemma mebuf2_take_or:
@@ -864,10 +946,11 @@ lemma meprev_next_next3:
   unfolding map_mbuf_append map_mbuf_empty list.map .
 
 lemma edsx_eval_since_rdsx0:
-  "edsx_eval_since args [] (rbufS buf) (rdsx aux)
+  "(case edsx_eval_since args [] (rbufS buf) (rdsx aux) of
+      (Zs, bf, a) \<Rightarrow> (map (dfilt (usx_q aux)) Zs, bf, a))
    = (case uedsx_eval_since args [] buf aux of
         (zs, buf', aux') \<Rightarrow> (map reopt_table zs, rbufS buf', rdsx aux'))"
-  using edsx_eval_since_rdsx[where rs = "[]"] unfolding list.map .
+  using edsx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
 lemma mebuf2T_take_acc0:
   assumes "\<And>x y t zs ax. f x y t (map reopt_table zs, ax)
@@ -936,7 +1019,8 @@ next
         (ys', i', b, \<phi>') \<Rightarrow> (map reopt_table ys', i', map_option reopt_table b, Rep_udformula \<phi>'))"
     using letpast_meval0_rdb[where R = Rep_udformula and n = "size \<phi>" and eval = "edeval j"
         and eval' = "udeval j" and j = j and i = i and ys = "[]" and xs = "list_of_option buf"
-        and p = "(p, m)" and ts = ts and db = db and \<phi> = \<phi>, OF size_Rep_udformula IH refl]
+        and p = "(p, m)" and ts = ts and db = db and \<phi> = \<phi>,
+        OF size_snd_edeval size_snd_udeval IH refl]
     by (cases buf) simp_all
   show ?case
     using 21(2)[OF refl _ refl refl]
@@ -984,8 +1068,21 @@ next
         del: meprev_next.simps ueprev_next.simps split: prod.splits list.splits bool.splits)
 next
   case (14 j ts db dags \<phi> \<psi> buf aux)
-  then show ?case
-    by (simp add: mebuf2S_add_rbufS edsx_eval_since_rdsx0
+  obtain xs \<phi>' where e1: "udeval j ts db \<phi> = (xs, \<phi>')" by (cases "udeval j ts db \<phi>")
+  obtain ys \<psi>' where e2: "udeval j ts db \<psi> = (ys, \<psi>')" by (cases "udeval j ts db \<psi>")
+  obtain zs buf' aux' where e3: "uedsx_eval_since dags [] (uebuf2S_add xs ys ts buf) aux
+      = (zs, buf', aux')"
+    by (cases "uedsx_eval_since dags [] (uebuf2S_add xs ys ts buf) aux")
+  obtain Zs Bf Ax where E3: "edsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)
+      = (Zs, Bf, Ax)"
+    by (cases "edsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)")
+  have Z: "map (dfilt (usx_q aux)) Zs = map reopt_table zs" and B: "Bf = rbufS buf'"
+    and A: "Ax = rdsx aux'"
+    using edsx_eval_since_rdsx0[where args = dags and buf = "uebuf2S_add xs ys ts buf" and aux = aux] by (simp_all add: e3 E3)
+  have q: "usx_q aux' = usx_q aux" by (rule usx_q_uedsx_eval_since'[OF e3])
+  show ?case
+    using 14
+    by (simp add: e1 e2 e3 E3 Z B A q mebuf2S_add_rbufS edeval_edandrel
         del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
 next
   case (15 j ts db dags msk \<phi> \<psi> buf nts t aux)
@@ -1012,6 +1109,25 @@ qed
 
 subsection \<open>The compiler, the state and the step\<close>
 
+text \<open>
+  A constraint over a node whose result is an aggregate becomes the node's guard rather than a
+  filter above it, when the node is a fused aggregating Since: the constraint is on the node's
+  own columns, which are exactly the aggregation's, so the groups that fail it never have to be
+  built.  Nothing else is fused -- every other node keeps the filter above it -- and the boxed
+  compiler of @{theory MFODL_Monitor_Dense.Dense_Descend_Code} keeps it above this one too,
+  which is what @{const edandrel} in @{const Rep_udformula} says.
+\<close>
+
+fun uset_q :: "uconstr \<Rightarrow> udformula \<Rightarrow> udformula option" where
+  "uset_q c (UDSince args \<phi> \<psi> buf aux) =
+     (case aux of UDSX_wagg p None a \<Rightarrow> Some (UDSince args \<phi> \<psi> buf (UDSX_wagg p (Some c) a))
+      | _ \<Rightarrow> None)"
+| "uset_q c \<phi> = None"
+
+lemma Rep_uset_q:
+  "uset_q c d = Some d' \<Longrightarrow> Rep_udformula d' = EDAndRel (Rep_udformula d) c"
+  by (cases d) (auto simp: edandrel_def split: udsaux_x.splits option.splits)
+
 text \<open>The compiler of @{theory MFODL_Monitor_Dense.Dense_Descend_Code} into the short formula: the
   same placement, with the structures initialised on short tuples.\<close>
 
@@ -1026,7 +1142,8 @@ function (sequential) udof ::
       else UDFail)"
 | "udof n cs (meformula.MAndRel \<phi> conf) =
      (if Formula.fv_trm (fst conf) \<subseteq> set cs \<and> Formula.fv_trm (snd (snd (snd conf))) \<subseteq> set cs
-      then UDAndRel (udof n cs \<phi>) (reindex_constraint cs conf)
+      then (let d = udof n cs \<phi>; c = reindex_constraint cs conf
+            in case uset_q c d of Some d' \<Rightarrow> d' | None \<Rightarrow> UDAndRel d c)
       else UDFail)"
 | "udof n cs (meformula.MNeg \<phi>) =
      (if cs = [] then UDNeg (udof n [] \<phi>)
@@ -1082,7 +1199,7 @@ function (sequential) udof ::
                  then UDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
                         (udsx_init_agg (dargs cs_R cs_L args)
                           (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
-                           m, ins_pos g y))
+                           m, ins_pos g y) None)
                  else UDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
                         m (ins_pos g y)
                         (UDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
@@ -1150,6 +1267,10 @@ termination udof
 
 lemma udof_edof: "Rep_udformula (udof n cs e) = edof n cs e"
 proof (induct n cs e rule: udof.induct)
+  case (3 n cs \<phi> conf)
+  then show ?case
+    by (auto simp: Let_def Rep_uset_q split: option.splits)
+next
   case (12 n cs args \<phi> \<psi> buf aux)
   then show ?case
     by (cases "args_agg args") (simp_all add: Let_def dsx_init_rdsx dsx_init_agg_rdsx)

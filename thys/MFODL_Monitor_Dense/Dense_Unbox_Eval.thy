@@ -773,23 +773,77 @@ text \<open>
   together -- and inserts the node's own tuple straight into the answer.
 \<close>
 
-definition ugmr :: "(event_data tuple \<Rightarrow> event_data list) \<Rightarrow> 'b agg_map \<Rightarrow> nat \<Rightarrow>
-    ('b \<Rightarrow> event_data) \<Rightarrow> event_data list set" where
-  "ugmr h m y f = h ` get_map_result m y f"
+text \<open>
+  A node whose result is an aggregate is often read through a constraint on the aggregate's own
+  value: \<^verbatim>\<open>(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r\<close> is the shape of a whole family of
+  policies.  Compiled as a filter over the node, that builds the table of all groups and then
+  drops most of it again -- every group that fails the constraint is inserted into a tree only
+  to be removed from the next one.  The constraint is carried by the node instead, as the guard
+  below, and the read inserts only the groups that pass.  The guard is @{const None} at a node
+  that carries no constraint, and then it admits everything.
+\<close>
+
+type_synonym uconstr = "Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm"
+
+definition uqok :: "uconstr option \<Rightarrow> event_data list \<Rightarrow> bool" where
+  "uqok q = (case q of None \<Rightarrow> (\<lambda>_. True) | Some c \<Rightarrow> ueval_constraint c)"
+
+definition dqok :: "uconstr option \<Rightarrow> event_data tuple \<Rightarrow> bool" where
+  "dqok q = (case q of None \<Rightarrow> (\<lambda>_. True) | Some c \<Rightarrow> deval_constraint c)"
+
+definition ufilt :: "uconstr option \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
+  "ufilt q X = Set.filter (uqok q) X"
+
+definition dfilt :: "uconstr option \<Rightarrow> event_data table \<Rightarrow> event_data table" where
+  "dfilt q X = Set.filter (dqok q) X"
+
+lemma uqok_None[simp]: "uqok None = (\<lambda>_. True)"
+  by (simp add: uqok_def)
+
+lemma dqok_None[simp]: "dqok None = (\<lambda>_. True)"
+  by (simp add: dqok_def)
+
+lemma ufilt_None[simp]: "ufilt None = id"
+  by (simp add: ufilt_def fun_eq_iff)
+
+lemma dfilt_None[simp]: "dfilt None = id"
+  by (simp add: dfilt_def fun_eq_iff)
+
+lemma ufilt_Some: "ufilt (Some c) X = Set.filter (ueval_constraint c) X"
+  by (simp add: ufilt_def uqok_def)
+
+lemma dfilt_Some: "dfilt (Some c) X = Set.filter (deval_constraint c) X"
+  by (simp add: dfilt_def dqok_def)
+
+lemma dfilt_reopt_table: "dfilt q (reopt_table X) = reopt_table (ufilt q X)"
+  by (auto simp: dfilt_def ufilt_def dqok_def uqok_def reopt_table_def split: option.splits)
+
+lemma dfilt_idem[simp]: "dfilt q (dfilt q X) = dfilt q X"
+  by (auto simp: dfilt_def)
+
+lemma dfilt_Un: "dfilt q (A \<union> B) = dfilt q A \<union> dfilt q B"
+  by (auto simp: dfilt_def)
+
+definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> (event_data tuple \<Rightarrow> event_data list) \<Rightarrow>
+    'b agg_map \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow> event_data list set" where
+  "ugmr q h m y f = Set.filter q (h ` get_map_result m y f)"
 
 text \<open>The entries of the mapping's tree carry the key and its value together, so the fused form
   needs no lookup, and it builds one tree rather than two.\<close>
 
-lemma fold_insert_image: "fold (\<lambda>x. Set.insert (g x)) xs A = g ` set xs \<union> A"
-  by (induct xs arbitrary: A) auto
+lemma fold_insert_image:
+  "fold (\<lambda>x A. let v = g x in if q v then Set.insert v A else A) xs A
+   = Set.filter q (g ` set xs) \<union> A"
+  by (induct xs arbitrary: A) (auto simp: Let_def)
 
 lemma ugmr_code[code]:
   fixes t :: "(event_data tuple, 'b) mapping_rbt"
-  shows "ugmr h (RBT_Mapping t) y f =
+  shows "ugmr q h (RBT_Mapping t) y f =
     (case ID CCOMPARE(event_data tuple) of
        None \<Rightarrow> Code.abort (STR ''ugmr RBT_Mapping: ccompare = None'')
-                (\<lambda>_. ugmr h (RBT_Mapping t) y f)
-     | Some _ \<Rightarrow> fold (\<lambda>p. Set.insert (h ((fst p)[y := Some (f (snd p))])))
+                (\<lambda>_. ugmr q h (RBT_Mapping t) y f)
+     | Some _ \<Rightarrow> fold (\<lambda>p A. let v = h (list_update (fst p) y (Some (f (snd p))))
+                    in if q v then Set.insert v A else A)
                   (RBT_Mapping2.entries t) {})"
 proof (cases "ID CCOMPARE(event_data tuple)")
   case (Some c)
@@ -804,62 +858,67 @@ proof (cases "ID CCOMPARE(event_data tuple)")
     by (simp add: lookup_Mapping_code(1) map_of_entries Some del: RBT_Mapping_def)
   have ky: "Mapping.keys (RBT_Mapping t) = fst ` set (RBT_Mapping2.entries t)"
     unfolding Mapping.keys_dom_lookup lk by (rule dom_map_of_conv_image_fst)
-  have "ugmr h (RBT_Mapping t) y f
-      = (\<lambda>p. h ((fst p)[y := Some (f (snd p))])) ` set (RBT_Mapping2.entries t)"
+  have "ugmr q h (RBT_Mapping t) y f
+      = Set.filter q ((\<lambda>p. h (list_update (fst p) y (Some (f (snd p)))))
+          ` set (RBT_Mapping2.entries t))"
     unfolding ugmr_def get_map_result_def ky lk image_image
-    by (rule image_cong[OF refl]) (simp add: mo)
+    by (intro arg_cong[of _ _ "Set.filter q"] image_cong[OF refl]) (simp add: mo)
   then show ?thesis using Some by (simp add: fold_insert_image)
 qed simp
 
-definition ures_maggaux :: "(event_data tuple \<Rightarrow> event_data list) \<Rightarrow> aggargs \<Rightarrow> aggaux \<Rightarrow>
-    event_data list set" where
-  "ures_maggaux h args a = h ` result_maggaux args a"
+definition ures_maggaux :: "(event_data list \<Rightarrow> bool) \<Rightarrow> (event_data tuple \<Rightarrow> event_data list) \<Rightarrow>
+    aggargs \<Rightarrow> aggaux \<Rightarrow> event_data list set" where
+  "ures_maggaux q h args a = Set.filter q (h ` result_maggaux args a)"
 
 lemma ures_maggaux_code[code]:
-  "ures_maggaux h args a =
+  "ures_maggaux q h args a =
     (let n = aggargs_n args; y = aggargs_y args; g0 = aggargs_g0 args; \<omega> = aggargs_\<omega> args in
      case a of
        CntAux m \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
-          else ugmr h m y (\<lambda>k. EInt (integer_of_int k)))
+         (if g0 \<and> Mapping.keys m = {}
+          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
+          else ugmr q h m y (\<lambda>k. EInt (integer_of_int k)))
      | SumAux m \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
+         (if g0 \<and> Mapping.keys m = {}
+          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
           else (case fst \<omega> of
-            Formula.Agg_Sum \<Rightarrow> ugmr h m y (\<lambda>k. EInt (snd k))
-          | Formula.Agg_Avg \<Rightarrow> ugmr h m y
+            Formula.Agg_Sum \<Rightarrow> ugmr q h m y (\<lambda>k. EInt (snd k))
+          | Formula.Agg_Avg \<Rightarrow> ugmr q h m y
               (\<lambda>k. EFloat (double_of_event_data (EInt (snd k)) / double_of_int (fst k)))
-          | _ \<Rightarrow> h ` result_maggaux args a))
+          | _ \<Rightarrow> Set.filter q (h ` result_maggaux args a)))
      | RankAux (m, t) \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
+         (if g0 \<and> Mapping.keys m = {}
+          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
           else (case fst \<omega> of
-            Formula.Agg_Min \<Rightarrow> ugmr h m y (\<lambda>k. get_edata_list k 0)
-          | Formula.Agg_Max \<Rightarrow> ugmr h m y (\<lambda>k. get_edata_list k (get_length k - 1))
-          | Formula.Agg_Med \<Rightarrow> ugmr h m y (\<lambda>k. let u = get_length k; u' = u div 2;
+            Formula.Agg_Min \<Rightarrow> ugmr q h m y (\<lambda>k. get_edata_list k 0)
+          | Formula.Agg_Max \<Rightarrow> ugmr q h m y (\<lambda>k. get_edata_list k (get_length k - 1))
+          | Formula.Agg_Med \<Rightarrow> ugmr q h m y (\<lambda>k. let u = get_length k; u' = u div 2;
               aggval = (if even u
                 then (double_of_event_data_agg (get_edata_list k (u' - 1))
                       + double_of_event_data_agg (get_edata_list k u')) / double_of_int 2
                 else double_of_event_data_agg (get_edata_list k u'))
               in EFloat aggval)
-          | _ \<Rightarrow> h ` result_maggaux args a)))"
+          | _ \<Rightarrow> Set.filter q (h ` result_maggaux args a))))"
   by (cases args) (simp add: ures_maggaux_def ugmr_def Let_def
       split: aggaux.splits Formula.agg_type.splits)
 
-definition uag_res :: "daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
-    event_data list set" where
-  "uag_res p w cc ax = (case ax of
+definition uag_res :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset \<Rightarrow>
+    aggaux option \<Rightarrow> event_data list set" where
+  "uag_res q p w cc ax = ufilt q (case ax of
      None \<Rightarrow> udagg_p p (snd cc)
    | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
 
 text \<open>The result is read off the kernel's structure in one pass: the projection to the node's
-  columns and the unboxing are one image, and that image is fused with the kernel's own read.\<close>
+  columns, the unboxing and the node's guard are one image, and that image is fused with the
+  kernel's own read.\<close>
 
 lemma uag_res_code[code]:
-  "uag_res p w cc ax = (case ax of
-     None \<Rightarrow> udagg_p p (snd cc)
+  "uag_res q p w cc ax = (case ax of
+     None \<Rightarrow> ufilt q (udagg_p p (snd cc))
    | Some a \<Rightarrow> (let args = dagg_args p w; msk = wide_mask (aggargs_n args) [0..<aggargs_n args]
-       in ures_maggaux (\<lambda>x. deopt (dproj msk x)) args a))"
-  by (simp add: uag_res_def ures_maggaux_def deopt_table_def dtabc_def image_image Let_def
-      split: option.splits)
+       in ures_maggaux (uqok q) (\<lambda>x. deopt (dproj msk x)) args a))"
+  by (simp add: uag_res_def ures_maggaux_def ufilt_def deopt_table_def dtabc_def image_image
+      Let_def split: option.splits)
 
 lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc cc) ax = uag_ins p w T cc ax"
   by (cases cc) (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps udagg_wide_eq)
@@ -873,8 +932,23 @@ proof -
   then show ?thesis by (simp add: uag_del_def ag_del_def cc udagg_wide_eq)
 qed
 
-lemma ag_res_rcc[simp]: "ag_res p w (rcc cc) ax = reopt_table (uag_res p w cc ax)"
-  by (cases cc) (simp add: uag_res_def ag_res_def rcc.simps udagg_p_eq dsan_def split: option.splits)
+lemma ag_res_rcc: "dfilt q (ag_res p w (rcc cc) ax) = reopt_table (uag_res q p w cc ax)"
+proof (cases cc)
+  case (Pair c S)
+  show ?thesis
+  proof (cases ax)
+    case None
+    show ?thesis unfolding Pair None
+      by (simp add: uag_res_def ag_res_def rcc.simps udagg_p_eq[symmetric] dfilt_reopt_table)
+  next
+    case (Some a)
+    show ?thesis unfolding Pair Some
+      by (simp add: uag_res_def ag_res_def rcc.simps dsan_def dfilt_reopt_table)
+  qed
+qed
+
+lemma ag_res_rcc_None[simp]: "ag_res p w (rcc cc) ax = reopt_table (uag_res None p w cc ax)"
+  using ag_res_rcc[of None] by simp
 
 lemma cnt_add_rcc[simp]: "cnt_add (reopt_table T) (rcc cc) = rcc (gcnt_add T cc)"
   by (simp add: gcnt_add_eq[symmetric])
@@ -945,8 +1019,9 @@ definition usa_add_new_table :: "args \<Rightarrow> daggp \<Rightarrow> event_da
       then ((t, pend, append_queue (t, X) win, gcnt_add X cc), uag_ins p (args_n args) X cc ax)
       else ((t, append_queue (t, X) pend, win, cc), ax)))"
 
-definition usa_result :: "args \<Rightarrow> daggp \<Rightarrow> uswagg \<Rightarrow> event_data list set" where
-  "usa_result args p aux = (case aux of ((t, pend, win, cc), ax) \<Rightarrow> uag_res p (args_n args) cc ax)"
+definition usa_result :: "uconstr option \<Rightarrow> args \<Rightarrow> daggp \<Rightarrow> uswagg \<Rightarrow> event_data list set" where
+  "usa_result q args p aux =
+     (case aux of ((t, pend, win, cc), ax) \<Rightarrow> uag_res q p (args_n args) cc ax)"
 
 text \<open>Its naturality, against the boxed window of the verified evaluator.\<close>
 
@@ -1021,10 +1096,13 @@ proof -
     by (simp add: sa_add_new_table_def usa_add_new_table_def rsa.simps rsw.simps)
 qed
 
-lemma sa_result_rsa: "sa_result args p (rsa aux) = reopt_table (usa_result args p aux)"
+lemma sa_result_rsa:
+  "dfilt q (sa_result args p (rsa aux)) = reopt_table (usa_result q args p aux)"
 proof -
   obtain t pend win cc ax where aux: "aux = ((t, pend, win, cc), ax)" by (cases aux) auto
-  show ?thesis unfolding aux by (simp add: sa_result_def usa_result_def rsa.simps rsw.simps)
+  show ?thesis unfolding aux
+    by (simp add: sa_result_def usa_result_def rsa.simps rsw.simps ag_res_rcc
+        del: ag_res_rcc_None)
 qed
 
 subsection \<open>The Until structure\<close>

@@ -49,10 +49,10 @@ definition uua_step :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow>
      (case uua_extend args p w ts0 win rest bend cc ax of (win, rest, bend, cc, ax) \<Rightarrow>
         (case safe_hd win of
            (None, win') \<Rightarrow> ((tl_queue nts, win', rest, len - 1, bend, cc,
-                             uag_res p w cc ax # dn), ax)
+                             uag_res None p w cc ax # dn), ax)
          | (Some e, win') \<Rightarrow>
            (let win'' = tl_queue win';
-                r = uag_res p w cc ax;
+                r = uag_res None p w cc ax;
                 cc' = gcnt_del (fst (snd e)) cc;
                 ax' = uag_del p w (fst (snd e)) cc ax;
                 bend' = (if Queue.is_empty win'' then True else bend)

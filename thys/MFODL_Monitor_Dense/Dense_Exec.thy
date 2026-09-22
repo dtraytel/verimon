@@ -276,6 +276,9 @@ lemma total_edeval: "All edeval_dom"
 
 termination edeval by (rule total_edeval)
 
+lemma size_snd_edeval[simp]: "size (snd (edeval j ts db \<phi>)) = size \<phi>"
+  by (rule psize_snd_edeval[OF total_edeval[THEN spec]])
+
 subsection \<open>The two evaluators agree\<close>
 
 lemma edeval_Rep:
