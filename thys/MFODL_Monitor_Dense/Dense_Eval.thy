@@ -131,6 +131,10 @@ datatype dformula =
   | DLetPast Formula.name nat dformula dformula nat "event_data table option"
   | DTrigger args "nat option list" dformula dformula "event_data mbuf2" "ts list"
       "event_data option gmmtaux"
+  | DMatchP nat \<I> mregex "mregex list" "nat option list list" "dformula list"
+      "event_data mbufn" "ts list" "event_data mr\<delta>aux"
+  | DMatchF nat \<I> mregex "mregex list" "nat option list list" "dformula list"
+      "event_data mbufn" "ts list" ts "event_data ml\<delta>aux"
 
 text \<open>The compiler is total on the kernel's formulas, so it answers @{const DFail} at a node it
   does not cover rather than failing.  Its caller checks that the compiled formula has none: this
@@ -154,6 +158,8 @@ fun vdfail_nodes :: "dformula \<Rightarrow> nat" where
 | "vdfail_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DLetPast p m \<phi> \<psi> i buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DTrigger dags pl \<phi> \<psi> dbuf nts daux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map vdfail_nodes L)"
+| "vdfail_nodes (DMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map vdfail_nodes L)"
 | "vdfail_nodes \<phi> = 0"
 
 function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database \<Rightarrow> dformula \<Rightarrow>
@@ -246,6 +252,19 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux)
             (mbuf2_add xs ys dbuf) (nts @ ts)
       in (zs, DTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
+| "deval j ts db (DMatchP m I mr mrs pls Ld dbuf nts daux) =
+     (let R = map (deval j ts db) Ld;
+          ((zs, daux'), dbuf', _, nts') = mbufnt_take (\<lambda>rels t (zs, ax).
+             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
+             in (zs @ [z], ax)) ([], daux) (mbufn_add (map fst R) dbuf) 0 (nts @ ts)
+      in (zs, DMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
+| "deval j ts db (DMatchF m I mr mrs pls Ld dbuf nts t daux) =
+     (let R = map (deval j ts db) Ld;
+          (daux', dbuf', nt, nts') = mbufnt_take
+             (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+             daux (mbufn_add (map fst R) dbuf) t (nts @ ts);
+          (zs, daux'') = eval_matchF I mr nt daux'
+      in (zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
@@ -1143,6 +1162,36 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dtrigger_rel n cs cs_L args tw aux daux buf dbuf nts \<Longrightarrow>
     dsim n cs tw (DTrigger dags pl \<phi>d \<psi>d dbuf nts daux)
       (mformula.MTrigger args \<phi> \<psi> buf nts aux)"
+| DsMatchP: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MMatchP I mr mrs L buf nts aux) \<Longrightarrow>
+    Regex.safe_regex fv rgx_safe_pred Past Strict
+      (from_mregex mr (\<psi>s :: ty Formula.formula list)) \<Longrightarrow>
+    ok (length \<psi>s) mr \<Longrightarrow> set cs = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
+    distinct mrs \<Longrightarrow> set mrs = RPDs mr \<Longrightarrow>
+    length css = length \<psi>s \<Longrightarrow> length L = length \<psi>s \<Longrightarrow> length Ld = length L \<Longrightarrow>
+    (\<forall>i < length \<psi>s. set (css ! i) = Formula.fv (\<psi>s ! i)) \<Longrightarrow>
+    (\<forall>c \<in> set css. wf_cols n c) \<Longrightarrow>
+    (\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)) \<Longrightarrow>
+    pls = map (emb_plan cs) css \<Longrightarrow>
+    dbufn n css buf dbuf \<Longrightarrow>
+    dmrd_rel n cs aux daux \<Longrightarrow>
+    dsim n cs tw (DMatchP (length cs) I mr mrs pls Ld dbuf nts daux)
+      (mformula.MMatchP I mr mrs L buf nts aux)"
+| DsMatchF: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MMatchF I mr mrs L buf nts t aux) \<Longrightarrow>
+    Regex.safe_regex fv rgx_safe_pred Futu Strict
+      (from_mregex mr (\<psi>s :: ty Formula.formula list)) \<Longrightarrow>
+    ok (length \<psi>s) mr \<Longrightarrow> set cs = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
+    distinct mrs \<Longrightarrow> set mrs = LPDs mr \<Longrightarrow>
+    length css = length \<psi>s \<Longrightarrow> length L = length \<psi>s \<Longrightarrow> length Ld = length L \<Longrightarrow>
+    (\<forall>i < length \<psi>s. set (css ! i) = Formula.fv (\<psi>s ! i)) \<Longrightarrow>
+    (\<forall>c \<in> set css. wf_cols n c) \<Longrightarrow>
+    (\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)) \<Longrightarrow>
+    pls = map (emb_plan cs) css \<Longrightarrow>
+    dbufn n css buf dbuf \<Longrightarrow>
+    dmld_rel n cs \<psi>s aux daux \<Longrightarrow>
+    dsim n cs tw (DMatchF (length cs) I mr mrs pls Ld dbuf nts t daux)
+      (mformula.MMatchF I mr mrs L buf nts t aux)"
 
 text \<open>The two facts the relation is designed to hand out at every node.\<close>
 
@@ -2882,6 +2931,12 @@ next
       by (rule dsim.DsTrigger[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
             an aL aR m0 dag pe]) (use step in simp)
   qed
+next
+  case (DsMatchP n cs tw I mr mrs L buf nts aux \<psi>s css Ld pls dbuf daux)
+  show ?case sorry
+next
+  case (DsMatchF n cs tw I mr mrs L buf nts t aux \<psi>s css Ld pls dbuf daux)
+  show ?case sorry
 qed
 
 text \<open>Induction on the bound discharges the assumption the theorem above carries, and
