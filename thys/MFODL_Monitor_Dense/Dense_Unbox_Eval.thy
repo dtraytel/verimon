@@ -763,6 +763,87 @@ definition uag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set
   "uag_del p w T cc ax = delete_maggaux' (dagg_args p w)
      (udagg_wide p w (Set.filter (\<lambda>x. Mapping.lookup (fst cc) x = Some 1) T)) ax"
 
+text \<open>
+  The kernel's aggregation structure answers with a table of the node's frame, one tuple per
+  group, which the node then reads at its own frame and without the option: two tables of the
+  same size built one after the other, once per time point.  @{term ures_maggaux} is the
+  composite, and is given a code equation that builds the second one only: the kernel's own
+  result goes through @{const get_map_result}, which walks the keys of the mapping and looks
+  each one up, so the fused form walks the mapping's entries instead -- the key and its value
+  together -- and inserts the node's own tuple straight into the answer.
+\<close>
+
+definition ugmr :: "(event_data tuple \<Rightarrow> event_data list) \<Rightarrow> 'b agg_map \<Rightarrow> nat \<Rightarrow>
+    ('b \<Rightarrow> event_data) \<Rightarrow> event_data list set" where
+  "ugmr h m y f = h ` get_map_result m y f"
+
+text \<open>The entries of the mapping's tree carry the key and its value together, so the fused form
+  needs no lookup, and it builds one tree rather than two.\<close>
+
+lemma fold_insert_image: "fold (\<lambda>x. Set.insert (g x)) xs A = g ` set xs \<union> A"
+  by (induct xs arbitrary: A) auto
+
+lemma ugmr_code[code]:
+  fixes t :: "(event_data tuple, 'b) mapping_rbt"
+  shows "ugmr h (RBT_Mapping t) y f =
+    (case ID CCOMPARE(event_data tuple) of
+       None \<Rightarrow> Code.abort (STR ''ugmr RBT_Mapping: ccompare = None'')
+                (\<lambda>_. ugmr h (RBT_Mapping t) y f)
+     | Some _ \<Rightarrow> fold (\<lambda>p. Set.insert (h ((fst p)[y := Some (f (snd p))])))
+                  (RBT_Mapping2.entries t) {})"
+proof (cases "ID CCOMPARE(event_data tuple)")
+  case (Some c)
+  note comp = ID_ccompare'[OF Some]
+  have dist: "distinct (map fst (RBT_Mapping2.entries t))"
+    using Some by (transfer fixing: c)
+      (simp add: ord.is_rbt_def linorder.distinct_entries[OF comparator.linorder[OF comp]])
+  have mo: "map_of (RBT_Mapping2.entries t) (fst p) = Some (snd p)"
+    if "p \<in> set (RBT_Mapping2.entries t)" for p
+    using dist that by (cases p) (simp add: map_of_is_SomeI)
+  have lk: "Mapping.lookup (RBT_Mapping t) = map_of (RBT_Mapping2.entries t)"
+    by (simp add: lookup_Mapping_code(1) map_of_entries Some del: RBT_Mapping_def)
+  have ky: "Mapping.keys (RBT_Mapping t) = fst ` set (RBT_Mapping2.entries t)"
+    unfolding Mapping.keys_dom_lookup lk by (rule dom_map_of_conv_image_fst)
+  have "ugmr h (RBT_Mapping t) y f
+      = (\<lambda>p. h ((fst p)[y := Some (f (snd p))])) ` set (RBT_Mapping2.entries t)"
+    unfolding ugmr_def get_map_result_def ky lk image_image
+    by (rule image_cong[OF refl]) (simp add: mo)
+  then show ?thesis using Some by (simp add: fold_insert_image)
+qed simp
+
+definition ures_maggaux :: "(event_data tuple \<Rightarrow> event_data list) \<Rightarrow> aggargs \<Rightarrow> aggaux \<Rightarrow>
+    event_data list set" where
+  "ures_maggaux h args a = h ` result_maggaux args a"
+
+lemma ures_maggaux_code[code]:
+  "ures_maggaux h args a =
+    (let n = aggargs_n args; y = aggargs_y args; g0 = aggargs_g0 args; \<omega> = aggargs_\<omega> args in
+     case a of
+       CntAux m \<Rightarrow>
+         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
+          else ugmr h m y (\<lambda>k. EInt (integer_of_int k)))
+     | SumAux m \<Rightarrow>
+         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
+          else (case fst \<omega> of
+            Formula.Agg_Sum \<Rightarrow> ugmr h m y (\<lambda>k. EInt (snd k))
+          | Formula.Agg_Avg \<Rightarrow> ugmr h m y
+              (\<lambda>k. EFloat (double_of_event_data (EInt (snd k)) / double_of_int (fst k)))
+          | _ \<Rightarrow> h ` result_maggaux args a))
+     | RankAux (m, t) \<Rightarrow>
+         (if g0 \<and> Mapping.keys m = {} then h ` singleton_table n y (eval_agg_op \<omega> {})
+          else (case fst \<omega> of
+            Formula.Agg_Min \<Rightarrow> ugmr h m y (\<lambda>k. get_edata_list k 0)
+          | Formula.Agg_Max \<Rightarrow> ugmr h m y (\<lambda>k. get_edata_list k (get_length k - 1))
+          | Formula.Agg_Med \<Rightarrow> ugmr h m y (\<lambda>k. let u = get_length k; u' = u div 2;
+              aggval = (if even u
+                then (double_of_event_data_agg (get_edata_list k (u' - 1))
+                      + double_of_event_data_agg (get_edata_list k u')) / double_of_int 2
+                else double_of_event_data_agg (get_edata_list k u'))
+              in EFloat aggval)
+          | _ \<Rightarrow> h ` result_maggaux args a)))"
+  by (cases args) (simp add: ures_maggaux_def ugmr_def Let_def
+      split: aggaux.splits Formula.agg_type.splits)
+
 definition uag_res :: "daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset \<Rightarrow> aggaux option \<Rightarrow>
     event_data list set" where
   "uag_res p w cc ax = (case ax of
@@ -770,14 +851,15 @@ definition uag_res :: "daggp \<Rightarrow> nat \<Rightarrow> event_data gcntset 
    | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
 
 text \<open>The result is read off the kernel's structure in one pass: the projection to the node's
-  columns and the unboxing are one image.\<close>
+  columns and the unboxing are one image, and that image is fused with the kernel's own read.\<close>
 
 lemma uag_res_code[code]:
   "uag_res p w cc ax = (case ax of
      None \<Rightarrow> udagg_p p (snd cc)
    | Some a \<Rightarrow> (let args = dagg_args p w; msk = wide_mask (aggargs_n args) [0..<aggargs_n args]
-       in (\<lambda>x. deopt (dproj msk x)) ` result_maggaux args a))"
-  by (simp add: uag_res_def deopt_table_def dtabc_def image_image Let_def split: option.splits)
+       in ures_maggaux (\<lambda>x. deopt (dproj msk x)) args a))"
+  by (simp add: uag_res_def ures_maggaux_def deopt_table_def dtabc_def image_image Let_def
+      split: option.splits)
 
 lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc cc) ax = uag_ins p w T cc ax"
   by (cases cc) (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps udagg_wide_eq)
