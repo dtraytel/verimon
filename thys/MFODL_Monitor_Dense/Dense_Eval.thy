@@ -583,7 +583,6 @@ text \<open>
 definition duaux_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow>
     muaux_dq \<Rightarrow> duaux_x \<Rightarrow> bool" where
   "duaux_rel n cs_R cs_L args cur aux daux \<longleftrightarrow>
-     dux_agg daux = None \<and>
      (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
         duxaux' n cs_R cs_L args cur daux auxlist)"
 
@@ -601,7 +600,6 @@ lemma duaux_rel_step:
 proof -
   obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
     and vd: "duxaux' n cs_R cs_L args u daux auxlist"
-    and ag: "dux_agg daux = None"
     using v unfolding duaux_rel_def by blast
   have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux) (update_until args a b t auxlist)"
     by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 an aL aR in simp_all)
@@ -610,25 +608,37 @@ proof -
         (dtabc n cs_L a) (dtabc n cs_R b) t daux)
       (update_until args a b t auxlist)"
     by (rule duxaux'_add_new[OF vd sR sL bR sub t1 t2 f2 ut])
-  ultimately show ?thesis using ag unfolding duaux_rel_def by simp blast
+  ultimately show ?thesis unfolding duaux_rel_def by blast
 qed
+
+lemma dux_agg_mbuf2t_take:
+  "mbuf2t_take (dux_add_new args msk) daux buf t nts = (daux', buf', t', nts') \<Longrightarrow>
+   dux_agg daux' = dux_agg daux"
+  by (induction "dux_add_new args msk" daux buf t nts arbitrary: daux' buf' t' nts'
+      rule: mbuf2t_take.induct) (auto split: if_splits prod.splits)
+
+lemma dux_post_mbuf2t_take:
+  "mbuf2t_take (dux_add_new args msk) daux buf t nts = (daux', buf', t', nts') \<Longrightarrow>
+   dux_post daux' = dux_post daux"
+  using dux_agg_mbuf2t_take by (simp add: dux_post_eq)
 
 lemma duaux_rel_eval:
   assumes v: "duaux_rel n cs_R cs_L args cur aux daux" and nt: "cur \<le> nt"
     and we: "eval_muaux_dq args nt aux = (zs, aux')"
     and de: "dux_eval (dargs cs_R cs_L args) nt daux = (dzs, daux')"
-  shows "dsres n cs_R args zs dzs \<and> duaux_rel n cs_R cs_L args cur aux' daux'"
+  shows "dsresh n cs_R args (dux_post daux) zs dzs \<and>
+    duaux_rel n cs_R cs_L args cur aux' daux'"
 proof -
   obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
     and vd: "duxaux' n cs_R cs_L args cur daux auxlist"
-    and ag: "dux_agg daux = None"
     using v unfolding duaux_rel_def by blast
   obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
     by (cases "eval_until (args_ivl args) nt auxlist")
   have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
     by (rule valid_eval_muaux_dq[OF vw nt we eu])
-  have d: "dzs = map (dtabc n cs_R) res \<and> duxaux' n cs_R cs_L args cur daux' auxlist'"
-    using duxaux'_eval[OF vd nt de eu] ag by (simp add: dux_post_eq)
+  have d: "dzs = map (dux_post daux \<circ> dtabc n cs_R) res \<and>
+      duxaux' n cs_R cs_L args cur daux' auxlist'"
+    by (rule duxaux'_eval[OF vd nt de eu])
   have tr: "list_all (table n (set cs_R)) res"
   proof (unfold list_all_iff, safe)
     fix x assume "x \<in> set res"
@@ -636,8 +646,7 @@ proof -
       unfolding eval_until_res[OF eu] by (auto dest!: set_takeWhileD)
     then show "table n (set cs_R) x" using duxaux'_tables[OF vd] by auto
   qed
-  have ag': "dux_agg daux' = None" using ag de by (metis dux_agg_eval snd_conv)
-  show ?thesis using w d tr ag' unfolding duaux_rel_def dsres_def by blast
+  show ?thesis using w d tr unfolding duaux_rel_def dsresh_def by blast
 qed
 
 text \<open>The node relation.  The stored timestamp is at or after the structure's current one and
@@ -674,7 +683,7 @@ lemma until_step_rel:
       = (daux1, dbuf1, dnt, dnts1)"
     and wev: "eval_muaux_dq args nt aux1 = (zs, aux2)"
     and dev: "dux_eval (dargs cs_R cs_L args) dnt daux1 = (dzs, daux2)"
-  shows "dsres n cs_R args zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+  shows "dsresh n cs_R args (dux_post daux) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
      dbuf1 = (map (dtabc n cs_L) (fst buf1), map (dtabc n cs_R) (snd buf1)) \<and>
      duntil_rel n cs_R cs_L args (dnext tw tss) nt aux2 daux2 buf1 dbuf1 nts1"
 proof -
@@ -722,8 +731,10 @@ proof -
     and sub1: "set nts1 \<subseteq> set (nts @ tss)"
     and dbf: "dbuf1 = (map (dtabc n cs_L) b1, map (dtabc n cs_R) b2)" using R by blast+
   have ntdn: "nt \<le> dnext tw tss" using R tdn bound by blast
-  have ev: "dsres n cs_R args zs dzs \<and> duaux_rel n cs_R cs_L args u aux2 daux2"
-    by (rule duaux_rel_eval[OF vu unt wev dev[unfolded dn]])
+  have pst: "dux_post daux1 = dux_post daux" by (rule dux_post_mbuf2t_take[OF de])
+  have ev: "dsresh n cs_R args (dux_post daux) zs dzs \<and>
+      duaux_rel n cs_R cs_L args u aux2 daux2"
+    using duaux_rel_eval[OF vu unt wev dev[unfolded dn]] pst by simp
   have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
   have lb1: "list_all (ftable n (set cs_L)) b1" using sb lus by (auto simp: list_all_iff)
   have lb2: "list_all (ftable n (set cs_R)) b2" using sb lvs by (auto simp: list_all_iff)
@@ -1021,6 +1032,7 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     args_L args = set cs_L \<Longrightarrow> args_R args = set cs \<Longrightarrow>
     dags = dargs cs cs_L args \<Longrightarrow> msk = dmsk cs cs_L \<Longrightarrow>
     duntil_rel n cs cs_L args tw t aux daux buf dbuf nts \<Longrightarrow>
+    dux_agg daux = None \<Longrightarrow>
     dsim n cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
       (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
 | DsSinceAgg: "wf_cols n cs \<Longrightarrow>
@@ -1072,6 +1084,7 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     nn = length (aggargs_tys ag) + n \<Longrightarrow>
     cs_R = agg_cols (length (aggargs_tys ag)) gcols \<Longrightarrow>
     cs = merge_cols gcols [y] \<Longrightarrow>
+    dux_agg daux = None \<Longrightarrow>
     dsim n cs tw (DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
         (length (aggargs_tys ag)) (ins_pos gcols y) (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux))
       (mformula.MUntil args \<phi> \<psi> buf nts t aux)"
@@ -2174,6 +2187,7 @@ next
     and wfL = DsUntil.hyps(7) and sub = DsUntil.hyps(8) and agg = DsUntil.hyps(9)
     and an = DsUntil.hyps(10) and aL = DsUntil.hyps(11) and aR = DsUntil.hyps(12)
     and dag = DsUntil.hyps(13) and pe = DsUntil.hyps(14) and rel = DsUntil.hyps(15)
+    and nag = DsUntil.hyps(16)
     and w = DsUntil.prems(1) and sts = DsUntil.prems(2)
     and mts = DsUntil.prems(3) and m = DsUntil.prems(4)
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
@@ -2202,12 +2216,18 @@ next
       (mbuf2_add (map (dtabc n cs_L) as) (map (dtabc n cs) bs) dbuf) t (nts @ ts)")
   obtain dzs daux2 where d4: "dux_eval dags dnt daux1 = (dzs, daux2)"
     by (cases "dux_eval dags dnt daux1")
-  have step: "dsres n cs args zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+  have post: "dux_post daux = id" using nag by (simp add: dux_post_eq)
+  have step: "dsresh n cs args (dux_post daux) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
       dbuf1 = (map (dtabc n cs_L) (fst buf1), map (dtabc n cs) (snd buf1)) \<and>
       duntil_rel n cs cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
     by (rule until_step_rel[OF _ _ _ sub an aL aR rel ta tb sts mts e3
         d3[unfolded dag pe] e4 d4[unfolded dag]]) (use wf wfL in auto)
-  have dz: "dzs = map (dtabc n cs) zs" using step dsres_none[OF agg] by blast
+  have dres: "dsres n cs args zs dzs"
+    using step unfolding post by (simp add: dsresh_def dsres_def)
+  have nag2: "dux_agg daux2 = None"
+    using dux_agg_mbuf2t_take[OF d3[unfolded dag pe]] dux_agg_eval[of dags dnt daux1]
+      d4 nag by simp
+  have dz: "dzs = map (dtabc n cs) zs" using dres dsres_none[OF agg] by blast
   have dn: "dnt = nt" and dns: "dnts1 = nts1"
     and rel': "duntil_rel n cs cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
     using step by blast+
@@ -2219,7 +2239,7 @@ next
     show "dsim n cs (dnext tw ts) (DUntil dags msk \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2) \<phi>'"
       unfolding f
       by (rule dsim.DsUntil[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub agg an aL aR
-            dag pe rel'])
+            dag pe rel' nag2])
   qed
 next
   case (DsSinceAgg n cs tw args \<phi> \<psi> buf aux nn cs_L \<phi>d cs_R \<psi>d ag dags daux dbuf gcols y)
@@ -2380,7 +2400,7 @@ next
     and wg = DsUntilAgg.hyps(16) and agn = DsUntilAgg.hyps(17) and ye = DsUntilAgg.hyps(18)
     and yn = DsUntilAgg.hyps(19) and yg = DsUntilAgg.hyps(20) and g0 = DsUntilAgg.hyps(21)
     and fv = DsUntilAgg.hyps(22) and nne = DsUntilAgg.hyps(23) and cRe = DsUntilAgg.hyps(24)
-    and cse = DsUntilAgg.hyps(25)
+    and cse = DsUntilAgg.hyps(25) and nag = DsUntilAgg.hyps(26)
     and w = DsUntilAgg.prems(1) and sts = DsUntilAgg.prems(2)
     and mts = DsUntilAgg.prems(3) and m = DsUntilAgg.prems(4)
   let ?ag = "dagg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
@@ -2413,11 +2433,17 @@ next
   obtain dzs daux2 where d4: "dux_eval dags dnt daux1 = (dzs, daux2)"
     by (cases "dux_eval dags dnt daux1")
   have wfR: "wf_cols nn cs_R" by (rule dsim_wf_cols[OF sim2])
-  have step: "dsres nn cs_R args zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+  have post: "dux_post daux = id" using nag by (simp add: dux_post_eq)
+  have step: "dsresh nn cs_R args (dux_post daux) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
       dbuf1 = (map (dtabc nn cs_L) (fst buf1), map (dtabc nn cs_R) (snd buf1)) \<and>
       duntil_rel nn cs_R cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
     by (rule until_step_rel[OF _ _ _ sub an aL aR rel ta tb sts mts e3
         d3[unfolded dag pe] e4 d4[unfolded dag]]) (use wfR wfL in auto)
+  have dres: "dsres nn cs_R args zs dzs"
+    using step unfolding post by (simp add: dsresh_def dsres_def)
+  have nag2: "dux_agg daux2 = None"
+    using dux_agg_mbuf2t_take[OF d3[unfolded dag pe]] dux_agg_eval[of dags dnt daux1]
+      d4 nag by simp
   have dn: "dnt = nt" and dns: "dnts1 = nts1"
     and rel': "duntil_rel nn cs_R cs_L args (dnext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
     using step by blast+
@@ -2425,7 +2451,7 @@ next
   proof -
     obtain vs where v: "list_all (table nn (set cs_R)) vs"
       "zs = map (eval_args_agg args) vs" "dzs = map (dtabc nn cs_R) vs"
-      using step unfolding dsres_def by blast
+      using dres unfolding dsres_def by blast
     show ?thesis unfolding x v(2) v(3)
       using v(1) wg yn yg fv g0 agn ye
       by (intro nth_equalityI)
@@ -2444,7 +2470,7 @@ next
           (DUntil dags msk \<phi>d2 \<psi>d2 dbuf1 nts1 nt daux2)) \<phi>'"
       unfolding f
       by (rule dsim.DsUntilAgg[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
-            agg an aL aR dag pe rel' wg agn ye yn yg g0 fv nne cRe cse])
+            agg an aL aR dag pe rel' wg agn ye yn yg g0 fv nne cRe cse nag2])
   qed
 next
   case (DsAndAssign n cs tw \<phi> y t cs0 \<phi>d)

@@ -626,7 +626,7 @@ proof -
     by (rule duxaux'_init[OF sR sL]) (use sub cL cR in simp)
   have r: "duaux_rel n cs_R cs_L args 0 (init_muaux_dq args)
       (dux_init (dargs cs_R cs_L args))"
-    unfolding duaux_rel_def using v s by simp blast
+    unfolding duaux_rel_def using v s by blast
   show ?thesis unfolding duntil_rel_def using r by auto
 qed
 
@@ -711,7 +711,7 @@ proof -
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<psi>)) (minit0 n \<psi>)"
     using i2[OF z2] unfolding A[symmetric] .
   show ?thesis unfolding m d
-    by (rule dsim.DsUntil[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl refl rl])
+    by (rule dsim.DsUntil[OF w pr i1[OF z1] s2 wL sb ag an aL aR refl refl rl]) simp
 qed
 
 lemma dsim_dof_minit0_MAgg:
@@ -1055,7 +1055,7 @@ proof -
     by (rule duntil_rel_init[OF a]) (use sub X wR wL in auto)
   show ?thesis unfolding m d
     by (rule dsim.DsUntilAgg[OF w pr s1 s2 wL sb agS an aL aR refl refl rl wg agn ay yn ynotg
-          g0 fs nne' cc cse])
+          g0 fs nne' cc cse dux_agg_init])
 qed
 
 lemma map2_nth:
