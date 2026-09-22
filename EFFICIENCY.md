@@ -7554,3 +7554,69 @@ What is left is the third item.  `ures_maggaux` is still **22.5%** of `aggonce-m
 **22.9%** of `aggonce-cnt50`, and on `pol-threshold`, where the guard now keeps almost all of it
 from being built, **7.7%**.  The measurement that motivates it stands: 36 of 200 groups change per
 time point, and the read rebuilds all 200.
+
+## 21.22 The incremental result, priced properly and declined
+
+21.20 priced the third item -- keeping the window's aggregate result across time points instead of
+rebuilding it -- at "about five times" the result build, from the measurement that *36 of 200
+groups change per time point*.  Both halves of that estimate were wrong, and in the same
+direction.
+
+**The counting.**  The 36 is the number of distinct groups in the tuples that *enter* the window.
+As many leave it, from a different draw, so the groups whose row changes between two reads is the
+union of the two:
+
+```
+$ python3  # over evaluation/perf/logs, the log the profiles run on
+A-events per time point   40
+distinct x per time point 36.42        (x is the group column)
+distinct x overall        200
+```
+
+With a window of 50 and 40 events a time point the leaving draw is independent of the entering
+one, so the union is 36.4 + 36.4 - 36.4²/199 ≈ **66 of 199 groups, a third**, not 18%.
+
+**The unit cost.**  The estimate also assumed that patching a group costs what building its row
+costs.  It does not.  Building a row is one structure operation -- read the value, insert the row
+into the answer.  Patching one is four: the group's value before the change, its value after,
+the removal of the old row from the answer and the insertion of the new one.  Neither of the two
+reads can be dropped: the answer is keyed by the whole row, so the old row cannot be found from
+the group alone, and the kernel's insertion does not report what it overwrote.
+
+The two costs are measurable and they are the same.  On `aggonce-cnt50`, over 1500 time points:
+
+| | inclusive | elements | per element |
+|---|---|---|---|
+| `insert_maggaux` (one mapping update per tuple) | 4.84% of 2.684 Gi | 1500 × 40 tuples | **2165 instr** |
+| `ures_maggaux` (one row built and inserted per group) | 22.80% of 2.684 Gi | 1500 × 199 groups | **2050 instr** |
+
+So the incremental read would cost 66 × 4 = **264** structure operations a time point where the
+rebuild costs **199**.  It is a 1.3x *loss*, and the best conceivable variant -- if the kernel's
+insertion and deletion were changed to report each group's value before and after, so that the two
+reads came free -- would be 66 × 2 = 132, a 34% saving on a 22.8% line, about 8% overall, for a
+change to the shared kernel's aggregation structure.  Declined, again, and this time with the
+arithmetic.
+
+It would pay where the touched groups are under a quarter of the groups present: a window that
+moves slowly against its group domain, or a domain much larger than the per-time-point event
+count.  That is a property of the workload, not of the formula, so it cannot be decided at compile
+time; it would have to be a runtime choice between two representations, which is a larger change
+than the 8% is worth.
+
+**What the read actually costs.**  It is not the tuple building.  `ures_maggaux` is 22.8% and the
+insertion into the answer set is 18.6% of the run; what is left, the row's construction, is under
+a fifth of the line.  We also checked whether the answer could be built from a sorted list in
+linear time instead of by insertion -- the rows come out of the mapping in group order, so they
+would already be sorted if the result column sorted after the group columns.  It does not:
+
+```
+PROBE calls=1000 sorted=0 avg_groups=199 y=0
+```
+
+The result column is **column 0** on all three formulas, so the rows come out ordered by group and
+have to go in ordered by (value, group); not one of the thousand reads produced a sorted list.
+Sorting them first and building in linear time trades the insertions' comparisons for a sort's --
+the same count -- and saves only the rebalancing, so it is not worth its own code path either.
+
+The remaining gap to MonPoly on these three formulas is what 21.20 measured: it does this with
+hash tables and we do it with red-black trees, and Containers offers no hashed set.
