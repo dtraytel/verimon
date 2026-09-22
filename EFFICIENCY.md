@@ -7507,3 +7507,50 @@ rank path does the same map lookup and update as the count, plus a treelist inse
    insertion and one set removal per tuple of dead work -- about 80 tree operations per time point
    against the result's 200, so on the order of 5%.  Self-contained, and the same redundancy as
    `table_in` against `tuple_in` in `mmsaux`, one level down.
+
+## 21.21 The guard and the count structure: two of the three, measured
+
+**F1, the guard.**  `(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r` built the full ~200-row
+aggregate table at every time point and then filtered all of it away.  The constraint is now the
+node's *guard*: the fused aggregating Since carries it, and `ugmr`'s fold inserts only the groups
+that pass, so the rows that fail are never built.
+
+The guard is the short evaluator's alone, which is what keeps the change small.  `UDSX_wagg`
+carries it, `rdsx` drops it, and `Rep_udformula` of a guarded Since is `EDAndRel` over the boxed
+node -- exactly what `edof` emits for `MAndRel`.  So the boxed evaluator, the three compilers'
+boxed halves and the simulation `dsim` are untouched; `udof` sets the guard through `uset_q` when
+the node it just compiled is a fused aggregating Since, and the correctness of that is one line
+(`Rep_uset_q`).  21.20's plan put the guard into `daggp` and so into `dsim`; going through
+`Rep_udformula` instead saves two `dsim` constructors and their proof cases.
+
+The wrap costs one lemma: `size (Rep_udformula φ) = size φ` is no longer true, and it was needed
+only to make `letpast_meval0`'s size guard take the same branch on the two sides.  It is replaced
+by the fact that *both* evaluators return a formula of the size they were given
+(`psize_snd_udeval`, `psize_snd_edeval`, both already proved), so that guard now never fires on
+either side -- a premise that says what is actually going on.
+
+**F3, the count structure.**  The count structure kept every tuple's count in a mapping *and* the
+tuples themselves in a set beside it, so that the plain window could hand out its union in one
+step.  The fused windows never hand out that union.  They now keep the mapping alone: what enters
+is what the mapping does not hold yet and what leaves is what it holds exactly once, both one
+lookup per tuple where they were a set difference and a lookup.  `ucc` reads the old structure off
+the mapping -- its key set is the mapping's domain, which is what the second half always held --
+so the naturality against the boxed window goes through unchanged and neither the boxed window nor
+the aggregate's invariant moves.  Both fused windows, Since and Until, keep the counts this way.
+
+| | 21.20 | + F1 | + F3 | total | MonPoly | ratio |
+|---|---|---|---|---|---|---|
+| `pol-threshold` | 2.995 Gi | 2.502 Gi | **2.104 Gi** | **-29.8%** | 1.264 Gi | 2.37x → **1.66x** |
+| `aggonce-min50` | 3.711 Gi | 3.695 Gi | **3.209 Gi** | **-13.5%** | 1.937 Gi | 1.92x → **1.66x** |
+| `aggonce-cnt50` | 3.092 Gi | 3.080 Gi | **2.684 Gi** | **-13.2%** | 2.265 Gi | 1.37x → **1.18x** |
+
+F1 is worth -16.5% where a constraint is there to push and nothing at all where there is none
+(-0.4% on the two `aggonce`, which is noise): the `None` guard is one match per group.  F3 is
+worth -13% to -16% on all three.  The 21.20 estimate for F3 was "on the order of 5%"; it counted
+the set operations against the result build's 200 insertions and forgot that the set operations
+run over *every* tuple while the result build runs over every *group*.
+
+What is left is the third item.  `ures_maggaux` is still **22.5%** of `aggonce-min50` and
+**22.9%** of `aggonce-cnt50`, and on `pol-threshold`, where the guard now keeps almost all of it
+from being built, **7.7%**.  The measurement that motivates it stands: 36 of 200 groups change per
+time point, and the read rebuilds all 200.
