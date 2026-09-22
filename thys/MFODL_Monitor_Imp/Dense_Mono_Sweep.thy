@@ -158,6 +158,49 @@ setup \<open>mono
    ("empty_treelist", "s8_empty_treelist", ["string8"])]
   dicts\<close>
 
+
+subsection \<open>A second pass\<close>
+
+text \<open>Removing the dominant instantiation of a generic operation does not remove the operation
+  while another instantiation still reaches it, and it promotes the next instantiation into
+  view: @{const Set.member} left the list at @{typ nat} and re-entered it at @{typ mregex}.
+  The sweep is therefore iterative.  This is the next layer.\<close>
+
+setup \<open>mono
+  [("Set.member", "mregex_member", ["mregex"]),
+   ("sort_key", "mregex_sort_key", ["mregex", "mregex"])]
+  dicts\<close>
+
+text \<open>The structures over the short tuples and over the wide ones that the first pass left: the
+  index of the join and of the Since, the frame changes, and the window operations that report
+  what entered and what left.\<close>
+
+setup \<open>mono
+  [("csl", "edl_csl", ["event_data list"]),
+   ("ecard", "edl_ecard", ["event_data list"]),
+   ("card", "edl_card", ["event_data list"]),
+   ("cluster", "edl_cluster", ["event_data list", "event_data list"]),
+   ("rbt_of_sorted_list", "edl_rbt_of_sorted_list", ["event_data list"]),
+   ("mapping_delete_set", "edl_mapping_delete_set", ["event_data list", "nat"]),
+   ("mrestrict1_cfi", "edl_mrestrict1_cfi", ["event_data list", "event_data list set"]),
+   ("gupd_nested_step_dq", "edl_gupd_nested_step_dq", ["event_data list", "nat + nat"]),
+   ("deopt_table", "ed_deopt_table", ["event_data"]),
+   ("dnarrow", "eo_dnarrow", ["event_data option"]),
+   ("dtabc", "eo_dtabc", ["event_data option"]),
+   ("didx", "ed_didx", ["event_data"]),
+   ("didx_add1_cfi", "ed_didx_add1_cfi", ["event_data"]),
+   ("didx_del1_cfi", "ed_didx_del1_cfi", ["event_data"]),
+   ("shift_end", "ed_shift_end", ["event_data"]),
+   ("gshift_end_del", "ed_gshift_end_del", ["event_data"]),
+   ("ggc_join_msaux_del", "ed_ggc_join_msaux_del", ["event_data"])]
+  dicts\<close>
+
+text \<open>Three more are recorded as not done for the same reason as @{text all_interval}:
+  @{text these}, @{text gadd_new_ts_msaux_add} and @{text safe_regex} are resolved to constants
+  whose type variable is fixed rather than schematic, so @{text monomorphize} has nothing to
+  instantiate.  Lifting that restriction is a change to \<^file>\<open>../MFODL_Monitor_Devel/monomorphize.ML\<close>
+  rather than a new spec.\<close>
+
 (*<*)
 end
 (*>*)

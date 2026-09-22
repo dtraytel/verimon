@@ -7289,29 +7289,35 @@ instance family needs its class operations as explicit equations first (`nat_dic
 `ed_dict_simps`, `mregex_dict_simps`, `s8_dict_simps`, mirroring `etuple_dict_simps` and
 `edl_dict_simps`), and then the specs are a list.  Thirty-two landed in this pass.
 
-**Two that did not.**  `all_interval` fails to derive -- `Code.read_const` resolves it to a
-constant whose type variable is fixed rather than schematic, so there is nothing to instantiate.
-And the set operations of the recursion check must stay generic: specialising `Regex.regex.atms`
+**What did not go through.**  Four constants -- `all_interval`, `these`,
+`gadd_new_ts_msaux_add` and `safe_regex` -- fail to derive: `Code.read_const` resolves each to a
+constant whose type variable is fixed rather than schematic, so `monomorphize` has nothing to
+instantiate.  Lifting that is a change to `monomorphize.ML`, not a new spec.  And the set
+operations of the recursion check must stay generic: specialising `Regex.regex.atms`
 at `rec_safety` makes the code generator demand `rec_safety :: {finite_UNIV, ceq, ccompare}`,
 arities that type does not have, and the export fails outright.  Both are recorded rather than
 worked around.
 
 **Measured.**  Outputs are unchanged by construction and in fact: every hash of `difftest.sh` is
 identical to the pre-sweep binary's, and the differential corpus stays at 593 identical, 7
-refused, 0 differing.  On the export itself: `src/verified.ml` 13901 → 13716 lines, the
-dictionary-taking definitions 248 → 236, and the applications that pass a concrete dictionary
-1214 → 1108, **-8.7%**.  The suite is unchanged within its noise.
+refused, 0 differing.  On the export itself: `src/verified.ml` 13901 → 13549 lines, the
+dictionary-taking definitions 248 → 223, and the applications that pass a concrete dictionary
+1214 → 1066, **-12.2%**, over two passes (32 specs and then 19 more).  The suite is unchanged
+within its noise.
 
 **What is left, and why the count moved less than the specs suggest.**  Removing the dominant
 instance of a generic function does not remove the function while another instance still reaches
 it, and it promotes the next instance into view: `Set.member` left the list at `nat` and
 re-entered it at `mregex`, and `Mapping.map_values` at a second value type.  The sweep is
-therefore iterative rather than one-shot.  What remains, in order of call sites:
+therefore iterative rather than one-shot: the second pass here took a layer that the first
+had made visible.  After both, 223 dictionary-taking definitions remain, of which 58 are reached
+at one closed type.  What is left, in order of call sites:
 `equal_option`/`cproper_interval_list`/`set_impl_proda` (dictionary constructors -- they go when
-their consumers do), then `equal_set` at a set of tables, `csl`, `mrestrict1_cfi`, `filterd`,
-the three heap-index operations `im_new`/`im_lookup_h`/`im_update_h` at a second value type, the
-two index-fold combinators `didx_add1_cfi`/`didx_del1_cfi`, and `safe_regex`.  These are all the
-same shape as the thirty-two above and need no new technique, only the next pass.
+their consumers do), `equal_set` at a set of tables, the Containers distinct-list and
+red-black-tree set implementations (`filterd`, `filterc`, `filtere`, `memberc`,
+`list_of_dlist`), the three heap-index operations `im_new`/`im_lookup_h`/`im_update_h` at a
+second value type, `upd_cfi`, `set_fold_cfc`, and the four that need the `monomorphize.ML`
+change above.  None of them needs a new technique, only the next pass.
 
 ### 21.17 The suite after 21.15 and 21.16
 
