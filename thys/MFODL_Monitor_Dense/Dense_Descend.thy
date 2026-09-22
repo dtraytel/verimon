@@ -35,6 +35,82 @@ definition dnode_n :: "nat \<Rightarrow> args \<Rightarrow> nat" where
   "dnode_n n args = (case args_agg args of None \<Rightarrow> n
      | Some ag \<Rightarrow> length (aggargs_tys ag) + aggargs_n ag)"
 
+text \<open>
+  The compiler reads an operand's column list off the node it is compiling, and every node but
+  the two match ones carries it: the conjunctions store their operands' column sets, the
+  temporal ones their arguments' and the aggregation its own.  A match node stores neither its
+  atoms' columns nor the formulas they came from, so the function below recovers them from the
+  operands themselves, answering @{term None} at the nodes where the column set is not
+  determined by what the node stores -- an @{const mformula.MRel}, whose table may be empty, and
+  a nested match node.  The compiler answers @{const DFail} there, which is sound: the criterion
+  its caller checks counts those.
+\<close>
+
+definition ungroup_cols :: "nat \<Rightarrow> cols \<Rightarrow> cols" where
+  "ungroup_cols k c = map (\<lambda>i. i - k) (filter (\<lambda>i. k \<le> i) c)"
+
+lemma set_ungroup_cols: "set (ungroup_cols k c) = (\<lambda>i. i - k) ` (set c - {0..<k})"
+  by (auto simp: ungroup_cols_def image_iff)
+
+lemma sorted_ungroup_cols:
+  assumes "sorted_wrt (<) c" shows "sorted_wrt (<) (ungroup_cols k c)"
+  unfolding ungroup_cols_def sorted_wrt_map
+  by (rule sorted_wrt_mono_rel[OF _ sorted_wrt_filter[OF assms]]) auto
+
+lemma those_eq_SomeD: "those xs = Some ys \<Longrightarrow> xs = map Some ys"
+  by (induct xs arbitrary: ys) (auto split: option.splits)
+
+function (sequential) mfcols ::
+    "nat \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> cols option" where
+  "mfcols n (mformula.MRel rel) = None"
+| "mfcols n (mformula.MPred e tms mode) =
+     (case mode of Copy \<Rightarrow> Some [0..<n]
+      | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set tms. Formula.fv_trm t)))"
+| "mfcols n (mformula.MLet p m \<phi> \<psi>) = mfcols n \<psi>"
+| "mfcols n (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = mfcols n \<psi>"
+| "mfcols n (mformula.MLetPast p m \<phi> \<psi> i buf) = mfcols n \<psi>"
+| "mfcols n (mformula.MAnd A1 \<phi> pos A2 \<psi> buf) =
+     (case (mfcols n \<phi>, mfcols n \<psi>) of
+        (Some c1, Some c2) \<Rightarrow> Some (if pos then merge_cols c1 c2 else c1)
+      | _ \<Rightarrow> None)"
+| "mfcols n (mformula.MAndAssign \<phi> conf) =
+     map_option (\<lambda>c. merge_cols c [fst conf]) (mfcols n \<phi>)"
+| "mfcols n (mformula.MAndRel \<phi> conf) = mfcols n \<phi>"
+| "mfcols n (mformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) = mfcols n \<alpha>"
+| "mfcols n (mformula.MAnds A_pos A_neg L buf) =
+     (case those (map (mfcols n) (take (length A_pos) L)) of
+        Some (c0 # cs') \<Rightarrow> Some (dands_cols c0 cs')
+      | _ \<Rightarrow> None)"
+| "mfcols n (mformula.MOr \<phi> \<psi> buf) = mfcols n \<phi>"
+| "mfcols n (mformula.MNeg \<phi>) = Some []"
+| "mfcols n (mformula.MExists \<phi>) = map_option (ungroup_cols (Suc 0)) (mfcols (Suc n) \<phi>)"
+| "mfcols n (mformula.MAgg args \<phi>) =
+     map_option (\<lambda>g. merge_cols (ungroup_cols (length (aggargs_tys args)) g)
+         [aggargs_y args])
+       (mfcols (length (aggargs_tys args) + n) \<phi>)"
+| "mfcols n (mformula.MPrev I \<phi> first buf nts) = mfcols n \<phi>"
+| "mfcols n (mformula.MNext I \<phi> first nts) = mfcols n \<phi>"
+| "mfcols n (mformula.MSince args \<phi> \<psi> buf aux) =
+     (case args_agg args of None \<Rightarrow> mfcols n \<psi>
+      | Some ag \<Rightarrow> map_option (\<lambda>r. merge_cols (ungroup_cols (length (aggargs_tys ag)) r)
+            [aggargs_y ag])
+          (mfcols (dnode_n n args) \<psi>))"
+| "mfcols n (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
+     (case args_agg args of None \<Rightarrow> mfcols n \<psi>
+      | Some ag \<Rightarrow> map_option (\<lambda>r. merge_cols (ungroup_cols (length (aggargs_tys ag)) r)
+            [aggargs_y ag])
+          (mfcols (dnode_n n args) \<psi>))"
+| "mfcols n (mformula.MTrigger args \<phi> \<psi> buf nts aux) = mfcols n \<psi>"
+| "mfcols n (mformula.MMatchP I mr mrs L buf nts aux) = None"
+| "mfcols n (mformula.MMatchF I mr mrs L buf nts t aux) = None"
+| "mfcols n (mformula.MTP mt i) = Some (mtrm_dcols mt)"
+| "mfcols n (mformula.MTS mt) = Some (mtrm_dcols mt)"
+  by pat_completeness auto
+
+termination
+  by (relation "measure (\<lambda>(n, \<phi>). size \<phi>)")
+    (auto dest!: in_set_takeD intro!: le_imp_less_Suc size_list_estimation')
+
 function (sequential) dof ::
     "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
   "dof n cs (mformula.MRel rel) = DRel (dsan (dtabc n cs rel))"
@@ -147,6 +223,22 @@ function (sequential) dof ::
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) []
              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else DFail)"
+| "dof n cs (mformula.MMatchP I mr mrs L buf nts aux) =
+     (case those (map (mfcols n) L) of None \<Rightarrow> DFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then DMatchP (length cs) I mr mrs (map (emb_plan cs) css) (map2 (dof n) css L)
+                (map (\<lambda>_. []) L) nts []
+         else DFail))"
+| "dof n cs (mformula.MMatchF I mr mrs L buf nts t aux) =
+     (case those (map (mfcols n) L) of None \<Rightarrow> DFail
+      | Some css \<Rightarrow>
+        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
+            (\<forall>c \<in> set css. set c \<subseteq> set cs)
+         then DMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (dof n) css L)
+                (map (\<lambda>_. []) L) nts t []
+         else DFail))"
 | "dof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then DTP mt i
       else DFail)"
@@ -190,6 +282,161 @@ lemma set_cols_merge:
   shows "set_cols (A \<union> B) = merge_cols (set_cols A) (set_cols B)"
   by (rule set_cols_eq)
     (use assms in \<open>auto simp: sorted_merge_cols set_merge_cols\<close>)
+
+text \<open>What @{const mfcols} answers is the column list of the frame the node produces at,
+  whenever it answers at all.\<close>
+
+lemma set_cols_insert:
+  assumes "finite B" shows "set_cols (Set.insert x B) = merge_cols (set_cols B) [x]"
+  using set_cols_merge[OF assms, of "{x}"] by (simp add: set_cols_singleton Un_commute)
+
+lemma set_cols_ungroup:
+  assumes "finite B"
+  shows "set_cols ((\<lambda>i. i - k) ` (B - {0..<k})) = ungroup_cols k (set_cols B)"
+  by (rule set_cols_eq)
+    (use assms in \<open>auto simp: set_ungroup_cols sorted_ungroup_cols\<close>)
+
+lemma set_cols_ungroup1:
+  assumes "finite B"
+  shows "set_cols ((\<lambda>i. i - Suc 0) ` (B - {0})) = ungroup_cols (Suc 0) (set_cols B)"
+  using set_cols_ungroup[OF assms, of "Suc 0"] by simp
+
+lemma mfcols_mok: "mok n A tw \<phi> \<Longrightarrow> mfcols n \<phi> = Some c \<Longrightarrow> c = set_cols A \<and> finite A"
+proof (induct n A tw \<phi> arbitrary: c rule: mok.induct)
+  case (MokRel n A rel tw)
+  then show ?case by simp
+next
+  case (MokNeg n tw \<phi>)
+  then show ?case by (simp add: set_cols_empty)
+next
+  case (MokAndRel n A tw \<phi> conf)
+  then show ?case by simp
+next
+  case (MokAndAssign conf n B tw \<phi> A)
+  then show ?case by (auto simp: set_cols_insert)
+next
+  case (MokExists n B tw \<phi> A)
+  then show ?case by (auto simp: set_cols_ungroup1)
+next
+  case (MokPredC tms n A tw e)
+  then show ?case by (simp add: set_cols_upt)
+next
+  case (MokPredS tms n A e tw)
+  then show ?case by simp
+next
+  case (MokPredM A tms n tw e)
+  then show ?case by simp
+next
+  case (MokTP A mt n tw i)
+  then show ?case
+    by (cases mt) (simp_all add: mtrm_dcols_def set_cols_empty set_cols_singleton)
+next
+  case (MokTS A mt n tw)
+  then show ?case
+    by (cases mt) (simp_all add: mtrm_dcols_def set_cols_empty set_cols_singleton)
+next
+  case (MokOr n A tw \<phi> \<psi> buf)
+  then show ?case by simp
+next
+  case (MokAnd n A1 tw \<phi> A2 \<psi> buf pos A)
+  then show ?case by (auto simp: set_cols_merge split: option.splits)
+next
+  case (MokPrev n A tw \<phi> buf I first nts)
+  then show ?case by simp
+next
+  case (MokNext n A tw \<phi> I first nts)
+  then show ?case by simp
+next
+  case (MokAgg args n G tw \<phi> A)
+  then show ?case by (auto simp: set_cols_insert set_cols_ungroup)
+next
+  case (MokAnds L A0 As A_neg buf n tw A)
+  note lenL = MokAnds.hyps(1) and ih = MokAnds.hyps(3) and A = MokAnds.hyps(7)
+  let ?As = "(A0 # As) @ A_neg"
+  let ?P = "take (length (A0 # As)) L"
+  from MokAnds.prems obtain c0 cs' where t: "those (map (mfcols n) ?P) = Some (c0 # cs')"
+    and ce: "c = dands_cols c0 cs'"
+    by (auto split: option.splits list.splits)
+  have lp: "length ?P = length (A0 # As)" using lenL by simp
+  have m: "map (mfcols n) ?P = map Some (c0 # cs')" by (rule those_eq_SomeD[OF t])
+  have lcs: "length (c0 # cs') = length (A0 # As)"
+    using arg_cong[OF m, of length] lp by simp
+  have eq: "(c0 # cs') ! i = set_cols ((A0 # As) ! i) \<and> finite ((A0 # As) ! i)"
+    if i: "i < length (A0 # As)" for i
+  proof -
+    have iP: "i < length ?P" using lp i by simp
+    have "map (mfcols n) ?P ! i = map Some (c0 # cs') ! i" using m by simp
+    then have s: "mfcols n (L ! i) = Some ((c0 # cs') ! i)"
+      using iP lcs i by (cases i) simp_all
+    have nA: "?As ! i = (A0 # As) ! i" using i by (cases i) (simp_all add: nth_append)
+    have iAs: "i < length ?As" using i by simp
+    show ?thesis using ih[rule_format, OF iAs] s nA by simp
+  qed
+  have cc: "c0 # cs' = map set_cols (A0 # As)"
+  proof (rule nth_equalityI)
+    show "length (c0 # cs') = length (map set_cols (A0 # As))" using lcs by simp
+  next
+    fix i assume "i < length (c0 # cs')"
+    then have i: "i < length (A0 # As)" using lcs by simp
+    show "(c0 # cs') ! i = map set_cols (A0 # As) ! i"
+      using eq[OF i] i by (cases i) simp_all
+  qed
+  have c0e: "c0 = set_cols A0" and cse: "cs' = map set_cols As" using cc by simp_all
+  have finA0: "finite A0" using eq[of 0] by simp
+  have finAs: "finite B" if b: "B \<in> set As" for B
+  proof -
+    obtain j where j: "j < length As" and Bj: "As ! j = B"
+      using b unfolding in_set_conv_nth by blast
+    have "finite ((A0 # As) ! Suc j)" using eq[of "Suc j"] j by simp
+    then show ?thesis using Bj by simp
+  qed
+  have fin: "finite A" unfolding A using finA0 finAs by auto
+  have srt: "sorted_wrt (<) (dands_cols (set_cols A0) (map set_cols As))"
+    by (rule sorted_dands_cols) (use finA0 finAs in auto)
+  have std: "set (dands_cols (set_cols A0) (map set_cols As)) = A"
+    unfolding A set_dands_cols using finA0 finAs by auto
+  show ?case
+  proof
+    show "c = set_cols A" unfolding ce c0e cse
+      by (rule set_cols_eq[symmetric, OF fin srt std])
+    show "finite A" by (rule fin)
+  qed
+next
+  case (MokSince n L tw \<phi> R \<psi> args buf aux)
+  then show ?case by simp
+next
+  case (MokUntil n L tw \<phi> R \<psi> args buf t aux nts)
+  then show ?case by simp
+next
+  case (MokSinceAgg m L tw \<phi> R \<psi> args buf aux aggargs n A)
+  then show ?case
+    by (auto simp: set_cols_insert set_cols_ungroup dnode_n_def)
+next
+  case (MokUntilAgg m L tw \<phi> R \<psi> args buf t aux nts aggargs n A)
+  then show ?case
+    by (auto simp: set_cols_insert set_cols_ungroup dnode_n_def)
+next
+  case (MokTrigger n L tw \<phi> R \<psi> args aux buf nts)
+  then show ?case by simp
+next
+  case (MokAndTrigger n A tw \<alpha> L \<phi> R \<psi> args aux buf2 nts buf1)
+  then show ?case by simp
+next
+  case (MokLet m tw \<phi> n A \<psi> p)
+  then show ?case by simp
+next
+  case (MokLetPast m tw \<phi> n A \<psi> buf p i)
+  then show ?case by simp
+next
+  case (MokFrz m tw \<phi> n A \<psi> \<alpha>s p jfrz jpsi0 jphi)
+  then show ?case by simp
+next
+  case (MokMatchP mr \<psi>s A mrs L n tw buf aux I nts)
+  then show ?case by simp
+next
+  case (MokMatchF mr \<psi>s A mrs L n tw buf aux I nts t)
+  then show ?case by simp
+qed
 
 subsection \<open>The nodes the dense fragment does not cover\<close>
 
@@ -1537,6 +1784,223 @@ proof -
   qed
 qed
 
+text \<open>
+  The two match nodes.  Their operands' column lists are not in the kernel's node, so the
+  compiler recovers them with @{const mfcols}; @{thm [source] mfcols_mok} turns what it recovers
+  into the operands' own frames, and the criterion the caller checks rules out the shapes where
+  it answers nothing.
+\<close>
+
+lemma safe_atms_safe_formula:
+  assumes r: "Regex.safe_regex fv rgx_safe_pred m g r" and \<psi>: "\<psi> \<in> safe_atms r"
+  shows "safe_formula \<psi>"
+proof -
+  from \<psi> obtain \<phi> where \<phi>: "\<phi> \<in> Regex.atms r"
+    and mem: "\<psi> \<in> (if safe_formula \<phi>
+        then {\<phi>} else case \<phi> of formula.Neg \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {})"
+    unfolding safe_atms_def by blast
+  show ?thesis
+  proof (cases "safe_formula \<phi>")
+    case True
+    then show ?thesis using mem by simp
+  next
+    case False
+    then obtain \<chi> where "\<phi> = formula.Neg \<chi>" and "safe_formula \<chi>"
+      using safe_regex_safe_formula[OF r \<phi>] by auto
+    then show ?thesis using mem False by simp
+  qed
+qed
+
+lemma dsim_dof_minit0_MMatchP:
+  assumes sr: "Regex.safe_regex fv rgx_safe_pred Past Strict r"
+    and b: "\<forall>x \<in> Formula.fv_regex r. x < n"
+    and tm: "to_mregex r = (mr, \<psi>s)"
+    and z: "dofz n (Formula.MatchP I r)"
+    and ih: "\<And>\<psi>. \<psi> \<in> safe_atms r \<Longrightarrow> (\<forall>x \<in> Formula.fv \<psi>. x < n) \<Longrightarrow> dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
+  shows "dofc n tw (Formula.MatchP I r)"
+proof -
+  let ?cs = "set_cols (Formula.fv_regex r)"
+  let ?L = "map (minit0 n) \<psi>s"
+  let ?mrs = "sorted_list_of_set (RPDs mr)"
+  have ok: "ok (length \<psi>s) mr" and at: "set \<psi>s = safe_atms r"
+    using to_mregex_ok[OF tm] by auto
+  have fm: "from_mregex mr \<psi>s = r" by (rule from_mregex_eq[OF sr tm])
+  have fr: "Formula.fv_regex r = (\<Union>\<psi> \<in> set \<psi>s. Formula.fv \<psi>)"
+    unfolding at by (rule fv_regex_alt2[OF sr])
+  have sub: "Formula.fv (\<psi>s ! i) \<subseteq> Formula.fv_regex r" if i: "i < length \<psi>s" for i
+  proof (rule subsetI)
+    fix x assume "x \<in> Formula.fv (\<psi>s ! i)"
+    then show "x \<in> Formula.fv_regex r" unfolding fr using i by auto
+  qed
+  have bi: "\<forall>x \<in> Formula.fv (\<psi>s ! i). x < n" if i: "i < length \<psi>s" for i
+    using b sub[OF i] by auto
+  have sfi: "safe_formula (\<psi>s ! i)" if i: "i < length \<psi>s" for i
+    by (rule safe_atms_safe_formula[OF sr]) (use at nth_mem[OF i] in blast)
+  have mo: "mok n (Formula.fv (\<psi>s ! i)) tw (minit0 n (\<psi>s ! i))" if i: "i < length \<psi>s" for i
+    by (rule mok_minit0[OF sfi[OF i] bi[OF i]])
+  have A: "Formula.fv (Formula.MatchP I r) = Formula.fv_regex r" by simp
+  have m: "minit0 n (Formula.MatchP I r)
+      = mformula.MMatchP I mr ?mrs ?L (replicate (length \<psi>s) []) [] []"
+    using tm by simp
+  obtain css where th: "those (map (mfcols n) ?L) = Some css"
+    using z unfolding A m by (cases "those (map (mfcols n) ?L)") simp_all
+  have mS: "map (mfcols n) ?L = map Some css" by (rule those_eq_SomeD[OF th])
+  have lcss: "length css = length \<psi>s"
+    using arg_cong[OF mS, of length] by simp
+  have cssi: "css ! i = set_cols (Formula.fv (\<psi>s ! i))" if i: "i < length \<psi>s" for i
+  proof -
+    have "map (mfcols n) ?L ! i = map Some css ! i" using mS by simp
+    then have "mfcols n (minit0 n (\<psi>s ! i)) = Some (css ! i)" using i lcss by simp
+    then show ?thesis using mfcols_mok[OF mo[OF i]] by simp
+  qed
+  have wcss: "wf_cols n c" if c: "c \<in> set css" for c
+  proof -
+    obtain i where i: "i < length css" and ci: "css ! i = c"
+      using c unfolding in_set_conv_nth by blast
+    show ?thesis unfolding ci[symmetric] cssi[OF i[unfolded lcss]]
+      by (rule wf_cols_set_cols[OF finite_fvi bi[OF i[unfolded lcss]]])
+  qed
+  have scss: "set c \<subseteq> set ?cs" if c: "c \<in> set css" for c
+  proof -
+    obtain i where i: "i < length css" and ci: "css ! i = c"
+      using c unfolding in_set_conv_nth by blast
+    show ?thesis unfolding ci[symmetric] cssi[OF i[unfolded lcss]]
+      using sub[OF i[unfolded lcss]] by simp
+  qed
+  have d: "dof n ?cs (mformula.MMatchP I mr ?mrs ?L (replicate (length \<psi>s) []) [] [])
+      = DMatchP (length ?cs) I mr ?mrs (map (emb_plan ?cs) css) (map2 (dof n) css ?L)
+          (map (\<lambda>_. []) ?L) [] []"
+    using th lcss scss by simp
+  have zl: "vdfail_nodes (dof n (css ! i) (?L ! i)) = 0" if i: "i < length \<psi>s" for i
+  proof -
+    have s: "sum_list (map vdfail_nodes (map2 (dof n) css ?L)) = 0"
+      using z unfolding A m d by simp
+    have e: "map2 (dof n) css ?L ! i = dof n (css ! i) (?L ! i)"
+      by (rule map2_nth) (use i lcss in simp_all)
+    have il: "i < length (map2 (dof n) css ?L)" using i lcss by simp
+    have "\<forall>x \<in> set (map2 (dof n) css ?L). vdfail_nodes x = 0"
+      using s by simp
+    then show ?thesis unfolding e[symmetric] using nth_mem[OF il] by blast
+  qed
+  have ld: "dsim n (css ! i) tw (map2 (dof n) css ?L ! i) (?L ! i)" if i: "i < length \<psi>s" for i
+  proof -
+    have e: "map2 (dof n) css ?L ! i = dof n (css ! i) (?L ! i)"
+      by (rule map2_nth) (use i lcss in simp_all)
+    have mem: "\<psi>s ! i \<in> safe_atms r" using at nth_mem[OF i] by blast
+    have "dofz n (\<psi>s ! i)" using zl[OF i] i by (simp add: cssi[OF i])
+    then have "dofc n tw (\<psi>s ! i)" by (rule ih[OF mem bi[OF i]])
+    then show ?thesis unfolding e using i by (simp add: cssi[OF i])
+  qed
+  have bf: "dbufn n css (replicate (length \<psi>s) []) (map (\<lambda>_. []) ?L)"
+    unfolding dbufn_def using lcss
+    by (simp add: map_replicate_const zip_replicate2 comp_def)
+  have fin: "finite (Formula.fv_regex r)" by simp
+  have sfa: "safe_formula (Formula.MatchP I r)" using sr by simp
+  have sc: "set ?cs = Formula.fv_regex r" using fin by simp
+  have pr: "produces n (set ?cs) tw
+      (mformula.MMatchP I mr ?mrs ?L (replicate (length \<psi>s) []) [] [])"
+    unfolding sc using produces_minit0[OF sfa b[folded A], unfolded A m] .
+  show ?thesis unfolding A m d
+    by (rule dsim.DsMatchP[OF wf_cols_set_cols[OF fin b] pr sr[folded fm] ok
+          _ _ _ _ _ _ _ _ _ _ refl bf dmrd_rel_Nil])
+      (use lcss cssi wcss scss sub ld in \<open>auto simp: sc fm finite_RPDs\<close>)
+qed
+
+lemma dsim_dof_minit0_MMatchF:
+  assumes sr: "Regex.safe_regex fv rgx_safe_pred Futu Strict r"
+    and b: "\<forall>x \<in> Formula.fv_regex r. x < n"
+    and tm: "to_mregex r = (mr, \<psi>s)"
+    and z: "dofz n (Formula.MatchF I r)"
+    and ih: "\<And>\<psi>. \<psi> \<in> safe_atms r \<Longrightarrow> (\<forall>x \<in> Formula.fv \<psi>. x < n) \<Longrightarrow> dofz n \<psi> \<Longrightarrow> dofc n tw \<psi>"
+  shows "dofc n tw (Formula.MatchF I r)"
+proof -
+  let ?cs = "set_cols (Formula.fv_regex r)"
+  let ?L = "map (minit0 n) \<psi>s"
+  let ?mrs = "sorted_list_of_set (LPDs mr)"
+  have ok: "ok (length \<psi>s) mr" and at: "set \<psi>s = safe_atms r"
+    using to_mregex_ok[OF tm] by auto
+  have fm: "from_mregex mr \<psi>s = r" by (rule from_mregex_eq[OF sr tm])
+  have fr: "Formula.fv_regex r = (\<Union>\<psi> \<in> set \<psi>s. Formula.fv \<psi>)"
+    unfolding at by (rule fv_regex_alt2[OF sr])
+  have sub: "Formula.fv (\<psi>s ! i) \<subseteq> Formula.fv_regex r" if i: "i < length \<psi>s" for i
+  proof (rule subsetI)
+    fix x assume "x \<in> Formula.fv (\<psi>s ! i)"
+    then show "x \<in> Formula.fv_regex r" unfolding fr using i by auto
+  qed
+  have bi: "\<forall>x \<in> Formula.fv (\<psi>s ! i). x < n" if i: "i < length \<psi>s" for i
+    using b sub[OF i] by auto
+  have sfi: "safe_formula (\<psi>s ! i)" if i: "i < length \<psi>s" for i
+    by (rule safe_atms_safe_formula[OF sr]) (use at nth_mem[OF i] in blast)
+  have mo: "mok n (Formula.fv (\<psi>s ! i)) tw (minit0 n (\<psi>s ! i))" if i: "i < length \<psi>s" for i
+    by (rule mok_minit0[OF sfi[OF i] bi[OF i]])
+  have A: "Formula.fv (Formula.MatchF I r) = Formula.fv_regex r" by simp
+  have m: "minit0 n (Formula.MatchF I r)
+      = mformula.MMatchF I mr ?mrs ?L (replicate (length \<psi>s) []) [] 0 []"
+    using tm by simp
+  obtain css where th: "those (map (mfcols n) ?L) = Some css"
+    using z unfolding A m by (cases "those (map (mfcols n) ?L)") simp_all
+  have mS: "map (mfcols n) ?L = map Some css" by (rule those_eq_SomeD[OF th])
+  have lcss: "length css = length \<psi>s"
+    using arg_cong[OF mS, of length] by simp
+  have cssi: "css ! i = set_cols (Formula.fv (\<psi>s ! i))" if i: "i < length \<psi>s" for i
+  proof -
+    have "map (mfcols n) ?L ! i = map Some css ! i" using mS by simp
+    then have "mfcols n (minit0 n (\<psi>s ! i)) = Some (css ! i)" using i lcss by simp
+    then show ?thesis using mfcols_mok[OF mo[OF i]] by simp
+  qed
+  have wcss: "wf_cols n c" if c: "c \<in> set css" for c
+  proof -
+    obtain i where i: "i < length css" and ci: "css ! i = c"
+      using c unfolding in_set_conv_nth by blast
+    show ?thesis unfolding ci[symmetric] cssi[OF i[unfolded lcss]]
+      by (rule wf_cols_set_cols[OF finite_fvi bi[OF i[unfolded lcss]]])
+  qed
+  have scss: "set c \<subseteq> set ?cs" if c: "c \<in> set css" for c
+  proof -
+    obtain i where i: "i < length css" and ci: "css ! i = c"
+      using c unfolding in_set_conv_nth by blast
+    show ?thesis unfolding ci[symmetric] cssi[OF i[unfolded lcss]]
+      using sub[OF i[unfolded lcss]] by simp
+  qed
+  have d: "dof n ?cs (mformula.MMatchF I mr ?mrs ?L (replicate (length \<psi>s) []) [] 0 [])
+      = DMatchF (length ?cs) I mr ?mrs (map (emb_plan ?cs) css) (map2 (dof n) css ?L)
+          (map (\<lambda>_. []) ?L) [] 0 []"
+    using th lcss scss by simp
+  have zl: "vdfail_nodes (dof n (css ! i) (?L ! i)) = 0" if i: "i < length \<psi>s" for i
+  proof -
+    have s: "sum_list (map vdfail_nodes (map2 (dof n) css ?L)) = 0"
+      using z unfolding A m d by simp
+    have e: "map2 (dof n) css ?L ! i = dof n (css ! i) (?L ! i)"
+      by (rule map2_nth) (use i lcss in simp_all)
+    have il: "i < length (map2 (dof n) css ?L)" using i lcss by simp
+    have "\<forall>x \<in> set (map2 (dof n) css ?L). vdfail_nodes x = 0"
+      using s by simp
+    then show ?thesis unfolding e[symmetric] using nth_mem[OF il] by blast
+  qed
+  have ld: "dsim n (css ! i) tw (map2 (dof n) css ?L ! i) (?L ! i)" if i: "i < length \<psi>s" for i
+  proof -
+    have e: "map2 (dof n) css ?L ! i = dof n (css ! i) (?L ! i)"
+      by (rule map2_nth) (use i lcss in simp_all)
+    have mem: "\<psi>s ! i \<in> safe_atms r" using at nth_mem[OF i] by blast
+    have "dofz n (\<psi>s ! i)" using zl[OF i] i by (simp add: cssi[OF i])
+    then have "dofc n tw (\<psi>s ! i)" by (rule ih[OF mem bi[OF i]])
+    then show ?thesis unfolding e using i by (simp add: cssi[OF i])
+  qed
+  have bf: "dbufn n css (replicate (length \<psi>s) []) (map (\<lambda>_. []) ?L)"
+    unfolding dbufn_def using lcss
+    by (simp add: map_replicate_const zip_replicate2 comp_def)
+  have fin: "finite (Formula.fv_regex r)" by simp
+  have sfa: "safe_formula (Formula.MatchF I r)" using sr by simp
+  have sc: "set ?cs = Formula.fv_regex r" using fin by simp
+  have pr: "produces n (set ?cs) tw
+      (mformula.MMatchF I mr ?mrs ?L (replicate (length \<psi>s) []) [] 0 [])"
+    unfolding sc using produces_minit0[OF sfa b[folded A], unfolded A m] .
+  show ?thesis unfolding A m d
+    by (rule dsim.DsMatchF[OF wf_cols_set_cols[OF fin b] pr sr[folded fm] ok
+          _ _ _ _ _ _ _ _ _ _ refl bf dmld_rel_Nil])
+      (use lcss cssi wcss scss sub ld in \<open>auto simp: sc fm finite_LPDs\<close>)
+qed
+
 lemma dsim_dof_minit0_TP:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MTP mt i"
@@ -2041,12 +2505,18 @@ next
   case (Release \<phi> I \<psi>) then show ?case by simp
 next
   case (MatchP I r)
-  show ?case by (rule dsim_dof_minit0_fail)
-      (use MatchP.hyps MatchP.prems in \<open>simp_all split: prod.split\<close>)
+  note sr = \<open>Regex.safe_regex fv rgx_safe_pred Past Strict r\<close>
+  obtain mr \<psi>s where tm: "to_mregex r = (mr, \<psi>s)" by (cases "to_mregex r")
+  have b: "\<forall>x \<in> Formula.fv_regex r. x < n" using MatchP.prems(1) by simp
+  show ?case
+    by (rule dsim_dof_minit0_MMatchP[OF sr b tm MatchP.prems(2)]) (use MatchP.IH in blast)
 next
   case (MatchF I r)
-  show ?case by (rule dsim_dof_minit0_fail)
-      (use MatchF.hyps MatchF.prems in \<open>simp_all split: prod.split\<close>)
+  note sr = \<open>Regex.safe_regex fv rgx_safe_pred Futu Strict r\<close>
+  obtain mr \<psi>s where tm: "to_mregex r = (mr, \<psi>s)" by (cases "to_mregex r")
+  have b: "\<forall>x \<in> Formula.fv_regex r. x < n" using MatchF.prems(1) by simp
+  show ?case
+    by (rule dsim_dof_minit0_MMatchF[OF sr b tm MatchF.prems(2)]) (use MatchF.IH in blast)
 next
   case (TP t)
   have sfa: "safe_formula (Formula.TP t)" using TP.hyps by simp
