@@ -122,8 +122,11 @@ setup \<open>mono
 subsection \<open>The regular expressions and the predicate table of the compiler\<close>
 
 text \<open>Cold -- entered once per formula rather than once per time point -- but generic all the
-  same.  @{typ mregex} is the state type of the match automata, @{typ rec_safety} the lattice
-  of the recursion check, and @{typ "string8 \<times> nat"} the key of the predicate table.\<close>
+  same.  @{typ mregex} is the state type of the match automata and @{typ "string8 \<times> nat"}
+  the key of the predicate table.  The set
+  operations of the recursion check itself stay generic: @{typ rec_safety} is a lattice without
+  the container sorts, so instantiating them there makes the code generator ask for arities it
+  does not have.\<close>
 
 setup \<open>mono
   [("Set.bind", "mregex_bind", ["mregex", "mregex"]),
@@ -131,7 +134,6 @@ setup \<open>mono
    ("less_eq :: _ set \<Rightarrow> _", "mregex_subset", ["mregex"]),
    ("Mapping.lookup_default", "mregex_lookup_default", ["mregex", "event_data option list set"]),
    ("RBT_Mapping2.bulkload", "mregex_rbt_bulkload", ["mregex", "event_data option list set"]),
-   ("Regex.regex.atms", "rs_atms", ["rec_safety"]),
    ("Mapping.map_values", "pn_map_values",
       ["string8 \<times> nat", "event_data option list set", "event_data option list set"])]
   dicts\<close>
@@ -142,7 +144,7 @@ text \<open>@{const insert_treelist} and its neighbours are the only place the e
   passed an @{class equal} and a @{class linorder} dictionary down a tree descent.  They are
   reached at two closed types -- the integer values of @{const Formula.Agg_Min},
   @{const Formula.Agg_Max} and @{const Formula.Agg_Med}, and the string values of the first two
-  -- so each gets a copy.  They are cold: on @{text aggonce-min50} the whole rank path is under
+  -- so each gets a copy.  They are cold: on \<^verbatim>\<open>aggonce-min50\<close> the whole rank path is under
   a percent of the run, and this is for the sake of the export, not of the clock.\<close>
 
 setup \<open>mono

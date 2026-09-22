@@ -7255,3 +7255,60 @@ and `difftest.sh` has vdense, dense and MonPoly agreeing on `agg`, `aggwide` and
 The remaining vdense timeout, `aggev-sum20`, is an aggregation over a *future* window: it runs
 5.3 s under vdense but 2.8 s under dense, so it is the unboxed refinement of the Until-side
 structure that costs there, not the aggregation.  That is its own item.
+
+### 21.16 The rest of the generated code, monomorphised (`Dense_Mono_Sweep.thy`)
+
+20.x and 21.6's `Monomorphic_Code.thy` and `Dense_Code_Opt.thy` monomorphised what the profiles
+charged for -- the containers at `event_data tuple` and at `event_data list`.  This section is
+about the rest: every operation the export still reaches with a type class dictionary in hand,
+at a type that is closed and known.  It is not a performance item.  The measured payoff of the
+largest single case, `insert_treelist`, is 0.03% of `aggonce-min50` (1.25 Mi of 3708 Mi, with
+the whole rank path under 0.6%), and the sweep changes no benchmark measurably.  It is here
+because the exported code is meant to be monomorphic throughout: a dictionary that survives is
+a dictionary a reader of the export has to account for.
+
+**What the count of 245 dictionary-taking definitions actually contains.**  Three kinds, and
+only two are work:
+
+- *Operations at one closed type* -- 70 of them, headed by `Set.member` at `nat` (29 call
+  sites), `List.superset`, `List.member`, `comparator_of`, `sum_list`, `Max`,
+  `atLeastLessThan`, `filter_set`, `wf_table_of_set_args`, `set_of_idx`, the `mregex` set
+  operations of the match automata and the `string8 × nat` mapping of the predicate table.
+- *Operations at several closed types* -- the subset test (`nat` and `mregex`) and the treelists
+  of the rank aggregations (`integer` and `string8`); one copy each.
+- *Dictionary constructors* -- `ccompare_list`, `ceq_option`, `equal_prod`, `heap_list`,
+  `set_empty`, `mapping_empty`, and so on.  These are not targets at all.  They exist only to
+  feed a generic consumer and disappear as the consumers are specialised, and they are the bulk
+  of both the multi-instantiation list (`ccompare_list` alone is 168 call sites) and of the 133
+  definitions that never see a concrete dictionary because their caller forwards its own.
+
+So the actionable set is the first two kinds, and the third is consequence.
+
+**How.**  No new mechanism: `monomorphize.ML`'s two commands, which 20.x introduced.  Each
+instance family needs its class operations as explicit equations first (`nat_dict_simps`,
+`ed_dict_simps`, `mregex_dict_simps`, `s8_dict_simps`, mirroring `etuple_dict_simps` and
+`edl_dict_simps`), and then the specs are a list.  Thirty-two landed in this pass.
+
+**Two that did not.**  `all_interval` fails to derive -- `Code.read_const` resolves it to a
+constant whose type variable is fixed rather than schematic, so there is nothing to instantiate.
+And the set operations of the recursion check must stay generic: specialising `Regex.regex.atms`
+at `rec_safety` makes the code generator demand `rec_safety :: {finite_UNIV, ceq, ccompare}`,
+arities that type does not have, and the export fails outright.  Both are recorded rather than
+worked around.
+
+**Measured.**  Outputs are unchanged by construction and in fact: every hash of `difftest.sh` is
+identical to the pre-sweep binary's, and the differential corpus stays at 593 identical, 7
+refused, 0 differing.  On the export itself: `src/verified.ml` 13901 → 13716 lines, the
+dictionary-taking definitions 248 → 236, and the applications that pass a concrete dictionary
+1214 → 1108, **-8.7%**.  The suite is unchanged within its noise.
+
+**What is left, and why the count moved less than the specs suggest.**  Removing the dominant
+instance of a generic function does not remove the function while another instance still reaches
+it, and it promotes the next instance into view: `Set.member` left the list at `nat` and
+re-entered it at `mregex`, and `Mapping.map_values` at a second value type.  The sweep is
+therefore iterative rather than one-shot.  What remains, in order of call sites:
+`equal_option`/`cproper_interval_list`/`set_impl_proda` (dictionary constructors -- they go when
+their consumers do), then `equal_set` at a set of tables, `csl`, `mrestrict1_cfi`, `filterd`,
+the three heap-index operations `im_new`/`im_lookup_h`/`im_update_h` at a second value type, the
+two index-fold combinators `didx_add1_cfi`/`didx_del1_cfi`, and `safe_regex`.  These are all the
+same shape as the thirty-two above and need no new technique, only the next pass.

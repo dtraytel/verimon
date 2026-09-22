@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Imp
-  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt
+  imports Monitor_Imp Monitor_Imp2 Dense_Imp Dense_Code_Opt Dense_Mono_Sweep
     "MFODL_Monitor_Dense.Dense_Descend_Code" "MFODL_Monitor_Dense.Dense_Unbox_Exec"
     "MFODL_Monitor_Devel.Monitor_Code"
 begin
