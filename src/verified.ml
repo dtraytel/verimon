@@ -76,12 +76,12 @@ module Monitor : sig
   type enat = Enat of nat | Infinity_enat
   type rec_safety
   type ('a, 'b) mapping
-  type ('a, 'b) sum = Inl of 'a | Inr of 'b
-  type 'a queue
-  type uduaux_x
   type aggaux
   type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med
+  type ('a, 'b) sum = Inl of 'a | Inr of 'b
+  type 'a queue
   type ty = TInt | TFloat | TString
+  type uduaux_x
   type udsaux_x
   type i
   type 'a args_ext
@@ -2727,14 +2727,32 @@ let ccompare_event_data =
 
 type 'a dq = Dq of 'a list * 'a list * nat * nat;;
 
+type 'a tree = Leaf | Node of 'a tree * 'a * 'a tree;;
+
+type 'a wf_wbt = Abs_wf_wbt of ('a * nat) tree;;
+
+type 'a treelist = Collapse of 'a wf_wbt;;
+
+type list_aux = LInt of Z.t treelist | LString of string treelist;;
+
+type typea = IntT | StringT;;
+
 type ('b, 'a) alist = Alist of ('b * 'a) list;;
 
 type ('a, 'b) mapping = Assoc_List_Mapping of ('a, 'b) alist |
   RBT_Mapping of ('a, 'b) mapping_rbt | Mapping of ('a -> 'b option);;
 
+type aggaux = CntAux of (((event_data option) list), nat) mapping |
+  SumAux of (((event_data option) list), (nat * Z.t)) mapping |
+  RankAux of ((((event_data option) list), list_aux) mapping * typea);;
+
+type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med;;
+
 type ('a, 'b) sum = Inl of 'a | Inr of 'b;;
 
 type 'a queue = Abs_queue of ('a list * 'a list);;
+
+type ty = TInt | TFloat | TString;;
 
 type uduaux_x =
   UDUX_gen of
@@ -2755,25 +2773,17 @@ type uduaux_x =
             (nat *
               (bool *
                 ((((event_data list), nat) mapping * (event_data list) set) *
-                  (event_data list) set list))))));;
-
-type 'a tree = Leaf | Node of 'a tree * 'a * 'a tree;;
-
-type 'a wf_wbt = Abs_wf_wbt of ('a * nat) tree;;
-
-type 'a treelist = Collapse of 'a wf_wbt;;
-
-type list_aux = LInt of Z.t treelist | LString of string treelist;;
-
-type typea = IntT | StringT;;
-
-type aggaux = CntAux of (((event_data option) list), nat) mapping |
-  SumAux of (((event_data option) list), (nat * Z.t)) mapping |
-  RankAux of ((((event_data option) list), list_aux) mapping * typea);;
-
-type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med;;
-
-type ty = TInt | TFloat | TString;;
+                  (event_data list) set list))))))
+  | UDUX_wagg of
+      (bool * ((agg_type * ty) * (trm * (nat * nat)))) *
+        ((nat queue *
+           ((nat * ((event_data list) set * bool)) queue *
+             ((nat * ((event_data list) set * bool)) queue *
+               (nat *
+                 (bool *
+                   ((((event_data list), nat) mapping * (event_data list) set) *
+                     (event_data list) set list)))))) *
+          aggaux option);;
 
 type udsaux_x =
   UDSX_gen of
@@ -11604,18 +11614,22 @@ let rec ugmr
           (entriesa (ccompare_list (ccompare_option ccompare_event_data)) t)
           edl_bot);;
 
+let rec uuw_init
+  args =
+    (empty_queue,
+      (empty_queue,
+        (empty_queue, (zero_nata, (true, ((edl_mempty_nat, edl_bot), []))))));;
+
+let rec uua_init args p = (uuw_init args, ag_init p (args_n args));;
+
+let rec udux_init_agg args p = UDUX_wagg (p, uua_init args p);;
+
 let rec de_gsw_init
   args = (zero_nata, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))));;
 
 let rec usa_init args p = (de_gsw_init args, ag_init p (args_n args));;
 
 let rec udsx_init_agg args p = UDSX_wagg (p, usa_init args p);;
-
-let rec uuw_init
-  args =
-    (empty_queue,
-      (empty_queue,
-        (empty_queue, (zero_nata, (true, ((edl_mempty_nat, edl_bot), []))))));;
 
 let rec udux_init
   args =
@@ -11886,13 +11900,27 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
   ((if aggargs_g0 ag then null g else true) &&
     nat_subset (fvi_trm zero_nata (aggargs_f ag))
       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R))))))))))))
-                  then UDAgg (aggargs_g0 ag, aggargs_omega ag,
-                               reindex_trm cs_R (aggargs_f ag), m, ins_pos g y,
-                               UDUntil
-                                 (dargs cs_R cs_L args, dmsk cs_R cs_L, phi_d,
-                                   psi_d, (mbuf_t_empty, mbuf_t_empty),
-                                   mbuf_t_empty, zero_nata,
-                                   udux_init (dargs cs_R cs_L args)))
+                  then (if is_empty
+                             (card_UNIV_nat, ceq_nat, cproper_interval_nat)
+                             (cpos cs_R
+                               (set (ceq_nat, ccompare_nat, set_impl_nat)
+                                 cs_L)) &&
+                             memL (args_ivl args) zero_nata
+                         then UDUntil
+                                (dargs cs_R cs_L args, dmsk cs_R cs_L, phi_d,
+                                  psi_d, (mbuf_t_empty, mbuf_t_empty),
+                                  mbuf_t_empty, zero_nata,
+                                  udux_init_agg (dargs cs_R cs_L args)
+                                    (aggargs_g0 ag,
+                                      (aggargs_omega ag,
+(reindex_trm cs_R (aggargs_f ag), (m, ins_pos g y)))))
+                         else UDAgg (aggargs_g0 ag, aggargs_omega ag,
+                                      reindex_trm cs_R (aggargs_f ag), m,
+                                      ins_pos g y,
+                                      UDUntil
+(dargs cs_R cs_L args, dmsk cs_R cs_L, phi_d, psi_d,
+  (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty, zero_nata,
+  udux_init (dargs cs_R cs_L args))))
                   else UDFail))))
     | n, cs, MAndAssign (phi, conf) ->
         (let y = fst conf in
@@ -12844,6 +12872,70 @@ let rec uebuf2T_take
                 (z, ((mbuf_t_Cons x xsa, ysa), mbuf_t_Cons t tsa))
               | (Some y, ysa) -> uebuf2T_take f (f x y t z) (xsa, ysa) tsa)));;
 
+let rec uua_extend
+  args p w ts0 win rest bend cc ax =
+    (if not bend then (win, (rest, (bend, (cc, ax))))
+      else (match safe_hd rest
+             with (None, resta) -> (win, (resta, (bend, (cc, ax))))
+             | (Some e, resta) ->
+               (if memR (args_ivl args) (minus_nata (fst e) ts0)
+                 then uua_extend args p w ts0 (append_queue e win)
+                        (tl_queue resta) (snd (snd e))
+                        (de_gcnt_add (fst (snd e)) cc)
+                        (uag_ins p w (fst (snd e)) cc ax)
+                 else (win, (resta, (bend, (cc, ax)))))));;
+
+let rec uua_step
+  args p w ts0 a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
+     let (wina, (resta, (benda, (cca, axa)))) =
+       uua_extend args p w ts0 win rest bend cc ax in
+      (match safe_hd wina
+        with (None, winb) ->
+          ((tl_queue nts,
+             (winb,
+               (resta,
+                 (minus_nata len one_nata,
+                   (benda, (cca, uag_res p w cca axa :: dn)))))),
+            axa)
+        | (Some e, winb) ->
+          (let winc = tl_queue winb in
+           let r = uag_res p w cca axa in
+           let ccaa = de_gcnt_del (fst (snd e)) cca in
+           let axb = uag_del p w (fst (snd e)) cca axa in
+           let bendb = (if is_emptya winc then true else benda) in
+            ((tl_queue nts,
+               (winc,
+                 (resta, (minus_nata len one_nata, (bendb, (ccaa, r :: dn)))))),
+              axb))));;
+
+let rec uua_shift
+  args p w nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
+      (match safe_hd nts
+        with (None, ntsa) ->
+          ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
+        | (Some ts0, ntsa) ->
+          (if memR (args_ivl args) (minus_nata nt ts0) ||
+                equal_nata len zero_nata
+            then ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
+            else uua_shift args p w nt
+                   (uua_step args p w ts0
+                     ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)))));;
+
+let rec uua_add_new
+  args p w rel1 rel2 nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
+       uua_shift args p w nt a in
+     let b =
+       (if args_pos args then not (unbox edl_is_empty_v rel1)
+         else unbox edl_is_empty_v rel1)
+       in
+      ((append_queue nt nts,
+         (win, (append_queue (nt, (rel2, b)) rest,
+                 (plus_nata len one_nata, (bend, (cc, dn)))))),
+        ax));;
+
 let rec uuw_extend
   args ts0 win rest bend cc =
     (if not bend then (win, (rest, (bend, cc)))
@@ -12904,7 +12996,9 @@ let rec udux_add_new
     args, msk, rel1, rel2, nt, UDUX_gen d ->
       UDUX_gen (de_gadd_new_dq args msk rel1 rel2 nt d)
     | args, msk, rel1, rel2, nt, UDUX_win w ->
-        UDUX_win (uuw_add_new args rel1 rel2 nt w);;
+        UDUX_win (uuw_add_new args rel1 rel2 nt w)
+    | args, msk, rel1, rel2, nt, UDUX_wagg (p, a) ->
+        UDUX_wagg (p, uua_add_new args p (args_n args) rel1 rel2 nt a);;
 
 let rec de_gands_pos
   x0 t us = match x0, t, us with [], t, us -> t
@@ -12954,6 +13048,12 @@ let rec uebuf2S_add
 let rec uebufn_add
   xsa xs = mapa (fun (a, b) -> mbuf_t_append a b) (zip xs xsa);;
 
+let rec uua_eval
+  args p w nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
+       uua_shift args p w nt a in
+      (rev dn, ((nts, (win, (rest, (len, (bend, (cc, [])))))), ax)));;
+
 let rec uuw_eval
   args nt aux =
     (let (nts, (win, (rest, (len, (bend, (cc, dn)))))) = uuw_shift args nt aux
@@ -12965,7 +13065,10 @@ let rec udux_eval
     args, nt, UDUX_gen d ->
       (let (zs, da) = de_geval_dq args nt d in (zs, UDUX_gen da))
     | args, nt, UDUX_win w ->
-        (let (zs, wa) = uuw_eval args nt w in (zs, UDUX_win wa));;
+        (let (zs, wa) = uuw_eval args nt w in (zs, UDUX_win wa))
+    | args, nt, UDUX_wagg (p, a) ->
+        (let (zs, aa) = uua_eval args p (args_n args) nt a in
+          (zs, UDUX_wagg (p, aa)));;
 
 let rec udeval
   j ts db x3 = match j, ts, db, x3 with j, ts, db, UDFail -> ([], UDFail)

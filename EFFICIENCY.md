@@ -7357,3 +7357,79 @@ occurrence in `data_in`, once in `table_in`, and once as a key of `tuple_in`, wi
 exact parallel copy of `Mapping.keys tuple_in` kept so that the result read is O(1).  That is
 `mmsaux` in the shared kernel, so it is a datatype change to `Optimized_Since.thy` and a larger
 piece of work than anything in 21.8-21.16; it is recorded here rather than started.
+
+### 21.18 The aggregation over a future window, fused (`Dense_Evt_UAgg.thy`, `Dense_Unbox_UAgg.thy`)
+
+21.17's suite left one vdense timeout, `aggev-sum20` (`r <- SUM y; x EVENTUALLY[0,20] A(x,y)`),
+and the reason was visible in the source rather than only in the profile.  `udof`'s `MSince`
+case with an aggregation has two branches -- the fused `udsx_init_agg` when the left operand is
+closed at the node's frame, the generic `UDAgg` over a plain `UDSince` otherwise -- and the
+`MUntil` case thirty lines below has only the second.  There was no `udux_init_agg` anywhere.
+So every aggregation over a future window clustered the whole window's union into groups once
+per time point: on `aggev-sum20`, 81.5% of the run in `uagg`, 8.763 Gi against the boxed
+evaluator's 4.575 Gi.
+
+**The structure.**  `uwagg` pairs the Until window with the kernel's incremental aggregation, as
+`swagg` does for the Since window, but the Until forces two differences.  Its answers are
+settled late -- a time point's answer is fixed only once the window has run past it -- so
+`uw_step` pushes a snapshot of the union onto a list of finished answers that `uw_eval` hands
+over later.  Fusing therefore means, first, that the aggregate is maintained alongside the count
+set through the scan that extends the window (`ua_extend`) and through the deletion in
+`ua_step`, and second, that what is pushed is the aggregate's own reading at that moment rather
+than the raw union.  The list of finished answers holds aggregated tables from then on, and that
+is the whole saving.
+
+Nothing of the aggregation had to be rebuilt: `ag_init`, `ag_ins`, `ag_del`, `ag_res` and the
+invariant `ag_inv` of 21.x are stated over a count set, not over the Since window, so the Until
+reuses them and their preservation lemmas as they stand.
+
+**The proof** is a simulation against the plain window.  `ua_rel` says the seven components
+agree except that the finished answers are the plain ones under `dagg_p`, and that the aggregate
+is valid for the current union.  `ua_extend_proj` gives the tracking, `ua_extend_rep` the
+invariant across the scan's insertions (mirroring `sa_move_rep`), `ua_step_rel` the step -- where
+`ag_res_inv` turns the aggregate's reading into `dagg_p` of the union and `ag_inv_del` carries
+the deletion -- and `ua_shift_rel` the recursion over them.  `valid_ua_eval` states exactly the
+property the fusion is for: the answers handed over are the plain window's under `dagg_p`.
+
+**The wiring** follows the Since's, rule for rule.  `duaux_x` gains `DUX_wagg` and the
+`dux_post`/`dux_agg` pair that names what a structure reports; `duxaux'` gains its case; the
+Until node's result is stated through `dsresh ... (dux_post daux)` and the two plain `dsim`
+cases record `dux_agg daux = None`; `DsUntilFused` is the new case, a bare `DUntil` whose
+structure reports the aggregate.  `UDUX_wagg` and `rua` carry it to the short tuples, and `dof`,
+`edof` and `udof` all emit the fused node when the window applies -- the left operand closed at
+the node's frame and the interval containing zero.
+
+**Measured.**  `aggev-sum20` under callgrind: 8.763 Gi → 2.846 Gi, **-68%**, with `uagg` and its
+clustering gone from the profile and `uag_res` reaching `ures_maggaux` at 18%, like every other
+aggregation.  On the suite's own log it runs 1.73 s against MonPoly's 1.70 s, where it was over
+the 5 s budget.  The `agg_fut` family goes to 0.76 of the boxed evaluator and 1.50x MonPoly,
+from 1.75x.  Outputs are unchanged: every `difftest.sh` hash matches and the differential corpus
+stays at 593 identical / 7 refused / 0 differing.
+
+### 21.19 The suite: no timeouts left
+
+| | 21.14 | 21.17 | now |
+|---|---|---|---|
+| vdense/monpoly, all 21 families | 1.34 | 1.33 | 1.35 |
+| vdense/dense | 0.96 | 0.96 | **0.96** |
+| vdense timeouts | 2 | 1 | **0** |
+| dense timeouts | 2 | 0 | 2 |
+| vdense formulas above 4x MonPoly | 0 | 0 | **0** |
+
+The verified unboxed evaluator now finishes all 185 formulas inside the 5 s budget, with
+identical verdicts throughout.  The `vdense/monpoly` column moved the wrong way between the last
+two runs by more than the change warrants -- the families this round did not touch move by up to
+0.07 in it -- which is the machine's drift again, and the reason the within-run `vdense/dense`
+column is the one to read.  There, the two families this round and 21.15 touched are the ones
+that moved: `agg_fut` 0.90 → **0.76** and `agg_once` 0.84 → **0.83**, with everything else within
+0.02 of where it was.
+
+What separates the verified evaluator from MonPoly is now one thing rather than three.  The
+aggregations over a window stand at 1.5-2.0x, and 21.15's profiling says why: their instruction
+counts are flat in the window length at about 1.35x MonPoly, but wall time is not, and it tracks
+peak resident memory (1.50x at window 5, 2.29x at window 500) with the garbage collector's share
+going 11.5% → 23.3% where MonPoly's goes 11.4% → 13.6%.  The Since/Once window stores each
+in-window tuple three times -- once per occurrence in `data_in`, once in `table_in`, and once as
+a key of `tuple_in`, with `table_in` an exact parallel copy of `Mapping.keys tuple_in` kept so
+that the result read is O(1).  That is `mmsaux` in the shared kernel, and a datatype change to
+`Optimized_Since.thy`: the next item, and a larger one than anything in 21.8-21.18.
