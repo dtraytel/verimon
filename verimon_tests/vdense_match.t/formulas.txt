@@ -1,0 +1,16 @@
+MATCHP[0,2] R(x)?
+MATCHF[0,2] R(x)?
+MATCHP[0,*) (R(x)? + S(x)?)
+MATCHF[0,*) (R(x)? + S(x)?)
+MATCHP[0,2] (R(x)? . S(x)?)
+MATCHP[0,3] (P(x,y)? + Q(x,y)?)
+MATCHF[0,3] (P(x,y)? + Q(x,y)?)
+MATCHP[0,2] ((R(x)? + S(x)?) . R(x)?)
+EXISTS y. MATCHP[0,2] (P(x,y)? + Q(x,y)?)
+R(x) AND MATCHP[0,2] R(x)?
+R(x) AND MATCHF[0,2] R(x)?
+(MATCHP[0,2] R(x)?) SINCE[0,2] S(x)
+(MATCHF[0,2] R(x)?) SINCE[0,2] S(x)
+ONCE[0,2] (MATCHP[0,1] R(x)?)
+z <- CNT x (MATCHP[0,2] R(x)?)
+z <- CNT x (MATCHF[0,2] R(x)?)
