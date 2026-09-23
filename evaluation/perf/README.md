@@ -20,28 +20,29 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.27 (574862ac),
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.28 (1a7c483),
 and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
-`-verified` is the original VeriMon.  The two ran on the same otherwise idle four-core
-container, with the same suite, logs and settings, so their numbers compare; that container is neither the machine of EFFICIENCY.md Section 21 nor the one of the 21.26 run it
-reports (geometric mean 1.25, no timeouts), so they compare with neither.
+`-verified` is the original VeriMon.  The two ran one after the other on the same otherwise idle
+four-core container, with the same suite, logs and settings, so their numbers compare; that
+container is not the one of the earlier pair of runs (after 21.27, geometric mean 1.33 with three
+timeouts), which runs MonPoly 1.31x as slowly (geometric mean over 194 formulas, up to 2.2x on
+the \`long\` log), so the two pairs compare with each other only through their ratios.
 
 | | master | refine |
 |---|---|---|
-| VeriMon timeouts (5 s) | 79 | 3 |
-| MonPoly timeouts | 2 | 1 |
-| both finish | 117 | 193 |
-| geometric mean VeriMon/MonPoly | 2.68 | 1.33 |
-| VeriMon faster / more than 2x slower | 0 / 91 | 22 / 13 |
+| VeriMon timeouts (5 s) | 64 | 0 |
+| MonPoly timeouts | 0 | 0 |
+| both finish | 132 | 196 |
+| geometric mean VeriMon/MonPoly | 2.71 | 1.13 |
+| VeriMon faster / more than 2x slower | 0 / 103 | 61 / 3 |
 
-MonPoly itself takes 0.87x its master time in the refine run, over the 194 formulas it finishes
-in both (an earlier refine run on the same container, after 21.26, put it at 0.86x and VeriMon
-at 0.99x its time here, with `aggonce-med20` a timeout that the rank trees of 21.27 bring to
-4.1 s); the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not all of
-that is noise.  Both runs have one verdict disagreement, `match-pcnt`, an end-of-stream
-difference between MonPoly and the verified monitor that the original VeriMon shares.  The
-`andtrigger` group has no ratio against MonPoly, which does not monitor TRIGGER; the reports
-record the verified monitor's times alone.
+MonPoly itself takes 0.88x its master time in the refine run, over the 196 formulas it finishes
+in both; the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not all of
+that is noise.  Over the 137 formulas the original VeriMon finishes, the verified monitor of
+refine takes 0.38x its time.  Both runs have one verdict disagreement, `match-pcnt`, an
+end-of-stream difference between MonPoly and the verified monitor that the original VeriMon
+shares.  The `andtrigger` group has no ratio against MonPoly, which does not monitor TRIGGER;
+the reports record the verified monitor's times alone.
 
 ## The logs
 

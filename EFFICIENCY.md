@@ -8061,8 +8061,9 @@ The run after 21.27 (`evaluation/perf/report.md`, 8f9de56) puts `-verified` at a
 of 1.33x MonPoly over the 193 formulas both finish, with three `-verified` timeouts and 13
 formulas more than 2x slower.
 
-**The timeouts are not blow-ups.**  That container runs MonPoly about twice as slowly as the one
-of this section, and with two jobs at once; on this one, without a timeout, the three formulas
+**The timeouts are not blow-ups.**  That container runs MonPoly 1.31x as slowly as the one of
+this section (geometric mean over 194 formulas; 2.2x on the \`long\` log), and with two jobs at
+once; on this one, without a timeout, the three formulas
 take 2.87 s (`aggonce-rate80`, 1.8x MonPoly), 1.84 s (`long-ev1000`, 1.4x) and 2.90 s
 (`long-sum100`, 1.0x -- MonPoly times out on it there too).
 
@@ -8112,6 +8113,24 @@ of a predicate that `LET` binds.  Ratio to MonPoly, median of five, on this sect
 | `join-both` (every predicate is read) | 1.05 | 1.07 |
 
 `since-nu50`, `pol-sincefut` and `match-pseq` stay within the noise.
+
+### The suite after the filter
+
+Master and refine (1a7c483), one after the other on the container of this section
+(`evaluation/perf/report0.md` and `report.md`):
+
+| | master | refine |
+|---|---|---|
+| VeriMon timeouts (5 s) | 64 | **0** |
+| both finish | 132 | 196 |
+| geometric mean VeriMon/MonPoly | 2.71 | **1.13** |
+| VeriMon faster / more than 2x slower | 0 / 103 | **61 / 3** |
+
+MonPoly takes 0.88x its master time there, and the verified monitor 0.38x the original VeriMon's
+over the 137 formulas that one finishes.  The three formulas still more than 2x slower are
+`pol-sincefutb` (2.38), `pol-threshold` (2.07) and `aggonce-min50` (2.03); the next eight, all
+between 1.84 and 1.99, are Since with a negated left operand, grouped aggregations over a window
+and the regular expressions -- the same groups as above, and none of them the front end's.
 
 ### I: the grouped aggregation over a past window
 
