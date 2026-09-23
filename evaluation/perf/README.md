@@ -28,6 +28,12 @@ difference between MonPoly and the verified monitor, which the heap-resident den
 replaced shared.  The `andtrigger` group has no ratio against MonPoly, which does not monitor
 TRIGGER; since 21.26 it records the verified monitor's times alone.
 
+`report0.md` and `ratios0.svg` are the starting point: the same suite and logs, run on 2026-09-23
+against a build of master (025a1423), where `-verified` is the original VeriMon.  It times out
+on 79 of the 201 formulas (MonPoly on 2) and is 2.68x MonPoly's time in geometric mean over the
+117 both finish; `match-pcnt` disagrees there too.  That run was on yet another container, so
+its ratios, not its seconds, are what compares with `report.md`.
+
 ## The logs
 
 One signature, `A(int,int) B(int,int) C(int) D(int,int,int)`, values uniform in a domain.
