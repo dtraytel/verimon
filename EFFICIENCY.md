@@ -8517,3 +8517,12 @@ Wall time on the suite's logs (median of five): `since-nu5` 1.27 s → 0.87 s ag
 0.77 s (ratio 1.66 → 1.13), `pol-sincefutb` 1.82 s → 1.27 s (1.88 → 1.31), `since-nu500` 1.60 →
 1.11, `since-u50` 1.33 → 1.00, `pol-threshold` 1.53 → 1.45.  The output is identical on these
 formulas and on the corpus (601 same).
+
+### The suite
+
+The suite rerun after this section (`evaluation/perf/report.md`, 348bc53) puts the geometric mean
+over the 196 formulas at 1.00, from 1.05, with 98 formulas where the verified monitor is faster
+(from 74) and none above 2x.  The `since` group went from 1.23 to 0.94: `since-nu5` 1.89 to 1.22,
+`since-nu500` 1.66 to 1.08, `since-u50` 1.50 to 1.04, and `pol-sincefutb` 1.90 to 1.33.  MonPoly
+ran 2% slower than in the previous run.  The largest ratios left are the aggregations over a past
+window: `aggonce-max50` (1.73), `aggonce-min50` (1.61) and `pol-threshold` (1.50).
