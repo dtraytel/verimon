@@ -2881,6 +2881,25 @@ type udformula = UDFail | UDRel of (event_data list) set |
                           (((event_data list), nat) mapping *
                             ((event_data list) set *
                               (event_data list) set)))))))))))
+  | UDAndTrigger of
+      djoin_plan * udformula *
+        ((event_data list) set mbuf_t * ((event_data list) set option) mbuf_t) *
+        unit args_ext * udformula * udformula *
+        ((event_data list) set mbuf_t * (event_data list) set mbuf_t) *
+        nat mbuf_t *
+        (nat *
+          (nat *
+            (nat *
+              (nat *
+                (bool list *
+                  ((nat * ((event_data list) set * (event_data list) set))
+                     queue *
+                    ((nat * (event_data list) set) queue *
+                      (((event_data list), nat) mapping *
+                        ((event_data list) set *
+                          (((event_data list), nat) mapping *
+                            ((event_data list) set *
+                              (event_data list) set)))))))))))
   | UDMatchP of
       nat * i * mregex * mregex list * ((nat option) list) list *
         udformula list * (event_data list) set mbuf_t list * nat mbuf_t *
@@ -2941,10 +2960,15 @@ let rec size_udformulaa
     | UDTrigger (x221, x222, x223, x224, x225, x226, x227) ->
         plus_nata (plus_nata (size_udformulaa x223) (size_udformulaa x224))
           (suc zero_nata)
-    | UDMatchP (x231, x232, x233, x234, x235, x236, x237, x238, x239) ->
-        plus_nata (size_list size_udformulaa x236) (suc zero_nata)
-    | UDMatchF (x241, x242, x243, x244, x245, x246, x247, x248, x249, x2410) ->
-        plus_nata (size_list size_udformulaa x246) (suc zero_nata);;
+    | UDAndTrigger (x231, x232, x233, x234, x235, x236, x237, x238, x239) ->
+        plus_nata
+          (plus_nata (plus_nata (size_udformulaa x232) (size_udformulaa x235))
+            (size_udformulaa x236))
+          (suc zero_nata)
+    | UDMatchP (x241, x242, x243, x244, x245, x246, x247, x248, x249) ->
+        plus_nata (size_list size_udformulaa x246) (suc zero_nata)
+    | UDMatchF (x251, x252, x253, x254, x255, x256, x257, x258, x259, x2510) ->
+        plus_nata (size_list size_udformulaa x256) (suc zero_nata);;
 
 type 'a size = {size : 'a -> nat};;
 let size _A = _A.size;;
@@ -11825,6 +11849,11 @@ let rec dformula_of
                                  (eo_dnarrow (wide_mask m (upt zero_nata m))))
                             alpha_s)))));;
 
+let rec tok
+  cs_R cs_L args =
+    memL (args_ivl args) zero_nata && memR (args_ivl args) zero_nata ||
+      equal_lista equal_nat cs_L cs_R && args_pos args;;
+
 let rec ugmr
   q h (RBT_Mapping t) y f =
     (match ccompare_lista (ccompare_option ccompare_event_data)
@@ -12002,6 +12031,7 @@ let rec uset_q
     | c, UDFrz (v, va, vb, vc, vd, ve, vf, vg) -> None
     | c, UDLetPast (v, va, vb, vc, vd, ve) -> None
     | c, UDTrigger (v, va, vb, vc, vd, ve, vf) -> None
+    | c, UDAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
     | c, UDMatchP (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
     | c, UDMatchF (v, va, vb, vc, vd, ve, vf, vg, vh, vi) -> None;;
 
@@ -12334,6 +12364,28 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
                      udof n cs psi, (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty,
                      de_ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
             else UDFail))
+    | n, cs, MAndTrigger (a, alpha, buf1, args, phi, psi, buf2, nts, aux) ->
+        (let cs_R = set_cols (args_R args) in
+         let cs_L = set_cols (args_L args) in
+          (if equal_nata (args_n args) n &&
+                (equal_lista equal_nat cs (set_cols a) &&
+                  (nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R)
+                     (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
+                    (nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
+                       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R) &&
+                      (tok cs_R cs_L args &&
+                        (mbuf_t_is_empty (fst buf1) &&
+                          (mbuf_t_is_empty (snd buf1) &&
+                            (mbuf_t_is_empty (fst buf2) &&
+                              (mbuf_t_is_empty (snd buf2) &&
+                                mbuf_t_is_empty nts))))))))
+            then UDAndTrigger
+                   (mk_djoin cs cs_R, udof n cs alpha,
+                     (mbuf_t_empty, mbuf_t_empty), dargs cs_R cs_L args,
+                     udof n cs_L phi, udof n cs_R psi,
+                     (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty,
+                     de_ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
+            else UDFail))
     | n, cs, MTP (mt, i) ->
         (if equal_lista equal_nat cs (mtrm_dcols mt) then UDTP (mt, i)
           else UDFail)
@@ -12372,8 +12424,7 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
                      (size_lista cs, i, mr, mrs, mapa (emb_plan cs) css,
                        mapa (fun (a, b) -> udof n a b) (zip css l),
                        mapa (fun _ -> mbuf_t_empty) l, nts, t, [])
-              else UDFail))
-    | n, cs, MAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> UDFail;;
+              else UDFail));;
 
 let rec freeze_meval0
   eval k x2 = match eval, k, x2 with eval, k, [] -> ([], [])
@@ -14027,8 +14078,33 @@ let rec udeval
            in
          let (zs, dauxb) = eval_matchF i mr nt dauxa in
           (mapa (deopt_table (ceq_event_data, ccompare_event_data)) zs,
-            UDMatchF
-              (m, i, mr, mrs, pls, mapa snd r, dbufa, ntsa, nt, dauxb)));;
+            UDMatchF (m, i, mr, mrs, pls, mapa snd r, dbufa, ntsa, nt, dauxb)))
+    | j, ts, db, UDAndTrigger (pl, alpha, dbf1, dags, phi, psi, dbf2, nts, daux)
+        -> (let (asa, alphaa) = udeval j ts db alpha in
+            let (xs, phia) = udeval j ts db phi in
+            let (ys, psia) = udeval j ts db psi in
+            let (a, b) =
+              uebuf2T_take
+                (fun r1 r2 t (ws, ax) ->
+                  (let axa = de_gupdate_mmtaux dags t r1 r2 ax in
+                    (ws @ [(if de_gmmtaux_empty axa then None
+                             else Some (de_gresult_mmtaux dags axa))],
+                      axa)))
+                ([], daux) (mebuf2_add xs ys dbf2) (mbuf_t_append nts ts)
+              in
+             (let (ws, dauxa) = a in
+               (fun (dbf2a, ntsa) ->
+                 (let (zs, dbf1a) =
+                    mebuf2_take
+                      (fun r1 aa ->
+                        (match aa with None -> r1
+                          | Some ab -> de_gbin_join pl r1 true ab))
+                      (mebuf2_add asa ws dbf1)
+                    in
+                   (zs, UDAndTrigger
+                          (pl, alphaa, dbf1a, dags, phia, psia, dbf2a, ntsa,
+                            dauxa)))))
+               b);;
 
 let rec udof_m n cs (Rep_meformula e) = udof n cs e;;
 
@@ -14402,6 +14478,9 @@ let rec uvdfail_nodes
         plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
     | UDTrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
         plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDAndTrigger (pl, alpha, dbf1, dags, phi, psi, dbf2, nts, daux) ->
+        plus_nata (plus_nata (uvdfail_nodes alpha) (uvdfail_nodes phi))
+          (uvdfail_nodes psi)
     | UDMatchP (m, i, mr, mrs, pls, l, dbuf, nts, daux) ->
         nat_sum_list (mapa uvdfail_nodes l)
     | UDMatchF (m, i, mr, mrs, pls, l, dbuf, nts, t, daux) ->

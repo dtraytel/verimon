@@ -1,0 +1,81 @@
+The fused And-Trigger node of the verified dense evaluator.  Each formula is run
+through the shipping verified monitor and through the verified dense evaluator
+(-vdense); the two must agree, and -vdense only accepts a formula when the
+dense compiler places every one of its nodes.
+
+  $ while IFS= read -r phi; do
+  >   [ -z "$phi" ] && continue
+  >   printf '%s\n' "$phi" > f.mfotl
+  >   echo "=== $phi"
+  >   monpoly -verified         -sig cov.sig -formula f.mfotl -log cov.log > a.txt 2>&1
+  >   monpoly -verified -vdense -sig cov.sig -formula f.mfotl -log cov.log > b.txt 2>&1
+  >   cat a.txt
+  >   diff -q a.txt b.txt > /dev/null || { echo "VDENSE MISMATCH"; diff a.txt b.txt; }
+  > done < formulas.txt
+  === P(x,y) AND (P(x,y) TRIGGER[1,3] Q(x,y))
+  @0 (time point 0): (1,2) (2,3)
+  @1 (time point 1): (1,2) (3,4)
+  @1 (time point 2): (5,5)
+  @3 (time point 3): (1,2)
+  @4 (time point 4): (2,3) (3,4)
+  @7 (time point 6): (1,2)
+  @9 (time point 7): (5,6)
+  === P(x,y) AND (R(x) TRIGGER[1,3] S(x))
+  @0 (time point 0): (1,2) (2,3)
+  @4 (time point 4): (2,3)
+  @7 (time point 6): (1,2)
+  === (P(x,y) AND (P(x,y) TRIGGER[1,3] Q(x,y))) AND R(x)
+  @0 (time point 0): (1,2)
+  @4 (time point 4): (2,3)
+  === EXISTS y. (P(x,y) AND (P(x,y) TRIGGER[1,3] Q(x,y)))
+  @0 (time point 0): (1) (2)
+  @1 (time point 1): (1) (3)
+  @1 (time point 2): (5)
+  @3 (time point 3): (1)
+  @4 (time point 4): (2) (3)
+  @7 (time point 6): (1)
+  @9 (time point 7): (5)
+  === P(x,y) AND (R(x) TRIGGER[2,*) S(x))
+  @0 (time point 0): (1,2) (2,3)
+  @1 (time point 1): (1,2) (3,4)
+  @1 (time point 2): (5,5)
+  @4 (time point 4): (2,3) (3,4)
+  @7 (time point 6): (1,2)
+  === T(x,y,z) AND (P(x,y) TRIGGER[1,2] Q(x,y))
+  @0 (time point 0): (1,2,5) (1,2,6)
+  @1 (time point 1): (1,2,6) (3,4,1)
+  @1 (time point 2): (5,5,5)
+  @3 (time point 3): (1,2,7)
+  @4 (time point 4): (2,3,1)
+  @7 (time point 5): (2,3,9)
+  @9 (time point 7): (5,6,1)
+  === P(x,y) AND (P(x,y) TRIGGER[0,2] Q(x,y))
+  @0 (time point 0): (2,3)
+  @1 (time point 1): (3,4)
+  @1 (time point 2): (5,5)
+  === R(x) AND (R(x) TRIGGER[1,1] S(x))
+  @0 (time point 0): (1)
+  @1 (time point 1): (2)
+  @1 (time point 2): (2)
+  @3 (time point 3): (3)
+  @4 (time point 4): (2)
+  @7 (time point 5): (1)
+  @9 (time point 7): (9)
+  === P(x,y) AND (R(x) TRIGGER[3,5] S(x))
+  @0 (time point 0): (1,2) (2,3)
+  @1 (time point 1): (1,2) (3,4)
+  @1 (time point 2): (5,5)
+  @4 (time point 4): (2,3) (3,4)
+  @7 (time point 6): (1,2)
+  === ONCE[0,3] (P(x,y) AND (R(x) TRIGGER[1,3] S(x)))
+  @0 (time point 0): (1,2) (2,3)
+  @1 (time point 1): (1,2) (2,3)
+  @1 (time point 2): (1,2) (2,3)
+  @3 (time point 3): (1,2) (2,3)
+  @4 (time point 4): (2,3)
+  @7 (time point 5): (2,3)
+  @7 (time point 6): (1,2) (2,3)
+  @9 (time point 7): (1,2)
+  === A() AND (B() TRIGGER[1,2] A())
+  @0 (time point 0): true
+  @9 (time point 7): true
