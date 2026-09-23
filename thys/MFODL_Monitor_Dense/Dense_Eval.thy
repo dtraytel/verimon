@@ -273,9 +273,9 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 | "deval j ts db (DMatchF m I mr mrs pls Ld dbuf nts t daux) =
      (let R = map (deval j ts db) Ld;
           (daux', dbuf', nt, nts') = mbufnt_take
-             (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+             (\<lambda>rels. gupdate_matchF (map emb_msk pls) I mr mrs rels)
              daux (mbufn_add (map fst R) dbuf) t (nts @ ts);
-          (zs, daux'') = eval_matchF I mr nt daux'
+          (zs, daux'') = geval_matchF I mr nt daux'
       in (map dsan zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
   by pat_completeness auto
 
@@ -1513,7 +1513,7 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     (\<forall>i < length L. dsim n (css ! i) tw (Ld ! i) (L ! i)) \<Longrightarrow>
     pls = map (emb_plan cs) css \<Longrightarrow>
     dbufn n css buf dbuf \<Longrightarrow>
-    dmld_rel n cs \<psi>s aux daux \<Longrightarrow>
+    gmld_rel n cs css \<psi>s aux daux \<Longrightarrow>
     dsim n cs tw (DMatchF (length cs) I mr mrs pls Ld dbuf nts t daux)
       (mformula.MMatchF I mr mrs L buf nts t aux)"
 
@@ -3541,7 +3541,7 @@ next
   let ?R = "map (meval j n ts db) L"
   let ?dR = "map (deval j ts db) Ld"
   let ?F = "update_matchF n I mr mrs"
-  let ?G = "\<lambda>rels. update_matchF (length cs) I mr mrs (map2 dembedp pls rels)"
+  let ?G = "\<lambda>rels. gupdate_matchF (map emb_msk pls) I mr mrs rels"
   obtain aux2 buf2 nt2 nts2 where g0:
     "mbufnt_take ?F aux (mbufn_add (map fst ?R) buf) t (nts @ ts) = (aux2, buf2, nt2, nts2)"
     by (cases "mbufnt_take ?F aux (mbufn_add (map fst ?R) buf) t (nts @ ts)") auto
@@ -3586,7 +3586,7 @@ next
   have badd: "dbufn n css (mbufn_add (map fst ?R) buf) (mbufn_add (map fst ?dR) dbuf)"
     unfolding dl by (rule dbufn_add[OF bf _ tabs]) (use lcL in simp)
   \<comment> \<open>one firing of the window\<close>
-  interpret dmatchF_frame n cs \<psi>s mrs
+  interpret gmatchF_frame n cs \<psi>s mrs css
   proof
     show "sorted_wrt (<) cs" using wf by simp
     show "\<forall>c \<in> set cs. c < n" using wf by simp
@@ -3596,42 +3596,43 @@ next
         Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex ms \<psi>s) \<and>
         ok (length \<psi>s) ms \<and> set cs = fv_regex (from_mregex ms \<psi>s)"
       using mrsd sr okm fvA by (auto simp: LPDs_safe LPDs_ok LPDs_safe_fv_regex)
+    show "length css = length \<psi>s" by (rule lc)
+    show "\<And>i. i < length \<psi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) = Formula.fv (\<psi>s ! i)"
+      using wc cfv lc by (auto intro: nth_mem)
   qed
-  have step: "dmld_rel n cs \<psi>s (?F as tt u) (?G (map2 (dtabc n) css as) tt u')"
+  have msk: "map emb_msk pls = map (dmsk cs) css"
+    unfolding pe map_map o_def
+  proof (rule map_cong[OF refl])
+    fix c assume c: "c \<in> set css"
+    then obtain i where i: "i < length css" and ci: "c = css ! i" by (auto simp: in_set_conv_nth)
+    show "emb_msk (emb_plan cs c) = dmsk cs c"
+    proof (rule emb_msk_emb_plan)
+      show "sorted_wrt (<) cs" using wf by simp
+      show "sorted_wrt (<) c" using wc c by auto
+      show "set c \<subseteq> set cs" using csub i ci lc by auto
+    qed
+  qed
+  have step: "gmld_rel n cs css \<psi>s (?F as tt u) (?G (map2 (dtabc n) css as) tt u')"
     if las: "length as = length css"
       and mas: "\<forall>i < length css. ftable n (set (css ! i)) (as ! i)"
-      and ru: "dmld_rel n cs \<psi>s u u'" for as u u' tt
+      and ru: "gmld_rel n cs css \<psi>s u u'" for as u u' tt
   proof -
-    have emb: "map2 dembedp pls (map2 (dtabc n) css as) = map (dtabc n cs) as"
-      unfolding list_eq_iff_nth_eq
-    proof (intro conjI allI impI)
-      show "length (map2 dembedp pls (map2 (dtabc n) css as)) = length (map (dtabc n cs) as)"
-        using pe las by simp
-    next
-      fix i assume i: "i < length (map2 dembedp pls (map2 (dtabc n) css as))"
-      then have i': "i < length css" using pe las by simp
-      have "dembedp (emb_plan cs (css ! i)) (dtabc n (css ! i) (as ! i)) = dtabc n cs (as ! i)"
-        by (rule dembedp_dtabc[OF conjunct1[OF wf] _ conjunct2[OF wf]])
-          (use i' wc mas in \<open>fastforce intro: nth_mem\<close>)+
-      then show "map2 dembedp pls (map2 (dtabc n) css as) ! i = map (dtabc n cs) as ! i"
-        using i' pe las by simp
-    qed
     have wfr: "list_all2 (\<lambda>\<psi> rl. table n (Formula.fv \<psi>) rl) \<psi>s as"
       using las lc cfv mas by (fastforce simp: list_all2_conv_all_nth)
-    show ?thesis using dtabc_update_matchF[OF wfr ru] by (simp add: emb)
+    show ?thesis using dtabc_gupdate_matchF[OF wfr ru] by (simp add: msk)
   qed
   obtain daux2 dbuf2 where dt:
     "mbufnt_take ?G daux (mbufn_add (map fst ?dR) dbuf) t (nts @ ts) = (daux2, dbuf2, nt2, nts2)"
-    and rw: "dmld_rel n cs \<psi>s aux2 daux2" and bf2: "dbufn n css buf2 dbuf2"
-    using dbufn_nt_take[where R = "dmld_rel n cs \<psi>s" and f = "?F" and g = "?G",
+    and rw: "gmld_rel n cs css \<psi>s aux2 daux2" and bf2: "dbufn n css buf2 dbuf2"
+    using dbufn_nt_take[where R = "gmld_rel n cs css \<psi>s" and f = "?F" and g = "?G",
         OF badd step rel g0] by blast
-  obtain dzs daux3 where g2: "eval_matchF I mr nt2 daux2 = (dzs, daux3)"
-    by (cases "eval_matchF I mr nt2 daux2") auto
-  have evb: "fst (eval_matchF I mr nt2 daux2) = map (dtabc n cs) (fst (eval_matchF I mr nt2 aux2))
-      \<and> dmld_rel n cs \<psi>s (snd (eval_matchF I mr nt2 aux2)) (snd (eval_matchF I mr nt2 daux2))"
-    by (rule dtabc_eval_matchF[OF rw])
+  obtain dzs daux3 where g2: "geval_matchF I mr nt2 daux2 = (dzs, daux3)"
+    by (cases "geval_matchF I mr nt2 daux2") auto
+  have evb: "fst (geval_matchF I mr nt2 daux2) = map (dtabc n cs) (fst (eval_matchF I mr nt2 aux2))
+      \<and> gmld_rel n cs css \<psi>s (snd (eval_matchF I mr nt2 aux2)) (snd (geval_matchF I mr nt2 daux2))"
+    by (rule dtabc_geval_matchF[OF rw])
   have ev: "dzs = map (dtabc n cs) zs" using evb g1 g2 by simp
-  have rel3: "dmld_rel n cs \<psi>s aux3 daux3" using evb g1 g2 by simp
+  have rel3: "gmld_rel n cs css \<psi>s aux3 daux3" using evb g1 g2 by simp
   have tx: "list_all (ftable n (set cs)) zs"
     using produces_tables[OF pr w sts mts m] unfolding x .
   have sz: "\<forall>x \<in> set zs. dsan (dtabc n cs x) = dtabc n cs x"

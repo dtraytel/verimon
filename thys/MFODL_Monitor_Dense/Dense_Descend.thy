@@ -2080,7 +2080,7 @@ proof -
     unfolding sc using produces_minit0[OF sfa b[folded A], unfolded A m] .
   show ?thesis unfolding A m d
     by (rule dsim.DsMatchF[OF wf_cols_set_cols[OF fin b] pr sr[folded fm] ok
-          _ _ _ _ _ _ _ _ _ _ refl bf dmld_rel_Nil])
+          _ _ _ _ _ _ _ _ _ _ refl bf gmld_rel_Nil])
       (use lcss cssi wcss scss sub ld in \<open>auto simp: sc fm finite_LPDs\<close>)
 qed
 

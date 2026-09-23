@@ -205,6 +205,98 @@ next
     by (simp add: dtabc_Un_img dtabc_geps_lax[OF s b lc css o2 tg])
 qed (simp_all add: dtabc_def empty_table_def)
 
+text \<open>The future window's two operations are the mirror images: the strict epsilon is strict on
+  the right of a concatenation, and the derivative steps the left.\<close>
+
+lemma dtabc_gleps_strict:
+  fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and ops: "list_all2 (\<lambda>\<psi> rel. table n (Formula.fv \<psi>) rel) \<psi>s rels"
+    and lc: "length css = length \<psi>s"
+    and css: "\<And>i. i < length \<psi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and>
+       set (css ! i) = Formula.fv (\<psi>s ! i) \<and> set (css ! i) \<subseteq> set cs"
+  shows "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex mr \<psi>s) \<Longrightarrow>
+     ok (length \<psi>s) mr \<Longrightarrow> set cs = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
+     dtabc n cs (l\<epsilon>_strict n rels mr)
+       = gleps_strict (map (dmsk cs) css) (map2 (dtabc n) css rels) mr"
+proof (induct mr)
+  case (MSkip m)
+  have "cs = []" using MSkip(3) by simp
+  then show ?case by (simp add: dtabc_Nil_unit_table dtabc_empty_iff empty_table_def)
+next
+  case (MTestPos i)
+  then have i: "i < length rels" and i': "i < length \<psi>s" using ops by (simp_all add: list_all2_lengthD)
+  have "css ! i = cs" using css[OF i'] MTestPos(3) s by (intro sorted_cols_eq) simp_all
+  then show ?case using i lc ops by (simp add: list_all2_lengthD)
+next
+  case (MTestNeg i)
+  then have i: "i < length rels" and i': "i < length \<psi>s" using ops by (simp_all add: list_all2_lengthD)
+  have t: "table n (set cs) (l\<epsilon>_strict n rels (MTestNeg i))"
+    by (rule table_leps_strict[OF MTestNeg(1,2,3) ops])
+  show ?case
+  proof (cases "rels ! i = empty_table")
+    case True
+    then have "cs = []" using t b by (intro table_unit_table_Nil) simp_all
+    then show ?thesis using True i i' lc
+      by (simp add: dtabc_Nil_unit_table dtabc_empty_iff empty_table_def)
+  next
+    case False
+    then show ?thesis using i i' lc by (simp add: dtabc_empty_iff empty_table_def)
+  qed
+next
+  case (MPlus r t)
+  have fvr: "set cs = fv_regex (from_mregex r \<psi>s)"
+    and fvt: "set cs = fv_regex (from_mregex t \<psi>s)" using MPlus(3,5) by auto
+  show ?case
+    using MPlus(1)[OF _ _ fvr] MPlus(2)[OF _ _ fvt] MPlus(3,4)
+    by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have lr: "length \<psi>s = length rels" using ops by (simp add: list_all2_lengthD)
+  have o1: "ok (length \<psi>s) r" and o2: "ok (length \<psi>s) t" using MTimes(4) by simp_all
+  have sr2: "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex t \<psi>s)"
+    using MTimes(3) by simp
+  have fvt: "set cs = fv_regex (from_mregex t \<psi>s)" using MTimes(3,5) by auto
+  have tg: "table n (set cs) (l\<epsilon>_strict n rels t)"
+    by (rule table_leps_strict[OF sr2 o2 fvt ops])
+  have css': "\<And>i. i < length rels \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) \<subseteq> set cs \<and>
+      table n (set (css ! i)) (rels ! i)"
+    using css ops lr by (auto simp: list_all2_conv_all_nth)
+  show ?case
+    using MTimes(2)[OF sr2 o2 fvt]
+    by (simp add: dtabc_geps_lax[OF s b lc[unfolded lr] css' o1[unfolded lr] tg])
+next
+  case (MStar r)
+  have t: "table n (set cs) (l\<epsilon>_strict n rels (MStar r))"
+    by (rule table_leps_strict[OF MStar(2,3,4) ops])
+  then have "cs = []" using b by (intro table_unit_table_Nil) simp_all
+  then show ?case by (simp add: dtabc_Nil_unit_table)
+qed
+
+lemma dtabc_gldelta:
+  assumes s: "sorted_wrt (<) cs" and b: "\<forall>c \<in> set cs. c < n"
+    and lc: "length css = length \<phi>s"
+    and css: "\<And>i. i < length \<phi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) \<subseteq> set cs \<and>
+       table n (set (css ! i)) (\<phi>s ! i)"
+    and X: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dX: "\<And>ms. glookup dX ms = dtabc n cs (lookup X ms)"
+  shows "ok (length \<phi>s) mr \<Longrightarrow>
+     dtabc n cs (l\<delta> \<kappa> X \<phi>s mr) = gldelta (map (dmsk cs) css) \<kappa> dX (map2 (dtabc n) css \<phi>s) mr"
+proof (induct mr arbitrary: \<kappa>)
+  case (MSkip m)
+  then show ?case using dX by (cases m) (simp_all add: dtabc_def empty_table_def)
+next
+  case (MPlus r t)
+  then show ?case by (simp add: dtabc_Un_img)
+next
+  case (MTimes r t)
+  have o1: "ok (length \<phi>s) r" and o2: "ok (length \<phi>s) t" using MTimes(3) by simp_all
+  have opsA: "\<forall>i < length \<phi>s. \<exists>B \<subseteq> set cs. table n B (\<phi>s ! i)" using css by blast
+  have tg: "table n (set cs) (l\<delta> \<kappa> X \<phi>s t)" by (rule table_ldelta[OF opsA X o2])
+  show ?case using MTimes(1)[OF o1] MTimes(2)[OF o2]
+    by (simp add: dtabc_Un_img dtabc_geps_lax[OF s b lc css o1 tg])
+qed (simp_all add: dtabc_def empty_table_def)
+
 subsection \<open>One firing of the window\<close>
 
 text \<open>The frame of @{locale dmatchP_frame}, with each operand's own columns.\<close>
@@ -320,6 +412,167 @@ proof -
     using both dtabc_foldr_lookup[OF both]
     by (simp add: update_matchP_def g Let_def)
 qed
+
+end
+
+section \<open>The future-match window over the operands' own frames\<close>
+
+text \<open>
+  The future window keeps, for every time point it has not decided yet, the operands' tables at
+  that time point and the result accumulated for it so far.  The dense node keeps the operands at
+  their own frames, as the node receives them, and the result at the node's.
+\<close>
+
+definition gmld_rel :: "nat \<Rightarrow> cols \<Rightarrow> cols list \<Rightarrow> ty Formula.formula list \<Rightarrow>
+    event_data ml\<delta>aux \<Rightarrow> event_data ml\<delta>aux \<Rightarrow> bool" where
+  "gmld_rel n cs css \<psi>s = list_all2 (\<lambda>(t, rls, rel) (t', drls, drel). t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<and>
+     drls = map2 (dtabc n) css rls \<and> drel = dtabc n cs rel)"
+
+lemma gmld_rel_Nil[simp]: "gmld_rel n cs css \<psi>s [] []"
+  by (simp add: gmld_rel_def)
+
+lemma gmld_rel_Cons[simp]:
+  "gmld_rel n cs css \<psi>s ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
+     list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<and>
+     drls = map2 (dtabc n) css rls \<and> drel = dtabc n cs rel \<and> gmld_rel n cs css \<psi>s aux daux"
+  by (simp add: gmld_rel_def)
+
+lemma gmld_rel_induct[consumes 1, case_names Nil Cons]:
+  assumes "gmld_rel n cs css \<psi>s aux daux"
+    and "P [] []"
+    and "\<And>t rls rel aux daux. list_all2 (\<lambda>\<psi> r. table n (Formula.fv \<psi>) r) \<psi>s rls \<Longrightarrow>
+       gmld_rel n cs css \<psi>s aux daux \<Longrightarrow> P aux daux \<Longrightarrow>
+       P ((t, rls, rel) # aux) ((t, map2 (dtabc n) css rls, dtabc n cs rel) # daux)"
+  shows "P aux daux"
+  using assms(1)[unfolded gmld_rel_def]
+  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: gmld_rel_def\<close>)
+
+text \<open>Reading the structure hands out the entries that have left the window, narrowed.\<close>
+
+lemma dtabc_geval_matchF:
+  assumes "gmld_rel n cs css \<psi>s aux daux"
+  shows "fst (geval_matchF I mr nt daux) = map (dtabc n cs) (fst (eval_matchF I mr nt aux)) \<and>
+     gmld_rel n cs css \<psi>s (snd (eval_matchF I mr nt aux)) (snd (geval_matchF I mr nt daux))"
+  using assms
+proof (induct rule: gmld_rel_induct)
+  case (Cons t rls rel aux daux)
+  obtain ys ax where e: "eval_matchF I mr nt aux = (ys, ax)"
+    by (cases "eval_matchF I mr nt aux")
+  obtain dys dax where de: "geval_matchF I mr nt daux = (dys, dax)"
+    by (cases "geval_matchF I mr nt daux")
+  have i1: "dys = map (dtabc n cs) ys" and i2: "gmld_rel n cs css \<psi>s ax dax"
+    using Cons(3) unfolding e de by simp_all
+  show ?case using Cons(1,2) i1 i2 by (simp add: e de)
+qed simp
+
+text \<open>The frame of @{locale dmatchF_frame}, with each operand's own columns.\<close>
+
+locale gmatchF_frame = dmatchF_frame n cs \<psi>s mrs for n cs \<psi>s mrs +
+  fixes css :: "cols list"
+  assumes lcss: "length css = length \<psi>s"
+    and css: "\<And>i. i < length \<psi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) = Formula.fv (\<psi>s ! i)"
+begin
+
+abbreviation "fmsks \<equiv> map (dmsk cs) css"
+
+lemma css_strict: "i < length \<psi>s \<Longrightarrow>
+    sorted_wrt (<) (css ! i) \<and> set (css ! i) = Formula.fv (\<psi>s ! i) \<and> set (css ! i) \<subseteq> set cs"
+  using css sub by auto
+
+lemma css_lax: "wfrels rels \<Longrightarrow> i < length rels \<Longrightarrow>
+    sorted_wrt (<) (css ! i) \<and> set (css ! i) \<subseteq> set cs \<and> table n (set (css ! i)) (rels ! i)"
+proof -
+  assume w: "wfrels rels" and i: "i < length rels"
+  have i': "i < length \<psi>s" using lr[OF w] i by simp
+  show ?thesis using css[OF i'] sub[OF i'] w i' by (auto simp: list_all2_conv_all_nth)
+qed
+
+lemma lcss_rels: "wfrels rels \<Longrightarrow> length css = length rels"
+  using lcss lr by simp
+
+lemma gdtabL: "wfrels rels \<Longrightarrow> ms \<in> set mrs \<Longrightarrow>
+    dtabc n cs (l\<epsilon>_strict n rels ms) = gleps_strict fmsks (map2 (dtabc n) css rels) ms"
+  using mrsok by (intro dtabc_gleps_strict[OF s b _ lcss css_strict]) auto
+
+lemma gdtabc_lookup_base:
+  "wfrels rels \<Longrightarrow>
+     glookup (gmrtabulate mrs (gleps_strict fmsks (map2 (dtabc n) css rels))) ms
+       = dtabc n cs (lookup (mrtabulate mrs (l\<epsilon>_strict n rels)) ms)"
+  by (cases "ms \<in> set mrs")
+    (simp_all add: glookup_lookup gmrtabulate_mrtabulate lookup_tabulate[OF d] gdtabL
+      empty_table_def)
+
+lemma gdtabc_lookup_step:
+  assumes rls: "wfrels rls" and X: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dX: "\<And>ms. glookup dX ms = dtabc n cs (lookup X ms)"
+  shows "glookup (gmrtabulate mrs (gldelta fmsks id dX (map2 (dtabc n) css rls))) ms
+       = dtabc n cs (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+proof -
+  have dL: "\<And>ms. ms \<in> set mrs \<Longrightarrow>
+      dtabc n cs (l\<delta> id X rls ms) = gldelta fmsks id dX (map2 (dtabc n) css rls) ms"
+    by (rule dtabc_gldelta[OF s b lcss_rels[OF rls] css_lax[OF rls] X dX okms[OF _ rls]])
+  show ?thesis
+    by (cases "ms \<in> set mrs")
+      (simp_all add: glookup_lookup gmrtabulate_mrtabulate lookup_tabulate[OF d] dL
+        empty_table_def)
+qed
+
+lemma gdtabc_matchF_foldr:
+  assumes rels: "wfrels rels" and rel: "gmld_rel n cs css \<psi>s aux daux"
+  shows "gmld_rel n cs css \<psi>s
+       (fst (foldr (update_matchF_step I mr mrs nt) aux
+          (update_matchF_base n I mr mrs rels nt)))
+       (fst (foldr (gupdate_matchF_step fmsks I mr mrs nt) daux
+          (gupdate_matchF_base fmsks I mr mrs (map2 (dtabc n) css rels) nt)))
+     \<and> (\<forall>ms. table n (set cs)
+          (lookup (snd (foldr (update_matchF_step I mr mrs nt) aux
+             (update_matchF_base n I mr mrs rels nt))) ms))
+     \<and> (\<forall>ms. glookup (snd (foldr (gupdate_matchF_step fmsks I mr mrs nt) daux
+             (gupdate_matchF_base fmsks I mr mrs (map2 (dtabc n) css rels) nt))) ms
+          = dtabc n cs (lookup (snd (foldr (update_matchF_step I mr mrs nt) aux
+             (update_matchF_base n I mr mrs rels nt))) ms))"
+  using rel
+proof (induct rule: gmld_rel_induct)
+  case Nil
+  show ?case
+    using rels table_lookup_base[OF rels] gdtabc_lookup_base[OF rels]
+    by (simp add: update_matchF_base_def gupdate_matchF_base_def Let_def empty_table_def)
+next
+  case (Cons t rls rel aux daux)
+  let ?G = "gupdate_matchF_base fmsks I mr mrs (map2 (dtabc n) css rels) nt"
+  obtain A X where W: "foldr (update_matchF_step I mr mrs nt) aux
+      (update_matchF_base n I mr mrs rels nt) = (A, X)"
+    by (cases "foldr (update_matchF_step I mr mrs nt) aux
+      (update_matchF_base n I mr mrs rels nt)")
+  obtain DA DX where D: "foldr (gupdate_matchF_step fmsks I mr mrs nt) daux ?G = (DA, DX)"
+    by (cases "foldr (gupdate_matchF_step fmsks I mr mrs nt) daux ?G")
+  have IH: "gmld_rel n cs css \<psi>s A DA" and tX: "\<And>ms. table n (set cs) (lookup X ms)"
+    and dXe: "\<And>ms. glookup DX ms = dtabc n cs (lookup X ms)"
+    using Cons(3) unfolding W D by simp_all
+  have tY: "\<forall>ms. table n (set cs) (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+    using table_lookup_step[OF Cons(1) tX] by blast
+  have dY: "\<forall>ms. glookup (gmrtabulate mrs (gldelta fmsks id DX (map2 (dtabc n) css rls))) ms
+      = dtabc n cs (lookup (mrtabulate mrs (l\<delta> id X rls)) ms)"
+    using gdtabc_lookup_step[OF Cons(1) tX dXe] by blast
+  have E: "foldr (update_matchF_step I mr mrs nt) ((t, rls, rel) # aux)
+      (update_matchF_base n I mr mrs rels nt)
+      = update_matchF_step I mr mrs nt (t, rls, rel) (A, X)"
+    unfolding W[symmetric] by simp
+  have DE: "foldr (gupdate_matchF_step fmsks I mr mrs nt)
+      ((t, map2 (dtabc n) css rls, dtabc n cs rel) # daux) ?G
+      = gupdate_matchF_step fmsks I mr mrs nt (t, map2 (dtabc n) css rls, dtabc n cs rel) (DA, DX)"
+    unfolding D[symmetric] by simp
+  show ?case unfolding E DE
+    using IH tY dY Cons(1)
+    by (simp add: update_matchF_step_def gupdate_matchF_step_def Let_def dtabc_Un_img)
+qed
+
+lemma dtabc_gupdate_matchF:
+  assumes rels: "wfrels rels" and rel: "gmld_rel n cs css \<psi>s aux daux"
+  shows "gmld_rel n cs css \<psi>s (update_matchF n I mr mrs rels nt aux)
+     (gupdate_matchF fmsks I mr mrs (map2 (dtabc n) css rels) nt daux)"
+  using gdtabc_matchF_foldr[OF rels rel] by (simp add: update_matchF_def gupdate_matchF_def)
 
 end
 

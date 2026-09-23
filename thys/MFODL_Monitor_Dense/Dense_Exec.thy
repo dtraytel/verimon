@@ -286,9 +286,9 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
 | "edeval j ts db (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =
      (let R = map (edeval j ts db) Ld;
           (daux', dbuf', nt, nts') = mebufnt_take
-             (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
+             (\<lambda>rels. gupdate_matchF (map emb_msk pls) I mr mrs rels)
              daux (mebufn_add (map fst R) dbuf) t (nts @@ ts);
-          (zs, daux'') = eval_matchF I mr nt daux'
+          (zs, daux'') = geval_matchF I mr nt daux'
       in (map dsan zs, EDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
 | "edeval j ts db (EDAndTrigger pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux) =
      (let (as, \<alpha>') = edeval j ts db \<alpha>; (xs, \<phi>') = edeval j ts db \<phi>;
