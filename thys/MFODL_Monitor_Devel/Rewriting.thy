@@ -985,8 +985,11 @@ text \<open> The frozen snapshot is applied to all variables @{term "[0..<n]"} o
 This requires the frozen formula's free variables to have no gaps, which is also required by
 the monitor for @{const Formula.Frz}. \<close>
 
-abbreviation frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
-  "frz_atom q n \<equiv> Pred q (map Formula.Var [0..<n])"
+definition frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
+  "frz_atom q n = Pred q (map Formula.Var [0..<n])"
+
+lemma my_size_frz_atom[simp, termination_simp]: "my_size (frz_atom q n) = 1"
+  by (simp add: frz_atom_def)
 
 definition frz_ok :: "'a formula \<Rightarrow> bool" where
   "frz_ok \<alpha> = ({0..<nfv \<alpha>} \<subseteq> fvi 0 \<alpha>)"
@@ -1257,11 +1260,11 @@ lemma frz_ok_fvi: "frz_ok \<alpha> \<Longrightarrow> fvi 0 \<alpha> = {0..<nfv \
   using fvi_less_nfv_r[of _ \<alpha>] by (auto simp: frz_ok_def)
 
 lemma fvi_frz_atom: "frz_ok \<alpha> \<Longrightarrow> Formula.fvi b (project (frz_atom q (nfv \<alpha>))) = Formula.fvi b (project \<alpha>)"
-  by (auto simp: Formula.fvi_iff_fv[of _ b "project \<alpha>"] fv_project frz_ok_fvi image_iff
+  by (auto simp: frz_atom_def Formula.fvi_iff_fv[of _ b "project \<alpha>"] fv_project frz_ok_fvi image_iff
     intro!: bexI[of _ "_ + b"])
 
-lemma fvi_frz_atom': "frz_ok \<alpha> \<Longrightarrow> (\<Union>x\<in>{0..<nfv \<alpha>} \<inter> Collect ((\<le>) b). {x - b}) = Formula.fvi b (project \<alpha>)"
-  using fvi_frz_atom[of \<alpha> b] by simp
+lemma preds_frz_atom[simp]: "preds (project (frz_atom q n)) = {(q, n)}"
+  by (simp add: frz_atom_def)
 
 (* TODO: Unused definition, move to formula or delete? *)
 definition trigger :: "'a Formula.formula \<Rightarrow> \<I> \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula.formula"
@@ -1290,11 +1293,11 @@ proof(induction \<alpha> t arbitrary:b rule:rewrite.induct)
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (4 \<alpha> t \<beta>)
   then show ?case
@@ -1328,31 +1331,31 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (8 \<alpha> I \<beta> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (9 \<alpha> I \<beta> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom')
+    by (auto simp: Let_def fvi_frz_atom)
 next
   case (10 \<alpha> I \<beta> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom' historically_def)
+    by (auto simp: Let_def fvi_frz_atom historically_def)
 next
   case (11 \<alpha> I \<beta> t)
   then show ?case
-    by (auto simp: Let_def fvi_frz_atom' once_def always_def)
+    by (auto simp: Let_def fvi_frz_atom once_def always_def)
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
   then show ?case
-    by (cases t) (auto simp: Let_def fvi_frz_atom' split: if_splits)
+    by (cases t) (auto simp: Let_def fvi_frz_atom split: if_splits)
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
   then show ?case
@@ -1750,7 +1753,7 @@ lemma sat_fun_upd_fresh[simp]: "p \<notin> preds (project \<phi>) \<Longrightarr
 lemma sat_frz_atom[simp]: "nfv \<alpha> = n \<Longrightarrow>
   sat \<sigma> (V((q, n) \<mapsto> \<lambda>w j. sat \<sigma> V w i \<alpha>)) v k (frz_atom q n) = sat \<sigma> V v i \<alpha>"
   unfolding sat_project[symmetric]
-  by (auto simp: fv_project comp_def dest!: fvi_less_nfv_r intro!: Formula.sat_fv_cong)
+  by (auto simp: frz_atom_def fv_project comp_def dest!: fvi_less_nfv_r intro!: Formula.sat_fv_cong)
 
 lemma sat_rewrite: "sat \<sigma> V v i (rewrite r t) = sat \<sigma> V v i (fix_r r t)"
 proof(induction r t arbitrary: V v i rule: rewrite.induct)
