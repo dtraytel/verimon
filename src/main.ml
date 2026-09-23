@@ -161,8 +161,11 @@ let main () =
               future. For past-only formulas we never add such a timestamp. *)
             (* The regex eval (EMatchP/EMatchF) finalizes a time point only once
                the next one's timestamp is known, so it needs the final maximal
-               timestamp to flush the last time point, even for past-only regex. *)
-            if not (Rewriting.is_future pf) && not (is_mfodl pf) then
+               timestamp to flush the last time point, even for past-only regex.
+               The verified kernel does not: it outputs a past-only formula's
+               verdict at each time point as it arrives, so the extra time point
+               would only add a verdict of its own, which MonPoly never reports. *)
+            if not (Rewriting.is_future pf) && (!Misc.verified || not (is_mfodl pf)) then
               Misc.new_last_ts := false;
             if not !nofilterrelopt then
               Filter_rel.enable pf;

@@ -115,7 +115,6 @@ when the dense compiler places every one of its nodes.
   @7 (time point 5): (1)
   @7 (time point 6): (0)
   @9 (time point 7): (1)
-  @MaxTS (time point 8): (0)
   === z <- CNT x (MATCHF[0,2] R(x)?)
   @0 (time point 0): (1)
   @1 (time point 1): (1)
