@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Exec
-  imports Log_Stream
+  imports Log_Filter
 begin
 (*>*)
 
@@ -14,9 +14,10 @@ text \<open>
   preceding chunks, if any: a simple string is thus extracted by one @{text String.sub} when it
   ends. Errors do not stop the parser: they are reported in the output, with the offset of the
   offending token in the input, and the parser resumes at the next @{text "@"}, @{text ";"} or
-  @{text ">"}. The main theorem, @{text eparse_correct}, states that for every division of an
-  input into chunks, the output is error-free exactly if the input is a log, and it then lists
-  the log's entries. For an input that is still being read, @{text efeed_chunks_online} states
+  @{text ">"}. The parser keeps the events of the predicates that its parameter @{text k}
+  accepts (@{theory Log_Parser.Log_Filter}). The main theorem, @{text eparse_correct}, states that
+  for every division of an input into chunks, the output is error-free exactly if the input is a
+  log, and it then lists the log's entries, without the events of the other predicates. For an input that is still being read, @{text efeed_chunks_online} states
   that the output so far is error-free exactly if the streaming parser has not failed, and it
   then lists the entries that the streaming parser has output; so an error means that no
   extension of the input is a log (@{thm [source] stream_run_error}), and the entries are those
@@ -380,42 +381,57 @@ text \<open>The output: an item, with the offset of its first token (the @{text 
 
 datatype out = O_ITEM integer "bytes item" | O_ERROR integer perror
 
-fun expect_of :: "'s pstate \<Rightarrow> expect" where
-  "expect_of P_INIT = X_ENTRY"
-| "expect_of P_TS = X_TIMESTAMP"
-| "expect_of (P_DB _ _) = X_PREDICATE"
-| "expect_of (P_NAME _ _ _) = X_PREDICATE"
-| "expect_of (P_TUPLES _ _ _) = X_PREDICATE"
-| "expect_of (P_FIELD1 _ _ _) = X_FIELD_OR_RPAREN"
-| "expect_of (P_AFTER _ _ _ _) = X_COMMA_OR_RPAREN"
-| "expect_of (P_FIELDN _ _ _ _) = X_FIELD"
-| "expect_of P_CMD = X_CMD_NAME"
-| "expect_of (P_ARGS _ _) = X_CMD_ARG"
+fun expect_of :: "'s fpstate \<Rightarrow> expect" where
+  "expect_of F_INIT = X_ENTRY"
+| "expect_of F_TS = X_TIMESTAMP"
+| "expect_of (F_DB _ _) = X_PREDICATE"
+| "expect_of (F_NAME _ _ _) = X_PREDICATE"
+| "expect_of (F_TUPLES _ _ _) = X_PREDICATE"
+| "expect_of (F_FIELD1 _ _ _) = X_FIELD_OR_RPAREN"
+| "expect_of (F_AFTER _ _ _ _) = X_COMMA_OR_RPAREN"
+| "expect_of (F_FIELDN _ _ _ _) = X_FIELD"
+| "expect_of (F_SKIP _ _) = X_PREDICATE"
+| "expect_of (F_SFIELD1 _ _) = X_FIELD_OR_RPAREN"
+| "expect_of (F_SAFTER _ _) = X_COMMA_OR_RPAREN"
+| "expect_of (F_SFIELDN _ _) = X_FIELD"
+| "expect_of F_CMD = X_CMD_NAME"
+| "expect_of (F_ARGS _ _) = X_CMD_ARG"
 
 text \<open>After an error, the parser skips tokens (state @{const None}) until a token that begins an
   entry or ends one.\<close>
 
-definition resync :: "'s token \<Rightarrow> 's pstate option" where
-  "resync t = (case t of T_AT \<Rightarrow> Some P_TS | T_SEMICOLON \<Rightarrow> Some P_INIT | T_RANGLE \<Rightarrow> Some P_CMD | _ \<Rightarrow> None)"
+definition resync :: "'s token \<Rightarrow> 's fpstate option" where
+  "resync t = (case t of T_AT \<Rightarrow> Some F_TS | T_SEMICOLON \<Rightarrow> Some F_INIT | T_RANGLE \<Rightarrow> Some F_CMD | _ \<Rightarrow> None)"
 
 text \<open>The offset of the first token of the item being read, after a token at offset @{text pos}
-  has led to the state @{text p}: the tokens that begin an item lead to @{const P_TS} and
-  @{const P_CMD}.\<close>
+  has led to the state @{text p}: the tokens that begin an item lead to @{const F_TS} and
+  @{const F_CMD}.\<close>
 
-definition start :: "integer \<Rightarrow> 's pstate option \<Rightarrow> integer \<Rightarrow> integer" where
-  "start pos p sp = (case p of Some P_TS \<Rightarrow> pos | Some P_CMD \<Rightarrow> pos | _ \<Rightarrow> sp)"
+definition start :: "integer \<Rightarrow> 's fpstate option \<Rightarrow> integer \<Rightarrow> integer" where
+  "start pos p sp = (case p of Some F_TS \<Rightarrow> pos | Some F_CMD \<Rightarrow> pos | _ \<Rightarrow> sp)"
+
+text \<open>The parser keeps the events of the predicates @{text k} accepts
+  (@{theory Log_Parser.Log_Filter}); @{text "sk k"} is the same test on the strings the byte
+  strings represent.\<close>
+
+definition sk :: "(bytes \<Rightarrow> bool) \<Rightarrow> string \<Rightarrow> bool" where
+  "sk k s = k (Abs_bytes s)"
+
+lemma sk_Rep[simp]: "sk k (Rep_bytes x) = k x"
+  by (simp add: sk_def Rep_bytes_inverse)
 
 text \<open>Feeding a token, with its offset, to the parser, where @{text sp} is the offset of the first
   token of the item being read. Outputs are accumulated in reverse.\<close>
 
-definition efeed :: "bytes token \<Rightarrow> integer \<Rightarrow> bytes pstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow> out list \<times> bytes pstate option" where
-  "efeed t pos p sp acc = (case p of
+definition efeed :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes token \<Rightarrow> integer \<Rightarrow> bytes fpstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
+  out list \<times> bytes fpstate option" where
+  "efeed k t pos p sp acc = (case p of
      None \<Rightarrow> (acc, resync t)
-   | Some ps \<Rightarrow> (case pstep t ps of
+   | Some ps \<Rightarrow> (case fstep k t ps of
        None \<Rightarrow> (O_ERROR pos (E_TOKEN (expect_of ps) (Some t)) # acc, resync t)
      | Some (es, ps') \<Rightarrow> (rev (map (O_ITEM sp) es) @ acc, Some ps')))"
 
-definition echar_err :: "integer \<Rightarrow> char \<Rightarrow> bytes pstate option \<Rightarrow> out list \<Rightarrow> out list" where
+definition echar_err :: "integer \<Rightarrow> char \<Rightarrow> bytes fpstate option \<Rightarrow> out list \<Rightarrow> out list" where
   "echar_err pos c p acc = (case p of None \<Rightarrow> acc | Some ps \<Rightarrow> O_ERROR pos (E_CHAR (expect_of ps) c) # acc)"
 
 subsection \<open>Chunks\<close>
@@ -423,22 +439,22 @@ subsection \<open>Chunks\<close>
 text \<open>The loop over the bytes of a chunk @{text s} of length @{text n}, which begins at offset
   @{text b} of the input.\<close>
 
-function eloop :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> bytes pstate option \<Rightarrow> integer \<Rightarrow>
-  out list \<Rightarrow> out list \<times> elstate \<times> bytes pstate option \<times> integer" where
-  "eloop s n b i l p sp acc = (if i < n then (case elex_step s b i (bytes_at s i) l of
-       R_SAME \<Rightarrow> eloop s n b (i + 1) l p sp acc
-     | R_NEXT l' \<Rightarrow> eloop s n b (i + 1) l' p sp acc
-     | R_TOK t tp l' \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow> eloop s n b (i + 1) l' p' (start tp p' sp) acc')
-     | R_TOK2 t tp t' tp' l' \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow>
-         case efeed t' tp' p' (start tp p' sp) acc' of (acc'', p'') \<Rightarrow>
-           eloop s n b (i + 1) l' p'' (start tp' p'' (start tp p' sp)) acc'')
-     | R_TOK_ERR t tp \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow>
-         eloop s n b (i + 1) E_INIT None sp (echar_err (b + i) (bytes_at s i) p' acc'))
-     | R_ERR \<Rightarrow> eloop s n b (i + 1) E_INIT None sp (echar_err (b + i) (bytes_at s i) p acc))
+function eloop :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> bytes fpstate option \<Rightarrow>
+  integer \<Rightarrow> out list \<Rightarrow> out list \<times> elstate \<times> bytes fpstate option \<times> integer" where
+  "eloop k s n b i l p sp acc = (if i < n then (case elex_step s b i (bytes_at s i) l of
+       R_SAME \<Rightarrow> eloop k s n b (i + 1) l p sp acc
+     | R_NEXT l' \<Rightarrow> eloop k s n b (i + 1) l' p sp acc
+     | R_TOK t tp l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow> eloop k s n b (i + 1) l' p' (start tp p' sp) acc')
+     | R_TOK2 t tp t' tp' l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+         case efeed k t' tp' p' (start tp p' sp) acc' of (acc'', p'') \<Rightarrow>
+           eloop k s n b (i + 1) l' p'' (start tp' p'' (start tp p' sp)) acc'')
+     | R_TOK_ERR t tp \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+         eloop k s n b (i + 1) E_INIT None sp (echar_err (b + i) (bytes_at s i) p' acc'))
+     | R_ERR \<Rightarrow> eloop k s n b (i + 1) E_INIT None sp (echar_err (b + i) (bytes_at s i) p acc))
    else (acc, l, p, sp))"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(s, n, b, i, l, p, sp, acc). nat_of_integer (n - i))") (auto simp: integer_simps)
+  by (relation "measure (\<lambda>(k, s, n, b, i, l, p, sp, acc). nat_of_integer (n - i))") (auto simp: integer_simps)
 
 declare eloop.simps[simp del]
 
@@ -455,40 +471,40 @@ definition close_chunk :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<R
 text \<open>The state between chunks: the offset of the next chunk, the states of the lexer and the
   parser, and the offset of the first token of the item being read.\<close>
 
-type_synonym estate = "integer \<times> elstate \<times> bytes pstate option \<times> integer"
+type_synonym estate = "integer \<times> elstate \<times> bytes fpstate option \<times> integer"
 
 definition einit :: estate where
-  "einit = (0, E_INIT, Some P_INIT, 0)"
+  "einit = (0, E_INIT, Some F_INIT, 0)"
 
-definition efeed_chunk :: "bytes \<Rightarrow> estate \<Rightarrow> out list \<times> estate" where
-  "efeed_chunk s st = (case st of (b, l, p, sp) \<Rightarrow> (let n = bytes_length s in
-     case eloop s n b 0 l p sp [] of (acc, l', p', sp') \<Rightarrow> (rev acc, (b + n, close_chunk s n l', p', sp'))))"
+definition efeed_chunk :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> estate \<Rightarrow> out list \<times> estate" where
+  "efeed_chunk k s st = (case st of (b, l, p, sp) \<Rightarrow> (let n = bytes_length s in
+     case eloop k s n b 0 l p sp [] of (acc, l', p', sp') \<Rightarrow> (rev acc, (b + n, close_chunk s n l', p', sp'))))"
 
-definition efinish_p :: "integer \<Rightarrow> bytes pstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow> out list" where
+definition efinish_p :: "integer \<Rightarrow> bytes fpstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow> out list" where
   "efinish_p b p sp acc = (case p of
      None \<Rightarrow> acc
-   | Some ps \<Rightarrow> (case parse_finish ps of
+   | Some ps \<Rightarrow> (case fparse_finish ps of
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
      | Some es \<Rightarrow> rev (map (O_ITEM sp) es) @ acc))"
 
 text \<open>The end of the input. A quoted string that has not ended is an error even while the
   parser skips tokens after an error, since the string contains the rest of the input.\<close>
 
-definition efinish :: "estate \<Rightarrow> out list" where
-  "efinish st = (case st of (b, l, p, sp) \<Rightarrow> (case l of
-     E_SIMPLE pre _ tp \<Rightarrow> (case efeed (T_STR (bytes_concat (rev pre))) tp p sp [] of
+definition efinish :: "(bytes \<Rightarrow> bool) \<Rightarrow> estate \<Rightarrow> out list" where
+  "efinish k st = (case st of (b, l, p, sp) \<Rightarrow> (case l of
+     E_SIMPLE pre _ tp \<Rightarrow> (case efeed k (T_STR (bytes_concat (rev pre))) tp p sp [] of
        (acc, p') \<Rightarrow> rev (efinish_p b p' (start tp p' sp) acc))
    | E_QUOTED pre _ tp \<Rightarrow> [O_ERROR tp E_UNTERMINATED]
    | E_ESCAPE pre _ tp \<Rightarrow> [O_ERROR tp E_UNTERMINATED]
    | _ \<Rightarrow> rev (efinish_p b p sp [])))"
 
-fun efeed_chunks :: "bytes list \<Rightarrow> estate \<Rightarrow> out list \<times> estate" where
-  "efeed_chunks [] st = ([], st)"
-| "efeed_chunks (s # ss) st = (case efeed_chunk s st of (o1, st1) \<Rightarrow>
-     (case efeed_chunks ss st1 of (o2, st2) \<Rightarrow> (o1 @ o2, st2)))"
+fun efeed_chunks :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes list \<Rightarrow> estate \<Rightarrow> out list \<times> estate" where
+  "efeed_chunks k [] st = ([], st)"
+| "efeed_chunks k (s # ss) st = (case efeed_chunk k s st of (o1, st1) \<Rightarrow>
+     (case efeed_chunks k ss st1 of (o2, st2) \<Rightarrow> (o1 @ o2, st2)))"
 
-definition eparse :: "bytes list \<Rightarrow> out list" where
-  "eparse ss = (case efeed_chunks ss einit of (outs, st) \<Rightarrow> outs @ efinish st)"
+definition eparse :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes list \<Rightarrow> out list" where
+  "eparse k ss = (case efeed_chunks k ss einit of (outs, st) \<Rightarrow> outs @ efinish k st)"
 
 subsection \<open>Correctness\<close>
 
@@ -538,14 +554,14 @@ lemma oks_append_Some:
 
 subsubsection \<open>The accumulator\<close>
 
-lemma efeed_acc: "efeed t pos p sp acc = (case efeed t pos p sp [] of (new, p') \<Rightarrow> (new @ acc, p'))"
+lemma efeed_acc: "efeed k t pos p sp acc = (case efeed k t pos p sp [] of (new, p') \<Rightarrow> (new @ acc, p'))"
   by (auto simp: efeed_def split: option.splits)
 
 lemma echar_err_acc: "echar_err pos c p acc = echar_err pos c p [] @ acc"
   by (auto simp: echar_err_def split: option.splits)
 
-lemma eloop_acc: "eloop s n b i l p sp acc =
-  (case eloop s n b i l p sp [] of (new, l', p', sp') \<Rightarrow> (new @ acc, l', p', sp'))"
+lemma eloop_acc: "eloop k s n b i l p sp acc =
+  (case eloop k s n b i l p sp [] of (new, l', p', sp') \<Rightarrow> (new @ acc, l', p', sp'))"
 proof (induction "nat_of_integer (n - i)" arbitrary: i l p sp acc)
   case 0
   then have "\<not> i < n"
@@ -553,10 +569,10 @@ proof (induction "nat_of_integer (n - i)" arbitrary: i l p sp acc)
   then show ?case
     by (simp add: eloop.simps)
 next
-  case (Suc k)
-  then have i: "i < n" and k: "k = nat_of_integer (n - (i + 1))"
+  case (Suc m)
+  then have i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
     by (auto simp: integer_simps)
-  note IH = Suc(1)[OF k]
+  note IH = Suc(1)[OF m]
   show ?case
   proof (cases "elex_step s b i (bytes_at s i) l")
     case R_SAME
@@ -568,30 +584,30 @@ next
       by (subst (1 2) eloop.simps) (simp split: prod.splits)
   next
     case (R_TOK t tp l')
-    obtain new1 p1 where e1: "efeed t tp p sp [] = (new1, p1)"
+    obtain new1 p1 where e1: "efeed k t tp p sp [] = (new1, p1)"
       by fastforce
     with R_TOK i IH[of l' p1 "start tp p1 sp" "new1 @ acc"] IH[of l' p1 "start tp p1 sp" new1] show ?thesis
-      by (subst (1 2) eloop.simps) (simp add: efeed_acc[of t tp p sp acc] split: prod.splits)
+      by (subst (1 2) eloop.simps) (simp add: efeed_acc[of k t tp p sp acc] split: prod.splits)
   next
     case (R_TOK2 t tp t' tp' l')
-    obtain new1 p1 where e1: "efeed t tp p sp [] = (new1, p1)"
+    obtain new1 p1 where e1: "efeed k t tp p sp [] = (new1, p1)"
       by fastforce
     let ?sp1 = "start tp p1 sp"
-    obtain new2 p2 where e2: "efeed t' tp' p1 ?sp1 [] = (new2, p2)"
+    obtain new2 p2 where e2: "efeed k t' tp' p1 ?sp1 [] = (new2, p2)"
       by fastforce
     let ?sp2 = "start tp' p2 ?sp1"
     from R_TOK2 i e1 e2 IH[of l' p2 ?sp2 "new2 @ new1 @ acc"] IH[of l' p2 ?sp2 "new2 @ new1"] show ?thesis
       by (subst (1 2) eloop.simps)
-        (simp add: efeed_acc[of t tp p sp acc] efeed_acc[of t' tp' p1 ?sp1 "new1 @ acc"]
-          efeed_acc[of t' tp' p1 ?sp1 new1] split: prod.splits)
+        (simp add: efeed_acc[of k t tp p sp acc] efeed_acc[of k t' tp' p1 ?sp1 "new1 @ acc"]
+          efeed_acc[of k t' tp' p1 ?sp1 new1] split: prod.splits)
   next
     case (R_TOK_ERR t tp)
-    obtain new1 p1 where e1: "efeed t tp p sp [] = (new1, p1)"
+    obtain new1 p1 where e1: "efeed k t tp p sp [] = (new1, p1)"
       by fastforce
     let ?e = "echar_err (b + i) (bytes_at s i) p1 []"
     from R_TOK_ERR i e1 IH[of E_INIT None sp "?e @ new1 @ acc"] IH[of E_INIT None sp "?e @ new1"] show ?thesis
       by (subst (1 2) eloop.simps)
-        (simp add: efeed_acc[of t tp p sp acc] echar_err_acc[of _ _ p1 "new1 @ acc"] echar_err_acc[of _ _ p1 new1]
+        (simp add: efeed_acc[of k t tp p sp acc] echar_err_acc[of _ _ p1 "new1 @ acc"] echar_err_acc[of _ _ p1 new1]
           split: prod.splits)
   next
     case R_ERR
@@ -609,15 +625,15 @@ fun eres_tks :: "eres \<Rightarrow> (bytes token \<times> integer) list" where
 lemma eres_toks_tks: "eres_toks r = map fst (eres_tks r)"
   by (cases r) auto
 
-fun efeeds :: "(bytes token \<times> integer) list \<Rightarrow> bytes pstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
-  out list \<times> bytes pstate option \<times> integer" where
-  "efeeds [] p sp acc = (acc, p, sp)"
-| "efeeds ((t, tp) # tks) p sp acc = (case efeed t tp p sp acc of (acc', p') \<Rightarrow> efeeds tks p' (start tp p' sp) acc')"
+fun efeeds :: "(bytes \<Rightarrow> bool) \<Rightarrow> (bytes token \<times> integer) list \<Rightarrow> bytes fpstate option \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
+  out list \<times> bytes fpstate option \<times> integer" where
+  "efeeds k [] p sp acc = (acc, p, sp)"
+| "efeeds k ((t, tp) # tks) p sp acc = (case efeed k t tp p sp acc of (acc', p') \<Rightarrow> efeeds k tks p' (start tp p' sp) acc')"
 
 lemma eloop_step:
   assumes "i < n" "eres_state l (elex_step s b i (bytes_at s i) l) = Some el"
-  shows "eloop s n b i l p sp acc = (case efeeds (eres_tks (elex_step s b i (bytes_at s i) l)) p sp acc of
-    (acc', p', sp') \<Rightarrow> eloop s n b (i + 1) el p' sp' acc')"
+  shows "eloop k s n b i l p sp acc = (case efeeds k (eres_tks (elex_step s b i (bytes_at s i) l)) p sp acc of
+    (acc', p', sp') \<Rightarrow> eloop k s n b (i + 1) el p' sp' acc')"
   using assms by (subst eloop.simps) (auto split: eres.splits prod.splits)
 
 lemma eres_state_None: "eres_state l r = None \<longleftrightarrow> (\<exists>t tp. r = R_TOK_ERR t tp) \<or> r = R_ERR"
@@ -625,20 +641,20 @@ lemma eres_state_None: "eres_state l r = None \<longleftrightarrow> (\<exists>t 
 
 subsubsection \<open>The parser\<close>
 
-lemma efeeds_acc: "efeeds tks p sp acc = (case efeeds tks p sp [] of (new, p', sp') \<Rightarrow> (new @ acc, p', sp'))"
+lemma efeeds_acc: "efeeds k tks p sp acc = (case efeeds k tks p sp [] of (new, p', sp') \<Rightarrow> (new @ acc, p', sp'))"
 proof (induction tks arbitrary: p sp acc)
   case (Cons tk tks)
   obtain t tp where tk: "tk = (t, tp)"
     by fastforce
-  obtain new1 p1 where e1: "efeed t tp p sp [] = (new1, p1)"
+  obtain new1 p1 where e1: "efeed k t tp p sp [] = (new1, p1)"
     by fastforce
   from Cons.IH[of p1 "start tp p1 sp" "new1 @ acc"] Cons.IH[of p1 "start tp p1 sp" new1] e1 tk show ?case
-    by (simp add: efeed_acc[of t tp p sp acc] split: prod.splits)
+    by (simp add: efeed_acc[of k t tp p sp acc] split: prod.splits)
 qed simp
 
 lemma efeeds_Some:
-  assumes "efeeds tks (Some ps) sp [] = (new, p', sp')"
-  shows "case parse_run (map fst tks) ps of
+  assumes "efeeds k tks (Some ps) sp [] = (new, p', sp')"
+  shows "case fparse_run k (map fst tks) ps of
      None \<Rightarrow> has_err new
    | Some (es, ps') \<Rightarrow> oks (rev new) = Some es \<and> p' = Some ps'"
   using assms
@@ -647,18 +663,18 @@ proof (induction tks arbitrary: ps sp new p' sp')
   obtain t tp where tk: "tk = (t, tp)"
     by fastforce
   show ?case
-  proof (cases "pstep t ps")
+  proof (cases "fstep k t ps")
     case None
     with Cons.prems tk show ?thesis
-      by (auto simp: efeed_def efeeds_acc[of _ _ _ "[_]"] split: prod.splits)
+      by (auto simp: efeed_def efeeds_acc[of _ _ _ _ "[_]"] split: prod.splits)
   next
     case (Some r)
     obtain es1 ps1 where r: "r = (es1, ps1)"
       by fastforce
-    obtain new2 p2 sp2 where e2: "efeeds tks (Some ps1) (start tp (Some ps1) sp) [] = (new2, p2, sp2)"
-      by (cases "efeeds tks (Some ps1) (start tp (Some ps1) sp) []") auto
+    obtain new2 p2 sp2 where e2: "efeeds k tks (Some ps1) (start tp (Some ps1) sp) [] = (new2, p2, sp2)"
+      by (cases "efeeds k tks (Some ps1) (start tp (Some ps1) sp) []") auto
     with Cons.prems tk Some r have new: "new = new2 @ rev (map (O_ITEM sp) es1)" and p2: "p' = p2"
-      by (auto simp: efeed_def efeeds_acc[of _ _ _ "rev (map (O_ITEM sp) es1)"] split: prod.splits)
+      by (auto simp: efeed_def efeeds_acc[of _ _ _ _ "rev (map (O_ITEM sp) es1)"] split: prod.splits)
     from Cons.IH[OF e2] Some r new p2 tk show ?thesis
       by (auto simp: oks_append split: option.splits)
   qed
@@ -666,21 +682,21 @@ qed simp
 
 subsubsection \<open>The loop over a chunk\<close>
 
-lemma stream_run_Cons_lex:
-  "stream_run (c # s) (L, P) = (case lex_step c L of
+lemma fstream_run_Cons_lex:
+  "fstream_run (sk k) (c # s) (L, P) = (case lex_step c L of
      None \<Rightarrow> None
-   | Some (ts, L1) \<Rightarrow> (case parse_run ts P of
+   | Some (ts, L1) \<Rightarrow> (case fparse_run (sk k) ts P of
        None \<Rightarrow> None
-     | Some (es1, P1) \<Rightarrow> map_option (apfst ((@) es1)) (stream_run s (L1, P1))))"
-  by (auto simp: stream_step_def split: option.splits)
+     | Some (es1, P1) \<Rightarrow> map_option (apfst ((@) es1)) (fstream_run (sk k) s (L1, P1))))"
+  by (auto simp: fstream_step_def split: option.splits)
 
 lemma eloop_correct:
   assumes "n = bytes_length s" "0 \<le> i" "i \<le> n" "wf_l i l"
-  shows "case stream_run (drop (nat_of_integer i) (Rep_bytes s)) (abs_l s i l, map_pstate Rep_bytes ps) of
-     None \<Rightarrow> has_err (fst (eloop s n b i l (Some ps) sp []))
-   | Some (es, L', P') \<Rightarrow> (\<exists>new es' l' ps' sp'. eloop s n b i l (Some ps) sp [] = (new, l', Some ps', sp') \<and>
+  shows "case fstream_run (sk k) (drop (nat_of_integer i) (Rep_bytes s)) (abs_l s i l, map_fpstate Rep_bytes ps) of
+     None \<Rightarrow> has_err (fst (eloop k s n b i l (Some ps) sp []))
+   | Some (es, L', P') \<Rightarrow> (\<exists>new es' l' ps' sp'. eloop k s n b i l (Some ps) sp [] = (new, l', Some ps', sp') \<and>
        oks (rev new) = Some es' \<and> abs_items es' = es \<and> abs_l s n l' = L' \<and> wf_l n l' \<and>
-       map_pstate Rep_bytes ps' = P')"
+       map_fpstate Rep_bytes ps' = P')"
   using assms
 proof (induction "nat_of_integer (n - i)" arbitrary: i l ps sp)
   case 0
@@ -689,8 +705,8 @@ proof (induction "nat_of_integer (n - i)" arbitrary: i l ps sp)
   with 0 show ?case
     by (simp add: eloop.simps bytes_length_def)
 next
-  case (Suc k)
-  then have i0: "0 \<le> i" and i: "i < n" and k: "k = nat_of_integer (n - (i + 1))"
+  case (Suc m)
+  then have i0: "0 \<le> i" and i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
     by (auto simp: integer_simps)
   let ?c = "bytes_at s i"
   let ?r = "elex_step s b i ?c l"
@@ -706,22 +722,22 @@ next
       by (simp add: eres_ok_def)
     then consider t tp where "?r = R_TOK_ERR t tp" | "?r = R_ERR"
       by (auto simp: eres_state_None)
-    then have "has_err (fst (eloop s n b i l (Some ps) sp []))"
+    then have "has_err (fst (eloop k s n b i l (Some ps) sp []))"
     proof cases
       case (1 t tp)
-      obtain new1 p1 where e1: "efeed t tp (Some ps) sp [] = (new1, p1)"
+      obtain new1 p1 where e1: "efeed k t tp (Some ps) sp [] = (new1, p1)"
         by fastforce
       have "has_err (echar_err (b + i) ?c p1 new1)"
         using e1 by (auto simp: efeed_def echar_err_def split: option.splits)
       with 1 i e1 show ?thesis
-        by (subst eloop.simps) (auto simp: eloop_acc[of _ _ _ _ _ _ _ "echar_err _ _ _ _"] split: prod.splits)
+        by (subst eloop.simps) (auto simp: eloop_acc[of _ _ _ _ _ _ _ _ "echar_err _ _ _ _"] split: prod.splits)
     next
       case 2
       with i show ?thesis
-        by (subst eloop.simps) (auto simp: echar_err_def eloop_acc[of _ _ _ _ _ _ _ "[_]"] split: prod.splits)
+        by (subst eloop.simps) (auto simp: echar_err_def eloop_acc[of _ _ _ _ _ _ _ _ "[_]"] split: prod.splits)
     qed
     with None drop show ?thesis
-      by (simp add: stream_run_Cons_lex del: stream_run.simps)
+      by (simp add: fstream_run_Cons_lex del: fstream_run.simps)
   next
     case (Some x)
     obtain ts L1 where x: "x = (ts, L1)"
@@ -730,52 +746,52 @@ next
       and ts: "map (map_token Rep_bytes) (eres_toks ?r) = ts" and L1: "abs_l s (i + 1) el = L1"
       and wf1: "wf_l (i + 1) el"
       by (auto simp: eres_ok_def)
-    have step: "eloop s n b i l (Some ps) sp [] =
-      (case efeeds (eres_tks ?r) (Some ps) sp [] of (acc', p', sp') \<Rightarrow> eloop s n b (i + 1) el p' sp' acc')"
+    have step: "eloop k s n b i l (Some ps) sp [] =
+      (case efeeds k (eres_tks ?r) (Some ps) sp [] of (acc', p', sp') \<Rightarrow> eloop k s n b (i + 1) el p' sp' acc')"
       by (rule eloop_step[OF i el])
-    obtain new1 p1 sp1 where e1: "efeeds (eres_tks ?r) (Some ps) sp [] = (new1, p1, sp1)"
-      by (cases "efeeds (eres_tks ?r) (Some ps) sp []") auto
-    have pr: "parse_run ts (map_pstate Rep_bytes ps) =
-      map_option (map_prod abs_items (map_pstate Rep_bytes)) (parse_run (map fst (eres_tks ?r)) ps)"
-      using parse_run_map[of Rep_bytes "map fst (eres_tks ?r)" ps] ts by (simp add: eres_toks_tks)
+    obtain new1 p1 sp1 where e1: "efeeds k (eres_tks ?r) (Some ps) sp [] = (new1, p1, sp1)"
+      by (cases "efeeds k (eres_tks ?r) (Some ps) sp []") auto
+    have pr: "fparse_run (sk k) ts (map_fpstate Rep_bytes ps) =
+      map_option (map_prod abs_items (map_fpstate Rep_bytes)) (fparse_run k (map fst (eres_tks ?r)) ps)"
+      using fparse_run_map[of "sk k" Rep_bytes "map fst (eres_tks ?r)" ps] ts by (simp add: eres_toks_tks)
     note E1 = efeeds_Some[OF e1]
     show ?thesis
-    proof (cases "parse_run (map fst (eres_tks ?r)) ps")
+    proof (cases "fparse_run k (map fst (eres_tks ?r)) ps")
       case None
       with E1 have "has_err new1"
         by simp
-      then have "has_err (fst (eloop s n b i l (Some ps) sp []))"
-        using step e1 by (auto simp: eloop_acc[of _ _ _ _ _ _ _ new1] split: prod.splits)
+      then have "has_err (fst (eloop k s n b i l (Some ps) sp []))"
+        using step e1 by (auto simp: eloop_acc[of _ _ _ _ _ _ _ _ new1] split: prod.splits)
       with None drop Some x pr show ?thesis
-        by (simp add: stream_run_Cons_lex del: stream_run.simps)
+        by (simp add: fstream_run_Cons_lex del: fstream_run.simps)
     next
       case (Some y)
       obtain es1 ps1 where y: "y = (es1, ps1)"
         by fastforce
       with E1 Some have new1: "oks (rev new1) = Some es1" and p1: "p1 = Some ps1"
         by auto
-      have IH: "case stream_run (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (abs_l s (i + 1) el, map_pstate Rep_bytes ps1) of
-        None \<Rightarrow> has_err (fst (eloop s n b (i + 1) el (Some ps1) sp1 []))
-      | Some (es, L', P') \<Rightarrow> (\<exists>new es' l' ps' sp'. eloop s n b (i + 1) el (Some ps1) sp1 [] = (new, l', Some ps', sp') \<and>
+      have IH: "case fstream_run (sk k) (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (abs_l s (i + 1) el, map_fpstate Rep_bytes ps1) of
+        None \<Rightarrow> has_err (fst (eloop k s n b (i + 1) el (Some ps1) sp1 []))
+      | Some (es, L', P') \<Rightarrow> (\<exists>new es' l' ps' sp'. eloop k s n b (i + 1) el (Some ps1) sp1 [] = (new, l', Some ps', sp') \<and>
           oks (rev new) = Some es' \<and> abs_items es' = es \<and> abs_l s n l' = L' \<and> wf_l n l' \<and>
-          map_pstate Rep_bytes ps' = P')"
+          map_fpstate Rep_bytes ps' = P')"
       proof -
         have "0 \<le> i + 1" "i + 1 \<le> n"
           using i i0 by (auto simp: integer_simps)
         then show ?thesis
-          using Suc.hyps(1)[of "i + 1" el ps1 sp1] k Suc.prems(1) wf1 by simp
+          using Suc.hyps(1)[of "i + 1" el ps1 sp1] m Suc.prems(1) wf1 by simp
       qed
-      have loop: "eloop s n b i l (Some ps) sp [] = (case eloop s n b (i + 1) el (Some ps1) sp1 [] of
+      have loop: "eloop k s n b i l (Some ps) sp [] = (case eloop k s n b (i + 1) el (Some ps1) sp1 [] of
         (new, l', p', sp') \<Rightarrow> (new @ new1, l', p', sp'))"
-        using step e1 p1 by (simp add: eloop_acc[of _ _ _ _ _ _ _ new1])
-      have stream: "stream_run (drop (nat_of_integer i) (Rep_bytes s)) (abs_l s i l, map_pstate Rep_bytes ps) =
-        map_option (apfst ((@) (abs_items es1))) (stream_run (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (L1, map_pstate Rep_bytes ps1))"
+        using step e1 p1 by (simp add: eloop_acc[of _ _ _ _ _ _ _ _ new1])
+      have stream: "fstream_run (sk k) (drop (nat_of_integer i) (Rep_bytes s)) (abs_l s i l, map_fpstate Rep_bytes ps) =
+        map_option (apfst ((@) (abs_items es1))) (fstream_run (sk k) (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (L1, map_fpstate Rep_bytes ps1))"
         using drop \<open>lex_step ?c (abs_l s i l) = Some x\<close> x pr Some y
-        by (simp add: stream_run_Cons_lex del: stream_run.simps)
+        by (simp add: fstream_run_Cons_lex del: fstream_run.simps)
       show ?thesis
-      proof (cases "stream_run (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (L1, map_pstate Rep_bytes ps1)")
+      proof (cases "fstream_run (sk k) (drop (nat_of_integer (i + 1)) (Rep_bytes s)) (L1, map_fpstate Rep_bytes ps1)")
         case None
-        with IH L1 have "has_err (fst (eloop s n b (i + 1) el (Some ps1) sp1 []))"
+        with IH L1 have "has_err (fst (eloop k s n b (i + 1) el (Some ps1) sp1 []))"
           by simp
         with None stream loop show ?thesis
           by (auto split: prod.splits)
@@ -784,8 +800,8 @@ next
         obtain es2 L2 P2 where z: "z = (es2, L2, P2)"
           by (cases z) auto
         with IH L1 Some obtain new2 es2' l2 ps2 sp2 where
-          "eloop s n b (i + 1) el (Some ps1) sp1 [] = (new2, l2, Some ps2, sp2)" "oks (rev new2) = Some es2'"
-          "abs_items es2' = es2" "abs_l s n l2 = L2" "wf_l n l2" "map_pstate Rep_bytes ps2 = P2"
+          "eloop k s n b (i + 1) el (Some ps1) sp1 [] = (new2, l2, Some ps2, sp2)" "oks (rev new2) = Some es2'"
+          "abs_items es2' = es2" "abs_l s n l2 = L2" "wf_l n l2" "map_fpstate Rep_bytes ps2 = P2"
           by auto
         with Some z stream loop new1 show ?thesis
           by (auto intro!: exI[of _ "es1 @ es2'"] simp: oks_append_Some)
@@ -819,104 +835,109 @@ lemma close_chunk_wf0: "wf0 (close_chunk s n l)"
 
 lemma efeed_chunk_correct:
   assumes "wf0 l"
-  shows "case stream_run (Rep_bytes s) (abs_l0 l, map_pstate Rep_bytes ps) of
-     None \<Rightarrow> has_err (fst (efeed_chunk s (b, l, Some ps, sp)))
-   | Some (es, L', P') \<Rightarrow> (\<exists>outs es' l' ps' sp'. efeed_chunk s (b, l, Some ps, sp) =
+  shows "case fstream_run (sk k) (Rep_bytes s) (abs_l0 l, map_fpstate Rep_bytes ps) of
+     None \<Rightarrow> has_err (fst (efeed_chunk k s (b, l, Some ps, sp)))
+   | Some (es, L', P') \<Rightarrow> (\<exists>outs es' l' ps' sp'. efeed_chunk k s (b, l, Some ps, sp) =
        (outs, (b + bytes_length s, l', Some ps', sp')) \<and> oks outs = Some es' \<and>
-       abs_items es' = es \<and> abs_l0 l' = L' \<and> wf0 l' \<and> map_pstate Rep_bytes ps' = P')"
+       abs_items es' = es \<and> abs_l0 l' = L' \<and> wf0 l' \<and> map_fpstate Rep_bytes ps' = P')"
 proof -
-  obtain acc l' p' sp' where e: "eloop s (bytes_length s) b 0 l (Some ps) sp [] = (acc, l', p', sp')"
-    by (cases "eloop s (bytes_length s) b 0 l (Some ps) sp []") auto
-  then have chunk: "efeed_chunk s (b, l, Some ps, sp) =
+  obtain acc l' p' sp' where e: "eloop k s (bytes_length s) b 0 l (Some ps) sp [] = (acc, l', p', sp')"
+    by (cases "eloop k s (bytes_length s) b 0 l (Some ps) sp []") auto
+  then have chunk: "efeed_chunk k s (b, l, Some ps, sp) =
     (rev acc, (b + bytes_length s, close_chunk s (bytes_length s) l', p', sp'))"
     by (simp add: efeed_chunk_def Let_def)
-  from eloop_correct[where n="bytes_length s" and s=s and i=0 and l=l and ps=ps and b=b and sp=sp] assms e
+  from eloop_correct[where n="bytes_length s" and s=s and i=0 and l=l and ps=ps and b=b and sp=sp and k=k] assms e
   show ?thesis
     by (auto simp: chunk abs_l_0 wf0_wf_l close_chunk_abs close_chunk_wf0 split: option.splits)
 qed
 
 lemma efeed_chunks_correct:
   assumes "wf0 l"
-  shows "case stream_run (concat (map Rep_bytes ss)) (abs_l0 l, map_pstate Rep_bytes ps) of
-     None \<Rightarrow> has_err (fst (efeed_chunks ss (b, l, Some ps, sp)))
-   | Some (es, L', P') \<Rightarrow> (\<exists>outs es' b' l' ps' sp'. efeed_chunks ss (b, l, Some ps, sp) =
+  shows "case fstream_run (sk k) (concat (map Rep_bytes ss)) (abs_l0 l, map_fpstate Rep_bytes ps) of
+     None \<Rightarrow> has_err (fst (efeed_chunks k ss (b, l, Some ps, sp)))
+   | Some (es, L', P') \<Rightarrow> (\<exists>outs es' b' l' ps' sp'. efeed_chunks k ss (b, l, Some ps, sp) =
        (outs, (b', l', Some ps', sp')) \<and> oks outs = Some es' \<and>
-       abs_items es' = es \<and> abs_l0 l' = L' \<and> wf0 l' \<and> map_pstate Rep_bytes ps' = P')"
+       abs_items es' = es \<and> abs_l0 l' = L' \<and> wf0 l' \<and> map_fpstate Rep_bytes ps' = P')"
   using assms
 proof (induction ss arbitrary: b l ps sp)
   case (Cons s ss)
-  note C = efeed_chunk_correct[OF Cons.prems, where s=s and ps=ps and b=b and sp=sp]
+  note C = efeed_chunk_correct[OF Cons.prems, where s=s and ps=ps and b=b and sp=sp and k=k]
   show ?case
-  proof (cases "stream_run (Rep_bytes s) (abs_l0 l, map_pstate Rep_bytes ps)")
+  proof (cases "fstream_run (sk k) (Rep_bytes s) (abs_l0 l, map_fpstate Rep_bytes ps)")
     case None
     with C show ?thesis
-      by (auto simp: stream_run_append split: prod.splits)
+      by (auto simp: fstream_run_append split: prod.splits)
   next
     case (Some x)
     obtain es1 L1 P1 where x: "x = (es1, L1, P1)"
       by (cases x) auto
-    with C Some obtain outs1 es1' l1 ps1 sp1 where c1: "efeed_chunk s (b, l, Some ps, sp) =
+    with C Some obtain outs1 es1' l1 ps1 sp1 where c1: "efeed_chunk k s (b, l, Some ps, sp) =
       (outs1, (b + bytes_length s, l1, Some ps1, sp1))" and "oks outs1 = Some es1'"
-      and "abs_items es1' = es1" "abs_l0 l1 = L1" "wf0 l1" "map_pstate Rep_bytes ps1 = P1"
+      and "abs_items es1' = es1" "abs_l0 l1 = L1" "wf0 l1" "map_fpstate Rep_bytes ps1 = P1"
       by auto
     moreover note IH = Cons.IH[OF \<open>wf0 l1\<close>, where b="b + bytes_length s" and ps=ps1 and sp=sp1]
     ultimately show ?thesis
-      using Some x by (auto simp: stream_run_append oks_append split: option.splits prod.splits)
+      using Some x by (auto simp: fstream_run_append oks_append split: option.splits prod.splits)
   qed
 qed simp
 
 lemma efinish_correct:
   assumes "wf0 l"
-  shows "case stream_finish (abs_l0 l, map_pstate Rep_bytes ps) of
-     None \<Rightarrow> has_err (efinish (b, l, Some ps, sp))
-   | Some es \<Rightarrow> (\<exists>es'. oks (efinish (b, l, Some ps, sp)) = Some es' \<and> abs_items es' = es)"
+  shows "case fstream_finish (sk k) (abs_l0 l, map_fpstate Rep_bytes ps) of
+     None \<Rightarrow> has_err (efinish k (b, l, Some ps, sp))
+   | Some es \<Rightarrow> (\<exists>es'. oks (efinish k (b, l, Some ps, sp)) = Some es' \<and> abs_items es' = es)"
 proof (cases l)
   case (E_SIMPLE pre st tp)
   let ?x = "bytes_concat (rev pre)"
   from assms E_SIMPLE have l: "abs_l0 l = L_SIMPLE (Rep_bytes ?x)"
     by (simp add: abs_l0_def pend_text_def pre_text_def rev_map)
-  have pr: "parse_run [T_STR (Rep_bytes ?x)] (map_pstate Rep_bytes ps) =
-    map_option (map_prod abs_items (map_pstate Rep_bytes)) (parse_run [T_STR ?x] ps)"
-    using parse_run_map[of Rep_bytes "[T_STR ?x]" ps] by simp
+  have pr: "fparse_run (sk k) [T_STR (Rep_bytes ?x)] (map_fpstate Rep_bytes ps) =
+    map_option (map_prod abs_items (map_fpstate Rep_bytes)) (fparse_run k [T_STR ?x] ps)"
+    using fparse_run_map[of "sk k" Rep_bytes "[T_STR ?x]" ps] by simp
   show ?thesis
     using E_SIMPLE l pr
-    by (auto simp: efinish_def stream_finish_def parse_from_def efeed_def efinish_p_def parse_finish_map
+    by (auto simp: efinish_def fstream_finish_def fparse_from_def efeed_def efinish_p_def fparse_finish_map
       resync_def oks_append oks_rev rev_map[symmetric] split: option.splits prod.splits)
-qed (use assms in \<open>auto simp: efinish_def stream_finish_def parse_from_def efinish_p_def abs_l0_def
-  parse_finish_map oks_rev rev_map[symmetric] split: option.splits\<close>)
+qed (use assms in \<open>auto simp: efinish_def fstream_finish_def fparse_from_def efinish_p_def abs_l0_def
+  fparse_finish_map oks_rev rev_map[symmetric] split: option.splits\<close>)
 
-theorem eparse_correct: "map_option abs_items (oks (eparse ss)) = parse_log (concat (map Rep_bytes ss))"
+theorem eparse_correct: "map_option abs_items (oks (eparse k ss)) = fparse_log (sk k) (concat (map Rep_bytes ss))"
 proof -
-  have init: "stream_init = (abs_l0 E_INIT, map_pstate Rep_bytes P_INIT)"
-    by (simp add: stream_init_def abs_l0_def)
-  note C = efeed_chunks_correct[of E_INIT ss 0 P_INIT 0, folded init]
+  have init: "fstream_init = (abs_l0 E_INIT, map_fpstate Rep_bytes F_INIT)"
+    by (simp add: fstream_init_def abs_l0_def)
+  note C = efeed_chunks_correct[where l=E_INIT and ss=ss and b=0 and ps=F_INIT and sp=0 and k=k, folded init]
   show ?thesis
-  proof (cases "stream_run (concat (map Rep_bytes ss)) stream_init")
+  proof (cases "fstream_run (sk k) (concat (map Rep_bytes ss)) fstream_init")
     case None
     with C show ?thesis
-      by (auto simp: eparse_def parse_log_def einit_def oks_None_iff oks_append split: prod.splits option.splits)
+      by (auto simp: eparse_def fparse_log_def einit_def oks_None_iff oks_append split: prod.splits option.splits)
   next
     case (Some x)
     obtain es L' P' where x: "x = (es, L', P')"
       by (cases x) auto
     with C Some obtain outs es' b' l' ps' sp' where
-      c: "efeed_chunks ss (0, E_INIT, Some P_INIT, 0) = (outs, (b', l', Some ps', sp'))" "oks outs = Some es'"
-      and "abs_items es' = es" "abs_l0 l' = L'" "wf0 l'" "map_pstate Rep_bytes ps' = P'"
+      c: "efeed_chunks k ss (0, E_INIT, Some F_INIT, 0) = (outs, (b', l', Some ps', sp'))" "oks outs = Some es'"
+      and "abs_items es' = es" "abs_l0 l' = L'" "wf0 l'" "map_fpstate Rep_bytes ps' = P'"
       by auto
-    moreover note F = efinish_correct[OF \<open>wf0 l'\<close>, where ps=ps' and b=b' and sp=sp']
+    moreover note F = efinish_correct[OF \<open>wf0 l'\<close>, where ps=ps' and b=b' and sp=sp' and k=k]
     ultimately show ?thesis
       using Some x
-      by (auto simp: eparse_def parse_log_def einit_def oks_append oks_None_iff split: option.splits)
+      by (auto simp: eparse_def fparse_log_def einit_def oks_append oks_None_iff split: option.splits)
   qed
 qed
 
+corollary eparse_filter:
+  "map_option abs_items (oks (eparse k ss)) =
+   map_option (map (filter_item (sk k))) (parse_log (concat (map Rep_bytes ss)))"
+  by (simp add: eparse_correct fparse_log_correct)
+
 theorem efeed_chunks_online:
-  "map_option abs_items (oks (fst (efeed_chunks ss einit))) =
-   map_option fst (stream_run (concat (map Rep_bytes ss)) stream_init)"
+  "map_option abs_items (oks (fst (efeed_chunks k ss einit))) =
+   map_option fst (fstream_run (sk k) (concat (map Rep_bytes ss)) fstream_init)"
 proof -
-  have init: "stream_init = (abs_l0 E_INIT, map_pstate Rep_bytes P_INIT)"
-    by (simp add: stream_init_def abs_l0_def)
-  note C = efeed_chunks_correct[of E_INIT ss 0 P_INIT 0, folded init]
+  have init: "fstream_init = (abs_l0 E_INIT, map_fpstate Rep_bytes F_INIT)"
+    by (simp add: fstream_init_def abs_l0_def)
+  note C = efeed_chunks_correct[where l=E_INIT and ss=ss and b=0 and ps=F_INIT and sp=0 and k=k, folded init]
   then show ?thesis
     by (auto simp: einit_def oks_None_iff split: option.splits prod.splits)
 qed
@@ -924,11 +945,11 @@ qed
 corollary efeed_chunks_prompt:
   assumes "Glex s ts" "G_parser ts es" "c = CHR ''@'' \<or> c = CHR ''>''"
     and "concat (map Rep_bytes ss) = s @ [c]"
-  shows "map_option abs_items (oks (fst (efeed_chunks ss einit))) = Some es"
+  shows "map_option abs_items (oks (fst (efeed_chunks k ss einit))) = Some (map (filter_item (sk k)) es)"
 proof -
-  obtain P where "stream_run (s @ [c]) stream_init = Some (es, L_INIT, P)"
-    using stream_run_prompt[OF assms(1-3)] .
-  with efeed_chunks_online[of ss] assms(4) show ?thesis
+  obtain P where "fstream_run (sk k) (s @ [c]) fstream_init = Some (map (filter_item (sk k)) es, L_INIT, P)"
+    using fstream_run_prompt[OF assms(1-3), of "sk k"] .
+  with efeed_chunks_online[where ss=ss and k=k] assms(4) show ?thesis
     by simp
 qed
 

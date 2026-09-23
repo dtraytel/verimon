@@ -12,5 +12,7 @@ session Log_Parser = "HOL-Library" +
     Log_Lexer
     Log_Parser
     Log_Stream
+    Log_Filter
     Log_Exec
+    Log_Values
     Log_Code
