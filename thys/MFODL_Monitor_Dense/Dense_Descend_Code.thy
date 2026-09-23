@@ -204,6 +204,16 @@ function (sequential) edof ::
              (edof n cs_L \<phi>) (edof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else EDFail)"
+| "edof n cs (meformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
+     (let cs_R = set_cols (args_R args); cs_L = set_cols (args_L args) in
+      if args_n args = n \<and> cs = set_cols A \<and> set cs_R \<subseteq> set cs \<and> set cs_L \<subseteq> set cs_R \<and>
+         tok cs_R cs_L args \<and> mbuf_t_is_empty (fst buf1) \<and> mbuf_t_is_empty (snd buf1) \<and>
+         mbuf_t_is_empty (fst buf2) \<and> mbuf_t_is_empty (snd buf2) \<and> mbuf_t_is_empty nts
+      then EDAndTrigger (mk_djoin cs cs_R) (edof n cs \<alpha>) (mbuf_t_empty, mbuf_t_empty)
+             (dargs cs_R cs_L args) (edof n cs_L \<phi>) (edof n cs_R \<psi>)
+             (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
+             (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
+      else EDFail)"
 | "edof n cs (meformula.MTP mt i) =
      (if cs = mtrm_dcols mt then EDTP mt i
       else EDFail)"
@@ -226,7 +236,6 @@ function (sequential) edof ::
          then EDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (edof n) css L)
                 (map (\<lambda>_. mbuf_t_empty) L) nts t []
          else EDFail))"
-| "edof n cs \<phi> = EDFail"
   by pat_completeness auto
 
 termination edof
@@ -248,6 +257,10 @@ next
 next
   case (7 n cs A \<phi> pos B \<psi> buf)
   then show ?case by (cases buf) (simp add: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
+next
+  case (19 n cs A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)
+  then show ?case
+    by (cases buf1; cases buf2) (auto simp: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
 qed (simp_all add: Let_def zip_map2 o_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
       mbuf_t_is_empty.rep_eq list_all_iff emfcols_mfcols
       split: list.splits option.splits prod.splits cong: map_cong)

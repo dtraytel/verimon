@@ -46,6 +46,9 @@ datatype edformula =
   | EDLetPast Formula.name nat edformula edformula nat "event_data table option"
   | EDTrigger args "nat option list" edformula edformula "event_data mebuf2" "ts mbuf_t"
       "event_data option gmmtaux"
+  | EDAndTrigger djoin_plan edformula
+      "event_data table mbuf_t \<times> event_data table option mbuf_t" args edformula edformula
+      "event_data mebuf2" "ts mbuf_t" "event_data option gmmtaux"
   | EDMatchP nat \<I> mregex "mregex list" "nat option list list" "edformula list"
       "event_data mebufn" "ts mbuf_t" "event_data mr\<delta>aux"
   | EDMatchF nat \<I> mregex "mregex list" "nat option list list" "edformula list"
@@ -86,6 +89,10 @@ fun Rep_edformula :: "edformula \<Rightarrow> dformula" where
 | "Rep_edformula (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
      DTrigger dags pl (Rep_edformula \<phi>) (Rep_edformula \<psi>) (map_prod Rep_mbuf_t Rep_mbuf_t dbuf)
        (Rep_mbuf_t nts) daux"
+| "Rep_edformula (EDAndTrigger pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux) =
+     DAndTrigger pl (Rep_edformula \<alpha>) (map_prod Rep_mbuf_t Rep_mbuf_t dbf1) dags
+       (Rep_edformula \<phi>) (Rep_edformula \<psi>) (map_prod Rep_mbuf_t Rep_mbuf_t dbf2)
+       (Rep_mbuf_t nts) daux"
 | "Rep_edformula (EDMatchP m I mr mrs pls Ld dbuf nts daux) =
      DMatchP m I mr mrs pls (map Rep_edformula Ld) (map Rep_mbuf_t dbuf) (Rep_mbuf_t nts) daux"
 | "Rep_edformula (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =
@@ -112,6 +119,8 @@ fun evdfail_nodes :: "edformula \<Rightarrow> nat" where
 | "evdfail_nodes (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDLetPast p m \<phi> \<psi> i buf) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
+| "evdfail_nodes (EDAndTrigger pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux) =
+     evdfail_nodes \<alpha> + evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map evdfail_nodes L)"
 | "evdfail_nodes (EDMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map evdfail_nodes L)"
 | "evdfail_nodes \<phi> = 0"
@@ -281,6 +290,17 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
              daux (mebufn_add (map fst R) dbuf) t (nts @@ ts);
           (zs, daux'') = eval_matchF I mr nt daux'
       in (map dsan zs, EDMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
+| "edeval j ts db (EDAndTrigger pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux) =
+     (let (as, \<alpha>') = edeval j ts db \<alpha>; (xs, \<phi>') = edeval j ts db \<phi>;
+          (ys, \<psi>') = edeval j ts db \<psi>;
+          ((ws, daux'), dbf2', nts') = mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
+            let ax = gupdate_mmtaux dags t r1 r2 ax
+            in (ws @ [if gmmtaux_empty ax then None
+                      else Some (dsan (gresult_mmtaux dags ax))], ax)) ([], daux)
+            (mebuf2_add xs ys dbf2) (nts @@ ts);
+          (zs, dbf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
+            | Some z \<Rightarrow> dbin_join pl r1 True z) (mebuf2_add as ws dbf1)
+      in (zs, EDAndTrigger pl \<alpha>' dbf1' dags \<phi>' \<psi>' dbf2' nts' daux'))"
   by pat_completeness auto
 
 lemma psize_snd_edeval:
@@ -370,6 +390,31 @@ next
     by (auto simp only: Let_def deval.simps edeval.simps mbufn_add Rep_edformula.simps
         mbuf_t_append.rep_eq
         split: prod.splits dest!: mebufnt_take)
+next
+  case (25 j ts db pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux)
+  obtain as \<alpha>' where a: "edeval j ts db \<alpha> = (as, \<alpha>')" by (cases "edeval j ts db \<alpha>")
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  let ?f = "\<lambda>r1 r2 t (ws, ax). let ax = gupdate_mmtaux dags t r1 r2 ax
+    in (ws @ [if gmmtaux_empty ax then None else Some (dsan (gresult_mmtaux dags ax))], ax)"
+  obtain ws daux' b2 nts' where t:
+    "mebuf2T_take ?f ([], daux) (mebuf2_add xs ys dbf2) (nts @@ ts) = ((ws, daux'), b2, nts')"
+    by (cases "mebuf2T_take ?f ([], daux) (mebuf2_add xs ys dbf2) (nts @@ ts)") auto
+  let ?g = "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> dbin_join pl r1 True z"
+  obtain zs b1 where u: "mebuf2_take ?g (mebuf2_add as ws dbf1) = (zs, b1)"
+    by (cases "mebuf2_take ?g (mebuf2_add as ws dbf1)")
+  have ia: "deval j ts db (Rep_edformula \<alpha>) = (as, Rep_edformula \<alpha>')" using 25(1) a by simp
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 25(2) a x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 25(3) a x y by simp
+  have t': "mbuf2T_take ?f ([], daux) (mbuf2_add xs ys (map_prod Rep_mbuf_t Rep_mbuf_t dbf2))
+      (Rep_mbuf_t nts @ ts) = ((ws, daux'), map_prod Rep_mbuf_t Rep_mbuf_t b2, Rep_mbuf_t nts')"
+    using mebuf2T_take[OF t] by (simp add: mbuf2_add mbuf_t_append.rep_eq)
+  have u': "mbuf2_take ?g (mbuf2_add as ws (map_prod Rep_mbuf_t Rep_mbuf_t dbf1))
+      = (zs, map_prod Rep_mbuf_t Rep_mbuf_t b1)"
+    using mebuf2_take[OF u] by (simp add: mbuf2_add)
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ia ix iy a x y
+        t[unfolded Let_def] t'[unfolded Let_def] u u' prod.case)
 qed (auto simp: mbuf2_add mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
     simp del: mprev_next.simps meprev_next.simps dsx_eval_since.simps edsx_eval_since.simps
     split: prod.splits dest!: mebuf2_take mebuf2t_take mebuf2T_take meprev_next edsx_eval_since)
