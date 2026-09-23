@@ -8206,3 +8206,68 @@ upkeep is the larger part of the run; MED and AVG gain least, because their per-
 tree, a running sum and count) is itself the bigger cost.  The corpus is unchanged (601 same, 0
 differing), the differential tests agree, and `dense_rank.t` covers the six aggregations over
 sliding windows with repeated values.
+
+## 21.30 The three slowest formulas: the trees' rebalancing, and a deletion the export lost
+
+After 21.29 three formulas were still more than 2x MonPoly: `pol-sincefutb` (2.29), `aggonce-min50`
+(2.11) and `since-nu5` (2.03).  Their instruction ratios are much lower (1.67, 1.34 and 1.57 on the
+1500-point logs); the difference is memory, since `-verified` allocated 4.1 to 5.2 times MonPoly's
+minor-heap words on all three.  An allocation profile (`MONPOLY_MEMPROF`) put **15% of all words
+allocated, on each of them, on one line**: the red-black tree's `RBT_Impl.balance`, with most of
+the next-largest sites in the same function.
+
+**The rebalancing.**  `balance` restores the colour invariant at every level on the way back from
+every insertion into every tree the monitor keeps.  Its equations are sequential, and the last one,
+`balance a s t b = Branch B a s t b`, is the one that applies at almost every level.  The code
+generator completes a sequential definition's patterns into disjoint nested ones, and in doing so
+replaces the variables `a` and `b` of that last equation by the constructor applications they were
+split into -- so the generated code rebuilds both subtrees from their fields, three blocks where
+one is needed.  It is the same defect 21.27 removed from the rank trees, one layer further down,
+and a case expression with overlapping nested patterns has it too: the case translation splits
+bound variables and rebuilds them in the right-hand sides.
+
+`Dense_RBT_Code.thy` gives `balance` a code equation that inspects its arguments one level at a
+time -- a node, then its colour -- and never splits a variable its right-hand side uses; the two
+checks for a red grandchild are two small functions, `bal_left` for the left side (only when it is
+red) and `bal_right` for the right side.  The equation is proved against the library's six by a
+case split.  The generated function falls through with `Branch (B, _, _, _, _) -> bal_right l k v
+r` and builds nothing it does not have to.
+
+**The lost deletion.**  21.8 gave the deletion of a key set from the Since structure's timestamp
+mapping a code equation through the specialised deletion (`de_mapping_delete_set_nat`).  21.16's
+second pass then made a second copy of the same operation at the same type from the generic
+equations (`edl_mapping_delete_set`), and its redirection is the one the code took: all 13 call
+sites went through the generic deletion with its comparator dictionaries, and the specialised copy
+was not in the export at all.  The copy now has the specialised deletion for trees and the generic
+equation for the other set representations.  None of the sweep's other duplicate copies had a
+better hand-written equation to lose.
+
+Instructions and minor-heap words on the 1500-point logs, and the wall-time ratio to MonPoly on the
+suite's logs (median of five, interleaved):
+
+| formula | instructions | allocation | ratio before → after |
+|---|---|---|---|
+| `pol-sincefutb` | −9.6% | −29.5% | 2.32 → **1.96** |
+| `aggonce-min50` | −7.8% | −30.4% | 1.85 → **1.67** |
+| `since-nu5` | −6.3% | −26.8% | 1.96 → **1.87** |
+| `since-nu50` | | | 1.94 → 1.75 |
+| `aggonce-cnt5` | −4.5% | −29.1% | 1.26 → 1.15 |
+| `pol-threshold` | | | 1.66 → 1.49 |
+| `A(x,y) AND ONCE[0,50] B(x,y)` | −4.1% | −23.2% | |
+| `onceex-50` | −3.3% | −28.8% | 0.39 → 0.37 |
+| `A(x,y) AND (C(x) UNTIL[0,20] B(x,y))` | −1.6% | −11.1% | |
+| `match-pseq` | −1.2% | −10.1% | 1.78 → 1.80 |
+| `join-both` | 0.0% | 0.0% | |
+
+Of the two, the rebalancing is nearly all of it; the deletion alone was measured at −0.6% to −1.5%
+on the Since formulas.  The allocation falls by up to 30% wherever trees are inserted into, which
+is why the wall time moves by more than the instructions; `join-both`, whose result is built in one
+pass without rebalancing, does not move.  None of the three is more than 2x MonPoly any more on these
+measurements (the suite itself has not been rerun for this section).  What is left of the three is what 21.27 and 21.22 priced: the negated
+operand's deletions from four persistent trees on the burst log, and the aggregate's result table.
+The Since node's garbage collection on a short window (11.6% of `since-nu5`: the index of the tuples
+since the last match rebuilt from scratch, and the window's union built through the generic set
+code) is recorded as a candidate, worth 3-5% there and little on longer windows.
+
+The export differs from the previous one in `balance` and `edl_mapping_delete_set` and the two new
+helpers; the corpus is unchanged (601 same, 0 differing) and the differential tests agree.
