@@ -8526,3 +8526,63 @@ over the 196 formulas at 1.00, from 1.05, with 98 formulas where the verified mo
 `since-nu500` 1.66 to 1.08, `since-u50` 1.50 to 1.04, and `pol-sincefutb` 1.90 to 1.33.  MonPoly
 ran 2% slower than in the previous run.  The largest ratios left are the aggregations over a past
 window: `aggonce-max50` (1.73), `aggonce-min50` (1.61) and `pol-threshold` (1.50).
+
+## 21.34 N: the window's aggregate over the window's own tuples
+
+After 21.33 the largest ratios were the aggregations over a past window, and 21.33's profile of
+`aggonce-*` and `pol-threshold` put the gap in memory traffic more than in instructions: the
+aggregate was still the kernel's `aggaux`, a mapping keyed by the *wide* tuple -- the group with a
+hole at the result column, as an `event_data option list` -- so every tuple that entered or left
+the window was widened to the kernel's frame, its group cut back off as a list of options, and the
+result was a table of the kernel's frame that the node then narrowed again.
+
+`Dense_Agg_Gen.thy` restates the kernel's structure over tuples of a bare element type: a mapping
+from the group -- the tuple's suffix after the bound columns, no hole -- to a count, to a count and
+a sum, or to the rank tree of the values (`'b gagg`), with the kernel's steps (`gi_cnt` ...
+`gd_rank`), folds over the table's sorted list (`gins`, `gdel`), and a read that writes the
+aggregate into each group (`gres`).  The window (`Dense_Evt_Agg.thy`) keeps it at `event_data
+option`; the short-tuple window (`Dense_Unbox_Eval.thy`, `Dense_Unbox_UAgg.thy`) keeps it at
+`event_data`.
+
+* **Against the kernel.**  `Rk` maps the structure to the kernel's by renaming the keys with
+  `kkey`, which puts the hole back (`kmap`, with `unkkey` as its partial inverse).  A kernel step
+  on a widened tuple is the generic step on the tuple under `Rk` (`insert_cnt_kmap` and its five
+  siblings); the kernel's `Finite_Set.fold` is the list fold because its steps commute
+  (`fold_image_list`); and a step that fails drops the structure at once rather than carrying a
+  flag (`fold_flag`).  So `insert_maggaux'` and `delete_maggaux'` on the widened table are `gins`
+  and `gdel` under `Rk`, `init_maggaux'` is `ginit`, and `result_maggaux` is `gres` for keys of the
+  group's length (`result_maggaux_Rk`).  The kernel's operations stay as the specification
+  (`kag_*`); the window's invariant is the kernel's under `Rk` together with the keys being
+  well-formed groups, and `ag_inv_init`, `ag_inv_ins`, `ag_inv_del` and `ag_res_inv` keep their
+  statements, so nothing above `Dense_Evt_Agg.thy` on the dense side changed.
+* **Against the short tuples.**  `rgagg` renames the keys by `reopt`, which the mapping
+  operations commute with (`rmk`); the steps (`gstep_ins_rgagg`), the folds, the initial structure
+  and the read (`gres_rgagg`) commute with it with no invariant, as the rest of the unboxed
+  evaluator does.
+* **The code.**  The entering and leaving tuples are the table's list filtered by the counts, so
+  the one pass of 21.29 needs neither its guard nor the widening: `cnt_ins_fold` and
+  `cnt_del_fold` hand each tuple to the generic step as they update its count.  The read walks the
+  mapping's entries and inserts the node's tuple if it passes the node's guard (`ugmr_code`).  The
+  steps are specialised at `event_data` (`edl_gi_cnt` ...), and the mappings at the two new value
+  types (`nat × integer`, `list_aux`) get the short tuples' specialised operations; without the
+  first, the generated steps built the list comparator at every lookup and the one pass was 5%
+  *slower* than before.
+
+Instructions on the suite's `base` log (1500 time points):
+
+| formula | before | after |
+|---|---|---|
+| `aggev-sum20` | 8.656 G | 7.884 G (−8.9%) |
+| `pol-threshold` | 6.272 G | 5.758 G (−8.2%) |
+| `aggonce-sum5` | 6.455 G | 5.949 G (−7.8%) |
+| `aggonce-cnt50` | 8.313 G | 7.772 G (−6.5%) |
+| `aggonce-max50` | 9.599 G | 9.042 G (−5.8%) |
+| `aggonce-med20` | 15.066 G | 14.525 G (−3.6%) |
+
+On `aggonce-cnt50` the window's upkeep went from 2.32 G to 2.07 G and the read from 2.01 G to 1.84 G,
+and D1 read misses fell by 11% (measured before the steps were specialised); what is left of the read is the output itself, 1.2 million tuples
+inserted into the result trees, which the previous code built as well.  MED gains least, because
+its rank trees are the same as before.  Wall time on the suite's logs against the previous binary
+(best of three, one worker): the `agg_once` family 0.91x, `agg_fut` 0.86x, `policy` 0.94x
+(`pol-threshold` 0.86x, `pol-chain` 0.88x), with every verdict the same.  The corpus is unchanged
+(601 same, 141 skipped, 0 differing) and `dune test` passes.

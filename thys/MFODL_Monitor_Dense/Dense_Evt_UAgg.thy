@@ -29,10 +29,10 @@ text \<open>The same seven components as @{typ uwaux}, paired with the kernel's 
   structure, exactly as @{typ swagg} pairs @{typ swaux} with it.  The list of finished answers
   inside holds tables the aggregation has already been applied to.\<close>
 
-type_synonym uwagg = "uwaux \<times> aggaux option"
+type_synonym uwagg = "uwaux \<times> dgagg option"
 
 function ua_extend :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow>
-    cntset \<Rightarrow> aggaux option \<Rightarrow> uw_entry queue \<times> uw_entry queue \<times> bool \<times> cntset \<times> aggaux option" where
+    cntset \<Rightarrow> dgagg option \<Rightarrow> uw_entry queue \<times> uw_entry queue \<times> bool \<times> cntset \<times> dgagg option" where
   "ua_extend args p w ts0 win rest bend cc ax =
      (if \<not> bend then (win, rest, bend, cc, ax)
       else (case safe_hd rest of

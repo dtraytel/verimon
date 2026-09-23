@@ -21,7 +21,7 @@ text \<open>The window keeps the count structure without its key set, as the fus
 type_synonym uuwauxm = "ts queue \<times> uuw_entry queue \<times> uuw_entry queue \<times> nat \<times> bool \<times>
   ucnt \<times> event_data list set list"
 
-type_synonym uuwagg = "uuwauxm \<times> aggaux option"
+type_synonym uuwagg = "uuwauxm \<times> ugagg option"
 
 definition uuwm_init :: "args \<Rightarrow> uuwauxm" where
   "uuwm_init args = (empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, [])"
@@ -41,8 +41,8 @@ lemma uuwm_length_ucc: "uuw_length args (uuwm w) = uuwm_length args w"
   by (cases w) (simp add: uuw_length_def uuwm_length_def uuwm.simps)
 
 function uua_extend :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uuw_entry queue \<Rightarrow> uuw_entry queue \<Rightarrow> bool \<Rightarrow>
-    ucnt \<Rightarrow> aggaux option \<Rightarrow>
-    uuw_entry queue \<times> uuw_entry queue \<times> bool \<times> ucnt \<times> aggaux option" where
+    ucnt \<Rightarrow> ugagg option \<Rightarrow>
+    uuw_entry queue \<times> uuw_entry queue \<times> bool \<times> ucnt \<times> ugagg option" where
   "uua_extend args p w ts0 win rest bend cc ax =
      (if \<not> bend then (win, rest, bend, cc, ax)
       else (case safe_hd rest of
@@ -113,20 +113,21 @@ definition uua_eval :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow>
 subsection \<open>Its naturality\<close>
 
 fun rua :: "uuwagg \<Rightarrow> uwagg" where
-  "rua (w, ax) = (ruw (uuwm w), ax)"
+  "rua (w, ax) = (ruw (uuwm w), map_option rgagg ax)"
 
 declare rua.simps[simp del]
 
 lemma fst_rua[simp]: "fst (rua a) = ruw (uuwm (fst a))"
   by (cases a) (simp add: rua.simps)
 
-lemma snd_rua[simp]: "snd (rua a) = snd a"
+lemma snd_rua[simp]: "snd (rua a) = map_option rgagg (snd a)"
   by (cases a) (simp add: rua.simps)
 
 lemma ua_extend_rua:
-  "ua_extend args p w ts0 (rqe win) (rqe rest) bend (rcc (ucc cc)) ax
+  "ua_extend args p w ts0 (rqe win) (rqe rest) bend (rcc (ucc cc)) (map_option rgagg ax)
    = (case uua_extend args p w ts0 win rest bend cc ax of
-        (win', rest', bend', cc', ax') \<Rightarrow> (rqe win', rqe rest', bend', rcc (ucc cc'), ax'))"
+        (win', rest', bend', cc', ax') \<Rightarrow>
+          (rqe win', rqe rest', bend', rcc (ucc cc'), map_option rgagg ax'))"
 proof (induct args p w ts0 win rest bend cc ax rule: uua_extend.induct)
   case (1 args p w ts0 win rest bend cc ax)
   obtain h rest' where sh: "safe_hd rest = (h, rest')" by (cases "safe_hd rest")

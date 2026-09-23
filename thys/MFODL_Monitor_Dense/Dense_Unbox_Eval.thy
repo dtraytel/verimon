@@ -835,24 +835,30 @@ definition ucnt_leave :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> e
 lemma ucnt_enter_ucc: "ucnt_enter T c = T - snd (ucc c)"
   by (auto simp: ucnt_enter_def ucc.simps lookup_None_keys)
 
+text \<open>
+  The aggregate is kept over the short tuples, in @{typ "event_data gagg"}: the dense window's
+  structure with the option taken off the keys.  @{text rgagg} puts it back on, and every
+  operation commutes with it -- the keys are renamed by the injective @{const reopt}, which the
+  mapping operations commute with, and the value a tuple contributes is the one the dense side
+  reads through @{const deopt}.
+\<close>
+
+type_synonym ugagg = "event_data gagg"
+
+fun rgagg :: "ugagg \<Rightarrow> dgagg" where
+  "rgagg (GCnt m) = GCnt (rmk (\<lambda>v. v) m)"
+| "rgagg (GSum m) = GSum (rmk (\<lambda>v. v) m)"
+| "rgagg (GRank m ty) = GRank (rmk (\<lambda>v. v) m) ty"
+
 definition uag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
-    aggaux option \<Rightarrow> aggaux option" where
-  "uag_ins p w T c ax = insert_maggaux' (dagg_args p w) (udagg_wide p w (ucnt_enter T c)) ax"
+    ugagg option \<Rightarrow> ugagg option" where
+  "uag_ins p w T c ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     gins k (umeval_trm f) (filter (\<lambda>t. Mapping.lookup c t = None) (csl T)) ax)"
 
 definition uag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
-    aggaux option \<Rightarrow> aggaux option" where
-  "uag_del p w T c ax = delete_maggaux' (dagg_args p w)
-     (udagg_wide p w (ucnt_leave T c)) ax"
-
-text \<open>
-  The kernel's aggregation structure answers with a table of the node's frame, one tuple per
-  group, which the node then reads at its own frame and without the option: two tables of the
-  same size built one after the other, once per time point.  @{term ures_maggaux} is the
-  composite, and is given a code equation that builds the second one only: the kernel's own
-  result goes through @{const get_map_result}, which walks the keys of the mapping and looks
-  each one up, so the fused form walks the mapping's entries instead -- the key and its value
-  together -- and inserts the node's own tuple straight into the answer.
-\<close>
+    ugagg option \<Rightarrow> ugagg option" where
+  "uag_del p w T c ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     gdel k (umeval_trm f) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl T)) ax)"
 
 text \<open>
   A node whose result is an aggregate is often read through a constraint on the aggregate's own
@@ -905,12 +911,13 @@ lemma dfilt_idem[simp]: "dfilt q (dfilt q X) = dfilt q X"
 lemma dfilt_Un: "dfilt q (A \<union> B) = dfilt q A \<union> dfilt q B"
   by (auto simp: dfilt_def)
 
-definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> (event_data tuple \<Rightarrow> event_data list) \<Rightarrow>
-    'b agg_map \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow> event_data list set" where
-  "ugmr q h m y f = Set.filter q (h ` get_map_result m y f)"
+text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.
+  The fused form walks the mapping's entries -- the key and its value together, so no lookup --
+  and inserts the node's own tuple straight into the answer.\<close>
 
-text \<open>The entries of the mapping's tree carry the key and its value together, so the fused form
-  needs no lookup, and it builds one tree rather than two.\<close>
+definition ugmr :: "(event_data list \<Rightarrow> bool) \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
+    (event_data list, 'b) mapping \<Rightarrow> event_data list set" where
+  "ugmr q p f m = Set.filter q (gmr p (\<lambda>x. x) f m)"
 
 lemma fold_insert_image:
   "fold (\<lambda>x A. let v = g x in if q v then Set.insert v A else A) xs A
@@ -918,101 +925,148 @@ lemma fold_insert_image:
   by (induct xs arbitrary: A) (auto simp: Let_def)
 
 lemma ugmr_code[code]:
-  fixes t :: "(event_data tuple, 'b) mapping_rbt"
-  shows "ugmr q h (RBT_Mapping t) y f =
-    (case ID CCOMPARE(event_data tuple) of
+  fixes t :: "(event_data list, 'b) mapping_rbt"
+  shows "ugmr q p f (RBT_Mapping t) =
+    (case ID CCOMPARE(event_data list) of
        None \<Rightarrow> Code.abort (STR ''ugmr RBT_Mapping: ccompare = None'')
-                (\<lambda>_. ugmr q h (RBT_Mapping t) y f)
-     | Some _ \<Rightarrow> fold (\<lambda>p A. let v = h (list_update (fst p) y (Some (f (snd p))))
+                (\<lambda>_. ugmr q p f (RBT_Mapping t))
+     | Some _ \<Rightarrow> fold (\<lambda>e A. let v = take p (fst e) @ f (snd e) # drop p (fst e)
                     in if q v then Set.insert v A else A)
                   (RBT_Mapping2.entries t) {})"
-proof (cases "ID CCOMPARE(event_data tuple)")
+proof (cases "ID CCOMPARE(event_data list)")
   case (Some c)
   note comp = ID_ccompare'[OF Some]
   have dist: "distinct (map fst (RBT_Mapping2.entries t))"
     using Some by (transfer fixing: c)
       (simp add: ord.is_rbt_def linorder.distinct_entries[OF comparator.linorder[OF comp]])
-  have mo: "map_of (RBT_Mapping2.entries t) (fst p) = Some (snd p)"
-    if "p \<in> set (RBT_Mapping2.entries t)" for p
-    using dist that by (cases p) (simp add: map_of_is_SomeI)
+  have mo: "map_of (RBT_Mapping2.entries t) (fst e) = Some (snd e)"
+    if "e \<in> set (RBT_Mapping2.entries t)" for e
+    using dist that by (cases e) (simp add: map_of_is_SomeI)
   have lk: "Mapping.lookup (RBT_Mapping t) = map_of (RBT_Mapping2.entries t)"
     by (simp add: lookup_Mapping_code(1) map_of_entries Some del: RBT_Mapping_def)
   have ky: "Mapping.keys (RBT_Mapping t) = fst ` set (RBT_Mapping2.entries t)"
     unfolding Mapping.keys_dom_lookup lk by (rule dom_map_of_conv_image_fst)
-  have "ugmr q h (RBT_Mapping t) y f
-      = Set.filter q ((\<lambda>p. h (list_update (fst p) y (Some (f (snd p)))))
+  have "ugmr q p f (RBT_Mapping t)
+      = Set.filter q ((\<lambda>e. take p (fst e) @ f (snd e) # drop p (fst e))
           ` set (RBT_Mapping2.entries t))"
-    unfolding ugmr_def get_map_result_def ky lk image_image
+    unfolding ugmr_def gmr_def ky lk image_image
     by (intro arg_cong[of _ _ "Set.filter q"] image_cong[OF refl]) (simp add: mo)
   then show ?thesis using Some by (simp add: fold_insert_image)
 qed simp
 
-definition ures_maggaux :: "(event_data list \<Rightarrow> bool) \<Rightarrow> (event_data tuple \<Rightarrow> event_data list) \<Rightarrow>
-    aggargs \<Rightarrow> aggaux \<Rightarrow> event_data list set" where
-  "ures_maggaux q h args a = Set.filter q (h ` result_maggaux args a)"
+definition ugres :: "(event_data list \<Rightarrow> bool) \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> nat \<Rightarrow> ugagg \<Rightarrow>
+    event_data list set" where
+  "ugres q g0 \<omega> p a = Set.filter q (gres g0 \<omega> p (\<lambda>x. x) a)"
 
-lemma ures_maggaux_code[code]:
-  "ures_maggaux q h args a =
-    (let n = aggargs_n args; y = aggargs_y args; g0 = aggargs_g0 args; \<omega> = aggargs_\<omega> args in
-     case a of
-       CntAux m \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {}
-          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
-          else ugmr q h m y (\<lambda>k. EInt (integer_of_int k)))
-     | SumAux m \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {}
-          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
-          else (case fst \<omega> of
-            Formula.Agg_Sum \<Rightarrow> ugmr q h m y (\<lambda>k. EInt (snd k))
-          | Formula.Agg_Avg \<Rightarrow> ugmr q h m y
-              (\<lambda>k. EFloat (double_of_event_data (EInt (snd k)) / double_of_int (fst k)))
-          | _ \<Rightarrow> Set.filter q (h ` result_maggaux args a)))
-     | RankAux (m, t) \<Rightarrow>
-         (if g0 \<and> Mapping.keys m = {}
-          then Set.filter q (h ` singleton_table n y (eval_agg_op \<omega> {}))
-          else (case fst \<omega> of
-            Formula.Agg_Min \<Rightarrow> ugmr q h m y (\<lambda>k. get_edata_list k 0)
-          | Formula.Agg_Max \<Rightarrow> ugmr q h m y (\<lambda>k. get_edata_list k (get_length k - 1))
-          | Formula.Agg_Med \<Rightarrow> ugmr q h m y (\<lambda>k. let u = get_length k; u' = u div 2;
-              aggval = (if even u
-                then (double_of_event_data_agg (get_edata_list k (u' - 1))
-                      + double_of_event_data_agg (get_edata_list k u')) / double_of_int 2
-                else double_of_event_data_agg (get_edata_list k u'))
-              in EFloat aggval)
-          | _ \<Rightarrow> Set.filter q (h ` result_maggaux args a))))"
-  by (cases args) (simp add: ures_maggaux_def ugmr_def Let_def
-      split: aggaux.splits Formula.agg_type.splits)
+lemma ugres_code[code]:
+  "ugres q g0 \<omega> p a = (case a of
+     GCnt m \<Rightarrow> (if g0 \<and> Mapping.is_empty m then Set.filter q {[eval_agg_op \<omega> {}]}
+       else ugmr q p (\<lambda>k. EInt (integer_of_int k)) m)
+   | GSum m \<Rightarrow> (if g0 \<and> Mapping.is_empty m then Set.filter q {[eval_agg_op \<omega> {}]}
+       else (case fst \<omega> of
+         Formula.Agg_Sum \<Rightarrow> ugmr q p (\<lambda>k. EInt (snd k)) m
+       | Formula.Agg_Avg \<Rightarrow> ugmr q p
+           (\<lambda>k. EFloat (double_of_event_data (EInt (snd k)) / double_of_int (fst k))) m
+       | _ \<Rightarrow> {}))
+   | GRank m ty \<Rightarrow> (if g0 \<and> Mapping.is_empty m then Set.filter q {[eval_agg_op \<omega> {}]}
+       else (case fst \<omega> of
+         Formula.Agg_Min \<Rightarrow> ugmr q p (\<lambda>k. get_edata_list k 0) m
+       | Formula.Agg_Max \<Rightarrow> ugmr q p (\<lambda>k. get_edata_list k (get_length k - 1)) m
+       | Formula.Agg_Med \<Rightarrow> ugmr q p (\<lambda>k. let u = get_length k; u' = u div 2;
+           aggval = (if even u
+             then (double_of_event_data_agg (get_edata_list k (u' - 1))
+                   + double_of_event_data_agg (get_edata_list k u')) / double_of_int 2
+             else double_of_event_data_agg (get_edata_list k u'))
+           in EFloat aggval) m
+       | _ \<Rightarrow> {})))"
+  by (cases a) (simp_all add: ugres_def ugmr_def Mapping.is_empty_def
+      split: Formula.agg_type.splits)
 
 definition uag_res :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ucnt \<Rightarrow>
-    aggaux option \<Rightarrow> event_data list set" where
+    ugagg option \<Rightarrow> event_data list set" where
   "uag_res q p w c ax = ufilt q (case ax of
      None \<Rightarrow> udagg_p p (Mapping.keys c)
-   | Some a \<Rightarrow> deopt_table (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
-
-text \<open>The result is read off the kernel's structure in one pass: the projection to the node's
-  columns, the unboxing and the node's guard are one image, and that image is fused with the
-  kernel's own read.\<close>
+   | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> gres g0 \<omega> pos (\<lambda>x. x) a))"
 
 lemma uag_res_code[code]:
   "uag_res q p w c ax = (case ax of
      None \<Rightarrow> ufilt q (udagg_p p (Mapping.keys c))
-   | Some a \<Rightarrow> (let args = dagg_args p w; msk = wide_mask (aggargs_n args) [0..<aggargs_n args]
-       in ures_maggaux (uqok q) (\<lambda>x. deopt (dproj msk x)) args a))"
-  by (simp add: uag_res_def ures_maggaux_def ufilt_def deopt_table_def dtabc_def image_image
-      Let_def split: option.splits)
+   | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) g0 \<omega> pos a))"
+  by (simp add: uag_res_def ugres_def ufilt_def split: option.splits prod.splits)
 
-lemma ag_ins_rcc[simp]: "ag_ins p w (reopt_table T) (rcc (ucc c)) ax = uag_ins p w T c ax"
-  by (simp add: uag_ins_def ag_ins_def cnt_enter_def rcc.simps ucc.simps udagg_wide_eq
-      ucnt_enter_ucc ucc.simps)
+text \<open>The naturality of the three operations and of the read.\<close>
 
-lemma ag_del_rcc[simp]: "ag_del p w (reopt_table T) (rcc (ucc c)) ax = uag_del p w T c ax"
+lemma drop_reopt: "drop k (reopt t) = reopt (drop k t)"
+  by (simp add: reopt_def drop_map)
+
+lemma gstep_ins_rgagg:
+  "gstep_ins k (\<lambda>t. ev (deopt t)) (reopt t) (map_option rgagg ax)
+   = map_option rgagg (gstep_ins k ev t ax)"
+proof (cases ax)
+  case (Some a)
+  then show ?thesis
+    by (cases a) (simp_all add: gstep_ins_def drop_reopt Let_def del: reopt_simps(5)
+        split: option.split prod.split event_data.split type.split list_aux.split)
+qed (simp add: gstep_ins_def)
+
+lemma gstep_del_rgagg:
+  "gstep_del k (\<lambda>t. ev (deopt t)) (reopt t) (map_option rgagg ax)
+   = map_option rgagg (gstep_del k ev t ax)"
+proof (cases ax)
+  case (Some a)
+  then show ?thesis
+    by (cases a) (simp_all add: gstep_del_def drop_reopt Let_def del: reopt_simps(5)
+        split: option.split prod.split event_data.split type.split list_aux.split)
+qed (simp add: gstep_del_def)
+
+lemma gins_rgagg:
+  "gins k (\<lambda>t. ev (deopt t)) (map reopt xs) (map_option rgagg ax) = map_option rgagg (gins k ev xs ax)"
+  by (induct xs arbitrary: ax) (simp_all add: gins_def gstep_ins_rgagg)
+
+lemma gdel_rgagg:
+  "gdel k (\<lambda>t. ev (deopt t)) (map reopt xs) (map_option rgagg ax) = map_option rgagg (gdel k ev xs ax)"
+  by (induct xs arbitrary: ax) (simp_all add: gdel_def gstep_del_rgagg)
+
+lemma ginit_rgagg[simp]: "map_option rgagg (ginit \<omega>) = ginit \<omega>"
+  by (simp add: ginit_def split: Formula.agg_type.splits ty.splits prod.splits)
+
+lemma ag_init_rgagg[simp]: "map_option rgagg (ag_init p w) = ag_init p w"
+  by (cases p) (simp add: ag_init_def)
+
+lemma reopt_in_rcc: "reopt t \<in> snd (rcc (ucc c)) \<longleftrightarrow> Mapping.lookup c t \<noteq> None"
+  by (auto simp: rcc.simps ucc.simps reopt_table_def lookup_None_keys reopt_def inj_on_def)
+
+lemma lookup_rcc_reopt: "Mapping.lookup (fst (rcc (ucc c))) (reopt t) = Mapping.lookup c t"
+  by (simp add: rcc.simps ucc.simps option.map_ident)
+
+lemma ag_ins_rcc[simp]:
+  "ag_ins p w (reopt_table T) (rcc (ucc c)) (map_option rgagg ax) = map_option rgagg (uag_ins p w T c ax)"
+  by (cases p) (simp add: ag_ins_def uag_ins_def csl_reopt_table filter_map o_def reopt_in_rcc
+      gins_rgagg)
+
+lemma ag_del_rcc[simp]:
+  "ag_del p w (reopt_table T) (rcc (ucc c)) (map_option rgagg ax) = map_option rgagg (uag_del p w T c ax)"
+  by (cases p) (simp add: ag_del_def uag_del_def csl_reopt_table filter_map o_def lookup_rcc_reopt
+      gdel_rgagg)
+
+lemma gmr_rmk: "gmr p Some f (rmk (\<lambda>v. v) m) = reopt_table (gmr p (\<lambda>x. x) f m)"
+  unfolding gmr_def keys_rmk reopt_table_def image_image
+  by (intro image_cong refl) (simp split: option.split)
+
+lemma gres_rgagg: "gres g0 \<omega> p Some (rgagg a) = reopt_table (gres g0 \<omega> p (\<lambda>x. x) a)"
 proof -
-  have "cnt_leave (reopt_table T) (rcc (ucc c)) = reopt_table (ucnt_leave T c)"
-    unfolding cnt_leave_def rcc.simps ucc.simps ucnt_leave_def by (auto simp: reopt_table_def)
-  then show ?thesis by (simp add: uag_del_def ag_del_def udagg_wide_eq)
+  have e: "Mapping.keys (rmk (\<lambda>v. v) m) = {} \<longleftrightarrow> Mapping.keys m = {}" for m :: "(event_data list, 'v) mapping"
+    by (simp add: reopt_table_def)
+  have s: "reopt_table {[x]} = {[Some x]}" for x :: event_data
+    by (simp add: reopt_table_def reopt_def)
+  have r0: "reopt_table {} = {}" by (simp add: reopt_table_def)
+  show ?thesis
+    by (cases a; simp only: rgagg.simps gres.simps e s gmr_rmk r0 split: if_split
+        Formula.agg_type.split; auto)
 qed
 
-lemma ag_res_rcc: "dfilt q (ag_res p w (rcc (ucc c)) ax) = reopt_table (uag_res q p w c ax)"
+lemma ag_res_rcc:
+  "dfilt q (ag_res p w (rcc (ucc c)) (map_option rgagg ax)) = reopt_table (uag_res q p w c ax)"
 proof (cases ax)
   case None
   show ?thesis unfolding None
@@ -1021,11 +1075,13 @@ proof (cases ax)
 next
   case (Some a)
   show ?thesis unfolding Some
-    by (simp add: uag_res_def ag_res_def rcc.simps ucc.simps dsan_def dfilt_reopt_table)
+    by (cases p) (simp add: uag_res_def ag_res_def gres_rgagg dfilt_reopt_table)
 qed
 
-lemma ag_res_rcc_None[simp]: "ag_res p w (rcc (ucc c)) ax = reopt_table (uag_res None p w c ax)"
+lemma ag_res_rcc_None[simp]:
+  "ag_res p w (rcc (ucc c)) (map_option rgagg ax) = reopt_table (uag_res None p w c ax)"
   using ag_res_rcc[of None] by simp
+
 
 lemma cnt_add_rcc[simp]: "cnt_add (reopt_table T) (rcc cc) = rcc (gcnt_add T cc)"
   by (simp add: gcnt_add_eq[symmetric])
@@ -1036,12 +1092,12 @@ lemma cnt_del_rcc[simp]: "cnt_del (reopt_table T) (rcc cc) = rcc (gcnt_del T cc)
 type_synonym uswaux =
   "ts \<times> (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue \<times> ucnt"
 
-type_synonym uswagg = "uswaux \<times> aggaux option"
+type_synonym uswagg = "uswaux \<times> ugagg option"
 
 function usa_move :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
-    (ts \<times> event_data list set) queue \<Rightarrow> ucnt \<Rightarrow> aggaux option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<Rightarrow> ucnt \<Rightarrow> ugagg option \<Rightarrow>
     (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue \<times>
-    ucnt \<times> aggaux option" where
+    ucnt \<times> ugagg option" where
   "usa_move args p nt pend win cc ax =
      (case safe_hd pend of
         (None, pend') \<Rightarrow> (pend', win, cc, ax)
@@ -1061,8 +1117,8 @@ termination
 declare usa_move.simps[simp del]
 
 function usa_expire :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
-    ucnt \<Rightarrow> aggaux option \<Rightarrow>
-    (ts \<times> event_data list set) queue \<times> ucnt \<times> aggaux option" where
+    ucnt \<Rightarrow> ugagg option \<Rightarrow>
+    (ts \<times> event_data list set) queue \<times> ucnt \<times> ugagg option" where
   "usa_expire args p nt win cc ax =
      (case safe_hd win of
         (None, win') \<Rightarrow> (win', cc, ax)
@@ -1117,7 +1173,7 @@ fun usw :: "uswaux \<Rightarrow> event_data gswaux" where
   "usw (t, pend, win, cc) = (t, pend, win, ucc cc)"
 
 fun rsa :: "uswagg \<Rightarrow> swagg" where
-  "rsa (w, ax) = (rsw (usw w), ax)"
+  "rsa (w, ax) = (rsw (usw w), map_option rgagg ax)"
 
 declare usw.simps[simp del] rsa.simps[simp del]
 
@@ -1128,9 +1184,9 @@ lemma usw_join_ucc: "gsw_join args X (usw w) = usw (usw_join args X w)"
   by (cases w) (simp add: gsw_join_def usw_join_def usw.simps ucc.simps)
 
 lemma sa_move_rsa:
-  "sa_move args p nt (rq pend) (rq win) (rcc (ucc cc)) ax
+  "sa_move args p nt (rq pend) (rq win) (rcc (ucc cc)) (map_option rgagg ax)
    = (case usa_move args p nt pend win cc ax of
-        (pend', win', cc', ax') \<Rightarrow> (rq pend', rq win', rcc (ucc cc'), ax'))"
+        (pend', win', cc', ax') \<Rightarrow> (rq pend', rq win', rcc (ucc cc'), map_option rgagg ax'))"
 proof (induct args p nt pend win cc ax rule: usa_move.induct)
   case (1 args p nt pend win cc ax)
   obtain h pend' where sh: "safe_hd pend = (h, pend')" by (cases "safe_hd pend")
@@ -1149,8 +1205,9 @@ proof (induct args p nt pend win cc ax rule: usa_move.induct)
 qed
 
 lemma sa_expire_rsa:
-  "sa_expire args p nt (rq win) (rcc (ucc cc)) ax
-   = (case usa_expire args p nt win cc ax of (win', cc', ax') \<Rightarrow> (rq win', rcc (ucc cc'), ax'))"
+  "sa_expire args p nt (rq win) (rcc (ucc cc)) (map_option rgagg ax)
+   = (case usa_expire args p nt win cc ax of
+        (win', cc', ax') \<Rightarrow> (rq win', rcc (ucc cc'), map_option rgagg ax'))"
 proof (induct args p nt win cc ax rule: usa_expire.induct)
   case (1 args p nt win cc ax)
   obtain h win' where sh: "safe_hd win = (h, win')" by (cases "safe_hd win")

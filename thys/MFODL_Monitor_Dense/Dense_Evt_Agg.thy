@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Evt_Agg
-  imports Dense_Evt Dense_Aux
+  imports Dense_Evt Dense_Aux Dense_Agg_Gen
 begin
 (*>*)
 
@@ -200,7 +200,8 @@ text \<open>
   the last to hold.  Those are the insertions and deletions the kernel's incremental structure
   takes, on the widened tuples.  The structure is optional, as in the kernel: @{const None} once
   an operation reports that it cannot maintain the aggregate, and then the result is computed
-  from the union directly.
+  from the union directly.  The kernel's operations are named @{text kag_} here: the window keeps
+  the structure of the next subsection, which they serve as the specification of.
 \<close>
 
 abbreviation sa_n :: "daggp \<Rightarrow> nat \<Rightarrow> nat" where "sa_n p w \<equiv> aggargs_n (dagg_args p w)"
@@ -214,26 +215,17 @@ definition cnt_enter :: "event_data table \<Rightarrow> cntset \<Rightarrow> eve
 definition cnt_leave :: "event_data table \<Rightarrow> cntset \<Rightarrow> event_data table" where
   "cnt_leave T cc = Set.filter (\<lambda>x. Mapping.lookup (fst cc) x = Some 1) T"
 
-definition ag_init :: "daggp \<Rightarrow> nat \<Rightarrow> aggaux option" where
-  "ag_init p w = init_maggaux' (dagg_args p w)"
+definition kag_init :: "daggp \<Rightarrow> nat \<Rightarrow> aggaux option" where
+  "kag_init p w = init_maggaux' (dagg_args p w)"
 
-definition ag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> aggaux option" where
-  "ag_ins p w T cc ax = insert_maggaux' (dagg_args p w) (dagg_wide p w (cnt_enter T cc)) ax"
+definition kag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> aggaux option" where
+  "kag_ins p w T cc ax = insert_maggaux' (dagg_args p w) (dagg_wide p w (cnt_enter T cc)) ax"
 
-definition ag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> aggaux option" where
-  "ag_del p w T cc ax = delete_maggaux' (dagg_args p w) (dagg_wide p w (cnt_leave T cc)) ax"
+definition kag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> aggaux option" where
+  "kag_del p w T cc ax = delete_maggaux' (dagg_args p w) (dagg_wide p w (cnt_leave T cc)) ax"
 
-text \<open>The kernel structure's result is sanitised on the way out: on the hole-free tables the
-  invariant below guarantees that is the identity, and it lets the unboxed evaluator read the
-  result without an invariant.\<close>
-
-definition ag_res :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> event_data table" where
-  "ag_res p w cc ax = (case ax of
-     None \<Rightarrow> dagg_p p (snd cc)
-   | Some a \<Rightarrow> dsan (dtabc (sa_n p w) [0..<sa_n p w] (result_maggaux (dagg_args p w) a)))"
-
-definition ag_inv :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> bool" where
-  "ag_inv p w cc ax \<longleftrightarrow> valid_maggaux' (dagg_args p w) ax (dagg_wide p w (snd cc))"
+definition kag_inv :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow> bool" where
+  "kag_inv p w cc ax \<longleftrightarrow> valid_maggaux' (dagg_args p w) ax (dagg_wide p w (snd cc))"
 
 lemma cnt_rep_snd_add: "cnt_rep f cc \<Longrightarrow> finite T \<Longrightarrow> snd (cnt_add T cc) = snd cc \<union> T"
   using cnt_rep_add[of f cc T] unfolding cnt_rep_def by auto
@@ -294,21 +286,21 @@ proof -
     unfolding dagg_wide_def dtabw_def by (rule inj_on_image_set_diff[OF inj sAB sB, symmetric])
 qed
 
-lemma ag_inv_init: "ag_inv p w (Mapping.empty, {}) (ag_init p w)"
+lemma kag_inv_init: "kag_inv p w (Mapping.empty, {}) (kag_init p w)"
   using valid_init_maggaux[of "dagg_args p w"]
-  by (auto simp: ag_inv_def ag_init_def split: prod.splits)
+  by (auto simp: kag_inv_def kag_init_def split: prod.splits)
 
-lemma ag_inv_ins:
+lemma kag_inv_ins:
   assumes cr: "cnt_rep f cc" and fT: "finite T" and ok: "dagg_ok p w"
-    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "ag_inv p w cc ax"
-  shows "ag_inv p w (cnt_add T cc) (ag_ins p w T cc ax)"
+    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "kag_inv p w cc ax"
+  shows "kag_inv p w (cnt_add T cc) (kag_ins p w T cc ax)"
 proof (cases ax)
   case None
-  then show ?thesis by (simp add: ag_inv_def ag_ins_def)
+  then show ?thesis by (simp add: kag_inv_def kag_ins_def)
 next
   case (Some a)
   let ?X = "dagg_wide p w (snd cc)" and ?Y = "dagg_wide p w (cnt_enter T cc)"
-  have v: "valid_maggaux (dagg_args p w) a ?X" using inv by (simp add: ag_inv_def Some)
+  have v: "valid_maggaux (dagg_args p w) a ?X" using inv by (simp add: kag_inv_def Some)
   have fY: "finite ?Y" using fT by (simp add: cnt_enter_def dagg_wide_finite)
   have dj: "?X \<inter> ?Y = {}"
     using dagg_wide_inj(1)[OF ok S, of "cnt_enter T cc"] T by (auto simp: cnt_enter_def)
@@ -316,27 +308,557 @@ next
     unfolding cnt_rep_snd_add[OF cr fT] dagg_wide_Un[symmetric] cnt_enter_def by simp
   show ?thesis
     using valid_insert_maggaux[OF v fY dj] unfolding XY
-    by (auto simp: ag_inv_def ag_ins_def Some split: prod.splits)
+    by (auto simp: kag_inv_def kag_ins_def Some split: prod.splits)
 qed
 
-lemma ag_inv_del:
+lemma kag_inv_del:
   assumes cr: "cnt_rep f cc" and fT: "finite T" and ok: "dagg_ok p w"
-    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "ag_inv p w cc ax"
-  shows "ag_inv p w (cnt_del T cc) (ag_del p w T cc ax)"
+    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "kag_inv p w cc ax"
+  shows "kag_inv p w (cnt_del T cc) (kag_del p w T cc ax)"
 proof (cases ax)
   case None
-  then show ?thesis by (simp add: ag_inv_def ag_del_def)
+  then show ?thesis by (simp add: kag_inv_def kag_del_def)
 next
   case (Some a)
   let ?X = "dagg_wide p w (snd cc)" and ?Y = "dagg_wide p w (cnt_leave T cc)"
-  have v: "valid_maggaux (dagg_args p w) a ?X" using inv by (simp add: ag_inv_def Some)
+  have v: "valid_maggaux (dagg_args p w) a ?X" using inv by (simp add: kag_inv_def Some)
   have sub: "?Y \<subseteq> ?X" by (rule dagg_wide_mono[OF cnt_leave_sub[OF cr]])
   have XY: "?X - ?Y = dagg_wide p w (snd (cnt_del T cc))"
     unfolding cnt_rep_snd_del[OF cr fT]
     by (rule dagg_wide_inj(2)[OF ok S]) (use cnt_leave_sub[OF cr] S in auto)
   show ?thesis
     using valid_delete_maggaux[OF v sub] unfolding XY
-    by (auto simp: ag_inv_def ag_del_def Some split: prod.splits)
+    by (auto simp: kag_inv_def kag_del_def Some split: prod.splits)
+qed
+
+subsection \<open>The aggregate over the window's own tuples\<close>
+
+text \<open>
+  The kernel's structure is kept over the widened tuples: the group it looks up is the tuple's
+  suffix with a hole at the result column, and the value is read by a shifted term.  The
+  structure @{typ "event_data option gagg"} of @{theory MFODL_Monitor_Dense.Dense_Agg_Gen} is
+  the same structure over the window's own tuples, with the hole taken out of the group: @{text
+  kkey} puts it back, and @{text Rk} maps the one structure to the other.  The kernel's steps
+  on a widened tuple are the steps below on the tuple itself, under @{text Rk}, and so are the
+  folds, the initial structure and -- for keys of the group's length -- the result.
+\<close>
+
+definition kkey :: "nat \<Rightarrow> 'a option list \<Rightarrow> 'a option list" where
+  "kkey p g = take p g @ None # drop p g"
+
+definition unkkey :: "nat \<Rightarrow> 'a option list \<Rightarrow> 'a option list option" where
+  "unkkey p K = (if p < length K \<and> K ! p = None then Some (take p K @ drop (Suc p) K) else None)"
+
+lemma unkkey_kkey: "p \<le> length g \<Longrightarrow> unkkey p (kkey p g) = Some g"
+  by (simp add: unkkey_def kkey_def nth_append min_def)
+
+lemma unkkey_SomeD: "unkkey p K = Some g \<Longrightarrow> K = kkey p g \<and> p \<le> length g"
+  by (auto simp: unkkey_def kkey_def split: if_splits) (metis id_take_nth_drop)
+
+lift_definition kmap :: "nat \<Rightarrow> ('a option list, 'v) mapping \<Rightarrow> ('a option list, 'v) mapping" is
+  "\<lambda>p m K. case unkkey p K of Some g \<Rightarrow> m g | None \<Rightarrow> None" .
+
+lemma lookup_kmap:
+  "Mapping.lookup (kmap p m) K = (case unkkey p K of Some g \<Rightarrow> Mapping.lookup m g | None \<Rightarrow> None)"
+  by (simp add: Mapping.lookup.rep_eq kmap.rep_eq split: option.splits)
+
+lemma lookup_kmap_kkey: "p \<le> length g \<Longrightarrow> Mapping.lookup (kmap p m) (kkey p g) = Mapping.lookup m g"
+  by (simp add: lookup_kmap unkkey_kkey)
+
+lemma kmap_empty[simp]: "kmap p Mapping.empty = Mapping.empty"
+  by (rule mapping_eqI) (simp add: lookup_kmap split: option.splits)
+
+lemma kmap_update:
+  assumes "p \<le> length g"
+  shows "kmap p (Mapping.update g v m) = Mapping.update (kkey p g) v (kmap p m)"
+proof (rule mapping_eqI)
+  fix K
+  show "Mapping.lookup (kmap p (Mapping.update g v m)) K
+      = Mapping.lookup (Mapping.update (kkey p g) v (kmap p m)) K"
+    using assms unfolding lookup_kmap lookup_update'
+    by (cases "unkkey p K") (auto simp: unkkey_kkey dest: unkkey_SomeD)
+qed
+
+lemma kmap_delete:
+  assumes "p \<le> length g"
+  shows "kmap p (Mapping.delete g m) = Mapping.delete (kkey p g) (kmap p m)"
+proof (rule mapping_eqI)
+  fix K
+  show "Mapping.lookup (kmap p (Mapping.delete g m)) K
+      = Mapping.lookup (Mapping.delete (kkey p g) (kmap p m)) K"
+    using assms unfolding lookup_kmap lookup_delete
+    by (cases "unkkey p K") (auto simp: unkkey_kkey dest: unkkey_SomeD)
+qed
+
+lemma keys_kmap: "Mapping.keys (kmap p m) = kkey p ` {g \<in> Mapping.keys m. p \<le> length g}"
+  by (auto simp: Mapping.keys_dom_lookup lookup_kmap unkkey_kkey split: option.splits)
+    (force dest: unkkey_SomeD)
+
+lemma dwiden_all_True: "length d = b \<Longrightarrow> dwiden (replicate b True) d = d"
+  by (induct b arbitrary: d) (auto simp: length_Suc_conv)
+
+lemma dwiden_slot:
+  "length d = a + b \<Longrightarrow> dwiden (replicate a True @ False # replicate b True) d = take a d @ None # drop a d"
+  by (induct a arbitrary: d) (auto simp: dwiden_all_True length_Suc_conv)
+
+lemma wide_mask_dagg:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w"
+  shows "wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)
+    = replicate (k + pos) True @ False # replicate (w - (k + pos)) True"
+proof -
+  have kw: "k \<le> w" and pw: "pos \<le> w - k" using ok by auto
+  have kpw: "k + pos \<le> w" using kw pw by arith
+  have cc: "dagg_ccols (g0, \<omega>, f, k, pos) w = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
+    unfolding dagg_ccols.simps by (rule agg_cols_dagg_gcols[OF kw pw])
+  note s = dagg_ccols_props(1)[OF ok]
+  show ?thesis
+  proof (rule nth_equalityI)
+    show "length (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w))
+      = length (replicate (k + pos) True @ False # replicate (w - (k + pos)) True)"
+      using kpw by simp
+  next
+    fix i assume "i < length (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w))"
+    then have i: "i < Suc w" by simp
+    show "wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w) ! i
+      = (replicate (k + pos) True @ False # replicate (w - (k + pos)) True) ! i"
+      unfolding nth_wide_mask[OF s i] unfolding cc using i kpw
+      by (cases "i < k + pos"; cases "i = k + pos") (auto simp: nth_append nth_Cons' simp del: upt_Suc)
+  qed
+qed
+
+lemma meval_shift_slot:
+  "Formula.fv_trm f \<subseteq> {0..<length t} \<Longrightarrow> b \<le> length t \<Longrightarrow>
+   meval_trm (shift_trm b f) (take b t @ None # drop b t) = meval_trm f t"
+  by (induct f) (auto simp: nth_append nth_Cons' min_def)
+
+lemma dagg_wide_tuple:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and t: "dwf_tuple w t"
+  shows "drop k (dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) t)
+      = kkey pos (drop k t)"
+    and "meval_trm (shift_trm (k + pos) f) (dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) t)
+      = umeval_trm f (deopt t)"
+    and "length (drop k t) = w - k" and "pos \<le> length (drop k t)"
+proof -
+  have kw: "k \<le> w" and pw: "pos \<le> w - k" and fv: "Formula.fv_trm f \<subseteq> {0..<w}" using ok by auto
+  have kpw: "k + pos \<le> w" using kw pw by arith
+  have lt: "length t = w" using t by (simp add: dwf_tuple_def)
+  have wd: "dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) t
+      = take (k + pos) t @ None # drop (k + pos) t"
+    unfolding wide_mask_dagg[OF ok] by (rule dwiden_slot) (use lt kpw in simp)
+  show "drop k (dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) t) = kkey pos (drop k t)"
+    unfolding wd kkey_def using lt kpw by (simp add: drop_take add.commute[of pos k])
+  show "meval_trm (shift_trm (k + pos) f) (dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) t)
+      = umeval_trm f (deopt t)"
+    unfolding wd using lt kpw fv
+    by (simp add: meval_shift_slot umeval_trm_deopt atLeastLessThan_def lessThan_def)
+  show "length (drop k t) = w - k" using lt by simp
+  then show "pos \<le> length (drop k t)" using pw by simp
+qed
+
+fun Rk :: "nat \<Rightarrow> event_data option gagg \<Rightarrow> aggaux" where
+  "Rk p (GCnt m) = CntAux (kmap p m)"
+| "Rk p (GSum m) = SumAux (kmap p m)"
+| "Rk p (GRank m ty) = RankAux (kmap p m, ty)"
+
+abbreviation kmp :: "nat \<Rightarrow> bool \<times> (event_data tuple, 'v) mapping \<Rightarrow> bool \<times> (event_data tuple, 'v) mapping"
+  where "kmp p \<equiv> map_prod id (kmap p)"
+
+lemma insert_cnt_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+  shows "insert_cnt args W (kmp p s) = kmp p (gi_cnt k t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update Let_def split: option.splits)
+
+lemma delete_cnt_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+  shows "delete_cnt args W (kmp p s) = kmp p (gd_cnt k t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update kmap_delete Let_def split: option.splits)
+
+lemma insert_sum_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+    and "meval_trm (aggargs_f args) W = ev t"
+  shows "insert_sum args W (kmp p s) = kmp p (gi_sum k ev t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update Let_def
+      split: option.splits event_data.splits prod.splits)
+
+lemma delete_sum_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+    and "meval_trm (aggargs_f args) W = ev t"
+  shows "delete_sum args W (kmp p s) = kmp p (gd_sum k ev t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update kmap_delete Let_def
+      split: option.splits event_data.splits prod.splits)
+
+lemma insert_rank_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+    and "meval_trm (aggargs_f args) W = ev t"
+  shows "insert_rank args ty W (kmp p s) = kmp p (gi_rank k ev ty t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update Let_def
+      split: option.splits event_data.splits prod.splits list_aux.splits type.splits)
+
+lemma delete_rank_kmap:
+  assumes "drop (length (aggargs_tys args)) W = kkey p (drop k t)" "p \<le> length (drop k t)"
+    and "meval_trm (aggargs_f args) W = ev t"
+  shows "delete_rank args ty W (kmp p s) = kmp p (gd_rank k ev ty t s)"
+  using assms by (cases s) (simp add: lookup_kmap_kkey kmap_update kmap_delete Let_def
+      split: option.splits event_data.splits prod.splits list_aux.splits type.splits)
+
+lemma fold_image_list:
+  assumes F: "comp_fun_commute_on UNIV F" and d: "distinct xs" and inj: "inj_on g (set xs)"
+  shows "Finite_Set.fold F b (g ` set xs) = fold (\<lambda>t. F (g t)) xs b"
+proof -
+  have dm: "distinct (map g xs)" using d inj by (simp add: distinct_map)
+  have "Finite_Set.fold F b (g ` set xs) = Finite_Set.fold F b (set (map g xs))" by simp
+  also have "\<dots> = fold F (remdups (map g xs)) b"
+    by (rule comp_fun_commute_on.fold_set_fold_remdups[OF F]) simp
+  also have "\<dots> = fold (\<lambda>t. F (g t)) xs b"
+    by (simp only: distinct_remdups_id[OF dm]) (induct xs arbitrary: b; simp)
+  finally show ?thesis .
+qed
+
+lemma cfc_insert_cnt: "comp_fun_commute_on UNIV (insert_cnt args)"
+  using insert_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_insert_sum: "comp_fun_commute_on UNIV (insert_sum args)"
+  using insert_sum_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_insert_rank: "comp_fun_commute_on UNIV (insert_rank args ty)"
+  using insert_rank_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_cnt: "comp_fun_commute_on UNIV (delete_cnt args)"
+  using delete_cnt_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_sum: "comp_fun_commute_on UNIV (delete_sum args)"
+  using delete_sum_comm by unfold_locales (auto simp: fun_eq_iff)
+lemma cfc_delete_rank: "comp_fun_commute_on UNIV (delete_rank args ty)"
+  using delete_rank_comm by unfold_locales (auto simp: fun_eq_iff)
+
+lemma dagg_wide_list:
+  assumes ok: "dagg_ok p w" and fin: "finite X" and X: "dwf_table w X"
+  shows "dagg_wide p w X = dwiden (wide_mask (Suc w) (dagg_ccols p w)) ` set (csorted_list_of_set X)"
+    and "distinct (csorted_list_of_set X)"
+    and "inj_on (dwiden (wide_mask (Suc w) (dagg_ccols p w))) (set (csorted_list_of_set X))"
+proof -
+  let ?m = "wide_mask (Suc w) (dagg_ccols p w)"
+  have s: "set (csorted_list_of_set X) = X" and d: "distinct (csorted_list_of_set X)"
+    using csorted_list_of_set_etuple[OF fin] by auto
+  have lm: "length (filter id ?m) = w"
+    using length_filter_wide_mask[OF dagg_ccols_props(1,2)[OF ok]] dagg_ccols_props(3)[OF ok]
+    by simp
+  have inj: "inj_on (dwiden ?m) {y. dwf_tuple w y}"
+    by (rule inj_on_subset[OF inj_on_dwiden]) (auto simp: lm dwf_tuple_def)
+  show "dagg_wide p w X = dwiden ?m ` set (csorted_list_of_set X)"
+    by (simp add: s dagg_wide_def dtabw_def)
+  show "distinct (csorted_list_of_set X)" by (rule d)
+  show "inj_on (dwiden ?m) (set (csorted_list_of_set X))"
+    by (rule inj_on_subset[OF inj]) (use X s in auto)
+qed
+
+lemma insert_maggaux'_Rk_gen:
+  assumes Y: "Y = h ` set xs" and d: "distinct xs" and inj: "inj_on h (set xs)"
+    and tup: "\<And>t. t \<in> set xs \<Longrightarrow> drop (length (aggargs_tys args)) (h t) = kkey pos (drop k t) \<and>
+       pos \<le> length (drop k t) \<and> meval_trm (aggargs_f args) (h t) = ev t"
+  shows "insert_maggaux' args Y (map_option (Rk pos) ax) = map_option (Rk pos) (gins k ev xs ax)"
+proof -
+  have fY: "finite Y" by (simp add: Y)
+  have c: "fold (\<lambda>t. insert_cnt args (h t)) xs (kmp pos s') = kmp pos (fold (gi_cnt k) xs s')" for s'
+    by (rule fold_rel, rule insert_cnt_kmap) (simp_all add: tup del: length_drop)
+  have sm: "fold (\<lambda>t. insert_sum args (h t)) xs (kmp pos s') = kmp pos (fold (gi_sum k ev) xs s')" for s'
+    by (rule fold_rel, rule insert_sum_kmap) (simp_all add: tup del: length_drop)
+  have r: "fold (\<lambda>t. insert_rank args ty (h t)) xs (kmp pos s') = kmp pos (fold (gi_rank k ev ty) xs s')"
+    for ty s'
+    by (rule fold_rel, rule insert_rank_kmap) (simp_all add: tup del: length_drop)
+  have fc: "fold (gstep_ins k ev) xs (Some (GCnt m)) =
+      (case fold (gi_cnt k) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GCnt m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_ins_def)
+  have fs: "fold (gstep_ins k ev) xs (Some (GSum m)) =
+      (case fold (gi_sum k ev) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GSum m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_ins_def)
+  have fr: "fold (gstep_ins k ev) xs (Some (GRank m ty)) =
+      (case fold (gi_rank k ev ty) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GRank m' ty) else None)"
+    for m ty
+    by (rule fold_flag[where C = "\<lambda>m. GRank m ty"]) (simp_all add: gstep_ins_def)
+  show ?thesis
+  proof (cases ax)
+    case (Some a)
+    show ?thesis
+    proof (cases a)
+      case (GCnt m)
+      show ?thesis
+        using c[of "(True, m)"] fY unfolding Some GCnt gins_def fc
+        by (simp add: Y fold_image_list[OF cfc_insert_cnt d inj] split: prod.splits)
+    next
+      case (GSum m)
+      show ?thesis
+        using sm[of "(True, m)"] fY unfolding Some GSum gins_def fs
+        by (simp add: Y fold_image_list[OF cfc_insert_sum d inj] split: prod.splits)
+    next
+      case (GRank m ty)
+      show ?thesis
+        using r[of ty "(True, m)"] fY unfolding Some GRank gins_def fr
+        by (simp add: Y fold_image_list[OF cfc_insert_rank d inj] split: prod.splits)
+    qed
+  qed simp
+qed
+
+lemma insert_maggaux'_Rk:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and fin: "finite X" and X: "dwf_table w X"
+  shows "insert_maggaux' (dagg_args (g0, \<omega>, f, k, pos) w) (dagg_wide (g0, \<omega>, f, k, pos) w X)
+      (map_option (Rk pos) ax)
+    = map_option (Rk pos) (gins k (\<lambda>t. umeval_trm f (deopt t)) (csorted_list_of_set X) ax)"
+  by (rule insert_maggaux'_Rk_gen[OF dagg_wide_list[OF ok fin X]])
+    (use dagg_wide_tuple[OF ok] X csorted_list_of_set_etuple[OF fin] in auto)
+
+lemma delete_maggaux'_Rk_gen:
+  assumes Y: "Y = h ` set xs" and d: "distinct xs" and inj: "inj_on h (set xs)"
+    and tup: "\<And>t. t \<in> set xs \<Longrightarrow> drop (length (aggargs_tys args)) (h t) = kkey pos (drop k t) \<and>
+       pos \<le> length (drop k t) \<and> meval_trm (aggargs_f args) (h t) = ev t"
+  shows "delete_maggaux' args Y (map_option (Rk pos) ax) = map_option (Rk pos) (gdel k ev xs ax)"
+proof -
+  have c: "fold (\<lambda>t. delete_cnt args (h t)) xs (kmp pos s') = kmp pos (fold (gd_cnt k) xs s')" for s'
+    by (rule fold_rel, rule delete_cnt_kmap) (simp_all add: tup del: length_drop)
+  have sm: "fold (\<lambda>t. delete_sum args (h t)) xs (kmp pos s') = kmp pos (fold (gd_sum k ev) xs s')" for s'
+    by (rule fold_rel, rule delete_sum_kmap) (simp_all add: tup del: length_drop)
+  have r: "fold (\<lambda>t. delete_rank args ty (h t)) xs (kmp pos s') = kmp pos (fold (gd_rank k ev ty) xs s')"
+    for ty s'
+    by (rule fold_rel, rule delete_rank_kmap) (simp_all add: tup del: length_drop)
+  have fc: "fold (gstep_del k ev) xs (Some (GCnt m)) =
+      (case fold (gd_cnt k) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GCnt m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_del_def)
+  have fs: "fold (gstep_del k ev) xs (Some (GSum m)) =
+      (case fold (gd_sum k ev) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GSum m') else None)" for m
+    by (rule fold_flag) (simp_all add: gstep_del_def)
+  have fr: "fold (gstep_del k ev) xs (Some (GRank m ty)) =
+      (case fold (gd_rank k ev ty) xs (True, m) of (v, m') \<Rightarrow> if v then Some (GRank m' ty) else None)"
+    for m ty
+    by (rule fold_flag[where C = "\<lambda>m. GRank m ty"]) (simp_all add: gstep_del_def)
+  show ?thesis
+  proof (cases ax)
+    case (Some a)
+    show ?thesis
+    proof (cases a)
+      case (GCnt m)
+      show ?thesis
+        using c[of "(True, m)"] unfolding Some GCnt gdel_def fc
+        by (simp add: Y fold_image_list[OF cfc_delete_cnt d inj] split: prod.splits)
+    next
+      case (GSum m)
+      show ?thesis
+        using sm[of "(True, m)"] unfolding Some GSum gdel_def fs
+        by (simp add: Y fold_image_list[OF cfc_delete_sum d inj] split: prod.splits)
+    next
+      case (GRank m ty)
+      show ?thesis
+        using r[of ty "(True, m)"] unfolding Some GRank gdel_def fr
+        by (simp add: Y fold_image_list[OF cfc_delete_rank d inj] split: prod.splits)
+    qed
+  qed simp
+qed
+
+lemma delete_maggaux'_Rk:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and fin: "finite X" and X: "dwf_table w X"
+  shows "delete_maggaux' (dagg_args (g0, \<omega>, f, k, pos) w) (dagg_wide (g0, \<omega>, f, k, pos) w X)
+      (map_option (Rk pos) ax)
+    = map_option (Rk pos) (gdel k (\<lambda>t. umeval_trm f (deopt t)) (csorted_list_of_set X) ax)"
+  by (rule delete_maggaux'_Rk_gen[OF dagg_wide_list[OF ok fin X]])
+    (use dagg_wide_tuple[OF ok] X csorted_list_of_set_etuple[OF fin] in auto)
+
+lemma init_maggaux'_Rk:
+  "init_maggaux' (dagg_args (g0, \<omega>, f, k, pos) w) = map_option (Rk pos) (ginit \<omega>)"
+  by (simp add: ginit_def split: prod.splits Formula.agg_type.splits ty.splits)
+
+lemma kkey_update: "p \<le> length g \<Longrightarrow> (kkey p g)[p := v] = take p g @ v # drop p g"
+  by (simp add: kkey_def list_update_append min_def)
+
+lemma get_map_result_kmap:
+  assumes "\<forall>g \<in> Mapping.keys m. p \<le> length g"
+  shows "get_map_result (kmap p m) p f = gmr p Some f m"
+proof -
+  have "{g \<in> Mapping.keys m. p \<le> length g} = Mapping.keys m" using assms by auto
+  then show ?thesis
+    unfolding get_map_result_def gmr_def keys_kmap image_image
+    using assms by (intro image_cong refl) (auto simp: lookup_kmap_kkey kkey_update Mapping.keys_dom_lookup split: option.splits)
+qed
+
+lemma singleton_table_1: "singleton_table (Suc 0) 0 x = {[Some x]}"
+  by (simp add: singleton_table_def)
+
+lemma result_maggaux_Rk:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and K: "\<forall>g \<in> gkeys a. pos \<le> length g"
+    and v: "valid_maggaux (dagg_args (g0, \<omega>, f, k, pos) w) (Rk pos a) X"
+  shows "result_maggaux (dagg_args (g0, \<omega>, f, k, pos) w) (Rk pos a) = gres g0 \<omega> pos Some a"
+proof -
+  have e: "Mapping.keys (kmap pos m) = {} \<longleftrightarrow> Mapping.keys m = {}" if "\<forall>g \<in> Mapping.keys m. pos \<le> length g"
+    for m :: "(event_data option list, 'v) mapping"
+    using that by (auto simp: keys_kmap)
+  have s: "g0 \<Longrightarrow> singleton_table (Suc (w - k)) pos x = {[Some x]}" for x :: event_data
+  proof -
+    assume "g0"
+    then have "w - k = 0" "pos = 0" using ok by auto
+    then show ?thesis by (simp add: singleton_table_1)
+  qed
+  show ?thesis
+  proof (cases a)
+    case (GCnt m)
+    then show ?thesis using K by (simp add: e s get_map_result_kmap)
+  next
+    case (GSum m)
+    have "fst \<omega> = Formula.Agg_Sum \<or> fst \<omega> = Formula.Agg_Avg"
+      using v by (simp add: GSum Let_def del: valid_aggmap_def)
+    then show ?thesis using K GSum by (auto simp: e s get_map_result_kmap case_prod_beta)
+  next
+    case (GRank m ty)
+    have "fst \<omega> = Formula.Agg_Min \<or> fst \<omega> = Formula.Agg_Max \<or> fst \<omega> = Formula.Agg_Med"
+      using v by (simp add: GRank Let_def del: valid_aggmap_def)
+    then show ?thesis using K GRank by (auto simp: e s get_map_result_kmap)
+  qed
+qed
+
+lemma wf_tuple_slot:
+  assumes "dwf_tuple b g" "p \<le> b"
+  shows "wf_tuple (Suc b) {0..<Suc b} (take p g @ Some v # drop p g)"
+proof -
+  have l: "length g = b" and s: "\<forall>i < b. g ! i \<noteq> None" using assms(1) by (auto simp: dwf_tuple_def)
+  show ?thesis unfolding wf_tuple_def
+  proof (intro conjI allI impI)
+    show "length (take p g @ Some v # drop p g) = Suc b" using l assms(2) by simp
+  next
+    fix i assume i: "i < Suc b"
+    show "((take p g @ Some v # drop p g) ! i = None) = (i \<notin> {0..<Suc b})"
+      using i l s assms(2) by (auto simp: nth_append nth_Cons' min_def split: if_splits)
+  qed
+qed
+
+lemma table_gmr:
+  assumes "\<forall>g \<in> Mapping.keys m. dwf_tuple b g" "p \<le> b"
+  shows "table (Suc b) {0..<Suc b} (gmr p Some f m)"
+  using assms
+  by (auto simp: table_def gmr_def Mapping.keys_dom_lookup split: option.splits
+      intro!: wf_tuple_slot)
+
+lemma table_gres:
+  assumes "\<forall>g \<in> gkeys a. dwf_tuple b g" "p \<le> b" "g0 \<Longrightarrow> b = 0"
+  shows "table (Suc b) {0..<Suc b} (gres g0 \<omega> p Some a)"
+proof -
+  have 1: "table (Suc b) {0..<Suc b} {[Some x]}" if g0 for x :: event_data
+    using assms(3)[OF that] by (simp add: table_def wf_tuple_def)
+  have 3: "table n V {}" for n V by (simp add: table_def)
+  show ?thesis
+    using assms(1) by (cases a) (simp_all add: 1 3 table_gmr[OF _ assms(2)] split: Formula.agg_type.splits)
+qed
+
+text \<open>The window's aggregate: the structure over the window's own tuples, fed with the sorted
+  list of what enters and what leaves, and read with the result column filled in.  Its
+  invariant is the kernel's, under @{const Rk}, and that its keys are the groups of well-formed
+  tuples.\<close>
+
+type_synonym dgagg = "event_data option gagg"
+
+definition ag_init :: "daggp \<Rightarrow> nat \<Rightarrow> 'b gagg option" where
+  "ag_init p w = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ginit \<omega>)"
+
+definition ag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> dgagg option \<Rightarrow> dgagg option" where
+  "ag_ins p w T cc ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     gins k (\<lambda>t. umeval_trm f (deopt t)) (filter (\<lambda>t. t \<notin> snd cc) (csl T)) ax)"
+
+definition ag_del :: "daggp \<Rightarrow> nat \<Rightarrow> event_data table \<Rightarrow> cntset \<Rightarrow> dgagg option \<Rightarrow> dgagg option" where
+  "ag_del p w T cc ax = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     gdel k (\<lambda>t. umeval_trm f (deopt t))
+       (filter (\<lambda>t. Mapping.lookup (fst cc) t = Some 1) (csl T)) ax)"
+
+definition ag_res :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> dgagg option \<Rightarrow> event_data table" where
+  "ag_res p w cc ax = (case ax of
+     None \<Rightarrow> dagg_p p (snd cc)
+   | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> gres g0 \<omega> pos Some a))"
+
+definition ag_inv :: "daggp \<Rightarrow> nat \<Rightarrow> cntset \<Rightarrow> dgagg option \<Rightarrow> bool" where
+  "ag_inv p w cc ax \<longleftrightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     kag_inv p w cc (map_option (Rk pos) ax) \<and>
+     (\<forall>a. ax = Some a \<longrightarrow> (\<forall>g \<in> gkeys a. dwf_tuple (w - k) g)))"
+
+lemma dwf_tuple_drop: "dwf_tuple w t \<Longrightarrow> dwf_tuple (w - k) (drop k t)"
+  by (auto simp: dwf_tuple_def)
+
+lemma gkeys_ginit: "ginit \<omega> = Some a \<Longrightarrow> gkeys a = {}"
+  by (cases \<omega>) (auto simp: ginit_def split: Formula.agg_type.splits ty.splits)
+
+lemma ag_ins_Rk:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and fT: "finite T" and T: "dwf_table w T"
+  shows "map_option (Rk pos) (ag_ins (g0, \<omega>, f, k, pos) w T cc ax)
+    = kag_ins (g0, \<omega>, f, k, pos) w T cc (map_option (Rk pos) ax)"
+proof -
+  note L = dagg_wide_list[OF ok fT T]
+  have s: "set (csl T) = T" using csorted_list_of_set_etuple[OF fT] by (simp add: csl_finite[OF fT])
+  show ?thesis
+    unfolding ag_ins_def kag_ins_def prod.case
+  proof (rule insert_maggaux'_Rk_gen[symmetric])
+    show "dagg_wide (g0, \<omega>, f, k, pos) w (cnt_enter T cc)
+      = dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w)) ` set (filter (\<lambda>t. t \<notin> snd cc) (csl T))"
+      by (auto simp: dagg_wide_def dtabw_def cnt_enter_def s)
+  qed (use L T s dagg_wide_tuple[OF ok] in \<open>auto simp: csl_finite[OF fT] intro: inj_on_subset\<close>)
+qed
+
+lemma ag_del_Rk:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and fT: "finite T" and T: "dwf_table w T"
+  shows "map_option (Rk pos) (ag_del (g0, \<omega>, f, k, pos) w T cc ax)
+    = kag_del (g0, \<omega>, f, k, pos) w T cc (map_option (Rk pos) ax)"
+proof -
+  note L = dagg_wide_list[OF ok fT T]
+  have s: "set (csl T) = T" using csorted_list_of_set_etuple[OF fT] by (simp add: csl_finite[OF fT])
+  show ?thesis
+    unfolding ag_del_def kag_del_def prod.case
+  proof (rule delete_maggaux'_Rk_gen[symmetric])
+    show "dagg_wide (g0, \<omega>, f, k, pos) w (cnt_leave T cc)
+      = dwiden (wide_mask (Suc w) (dagg_ccols (g0, \<omega>, f, k, pos) w))
+        ` set (filter (\<lambda>t. Mapping.lookup (fst cc) t = Some 1) (csl T))"
+      by (auto simp: dagg_wide_def dtabw_def cnt_leave_def s)
+  qed (use L T s dagg_wide_tuple[OF ok] in \<open>auto simp: csl_finite[OF fT] intro: inj_on_subset\<close>)
+qed
+
+lemma ag_inv_init: "ag_inv p w (Mapping.empty, {}) (ag_init p w)"
+proof -
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p)
+  have "kag_inv p w (Mapping.empty, {}) (map_option (Rk pos) (ginit \<omega>))"
+    using kag_inv_init[of p w] unfolding kag_init_def p init_maggaux'_Rk .
+  then show ?thesis by (auto simp: ag_inv_def ag_init_def p dest: gkeys_ginit)
+qed
+
+lemma ag_inv_ins:
+  assumes cr: "cnt_rep f cc" and fT: "finite T" and ok: "dagg_ok p w"
+    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "ag_inv p w cc ax"
+  shows "ag_inv p w (cnt_add T cc) (ag_ins p w T cc ax)"
+proof -
+  obtain g0 \<omega> f' k pos where p: "p = (g0, \<omega>, f', k, pos)" by (cases p)
+  have ki: "kag_inv p w cc (map_option (Rk pos) ax)"
+    and K: "\<And>a. ax = Some a \<Longrightarrow> \<forall>g \<in> gkeys a. dwf_tuple (w - k) g"
+    using inv by (auto simp: ag_inv_def p)
+  have "kag_inv p w (cnt_add T cc) (map_option (Rk pos) (ag_ins p w T cc ax))"
+    unfolding p ag_ins_Rk[OF ok[unfolded p] fT T] by (rule kag_inv_ins[OF cr fT ok T S ki, unfolded p])
+  moreover have "\<forall>g \<in> gkeys a'. dwf_tuple (w - k) g" if a': "ag_ins p w T cc ax = Some a'" for a'
+  proof (cases ax)
+    case (Some a)
+    have sub: "gkeys a' \<subseteq> gkeys a \<union> drop k ` set (filter (\<lambda>t. t \<notin> snd cc) (csl T))"
+      using a' by (intro gkeys_gins) (simp add: ag_ins_def p Some)
+    have "set (filter (\<lambda>t. t \<notin> snd cc) (csl T)) \<subseteq> T"
+      using csorted_list_of_set_etuple[OF fT] by (auto simp: csl_finite[OF fT])
+    then show ?thesis using sub K[OF Some] T dwf_tuple_drop by blast
+  qed (use a' in \<open>simp add: ag_ins_def p\<close>)
+  ultimately show ?thesis by (simp add: ag_inv_def p)
+qed
+
+lemma ag_inv_del:
+  assumes cr: "cnt_rep f cc" and fT: "finite T" and ok: "dagg_ok p w"
+    and T: "dwf_table w T" and S: "dwf_table w (snd cc)" and inv: "ag_inv p w cc ax"
+  shows "ag_inv p w (cnt_del T cc) (ag_del p w T cc ax)"
+proof -
+  obtain g0 \<omega> f' k pos where p: "p = (g0, \<omega>, f', k, pos)" by (cases p)
+  have ki: "kag_inv p w cc (map_option (Rk pos) ax)"
+    and K: "\<And>a. ax = Some a \<Longrightarrow> \<forall>g \<in> gkeys a. dwf_tuple (w - k) g"
+    using inv by (auto simp: ag_inv_def p)
+  have "kag_inv p w (cnt_del T cc) (map_option (Rk pos) (ag_del p w T cc ax))"
+    unfolding p ag_del_Rk[OF ok[unfolded p] fT T] by (rule kag_inv_del[OF cr fT ok T S ki, unfolded p])
+  moreover have "\<forall>g \<in> gkeys a'. dwf_tuple (w - k) g" if a': "ag_del p w T cc ax = Some a'" for a'
+  proof (cases ax)
+    case (Some a)
+    have "gkeys a' \<subseteq> gkeys a"
+      using a' by (intro gkeys_gdel) (simp add: ag_del_def p Some)
+    then show ?thesis using K[OF Some] by blast
+  qed (use a' in \<open>simp add: ag_del_def p\<close>)
+  ultimately show ?thesis by (simp add: ag_inv_def p)
 qed
 
 lemma ag_res_inv:
@@ -347,11 +869,21 @@ proof (cases ax)
   then show ?thesis by (simp add: ag_res_def)
 next
   case (Some a)
-  have "result_maggaux (dagg_args p w) a = eval_aggargs (dagg_args p w) (dagg_wide p w (snd cc))"
-    by (rule valid_result_maggaux) (use inv in \<open>simp add: ag_inv_def Some\<close>)
-  then show ?thesis
-    unfolding ag_res_def Some option.case by (simp add: dagg_p_eval_aggargs[OF ok S, symmetric])
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p)
+  have v: "valid_maggaux (dagg_args p w) (Rk pos a) (dagg_wide p w (snd cc))"
+    and K: "\<forall>g \<in> gkeys a. dwf_tuple (w - k) g"
+    using inv by (auto simp: ag_inv_def kag_inv_def p Some)
+  have pw: "pos \<le> w - k" and g0w: "g0 \<Longrightarrow> w - k = 0" using ok by (auto simp: p)
+  have K': "\<forall>g \<in> gkeys a. pos \<le> length g" using K pw by (auto simp: dwf_tuple_def)
+  have "dagg_p p (snd cc) = dtabc (Suc (w - k)) [0..<Suc (w - k)]
+      (result_maggaux (dagg_args p w) (Rk pos a))"
+    using dagg_p_eval_aggargs[OF ok S] valid_result_maggaux[OF v] by (simp add: p)
+  also have "\<dots> = gres g0 \<omega> pos Some a"
+    unfolding p result_maggaux_Rk[OF ok[unfolded p] K' v[unfolded p]]
+    by (rule dtabc_upt[OF table_gres[OF K pw g0w]])
+  finally show ?thesis by (simp add: ag_res_def Some p)
 qed
+
 
 subsection \<open>The window, with the aggregate\<close>
 
@@ -363,11 +895,11 @@ text \<open>
   with the aggregate's invariant for the window's count set.
 \<close>
 
-type_synonym swagg = "swaux \<times> aggaux option"
+type_synonym swagg = "swaux \<times> dgagg option"
 
 function sa_move :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data table) queue \<Rightarrow>
-    (ts \<times> event_data table) queue \<Rightarrow> cntset \<Rightarrow> aggaux option \<Rightarrow>
-    (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> cntset \<times> aggaux option" where
+    (ts \<times> event_data table) queue \<Rightarrow> cntset \<Rightarrow> dgagg option \<Rightarrow>
+    (ts \<times> event_data table) queue \<times> (ts \<times> event_data table) queue \<times> cntset \<times> dgagg option" where
   "sa_move args p nt pend win cc ax =
      (case safe_hd pend of
         (None, pend') \<Rightarrow> (pend', win, cc, ax)
@@ -387,7 +919,7 @@ termination
 declare sa_move.simps[simp del]
 
 function sa_expire :: "args \<Rightarrow> daggp \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data table) queue \<Rightarrow> cntset \<Rightarrow>
-    aggaux option \<Rightarrow> (ts \<times> event_data table) queue \<times> cntset \<times> aggaux option" where
+    dgagg option \<Rightarrow> (ts \<times> event_data table) queue \<times> cntset \<times> dgagg option" where
   "sa_expire args p nt win cc ax =
      (case safe_hd win of
         (None, win') \<Rightarrow> (win', cc, ax)
