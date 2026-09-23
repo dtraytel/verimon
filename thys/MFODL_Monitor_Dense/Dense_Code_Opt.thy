@@ -400,9 +400,9 @@ lemma umatch_table_rbt[code]:
   "umatch_table tms cs (RBT_set rbt) = RBT_Set2.fold (\<lambda>x acc. case umatch tms x of None \<Rightarrow> acc
      | Some f \<Rightarrow> edl_insert (map (\<lambda>c. the (f c)) cs) acc) rbt {}"
 proof -
-  have "ID CCOMPARE(event_data list) \<noteq> None" by (simp add: edl_dict_simps)
-  then show ?thesis
-    unfolding umatch_table_def RBT_set_conv_keys RBT_Set2.fold_conv_fold_keys' edl_insert_def
+  have i: "ID CCOMPARE(event_data list) \<noteq> None" by (simp add: edl_dict_simps)
+  show ?thesis
+    unfolding umatch_table_def RBT_set_conv_keys[OF i] RBT_Set2.fold_conv_fold_keys' edl_insert_def
       these_image_fold RBT_Set2.keys.rep_eq by simp
 qed
 
