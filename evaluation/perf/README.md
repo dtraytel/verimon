@@ -20,12 +20,12 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.31 (df896bc),
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.32 (701a880),
 and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
 `-verified` is the original VeriMon.  Both ran on the same otherwise idle four-core container,
 with the same suite, logs and settings, so their numbers compare (master and a refine run after
-21.28 one after the other, then refine again after 21.29, 21.30 and 21.31, with MonPoly's times
-within 2% of the previous run's each time); that
+21.28 one after the other, then refine again after 21.29, 21.30, 21.31 and 21.32, with MonPoly's
+times within 3% of the previous run's each time); that
 container is not the one of the earlier pair of runs (after 21.27, geometric mean 1.33 with three
 timeouts), which runs MonPoly 1.31x as slowly (geometric mean over 194 formulas, up to 2.2x on
 the `long` log), so the two pairs compare with each other only through their ratios.
@@ -35,10 +35,10 @@ the `long` log), so the two pairs compare with each other only through their rat
 | VeriMon timeouts (5 s) | 64 | 0 |
 | MonPoly timeouts | 0 | 0 |
 | both finish | 132 | 196 |
-| geometric mean VeriMon/MonPoly | 2.71 | 1.06 |
-| VeriMon faster / more than 2x slower | 0 / 103 | 68 / 0 |
+| geometric mean VeriMon/MonPoly | 2.71 | 1.05 |
+| VeriMon faster / more than 2x slower | 0 / 103 | 74 / 0 |
 
-MonPoly itself takes 0.86x its master time in the refine run, over the 196 formulas it finishes
+MonPoly itself takes 0.89x its master time in the refine run, over the 196 formulas it finishes
 in both; the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not all of
 that is noise.  Over the 137 formulas the original VeriMon finishes, the verified monitor of
 refine takes 0.35x its time.  The master run has one verdict disagreement, `match-pcnt`, an
@@ -46,16 +46,18 @@ end-of-stream difference between MonPoly and the verified monitor that the origi
 shares; the refine run has none since EFFICIENCY.md 21.31.  The `andtrigger` group has no ratio against MonPoly, which does not monitor TRIGGER;
 the reports record the verified monitor's times alone.
 
-Between the refine runs after 21.30 and after 21.31 only the verified monitor changed (the
-regular-expression windows over short tuples, the Since join's deletions and the end of the log for
-past-only formulas, EFFICIENCY.md 21.31): the `match` group went from 1.39 to 1.00 -- the verified
-monitor takes 0.69x its previous time there -- and among the Since formulas with a partial left
-operand `since-u50` went from 1.60 to 1.31 and `since-u5` from 1.43 to 1.25, while the negated ones,
-6% fewer instructions each, stayed within the noise (`since-nu50` 1.73 to 1.63, `since-nu500` 1.65
-to 1.73).  The verdict disagreement on `match-pcnt` is gone.  The geometric mean stays at 1.06: MonPoly ran 2% faster than in the previous run, and the
-groups whose code did not change moved by up to 7% either way, the run-to-run noise of
-best-of-three with two workers that is why EFFICIENCY.md measures single changes in instructions.
-The runs after 21.29 and 21.30 had gone from 1.13 to 1.06, with the red-black trees' rebalancing.
+Between the refine runs after 21.31 and after 21.32 only the verified monitor changed (the Until
+structure's remaining dictionaries, the red-black trees' black heights and the Until window's
+result read off its front map, EFFICIENCY.md 21.32): the `until` group went from 1.31 to 1.16 --
+the verified monitor takes 0.90x its previous time there -- with `until-nu20` from 1.61 to 1.24,
+`until-bb50` from 1.29 to 1.06 and `until-u5` from 1.31 to 1.12; `until-u50` (1.22 to 1.27) moved
+within the noise.  The geometric mean went from 1.06 to 1.05, and the formulas where the verified
+monitor is faster from 68 to 74; MonPoly ran 3% slower than in the previous run, and the groups whose
+code did not change moved by up to 8% either way, the run-to-run noise of best-of-three with two
+workers that is why EFFICIENCY.md measures single changes in instructions.  The largest ratios left
+are `pol-sincefutb` (1.90), `since-nu5` (1.89), `pol-threshold` (1.73) and `aggonce-max50` (1.71).
+The earlier refine runs went from 1.13 to 1.06 after 21.29 and 21.30 (the red-black trees'
+rebalancing), and the `match` group from 1.39 to 1.00 after 21.31 (EFFICIENCY.md 21.31).
 
 ## The logs
 

@@ -8452,6 +8452,16 @@ state, so nothing above `Dense_Evt_Aux.thy` changed, and the short-tuple refinem
 Wall time on `until-nu20`, against the start of this section: 1.42 s → 1.12 s, against MonPoly's
 0.87 s (ratio 1.63 → 1.29).  The output is identical on the six formulas and on the corpus.
 
+### The suite
+
+The suite rerun after this section (`evaluation/perf/report.md`, 701a880) puts `until` at 1.16,
+from 1.31: the verified monitor takes 0.90x its previous time on the group, `until-nu20` went from
+1.61 to 1.24, `until-bb50` from 1.29 to 1.06 and `until-u5` from 1.31 to 1.12, while `until-u50`
+(1.22 to 1.27) stayed within the noise.  The geometric mean over the 196 formulas went from 1.06
+to 1.05, with 74 formulas where the verified monitor is faster (from 68) and none above 2x;
+MonPoly ran 3% slower than in the previous run.  The largest ratios left are `pol-sincefutb`
+(1.90), `since-nu5` (1.89), `pol-threshold` (1.73) and `aggonce-max50` (1.71).
+
 ### What is left
 
 The rest is what persistent trees cost: 6.5 million tuple comparisons (`edl_comparator` and
