@@ -8467,3 +8467,53 @@ MonPoly ran 3% slower than in the previous run.  The largest ratios left are `po
 The rest is what persistent trees cost: 6.5 million tuple comparisons (`edl_comparator` and
 `comparator_event_data`, 13%), the lookups in the per-time-point maps of the nested deque (5%), and
 `caml_modify` and the minor collector (8%), where MonPoly updates hash tables in place.
+
+## 21.33 The next three worst ratios
+
+After 21.32 the three largest ratios were `pol-sincefutb` (1.90), `since-nu5` (1.89) and
+`pol-threshold` (1.73).
+
+### The Since structure with an interval that contains zero
+
+The Since structure keeps, besides the window, two mappings that record since when each tuple
+has been seen (`tuple_since`, and its index `idx_since`), prunes them every so often (`dgc_msaux`,
+which rebuilds the index and filters the mapping against every tuple of the window), and updates
+both at every insertion and every join.  They are read at one place: when a time point moves from
+`data_prev` -- the part of the window not yet old enough to count -- into `data_in`.  When the
+interval contains zero no time point is too young, the insertion puts every table into `data_in`
+directly, and `data_prev` stays empty; the two mappings are bookkeeping that nothing reads.  On
+`since-nu5` they were a quarter of the run (the collection alone 11%).  Every Since of the suite
+with a lower bound of zero pays for them: all of the `since` group but the ones with a positive
+lower bound, and `pol-sincefutb`.
+
+`Dense_Aux.thy` now has `dadd_new_table_lz` and `dgc_join_lz`, which skip the two mappings and the
+collection when the interval contains zero and are the old operations otherwise, and the dense and
+the short-tuple Since run them.  Their validity, `valid_dmsaux_lz`, is the verified one for *some*
+choice of the two mappings and of the time of the last collection (`dset_since`), together with
+`data_prev` being empty; the operations that do not touch the mappings commute with `dset_since`,
+the join produces mappings of its own from the ones it is given, and the insertion of the old
+operations is the new one with the mappings updated.  So `dsaux'` changed its validity and its
+four lemmas their proofs, and nothing above `Dense_Aux.thy` changed.
+
+| formula (instructions, `base`/`burst` 1500) | before | after |
+|---|---|---|
+| `since-nu5` | 2.103 G | 1.501 G (-28.6%) |
+| `since-nu500` | 2.126 G | 1.531 G (-28.0%) |
+| `pol-sincefutb` | 1.262 G | 0.946 G (-25.1%) |
+| `since-u50` | 1.564 G | 1.208 G (-22.7%) |
+
+MonPoly takes 1.475 G on `since-nu5`.
+
+### The match of a predicate against its terms
+
+`pol-threshold` counts over a past window, `r <- CNT y; x ONCE[0,60] A(x,y)`; inside the
+aggregation the variables are renumbered, so the predicate is matched against its terms
+(`umatch_table`) rather than copied, and that ran the generic image and `Option.these` with their
+dictionaries: 9% of the run.  `umatch_table_rbt` (`Dense_Code_Opt.thy`) is one fold over the
+tree that inserts the matches with the specialised insertion.  `pol-threshold` -5.7%,
+`aggonce-max50` -3.6%; the rest of both is the window aggregate that 21.30 priced.
+
+Wall time on the suite's logs (median of five): `since-nu5` 1.27 s → 0.87 s against MonPoly's
+0.77 s (ratio 1.66 → 1.13), `pol-sincefutb` 1.82 s → 1.27 s (1.88 → 1.31), `since-nu500` 1.60 →
+1.11, `since-u50` 1.33 → 1.00, `pol-threshold` 1.53 → 1.45.  The output is identical on these
+formulas and on the corpus (601 same).

@@ -8065,19 +8065,19 @@ let rec de_gadd_new_table_msaux
                      (data_in,
                        (table_in,
                          (idx_in, (tuple_in, (idx_since, tuple_since)))))))))
-    = (let xa = de_minus_keys x tuple_since in
-       let tuple_sincea = de_upd_set_nat tuple_since (fun _ -> t) xa in
-       let idx_sincea = de_gidx_upd args (fun _ -> de_didx_add msk xa idx_since)
-         in
-        (if memL (args_ivl args) zero_nata
-          then (t, (gc, (msk, (data_prev,
-                                (append_queue (t, x) data_in,
-                                  (edl_union table_in x,
-                                    (de_gidx_upd args
-                                       (fun _ -> de_didx_add msk x idx_in),
-                                      (de_upd_set_nat tuple_in (fun _ -> t) x,
-(idx_sincea, tuple_sincea)))))))))
-          else (t, (gc, (msk, (append_queue (t, x) data_prev,
+    = (if memL (args_ivl args) zero_nata
+        then (t, (gc, (msk, (data_prev,
+                              (append_queue (t, x) data_in,
+                                (edl_union table_in x,
+                                  (de_gidx_upd args
+                                     (fun _ -> de_didx_add msk x idx_in),
+                                    (de_upd_set_nat tuple_in (fun _ -> t) x,
+                                      (idx_since, tuple_since)))))))))
+        else (let xa = de_minus_keys x tuple_since in
+              let tuple_sincea = de_upd_set_nat tuple_since (fun _ -> t) xa in
+              let idx_sincea =
+                de_gidx_upd args (fun _ -> de_didx_add msk xa idx_since) in
+               (t, (gc, (msk, (append_queue (t, x) data_prev,
                                 (data_in,
                                   (table_in,
                                     (idx_in,
@@ -9588,7 +9588,8 @@ let rec de_ggc_join_msaux
                      (data_in,
                        (table_in,
                          (idx_in, (tuple_in, (idx_since, tuple_since)))))))))
-    = (if not (memR (args_ivl args) (minus_nata t gc))
+    = (if not (memL (args_ivl args) zero_nata) &&
+            not (memR (args_ivl args) (minus_nata t gc))
         then de_gjoin_msaux args y
                (de_ggc_msaux args
                  (t, (gc, (msk, (data_prev,
@@ -10633,16 +10634,57 @@ let rec udux_eval
           (zs, UDUX_wagg (p, aa)));;
 
 let rec umatch_table
-  tms cs x =
-    these ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
-            set_impl_list)
-      (image ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
-        ((ceq_option (ceq_list ceq_event_data)),
-          (ccompare_option (ccompare_list ccompare_event_data)),
-          (set_impl_option set_impl_list))
-        (fun xa ->
-          map_option (fun f -> mapa (fun c -> the (f c)) cs) (umatch tms xa))
-        x);;
+  tms cs x2 = match tms, cs, x2 with
+    tms, cs, RBT_set rbt ->
+      unbox edl_rbt_fold_table_v
+        (fun x acc ->
+          (match umatch tms x with None -> acc
+            | Some f -> edl_insert (mapa (fun c -> the (f c)) cs) acc))
+        rbt edl_bot
+    | tms, cs, DList_set d ->
+        these ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+                set_impl_list)
+          (image
+            ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
+            ((ceq_option (ceq_list ceq_event_data)),
+              (ccompare_option (ccompare_list ccompare_event_data)),
+              (set_impl_option set_impl_list))
+            (fun x ->
+              map_option (fun f -> mapa (fun c -> the (f c)) cs) (umatch tms x))
+            (DList_set d))
+    | tms, cs, Set_Monad xs ->
+        these ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+                set_impl_list)
+          (image
+            ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
+            ((ceq_option (ceq_list ceq_event_data)),
+              (ccompare_option (ccompare_list ccompare_event_data)),
+              (set_impl_option set_impl_list))
+            (fun x ->
+              map_option (fun f -> mapa (fun c -> the (f c)) cs) (umatch tms x))
+            (Set_Monad xs))
+    | tms, cs, Collect_set p ->
+        these ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+                set_impl_list)
+          (image
+            ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
+            ((ceq_option (ceq_list ceq_event_data)),
+              (ccompare_option (ccompare_list ccompare_event_data)),
+              (set_impl_option set_impl_list))
+            (fun x ->
+              map_option (fun f -> mapa (fun c -> the (f c)) cs) (umatch tms x))
+            (Collect_set p))
+    | tms, cs, Complement q ->
+        these ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
+                set_impl_list)
+          (image
+            ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data))
+            ((ceq_option (ceq_list ceq_event_data)),
+              (ccompare_option (ccompare_list ccompare_event_data)),
+              (set_impl_option set_impl_list))
+            (fun x ->
+              map_option (fun f -> mapa (fun c -> the (f c)) cs) (umatch tms x))
+            (Complement q));;
 
 let rec mebuf2_take
   f (xs, ys) =
