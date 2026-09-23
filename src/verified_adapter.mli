@@ -19,9 +19,10 @@ val flush_batch: batches -> db -> db
 
 type tyssig 
 val convert_into_tysym: tcst -> Verified.Monitor.tysym
-(** The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
-    with the types of their arguments. *)
-val lsig_of_schema: Db.schema -> (string * Verified.Monitor.ty list) list
+(** The signature as the verified monitor on the log reads it (Log_Monitor.thy) for a formula:
+    the predicates with the types of their arguments. *)
+val lsig_of_schema: Db.schema -> Verified.Monitor.tysym Verified.Monitor.formula ->
+  (string * Verified.Monitor.ty list) list
 val int_of_nat: Verified.Monitor.nat -> int
 val convert_schema_into_sig: Db.schema -> tyssig
 

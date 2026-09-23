@@ -11,26 +11,29 @@ text \<open>
   monitor, into the monitor that @{text "-verified"} runs on a log: @{text vinit} prepares the
   formula and starts the monitor, @{text vfeed_chunk} reads a chunk of the log, and
   @{text vfinish} the end of the log. The parser skips the events of the predicates that the
-  signature declares but the formula does not mention (@{theory Log_Parser.Log_Filter}); the
-  time points it outputs are converted by the signature into the monitor's databases and fed
-  to @{const udmstep}.
+  signature declares but whose names do not occur freely in the formula
+  (@{theory Log_Parser.Log_Filter}); the time points it outputs are converted by the signature
+  into the monitor's databases and fed to @{const udmstep}.
 
   The main theorem, @{text verimon_log.vrun_log}, states that for the bytes of a log that
-  denotes a prefix -- its entries are those of the grammar (@{const parse_log}), their
-  timestamps natural numbers that do not decrease, and their events those of the signature
-  with fields of the declared types (@{text log_prefix}) -- the monitor reports no error, and
-  that its verdicts are those that the specification of the formula prescribes for the prefix
-  (@{text Mt}, as in @{thm [source] verimon_prepare.udminit_verimon_mverdicts}).
+  denotes a prefix -- its items are those the parser reads (@{const parse_log}, which accepts
+  exactly the logs of the grammar, @{thm [source] parse_log_correct}), they are entries, their
+  timestamps are natural numbers that do not decrease, and their events are those of the
+  signature with fields of the declared types (@{text log_prefix}) -- the monitor reports no
+  error, and its verdicts are those that the specification of the formula prescribes for the
+  prefix (@{text Mt}, as in @{thm [source] verimon_prepare.udminit_verimon_mverdicts}).
   @{text verimon_log.vrun_filtered} states the same for the logs whose events of the other
-  predicates are arbitrary, and that the monitor reports an error on every other log;
-  @{text verimon_log.Mt_pred_names} states that the verdicts do not depend on these events.
-  @{text verimon_log.vfeed_chunks_online} and @{text verimon_log.vfeed_chunks_prompt} state
-  the same for a log that is still being read.
+  declared predicates are arbitrary, and that the monitor reports an error on every other log;
+  @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
+  @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
+  @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read.
+  The theorems say nothing about what is output after the first error, nor about the verdicts
+  output together with it, for the same chunk.
 
-  Beyond the specifications, the theorems rest on the code printings of
-  @{theory Log_Parser.Log_Code} and the one below, and they take the reader of floats as a
-  parameter, about which nothing is assumed: the front end passes OCaml's
-  @{text float_of_string}.
+  The theorems take the reader of floats as a parameter, about which nothing is assumed: the
+  front end passes OCaml's @{text float_of_string_opt}. That the generated code computes these
+  functions rests on the code printings: those of @{theory Log_Parser.Log_Code}, of the
+  monitor's session (strings, floats, integers and containers), and the two below.
 \<close>
 
 subsection \<open>Strings\<close>
@@ -47,9 +50,10 @@ lemma Rep_string8_of_bytes[simp]: "Rep_string8 (string8_of_bytes b) = Rep_bytes 
 lemma string8_of_bytes_inject[simp]: "string8_of_bytes a = string8_of_bytes b \<longleftrightarrow> a = b"
   by (metis Rep_bytes_inject Rep_string8_of_bytes)
 
-text \<open>Trusted: both types are OCaml's strings, with the same bijection between @{typ char} and
-  OCaml's characters (@{theory Log_Parser.Log_Code} and @{theory MFODL_Monitor_Devel.Event_Data}),
-  so the conversion is the identity.\<close>
+text \<open>Trusted: both types are printed as OCaml's strings, a character list as the string of the
+  characters' codes (@{theory Log_Parser.Log_Code} prints @{typ char} so; the printings of
+  @{theory MFODL_Monitor_Devel.Event_Data} compare strings byte-wise, as the characters' codes
+  are compared), so the conversion is the identity.\<close>
 
 declare [[code drop: string8_of_bytes]]
 
@@ -438,6 +442,38 @@ proof (rule mapping_eqI)
   qed
 qed
 
+subsection \<open>The predicates of the formula\<close>
+
+text \<open>The predicates that occur freely in a formula (@{const Rewriting.preds}), as a list.\<close>
+
+fun free_preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) list" where
+  "free_preds (Formula.Pred e ts) = [(e, length ts)]"
+| "free_preds (Formula.Let p \<phi> \<psi>) = free_preds \<phi> @ filter (\<lambda>x. x \<noteq> (p, Formula.nfv \<phi>)) (free_preds \<psi>)"
+| "free_preds (Formula.Frz p \<phi> \<psi>) = free_preds \<phi> @ filter (\<lambda>x. x \<noteq> (p, Formula.nfv \<phi>)) (free_preds \<psi>)"
+| "free_preds (Formula.LetPast p \<phi> \<psi>) = filter (\<lambda>x. x \<noteq> (p, Formula.nfv \<phi>)) (free_preds \<phi> @ free_preds \<psi>)"
+| "free_preds (Formula.Eq t1 t2) = []"
+| "free_preds (Formula.Less t1 t2) = []"
+| "free_preds (Formula.LessEq t1 t2) = []"
+| "free_preds (Formula.Neg \<phi>) = free_preds \<phi>"
+| "free_preds (Formula.Or \<phi> \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.And \<phi> \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.Ands \<phi>s) = concat (map free_preds \<phi>s)"
+| "free_preds (Formula.Exists t \<phi>) = free_preds \<phi>"
+| "free_preds (Formula.Agg y \<omega> tys f \<phi>) = free_preds \<phi>"
+| "free_preds (Formula.Prev I \<phi>) = free_preds \<phi>"
+| "free_preds (Formula.Next I \<phi>) = free_preds \<phi>"
+| "free_preds (Formula.Since \<phi> I \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.Until \<phi> I \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.Trigger \<phi> I \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.Release \<phi> I \<psi>) = free_preds \<phi> @ free_preds \<psi>"
+| "free_preds (Formula.MatchF I r) = regex_list free_preds r"
+| "free_preds (Formula.MatchP I r) = regex_list free_preds r"
+| "free_preds (Formula.TP t) = []"
+| "free_preds (Formula.TS t) = []"
+
+lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi> rule: free_preds.induct) (auto simp: fv_regex_alt)
+
 subsection \<open>The monitor on the log\<close>
 
 text \<open>The configuration: the names of the predicates the formula mentions, those of the
@@ -446,9 +482,9 @@ text \<open>The configuration: the names of the predicates the formula mentions,
 datatype vconf = VConf (vc_rel: "Formula.name list") (vc_sig: "Formula.name list") (vc_lsig: lsig)
   (vc_pf: "bytes \<Rightarrow> double option")
 
-text \<open>The parser keeps the events of the predicates the formula mentions, and those of the
-  predicates the signature does not declare, which the conversion reports. The events of the
-  other predicates are neither converted nor checked.\<close>
+text \<open>The parser keeps the events of the predicates whose names occur freely in the formula,
+  and those of the predicates the signature does not declare, which the conversion reports. The
+  events of the other predicates are neither converted nor checked.\<close>
 
 definition vkeep :: "vconf \<Rightarrow> bytes \<Rightarrow> bool" where
   "vkeep cf b = (let q = string8_of_bytes b in q \<in> set (vc_rel cf) \<or> q \<notin> set (vc_sig cf))"
@@ -522,7 +558,7 @@ definition vinit :: "bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> ls
      (case udminit_verimon mw rw (lsig_tsig S) \<phi> of
        Inl e \<Rightarrow> Inl (VI_PREPARE e)
      | Inr ust \<Rightarrow> (let n = uvdfail_nodes (udmstate_m ust) in
-         if n = 0 then Inr (VConf (if filt then pred_names \<phi> else map fst S) (map fst S) S pf, (einit, ust, 0))
+         if n = 0 then Inr (VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
 text \<open>For the theorems: the whole input, in chunks, and the verdicts in the output.\<close>
@@ -547,6 +583,14 @@ lemma vverdicts_simps[simp]:
   "vverdicts (VO_ERROR pos e # xs) = vverdicts xs"
   "vverdicts (xs @ ys) = vverdicts xs @ vverdicts ys"
   by (simp_all add: vverdicts_def)
+
+text \<open>For the driver: the least offset in the input that later outputs may report, except that
+  of the pending item -- that of the pending lexeme, if any, and otherwise the number of bytes
+  read.\<close>
+
+definition vpending :: "vstate \<Rightarrow> integer" where
+  "vpending z = (case fst z of (b, l, _) \<Rightarrow> (case l of
+     E_SIMPLE xs j t \<Rightarrow> t | E_QUOTED xs j t \<Rightarrow> t | E_ESCAPE xs j t \<Rightarrow> t | _ \<Rightarrow> b))"
 
 lemma has_verror_simps[simp]:
   "\<not> has_verror []"
@@ -939,26 +983,30 @@ qed
 
 subsection \<open>The verdicts depend only on the events of the predicates the formula mentions\<close>
 
-lemma matches_pred_names: "Safety.matches v \<phi> e \<Longrightarrow> fst e \<in> set (pred_names \<phi>)"
+text \<open>An event that a formula matches is one of a predicate that occurs freely in it.\<close>
+
+lemma matches_preds: "Safety.matches v \<phi> e \<Longrightarrow> (fst e, length (snd e)) \<in> Rewriting.preds \<phi>"
 proof (induction \<phi> arbitrary: v e)
   case (LetPast p \<phi> \<psi>)
+  from LetPast.prems have ne: "(fst e, length (snd e)) \<noteq> (p, Formula.nfv \<phi>)"
+    by auto
   from LetPast.prems obtain e' where r: "(\<lambda>e' e. Safety.matches (snd e') \<phi> e \<and> fst e' = p \<and>
       length (snd e') = Formula.nfv \<phi>)\<^sup>*\<^sup>* e' e" and m: "Safety.matches v \<psi> e'"
     by auto
   from r show ?case
   proof (cases rule: rtranclp.cases)
     case rtrancl_refl
-    with LetPast.IH(2)[OF m] show ?thesis
+    with LetPast.IH(2)[OF m] ne show ?thesis
       by simp
   next
     case (rtrancl_into_rtrancl b)
-    with LetPast.IH(1)[of "snd b" e] show ?thesis
+    with LetPast.IH(1)[of "snd b" e] ne show ?thesis
       by simp
   qed
-qed fastforce+
+qed (fastforce simp: fv_regex_alt)+
 
-lemma pred_names_map_formula[simp]: "set (pred_names (Formula.formula.map_formula f \<phi>)) = set (pred_names \<phi>)"
-  by (induction \<phi>) (auto simp: regex.set_map)
+lemma preds_map_formula[simp]: "Rewriting.preds (Formula.formula.map_formula f \<phi>) = Rewriting.preds \<phi>"
+  by (induction \<phi>) (auto simp: fv_regex_alt regex.set_map)
 
 lemma pmap_\<Gamma>_pmap_\<Gamma>: "pmap_\<Gamma> f (pmap_\<Gamma> g \<pi>) = pmap_\<Gamma> (f \<circ> g) \<pi>"
   by transfer (auto split: prod.splits)
@@ -996,18 +1044,18 @@ text \<open>The predicates whose events the parser keeps, as the specification s
   missing ones @{const None}.\<close>
 
 definition keep_spec :: "bool \<Rightarrow> 't Formula.formula \<Rightarrow> lsig \<Rightarrow> string \<Rightarrow> bool" where
-  "keep_spec filt \<phi> S p \<longleftrightarrow> \<not> filt \<or> Abs_string8 p \<in> set (pred_names \<phi>) \<or> Abs_string8 p \<notin> fst ` set S"
+  "keep_spec filt \<phi> S p \<longleftrightarrow> \<not> filt \<or> Abs_string8 p \<in> fst ` Rewriting.preds \<phi> \<or> Abs_string8 p \<notin> fst ` set S"
 
 definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times> utable) list \<Rightarrow> (nat \<times> ts \<times> event_data table) list" where
   "vwiden \<phi> = map (\<lambda>(i, t, X). (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (reopt_table X)))"
 
 lemma vinit_Inr:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
-  obtains ust where "cf = VConf (if filt then pred_names \<phi> else map fst S) (map fst S) S pf" "z = (einit, ust, 0)"
+  obtains ust where "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" "z = (einit, ust, 0)"
     "wf_formula \<phi>" "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "uvdfail_nodes (udmstate_m ust) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
-lemma sk_vkeep: "sk (vkeep (VConf (if filt then pred_names \<phi> else map fst S) (map fst S) S pf)) = keep_spec filt \<phi> S"
+lemma sk_vkeep: "sk (vkeep (VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf)) = keep_spec filt \<phi> S"
   by (auto simp: fun_eq_iff sk_def vkeep_def keep_spec_def string8_of_bytes_def Abs_bytes_inverse)
 
 text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
@@ -1081,25 +1129,28 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) (lsig_tsig S)" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The verdicts depend only on the events of the predicates the formula mentions.\<close>
+text \<open>The verdicts depend only on the events of the predicates that occur freely in the
+  formula.\<close>
 
-theorem Mt_pred_names:
+theorem Mt_preds:
   assumes "wty_prefix (lsig_lookup S) \<pi>" "wty_prefix (lsig_lookup S) \<pi>'"
-    and "pmap_\<Gamma> (\<lambda>D. D \<inter> {e. fst e \<in> set (pred_names \<phi>)}) \<pi> = pmap_\<Gamma> (\<lambda>D. D \<inter> {e. fst e \<in> set (pred_names \<phi>)}) \<pi>'"
+    and "pmap_\<Gamma> (\<lambda>D. D \<inter> {e. (fst e, length (snd e)) \<in> Rewriting.preds \<phi>}) \<pi> =
+      pmap_\<Gamma> (\<lambda>D. D \<inter> {e. (fst e, length (snd e)) \<in> Rewriting.preds \<phi>}) \<pi>'"
   shows "monitor_\<phi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>'"
 proof -
   have E: "Safety.matches v (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) e \<Longrightarrow>
-    e \<in> {e. fst e \<in> set (pred_names \<phi>)}" for v e
-    using matches_pred_names by fastforce
+    e \<in> {e. (fst e, length (snd e)) \<in> Rewriting.preds \<phi>}" for v e
+    using matches_preds[of v "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>" e] by simp
   from assms show ?thesis
     using monitor_\<phi>.Mt_restrict[OF _ E, of \<pi>] monitor_\<phi>.Mt_restrict[OF _ E, of \<pi>']
     by (simp add: map_sig_lsig)
 qed
 
-text \<open>The monitor on a log whose events of the predicates the formula mentions, and of those
-  the signature does not declare, denote a prefix: it reports no error, and its verdicts are
-  those the specification prescribes for this prefix, and thus for every well-typed prefix with
-  the same events of these predicates (@{thm [source] Mt_pred_names}); otherwise, it reports an
+text \<open>The monitor on a log whose events of the predicates whose names occur freely in the
+  formula, and of those the signature does not declare, denote a prefix (all events, unless
+  @{text filt}): it reports no error, and its verdicts are those the specification prescribes
+  for this prefix, and thus for every well-typed prefix with the same events of the predicates
+  that occur freely in the formula (@{thm [source] Mt_preds}); otherwise, it reports an
   error.\<close>
 
 theorem vrun_filtered:
@@ -1109,7 +1160,7 @@ theorem vrun_filtered:
   shows "\<not> has_verror (vrun cf fin z ss) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust where cf: "cf = VConf (if filt then pred_names \<phi> else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
+  obtain ust where cf: "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
     and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
   have L: "L = log_prefix (sk (vkeep cf)) (sf (vc_pf cf)) (vc_lsig cf) fin (concat (map Rep_bytes ss))"
@@ -1140,8 +1191,8 @@ proof -
 qed
 
 text \<open>The monitor on a log that denotes a prefix: it reports no error, and its verdicts are those
-  the specification prescribes for the prefix, although it never converts the events of the
-  predicates the formula does not mention.\<close>
+  the specification prescribes for the prefix, although, if @{text filt}, it does not convert
+  the events of the other predicates.\<close>
 
 theorem vrun_log:
   assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
@@ -1159,8 +1210,8 @@ proof -
   then show "\<not> has_verror (vrun cf fin z ss)"
     using vrun_filtered(1)[OF init] by simp
   have E: "Safety.matches v (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) e \<Longrightarrow> e \<in> ?E" for v e
-    using matches_pred_names[of v "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>" e]
-    by (simp add: keep_spec_def Rep_string8_inverse)
+    using matches_preds[of v "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>" e]
+    by (force simp: keep_spec_def Rep_string8_inverse)
   have "monitor_\<phi>.Mt (pmap_\<Gamma> (\<lambda>D. D \<inter> ?E) \<pi>) = monitor_\<phi>.Mt \<pi>"
     using monitor_\<phi>.Mt_restrict[OF _ E] prefix_of_items_wty(1)[OF p] by (simp add: map_sig_lsig)
   with vrun_filtered(2)[OF init L] show "flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
@@ -1178,7 +1229,7 @@ theorem vfeed_chunks_online:
   shows "\<not> has_verror (fst (vfeed_chunks cf ss z)) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust where cf: "cf = VConf (if filt then pred_names \<phi> else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
+  obtain ust where cf: "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
     and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
   have L: "L = Option.bind (fstream_run (sk (vkeep cf)) (concat (map Rep_bytes ss)) fstream_init)
@@ -1210,6 +1261,34 @@ proof -
   qed
 qed
 
+text \<open>At the level of the grammar: if the input read so far extends to a log, the verdicts output
+  so far are those of a prefix of the log's entries, if there was no error.\<close>
+
+corollary vfeed_chunks_log:
+  assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
+    and log: "log_lang (concat (map Rep_bytes ss) @ s') es'"
+    and ok: "\<not> has_verror (fst (vfeed_chunks cf ss z))"
+  obtains es es'' \<pi> where "es' = es @ es''"
+    and "prefix_of_items (sf pf) S None (map (filter_item (keep_spec filt \<phi> S)) es) = Some \<pi>"
+    and "flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
+proof -
+  let ?s = "concat (map Rep_bytes ss)" and ?K = "keep_spec filt \<phi> S"
+  have "Option.bind (fstream_run ?K ?s fstream_init) (\<lambda>(es, _). prefix_of_items (sf pf) S None es) \<noteq> None"
+    using vfeed_chunks_online(1)[OF init, of ss] ok by simp
+  then obtain es1 l1 p1 \<pi> where f: "fstream_run ?K ?s fstream_init = Some (es1, l1, p1)"
+    and p: "prefix_of_items (sf pf) S None es1 = Some \<pi>"
+    by (cases "fstream_run ?K ?s fstream_init") auto
+  from f obtain es st where r: "stream_run ?s stream_init = Some (es, st)"
+    and es1: "es1 = map (filter_item ?K) es"
+    unfolding fstream_run_init by (cases "stream_run ?s stream_init") (auto split: prod.splits)
+  obtain es'' where "es' = es @ es''"
+    using stream_run_prefix[OF r log] .
+  moreover have "flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
+    using vfeed_chunks_online(2)[OF init, of ss \<pi>] f p by simp
+  ultimately show ?thesis
+    using that p es1 by blast
+qed
+
 text \<open>In particular, the verdicts of the entries of a log are output as soon as the next item
   begins, if they denote a prefix.\<close>
 
@@ -1231,8 +1310,8 @@ proof -
   then show "\<not> has_verror (fst (vfeed_chunks cf ss z))"
     using vfeed_chunks_online(1)[OF init] by simp
   have E: "Safety.matches v (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) e \<Longrightarrow> e \<in> ?E" for v e
-    using matches_pred_names[of v "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>" e]
-    by (simp add: keep_spec_def Rep_string8_inverse)
+    using matches_preds[of v "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>" e]
+    by (force simp: keep_spec_def Rep_string8_inverse)
   have "monitor_\<phi>.Mt (pmap_\<Gamma> (\<lambda>D. D \<inter> ?E) \<pi>) = monitor_\<phi>.Mt \<pi>"
     using monitor_\<phi>.Mt_restrict[OF _ E] prefix_of_items_wty(1)[OF p] by (simp add: map_sig_lsig)
   with vfeed_chunks_online(2)[OF init L] show "flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"

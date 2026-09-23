@@ -1,10 +1,13 @@
-(* The verified log parser (session Log_Parser), with the interface of Log_parser.Make.  Both
-   monitors read their logs with it unless [old] is set (option -old_log_parser), which selects
-   MonPoly's hand-written parser, for differential testing. *)
+(* The verified log parser (session Log_Parser), with the interface of Log_parser.Make, for
+   MonPoly's monitor; the verified monitor (-verified) runs the parser through the verified
+   code of Log_Monitor.thy instead (Algorithm_verified), and uses only the readers, the
+   positions and the messages below.  With [old] (option -old_log_parser) both read their logs
+   with MonPoly's hand-written parser, for differential testing. *)
 
 val old: bool ref
 
-(* The size of the chunks the log is read in (4096). *)
+(* The size of the chunks MonPoly's monitor reads the log in (4096); the verified monitor has
+   its own, Algorithm_verified.chunk_size. *)
 val chunk_size: int ref
 
 (* Readers of the input in chunks of [size] bytes ([chunk_size] by default). *)

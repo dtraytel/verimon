@@ -298,13 +298,39 @@ let flush_batch b db = match b, db with
     Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
 
 (* The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
-   with the types of their arguments. *)
-let lsig_of_schema dbschema =
+   with the types of their arguments.  The verified monitor does not support regular
+   expressions: a formula that mentions a predicate with such an argument is refused, as
+   [convert_schema_into_sig] refuses it when the type checker looks the predicate up; the
+   arguments of the other such predicates are read as strings (the parser drops their events
+   unless -nofilterrel). *)
+let rec vpred_names acc (f : tysym Verified.Monitor.formula) = match f with
+  | Verified.Monitor.Pred (p, _) -> p :: acc
+  | Verified.Monitor.Let (_, a, b) | Verified.Monitor.Frz (_, a, b)
+  | Verified.Monitor.LetPast (_, a, b) | Verified.Monitor.Or (a, b) | Verified.Monitor.And (a, b)
+  | Verified.Monitor.Since (a, _, b) | Verified.Monitor.Until (a, _, b)
+  | Verified.Monitor.Trigger (a, _, b) | Verified.Monitor.Release (a, _, b) ->
+      vpred_names (vpred_names acc a) b
+  | Verified.Monitor.Neg a | Verified.Monitor.Exists (_, a) | Verified.Monitor.Agg (_, _, _, _, a)
+  | Verified.Monitor.Prev (_, a) | Verified.Monitor.Next (_, a) -> vpred_names acc a
+  | Verified.Monitor.Ands l -> List.fold_left vpred_names acc l
+  | Verified.Monitor.MatchF (_, r) | Verified.Monitor.MatchP (_, r) -> vregex_names acc r
+  | Verified.Monitor.Eq _ | Verified.Monitor.Less _ | Verified.Monitor.LessEq _
+  | Verified.Monitor.TP _ | Verified.Monitor.TS _ -> acc
+and vregex_names acc = function
+  | Verified.Monitor.Skip _ -> acc
+  | Verified.Monitor.Test a -> vpred_names acc a
+  | Verified.Monitor.Plusa (r, s) | Verified.Monitor.Times (r, s) -> vregex_names (vregex_names acc r) s
+  | Verified.Monitor.Star r -> vregex_names acc r
+
+let lsig_of_schema dbschema cf =
+  let names = vpred_names [] cf in
   List.map (fun (pname, tl) -> (pname, List.map (fun (_, t) -> match t with
       TInt -> Verified.Monitor.TInt
     | TFloat -> Verified.Monitor.TFloat
     | TStr -> Verified.Monitor.TString
-    | TRegexp -> unsupported "Regular expressions constants are not supported") tl)) dbschema
+    | TRegexp ->
+        if List.mem pname names then unsupported "Regular expressions constants are not supported"
+        else Verified.Monitor.TString) tl)) dbschema
 
 let convert_into_tysym ty = 
   match ty with

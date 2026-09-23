@@ -22,7 +22,8 @@ text \<open>
   verified log parser, which drops the events of the predicates the formula does not mention,
   the conversion of the entries into the monitor's databases, and the monitor, with the
   theorems @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} from the bytes
-  of the log to the verdicts.
+  of the log to the verdicts; @{const vpending} tells the driver which part of the input it
+  still needs for locating errors.
 
   The export is entirely within this session.  The code-generator setup it relies on -- the
   monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
@@ -82,7 +83,7 @@ export_code
   Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
   Log_Exec.E_TOKEN Log_Exec.X_ENTRY
   (*the verified monitor on the log: parser, conversion, and dense monitor*)
-  Log_Monitor.vinit Log_Monitor.vfeed_chunk Log_Monitor.vfinish Log_Monitor.VO_VERDICTS
+  Log_Monitor.vinit Log_Monitor.vfeed_chunk Log_Monitor.vfinish Log_Monitor.vpending Log_Monitor.VO_VERDICTS
   Log_Monitor.VE_PARSE Log_Monitor.VI_WF
   in OCaml module_name Monitor file_prefix "verified"
 

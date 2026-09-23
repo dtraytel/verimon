@@ -90,13 +90,22 @@ let monitor_gen parse dbschema logfile fv f =
 (* The verified path (thys/MFODL_Monitor_Dense/Log_Monitor.thy): [vinit] prepares the formula
    and starts the monitor, [vfeed_chunk] reads a chunk of the log and [vfinish] the end of the
    log.  All three are generated code: the verified log parser, which skips the events of the
-   predicates the formula does not mention (unless -nofilterrel) before they are even stored,
-   the conversion of the timestamps and fields and the construction of the monitor's databases,
-   and the verified dense monitor.  Theorems verimon_log.vrun_log and vrun_filtered state that
-   the verdicts it outputs for the bytes of a log are those the specification of the formula
-   prescribes for the trace the log denotes, and that it reports an error for a log that
-   denotes none; this driver only reads the input, prints the verdicts and words the errors.
-   Floats are read by OCaml's float_of_string, a parameter of the theorems. *)
+   predicates the signature declares but whose names do not occur freely in the formula (unless
+   -nofilterrel) before they are even stored, the conversion of the timestamps and fields and
+   the construction of the monitor's databases, and the verified dense monitor.  Theorems
+   verimon_log.vrun_log and vrun_filtered state that the verdicts output for the bytes of a log
+   are those the specification of the formula prescribes for the prefix the log denotes, and
+   that an error is reported exactly when the log restricted to the predicates it keeps denotes
+   no prefix; vfeed_chunks_online states the same for the chunks read so far.  They cover the
+   output up to the chunk with the first error, but neither the verdicts of that chunk before
+   the error nor anything after it (with -ignore_parse_errors).
+
+   Outside the theorems: the formula is MonPoly's, as its front end has read, checked and
+   possibly rewritten it, converted by Verified_adapter.convert_formula; the signature is
+   MonPoly's; floats are read by float_of_string_opt, a parameter of the theorems; the last
+   time point at MaxTS is added unless -nonewlastts or the formula is past-only; and this driver
+   reads the input, prints the verdicts, words and locates the errors, and decides whether to
+   go on after an error. *)
 
 module VM = Verified.Monitor
 
@@ -109,7 +118,7 @@ let string_of_vty = function
 
 let init_verified dbschema f =
   let cf = Verified_adapter.convert_formula dbschema f in
-  let lsig = Verified_adapter.lsig_of_schema dbschema in
+  let lsig = Verified_adapter.lsig_of_schema dbschema cf in
   let pf s = float_of_string_opt s in
   let stats n =
     if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
@@ -131,11 +140,17 @@ let run_verified dbschema fname read fv f =
   let arities = Hashtbl.create 64 in
   List.iter (fun (p, tl) -> if not (Hashtbl.mem arities p) then Hashtbl.add arities p (List.length tl))
     dbschema;
+  (* Positions: the chunks are kept from the pending lexeme on ([vpending]); the position of
+     the pending item, which errors about an entry are reported at, is computed when the item
+     begins. *)
   let ln = Verified_log_parser.init_lines fname in
+  let item_off = ref (-1) and item_pos = ref Lexing.dummy_pos in
+  let position off =
+    if off = !item_off then !item_pos else Verified_log_parser.position ln off in
   let cur_tp = ref 0 in
   let error off msg =
     prerr_endline "ERROR while parsing log:";
-    prerr_endline (Log_parser.string_of_position (Verified_log_parser.position ln off) ^ ": " ^ msg);
+    prerr_endline (Log_parser.string_of_position (position off) ^ ": " ^ msg);
     if not !Misc.ignore_parse_errors then exit 1 in
   let handle = function
     | VM.VO_VERDICTS vs ->
@@ -169,14 +184,19 @@ let run_verified dbschema fname read fv f =
          | VM.VE_COMMAND _ ->
              prerr_endline "ERROR: Commands are not supported by the verified kernel";
              if not !Misc.ignore_parse_errors then exit 1) in
-  (* the chunks before the item the parser is in are not needed for positions any more; they
-     are dropped when a new item begins, since dropping walks the chunks kept *)
-  let last_sp = ref (-1) in
-  let forget (_, (_, (_, sp))) =
+  let last_pending = ref (-1) in
+  let forget st =
+    let (_, (_, (_, sp))) = fst st in
     let sp = Verified_log_parser.int_of_z sp in
-    if sp <> !last_sp then begin
-      last_sp := sp;
-      Verified_log_parser.forget ln sp
+    if sp <> !item_off then begin
+      item_off := sp;
+      item_pos := Verified_log_parser.position ln sp
+    end;
+    (* dropping walks the chunks kept, so it is done only when the offset changes *)
+    let pending = Verified_log_parser.int_of_z (VM.vpending st) in
+    if pending <> !last_pending then begin
+      last_pending := pending;
+      Verified_log_parser.forget ln pending
     end in
   let rec loop st =
     match read () with
@@ -184,7 +204,7 @@ let run_verified dbschema fname read fv f =
         Verified_log_parser.push_chunk ln s;
         let (outs, st) = VM.vfeed_chunk conf s st in
         List.iter handle outs;
-        forget (fst st);
+        forget st;
         loop st
     | None ->
         let fin = if !Misc.new_last_ts then Some (VM.nat_of_integer MFOTL.ts_max) else None in

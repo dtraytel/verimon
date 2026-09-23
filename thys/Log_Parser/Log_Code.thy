@@ -289,9 +289,10 @@ proof -
 qed
 
 lemma idigits_code[code]: "idigits s n b i acc = (if idx_less i n then
-    (let d = idigit b (bytes_at s i) in if d < 0 then -1 else idigits s n b (idx_succ i) (b * acc + d))
+    (let c = bytes_at s i in if c = CHR ''_'' then idigits s n b (idx_succ i) acc
+     else let d = idigit b c in if d < 0 then -1 else idigits s n b (idx_succ i) (b * acc + d))
   else acc)"
-  unfolding idx_less_def idx_succ_def by (rule idigits.simps)
+  unfolding idx_less_def idx_succ_def by (subst idigits.simps) (simp add: Let_def)
 
 (*<*)
 end

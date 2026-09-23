@@ -9,9 +9,11 @@ section \<open>Numbers in the log\<close>
 text \<open>
   Integers in the log are written as by Zarith's @{text Z.of_string}, on which MonPoly relies: an
   optional sign, then decimal digits, or @{text "0x"}, @{text "0o"} or @{text "0b"} (in either
-  case) followed by hexadecimal, octal or binary digits. Unlike @{text Z.of_string}, at least
-  one digit is required (Zarith reads the empty string, a lone sign and a lone base prefix as
-  0), and underscores are not allowed. Timestamps are the integers that are not negative. The
+  case) followed by hexadecimal, octal or binary digits, among which underscores are ignored.
+  Unlike @{text Z.of_string}, a digit is required after the sign and the base prefix (Zarith
+  reads the empty string, a lone sign and a lone base prefix as 0, and rejects an underscore
+  there too), and the sign is @{text "-"} or @{text "+"} (Zarith also reads @{text "-+"}).
+  Timestamps are the integers that are not negative. The
   specification is on character lists; the functions on byte strings below, from which the code
   is generated, are proved equal to it.
 \<close>
@@ -27,10 +29,11 @@ definition digit_val :: "nat \<Rightarrow> char \<Rightarrow> nat option" where
 
 fun digits_val :: "nat \<Rightarrow> nat \<Rightarrow> char list \<Rightarrow> nat option" where
   "digits_val b n [] = Some n"
-| "digits_val b n (c # cs) = (case digit_val b c of None \<Rightarrow> None | Some d \<Rightarrow> digits_val b (b * n + d) cs)"
+| "digits_val b n (c # cs) = (if c = CHR ''_'' then digits_val b n cs
+     else case digit_val b c of None \<Rightarrow> None | Some d \<Rightarrow> digits_val b (b * n + d) cs)"
 
 definition nat_of_digits :: "nat \<Rightarrow> char list \<Rightarrow> nat option" where
-  "nat_of_digits b cs = (if cs = [] then None else digits_val b 0 cs)"
+  "nat_of_digits b cs = (case cs of [] \<Rightarrow> None | c # _ \<Rightarrow> if c = CHR ''_'' then None else digits_val b 0 cs)"
 
 text \<open>The base prefix, if any, and the digits after it.\<close>
 
@@ -62,7 +65,8 @@ subsection \<open>On byte strings\<close>
 text \<open>The loops over a byte string @{text s} of length @{text n}, from index @{text i}.\<close>
 
 function bdigits :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> nat option" where
-  "bdigits s n b i acc = (if i < n then (case digit_val b (bytes_at s i) of
+  "bdigits s n b i acc = (if i < n then (if bytes_at s i = CHR ''_'' then bdigits s n b (i + 1) acc
+     else case digit_val b (bytes_at s i) of
        None \<Rightarrow> None
      | Some d \<Rightarrow> bdigits s n b (i + 1) (b * acc + d))
    else Some acc)"
@@ -73,7 +77,8 @@ termination
 declare bdigits.simps[simp del]
 
 definition bnat_of_digits :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat option" where
-  "bnat_of_digits s n b i = (if i < n then bdigits s n b i 0 else None)"
+  "bnat_of_digits s n b i = (if i < n then (if bytes_at s i = CHR ''_'' then None else bdigits s n b i 0)
+     else None)"
 
 text \<open>The base prefix at index @{text i}: the base and the index of the first digit.\<close>
 
@@ -128,8 +133,19 @@ qed
 lemma bnat_of_digits_correct:
   assumes "n = bytes_length s" "0 \<le> i" "i \<le> n"
   shows "bnat_of_digits s n b i = nat_of_digits b (drop (nat_of_integer i) (Rep_bytes s))"
-  using assms bdigits_correct[OF assms, of b 0]
-  by (auto simp: bnat_of_digits_def nat_of_digits_def bytes_length_def integer_simps)
+proof (cases "i < n")
+  case True
+  then have "drop (nat_of_integer i) (Rep_bytes s) = bytes_at s i # drop (nat_of_integer (i + 1)) (Rep_bytes s)"
+    using assms by (simp add: bytes_at_def nat_of_integer_add1 Cons_nth_drop_Suc nat_of_integer_less_length)
+  with True bdigits_correct[OF assms, of b 0] show ?thesis
+    by (simp add: bnat_of_digits_def nat_of_digits_def)
+next
+  case False
+  with assms have "drop (nat_of_integer i) (Rep_bytes s) = []"
+    by (auto simp: bytes_length_def integer_simps)
+  with False show ?thesis
+    by (simp add: bnat_of_digits_def nat_of_digits_def)
+qed
 
 lemma drop_Cons_nth:
   "0 \<le> i \<Longrightarrow> i < bytes_length s \<Longrightarrow>
@@ -236,7 +252,8 @@ proof -
 qed
 
 function idigits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer" where
-  "idigits s n b i acc = (if i < n then (let d = idigit b (bytes_at s i) in
+  "idigits s n b i acc = (if i < n then (if bytes_at s i = CHR ''_'' then idigits s n b (i + 1) acc
+     else let d = idigit b (bytes_at s i) in
        if d < 0 then -1 else idigits s n b (i + 1) (b * acc + d))
    else acc)"
   by pat_completeness auto
@@ -259,27 +276,36 @@ next
     by (auto simp: integer_simps)
   note IH = Suc.hyps(1)[OF m]
   show ?case
-  proof (cases "digit_val b (bytes_at s i)")
-    case None
-    then have "idigit (integer_of_nat b) (bytes_at s i) = -1"
-      by (simp add: idigit_def)
-    with None i show ?thesis
+  proof (cases "bytes_at s i = CHR ''_''")
+    case True
+    with i IH[of acc] show ?thesis
       by (subst idigits.simps, subst bdigits.simps) simp
   next
-    case (Some d)
-    then have "idigit (integer_of_nat b) (bytes_at s i) = integer_of_nat d"
-      by (simp add: idigit_def)
-    moreover have "\<not> integer_of_nat d < 0"
-      by (simp add: less_integer.rep_eq)
-    moreover have "integer_of_nat b * integer_of_nat acc + integer_of_nat d = integer_of_nat (b * acc + d)"
-      by (simp add: integer_of_nat_eq_of_nat)
-    ultimately show ?thesis
-      using Some i IH[of "b * acc + d"] by (subst idigits.simps, subst bdigits.simps) (simp add: Let_def)
+    case False
+    show ?thesis
+    proof (cases "digit_val b (bytes_at s i)")
+      case None
+      then have "idigit (integer_of_nat b) (bytes_at s i) = -1"
+        by (simp add: idigit_def)
+      with None False i show ?thesis
+        by (subst idigits.simps, subst bdigits.simps) simp
+    next
+      case (Some d)
+      then have "idigit (integer_of_nat b) (bytes_at s i) = integer_of_nat d"
+        by (simp add: idigit_def)
+      moreover have "\<not> integer_of_nat d < 0"
+        by (simp add: less_integer.rep_eq)
+      moreover have "integer_of_nat b * integer_of_nat acc + integer_of_nat d = integer_of_nat (b * acc + d)"
+        by (simp add: integer_of_nat_eq_of_nat)
+      ultimately show ?thesis
+        using Some False i IH[of "b * acc + d"] by (subst idigits.simps, subst bdigits.simps) (simp add: Let_def)
+    qed
   qed
 qed
 
 lemma bnat_of_digits_code[code]: "bnat_of_digits s n b i = (if i < n then
-    (let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r))
+    (if bytes_at s i = CHR ''_'' then None
+     else let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r))
   else None)"
   using idigits[of s n b i 0]
   by (auto simp: bnat_of_digits_def Let_def integer_simps integer_of_nat_eq_of_nat split: option.splits)

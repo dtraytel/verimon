@@ -260,6 +260,10 @@ module Monitor : sig
       string ->
         Z.t * (elstate * (string fpstate option * Z.t)) ->
           out list * (Z.t * (elstate * (string fpstate option * Z.t)))
+  val vpending :
+    (Z.t * (elstate * (string fpstate option * Z.t))) *
+      (unit udmstate_ext * nat) ->
+      Z.t
   val vfeed_chunk :
     vconf ->
       string ->
@@ -13542,6 +13546,42 @@ let rec udminit_verimon
       (fun psi -> udminit_push (if mw then convert_multiway psi else psi))
       (prepare_verimon rw siga phi);;
 
+let rec free_preds
+  = function Pred (e, ts) -> [(e, size_lista ts)]
+    | Let (p, phi, psi) ->
+        free_preds phi @
+          filtera
+            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+            (free_preds psi)
+    | Frz (p, phi, psi) ->
+        free_preds phi @
+          filtera
+            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+            (free_preds psi)
+    | LetPast (p, phi, psi) ->
+        filtera
+          (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+          (free_preds phi @ free_preds psi)
+    | Eq (t1, t2) -> []
+    | Less (t1, t2) -> []
+    | LessEq (t1, t2) -> []
+    | Neg phi -> free_preds phi
+    | Or (phi, psi) -> free_preds phi @ free_preds psi
+    | And (phi, psi) -> free_preds phi @ free_preds psi
+    | Ands phi_s -> maps free_preds phi_s
+    | Exists (t, phi) -> free_preds phi
+    | Agg (y, omega, tys, f, phi) -> free_preds phi
+    | Prev (i, phi) -> free_preds phi
+    | Next (i, phi) -> free_preds phi
+    | Since (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Until (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Trigger (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Release (phi, i, psi) -> free_preds phi @ free_preds psi
+    | MatchF (i, r) -> regex_list free_preds r
+    | MatchP (i, r) -> regex_list free_preds r
+    | TP t -> []
+    | TS t -> [];;
+
 let rec lsig_find
   x0 q n = match x0, q, n with [], q, n -> None
     | (p, tys) :: s, q, n ->
@@ -13609,7 +13649,7 @@ let rec vinit
              | Inr ust ->
                (let n = uvdfail_nodes (udmstate_m ust) in
                  (if equal_nata n zero_nata
-                   then Inr (VConf ((if filt then pred_names phi
+                   then Inr (VConf ((if filt then mapa fst (free_preds phi)
                                       else mapa fst s),
                                      mapa fst s, s, pf),
                               (einit, (ust, zero_nata)))
@@ -13639,24 +13679,33 @@ let rec idigits
   s n b i acc =
     (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
           i n
-      then (let d =
-              idigit b
-                ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      then (let c =
+              (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
       else if Z.sign i < 0 then 0 else Z.to_int i))
-                  s i)
+                s i
               in
-             (if Z.lt d Z.zero then (Z.neg (Z.of_int 1))
-               else idigits s n b
+             (if ((c : char) = '\095')
+               then idigits s n b
                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
                         i)
-                      (Z.add (Z.mul b acc) d)))
+                      acc
+               else (let d = idigit b c in
+                      (if Z.lt d Z.zero then (Z.neg (Z.of_int 1))
+                        else idigits s n b
+                               ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                 i)
+                               (Z.add (Z.mul b acc) d)))))
       else acc);;
 
 let rec bnat_of_digits
   s n b i =
     (if Z.lt i n
-      then (let r = idigits s n (integer_of_nat b) i Z.zero in
-             (if Z.lt r Z.zero then None else Some (nat_of_integer r)))
+      then (if ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                   s i) : char) = '\095')
+             then None
+             else (let r = idigits s n (integer_of_nat b) i Z.zero in
+                    (if Z.lt r Z.zero then None else Some (nat_of_integer r))))
       else None);;
 
 let rec bbase_of
@@ -13831,6 +13880,11 @@ let rec efeed_chunk
      let n = (Z.of_int (String.length s)) in
      let (acc, (la, (pa, spa))) = eloop k s n b Z.zero l p sp [] in
       (rev acc, (Z.add b n, (close_chunk s n la, (pa, spa)))));;
+
+let rec vpending
+  z = (match fst z with (b, (E_INIT, _)) -> b
+        | (_, (E_SIMPLE (_, _, t), _)) -> t | (_, (E_QUOTED (_, _, t), _)) -> t
+        | (_, (E_ESCAPE (_, _, t), _)) -> t | (b, (E_COMMENT, _)) -> b);;
 
 let rec vfeed_chunk
   cf s z =

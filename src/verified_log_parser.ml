@@ -1,8 +1,9 @@
 (* The log parser generated from theory Log_Code of session Log_Parser (thys/Log_Parser), driven
    over a channel or a string.
 
-   The generated code reads the log in chunks: efeed_chunk takes the next chunk and the state
-   and returns what the chunk completes, efinish returns what the end of the input completes.
+   The generated code reads the log in chunks: efeed_chunk takes the predicates whose events
+   are wanted (here: all), the next chunk and the state and returns what the chunk completes,
+   efinish returns what the end of the input completes.
    Theorem eparse_correct (Log_Exec.thy) states that, however the input is divided into chunks,
    the outputs contain no error exactly if the input is a log of the grammar of Log_Grammar.thy,
    and that they then list its entries in order; by efeed_chunks_online and efeed_chunks_prompt,
@@ -16,7 +17,8 @@
    This module passes the entries to a consumer with the interface of Log_parser.Make and does
    what the grammar leaves to the consumer: it converts timestamps, looks predicates up in the
    signature, keeps MonPoly's statistics, parses the parameters of commands, and turns the
-   offsets of errors into lines and columns. *)
+   offsets of errors into lines and columns.  The verified monitor (-verified) does not use
+   Make: Log_Monitor.thy does its conversions (see Algorithm_verified). *)
 
 module V = Verified.Monitor
 

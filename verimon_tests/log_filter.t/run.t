@@ -1,7 +1,7 @@
 Under -verified, the log is read, converted and monitored by the code of
 thys/MFODL_Monitor_Dense/Log_Monitor.thy.  The parser drops the events of the predicates that
-are in the signature but that the formula does not mention before it stores them: their
-fields are neither converted nor checked.
+are in the signature but whose names do not occur freely in the formula before it stores them:
+their fields are neither converted nor checked.
 
   $ echo 'P(x)' > p.mfotl
   $ printf '@1 P(1) Q(1) R(1) R(a,b) F(x)\n@2 P(2)\n' > l.log
@@ -16,15 +16,33 @@ With -nofilterrel, all events are converted:
   l.log:1:1: Wrong tuple length for predicate R (expected: 2, actual: 1)
   [1]
 
-The formula mentions a predicate by its name and arity, and a LET binds only the arity it
-defines: here the R of the signature, with two arguments, is read, although R with one
-argument is bound.  (MonPoly's own filter, which binds names, drops the events of R.)
+A predicate occurs freely by its name and arity, and a LET binds only the arity it defines:
+here the R of the signature, with two arguments, occurs freely, although R with one argument
+is bound, so the parser keeps the events of R.  (MonPoly's own filter, which binds names, drops
+them.)
 
   $ echo 'LET R(x) = P(x) IN R(x) AND EXISTS y. R(x,y)' > let.mfotl
   $ printf '@1 P(1) R(1,2)\n@2 P(2)\n' > l.log
   $ monpoly -verified -sig s.sig -formula let.mfotl -log l.log
   @1 (time point 0): (1)
   $ monpoly -verified -sig s.sig -formula let.mfotl -log l.log -old_log_parser
+
+When all occurrences of R are bound, the events of R are dropped:
+
+  $ echo 'LET R(x) = P(x) IN R(x)' > let1.mfotl
+  $ printf '@1 P(1) R(1) R(a,b)\n@2 P(2)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula let1.mfotl -log l.log
+  @1 (time point 0): (1)
+  @2 (time point 1): (2)
+
+A predicate of the signature with an argument of type regexp, which the verified kernel does not
+support, may be declared if the formula does not mention it:
+
+  $ printf 'P(int)\nX(regexp)\n' > rx.sig
+  $ printf '@1 P(1) X("a.*")\n@2 P(2)\n' > l.log
+  $ monpoly -verified -sig rx.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  @2 (time point 1): (2)
 
 Events of predicates that the signature does not declare, events of the formula's
 predicates of another arity or with fields of another type, and entries with a timestamp
@@ -55,18 +73,23 @@ the entry is dropped:
   l.log:2:1: Expected type float for predicate F, field number 1
   @3 (time point 1): (nan)
 
-Timestamps are natural numbers, in decimal or with the prefixes 0x, 0o and 0b, without signs
-and underscores:
+Timestamps are natural numbers, and integers are written as for Zarith's Z.of_string, in
+decimal or with the prefixes 0x, 0o and 0b, with underscores after the first digit, except
+that a digit is required after the sign and the prefix:
 
-  $ printf '@0x10 P(1)\n@-1 P(2)\n@1_0 P(3)\n@0b11111 P(4)\n@0o40 P(5)\n' > l.log
+  $ printf '@0x10 P(1)\n@-1 P(2)\n@1_7 P(3_0)\n@0b1_0010 P(-0x1f)\n@0o40 P("+5")\n@_1 P(6)\n@33 P(0x)\n@34 P(1)\n' > l.log
   $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log -ignore_parse_errors
   @16 (time point 0): (1)
   ERROR while parsing log:
   l.log:2:1: Cannot convert -1 into a timestamp
+  @17 (time point 1): (30)
+  @18 (time point 2): (-31)
+  @32 (time point 3): (5)
   ERROR while parsing log:
-  l.log:3:1: Cannot convert 1_0 into a timestamp
-  @31 (time point 1): (4)
-  @32 (time point 2): (5)
+  l.log:6:1: Cannot convert _1 into a timestamp
+  ERROR while parsing log:
+  l.log:7:1: Expected type int for predicate P, field number 1
+  @34 (time point 4): (1)
 
 Timestamps must not decrease, and the verified kernel does not support commands:
 
