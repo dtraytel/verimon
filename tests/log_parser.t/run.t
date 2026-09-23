@@ -129,6 +129,24 @@ predicate outside the signature and a timestamp that is not a number.  The entry
   l.log:5:1: Cannot convert x into a timestamp
   @4 (time point 2): ("f")
 
+A predicate named by the empty quoted string is looked up like any other:
+
+  $ printf '@1 ""() P(b)\n@2 P(c)\n' > l.log
+  $ monpoly -sig s.sig -formula p.mfotl -log l.log -ignore_parse_errors
+  ERROR while parsing log:
+  l.log:1:1: Predicate  was not defined in the signature.
+  @2 (time point 0): ("c")
+
+A quoted string that is not closed contains the rest of the log, also after an error:
+
+  $ printf '@1 P(a)\n@2 P(b c")\n@3 P(c)\n' > l.log
+  $ monpoly -sig s.sig -formula p.mfotl -log l.log -ignore_parse_errors
+  @1 (time point 0): ("a")
+  ERROR while parsing log:
+  l.log:2:8: Expected ',' or ')' but saw "c"
+  ERROR while parsing log:
+  l.log:2:9: Unterminated quoted string
+
 The parameters of commands:
 
   $ printf '@1 P(a)\n> get_pos a {b} <\n' > l.log
@@ -170,3 +188,9 @@ The log is read in chunks of 4096 bytes.  Lexemes, entries, and line counts acro
   ERROR while parsing log:
   l.log:3:1: Predicate X was not defined in the signature.
   @2 (time point 0): ("b")
+
+A lexeme that spans many chunks takes time linear in its length (here about 1000 chunks):
+
+  $ awk 'BEGIN { s = "x"; for (i = 0; i < 22; i++) s = s s; printf "@1 P(\"%s\") @2 P(b)\n", s }' > l.log
+  $ monpoly -sig s.sig -formula p.mfotl -log l.log | wc -c
+  4194353

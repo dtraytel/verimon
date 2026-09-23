@@ -7,7 +7,8 @@
    the outputs contain no error exactly if the input is a log of the grammar of Log_Grammar.thy,
    and that they then list its entries in order; efeed_chunks_online states the same for the
    entries output so far, so a time point is passed on as soon as the byte that completes it has
-   been read.  After an error the parser skips to the next '@', ';' or '>'.
+   been read.  After an error the parser skips to the next '@', ';' or '>' (but a quoted string
+   that is not closed contains the rest of the input).
 
    This module passes the entries to a consumer with the interface of Log_parser.Make and does
    what the grammar leaves to the consumer: it converts timestamps, looks predicates up in the
@@ -185,15 +186,14 @@ module Make (C : Log_parser.Consumer) = struct
       dbschema;
     (* the schema of a predicate (Not_found if it is not in the signature), remembering the last
        one, since consecutive events are often of the same predicate *)
-    let last = ref ("", ("", [])) in
+    let last = ref None in
     let find p =
-      let (q, schema) = !last in
-      if String.equal p q then schema
-      else begin
-        let schema = Hashtbl.find schemas p in
-        last := (p, schema);
-        schema
-      end in
+      match !last with
+      | Some (q, schema) when String.equal p q -> schema
+      | _ ->
+          let schema = Hashtbl.find schemas p in
+          last := Some (p, schema);
+          schema in
     let ln = init_lines fname in
     let error off msg = C.parse_error ctxt (position ln off) msg in
     let handle o =

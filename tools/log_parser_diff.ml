@@ -9,8 +9,8 @@
 
    Usage: log_parser_diff [-sig FILE] LOG...     compares the parsers on the logs
           log_parser_diff -fuzz N [-seed S]       compares them on N random logs
-   The verified parser is run with chunks of 4096, 1, 2, 3, and 7 bytes, which must all give the
-   same trace. *)
+   The verified parser is run with chunks of 4096, 1, 2, 3, and 7 bytes (4096, 7, and 1000 for
+   logs of more than 64 KB), which must all give the same trace. *)
 
 open Libmonpoly
 
@@ -101,44 +101,44 @@ let unrecognized msg =
     else find (i + 1) in
   find 0
 
-(* Errors in commands: MonPoly's parser reads the parameters of a command while it reads the
-   command and words its errors after the parameters it expects; the verified parser reads a
-   command's tokens, words its errors after the tokens that a command may contain, and passes the
-   tokens to the reader of the parameters (Verified_log_parser.command_params), which reports its
-   errors at the command's '>'.  So it may report an error in a command later or earlier.  These
-   are the messages of errors in commands only; MonPoly's parser also reports errors in the tuples
-   of command parameters as "Expected ',' or ')'", as for entries.  (In entries, both parsers
-   report such an error at the same token.) *)
-let command_msg m =
-  List.exists (fun p -> starts_with p m) [
-    "Expected a command"; "Expected a string,"; "Expected a string or"; "Expected a string but";
-    "Expected an integer"; "Expected a tuple of integers"; "Expected '(' but"; "Expected ')' but";
-    "Expected ',' but"; "Expected '{' but"; "Expected '}' but"; "Expected '<' but" ]
+(* Whether offset [off] lies within a command, after its '>' and before its '<', by the tokens
+   of MonPoly's lexer (which are the verified lexer's, see Log_Grammar.thy).  MonPoly's parser
+   reads the parameters of a command while it reads the command; the verified parser reads a
+   command's tokens and passes them to the reader of the parameters
+   (Verified_log_parser.command_params), which reports its errors at the command's '>'.  So in a
+   command, the two may report an error at different offsets and with different messages. *)
+let in_command log off =
+  let lb = Lexing.from_string log in
+  let rec go inside =
+    match Log_lexer.token lb with
+    | exception _ -> inside
+    | t when lb.Lexing.lex_start_p.Lexing.pos_cnum >= off || t = Log_lexer.EOF -> inside
+    | Log_lexer.CMD -> go true
+    | Log_lexer.EOC -> go false
+    | _ -> go inside in
+  go false
 
 type verdict = Same | Tolerated of string | Differ
 
 (* MonPoly's parser keeps at most two arguments of a command, in reverse order, without reading
    the '<' after them, and skips the token after the '<' that ends a command. *)
 let compare_traces log o n =
-  let new_in_command off m =
-    command_msg m || starts_with "Expected a command argument" m
-    || (0 <= off && off < String.length log && log.[off] = '>') in
+  let at_cmd off = 0 <= off && off < String.length log && log.[off] = '>' in
   let o = upto_error o and n = upto_error n in
   let rec go tol after_cmd o n =
     let tolerate k = match tol with Some _ -> tol | None -> Some k in
     match o, n with
     | [], [] -> (match tol with Some k -> Tolerated k | None -> Same)
     | [Err (-1, _)], _ -> Tolerated "MonPoly's parser raised an exception"
-    | Err (_, m) :: _, _ when semantic m -> Tolerated "semantic error"
-    | _, Err (_, m) :: _ when semantic m -> Tolerated "semantic error"
     | [Err (oo, om)], [Err (no, nm)] when oo = no && om = nm -> go tol false [] []
     | [Err (oo, om)], [Err (no, nm)] when oo = no && unrecognized om <> None && unrecognized om = unrecognized nm ->
         go tol false [] []
+    (* the verified parser reports an error in an entry at its '@', after any syntax error in it *)
+    | [Err (oo, om)], [Err (no, nm)] when semantic om && (om = nm || no > oo) -> Tolerated "semantic error"
     | [Err (oo, om)], [Err (no, nm)] when nm = "Unterminated quoted string"
         && (unrecognized om <> None && (oo = no || oo = no + 1) || ends_with "but saw \"r\"" om && oo = no) ->
         Tolerated "unterminated string"
-    | [Err (oo, om)], [Err (no, nm)]
-      when (command_msg om || starts_with "Expected ',' or ')'" om) && (new_in_command no nm || no > oo) ->
+    | [Err (oo, _)], [Err (no, _)] when in_command log oo && (in_command log no || at_cmd no || no > oo) ->
         Tolerated "error in a command"
     | Cmd (_, Some (Helper.Arguments [_; _])) :: _, Err _ :: _ -> Tolerated "two arguments of a command"
     | Cmd (c, Some (Helper.Arguments [b; a])) :: o, Cmd (c', Some (Helper.Arguments (a' :: b' :: r))) :: n
@@ -171,20 +171,36 @@ let schema_of log =
 let tally = Hashtbl.create 8
 let count k = Hashtbl.replace tally k (1 + try Hashtbl.find tally k with Not_found -> 0)
 
+(* The predicates that a trace reports as not in the signature. *)
+let undefined trace =
+  let pre = "Predicate " and post = " was not defined in the signature." in
+  List.filter_map (function
+    | Err (_, m) when starts_with pre m && ends_with post m ->
+        Some (String.sub m (String.length pre) (String.length m - String.length pre - String.length post))
+    | _ -> None) trace
+
 let check ?schema name log =
-  let schema = match schema with Some s -> s | None -> schema_of log in
-  (* fields may be of any arity: MonPoly's parser does not check arities, the consumer does *)
-  let o = run_old schema log in
-  let results = List.map (fun size ->
-    Verified_log_parser.chunk_size := size;
-    (size, run_new schema log)) [4096; 1; 2; 3; 7] in
-  Verified_log_parser.chunk_size := 4096;
-  let n = List.assoc 4096 results in
+  (* Without a signature, the predicates of the log, found by both parsers: those that the
+     verified parser outputs, and those that either parser reports as undefined.  Fields may be
+     of any arity: the parsers do not check arities, the monitor does. *)
+  let given = schema <> None in
+  let rec runs schema k =
+    let o = run_old schema log and n = run_new schema log in
+    let missing = List.sort_uniq compare (undefined o @ undefined n) in
+    if given || missing = [] || k = 0 then (schema, o)
+    else runs (List.map (fun p -> (p, [])) missing @ schema) (k - 1) in
+  let (schema, o) = runs (match schema with Some s -> s | None -> schema_of log) 10 in
+  let n = run_new schema log in
+  let digest t = Digest.string (Marshal.to_string t []) in
+  let d = digest n in
   let ok = ref true in
-  List.iter (fun (size, n') -> if n' <> n then begin
-    ok := false; count "chunking";
-    Printf.printf "=== %s: chunks of %d bytes give another trace than chunks of 4096\n" name size end)
-    results;
+  List.iter (fun size ->
+    Verified_log_parser.chunk_size := size;
+    if digest (run_new schema log) <> d then begin
+      ok := false; count "chunking";
+      Printf.printf "=== %s: chunks of %d bytes give another trace than chunks of 4096\n" name size end)
+    (if String.length log <= 65536 then [1; 2; 3; 7] else [7; 1000]);
+  Verified_log_parser.chunk_size := 4096;
   (match compare_traces log o n with
    | Same -> count "same"
    | Tolerated k -> count k
