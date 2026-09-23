@@ -80,8 +80,8 @@ proof -
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv (\<psi>_mw mw))
       (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (\<psi>_mw mw)))) = 0"
     using zf unfolding ust by (simp only: Rep_udminit_safe[symmetric] vdfail_nodes_Rep_udmstate)
-  from verimon_mw.dmonitor_mverdicts_dof[OF zf' f wty] show ?thesis
-    by (simp add: ust Rep_udminit_safe nfv_\<psi>_mw fvi_\<psi>_mw Mt_\<psi>_mw Mt_exchange)
+  from verimon_mw.dmonitor_mverdicts_dof[OF zf' f wty, unfolded Mt_\<psi>_mw Mt_exchange] show ?thesis
+    by (simp add: ust Rep_udminit_safe nfv_\<psi>_mw fvi_\<psi>_mw)
 qed
 
 end
