@@ -207,32 +207,50 @@ let run_verified dbschema fname read fv f =
     end in
   (* The outputs up to the first error: those of the longest prefix of the chunk whose outputs
      have no error (the outputs only grow with the input), followed by the outputs of the whole
-     chunk from the first error on.  The prefix is found by bisection, feeding each probe from
-     the state after the longest prefix found so far, so that the chunk is read about twice;
-     vfeed_chunk_online covers each probe, from a state that satisfies the invariant.  If no
-     verdict precedes the error, there is nothing to find.  After the first error, the outputs
-     are handled as they come. *)
+     chunk from the first error on.  vfeed_chunk_online covers each prefix fed from a state that
+     satisfies the invariant.  The first error is reported at the first byte of its item, and
+     the items before it are complete once that byte is read, so the prefix up to it usually has
+     all the verdicts before the error; otherwise the prefix is found by bisection, feeding each
+     probe from the state after the longest prefix found so far.  If no verdict precedes the
+     error, there is nothing to find.  After the first error, the outputs are handled as they
+     come. *)
   let erred = ref false in
   let is_error = function VM.VO_ERROR _ -> true | VM.VO_VERDICTS _ -> false in
   let rec from_error = function
     | [] -> []
     | o :: os -> if is_error o then o :: os else from_error os in
+  let rec before_error = function
+    | [] -> 0
+    | o :: os -> if is_error o then 0 else 1 + before_error os in
   let first_error s st outs =
-    match outs with
-    | o :: _ when is_error o -> outs
-    | _ ->
-        let lo = ref 0 and hi = ref (String.length s) and st_lo = ref st and acc = ref [] in
-        while !hi - !lo > 1 do
-          let mid = (!lo + !hi) / 2 in
-          let (o, st_mid) = VM.vfeed_chunk conf (String.sub s !lo (mid - !lo)) !st_lo in
-          if List.exists is_error o then hi := mid
+    match from_error outs with
+    | (VM.VO_ERROR (off, _) :: _) as err ->
+        let n = before_error outs in
+        if n = 0 then outs else begin
+          let len = String.length s in
+          let (base, _) = fst st in
+          let p = Verified_log_parser.int_of_z off - Verified_log_parser.int_of_z base + 1 in
+          let p = max 1 (min len p) in
+          let (o1, st1) = VM.vfeed_chunk conf (String.sub s 0 p) st in
+          let ok1 = not (List.exists is_error o1) in
+          if ok1 && List.length o1 = n then o1 @ err
           else begin
-            acc := List.rev_append o !acc;
-            st_lo := st_mid;
-            lo := mid
+            let lo = ref (if ok1 then p else 0) and hi = ref (if ok1 then len else p) in
+            let st_lo = ref (if ok1 then st1 else st) and acc = ref (if ok1 then List.rev o1 else []) in
+            while !hi - !lo > 1 do
+              let mid = (!lo + !hi) / 2 in
+              let (o, st_mid) = VM.vfeed_chunk conf (String.sub s !lo (mid - !lo)) !st_lo in
+              if List.exists is_error o then hi := mid
+              else begin
+                acc := List.rev_append o !acc;
+                st_lo := st_mid;
+                lo := mid
+              end
+            done;
+            List.rev !acc @ err
           end
-        done;
-        List.rev !acc @ from_error outs in
+        end
+    | _ -> outs in
   let rec loop st =
     match read () with
     | Some s ->
