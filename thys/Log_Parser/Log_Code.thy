@@ -1,6 +1,6 @@
 (*<*)
 theory Log_Code
-  imports Log_Exec "HOL-Library.Code_Abstract_Char" "HOL-Library.Code_Target_Nat"
+  imports Log_Values "HOL-Library.Code_Abstract_Char" "HOL-Library.Code_Target_Nat"
 begin
 (*>*)
 
@@ -269,6 +269,29 @@ lemma efinish_p_code[code]: "efinish_p b p sp acc = (case p of
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
      | Some es \<Rightarrow> fold (\<lambda>e acc. O_ITEM sp e # acc) es acc))"
   by (auto simp: efinish_p_def fold_O_ITEM split: option.splits)
+
+subsection \<open>Numbers\<close>
+
+text \<open>The digits of a number are recognized by comparing characters, and their indices are
+  compared and incremented as indices are.\<close>
+
+lemma idigit_code[code]: "idigit b c =
+   (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' then (let d = integer_of_char c - 48 in if d < b then d else -1)
+    else if CHR ''a'' \<le> c \<and> c \<le> CHR ''f'' then (let d = integer_of_char c - 87 in if d < b then d else -1)
+    else if CHR ''A'' \<le> c \<and> c \<le> CHR ''F'' then (let d = integer_of_char c - 55 in if d < b then d else -1)
+    else -1)"
+proof -
+  have k: "integer_of_char c = integer_of_nat (of_char c)"
+    by (simp add: integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  show ?thesis
+    unfolding idigit_alt Let_def k
+    by (auto simp: less_eq_char_def integer_simps)
+qed
+
+lemma idigits_code[code]: "idigits s n b i acc = (if idx_less i n then
+    (let d = idigit b (bytes_at s i) in if d < 0 then -1 else idigits s n b (idx_succ i) (b * acc + d))
+  else acc)"
+  unfolding idx_less_def idx_succ_def by (rule idigits.simps)
 
 (*<*)
 end

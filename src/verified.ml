@@ -10127,8 +10127,8 @@ let uempty_db : ((string * nat), ((event_data list) set list)) mapping
 let rec add_evk
   k vs x2 = match k, vs, x2 with k, vs, [] -> [(k, [vs])]
     | ka, vs, (k, xs) :: g ->
-        (if equal_proda equal_string8 equal_nat k ka then (k, vs :: xs) :: g
-          else (k, xs) :: add_evk ka vs g);;
+        (if String.equal (fst k) (fst ka) && equal_nata (snd k) (snd ka)
+          then (k, vs :: xs) :: g else (k, xs) :: add_evk ka vs g);;
 
 let rec add_ev (p, vs) g = add_evk (p, size_lista vs) vs g;;
 
@@ -13542,11 +13542,13 @@ let rec udminit_verimon
       (fun psi -> udminit_push (if mw then convert_multiway psi else psi))
       (prepare_verimon rw siga phi);;
 
-let rec lsig_lookup
-  s (q, n) =
-    map_option snd
-      (find (fun (p, tys) -> Stdlib.(=) p q && equal_nata (size_lista tys) n)
-        s);;
+let rec lsig_find
+  x0 q n = match x0, q, n with [], q, n -> None
+    | (p, tys) :: s, q, n ->
+        (if String.equal p q && equal_nata (size_lista tys) n then Some tys
+          else lsig_find s q n);;
+
+let rec lsig_lookup s (q, n) = lsig_find s q n;;
 
 let rec lsig_tsig s = map_sig (fun a -> TCst a) (lsig_lookup s);;
 
@@ -13620,22 +13622,23 @@ let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
 
 let rec idigit
-  b c = (let k = (Z.of_int (Char.code c)) in
-          (if Z.leq (Z.of_int 48) k && Z.leq k (Z.of_int 57)
-            then (if Z.lt (Z.sub k (Z.of_int 48)) b then Z.sub k (Z.of_int 48)
-                   else (Z.neg (Z.of_int 1)))
-            else (if Z.leq (Z.of_int 97) k && Z.leq k (Z.of_int 102)
-                   then (if Z.lt (Z.sub k (Z.of_int 87)) b
-                          then Z.sub k (Z.of_int 87) else (Z.neg (Z.of_int 1)))
-                   else (if Z.leq (Z.of_int 65) k && Z.leq k (Z.of_int 70)
-                          then (if Z.lt (Z.sub k (Z.of_int 55)) b
-                                 then Z.sub k (Z.of_int 55)
-                                 else (Z.neg (Z.of_int 1)))
-                          else (Z.neg (Z.of_int 1))))));;
+  b c = (if (('\048' : char) <= c) && ((c : char) <= '\057')
+          then (let d = Z.sub ((Z.of_int (Char.code c))) (Z.of_int 48) in
+                 (if Z.lt d b then d else (Z.neg (Z.of_int 1))))
+          else (if (('\097' : char) <= c) && ((c : char) <= '\102')
+                 then (let d = Z.sub ((Z.of_int (Char.code c))) (Z.of_int 87) in
+                        (if Z.lt d b then d else (Z.neg (Z.of_int 1))))
+                 else (if (('\065' : char) <= c) && ((c : char) <= '\070')
+                        then (let d =
+                                Z.sub ((Z.of_int (Char.code c))) (Z.of_int 55)
+                                in
+                               (if Z.lt d b then d else (Z.neg (Z.of_int 1))))
+                        else (Z.neg (Z.of_int 1)))));;
 
 let rec idigits
   s n b i acc =
-    (if Z.lt i n
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n
       then (let d =
               idigit b
                 ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
@@ -13643,7 +13646,9 @@ let rec idigits
                   s i)
               in
              (if Z.lt d Z.zero then (Z.neg (Z.of_int 1))
-               else idigits s n b (Z.add i (Z.of_int 1))
+               else idigits s n b
+                      ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                        i)
                       (Z.add (Z.mul b acc) d)))
       else acc);;
 
@@ -13760,8 +13765,8 @@ let rec vc_rel (VConf (x1, x2, x3, x4)) = x1;;
 let rec vkeep
   cf b =
     (let q = (fun x -> x) b in
-      membera equal_string8 (vc_rel cf) q ||
-        not (membera equal_string8 (vc_sig cf) q));;
+      list_ex (String.equal q) (vc_rel cf) ||
+        not (list_ex (String.equal q) (vc_sig cf)));;
 
 let rec vitems_acc
   cf x1 z acc = match cf, x1, z, acc with cf, [], z, acc -> (rev acc, z)

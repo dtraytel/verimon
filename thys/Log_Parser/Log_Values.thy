@@ -222,7 +222,7 @@ text \<open>The code computes on integers: arithmetic on the natural numbers of 
 definition idigit :: "integer \<Rightarrow> char \<Rightarrow> integer" where
   "idigit b c = (case digit_val (nat_of_integer b) c of None \<Rightarrow> -1 | Some d \<Rightarrow> integer_of_nat d)"
 
-lemma idigit_code[code]: "idigit b c = (let k = integer_of_char c in
+lemma idigit_alt: "idigit b c = (let k = integer_of_char c in
      if 48 \<le> k \<and> k \<le> 57 then (if k - 48 < b then k - 48 else -1)
      else if 97 \<le> k \<and> k \<le> 102 then (if k - 87 < b then k - 87 else -1)
      else if 65 \<le> k \<and> k \<le> 70 then (if k - 55 < b then k - 55 else -1)

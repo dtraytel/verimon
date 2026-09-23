@@ -56,6 +56,17 @@ declare [[code drop: string8_of_bytes]]
 code_printing
   constant string8_of_bytes \<rightharpoonup> (OCaml) "(fun x -> x)"
 
+text \<open>Trusted as well: the equality of strings is that of OCaml's strings. (The code of
+  @{text "HOL.equal"} on @{typ string8} is OCaml's polymorphic equality, which is slower.)\<close>
+
+definition str8_eq :: "string8 \<Rightarrow> string8 \<Rightarrow> bool" where
+  "str8_eq a b \<longleftrightarrow> a = b"
+
+declare [[code drop: str8_eq]]
+
+code_printing
+  constant str8_eq \<rightharpoonup> (OCaml) "String.equal"
+
 subsection \<open>Signatures\<close>
 
 text \<open>The signature as the front end reads it: the predicates with their argument types.\<close>
@@ -70,9 +81,12 @@ definition lsig_tsig :: "lsig \<Rightarrow> tyssig" where
 
 text \<open>The code compares the names first.\<close>
 
-lemma lsig_lookup_code[code]:
-  "lsig_lookup S (q, n) = map_option snd (find (\<lambda>(p, tys). p = q \<and> length tys = n) S)"
-  by (simp add: lsig_lookup_def)
+fun lsig_find :: "lsig \<Rightarrow> string8 \<Rightarrow> nat \<Rightarrow> ty list option" where
+  "lsig_find [] q n = None"
+| "lsig_find ((p, tys) # S) q n = (if str8_eq p q \<and> length tys = n then Some tys else lsig_find S q n)"
+
+lemma lsig_lookup_code[code]: "lsig_lookup S (q, n) = lsig_find S q n"
+  by (induction S q n rule: lsig_find.induct) (auto simp: lsig_lookup_def str8_eq_def)
 
 lemma lsig_lookup_length: "lsig_lookup S (p, n) = Some tys \<Longrightarrow> length tys = n"
   by (induction S) (auto simp: lsig_lookup_def split: if_splits)
@@ -323,10 +337,11 @@ text \<open>The code computes the key of an event once.\<close>
 fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
     ((Formula.name \<times> nat) \<times> event_data list list) list" where
   "add_evk k vs [] = [(k, [vs])]"
-| "add_evk k vs ((k', xs) # g) = (if k' = k then (k', vs # xs) # g else (k', xs) # add_evk k vs g)"
+| "add_evk k vs ((k', xs) # g) = (if str8_eq (fst k') (fst k) \<and> snd k' = snd k then (k', vs # xs) # g
+     else (k', xs) # add_evk k vs g)"
 
 lemma add_ev_code[code]: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
-  by (induction "(p, vs)" g rule: add_ev.induct) auto
+  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
 
 definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
   "build_db evs = fold (\<lambda>(k, xs) db. uinsert_table_into_db k (utable_of_list (sort_t xs)) db) (group_evs evs) uempty_db"
@@ -437,6 +452,10 @@ text \<open>The parser keeps the events of the predicates the formula mentions, 
 
 definition vkeep :: "vconf \<Rightarrow> bytes \<Rightarrow> bool" where
   "vkeep cf b = (let q = string8_of_bytes b in q \<in> set (vc_rel cf) \<or> q \<notin> set (vc_sig cf))"
+
+lemma vkeep_code[code]:
+  "vkeep cf b = (let q = string8_of_bytes b in list_ex (str8_eq q) (vc_rel cf) \<or> \<not> list_ex (str8_eq q) (vc_sig cf))"
+  by (auto simp: vkeep_def str8_eq_def list_ex_iff)
 
 text \<open>The state of the monitor proper is that of the dense monitor and the last timestamp; that of
   the whole monitor includes the parser's.\<close>
