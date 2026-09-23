@@ -784,7 +784,12 @@ lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_neg
 lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
 
-(* Proofs that rewrite does not change the progress of the monitor *)
+(* Proofs that rewrite does not change the progress of the monitor.
+   The rules that propagate a range restriction \<alpha> into the scope of a temporal operator bind
+   \<alpha>'s current satisfactions to a fresh predicate with the freeze operator (Frz q \<alpha> (\<alpha> \<and> OP (q \<and> \<beta>))).
+   Since \<alpha> is conjoined at the outer level, the frozen predicate q is available whenever the outer
+   conjunction can make progress (lemma progress_Frz_And); hence the progress of the rewritten formula
+   coincides with the original one (lemma progress_rewrite). *)
 lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
   apply (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
   using [[linarith_split_limit=17]]
