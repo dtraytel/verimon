@@ -28,9 +28,9 @@ text \<open>
   @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
   @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read, from
   the initial state; theory @{text Log_Monitor_Online} states it for the online interface, chunk
-  by chunk: an invariant relates the state to the bytes read and the prefix they denote, and each
-  chunk's verdicts are exactly the ones that the specification prescribes for the longer prefix
-  and not for the shorter one.
+  by chunk: an invariant relates the state to the bytes read and the prefix they denote, and a
+  chunk after which they still denote a prefix preserves it and outputs exactly the verdicts that
+  the specification prescribes for the longer prefix and not for the shorter one.
   The theorems say nothing about which error is reported, what is output after the first error,
   nor about the verdicts output together with it, for the same chunk; for that chunk, the driver
   outputs the verdicts of its longest prefix whose outputs have no error, which the theorems
@@ -331,6 +331,25 @@ fun pred_error :: "lsig \<Rightarrow> (bytes \<times> bytes list) list \<Rightar
 | "pred_error S ((p, fs) # es) = (if list_ex (\<lambda>(q, _). str8_eq q (string8_of_bytes p)) S
      then pred_error S es else Some (VE_PREDICATE p (length fs)))"
 
+text \<open>The error of the first event that does not convert, as MonPoly's parser reports it: it
+  converts the fields against the types that the signature declares for the name of the predicate
+  one after the other, and reports a wrong number of fields only if the fields they have in
+  common convert.\<close>
+
+fun conv_error :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow> lsig \<Rightarrow>
+    (bytes \<times> bytes list) list \<Rightarrow> verror option" where
+  "conv_error pf L S [] = None"
+| "conv_error pf L S ((p, fs) # es) = (let q = string8_of_bytes p in
+     case L (q, length fs) of
+       Some tys \<Rightarrow> (case conv_fields pf tys fs 0 of
+         Inl (i, t) \<Rightarrow> Some (VE_FIELD p i t)
+       | Inr _ \<Rightarrow> conv_error pf L S es)
+     | None \<Rightarrow> (case find (\<lambda>(q', _). str8_eq q' q) S of
+         None \<Rightarrow> Some (VE_PREDICATE p (length fs))
+       | Some (_, tys) \<Rightarrow> (case conv_fields pf tys fs 0 of
+           Inl (i, t) \<Rightarrow> Some (VE_FIELD p i t)
+         | Inr _ \<Rightarrow> Some (VE_PREDICATE p (length fs)))))"
+
 subsection \<open>Sorting\<close>
 
 text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
@@ -595,7 +614,8 @@ text \<open>The predicates whose events the parser skips: in a list for few pred
   many.\<close>
 
 definition vskip :: "bool \<Rightarrow> tysym Formula.formula \<Rightarrow> lsig \<Rightarrow> Formula.name list" where
-  "vskip filt \<phi> S = (if filt then filter (\<lambda>q. q \<notin> set (map fst (free_preds \<phi>))) (map fst S) else [])"
+  "vskip filt \<phi> S = (if filt then (let F = set (map fst (free_preds \<phi>)) in filter (\<lambda>q. q \<notin> F) (map fst S))
+     else [])"
 
 definition vskip_fun :: "Formula.name list \<Rightarrow> Formula.name \<Rightarrow> bool" where
   "vskip_fun xs = (if length xs < 32 then (\<lambda>q. list_ex (str8_eq q) xs) else (let A = set xs in (\<lambda>q. q \<in> A)))"
@@ -625,7 +645,7 @@ definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times
 text \<open>An item that does not denote a time point is reported, and the monitor's state does not
   change. If the events do not convert, the error reported is the first of, in the order of
   MonPoly's parser: an event of an undeclared predicate, a decreasing timestamp, and the first
-  event that does not convert.\<close>
+  event that does not convert (@{const conv_error}).\<close>
 
 definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vitem cf x z = (case x of
@@ -636,7 +656,8 @@ definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow>
      | Some t \<Rightarrow> (case conv_events (vc_pf cf) (vc_lookup cf) evs of
          Inl e \<Rightarrow> (VO_ERROR sp (case pred_error (vc_lsig cf) evs of
              Some e' \<Rightarrow> e'
-           | None \<Rightarrow> if t < snd z then VE_ORDER t (snd z) else e), z)
+           | None \<Rightarrow> if t < snd z then VE_ORDER t (snd z)
+             else (case conv_error (vc_pf cf) (vc_lookup cf) (vc_lsig cf) evs of Some e' \<Rightarrow> e' | None \<Rightarrow> e)), z)
        | Inr xs \<Rightarrow> vtp sp xs t z)))"
 
 fun vitems :: "vconf \<Rightarrow> out list \<Rightarrow> vmstate \<Rightarrow> vout list \<times> vmstate" where
@@ -1193,7 +1214,7 @@ lemma vinit_Inr:
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
-  by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def keep_spec_def string8_of_bytes_def
+  by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def Let_def keep_spec_def string8_of_bytes_def
       Abs_bytes_inverse)
 
 text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>

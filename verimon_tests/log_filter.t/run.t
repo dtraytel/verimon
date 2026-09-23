@@ -44,6 +44,14 @@ support, may be declared if the formula does not mention it:
   @1 (time point 0): (1)
   @2 (time point 1): (2)
 
+With -nofilterrel, the events of such a predicate are read as strings: unlike MonPoly, the
+verified path does not check that their fields are regular expressions.
+
+  $ printf '@1 P(1) X(abc)\n@2 P(2)\n' > l.log
+  $ monpoly -verified -sig rx.sig -formula p.mfotl -log l.log -nofilterrel
+  @1 (time point 0): (1)
+  @2 (time point 1): (2)
+
 Events of predicates that the signature does not declare, events of the formula's
 predicates of another arity or with fields of another type, and entries with a timestamp
 that is not a natural number are reported, at the entry's '@'; with -ignore_parse_errors,
@@ -135,6 +143,26 @@ fields of each event are checked after, one event after the other:
   @1 (time point 0): (1)
   ERROR while parsing log:
   l.log:2:1: Predicate S was not defined in the signature.
+  [1]
+
+An event with a wrong number of fields is reported as such only if the fields it has in common
+with the predicate's declaration convert, as MonPoly's parser does:
+
+  $ printf '@1 P(1)\n@2 P(a,b)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Expected type int for predicate P, field number 1
+  [1]
+  $ monpoly -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR: Wrong type for predicate P: Expected type int for field number 1
+  [1]
+  $ printf '@1 P(1)\n@2 P(2,b)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Wrong tuple length for predicate P (expected: 1, actual: 2)
   [1]
 
 In a large signature, the predicates are looked up in a mapping, and those whose events are

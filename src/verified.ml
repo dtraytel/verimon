@@ -13683,10 +13683,12 @@ let rec free_preds
 let rec vskip
   filt phi s =
     (if filt
-      then filtera
-             (fun q ->
-               not (membera equal_string8 (mapa fst (free_preds phi)) q))
-             (mapa fst s)
+      then (let f =
+              set (ceq_string8, ccompare_string8, set_impl_string8)
+                (mapa fst (free_preds phi))
+              in
+             filtera (fun q -> not (member (ceq_string8, ccompare_string8) q f))
+               (mapa fst s))
       else []);;
 
 let rec vinit
@@ -13838,6 +13840,23 @@ let rec pred_error
         (if list_ex (fun (q, _) -> String.equal q ((fun x -> x) p)) s
           then pred_error s es else Some (VE_PREDICATE (p, size_lista fs)));;
 
+let rec conv_error
+  pf l s x3 = match pf, l, s, x3 with pf, l, s, [] -> None
+    | pf, l, s, (p, fs) :: es ->
+        (let q = (fun x -> x) p in
+          (match l (q, size_lista fs)
+            with None ->
+              (match find (fun (qa, _) -> String.equal qa q) s
+                with None -> Some (VE_PREDICATE (p, size_lista fs))
+                | Some (_, tys) ->
+                  (match conv_fields pf tys fs zero_nata
+                    with Inl (i, t) -> Some (VE_FIELD (p, i, t))
+                    | Inr _ -> Some (VE_PREDICATE (p, size_lista fs))))
+            | Some tys ->
+              (match conv_fields pf tys fs zero_nata
+                with Inl (i, t) -> Some (VE_FIELD (p, i, t))
+                | Inr _ -> conv_error pf l s es)));;
+
 let rec less_eq_int k l = Z.leq (integer_of_int k) (integer_of_int l);;
 
 let zero_int : int = Int_of_integer Z.zero;;
@@ -13858,7 +13877,10 @@ let rec vitem
                    (sp, (match pred_error (vc_lsig cf) evs
                           with None ->
                             (if less_nat t (snd z) then VE_ORDER (t, snd z)
-                              else e)
+                              else (match
+                                     conv_error (vc_pf cf) (vc_lookup cf)
+                                       (vc_lsig cf) evs
+                                     with None -> e | Some ea -> ea))
                           | Some ea -> ea)),
                   z)
               | Inr xs -> vtp sp xs t z))

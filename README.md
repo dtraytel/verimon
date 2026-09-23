@@ -176,17 +176,19 @@ log denotes, and that an error is reported exactly when the log,
 restricted to the predicates the parser keeps, denotes no prefix.  As for
 VeriMon's kernel, they are also stated for the online interface (theory
 `Log_Monitor_Online`): an invariant relates the monitor's state to the
-bytes read so far and the prefix they denote, the initial state satisfies
-it, and each chunk of the input preserves it and outputs exactly the
-verdicts that the specification prescribes for the longer prefix and not
-for the shorter one.  They
+bytes read so far and the prefix they denote, and the initial state
+satisfies it; a chunk of the input after which the bytes read still denote
+a prefix preserves it, reports no error and outputs exactly the verdicts
+that the specification prescribes for the longer prefix and not for the
+shorter one, and a chunk after which they denote none reports an error.  They
 cover the output up to the first error (for the chunk of the input with
 the first error, the driver outputs the verdicts of its longest prefix
 without an error), not what is output after it (with
 `-ignore_parse_errors`), nor which error is reported.  Timestamps are
 then natural numbers, and integers are written as for Zarith's
 `Z.of_string` except that a digit is required after the sign and the
-base prefix (`0x`, `0o` or `0b`).  Floats are read by OCaml's
+base prefix (`0x`, `0o` or `0b`); they are converted digit by digit, in
+time quadratic in the number of digits.  Floats are read by OCaml's
 `float_of_string_opt`, a parameter of the theorems.  Outside them remain
 MonPoly's reading and preprocessing of the formula and the signature, and
 the driver in `src/algorithm_verified.ml`, which reads the input in

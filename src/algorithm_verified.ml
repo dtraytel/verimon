@@ -97,12 +97,12 @@ let monitor_gen parse dbschema logfile fv f =
    are those the specification of the formula prescribes for the prefix the log denotes, and
    that an error is reported exactly when the log restricted to the predicates it keeps denotes
    no prefix; vfeed_chunks_online states the same for the chunks read so far.  Theory
-   Log_Monitor_Online states it for this interface, call by call: the state after the bytes
-   read satisfies the invariant wf_vstate for the prefix they denote (wf_vstate_vinit), and each
-   call of vfeed_chunk (vfeed_chunk_online) or vfinish (vfinish_online) from such a state
-   reports no error and outputs exactly the verdicts that the specification prescribes for the
-   longer prefix and not for the shorter one, or reports an error if the bytes no longer denote
-   a prefix.  The theorems cover the output up to the first error (for the chunk with the first
+   Log_Monitor_Online states it for this interface, call by call: the initial state satisfies
+   the invariant wf_vstate for the bytes read and the prefix they denote (wf_vstate_vinit), and
+   a call of vfeed_chunk (vfeed_chunk_online) or vfinish (vfinish_online) from such a state
+   either reports an error, exactly when the bytes no longer denote a prefix, or reports none,
+   outputs exactly the verdicts that the specification prescribes for the longer prefix and not
+   for the shorter one, and (for vfeed_chunk) leaves a state that satisfies the invariant.  The theorems cover the output up to the first error (for the chunk with the first
    error, the driver outputs the verdicts of its longest prefix without an error, see
    first_error), but not what is output after it (with -ignore_parse_errors), nor which error
    is reported.
