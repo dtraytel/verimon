@@ -68,20 +68,20 @@ text \<open>The verdicts of the dense monitor started from the state @{const udm
   are the verdicts the specification of the input formula prescribes.\<close>
 
 theorem udminit_verimon_mverdicts:
-  assumes init: "udminit_verimon mw rw sig \<phi> = Inr st"
-    and zf: "uvdfail_nodes (udmstate_m st) = 0"
+  assumes init: "udminit_verimon mw rw sig \<phi> = Inr ust"
+    and zf: "uvdfail_nodes (udmstate_m ust) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix (map_sig (convert_tysym o check_subst) sig) \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
-      (dmonitor (Rep_udmstate st) \<pi>)) = monitor_\<phi>.Mt \<pi>"
+      (dmonitor (Rep_udmstate ust) \<pi>)) = monitor_\<phi>.Mt \<pi>"
 proof -
-  have st: "st = udminit_safe (\<psi>_mw mw)"
+  have ust: "ust = udminit_safe (\<psi>_mw mw)"
     using init by (simp add: udminit_verimon_\<psi>_mw)
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv (\<psi>_mw mw))
       (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (\<psi>_mw mw)))) = 0"
-    using zf unfolding st by (simp only: Rep_udminit_safe[symmetric] vdfail_nodes_Rep_udmstate)
+    using zf unfolding ust by (simp only: Rep_udminit_safe[symmetric] vdfail_nodes_Rep_udmstate)
   from verimon_mw.dmonitor_mverdicts_dof[OF zf' f wty] show ?thesis
-    by (simp add: st Rep_udminit_safe nfv_\<psi>_mw fvi_\<psi>_mw Mt_\<psi>_mw Mt_exchange)
+    by (simp add: ust Rep_udminit_safe nfv_\<psi>_mw fvi_\<psi>_mw Mt_\<psi>_mw Mt_exchange)
 qed
 
 end
