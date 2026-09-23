@@ -373,7 +373,7 @@ lemma dux_agg_eval[simp]: "dux_agg (snd (dux_eval args nt d)) = dux_agg d"
 definition duxaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow>
     event_data muaux \<Rightarrow> bool" where
   "duxaux' n cs_R cs_L args cur daux auxlist \<longleftrightarrow> (case daux of
-     DUX_gen d \<Rightarrow> duaux' n cs_R cs_L args cur d auxlist
+     DUX_gen d \<Rightarrow> duaux' n cs_R cs_L args cur (fix_res d) auxlist
    | DUX_win w \<Rightarrow> cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0 \<and>
        (\<forall>(t, a1, a2) \<in> set auxlist. table n (set cs_L) a1 \<and> table n (set cs_R) a2) \<and>
        valid_uw (dargs cs_R cs_L args) cur w (dauxlist3 n cs_R auxlist)
@@ -390,8 +390,8 @@ lemma duxaux'_init:
   assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
     and sub: "set cs_L \<subseteq> set cs_R"
   shows "duxaux' n cs_R cs_L args 0 (dux_init (dargs cs_R cs_L args)) []"
-  using duaux'_init[OF s_R s_L sub, of n args] valid_uw_init
-  by (auto simp: duxaux'_def dux_init_def dauxlist3_def ginit_dq_eq)
+  using duaux'_init[OF s_R s_L sub, of n args, folded ginit_dq_eq] valid_uw_init
+  by (auto simp: duxaux'_def dux_init_def dauxlist3_def)
 
 lemma duxaux'_init_agg:
   assumes c: "cpos cs_R (set cs_L) = {}" and inz: "memL (args_ivl args) 0"
@@ -412,10 +412,15 @@ lemma duxaux'_add_new:
       (update_until args rel1 rel2 nt auxlist)"
 proof (cases daux)
   case (DUX_gen d)
-  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
-  have g: "gadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt d
-      = dadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt d"
-    by (rule gadd_new_dq_eq[OF _ duaux'_ushape[OF vd]]) (simp add: dargs_def init_args_def)
+  have vd: "duaux' n cs_R cs_L args cur (fix_res d) auxlist"
+    using v unfolding DUX_gen by (simp add: duxaux'_def)
+  have sh: "ushape d" and a1: "\<And>k v. Mapping.lookup (ua1 d) k = Some v \<Longrightarrow> v < utp d"
+    using duaux'_ushape[OF vd] by simp_all
+  have g: "fix_res (gadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1)
+        (dtabc n cs_R rel2) nt d)
+      = dadd_new_dq (dargs cs_R cs_L args) (dmsk cs_R cs_L) (dtabc n cs_L rel1) (dtabc n cs_R rel2) nt
+        (fix_res d)"
+    by (rule gadd_new_dq_eq(1)[OF _ sh a1]) (simp add: dargs_def init_args_def)
   show ?thesis
     using duaux'_add_new[OF vd s_R s_L b_R sub t1 t2 f2 nt] unfolding DUX_gen
     by (simp add: duxaux'_def g)
@@ -474,14 +479,17 @@ lemma duxaux'_eval:
     duxaux' n cs_R cs_L args cur daux' auxlist'"
 proof (cases daux)
   case (DUX_gen d)
-  have vd: "duaux' n cs_R cs_L args cur d auxlist" using v unfolding DUX_gen by (simp add: duxaux'_def)
-  have g: "geval_dq (dargs cs_R cs_L args) nt d = eval_dq (dargs cs_R cs_L args) nt d"
-    by (rule geval_dq_eq[OF _ duaux'_ushape(1)[OF vd]]) (simp add: dargs_def init_args_def)
-  obtain dres0 d' where e: "eval_dq (dargs cs_R cs_L args) nt d = (dres0, d')"
-    by (cases "eval_dq (dargs cs_R cs_L args) nt d")
-  have r: "dres = dres0" and d': "daux' = DUX_gen d'"
-    using de unfolding DUX_gen by (simp_all add: e g del: eval_dq.simps geval_dq.simps)
-  show ?thesis unfolding r d' DUX_gen using duaux'_eval[OF vd nt e we] by (simp add: duxaux'_def)
+  have vd: "duaux' n cs_R cs_L args cur (fix_res d) auxlist"
+    using v unfolding DUX_gen by (simp add: duxaux'_def)
+  have sh: "ushape d" using duaux'_ushape(1)[OF vd] by simp
+  have ag: "args_agg (dargs cs_R cs_L args) = None" by (simp add: dargs_def init_args_def)
+  obtain dres0 d0 where e: "eval_dq (dargs cs_R cs_L args) nt (fix_res d) = (dres0, d0)"
+    by (cases "eval_dq (dargs cs_R cs_L args) nt (fix_res d)")
+  obtain d' where g: "geval_dq (dargs cs_R cs_L args) nt d = (dres, d')" and d': "daux' = DUX_gen d'"
+    using de unfolding DUX_gen by (auto simp del: geval_dq.simps split: prod.splits)
+  have r: "dres = dres0" and f: "fix_res d' = d0"
+    using geval_dq_eq[OF ag sh, of nt] unfolding g e by simp_all
+  show ?thesis unfolding r d' DUX_gen using duaux'_eval[OF vd nt e we] f by (simp add: duxaux'_def)
 next
   case (DUX_win w)
   obtain dres0 w' where e: "uw_eval (dargs cs_R cs_L args) nt w = (dres0, w')"
@@ -528,7 +536,7 @@ lemma duxaux'_length:
   "duxaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
      dux_length (dargs cs_R cs_L args) daux = length auxlist"
   using duaux'_length valid_uw_length valid_ua_length
-  by (cases daux) (auto simp: duxaux'_def dauxlist3_def glength_dq_eq)
+  by (cases daux) (auto simp: duxaux'_def dauxlist3_def glength_dq_eq[symmetric])
 
 (*<*)
 end

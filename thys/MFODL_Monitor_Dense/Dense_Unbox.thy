@@ -1181,6 +1181,8 @@ text \<open>
   One delta is not written out.  What a new time point adds to the front map is exactly what it
   adds to @{term result}, because @{term result} is that map's key set, so the insertion is the
   difference between the two -- which is what the kernel's @{term to_add} computes the long way.
+  Since the generic insertion no longer maintains @{term result}
+  (@{theory MFODL_Monitor_Dense.Dense_Until_Gen}), the new result is read off the front map.
 \<close>
 
 type_synonym dmauaux = "event_data gmuaux \<times> daggaux option"
@@ -1239,8 +1241,9 @@ definition gaadd_new_dq :: "args \<Rightarrow> daggargs \<Rightarrow> bool list 
       new_tstp = (if inz then Inr tp else Inl nt);
       tstp_dq = dq_push nt tstp_dq;
       P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
-      (tbl, a2_dq', result') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
-        (csl rel2) ({}, a2_dq, result);
+      (tbl, a2_dq') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+        (csl rel2) ({}, a2_dq);
+      result' = Mapping.keys (dq_hd_s a2_dq' Mapping.empty);
       tables = append_queue (tbl, new_tstp) tables;
       a2_dq = dq_push Mapping.empty a2_dq';
       a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)

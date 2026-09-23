@@ -486,14 +486,14 @@ lemma gadd_new_dq_code[code]:
      new_tstp = (if inz then Inr tp else Inl nt);
      tstp_dq = dq_push nt tstp_dq;
      P = (\<lambda>t. memL I (nt - dq_nth_s tstp_dq (t - (tp - len)) 0));
-     (tbl, a2_dq', result') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
-       (csl rel2) ({}, a2_dq, result);
+     (tbl, a2_dq') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+       (csl rel2) ({}, a2_dq);
      tables = append_queue (tbl, new_tstp) tables;
      a2_dq = dq_push Mapping.empty a2_dq';
      a1_map = (if pos then mfilter_keys True rel1
        (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
      tss = append_queue nt tss in
-     (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn))"
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn))"
   unfolding gadd_new_dq_def mfilter_keys_def eq_True ..
 
 (*<*)

@@ -1308,37 +1308,37 @@ lemma gupd_nested_step_dq_ra2[simp]:
   by (auto simp: gupd_nested_step_dq_def Let_def split: option.splits)
 
 lemma guntil_step_dq_racc:
-  "guntil_step_dq P d t0 (t, reopt as) (reopt_table tbl, ra2 a2, reopt_table res)
-   = (case guntil_step_dq P d t0 (t, as) (tbl, a2, res) of
-        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+  "guntil_step_dq P d t0 (t, reopt as) (reopt_table tbl, ra2 a2)
+   = (case guntil_step_dq P d t0 (t, as) (tbl, a2) of
+        (tbl', a2') \<Rightarrow> (reopt_table tbl', ra2 a2'))"
   by (simp add: guntil_step_dq_def)
 
 lemma guntil_elem_step_dq_racc:
   "guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d (reopt as)
-     (reopt_table tbl, ra2 a2, reopt_table res)
-   = (case guntil_elem_step_dq a1 msk pos tp len inz P d as (tbl, a2, res) of
-        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+     (reopt_table tbl, ra2 a2)
+   = (case guntil_elem_step_dq a1 msk pos tp len inz P d as (tbl, a2) of
+        (tbl', a2') \<Rightarrow> (reopt_table tbl', ra2 a2'))"
   by (auto simp: guntil_elem_step_dq_def Let_def guntil_step_dq_racc
       split: option.splits prod.splits)
 
 lemma fold_guntil_elem_step_dq_racc:
   "fold (guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d) (map reopt xs)
-     (reopt_table tbl, ra2 a2, reopt_table res)
-   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs (tbl, a2, res) of
-        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
-proof (induct xs arbitrary: tbl a2 res)
+     (reopt_table tbl, ra2 a2)
+   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs (tbl, a2) of
+        (tbl', a2') \<Rightarrow> (reopt_table tbl', ra2 a2'))"
+proof (induct xs arbitrary: tbl a2)
   case (Cons x xs)
-  obtain tbl' a2' res'
-    where s: "guntil_elem_step_dq a1 msk pos tp len inz P d x (tbl, a2, res) = (tbl', a2', res')"
-    by (metis prod_cases3)
+  obtain tbl' a2'
+    where s: "guntil_elem_step_dq a1 msk pos tp len inz P d x (tbl, a2) = (tbl', a2')"
+    by (metis prod.exhaust)
   show ?case by (simp add: guntil_elem_step_dq_racc s Cons)
 qed simp
 
 lemma fold_guntil_elem_step_dq_racc0:
   "fold (guntil_elem_step_dq (rmk (\<lambda>v. v) a1) msk pos tp len inz P d) (map reopt xs)
-     ({}, ra2 a2, reopt_table res)
-   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs ({}, a2, res) of
-        (tbl', a2', res') \<Rightarrow> (reopt_table tbl', ra2 a2', reopt_table res'))"
+     ({}, ra2 a2)
+   = (case fold (guntil_elem_step_dq a1 msk pos tp len inz P d) xs ({}, a2) of
+        (tbl', a2') \<Rightarrow> (reopt_table tbl', ra2 a2'))"
   using fold_guntil_elem_step_dq_racc[where tbl = "{}"] by simp
 
 lemma geval_step_dq_rmuaux:
