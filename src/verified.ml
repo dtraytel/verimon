@@ -1065,145 +1065,48 @@ let rec rbt_inter_rbt_join2 _A
       (rbt_recolor
         (inter_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
 
+let rec bal_right
+  l k v r =
+    (match r with Empty -> Branch (B, l, k, v, r)
+      | Branch (R, b, s, t, c) ->
+        (let other =
+           (match b with Empty -> Branch (B, l, k, v, r)
+             | Branch (R, b1, s1, t1, c1) ->
+               Branch
+                 (R, Branch (B, l, k, v, b1), s1, t1, Branch (B, c1, s, t, c))
+             | Branch (B, _, _, _, _) -> Branch (B, l, k, v, r))
+           in
+          (match c with Empty -> other
+            | Branch (R, c1, y, z, d) ->
+              Branch (R, Branch (B, l, k, v, b), s, t, Branch (B, c1, y, z, d))
+            | Branch (B, _, _, _, _) -> other))
+      | Branch (B, _, _, _, _) -> Branch (B, l, k, v, r));;
+
+let rec bal_left
+  a w x b l k v r =
+    (match a
+      with Empty ->
+        (match b with Empty -> bal_right l k v r
+          | Branch (R, b1, s, t, c) ->
+            Branch (R, Branch (B, a, w, x, b1), s, t, Branch (B, c, k, v, r))
+          | Branch (B, _, _, _, _) -> bal_right l k v r)
+      | Branch (R, a1, w1, x1, b1) ->
+        Branch (R, Branch (B, a1, w1, x1, b1), w, x, Branch (B, b, k, v, r))
+      | Branch (B, _, _, _, _) ->
+        (match b with Empty -> bal_right l k v r
+          | Branch (R, b2, s, t, c) ->
+            Branch (R, Branch (B, a, w, x, b2), s, t, Branch (B, c, k, v, r))
+          | Branch (B, _, _, _, _) -> bal_right l k v r));;
+
 let rec balance
-  x0 s t x3 = match x0, s, t, x3 with
-    Branch (R, a, w, x, b), s, t, Branch (R, c, y, z, d) ->
-      Branch (R, Branch (B, a, w, x, b), s, t, Branch (B, c, y, z, d))
-    | Branch (R, Branch (R, a, w, x, b), s, t, c), y, z, Empty ->
-        Branch (R, Branch (B, a, w, x, b), s, t, Branch (B, c, y, z, Empty))
-    | Branch (R, Branch (R, a, w, x, b), s, t, c), y, z,
-        Branch (B, va, vb, vc, vd)
-        -> Branch
-             (R, Branch (B, a, w, x, b), s, t,
-               Branch (B, c, y, z, Branch (B, va, vb, vc, vd)))
-    | Branch (R, Empty, w, x, Branch (R, b, s, t, c)), y, z, Empty ->
-        Branch (R, Branch (B, Empty, w, x, b), s, t, Branch (B, c, y, z, Empty))
-    | Branch (R, Branch (B, va, vb, vc, vd), w, x, Branch (R, b, s, t, c)), y,
-        z, Empty
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), w, x, b), s, t,
-               Branch (B, c, y, z, Empty))
-    | Branch (R, Empty, w, x, Branch (R, b, s, t, c)), y, z,
-        Branch (B, va, vb, vc, vd)
-        -> Branch
-             (R, Branch (B, Empty, w, x, b), s, t,
-               Branch (B, c, y, z, Branch (B, va, vb, vc, vd)))
-    | Branch (R, Branch (B, ve, vf, vg, vh), w, x, Branch (R, b, s, t, c)), y,
-        z, Branch (B, va, vb, vc, vd)
-        -> Branch
-             (R, Branch (B, Branch (B, ve, vf, vg, vh), w, x, b), s, t,
-               Branch (B, c, y, z, Branch (B, va, vb, vc, vd)))
-    | Empty, w, x, Branch (R, b, s, t, Branch (R, c, y, z, d)) ->
-        Branch (R, Branch (B, Empty, w, x, b), s, t, Branch (B, c, y, z, d))
-    | Branch (B, va, vb, vc, vd), w, x,
-        Branch (R, b, s, t, Branch (R, c, y, z, d))
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), w, x, b), s, t,
-               Branch (B, c, y, z, d))
-    | Empty, w, x, Branch (R, Branch (R, b, s, t, c), y, z, Empty) ->
-        Branch (R, Branch (B, Empty, w, x, b), s, t, Branch (B, c, y, z, Empty))
-    | Empty, w, x,
-        Branch (R, Branch (R, b, s, t, c), y, z, Branch (B, va, vb, vc, vd))
-        -> Branch
-             (R, Branch (B, Empty, w, x, b), s, t,
-               Branch (B, c, y, z, Branch (B, va, vb, vc, vd)))
-    | Branch (B, va, vb, vc, vd), w, x,
-        Branch (R, Branch (R, b, s, t, c), y, z, Empty)
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), w, x, b), s, t,
-               Branch (B, c, y, z, Empty))
-    | Branch (B, va, vb, vc, vd), w, x,
-        Branch (R, Branch (R, b, s, t, c), y, z, Branch (B, ve, vf, vg, vh))
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), w, x, b), s, t,
-               Branch (B, c, y, z, Branch (B, ve, vf, vg, vh)))
-    | Empty, s, t, Empty -> Branch (B, Empty, s, t, Empty)
-    | Empty, s, t, Branch (B, va, vb, vc, vd) ->
-        Branch (B, Empty, s, t, Branch (B, va, vb, vc, vd))
-    | Empty, s, t, Branch (v, Empty, vb, vc, Empty) ->
-        Branch (B, Empty, s, t, Branch (v, Empty, vb, vc, Empty))
-    | Empty, s, t, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty) ->
-        Branch
-          (B, Empty, s, t,
-            Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty))
-    | Empty, s, t, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)) ->
-        Branch
-          (B, Empty, s, t,
-            Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)))
-    | Empty, s, t,
-        Branch
-          (v, Branch (B, ve, vj, vk, vl), vb, vc, Branch (B, vf, vg, vh, vi))
-        -> Branch
-             (B, Empty, s, t,
-               Branch
-                 (v, Branch (B, ve, vj, vk, vl), vb, vc,
-                   Branch (B, vf, vg, vh, vi)))
-    | Branch (B, va, vb, vc, vd), s, t, Empty ->
-        Branch (B, Branch (B, va, vb, vc, vd), s, t, Empty)
-    | Branch (B, va, vb, vc, vd), s, t, Branch (B, ve, vf, vg, vh) ->
-        Branch (B, Branch (B, va, vb, vc, vd), s, t, Branch (B, ve, vf, vg, vh))
-    | Branch (B, va, vb, vc, vd), s, t, Branch (v, Empty, vf, vg, Empty) ->
-        Branch
-          (B, Branch (B, va, vb, vc, vd), s, t,
-            Branch (v, Empty, vf, vg, Empty))
-    | Branch (B, va, vb, vc, vd), s, t,
-        Branch (v, Branch (B, vi, vj, vk, vl), vf, vg, Empty)
-        -> Branch
-             (B, Branch (B, va, vb, vc, vd), s, t,
-               Branch (v, Branch (B, vi, vj, vk, vl), vf, vg, Empty))
-    | Branch (B, va, vb, vc, vd), s, t,
-        Branch (v, Empty, vf, vg, Branch (B, vj, vk, vl, vm))
-        -> Branch
-             (B, Branch (B, va, vb, vc, vd), s, t,
-               Branch (v, Empty, vf, vg, Branch (B, vj, vk, vl, vm)))
-    | Branch (B, va, vb, vc, vd), s, t,
-        Branch
-          (v, Branch (B, vi, vn, vo, vp), vf, vg, Branch (B, vj, vk, vl, vm))
-        -> Branch
-             (B, Branch (B, va, vb, vc, vd), s, t,
-               Branch
-                 (v, Branch (B, vi, vn, vo, vp), vf, vg,
-                   Branch (B, vj, vk, vl, vm)))
-    | Branch (v, Empty, vb, vc, Empty), s, t, Empty ->
-        Branch (B, Branch (v, Empty, vb, vc, Empty), s, t, Empty)
-    | Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), s, t, Empty ->
-        Branch
-          (B, Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), s, t,
-            Empty)
-    | Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), s, t, Empty ->
-        Branch
-          (B, Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), s, t,
-            Empty)
-    | Branch
-        (v, Branch (B, vf, vg, vh, vi), vb, vc, Branch (B, ve, vj, vk, vl)),
-        s, t, Empty
-        -> Branch
-             (B, Branch
-                   (v, Branch (B, vf, vg, vh, vi), vb, vc,
-                     Branch (B, ve, vj, vk, vl)),
-               s, t, Empty)
-    | Branch (v, Empty, vf, vg, Empty), s, t, Branch (B, va, vb, vc, vd) ->
-        Branch
-          (B, Branch (v, Empty, vf, vg, Empty), s, t,
-            Branch (B, va, vb, vc, vd))
-    | Branch (v, Empty, vf, vg, Branch (B, vi, vj, vk, vl)), s, t,
-        Branch (B, va, vb, vc, vd)
-        -> Branch
-             (B, Branch (v, Empty, vf, vg, Branch (B, vi, vj, vk, vl)), s, t,
-               Branch (B, va, vb, vc, vd))
-    | Branch (v, Branch (B, vj, vk, vl, vm), vf, vg, Empty), s, t,
-        Branch (B, va, vb, vc, vd)
-        -> Branch
-             (B, Branch (v, Branch (B, vj, vk, vl, vm), vf, vg, Empty), s, t,
-               Branch (B, va, vb, vc, vd))
-    | Branch
-        (v, Branch (B, vj, vk, vl, vm), vf, vg, Branch (B, vi, vn, vo, vp)),
-        s, t, Branch (B, va, vb, vc, vd)
-        -> Branch
-             (B, Branch
-                   (v, Branch (B, vj, vk, vl, vm), vf, vg,
-                     Branch (B, vi, vn, vo, vp)),
-               s, t, Branch (B, va, vb, vc, vd));;
+  l k v r =
+    (match l with Empty -> bal_right l k v r
+      | Branch (R, a, w, x, b) ->
+        (match r with Empty -> bal_left a w x b l k v r
+          | Branch (R, c, y, z, d) ->
+            Branch (R, Branch (B, a, w, x, b), k, v, Branch (B, c, y, z, d))
+          | Branch (B, _, _, _, _) -> bal_left a w x b l k v r)
+      | Branch (B, _, _, _, _) -> bal_right l k v r);;
 
 let rec rbt_comp_ins
   c f k v x4 = match c, f, k, v, x4 with
@@ -11831,54 +11734,51 @@ let rec mapping_delete_set_cfi (_A1, _A2)
 let rec edl_mapping_delete_set
   m x1 = match m, x1 with
     m, RBT_set rbt ->
-      foldb (ccompare_list ccompare_event_data)
-        (delete
-          ((ccompare_list ccompare_event_data), (equal_list equal_event_data)))
-        rbt m
-    | m, DList_set uu ->
-        (if unbox edl_finite_v (DList_set uu)
+      foldb (ccompare_list ccompare_event_data) edl_delete_nat rbt m
+    | m, DList_set dxs ->
+        (if unbox edl_finite_v (DList_set dxs)
           then set_fold_cfi
                  ((ceq_list ceq_event_data),
                    (ccompare_list ccompare_event_data))
                  (mapping_delete_set_cfi
                    ((ccompare_list ccompare_event_data),
                      (equal_list equal_event_data)))
-                 m (DList_set uu)
+                 m (DList_set dxs)
           else failwith "mapping_delete_set: infinite"
-                 (fun _ -> edl_mapping_delete_set m (DList_set uu)))
-    | m, Set_Monad uu ->
-        (if unbox edl_finite_v (Set_Monad uu)
+                 (fun _ -> edl_mapping_delete_set m (DList_set dxs)))
+    | m, Set_Monad xs ->
+        (if unbox edl_finite_v (Set_Monad xs)
           then set_fold_cfi
                  ((ceq_list ceq_event_data),
                    (ccompare_list ccompare_event_data))
                  (mapping_delete_set_cfi
                    ((ccompare_list ccompare_event_data),
                      (equal_list equal_event_data)))
-                 m (Set_Monad uu)
+                 m (Set_Monad xs)
           else failwith "mapping_delete_set: infinite"
-                 (fun _ -> edl_mapping_delete_set m (Set_Monad uu)))
-    | m, Collect_set uu ->
-        (if unbox edl_finite_v (Collect_set uu)
+                 (fun _ -> edl_mapping_delete_set m (Set_Monad xs)))
+    | m, Collect_set p ->
+        (if unbox edl_finite_v (Collect_set p)
           then set_fold_cfi
                  ((ceq_list ceq_event_data),
                    (ccompare_list ccompare_event_data))
                  (mapping_delete_set_cfi
                    ((ccompare_list ccompare_event_data),
                      (equal_list equal_event_data)))
-                 m (Collect_set uu)
+                 m (Collect_set p)
           else failwith "mapping_delete_set: infinite"
-                 (fun _ -> edl_mapping_delete_set m (Collect_set uu)))
-    | m, Complement uu ->
-        (if unbox edl_finite_v (Complement uu)
+                 (fun _ -> edl_mapping_delete_set m (Collect_set p)))
+    | m, Complement q ->
+        (if unbox edl_finite_v (Complement q)
           then set_fold_cfi
                  ((ceq_list ceq_event_data),
                    (ccompare_list ccompare_event_data))
                  (mapping_delete_set_cfi
                    ((ccompare_list ccompare_event_data),
                      (equal_list equal_event_data)))
-                 m (Complement uu)
+                 m (Complement q)
           else failwith "mapping_delete_set: infinite"
-                 (fun _ -> edl_mapping_delete_set m (Complement uu)));;
+                 (fun _ -> edl_mapping_delete_set m (Complement q)));;
 
 let rec de_mapping_delete_set_table
   m (RBT_set rbt) =
