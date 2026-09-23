@@ -568,6 +568,8 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("filter_set", "de_filter_set", ["nat", "event_data list"]),
       ("filter_cfi", "de_filter_cfi", ["nat", "event_data list"]),
       ("mapping_delete_set", "de_mapping_delete_set_nat", ["event_data list", "nat"]),
+      ("del_buckets", "de_del_buckets_nat", ["event_data list", "event_data list", "nat"]),
+      ("del_buckets1", "de_del_buckets1_nat", ["event_data list", "event_data list", "nat"]),
       ("mapping_delete_set", "de_mapping_delete_set_table",
         ["event_data list", "event_data list set"])])
   ["edl_dict_simps", "etuple_dict_simps"]\<close>

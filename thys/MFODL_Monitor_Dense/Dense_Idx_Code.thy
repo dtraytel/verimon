@@ -375,6 +375,67 @@ declare [[code drop: dsemi_idx gjoin_msaux]]
 lemma dsemi_idx_code[code]: "dsemi_idx msk pos idx X = set_of_idx (mfilter_keys pos X idx)"
   by (simp add: dsemi_idx_def mfilter_keys_def)
 
+subsection \<open>Deleting an index's buckets\<close>
+
+text \<open>
+  The join removes, from the window's table and from the per-tuple time stamps, the tuples of the
+  index entries whose keys fail the probe.  Gathering those tuples into one set first builds a
+  table that is only ever subtracted; removing each entry's tuples in turn does without it.
+\<close>
+
+definition del_buckets :: "('k, 'b set) mapping \<Rightarrow> 'b set \<times> ('b, 'v) mapping \<Rightarrow>
+    'b set \<times> ('b, 'v) mapping" where
+  "del_buckets M = (\<lambda>(T, tm). (T - set_of_idx M, mapping_delete_set tm (set_of_idx M)))"
+
+definition del_buckets1 :: "('k, 'b set) mapping \<Rightarrow> ('b, 'v) mapping \<Rightarrow> ('b, 'v) mapping" where
+  "del_buckets1 M tm = mapping_delete_set tm (set_of_idx M)"
+
+lemma mapping_delete_set_Un:
+  "mapping_delete_set m (A \<union> B) = mapping_delete_set (mapping_delete_set m A) B"
+  by (intro mapping_eqI) (simp add: delete_set_lookup)
+
+lemma mapping_delete_set_empty: "mapping_delete_set m {} = m"
+  by (intro mapping_eqI) (simp add: delete_set_lookup)
+
+lemma fold_del_buckets:
+  "fold (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p))) xs (T, tm)
+   = (T - \<Union>(snd ` set xs), mapping_delete_set tm (\<Union>(snd ` set xs)))"
+  by (induct xs arbitrary: T tm)
+    (auto simp: mapping_delete_set_Un[symmetric] mapping_delete_set_empty Diff_Un
+      Un_commute[of "snd _"] Diff_Diff_Int intro: arg_cong2[where f = "(-)"])
+
+lemma fold_del_buckets1:
+  "fold (\<lambda>p tm. mapping_delete_set tm (snd p)) xs tm = mapping_delete_set tm (\<Union>(snd ` set xs))"
+  by (induct xs arbitrary: tm) (auto simp: mapping_delete_set_Un[symmetric] mapping_delete_set_empty)
+
+lemma del_buckets_code[code]:
+  fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
+  shows "del_buckets (RBT_Mapping t) = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''del_buckets RBT_Mapping: ccompare = None'')
+        (\<lambda>_. del_buckets (RBT_Mapping t))
+    | Some _ \<Rightarrow> fold (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p)))
+        (RBT_Mapping2.entries t))"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  have S: "set_of_idx (RBT_Mapping t) = \<Union>(snd ` set (RBT_Mapping2.entries t))"
+    using set_of_idx_code[of t] Some by simp
+  show ?thesis unfolding Some option.case del_buckets_def S
+    by (simp add: fold_del_buckets fun_eq_iff)
+qed simp
+
+lemma del_buckets1_code[code]:
+  fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
+  shows "del_buckets1 (RBT_Mapping t) tm = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''del_buckets1 RBT_Mapping: ccompare = None'')
+        (\<lambda>_. del_buckets1 (RBT_Mapping t) tm)
+    | Some _ \<Rightarrow> fold (\<lambda>p tm. mapping_delete_set tm (snd p)) (RBT_Mapping2.entries t) tm)"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  have S: "set_of_idx (RBT_Mapping t) = \<Union>(snd ` set (RBT_Mapping2.entries t))"
+    using set_of_idx_code[of t] Some by simp
+  show ?thesis unfolding Some option.case del_buckets1_def S by (simp add: fold_del_buckets1)
+qed simp
+
 lemma gjoin_msaux_code[code]:
   "gjoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
@@ -394,14 +455,18 @@ lemma gjoin_msaux_code[code]:
          (t, gc, msk, data_prev, data_in, table_in - in_del, Mapping.empty, tuple_in',
           Mapping.empty, tuple_since'))
       else
-        (let in_del = dsemi_idx msk (\<not> pos) idx_in Y;
-         since_del = dsemi_idx msk (\<not> pos) idx_since Y in
-         (t, gc, msk, data_prev, data_in, table_in - in_del,
-          mfilter_keys pos Y idx_in, mapping_delete_set tuple_in in_del,
+        (let (table_in', tuple_in') = del_buckets (mfilter_keys (\<not> pos) Y idx_in) (table_in, tuple_in) in
+         (t, gc, msk, data_prev, data_in, table_in',
+          mfilter_keys pos Y idx_in, tuple_in',
           mfilter_keys pos Y idx_since,
-          mapping_delete_set tuple_since since_del))))"
-  unfolding mfilter_keys_def by simp
-
-(*<*)
+          del_buckets1 (mfilter_keys (\<not> pos) Y idx_since) tuple_since))))"
+proof -
+  have D: "\<And>M. del_buckets M (table_in, tuple_in)
+      = (table_in - set_of_idx M, mapping_delete_set tuple_in (set_of_idx M))"
+    by (simp add: del_buckets_def)
+  show ?thesis
+    by (simp only: gjoin_msaux.simps Let_def D del_buckets1_def mfilter_keys_def dsemi_idx_def
+        prod.case)
+qed(*<*)
 end
 (*>*)

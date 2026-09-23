@@ -9486,25 +9486,16 @@ let rec de_mfilter_keys_nat
                         (fun _ -> de_mfilter_keys_nat pos (Complement uu) m))
           else edl_mapping_delete_set m (Complement uu));;
 
-let rec set_of_idx _A (_B1, _B2, _B3)
+let rec de_del_buckets1_nat
+  (RBT_Mapping t) tm =
+    fold (fun p tma -> edl_mapping_delete_set tma (snd p))
+      (entriesa (ccompare_list ccompare_event_data) t) tm;;
+
+let rec de_del_buckets_nat
   (RBT_Mapping t) =
-    (match ccompare _A
-      with None ->
-        failwith "set_of_idx RBT_Mapping: ccompare = None"
-          (fun _ -> set_of_idx _A (_B1, _B2, _B3) (RBT_Mapping t))
-      | Some _ ->
-        fold (fun p -> sup_seta (_B1, _B2) (snd p)) (entriesa _A t)
-          (bot_set (_B1, _B2, _B3)));;
-
-let edl_set_of_idx_v :
-  (((event_data list), (event_data list) set) mapping -> (event_data list) set)
-    boxed
-  = Box (set_of_idx (ccompare_list ccompare_event_data)
-          ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data),
-            set_impl_list));;
-
-let rec de_dsemi_idx
-  msk pos idx x = unbox edl_set_of_idx_v (de_mfilter_keys_table pos x idx);;
+    fold (fun p (ta, tm) ->
+           (edl_minus ta (snd p), edl_mapping_delete_set tm (snd p)))
+      (entriesa (ccompare_list ccompare_event_data) t);;
 
 let rec de_gjoin_msaux
   args y
@@ -9535,15 +9526,19 @@ let rec de_gjoin_msaux
  (data_in,
    (edl_minus table_in in_del,
      (edl_mempty_table, (tuple_ina, (edl_mempty_table, tuple_sincea))))))))))
-                 else (let in_del = de_dsemi_idx msk (not pos) idx_in y in
-                       let since_del = de_dsemi_idx msk (not pos) idx_since y in
+                 else (let (table_ina, tuple_ina) =
+                         de_del_buckets_nat
+                           (de_mfilter_keys_table (not pos) y idx_in)
+                           (table_in, tuple_in)
+                         in
                         (t, (gc, (msk, (data_prev,
  (data_in,
-   (edl_minus table_in in_del,
+   (table_ina,
      (de_mfilter_keys_table pos y idx_in,
-       (edl_mapping_delete_set tuple_in in_del,
+       (tuple_ina,
          (de_mfilter_keys_table pos y idx_since,
-           edl_mapping_delete_set tuple_since since_del)))))))))))));;
+           de_del_buckets1_nat (de_mfilter_keys_table (not pos) y idx_since)
+             tuple_since)))))))))))));;
 
 let edl_mfilter_nat_v :
   ((event_data list -> nat -> bool) ->
