@@ -853,8 +853,8 @@ into a temporal operator. Instead of copying @{term \<alpha>} under an opposite 
 which overapproximates @{term \<alpha>}'s satisfactions and may destroy the monitor's progress,
 we freeze @{term \<alpha>} at the current time-point into a fresh predicate @{term q} with
 @{term "Frz q \<alpha> \<psi>"} and use @{term q} inside the temporal operator in @{term \<psi>}.
-To guarantee freshness, @{term q} is longer than all predicate names occurring in the involved
-subformulas. \<close>
+To guarantee freshness, @{term q} is chosen to differ from all predicate names occurring in
+the involved subformulas. \<close>
 
 text \<open> The predicates (with arities) that occur freely in a formula. Unlike
 @{const Formula.contains_pred}, this is a purely syntactic notion, which also accounts for
@@ -885,72 +885,105 @@ fun preds :: "'t Formula.formula \<Rightarrow> (Formula.name \<times> nat) set" 
 | "preds (Formula.TP t) = {}"
 | "preds (Formula.TS t) = {}"
 
-text \<open> An upper bound on the length of all predicate names occurring in a formula. \<close>
+primrec regex_list :: "('a \<Rightarrow> 'b list) \<Rightarrow> 'a Regex.regex \<Rightarrow> 'b list" where
+  "regex_list f (Regex.Skip n) = []"
+| "regex_list f (Regex.Test \<phi>) = f \<phi>"
+| "regex_list f (Regex.Plus r s) = regex_list f r @ regex_list f s"
+| "regex_list f (Regex.Times r s) = regex_list f r @ regex_list f s"
+| "regex_list f (Regex.Star r) = regex_list f r"
 
-fun max_pred_len :: "'t Formula.formula \<Rightarrow> nat" where
-  "max_pred_len (Formula.Pred e ts) = length (String.explode e)"
-| "max_pred_len (Formula.Let p \<phi> \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Frz p \<phi> \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.LetPast p \<phi> \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Eq t1 t2) = 0"
-| "max_pred_len (Formula.Less t1 t2) = 0"
-| "max_pred_len (Formula.LessEq t1 t2) = 0"
-| "max_pred_len (Formula.Neg \<phi>) = max_pred_len \<phi>"
-| "max_pred_len (Formula.Or \<phi> \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.And \<phi> \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Ands \<phi>s) = Max (insert 0 (max_pred_len ` set \<phi>s))"
-| "max_pred_len (Formula.Exists t \<phi>) = max_pred_len \<phi>"
-| "max_pred_len (Formula.Agg y \<omega> tys f \<phi>) = max_pred_len \<phi>"
-| "max_pred_len (Formula.Prev I \<phi>) = max_pred_len \<phi>"
-| "max_pred_len (Formula.Next I \<phi>) = max_pred_len \<phi>"
-| "max_pred_len (Formula.Since \<phi> I \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Until \<phi> I \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Trigger \<phi> I \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.Release \<phi> I \<psi>) = max (max_pred_len \<phi>) (max_pred_len \<psi>)"
-| "max_pred_len (Formula.MatchF I r) = Max (insert 0 (Regex.fv_regex (\<lambda>\<phi>. {max_pred_len \<phi>}) r))"
-| "max_pred_len (Formula.MatchP I r) = Max (insert 0 (Regex.fv_regex (\<lambda>\<phi>. {max_pred_len \<phi>}) r))"
-| "max_pred_len (Formula.TP t) = 0"
-| "max_pred_len (Formula.TS t) = 0"
+lemma regex_list_cong[fundef_cong]:
+  "r = r' \<Longrightarrow> (\<And>z. z \<in> Regex.atms r \<Longrightarrow> f z = f' z) \<Longrightarrow> regex_list f r = regex_list f' r'"
+  by (induct r arbitrary: r') auto
+
+lemma set_regex_list[simp]: "set (regex_list f r) = (\<Union>z \<in> Regex.atms r. set (f z))"
+  by (induct r) auto
+
+text \<open> All predicate names (including bound ones) occurring in a formula. \<close>
+
+fun pred_names :: "'t Formula.formula \<Rightarrow> Formula.name list" where
+  "pred_names (Formula.Pred e ts) = [e]"
+| "pred_names (Formula.Let p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Frz p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.LetPast p \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Eq t1 t2) = []"
+| "pred_names (Formula.Less t1 t2) = []"
+| "pred_names (Formula.LessEq t1 t2) = []"
+| "pred_names (Formula.Neg \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Or \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.And \<phi> \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Ands \<phi>s) = concat (map pred_names \<phi>s)"
+| "pred_names (Formula.Exists t \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Agg y \<omega> tys f \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Prev I \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Next I \<phi>) = pred_names \<phi>"
+| "pred_names (Formula.Since \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Until \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Trigger \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.Release \<phi> I \<psi>) = pred_names \<phi> @ pred_names \<psi>"
+| "pred_names (Formula.MatchF I r) = regex_list pred_names r"
+| "pred_names (Formula.MatchP I r) = regex_list pred_names r"
+| "pred_names (Formula.TP t) = []"
+| "pred_names (Formula.TS t) = []"
 
 lemma finite_preds[simp]: "finite (preds \<phi>)"
-  by (induction \<phi> rule: preds.induct) auto
+  by (induction \<phi> rule: preds.induct) (auto simp: fv_regex_alt)
 
-lemma preds_max_pred_len: "(e, n) \<in> preds \<phi> \<Longrightarrow> length (String.explode e) \<le> max_pred_len \<phi>"
-proof (induction \<phi> arbitrary: n rule: preds.induct)
-  case (11 \<phi>s)
-  then show ?case
-    by (auto intro: le_trans[OF _ Max_ge])
-next
-  case (20 I r)
-  then show ?case
-    by (auto simp: fv_regex_alt intro: le_trans[OF _ Max_ge])
-next
-  case (21 I r)
-  then show ?case
-    by (auto simp: fv_regex_alt intro: le_trans[OF _ Max_ge])
-qed (auto split: if_splits)
+lemma preds_pred_names: "(e, n) \<in> preds \<phi> \<Longrightarrow> e \<in> set (pred_names \<phi>)"
+  by (induction \<phi> arbitrary: n rule: preds.induct) (auto simp: fv_regex_alt split: if_splits)
 
 lemma contains_pred_preds: "Formula.contains_pred p \<phi> \<Longrightarrow> p \<in> preds \<phi>"
   by (induction p \<phi> rule: Formula.contains_pred.induct) (auto simp: fv_regex_alt)
 
+text \<open> A name that does not occur in the given list: among the @{term "Suc (length ns)"}
+pairwise distinct candidates @{text "q, qq, qqq, \<dots>"} at least one is not in @{term ns}. \<close>
+
+definition frz_cand :: "nat \<Rightarrow> Formula.name" where
+  "frz_cand k = string8_literal (String.implode (replicate (Suc k) CHR ''q''))"
+
+lemma inj_frz_cand: "inj frz_cand"
+proof (rule injI)
+  fix k l
+  assume "frz_cand k = frz_cand l"
+  then have "length (Rep_string8 (frz_cand k)) = length (Rep_string8 (frz_cand l))"
+    by simp
+  then show "k = l"
+    by (simp add: frz_cand_def string8_literal.rep_eq)
+qed
+
+definition fresh_name :: "Formula.name list \<Rightarrow> Formula.name" where
+  "fresh_name ns = (case find (\<lambda>c. c \<notin> set ns) (map frz_cand [0..<Suc (length ns)]) of
+     Some c \<Rightarrow> c | None \<Rightarrow> frz_cand 0)"
+
+lemma fresh_name: "fresh_name ns \<notin> set ns"
+proof -
+  let ?cs = "map frz_cand [0..<Suc (length ns)]"
+  have "card (set ?cs) = Suc (length ns)"
+    by (subst distinct_card) (auto simp: distinct_map inj_on_subset[OF inj_frz_cand] simp del: upt_Suc)
+  moreover have "card (set ns) \<le> length ns"
+    by (rule card_length)
+  ultimately have "\<not> set ?cs \<subseteq> set ns"
+    by (metis card_mono finite_set not_less_eq_eq)
+  then have "\<exists>c \<in> set ?cs. c \<notin> set ns"
+    by blast
+  then obtain c where "find (\<lambda>c. c \<notin> set ns) ?cs = Some c"
+    by (metis find_None_iff not_Some_eq)
+  then show ?thesis
+    by (auto simp: fresh_name_def dest: find_Some_iff[THEN iffD1])
+qed
+
 text \<open> The fresh name for freezing a snapshot in the context of the given subformulas. \<close>
 
 definition frz_name :: "'a formula list \<Rightarrow> Formula.name" where
-  "frz_name \<phi>s = String.implode
-     (replicate (Suc (Max (insert 0 ((\<lambda>\<phi>. max_pred_len (project \<phi>)) ` set \<phi>s)))) CHR ''q'')"
+  "frz_name \<phi>s = fresh_name (concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s))"
 
 lemma frz_name_fresh: "\<phi> \<in> set \<phi>s \<Longrightarrow> (frz_name \<phi>s, n) \<notin> preds (project \<phi>)"
-proof
-  assume "\<phi> \<in> set \<phi>s" "(frz_name \<phi>s, n) \<in> preds (project \<phi>)"
-  then have "length (String.explode (frz_name \<phi>s)) \<le> Max (insert 0 ((\<lambda>\<phi>. max_pred_len (project \<phi>)) ` set \<phi>s))"
-    by (auto dest!: preds_max_pred_len intro: le_trans[OF _ Max_ge])
-  then show False
-    by (simp add: frz_name_def String.explode_implode_eq)
-qed
+  using fresh_name[of "concat (map (\<lambda>\<phi>. pred_names (project \<phi>)) \<phi>s)"]
+  by (auto simp: frz_name_def dest!: preds_pred_names)
 
 text \<open> The frozen snapshot is applied to all variables @{term "[0..<n]"} of the frozen formula.
 This requires the frozen formula's free variables to have no gaps, which is also required by
-the monitor (see @{const mmonitorable_exec}). \<close>
+the monitor for @{const Formula.Frz}. \<close>
 
 abbreviation frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
   "frz_atom q n \<equiv> Pred q (map Formula.Var [0..<n])"
