@@ -557,7 +557,9 @@ fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str 
 
 setup \<open>Monomorphize.monomorphize_cmd
   (map (fn c => (c, mono_name "de_" c, ["event_data"])) dense_elem_consts
-   @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data"]),
+   @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data list"]),
+      ("Mapping.combine", "de_combine_tstp", ["nat + nat", "event_data list"]),
+      ("mapping_delete_set", "de_mapping_delete_set_tstp", ["event_data list", "nat + nat"]),
       ("mrestrict1", "de_mrestrict1_nat", ["event_data list", "nat"]),
       ("mrestrict1", "de_mrestrict1_table", ["event_data list", "event_data list set"]),
       ("mfilter_keys", "de_mfilter_keys_nat", ["event_data list", "nat"]),

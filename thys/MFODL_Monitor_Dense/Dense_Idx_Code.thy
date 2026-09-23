@@ -467,6 +467,35 @@ proof -
   show ?thesis
     by (simp only: gjoin_msaux.simps Let_def D del_buckets1_def mfilter_keys_def dsemi_idx_def
         prod.case)
-qed(*<*)
+qed
+
+subsection \<open>The Until structure's map of the left operand\<close>
+
+text \<open>For a positive left operand the Until structure keeps, for every tuple of the latest left
+  table, the time point since which it has held; the update restricts the map to that table.  The
+  restriction is @{const mfilter_keys}, which looks the table's tuples up rather than filtering
+  the whole map through a generic predicate.\<close>
+
+declare [[code drop: gadd_new_dq]]
+
+lemma gadd_new_dq_code[code]:
+  "gadd_new_dq args msk rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
+       gshift_dq args nt aux;
+     I = args_ivl args; pos = args_pos args; inz = memL I 0;
+     new_tstp = (if inz then Inr tp else Inl nt);
+     tstp_dq = dq_push nt tstp_dq;
+     P = (\<lambda>t. memL I (nt - dq_nth_s tstp_dq (t - (tp - len)) 0));
+     (tbl, a2_dq', result') = fold (guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+       (csl rel2) ({}, a2_dq, result);
+     tables = append_queue (tbl, new_tstp) tables;
+     a2_dq = dq_push Mapping.empty a2_dq';
+     a1_map = (if pos then mfilter_keys True rel1
+       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
+     tss = append_queue nt tss in
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, dn))"
+  unfolding gadd_new_dq_def mfilter_keys_def eq_True ..
+
+(*<*)
 end
 (*>*)

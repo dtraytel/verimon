@@ -183,7 +183,6 @@ setup \<open>mono
    ("rbt_of_sorted_list", "edl_rbt_of_sorted_list", ["event_data list"]),
    ("mapping_delete_set", "edl_mapping_delete_set", ["event_data list", "nat"]),
    ("mrestrict1_cfi", "edl_mrestrict1_cfi", ["event_data list", "event_data list set"]),
-   ("gupd_nested_step_dq", "edl_gupd_nested_step_dq", ["event_data list", "nat + nat"]),
    ("deopt_table", "ed_deopt_table", ["event_data"]),
    ("dnarrow", "eo_dnarrow", ["event_data option"]),
    ("dtabc", "eo_dtabc", ["event_data option"]),
