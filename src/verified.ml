@@ -3041,8 +3041,9 @@ type safety = Strict | Lax;;
 
 type tysym = TAny of nat | TNum of nat | TCst of ty;;
 
-type elstate = E_INIT | E_SIMPLE of string * Z.t * Z.t |
-  E_QUOTED of string * Z.t * Z.t | E_ESCAPE of string * Z.t * Z.t | E_COMMENT;;
+type elstate = E_INIT | E_SIMPLE of string list * Z.t * Z.t |
+  E_QUOTED of string list * Z.t * Z.t | E_ESCAPE of string list * Z.t * Z.t |
+  E_COMMENT;;
 
 type eres = R_SAME | R_NEXT of elstate | R_TOK of string token * Z.t * elstate |
   R_TOK2 of string token * Z.t * string token * Z.t * elstate |
@@ -4865,14 +4866,19 @@ let rec rem_col cs y = filtera (fun c -> not (equal_nata c y)) cs;;
 
 let rec is_r
   pre s st i =
-    (if (String.length pre = 0)
-      then Z.equal i (Z.add st (Z.of_int 1)) &&
-             ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
-                 s st) : char) = '\114')
-      else Z.equal ((Z.of_int (String.length pre))) (Z.of_int 1) &&
-             (Z.equal i st &&
-               ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
-                   pre Z.zero) : char) = '\114')));;
+    (match filtera (fun x -> not ((String.length x = 0))) pre
+      with [] ->
+        Z.equal i (Z.add st (Z.of_int 1)) &&
+          ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+              s st) : char) = '\114')
+      | [x] ->
+        Z.equal ((Z.of_int (String.length x))) (Z.of_int 1) &&
+          (Z.equal i st &&
+            ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                x Z.zero) : char) = '\114'))
+      | _ :: _ :: _ -> false);;
 
 let rec mapping_empty_choose _A
   = (match ccompare _A with None -> Assoc_List_Mapping empty
@@ -5071,7 +5077,8 @@ let rec skip_comment
     (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
           i n &&
           (let c =
-             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                s i
              in
             not (((c : char) = '\010')) && not (((c : char) = '\013')))
@@ -5085,7 +5092,8 @@ let rec skip_simple
     (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
           i n &&
           (let c =
-             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                s i
              in
             (('\048' : char) <= c) && ((c : char) <= '\057') ||
@@ -5109,7 +5117,8 @@ let rec skip_quoted
     (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
           i n &&
           (let c =
-             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                s i
              in
             not (((c : char) = '\034')) && not (((c : char) = '\092')))
@@ -5123,7 +5132,8 @@ let rec skip_white
     (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
           i n &&
           (let c =
-             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                s i
              in
             ((c : char) = '\032') ||
@@ -5291,7 +5301,7 @@ let rec elex_init
                         (((c : char) = '\045') ||
                           (((c : char) = '\046') ||
                             ((c : char) = '\033'))))))))))
-      then R_NEXT (E_SIMPLE ("", i, pos))
+      then R_NEXT (E_SIMPLE ([], i, pos))
       else (if ((c : char) = '\032') ||
                  (((c : char) = '\009') ||
                    (((c : char) = '\010') || ((c : char) = '\013')))
@@ -5315,7 +5325,7 @@ let rec elex_init
    else (if ((c : char) = '\034')
           then R_NEXT
                  (E_QUOTED
-                   ("", (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                   ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
                           i,
                      pos))
           else R_ERR)))))))))))));;
@@ -5329,25 +5339,28 @@ let rec close_tok
 
 let rec mk_str
   pre s st i =
-    (if (String.length pre = 0)
-      then (fun s i j -> let n = String.length s in
+    (match pre
+      with [] ->
+        (fun s i j -> let n = String.length s in
       if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
         && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
       then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
       else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
-        let l = Z.sub j (Z.max i Z.zero) in
+        let l = Z.sub j i in
         if Z.sign l <= 0 || a >= n then ""
         else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
-             s st i
-      else (pre ^ ((fun s i j -> let n = String.length s in
+          s st i
+      | _ :: _ ->
+        (String.concat "" (rev ((fun s i j -> let n = String.length s in
       if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
         && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
       then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
       else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
-        let l = Z.sub j (Z.max i Z.zero) in
+        let l = Z.sub j i in
         if Z.sign l <= 0 || a >= n then ""
         else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
-                    s st i)));;
+                                  s st i ::
+                                 pre))));;
 
 let rec elex_step
   s b i c l =
@@ -5377,7 +5390,7 @@ let rec elex_step
           else (if ((c : char) = '\034') && is_r pre s st i
                  then R_NEXT
                         (E_QUOTED
-                          ("", (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                          ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
                                  i,
                             tp))
                  else close_tok (T_STR (mk_str pre s st i)) tp
@@ -5415,7 +5428,8 @@ let rec eloop
             ia n
         then (match
                elex_step s b ia
-                 ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                 ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                    s ia)
                  l
                with R_SAME ->
@@ -5450,7 +5464,8 @@ let rec eloop
                      (echar_err
                        ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
                          b ia)
-                       ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                       ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                          s ia)
                        pa acca))
                | R_ERR ->
@@ -5461,7 +5476,8 @@ let rec eloop
                    (echar_err
                      ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
                        b ia)
-                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
                        s ia)
                      p acc))
         else (acc, (l, (p, sp)))));;
@@ -6072,12 +6088,11 @@ let rec efinish_p
 let rec efinish
   st = (match st with (b, (E_INIT, (p, sp))) -> rev (efinish_p b p sp [])
          | (b, (E_SIMPLE (pre, _, tp), (p, sp))) ->
-           (let (acc, pa) = efeed (T_STR pre) tp p sp [] in
+           (let (acc, pa) =
+              efeed (T_STR ((String.concat "" (rev pre)))) tp p sp [] in
              rev (efinish_p b pa (start tp pa sp) acc))
-         | (_, (E_QUOTED (_, _, tp), (p, _))) ->
-           (match p with None -> [] | Some _ -> [O_ERROR (tp, E_UNTERMINATED)])
-         | (_, (E_ESCAPE (_, _, tp), (p, _))) ->
-           (match p with None -> [] | Some _ -> [O_ERROR (tp, E_UNTERMINATED)])
+         | (_, (E_QUOTED (_, _, tp), (_, _))) -> [O_ERROR (tp, E_UNTERMINATED)]
+         | (_, (E_ESCAPE (_, _, tp), (_, _))) -> [O_ERROR (tp, E_UNTERMINATED)]
          | (b, (E_COMMENT, (p, sp))) -> rev (efinish_p b p sp []));;
 
 let rec atms (_A1, _A2, _A3)
@@ -8861,9 +8876,45 @@ let rec uassign p t d = edl_image (uassign1 p t) d;;
 let rec close_chunk
   s n l =
     (match l with E_INIT -> l
-      | E_SIMPLE (pre, st, a) -> E_SIMPLE (mk_str pre s st n, Z.zero, a)
-      | E_QUOTED (pre, st, a) -> E_QUOTED (mk_str pre s st n, Z.zero, a)
-      | E_ESCAPE (pre, st, a) -> E_ESCAPE (mk_str pre s st n, Z.zero, a)
+      | E_SIMPLE (pre, st, a) ->
+        E_SIMPLE
+          ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+             s st n ::
+             pre,
+            Z.zero, a)
+      | E_QUOTED (pre, st, a) ->
+        E_QUOTED
+          ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+             s st n ::
+             pre,
+            Z.zero, a)
+      | E_ESCAPE (pre, st, a) ->
+        E_ESCAPE
+          ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+             s st n ::
+             pre,
+            Z.zero, a)
       | E_COMMENT -> l);;
 
 let rec efeed_chunk

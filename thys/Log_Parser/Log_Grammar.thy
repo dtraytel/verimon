@@ -27,6 +27,12 @@ text \<open>
   \<^item> Space, tab, line feed and carriage return separate tokens, and @{text "#"} starts a comment
     that runs to the end of the line or of the input.
 
+  For commands, MonPoly's parser deviates from this format, and the grammar does not follow it
+  there: it skips the token after the @{text "<"} that ends a command (so that it accepts
+  @{text "> c < ;"} and rejects @{text "> c < @1"}), and it keeps at most two arguments of a
+  command, in reverse order, without requiring the @{text "<"} after the second one. Here, a
+  command takes all its arguments, and is followed by an entry or the end of the log.
+
   The strings of tokens and entries are left uninterpreted here: timestamps and fields are
   converted, and predicates are looked up in the signature, by the consumer of the entries.
   The token and entry types are polymorphic in the type of strings, so that the executable

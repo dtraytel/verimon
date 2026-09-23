@@ -40,9 +40,11 @@ setup \<open>
 
 subsection \<open>Byte strings and indices\<close>
 
-text \<open>@{const bytes_sub} is total like its specification: its indices are clipped to the string,
-  so that the printing agrees with @{thm Rep_bytes_sub} on all arguments. @{const bytes_at} is only
-  specified within the string and applied there.\<close>
+text \<open>The printings agree with the definitions on all arguments. @{const bytes_sub} is total like
+  its definition, taking @{text "nat (j - i)"} bytes after the first @{text "nat i"} ones.
+  @{const bytes_at} reads the first byte at a negative index, like its definition; at an index
+  beyond the string, where its definition leaves the result unspecified, it raises an exception.
+  The parser applies both within the string only.\<close>
 
 definition idx_less :: "integer \<Rightarrow> integer \<Rightarrow> bool" where
   "idx_less i j \<longleftrightarrow> i < j"
@@ -53,24 +55,25 @@ definition idx_succ :: "integer \<Rightarrow> integer" where
 definition idx_add :: "integer \<Rightarrow> integer \<Rightarrow> integer" where
   "idx_add i j = i + j"
 
-declare [[code drop: bytes_length bytes_at bytes_sub bytes_append bytes_empty bytes_null idx_less idx_succ idx_add]]
+declare [[code drop: bytes_length bytes_at bytes_sub bytes_concat bytes_empty bytes_null idx_less idx_succ idx_add]]
 
 code_printing
   type_constructor bytes \<rightharpoonup> (OCaml) "string"
 | constant bytes_length \<rightharpoonup> (OCaml) "(Z.of'_int (String.length _))"
 | constant bytes_null \<rightharpoonup> (OCaml) "(String.length _ = 0)"
 | constant bytes_at \<rightharpoonup> (OCaml)
-    "(fun s i -> String.get s (if Obj.is'_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to'_int i))"
+    "(fun s i -> String.get s (if Obj.is'_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to'_int i))"
 | constant bytes_sub \<rightharpoonup> (OCaml)
     "(fun s i j -> let n = String.length s in
       if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
         && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
       then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
       else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of'_int n) then Z.to'_int i else n in
-        let l = Z.sub j (Z.max i Z.zero) in
+        let l = Z.sub j i in
         if Z.sign l <= 0 || a >= n then \"\"
         else String.sub s a (if Z.lt l (Z.of'_int (n - a)) then Z.to'_int l else n - a)))"
-| constant bytes_append \<rightharpoonup> (OCaml) "(_ ^ _)"
+| constant bytes_concat \<rightharpoonup> (OCaml) "(String.concat \"\" _)"
 | constant bytes_empty \<rightharpoonup> (OCaml) "\"\""
 | constant idx_less \<rightharpoonup> (OCaml)
     "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)"
@@ -214,7 +217,7 @@ text \<open>The steps of the lexer with the character classes unfolded and the m
 lemma elex_init_code[code]: "elex_init pos i c =
     (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' \<or> CHR ''A'' \<le> c \<and> c \<le> CHR ''Z'' \<or> CHR ''a'' \<le> c \<and> c \<le> CHR ''z'' \<or>
       c = CHR ''_'' \<or> c = CHR ''['' \<or> c = CHR '']'' \<or> c = CHR ''/'' \<or> c = CHR '':'' \<or> c = CHR ''-'' \<or>
-      c = CHR ''.'' \<or> c = CHR ''!'' then R_NEXT (E_SIMPLE bytes_empty i pos)
+      c = CHR ''.'' \<or> c = CHR ''!'' then R_NEXT (E_SIMPLE [] i pos)
      else if c = CHR '' '' \<or> c = CHR 0x09 \<or> c = CHR 0x0A \<or> c = CHR 0x0D then R_NEXT E_INIT
      else if c = CHR ''@'' then R_TOK T_AT pos E_INIT
      else if c = CHR ''('' then R_TOK T_LPAREN pos E_INIT
@@ -226,7 +229,7 @@ lemma elex_init_code[code]: "elex_init pos i c =
      else if c = CHR '','' then R_TOK T_COMMA pos E_INIT
      else if c = CHR '';'' then R_TOK T_SEMICOLON pos E_INIT
      else if c = CHR ''#'' then R_NEXT E_COMMENT
-     else if c = CHR 0x22 then R_NEXT (E_QUOTED bytes_empty (idx_succ i) pos)
+     else if c = CHR 0x22 then R_NEXT (E_QUOTED [] (idx_succ i) pos)
      else R_ERR)"
   unfolding isSimpleChar_def[symmetric] isWhiteSpace_def[symmetric] idx_succ_def
   by (cases "isSimpleChar c") (simp_all add: elex_init_def simple_not_special)
@@ -238,7 +241,7 @@ lemma elex_step_code[code]: "elex_step s b i c l = (case l of
        (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' \<or> CHR ''A'' \<le> c \<and> c \<le> CHR ''Z'' \<or> CHR ''a'' \<le> c \<and> c \<le> CHR ''z'' \<or>
           c = CHR ''_'' \<or> c = CHR ''['' \<or> c = CHR '']'' \<or> c = CHR ''/'' \<or> c = CHR '':'' \<or> c = CHR ''-'' \<or>
           c = CHR ''.'' \<or> c = CHR ''!'' then R_SAME
-        else if c = CHR 0x22 \<and> is_r pre s st i then R_NEXT (E_QUOTED bytes_empty (idx_succ i) tp)
+        else if c = CHR 0x22 \<and> is_r pre s st i then R_NEXT (E_QUOTED [] (idx_succ i) tp)
         else close_tok (T_STR (mk_str pre s st i)) tp (elex_init (idx_add b i) i c))
    | E_QUOTED pre st tp \<Rightarrow>
        (if c = CHR 0x22 then R_TOK (T_STR (mk_str pre s st i)) tp E_INIT

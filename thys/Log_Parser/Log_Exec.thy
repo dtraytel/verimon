@@ -40,8 +40,8 @@ definition bytes_sub :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rig
 definition bytes_null :: "bytes \<Rightarrow> bool" where
   "bytes_null s \<longleftrightarrow> Rep_bytes s = []"
 
-definition bytes_append :: "bytes \<Rightarrow> bytes \<Rightarrow> bytes" where
-  "bytes_append s t = Abs_bytes (Rep_bytes s @ Rep_bytes t)"
+definition bytes_concat :: "bytes list \<Rightarrow> bytes" where
+  "bytes_concat ss = Abs_bytes (concat (map Rep_bytes ss))"
 
 definition bytes_empty :: bytes where
   "bytes_empty = Abs_bytes []"
@@ -50,8 +50,8 @@ lemma Rep_bytes_sub[simp]:
   "Rep_bytes (bytes_sub s i j) = take (nat_of_integer (j - i)) (drop (nat_of_integer i) (Rep_bytes s))"
   by (simp add: bytes_sub_def Abs_bytes_inverse)
 
-lemma Rep_bytes_append[simp]: "Rep_bytes (bytes_append s t) = Rep_bytes s @ Rep_bytes t"
-  by (simp add: bytes_append_def Abs_bytes_inverse)
+lemma Rep_bytes_concat[simp]: "Rep_bytes (bytes_concat ss) = concat (map Rep_bytes ss)"
+  by (simp add: bytes_concat_def Abs_bytes_inverse)
 
 lemma Rep_bytes_empty[simp]: "Rep_bytes bytes_empty = []"
   by (simp add: bytes_empty_def Abs_bytes_inverse)
@@ -77,16 +77,20 @@ lemma nat_of_integer_le_length:
 
 subsection \<open>The lexer\<close>
 
-text \<open>The states of the lexer. A pending lexeme records the text of the preceding chunks, the
-  index at which its part in the current chunk begins, and the offset of its first character in
-  the input.\<close>
+text \<open>The states of the lexer. A pending lexeme records its parts in the preceding chunks (the
+  last one first), the index at which its part in the current chunk begins, and the offset of its
+  first character in the input. The parts are concatenated once, when the lexeme ends, so that a
+  lexeme that spans many chunks takes time linear in its length.\<close>
 
-datatype elstate = E_INIT | E_SIMPLE bytes integer integer | E_QUOTED bytes integer integer
-  | E_ESCAPE bytes integer integer
+datatype elstate = E_INIT | E_SIMPLE "bytes list" integer integer | E_QUOTED "bytes list" integer integer
+  | E_ESCAPE "bytes list" integer integer
   | E_COMMENT
 
-definition pend_text :: "bytes \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> string" where
-  "pend_text pre s st i = Rep_bytes pre @ take (nat_of_integer (i - st)) (drop (nat_of_integer st) (Rep_bytes s))"
+definition pre_text :: "bytes list \<Rightarrow> string" where
+  "pre_text pre = concat (map Rep_bytes (rev pre))"
+
+definition pend_text :: "bytes list \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> string" where
+  "pend_text pre s st i = pre_text pre @ take (nat_of_integer (i - st)) (drop (nat_of_integer st) (Rep_bytes s))"
 
 fun abs_l :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> lstate" where
   "abs_l s i E_INIT = L_INIT"
@@ -108,12 +112,17 @@ text \<open>The result of a step of the lexer: the state is unchanged, or there 
 datatype eres = R_SAME | R_NEXT elstate | R_TOK "bytes token" integer elstate
   | R_TOK2 "bytes token" integer "bytes token" integer elstate | R_TOK_ERR "bytes token" integer | R_ERR
 
-definition mk_str :: "bytes \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bytes" where
-  "mk_str pre s st i = (if bytes_null pre then bytes_sub s st i else bytes_append pre (bytes_sub s st i))"
+definition mk_str :: "bytes list \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bytes" where
+  "mk_str pre s st i = (case pre of [] \<Rightarrow> bytes_sub s st i | _ \<Rightarrow> bytes_concat (rev (bytes_sub s st i # pre)))"
 
-definition is_r :: "bytes \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bool" where
-  "is_r pre s st i = (if bytes_null pre then i = st + 1 \<and> bytes_at s st = CHR ''r''
-     else bytes_length pre = 1 \<and> i = st \<and> bytes_at pre 0 = CHR ''r'')"
+text \<open>Whether the pending simple string is @{text r}, which begins an r-quoted string if a quote
+  follows.\<close>
+
+definition is_r :: "bytes list \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> bool" where
+  "is_r pre s st i = (case filter (\<lambda>x. \<not> bytes_null x) pre of
+     [] \<Rightarrow> i = st + 1 \<and> bytes_at s st = CHR ''r''
+   | [x] \<Rightarrow> bytes_length x = 1 \<and> i = st \<and> bytes_at x 0 = CHR ''r''
+   | _ \<Rightarrow> False)"
 
 definition elex_init :: "integer \<Rightarrow> integer \<Rightarrow> char \<Rightarrow> eres" where
   "elex_init pos i c =
@@ -128,8 +137,8 @@ definition elex_init :: "integer \<Rightarrow> integer \<Rightarrow> char \<Righ
      else if c = CHR '','' then R_TOK T_COMMA pos E_INIT
      else if c = CHR '';'' then R_TOK T_SEMICOLON pos E_INIT
      else if c = CHR ''#'' then R_NEXT E_COMMENT
-     else if c = CHR 0x22 then R_NEXT (E_QUOTED bytes_empty (i + 1) pos)
-     else if isSimpleChar c then R_NEXT (E_SIMPLE bytes_empty i pos)
+     else if c = CHR 0x22 then R_NEXT (E_QUOTED [] (i + 1) pos)
+     else if isSimpleChar c then R_NEXT (E_SIMPLE [] i pos)
      else R_ERR)"
 
 definition close_tok :: "bytes token \<Rightarrow> integer \<Rightarrow> eres \<Rightarrow> eres" where
@@ -143,7 +152,7 @@ definition elex_step :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rig
      E_INIT \<Rightarrow> (if isWhiteSpace c then R_SAME else elex_init (b + i) i c)
    | E_SIMPLE pre st tp \<Rightarrow>
        (if isSimpleChar c then R_SAME
-        else if c = CHR 0x22 \<and> is_r pre s st i then R_NEXT (E_QUOTED bytes_empty (i + 1) tp)
+        else if c = CHR 0x22 \<and> is_r pre s st i then R_NEXT (E_QUOTED [] (i + 1) tp)
         else close_tok (T_STR (mk_str pre s st i)) tp (elex_init (b + i) i c))
    | E_QUOTED pre st tp \<Rightarrow>
        (if c = CHR 0x22 then R_TOK (T_STR (mk_str pre s st i)) tp E_INIT
@@ -189,15 +198,25 @@ proof -
     by (simp add: pend_text_def bytes_at_def take_Suc_conv_app_nth)
 qed
 
-lemma pend_text_start:
-  "0 \<le> i \<Longrightarrow> i < bytes_length s \<Longrightarrow> pend_text bytes_empty s i (i + 1) = [bytes_at s i]"
-  using pend_text_Suc[of i i s bytes_empty] by (simp add: pend_text_def)
+lemma pre_text_simps[simp]:
+  "pre_text [] = []"
+  "pre_text (x # pre) = pre_text pre @ Rep_bytes x"
+  by (simp_all add: pre_text_def)
 
-lemma pend_text_empty: "pend_text bytes_empty s i i = []"
+lemma pend_text_start:
+  "0 \<le> i \<Longrightarrow> i < bytes_length s \<Longrightarrow> pend_text [] s i (i + 1) = [bytes_at s i]"
+  using pend_text_Suc[of i i s "[]"] by (simp add: pend_text_def)
+
+lemma pend_text_empty: "pend_text [] s i i = []"
   by (simp add: pend_text_def)
 
 lemma Rep_mk_str: "Rep_bytes (mk_str pre s st i) = pend_text pre s st i"
-  by (simp add: mk_str_def pend_text_def bytes_null_def)
+  by (cases pre) (simp_all add: mk_str_def pend_text_def pre_text_def)
+
+text \<open>The empty parts do not contribute to the text.\<close>
+
+lemma pre_text_filter: "pre_text (filter (\<lambda>x. \<not> bytes_null x) pre) = pre_text pre"
+  by (induction pre) (auto simp: bytes_null_def)
 
 lemma is_r_iff:
   assumes "0 \<le> st" "st \<le> i" "i \<le> bytes_length s"
@@ -205,14 +224,19 @@ lemma is_r_iff:
 proof -
   let ?k = "nat_of_integer (i - st)" and ?a = "nat_of_integer st"
   let ?t = "take ?k (drop ?a (Rep_bytes s))"
+  let ?q = "filter (\<lambda>x. \<not> bytes_null x) pre"
   have ak: "?a + ?k = nat_of_integer i" and il: "nat_of_integer i \<le> length (Rep_bytes s)"
     using assms by (auto simp: integer_simps bytes_length_def)
   then have len: "length ?t = ?k"
     by simp
   have k1: "?k = 1 \<longleftrightarrow> i = st + 1" and k0: "?k = 0 \<longleftrightarrow> i = st"
     using assms by (auto simp: integer_simps)
+  have pt: "pend_text pre s st i = pre_text ?q @ ?t"
+    by (simp add: pend_text_def pre_text_filter)
+  have ne: "Rep_bytes x \<noteq> []" if "x \<in> set ?q" for x
+    using that by (auto simp: bytes_null_def)
   show ?thesis
-  proof (cases "Rep_bytes pre")
+  proof (cases ?q)
     case Nil
     have "?t = ''r'' \<longleftrightarrow> i = st + 1 \<and> bytes_at s st = CHR ''r''"
     proof
@@ -228,14 +252,30 @@ proof -
       with k1 ak il show "?t = ''r''"
         by (simp add: bytes_at_def take_Suc_conv_app_nth)
     qed
-    with Nil show ?thesis
-      by (simp add: is_r_def pend_text_def bytes_null_def)
+    with Nil pt show ?thesis
+      by (simp add: is_r_def)
   next
-    case (Cons a as)
-    have "Rep_bytes pre @ ?t = ''r'' \<longleftrightarrow> Rep_bytes pre = ''r'' \<and> ?k = 0"
-      using Cons len by (cases as) auto
-    with Cons k0 show ?thesis
-      by (auto simp: is_r_def pend_text_def bytes_length_def bytes_at_def bytes_null_def integer_simps)
+    case (Cons x xs)
+    then have x: "Rep_bytes x \<noteq> []"
+      using ne[of x] by simp
+    show ?thesis
+    proof (cases xs)
+      case Nil
+      have "Rep_bytes x @ ?t = ''r'' \<longleftrightarrow> Rep_bytes x = ''r'' \<and> ?k = 0"
+        using x len by (cases "Rep_bytes x") auto
+      with Cons Nil pt k0 x show ?thesis
+        by (auto simp: is_r_def bytes_length_def bytes_at_def integer_simps length_Suc_conv)
+    next
+      case (Cons y ys)
+      with \<open>?q = x # xs\<close> have "Rep_bytes y \<noteq> []"
+        using ne[of y] by simp
+      with x \<open>?q = x # xs\<close> Cons have "2 \<le> length (pend_text pre s st i)"
+        unfolding pt by (cases "Rep_bytes x"; cases "Rep_bytes y") auto
+      moreover have "\<not> is_r pre s st i"
+        using \<open>?q = x # xs\<close> Cons by (simp add: is_r_def)
+      ultimately show ?thesis
+        by auto
+    qed
   qed
 qed
 
@@ -397,14 +437,14 @@ termination
 
 declare eloop.simps[simp del]
 
-text \<open>At the end of a chunk, the part of a pending lexeme in it is moved into the text of the
+text \<open>At the end of a chunk, the part of a pending lexeme in it is added to its parts in the
   preceding chunks.\<close>
 
 definition close_chunk :: "bytes \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> elstate" where
   "close_chunk s n l = (case l of
-     E_SIMPLE pre st tp \<Rightarrow> E_SIMPLE (mk_str pre s st n) 0 tp
-   | E_QUOTED pre st tp \<Rightarrow> E_QUOTED (mk_str pre s st n) 0 tp
-   | E_ESCAPE pre st tp \<Rightarrow> E_ESCAPE (mk_str pre s st n) 0 tp
+     E_SIMPLE pre st tp \<Rightarrow> E_SIMPLE (bytes_sub s st n # pre) 0 tp
+   | E_QUOTED pre st tp \<Rightarrow> E_QUOTED (bytes_sub s st n # pre) 0 tp
+   | E_ESCAPE pre st tp \<Rightarrow> E_ESCAPE (bytes_sub s st n # pre) 0 tp
    | _ \<Rightarrow> l)"
 
 text \<open>The state between chunks: the offset of the next chunk, the states of the lexer and the
@@ -426,13 +466,15 @@ definition efinish_p :: "integer \<Rightarrow> bytes pstate option \<Rightarrow>
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
      | Some es \<Rightarrow> rev (map (O_ITEM sp) es) @ acc))"
 
-text \<open>The end of the input.\<close>
+text \<open>The end of the input. A quoted string that has not ended is an error even while the
+  parser skips tokens after an error, since the string contains the rest of the input.\<close>
 
 definition efinish :: "estate \<Rightarrow> out list" where
   "efinish st = (case st of (b, l, p, sp) \<Rightarrow> (case l of
-     E_SIMPLE pre _ tp \<Rightarrow> (case efeed (T_STR pre) tp p sp [] of (acc, p') \<Rightarrow> rev (efinish_p b p' (start tp p' sp) acc))
-   | E_QUOTED pre _ tp \<Rightarrow> (case p of None \<Rightarrow> [] | Some _ \<Rightarrow> [O_ERROR tp E_UNTERMINATED])
-   | E_ESCAPE pre _ tp \<Rightarrow> (case p of None \<Rightarrow> [] | Some _ \<Rightarrow> [O_ERROR tp E_UNTERMINATED])
+     E_SIMPLE pre _ tp \<Rightarrow> (case efeed (T_STR (bytes_concat (rev pre))) tp p sp [] of
+       (acc, p') \<Rightarrow> rev (efinish_p b p' (start tp p' sp) acc))
+   | E_QUOTED pre _ tp \<Rightarrow> [O_ERROR tp E_UNTERMINATED]
+   | E_ESCAPE pre _ tp \<Rightarrow> [O_ERROR tp E_UNTERMINATED]
    | _ \<Rightarrow> rev (efinish_p b p sp [])))"
 
 fun efeed_chunks :: "bytes list \<Rightarrow> estate \<Rightarrow> out list \<times> estate" where
@@ -825,11 +867,12 @@ lemma efinish_correct:
    | Some es \<Rightarrow> (\<exists>es'. oks (efinish (b, l, Some ps, sp)) = Some es' \<and> abs_items es' = es)"
 proof (cases l)
   case (E_SIMPLE pre st tp)
-  with assms have l: "abs_l0 l = L_SIMPLE (Rep_bytes pre)"
-    by (simp add: abs_l0_def pend_text_def)
-  have pr: "parse_run [T_STR (Rep_bytes pre)] (map_pstate Rep_bytes ps) =
-    map_option (map_prod abs_items (map_pstate Rep_bytes)) (parse_run [T_STR pre] ps)"
-    using parse_run_map[of Rep_bytes "[T_STR pre]" ps] by simp
+  let ?x = "bytes_concat (rev pre)"
+  from assms E_SIMPLE have l: "abs_l0 l = L_SIMPLE (Rep_bytes ?x)"
+    by (simp add: abs_l0_def pend_text_def pre_text_def rev_map)
+  have pr: "parse_run [T_STR (Rep_bytes ?x)] (map_pstate Rep_bytes ps) =
+    map_option (map_prod abs_items (map_pstate Rep_bytes)) (parse_run [T_STR ?x] ps)"
+    using parse_run_map[of Rep_bytes "[T_STR ?x]" ps] by simp
   show ?thesis
     using E_SIMPLE l pr
     by (auto simp: efinish_def stream_finish_def parse_from_def efeed_def efinish_p_def parse_finish_map

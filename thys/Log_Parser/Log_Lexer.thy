@@ -13,7 +13,8 @@ text \<open>
   This is the automaton of Rappl's lexer, extended by escapes, @{text "r\"\<dots>\""} strings,
   braces, and a final step @{text lex_finish} for the end of the input. Unlike the automaton
   of MonPoly's lexer, it never backtracks: an unterminated quoted string is only detected at the
-  end of the input.
+  end of the input, and contains the rest of the input. (MonPoly's lexer reads a quote that no
+  quote follows as a character that begins no token, and continues after it.)
 \<close>
 
 datatype lstate = L_INIT | L_SIMPLE string | L_QUOTED string | L_ESCAPE string | L_COMMENT
