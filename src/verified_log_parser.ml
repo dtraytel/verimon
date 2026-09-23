@@ -259,6 +259,9 @@ module Make (C : Log_parser.Consumer) = struct
       end) ctxt
 
   let parse_file dbschema fname ctxt =
-    let ic = if fname = "" then stdin else open_in_bin fname in
-    parse_channel dbschema fname ic ctxt
+    if fname = "" then parse_channel dbschema fname stdin ctxt
+    else begin
+      let ic = open_in_bin fname in
+      Fun.protect ~finally:(fun () -> close_in_noerr ic) (fun () -> parse_channel dbschema fname ic ctxt)
+    end
 end
