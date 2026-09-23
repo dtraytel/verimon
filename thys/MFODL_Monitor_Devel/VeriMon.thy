@@ -8,7 +8,7 @@ lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (re
 
 lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_formula f \<phi>) j = progress \<sigma> P \<phi> j"
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
-    (auto simp: letpast_progress_def progress_regex_def regex.set_map image_image)
+    (auto simp: letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
 context maux begin
 
@@ -49,6 +49,7 @@ inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
 inductive_cases wty_formula_LessE[elim!]: "S, E \<turnstile> Formula.Less t1 t2"
 inductive_cases wty_formula_LessEqE[elim!]: "S, E \<turnstile> Formula.LessEq t1 t2"
 inductive_cases wty_formula_LetE[elim!]: "S, E \<turnstile> Formula.Let p \<phi>1 \<phi>2"
+inductive_cases wty_formula_FrzE[elim!]: "S, E \<turnstile> Formula.Frz p \<phi>1 \<phi>2"
 inductive_cases wty_formula_LetPastE[elim!]: "S, E \<turnstile> Formula.LetPast p \<phi>1 \<phi>2"
 inductive_cases wty_formula_NegE[elim!]: "S, E \<turnstile> Formula.Neg \<phi>"
 inductive_cases wty_formula_OrE[elim!]: "S, E \<turnstile> Formula.Or \<phi>1 \<phi>2"
@@ -84,6 +85,10 @@ next
   then show ?case
     by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.Let)
 next
+  case (Frz S E' \<phi> p E \<psi>)
+  then show ?case
+    by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.Frz)
+next
   case (LetPast S p \<phi> E' E \<psi>)
   then show ?case
     by (auto simp del: fun_upd_apply simp: simplify_terms_nfv intro!: wty_formula.LetPast)
@@ -105,21 +110,29 @@ proof (induction \<phi> arbitrary: S E rule: push_negation.induct)
 next
   case (4 p \<phi> \<psi>)
   then show ?case
+    by (auto simp: push_negation_nfv intro!: wty_formula.Frz)
+next
+  case (5 p \<phi> \<psi>)
+  then show ?case
     by (auto simp: push_negation_nfv intro!: wty_formula.LetPast)
 next
-  case ("5_2" v va vb)
+  case ("6_2" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Let wty_formula.Neg)
 next
-  case ("5_3" v va vb)
+  case ("6_3" v va vb)
+  then show ?case
+    by (fastforce intro!: wty_formula.Frz wty_formula.Neg)
+next
+  case ("6_4" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Neg wty_formula.LetPast)
 next
-  case (15 I r)
+  case (16 I r)
   then show ?case 
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
-  case (16 I r)
+  case (17 I r)
   then show ?case
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed (auto intro!: wty_formula.intros)
@@ -132,21 +145,29 @@ proof (induction \<phi> arbitrary: S E rule: elim_double_negation.induct)
 next
   case (3 p \<phi> \<psi>)
   then show ?case
+    by (auto simp: elim_double_negation_nfv intro!: wty_formula.Frz)
+next
+  case (4 p \<phi> \<psi>)
+  then show ?case
     by (auto simp: elim_double_negation_nfv intro!: wty_formula.LetPast)
 next
-  case ("4_2" v va vb)
+  case ("5_2" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.Let wty_formula.Neg)
 next
-  case ("4_3" v va vb)
+  case ("5_3" v va vb)
+  then show ?case
+    by (fastforce intro!: wty_formula.Frz wty_formula.Neg)
+next
+  case ("5_4" v va vb)
   then show ?case
     by (fastforce intro!: wty_formula.LetPast wty_formula.Neg)
 next
-  case (14 I r)
+  case (15 I r)
   then show ?case
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
-  case (15 I r)
+  case (16 I r)
   then show ?case
     by (fastforce simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
 qed (auto intro!: wty_formula.intros)
@@ -182,6 +203,10 @@ next
   with Agg(2) Agg(1)[of S "agg_env E tys" "n + length tys"] show ?case
     by (auto intro!: wty_formula.Agg dest!: wty_trm_shiftTI[of "agg_env E tys" f _ "n + length tys" k])
 next
+  case (Frz p \<alpha> \<beta>)
+  then show ?case
+    by (auto intro!: wty_formula.Frz)
+next
   case (MatchF I r)
   then show ?case
     by (auto intro!: wty_formula.MatchF simp: regex.pred_map elim!: regex.pred_mono_strong)
@@ -192,15 +217,178 @@ next
 qed (auto 0 4 simp: list.rel_map once_def eventually_def historically_def always_def
     elim!: list.rel_mono_strong intro: wty_formula.intros wty_trm_shiftTI)
 
-lemma wty_rewrite: "S, E \<turnstile> project \<phi> \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
-proof (induction \<phi> t arbitrary: E rule: rewrite.induct)
-  case (2 \<alpha> \<beta> I \<gamma> t)
+text \<open> Typing is not affected by updating the signature for predicates that do not occur. \<close>
+
+lemma wty_formula_fun_upd_fresh: "S, E \<turnstile> \<phi> \<Longrightarrow> p \<notin> preds \<phi> \<Longrightarrow> S(p \<mapsto> x), E \<turnstile> \<phi>"
+proof (induction S E \<phi> rule: wty_formula.induct)
+  case (Pred S q tms tys E)
   then show ?case
-    by (fastforce simp: once_def eventually_def intro!: wty_formula.And wty_formula.Release wty_formula.Since wty_formula.Until)
+    by (auto intro!: wty_formula.Pred)
+next
+  case (Let S E' \<phi> q E \<psi>)
+  let ?q = "(q, Formula.nfv \<phi>)"
+  let ?t = "tabulate E' 0 (Formula.nfv \<phi>)"
+  from Let.prems have p: "p \<notin> preds \<phi>" "p \<noteq> ?q \<Longrightarrow> p \<notin> preds \<psi>"
+    by auto
+  have "S(p \<mapsto> x, ?q \<mapsto> ?t), E \<turnstile> \<psi>"
+  proof (cases "p = ?q")
+    case True
+    then have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t)"
+      by simp
+    then show ?thesis
+      using Let.hyps(2) by (simp only:)
+  next
+    case False
+    then have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t, p \<mapsto> x)"
+      by (rule fun_upd_twist)
+    then show ?thesis
+      using Let.IH(2)[OF p(2)[OF False]] by (simp only:)
+  qed
+  then show ?case
+    by (rule wty_formula.Let[OF Let.IH(1)[OF p(1)]])
+next
+  case (Frz S E' \<phi> q E \<psi>)
+  let ?q = "(q, Formula.nfv \<phi>)"
+  let ?t = "tabulate E' 0 (Formula.nfv \<phi>)"
+  from Frz.prems have p: "p \<notin> preds \<phi>" "p \<noteq> ?q \<Longrightarrow> p \<notin> preds \<psi>"
+    by auto
+  have "S(p \<mapsto> x, ?q \<mapsto> ?t), E \<turnstile> \<psi>"
+  proof (cases "p = ?q")
+    case True
+    then have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t)"
+      by simp
+    then show ?thesis
+      using Frz.hyps(2) by (simp only:)
+  next
+    case False
+    then have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t, p \<mapsto> x)"
+      by (rule fun_upd_twist)
+    then show ?thesis
+      using Frz.IH(2)[OF p(2)[OF False]] by (simp only:)
+  qed
+  then show ?case
+    by (rule wty_formula.Frz[OF Frz.IH(1)[OF p(1)]])
+next
+  case (LetPast S q \<phi> E' E \<psi>)
+  let ?q = "(q, Formula.nfv \<phi>)"
+  let ?t = "tabulate E' 0 (Formula.nfv \<phi>)"
+  have "S(p \<mapsto> x, ?q \<mapsto> ?t), E' \<turnstile> \<phi> \<and> S(p \<mapsto> x, ?q \<mapsto> ?t), E \<turnstile> \<psi>"
+  proof (cases "p = ?q")
+    case True
+    then have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t)"
+      by simp
+    then show ?thesis
+      using LetPast.hyps by (simp only: simp_thms)
+  next
+    case False
+    with LetPast.prems have "p \<notin> preds \<phi>" "p \<notin> preds \<psi>"
+      by auto
+    moreover from False have "S(p \<mapsto> x, ?q \<mapsto> ?t) = S(?q \<mapsto> ?t, p \<mapsto> x)"
+      by (rule fun_upd_twist)
+    ultimately show ?thesis
+      using LetPast.IH by (simp only: simp_thms)
+  qed
+  then show ?case
+    by (blast intro: wty_formula.LetPast[where E'=E'])
+next
+  case (MatchP S E r I)
+  then show ?case
+    by (auto simp: fv_regex_alt regex.pred_set intro!: wty_formula.MatchP)
+next
+  case (MatchF S E r I)
+  then show ?case
+    by (auto simp: fv_regex_alt regex.pred_set intro!: wty_formula.MatchF)
+qed (auto intro!: wty_formula.intros)
+
+lemma wty_frz_atom: "S (q, n) = Some (tabulate E 0 n) \<Longrightarrow> S, E \<turnstile> project (frz_atom q n)"
+  by (auto simp: frz_atom_def tabulate_alt list.rel_map intro!: wty_formula.Pred wty_trm.Var list.rel_refl)
+
+text \<open> Typing of a frozen conjunct: @{term "Frz q \<alpha>' (And \<alpha>' \<psi>)"}. \<close>
+
+lemma wty_frz_and:
+  assumes "S, E \<turnstile> project \<alpha>'" "(q, nfv \<alpha>') \<notin> preds (project \<alpha>')"
+    and "S((q, nfv \<alpha>') \<mapsto> tabulate E 0 (nfv \<alpha>')), E \<turnstile> project \<psi>"
+  shows "S, E \<turnstile> project (Frz q \<alpha>' (And \<alpha>' \<psi>))"
+  unfolding project.simps
+  by (rule wty_formula.Frz[where E'=E, OF assms(1)], rule wty_formula.And)
+    (use assms in \<open>simp_all add: nfv_project wty_formula_fun_upd_fresh\<close>)
+
+lemma wty_frz_atom_and:
+  assumes "S, E \<turnstile> project \<beta>" "(q, n) \<notin> preds (project \<beta>)"
+  shows "S((q, n) \<mapsto> tabulate E 0 n), E \<turnstile> project (And (frz_atom q n) \<beta>)"
+  unfolding project.simps
+  by (rule wty_formula.And[OF wty_frz_atom wty_formula_fun_upd_fresh[OF assms]]) simp
+
+lemma wty_fresh_rewrite:
+  "S, E \<turnstile> project (rewrite \<gamma> t) \<Longrightarrow> (q, n) \<notin> preds (project \<gamma>) \<Longrightarrow>
+   S((q, n) \<mapsto> x), E \<turnstile> project (rewrite \<gamma> t)"
+  by (simp add: wty_formula_fun_upd_fresh)
+
+lemma wty_frz_conj_rw:
+  assumes "S, E \<turnstile> project (rewrite \<alpha> Same)" "(q, nfv \<alpha>) \<notin> preds (project \<alpha>)"
+    "S((q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>)), E \<turnstile> project X"
+  shows "S, E \<turnstile> project (Frz q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) X))"
+  using wty_frz_and[of S E "rewrite \<alpha> Same" q X] assms by simp
+
+lemma wty_rewrite: "S, E \<turnstile> project \<phi> \<Longrightarrow> S, E \<turnstile> project (rewrite \<phi> t)"
+proof (induction \<phi> t arbitrary: S E rule: rewrite.induct)
+  case (1 \<alpha> \<beta> \<gamma> t)
+  then show ?case
+    by (auto intro!: wty_formula.intros)
+next
+  case (2 \<alpha> \<beta> I \<gamma> t)
+  from "2.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by auto
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "2.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)"
+      by (rule "2.IH"(3)[OF True refl refl refl wty_frz_atom_and[OF w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Release (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I
+      (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Release (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I
+      (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "2.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 2 w\<alpha> w\<beta> w\<gamma> show ?thesis
+      by (auto intro!: wty_formula.intros)
+  qed
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (fastforce simp: eventually_def intro!: wty_formula.And wty_formula.Trigger wty_formula.Until)
+  from "3.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by auto
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "3.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)"
+      by (rule "3.IH"(3)[OF True refl refl refl wty_frz_atom_and[OF w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Trigger (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I
+      (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Trigger (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I
+      (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "3.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 3 w\<alpha> w\<beta> w\<gamma> show ?thesis
+      by (auto intro!: wty_formula.intros)
+  qed
 next
   case (4 \<alpha> k \<beta> t)
   have "(\<lambda>i. if i = 0 then k else E (i - 1)) = case_nat k E"
@@ -210,156 +398,272 @@ next
     by (auto intro!: wty_formula.Exists wty_formula.And 4(1))
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case(* And (Since) *)
-  proof (cases "bounded I")
-    case T1:True
-    then show ?thesis
-    proof (cases "prop_cond \<alpha> \<beta>")
-      case T2:True
-      with 6(1,3,10) show ?thesis
-        by (auto simp: T1 eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until 6(2))
-    next
-      case F2:False
-      then show ?thesis
-      proof(cases "prop_cond \<alpha> \<gamma>")
-        case T3:True
-        with 6(4,5,10) show ?thesis
-          by (auto simp: T1 F2 eventually_def intro!: wty_formula.And wty_formula.Since wty_formula.Until 6(6))
-      next
-        case F3:False
-        with 6(7,8,9,10) show ?thesis
-          by (auto simp: F2 intro!: wty_formula.And wty_formula.Since)
-      qed
-    qed
+  from "6.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by auto
+  let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+  let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+  consider (a) "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>"
+    | (c) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "\<not> (prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "6.IH"(2)[OF a refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite \<gamma> Same)"
+      by (rule wty_fresh_rewrite[OF "6.IH"(3)[OF a refl refl refl w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Since (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Since (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same)))"
+      using a by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "6.IH"(1)[OF a w\<alpha>] _ body]) (simp add: frz_name_fresh)
   next
-    case F1:False
-    with 6(7,8,9,10) show ?thesis
-      by (auto intro!: wty_formula.And wty_formula.Since)
+    case b
+    have w1: "?S, E \<turnstile> project (rewrite \<beta> Same)"
+      by (rule wty_fresh_rewrite[OF "6.IH"(5)[OF b refl refl refl w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)"
+      by (rule "6.IH"(6)[OF b refl refl refl wty_frz_atom_and[OF w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Since (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Since (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using b by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "6.IH"(4)[OF b w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case c
+    with 6 w\<alpha> w\<beta> w\<gamma> show ?thesis
+      by (auto intro!: wty_formula.intros)
   qed
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case(* And (Until) *)
-  proof (cases "bounded I")
-    case T1:True
-    then show ?thesis
-    proof (cases "prop_cond \<alpha> \<beta>")
-      case T2:True
-      with 7(1,3,10) show ?thesis
-        by (auto simp: T1 once_def
-            intro!: wty_formula.And wty_formula.Until wty_formula.Since 7(2))
-    next
-      case F2:False
-      then show ?thesis
-      proof(cases "prop_cond \<alpha> \<gamma>")
-        case T3:True
-        with 7(4,5,10) show ?thesis
-          by (auto simp: T1 F2 once_def
-              intro!: wty_formula.And wty_formula.Until wty_formula.Since 7(6))
-      next
-        case F3:False
-        with 7(7,8,9,10) show ?thesis
-          by (auto simp: F2 intro!: wty_formula.And wty_formula.Until)
-      qed
-    qed
+  from "7.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by auto
+  let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+  let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+  consider (a) "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>"
+    | (c) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "\<not> (prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "7.IH"(2)[OF a refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite \<gamma> Same)"
+      by (rule wty_fresh_rewrite[OF "7.IH"(3)[OF a refl refl refl w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Until (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Until (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same)))"
+      using a by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "7.IH"(1)[OF a w\<alpha>] _ body]) (simp add: frz_name_fresh)
   next
-    case F1:False
-    with 7(7,8,9,10) show ?thesis
-      by (auto intro!: wty_formula.And wty_formula.Until)
+    case b
+    have w1: "?S, E \<turnstile> project (rewrite \<beta> Same)"
+      by (rule wty_fresh_rewrite[OF "7.IH"(5)[OF b refl refl refl w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)"
+      by (rule "7.IH"(6)[OF b refl refl refl wty_frz_atom_and[OF w\<gamma>]]) (simp add: frz_name_fresh)
+    from w1 w2 have body: "?S, E \<turnstile> project (Until (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))"
+      by (auto intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Until (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using b by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "7.IH"(4)[OF b w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case c
+    with 7 w\<alpha> w\<beta> w\<gamma> show ?thesis
+      by (auto intro!: wty_formula.intros)
+  qed
+next
+  case (8 \<alpha> I \<beta> t)
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    from "8.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+      by (auto simp: once_def)
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "8.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have body: "?S, E \<turnstile> project (Once I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))"
+      using w1 by (auto simp: once_def intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Once I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Once I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "8.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 8 show ?thesis
+      by (auto simp: once_def intro!: wty_formula.intros)
+  qed
+next
+  case (9 \<alpha> I \<beta> t)
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    from "9.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+      by (auto simp: eventually_def)
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "9.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have body: "?S, E \<turnstile> project (Eventually I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))"
+      using w1 by (auto simp: eventually_def intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Eventually I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Eventually I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "9.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 9 show ?thesis
+      by (auto simp: eventually_def intro!: wty_formula.intros)
+  qed
+next
+  case (10 \<alpha> I \<beta> t)
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    from "10.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+      by (auto simp: historically_def once_def)
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "10.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have body: "?S, E \<turnstile> project (Historically I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))"
+      using w1 by (auto simp: historically_def once_def intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Historically I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Historically I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "10.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 10 show ?thesis
+      by (auto simp: historically_def once_def intro!: wty_formula.intros)
+  qed
+next
+  case (11 \<alpha> I \<beta> t)
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    from "11.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+      by (auto simp: always_def eventually_def)
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "11.IH"(2)[OF True refl refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have body: "?S, E \<turnstile> project (Always I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))"
+      using w1 by (auto simp: always_def eventually_def intro!: wty_formula.intros)
+    have eq: "rewrite (And \<alpha> (Always I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) (Always I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    show ?thesis
+      unfolding eq by (rule wty_frz_conj_rw[OF "11.IH"(1)[OF True w\<alpha>] _ body]) (simp add: frz_name_fresh)
+  next
+    case False
+    with 11 show ?thesis
+      by (auto simp: always_def eventually_def intro!: wty_formula.intros)
   qed
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  then show ?case(* Since (And) *)
+  from "14.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by auto
+  have wl: "S, E \<turnstile> project (rewrite (And \<alpha> \<gamma>) Same)"
+    using "14.IH"(1) w\<alpha> w\<gamma> by (auto intro!: wty_formula.intros)
+  let ?q = "frz_name [\<alpha>, \<gamma>, \<beta>]"
+  consider (a) "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)"
+      "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> \<and> frz_ok \<gamma>"
+    | (c) "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)"
+      "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> \<and> frz_ok \<gamma>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    let ?S = "S((?q, nfv \<alpha>) \<mapsto> tabulate E 0 (nfv \<alpha>))"
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)"
+      by (rule "14.IH"(3)[OF refl a refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And \<alpha> \<gamma>) Same)"
+      by (rule wty_fresh_rewrite[OF wl]) (simp add: frz_name_fresh)
+    from a w1 w2 show ?thesis
+      using "14.IH"(2)[OF refl a refl refl w\<alpha>]
+      by (auto simp: Let_def nfv_project intro!: wty_formula.Frz[where E'=E] wty_formula.Since)
+  next
+    case b
+    let ?S = "S((?q, nfv \<gamma>) \<mapsto> tabulate E 0 (nfv \<gamma>))"
+    have w1: "?S, E \<turnstile> project (rewrite (And (frz_atom ?q (nfv \<gamma>)) \<beta>) Same)"
+      by (rule "14.IH"(5)[OF refl b refl refl wty_frz_atom_and[OF w\<beta>]]) (simp add: frz_name_fresh)
+    have w2: "?S, E \<turnstile> project (rewrite (And \<alpha> \<gamma>) Same)"
+      by (rule wty_fresh_rewrite[OF wl]) (simp add: frz_name_fresh)
+    from b w1 w2 show ?thesis
+      using "14.IH"(4)[OF refl b refl refl w\<gamma>]
+      by (auto simp: Let_def nfv_project intro!: wty_formula.Frz[where E'=E] wty_formula.Since)
+  next
+    case c
+    with 14 wl w\<alpha> w\<beta> w\<gamma> show ?thesis
+      by (cases t) (auto simp: Let_def once_def intro!: wty_formula.intros "14.IH"(6-8))
+  qed
+next
+  case (5 \<alpha> \<beta> t)
+  from "5.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    by auto
+  show ?case
   proof (cases "prop_cond \<alpha> \<beta>")
-    case T1:True
+    case True
     then show ?thesis
-    proof (cases t)
-      case Same
-      with 14(1,6,7) show ?thesis
-        by (auto simp: eventually_def
-            intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(2,3))
-    next
-      case Swapped
-      with 14(1,6,7) show ?thesis
-        by (auto simp: once_def intro!: wty_formula.Since wty_formula.And 14(4,5))
-    qed
-   next
-    case F1:False
+      using "5.IH"(1)[OF True w\<alpha>] "5.IH"(2)[OF True, unfolded project.simps, OF wty_formula.And[OF w\<alpha> w\<beta>]]
+      by (auto intro!: wty_formula.intros)
+  next
+    case False
     then show ?thesis
-    proof (cases "prop_cond \<alpha> \<gamma>")
-      case T2:True
-      then show ?thesis
-      proof (cases t)
-        case Same
-        with 14(1,6,7) show ?thesis
-          by (auto simp: F1 eventually_def
-              intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(3))
-      next
-        case Swapped
-        with 14(1,6,7) show ?thesis
-          by (auto simp: F1 once_def intro!: wty_formula.Since wty_formula.And 14(5))
-      qed
-    next
-      case F2:False
-      then show ?thesis
-      proof (cases t)
-        case Same
-        with 14(1,6,7) show ?thesis
-          by (auto simp: eventually_def
-              intro!: wty_formula.Since wty_formula.And wty_formula.Until 14(2,3))
-      next
-        case Swapped
-        with 14(1,6,7) show ?thesis
-          by (auto simp: once_def intro!: wty_formula.Since wty_formula.And 14(4,5))
-      qed
-    qed
+      using "5.IH"(3)[OF False w\<alpha>] "5.IH"(4)[OF False refl w\<beta>]
+      by (auto intro!: wty_formula.intros)
+  qed
+next
+  case (12 \<alpha> I \<beta> t)
+  from "12.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    by auto
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta>")
+    case True
+    then show ?thesis
+      using "12.IH"(1)[OF True w\<alpha>] "12.IH"(3)[OF True w\<beta>]
+      by (auto intro!: wty_formula.intros)
+  next
+    case False
+    then show ?thesis
+      using "12.IH"(4)[OF False w\<alpha>] "12.IH"(5)[OF False refl w\<beta>]
+      by (auto intro!: wty_formula.intros)
+  qed
+next
+  case (13 \<alpha> I \<beta> t)
+  from "13.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    by auto
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta>")
+    case True
+    then show ?thesis
+      using "13.IH"(1)[OF True w\<alpha>] "13.IH"(3)[OF True w\<beta>]
+      by (auto intro!: wty_formula.intros)
+  next
+    case False
+    then show ?thesis
+      using "13.IH"(4)[OF False w\<alpha>] "13.IH"(5)[OF False refl w\<beta>]
+      by (auto intro!: wty_formula.intros)
   qed
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
-  then show ?case(* Until (And) *)
-  proof (cases "prop_cond \<alpha> \<beta>")
-    case T1:True
-    then show ?thesis
-    proof (cases t)
-      case Same
-      with 15(1,6,7) show ?thesis
-        by (auto simp: once_def
-            intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(2,3))
-    next
-      case Swapped
-      with 15(1,6,7) show ?thesis
-        by (auto simp: eventually_def intro!: wty_formula.Until wty_formula.And 15(4,5))
-    qed
-  next
-    case F1:False
-    then show ?thesis
-    proof (cases "prop_cond \<alpha> \<gamma>")
-      case T2:True
-      then show ?thesis
-      proof (cases t)
-        case Same
-        with 15(1,6,7) show ?thesis
-          by (auto simp: once_def F1
-              intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(3))
-      next
-        case Swapped
-        with 15(1,6,7) show ?thesis
-          by (auto simp: eventually_def F1 intro!: wty_formula.Until wty_formula.And 15(5))
-      qed
-    next
-      case F2:False
-      with 15 show ?thesis
-      proof (cases t)
-        case Same
-        with 15(1,6,7) show ?thesis
-          by (auto simp: once_def
-              intro!: wty_formula.Until wty_formula.And wty_formula.Since 15(2,3))
-      next
-        case Swapped
-        with 15(1,6,7) show ?thesis
-          by (auto simp: eventually_def intro!: wty_formula.Until wty_formula.And 15(4,5))
-      qed
-    qed
-  qed
+  from "15.prems" have w\<alpha>: "S, E \<turnstile> project \<alpha>" and w\<beta>: "S, E \<turnstile> project \<beta>"
+    and w\<gamma>: "S, E \<turnstile> project \<gamma>"
+    by (cases t; auto)+
+  have wl: "S, E \<turnstile> project (rewrite (And \<alpha> \<gamma>) Same)"
+    using "15.IH"(1) w\<alpha> w\<gamma> by (auto intro!: wty_formula.intros)
+  show ?case
+    using wl w\<alpha> w\<beta> w\<gamma>
+    by (cases t) (auto simp: Let_def once_def intro!: wty_formula.intros "15.IH"(2-4))
 next
   case (34 I r t)
   then show ?case
@@ -368,6 +672,26 @@ next
   case (35 I r t)
   then show ?case
     by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
+next
+  case (36 \<phi>s t)
+  then show ?case
+    by (auto intro!: wty_formula.Ands)
+next
+  case ("19_10" \<phi>s I r)
+  from "19_10.prems" have wr: "S, E \<turnstile> project r" and w\<phi>s: "\<forall>\<phi>\<in>set \<phi>s. S, E \<turnstile> project \<phi>"
+    by auto
+  have "S, E \<turnstile> project (rewrite (Ands \<phi>s) Same)"
+    by (rule "19_10.IH"(2)) (use w\<phi>s in \<open>auto intro!: wty_formula.Ands\<close>)
+  then show ?case
+    using "19_10.IH"(1)[OF wr] by (auto intro!: wty_formula.intros)
+next
+  case ("20_10" \<phi>s I r)
+  from "20_10.prems" have wr: "S, E \<turnstile> project r" and w\<phi>s: "\<forall>\<phi>\<in>set \<phi>s. S, E \<turnstile> project \<phi>"
+    by auto
+  have "S, E \<turnstile> project (rewrite (Ands \<phi>s) Same)"
+    by (rule "20_10.IH"(2)) (use w\<phi>s in \<open>auto intro!: wty_formula.Ands\<close>)
+  then show ?case
+    using "20_10.IH"(1)[OF wr] by (auto intro!: wty_formula.intros)
 qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
 
 lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> project (embed \<phi>)"
@@ -419,17 +743,19 @@ lemma future_bounded_shiftI_r[simp]: "Safety.future_bounded (project (shiftI_r i
 lemma future_bounded_fix_r[simp]: "Safety.future_bounded (project (fix_r \<phi> t)) = Safety.future_bounded (project \<phi>)"
   by (induction \<phi> t rule: fix_r.induct) auto
 
+lemma future_bounded_frz_atom[simp]: "Safety.future_bounded (project (frz_atom q n))"
+  by (simp add: frz_atom_def)
+
 lemma future_bounded_rewrite: "Safety.future_bounded (project (rewrite \<phi> t)) \<Longrightarrow> Safety.future_bounded (project \<phi>)"
 proof (induction \<phi> t rule: rewrite.induct)
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (fastforce simp: Let_def split: if_splits)
-next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  from 14(1,7) 14(2-6)[OF refl] show ?case
-    by (cases "prop_cond \<alpha> \<beta>"; cases "prop_cond \<gamma> \<beta>")
-      (auto simp: Let_def split: if_splits)
-qed (auto simp: always_def historically_def list.pred_map regex.pred_map
+  then show ?case
+    by (cases t) (auto simp: Let_def split: if_splits)
+next
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  then show ?case
+    by (cases t) (auto simp: Let_def split: if_splits)
+qed (auto simp: Let_def always_def historically_def list.pred_map regex.pred_map
       elim: list.pred_mono_strong regex.pred_mono_strong split: if_splits)
 
 lemma future_bounded_project_embed: "Safety.future_bounded (project (embed \<phi>)) \<Longrightarrow> Safety.future_bounded \<phi>"
@@ -444,62 +770,508 @@ lemma future_bounded_rrewrite: "Safety.future_bounded (rrewrite \<phi>) \<Longri
 lemma progress_simplify_terms[simp]: "progress \<sigma> P (simplify_terms \<phi>) j = progress \<sigma> P \<phi> j"
   using [[linarith_split_limit = 17]]
   by (induction \<phi> arbitrary: P j rule: simplify_terms.induct)
-    (auto simp: simplify_terms_nfv letpast_progress_def progress_regex_def regex.set_map image_image
+    (auto simp: simplify_terms_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image
      release_safe_bounded_def Formula.eventually_def always_safe_bounded_def)
 
 lemma progress_push_negation[simp]: "progress \<sigma> P (push_negation \<phi>) j = progress \<sigma> P \<phi> j"
   by (induction \<phi> arbitrary: P j rule: push_negation.induct)
-    (auto simp: push_negation_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
+    (auto simp: push_negation_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
 lemma progress_elim_double_negation[simp]: "progress \<sigma> P (elim_double_negation \<phi>) j = progress \<sigma> P \<phi> j"
   by (induction \<phi> arbitrary: P j rule: elim_double_negation.induct)
-    (auto simp: elim_double_negation_nfv letpast_progress_def progress_regex_def regex.set_map image_image)
+    (auto simp: elim_double_negation_nfv letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
 lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \<sigma> P \<phi> j"
   unfolding normalize_def by auto
 
-(* Proof that shiftI_r preserves the progress - part of incomplete proof for rewrite *)
+(* Proofs that rewrite does not change the progress of the monitor *)
 lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
   apply (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
   using [[linarith_split_limit=17]]
   by (auto simp: image_image regex.set_map regex.map_comp eventually_def historically_def always_def
-    always_safe_bounded_def release_safe_bounded_def progress_regex_def
+    always_safe_bounded_def release_safe_bounded_def progress_regex_def frz_progress_def
     elim: list.pred_mono_strong regex.pred_mono_strong)
 
-(* Counter example for progress not staying the same when rewriting a formula
-Original:  A(x,y) \<and> ((\<not>B(x) \<or> B(y)) Since C(x,y))
-Rewritten: A(x,y) \<and> (((Eventually A(x,y) \<and> \<not>(Eventually A(x,y) \<and> B(x))) \<or> (Eventually A(x,y) \<and> B(y))) Since C(x,y)) *)
-definition "counterex = Formula.And (Formula.Pred (STR ''a'') [Formula.Var 0, Formula.Var 1])
-  (Formula.Since (Formula.Or (Formula.Neg (Formula.Pred (STR ''b'') [Formula.Var 0]))
-                             (Formula.Pred (STR ''b'') [Formula.Var 1]))
-                 (interval 0 10)
-                 (Formula.Pred (STR ''c'') [Formula.Var 0, Formula.Var 1]))"
+text \<open> The progress of a freeze operator whose body is not ahead of the frozen formula. \<close>
 
-lemma bounded_init_ivl[simp]: "bounded I \<Longrightarrow> bounded (init_ivl I)"
-  by transfer auto
+lemma progress_Frz_eq:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P"
+    and le1: "progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j \<le> progress \<sigma> P \<alpha> j"
+    and le0: "progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> 0)) \<psi> j \<le> progress \<sigma> P \<alpha> j"
+  shows "progress \<sigma> P (Formula.Frz q \<alpha> \<psi>) j = progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j"
+proof -
+  let ?pn = "(q, Formula.nfv \<alpha>)"
+  let ?a = "progress \<sigma> P \<alpha> j" and ?m = "progress \<sigma> (P(?pn \<mapsto> j)) \<psi> j"
+  have a_le: "?a \<le> j"
+    by (rule progress_le_gen[OF P])
+  have "(LEAST i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> (if i < ?a then j else 0))) \<psi> j \<le> i) = ?m"
+  proof (rule Least_equality)
+    show "?m \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> if ?m < ?a then j else 0)) \<psi> j \<le> ?m"
+      using le1 le0 a_le by auto
+  next
+    fix y
+    assume "y \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> if y < ?a then j else 0)) \<psi> j \<le> y"
+    then show "?m \<le> y"
+      using le1 by (cases "y < ?a") auto
+  qed
+  then show ?thesis
+    by (simp add: frz_progress_def)
+qed
 
-lemma "\<not> mmonitorable counterex"
-  using interval_bounds[of 0 10, OF _ refl]
-  by (auto simp: rrewrite_def prop_cond_def counterex_def eventually_def mmonitorable_def safe_assignment_def enat_0)
+lemma progress_fresh[simp]: "p \<notin> preds \<phi> \<Longrightarrow> progress \<sigma> (P(p \<mapsto> x)) \<phi> j = progress \<sigma> P \<phi> j"
+  by (rule not_contains_pred_progress) (auto dest: contains_pred_preds)
 
-lemma "mmonitorable (rrewrite counterex)"
-  using interval_bounds[of 0 10, OF _ refl]
-  by (auto simp: rrewrite_def prop_cond_def counterex_def eventually_def mmonitorable_def safe_assignment_def enat_0)
+lemma progress_Frz_And:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P" and fresh: "(q, Formula.nfv \<alpha>) \<notin> preds \<alpha>"
+  shows "progress \<sigma> P (Formula.Frz q \<alpha> (Formula.And \<alpha> \<psi>)) j =
+    min (progress \<sigma> P \<alpha> j) (progress \<sigma> (P((q, Formula.nfv \<alpha>) \<mapsto> j)) \<psi> j)"
+  using fresh by (subst progress_Frz_eq[OF P]) auto
 
-lemma "progress \<sigma> Map.empty counterex j = j"
-  by (auto simp add: counterex_def)
+lemma progress_frz_and_rw:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P" and fresh: "(q, nfv \<alpha>) \<notin> preds (project \<alpha>)"
+  shows "progress \<sigma> P (project (Frz q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same) X))) j =
+    min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> (P((q, nfv \<alpha>) \<mapsto> j)) (project X) j)"
+  using progress_Frz_And[OF P, where q=q and \<alpha>="project (rewrite \<alpha> Same)" and \<psi>="project X" and \<sigma>=\<sigma>] fresh
+  by (simp add: nfv_project)
 
-lemma assumes "0 \<noteq> j" shows "progress \<sigma> Map.empty (rrewrite counterex) j < j"
-  using interval_bounds[of 0 10] assms
-  apply (auto simp add: rrewrite_def prop_cond_def counterex_def eventually_def enat_0 min_less_iff_disj)
-  apply (subst cInf_less_iff)
-  subgoal
-    by (auto simp: enat_0 intro!: exI[of _ "j"])
-  subgoal
-    by auto
-  subgoal
-    by (auto simp: enat_0 intro!: exI[of _ "j - 1"])
-  done
+lemma progress_frz_atom_and:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P" and fresh: "(q, n) \<notin> preds (project \<beta>)"
+  shows "progress \<sigma> (P((q, n) \<mapsto> j)) (project (And (frz_atom q n) \<beta>)) j = progress \<sigma> P (project \<beta>) j"
+  using fresh progress_le_gen[OF P, of \<sigma> "project \<beta>"] by (simp add: frz_atom_def)
+
+lemma progress_frz_ih:
+  assumes P: "pred_mapping (\<lambda>x. x \<le> j) P" and fresh: "(q, n) \<notin> preds (project \<beta>)"
+    and IH: "pred_mapping (\<lambda>x. x \<le> j) (P((q, n) \<mapsto> j)) \<Longrightarrow>
+      progress \<sigma> (P((q, n) \<mapsto> j)) (project (rewrite (And (frz_atom q n) \<beta>) Same)) j =
+      progress \<sigma> (P((q, n) \<mapsto> j)) (project (fix_r (And (frz_atom q n) \<beta>) Same)) j"
+  shows "progress \<sigma> (P((q, n) \<mapsto> j)) (project (rewrite (And (frz_atom q n) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+  using IH P progress_frz_atom_and[OF P fresh] by simp
+
+lemma progress_release_safe_bounded_cong:
+  assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
+  shows "progress \<sigma> P (release_safe_bounded \<phi> I \<psi>) j = progress \<sigma> P' (release_safe_bounded \<phi>' I \<psi>') j"
+  using assms
+  by (simp only: progress.simps release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def Formula.TT_def)
+
+lemma progress_Release_cong:
+  assumes "progress \<sigma> P \<phi> j = progress \<sigma> P' \<phi>' j" "progress \<sigma> P \<psi> j = progress \<sigma> P' \<psi>' j"
+  shows "progress \<sigma> P (Formula.Release \<phi> I \<psi>) j = progress \<sigma> P' (Formula.Release \<phi>' I \<psi>') j"
+  using assms
+  by (simp only: progress.simps release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def Formula.TT_def)
+
+lemma progress_Until_cong:
+  assumes "min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) = min (progress \<sigma> P' \<phi>' j) (progress \<sigma> P' \<psi>' j)"
+  shows "progress \<sigma> P (Formula.Until \<phi> I \<psi>) j = progress \<sigma> P' (Formula.Until \<phi>' I \<psi>') j"
+  using assms by (simp only: progress.simps)
+
+lemma progress_rewrite:
+  "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
+   progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
+proof (induction \<phi> t arbitrary: P rule: rewrite.induct)
+  case (2 \<alpha> \<beta> I \<gamma> t)
+  note P = "2.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "2.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)) j = progress \<sigma> P (project \<gamma>) j"
+      by (rule progress_frz_ih[OF P _ "2.IH"(3)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Release (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Release
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) I (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Release \<beta> I \<gamma>)) t)) j"
+      using progress_Release_cong[OF h1 h2, of I] "2.IH"(1)[OF True P] by simp
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Release \<beta> I \<gamma>)) t =
+      And (rewrite \<alpha> Same) (Release (rewrite \<beta> Same) I (rewrite \<gamma> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "2.IH"(4)[OF False P] "2.IH"(5)[OF False refl P] "2.IH"(6)[OF False refl refl P]
+        progress_release_safe_bounded_cong[OF "2.IH"(5)[OF False refl P] "2.IH"(6)[OF False refl refl P], of I]
+      by simp
+  qed
+next
+  case (3 \<alpha> \<beta> I \<gamma> t)
+  note P = "3.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "3.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)) j = progress \<sigma> P (project \<gamma>) j"
+      by (rule progress_frz_ih[OF P _ "3.IH"(3)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Trigger (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Trigger
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) I (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Trigger \<beta> I \<gamma>)) t)) j"
+      using h1 h2 "3.IH"(1)[OF True P] by simp
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Trigger \<beta> I \<gamma>)) t =
+      And (rewrite \<alpha> Same) (Trigger (rewrite \<beta> Same) I (rewrite \<gamma> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "3.IH"(4)[OF False P] "3.IH"(5)[OF False refl P] "3.IH"(6)[OF False refl refl P]
+      by simp
+  qed
+next
+  case (4 \<alpha> k \<beta> t)
+  then show ?case
+    by (cases "prop_cond \<alpha> \<beta>") (auto simp: project_shift[symmetric])
+next
+  case (6 \<alpha> \<beta> I \<gamma> t)
+  note P = "6.prems"
+  let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+  let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+  consider (a) "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>"
+    | (c) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "\<not> (prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "6.IH"(2)[OF a refl refl refl]]) (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite \<gamma> Same)) j = progress \<sigma> P (project \<gamma>) j"
+      using "6.IH"(3)[OF a refl refl refl P] by (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Since (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same)))"
+      using a by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Since
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) I (project (rewrite \<gamma> Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Since \<beta> I \<gamma>)) t)) j"
+      using h1 h2 "6.IH"(1)[OF a P] by simp
+    finally show ?thesis .
+  next
+    case b
+    have h1: "progress \<sigma> ?P (project (rewrite \<beta> Same)) j = progress \<sigma> P (project \<beta>) j"
+      using "6.IH"(5)[OF b refl refl refl P] by (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)) j = progress \<sigma> P (project \<gamma>) j"
+      by (rule progress_frz_ih[OF P _ "6.IH"(6)[OF b refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Since (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using b by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Since
+        (project (rewrite \<beta> Same)) I (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Since \<beta> I \<gamma>)) t)) j"
+      using h1 h2 "6.IH"(4)[OF b P] by simp
+    finally show ?thesis .
+  next
+    case c
+    then have eq: "rewrite (And \<alpha> (Since \<beta> I \<gamma>)) t =
+      And (rewrite \<alpha> Same) (Since (rewrite \<beta> Same) I (rewrite \<gamma> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "6.IH"(7)[OF c P] "6.IH"(8)[OF c refl P] "6.IH"(9)[OF c refl refl P]
+      by simp
+  qed
+next
+  case (7 \<alpha> \<beta> I \<gamma> t)
+  note P = "7.prems"
+  let ?q = "frz_name [\<alpha>, \<beta>, \<gamma>]"
+  let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+  consider (a) "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>"
+    | (c) "\<not> (prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)" "\<not> (prop_cond \<alpha> \<gamma> \<and> frz_ok \<alpha>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "7.IH"(2)[OF a refl refl refl]]) (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite \<gamma> Same)) j = progress \<sigma> P (project \<gamma>) j"
+      using "7.IH"(3)[OF a refl refl refl P] by (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Until (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same) I (rewrite \<gamma> Same)))"
+      using a by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Until
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) I (project (rewrite \<gamma> Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Until \<beta> I \<gamma>)) t)) j"
+      using h1 h2 "7.IH"(1)[OF a P] by simp
+    finally show ?thesis .
+  next
+    case b
+    have h1: "progress \<sigma> ?P (project (rewrite \<beta> Same)) j = progress \<sigma> P (project \<beta>) j"
+      using "7.IH"(5)[OF b refl refl refl P] by (simp add: frz_name_fresh)
+    have h2: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)) j = progress \<sigma> P (project \<gamma>) j"
+      by (rule progress_frz_ih[OF P _ "7.IH"(6)[OF b refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Until (rewrite \<beta> Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same)))"
+      using b by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.Until
+        (project (rewrite \<beta> Same)) I (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<gamma>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Until \<beta> I \<gamma>)) t)) j"
+      using h1 h2 "7.IH"(4)[OF b P] by simp
+    finally show ?thesis .
+  next
+    case c
+    then have eq: "rewrite (And \<alpha> (Until \<beta> I \<gamma>)) t =
+      And (rewrite \<alpha> Same) (Until (rewrite \<beta> Same) I (rewrite \<gamma> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "7.IH"(7)[OF c P] "7.IH"(8)[OF c refl P] "7.IH"(9)[OF c refl refl P]
+      by simp
+  qed
+next
+  case (8 \<alpha> I \<beta> t)
+  note P = "8.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "8.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Once I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Once I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Once I \<beta>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (once I
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Once I \<beta>)) t)) j"
+      using h1 "8.IH"(1)[OF True P] by (simp add: once_def)
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Once I \<beta>)) t = And (rewrite \<alpha> Same) (Once I (rewrite \<beta> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "8.IH"(3)[OF False P] "8.IH"(4)[OF False refl P]
+      by (simp add: once_def)
+  qed
+next
+  case (9 \<alpha> I \<beta> t)
+  note P = "9.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "9.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Eventually I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Eventually I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Eventually I \<beta>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (Formula.eventually I
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Eventually I \<beta>)) t)) j"
+      using h1 "9.IH"(1)[OF True P] by (simp add: eventually_def)
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Eventually I \<beta>)) t = And (rewrite \<alpha> Same) (Eventually I (rewrite \<beta> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "9.IH"(3)[OF False P] "9.IH"(4)[OF False refl P]
+      by (simp add: eventually_def)
+  qed
+next
+  case (10 \<alpha> I \<beta> t)
+  note P = "10.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "10.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Historically I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Historically I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Historically I \<beta>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (historically I
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Historically I \<beta>)) t)) j"
+      using h1 "10.IH"(1)[OF True P] by (simp add: historically_def once_def)
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Historically I \<beta>)) t = And (rewrite \<alpha> Same) (Historically I (rewrite \<beta> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "10.IH"(3)[OF False P] "10.IH"(4)[OF False refl P]
+      by (simp add: historically_def once_def)
+  qed
+next
+  case (11 \<alpha> I \<beta> t)
+  note P = "11.prems"
+  show ?case
+  proof (cases "prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>")
+    case True
+    let ?q = "frz_name [\<alpha>, \<beta>]"
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "11.IH"(2)[OF True refl refl refl]]) (simp add: frz_name_fresh)
+    have eq: "rewrite (And \<alpha> (Always I \<beta>)) t = Frz ?q (rewrite \<alpha> Same) (And (rewrite \<alpha> Same)
+      (Always I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)))"
+      using True by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (And \<alpha> (Always I \<beta>)) t)) j =
+      min (progress \<sigma> P (project (rewrite \<alpha> Same)) j) (progress \<sigma> ?P (always I
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))) j)"
+      unfolding eq by (subst progress_frz_and_rw[OF P]) (simp_all add: frz_name_fresh)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (And \<alpha> (Always I \<beta>)) t)) j"
+      using h1 "11.IH"(1)[OF True P] by (simp add: always_def eventually_def)
+    finally show ?thesis .
+  next
+    case False
+    then have eq: "rewrite (And \<alpha> (Always I \<beta>)) t = And (rewrite \<alpha> Same) (Always I (rewrite \<beta> Same))"
+      by (simp add: Let_def)
+    show ?thesis
+      unfolding eq using "11.IH"(3)[OF False P] "11.IH"(4)[OF False refl P]
+      by (simp add: always_def eventually_def)
+  qed
+next
+  case (12 \<alpha> I \<beta> t)
+  from "12.IH"(1-4)[OF _ "12.prems"] "12.IH"(5)[OF _ refl "12.prems"] show ?case
+    by (cases "prop_cond \<alpha> \<beta>") auto
+next
+  case (13 \<alpha> I \<beta> t)
+  from "13.IH"(1-4)[OF _ "13.prems"] "13.IH"(5)[OF _ refl "13.prems"] show ?case
+    using progress_le_gen[OF "13.prems", of \<sigma> "project \<alpha>"] progress_le_gen[OF "13.prems", of \<sigma> "project \<beta>"]
+    by (cases "prop_cond \<alpha> \<beta>") (auto simp: min_def not_le less_Suc_eq)
+next
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  note P = "14.prems"
+  let ?q = "frz_name [\<alpha>, \<gamma>, \<beta>]"
+  have L: "progress \<sigma> (P((?q, n) \<mapsto> x)) (project (rewrite (And \<alpha> \<gamma>) Same)) j =
+    min (progress \<sigma> P (project \<alpha>) j) (progress \<sigma> P (project \<gamma>) j)" for n x
+    using "14.IH"(1)[OF P] by (simp add: frz_name_fresh)
+  consider (a) "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>"
+    | (b) "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)"
+      "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> \<and> frz_ok \<gamma>"
+    | (c) "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> \<and> frz_ok \<alpha>)"
+      "\<not> (t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> \<and> frz_ok \<gamma>)"
+    by blast
+  then show ?case
+  proof cases
+    case a
+    let ?P = "P((?q, nfv \<alpha>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "14.IH"(3)[OF refl a refl refl]]) (simp add: frz_name_fresh)
+    have h\<alpha>: "progress \<sigma> P (project (rewrite \<alpha> Same)) j = progress \<sigma> P (project \<alpha>) j"
+      using "14.IH"(2)[OF refl a refl refl P] by simp
+    have eq: "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t = Frz ?q (rewrite \<alpha> Same)
+      (Since (rewrite (And \<alpha> \<gamma>) Same) I (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))"
+      using a by (simp add: Let_def)
+    have "progress \<sigma> P (project (rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t)) j =
+      progress \<sigma> ?P (Formula.Since (project (rewrite (And \<alpha> \<gamma>) Same)) I
+        (project (rewrite (And (frz_atom ?q (nfv \<alpha>)) \<beta>) Same))) j"
+      unfolding eq project.simps
+      by (rule progress_Frz_eq[OF P, where \<alpha>="project (rewrite \<alpha> Same)", unfolded nfv_project nfv_rewrite]) (simp_all add: L h\<alpha>)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (Since (And \<alpha> \<gamma>) I \<beta>) t)) j"
+      using a L h1 by simp
+    finally show ?thesis .
+  next
+    case b
+    let ?P = "P((?q, nfv \<gamma>) \<mapsto> j)"
+    have h1: "progress \<sigma> ?P (project (rewrite (And (frz_atom ?q (nfv \<gamma>)) \<beta>) Same)) j = progress \<sigma> P (project \<beta>) j"
+      by (rule progress_frz_ih[OF P _ "14.IH"(5)[OF refl b refl refl]]) (simp add: frz_name_fresh)
+    have h\<gamma>: "progress \<sigma> P (project (rewrite \<gamma> Same)) j = progress \<sigma> P (project \<gamma>) j"
+      using "14.IH"(4)[OF refl b refl refl P] by simp
+    have eq: "rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t = Frz ?q (rewrite \<gamma> Same)
+      (Since (rewrite (And \<alpha> \<gamma>) Same) I (rewrite (And (frz_atom ?q (nfv \<gamma>)) \<beta>) Same))"
+      using b by (auto simp: Let_def)
+    have "progress \<sigma> P (project (rewrite (Since (And \<alpha> \<gamma>) I \<beta>) t)) j =
+      progress \<sigma> ?P (Formula.Since (project (rewrite (And \<alpha> \<gamma>) Same)) I
+        (project (rewrite (And (frz_atom ?q (nfv \<gamma>)) \<beta>) Same))) j"
+      unfolding eq project.simps
+      by (rule progress_Frz_eq[OF P, where \<alpha>="project (rewrite \<gamma> Same)", unfolded nfv_project nfv_rewrite]) (simp_all add: L h\<gamma>)
+    also have "\<dots> = progress \<sigma> P (project (fix_r (Since (And \<alpha> \<gamma>) I \<beta>) t)) j"
+      using b L h1 by simp
+    finally show ?thesis .
+  next
+    case c
+    have le: "progress \<sigma> P (project \<alpha>) j \<le> j" "progress \<sigma> P (project \<gamma>) j \<le> j"
+      by (rule progress_le_gen[OF P])+
+    show ?thesis
+      using c "14.IH"(1)[OF P] "14.IH"(6)[OF refl c _ P] "14.IH"(7)[OF refl c _ _ P] "14.IH"(8)[OF refl c _ _ P] le
+      by (cases t) (auto simp: Let_def once_def min_def split: if_splits)
+  qed
+next
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  note P = "15.prems"
+  have le: "progress \<sigma> P (project \<alpha>) j \<le> j" "progress \<sigma> P (project \<gamma>) j \<le> j"
+    by (rule progress_le_gen[OF P])+
+  let ?a = "progress \<sigma> P (project \<alpha>) j" and ?b = "progress \<sigma> P (project \<beta>) j"
+    and ?c = "progress \<sigma> P (project \<gamma>) j"
+  define r where "r = (if t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta> then rewrite (And (Once I \<alpha>) \<beta>) Same
+    else if t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta> then rewrite (And (Once I \<gamma>) \<beta>) Same
+    else rewrite \<beta> Same)"
+  have eq: "rewrite (Until (And \<alpha> \<gamma>) I \<beta>) t = fix_r (Until (rewrite (And \<alpha> \<gamma>) Same) I r) t"
+    by (simp add: r_def Let_def)
+  have L: "progress \<sigma> P (project (rewrite (And \<alpha> \<gamma>) Same)) j = min ?a ?c"
+    using "15.IH"(1)[OF P] by simp
+  have R: "min (min ?a ?c) (progress \<sigma> P (project r) j) = min (min ?a ?c) ?b"
+  proof (cases "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>")
+    case True
+    then show ?thesis
+      using "15.IH"(2)[OF refl True P] le by (simp add: r_def once_def min_def)
+  next
+    case False
+    show ?thesis
+    proof (cases "t = Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>")
+      case True
+      then show ?thesis
+        using "15.IH"(3)[OF refl False True P] False le by (simp add: r_def once_def min_def)
+    next
+      case False': False
+      have "r = rewrite \<beta> Same"
+        by (simp only: r_def if_not_P[OF False] if_not_P[OF False'])
+      then show ?thesis
+        using "15.IH"(4)[OF refl False False' P] by simp
+    qed
+  qed
+  show ?case
+  proof (cases t)
+    case Same
+    show ?thesis
+      unfolding eq unfolding Same fix_r.simps project.simps
+      by (rule progress_Until_cong) (simp add: L R)
+  next
+    case Swapped
+    show ?thesis
+      unfolding eq unfolding Swapped fix_r.simps project.simps
+      by (rule progress_Until_cong) (use R in \<open>simp add: L min.commute min.left_commute min.assoc\<close>)
+  qed
+next
+  case (27 \<phi> I \<psi> t)
+  then show ?case
+    using "27.IH"(1)[OF "27.prems"] "27.IH"(2)[OF "27.prems"]
+      progress_release_safe_bounded_cong[OF "27.IH"(1)[OF "27.prems"] "27.IH"(2)[OF "27.prems"], of I]
+    by simp
+qed (auto simp: once_def always_def eventually_def historically_def
+    progress_regex_def regex.set_map image_image)
+
+lemma progress_rrewrite: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (rrewrite \<phi>) j = progress \<sigma> P \<phi> j"
+  by (simp add: rrewrite_def progress_rewrite project_embed)
 
 (* Locale for correctness proofs *)
 locale verimon_rewrite = maux +
@@ -548,12 +1320,9 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
     subgoal
       by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
         (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize)
-(*
     subgoal
-      apply (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-      apply (auto simp add: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
-      done
-*)
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
     done
   subgoal using prepare_Inr
     by (cases "prepare_verimon rw sig \<phi>")
@@ -573,26 +1342,24 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
     subgoal
       by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
         (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
-(*
     subgoal
       by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] dest: spec[of _ "convert_tysym o check_subst"])
-*)
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
     done
   subgoal
     using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
     by (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
         simp flip: monitorable_formula_code 
-        split: sum.splits if_splits intro: (* future_bounded_rrewrite *) future_bounded_normalize)
+        split: sum.splits if_splits intro: future_bounded_rrewrite future_bounded_normalize)
   done
 
 lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi (* rrewrite_fvi *) type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_fvi rrewrite_fvi type_check_def check_check_subst)
 
 lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv (* rrewrite_nfv *) type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
 
 lemma sat_the_\<psi>:
   "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
@@ -601,7 +1368,7 @@ lemma sat_the_\<psi>:
 
 lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>) \<pi>"
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
-  by (auto split: sum.splits if_splits simp: progress_normalize Let_def type_check_def check_check_subst)
+  by (auto split: sum.splits if_splits simp: progress_normalize progress_rrewrite Let_def type_check_def check_check_subst)
 
 lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
@@ -611,7 +1378,7 @@ lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst)
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
   using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
-    intro!: wf_mstate_minit (* wty_rrewrite *) wty_normalize dest!: spec[of _ "convert_tysym"])
+    intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
 
 (* Correctness of specification of the monitor *)
 lemmas mono_monitor = monitor_\<phi>.mono_monitor
@@ -625,71 +1392,4 @@ lemmas mstep_mverdicts = verimon_\<psi>.mstep_mverdicts[unfolded Mt_exchange]
 
 end
 
-(* Incomplete proof of rewrite preserving the progress.
-lemma progress_rewrite[simp]: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (project (rewrite \<phi> t)) j = progress \<sigma> P (project (fix_r \<phi> t)) j"
-  proof (induction \<phi> t arbitrary: P j rule: rewrite.induct)
-  case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case (*And \<alpha> (Release \<beta> I \<gamma>) **fine** *)
-    sorry
-next
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case (* And \<alpha> (Trigger \<beta> I \<gamma>) INTRODUCES A FUTURE OPERATOR *)
-    sorry
-next
-  case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case (* And \<alpha> (Since \<beta> I \<gamma>) INTRODUCES A FUTURE OPERATOR *)
-    sorry
-next
-  case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case  (* And \<alpha> (Until \<beta> I \<gamma>) **fine** *)
-    sorry
-next
-  case (8 \<alpha> I \<beta> t)
-  then show ?case (* And \<alpha> (Once I \<beta>) INTRODUCES A FUTURE OPERATOR *)
-    sorry
-next
-  case (9 \<alpha> I \<beta> t)
-  then show ?case  (* And \<alpha> (Eventually I \<beta>) **fine** *)
-    sorry
-next
-  case (10 \<alpha> I \<beta> t)
-  then show ?case (* And \<alpha> (Historically I \<beta>) INTRODUCES A FUTURE OPERATOR *)
-    sorry
-next
-  case (11 \<alpha> I \<beta> t)
-  then show ?case (* And \<alpha> (Always I \<beta>) **fine** *)
-    apply (auto simp: once_def always_def eventually_def min_def)
-               apply (erule order_trans)
-    sorry
-next
-  case (12 \<alpha> I \<beta> t)
-  from 12(1-4) 12(5)[OF _ refl] 12(6) show ?case
-    by (cases "prop_cond \<alpha> \<beta>") auto
-next
-  case (13 \<alpha> I \<beta> t)
-  from 13(1-4) 13(5)[OF _ refl] 13(6) show ?case
-    apply auto
-    apply (auto simp: min_def not_le less_Suc_eq)
-    using progress_le_gen[OF 13(6), of \<sigma> "project \<alpha>"] progress_le_gen[OF 13(6), of \<sigma> "project \<beta>"]
-    apply simp_all
-    done
-next
-  case (14 \<alpha> \<gamma> I \<beta> t)
-  then show ?case (* Since (And \<alpha> \<gamma>) I \<beta>) INTRODUCES A FUTURE OPERATOR  *)
-    sorry
-next
-  case (15 \<alpha> \<gamma> I \<beta> t)
-  then show ?case (* Until (And \<alpha> \<gamma>) I \<beta> **fine** *)
-    sorry
-next
-  case (27 \<phi> I \<psi> t)
-  then show ?case using [[linarith_split_limit=17]]
-    by (auto simp: conj_commute once_def always_def eventually_def historically_def
-      release_safe_bounded_def always_safe_bounded_def)
-qed (auto simp: conj_commute once_def always_def eventually_def historically_def
-    progress_regex_def regex.set_map image_image)
-
-lemma progress_rrewrite: "progress \<sigma> P (rrewrite \<phi> ) j = progress \<sigma> P \<phi> j"
-  by (auto simp: rrewrite_def project_embed)
-*)
 end
