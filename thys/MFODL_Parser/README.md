@@ -86,3 +86,22 @@ Differences that do not come from the grammar:
 - A time unit other than `d`, `h`, `m`, `s` (as in `5x`) is rejected by the
   lexer. MonPoly lexes it and then fails in the parser, so the outcome is the
   same.
+
+## Testing
+
+`tools/parser_difftest.ml` (`parser_difftest`) runs both parsers on the same
+inputs and compares the syntax trees; with `-lex` it compares the token streams
+of the lexer model and of `src/formula_lexer.mll` on random strings of tricky
+lexemes. `tests/verified_parser.t` runs a small instance of both.
+
+## Performance
+
+The exported parser takes about 30 ms per input character (a second for a
+formula of a few dozen characters). The time goes into the LR driver of the
+`grammar` package, which recomputes the closure of each state with its layout
+anchors at run time, at a cost quadratic in the number of productions (211
+here). The grammar has no layout annotations, so a driver that precomputed the
+closures would suffice for it.
+
+`src/verified_parser.ml` is large (about 11 MB), mostly the LR tables, in which
+every nonterminal name is a list of characters.
