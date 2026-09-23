@@ -20,13 +20,13 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are the run of 2026-09-23, after 21.25, on a
-four-core container that is slower and noisier than the machine of EFFICIENCY.md Section 21:
-MonPoly itself takes 1.22x its time of the 2026-09-22 run there, so the ratios are not
-comparable with that run's (EFFICIENCY.md 21.25 has the like-for-like comparison).  Its one
-verdict disagreement, `match-pcnt`, is an end-of-stream difference between MonPoly and both
-verified monitors, not between the two verified ones.  The `andtrigger` group has no ratio
-against MonPoly, which does not monitor TRIGGER; it is there for the two verified monitors.
+`report.md` and `ratios.svg` in this directory are the run of 2026-09-23 after 21.26, on a
+four-core container that is again not the machine of EFFICIENCY.md Section 21, and not the
+one of the 21.25 run either (MonPoly takes 0.81x its time there), so the ratios are comparable
+with neither run's.  Its one verdict disagreement, `match-pcnt`, is an end-of-stream
+difference between MonPoly and the verified monitor, which the heap-resident dense monitor it
+replaced shared.  The `andtrigger` group has no ratio against MonPoly, which does not monitor
+TRIGGER; since 21.26 it records the verified monitor's times alone.
 
 ## The logs
 

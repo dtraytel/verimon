@@ -7832,3 +7832,102 @@ change adds a node and touches nothing else in the generated code, so all three 
 together is drift between the two runs, not a regression.  The two `-vdense` timeouts of this
 run, `long-sum100` and `pol-unmatched`, time out under the old binary on this container too;
 at 21.24 on the other machine they took under 5 s.
+
+## 21.26 `-verified` runs the verified dense evaluator
+
+Until now the binary had two dense monitors.  `-verified` ran the heap-resident one of
+`Dense_Imp.thy` (session `MFODL_Monitor_Imp`): an Imperative HOL evaluator with a hash-join index
+on the heap, compiled from the kernel's formula.  It uses the proved short-tuple operations, and
+its multi-way join is proved correct (`dmulti_join_rule`, `Dense_Join_Correct.thy`), but its
+compiler and its evaluation function are not proved to simulate the kernel.  `-verified -vdense`
+ran the verified dense evaluator (`udminit_safe`/`udmstep`), which the simulation theorem of
+`Dense_Eval.thy` covers through the refinements of `Dense_Exec.thy` and `Dense_Unbox_Exec.thy`,
+and which refused any formula with a node its compiler could not place.  21.25 removed the last
+such node: on the corpus `-vdense` refuses nothing.  So `-verified` now runs the verified
+evaluator, and the heap-resident monitor is out of the binary.
+
+### The export
+
+`src/verified.ml` is now the export of `MFODL_Monitor_Dense.Monitor_Code_Dense`, not of
+`MFODL_Monitor_Imp.Monitor_Code_Imp`.  That export already existed for reading (it was checked
+to reach nothing of the Imp session), but it was not the one the binary was built from, because
+the code-generator tuning of 20.x and 21.x -- the monomorphised containers, the tree primitives
+with the comparator called directly, the dictionaries built once (`Dense_Code_Opt.thy`) and the
+sweep over the remaining generic operations (`Dense_Mono_Sweep.thy`) -- lived in the Imp session.
+Both theories move into `MFODL_Monitor_Dense`.  Only two parts of them are about the heap: the
+box of the heap index of the dense join (`im_lookup_h` and its neighbours) and the two
+specialisations of the heap-resident Since (`hsd_*`, `hsw_*`).  They stay in the Imp session as
+`Dense_Imp_Code_Opt.thy`.  `Monitor_Code_Imp` now exports only the heap-resident monitor, to a
+file of its own, `verified_imp.ocaml`, that is not linked into the binary.
+`Monitor_Code_Imp_Only`, which did that alongside the combined export, goes.
+
+Moving the theories changed how the code preprocessor's rules are merged, and with it the
+generated code, in two ways.  Both are invisible to correctness, since every rule involved is a
+proved code equation for the same function, but both undo part of E2's monomorphisation:
+
+- Where a box of `Dense_Code_Opt` (`card` ↦ `unbox edl_card_v`) and a monomorphic copy from
+  `Dense_Mono_Sweep`'s second pass (`card` ↦ `edl_card`) rewrite the same term, the preprocessor
+  takes whichever rule the merge of the theory branches puts first.  With `Dense_Mono_Sweep`
+  imported before `Monitor_Code` the box won, at `card`, `Set.remove`, `cluster`,
+  `rbt_of_sorted_list`, `deopt_table` and the deletion of a key set.  Importing `Monitor_Code`
+  first restores the old choice.  (`code_thms` on a one-line definition in a scratch theory
+  showed which rule wins for each order.)
+- A merge takes the union of the two preprocessor simpsets, so it brings back rules that one
+  branch deleted.  `Dense_Code_Opt` takes the redirections of the wide set operations to their
+  boxes (`ed_union_v_unfold` and four more) out of the preprocessor so that the monomorphic
+  `ed_union` etc. apply; `Monitor_Code` brings them back.  `Monitor_Code_Dense` now deletes
+  them again after the merge.
+
+With both, every function the new export shares with the old one is textually identical to it,
+up to whitespace and the name of the sum monad's bind (`binda` before, `bind` now that the heap
+monad's bind is gone).  What the new export lacks is the heap-resident monitor's own code, 196
+items (`deval_step`, `dformula_of`, `minit_safe_d`, the heap index, the `hsd_*` Since, the typerep
+and heap class instances); it has none the old one lacked.  `src/verified.ml` shrinks from 14,512
+lines to 11,377.
+
+### The front end
+
+`Verified_adapter` has one state type and one step.  A formula with a node outside the verified
+dense fragment is refused with the same message `-vdense` used, which no formula of the corpus
+triggers.  `-vdense` is accepted and ignored, like the other deprecated flags.  The two cram
+tests that compared `-verified` with `-verified -vdense` (21.24, 21.25) become plain `-verified`
+tests: their expected output was recorded from the heap-resident monitor, so they now check the
+switch itself.  They are renamed `dense_match.t` and `dense_andtrigger.t`.  The performance
+runner drops the `dense` system; `vdense` keeps its name in the reports but is now plain
+`-verified`.
+
+### Checks
+
+Both sessions build.  `dune test` passes.  The new `-verified` agrees with the old one (the 21.25
+binary, whose `-verified` was the heap-resident monitor) on the whole corpus: 600 same, 0
+refused, 0 differing.  It also agrees on the 21 benchmark formulas of section 1 and the later
+sections, and with MonPoly on the 17 of them MonPoly monitors.
+
+### What the switch costs
+
+The verified evaluator's own code is unchanged, so the question is only how it compares with the
+monitor `-verified` used to run.  The 21.25 run measured both in one suite on one container:
+
+| over the 192 formulas both finished | vdense / dense |
+|---|---|
+| geomean | **0.975** |
+| median | 0.99 |
+| vdense more than 10% faster | 44 |
+| vdense more than 10% slower | 24 |
+| vdense more than 25% slower | 10 |
+
+On most of the suite the switch is free, or a little better.  The exception is the temporal regex
+nodes: nine of the ten formulas that lose more than 25% are `match-*`, at 1.29x to 2.48x
+(`match-pstar`).  21.24 said why: the verified match node runs the kernel's window of tabulated
+derivatives over boxed tuples and converts at its boundary, where the heap-resident monitor had
+a window at its own frame.  The tenth is `andnot-dom50` (1.37x), a single anti-join on the
+small-domain log.  A dense match window over short tuples, in the shape of the Since and Until
+structures of sections 13 and 16, is what would close the regex gap; it is the obvious first
+item for H.
+
+The suite after the switch, on yet another container (MonPoly at 0.81x its time of the 21.25
+run, so again not comparable with earlier runs): all 201 formulas finish under `-verified`, with
+no timeouts; over the 196 that MonPoly monitors, the geometric mean of `-verified`/MonPoly is
+1.25, median 1.22.  32 formulas are faster under `-verified`, 9 more than 2x slower, and none
+more than 4x slower.  The worst family is `once_exists` (1.78), then `agg_once` (1.56), `match`
+(1.53) and `policy` (1.52).
