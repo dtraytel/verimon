@@ -311,23 +311,26 @@ let rec convert_schema_into_sig sch =
                                       else (convert_schema_into_sig rest) k)
   | [] -> (fun k -> None)
 
-let type_check_formula dbschema f =
-  type_check (convert_schema_into_sig dbschema) f
-
 (* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
    Dense_Eval.thy, which drops the empty columns, run on the short tuples as
-   Dense_Unbox_Exec.thy states it.  [udminit_push] moves existential quantifiers into the past
-   and future diamonds they commute with (Dense_Push.thy) and compiles the formula the kernel's
-   [meinit0] builds from the result into the dense one; [udmstep] performs one step; both are
-   pure functions.  The
-   simulation theorem of Dense_Eval.thy covers the evaluator through the refinement theorems of
-   Dense_Exec.thy and Dense_Unbox_Exec.thy, provided the compiler placed every node:
-   [uvdfail_nodes] counts the ones it could not, and a formula with any is refused rather than
-   run outside the theorem. *)
+   Dense_Unbox_Exec.thy states it.  [udminit_verimon] prepares the formula as VeriMon does
+   (Dense_VeriMon.thy): it type checks it and, if it is not monitorable and [rw] is set,
+   normalizes and rewrites it; then, if [mw] is set, it converts it into multi-way joins; then
+   [udminit_push] moves existential quantifiers into the past and future diamonds they commute
+   with (Dense_Push.thy) and compiles the result into the dense one.  [udmstep] performs one
+   step; all of these are pure functions.  The theorem udminit_verimon_mverdicts of
+   Dense_VeriMon.thy states that the verdicts are those of the input formula, through the
+   simulation theorem of Dense_Eval.thy and the refinement theorems of Dense_Exec.thy and
+   Dense_Unbox_Exec.thy, provided the compiler placed every node: [uvdfail_nodes] counts the
+   ones it could not, and a formula with any is refused rather than run outside the theorem.
+   The front end therefore neither type checks nor rewrites the formula itself for this monitor
+   (see [Rewriting.check_formula]). *)
 type state = unit udmstate_ext
 
-let init cf =
-  let st = udminit_push cf in
+let init ~mw ~rw dbschema cf =
+  let st = match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
+    | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
+    | Inr st -> st in
   let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
   if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
     Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;
@@ -532,6 +535,10 @@ let show_results posl _i q tsq (v: verdict) =
       show_results_gen uset_fold add_utuple compare_tuple_mp
         (fun () -> show_results_slow posl q tsq v) q tsq table
 
-let is_monitorable dbschema f =
-  let s = mmonitorable_exec (convert_formula dbschema f) in
-  (s, (if s then None else Some (f, "MFODL formula is not monitorable")))
+(* Monitorability as the verified monitor decides it: the formula is accepted if VeriMon's
+   preparation (type checking and, with [rw], normalization and rewriting) yields a monitorable
+   formula. *)
+let is_monitorable rw dbschema f =
+  match prepare_verimon rw (convert_schema_into_sig dbschema) (convert_formula dbschema f) with
+  | Inr _ -> (true, None)
+  | Inl e -> (false, Some (f, "MFODL formula is not monitorable (" ^ e ^ ")"))

@@ -1,5 +1,5 @@
 theory VeriMon
-imports Correctness Rewriting
+imports Correctness Rewriting Safety_Proofs
 begin
 
 lemma map_formula_release_safe_bounded[simp]: "Formula.formula.map_formula f (release_safe_bounded \<phi> I \<psi>) =
@@ -10,7 +10,10 @@ lemma progress_map_formula[simp]: "progress \<sigma> P (Formula.formula.map_form
   by (induct \<phi> arbitrary: P j rule: progress_custom_induct)
     (auto simp: letpast_progress_def frz_progress_def progress_regex_def regex.set_map image_image)
 
-context maux begin
+text \<open>VeriMon's preparation of an input formula: type checking and, if the formula is not
+  monitorable and rewriting is requested (@{text rw}), normalization and then rewriting, until
+  the formula becomes monitorable. It does not depend on the auxiliary data structures of the
+  monitor, so all monitors (the kernel and the dense one) share it.\<close>
 
 definition "prepare_verimon rw sig \<phi> =
   (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
@@ -22,6 +25,8 @@ definition "prepare_verimon rw sig \<phi> =
               let r\<phi> = rrewrite n\<phi> in
                 if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
          else Inl STR ''not monitorable'')))"
+
+context maux begin
 
 definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw sig \<phi>)"
 
@@ -695,9 +700,7 @@ next
 qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
 
 lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> project (embed \<phi>)"
-  by (induction S E \<phi> rule: wty_formula.induct)
-  (auto simp: nfv_project project_embed regex.pred_map comp_def
-   intro!: wty_formula.intros elim: regex.pred_mono_strong)
+  by (simp add: project_embed)
 
 lemma wty_rrewrite: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> rrewrite \<phi>"
   unfolding rrewrite_def using wty_rewrite wty_project_embed by auto
@@ -1278,8 +1281,13 @@ qed (auto simp: once_def always_def eventually_def historically_def
 lemma progress_rrewrite: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (rrewrite \<phi>) j = progress \<sigma> P \<phi> j"
   by (simp add: rrewrite_def progress_rewrite project_embed)
 
-(* Locale for correctness proofs *)
-locale verimon_rewrite = maux +
+(* Locales for correctness proofs *)
+
+text \<open>The correctness of the preparation: whatever monitor evaluates the prepared formula
+  @{text \<psi>}, it satisfies the specification of @{text \<psi>}, which coincides with that of the
+  input formula. The locale does not depend on the auxiliary data structures of any monitor.\<close>
+
+locale verimon_prepare =
   fixes rw sig \<phi>
   assumes wf: "wf_formula \<phi>" 
   and prepare_Inr: "\<not> sum.isl (prepare_verimon rw sig \<phi>)"
@@ -1313,9 +1321,10 @@ lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))
   using wf_f_comp[OF wf_f_TCst_convert_tysym check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct1]]
   by (auto simp: comp_assoc)
 
-interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+lemma verimon_spec_\<psi>:
+  "verimon_spec \<psi> (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
   unfolding \<psi>_def
-  apply standard
+  apply unfold_locales
   subgoal using prepare_Inr
     apply (cases "prepare_verimon rw sig \<phi>")
      apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
@@ -1334,9 +1343,11 @@ interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_su
       (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
   done
 
-interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
-  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
-  apply standard
+
+lemma future_bounded_\<phi>:
+  "future_bounded_mfodl (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)
+    (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
+  apply unfold_locales
   subgoal
     using prepare_\<psi>
     apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
@@ -1357,6 +1368,14 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
         simp flip: monitorable_formula_code 
         split: sum.splits if_splits intro: future_bounded_rrewrite future_bounded_normalize)
   done
+
+
+interpretation verimon_\<psi>: verimon_spec \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  using verimon_spec_\<psi> by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def)
+
+interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
+  "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
 lemma fvi_\<psi>: "Formula.fvi b \<psi> = Formula.fvi b \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
@@ -1379,17 +1398,46 @@ lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
   unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
   by (auto simp: sat_the_\<psi> fvi_\<psi> nfv_\<psi> pprogress_\<psi>)
 
+(* Correctness of specification of the monitor *)
+lemmas mono_monitor = monitor_\<phi>.mono_monitor
+lemmas sound_monitor = monitor_\<phi>.sound_monitor
+lemmas complete_monitor = monitor_\<phi>.complete_monitor
+lemmas sliceable_M = monitor_\<phi>.sliceable_M
+
+end
+
+text \<open>The kernel's monitor on the prepared formula.\<close>
+
+locale verimon_rewrite = maux + verimon_prepare
+begin
+
+interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
+  unfolding \<psi>_def
+  apply standard
+  subgoal using prepare_Inr
+    apply (cases "prepare_verimon rw sig \<phi>")
+     apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
+    subgoal
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
+    subgoal
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize)
+    subgoal
+      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
+        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
+    done
+  subgoal using prepare_Inr
+    by (cases "prepare_verimon rw sig \<phi>")
+      (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
+  done
+
 lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
   using check_sound_proven[OF check_check_subst wf, unfolded wty_result_fX_def, THEN conjunct2, THEN spec, of "convert_tysym o check_subst"]
   by (auto split: sum.splits if_splits simp: Let_def type_check_def check_check_subst
     intro!: wf_mstate_minit wty_rrewrite wty_normalize dest!: spec[of _ "convert_tysym"])
 
-(* Correctness of specification of the monitor *)
-lemmas mono_monitor = monitor_\<phi>.mono_monitor
-lemmas sound_monitor = monitor_\<phi>.sound_monitor
-lemmas complete_monitor = monitor_\<phi>.complete_monitor
-lemmas sliceable_M = monitor_\<phi>.sliceable_M
 (* Correctness of output of the monitor (verdicts of \phi is the output) *)
 lemmas wf_mstate_minit = verimon_wf_mstate_minit
 lemmas wf_mstate_mstep = wf_mstate_mstep

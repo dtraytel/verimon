@@ -1822,11 +1822,14 @@ let check_formula s f =
     | Some mode -> expand_let mode f
   in
 
-  (* Check monitorability *)
-  let check_mon = if !Misc.verified then Verified_adapter.is_monitorable s
+  (* Check monitorability.  The verified monitor (-verified) normalizes and rewrites the formula
+     itself, as VeriMon does, within its verified initialization (Dense_VeriMon.thy); the front
+     end then neither rewrites the formula nor checks it against anything but that
+     preparation. *)
+  let check_mon = if !Misc.verified then Verified_adapter.is_monitorable (not !no_rw) s
     else is_monitorable
   in
-  if !no_rw then
+  if !no_rw || !Misc.verified then
     let is_mon, reason = check_mon f in
     if !Misc.verbose || !Misc.checkf then
       begin

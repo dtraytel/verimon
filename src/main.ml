@@ -231,7 +231,7 @@ let _ =
     "-stop_at_first_viol", Arg.Set Misc.stop_at_first_viol, "\tStop at first encountered violation";
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
-    "-verified", Arg.Set Misc.verified, "\tRun the verified monitor (the dense evaluator of thys/MFODL_Monitor_Dense, proved to simulate MonPoly's verified kernel)";
+    "-verified", Arg.Set Misc.verified, "\tRun the verified monitor (the dense evaluator of thys/MFODL_Monitor_Dense, proved to simulate MonPoly's verified kernel) on the formula as VeriMon prepares it (verified normalization and rewriting, Dense_VeriMon.thy; -no_rw and -no_mw apply)";
     "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
     "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-vdense", Arg.Set Misc.verified_dense, "\tDeprecated, accepted and ignored: -verified always runs the verified dense evaluator";

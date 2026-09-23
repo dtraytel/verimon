@@ -73,20 +73,17 @@ let monitor_gen parse dbschema logfile fv f =
   assert (List.length fv_pos = List.length fv);
 
   let cf = Verified_adapter.convert_formula dbschema f in
-  let tf = Verified_adapter.type_check_formula dbschema cf in
-  match tf with
-    Verified.Monitor.Inr cf ->
-      let cf = if !no_mw then cf else Verified.Monitor.convert_multiway cf in
-      let ctxt = Monitor.{
-        fv_pos;
-        cur_tp = 0;
-        cur_ts = MFOTL.ts_invalid;
-        cur_db = Verified_adapter.empty_db ();
-        cur_batch = Verified_adapter.empty_batch ();
-        cur_state = Verified_adapter.init cf;
-      } in
-      ignore (parse dbschema logfile ctxt)
-  | Verified.Monitor.Inl e -> failwith ("Error during verified type checking: " ^ e)
+  let cur_state =
+    Verified_adapter.init ~mw:(not !no_mw) ~rw:(not !Rewriting.no_rw) dbschema cf in
+  let ctxt = Monitor.{
+    fv_pos;
+    cur_tp = 0;
+    cur_ts = MFOTL.ts_invalid;
+    cur_db = Verified_adapter.empty_db ();
+    cur_batch = Verified_adapter.empty_batch ();
+    cur_state;
+  } in
+  ignore (parse dbschema logfile ctxt)
 
 let monitor_string = monitor_gen (fun dbschema log -> P.parse dbschema (Lexing.from_string log))
 let monitor = monitor_gen P.parse_file
