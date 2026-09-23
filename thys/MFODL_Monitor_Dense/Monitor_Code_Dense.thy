@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Agg_Code Dense_Push
+  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Agg_Upkeep Dense_Push
 begin
 (*>*)
 
@@ -17,8 +17,9 @@ text \<open>
 
   The export is entirely within this session.  The code-generator setup it relies on -- the
   monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
-  and @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, the rank trees and result tables of the
-  aggregations of @{theory MFODL_Monitor_Dense.Dense_Agg_Code}, and the front end's entry
+  and @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, the rank trees of the aggregations of
+  @{theory MFODL_Monitor_Dense.Dense_Agg_Code} and their windows' one-pass upkeep of
+  @{theory MFODL_Monitor_Dense.Dense_Agg_Upkeep}, and the front end's entry
   points -- is stated here too, so nothing of the imperative refinement of session
   MFODL\_Monitor\_Imp, and in particular nothing of its unverified heap-resident dense monitor,
   is imported, let alone reachable.

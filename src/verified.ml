@@ -4698,6 +4698,12 @@ let rec wide_mask_at
 
 let rec wide_mask n cs = wide_mask_at zero_nata n cs;;
 
+let rec count_list _A
+  x0 y = match x0, y with [], y -> zero_nata
+    | x :: xs, y ->
+        (if eq _A x y then plus_nata (count_list _A xs y) one_nata
+          else count_list _A xs y);;
+
 let rec sorted_wrt p x1 = match p, x1 with p, [] -> true
                      | p, x :: ys -> list_all (p x) ys && sorted_wrt p ys;;
 
@@ -8719,47 +8725,17 @@ let rec de_gsw_add_new_table
         then (t, (pend, (append_queue (t, x) win, de_gcnt_add x cc)))
         else (t, (append_queue (t, x) pend, (win, cc)))));;
 
+let rec cnt_ins_fold
+  f g xs c b =
+    fold (fun t (ca, acc) ->
+           (match edl_lookup_nat ca t
+             with None -> (edl_update_nat t one_nata ca, f (g t) acc)
+             | Some k -> (edl_update_nat t (plus_nata k one_nata) ca, acc)))
+      xs (c, b);;
+
 let rec ucnt_add1
   t c = (match edl_lookup_nat c t with None -> edl_update_nat t one_nata c
           | Some k -> edl_update_nat t (plus_nata k one_nata) c);;
-
-let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
-
-let ed_fold_cfc_agg5_v :
-  ((((event_data option) list),
-     (bool * (((event_data option) list), list_aux) mapping))
-     comp_fun_commute ->
-    bool * (((event_data option) list), list_aux) mapping ->
-      ((event_data option) list) set ->
-        bool * (((event_data option) list), list_aux) mapping)
-    boxed
-  = Box (set_fold_cfc
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let ed_fold_cfc_agg4_v :
-  ((((event_data option) list),
-     (bool * (((event_data option) list), (nat * Z.t)) mapping))
-     comp_fun_commute ->
-    bool * (((event_data option) list), (nat * Z.t)) mapping ->
-      ((event_data option) list) set ->
-        bool * (((event_data option) list), (nat * Z.t)) mapping)
-    boxed
-  = Box (set_fold_cfc
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
-
-let ed_fold_cfc_agg3_v :
-  ((((event_data option) list),
-     (bool * (((event_data option) list), nat) mapping))
-     comp_fun_commute ->
-    bool * (((event_data option) list), nat) mapping ->
-      ((event_data option) list) set ->
-        bool * (((event_data option) list), nat) mapping)
-    boxed
-  = Box (set_fold_cfc
-          ((ceq_list (ceq_option ceq_event_data)),
-            (ccompare_list (ccompare_option ccompare_event_data))));;
 
 let rec balanced1
   t1 t2 =
@@ -8891,7 +8867,7 @@ let rec insert_rank
                      else ed_mempty_rank)))
       else (v, m));;
 
-let rec insert_rank_cfc xb xc = Abs_comp_fun_commute (insert_rank xb xc);;
+let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
 
 let ed_impl_of_sum_v :
   ((((event_data option) list), (nat * Z.t)) mapping_rbt ->
@@ -8936,8 +8912,6 @@ let rec insert_sum
                    | (Some (_, _), EString _) -> (false, ed_mempty_sum)))
       else (v, m));;
 
-let rec insert_sum_cfc xa = Abs_comp_fun_commute (insert_sum xa);;
-
 let ed_impl_of_nat_v :
   ((((event_data option) list), nat) mapping_rbt ->
     (((event_data option) list), nat) rbt)
@@ -8973,6 +8947,51 @@ let rec insert_cnt
                          ed_update_nat group (plus_nata i one_nata) m)))
       else (v, m));;
 
+let rec udwiden x0 xs = match x0, xs with [], xs -> []
+                  | false :: bs, xs -> None :: udwiden bs xs
+                  | true :: bs, x :: xs -> Some x :: udwiden bs xs
+                  | true :: bs, [] -> [];;
+
+let ed_fold_cfc_agg5_v :
+  ((((event_data option) list),
+     (bool * (((event_data option) list), list_aux) mapping))
+     comp_fun_commute ->
+    bool * (((event_data option) list), list_aux) mapping ->
+      ((event_data option) list) set ->
+        bool * (((event_data option) list), list_aux) mapping)
+    boxed
+  = Box (set_fold_cfc
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let ed_fold_cfc_agg4_v :
+  ((((event_data option) list),
+     (bool * (((event_data option) list), (nat * Z.t)) mapping))
+     comp_fun_commute ->
+    bool * (((event_data option) list), (nat * Z.t)) mapping ->
+      ((event_data option) list) set ->
+        bool * (((event_data option) list), (nat * Z.t)) mapping)
+    boxed
+  = Box (set_fold_cfc
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let ed_fold_cfc_agg3_v :
+  ((((event_data option) list),
+     (bool * (((event_data option) list), nat) mapping))
+     comp_fun_commute ->
+    bool * (((event_data option) list), nat) mapping ->
+      ((event_data option) list) set ->
+        bool * (((event_data option) list), nat) mapping)
+    boxed
+  = Box (set_fold_cfc
+          ((ceq_list (ceq_option ceq_event_data)),
+            (ccompare_list (ccompare_option ccompare_event_data))));;
+
+let rec insert_rank_cfc xb xc = Abs_comp_fun_commute (insert_rank xb xc);;
+
+let rec insert_sum_cfc xa = Abs_comp_fun_commute (insert_sum xa);;
+
 let rec insert_cnt_cfc xa = Abs_comp_fun_commute (insert_cnt xa);;
 
 let rec insert_maggaux
@@ -9007,11 +9026,6 @@ let rec edl_image_to_wide
     foldb (ccompare_list ccompare_event_data) (fun x -> ed_insert (h x)) rbt
       ed_bot;;
 
-let rec udwiden x0 xs = match x0, xs with [], xs -> []
-                  | false :: bs, xs -> None :: udwiden bs xs
-                  | true :: bs, x :: xs -> Some x :: udwiden bs xs
-                  | true :: bs, [] -> [];;
-
 let rec de_udtabw n cs d = edl_image_to_wide (udwiden (wide_mask n cs)) d;;
 
 let rec udagg_wide p w d = de_udtabw (suc w) (dagg_ccols p w) d;;
@@ -9022,12 +9036,36 @@ let rec uag_ins
   p w t c ax =
     insert_maggauxa (dagg_args p w) (udagg_wide p w (ucnt_enter t c)) ax;;
 
+let rec uag_step_ins
+  p w x c ax =
+    (let msk = wide_mask (suc w) (dagg_ccols p w) in
+     let k = count_list equal_bool msk true in
+     let xs = edl_csl x in
+      (if unbox edl_finite_v x &&
+            list_all (fun t -> equal_nata (size_lista t) k) xs
+        then (let args = dagg_args p w in
+              let g = udwiden msk in
+               (match ax with None -> (fold ucnt_add1 xs c, None)
+                 | Some (CntAux m) ->
+                   (let (ca, (v, ma)) =
+                      cnt_ins_fold (insert_cnt args) g xs c (true, m) in
+                     (ca, (if v then Some (CntAux ma) else None)))
+                 | Some (SumAux m) ->
+                   (let (ca, (v, ma)) =
+                      cnt_ins_fold (insert_sum args) g xs c (true, m) in
+                     (ca, (if v then Some (SumAux ma) else None)))
+                 | Some (RankAux (m, ty)) ->
+                   (let (ca, (v, ma)) =
+                      cnt_ins_fold (insert_rank args ty) g xs c (true, m) in
+                     (ca, (if v then Some (RankAux (ma, ty)) else None)))))
+        else (ucnt_add x c, uag_ins p w x c ax)));;
+
 let rec usa_add_new_table
   args p x aux =
     (let ((t, (pend, (win, cc))), ax) = aux in
       (if memL (args_ivl args) zero_nata
-        then ((t, (pend, (append_queue (t, x) win, ucnt_add x cc))),
-               uag_ins p (args_n args) x cc ax)
+        then (let (cca, a) = uag_step_ins p (args_n args) x cc ax in
+               ((t, (pend, (append_queue (t, x) win, cca))), a))
         else ((t, (append_queue (t, x) pend, (win, cc))), ax)));;
 
 let rec udsx_add_new_table
@@ -9282,13 +9320,22 @@ let rec de_gsw_add_new_ts
      let (winb, ccb) = de_gsw_expire args nt wina cca in
       (nt, (penda, (winb, ccb))));;
 
+let rec cnt_del_fold
+  f g xs c b =
+    fold (fun t (ca, acc) ->
+           (match edl_lookup_nat ca t with None -> (ca, acc)
+             | Some k ->
+               (if less_eq_nat k one_nata
+                 then (edl_delete_nat t ca,
+                        (if equal_nata k one_nata then f (g t) acc else acc))
+                 else (edl_update_nat t (minus_nata k one_nata) ca, acc))))
+      xs (c, b);;
+
 let rec ucnt_del1
   t c = (match edl_lookup_nat c t with None -> c
           | Some k ->
             (if less_eq_nat k one_nata then edl_delete_nat t c
               else edl_update_nat t (minus_nata k one_nata) c));;
-
-let rec ucnt_del t c = fold ucnt_del1 (edl_csl t) c;;
 
 let rec equal_tree _A
   x0 x1 = match x0, x1 with Leaf, Node (x21, x22, x23) -> false
@@ -9426,7 +9473,7 @@ let rec delete_rank
                  (a, b))
       else (v, m));;
 
-let rec delete_rank_cfc xb xc = Abs_comp_fun_commute (delete_rank xb xc);;
+let rec ucnt_del t c = fold ucnt_del1 (edl_csl t) c;;
 
 let rec ed_rbt_delete_sum
   xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_sum_v xc));;
@@ -9456,8 +9503,6 @@ let rec delete_sum
                    | (Some (_, _), EString _) -> (false, ed_mempty_sum)))
       else (v, m));;
 
-let rec delete_sum_cfc xa = Abs_comp_fun_commute (delete_sum xa);;
-
 let rec ed_rbt_delete_nat
   xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_nat_v xc));;
 
@@ -9480,6 +9525,10 @@ let rec delete_cnt
                            else ed_update_nat group (minus_nata i one_nata)
                                   m))))
       else (v, m));;
+
+let rec delete_rank_cfc xb xc = Abs_comp_fun_commute (delete_rank xb xc);;
+
+let rec delete_sum_cfc xa = Abs_comp_fun_commute (delete_sum xa);;
 
 let rec delete_cnt_cfc xa = Abs_comp_fun_commute (delete_cnt xa);;
 
@@ -9515,13 +9564,37 @@ let rec uag_del
   p w t c ax =
     delete_maggauxa (dagg_args p w) (udagg_wide p w (ucnt_leave t c)) ax;;
 
+let rec uag_step_del
+  p w x c ax =
+    (let msk = wide_mask (suc w) (dagg_ccols p w) in
+     let k = count_list equal_bool msk true in
+     let xs = edl_csl x in
+      (if unbox edl_finite_v x &&
+            list_all (fun t -> equal_nata (size_lista t) k) xs
+        then (let args = dagg_args p w in
+              let g = udwiden msk in
+               (match ax with None -> (fold ucnt_del1 xs c, None)
+                 | Some (CntAux m) ->
+                   (let (ca, (v, ma)) =
+                      cnt_del_fold (delete_cnt args) g xs c (true, m) in
+                     (ca, (if v then Some (CntAux ma) else None)))
+                 | Some (SumAux m) ->
+                   (let (ca, (v, ma)) =
+                      cnt_del_fold (delete_sum args) g xs c (true, m) in
+                     (ca, (if v then Some (SumAux ma) else None)))
+                 | Some (RankAux (m, ty)) ->
+                   (let (ca, (v, ma)) =
+                      cnt_del_fold (delete_rank args ty) g xs c (true, m) in
+                     (ca, (if v then Some (RankAux (ma, ty)) else None)))))
+        else (ucnt_del x c, uag_del p w x c ax)));;
+
 let rec usa_expire
   args p nt win cc ax =
     (match safe_hd win with (None, wina) -> (wina, (cc, ax))
       | (Some e, wina) ->
         (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, (cc, ax))
-          else usa_expire args p nt (tl_queue wina) (ucnt_del (snd e) cc)
-                 (uag_del p (args_n args) (snd e) cc ax)));;
+          else (let (a, b) = uag_step_del p (args_n args) (snd e) cc ax in
+                 usa_expire args p nt (tl_queue wina) a b)));;
 
 let rec usa_move
   args p nt pend win cc ax =

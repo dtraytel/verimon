@@ -8141,3 +8141,68 @@ not per tuple of the window.  On `aggonce-max50` after 21.27, the result table i
 run and the per-group mapping's upkeep 19.8% as tuples enter and 19.2% as they leave.  21.22
 priced an incremental result (only the groups that change) and declined it; I starts by
 re-profiling the family on the filtered front end, and records here what it does.
+
+## 21.29 I: the aggregation over a window, kept up in one pass per table
+
+21.28 named the grouped aggregation over a past window as the next round: 14 of the 30 slowest
+formulas, slow at a window of 5 as at 50.  Profiled on the filtered front end, `aggonce-cnt5`
+(2.08 G instructions on the 1500-point log) spends its window's upkeep like this:
+
+| step, per entering or leaving table | share |
+|---|---|
+| widening the entering and leaving tuples to the kernel's frame (`udagg_wide`), into a new tree each | 6.2% |
+| selecting the tuples that newly enter or finally leave by their count (`ucnt_enter`, `ucnt_leave`), into a new tree each | 6.0% |
+| the kernel's fold over those trees (`insert_maggaux`, `delete_maggaux`) | 11.4% |
+| the separate passes that update the counts (`ucnt_add`, `ucnt_del`) | 10.9% |
+
+The two intermediate trees exist only to be folded over once, and every tuple's count is read
+twice, once to select it and once to update it.  21.22's price for an incremental *result* does
+not apply here: this is the upkeep of the per-group mapping, which every time point does anyway.
+
+`Dense_Agg_Upkeep.thy` does it in one pass over the table's sorted list, which reads each tuple's
+count once, updates it, and hands the widened tuple straight to the kernel's step when the count
+says it enters or leaves.  Three facts carry the proof, and the only one about aggregation was
+already proved for the kernel:
+
+* the kernel's steps commute (`insert_cnt_comm` and its five siblings, already proved for the
+  kernel), so its `Finite_Set.fold` over the widened, filtered table is a fold over the table's
+  list with the filter and the widening applied per tuple -- provided the list is distinct and
+  the widening is injective on it (`fold_image_filter_list`);
+* the widening `udwiden` is injective on the tuples of the length its mask expects
+  (`inj_on_udwiden`) -- which the code checks, since the equation cannot assume it;
+* the tuples of a table are distinct, so each tuple's count is unaffected by the updates of the
+  tuples before it in the same pass (`cnt_ins_fold_eq`, `cnt_del_fold_eq`).
+
+`uag_step_ins_eq` and `uag_step_del_eq` combine them: under the guard that the table is finite and
+its tuples have the widening's length, the one pass computes exactly the counts and the aggregate
+that the two passes did; otherwise the code takes the two passes.  `usa_add_new_table` and
+`usa_expire` get code equations through the combined steps.  Nothing of the kernel's aggregation
+structure, of the node's invariant or of the naturality proofs moves -- the change is code
+equations proved against the ones they replace -- and the export differs from the previous one in
+five new functions and the two window steps.
+
+Instructions on the 1500-point log, and wall time on the suite's `base` log (median of five,
+interleaved; ratio to MonPoly):
+
+| formula | instructions | wall before → after | ratio before → after |
+|---|---|---|---|
+| `pol-threshold` | −13.0% | 1.21 s → 1.03 s | 2.05 → **1.74** |
+| `aggonce-sum5` | −11.3% | 1.21 s → 1.10 s | 1.50 → 1.37 |
+| `aggonce-cnt5` | −11.2% | 1.16 s → 1.00 s | 1.46 → 1.26 |
+| `aggonce-cnt50` | −9.5% | | |
+| `aggonce-max50` | −9.2% | 1.85 s → 1.65 s | 2.07 → **1.84** |
+| `aggonce-min50` | | 1.90 s → 1.70 s | 2.21 → **1.99** |
+| `aggonce-cnt500` | −7.4% | | |
+| `aggonce-med20` | −5.9% | | |
+| `aggonce-avg50` | −5.6% | | |
+| `pol-sumfilter` | | 1.68 s → 1.48 s | 1.82 → 1.60 |
+| `aggguard-sum` | | 1.42 s → 1.22 s | 1.64 → 1.42 |
+| `aggonce-rate80` | | 2.74 s → 2.35 s | 1.69 → 1.44 |
+| `onceex-50` (control) | 0.0% | | |
+| `since-nu50` (control) | | 1.70 s → 1.75 s | 1.94 → 1.99 |
+
+The saving is largest where the window is short or the result is filtered away, because there the
+upkeep is the larger part of the run; MED and AVG gain least, because their per-group step (a rank
+tree, a running sum and count) is itself the bigger cost.  The corpus is unchanged (601 same, 0
+differing), the differential tests agree, and `dense_rank.t` covers the six aggregations over
+sliding windows with repeated values.
