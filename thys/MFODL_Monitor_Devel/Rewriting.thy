@@ -1260,6 +1260,9 @@ lemma fvi_frz_atom: "frz_ok \<alpha> \<Longrightarrow> Formula.fvi b (project (f
   by (auto simp: Formula.fvi_iff_fv[of _ b "project \<alpha>"] fv_project frz_ok_fvi image_iff
     intro!: bexI[of _ "_ + b"])
 
+lemma fvi_frz_atom': "frz_ok \<alpha> \<Longrightarrow> (\<Union>x\<in>{0..<nfv \<alpha>} \<inter> Collect ((\<le>) b). {x - b}) = Formula.fvi b (project \<alpha>)"
+  using fvi_frz_atom[of \<alpha> b] by simp
+
 (* TODO: Unused definition, move to formula or delete? *)
 definition trigger :: "'a Formula.formula \<Rightarrow> \<I> \<Rightarrow> 'a Formula.formula \<Rightarrow> 'a Formula.formula"
   where "trigger \<phi> I \<psi> = \<not>\<^sub>F (\<not>\<^sub>F \<phi> \<^bold>S I \<not>\<^sub>F \<psi>)"
@@ -1287,66 +1290,11 @@ proof(induction \<alpha> t arbitrary:b rule:rewrite.induct)
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis using 2 by fastforce
-  next
-    case False
-    then show ?thesis using 2 by auto
-  qed
+    by (auto simp: Let_def fvi_frz_atom')
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases "prop_cond \<alpha> \<beta>")
-    case T1:True
-    then show ?thesis
-    proof(cases "prop_cond \<beta> \<alpha>")
-      case T2:True
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        thm 3(1)
-        case True
-        then show ?thesis using 3[where ?b=b] T1 T2 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] T1 T2 by auto
-      qed
-    next
-      case F1:False
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3[where ?b=b] T1 F1 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] T1 F1 by auto
-      qed
-    qed
-  next
-    case F1:False
-    then show ?thesis
-      proof(cases "prop_cond \<beta> \<alpha>")
-      case T2:True
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3 F1 T2 by auto
-      next
-        case False
-        then show ?thesis using 3 F1 T2 by auto
-      qed
-    next
-      case F1:False
-      then show ?thesis
-      proof(cases "prop_cond \<gamma> \<alpha>")
-        case True
-        then show ?thesis using 3[where ?b=b] F1 F1 by auto
-      next
-        case False
-        then show ?thesis using 3[where ?b=b] F1 F1 by auto
-      qed
-    qed
-  qed
+    by (auto simp: Let_def fvi_frz_atom')
 next
   case (4 \<alpha> t \<beta>)
   then show ?case
@@ -1380,149 +1328,35 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-      apply(simp add: 6(1)[symmetric])
-    by fastforce
+    by (auto simp: Let_def fvi_frz_atom')
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-      apply(simp add: 7(1)[symmetric])
-      by fastforce
+    by (auto simp: Let_def fvi_frz_atom')
 next
-  case (10 \<alpha> I \<beta> b t)
+  case (8 \<alpha> I \<beta> t)
   then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis 
-      using 10
-      by (clarsimp simp: historically_def)
-  next
-    case False
-    then show ?thesis
-      using 10
-      by (clarsimp simp: historically_def)
-  qed
+    by (auto simp: Let_def fvi_frz_atom')
 next
-  case (11 \<alpha> I \<beta> b t)
+  case (9 \<alpha> I \<beta> t)
   then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis 
-      using 11
-      by (clarsimp simp: once_def always_def)
-  next
-    case False
-    then show ?thesis
-      using 11
-      by (clarsimp simp: once_def always_def)
-  qed
+    by (auto simp: Let_def fvi_frz_atom')
+next
+  case (10 \<alpha> I \<beta> t)
+  then show ?case
+    by (auto simp: Let_def fvi_frz_atom' historically_def)
+next
+  case (11 \<alpha> I \<beta> t)
+  then show ?case
+    by (auto simp: Let_def fvi_frz_atom' once_def always_def)
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
   then show ?case
-  proof(cases)
-    case a(*TODO use simplifier for these proofs, also prove shift_fv2*)
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by auto
-  next
-    case b
-    then show ?thesis
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      then show ?thesis using b 14 by blast
-    next
-      case False
-      then show ?thesis using b 14 by fastforce
-    qed
-  next
-    case c
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by blast
-  next
-    case d
-    then show ?thesis using 14
-      apply(simp add: 14(1)[symmetric])
-      by blast
-  next
-    case e
-    then show ?thesis
-      proof(cases "t=Swapped")
-        case True
-        then show ?thesis using e 14
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      next
-        case False
-        then show ?thesis using e 14 not_swapped[OF False]
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      qed
-  qed
+    by (cases t) (auto simp: Let_def fvi_frz_atom' split: if_splits)
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
   then show ?case
-  proof(cases)
-    case a(*TODO use simplifier for these proofs, also prove shift_fv2*)
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by auto
-  next
-    case b
-    then show ?thesis
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      then show ?thesis using b 15 by blast
-    next
-      case False
-      then show ?thesis using b 15 by fastforce
-    qed
-  next
-    case c
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by blast
-  next
-    case d
-    then show ?thesis using 15
-      apply(simp add: 15(1)[symmetric])
-      by blast
-  next
-    case e
-    then show ?thesis
-      proof(cases "t=Swapped")
-        case True
-        then show ?thesis using e 15
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      next
-        case False
-        then show ?thesis using e 15 not_swapped[OF False]
-          apply(simp only:rewrite.simps if_False Let_def fix_r.simps)
-          apply(simp only:project.simps)
-          by auto
-      qed
-    qed
+    by (cases t) (auto simp: Let_def split: if_splits)
 next
   case ("16_12" v va vb vc vd I r)
   then show ?case by fastforce
@@ -1890,40 +1724,60 @@ proof -
     by (metis (mono_tags, lifting) sat_project)
 qed
 
+lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
+  unfolding nfv_project[symmetric] Formula.nfv_def rewrite_fv[symmetric] ..
+
+lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
+  by (induction \<phi> arbitrary: k) (auto simp: fv_regex_alt regex.set_map)
+
+lemma preds_rewrite: "p \<in> preds (project (rewrite \<phi> t)) \<Longrightarrow> p \<in> preds (project \<phi>)"
+proof (induction \<phi> t rule: rewrite.induct)
+  case (34 I r t)
+  then show ?case by (auto simp: fv_regex_alt regex.set_map)
+next
+  case (35 I r t)
+  then show ?case by (auto simp: fv_regex_alt regex.set_map)
+qed (auto simp: Let_def nfv_project project_shift once_def eventually_def historically_def always_def
+  split: if_splits)
+
+lemma fresh_rewrite[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
+  using preds_rewrite by blast
+
+lemma sat_fun_upd_fresh[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> sat \<sigma> (V(p \<mapsto> X)) v i \<phi> = sat \<sigma> V v i \<phi>"
+  unfolding sat_project[symmetric]
+  by (rule not_contains_pred_sat) (auto dest: contains_pred_preds)
+
+lemma sat_frz_atom[simp]: "nfv \<alpha> = n \<Longrightarrow>
+  sat \<sigma> (V((q, n) \<mapsto> \<lambda>w j. sat \<sigma> V w i \<alpha>)) v k (frz_atom q n) = sat \<sigma> V v i \<alpha>"
+  unfolding sat_project[symmetric]
+  by (auto simp: fv_project comp_def dest!: fvi_less_nfv_r intro!: Formula.sat_fv_cong)
+
 lemma sat_rewrite: "sat \<sigma> V v i (rewrite r t) = sat \<sigma> V v i (fix_r r t)"
-proof(induction r t arbitrary: v i rule: rewrite.induct)
+proof(induction r t arbitrary: V v i rule: rewrite.induct)
   case (1 \<alpha> \<beta> \<gamma> t)
-  thm rsub_2[OF f_conr2_1_t 1(1-2)]
   then show ?case 
     using sat_main_1 by simp
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
   then show ?case 
-    using sat_main_2 by simp
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
   then show ?case 
-    using sat_main_3 by simp
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (4 \<alpha> t \<beta>)
-
   then show ?case
   proof(cases "prop_cond \<alpha> \<beta>")
     case True
     moreover have obs: "project (shiftI_r 0 \<alpha>) = shiftI 0 (project \<alpha>)" 
       by (rule project_shift[of 0])
-    ultimately show ?thesis using
-       sat_main_4
-      apply (simp only: fix_r.simps rewrite.simps if_True)
-      apply(simp only: rsub_1[OF f_conr_1_t 4(1)[OF True] ] fix_r.simps)
-      apply(simp only:  project.simps  fix_r.simps project_shift)
-      by (metis obs project.simps(12) project.simps(10) sat_project)(*remove embedding*)
+    ultimately show ?thesis
+      using 4(1)[OF True] sat_main_4 by (simp add: sat_project[symmetric] obs)
   next
     case False
     then show ?thesis
-      apply(simp only: fix_r.simps rewrite.simps if_False Let_def)
-      apply(simp only: rsub_2[OF f_conr2_2_t 4(2)[OF False] rsub_1[OF f_conr_1_t 4(3)[OF False refl]]] fix_r.simps)
-      done
+      using 4(2,3)[OF False] by simp
   qed
 next
   case (5 \<alpha> \<beta> t)
@@ -1933,233 +1787,62 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases"(prop_cond \<alpha> \<beta>) \<and> (bounded I)")
-    case True
-  then show ?thesis
-    apply(simp only:rewrite.simps rsub_2[OF f_conr2_2_t 6(1)[OF True] rsub_2[OF f_conr2_5_t 6(2,3)[OF True]]] split:if_splits)
-    apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_10[symmetric]) (*rewrite lemma*)
-    apply(simp)
-    done
-next
-  case F1:False
-  then show ?thesis
-  proof(cases "(prop_cond \<alpha> \<gamma>) \<and> (bounded I)")
-    case True
-    then show ?thesis using F1
-      apply(simp only: rewrite.simps rsub_2[OF f_conr2_2_t 6(4)[OF F1 True] rsub_2[OF f_conr2_5_t 6(5,6)[OF F1 True]]] split:if_splits)
-      apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_12[symmetric]) (*rewrite lemma*)
-    apply(simp)
-      done
-next
-  case False
-  then show ?thesis using F1 6
-    apply(simp only:rewrite.simps Let_def  split:if_splits)
-    apply(simp only: rsub_2[OF f_conr2_2_t 6(7)[OF F1 False] rsub_2[OF f_conr2_5_t 6(8)[OF F1 False refl] 6(9)[OF F1 False refl refl]]])
-    apply(simp)
-      done
-qed
-qed
-
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-  proof(cases"(prop_cond \<alpha> \<beta>) \<and> (bounded I)")
-    case True
-  then show ?thesis
-    apply(simp only:rewrite.simps rsub_2[OF f_conr2_2_t 7(1)[OF True] rsub_2[OF f_conr2_6_t 7(2,3)[OF True]]] split:if_splits)
-    apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_11[symmetric]) (*rewrite lemma*)
-    apply(simp)
-    done
-next
-  case F1:False
-  then show ?thesis
-  proof(cases "(prop_cond \<alpha> \<gamma>) \<and> (bounded I)")
-    case True
-    then show ?thesis using F1
-      apply(simp only: rewrite.simps rsub_2[OF f_conr2_2_t 7(4)[OF F1 True] rsub_2[OF f_conr2_6_t 7(5,6)[OF F1 True]]] split:if_splits)
-      apply(simp only: project.simps  fix_r.simps)(*remove embedding*)
-    apply(simp only: sat_main_13[symmetric]) (*rewrite lemma*)
-    apply(simp)
-      done
-next
-  case False
-  then show ?thesis using F1
-    apply(simp only:rewrite.simps Let_def  split:if_splits)
-    apply(simp only: rsub_2[OF f_conr2_2_t 7(7)[OF F1 False] rsub_2[OF f_conr2_6_t 7(8)[OF F1 False refl] 7(9)[OF F1 False refl refl]]])
-    apply(simp)
-      done
-  qed
-  qed
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (8 \<alpha> I \<beta> t)
-  then show ?case by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (9 \<alpha> I \<beta> t)
-  then show ?case  by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
-case (10 \<alpha> I \<beta> t)
-  then show ?case  by (auto simp add:)
+  case (10 \<alpha> I \<beta> t)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (11 \<alpha> I \<beta> t)
-  then show ?case by (auto simp add:)
+  then show ?case
+    by (auto simp: Let_def frz_name_fresh)
 next
   case (12 \<alpha> I \<beta> t)
   then show ?case
-proof(cases "prop_cond \<alpha> \<beta> ")
-  case True
-  then show ?thesis using rsub_2[OF f_conr2_2_t 12(1)[OF True] rsub_1[OF f_conr_6_t rsub_2[OF f_conr2_2_t rsub_1[OF f_conr_5_t 12(1)[OF True]] 12(3)[OF True]]]] sat_main_22[symmetric]
-    apply(simp only: rewrite.simps fix_r.simps  split:if_splits)
-    apply(simp split: nat.splits)
-    using "12.IH"(1) "12.IH"(3) by force
-next
-  case False
-  then show ?thesis 
-    using rsub_2[OF f_conr2_2_t 12(4)[OF False] rsub_1[OF f_conr_6_t 12(5)[OF False refl]]] by simp
-qed
+    by (auto split: nat.splits)
 next
   case (13 \<alpha> I \<beta> t)
   then show ?case by (auto simp add: )
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> bounded I \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> bounded I \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
-  then show ?case
-  proof(cases)
-    case a
-    then have ex:"\<not> mem I 0" by auto
-    from a show ?thesis
-          apply(simp del: sat.simps add: rsub_2[OF f_conr2_5_t 14(1) 14(2)[OF refl a ]]  split:if_splits )
-          apply(simp only:sat_main_6[OF ex, symmetric])(*apply rewrite lemma*)
-      done
+  have mem0: "\<not> mem I 0 \<Longrightarrow> mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<Longrightarrow> j \<le> i \<Longrightarrow> i \<in> {j<..i}" for j
+    by (cases "j = i") auto
+  show ?case
+  proof (cases t)
+    case Same
+    with 14 mem0 show ?thesis
+      by (auto 5 0 simp: Let_def frz_name_fresh)
   next
-    case b
-    then have ex:"\<not> mem I 0" by auto
-    have swap: "sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I (And (Eventually I \<gamma>) \<beta>)) = sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I \<beta>) \<longleftrightarrow>
-                sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I (And (Eventually I \<gamma>) \<beta>)) = sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I \<beta>)" 
-      by (simp add: ;fast)
-    from b show ?thesis using swap
-      apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(1) 14(3)[OF refl b]]  split:if_splits) (*remove recursion*)
-        apply(rule sat_main_6[OF ex, symmetric])(*apply rewrite lemma*)
-      done
-next
-  case c
-  then show ?thesis
-    apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(4)[OF refl c] 14(1)]  split:if_splits) (*remove recursion*)
-    apply(rule sat_main_8[symmetric])
-    done
-next
-  case d
-  have swap:"sat \<sigma> V v i (Since (And (Once (init_ivl I) \<gamma>) \<beta>) I (And \<alpha> \<gamma>)) =
-             sat \<sigma> V v i (Since (And (Once (init_ivl I) \<gamma>) \<beta>) I (And \<gamma> \<alpha>))"
-            "sat \<sigma> V v i (Since \<beta> I (And \<alpha> \<gamma>)) = sat \<sigma> V v i (Since \<beta> I (And \<gamma> \<alpha>))" 
-    by auto
-  from d show ?thesis
-    apply(simp only:rewrite.simps)
-    apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(5)[OF refl d] 14(1)]  split:if_splits) (*remove recursion*)
-    apply(simp only: swap)
-    apply(rule sat_main_8[symmetric])
-    done
-next
-  case e
-  then show ?thesis
-  proof(cases "t=Swapped")
-    case True
-    then show ?thesis using e
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(6)[OF refl e]] 14(1)  split:if_splits) (*remove recursion*)
-      done
-  next
-    case False
-    then show ?thesis using e not_swapped[OF False]
-      apply(simp only:rewrite.simps fix_r.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_5_t 14(1) 14(6)[OF refl e]]  split:if_splits) (*remove recursion*)
-      done
+    case Swapped
+    with 14 show ?thesis
+      using sat_main_8[of \<sigma> V v i \<beta> I \<alpha> \<gamma>] sat_main_8[of \<sigma> V v i \<beta> I \<gamma> \<alpha>]
+      by (auto simp: Let_def)
   qed
-qed
 next
-case (15 \<alpha> \<gamma> I \<beta> t)
-  let ?a = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
-  let ?b = "t=Same \<and> \<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
-  let ?c = "t=Swapped \<and> prop_cond \<alpha> \<beta>"
-  let ?d = "t=Swapped \<and> prop_cond \<gamma> \<beta>"
-  consider (a) ?a |
-           (b) "\<not>?a" "?b" |
-           (c) "\<not>?a" "\<not>?b" "?c" |
-           (d) "\<not>?a" "\<not>?b" "\<not>?c" "?d" |
-           (e) "\<not>?a" "\<not>?b" "\<not>?c" "\<not>?d"  by argo
-  then show ?case
-  proof(cases)
-    case a
-    then have ex:"\<not> mem I 0" by auto
-    from a show ?thesis
-          apply(simp del: sat.simps add: rsub_2[OF f_conr2_6_t 15(1) 15(2)[OF refl a ]]  split:if_splits )
-          apply(simp only:sat_main_7[OF ex, symmetric])(*apply rewrite lemma*)
-      done
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  show ?case
+  proof (cases t)
+    case Same
+    with 15 show ?thesis
+      using sat_main_7[of I \<sigma> V v i \<alpha> \<gamma> \<beta>] sat_main_7[of I \<sigma> V v i \<gamma> \<alpha> \<beta>]
+      by (auto simp: Let_def)
   next
-    case b
-    then have ex:"\<not> mem I 0" by auto
-    have swap: "sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I (And (Once I \<gamma>) \<beta>)) = sat \<sigma> V v i (Until (And \<gamma> \<alpha>) I (And (Once I \<gamma>) \<beta>))"
-               "sat \<sigma> V v i (Since (And \<alpha> \<gamma>) I \<beta>) = sat \<sigma> V v i (Since (And \<gamma> \<alpha>) I \<beta>)"
-      by auto
-    from b show ?thesis
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(1) 15(3)[OF refl b]]  split:if_splits) (*remove recursion*)
-      apply(simp only: swap)
-      apply(simp only: sat_main_7[OF ex, symmetric])(*apply rewrite lemma*)
-      apply(auto)
-      done
-next
-  case c
-  thm 15(1)
-  thm 15(4)[OF refl ]
-  thm rsub_2[OF f_conr2_5_t  ]
-  thm sat_main_8[symmetric]
-  then show ?thesis
-    apply(simp only:rewrite.simps)
-        apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(4)[OF refl c] 15(1)]  split:if_splits) (*remove recursion*)
-    apply(rule sat_main_9[symmetric])
-    done
-next
-  case d
-  have swap:"sat \<sigma> V v i (Until (And (Eventually (init_ivl I) \<gamma>) \<beta>) I (And \<alpha> \<gamma>)) =
-             sat \<sigma> V v i (Until (And (Eventually (init_ivl I) \<gamma>) \<beta>) I (And \<gamma> \<alpha>))"
-            "sat \<sigma> V v i (Until \<beta> I (And \<alpha> \<gamma>)) = sat \<sigma> V v i (Until \<beta> I (And \<gamma> \<alpha>))" 
-    by auto
-  from d show ?thesis using swap
-    apply(simp only:rewrite.simps)
-    apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(5)[OF refl d] 15(1)]  split:if_splits) (*remove recursion*)
-    apply(simp only: swap)
-    apply(rule sat_main_9[symmetric])
-    done
-next
-  case e
-  then show ?thesis
-  proof(cases "t=Swapped")
-    case True
-    then show ?thesis using e
-      apply(simp only:rewrite.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(6)[OF refl e]] 15(1)  split:if_splits) (*remove recursion*)
-      done
-  next
-    case False
-    then show ?thesis using e not_swapped[OF False]
-      apply(simp only:rewrite.simps fix_r.simps)
-      apply(simp del: sat.simps  add: rsub_2[OF f_conr2_6_t 15(1) 15(6)[OF refl e]]  split:if_splits) (*remove recursion*)
-      done
+    case Swapped
+    with 15 show ?thesis
+      by (auto simp: Let_def)
   qed
-qed
 next
   case (24 y \<omega> b' f \<phi> t)
   then show ?case
