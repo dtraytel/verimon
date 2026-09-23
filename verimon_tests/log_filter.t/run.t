@@ -104,6 +104,44 @@ Timestamps must not decrease, and the verified kernel does not support commands:
   ERROR: Commands are not supported by the verified kernel
   [1]
 
+The errors of an entry are checked for in the order of MonPoly's parser: its predicates are
+looked up before the order of the timestamps is checked, and its fields are converted after:
+
+  $ printf '@2 P(1)\n@1 S(1)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @2 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Predicate S was not defined in the signature.
+  [1]
+  $ printf '@2 P(1)\n@1 P(a)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @2 (time point 0): (1)
+  ERROR: Out of order timestamp 1 (previous: 2)
+  [1]
+
+In a large signature, the predicates are looked up in a mapping, and those whose events are
+skipped in a set:
+
+  $ for i in $(seq 1 40); do echo "A$i(int)"; done > big.sig
+  $ echo 'A7(x) AND NOT A8(x)' > big.mfotl
+  $ printf '@1 A7(1) A7(2) A8(2) A9(x) A40(1,2)\n@2 A7(3) A1(1)\n@3 A7(a)\n' > l.log
+  $ monpoly -verified -sig big.sig -formula big.mfotl -log l.log
+  @1 (time point 0): (1)
+  @2 (time point 1): (3)
+  ERROR while parsing log:
+  l.log:3:1: Expected type int for predicate A7, field number 1
+  [1]
+  $ monpoly -verified -sig big.sig -formula big.mfotl -log l.log -nofilterrel
+  ERROR while parsing log:
+  l.log:1:1: Wrong tuple length for predicate A40 (expected: 1, actual: 2)
+  [1]
+  $ printf '@1 A7(1) A7(2) A8(2)\n@2 A7(3) B(1)\n' > l.log
+  $ monpoly -verified -sig big.sig -formula big.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Predicate B was not defined in the signature.
+  [1]
+
 Syntax errors are reported as MonPoly's parser reports them:
 
   $ printf '@1 P(1)\n@2 P(2 \n' > l.log

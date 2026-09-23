@@ -215,7 +215,6 @@ module Monitor : sig
       (event_data list) set ->
         ((string * nat), ((event_data list) set list)) mapping ->
           ((string * nat), ((event_data list) set list)) mapping
-  val utable_of_list : (event_data list) list -> (event_data list) set
   val uempty_db : ((string * nat), ((event_data list) set list)) mapping
   val efinish :
     (string -> bool) ->
@@ -275,6 +274,7 @@ module Monitor : sig
   val urbt_fold :
     (event_data list -> 'a -> 'a) ->
       ((event_data list), unit) mapping_rbt -> 'a -> 'a
+  val utable_of_list : (event_data list) list -> (event_data list) set
 end = struct
 
 type nat = Nat of Z.t;;
@@ -2643,6 +2643,14 @@ let preorder_string8 = ({ord_preorder = ord_string8} : string preorder);;
 
 let order_string8 = ({preorder_order = preorder_string8} : string order);;
 
+let ceq_string8a : (string -> string -> bool) option = Some Stdlib.(=);;
+
+let ceq_string8 = ({ceq = ceq_string8a} : string ceq);;
+
+let set_impl_string8a : (string, set_impla) phantom = Phantom Set_RBT;;
+
+let set_impl_string8 = ({set_impl = set_impl_string8a} : string set_impl);;
+
 let linorder_string8 = ({order_linorder = order_string8} : string linorder);;
 
 let rec compare_string8
@@ -3102,8 +3110,8 @@ type argpos = Same | Swapped;;
 
 type vconf =
   VConf of
-    string list * string list * (string * ty list) list *
-      (string -> float option);;
+    (string -> bool) * (string * ty list) list *
+      (string * nat -> (ty list) option) * (string -> float option);;
 
 type 'a formulaa = Preda of string * trm list |
   Leta of string * 'a formulaa * 'a formulaa |
@@ -10105,13 +10113,14 @@ let rec strict_sorted_by
     | c, [] -> true
     | c, [v] -> true;;
 
-let rec edl_rbt_of_sorted_list
-  xa = Mapping_RBTa
-         (if strict_sorted_by edl_comparator xa
-           then rbtreeify (mapa (fun x -> (x, ())) xa)
-           else rbt_comp_bulkload edl_comparator (mapa (fun x -> (x, ())) xa));;
+let rec map_t f xs = rev (fold (fun x -> (fun a -> f x :: a)) xs []);;
 
-let rec utable_of_list xs = RBT_set (edl_rbt_of_sorted_list xs);;
+let rec urbt_of_sorted
+  xs = Mapping_RBTa
+         (if strict_sorted_by edl_comparator xs
+           then rbtreeify (map_t (fun x -> (x, ())) xs)
+           else rbt_comp_bulkload edl_comparator
+                  (map_t (fun x -> (x, ())) xs));;
 
 let rec mapping_impl_choose2
   x y = match x, y with Mapping_RBT, Mapping_RBT -> Mapping_RBT
@@ -10176,8 +10185,9 @@ let rec sort_t _A
 let rec build_db
   evs = fold (fun (k, xs) ->
                uinsert_table_into_db k
-                 (utable_of_list
-                   (sort_t (ccompare_list ccompare_event_data) xs)))
+                 (RBT_set
+                   (urbt_of_sorted
+                     (sort_t (ccompare_list ccompare_event_data) (rev xs)))))
           (group_evs evs) uempty_db;;
 
 let rec vtp
@@ -13546,41 +13556,14 @@ let rec udminit_verimon
       (fun psi -> udminit_push (if mw then convert_multiway psi else psi))
       (prepare_verimon rw siga phi);;
 
-let rec free_preds
-  = function Pred (e, ts) -> [(e, size_lista ts)]
-    | Let (p, phi, psi) ->
-        free_preds phi @
-          filtera
-            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
-            (free_preds psi)
-    | Frz (p, phi, psi) ->
-        free_preds phi @
-          filtera
-            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
-            (free_preds psi)
-    | LetPast (p, phi, psi) ->
-        filtera
-          (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
-          (free_preds phi @ free_preds psi)
-    | Eq (t1, t2) -> []
-    | Less (t1, t2) -> []
-    | LessEq (t1, t2) -> []
-    | Neg phi -> free_preds phi
-    | Or (phi, psi) -> free_preds phi @ free_preds psi
-    | And (phi, psi) -> free_preds phi @ free_preds psi
-    | Ands phi_s -> maps free_preds phi_s
-    | Exists (t, phi) -> free_preds phi
-    | Agg (y, omega, tys, f, phi) -> free_preds phi
-    | Prev (i, phi) -> free_preds phi
-    | Next (i, phi) -> free_preds phi
-    | Since (phi, i, psi) -> free_preds phi @ free_preds psi
-    | Until (phi, i, psi) -> free_preds phi @ free_preds psi
-    | Trigger (phi, i, psi) -> free_preds phi @ free_preds psi
-    | Release (phi, i, psi) -> free_preds phi @ free_preds psi
-    | MatchF (i, r) -> regex_list free_preds r
-    | MatchP (i, r) -> regex_list free_preds r
-    | TP t -> []
-    | TS t -> [];;
+let rec ix_list
+  m p = (match lookupa (ccompare_string8, equal_string8) m p with None -> []
+          | Some l -> l);;
+
+let rec index_lookup
+  i pn =
+    map_option snd
+      (find (fun (n, _) -> equal_nata n (snd pn)) (ix_list i (fst pn)));;
 
 let rec lsig_find
   x0 q n = match x0, q, n with [], q, n -> None
@@ -13589,6 +13572,26 @@ let rec lsig_find
           else lsig_find s q n);;
 
 let rec lsig_lookup s (q, n) = lsig_find s q n;;
+
+let rec ix_add
+  (p, tys) m =
+    updateb (ccompare_string8, equal_string8) p
+      ((size_lista tys, tys) :: ix_list m p) m;;
+
+let rec lsig_index
+  s = foldr ix_add s
+        (mapping_empty ccompare_string8 (of_phantom mapping_impl_string8a));;
+
+let rec lsig_lookup_fun
+  s = (if less_nat (size_lista s) (nat_of_integer (Z.of_int 32))
+        then lsig_lookup s else (let a = lsig_index s in index_lookup a));;
+
+let rec vskip_fun
+  xs = (if less_nat (size_lista xs) (nat_of_integer (Z.of_int 32))
+         then (fun q -> list_ex (String.equal q) xs)
+         else (let a = set (ceq_string8, ccompare_string8, set_impl_string8) xs
+                 in
+                (fun q -> member (ceq_string8, ccompare_string8) q a)));;
 
 let rec lsig_tsig s = map_sig (fun a -> TCst a) (lsig_lookup s);;
 
@@ -13641,6 +13644,51 @@ let rec wf_formula
     | TP v -> true
     | TS v -> true;;
 
+let rec free_preds
+  = function Pred (e, ts) -> [(e, size_lista ts)]
+    | Let (p, phi, psi) ->
+        free_preds phi @
+          filtera
+            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+            (free_preds psi)
+    | Frz (p, phi, psi) ->
+        free_preds phi @
+          filtera
+            (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+            (free_preds psi)
+    | LetPast (p, phi, psi) ->
+        filtera
+          (fun x -> not (equal_proda equal_string8 equal_nat x (p, nfv phi)))
+          (free_preds phi @ free_preds psi)
+    | Eq (t1, t2) -> []
+    | Less (t1, t2) -> []
+    | LessEq (t1, t2) -> []
+    | Neg phi -> free_preds phi
+    | Or (phi, psi) -> free_preds phi @ free_preds psi
+    | And (phi, psi) -> free_preds phi @ free_preds psi
+    | Ands phi_s -> maps free_preds phi_s
+    | Exists (t, phi) -> free_preds phi
+    | Agg (y, omega, tys, f, phi) -> free_preds phi
+    | Prev (i, phi) -> free_preds phi
+    | Next (i, phi) -> free_preds phi
+    | Since (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Until (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Trigger (phi, i, psi) -> free_preds phi @ free_preds psi
+    | Release (phi, i, psi) -> free_preds phi @ free_preds psi
+    | MatchF (i, r) -> regex_list free_preds r
+    | MatchP (i, r) -> regex_list free_preds r
+    | TP t -> []
+    | TS t -> [];;
+
+let rec vskip
+  filt phi s =
+    (if filt
+      then filtera
+             (fun q ->
+               not (membera equal_string8 (mapa fst (free_preds phi)) q))
+             (mapa fst s)
+      else []);;
+
 let rec vinit
   mw rw filt s pf phi =
     (if not (wf_formula phi) then Inl VI_WF
@@ -13649,13 +13697,12 @@ let rec vinit
              | Inr ust ->
                (let n = uvdfail_nodes (udmstate_m ust) in
                  (if equal_nata n zero_nata
-                   then Inr (VConf ((if filt then mapa fst (free_preds phi)
-                                      else mapa fst s),
-                                     mapa fst s, s, pf),
+                   then Inr (VConf (vskip_fun (vskip filt phi s), s,
+                                     lsig_lookup_fun s, pf),
                               (einit, (ust, zero_nata)))
                    else Inl (VI_FRAGMENT n)))));;
 
-let rec vc_lsig (VConf (x1, x2, x3, x4)) = x3;;
+let rec vc_lookup (VConf (x1, x2, x3, x4)) = x3;;
 
 let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 
@@ -13766,22 +13813,29 @@ let rec conv_fields
     | pf, uu, [], i -> Inr [];;
 
 let rec conv_event
-  pf s e =
+  pf l e =
     (let (p, fs) = e in
      let q = (fun x -> x) p in
-      (match lsig_lookup s (q, size_lista fs)
+      (match l (q, size_lista fs)
         with None -> Inl (VE_PREDICATE (p, size_lista fs))
         | Some tys ->
           map_sum (fun (a, b) -> VE_FIELD (p, a, b)) (fun a -> (q, a))
             (conv_fields pf tys fs zero_nata)));;
 
 let rec conv_events_acc
-  pf s acc x3 = match pf, s, acc, x3 with pf, s, acc, [] -> Inr (rev acc)
-    | pf, s, acc, e :: es ->
-        (match conv_event pf s e with Inl a -> Inl a
-          | Inr x -> conv_events_acc pf s (x :: acc) es);;
+  pf l acc x3 = match pf, l, acc, x3 with pf, l, acc, [] -> Inr (rev acc)
+    | pf, l, acc, e :: es ->
+        (match conv_event pf l e with Inl a -> Inl a
+          | Inr x -> conv_events_acc pf l (x :: acc) es);;
 
-let rec conv_events pf s es = conv_events_acc pf s [] es;;
+let rec conv_events pf l es = conv_events_acc pf l [] es;;
+
+let rec pred_error
+  l x1 = match l, x1 with l, [] -> None
+    | l, (p, fs) :: es ->
+        (match l ((fun x -> x) p, size_lista fs)
+          with None -> Some (VE_PREDICATE (p, size_lista fs))
+          | Some _ -> pred_error l es);;
 
 let rec less_eq_int k l = Z.leq (integer_of_int k) (integer_of_int l);;
 
@@ -13791,31 +13845,26 @@ let rec bnat_of
   s = (match bint_of s with None -> None
         | Some i -> (if less_eq_int zero_int i then Some (nat i) else None));;
 
-let rec conv_entry
-  cf ts evs =
-    (match bnat_of ts with None -> Inl (VE_TIMESTAMP ts)
-      | Some t ->
-        map_sum id (fun xs -> (xs, t))
-          (conv_events (vc_pf cf) (vc_lsig cf) evs));;
-
 let rec vitem
   cf x z =
     (match x
       with O_ITEM (sp, Entry (ts, evs)) ->
-        (match conv_entry cf ts evs with Inl e -> (VO_ERROR (sp, e), z)
-          | Inr (xs, t) -> vtp sp xs t z)
+        (match bnat_of ts with None -> (VO_ERROR (sp, VE_TIMESTAMP ts), z)
+          | Some t ->
+            (match pred_error (vc_lookup cf) evs
+              with None ->
+                (if less_nat t (snd z)
+                  then (VO_ERROR (sp, VE_ORDER (t, snd z)), z)
+                  else (match conv_events (vc_pf cf) (vc_lookup cf) evs
+                         with Inl e -> (VO_ERROR (sp, e), z)
+                         | Inr xs -> vtp sp xs t z))
+              | Some e -> (VO_ERROR (sp, e), z)))
       | O_ITEM (sp, Command (c, _)) -> (VO_ERROR (sp, VE_COMMAND c), z)
       | O_ERROR (pos, e) -> (VO_ERROR (pos, VE_PARSE e), z));;
 
-let rec vc_sig (VConf (x1, x2, x3, x4)) = x2;;
+let rec vc_skip (VConf (x1, x2, x3, x4)) = x1;;
 
-let rec vc_rel (VConf (x1, x2, x3, x4)) = x1;;
-
-let rec vkeep
-  cf b =
-    (let q = (fun x -> x) b in
-      list_ex (String.equal q) (vc_rel cf) ||
-        not (list_ex (String.equal q) (vc_sig cf)));;
+let rec vkeep cf b = not (vc_skip cf ((fun x -> x) b));;
 
 let rec vitems_acc
   cf x1 z acc = match cf, x1, z, acc with cf, [], z, acc -> (rev acc, z)
@@ -13893,5 +13942,13 @@ let rec vfeed_chunk
       (vs, (est, mst)));;
 
 let rec urbt_fold x = foldb (ccompare_list ccompare_event_data) x;;
+
+let rec edl_rbt_of_sorted_list
+  xa = Mapping_RBTa
+         (if strict_sorted_by edl_comparator xa
+           then rbtreeify (mapa (fun x -> (x, ())) xa)
+           else rbt_comp_bulkload edl_comparator (mapa (fun x -> (x, ())) xa));;
+
+let rec utable_of_list xs = RBT_set (edl_rbt_of_sorted_list xs);;
 
 end;; (*struct Monitor*)

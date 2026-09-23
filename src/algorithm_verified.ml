@@ -198,17 +198,44 @@ let run_verified dbschema fname read fv f =
       last_pending := pending;
       Verified_log_parser.forget ln pending
     end in
+  (* The outputs up to the first error: those of the longest prefix of the chunk whose outputs
+     have no error (the outputs only grow with the input), which vfeed_chunks_online covers,
+     followed by the outputs of the whole chunk from the first error on.  After the first
+     error, the outputs are handled as they come. *)
+  let erred = ref false in
+  let is_error = function VM.VO_ERROR _ -> true | VM.VO_VERDICTS _ -> false in
+  let rec from_error = function
+    | [] -> []
+    | o :: os -> if is_error o then o :: os else from_error os in
+  let first_error s st outs =
+    let lo = ref 0 and hi = ref (String.length s) in
+    while !hi - !lo > 1 do
+      let mid = (!lo + !hi) / 2 in
+      if List.exists is_error (fst (VM.vfeed_chunk conf (String.sub s 0 mid) st)) then hi := mid
+      else lo := mid
+    done;
+    fst (VM.vfeed_chunk conf (String.sub s 0 !lo) st) @ from_error outs in
   let rec loop st =
     match read () with
     | Some s ->
         Verified_log_parser.push_chunk ln s;
-        let (outs, st) = VM.vfeed_chunk conf s st in
+        let (outs, st') = VM.vfeed_chunk conf s st in
+        let outs = if !erred || not (List.exists is_error outs) then outs
+          else (erred := true; first_error s st outs) in
         List.iter handle outs;
-        forget st;
-        loop st
+        forget st';
+        loop st'
     | None ->
         let fin = if !Misc.new_last_ts then Some (VM.nat_of_integer MFOTL.ts_max) else None in
-        List.iter handle (VM.vfinish conf fin st) in
+        let outs = VM.vfinish conf fin st in
+        let outs = if !erred || not (List.exists is_error outs) then outs
+          else begin
+            (* without the last time point, vrun_filtered covers the outputs if they have no
+               error *)
+            let outs0 = VM.vfinish conf None st in
+            if List.exists is_error outs0 then from_error outs else outs0 @ from_error outs
+          end in
+        List.iter handle outs in
   try loop st with Log_parser.Stop_parser -> ()
 
 (* The verdicts of a chunk are output together, so they survive the monitor's steps on the

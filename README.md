@@ -174,8 +174,10 @@ theorems state that the verdicts output for the bytes of a log are those
 that the specification of the formula prescribes for the trace prefix the
 log denotes, and that an error is reported exactly when the log,
 restricted to the predicates the parser keeps, denotes no prefix.  They
-cover the output up to the chunk of the input with the first error, not
-what is output after it (with `-ignore_parse_errors`).  Timestamps are
+cover the output up to the first error (for the chunk of the input with
+the first error, the driver outputs the verdicts of its longest prefix
+without an error), not what is output after it (with
+`-ignore_parse_errors`), nor which error is reported.  Timestamps are
 then natural numbers, and integers are written as for Zarith's
 `Z.of_string` except that a digit is required after the sign and the
 base prefix (`0x`, `0o` or `0b`).  Floats are read by OCaml's

@@ -27,8 +27,10 @@ text \<open>
   @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
   @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
   @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read.
-  The theorems say nothing about what is output after the first error, nor about the verdicts
-  output together with it, for the same chunk.
+  The theorems say nothing about which error is reported, what is output after the first error,
+  nor about the verdicts output together with it, for the same chunk; for that chunk, the driver
+  outputs the verdicts of its longest prefix whose outputs have no error, which the theorems
+  cover.
 
   The theorems take the reader of floats as a parameter, about which nothing is assumed: the
   front end passes OCaml's @{text float_of_string_opt}. That the generated code computes these
@@ -95,6 +97,58 @@ lemma lsig_lookup_code[code]: "lsig_lookup S (q, n) = lsig_find S q n"
 lemma lsig_lookup_length: "lsig_lookup S (p, n) = Some tys \<Longrightarrow> length tys = n"
   by (induction S) (auto simp: lsig_lookup_def split: if_splits)
 
+text \<open>For large signatures, the code looks predicates up in a mapping from their names to their
+  arities and argument types.\<close>
+
+definition ix_list :: "(Formula.name, (nat \<times> ty list) list) mapping \<Rightarrow> Formula.name \<Rightarrow> (nat \<times> ty list) list" where
+  "ix_list m p = (case Mapping.lookup m p of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
+
+fun ix_add :: "Formula.name \<times> ty list \<Rightarrow> (Formula.name, (nat \<times> ty list) list) mapping \<Rightarrow>
+    (Formula.name, (nat \<times> ty list) list) mapping" where
+  "ix_add (p, tys) m = Mapping.update p ((length tys, tys) # ix_list m p) m"
+
+definition lsig_index :: "lsig \<Rightarrow> (Formula.name, (nat \<times> ty list) list) mapping" where
+  "lsig_index S = fold ix_add (rev S) Mapping.empty"
+
+definition index_lookup :: "(Formula.name, (nat \<times> ty list) list) mapping \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ty list option" where
+  "index_lookup I pn = map_option snd (find (\<lambda>(n, _). n = snd pn) (ix_list I (fst pn)))"
+
+lemma ix_list_fold: "ix_list (fold ix_add xs m) p = [(length tys, tys). (q, tys) \<leftarrow> rev xs, q = p] @ ix_list m p"
+proof (induction xs arbitrary: m)
+  case (Cons x xs)
+  obtain q tys where x: "x = (q, tys)"
+    by (cases x)
+  show ?case
+    using Cons[of "ix_add x m"] by (auto simp: x ix_list_def split: if_splits)
+qed simp
+
+lemma ix_list_lsig_index: "ix_list (lsig_index S) p = [(length tys, tys). (q, tys) \<leftarrow> S, q = p]"
+proof -
+  have "ix_list Mapping.empty p = []"
+    by (simp add: ix_list_def)
+  then show ?thesis
+    by (simp add: lsig_index_def ix_list_fold)
+qed
+
+lemma index_lookup_lsig_index: "index_lookup (lsig_index S) = lsig_lookup S"
+proof (rule ext)
+  fix pn :: "Formula.name \<times> nat"
+  obtain p n where pn: "pn = (p, n)"
+    by (cases pn)
+  show "index_lookup (lsig_index S) pn = lsig_lookup S pn"
+    unfolding pn index_lookup_def ix_list_lsig_index lsig_lookup_def
+    by (induction S) (auto split: if_splits)
+qed
+
+text \<open>The lookup the conversion uses: in the list for small signatures, in the mapping for the
+  others.\<close>
+
+definition lsig_lookup_fun :: "lsig \<Rightarrow> Formula.name \<times> nat \<Rightarrow> ty list option" where
+  "lsig_lookup_fun S = (if length S < 32 then lsig_lookup S else (let I = lsig_index S in index_lookup I))"
+
+lemma lsig_lookup_fun[simp]: "lsig_lookup_fun S = lsig_lookup S"
+  by (simp add: lsig_lookup_fun_def index_lookup_lsig_index)
+
 subsection \<open>Converting events\<close>
 
 text \<open>A field of a given type. Integers are read as in @{theory Log_Parser.Log_Values}; floats
@@ -123,17 +177,19 @@ fun conv_fields :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty list \<
    | Some x \<Rightarrow> map_sum id (Cons x) (conv_fields pf ts fs (Suc i)))"
 | "conv_fields pf _ _ i = Inr []"
 
-definition conv_event :: "(bytes \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> bytes \<times> bytes list \<Rightarrow> verror + Formula.event" where
-  "conv_event pf S e = (case e of (p, fs) \<Rightarrow> let q = string8_of_bytes p in
-     (case lsig_lookup S (q, length fs) of
+definition conv_event :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow>
+    bytes \<times> bytes list \<Rightarrow> verror + Formula.event" where
+  "conv_event pf L e = (case e of (p, fs) \<Rightarrow> let q = string8_of_bytes p in
+     (case L (q, length fs) of
        None \<Rightarrow> Inl (VE_PREDICATE p (length fs))
      | Some tys \<Rightarrow> map_sum (\<lambda>(i, t). VE_FIELD p i t) (Pair q) (conv_fields pf tys fs 0)))"
 
-fun conv_events :: "(bytes \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list" where
-  "conv_events pf S [] = Inr []"
-| "conv_events pf S (e # es) = (case conv_event pf S e of
+fun conv_events :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow>
+    (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list" where
+  "conv_events pf L [] = Inr []"
+| "conv_events pf L (e # es) = (case conv_event pf L e of
      Inl err \<Rightarrow> Inl err
-   | Inr x \<Rightarrow> map_sum id (Cons x) (conv_events pf S es))"
+   | Inr x \<Rightarrow> map_sum id (Cons x) (conv_events pf L es))"
 
 subsection \<open>What an entry denotes\<close>
 
@@ -218,7 +274,7 @@ qed auto
 abbreviation abs_event :: "bytes \<times> bytes list \<Rightarrow> string \<times> string list" where
   "abs_event \<equiv> map_prod Rep_bytes (map Rep_bytes)"
 
-lemma conv_event_string: "opt_of_sum (conv_event pf S e) = event_of_string (sf pf) S (abs_event e)"
+lemma conv_event_string: "opt_of_sum (conv_event pf (lsig_lookup S) e) = event_of_string (sf pf) S (abs_event e)"
 proof -
   obtain p fs where e: "e = (p, fs)"
     by (cases e)
@@ -231,11 +287,11 @@ proof -
 qed
 
 lemma conv_events_string:
-  "opt_of_sum (conv_events pf S evs) = those (map (\<lambda>e. event_of_string (sf pf) S (abs_event e)) evs)"
+  "opt_of_sum (conv_events pf (lsig_lookup S) evs) = those (map (\<lambda>e. event_of_string (sf pf) S (abs_event e)) evs)"
 proof (induction evs)
   case (Cons e evs)
   show ?case
-  proof (cases "conv_event pf S e")
+  proof (cases "conv_event pf (lsig_lookup S) e")
     case (Inl err)
     with conv_event_string[of pf S e] show ?thesis
       by simp
@@ -249,18 +305,43 @@ qed simp
 text \<open>The code converts the events of a time point with an accumulator, so that the depth of the
   recursion does not grow with their number.\<close>
 
-fun conv_events_acc :: "(bytes \<Rightarrow> double option) \<Rightarrow> lsig \<Rightarrow> Formula.event list \<Rightarrow>
-    (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list" where
-  "conv_events_acc pf S acc [] = Inr (rev acc)"
-| "conv_events_acc pf S acc (e # es) = (case conv_event pf S e of
+fun conv_events_acc :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow>
+    Formula.event list \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list" where
+  "conv_events_acc pf L acc [] = Inr (rev acc)"
+| "conv_events_acc pf L acc (e # es) = (case conv_event pf L e of
      Inl err \<Rightarrow> Inl err
-   | Inr x \<Rightarrow> conv_events_acc pf S (x # acc) es)"
+   | Inr x \<Rightarrow> conv_events_acc pf L (x # acc) es)"
 
-lemma conv_events_acc: "conv_events_acc pf S acc es = map_sum id ((@) (rev acc)) (conv_events pf S es)"
-  by (induction pf S acc es rule: conv_events_acc.induct) (auto simp: map_sum_def split: sum.splits)
+lemma conv_events_acc: "conv_events_acc pf L acc es = map_sum id ((@) (rev acc)) (conv_events pf L es)"
+  by (induction pf L acc es rule: conv_events_acc.induct) (auto simp: map_sum_def split: sum.splits)
 
-lemma conv_events_code[code]: "conv_events pf S es = conv_events_acc pf S [] es"
-  by (cases "conv_events pf S es") (simp_all add: conv_events_acc)
+lemma conv_events_code[code]: "conv_events pf L es = conv_events_acc pf L [] es"
+  by (cases "conv_events pf L es") (simp_all add: conv_events_acc)
+
+text \<open>The first event of a predicate that the signature does not declare with its arity. As in
+  MonPoly's parser, these events are reported before the order of the timestamps is checked, and
+  the fields are converted after.\<close>
+
+fun pred_error :: "(Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror option" where
+  "pred_error L [] = None"
+| "pred_error L ((p, fs) # es) = (case L (string8_of_bytes p, length fs) of
+     None \<Rightarrow> Some (VE_PREDICATE p (length fs))
+   | Some _ \<Rightarrow> pred_error L es)"
+
+lemma conv_events_pred_error: "conv_events pf L es = Inr xs \<Longrightarrow> pred_error L es = None"
+proof (induction es arbitrary: xs)
+  case (Cons e es)
+  obtain p fs where e: "e = (p, fs)"
+    by (cases e)
+  obtain x where x: "conv_event pf L e = Inr x"
+    using Cons.prems by (cases "conv_event pf L e") auto
+  obtain ys where ys: "conv_events pf L es = Inr ys"
+    using Cons.prems x by (cases "conv_events pf L es") auto
+  obtain tys where "L (string8_of_bytes p, length fs) = Some tys"
+    using x by (cases "L (string8_of_bytes p, length fs)") (auto simp: e conv_event_def Let_def)
+  with Cons.IH[OF ys] show ?case
+    by (simp add: e)
+qed simp
 
 subsection \<open>Sorting\<close>
 
@@ -442,6 +523,39 @@ proof (rule mapping_eqI)
   qed
 qed
 
+text \<open>The groups hold their tuples in the reverse order of the log. The code reverses them before
+  sorting them, so that tuples that come sorted in the log are sorted in linear time, and builds
+  the tree from the sorted list with the comparator of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
+  and without a recursion as deep as the list.\<close>
+
+definition map_t :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
+  "map_t f xs = rev (fold (\<lambda>x acc. f x # acc) xs [])"
+
+lemma map_t[simp]: "map_t f xs = map f xs"
+proof -
+  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
+    by (induction xs arbitrary: acc) auto
+  then show ?thesis
+    by (simp add: map_t_def)
+qed
+
+definition urbt_of_sorted :: "event_data list list \<Rightarrow> event_data list set_rbt" where
+  "urbt_of_sorted = rbt_of_sorted_list"
+
+lemma urbt_of_sorted_code[code abstract]: "RBT_Mapping2.impl_of (urbt_of_sorted xs) =
+  (if strict_sorted_by edl_comparator xs then rbtreeify (map_t (\<lambda>x. (x, ())) xs)
+   else rbt_comp_bulkload edl_comparator (map_t (\<lambda>x. (x, ())) xs))"
+  by (simp add: urbt_of_sorted_def rbt_of_sorted_list.rep_eq ccomp_edl)
+
+lemma build_db_code[code]: "build_db evs =
+  fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_t (rev xs)))) db) (group_evs evs) uempty_db"
+proof -
+  have "utable_of_list (sort_t xs) = RBT_set (urbt_of_sorted (sort_t (rev xs)))" for xs
+    by (simp add: urbt_of_sorted_def RBT_set_rbt_of_sorted_list ID_ccompare_ed utable_of_list_def set_sort_t)
+  then show ?thesis
+    by (simp add: build_db_def)
+qed
+
 subsection \<open>The predicates of the formula\<close>
 
 text \<open>The predicates that occur freely in a formula (@{const Rewriting.preds}), as a list.\<close>
@@ -476,22 +590,30 @@ lemma set_free_preds[simp]: "set (free_preds \<phi>) = Rewriting.preds \<phi>"
 
 subsection \<open>The monitor on the log\<close>
 
-text \<open>The configuration: the names of the predicates the formula mentions, those of the
-  signature, the signature, and the reader of floats.\<close>
+text \<open>The configuration: which predicates' events to skip, the signature, the lookup of a
+  predicate in it, and the reader of floats.\<close>
 
-datatype vconf = VConf (vc_rel: "Formula.name list") (vc_sig: "Formula.name list") (vc_lsig: lsig)
-  (vc_pf: "bytes \<Rightarrow> double option")
+datatype vconf = VConf (vc_skip: "Formula.name \<Rightarrow> bool") (vc_lsig: lsig)
+  (vc_lookup: "Formula.name \<times> nat \<Rightarrow> ty list option") (vc_pf: "bytes \<Rightarrow> double option")
 
 text \<open>The parser keeps the events of the predicates whose names occur freely in the formula,
   and those of the predicates the signature does not declare, which the conversion reports. The
   events of the other predicates are neither converted nor checked.\<close>
 
 definition vkeep :: "vconf \<Rightarrow> bytes \<Rightarrow> bool" where
-  "vkeep cf b = (let q = string8_of_bytes b in q \<in> set (vc_rel cf) \<or> q \<notin> set (vc_sig cf))"
+  "vkeep cf b = (\<not> vc_skip cf (string8_of_bytes b))"
 
-lemma vkeep_code[code]:
-  "vkeep cf b = (let q = string8_of_bytes b in list_ex (str8_eq q) (vc_rel cf) \<or> \<not> list_ex (str8_eq q) (vc_sig cf))"
-  by (auto simp: vkeep_def str8_eq_def list_ex_iff)
+text \<open>The predicates whose events the parser skips: in a list for few predicates, in a set for
+  many.\<close>
+
+definition vskip :: "bool \<Rightarrow> tysym Formula.formula \<Rightarrow> lsig \<Rightarrow> Formula.name list" where
+  "vskip filt \<phi> S = (if filt then filter (\<lambda>q. q \<notin> set (map fst (free_preds \<phi>))) (map fst S) else [])"
+
+definition vskip_fun :: "Formula.name list \<Rightarrow> Formula.name \<Rightarrow> bool" where
+  "vskip_fun xs = (if length xs < 32 then (\<lambda>q. list_ex (str8_eq q) xs) else (let A = set xs in (\<lambda>q. q \<in> A)))"
+
+lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
+  by (auto simp: vskip_fun_def str8_eq_def list_ex_iff)
 
 text \<open>The state of the monitor proper is that of the dense monitor and the last timestamp; that of
   the whole monitor includes the parser's.\<close>
@@ -510,18 +632,24 @@ definition vtp :: "integer \<Rightarrow> Formula.event list \<Rightarrow> nat \<
 definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list \<times> nat" where
   "conv_entry cf ts evs = (case bnat_of ts of
      None \<Rightarrow> Inl (VE_TIMESTAMP ts)
-   | Some t \<Rightarrow> map_sum id (\<lambda>xs. (xs, t)) (conv_events (vc_pf cf) (vc_lsig cf) evs))"
+   | Some t \<Rightarrow> map_sum id (\<lambda>xs. (xs, t)) (conv_events (vc_pf cf) (vc_lookup cf) evs))"
 
 text \<open>An item that does not denote a time point is reported, and the monitor's state does not
-  change.\<close>
+  change. The errors are checked for in the order of MonPoly's parser: the timestamp, the
+  predicates of the events, the order of the timestamps, and then the fields of the events.\<close>
 
 definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vitem cf x z = (case x of
      O_ERROR pos e \<Rightarrow> (VO_ERROR pos (VE_PARSE e), z)
    | O_ITEM sp (Command c args) \<Rightarrow> (VO_ERROR sp (VE_COMMAND c), z)
-   | O_ITEM sp (Entry ts evs) \<Rightarrow> (case conv_entry cf ts evs of
-       Inl e \<Rightarrow> (VO_ERROR sp e, z)
-     | Inr (xs, t) \<Rightarrow> vtp sp xs t z))"
+   | O_ITEM sp (Entry ts evs) \<Rightarrow> (case bnat_of ts of
+       None \<Rightarrow> (VO_ERROR sp (VE_TIMESTAMP ts), z)
+     | Some t \<Rightarrow> (case pred_error (vc_lookup cf) evs of
+         Some e \<Rightarrow> (VO_ERROR sp e, z)
+       | None \<Rightarrow> if t < snd z then (VO_ERROR sp (VE_ORDER t (snd z)), z)
+         else (case conv_events (vc_pf cf) (vc_lookup cf) evs of
+           Inl e \<Rightarrow> (VO_ERROR sp e, z)
+         | Inr xs \<Rightarrow> vtp sp xs t z))))"
 
 fun vitems :: "vconf \<Rightarrow> out list \<Rightarrow> vmstate \<Rightarrow> vout list \<times> vmstate" where
   "vitems cf [] z = ([], z)"
@@ -558,7 +686,7 @@ definition vinit :: "bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> ls
      (case udminit_verimon mw rw (lsig_tsig S) \<phi> of
        Inl e \<Rightarrow> Inl (VI_PREPARE e)
      | Inr ust \<Rightarrow> (let n = uvdfail_nodes (udmstate_m ust) in
-         if n = 0 then Inr (VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf, (einit, ust, 0))
+         if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
 text \<open>For the theorems: the whole input, in chunks, and the verdicts in the output.\<close>
@@ -634,22 +762,36 @@ definition conv_item :: "vconf \<Rightarrow> bytes item \<Rightarrow> (Formula.e
   "conv_item cf x = (case x of Entry ts evs \<Rightarrow> opt_of_sum (conv_entry cf ts evs) | Command c args \<Rightarrow> None)"
 
 lemma conv_item_string:
-  "map_option (apfst set) (conv_item cf x) = tp_of_item (sf (vc_pf cf)) (vc_lsig cf) (map_item Rep_bytes x)"
+  assumes "vc_lookup cf = lsig_lookup (vc_lsig cf)"
+  shows "map_option (apfst set) (conv_item cf x) = tp_of_item (sf (vc_pf cf)) (vc_lsig cf) (map_item Rep_bytes x)"
 proof (cases x)
   case (Entry ts evs)
   have "those (map (event_of_string (sf (vc_pf cf)) (vc_lsig cf)) (map abs_event evs)) =
-    opt_of_sum (conv_events (vc_pf cf) (vc_lsig cf) evs)"
-    by (simp add: conv_events_string comp_def)
+    opt_of_sum (conv_events (vc_pf cf) (vc_lookup cf) evs)"
+    by (simp add: assms conv_events_string comp_def)
   then show ?thesis
     by (auto simp: Entry conv_item_def tp_of_item_def conv_entry_def bnat_of_correct opt_of_sum_def
       split: option.splits sum.splits)
 qed (simp add: conv_item_def tp_of_item_def)
 
 lemma vitem_None: "conv_item cf e = None \<Longrightarrow> \<exists>err. vitem cf (O_ITEM sp e) z = (VO_ERROR sp err, z)"
-  by (auto simp: vitem_def conv_item_def opt_of_sum_def split: item.splits sum.splits)
+  by (auto simp: vitem_def conv_item_def conv_entry_def opt_of_sum_def split: item.splits sum.splits option.splits)
 
-lemma vitem_Some: "conv_item cf e = Some (xs, t) \<Longrightarrow> vitem cf (O_ITEM sp e) z = vtp sp xs t z"
-  by (auto simp: vitem_def conv_item_def opt_of_sum_def split: item.splits sum.splits)
+lemma vitem_Some:
+  assumes "conv_item cf e = Some (xs, t)"
+  shows "vitem cf (O_ITEM sp e) z = vtp sp xs t z"
+proof -
+  obtain ts evs where e: "e = Entry ts evs"
+    using assms by (cases e) (auto simp: conv_item_def)
+  obtain t' where t: "bnat_of ts = Some t'"
+    using assms by (cases "bnat_of ts") (auto simp: e conv_item_def conv_entry_def)
+  obtain ys where c: "conv_events (vc_pf cf) (vc_lookup cf) evs = Inr ys"
+    using assms by (cases "conv_events (vc_pf cf) (vc_lookup cf) evs") (auto simp: e t conv_item_def conv_entry_def)
+  have "ys = xs" "t' = t"
+    using assms by (simp_all add: e t c conv_item_def conv_entry_def)
+  then show ?thesis
+    using conv_events_pred_error[OF c] by (simp add: vitem_def e t c vtp_def)
+qed
 
 lemma vitems_append: "vitems cf (xs @ ys) z = (case vitems cf xs z of (vs1, z1) \<Rightarrow>
   (case vitems cf ys z1 of (vs2, z2) \<Rightarrow> (vs1 @ vs2, z2)))"
@@ -828,23 +970,28 @@ proof (induction ys arbitrary: a)
     by auto
 qed simp
 
-lemma those_conv_item: "those (map (tp_of_item (sf (vc_pf cf)) (vc_lsig cf)) (abs_items es)) =
-  map_option (map (apfst set)) (those (map (conv_item cf) es))"
-  by (simp add: comp_def conv_item_string[symmetric] those_map_option[symmetric])
+lemma those_conv_item:
+  assumes "vc_lookup cf = lsig_lookup (vc_lsig cf)"
+  shows "those (map (tp_of_item (sf (vc_pf cf)) (vc_lsig cf)) (abs_items es)) =
+    map_option (map (apfst set)) (those (map (conv_item cf) es))"
+  by (simp add: comp_def conv_item_string[OF assms, symmetric] those_map_option[symmetric])
 
 definition fin_tps :: "nat option \<Rightarrow> (Formula.event list \<times> nat) list" where
   "fin_tps fin = (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [([], t)])"
 
-lemma prefix_of_items_abs: "prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) fin (abs_items es) =
-  (case those (map (conv_item cf) es) of
-    None \<Rightarrow> None
-  | Some tps \<Rightarrow> (let tps' = map (apfst set) (tps @ fin_tps fin) in
-      if sorted (map snd tps') then Some (prefix_of_list tps') else None))"
-  unfolding prefix_of_items_def those_conv_item
+lemma prefix_of_items_abs:
+  assumes "vc_lookup cf = lsig_lookup (vc_lsig cf)"
+  shows "prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) fin (abs_items es) =
+    (case those (map (conv_item cf) es) of
+      None \<Rightarrow> None
+    | Some tps \<Rightarrow> (let tps' = map (apfst set) (tps @ fin_tps fin) in
+        if sorted (map snd tps') then Some (prefix_of_list tps') else None))"
+  unfolding prefix_of_items_def those_conv_item[OF assms]
   by (auto simp: fin_tps_def Let_def split: option.splits)
 
 lemma vitems_cases:
   fixes cf fin pos ust xs
+  assumes lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
   defines "V \<equiv> (case vitems cf xs (ust, 0) of
       (vs, z') \<Rightarrow> vs @ (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [fst (vtp pos [] t z')]))"
     and "L \<equiv> Option.bind (oks xs) (\<lambda>es. prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) fin (abs_items es))"
@@ -877,7 +1024,7 @@ proof -
       then have "has_verror V"
         using V vs by simp
       moreover from None have "L = None"
-        by (simp add: L prefix_of_items_abs)
+        by (simp add: L prefix_of_items_abs[OF lk])
       ultimately show thesis
         by (rule err)
     next
@@ -885,7 +1032,7 @@ proof -
       note tps = this
       let ?tps = "tps @ fin_tps fin"
       have L': "L = (if sorted (map snd ?tps) then Some (prefix_of_list (map (apfst set) ?tps)) else None)"
-        by (simp add: L prefix_of_items_abs tps Let_def comp_def)
+        by (simp add: L prefix_of_items_abs[OF lk] tps Let_def comp_def)
       have A: "\<not> has_verror vs \<longleftrightarrow> sorted (0 # map snd tps)"
         using vitems_ok[OF \<open>oks ?xs = Some es\<close> vs] vitems_noerr[OF \<open>oks ?xs = Some es\<close> tps, of 0 ust] vs tps
         by fastforce
@@ -928,6 +1075,7 @@ qed
 
 lemma vrun_cases:
   fixes cf fin ust ss
+  assumes lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
   defines "L \<equiv> log_prefix (sk (vkeep cf)) (sf (vc_pf cf)) (vc_lsig cf) fin (concat (map Rep_bytes ss))"
     and "V \<equiv> vrun cf fin (einit, (ust, 0)) ss"
   obtains (err) "has_verror V" "L = None"
@@ -942,7 +1090,7 @@ proof -
     using eparse_filter[of ?k ss] unfolding L_def log_prefix_def
     by (cases "oks ?xs"; cases "parse_log (concat (map Rep_bytes ss))") auto
   show thesis
-  proof (cases rule: vitems_cases[where cf=cf and xs="?xs" and ust=ust and fin=fin and pos=pos])
+  proof (cases rule: vitems_cases[where cf=cf and xs="?xs" and ust=ust and fin=fin and pos=pos, OF lk, case_names err ok])
     case err
     then show thesis
       using that(1) V L by simp
@@ -955,6 +1103,7 @@ qed
 
 lemma vfeed_chunks_cases:
   fixes cf ust ss
+  assumes lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
   defines "V \<equiv> fst (vfeed_chunks cf ss (einit, (ust, 0)))"
     and "L \<equiv> Option.bind (fstream_run (sk (vkeep cf)) (concat (map Rep_bytes ss)) fstream_init)
       (\<lambda>(es, _). prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) None es)"
@@ -970,7 +1119,7 @@ proof -
     using efeed_chunks_online[of ?k ss] unfolding L_def
     by (cases "oks ?xs"; cases "fstream_run (sk ?k) (concat (map Rep_bytes ss)) fstream_init") auto
   show thesis
-  proof (cases rule: vitems_cases[where cf=cf and xs="?xs" and ust=ust and fin=None and pos=0])
+  proof (cases rule: vitems_cases[where cf=cf and xs="?xs" and ust=ust and fin=None and pos=0, OF lk, case_names err ok])
     case err
     then show thesis
       using that(1) V L by simp
@@ -981,7 +1130,7 @@ proof -
   qed
 qed
 
-subsection \<open>The verdicts depend only on the events of the predicates the formula mentions\<close>
+subsection \<open>The verdicts depend only on the events of the predicates that occur freely\<close>
 
 text \<open>An event that a formula matches is one of a predicate that occurs freely in it.\<close>
 
@@ -1051,12 +1200,13 @@ definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times>
 
 lemma vinit_Inr:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
-  obtains ust where "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" "z = (einit, ust, 0)"
+  obtains ust where "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" "z = (einit, ust, 0)"
     "wf_formula \<phi>" "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "uvdfail_nodes (udmstate_m ust) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
-lemma sk_vkeep: "sk (vkeep (VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf)) = keep_spec filt \<phi> S"
-  by (auto simp: fun_eq_iff sk_def vkeep_def keep_spec_def string8_of_bytes_def Abs_bytes_inverse)
+lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
+  by (auto simp: fun_eq_iff sk_def vkeep_def vskip_fun vskip_def keep_spec_def string8_of_bytes_def
+      Abs_bytes_inverse)
 
 text \<open>Filtering the items restricts the prefix they denote to the events kept.\<close>
 
@@ -1160,19 +1310,21 @@ theorem vrun_filtered:
   shows "\<not> has_verror (vrun cf fin z ss) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust where cf: "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
+  obtain ust where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and z: "z = (einit, ust, 0)"
     and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
+  have lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
+    by (simp add: cf)
   have L: "L = log_prefix (sk (vkeep cf)) (sf (vc_pf cf)) (vc_lsig cf) fin (concat (map Rep_bytes ss))"
     by (simp add: L_def cf sk_vkeep)
   show "\<not> has_verror (vrun cf fin z ss) \<longleftrightarrow> L \<noteq> None"
-    by (cases rule: vrun_cases[where cf=cf and fin=fin and ust=ust and ss=ss]) (auto simp: L z)
+    by (cases rule: vrun_cases[where cf=cf and fin=fin and ust=ust and ss=ss, OF lk, case_names err ok]) (auto simp: L z)
   assume "L = Some \<pi>"
   then obtain items where "prefix_of_items (sf pf) S fin (map (filter_item (keep_spec filt \<phi> S)) items) = Some \<pi>"
     by (cases "parse_log (concat (map Rep_bytes ss))") (auto simp: L_def log_prefix_def)
   note w = prefix_of_items_wty[OF this]
   show "flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
-  proof (cases rule: vrun_cases[where cf=cf and fin=fin and ust=ust and ss=ss])
+  proof (cases rule: vrun_cases[where cf=cf and fin=fin and ust=ust and ss=ss, OF lk, case_names err ok])
     case err
     with \<open>L = Some \<pi>\<close> show ?thesis
       by (simp add: L)
@@ -1229,21 +1381,23 @@ theorem vfeed_chunks_online:
   shows "\<not> has_verror (fst (vfeed_chunks cf ss z)) \<longleftrightarrow> L \<noteq> None"
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
 proof -
-  obtain ust where cf: "cf = VConf (if filt then map fst (free_preds \<phi>) else map fst S) (map fst S) S pf" and z: "z = (einit, ust, 0)"
+  obtain ust where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and z: "z = (einit, ust, 0)"
     and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
+  have lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
+    by (simp add: cf)
   have L: "L = Option.bind (fstream_run (sk (vkeep cf)) (concat (map Rep_bytes ss)) fstream_init)
       (\<lambda>(es, _). prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) None es)"
     by (simp add: L_def cf sk_vkeep)
   show "\<not> has_verror (fst (vfeed_chunks cf ss z)) \<longleftrightarrow> L \<noteq> None"
-    by (cases rule: vfeed_chunks_cases[where cf=cf and ust=ust and ss=ss]) (auto simp: L z)
+    by (cases rule: vfeed_chunks_cases[where cf=cf and ust=ust and ss=ss, OF lk, case_names err ok]) (auto simp: L z)
   assume "L = Some \<pi>"
   then obtain es where "prefix_of_items (sf pf) S None es = Some \<pi>"
     by (cases "fstream_run (keep_spec filt \<phi> S) (concat (map Rep_bytes ss)) fstream_init")
       (auto simp: L_def)
   note w = prefix_of_items_wty[OF this]
   show "flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
-  proof (cases rule: vfeed_chunks_cases[where cf=cf and ust=ust and ss=ss])
+  proof (cases rule: vfeed_chunks_cases[where cf=cf and ust=ust and ss=ss, OF lk, case_names err ok])
     case err
     with \<open>L = Some \<pi>\<close> show ?thesis
       by (simp add: L)
