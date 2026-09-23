@@ -1,0 +1,11 @@
+chapter AFP
+
+session MFODL_Parser = LR_Parser +
+  description
+    "A verified parser for MonPoly's formula syntax, generated from a grammar by the
+     parser command of the grammar package."
+  options [timeout = 3600]
+  theories
+    MFODL_Parser
+  export_files (in ".") [2]
+    "MFODL_Parser.MFODL_Parser:code/**"
