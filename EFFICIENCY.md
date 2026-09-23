@@ -8273,3 +8273,108 @@ code) is recorded as a candidate, worth 3-5% there and little on longer windows.
 
 The export differs from the previous one in `balance` and `edl_mapping_delete_set` and the two new
 helpers; the corpus is unchanged (601 same, 0 differing) and the differential tests agree.
+
+## 21.31 The match and since groups, and the suite's one verdict disagreement
+
+After 21.30 the two groups furthest from MonPoly were `match` (geometric mean 1.39) and `since`
+(1.25), and `match-pcnt` was the suite's one verdict disagreement.
+
+### The final time point
+
+For a formula that looks into the future the front end appends a last time point with the maximal
+time stamp, which lets the verdicts still pending at the end of the log be decided.  For a
+past-only formula it does not -- except for the regular expressions, because MonPoly's own regex
+evaluation (`algorithm.ml`, `EMatchP`) finalises a time point only once the next one's time stamp
+is known and needs the extra one to flush the last real time point.  The verified monitor outputs
+a past-only formula's verdicts as the time points arrive, so the extra time point only added a
+verdict about itself: `@MaxTS (time point 6000): (0)` on `match-pcnt`, a count over the empty group
+that MonPoly never reports.  `main.ml` now drops the extra time point for every past-only formula
+under `-verified` (5b9ef69).
+
+Running the verified monitor with `-nonewlastts` altogether would be wrong in the other direction:
+for a future formula neither monitor can decide the last verdicts without the final time point (on
+`r <- CNT x EVENTUALLY[0,5] C(x)` the output would stop at time point 5993 instead of 5999), and
+MonPoly adds it by default, so every future group would disagree.  The extra time point is harmless
+to the verified monitor's guarantee: it is one more, empty, time point of the trace, and a future
+formula's verdict at that time point is never decided.
+
+### The regular-expression windows over short tuples
+
+The dense match nodes of 21.24 kept the kernel's window at the node's own width.  Every firing
+converted each operand table from short tuples back to boxed ones (`reopt_table`), widened it into
+the node's columns (`dembedp`), ran the kernel's `update_matchP`/`update_matchF` over boxed tuples,
+and stripped the option off the result again.  On the 1500-point `base` log that was, for
+`match-pseq`, 40% of the run in the window and 18% in the conversions; for `match-pstar` 45% and
+20%; for `match-fseq` 28% and 23%.
+
+`Dense_Unbox.thy` already had the window this needed, written for the heap-resident monitor of
+`Dense_Imp.thy` and never proved: `gupdate_matchP` and `gupdate_matchF`, polymorphic in the field
+type, which probe each atom's table at the atom's own columns with the semi-join `dsemi` against a
+mask, and intersect where the kernel joins two lax epsilons.  The dense nodes (`DMatchP`/`DMatchF`,
+and the boxed `EDMatchP`/`EDMatchF`) now run it over boxed tuples on the operands at their own
+frames, and the short-tuple nodes run it over their own tuples, so neither the conversions nor the
+widening happen any more.
+
+`Dense_Match_Gen.thy` proves that the generic window computes the narrowing of the kernel's:
+
+* the semi-join against an atom is the narrowing of the kernel's join (`dsemi_join`, 20.2),
+  and the join of two lax epsilons, both tables over the node's columns, is their intersection
+  (`dtabc_join_same`);
+* the unit table -- the tuple with every column blank -- is the empty short tuple, which is its
+  narrowing only when the node has no columns; a strict epsilon returns it only in that case,
+  because what it returns is a table over the node's columns (`table_reps_strict`), and
+  `table_unit_table_Nil` reads the empty column list off that.
+
+The past node keeps the relation it had (`dmrd_rel`, the window's entries narrowed), and
+`dtabc_gupdate_matchP` is its step.  The future window also stores every undecided time point's
+operand tables, which are now kept at the operands' frames, so `DsMatchF` carries a new relation,
+`gmld_rel`, whose step and read are `dtabc_gupdate_matchF` and `dtabc_geval_matchF`.
+
+Relating the short-tuple node to the boxed one is naturality under putting the option back on the
+fields (`gupdate_matchP_reopt`, `gupdate_matchF_reopt`, `geval_matchF_reopt`), and `udeval_Rep` states
+that for every state, well-formed or not.  That is why the window's atoms are now read totally
+(`gnth`, the empty table past the end of the list): with the partial `!`, an out-of-range atom index
+has no relation between the boxed and the short list.  A well-formed node never reads past the end.
+
+| formula (instructions, `base` 1500) | before | after | MonPoly |
+|---|---|---|---|
+| `match-pseq` | 1.815 G | 0.907 G (−50%) | 0.959 G |
+| `match-pstar` | 2.471 G | 1.123 G (−55%) | 1.398 G |
+| `match-p1` | 1.060 G | 0.826 G (−22%) | 0.853 G |
+| `match-fseq` | 1.675 G | 0.894 G (−47%) | 1.000 G |
+| `match-falt` | 1.690 G | 1.027 G (−39%) | 1.172 G |
+| `match-f1` | 1.138 G | 0.863 G (−24%) | 0.953 G |
+
+Wall time on the suite's `base` log (median of five, interleaved): `match-pseq` 0.77 s → 0.40 s,
+`match-pstar` 1.05 s → 0.52 s, `match-p1` 0.48 s → 0.37 s, against MonPoly's 0.43 s, 0.62 s and
+0.38 s.  The output is identical on the eleven regex formulas of the suite, and equal to MonPoly's.
+
+### The Since join's deletions
+
+When a Since node's left operand covers part of its columns, the join with it removes the tuples of
+every index entry whose key fails the probe from the window's table and from the per-tuple time
+stamps, for the tuples in the window and for those since the last match.  It gathered them into one
+set first (`set_of_idx` over the failing entries) and subtracted that; `del_buckets` and
+`del_buckets1` (`Dense_Idx_Code.thy`) fold over the failing entries and remove each entry's tuples in
+turn, with code equations proved against the union (`fold_del_buckets`).  On `since-u50` (the
+positive unary left operand) the instructions go from 1.679 G to 1.569 G (−6.6%), on `since-nu50`
+(the negated one) from 2.453 G to 2.296 G (−6.4%); formulas whose left operand covers all the
+columns take the other branch and do not move.
+
+A first attempt kept the union and only specialised it -- `set_of_idx` unions through the generic,
+dictionary-passing `sup` rather than the specialised `edl_union` -- and bought nothing (+0.3% and
+−1.8%); the cost is the union's construction, not its dictionaries.  What remains of the `since`
+group is what 21.27 priced: every time point inserts its tuples into five persistent trees and the
+next join deletes most of them again, which MonPoly does on hash tables.
+
+### The suite
+
+The suite rerun after this section (`evaluation/perf/report.md`, df896bc) has no verdict
+disagreement any more.  `match` went from 1.39 to 1.00, its eleven formulas between 0.80
+(`match-pstar`) and 1.27 (`match-pnarrow`, whose operand is narrower than the node's frame); `since`
+went from 1.25 to 1.23, with `since-u50` from 1.60 to 1.31 and `since-u5` from 1.43 to 1.25.  The
+geometric mean over the 196 formulas stays at 1.06, with none above 2x: MonPoly ran 2% faster than
+in the previous run, and the groups whose code did not change moved by up to 7% either way.  The
+largest ratios left are `pol-sincefutb` (1.91), `since-nu5` (1.77), `since-nu500` (1.73) and
+`aggonce-max50` (1.71): the negated left operand and the extremum's result table that 21.27 and
+21.30 priced.
