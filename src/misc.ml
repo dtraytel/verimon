@@ -108,11 +108,12 @@ let gc_space_overhead = ref 0
    one keeps it in the minor heap. *)
 let gc_minor_heap = ref 0
 
-(* Represent each table's tuples without the positions that are None for all of them, keeping
-   the column list in the formula (see thys/MFODL_Monitor_Imp/Dense_Imp.thy). *)
+(* Set by the deprecated -dense, which the verified monitor ignores: it always represents each
+   table's tuples without the positions that are None for all of them (thys/MFODL_Monitor_Dense). *)
 let dense_cols = ref false
 
-(* Run the verified dense evaluator of Dense_Eval.thy instead of the shipping one. *)
+(* Set by the deprecated -vdense, which is ignored: -verified always runs the verified dense
+   evaluator. *)
 let verified_dense = ref false
 
 let new_last_ts = ref true

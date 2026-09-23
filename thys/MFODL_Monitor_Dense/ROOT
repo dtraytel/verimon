@@ -6,9 +6,10 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
      window-union structures shared with the heap-resident Since/Until refinement of
      MFODL_Monitor_Imp: all of it definitions and proofs over plain HOL functions, with no
      Imperative_HOL. Separate from MFODL_Monitor_Imp so that this material -- including the
-     vdense evaluator udmstep/udeval -- can be checked and reused without ever touching the Heap
-     monad, and so that a change to the imperative refinement does not force this session to be
-     rebuilt."
+     verified dense evaluator udmstep/udeval -- can be checked and reused without ever touching
+     the Heap monad, and so that a change to the imperative refinement does not force this
+     session to be rebuilt. Monitor_Code_Dense is the code export the shipping binary is built
+     from (src/verified.ml)."
   theories
     Table_Evt
     Since_Evt
@@ -38,6 +39,8 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Unbox_Exec
     Dense_Unbox
     Dense_Idx_Code
+    Dense_Code_Opt
+    Dense_Mono_Sweep
   theories [document=false]
     Monitor_Code_Dense
   export_files (in ".") [2]

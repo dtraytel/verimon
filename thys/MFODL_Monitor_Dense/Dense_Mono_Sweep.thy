@@ -7,7 +7,7 @@ begin
 section \<open>The remaining generic operations of the generated code\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Imp.Dense_Code_Opt}
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
   monomorphise the operations of the inner loops -- the containers at @{typ "event_data tuple"}
   and at @{typ "event_data list"} -- because those were what the profiles charged for.  What is
   left over is everything else: operations the generated code still reaches with a type class

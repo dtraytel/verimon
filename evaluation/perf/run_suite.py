@@ -3,11 +3,12 @@
 run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
 
   python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 3] [--timeout 5]
-                       [--jobs 2] [--budget 1800] [--systems monpoly,vdense[,dense]]
+                       [--jobs 2] [--budget 1800] [--systems monpoly,vdense]
                        [--families once,since] [--out results]
 
-Systems: monpoly is the binary without flags; vdense is `-verified -vdense` (the verified dense
-evaluator of Dense_Eval.thy); dense is `-verified` (the shipping dense monitor).
+Systems: monpoly is the binary without flags; vdense is `-verified`, the verified dense evaluator
+of thys/MFODL_Monitor_Dense (the name dates from when it needed `-vdense` next to a second,
+unverified dense monitor under `-verified`; that monitor is no longer in the binary).
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
 classified as `refused` (outside the verified dense fragment), `unmonitorable` (the front end
@@ -22,7 +23,7 @@ Writes <out>/results.json, <out>/results.csv and <out>/report.md.
 import argparse, concurrent.futures, csv, hashlib, json, math, os, statistics, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SYSTEMS = {"monpoly": [], "vdense": ["-verified", "-vdense"], "dense": ["-verified"]}
+SYSTEMS = {"monpoly": [], "vdense": ["-verified"]}
 
 
 def read_suite(path):

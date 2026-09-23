@@ -22,8 +22,9 @@ the generated copy).
 `add_new_dq` and records which deque entries the new table's pairs touch and how often the
 front list of the deque is empty when they do.
 
-Since the export list of `thys/MFODL_Monitor_Imp/Monitor_Code_Imp.thy` was trimmed to the
-monitor over the short tuples (Section 20.38 of `EFFICIENCY.md`), the kernel no longer
-contains the operations on the wide tables that these two drivers build their inputs with
-(`table_of_list`).  To run them, add that constant back to the `export_code` command, rebuild
-the session and regenerate `src/verified.ml`; the drivers themselves are unchanged.
+Since the export list was trimmed to the monitor over the short tuples (Section 20.38 of
+`EFFICIENCY.md`), the kernel no longer contains the operations on the wide tables that these
+two drivers build their inputs with (`table_of_list`).  To run them, add that constant back to
+the `export_code` command of `thys/MFODL_Monitor_Dense/Monitor_Code_Dense.thy` (the export
+`src/verified.ml` is built from since Section 21.26), rebuild the session and regenerate
+`src/verified.ml`; the drivers themselves are unchanged.

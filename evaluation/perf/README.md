@@ -2,8 +2,8 @@
 
 201 hand-picked formulas in 23 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
-(`-verified -vdense`, `Dense_Eval.thy` through the queue buffers of `Dense_Exec.thy`) on the
-same log, with a 5-second timeout per run, best of three repetitions, in about a quarter of an
+(`-verified`: `Dense_Eval.thy` over the short tuples of `Dense_Unbox_Exec.thy`; the system is
+called `vdense` in the reports) on the same log, with a 5-second timeout per run, best of three repetitions, in about a quarter of an
 hour on four cores.
 
 ```
@@ -14,8 +14,9 @@ python3 plot.py                     # results/ratios.svg, the ratios per group
 
 `run_suite.py` takes `--bin` (default: the tree's `_build/default/src/main.exe`), `--suite`
 (`suite.txt`), `--reps` (default 3, at most 3), `--timeout` (5 s), `--jobs` (2 workers),
-`--budget` (1800 s of wall time), `--systems` (`monpoly,vdense`; add `dense` for the shipping
-dense monitor) and `--families`/`--names` to run a subset.  Repetitions are interleaved across
+`--budget` (1800 s of wall time), `--systems` (`monpoly,vdense`) and `--families`/`--names`
+to run a subset.  Runs before EFFICIENCY.md 21.26 had a third system, `dense`, the
+heap-resident dense monitor that `-verified` ran then; it is no longer in the binary.  Repetitions are interleaved across
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 

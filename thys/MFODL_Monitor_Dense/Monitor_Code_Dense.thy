@@ -1,30 +1,49 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports Dense_Idx_Code Dense_Unbox_Exec "MFODL_Monitor_Devel.Monitor_Code"
+  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Mono_Sweep
 begin
 (*>*)
 
 text \<open>
-  The verified dense evaluator's own code export, entirely within this session: it needs nothing
-  from the imperative refinement of the downstream Table\_Imp theory (session
-  MFODL\_Monitor\_Imp) and its heap-resident Since/Until, so this theory does not import that
-  session at all. @{const udminit_safe} builds the initial state -- compiling the sparse formula
-  into the short-tuple one -- and @{const udmstep} performs one step on it, both pure functions
-  over the kernel's dense tables. @{const uvdfail_nodes} says whether the compiler covered the
-  whole formula; it must be zero for the correctness theorem @{text udeval_Rep} (@{theory
+  The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's
+  \<^verbatim>\<open>verified.ocaml\<close>, and @{text "-verified"} runs the verified dense evaluator it contains.
+  @{const udminit_safe} builds the initial state -- compiling the sparse formula into the
+  short-tuple one -- and @{const udmstep} performs one step on it, both pure functions over the
+  short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
+  must be zero for the correctness theorem @{text udeval_Rep} (@{theory
   MFODL_Monitor_Dense.Dense_Unbox_Exec}) to apply, and the front end refuses the formula
   otherwise.
 
-  Nothing else is exported, so the wide-tuple evaluators and the heap-resident dense mode of the
-  downstream MFODL\_Monitor\_Imp session are absent from this file entirely, not merely unreachable:
-  they are not even theories this session imports.
+  The export is entirely within this session.  The code-generator setup it relies on -- the
+  monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
+  and @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, and the front end's entry points -- is
+  stated here too, so nothing of the imperative refinement of session MFODL\_Monitor\_Imp, and
+  in particular nothing of its unverified heap-resident dense monitor, is imported, let alone
+  reachable.
+
+  The order of the two imports matters.  Where a boxed operation of
+  @{theory MFODL_Monitor_Dense.Dense_Code_Opt} and its monomorphic copy from the second pass of
+  @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep} both rewrite the same term, the code
+  preprocessor takes whichever rule the merge of the two branches puts first.  Importing
+  @{theory MFODL_Monitor_Devel.Monitor_Code} first leaves the monomorphic copies in front, as
+  they were when the export was made in session MFODL\_Monitor\_Imp; the other order would
+  reinstate the boxed versions of @{const card}, @{const Set.remove}, @{const cluster} and a
+  few more.
+
+  A merge also takes the union of the two preprocessor simpsets, so it brings back rules one
+  branch deleted: the redirections of the set operations on the wide tuples to their boxes,
+  which @{theory MFODL_Monitor_Dense.Dense_Code_Opt} takes out of the preprocessor so that the
+  monomorphic copies apply, return with @{theory MFODL_Monitor_Devel.Monitor_Code}.  They are
+  taken out again here, after the merge.
 \<close>
+
+setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
+  @{thms ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold ed_filter_v_unfold
+    ed_image_v_unfold})\<close>
 
 text \<open>@{thm [source] mestate_def} is the kernel's code constructor for its state record, so the
   selectors the export's own dependency closure reaches need their equations stated against it;
-  the record's own are about a constructor the code generator does not have.  The same lemma as
-  in the downstream Monitor\_Code\_Imp theory (session MFODL\_Monitor\_Imp), needed here for the
-  same reason even though this export never calls the wide-tuple monitor itself.\<close>
+  the record's own are about a constructor the code generator does not have.\<close>
 
 lemma mstate_sel_code[code]:
   "mstate_i (mestate i j m n t \<zeta>) = i"
@@ -33,30 +52,6 @@ lemma mstate_sel_code[code]:
   "mstate_n (mestate i j m n t \<zeta>) = n"
   "mstate_t (mestate i j m n t \<zeta>) = linearize t"
   by (simp_all add: mestate_def)
-
-text \<open>The front end builds the tables of a time point itself, sorted, and hands them to
-  @{const table_of_list}, which checks the sortedness in linear time and builds the tree in one
-  pass.  The monitor over the short tuples reads the same tables with nothing around the fields,
-  so it needs the same three entry points at its own tuple type; the bodies are those of
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Devel.Monitor_Impl}
-  with the option gone.\<close>
-
-definition utable_of_list :: "event_data list list \<Rightarrow> utable" where
-  "utable_of_list xs = set xs"
-
-lemma utable_of_list_code[code]: "utable_of_list xs = RBT_set (rbt_of_sorted_list xs)"
-  by (simp add: utable_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_ed)
-
-definition uempty_db :: udatabase where "uempty_db = Mapping.empty"
-
-text \<open>And the fold the front end prints a verdict with, at the short tuples.\<close>
-
-definition urbt_fold :: "_ \<Rightarrow> event_data list set_rbt \<Rightarrow> _ \<Rightarrow> _" where
-  "urbt_fold = RBT_Set2.fold"
-
-definition uinsert_table_into_db :: "string8 \<times> nat \<Rightarrow> utable \<Rightarrow> udatabase \<Rightarrow> udatabase" where
-  "uinsert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"
-
 export_code
   (*basic types*)
   nat_of_integer integer_of_nat int_of_integer integer_of_int enat

@@ -314,42 +314,24 @@ let rec convert_schema_into_sig sch =
 let type_check_formula dbschema f =
   type_check (convert_schema_into_sig dbschema) f
 
-(* The only monitor is the one over the tuples without their empty columns
-   (thys/MFODL_Monitor_Imp/Dense_Imp.thy): [minit_safe_d] compiles the formula the kernel's
-   [meinit0] builds into the dense one and allocates the heap-resident structures it asks for,
-   [mstep_d] performs one step.  Both are heap computations, so the generated OCaml represents
-   them as thunks and the unit argument runs them.
-
-   [minit_safe_d] fails when the compiler cannot place a node -- there is no wide evaluation
-   left to fall back to -- and [dfail_nodes] counts those nodes; on a state it returned the
-   count is 0 by construction. *)
-type dense_state = nat * (nat * (dformula * (nat * nat queue)))
-
-(* The verified dense evaluator, for [-vdense]: the algorithm of Dense_Eval.thy, which drops the
-   empty columns, run on the short tuples as Dense_Unbox_Exec.thy states it; the simulation
-   theorem of Dense_Eval.thy covers it through the refinement theorem of that theory. *)
-type vdense_state = unit udmstate_ext
-
-type state = Dense of dense_state | VDense of vdense_state
+(* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
+   Dense_Eval.thy, which drops the empty columns, run on the short tuples as
+   Dense_Unbox_Exec.thy states it.  [udminit_safe] compiles the formula the kernel's [meinit0]
+   builds into the dense one and [udmstep] performs one step; both are pure functions.  The
+   simulation theorem of Dense_Eval.thy covers the evaluator through the refinement theorems of
+   Dense_Exec.thy and Dense_Unbox_Exec.thy, provided the compiler placed every node:
+   [uvdfail_nodes] counts the ones it could not, and a formula with any is refused rather than
+   run outside the theorem. *)
+type state = unit udmstate_ext
 
 let init cf =
-  if !Misc.verified_dense then begin
-    let st = udminit_safe cf in
-    let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
-    if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
-      Printf.eprintf "[vdense] nodes outside the verified dense fragment: %d\n%!" nf;
-    if nf <> 0 then
-      failwith "the formula is outside the verified dense fragment";
-    VDense st
-  end
-  else begin
-    let st = minit_safe_d cf () in
-    (match st with (_, (_, (m, _))) ->
-      if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
-        Printf.eprintf "[dense] subformulas outside the dense fragment: %d\n%!"
-          (int_of_nat (dfail_nodes m)));
-    Dense st
-  end
+  let st = udminit_safe cf in
+  let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
+  if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
+    Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;
+  if nf <> 0 then
+    failwith "the formula is outside the verified dense fragment";
+  st
 
 let uset_fold f s x = match s with
   | RBT_set r -> urbt_fold f r x
@@ -363,16 +345,9 @@ type verdict = UV of event_data list set
 let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
 
-let short_db_only = function
-  | Short db -> db
-
-let step t db = function
-  | Dense st ->
-    let (vs, st') = mstep_d (short_db_only db, nat_of_integer t) st () in
-    (annotate (fun v -> UV v) vs, Dense st')
-  | VDense st ->
-    let (vs, st') = udmstep (short_db_only db, nat_of_integer t) st in
-    (annotate (fun v -> UV v) vs, VDense st')
+let step t (Short db) st =
+  let (vs, st') = udmstep (db, nat_of_integer t) st in
+  (annotate (fun v -> UV v) vs, st')
 
 (* Direct output of verdicts.
 

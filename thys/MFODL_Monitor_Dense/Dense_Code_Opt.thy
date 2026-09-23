@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Code_Opt
-  imports Dense_Imp "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Idx_Code"
+  imports Dense_Unbox_Exec Dense_Idx_Code "MFODL_Monitor_Devel.Monomorphic_Code"
 begin
 (*>*)
 
@@ -396,22 +396,6 @@ setup \<open>Monomorphize.box_cmd
    map (fn (tn, ty) => ("RBT_Mapping2.impl_of", "edl_impl_of_" ^ tn ^ "_v", [edl, ty]))
      edl_value_types)\<close>
 
-subsection \<open>The heap index of the dense join\<close>
-
-text \<open>
-  The operations of @{theory MFODL_Monitor_Imp.Table_Imp} take the @{class heap} dictionary of
-  the key type and of the value type, and the code generator builds both at every call.  The
-  index of the join over the wide tuples is boxed for that reason in
-  @{theory MFODL_Monitor_Imp.Join_Imp2}; the one over the short tuples is entered once per
-  indexed and once per probed tuple, so it needs the same.
-\<close>
-
-setup \<open>Monomorphize.box_cmd
-  (let val edl = "event_data list"; val edll = "event_data list list" in
-    [("im_lookup_h", "djidx_lookup_h_v", [edl, edll]),
-     ("im_update_h", "djidx_update_h_v", [edl, edll]),
-     ("im_new", "djidx_new_v", [edl, edll])] end)\<close>
-
 subsection \<open>The tree primitives with the short tuples' comparator called directly\<close>
 
 definition edl_rbtc_lookup :: "(event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow> 'v option" where
@@ -542,9 +526,6 @@ text \<open>
   and the generality is paid for once per probed tuple.  Specialising each operation at
   @{typ event_data} lets @{thm [source] edl_dict_simps} fix the dictionaries and the rules above
   pick up @{const edl_comparator} and the specialised tree primitives.
-
-  The heap-resident Since is generic in its tuple type rather than its element type, and is used
-  at both, so it is specialised twice.
 \<close>
 
 ML \<open>
@@ -571,12 +552,6 @@ val dense_elem_consts =
    "gsw_result", "udtabw", "deopt_table", "reopt_table",
    "didx_add1", "didx_add", "didx_del1", "didx_del", "dbucket", "fold_filter_set"]
 
-val heap_since_consts =
-  ["gjc", "filter_loop2", "expire_loop2", "upd_loop2", "move_loop2",
-   "del_loop2", "ins_loop2", "since_loop2", "init2", "shift_end2",
-   "add_new_ts2'", "add_new_ts2", "gc2", "join2", "gc_join2",
-   "add_new_table2", "result2"]
-
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
 \<close>
 
@@ -594,9 +569,7 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("filter_cfi", "de_filter_cfi", ["nat", "event_data list"]),
       ("mapping_delete_set", "de_mapping_delete_set_nat", ["event_data list", "nat"]),
       ("mapping_delete_set", "de_mapping_delete_set_table",
-        ["event_data list", "event_data list set"])]
-   @ map (fn c => (c, mono_name "hsd_" c, ["event_data list"])) heap_since_consts
-   @ map (fn c => (c, mono_name "hsw_" c, ["event_data tuple"])) heap_since_consts)
+        ["event_data list", "event_data list set"])])
   ["edl_dict_simps", "etuple_dict_simps"]\<close>
 
 text \<open>The count set's fold passes its step unapplied, which the redirection above does not reach;

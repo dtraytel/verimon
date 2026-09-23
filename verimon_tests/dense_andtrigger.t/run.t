@@ -1,16 +1,14 @@
 The fused And-Trigger node of the verified dense evaluator.  Each formula is run
-through the shipping verified monitor and through the verified dense evaluator
-(-vdense); the two must agree, and -vdense only accepts a formula when the
-dense compiler places every one of its nodes.
+through the verified monitor; the expected output was recorded from the
+heap-resident dense monitor that -verified ran before, and the dense
+evaluator agreed with it on every formula.  -verified only accepts a formula
+when the dense compiler places every one of its nodes.
 
   $ while IFS= read -r phi; do
   >   [ -z "$phi" ] && continue
   >   printf '%s\n' "$phi" > f.mfotl
   >   echo "=== $phi"
-  >   monpoly -verified         -sig cov.sig -formula f.mfotl -log cov.log > a.txt 2>&1
-  >   monpoly -verified -vdense -sig cov.sig -formula f.mfotl -log cov.log > b.txt 2>&1
-  >   cat a.txt
-  >   diff -q a.txt b.txt > /dev/null || { echo "VDENSE MISMATCH"; diff a.txt b.txt; }
+  >   monpoly -verified -sig cov.sig -formula f.mfotl -log cov.log 2>&1
   > done < formulas.txt
   === P(x,y) AND (P(x,y) TRIGGER[1,3] Q(x,y))
   @0 (time point 0): (1,2) (2,3)
