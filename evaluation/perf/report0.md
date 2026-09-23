@@ -1,6 +1,6 @@
 # Performance suite: monpoly vs verimon
 
-The starting point: both systems from a build of master (025a1423), where `-verified` is the original VeriMon, on the same suite and logs as `report.md`.  Run on 2026-09-23 on a four-core container that is not the machine of `report.md`'s run, so compare the ratios, not the seconds.
+The starting point: both systems from a build of master (025a1423), where `-verified` is the original VeriMon, on the same suite and logs as `report.md`.  Run on 2026-09-23 on the same container as `report.md`, one run after the other, so the two compare.
 
 201 formulas, 23 families; 3 repetitions (best of), timeout 5 s per run, 2 workers; wall time 996 s (budget 2400 s).
 
