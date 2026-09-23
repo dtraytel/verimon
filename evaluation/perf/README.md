@@ -20,10 +20,12 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.28 (1a7c483),
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.29 (ff75a20),
 and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
-`-verified` is the original VeriMon.  The two ran one after the other on the same otherwise idle
-four-core container, with the same suite, logs and settings, so their numbers compare; that
+`-verified` is the original VeriMon.  Both ran on the same otherwise idle four-core container,
+with the same suite, logs and settings, so their numbers compare (master and a refine run after
+21.28 one after the other, then refine again after 21.29, with MonPoly's times within 0.5% of the
+previous run's); that
 container is not the one of the earlier pair of runs (after 21.27, geometric mean 1.33 with three
 timeouts), which runs MonPoly 1.31x as slowly (geometric mean over 194 formulas, up to 2.2x on
 the \`long\` log), so the two pairs compare with each other only through their ratios.
@@ -34,7 +36,7 @@ the \`long\` log), so the two pairs compare with each other only through their r
 | MonPoly timeouts | 0 | 0 |
 | both finish | 132 | 196 |
 | geometric mean VeriMon/MonPoly | 2.71 | 1.13 |
-| VeriMon faster / more than 2x slower | 0 / 103 | 61 / 3 |
+| VeriMon faster / more than 2x slower | 0 / 103 | 59 / 3 |
 
 MonPoly itself takes 0.88x its master time in the refine run, over the 196 formulas it finishes
 in both; the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not all of
@@ -43,6 +45,12 @@ refine takes 0.38x its time.  Both runs have one verdict disagreement, `match-pc
 end-of-stream difference between MonPoly and the verified monitor that the original VeriMon
 shares.  The `andtrigger` group has no ratio against MonPoly, which does not monitor TRIGGER;
 the reports record the verified monitor's times alone.
+
+Between the two refine runs, only the aggregations over a window changed (EFFICIENCY.md 21.29):
+the `agg_once` group went from 1.41 to 1.32 and `pol-threshold` from 2.07 to 1.68, while groups
+whose code did not change moved by up to 7% either way (`join` 1.02 to 1.09, `match` 1.48 to
+1.54) -- the run-to-run noise of best-of-three with two workers, which is why EFFICIENCY.md
+measures single changes in instructions.
 
 ## The logs
 
