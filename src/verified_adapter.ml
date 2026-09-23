@@ -541,4 +541,5 @@ let show_results posl _i q tsq (v: verdict) =
 let is_monitorable rw dbschema f =
   match prepare_verimon rw (convert_schema_into_sig dbschema) (convert_formula dbschema f) with
   | Inr _ -> (true, None)
+  | Inl e when e = "not monitorable" -> (false, Some (f, "MFODL formula is not monitorable"))
   | Inl e -> (false, Some (f, "MFODL formula is not monitorable (" ^ e ^ ")"))

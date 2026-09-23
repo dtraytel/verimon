@@ -1823,13 +1823,32 @@ let check_formula s f =
   in
 
   (* Check monitorability.  The verified monitor (-verified) normalizes and rewrites the formula
-     itself, as VeriMon does, within its verified initialization (Dense_VeriMon.thy); the front
-     end then neither rewrites the formula nor checks it against anything but that
-     preparation. *)
+     itself, as VeriMon does, within its verified initialization (Dense_VeriMon.thy), so the front
+     end only eliminates the syntactic sugar the verified monitor does not know (the verified
+     conversion of the formula expects ALWAYS and PAST_ALWAYS as RELEASE and TRIGGER) and hands
+     the formula over.  Only if VeriMon's preparation cannot make the formula monitorable does
+     the front end's own normalization and rewriting below take over, as it did before, and hand
+     over the formula it produces; the verified preparation then checks and prepares that one. *)
   let check_mon = if !Misc.verified then Verified_adapter.is_monitorable (not !no_rw) s
     else is_monitorable
   in
-  if !no_rw || !Misc.verified then
+  let nsf = if !Misc.verified && not !no_rw then normalize_syntax f else f in
+  if !Misc.verified && not !no_rw && fst (check_mon nsf) then
+    begin
+      if !Misc.verbose || !Misc.checkf then
+        begin
+          if nsf <> f then
+            MFOTL.prerrnl_formula "The input formula is:\n  " f;
+          MFOTL.prerrnl_formula "The analyzed formula is:\n  " nsf;
+          prerr_string "The sequence of free variables is: ";
+          Misc.prerr_list prerr_string orig_fv;
+          prerr_newline()
+        end;
+      if !Misc.checkf then
+        prerr_string "The analyzed formula is monitorable.\n";
+      (true, nsf, fvtypes)
+    end
+  else if !no_rw then
     let is_mon, reason = check_mon f in
     if !Misc.verbose || !Misc.checkf then
       begin
