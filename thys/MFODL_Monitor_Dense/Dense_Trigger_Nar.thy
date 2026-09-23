@@ -455,12 +455,13 @@ proof -
       fold_hist_tmm[OF mvm, unfolded Let_def] td fh)
 qed
 
-text \<open>The standalone trigger always has @{term "mem (args_ivl args) 0"}, so only that branch of
-  @{const update_mmtaux} is ever taken; the other reads @{term tuple_in_once} at the left
-  operand's own tuples in either structure and needs no widening lemma.\<close>
+text \<open>Both branches of @{const update_mmtaux} widen.  The one at an interval containing zero is
+  the only one a standalone trigger node ever takes; the other, which records the left operand's
+  tuples in the queue and in the mapping of last occurrences, is the one the And-Trigger node
+  needs, and it widens by @{thm [source] wkeys_upd_set}.\<close>
 
 lemma update_mmtaux_tmm:
-  assumes dm: "dmsk_args args msk" and m0: "mem (args_ivl args) 0"
+  assumes dm: "dmsk_args args msk"
     and adp: "\<And>t l r. (t, l, r) \<in> set (linearize data_prev) \<Longrightarrow>
       (\<forall>y \<in> l. dnarrow_tuple msk y) \<and> (\<forall>x \<in> r. length x = length msk)"
     and atio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
@@ -498,10 +499,16 @@ proof -
   have sj: "{as \<in> r. proj_tuple_in_join (args_pos args) msk as (dwiden msk ` l)}
       = gsemi_join msk (args_pos args) r l"
     by (simp only: pj gsemi_join_dsemi[OF rw])
+  have wk: "upd_set (wkeys msk tio') (\<lambda>_. nt) (dwiden msk ` l)
+      = wkeys msk (upd_set tio' (\<lambda>_. nt) l)"
+    using wkeys_upd_set[OF lw, where f = "\<lambda>_. nt" and m = tio'] by (simp add: comp_def)
+  have aq: "append_queue (nt, dwiden msk ` l, r) (map_queue (temb msk) data_prev')
+      = map_queue (temb msk) (append_queue (nt, l, r) data_prev')"
+    using append_queue_map_queue[of "temb msk" "(nt, l, r)" data_prev'] by simp
   show ?thesis
     unfolding update_mmtaux_def gupdate_mmtaux_def Let_def prod.case u g
-      dmsk_args_maskL[OF dm] dmsk_args_maskR[OF dm] if_P[OF m0] sj
-    by simp
+      dmsk_args_maskL[OF dm] dmsk_args_maskR[OF dm] sj
+    by (simp add: wk aq image_Un)
 qed
 
 subsection \<open>The invariant the standalone trigger keeps\<close>
@@ -563,13 +570,243 @@ proof -
     by (simp add: gupdate_mmtaux_def Let_def split: prod.splits)
 qed
 
-text \<open>The two reads of the structure, on a state the standalone trigger keeps.\<close>
+text \<open>
+  The And-Trigger node's interval need not contain zero, and then the update does record a left
+  tuple: the state stays narrow rather than void.  Narrowness is preserved for a simpler reason
+  than voidness -- the scan the update opens with only drops from the three places narrowness
+  constrains, and what the step then adds is the operands' own tables.
+\<close>
+
+lemma fold_filter_once_shrink:
+  "case fold (\<lambda>(t, X) (tio, keys).
+        (Mapping.filter (filter_cond (to_table X) tio t) tio,
+         {as \<in> keys. filter_cond' (to_table X) tio t as})) xs (tio, keys) of
+     (tio', keys') \<Rightarrow> Mapping.keys tio' \<subseteq> Mapping.keys tio \<and> keys' \<subseteq> keys"
+proof (induct xs arbitrary: tio keys)
+  case (Cons x xs)
+  obtain t X where x: "x = (t, X)" by (cases x)
+  show ?case
+    using Cons[of "Mapping.filter (filter_cond (to_table X) tio t) tio"
+        "{as \<in> keys. filter_cond' (to_table X) tio t as}"] keys_filter
+    by (fastforce simp: x split: prod.splits)
+qed simp
+
+lemma shift_end'_sub:
+  assumes se: "shift_end' I nt to_table (q, data_in, tio, keys) = (q0, di', move, tio', keys')"
+  shows "set (linearize di') \<subseteq> set (linearize data_in) \<and> set move \<subseteq> set (linearize data_in) \<and>
+    Mapping.keys tio' \<subseteq> Mapping.keys tio \<and> keys' \<subseteq> keys"
+proof -
+  obtain di'' mv where td: "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_in = (di'', mv)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) data_in")
+  have l1: "set (linearize di'') \<subseteq> set (linearize data_in)"
+    using takedropWhile_queue_fst[of "\<lambda>(t, _). \<not> memR I (nt - t)" data_in]
+    by (auto simp: td dropWhile_queue_rep
+        simp del: takedropWhile_queue.simps dropWhile_queue.simps dest: set_dropWhileD)
+  have l2: "set mv \<subseteq> set (linearize data_in)"
+    using takedropWhile_queue_snd[of "\<lambda>(t, _). \<not> memR I (nt - t)" data_in]
+    by (auto simp: td simp del: takedropWhile_queue.simps dest: set_takeWhileD)
+  obtain tio'' keys'' where fo:
+    "fold (\<lambda>(t, X) (tio, keys). (Mapping.filter (filter_cond (to_table X) tio t) tio,
+        {as \<in> keys. filter_cond' (to_table X) tio t as})) mv (tio, keys) = (tio'', keys'')"
+    by (cases "fold (\<lambda>(t, X) (tio, keys). (Mapping.filter (filter_cond (to_table X) tio t) tio,
+        {as \<in> keys. filter_cond' (to_table X) tio t as})) mv (tio, keys)")
+  have l34: "Mapping.keys tio'' \<subseteq> Mapping.keys tio \<and> keys'' \<subseteq> keys"
+    using fold_filter_once_shrink[where to_table = to_table and xs = mv and tio = tio
+        and keys = keys, unfolded fo prod.case] .
+  have s: "shift_end' I nt to_table (q, data_in, tio, keys)
+      = (dropWhile_queue (\<lambda>(t, _). \<not> memR I (nt - t)) q, di'', mv, tio'', keys'')"
+    by (simp only: shift_end'.simps Let_def td fo prod.case)
+  show ?thesis using l1 l2 l34 se[unfolded s] by auto
+qed
+
+lemma shift_end'_tnar:
+  fixes data_prev :: "(ts \<times> 'b table \<times> 'b table) queue"
+  assumes dp: "\<forall>(t, a, b) \<in> set (linearize data_prev).
+      (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)"
+    and tio: "\<forall>k \<in> Mapping.keys tio. dnarrow_tuple msk k"
+    and keys: "\<forall>y \<in> keys. dnarrow_tuple msk y"
+    and se: "shift_end' I nt fst (q, data_prev, tio, keys) = (q0, dp', move, tio', keys')"
+  shows "(\<forall>(t, a, b) \<in> set (linearize dp').
+        (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)) \<and>
+      (\<forall>k \<in> Mapping.keys tio'. dnarrow_tuple msk k) \<and> (\<forall>y \<in> keys'. dnarrow_tuple msk y)"
+  using shift_end'_sub[OF se] dp tio keys by fastforce
+
+text \<open>The update's scan is the only thing that touches the three places the invariants below
+  constrain; these read the scan's three answers off the update's state.\<close>
+
+lemma gupdate_mmtaux'_shift:
+  fixes data_prev :: "(ts \<times> 'b table \<times> 'b table) queue"
+  assumes se: "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+      (empty_queue :: (ts \<times> 'b table \<times> 'b table) queue, data_prev, tio, keys)
+    = (q0, dp', move, tio2, keys2)"
+    and g: "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat
+      = (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss')"
+  shows "data_prev' = dp' \<and> tio' = tio2 \<and> keys' = keys2"
+proof -
+  obtain di' drop where td:
+    "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in = (di', drop)"
+    by (cases "takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in") auto
+  obtain tsh' hs' idx ss' where fh:
+    "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tuple_since_hist, hist_sat, idx_mid, since_sat) = (tsh', hs', idx, ss')"
+    by (cases "fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+       (upd_set (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist) (\<lambda>_. idx_move)
+          (r - Mapping.keys (Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist)),
+        hist_sat \<inter> r, idx_move + 1, since_sat \<inter> r \<union> gsemi_join msk (args_pos args) r l))
+       move (tuple_since_hist, hist_sat, idx_mid, since_sat)") auto
+  show ?thesis
+    using g[unfolded gupdate_mmtaux'_def Let_def se td fh prod.case] by simp
+qed
+
+text \<open>The update's scan keeps the three places narrowness constrains narrow, and the branch the
+  And-Trigger node takes then adds the operands' own tuples, which the node's mask fits.\<close>
+
+lemma gupdate_mmtaux'_tnar:
+  fixes data_prev :: "(ts \<times> 'b table \<times> 'b table) queue"
+  assumes dp: "\<forall>(t, a, b) \<in> set (linearize data_prev).
+      (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)"
+    and tio: "\<forall>k \<in> Mapping.keys tio. dnarrow_tuple msk k"
+    and keys: "\<forall>y \<in> keys. dnarrow_tuple msk y"
+  shows "case gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat of
+      (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss') \<Rightarrow>
+        (\<forall>(t, a, b) \<in> set (linearize data_prev').
+           (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)) \<and>
+        (\<forall>k \<in> Mapping.keys tio'. dnarrow_tuple msk k) \<and> (\<forall>y \<in> keys'. dnarrow_tuple msk y)"
+proof -
+  obtain q0 dp' move tio2 keys2 where se:
+    "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'b table \<times> 'b table) queue, data_prev, tio, keys)
+      = (q0, dp', move, tio2, keys2)"
+    by (cases "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'b table \<times> 'b table) queue, data_prev, tio, keys)") auto
+  obtain im io dpp dii tt kk t1 t2 t3 where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat = (im, io, dpp, dii, tt, kk, t1, t2, t3)"
+    by (metis surj_pair)
+  show ?thesis unfolding g prod.case
+    using shift_end'_tnar[OF dp tio keys se] gupdate_mmtaux'_shift[OF se g] by simp
+qed
+
+lemma gupdate_mmtaux'_keys_sub:
+  fixes data_prev :: "(ts \<times> 'b table \<times> 'b table) queue"
+  shows "case gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat of
+      (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss') \<Rightarrow> keys' \<subseteq> keys"
+proof -
+  obtain q0 dp' move tio2 keys2 where se:
+    "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'b table \<times> 'b table) queue, data_prev, tio, keys)
+      = (q0, dp', move, tio2, keys2)"
+    by (cases "shift_end' (flip_int_less_lower (args_ivl args)) nt fst
+        (empty_queue :: (ts \<times> 'b table \<times> 'b table) queue, data_prev, tio, keys)") auto
+  obtain im io dpp dii tt kk t1 t2 t3 where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys
+        tuple_since_hist hist_sat since_sat = (im, io, dpp, dii, tt, kk, t1, t2, t3)"
+    by (metis surj_pair)
+  show ?thesis unfolding g prod.case
+    using shift_end'_sub[OF se] gupdate_mmtaux'_shift[OF se g] by simp
+qed
+lemma gupdate_mmtaux_tnar:
+  assumes v: "tnar msk ax"
+    and lw: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" and rw: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
+  shows "tnar msk (gupdate_mmtaux args nt l r ax)"
+proof -
+  obtain cur idx_next idx_mid idx_oldest msk' data_prev data_in tio keys tsh hs ss
+    where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tio, keys,
+      tsh, hs, ss)"
+    by (metis surj_pair)
+  have m: "msk' = msk"
+    and adp: "\<forall>(t, a, b) \<in> set (linearize data_prev).
+       (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)"
+    and atio: "\<forall>k \<in> Mapping.keys tio. dnarrow_tuple msk k"
+    and akeys: "\<forall>y \<in> keys. dnarrow_tuple msk y"
+    using v unfolding ax by simp_all
+  obtain idx_mid' idx_oldest' data_prev' data_in' tio' keys' tsh' hs' ss' where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
+      = (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss')"
+    by (metis surj_pair)
+  have n: "(\<forall>(t, a, b) \<in> set (linearize data_prev').
+        (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)) \<and>
+      (\<forall>k \<in> Mapping.keys tio'. dnarrow_tuple msk k) \<and> (\<forall>y \<in> keys'. dnarrow_tuple msk y)"
+    using gupdate_mmtaux'_tnar[OF adp atio akeys, where args = args and nt = nt
+        and idx_mid = idx_mid and idx_oldest = idx_oldest and data_in = data_in
+        and tuple_since_hist = tsh and hist_sat = hs and since_sat = ss]
+    unfolding g prod.case .
+  show ?thesis
+    unfolding ax m gupdate_mmtaux_def Let_def prod.case g
+    using n lw rw by (auto simp: append_queue_rep Mapping_upd_set_keys)
+qed
+
+subsection \<open>The invariant the fused And-Trigger keeps\<close>
+
+text \<open>
+  The And-Trigger node's state does record left tuples, so the read of the widened state unions
+  in their widening rather than the tuples themselves.  The two agree exactly when the widening
+  map is the identity on what is stored, and that is the second invariant the node keeps.  It
+  holds vacuously while the set of recorded keys is empty, which is the standalone trigger's
+  case, and it holds outright when the two operand frames coincide, which is what the safety of
+  a trigger whose interval misses zero forces.
+\<close>
+
+fun tfix :: "'a option gmmtaux \<Rightarrow> bool" where
+  "tfix (cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tuple_in_once,
+      tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat) \<longleftrightarrow>
+    (\<forall>y \<in> tuple_in_once_keys. dwiden msk y = y)"
+
+lemma tvoid_tfix: "tvoid msk ax \<Longrightarrow> tfix ax"
+  by (cases ax rule: tmm.cases) simp
+
+lemma tfix_ginit: "tfix (ginit_mmtaux args msk)"
+  by (simp add: ginit_mmtaux_def)
+
+lemma dwiden_all: "\<forall>b \<in> set msk. b \<Longrightarrow> length y = length msk \<Longrightarrow> dwiden msk y = y"
+  by (induct msk y rule: dwiden.induct) auto
+
+lemma gupdate_mmtaux_tfix:
+  assumes n: "tnar msk ax" and v: "tfix ax"
+    and lw: "mem (args_ivl args) 0 \<or> (\<forall>y \<in> l. dwiden msk y = y)"
+  shows "tfix (gupdate_mmtaux args nt l r ax)"
+proof -
+  obtain cur idx_next idx_mid idx_oldest msk' data_prev data_in tio keys tsh hs ss
+    where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tio, keys,
+      tsh, hs, ss)"
+    by (metis surj_pair)
+  have m: "msk' = msk" using n unfolding ax by simp
+  have akeys: "\<forall>y \<in> keys. dwiden msk y = y" using v unfolding ax m by simp
+  obtain idx_mid' idx_oldest' data_prev' data_in' tio' keys' tsh' hs' ss' where g:
+    "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
+      = (idx_mid', idx_oldest', data_prev', data_in', tio', keys', tsh', hs', ss')"
+    by (metis surj_pair)
+  have ks: "keys' \<subseteq> keys"
+    using gupdate_mmtaux'_keys_sub[where args = args and nt = nt and idx_mid = idx_mid
+        and idx_oldest = idx_oldest and msk = msk and data_prev = data_prev
+        and data_in = data_in and tio = tio and keys = keys and tuple_since_hist = tsh
+        and hist_sat = hs and since_sat = ss]
+    unfolding g prod.case .
+  show ?thesis
+    unfolding ax m gupdate_mmtaux_def Let_def prod.case g
+    using akeys ks lw by auto
+qed
+
+text \<open>The two reads of the structure.  On a non-empty window the kernel's read unions in the
+  widened keys, which the second invariant leaves alone; on an empty one it answers the full
+  table, which the dense node turns into the absence of a constraint.\<close>
 
 lemma result_mmtaux_tmm:
-  assumes v: "tvoid msk ax" and ne: "\<not> gmmtaux_empty ax"
+  assumes v: "tfix ax" and ne: "\<not> gmmtaux_empty ax"
   shows "snd (result_mmtaux args (tmm ax)) = gresult_mmtaux args ax"
   using assms
-  by (cases ax rule: tmm.cases) (simp add: gmmtaux_empty_def gresult_mmtaux_def)
+  by (cases ax rule: tmm.cases) (auto simp: gmmtaux_empty_def gresult_mmtaux_def)
+
+lemma result_mmtaux_empty:
+  assumes e: "gmmtaux_empty ax"
+  shows "result_mmtaux args (tmm ax) = ({}, {replicate (args_n args) None})"
+  using e by (cases ax rule: tmm.cases) (simp add: gmmtaux_empty_def)
 
 lemma init_mmtaux_tmm:
   assumes dm: "dmsk_args args msk"
@@ -580,7 +817,7 @@ text \<open>The update, packaged at the state rather than its components: this i
   evaluator's trigger node uses.\<close>
 
 lemma update_mmtaux_tmm':
-  assumes dm: "dmsk_args args msk" and m0: "mem (args_ivl args) 0" and v: "tvoid msk ax"
+  assumes dm: "dmsk_args args msk" and v: "tnar msk ax"
     and lw: "\<And>y. y \<in> l \<Longrightarrow> dnarrow_tuple msk y" and rw: "\<And>x. x \<in> r \<Longrightarrow> length x = length msk"
   shows "update_mmtaux args nt (dwiden msk ` l) r (tmm ax) = tmm (gupdate_mmtaux args nt l r ax)"
 proof -
@@ -588,11 +825,14 @@ proof -
     where ax: "ax = (cur, idx_next, idx_mid, idx_oldest, msk', data_prev, data_in, tio, keys,
       tsh, hs, ss)"
     by (metis surj_pair)
-  have m: "msk' = msk" and dp: "data_prev = empty_queue"
-    and tio: "tio = Mapping.empty" and keys: "keys = {}" using v ax by simp_all
+  have m: "msk' = msk"
+    and adp: "\<And>t a b. (t, a, b) \<in> set (linearize data_prev) \<Longrightarrow>
+       (\<forall>y \<in> a. dnarrow_tuple msk y) \<and> (\<forall>x \<in> b. length x = length msk)"
+    and atio: "\<And>k. k \<in> Mapping.keys tio \<Longrightarrow> dnarrow_tuple msk k"
+    and akeys: "\<And>y. y \<in> keys \<Longrightarrow> dnarrow_tuple msk y"
+    using v unfolding ax by auto
   show ?thesis unfolding ax m tmm.simps
-    by (rule update_mmtaux_tmm[OF dm m0 _ _ _ lw rw])
-      (use dp tio keys in \<open>simp_all add: empty_queue_rep\<close>)
+    by (rule update_mmtaux_tmm[OF dm adp atio akeys lw rw])
 qed
 
 text \<open>With the interval containing zero the window is never empty after a step: the update
@@ -616,20 +856,39 @@ subsection \<open>The auxiliary list a narrow trigger structure stands for\<clos
 text \<open>
   The evaluator's trigger node carries the narrow structure, and is related to the kernel's
   abstract auxiliary list through the kernel's own validity of the widened state.  The
-  hypotheses of the widening map are kept as part of the relation, as the invariant
-  @{const tvoid}, which the initial state has and the update preserves.
+  hypotheses of the widening map are kept as part of the relation, as the invariants
+  @{const tnar} and @{const tfix}, which the initial state has and the update preserves.  Both
+  the standalone trigger and the fused And-Trigger use this relation; they differ only in the
+  side condition @{term tok}, which the standalone node meets by its interval and the fused one
+  by its two operand frames agreeing.
 \<close>
+
+definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
+  "tok cs_R cs_L args \<longleftrightarrow> mem (args_ivl args) 0 \<or> (cs_L = cs_R \<and> args_pos args)"
+
+lemma dmsk_all:
+  assumes s: "sorted_wrt (<) cs"
+  shows "\<forall>b \<in> set (dmsk cs cs). b"
+proof (rule ballI)
+  have l: "length (dmsk cs cs) = length cs"
+    unfolding dmsk_def by (rule length_mrg_left_key[OF s s order.refl])
+  fix b assume "b \<in> set (dmsk cs cs)"
+  then obtain i where i: "i < length (dmsk cs cs)" and bi: "b = dmsk cs cs ! i"
+    by (auto simp: in_set_conv_nth)
+  show "b" using nth_mrg_left_key[OF s s order.refl, of i] i l
+    unfolding bi dmsk_def by simp
+qed
 
 definition dtaux :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data option gmmtaux \<Rightarrow>
     event_data mtaux \<Rightarrow> bool" where
   "dtaux n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
      (\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r) \<and>
-     tvoid (dmsk cs_R cs_L) daux \<and>
+     tnar (dmsk cs_R cs_L) daux \<and> tfix daux \<and>
      valid_mmtaux (dargs cs_R cs_L args) cur (tmm daux) (dauxlist3 n cs_R auxlist)"
 
 lemma dtaux_init:
   assumes s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
-    and sub: "set cs_L \<subseteq> set cs_R" and m0: "mem (args_ivl args) 0"
+    and sub: "set cs_L \<subseteq> set cs_R" and ok: "tok cs_R cs_L args"
   shows "dtaux n cs_R cs_L args 0 (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
 proof -
   have sub': "cpos cs_R (set cs_L) \<subseteq> {0..<length cs_R}"
@@ -640,28 +899,28 @@ proof -
     using valid_init_mmtaux[where I = "args_ivl args" and n = "length cs_R"
         and L = "cpos cs_R (set cs_L)" and R = "{0..<length cs_R}"
         and pos = "args_pos args" and agg = None]
-      m0 sub'
-    by (simp add: dargs_def Let_def)
+      ok sub'
+    by (auto simp: dargs_def Let_def tok_def cpos_all)
   then show ?thesis
-    by (simp add: dtaux_def dauxlist3_def tvoid_ginit init_mmtaux_tmm[OF dm])
+    by (simp add: dtaux_def dauxlist3_def tvoid_tnar[OF tvoid_ginit] tfix_ginit
+        init_mmtaux_tmm[OF dm])
 qed
 
 lemma dtaux_update:
   assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and nt: "cur \<le> nt"
     and s_R: "sorted_wrt (<) cs_R" and s_L: "sorted_wrt (<) cs_L"
     and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
-    and m0: "mem (args_ivl args) 0"
+    and ok: "tok cs_R cs_L args"
     and tl: "table n (set cs_L) l" and tr: "table n (set cs_R) r"
   shows "dtaux n cs_R cs_L args nt
       (gupdate_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_L l) (dtabc n cs_R r) daux)
       (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist @ [(nt, l, r)])"
 proof -
   have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
-    and vo: "tvoid (dmsk cs_R cs_L) daux"
+    and vn: "tnar (dmsk cs_R cs_L) daux" and vf: "tfix daux"
     and d: "valid_mmtaux (dargs cs_R cs_L args) cur (tmm daux) (dauxlist3 n cs_R auxlist)"
     using v by (auto simp: dtaux_def)
   have b_L: "\<forall>c \<in> set cs_L. c < n" using sub b by auto
-  have m0': "mem (args_ivl (dargs cs_R cs_L args)) 0" using m0 by simp
   have dm: "dmsk_args (dargs cs_R cs_L args) (dmsk cs_R cs_L)"
     unfolding dmsk_def by (rule dmsk_args_dargs[OF s_R s_L sub])
   have lf: "length (filter id (dmsk cs_R cs_L)) = length cs_L"
@@ -677,7 +936,7 @@ proof -
   have u0: "update_mmtaux (dargs cs_R cs_L args) nt (dwiden (dmsk cs_R cs_L) ` dtabc n cs_L l)
         (dtabc n cs_R r) (tmm daux)
       = tmm (gupdate_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_L l) (dtabc n cs_R r) daux)"
-    by (rule update_mmtaux_tmm'[OF dm m0' vo]) (use lw rw in auto)
+    by (rule update_mmtaux_tmm'[OF dm vn]) (use lw rw in auto)
   have u: "update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) (tmm daux)
       = tmm (gupdate_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_L l) (dtabc n cs_R r) daux)"
     using u0 by (simp only: wi)
@@ -687,14 +946,28 @@ proof -
   have tr': "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
       (dtabc n cs_R r)"
     using table_dtabc_cpos[OF s_R b order.refl tr] by (simp add: cpos_all)
+  have tn: "tnar (dmsk cs_R cs_L)
+      (gupdate_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_L l) (dtabc n cs_R r) daux)"
+    by (rule gupdate_mmtaux_tnar[OF vn lw rw])
+  have fx: "tfix (gupdate_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_L l) (dtabc n cs_R r) daux)"
+  proof (rule gupdate_mmtaux_tfix[OF vn vf])
+    show "mem (args_ivl (dargs cs_R cs_L args)) 0 \<or>
+        (\<forall>y \<in> dtabc n cs_L l. dwiden (dmsk cs_R cs_L) y = y)"
+    proof (cases "mem (args_ivl args) 0")
+      case False
+      then have e: "cs_L = cs_R" using ok by (simp add: tok_def)
+      have ly: "\<And>y. y \<in> dtabc n cs_L l \<Longrightarrow> length y = length (dmsk cs_R cs_L)"
+        using lw lf ln e by simp
+      show ?thesis using ly dmsk_all[OF s_R] by (auto simp: e intro: dwiden_all)
+    qed simp
+  qed
   have "valid_mmtaux (dargs cs_R cs_L args) nt
       (update_mmtaux (dargs cs_R cs_L args) nt (dtabc n cs_R l) (dtabc n cs_R r) (tmm daux))
       (filter (\<lambda>(t, _). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
          (dauxlist3 n cs_R auxlist) @ [(nt, dtabc n cs_R l, dtabc n cs_R r)])"
     by (rule valid_update_mmtaux[OF nt tl' tr' d])
   then show ?thesis
-    using w tl tr gupdate_mmtaux_tvoid[OF _ vo, of "dargs cs_R cs_L args" nt "dtabc n cs_L l"
-      "dtabc n cs_R r"] m0
+    using w tl tr tn fx
     by (auto simp: dtaux_def dauxlist3_filter_append u)
 qed
 
@@ -706,15 +979,41 @@ lemma dtaux_result:
        = dtabc n cs_R (snd (trigger_results args cur auxlist))"
 proof -
   have w: "\<forall>(t, l, r) \<in> set auxlist. table n (set cs_L) l \<and> table n (set cs_R) r"
-    and vo: "tvoid (dmsk cs_R cs_L) daux"
+    and vf: "tfix daux"
     and d: "valid_mmtaux (dargs cs_R cs_L args) cur (tmm daux) (dauxlist3 n cs_R auxlist)"
     using v by (auto simp: dtaux_def)
   have res: "result_mmtaux (dargs cs_R cs_L args) (tmm daux)
       = trigger_results (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist)"
     by (rule valid_result_mmtaux[OF d])
   show ?thesis
-    unfolding result_mmtaux_tmm[OF vo ne, symmetric] res
+    unfolding result_mmtaux_tmm[OF vf ne, symmetric] res
     by (rule dtabc_trigger_results[OF s b sub an aL aR w])
+qed
+
+text \<open>With an empty window the kernel's read is the full table, and that is decided by the
+  timestamps alone, so it is the same read at the node's own frame.\<close>
+
+lemma dtaux_result_empty:
+  assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and e: "gmmtaux_empty daux"
+  shows "trigger_results args cur auxlist = ({}, {replicate (args_n args) None})"
+proof -
+  have d: "valid_mmtaux (dargs cs_R cs_L args) cur (tmm daux) (dauxlist3 n cs_R auxlist)"
+    using v by (auto simp: dtaux_def)
+  obtain cur' idx_next idx_mid idx_oldest msk data_prev data_in tio keys tsh hs ss
+    where ax: "daux = (cur', idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tio, keys,
+      tsh, hs, ss)"
+    by (metis surj_pair)
+  have ie: "linearize data_in = []"
+    using e unfolding ax by (simp add: gmmtaux_empty_def Queue.is_empty_alt)
+  have "map (\<lambda>(t, l, r). (t, r))
+      (auxlist_data_in (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist))
+    = linearize data_in"
+    using d unfolding ax tmm.simps valid_mmtaux_def prod.case by blast
+  then have "auxlist_data_in (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist) = []"
+    unfolding ie by simp
+  then have "filter (\<lambda>x. mem (args_ivl args) (cur - fst x)) auxlist = []"
+    by (simp add: auxlist_data_in_def dauxlist3_def filter_map case_prod_beta comp_def)
+  then show ?thesis by (simp add: split_def)
 qed
 
 (*<*)

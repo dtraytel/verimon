@@ -847,6 +847,7 @@ proof -
     and dbf: "dbuf = (map (dtabc n cs_L) (fst buf), map (dtabc n cs_R) (snd buf))"
     using rel by (rule dtrigger_relE)
   have m0': "mem (args_ivl (dargs cs_R cs_L args)) 0" using m0 by simp
+  have tk: "tok cs_R cs_L args" using m0 by (simp add: tok_def)
   obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
   define us where "us = fst buf @ as"
   define vs where "vs = snd buf @ bs"
@@ -889,7 +890,7 @@ proof -
       using wfz t1 t2 unfolding al'_def by auto
     have vd': "dtaux n cs_R cs_L args v
         (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c) (snd z')) al'"
-      unfolding al'_def by (rule dtaux_update[OF vdz wv s sL b sub m0]) (use t1 t2 in simp_all)
+      unfolding al'_def by (rule dtaux_update[OF vdz wv s sL b sub tk]) (use t1 t2 in simp_all)
     have ne: "\<not> gmmtaux_empty (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a)
         (dtabc n cs_R c) (snd z'))"
       by (rule gupdate_mmtaux_not_empty[OF m0'])
