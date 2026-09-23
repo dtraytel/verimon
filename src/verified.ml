@@ -57,6 +57,50 @@ end = struct
   let compare x y = Z.of_int (Stdlib.compare x y);;
 end;;
 
+module Str_Literal : sig
+  val literal_of_asciis : Z.t list -> string
+  val asciis_of_literal: string -> Z.t list
+end = struct
+
+(* deliberate clones not relying on List._ module *)
+
+let rec length xs = match xs with
+    [] -> 0
+  | x :: xs -> 1 + length xs;;
+
+let rec nth xs n = match xs with
+  (x :: xs) -> if n <= 0 then x else nth xs (n - 1);;
+
+let rec map_range f n =
+  if n <= 0
+    then []
+    else
+      let m = n - 1
+    in map_range f m @ [f m];;
+
+let implode f xs =
+  String.init (length xs) (fun n -> f (nth xs n));;
+
+let explode f s =
+  map_range (fun n -> f (String.get s n)) (String.length s);;
+
+let z_128 = Z.of_int 128;;
+
+let check_ascii k =
+  if 0 <= k && k < 128
+  then k
+  else failwith "Non-ASCII character in literal";;
+
+let char_of_ascii k = Char.chr (Z.to_int (Z.rem k z_128));;
+
+let ascii_of_char c = Z.of_int (check_ascii (Char.code c));;
+
+let literal_of_asciis ks = implode char_of_ascii ks;;
+
+let asciis_of_literal s = explode ascii_of_char s;;
+
+end;;
+
 module Monitor : sig
   type nat
   val integer_of_nat : nat -> Z.t
@@ -119,6 +163,10 @@ module Monitor : sig
   val mmonitorable_exec : 'a formula -> bool
   val udminit_push : ty formula -> unit udmstate_ext
   val convert_multiway : 'a formula -> 'a formula
+  val prepare_verimon :
+    bool ->
+      (string * nat -> (tysym list) option) ->
+        tysym formula -> (string, ty formula) sum
   val uempty_db : ((string * nat), ((event_data list) set list)) mapping
   val urbt_fold :
     (event_data list -> 'a -> 'a) ->
@@ -129,6 +177,11 @@ module Monitor : sig
       unit udmstate_ext ->
         (nat * (nat * (event_data list) set)) list * unit udmstate_ext
   val utable_of_list : (event_data list) list -> (event_data list) set
+  val udminit_verimon :
+    bool ->
+      bool ->
+        (string * nat -> (tysym list) option) ->
+          tysym formula -> (string, unit udmstate_ext) sum
   val uvdfail_nodes : udformula -> nat
   val uinsert_table_into_db :
     string * nat ->
@@ -2611,6 +2664,12 @@ let mapping_impl_string8 =
 
 let equal_integer = ({equal = Z.equal} : Z.t equal);;
 
+let one_integera : Z.t = (Z.of_int 1);;
+
+let one_integer = ({one = one_integera} : Z.t one);;
+
+let zero_integer = ({zero = Z.zero} : Z.t zero);;
+
 let ord_integer = ({less_eq = Z.leq; less = Z.lt} : Z.t ord);;
 
 let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
@@ -2618,6 +2677,10 @@ let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
 let order_integer = ({preorder_order = preorder_integer} : Z.t order);;
 
 let linorder_integer = ({order_linorder = order_integer} : Z.t linorder);;
+
+let zero_neq_one_integer =
+  ({one_zero_neq_one = one_integer; zero_zero_neq_one = zero_integer} :
+    Z.t zero_neq_one);;
 
 let equal_event_data = ({equal = equal_event_dataa} : event_data equal);;
 
@@ -2923,6 +2986,8 @@ type cmp_val = LT | EQ | GT;;
 type 'a regex = Skip of nat | Test of 'a | Plusa of 'a regex * 'a regex |
   Times of 'a regex * 'a regex | Star of 'a regex;;
 
+type char = Chara of bool * bool * bool * bool * bool * bool * bool * bool;;
+
 type safety = Strict | Lax;;
 
 type tysym = TAny of nat | TNum of nat | TCst of ty;;
@@ -3019,6 +3084,24 @@ type ('a, 'b, 'c) meformula = MRel of ((event_data option) list) set |
 
 type ('a, 'b, 'c) mformula = Rep_meformula of ('a, 'b, 'c) meformula;;
 
+type argpos = Same | Swapped;;
+
+type 'a formulaa = Preda of string * trm list |
+  Leta of string * 'a formulaa * 'a formulaa |
+  Frza of string * 'a formulaa * 'a formulaa |
+  LetPasta of string * 'a formulaa * 'a formulaa | Eqb of trm * trm |
+  Lessa of trm * trm | LessEqa of trm * trm | Nega of 'a formulaa |
+  Ora of 'a formulaa * 'a formulaa | Anda of 'a formulaa * 'a formulaa |
+  Andsa of 'a formulaa list | Existsa of 'a * 'a formulaa |
+  Agga of nat * (agg_type * 'a) * 'a list * trm * 'a formulaa |
+  Preva of i * 'a formulaa | Nexta of i * 'a formulaa | Once of i * 'a formulaa
+  | Eventually of i * 'a formulaa | Historically of i * 'a formulaa |
+  Always of i * 'a formulaa | Sincea of 'a formulaa * i * 'a formulaa |
+  Untila of 'a formulaa * i * 'a formulaa |
+  Triggera of 'a formulaa * i * 'a formulaa |
+  Releasea of 'a formulaa * i * 'a formulaa | MatchFa of i * 'a formulaa regex |
+  MatchPa of i * 'a formulaa regex | TPa of trm | TSa of trm;;
+
 type 'a wf_table = Wf_table_of_wf_set of 'a wf_set |
   Wf_table_of_idx of 'a wf_idx |
   Wf_table_of_set of nat * nat set * (('a option) list) set |
@@ -3112,6 +3195,9 @@ let rec drop
     | n, x :: xs ->
         (if equal_nata n zero_nata then x :: xs
           else drop (minus_nata n one_nata) xs);;
+
+let rec find uu x1 = match uu, x1 with uu, [] -> None
+               | p, x :: xs -> (if p x then Some x else find p xs);;
 
 let rec last (x :: xs) = (if null xs then x else last xs);;
 
@@ -3919,6 +4005,345 @@ let rec these (_A1, _A2, _A3)
   a = image_filter ((ceq_option _A1), (ccompare_option _A2)) (_A1, _A2, _A3)
         (fun x -> x) a;;
 
+let rec nat_subset
+  x0 b = match x0, b with
+    RBT_set rbt1, RBT_set rbt2 ->
+      sorted_list_subset_fusion (lt_of_comp compare_nat) equal_nata
+        rbt_keys_generator rbt_keys_generator (init ccompare_nat rbt1)
+        (init ccompare_nat rbt2)
+    | Complement a1, Complement a2 -> nat_subset a2 a1
+    | Collect_set p, Complement a ->
+        nat_subset a (collect cenum_nat (fun x -> not (p x)))
+    | RBT_set rbt, b ->
+        list_all_fusion rbt_keys_generator (fun x -> nat_member x b)
+          (init ccompare_nat rbt)
+    | DList_set dxs, c -> dlist_all ceq_nat (fun x -> nat_member x c) dxs
+    | Set_Monad xs, c -> list_all (fun x -> nat_member x c) xs;;
+
+let rec rep_I (Abs_I x) = x;;
+
+let rec memR x = fst (snd (rep_I x));;
+
+let rec memL x = fst (rep_I x);;
+
+let rec rr
+  b x1 = match b, x1 with
+    b, Preda (r, ts) ->
+      sup_setb
+        (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+          set_impl_nat)
+        (image (ceq_trm, ccompare_trm)
+          ((ceq_set
+             (cenum_nat, ceq_nat,
+               cproper_interval_nat.ccompare_cproper_interval)),
+            (ccompare_set
+              (finite_UNIV_nat, ceq_nat, cproper_interval_nat, set_impl_nat)),
+            set_impl_set)
+          (fvi_trm b) (set (ceq_trm, ccompare_trm, set_impl_trm) ts))
+    | b, Leta (p, phi, psi) -> rr b psi
+    | b, Frza (p, phi, psi) -> rr b psi
+    | b, LetPasta (p, phi, psi) -> rr b psi
+    | b, Eqb (t1, t2) ->
+        (match (t1, t2)
+          with (Var _, Var _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var x, Const _) ->
+            insert (ceq_nat, ccompare_nat) (minus_nata x b)
+              (set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+          | (Var _, Plus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Minus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, UMinus _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mult (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Div (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mod (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, F2i _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, I2f _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Var x) ->
+            insert (ceq_nat, ccompare_nat) (minus_nata x b)
+              (set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+          | (Const _, Const _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Plus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Minus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, UMinus _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Mult (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Div (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, Mod (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, F2i _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, I2f _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Plus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Minus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (UMinus _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mult (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Div (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mod (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (F2i _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (I2f _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | b, Lessa (t1, t2) ->
+        (match (t1, t2)
+          with (Var _, Var _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var x, Const _) ->
+            insert (ceq_nat, ccompare_nat) (minus_nata x b)
+              (set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+          | (Var _, Plus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Minus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, UMinus _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mult (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Div (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mod (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, F2i _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, I2f _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Plus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Minus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (UMinus _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mult (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Div (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mod (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (F2i _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (I2f _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | b, LessEqa (t1, t2) ->
+        (match (t1, t2)
+          with (Var _, Var _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var x, Const _) ->
+            insert (ceq_nat, ccompare_nat) (minus_nata x b)
+              (set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+          | (Var _, Plus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Minus (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, UMinus _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mult (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Div (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, Mod (_, _)) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, F2i _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Var _, I2f _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Const _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Plus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Minus (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (UMinus _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mult (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Div (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (Mod (_, _), _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (F2i _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          | (I2f _, _) ->
+            set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | b, Ora (phi, psi) ->
+        inf_seta (ceq_nat, ccompare_nat) (rr b phi) (rr b psi)
+    | b, Anda (phi, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (rr b psi) (rr b phi)
+    | b, Andsa phi_s ->
+        (let xs = mapa (rr b) phi_s in
+          sup_setb
+            (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+              set_impl_nat)
+            (image
+              ((ceq_set
+                 (cenum_nat, ceq_nat,
+                   cproper_interval_nat.ccompare_cproper_interval)),
+                (ccompare_set
+                  (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)))
+              ((ceq_set
+                 (cenum_nat, ceq_nat,
+                   cproper_interval_nat.ccompare_cproper_interval)),
+                (ccompare_set
+                  (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)),
+                set_impl_set)
+              (fun x -> x)
+              (set ((ceq_set
+                      (cenum_nat, ceq_nat,
+                        cproper_interval_nat.ccompare_cproper_interval)),
+                     (ccompare_set
+                       (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                         set_impl_nat)),
+                     set_impl_set)
+                xs)))
+    | b, Existsa (t, phi) ->
+        (if nat_member zero_nata (rr zero_nata phi) then rr (suc b) phi
+          else set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | ba, Agga (y, omega, b, f, phi) ->
+        (if nat_subset (unbox nat_atLeastLessThan_v zero_nata (size_lista b))
+              (rr zero_nata phi)
+          then sup_seta (ceq_nat, ccompare_nat)
+                 (insert (ceq_nat, ccompare_nat) y
+                   (set_empty (ceq_nat, ccompare_nat)
+                     (of_phantom set_impl_nata)))
+                 (rr (plus_nata ba (size_lista b)) phi)
+          else set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | b, Preva (i, phi) -> rr b phi
+    | b, Nexta (i, phi) -> rr b phi
+    | b, Sincea (phi, i, psi) -> rr b psi
+    | b, Untila (phi, i, psi) -> rr b psi
+    | b, Releasea (phi, i, psi) ->
+        (if not (memL i zero_nata && memR i zero_nata)
+          then set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          else rr b psi)
+    | b, Triggera (phi, i, psi) ->
+        (if not (memL i zero_nata && memR i zero_nata)
+          then set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          else rr b psi)
+    | b, MatchFa (i, r) ->
+        set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+    | b, MatchPa (i, r) ->
+        set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+    | b, Nega alpha ->
+        set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+    | b, Eventually (i, alpha) -> rr b alpha
+    | b, Once (i, alpha) -> rr b alpha
+    | b, Always (i, alpha) ->
+        (if not (memL i zero_nata && memR i zero_nata)
+          then set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          else rr b alpha)
+    | b, Historically (i, alpha) ->
+        (if not (memL i zero_nata && memR i zero_nata)
+          then set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata)
+          else rr b alpha)
+    | b, TPa t -> fvi_trm b t
+    | b, TSa t -> fvi_trm b t;;
+
+let rec uminus_event_data = function EInt x -> EInt (Z.neg x)
+                            | EFloat x -> EFloat (Stdlib.(~-.) x)
+                            | EString v -> failwith "undefined";;
+
+let rec mod_to_zero
+  x y = (let z =
+           snd ((fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem
+                  (Z.abs k) (Z.abs l))
+                 x y)
+           in
+          (if Z.lt x Z.zero then Z.neg z else z));;
+
+let rec modulo_event_data
+  uu uv = match uu, uv with EInt x, EInt y -> EInt (mod_to_zero x y)
+    | EFloat v, uv -> failwith "undefined"
+    | EString v, uv -> failwith "undefined"
+    | uu, EFloat v -> failwith "undefined"
+    | uu, EString v -> failwith "undefined";;
+
+let rec div_to_zero
+  x y = (let z =
+           fst ((fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem
+                  (Z.abs k) (Z.abs l))
+                 x y)
+           in
+          (if not (equal_boola (Z.lt x Z.zero) (Z.lt y Z.zero)) then Z.neg z
+            else z));;
+
+let rec divide_event_data
+  uu uv = match uu, uv with EInt x, EInt y -> EInt (div_to_zero x y)
+    | EFloat x, EFloat y -> EFloat (Stdlib.(/.) x y)
+    | EFloat v, EInt va -> failwith "undefined"
+    | EFloat v, EString va -> failwith "undefined"
+    | EString v, uv -> failwith "undefined"
+    | EInt va, EFloat v -> failwith "undefined"
+    | uu, EString v -> failwith "undefined";;
+
+let rec times_event_data
+  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.mul x y)
+    | EFloat x, EFloat y -> EFloat (Stdlib.( *. ) x y)
+    | EFloat v, EInt va -> failwith "undefined"
+    | EFloat v, EString va -> failwith "undefined"
+    | EString v, uv -> failwith "undefined"
+    | EInt va, EFloat v -> failwith "undefined"
+    | uu, EString v -> failwith "undefined";;
+
+let rec minus_event_data
+  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.sub x y)
+    | EFloat x, EFloat y -> EFloat (Stdlib.(-.) x y)
+    | EFloat v, EInt va -> failwith "undefined"
+    | EFloat v, EString va -> failwith "undefined"
+    | EString v, uv -> failwith "undefined"
+    | EInt va, EFloat v -> failwith "undefined"
+    | uu, EString v -> failwith "undefined";;
+
+let rec plus_event_data
+  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.add x y)
+    | EFloat x, EFloat y -> EFloat (Stdlib.(+.) x y)
+    | EFloat v, EInt va -> failwith "undefined"
+    | EFloat v, EString va -> failwith "undefined"
+    | EString v, uv -> failwith "undefined"
+    | EInt va, EFloat v -> failwith "undefined"
+    | uu, EString v -> failwith "undefined";;
+
+let rec integer_of_event_data = function EInt uu -> failwith "undefined"
+                                | EFloat x -> Z.of_float x
+                                | EString uv -> failwith "undefined";;
+
+let rec double_of_event_data = function EInt x -> Z.to_float x
+                               | EFloat uu -> failwith "undefined"
+                               | EString uv -> failwith "undefined";;
+
+let rec eval_trm
+  v x1 = match v, x1 with v, Var x -> nth v x
+    | v, Const x -> x
+    | v, Plus (x, y) -> plus_event_data (eval_trm v x) (eval_trm v y)
+    | v, Minus (x, y) -> minus_event_data (eval_trm v x) (eval_trm v y)
+    | v, UMinus x -> uminus_event_data (eval_trm v x)
+    | v, Mult (x, y) -> times_event_data (eval_trm v x) (eval_trm v y)
+    | v, Div (x, y) -> divide_event_data (eval_trm v x) (eval_trm v y)
+    | v, Mod (x, y) -> modulo_event_data (eval_trm v x) (eval_trm v y)
+    | v, F2i x -> EInt (integer_of_event_data (eval_trm v x))
+    | v, I2f x -> EFloat (double_of_event_data (eval_trm v x));;
+
 let rec exhaustive_above_fusion
   proper_interval g y s =
     (if has_next g s
@@ -4003,6 +4428,11 @@ let rec is_empty (_A1, _A2, _A3)
               (fun _ -> is_empty (_A1, _A2, _A3) (DList_set dxs))
           | Some _ -> nulla _A2 dxs)
     | Set_Monad xs -> null xs;;
+
+let rec st
+  t = (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
+            (fvi_trm zero_nata t)
+        then Const (eval_trm [] t) else t);;
 
 let rec map_regex
   f x1 = match f, x1 with f, Skip x1 -> Skip x1
@@ -4219,8 +4649,8 @@ let rec check_pred
           bind (check_pred p (comp f e) trms (mapa f ts))
             (fun fa -> Inr (comp fa f)))
     | p, e, [], [] -> Inr id
-    | p, e, [], v :: va -> Inl ("wrong arity for predicate " ^ (fun x -> x) p)
-    | p, e, v :: va, [] -> Inl ("wrong arity for predicate " ^ (fun x -> x) p);;
+    | p, e, [], v :: va -> Inl ("wrong arity for predicate " ^ id p)
+    | p, e, v :: va, [] -> Inl ("wrong arity for predicate " ^ id p);;
 
 let rec check_ands_f
   check s e =
@@ -4248,8 +4678,7 @@ let rec check
   s e x2 = match s, e, x2 with
     s, e, Pred (r, ts) ->
       (match s (r, size_lista ts)
-        with None ->
-          Inl (("unknown predicate " ^ (fun x -> x) r) ^ " in input formula")
+        with None -> Inl (("unknown predicate " ^ id r) ^ " in input formula")
         | Some a -> check_pred r e ts a)
     | s, e, Let (p, phi, psi) ->
         (let f0 = funpow (nfv phi) new_type_symbol in
@@ -4370,12 +4799,6 @@ let rec no_left p = list_all (fun m -> not (equal_mrg m MLft)) p;;
 
 let rec rem_col cs y = filtera (fun c -> not (equal_nata c y)) cs;;
 
-let rec rep_I (Abs_I x) = x;;
-
-let rec memL x = fst (rep_I x);;
-
-let rec memR x = fst (snd (rep_I x));;
-
 let rec mapping_empty_choose _A
   = (match ccompare _A with None -> Assoc_List_Mapping empty
       | Some _ -> RBT_Mapping (emptyc _A));;
@@ -4403,6 +4826,100 @@ let rec hd_queue_t
 let rec hd_queue x = hd_queue_t (rep_queue x);;
 
 let rec safe_hd q = (let qa = norm_queue q in (hd_queue qa, qa));;
+
+let rec fvia
+  b x1 = match b, x1 with
+    b, Preda (r, ts) ->
+      sup_setb
+        (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+          set_impl_nat)
+        (image (ceq_trm, ccompare_trm)
+          ((ceq_set
+             (cenum_nat, ceq_nat,
+               cproper_interval_nat.ccompare_cproper_interval)),
+            (ccompare_set
+              (finite_UNIV_nat, ceq_nat, cproper_interval_nat, set_impl_nat)),
+            set_impl_set)
+          (fvi_trm b) (set (ceq_trm, ccompare_trm, set_impl_trm) ts))
+    | b, Leta (p, phi, psi) -> fvia b psi
+    | b, Frza (p, phi, psi) -> fvia b psi
+    | b, LetPasta (p, phi, psi) -> fvia b psi
+    | b, Eqb (t1, t2) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvi_trm b t1) (fvi_trm b t2)
+    | b, Lessa (t1, t2) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvi_trm b t1) (fvi_trm b t2)
+    | b, LessEqa (t1, t2) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvi_trm b t1) (fvi_trm b t2)
+    | b, Nega phi -> fvia b phi
+    | b, Ora (phi, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, Anda (phi, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, Andsa phi_s ->
+        (let xs = mapa (fvia b) phi_s in
+          sup_setb
+            (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+              set_impl_nat)
+            (image
+              ((ceq_set
+                 (cenum_nat, ceq_nat,
+                   cproper_interval_nat.ccompare_cproper_interval)),
+                (ccompare_set
+                  (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)))
+              ((ceq_set
+                 (cenum_nat, ceq_nat,
+                   cproper_interval_nat.ccompare_cproper_interval)),
+                (ccompare_set
+                  (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)),
+                set_impl_set)
+              (fun x -> x)
+              (set ((ceq_set
+                      (cenum_nat, ceq_nat,
+                        cproper_interval_nat.ccompare_cproper_interval)),
+                     (ccompare_set
+                       (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                         set_impl_nat)),
+                     set_impl_set)
+                xs)))
+    | b, Existsa (t, phi) -> fvia (suc b) phi
+    | b, Agga (y, omega, tys, f, phi) ->
+        sup_seta (ceq_nat, ccompare_nat)
+          (sup_seta (ceq_nat, ccompare_nat)
+            (fvia (plus_nata b (size_lista tys)) phi)
+            (fvi_trm (plus_nata b (size_lista tys)) f))
+          (if less_eq_nat b y
+            then insert (ceq_nat, ccompare_nat) (minus_nata y b)
+                   (set_empty (ceq_nat, ccompare_nat)
+                     (of_phantom set_impl_nata))
+            else set_empty (ceq_nat, ccompare_nat) (of_phantom set_impl_nata))
+    | b, Preva (i, phi) -> fvia b phi
+    | b, Nexta (i, phi) -> fvia b phi
+    | b, Once (i, phi) -> fvia b phi
+    | b, Eventually (i, phi) -> fvia b phi
+    | b, Historically (i, phi) -> fvia b phi
+    | b, Always (i, phi) -> fvia b phi
+    | b, Sincea (phi, i, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, Untila (phi, i, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, Triggera (phi, i, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, Releasea (phi, i, psi) ->
+        sup_seta (ceq_nat, ccompare_nat) (fvia b phi) (fvia b psi)
+    | b, MatchFa (i, r) ->
+        fv_regex (ceq_nat, ccompare_nat, set_impl_nat) (fvia b) r
+    | b, MatchPa (i, r) ->
+        fv_regex (ceq_nat, ccompare_nat, set_impl_nat) (fvia b) r
+    | b, TPa t -> fvi_trm b t
+    | b, TSa t -> fvi_trm b t;;
+
+let rec nfva
+  phi = nat_Max
+          (insert (ceq_nat, ccompare_nat) zero_nata
+            (image (ceq_nat, ccompare_nat) (ceq_nat, ccompare_nat, set_impl_nat)
+              suc (fvia zero_nata phi)));;
 
 let rec inorder = function Leaf -> []
                   | Node (l, (a, uu), r) -> inorder l @ a :: inorder r;;
@@ -4459,6 +4976,10 @@ let rec smp_cols = function [] -> []
                    | I2f v :: ts -> [];;
 
 let rec dmsk cs_R cs_L = mrg_left_key (mrg_plan cs_R cs_L);;
+
+let rec eventually i phi = Until (tt, i, phi);;
+
+let rec always i phi = Neg (eventually i (Neg phi));;
 
 let rec partition
   p x1 = match p, x1 with p, [] -> ([], [])
@@ -4637,6 +5158,41 @@ let rec tl_queue_t
         | (_ :: asa, ls) -> (asa, ls));;
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
+
+let rec of_bool _A = function false -> zero _A.zero_zero_neq_one
+                     | true -> one _A.one_zero_neq_one;;
+
+let rec integer_of_char
+  (Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
+    Z.add (Z.mul
+            (Z.add
+              (Z.mul
+                (Z.add
+                  (Z.mul
+                    (Z.add
+                      (Z.mul
+                        (Z.add
+                          (Z.mul
+                            (Z.add
+                              (Z.mul
+                                (Z.add
+                                  (Z.mul (of_bool zero_neq_one_integer b7)
+                                    (Z.of_int 2))
+                                  (of_bool zero_neq_one_integer b6))
+                                (Z.of_int 2))
+                              (of_bool zero_neq_one_integer b5))
+                            (Z.of_int 2))
+                          (of_bool zero_neq_one_integer b4))
+                        (Z.of_int 2))
+                      (of_bool zero_neq_one_integer b3))
+                    (Z.of_int 2))
+                  (of_bool zero_neq_one_integer b2))
+                (Z.of_int 2))
+              (of_bool zero_neq_one_integer b1))
+            (Z.of_int 2))
+      (of_bool zero_neq_one_integer b0);;
+
+let rec implode cs = Str_Literal.literal_of_asciis (mapa integer_of_char cs);;
 
 let rec restrict_aux
   i a x2 = match i, a, x2 with i, a, [] -> []
@@ -4858,6 +5414,146 @@ let rec pop_queue_t
 
 let rec pop_queue xa = Abs_queue (pop_queue_t (rep_queue xa));;
 
+let rec neg_r
+  phi = (match phi with Preda (_, _) -> Nega phi | Leta (_, _, _) -> Nega phi
+          | Frza (_, _, _) -> Nega phi | LetPasta (_, _, _) -> Nega phi
+          | Eqb (_, _) -> Nega phi | Lessa (_, _) -> Nega phi
+          | LessEqa (_, _) -> Nega phi | Nega _ -> Nega phi
+          | Ora (_, _) -> Nega phi | Anda (_, _) -> Nega phi
+          | Andsa _ -> Nega phi | Existsa (_, _) -> Nega phi
+          | Agga (_, _, _, _, _) -> Nega phi | Preva (_, _) -> Nega phi
+          | Nexta (_, _) -> Nega phi | Once (_, Preda (_, _)) -> Nega phi
+          | Once (_, Leta (_, _, _)) -> Nega phi
+          | Once (_, Frza (_, _, _)) -> Nega phi
+          | Once (_, LetPasta (_, _, _)) -> Nega phi
+          | Once (_, Eqb (_, _)) -> Nega phi
+          | Once (_, Lessa (_, _)) -> Nega phi
+          | Once (_, LessEqa (_, _)) -> Nega phi
+          | Once (i, Nega a) -> Historically (i, a)
+          | Once (_, Ora (_, _)) -> Nega phi | Once (_, Anda (_, _)) -> Nega phi
+          | Once (_, Andsa _) -> Nega phi | Once (_, Existsa (_, _)) -> Nega phi
+          | Once (_, Agga (_, _, _, _, _)) -> Nega phi
+          | Once (_, Preva (_, _)) -> Nega phi
+          | Once (_, Nexta (_, _)) -> Nega phi
+          | Once (_, Once (_, _)) -> Nega phi
+          | Once (_, Eventually (_, _)) -> Nega phi
+          | Once (_, Historically (_, _)) -> Nega phi
+          | Once (_, Always (_, _)) -> Nega phi
+          | Once (_, Sincea (_, _, _)) -> Nega phi
+          | Once (_, Untila (_, _, _)) -> Nega phi
+          | Once (_, Triggera (_, _, _)) -> Nega phi
+          | Once (_, Releasea (_, _, _)) -> Nega phi
+          | Once (_, MatchFa (_, _)) -> Nega phi
+          | Once (_, MatchPa (_, _)) -> Nega phi | Once (_, TPa _) -> Nega phi
+          | Once (_, TSa _) -> Nega phi
+          | Eventually (_, Preda (_, _)) -> Nega phi
+          | Eventually (_, Leta (_, _, _)) -> Nega phi
+          | Eventually (_, Frza (_, _, _)) -> Nega phi
+          | Eventually (_, LetPasta (_, _, _)) -> Nega phi
+          | Eventually (_, Eqb (_, _)) -> Nega phi
+          | Eventually (_, Lessa (_, _)) -> Nega phi
+          | Eventually (_, LessEqa (_, _)) -> Nega phi
+          | Eventually (i, Nega a) -> Always (i, a)
+          | Eventually (_, Ora (_, _)) -> Nega phi
+          | Eventually (_, Anda (_, _)) -> Nega phi
+          | Eventually (_, Andsa _) -> Nega phi
+          | Eventually (_, Existsa (_, _)) -> Nega phi
+          | Eventually (_, Agga (_, _, _, _, _)) -> Nega phi
+          | Eventually (_, Preva (_, _)) -> Nega phi
+          | Eventually (_, Nexta (_, _)) -> Nega phi
+          | Eventually (_, Once (_, _)) -> Nega phi
+          | Eventually (_, Eventually (_, _)) -> Nega phi
+          | Eventually (_, Historically (_, _)) -> Nega phi
+          | Eventually (_, Always (_, _)) -> Nega phi
+          | Eventually (_, Sincea (_, _, _)) -> Nega phi
+          | Eventually (_, Untila (_, _, _)) -> Nega phi
+          | Eventually (_, Triggera (_, _, _)) -> Nega phi
+          | Eventually (_, Releasea (_, _, _)) -> Nega phi
+          | Eventually (_, MatchFa (_, _)) -> Nega phi
+          | Eventually (_, MatchPa (_, _)) -> Nega phi
+          | Eventually (_, TPa _) -> Nega phi
+          | Eventually (_, TSa _) -> Nega phi | Historically (_, _) -> Nega phi
+          | Always (_, _) -> Nega phi | Sincea (_, _, _) -> Nega phi
+          | Untila (_, _, _) -> Nega phi | Triggera (_, _, _) -> Nega phi
+          | Releasea (_, _, _) -> Nega phi | MatchFa (_, _) -> Nega phi
+          | MatchPa (_, _) -> Nega phi | TPa _ -> Nega phi
+          | TSa _ -> Nega phi);;
+
+let rec is_TT
+  phi = (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+          | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+          | Eq (t1, t2) ->
+            equal_trma t1 (Const (EInt Z.zero)) &&
+              equal_trma t2 (Const (EInt Z.zero))
+          | Less (_, _) -> false | LessEq (_, _) -> false | Neg _ -> false
+          | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+          | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+          | Prev (_, _) -> false | Next (_, _) -> false
+          | Since (_, _, _) -> false | Until (_, _, _) -> false
+          | Trigger (_, _, _) -> false | Release (_, _, _) -> false
+          | MatchF (_, _) -> false | MatchP (_, _) -> false | TP _ -> false
+          | TS _ -> false);;
+
+let rec embed
+  = function Pred (p, ts) -> Preda (p, ts)
+    | Let (p, phi, psi) -> Leta (p, embed phi, embed psi)
+    | Frz (p, phi, psi) -> Frza (p, embed phi, embed psi)
+    | LetPast (p, phi, psi) -> LetPasta (p, embed phi, embed psi)
+    | Eq (t1, t2) -> Eqb (t1, t2)
+    | LessEq (t1, t2) -> LessEqa (t1, t2)
+    | Less (t1, t2) -> Lessa (t1, t2)
+    | Neg phi -> neg_r (embed phi)
+    | Or (phi, psi) -> Ora (embed phi, embed psi)
+    | And (phi, psi) -> Anda (embed phi, embed psi)
+    | Ands phi_s -> Andsa (mapa embed phi_s)
+    | Exists (t, phi) -> Existsa (t, embed phi)
+    | Agg (y, omega, b, f, phi) -> Agga (y, omega, b, f, embed phi)
+    | Prev (i, phi) -> Preva (i, embed phi)
+    | Next (i, phi) -> Nexta (i, embed phi)
+    | Since (phi, i, psi) ->
+        (if is_TT phi then Once (i, embed psi)
+          else Sincea (embed phi, i, embed psi))
+    | Until (phi, i, psi) ->
+        (if is_TT phi then Eventually (i, embed psi)
+          else Untila (embed phi, i, embed psi))
+    | Trigger (phi, i, psi) -> Triggera (embed phi, i, embed psi)
+    | Release (phi, i, psi) -> Releasea (embed phi, i, embed psi)
+    | MatchF (i, r) -> MatchFa (i, map_regex embed r)
+    | MatchP (i, r) -> MatchPa (i, map_regex embed r)
+    | TP t -> TPa t
+    | TS t -> TSa t;;
+
+let rec fix_r
+  r uu = match r, uu with Sincea (l, i, r), Swapped -> Sincea (r, i, l)
+    | Untila (l, i, r), Swapped -> Untila (r, i, l)
+    | Preda (v, va), uu -> Preda (v, va)
+    | Leta (v, va, vb), uu -> Leta (v, va, vb)
+    | Frza (v, va, vb), uu -> Frza (v, va, vb)
+    | LetPasta (v, va, vb), uu -> LetPasta (v, va, vb)
+    | Eqb (v, va), uu -> Eqb (v, va)
+    | Lessa (v, va), uu -> Lessa (v, va)
+    | LessEqa (v, va), uu -> LessEqa (v, va)
+    | Nega v, uu -> Nega v
+    | Ora (v, va), uu -> Ora (v, va)
+    | Anda (v, va), uu -> Anda (v, va)
+    | Andsa v, uu -> Andsa v
+    | Existsa (v, va), uu -> Existsa (v, va)
+    | Agga (v, va, vb, vc, vd), uu -> Agga (v, va, vb, vc, vd)
+    | Preva (v, va), uu -> Preva (v, va)
+    | Nexta (v, va), uu -> Nexta (v, va)
+    | Once (v, va), uu -> Once (v, va)
+    | Eventually (v, va), uu -> Eventually (v, va)
+    | Historically (v, va), uu -> Historically (v, va)
+    | Always (v, va), uu -> Always (v, va)
+    | Untila (v, va, vb), Same -> Untila (v, va, vb)
+    | Triggera (v, va, vb), uu -> Triggera (v, va, vb)
+    | Releasea (v, va, vb), uu -> Releasea (v, va, vb)
+    | MatchFa (v, va), uu -> MatchFa (v, va)
+    | MatchPa (v, va), uu -> MatchPa (v, va)
+    | TPa v, uu -> TPa v
+    | TSa v, uu -> TSa v
+    | r, Same -> r;;
+
 let rec merge_cols
   x0 ds = match x0, ds with [], ds -> ds
     | c :: cs, [] -> c :: merge_cols cs []
@@ -4871,7 +5567,7 @@ let rec dands_cols acc x1 = match acc, x1 with acc, [] -> acc
 
 let rec mtrm_dcols mt = (match mt with MVar v -> [v] | MConst _ -> []);;
 
-let rec is_TT
+let rec is_TTa
   phi = (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
           | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
           | Eq (Var _, _) -> false | Eq (Const (EInt _), Var _) -> false
@@ -4956,20 +5652,10 @@ let rec safe_regex (_B1, _B2, _B3, _B4, _B5)
             (fv_regex (_B3, _B4.ccompare_cproper_interval, _B5) fv r)) &&
           safe_regex (_B1, _B2, _B3, _B4, _B5) fv safe m g r;;
 
-let rec nat_subset
-  x0 b = match x0, b with
-    RBT_set rbt1, RBT_set rbt2 ->
-      sorted_list_subset_fusion (lt_of_comp compare_nat) equal_nata
-        rbt_keys_generator rbt_keys_generator (init ccompare_nat rbt1)
-        (init ccompare_nat rbt2)
-    | Complement a1, Complement a2 -> nat_subset a2 a1
-    | Collect_set p, Complement a ->
-        nat_subset a (collect cenum_nat (fun x -> not (p x)))
-    | RBT_set rbt, b ->
-        list_all_fusion rbt_keys_generator (fun x -> nat_member x b)
-          (init ccompare_nat rbt)
-    | DList_set dxs, c -> dlist_all ceq_nat (fun x -> nat_member x c) dxs
-    | Set_Monad xs, c -> list_all (fun x -> nat_member x c) xs;;
+let rec frz_ok
+  alpha =
+    nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfva alpha))
+      (fvia zero_nata alpha);;
 
 let rec safe_dual
   conjoined safety_pred phi i psi =
@@ -4993,6 +5679,9 @@ let rec safe_dual
                (safety_pred psi &&
                  set_eq (cenum_nat, ceq_nat, ccompare_nat) (fvi zero_nata phi)
                    (fvi zero_nata psi))));;
+
+let rec map_sum f1 f2 x2 = match f1, f2, x2 with f1, f2, Inl a -> Inl (f1 a)
+                  | f1, f2, Inr a -> Inr (f2 a);;
 
 let rec unit_table (_A1, _A2)
   n = insert
@@ -5124,78 +5813,6 @@ let rec edl_card
 
 let rec edl_ecard
   a = (if unbox edl_finite_v a then Enat (edl_card a) else Infinity_enat);;
-
-let rec uminus_event_data = function EInt x -> EInt (Z.neg x)
-                            | EFloat x -> EFloat (Stdlib.(~-.) x)
-                            | EString v -> failwith "undefined";;
-
-let rec mod_to_zero
-  x y = (let z =
-           snd ((fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem
-                  (Z.abs k) (Z.abs l))
-                 x y)
-           in
-          (if Z.lt x Z.zero then Z.neg z else z));;
-
-let rec modulo_event_data
-  uu uv = match uu, uv with EInt x, EInt y -> EInt (mod_to_zero x y)
-    | EFloat v, uv -> failwith "undefined"
-    | EString v, uv -> failwith "undefined"
-    | uu, EFloat v -> failwith "undefined"
-    | uu, EString v -> failwith "undefined";;
-
-let rec div_to_zero
-  x y = (let z =
-           fst ((fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem
-                  (Z.abs k) (Z.abs l))
-                 x y)
-           in
-          (if not (equal_boola (Z.lt x Z.zero) (Z.lt y Z.zero)) then Z.neg z
-            else z));;
-
-let rec divide_event_data
-  uu uv = match uu, uv with EInt x, EInt y -> EInt (div_to_zero x y)
-    | EFloat x, EFloat y -> EFloat (Stdlib.(/.) x y)
-    | EFloat v, EInt va -> failwith "undefined"
-    | EFloat v, EString va -> failwith "undefined"
-    | EString v, uv -> failwith "undefined"
-    | EInt va, EFloat v -> failwith "undefined"
-    | uu, EString v -> failwith "undefined";;
-
-let rec times_event_data
-  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.mul x y)
-    | EFloat x, EFloat y -> EFloat (Stdlib.( *. ) x y)
-    | EFloat v, EInt va -> failwith "undefined"
-    | EFloat v, EString va -> failwith "undefined"
-    | EString v, uv -> failwith "undefined"
-    | EInt va, EFloat v -> failwith "undefined"
-    | uu, EString v -> failwith "undefined";;
-
-let rec minus_event_data
-  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.sub x y)
-    | EFloat x, EFloat y -> EFloat (Stdlib.(-.) x y)
-    | EFloat v, EInt va -> failwith "undefined"
-    | EFloat v, EString va -> failwith "undefined"
-    | EString v, uv -> failwith "undefined"
-    | EInt va, EFloat v -> failwith "undefined"
-    | uu, EString v -> failwith "undefined";;
-
-let rec plus_event_data
-  uu uv = match uu, uv with EInt x, EInt y -> EInt (Z.add x y)
-    | EFloat x, EFloat y -> EFloat (Stdlib.(+.) x y)
-    | EFloat v, EInt va -> failwith "undefined"
-    | EFloat v, EString va -> failwith "undefined"
-    | EString v, uv -> failwith "undefined"
-    | EInt va, EFloat v -> failwith "undefined"
-    | uu, EString v -> failwith "undefined";;
-
-let rec integer_of_event_data = function EInt uu -> failwith "undefined"
-                                | EFloat x -> Z.of_float x
-                                | EString uv -> failwith "undefined";;
-
-let rec double_of_event_data = function EInt x -> Z.to_float x
-                               | EFloat uu -> failwith "undefined"
-                               | EString uv -> failwith "undefined";;
 
 let rec umeval_trm
   x0 v = match x0, v with Var x, v -> nth v x
@@ -5549,8 +6166,6 @@ let rec flip_int_less_lower
   xa = Abs_I (if not (memL xa zero_nata)
                then ((fun _ -> true), ((fun i -> not (memL xa i)), true))
                else ((fun _ -> true), ((fun _ -> true), false)));;
-
-let rec eventually i phi = Until (tt, i, phi);;
 
 let rec always_safe_bounded
   i phi =
@@ -6097,6 +6712,651 @@ let rec to_mregex r = to_mregex_exec r [];;
 
 let empty_queue : 'a queue = Abs_queue ([], []);;
 
+let rec historically i phi = Neg (once i (Neg phi));;
+
+let rec project
+  = function Preda (p, ts) -> Pred (p, ts)
+    | Leta (p, phi, psi) -> Let (p, project phi, project psi)
+    | Frza (p, phi, psi) -> Frz (p, project phi, project psi)
+    | LetPasta (p, phi, psi) -> LetPast (p, project phi, project psi)
+    | Eqb (t1, t2) -> Eq (t1, t2)
+    | LessEqa (t1, t2) -> LessEq (t1, t2)
+    | Lessa (t1, t2) -> Less (t1, t2)
+    | Nega phi -> Neg (project phi)
+    | Ora (phi, psi) -> Or (project phi, project psi)
+    | Anda (phi, psi) -> And (project phi, project psi)
+    | Andsa phi_s -> Ands (mapa project phi_s)
+    | Existsa (t, phi) -> Exists (t, project phi)
+    | Agga (y, omega, b, f, phi) -> Agg (y, omega, b, f, project phi)
+    | Preva (i, phi) -> Prev (i, project phi)
+    | Nexta (i, phi) -> Next (i, project phi)
+    | Once (i, phi) -> once i (project phi)
+    | Eventually (i, phi) -> eventually i (project phi)
+    | Historically (i, phi) -> historically i (project phi)
+    | Always (i, phi) -> always i (project phi)
+    | Sincea (phi, i, psi) -> Since (project phi, i, project psi)
+    | Untila (phi, i, psi) -> Until (project phi, i, project psi)
+    | Triggera (phi, i, psi) -> Trigger (project phi, i, project psi)
+    | Releasea (phi, i, psi) -> Release (project phi, i, project psi)
+    | MatchFa (i, r) -> MatchF (i, map_regex project r)
+    | MatchPa (i, r) -> MatchP (i, map_regex project r)
+    | TPa t -> TP t
+    | TSa t -> TS t;;
+
+let rec equal_argpos x0 x1 = match x0, x1 with Same, Swapped -> false
+                       | Swapped, Same -> false
+                       | Swapped, Swapped -> true
+                       | Same, Same -> true;;
+
+let rec minus_comp
+  comp t1 t2 =
+    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
+      else (if small_rbta t1
+             then rbtreeify
+                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
+                      (entries t1))
+             else (match t2 with Empty -> t1
+                    | Branch (_, l2, a, (), r2) ->
+                      (let (l1, (_, r1)) = split_comp comp t1 a in
+                        rbt_join2a (minus_comp comp l1 l2)
+                          (minus_comp comp r1 r2)))));;
+
+let rec rbt_minus_rbt_join2 _A
+  xb xc =
+    Mapping_RBTa
+      (rbt_recolor
+        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+
+let rec minus_set (_A1, _A2)
+  a b = match a, b with
+    RBT_set t1, RBT_set t2 ->
+      (match ccompare _A2
+        with None ->
+          failwith "minus RBT_set RBT_set: ccompare = None"
+            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
+        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
+    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
+
+let rec prop_cond
+  f1 f2 =
+    (let rr1 = rr zero_nata f1 in
+     let rr2 = rr zero_nata f2 in
+     let fv2 = fvi zero_nata (project f2) in
+      not (is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
+            (inf_seta (ceq_nat, ccompare_nat) rr1
+              (minus_set (ceq_nat, ccompare_nat) fv2 rr2))));;
+
+let rec shiftTI
+  k x1 = match k, x1 with
+    k, Var i -> (if less_nat i k then Var i else Var (plus_nata i one_nata))
+    | k, Plus (t, u) -> Plus (shiftTI k t, shiftTI k u)
+    | k, Minus (t, u) -> Minus (shiftTI k t, shiftTI k u)
+    | k, UMinus t -> UMinus (shiftTI k t)
+    | k, Mult (t, u) -> Mult (shiftTI k t, shiftTI k u)
+    | k, Div (t, u) -> Div (shiftTI k t, shiftTI k u)
+    | k, Mod (t, u) -> Mod (shiftTI k t, shiftTI k u)
+    | k, F2i t -> F2i (shiftTI k t)
+    | k, I2f t -> I2f (shiftTI k t)
+    | k, Const n -> Const n;;
+
+let rec shiftI_r
+  k x1 = match k, x1 with k, Preda (r, ts) -> Preda (r, mapa (shiftTI k) ts)
+    | k, Existsa (t, a) -> Existsa (t, shiftI_r (suc k) a)
+    | k, Leta (nm, a, b) -> Leta (nm, a, shiftI_r k b)
+    | k, Frza (nm, a, b) -> Frza (nm, a, shiftI_r k b)
+    | k, LetPasta (nm, a, b) -> LetPasta (nm, a, shiftI_r k b)
+    | k, Eqb (t1, t2) -> Eqb (shiftTI k t1, shiftTI k t2)
+    | k, Lessa (t1, t2) -> Lessa (shiftTI k t1, shiftTI k t2)
+    | k, LessEqa (t1, t2) -> LessEqa (shiftTI k t1, shiftTI k t2)
+    | k, Nega a -> Nega (shiftI_r k a)
+    | k, Ora (a, b) -> Ora (shiftI_r k a, shiftI_r k b)
+    | k, Anda (a, b) -> Anda (shiftI_r k a, shiftI_r k b)
+    | k, Andsa asa -> Andsa (mapa (shiftI_r k) asa)
+    | k, Agga (y, op, b, t, a) ->
+        Agga ((if less_nat y k then y else plus_nata y one_nata), op, b,
+               shiftTI (plus_nata k (size_lista b)) t,
+               shiftI_r (plus_nata k (size_lista b)) a)
+    | k, Preva (i, a) -> Preva (i, shiftI_r k a)
+    | k, Nexta (i, a) -> Nexta (i, shiftI_r k a)
+    | k, Sincea (a1, i, a2) -> Sincea (shiftI_r k a1, i, shiftI_r k a2)
+    | k, Untila (a1, i, a2) -> Untila (shiftI_r k a1, i, shiftI_r k a2)
+    | k, Releasea (a1, i, a2) -> Releasea (shiftI_r k a1, i, shiftI_r k a2)
+    | k, Triggera (a1, i, a2) -> Triggera (shiftI_r k a1, i, shiftI_r k a2)
+    | k, Eventually (i, a2) -> Eventually (i, shiftI_r k a2)
+    | k, Once (i, a2) -> Once (i, shiftI_r k a2)
+    | k, Historically (i, a2) -> Historically (i, shiftI_r k a2)
+    | k, Always (i, a2) -> Always (i, shiftI_r k a2)
+    | k, MatchFa (i, r) -> MatchFa (i, map_regex (shiftI_r k) r)
+    | k, MatchPa (i, r) -> MatchPa (i, map_regex (shiftI_r k) r)
+    | k, TPa t -> TPa (shiftTI k t)
+    | k, TSa t -> TSa (shiftTI k t);;
+
+let rec init_ivl
+  xa = Abs_I (let (_, (r, n)) = rep_I xa in ((fun _ -> true), (r, n)));;
+
+let rec regex_list f x1 = match f, x1 with f, Skip n -> []
+                     | f, Test phi -> f phi
+                     | f, Plusa (r, s) -> regex_list f r @ regex_list f s
+                     | f, Times (r, s) -> regex_list f r @ regex_list f s
+                     | f, Star r -> regex_list f r;;
+
+let rec pred_names
+  = function Pred (e, ts) -> [e]
+    | Let (p, phi, psi) -> pred_names phi @ pred_names psi
+    | Frz (p, phi, psi) -> pred_names phi @ pred_names psi
+    | LetPast (p, phi, psi) -> pred_names phi @ pred_names psi
+    | Eq (t1, t2) -> []
+    | Less (t1, t2) -> []
+    | LessEq (t1, t2) -> []
+    | Neg phi -> pred_names phi
+    | Or (phi, psi) -> pred_names phi @ pred_names psi
+    | And (phi, psi) -> pred_names phi @ pred_names psi
+    | Ands phi_s -> maps pred_names phi_s
+    | Exists (t, phi) -> pred_names phi
+    | Agg (y, omega, tys, f, phi) -> pred_names phi
+    | Prev (i, phi) -> pred_names phi
+    | Next (i, phi) -> pred_names phi
+    | Since (phi, i, psi) -> pred_names phi @ pred_names psi
+    | Until (phi, i, psi) -> pred_names phi @ pred_names psi
+    | Trigger (phi, i, psi) -> pred_names phi @ pred_names psi
+    | Release (phi, i, psi) -> pred_names phi @ pred_names psi
+    | MatchF (i, r) -> regex_list pred_names r
+    | MatchP (i, r) -> regex_list pred_names r
+    | TP t -> []
+    | TS t -> [];;
+
+let rec frz_cand
+  k = id (implode
+           (replicate (suc k)
+             (Chara (true, false, false, false, true, true, true, false))));;
+
+let rec fresh_name
+  ns = (match
+         find (fun c -> not (membera equal_string8 ns c))
+           (mapa frz_cand (upt zero_nata (suc (size_lista ns))))
+         with None -> frz_cand zero_nata | Some c -> c);;
+
+let rec frz_name
+  phi_s = fresh_name (maps (fun phi -> pred_names (project phi)) phi_s);;
+
+let rec frz_atom q n = Preda (q, mapa (fun a -> Var a) (upt zero_nata n));;
+
+let rec rewrite
+  x0 t = match x0, t with
+    Anda (alpha, Ora (beta, gamma)), t ->
+      (if prop_cond alpha beta || prop_cond alpha gamma
+        then Ora (rewrite (Anda (alpha, beta)) Same,
+                   rewrite (Anda (alpha, gamma)) Same)
+        else (let alphaa = rewrite alpha Same in
+              let betaa = rewrite beta Same in
+              let gammaa = rewrite gamma Same in
+               Anda (alphaa, Ora (betaa, gammaa))))
+    | Anda (alpha, Releasea (beta, i, gamma)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta; gamma] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Releasea
+                                 (rewrite (Anda (q_alpha, beta)) Same, i,
+                                   rewrite (Anda (q_alpha, gamma)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                let gammaa = rewrite gamma Same in
+                 Anda (alphaa, Releasea (betaa, i, gammaa))))
+    | Anda (alpha, Triggera (beta, i, gamma)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta; gamma] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Triggera
+                                 (rewrite (Anda (q_alpha, beta)) Same, i,
+                                   rewrite (Anda (q_alpha, gamma)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                let gammaa = rewrite gamma Same in
+                 Anda (alphaa, Triggera (betaa, i, gammaa))))
+    | Anda (alpha, Existsa (k, beta)), t ->
+        (if prop_cond alpha beta
+          then Existsa (k, rewrite (Anda (shiftI_r zero_nata alpha, beta)) Same)
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Existsa (k, betaa))))
+    | Anda (alpha, Nega beta), t ->
+        (if prop_cond alpha beta
+          then Anda (rewrite alpha Same,
+                      Nega (rewrite (Anda (alpha, beta)) Same))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Nega betaa)))
+    | Anda (alpha, Sincea (beta, i, gamma)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta; gamma] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Sincea
+                                 (rewrite (Anda (q_alpha, beta)) Same, i,
+                                   rewrite gamma Same))))
+          else (if prop_cond alpha gamma && frz_ok alpha
+                 then (let alphaa = rewrite alpha Same in
+                       let q = frz_name [alpha; beta; gamma] in
+                       let q_alpha = frz_atom q (nfva alpha) in
+                        Frza (q, alphaa,
+                               Anda (alphaa,
+                                      Sincea
+(rewrite beta Same, i, rewrite (Anda (q_alpha, gamma)) Same))))
+                 else (let alphaa = rewrite alpha Same in
+                       let betaa = rewrite beta Same in
+                       let gammaa = rewrite gamma Same in
+                        Anda (alphaa, Sincea (betaa, i, gammaa)))))
+    | Anda (alpha, Untila (beta, i, gamma)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta; gamma] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Untila
+                                 (rewrite (Anda (q_alpha, beta)) Same, i,
+                                   rewrite gamma Same))))
+          else (if prop_cond alpha gamma && frz_ok alpha
+                 then (let alphaa = rewrite alpha Same in
+                       let q = frz_name [alpha; beta; gamma] in
+                       let q_alpha = frz_atom q (nfva alpha) in
+                        Frza (q, alphaa,
+                               Anda (alphaa,
+                                      Untila
+(rewrite beta Same, i, rewrite (Anda (q_alpha, gamma)) Same))))
+                 else (let alphaa = rewrite alpha Same in
+                       let betaa = rewrite beta Same in
+                       let gammaa = rewrite gamma Same in
+                        Anda (alphaa, Untila (betaa, i, gammaa)))))
+    | Anda (alpha, Once (i, beta)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Once (i, rewrite (Anda (q_alpha, beta)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Once (i, betaa))))
+    | Anda (alpha, Eventually (i, beta)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Eventually
+                                 (i, rewrite (Anda (q_alpha, beta)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Eventually (i, betaa))))
+    | Anda (alpha, Historically (i, beta)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Historically
+                                 (i, rewrite (Anda (q_alpha, beta)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Historically (i, betaa))))
+    | Anda (alpha, Always (i, beta)), t ->
+        (if prop_cond alpha beta && frz_ok alpha
+          then (let alphaa = rewrite alpha Same in
+                let q = frz_name [alpha; beta] in
+                let q_alpha = frz_atom q (nfva alpha) in
+                 Frza (q, alphaa,
+                        Anda (alphaa,
+                               Always
+                                 (i, rewrite (Anda (q_alpha, beta)) Same))))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Always (i, betaa))))
+    | Anda (alpha, Preva (i, beta)), t ->
+        (if prop_cond alpha beta
+          then Anda (rewrite alpha Same,
+                      Preva (i, Anda (Nexta (i, rewrite alpha Same),
+                                       rewrite beta Same)))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Preva (i, betaa))))
+    | Anda (alpha, Nexta (i, beta)), t ->
+        (if prop_cond alpha beta
+          then Anda (rewrite alpha Same,
+                      Nexta (i, Anda (Preva (i, rewrite alpha Same),
+                                       rewrite beta Same)))
+          else (let alphaa = rewrite alpha Same in
+                let betaa = rewrite beta Same in
+                 Anda (alphaa, Nexta (i, betaa))))
+    | Sincea (Anda (alpha, gamma), i, beta), t ->
+        (let l = rewrite (Anda (alpha, gamma)) Same in
+          (if equal_argpos t Same &&
+                (not (memL i zero_nata && memR i zero_nata) &&
+                  (prop_cond alpha beta && frz_ok alpha))
+            then (let q = frz_name [alpha; gamma; beta] in
+                  let q_alpha = frz_atom q (nfva alpha) in
+                   Frza (q, rewrite alpha Same,
+                          Sincea (l, i, rewrite (Anda (q_alpha, beta)) Same)))
+            else (if equal_argpos t Same &&
+                       (not (memL i zero_nata && memR i zero_nata) &&
+                         (prop_cond gamma beta && frz_ok gamma))
+                   then (let q = frz_name [alpha; gamma; beta] in
+                         let q_gamma = frz_atom q (nfva gamma) in
+                          Frza (q, rewrite gamma Same,
+                                 Sincea
+                                   (l, i, rewrite (Anda (q_gamma, beta)) Same)))
+                   else (let r =
+                           (if equal_argpos t Swapped &&
+                                 (memL i zero_nata && memR i zero_nata &&
+                                   (bounded i && prop_cond alpha beta))
+                             then rewrite
+                                    (Anda (Once (init_ivl i, alpha), beta)) Same
+                             else (if equal_argpos t Swapped &&
+(memL i zero_nata && memR i zero_nata && (bounded i && prop_cond gamma beta))
+                                    then rewrite
+   (Anda (Once (init_ivl i, gamma), beta)) Same
+                                    else rewrite beta Same))
+                           in
+                          fix_r (Sincea (l, i, r)) t))))
+    | Untila (Anda (alpha, gamma), i, beta), t ->
+        (let l = rewrite (Anda (alpha, gamma)) Same in
+         let r =
+           (if equal_argpos t Same &&
+                 (not (memL i zero_nata && memR i zero_nata) &&
+                   prop_cond alpha beta)
+             then rewrite (Anda (Once (i, alpha), beta)) Same
+             else (if equal_argpos t Same &&
+                        (not (memL i zero_nata && memR i zero_nata) &&
+                          prop_cond gamma beta)
+                    then rewrite (Anda (Once (i, gamma), beta)) Same
+                    else rewrite beta Same))
+           in
+          fix_r (Untila (l, i, r)) t)
+    | Sincea (Preda (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Preda (v, va))) Swapped
+    | Sincea (Leta (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Leta (v, va, vb))) Swapped
+    | Sincea (Frza (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Frza (v, va, vb))) Swapped
+    | Sincea (LetPasta (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, LetPasta (v, va, vb))) Swapped
+    | Sincea (Eqb (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Eqb (v, va))) Swapped
+    | Sincea (Lessa (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Lessa (v, va))) Swapped
+    | Sincea (LessEqa (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, LessEqa (v, va))) Swapped
+    | Sincea (Nega v, i, r), Same -> rewrite (Sincea (r, i, Nega v)) Swapped
+    | Sincea (Ora (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Ora (v, va))) Swapped
+    | Sincea (Andsa v, i, r), Same -> rewrite (Sincea (r, i, Andsa v)) Swapped
+    | Sincea (Existsa (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Existsa (v, va))) Swapped
+    | Sincea (Agga (v, va, vb, vc, vd), i, r), Same ->
+        rewrite (Sincea (r, i, Agga (v, va, vb, vc, vd))) Swapped
+    | Sincea (Preva (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Preva (v, va))) Swapped
+    | Sincea (Nexta (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Nexta (v, va))) Swapped
+    | Sincea (Once (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Once (v, va))) Swapped
+    | Sincea (Eventually (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Eventually (v, va))) Swapped
+    | Sincea (Historically (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Historically (v, va))) Swapped
+    | Sincea (Always (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, Always (v, va))) Swapped
+    | Sincea (Sincea (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Sincea (v, va, vb))) Swapped
+    | Sincea (Untila (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Untila (v, va, vb))) Swapped
+    | Sincea (Triggera (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Triggera (v, va, vb))) Swapped
+    | Sincea (Releasea (v, va, vb), i, r), Same ->
+        rewrite (Sincea (r, i, Releasea (v, va, vb))) Swapped
+    | Sincea (MatchFa (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, MatchFa (v, va))) Swapped
+    | Sincea (MatchPa (v, va), i, r), Same ->
+        rewrite (Sincea (r, i, MatchPa (v, va))) Swapped
+    | Sincea (TPa v, i, r), Same -> rewrite (Sincea (r, i, TPa v)) Swapped
+    | Sincea (TSa v, i, r), Same -> rewrite (Sincea (r, i, TSa v)) Swapped
+    | Untila (Preda (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Preda (v, va))) Swapped
+    | Untila (Leta (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Leta (v, va, vb))) Swapped
+    | Untila (Frza (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Frza (v, va, vb))) Swapped
+    | Untila (LetPasta (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, LetPasta (v, va, vb))) Swapped
+    | Untila (Eqb (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Eqb (v, va))) Swapped
+    | Untila (Lessa (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Lessa (v, va))) Swapped
+    | Untila (LessEqa (v, va), i, r), Same ->
+        rewrite (Untila (r, i, LessEqa (v, va))) Swapped
+    | Untila (Nega v, i, r), Same -> rewrite (Untila (r, i, Nega v)) Swapped
+    | Untila (Ora (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Ora (v, va))) Swapped
+    | Untila (Andsa v, i, r), Same -> rewrite (Untila (r, i, Andsa v)) Swapped
+    | Untila (Existsa (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Existsa (v, va))) Swapped
+    | Untila (Agga (v, va, vb, vc, vd), i, r), Same ->
+        rewrite (Untila (r, i, Agga (v, va, vb, vc, vd))) Swapped
+    | Untila (Preva (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Preva (v, va))) Swapped
+    | Untila (Nexta (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Nexta (v, va))) Swapped
+    | Untila (Once (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Once (v, va))) Swapped
+    | Untila (Eventually (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Eventually (v, va))) Swapped
+    | Untila (Historically (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Historically (v, va))) Swapped
+    | Untila (Always (v, va), i, r), Same ->
+        rewrite (Untila (r, i, Always (v, va))) Swapped
+    | Untila (Sincea (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Sincea (v, va, vb))) Swapped
+    | Untila (Untila (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Untila (v, va, vb))) Swapped
+    | Untila (Triggera (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Triggera (v, va, vb))) Swapped
+    | Untila (Releasea (v, va, vb), i, r), Same ->
+        rewrite (Untila (r, i, Releasea (v, va, vb))) Swapped
+    | Untila (MatchFa (v, va), i, r), Same ->
+        rewrite (Untila (r, i, MatchFa (v, va))) Swapped
+    | Untila (MatchPa (v, va), i, r), Same ->
+        rewrite (Untila (r, i, MatchPa (v, va))) Swapped
+    | Untila (TPa v, i, r), Same -> rewrite (Untila (r, i, TPa v)) Swapped
+    | Untila (TSa v, i, r), Same -> rewrite (Untila (r, i, TSa v)) Swapped
+    | Anda (l, Preda (v, va)), Same -> rewrite (Anda (Preda (v, va), l)) Swapped
+    | Anda (l, Leta (v, va, vb)), Same ->
+        rewrite (Anda (Leta (v, va, vb), l)) Swapped
+    | Anda (l, Frza (v, va, vb)), Same ->
+        rewrite (Anda (Frza (v, va, vb), l)) Swapped
+    | Anda (l, LetPasta (v, va, vb)), Same ->
+        rewrite (Anda (LetPasta (v, va, vb), l)) Swapped
+    | Anda (l, Eqb (v, va)), Same -> rewrite (Anda (Eqb (v, va), l)) Swapped
+    | Anda (l, Lessa (v, va)), Same -> rewrite (Anda (Lessa (v, va), l)) Swapped
+    | Anda (l, LessEqa (v, va)), Same ->
+        rewrite (Anda (LessEqa (v, va), l)) Swapped
+    | Anda (l, Anda (v, va)), Same -> rewrite (Anda (Anda (v, va), l)) Swapped
+    | Anda (l, Andsa v), Same -> rewrite (Anda (Andsa v, l)) Swapped
+    | Anda (l, Agga (v, va, vb, vc, vd)), Same ->
+        rewrite (Anda (Agga (v, va, vb, vc, vd), l)) Swapped
+    | Anda (l, MatchFa (v, va)), Same ->
+        rewrite (Anda (MatchFa (v, va), l)) Swapped
+    | Anda (l, MatchPa (v, va)), Same ->
+        rewrite (Anda (MatchPa (v, va), l)) Swapped
+    | Anda (l, TPa v), Same -> rewrite (Anda (TPa v, l)) Swapped
+    | Anda (l, TSa v), Same -> rewrite (Anda (TSa v, l)) Swapped
+    | Sincea (Preda (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Preda (v, va)) Same)
+    | Sincea (Leta (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Leta (v, va, vb)) Same)
+    | Sincea (Frza (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Frza (v, va, vb)) Same)
+    | Sincea (LetPasta (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (LetPasta (v, va, vb)) Same)
+    | Sincea (Eqb (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Eqb (v, va)) Same)
+    | Sincea (Lessa (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Lessa (v, va)) Same)
+    | Sincea (LessEqa (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (LessEqa (v, va)) Same)
+    | Sincea (Nega v, i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Nega v) Same)
+    | Sincea (Ora (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Ora (v, va)) Same)
+    | Sincea (Andsa v, i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Andsa v) Same)
+    | Sincea (Existsa (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Existsa (v, va)) Same)
+    | Sincea (Agga (v, va, vb, vc, vd), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Agga (v, va, vb, vc, vd)) Same)
+    | Sincea (Preva (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Preva (v, va)) Same)
+    | Sincea (Nexta (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Nexta (v, va)) Same)
+    | Sincea (Once (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Once (v, va)) Same)
+    | Sincea (Eventually (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Eventually (v, va)) Same)
+    | Sincea (Historically (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Historically (v, va)) Same)
+    | Sincea (Always (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Always (v, va)) Same)
+    | Sincea (Sincea (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Sincea (v, va, vb)) Same)
+    | Sincea (Untila (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Untila (v, va, vb)) Same)
+    | Sincea (Triggera (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Triggera (v, va, vb)) Same)
+    | Sincea (Releasea (v, va, vb), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (Releasea (v, va, vb)) Same)
+    | Sincea (MatchFa (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (MatchFa (v, va)) Same)
+    | Sincea (MatchPa (v, va), i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (MatchPa (v, va)) Same)
+    | Sincea (TPa v, i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (TPa v) Same)
+    | Sincea (TSa v, i, r), Swapped ->
+        Sincea (rewrite r Same, i, rewrite (TSa v) Same)
+    | Untila (Preda (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Preda (v, va)) Same)
+    | Untila (Leta (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Leta (v, va, vb)) Same)
+    | Untila (Frza (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Frza (v, va, vb)) Same)
+    | Untila (LetPasta (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (LetPasta (v, va, vb)) Same)
+    | Untila (Eqb (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Eqb (v, va)) Same)
+    | Untila (Lessa (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Lessa (v, va)) Same)
+    | Untila (LessEqa (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (LessEqa (v, va)) Same)
+    | Untila (Nega v, i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Nega v) Same)
+    | Untila (Ora (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Ora (v, va)) Same)
+    | Untila (Andsa v, i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Andsa v) Same)
+    | Untila (Existsa (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Existsa (v, va)) Same)
+    | Untila (Agga (v, va, vb, vc, vd), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Agga (v, va, vb, vc, vd)) Same)
+    | Untila (Preva (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Preva (v, va)) Same)
+    | Untila (Nexta (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Nexta (v, va)) Same)
+    | Untila (Once (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Once (v, va)) Same)
+    | Untila (Eventually (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Eventually (v, va)) Same)
+    | Untila (Historically (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Historically (v, va)) Same)
+    | Untila (Always (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Always (v, va)) Same)
+    | Untila (Sincea (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Sincea (v, va, vb)) Same)
+    | Untila (Untila (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Untila (v, va, vb)) Same)
+    | Untila (Triggera (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Triggera (v, va, vb)) Same)
+    | Untila (Releasea (v, va, vb), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (Releasea (v, va, vb)) Same)
+    | Untila (MatchFa (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (MatchFa (v, va)) Same)
+    | Untila (MatchPa (v, va), i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (MatchPa (v, va)) Same)
+    | Untila (TPa v, i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (TPa v) Same)
+    | Untila (TSa v, i, r), Swapped ->
+        Untila (rewrite r Same, i, rewrite (TSa v) Same)
+    | Anda (l, Preda (v, va)), Swapped ->
+        Anda (rewrite (Preda (v, va)) Same, rewrite l Same)
+    | Anda (l, Leta (v, va, vb)), Swapped ->
+        Anda (rewrite (Leta (v, va, vb)) Same, rewrite l Same)
+    | Anda (l, Frza (v, va, vb)), Swapped ->
+        Anda (rewrite (Frza (v, va, vb)) Same, rewrite l Same)
+    | Anda (l, LetPasta (v, va, vb)), Swapped ->
+        Anda (rewrite (LetPasta (v, va, vb)) Same, rewrite l Same)
+    | Anda (l, Eqb (v, va)), Swapped ->
+        Anda (rewrite (Eqb (v, va)) Same, rewrite l Same)
+    | Anda (l, Lessa (v, va)), Swapped ->
+        Anda (rewrite (Lessa (v, va)) Same, rewrite l Same)
+    | Anda (l, LessEqa (v, va)), Swapped ->
+        Anda (rewrite (LessEqa (v, va)) Same, rewrite l Same)
+    | Anda (l, Anda (v, va)), Swapped ->
+        Anda (rewrite (Anda (v, va)) Same, rewrite l Same)
+    | Anda (l, Andsa v), Swapped ->
+        Anda (rewrite (Andsa v) Same, rewrite l Same)
+    | Anda (l, Agga (v, va, vb, vc, vd)), Swapped ->
+        Anda (rewrite (Agga (v, va, vb, vc, vd)) Same, rewrite l Same)
+    | Anda (l, MatchFa (v, va)), Swapped ->
+        Anda (rewrite (MatchFa (v, va)) Same, rewrite l Same)
+    | Anda (l, MatchPa (v, va)), Swapped ->
+        Anda (rewrite (MatchPa (v, va)) Same, rewrite l Same)
+    | Anda (l, TPa v), Swapped -> Anda (rewrite (TPa v) Same, rewrite l Same)
+    | Anda (l, TSa v), Swapped -> Anda (rewrite (TSa v) Same, rewrite l Same)
+    | Ora (phi, psi), t -> Ora (rewrite phi Same, rewrite psi Same)
+    | Existsa (k, phi), t -> Existsa (k, rewrite phi Same)
+    | Agga (y, omega, b, f, phi), t -> Agga (y, omega, b, f, rewrite phi Same)
+    | Preva (i, phi), t -> Preva (i, rewrite phi Same)
+    | Nexta (i, phi), t -> Nexta (i, rewrite phi Same)
+    | Releasea (phi, i, psi), t ->
+        Releasea (rewrite phi Same, i, rewrite psi Same)
+    | Triggera (phi, i, psi), t ->
+        Triggera (rewrite phi Same, i, rewrite psi Same)
+    | Nega alpha, t -> Nega (rewrite alpha Same)
+    | Eventually (i, alpha), t -> Eventually (i, rewrite alpha Same)
+    | Once (i, alpha), t -> Once (i, rewrite alpha Same)
+    | Always (i, alpha), t -> Always (i, rewrite alpha Same)
+    | Historically (i, alpha), t -> Historically (i, rewrite alpha Same)
+    | MatchFa (i, r), t -> MatchFa (i, map_regex (fun f -> rewrite f Same) r)
+    | MatchPa (i, r), t -> MatchPa (i, map_regex (fun f -> rewrite f Same) r)
+    | Andsa phi_s, t -> Andsa (mapa (fun r -> rewrite r Same) phi_s)
+    | Preda (v, va), t -> Preda (v, va)
+    | Leta (v, va, vb), t -> Leta (v, va, vb)
+    | Frza (v, va, vb), t -> Frza (v, va, vb)
+    | LetPasta (v, va, vb), t -> LetPasta (v, va, vb)
+    | Eqb (v, va), t -> Eqb (v, va)
+    | Lessa (v, va), t -> Lessa (v, va)
+    | LessEqa (v, va), t -> LessEqa (v, va)
+    | TPa v, t -> TPa v
+    | TSa v, t -> TSa v;;
+
 let rec check_wty_regex
   check_wty_formula x1 = match check_wty_formula, x1 with
     check_wty_formula, Skip l -> true
@@ -6151,10 +7411,10 @@ let rec type_check
 let rec ex_into
   t x1 = match t, x1 with
     t, Since (phi, i, psi) ->
-      (if is_TT phi then Since (tt, i, ex_into t psi)
+      (if is_TTa phi then Since (tt, i, ex_into t psi)
         else Exists (t, Since (phi, i, psi)))
     | t, Until (phi, i, psi) ->
-        (if is_TT phi then Until (tt, i, ex_into t psi)
+        (if is_TTa phi then Until (tt, i, ex_into t psi)
           else Exists (t, Until (phi, i, psi)))
     | t, Pred (v, va) -> Exists (t, Pred (v, va))
     | t, Let (v, va, vb) -> Exists (t, Let (v, va, vb))
@@ -6915,6 +8175,8 @@ let rec rbt_join2
 
 let rec small_rbt t = less_nat (bheight t) (nat_of_integer (Z.of_int 4));;
 
+let rec rrewrite phi = project (rewrite (embed phi) Same);;
+
 let rec didx_live
   args =
     not (is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
@@ -6956,6 +8218,145 @@ let rec prepend_queue_t
             | _ :: _ -> (a :: fs, ls)));;
 
 let rec prepend_queue xb xc = Abs_queue (prepend_queue_t xb (rep_queue xc));;
+
+let rec elim_double_negation
+  = function Neg (Neg phi) -> elim_double_negation phi
+    | Let (p, phi, psi) ->
+        Let (p, elim_double_negation phi, elim_double_negation psi)
+    | Frz (p, phi, psi) ->
+        Frz (p, elim_double_negation phi, elim_double_negation psi)
+    | LetPast (p, phi, psi) ->
+        LetPast (p, elim_double_negation phi, elim_double_negation psi)
+    | Neg (Pred (v, va)) -> Neg (elim_double_negation (Pred (v, va)))
+    | Neg (Let (v, va, vb)) -> Neg (elim_double_negation (Let (v, va, vb)))
+    | Neg (Frz (v, va, vb)) -> Neg (elim_double_negation (Frz (v, va, vb)))
+    | Neg (LetPast (v, va, vb)) ->
+        Neg (elim_double_negation (LetPast (v, va, vb)))
+    | Neg (Eq (v, va)) -> Neg (elim_double_negation (Eq (v, va)))
+    | Neg (Less (v, va)) -> Neg (elim_double_negation (Less (v, va)))
+    | Neg (LessEq (v, va)) -> Neg (elim_double_negation (LessEq (v, va)))
+    | Neg (Or (v, va)) -> Neg (elim_double_negation (Or (v, va)))
+    | Neg (And (v, va)) -> Neg (elim_double_negation (And (v, va)))
+    | Neg (Ands v) -> Neg (elim_double_negation (Ands v))
+    | Neg (Exists (v, va)) -> Neg (elim_double_negation (Exists (v, va)))
+    | Neg (Agg (v, va, vb, vc, vd)) ->
+        Neg (elim_double_negation (Agg (v, va, vb, vc, vd)))
+    | Neg (Prev (v, va)) -> Neg (elim_double_negation (Prev (v, va)))
+    | Neg (Next (v, va)) -> Neg (elim_double_negation (Next (v, va)))
+    | Neg (Since (v, va, vb)) -> Neg (elim_double_negation (Since (v, va, vb)))
+    | Neg (Until (v, va, vb)) -> Neg (elim_double_negation (Until (v, va, vb)))
+    | Neg (Trigger (v, va, vb)) ->
+        Neg (elim_double_negation (Trigger (v, va, vb)))
+    | Neg (Release (v, va, vb)) ->
+        Neg (elim_double_negation (Release (v, va, vb)))
+    | Neg (MatchF (v, va)) -> Neg (elim_double_negation (MatchF (v, va)))
+    | Neg (MatchP (v, va)) -> Neg (elim_double_negation (MatchP (v, va)))
+    | Neg (TP v) -> Neg (elim_double_negation (TP v))
+    | Neg (TS v) -> Neg (elim_double_negation (TS v))
+    | Or (phi, psi) -> Or (elim_double_negation phi, elim_double_negation psi)
+    | And (phi, psi) -> And (elim_double_negation phi, elim_double_negation psi)
+    | Ands l -> Ands (mapa elim_double_negation l)
+    | Exists (t, phi) -> Exists (t, elim_double_negation phi)
+    | Agg (y, omega, tys, f, phi) ->
+        Agg (y, omega, tys, f, elim_double_negation phi)
+    | Prev (i, phi) -> Prev (i, elim_double_negation phi)
+    | Next (i, phi) -> Next (i, elim_double_negation phi)
+    | Since (phi, i, psi) ->
+        Since (elim_double_negation phi, i, elim_double_negation psi)
+    | Until (phi, i, psi) ->
+        Until (elim_double_negation phi, i, elim_double_negation psi)
+    | MatchP (i, r) -> MatchP (i, map_regex elim_double_negation r)
+    | MatchF (i, r) -> MatchF (i, map_regex elim_double_negation r)
+    | Pred (v, va) -> Pred (v, va)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
+let rec simplify_terms
+  = function Pred (r, ts) -> Pred (r, mapa st ts)
+    | Let (p, phi, psi) -> Let (p, simplify_terms phi, simplify_terms psi)
+    | Frz (p, phi, psi) -> Frz (p, simplify_terms phi, simplify_terms psi)
+    | LetPast (p, phi, psi) ->
+        LetPast (p, simplify_terms phi, simplify_terms psi)
+    | Eq (t1, t2) -> Eq (st t1, st t2)
+    | Less (t1, t2) -> Less (st t1, st t2)
+    | LessEq (t1, t2) -> LessEq (st t1, st t2)
+    | Neg phi -> Neg (simplify_terms phi)
+    | Or (phi, psi) -> Or (simplify_terms phi, simplify_terms psi)
+    | And (phi, psi) -> And (simplify_terms phi, simplify_terms psi)
+    | Ands l -> Ands (mapa simplify_terms l)
+    | Exists (t, phi) -> Exists (t, simplify_terms phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, simplify_terms phi)
+    | Prev (i, phi) -> Prev (i, simplify_terms phi)
+    | Next (i, phi) -> Next (i, simplify_terms phi)
+    | Since (phi, i, psi) -> Since (simplify_terms phi, i, simplify_terms psi)
+    | Until (phi, i, psi) -> Until (simplify_terms phi, i, simplify_terms psi)
+    | Trigger (phi, i, psi) ->
+        Trigger (simplify_terms phi, i, simplify_terms psi)
+    | Release (phi, i, psi) ->
+        Release (simplify_terms phi, i, simplify_terms psi)
+    | MatchP (i, r) -> MatchP (i, map_regex simplify_terms r)
+    | MatchF (i, r) -> MatchF (i, map_regex simplify_terms r)
+    | TP t -> TP (st t)
+    | TS t -> TS (st t);;
+
+let rec push_negation
+  = function
+    Neg (And (phi, psi)) ->
+      Or (push_negation (Neg phi), push_negation (Neg psi))
+    | Neg (Or (phi, psi)) ->
+        And (push_negation (Neg phi), push_negation (Neg psi))
+    | Let (p, phi, psi) -> Let (p, push_negation phi, push_negation psi)
+    | Frz (p, phi, psi) -> Frz (p, push_negation phi, push_negation psi)
+    | LetPast (p, phi, psi) -> LetPast (p, push_negation phi, push_negation psi)
+    | Neg (Pred (v, va)) -> Neg (push_negation (Pred (v, va)))
+    | Neg (Let (v, va, vb)) -> Neg (push_negation (Let (v, va, vb)))
+    | Neg (Frz (v, va, vb)) -> Neg (push_negation (Frz (v, va, vb)))
+    | Neg (LetPast (v, va, vb)) -> Neg (push_negation (LetPast (v, va, vb)))
+    | Neg (Eq (v, va)) -> Neg (push_negation (Eq (v, va)))
+    | Neg (Less (v, va)) -> Neg (push_negation (Less (v, va)))
+    | Neg (LessEq (v, va)) -> Neg (push_negation (LessEq (v, va)))
+    | Neg (Neg v) -> Neg (push_negation (Neg v))
+    | Neg (Ands v) -> Neg (push_negation (Ands v))
+    | Neg (Exists (v, va)) -> Neg (push_negation (Exists (v, va)))
+    | Neg (Agg (v, va, vb, vc, vd)) ->
+        Neg (push_negation (Agg (v, va, vb, vc, vd)))
+    | Neg (Prev (v, va)) -> Neg (push_negation (Prev (v, va)))
+    | Neg (Next (v, va)) -> Neg (push_negation (Next (v, va)))
+    | Neg (Since (v, va, vb)) -> Neg (push_negation (Since (v, va, vb)))
+    | Neg (Until (v, va, vb)) -> Neg (push_negation (Until (v, va, vb)))
+    | Neg (Trigger (v, va, vb)) -> Neg (push_negation (Trigger (v, va, vb)))
+    | Neg (Release (v, va, vb)) -> Neg (push_negation (Release (v, va, vb)))
+    | Neg (MatchF (v, va)) -> Neg (push_negation (MatchF (v, va)))
+    | Neg (MatchP (v, va)) -> Neg (push_negation (MatchP (v, va)))
+    | Neg (TP v) -> Neg (push_negation (TP v))
+    | Neg (TS v) -> Neg (push_negation (TS v))
+    | Or (phi, psi) -> Or (push_negation phi, push_negation psi)
+    | And (phi, psi) -> And (push_negation phi, push_negation psi)
+    | Ands l -> Ands (mapa push_negation l)
+    | Exists (t, phi) -> Exists (t, push_negation phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, push_negation phi)
+    | Prev (i, phi) -> Prev (i, push_negation phi)
+    | Next (i, phi) -> Next (i, push_negation phi)
+    | Since (phi, i, psi) -> Since (push_negation phi, i, push_negation psi)
+    | Until (phi, i, psi) -> Until (push_negation phi, i, push_negation psi)
+    | MatchP (i, r) -> MatchP (i, map_regex push_negation r)
+    | MatchF (i, r) -> MatchF (i, map_regex push_negation r)
+    | Pred (v, va) -> Pred (v, va)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
+let rec normalize
+  x = comp (comp elim_double_negation push_negation) simplify_terms x;;
 
 let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
                        | Pred (v, va) -> [Pred (v, va)]
@@ -11435,6 +12836,19 @@ let rec convert_multiway
     | TP t -> TP t
     | TS t -> TS t;;
 
+let rec prepare_verimon
+  rw siga phi =
+    (match type_check siga phi with Inl a -> Inl a
+      | Inr phia ->
+        (if mmonitorable_exec phia then Inr phia
+          else (if rw
+                 then (let n_phi = normalize phia in
+                        (if mmonitorable_exec n_phi then Inr n_phi
+                          else (let r_phi = rrewrite n_phi in
+                                 (if mmonitorable_exec r_phi then Inr r_phi
+                                   else Inl "not monitorable"))))
+                 else Inl "not monitorable")));;
+
 let rec mapping_impl_choose2
   x y = match x, y with Mapping_RBT, Mapping_RBT -> Mapping_RBT
     | Mapping_Assoc_List, Mapping_Assoc_List -> Mapping_Assoc_List
@@ -11516,6 +12930,12 @@ let rec edl_rbt_of_sorted_list
 let rec utable_of_list xs = RBT_set (edl_rbt_of_sorted_list xs);;
 
 let rec nat_sum_list xs = foldr plus_nata xs zero_nata;;
+
+let rec udminit_verimon
+  mw rw siga phi =
+    map_sum id
+      (fun psi -> udminit_push (if mw then convert_multiway psi else psi))
+      (prepare_verimon rw siga phi);;
 
 let rec uvdfail_nodes
   = function UDFail -> one_nata
