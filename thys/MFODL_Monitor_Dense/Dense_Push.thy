@@ -1,0 +1,316 @@
+(*<*)
+theory Dense_Push
+  imports "MFODL_Monitor_Dense.Dense_Unbox_Exec"
+begin
+(*>*)
+
+section \<open>An existential quantifier moved into a window\<close>
+
+text \<open>
+  Over a window whose left operand is @{const Formula.TT} -- the past and future diamonds
+  @{text "ONCE"} and @{text "EVENTUALLY"} -- an existential quantifier commutes with the window:
+  @{text "\<exists>y. ONCE[I] \<phi>"} holds exactly when @{text "ONCE[I] (\<exists>y. \<phi>)"} does.  The two monitor
+  very differently.  With the quantifier outside, the window keeps every tuple of @{text \<phi>} over
+  the whole interval and the quantifier projects that whole result at every time point; with it
+  inside, the projection happens once, on the tuples entering the window, and the window keeps
+  only the projected tuples.  On @{text "C(x) AND (EXISTS y. ONCE[0,50] A(x,y))"} the first holds
+  about 2000 pairs where the second holds about 200 values of @{text x}.
+
+  @{text push_ex} makes that move everywhere it applies, and the lemmas below show that it
+  changes nothing the monitor's specification depends on: the free variables, the satisfaction
+  relation, the progress, the relevant events, safety, future-boundedness and typing.  It leaves
+  alone the subformulas whose treatment builds new formulas from their operands (@{text Let},
+  @{text LetPast}, @{text Frz}, the regular expressions, the trigger and release operators, and
+  a conjunction with a trigger or release on the right), which keeps those lemmas structural.
+\<close>
+
+text \<open>Equality on formulas is not executable -- the intervals have no equality in the generated
+  code -- so the test for @{const Formula.TT} gets a code equation that reads its shape.\<close>
+
+definition is_TT :: "'t Formula.formula \<Rightarrow> bool" where
+  [simp]: "is_TT \<phi> \<longleftrightarrow> \<phi> = Formula.TT"
+
+lemma is_TT_code[code]:
+  "is_TT \<phi> = (case \<phi> of Formula.Eq (Formula.Const (EInt i)) (Formula.Const (EInt j)) \<Rightarrow>
+      i = 0 \<and> j = 0 | _ \<Rightarrow> False)"
+proof (cases \<phi>)
+  case (Eq t1 t2)
+  then show ?thesis
+    by (cases t1; cases t2) (auto simp: Formula.TT_def split: event_data.split)
+qed (simp_all add: Formula.TT_def)
+
+fun ex_into :: "'t \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula" where
+  "ex_into t (Formula.Since \<phi> I \<psi>) =
+     (if is_TT \<phi> then Formula.Since Formula.TT I (ex_into t \<psi>)
+      else Formula.Exists t (Formula.Since \<phi> I \<psi>))"
+| "ex_into t (Formula.Until \<phi> I \<psi>) =
+     (if is_TT \<phi> then Formula.Until Formula.TT I (ex_into t \<psi>)
+      else Formula.Exists t (Formula.Until \<phi> I \<psi>))"
+| "ex_into t \<phi> = Formula.Exists t \<phi>"
+
+fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
+  "push_ex (Formula.Exists t \<phi>) = ex_into t (push_ex \<phi>)"
+| "push_ex (Formula.Neg \<phi>) = Formula.Neg (push_ex \<phi>)"
+| "push_ex (Formula.Or \<phi> \<psi>) = Formula.Or (push_ex \<phi>) (push_ex \<psi>)"
+| "push_ex (Formula.And \<phi> \<psi>) = (case \<psi> of
+      Formula.Trigger _ _ _ \<Rightarrow> Formula.And \<phi> \<psi>
+    | Formula.Release _ _ _ \<Rightarrow> Formula.And \<phi> \<psi>
+    | _ \<Rightarrow> Formula.And (push_ex \<phi>) (push_ex \<psi>))"
+| "push_ex (Formula.Ands l) = Formula.Ands (map push_ex l)"
+| "push_ex (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (push_ex \<phi>)"
+| "push_ex (Formula.Prev I \<phi>) = Formula.Prev I (push_ex \<phi>)"
+| "push_ex (Formula.Next I \<phi>) = Formula.Next I (push_ex \<phi>)"
+| "push_ex (Formula.Since \<phi> I \<psi>) = Formula.Since (push_ex \<phi>) I (push_ex \<psi>)"
+| "push_ex (Formula.Until \<phi> I \<psi>) = Formula.Until (push_ex \<phi>) I (push_ex \<psi>)"
+| "push_ex \<phi> = \<phi>"
+
+text \<open>The conjunction's equation with its case distinction folded into a test, so that the
+  lemmas below can go by structural induction without splitting over every constructor.\<close>
+
+lemma push_ex_And:
+  "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
+     then Formula.And \<phi> \<psi> else Formula.And (push_ex \<phi>) (push_ex \<psi>))"
+  by (cases \<psi>) simp_all
+
+declare push_ex.simps(4)[simp del]
+
+subsection \<open>Free variables\<close>
+
+lemma fvi_ex_into[simp]: "Formula.fvi b (ex_into t \<phi>) = Formula.fvi (Suc b) \<phi>"
+  by (induct t \<phi> arbitrary: b rule: ex_into.induct) auto
+
+lemma fvi_push_ex[simp]: "Formula.fvi b (push_ex \<phi>) = Formula.fvi b \<phi>"
+  by (induct \<phi> arbitrary: b) (auto simp: push_ex_And)
+
+lemma nfv_push_ex[simp]: "Formula.nfv (push_ex \<phi>) = Formula.nfv \<phi>"
+  by (simp add: Formula.nfv_def)
+
+subsection \<open>Satisfaction\<close>
+
+lemma sat_ex_into[simp]:
+  "Formula.sat \<sigma> V v i (ex_into t \<phi>) = (\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>)"
+  by (induct t \<phi> arbitrary: v i rule: ex_into.induct) auto
+
+lemma sat_push_ex[simp]: "Formula.sat \<sigma> V v i (push_ex \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (induct \<phi> arbitrary: V v i) (auto simp: push_ex_And split: nat.splits)
+
+subsection \<open>Shapes\<close>
+
+text \<open>The safety conditions look at a few syntactic shapes of their operands: comparisons,
+  assignments and negations.  The quantifier's step never produces one of them, and the rest of
+  the traversal keeps each of them as it is.\<close>
+
+lemma ex_into_shapes[simp]:
+  "\<not> is_constraint (ex_into t \<phi>)"
+  "\<not> safe_assignment X (ex_into t \<phi>)"
+  "ex_into t \<phi> \<noteq> Formula.Neg \<psi>"
+  "remove_neg (ex_into t \<phi>) = ex_into t \<phi>"
+  "\<not> Formula.is_Trigger (ex_into t \<phi>)"
+  "\<not> Formula.is_Release (ex_into t \<phi>)"
+  "ex_into t \<phi> \<noteq> Formula.Eq t1 t2"
+  "ex_into t \<phi> \<noteq> Formula.Less t1 t2"
+  "ex_into t \<phi> \<noteq> Formula.LessEq t1 t2"
+  by (induct t \<phi> rule: ex_into.induct) (simp_all add: safe_assignment_def)
+
+lemma push_ex_Neg_iff:
+  "push_ex \<phi> = Formula.Neg \<psi> \<longleftrightarrow> (\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>' \<and> \<psi> = push_ex \<phi>')"
+  by (cases \<phi>) (auto simp: push_ex_And)
+
+lemma push_ex_comparison:
+  "push_ex \<phi> = Formula.Eq t1 t2 \<longleftrightarrow> \<phi> = Formula.Eq t1 t2"
+  "push_ex \<phi> = Formula.Less t1 t2 \<longleftrightarrow> \<phi> = Formula.Less t1 t2"
+  "push_ex \<phi> = Formula.LessEq t1 t2 \<longleftrightarrow> \<phi> = Formula.LessEq t1 t2"
+  by (cases \<phi>; simp add: push_ex_And)+
+
+lemma is_constraint_push_ex[simp]: "is_constraint (push_ex \<phi>) = is_constraint \<phi>"
+proof (cases \<phi>)
+  case (Neg \<psi>)
+  then show ?thesis by (auto simp: is_constraint_Neg_iff push_ex_comparison)
+qed (auto simp: push_ex_And)
+
+lemma safe_assignment_push_ex[simp]: "safe_assignment X (push_ex \<phi>) = safe_assignment X \<phi>"
+proof (cases \<phi>)
+  case (Exists t \<psi>)
+  then show ?thesis
+    using ex_into_shapes(2)[of X t "push_ex \<psi>"] by (simp add: safe_assignment_def)
+qed (simp_all add: push_ex_And safe_assignment_def)
+
+lemma remove_neg_push_ex[simp]: "remove_neg (push_ex \<phi>) = push_ex (remove_neg \<phi>)"
+  by (cases \<phi>) (auto simp: push_ex_And)
+
+lemma is_Trigger_push_ex[simp]: "Formula.is_Trigger (push_ex \<phi>) = Formula.is_Trigger \<phi>"
+  and is_Release_push_ex[simp]: "Formula.is_Release (push_ex \<phi>) = Formula.is_Release \<phi>"
+  by (cases \<phi>; simp add: push_ex_And)+
+
+lemma safe_And_not_TR:
+  "\<not> Formula.is_Trigger \<psi> \<Longrightarrow> \<not> Formula.is_Release \<psi> \<Longrightarrow>
+   safe_formula (Formula.And \<phi> \<psi>) = (safe_formula \<phi> \<and>
+     (safe_assignment (Formula.fv \<phi>) \<psi> \<or> safe_formula \<psi> \<or> Formula.fv \<psi> \<subseteq> Formula.fv \<phi> \<and>
+       (is_constraint \<psi> \<or> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>' | _ \<Rightarrow> False))))"
+  by (cases \<psi>) simp_all
+
+lemma case_Neg_push_ex:
+  "(case push_ex \<phi> of Formula.Neg \<psi> \<Rightarrow> f \<psi> | _ \<Rightarrow> False)
+   = (case \<phi> of Formula.Neg \<psi> \<Rightarrow> f (push_ex \<psi>) | _ \<Rightarrow> False)"
+  by (simp add: case_Neg_iff push_ex_Neg_iff) blast
+
+lemma size_remove_neg: "size (remove_neg \<phi>) \<le> size \<phi>"
+  by (cases \<phi>) simp_all
+
+subsection \<open>Safety\<close>
+
+lemma safe_ex_into[simp]: "safe_formula (ex_into t \<phi>) = (safe_formula \<phi> \<and> 0 \<in> Formula.fv \<phi>)"
+  by (induct t \<phi> rule: ex_into.induct) auto
+
+lemma safe_push_ex[simp]: "safe_formula (push_ex \<phi>) = safe_formula \<phi>"
+proof (induct \<phi> rule: measure_induct_rule[where f = size])
+  case (less \<phi>)
+  show ?case
+  proof (cases \<phi>)
+    case (And \<phi>1 \<psi>)
+    show ?thesis
+    proof (cases "Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>")
+      case True
+      then show ?thesis by (simp add: And push_ex_And)
+    next
+      case False
+      then have nt: "\<not> Formula.is_Trigger \<psi>" "\<not> Formula.is_Release \<psi>" by simp_all
+      have i1: "safe_formula (push_ex \<phi>1) = safe_formula \<phi>1"
+        and i2: "safe_formula (push_ex \<psi>) = safe_formula \<psi>"
+        by (rule less; simp add: And)+
+      have i3: "(case \<psi> of Formula.Neg \<psi>' \<Rightarrow> safe_formula (push_ex \<psi>') | _ \<Rightarrow> False)
+          = (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>' | _ \<Rightarrow> False)"
+        by (cases \<psi>) (simp_all add: And less)
+      show ?thesis
+        unfolding And push_ex_And
+        by (simp del: safe_formula.simps(10) add: nt safe_And_not_TR case_Neg_push_ex i1 i2 i3)
+    qed
+  next
+    case (Ands l)
+    have s1: "size x < size \<phi>" if "x \<in> set l" for x
+      using size_list_estimation'[of x l "size x" size] that by (simp add: Ands)
+    have s2: "size (remove_neg x) < size \<phi>" if "x \<in> set l" for x
+      using size_list_estimation'[of x l "size (remove_neg x)" size] that size_remove_neg[of x]
+      by (simp add: Ands)
+    have i: "\<And>x. x \<in> set l \<Longrightarrow> safe_formula (push_ex x) = safe_formula x"
+      by (rule less, rule s1)
+    have j: "\<And>x. x \<in> set l \<Longrightarrow> safe_formula (push_ex (remove_neg x)) = safe_formula (remove_neg x)"
+      by (rule less, rule s2)
+    have p: "partition safe_formula (map push_ex l)
+        = (map push_ex (filter safe_formula l), map push_ex (filter (Not \<circ> safe_formula) l))"
+      by (auto simp: filter_map o_def i cong: filter_cong)
+    show ?thesis
+      unfolding Ands push_ex.simps safe_formula.simps p
+      by (auto simp: list.pred_map list_all_iff o_def j)
+  next
+    case (Since \<phi>1 I \<psi>)
+    have "(case \<phi>1 of Formula.Neg \<psi>' \<Rightarrow> safe_formula (push_ex \<psi>') | _ \<Rightarrow> False)
+        = (case \<phi>1 of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>' | _ \<Rightarrow> False)"
+      by (cases \<phi>1) (simp_all add: Since less)
+    then show ?thesis by (simp add: Since case_Neg_push_ex less)
+  next
+    case (Until \<phi>1 I \<psi>)
+    have "(case \<phi>1 of Formula.Neg \<psi>' \<Rightarrow> safe_formula (push_ex \<psi>') | _ \<Rightarrow> False)
+        = (case \<phi>1 of Formula.Neg \<psi>' \<Rightarrow> safe_formula \<psi>' | _ \<Rightarrow> False)"
+      by (cases \<phi>1) (simp_all add: Until less)
+    then show ?thesis by (simp add: Until case_Neg_push_ex less)
+  qed (simp_all add: less)
+qed
+
+subsection \<open>Future-boundedness, monitorability and relevant events\<close>
+
+lemma future_bounded_ex_into[simp]:
+  "Safety.future_bounded (ex_into t \<phi>) = Safety.future_bounded \<phi>"
+  by (induct t \<phi> rule: ex_into.induct) auto
+
+lemma future_bounded_push_ex[simp]: "Safety.future_bounded (push_ex \<phi>) = Safety.future_bounded \<phi>"
+  by (induct \<phi>) (auto simp: push_ex_And list.pred_map o_def cong: list.pred_cong)
+
+lemma mmonitorable_push_ex[simp]: "mmonitorable (push_ex \<phi>) = mmonitorable \<phi>"
+  by (simp add: mmonitorable_def)
+
+lemma matches_ex_into[simp]:
+  "Safety.matches v (ex_into t \<phi>) e = (\<exists>z. Safety.matches (z # v) \<phi> e)"
+  by (induct t \<phi> arbitrary: v rule: ex_into.induct) (auto simp: Formula.TT_def)
+
+lemma matches_push_ex[simp]: "Safety.matches v (push_ex \<phi>) e = Safety.matches v \<phi> e"
+  by (induct \<phi> arbitrary: v) (auto simp: push_ex_And)
+
+subsection \<open>Progress\<close>
+
+lemma progress_ex_into[simp]: "progress \<sigma> P (ex_into t \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct t \<phi> arbitrary: P rule: ex_into.induct) (simp_all add: Formula.TT_def)
+
+lemma progress_push_ex[simp]: "progress \<sigma> P (push_ex \<phi>) j = progress \<sigma> P \<phi> j"
+  by (induct \<phi> arbitrary: P) (auto simp: push_ex_And o_def cong: map_cong)
+
+lemma pprogress_push_ex[simp]: "pprogress (push_ex \<phi>) = pprogress \<phi>"
+  by (simp add: pprogress_def fun_eq_iff)
+
+subsection \<open>Typing\<close>
+
+lemma wty_ex_into: "S, case_nat t E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> ex_into t \<phi>"
+proof (induct t \<phi> arbitrary: E rule: ex_into.induct)
+  case (1 t \<phi> I \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.intros elim: wty_formula.cases)
+next
+  case (2 t \<phi> I \<psi>)
+  then show ?case
+    by (auto intro!: wty_formula.intros elim: wty_formula.cases)
+qed (auto intro: wty_formula.Exists)
+
+lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_ex \<phi>"
+  by (induct rule: wty_formula.induct)
+    (auto simp: push_ex_And intro!: wty_formula.intros wty_ex_into elim: regex.pred_mono_strong)
+
+subsection \<open>The dense monitor on the rewritten formula\<close>
+
+text \<open>
+  Everything the specification of the monitor for @{term \<phi>} depends on -- the number and set
+  of free variables, the traces (through the signature), the satisfaction relation and the
+  progress -- is the same for @{term "push_ex \<phi>"}, which is monitorable and well typed whenever
+  @{term \<phi>} is.  So the dense monitor started on @{term "push_ex \<phi>"} computes exactly the
+  verdicts of @{term \<phi>}.
+\<close>
+
+context verimon_spec
+begin
+
+theorem dmonitor_mverdicts_push:
+  assumes zf: "vdfail_nodes (dmstate_m (dof_state (Formula.nfv \<phi>)
+      (set_cols (Formula.fv \<phi>)) (minit_safe (push_ex \<phi>)))) = 0"
+    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
+  shows "flatten_verdicts (map (\<lambda>(i, t, X).
+      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
+      (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
+         (minit_safe (push_ex \<phi>))) \<pi>)) = Mt \<pi>"
+proof -
+  interpret p: verimon_spec "push_ex \<phi>" SIG ENV
+    by unfold_locales (simp_all add: wty_push_ex[OF well_typed] monitorable)
+  have "flatten_verdicts (map (\<lambda>(i, t, X).
+      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
+      (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
+         (minit_safe (push_ex \<phi>))) \<pi>)) = p.Mt \<pi>"
+    using p.dmonitor_mverdicts_dof[OF _ f wty] zf by simp
+  also have "p.Mt \<pi> = Mt \<pi>"
+    by simp
+  finally show ?thesis .
+qed
+
+end
+
+text \<open>The front end's entry point: the monitor over the short tuples, started on the rewritten
+  formula.  Its representation is the dense monitor of @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
+
+definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
+  "udminit_push \<phi> = udminit_safe (push_ex \<phi>)"
+
+lemma Rep_udminit_push:
+  "Rep_udmstate (udminit_push \<phi>)
+   = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe (push_ex \<phi>))"
+  by (simp add: udminit_push_def Rep_udminit_safe)
+
+(*<*)
+end
+(*>*)

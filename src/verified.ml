@@ -76,7 +76,6 @@ module Monitor : sig
   type enat = Enat of nat | Infinity_enat
   type rec_safety
   type ('a, 'b) mapping
-  type aggaux
   type agg_type = Agg_Cnt | Agg_Min | Agg_Max | Agg_Sum | Agg_Avg | Agg_Med
   type ('a, 'b) sum = Inl of 'a | Inr of 'b
   type 'a queue
@@ -109,10 +108,7 @@ module Monitor : sig
     | Trigger of 'a formula * i * 'a formula |
     Release of 'a formula * i * 'a formula | MatchF of i * 'a formula regex |
     MatchP of i * 'a formula regex | TP of trm | TS of trm
-  type 'a wf_table
   type 'a boxed
-  type ('a, 'b, 'c, 'd) mstate_ext
-  type muaux_dq
   type 'a udmstate_ext
   val wild : 'a regex
   val integer_of_int : int -> Z.t
@@ -121,6 +117,7 @@ module Monitor : sig
     (string * nat -> (tysym list) option) ->
       tysym formula -> (string, ty formula) sum
   val mmonitorable_exec : 'a formula -> bool
+  val udminit_push : ty formula -> unit udmstate_ext
   val convert_multiway : 'a formula -> 'a formula
   val uempty_db : ((string * nat), ((event_data list) set list)) mapping
   val urbt_fold :
@@ -132,7 +129,6 @@ module Monitor : sig
       unit udmstate_ext ->
         (nat * (nat * (event_data list) set)) list * unit udmstate_ext
   val utable_of_list : (event_data list) list -> (event_data list) set
-  val udminit_safe : ty formula -> unit udmstate_ext
   val uvdfail_nodes : udformula -> nat
   val uinsert_table_into_db :
     string * nat ->
@@ -4873,6 +4869,36 @@ let rec dands_cols acc x1 = match acc, x1 with acc, [] -> acc
 
 let rec mtrm_dcols mt = (match mt with MVar v -> [v] | MConst _ -> []);;
 
+let rec is_TT
+  phi = (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+          | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+          | Eq (Var _, _) -> false | Eq (Const (EInt _), Var _) -> false
+          | Eq (Const (EInt i), Const (EInt j)) ->
+            Z.equal i Z.zero && Z.equal j Z.zero
+          | Eq (Const (EInt _), Const (EFloat _)) -> false
+          | Eq (Const (EInt _), Const (EString _)) -> false
+          | Eq (Const (EInt _), Plus (_, _)) -> false
+          | Eq (Const (EInt _), Minus (_, _)) -> false
+          | Eq (Const (EInt _), UMinus _) -> false
+          | Eq (Const (EInt _), Mult (_, _)) -> false
+          | Eq (Const (EInt _), Div (_, _)) -> false
+          | Eq (Const (EInt _), Mod (_, _)) -> false
+          | Eq (Const (EInt _), F2i _) -> false
+          | Eq (Const (EInt _), I2f _) -> false
+          | Eq (Const (EFloat _), _) -> false
+          | Eq (Const (EString _), _) -> false | Eq (Plus (_, _), _) -> false
+          | Eq (Minus (_, _), _) -> false | Eq (UMinus _, _) -> false
+          | Eq (Mult (_, _), _) -> false | Eq (Div (_, _), _) -> false
+          | Eq (Mod (_, _), _) -> false | Eq (F2i _, _) -> false
+          | Eq (I2f _, _) -> false | Less (_, _) -> false
+          | LessEq (_, _) -> false | Neg _ -> false | Or (_, _) -> false
+          | And (_, _) -> false | Ands _ -> false | Exists (_, _) -> false
+          | Agg (_, _, _, _, _) -> false | Prev (_, _) -> false
+          | Next (_, _) -> false | Since (_, _, _) -> false
+          | Until (_, _, _) -> false | Trigger (_, _, _) -> false
+          | Release (_, _, _) -> false | MatchF (_, _) -> false
+          | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
+
 let rec bounded x = snd (snd (rep_I x));;
 
 let rec list_update
@@ -6119,6 +6145,84 @@ let rec type_check
         (if check_wty_formula (map_formula f phi)
           then Inr (map_formula (comp convert_tysym f) phi)
           else Inl "failed to infer ground type for aggregation result"));;
+
+let rec ex_into
+  t x1 = match t, x1 with
+    t, Since (phi, i, psi) ->
+      (if is_TT phi then Since (tt, i, ex_into t psi)
+        else Exists (t, Since (phi, i, psi)))
+    | t, Until (phi, i, psi) ->
+        (if is_TT phi then Until (tt, i, ex_into t psi)
+          else Exists (t, Until (phi, i, psi)))
+    | t, Pred (v, va) -> Exists (t, Pred (v, va))
+    | t, Let (v, va, vb) -> Exists (t, Let (v, va, vb))
+    | t, Frz (v, va, vb) -> Exists (t, Frz (v, va, vb))
+    | t, LetPast (v, va, vb) -> Exists (t, LetPast (v, va, vb))
+    | t, Eq (v, va) -> Exists (t, Eq (v, va))
+    | t, Less (v, va) -> Exists (t, Less (v, va))
+    | t, LessEq (v, va) -> Exists (t, LessEq (v, va))
+    | t, Neg v -> Exists (t, Neg v)
+    | t, Or (v, va) -> Exists (t, Or (v, va))
+    | t, And (v, va) -> Exists (t, And (v, va))
+    | t, Ands v -> Exists (t, Ands v)
+    | t, Exists (v, va) -> Exists (t, Exists (v, va))
+    | t, Agg (v, va, vb, vc, vd) -> Exists (t, Agg (v, va, vb, vc, vd))
+    | t, Prev (v, va) -> Exists (t, Prev (v, va))
+    | t, Next (v, va) -> Exists (t, Next (v, va))
+    | t, Trigger (v, va, vb) -> Exists (t, Trigger (v, va, vb))
+    | t, Release (v, va, vb) -> Exists (t, Release (v, va, vb))
+    | t, MatchF (v, va) -> Exists (t, MatchF (v, va))
+    | t, MatchP (v, va) -> Exists (t, MatchP (v, va))
+    | t, TP v -> Exists (t, TP v)
+    | t, TS v -> Exists (t, TS v);;
+
+let rec push_ex
+  = function Exists (t, phi) -> ex_into t (push_ex phi)
+    | Neg phi -> Neg (push_ex phi)
+    | Or (phi, psi) -> Or (push_ex phi, push_ex psi)
+    | And (phi, psi) ->
+        (match psi with Pred (_, _) -> And (push_ex phi, push_ex psi)
+          | Let (_, _, _) -> And (push_ex phi, push_ex psi)
+          | Frz (_, _, _) -> And (push_ex phi, push_ex psi)
+          | LetPast (_, _, _) -> And (push_ex phi, push_ex psi)
+          | Eq (_, _) -> And (push_ex phi, push_ex psi)
+          | Less (_, _) -> And (push_ex phi, push_ex psi)
+          | LessEq (_, _) -> And (push_ex phi, push_ex psi)
+          | Neg _ -> And (push_ex phi, push_ex psi)
+          | Or (_, _) -> And (push_ex phi, push_ex psi)
+          | And (_, _) -> And (push_ex phi, push_ex psi)
+          | Ands _ -> And (push_ex phi, push_ex psi)
+          | Exists (_, _) -> And (push_ex phi, push_ex psi)
+          | Agg (_, _, _, _, _) -> And (push_ex phi, push_ex psi)
+          | Prev (_, _) -> And (push_ex phi, push_ex psi)
+          | Next (_, _) -> And (push_ex phi, push_ex psi)
+          | Since (_, _, _) -> And (push_ex phi, push_ex psi)
+          | Until (_, _, _) -> And (push_ex phi, push_ex psi)
+          | Trigger (_, _, _) -> And (phi, psi)
+          | Release (_, _, _) -> And (phi, psi)
+          | MatchF (_, _) -> And (push_ex phi, push_ex psi)
+          | MatchP (_, _) -> And (push_ex phi, push_ex psi)
+          | TP _ -> And (push_ex phi, push_ex psi)
+          | TS _ -> And (push_ex phi, push_ex psi))
+    | Ands l -> Ands (mapa push_ex l)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, push_ex phi)
+    | Prev (i, phi) -> Prev (i, push_ex phi)
+    | Next (i, phi) -> Next (i, push_ex phi)
+    | Since (phi, i, psi) -> Since (push_ex phi, i, push_ex psi)
+    | Until (phi, i, psi) -> Until (push_ex phi, i, push_ex psi)
+    | Pred (v, va) -> Pred (v, va)
+    | Let (v, va, vb) -> Let (v, va, vb)
+    | Frz (v, va, vb) -> Frz (v, va, vb)
+    | LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | MatchF (v, va) -> MatchF (v, va)
+    | MatchP (v, va) -> MatchP (v, va)
+    | TP v -> TP v
+    | TS v -> TS v;;
 
 let rec deopt x = mapa the x;;
 
@@ -8201,6 +8305,208 @@ let rec dannotate
             (plus_nata (plus_nata i one_nata) (size_lista vs), (tqa, rev acc))
           | (Some t, tqa) ->
             dannotate (plus_nata i one_nata) tqa vs ((i, (t, v)) :: acc));;
+
+let rec append_queue_list
+  xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
+
+let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
+
+let rec mstate_t (Mestate (i, j, m, n, t, zeta)) = linearize t;;
+
+let rec mstate_m (Mestate (i, j, m, n, t, zeta)) = m;;
+
+let rec mstate_j (Mestate (i, j, m, n, t, zeta)) = j;;
+
+let rec mstate_i (Mestate (i, j, m, n, t, zeta)) = i;;
+
+let rec udof_m n cs (Rep_meformula e) = udof n cs e;;
+
+let rec udof_state
+  n cs st =
+    Udmstate_ext
+      (mstate_i st, mstate_j st, udof_m n cs (mstate_m st), n, cs,
+        mbuf_t_append mbuf_t_empty (mstate_t st), ());;
+
+let rec mmonitorable_exec
+  = function Eq (t1, t2) -> is_simple_eq t1 t2
+    | Pred (e, ts) -> list_all (fun t -> is_Var t || is_Const t) ts
+    | Let (p, phi, psi) ->
+        nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
+          (fvi zero_nata phi) &&
+          (mmonitorable_exec phi && mmonitorable_exec psi)
+    | Frz (p, phi, psi) ->
+        nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
+          (fvi zero_nata phi) &&
+          (mmonitorable_exec phi && mmonitorable_exec psi)
+    | LetPast (p, phi, psi) ->
+        less_eq_rec_safety (safe_letpast (p, nfv phi) phi) PastRec &&
+          (nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
+             (fvi zero_nata phi) &&
+            (mmonitorable_exec phi && mmonitorable_exec psi))
+    | Neg phi ->
+        is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
+          (fvi zero_nata phi) &&
+          mmonitorable_exec phi
+    | Or (phi, psi) ->
+        set_eq (cenum_nat, ceq_nat, ccompare_nat) (fvi zero_nata phi)
+          (fvi zero_nata psi) &&
+          (mmonitorable_exec phi && mmonitorable_exec psi)
+    | And (phi, psi) ->
+        mmonitorable_exec phi &&
+          (safe_assignment (fvi zero_nata phi) psi ||
+            (mmonitorable_exec psi ||
+              nat_subset (fvi zero_nata psi) (fvi zero_nata phi) &&
+                (is_constraint psi ||
+                  (match psi with Pred (_, _) -> false | Let (_, _, _) -> false
+                    | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+                    | Eq (_, _) -> false | Less (_, _) -> false
+                    | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
+                    | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+                    | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+                    | Prev (_, _) -> false | Next (_, _) -> false
+                    | Since (_, _, _) -> false | Until (_, _, _) -> false
+                    | Trigger (a, b, c) ->
+                      safe_dual true mmonitorable_exec a b c
+                    | Release (phia, i, psia) ->
+                      bounded i &&
+                        (not (memL i zero_nata && memR i zero_nata) &&
+                          (mmonitorable_exec phia &&
+                            (mmonitorable_exec psia &&
+                              (set_eq (cenum_nat, ceq_nat, ccompare_nat)
+                                 (fvi zero_nata phia) (fvi zero_nata psia) &&
+                                mmonitorable_exec
+                                  (and_release_safe_bounded phi phia i psia)))))
+                    | MatchF (_, _) -> false | MatchP (_, _) -> false
+                    | TP _ -> false | TS _ -> false))))
+    | Ands l ->
+        (let (pos, neg) = partition mmonitorable_exec l in
+          not (null pos) &&
+            (list_all mmonitorable_exec (mapa remove_neg neg) &&
+              nat_subset
+                (sup_setb
+                  (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)
+                  (set ((ceq_set
+                          (cenum_nat, ceq_nat,
+                            cproper_interval_nat.ccompare_cproper_interval)),
+                         (ccompare_set
+                           (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                             set_impl_nat)),
+                         set_impl_set)
+                    (mapa (fvi zero_nata) neg)))
+                (sup_setb
+                  (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+                    set_impl_nat)
+                  (set ((ceq_set
+                          (cenum_nat, ceq_nat,
+                            cproper_interval_nat.ccompare_cproper_interval)),
+                         (ccompare_set
+                           (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
+                             set_impl_nat)),
+                         set_impl_set)
+                    (mapa (fvi zero_nata) pos)))))
+    | Exists (t, phi) ->
+        nat_member zero_nata (fvi zero_nata phi) && mmonitorable_exec phi
+    | Agg (y, omega, tys, f, phi) ->
+        mmonitorable_exec phi &&
+          (not (nat_member (plus_nata y (size_lista tys))
+                 (fvi zero_nata phi)) &&
+            (nat_subset (unbox nat_atLeastLessThan_v zero_nata (size_lista tys))
+               (fvi zero_nata phi) &&
+              nat_subset (fvi_trm zero_nata f) (fvi zero_nata phi)))
+    | Prev (i, phi) -> mmonitorable_exec phi
+    | Next (i, phi) -> mmonitorable_exec phi
+    | Since (phi, i, psi) ->
+        nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
+          ((mmonitorable_exec phi ||
+             (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+               | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+               | Eq (_, _) -> false | Less (_, _) -> false
+               | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
+               | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+               | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+               | Prev (_, _) -> false | Next (_, _) -> false
+               | Since (_, _, _) -> false | Until (_, _, _) -> false
+               | Trigger (_, _, _) -> false | Release (_, _, _) -> false
+               | MatchF (_, _) -> false | MatchP (_, _) -> false | TP _ -> false
+               | TS _ -> false)) &&
+            mmonitorable_exec psi)
+    | Until (phi, i, psi) ->
+        nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
+          (bounded i &&
+            ((mmonitorable_exec phi ||
+               (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+                 | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+                 | Eq (_, _) -> false | Less (_, _) -> false
+                 | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
+                 | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+                 | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+                 | Prev (_, _) -> false | Next (_, _) -> false
+                 | Since (_, _, _) -> false | Until (_, _, _) -> false
+                 | Trigger (_, _, _) -> false | Release (_, _, _) -> false
+                 | MatchF (_, _) -> false | MatchP (_, _) -> false
+                 | TP _ -> false | TS _ -> false)) &&
+              mmonitorable_exec psi))
+    | Trigger (phi, i, psi) -> safe_dual false mmonitorable_exec phi i psi
+    | Release (phi, i, psi) ->
+        memL i zero_nata && memR i zero_nata &&
+          (bounded i &&
+            (mmonitorable_exec psi &&
+              (nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
+                mmonitorable_exec (release_safe_0 phi i psi))))
+    | MatchP (i, r) ->
+        safe_regex
+          (card_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+            set_impl_nat)
+          (fvi zero_nata)
+          (fun g phi ->
+            mmonitorable_exec phi ||
+              equal_safety g Lax &&
+                (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+                  | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+                  | Eq (_, _) -> false | Less (_, _) -> false
+                  | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
+                  | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+                  | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+                  | Prev (_, _) -> false | Next (_, _) -> false
+                  | Since (_, _, _) -> false | Until (_, _, _) -> false
+                  | Trigger (_, _, _) -> false | Release (_, _, _) -> false
+                  | MatchF (_, _) -> false | MatchP (_, _) -> false
+                  | TP _ -> false | TS _ -> false))
+          Past Strict r
+    | MatchF (i, r) ->
+        safe_regex
+          (card_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
+            set_impl_nat)
+          (fvi zero_nata)
+          (fun g phi ->
+            mmonitorable_exec phi ||
+              equal_safety g Lax &&
+                (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
+                  | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+                  | Eq (_, _) -> false | Less (_, _) -> false
+                  | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
+                  | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
+                  | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
+                  | Prev (_, _) -> false | Next (_, _) -> false
+                  | Since (_, _, _) -> false | Until (_, _, _) -> false
+                  | Trigger (_, _, _) -> false | Release (_, _, _) -> false
+                  | MatchF (_, _) -> false | MatchP (_, _) -> false
+                  | TP _ -> false | TS _ -> false))
+          Futu Strict r &&
+          bounded i
+    | TP t -> is_Var t || is_Const t
+    | TS t -> is_Var t || is_Const t
+    | Less (v, va) -> false
+    | LessEq (v, va) -> false;;
+
+let rec minit_safe
+  phi = (if mmonitorable_exec phi then minit phi else failwith "undefined");;
+
+let rec udminit_safe
+  phi = udof_state (nfv phi) (set_cols (fvi zero_nata phi)) (minit_safe phi);;
+
+let rec udminit_push phi = udminit_safe (push_ex phi);;
 
 let edl_impl_of_nat_v :
   (((event_data list), nat) mapping_rbt -> ((event_data list), nat) rbt) boxed
@@ -10630,11 +10936,6 @@ let rec uebufn_take
       else uebufn_take f (f (mapa (comp (comp the fst) mbuf_t_cases) buf) z)
              (mapa (comp snd mbuf_t_cases) buf));;
 
-let rec append_queue_list
-  xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
-
-let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
-
 let rec uebuf2S_add
   xsa ysa tsa (xs, (ys, (ts, skew))) =
     (mbuf_t_append xs xsa,
@@ -10969,192 +11270,6 @@ let rec udeval
                             dauxa)))))
                b);;
 
-let rec udof_m n cs (Rep_meformula e) = udof n cs e;;
-
-let rec mstate_i (Mestate (i, j, m, n, t, zeta)) = i;;
-
-let rec mstate_j (Mestate (i, j, m, n, t, zeta)) = j;;
-
-let rec mstate_m (Mestate (i, j, m, n, t, zeta)) = m;;
-
-let rec mstate_t (Mestate (i, j, m, n, t, zeta)) = linearize t;;
-
-let rec mmonitorable_exec
-  = function Eq (t1, t2) -> is_simple_eq t1 t2
-    | Pred (e, ts) -> list_all (fun t -> is_Var t || is_Const t) ts
-    | Let (p, phi, psi) ->
-        nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
-          (fvi zero_nata phi) &&
-          (mmonitorable_exec phi && mmonitorable_exec psi)
-    | Frz (p, phi, psi) ->
-        nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
-          (fvi zero_nata phi) &&
-          (mmonitorable_exec phi && mmonitorable_exec psi)
-    | LetPast (p, phi, psi) ->
-        less_eq_rec_safety (safe_letpast (p, nfv phi) phi) PastRec &&
-          (nat_subset (unbox nat_atLeastLessThan_v zero_nata (nfv phi))
-             (fvi zero_nata phi) &&
-            (mmonitorable_exec phi && mmonitorable_exec psi))
-    | Neg phi ->
-        is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
-          (fvi zero_nata phi) &&
-          mmonitorable_exec phi
-    | Or (phi, psi) ->
-        set_eq (cenum_nat, ceq_nat, ccompare_nat) (fvi zero_nata phi)
-          (fvi zero_nata psi) &&
-          (mmonitorable_exec phi && mmonitorable_exec psi)
-    | And (phi, psi) ->
-        mmonitorable_exec phi &&
-          (safe_assignment (fvi zero_nata phi) psi ||
-            (mmonitorable_exec psi ||
-              nat_subset (fvi zero_nata psi) (fvi zero_nata phi) &&
-                (is_constraint psi ||
-                  (match psi with Pred (_, _) -> false | Let (_, _, _) -> false
-                    | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-                    | Eq (_, _) -> false | Less (_, _) -> false
-                    | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
-                    | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
-                    | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
-                    | Prev (_, _) -> false | Next (_, _) -> false
-                    | Since (_, _, _) -> false | Until (_, _, _) -> false
-                    | Trigger (a, b, c) ->
-                      safe_dual true mmonitorable_exec a b c
-                    | Release (phia, i, psia) ->
-                      bounded i &&
-                        (not (memL i zero_nata && memR i zero_nata) &&
-                          (mmonitorable_exec phia &&
-                            (mmonitorable_exec psia &&
-                              (set_eq (cenum_nat, ceq_nat, ccompare_nat)
-                                 (fvi zero_nata phia) (fvi zero_nata psia) &&
-                                mmonitorable_exec
-                                  (and_release_safe_bounded phi phia i psia)))))
-                    | MatchF (_, _) -> false | MatchP (_, _) -> false
-                    | TP _ -> false | TS _ -> false))))
-    | Ands l ->
-        (let (pos, neg) = partition mmonitorable_exec l in
-          not (null pos) &&
-            (list_all mmonitorable_exec (mapa remove_neg neg) &&
-              nat_subset
-                (sup_setb
-                  (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
-                    set_impl_nat)
-                  (set ((ceq_set
-                          (cenum_nat, ceq_nat,
-                            cproper_interval_nat.ccompare_cproper_interval)),
-                         (ccompare_set
-                           (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
-                             set_impl_nat)),
-                         set_impl_set)
-                    (mapa (fvi zero_nata) neg)))
-                (sup_setb
-                  (finite_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
-                    set_impl_nat)
-                  (set ((ceq_set
-                          (cenum_nat, ceq_nat,
-                            cproper_interval_nat.ccompare_cproper_interval)),
-                         (ccompare_set
-                           (finite_UNIV_nat, ceq_nat, cproper_interval_nat,
-                             set_impl_nat)),
-                         set_impl_set)
-                    (mapa (fvi zero_nata) pos)))))
-    | Exists (t, phi) ->
-        nat_member zero_nata (fvi zero_nata phi) && mmonitorable_exec phi
-    | Agg (y, omega, tys, f, phi) ->
-        mmonitorable_exec phi &&
-          (not (nat_member (plus_nata y (size_lista tys))
-                 (fvi zero_nata phi)) &&
-            (nat_subset (unbox nat_atLeastLessThan_v zero_nata (size_lista tys))
-               (fvi zero_nata phi) &&
-              nat_subset (fvi_trm zero_nata f) (fvi zero_nata phi)))
-    | Prev (i, phi) -> mmonitorable_exec phi
-    | Next (i, phi) -> mmonitorable_exec phi
-    | Since (phi, i, psi) ->
-        nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
-          ((mmonitorable_exec phi ||
-             (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
-               | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-               | Eq (_, _) -> false | Less (_, _) -> false
-               | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
-               | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
-               | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
-               | Prev (_, _) -> false | Next (_, _) -> false
-               | Since (_, _, _) -> false | Until (_, _, _) -> false
-               | Trigger (_, _, _) -> false | Release (_, _, _) -> false
-               | MatchF (_, _) -> false | MatchP (_, _) -> false | TP _ -> false
-               | TS _ -> false)) &&
-            mmonitorable_exec psi)
-    | Until (phi, i, psi) ->
-        nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
-          (bounded i &&
-            ((mmonitorable_exec phi ||
-               (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
-                 | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-                 | Eq (_, _) -> false | Less (_, _) -> false
-                 | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
-                 | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
-                 | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
-                 | Prev (_, _) -> false | Next (_, _) -> false
-                 | Since (_, _, _) -> false | Until (_, _, _) -> false
-                 | Trigger (_, _, _) -> false | Release (_, _, _) -> false
-                 | MatchF (_, _) -> false | MatchP (_, _) -> false
-                 | TP _ -> false | TS _ -> false)) &&
-              mmonitorable_exec psi))
-    | Trigger (phi, i, psi) -> safe_dual false mmonitorable_exec phi i psi
-    | Release (phi, i, psi) ->
-        memL i zero_nata && memR i zero_nata &&
-          (bounded i &&
-            (mmonitorable_exec psi &&
-              (nat_subset (fvi zero_nata phi) (fvi zero_nata psi) &&
-                mmonitorable_exec (release_safe_0 phi i psi))))
-    | MatchP (i, r) ->
-        safe_regex
-          (card_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
-            set_impl_nat)
-          (fvi zero_nata)
-          (fun g phi ->
-            mmonitorable_exec phi ||
-              equal_safety g Lax &&
-                (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
-                  | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-                  | Eq (_, _) -> false | Less (_, _) -> false
-                  | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
-                  | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
-                  | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
-                  | Prev (_, _) -> false | Next (_, _) -> false
-                  | Since (_, _, _) -> false | Until (_, _, _) -> false
-                  | Trigger (_, _, _) -> false | Release (_, _, _) -> false
-                  | MatchF (_, _) -> false | MatchP (_, _) -> false
-                  | TP _ -> false | TS _ -> false))
-          Past Strict r
-    | MatchF (i, r) ->
-        safe_regex
-          (card_UNIV_nat, cenum_nat, ceq_nat, cproper_interval_nat,
-            set_impl_nat)
-          (fvi zero_nata)
-          (fun g phi ->
-            mmonitorable_exec phi ||
-              equal_safety g Lax &&
-                (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
-                  | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-                  | Eq (_, _) -> false | Less (_, _) -> false
-                  | LessEq (_, _) -> false | Neg a -> mmonitorable_exec a
-                  | Or (_, _) -> false | And (_, _) -> false | Ands _ -> false
-                  | Exists (_, _) -> false | Agg (_, _, _, _, _) -> false
-                  | Prev (_, _) -> false | Next (_, _) -> false
-                  | Since (_, _, _) -> false | Until (_, _, _) -> false
-                  | Trigger (_, _, _) -> false | Release (_, _, _) -> false
-                  | MatchF (_, _) -> false | MatchP (_, _) -> false
-                  | TP _ -> false | TS _ -> false))
-          Futu Strict r &&
-          bounded i
-    | TP t -> is_Var t || is_Const t
-    | TS t -> is_Var t || is_Const t
-    | Less (v, va) -> false
-    | LessEq (v, va) -> false;;
-
-let rec minit_safe
-  phi = (if mmonitorable_exec phi then minit phi else failwith "undefined");;
-
 let rec convert_multiway
   = function Pred (p, ts) -> Pred (p, ts)
     | Eq (t, u) -> Eq (t, u)
@@ -11293,12 +11408,6 @@ let rec udmstep
              (i, plus_nata (udmstate_j st) one_nata, m, udmstate_n st,
                udmstate_cs st, tq, ())));;
 
-let rec udof_state
-  n cs st =
-    Udmstate_ext
-      (mstate_i st, mstate_j st, udof_m n cs (mstate_m st), n, cs,
-        mbuf_t_append mbuf_t_empty (mstate_t st), ());;
-
 let rec strict_sorted_by
   c x1 = match c, x1 with
     c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
@@ -11314,9 +11423,6 @@ let rec edl_rbt_of_sorted_list
 let rec utable_of_list xs = RBT_set (edl_rbt_of_sorted_list xs);;
 
 let rec nat_sum_list xs = foldr plus_nata xs zero_nata;;
-
-let rec udminit_safe
-  phi = udof_state (nfv phi) (set_cols (fvi zero_nata phi)) (minit_safe phi);;
 
 let rec uvdfail_nodes
   = function UDFail -> one_nata

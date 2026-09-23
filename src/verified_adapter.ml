@@ -316,8 +316,10 @@ let type_check_formula dbschema f =
 
 (* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
    Dense_Eval.thy, which drops the empty columns, run on the short tuples as
-   Dense_Unbox_Exec.thy states it.  [udminit_safe] compiles the formula the kernel's [meinit0]
-   builds into the dense one and [udmstep] performs one step; both are pure functions.  The
+   Dense_Unbox_Exec.thy states it.  [udminit_push] moves existential quantifiers into the past
+   and future diamonds they commute with (Dense_Push.thy) and compiles the formula the kernel's
+   [meinit0] builds from the result into the dense one; [udmstep] performs one step; both are
+   pure functions.  The
    simulation theorem of Dense_Eval.thy covers the evaluator through the refinement theorems of
    Dense_Exec.thy and Dense_Unbox_Exec.thy, provided the compiler placed every node:
    [uvdfail_nodes] counts the ones it could not, and a formula with any is refused rather than
@@ -325,7 +327,7 @@ let type_check_formula dbschema f =
 type state = unit udmstate_ext
 
 let init cf =
-  let st = udminit_safe cf in
+  let st = udminit_push cf in
   let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
   if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
     Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;

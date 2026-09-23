@@ -1,15 +1,16 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Mono_Sweep
+  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Mono_Sweep Dense_Push
 begin
 (*>*)
 
 text \<open>
   The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's
   \<^verbatim>\<open>verified.ocaml\<close>, and @{text "-verified"} runs the verified dense evaluator it contains.
-  @{const udminit_safe} builds the initial state -- compiling the sparse formula into the
-  short-tuple one -- and @{const udmstep} performs one step on it, both pure functions over the
-  short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
+  @{const udminit_push} builds the initial state -- moving existential quantifiers into the
+  windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and compiling the
+  resulting sparse formula into the short-tuple one -- and @{const udmstep} performs one step
+  on it, both pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
   must be zero for the correctness theorem @{text udeval_Rep} (@{theory
   MFODL_Monitor_Dense.Dense_Unbox_Exec}) to apply, and the front end refuses the formula
   otherwise.
@@ -21,7 +22,7 @@ text \<open>
   in particular nothing of its unverified heap-resident dense monitor, is imported, let alone
   reachable.
 
-  The order of the two imports matters.  Where a boxed operation of
+  The order of the first two imports matters.  Where a boxed operation of
   @{theory MFODL_Monitor_Dense.Dense_Code_Opt} and its monomorphic copy from the second pass of
   @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep} both rewrite the same term, the code
   preprocessor takes whichever rule the merge of the two branches puts first.  Importing
@@ -63,7 +64,7 @@ export_code
   (*the verified dense monitor's own database, over the short tuples*)
   utable_of_list uempty_db uinsert_table_into_db urbt_fold
   (*the verified dense monitor, over the short tuples*)
-  udminit_safe udmstep uvdfail_nodes udmstate_m
+  udminit_push udmstep uvdfail_nodes udmstate_m
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)
