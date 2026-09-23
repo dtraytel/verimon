@@ -152,6 +152,20 @@ primrec project :: "'a formula \<Rightarrow> 'a Formula.formula"
   | "project (TP t) = Formula.TP t"
   | "project (TS t) = Formula.TS t"
 
+text \<open>The embedding recognises the derived operators @{const once}, @{const Formula.eventually},
+@{const historically}, and @{const always} of the input formula, so that the rewrite rules for
+these operators become applicable. We avoid comparing formulas for equality to not impose an
+equality constraint on the type of aggregation parameters.\<close>
+
+definition is_TT :: "'a Formula.formula \<Rightarrow> bool" where
+  "is_TT \<phi> = (case \<phi> of Formula.Eq t1 t2 \<Rightarrow> t1 = Formula.Const (EInt 0) \<and> t2 = Formula.Const (EInt 0) | _ \<Rightarrow> False)"
+
+lemma is_TT_iff[simp]: "is_TT \<phi> \<longleftrightarrow> \<phi> = Formula.TT"
+  by (auto simp: is_TT_def Formula.TT_def split: Formula.formula.splits)
+
+definition neg_r :: "'a formula \<Rightarrow> 'a formula" where
+  "neg_r \<phi> = (case \<phi> of Once I (Neg \<psi>) \<Rightarrow> Historically I \<psi> | Eventually I (Neg \<psi>) \<Rightarrow> Always I \<psi> | _ \<Rightarrow> Neg \<phi>)"
+
 primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   where "embed (p \<dagger> ts) = p \<dagger>\<^sub>R ts"
   | "embed (Formula.Let p \<phi> \<psi>) = Let p (embed \<phi>) (embed \<psi>)"
@@ -160,7 +174,7 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (t1 =\<^sub>F t2) = (t1 =\<^sub>R t2)"
   | "embed (t1 \<le>\<^sub>F t2) = (t1 \<le>\<^sub>R t2)"
   | "embed (t1 <\<^sub>F t2) = (t1 <\<^sub>R t2)"
-  | "embed (\<not>\<^sub>F \<phi>) = \<not>\<^sub>R (embed \<phi>)"
+  | "embed (\<not>\<^sub>F \<phi>) = neg_r (embed \<phi>)"
   | "embed (\<phi> \<or>\<^sub>F \<psi>) = (embed \<phi>) \<or>\<^sub>R (embed \<psi>)"
   | "embed (\<phi> \<and>\<^sub>F \<psi>) = (embed \<phi>) \<and>\<^sub>R (embed \<psi>)"
   | "embed (\<And>\<^sub>F \<phi>s) = \<And>\<^sub>R (map embed \<phi>s)"
@@ -168,8 +182,8 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (Formula.Agg y \<omega> b' f \<phi>) = Agg y \<omega> b' f (embed \<phi>)"
   | "embed (\<^bold>Y I \<phi>) = \<^bold>Y\<^sub>R I (embed \<phi>)"
   | "embed (\<^bold>X I \<phi>) = \<^bold>X\<^sub>R I (embed \<phi>)"
-  | "embed (\<phi> \<^bold>S I \<psi>) = (embed \<phi>) \<^bold>S\<^sub>R I (embed \<psi>)"
-  | "embed (\<phi> \<^bold>U I \<psi>) = (embed \<phi>) \<^bold>U\<^sub>R I (embed \<psi>)"
+  | "embed (\<phi> \<^bold>S I \<psi>) = (if is_TT \<phi> then \<^bold>P\<^sub>R I (embed \<psi>) else (embed \<phi>) \<^bold>S\<^sub>R I (embed \<psi>))"
+  | "embed (\<phi> \<^bold>U I \<psi>) = (if is_TT \<phi> then \<^bold>F\<^sub>R I (embed \<psi>) else (embed \<phi>) \<^bold>U\<^sub>R I (embed \<psi>))"
   | "embed (\<phi> \<^bold>T I \<psi>) = (embed \<phi>) \<^bold>T\<^sub>R I (embed \<psi>)"
   | "embed (\<phi> \<^bold>R I \<psi>) = (embed \<phi>) \<^bold>R\<^sub>R I (embed \<psi>)"
   | "embed (Formula.MatchF I r) = MatchF I (regex.map_regex embed r)"
@@ -177,9 +191,13 @@ primrec embed :: "'a Formula.formula \<Rightarrow> 'a formula"
   | "embed (Formula.TP t) = TP t"
   | "embed (Formula.TS t) = TS t"
 
+lemma project_neg_r[simp]: "project (neg_r \<phi>) = \<not>\<^sub>F (project \<phi>)"
+  by (auto simp: neg_r_def historically_def always_def once_def Formula.eventually_def
+      split: formula.splits)
+
 lemma project_embed: "project (embed \<phi>) = \<phi>"
   by (induct \<phi>)
-    (auto simp: list.map_ident_strong 
+    (auto simp: list.map_ident_strong once_def Formula.eventually_def
       regex.map_comp regex.map_ident_strong)
 
 fun fvi :: "nat \<Rightarrow> 't formula \<Rightarrow> nat set" 
@@ -281,30 +299,7 @@ lemma nfv_project: "Formula.nfv (project \<phi>) = nfv \<phi>"
   by (simp add: nfv_def Formula.nfv_def fv_project)
 
 lemma fvi_embed[simp]: "fvi 0 (embed \<phi>) = FV \<phi>"
-proof (induct \<phi>)
-next
-  case (Exists t \<phi>)
-  thus ?case
-    by (auto simp: fvi_Suc Formula.fvi_Suc)
-next
-  case (Agg y \<omega> b' f \<phi>)
-  hence "Formula.fvi (length b') \<phi> \<subseteq> fvi (length b') (embed \<phi>)"
-    apply (clarsimp simp: subset_eq)
-    by (subst (asm) Formula.fvi_iff_fv, subst fvi_iff_fv) simp
-  moreover have "fvi (length b') (embed \<phi>) \<subseteq> Formula.fvi (length b') \<phi>"
-    using Agg apply (clarsimp simp: subset_eq)
-    by (subst (asm) fvi_iff_fv, subst Formula.fvi_iff_fv, simp)
-  ultimately show ?case
-    by auto
-next
-  case (MatchP I r)
-  thus ?case
-    by (induct r; clarsimp)
-next
-  case (MatchF I r)
-  thus ?case
-    by (induct r; clarsimp)
-qed auto
+  by (simp flip: fv_project add: project_embed)
 
 lemma nfv_embed[simp]: "nfv (embed \<phi>) = Formula.nfv \<phi>"
   by (simp add: nfv_def Formula.nfv_def)
@@ -364,21 +359,7 @@ qed (auto simp: fv_project nfv_project
     split: nat.splits)
 
 lemma sat_embed: "sat \<sigma> V v i (embed \<phi>) \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
-proof (induct \<phi> arbitrary: \<sigma> V v i)
-next
-  case (MatchP I r)
-  then show ?case 
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
-next
-  case (MatchF I r)
-  then show ?case
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
-qed (auto simp del: fun_upd_apply 
-    split: nat.splits)
+  by (simp flip: sat_project add: project_embed)
 
 
 subsubsection \<open> Definition of rewriting function \<close>
