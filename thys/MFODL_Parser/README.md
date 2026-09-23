@@ -11,15 +11,30 @@ it sound and complete:
 where `mfodl_Formula` is the inductive relation defined by the grammar: one
 introduction rule per production, with the semantic actions as values.
 
-## Theories
+## Sessions and theories
+
+`MFODL_Grammar` (this directory) holds the grammar, `MFODL_Parser` (`Parser/`)
+the parser generated from it. The grammar is a session of its own because the
+`grammar` command takes long (about 40 minutes, most of it defining the
+decoders), and it only needs to rerun when the grammar changes.
 
 | Theory | Content |
 |---|---|
 | `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
 | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
-| `MFODL_Lexer` | An executable model of `src/formula_lexer.mll` (not verified) |
-| `MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
-| `MFODL_Parser` | The parser `mfodl_parse`, its correctness, and `parse_formula` = lexer + parser + post-processing |
+| `Parser/MFODL_Lexer` | An executable model of `src/formula_lexer.mll` (not verified) |
+| `Parser/MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
+| `Parser/MFODL_Parser` | The parser `mfodl_parse`, its correctness, `parse_formula` = lexer + parser + post-processing, and the code export |
+
+Building and exporting the parser:
+
+```
+cd thys && isabelle build -b -e -d . MFODL_Parser
+cp MFODL_Parser/Parser/verified_parser.ocaml ../src/verified_parser.ml
+```
+
+The `grammar` package's own session `Grammar_Command` builds its PDF
+documentation, so it needs LaTeX.
 
 ## From precedences to productions
 

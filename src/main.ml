@@ -50,7 +50,7 @@ open Rewriting
 let usage_string =
   "Usage: monpoly -sig <file> -formula <file> [-negate] [-log <file>]
                [-help] [-version] [-debug <unit>] [-verbose] [-no_rw]
-               [-check] [-sigout] [-unix] [-mem] [-nonewlastts] [-verified]
+               [-check] [-sigout] [-unix] [-mem] [-nonewlastts] [-verified] [-verified_parser]
                [-no_mw] [-generic_join] [-imperative_join] [-nofilterrel] [-nofilteremptytp] [-stats]
                [-ignore_parse_errors] [-stop_at_out_of_order_ts]
                [-stop_at_first_viol] [-load <file>]"
@@ -61,11 +61,17 @@ let print_usage_and_exit () =
 
 
 let formulafile = ref ""
+let verified_parser = ref false
 
 let analyze_formulafile () =
   let ic = open_in !formulafile in
   try
-    let f = Formula_parser.formula Formula_lexer.token (Lexing.from_channel ic) in
+    let f =
+      if !verified_parser then
+        match Verified_parser_adapter.parse_string (really_input_string ic (in_channel_length ic)) with
+        | Some f -> f
+        | None -> failwith "[Main.main] the verified parser rejects the formula"
+      else Formula_parser.formula Formula_lexer.token (Lexing.from_channel ic) in
     if Misc.debugging Dbg_all then
       Printf.eprintf "[Main.main] The formula file was parsed correctly.\n%!";
     f
@@ -236,6 +242,7 @@ let _ =
     "-stop_at_first_viol", Arg.Set Misc.stop_at_first_viol, "\tStop at first encountered violation";
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
+    "-verified_parser", Arg.Set verified_parser, "\tParse the formula with the verified parser (thys/MFODL_Parser) rather than MonPoly's";
     "-verified", Arg.Set Misc.verified, "\tRun the verified monitor (the executable evaluator of thys/MFODL_Monitor_Exec, proved to simulate MonPoly's verified kernel) on the formula as VeriMon prepares it (verified normalization and rewriting, Prepare.thy; -no_rw and -no_mw apply)";
     "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
     "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";

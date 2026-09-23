@@ -12,12 +12,21 @@
   (flags (:standard -w -a))
   (modules verified))
 
+; The verified formula parser, generated from thys/MFODL_Parser in the same way.
+(library
+  (name verified_parser)
+  (public_name libmonpoly.verified_parser)
+  (libraries zarith)
+  (instrumentation (backend bisect_ppx))
+  (flags (:standard -w -a))
+  (modules verified_parser))
+
 (library
   (name libmonpoly)
   (public_name libmonpoly)
-  (libraries str unix zarith verified)
+  (libraries str unix zarith verified verified_parser)
   (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main verified)))
+  (modules (:standard \ Main verified verified_parser)))
 
 (executable
   (name main)

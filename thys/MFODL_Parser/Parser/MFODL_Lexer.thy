@@ -1,12 +1,12 @@
 theory MFODL_Lexer
-  imports MFODL_Grammar
+  imports MFODL_Grammar.MFODL_Grammar
 begin
 
 section \<open>Lexer\<close>
 
 text \<open>
   An executable model of MonPoly's formula lexer
-  (\<^file>\<open>../../src/formula_lexer.mll\<close>). Like ocamllex, it takes the longest
+  (\<^file>\<open>../../../src/formula_lexer.mll\<close>). Like ocamllex, it takes the longest
   match at every position and resolves ties by rule order. Characters are
   bytes, so the Unicode spellings \<open>\<triangleright>\<close> and \<open>\<triangleleft>\<close> of \<open>|>\<close> and \<open><|\<close> are matched by their
   UTF-8 encodings. Unlike MonPoly, a time unit other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close>, \<open>s\<close>
@@ -17,11 +17,14 @@ text \<open>
   the verified parser consumes.
 \<close>
 
+definition in_range :: \<open>char \<Rightarrow> char \<Rightarrow> char \<Rightarrow> bool\<close> where
+  \<open>in_range a b c = ((of_char a :: nat) \<le> of_char c \<and> (of_char c :: nat) \<le> of_char b)\<close>
+
 definition is_digit :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_digit c = (CHR ''0'' \<le> c \<and> c \<le> CHR ''9'')\<close>
+  \<open>is_digit c = in_range (CHR ''0'') (CHR ''9'') c\<close>
 
 definition is_letter :: \<open>char \<Rightarrow> bool\<close> where
-  \<open>is_letter c = (CHR ''a'' \<le> c \<and> c \<le> CHR ''z'' \<or> CHR ''A'' \<le> c \<and> c \<le> CHR ''Z'')\<close>
+  \<open>is_letter c = (in_range (CHR ''a'') (CHR ''z'') c \<or> in_range (CHR ''A'') (CHR ''Z'') c)\<close>
 
 definition is_str_start :: \<open>char \<Rightarrow> bool\<close> where
   \<open>is_str_start c = (is_letter c \<or> is_digit c \<or> c = CHR ''_'')\<close>
@@ -97,10 +100,10 @@ subsection \<open>Rules\<close>
 
 datatype action = Emit mtok | Skip | Comment | LineComment | EmitTU
 
-text \<open>The rules in the order of \<^file>\<open>../../src/formula_lexer.mll\<close>.\<close>
+text \<open>The rules in the order of \<^file>\<open>../../../src/formula_lexer.mll\<close>.\<close>
 
-definition keywords :: \<open>(string \<times> mtok) list\<close> where
-  \<open>keywords =
+definition keyword_table :: \<open>(string \<times> mtok) list\<close> where
+  \<open>keyword_table =
     [(''+'', PLUS), (''-'', MINUS), (''.'', DOT), (''*'', STAR), (''/'', SLASH),
      (''('', LPA), ('')'', RPA), (''['', LSB), ('']'', RSB),
      (''|>'', FREX), ([CHR 0xE2, CHR 0x96, CHR 0xB7], FREX), (''FORWARD'', FREX), (''MATCHF'', FREX),
@@ -122,7 +125,7 @@ definition keywords :: \<open>(string \<times> mtok) list\<close> where
 definition rules :: \<open>((string \<Rightarrow> nat option) \<times> action) list\<close> where
   \<open>rules =
     [(m_space, Skip)] @
-    map (\<lambda>(k, t). (m_fixed k, Emit t)) keywords @
+    map (\<lambda>(k, t). (m_fixed k, Emit t)) keyword_table @
     [(m_unit, EmitTU), (m_int, Emit INTEGER), (m_rat, Emit RAT), (m_quoted, Emit STR_CST),
      (m_regexp, Emit REGEXP_CST), (m_string, Emit NAME),
      (m_fixed ''(*'', Comment), (m_fixed ''#'', LineComment)]\<close>

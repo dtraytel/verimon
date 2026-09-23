@@ -119,8 +119,6 @@ text \<open>
   \<open>\<phi>\<close> is parenthesised, as in \<open>y <- op x; (\<phi>)\<close>.
 \<close>
 
-declare [[grammar_timing = true]]
-
 grammar (relation) mfodl =
   tokens \<open>mtoken\<close>
   terminals
