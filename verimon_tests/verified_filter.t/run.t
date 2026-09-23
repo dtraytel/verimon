@@ -1,0 +1,102 @@
+The verified monitor drops the events of predicates its formula does not mention
+before converting them, as MonPoly does (Filter_rel).  The log has events of
+predicates each formula ignores, time points that carry only such events (which
+must still count as time points for PREV, NEXT, the windows and MATCHP), and
+events of P where LET binds P (which the formula must not see).  The expected
+output was recorded from the verified monitor before the filter and agrees with
+MonPoly's.
+
+  $ while IFS= read -r phi; do
+  >   [ -z "$phi" ] && continue
+  >   printf '%s\n' "$phi" > f.mfotl
+  >   echo "=== $phi"
+  >   monpoly -verified -sig filt.sig -formula f.mfotl -log filt.log 2>&1
+  > done < formulas.txt
+  === P(x)
+  @0 (time point 0): (1)
+  @3 (time point 3): (2) (3)
+  @6 (time point 6): (4)
+  @10 (time point 8): (1)
+  === PREV[0,2] P(x)
+  @1 (time point 1): (1)
+  @5 (time point 4): (2) (3)
+  === ONCE[0,3] P(x)
+  @0 (time point 0): (1)
+  @1 (time point 1): (1)
+  @2 (time point 2): (1)
+  @3 (time point 3): (1) (2) (3)
+  @5 (time point 4): (2) (3)
+  @6 (time point 5): (2) (3)
+  @6 (time point 6): (2) (3) (4)
+  @9 (time point 7): (4)
+  @10 (time point 8): (1)
+  === P(x) SINCE[0,5] Q(x)
+  @0 (time point 0): (2)
+  @1 (time point 1): (3)
+  @3 (time point 3): (1)
+  @5 (time point 4): (3)
+  @6 (time point 5): (2)
+  @6 (time point 6): (4)
+  === NEXT[0,3] P(x)
+  @2 (time point 2): (2) (3)
+  @6 (time point 5): (4)
+  @9 (time point 7): (1)
+  === EVENTUALLY[0,4] P(x)
+  @0 (time point 0): (1) (2) (3)
+  @1 (time point 1): (2) (3)
+  @2 (time point 2): (2) (3) (4)
+  @3 (time point 3): (2) (3) (4)
+  @5 (time point 4): (4)
+  @6 (time point 5): (1) (4)
+  @6 (time point 6): (1) (4)
+  @9 (time point 7): (1)
+  @10 (time point 8): (1)
+  === r <- CNT x ONCE[0,4] P(x)
+  @0 (time point 0): (1)
+  @1 (time point 1): (1)
+  @2 (time point 2): (1)
+  @3 (time point 3): (3)
+  @5 (time point 4): (2)
+  @6 (time point 5): (2)
+  @6 (time point 6): (3)
+  @9 (time point 7): (1)
+  @10 (time point 8): (2)
+  === LET P(x) = Q(x) IN P(x)
+  @0 (time point 0): (2)
+  @1 (time point 1): (3)
+  @3 (time point 3): (1)
+  @5 (time point 4): (3)
+  @6 (time point 5): (2)
+  @6 (time point 6): (4)
+  === LET P(x) = Q(x) IN ONCE[0,3] P(x)
+  @0 (time point 0): (2)
+  @1 (time point 1): (2) (3)
+  @2 (time point 2): (2) (3)
+  @3 (time point 3): (1) (2) (3)
+  @5 (time point 4): (1) (3)
+  @6 (time point 5): (1) (2) (3)
+  @6 (time point 6): (1) (2) (3) (4)
+  @9 (time point 7): (2) (4)
+  === (LET P(x) = Q(x) IN P(x)) AND ONCE[0,10] R(x,y)
+  @1 (time point 1): (3,4)
+  @3 (time point 3): (1,2)
+  @5 (time point 4): (3,4)
+  @6 (time point 5): (2,2)
+  @6 (time point 6): (4,1)
+  === LET Q(x) = EXISTS y. R(x,y) IN P(x) AND NOT Q(x)
+  @3 (time point 3): (2) (3)
+  === MATCHP[0,4] (P(x)? . Q(x)?)
+  @5 (time point 4): (3)
+
+The filter is switched off with -nofilterrel, as for MonPoly, with the same result.
+
+  $ echo 'LET P(x) = Q(x) IN ONCE[0,3] P(x)' > g.mfotl
+  $ monpoly -verified -nofilterrel -sig filt.sig -formula g.mfotl -log filt.log
+  @0 (time point 0): (2)
+  @1 (time point 1): (2) (3)
+  @2 (time point 2): (2) (3)
+  @3 (time point 3): (1) (2) (3)
+  @5 (time point 4): (1) (3)
+  @6 (time point 5): (1) (2) (3)
+  @6 (time point 6): (1) (2) (3) (4)
+  @9 (time point 7): (2) (4)

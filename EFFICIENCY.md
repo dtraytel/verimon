@@ -8054,3 +8054,71 @@ table is imperative: the verified structures of this session are pure functions,
 heap-resident refinement of session MFODL_Monitor_Imp, which is where an imperative structure
 would go, is not what `-verified` runs (21.26).  Halving the node's work -- which no change to
 the pure structures in sight would do -- would take `since-nu50` from 2.0x to about 1.3x.
+
+## 21.28 The suite after 21.27, and the front end's predicate filter
+
+The run after 21.27 (`evaluation/perf/report.md`, 8f9de56) puts `-verified` at a geometric mean
+of 1.33x MonPoly over the 193 formulas both finish, with three `-verified` timeouts and 13
+formulas more than 2x slower.
+
+**The timeouts are not blow-ups.**  That container runs MonPoly about twice as slowly as the one
+of this section, and with two jobs at once; on this one, without a timeout, the three formulas
+take 2.87 s (`aggonce-rate80`, 1.8x MonPoly), 1.84 s (`long-ev1000`, 1.4x) and 2.90 s
+(`long-sum100`, 1.0x -- MonPoly times out on it there too).
+
+**The 30 largest slowdowns fall into four groups:**
+
+| group | of the 30 | examples | what it pays for |
+|---|---|---|---|
+| grouped aggregation over a past window | 14 | `aggonce-*`, `pol-threshold`, `pol-sumfilter`, `aggguard-sum` | the result table and the per-group mapping, rebuilt or updated at every time point |
+| Since/Until with a negated unary left operand | 7 | `since-nu*`, `pol-sincefut(b)`, `until-nu20` | the node's five persistent trees (21.27, declined) |
+| MATCHP/MATCHF | 6 | `match-pseq`, `match-pstar` | the kernel's derivative window (21.24, 21.26) |
+| a fixed cost of the front end | 2 | `prev-unary`, `join-self3` | every event converted, see below |
+
+The suite's ratios are larger than this container's (`aggonce-cnt5` is 2.21x there and 1.50x here;
+its instruction ratio is 1.21x).  `-verified` allocates two to five times what MonPoly does
+(`aggonce-cnt5`: 544 M words of minor heap against 116 M), and two jobs sharing a container's
+memory bandwidth cost the one that allocates more.  One lead was ruled out on the way:
+`-verified` compacts its heap far more often (83 compactions on `aggonce-cnt5` against 2), because
+its `space_overhead` of 500 meets the default `max_overhead` of 500; switching compaction off
+changed no wall time measurably.
+
+### The predicate filter
+
+On `prev-unary` (`PREV[0,1] C(x)`) the lexer costs the same in both systems, and `-verified`'s
+extra 181 M instructions are in the unverified front end: every event of every predicate was
+converted to short tuples, sorted and built into a table at every time point, although the
+formula reads only `C`, 10 of the 100 events per time point.  `main.ml` enabled `Filter_rel` for
+both systems, and MonPoly's `Algorithm.tuple` consults it, but `Algorithm_verified.tuple` did not.
+It now drops the events of predicates the formula does not mention (`Filter_rel.rel_OK`, which
+treats the names that `LET`, `LETPAST` and the freeze quantifier bind as bound); `-nofilterrel`
+switches it off for both systems.  Only whole predicates are dropped, not tuples by their
+constants, and the time points stay: `end_tp` runs for every one.  That this preserves the output
+is `sat_relevant_events'` (`Sat.thy`): satisfaction depends on the events of the formula's own
+predicates only.
+
+The corpus is unchanged (600 same, 0 differing), and the cram test `verified_filter.t` covers
+time points with only filtered events (PREV, NEXT, the windows, an aggregation, MATCHP) and events
+of a predicate that `LET` binds.  Ratio to MonPoly, median of five, on this section's container:
+
+| formula | before | after |
+|---|---|---|
+| `prev-unary` | 1.41 | 0.97 |
+| `join-self3` | 1.54 | 1.10 |
+| `aggonce-cnt5` | 1.50 | 1.38 |
+| `pol-threshold` | 2.07 | 1.94 |
+| `aggonce-rate80` | 1.71 | 1.61 |
+| `long-ev1000` | 1.29 | 1.20 |
+| `join-both` (every predicate is read) | 1.05 | 1.07 |
+
+`since-nu50`, `pol-sincefut` and `match-pseq` stay within the noise.
+
+### I: the grouped aggregation over a past window
+
+The next round, I, takes the largest group: 14 of the 30 slowest formulas are a grouped
+aggregation over a past window.  They are slow at a window of 5 as at a window of 50
+(`aggonce-cnt5` 2.2x, `aggonce-cnt50` 1.8x in the suite), so what they pay for is per time point,
+not per tuple of the window.  On `aggonce-max50` after 21.27, the result table is 20.5% of the
+run and the per-group mapping's upkeep 19.8% as tuples enter and 19.2% as they leave.  21.22
+priced an incremental result (only the groups that change) and declined it; I starts by
+re-profiling the family on the filtered front end, and records here what it does.

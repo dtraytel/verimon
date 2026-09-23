@@ -22,8 +22,14 @@ module Monitor = struct
         exit 1
       end
 
-  let tuple ctxt s sl =
-    Verified_adapter.add_to_batch ctxt.cur_batch s sl
+  (* Events of predicates the formula does not mention are dropped before they are
+     converted, as MonPoly's front end does (Filter_rel, disabled by -nofilterrel).  Only
+     whole predicates are filtered, not tuples: satisfaction depends on the events of the
+     formula's own predicates alone (sat_relevant_events' in Sat.thy), and the time points
+     themselves are kept, since end_tp still runs for every one. *)
+  let tuple ctxt ((name, _) as s) sl =
+    if not !Filter_rel.enabled || Filter_rel.rel_OK name then
+      Verified_adapter.add_to_batch ctxt.cur_batch s sl
 
   let end_tp ctxt =
     let db = Verified_adapter.flush_batch ctxt.cur_batch ctxt.cur_db in
