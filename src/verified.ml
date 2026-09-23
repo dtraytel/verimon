@@ -2747,7 +2747,7 @@ type udformula = UDFail | UDRel of (event_data list) set |
   | UDMatchP of
       nat * i * mregex * mregex list * ((nat option) list) list *
         udformula list * (event_data list) set mbuf_t list * nat mbuf_t *
-        (nat * (mregex, ((event_data option) list) set) mapping) list
+        (nat * (mregex, (event_data list) set) mapping) list
   | UDMatchF of
       nat * i * mregex * mregex list * ((nat option) list) list *
         udformula list * (event_data list) set mbuf_t list * nat mbuf_t * nat *
@@ -5397,40 +5397,6 @@ let rec meval_trm
     | F2i x, v -> EInt (integer_of_event_data (meval_trm x v))
     | I2f x, v -> EFloat (double_of_event_data (meval_trm x v));;
 
-let rec r_delta (_A1, _A2, _A3)
-  kappa x phi_s xa3 = match kappa, x, phi_s, xa3 with
-    kappa, x, phi_s, MSkip n ->
-      (if equal_nata n zero_nata
-        then empty_table
-               ((ceq_list (ceq_option _A1)),
-                 (ccompare_list (ccompare_option _A2)), set_impl_list)
-        else lookupb (ccompare_mregex, equal_mregex)
-               ((ceq_list (ceq_option _A1)),
-                 (ccompare_list (ccompare_option _A2)), set_impl_list)
-               x (kappa (MSkip (minus_nata n one_nata))))
-    | kappa, x, phi_s, MTestPos i ->
-        empty_table
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-            set_impl_list)
-    | kappa, x, phi_s, MTestNeg i ->
-        empty_table
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)),
-            set_impl_list)
-    | kappa, x, phi_s, MPlus (r, s) ->
-        sup_seta
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (r_delta (_A1, _A2, _A3) kappa x phi_s r)
-          (r_delta (_A1, _A2, _A3) kappa x phi_s s)
-    | kappa, x, phi_s, MTimes (r, s) ->
-        sup_seta
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (r_delta (_A1, _A2, _A3) (fun t -> kappa (MTimes (r, t))) x phi_s s)
-          (epsilon_lax (_A1, _A2, _A3) (r_delta (_A1, _A2, _A3) kappa x phi_s r)
-            phi_s s)
-    | kappa, x, phi_s, MStar r ->
-        r_delta (_A1, _A2, _A3) (fun t -> kappa (MTimes (MStar r, t))) x phi_s
-          r;;
-
 let rec less_eq_rec_safety x0 uu = match x0, uu with Unused, uu -> true
                              | PastRec, PastRec -> true
                              | PastRec, NonFutuRec -> true
@@ -7920,82 +7886,6 @@ let rec update_matchF
     fst (foldr (ed_update_matchF_step i mr mrs nt) aux
           (ed_update_matchF_base n i mr mrs rels nt));;
 
-let rec r_epsilon_strict (_A1, _A2, _A3)
-  n phi_s x2 = match n, phi_s, x2 with
-    n, phi_s, MSkip m ->
-      (if equal_nata m zero_nata then unit_table (_A1, _A2) n
-        else empty_table
-               ((ceq_list (ceq_option _A1)),
-                 (ccompare_list (ccompare_option _A2)), set_impl_list))
-    | n, phi_s, MTestPos i -> nth phi_s i
-    | n, phi_s, MTestNeg i ->
-        (if is_empty
-              (card_UNIV_list, (ceq_list (ceq_option _A1)),
-                (cproper_interval_list (ccompare_option _A2)))
-              (nth phi_s i)
-          then unit_table (_A1, _A2) n
-          else empty_table
-                 ((ceq_list (ceq_option _A1)),
-                   (ccompare_list (ccompare_option _A2)), set_impl_list))
-    | n, phi_s, MPlus (r, s) ->
-        sup_seta
-          ((ceq_list (ceq_option _A1)), (ccompare_list (ccompare_option _A2)))
-          (r_epsilon_strict (_A1, _A2, _A3) n phi_s r)
-          (r_epsilon_strict (_A1, _A2, _A3) n phi_s s)
-    | n, phi_s, MTimes (r, s) ->
-        epsilon_lax (_A1, _A2, _A3) (r_epsilon_strict (_A1, _A2, _A3) n phi_s r)
-          phi_s s
-    | n, phi_s, MStar r -> unit_table (_A1, _A2) n;;
-
-let rec update_matchP
-  n i mr mrs rels nt aux =
-    (let auxa =
-       (match
-         maps (fun (t, rel) ->
-                (if memR i (minus_nata nt t)
-                  then [(t, ed_mrtabulate mrs
-                              (fun mra ->
-                                ed_union
-                                  (r_delta
-                                    (ceq_event_data, ccompare_event_data,
-                                      equal_event_data)
-                                    id rel rels mra)
-                                  (if equal_nata t nt
-                                    then r_epsilon_strict
-   (ceq_event_data, ccompare_event_data, equal_event_data) n rels mra
-                                    else ed_bot)))]
-                  else []))
-           aux
-         with [] ->
-           [(nt, ed_mrtabulate mrs
-                   (r_epsilon_strict
-                     (ceq_event_data, ccompare_event_data, equal_event_data) n
-                     rels))]
-         | x :: auxa ->
-           (if equal_nata (fst x) nt then x :: auxa
-             else (nt, ed_mrtabulate mrs
-                         (r_epsilon_strict
-                           (ceq_event_data, ccompare_event_data,
-                             equal_event_data)
-                           n rels)) ::
-                    x :: auxa))
-       in
-      (foldr (sup_seta
-               ((ceq_list (ceq_option ceq_event_data)),
-                 (ccompare_list (ccompare_option ccompare_event_data))))
-         (maps (fun (t, rel) ->
-                 (if memL i (minus_nata nt t)
-                   then [lookupb (ccompare_mregex, equal_mregex)
-                           ((ceq_list (ceq_option ceq_event_data)),
-                             (ccompare_list
-                               (ccompare_option ccompare_event_data)),
-                             set_impl_list)
-                           rel mr]
-                   else []))
-           auxa)
-         ed_bot,
-        auxa));;
-
 let rec dropWhile_queue
   f q = (match safe_hd q with (None, qa) -> qa
           | (Some a, qa) ->
@@ -8008,6 +7898,9 @@ let rec takeWhile_queue
               then (let (qaa, _) = takeWhile_queue f (tl_queue qa) in
                      (prepend_queue a qaa, qa))
               else (empty_queue, qa)));;
+
+let rec bulkload _A
+  xa = Mapping_RBTa (rbt_comp_bulkload (the (ccompare _A)) xa);;
 
 let rec comp_fun_commute_apply (Abs_comp_fun_commute x) = x;;
 
@@ -8053,6 +7946,9 @@ let rec wbt_min
   = function Leaf -> nth [] zero_nata
     | Node (l, (a, uu), uv) ->
         (match l with Leaf -> a | Node (_, _, _) -> wbt_min l);;
+
+let rec de_gnth
+  xs i = (if less_nat i (size_lista xs) then nth xs i else edl_bot);;
 
 let rec edl_rbt_inter_list
   xb xc =
@@ -8233,6 +8129,8 @@ let rec dannotate
             (plus_nata (plus_nata i one_nata) (size_lista vs), (tqa, rev acc))
           | (Some t, tqa) ->
             dannotate (plus_nata i one_nata) tqa vs ((i, (t, v)) :: acc));;
+
+let rec emb_msk p = mapa (fun q -> not (is_none q)) p;;
 
 let rec append_queue_list
   xb xc = Abs_queue (let (fs, ls) = rep_queue xc in (fs, rev_prepend xb ls));;
@@ -10350,6 +10248,98 @@ let rec de_gupdate_mmtaux
  (edl_union tuple_in_once_keysa l,
    (tuple_since_hista, (hist_sata, since_sata))))))))))))));;
 
+let rec de_geps_lax
+  msks guard phi_s x3 = match msks, guard, phi_s, x3 with
+    msks, guard, phi_s, MSkip n ->
+      (if equal_nata n zero_nata then guard else edl_bot)
+    | msks, guard, phi_s, MTestPos i ->
+        de_dsemi (nth msks i) true guard (de_gnth phi_s i)
+    | msks, guard, phi_s, MTestNeg i ->
+        de_dsemi (nth msks i) false guard (de_gnth phi_s i)
+    | msks, guard, phi_s, MPlus (r, s) ->
+        edl_union (de_geps_lax msks guard phi_s r)
+          (de_geps_lax msks guard phi_s s)
+    | msks, guard, phi_s, MTimes (r, s) ->
+        edl_inter (de_geps_lax msks guard phi_s r)
+          (de_geps_lax msks guard phi_s s)
+    | msks, guard, phi_s, MStar r -> guard;;
+
+let rec de_greps_strict
+  msks phi_s x2 = match msks, phi_s, x2 with
+    msks, phi_s, MSkip m ->
+      (if equal_nata m zero_nata then edl_insert [] edl_bot else edl_bot)
+    | msks, phi_s, MTestPos i -> de_gnth phi_s i
+    | msks, phi_s, MTestNeg i ->
+        (if unbox edl_is_empty_v (de_gnth phi_s i) then edl_insert [] edl_bot
+          else edl_bot)
+    | msks, phi_s, MPlus (r, s) ->
+        edl_union (de_greps_strict msks phi_s r) (de_greps_strict msks phi_s s)
+    | msks, phi_s, MTimes (r, s) ->
+        de_geps_lax msks (de_greps_strict msks phi_s r) phi_s s
+    | msks, phi_s, MStar r -> edl_insert [] edl_bot;;
+
+let rec de_gmrtabulate
+  xs f =
+    (match ccompare_mregexa
+      with None ->
+        failwith "gmrtabulate RBT_Mapping: ccompare = None"
+          (fun _ -> de_gmrtabulate xs f)
+      | Some _ ->
+        RBT_Mapping
+          (bulkload ccompare_mregex
+            (map_filter
+              (fun k ->
+                (let fk = f k in
+                  (if unbox edl_is_empty_v fk then None else Some (k, fk))))
+              xs)));;
+
+let rec de_glookup
+  x = lookup_default (ccompare_mregex, equal_mregex) edl_bot x;;
+
+let rec de_grdelta
+  msks kappa x phi_s xa4 = match msks, kappa, x, phi_s, xa4 with
+    msks, kappa, x, phi_s, MSkip n ->
+      (if equal_nata n zero_nata then edl_bot
+        else de_glookup x (kappa (MSkip (minus_nata n one_nata))))
+    | msks, kappa, x, phi_s, MTestPos i -> edl_bot
+    | msks, kappa, x, phi_s, MTestNeg i -> edl_bot
+    | msks, kappa, x, phi_s, MPlus (r, s) ->
+        edl_union (de_grdelta msks kappa x phi_s r)
+          (de_grdelta msks kappa x phi_s s)
+    | msks, kappa, x, phi_s, MTimes (r, s) ->
+        edl_union (de_grdelta msks (fun t -> kappa (MTimes (r, t))) x phi_s s)
+          (de_geps_lax msks (de_grdelta msks kappa x phi_s r) phi_s s)
+    | msks, kappa, x, phi_s, MStar r ->
+        de_grdelta msks (fun t -> kappa (MTimes (MStar r, t))) x phi_s r;;
+
+let rec de_gupdate_matchP
+  msks i mr mrs rels nt aux =
+    (let auxa =
+       (match
+         maps (fun (t, rel) ->
+                (if memR i (minus_nata nt t)
+                  then [(t, de_gmrtabulate mrs
+                              (fun mra ->
+                                edl_union (de_grdelta msks id rel rels mra)
+                                  (if equal_nata t nt
+                                    then de_greps_strict msks rels mra
+                                    else edl_bot)))]
+                  else []))
+           aux
+         with [] -> [(nt, de_gmrtabulate mrs (de_greps_strict msks rels))]
+         | x :: auxa ->
+           (if equal_nata (fst x) nt then x :: auxa
+             else (nt, de_gmrtabulate mrs (de_greps_strict msks rels)) ::
+                    x :: auxa))
+       in
+      (foldr (sup_seta
+               ((ceq_list ceq_event_data), (ccompare_list ccompare_event_data)))
+         (maps (fun (t, rel) ->
+                 (if memL i (minus_nata nt t) then [de_glookup rel mr] else []))
+           auxa)
+         edl_bot,
+        auxa));;
+
 let rec de_gresult_mmtaux
   args =
     (fun (_, (_, (_, (_, (_, (_, (_, (_, (tuple_in_once_keys,
@@ -11201,23 +11191,14 @@ let rec udeval
            uebufnt_take
              (fun rels t (zs, ax) ->
                (let (z, a) =
-                  update_matchP m i mr mrs
-                    (mapa (fun (a, b) ->
-                            dembedp (ceq_event_data, ccompare_event_data) a b)
-                      (zip pls
-                        (mapa (reopt_table
-                                (ceq_event_data, ccompare_event_data))
-                          rels)))
-                    t ax
-                  in
+                  de_gupdate_matchP (mapa emb_msk pls) i mr mrs rels t ax in
                  (mbuf_t_append zs [z], a)))
              (mbuf_t_empty, daux) (uebufn_add (mapa fst r) dbuf) zero_nata
              (mbuf_t_append nts ts)
            in
           (let (zs, dauxa) = a in
             (fun (dbufa, (_, ntsa)) ->
-              (mapa (deopt_table (ceq_event_data, ccompare_event_data))
-                 (rep_mbuf_t zs),
+              (rep_mbuf_t zs,
                 UDMatchP (m, i, mr, mrs, pls, mapa snd r, dbufa, ntsa, dauxa))))
             b)
     | j, ts, db, UDMatchF (m, i, mr, mrs, pls, ld, dbuf, nts, t, daux) ->

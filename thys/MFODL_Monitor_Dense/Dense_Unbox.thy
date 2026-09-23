@@ -710,7 +710,18 @@ text \<open>
   an empty skip that could match the empty word while the node still binds a variable would make
   the formula unsafe.  With no columns the unit table is the one empty tuple, which is what the
   operations below return.
+
+  An atom's table is read with @{text gnth}, the empty table past the end of the list.  A
+  well-formed node never reads past it; reading it totally is what makes the operations commute
+  with putting the option back on the fields for every argument, well-formed or not, which is the
+  form in which the short-tuple evaluator is related to the boxed one.
 \<close>
+
+definition gnth :: "'b list set list \<Rightarrow> nat \<Rightarrow> 'b list set" where
+  "gnth xs i = (if i < length xs then xs ! i else {})"
+
+lemma gnth_nth[simp]: "i < length xs \<Longrightarrow> gnth xs i = xs ! i"
+  by (simp add: gnth_def)
 
 definition glookup :: "(mregex, 'b list set) mapping \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "glookup = Mapping.lookup_default {}"
@@ -733,24 +744,24 @@ lemma gmrtabulate_rbt_code[code]: "gmrtabulate (xs :: mregex list) f =
 
 fun geps_lax :: "bool list list \<Rightarrow> 'b list set \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "geps_lax msks guard \<phi>s (MSkip n) = (if n = 0 then guard else {})"
-| "geps_lax msks guard \<phi>s (MTestPos i) = dsemi (msks ! i) True guard (\<phi>s ! i)"
-| "geps_lax msks guard \<phi>s (MTestNeg i) = dsemi (msks ! i) False guard (\<phi>s ! i)"
+| "geps_lax msks guard \<phi>s (MTestPos i) = dsemi (msks ! i) True guard (gnth \<phi>s i)"
+| "geps_lax msks guard \<phi>s (MTestNeg i) = dsemi (msks ! i) False guard (gnth \<phi>s i)"
 | "geps_lax msks guard \<phi>s (MPlus r s) = geps_lax msks guard \<phi>s r \<union> geps_lax msks guard \<phi>s s"
 | "geps_lax msks guard \<phi>s (MTimes r s) = geps_lax msks guard \<phi>s r \<inter> geps_lax msks guard \<phi>s s"
 | "geps_lax msks guard \<phi>s (MStar r) = guard"
 
 fun greps_strict :: "bool list list \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "greps_strict msks \<phi>s (MSkip m) = (if m = 0 then {[]} else {})"
-| "greps_strict msks \<phi>s (MTestPos i) = \<phi>s ! i"
-| "greps_strict msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = {} then {[]} else {})"
+| "greps_strict msks \<phi>s (MTestPos i) = gnth \<phi>s i"
+| "greps_strict msks \<phi>s (MTestNeg i) = (if gnth \<phi>s i = {} then {[]} else {})"
 | "greps_strict msks \<phi>s (MPlus r s) = greps_strict msks \<phi>s r \<union> greps_strict msks \<phi>s s"
 | "greps_strict msks \<phi>s (MTimes r s) = geps_lax msks (greps_strict msks \<phi>s r) \<phi>s s"
 | "greps_strict msks \<phi>s (MStar r) = {[]}"
 
 fun gleps_strict :: "bool list list \<Rightarrow> 'b list set list \<Rightarrow> mregex \<Rightarrow> 'b list set" where
   "gleps_strict msks \<phi>s (MSkip m) = (if m = 0 then {[]} else {})"
-| "gleps_strict msks \<phi>s (MTestPos i) = \<phi>s ! i"
-| "gleps_strict msks \<phi>s (MTestNeg i) = (if \<phi>s ! i = {} then {[]} else {})"
+| "gleps_strict msks \<phi>s (MTestPos i) = gnth \<phi>s i"
+| "gleps_strict msks \<phi>s (MTestNeg i) = (if gnth \<phi>s i = {} then {[]} else {})"
 | "gleps_strict msks \<phi>s (MPlus r s) = gleps_strict msks \<phi>s r \<union> gleps_strict msks \<phi>s s"
 | "gleps_strict msks \<phi>s (MTimes r s) = geps_lax msks (gleps_strict msks \<phi>s s) \<phi>s r"
 | "gleps_strict msks \<phi>s (MStar r) = {[]}"

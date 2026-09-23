@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Eval
-  imports Dense_Evt_Aux Dense_Trigger_Nar
+  imports Dense_Evt_Aux Dense_Trigger_Nar Dense_Match_Gen
 begin
 (*>*)
 
@@ -267,7 +267,7 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
 | "deval j ts db (DMatchP m I mr mrs pls Ld dbuf nts daux) =
      (let R = map (deval j ts db) Ld;
           ((zs, daux'), dbuf', _, nts') = mbufnt_take (\<lambda>rels t (zs, ax).
-             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
+             let (z, ax) = gupdate_matchP (map emb_msk pls) I mr mrs rels t ax
              in (zs @ [z], ax)) ([], daux) (mbufn_add (map fst R) dbuf) 0 (nts @ ts)
       in (map dsan zs, DMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
 | "deval j ts db (DMatchF m I mr mrs pls Ld dbuf nts t daux) =
@@ -3411,7 +3411,7 @@ next
   let ?F = "\<lambda>rels t (zs, ax).
       let (z, ax) = update_matchP n I mr mrs rels t ax in (zs @ [z], ax)"
   let ?G = "\<lambda>rels t (zs, ax).
-      let (z, ax) = update_matchP (length cs) I mr mrs (map2 dembedp pls rels) t ax
+      let (z, ax) = gupdate_matchP (map emb_msk pls) I mr mrs rels t ax
       in (zs @ [z], ax)"
   obtain zs aux2 buf2 tt2 nts2 where g0:
     "mbufnt_take ?F ([], aux) (mbufn_add (map fst ?R) buf) 0 (nts @ ts)
@@ -3467,21 +3467,19 @@ next
     obtain dzs0 dax where u': "u' = (dzs0, dax)" by (cases u')
     have dz: "dzs0 = map (dtabc n cs) zs0" and rax: "dmrd_rel n cs ax dax"
       using ru by (simp_all add: Rel_def u u')
-    have emb: "map2 dembedp pls (map2 (dtabc n) css as) = map (dtabc n cs) as"
-      unfolding list_eq_iff_nth_eq
-    proof (intro conjI allI impI)
-      show "length (map2 dembedp pls (map2 (dtabc n) css as)) = length (map (dtabc n cs) as)"
-        using pe las by simp
-    next
-      fix i assume i: "i < length (map2 dembedp pls (map2 (dtabc n) css as))"
-      then have i': "i < length css" using pe las by simp
-      have "dembedp (emb_plan cs (css ! i)) (dtabc n (css ! i) (as ! i)) = dtabc n cs (as ! i)"
-        by (rule dembedp_dtabc[OF conjunct1[OF wf] _ conjunct2[OF wf]])
-          (use i' wc mas in \<open>fastforce intro: nth_mem\<close>)+
-      then show "map2 dembedp pls (map2 (dtabc n) css as) ! i = map (dtabc n cs) as ! i"
-        using i' pe las by simp
+    have msk: "map emb_msk pls = map (dmsk cs) css"
+      unfolding pe map_map o_def
+    proof (rule map_cong[OF refl])
+      fix c assume c: "c \<in> set css"
+      then obtain i where i: "i < length css" and ci: "c = css ! i" by (auto simp: in_set_conv_nth)
+      show "emb_msk (emb_plan cs c) = dmsk cs c"
+      proof (rule emb_msk_emb_plan)
+        show "sorted_wrt (<) cs" using wf by simp
+        show "sorted_wrt (<) c" using wc c by auto
+        show "set c \<subseteq> set cs" using csub i ci lc by auto
+      qed
     qed
-    interpret dmatchP_frame n cs \<psi>s as mrs
+    interpret gmatchP_frame n cs \<psi>s as mrs css
     proof
       show "sorted_wrt (<) cs" using wf by simp
       show "\<forall>c \<in> set cs. c < n" using wf by simp
@@ -3494,13 +3492,16 @@ next
           ok (length \<psi>s) ms \<and> set cs = fv_regex (from_mregex ms \<psi>s)"
         using mrsd sr okm fvA
         by (auto simp: RPDs_safe RPDs_ok RPDs_safe_fv_regex)
+      show "length css = length \<psi>s" by (rule lc)
+      show "\<And>i. i < length \<psi>s \<Longrightarrow> sorted_wrt (<) (css ! i) \<and> set (css ! i) = Formula.fv (\<psi>s ! i)"
+        using wc cfv lc by (auto intro: nth_mem)
     qed
     have uu: "dtabc n cs (fst (update_matchP n I mr mrs as t ax))
-        = fst (update_matchP (length cs) I mr mrs (map (dtabc n cs) as) t dax) \<and>
+        = fst (gupdate_matchP (map (dmsk cs) css) I mr mrs (map2 (dtabc n) css as) t dax) \<and>
       dmrd_rel n cs (snd (update_matchP n I mr mrs as t ax))
-        (snd (update_matchP (length cs) I mr mrs (map (dtabc n cs) as) t dax))"
-      by (rule dtabc_update_matchP[OF rax])
-    show ?thesis using dz uu by (simp add: Rel_def u u' emb Let_def split_beta)
+        (snd (gupdate_matchP (map (dmsk cs) css) I mr mrs (map2 (dtabc n) css as) t dax))"
+      by (rule dtabc_gupdate_matchP[OF rax])
+    show ?thesis using dz uu by (simp add: Rel_def u u' msk Let_def split_beta)
   qed
   have rz: "Rel ([], aux) ([], daux)" using rel by (simp add: Rel_def)
   obtain w2 dbuf2 where dt:

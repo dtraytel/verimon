@@ -280,7 +280,7 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
 | "edeval j ts db (EDMatchP m I mr mrs pls Ld dbuf nts daux) =
      (let R = map (edeval j ts db) Ld;
           ((zs, daux'), dbuf', _, nts') = mebufnt_take (\<lambda>rels t (zs, ax).
-             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls rels) t ax
+             let (z, ax) = gupdate_matchP (map emb_msk pls) I mr mrs rels t ax
              in (zs @@ [z], ax)) (mbuf_t_empty, daux) (mebufn_add (map fst R) dbuf) 0 (nts @@ ts)
       in (map dsan (Rep_mbuf_t zs), EDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
 | "edeval j ts db (EDMatchF m I mr mrs pls Ld dbuf nts t daux) =

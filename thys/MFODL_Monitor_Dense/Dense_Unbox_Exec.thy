@@ -650,9 +650,16 @@ datatype udformula =
   | UDAndTrigger djoin_plan udformula "utable mbuf_t \<times> utable option mbuf_t" args
       udformula udformula uebuf2 "ts mbuf_t" "event_data gmmtaux"
   | UDMatchP nat \<I> mregex "mregex list" "nat option list list" "udformula list"
-      uebufn "ts mbuf_t" "event_data mr\<delta>aux"
+      uebufn "ts mbuf_t" "event_data gmrdaux"
   | UDMatchF nat \<I> mregex "mregex list" "nat option list list" "udformula list"
       uebufn "ts mbuf_t" ts "event_data ml\<delta>aux"
+
+text \<open>The past-match node runs the window of @{theory MFODL_Monitor_Dense.Dense_Unbox} over short
+  tuples; the boxed node runs the same window over the boxed ones, and the two differ by the option
+  around every field of every table in it.\<close>
+
+definition rmrd :: "event_data gmrdaux \<Rightarrow> event_data mr\<delta>aux" where
+  "rmrd = map (\<lambda>(t, X). (t, Mapping.map_values (\<lambda>_. reopt_table) X))"
 
 abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
   "rbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
@@ -715,7 +722,7 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
        (map_prod (map_mbuf reopt_table) (map_mbuf (map_option reopt_table)) dbf1) dags
        (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbf2) nts (bmm daux)"
 | "Rep_udformula (UDMatchP m I mr mrs pls Ld dbuf nts daux) =
-     EDMatchP m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts daux"
+     EDMatchP m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts (rmrd daux)"
 | "Rep_udformula (UDMatchF m I mr mrs pls Ld dbuf nts t daux) =
      EDMatchF m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts t daux"
 
@@ -906,10 +913,10 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
 | "udeval j ts db (UDMatchP m I mr mrs pls Ld dbuf nts daux) =
      (let R = map (udeval j ts db) Ld;
           ((zs, daux'), dbuf', _, nts') = uebufnt_take (\<lambda>rels t (zs, ax).
-             let (z, ax) = update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax
+             let (z, ax) = gupdate_matchP (map emb_msk pls) I mr mrs rels t ax
              in (zs @@ [z], ax)) (mbuf_t_empty, daux)
              (uebufn_add (map fst R) dbuf) 0 (nts @@ ts)
-      in (map deopt_table (Rep_mbuf_t zs),
+      in (Rep_mbuf_t zs,
           UDMatchP m I mr mrs pls (map snd R) dbuf' nts' daux'))"
 | "udeval j ts db (UDMatchF m I mr mrs pls Ld dbuf nts t daux) =
      (let R = map (udeval j ts db) Ld;
@@ -972,19 +979,81 @@ lemma mebufn_take_ands:
       "map_mbuf reopt_table" "\<lambda>as zs. zs @@ [gmulti_join ps ns as]" mbuf_t_empty buf]
   by (simp add: dmulti_join_reopt_table)
 
-text \<open>The match nodes keep the kernel's window, so the accumulator they carry is the boxed one
-  and the relabelling is on the buffers alone.\<close>
+text \<open>The past-match window commutes with putting the option back on the fields: the semi-join,
+  the unions and intersections, the unit table and the tabulation all do, for every argument.\<close>
+
+lemma gnth_map_reopt[simp]: "gnth (map reopt_table xs) i = reopt_table (gnth xs i)"
+  by (simp add: gnth_def)
+
+lemma reopt_table_unit[simp]: "reopt_table {[]} = {[]}"
+  by (simp add: reopt_table_def)
+
+lemma reopt_table_if_empty[simp]:
+  "(if b then reopt_table X else {}) = reopt_table (if b then X else {})"
+  by simp
+
+lemma glookup_rmap[simp]:
+  "glookup (Mapping.map_values (\<lambda>_. reopt_table) X) ms = reopt_table (glookup X ms)"
+  by (simp add: glookup_def Mapping.lookup_default_def Mapping.lookup_map_values
+      split: option.splits)
+
+lemma gmrtabulate_reopt[simp]:
+  "gmrtabulate xs (\<lambda>ms. reopt_table (f ms))
+   = Mapping.map_values (\<lambda>_. reopt_table) (gmrtabulate xs f)"
+  by transfer (rule ext, induct_tac xs, auto simp: Let_def List.map_filter_simps)
+
+lemma geps_lax_reopt[simp]:
+  "geps_lax msks (reopt_table g) (map reopt_table \<phi>s) r = reopt_table (geps_lax msks g \<phi>s r)"
+  by (induct r arbitrary: g) auto
+
+lemma greps_strict_reopt[simp]:
+  "greps_strict msks (map reopt_table \<phi>s) r = reopt_table (greps_strict msks \<phi>s r)"
+  by (induct r) auto
+
+lemma grdelta_reopt[simp]:
+  "grdelta msks \<kappa> (Mapping.map_values (\<lambda>_. reopt_table) X) (map reopt_table \<phi>s) r
+   = reopt_table (grdelta msks \<kappa> X \<phi>s r)"
+  by (induct r arbitrary: \<kappa>) (auto split: nat.splits)
+
+lemma rmrd_simps[simp]: "rmrd [] = []"
+  "rmrd ((t, X) # aux) = (t, Mapping.map_values (\<lambda>_. reopt_table) X) # rmrd aux"
+  by (simp_all add: rmrd_def)
+
+lemma foldr_glookup_rmrd:
+  "foldr (\<union>) [glookup rel mr. (t, rel) \<leftarrow> rmrd A, P t] {}
+   = reopt_table (foldr (\<union>) [glookup rel mr. (t, rel) \<leftarrow> A, P t] {})"
+  by (induct A) auto
+
+lemma rmrd_case:
+  "(case rmrd W of [] \<Rightarrow> [(nt, Mapping.map_values (\<lambda>_. reopt_table) H)]
+    | x # w \<Rightarrow> (if fst x = nt then x # w else (nt, Mapping.map_values (\<lambda>_. reopt_table) H) # x # w))
+   = rmrd (case W of [] \<Rightarrow> [(nt, H)] | x # w \<Rightarrow> (if fst x = nt then x # w else (nt, H) # x # w))"
+  by (cases W) (auto simp: rmrd_def split: prod.splits)
+
+lemma gupdate_matchP_reopt:
+  "gupdate_matchP msks I mr mrs (map reopt_table rels) nt (rmrd aux)
+   = map_prod reopt_table rmrd (gupdate_matchP msks I mr mrs rels nt aux)"
+proof -
+  let ?W = "\<lambda>rels aux. [(t, gmrtabulate mrs (\<lambda>mr. grdelta msks id rel rels mr
+      \<union> (if t = nt then greps_strict msks rels mr else {}))). (t, rel) \<leftarrow> aux, memR I (nt - t)]"
+  have W: "?W (map reopt_table rels) (rmrd aux) = rmrd (?W rels aux)"
+    by (induct aux) (auto cong: if_cong)
+  have H: "greps_strict msks (map reopt_table rels) = (\<lambda>ms. reopt_table (greps_strict msks rels ms))"
+    by (rule ext) simp
+  show ?thesis
+    unfolding gupdate_matchP_def Let_def unfolding W unfolding H gmrtabulate_reopt rmrd_case
+    by (simp only: foldr_glookup_rmrd map_prod_simp)
+qed
 
 lemma mebufnt_take_matchP:
   "mebufnt_take (\<lambda>rels t (zs, ax).
-       (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
-          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-     z0 (map (map_mbuf reopt_table) buf) t0 ts
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+     (map_prod (map_mbuf reopt_table) rmrd z0) (map (map_mbuf reopt_table) buf) t0 ts
    = (case uebufnt_take (\<lambda>rels t (zs, ax).
-       (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
-          (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts of
-        (z', buf', t', ts') \<Rightarrow> (z', map (map_mbuf reopt_table) buf', t', ts'))"
-  by (rule mebufnt_take_map_mbuf[where h = "\<lambda>a. a"]) simp
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts of
+        (z', buf', t', ts') \<Rightarrow>
+          (map_prod (map_mbuf reopt_table) rmrd z', map (map_mbuf reopt_table) buf', t', ts'))"
+  by (rule mebufnt_take_map_mbuf) (auto simp: gupdate_matchP_reopt split: prod.splits)
 
 lemma mebufnt_take_matchF:
   "mebufnt_take (\<lambda>rels. update_matchF m I mr mrs (map2 dembedp pls rels))
@@ -997,13 +1066,14 @@ lemma mebufnt_take_matchF:
 
 lemma mebufnt_take_matchP':
   assumes "uebufnt_take (\<lambda>rels t (zs, ax).
-       (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
-          (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts = (z', buf', t', ts')"
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+     (mbuf_t_empty, a0) buf t0 ts = ((zs', a'), buf', t', ts')"
   shows "mebufnt_take (\<lambda>rels t (zs, ax).
-       (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
-          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-     z0 (map (map_mbuf reopt_table) buf) t0 ts = (z', map (map_mbuf reopt_table) buf', t', ts')"
-  using assms unfolding mebufnt_take_matchP by simp
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+     (mbuf_t_empty, rmrd a0) (map (map_mbuf reopt_table) buf) t0 ts
+     = ((map_mbuf reopt_table zs', rmrd a'), map (map_mbuf reopt_table) buf', t', ts')"
+  using mebufnt_take_matchP[of msks I mr mrs "(mbuf_t_empty, a0)" buf t0 ts] assms
+  by simp
 
 lemma mebufnt_take_matchF':
   assumes "uebufnt_take
@@ -1321,21 +1391,19 @@ next
       = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
     by (auto simp: 23 split: prod.splits)
   let ?F = "\<lambda>rels t (zs, ax).
-      (case update_matchP m I mr mrs (map2 dembedp pls (map reopt_table rels)) t ax of
-         (z, ax) \<Rightarrow> (zs @@ [z], ax))"
+      (case gupdate_matchP (map emb_msk pls) I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax))"
   let ?B = "uebufn_add (map fst (map (udeval j ts db) Ld)) dbuf"
   obtain zs daux' dbuf' tt nts' where U:
     "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts) = ((zs, daux'), dbuf', tt, nts')"
     by (cases "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts)") auto
-  have E: "mebufnt_take (\<lambda>rels t (zs, ax).
-        (case update_matchP m I mr mrs (map2 dembedp pls rels) t ax of
-          (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-      (mbuf_t_empty, daux) (map (map_mbuf reopt_table) ?B) 0 (nts @@ ts)
-      = ((zs, daux'), map (map_mbuf reopt_table) dbuf', tt, nts')"
+  have E: "mebufnt_take ?F (mbuf_t_empty, rmrd daux) (map (map_mbuf reopt_table) ?B) 0 (nts @@ ts)
+      = ((map_mbuf reopt_table zs, rmrd daux'), map (map_mbuf reopt_table) dbuf', tt, nts')"
     by (rule mebufnt_take_matchP'[OF U])
+  have Z: "map dsan (Rep_mbuf_t (map_mbuf reopt_table zs)) = map reopt_table (Rep_mbuf_t zs)"
+    by simp
   show ?case
     by (simp only: Let_def edeval.simps udeval.simps R mebufn_add_map_mbuf U E
-        prod.case map_dsan_reopt_deopt Rep_udformula.simps)
+        prod.case Z Rep_udformula.simps)
 next
   case (24 j ts db m I mr mrs pls Ld dbuf nts t daux)
   have R: "map fst (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
