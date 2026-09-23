@@ -1,0 +1,12 @@
+chapter AFP
+
+session Log_Parser = "HOL-Library" +
+  description
+    "A verified lexer and parser for MonPoly's log format: an inductive grammar of the format and
+     a character-by-character lexer and token-by-token parser, both proved sound and complete with
+     respect to it. Started as the student projects BA_verimon_parsing (Jonathan Rappl, 2021) and
+     POCS_verimon_parsing (2023)."
+  theories
+    Grammar
+    Lexer
+    Parser
