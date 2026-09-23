@@ -10,7 +10,8 @@
    time point is passed on as soon as the '@' or '>' of the next item has been read.  After an
    error the parser skips to the next '@', ';' or '>' (but a quoted string that is not closed
    contains the rest of the input); what it outputs after an error, and the offsets, are not
-   covered by the theorems.
+   covered by the theorems.  An error is reported once the offending token has ended, which for
+   a simple string is at the next byte that is not part of it.
 
    This module passes the entries to a consumer with the interface of Log_parser.Make and does
    what the grammar leaves to the consumer: it converts timestamps, looks predicates up in the

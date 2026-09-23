@@ -193,6 +193,32 @@ let in_command log off =
     | _ -> go inside in
   go false
 
+(* Whether one of the last two commands that begin at or before offset [off] (an error in a
+   command, or at the '>' of the next one) has two arguments that are not followed by its '<',
+   which MonPoly's parser does not require. *)
+let two_args_open log off =
+  let lb = Lexing.from_string log in
+  let rec cmds acc = match (try Log_lexer.token lb with _ -> Log_lexer.EOF) with
+    | Log_lexer.EOF -> acc
+    | Log_lexer.CMD when lb.Lexing.lex_start_p.Lexing.pos_cnum <= off ->
+        cmds (lb.Lexing.lex_start_p.Lexing.pos_cnum :: acc)
+    | _ -> cmds acc in
+  let open_at p =
+    let lb = Lexing.from_string (String.sub log p (String.length log - p)) in
+    let tok () = try Log_lexer.token lb with _ -> Log_lexer.EOF in
+    let gt = tok () in
+    let name = tok () in
+    let a = tok () in
+    let b = tok () in
+    let t = tok () in
+    match gt, name, a, b with
+    | Log_lexer.CMD, Log_lexer.STR _, Log_lexer.STR _, Log_lexer.STR _ -> t <> Log_lexer.EOC
+    | _ -> false in
+  match cmds [] with
+  | p :: q :: _ -> open_at p || open_at q
+  | [p] -> open_at p
+  | [] -> false
+
 type verdict = Same | Tolerated of string | Differ
 
 (* MonPoly's parser keeps at most two arguments of a command, in reverse order, and does not
@@ -220,7 +246,8 @@ let compare_traces log o n =
         Tolerated "unterminated string"
     | [Err (oo, _)], [Err (no, _)] when in_command log oo && (in_command log no || at_cmd no || no > oo) ->
         Tolerated "error in a command"
-    | Cmd (_, Some (Helper.Arguments [_; _])) :: _, Err (no, _) :: _ when in_command log no || at_cmd no ->
+    | Cmd (_, Some (Helper.Arguments [_; _])) :: _, Err (no, _) :: _
+      when (in_command log no || at_cmd no) && two_args_open log no ->
         Tolerated "two arguments of a command without '<'"
     | Cmd (c, Some (Helper.Arguments [b; a])) :: o, Cmd (c', Some (Helper.Arguments (a' :: b' :: r))) :: n
       when c = c' && a = a' && b = b' ->
