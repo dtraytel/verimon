@@ -38,17 +38,20 @@ let string_of_event = function
   | Err (off, msg) -> Printf.sprintf "error at %d: %s" off msg
   | End -> "end"
 
-(* The recording consumer.  A time point is recorded when it ends. *)
+(* The recording consumer.  A time point is recorded when it ends; a tuple with the name and the
+   arity of the schema it is given; an error with its offset, and separately with its line and
+   column. *)
 module Rec = struct
   type t = {
     mutable events: event list;
     mutable cur: (string * (string * string list) list) option;
+    mutable positions: (int * int * int) list;
     stats: Log_parser.Stats.t;
   }
-  let create () = { events = []; cur = None; stats = Log_parser.Stats.init () }
+  let create () = { events = []; cur = None; positions = []; stats = Log_parser.Stats.init () }
   let begin_tp c ts = c.cur <- Some (MFOTL.string_of_ts ts, [])
-  let tuple c (p, _) fs = match c.cur with
-    | Some (ts, evs) -> c.cur <- Some (ts, (p, fs) :: evs)
+  let tuple c (p, tl) fs = match c.cur with
+    | Some (ts, evs) -> c.cur <- Some (ts, (p ^ "/" ^ string_of_int (List.length tl), fs) :: evs)
     | None -> failwith "tuple outside of a time point"
   let end_tp c = match c.cur with
     | Some (ts, evs) -> c.events <- Tp (ts, List.rev evs) :: c.events; c.cur <- None
@@ -57,7 +60,8 @@ module Rec = struct
   let end_log c = c.events <- End :: c.events
   let parse_error c pos msg =
     c.cur <- None;
-    c.events <- Err (pos.Lexing.pos_cnum, msg) :: c.events
+    c.events <- Err (pos.Lexing.pos_cnum, msg) :: c.events;
+    c.positions <- Lexing.(pos.pos_cnum, pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1) :: c.positions
   let stats c = c.stats
 end
 
@@ -71,9 +75,26 @@ let run_old schema log =
    with Invalid_argument m | Failure m -> c.events <- Err (-1, "exception: " ^ m) :: c.events);
   List.rev c.events
 
+(* The line and column of an offset, counting "\n", "\r" and "\r\n" as one line break each. *)
+let line_col log off =
+  let line = ref 1 and bol = ref 0 in
+  for i = 0 to min off (String.length log) - 1 do
+    match log.[i] with
+    | '\n' -> if not (i > 0 && log.[i - 1] = '\r') then incr line; bol := i + 1
+    | '\r' -> incr line; bol := i + 1
+    | _ -> ()
+  done;
+  (!line, off - !bol + 1)
+
+exception Wrong_position of int * (int * int) * (int * int)
+
+(* The trace of the verified parser; the positions of its errors must be those of their offsets. *)
 let run_new schema log =
   let c = Rec.create () in
   ignore (New.parse_string schema log c);
+  List.iter (fun (off, l, col) ->
+    let lc = line_col log off in
+    if lc <> (l, col) then raise (Wrong_position (off, (l, col), lc))) c.positions;
   List.rev c.events
 
 (* The traces up to and including the first error. *)
@@ -179,7 +200,16 @@ let undefined trace =
         Some (String.sub m (String.length pre) (String.length m - String.length pre - String.length post))
     | _ -> None) trace
 
-let check ?schema name log =
+let rec check ?schema name log =
+  try check_traces ?schema name log
+  with Wrong_position (off, (l, c), (l', c')) ->
+    count "position";
+    Printf.printf "=== %s: the verified parser locates offset %d at %d:%d instead of %d:%d (with chunks of %d bytes)\n"
+      name off l c l' c' !Verified_log_parser.chunk_size;
+    Verified_log_parser.chunk_size := 4096;
+    false
+
+and check_traces ?schema name log =
   (* Without a signature, the predicates of the log, found by both parsers: those that the
      verified parser outputs, and those that either parser reports as undefined.  Fields may be
      of any arity: the parsers do not check arities, the monitor does. *)
@@ -192,6 +222,7 @@ let check ?schema name log =
   let (schema, o) = runs (match schema with Some s -> s | None -> schema_of log) 10 in
   let n = run_new schema log in
   let digest t = Digest.string (Marshal.to_string t []) in
+  (* positions are checked by run_new, for all chunk sizes *)
   let d = digest n in
   let ok = ref true in
   List.iter (fun size ->
@@ -239,7 +270,7 @@ let gen_entry b =
   add "@"; add (ws ()); add (string_of_int (Random.int 100));
   for _ = 1 to Random.int 4 do
     add (white ()); add " ";
-    add (pick [| "p"; "q"; "r"; "\"p\""; "long_name_1" |]);
+    add (pick [| "p"; "q"; "r"; "\"p\""; "long_name_1"; "\"\"" |]);
     (match Random.int 3 with
      | 0 -> ()
      | _ ->

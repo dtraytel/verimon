@@ -369,7 +369,7 @@ materializing `replicate j α`, and is differentially tested against this kernel
 | `src/relation.ml`, `src/table.ml`, `src/tuple.ml` | Finite relations and relational algebra (join, project, select, anti-join). |
 | `src/aggreg.ml` | Incremental aggregation operators. |
 | `src/verified.ml` | Isabelle-extracted verified kernel (`-verified` flag); same spec, proof-carrying. The `MFrz` step implements freeze (§7). |
-| `src/verified_log_parser.ml` | Streaming log reader that drives `Monitor`, generated from the verified parser of `thys/Log_Parser` (`src/log_parser.ml` is the former hand-written one, selected by `-old_log_parser`). |
+| `src/verified_log_parser.ml` | Streaming log reader that drives `Monitor`: the (unverified) driver of the parser generated from `thys/Log_Parser` into `src/verified.ml` (`src/log_parser.ml` is the former hand-written one, selected by `-old_log_parser`). |
 | `freeze_simplified.md`, `freeze_incremental.md`, `freeze_formalization.md` | Design notes for the verified freeze monitor (`MFrz`): proof story, progress, and the incremental replay design. |
 
 ---

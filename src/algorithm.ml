@@ -1717,7 +1717,10 @@ module Monitor = struct
             if not !Misc.ignore_parse_errors then exit 1)
       | "LATENCY" ->
        (match params with
-        | Some (Arguments args) -> print_stats (String.concat " " args) ctxt
+        | Some (Arguments args) ->
+           (* MonPoly's former parser passes (at most two) arguments in reverse order *)
+           let args = if !Verified_log_parser.old then List.rev args else args in
+           print_stats (String.concat " " args) ctxt
         | _ ->
            prerr_endline "ERROR: Bad arguments for LATENCY command";
            if not !Misc.ignore_parse_errors then exit 1)
