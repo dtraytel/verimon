@@ -3069,10 +3069,6 @@ type 'a udmstate_ext =
 
 let rec id x = (fun xa -> xa) x;;
 
-let rec cmp (_A1, _A2)
-  x y = (if less _A2.order_linorder.preorder_order.ord_preorder x y then LT
-          else (if eq _A1 x y then EQ else GT));;
-
 let rec nth
   (x :: xs) n =
     (if equal_nata n zero_nata then x else nth xs (minus_nata n one_nata));;
@@ -6992,6 +6988,9 @@ let rec upd_cfi (_A1, _A2)
 
 let rec entriesa _A xa = entries (impl_ofa _A xa);;
 
+let rec s8_cmp
+  x y = (if Stdlib.(<) x y then LT else (if Stdlib.(=) x y then EQ else GT));;
+
 let rec aggargs_tys
   (Aggargs_ext
     (aggargs_cols, aggargs_n, aggargs_g0, aggargs_y, aggargs_omega, aggargs_tys,
@@ -8130,6 +8129,22 @@ let rec set_fold_cfc (_A1, _A2)
         failwith "set_fold_cfc not supported on Complement"
           (fun _ -> set_fold_cfc (_A1, _A2) f b (Complement a));;
 
+let rec int_cmp
+  x y = (if Z.lt x y then LT else (if Z.equal x y then EQ else GT));;
+
+let rec nat_cmp
+  x y = (if less_nat x y then LT else (if equal_nata x y then EQ else GT));;
+
+let rec wbt_max
+  = function Leaf -> nth [] zero_nata
+    | Node (uu, (a, uv), r) ->
+        (match r with Leaf -> a | Node (_, _, _) -> wbt_max r);;
+
+let rec wbt_min
+  = function Leaf -> nth [] zero_nata
+    | Node (l, (a, uu), uv) ->
+        (match l with Leaf -> a | Node (_, _, _) -> wbt_min l);;
+
 let rec edl_rbt_inter_list
   xb xc =
     Mapping_RBTa
@@ -8280,7 +8295,7 @@ let rec select
   x0 n = match x0, n with
     Node (l, (a, uu), r), n ->
       (let s = size_wbt l in
-        (match cmp (equal_nat, linorder_nat) s n
+        (match nat_cmp s n
           with LT -> select r (minus_nata (minus_nata n s) one_nata) | EQ -> a
           | GT -> select l n))
     | Leaf, n -> nth [] n;;
@@ -8288,6 +8303,10 @@ let rec select
 let rec tree_select _A xa = select (rep_wf_wbt _A xa);;
 
 let rec get_treelist _A (Collapse y) n = tree_select _A y n;;
+
+let rec tree_max _A xa = wbt_max (rep_wf_wbt _A xa);;
+
+let rec tree_min _A xa = wbt_min (rep_wf_wbt _A xa);;
 
 let rec de_dsemi
   msk pos a b =
@@ -8776,24 +8795,29 @@ let rec rotateL
 
 let rec balanceL l a r = (if balanced1 l r then n l a r else rotateL l a r);;
 
-let rec insertc (_A1, _A2)
+let rec int_wbt_insert
   x xa1 = match x, xa1 with x, Leaf -> Node (Leaf, (x, one_nata), Leaf)
     | x, Node (l, (a, n), r) ->
-        (match cmp (_A1, _A2) x a
-          with LT -> balanceR (insertc (_A1, _A2) x l) a r
-          | EQ -> balanceR (insertc (_A1, _A2) x l) a r
-          | GT -> balanceL l a (insertc (_A1, _A2) x r));;
+        (match int_cmp x a with LT -> balanceR (int_wbt_insert x l) a r
+          | EQ -> balanceR (int_wbt_insert x l) a r
+          | GT -> balanceL l a (int_wbt_insert x r));;
 
-let rec tree_insert (_A1, _A2)
-  xb xc = Abs_wf_wbt (insertc (_A1, _A2) xb (rep_wf_wbt _A2 xc));;
+let rec int_tree_insert
+  xb xc = Abs_wf_wbt (int_wbt_insert xb (rep_wf_wbt linorder_integer xc));;
 
-let rec int_insert_treelist
-  x (Collapse y) =
-    Collapse (tree_insert (equal_integer, linorder_integer) x y);;
+let rec int_insert_treelist x (Collapse y) = Collapse (int_tree_insert x y);;
 
-let rec s8_insert_treelist
-  x (Collapse y) =
-    Collapse (tree_insert (equal_string8, linorder_string8) x y);;
+let rec s8_wbt_insert
+  x xa1 = match x, xa1 with x, Leaf -> Node (Leaf, (x, one_nata), Leaf)
+    | x, Node (l, (a, n), r) ->
+        (match s8_cmp x a with LT -> balanceR (s8_wbt_insert x l) a r
+          | EQ -> balanceR (s8_wbt_insert x l) a r
+          | GT -> balanceL l a (s8_wbt_insert x r));;
+
+let rec s8_tree_insert
+  xb xc = Abs_wf_wbt (s8_wbt_insert xb (rep_wf_wbt linorder_string8 xc));;
+
+let rec s8_insert_treelist x (Collapse y) = Collapse (s8_tree_insert x y);;
 
 let rec empty_tree _A = Abs_wf_wbt Leaf;;
 
@@ -9286,51 +9310,47 @@ let rec equal_treelist (_A1, _A2)
       then equal_wf_wbt (_A1, _A2) y1 (empty_tree _A2)
       else equal_lista _A1 (tree_inorder _A2 y1) (tree_inorder _A2 y2));;
 
-let rec split_mina _A
+let rec split_min_p
   (Node (l, (a, uu), r)) =
-    (if equal_tree (equal_prod _A equal_nat) l Leaf then (a, r)
-      else (let (x, la) = split_mina _A l in (x, balanceL la a r)));;
+    (match l with Leaf -> (a, r)
+      | Node (_, _, _) ->
+        (let (x, la) = split_min_p l in (x, balanceL la a r)));;
 
-let rec del_max _A
+let rec del_max_p
   (Node (l, (a, uu), r)) =
-    (if equal_tree (equal_prod _A equal_nat) r Leaf then (a, l)
-      else (let (x, ra) = del_max _A r in (x, balanceR l a ra)));;
+    (match r with Leaf -> (a, l)
+      | Node (_, _, _) -> (let (x, ra) = del_max_p r in (x, balanceR l a ra)));;
 
-let rec size_tree
-  = function Leaf -> zero_nata
-    | Node (x21, x22, x23) ->
-        plus_nata (plus_nata (size_tree x21) (size_tree x23)) (suc zero_nata);;
+let rec combine_p
+  l r = (match l with Leaf -> r
+          | Node (_, _, _) ->
+            (match r with Leaf -> l
+              | Node (_, _, _) ->
+                (if less_nat (size_wbt r) (size_wbt l)
+                  then (let (lMax, la) = del_max_p l in balanceL la lMax r)
+                  else (let (a, b) = split_min_p r in balanceR l a b))));;
 
-let rec combineb _A
-  x0 x1 = match x0, x1 with Leaf, Leaf -> Leaf
-    | Leaf, Node (v, va, vb) -> Node (v, va, vb)
-    | Node (v, va, vb), Leaf -> Node (v, va, vb)
-    | Node (v, va, vb), Node (vc, vd, ve) ->
-        (if less_nat (size_tree (Node (vc, vd, ve)))
-              (size_tree (Node (v, va, vb)))
-          then (let (lMax, l) = del_max _A (Node (v, va, vb)) in
-                 balanceL l lMax (Node (vc, vd, ve)))
-          else (let (a, b) = split_mina _A (Node (vc, vd, ve)) in
-                 balanceR (Node (v, va, vb)) a b));;
-
-let rec deletec (_A1, _A2)
+let rec int_wbt_delete
   uu x1 = match uu, x1 with uu, Leaf -> Leaf
     | x, Node (l, (a, uv), r) ->
-        (match cmp (_A1, _A2) x a
-          with LT -> balanceL (deletec (_A1, _A2) x l) a r
-          | EQ -> combineb _A1 l r
-          | GT -> balanceR l a (deletec (_A1, _A2) x r));;
+        (match int_cmp x a with LT -> balanceL (int_wbt_delete x l) a r
+          | EQ -> combine_p l r | GT -> balanceR l a (int_wbt_delete x r));;
 
-let rec tree_remove (_A1, _A2)
-  xb xc = Abs_wf_wbt (deletec (_A1, _A2) xb (rep_wf_wbt _A2 xc));;
+let rec int_tree_remove
+  x t = Abs_wf_wbt (int_wbt_delete x (rep_wf_wbt linorder_integer t));;
 
-let rec int_remove_treelist
-  x (Collapse y) =
-    Collapse (tree_remove (equal_integer, linorder_integer) x y);;
+let rec int_remove_treelist x (Collapse y) = Collapse (int_tree_remove x y);;
 
-let rec s8_remove_treelist
-  x (Collapse y) =
-    Collapse (tree_remove (equal_string8, linorder_string8) x y);;
+let rec s8_wbt_delete
+  uu x1 = match uu, x1 with uu, Leaf -> Leaf
+    | x, Node (l, (a, uv), r) ->
+        (match s8_cmp x a with LT -> balanceL (s8_wbt_delete x l) a r
+          | EQ -> combine_p l r | GT -> balanceR l a (s8_wbt_delete x r));;
+
+let rec s8_tree_remove
+  x t = Abs_wf_wbt (s8_wbt_delete x (rep_wf_wbt linorder_string8 t));;
+
+let rec s8_remove_treelist x (Collapse y) = Collapse (s8_tree_remove x y);;
 
 let rec ed_rbtc_del
   x xa1 = match x, xa1 with x, Empty -> Empty
@@ -9591,6 +9611,14 @@ let ed_set_eq_v :
           (cenum_list, (ceq_list (ceq_option ceq_event_data)),
             (ccompare_list (ccompare_option ccompare_event_data))));;
 
+let rec get_edata_min
+  = function LInt (Collapse t) -> EInt (tree_min linorder_integer t)
+    | LString (Collapse s) -> EString (tree_min linorder_string8 s);;
+
+let rec get_edata_max
+  = function LInt (Collapse t) -> EInt (tree_max linorder_integer t)
+    | LString (Collapse s) -> EString (tree_max linorder_string8 s);;
+
 let rec tree_size _A xa = size_wbt (rep_wf_wbt _A xa);;
 
 let rec length_treelist _A (Collapse y) = tree_size _A y;;
@@ -9644,12 +9672,8 @@ let rec result_maggaux
                      (of_phantom
                        (set_impl_proda set_impl_event_data set_impl_enat))))
           else (match fst omega
-                 with Agg_Min ->
-                   ed_get_map_result m y (fun k -> get_edata_list k zero_nata)
-                 | Agg_Max ->
-                   ed_get_map_result m y
-                     (fun k ->
-                       get_edata_list k (minus_nata (get_length k) one_nata))
+                 with Agg_Min -> ed_get_map_result m y get_edata_min
+                 | Agg_Max -> ed_get_map_result m y get_edata_max
                  | Agg_Med ->
                    ed_get_map_result m y
                      (fun k ->
@@ -9738,12 +9762,8 @@ let rec ures_maggaux
             else (match fst omega
                    with Agg_Cnt ->
                      edl_filter q (edl_image_of_wide h (result_maggaux args a))
-                   | Agg_Min ->
-                     ugmr q h m y (fun k -> get_edata_list k zero_nata)
-                   | Agg_Max ->
-                     ugmr q h m y
-                       (fun k ->
-                         get_edata_list k (minus_nata (get_length k) one_nata))
+                   | Agg_Min -> ugmr q h m y get_edata_min
+                   | Agg_Max -> ugmr q h m y get_edata_max
                    | Agg_Sum ->
                      edl_filter q (edl_image_of_wide h (result_maggaux args a))
                    | Agg_Avg ->

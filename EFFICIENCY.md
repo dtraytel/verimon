@@ -7931,3 +7931,126 @@ no timeouts; over the 196 that MonPoly monitors, the geometric mean of `-verifie
 1.25, median 1.22.  32 formulas are faster under `-verified`, 9 more than 2x slower, and none
 more than 4x slower.  The worst family is `once_exists` (1.78), then `agg_once` (1.56), `match`
 (1.53) and `policy` (1.52).
+
+## 21.27 H: the three worst families after the switch
+
+The 21.26 run ranked the families by the geometric mean of `-verified`/MonPoly: `once_exists`
+(1.78), `agg_once` (1.56), `match` (1.53) and `policy` (1.52).  `match` has had its dense nodes
+since 21.24; what it still pays for is the kernel's derivative window, whose replacement 21.26
+already priced.  H took the worst formula of the other kinds: the existential over a window
+(`onceex-50`), the extremum over a window (`aggonce-max50`), and the Since with a negated
+left operand behind most of `policy` (`since-nu50`).  The first is fixed, the second improved,
+the third priced and declined.
+
+### H1: the existential moves into the window
+
+Over a window whose left operand is `TT` -- `ONCE` and `EVENTUALLY` -- an existential commutes
+with the window: `∃y. ONCE[I] φ` holds exactly when `ONCE[I] (∃y. φ)` does.  The two monitor
+very differently.  With the quantifier outside, the window keeps every tuple of `φ` over the
+whole interval and the quantifier projects that whole result at every time point; with it
+inside, the projection runs once, on the entering tuples, and the window keeps only the
+projected ones.  On `onceex-50` (`C(x) AND (EXISTS y. ONCE[0,50] A(x,y))`) the window holds
+about 2000 pairs against 200 values of `x`, and the projection was 71% of the run.
+
+`push_ex` (`Dense_Push.thy`) makes the move everywhere it applies, and nowhere inside `LET`,
+`LETPAST`, the freeze quantifier, the regular expressions, the trigger and release operators,
+or a conjunction with a trigger or release on the right: those are the formulas whose
+treatment builds new formulas from their operands, and leaving them alone keeps the lemmas
+structural.  The lemmas show that `push_ex` preserves everything the monitor's specification
+depends on -- free variables, satisfaction, progress, the relevant events, safety in both
+directions, future-boundedness and typing -- so `verimon_spec.dmonitor_mverdicts_push` states
+that the dense monitor started on `push_ex φ` computes exactly `Mt` for `φ`.  The front end
+calls `udminit_push = udminit_safe ∘ push_ex`.  Formula equality is not executable (the
+intervals have no equality in the generated code), so the test for `TT` gets a code equation
+that reads its shape.
+
+| formula | before | after | MonPoly |
+|---|---|---|---|
+| `onceex-50` | 3.77 s | 0.63 s | 1.35 s |
+| `onceex-not50` | 3.49 s | 0.58 s | 1.77 s |
+| `onceex-20` | 1.92 s | 0.60 s | 1.00 s |
+
+The output is identical on all three; the cram test `dense_push.t` runs 18 formulas, including
+the shapes the rewrite leaves alone.
+
+### H2: the extremum over a window
+
+`aggonce-max50` (`r <- MAX y; x ONCE[0,50] A(x,y)`) keeps, per group, an order-statistic tree
+of the window's values (`Order_Statistic_Tree.thy`, a weight-balanced tree with sizes in the
+nodes, under `Tree_List.thy`'s `treelist` and `Optimized_Agg.thy`'s `list_aux`).  The profile
+charged it in three places, and `Dense_Agg_Code.thy` refines all three with code equations
+proved against the ones they replace:
+
+* **Reading the extremum.**  MIN and MAX asked for the element of rank 0 and of rank `n - 1`,
+  and `select` finds it by comparing the rank with the stored size at every node on the way
+  down -- natural-number arithmetic that the generated code does through Zarith.  That read was
+  201 M instructions of max50's 3.35 G.  `wbt_min` and `wbt_max` walk to the leftmost and the
+  rightmost node instead; `select t 0 = wbt_min t` and `select t (size_wbt t - 1) = wbt_max t`
+  on every tree satisfying `wbt`, which every tree inside `wf_wbt` does, and a `code_unfold`
+  rule redirects the two reads of the result.
+* **Deleting.**  `combine`, which joins the two subtrees of a deleted node, compared `size`
+  of both, which walks them, although every node carries its size; and `split_min`/`del_max`
+  tested `l = Leaf`, an equality on trees, which was the only reason the tree operations took an
+  `equal` dictionary.  `delete_p` reads the stored size and matches on `Leaf`; it equals `delete`
+  under `wbt`, and is `tree_remove`'s code equation.
+* **The dictionaries.**  21.16 specialised the treelist operations at `integer` and `string8`, but
+  their bodies still called the generic tree operations, whose comparison `cmp` went through the
+  dictionary's `less` and `equal` at every node.  The tree operations now have their copies at
+  both types too, and `select` its `nat` comparison.  The exported code has no dictionary left on
+  the rank path.
+
+The subtrees are inspected with a `case` rather than by nested patterns: `fun` compiles a
+nested pattern `Node (Node l' x r') y r` into code that rebuilds the inner node before passing
+it on, an allocation per level.
+
+The result table was measured too, and left alone.  `ugmr` builds it by inserting its rows one
+at a time into a persistent red-black tree; the alternative -- collect the rows, sort them with
+the comparator merge sort `sort_c`, build the tree with `rbt_of_sorted_list` -- was proved (the
+equation and its proof were three lines over `ugmr_code`) and measured.  Section 15.7 found that
+construction wrong for the probe join, whose list can be far longer than its table; here there is
+one row per group, so that case does not arise, and it still does not pay: on `aggonce-cnt50` it
+saved 190 M instructions of insertion and rebalancing and spent 170 M on the merge sort, the
+sortedness check of `rbt_of_sorted_list` and the natural-number arithmetic of `rbtreeify`, net
+0.7% of the run.  The experiment that had suggested it used OCaml's `List.sort_uniq`, which the
+verified code does not have.
+
+Measured, instructions exactly on the 1500-point `base` log of the profiles, and wall time on the
+suite's `base` log (median of seven runs, interleaved, on one container):
+
+| formula | instructions, before → after | wall, before → after | MonPoly |
+|---|---|---|---|
+| `aggonce-max50` | 3.347 G → 3.091 G (−7.6%) | 2.14 s → 2.02 s | 0.91 s |
+| `aggonce-min50` | 3.228 G → 3.072 G (−4.8%) | 2.12 s → 2.00 s | 0.96 s |
+| `aggonce-med20` | 4.455 G → 4.401 G (−1.2%) | 2.49 s → 2.36 s | 1.66 s |
+| `aggonce-cnt50` (code unchanged) | 2.704 G → 2.704 G (0.0%) | 1.61 s → 1.68 s | 1.08 s |
+
+MAX gains more than MIN because `select`'s descent to the last rank subtracts at every node, where
+the descent to rank 0 only compares; MED still selects by rank and gains only the deletions and
+the comparisons.  The controls' wall times (`aggonce-cnt50` +4%, `since-nu50` +3%) are this container's
+noise, which is why the instruction counts are the measurement.  H2 is therefore a modest
+improvement, and MIN and MAX stay at about 2.1-2.2x MonPoly.  What is left of them is no longer the
+rank tree -- its insertions and deletions are now 5.7% of `aggonce-max50` -- but what every
+aggregation over a window pays: the result table (20.5%), and the per-group mapping's upkeep as
+tuples enter (19.8%) and leave (19.2%) the window, which 21.22 priced.  The cram test
+`dense_rank.t` runs MIN, MAX and MED over sliding windows on a log with repeated values, grouped
+and ungrouped, on integers and strings, with the output recorded from the verified monitor
+before the change (and equal to MonPoly's).
+
+### H3: Since with a negated left operand, declined
+
+`since-nu50` (`B(x,y) AND ((NOT C(x)) SINCE[0,50] A(x,y))`) runs at about 2x MonPoly.  Two thirds
+of the run is the Since node, and all of it is red-black-tree work on the node's five
+structures: the window's table, its index by the left operand's columns, the per-tuple
+timestamps, and the same two for the tuples since the last match.  Adding a time point's tuples
+is 29% of the run, the negated operand's garbage collection and join 34% (of which the join is
+24%); red-black insertion, deletion and rebalancing make up the bulk of both.  The join is
+already key-driven -- for a negated operand it deletes the operand's keys from the index rather
+than filtering the index (21.8) -- and the one remaining generic piece, the collection's
+union of the window's tuple sets, was rewritten as a fold of `edl_union` in an experiment and
+bought 1.9%.
+
+What is left is the price of five persistent trees against MonPoly's hash tables, and a hash
+table is imperative: the verified structures of this session are pure functions, and the
+heap-resident refinement of session MFODL_Monitor_Imp, which is where an imperative structure
+would go, is not what `-verified` runs (21.26).  Halving the node's work -- which no change to
+the pure structures in sight would do -- would take `since-nu50` from 2.0x to about 1.3x.

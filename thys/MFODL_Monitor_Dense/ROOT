@@ -42,6 +42,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Push
     Dense_Code_Opt
     Dense_Mono_Sweep
+    Dense_Agg_Code
   theories [document=false]
     Monitor_Code_Dense
   export_files (in ".") [2]
