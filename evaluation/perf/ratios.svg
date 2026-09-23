@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="448" font-family="sans-serif" font-size="11">
 <rect width="100%" height="100%" fill="white"/>
-<text x="130" y="18" font-size="13">runtime ratio vdense / monpoly per formula (best of repetitions); x = timeout of vdense, o = timeout of monpoly</text>
+<text x="130" y="18" font-size="13">runtime ratio verimon / monpoly per formula (best of repetitions); x = timeout of verimon, o = timeout of monpoly</text>
 <line x1="130.0" y1="32" x2="130.0" y2="418" stroke="#ccc" stroke-width="0.6"/>
 <text x="130.0" y="432" text-anchor="middle" fill="#333">0.25x</text>
 <line x1="276.0" y1="32" x2="276.0" y2="418" stroke="#ccc" stroke-width="0.6"/>

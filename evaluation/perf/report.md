@@ -1,10 +1,10 @@
-# Performance suite: monpoly vs vdense
+# Performance suite: monpoly vs verimon
 
 201 formulas, 23 families; 3 repetitions (best of), timeout 5 s per run, 2 workers; wall time 534 s (budget 2400 s).
 
-## vdense against monpoly
+## verimon against monpoly
 
-| | monpoly | vdense |
+| | monpoly | verimon |
 |---|---|---|
 | ok | 196 | 201 |
 | timeout | 0 | 0 |
@@ -12,13 +12,13 @@
 | unmonitorable | 5 | 0 |
 | error | 0 | 0 |
 
-Over the 196 formulas both finish: geometric mean of vdense/monpoly = **1.25**, median 1.22, 32 where vdense is faster, 53 within 10%, 9 where vdense is more than 2x slower, 0 more than 4x slower.
+Over the 196 formulas both finish: geometric mean of verimon/monpoly = **1.25**, median 1.22, 32 where verimon is faster, 53 within 10%, 9 where verimon is more than 2x slower, 0 more than 4x slower.
 
 Verdict disagreements: match-pcnt
 
 ### By family
 
-| family | n | both ok | geomean vdense/monpoly | min | max | monpoly timeouts | vdense timeouts | refused |
+| family | n | both ok | geomean verimon/monpoly | min | max | monpoly timeouts | verimon timeouts | refused |
 |---|---|---|---|---|---|---|---|---|
 | join | 9 | 9 | 1.09 | 0.96 | 1.60 | 0 | 0 | 0 |
 | join_scale | 5 | 5 | 1.02 | 0.96 | 1.10 | 0 | 0 | 0 |
@@ -44,9 +44,9 @@ Verdict disagreements: match-pcnt
 | match | 11 | 11 | 1.53 | 1.29 | 1.85 | 0 | 0 | 0 |
 | andtrigger | 5 | 0 | - | - | - | 0 | 0 | 0 |
 
-### Where vdense is slowest relative to monpoly
+### Where verimon is slowest relative to monpoly
 
-| name | log | formula | monpoly s | vdense s | ratio |
+| name | log | formula | monpoly s | verimon s | ratio |
 |---|---|---|---|---|---|
 | onceex-50 | base | `C(x) AND (EXISTS y. ONCE[0,50] A(x,y))` | 1.43 | 3.72 | 2.59 |
 | aggonce-max50 | base | `r <- MAX y; x ONCE[0,50] A(x,y)` | 0.90 | 2.14 | 2.36 |
@@ -64,9 +64,9 @@ Verdict disagreements: match-pcnt
 | onceex-20 | base | `C(x) AND (EXISTS y. ONCE[0,20] A(x,y))` | 1.07 | 2.03 | 1.89 |
 | aggonce-cnt500 | base | `r <- CNT y; x ONCE[0,500] A(x,y)` | 1.18 | 2.20 | 1.86 |
 
-### Where vdense is fastest relative to monpoly
+### Where verimon is fastest relative to monpoly
 
-| name | log | formula | monpoly s | vdense s | ratio |
+| name | log | formula | monpoly s | verimon s | ratio |
 |---|---|---|---|---|---|
 | since-lb | base | `A(x,y) SINCE[2,500] B(x,y)` | 1.00 | 0.65 | 0.65 |
 | prev-join3 | base | `A(x,y) AND PREV[0,1] (B(x,z) AND C(z))` | 0.48 | 0.37 | 0.77 |
@@ -81,7 +81,7 @@ Verdict disagreements: match-pcnt
 
 ### Timeouts, refusals and errors
 
-| name | log | formula | monpoly | vdense |
+| name | log | formula | monpoly | verimon |
 |---|---|---|---|---|
 | atrig-5 | base | `A(x,y) AND (A(x,y) TRIGGER[1,5] B(x,y))` | unmonitorable | 0.65 s |
 | atrig-50 | base | `A(x,y) AND (A(x,y) TRIGGER[1,50] B(x,y))` | unmonitorable | 0.69 s |
@@ -91,7 +91,7 @@ Verdict disagreements: match-pcnt
 
 ## All formulas
 
-| name | log | formula | monpoly s | vdense s | ratio | agree | why |
+| name | log | formula | monpoly s | verimon s | ratio | agree | why |
 |---|---|---|---|---|---|---|---|
 | join-both | base | `A(x,y) AND B(x,y)` | 0.36 | 0.37 | 1.03 | yes | equi-join on both columns: a set intersection |
 | join-one | base | `A(x,y) AND B(y,z)` | 0.49 | 0.51 | 1.03 | yes | one shared column, the common case |

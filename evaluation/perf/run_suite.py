@@ -3,12 +3,13 @@
 run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
 
   python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 3] [--timeout 5]
-                       [--jobs 2] [--budget 1800] [--systems monpoly,vdense]
+                       [--jobs 2] [--budget 1800] [--systems monpoly,verimon]
                        [--families once,since] [--out results]
 
-Systems: monpoly is the binary without flags; vdense is `-verified`, the verified dense evaluator
-of thys/MFODL_Monitor_Dense (the name dates from when it needed `-vdense` next to a second,
-unverified dense monitor under `-verified`; that monitor is no longer in the binary).
+Systems: monpoly is the binary without flags; verimon is `-verified`, the verified dense evaluator
+of thys/MFODL_Monitor_Dense (reports before 2026-09-23 call it `vdense`, from when it needed
+`-vdense` next to a second, unverified dense monitor under `-verified`; that monitor is no
+longer in the binary).  Run against a build of master, `-verified` is the original VeriMon.
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
 classified as `refused` (outside the verified dense fragment), `unmonitorable` (the front end
@@ -23,7 +24,7 @@ Writes <out>/results.json, <out>/results.csv and <out>/report.md.
 import argparse, concurrent.futures, csv, hashlib, json, math, os, statistics, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SYSTEMS = {"monpoly": [], "vdense": ["-verified"]}
+SYSTEMS = {"monpoly": [], "verimon": ["-verified"]}
 
 
 def read_suite(path):
@@ -108,7 +109,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=5.0)
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--budget", type=float, default=1800.0, help="wall-clock budget in seconds")
-    ap.add_argument("--systems", default="monpoly,vdense")
+    ap.add_argument("--systems", default="monpoly,verimon")
     ap.add_argument("--families", default="", help="comma-separated subset of families")
     ap.add_argument("--names", default="", help="comma-separated subset of formula names")
     args = ap.parse_args()
