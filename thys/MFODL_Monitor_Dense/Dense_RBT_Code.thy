@@ -103,6 +103,99 @@ lemma edl_mapping_delete_set_code[code]:
     apply (rule de_mapping_delete_set_nat_rbt[unfolded de_mapping_delete_set_nat_def])
    apply (rule mapping_delete_set_code)+
   done
+
+section \<open>The join-based set operations, without counting black heights\<close>
+
+text \<open>
+  The union, the intersection and the difference of two red-black trees
+  (@{const RBT_Comparator_Impl.rbt_comp_union_swap_rec} and its neighbours) split one tree at
+  the other's root and join the results back together.  Every join, and every recursive step of
+  the operations themselves, compares the black heights of two trees, and the library computes
+  each height as a @{typ nat} by walking the tree's left spine -- a boxed number per level, and
+  per call.  On \<^verbatim>\<open>until-nu20\<close> that was 5\% of the run.
+
+  \<^file>\<open>../MFODL_Monitor_Devel/RBT_set_opt.thy\<close> already decides these comparisons for its own
+  trees by descending the two spines in lockstep (@{text bh_le}), or by counting a bound down
+  (@{text bh_lt}); both allocate nothing.  Those are stated for the trees of unit values; the
+  library's operations are at every value type, so the two comparisons are restated here at
+  that generality and the library's code equations are replaced by ones that use them.
+\<close>
+
+function bh_le_g :: "('a, 'b) rbt \<Rightarrow> ('c, 'd) rbt \<Rightarrow> bool" where
+  "bh_le_g RBT_Impl.Empty t2 = True"
+| "bh_le_g (Branch RBT_Impl.R l1 a1 b1 r1) t2 = bh_le_g l1 t2"
+| "bh_le_g (Branch RBT_Impl.B l1 a1 b1 r1) RBT_Impl.Empty = False"
+| "bh_le_g (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.R l2 a2 b2 r2) =
+     bh_le_g (Branch RBT_Impl.B l1 a1 b1 r1) l2"
+| "bh_le_g (Branch RBT_Impl.B l1 a1 b1 r1) (Branch RBT_Impl.B l2 a2 b2 r2) = bh_le_g l1 l2"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(t1, t2). size t1 + size t2)") auto
+
+lemma bh_le_g_correct: "bh_le_g t1 t2 \<longleftrightarrow> bheight t1 \<le> bheight t2"
+  by (induction t1 t2 rule: bh_le_g.induct) auto
+
+fun bh_lt_g :: "integer \<Rightarrow> ('a, 'b) rbt \<Rightarrow> bool" where
+  "bh_lt_g k RBT_Impl.Empty = (0 < k)"
+| "bh_lt_g k (Branch RBT_Impl.R l a b r) = bh_lt_g k l"
+| "bh_lt_g k (Branch RBT_Impl.B l a b r) = (if k \<le> 0 then False else bh_lt_g (k - 1) l)"
+
+lemma bh_lt_g_correct: "bh_lt_g k t \<longleftrightarrow> integer_of_nat (bheight t) < k"
+proof (induction k t rule: bh_lt_g.induct)
+  case (3 k l a b r)
+  show ?case
+  proof (cases "k \<le> 0")
+    case True
+    have "k \<le> 0" by (rule True)
+    also have "(0::integer) \<le> 1 + of_nat (bheight l)"
+      by simp
+    finally have "k \<le> 1 + of_nat (bheight l)" .
+    then show ?thesis using True by (simp add: integer_of_nat_eq_of_nat not_less)
+  next
+    case False
+    then show ?thesis using 3
+      by (simp add: integer_of_nat_eq_of_nat less_diff_eq add.commute)
+  qed
+qed (auto simp: integer_of_nat_eq_of_nat)
+
+text \<open>The library's two tests, and the three joins, through the comparisons.  The union and the
+  intersection come with code equations that compute both heights up front, and are given their
+  defining equations back, which are stated with the two tests.\<close>
+
+declare [[code drop: RBT_Impl.small_rbt RBT_Impl.flip_rbt RBT_Impl.rbt_joinL RBT_Impl.rbt_joinR
+  RBT_Impl.rbt_join RBT_Comparator_Impl.rbt_comp_union_swap_rec
+  RBT_Comparator_Impl.rbt_comp_inter_swap_rec]]
+
+lemma small_rbt_bh_code[code]: "RBT_Impl.small_rbt t = bh_lt_g 4 t"
+  by (simp add: RBT_Impl.small_rbt_def bh_lt_g_correct integer_of_nat_eq_of_nat)
+
+lemma flip_rbt_bh_code[code]: "RBT_Impl.flip_rbt t1 t2 = (\<not> bh_le_g t1 t2)"
+  by (simp add: RBT_Impl.flip_rbt_def bh_le_g_correct not_le)
+
+lemma rbt_joinL_bh_code[code]: "RBT_Impl.rbt_joinL l a b r = (if bh_le_g r l
+    then Branch RBT_Impl.R l a b r
+    else case r of
+      Branch RBT_Impl.B l' a' b' r' \<Rightarrow> rbt_baliL (RBT_Impl.rbt_joinL l a b l') a' b' r'
+    | Branch RBT_Impl.R l' a' b' r' \<Rightarrow> Branch RBT_Impl.R (RBT_Impl.rbt_joinL l a b l') a' b' r')"
+  by (subst RBT_Impl.rbt_joinL.simps) (simp add: bh_le_g_correct)
+
+lemma rbt_joinR_bh_code[code]: "RBT_Impl.rbt_joinR l a b r = (if bh_le_g l r
+    then Branch RBT_Impl.R l a b r
+    else case l of
+      Branch RBT_Impl.B l' a' b' r' \<Rightarrow> rbt_baliR l' a' b' (RBT_Impl.rbt_joinR r' a b r)
+    | Branch RBT_Impl.R l' a' b' r' \<Rightarrow> Branch RBT_Impl.R l' a' b' (RBT_Impl.rbt_joinR r' a b r))"
+  by (subst RBT_Impl.rbt_joinR.simps) (simp add: bh_le_g_correct)
+
+lemma rbt_join_bh_code[code]: "RBT_Impl.rbt_join l a b r = (if \<not> bh_le_g l r
+    then paint RBT_Impl.B (RBT_Impl.rbt_joinR l a b r)
+    else if \<not> bh_le_g r l
+    then paint RBT_Impl.B (RBT_Impl.rbt_joinL l a b r)
+    else Branch RBT_Impl.B l a b r)"
+  by (simp add: RBT_Impl.rbt_join_def bh_le_g_correct Let_def)
+
+declare RBT_Comparator_Impl.rbt_comp_union_swap_rec.simps[code]
+  RBT_Comparator_Impl.rbt_comp_inter_swap_rec.simps[code]
+
 (*<*)
 end
 (*>*)

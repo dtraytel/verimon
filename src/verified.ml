@@ -882,7 +882,7 @@ let rec rbt_join2a
   l r = (if is_emptyb r then l
           else (let (a, b) = split_min r in rbt_joina l a b));;
 
-let rec flip_rbt t1 t2 = not (bh_le t1 t2);;
+let rec flip_rbta t1 t2 = not (bh_le t1 t2);;
 
 let rec suc n = plus_nata n one_nata;;
 
@@ -944,7 +944,7 @@ let rec entries x = gen_entries [] x;;
 
 let rec inter_comp
   comp t1 t2 =
-    (let (t1a, t2a) = (if flip_rbt t1 t2 then (t2, t1) else (t1, t2)) in
+    (let (t1a, t2a) = (if flip_rbta t1 t2 then (t2, t1) else (t1, t2)) in
       (if small_rbta t1a
         then rbtreeify
                (filtera
@@ -1033,7 +1033,7 @@ let rec folda
 
 let rec union_comp
   comp t1 t2 =
-    (let (t1a, t2a) = (if flip_rbt t1 t2 then (t2, t1) else (t1, t2)) in
+    (let (t1a, t2a) = (if flip_rbta t1 t2 then (t2, t1) else (t1, t2)) in
       (if small_rbta t1a then folda (rbt_comp_insert comp) t1a t2a
         else (match t2a with Empty -> t1a
                | Branch (_, l2, a, (), r2) ->
@@ -4544,11 +4544,6 @@ let rec list_update
         (if equal_nata i zero_nata then y :: xs
           else x :: list_update xs (minus_nata i one_nata) y);;
 
-let rec bheight
-  = function Empty -> zero_nata
-    | Branch (c, lt, k, v, rt) ->
-        (if equal_color c B then suc (bheight lt) else bheight lt);;
-
 let rec atms (_A1, _A2, _A3)
   = function Skip x1 -> bot_set (_A1, _A2, _A3)
     | Test x2 -> insert (_A1, _A2) x2 (bot_set (_A1, _A2, _A3))
@@ -5642,6 +5637,16 @@ let rec to_mregex r = to_mregex_exec r [];;
 
 let empty_queue : 'a queue = Abs_queue ([], []);;
 
+let rec bh_le_g
+  x0 t2 = match x0, t2 with Empty, t2 -> true
+    | Branch (R, l1, a1, b1, r1), t2 -> bh_le_g l1 t2
+    | Branch (B, l1, a1, b1, r1), Empty -> false
+    | Branch (B, l1, a1, b1, r1), Branch (R, l2, a2, b2, r2) ->
+        bh_le_g (Branch (B, l1, a1, b1, r1)) l2
+    | Branch (B, l1, a1, b1, r1), Branch (B, l2, a2, b2, r2) -> bh_le_g l1 l2;;
+
+let rec flip_rbt t1 t2 = not (bh_le_g t1 t2);;
+
 let rec rbt_baliR
   t1 ab bb x3 = match t1, ab, bb, x3 with
     t1, ab, bb, Branch (R, t2, aa, ba, Branch (R, t3, a, b, t4)) ->
@@ -5676,7 +5681,7 @@ let rec rbt_baliR
 
 let rec rbt_joinR
   l a b r =
-    (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, a, b, r)
+    (if bh_le_g l r then Branch (R, l, a, b, r)
       else (match l
              with Branch (R, la, ab, ba, ra) ->
                Branch (R, la, ab, ba, rbt_joinR ra a b r)
@@ -5718,7 +5723,7 @@ let rec rbt_baliL
 
 let rec rbt_joinL
   l a b r =
-    (if less_eq_nat (bheight r) (bheight l) then Branch (R, l, a, b, r)
+    (if bh_le_g r l then Branch (R, l, a, b, r)
       else (match r
              with Branch (R, la, ab, ba, ra) ->
                Branch (R, rbt_joinL l a b la, ab, ba, ra)
@@ -5727,11 +5732,9 @@ let rec rbt_joinL
 
 let rec rbt_join
   l a b r =
-    (let bhl = bheight l in
-     let bhr = bheight r in
-      (if less_nat bhr bhl then paint B (rbt_joinR l a b r)
-        else (if less_nat bhl bhr then paint B (rbt_joinL l a b r)
-               else Branch (B, l, a, b, r))));;
+    (if not (bh_le_g l r) then paint B (rbt_joinR l a b r)
+      else (if not (bh_le_g r l) then paint B (rbt_joinL l a b r)
+             else Branch (B, l, a, b, r)));;
 
 let rec check_wty_regex
   check_wty_formula x1 = match check_wty_formula, x1 with
@@ -6556,7 +6559,13 @@ let rec rbt_join2
   l r = (if is_rbt_empty r then l
           else (let (a, (b, c)) = rbt_split_min r in rbt_join l a b c));;
 
-let rec small_rbt t = less_nat (bheight t) (nat_of_integer (Z.of_int 4));;
+let rec bh_lt_g
+  k x1 = match k, x1 with k, Empty -> Z.lt Z.zero k
+    | k, Branch (R, l, a, b, r) -> bh_lt_g k l
+    | k, Branch (B, l, a, b, r) ->
+        (if Z.leq k Z.zero then false else bh_lt_g (Z.sub k (Z.of_int 1)) l);;
+
+let rec small_rbt t = bh_lt_g (Z.of_int 4) t;;
 
 let rec didx_live
   args =
@@ -7499,15 +7508,10 @@ let rec rbt_split_comp
 
 let rec rbt_comp_inter_swap_rec
   c f gamma t1 t2 =
-    (let bh1 = bheight t1 in
-     let bh2 = bheight t2 in
-     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
-       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
-         else (gamma, (t2, (bh2, (t1, bh1)))))
-       in
+    (let (gammaa, (t2a, t1a)) =
+       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
      let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
-        then rbtreeify (map_filter_comp_inter c fa t1a t2a)
+      (if small_rbt t2a then rbtreeify (map_filter_comp_inter c fa t1a t2a)
         else (match t1a with Empty -> Empty
                | Branch (_, l1, a, b, r1) ->
                  (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
@@ -7541,15 +7545,10 @@ let rec edl_member
 
 let rec rbt_comp_union_swap_rec
   c f gamma t1 t2 =
-    (let bh1 = bheight t1 in
-     let bh2 = bheight t2 in
-     let (gammaa, (t2a, (bh2a, (t1a, _)))) =
-       (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
-         else (gamma, (t2, (bh2, (t1, bh1)))))
-       in
+    (let (gammaa, (t2a, t1a)) =
+       (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
      let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if less_nat bh2a (nat_of_integer (Z.of_int 4))
-        then folda (rbt_comp_insert_with_key c fa) t2a t1a
+      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
         else (match t1a with Empty -> t2a
                | Branch (_, l1, a, b, r1) ->
                  (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
