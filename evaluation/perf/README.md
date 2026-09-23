@@ -1,6 +1,6 @@
 # Performance suite: the verified dense evaluator against MonPoly
 
-196 hand-picked formulas in 22 groups, each there for a stated reason (`suite.txt`, one
+201 hand-picked formulas in 23 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
 (`-verified -vdense`, `Dense_Eval.thy` through the queue buffers of `Dense_Exec.thy`) on the
 same log, with a 5-second timeout per run, best of three repetitions, in about a quarter of an
@@ -19,10 +19,13 @@ dense monitor) and `--families`/`--names` to run a subset.  Repetitions are inte
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are the run of 2026-09-22 on the machine of
-EFFICIENCY.md Section 21 (four cores), after 21.24.  Its one verdict disagreement,
-`match-pcnt`, is an end-of-stream difference between MonPoly and both verified monitors, not
-between the two verified ones.
+`report.md` and `ratios.svg` in this directory are the run of 2026-09-23, after 21.25, on a
+four-core container that is slower and noisier than the machine of EFFICIENCY.md Section 21:
+MonPoly itself takes 1.22x its time of the 2026-09-22 run there, so the ratios are not
+comparable with that run's (EFFICIENCY.md 21.25 has the like-for-like comparison).  Its one
+verdict disagreement, `match-pcnt`, is an end-of-stream difference between MonPoly and both
+verified monitors, not between the two verified ones.  The `andtrigger` group has no ratio
+against MonPoly, which does not monitor TRIGGER; it is there for the two verified monitors.
 
 ## The logs
 
@@ -42,8 +45,8 @@ a quantifier the guard cannot pass; Since by the shape of its left operand; the 
 and Until likewise, and both on the bursty log; nested temporal operators; aggregations at a
 time point, over a past window (grouped, ungrouped, every operator), over a future window and
 under guards; Let; ternary predicates under the temporal operators; long windows on the long
-thin log; policy-shaped formulas; and the temporal regex nodes, by the shape of the regex and
-in the past and the future.  Bounds are chosen at the scales that matter on the log:
+thin log; policy-shaped formulas; the temporal regex nodes, by the shape of the regex and
+in the past and the future; and the conjunction with a trigger whose interval misses zero.  Bounds are chosen at the scales that matter on the log:
 a handful of time points, a few tens, a few hundreds (where a window of binary tuples over a
 domain of 200 by 200 saturates), and thousands on the thin log.
 

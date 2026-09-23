@@ -244,3 +244,10 @@ match-fseq    | base | A(x,y) AND MATCHF[0,10] (A(x,y)? . B(x,y)?)              
 match-fburst  | burst | A(x,y) AND MATCHF[0,3] B(x,y)?                                | the future regex on the bursty log
 match-pnarrow | base | C(x) AND MATCHP[0,20] (EXISTS y. A(x,y))?                      | the operand is narrower than the node's frame
 match-pcnt    | base | r <- CNT x MATCHP[0,20] C(x)?                                  | an aggregate over a past regex
+
+## andtrigger: the fused conjunction with a trigger whose interval misses zero
+atrig-5       | base | A(x,y) AND (A(x,y) TRIGGER[1,5] B(x,y))                        | a short window, the trigger at the conjunct's frame
+atrig-50      | base | A(x,y) AND (A(x,y) TRIGGER[1,50] B(x,y))                       | a longer window
+atrig-lb      | base | A(x,y) AND (A(x,y) TRIGGER[5,20] B(x,y))                       | a positive lower bound: the window starts empty
+atrig-inf     | base | A(x,y) AND (A(x,y) TRIGGER[1,*) B(x,y))                        | unbounded
+atrig-narrow  | base | A(x,y) AND (C(x) TRIGGER[1,10] (EXISTS y. B(x,y)))             | the trigger narrower than the conjunct

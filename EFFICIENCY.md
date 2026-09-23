@@ -7735,3 +7735,100 @@ faster, 16 more than 2x slower, none more than 4x.
 not the regex: both verified monitors print a final `@MaxTS (time point 6000): (0)` that MonPoly
 does not, which is the end-of-stream behaviour of a count over an empty group.  The two verified
 evaluators agree on it tuple for tuple, as they do on the other ten.
+
+## 21.25 The fused And-Trigger, in the verified dense evaluator
+
+After 21.24 the dense compiler refused exactly one kernel node: `MAndTrigger`, the kernel's
+fusion of `α AND (φ TRIGGER I ψ)`.  `dof` answered `DFail` there, so `-vdense` refused every
+formula containing one; the seven formulas of the 600-formula corpus it refused were all of
+this shape.  It is now a dense node, and with it every constructor of the kernel's `mformula`
+has one: the catch-all `DFail` equations of `dof`, `edof` and `udof` are gone.
+
+### Which And-Trigger reaches the node
+
+When `I` contains 0, the kernel initialises the conjunction as an ordinary `MAnd` over a
+standalone `MTrigger`, and both already had dense nodes.  So `MAndTrigger` arises only for an
+interval that misses 0, and then the safety of the trigger forces its two operands onto the
+same free variables and the trigger onto the positive side.  The compiler's guard says exactly
+this, as `tok cs_R cs_L args ⟷ mem I 0 ∨ (cs_L = cs_R ∧ args_pos args)`, together with the
+frames the other nodes check: the conjunct at the node's frame `cs`, the trigger at
+`cs_R ⊆ cs`, its left operand at `cs_L ⊆ cs_R`.
+
+### The node
+
+`DAndTrigger` runs two stages.  The first is the standalone trigger node's: the two operands'
+tables go through a buffer into the narrowed trigger structure (`gupdate_mmtaux`), and each time
+point's read comes out as an option: `None` while the window is empty, `Some` of the trigger's
+answer at its own frame `cs_R` otherwise.  The second stage buffers the conjunct's tables
+against those reads and joins: `None` lets the conjunct's table through unchanged, and `Some z`
+joins it with `z` through the plan `mk_djoin cs cs_R`.
+
+The option is the one real difference from the kernel.  The kernel's fused node reads the
+trigger structure as a pair of a column set and a table, and on an empty window that pair is the
+full table over no columns (`({}, unit_table n)`), which its `bin_join` then lets through.  A
+dense table over no columns has no such reading at the trigger's frame, so the dense node keeps
+the case apart, and `dtres` relates the two reads; `dtres_join` shows that the two joins agree.
+
+### The invariant
+
+The standalone trigger node never keeps left tuples keyed in its structure, so the narrowing
+invariant of 21.9 and 21.12 (`tnar`) was the whole story there.  The fused node's
+structure does keep them, because the interval misses 0 and the left operand's tuples have to
+wait.  Its read then unions in their widening rather than the tuples themselves, and the two
+agree exactly when the widening is the identity on what is stored.  That is the second
+invariant, `tfix`.  It holds vacuously while nothing is stored, which covers the standalone
+case, and outright when `cs_L = cs_R` (the mask is all true, `dmsk_all`), which the guard
+guarantees.  `dtaux` is now `tnar ∧ tfix`, and its initialisation, update and read lemmas take
+`tok` in place of `mem I 0`, so the standalone trigger node keeps its proofs unchanged.
+
+`dsim` gains `DsAndTrigger`, and the simulation theorem gains its case.  The two buffers are
+`mbuf2_take_rel2` and `dandbuf_add`/`dandbuf_take`, in the same style as the other binary nodes.
+
+### The executable mirrors
+
+`EDAndTrigger` in `Dense_Exec.thy` and `UDAndTrigger` in `Dense_Unbox_Exec.thy` are the same
+node over queue buffers and then over short tuples, with `edeval_Rep`, `edof_dof`, `udeval_Rep`
+and `udof_edof` extended to them.  The unboxed node reads the trigger structure without `dsan`,
+because it already works on short tuples; the relabelling lemmas
+`mebuf2T_take_andtrigger` and `mebuf2_take_andtrigger` carry the two stages across `reopt`.
+
+### Tests
+
+The cram test `verimon_tests/vdense_andtrigger.t` runs eleven such formulas through `-verified`
+and `-verified -vdense` and compares their output.  They cover a trigger at the conjunct's
+frame, a narrower one, a bounded and an unbounded window, a positive lower bound, the node
+under a quantifier, a conjunction and a temporal operator, and the nullary case.  All agree,
+and the `verimon_tests` and `tests` suites pass.  The corpus now runs entirely under `-vdense`:
+600 same, 0 refused, 0 differing (593/7/0 before).
+
+### The suite
+
+Five formulas, one new group, all on the base log: a short, a longer and an unbounded window,
+a positive lower bound, and a trigger narrower than its conjunct.  MonPoly does not monitor
+TRIGGER, so the group has no ratio against it; it is there for the two verified monitors.
+
+| | vdense s | dense s | vdense / dense |
+|---|---|---|---|
+| `atrig-5` | 0.81 | 0.85 | 0.95 |
+| `atrig-50` | 0.81 | 1.04 | 0.78 |
+| `atrig-lb` | 1.44 | 1.62 | 0.88 |
+| `atrig-inf` | 1.01 | 0.98 | 1.03 |
+| `atrig-narrow` | 0.84 | 0.98 | 0.85 |
+| geomean | | | **0.89** |
+
+The verified dense evaluator is level with the shipping dense monitor on this group, if
+anything slightly ahead.  That is expected: the shipping node in `Dense_Imp.thy` runs the same
+two stages over the same narrowed trigger structure (`dargs cs_R cs_L`), and differs only in
+wrapping the conjunct's tables in an option and joining through its heap index.  Against the
+shipping monitor's times from the pre-change run on the same container (below), the ratios are
+0.82 to 0.98, so the 0.89 is within this container's noise and should not be read as an advantage.
+
+This run was on a different container from the earlier sections, a slower and noisier one.
+MonPoly takes 1.22x its time of the 21.24 run there, and the whole-suite ratio vdense/monpoly
+reads 1.35 against 1.29.  To separate the machine from the change, the pre-change binary
+(21.24) ran the whole suite on the same container right after: the new binary's times are
+0.93x the old one's for MonPoly, 0.89x for `-vdense` and 0.91x for the shipping monitor.  The
+change adds a node and touches nothing else in the generated code, so all three moving
+together is drift between the two runs, not a regression.  The two `-vdense` timeouts of this
+run, `long-sum100` and `pol-unmatched`, time out under the old binary on this container too;
+at 21.24 on the other machine they took under 5 s.
