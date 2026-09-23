@@ -1427,49 +1427,6 @@ next
   qed
 qed
 
-lemma ftable_trigger_results:
-  fixes args :: args
-  assumes wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r"
-    and ne: "auxlist \<noteq> []" and m0: "mem (args_ivl args) 0"
-    and lst: "fst (last auxlist) = cur"
-    and an: "args_n args = n" and aR: "args_R args = R"
-  shows "ftable n R (snd (trigger_results args cur auxlist))"
-    and "fst (trigger_results args cur auxlist) = R"
-proof -
-  have kl: "length auxlist - 1 < length auxlist" using ne by simp
-  obtain l0 r0 where a0: "auxlist ! (length auxlist - 1) = (cur, l0, r0)"
-    using lst ne by (cases "auxlist ! (length auxlist - 1)") (simp add: last_conv_nth)
-  have mem0: "auxlist ! (length auxlist - 1) \<in> set auxlist" using kl by (rule nth_mem)
-  have tr0: "ftable n R r0" using wf mem0 a0 by force
-  have mm: "mem (args_ivl args) (cur - cur)" using m0 by simp
-  have m: "(cur, l0, r0) \<in> set auxlist" using mem0 a0 by simp
-  have fl: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist \<noteq> []"
-  proof
-    assume e: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist = []"
-    have "\<forall>x \<in> set auxlist. \<not> (case x of (t, _, _) \<Rightarrow> mem (args_ivl args) (cur - t))"
-      using e unfolding filter_empty_conv by simp
-    from this[rule_format, OF m] show False using mm by simp
-  qed
-  have tb: "table n R (snd (trigger_results args cur auxlist))"
-    using fl an aR by (auto simp: table_def)
-  have sub: "snd (trigger_results args cur auxlist) \<subseteq> r0"
-  proof
-    fix tu assume tu: "tu \<in> snd (trigger_results args cur auxlist)"
-    have H: "\<forall>i \<in> {0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
-        mem (args_ivl args) (cur - t) \<longrightarrow>
-        (tu \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
-           join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
-             (proj_tuple (join_mask (args_n args) (args_L args)) tu)))"
-      using tu fl by simp
-    have "{length auxlist - 1<..<length auxlist} = {}" using ne by auto
-    then show "tu \<in> r0" using H[rule_format, of "length auxlist - 1"] kl a0 mm by simp
-  qed
-  have fin: "finite (snd (trigger_results args cur auxlist))"
-    by (rule finite_subset[OF sub]) (use tr0 in simp)
-  show "ftable n R (snd (trigger_results args cur auxlist))" using tb fin by simp
-  show "fst (trigger_results args cur auxlist) = R" using fl aR by simp
-qed
-
 definition taux_inv :: "args \<Rightarrow> nat \<Rightarrow> nat set \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
     event_data mmtaux \<Rightarrow> bool" where
   "taux_inv args n L R cur aux \<longleftrightarrow>

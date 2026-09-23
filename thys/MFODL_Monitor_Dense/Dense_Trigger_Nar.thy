@@ -6,6 +6,12 @@ begin
 
 section \<open>The kernel's trigger structure at the narrow left frame\<close>
 
+text \<open>A table is used throughout with the two properties every theorem about the dense
+  representation needs of it: it is well formed over the node's columns, and it is finite.\<close>
+
+abbreviation (input) ftable :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> bool" where
+  "ftable n A X \<equiv> table n A X \<and> finite X"
+
 text \<open>
   The trigger node of the dense evaluator keeps its window over the right operand's frame, and
   the left operand's tuples at the left operand's own frame -- narrow, without the columns the
@@ -851,6 +857,126 @@ proof -
         append_queue_rep split: prod.splits)
 qed
 
+text \<open>The read of the trigger structure is a finite table over the right operand's columns.
+  With an interval containing zero that is immediate, because the window then always holds the
+  latest time point and the read is contained in its right table.  Without it a safe trigger has
+  the same free variables on both sides, and the read is contained in the union of the window's
+  tables -- which is what the weakened form below states, with the reported column set only
+  bounded rather than fixed.\<close>
+
+lemma ftable_trigger_results:
+  fixes args :: args
+  assumes wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r"
+    and ne: "auxlist \<noteq> []" and m0: "mem (args_ivl args) 0"
+    and lst: "fst (last auxlist) = cur"
+    and an: "args_n args = n" and aR: "args_R args = R"
+  shows "ftable n R (snd (trigger_results args cur auxlist))"
+    and "fst (trigger_results args cur auxlist) = R"
+proof -
+  have kl: "length auxlist - 1 < length auxlist" using ne by simp
+  obtain l0 r0 where a0: "auxlist ! (length auxlist - 1) = (cur, l0, r0)"
+    using lst ne by (cases "auxlist ! (length auxlist - 1)") (simp add: last_conv_nth)
+  have mem0: "auxlist ! (length auxlist - 1) \<in> set auxlist" using kl by (rule nth_mem)
+  have tr0: "ftable n R r0" using wf mem0 a0 by force
+  have mm: "mem (args_ivl args) (cur - cur)" using m0 by simp
+  have m: "(cur, l0, r0) \<in> set auxlist" using mem0 a0 by simp
+  have fl: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist \<noteq> []"
+  proof
+    assume e: "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist = []"
+    have "\<forall>x \<in> set auxlist. \<not> (case x of (t, _, _) \<Rightarrow> mem (args_ivl args) (cur - t))"
+      using e unfolding filter_empty_conv by simp
+    from this[rule_format, OF m] show False using mm by simp
+  qed
+  have tb: "table n R (snd (trigger_results args cur auxlist))"
+    using fl an aR by (auto simp: table_def)
+  have sub: "snd (trigger_results args cur auxlist) \<subseteq> r0"
+  proof
+    fix tu assume tu: "tu \<in> snd (trigger_results args cur auxlist)"
+    have H: "\<forall>i \<in> {0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
+        mem (args_ivl args) (cur - t) \<longrightarrow>
+        (tu \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
+           join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
+             (proj_tuple (join_mask (args_n args) (args_L args)) tu)))"
+      using tu fl by simp
+    have "{length auxlist - 1<..<length auxlist} = {}" using ne by auto
+    then show "tu \<in> r0" using H[rule_format, of "length auxlist - 1"] kl a0 mm by simp
+  qed
+  have fin: "finite (snd (trigger_results args cur auxlist))"
+    by (rule finite_subset[OF sub]) (use tr0 in simp)
+  show "ftable n R (snd (trigger_results args cur auxlist))" using tb fin by simp
+  show "fst (trigger_results args cur auxlist) = R" using fl aR by simp
+qed
+
+
+lemma ftable_trigger_results_weak:
+  fixes args :: args
+  assumes wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n L l \<and> ftable n R r"
+    and ne: "auxlist \<noteq> []" and lst: "fst (last auxlist) = cur"
+    and an: "args_n args = n" and aL: "args_L args = L" and aR: "args_R args = R"
+    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> L = R)"
+  shows "ftable n (fst (trigger_results args cur auxlist))
+      (snd (trigger_results args cur auxlist)) \<and>
+    fst (trigger_results args cur auxlist) \<subseteq> R"
+proof (cases "mem (args_ivl args) 0")
+  case True
+  show ?thesis using ftable_trigger_results[OF wf ne True lst an aR] by simp
+next
+  case False
+  then have pos: "args_pos args" and LR: "L = R" using wkc by auto
+  show ?thesis
+  proof (cases "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist = []")
+    case True
+    then show ?thesis by (simp add: table_def wf_tuple_def an)
+  next
+    case False
+    then obtain x where x: "x \<in> set auxlist"
+      and px: "case x of (t, _, _) \<Rightarrow> mem (args_ivl args) (cur - t)"
+      by (auto simp: filter_empty_conv)
+    obtain t0 l0 r0 where x0: "x = (t0, l0, r0)" by (cases x)
+    have mm: "mem (args_ivl args) (cur - t0)" using px x0 by simp
+    obtain i0 where i0: "i0 < length auxlist" and xi: "auxlist ! i0 = (t0, l0, r0)"
+      using x x0 by (auto simp: in_set_conv_nth)
+    have fl: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)"
+      using False by simp
+    have tr0: "ftable n R r0" using wf x x0 by force
+    have tb: "table n R (snd (trigger_results args cur auxlist))"
+      using fl an aR by (auto simp: table_def)
+    have sub: "snd (trigger_results args cur auxlist)
+        \<subseteq> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
+    proof
+      fix tu assume tu: "tu \<in> snd (trigger_results args cur auxlist)"
+      have wt: "wf_tuple n R tu" using tu fl an aR by simp
+      have pj: "proj_tuple (join_mask (args_n args) (args_L args)) tu = tu"
+        using wf_tuple_proj_idle[OF wt] an aL LR by simp
+      have H: "\<forall>i \<in> {0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
+          mem (args_ivl args) (cur - t) \<longrightarrow>
+          (tu \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
+             join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
+               (proj_tuple (join_mask (args_n args) (args_L args)) tu)))"
+        using tu fl by simp
+      have jc: "\<And>t. join_cond (args_pos args) t
+          (proj_tuple (join_mask (args_n args) (args_L args)) tu) = (tu \<in> t)"
+        using pos pj by simp
+      have step: "tu \<in> r0 \<or> (\<exists>j \<in> {i0<..<length auxlist}.
+          join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
+            (proj_tuple (join_mask (args_n args) (args_L args)) tu))"
+        using H[rule_format, of i0] i0 xi mm by simp
+      show "tu \<in> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
+        using step unfolding jc by auto
+    qed
+    have finl: "finite (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
+    proof (rule finite_UN_I[OF finite_atLeastLessThan])
+      fix j assume "j \<in> {0..<length auxlist}"
+      then have m: "auxlist ! j \<in> set auxlist" by simp
+      obtain vj lj rj where e: "auxlist ! j = (vj, lj, rj)" by (cases "auxlist ! j")
+      show "finite ((fst \<circ> snd) (auxlist ! j))" using wf m unfolding e by force
+    qed
+    have fin: "finite (snd (trigger_results args cur auxlist))"
+      by (rule finite_subset[OF sub]) (use tr0 finl in simp)
+    show ?thesis using tb fin fl aR by simp
+  qed
+qed
+
 subsection \<open>The auxiliary list a narrow trigger structure stands for\<close>
 
 text \<open>
@@ -865,6 +991,13 @@ text \<open>
 
 definition tok :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> bool" where
   "tok cs_R cs_L args \<longleftrightarrow> mem (args_ivl args) 0 \<or> (cs_L = cs_R \<and> args_pos args)"
+
+lemma tok_mem0: "mem (args_ivl args) 0 \<Longrightarrow> tok cs_R cs_L args"
+  by (simp add: tok_def)
+
+lemma tok_weak:
+  "tok cs_R cs_L args \<Longrightarrow> mem (args_ivl args) 0 \<or> (args_pos args \<and> set cs_L = set cs_R)"
+  by (auto simp: tok_def)
 
 lemma dmsk_all:
   assumes s: "sorted_wrt (<) cs"
@@ -993,9 +1126,9 @@ qed
 text \<open>With an empty window the kernel's read is the full table, and that is decided by the
   timestamps alone, so it is the same read at the node's own frame.\<close>
 
-lemma dtaux_result_empty:
-  assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and e: "gmmtaux_empty daux"
-  shows "trigger_results args cur auxlist = ({}, {replicate (args_n args) None})"
+lemma dtaux_window:
+  assumes v: "dtaux n cs_R cs_L args cur daux auxlist"
+  shows "gmmtaux_empty daux \<longleftrightarrow> filter (\<lambda>(t, _). mem (args_ivl args) (cur - t)) auxlist = []"
 proof -
   have d: "valid_mmtaux (dargs cs_R cs_L args) cur (tmm daux) (dauxlist3 n cs_R auxlist)"
     using v by (auto simp: dtaux_def)
@@ -1003,18 +1136,21 @@ proof -
     where ax: "daux = (cur', idx_next, idx_mid, idx_oldest, msk, data_prev, data_in, tio, keys,
       tsh, hs, ss)"
     by (metis surj_pair)
-  have ie: "linearize data_in = []"
-    using e unfolding ax by (simp add: gmmtaux_empty_def Queue.is_empty_alt)
-  have "map (\<lambda>(t, l, r). (t, r))
+  have mp: "map (\<lambda>(t, l, r). (t, r))
       (auxlist_data_in (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist))
     = linearize data_in"
     using d unfolding ax tmm.simps valid_mmtaux_def prod.case by blast
-  then have "auxlist_data_in (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist) = []"
-    unfolding ie by simp
-  then have "filter (\<lambda>x. mem (args_ivl args) (cur - fst x)) auxlist = []"
-    by (simp add: auxlist_data_in_def dauxlist3_def filter_map case_prod_beta comp_def)
-  then show ?thesis by (simp add: split_def)
+  have adi: "auxlist_data_in (dargs cs_R cs_L args) cur (dauxlist3 n cs_R auxlist)
+      = dauxlist3 n cs_R (filter (\<lambda>(t, _). mem (args_ivl args) (cur - t)) auxlist)"
+    by (simp add: auxlist_data_in_def dauxlist3_def filter_map split_def comp_def)
+  show ?thesis using mp unfolding adi ax
+    by (auto simp: gmmtaux_empty_def Queue.is_empty_alt dauxlist3_def)
 qed
+
+lemma dtaux_result_empty:
+  assumes v: "dtaux n cs_R cs_L args cur daux auxlist" and e: "gmmtaux_empty daux"
+  shows "trigger_results args cur auxlist = ({}, {replicate (args_n args) None})"
+  using dtaux_window[OF v] e by (simp add: split_def)
 
 (*<*)
 end

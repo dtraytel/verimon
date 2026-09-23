@@ -15,9 +15,6 @@ text \<open>
   where -- and the only place where -- this development touches the kernel's correctness proof.
 \<close>
 
-abbreviation (input) ftable :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> bool" where
-  "ftable n A X \<equiv> table n A X \<and> finite X"
-
 text \<open>
   A database is well formed when the table stored at a name of arity @{term ar} holds tuples of
   that width with no holes -- which is what the trace's own databases look like.  The dense
@@ -131,6 +128,8 @@ datatype dformula =
   | DLetPast Formula.name nat dformula dformula nat "event_data table option"
   | DTrigger args "nat option list" dformula dformula "event_data mbuf2" "ts list"
       "event_data option gmmtaux"
+  | DAndTrigger djoin_plan dformula "event_data table list \<times> event_data table option list"
+      args dformula dformula "event_data mbuf2" "ts list" "event_data option gmmtaux"
   | DMatchP nat \<I> mregex "mregex list" "nat option list list" "dformula list"
       "event_data mbufn" "ts list" "event_data mr\<delta>aux"
   | DMatchF nat \<I> mregex "mregex list" "nat option list list" "dformula list"
@@ -158,6 +157,8 @@ fun vdfail_nodes :: "dformula \<Rightarrow> nat" where
 | "vdfail_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DLetPast p m \<phi> \<psi> i buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DTrigger dags pl \<phi> \<psi> dbuf nts daux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> dbuf2 nts daux) =
+     vdfail_nodes \<alpha> + vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DMatchP m I mr mrs pls L dbuf nts daux) = sum_list (map vdfail_nodes L)"
 | "vdfail_nodes (DMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map vdfail_nodes L)"
 | "vdfail_nodes \<phi> = 0"
@@ -252,6 +253,17 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
             in (zs @ [dsan (gresult_mmtaux dags ax)], ax)) ([], daux)
             (mbuf2_add xs ys dbuf) (nts @ ts)
       in (zs, DTrigger dags pl \<phi>' \<psi>' dbuf' nts' daux'))"
+| "deval j ts db (DAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> dbuf2 nts daux) =
+     (let (as, \<alpha>') = deval j ts db \<alpha>; (xs, \<phi>') = deval j ts db \<phi>;
+          (ys, \<psi>') = deval j ts db \<psi>;
+          ((ws, daux'), dbuf2', nts') = mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+            let ax = gupdate_mmtaux dags t r1 r2 ax
+            in (ws @ [if gmmtaux_empty ax then None
+                      else Some (dsan (gresult_mmtaux dags ax))], ax)) ([], daux)
+            (mbuf2_add xs ys dbuf2) (nts @ ts);
+          (zs, dbuf1') = mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
+            | Some z \<Rightarrow> dbin_join pl r1 True z) (mbuf2_add as ws dbuf1)
+      in (zs, DAndTrigger pl \<alpha>' dbuf1' dags \<phi>' \<psi>' dbuf2' nts' daux'))"
 | "deval j ts db (DMatchP m I mr mrs pls Ld dbuf nts daux) =
      (let R = map (deval j ts db) Ld;
           ((zs, daux'), dbuf', _, nts') = mbufnt_take (\<lambda>rels t (zs, ax).
@@ -964,6 +976,303 @@ proof -
   then show ?thesis using dz dn1 bfs dbf1 by simp
 qed
 
+subsection \<open>The fused And-Trigger, and its two buffers\<close>
+
+text \<open>
+  The kernel's fused node reads the trigger structure as a pair: a set of columns and a table.
+  On a non-empty window the set is the trigger's own frame and the table is its answer; on an
+  empty one the read is the full table over no columns at all, which the join then lets through
+  untouched.  The dense node keeps that distinction as an option -- @{term None} stands for the
+  empty window and the join step skips -- so the two reads are related rather than equal.
+\<close>
+
+definition dtres :: "nat \<Rightarrow> cols \<Rightarrow> nat set \<times> event_data table \<Rightarrow> event_data table option \<Rightarrow> bool"
+  where
+  "dtres n cs_R p q \<longleftrightarrow> (case q of
+      None \<Rightarrow> p = ({}, unit_table n)
+    | Some d \<Rightarrow> fst p = set cs_R \<and> ftable n (set cs_R) (snd p) \<and> d = dtabc n cs_R (snd p))"
+
+lemma dtres_join:
+  assumes s: "sorted_wrt (<) cs" and sR: "sorted_wrt (<) cs_R"
+    and b: "\<forall>c \<in> set cs. c < n" and sub: "set cs_R \<subseteq> set cs"
+    and t: "ftable n (set cs) a" and r: "dtres n cs_R p q"
+  shows "(case q of None \<Rightarrow> dtabc n cs a
+        | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) (dtabc n cs a) True z)
+      = dtabc n cs (bin_join n (set cs) a True (fst p) (snd p))"
+proof (cases q)
+  case None
+  then have p: "p = ({}, unit_table n)" using r by (simp add: dtres_def)
+  have tu: "table n {} (unit_table n)" by (simp add: unit_table_def table_def wf_tuple_def)
+  have "bin_join n (set cs) a True {} (unit_table n) = a"
+    using t tu by (simp add: bin_join_table join_no_cols unit_table_def)
+  then show ?thesis using None unfolding p by simp
+next
+  case (Some d)
+  then have fp: "fst p = set cs_R" and tp: "ftable n (set cs_R) (snd p)"
+    and d: "d = dtabc n cs_R (snd p)" using r by (auto simp: dtres_def)
+  have bR: "\<forall>c \<in> set cs_R. c < n" using sub b by auto
+  have "dbin_join (mk_djoin cs cs_R) (dtabc n cs a) True (dtabc n cs_R (snd p))
+      = dtabc n (merge_cols cs cs_R) (bin_join n (set cs) a True (set cs_R) (snd p))"
+    by (rule dbin_join_bin_join[OF s sR b bR _ _ _ _ _]) (use t tp in auto)
+  then show ?thesis using Some fp d by (simp add: merge_cols_sub_left[OF s sR sub])
+qed
+
+text \<open>The outer buffer's two sides are therefore related rather than mapped, so the traversal
+  that drains it needs a relational counterpart of @{thm [source] mbuf2_take_map}.\<close>
+
+lemma mbuf2_take_rel2:
+  assumes eq: "\<And>a b db. a \<in> set xs \<Longrightarrow> Q b db \<Longrightarrow> g (h a) db = m (f a b)"
+    and q: "list_all2 Q ys dys"
+    and t: "mbuf2_take f (xs, ys) = (zs, (xs', ys'))"
+  shows "\<exists>dys'. mbuf2_take g (map h xs, dys) = (map m zs, (map h xs', dys')) \<and>
+      list_all2 Q ys' dys'"
+  using assms
+proof (induct xs arbitrary: ys dys zs xs' ys')
+  case Nil
+  then show ?case by auto
+next
+  case (Cons x xs)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using Cons.prems(2,3) by (cases dys) auto
+  next
+    case (Cons y ys0)
+    then obtain dy dys0 where d: "dys = dy # dys0" and qy: "Q y dy"
+      and q0: "list_all2 Q ys0 dys0" using Cons.prems(2) by (cases dys) auto
+    obtain ws b1 b2 where w: "mbuf2_take f (xs, ys0) = (ws, (b1, b2))"
+      by (cases "mbuf2_take f (xs, ys0)") auto
+    have zs: "zs = f x y # ws" and xs': "xs' = b1" and ys': "ys' = b2"
+      using Cons.prems(3) w unfolding Cons by (auto simp: Let_def)
+    have e0: "\<And>a b db. a \<in> set xs \<Longrightarrow> Q b db \<Longrightarrow> g (h a) db = m (f a b)"
+      using Cons.prems(1) by simp
+    obtain dys' where r: "mbuf2_take g (map h xs, dys0) = (map m ws, (map h b1, dys'))"
+      and q': "list_all2 Q b2 dys'" using Cons.hyps[OF e0 q0 w] by blast
+    have hx: "g (h x) dy = m (f x y)" by (rule Cons.prems(1)[OF _ qy]) simp
+    show ?thesis using r q' hx unfolding d zs xs' ys' by (auto simp: Let_def)
+  qed
+qed
+
+text \<open>The node's outer buffer: the left operand's tables at the node's own frame, and the
+  trigger's reads as options.\<close>
+
+definition dandbuf :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> event_data mbuft2 \<Rightarrow>
+    (event_data table list \<times> event_data table option list) \<Rightarrow> bool" where
+  "dandbuf n cs cs_R buf dbuf \<longleftrightarrow>
+     list_all (ftable n (set cs)) (fst buf) \<and>
+     fst dbuf = map (dtabc n cs) (fst buf) \<and>
+     list_all2 (dtres n cs_R) (snd buf) (snd dbuf)"
+
+lemma dandbuf_add:
+  assumes b: "dandbuf n cs cs_R buf dbuf" and x: "list_all (ftable n (set cs)) xs"
+    and y: "list_all2 (dtres n cs_R) ys dys"
+  shows "dandbuf n cs cs_R (mbuf2_add xs ys buf) (mbuf2_add (map (dtabc n cs) xs) dys dbuf)"
+  using assms by (cases buf; cases dbuf) (auto simp: dandbuf_def list_all2_appendI)
+
+lemma dandbuf_take:
+  assumes s: "sorted_wrt (<) cs" and sR: "sorted_wrt (<) cs_R"
+    and b: "\<forall>c \<in> set cs. c < n" and sub: "set cs_R \<subseteq> set cs"
+    and bf: "dandbuf n cs cs_R buf dbuf"
+    and t: "mbuf2_take (\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2) buf = (zs, buf')"
+  shows "\<exists>dbuf'. mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
+        | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) r1 True z) dbuf
+      = (map (dtabc n cs) zs, dbuf') \<and> dandbuf n cs cs_R buf' dbuf'"
+proof -
+  obtain b1 b2 where bu: "buf = (b1, b2)" by (cases buf)
+  obtain c1 c2 where bu': "buf' = (c1, c2)" by (cases buf')
+  have l1: "list_all (ftable n (set cs)) b1" and d1: "fst dbuf = map (dtabc n cs) b1"
+    and q: "list_all2 (dtres n cs_R) b2 (snd dbuf)"
+    using bf bu by (auto simp: dandbuf_def)
+  have eq: "\<And>a p q. a \<in> set b1 \<Longrightarrow> dtres n cs_R p q \<Longrightarrow>
+      (case q of None \<Rightarrow> dtabc n cs a | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) (dtabc n cs a) True z)
+        = dtabc n cs ((\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2) a p)"
+  proof -
+    fix a p q assume au: "a \<in> set b1" and dr: "dtres n cs_R p q"
+    have ta: "ftable n (set cs) a" using l1 au by (simp add: list_all_iff)
+    show "(case q of None \<Rightarrow> dtabc n cs a
+          | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) (dtabc n cs a) True z)
+        = dtabc n cs ((\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2) a p)"
+      using dtres_join[OF s sR b sub ta dr] by (simp add: case_prod_beta)
+  qed
+  obtain dys' where r: "mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
+        | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) r1 True z) (map (dtabc n cs) b1, snd dbuf)
+      = (map (dtabc n cs) zs, (map (dtabc n cs) c1, dys'))"
+    and q': "list_all2 (dtres n cs_R) c2 dys'"
+    using mbuf2_take_rel2[where h = "dtabc n cs" and m = "dtabc n cs"
+        and Q = "dtres n cs_R" and f = "\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2"
+        and g = "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> dbin_join (mk_djoin cs cs_R) r1 True z"
+        and xs = b1 and ys = b2 and dys = "snd dbuf" and zs = zs and xs' = c1 and ys' = c2,
+        OF eq q t[unfolded bu bu']] by blast
+  have sc: "set c1 \<subseteq> set b1" using mbuf2_take_sub t bu bu' by blast
+  have du: "dbuf = (map (dtabc n cs) b1, snd dbuf)" using d1 by (cases dbuf) simp
+  show ?thesis using r q' sc l1 bu'
+    by (intro exI[where x = "(map (dtabc n cs) c1, dys')"])
+      (subst du, auto simp: dandbuf_def list_all_iff)
+qed
+
+text \<open>One firing of the fused node's trigger structure.  It differs from the standalone node's
+  only in what each step appends: the kernel keeps the read's column set beside its table, and
+  the dense side keeps the empty window as @{term None}.\<close>
+
+lemma dandtrigger_step_rel:
+  assumes s: "sorted_wrt (<) cs_R" and sL: "sorted_wrt (<) cs_L"
+    and b: "\<forall>c \<in> set cs_R. c < n" and sub: "set cs_L \<subseteq> set cs_R"
+    and an: "args_n args = n" and aL: "args_L args = set cs_L" and aR: "args_R args = set cs_R"
+    and ok: "tok cs_R cs_L args"
+    and rel: "dtrigger_rel n cs_R cs_L args tw aux daux buf dbuf nts"
+    and ta: "list_all (ftable n (set cs_L)) as" and tb: "list_all (ftable n (set cs_R)) bs"
+    and st: "sorted tss" and bnd: "\<forall>v \<in> set tss. tw \<le> v"
+    and we: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+        in (zs @ [(fv_z, z)], ax)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
+      = ((zs, aux1), buf1, nts1)"
+    and de: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+        let ax = gupdate_mmtaux (dargs cs_R cs_L args) t r1 r2 ax
+        in (ws @ [if gmmtaux_empty ax then None
+                  else Some (dsan (gresult_mmtaux (dargs cs_R cs_L args) ax))], ax)) ([], daux)
+        (mbuf2_add (map (dtabc n cs_L) as) (map (dtabc n cs_R) bs) dbuf) (nts @ tss)
+      = ((dzs, daux1), dbuf1, dnts1)"
+  shows "list_all2 (dtres n cs_R) zs dzs \<and> dnts1 = nts1 \<and>
+     dtrigger_rel n cs_R cs_L args (dnext tw tss) aux1 daux1 buf1 dbuf1 nts1"
+proof -
+  obtain cur auxlist where vw: "valid_mmtaux args cur aux auxlist"
+    and wf: "\<forall>(t, l, r) \<in> set auxlist. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+    and vd: "dtaux n cs_R cs_L args cur daux auxlist" and ctw: "cur \<le> tw"
+    and lu: "list_all (ftable n (set cs_L)) (fst buf)"
+    and lv: "list_all (ftable n (set cs_R)) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
+    and dbf: "dbuf = (map (dtabc n cs_L) (fst buf), map (dtabc n cs_R) (snd buf))"
+    using rel by (rule dtrigger_relE)
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  define g where "g = (\<lambda>r1 r2 t (zs :: (nat set \<times> event_data table) list, ax).
+    let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+    in (zs @ [(fv_z, z)], ax))"
+  define gd where "gd = (\<lambda>r1 r2 t (ws :: event_data table option list, ax).
+    let ax = gupdate_mmtaux (dargs cs_R cs_L args) t r1 r2 ax
+    in (ws @ [if gmmtaux_empty ax then None
+              else Some (dsan (gresult_mmtaux (dargs cs_R cs_L args) ax))], ax))"
+  define R where "R = (\<lambda>v (pr :: (nat set \<times> event_data table) list \<times> event_data mmtaux)
+      (dpr :: event_data table option list \<times> event_data option gmmtaux).
+    (\<exists>al. valid_mmtaux args v (snd pr) al \<and>
+       (\<forall>(t, l, r) \<in> set al. ftable n (set cs_L) l \<and> ftable n (set cs_R) r) \<and>
+       dtaux n cs_R cs_L args v (snd dpr) al) \<and>
+     list_all2 (dtres n cs_R) (fst pr) (fst dpr))"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have mad: "mbuf2_add (map (dtabc n cs_L) as) (map (dtabc n cs_R) bs) dbuf
+      = (map (dtabc n cs_L) us, map (dtabc n cs_R) vs)"
+    using dbf by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable n (set cs_L)) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable n (set cs_R)) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a c v w z z'. a \<in> set us \<Longrightarrow> c \<in> set vs \<Longrightarrow> R w z z' \<Longrightarrow> w \<le> v \<Longrightarrow>
+      R v (g a c v z) (gd (dtabc n cs_L a) (dtabc n cs_R c) v z')"
+  proof -
+    fix a c v w and z :: "(nat set \<times> event_data table) list \<times> event_data mmtaux"
+      and z' :: "event_data table option list \<times> event_data option gmmtaux"
+    assume au: "a \<in> set us" and cv: "c \<in> set vs" and q: "R w z z'" and wv: "w \<le> v"
+    have t1: "ftable n (set cs_L) a" using au lus by (simp add: list_all_iff)
+    have t2: "ftable n (set cs_R) c" using cv lvs by (simp add: list_all_iff)
+    obtain al where vwz: "valid_mmtaux args w (snd z) al"
+      and wfz: "\<forall>(t, l, r) \<in> set al. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+      and vdz: "dtaux n cs_R cs_L args w (snd z') al"
+      using q unfolding R_def by blast
+    have fz: "list_all2 (dtres n cs_R) (fst z) (fst z')" using q unfolding R_def by blast
+    define al' where "al' = filter (\<lambda>(t, _). memR (args_ivl args) (v - t)) al @ [(v, a, c)]"
+    have vw': "valid_mmtaux args v (update_mmtaux args v a c (snd z)) al'"
+      unfolding al'_def
+      by (rule valid_update_mmtaux[OF wv _ _ vwz]) (use t1 t2 an aL aR in simp_all)
+    have wf': "\<forall>(t, l, r) \<in> set al'. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+      using wfz t1 t2 unfolding al'_def by auto
+    have vd': "dtaux n cs_R cs_L args v
+        (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c) (snd z')) al'"
+      unfolding al'_def by (rule dtaux_update[OF vdz wv s sL b sub ok]) (use t1 t2 in simp_all)
+    have res: "result_mmtaux args (update_mmtaux args v a c (snd z))
+        = trigger_results args v al'" by (rule valid_result_mmtaux[OF vw'])
+    have dr: "dtres n cs_R (result_mmtaux args (update_mmtaux args v a c (snd z)))
+        (if gmmtaux_empty (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a)
+             (dtabc n cs_R c) (snd z')) then None
+         else Some (dsan (gresult_mmtaux (dargs cs_R cs_L args)
+           (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c)
+             (snd z')))))"
+    proof (cases "gmmtaux_empty (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a)
+        (dtabc n cs_R c) (snd z'))")
+      case True
+      then show ?thesis
+        unfolding res using dtaux_result_empty[OF vd' True] an
+        by (simp add: dtres_def unit_table_def)
+    next
+      case False
+      have nz: "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (v - t)) al')"
+        using dtaux_window[OF vd'] False by (simp add: split_def)
+      have lst: "fst (last al') = v" unfolding al'_def by simp
+      have ft: "ftable n (fst (trigger_results args v al')) (snd (trigger_results args v al'))"
+        by (rule conjunct1[OF ftable_trigger_results_weak[OF wf' _ lst an aL aR tok_weak[OF ok]]])
+          (simp add: al'_def)
+      have fv: "fst (trigger_results args v al') = set cs_R" using nz aR by simp
+      have tr: "ftable n (set cs_R) (snd (trigger_results args v al'))" using ft unfolding fv .
+      have dres: "gresult_mmtaux (dargs cs_R cs_L args)
+            (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c) (snd z'))
+          = dtabc n cs_R (snd (trigger_results args v al'))"
+        by (rule dtaux_result[OF vd' False s b sub an aL aR])
+      have sd: "dsan (gresult_mmtaux (dargs cs_R cs_L args)
+            (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c) (snd z')))
+          = dtabc n cs_R (snd (trigger_results args v al'))"
+        unfolding dres by (rule dsan_dtabc[OF s b]) (use tr in simp)
+      show ?thesis unfolding res using False fv tr sd by (simp add: dtres_def)
+    qed
+    have gz: "g a c v z = (fst z @ [result_mmtaux args (update_mmtaux args v a c (snd z))],
+           update_mmtaux args v a c (snd z))"
+      by (cases z) (simp add: g_def Let_def case_prod_beta)
+    have gdz: "gd (dtabc n cs_L a) (dtabc n cs_R c) v z'
+        = (fst z' @ [if gmmtaux_empty (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a)
+               (dtabc n cs_R c) (snd z')) then None
+             else Some (dsan (gresult_mmtaux (dargs cs_R cs_L args)
+               (gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c)
+                 (snd z'))))],
+           gupdate_mmtaux (dargs cs_R cs_L args) v (dtabc n cs_L a) (dtabc n cs_R c) (snd z'))"
+      by (cases z') (simp add: gd_def Let_def case_prod_beta)
+    show "R v (g a c v z) (gd (dtabc n cs_L a) (dtabc n cs_R c) v z')"
+      unfolding R_def gz gdz fst_conv snd_conv
+      using vw' wf' vd' fz dr by (intro conjI exI[where x = al']) (simp_all add: list_all2_appendI)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn st cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ctw by fastforce
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext tw tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF st] by fastforce
+  have cdn: "cur \<le> dnext tw tss" using ctw dnext_ge[OF bnd] by simp
+  have r0: "R cur ([], aux) ([], daux)" unfolding R_def
+    by (intro conjI exI[where x = auxlist]) (use vw wf vd in simp_all)
+  have we': "mbuf2T_take g ([], aux) (us, vs) (nts @ tss) = ((zs, aux1), (b1, b2), nts1)"
+    using we unfolding ma bfs g_def by simp
+  have de': "mbuf2T_take gd ([], daux) (map (dtabc n cs_L) us, map (dtabc n cs_R) vs)
+      (nts @ tss) = ((dzs, daux1), dbuf1, dnts1)"
+    using de unfolding mad gd_def by simp
+  have Rr: "(\<exists>u. R u (zs, aux1) (dzs, daux1) \<and> u \<le> dnext tw tss \<and> (\<forall>t \<in> set nts1. u \<le> t)) \<and>
+      sorted nts1 \<and> set nts1 \<subseteq> set (nts @ tss) \<and> set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs \<and>
+      dbuf1 = (map (dtabc n cs_L) b1, map (dtabc n cs_R) b2) \<and> dnts1 = nts1"
+    by (rule mbuf2T_take_rel[where R = R and f = g and g = gd and h = "dtabc n cs_L"
+        and k = "dtabc n cs_R", OF step r0 sts cts bound cdn we' de'])
+  obtain u where ru: "R u (zs, aux1) (dzs, daux1)" and ub: "u \<le> dnext tw tss"
+    and un: "\<forall>t \<in> set nts1. u \<le> t" using Rr by blast
+  have sn1: "sorted nts1" and sb1: "set b1 \<subseteq> set us" and sb2: "set b2 \<subseteq> set vs"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)"
+    and dbf1: "dbuf1 = (map (dtabc n cs_L) b1, map (dtabc n cs_R) b2)"
+    and dn1: "dnts1 = nts1" using Rr by blast+
+  have lb1: "list_all (ftable n (set cs_L)) b1" using sb1 lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable n (set cs_R)) b2" using sb2 lvs by (auto simp: list_all_iff)
+  obtain al1 where v1: "valid_mmtaux args u aux1 al1"
+    and w1: "\<forall>(t, l, r) \<in> set al1. ftable n (set cs_L) l \<and> ftable n (set cs_R) r"
+    and d1: "dtaux n cs_R cs_L args u daux1 al1" using ru unfolding R_def by auto
+  have dz: "list_all2 (dtres n cs_R) zs dzs" using ru unfolding R_def by simp
+  have bnd1: "\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> dnext tw tss" using un sub1 bound by auto
+  have "dtrigger_rel n cs_R cs_L args (dnext tw tss) aux1 daux1 (b1, b2)
+      (map (dtabc n cs_L) b1, map (dtabc n cs_R) b2) nts1"
+    by (rule dtrigger_relI[OF v1 w1 d1 ub lb1 lb2 sn1 bnd1])
+  then show ?thesis using dz dn1 bfs dbf1 by simp
+qed
+
 subsection \<open>The relation itself\<close>
 
 inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformula \<Rightarrow>
@@ -1163,6 +1472,18 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dtrigger_rel n cs cs_L args tw aux daux buf dbuf nts \<Longrightarrow>
     dsim n cs tw (DTrigger dags pl \<phi>d \<psi>d dbuf nts daux)
       (mformula.MTrigger args \<phi> \<psi> buf nts aux)"
+| DsAndTrigger: "wf_cols n cs \<Longrightarrow>
+    produces n (set cs) tw (mformula.MAndTrigger (set cs) \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) \<Longrightarrow>
+    dsim n cs tw \<alpha>d \<alpha> \<Longrightarrow> dsim n cs_L tw \<phi>d \<phi> \<Longrightarrow> dsim n cs_R tw \<psi>d \<psi> \<Longrightarrow>
+    wf_cols n cs_L \<Longrightarrow> wf_cols n cs_R \<Longrightarrow>
+    set cs_L \<subseteq> set cs_R \<Longrightarrow> set cs_R \<subseteq> set cs \<Longrightarrow>
+    args_n args = n \<Longrightarrow> args_L args = set cs_L \<Longrightarrow> args_R args = set cs_R \<Longrightarrow>
+    tok cs_R cs_L args \<Longrightarrow>
+    dags = dargs cs_R cs_L args \<Longrightarrow> pl = mk_djoin cs cs_R \<Longrightarrow>
+    dandbuf n cs cs_R buf1 dbf1 \<Longrightarrow>
+    dtrigger_rel n cs_R cs_L args tw aux daux buf2 dbf2 nts \<Longrightarrow>
+    dsim n cs tw (DAndTrigger pl \<alpha>d dbf1 dags \<phi>d \<psi>d dbf2 nts daux)
+      (mformula.MAndTrigger (set cs) \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)"
 | DsMatchP: "wf_cols n cs \<Longrightarrow>
     produces n (set cs) tw (mformula.MMatchP I mr mrs L buf nts aux) \<Longrightarrow>
     Regex.safe_regex fv rgx_safe_pred Past Strict
@@ -2993,6 +3314,87 @@ next
       unfolding f
       by (rule dsim.DsTrigger[OF wf produces_next[OF pr w sts mts m, unfolded f] s1 s2 wfL sub
             an aL aR m0 dag pe]) (use step in simp)
+  qed
+next
+  case (DsAndTrigger n cs tw \<alpha> buf1 args \<phi> \<psi> buf2 nts aux \<alpha>d cs_L \<phi>d cs_R \<psi>d dags pl dbf1 daux
+      dbf2)
+  note wf = DsAndTrigger.hyps(1) and pr = DsAndTrigger.hyps(2)
+    and sim0 = DsAndTrigger.hyps(3) and IH0 = DsAndTrigger.hyps(4)
+    and sim1 = DsAndTrigger.hyps(5) and IH1 = DsAndTrigger.hyps(6)
+    and sim2 = DsAndTrigger.hyps(7) and IH2 = DsAndTrigger.hyps(8)
+    and wfL = DsAndTrigger.hyps(9) and wfR = DsAndTrigger.hyps(10)
+    and subLR = DsAndTrigger.hyps(11) and subR = DsAndTrigger.hyps(12)
+    and an = DsAndTrigger.hyps(13) and aL = DsAndTrigger.hyps(14)
+    and aR = DsAndTrigger.hyps(15) and ok = DsAndTrigger.hyps(16)
+    and dag = DsAndTrigger.hyps(17) and ple = DsAndTrigger.hyps(18)
+    and bf1 = DsAndTrigger.hyps(19) and rel = DsAndTrigger.hyps(20)
+    and w = DsAndTrigger.prems(1) and sts = DsAndTrigger.prems(2)
+    and mts = DsAndTrigger.prems(3) and m = DsAndTrigger.prems(4)
+  have cwf: "sorted_wrt (<) cs" and cb: "\<forall>c \<in> set cs. c < n" using wf by auto
+  have rwf: "sorted_wrt (<) cs_R" and rb: "\<forall>c \<in> set cs_R. c < n" using wfR by auto
+  have lwf: "sorted_wrt (<) cs_L" using wfL by auto
+  obtain as \<alpha>2 where e0: "meval j n ts db \<alpha> = (as, \<alpha>2)" by (cases "meval j n ts db \<alpha>")
+  obtain xs1 \<phi>2 where e1: "meval j n ts db \<phi> = (xs1, \<phi>2)" by (cases "meval j n ts db \<phi>")
+  obtain ys1 \<psi>2 where e2: "meval j n ts db \<psi> = (ys1, \<psi>2)" by (cases "meval j n ts db \<psi>")
+  obtain ws aux2 buf2' nts2 where e3: "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+      in (zs @ [(fv_z, z)], ax)) ([], aux) (mbuf2_add xs1 ys1 buf2) (nts @ ts)
+      = ((ws, aux2), buf2', nts2)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+      in (zs @ [(fv_z, z)], ax)) ([], aux) (mbuf2_add xs1 ys1 buf2) (nts @ ts)") auto
+  obtain zs buf1' where e4: "mbuf2_take (\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2)
+      (mbuf2_add as ws buf1) = (zs, buf1')"
+    by (cases "mbuf2_take (\<lambda>r1 (V, r2). bin_join n (set cs) r1 True V r2)
+      (mbuf2_add as ws buf1)") auto
+  have x: "xs = zs"
+    and f: "\<phi>' = mformula.MAndTrigger (set cs) \<alpha>2 buf1' args \<phi>2 \<psi>2 buf2' nts2 aux2"
+    using m e0 e1 e2 e3 e4 by (simp_all del: bin_join.simps)
+  have sz0: "size \<alpha> \<le> NN" and sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+    by (rule order_trans[OF _ DsAndTrigger.prems(5)], simp)+
+  obtain \<alpha>d2 where d0: "deval j ts db \<alpha>d = (map (dtabc n cs) as, \<alpha>d2)"
+    and s0: "dsim n cs (dnext tw ts) \<alpha>d2 \<alpha>2" using IH0[OF w sts mts e0 sz0] by blast
+  obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (map (dtabc n cs_L) xs1, \<phi>d2)"
+    and s1: "dsim n cs_L (dnext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1] by blast
+  obtain \<psi>d2 where d2: "deval j ts db \<psi>d = (map (dtabc n cs_R) ys1, \<psi>d2)"
+    and s2: "dsim n cs_R (dnext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2] by blast
+  have t0: "list_all (ftable n (set cs)) as"
+    by (rule produces_tables[OF dsim_produces[OF sim0] w sts mts e0])
+  have ta: "list_all (ftable n (set cs_L)) xs1"
+    by (rule produces_tables[OF dsim_produces[OF sim1] w sts mts e1])
+  have tb: "list_all (ftable n (set cs_R)) ys1"
+    by (rule produces_tables[OF dsim_produces[OF sim2] w sts mts e2])
+  obtain dws daux2 dbf2' dnts2 where d3: "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (ws @ [if gmmtaux_empty ax then None else Some (dsan (gresult_mmtaux dags ax))], ax))
+      ([], daux) (mbuf2_add (map (dtabc n cs_L) xs1) (map (dtabc n cs_R) ys1) dbf2) (nts @ ts)
+      = ((dws, daux2), dbf2', dnts2)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (ws @ [if gmmtaux_empty ax then None else Some (dsan (gresult_mmtaux dags ax))], ax))
+      ([], daux) (mbuf2_add (map (dtabc n cs_L) xs1) (map (dtabc n cs_R) ys1) dbf2)
+      (nts @ ts)") auto
+  have step: "list_all2 (dtres n cs_R) ws dws \<and> dnts2 = nts2 \<and>
+      dtrigger_rel n cs_R cs_L args (dnext tw ts) aux2 daux2 buf2' dbf2' nts2"
+    by (rule dandtrigger_step_rel[OF rwf lwf rb subLR an aL aR ok rel ta tb sts mts e3
+          d3[unfolded dag]])
+  have badd: "dandbuf n cs cs_R (mbuf2_add as ws buf1)
+      (mbuf2_add (map (dtabc n cs) as) dws dbf1)"
+    by (rule dandbuf_add[OF bf1 t0]) (use step in simp)
+  obtain dbf1' where d4: "mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
+        | Some z \<Rightarrow> dbin_join pl r1 True z) (mbuf2_add (map (dtabc n cs) as) dws dbf1)
+      = (map (dtabc n cs) zs, dbf1')"
+    and bf1': "dandbuf n cs cs_R buf1' dbf1'"
+    using dandbuf_take[OF cwf rwf cb subR badd e4] unfolding ple by blast
+  show ?case
+  proof (intro exI conjI)
+    show "deval j ts db (DAndTrigger pl \<alpha>d dbf1 dags \<phi>d \<psi>d dbf2 nts daux)
+        = (map (dtabc n cs) xs, DAndTrigger pl \<alpha>d2 dbf1' dags \<phi>d2 \<psi>d2 dbf2' nts2 daux2)"
+      using d0 d1 d2 d3 d4 step x by simp
+    show "dsim n cs (dnext tw ts) (DAndTrigger pl \<alpha>d2 dbf1' dags \<phi>d2 \<psi>d2 dbf2' nts2 daux2) \<phi>'"
+      unfolding f
+      by (rule dsim.DsAndTrigger[OF wf produces_next[OF pr w sts mts m, unfolded f] s0 s1 s2
+            wfL wfR subLR subR an aL aR ok dag ple bf1']) (use step in simp)
   qed
 next
   case (DsMatchP n cs tw I mr mrs L buf nts aux \<psi>s css Ld pls dbuf daux)
