@@ -8378,3 +8378,60 @@ in the previous run, and the groups whose code did not change moved by up to 7% 
 largest ratios left are `pol-sincefutb` (1.91), `since-nu5` (1.77), `since-nu500` (1.73) and
 `aggonce-max50` (1.71): the negated left operand and the extremum's result table that 21.27 and
 21.30 priced.
+
+## 21.32 The Until group
+
+After 21.31 `until` was the group furthest from MonPoly (`until-nu20` 1.61, the rest 1.22 to 1.31).
+Its instruction ratios are lower than its wall-time ratios (`until-nu20` 2.35 G against MonPoly's
+1.62 G), so part of the gap is allocation and collection rather than work.
+
+### Dictionaries left in the window update
+
+The profile still showed the Until window's inner operations passing type-class dictionaries:
+the nested deque update `gupd_nested_step_dq` (16% of `until-nu20`), the merge of two time-stamp maps
+(`Mapping.combine`, 7%) and the deletion of a key set from one (`mapping_delete_set`, 5%) -- all at
+the time-stamp type `nat + nat` -- and the positive left operand's map was restricted with a generic
+`Mapping.filter`.  The spec for `gupd_nested_step_dq` in `Dense_Code_Opt.thy` listed its type
+arguments in the wrong order (`monomorphize` takes them in order of first occurrence in the type),
+so its copy was never used; a second, equally wrong entry in `Dense_Mono_Sweep.thy` is gone.  The
+merge and the deletion get copies at `nat + nat`, and `gadd_new_dq_code` (`Dense_Idx_Code.thy`)
+restricts the map with `mfilter_keys`, which looks the table's tuples up.  Instructions on `base`
+1500: `until-bb5` -2.4%, `until-u50` -2.3%, `until-nu20` -3.5% (b633493).
+
+### Black heights
+
+The library's join-based union, intersection and difference of red-black trees
+(`RBT_Comparator_Impl`) compare the black heights of two trees at every join and at every recursive
+step, and compute each as a `nat` by walking the left spine -- a boxed number per level per call,
+5% of `until-nu20`.  `RBT_set_opt.thy` already decided these comparisons without counting for its
+own trees; `Dense_RBT_Code.thy` restates the two comparisons (`bh_le_g`, `bh_lt_g`) at every value
+type and gives the library's `small_rbt`, `flip_rbt`, the three joins and the union and
+intersection code equations through them.  `bheight` no longer occurs in the export.  Instructions:
+`until-nu20` -3.0%, `since-nu500` -1.2%, `until-u50` -1.0%, other set-heavy formulas 0 to -0.8%
+(32a439a).
+
+| formula (wall, `base`, median of five) | before | after | MonPoly | ratio |
+|---|---|---|---|---|
+| `until-bb5` | 0.72 s | 0.67 s | 0.57 s | 1.27 → 1.18 |
+| `until-bb50` | 0.77 s | 0.72 s | 0.62 s | 1.24 → 1.16 |
+| `until-u5` | 0.62 s | 0.62 s | 0.52 s | 1.19 → 1.20 |
+| `until-u50` | 0.72 s | 0.67 s | 0.57 s | 1.27 → 1.18 |
+| `until-nu20` | 1.37 s | 1.27 s | 0.87 s | 1.58 → 1.46 |
+
+The output is identical on the six formulas and on the test corpus (601 same).
+
+### What is left
+
+The largest item is the window's result.  At every time point that leaves the window the step
+rebuilds the verdict of the next one as `(result - to_del) ∪ keys m'` (7.6% and 6.3% of
+`until-nu20`), and the insertion of every new tuple also inserts it into `result` when it lands in
+the front entry (part of the 6.4% in `edl_insert`).  The kernel's invariant already says that
+`result` is the key set of the front map (`valid_mmuaux'`, `Optimized_Until.thy`), so the verdict
+could be read off that map, which needs no comparisons, and the field would not need maintaining.
+But `result` is part of the state that the dense evaluator shares with the kernel by equality, so
+dropping it changes the state type and the simulation of the Until node, from the kernel's
+invariant down to `udeval_Rep`.  That is a change to the proofs rather than to the code setup.
+
+The rest is what persistent trees cost: 6.5 million tuple comparisons (`edl_comparator` and
+`comparator_event_data`, 13%), the lookups in the per-time-point maps of the nested deque (5%), and
+`caml_modify` and the minor collector (8%), where MonPoly updates hash tables in place.
