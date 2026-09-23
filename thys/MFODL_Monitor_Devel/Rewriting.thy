@@ -1662,15 +1662,29 @@ lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
 lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
   by (induction \<phi> arbitrary: k) (auto simp: fv_regex_alt regex.set_map)
 
+lemma preds_TT[simp]: "preds Formula.TT = {}"
+  by (simp add: Formula.TT_def)
+
+lemma Diff_fresh: "x \<notin> A \<Longrightarrow> A - {x} = A"
+  by blast
+
 lemma preds_rewrite[simp]: "preds (project (rewrite \<phi> t)) = preds (project \<phi>)"
 proof (induction \<phi> t rule: rewrite.induct)
+  case (14 \<alpha> \<gamma> I \<beta> t)
+  then show ?case
+    by (cases t) (simp_all add: Let_def once_def nfv_project frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
+next
+  case (15 \<alpha> \<gamma> I \<beta> t)
+  then show ?case
+    by (cases t) (simp_all add: Let_def once_def Un_ac split: if_splits)
+next
   case (34 I r t)
   then show ?case by (simp add: fv_regex_alt regex.set_map)
 next
   case (35 I r t)
   then show ?case by (simp add: fv_regex_alt regex.set_map)
-qed (auto simp: Let_def nfv_project project_shift once_def eventually_def historically_def
-  always_def frz_name_fresh)
+qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
+  always_def frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
 
 lemma fresh_rewrite: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
   by simp
@@ -1764,12 +1778,13 @@ next
   qed
 next
   case (15 \<alpha> \<gamma> I \<beta> t)
+  have lt: "\<not> memL I 0 \<Longrightarrow> memL I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<Longrightarrow> i \<le> j \<Longrightarrow> i \<in> {i..<j}" for j
+    by (cases "j = i") auto
   show ?case
   proof (cases t)
     case Same
-    with 15 show ?thesis
-      using sat_main_7[of I \<sigma> V v i \<alpha> \<gamma> \<beta>] sat_main_7[of I \<sigma> V v i \<gamma> \<alpha> \<beta>]
-      by (auto simp: Let_def)
+    with 15 lt show ?thesis
+      by (auto simp: Let_def; blast)
   next
     case Swapped
     with 15 show ?thesis
