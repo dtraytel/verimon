@@ -242,14 +242,15 @@ fun ggc_msaux :: "args \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux" where
 fun gadd_new_table_msaux :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux" where
   "gadd_new_table_msaux args X (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
-    (let X' = minus_keys X tuple_since;
-     tuple_since' = upd_set tuple_since (\<lambda>_. t) X';
-     idx_since' = gidx_upd args (\<lambda>_. didx_union idx_since (didx msk X')) in
-     (if memL (args_ivl args) 0 then
-        (t, gc, msk, data_prev, append_queue (t, X) data_in, table_in \<union> X,
-         gidx_upd args (\<lambda>_. didx_union idx_in (didx msk X)), upd_set tuple_in (\<lambda>_. t) X,
-         idx_since', tuple_since')
-      else (t, gc, msk, append_queue (t, X) data_prev, data_in, table_in, idx_in, tuple_in,
+    (if memL (args_ivl args) 0 then
+       (t, gc, msk, data_prev, append_queue (t, X) data_in, table_in \<union> X,
+        gidx_upd args (\<lambda>_. didx_union idx_in (didx msk X)), upd_set tuple_in (\<lambda>_. t) X,
+        idx_since, tuple_since)
+     else
+       (let X' = minus_keys X tuple_since;
+        tuple_since' = upd_set tuple_since (\<lambda>_. t) X';
+        idx_since' = gidx_upd args (\<lambda>_. didx_union idx_since (didx msk X')) in
+        (t, gc, msk, append_queue (t, X) data_prev, data_in, table_in, idx_in, tuple_in,
          idx_since', tuple_since')))"
 
 fun gresult_msaux :: "args \<Rightarrow> 'b gmsaux \<Rightarrow> 'b list set" where
@@ -285,7 +286,7 @@ fun gjoin_msaux :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rig
 fun ggc_join_msaux :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux" where
   "ggc_join_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
-    (if \<not> memR (args_ivl args) (t - gc)
+    (if \<not> memL (args_ivl args) 0 \<and> \<not> memR (args_ivl args) (t - gc)
      then gjoin_msaux args Y (ggc_msaux args (t, gc, msk, data_prev, data_in, table_in, idx_in,
        tuple_in, idx_since, tuple_since))
      else gjoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
@@ -320,7 +321,7 @@ lemma ggc_msaux_eq: "ggc_msaux args (d :: event_data dmsaux) = dgc_msaux args d"
   by (cases d rule: dmsaux_cases) (simp add: Let_def gidx_upd_eq)
 
 lemma gadd_new_table_msaux_eq:
-  "gadd_new_table_msaux args X (d :: event_data dmsaux) = dadd_new_table_msaux args X d"
+  "gadd_new_table_msaux args X (d :: event_data dmsaux) = dadd_new_table_lz args X d"
   by (cases d rule: dmsaux_cases) (simp add: Let_def gidx_upd_eq)
 
 lemma gresult_msaux_eq: "gresult_msaux args (d :: event_data dmsaux) = dresult_msaux args d"
@@ -329,8 +330,8 @@ lemma gresult_msaux_eq: "gresult_msaux args (d :: event_data dmsaux) = dresult_m
 lemma gjoin_msaux_eq: "gjoin_msaux args Y (d :: event_data dmsaux) = djoin_msaux args Y d"
   by (cases d rule: dmsaux_cases) (simp add: Let_def)
 
-lemma ggc_join_msaux_eq: "ggc_join_msaux args Y (d :: event_data dmsaux) = dgc_join_msaux args Y d"
-  by (cases d rule: dmsaux_cases) (simp add: gjoin_msaux_eq ggc_msaux_eq)
+lemma ggc_join_msaux_eq: "ggc_join_msaux args Y (d :: event_data dmsaux) = dgc_join_lz args Y d"
+  by (cases d rule: dmsaux_cases) (simp add: dgc_join_lz_def gjoin_msaux_eq ggc_msaux_eq)
 
 subsection \<open>The Until structure, over a bare element type\<close>
 
@@ -1129,7 +1130,7 @@ lemma gjoin_msaux_del_fst: "fst (gjoin_msaux_del args Y s) = gjoin_msaux args Y 
 fun ggc_join_msaux_del :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set option" where
   "ggc_join_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
-    (if \<not> memR (args_ivl args) (t - gc)
+    (if \<not> memL (args_ivl args) 0 \<and> \<not> memR (args_ivl args) (t - gc)
      then gjoin_msaux_del args Y (ggc_msaux args (t, gc, msk, data_prev, data_in, table_in,
        idx_in, tuple_in, idx_since, tuple_since))
      else gjoin_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,

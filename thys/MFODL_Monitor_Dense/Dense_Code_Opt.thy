@@ -387,6 +387,36 @@ lemma edl_image_to_wide_rbt[code]:
   unfolding edl_image_to_wide_def ed_insert_def
   by (simp add: Set_image_code(1) edl_dict_simps comp_def)
 
+text \<open>The match of a predicate's table against the atom's terms is an image followed by
+  @{const Option.these}, which the generated code ran through the generic set operations with
+  their dictionaries; on a tree it is one fold that inserts the matches.\<close>
+
+lemma these_image_fold:
+  "fold (\<lambda>x acc. case u x of None \<Rightarrow> acc | Some f \<Rightarrow> Set.insert (h f) acc) xs A
+   = A \<union> Option.these ((\<lambda>x. map_option h (u x)) ` set xs)"
+  by (induct xs arbitrary: A) (auto split: option.splits)
+
+lemma umatch_table_rbt[code]:
+  "umatch_table tms cs (RBT_set rbt) = RBT_Set2.fold (\<lambda>x acc. case umatch tms x of None \<Rightarrow> acc
+     | Some f \<Rightarrow> edl_insert (map (\<lambda>c. the (f c)) cs) acc) rbt {}"
+proof -
+  have "ID CCOMPARE(event_data list) \<noteq> None" by (simp add: edl_dict_simps)
+  then show ?thesis
+    unfolding umatch_table_def RBT_set_conv_keys RBT_Set2.fold_conv_fold_keys' edl_insert_def
+      these_image_fold RBT_Set2.keys.rep_eq by simp
+qed
+
+lemma umatch_table_other[code]:
+  "umatch_table tms cs (DList_set d) = Option.these ((\<lambda>x. map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs)
+     (umatch tms x)) ` DList_set d)"
+  "umatch_table tms cs (Set_Monad xs) = Option.these ((\<lambda>x. map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs)
+     (umatch tms x)) ` Set_Monad xs)"
+  "umatch_table tms cs (Collect_set P) = Option.these ((\<lambda>x. map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs)
+     (umatch tms x)) ` Collect_set P)"
+  "umatch_table tms cs (Complement Q) = Option.these ((\<lambda>x. map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs)
+     (umatch tms x)) ` Complement Q)"
+  by (simp_all add: umatch_table_def)
+
 
 text \<open>As above, the projection out of a mapping's tree has to be boxed at every value type, or
   the monomorphised lookup moves the per-call dictionary build one frame down into it.\<close>

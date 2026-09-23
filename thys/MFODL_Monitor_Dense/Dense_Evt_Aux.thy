@@ -37,12 +37,12 @@ fun dsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> dsaux_x \<Rightarrow>
 | "dsx_add_new_ts args nt (DSX_wagg p a) = DSX_wagg p (sa_add_new_ts args p nt a)"
 
 fun dsx_join :: "args \<Rightarrow> event_data table \<Rightarrow> dsaux_x \<Rightarrow> dsaux_x" where
-  "dsx_join args X (DSX_gen d) = DSX_gen (dgc_join_msaux args X d)"
+  "dsx_join args X (DSX_gen d) = DSX_gen (dgc_join_lz args X d)"
 | "dsx_join args X (DSX_win w) = DSX_win (sw_join args X w)"
 | "dsx_join args X (DSX_wagg p a) = DSX_wagg p (sa_join args p X a)"
 
 fun dsx_add_new_table :: "args \<Rightarrow> event_data table \<Rightarrow> dsaux_x \<Rightarrow> dsaux_x" where
-  "dsx_add_new_table args X (DSX_gen d) = DSX_gen (dadd_new_table_msaux args X d)"
+  "dsx_add_new_table args X (DSX_gen d) = DSX_gen (dadd_new_table_lz args X d)"
 | "dsx_add_new_table args X (DSX_win w) = DSX_win (sw_add_new_table args X w)"
 | "dsx_add_new_table args X (DSX_wagg p a) = DSX_wagg p (sa_add_new_table args p X a)"
 

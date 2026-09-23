@@ -841,6 +841,211 @@ proof -
   qed
 qed
 
+subsection \<open>A window that starts at the current time point\<close>
+
+text \<open>
+  The two mappings that record since when a tuple has been seen, @{text tuple_since} and its
+  index @{text idx_since}, are read at one place only: when a time point moves from
+  @{text data_prev}, the part of the window not yet old enough to count, into @{text data_in}.
+  When the interval contains zero no time point is ever too young, the insertion puts every
+  table into @{text data_in} directly, and @{text data_prev} stays empty -- so the two mappings,
+  and the garbage collection that prunes them, are bookkeeping that nothing reads.  The
+  operations below skip them in that case.
+
+  Their validity is the verified one for \<^emph>\<open>some\<close> choice of the two mappings and of the time of
+  the last collection, @{text dset_since}; the operations that touch them are the only ones
+  that change, and on the fields they do not touch they agree with the verified ones.
+\<close>
+
+fun dset_since :: "ts \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, ts) mapping \<Rightarrow> 'a dmsaux \<Rightarrow>
+    'a dmsaux" where
+  "dset_since gc' is ts (t, gc, msk, dp, di, ti, ii, tui, idxs, tus) =
+     (t, gc', msk, dp, di, ti, ii, tui, is, ts)"
+
+fun dprev_of :: "'a dmsaux \<Rightarrow> (ts \<times> 'a table) queue" where
+  "dprev_of (t, gc, msk, dp, di, ti, ii, tui, idxs, tus) = dp"
+
+fun dadd_new_table_lz :: "args \<Rightarrow> 'a table \<Rightarrow> 'a dmsaux \<Rightarrow> 'a dmsaux" where
+  "dadd_new_table_lz args X (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (if memL (args_ivl args) 0 then
+       (t, gc, msk, data_prev, append_queue (t, X) data_in, table_in \<union> X,
+        didx_upd args (\<lambda>_. didx_union idx_in (didx msk X)), upd_set tuple_in (\<lambda>_. t) X,
+        idx_since, tuple_since)
+     else dadd_new_table_msaux args X (t, gc, msk, data_prev, data_in, table_in, idx_in,
+       tuple_in, idx_since, tuple_since))"
+
+definition dgc_join_lz :: "args \<Rightarrow> 'a table \<Rightarrow> 'a dmsaux \<Rightarrow> 'a dmsaux" where
+  "dgc_join_lz args Y daux =
+    (if memL (args_ivl args) 0 then djoin_msaux args Y daux else dgc_join_msaux args Y daux)"
+
+definition valid_dmsaux_lz :: "args \<Rightarrow> bool list \<Rightarrow> ts \<Rightarrow> 'a dmsaux \<Rightarrow> 'a Monitor.msaux \<Rightarrow> bool"
+  where
+  "valid_dmsaux_lz args msk cur daux ys \<longleftrightarrow> (if memL (args_ivl args) 0
+     then linearize (dprev_of daux) = [] \<and>
+       (\<exists>gc is ts. valid_dmsaux args msk cur (dset_since gc is ts daux) ys)
+     else valid_dmsaux args msk cur daux ys)"
+
+lemma valid_dmsaux_lz_intro:
+  "valid_dmsaux args msk cur daux ys \<Longrightarrow> (memL (args_ivl args) 0 \<Longrightarrow> linearize (dprev_of daux) = [])
+    \<Longrightarrow> valid_dmsaux_lz args msk cur daux ys"
+  unfolding valid_dmsaux_lz_def by (cases daux rule: dmsaux_cases) (auto intro!: exI)
+
+lemma valid_dinit_msaux_lz:
+  assumes "L \<subseteq> R"
+  shows "valid_dmsaux_lz (init_args I n L R b agg) msk 0
+    (dinit_msaux (init_args I n L R b agg) msk) []"
+  by (rule valid_dmsaux_lz_intro[OF valid_dinit_msaux[OF assms]])
+    (simp add: dinit_msaux_def empty_queue_rep)
+
+lemma dshift_end_dset_since:
+  "dshift_end args nt (dset_since g i s daux) = dset_since g i s (dshift_end args nt daux)"
+  by (cases daux rule: dmsaux_cases) (simp add: Let_def split: prod.splits)
+
+lemma dadd_new_ts'_dset_since:
+  assumes e: "linearize (dprev_of daux) = []"
+  shows "dadd_new_ts_msaux' args nt (dset_since g i s daux)
+    = dset_since g i s (dadd_new_ts_msaux' args nt daux)"
+proof (cases daux rule: dmsaux_cases)
+  case (1 t gc m dp di ti ii tui idxs tus)
+  obtain dp' mv where tdw: "takedropWhile_queue (\<lambda>(t, X). memL (args_ivl args) (nt - t)) dp = (dp', mv)"
+    by (cases "takedropWhile_queue (\<lambda>(t, X). memL (args_ivl args) (nt - t)) dp")
+  have mv: "mv = []"
+    using takedropWhile_queue_snd[of "\<lambda>(t, X). memL (args_ivl args) (nt - t)" dp] e
+    unfolding 1 tdw by simp
+  show ?thesis unfolding 1
+    by (simp add: tdw mv Let_def del: takedropWhile_queue.simps)
+qed
+
+lemma dprev_of_dshift_end:
+  assumes e: "linearize (dprev_of daux) = []"
+  shows "linearize (dprev_of (dshift_end args nt daux)) = []"
+proof (cases daux rule: dmsaux_cases)
+  case (1 t gc m dp di ti ii tui idxs tus)
+  show ?thesis using e unfolding 1
+    by (simp add: Let_def dropWhile_queue_rep del: dropWhile_queue.simps takedropWhile_queue.simps
+        split: prod.splits)
+qed
+
+lemma dprev_of_dadd_new_ts':
+  assumes e: "linearize (dprev_of daux) = []"
+  shows "linearize (dprev_of (dadd_new_ts_msaux' args nt daux)) = []"
+proof (cases daux rule: dmsaux_cases)
+  case (1 t gc m dp di ti ii tui idxs tus)
+  obtain dp' mv where tdw: "takedropWhile_queue (\<lambda>(t, X). memL (args_ivl args) (nt - t)) dp = (dp', mv)"
+    by (cases "takedropWhile_queue (\<lambda>(t, X). memL (args_ivl args) (nt - t)) dp")
+  have "linearize dp' = []"
+    using takedropWhile_queue_fst[of "\<lambda>(t, X). memL (args_ivl args) (nt - t)" dp] e
+    unfolding 1 tdw by (simp add: dropWhile_queue_rep del: dropWhile_queue.simps)
+  then show ?thesis unfolding 1
+    by (simp add: tdw Let_def del: takedropWhile_queue.simps split: prod.splits)
+qed
+lemma valid_dadd_new_ts_lz:
+  assumes v: "valid_dmsaux_lz args msk cur daux ys" and nt: "nt \<ge> cur"
+  shows "valid_dmsaux_lz args msk nt (dadd_new_ts_msaux args nt daux)
+     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) ys)"
+proof (cases "memL (args_ivl args) 0")
+  case True
+  obtain g i s where vw: "valid_dmsaux args msk cur (dset_since g i s daux) ys"
+    and dp: "linearize (dprev_of daux) = []"
+    using v True unfolding valid_dmsaux_lz_def by auto
+  have dp': "linearize (dprev_of (dshift_end args nt daux)) = []"
+    by (rule dprev_of_dshift_end[OF dp])
+  have "dadd_new_ts_msaux args nt (dset_since g i s daux)
+      = dset_since g i s (dadd_new_ts_msaux args nt daux)"
+    unfolding dadd_new_ts_msaux_def dshift_end_dset_since dadd_new_ts'_dset_since[OF dp'] ..
+  then have "valid_dmsaux args msk nt (dset_since g i s (dadd_new_ts_msaux args nt daux))
+      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) ys)"
+    using valid_dadd_new_ts[OF vw nt] by simp
+  moreover have "linearize (dprev_of (dadd_new_ts_msaux args nt daux)) = []"
+    unfolding dadd_new_ts_msaux_def by (rule dprev_of_dadd_new_ts'[OF dp'])
+  ultimately show ?thesis unfolding valid_dmsaux_lz_def if_P[OF True] by blast
+next
+  case False
+  then show ?thesis using v valid_dadd_new_ts[OF _ nt] by (simp add: valid_dmsaux_lz_def)
+qed
+
+lemma dadd_new_table_lz_dset_since:
+  assumes "memL (args_ivl args) 0"
+  shows "\<exists>i' s'. dadd_new_table_msaux args X (dset_since g i s daux)
+    = dset_since g i' s' (dadd_new_table_lz args X daux)"
+  using assms by (cases daux rule: dmsaux_cases) (auto simp: Let_def)
+
+lemma valid_dadd_new_table_lz:
+  assumes v: "valid_dmsaux_lz args msk cur daux ys" and X: "table (args_n args) (args_R args) X"
+  shows "valid_dmsaux_lz args msk cur (dadd_new_table_lz args X daux)
+    (case ys of [] \<Rightarrow> [(cur, X)]
+     | ((t, y) # ts) \<Rightarrow> if t = cur then (t, y \<union> X) # ts else (cur, X) # ys)"
+proof (cases "memL (args_ivl args) 0")
+  case True
+  obtain g i s where vw: "valid_dmsaux args msk cur (dset_since g i s daux) ys"
+    and dp: "linearize (dprev_of daux) = []"
+    using v True unfolding valid_dmsaux_lz_def by auto
+  obtain i' s' where e: "dadd_new_table_msaux args X (dset_since g i s daux)
+      = dset_since g i' s' (dadd_new_table_lz args X daux)"
+    using dadd_new_table_lz_dset_since[OF True] by blast
+  have "linearize (dprev_of (dadd_new_table_lz args X daux)) = []"
+    using dp True by (cases daux rule: dmsaux_cases) simp
+  then show ?thesis using valid_dadd_new_table[OF vw X]
+    unfolding e valid_dmsaux_lz_def if_P[OF True] by blast
+next
+  case False
+  have "dadd_new_table_lz args X daux = dadd_new_table_msaux args X daux"
+    using False by (cases daux rule: dmsaux_cases) simp
+  then show ?thesis using v valid_dadd_new_table[OF _ X] False
+    by (simp add: valid_dmsaux_lz_def)
+qed
+
+lemma djoin_dset_since:
+  "\<exists>i' s'. djoin_msaux args Y (dset_since g i s daux) = dset_since g i' s' (djoin_msaux args Y daux)"
+  by (cases daux rule: dmsaux_cases) (auto simp: Let_def)
+
+lemma dgc_dset_since:
+  "\<exists>g' i' s'. dgc_msaux args (dset_since g i s daux) = dset_since g' i' s' daux"
+  by (cases daux rule: dmsaux_cases) (auto simp: Let_def)
+
+lemma valid_dgc_join_lz:
+  assumes v: "valid_dmsaux_lz args msk cur daux ys" and dm: "dmsk_args args msk"
+    and Yw: "\<And>y. y \<in> Y \<Longrightarrow> dwf_tuple (length (filter id msk)) y"
+  shows "valid_dmsaux_lz args msk cur (dgc_join_lz args Y daux)
+     (map (\<lambda>(t, rel). (t, join rel (args_pos args) (dwiden msk ` Y))) ys)"
+proof (cases "memL (args_ivl args) 0")
+  case True
+  obtain g i s where vw: "valid_dmsaux args msk cur (dset_since g i s daux) ys"
+    and dp: "linearize (dprev_of daux) = []"
+    using v True unfolding valid_dmsaux_lz_def by auto
+  have gj: "\<exists>g' i' s'. dgc_join_msaux args Y (dset_since g i s daux)
+      = dset_since g' i' s' (djoin_msaux args Y daux)"
+  proof -
+    have alt: "dgc_join_msaux args Y (dset_since g i s daux)
+        = djoin_msaux args Y (dgc_msaux args (dset_since g i s daux))
+      \<or> dgc_join_msaux args Y (dset_since g i s daux) = djoin_msaux args Y (dset_since g i s daux)"
+      by (cases daux rule: dmsaux_cases) auto
+    obtain g1 i1 s1 where c: "dgc_msaux args (dset_since g i s daux) = dset_since g1 i1 s1 daux"
+      using dgc_dset_since by blast
+    show ?thesis using alt unfolding c by (metis djoin_dset_since)
+  qed
+  then obtain g' i' s' where e: "dgc_join_msaux args Y (dset_since g i s daux)
+      = dset_since g' i' s' (djoin_msaux args Y daux)" by blast
+  have "linearize (dprev_of (djoin_msaux args Y daux)) = []"
+    using dp by (cases daux rule: dmsaux_cases) (simp add: Let_def)
+  moreover have "valid_dmsaux args msk cur (dgc_join_msaux args Y (dset_since g i s daux))
+      (map (\<lambda>(t, rel). (t, join rel (args_pos args) (dwiden msk ` Y))) ys)"
+    by (rule valid_dgc_join[OF vw dm]) (rule Yw)
+  ultimately show ?thesis
+    unfolding e dgc_join_lz_def valid_dmsaux_lz_def if_P[OF True] by blast
+next
+  case False
+  then show ?thesis using v valid_dgc_join[OF _ dm Yw]
+    by (simp add: valid_dmsaux_lz_def dgc_join_lz_def)
+qed
+
+lemma valid_dresult_msaux_lz:
+  "valid_dmsaux_lz args msk cur daux ys \<Longrightarrow> dresult_msaux args daux
+    = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
+  unfolding valid_dmsaux_lz_def
+  by (cases daux rule: dmsaux_cases) (auto dest: valid_dresult_msaux split: if_splits)
+
 subsection \<open>The dense mask at the dense frame\<close>
 
 text \<open>
@@ -963,17 +1168,17 @@ definition dsaux' :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ar
     (ts \<times> event_data table) list \<Rightarrow> bool" where
   "dsaux' n cs_R cs_L args cur daux auxlist \<longleftrightarrow>
      (\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel) \<and>
-     valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux (dauxlist n cs_R auxlist)"
+     valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux (dauxlist n cs_R auxlist)"
 
 lemma dsaux'_init:
   assumes sub: "set cs_L \<subseteq> set cs_R"
   shows "dsaux' n cs_R cs_L args 0 (dinit_msaux (dargs cs_R cs_L args) (dmsk cs_R cs_L)) []"
 proof -
-  have "valid_dmsaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
+  have "valid_dmsaux_lz (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
       {0..<length cs_R} (args_pos args) None) (dmsk cs_R cs_L) 0
       (dinit_msaux (init_args (args_ivl args) (length cs_R) (cpos cs_R (set cs_L))
         {0..<length cs_R} (args_pos args) None) (dmsk cs_R cs_L)) []"
-    by (rule valid_dinit_msaux) (use sub in \<open>auto simp: cpos_def\<close>)
+    by (rule valid_dinit_msaux_lz) (use sub in \<open>auto simp: cpos_def\<close>)
   then show ?thesis by (simp add: dsaux'_def dargs_def dauxlist_def)
 qed
 
@@ -983,14 +1188,14 @@ lemma dsaux'_add_new_ts:
       (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
 proof -
   have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
-    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+    and d: "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
       (dauxlist n cs_R auxlist)"
     using v by (auto simp: dsaux'_def)
-  have "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) nt
+  have "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) nt
       (dadd_new_ts_msaux (dargs cs_R cs_L args) nt daux)
       (filter (\<lambda>(t, rel). memR (args_ivl (dargs cs_R cs_L args)) (nt - t))
         (dauxlist n cs_R auxlist))"
-    by (rule valid_dadd_new_ts[OF d nt])
+    by (rule valid_dadd_new_ts_lz[OF d nt])
   then show ?thesis using w by (simp add: dsaux'_def dauxlist_filter)
 qed
 
@@ -1000,11 +1205,11 @@ lemma dsaux'_join:
     and b_R: "\<forall>c \<in> set cs_R. c < n"
     and sub: "set cs_L \<subseteq> set cs_R" and t1: "table n (set cs_L) rel1"
   shows "dsaux' n cs_R cs_L args cur
-      (dgc_join_msaux (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
+      (dgc_join_lz (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
       (map (\<lambda>(t, rel). (t, join rel (args_pos args) rel1)) auxlist)"
 proof -
   have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
-    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+    and d: "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
       (dauxlist n cs_R auxlist)"
     using v by (auto simp: dsaux'_def)
   have b_L: "\<forall>c \<in> set cs_L. c < n" using sub b_R by auto
@@ -1016,11 +1221,11 @@ proof -
     unfolding lf by (rule dwf_tuple_dtabc[OF s_L b_L t1])
   have wi: "dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1 = dtabc n cs_R rel1"
     unfolding dmsk_def by (rule dwiden_image_dtabc[OF s_R s_L sub b_R t1])
-  have jj: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
-      (dgc_join_msaux (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
+  have jj: "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
+      (dgc_join_lz (dargs cs_R cs_L args) (dtabc n cs_L rel1) daux)
       (map (\<lambda>(t, rel). (t, join rel (args_pos (dargs cs_R cs_L args))
         (dwiden (dmsk cs_R cs_L) ` dtabc n cs_L rel1))) (dauxlist n cs_R auxlist))"
-    by (rule valid_dgc_join[OF d dm]) (rule Yw)
+    by (rule valid_dgc_join_lz[OF d dm]) (rule Yw)
   from jj[unfolded wi] show ?thesis using w
     by (simp add: dsaux'_def dauxlist_join[OF s_R b_R sub w t1]
         dauxlist_wf_join[OF w sub t1])
@@ -1031,23 +1236,23 @@ lemma dsaux'_add_new_table:
     and s_R: "sorted_wrt (<) cs_R" and b_R: "\<forall>c \<in> set cs_R. c < n"
     and t2: "table n (set cs_R) rel2"
   shows "dsaux' n cs_R cs_L args cur
-      (dadd_new_table_msaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+      (dadd_new_table_lz (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
       (case auxlist of [] \<Rightarrow> [(cur, rel2)]
        | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # auxlist)"
 proof -
   have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
-    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+    and d: "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
       (dauxlist n cs_R auxlist)"
     using v by (auto simp: dsaux'_def)
   have tt: "table (args_n (dargs cs_R cs_L args)) (args_R (dargs cs_R cs_L args))
       (dtabc n cs_R rel2)"
     using table_dtabc_cpos[OF s_R b_R subset_refl t2] by (simp add: cpos_all)
-  have "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
-      (dadd_new_table_msaux (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
+  have "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur
+      (dadd_new_table_lz (dargs cs_R cs_L args) (dtabc n cs_R rel2) daux)
       (case dauxlist n cs_R auxlist of [] \<Rightarrow> [(cur, dtabc n cs_R rel2)]
        | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc n cs_R rel2) # r
                          else (cur, dtabc n cs_R rel2) # dauxlist n cs_R auxlist)"
-    by (rule valid_dadd_new_table[OF d tt])
+    by (rule valid_dadd_new_table_lz[OF d tt])
   then show ?thesis using w t2
     by (simp add: dsaux'_def dauxlist_add_new_table[symmetric]
         dauxlist_wf_add_new_table[OF w t2])
@@ -1060,13 +1265,13 @@ lemma dsaux'_result:
           memL (args_ivl args) (cur - t)] {})"
 proof -
   have w: "\<forall>(t, rel) \<in> set auxlist. table n (set cs_R) rel"
-    and d: "valid_dmsaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+    and d: "valid_dmsaux_lz (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
       (dauxlist n cs_R auxlist)"
     using v by (auto simp: dsaux'_def)
   have "dresult_msaux (dargs cs_R cs_L args) daux
       = foldr (\<union>) [rel. (t, rel) \<leftarrow> dauxlist n cs_R auxlist,
           memL (args_ivl (dargs cs_R cs_L args)) (cur - t)] {}"
-    by (rule valid_dresult_msaux[OF d])
+    by (rule valid_dresult_msaux_lz[OF d])
   then show ?thesis by (simp add: dtabc_result[OF w])
 qed
 
