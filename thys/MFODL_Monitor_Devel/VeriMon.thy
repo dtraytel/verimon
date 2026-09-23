@@ -18,20 +18,11 @@ definition "prepare_verimon rw sig \<phi> =
       (if mmonitorable_exec \<phi> then Inr \<phi> else
         (if rw then
           let n\<phi> = normalize \<phi> in
-            if mmonitorable_exec n\<phi> then Inr n\<phi> else Inl STR ''not monitorable''
-         else Inl STR ''not monitorable'')))"
-(* All outcommented parts correspond to lemmas concerning the rewrite function.
-definition "prepare_verimon rw sig \<phi> =
-  (case type_check sig \<phi> of Inl err \<Rightarrow> Inl err
-    | Inr \<phi> \<Rightarrow>
-      (if mmonitorable_exec \<phi> then Inr \<phi> else
-        (if rw then
-          let n\<phi> = normalize \<phi> in
             if mmonitorable_exec n\<phi> then Inr n\<phi> else
               let r\<phi> = rrewrite n\<phi> in
                 if mmonitorable_exec r\<phi> then Inr r\<phi> else Inl STR ''not monitorable''
-         else Inl STR ''not monitorable'')))" *)
- 
+         else Inl STR ''not monitorable'')))"
+
 definition "minit_verimon rw sig \<phi> = map_sum id minit (prepare_verimon rw sig \<phi>)"
 
 end
