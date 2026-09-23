@@ -988,7 +988,7 @@ the monitor for @{const Formula.Frz}. \<close>
 definition frz_atom :: "Formula.name \<Rightarrow> nat \<Rightarrow> 'a formula" where
   "frz_atom q n = Pred q (map Formula.Var [0..<n])"
 
-lemma my_size_frz_atom[simp, termination_simp]: "my_size (frz_atom q n) = 1"
+lemma my_size_frz_atom[simp]: "my_size (frz_atom q n) = 1"
   by (simp add: frz_atom_def)
 
 definition frz_ok :: "'a formula \<Rightarrow> bool" where
@@ -1279,79 +1279,20 @@ lemma sat_trigger_eq: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> trigger 
   \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi> \<^bold>T I \<psi>"
   by auto
 
-lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
+lemma rewrite_fv': "Formula.fvi b (project (rewrite \<alpha> t)) = Formula.fvi b (project \<alpha>)"
 proof(induction \<alpha> t arbitrary:b rule:rewrite.induct)
-  case (1 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
-    case True
-    then show ?thesis using 1 by fastforce
-  next
-    case False
-    then show ?thesis using 1 by auto
-  qed
-next
-  case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
-  case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
   case (4 \<alpha> t \<beta>)
   then show ?case
-    proof(cases "prop_cond \<alpha> \<beta>")
-      case True
-      have helper:"fvi_r b \<alpha>  = Formula.fvi (Suc b) (Rewriting.shift (project \<alpha>))" 
-        using fvi_shift by auto
-      from True show ?thesis using 4 helper
-        apply(simp only:rewrite.simps if_True)
-        apply(simp only:project.simps)
-        apply(simp only:Formula.fvi.simps)
-        apply(simp only: 4(1)[OF True,of "Suc b",symmetric])
-        apply(simp only:project.simps)
-        apply(simp only: project_shift)
-        apply(simp only:Formula.fvi.simps)
-        done
-    next
-      case False
-      then show ?thesis using 4 by auto
-    qed
-next
-  case (5 \<alpha> \<beta> I t)
-  then show ?case
-  proof(cases "prop_cond \<alpha> \<beta> ")
+  proof(cases "prop_cond \<alpha> \<beta>")
     case True
-    then show ?thesis using 5 by fastforce
+    have "fvi_r b \<alpha> = Formula.fvi (Suc b) (Rewriting.shift (project \<alpha>))"
+      using fvi_shift by auto
+    with True show ?thesis
+      using 4(1)[OF True, of "Suc b"] by (simp add: project_shift)
   next
     case False
-    then show ?thesis using 5 by auto
+    then show ?thesis using 4 by auto
   qed
-next
-  case (6 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
-  case (7 \<alpha> \<beta> I \<gamma> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
-  case (8 \<alpha> I \<beta> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
-  case (9 \<alpha> I \<beta> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom)
-next
-  case (10 \<alpha> I \<beta> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom historically_def)
-next
-  case (11 \<alpha> I \<beta> t)
-  then show ?case
-    by (auto simp: Let_def fvi_frz_atom once_def always_def)
 next
   case (14 \<alpha> \<gamma> I \<beta> t)
   then show ?case
@@ -1361,27 +1302,15 @@ next
   then show ?case
     by (cases t) (auto simp: Let_def split: if_splits)
 next
-  case ("16_12" v va vb vc vd I r)
-  then show ?case by fastforce
-next
-  case ("17_12" v va vb vc vd I r)
-  then show ?case by fastforce
-next
-  case ("18_10" l v va vb vc vd)
-  then show ?case by fastforce
-next
-  case (23 \<phi> t)
-  then show ?case by simp
-next
-  case (24 y \<omega> b' f \<phi> t)
-  then show ?case by simp
-next
-case (34 I r t)
+  case (34 I r t)
   then show ?case by (induction r;auto)
 next
   case (35 I r t)
   then show ?case by (induction r;auto)
-qed (auto simp: always_def historically_def)
+qed (auto simp: Let_def fvi_frz_atom once_def eventually_def always_def historically_def)
+
+lemma rewrite_fv: "Formula.fvi b (project \<alpha>) = Formula.fvi b (project (rewrite \<alpha> t))"
+  by (rule rewrite_fv'[symmetric])
 
 lemma equiv_2: "sat \<sigma> V v i (Until \<alpha> I \<beta>) = sat \<sigma> V v i (Until (And \<alpha> (Eventually (init_ivl I) \<beta>) ) I \<beta>)"
 (is "?L = ?R")
@@ -1733,15 +1662,15 @@ lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
 lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
   by (induction \<phi> arbitrary: k) (auto simp: fv_regex_alt regex.set_map)
 
-lemma preds_rewrite: "p \<in> preds (project (rewrite \<phi> t)) \<Longrightarrow> p \<in> preds (project \<phi>)"
+lemma preds_rewrite: "preds (project (rewrite \<phi> t)) \<subseteq> preds (project \<phi>)"
 proof (induction \<phi> t rule: rewrite.induct)
   case (34 I r t)
-  then show ?case by (auto simp: fv_regex_alt regex.set_map)
+  then show ?case by (fastforce simp: fv_regex_alt regex.set_map)
 next
   case (35 I r t)
-  then show ?case by (auto simp: fv_regex_alt regex.set_map)
-qed (auto simp: Let_def nfv_project project_shift once_def eventually_def historically_def always_def
-  split: if_splits)
+  then show ?case by (fastforce simp: fv_regex_alt regex.set_map)
+qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
+  always_def split: if_splits; blast?)
 
 lemma fresh_rewrite[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
   using preds_rewrite by blast
@@ -1826,7 +1755,7 @@ next
   proof (cases t)
     case Same
     with 14 mem0 show ?thesis
-      by (auto 5 0 simp: Let_def frz_name_fresh)
+      by (auto simp: Let_def frz_name_fresh; blast)
   next
     case Swapped
     with 14 show ?thesis
