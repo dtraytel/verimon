@@ -1662,18 +1662,18 @@ lemma nfv_rewrite[simp]: "nfv (rewrite \<alpha> t) = nfv \<alpha>"
 lemma preds_shiftI[simp]: "preds (shiftI k \<phi>) = preds \<phi>"
   by (induction \<phi> arbitrary: k) (auto simp: fv_regex_alt regex.set_map)
 
-lemma preds_rewrite: "preds (project (rewrite \<phi> t)) \<subseteq> preds (project \<phi>)"
+lemma preds_rewrite[simp]: "preds (project (rewrite \<phi> t)) = preds (project \<phi>)"
 proof (induction \<phi> t rule: rewrite.induct)
   case (34 I r t)
-  then show ?case by (fastforce simp: fv_regex_alt regex.set_map)
+  then show ?case by (simp add: fv_regex_alt regex.set_map)
 next
   case (35 I r t)
-  then show ?case by (fastforce simp: fv_regex_alt regex.set_map)
-qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
-  always_def split: if_splits; blast?)
+  then show ?case by (simp add: fv_regex_alt regex.set_map)
+qed (auto simp: Let_def nfv_project project_shift once_def eventually_def historically_def
+  always_def frz_name_fresh)
 
-lemma fresh_rewrite[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
-  using preds_rewrite by blast
+lemma fresh_rewrite: "p \<notin> preds (project \<phi>) \<Longrightarrow> p \<notin> preds (project (rewrite \<phi> t))"
+  by simp
 
 lemma sat_fun_upd_fresh[simp]: "p \<notin> preds (project \<phi>) \<Longrightarrow> sat \<sigma> (V(p \<mapsto> X)) v i \<phi> = sat \<sigma> V v i \<phi>"
   unfolding sat_project[symmetric]
