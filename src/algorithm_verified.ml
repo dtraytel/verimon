@@ -169,8 +169,15 @@ let run_verified dbschema fname read fv f =
          | VM.VE_COMMAND _ ->
              prerr_endline "ERROR: Commands are not supported by the verified kernel";
              if not !Misc.ignore_parse_errors then exit 1) in
-  (* the chunks before the item the parser is in are not needed for positions any more *)
-  let forget (_, (_, (_, sp))) = Verified_log_parser.forget ln (Verified_log_parser.int_of_z sp) in
+  (* the chunks before the item the parser is in are not needed for positions any more; they
+     are dropped when a new item begins, since dropping walks the chunks kept *)
+  let last_sp = ref (-1) in
+  let forget (_, (_, (_, sp))) =
+    let sp = Verified_log_parser.int_of_z sp in
+    if sp <> !last_sp then begin
+      last_sp := sp;
+      Verified_log_parser.forget ln sp
+    end in
   let rec loop st =
     match read () with
     | Some s ->
@@ -184,19 +191,23 @@ let run_verified dbschema fname read fv f =
         List.iter handle (VM.vfinish conf fin st) in
   try loop st with Log_parser.Stop_parser -> ()
 
+(* The verdicts of a chunk are output together, so they survive the monitor's steps on the
+   chunk's other time points; small chunks keep them from being promoted to the major heap. *)
+let chunk_size = ref 512
+
 let monitor_string dbschema log fv f =
   if !Verified_log_parser.old then
     monitor_gen (fun dbschema log ctxt -> P.parse dbschema (Lexing.from_string log) ctxt) dbschema log fv f
   else
-    run_verified dbschema "" (Verified_log_parser.string_reader log) fv f
+    run_verified dbschema "" (Verified_log_parser.string_reader ~size:!chunk_size log) fv f
 
 let monitor dbschema logfile fv f =
   if !Verified_log_parser.old then
     monitor_gen (fun dbschema logfile ctxt -> P.parse_file dbschema logfile ctxt) dbschema logfile fv f
   else if logfile = "" then
-    run_verified dbschema logfile (Verified_log_parser.channel_reader stdin) fv f
+    run_verified dbschema logfile (Verified_log_parser.channel_reader ~size:!chunk_size stdin) fv f
   else begin
     let ic = open_in_bin logfile in
     Fun.protect ~finally:(fun () -> close_in_noerr ic)
-      (fun () -> run_verified dbschema logfile (Verified_log_parser.channel_reader ic) fv f)
+      (fun () -> run_verified dbschema logfile (Verified_log_parser.channel_reader ~size:!chunk_size ic) fv f)
   end

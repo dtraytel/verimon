@@ -8,11 +8,29 @@ section \<open>From the log to the verdicts\<close>
 
 text \<open>
   This theory composes the verified log parser of session Log_Parser with the verified dense
-  monitor: the time points the parser outputs are converted into the monitor's databases, by
-  the signature, and fed to @{const udmstep}. The parser drops the events of the predicates the
-  formula does not mention (@{theory Log_Parser.Log_Filter}). The final theorem states that the
-  verdicts output for a log are those that the specification of the formula prescribes for the
-  trace the log denotes.
+  monitor, into the monitor that @{text "-verified"} runs on a log: @{text vinit} prepares the
+  formula and starts the monitor, @{text vfeed_chunk} reads a chunk of the log, and
+  @{text vfinish} the end of the log. The parser skips the events of the predicates that the
+  signature declares but the formula does not mention (@{theory Log_Parser.Log_Filter}); the
+  time points it outputs are converted by the signature into the monitor's databases and fed
+  to @{const udmstep}.
+
+  The main theorem, @{text verimon_log.vrun_log}, states that for the bytes of a log that
+  denotes a prefix -- its entries are those of the grammar (@{const parse_log}), their
+  timestamps natural numbers that do not decrease, and their events those of the signature
+  with fields of the declared types (@{text log_prefix}) -- the monitor reports no error, and
+  that its verdicts are those that the specification of the formula prescribes for the prefix
+  (@{text Mt}, as in @{thm [source] verimon_prepare.udminit_verimon_mverdicts}).
+  @{text verimon_log.vrun_filtered} states the same for the logs whose events of the other
+  predicates are arbitrary, and that the monitor reports an error on every other log;
+  @{text verimon_log.Mt_pred_names} states that the verdicts do not depend on these events.
+  @{text verimon_log.vfeed_chunks_online} and @{text verimon_log.vfeed_chunks_prompt} state
+  the same for a log that is still being read.
+
+  Beyond the specifications, the theorems rest on the code printings of
+  @{theory Log_Parser.Log_Code} and the one below, and they take the reader of floats as a
+  parameter, about which nothing is assumed: the front end passes OCaml's
+  @{text float_of_string}.
 \<close>
 
 subsection \<open>Strings\<close>
@@ -49,6 +67,12 @@ definition lsig_lookup :: "lsig \<Rightarrow> string8 \<times> nat \<Rightarrow>
 
 definition lsig_tsig :: "lsig \<Rightarrow> tyssig" where
   "lsig_tsig S = map_sig TCst (lsig_lookup S)"
+
+text \<open>The code compares the names first.\<close>
+
+lemma lsig_lookup_code[code]:
+  "lsig_lookup S (q, n) = map_option snd (find (\<lambda>(p, tys). p = q \<and> length tys = n) S)"
+  by (simp add: lsig_lookup_def)
 
 lemma lsig_lookup_length: "lsig_lookup S (p, n) = Some tys \<Longrightarrow> length tys = n"
   by (induction S) (auto simp: lsig_lookup_def split: if_splits)
@@ -224,7 +248,7 @@ subsection \<open>Sorting\<close>
 
 text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
   @{const utable_of_list} builds the tree directly. The merge sort @{const sort_c} is not tail
-  recursive; its variant below is, since a time point may hold many events.\<close>
+  recursive; the variant below is, since a time point may hold many events.\<close>
 
 fun merge_t :: "('a :: ccompare) list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "merge_t acc [] ys = fold Cons acc ys"
@@ -243,8 +267,18 @@ fun merge_all_t :: "nat \<Rightarrow> ('a :: ccompare) list list \<Rightarrow> '
 | "merge_all_t (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
      | _ \<Rightarrow> merge_all_t k (merge_pairs_t [] xss))"
 
+text \<open>The sort merges the runs of increasing elements of the list: a sorted list is one run.\<close>
+
+fun runs_t :: "('a :: ccompare) \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
+  "runs_t x cur acc [] = rev (x # cur) # acc"
+| "runs_t x cur acc (y # ys) = (if ccomp x y = order.Lt then runs_t y (x # cur) acc ys
+     else runs_t y [] (rev (x # cur) # acc) ys)"
+
 definition sort_t :: "('a :: ccompare) list \<Rightarrow> 'a list" where
-  "sort_t xs = merge_all_t (length xs) (fold (\<lambda>x acc. [x] # acc) xs [])"
+  "sort_t xs = (case xs of [] \<Rightarrow> [] | x # ys \<Rightarrow> merge_all_t (length xs) (runs_t x [] [] ys))"
+
+lemma set_runs_t: "\<Union> (set ` set (runs_t x cur acc ys)) = Set.insert x (set cur \<union> \<Union> (set ` set acc) \<union> set ys)"
+  by (induction x cur acc ys rule: runs_t.induct) auto
 
 lemma merge_t: "merge_t acc xs ys = rev acc @ merge_c xs ys"
   by (induction acc xs ys rule: merge_t.induct) (auto simp: fold_Cons_rev split: order.splits)
@@ -268,12 +302,7 @@ proof (induction k arbitrary: xss)
 qed simp
 
 lemma set_sort_t: "set (sort_t (xs :: 'a list)) = set xs"
-proof -
-  have "\<Union> (set ` set (fold (\<lambda>x acc. [x] # acc) xs acc)) = set xs \<union> \<Union> (set ` set acc)" for acc :: "'a list list"
-    by (induction xs arbitrary: acc) auto
-  then show ?thesis
-    by (simp add: sort_t_def set_merge_all_t)
-qed
+  by (cases xs) (simp_all add: sort_t_def set_merge_all_t set_runs_t del: merge_all_t.simps)
 
 end
 
@@ -288,6 +317,16 @@ fun add_ev :: "Formula.event \<Rightarrow> ((Formula.name \<times> nat) \<times>
 
 definition group_evs :: "Formula.event list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list" where
   "group_evs evs = fold add_ev evs []"
+
+text \<open>The code computes the key of an event once.\<close>
+
+fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
+    ((Formula.name \<times> nat) \<times> event_data list list) list" where
+  "add_evk k vs [] = [(k, [vs])]"
+| "add_evk k vs ((k', xs) # g) = (if k' = k then (k', vs # xs) # g else (k', xs) # add_evk k vs g)"
+
+lemma add_ev_code[code]: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
+  by (induction "(p, vs)" g rule: add_ev.induct) auto
 
 definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
   "build_db evs = fold (\<lambda>(k, xs) db. uinsert_table_into_db k (utable_of_list (sort_t xs)) db) (group_evs evs) uempty_db"

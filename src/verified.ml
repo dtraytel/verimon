@@ -10124,11 +10124,13 @@ let uempty_db : ((string * nat), ((event_data list) set list)) mapping
   = mapping_empty (ccompare_prod ccompare_string8 ccompare_nat)
       (of_phantom (mapping_impl_prod mapping_impl_string8 mapping_impl_nat));;
 
-let rec add_ev
-  x0 x1 = match x0, x1 with (p, vs), [] -> [((p, size_lista vs), [vs])]
-    | (p, vs), (k, xs) :: g ->
-        (if equal_proda equal_string8 equal_nat k (p, size_lista vs)
-          then (k, vs :: xs) :: g else (k, xs) :: add_ev (p, vs) g);;
+let rec add_evk
+  k vs x2 = match k, vs, x2 with k, vs, [] -> [(k, [vs])]
+    | ka, vs, (k, xs) :: g ->
+        (if equal_proda equal_string8 equal_nat k ka then (k, vs :: xs) :: g
+          else (k, xs) :: add_evk ka vs g);;
+
+let rec add_ev (p, vs) g = add_evk (p, size_lista vs) vs g;;
 
 let rec group_evs evs = fold add_ev evs [];;
 
@@ -10155,9 +10157,17 @@ let rec merge_all_t _A
                merge_all_t _A (minus_nata k one_nata)
                  (merge_pairs_t _A [] xss)));;
 
+let rec runs_t _A
+  x cur acc xa3 = match x, cur, acc, xa3 with
+    x, cur, acc, [] -> rev (x :: cur) :: acc
+    | x, cur, acc, y :: ys ->
+        (if equal_order (the (ccompare _A) x y) Lt
+          then runs_t _A y (x :: cur) acc ys
+          else runs_t _A y [] (rev (x :: cur) :: acc) ys);;
+
 let rec sort_t _A
-  xs = merge_all_t _A (size_lista xs)
-         (fold (fun x -> (fun a -> [x] :: a)) xs []);;
+  xs = (match xs with [] -> []
+         | x :: ys -> merge_all_t _A (size_lista xs) (runs_t _A x [] [] ys));;
 
 let rec build_db
   evs = fold (fun (k, xs) ->
@@ -13533,10 +13543,9 @@ let rec udminit_verimon
       (prepare_verimon rw siga phi);;
 
 let rec lsig_lookup
-  s pn =
+  s (q, n) =
     map_option snd
-      (find (fun (p, tys) ->
-              equal_proda equal_string8 equal_nat (p, size_lista tys) pn)
+      (find (fun (p, tys) -> Stdlib.(=) p q && equal_nata (size_lista tys) n)
         s);;
 
 let rec lsig_tsig s = map_sig (fun a -> TCst a) (lsig_lookup s);;
@@ -13610,44 +13619,40 @@ let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 
 let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
 
-let rec nat_of_char c = Nat ((Z.of_int (Char.code c)));;
+let rec idigit
+  b c = (let k = (Z.of_int (Char.code c)) in
+          (if Z.leq (Z.of_int 48) k && Z.leq k (Z.of_int 57)
+            then (if Z.lt (Z.sub k (Z.of_int 48)) b then Z.sub k (Z.of_int 48)
+                   else (Z.neg (Z.of_int 1)))
+            else (if Z.leq (Z.of_int 97) k && Z.leq k (Z.of_int 102)
+                   then (if Z.lt (Z.sub k (Z.of_int 87)) b
+                          then Z.sub k (Z.of_int 87) else (Z.neg (Z.of_int 1)))
+                   else (if Z.leq (Z.of_int 65) k && Z.leq k (Z.of_int 70)
+                          then (if Z.lt (Z.sub k (Z.of_int 55)) b
+                                 then Z.sub k (Z.of_int 55)
+                                 else (Z.neg (Z.of_int 1)))
+                          else (Z.neg (Z.of_int 1))))));;
 
-let rec digit_val
-  b c = (let k = nat_of_char c in
-          (if less_eq_nat (nat_of_integer (Z.of_int 48)) k &&
-                (less_eq_nat k (nat_of_integer (Z.of_int 57)) &&
-                  less_nat (minus_nata k (nat_of_integer (Z.of_int 48))) b)
-            then Some (minus_nata k (nat_of_integer (Z.of_int 48)))
-            else (if less_eq_nat (nat_of_integer (Z.of_int 97)) k &&
-                       (less_eq_nat k (nat_of_integer (Z.of_int 102)) &&
-                         less_nat (minus_nata k (nat_of_integer (Z.of_int 87)))
-                           b)
-                   then Some (minus_nata k (nat_of_integer (Z.of_int 87)))
-                   else (if less_eq_nat (nat_of_integer (Z.of_int 65)) k &&
-                              (less_eq_nat k (nat_of_integer (Z.of_int 70)) &&
-                                less_nat
-                                  (minus_nata k (nat_of_integer (Z.of_int 55)))
-                                  b)
-                          then Some (minus_nata k
-                                      (nat_of_integer (Z.of_int 55)))
-                          else None))));;
-
-let rec bdigits
+let rec idigits
   s n b i acc =
     (if Z.lt i n
-      then (match
-             digit_val b
-               ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      then (let d =
+              idigit b
+                ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
       else if Z.sign i < 0 then 0 else Z.to_int i))
-                 s i)
-             with None -> None
-             | Some d ->
-               bdigits s n b (Z.add i (Z.of_int 1))
-                 (plus_nata (times_nata b acc) d))
-      else Some acc);;
+                  s i)
+              in
+             (if Z.lt d Z.zero then (Z.neg (Z.of_int 1))
+               else idigits s n b (Z.add i (Z.of_int 1))
+                      (Z.add (Z.mul b acc) d)))
+      else acc);;
 
 let rec bnat_of_digits
-  s n b i = (if Z.lt i n then bdigits s n b i zero_nata else None);;
+  s n b i =
+    (if Z.lt i n
+      then (let r = idigits s n (integer_of_nat b) i Z.zero in
+             (if Z.lt r Z.zero then None else Some (nat_of_integer r)))
+      else None);;
 
 let rec bbase_of
   s n i =

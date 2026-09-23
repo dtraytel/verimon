@@ -7,9 +7,9 @@ val old: bool ref
 (* The size of the chunks the log is read in (4096). *)
 val chunk_size: int ref
 
-(* Readers of the input in chunks of [chunk_size] bytes. *)
-val channel_reader: in_channel -> unit -> string option
-val string_reader: string -> unit -> string option
+(* Readers of the input in chunks of [size] bytes ([chunk_size] by default). *)
+val channel_reader: ?size:int -> in_channel -> unit -> string option
+val string_reader: ?size:int -> string -> unit -> string option
 
 (* The keep function of the parser that keeps all events, as MonPoly's consumer needs them. *)
 val keep_all: string -> bool

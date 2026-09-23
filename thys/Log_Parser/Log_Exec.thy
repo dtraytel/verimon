@@ -17,9 +17,10 @@ text \<open>
   @{text ">"}. The parser keeps the events of the predicates that its parameter @{text k}
   accepts (@{theory Log_Parser.Log_Filter}). The main theorem, @{text eparse_correct}, states that
   for every division of an input into chunks, the output is error-free exactly if the input is a
-  log, and it then lists the log's entries, without the events of the other predicates. For an input that is still being read, @{text efeed_chunks_online} states
-  that the output so far is error-free exactly if the streaming parser has not failed, and it
-  then lists the entries that the streaming parser has output; so an error means that no
+  log, and it then lists the log's entries, without the events of the other predicates. For an
+  input that is still being read, @{text efeed_chunks_online} states that the output so far is
+  error-free exactly if the streaming parser has not failed, and it then lists the entries that
+  the streaming parser has output; so an error means that no
   extension of the input is a log (@{thm [source] stream_run_error}), and the entries are those
   of every extension that is a log (@{thm [source] stream_run_prefix}), output as soon as the next
   item begins (@{text efeed_chunks_prompt}). What the parser outputs after an error, and the

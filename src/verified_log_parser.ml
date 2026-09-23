@@ -186,15 +186,14 @@ let int_of_z z = if Z.fits_int z then Z.to_int z else max_int
 let keep_all (_ : string) = true
 
 (* Readers of the input in chunks. *)
-let channel_reader ic =
-  let size = !chunk_size in
+let channel_reader ?(size = !chunk_size) ic =
   let buf = Bytes.create size in
   fun () ->
     let n = input ic buf 0 size in
     if n = 0 then None else Some (Bytes.sub_string buf 0 n)
 
-let string_reader s =
-  let size = !chunk_size and pos = ref 0 in
+let string_reader ?(size = !chunk_size) s =
+  let pos = ref 0 in
   fun () ->
     if !pos >= String.length s then None
     else begin

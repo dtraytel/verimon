@@ -214,6 +214,76 @@ qed
 theorem bnat_of_correct: "bnat_of s = nat_of_string (Rep_bytes s)"
   by (simp add: bnat_of_def nat_of_string_def bint_of_correct)
 
+subsection \<open>Code\<close>
+
+text \<open>The code computes on integers: arithmetic on the natural numbers of the generated code
+  allocates. A digit, and the value of the digits, are -1 if they are not ones of the base.\<close>
+
+definition idigit :: "integer \<Rightarrow> char \<Rightarrow> integer" where
+  "idigit b c = (case digit_val (nat_of_integer b) c of None \<Rightarrow> -1 | Some d \<Rightarrow> integer_of_nat d)"
+
+lemma idigit_code[code]: "idigit b c = (let k = integer_of_char c in
+     if 48 \<le> k \<and> k \<le> 57 then (if k - 48 < b then k - 48 else -1)
+     else if 97 \<le> k \<and> k \<le> 102 then (if k - 87 < b then k - 87 else -1)
+     else if 65 \<le> k \<and> k \<le> 70 then (if k - 55 < b then k - 55 else -1)
+     else -1)"
+proof -
+  have k: "integer_of_char c = integer_of_nat (of_char c)"
+    by (simp add: integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  show ?thesis
+    unfolding idigit_def digit_val_def k Let_def
+    by (auto simp: integer_simps integer_of_nat_eq_of_nat nat_less_iff split: if_splits)
+qed
+
+function idigits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer" where
+  "idigits s n b i acc = (if i < n then (let d = idigit b (bytes_at s i) in
+       if d < 0 then -1 else idigits s n b (i + 1) (b * acc + d))
+   else acc)"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(s, n, b, i, acc). nat_of_integer (n - i))") (auto simp: integer_simps)
+
+declare idigits.simps[simp del]
+
+lemma idigits: "idigits s n (integer_of_nat b) i (integer_of_nat acc) =
+  (case bdigits s n b i acc of None \<Rightarrow> -1 | Some m \<Rightarrow> integer_of_nat m)"
+proof (induction "nat_of_integer (n - i)" arbitrary: i acc)
+  case 0
+  then have "\<not> i < n"
+    by (auto simp: integer_simps)
+  then show ?case
+    by (simp add: idigits.simps bdigits.simps)
+next
+  case (Suc m)
+  then have i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
+    by (auto simp: integer_simps)
+  note IH = Suc.hyps(1)[OF m]
+  show ?case
+  proof (cases "digit_val b (bytes_at s i)")
+    case None
+    then have "idigit (integer_of_nat b) (bytes_at s i) = -1"
+      by (simp add: idigit_def)
+    with None i show ?thesis
+      by (subst idigits.simps, subst bdigits.simps) simp
+  next
+    case (Some d)
+    then have "idigit (integer_of_nat b) (bytes_at s i) = integer_of_nat d"
+      by (simp add: idigit_def)
+    moreover have "\<not> integer_of_nat d < 0"
+      by (simp add: less_integer.rep_eq)
+    moreover have "integer_of_nat b * integer_of_nat acc + integer_of_nat d = integer_of_nat (b * acc + d)"
+      by (simp add: integer_of_nat_eq_of_nat)
+    ultimately show ?thesis
+      using Some i IH[of "b * acc + d"] by (subst idigits.simps, subst bdigits.simps) (simp add: Let_def)
+  qed
+qed
+
+lemma bnat_of_digits_code[code]: "bnat_of_digits s n b i = (if i < n then
+    (let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r))
+  else None)"
+  using idigits[of s n b i 0]
+  by (auto simp: bnat_of_digits_def Let_def integer_simps integer_of_nat_eq_of_nat split: option.splits)
+
 (*<*)
 end
 (*>*)
