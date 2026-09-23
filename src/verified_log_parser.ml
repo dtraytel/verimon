@@ -181,6 +181,28 @@ let command_params args =
 
 let int_of_z z = if Z.fits_int z then Z.to_int z else max_int
 
+(* MonPoly's consumer keeps all events: it filters them itself, and counts them in its
+   statistics. *)
+let keep_all (_ : string) = true
+
+(* Readers of the input in chunks. *)
+let channel_reader ic =
+  let size = !chunk_size in
+  let buf = Bytes.create size in
+  fun () ->
+    let n = input ic buf 0 size in
+    if n = 0 then None else Some (Bytes.sub_string buf 0 n)
+
+let string_reader s =
+  let size = !chunk_size and pos = ref 0 in
+  fun () ->
+    if !pos >= String.length s then None
+    else begin
+      let n = min size (String.length s - !pos) in
+      let c = String.sub s !pos n in
+      pos := !pos + n; Some c
+    end
+
 module Make (C : Log_parser.Consumer) = struct
 
   let run dbschema fname read ctxt =
@@ -234,32 +256,19 @@ module Make (C : Log_parser.Consumer) = struct
       match read () with
       | Some s ->
           push_chunk ln s;
-          let (outs, st) = V.efeed_chunk s st in
+          let (outs, st) = V.efeed_chunk keep_all s st in
           List.iter handle outs;
           loop st
-      | None -> List.iter handle (V.efinish st) in
+      | None -> List.iter handle (V.efinish keep_all st) in
     try
       loop V.einit;
       C.end_log ctxt;
       true
     with Log_parser.Stop_parser -> false
 
-  let parse_channel dbschema fname ic ctxt =
-    let size = !chunk_size in
-    let buf = Bytes.create size in
-    run dbschema fname (fun () ->
-      let n = input ic buf 0 size in
-      if n = 0 then None else Some (Bytes.sub_string buf 0 n)) ctxt
+  let parse_channel dbschema fname ic ctxt = run dbschema fname (channel_reader ic) ctxt
 
-  let parse_string dbschema s ctxt =
-    let size = !chunk_size and pos = ref 0 in
-    run dbschema "" (fun () ->
-      if !pos >= String.length s then None
-      else begin
-        let n = min size (String.length s - !pos) in
-        let c = String.sub s !pos n in
-        pos := !pos + n; Some c
-      end) ctxt
+  let parse_string dbschema s ctxt = run dbschema "" (string_reader s) ctxt
 
   let parse_file dbschema fname ctxt =
     if fname = "" then parse_channel dbschema fname stdin ctxt

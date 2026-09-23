@@ -1,6 +1,7 @@
 (*<*)
 theory Monitor_Code_Dense
   imports "MFODL_Monitor_Devel.Monitor_Code" Dense_RBT_Code Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
+    Log_Monitor
 begin
 (*>*)
 
@@ -16,7 +17,12 @@ text \<open>
   pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
   must be zero for the correctness theorem @{text udeval_Rep} (@{theory
   MFODL_Monitor_Dense.Dense_Unbox_Exec}) to apply, and the front end refuses the formula
-  otherwise.
+  otherwise.  @{text "-verified"} runs them on the log through @{const vinit},
+  @{const vfeed_chunk} and @{const vfinish} (@{theory MFODL_Monitor_Dense.Log_Monitor}): the
+  verified log parser, which drops the events of the predicates the formula does not mention,
+  the conversion of the entries into the monitor's databases, and the monitor, with the
+  theorems @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} from the bytes
+  of the log to the verdicts.
 
   The export is entirely within this session.  The code-generator setup it relies on -- the
   monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
@@ -75,6 +81,9 @@ export_code
   (*the verified log parser (session Log_Parser), which reads the log in chunks*)
   Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
   Log_Exec.E_TOKEN Log_Exec.X_ENTRY
+  (*the verified monitor on the log: parser, conversion, and dense monitor*)
+  Log_Monitor.vinit Log_Monitor.vfeed_chunk Log_Monitor.vfinish Log_Monitor.VO_VERDICTS
+  Log_Monitor.VE_PARSE Log_Monitor.VI_WF
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)

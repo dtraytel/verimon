@@ -57,17 +57,6 @@ definition int_of_string :: "char list \<Rightarrow> int option" where
 definition nat_of_string :: "char list \<Rightarrow> nat option" where
   "nat_of_string cs = (case int_of_string cs of Some i \<Rightarrow> if 0 \<le> i then Some (nat i) else None | None \<Rightarrow> None)"
 
-lemma digits_val_Some_le: "digits_val b n cs = Some m \<Longrightarrow> 0 < b \<Longrightarrow> n \<le> m"
-proof (induction b n cs rule: digits_val.induct)
-  case (2 b n c cs)
-  then obtain d where "digit_val b c = Some d" "digits_val b (b * n + d) cs = Some m"
-    by (auto split: option.splits)
-  with 2 have "b * n + d \<le> m"
-    by auto
-  with \<open>0 < b\<close> show ?case
-    by (metis add_leD1 dual_order.trans mult_le_mono1 nat_mult_1 One_nat_def Suc_leI)
-qed simp
-
 subsection \<open>On byte strings\<close>
 
 text \<open>The loops over a byte string @{text s} of length @{text n}, from index @{text i}.\<close>

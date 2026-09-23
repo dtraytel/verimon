@@ -297,6 +297,15 @@ let flush_batch b db = match b, db with
   | UB b, Short db ->
     Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
 
+(* The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
+   with the types of their arguments. *)
+let lsig_of_schema dbschema =
+  List.map (fun (pname, tl) -> (pname, List.map (fun (_, t) -> match t with
+      TInt -> Verified.Monitor.TInt
+    | TFloat -> Verified.Monitor.TFloat
+    | TStr -> Verified.Monitor.TString
+    | TRegexp -> unsupported "Regular expressions constants are not supported") tl)) dbschema
+
 let convert_into_tysym ty = 
   match ty with
     TInt -> Verified.Monitor.TCst (Verified.Monitor.TInt)
@@ -346,6 +355,8 @@ let uset_fold f s x = match s with
    converting to [Tuple.tuple] first.  The monitor over the short tuples produces them without
    the option around the fields. *)
 type verdict = UV of event_data list set
+
+let verdict_of_table t = UV t
 
 let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs

@@ -271,8 +271,8 @@ let schema_of log =
   let add = List.iter (function
     | V.O_ITEM (_, V.Entry (_, evs)) -> List.iter (fun (p, _) -> Hashtbl.replace preds p ()) evs
     | _ -> ()) in
-  let (o, st) = V.efeed_chunk log V.einit in
-  add o; add (V.efinish st);
+  let (o, st) = V.efeed_chunk Verified_log_parser.keep_all log V.einit in
+  add o; add (V.efinish Verified_log_parser.keep_all st);
   Hashtbl.fold (fun p () s -> (p, []) :: s) preds []
 
 let tally = Hashtbl.create 8

@@ -19,6 +19,10 @@ val flush_batch: batches -> db -> db
 
 type tyssig 
 val convert_into_tysym: tcst -> Verified.Monitor.tysym
+(** The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
+    with the types of their arguments. *)
+val lsig_of_schema: Db.schema -> (string * Verified.Monitor.ty list) list
+val int_of_nat: Verified.Monitor.nat -> int
 val convert_schema_into_sig: Db.schema -> tyssig
 
 type state
@@ -27,6 +31,7 @@ type state
     the verified dense monitor's state from it. *)
 val init: mw:bool -> rw:bool -> Db.schema -> Verified.Monitor.tysym Verified.Monitor.formula -> state
 type verdict
+val verdict_of_table: Verified.Monitor.event_data list Verified.Monitor.set -> verdict
 val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * verdict) list * state
 (** [show_results posl i q tsq table] prints the verdict [table] for time point [q] like
     [Helper.show_results] and returns whether it is non-empty. *)
