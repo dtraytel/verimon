@@ -8263,7 +8263,9 @@ Of the two, the rebalancing is nearly all of it; the deletion alone was measured
 on the Since formulas.  The allocation falls by up to 30% wherever trees are inserted into, which
 is why the wall time moves by more than the instructions; `join-both`, whose result is built in one
 pass without rebalancing, does not move.  None of the three is more than 2x MonPoly any more on these
-measurements (the suite itself has not been rerun for this section).  What is left of the three is what 21.27 and 21.22 priced: the negated
+measurements, and the suite rerun after this section (`evaluation/perf/report.md`) agrees: its
+geometric mean went from 1.13 to 1.06 and no formula of it is left above 2x, the slowest being
+`pol-sincefutb` 1.94, `pol-sincefut` 1.90 and `aggonce-min50` 1.74.  What is left of the three is what 21.27 and 21.22 priced: the negated
 operand's deletions from four persistent trees on the burst log, and the aggregate's result table.
 The Since node's garbage collection on a short window (11.6% of `since-nu5`: the index of the tuples
 since the last match rebuilt from scratch, and the window's union built through the generic set
