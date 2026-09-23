@@ -327,6 +327,35 @@ proof -
     by (intro that[of \<pi>]) (simp add: stream_prefix_def r)
 qed
 
+lemma prefix_of_items_append_mono:
+  assumes "prefix_of_items pf S None es = Some \<pi>" and "prefix_of_items pf S None (es @ es') = Some \<pi>'"
+  shows "\<pi> \<le> \<pi>'"
+proof -
+  from assms(1) obtain T1 where T1: "those (map (tp_of_item pf S) es) = Some T1" and s1: "sorted (map snd T1)"
+    and \<pi>: "\<pi> = prefix_of_list T1"
+    by (auto simp: prefix_of_items_def split: option.splits if_splits)
+  from assms(2) obtain T where T: "those (map (tp_of_item pf S) (es @ es')) = Some T" and s: "sorted (map snd T)"
+    and \<pi>': "\<pi>' = prefix_of_list T"
+    by (auto simp: prefix_of_items_def split: option.splits if_splits)
+  from T T1 obtain T2 where "T = T1 @ T2"
+    by (cases "those (map (tp_of_item pf S) es')") (auto simp: those_append)
+  with s s1 show ?thesis
+    by (intro less_eq_prefix_append) (simp add: \<pi> \<pi>' Rep_prefix_of_list)
+qed
+
+lemma stream_prefix_mono:
+  assumes "stream_prefix K pf S s = Some \<pi>" and "stream_prefix K pf S (s @ s') = Some \<pi>'"
+  shows "\<pi> \<le> \<pi>'"
+proof -
+  from assms(1) obtain es st where r: "fstream_run K s fstream_init = Some (es, st)"
+    and p: "prefix_of_items pf S None es = Some \<pi>"
+    by (cases "fstream_run K s fstream_init") (auto simp: stream_prefix_def)
+  from assms(2) r obtain es2 st2 where "fstream_run K s' st = Some (es2, st2)"
+    and p': "prefix_of_items pf S None (es @ es2) = Some \<pi>'"
+    by (cases "fstream_run K s' st") (auto simp: stream_prefix_def fstream_run_append)
+  from prefix_of_items_append_mono[OF p p'] show ?thesis .
+qed
+
 lemma less_eq_prefix_Rep: "\<pi> \<le> \<pi>' \<Longrightarrow> \<exists>xs. Rep_prefix \<pi>' = Rep_prefix \<pi> @ xs"
   by transfer auto
 
@@ -371,10 +400,10 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) (lsig_tsig S)" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The state @{text z} is the one after the bytes @{text s} are read, which denote the prefix
-  @{text \<pi>}, from the state @{const vinit} started with the configuration @{text cf}: its parser
-  state is the streaming parser's after @{text s}, and its monitor state is the dense monitor's
-  after @{text \<pi>}, with the last timestamp of @{text \<pi>}.\<close>
+text \<open>The state @{text z} is the one after the bytes @{text s} are read, whose events that the
+  parser keeps denote the prefix @{text \<pi>}, from the state @{const vinit} started with the
+  configuration @{text cf}: its parser state is the streaming parser's after @{text s}, and its
+  monitor state is the dense monitor's after @{text \<pi>}, with the last timestamp of @{text \<pi>}.\<close>
 
 definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> vconf \<Rightarrow> string \<Rightarrow> Formula.prefix \<Rightarrow> vstate \<Rightarrow> bool" where
   "wf_vstate filt pf cf s \<pi> z \<longleftrightarrow> (\<exists>ust0 b l ps sp ust es.
@@ -755,6 +784,36 @@ next
     by blast
 qed
 
+theorem vfeed_chunks_online_error:
+  assumes "wf_vstate filt pf cf s \<pi> z" and "vfeed_chunks cf cs z = (outs, z')"
+    and "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ concat (map Rep_bytes cs)) = None"
+  shows "has_verror outs"
+  using assms
+proof (induction cs arbitrary: s \<pi> z outs)
+  case Nil
+  then show ?case
+    using wf_vstate_stream_prefix[OF Nil.prems(1)] by simp
+next
+  case (Cons c cs)
+  obtain outs1 z1 where s1: "vfeed_chunk cf c z = (outs1, z1)"
+    by (cases "vfeed_chunk cf c z")
+  obtain outs2 where s2: "vfeed_chunks cf cs z1 = (outs2, z')" and outs: "outs = outs1 @ outs2"
+    using Cons.prems(2) s1 by (auto split: prod.splits)
+  show ?case
+  proof (cases "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ Rep_bytes c)")
+    case None
+    then show ?thesis
+      using vfeed_chunk_online(1)[OF Cons.prems(1) s1] by (simp add: outs)
+  next
+    case (Some \<pi>1)
+    note O1 = vfeed_chunk_online(2)[OF Cons.prems(1) s1 Some]
+    have "has_verror outs2"
+      by (rule Cons.IH[where s = "s @ Rep_bytes c" and \<pi> = \<pi>1]) (use O1 s2 Cons.prems(3) in simp_all)
+    then show ?thesis
+      by (simp add: outs)
+  qed
+qed
+
 text \<open>The verdicts do not depend on the events that the parser skips.\<close>
 
 lemma Mt_filter:
@@ -778,7 +837,8 @@ theorem vfeed_chunk_online_log:
   assumes wf: "wf_vstate filt pf cf s \<pi>0 z" and step: "vfeed_chunk cf c z = (outs, z')"
     and p: "stream_prefix (\<lambda>_. True) (sf pf) S s = Some \<pi>"
     and p': "stream_prefix (\<lambda>_. True) (sf pf) S (s @ Rep_bytes c) = Some \<pi>'"
-  shows "\<not> has_verror outs" and "\<exists>\<pi>0'. wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>0' z'"
+  shows "\<not> has_verror outs" and "\<pi> \<le> \<pi>'"
+    and "wf_vstate filt pf cf (s @ Rep_bytes c) (pmap_\<Gamma> (\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}) \<pi>') z'"
     and "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   let ?g = "\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}"
@@ -795,8 +855,10 @@ proof -
   obtain es' where "prefix_of_items (sf pf) S None es' = Some \<pi>'"
     using stream_prefix_items[OF p'] by blast
   note M' = Mt_filter[OF this]
-  show "\<not> has_verror outs" and "\<exists>\<pi>0'. wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>0' z'"
+  show "\<not> has_verror outs" and "wf_vstate filt pf cf (s @ Rep_bytes c) (pmap_\<Gamma> ?g \<pi>') z'"
     using O by blast+
+  show "\<pi> \<le> \<pi>'"
+    by (rule stream_prefix_mono[OF p p'])
   have "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
     using O unfolding \<pi>0 by blast
   then show "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
@@ -833,6 +895,40 @@ proof -
     by (simp only: M M')
 qed
 
+theorem vfeed_chunks_online_log:
+  assumes wf: "wf_vstate filt pf cf s \<pi>0 z" and steps: "vfeed_chunks cf cs z = (outs, z')"
+    and p: "stream_prefix (\<lambda>_. True) (sf pf) S s = Some \<pi>"
+    and p': "stream_prefix (\<lambda>_. True) (sf pf) S (s @ concat (map Rep_bytes cs)) = Some \<pi>'"
+  shows "\<not> has_verror outs" and "\<pi> \<le> \<pi>'"
+    and "wf_vstate filt pf cf (s @ concat (map Rep_bytes cs))
+      (pmap_\<Gamma> (\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}) \<pi>') z'"
+    and "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+proof -
+  let ?g = "\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}"
+  have f: "stream_prefix (keep_spec filt \<phi> S) (sf pf) S s = Some (pmap_\<Gamma> ?g \<pi>)"
+    by (rule stream_prefix_filter[OF p])
+  have f': "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ concat (map Rep_bytes cs)) = Some (pmap_\<Gamma> ?g \<pi>')"
+    by (rule stream_prefix_filter[OF p'])
+  have \<pi>0: "\<pi>0 = pmap_\<Gamma> ?g \<pi>"
+    using wf_vstate_stream_prefix[OF wf] f by simp
+  note O = vfeed_chunks_online_step[OF wf steps f']
+  obtain es where "prefix_of_items (sf pf) S None es = Some \<pi>"
+    using stream_prefix_items[OF p] by blast
+  note M = Mt_filter[OF this]
+  obtain es' where "prefix_of_items (sf pf) S None es' = Some \<pi>'"
+    using stream_prefix_items[OF p'] by blast
+  note M' = Mt_filter[OF this]
+  show "\<not> has_verror outs"
+    and "wf_vstate filt pf cf (s @ concat (map Rep_bytes cs)) (pmap_\<Gamma> ?g \<pi>') z'"
+    using O by blast+
+  show "\<pi> \<le> \<pi>'"
+    by (rule stream_prefix_mono[OF p p'])
+  have "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
+    using O unfolding \<pi>0 by blast
+  then show "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    by (simp only: M M')
+qed
+
 text \<open>In summary, for the monitor on the log, as for VeriMon's kernel
   (@{thm [source] verimon_rewrite.wf_mstate_minit}, @{thm [source] verimon_rewrite.wf_mstate_mstep},
   @{thm [source] verimon_rewrite.mstep_mverdicts}):
@@ -843,6 +939,8 @@ text \<open>In summary, for the monitor on the log, as for VeriMon's kernel
   \item @{thm [source] vfeed_chunks_online_step}: @{thm vfeed_chunks_online_step[no_vars]}
   \item @{thm [source] vfeed_chunk_online_log}: @{thm vfeed_chunk_online_log[no_vars]}
   \item @{thm [source] vfinish_online_log}: @{thm vfinish_online_log[no_vars]}
+  \item @{thm [source] vfeed_chunks_online_log}: @{thm vfeed_chunks_online_log[no_vars]}
+  \item @{thm [source] vfeed_chunks_online_error}: @{thm vfeed_chunks_online_error[no_vars]}
   \end{itemize}
   The prefixes are those of the events that the parser keeps; by
   @{thm [source] Mt_preds}, the verdicts are those of every well-typed prefix with the same events

@@ -98,7 +98,9 @@ let monitor_gen parse dbschema logfile fv f =
    that an error is reported exactly when the log restricted to the predicates it keeps denotes
    no prefix; vfeed_chunks_online states the same for the chunks read so far.  Theory
    Log_Monitor_Online states it for this interface, call by call: the initial state satisfies
-   the invariant wf_vstate for the bytes read and the prefix they denote (wf_vstate_vinit), and
+   the invariant wf_vstate for the bytes read and the prefix that their events the parser keeps
+   denote (wf_vstate_vinit; the *_log corollaries state the same for the prefix that all the
+   events denote), and
    a call of vfeed_chunk (vfeed_chunk_online) or vfinish (vfinish_online) from such a state
    either reports an error, exactly when the bytes no longer denote a prefix, or reports none,
    outputs exactly the verdicts that the specification prescribes for the longer prefix and not

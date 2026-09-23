@@ -176,11 +176,13 @@ log denotes, and that an error is reported exactly when the log,
 restricted to the predicates the parser keeps, denotes no prefix.  As for
 VeriMon's kernel, they are also stated for the online interface (theory
 `Log_Monitor_Online`): an invariant relates the monitor's state to the
-bytes read so far and the prefix they denote, and the initial state
-satisfies it; a chunk of the input after which the bytes read still denote
-a prefix preserves it, reports no error and outputs exactly the verdicts
-that the specification prescribes for the longer prefix and not for the
-shorter one, and a chunk after which they denote none reports an error.  They
+bytes read so far and the prefix that their events the parser keeps
+denote, and the initial state satisfies it; a chunk of the input after
+which that is still a prefix preserves it, reports no error and outputs
+exactly the verdicts that the specification prescribes for the longer
+prefix and not for the shorter one, and a chunk after which it is none
+reports an error.  Corollaries state the same for bytes whose events all
+denote a prefix, as for the whole log.  They
 cover the output up to the first error (for the chunk of the input with
 the first error, the driver outputs the verdicts of its longest prefix
 without an error), not what is output after it (with
