@@ -1780,11 +1780,41 @@ next
   case (15 \<alpha> \<gamma> I \<beta> t)
   have lt: "\<not> memL I 0 \<Longrightarrow> memL I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<Longrightarrow> i \<le> j \<Longrightarrow> i \<in> {i..<j}" for j
     by (cases "j = i") auto
+  have r: "sat \<sigma> V v i (Until (rewrite (And \<alpha> \<gamma>) Same) I X) = sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I Y)"
+    if "\<And>v i. sat \<sigma> V v i X = sat \<sigma> V v i Y" for X Y
+    using 15(1) that by simp
+  have eq\<gamma>: "sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I (And (Once I \<gamma>) \<beta>)) = sat \<sigma> V v i (Until (And \<alpha> \<gamma>) I \<beta>)"
+    if "\<not> mem I 0"
+    using that lt by (auto 0 4)
   show ?case
   proof (cases t)
     case Same
-    with 15 lt show ?thesis
-      by (auto simp: Let_def; blast)
+    consider (a) "\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>"
+      | (b) "\<not> (\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>)" "\<not> mem I 0 \<and> prop_cond \<gamma> \<beta>"
+      | (c) "\<not> (\<not> mem I 0 \<and> prop_cond \<alpha> \<beta>)" "\<not> (\<not> mem I 0 \<and> prop_cond \<gamma> \<beta>)"
+      by blast
+    then show ?thesis
+    proof cases
+      case a
+      have "sat \<sigma> V v i (rewrite (And (Once I \<alpha>) \<beta>) Same) = sat \<sigma> V v i (And (Once I \<alpha>) \<beta>)" for v i
+        using 15(2)[OF refl] Same a by simp
+      from r[OF this] Same a show ?thesis
+        using sat_main_7[of I \<sigma> V v i \<alpha> \<gamma> \<beta>]
+        by (simp add: Let_def del: sat.simps)
+    next
+      case b
+      have "sat \<sigma> V v i (rewrite (And (Once I \<gamma>) \<beta>) Same) = sat \<sigma> V v i (And (Once I \<gamma>) \<beta>)" for v i
+        using 15(3)[OF refl] Same b by simp
+      from r[OF this] Same b show ?thesis
+        using eq\<gamma>
+        by (simp add: Let_def del: sat.simps)
+    next
+      case c
+      have "sat \<sigma> V v i (rewrite \<beta> Same) = sat \<sigma> V v i \<beta>" for v i
+        using 15(4)[OF refl] Same c by simp
+      from r[OF this] Same c show ?thesis
+        by (auto simp: Let_def simp del: sat.simps)
+    qed
   next
     case Swapped
     with 15 show ?thesis
