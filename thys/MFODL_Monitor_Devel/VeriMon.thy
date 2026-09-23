@@ -1281,6 +1281,161 @@ qed (auto simp: once_def always_def eventually_def historically_def
 lemma progress_rrewrite: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (rrewrite \<phi>) j = progress \<sigma> P \<phi> j"
   by (simp add: rrewrite_def progress_rewrite project_embed)
 
+(* Proofs that the conversion into multi-way joins preserves well-typedness and the specification *)
+
+lemma wty_get_and_list: "S, E \<turnstile> \<phi> \<Longrightarrow> \<psi> \<in> set (get_and_list \<phi>) \<Longrightarrow> S, E \<turnstile> \<psi>"
+  by (induction \<phi> rule: get_and_list.induct) (auto split: if_splits)
+
+lemma wty_Ands_get_and_list:
+  "S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<beta> \<Longrightarrow> S, E \<turnstile> Formula.Ands (get_and_list \<alpha> @ get_and_list \<beta>)"
+  by (auto intro!: wty_formula.Ands dest: wty_get_and_list)
+
+lemma wty_Ands_Cons_get_and_list:
+  "S, E \<turnstile> \<alpha> \<Longrightarrow> S, E \<turnstile> \<beta> \<Longrightarrow> S, E \<turnstile> Formula.Ands (\<alpha> # get_and_list \<beta>)"
+  by (auto intro!: wty_formula.Ands dest: wty_get_and_list)
+
+lemma wty_release_safe_0: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> release_safe_0 \<phi> I \<psi>"
+  by (auto simp: release_safe_0_def always_safe_0_def intro!: wty_formula.intros)
+
+lemma wty_release_safe_bounded: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> release_safe_bounded \<phi> I \<psi>"
+  by (auto simp: release_safe_bounded_def always_safe_bounded_def Formula.eventually_def once_def
+      intro!: wty_formula.intros)
+
+lemma wty_and_release_safe_bounded:
+  "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> \<phi>' \<Longrightarrow> S, E \<turnstile> \<psi>' \<Longrightarrow> S, E \<turnstile> and_release_safe_bounded \<phi> \<phi>' I \<psi>'"
+  by (auto simp: and_release_safe_bounded_def Formula.eventually_def
+      intro!: wty_formula.intros wty_release_safe_bounded)
+
+lemma wty_convert_multiway: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> convert_multiway \<phi>"
+proof (induction \<phi> arbitrary: S E rule: measure_induct_rule[of size'])
+  case (less \<phi>)
+  note IH = less.IH
+  show ?case
+    using less.prems
+  proof (cases \<phi>)
+    case (And \<alpha> \<beta>)
+    from less.prems have w\<alpha>: "S, E \<turnstile> \<alpha>" and w\<beta>: "S, E \<turnstile> \<beta>"
+      by (auto simp: And)
+    have c\<alpha>: "S, E \<turnstile> convert_multiway \<alpha>"
+      by (rule IH[OF _ w\<alpha>]) (unfold And, rule size'_Or(1))
+    have c\<beta>: "S, E \<turnstile> convert_multiway \<beta>"
+      by (rule IH[OF _ w\<beta>]) (unfold And, rule size'_Or(2))
+    have cr: "S, E \<turnstile> convert_multiway (and_release_safe_bounded \<alpha> \<phi>' I \<psi>')"
+      if \<beta>: "\<beta> = Formula.Release \<phi>' I \<psi>'" for \<phi>' I \<psi>'
+    proof (rule IH)
+      show "size' (and_release_safe_bounded \<alpha> \<phi>' I \<psi>') < size' \<phi>"
+        using size'_and_release[of \<alpha> \<phi>' I \<psi>'] by (simp add: And \<beta>)
+      show "S, E \<turnstile> and_release_safe_bounded \<alpha> \<phi>' I \<psi>'"
+        using w\<alpha> w\<beta> by (auto simp: \<beta> intro!: wty_and_release_safe_bounded)
+    qed
+    show ?thesis
+    proof (cases "\<exists>\<phi>' I \<psi>'. \<beta> = Formula.Release \<phi>' I \<psi>'")
+      case True
+      then obtain \<phi>' I \<psi>' where \<beta>: "\<beta> = Formula.Release \<phi>' I \<psi>'"
+        by blast
+      show ?thesis
+        using c\<alpha> c\<beta> cr[OF \<beta>] w\<beta> unfolding And \<beta>
+        by (auto intro!: wty_formula.And wty_formula.Release wty_Ands_get_and_list
+            wty_Ands_Cons_get_and_list)
+    next
+      case False
+      then have nr: "(case \<beta> of Formula.Release \<phi>' I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) = False"
+        by (cases \<beta>) auto
+      show ?thesis
+        using c\<alpha> c\<beta> w\<beta> unfolding And
+        by (auto simp: nr intro!: wty_formula.And wty_Ands_get_and_list wty_Ands_Cons_get_and_list)
+    qed
+  next
+    case (Release \<alpha> I \<beta>)
+    from less.prems have w\<alpha>: "S, E \<turnstile> \<alpha>" and w\<beta>: "S, E \<turnstile> \<beta>"
+      by (auto simp: Release)
+    have "S, E \<turnstile> convert_multiway (release_safe_0 \<alpha> I \<beta>)"
+      by (rule IH[OF _ wty_release_safe_0[OF w\<alpha> w\<beta>]])
+        (use size'_Release[of \<alpha> I \<beta>] in \<open>simp add: Release\<close>)
+    moreover have "S, E \<turnstile> convert_multiway (release_safe_bounded \<alpha> I \<beta>)"
+      by (rule IH[OF _ wty_release_safe_bounded[OF w\<alpha> w\<beta>]])
+        (use size'_Release[of \<alpha> I \<beta>] in \<open>simp add: Release\<close>)
+    ultimately show ?thesis
+      by (simp add: Release)
+  next
+    case (Ands \<phi>s)
+    have "S, E \<turnstile> convert_multiway \<chi>" if "\<chi> \<in> set \<phi>s" for \<chi>
+    proof (rule IH)
+      show "size' \<chi> < size' \<phi>"
+        using sum_list_mem_leq[OF that, of size'] by (simp add: Ands)
+      show "S, E \<turnstile> \<chi>"
+        using less.prems that by (auto simp: Ands)
+    qed
+    then show ?thesis
+      by (auto simp: Ands intro!: wty_formula.Ands)
+  next
+    case (MatchP I r)
+    have sz: "size' \<chi> < size' \<phi>" if "\<chi> \<in> regex.atms r" for \<chi>
+      using regex_atms_size'[OF that] by (simp add: MatchP)
+    have "Regex.pred_regex (\<lambda>\<chi>. S, E \<turnstile> convert_multiway \<chi>) r"
+      using less.prems by (auto simp: MatchP elim!: regex.pred_mono_strong intro: IH[OF sz])
+    then show ?thesis
+      by (auto simp: MatchP regex.pred_map comp_def intro!: wty_formula.MatchP)
+  next
+    case (MatchF I r)
+    have sz: "size' \<chi> < size' \<phi>" if "\<chi> \<in> regex.atms r" for \<chi>
+      using regex_atms_size'[OF that] by (simp add: MatchF)
+    have "Regex.pred_regex (\<lambda>\<chi>. S, E \<turnstile> convert_multiway \<chi>) r"
+      using less.prems by (auto simp: MatchF elim!: regex.pred_mono_strong intro: IH[OF sz])
+    then show ?thesis
+      by (auto simp: MatchF regex.pred_map comp_def intro!: wty_formula.MatchF)
+  next
+    case (Let p \<alpha> \<beta>)
+    from less.prems obtain E' where w\<alpha>: "S, E' \<turnstile> \<alpha>"
+      and w\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> \<beta>"
+      by (auto simp: Let)
+    have c\<alpha>: "S, E' \<turnstile> convert_multiway \<alpha>"
+      by (rule IH[OF _ w\<alpha>]) (simp add: Let)
+    have c\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> convert_multiway \<beta>"
+      by (rule IH[OF _ w\<beta>]) (simp add: Let)
+    show ?thesis
+      unfolding Let convert_multiway.simps
+      by (rule wty_formula.Let[where E'=E', OF c\<alpha>]) (simp add: nfv_convert_multiway c\<beta>)
+  next
+    case (Frz p \<alpha> \<beta>)
+    from less.prems obtain E' where w\<alpha>: "S, E' \<turnstile> \<alpha>"
+      and w\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> \<beta>"
+      by (auto simp: Frz)
+    have c\<alpha>: "S, E' \<turnstile> convert_multiway \<alpha>"
+      by (rule IH[OF _ w\<alpha>]) (simp add: Frz)
+    have c\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> convert_multiway \<beta>"
+      by (rule IH[OF _ w\<beta>]) (simp add: Frz)
+    show ?thesis
+      unfolding Frz convert_multiway.simps
+      by (rule wty_formula.Frz[where E'=E', OF c\<alpha>]) (simp add: nfv_convert_multiway c\<beta>)
+  next
+    case (LetPast p \<alpha> \<beta>)
+    from less.prems obtain E' where
+      w\<alpha>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E' \<turnstile> \<alpha>"
+      and w\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> \<beta>"
+      by (auto simp: LetPast)
+    have c\<alpha>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E' \<turnstile> convert_multiway \<alpha>"
+      by (rule IH[OF _ w\<alpha>]) (simp add: LetPast)
+    have c\<beta>: "S((p, Formula.nfv \<alpha>) \<mapsto> tabulate E' 0 (Formula.nfv \<alpha>)), E \<turnstile> convert_multiway \<beta>"
+      by (rule IH[OF _ w\<beta>]) (simp add: LetPast)
+    show ?thesis
+      unfolding LetPast convert_multiway.simps
+      by (rule wty_formula.LetPast[where E'=E']) (simp_all add: nfv_convert_multiway c\<alpha> c\<beta>)
+  qed (auto simp: nfv_convert_multiway intro!: wty_formula.intros intro: IH)
+qed
+
+lemma mmonitorable_convert_multiway: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (convert_multiway \<phi>)"
+  by (simp add: mmonitorable_def safe_convert_multiway future_bounded_convert_multiway)
+
+lemma verimon_spec_convert_multiway:
+  assumes "verimon_spec \<phi> S E"
+  shows "verimon_spec (convert_multiway \<phi>) S E"
+proof -
+  interpret verimon_spec \<phi> S E by (fact assms)
+  show ?thesis
+    by unfold_locales (auto intro: wty_convert_multiway[OF well_typed] mmonitorable_convert_multiway[OF monitorable])
+qed
+
 (* Locales for correctness proofs *)
 
 text \<open>The correctness of the preparation: whatever monitor evaluates the prepared formula
