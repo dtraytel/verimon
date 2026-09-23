@@ -173,7 +173,13 @@ monitor's databases and the monitor itself are generated code too.  Its
 theorems state that the verdicts output for the bytes of a log are those
 that the specification of the formula prescribes for the trace prefix the
 log denotes, and that an error is reported exactly when the log,
-restricted to the predicates the parser keeps, denotes no prefix.  They
+restricted to the predicates the parser keeps, denotes no prefix.  As for
+VeriMon's kernel, they are also stated for the online interface (theory
+`Log_Monitor_Online`): an invariant relates the monitor's state to the
+bytes read so far and the prefix they denote, the initial state satisfies
+it, and each chunk of the input preserves it and outputs exactly the
+verdicts that the specification prescribes for the longer prefix and not
+for the shorter one.  They
 cover the output up to the first error (for the chunk of the input with
 the first error, the driver outputs the verdicts of its longest prefix
 without an error), not what is output after it (with

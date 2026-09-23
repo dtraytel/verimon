@@ -26,7 +26,11 @@ text \<open>
   declared predicates are arbitrary, and that the monitor reports an error on every other log;
   @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
   @{text verimon_log.vfeed_chunks_online}, @{text verimon_log.vfeed_chunks_log} and
-  @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read.
+  @{text verimon_log.vfeed_chunks_prompt} state the same for a log that is still being read, from
+  the initial state; theory @{text Log_Monitor_Online} states it for the online interface, chunk
+  by chunk: an invariant relates the state to the bytes read and the prefix they denote, and each
+  chunk's verdicts are exactly the ones that the specification prescribes for the longer prefix
+  and not for the shorter one.
   The theorems say nothing about which error is reported, what is output after the first error,
   nor about the verdicts output together with it, for the same chunk; for that chunk, the driver
   outputs the verdicts of its longest prefix whose outputs have no error, which the theorems
@@ -318,30 +322,14 @@ lemma conv_events_acc: "conv_events_acc pf L acc es = map_sum id ((@) (rev acc))
 lemma conv_events_code[code]: "conv_events pf L es = conv_events_acc pf L [] es"
   by (cases "conv_events pf L es") (simp_all add: conv_events_acc)
 
-text \<open>The first event of a predicate that the signature does not declare with its arity. As in
-  MonPoly's parser, these events are reported before the order of the timestamps is checked, and
-  the fields are converted after.\<close>
+text \<open>The first event of a predicate whose name the signature does not declare. Which error is
+  reported for an entry follows MonPoly's parser, which checks the names of the predicates, then
+  the order of the timestamps, and then the arity and the fields of each event in turn.\<close>
 
-fun pred_error :: "(Formula.name \<times> nat \<Rightarrow> ty list option) \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror option" where
-  "pred_error L [] = None"
-| "pred_error L ((p, fs) # es) = (case L (string8_of_bytes p, length fs) of
-     None \<Rightarrow> Some (VE_PREDICATE p (length fs))
-   | Some _ \<Rightarrow> pred_error L es)"
-
-lemma conv_events_pred_error: "conv_events pf L es = Inr xs \<Longrightarrow> pred_error L es = None"
-proof (induction es arbitrary: xs)
-  case (Cons e es)
-  obtain p fs where e: "e = (p, fs)"
-    by (cases e)
-  obtain x where x: "conv_event pf L e = Inr x"
-    using Cons.prems by (cases "conv_event pf L e") auto
-  obtain ys where ys: "conv_events pf L es = Inr ys"
-    using Cons.prems x by (cases "conv_events pf L es") auto
-  obtain tys where "L (string8_of_bytes p, length fs) = Some tys"
-    using x by (cases "L (string8_of_bytes p, length fs)") (auto simp: e conv_event_def Let_def)
-  with Cons.IH[OF ys] show ?case
-    by (simp add: e)
-qed simp
+fun pred_error :: "lsig \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror option" where
+  "pred_error S [] = None"
+| "pred_error S ((p, fs) # es) = (if list_ex (\<lambda>(q, _). str8_eq q (string8_of_bytes p)) S
+     then pred_error S es else Some (VE_PREDICATE p (length fs)))"
 
 subsection \<open>Sorting\<close>
 
@@ -635,8 +623,9 @@ definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times
    | Some t \<Rightarrow> map_sum id (\<lambda>xs. (xs, t)) (conv_events (vc_pf cf) (vc_lookup cf) evs))"
 
 text \<open>An item that does not denote a time point is reported, and the monitor's state does not
-  change. The errors are checked for in the order of MonPoly's parser: the timestamp, the
-  predicates of the events, the order of the timestamps, and then the fields of the events.\<close>
+  change. If the events do not convert, the error reported is the first of, in the order of
+  MonPoly's parser: an event of an undeclared predicate, a decreasing timestamp, and the first
+  event that does not convert.\<close>
 
 definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vitem cf x z = (case x of
@@ -644,12 +633,11 @@ definition vitem :: "vconf \<Rightarrow> out \<Rightarrow> vmstate \<Rightarrow>
    | O_ITEM sp (Command c args) \<Rightarrow> (VO_ERROR sp (VE_COMMAND c), z)
    | O_ITEM sp (Entry ts evs) \<Rightarrow> (case bnat_of ts of
        None \<Rightarrow> (VO_ERROR sp (VE_TIMESTAMP ts), z)
-     | Some t \<Rightarrow> (case pred_error (vc_lookup cf) evs of
-         Some e \<Rightarrow> (VO_ERROR sp e, z)
-       | None \<Rightarrow> if t < snd z then (VO_ERROR sp (VE_ORDER t (snd z)), z)
-         else (case conv_events (vc_pf cf) (vc_lookup cf) evs of
-           Inl e \<Rightarrow> (VO_ERROR sp e, z)
-         | Inr xs \<Rightarrow> vtp sp xs t z))))"
+     | Some t \<Rightarrow> (case conv_events (vc_pf cf) (vc_lookup cf) evs of
+         Inl e \<Rightarrow> (VO_ERROR sp (case pred_error (vc_lsig cf) evs of
+             Some e' \<Rightarrow> e'
+           | None \<Rightarrow> if t < snd z then VE_ORDER t (snd z) else e), z)
+       | Inr xs \<Rightarrow> vtp sp xs t z)))"
 
 fun vitems :: "vconf \<Rightarrow> out list \<Rightarrow> vmstate \<Rightarrow> vout list \<times> vmstate" where
   "vitems cf [] z = ([], z)"
@@ -790,7 +778,7 @@ proof -
   have "ys = xs" "t' = t"
     using assms by (simp_all add: e t c conv_item_def conv_entry_def)
   then show ?thesis
-    using conv_events_pred_error[OF c] by (simp add: vitem_def e t c vtp_def)
+    by (simp add: vitem_def e t c)
 qed
 
 lemma vitems_append: "vitems cf (xs @ ys) z = (case vitems cf xs z of (vs1, z1) \<Rightarrow>

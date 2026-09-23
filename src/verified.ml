@@ -13704,6 +13704,8 @@ let rec vinit
 
 let rec vc_lookup (VConf (x1, x2, x3, x4)) = x3;;
 
+let rec vc_lsig (VConf (x1, x2, x3, x4)) = x2;;
+
 let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 
 let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
@@ -13831,11 +13833,10 @@ let rec conv_events_acc
 let rec conv_events pf l es = conv_events_acc pf l [] es;;
 
 let rec pred_error
-  l x1 = match l, x1 with l, [] -> None
-    | l, (p, fs) :: es ->
-        (match l ((fun x -> x) p, size_lista fs)
-          with None -> Some (VE_PREDICATE (p, size_lista fs))
-          | Some _ -> pred_error l es);;
+  s x1 = match s, x1 with s, [] -> None
+    | s, (p, fs) :: es ->
+        (if list_ex (fun (q, _) -> String.equal q ((fun x -> x) p)) s
+          then pred_error s es else Some (VE_PREDICATE (p, size_lista fs)));;
 
 let rec less_eq_int k l = Z.leq (integer_of_int k) (integer_of_int l);;
 
@@ -13851,14 +13852,16 @@ let rec vitem
       with O_ITEM (sp, Entry (ts, evs)) ->
         (match bnat_of ts with None -> (VO_ERROR (sp, VE_TIMESTAMP ts), z)
           | Some t ->
-            (match pred_error (vc_lookup cf) evs
-              with None ->
-                (if less_nat t (snd z)
-                  then (VO_ERROR (sp, VE_ORDER (t, snd z)), z)
-                  else (match conv_events (vc_pf cf) (vc_lookup cf) evs
-                         with Inl e -> (VO_ERROR (sp, e), z)
-                         | Inr xs -> vtp sp xs t z))
-              | Some e -> (VO_ERROR (sp, e), z)))
+            (match conv_events (vc_pf cf) (vc_lookup cf) evs
+              with Inl e ->
+                (VO_ERROR
+                   (sp, (match pred_error (vc_lsig cf) evs
+                          with None ->
+                            (if less_nat t (snd z) then VE_ORDER (t, snd z)
+                              else e)
+                          | Some ea -> ea)),
+                  z)
+              | Inr xs -> vtp sp xs t z))
       | O_ITEM (sp, Command (c, _)) -> (VO_ERROR (sp, VE_COMMAND c), z)
       | O_ERROR (pos, e) -> (VO_ERROR (pos, VE_PARSE e), z));;
 

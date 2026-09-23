@@ -10,7 +10,8 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
      the Heap monad, and so that a change to the imperative refinement does not force this
      session to be rebuilt. Monitor_Code_Dense is the code export the shipping binary is built
      from (src/verified.ml), together with the verified log parser of session Log_Parser;
-     Log_Monitor composes the two, from the bytes of the log to the verdicts."
+     Log_Monitor composes the two, from the bytes of the log to the verdicts, and
+     Log_Monitor_Online states its correctness for the online interface."
   sessions
     Log_Parser
   theories
@@ -50,6 +51,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_VeriMon
     Dense_RBT_Code
     Log_Monitor
+    Log_Monitor_Online
   theories [document=false]
     Monitor_Code_Dense
   export_files (in ".") [2]

@@ -104,8 +104,9 @@ Timestamps must not decrease, and the verified kernel does not support commands:
   ERROR: Commands are not supported by the verified kernel
   [1]
 
-The errors of an entry are checked for in the order of MonPoly's parser: its predicates are
-looked up before the order of the timestamps is checked, and its fields are converted after:
+The errors of an entry are checked for in the order of MonPoly's parser: the names of its
+predicates are looked up before the order of the timestamps is checked, and the arity and the
+fields of each event are checked after, one event after the other:
 
   $ printf '@2 P(1)\n@1 S(1)\n' > l.log
   $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
@@ -117,6 +118,23 @@ looked up before the order of the timestamps is checked, and its fields are conv
   $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
   @2 (time point 0): (1)
   ERROR: Out of order timestamp 1 (previous: 2)
+  [1]
+  $ printf '@2 P(1)\n@1 P(1,2)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @2 (time point 0): (1)
+  ERROR: Out of order timestamp 1 (previous: 2)
+  [1]
+  $ printf '@1 P(1)\n@2 P(1,2) S(1)\n' > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Predicate S was not defined in the signature.
+  [1]
+  $ printf '@1 P(1)\n@2 P(1,2) S(1)\n' > l.log
+  $ monpoly -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR while parsing log:
+  l.log:2:1: Predicate S was not defined in the signature.
   [1]
 
 In a large signature, the predicates are looked up in a mapping, and those whose events are
@@ -133,7 +151,7 @@ skipped in a set:
   [1]
   $ monpoly -verified -sig big.sig -formula big.mfotl -log l.log -nofilterrel
   ERROR while parsing log:
-  l.log:1:1: Wrong tuple length for predicate A40 (expected: 1, actual: 2)
+  l.log:1:1: Expected type int for predicate A9, field number 1
   [1]
   $ printf '@1 A7(1) A7(2) A8(2)\n@2 A7(3) B(1)\n' > l.log
   $ monpoly -verified -sig big.sig -formula big.mfotl -log l.log

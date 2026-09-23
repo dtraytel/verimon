@@ -96,9 +96,16 @@ let monitor_gen parse dbschema logfile fv f =
    verimon_log.vrun_log and vrun_filtered state that the verdicts output for the bytes of a log
    are those the specification of the formula prescribes for the prefix the log denotes, and
    that an error is reported exactly when the log restricted to the predicates it keeps denotes
-   no prefix; vfeed_chunks_online states the same for the chunks read so far.  They cover the
-   output up to the chunk with the first error, but neither the verdicts of that chunk before
-   the error nor anything after it (with -ignore_parse_errors).
+   no prefix; vfeed_chunks_online states the same for the chunks read so far.  Theory
+   Log_Monitor_Online states it for this interface, call by call: the state after the bytes
+   read satisfies the invariant wf_vstate for the prefix they denote (wf_vstate_vinit), and each
+   call of vfeed_chunk (vfeed_chunk_online) or vfinish (vfinish_online) from such a state
+   reports no error and outputs exactly the verdicts that the specification prescribes for the
+   longer prefix and not for the shorter one, or reports an error if the bytes no longer denote
+   a prefix.  The theorems cover the output up to the first error (for the chunk with the first
+   error, the driver outputs the verdicts of its longest prefix without an error, see
+   first_error), but not what is output after it (with -ignore_parse_errors), nor which error
+   is reported.
 
    Outside the theorems: the formula is MonPoly's, as its front end has read, checked and
    possibly rewritten it, converted by Verified_adapter.convert_formula; the signature is
@@ -199,22 +206,33 @@ let run_verified dbschema fname read fv f =
       Verified_log_parser.forget ln pending
     end in
   (* The outputs up to the first error: those of the longest prefix of the chunk whose outputs
-     have no error (the outputs only grow with the input), which vfeed_chunks_online covers,
-     followed by the outputs of the whole chunk from the first error on.  After the first
-     error, the outputs are handled as they come. *)
+     have no error (the outputs only grow with the input), followed by the outputs of the whole
+     chunk from the first error on.  The prefix is found by bisection, feeding each probe from
+     the state after the longest prefix found so far, so that the chunk is read about twice;
+     vfeed_chunk_online covers each probe, from a state that satisfies the invariant.  If no
+     verdict precedes the error, there is nothing to find.  After the first error, the outputs
+     are handled as they come. *)
   let erred = ref false in
   let is_error = function VM.VO_ERROR _ -> true | VM.VO_VERDICTS _ -> false in
   let rec from_error = function
     | [] -> []
     | o :: os -> if is_error o then o :: os else from_error os in
   let first_error s st outs =
-    let lo = ref 0 and hi = ref (String.length s) in
-    while !hi - !lo > 1 do
-      let mid = (!lo + !hi) / 2 in
-      if List.exists is_error (fst (VM.vfeed_chunk conf (String.sub s 0 mid) st)) then hi := mid
-      else lo := mid
-    done;
-    fst (VM.vfeed_chunk conf (String.sub s 0 !lo) st) @ from_error outs in
+    match outs with
+    | o :: _ when is_error o -> outs
+    | _ ->
+        let lo = ref 0 and hi = ref (String.length s) and st_lo = ref st and acc = ref [] in
+        while !hi - !lo > 1 do
+          let mid = (!lo + !hi) / 2 in
+          let (o, st_mid) = VM.vfeed_chunk conf (String.sub s !lo (mid - !lo)) !st_lo in
+          if List.exists is_error o then hi := mid
+          else begin
+            acc := List.rev_append o !acc;
+            st_lo := st_mid;
+            lo := mid
+          end
+        done;
+        List.rev !acc @ from_error outs in
   let rec loop st =
     match read () with
     | Some s ->
