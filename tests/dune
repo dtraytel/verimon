@@ -1,3 +1,7 @@
 (cram
   (applies_to :whole_subtree)
   (deps %{bin:monpoly}))
+
+(cram
+  (applies_to verified_parser)
+  (deps %{bin:parser_difftest}))

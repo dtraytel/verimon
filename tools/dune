@@ -41,3 +41,10 @@
   (name log_parser_bench)
   (modules Log_parser_bench)
   (libraries libmonpoly verified unix))
+
+(executable
+  (name parser_difftest)
+  (public_name parser_difftest)
+  (package monpoly-tools)
+  (modules Parser_difftest)
+  (libraries libmonpoly))

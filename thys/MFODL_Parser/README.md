@@ -13,24 +13,25 @@ introduction rule per production, with the semantic actions as values.
 
 ## Sessions and theories
 
-`MFODL_Grammar` (this directory) holds the grammar, `MFODL_Parser` (`Parser/`)
-the parser generated from it. The grammar is a session of its own because the
-`grammar` command takes long (about 40 minutes, most of it defining the
-decoders), and it only needs to rerun when the grammar changes.
+| Session (directory) | Theory | Content |
+|---|---|---|
+| `MFODL_Grammar` (`.`) | `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
+| | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
+| `MFODL_Parser` (`Parser`) | `MFODL_Lexer` | An executable model of `src/formula_lexer.mll` (not verified) |
+| | `MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
+| | `MFODL_Parser` | The parser `mfodl_parse`, its correctness, and `parse_formula` = lexer + parser + post-processing |
+| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Parser_Code` | Examples checked by evaluation, and the code export |
 
-| Theory | Content |
-|---|---|
-| `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
-| `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
-| `Parser/MFODL_Lexer` | An executable model of `src/formula_lexer.mll` (not verified) |
-| `Parser/MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
-| `Parser/MFODL_Parser` | The parser `mfodl_parse`, its correctness, `parse_formula` = lexer + parser + post-processing, and the code export |
+The sessions are separate because the `grammar` and `parser` commands are slow
+on a grammar of this size (each takes the better part of an hour, most of it in
+defining and proving the decoders and in evaluating the LR tables and the static
+check), and neither needs to rerun unless the grammar changes.
 
 Building and exporting the parser:
 
 ```
-cd thys && isabelle build -b -e -d . MFODL_Parser
-cp MFODL_Parser/Parser/verified_parser.ocaml ../src/verified_parser.ml
+cd thys && isabelle build -b -e -d . MFODL_Parser_Code
+cp MFODL_Parser/Parser/Code/verified_parser.ocaml ../src/verified_parser.ml
 ```
 
 The `grammar` package's own session `Grammar_Command` builds its PDF
@@ -47,7 +48,14 @@ in `MFODL_Grammar.thy`):
 - three variants of each level for formulas that end in a prefix operator whose
   body extends to the right (closed, mid prefix, low prefix);
 - regular expression atoms restricted to formulas that cannot absorb what
-  continues a regular expression.
+  continues a regular expression;
+- separate copies of a few nonterminals for contexts with different followers.
+  The `parser` command's LR machine pools the lookaheads of a production that
+  is complete after one symbol over all contexts in which that symbol starts
+  something, so its static determinism check is stricter than LALR(1).
+
+The static check is part of the `parser` command: `mfodl_parse.complete` has no
+premises only if the check succeeds.
 
 ## Differences from MonPoly's parser
 

@@ -1,9 +1,20 @@
 (* Glue between the verified formula parser (src/verified_parser.ml, exported from
    thys/MFODL_Parser) and MonPoly's syntax tree (MFOTL.formula). *)
 
-module V = Verified_parser
+module V = Verified_parser.Verified_parser
 
-let str cs = V.implode cs
+(* Strings are lists of bytes, each a Chara of its eight bits, least significant first. *)
+let chars_of_string s =
+  List.init (String.length s) (fun i ->
+      let c = Char.code s.[i] in
+      let b k = c land (1 lsl k) <> 0 in
+      V.Chara (b 0, b 1, b 2, b 3, b 4, b 5, b 6, b 7))
+
+let char_of (V.Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
+  let bit b k = if b then 1 lsl k else 0 in
+  Char.chr (bit b0 0 + bit b1 1 + bit b2 2 + bit b3 3 + bit b4 4 + bit b5 5 + bit b6 6 + bit b7 7)
+
+let str cs = String.of_seq (Seq.map char_of (List.to_seq cs))
 let int i = V.integer_of_int i
 
 let bound = function
@@ -90,7 +101,10 @@ and regex = function
   | V.RPlus (a, b) -> MFOTL.Plus (regex a, regex b)
   | V.RStar a -> MFOTL.Star (regex a)
 
+let lex_string s =
+  Option.map (List.map (fun (t, l) -> (t, str l))) (V.lex_chars (chars_of_string s))
+
 let parse_string s =
-  match V.parse_formula_literal s with
+  match V.parse_formula (chars_of_string s) with
   | None -> None
   | Some f -> (try Some (formula f) with Failure _ -> None)

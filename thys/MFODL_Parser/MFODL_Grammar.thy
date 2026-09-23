@@ -113,6 +113,20 @@ text \<open>
   must be parenthesised in atoms. MonPoly accepts some of these without
   parentheses (see \<^file>\<open>README.md\<close>).
 
+  \<^descr>[Contexts of short productions] The parser of the \<^theory_text>\<open>parser\<close>
+  command runs on a coarse LR(0) automaton: after a symbol \<open>X\<close>, a state holds
+  the items \<open>A \<rightarrow> X \<cdot> \<beta>\<close> of all productions starting with \<open>X\<close>, and the
+  lookaheads of such an item are pooled over all contexts in which \<open>X\<close> starts
+  something. Its static check therefore rejects grammars that ocamlyacc accepts,
+  when a production that is complete after one symbol is used in contexts with
+  different followers. Where that happens, a context gets its own nonterminals:
+  \<open>FTerm\<close> for the first argument after the \<open>(\<close> of a predicate or a
+  \<open>MATCHES\<close> list (whose followers include \<open>,\<close>, like the lower bound of an
+  interval \<open>(5, \<dots>\<close>), \<open>PTerm\<close> for the pattern of \<open>MATCHES \<dots> (\<dots>)\<close> (followed
+  by \<open>(\<close>, like a predicate name), and \<open>RAtomF\<close>, \<open>RAtomS\<close>, \<open>RSafeF\<close>,
+  \<open>RSafeS\<close> for the first atom in parentheses and the operand of \<open>*\<close>. The
+  variables of an aggregation are \<open>NAME\<close> tokens for the same reason.
+
   \<^descr>[Aggregations] \<open>y <- op x; g\<^sub>1, \<dots>, g\<^sub>n \<phi>\<close> groups by the variables
   \<open>g\<^sub>i\<close>. After \<open>;\<close>, MonPoly reads a name as a group-by variable, never as the
   beginning of \<open>\<phi>\<close>; the grammar accepts an empty group-by list after \<open>;\<close> if
@@ -196,9 +210,9 @@ grammar (relation) mfodl =
       | "LET" Pred "=" Formula "IN" Formula \<Rightarrow> \<open>FLet\<close>
       | "LETPAST" Pred "=" Formula "IN" Formula \<Rightarrow> \<open>FLetPast\<close>
       | "FRZ" Pred "=" Formula "IN" Formula \<Rightarrow> \<open>FFrz\<close>
-      | Var "<-" AggOp Var Formula \<Rightarrow> \<open>\<lambda>y op x f. FAggreg y op x [] f\<close>
-      | Var "<-" AggOp Var ";" VarList1 Formula \<Rightarrow> \<open>FAggreg\<close>
-      | Var "<-" AggOp Var ";" "(" Formula ")" \<Rightarrow> \<open>\<lambda>y op x f. FAggreg y op x [] f\<close>
+      | Var "<-" AggOp NAME Formula \<Rightarrow> \<open>\<lambda>y op x f. FAggreg y op (lexeme x) [] f\<close>
+      | Var "<-" AggOp NAME ";" VarList1 Formula \<Rightarrow> \<open>\<lambda>y op x g f. FAggreg y op (lexeme x) g f\<close>
+      | Var "<-" AggOp NAME ";" "(" Formula ")" \<Rightarrow> \<open>\<lambda>y op x f. FAggreg y op (lexeme x) [] f\<close>
   and
     UOp :: \<open>interval \<Rightarrow> formula \<Rightarrow> formula\<close>
       = "PREV" \<Rightarrow> \<open>FPrev\<close> | "NEXT" \<Rightarrow> \<open>FNext\<close> | "EVENTUALLY" \<Rightarrow> \<open>FEventually\<close>
@@ -214,8 +228,8 @@ grammar (relation) mfodl =
     VarList :: \<open>string list\<close> = \<Rightarrow> \<open>[]\<close> | VarList1
   and
     VarList1 :: \<open>string list\<close>
-      = Var \<Rightarrow> \<open>\<lambda>v. [v]\<close>
-      | VarList "," Var \<Rightarrow> \<open>\<lambda>vs v. vs @ [v]\<close>
+      = NAME \<Rightarrow> \<open>\<lambda>v. [lexeme v]\<close>
+      | VarList "," NAME \<Rightarrow> \<open>\<lambda>vs v. vs @ [lexeme v]\<close>
   and
     Var :: \<open>string\<close> = NAME \<Rightarrow> \<open>lexeme\<close>
   and
@@ -223,8 +237,15 @@ grammar (relation) mfodl =
   and
     TermArgs :: \<open>trm list\<close>
       = \<Rightarrow> \<open>[]\<close>
+      | FArg \<Rightarrow> \<open>\<lambda>t. [t]\<close>
+      | FArg "," TermArgsR \<Rightarrow> \<open>(#)\<close>
+  and
+    TermArgsR :: \<open>trm list\<close>
+      = \<Rightarrow> \<open>[]\<close>
       | TermArg \<Rightarrow> \<open>\<lambda>t. [t]\<close>
-      | TermArg "," TermArgs \<Rightarrow> \<open>(#)\<close>
+      | TermArg "," TermArgsR \<Rightarrow> \<open>(#)\<close>
+  and
+    FArg :: \<open>trm\<close> = FTerm | "_" \<Rightarrow> \<open>TVar ''_''\<close>
   and
     TermArg :: \<open>trm\<close> = Term | "_" \<Rightarrow> \<open>TVar ''_''\<close>
   and
@@ -235,7 +256,7 @@ grammar (relation) mfodl =
       | "FALSE" \<Rightarrow> \<open>FEqual (TCst (CInt 0)) (TCst (CInt 1))\<close>
       | "TRUE" \<Rightarrow> \<open>FEqual (TCst (CInt 0)) (TCst (CInt 0))\<close>
       | Pred \<Rightarrow> \<open>FPred\<close>
-      | Term "MATCHES" Term "(" OptTerms ")" \<Rightarrow> \<open>FMatches\<close>
+      | Term "MATCHES" PTerm "(" OptTerms ")" \<Rightarrow> \<open>FMatches\<close>
   and
     AtomT :: \<open>formula\<close>
       = Term "=" Term \<Rightarrow> \<open>FEqual\<close>
@@ -252,16 +273,36 @@ grammar (relation) mfodl =
       | "<|" Intv Regex \<Rightarrow> \<open>\<lambda>i r. FPrex i (r False)\<close>
       | "<|" Regex \<Rightarrow> \<open>\<lambda>r. FPrex dfintv (r False)\<close>
   and
+    PTerm :: \<open>trm\<close>
+      = Term "+" PTermM \<Rightarrow> \<open>TPlus\<close> | Term "-" PTermM \<Rightarrow> \<open>TMinus\<close> | PTermM
+  and
+    PTermM :: \<open>trm\<close>
+      = TermM "*" PTermU \<Rightarrow> \<open>TMult\<close> | TermM "/" PTermU \<Rightarrow> \<open>TDiv\<close>
+      | TermM "MOD" PTermU \<Rightarrow> \<open>TMod\<close> | PTermU
+  and
+    PTermU :: \<open>trm\<close> = "-" PTermU \<Rightarrow> \<open>TUMinus\<close> | PTermP
+  and
+    PTermP :: \<open>trm\<close>
+      = "(" Term ")"
+      | Fun "(" Term ")" \<Rightarrow> \<open>\<lambda>f t. f t\<close>
+      | Cst \<Rightarrow> \<open>TCst\<close>
+      | NAME \<Rightarrow> \<open>\<lambda>v. TVar (lexeme v)\<close>
+  and
     OptTerms :: \<open>trm option list\<close>
       = \<Rightarrow> \<open>[]\<close>
-      | OptTerm \<Rightarrow> \<open>\<lambda>t. [t]\<close>
+      | FOptTerm \<Rightarrow> \<open>\<lambda>t. [t]\<close>
       | OptTerms "," OptTerm \<Rightarrow> \<open>\<lambda>ts t. ts @ [t]\<close>
+  and
+    FOptTerm :: \<open>trm option\<close> = "_" \<Rightarrow> \<open>None\<close> | FTerm \<Rightarrow> \<open>Some\<close>
   and
     OptTerm :: \<open>trm option\<close> = "_" \<Rightarrow> \<open>None\<close> | Term \<Rightarrow> \<open>Some\<close>
   and
     Intv :: \<open>interval\<close> = LBound "," RBound \<Rightarrow> \<open>Pair\<close>
   and
-    LBound :: \<open>bound\<close> = "(" Units \<Rightarrow> \<open>OBnd\<close> | "[" Units \<Rightarrow> \<open>CBnd\<close>
+    LBound :: \<open>bound\<close>
+      = "(" INTEGER \<Rightarrow> \<open>\<lambda>t. OBnd (int_of_lexeme (lexeme t))\<close>
+      | "(" TU \<Rightarrow> \<open>\<lambda>t. OBnd (units_of_lexeme (lexeme t))\<close>
+      | "[" Units \<Rightarrow> \<open>CBnd\<close>
   and
     RBound :: \<open>bound\<close>
       = Units ")" \<Rightarrow> \<open>OBnd\<close> | Units "]" \<Rightarrow> \<open>CBnd\<close>
@@ -285,6 +326,27 @@ grammar (relation) mfodl =
       | Fun "(" Term ")" \<Rightarrow> \<open>\<lambda>f t. f t\<close>
       | Cst \<Rightarrow> \<open>TCst\<close>
       | Var \<Rightarrow> \<open>TVar\<close>
+  and
+    FTerm :: \<open>trm\<close>
+      = FTerm "+" TermM \<Rightarrow> \<open>TPlus\<close> | FTerm "-" TermM \<Rightarrow> \<open>TMinus\<close> | FTermM
+  and
+    FTermM :: \<open>trm\<close>
+      = FTermM "*" TermU \<Rightarrow> \<open>TMult\<close> | FTermM "/" TermU \<Rightarrow> \<open>TDiv\<close>
+      | FTermM "MOD" TermU \<Rightarrow> \<open>TMod\<close> | FTermU
+  and
+    FTermU :: \<open>trm\<close> = "-" TermU \<Rightarrow> \<open>TUMinus\<close> | FTermP
+  and
+    FTermP :: \<open>trm\<close>
+      = "(" Term ")"
+      | Fun "(" Term ")" \<Rightarrow> \<open>\<lambda>f t. f t\<close>
+      | FCst \<Rightarrow> \<open>TCst\<close>
+      | Var \<Rightarrow> \<open>TVar\<close>
+  and
+    FCst :: \<open>cst\<close>
+      = INTEGER \<Rightarrow> \<open>\<lambda>t. CInt (int_of_lexeme (lexeme t))\<close>
+      | RAT \<Rightarrow> \<open>\<lambda>t. CFloat (lexeme t)\<close>
+      | STR_CST \<Rightarrow> \<open>\<lambda>t. CStr (strip_quotes (lexeme t))\<close>
+      | REGEXP_CST \<Rightarrow> \<open>\<lambda>t. CRegexp (strip_regexp (lexeme t))\<close>
   and
     Fun :: \<open>trm \<Rightarrow> trm\<close>
       = "f2i" \<Rightarrow> \<open>TF2i\<close> | "i2f" \<Rightarrow> \<open>TI2f\<close> | "DAY_OF_MONTH" \<Rightarrow> \<open>TDayOfMonth\<close>
@@ -317,17 +379,29 @@ grammar (relation) mfodl =
       = "(" Regex2 ")"
       | "." \<Rightarrow> \<open>\<lambda>_. wild\<close>
       | RTestF "?" \<Rightarrow> \<open>\<lambda>f _. RTest f\<close>
-      | RAtom "*" \<Rightarrow> \<open>\<lambda>a d. RStar (a d)\<close>
+      | RAtomS "*" \<Rightarrow> \<open>\<lambda>a d. RStar (a d)\<close>
+  and
+    RAtomS :: \<open>bool \<Rightarrow> regex\<close> = RAtom2 | RSafeS \<Rightarrow> \<open>bare_atom\<close>
   and
     Regex2 :: \<open>bool \<Rightarrow> regex\<close>
-      = RConcN "+" Regex \<Rightarrow> \<open>\<lambda>a b d. RPlus (a d) (b d)\<close>
+      = RConcNF "+" Regex \<Rightarrow> \<open>\<lambda>a b d. RPlus (a d) (b d)\<close>
       | RConc2
   and
+    RConcNF :: \<open>bool \<Rightarrow> regex\<close>
+      = RAtomF RConcN \<Rightarrow> \<open>\<lambda>a b d. RConcat (a d) (b d)\<close>
+      | RAtomF
+  and
     RConc2 :: \<open>bool \<Rightarrow> regex\<close>
-      = RAtom RConc \<Rightarrow> \<open>\<lambda>a b d. RConcat (a d) (b d)\<close>
+      = RAtomF RConc \<Rightarrow> \<open>\<lambda>a b d. RConcat (a d) (b d)\<close>
       | RAtom2
   and
+    RAtomF :: \<open>bool \<Rightarrow> regex\<close> = RAtom2 | RSafeF \<Rightarrow> \<open>bare_atom\<close>
+  and
     RSafe :: \<open>formula\<close> = "NOT" RSafe \<Rightarrow> \<open>FNeg\<close> | AtomS
+  and
+    RSafeS :: \<open>formula\<close> = "NOT" RSafeS \<Rightarrow> \<open>FNeg\<close> | AtomS
+  and
+    RSafeF :: \<open>formula\<close> = "NOT" RSafeF \<Rightarrow> \<open>FNeg\<close> | AtomS
   and
     RTestF :: \<open>formula\<close> = "NOT" RTestF \<Rightarrow> \<open>FNeg\<close> | AtomS | AtomT
   and

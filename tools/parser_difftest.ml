@@ -2,16 +2,21 @@
    exported to src/verified_parser.ml) against MonPoly's ocamlyacc parser
    (src/formula_parser.mly).
 
-   Usage: parser_difftest [-n N] [-seed S] [-depth D] [-v] [FILE...]
+   Usage: parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [FILE...]
    Each FILE is parsed as one formula. Without files, N random formulas are
    generated. For every input both parsers run; the outcomes are classified as
      same     both accept with equal syntax trees, or both reject
      differ   both accept with different syntax trees
      mp-only  only MonPoly accepts
      vp-only  only the verified parser accepts
-   Anonymous variables (_1, _2, ...) are compared up to renaming, since
-   MonPoly's counter is never reset between parses. *)
+   Anonymous variables (_1, _2, ...) are compared up to a shift of their
+   numbers, since MonPoly's counter is never reset between parses.
 
+   With -lex, random strings are lexed instead and the token streams of the
+   verified lexer model (thys/MFODL_Parser/Parser/MFODL_Lexer.thy) and of
+   src/formula_lexer.mll are compared. *)
+
+open Libmonpoly
 open MFOTL
 
 let parse_monpoly s =
@@ -208,6 +213,168 @@ and regex d =
     | 2 -> ratom d ^ "*"
     | _ -> ratom d
 
+(* Token class names of the verified lexer, spelled as in src/formula_parser.mly. *)
+let vtok_name = function
+  | Verified_parser.Verified_parser.FALSE -> "FALSE"
+  | Verified_parser.Verified_parser.TRUE -> "TRUE"
+  | Verified_parser.Verified_parser.LPA -> "LPA"
+  | Verified_parser.Verified_parser.RPA -> "RPA"
+  | Verified_parser.Verified_parser.LSB -> "LSB"
+  | Verified_parser.Verified_parser.RSB -> "RSB"
+  | Verified_parser.Verified_parser.COM -> "COM"
+  | Verified_parser.Verified_parser.SC -> "SC"
+  | Verified_parser.Verified_parser.DOT -> "DOT"
+  | Verified_parser.Verified_parser.QM -> "QM"
+  | Verified_parser.Verified_parser.LD -> "LD"
+  | Verified_parser.Verified_parser.LESSEQ -> "LESSEQ"
+  | Verified_parser.Verified_parser.EQ -> "EQ"
+  | Verified_parser.Verified_parser.LESS -> "LESS"
+  | Verified_parser.Verified_parser.GTR -> "GTR"
+  | Verified_parser.Verified_parser.GTREQ -> "GTREQ"
+  | Verified_parser.Verified_parser.STAR -> "STAR"
+  | Verified_parser.Verified_parser.LARROW -> "LARROW"
+  | Verified_parser.Verified_parser.SUBSTRING -> "SUBSTRING"
+  | Verified_parser.Verified_parser.MATCHES -> "MATCHES"
+  | Verified_parser.Verified_parser.PLUS -> "PLUS"
+  | Verified_parser.Verified_parser.MINUS -> "MINUS"
+  | Verified_parser.Verified_parser.SLASH -> "SLASH"
+  | Verified_parser.Verified_parser.MOD -> "MOD"
+  | Verified_parser.Verified_parser.F2I -> "F2I"
+  | Verified_parser.Verified_parser.I2F -> "I2F"
+  | Verified_parser.Verified_parser.DAY_OF_MONTH -> "DAY_OF_MONTH"
+  | Verified_parser.Verified_parser.MONTH -> "MONTH"
+  | Verified_parser.Verified_parser.YEAR -> "YEAR"
+  | Verified_parser.Verified_parser.FORMAT_DATE -> "FORMAT_DATE"
+  | Verified_parser.Verified_parser.R2S -> "R2S"
+  | Verified_parser.Verified_parser.S2R -> "S2R"
+  | Verified_parser.Verified_parser.I2S -> "I2S"
+  | Verified_parser.Verified_parser.S2I -> "S2I"
+  | Verified_parser.Verified_parser.F2S -> "F2S"
+  | Verified_parser.Verified_parser.S2F -> "S2F"
+  | Verified_parser.Verified_parser.NAME -> "STR"
+  | Verified_parser.Verified_parser.STR_CST -> "STR_CST"
+  | Verified_parser.Verified_parser.REGEXP_CST -> "REGEXP_CST"
+  | Verified_parser.Verified_parser.INTEGER -> "INT"
+  | Verified_parser.Verified_parser.RAT -> "RAT"
+  | Verified_parser.Verified_parser.TU -> "TU"
+  | Verified_parser.Verified_parser.LET -> "LET"
+  | Verified_parser.Verified_parser.LETPAST -> "LETPAST"
+  | Verified_parser.Verified_parser.FRZ -> "FRZ"
+  | Verified_parser.Verified_parser.IN -> "IN"
+  | Verified_parser.Verified_parser.NOT -> "NOT"
+  | Verified_parser.Verified_parser.AND -> "AND"
+  | Verified_parser.Verified_parser.OR -> "OR"
+  | Verified_parser.Verified_parser.IMPL -> "IMPL"
+  | Verified_parser.Verified_parser.EQUIV -> "EQUIV"
+  | Verified_parser.Verified_parser.EXISTS -> "EX"
+  | Verified_parser.Verified_parser.FORALL -> "FA"
+  | Verified_parser.Verified_parser.PREV -> "PREV"
+  | Verified_parser.Verified_parser.NEXT -> "NEXT"
+  | Verified_parser.Verified_parser.EVENTUALLY -> "EVENTUALLY"
+  | Verified_parser.Verified_parser.ONCE -> "ONCE"
+  | Verified_parser.Verified_parser.ALWAYS -> "ALWAYS"
+  | Verified_parser.Verified_parser.PAST_ALWAYS -> "PAST_ALWAYS"
+  | Verified_parser.Verified_parser.SINCE -> "SINCE"
+  | Verified_parser.Verified_parser.TRIGGER -> "TRIGGER"
+  | Verified_parser.Verified_parser.UNTIL -> "UNTIL"
+  | Verified_parser.Verified_parser.RELEASE -> "RELEASE"
+  | Verified_parser.Verified_parser.BAR -> "BAR"
+  | Verified_parser.Verified_parser.FREX -> "FREX"
+  | Verified_parser.Verified_parser.PREX -> "PREX"
+  | Verified_parser.Verified_parser.CNT -> "CNT"
+  | Verified_parser.Verified_parser.MIN_KW -> "MIN"
+  | Verified_parser.Verified_parser.MAX_KW -> "MAX"
+  | Verified_parser.Verified_parser.SUM_KW -> "SUM"
+  | Verified_parser.Verified_parser.AVG -> "AVG"
+  | Verified_parser.Verified_parser.MED -> "MED"
+
+(* MonPoly's token stream: names and payloads. *)
+let mp_token_name = function
+  | Formula_parser.FALSE -> "FALSE" | Formula_parser.TRUE -> "TRUE" | Formula_parser.LPA -> "LPA"
+  | Formula_parser.RPA -> "RPA" | Formula_parser.LSB -> "LSB" | Formula_parser.RSB -> "RSB"
+  | Formula_parser.COM -> "COM" | Formula_parser.SC -> "SC" | Formula_parser.DOT -> "DOT"
+  | Formula_parser.QM -> "QM" | Formula_parser.LD -> "LD" | Formula_parser.LESSEQ -> "LESSEQ"
+  | Formula_parser.EQ -> "EQ" | Formula_parser.LESS -> "LESS" | Formula_parser.GTR -> "GTR"
+  | Formula_parser.GTREQ -> "GTREQ" | Formula_parser.STAR -> "STAR" | Formula_parser.LARROW -> "LARROW"
+  | Formula_parser.SUBSTRING -> "SUBSTRING" | Formula_parser.MATCHES -> "MATCHES"
+  | Formula_parser.PLUS -> "PLUS" | Formula_parser.MINUS -> "MINUS" | Formula_parser.SLASH -> "SLASH"
+  | Formula_parser.MOD -> "MOD" | Formula_parser.F2I -> "F2I" | Formula_parser.I2F -> "I2F"
+  | Formula_parser.DAY_OF_MONTH -> "DAY_OF_MONTH" | Formula_parser.MONTH -> "MONTH"
+  | Formula_parser.YEAR -> "YEAR" | Formula_parser.FORMAT_DATE -> "FORMAT_DATE"
+  | Formula_parser.R2S -> "R2S" | Formula_parser.S2R -> "S2R" | Formula_parser.I2S -> "I2S"
+  | Formula_parser.S2I -> "S2I" | Formula_parser.F2S -> "F2S" | Formula_parser.S2F -> "S2F"
+  | Formula_parser.STR _ -> "STR" | Formula_parser.STR_CST _ -> "STR_CST"
+  | Formula_parser.REGEXP_CST _ -> "REGEXP_CST" | Formula_parser.INT _ -> "INT"
+  | Formula_parser.RAT _ -> "RAT" | Formula_parser.TU _ -> "TU"
+  | Formula_parser.LET -> "LET" | Formula_parser.LETPAST -> "LETPAST" | Formula_parser.FRZ -> "FRZ"
+  | Formula_parser.IN -> "IN" | Formula_parser.NOT -> "NOT" | Formula_parser.AND -> "AND"
+  | Formula_parser.OR -> "OR" | Formula_parser.IMPL -> "IMPL" | Formula_parser.EQUIV -> "EQUIV"
+  | Formula_parser.EX -> "EX" | Formula_parser.FA -> "FA" | Formula_parser.PREV -> "PREV"
+  | Formula_parser.NEXT -> "NEXT" | Formula_parser.EVENTUALLY -> "EVENTUALLY"
+  | Formula_parser.ONCE -> "ONCE" | Formula_parser.ALWAYS -> "ALWAYS"
+  | Formula_parser.PAST_ALWAYS -> "PAST_ALWAYS" | Formula_parser.SINCE -> "SINCE"
+  | Formula_parser.TRIGGER -> "TRIGGER" | Formula_parser.UNTIL -> "UNTIL"
+  | Formula_parser.RELEASE -> "RELEASE" | Formula_parser.BAR -> "BAR" | Formula_parser.FREX -> "FREX"
+  | Formula_parser.PREX -> "PREX" | Formula_parser.CNT -> "CNT" | Formula_parser.MIN -> "MIN"
+  | Formula_parser.MAX -> "MAX" | Formula_parser.SUM -> "SUM" | Formula_parser.AVG -> "AVG"
+  | Formula_parser.MED -> "MED" | Formula_parser.END -> "END" | Formula_parser.EOF -> "EOF"
+
+exception Bad_unit
+
+(* MonPoly's tokens up to EOF; a time unit other than d, h, m, s fails in
+   every context, so it counts as a lexing failure here. *)
+let lex_monpoly s =
+  let lb = Lexing.from_string s in
+  let rec go acc =
+    match Formula_lexer.token lb with
+    | Formula_parser.EOF -> List.rev acc
+    | Formula_parser.TU (_, c) when not (String.contains "dhms" c) -> raise Bad_unit
+    | t -> go (t :: acc)
+  in
+  try Some (go []) with _ -> None
+
+(* A verified token (class, lexeme) against a MonPoly token. *)
+let same_token (vt, lx) t =
+  vtok_name vt = mp_token_name t
+  && (match t with
+      | Formula_parser.STR s | Formula_parser.STR_CST s | Formula_parser.REGEXP_CST s -> s = lx
+      | Formula_parser.INT z -> Z.equal z (Z.of_string lx)
+      | Formula_parser.RAT r -> r = float_of_string lx
+      | Formula_parser.TU (n, c) ->
+        let k = String.length lx in
+        k >= 2 && lx.[k - 1] = c && string_of_int n = String.sub lx 0 (k - 1)
+      | _ -> true)
+
+let lex_verified s = Verified_parser_adapter.lex_string s
+
+let fragments =
+  [| "P"; "x"; "_"; "_x"; "-"; "-5"; "5"; "12"; "1.5"; "-2."; "3s"; "5x"; "7sec"; "\"a\\\"b\""; "\"ab\"";
+     "r\"a.*\""; "r\"a\"x"; "("; ")"; "(*"; "*)"; "#"; "\n"; " "; " "; " "; "\t"; "|>"; "<|"; "|"; "<-";
+     "<="; "<"; ">="; ">"; "="; "AND"; "ANDX"; "PREVIOUS"; "PREV"; "MATCHES"; "MATCHF"; "MATCHP";
+     "\xe2\x96\xb7"; "\xe2\x97\x81"; "FORWARD"; ","; ";"; "?"; "."; "*"; "+"; "/"; "MOD"; "f2i"; "x-1";
+     "a:b"; "'"; "\""; "@"; "["; "]"; "EXISTS"; "SUM"; "SUMS"; "CNT"; "TRUE"; "IN"; "INT" |]
+
+let random_lexeme_string () =
+  String.concat "" (List.init (1 + Random.int 12) (fun _ -> fragments.(Random.int (Array.length fragments))))
+
+let lex_test n =
+  let same = ref 0 and diff = ref 0 in
+  for i = 1 to n do
+    let s = random_lexeme_string () in
+    let ok = match lex_monpoly s, lex_verified s with
+      | None, None -> true
+      | Some a, Some b -> List.length a = List.length b && List.for_all2 (fun v m -> same_token v m) b a
+      | _ -> false
+    in
+    if ok then incr same
+    else begin
+      incr diff;
+      Printf.printf "LEX-DIFFER [%d]: %S\n" i s
+    end
+  done;
+  Printf.printf "lexed: %d  same: %d  differ: %d\n" n !same !diff;
+  if !diff > 0 then exit 1
+
 (* ---------------------------------------------------------------------- *)
 
 let verbose = ref false
@@ -215,6 +382,7 @@ let count = ref 1000
 let seed = ref 42
 let depth = ref 4
 let files = ref []
+let lex_mode = ref false
 
 let read_file fn =
   let ic = open_in_bin fn in
@@ -226,10 +394,12 @@ let () =
     [ ("-n", Arg.Set_int count, "number of random formulas (default 1000)");
       ("-seed", Arg.Set_int seed, "random seed (default 42)");
       ("-depth", Arg.Set_int depth, "maximal nesting depth (default 4)");
-      ("-v", Arg.Set verbose, "print every input") ]
+      ("-v", Arg.Set verbose, "print every input");
+      ("-lex", Arg.Set lex_mode, "compare the lexers on N random strings") ]
     (fun f -> files := f :: !files)
-    "parser_difftest [-n N] [-seed S] [-depth D] [-v] [FILE...]";
+    "parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [FILE...]";
   Random.init !seed;
+  if !lex_mode then (lex_test !count; exit 0);
   let inputs =
     if !files <> [] then List.rev_map (fun fn -> (fn, read_file fn)) !files
     else List.init !count (fun i -> (string_of_int i, formula (1 + Random.int !depth)))

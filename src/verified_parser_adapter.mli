@@ -5,3 +5,6 @@ val parse_string : string -> MFOTL.formula option
     [Formula_parser.formula Formula_lexer.token], returning [None] where
     MonPoly's parser fails (and on the documented differences, see
     thys/MFODL_Parser/README.md). *)
+
+val lex_string : string -> (Verified_parser.Verified_parser.mtok * string) list option
+(** The token classes and lexemes of the verified lexer model, for testing. *)
