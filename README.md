@@ -164,6 +164,20 @@ parameters of commands, and locating errors by line and column.  With
 `-old_log_parser`, MonPoly's former hand-written parser is used instead;
 `tools/log_parser_diff.ml` compares the two.
 
+With `-verified`, more of this is verified (theory `Log_Monitor` in
+`thys/MFODL_Monitor_Dense`): the parser skips the events of the
+predicates that the signature declares but the formula does not mention
+(unless `-nofilterrel`) without storing them, and the conversion of the
+timestamps and fields, the construction of the monitor's databases and
+the monitor itself are generated code too.  Its theorems state that the
+verdicts output for the bytes of a log are those that the specification
+of the formula prescribes for the trace prefix the log denotes, and that
+an error is reported for a log that denotes none.  Timestamps are then
+natural numbers, in decimal or with the prefixes `0x`, `0o` or `0b`, and
+floats are read by OCaml's `float_of_string`, a parameter of the
+theorems; the driver in `src/algorithm_verified.ml` only reads the input
+in chunks, prints the verdicts, and words the errors.
+
 The relations used in the formula and the log must be specified in the
 signature file (`examples/rv11.sig`).  In the example, the signature file
 contains the 2 lines:
