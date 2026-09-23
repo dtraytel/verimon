@@ -5,10 +5,12 @@
    and returns what the chunk completes, efinish returns what the end of the input completes.
    Theorem eparse_correct (Log_Exec.thy) states that, however the input is divided into chunks,
    the outputs contain no error exactly if the input is a log of the grammar of Log_Grammar.thy,
-   and that they then list its entries in order; efeed_chunks_online states the same for the
-   entries output so far, so a time point is passed on as soon as the byte that completes it has
-   been read.  After an error the parser skips to the next '@', ';' or '>' (but a quoted string
-   that is not closed contains the rest of the input).
+   and that they then list its entries in order; by efeed_chunks_online and efeed_chunks_prompt,
+   the entries output so far are those of every log that extends the input read so far, and a
+   time point is passed on as soon as the '@' or '>' of the next item has been read.  After an
+   error the parser skips to the next '@', ';' or '>' (but a quoted string that is not closed
+   contains the rest of the input); what it outputs after an error, and the offsets, are not
+   covered by the theorems.
 
    This module passes the entries to a consumer with the interface of Log_parser.Make and does
    what the grammar leaves to the consumer: it converts timestamps, looks predicates up in the

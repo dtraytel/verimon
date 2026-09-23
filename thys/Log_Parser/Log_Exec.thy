@@ -16,8 +16,13 @@ text \<open>
   offending token in the input, and the parser resumes at the next @{text "@"}, @{text ";"} or
   @{text ">"}. The main theorem, @{text eparse_correct}, states that for every division of an
   input into chunks, the output is error-free exactly if the input is a log, and it then lists
-  the log's entries; @{text efeed_chunks_online} states the same for the output so far of an
-  input that is still being read.
+  the log's entries. For an input that is still being read, @{text efeed_chunks_online} states
+  that the output so far is error-free exactly if the streaming parser has not failed, and it
+  then lists the entries that the streaming parser has output; so an error means that no
+  extension of the input is a log (@{thm [source] stream_run_error}), and the entries are those
+  of every extension that is a log (@{thm [source] stream_run_prefix}), output as soon as the next
+  item begins (@{text efeed_chunks_prompt}). What the parser outputs after an error, and the
+  offsets in the output, are not covered by these theorems.
 \<close>
 
 subsection \<open>Byte strings\<close>
@@ -914,6 +919,17 @@ proof -
   note C = efeed_chunks_correct[of E_INIT ss 0 P_INIT 0, folded init]
   then show ?thesis
     by (auto simp: einit_def oks_None_iff split: option.splits prod.splits)
+qed
+
+corollary efeed_chunks_prompt:
+  assumes "Glex s ts" "G_parser ts es" "c = CHR ''@'' \<or> c = CHR ''>''"
+    and "concat (map Rep_bytes ss) = s @ [c]"
+  shows "map_option abs_items (oks (fst (efeed_chunks ss einit))) = Some es"
+proof -
+  obtain P where "stream_run (s @ [c]) stream_init = Some (es, L_INIT, P)"
+    using stream_run_prompt[OF assms(1-3)] .
+  with efeed_chunks_online[of ss] assms(4) show ?thesis
+    by simp
 qed
 
 (*<*)

@@ -155,8 +155,9 @@ The log is read by a parser that is generated from its formalization in
 Isabelle/HOL (session `Log_Parser` in `thys/Log_Parser`, exported into
 `src/verified.ml`).  Its correctness theorem states that it accepts exactly
 the logs of the grammar formalized there, and that it passes on their time
-points in order, each as soon as it has been read (and not before: a time
-point is held in memory until it has been read completely).  What the grammar
+points in order, each as soon as the next time point or command begins (and
+not before: a time point is held in memory until it has been read
+completely).  What it outputs after an error is not covered by the proofs.  What the grammar
 leaves open is done by the unverified driver `src/verified_log_parser.ml`:
 converting timestamps, looking predicates up in the signature, reading the
 parameters of commands, and locating errors by line and column.  With

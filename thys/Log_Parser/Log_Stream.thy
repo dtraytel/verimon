@@ -8,8 +8,8 @@ section \<open>Lexing and parsing in one pass\<close>
 
 text \<open>
   The streaming parser feeds each token to the parser as soon as the lexer emits it, so that a
-  time point is output as soon as the character that completes it has been read: it reads its
-  input online. Its state pairs the states of the lexer and of the parser.
+  time point is output as soon as the next item begins (@{text stream_run_prompt} below): it
+  reads its input online. Its state pairs the states of the lexer and of the parser.
 \<close>
 
 type_synonym sstate = "lstate \<times> string pstate"
@@ -117,6 +117,61 @@ proof
     by (simp add: parse_log_correct)
   with assms show False
     by (simp add: parse_log_def stream_run_append)
+qed
+
+subsection \<open>Promptness\<close>
+
+text \<open>The streaming parser passes on an entry as soon as the next item begins: once it has read a
+  log and the @{text "@"} or @{text ">"} that follows it, it has output all of the log's entries.
+  (@{const Glex} excludes a log that ends in a comment without a line end, in which the
+  @{text "@"} would belong to the comment.)\<close>
+
+lemma lex_run_Glex_close:
+  assumes "Glex s ts" "c = CHR ''@'' \<or> c = CHR ''>''"
+  shows "lex_run (s @ [c]) L_INIT = Some (ts @ [if c = CHR ''@'' then T_AT else T_RANGLE], L_INIT)"
+proof -
+  from Glex_lex_run[OF assms(1)] obtain ts1 l where run: "lex_run s L_INIT = Some (ts1, l)"
+    and ends: "lex_ends ts ts1 l"
+    by blast
+  have c: "\<not> isSimpleChar c" "c \<noteq> CHR 0x22"
+    using assms(2) by (auto simp: isSimpleChar_def)
+  have init: "lex_run [c] L_INIT = Some ([if c = CHR ''@'' then T_AT else T_RANGLE], L_INIT)"
+    using assms(2) by (auto simp: lex_init_def isWhiteSpace_def)
+  from ends show ?thesis
+    unfolding lex_ends_def
+  proof (elim disjE exE conjE)
+    assume "l = L_INIT" "ts = ts1"
+    with run init show ?thesis
+      by (simp add: lex_run_append)
+  next
+    fix x
+    assume "l = L_SIMPLE x" "ts = ts1 @ [T_STR x]"
+    with run init c lex_run_close_simple[of c x "[]"] show ?thesis
+      by (simp add: lex_run_append)
+  qed
+qed
+
+lemma parse_finish_close:
+  "parse_finish p = Some es \<Longrightarrow> t = T_AT \<or> t = T_RANGLE \<Longrightarrow>
+   pstep t p = Some (es, if t = T_AT then P_TS else P_CMD)"
+  by (cases p) (auto simp: close_entry_def)
+
+theorem stream_run_prompt:
+  assumes "Glex s ts" "G_parser ts es" "c = CHR ''@'' \<or> c = CHR ''>''"
+  obtains P where "stream_run (s @ [c]) stream_init = Some (es, L_INIT, P)"
+proof -
+  from assms(2) have "parse ts = Some es"
+    by (rule parse_complete)
+  then obtain es1 p es2 where run: "parse_run ts P_INIT = Some (es1, p)"
+    and fin: "parse_finish p = Some es2" and es: "es = es1 @ es2"
+    by (auto simp: parse_def parse_from_def split: option.splits)
+  let ?t = "if c = CHR ''@'' then T_AT else T_RANGLE"
+  have "pstep ?t p = Some (es2, if ?t = T_AT then P_TS else P_CMD)"
+    using parse_finish_close[OF fin] assms(3) by auto
+  with run have "parse_run (ts @ [?t]) P_INIT = Some (es, if ?t = T_AT then P_TS else P_CMD)"
+    by (auto simp: parse_run_append es split: if_splits)
+  with lex_run_Glex_close[OF assms(1,3)] show ?thesis
+    by (auto simp: stream_run_lex_run stream_init_def intro: that)
 qed
 
 (*<*)
