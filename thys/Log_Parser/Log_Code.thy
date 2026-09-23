@@ -60,12 +60,12 @@ code_printing
 | constant bytes_length \<rightharpoonup> (OCaml) "(Z.of'_int (String.length _))"
 | constant bytes_null \<rightharpoonup> (OCaml) "(String.length _ = 0)"
 | constant bytes_at \<rightharpoonup> (OCaml)
-    "(fun s i -> String.get s (if Obj.is'_int (Obj.repr i) then (Obj.magic i : int) else Z.to'_int i))"
+    "(fun s i -> String.get s (if Obj.is'_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to'_int i))"
 | constant bytes_sub \<rightharpoonup> (OCaml)
     "(fun s i j -> let n = String.length s in
-      if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && 0 <= (Obj.magic i : int)
-        && (Obj.magic i : int) <= (Obj.magic j : int) && (Obj.magic j : int) <= n
-      then String.sub s (Obj.magic i : int) ((Obj.magic j : int) - (Obj.magic i : int))
+      if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
       else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of'_int n) then Z.to'_int i else n in
         let l = Z.sub j (Z.max i Z.zero) in
         if Z.sign l <= 0 || a >= n then \"\"
@@ -73,11 +73,11 @@ code_printing
 | constant bytes_append \<rightharpoonup> (OCaml) "(_ ^ _)"
 | constant bytes_empty \<rightharpoonup> (OCaml) "\"\""
 | constant idx_less \<rightharpoonup> (OCaml)
-    "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) then (Obj.magic i : int) < (Obj.magic j : int) else Z.lt i j)"
+    "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)"
 | constant idx_succ \<rightharpoonup> (OCaml)
-    "(fun i -> if Obj.is'_int (Obj.repr i) && (Obj.magic i : int) < max'_int then Z.of'_int ((Obj.magic i : int) + 1) else Z.succ i)"
+    "(fun i -> if Obj.is'_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max'_int then Z.of'_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)"
 | constant idx_add \<rightharpoonup> (OCaml)
-    "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && (let a = (Obj.magic i : int) and b = (Obj.magic j : int) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of'_int ((Obj.magic i : int) + (Obj.magic j : int)) else Z.add i j)"
+    "(fun i j -> if Obj.is'_int (Obj.repr i) && Obj.is'_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of'_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)"
 
 subsection \<open>Scanning lexemes\<close>
 
@@ -103,15 +103,15 @@ termination
 
 declare eskip.simps[simp del]
 
-lemma eloop_eskip: "eloop s n b i l p acc = eloop s n b (eskip l s n i) l p acc"
+lemma eloop_eskip: "eloop s n b i l p sp acc = eloop s n b (eskip l s n i) l p sp acc"
 proof (induction l s n i rule: eskip.induct)
   case (1 l s n i)
   show ?case
   proof (cases "i < n \<and> skips l (bytes_at s i)")
     case True
-    then have "eloop s n b i l p acc = eloop s n b (i + 1) l p acc"
+    then have "eloop s n b i l p sp acc = eloop s n b (i + 1) l p sp acc"
       by (subst eloop.simps) (simp add: skips_R_SAME)
-    also have "\<dots> = eloop s n b (eskip l s n (i + 1)) l p acc"
+    also have "\<dots> = eloop s n b (eskip l s n (i + 1)) l p sp acc"
       using 1 True by simp
     also have "eskip l s n (i + 1) = eskip l s n i"
       using True by (simp add: eskip.simps[of l s n i])
@@ -192,16 +192,17 @@ qed
 text \<open>The loop scans before each step of the automaton.\<close>
 
 lemma eloop_code[code]:
-  "eloop s n b i l p acc = (let i = eskip l s n i in if idx_less i n then (case elex_step s b i (bytes_at s i) l of
-       R_SAME \<Rightarrow> eloop s n b (idx_succ i) l p acc
-     | R_NEXT l' \<Rightarrow> eloop s n b (idx_succ i) l' p acc
-     | R_TOK t tp l' \<Rightarrow> (case efeed t tp p acc of (acc', p') \<Rightarrow> eloop s n b (idx_succ i) l' p' acc')
-     | R_TOK2 t tp t' tp' l' \<Rightarrow> (case efeed t tp p acc of (acc', p') \<Rightarrow>
-         case efeed t' tp' p' acc' of (acc'', p'') \<Rightarrow> eloop s n b (idx_succ i) l' p'' acc'')
-     | R_TOK_ERR t tp \<Rightarrow> (case efeed t tp p acc of (acc', p') \<Rightarrow>
-         eloop s n b (idx_succ i) E_INIT None (echar_err (idx_add b i) (bytes_at s i) p' acc'))
-     | R_ERR \<Rightarrow> eloop s n b (idx_succ i) E_INIT None (echar_err (idx_add b i) (bytes_at s i) p acc))
-   else (acc, l, p))"
+  "eloop s n b i l p sp acc = (let i = eskip l s n i in if idx_less i n then (case elex_step s b i (bytes_at s i) l of
+       R_SAME \<Rightarrow> eloop s n b (idx_succ i) l p sp acc
+     | R_NEXT l' \<Rightarrow> eloop s n b (idx_succ i) l' p sp acc
+     | R_TOK t tp l' \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow> eloop s n b (idx_succ i) l' p' (start tp p' sp) acc')
+     | R_TOK2 t tp t' tp' l' \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow>
+         case efeed t' tp' p' (start tp p' sp) acc' of (acc'', p'') \<Rightarrow>
+           eloop s n b (idx_succ i) l' p'' (start tp' p'' (start tp p' sp)) acc'')
+     | R_TOK_ERR t tp \<Rightarrow> (case efeed t tp p sp acc of (acc', p') \<Rightarrow>
+         eloop s n b (idx_succ i) E_INIT None sp (echar_err (idx_add b i) (bytes_at s i) p' acc'))
+     | R_ERR \<Rightarrow> eloop s n b (idx_succ i) E_INIT None sp (echar_err (idx_add b i) (bytes_at s i) p acc))
+   else (acc, l, p, sp))"
   unfolding idx_less_def idx_succ_def idx_add_def Let_def
   by (subst eloop_eskip, subst eloop.simps) simp
 
@@ -249,21 +250,21 @@ lemma elex_step_code[code]: "elex_step s b i c l = (case l of
   unfolding isLineCommentEnd_def[symmetric]
   by (simp add: elex_step_def)
 
-lemma fold_O_ITEM: "fold (\<lambda>e acc. O_ITEM e # acc) es acc = rev (map O_ITEM es) @ acc"
+lemma fold_O_ITEM: "fold (\<lambda>e acc. O_ITEM sp e # acc) es acc = rev (map (O_ITEM sp) es) @ acc"
   by (induction es arbitrary: acc) auto
 
-lemma efeed_code[code]: "efeed t pos p acc = (case p of
+lemma efeed_code[code]: "efeed t pos p sp acc = (case p of
      None \<Rightarrow> (acc, resync t)
    | Some ps \<Rightarrow> (case pstep t ps of
        None \<Rightarrow> (O_ERROR pos (E_TOKEN (expect_of ps) (Some t)) # acc, resync t)
-     | Some (es, ps') \<Rightarrow> (fold (\<lambda>e acc. O_ITEM e # acc) es acc, Some ps')))"
+     | Some (es, ps') \<Rightarrow> (fold (\<lambda>e acc. O_ITEM sp e # acc) es acc, Some ps')))"
   by (auto simp: efeed_def fold_O_ITEM split: option.splits)
 
-lemma efinish_p_code[code]: "efinish_p b p acc = (case p of
+lemma efinish_p_code[code]: "efinish_p b p sp acc = (case p of
      None \<Rightarrow> acc
    | Some ps \<Rightarrow> (case parse_finish ps of
        None \<Rightarrow> O_ERROR b (E_TOKEN (expect_of ps) None) # acc
-     | Some es \<Rightarrow> fold (\<lambda>e acc. O_ITEM e # acc) es acc))"
+     | Some es \<Rightarrow> fold (\<lambda>e acc. O_ITEM sp e # acc) es acc))"
   by (auto simp: efinish_p_def fold_O_ITEM split: option.splits)
 
 (*<*)
