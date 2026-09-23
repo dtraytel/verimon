@@ -227,6 +227,7 @@ let _ =
     "-nofilteremptytp", Arg.Set nofilteremptytpopt, "\tDisable filter_empty_tp module";
     "-stats", Arg.Set statsarg, "\t\tShow stats at the end of stdout";
     "-ignore_parse_errors", Arg.Set Misc.ignore_parse_errors, "\tIgnore log parse errors";
+    "-old_log_parser", Arg.Set Verified_log_parser.old, "\tRead the log with MonPoly's hand-written parser instead of the verified one (thys/Log_Parser)";
     "-stop_at_out_of_order_ts", Arg.Set Misc.stop_at_out_of_order_ts, "\tStop monitoring when out-of-order timestamps encountered, otherwise issue warning";
     "-stop_at_first_viol", Arg.Set Misc.stop_at_first_viol, "\tStop at first encountered violation";
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";

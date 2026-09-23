@@ -57,6 +57,36 @@ end = struct
   let compare x y = Z.of_int (Stdlib.compare x y);;
 end;;
 
+
+module Bit_Shifts : sig
+  val push : Z.t -> Z.t -> Z.t
+  val drop : Z.t -> Z.t -> Z.t
+end = struct
+
+let rec fold f xs y = match xs with
+  [] -> y
+  | (x :: xs) -> fold f xs (f x y);;
+
+let rec replicate n x = (if Z.leq n Z.zero then [] else x :: replicate (Z.pred n) x);;
+
+let max_index = Z.of_int max_int;;
+
+let splitIndex i = let (b, s) = Z.div_rem i max_index
+  in Z.to_int s :: replicate b max_int;;
+
+let push' i k = Z.shift_left k i;;
+
+let drop' i k = Z.shift_right k i;;
+
+(* The implementations are formally total, though indices >~ max_index will produce heavy computation load *)
+
+let push i = fold push' (splitIndex (Z.abs i));;
+
+let drop i = fold drop' (splitIndex (Z.abs i));;
+
+end;;
+
+
 module Str_Literal : sig
   val literal_of_asciis : Z.t list -> string
   val asciis_of_literal: string -> Z.t list
@@ -136,8 +166,18 @@ module Monitor : sig
   type int = Int_of_integer of Z.t
   type 'a regex = Skip of nat | Test of 'a | Plusa of 'a regex * 'a regex |
     Times of 'a regex * 'a regex | Star of 'a regex
+  type 'a token = T_AT | T_LPAREN | T_RPAREN | T_LANGLE | T_RANGLE | T_LBRACE |
+    T_RBRACE | T_COMMA | T_SEMICOLON | T_STR of 'a
+  type 'a item = Entry of 'a * ('a * 'a list) list |
+    Command of 'a * 'a token list
+  type expect = X_ENTRY | X_TIMESTAMP | X_PREDICATE | X_FIELD_OR_RPAREN |
+    X_COMMA_OR_RPAREN | X_FIELD | X_CMD_NAME | X_CMD_ARG
+  type perror = E_TOKEN of expect * string token option |
+    E_CHAR of expect * char | E_UNTERMINATED
+  type out = O_ITEM of Z.t * string item | O_ERROR of Z.t * perror
   type safety
   type tysym = TAny of nat | TNum of nat | TCst of ty
+  type elstate
   type modality
   type 'a formula = Pred of string * trm list |
     Let of string * 'a formula * 'a formula |
@@ -152,14 +192,21 @@ module Monitor : sig
     | Trigger of 'a formula * i * 'a formula |
     Release of 'a formula * i * 'a formula | MatchF of i * 'a formula regex |
     MatchP of i * 'a formula regex | TP of trm | TS of trm
+  type 'a pstate
   type 'a boxed
   type 'a udmstate_ext
   val wild : 'a regex
+  val einit : Z.t * (elstate * (string pstate option * Z.t))
+  val efinish : Z.t * (elstate * (string pstate option * Z.t)) -> out list
   val integer_of_int : int -> Z.t
   val interval : nat -> enat -> i
   val type_check :
     (string * nat -> (tysym list) option) ->
       tysym formula -> (string, ty formula) sum
+  val efeed_chunk :
+    string ->
+      Z.t * (elstate * (string pstate option * Z.t)) ->
+        out list * (Z.t * (elstate * (string pstate option * Z.t)))
   val mmonitorable_exec : 'a formula -> bool
   val udminit_push : ty formula -> unit udmstate_ext
   val convert_multiway : 'a formula -> 'a formula
@@ -2664,12 +2711,6 @@ let mapping_impl_string8 =
 
 let equal_integer = ({equal = Z.equal} : Z.t equal);;
 
-let one_integera : Z.t = (Z.of_int 1);;
-
-let one_integer = ({one = one_integera} : Z.t one);;
-
-let zero_integer = ({zero = Z.zero} : Z.t zero);;
-
 let ord_integer = ({less_eq = Z.leq; less = Z.lt} : Z.t ord);;
 
 let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
@@ -2677,10 +2718,6 @@ let preorder_integer = ({ord_preorder = ord_integer} : Z.t preorder);;
 let order_integer = ({preorder_order = preorder_integer} : Z.t order);;
 
 let linorder_integer = ({order_linorder = order_integer} : Z.t linorder);;
-
-let zero_neq_one_integer =
-  ({one_zero_neq_one = one_integer; zero_zero_neq_one = zero_integer} :
-    Z.t zero_neq_one);;
 
 let equal_event_data = ({equal = equal_event_dataa} : event_data equal);;
 
@@ -2986,11 +3023,30 @@ type cmp_val = LT | EQ | GT;;
 type 'a regex = Skip of nat | Test of 'a | Plusa of 'a regex * 'a regex |
   Times of 'a regex * 'a regex | Star of 'a regex;;
 
-type char = Chara of bool * bool * bool * bool * bool * bool * bool * bool;;
+type 'a token = T_AT | T_LPAREN | T_RPAREN | T_LANGLE | T_RANGLE | T_LBRACE |
+  T_RBRACE | T_COMMA | T_SEMICOLON | T_STR of 'a;;
+
+type 'a item = Entry of 'a * ('a * 'a list) list |
+  Command of 'a * 'a token list;;
+
+type expect = X_ENTRY | X_TIMESTAMP | X_PREDICATE | X_FIELD_OR_RPAREN |
+  X_COMMA_OR_RPAREN | X_FIELD | X_CMD_NAME | X_CMD_ARG;;
+
+type perror = E_TOKEN of expect * string token option | E_CHAR of expect * char
+  | E_UNTERMINATED;;
+
+type out = O_ITEM of Z.t * string item | O_ERROR of Z.t * perror;;
 
 type safety = Strict | Lax;;
 
 type tysym = TAny of nat | TNum of nat | TCst of ty;;
+
+type elstate = E_INIT | E_SIMPLE of string * Z.t * Z.t |
+  E_QUOTED of string * Z.t * Z.t | E_ESCAPE of string * Z.t * Z.t | E_COMMENT;;
+
+type eres = R_SAME | R_NEXT of elstate | R_TOK of string token * Z.t * elstate |
+  R_TOK2 of string token * Z.t * string token * Z.t * elstate |
+  R_TOK_ERR of string token * Z.t | R_ERR;;
 
 type modality = Past | Futu;;
 
@@ -3085,6 +3141,14 @@ type ('a, 'b, 'c) meformula = MRel of ((event_data option) list) set |
 type ('a, 'b, 'c) mformula = Rep_meformula of ('a, 'b, 'c) meformula;;
 
 type argpos = Same | Swapped;;
+
+type 'a pstate = P_INIT | P_TS | P_DB of 'a * ('a * 'a list) list |
+  P_NAME of 'a * ('a * 'a list) list * 'a |
+  P_TUPLES of 'a * ('a * 'a list) list * 'a |
+  P_FIELD1 of 'a * ('a * 'a list) list * 'a |
+  P_AFTER of 'a * ('a * 'a list) list * 'a * 'a list |
+  P_FIELDN of 'a * ('a * 'a list) list * 'a * 'a list | P_CMD |
+  P_ARGS of 'a * 'a token list;;
 
 type 'a formulaa = Preda of string * trm list |
   Leta of string * 'a formulaa * 'a formulaa |
@@ -4799,6 +4863,17 @@ let rec no_left p = list_all (fun m -> not (equal_mrg m MLft)) p;;
 
 let rec rem_col cs y = filtera (fun c -> not (equal_nata c y)) cs;;
 
+let rec is_r
+  pre s st i =
+    (if (String.length pre = 0)
+      then Z.equal i (Z.add st (Z.of_int 1)) &&
+             ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                 s st) : char) = '\114')
+      else Z.equal ((Z.of_int (String.length pre))) (Z.of_int 1) &&
+             (Z.equal i st &&
+               ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                   pre Z.zero) : char) = '\114')));;
+
 let rec mapping_empty_choose _A
   = (match ccompare _A with None -> Assoc_List_Mapping empty
       | Some _ -> RBT_Mapping (emptyc _A));;
@@ -4991,6 +5066,406 @@ let rec replicate
   n x = (if equal_nata n zero_nata then []
           else x :: replicate (minus_nata n one_nata) x);;
 
+let rec skip_comment
+  s n i =
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n &&
+          (let c =
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+               s i
+             in
+            not (((c : char) = '\010')) && not (((c : char) = '\013')))
+      then skip_comment s n
+             ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               i)
+      else i);;
+
+let rec skip_simple
+  s n i =
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n &&
+          (let c =
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+               s i
+             in
+            (('\048' : char) <= c) && ((c : char) <= '\057') ||
+              ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+                ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+                  (((c : char) = '\095') ||
+                    (((c : char) = '\091') ||
+                      (((c : char) = '\093') ||
+                        (((c : char) = '\047') ||
+                          (((c : char) = '\058') ||
+                            (((c : char) = '\045') ||
+                              (((c : char) = '\046') ||
+                                ((c : char) = '\033')))))))))))
+      then skip_simple s n
+             ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               i)
+      else i);;
+
+let rec skip_quoted
+  s n i =
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n &&
+          (let c =
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+               s i
+             in
+            not (((c : char) = '\034')) && not (((c : char) = '\092')))
+      then skip_quoted s n
+             ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               i)
+      else i);;
+
+let rec skip_white
+  s n i =
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n &&
+          (let c =
+             (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+               s i
+             in
+            ((c : char) = '\032') ||
+              (((c : char) = '\009') ||
+                (((c : char) = '\010') || ((c : char) = '\013'))))
+      then skip_white s n
+             ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               i)
+      else i);;
+
+let rec eskip
+  l s n i =
+    (match l with E_INIT -> skip_white s n i
+      | E_SIMPLE (_, _, _) -> skip_simple s n i
+      | E_QUOTED (_, _, _) -> skip_quoted s n i | E_ESCAPE (_, _, _) -> i
+      | E_COMMENT -> skip_comment s n i);;
+
+let rec expect_of = function P_INIT -> X_ENTRY
+                    | P_TS -> X_TIMESTAMP
+                    | P_DB (uu, uv) -> X_PREDICATE
+                    | P_NAME (uw, ux, uy) -> X_PREDICATE
+                    | P_TUPLES (uz, va, vb) -> X_PREDICATE
+                    | P_FIELD1 (vc, vd, ve) -> X_FIELD_OR_RPAREN
+                    | P_AFTER (vf, vg, vh, vi) -> X_COMMA_OR_RPAREN
+                    | P_FIELDN (vj, vk, vl, vm) -> X_FIELD
+                    | P_CMD -> X_CMD_NAME
+                    | P_ARGS (vn, vo) -> X_CMD_ARG;;
+
+let rec close_entry
+  t e = (match t with T_AT -> Some ([e], P_TS) | T_LPAREN -> None
+          | T_RPAREN -> None | T_LANGLE -> None | T_RANGLE -> Some ([e], P_CMD)
+          | T_LBRACE -> None | T_RBRACE -> None | T_COMMA -> None
+          | T_SEMICOLON -> Some ([e], P_INIT) | T_STR _ -> None);;
+
+let rec cmd_arg = function T_AT -> false
+                  | T_SEMICOLON -> false
+                  | T_LANGLE -> false
+                  | T_RANGLE -> false
+                  | T_LPAREN -> true
+                  | T_RPAREN -> true
+                  | T_LBRACE -> true
+                  | T_RBRACE -> true
+                  | T_COMMA -> true
+                  | T_STR v -> true;;
+
+let rec pstep
+  t x1 = match t, x1 with
+    t, P_INIT ->
+      (match t with T_AT -> Some ([], P_TS) | T_LPAREN -> None
+        | T_RPAREN -> None | T_LANGLE -> None | T_RANGLE -> Some ([], P_CMD)
+        | T_LBRACE -> None | T_RBRACE -> None | T_COMMA -> None
+        | T_SEMICOLON -> None | T_STR _ -> None)
+    | t, P_TS ->
+        (match t with T_AT -> None | T_LPAREN -> None | T_RPAREN -> None
+          | T_LANGLE -> None | T_RANGLE -> None | T_LBRACE -> None
+          | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> None
+          | T_STR ts -> Some ([], P_DB (ts, [])))
+    | t, P_DB (ts, evs) ->
+        (match t with T_AT -> close_entry t (Entry (ts, rev evs))
+          | T_LPAREN -> close_entry t (Entry (ts, rev evs))
+          | T_RPAREN -> close_entry t (Entry (ts, rev evs))
+          | T_LANGLE -> close_entry t (Entry (ts, rev evs))
+          | T_RANGLE -> close_entry t (Entry (ts, rev evs))
+          | T_LBRACE -> close_entry t (Entry (ts, rev evs))
+          | T_RBRACE -> close_entry t (Entry (ts, rev evs))
+          | T_COMMA -> close_entry t (Entry (ts, rev evs))
+          | T_SEMICOLON -> close_entry t (Entry (ts, rev evs))
+          | T_STR p -> Some ([], P_NAME (ts, evs, p)))
+    | t, P_NAME (ts, evs, p) ->
+        (match t with T_AT -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_LPAREN -> Some ([], P_FIELD1 (ts, evs, p))
+          | T_RPAREN -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_LANGLE -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_RANGLE -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_LBRACE -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_RBRACE -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_COMMA -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_SEMICOLON -> close_entry t (Entry (ts, rev ((p, []) :: evs)))
+          | T_STR q -> Some ([], P_NAME (ts, (p, []) :: evs, q)))
+    | t, P_TUPLES (ts, evs, p) ->
+        (match t with T_AT -> close_entry t (Entry (ts, rev evs))
+          | T_LPAREN -> Some ([], P_FIELD1 (ts, evs, p))
+          | T_RPAREN -> close_entry t (Entry (ts, rev evs))
+          | T_LANGLE -> close_entry t (Entry (ts, rev evs))
+          | T_RANGLE -> close_entry t (Entry (ts, rev evs))
+          | T_LBRACE -> close_entry t (Entry (ts, rev evs))
+          | T_RBRACE -> close_entry t (Entry (ts, rev evs))
+          | T_COMMA -> close_entry t (Entry (ts, rev evs))
+          | T_SEMICOLON -> close_entry t (Entry (ts, rev evs))
+          | T_STR q -> Some ([], P_NAME (ts, evs, q)))
+    | t, P_FIELD1 (ts, evs, p) ->
+        (match t with T_AT -> None | T_LPAREN -> None
+          | T_RPAREN -> Some ([], P_TUPLES (ts, (p, []) :: evs, p))
+          | T_LANGLE -> None | T_RANGLE -> None | T_LBRACE -> None
+          | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> None
+          | T_STR f -> Some ([], P_AFTER (ts, evs, p, [f])))
+    | t, P_AFTER (ts, evs, p, fs) ->
+        (match t with T_AT -> None | T_LPAREN -> None
+          | T_RPAREN -> Some ([], P_TUPLES (ts, (p, rev fs) :: evs, p))
+          | T_LANGLE -> None | T_RANGLE -> None | T_LBRACE -> None
+          | T_RBRACE -> None | T_COMMA -> Some ([], P_FIELDN (ts, evs, p, fs))
+          | T_SEMICOLON -> None | T_STR _ -> None)
+    | t, P_FIELDN (ts, evs, p, fs) ->
+        (match t with T_AT -> None | T_LPAREN -> None | T_RPAREN -> None
+          | T_LANGLE -> None | T_RANGLE -> None | T_LBRACE -> None
+          | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> None
+          | T_STR f -> Some ([], P_AFTER (ts, evs, p, f :: fs)))
+    | t, P_CMD ->
+        (match t with T_AT -> None | T_LPAREN -> None | T_RPAREN -> None
+          | T_LANGLE -> None | T_RANGLE -> None | T_LBRACE -> None
+          | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> None
+          | T_STR c -> Some ([], P_ARGS (c, [])))
+    | t, P_ARGS (c, args) ->
+        (match t
+          with T_AT ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_LPAREN ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_RPAREN ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_LANGLE -> Some ([Command (c, rev args)], P_INIT)
+          | T_RANGLE ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_LBRACE ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_RBRACE ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_COMMA ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_SEMICOLON ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None)
+          | T_STR _ ->
+            (if cmd_arg t then Some ([], P_ARGS (c, t :: args)) else None));;
+
+let rec resync
+  t = (match t with T_AT -> Some P_TS | T_LPAREN -> None | T_RPAREN -> None
+        | T_LANGLE -> None | T_RANGLE -> Some P_CMD | T_LBRACE -> None
+        | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> Some P_INIT
+        | T_STR _ -> None);;
+
+let rec efeed
+  t pos p sp acc =
+    (match p with None -> (acc, resync t)
+      | Some ps ->
+        (match pstep t ps
+          with None ->
+            (O_ERROR (pos, E_TOKEN (expect_of ps, Some t)) :: acc, resync t)
+          | Some (es, psa) ->
+            (fold (fun e -> (fun a -> O_ITEM (sp, e) :: a)) es acc,
+              Some psa)));;
+
+let einit : Z.t * (elstate * (string pstate option * Z.t))
+  = (Z.zero, (E_INIT, (Some P_INIT, Z.zero)));;
+
+let rec elex_init
+  pos i c =
+    (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
+          ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+            ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+              (((c : char) = '\095') ||
+                (((c : char) = '\091') ||
+                  (((c : char) = '\093') ||
+                    (((c : char) = '\047') ||
+                      (((c : char) = '\058') ||
+                        (((c : char) = '\045') ||
+                          (((c : char) = '\046') ||
+                            ((c : char) = '\033'))))))))))
+      then R_NEXT (E_SIMPLE ("", i, pos))
+      else (if ((c : char) = '\032') ||
+                 (((c : char) = '\009') ||
+                   (((c : char) = '\010') || ((c : char) = '\013')))
+             then R_NEXT E_INIT
+             else (if ((c : char) = '\064') then R_TOK (T_AT, pos, E_INIT)
+                    else (if ((c : char) = '\040')
+                           then R_TOK (T_LPAREN, pos, E_INIT)
+                           else (if ((c : char) = '\041')
+                                  then R_TOK (T_RPAREN, pos, E_INIT)
+                                  else (if ((c : char) = '\060')
+ then R_TOK (T_LANGLE, pos, E_INIT)
+ else (if ((c : char) = '\062') then R_TOK (T_RANGLE, pos, E_INIT)
+        else (if ((c : char) = '\123') then R_TOK (T_LBRACE, pos, E_INIT)
+               else (if ((c : char) = '\125') then R_TOK (T_RBRACE, pos, E_INIT)
+                      else (if ((c : char) = '\044')
+                             then R_TOK (T_COMMA, pos, E_INIT)
+                             else (if ((c : char) = '\059')
+                                    then R_TOK (T_SEMICOLON, pos, E_INIT)
+                                    else (if ((c : char) = '\035')
+   then R_NEXT E_COMMENT
+   else (if ((c : char) = '\034')
+          then R_NEXT
+                 (E_QUOTED
+                   ("", (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                          i,
+                     pos))
+          else R_ERR)))))))))))));;
+
+let rec close_tok
+  t tp r =
+    (match r with R_SAME -> R_TOK_ERR (t, tp) | R_NEXT a -> R_TOK (t, tp, a)
+      | R_TOK (a, b, c) -> R_TOK2 (t, tp, a, b, c)
+      | R_TOK2 (_, _, _, _, _) -> R_TOK_ERR (t, tp)
+      | R_TOK_ERR (_, _) -> R_TOK_ERR (t, tp) | R_ERR -> R_TOK_ERR (t, tp));;
+
+let rec mk_str
+  pre s st i =
+    (if (String.length pre = 0)
+      then (fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j (Z.max i Z.zero) in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+             s st i
+      else (pre ^ ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j (Z.max i Z.zero) in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+                    s st i)));;
+
+let rec elex_step
+  s b i c l =
+    (match l
+      with E_INIT ->
+        (if ((c : char) = '\032') ||
+              (((c : char) = '\009') ||
+                (((c : char) = '\010') || ((c : char) = '\013')))
+          then R_SAME
+          else elex_init
+                 ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                   b i)
+                 i c)
+      | E_SIMPLE (pre, st, tp) ->
+        (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
+              ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+                ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+                  (((c : char) = '\095') ||
+                    (((c : char) = '\091') ||
+                      (((c : char) = '\093') ||
+                        (((c : char) = '\047') ||
+                          (((c : char) = '\058') ||
+                            (((c : char) = '\045') ||
+                              (((c : char) = '\046') ||
+                                ((c : char) = '\033'))))))))))
+          then R_SAME
+          else (if ((c : char) = '\034') && is_r pre s st i
+                 then R_NEXT
+                        (E_QUOTED
+                          ("", (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                 i,
+                            tp))
+                 else close_tok (T_STR (mk_str pre s st i)) tp
+                        (elex_init
+                          ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                            b i)
+                          i c)))
+      | E_QUOTED (pre, st, tp) ->
+        (if ((c : char) = '\034')
+          then R_TOK (T_STR (mk_str pre s st i), tp, E_INIT)
+          else (if ((c : char) = '\092') then R_NEXT (E_ESCAPE (pre, st, tp))
+                 else R_SAME))
+      | E_ESCAPE (pre, st, tp) -> R_NEXT (E_QUOTED (pre, st, tp))
+      | E_COMMENT ->
+        (if ((c : char) = '\010') || ((c : char) = '\013') then R_NEXT E_INIT
+          else R_SAME));;
+
+let rec echar_err
+  pos c p acc =
+    (match p with None -> acc
+      | Some ps -> O_ERROR (pos, E_CHAR (expect_of ps, c)) :: acc);;
+
+let rec start
+  pos p sp =
+    (match p with None -> sp | Some P_INIT -> sp | Some P_TS -> pos
+      | Some (P_DB (_, _)) -> sp | Some (P_NAME (_, _, _)) -> sp
+      | Some (P_TUPLES (_, _, _)) -> sp | Some (P_FIELD1 (_, _, _)) -> sp
+      | Some (P_AFTER (_, _, _, _)) -> sp | Some (P_FIELDN (_, _, _, _)) -> sp
+      | Some P_CMD -> pos | Some (P_ARGS (_, _)) -> sp);;
+
+let rec eloop
+  s n b i l p sp acc =
+    (let ia = eskip l s n i in
+      (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+            ia n
+        then (match
+               elex_step s b ia
+                 ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                   s ia)
+                 l
+               with R_SAME ->
+                 eloop s n b
+                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                     ia)
+                   l p sp acc
+               | R_NEXT la ->
+                 eloop s n b
+                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                     ia)
+                   la p sp acc
+               | R_TOK (t, tp, la) ->
+                 (let (acca, pa) = efeed t tp p sp acc in
+                   eloop s n b
+                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                       ia)
+                     la pa (start tp pa sp) acca)
+               | R_TOK2 (t, tp, ta, tpa, la) ->
+                 (let (acca, pa) = efeed t tp p sp acc in
+                  let (accb, paa) = efeed ta tpa pa (start tp pa sp) acca in
+                   eloop s n b
+                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                       ia)
+                     la paa (start tpa paa (start tp pa sp)) accb)
+               | R_TOK_ERR (t, tp) ->
+                 (let (acca, pa) = efeed t tp p sp acc in
+                   eloop s n b
+                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                       ia)
+                     E_INIT None sp
+                     (echar_err
+                       ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                         b ia)
+                       ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                         s ia)
+                       pa acca))
+               | R_ERR ->
+                 eloop s n b
+                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                     ia)
+                   E_INIT None sp
+                   (echar_err
+                     ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                       b ia)
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (Obj.magic i : Stdlib.Int.t) else Z.to_int i))
+                       s ia)
+                     p acc))
+        else (acc, (l, (p, sp)))));;
+
 let rec delete_aux _A
   k x1 = match k, x1 with k, [] -> []
     | ka, (k, v) :: xs ->
@@ -5159,40 +5634,9 @@ let rec tl_queue_t
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
 
-let rec of_bool _A = function false -> zero _A.zero_zero_neq_one
-                     | true -> one _A.one_zero_neq_one;;
-
-let rec integer_of_char
-  (Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
-    Z.add (Z.mul
-            (Z.add
-              (Z.mul
-                (Z.add
-                  (Z.mul
-                    (Z.add
-                      (Z.mul
-                        (Z.add
-                          (Z.mul
-                            (Z.add
-                              (Z.mul
-                                (Z.add
-                                  (Z.mul (of_bool zero_neq_one_integer b7)
-                                    (Z.of_int 2))
-                                  (of_bool zero_neq_one_integer b6))
-                                (Z.of_int 2))
-                              (of_bool zero_neq_one_integer b5))
-                            (Z.of_int 2))
-                          (of_bool zero_neq_one_integer b4))
-                        (Z.of_int 2))
-                      (of_bool zero_neq_one_integer b3))
-                    (Z.of_int 2))
-                  (of_bool zero_neq_one_integer b2))
-                (Z.of_int 2))
-              (of_bool zero_neq_one_integer b1))
-            (Z.of_int 2))
-      (of_bool zero_neq_one_integer b0);;
-
-let rec implode cs = Str_Literal.literal_of_asciis (mapa integer_of_char cs);;
+let rec implode
+  cs = Str_Literal.literal_of_asciis
+         (mapa (fun a -> (Z.of_int (Char.code a))) cs);;
 
 let rec restrict_aux
   i a x2 = match i, a, x2 with i, a, [] -> []
@@ -5604,6 +6048,37 @@ let rec list_update
     | x :: xs, i, y ->
         (if equal_nata i zero_nata then y :: xs
           else x :: list_update xs (minus_nata i one_nata) y);;
+
+let rec parse_finish
+  = function P_INIT -> Some []
+    | P_DB (ts, evs) -> Some [Entry (ts, rev evs)]
+    | P_NAME (ts, evs, p) -> Some [Entry (ts, rev ((p, []) :: evs))]
+    | P_TUPLES (ts, evs, p) -> Some [Entry (ts, rev evs)]
+    | P_TS -> None
+    | P_FIELD1 (v, va, vb) -> None
+    | P_AFTER (v, va, vb, vc) -> None
+    | P_FIELDN (v, va, vb, vc) -> None
+    | P_CMD -> None
+    | P_ARGS (v, va) -> None;;
+
+let rec efinish_p
+  b p sp acc =
+    (match p with None -> acc
+      | Some ps ->
+        (match parse_finish ps
+          with None -> O_ERROR (b, E_TOKEN (expect_of ps, None)) :: acc
+          | Some es -> fold (fun e -> (fun a -> O_ITEM (sp, e) :: a)) es acc));;
+
+let rec efinish
+  st = (match st with (b, (E_INIT, (p, sp))) -> rev (efinish_p b p sp [])
+         | (b, (E_SIMPLE (pre, _, tp), (p, sp))) ->
+           (let (acc, pa) = efeed (T_STR pre) tp p sp [] in
+             rev (efinish_p b pa (start tp pa sp) acc))
+         | (_, (E_QUOTED (_, _, tp), (p, _))) ->
+           (match p with None -> [] | Some _ -> [O_ERROR (tp, E_UNTERMINATED)])
+         | (_, (E_ESCAPE (_, _, tp), (p, _))) ->
+           (match p with None -> [] | Some _ -> [O_ERROR (tp, E_UNTERMINATED)])
+         | (b, (E_COMMENT, (p, sp))) -> rev (efinish_p b p sp []));;
 
 let rec atms (_A1, _A2, _A3)
   = function Skip x1 -> bot_set (_A1, _A2, _A3)
@@ -6865,10 +7340,7 @@ let rec pred_names
     | TP t -> []
     | TS t -> [];;
 
-let rec frz_cand
-  k = id (implode
-           (replicate (suc k)
-             (Chara (true, false, false, false, true, true, true, false))));;
+let rec frz_cand k = id (implode (replicate (suc k) '\113'));;
 
 let rec fresh_name
   ns = (match
@@ -8385,6 +8857,21 @@ let rec get_and_list = function Ands l -> (if null l then [Ands l] else l)
 let rec uassign1 p t d = take p d @ umeval_trm t d :: drop p d;;
 
 let rec uassign p t d = edl_image (uassign1 p t) d;;
+
+let rec close_chunk
+  s n l =
+    (match l with E_INIT -> l
+      | E_SIMPLE (pre, st, a) -> E_SIMPLE (mk_str pre s st n, Z.zero, a)
+      | E_QUOTED (pre, st, a) -> E_QUOTED (mk_str pre s st n, Z.zero, a)
+      | E_ESCAPE (pre, st, a) -> E_ESCAPE (mk_str pre s st n, Z.zero, a)
+      | E_COMMENT -> l);;
+
+let rec efeed_chunk
+  s st =
+    (let (b, (l, (p, sp))) = st in
+     let n = (Z.of_int (String.length s)) in
+     let (acc, (la, (pa, spa))) = eloop s n b Z.zero l p sp [] in
+      (rev acc, (Z.add b n, (close_chunk s n la, (pa, spa)))));;
 
 let rec is_simple_eq
   t1 t2 =

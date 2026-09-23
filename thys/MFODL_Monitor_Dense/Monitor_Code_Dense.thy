@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Agg_Upkeep Dense_Push Dense_VeriMon
+  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_Agg_Upkeep Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
 begin
 (*>*)
 
@@ -71,6 +71,9 @@ export_code
   (*the verified dense monitor, over the short tuples, and its initialization with VeriMon's
     preparation of the formula*)
   udminit_push udminit_verimon prepare_verimon udmstep uvdfail_nodes udmstate_m
+  (*the verified log parser (session Log_Parser), which reads the log in chunks*)
+  Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
+  Log_Exec.E_TOKEN Log_Exec.X_ENTRY
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)

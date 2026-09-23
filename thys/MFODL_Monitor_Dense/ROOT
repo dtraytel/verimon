@@ -9,7 +9,9 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
      verified dense evaluator udmstep/udeval -- can be checked and reused without ever touching
      the Heap monad, and so that a change to the imperative refinement does not force this
      session to be rebuilt. Monitor_Code_Dense is the code export the shipping binary is built
-     from (src/verified.ml)."
+     from (src/verified.ml), together with the verified log parser of session Log_Parser."
+  sessions
+    Log_Parser
   theories
     Table_Evt
     Since_Evt

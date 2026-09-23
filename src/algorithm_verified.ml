@@ -66,6 +66,7 @@ module Monitor = struct
 end
 
 module P = Log_parser.Make (Monitor)
+module V = Verified_log_parser.Make (Monitor)
 
 let monitor_gen parse dbschema logfile fv f =
   (* compute permutation for output tuples *)
@@ -85,5 +86,9 @@ let monitor_gen parse dbschema logfile fv f =
   } in
   ignore (parse dbschema logfile ctxt)
 
-let monitor_string = monitor_gen (fun dbschema log -> P.parse dbschema (Lexing.from_string log))
-let monitor = monitor_gen P.parse_file
+let monitor_string = monitor_gen (fun dbschema log ctxt ->
+  if !Verified_log_parser.old then P.parse dbschema (Lexing.from_string log) ctxt
+  else V.parse_string dbschema log ctxt)
+let monitor = monitor_gen (fun dbschema logfile ctxt ->
+  if !Verified_log_parser.old then P.parse_file dbschema logfile ctxt
+  else V.parse_file dbschema logfile ctxt)
