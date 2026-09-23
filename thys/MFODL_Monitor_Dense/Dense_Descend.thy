@@ -223,6 +223,14 @@ function (sequential) dof ::
              (dof n cs_L \<phi>) (dof n cs \<psi>) ([], []) []
              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else DFail)"
+| "dof n cs (mformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
+     (let cs_R = set_cols (args_R args); cs_L = set_cols (args_L args) in
+      if args_n args = n \<and> cs = set_cols A \<and> set cs_R \<subseteq> set cs \<and> set cs_L \<subseteq> set cs_R \<and>
+         tok cs_R cs_L args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
+      then DAndTrigger (mk_djoin cs cs_R) (dof n cs \<alpha>) ([], []) (dargs cs_R cs_L args)
+             (dof n cs_L \<phi>) (dof n cs_R \<psi>) ([], []) []
+             (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
+      else DFail)"
 | "dof n cs (mformula.MMatchP I mr mrs L buf nts aux) =
      (case those (map (mfcols n) L) of None \<Rightarrow> DFail
       | Some css \<Rightarrow>
@@ -245,7 +253,6 @@ function (sequential) dof ::
 | "dof n cs (mformula.MTS mt) =
      (if cs = mtrm_dcols mt then DTS mt
       else DFail)"
-| "dof n cs \<phi> = DFail"
   by pat_completeness auto
 
 termination dof
@@ -1715,7 +1722,7 @@ proof -
         and R = "Formula.fv \<eta>" and pos = pos and agg = None] m0 sub
     unfolding ai by (simp add: Let_def)
   have di: "dtaux n ?cs ?csL args 0 (ginit_mmtaux (dargs ?cs ?csL args) (dmsk ?cs ?csL)) []"
-    by (rule dtaux_init[OF _ _ subc]) (use w wL m0 aI in simp_all)
+    by (rule dtaux_init[OF _ _ subc]) (use w wL m0 aI in \<open>simp_all add: tok_def\<close>)
   have rel: "dtrigger_rel n ?cs ?csL args tw (init_mmtaux args)
       (ginit_mmtaux (dargs ?cs ?csL args) (dmsk ?cs ?csL)) ([], []) ([], []) []"
     unfolding dtrigger_rel_def
@@ -1782,6 +1789,82 @@ proof -
     show ?thesis
       by (rule dsim_dof_minit0_Trigger[OF st b mi refl m0 _ B z i1 i2]) (use sub fvc in simp)
   qed
+qed
+
+text \<open>
+  The fused And-Trigger node.  Its trigger's interval misses zero -- with zero in it the kernel's
+  initialisation takes the plain conjunction's branch instead -- and then the safety of the
+  trigger forces its two operands' free variables to agree.  That is what makes the dense
+  structure's widening map the identity on what it stores, and so the read at the node's own
+  frame the right one.
+\<close>
+
+lemma dsim_dof_minit0_MAndTrigger:
+  assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
+    and m: "minit0 n \<phi> = mformula.MAndTrigger (Formula.fv \<alpha>) (minit0 n \<alpha>) ([], []) args
+              (minit0 n \<chi>) (minit0 n \<eta>) ([], []) [] (init_mmtaux args)"
+    and ai: "args = init_args I n (Formula.fv \<chi>) (Formula.fv \<eta>) True None"
+    and nm0: "\<not> mem I 0" and eq: "Formula.fv \<chi> = Formula.fv \<eta>"
+    and subR: "Formula.fv \<eta> \<subseteq> Formula.fv \<alpha>"
+    and A: "Formula.fv \<phi> = Formula.fv \<alpha>"
+    and z: "dofz n \<phi>"
+    and i0: "dofz n \<alpha> \<Longrightarrow> dofc n tw \<alpha>"
+    and i1: "dofz n \<chi> \<Longrightarrow> dofc n tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
+  shows "dofc n tw \<phi>"
+proof -
+  let ?cs = "set_cols (Formula.fv \<phi>)"
+  let ?csL = "set_cols (Formula.fv \<chi>)"
+  let ?csR = "set_cols (Formula.fv \<eta>)"
+  have e: "?csL = ?csR" using eq by simp
+  have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
+  have bR: "\<forall>x \<in> Formula.fv \<eta>. x < n" using subR b A by auto
+  have wR: "wf_cols n ?csR" by (rule wf_cols_set_cols[OF finite_fvi bR])
+  have wL: "wf_cols n ?csL" using wR unfolding e .
+  have sc: "set ?cs = Formula.fv \<alpha>" using A by (simp add: finite_fvi)
+  have scR: "set ?csR = Formula.fv \<eta>" by (simp add: finite_fvi)
+  have scL: "set ?csL = Formula.fv \<chi>" by (simp add: finite_fvi)
+  have subLR: "set ?csL \<subseteq> set ?csR" using e by simp
+  have subc: "set ?csR \<subseteq> set ?cs" using subR sc scR by simp
+  have an: "args_n args = n" and aL: "args_L args = set ?csL"
+    and aR: "args_R args = set ?csR" and aI: "args_ivl args = I"
+    and ap: "args_pos args" using scL scR by (simp_all add: ai init_args_def)
+  have tk: "tok ?csR ?csL args" using e ap by (simp add: tok_def)
+  have sa: "set_cols (Formula.fv \<alpha>) = ?cs" unfolding A ..
+  have pr: "produces n (set ?cs) tw (mformula.MAndTrigger (set ?cs) (minit0 n \<alpha>) ([], [])
+      args (minit0 n \<chi>) (minit0 n \<eta>) ([], []) [] (init_mmtaux args))"
+    using produces_minit0[OF sf b] unfolding m by (simp add: A)
+  have d: "dof n ?cs (mformula.MAndTrigger (Formula.fv \<alpha>) (minit0 n \<alpha>) ([], []) args
+        (minit0 n \<chi>) (minit0 n \<eta>) ([], []) [] (init_mmtaux args))
+      = DAndTrigger (mk_djoin ?cs ?csR) (dof n ?cs (minit0 n \<alpha>)) ([], [])
+          (dargs ?csR ?csL args) (dof n ?csL (minit0 n \<chi>)) (dof n ?csR (minit0 n \<eta>))
+          ([], []) [] (ginit_mmtaux (dargs ?csR ?csL args) (dmsk ?csR ?csL))"
+    using an aL aR subLR subc tk sa by (simp add: Let_def)
+  have z0: "dofz n \<alpha>" and z1: "dofz n \<chi>" and z2: "dofz n \<eta>"
+    using z unfolding m d by (simp_all add: A)
+  have s0: "dsim n ?cs tw (dof n ?cs (minit0 n \<alpha>)) (minit0 n \<alpha>)" using i0[OF z0] unfolding A .
+  have s1: "dsim n ?csL tw (dof n ?csL (minit0 n \<chi>)) (minit0 n \<chi>)" using i1[OF z1] .
+  have s2: "dsim n ?csR tw (dof n ?csR (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] .
+  have c1: "if mem I 0 then Formula.fv \<chi> \<subseteq> Formula.fv \<eta> else Formula.fv \<chi> = Formula.fv \<eta>"
+    using eq by simp
+  have vi: "valid_mmtaux args 0 (init_mmtaux args) []"
+    using valid_init_mmtaux[where I = I and n = n and L = "Formula.fv \<chi>"
+        and R = "Formula.fv \<eta>" and pos = True and agg = None] c1
+    unfolding ai by (simp add: Let_def)
+  have di: "dtaux n ?csR ?csL args 0 (ginit_mmtaux (dargs ?csR ?csL args) (dmsk ?csR ?csL)) []"
+    by (rule dtaux_init[OF _ _ subLR tk]) (use wR wL in simp_all)
+  have rel: "dtrigger_rel n ?csR ?csL args tw (init_mmtaux args)
+      (ginit_mmtaux (dargs ?csR ?csL args) (dmsk ?csR ?csL)) ([], []) ([], []) []"
+    unfolding dtrigger_rel_def
+    by (intro exI[where x = 0] exI[where x = "[]"] conjI) (use vi di in simp_all)
+  have bf1: "dandbuf n ?cs ?csR ([], []) ([], [])" by (simp add: dandbuf_def)
+  have g: "dsim n ?cs tw
+      (DAndTrigger (mk_djoin ?cs ?csR) (dof n ?cs (minit0 n \<alpha>)) ([], [])
+        (dargs ?csR ?csL args) (dof n ?csL (minit0 n \<chi>)) (dof n ?csR (minit0 n \<eta>))
+        ([], []) [] (ginit_mmtaux (dargs ?csR ?csL args) (dmsk ?csR ?csL)))
+      (mformula.MAndTrigger (set ?cs) (minit0 n \<alpha>) ([], []) args
+        (minit0 n \<chi>) (minit0 n \<eta>) ([], []) [] (init_mmtaux args))"
+    by (rule dsim.DsAndTrigger[OF w pr s0 s1 s2 wL wR subLR subc an aL aR tk refl refl bf1 rel])
+  show ?thesis unfolding m d using g unfolding sc .
 qed
 
 text \<open>
@@ -2185,10 +2268,20 @@ next
       using False by (simp add: safe_dual_def)
     have sfa: "safe_formula (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))"
       using And_Trigger.hyps subf by simp
-    have m: "dof n (set_cols (Formula.fv (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))))
-          (minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))) = DFail"
+    have eqf: "Formula.fv \<phi>' = Formula.fv \<psi>'" using sd False by (simp add: safe_dual_def)
+    have subR: "Formula.fv \<psi>' \<subseteq> Formula.fv \<phi>" using subf by auto
+    have Af: "Formula.fv (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')) = Formula.fv \<phi>"
+      using subf by auto
+    have i1: "dofz n \<phi>' \<Longrightarrow> dofc n tw \<phi>'" using sp' And_Trigger.IH(2)[OF bL] by auto
+    have m: "minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))
+        = mformula.MAndTrigger (Formula.fv \<phi>) (minit0 n \<phi>) ([], [])
+            (init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') True None)
+            (minit0 n \<phi>') (minit0 n \<psi>') ([], []) []
+            (init_mmtaux (init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') True None))"
       using nst sp' by (simp add: no_safe_assign_trigger verimon_maux.init_and_trigger_def)
-    show ?thesis by (rule dsim_dof_minit0_fail[OF m And_Trigger.prems(2)])
+    show ?thesis
+      by (rule dsim_dof_minit0_MAndTrigger[OF sfa And_Trigger.prems(1) m refl False eqf subR Af
+            And_Trigger.prems(2) And_Trigger.IH(1)[OF bA] i1 And_Trigger.IH(3)[OF bR]])
   qed
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
