@@ -11,7 +11,7 @@ text \<open>
   @{typ event_data} for code generation, so it is restated here over a bare element type
   \<open>'b\<close>, where the kernel's is over @{typ "'a option"}: the dense evaluator runs it at
   @{typ "event_data option"}, where it is the kernel's structure, and the unboxed evaluator at
-  @{typ event_data}.  Two things genuinely change.
+  @{typ event_data}.  Three things genuinely change.
 
   @{const eval_step_dq} passes the finished table through @{const eval_args_agg}, which is an
   aggregation over @{typ event_data} and cannot be generic.  The dense fragment only ever builds
@@ -24,6 +24,11 @@ text \<open>
   The generic operations read through @{text dq_nth_s}, which returns a default past the end.
   On the well-shaped states the kernel's invariant guarantees the two readings agree, which is
   what the agreement lemmas say; the refinement to short tuples then needs no invariant.
+
+  The kernel maintains the verdict of the oldest pending time point as a set of its own; the
+  generic operations read it off the nested deque's front entry instead, whose key set it
+  always is.  The agreement lemmas therefore relate a generic state to the kernel's through
+  @{text fix_res}, which writes that key set into the field.
 \<close>
 
 definition dq_nth_s :: "'a dq \<Rightarrow> nat \<Rightarrow> 'a \<Rightarrow> 'a" where

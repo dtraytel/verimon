@@ -8420,17 +8420,39 @@ intersection code equations through them.  `bheight` no longer occurs in the exp
 
 The output is identical on the six formulas and on the test corpus (601 same).
 
-### What is left
+### The window's result
 
-The largest item is the window's result.  At every time point that leaves the window the step
-rebuilds the verdict of the next one as `(result - to_del) ∪ keys m'` (7.6% and 6.3% of
-`until-nu20`), and the insertion of every new tuple also inserts it into `result` when it lands in
-the front entry (part of the 6.4% in `edl_insert`).  The kernel's invariant already says that
-`result` is the key set of the front map (`valid_mmuaux'`, `Optimized_Until.thy`), so the verdict
-could be read off that map, which needs no comparisons, and the field would not need maintaining.
-But `result` is part of the state that the dense evaluator shares with the kernel by equality, so
-dropping it changes the state type and the simulation of the Until node, from the kernel's
-invariant down to `udeval_Rep`.  That is a change to the proofs rather than to the code setup.
+At every time point that leaves the window the step rebuilt the verdict of the next one as
+`(result - to_del) ∪ keys m'` (7.6% and 6.3% of `until-nu20`), and the insertion of every new
+tuple also inserted it into `result` when it landed in the front entry of the nested deque (part
+of the 6.4% in `edl_insert`).  The kernel's invariant (`valid_mmuaux'`, `Optimized_Until.thy`) says
+that `result` is always the key set of that front entry.  The generic operations of
+`Dense_Until_Gen.thy` no longer maintain the field: the step reports `Mapping.keys m` of the entry
+it removes, which needs no comparisons, and the insertion folds over the table and the deque only.
+
+The dense Until node was related to the kernel's structure by equality at the option instance.
+It is now related through `fix_res`, which writes the front entry's key set into the field:
+`geval_step_dq_eq`, `gshift_dq_eq`, `geval_dq_eq` and `gadd_new_dq_eq` state that the generic
+operation followed by `fix_res` is the kernel's operation on the fixed state.  For the step that
+is the observation that the merged front entry's keys are the surviving keys of the old front and
+those of the next one, and it needs only the deques' shape; for the insertion it is that the
+kernel's fold adds a tuple to the result exactly when it enters the front entry
+(`fold_duntil_elem_step_dq_lift`).  The node's validity (`duxaux'`) is the old one of the fixed
+state, so nothing above `Dense_Evt_Aux.thy` changed, and the short-tuple refinement
+(`udeval_Rep`) kept its proof, with the accumulator of the insertion one component shorter.
+
+| formula (instructions, `base` 1500) | before | after |
+|---|---|---|
+| `until-bb5` | 1.410 G | 1.368 G (-3.0%) |
+| `until-bb50` | 1.491 G | 1.453 G (-2.6%) |
+| `until-u5` | 1.317 G | 1.269 G (-3.6%) |
+| `until-u50` | 1.456 G | 1.412 G (-3.0%) |
+| `until-nu20` | 2.194 G | 1.960 G (-10.7%) |
+
+Wall time on `until-nu20`, against the start of this section: 1.42 s → 1.12 s, against MonPoly's
+0.87 s (ratio 1.63 → 1.29).  The output is identical on the six formulas and on the corpus.
+
+### What is left
 
 The rest is what persistent trees cost: 6.5 million tuple comparisons (`edl_comparator` and
 `comparator_event_data`, 13%), the lookups in the per-time-point maps of the nested deque (5%), and

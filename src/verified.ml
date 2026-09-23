@@ -10099,12 +10099,10 @@ let rec max_tstp
 
 let rec de_guntil_step_dq
   pa d t0 p acc =
-    (let (tbl, (a2, res)) = acc in
+    (let (tbl, a2) = acc in
       (if pa (fst p)
         then (edl_insert (snd p) tbl,
-               (de_gupd_nested_step_dq t0 d (max_tstp d) p a2,
-                 (if equal_nata (fst p) t0 then edl_insert (snd p) res
-                   else res)))
+               de_gupd_nested_step_dq t0 d (max_tstp d) p a2)
         else acc));;
 
 let rec de_guntil_elem_step_dq
@@ -10224,7 +10222,7 @@ let rec de_geval_step_dq
     = (let (Some _, tssa) = safe_hd tss in
        let m = dq_hd_s a2_dq edl_mempty_tstp in
        let i = args_ivl args in
-       let t = result in
+       let t = unbox edl_keys_tstp_v m in
        let tssb = tl_queue tssa in
        let (ts, tssc) =
          (match safe_hd tssb with (None, tssc) -> (zero_nata, tssc)
@@ -10263,10 +10261,6 @@ let rec de_geval_step_dq
        let ma = de_mapping_delete_set_tstp m to_del in
        let a2_dqa = dq_tl a2_dq in
        let maa = dq_hd_s a2_dqa edl_mempty_tstp in
-       let resulta =
-         (if equal_nata len one_nata then edl_bot
-           else edl_union (edl_minus result to_del) (unbox edl_keys_tstp_v maa))
-         in
        let a2_dqb =
          dq_upd a2_dqa zero_nata
            (if equal_nata len one_nata then edl_mempty_tstp
@@ -10278,7 +10272,7 @@ let rec de_geval_step_dq
                  (minus_nata len one_nata,
                    (maskL,
                      (maskR,
-                       (resulta,
+                       (result,
                          (a1_map, (a2_dqb, (tstp_dqa, t :: dn)))))))))));;
 
 let rec de_gshift_dq
@@ -10325,9 +10319,9 @@ let rec de_gadd_new_dq
            (minus_nata nt
              (dq_nth_s tstp_dqa (minus_nata t (minus_nata tp len)) zero_nata)))
        in
-     let (tbl, (a2_dqa, resulta)) =
+     let (tbl, a2_dqa) =
        fold (de_guntil_elem_step_dq a1_map msk pos tp len inz p new_tstp)
-         (edl_csl rel2) (edl_bot, (a2_dq, result))
+         (edl_csl rel2) (edl_bot, a2_dq)
        in
      let tablesa = append_queue (tbl, new_tstp) tables in
      let a2_dqb = dq_push edl_mempty_tstp a2_dqa in
@@ -10345,7 +10339,7 @@ let rec de_gadd_new_dq
           (tablesa,
             (plus_nata len one_nata,
               (maskL,
-                (maskR, (resulta, (a1_mapa, (a2_dqb, (tstp_dqa, dn)))))))))));;
+                (maskR, (result, (a1_mapa, (a2_dqb, (tstp_dqa, dn)))))))))));;
 
 let rec uua_extend
   args p w ts0 win rest bend cc ax =
