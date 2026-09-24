@@ -167,6 +167,14 @@ definition conv_field :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty \
 lemma conv_field_ty: "conv_field pf t f = Some x \<Longrightarrow> ty_of x = t"
   by (cases t) (auto simp: conv_field_def)
 
+text \<open>The field conversion uses the fused integer conversion.\<close>
+
+lemma conv_field_code[code]: "conv_field pf t f = (case t of
+     TInt \<Rightarrow> map_option EInt (ibint_of f)
+   | TFloat \<Rightarrow> map_option EFloat (pf f)
+   | TString \<Rightarrow> Some (EString (string8_of_bytes f)))"
+  by (simp add: conv_field_def ibint_of_def option.map_comp comp_def split: ty.splits)
+
 text \<open>The errors the conversion reports.\<close>
 
 datatype verror = VE_PARSE perror | VE_TIMESTAMP bytes | VE_ORDER nat nat | VE_PREDICATE bytes nat
@@ -412,6 +420,49 @@ lemma set_sort_t: "set (sort_t (xs :: 'a list)) = set xs"
 
 end
 
+text \<open>The sort with an explicit comparator, so that the code sorts the tuples with
+  @{const edl_comparator}.\<close>
+
+fun merge_tc :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "merge_tc c acc [] ys = fold Cons acc ys"
+| "merge_tc c acc (x # xs) [] = fold Cons acc (x # xs)"
+| "merge_tc c acc (x # xs) (y # ys) = (case c x y of
+     order.Lt \<Rightarrow> merge_tc c (x # acc) xs (y # ys)
+   | order.Gt \<Rightarrow> merge_tc c (y # acc) (x # xs) ys
+   | order.Eq \<Rightarrow> merge_tc c (x # acc) xs ys)"
+
+fun merge_pairs_tc :: "'a comparator \<Rightarrow> 'a list list \<Rightarrow> 'a list list \<Rightarrow> 'a list list" where
+  "merge_pairs_tc c acc (a # b # r) = merge_pairs_tc c (merge_tc c [] a b # acc) r"
+| "merge_pairs_tc c acc r = r @ acc"
+
+fun merge_all_tc :: "'a comparator \<Rightarrow> nat \<Rightarrow> 'a list list \<Rightarrow> 'a list" where
+  "merge_all_tc c 0 xss = concat xss"
+| "merge_all_tc c (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
+     | _ \<Rightarrow> merge_all_tc c k (merge_pairs_tc c [] xss))"
+
+fun runs_tc :: "'a comparator \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
+  "runs_tc c x cur acc [] = rev (x # cur) # acc"
+| "runs_tc c x cur acc (y # ys) = (if c x y = order.Lt then runs_tc c y (x # cur) acc ys
+     else runs_tc c y [] (rev (x # cur) # acc) ys)"
+
+definition sort_tc :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "sort_tc c xs = (case xs of [] \<Rightarrow> [] | x # ys \<Rightarrow> merge_all_tc c (length xs) (runs_tc c x [] [] ys))"
+
+lemma merge_tc: "merge_tc ccomp acc xs ys = merge_t acc xs ys"
+  by (induction acc xs ys rule: merge_t.induct) (simp_all split: order.splits)
+
+lemma merge_pairs_tc: "merge_pairs_tc ccomp acc xss = merge_pairs_t acc xss"
+  by (induction acc xss rule: merge_pairs_t.induct) (simp_all add: merge_tc)
+
+lemma merge_all_tc: "merge_all_tc ccomp k xss = merge_all_t k xss"
+  by (induction k xss rule: merge_all_t.induct) (simp_all add: merge_pairs_tc split: list.splits)
+
+lemma runs_tc: "runs_tc ccomp x cur acc ys = runs_t x cur acc ys"
+  by (induction x cur acc ys rule: runs_t.induct) simp_all
+
+lemma sort_tc: "sort_tc ccomp xs = sort_t xs"
+  by (cases xs) (simp_all add: sort_tc_def sort_t_def merge_all_tc runs_tc del: merge_all_tc.simps merge_all_t.simps)
+
 subsection \<open>Databases\<close>
 
 text \<open>The events of a time point, grouped by predicate and arity.\<close>
@@ -554,7 +605,7 @@ lemma urbt_of_sorted_code[code abstract]: "RBT_Mapping2.impl_of (urbt_of_sorted 
    else rbt_comp_bulkload edl_comparator (map_t (\<lambda>x. (x, ())) xs))"
   by (simp add: urbt_of_sorted_def rbt_of_sorted_list.rep_eq ccomp_edl)
 
-lemma build_db_code[code]: "build_db evs =
+lemma build_db_code: "build_db evs =
   fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_t (rev xs)))) db) (group_evs evs) uempty_db"
 proof -
   have "utable_of_list (sort_t xs) = RBT_set (urbt_of_sorted (sort_t (rev xs)))" for xs
@@ -562,6 +613,14 @@ proof -
   then show ?thesis
     by (simp add: build_db_def)
 qed
+
+text \<open>The code sorts the tuples with @{const edl_comparator} rather than through the dictionaries
+  of the comparator on lists.\<close>
+
+lemma build_db_code_edl[code]: "build_db evs =
+  fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_tc edl_comparator (rev xs)))) db)
+    (group_evs evs) uempty_db"
+  by (simp add: build_db_code sort_tc[symmetric] ccomp_edl)
 
 subsection \<open>The predicates of the formula\<close>
 

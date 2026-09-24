@@ -10147,47 +10147,45 @@ let rec add_ev (p, vs) g = add_evk (p, size_lista vs) vs g;;
 
 let rec group_evs evs = fold add_ev evs [];;
 
-let rec merge_t _A
-  acc x1 ys = match acc, x1, ys with
-    acc, [], ys -> fold (fun a b -> a :: b) acc ys
-    | acc, x :: xs, [] -> fold (fun a b -> a :: b) acc (x :: xs)
-    | acc, x :: xs, y :: ys ->
-        (match the (ccompare _A) x y with Eqa -> merge_t _A (x :: acc) xs ys
-          | Lt -> merge_t _A (x :: acc) xs (y :: ys)
-          | Gt -> merge_t _A (y :: acc) (x :: xs) ys);;
+let rec merge_tc
+  c acc x2 ys = match c, acc, x2, ys with
+    c, acc, [], ys -> fold (fun a b -> a :: b) acc ys
+    | c, acc, x :: xs, [] -> fold (fun a b -> a :: b) acc (x :: xs)
+    | c, acc, x :: xs, y :: ys ->
+        (match c x y with Eqa -> merge_tc c (x :: acc) xs ys
+          | Lt -> merge_tc c (x :: acc) xs (y :: ys)
+          | Gt -> merge_tc c (y :: acc) (x :: xs) ys);;
 
-let rec merge_pairs_t _A
-  acc x1 = match acc, x1 with
-    acc, a :: b :: r -> merge_pairs_t _A (merge_t _A [] a b :: acc) r
-    | acc, [] -> [] @ acc
-    | acc, [v] -> [v] @ acc;;
+let rec merge_pairs_tc
+  c acc x2 = match c, acc, x2 with
+    c, acc, a :: b :: r -> merge_pairs_tc c (merge_tc c [] a b :: acc) r
+    | c, acc, [] -> [] @ acc
+    | c, acc, [v] -> [v] @ acc;;
 
-let rec merge_all_t _A
-  k xss =
+let rec merge_all_tc
+  c k xss =
     (if equal_nata k zero_nata then concat xss
       else (match xss with [] -> [] | [a] -> a
              | _ :: _ :: _ ->
-               merge_all_t _A (minus_nata k one_nata)
-                 (merge_pairs_t _A [] xss)));;
+               merge_all_tc c (minus_nata k one_nata)
+                 (merge_pairs_tc c [] xss)));;
 
-let rec runs_t _A
-  x cur acc xa3 = match x, cur, acc, xa3 with
-    x, cur, acc, [] -> rev (x :: cur) :: acc
-    | x, cur, acc, y :: ys ->
-        (if equal_order (the (ccompare _A) x y) Lt
-          then runs_t _A y (x :: cur) acc ys
-          else runs_t _A y [] (rev (x :: cur) :: acc) ys);;
+let rec runs_tc
+  c x cur acc xa4 = match c, x, cur, acc, xa4 with
+    c, x, cur, acc, [] -> rev (x :: cur) :: acc
+    | c, x, cur, acc, y :: ys ->
+        (if equal_order (c x y) Lt then runs_tc c y (x :: cur) acc ys
+          else runs_tc c y [] (rev (x :: cur) :: acc) ys);;
 
-let rec sort_t _A
-  xs = (match xs with [] -> []
-         | x :: ys -> merge_all_t _A (size_lista xs) (runs_t _A x [] [] ys));;
+let rec sort_tc
+  c xs =
+    (match xs with [] -> []
+      | x :: ys -> merge_all_tc c (size_lista xs) (runs_tc c x [] [] ys));;
 
 let rec build_db
   evs = fold (fun (k, xs) ->
                uinsert_table_into_db k
-                 (RBT_set
-                   (urbt_of_sorted
-                     (sort_t (ccompare_list ccompare_event_data) (rev xs)))))
+                 (RBT_set (urbt_of_sorted (sort_tc edl_comparator (rev xs)))))
           (group_evs evs) uempty_db;;
 
 let rec vtp
@@ -13717,8 +13715,6 @@ let rec vc_lsig (VConf (x1, x2, x3, x4)) = x2;;
 
 let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 
-let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
-
 let rec icombine = function [] -> Z.zero
                    | [(v, p)] -> v
                    | x :: y :: xs -> icombine (istep (x :: y :: xs) []);;
@@ -13775,6 +13771,123 @@ let rec idigits
                                  i)
                                (Z.add (Z.mul b acc) d)))))
       else acc);;
+
+let rec inat_of_digits
+  s n b i =
+    (if Z.lt i n
+      then (if ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                   s i) : char) = '\095')
+             then None
+             else (if Z.leq (Z.sub n i) (Z.of_int 256)
+                    then (let r = idigits s n b i Z.zero in
+                           (if Z.lt r Z.zero then None else Some r))
+                    else (match icollect s n b i [] with None -> None
+                           | Some rds ->
+                             Some (icombine
+                                    (fold (fun d -> (fun a -> (d, b) :: a)) rds
+                                      [])))))
+      else None);;
+
+let rec ibbase_of
+  s n i =
+    (if Z.lt (Z.add i (Z.of_int 1)) n &&
+          ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+              s i) : char) = '\048')
+      then (let x =
+              (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                s (Z.add i (Z.of_int 1))
+              in
+             (if ((x : char) = '\120') || ((x : char) = '\088')
+               then ((Z.of_int 16), Z.add i (Z.of_int 2))
+               else (if ((x : char) = '\111') || ((x : char) = '\079')
+                      then ((Z.of_int 8), Z.add i (Z.of_int 2))
+                      else (if ((x : char) = '\098') || ((x : char) = '\066')
+                             then ((Z.of_int 2), Z.add i (Z.of_int 2))
+                             else ((Z.of_int 10), i)))))
+      else ((Z.of_int 10), i));;
+
+let rec ibint_of
+  s = (let n = (Z.of_int (String.length s)) in
+        (if Z.lt Z.zero n
+          then (let c =
+                  (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                    s Z.zero
+                  in
+                 (if ((c : char) = '\045')
+                   then map_option Z.neg
+                          (let (a, b) = ibbase_of s n (Z.of_int 1) in
+                            inat_of_digits s n a b)
+                   else (if ((c : char) = '\043')
+                          then (let (a, b) = ibbase_of s n (Z.of_int 1) in
+                                 inat_of_digits s n a b)
+                          else (let (a, b) = ibbase_of s n Z.zero in
+                                 inat_of_digits s n a b))))
+          else None));;
+
+let rec conv_field
+  pf t f =
+    (match t with TInt -> map_option (fun a -> EInt a) (ibint_of f)
+      | TFloat -> map_option (fun a -> EFloat a) (pf f)
+      | TString -> Some (EString ((fun x -> x) f)));;
+
+let rec conv_fields
+  pf uu uv i = match pf, uu, uv, i with
+    pf, t :: ts, f :: fs, i ->
+      (match conv_field pf t f with None -> Inl (i, t)
+        | Some x -> map_sum id (fun a -> x :: a) (conv_fields pf ts fs (suc i)))
+    | pf, [], uv, i -> Inr []
+    | pf, uu, [], i -> Inr [];;
+
+let rec conv_event
+  pf l e =
+    (let (p, fs) = e in
+     let q = (fun x -> x) p in
+      (match l (q, size_lista fs)
+        with None -> Inl (VE_PREDICATE (p, size_lista fs))
+        | Some tys ->
+          map_sum (fun (a, b) -> VE_FIELD (p, a, b)) (fun a -> (q, a))
+            (conv_fields pf tys fs zero_nata)));;
+
+let rec conv_events_acc
+  pf l acc x3 = match pf, l, acc, x3 with pf, l, acc, [] -> Inr (rev acc)
+    | pf, l, acc, e :: es ->
+        (match conv_event pf l e with Inl a -> Inl a
+          | Inr x -> conv_events_acc pf l (x :: acc) es);;
+
+let rec conv_events pf l es = conv_events_acc pf l [] es;;
+
+let rec pred_error
+  s x1 = match s, x1 with s, [] -> None
+    | s, (p, fs) :: es ->
+        (if list_ex (fun (q, _) -> String.equal q ((fun x -> x) p)) s
+          then pred_error s es else Some (VE_PREDICATE (p, size_lista fs)));;
+
+let rec conv_error
+  pf l s x3 = match pf, l, s, x3 with pf, l, s, [] -> None
+    | pf, l, s, (p, fs) :: es ->
+        (let q = (fun x -> x) p in
+          (match l (q, size_lista fs)
+            with None ->
+              (match find (fun (qa, _) -> String.equal qa q) s
+                with None -> Some (VE_PREDICATE (p, size_lista fs))
+                | Some (_, tys) ->
+                  (match conv_fields pf tys fs zero_nata
+                    with Inl (i, t) -> Some (VE_FIELD (p, i, t))
+                    | Inr _ -> Some (VE_PREDICATE (p, size_lista fs))))
+            | Some tys ->
+              (match conv_fields pf tys fs zero_nata
+                with Inl (i, t) -> Some (VE_FIELD (p, i, t))
+                | Inr _ -> conv_error pf l s es)));;
+
+let rec less_eq_int k l = Z.leq (integer_of_int k) (integer_of_int l);;
+
+let zero_int : int = Int_of_integer Z.zero;;
+
+let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
 
 let rec bnat_of_digits
   s n b i =
@@ -13836,67 +13949,6 @@ let rec bint_of
                                  (bunsigned s n (Z.of_int 1))
                           else map_option int_of_nat (bunsigned s n Z.zero))))
           else None));;
-
-let rec conv_field
-  pf t f =
-    (match t
-      with TInt ->
-        map_option (comp (fun a -> EInt a) integer_of_int) (bint_of f)
-      | TFloat -> map_option (fun a -> EFloat a) (pf f)
-      | TString -> Some (EString ((fun x -> x) f)));;
-
-let rec conv_fields
-  pf uu uv i = match pf, uu, uv, i with
-    pf, t :: ts, f :: fs, i ->
-      (match conv_field pf t f with None -> Inl (i, t)
-        | Some x -> map_sum id (fun a -> x :: a) (conv_fields pf ts fs (suc i)))
-    | pf, [], uv, i -> Inr []
-    | pf, uu, [], i -> Inr [];;
-
-let rec conv_event
-  pf l e =
-    (let (p, fs) = e in
-     let q = (fun x -> x) p in
-      (match l (q, size_lista fs)
-        with None -> Inl (VE_PREDICATE (p, size_lista fs))
-        | Some tys ->
-          map_sum (fun (a, b) -> VE_FIELD (p, a, b)) (fun a -> (q, a))
-            (conv_fields pf tys fs zero_nata)));;
-
-let rec conv_events_acc
-  pf l acc x3 = match pf, l, acc, x3 with pf, l, acc, [] -> Inr (rev acc)
-    | pf, l, acc, e :: es ->
-        (match conv_event pf l e with Inl a -> Inl a
-          | Inr x -> conv_events_acc pf l (x :: acc) es);;
-
-let rec conv_events pf l es = conv_events_acc pf l [] es;;
-
-let rec pred_error
-  s x1 = match s, x1 with s, [] -> None
-    | s, (p, fs) :: es ->
-        (if list_ex (fun (q, _) -> String.equal q ((fun x -> x) p)) s
-          then pred_error s es else Some (VE_PREDICATE (p, size_lista fs)));;
-
-let rec conv_error
-  pf l s x3 = match pf, l, s, x3 with pf, l, s, [] -> None
-    | pf, l, s, (p, fs) :: es ->
-        (let q = (fun x -> x) p in
-          (match l (q, size_lista fs)
-            with None ->
-              (match find (fun (qa, _) -> String.equal qa q) s
-                with None -> Some (VE_PREDICATE (p, size_lista fs))
-                | Some (_, tys) ->
-                  (match conv_fields pf tys fs zero_nata
-                    with Inl (i, t) -> Some (VE_FIELD (p, i, t))
-                    | Inr _ -> Some (VE_PREDICATE (p, size_lista fs))))
-            | Some tys ->
-              (match conv_fields pf tys fs zero_nata
-                with Inl (i, t) -> Some (VE_FIELD (p, i, t))
-                | Inr _ -> conv_error pf l s es)));;
-
-let rec less_eq_int k l = Z.leq (integer_of_int k) (integer_of_int l);;
-
-let zero_int : int = Int_of_integer Z.zero;;
 
 let rec bnat_of
   s = (match bint_of s with None -> None

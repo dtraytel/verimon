@@ -470,6 +470,65 @@ proof -
     unfolding bnat_of_digits_def by (simp add: D I)
 qed
 
+text \<open>The conversion of the fields of the log into integers, fused into one function on
+  integers, without the detours through the natural numbers of the generated code.\<close>
+
+definition inat_of_digits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer option" where
+  "inat_of_digits s n b i = (if i < n then
+    (if bytes_at s i = CHR ''_'' then None
+     else if n - i \<le> 256 then (let r = idigits s n b i 0 in if r < 0 then None else Some r)
+     else (case icollect s n b i [] of
+       None \<Rightarrow> None
+     | Some rds \<Rightarrow> Some (icombine (fold (\<lambda>d acc. (d, b) # acc) rds []))))
+  else None)"
+
+lemma inat_of_digits: "inat_of_digits s n (integer_of_nat b) i = map_option integer_of_nat (bnat_of_digits s n b i)"
+proof -
+  have F: "foldl (\<lambda>a d. a * integer_of_nat b + d) 0 (map integer_of_nat ds) =
+    integer_of_nat (foldl (\<lambda>a d. b * a + d) 0 ds)" for ds
+    using foldl_integer_of_nat[of b 0 ds] by (simp add: integer_of_nat_eq_of_nat)
+  have D: "(case icollect s n (integer_of_nat b) i [] of
+      None \<Rightarrow> None
+    | Some rds \<Rightarrow> Some (icombine (fold (\<lambda>d acc. (d, integer_of_nat b) # acc) rds []))) =
+    map_option integer_of_nat (bdigits s n b i 0)"
+    by (auto simp: bdigits_bdlist icollect fold_Cons_map rev_map icombine pvals_digits F
+        split: option.splits)
+  have I: "(let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some r) =
+    map_option integer_of_nat (bdigits s n b i 0)"
+    using idigits[of s n b i 0] by (auto simp: Let_def integer_of_nat_eq_of_nat split: option.splits)
+  show ?thesis
+    unfolding inat_of_digits_def bnat_of_digits_def by (simp add: D I)
+qed
+
+definition ibbase_of :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<times> integer" where
+  "ibbase_of s n i = (case bbase_of s n i of (b, j) \<Rightarrow> (integer_of_nat b, j))"
+
+lemma ibbase_of_code[code]: "ibbase_of s n i = (if i + 1 < n \<and> bytes_at s i = CHR ''0'' then
+       (let x = bytes_at s (i + 1) in
+        if x = CHR ''x'' \<or> x = CHR ''X'' then (16, i + 2)
+        else if x = CHR ''o'' \<or> x = CHR ''O'' then (8, i + 2)
+        else if x = CHR ''b'' \<or> x = CHR ''B'' then (2, i + 2)
+        else (10, i))
+     else (10, i))"
+  by (simp add: ibbase_of_def bbase_of_def Let_def integer_of_nat_eq_of_nat)
+
+definition ibint_of :: "bytes \<Rightarrow> integer option" where
+  "ibint_of s = map_option integer_of_int (bint_of s)"
+
+lemma ibunsigned: "(case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j) =
+  map_option integer_of_nat (bunsigned s n i)"
+  by (simp add: ibbase_of_def bunsigned_def inat_of_digits split: prod.splits)
+
+lemma ibint_of_code[code]: "ibint_of s = (let n = bytes_length s in
+     if 0 < n then
+       (let c = bytes_at s 0 in
+        if c = CHR ''-'' then map_option uminus (case ibbase_of s n 1 of (b, j) \<Rightarrow> inat_of_digits s n b j)
+        else if c = CHR ''+'' then (case ibbase_of s n 1 of (b, j) \<Rightarrow> inat_of_digits s n b j)
+        else (case ibbase_of s n 0 of (b, j) \<Rightarrow> inat_of_digits s n b j))
+     else None)"
+  unfolding ibunsigned
+  by (simp add: ibint_of_def bint_of_def Let_def option.map_comp comp_def integer_of_nat_eq_of_nat)
+
 (*<*)
 end
 (*>*)
