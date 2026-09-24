@@ -8586,3 +8586,42 @@ its rank trees are the same as before.  Wall time on the suite's logs against th
 (best of three, one worker): the `agg_once` family 0.91x, `agg_fut` 0.86x, `policy` 0.94x
 (`pol-threshold` 0.86x, `pol-chain` 0.88x), with every verdict the same.  The corpus is unchanged
 (601 same, 141 skipped, 0 differing) and `dune test` passes.
+
+## 21.35 The policy group: a mapping's lookup and update in one descent
+
+On the local runs after 21.34 the four largest ratios are in the `policy` group: `pol-threshold`
+(1.48), `pol-sumfilter` (1.39), `pol-sincefutb` (1.25) and `pol-sincefut` (1.18); by group, `policy`
+is at 1.02 and `once_scale` and `until` are the slowest (1.10, 1.09).  `pol-threshold`, a count over
+`ONCE[0,60]` against a threshold, takes 5.76 G instructions under the verified monitor against
+MonPoly's 5.09 G, only 1.13x, but its wall time is 1.48x: the difference is memory traffic.  D1
+misses are 2.2x MonPoly's (61.5 M against 28.5 M), and they sit in the key comparisons and descents
+of the two red-black trees that the window updates per tuple -- the count of every tuple in the
+window (1.33 G of the 3.09 G the evaluator spends) and the aggregate of every group (0.64 G) --
+where MonPoly uses hash tables.  Every update of an existing key there was a lookup followed by an
+insertion: two descents of the same tree, comparing the same key with the same nodes.
+
+`Dense_Map_Upd.thy` adds `mupd k F m = (lookup m k, update k (F (lookup m k)) m)` and gives it,
+on a red-black tree, a code equation that does both in one descent (`rbt_comp_ins_lk`, proved
+equal to the lookup paired with the insertion by induction over the insertion, with no invariant;
+lifted to `mapping_rbt` with `code_dt`, and specialised at the short tuples' comparator and value
+types).  The count set's insertion in the window of 21.29 and in the plain window (`ucnt_add1`,
+`de_gcnt_add1`, `cnt_ins_fold`) and the aggregate's insertion steps (`gi_cnt`, `gi_sum`, `gi_rank`)
+get code equations through it, proved against their definitions.  The deletions keep their lookup:
+a deletion's rebalancing depends on whether the key goes, which is known only after the lookup.
+
+| formula (instructions, `base`/`dom50` 1500) | before | after |
+|---|---|---|
+| `once-infnot` | 4.568 G | 4.345 G (−4.9%) |
+| `pol-threshold` | 5.758 G | 5.558 G (−3.5%) |
+| `aggonce-dom50` | 5.087 G | 4.946 G (−2.8%) |
+| `aggonce-cnt50` | 7.772 G | 7.578 G (−2.5%) |
+| `once-g50` | 6.089 G | 5.963 G (−2.1%) |
+| `aggonce-max50` | 9.042 G | 8.871 G (−1.9%) |
+| `since-bb500`, `since-nb5` (controls) | | 0.0% |
+
+The saving is the lookups of the insertions: the entering tuples are mostly new, and each new
+tuple and each touched group costs one descent less.  It is smaller than the traffic gap to
+MonPoly, which is the price of comparison trees over short-tuple keys against hashing, and which
+this change does not close.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and
+`dune test` passes; the container's wall times move by up to 15% per formula from run to run, so
+the table gives instructions.

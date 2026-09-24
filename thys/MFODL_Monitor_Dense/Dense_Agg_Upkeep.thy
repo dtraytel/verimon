@@ -117,23 +117,6 @@ lemma usa_expire_code[code]:
                  (cc', ax') \<Rightarrow> usa_expire args p nt (tl_queue win') cc' ax')))"
   by (subst usa_expire.simps) (simp add: uag_step_del_def split: prod.splits option.splits)
 
-subsection \<open>The steps at the short tuples\<close>
-
-text \<open>The steps of @{theory MFODL_Monitor_Dense.Dense_Agg_Gen} are generic in the element
-  type, and their generated code built the comparator of the key lists at every lookup; these are
-  their copies at @{typ event_data}, whose mapping operations the specialised ones take over.\<close>
-
-setup \<open>Monomorphize.monomorphize_cmd
-  [("gi_cnt", "edl_gi_cnt", ["event_data"]),
-   ("gd_cnt", "edl_gd_cnt", ["event_data"]),
-   ("gi_sum", "edl_gi_sum", ["event_data"]),
-   ("gd_sum", "edl_gd_sum", ["event_data"]),
-   ("gi_rank", "edl_gi_rank", ["event_data"]),
-   ("gd_rank", "edl_gd_rank", ["event_data"]),
-   ("gstep_ins", "edl_gstep_ins", ["event_data"]),
-   ("gstep_del", "edl_gstep_del", ["event_data"])]
-  ["edl_dict_simps"]\<close>
-
 (*<*)
 end
 (*>*)

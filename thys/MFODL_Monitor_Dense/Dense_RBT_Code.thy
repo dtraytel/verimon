@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_RBT_Code
-  imports Dense_Agg_Upkeep
+  imports Dense_Map_Upd
 begin
 (*>*)
 
