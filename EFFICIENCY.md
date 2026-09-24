@@ -8873,7 +8873,7 @@ conversion into tables, which alone allocate more than all of MonPoly); about a 
 node's trees, and of that the deletions -- from the table and the time stamps when a `C` tuple
 drops its bucket, and from the count sets -- are the larger part.
 
-21.9's reason for rewriting the insertion's `balance` holds for the deletion too: its steps
+21.30's reason for rewriting the insertion's `balance` holds for the deletion too: its steps
 `balance_left`, `balance_right` and `combine`, and the specialised deletions' steps to the left and
 to the right (`edl_rbtc_del_from_left`, `edl_rbtc_del_lk_fl` and their mirror images), are
 sequential equations, and the code generator's completed patterns rebuild the subtrees they only
