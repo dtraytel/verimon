@@ -226,13 +226,15 @@ lemma Sup_rec_safety_le_iff: "\<Squnion> A \<le> (x::rec_safety) \<longleftright
     (simp_all add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup])
 
 lemma le_Sup_rec_safety_iff: "(x::rec_safety) \<le> \<Squnion> A \<longleftrightarrow> (\<exists>y\<in>insert Unused A. x \<le> y)"
-  unfolding Sup_rec_safety_def using finite[of A]
-  apply (induction A rule: finite_induct)
-   apply (auto simp add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup]
-        bot.extremum_unique
-      simp flip: bot_rec_safety_def
-      intro: sup.coboundedI1 sup.coboundedI2)
-  by (smt (z3) sup_rec_safety.elims)
+proof -
+  have le_sup_rec_safety_iff: "x \<le> a \<squnion> b \<longleftrightarrow> x \<le> a \<or> x \<le> b" for a b :: rec_safety
+    by (cases x; cases a; cases b) simp_all
+  show ?thesis
+    unfolding Sup_rec_safety_def using finite[of A]
+    by (induction A rule: finite_induct)
+      (simp_all add: comp_fun_idem_on.fold_insert_idem[OF comp_fun_idem_on_sup]
+        le_sup_rec_safety_iff disj_left_commute)
+qed
 
 lemma Sup_eq_Unused_iff: "\<Squnion> A = Unused \<longleftrightarrow> A \<subseteq> {Unused}"
 proof -
@@ -777,9 +779,13 @@ next
     by (force dest!: sum_list_mem_leq[of _ _ size'])
 next
   case (Ands2 l pair safes \<phi>)
+  then obtain \<psi> where "\<psi> \<in> set l" and "\<phi> = remove_neg \<psi>"
+    by blast
+  then have "size' \<phi> \<le> sum_list (map size' l)"
+    using size'_remove_neg[of \<psi>] sum_list_mem_leq[of \<psi> l size']
+    by simp
   then show ?case 
-    by (auto simp add: Nat.less_Suc_eq_le dest!: sum_list_mem_leq[of _ _ size'])
-      (smt (z3) order.trans size'_remove_neg)
+    by simp
 next
   case (R_safe0 \<phi> I \<psi>)
   then show ?case 
@@ -897,6 +903,11 @@ proof (cases \<phi>)
         by auto
     next
       case not_mem: False
+      have safe_\<phi>: "safe_formula \<phi>" and safe_\<alpha>\<beta>: "safe_formula \<alpha>" "safe_formula \<beta>"
+        and fv_\<alpha>\<beta>: "fv \<alpha> = fv \<beta>" "fv \<beta> \<subseteq> fv \<phi>"
+        using safe not_mem no_safe_assign_trigger[of \<phi> \<alpha> I \<beta>]
+        unfolding And Trigger
+        by (simp_all add: safe_dual_def)
       show ?thesis
       proof (cases "bounded I")
         case True
@@ -905,27 +916,19 @@ proof (cases \<phi>)
           unfolding Trigger
           by auto
         show ?thesis
-          using Trigger not_mem
+          using safe_\<phi> safe_\<alpha>\<beta> fv_\<alpha>\<beta>
           unfolding And obs and_trigger_safe_bounded_def trigger_safe_bounded_def 
-          apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
-              Un_commute safe_dual_def)
-          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
-              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
-              safe_formula.simps(10,18) subset_Un_eq)
+          by (simp add: Un_absorb2)
       next
         case False
         then have obs: "(rewrite_trigger (formula.And \<phi> \<psi>)) = and_trigger_safe_unbounded \<phi> \<alpha> I \<beta>"
           using not_mem
           unfolding Trigger
           by auto
-        then show ?thesis
-          using Trigger not_mem
+        show ?thesis
+          using safe_\<phi> safe_\<alpha>\<beta> fv_\<alpha>\<beta>
           unfolding And obs and_trigger_safe_unbounded_def trigger_safe_unbounded_def
-          apply (simp add: Un_absorb Un_left_absorb Un_left_commute 
-              Un_commute safe_dual_def)
-          by (smt (verit, ccfv_SIG) And Un_absorb formula.simps(547) fvi.simps(18)
-              is_constraint.simps(40) no_safe_assign_trigger safe safe_dual_def
-              safe_formula.simps(10,18) subset_Un_eq)
+          by (simp add: Un_absorb2)
       qed
     qed
   qed (auto)
