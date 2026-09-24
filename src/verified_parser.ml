@@ -6534,15 +6534,16 @@ let rec suc n = plus_nata n (Nat_of_num One);;
 
 let rec comp f g = (fun x -> f (g x));;
 
-let rec nth
-  (x :: xs) n =
-    (if equal_nata n Zero_nat then x
-      else nth xs (minus_nata n (Nat_of_num One)));;
-
 let rec fold f x1 s = match f, x1, s with f, [], s -> s
                | f, x :: xs, s -> fold f xs (f x s);;
 
 let rec rev xs = fold (fun a b -> a :: b) xs [];;
+
+let rec upt i j = (if less_nat i j then i :: upt (suc i) j else []);;
+
+let rec zip xs ys = match xs, ys with [], ys -> []
+              | xs, [] -> []
+              | x :: xs, y :: ys -> (x, y) :: zip xs ys;;
 
 let rec drop
   n x1 = match n, x1 with n, [] -> []
@@ -6644,6 +6645,9 @@ let rec ilic _A
           (match v with [] -> is_none t
             | x :: _ -> equal_option _A t (Some (tok x))))
       cells;;
+
+let rec dropWhile p x1 = match p, x1 with p, [] -> []
+                    | p, x :: xs -> (if p x then dropWhile p xs else x :: xs);;
 
 let rec takeWhile p x1 = match p, x1 with p, [] -> []
                     | p, x :: xs -> (if p x then x :: takeWhile p xs else []);;
@@ -6764,56 +6768,23 @@ let rec stree
         Node (fst pr, rev (take (size_list (snd pr)) tstk)) ::
           drop (size_list (snd pr)) tstk);;
 
-let rec comment_end
-  = function
-    c :: d :: s ->
-      (if equal_chara c
-            (Chara (false, true, false, true, false, true, false, false)) &&
-            equal_chara d
-              (Chara (true, false, false, true, false, true, false, false))
-        then Some (Nat_of_num (Bit0 One))
-        else map_option suc (comment_end (d :: s)))
-    | [] -> None
-    | [v] -> None;;
-
-let rec valid_unit
-  lx = member equal_char
-         [Chara (false, false, true, false, false, true, true, false);
-           Chara (false, false, false, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, true, true, false)]
-         (last lx);;
-
-let rec best_match
-  b x1 s = match b, x1, s with b, [], s -> b
-    | b, (m, a) :: rs, s ->
-        best_match
-          (match m s with None -> b
-            | Some n ->
-              (match b with None -> Some (n, a)
-                | Some (na, _) -> (if less_nat na n then Some (n, a) else b)))
-          rs s;;
-
-let rec mk_token
-  t off lx =
-    Token_ext (t, Span_ext (Zero_nat, off, off, size_list lx, lx, ()), ());;
-
-let rec line_end
-  s = (let n =
-         size_list
-           (takeWhile
-             (fun c ->
-               not (equal_chara c
-                     (Chara
-                       (false, true, false, true, false, false, false,
-                         false))) &&
-                 not (equal_chara c
-                       (Chara
-                         (true, false, true, true, false, false, false,
-                           false))))
-             s)
-         in
-        (if less_nat n (size_list s) then suc n else n));;
+let rec char_of _A
+  n = Chara (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+               n Zero_nat,
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num One),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit0 One)),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit1 One)),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit0 (Bit0 One))),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit1 (Bit0 One))),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit0 (Bit1 One))),
+              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                n (Nat_of_num (Bit1 (Bit1 One))));;
 
 let keyword_table : (char list * mtok) list
   = [([Chara (true, true, false, true, false, true, false, false)], PLUS);
@@ -7176,66 +7147,95 @@ let keyword_table : (char list * mtok) list
          Chara (false, false, true, false, false, false, true, false)],
         MED)];;
 
-let rec horner_sum _B
-  f a xs =
-    foldr (fun x b ->
-            plus _B.semiring_0_comm_semiring_0.comm_monoid_add_semiring_0.monoid_add_comm_monoid_add.semigroup_add_monoid_add.plus_semigroup_add
-              (f x)
-              (times
-                _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.times_mult_zero
-                a b))
-      xs (zero _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.zero_mult_zero);;
-
 let rec of_bool _A = function false -> zero _A.zero_zero_neq_one
                      | true -> one _A.one_zero_neq_one;;
 
-let rec digit7 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x8;;
-
-let rec digit6 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x7;;
-
-let rec digit5 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x6;;
-
-let rec digit4 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x5;;
-
-let rec digit3 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x4;;
-
-let rec digit2 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x3;;
-
-let rec digit1 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x2;;
-
-let rec digit0 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x1;;
-
-let rec of_char _A
-  c = horner_sum _A.comm_semiring_0_comm_semiring_1
-        (of_bool _A.semiring_1_comm_semiring_1.zero_neq_one_semiring_1)
-        (numeral
-          _A.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral
-          (Bit0 One))
-        [digit0 c; digit1 c; digit2 c; digit3 c; digit4 c; digit5 c; digit6 c;
-          digit7 c];;
-
-let rec in_range
-  a b c =
-    less_eq_nat (of_char comm_semiring_1_nat a)
-      (of_char comm_semiring_1_nat c) &&
-      less_eq_nat (of_char comm_semiring_1_nat c)
-        (of_char comm_semiring_1_nat b);;
+let rec integer_of_char
+  (Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
+    Z.add (Z.mul
+            (Z.add
+              (Z.mul
+                (Z.add
+                  (Z.mul
+                    (Z.add
+                      (Z.mul
+                        (Z.add
+                          (Z.mul
+                            (Z.add
+                              (Z.mul
+                                (Z.add
+                                  (Z.mul (of_bool zero_neq_one_integer b7)
+                                    (Z.of_int 2))
+                                  (of_bool zero_neq_one_integer b6))
+                                (Z.of_int 2))
+                              (of_bool zero_neq_one_integer b5))
+                            (Z.of_int 2))
+                          (of_bool zero_neq_one_integer b4))
+                        (Z.of_int 2))
+                      (of_bool zero_neq_one_integer b3))
+                    (Z.of_int 2))
+                  (of_bool zero_neq_one_integer b2))
+                (Z.of_int 2))
+              (of_bool zero_neq_one_integer b1))
+            (Z.of_int 2))
+      (of_bool zero_neq_one_integer b0);;
 
 let rec is_letter
-  c = in_range (Chara (true, false, false, false, false, true, true, false))
-        (Chara (false, true, false, true, true, true, true, false)) c ||
-        in_range (Chara (true, false, false, false, false, false, true, false))
-          (Chara (false, true, false, true, true, false, true, false)) c;;
+  c = (let k = integer_of_char c in
+        Z.leq (Z.of_int 97) k && Z.leq k (Z.of_int 122) ||
+          Z.leq (Z.of_int 65) k && Z.leq k (Z.of_int 90));;
 
 let rec is_digit
-  c = in_range (Chara (false, false, false, false, true, true, false, false))
-        (Chara (true, false, false, true, true, true, false, false)) c;;
+  c = (let k = integer_of_char c in
+        Z.leq (Z.of_int 48) k && Z.leq k (Z.of_int 57));;
 
 let rec is_str_start
   c = is_letter c ||
         (is_digit c ||
           equal_chara c
             (Chara (true, true, true, true, true, false, true, false)));;
+
+let rec sign_len
+  s = (match s with [] -> Zero_nat
+        | Chara (true, true, _, _, _, _, _, _) :: _ -> Zero_nat
+        | Chara (true, false, true, true, true, _, _, _) :: _ -> Zero_nat
+        | Chara (true, false, true, true, false, true, true, _) :: _ -> Zero_nat
+        | Chara (true, false, true, true, false, true, false, true) :: _ ->
+          Zero_nat
+        | Chara (true, false, true, true, false, true, false, false) :: _ ->
+          Nat_of_num One
+        | Chara (true, false, true, true, false, false, _, _) :: _ -> Zero_nat
+        | Chara (true, false, true, false, _, _, _, _) :: _ -> Zero_nat
+        | Chara (true, false, false, _, _, _, _, _) :: _ -> Zero_nat
+        | Chara (false, _, _, _, _, _, _, _) :: _ -> Zero_nat);;
+
+let rec is_space
+  c = member equal_char
+        [Chara (false, false, false, false, false, true, false, false);
+          Chara (true, false, false, true, false, false, false, false);
+          Chara (false, true, false, true, false, false, false, false);
+          Chara (true, false, true, true, false, false, false, false)]
+        c;;
+
+let rule_starts : (char -> bool) list
+  = [is_space] @
+      map (fun (k, _) c -> equal_chara c (hd k)) keyword_table @
+        [is_digit;
+          (fun c -> not (equal_nata (sign_len [c]) Zero_nat) || is_digit c);
+          (fun c -> not (equal_nata (sign_len [c]) Zero_nat) || is_digit c);
+          (fun c ->
+            equal_chara c
+              (Chara (false, true, false, false, false, true, false, false)));
+          (fun c ->
+            equal_chara c
+              (Chara (false, true, false, false, true, true, true, false)));
+          is_str_start;
+          (fun c ->
+            equal_chara c
+              (Chara (false, false, false, true, false, true, false, false)));
+          (fun c ->
+            equal_chara c
+              (Chara (true, true, false, false, false, true, false, false)))];;
 
 let rec is_str_char
   c = is_str_start c ||
@@ -7285,54 +7285,42 @@ let rec m_regexp
                 (Chara (false, true, false, false, true, true, true, false))
             then map_option suc (m_quoted sa) else None));;
 
-let rec is_space
-  c = member equal_char
-        [Chara (false, false, false, false, false, true, false, false);
-          Chara (true, false, false, true, false, false, false, false);
-          Chara (false, true, false, true, false, false, false, false);
-          Chara (true, false, true, true, false, false, false, false)]
-        c;;
-
 let rec m_space
   s = (match s with [] -> None
         | c :: _ -> (if is_space c then Some (Nat_of_num One) else None));;
 
-let rec m_fixed
-  k s = (if not (null k) && equal_lista equal_char (take (size_list k) s) k
-          then Some (size_list k) else None);;
+let rec starts_with _A x0 uu = match x0, uu with [], uu -> true
+                         | uv :: uw, [] -> false
+                         | a :: k, b :: s -> eq _A a b && starts_with _A k s;;
 
-let rec count_digits s = size_list (takeWhile is_digit s);;
+let rec m_fixed
+  k s = (if not (null k) && starts_with equal_char k s then Some (size_list k)
+          else None);;
+
+let rec count_digits
+  = function [] -> Zero_nat
+    | c :: s -> (if is_digit c then suc (count_digits s) else Zero_nat);;
 
 let rec m_unit
   s = (let n = count_digits s in
         (if less_nat Zero_nat n &&
-              (less_nat n (size_list s) && is_letter (nth s n))
+              (match dropWhile is_digit s with [] -> false
+                | c :: _ -> is_letter c)
           then Some (suc n) else None));;
-
-let rec sign_len
-  s = (match s with [] -> Zero_nat
-        | Chara (true, true, _, _, _, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, true, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, false, true, true, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, false, true, false, true) :: _ ->
-          Zero_nat
-        | Chara (true, false, true, true, false, true, false, false) :: _ ->
-          Nat_of_num One
-        | Chara (true, false, true, true, false, false, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, false, _, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, false, _, _, _, _, _) :: _ -> Zero_nat
-        | Chara (false, _, _, _, _, _, _, _) :: _ -> Zero_nat);;
 
 let rec m_rat
   s = (let k = sign_len s in
-       let n = count_digits (drop k s) in
+       let t = drop k s in
+       let n = count_digits t in
+       let u = dropWhile is_digit t in
         (if less_nat Zero_nat n &&
-              (less_nat (plus_nata k n) (size_list s) &&
-                equal_chara (nth s (plus_nata k n))
-                  (Chara (false, true, true, true, false, true, false, false)))
+              (match u with [] -> false
+                | c :: _ ->
+                  equal_chara c
+                    (Chara
+                      (false, true, true, true, false, true, false, false)))
           then Some (plus_nata (plus_nata (plus_nata k n) (Nat_of_num One))
-                      (count_digits
-                        (drop (plus_nata (plus_nata k n) (Nat_of_num One)) s)))
+                      (count_digits (tl u)))
           else None));;
 
 let rec m_int
@@ -7354,11 +7342,84 @@ let rules : ((char list -> nat option) * action) list
              [Chara (true, true, false, false, false, true, false, false)],
             LineComment)];;
 
+let rec rules_for
+  c = map_filter
+        (fun x -> (if (let (_, p) = x in p c) then Some (fst x) else None))
+        (zip rules rule_starts);;
+
+let rules_tab : (((char list -> nat option) * action) list) array
+  = Array.of_list
+      (map (fun i ->
+             rules_for
+               (char_of linordered_euclidean_semiring_bit_operations_nat i))
+        (upt Zero_nat
+          (Nat_of_num
+            (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One)))))))))));;
+
+let rec best_match
+  b x1 s = match b, x1, s with b, [], s -> b
+    | b, (m, a) :: rs, s ->
+        best_match
+          (match m s with None -> b
+            | Some n ->
+              (match b with None -> Some (n, a)
+                | Some (na, _) -> (if less_nat na n then Some (n, a) else b)))
+          rs s;;
+
+let rec lex_match
+  s = (match s with [] -> None
+        | c :: _ ->
+          best_match None
+            ((fun (a, i) -> Array.get a (Z.to_int i))
+              (rules_tab, integer_of_char c))
+            s);;
+
+let rec comment_end
+  = function
+    c :: d :: s ->
+      (if equal_chara c
+            (Chara (false, true, false, true, false, true, false, false)) &&
+            equal_chara d
+              (Chara (true, false, false, true, false, true, false, false))
+        then Some (Nat_of_num (Bit0 One))
+        else map_option suc (comment_end (d :: s)))
+    | [] -> None
+    | [v] -> None;;
+
+let rec valid_unit
+  lx = member equal_char
+         [Chara (false, false, true, false, false, true, true, false);
+           Chara (false, false, false, true, false, true, true, false);
+           Chara (true, false, true, true, false, true, true, false);
+           Chara (true, true, false, false, true, true, true, false)]
+         (last lx);;
+
+let rec mk_token
+  t off lx =
+    Token_ext (t, Span_ext (Zero_nat, off, off, size_list lx, lx, ()), ());;
+
+let rec line_end
+  s = (let n =
+         size_list
+           (takeWhile
+             (fun c ->
+               not (equal_chara c
+                     (Chara
+                       (false, true, false, true, false, false, false,
+                         false))) &&
+                 not (equal_chara c
+                       (Chara
+                         (true, false, true, true, false, false, false,
+                           false))))
+             s)
+         in
+        (if less_nat n (size_list s) then suc n else n));;
+
 let rec lex_aux
   uu uv x2 = match uu, uv, x2 with uu, uv, [] -> Some []
     | fuel, uw, v :: va ->
         (if equal_nata fuel Zero_nat then None
-          else (match best_match None rules (v :: va) with None -> None
+          else (match lex_match (v :: va) with None -> None
                  | Some (n, a) ->
                    (let lx = take n (v :: va) in
                     let rest = drop n (v :: va) in
@@ -7541,6 +7602,22 @@ let rec itabs_of
             Array.of_list pN, Array.of_list cs, Array.of_list pc,
             Array.of_list prs, Array.of_list pl, Array.of_list ph,
             Array.of_list pf);;
+
+let rec digit0 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x1;;
+
+let rec digit1 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x2;;
+
+let rec digit2 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x3;;
+
+let rec digit3 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x4;;
+
+let rec digit4 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x5;;
+
+let rec digit5 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x6;;
+
+let rec digit6 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x7;;
+
+let rec digit7 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x8;;
 
 let rec equal_dact _A _B
   x0 x1 = match x0, x1 with DShift, DReduce x2 -> false
@@ -8027,24 +8104,6 @@ let rec equal_trm
     | TCst x2, TCst y2 -> equal_cst x2 y2
     | TVar x1, TVar y1 -> equal_lista equal_char x1 y1;;
 
-let rec char_of _A
-  n = Chara (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-               n Zero_nat,
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num One),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 One)),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 One)),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 (Bit0 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 (Bit0 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 (Bit1 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 (Bit1 One))));;
-
 let rec digits_of_nat
   n = (if less_nat n (Nat_of_num (Bit0 (Bit1 (Bit0 One))))
         then [char_of linordered_euclidean_semiring_bit_operations_nat
@@ -8164,6 +8223,25 @@ let rec postprocess
 
 let rec bare_atom
   f fut = (if fut then RConcat (RTest f, wild) else RConcat (wild, RTest f));;
+
+let rec horner_sum _B
+  f a xs =
+    foldr (fun x b ->
+            plus _B.semiring_0_comm_semiring_0.comm_monoid_add_semiring_0.monoid_add_comm_monoid_add.semigroup_add_monoid_add.plus_semigroup_add
+              (f x)
+              (times
+                _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.times_mult_zero
+                a b))
+      xs (zero _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.zero_mult_zero);;
+
+let rec of_char _A
+  c = horner_sum _A.comm_semiring_0_comm_semiring_1
+        (of_bool _A.semiring_1_comm_semiring_1.zero_neq_one_semiring_1)
+        (numeral
+          _A.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral
+          (Bit0 One))
+        [digit0 c; digit1 c; digit2 c; digit3 c; digit4 c; digit5 c; digit6 c;
+          digit7 c];;
 
 let rec minus_int
   k l = Int_of_integer (Z.sub (integer_of_int k) (integer_of_int l));;

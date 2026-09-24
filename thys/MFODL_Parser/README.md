@@ -98,19 +98,18 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-13 to 48 tokens), the verified parser takes 0.2 to 0.9 ms per formula (median
-0.4 ms), against 2 to 5 µs for MonPoly's parser; `monpoly -check` on
-`join-one` takes 4 ms with and without `-verified_parser`. The time is linear in
-the number of tokens, about 18 µs per token. The lexer model now takes most of
-it (62%, median 0.22 ms per formula), the LR driver 29% (median 0.1 ms).
-Measured with
+13 to 48 tokens), the verified parser takes 0.1 to 0.3 ms per formula, against
+2 to 5 µs for MonPoly's parser; in `monpoly -check` it is lost in the start-up
+time. Measured with
 
 ```
 parser_difftest -time FILE...
 ```
 
 which prints, per formula, the CPU time of both parsers and that of the
-verified lexer, LR parser and the rest (with a resolution of 0.1 ms).
+verified lexer, LR parser and the rest (with a resolution of 0.1 ms). Below
+that resolution, instruction counts (callgrind, each suite formula parsed
+once): 207 M in total, 193 M of them in the LR driver and 13 M in the lexer.
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -118,15 +117,21 @@ of state indices of two precomputed LR(0) automata, proved to compute the same
 result as the package's general driver. Its code equation runs on indexed
 tables: productions and nonterminals are numbered, goto rows are keyed by
 terminal or nonterminal number, and the tables are arrays, so a step compares
-no names and finds its table rows by array index. Counted in instructions (callgrind, each suite
-formula parsed once), the LR driver went from 4.7 G with name-keyed list
-tables to 0.19 G (24x). The general driver, which computes the closure of
+no names and finds its table rows by array index. Counted in instructions
+(callgrind, each suite formula parsed once), the LR driver went from 4.7 G
+with name-keyed list tables to 0.19 G (24x). The general driver, which computes the closure of
 every new state with its layout anchors at run time, was another 100 to 170
 times slower (197 ms to 1.01 s per formula).
 
+The lexer model (`MFODL_Lexer`) is written for readability; `MFODL_Parser_Code`
+gives it code equations, proved equal to its definitions, that avoid
+arithmetic on naturals and try only the rules that can match at the current
+character. They reduced the lexer from 427 M to 13 M instructions.
+
 `MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
-ocamlopt sees the tables as static data; the index arithmetic this costs is
-small next to the lexer.
+ocamlopt sees the tables as static data. About half of the LR driver's
+remaining time is the conversion of table indices to integers for array
+access.
 
 `src/verified_parser.ml` is large (about 5 MB), mostly the LR tables, whose
 numbers are binary numerals.
