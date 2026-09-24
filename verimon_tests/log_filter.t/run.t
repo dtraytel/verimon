@@ -99,6 +99,15 @@ that a digit is required after the sign and the prefix:
   l.log:7:1: Expected type int for predicate P, field number 1
   @34 (time point 4): (1)
 
+Numerals of more than 256 characters are converted by combining blocks of digits pairwise, in
+time quasi-linear in their length:
+
+  $ printf '@1 P(1_%s)\n@2 P(-0b%s)\n' $(printf '0%.0s' $(seq 1 299)) $(printf '1%.0s' $(seq 1 300)) > l.log
+  $ monpoly -verified -sig s.sig -formula p.mfotl -log l.log -nonewlastts > v.out
+  $ monpoly -verified -old_log_parser -sig s.sig -formula p.mfotl -log l.log -nonewlastts > o.out
+  $ cmp v.out o.out && wc -c < v.out
+  436
+
 Timestamps must not decrease, and the verified kernel does not support commands:
 
   $ printf '@2 P(1)\n@1 P(2)\n' > l.log

@@ -10416,6 +10416,13 @@ let rec efinish
       | (_, (E_ESCAPE (_, _, tp), (_, _))) -> [O_ERROR (tp, E_UNTERMINATED)]
       | (b, (E_COMMENT, (p, sp))) -> rev (efinish_p b p sp []));;
 
+let rec istep
+  x0 acc = match x0, acc with
+    (v1, p1) :: (v2, p2) :: xs, acc ->
+      istep xs ((Z.add (Z.mul v1 p2) v2, Z.mul p1 p2) :: acc)
+    | [], acc -> rev acc @ []
+    | [v], acc -> rev acc @ [v];;
+
 let rec atms (_A1, _A2, _A3)
   = function Skip x1 -> bot_set (_A1, _A2, _A3)
     | Test x2 -> insert (_A1, _A2) x2 (bot_set (_A1, _A2, _A3))
@@ -13712,6 +13719,10 @@ let rec vc_pf (VConf (x1, x2, x3, x4)) = x4;;
 
 let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
 
+let rec icombine = function [] -> Z.zero
+                   | [(v, p)] -> v
+                   | x :: y :: xs -> icombine (istep (x :: y :: xs) []);;
+
 let rec idigit
   b c = (if (('\048' : char) <= c) && ((c : char) <= '\057')
           then (let d = Z.sub ((Z.of_int (Char.code c))) (Z.of_int 48) in
@@ -13725,6 +13736,23 @@ let rec idigit
                                 in
                                (if Z.lt d b then d else (Z.neg (Z.of_int 1))))
                         else (Z.neg (Z.of_int 1)))));;
+
+let rec icollect
+  s n b i acc =
+    (if Z.lt i n
+      then (if ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                   s i) : char) = '\095')
+             then icollect s n b (Z.add i (Z.of_int 1)) acc
+             else (let d =
+                     idigit b
+                       ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                         s i)
+                     in
+                    (if Z.lt d Z.zero then None
+                      else icollect s n b (Z.add i (Z.of_int 1)) (d :: acc))))
+      else Some acc);;
 
 let rec idigits
   s n b i acc =
@@ -13755,8 +13783,17 @@ let rec bnat_of_digits
       else if Z.sign i < 0 then 0 else Z.to_int i))
                    s i) : char) = '\095')
              then None
-             else (let r = idigits s n (integer_of_nat b) i Z.zero in
-                    (if Z.lt r Z.zero then None else Some (nat_of_integer r))))
+             else (if Z.leq (Z.sub n i) (Z.of_int 256)
+                    then (let r = idigits s n (integer_of_nat b) i Z.zero in
+                           (if Z.lt r Z.zero then None
+                             else Some (nat_of_integer r)))
+                    else (match icollect s n (integer_of_nat b) i []
+                           with None -> None
+                           | Some rds ->
+                             Some (nat_of_integer
+                                    (icombine
+                                      (fold
+(fun d -> (fun a -> (d, integer_of_nat b) :: a)) rds []))))))
       else None);;
 
 let rec bbase_of

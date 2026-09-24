@@ -189,8 +189,7 @@ without an error), not what is output after it (with
 `-ignore_parse_errors`), nor which error is reported.  Timestamps are
 then natural numbers, and integers are written as for Zarith's
 `Z.of_string` except that a digit is required after the sign and the
-base prefix (`0x`, `0o` or `0b`); they are converted digit by digit, in
-time quadratic in the number of digits.  Floats are read by OCaml's
+base prefix (`0x`, `0o` or `0b`).  Floats are read by OCaml's
 `float_of_string_opt`, a parameter of the theorems.  Outside them remain
 MonPoly's reading and preprocessing of the formula and the signature, and
 the driver in `src/algorithm_verified.ml`, which reads the input in

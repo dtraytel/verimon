@@ -303,12 +303,172 @@ next
   qed
 qed
 
-lemma bnat_of_digits_code[code]: "bnat_of_digits s n b i = (if i < n then
+lemma bnat_of_digits_idigits: "bnat_of_digits s n b i = (if i < n then
     (if bytes_at s i = CHR ''_'' then None
      else let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r))
   else None)"
   using idigits[of s n b i 0]
   by (auto simp: bnat_of_digits_def Let_def integer_simps integer_of_nat_eq_of_nat split: option.splits)
+
+text \<open>The loop above takes time quadratic in the number of digits: each step multiplies the
+  value of the digits so far. For long numerals, the code instead collects the digits and then
+  combines neighbouring blocks of digits pairwise, as a block of value @{text v} and weight
+  @{text p} (the base to the power of its length) followed by one of value @{text v'} and weight
+  @{text p'} is one of value @{text "v * p' + v'"} and weight @{text "p * p'"}: each round halves
+  the number of blocks and multiplies numbers of about equal length, so the time is that of a
+  logarithmic number of rounds of balanced multiplications.\<close>
+
+function bdlist :: "bytes \<Rightarrow> integer \<Rightarrow> nat \<Rightarrow> integer \<Rightarrow> nat list option" where
+  "bdlist s n b i = (if i < n then (if bytes_at s i = CHR ''_'' then bdlist s n b (i + 1)
+     else case digit_val b (bytes_at s i) of
+       None \<Rightarrow> None
+     | Some d \<Rightarrow> map_option (Cons d) (bdlist s n b (i + 1)))
+   else Some [])"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(s, n, b, i). nat_of_integer (n - i))") (auto simp: integer_simps)
+
+declare bdlist.simps[simp del]
+
+lemma bdigits_bdlist: "bdigits s n b i acc = map_option (foldl (\<lambda>a d. b * a + d) acc) (bdlist s n b i)"
+proof (induction "nat_of_integer (n - i)" arbitrary: i acc)
+  case 0
+  then have "\<not> i < n"
+    by (auto simp: integer_simps)
+  then show ?case
+    by (simp add: bdigits.simps bdlist.simps)
+next
+  case (Suc m)
+  then have i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
+    by (auto simp: integer_simps)
+  note IH = Suc.hyps(1)[OF m]
+  show ?case
+    using i IH by (subst bdigits.simps, subst bdlist.simps) (auto simp: option.map_comp comp_def split: option.splits)
+qed
+
+function icollect :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer list \<Rightarrow> integer list option" where
+  "icollect s n b i acc = (if i < n then (if bytes_at s i = CHR ''_'' then icollect s n b (i + 1) acc
+     else let d = idigit b (bytes_at s i) in
+       if d < 0 then None else icollect s n b (i + 1) (d # acc))
+   else Some acc)"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(s, n, b, i, acc). nat_of_integer (n - i))") (auto simp: integer_simps)
+
+declare icollect.simps[simp del]
+
+lemma icollect: "icollect s n (integer_of_nat b) i acc =
+  map_option (\<lambda>ds. rev (map integer_of_nat ds) @ acc) (bdlist s n b i)"
+proof (induction "nat_of_integer (n - i)" arbitrary: i acc)
+  case 0
+  then have "\<not> i < n"
+    by (auto simp: integer_simps)
+  then show ?case
+    by (simp add: icollect.simps bdlist.simps)
+next
+  case (Suc m)
+  then have i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
+    by (auto simp: integer_simps)
+  note IH = Suc.hyps(1)[OF m]
+  show ?case
+  proof (cases "bytes_at s i = CHR ''_''")
+    case True
+    with i IH[of acc] show ?thesis
+      by (subst icollect.simps, subst bdlist.simps) simp
+  next
+    case False
+    show ?thesis
+    proof (cases "digit_val b (bytes_at s i)")
+      case None
+      then have "idigit (integer_of_nat b) (bytes_at s i) = -1"
+        by (simp add: idigit_def)
+      with None False i show ?thesis
+        by (subst icollect.simps, subst bdlist.simps) simp
+    next
+      case (Some d)
+      then have "idigit (integer_of_nat b) (bytes_at s i) = integer_of_nat d"
+        by (simp add: idigit_def)
+      moreover have "\<not> integer_of_nat d < 0"
+        by (simp add: less_integer.rep_eq)
+      ultimately show ?thesis
+        using Some False i IH[of "integer_of_nat d # acc"]
+        by (subst icollect.simps, subst bdlist.simps) (simp add: Let_def option.map_comp comp_def)
+    qed
+  qed
+qed
+
+text \<open>Blocks as pairs of a value and a weight.\<close>
+
+definition pvals :: "integer \<Rightarrow> (integer \<times> integer) list \<Rightarrow> integer" where
+  "pvals a xs = foldl (\<lambda>a (v, p). a * p + v) a xs"
+
+fun istep :: "(integer \<times> integer) list \<Rightarrow> (integer \<times> integer) list \<Rightarrow> (integer \<times> integer) list" where
+  "istep ((v1, p1) # (v2, p2) # xs) acc = istep xs ((v1 * p2 + v2, p1 * p2) # acc)"
+| "istep xs acc = rev acc @ xs"
+
+lemma pvals_istep: "pvals a (istep xs acc) = pvals a (rev acc @ xs)"
+  by (induction xs acc rule: istep.induct) (simp_all add: pvals_def algebra_simps)
+
+lemma length_istep: "length (istep xs acc) = length acc + (length xs + 1) div 2"
+  by (induction xs acc rule: istep.induct) auto
+
+function icombine :: "(integer \<times> integer) list \<Rightarrow> integer" where
+  "icombine [] = 0"
+| "icombine [(v, p)] = v"
+| "icombine (x # y # xs) = icombine (istep (x # y # xs) [])"
+  by pat_completeness auto
+termination
+  by (relation "measure length") (auto simp: length_istep)
+
+lemma icombine: "icombine xs = pvals 0 xs"
+proof (induction xs rule: icombine.induct)
+  case (3 x y xs)
+  then show ?case
+    by (simp add: pvals_istep)
+qed (simp_all add: pvals_def)
+
+lemma pvals_digits: "pvals a (map (\<lambda>d. (d, b)) ds) = foldl (\<lambda>a d. a * b + d) a ds"
+  by (induction ds arbitrary: a) (simp_all add: pvals_def)
+
+lemma foldl_integer_of_nat:
+  "foldl (\<lambda>a d. a * integer_of_nat b + d) (integer_of_nat acc) (map integer_of_nat ds) =
+   integer_of_nat (foldl (\<lambda>a d. b * a + d) acc ds)"
+proof (induction ds arbitrary: acc)
+  case (Cons d ds)
+  have "integer_of_nat acc * integer_of_nat b + integer_of_nat d = integer_of_nat (b * acc + d)"
+    by (simp add: integer_of_nat_eq_of_nat algebra_simps)
+  with Cons.IH[of "b * acc + d"] show ?case
+    by simp
+qed simp
+
+lemma fold_Cons_map: "fold (\<lambda>d acc. f d # acc) xs ys = rev (map f xs) @ ys"
+  by (induction xs arbitrary: ys) simp_all
+
+lemma bnat_of_digits_code[code]: "bnat_of_digits s n b i = (if i < n then
+    (if bytes_at s i = CHR ''_'' then None
+     else if n - i \<le> 256 then
+       (let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r))
+     else (case icollect s n (integer_of_nat b) i [] of
+       None \<Rightarrow> None
+     | Some rds \<Rightarrow> Some (nat_of_integer (icombine (fold (\<lambda>d acc. (d, integer_of_nat b) # acc) rds [])))))
+  else None)"
+proof -
+  have F: "foldl (\<lambda>a d. a * integer_of_nat b + d) 0 (map integer_of_nat ds) =
+    integer_of_nat (foldl (\<lambda>a d. b * a + d) 0 ds)" for ds
+    using foldl_integer_of_nat[of b 0 ds] by (simp add: integer_of_nat_eq_of_nat)
+  have D: "(case icollect s n (integer_of_nat b) i [] of
+      None \<Rightarrow> None
+    | Some rds \<Rightarrow> Some (nat_of_integer (icombine (fold (\<lambda>d acc. (d, integer_of_nat b) # acc) rds [])))) =
+    bdigits s n b i 0"
+    by (auto simp: bdigits_bdlist icollect fold_Cons_map rev_map icombine pvals_digits F
+        split: option.splits)
+  have I: "i < n \<Longrightarrow> bytes_at s i \<noteq> CHR ''_'' \<Longrightarrow>
+    (let r = idigits s n (integer_of_nat b) i 0 in if r < 0 then None else Some (nat_of_integer r)) =
+    bdigits s n b i 0"
+    using bnat_of_digits_idigits[of s n b i] by (simp add: bnat_of_digits_def)
+  show ?thesis
+    unfolding bnat_of_digits_def by (simp add: D I)
+qed
 
 (*<*)
 end
