@@ -64,7 +64,7 @@ text \<open>Entry points for \<^verbatim>\<open>src/verified_parser_adapter.ml\<
 definition lex_chars :: \<open>string \<Rightarrow> (mtok \<times> string) list option\<close> where
   \<open>lex_chars s = map_option (map (\<lambda>t. (tok t, lexeme t))) (lex s)\<close>
 
-export_code parse_formula lex_chars integer_of_int integer_of_nat
+export_code parse_formula lex_chars lex mfodl_parse postprocess integer_of_int integer_of_nat
   String.Char CInt TVar OBnd ACnt FEqual RSkip FALSE
   in OCaml module_name Verified_parser file_prefix "verified_parser"
 

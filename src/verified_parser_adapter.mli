@@ -8,3 +8,6 @@ val parse_string : string -> MFOTL.formula option
 
 val lex_string : string -> (Verified_parser.Verified_parser.mtok * string) list option
 (** The token classes and lexemes of the verified lexer model, for testing. *)
+
+val chars_of_string : string -> Verified_parser.Verified_parser.char list
+(** The input of the exported parser: the bytes of a string, for testing. *)

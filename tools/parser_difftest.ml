@@ -2,7 +2,7 @@
    exported to src/verified_parser.ml) against MonPoly's ocamlyacc parser
    (src/formula_parser.mly).
 
-   Usage: parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [FILE...]
+   Usage: parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [-time] [FILE...]
    Each FILE is parsed as one formula. Without files, N random formulas are
    generated. For every input both parsers run; the outcomes are classified as
      same     both accept with equal syntax trees, or both reject
@@ -14,7 +14,12 @@
 
    With -lex, random strings are lexed instead and the token streams of the
    verified lexer model (thys/MFODL_Parser/Parser/MFODL_Lexer.thy) and of
-   src/formula_lexer.mll are compared. *)
+   src/formula_lexer.mll are compared.
+
+   With -time, the inputs are not compared but timed: one line per input with
+   its length in characters and tokens, the CPU time of MonPoly's parser, and
+   that of the verified parser, in total and split into the lexer, the LR
+   parser and the rest (post-processing and conversion to MonPoly's trees). *)
 
 open Libmonpoly
 open MFOTL
@@ -383,11 +388,47 @@ let seed = ref 42
 let depth = ref 4
 let files = ref []
 let lex_mode = ref false
+let time_mode = ref false
 
 let read_file fn =
   let ic = open_in_bin fn in
   let s = really_input_string ic (in_channel_length ic) in
   close_in ic; s
+
+(* CPU seconds per call of f, repeated for at least min_s seconds *)
+let cpu_time ?(min_s = 0.2) f =
+  let t0 = Sys.time () in
+  let rec go n =
+    ignore (Sys.opaque_identity (f ()));
+    let t = Sys.time () -. t0 in
+    if t < min_s then go (n + 1) else t /. float_of_int n
+  in
+  go 1
+
+let time_inputs inputs =
+  let module V = Verified_parser.Verified_parser in
+  Printf.printf "%-22s %5s %4s %10s %10s %10s %10s %10s\n"
+    "name" "chars" "toks" "monpoly_ms" "verif_ms" "lex_ms" "lr_ms" "rest_ms";
+  let tot_mp = ref 0.0 and tot_vp = ref 0.0 in
+  List.iter (fun (name, s) ->
+      let cs = Verified_parser_adapter.chars_of_string s in
+      let toks = match V.lex cs with Some w -> List.length w | None -> 0 in
+      let mp = cpu_time (fun () -> parse_monpoly s) in
+      let vp = cpu_time (fun () -> parse_verified s) in
+      let lx = cpu_time (fun () -> V.lex cs) in
+      let lr =
+        match V.lex cs with
+        | Some w -> cpu_time (fun () -> V.mfodl_parse w)
+        | None -> 0.0
+      in
+      tot_mp := !tot_mp +. mp; tot_vp := !tot_vp +. vp;
+      Printf.printf "%-22s %5d %4d %10.3f %10.1f %10.2f %10.1f %10.2f\n%!"
+        (Filename.remove_extension (Filename.basename name)) (String.length (String.trim s)) toks
+        (1000. *. mp) (1000. *. vp) (1000. *. lx) (1000. *. lr)
+        (1000. *. (vp -. lx -. lr)))
+    inputs;
+  Printf.printf "total: monpoly %.3f s, verified %.1f s (%d inputs)\n"
+    !tot_mp !tot_vp (List.length inputs)
 
 let () =
   Arg.parse
@@ -395,15 +436,17 @@ let () =
       ("-seed", Arg.Set_int seed, "random seed (default 42)");
       ("-depth", Arg.Set_int depth, "maximal nesting depth (default 4)");
       ("-v", Arg.Set verbose, "print every input");
-      ("-lex", Arg.Set lex_mode, "compare the lexers on N random strings") ]
+      ("-lex", Arg.Set lex_mode, "compare the lexers on N random strings");
+      ("-time", Arg.Set time_mode, "time the parsers instead of comparing them") ]
     (fun f -> files := f :: !files)
-    "parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [FILE...]";
+    "parser_difftest [-n N] [-seed S] [-depth D] [-v] [-lex] [-time] [FILE...]";
   Random.init !seed;
   if !lex_mode then (lex_test !count; exit 0);
   let inputs =
     if !files <> [] then List.rev_map (fun fn -> (fn, read_file fn)) !files
     else List.init !count (fun i -> (string_of_int i, formula (1 + Random.int !depth)))
   in
+  if !time_mode then (time_inputs inputs; exit 0);
   let same = ref 0 and differ = ref 0 and mp_only = ref 0 and vp_only = ref 0
   and both_ok = ref 0 in
   List.iter (fun (name, s) ->

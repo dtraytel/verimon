@@ -11,6 +11,10 @@ module Verified_parser : sig
     | IMPL | EQUIV | EXISTS | FORALL | PREV | NEXT | EVENTUALLY | ONCE | ALWAYS
     | PAST_ALWAYS | SINCE | TRIGGER | UNTIL | RELEASE | BAR | FREX | PREX | CNT
     | MIN_KW | MAX_KW | SUM_KW | AVG | MED
+  type ('a, 'b) sym
+  type irel
+  type indrep
+  type wrel
   type cst = CInt of int | CStr of char list | CFloat of char list |
     CRegexp of char list
   type trm = TVar of char list | TCst of cst | TF2i of trm | TI2f of trm |
@@ -43,6 +47,11 @@ module Verified_parser : sig
     FRelease of (bound * bound) * formula * formula |
     FFrex of (bound * bound) * regex | FPrex of (bound * bound) * regex
   type ('a, 'b, 'c) token_ext
+  type ('a, 'b, 'c, 'd) ast
+  type ('a, 'b, 'c) is_cfg_ext
+  val lex : char list -> ((mtok, char, unit) token_ext list) option
+  val postprocess : formula -> formula option
+  val mfodl_parse : (mtok, char, unit) token_ext list -> formula option
   val parse_formula : char list -> formula option
   val integer_of_nat : nat -> Z.t
   val lex_chars : char list -> ((mtok * char list) list) option
