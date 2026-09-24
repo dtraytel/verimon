@@ -1105,21 +1105,21 @@ let rec rbt_inter_rbt_join2 _A
       (rbt_recolor
         (inter_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
 
+let rec bal_right_b
+  l k v r b s t c =
+    (match b with Empty -> Branch (B, l, k, v, r)
+      | Branch (R, b1, s1, t1, c1) ->
+        Branch (R, Branch (B, l, k, v, b1), s1, t1, Branch (B, c1, s, t, c))
+      | Branch (B, _, _, _, _) -> Branch (B, l, k, v, r));;
+
 let rec bal_right
   l k v r =
     (match r with Empty -> Branch (B, l, k, v, r)
       | Branch (R, b, s, t, c) ->
-        (let other =
-           (match b with Empty -> Branch (B, l, k, v, r)
-             | Branch (R, b1, s1, t1, c1) ->
-               Branch
-                 (R, Branch (B, l, k, v, b1), s1, t1, Branch (B, c1, s, t, c))
-             | Branch (B, _, _, _, _) -> Branch (B, l, k, v, r))
-           in
-          (match c with Empty -> other
-            | Branch (R, c1, y, z, d) ->
-              Branch (R, Branch (B, l, k, v, b), s, t, Branch (B, c1, y, z, d))
-            | Branch (B, _, _, _, _) -> other))
+        (match c with Empty -> bal_right_b l k v r b s t c
+          | Branch (R, c1, y, z, d) ->
+            Branch (R, Branch (B, l, k, v, b), s, t, Branch (B, c1, y, z, d))
+          | Branch (B, _, _, _, _) -> bal_right_b l k v r b s t c)
       | Branch (B, _, _, _, _) -> Branch (B, l, k, v, r));;
 
 let rec bal_left
@@ -1160,8 +1160,12 @@ let rec rbt_comp_ins
           | Lt -> Branch (R, rbt_comp_ins c f k v l, x, y, r)
           | Gt -> Branch (R, l, x, y, rbt_comp_ins c f k v r));;
 
-let rec paint c x1 = match c, x1 with c, Empty -> Empty
-                | c, Branch (uu, l, k, v, r) -> Branch (c, l, k, v, r);;
+let rec paint
+  c t = (match t with Empty -> Empty
+          | Branch (ca, l, k, v, r) ->
+            (match c
+              with R -> (match ca with R -> t | B -> Branch (R, l, k, v, r))
+              | B -> (match ca with R -> Branch (B, l, k, v, r) | B -> t)));;
 
 let rec rbt_comp_insert_with_key c f k v t = paint B (rbt_comp_ins c f k v t);;
 
@@ -3394,75 +3398,71 @@ let rec mapa f x1 = match f, x1 with f, [] -> []
 
 let rec fun_upda equal f aa b a = (if equal aa a then b else f a);;
 
+let rec bal_right_del
+  l k x r =
+    (match l with Empty -> Empty | Branch (R, _, _, _, Empty) -> Empty
+      | Branch (R, _, _, _, Branch (R, _, _, _, _)) -> Empty
+      | Branch (R, a1, k1, x1, Branch (B, b2, s2, y2, c2)) ->
+        Branch
+          (R, balance (paint R a1) k1 x1 b2, s2, y2, Branch (B, c2, k, x, r))
+      | Branch (B, a1, k1, x1, b1) ->
+        balance (Branch (R, a1, k1, x1, b1)) k x r);;
+
 let rec balance_right
-  a k x xa3 = match a, k, x, xa3 with
-    a, k, x, Branch (R, b, s, y, c) ->
-      Branch (R, a, k, x, Branch (B, b, s, y, c))
-    | Branch (B, a, k, x, b), s, y, Empty ->
-        balance (Branch (R, a, k, x, b)) s y Empty
-    | Branch (B, a, k, x, b), s, y, Branch (B, va, vb, vc, vd) ->
-        balance (Branch (R, a, k, x, b)) s y (Branch (B, va, vb, vc, vd))
-    | Branch (R, a, k, x, Branch (B, b, s, y, c)), t, z, Empty ->
-        Branch (R, balance (paint R a) k x b, s, y, Branch (B, c, t, z, Empty))
-    | Branch (R, a, k, x, Branch (B, b, s, y, c)), t, z,
-        Branch (B, va, vb, vc, vd)
-        -> Branch
-             (R, balance (paint R a) k x b, s, y,
-               Branch (B, c, t, z, Branch (B, va, vb, vc, vd)))
-    | Empty, k, x, Empty -> Empty
-    | Branch (R, va, vb, vc, Empty), k, x, Empty -> Empty
-    | Branch (R, va, vb, vc, Branch (R, ve, vf, vg, vh)), k, x, Empty -> Empty
-    | Empty, k, x, Branch (B, va, vb, vc, vd) -> Empty
-    | Branch (R, ve, vf, vg, Empty), k, x, Branch (B, va, vb, vc, vd) -> Empty
-    | Branch (R, ve, vf, vg, Branch (R, vi, vj, vk, vl)), k, x,
-        Branch (B, va, vb, vc, vd)
-        -> Empty;;
+  l k x r =
+    (match r with Empty -> bal_right_del l k x r
+      | Branch (R, b, s, y, c) -> Branch (R, l, k, x, Branch (B, b, s, y, c))
+      | Branch (B, _, _, _, _) -> bal_right_del l k x r);;
+
+let rec bal_left_del
+  l k x r =
+    (match r with Empty -> Empty | Branch (R, Empty, _, _, _) -> Empty
+      | Branch (R, Branch (R, _, _, _, _), _, _, _) -> Empty
+      | Branch (R, Branch (B, a1, s1, y1, b1), s, y, b) ->
+        Branch (R, Branch (B, l, k, x, a1), s1, y1, balance b1 s y (paint R b))
+      | Branch (B, a, s, y, b) -> balance l k x (Branch (R, a, s, y, b)));;
 
 let rec balance_left
-  x0 s y c = match x0, s, y, c with
-    Branch (R, a, k, x, b), s, y, c ->
-      Branch (R, Branch (B, a, k, x, b), s, y, c)
-    | Empty, k, x, Branch (B, a, s, y, b) ->
-        balance Empty k x (Branch (R, a, s, y, b))
-    | Branch (B, va, vb, vc, vd), k, x, Branch (B, a, s, y, b) ->
-        balance (Branch (B, va, vb, vc, vd)) k x (Branch (R, a, s, y, b))
-    | Empty, k, x, Branch (R, Branch (B, a, s, y, b), t, z, c) ->
-        Branch (R, Branch (B, Empty, k, x, a), s, y, balance b t z (paint R c))
-    | Branch (B, va, vb, vc, vd), k, x,
-        Branch (R, Branch (B, a, s, y, b), t, z, c)
-        -> Branch
-             (R, Branch (B, Branch (B, va, vb, vc, vd), k, x, a), s, y,
-               balance b t z (paint R c))
-    | Empty, k, x, Empty -> Empty
-    | Empty, k, x, Branch (R, Empty, vb, vc, vd) -> Empty
-    | Empty, k, x, Branch (R, Branch (R, ve, vf, vg, vh), vb, vc, vd) -> Empty
-    | Branch (B, va, vb, vc, vd), k, x, Empty -> Empty
-    | Branch (B, va, vb, vc, vd), k, x, Branch (R, Empty, vf, vg, vh) -> Empty
-    | Branch (B, va, vb, vc, vd), k, x,
-        Branch (R, Branch (R, vi, vj, vk, vl), vf, vg, vh)
-        -> Empty;;
+  l k x r =
+    (match l with Empty -> bal_left_del l k x r
+      | Branch (R, a, ka, xa, b) ->
+        Branch (R, Branch (B, a, ka, xa, b), k, x, r)
+      | Branch (B, _, _, _, _) -> bal_left_del l k x r);;
 
 let rec combine
-  xa0 x = match xa0, x with Empty, x -> x
-    | Branch (v, va, vb, vc, vd), Empty -> Branch (v, va, vb, vc, vd)
-    | Branch (R, a, k, x, b), Branch (R, c, s, y, d) ->
-        (match combine b c
-          with Empty -> Branch (R, a, k, x, Branch (R, Empty, s, y, d))
-          | Branch (R, b2, t, z, c2) ->
-            Branch (R, Branch (R, a, k, x, b2), t, z, Branch (R, c2, s, y, d))
-          | Branch (B, b2, t, z, c2) ->
-            Branch (R, a, k, x, Branch (R, Branch (B, b2, t, z, c2), s, y, d)))
-    | Branch (B, a, k, x, b), Branch (B, c, s, y, d) ->
-        (match combine b c
-          with Empty -> balance_left a k x (Branch (B, Empty, s, y, d))
-          | Branch (R, b2, t, z, c2) ->
-            Branch (R, Branch (B, a, k, x, b2), t, z, Branch (B, c2, s, y, d))
-          | Branch (B, b2, t, z, c2) ->
-            balance_left a k x (Branch (B, Branch (B, b2, t, z, c2), s, y, d)))
-    | Branch (B, va, vb, vc, vd), Branch (R, b, k, x, c) ->
-        Branch (R, combine (Branch (B, va, vb, vc, vd)) b, k, x, c)
-    | Branch (R, a, k, x, b), Branch (B, va, vb, vc, vd) ->
-        Branch (R, a, k, x, combine b (Branch (B, va, vb, vc, vd)));;
+  l r = (match l with Empty -> r
+          | Branch (cl, a, k, x, b) ->
+            (match r with Empty -> l
+              | Branch (cr, c, s, y, d) ->
+                (match cl
+                  with R ->
+                    (match cr
+                      with R ->
+                        (let bc = combine b c in
+                          (match bc
+                            with Empty ->
+                              Branch (R, a, k, x, Branch (R, bc, s, y, d))
+                            | Branch (R, b2, t, z, c2) ->
+                              Branch
+                                (R, Branch (R, a, k, x, b2), t, z,
+                                  Branch (R, c2, s, y, d))
+                            | Branch (B, _, _, _, _) ->
+                              Branch (R, a, k, x, Branch (R, bc, s, y, d))))
+                      | B -> Branch (R, a, k, x, combine b r))
+                  | B ->
+                    (match cr with R -> Branch (R, combine l c, s, y, d)
+                      | B ->
+                        (let bc = combine b c in
+                          (match bc
+                            with Empty ->
+                              balance_left a k x (Branch (B, bc, s, y, d))
+                            | Branch (R, b2, t, z, c2) ->
+                              Branch
+                                (R, Branch (B, a, k, x, b2), t, z,
+                                  Branch (B, c2, s, y, d))
+                            | Branch (B, _, _, _, _) ->
+                              balance_left a k x
+                                (Branch (B, bc, s, y, d))))))));;
 
 let rec rbt_comp_del
   c x xa2 = match c, x, xa2 with c, x, Empty -> Empty
@@ -8321,19 +8321,15 @@ let rec edl_rbtc_del
           | Lt -> edl_rbtc_del_from_left x a y s b
           | Gt -> edl_rbtc_del_from_right x a y s b)
 and edl_rbtc_del_from_left
-  x xa1 y s b = match x, xa1, y, s, b with
-    x, Branch (B, lt, z, v, rt), y, s, b ->
-      balance_left (edl_rbtc_del x (Branch (B, lt, z, v, rt))) y s b
-    | x, Empty, y, s, b -> Branch (R, edl_rbtc_del x Empty, y, s, b)
-    | x, Branch (R, va, vb, vc, vd), y, s, b ->
-        Branch (R, edl_rbtc_del x (Branch (R, va, vb, vc, vd)), y, s, b)
+  x a y s b =
+    (match a with Empty -> Branch (R, Empty, y, s, b)
+      | Branch (R, _, _, _, _) -> Branch (R, edl_rbtc_del x a, y, s, b)
+      | Branch (B, _, _, _, _) -> balance_left (edl_rbtc_del x a) y s b)
 and edl_rbtc_del_from_right
-  x a y s xa4 = match x, a, y, s, xa4 with
-    x, a, y, s, Branch (B, lt, z, v, rt) ->
-      balance_right a y s (edl_rbtc_del x (Branch (B, lt, z, v, rt)))
-    | x, a, y, s, Empty -> Branch (R, a, y, s, edl_rbtc_del x Empty)
-    | x, a, y, s, Branch (R, va, vb, vc, vd) ->
-        Branch (R, a, y, s, edl_rbtc_del x (Branch (R, va, vb, vc, vd)));;
+  x a y s b =
+    (match b with Empty -> Branch (R, a, y, s, Empty)
+      | Branch (R, _, _, _, _) -> Branch (R, a, y, s, edl_rbtc_del x b)
+      | Branch (B, _, _, _, _) -> balance_right a y s (edl_rbtc_del x b));;
 
 let rec edl_rbtc_delete k t = paint B (edl_rbtc_del k t);;
 
@@ -8499,25 +8495,19 @@ let rec edl_rbtc_del_lk
           | Lt -> edl_rbtc_del_lk_fl x a y s b
           | Gt -> edl_rbtc_del_lk_fr x a y s b)
 and edl_rbtc_del_lk_fl
-  x xa1 y s b = match x, xa1, y, s, b with
-    x, Branch (B, lt, z, v, rt), y, s, b ->
-      (let (ov, l) = edl_rbtc_del_lk x (Branch (B, lt, z, v, rt)) in
-        (ov, balance_left l y s b))
-    | x, Empty, y, s, b ->
-        (let (ov, a) = edl_rbtc_del_lk x Empty in (ov, Branch (R, a, y, s, b)))
-    | x, Branch (R, va, vb, vc, vd), y, s, b ->
-        (let (ov, a) = edl_rbtc_del_lk x (Branch (R, va, vb, vc, vd)) in
-          (ov, Branch (R, a, y, s, b)))
+  x a y s b =
+    (match a with Empty -> (None, Branch (R, Empty, y, s, b))
+      | Branch (R, _, _, _, _) ->
+        (let (ov, aa) = edl_rbtc_del_lk x a in (ov, Branch (R, aa, y, s, b)))
+      | Branch (B, _, _, _, _) ->
+        (let (ov, l) = edl_rbtc_del_lk x a in (ov, balance_left l y s b)))
 and edl_rbtc_del_lk_fr
-  x a y s xa4 = match x, a, y, s, xa4 with
-    x, a, y, s, Branch (B, lt, z, v, rt) ->
-      (let (ov, r) = edl_rbtc_del_lk x (Branch (B, lt, z, v, rt)) in
-        (ov, balance_right a y s r))
-    | x, a, y, s, Empty ->
-        (let (ov, b) = edl_rbtc_del_lk x Empty in (ov, Branch (R, a, y, s, b)))
-    | x, a, y, s, Branch (R, va, vb, vc, vd) ->
-        (let (ov, b) = edl_rbtc_del_lk x (Branch (R, va, vb, vc, vd)) in
-          (ov, Branch (R, a, y, s, b)));;
+  x a y s b =
+    (match b with Empty -> (None, Branch (R, a, y, s, Empty))
+      | Branch (R, _, _, _, _) ->
+        (let (ov, ba) = edl_rbtc_del_lk x b in (ov, Branch (R, a, y, s, ba)))
+      | Branch (B, _, _, _, _) ->
+        (let (ov, r) = edl_rbtc_del_lk x b in (ov, balance_right a y s r)));;
 
 let rec edl_del_lk_aux_nat
   xb xc =

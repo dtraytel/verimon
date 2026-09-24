@@ -8863,3 +8863,42 @@ lifting's boxes), a few percent spread thinly.  The corpus is unchanged (652 sam
 differing), `dune test` passes, and on a random log the grouped and ungrouped `CNT`, `SUM` and `AVG`
 over integer and float values, with and without a constraint, agree with the previous build and
 with MonPoly.
+
+## 21.41 The deletion's rebalancing, without rebuilding what it looks at
+
+On `pol-sincefutb` the verified monitor allocates 357 M words against MonPoly's 123 M, and the
+estimate's gap (15.3 G against 10.0 G) is mostly the last-level write misses of that allocation
+(47 M against 15 M).  A little over half of it is the front end (the log's lexer and parser and the
+conversion into tables, which alone allocate more than all of MonPoly); about a third is the Since
+node's trees, and of that the deletions -- from the table and the time stamps when a `C` tuple
+drops its bucket, and from the count sets -- are the larger part.
+
+21.9's reason for rewriting the insertion's `balance` holds for the deletion too: its steps
+`balance_left`, `balance_right` and `combine`, and the specialised deletions' steps to the left and
+to the right (`edl_rbtc_del_from_left`, `edl_rbtc_del_lk_fl` and their mirror images), are
+sequential equations, and the code generator's completed patterns rebuild the subtrees they only
+inspect -- a black node passed on unchanged, rebuilt at every level of every deletion before the
+recursive call.  `Dense_RBT_Code.thy` gives them equations that inspect one level at a time and
+never split a variable that the right-hand side uses (`balance_left_code`, `balance_right_code`,
+`combine_code`, `edl_rbtc_del_from_left_code`, ..., each proved by cases on the original
+equations).  Two smaller ones go with them: `bal_right` evaluated its fallback before looking at
+the case that drops it, and `paint` rebuilt the root on every insertion and deletion although it
+almost always has the colour already.
+
+| formula (instr. + 10·D1 miss + 100·LL miss) | before | after | MonPoly |
+|---|---|---|---|
+| `pol-sincefutb` | 15.30 G | 14.71 G (−3.9%) | 10.03 G |
+| `pol-sincefut` | 14.59 G | 13.80 G (−5.4%) | 9.70 G |
+| `since-nu5` | 11.28 G | 10.69 G (−5.3%) | |
+| `until-nu20` | 12.80 G | 12.35 G (−3.5%) | |
+| `once-rate80` | 23.34 G | 22.54 G (−3.4%) | 15.75 G |
+| `since-bb500` | 7.64 G | 7.43 G (−2.8%) | 7.14 G |
+| `aggonce-min50` | 14.58 G | 14.19 G (−2.7%) | 9.84 G |
+| `pol-threshold` | 8.73 G | 8.68 G (−0.6%) | 6.72 G |
+| `join-both` | 5.21 G | 5.20 G | 3.96 G |
+
+What remains of the Since node's share is the trees' path copying itself: a tuple entering costs
+insertions into the table, the index's bucket and the time stamps, and a dropped bucket costs a
+deletion from the table and from the time stamps per tuple.  Keeping the time stamps in the index's
+buckets would save one of the three trees, at the price of restating the Since structure and its
+proofs.  The corpus is unchanged (652 same, 149 skipped, 0 differing) and `dune test` passes.
