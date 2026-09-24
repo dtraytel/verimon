@@ -483,7 +483,7 @@ fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Righta
 | "add_evk k vs ((k', xs) # g) = (if str8_eq (fst k') (fst k) \<and> snd k' = snd k then (k', vs # xs) # g
      else (k', xs) # add_evk k vs g)"
 
-lemma add_ev_code[code]: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
+lemma add_ev_code: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
   by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
 
 definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
@@ -890,6 +890,43 @@ proof -
   then show ?thesis
     by (simp add: build_db_code)
 qed
+
+subsection \<open>Converting events faster\<close>
+
+text \<open>The fields are converted by a tail-recursive loop, which computes the index of a field only
+  if it does not convert, and the lengths of lists are counted as integers rather than as natural
+  numbers.\<close>
+
+fun conv_fields_a :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty list \<Rightarrow> bytes list \<Rightarrow> event_data list \<Rightarrow>
+    (nat \<times> ty) + event_data list" where
+  "conv_fields_a pf (t # ts) (f # fs) acc = (case conv_field pf t f of
+     None \<Rightarrow> Inl (length acc, t)
+   | Some x \<Rightarrow> conv_fields_a pf ts fs (x # acc))"
+| "conv_fields_a pf _ _ acc = Inr (rev acc)"
+
+lemma conv_fields_a: "conv_fields_a pf tys fs acc = map_sum id ((@) (rev acc)) (conv_fields pf tys fs (length acc))"
+  by (induction pf tys fs acc rule: conv_fields_a.induct) (auto simp: sum.map_comp comp_def split: option.splits)
+
+lemma conv_event_fast[code]: "conv_event pf L e = (case e of (p, fs) \<Rightarrow> let q = string8_of_bytes p; m = nat_of_integer (ilen 0 fs) in
+     (case L (q, m) of
+       None \<Rightarrow> Inl (VE_PREDICATE p m)
+     | Some tys \<Rightarrow> map_sum (\<lambda>(i, t). VE_FIELD p i t) (Pair q) (conv_fields_a pf tys fs [])))"
+proof -
+  have A: "nat_of_integer (ilen 0 fs) = length fs" for fs :: "bytes list"
+    by (simp add: ilen)
+  have B: "conv_fields_a pf tys fs [] = conv_fields pf tys fs 0" for tys fs
+    by (cases "conv_fields pf tys fs 0") (simp_all add: conv_fields_a)
+  show ?thesis
+    by (auto simp: conv_event_def A B Let_def split: prod.splits option.splits)
+qed
+
+lemma lsig_find_fast[code]: "lsig_find [] q n = None"
+  "lsig_find ((p, tys) # S) q n = (if str8_eq p q \<and> ilen 0 tys = integer_of_nat n then Some tys else lsig_find S q n)"
+  by (simp_all add: ilen integer_of_nat_eq_of_nat)
+
+lemma add_ev_fast[code]: "add_ev (p, vs) g = add_evk (p, nat_of_integer (ilen 0 vs)) vs g"
+  by (simp add: add_ev_code ilen)
+
 
 subsection \<open>The predicates of the formula\<close>
 

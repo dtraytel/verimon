@@ -568,7 +568,7 @@ qed
 definition iunsigned :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer option" where
   "iunsigned s n i = (case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j)"
 
-lemma iunsigned_code[code]: "iunsigned s n i =
+lemma iunsigned_code: "iunsigned s n i =
     (if i < n \<and> n - i \<le> 256 \<and> CHR ''1'' \<le> bytes_at s i \<and> bytes_at s i \<le> CHR ''9'' then
       (let r = ddigits s n i 0 in if r < 0 then None else Some r)
     else (case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j))"
@@ -584,7 +584,7 @@ next
     by (simp only: if_False iunsigned_def)
 qed
 
-lemma ibint_of_code[code]: "ibint_of s = (let n = bytes_length s in
+lemma ibint_of_code: "ibint_of s = (let n = bytes_length s in
      if 0 < n then
        (let c = bytes_at s 0 in
         if c = CHR ''-'' then map_option uminus (iunsigned s n 1)

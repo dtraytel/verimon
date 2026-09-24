@@ -10699,7 +10699,7 @@ let rec add_evk
         (if String.equal (fst k) (fst ka) && equal_nata (snd k) (snd ka)
           then (k, vs :: xs) :: g else (k, xs) :: add_evk ka vs g);;
 
-let rec add_ev (p, vs) g = add_evk (p, size_lista vs) vs g;;
+let rec add_ev (p, vs) g = add_evk (p, nat_of_integer (ilen Z.zero vs)) vs g;;
 
 let rec group_evs evs = fold add_ev evs [];;
 
@@ -14093,8 +14093,8 @@ let rec index_lookup
 let rec lsig_find
   x0 q n = match x0, q, n with [], q, n -> None
     | (p, tys) :: s, q, n ->
-        (if String.equal p q && equal_nata (size_lista tys) n then Some tys
-          else lsig_find s q n);;
+        (if String.equal p q && Z.equal (ilen Z.zero tys) (integer_of_nat n)
+          then Some tys else lsig_find s q n);;
 
 let rec lsig_lookup s (q, n) = lsig_find s q n;;
 
@@ -14354,8 +14354,11 @@ let rec ddigits
 
 let rec iunsigned
   s n i =
-    (if Z.lt i n &&
-          (Z.leq (Z.sub n i) (Z.of_int 256) &&
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n &&
+          ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+             n ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                 i (Z.of_int 257)) &&
             ((('\049' : char) <= ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
       else if Z.sign i < 0 then 0 else Z.to_int i))
                                    s i)) &&
@@ -14363,12 +14366,15 @@ let rec iunsigned
       else if Z.sign i < 0 then 0 else Z.to_int i))
                   s i) : char) <= '\057')))
       then (let r = ddigits s n i Z.zero in
-             (if Z.lt r Z.zero then None else Some r))
+             (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                   r Z.zero
+               then None else Some r))
       else (let (a, b) = ibbase_of s n i in inat_of_digits s n a b));;
 
 let rec ibint_of
   s = (let n = (Z.of_int (String.length s)) in
-        (if Z.lt Z.zero n
+        (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+              Z.zero n
           then (let c =
                   (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
       else if Z.sign i < 0 then 0 else Z.to_int i))
@@ -14387,23 +14393,23 @@ let rec conv_field
       | TFloat -> map_option (fun a -> EFloat a) (pf f)
       | TString -> Some (EString ((fun x -> x) f)));;
 
-let rec conv_fields
-  pf uu uv i = match pf, uu, uv, i with
-    pf, t :: ts, f :: fs, i ->
-      (match conv_field pf t f with None -> Inl (i, t)
-        | Some x -> map_sum id (fun a -> x :: a) (conv_fields pf ts fs (suc i)))
-    | pf, [], uv, i -> Inr []
-    | pf, uu, [], i -> Inr [];;
+let rec conv_fields_a
+  pf uu uv acc = match pf, uu, uv, acc with
+    pf, t :: ts, f :: fs, acc ->
+      (match conv_field pf t f with None -> Inl (size_lista acc, t)
+        | Some x -> conv_fields_a pf ts fs (x :: acc))
+    | pf, [], uv, acc -> Inr (rev acc)
+    | pf, uu, [], acc -> Inr (rev acc);;
 
 let rec conv_event
   pf l e =
     (let (p, fs) = e in
      let q = (fun x -> x) p in
-      (match l (q, size_lista fs)
-        with None -> Inl (VE_PREDICATE (p, size_lista fs))
+     let m = nat_of_integer (ilen Z.zero fs) in
+      (match l (q, m) with None -> Inl (VE_PREDICATE (p, m))
         | Some tys ->
           map_sum (fun (a, b) -> VE_FIELD (p, a, b)) (fun a -> (q, a))
-            (conv_fields pf tys fs zero_nata)));;
+            (conv_fields_a pf tys fs [])));;
 
 let rec conv_events_acc
   pf l acc x3 = match pf, l, acc, x3 with pf, l, acc, [] -> Inr (rev acc)
@@ -14418,6 +14424,14 @@ let rec pred_error
     | s, (p, fs) :: es ->
         (if list_ex (fun (q, _) -> String.equal q ((fun x -> x) p)) s
           then pred_error s es else Some (VE_PREDICATE (p, size_lista fs)));;
+
+let rec conv_fields
+  pf uu uv i = match pf, uu, uv, i with
+    pf, t :: ts, f :: fs, i ->
+      (match conv_field pf t f with None -> Inl (i, t)
+        | Some x -> map_sum id (fun a -> x :: a) (conv_fields pf ts fs (suc i)))
+    | pf, [], uv, i -> Inr []
+    | pf, uu, [], i -> Inr [];;
 
 let rec conv_error
   pf l s x3 = match pf, l, s, x3 with pf, l, s, [] -> None

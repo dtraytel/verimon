@@ -541,6 +541,29 @@ lemma efeed_fast[code]: "efeed k t pos p sp acc = (case p of
 lemma eloop_floop[code]: "eloop k s n b i l p sp acc = floop k s n b i l p sp acc"
   by (rule floop_eloop[symmetric])
 
+text \<open>The integer fields compare their indices and the value with the comparisons of indices
+  above, which compare machine integers directly.\<close>
+
+lemma iunsigned_idx[code]: "iunsigned s n i =
+    (if idx_less i n \<and> idx_less n (idx_add i 257) \<and> CHR ''1'' \<le> bytes_at s i \<and> bytes_at s i \<le> CHR ''9'' then
+      (let r = ddigits s n i 0 in if idx_less r 0 then None else Some r)
+    else (case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j))"
+proof -
+  have "n - i \<le> 256 \<longleftrightarrow> n < i + 257" for n i :: integer
+    by (simp add: integer_simps) linarith
+  then show ?thesis
+    by (simp add: iunsigned_code idx_less_def idx_add_def)
+qed
+
+lemma ibint_of_idx[code]: "ibint_of s = (let n = bytes_length s in
+     if idx_less 0 n then
+       (let c = bytes_at s 0 in
+        if c = CHR ''-'' then map_option uminus (iunsigned s n 1)
+        else if c = CHR ''+'' then iunsigned s n 1
+        else iunsigned s n 0)
+     else None)"
+  by (simp add: ibint_of_code idx_less_def)
+
 (*<*)
 end
 (*>*)
