@@ -3263,8 +3263,20 @@ proof -
   have neqs: "trm.Plus = trm.Mod = False" "trm.Minus = trm.Mod = False" "trm.Mult = trm.Mod = False" "trm.Div = trm.Mod = False" by (auto simp:fun_eq_iff)
   then obtain f' where f'_def: "clash_propagate constr type_start E_start = return f'" using assms(3-4)
     by (auto simp add: check_binop_def clash_propagate_def split: option.splits if_splits) auto 
-  hence constr_int: "constr = TCst TInt \<Longrightarrow> wf_f (TCst \<circ> f'') \<Longrightarrow> resultless_trm_f f'' f' type \<Longrightarrow> f'' type = TInt" for f'' 
-    unfolding resultless_trm_f_def by (cases "min_type (TCst TInt) type_start"; auto simp: clash_propagate_def comp_assoc wf_f_def) (smt (verit, best) assms(4) case_prod_conv min_consistent min_const tysym.distinct(5) update_env_def)
+  have constr_int: "constr = TCst TInt \<Longrightarrow> wf_f (TCst \<circ> f'') \<Longrightarrow> resultless_trm_f f'' f' type \<Longrightarrow> f'' type = TInt" for f''
+  proof -
+    assume c: "constr = TCst TInt" and "wf_f (TCst \<circ> f'')" and res: "resultless_trm_f f'' f' type"
+    from c have "trm = trm.Mod"
+      by (simp split: if_splits)
+    with f'_def have cp: "clash_propagate (TCst TInt) type E = return f'"
+      by simp
+    have "f' type = TCst TInt"
+      using cp[symmetric] by (cases type) (simp_all add: clash_propagate_def update_env_def split: if_splits)
+    moreover obtain g where "wf_f (TCst \<circ> g)" "f'' = g \<circ> f'"
+      using res unfolding resultless_trm_f_def by blast
+    ultimately show "f'' type = TInt"
+      by (simp add: wf_f_def)
+  qed
   have wf_f': "wf_f f'" using f'_def by (simp add: wf_f_clash_propagate)
   have wf_final: "wf_f final_f" using assms(4) wf_new_type_symbol by(auto)
   obtain f'' where  f''_def: "check_trm (f' \<circ> E_start) (f' type_start) t1 = return f''" 
@@ -3329,7 +3341,7 @@ proof -
     hence wty_terms:
       "(fa \<circ> E) \<turnstile> t1 :: fa type" 
       "(fa \<circ> E) \<turnstile> t2 :: fa type" 
-      using g_def(2) by (smt (verit, best) comp_def g_def(3) image_subset_iff wty_trm_fv_cong)+
+      by (simp_all add: g_def(2))
     have resless: "resultless_trm_f fa (f' \<circ> final_f) type"
       unfolding resultless_trm_f_def using f_def g_def(2) g_def(3) wfs(1) by (auto simp del:final_f_def) force
     have "(fa \<circ> E) \<turnstile> trm t1 t2 :: fa type" 
@@ -3388,7 +3400,7 @@ proof -
     obtain g where g_def: "wf_f (TCst \<circ> g)" "f'' = g \<circ> fp" 
       using step1[OF wf typed] unfolding resultless_trm_f_def by auto
     hence "(g \<circ> (fp \<circ> E) \<turnstile> t :: g (TCst b))" 
-      using typed2 by (smt (verit, best) assms(3) comp_apply image_subset_iff tysym.inject(3) wf_f_def wty_trm_fv_cong)
+      using typed2 by (simp add: comp_assoc wf_f_def)
     then obtain g' where g'_def: "wf_f (TCst \<circ> g')" "g = g' \<circ> fp'"
       using wty g_def(1) unfolding wty_result_fX_trm_def by auto
     have "f'' type = (g' \<circ> (fp' \<circ> fp)) type" using g'_def(1) prec_int typed wf_f_def wf_fp' wtytrm by force
@@ -3422,7 +3434,7 @@ proof -
       using tcst_b_aux[OF wf_fa'] type by (metis comp_eq_dest_lhs rewriteL_comp_comp)
     hence "f' \<circ> E \<turnstile> t :: b" 
       using g_def(2)[unfolded f_def] assms(3) 
-      by (smt (verit, best) comp_apply image_subset_iff wty_trm_fv_cong)
+      by (simp add: comp_assoc)
     hence "(f' \<circ> E) \<turnstile> (trm t) :: f' type"
       by (metis F2i I2f a_def assms(3) b_def comp_apply ex_g typ''_def type'_def)
   }
