@@ -683,6 +683,9 @@ fun ilen :: "integer \<Rightarrow> 'a list \<Rightarrow> integer" where
 lemma ilen: "ilen acc xs = acc + integer_of_nat (length xs)"
   by (induction acc xs rule: ilen.induct) (simp_all add: integer_of_nat_eq_of_nat)
 
+lemma ilen_code[code]: "ilen acc [] = acc" "ilen acc (x # xs) = ilen (idx_succ acc) xs"
+  by (simp_all add: idx_succ_def)
+
 definition rbtreeify_i :: "('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt" where
   "rbtreeify_i kvs = fst (rbtreeify_gi (ilen 1 kvs) kvs)"
 

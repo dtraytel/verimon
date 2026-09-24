@@ -10647,8 +10647,12 @@ and rbtreeify_fi
                              apfst (fun a -> Branch (B, t1, k, v, a))
                                (rbtreeify_fi na kvsa))))));;
 
-let rec ilen acc x1 = match acc, x1 with acc, [] -> acc
-               | acc, x :: xs -> ilen (Z.add acc (Z.of_int 1)) xs;;
+let rec ilen
+  acc x1 = match acc, x1 with acc, [] -> acc
+    | acc, x :: xs ->
+        ilen ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               acc)
+          xs;;
 
 let rec rbtreeify_i kvs = fst (rbtreeify_gi (ilen (Z.of_int 1) kvs) kvs);;
 
