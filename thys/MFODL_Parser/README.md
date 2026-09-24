@@ -98,18 +98,30 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-13 to 48 tokens), the verified parser takes 0.1 to 0.3 ms per formula, against
-2 to 5 µs for MonPoly's parser; in `monpoly -check` it is lost in the start-up
-time. Measured with
+9 to 48 tokens), the verified parser takes 51 to 285 µs per formula (median
+111 µs, 5.7 µs per token), against 1.3 to 4.7 µs (median 2.3 µs) for MonPoly's
+parser: 35 to 71 times slower (median 48). The LR driver takes 88% of the
+time, the lexer 7%, post-processing and conversion 5%. In a `monpoly -check`
+run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
 parser_difftest -time FILE...
 ```
 
-which prints, per formula, the CPU time of both parsers and that of the
-verified lexer, LR parser and the rest (with a resolution of 0.1 ms). Below
-that resolution, instruction counts (callgrind, each suite formula parsed
-once): 207 M in total, 193 M of them in the LR driver and 13 M in the lexer.
+which prints, per formula, the CPU time in microseconds of both parsers and
+that of the verified lexer, LR parser and the rest. The earlier versions of
+the export, on the same suite (median per formula):
+
+| version                                   | median   | total    |
+|-------------------------------------------|----------|----------|
+| general driver of the `grammar` package   | 417 ms   | 93.6 s   |
+| simple driver (`lr/LR_Simple.thy`)        | 2.9 ms   | 648 ms   |
+| simple driver on indexed tables           | 381 µs   | 84.1 ms  |
+| and code equations for the lexer (current)| 111 µs   | 24.7 ms  |
+| MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
+
+In instructions (callgrind, each suite formula parsed once) the current
+parser executes 207 M, 193 M of them in the LR driver and 13 M in the lexer.
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack

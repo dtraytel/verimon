@@ -19,7 +19,8 @@
    With -time, the inputs are not compared but timed: one line per input with
    its length in characters and tokens, the CPU time of MonPoly's parser, and
    that of the verified parser, in total and split into the lexer, the LR
-   parser and the rest (post-processing and conversion to MonPoly's trees). *)
+   parser and the rest (post-processing and conversion to MonPoly's trees),
+   in microseconds. *)
 
 open Libmonpoly
 open MFOTL
@@ -408,7 +409,7 @@ let cpu_time ?(min_s = 0.2) f =
 let time_inputs inputs =
   let module V = Verified_parser.Verified_parser in
   Printf.printf "%-22s %5s %4s %10s %10s %10s %10s %10s\n"
-    "name" "chars" "toks" "monpoly_ms" "verif_ms" "lex_ms" "lr_ms" "rest_ms";
+    "name" "chars" "toks" "monpoly_us" "verif_us" "lex_us" "lr_us" "rest_us";
   let tot_mp = ref 0.0 and tot_vp = ref 0.0 in
   List.iter (fun (name, s) ->
       let cs = Verified_parser_adapter.chars_of_string s in
@@ -422,12 +423,12 @@ let time_inputs inputs =
         | None -> 0.0
       in
       tot_mp := !tot_mp +. mp; tot_vp := !tot_vp +. vp;
-      Printf.printf "%-22s %5d %4d %10.3f %10.1f %10.2f %10.1f %10.2f\n%!"
+      Printf.printf "%-22s %5d %4d %10.2f %10.1f %10.1f %10.1f %10.1f\n%!"
         (Filename.remove_extension (Filename.basename name)) (String.length (String.trim s)) toks
-        (1000. *. mp) (1000. *. vp) (1000. *. lx) (1000. *. lr)
-        (1000. *. (vp -. lx -. lr)))
+        (1e6 *. mp) (1e6 *. vp) (1e6 *. lx) (1e6 *. lr)
+        (1e6 *. (vp -. lx -. lr)))
     inputs;
-  Printf.printf "total: monpoly %.3f s, verified %.1f s (%d inputs)\n"
+  Printf.printf "total: monpoly %.4f s, verified %.4f s (%d inputs)\n"
     !tot_mp !tot_vp (List.length inputs)
 
 let () =
