@@ -8757,3 +8757,65 @@ builds its table of groups afresh, one insertion per group (20% of `aggonce-min5
 `pol-threshold`, where the constraint `40 < r` keeps few of them), while from one time point to the
 next only the groups the entering and leaving tuples touch can change -- and for MIN and MAX few of
 those do.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and `dune test` passes.
+
+## 21.39 The aggregations over a past window: the result table, and a guard that did not reach the node
+
+**MIN and MAX keep their result table.**  21.38 ended on the result read: at every time point the
+aggregation over a past window built its table of groups afresh, one insertion per group, although
+only the groups touched by the entering and leaving tuples can change.  `Dense_Agg_Cache.thy`
+keeps the table next to the window's count set and aggregate (`ucache`, a typedef whose invariant
+says that the table is the aggregate's result whenever the aggregate is there) and updates it
+tuple by tuple: `cupd` removes the group's old result tuple and inserts the new one, and does
+nothing when the group's value did not change.  The window's operations (`usc_*`) are the old
+ones (`usa_*`) with the table threaded through, proved equal to them under the projection `ucs`
+that forgets it, so the unboxed window's representation function only gains that projection and
+nothing above it moves.
+
+Measured on every aggregation it lost on `CNT` and `SUM`: their value changes with almost every
+tuple, so the table is updated per tuple where it was rebuilt per group, and per time point there
+are more tuples than groups.  For MIN and MAX the group's value changes rarely.  The table is
+therefore kept for those two only (`cachedp`); for the others the node reads the result as before.
+
+**The rank steps return the old and the new value.**  A table update needs the group's value
+before and after the step.  Read off the aggregate's mapping that is two more descents per tuple
+(`edl_gval`, 6.6% of `aggonce-min50`).  `Dense_Map_Upd.thy` adds `rbt_comp_ins_lk2`, the update
+descent of 21.35 that also returns the value it wrote (proved to be the old descent with `F`
+applied to the value found), lifted to `upd_lk2` and `mupd2`.  The rank steps (`gstepv_ins`,
+`gstepv_del`) go through it and return the group's multiset before and after, from which the
+result value is read (`rkval`); the table update then costs no lookup.  The rank deletion
+(`gd_rank`) also goes through `mupd2` now, one descent where it was a lookup and an update, and
+descends again only to delete a group whose multiset became empty.
+
+**A comparison that stopped above an anti-join.**  `pol-sumfilter` is
+`(r <- SUM y; x ONCE[0,60] A(x,y)) AND NOT C(x) AND 4000 < r`.  21.21's guard puts a comparison
+into the aggregation over a window when the comparison is conjoined to it directly; here the front
+end's `convert_multiway` makes of the formula `(C(x) negated, the aggregate) AND 4000 < r`, a
+comparison above a multiway conjunction, so the node built all ~200 groups at every time point,
+anti-joined them with `C` and filtered them afterwards (the read and the anti-join were 20% and
+13% of the run).  `Dense_Push.thy`'s rewrite (21.31, `push_ex`) now also moves such a comparison
+onto the first operand of the multiway conjunction that is an aggregation over a window and binds
+the comparison's variables (`and_cstr`, `ands_cstr`), where it becomes the guard.  The rewrite
+keeps everything the monitor's specification depends on -- free variables, satisfaction, progress,
+relevant events, safety, future-boundedness and typing (`*_and_cstr`) -- so
+`dmonitor_mverdicts_push` covers it unchanged.  The move is made onto window aggregations only:
+onto another operand it trades filtering the join's result for filtering the operand, which pays
+off only when the operand is the smaller of the two -- `aggguard-cnt`, whose operand is a plain
+aggregation over all of `B`, was 2.7% slower with the move and is unchanged without it.
+
+| formula (instructions) | 21.38 | after | MonPoly | ratio |
+|---|---|---|---|---|
+| `aggonce-min50` | 8.680 G | 7.490 G (−13.7%) | 7.795 G | 1.115 → **0.961** |
+| `aggonce-max50` | 8.749 G | 7.550 G (−13.7%) | 7.850 G | 1.120 → **0.962** |
+| `aggonce-min5` | 6.055 G | 6.001 G (−0.9%) | 6.233 G | 0.963 |
+| `pol-sumfilter` | 7.876 G | 5.602 G (−28.9%) | 7.035 G | 1.120 → **0.796** |
+| `aggguard-sum` | 7.242 G | 6.808 G (−6.0%) | 6.459 G | 1.054 |
+| `pol-threshold` | 5.324 G | 5.317 G (−0.1%) | 5.091 G | 1.044 |
+| `aggonce-cnt50`, `aggonce-sum50`, `aggonce-med20`, `agg-min`, `aggguard-cnt`, `pol-p3` | | ±0.1% | | |
+
+`pol-threshold` (`CNT`, guard already in place since 21.21) is where 21.38 left it.  What remains
+there is per tuple: a tuple entering the window costs a descent of the count set, keyed by the
+whole tuple, and one of the aggregate's map, keyed by its group, and leaving costs the same again;
+MonPoly does the same work in two hash tables.  Keeping the count set per group would save the
+second descent's comparisons at the price of restating the count set and its naturality proofs;
+it is not done here.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and `dune test`
+passes.

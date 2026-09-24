@@ -48,6 +48,34 @@ fun ex_into :: "'t \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.for
       else Formula.Exists t (Formula.Until \<phi> I \<psi>))"
 | "ex_into t \<phi> = Formula.Exists t \<phi>"
 
+text \<open>A comparison conjoined to a multiway conjunction is moved onto the first of its safe
+  operands that binds the comparison's variables and is an aggregation over a window:
+  @{text "(\<psi>\<^sub>1 AND \<dots> AND \<phi> AND \<dots>) AND c"} becomes the conjunction with @{text \<phi>} replaced by
+  @{text "\<phi> AND c"}.  There the comparison becomes the aggregate's guard (@{const uset_q}), so the
+  groups that fail it are never built, where above the conjunction it filtered the join's and the
+  anti-joins' result.  Onto other operands the move is not made: filtering an operand instead of
+  the join's result pays off only when the operand is the smaller of the two, which the rewrite
+  cannot know.  The multiway conjunction is what the front end's @{const convert_multiway} makes of
+  @{text "\<phi> AND NOT \<psi> AND c"}.\<close>
+
+definition is_cmp :: "'t Formula.formula \<Rightarrow> bool" where
+  "is_cmp c = (case c of Formula.Less _ _ \<Rightarrow> True | Formula.LessEq _ _ \<Rightarrow> True | _ \<Rightarrow> False)"
+
+definition is_wagg :: "'t Formula.formula \<Rightarrow> bool" where
+  "is_wagg e = (case e of Formula.Agg _ _ _ _ (Formula.Since _ _ _) \<Rightarrow> True
+     | Formula.Agg _ _ _ _ (Formula.Until _ _ _) \<Rightarrow> True | _ \<Rightarrow> False)"
+
+fun ands_cstr :: "'t Formula.formula \<Rightarrow> 't Formula.formula list \<Rightarrow> 't Formula.formula list option" where
+  "ands_cstr c [] = None"
+| "ands_cstr c (e # es) = (if is_wagg e \<and> safe_formula e \<and> Formula.fv c \<subseteq> Formula.fv e
+     then Some (Formula.And e c # es) else map_option ((#) e) (ands_cstr c es))"
+
+definition and_cstr :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula" where
+  "and_cstr X c = (case X of
+      Formula.Ands l \<Rightarrow> (if is_cmp c then (case ands_cstr c l of
+          Some l' \<Rightarrow> Formula.Ands l' | None \<Rightarrow> Formula.And X c) else Formula.And X c)
+    | _ \<Rightarrow> Formula.And X c)"
+
 fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "push_ex (Formula.Exists t \<phi>) = ex_into t (push_ex \<phi>)"
 | "push_ex (Formula.Neg \<phi>) = Formula.Neg (push_ex \<phi>)"
@@ -55,7 +83,7 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
 | "push_ex (Formula.And \<phi> \<psi>) = (case \<psi> of
       Formula.Trigger _ _ _ \<Rightarrow> Formula.And \<phi> \<psi>
     | Formula.Release _ _ _ \<Rightarrow> Formula.And \<phi> \<psi>
-    | _ \<Rightarrow> Formula.And (push_ex \<phi>) (push_ex \<psi>))"
+    | _ \<Rightarrow> and_cstr (push_ex \<phi>) (push_ex \<psi>))"
 | "push_ex (Formula.Ands l) = Formula.Ands (map push_ex l)"
 | "push_ex (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (push_ex \<phi>)"
 | "push_ex (Formula.Prev I \<phi>) = Formula.Prev I (push_ex \<phi>)"
@@ -69,10 +97,130 @@ text \<open>The conjunction's equation with its case distinction folded into a t
 
 lemma push_ex_And:
   "push_ex (Formula.And \<phi> \<psi>) = (if Formula.is_Trigger \<psi> \<or> Formula.is_Release \<psi>
-     then Formula.And \<phi> \<psi> else Formula.And (push_ex \<phi>) (push_ex \<psi>))"
+     then Formula.And \<phi> \<psi> else and_cstr (push_ex \<phi>) (push_ex \<psi>))"
   by (cases \<psi>) simp_all
 
 declare push_ex.simps(4)[simp del]
+
+subsection \<open>The comparison's move\<close>
+
+text \<open>The move keeps the conjunction's operands and only regroups them; its result is a
+  conjunction or a multiway conjunction.\<close>
+
+lemma ands_cstr_Some:
+  "ands_cstr c l = Some l' \<Longrightarrow> \<exists>xs e ys. l = xs @ e # ys \<and> l' = xs @ Formula.And e c # ys \<and>
+     safe_formula e \<and> Formula.fv c \<subseteq> Formula.fv e"
+proof (induct l arbitrary: l')
+  case (Cons e es)
+  show ?case
+  proof (cases "is_wagg e \<and> safe_formula e \<and> Formula.fv c \<subseteq> Formula.fv e")
+    case True
+    with Cons.prems show ?thesis by (intro exI[of _ "[]"]) auto
+  next
+    case False
+    with Cons.prems obtain l'' where l'': "ands_cstr c es = Some l''" "l' = e # l''" by auto
+    from Cons.hyps[OF l''(1)] obtain xs e' ys where
+      "es = xs @ e' # ys" "l'' = xs @ Formula.And e' c # ys" "safe_formula e'" "Formula.fv c \<subseteq> Formula.fv e'"
+      by blast
+    with l''(2) show ?thesis by (intro exI[of _ "e # xs"]) auto
+  qed
+qed simp
+
+lemma and_cstr_cases:
+  obtains "and_cstr X c = Formula.And X c"
+  | xs e ys where "X = Formula.Ands (xs @ e # ys)" "is_cmp c" "safe_formula e"
+    "Formula.fv c \<subseteq> Formula.fv e" "and_cstr X c = Formula.Ands (xs @ Formula.And e c # ys)"
+proof (cases "\<exists>l l'. X = Formula.Ands l \<and> is_cmp c \<and> ands_cstr c l = Some l'")
+  case True
+  then obtain l l' where s: "X = Formula.Ands l" "is_cmp c" "ands_cstr c l = Some l'" by blast
+  from ands_cstr_Some[OF s(3)] obtain xs e ys where
+    t: "l = xs @ e # ys" "l' = xs @ Formula.And e c # ys" "safe_formula e" "Formula.fv c \<subseteq> Formula.fv e"
+    by blast
+  show thesis by (rule that(2)[of xs e ys]) (simp_all add: and_cstr_def s(1,2) t s(3)[unfolded t])
+next
+  case False
+  then have "and_cstr X c = Formula.And X c"
+    unfolding and_cstr_def by (auto split: Formula.formula.split option.split)
+  then show thesis by (rule that(1))
+qed
+
+lemma and_cstr_shape: "(\<exists>a b. and_cstr X c = Formula.And a b) \<or> (\<exists>l. and_cstr X c = Formula.Ands l)"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma and_cstr_shapes[simp]:
+  "\<not> is_constraint (and_cstr X c)"
+  "\<not> safe_assignment Y (and_cstr X c)"
+  "and_cstr X c \<noteq> Formula.Neg \<psi>"
+  "remove_neg (and_cstr X c) = and_cstr X c"
+  "\<not> Formula.is_Trigger (and_cstr X c)"
+  "\<not> Formula.is_Release (and_cstr X c)"
+  "and_cstr X c \<noteq> Formula.Eq t1 t2"
+  "and_cstr X c \<noteq> Formula.Less t1 t2"
+  "and_cstr X c \<noteq> Formula.LessEq t1 t2"
+  using and_cstr_shape[of X c] by (auto simp: safe_assignment_def)
+
+lemma is_cmp_cases:
+  assumes "is_cmp c"
+  obtains t1 t2 where "c = Formula.Less t1 t2" | t1 t2 where "c = Formula.LessEq t1 t2"
+  using assms by (cases c) (simp_all add: is_cmp_def)
+
+lemma fvi_and_cstr[simp]: "Formula.fvi b (and_cstr X c) = Formula.fvi b (Formula.And X c)"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma sat_and_cstr[simp]:
+  "Formula.sat \<sigma> V v i (and_cstr X c) = Formula.sat \<sigma> V v i (Formula.And X c)"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma future_bounded_and_cstr[simp]:
+  "Safety.future_bounded (and_cstr X c) = Safety.future_bounded (Formula.And X c)"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma matches_and_cstr[simp]: "Safety.matches v (and_cstr X c) e = Safety.matches v (Formula.And X c) e"
+  by (cases rule: and_cstr_cases[of X c]) auto
+
+lemma progress_and_cstr[simp]: "progress \<sigma> P (and_cstr X c) j = progress \<sigma> P (Formula.And X c) j"
+proof (cases rule: and_cstr_cases[of X c])
+  case (2 xs e ys)
+  from 2(2) have pc: "progress \<sigma> P c j = j" by (cases rule: is_cmp_cases) simp_all
+  show ?thesis
+    using 2 pc
+    by (cases "set (map (\<lambda>\<phi>. progress \<sigma> P \<phi> j) xs) \<union> set (map (\<lambda>\<phi>. progress \<sigma> P \<phi> j) ys) = {}")
+      (auto simp: min.assoc min.commute min.left_commute)
+qed simp
+
+lemma safe_And_cmp: "is_cmp c \<Longrightarrow> safe_formula (Formula.And X c) = (safe_formula X \<and> Formula.fv c \<subseteq> Formula.fv X)"
+  by (erule is_cmp_cases) (simp_all add: safe_assignment_def)
+
+lemma safe_Ands_replace:
+  assumes "safe_formula e" "safe_formula e'" "Formula.fv e' = Formula.fv e"
+  shows "safe_formula (Formula.Ands (xs @ e' # ys)) = safe_formula (Formula.Ands (xs @ e # ys))"
+  using assms by simp
+
+lemma safe_and_cstr[simp]: "safe_formula (and_cstr X c) = safe_formula (Formula.And X c)"
+proof (cases rule: and_cstr_cases[of X c])
+  case (2 xs e ys)
+  have l: "safe_formula (Formula.Ands (xs @ Formula.And e c # ys)) = safe_formula (Formula.Ands (xs @ e # ys))"
+    by (rule safe_Ands_replace) (use 2 safe_And_cmp[OF 2(2)] in auto)
+  have "Formula.fv c \<subseteq> Formula.fv (Formula.Ands (xs @ e # ys))"
+    using 2(4) by auto
+  then have r: "safe_formula (Formula.And X c) = safe_formula (Formula.Ands (xs @ e # ys))"
+    unfolding safe_And_cmp[OF 2(2)] 2(1) by blast
+  show ?thesis
+    by (simp only: 2(5) l r)
+qed simp
+
+lemma wty_and_cstr:
+  assumes "S, E \<turnstile> Formula.And X c"
+  shows "S, E \<turnstile> and_cstr X c"
+proof (cases rule: and_cstr_cases[of X c])
+  case (2 xs e ys)
+  from assms have a: "S, E \<turnstile> Formula.Ands (xs @ e # ys)" "S, E \<turnstile> c"
+    unfolding 2(1) by (auto dest: wty_formula_AndD)
+  have "\<forall>\<phi> \<in> set (xs @ Formula.And e c # ys). S, E \<turnstile> \<phi>"
+    using wty_formula_AndsD[OF a(1)] a(2) by (auto intro: wty_formula.And)
+  then show ?thesis
+    unfolding 2(5) by (rule wty_formula.Ands)
+qed (use assms in simp)
 
 subsection \<open>Free variables\<close>
 
@@ -133,6 +281,10 @@ proof (cases \<phi>)
   case (Exists t \<psi>)
   then show ?thesis
     using ex_into_shapes(2)[of X t "push_ex \<psi>"] by (simp add: safe_assignment_def)
+next
+  case (And \<phi>1 \<psi>)
+  then show ?thesis
+    using and_cstr_shapes(2)[of X "push_ex \<phi>1" "push_ex \<psi>"] by (simp add: push_ex_And safe_assignment_def)
 qed (simp_all add: push_ex_And safe_assignment_def)
 
 lemma remove_neg_push_ex[simp]: "remove_neg (push_ex \<phi>) = push_ex (remove_neg \<phi>)"
@@ -262,7 +414,7 @@ qed (auto intro: wty_formula.Exists)
 
 lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_ex \<phi>"
   by (induct rule: wty_formula.induct)
-    (auto simp: push_ex_And intro!: wty_formula.intros wty_ex_into elim: regex.pred_mono_strong)
+    (auto simp: push_ex_And intro!: wty_formula.intros wty_ex_into wty_and_cstr elim: regex.pred_mono_strong)
 
 subsection \<open>The dense monitor on the rewritten formula\<close>
 

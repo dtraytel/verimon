@@ -4765,6 +4765,18 @@ let rec reindex_trm
     | cs, F2i a -> F2i (reindex_trm cs a)
     | cs, I2f a -> I2f (reindex_trm cs a);;
 
+let rec is_cmp
+  c = (match c with Pred (_, _) -> false | Let (_, _, _) -> false
+        | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+        | Eq (_, _) -> false | Less (_, _) -> true | LessEq (_, _) -> true
+        | Neg _ -> false | Or (_, _) -> false | And (_, _) -> false
+        | Ands _ -> false | Exists (_, _) -> false
+        | Agg (_, _, _, _, _) -> false | Prev (_, _) -> false
+        | Next (_, _) -> false | Since (_, _, _) -> false
+        | Until (_, _, _) -> false | Trigger (_, _, _) -> false
+        | Release (_, _, _) -> false | MatchF (_, _) -> false
+        | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
+
 let edl_impl_of_table_v :
   (((event_data list), (event_data list) set) mapping_rbt ->
     ((event_data list), (event_data list) set) rbt)
@@ -6443,34 +6455,93 @@ let rec ex_into
     | t, TP v -> Exists (t, TP v)
     | t, TS v -> Exists (t, TS v);;
 
+let rec is_wagg
+  e = (match e with Pred (_, _) -> false | Let (_, _, _) -> false
+        | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+        | Eq (_, _) -> false | Less (_, _) -> false | LessEq (_, _) -> false
+        | Neg _ -> false | Or (_, _) -> false | And (_, _) -> false
+        | Ands _ -> false | Exists (_, _) -> false
+        | Agg (_, _, _, _, Pred (_, _)) -> false
+        | Agg (_, _, _, _, Let (_, _, _)) -> false
+        | Agg (_, _, _, _, Frz (_, _, _)) -> false
+        | Agg (_, _, _, _, LetPast (_, _, _)) -> false
+        | Agg (_, _, _, _, Eq (_, _)) -> false
+        | Agg (_, _, _, _, Less (_, _)) -> false
+        | Agg (_, _, _, _, LessEq (_, _)) -> false
+        | Agg (_, _, _, _, Neg _) -> false
+        | Agg (_, _, _, _, Or (_, _)) -> false
+        | Agg (_, _, _, _, And (_, _)) -> false
+        | Agg (_, _, _, _, Ands _) -> false
+        | Agg (_, _, _, _, Exists (_, _)) -> false
+        | Agg (_, _, _, _, Agg (_, _, _, _, _)) -> false
+        | Agg (_, _, _, _, Prev (_, _)) -> false
+        | Agg (_, _, _, _, Next (_, _)) -> false
+        | Agg (_, _, _, _, Since (_, _, _)) -> true
+        | Agg (_, _, _, _, Until (_, _, _)) -> true
+        | Agg (_, _, _, _, Trigger (_, _, _)) -> false
+        | Agg (_, _, _, _, Release (_, _, _)) -> false
+        | Agg (_, _, _, _, MatchF (_, _)) -> false
+        | Agg (_, _, _, _, MatchP (_, _)) -> false
+        | Agg (_, _, _, _, TP _) -> false | Agg (_, _, _, _, TS _) -> false
+        | Prev (_, _) -> false | Next (_, _) -> false | Since (_, _, _) -> false
+        | Until (_, _, _) -> false | Trigger (_, _, _) -> false
+        | Release (_, _, _) -> false | MatchF (_, _) -> false
+        | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
+
+let rec ands_cstr
+  c x1 = match c, x1 with c, [] -> None
+    | c, e :: es ->
+        (if is_wagg e &&
+              (safe_formula e && nat_subset (fvi zero_nata c) (fvi zero_nata e))
+          then Some (And (e, c) :: es)
+          else map_option (fun a -> e :: a) (ands_cstr c es));;
+
+let rec and_cstr
+  x c = (match x with Pred (_, _) -> And (x, c) | Let (_, _, _) -> And (x, c)
+          | Frz (_, _, _) -> And (x, c) | LetPast (_, _, _) -> And (x, c)
+          | Eq (_, _) -> And (x, c) | Less (_, _) -> And (x, c)
+          | LessEq (_, _) -> And (x, c) | Neg _ -> And (x, c)
+          | Or (_, _) -> And (x, c) | And (_, _) -> And (x, c)
+          | Ands l ->
+            (if is_cmp c
+              then (match ands_cstr c l with None -> And (x, c)
+                     | Some a -> Ands a)
+              else And (x, c))
+          | Exists (_, _) -> And (x, c) | Agg (_, _, _, _, _) -> And (x, c)
+          | Prev (_, _) -> And (x, c) | Next (_, _) -> And (x, c)
+          | Since (_, _, _) -> And (x, c) | Until (_, _, _) -> And (x, c)
+          | Trigger (_, _, _) -> And (x, c) | Release (_, _, _) -> And (x, c)
+          | MatchF (_, _) -> And (x, c) | MatchP (_, _) -> And (x, c)
+          | TP _ -> And (x, c) | TS _ -> And (x, c));;
+
 let rec push_ex
   = function Exists (t, phi) -> ex_into t (push_ex phi)
     | Neg phi -> Neg (push_ex phi)
     | Or (phi, psi) -> Or (push_ex phi, push_ex psi)
     | And (phi, psi) ->
-        (match psi with Pred (_, _) -> And (push_ex phi, push_ex psi)
-          | Let (_, _, _) -> And (push_ex phi, push_ex psi)
-          | Frz (_, _, _) -> And (push_ex phi, push_ex psi)
-          | LetPast (_, _, _) -> And (push_ex phi, push_ex psi)
-          | Eq (_, _) -> And (push_ex phi, push_ex psi)
-          | Less (_, _) -> And (push_ex phi, push_ex psi)
-          | LessEq (_, _) -> And (push_ex phi, push_ex psi)
-          | Neg _ -> And (push_ex phi, push_ex psi)
-          | Or (_, _) -> And (push_ex phi, push_ex psi)
-          | And (_, _) -> And (push_ex phi, push_ex psi)
-          | Ands _ -> And (push_ex phi, push_ex psi)
-          | Exists (_, _) -> And (push_ex phi, push_ex psi)
-          | Agg (_, _, _, _, _) -> And (push_ex phi, push_ex psi)
-          | Prev (_, _) -> And (push_ex phi, push_ex psi)
-          | Next (_, _) -> And (push_ex phi, push_ex psi)
-          | Since (_, _, _) -> And (push_ex phi, push_ex psi)
-          | Until (_, _, _) -> And (push_ex phi, push_ex psi)
+        (match psi with Pred (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Let (_, _, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Frz (_, _, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | LetPast (_, _, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Eq (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Less (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | LessEq (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Neg _ -> and_cstr (push_ex phi) (push_ex psi)
+          | Or (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | And (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Ands _ -> and_cstr (push_ex phi) (push_ex psi)
+          | Exists (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Agg (_, _, _, _, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Prev (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Next (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Since (_, _, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | Until (_, _, _) -> and_cstr (push_ex phi) (push_ex psi)
           | Trigger (_, _, _) -> And (phi, psi)
           | Release (_, _, _) -> And (phi, psi)
-          | MatchF (_, _) -> And (push_ex phi, push_ex psi)
-          | MatchP (_, _) -> And (push_ex phi, push_ex psi)
-          | TP _ -> And (push_ex phi, push_ex psi)
-          | TS _ -> And (push_ex phi, push_ex psi))
+          | MatchF (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | MatchP (_, _) -> and_cstr (push_ex phi) (push_ex psi)
+          | TP _ -> and_cstr (push_ex phi) (push_ex psi)
+          | TS _ -> and_cstr (push_ex phi) (push_ex psi))
     | Ands l -> Ands (mapa push_ex l)
     | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, push_ex phi)
     | Prev (i, phi) -> Prev (i, push_ex phi)
