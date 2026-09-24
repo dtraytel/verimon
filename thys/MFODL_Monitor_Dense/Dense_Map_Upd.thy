@@ -11,8 +11,9 @@ text \<open>
   and every update of an existing key is a lookup followed by an insertion: two descents of the
   same red-black tree, each comparing the key with the same nodes.  @{text mupd} is the pair of
   the two, and on a tree it is one descent (@{text rbt_comp_ins_lk}) that returns the old value
-  and inserts the new one, which is computed from it.  The tree it builds is the one the
-  insertion builds, so the operation is proved against the two it replaces with no invariant.
+  and inserts the new one, which is computed from it.  For a new key the tree it builds is the one
+  the insertion builds; for a present key it only replaces the value, as the tree's
+  @{text map_entry} does, and skips the insertion's rebalancing on the way up.
 \<close>
 
 subsection \<open>On the trees\<close>
@@ -26,18 +27,33 @@ fun rbt_comp_ins_lk :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarr
   "rbt_comp_ins_lk F k RBT_Impl.Empty =
      (None, Branch RBT_Impl.R RBT_Impl.Empty k (F None) RBT_Impl.Empty)"
 | "rbt_comp_ins_lk F k (Branch RBT_Impl.B l x y r) = (case c k x of
-     Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of (ov, l') \<Rightarrow> (ov, balance l' x y r))
-   | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of (ov, r') \<Rightarrow> (ov, balance l x y r'))
+     Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of
+       (None, l') \<Rightarrow> (None, balance l' x y r) | (ov, l') \<Rightarrow> (ov, Branch RBT_Impl.B l' x y r))
+   | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of
+       (None, r') \<Rightarrow> (None, balance l x y r') | (ov, r') \<Rightarrow> (ov, Branch RBT_Impl.B l x y r'))
    | Eq \<Rightarrow> (Some y, Branch RBT_Impl.B l x (F (Some y)) r))"
 | "rbt_comp_ins_lk F k (Branch RBT_Impl.R l x y r) = (case c k x of
      Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of (ov, l') \<Rightarrow> (ov, Branch RBT_Impl.R l' x y r))
    | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of (ov, r') \<Rightarrow> (ov, Branch RBT_Impl.R l x y r'))
    | Eq \<Rightarrow> (Some y, Branch RBT_Impl.R l x (F (Some y)) r))"
 
+lemma fst_rbt_comp_ins_lk: "fst (rbt_comp_ins_lk F k t) = rbt_comp_lookup c t k"
+  by (induct F k t rule: rbt_comp_ins_lk.induct) (auto split: order.splits prod.splits option.splits)
+
+text \<open>A key not in the tree is inserted as by the insertion.  A key in it only has its value
+  replaced, which is the tree's @{text map_entry}: the tree keeps its shape and its colours, and
+  the rebalancing on the way up, which the insertion does in any case, is skipped.\<close>
+
 lemma rbt_comp_ins_lk:
-  "rbt_comp_ins_lk F k t =
-    (rbt_comp_lookup c t k, rbt_comp_ins c (\<lambda>_ _ nv. nv) k (F (rbt_comp_lookup c t k)) t)"
-  by (induct F k t rule: rbt_comp_ins_lk.induct) (auto split: order.splits prod.splits)
+  "rbt_comp_ins_lk F k t = (rbt_comp_lookup c t k, case rbt_comp_lookup c t k of
+     None \<Rightarrow> rbt_comp_ins c (\<lambda>_ _ nv. nv) k (F None) t
+   | Some v \<Rightarrow> rbt_comp_map_entry c k (\<lambda>_. F (Some v)) t)"
+proof (induct F k t rule: rbt_comp_ins_lk.induct)
+  case (2 F k l x y r)
+  then show ?case
+    using fst_rbt_comp_ins_lk[of F k l] fst_rbt_comp_ins_lk[of F k r]
+    by (auto split: order.splits prod.splits option.splits)
+qed (auto split: order.splits prod.splits option.splits)
 
 end
 
@@ -46,19 +62,27 @@ subsection \<open>On the lifted trees\<close>
 lemma paint_rbt_comp_ins: "paint RBT_Impl.B (rbt_comp_ins c (\<lambda>_ _ nv. nv) k v t) = rbt_comp_insert c k v t"
   by (simp add: rbt_comp_insert_def rbt_comp_insert_with_key_def)
 
+lemma is_rbt_rbt_comp_map_entry:
+  "ID CCOMPARE('a :: ccompare) = Some c \<Longrightarrow> ord.is_rbt (lt_of_comp c) (t :: ('a, 'b) rbt) \<Longrightarrow>
+    ord.is_rbt (lt_of_comp c) (rbt_comp_map_entry c k f t)"
+  by (simp add: rbt_comp_map_entry[OF ID_ccompare'] ord.rbt_map_entry_is_rbt)
+
 declare [[typedef_overloaded]]
 
 lift_definition (code_dt) upd_lk :: "'a :: ccompare \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping_rbt \<Rightarrow>
     'b option \<times> ('a, 'b) mapping_rbt" is
-  "\<lambda>k F t. case rbt_comp_ins_lk ccomp F k t of (ov, t') \<Rightarrow> (ov, paint RBT_Impl.B t')"
-  unfolding rbt_comp_ins_lk prod.case paint_rbt_comp_ins
-  by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare simp: rbt_comp_insert[OF ID_ccompare'])
+  "\<lambda>k F t. case rbt_comp_ins_lk ccomp F k t of
+     (None, t') \<Rightarrow> (None, paint RBT_Impl.B t') | (Some v, t') \<Rightarrow> (Some v, t')"
+  unfolding rbt_comp_ins_lk prod.case
+  by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare is_rbt_rbt_comp_map_entry
+      simp: paint_rbt_comp_ins rbt_comp_insert[OF ID_ccompare'] split: option.splits)
 
 declare [[typedef_overloaded = false]]
 
-lemma upd_lk_eq: "upd_lk k F t =
-    (RBT_Mapping2.lookup t k, RBT_Mapping2.insert k (F (RBT_Mapping2.lookup t k)) t)"
-  by transfer (simp add: rbt_comp_ins_lk paint_rbt_comp_ins)
+lemma upd_lk_eq: "upd_lk k F t = (RBT_Mapping2.lookup t k, case RBT_Mapping2.lookup t k of
+    None \<Rightarrow> RBT_Mapping2.insert k (F None) t
+  | Some v \<Rightarrow> RBT_Mapping2.map_entry k (\<lambda>_. F (Some v)) t)"
+  by transfer (simp add: rbt_comp_ins_lk paint_rbt_comp_ins split: option.splits)
 
 subsection \<open>On the mappings\<close>
 
@@ -74,8 +98,8 @@ lemma mupd_code[code]:
       (Mapping.lookup (Assoc_List_Mapping al) k,
        Mapping.update k (F (Mapping.lookup (Assoc_List_Mapping al) k)) (Assoc_List_Mapping al))"
     "mupd k F (Mapping f) = (Mapping.lookup (Mapping f) k, Mapping.update k (F (Mapping.lookup (Mapping f) k)) (Mapping f))"
-  by (simp_all add: mupd_def upd_lk_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
-      split: option.splits)
+  by (auto simp: mupd_def upd_lk_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
+      fun_eq_iff split: option.splits)
 
 subsection \<open>The updates of the count sets and of the aggregates\<close>
 
@@ -412,32 +436,158 @@ proof -
     unfolding de_geval_step_dq_def geval_step_dq.simps Let_def eq ..
 qed
 
+subsection \<open>A deletion that returns the deleted value\<close>
+
+text \<open>The window's count set drops a tuple leaving it by a lookup, to learn its count, and then a
+  deletion (or, for a count above one, an update): two descents.  @{text rbt_comp_del_lk} is the
+  deletion returning the value it removed, in the deletion's one descent; the count above one,
+  the rare case, then takes an update of the original tree.\<close>
+
+context
+  fixes c :: "'a comparator"
+begin
+
+fun rbt_comp_del_lk_from_left :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> ('a, 'b) rbt \<Rightarrow>
+    'b option \<times> ('a, 'b) rbt" and
+  rbt_comp_del_lk_from_right :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'a \<Rightarrow> 'b \<Rightarrow> ('a, 'b) rbt \<Rightarrow>
+    'b option \<times> ('a, 'b) rbt" and
+  rbt_comp_del_lk :: "'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'b option \<times> ('a, 'b) rbt"
+where
+  "rbt_comp_del_lk x RBT_Impl.Empty = (None, RBT_Impl.Empty)"
+| "rbt_comp_del_lk x (Branch _ a y s b) = (case c x y of
+     Lt \<Rightarrow> rbt_comp_del_lk_from_left x a y s b
+   | Gt \<Rightarrow> rbt_comp_del_lk_from_right x a y s b
+   | Eq \<Rightarrow> (Some s, RBT_Impl.combine a b))"
+| "rbt_comp_del_lk_from_left x (Branch RBT_Impl.B lt z v rt) y s b =
+     (case rbt_comp_del_lk x (Branch RBT_Impl.B lt z v rt) of (ov, l') \<Rightarrow> (ov, balance_left l' y s b))"
+| "rbt_comp_del_lk_from_left x a y s b =
+     (case rbt_comp_del_lk x a of (ov, a') \<Rightarrow> (ov, Branch RBT_Impl.R a' y s b))"
+| "rbt_comp_del_lk_from_right x a y s (Branch RBT_Impl.B lt z v rt) =
+     (case rbt_comp_del_lk x (Branch RBT_Impl.B lt z v rt) of (ov, r') \<Rightarrow> (ov, balance_right a y s r'))"
+| "rbt_comp_del_lk_from_right x a y s b =
+     (case rbt_comp_del_lk x b of (ov, b') \<Rightarrow> (ov, Branch RBT_Impl.R a y s b'))"
+
+lemma rbt_comp_del_lk:
+  fixes a b t :: "('a, 'b) rbt"
+  shows "rbt_comp_del_lk_from_left x a y s b = (rbt_comp_lookup c a x, rbt_comp_del_from_left c x a y s b)"
+  "rbt_comp_del_lk_from_right x a y s b = (rbt_comp_lookup c b x, rbt_comp_del_from_right c x a y s b)"
+  "rbt_comp_del_lk x t = (rbt_comp_lookup c t x, rbt_comp_del c x t)"
+  by (induct x a y s b and x a y s b and x t
+      rule: rbt_comp_del_lk_from_left_rbt_comp_del_lk_from_right_rbt_comp_del_lk.induct)
+    (auto split: order.splits prod.splits)
+
+end
+
+declare [[typedef_overloaded]]
+
+lift_definition (code_dt) del_lk :: "'a :: ccompare \<Rightarrow> ('a, 'b) mapping_rbt \<Rightarrow>
+    'b option \<times> ('a, 'b) mapping_rbt" is
+  "\<lambda>k t. case rbt_comp_del_lk ccomp k t of (ov, t') \<Rightarrow> (ov, paint RBT_Impl.B t')"
+  unfolding rbt_comp_del_lk prod.case rbt_comp_delete_def[symmetric]
+  by (auto 4 3 intro: linorder.rbt_delete_is_rbt ID_ccompare simp: rbt_comp_delete[OF ID_ccompare'])
+
+declare [[typedef_overloaded = false]]
+
+lemma del_lk_eq: "del_lk k t = (RBT_Mapping2.lookup t k, RBT_Mapping2.delete k t)"
+  by transfer (simp add: rbt_comp_del_lk rbt_comp_delete_def)
+
+definition mdel_lk :: "'a \<Rightarrow> ('a, 'b) mapping \<Rightarrow> 'b option \<times> ('a, 'b) mapping"
+  where "mdel_lk k m = (Mapping.lookup m k, Mapping.delete k m)"
+
+lemma mdel_lk_code[code]:
+  fixes t :: "('a :: ccompare, 'b) mapping_rbt"
+  shows "mdel_lk k (RBT_Mapping t) = (case ID CCOMPARE('a) of
+      None \<Rightarrow> Code.abort (STR ''mdel_lk RBT_Mapping: ccompare = None'') (\<lambda>_. mdel_lk k (RBT_Mapping t))
+    | Some _ \<Rightarrow> (case del_lk k t of (ov, t') \<Rightarrow> (ov, RBT_Mapping t')))"
+    "mdel_lk k (Assoc_List_Mapping al) =
+      (Mapping.lookup (Assoc_List_Mapping al) k, Mapping.delete k (Assoc_List_Mapping al))"
+    "mdel_lk k (Mapping f) = (Mapping.lookup (Mapping f) k, Mapping.delete k (Mapping f))"
+  by (simp_all add: mdel_lk_def del_lk_eq lookup_Mapping_code delete_Mapping Mapping.lookup.abs_eq
+      split: option.splits)
+
+text \<open>The count sets' deletions through it.\<close>
+
+lemma ucnt_del1_mdel_lk[code]: "ucnt_del1 t c = (case mdel_lk t c of
+     (None, _) \<Rightarrow> c
+   | (Some k, c') \<Rightarrow> (if k \<le> 1 then c' else Mapping.update t (k - 1) c))"
+  by (simp add: ucnt_del1_def mdel_lk_def split: option.splits)
+
+lemma de_gcnt_del1_mdel_lk[code]: "de_gcnt_del1 t cc = (case cc of (c, s) \<Rightarrow> (case mdel_lk t c of
+     (None, _) \<Rightarrow> (c, s)
+   | (Some k, c') \<Rightarrow> (if k \<le> 1 then (c', Set.remove t s) else (Mapping.update t (k - 1) c, s))))"
+  by (simp add: de_gcnt_del1_def gcnt_del1_def mdel_lk_def split: option.splits prod.splits)
+
+lemma cnt_del_fold_mdel_lk[code]:
+  "cnt_del_fold F xs c b = fold (\<lambda>t (c, acc). case mdel_lk t c of
+       (None, _) \<Rightarrow> (c, acc)
+     | (Some k, c') \<Rightarrow> (if k \<le> 1 then (c', if k = 1 then F t acc else acc)
+                        else (Mapping.update t (k - 1) c, acc))) xs (c, b)"
+  unfolding cnt_del_fold_def
+  by (rule arg_cong[where f = "\<lambda>g. fold g xs (c, b)"])
+    (auto simp: fun_eq_iff mdel_lk_def split: option.splits)
+
+text \<open>The aggregate's deletions: the group's entry, read and written in one descent by
+  @{const mupd}, since a group usually outlives the tuple; the last tuple of a group then takes
+  a deletion of the original mapping.\<close>
+
+lemma gd_cnt_mupd[code]:
+  "gd_cnt k t (v, m) = (if v then (v, case mupd (drop k t)
+       (\<lambda>ov. case ov of Some i \<Rightarrow> i - 1 | None \<Rightarrow> 0) m of
+       (Some i, m') \<Rightarrow> (if i = 1 then Mapping.delete (drop k t) m else m')
+     | (None, _) \<Rightarrow> m)
+     else (v, m))"
+  by (simp add: mupd_def split: option.splits)
+
+lemma gd_sum_mupd[code]:
+  "gd_sum k ev t (v, m) = (if v then (case ev t of
+       EInt i \<Rightarrow> (case mupd (drop k t)
+         (\<lambda>ov. case ov of Some (cnt, s) \<Rightarrow> (cnt - 1, s - i) | None \<Rightarrow> (0, 0)) m of
+           (Some (cnt, s), m') \<Rightarrow> (True, if cnt = 1 then Mapping.delete (drop k t) m else m')
+         | (None, _) \<Rightarrow> (False, Mapping.empty))
+     | _ \<Rightarrow> (False, Mapping.empty))
+     else (v, m))"
+  by (simp add: mupd_def Let_def split: option.splits event_data.splits prod.splits)
+
 subsection \<open>At the short tuples\<close>
 
 definition edl_rbtc_ins_lk :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>
     (event_data list, 'v) rbt \<Rightarrow> 'v option \<times> (event_data list, 'v) rbt" where
   "edl_rbtc_ins_lk = rbt_comp_ins_lk edl_comparator"
 
-lemma edl_rbtc_ins_lk_simps[code]:
-  "edl_rbtc_ins_lk F k RBT_Impl.Empty =
-     (None, Branch RBT_Impl.R RBT_Impl.Empty k (F None) RBT_Impl.Empty)"
-  "edl_rbtc_ins_lk F k (Branch RBT_Impl.B l x y r) = (case edl_comparator k x of
-     Lt \<Rightarrow> (case edl_rbtc_ins_lk F k l of (ov, l') \<Rightarrow> (ov, balance l' x y r))
-   | Gt \<Rightarrow> (case edl_rbtc_ins_lk F k r of (ov, r') \<Rightarrow> (ov, balance l x y r'))
-   | Eq \<Rightarrow> (Some y, Branch RBT_Impl.B l x (F (Some y)) r))"
-  "edl_rbtc_ins_lk F k (Branch RBT_Impl.R l x y r) = (case edl_comparator k x of
-     Lt \<Rightarrow> (case edl_rbtc_ins_lk F k l of (ov, l') \<Rightarrow> (ov, Branch RBT_Impl.R l' x y r))
-   | Gt \<Rightarrow> (case edl_rbtc_ins_lk F k r of (ov, r') \<Rightarrow> (ov, Branch RBT_Impl.R l x y r'))
-   | Eq \<Rightarrow> (Some y, Branch RBT_Impl.R l x (F (Some y)) r))"
-  unfolding edl_rbtc_ins_lk_def by simp_all
+lemmas edl_rbtc_ins_lk_simps[code] = rbt_comp_ins_lk.simps[of edl_comparator, folded edl_rbtc_ins_lk_def]
 
 lemma edl_rbtc_ins_lk_unfold[code_unfold]: "rbt_comp_ins_lk edl_comparator = edl_rbtc_ins_lk"
   by (simp add: edl_rbtc_ins_lk_def)
 
+definition edl_rbtc_del_lk :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    'v option \<times> (event_data list, 'v) rbt" where
+  "edl_rbtc_del_lk = rbt_comp_del_lk edl_comparator"
+
+definition edl_rbtc_del_lk_fl :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow>
+    'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> 'v option \<times> (event_data list, 'v) rbt" where
+  "edl_rbtc_del_lk_fl = rbt_comp_del_lk_from_left edl_comparator"
+
+definition edl_rbtc_del_lk_fr :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow>
+    'v \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> 'v option \<times> (event_data list, 'v) rbt" where
+  "edl_rbtc_del_lk_fr = rbt_comp_del_lk_from_right edl_comparator"
+
+lemmas edl_rbtc_del_lk_simps[code] =
+  rbt_comp_del_lk.simps[of edl_comparator, folded edl_rbtc_del_lk_def edl_rbtc_del_lk_fl_def
+    edl_rbtc_del_lk_fr_def]
+  rbt_comp_del_lk_from_left.simps[of edl_comparator, folded edl_rbtc_del_lk_def edl_rbtc_del_lk_fl_def
+    edl_rbtc_del_lk_fr_def]
+  rbt_comp_del_lk_from_right.simps[of edl_comparator, folded edl_rbtc_del_lk_def edl_rbtc_del_lk_fl_def
+    edl_rbtc_del_lk_fr_def]
+
+lemma edl_rbtc_del_lk_unfold[code_unfold]: "rbt_comp_del_lk edl_comparator = edl_rbtc_del_lk"
+  by (simp add: edl_rbtc_del_lk_def)
+
 setup \<open>Monomorphize.monomorphize_cmd
   (maps (fn (tn, ty) =>
      [("Dense_Map_Upd.upd_lk_aux", "edl_upd_lk_aux_" ^ tn, [edl, ty]),
-      ("upd_lk", "edl_upd_lk_" ^ tn, [edl, ty]), ("mupd", "edl_mupd_" ^ tn, [edl, ty])])
+      ("upd_lk", "edl_upd_lk_" ^ tn, [edl, ty]), ("mupd", "edl_mupd_" ^ tn, [edl, ty]),
+      ("Dense_Map_Upd.del_lk_aux", "edl_del_lk_aux_" ^ tn, [edl, ty]),
+      ("del_lk", "edl_del_lk_" ^ tn, [edl, ty]), ("mdel_lk", "edl_mdel_lk_" ^ tn, [edl, ty])])
      edl_value_types)
   ["edl_dict_simps"]\<close>
 
