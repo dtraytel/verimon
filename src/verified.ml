@@ -5130,6 +5130,126 @@ let rec eskip
       | E_QUOTED (_, _, _) -> skip_quoted s n i | E_ESCAPE (_, _, _) -> i
       | E_COMMENT -> skip_comment s n i);;
 
+let rec elex_init
+  pos i c =
+    (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
+          ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+            ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+              (((c : char) = '\095') ||
+                (((c : char) = '\091') ||
+                  (((c : char) = '\093') ||
+                    (((c : char) = '\047') ||
+                      (((c : char) = '\058') ||
+                        (((c : char) = '\045') ||
+                          (((c : char) = '\046') ||
+                            ((c : char) = '\033'))))))))))
+      then R_NEXT (E_SIMPLE ([], i, pos))
+      else (if ((c : char) = '\032') ||
+                 (((c : char) = '\009') ||
+                   (((c : char) = '\010') || ((c : char) = '\013')))
+             then R_NEXT E_INIT
+             else (if ((c : char) = '\064') then R_TOK (T_AT, pos, E_INIT)
+                    else (if ((c : char) = '\040')
+                           then R_TOK (T_LPAREN, pos, E_INIT)
+                           else (if ((c : char) = '\041')
+                                  then R_TOK (T_RPAREN, pos, E_INIT)
+                                  else (if ((c : char) = '\060')
+ then R_TOK (T_LANGLE, pos, E_INIT)
+ else (if ((c : char) = '\062') then R_TOK (T_RANGLE, pos, E_INIT)
+        else (if ((c : char) = '\123') then R_TOK (T_LBRACE, pos, E_INIT)
+               else (if ((c : char) = '\125') then R_TOK (T_RBRACE, pos, E_INIT)
+                      else (if ((c : char) = '\044')
+                             then R_TOK (T_COMMA, pos, E_INIT)
+                             else (if ((c : char) = '\059')
+                                    then R_TOK (T_SEMICOLON, pos, E_INIT)
+                                    else (if ((c : char) = '\035')
+   then R_NEXT E_COMMENT
+   else (if ((c : char) = '\034')
+          then R_NEXT
+                 (E_QUOTED
+                   ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                          i,
+                     pos))
+          else R_ERR)))))))))))));;
+
+let rec close_tok
+  t tp r =
+    (match r with R_SAME -> R_TOK_ERR (t, tp) | R_NEXT a -> R_TOK (t, tp, a)
+      | R_TOK (a, b, c) -> R_TOK2 (t, tp, a, b, c)
+      | R_TOK2 (_, _, _, _, _) -> R_TOK_ERR (t, tp)
+      | R_TOK_ERR (_, _) -> R_TOK_ERR (t, tp) | R_ERR -> R_TOK_ERR (t, tp));;
+
+let rec mk_str
+  pre s st i =
+    (match pre
+      with [] ->
+        (fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+          s st i
+      | _ :: _ ->
+        (String.concat "" (rev ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+                                  s st i ::
+                                 pre))));;
+
+let rec elex_step
+  s b i c l =
+    (match l
+      with E_INIT ->
+        (if ((c : char) = '\032') ||
+              (((c : char) = '\009') ||
+                (((c : char) = '\010') || ((c : char) = '\013')))
+          then R_SAME
+          else elex_init
+                 ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                   b i)
+                 i c)
+      | E_SIMPLE (pre, st, tp) ->
+        (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
+              ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+                ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+                  (((c : char) = '\095') ||
+                    (((c : char) = '\091') ||
+                      (((c : char) = '\093') ||
+                        (((c : char) = '\047') ||
+                          (((c : char) = '\058') ||
+                            (((c : char) = '\045') ||
+                              (((c : char) = '\046') ||
+                                ((c : char) = '\033'))))))))))
+          then R_SAME
+          else (if ((c : char) = '\034') && is_r pre s st i
+                 then R_NEXT
+                        (E_QUOTED
+                          ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                 i,
+                            tp))
+                 else close_tok (T_STR (mk_str pre s st i)) tp
+                        (elex_init
+                          ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                            b i)
+                          i c)))
+      | E_QUOTED (pre, st, tp) ->
+        (if ((c : char) = '\034')
+          then R_TOK (T_STR (mk_str pre s st i), tp, E_INIT)
+          else (if ((c : char) = '\092') then R_NEXT (E_ESCAPE (pre, st, tp))
+                 else R_SAME))
+      | E_ESCAPE (pre, st, tp) -> R_NEXT (E_QUOTED (pre, st, tp))
+      | E_COMMENT ->
+        (if ((c : char) = '\010') || ((c : char) = '\013') then R_NEXT E_INIT
+          else R_SAME));;
+
 let rec expect_of = function F_INIT -> X_ENTRY
                     | F_TS -> X_TIMESTAMP
                     | F_DB (uu, uv) -> X_PREDICATE
@@ -5144,6 +5264,24 @@ let rec expect_of = function F_INIT -> X_ENTRY
                     | F_SFIELDN (vt, vu) -> X_FIELD
                     | F_CMD -> X_CMD_NAME
                     | F_ARGS (vv, vw) -> X_CMD_ARG;;
+
+let rec echar_err
+  pos c p acc =
+    (match p with None -> acc
+      | Some ps -> O_ERROR (pos, E_CHAR (expect_of ps, c)) :: acc);;
+
+let rec start
+  pos p sp =
+    (match p with None -> sp | Some F_INIT -> sp | Some F_TS -> pos
+      | Some (F_DB (_, _)) -> sp | Some (F_NAME (_, _, _)) -> sp
+      | Some (F_TUPLES (_, _, _)) -> sp | Some (F_FIELD1 (_, _, _)) -> sp
+      | Some (F_AFTER (_, _, _, _)) -> sp | Some (F_FIELDN (_, _, _, _)) -> sp
+      | Some (F_SKIP (_, _)) -> sp | Some (F_SFIELD1 (_, _)) -> sp
+      | Some (F_SAFTER (_, _)) -> sp | Some (F_SFIELDN (_, _)) -> sp
+      | Some F_CMD -> pos | Some (F_ARGS (_, _)) -> sp);;
+
+let rec fname
+  k ts evs p = (if k p then F_NAME (ts, evs, p) else F_SKIP (ts, evs));;
 
 let rec cmd_arg = function T_AT -> false
                   | T_SEMICOLON -> false
@@ -5161,9 +5299,6 @@ let rec fclose
           | T_RPAREN -> None | T_LANGLE -> None | T_RANGLE -> Some ([e], F_CMD)
           | T_LBRACE -> None | T_RBRACE -> None | T_COMMA -> None
           | T_SEMICOLON -> Some ([e], F_INIT) | T_STR _ -> None);;
-
-let rec fname
-  k ts evs p = (if k p then F_NAME (ts, evs, p) else F_SKIP (ts, evs));;
 
 let rec fstep
   k t x2 = match k, t, x2 with
@@ -5288,215 +5423,573 @@ let rec resync
         | T_RBRACE -> None | T_COMMA -> None | T_SEMICOLON -> Some F_INIT
         | T_STR _ -> None);;
 
+let rec efeed_s
+  k t pos ps sp acc =
+    (match fstep k t ps
+      with None ->
+        (O_ERROR (pos, E_TOKEN (expect_of ps, Some t)) :: acc, resync t)
+      | Some (es, psa) ->
+        (fold (fun e -> (fun a -> O_ITEM (sp, e) :: a)) es acc, Some psa));;
+
 let rec efeed
   k t pos p sp acc =
     (match p with None -> (acc, resync t)
       | Some ps ->
-        (match fstep k t ps
-          with None ->
-            (O_ERROR (pos, E_TOKEN (expect_of ps, Some t)) :: acc, resync t)
-          | Some (es, psa) ->
-            (fold (fun e -> (fun a -> O_ITEM (sp, e) :: a)) es acc,
-              Some psa)));;
+        (match ps
+          with F_INIT ->
+            (match t with T_AT -> (acc, Some F_TS)
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR _ -> efeed_s k t pos ps sp acc)
+          | F_TS ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR ts -> (acc, Some (F_DB (ts, []))))
+          | F_DB (ts, evs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR q -> (acc, Some (fname k ts evs q)))
+          | F_NAME (ts, evs, q) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> (acc, Some (F_FIELD1 (ts, evs, q)))
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR r -> (acc, Some (fname k ts ((q, []) :: evs) r)))
+          | F_TUPLES (ts, evs, q) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> (acc, Some (F_FIELD1 (ts, evs, q)))
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR r -> (acc, Some (fname k ts evs r)))
+          | F_FIELD1 (ts, evs, q) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> (acc, Some (F_TUPLES (ts, (q, []) :: evs, q)))
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR f -> (acc, Some (F_AFTER (ts, evs, q, [f]))))
+          | F_AFTER (ts, evs, q, fs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> (acc, Some (F_TUPLES (ts, (q, rev fs) :: evs, q)))
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> (acc, Some (F_FIELDN (ts, evs, q, fs)))
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR _ -> efeed_s k t pos ps sp acc)
+          | F_FIELDN (ts, evs, q, fs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR f -> (acc, Some (F_AFTER (ts, evs, q, f :: fs))))
+          | F_SKIP (ts, evs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> (acc, Some (F_SFIELD1 (ts, evs)))
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR r -> (acc, Some (fname k ts evs r)))
+          | F_SFIELD1 (ts, evs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> (acc, Some (F_SKIP (ts, evs)))
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR _ -> (acc, Some (F_SAFTER (ts, evs))))
+          | F_SAFTER (ts, evs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> (acc, Some (F_SKIP (ts, evs)))
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> (acc, Some (F_SFIELDN (ts, evs)))
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR _ -> efeed_s k t pos ps sp acc)
+          | F_SFIELDN (ts, evs) ->
+            (match t with T_AT -> efeed_s k t pos ps sp acc
+              | T_LPAREN -> efeed_s k t pos ps sp acc
+              | T_RPAREN -> efeed_s k t pos ps sp acc
+              | T_LANGLE -> efeed_s k t pos ps sp acc
+              | T_RANGLE -> efeed_s k t pos ps sp acc
+              | T_LBRACE -> efeed_s k t pos ps sp acc
+              | T_RBRACE -> efeed_s k t pos ps sp acc
+              | T_COMMA -> efeed_s k t pos ps sp acc
+              | T_SEMICOLON -> efeed_s k t pos ps sp acc
+              | T_STR _ -> (acc, Some (F_SAFTER (ts, evs))))
+          | F_CMD -> efeed_s k t pos ps sp acc
+          | F_ARGS (_, _) -> efeed_s k t pos ps sp acc));;
+
+let rec floop
+  k s n b i l p sp acc =
+    (match l
+      with E_INIT ->
+        (let ia = eskip E_INIT s n i in
+          (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                ia n
+            then (let c =
+                    (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                      s ia
+                    in
+                   (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
+                         ((('\097' : char) <= c) && ((c : char) <= '\122') ||
+                           ((('\065' : char) <= c) && ((c : char) <= '\090') ||
+                             (((c : char) = '\095') ||
+                               (((c : char) = '\091') ||
+                                 (((c : char) = '\093') ||
+                                   (((c : char) = '\047') ||
+                                     (((c : char) = '\058') ||
+                                       (((c : char) = '\045') ||
+ (((c : char) = '\046') || ((c : char) = '\033'))))))))))
+                     then (let j =
+                             eskip (E_SIMPLE
+                                     ([], ia,
+                                       (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+ b ia))
+                               s n ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                     ia)
+                             in
+                           let tp =
+                             (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                               b ia
+                             in
+                            (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                                  j n
+                              then (let ca =
+                                      (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+s j
+                                      in
+                                     (if ((ca : char) = '\034') &&
+   is_r [] s ia j
+                                       then floop k s n b
+      ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+        j)
+      (E_QUOTED
+        ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+               j,
+          tp))
+      p sp acc
+                                       else (let t =
+       T_STR ((fun s i j -> let n = String.length s in
+      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
+        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
+      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
+      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
+        let l = Z.sub j i in
+        if Z.sign l <= 0 || a >= n then ""
+        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
+               s ia j)
+       in
+      (match
+        elex_init
+          ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+            b j)
+          j ca
+        with R_SAME ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              E_INIT None sp
+              (echar_err
+                ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                  b j)
+                ca pa acca))
+        | R_NEXT la ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              la pa (start tp pa sp) acca)
+        | R_TOK (ta, tpa, la) ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+           let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              la paa (start tpa paa (start tp pa sp)) accb)
+        | R_TOK2 (_, _, _, _, _) ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              E_INIT None sp
+              (echar_err
+                ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                  b j)
+                ca pa acca))
+        | R_TOK_ERR (_, _) ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              E_INIT None sp
+              (echar_err
+                ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                  b j)
+                ca pa acca))
+        | R_ERR ->
+          (let (acca, pa) = efeed k t tp p sp acc in
+            floop k s n b
+              ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                j)
+              E_INIT None sp
+              (echar_err
+                ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                  b j)
+                ca pa acca))))))
+                              else (acc, (E_SIMPLE ([], ia, tp), (p, sp)))))
+                     else (match
+                            elex_init
+                              ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                                b ia)
+                              ia c
+                            with R_SAME ->
+                              floop k s n b
+                                ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                  ia)
+                                E_INIT None sp
+                                (echar_err
+                                  ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                                    b ia)
+                                  c p acc)
+                            | R_NEXT la ->
+                              floop k s n b
+                                ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                  ia)
+                                la p sp acc
+                            | R_TOK (t, tp, la) ->
+                              (let (acca, pa) = efeed k t tp p sp acc in
+                                floop k s n b
+                                  ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                    ia)
+                                  la pa (start tp pa sp) acca)
+                            | R_TOK2 (_, _, _, _, _) ->
+                              floop k s n b
+                                ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                  ia)
+                                E_INIT None sp
+                                (echar_err
+                                  ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                                    b ia)
+                                  c p acc)
+                            | R_TOK_ERR (_, _) ->
+                              floop k s n b
+                                ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                  ia)
+                                E_INIT None sp
+                                (echar_err
+                                  ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                                    b ia)
+                                  c p acc)
+                            | R_ERR ->
+                              floop k s n b
+                                ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                                  ia)
+                                E_INIT None sp
+                                (echar_err
+                                  ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                                    b ia)
+                                  c p acc))))
+            else (acc, (E_INIT, (p, sp)))))
+      | E_SIMPLE (_, _, _) ->
+        (let ia = eskip l s n i in
+          (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                ia n
+            then (match
+                   elex_step s b ia
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                       s ia)
+                     l
+                   with R_SAME ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       l p sp acc
+                   | R_NEXT la ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       la p sp acc
+                   | R_TOK (t, tp, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la pa (start tp pa sp) acca)
+                   | R_TOK2 (t, tp, ta, tpa, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                      let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca
+                        in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la paa (start tpa paa (start tp pa sp)) accb)
+                   | R_TOK_ERR (t, tp) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         E_INIT None sp
+                         (echar_err
+                           ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                             b ia)
+                           ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                             s ia)
+                           pa acca))
+                   | R_ERR ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       E_INIT None sp
+                       (echar_err
+                         ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                           b ia)
+                         ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                           s ia)
+                         p acc))
+            else (acc, (l, (p, sp)))))
+      | E_QUOTED (_, _, _) ->
+        (let ia = eskip l s n i in
+          (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                ia n
+            then (match
+                   elex_step s b ia
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                       s ia)
+                     l
+                   with R_SAME ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       l p sp acc
+                   | R_NEXT la ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       la p sp acc
+                   | R_TOK (t, tp, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la pa (start tp pa sp) acca)
+                   | R_TOK2 (t, tp, ta, tpa, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                      let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca
+                        in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la paa (start tpa paa (start tp pa sp)) accb)
+                   | R_TOK_ERR (t, tp) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         E_INIT None sp
+                         (echar_err
+                           ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                             b ia)
+                           ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                             s ia)
+                           pa acca))
+                   | R_ERR ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       E_INIT None sp
+                       (echar_err
+                         ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                           b ia)
+                         ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                           s ia)
+                         p acc))
+            else (acc, (l, (p, sp)))))
+      | E_ESCAPE (_, _, _) ->
+        (let ia = eskip l s n i in
+          (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                ia n
+            then (match
+                   elex_step s b ia
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                       s ia)
+                     l
+                   with R_SAME ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       l p sp acc
+                   | R_NEXT la ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       la p sp acc
+                   | R_TOK (t, tp, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la pa (start tp pa sp) acca)
+                   | R_TOK2 (t, tp, ta, tpa, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                      let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca
+                        in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la paa (start tpa paa (start tp pa sp)) accb)
+                   | R_TOK_ERR (t, tp) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         E_INIT None sp
+                         (echar_err
+                           ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                             b ia)
+                           ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                             s ia)
+                           pa acca))
+                   | R_ERR ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       E_INIT None sp
+                       (echar_err
+                         ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                           b ia)
+                         ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                           s ia)
+                         p acc))
+            else (acc, (l, (p, sp)))))
+      | E_COMMENT ->
+        (let ia = eskip l s n i in
+          (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+                ia n
+            then (match
+                   elex_step s b ia
+                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                       s ia)
+                     l
+                   with R_SAME ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       l p sp acc
+                   | R_NEXT la ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       la p sp acc
+                   | R_TOK (t, tp, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la pa (start tp pa sp) acca)
+                   | R_TOK2 (t, tp, ta, tpa, la) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                      let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca
+                        in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         la paa (start tpa paa (start tp pa sp)) accb)
+                   | R_TOK_ERR (t, tp) ->
+                     (let (acca, pa) = efeed k t tp p sp acc in
+                       floop k s n b
+                         ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                           ia)
+                         E_INIT None sp
+                         (echar_err
+                           ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                             b ia)
+                           ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                             s ia)
+                           pa acca))
+                   | R_ERR ->
+                     floop k s n b
+                       ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                         ia)
+                       E_INIT None sp
+                       (echar_err
+                         ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
+                           b ia)
+                         ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                           s ia)
+                         p acc))
+            else (acc, (l, (p, sp))))));;
 
 let einit : Z.t * (elstate * (string fpstate option * Z.t))
   = (Z.zero, (E_INIT, (Some F_INIT, Z.zero)));;
 
-let rec elex_init
-  pos i c =
-    (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
-          ((('\065' : char) <= c) && ((c : char) <= '\090') ||
-            ((('\097' : char) <= c) && ((c : char) <= '\122') ||
-              (((c : char) = '\095') ||
-                (((c : char) = '\091') ||
-                  (((c : char) = '\093') ||
-                    (((c : char) = '\047') ||
-                      (((c : char) = '\058') ||
-                        (((c : char) = '\045') ||
-                          (((c : char) = '\046') ||
-                            ((c : char) = '\033'))))))))))
-      then R_NEXT (E_SIMPLE ([], i, pos))
-      else (if ((c : char) = '\032') ||
-                 (((c : char) = '\009') ||
-                   (((c : char) = '\010') || ((c : char) = '\013')))
-             then R_NEXT E_INIT
-             else (if ((c : char) = '\064') then R_TOK (T_AT, pos, E_INIT)
-                    else (if ((c : char) = '\040')
-                           then R_TOK (T_LPAREN, pos, E_INIT)
-                           else (if ((c : char) = '\041')
-                                  then R_TOK (T_RPAREN, pos, E_INIT)
-                                  else (if ((c : char) = '\060')
- then R_TOK (T_LANGLE, pos, E_INIT)
- else (if ((c : char) = '\062') then R_TOK (T_RANGLE, pos, E_INIT)
-        else (if ((c : char) = '\123') then R_TOK (T_LBRACE, pos, E_INIT)
-               else (if ((c : char) = '\125') then R_TOK (T_RBRACE, pos, E_INIT)
-                      else (if ((c : char) = '\044')
-                             then R_TOK (T_COMMA, pos, E_INIT)
-                             else (if ((c : char) = '\059')
-                                    then R_TOK (T_SEMICOLON, pos, E_INIT)
-                                    else (if ((c : char) = '\035')
-   then R_NEXT E_COMMENT
-   else (if ((c : char) = '\034')
-          then R_NEXT
-                 (E_QUOTED
-                   ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                          i,
-                     pos))
-          else R_ERR)))))))))))));;
-
-let rec close_tok
-  t tp r =
-    (match r with R_SAME -> R_TOK_ERR (t, tp) | R_NEXT a -> R_TOK (t, tp, a)
-      | R_TOK (a, b, c) -> R_TOK2 (t, tp, a, b, c)
-      | R_TOK2 (_, _, _, _, _) -> R_TOK_ERR (t, tp)
-      | R_TOK_ERR (_, _) -> R_TOK_ERR (t, tp) | R_ERR -> R_TOK_ERR (t, tp));;
-
-let rec mk_str
-  pre s st i =
-    (match pre
-      with [] ->
-        (fun s i j -> let n = String.length s in
-      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
-        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
-      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
-      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
-        let l = Z.sub j i in
-        if Z.sign l <= 0 || a >= n then ""
-        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
-          s st i
-      | _ :: _ ->
-        (String.concat "" (rev ((fun s i j -> let n = String.length s in
-      if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && 0 <= (Obj.magic i : Stdlib.Int.t)
-        && (Obj.magic i : Stdlib.Int.t) <= (Obj.magic j : Stdlib.Int.t) && (Obj.magic j : Stdlib.Int.t) <= n
-      then String.sub s (Obj.magic i : Stdlib.Int.t) ((Obj.magic j : Stdlib.Int.t) - (Obj.magic i : Stdlib.Int.t))
-      else (let a = if Z.sign i <= 0 then 0 else if Z.lt i (Z.of_int n) then Z.to_int i else n in
-        let l = Z.sub j i in
-        if Z.sign l <= 0 || a >= n then ""
-        else String.sub s a (if Z.lt l (Z.of_int (n - a)) then Z.to_int l else n - a)))
-                                  s st i ::
-                                 pre))));;
-
-let rec elex_step
-  s b i c l =
-    (match l
-      with E_INIT ->
-        (if ((c : char) = '\032') ||
-              (((c : char) = '\009') ||
-                (((c : char) = '\010') || ((c : char) = '\013')))
-          then R_SAME
-          else elex_init
-                 ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
-                   b i)
-                 i c)
-      | E_SIMPLE (pre, st, tp) ->
-        (if (('\048' : char) <= c) && ((c : char) <= '\057') ||
-              ((('\065' : char) <= c) && ((c : char) <= '\090') ||
-                ((('\097' : char) <= c) && ((c : char) <= '\122') ||
-                  (((c : char) = '\095') ||
-                    (((c : char) = '\091') ||
-                      (((c : char) = '\093') ||
-                        (((c : char) = '\047') ||
-                          (((c : char) = '\058') ||
-                            (((c : char) = '\045') ||
-                              (((c : char) = '\046') ||
-                                ((c : char) = '\033'))))))))))
-          then R_SAME
-          else (if ((c : char) = '\034') && is_r pre s st i
-                 then R_NEXT
-                        (E_QUOTED
-                          ([], (fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                                 i,
-                            tp))
-                 else close_tok (T_STR (mk_str pre s st i)) tp
-                        (elex_init
-                          ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
-                            b i)
-                          i c)))
-      | E_QUOTED (pre, st, tp) ->
-        (if ((c : char) = '\034')
-          then R_TOK (T_STR (mk_str pre s st i), tp, E_INIT)
-          else (if ((c : char) = '\092') then R_NEXT (E_ESCAPE (pre, st, tp))
-                 else R_SAME))
-      | E_ESCAPE (pre, st, tp) -> R_NEXT (E_QUOTED (pre, st, tp))
-      | E_COMMENT ->
-        (if ((c : char) = '\010') || ((c : char) = '\013') then R_NEXT E_INIT
-          else R_SAME));;
-
-let rec echar_err
-  pos c p acc =
-    (match p with None -> acc
-      | Some ps -> O_ERROR (pos, E_CHAR (expect_of ps, c)) :: acc);;
-
-let rec start
-  pos p sp =
-    (match p with None -> sp | Some F_INIT -> sp | Some F_TS -> pos
-      | Some (F_DB (_, _)) -> sp | Some (F_NAME (_, _, _)) -> sp
-      | Some (F_TUPLES (_, _, _)) -> sp | Some (F_FIELD1 (_, _, _)) -> sp
-      | Some (F_AFTER (_, _, _, _)) -> sp | Some (F_FIELDN (_, _, _, _)) -> sp
-      | Some (F_SKIP (_, _)) -> sp | Some (F_SFIELD1 (_, _)) -> sp
-      | Some (F_SAFTER (_, _)) -> sp | Some (F_SFIELDN (_, _)) -> sp
-      | Some F_CMD -> pos | Some (F_ARGS (_, _)) -> sp);;
-
-let rec eloop
-  k s n b i l p sp acc =
-    (let ia = eskip l s n i in
-      (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
-            ia n
-        then (match
-               elex_step s b ia
-                 ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
-      else if Z.sign i < 0 then 0 else Z.to_int i))
-                   s ia)
-                 l
-               with R_SAME ->
-                 eloop k s n b
-                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                     ia)
-                   l p sp acc
-               | R_NEXT la ->
-                 eloop k s n b
-                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                     ia)
-                   la p sp acc
-               | R_TOK (t, tp, la) ->
-                 (let (acca, pa) = efeed k t tp p sp acc in
-                   eloop k s n b
-                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                       ia)
-                     la pa (start tp pa sp) acca)
-               | R_TOK2 (t, tp, ta, tpa, la) ->
-                 (let (acca, pa) = efeed k t tp p sp acc in
-                  let (accb, paa) = efeed k ta tpa pa (start tp pa sp) acca in
-                   eloop k s n b
-                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                       ia)
-                     la paa (start tpa paa (start tp pa sp)) accb)
-               | R_TOK_ERR (t, tp) ->
-                 (let (acca, pa) = efeed k t tp p sp acc in
-                   eloop k s n b
-                     ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                       ia)
-                     E_INIT None sp
-                     (echar_err
-                       ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
-                         b ia)
-                       ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
-      else if Z.sign i < 0 then 0 else Z.to_int i))
-                         s ia)
-                       pa acca))
-               | R_ERR ->
-                 eloop k s n b
-                   ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
-                     ia)
-                   E_INIT None sp
-                   (echar_err
-                     ((fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) && (let a = (Obj.magic i : Stdlib.Int.t) and b = (Obj.magic j : Stdlib.Int.t) in let c = a + b in (c lxor a) land (c lxor b) >= 0) then Z.of_int ((Obj.magic i : Stdlib.Int.t) + (Obj.magic j : Stdlib.Int.t)) else Z.add i j)
-                       b ia)
-                     ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
-      else if Z.sign i < 0 then 0 else Z.to_int i))
-                       s ia)
-                     p acc))
-        else (acc, (l, (p, sp)))));;
+let rec eloop k s n b i l p sp acc = floop k s n b i l p sp acc;;
 
 let rec delete_aux _A
   k x1 = match k, x1 with k, [] -> []

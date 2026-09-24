@@ -194,7 +194,7 @@ qed
 
 text \<open>The loop scans before each step of the automaton.\<close>
 
-lemma eloop_code[code]:
+lemma eloop_code:
   "eloop k s n b i l p sp acc = (let i = eskip l s n i in if idx_less i n then (case elex_step s b i (bytes_at s i) l of
        R_SAME \<Rightarrow> eloop k s n b (idx_succ i) l p sp acc
      | R_NEXT l' \<Rightarrow> eloop k s n b (idx_succ i) l' p sp acc
@@ -256,7 +256,7 @@ lemma elex_step_code[code]: "elex_step s b i c l = (case l of
 lemma fold_O_ITEM: "fold (\<lambda>e acc. O_ITEM sp e # acc) es acc = rev (map (O_ITEM sp) es) @ acc"
   by (induction es arbitrary: acc) auto
 
-lemma efeed_code[code]: "efeed k t pos p sp acc = (case p of
+lemma efeed_code: "efeed k t pos p sp acc = (case p of
      None \<Rightarrow> (acc, resync t)
    | Some ps \<Rightarrow> (case fstep k t ps of
        None \<Rightarrow> (O_ERROR pos (E_TOKEN (expect_of ps) (Some t)) # acc, resync t)
@@ -300,6 +300,246 @@ lemma ddigits_code[code]: "ddigits s n i acc = (if idx_less i n then (let c = by
      else -1)
    else acc)"
   unfolding idx_less_def idx_succ_def by (subst ddigits.simps) (simp add: Let_def)
+
+subsection \<open>The loop with a fast path for simple strings\<close>
+
+text \<open>Most lexemes are simple strings followed by a delimiter. From the initial state, the loop
+  below scans such a string and handles the byte after it in one step, where @{const eloop} takes
+  a step for its first byte, scans the rest, and takes another step for the byte after it, which
+  it classifies again. It is proved equal to @{const eloop}.\<close>
+
+lemma eskip_ge: "i \<le> eskip l s n i"
+  by (induction l s n i rule: eskip.induct) (subst eskip.simps, force)
+
+lemma eskip_stop: "eskip l s n i < n \<Longrightarrow> \<not> skips l (bytes_at s (eskip l s n i))"
+proof (induction l s n i rule: eskip.induct)
+  case (1 l s n i)
+  show ?case
+  proof (cases "i < n \<and> skips l (bytes_at s i)")
+    case True
+    then have "eskip l s n i = eskip l s n (i + 1)"
+      by (subst eskip.simps) simp
+    with 1 True show ?thesis
+      by simp
+  next
+    case False
+    then have "eskip l s n i = i"
+      using False by (subst eskip.simps) auto
+    with 1(2) False show ?thesis
+      by simp
+  qed
+qed
+
+lemma measure_succ_less:
+  "i \<le> j \<Longrightarrow> j < n \<Longrightarrow> nat_of_integer (n - (j + 1)) < nat_of_integer (n - i)"
+  "i \<le> j0 \<Longrightarrow> j0 + 1 \<le> j \<Longrightarrow> j < n \<Longrightarrow> nat_of_integer (n - (j + 1)) < nat_of_integer (n - i)"
+  for i j0 j n :: integer
+  by (simp_all add: integer_simps)
+
+lemma eskip_ge': "i \<le> j \<Longrightarrow> i \<le> eskip l s n j"
+  using eskip_ge order_trans by blast
+
+lemma le_succ: "(i :: integer) \<le> j \<Longrightarrow> i \<le> j + 1"
+  by simp
+abbreviation simple_c :: "char \<Rightarrow> bool" where
+  "simple_c c \<equiv> CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' \<or> CHR ''a'' \<le> c \<and> c \<le> CHR ''z'' \<or> CHR ''A'' \<le> c \<and> c \<le> CHR ''Z'' \<or>
+     c = CHR ''_'' \<or> c = CHR ''['' \<or> c = CHR '']'' \<or> c = CHR ''/'' \<or> c = CHR '':'' \<or> c = CHR ''-'' \<or>
+     c = CHR ''.'' \<or> c = CHR ''!''"
+
+function floop :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> elstate \<Rightarrow> bytes fpstate option \<Rightarrow>
+  integer \<Rightarrow> out list \<Rightarrow> out list \<times> elstate \<times> bytes fpstate option \<times> integer" where
+  "floop k s n b i l p sp acc = (case l of
+     E_INIT \<Rightarrow> (let i = eskip E_INIT s n i in
+       if idx_less i n then (let c = bytes_at s i in
+         if simple_c c then (let j = eskip (E_SIMPLE [] i (idx_add b i)) s n (idx_succ i); tp = idx_add b i in
+           if idx_less j n then (let c' = bytes_at s j in
+             if c' = CHR 0x22 \<and> is_r [] s i j then floop k s n b (idx_succ j) (E_QUOTED [] (idx_succ j) tp) p sp acc
+             else (let t = T_STR (bytes_sub s i j) in case elex_init (idx_add b j) j c' of
+                 R_NEXT l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+                   floop k s n b (idx_succ j) l' p' (start tp p' sp) acc')
+               | R_TOK t' tp' l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+                   case efeed k t' tp' p' (start tp p' sp) acc' of (acc'', p'') \<Rightarrow>
+                     floop k s n b (idx_succ j) l' p'' (start tp' p'' (start tp p' sp)) acc'')
+               | _ \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+                   floop k s n b (idx_succ j) E_INIT None sp (echar_err (idx_add b j) c' p' acc'))))
+           else (acc, E_SIMPLE [] i tp, p, sp))
+         else (case elex_init (idx_add b i) i c of
+             R_NEXT l' \<Rightarrow> floop k s n b (idx_succ i) l' p sp acc
+           | R_TOK t tp l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+               floop k s n b (idx_succ i) l' p' (start tp p' sp) acc')
+           | _ \<Rightarrow> floop k s n b (idx_succ i) E_INIT None sp (echar_err (idx_add b i) c p acc)))
+       else (acc, E_INIT, p, sp))
+   | _ \<Rightarrow> (let i = eskip l s n i in if idx_less i n then (case elex_step s b i (bytes_at s i) l of
+       R_SAME \<Rightarrow> floop k s n b (idx_succ i) l p sp acc
+     | R_NEXT l' \<Rightarrow> floop k s n b (idx_succ i) l' p sp acc
+     | R_TOK t tp l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow> floop k s n b (idx_succ i) l' p' (start tp p' sp) acc')
+     | R_TOK2 t tp t' tp' l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+         case efeed k t' tp' p' (start tp p' sp) acc' of (acc'', p'') \<Rightarrow>
+           floop k s n b (idx_succ i) l' p'' (start tp' p'' (start tp p' sp)) acc'')
+     | R_TOK_ERR t tp \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+         floop k s n b (idx_succ i) E_INIT None sp (echar_err (idx_add b i) (bytes_at s i) p' acc'))
+     | R_ERR \<Rightarrow> floop k s n b (idx_succ i) E_INIT None sp (echar_err (idx_add b i) (bytes_at s i) p acc))
+   else (acc, l, p, sp)))"
+  by pat_completeness auto
+termination
+  apply (relation "measure (\<lambda>(k, s, n, b, i, l, p, sp, acc). nat_of_integer (n - i))")
+  apply (simp_all add: idx_less_def idx_succ_def)
+  apply ((rule measure_succ_less(1); (assumption | intro eskip_ge' le_succ order_refl)))+
+  done
+
+declare floop.simps[simp del]
+
+lemma simple_c_isSimpleChar: "simple_c c \<longleftrightarrow> isSimpleChar c"
+  by (auto simp: isSimpleChar_def)
+
+lemma elex_init_simple: "isSimpleChar c \<Longrightarrow> elex_init pos i c = R_NEXT (E_SIMPLE [] i pos)"
+  by (simp add: elex_init_def simple_not_special)
+
+lemma floop_eloop: "floop k s n b i l p sp acc = eloop k s n b i l p sp acc"
+proof (induction "nat_of_integer (n - i)" arbitrary: i l p sp acc rule: less_induct)
+  case less
+  have IH: "floop k s n b (idx_succ j) l' p' sp' acc' = eloop k s n b (idx_succ j) l' p' sp' acc'"
+    if "i \<le> j" "j < n" for j l' p' sp' acc'
+    using less measure_succ_less(1)[OF that(1,2)] by (simp add: idx_succ_def)
+  let ?i = "eskip l s n i"
+  have ge: "i \<le> ?i"
+    by (rule eskip_ge)
+  show ?case
+  proof (cases "l = E_INIT")
+    case False
+    show ?thesis
+      unfolding eloop_code[of k s n b i l]
+      by (subst floop.simps) (use False in \<open>cases l; auto simp: IH eskip_ge Let_def idx_less_def split: eres.splits prod.splits\<close>)
+  next
+    case l: True
+    let ?i = "eskip E_INIT s n i"
+    show ?thesis
+    proof (cases "?i < n")
+      case False
+      then show ?thesis
+        unfolding l eloop_code[of k s n b i E_INIT]
+        by (subst floop.simps) (simp add: Let_def idx_less_def)
+    next
+      case i: True
+      let ?c = "bytes_at s ?i"
+      have nw: "\<not> isWhiteSpace ?c"
+        using eskip_stop[of E_INIT s n i] i by (simp add: skips_def)
+      have step: "elex_step s b ?i ?c E_INIT = elex_init (idx_add b ?i) ?i ?c"
+        using nw by (simp add: elex_step_def isWhiteSpace_def idx_add_def)
+      show ?thesis
+      proof (cases "simple_c ?c")
+        case False
+        have F: "floop k s n b i E_INIT p sp acc = (case elex_init (idx_add b ?i) ?i ?c of
+             R_NEXT l' \<Rightarrow> floop k s n b (idx_succ ?i) l' p sp acc
+           | R_TOK t tp l' \<Rightarrow> (case efeed k t tp p sp acc of (acc', p') \<Rightarrow>
+               floop k s n b (idx_succ ?i) l' p' (start tp p' sp) acc')
+           | _ \<Rightarrow> floop k s n b (idx_succ ?i) E_INIT None sp (echar_err (idx_add b ?i) ?c p acc))"
+          by (subst floop.simps) (simp only: Let_def idx_less_def i False if_True if_False elstate.case)
+        show ?thesis
+          unfolding l F eloop_code[of k s n b i E_INIT]
+          using i step elex_init_cases[of "idx_add b ?i" ?i ?c]
+          by (auto simp: Let_def idx_less_def IH eskip_ge split: prod.splits)
+      next
+        case sc: True
+        let ?tp = "idx_add b ?i"
+        let ?j = "eskip (E_SIMPLE [] ?i ?tp) s n (idx_succ ?i)"
+        have "i \<le> ?i" "idx_succ ?i \<le> ?j"
+          by (rule eskip_ge)+
+        then have ij: "i \<le> ?j"
+          by (simp add: idx_succ_def)
+        have IH': "floop k s n b (j + 1) l' p' sp' acc' = eloop k s n b (j + 1) l' p' sp' acc'"
+          if "i \<le> j" "j < n" for j l' p' sp' acc'
+          using IH[OF that] by (simp add: idx_succ_def)
+        have "elex_step s b ?i ?c E_INIT = R_NEXT (E_SIMPLE [] ?i ?tp)"
+          using step elex_init_simple sc simple_c_isSimpleChar by simp
+        then have E1: "eloop k s n b i E_INIT p sp acc = eloop k s n b ?j (E_SIMPLE [] ?i ?tp) p sp acc"
+          using i by (simp add: eloop_code[of k s n b i E_INIT] Let_def idx_less_def eloop_eskip[of k s n b "idx_succ ?i"])
+        show ?thesis
+        proof (cases "?j < n")
+          case False
+          have F: "floop k s n b i E_INIT p sp acc = (acc, E_SIMPLE [] ?i ?tp, p, sp)"
+            by (subst floop.simps) (simp only: Let_def idx_less_def i False sc if_True if_False elstate.case)
+          show ?thesis
+            unfolding l F E1 using False by (subst eloop.simps) simp
+        next
+          case j: True
+          let ?c' = "bytes_at s ?j"
+          have ns: "\<not> isSimpleChar ?c'"
+            using eskip_stop[of "E_SIMPLE [] ?i ?tp" s n "idx_succ ?i"] j by (simp add: skips_def)
+          have F: "floop k s n b i E_INIT p sp acc = (if ?c' = CHR 0x22 \<and> is_r [] s ?i ?j
+              then floop k s n b (idx_succ ?j) (E_QUOTED [] (idx_succ ?j) ?tp) p sp acc
+              else (case elex_init (idx_add b ?j) ?j ?c' of
+                 R_NEXT l' \<Rightarrow> (case efeed k (T_STR (bytes_sub s ?i ?j)) ?tp p sp acc of (acc', p') \<Rightarrow>
+                   floop k s n b (idx_succ ?j) l' p' (start ?tp p' sp) acc')
+               | R_TOK t' tp' l' \<Rightarrow> (case efeed k (T_STR (bytes_sub s ?i ?j)) ?tp p sp acc of (acc', p') \<Rightarrow>
+                   case efeed k t' tp' p' (start ?tp p' sp) acc' of (acc'', p'') \<Rightarrow>
+                     floop k s n b (idx_succ ?j) l' p'' (start tp' p'' (start ?tp p' sp)) acc'')
+               | _ \<Rightarrow> (case efeed k (T_STR (bytes_sub s ?i ?j)) ?tp p sp acc of (acc', p') \<Rightarrow>
+                   floop k s n b (idx_succ ?j) E_INIT None sp (echar_err (idx_add b ?j) ?c' p' acc'))))"
+            by (subst floop.simps) (simp only: Let_def idx_less_def i j sc if_True if_False elstate.case)
+          show ?thesis
+            unfolding l F E1
+            using ns ij j elex_init_cases[of "idx_add b ?j" ?j ?c']
+            by (subst eloop.simps) (auto simp: elex_step_def close_tok_def mk_str_def idx_succ_def idx_add_def IH'
+                split: prod.splits)
+        qed      qed
+    qed
+  qed
+qed
+
+text \<open>The step of the parser, with the transitions that output no item taken directly rather than
+  through the result of @{const fstep}.\<close>
+
+definition efeed_s :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes token \<Rightarrow> integer \<Rightarrow> bytes fpstate \<Rightarrow> integer \<Rightarrow> out list \<Rightarrow>
+  out list \<times> bytes fpstate option" where
+  "efeed_s k t pos ps sp acc = efeed k t pos (Some ps) sp acc"
+
+lemma efeed_s_code[code]: "efeed_s k t pos ps sp acc = (case fstep k t ps of
+     None \<Rightarrow> (O_ERROR pos (E_TOKEN (expect_of ps) (Some t)) # acc, resync t)
+   | Some (es, ps') \<Rightarrow> (fold (\<lambda>e acc. O_ITEM sp e # acc) es acc, Some ps'))"
+  by (simp add: efeed_s_def efeed_code)
+
+lemma efeed_fast[code]: "efeed k t pos p sp acc = (case p of
+     None \<Rightarrow> (acc, resync t)
+   | Some ps \<Rightarrow> (case ps of
+       F_INIT \<Rightarrow> (case t of T_AT \<Rightarrow> (acc, Some F_TS) | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_TS \<Rightarrow> (case t of T_STR ts \<Rightarrow> (acc, Some (F_DB ts [])) | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_DB ts evs \<Rightarrow> (case t of T_STR q \<Rightarrow> (acc, Some (fname k ts evs q)) | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_NAME ts evs q \<Rightarrow> (case t of
+         T_LPAREN \<Rightarrow> (acc, Some (F_FIELD1 ts evs q))
+       | T_STR r \<Rightarrow> (acc, Some (fname k ts ((q, []) # evs) r))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_TUPLES ts evs q \<Rightarrow> (case t of
+         T_STR r \<Rightarrow> (acc, Some (fname k ts evs r))
+       | T_LPAREN \<Rightarrow> (acc, Some (F_FIELD1 ts evs q))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_FIELD1 ts evs q \<Rightarrow> (case t of
+         T_STR f \<Rightarrow> (acc, Some (F_AFTER ts evs q [f]))
+       | T_RPAREN \<Rightarrow> (acc, Some (F_TUPLES ts ((q, []) # evs) q))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_AFTER ts evs q fs \<Rightarrow> (case t of
+         T_COMMA \<Rightarrow> (acc, Some (F_FIELDN ts evs q fs))
+       | T_RPAREN \<Rightarrow> (acc, Some (F_TUPLES ts ((q, rev fs) # evs) q))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_FIELDN ts evs q fs \<Rightarrow> (case t of T_STR f \<Rightarrow> (acc, Some (F_AFTER ts evs q (f # fs))) | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_SKIP ts evs \<Rightarrow> (case t of
+         T_STR r \<Rightarrow> (acc, Some (fname k ts evs r))
+       | T_LPAREN \<Rightarrow> (acc, Some (F_SFIELD1 ts evs))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_SFIELD1 ts evs \<Rightarrow> (case t of
+         T_STR f \<Rightarrow> (acc, Some (F_SAFTER ts evs))
+       | T_RPAREN \<Rightarrow> (acc, Some (F_SKIP ts evs))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_SAFTER ts evs \<Rightarrow> (case t of
+         T_COMMA \<Rightarrow> (acc, Some (F_SFIELDN ts evs))
+       | T_RPAREN \<Rightarrow> (acc, Some (F_SKIP ts evs))
+       | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | F_SFIELDN ts evs \<Rightarrow> (case t of T_STR f \<Rightarrow> (acc, Some (F_SAFTER ts evs)) | _ \<Rightarrow> efeed_s k t pos ps sp acc)
+     | _ \<Rightarrow> efeed_s k t pos ps sp acc))"
+  by (cases p) (auto simp: efeed_s_def efeed_def split: fpstate.splits token.splits)
+
+lemma eloop_floop[code]: "eloop k s n b i l p sp acc = floop k s n b i l p sp acc"
+  by (rule floop_eloop[symmetric])
 
 (*<*)
 end
