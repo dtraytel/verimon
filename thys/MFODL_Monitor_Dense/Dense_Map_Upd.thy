@@ -55,6 +55,32 @@ proof (induct F k t rule: rbt_comp_ins_lk.induct)
     by (auto split: order.splits prod.splits option.splits)
 qed (auto split: order.splits prod.splits option.splits)
 
+text \<open>The same descent, returning the new value as well, for a caller that reads it.\<close>
+
+fun rbt_comp_ins_lk2 :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarrow> ('a, 'b) rbt \<Rightarrow> 'b option \<times> 'b \<times> ('a, 'b) rbt"
+  where
+  "rbt_comp_ins_lk2 F k RBT_Impl.Empty =
+     (let nv = F None in (None, nv, Branch RBT_Impl.R RBT_Impl.Empty k nv RBT_Impl.Empty))"
+| "rbt_comp_ins_lk2 F k (Branch RBT_Impl.B l x y r) = (case c k x of
+     Lt \<Rightarrow> (case rbt_comp_ins_lk2 F k l of
+       (None, nv, l') \<Rightarrow> (None, nv, balance l' x y r) | (ov, nv, l') \<Rightarrow> (ov, nv, Branch RBT_Impl.B l' x y r))
+   | Gt \<Rightarrow> (case rbt_comp_ins_lk2 F k r of
+       (None, nv, r') \<Rightarrow> (None, nv, balance l x y r') | (ov, nv, r') \<Rightarrow> (ov, nv, Branch RBT_Impl.B l x y r'))
+   | Eq \<Rightarrow> (let nv = F (Some y) in (Some y, nv, Branch RBT_Impl.B l x nv r)))"
+| "rbt_comp_ins_lk2 F k (Branch RBT_Impl.R l x y r) = (case c k x of
+     Lt \<Rightarrow> (case rbt_comp_ins_lk2 F k l of (ov, nv, l') \<Rightarrow> (ov, nv, Branch RBT_Impl.R l' x y r))
+   | Gt \<Rightarrow> (case rbt_comp_ins_lk2 F k r of (ov, nv, r') \<Rightarrow> (ov, nv, Branch RBT_Impl.R l x y r'))
+   | Eq \<Rightarrow> (let nv = F (Some y) in (Some y, nv, Branch RBT_Impl.R l x nv r)))"
+
+lemma rbt_comp_ins_lk2: "rbt_comp_ins_lk2 F k t =
+    (case rbt_comp_ins_lk F k t of (ov, t') \<Rightarrow> (ov, F ov, t'))"
+proof (induct F k t rule: rbt_comp_ins_lk2.induct)
+  case (2 F k l x y r)
+  then show ?case
+    using fst_rbt_comp_ins_lk[of F k l] fst_rbt_comp_ins_lk[of F k r]
+    by (auto simp: Let_def split: order.splits prod.splits option.splits)
+qed (auto simp: Let_def split: order.splits prod.splits option.splits)
+
 end
 
 subsection \<open>On the lifted trees\<close>
@@ -77,7 +103,18 @@ lift_definition (code_dt) upd_lk :: "'a :: ccompare \<Rightarrow> ('b option \<R
   by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare is_rbt_rbt_comp_map_entry
       simp: paint_rbt_comp_ins rbt_comp_insert[OF ID_ccompare'] split: option.splits)
 
+lift_definition (code_dt) upd_lk2 :: "'a :: ccompare \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping_rbt \<Rightarrow>
+    'b option \<times> 'b \<times> ('a, 'b) mapping_rbt" is
+  "\<lambda>k F t. case rbt_comp_ins_lk2 ccomp F k t of
+     (None, nv, t') \<Rightarrow> (None, nv, paint RBT_Impl.B t') | (Some v, nv, t') \<Rightarrow> (Some v, nv, t')"
+  unfolding rbt_comp_ins_lk2 rbt_comp_ins_lk prod.case
+  by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare is_rbt_rbt_comp_map_entry
+      simp: paint_rbt_comp_ins rbt_comp_insert[OF ID_ccompare'] split: option.splits)
+
 declare [[typedef_overloaded = false]]
+
+lemma upd_lk2_eq: "upd_lk2 k F t = (case upd_lk k F t of (ov, t') \<Rightarrow> (ov, F ov, t'))"
+  by transfer (simp add: rbt_comp_ins_lk2 split: prod.splits option.splits)
 
 lemma upd_lk_eq: "upd_lk k F t = (RBT_Mapping2.lookup t k, case RBT_Mapping2.lookup t k of
     None \<Rightarrow> RBT_Mapping2.insert k (F None) t
@@ -100,6 +137,29 @@ lemma mupd_code[code]:
     "mupd k F (Mapping f) = (Mapping.lookup (Mapping f) k, Mapping.update k (F (Mapping.lookup (Mapping f) k)) (Mapping f))"
   by (auto simp: mupd_def upd_lk_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
       fun_eq_iff split: option.splits)
+
+text \<open>The update that returns the new value too, computed once.\<close>
+
+definition mupd2 :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> 'b option \<times> 'b \<times> ('a, 'b) mapping"
+  where "mupd2 k F m = (case mupd k F m of (ov, m') \<Rightarrow> (ov, F ov, m'))"
+
+lemma mupd2_code[code]:
+  fixes t :: "('a :: ccompare, 'b) mapping_rbt"
+  shows "mupd2 k F (RBT_Mapping t) = (case ID CCOMPARE('a) of
+      None \<Rightarrow> Code.abort (STR ''mupd2 RBT_Mapping: ccompare = None'') (\<lambda>_. mupd2 k F (RBT_Mapping t))
+    | Some _ \<Rightarrow> (case upd_lk2 k F t of (ov, nv, t') \<Rightarrow> (ov, nv, RBT_Mapping t')))"
+    "mupd2 k F (Assoc_List_Mapping al) = (case mupd k F (Assoc_List_Mapping al) of (ov, m') \<Rightarrow> (ov, F ov, m'))"
+    "mupd2 k F (Mapping f) = (case mupd k F (Mapping f) of (ov, m') \<Rightarrow> (ov, F ov, m'))"
+proof -
+  show "mupd2 k F (RBT_Mapping t) = (case ID CCOMPARE('a) of
+      None \<Rightarrow> Code.abort (STR ''mupd2 RBT_Mapping: ccompare = None'') (\<lambda>_. mupd2 k F (RBT_Mapping t))
+    | Some _ \<Rightarrow> (case upd_lk2 k F t of (ov, nv, t') \<Rightarrow> (ov, nv, RBT_Mapping t')))"
+  proof (cases "ID CCOMPARE('a)")
+    case (Some c)
+    then show ?thesis
+      unfolding mupd2_def by (subst mupd_code(1)) (auto simp: upd_lk2_eq split: prod.splits)
+  qed simp
+qed (simp_all add: mupd2_def)
 
 subsection \<open>The updates of the count sets and of the aggregates\<close>
 
@@ -149,6 +209,25 @@ lemma gi_rank_mupd[code]:
      | _ \<Rightarrow> (False, Mapping.empty))
      else (v, m))"
   by (auto simp: mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
+
+text \<open>A deletion from a rank aggregate writes the shrunk multiset in the same descent, and
+  descends again only to delete a group whose multiset became empty.\<close>
+
+lemma gd_rank_mupd2[code]:
+  "gd_rank k ev ty t (v, m) = (if v then (case (ev t, ty) of
+       (EInt c, IntT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LInt s) \<Rightarrow> LInt (remove_treelist c s) | _ \<Rightarrow> LInt empty_treelist) m of
+          (Some (LInt _), nv, m') \<Rightarrow>
+            (True, if nv = LInt empty_treelist then Mapping.delete (drop k t) m else m')
+        | (Some (LString _), _, _) \<Rightarrow> (False, Mapping.empty) | (None, _, _) \<Rightarrow> (True, m))
+     | (EString c, StringT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LString s) \<Rightarrow> LString (remove_treelist c s) | _ \<Rightarrow> LString empty_treelist) m of
+          (Some (LString _), nv, m') \<Rightarrow>
+            (True, if nv = LString empty_treelist then Mapping.delete (drop k t) m else m')
+        | (Some (LInt _), _, _) \<Rightarrow> (False, Mapping.empty) | (None, _, _) \<Rightarrow> (True, m))
+     | _ \<Rightarrow> (False, Mapping.empty))
+     else (v, m))"
+  by (auto simp: mupd2_def mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
 
 subsection \<open>The tree union and difference at the short tuples' comparator\<close>
 
@@ -559,6 +638,15 @@ lemmas edl_rbtc_ins_lk_simps[code] = rbt_comp_ins_lk.simps[of edl_comparator, fo
 lemma edl_rbtc_ins_lk_unfold[code_unfold]: "rbt_comp_ins_lk edl_comparator = edl_rbtc_ins_lk"
   by (simp add: edl_rbtc_ins_lk_def)
 
+definition edl_rbtc_ins_lk2 :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>
+    (event_data list, 'v) rbt \<Rightarrow> 'v option \<times> 'v \<times> (event_data list, 'v) rbt" where
+  "edl_rbtc_ins_lk2 = rbt_comp_ins_lk2 edl_comparator"
+
+lemmas edl_rbtc_ins_lk2_simps[code] = rbt_comp_ins_lk2.simps[of edl_comparator, folded edl_rbtc_ins_lk2_def]
+
+lemma edl_rbtc_ins_lk2_unfold[code_unfold]: "rbt_comp_ins_lk2 edl_comparator = edl_rbtc_ins_lk2"
+  by (simp add: edl_rbtc_ins_lk2_def)
+
 definition edl_rbtc_del_lk :: "event_data list \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
     'v option \<times> (event_data list, 'v) rbt" where
   "edl_rbtc_del_lk = rbt_comp_del_lk edl_comparator"
@@ -591,6 +679,11 @@ setup \<open>Monomorphize.monomorphize_cmd
      edl_value_types)
   ["edl_dict_simps"]\<close>
 
+setup \<open>Monomorphize.monomorphize_cmd
+  [("Dense_Map_Upd.upd_lk2_aux", "edl_upd_lk2_aux_laux", [edl, "list_aux"]),
+   ("upd_lk2", "edl_upd_lk2_laux", [edl, "list_aux"]), ("mupd2", "edl_mupd2_laux", [edl, "list_aux"])]
+  ["edl_dict_simps"]\<close>
+
 subsection \<open>The result's upkeep, with the steps applied\<close>
 
 text \<open>The window's steps of @{theory MFODL_Monitor_Dense.Dense_Agg_Cache} pass the aggregate's
@@ -605,20 +698,82 @@ definition cstep_del :: "uconstr option \<Rightarrow> daggp \<Rightarrow> event_
     ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
   "cstep_del = cstep gstep_del"
 
+text \<open>The table is updated with the group's value before and after the step.  Read off the
+  mapping, these are two more descents per tuple; a rank aggregate's step returns both, the old
+  multiset read and the new one written by its one descent.\<close>
+
+definition rkval :: "ty Formula.agg_op \<Rightarrow> list_aux \<Rightarrow> event_data option" where
+  "rkval \<omega> l = (case fst \<omega> of
+       Formula.Agg_Min \<Rightarrow> Some (get_edata_list l 0)
+     | Formula.Agg_Max \<Rightarrow> Some (get_edata_list l (get_length l - 1))
+     | Formula.Agg_Med \<Rightarrow> Some (let u = get_length l; u' = u div 2;
+         aggval = (if even u
+           then (double_of_event_data_agg (get_edata_list l (u' - 1))
+                 + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2
+           else double_of_event_data_agg (get_edata_list l u'))
+         in EFloat aggval)
+     | _ \<Rightarrow> None)"
+
+lemma gval_GRank: "gval \<omega> (GRank m ty) g = (case Mapping.lookup m g of None \<Rightarrow> None | Some l \<Rightarrow> rkval \<omega> l)"
+  by (cases "fst \<omega>") (simp_all add: rkval_def split: option.splits)
+
+definition gstepv_ins :: "ty Formula.agg_op \<Rightarrow> nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Rightarrow> event_data list \<Rightarrow>
+    ugagg \<Rightarrow> (ugagg \<times> event_data option \<times> event_data option) option" where
+  "gstepv_ins \<omega> k ev t a = map_option (\<lambda>a'. (a', gval \<omega> a (drop k t), gval \<omega> a' (drop k t)))
+     (gstep_ins k ev t (Some a))"
+
+definition gstepv_del :: "ty Formula.agg_op \<Rightarrow> nat \<Rightarrow> (event_data list \<Rightarrow> event_data) \<Rightarrow> event_data list \<Rightarrow>
+    ugagg \<Rightarrow> (ugagg \<times> event_data option \<times> event_data option) option" where
+  "gstepv_del \<omega> k ev t a = map_option (\<lambda>a'. (a', gval \<omega> a (drop k t), gval \<omega> a' (drop k t)))
+     (gstep_del k ev t (Some a))"
+
+lemma gstepv_ins_code[code]: "gstepv_ins \<omega> k ev t a = (case a of
+    GRank m ty \<Rightarrow> (case (ev t, ty) of
+       (EInt c, IntT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LInt s) \<Rightarrow> LInt (insert_treelist c s)
+          | _ \<Rightarrow> LInt (insert_treelist c empty_treelist)) m of
+          (Some (LString _), _, _) \<Rightarrow> None
+        | (ov, nv, m') \<Rightarrow> Some (GRank m' ty, case ov of None \<Rightarrow> None | Some l \<Rightarrow> rkval \<omega> l, rkval \<omega> nv))
+     | (EString c, StringT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LString s) \<Rightarrow> LString (insert_treelist c s)
+          | _ \<Rightarrow> LString (insert_treelist c empty_treelist)) m of
+          (Some (LInt _), _, _) \<Rightarrow> None
+        | (ov, nv, m') \<Rightarrow> Some (GRank m' ty, case ov of None \<Rightarrow> None | Some l \<Rightarrow> rkval \<omega> l, rkval \<omega> nv))
+     | _ \<Rightarrow> None)
+  | _ \<Rightarrow> map_option (\<lambda>a'. (a', gval \<omega> a (drop k t), gval \<omega> a' (drop k t))) (gstep_ins k ev t (Some a)))"
+  by (auto simp: gstepv_ins_def gstep_ins_def gval_GRank mupd2_def mupd_def Let_def
+      simp del: gval.simps split: gagg.splits option.splits event_data.splits type.splits list_aux.splits)
+
+lemma gstepv_del_code[code]: "gstepv_del \<omega> k ev t a = (case a of
+    GRank m ty \<Rightarrow> (case (ev t, ty) of
+       (EInt c, IntT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LInt s) \<Rightarrow> LInt (remove_treelist c s) | _ \<Rightarrow> LInt empty_treelist) m of
+          (Some (LInt s), nv, m') \<Rightarrow> (if nv = LInt empty_treelist
+            then Some (GRank (Mapping.delete (drop k t) m) ty, rkval \<omega> (LInt s), None)
+            else Some (GRank m' ty, rkval \<omega> (LInt s), rkval \<omega> nv))
+        | (Some (LString _), _, _) \<Rightarrow> None | (None, _, _) \<Rightarrow> Some (a, None, None))
+     | (EString c, StringT) \<Rightarrow> (case mupd2 (drop k t) (\<lambda>ov. case ov of
+            Some (LString s) \<Rightarrow> LString (remove_treelist c s) | _ \<Rightarrow> LString empty_treelist) m of
+          (Some (LString s), nv, m') \<Rightarrow> (if nv = LString empty_treelist
+            then Some (GRank (Mapping.delete (drop k t) m) ty, rkval \<omega> (LString s), None)
+            else Some (GRank m' ty, rkval \<omega> (LString s), rkval \<omega> nv))
+        | (Some (LInt _), _, _) \<Rightarrow> None | (None, _, _) \<Rightarrow> Some (a, None, None))
+     | _ \<Rightarrow> None)
+  | _ \<Rightarrow> map_option (\<lambda>a'. (a', gval \<omega> a (drop k t), gval \<omega> a' (drop k t))) (gstep_del k ev t (Some a)))"
+  by (auto simp: gstepv_del_def gstep_del_def gval_GRank mupd2_def mupd_def Let_def
+      simp del: gval.simps split: gagg.splits option.splits event_data.splits type.splits list_aux.splits)
+
 lemma cstep_ins_code[code]: "cstep_ins q p t axC = (case axC of (ax, C) \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
      (case ax of None \<Rightarrow> (None, C)
-      | Some a \<Rightarrow> (case gstep_ins k (umeval_trm f) t (Some a) of None \<Rightarrow> (None, C)
-         | Some a' \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) (gval \<omega> a (drop k t))
-              (gval \<omega> a' (drop k t)) C)))))"
-  by (simp add: cstep_ins_def cstep_def)
+      | Some a \<Rightarrow> (case gstepv_ins \<omega> k (umeval_trm f) t a of None \<Rightarrow> (None, C)
+         | Some (a', ov, nv) \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) ov nv C)))))"
+  by (simp add: cstep_ins_def cstep_def gstepv_ins_def split: option.splits prod.splits)
 
 lemma cstep_del_code[code]: "cstep_del q p t axC = (case axC of (ax, C) \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
      (case ax of None \<Rightarrow> (None, C)
-      | Some a \<Rightarrow> (case gstep_del k (umeval_trm f) t (Some a) of None \<Rightarrow> (None, C)
-         | Some a' \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) (gval \<omega> a (drop k t))
-              (gval \<omega> a' (drop k t)) C)))))"
-  by (simp add: cstep_del_def cstep_def)
-
+      | Some a \<Rightarrow> (case gstepv_del \<omega> k (umeval_trm f) t a of None \<Rightarrow> (None, C)
+         | Some (a', ov, nv) \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) ov nv C)))))"
+  by (simp add: cstep_del_def cstep_def gstepv_del_def split: option.splits prod.splits)
 text \<open>The result table of a structure built afresh is the aggregate's result, as the read
   computes it without the table.\<close>
 
