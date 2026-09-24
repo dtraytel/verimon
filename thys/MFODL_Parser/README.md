@@ -24,7 +24,7 @@ introduction rule per production, with the semantic actions as values.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 16 minutes, most
+the inductive definitions of the relation; `MFODL_Parser` about 22 minutes, most
 of it in evaluating the LR tables and the static check), and neither needs to
 rerun unless the grammar changes.
 
@@ -98,13 +98,12 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-13 to 48 tokens), the verified parser takes 197 ms to 1.01 s per formula
-(median 397 ms), against 2 to 5 µs for MonPoly's parser; `monpoly -check` on
-`join-one` takes 0.34 s with `-verified_parser` and 0.02 s without. The suite's
-monitoring runs take 0.2 to 0.6 s, so the verified parser would about double
-them. The time is linear in the number of tokens, 18 to 23 ms per token, and
-goes almost entirely (99.7%) into the LR driver of the `grammar` package; the
-lexer takes 0.2 ms, post-processing and conversion less. Measured with
+13 to 48 tokens), the verified parser takes 1.4 to 7.0 ms per formula (median
+2.9 ms), against 2 to 5 µs for MonPoly's parser; `monpoly -check` on
+`join-one` takes 7 ms with `-verified_parser` and 5 ms without, so the parser
+is negligible next to the suite's monitoring runs (0.2 to 0.6 s). The time is
+linear in the number of tokens, 0.13 to 0.21 ms per token; 90% of it is the LR
+driver and 8% the lexer. Measured with
 
 ```
 parser_difftest -time FILE...
@@ -113,21 +112,15 @@ parser_difftest -time FILE...
 which prints, per formula, the CPU time of both parsers and that of the
 verified lexer, LR parser and the rest.
 
-Within the driver, 98% of a step is the closure of the new state
-(`xclosure_auto`), recomputed at every shift and reduction with its layout
-anchors: each round of the closure folds, for every one of the 211
-productions, over all slots of the state (the kernel and one predicted slot per
-production), rebuilding the slot list for every production and comparing
-nonterminal names as character lists. Only the slots whose next symbol is the
-production's left-hand side contribute. In an unverified experiment on the
-exported code, building the slot list once per round made the parser 1.9x
-faster, and folding each production over the slots of its own nonterminal only
-(bucketed by name) 15x (1.4 ms per token), with the same results on the test
-cases; after that, hashing and comparing names takes most of the time. Doing
-this in the `grammar` package (a code equation for `xround`) and replacing
-names by indices at run time would be the next steps. The grammar has no
-layout annotations, so a driver that precomputed the closures, or a plain
-table-driven LALR(1) driver, would suffice for it.
+The grammar has no layout annotations, so the `parser` command generates code
+for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
+of state indices of two precomputed LR(0) automata, proved to compute the same
+result as the package's general driver. The general driver computes the
+closure of every new state with its layout anchors at run time and was 100 to
+170 times slower on the suite (197 ms to 1.01 s per formula). Most of the
+remaining time is spent on list lookups in the tables and on comparing
+nonterminal names as character lists; replacing names by indices at run time
+would be the next step.
 
 `src/verified_parser.ml` is large (about 11 MB), mostly the LR tables, in which
 every nonterminal name is a list of characters.
