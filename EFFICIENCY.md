@@ -8715,3 +8715,45 @@ against 34 M are writes -- the fresh lines of the red-black trees' rebuilt paths
 of the window's count set allocates and MonPoly's hash tables update in place.  A code equation does
 not change that; a structure that allocates less per update would.  The corpus is unchanged (601 same, 141
 skipped, 0 differing) and `dune test` passes.
+
+## 21.38 `pol-threshold` and `aggonce-min50`/`max50`: the per-tuple descents
+
+On `pol-threshold` (`(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r`) the verified monitor executed
+5.56 G instructions against MonPoly's 5.09 G (1.09x), on `aggonce-min50` and `aggonce-max50` 8.8 G
+against 7.8 G (1.13x); the local wall-time ratios are 1.40 and 1.25.  Most of the node's work is per
+tuple: a tuple entering the window costs about 3 900 instructions and one leaving it about 5 000,
+because the window's count set is read and then written (a lookup, then a deletion or an update)
+and so is the aggregate's map from groups -- four descents of a red-black tree for a tuple leaving.
+And a key already in a tree, which is what the aggregate's map almost always holds, is updated by
+the insertion, which rebalances the path it rebuilds although the tree's shape does not change.
+
+`Dense_Map_Upd.thy` removes the extra descents:
+
+* `rbt_comp_del_lk` is the deletion returning the value it removed, in the deletion's one descent
+  (proved equal to the lookup and the deletion by induction along the deletion), lifted to the
+  trees with the red-black invariant (`del_lk`) and to the mappings (`mdel_lk`).  The count sets'
+  deletions (`ucnt_del1`, the window's `gcnt_del1` and the aggregate window's `cnt_del_fold`) go
+  through it: a tuple whose count is one, the common case, costs one descent, and a count above one
+  an update of the original map.
+* The aggregate's decrements (`gd_cnt`, `gd_sum`) read and write the group's entry by `mupd` of
+  21.35, one descent, and delete the group only when its last tuple leaves.
+* `rbt_comp_ins_lk` of 21.35 no longer rebalances when the key is present: it only replaces the
+  value, which is the tree's `map_entry` (`rbt_comp_ins_lk`: the result is the insertion for a new
+  key and `rbt_comp_map_entry` for a present one), so the lifted `upd_lk` keeps the invariant and
+  `mupd` the mapping.  This one needs the invariant, since the insertion recolours a black node with
+  two red children even when the key is present; the lifting supplies it.
+
+| formula (instructions) | before | after | MonPoly |
+|---|---|---|---|
+| `pol-threshold` | 5.558 G | 5.324 G (−4.2%) | 5.089 G |
+| `pol-sumfilter` | 8.082 G | 7.876 G (−2.5%) | 7.032 G |
+| `aggonce-min50` | 8.818 G | 8.680 G (−1.6%) | 7.782 G |
+| `aggonce-max50` | 8.873 G | 8.749 G (−1.4%) | 7.808 G |
+| `once-rate80` | 11.729 G | 11.530 G (−1.7%) | 11.334 G |
+| `until-nu20`, `since-nu5` | | −0.7%, −0.4% | |
+
+What is left on the aggregations over a past window is the result: at every time point the node
+builds its table of groups afresh, one insertion per group (20% of `aggonce-min50`, 10% of
+`pol-threshold`, where the constraint `40 < r` keeps few of them), while from one time point to the
+next only the groups the entering and leaving tuples touch can change -- and for MIN and MAX few of
+those do.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and `dune test` passes.
