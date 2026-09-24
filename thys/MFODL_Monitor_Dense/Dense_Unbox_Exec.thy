@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Unbox_Exec
-  imports Dense_Unbox_UAgg Dense_Descend_Code
+  imports Dense_Agg_Cache Dense_Descend_Code
 begin
 (*>*)
 
@@ -28,12 +28,12 @@ text \<open>The structure of a fused aggregating window carries the node's guard
   stands for does not have it at all -- there the constraint stays a filter over the node.\<close>
 
 datatype udsaux_x = UDSX_gen "event_data gmsaux" | UDSX_win "event_data gswaux"
-  | UDSX_wagg daggp "uconstr option" uswagg
+  | UDSX_wagg daggp "uconstr option" uswaggc
 
 fun rdsx :: "udsaux_x \<Rightarrow> dsaux_x" where
   "rdsx (UDSX_gen d) = DSX_gen (rmsaux d)"
 | "rdsx (UDSX_win w) = DSX_win (rsw w)"
-| "rdsx (UDSX_wagg p q a) = DSX_wagg p (rsa a)"
+| "rdsx (UDSX_wagg p q a) = DSX_wagg p (rsa (ucs a))"
 
 fun usx_q :: "udsaux_x \<Rightarrow> uconstr option" where
   "usx_q (UDSX_wagg p q a) = q"
@@ -44,27 +44,27 @@ definition udsx_init :: "args \<Rightarrow> bool list \<Rightarrow> udsaux_x" wh
      else UDSX_gen (ginit_msaux args msk))"
 
 definition udsx_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> uconstr option \<Rightarrow> udsaux_x" where
-  "udsx_init_agg args p q = UDSX_wagg p q (usa_init args p)"
+  "udsx_init_agg args p q = UDSX_wagg p q (usc_init args p q)"
 
 fun udsx_add_new_ts :: "args \<Rightarrow> ts \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_add_new_ts args nt (UDSX_gen d) = UDSX_gen (gadd_new_ts_msaux args nt d)"
 | "udsx_add_new_ts args nt (UDSX_win w) = UDSX_win (gsw_add_new_ts args nt w)"
-| "udsx_add_new_ts args nt (UDSX_wagg p q a) = UDSX_wagg p q (usa_add_new_ts args p nt a)"
+| "udsx_add_new_ts args nt (UDSX_wagg p q a) = UDSX_wagg p q (usc_add_new_ts args p q nt a)"
 
 fun udsx_join :: "args \<Rightarrow> utable \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_join args X (UDSX_gen d) = UDSX_gen (ggc_join_msaux args X d)"
 | "udsx_join args X (UDSX_win w) = UDSX_win (gsw_join args X w)"
-| "udsx_join args X (UDSX_wagg p q a) = UDSX_wagg p q (usa_join args p X a)"
+| "udsx_join args X (UDSX_wagg p q a) = UDSX_wagg p q (usc_join args p q X a)"
 
 fun udsx_add_new_table :: "args \<Rightarrow> utable \<Rightarrow> udsaux_x \<Rightarrow> udsaux_x" where
   "udsx_add_new_table args X (UDSX_gen d) = UDSX_gen (gadd_new_table_msaux args X d)"
 | "udsx_add_new_table args X (UDSX_win w) = UDSX_win (gsw_add_new_table args X w)"
-| "udsx_add_new_table args X (UDSX_wagg p q a) = UDSX_wagg p q (usa_add_new_table args p X a)"
+| "udsx_add_new_table args X (UDSX_wagg p q a) = UDSX_wagg p q (usc_add_new_table args p q X a)"
 
 fun udsx_result :: "args \<Rightarrow> udsaux_x \<Rightarrow> utable" where
   "udsx_result args (UDSX_gen d) = gresult_msaux args d"
 | "udsx_result args (UDSX_win w) = gsw_result args w"
-| "udsx_result args (UDSX_wagg p q a) = usa_result q args p a"
+| "udsx_result args (UDSX_wagg p q a) = usc_result q args p a"
 
 lemma usx_q_add_new_ts[simp]: "usx_q (udsx_add_new_ts args nt d) = usx_q d"
   by (cases d) simp_all
@@ -80,7 +80,7 @@ lemma dsx_init_rdsx: "dsx_init args msk = rdsx (udsx_init args msk)"
       ginit_msaux_rmsaux[symmetric] ginit_msaux_eq)
 
 lemma dsx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = dsx_init_agg args p"
-  by (simp add: dsx_init_agg_def udsx_init_agg_def sa_init_rsa)
+  by (simp add: dsx_init_agg_def udsx_init_agg_def sa_init_rsa usc_init_ucs)
 
 lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
   by (simp add: udsx_init_agg_def)
@@ -90,16 +90,16 @@ lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
 
 lemma dsx_add_new_ts_rdsx: "dsx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
   by (cases d) (simp_all add: gadd_new_ts_msaux_eq[symmetric] gadd_new_ts_msaux_rmsaux
-      gsw_add_new_ts_eq[symmetric] gsw_add_new_ts_rsw sa_add_new_ts_rsa)
+      gsw_add_new_ts_eq[symmetric] gsw_add_new_ts_rsw sa_add_new_ts_rsa usc_add_new_ts_ucs)
 
 lemma dsx_join_rdsx: "dsx_join args (reopt_table X) (rdsx d) = rdsx (udsx_join args X d)"
   by (cases d) (simp_all add: ggc_join_msaux_eq[symmetric] ggc_join_msaux_rmsaux
-      gsw_join_eq[symmetric] gsw_join_rsw sa_join_rsa)
+      gsw_join_eq[symmetric] gsw_join_rsw sa_join_rsa usc_join_ucs)
 
 lemma dsx_add_new_table_rdsx:
   "dsx_add_new_table args (reopt_table X) (rdsx d) = rdsx (udsx_add_new_table args X d)"
   by (cases d) (simp_all add: gadd_new_table_msaux_eq[symmetric] gadd_new_table_msaux_rmsaux
-      gsw_add_new_table_eq[symmetric] gsw_add_new_table_rsw sa_add_new_table_rsa)
+      gsw_add_new_table_eq[symmetric] gsw_add_new_table_rsw sa_add_new_table_rsa usc_add_new_table_ucs)
 
 text \<open>The boxed structure reports the node's whole result and the node filters it; the short
   one reports the filtered result straight away.\<close>
@@ -107,7 +107,7 @@ text \<open>The boxed structure reports the node's whole result and the node fil
 lemma dsx_result_rdsx:
   "usx_q d = q \<Longrightarrow> dfilt q (dsx_result args (rdsx d)) = reopt_table (udsx_result args d)"
   by (cases d) (simp_all add: gresult_msaux_eq[symmetric] gresult_msaux_rmsaux
-      gsw_result_eq[symmetric] gsw_result_rsw sa_result_rsa)
+      gsw_result_eq[symmetric] gsw_result_rsw sa_result_rsa usc_result_ucs)
 
 datatype uduaux_x = UDUX_gen "event_data gmuaux" | UDUX_win uuwaux | UDUX_wagg daggp uuwagg
 

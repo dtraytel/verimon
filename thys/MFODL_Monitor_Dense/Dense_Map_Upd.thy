@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Map_Upd
-  imports Dense_Agg_Upkeep
+  imports Dense_Agg_Code
 begin
 (*>*)
 
@@ -605,7 +605,9 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("gi_rank", "edl_gi_rank", ["event_data"]),
    ("gd_rank", "edl_gd_rank", ["event_data"]),
    ("gstep_ins", "edl_gstep_ins", ["event_data"]),
-   ("gstep_del", "edl_gstep_del", ["event_data"])]
+   ("gstep_del", "edl_gstep_del", ["event_data"]),
+   ("gval", "edl_gval", ["event_data"]),
+   ("gempty", "edl_gempty", ["event_data"])]
   ["edl_dict_simps"]\<close>
 
 (*<*)

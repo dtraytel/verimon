@@ -18,8 +18,8 @@ text \<open>
   The export is entirely within this session.  The code-generator setup it relies on -- the
   monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
   and @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, the rank trees of the aggregations of
-  @{theory MFODL_Monitor_Dense.Dense_Agg_Code} and their windows' one-pass upkeep of
-  @{theory MFODL_Monitor_Dense.Dense_Agg_Upkeep}, the red-black trees' rebalancing of
+  @{theory MFODL_Monitor_Dense.Dense_Agg_Code}, the one-descent updates of
+  @{theory MFODL_Monitor_Dense.Dense_Map_Upd}, the red-black trees' rebalancing of
   @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, and the front end's entry
   points -- is stated here too, so nothing of the imperative refinement of session
   MFODL\_Monitor\_Imp, and in particular nothing of its unverified heap-resident dense monitor,
