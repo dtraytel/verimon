@@ -353,8 +353,10 @@ proof -
     from Agg.prems Agg.hyps(1) have part1: "E' s = t_res agg_type t" by auto
     from Agg  have  aggenv: "\<forall>y\<in> Formula.fvi_trm (length tys) f. E y = E' y" by (auto simp: agg_env_def)
     from this have "\<forall>y\<in> Formula.fvi_trm 0 f. y\<ge> length tys \<longrightarrow>  E (y - length tys)  = E' (y - length tys) " by (meson fvi_trm_iff_fv_trm fvi_trm_minus fvi_trm_plus)
-    from this  Agg.hyps(2) have  "(\<lambda>z. if z < length tys then tys ! z else E' (z - length tys)) \<turnstile> f :: t" using wty_trm_fv_cong
-    by (smt (verit, del_insts) agg_env_def not_less) 
+    from this have "agg_env E tys \<turnstile> f :: t \<longleftrightarrow> (\<lambda>z. if z < length tys then tys ! z else E' (z - length tys)) \<turnstile> f :: t"
+      by (intro wty_trm_fv_cong) (simp add: agg_env_def)
+    with Agg.hyps(2) have "(\<lambda>z. if z < length tys then tys ! z else E' (z - length tys)) \<turnstile> f :: t"
+      by blast
   from this have part2: "agg_env E' tys \<turnstile> f :: t" by (auto simp add: agg_env_def)
 
     from Agg have  "\<forall>y\<in> Formula.fvi (length tys) \<phi>. E y = E' y" by auto
@@ -1422,7 +1424,7 @@ next
   from phidef Ands(6) have phi_IH: "S, E \<turnstile> \<phi> \<Longrightarrow>
     wty_envs S \<sigma> V \<Longrightarrow>
     sat' \<sigma> V v i \<phi> \<Longrightarrow> x \<in> fv \<phi> \<Longrightarrow> ty_of (v ! x) = E x"
-        using list_all2_iff by (smt (verit, ccfv_SIG) Ball_set_list_all)
+        unfolding list_all_iff by blast
       from Ands.prems(1) have  "\<forall>\<phi> \<in> set l. S, E \<turnstile> \<phi>" by cases
       from this phi_in_l have p1: "S, E \<turnstile> \<phi>"  by auto
       from phi_in_l Ands.prems(3) have p3: "sat' \<sigma> V v i \<phi>" by auto
@@ -1699,9 +1701,15 @@ proof -
 qed 
 
 lemma eval_agg_op_inst: "sat_inst.eval_agg_op' (\<omega>, d) M  = Formula.eval_agg_op (\<omega>, d) M"
-  apply (cases \<omega>) apply (auto simp:Let_def) apply(induction "flatten_multiset M")  apply(cases \<omega>) apply(auto split: list.splits) 
-    apply (smt (verit) foldl_cong min_def sat_inst.undef_min_def sat_inst.undef_min_def) 
-   apply(cases "finite_multiset M") apply(auto) by (metis (full_types) foldl_cong max_def sat_inst.undef_max_def)
+proof -
+  have undef_min_eq: "sat_inst.undef_min = min"
+    by (simp add: fun_eq_iff sat_inst.undef_min_def min_def)
+  have undef_max_eq: "sat_inst.undef_max = max"
+    by (simp add: fun_eq_iff sat_inst.undef_max_def max_def)
+  note inst_simps = sat_inst.eval_agg_op'.simps[unfolded undef_min_eq undef_max_eq]
+  show ?thesis
+    by (cases \<omega>) (simp_all only: inst_simps Formula.eval_agg_op.simps)
+qed
 
 lemma sat_inst_of_sat': "Formula.sat \<sigma> V v i \<phi> = sat_inst.sat' \<sigma> V v i \<phi>"
  apply (induction \<phi> arbitrary: v V i)  apply  (auto simp add: eval_trm_inst less_event_data_def sat_inst.undef_less_def  split: nat.splits)
@@ -3161,9 +3169,22 @@ proof -
     assume wf_f'': "wf_f (TCst \<circ> f'')" and wty: "(f'' \<circ> E) \<turnstile> t :: f'' type" 
     define g where "g = (\<lambda>t. if type = t then ty else f'' t)"
     have wf_g: "wf_f (TCst \<circ> g)" using wty[unfolded assms(2)] wf_f'' g_def by (auto simp add: wf_f_def)
+    have oldt: "oldt = type"
+      using min_consistent[OF t_def] min_const[OF t_def] by metis
+    have f_v: "f v = (if v = type then TCst ty else v)" for v
+      using fun_cong[OF f_def, of v] min_const[OF t_def] oldt by (simp add: update_env_def)
     have g1: "f'' t = (g \<circ> f) t" for t
-      using wty[unfolded assms(2)] f_def g_def[unfolded wty[unfolded assms(2), symmetric]]
-      by (auto simp add: update_env_def) (smt (verit, ccfv_threshold) comp_apply min_consistent t_def tysym.inject(3) wf_f'' wf_f_def)
+    proof (cases "type = t")
+      case True
+      have "f'' (TCst ty) = ty"
+        using wf_f'' by (simp add: wf_f_def)
+      with True wty[unfolded assms(2)] show ?thesis
+        by (simp add: g_def f_v)
+    next
+      case False
+      then show ?thesis
+        by (simp add: g_def f_v)
+    qed
     moreover have "f'' type = (g \<circ> f) type" using g1 by auto
     ultimately have "(\<exists>g. wf_f (TCst \<circ> g) \<and> f'' = (g \<circ> f))" using wf_g by force
   }
@@ -3189,7 +3210,7 @@ proof -
     obtain g where g_def: "wf_f (TCst \<circ> g)" "fa = g \<circ> f"
       using assms(2) fa_assm unfolding half_wty_trm_def by auto
     hence "g \<circ> (f \<circ> E) \<turnstile> t :: g (f type)" 
-      using fa_assm(2) by (smt (verit, best) comp_eq_dest_lhs image_subset_iff wty_trm_fv_cong)
+      using fa_assm(2) by (simp add: comp_assoc)
     then show "\<exists>g. wf_f (TCst \<circ> g) \<and> fa = g \<circ> (f' \<circ> f)"
       using assms(1) g_def unfolding wty_result_fX_trm_def by force
   next
@@ -3198,7 +3219,7 @@ proof -
     have "(g \<circ> f') \<circ> (f \<circ> E) \<turnstile> t :: (g \<circ> f') (f type)" 
       using assms(1) unfolding wty_result_fX_trm_def by (metis fa_assm(3) fun.map_comp wf_f_comp)
     then show "g \<circ> (f' \<circ> f) \<circ> E \<turnstile> t :: g (f' (f type))" 
-      using fa_assm by (smt (verit, best) comp_def image_subset_iff wty_trm_fv_cong)
+      by (simp add: comp_assoc)
   qed
 qed
      
@@ -3215,7 +3236,7 @@ proof -
     obtain g where g_def: "wf_f (TCst \<circ> g)" "f'' = g \<circ> f"  "f'' typ = (g \<circ> f) typ" 
       using assms(1) wf typed unfolding half_wty_trm_def by blast
     have "g \<circ> (f \<circ> E) \<turnstile> trm :: g (f typ)"
-      using typed g_def(2) by (smt (verit, ccfv_SIG) comp_apply g_def(3) image_subset_iff wty_trm_fv_cong)
+      using typed by (simp add: g_def(2) comp_assoc)
     hence "(\<exists>g. wf_f (TCst \<circ> g) \<and> f'' = (g \<circ> (f' \<circ> f)))"
       using g_def assms(2) unfolding half_wty_trm_def by force
   }
