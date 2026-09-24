@@ -148,7 +148,7 @@ fields of each event are checked after, one event after the other:
   l.log:2:1: Predicate S was not defined in the signature.
   [1]
   $ printf '@1 P(1)\n@2 P(1,2) S(1)\n' > l.log
-  $ monpoly -sig s.sig -formula p.mfotl -log l.log
+  $ monpoly -verified_log_parser -sig s.sig -formula p.mfotl -log l.log
   @1 (time point 0): (1)
   ERROR while parsing log:
   l.log:2:1: Predicate S was not defined in the signature.
@@ -163,7 +163,7 @@ with the predicate's declaration convert, as MonPoly's parser does:
   ERROR while parsing log:
   l.log:2:1: Expected type int for predicate P, field number 1
   [1]
-  $ monpoly -sig s.sig -formula p.mfotl -log l.log
+  $ monpoly -verified_log_parser -sig s.sig -formula p.mfotl -log l.log
   @1 (time point 0): (1)
   ERROR: Wrong type for predicate P: Expected type int for field number 1
   [1]

@@ -22,7 +22,12 @@
 
 module V = Verified.Monitor
 
-let old = ref false
+(* Which parser reads the log: MonPoly's hand-written one (Some true, -old_log_parser) or the
+   verified one (Some false, -verified_log_parser); by default, the verified one for the verified
+   monitor (-verified) and the hand-written one for MonPoly's monitor. *)
+let old : bool option ref = ref None
+
+let use_old () = match !old with Some b -> b | None -> not !Misc.verified
 
 (* Small chunks: the outputs of a chunk live until the chunk has been read, and on large chunks
    they survive minor collections.  (A reference, so that tests can vary it.) *)

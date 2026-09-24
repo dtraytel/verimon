@@ -1719,7 +1719,7 @@ module Monitor = struct
        (match params with
         | Some (Arguments args) ->
            (* MonPoly's former parser passes (at most two) arguments in reverse order *)
-           let args = if !Verified_log_parser.old then List.rev args else args in
+           let args = if Verified_log_parser.use_old () then List.rev args else args in
            print_stats (String.concat " " args) ctxt
         | _ ->
            prerr_endline "ERROR: Bad arguments for LATENCY command";
@@ -1749,13 +1749,13 @@ end
 module Old_parser = Log_parser.Make (Monitor)
 module Verified_parser = Verified_log_parser.Make (Monitor)
 
-(* The log parser: the verified one, or MonPoly's hand-written one with -old_log_parser. *)
+(* The log parser: MonPoly's hand-written one, or the verified one with -verified_log_parser. *)
 module Parser = struct
   let parse_string dbschema log ctxt =
-    if !Verified_log_parser.old then Old_parser.parse dbschema (Lexing.from_string log) ctxt
+    if Verified_log_parser.use_old () then Old_parser.parse dbschema (Lexing.from_string log) ctxt
     else Verified_parser.parse_string dbschema log ctxt
   let parse_file dbschema logfile ctxt =
-    if !Verified_log_parser.old then Old_parser.parse_file dbschema logfile ctxt
+    if Verified_log_parser.use_old () then Old_parser.parse_file dbschema logfile ctxt
     else Verified_parser.parse_file dbschema logfile ctxt
 end
 

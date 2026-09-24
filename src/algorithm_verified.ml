@@ -281,13 +281,13 @@ let run_verified dbschema fname read fv f =
 let chunk_size = ref 512
 
 let monitor_string dbschema log fv f =
-  if !Verified_log_parser.old then
+  if Verified_log_parser.use_old () then
     monitor_gen (fun dbschema log ctxt -> P.parse dbschema (Lexing.from_string log) ctxt) dbschema log fv f
   else
     run_verified dbschema "" (Verified_log_parser.string_reader ~size:!chunk_size log) fv f
 
 let monitor dbschema logfile fv f =
-  if !Verified_log_parser.old then
+  if Verified_log_parser.use_old () then
     monitor_gen (fun dbschema logfile ctxt -> P.parse_file dbschema logfile ctxt) dbschema logfile fv f
   else if logfile = "" then
     run_verified dbschema logfile (Verified_log_parser.channel_reader ~size:!chunk_size stdin) fv f

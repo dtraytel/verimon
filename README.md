@@ -117,7 +117,10 @@ The options are:
     -nonewlastts      Do not add a last maximal timestamp
     -nofilterrel      Disable filter_rel module
     -nofilteremptytp  Disable filter_empty_tp module
-    -old_log_parser   Read the log with MonPoly's former, hand-written parser
+    -old_log_parser   Read the log with MonPoly's hand-written parser (the default
+                      without -verified)
+    -verified_log_parser  Read the log with the verified parser (the default
+                      with -verified)
 ```
 
 
@@ -151,7 +154,8 @@ value 160.  If time units such as days or hours are used in the
 formula, then time is assumed to be Unix time.  MonPoly reads from
 stdin if no log file is specified with the switch `-log`.
 
-The log is read by a parser that is generated from its formalization in
+With `-verified`, and with `-verified_log_parser` also without it, the
+log is read by a parser that is generated from its formalization in
 Isabelle/HOL (session `Log_Parser` in `thys/Log_Parser`, exported into
 `src/verified.ml`).  Its correctness theorem states that it accepts exactly
 the logs of the grammar formalized there, and that it passes on their time
@@ -160,9 +164,10 @@ not before: a time point is held in memory until it has been read
 completely).  What it outputs after an error is not covered by the proofs.  What the grammar
 leaves open is done by the unverified driver `src/verified_log_parser.ml`:
 converting timestamps, looking predicates up in the signature, reading the
-parameters of commands, and locating errors by line and column.  With
-`-old_log_parser`, MonPoly's former hand-written parser is used instead;
-`tools/log_parser_diff.ml` compares the two.
+parameters of commands, and locating errors by line and column.  Without
+`-verified`, MonPoly's hand-written parser is used by default, and with
+`-old_log_parser` also with `-verified`; `tools/log_parser_diff.ml`
+compares the two.
 
 With `-verified`, more of this is verified (theory `Log_Monitor` in
 `thys/MFODL_Monitor_Dense`): the parser skips the events of the
