@@ -6757,13 +6757,13 @@ let rec edl_rbtc_ins_lk
         (match edl_comparator k x
           with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
           | Lt ->
-            (match edl_rbtc_ins_lk f k l
-              with (None, la) -> (None, balance la x y r)
-              | (Some a, la) -> (Some a, Branch (B, la, x, y, r)))
+            (let (ov, la) = edl_rbtc_ins_lk f k l in
+              (ov, (if is_none ov then balance la x y r
+                     else Branch (B, la, x, y, r))))
           | Gt ->
-            (match edl_rbtc_ins_lk f k r
-              with (None, ra) -> (None, balance l x y ra)
-              | (Some a, ra) -> (Some a, Branch (B, l, x, y, ra))))
+            (let (ov, ra) = edl_rbtc_ins_lk f k r in
+              (ov, (if is_none ov then balance l x y ra
+                     else Branch (B, l, x, y, ra)))))
     | f, k, Branch (R, l, x, y, r) ->
         (match edl_comparator k x
           with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
@@ -7244,13 +7244,13 @@ let rec rbt_comp_ins_lk
     | c, f, k, Branch (B, l, x, y, r) ->
         (match c k x with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
           | Lt ->
-            (match rbt_comp_ins_lk c f k l
-              with (None, la) -> (None, balance la x y r)
-              | (Some a, la) -> (Some a, Branch (B, la, x, y, r)))
+            (let (ov, la) = rbt_comp_ins_lk c f k l in
+              (ov, (if is_none ov then balance la x y r
+                     else Branch (B, la, x, y, r))))
           | Gt ->
-            (match rbt_comp_ins_lk c f k r
-              with (None, ra) -> (None, balance l x y ra)
-              | (Some a, ra) -> (Some a, Branch (B, l, x, y, ra))))
+            (let (ov, ra) = rbt_comp_ins_lk c f k r in
+              (ov, (if is_none ov then balance l x y ra
+                     else Branch (B, l, x, y, ra)))))
     | c, f, k, Branch (R, l, x, y, r) ->
         (match c k x with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
           | Lt ->
@@ -7444,14 +7444,13 @@ let rec edl_rbtc_ins_lk2
           with Eqa ->
             (let nv = f (Some y) in (Some y, (nv, Branch (B, l, x, nv, r))))
           | Lt ->
-            (match edl_rbtc_ins_lk2 f k l
-              with (None, (nv, la)) -> (None, (nv, balance la x y r))
-              | (Some aa, (nv, la)) -> (Some aa, (nv, Branch (B, la, x, y, r))))
+            (let (ov, (nv, la)) = edl_rbtc_ins_lk2 f k l in
+              (ov, (nv, (if is_none ov then balance la x y r
+                          else Branch (B, la, x, y, r)))))
           | Gt ->
-            (match edl_rbtc_ins_lk2 f k r
-              with (None, (nv, ra)) -> (None, (nv, balance l x y ra))
-              | (Some aa, (nv, ra)) ->
-                (Some aa, (nv, Branch (B, l, x, y, ra)))))
+            (let (ov, (nv, ra)) = edl_rbtc_ins_lk2 f k r in
+              (ov, (nv, (if is_none ov then balance l x y ra
+                          else Branch (B, l, x, y, ra))))))
     | f, k, Branch (R, l, x, y, r) ->
         (match edl_comparator k x
           with Eqa ->
@@ -7780,19 +7779,44 @@ let edl_mis_empty_nat_v : (((event_data list), nat) mapping -> bool) boxed
           ((ccompare_list ccompare_event_data), (equal_list equal_event_data))
           equal_nat);;
 
-let rec entriesa _A xa = entries (impl_ofa _A xa);;
+let rec ins_at
+  n v g =
+    (if equal_nata n zero_nata then v :: g
+      else (match g with [] -> [v]
+             | x :: xs -> x :: ins_at (minus_nata n one_nata) v xs));;
 
-let rec ugmr
+let rec tval
+  p g v t =
+    (match t
+      with Var i ->
+        (if equal_nata i p && less_eq_nat p (size_lista g) then v
+          else umeval_trm t (ins_at p v g))
+      | Const c -> c | Plus (_, _) -> umeval_trm t (ins_at p v g)
+      | Minus (_, _) -> umeval_trm t (ins_at p v g)
+      | UMinus _ -> umeval_trm t (ins_at p v g)
+      | Mult (_, _) -> umeval_trm t (ins_at p v g)
+      | Div (_, _) -> umeval_trm t (ins_at p v g)
+      | Mod (_, _) -> umeval_trm t (ins_at p v g)
+      | F2i _ -> umeval_trm t (ins_at p v g)
+      | I2f _ -> umeval_trm t (ins_at p v g));;
+
+let rec qval
+  q p g v =
+    (match q with None -> true
+      | Some (t1, (b, (mc, t2))) ->
+        equal_boola (eval_constraint0 mc (tval p g v t1) (tval p g v t2)) b);;
+
+let rec ugmr_q
   q p f (RBT_Mapping t) =
     (match ccompare_lista ccompare_event_data
       with None ->
-        failwith "ugmr RBT_Mapping: ccompare = None"
-          (fun _ -> ugmr q p f (RBT_Mapping t))
+        failwith "ugmr_q RBT_Mapping: ccompare = None"
+          (fun _ -> ugmr_q q p f (RBT_Mapping t))
       | Some _ ->
-        fold (fun e a ->
-               (let v = take p (fst e) @ f (snd e) :: drop p (fst e) in
-                 (if q v then edl_insert v a else a)))
-          (entriesa (ccompare_list ccompare_event_data) t) edl_bot);;
+        folda (fun g a aa ->
+                (let v = f a in
+                  (if qval q p g v then edl_insert (ins_at p v g) aa else aa)))
+          (impl_ofa (ccompare_list ccompare_event_data) t) edl_bot);;
 
 let rec aggreg_default_value
   op t =
@@ -7890,12 +7914,12 @@ let rec eval_agg_op
                     else double_of_event_data_agg (nth (a :: lista) ua)))
             | (_ :: _, false) -> y0));;
 
-let rec ugres
+let rec ugres_q
   q g0 omega p a =
     (match a
       with GCnt m ->
         (if g0 && unbox edl_mis_empty_nat_v m
-          then edl_filter q
+          then edl_filter (uqok q)
                  (edl_insert
                    [eval_agg_op omega
                       (set_empty
@@ -7904,10 +7928,10 @@ let rec ugres
                         (of_phantom
                           (set_impl_proda set_impl_event_data set_impl_enat)))]
                    edl_bot)
-          else ugmr q p (fun k -> EInt (integer_of_int (int_of_nat k))) m)
+          else ugmr_q q p (fun k -> EInt (integer_of_int (int_of_nat k))) m)
       | GSum m ->
         (if g0 && unbox edl_mis_empty_nsum_v m
-          then edl_filter q
+          then edl_filter (uqok q)
                  (edl_insert
                    [eval_agg_op omega
                       (set_empty
@@ -7918,9 +7942,9 @@ let rec ugres
                    edl_bot)
           else (match fst omega with Agg_Cnt -> edl_bot | Agg_Min -> edl_bot
                  | Agg_Max -> edl_bot
-                 | Agg_Sum -> ugmr q p (fun k -> EInt (snd k)) m
+                 | Agg_Sum -> ugmr_q q p (fun k -> EInt (snd k)) m
                  | Agg_Avg ->
-                   ugmr q p
+                   ugmr_q q p
                      (fun k ->
                        EFloat
                          (Stdlib.(/.) (double_of_event_data (EInt (snd k)))
@@ -7929,7 +7953,7 @@ let rec ugres
                  | Agg_Med -> edl_bot))
       | GRank (m, _) ->
         (if g0 && unbox edl_mis_empty_laux_v m
-          then edl_filter q
+          then edl_filter (uqok q)
                  (edl_insert
                    [eval_agg_op omega
                       (set_empty
@@ -7939,11 +7963,11 @@ let rec ugres
                           (set_impl_proda set_impl_event_data set_impl_enat)))]
                    edl_bot)
           else (match fst omega with Agg_Cnt -> edl_bot
-                 | Agg_Min -> ugmr q p get_edata_min m
-                 | Agg_Max -> ugmr q p get_edata_max m | Agg_Sum -> edl_bot
+                 | Agg_Min -> ugmr_q q p get_edata_min m
+                 | Agg_Max -> ugmr_q q p get_edata_max m | Agg_Sum -> edl_bot
                  | Agg_Avg -> edl_bot
                  | Agg_Med ->
-                   ugmr q p
+                   ugmr_q q p
                      (fun k ->
                        (let u = get_length k in
                         let ua = divide_nat u (nat_of_integer (Z.of_int 2)) in
@@ -7963,8 +7987,7 @@ let rec ugres
                      m)));;
 
 let rec gcache
-  q p a =
-    (let (_, (omega, (_, (_, pos)))) = p in ugres (uqok q) false omega pos a);;
+  q p a = (let (_, (omega, (_, (_, pos)))) = p in ugres_q q false omega pos a);;
 
 let rec cset q p ax = (match ax with None -> edl_bot | Some a -> gcache q p a);;
 
@@ -8519,14 +8542,13 @@ let rec rbt_comp_ins_lk2
           with Eqa ->
             (let nv = f (Some y) in (Some y, (nv, Branch (B, l, x, nv, r))))
           | Lt ->
-            (match rbt_comp_ins_lk2 c f k l
-              with (None, (nv, la)) -> (None, (nv, balance la x y r))
-              | (Some aa, (nv, la)) -> (Some aa, (nv, Branch (B, la, x, y, r))))
+            (let (ov, (nv, la)) = rbt_comp_ins_lk2 c f k l in
+              (ov, (nv, (if is_none ov then balance la x y r
+                          else Branch (B, la, x, y, r)))))
           | Gt ->
-            (match rbt_comp_ins_lk2 c f k r
-              with (None, (nv, ra)) -> (None, (nv, balance l x y ra))
-              | (Some aa, (nv, ra)) ->
-                (Some aa, (nv, Branch (B, l, x, y, ra)))))
+            (let (ov, (nv, ra)) = rbt_comp_ins_lk2 c f k r in
+              (ov, (nv, (if is_none ov then balance l x y ra
+                          else Branch (B, l, x, y, ra))))))
     | c, f, k, Branch (R, l, x, y, r) ->
         (match c k x
           with Eqa ->
@@ -8955,7 +8977,7 @@ let rec uc_res
                                      set_impl_enat)))]
                             edl_bot)
                    else uc_set x)
-            else ugres (uqok q) g0 omega pos a)));;
+            else ugres_q q g0 omega pos a)));;
 
 let rec usc_result
   q args p aux = (let ((_, (_, _)), x) = aux in uc_res q p (args_n args) x);;
@@ -9155,6 +9177,8 @@ let rec de_mfilter_keys_nat
                  else failwith "mfilter_keys: infinite"
                         (fun _ -> de_mfilter_keys_nat pos (Complement uu) m))
           else edl_mapping_delete_set m (Complement uu));;
+
+let rec entriesa _A xa = entries (impl_ofa _A xa);;
 
 let rec de_del_buckets1_nat
   (RBT_Mapping t) tm =
@@ -10217,8 +10241,7 @@ let rec uag_res
   q p w c ax =
     (match ax with None -> ufilt q (udagg_p p (unbox edl_keys_nat_v c))
       | Some a ->
-        (let (g0, (omega, (_, (_, pos)))) = p in
-          ugres (uqok q) g0 omega pos a));;
+        (let (g0, (omega, (_, (_, pos)))) = p in ugres_q q g0 omega pos a));;
 
 let rec uua_step
   args p w ts0 a =

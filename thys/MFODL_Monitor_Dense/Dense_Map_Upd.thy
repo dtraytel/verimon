@@ -27,10 +27,10 @@ fun rbt_comp_ins_lk :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightarr
   "rbt_comp_ins_lk F k RBT_Impl.Empty =
      (None, Branch RBT_Impl.R RBT_Impl.Empty k (F None) RBT_Impl.Empty)"
 | "rbt_comp_ins_lk F k (Branch RBT_Impl.B l x y r) = (case c k x of
-     Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of
-       (None, l') \<Rightarrow> (None, balance l' x y r) | (ov, l') \<Rightarrow> (ov, Branch RBT_Impl.B l' x y r))
-   | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of
-       (None, r') \<Rightarrow> (None, balance l x y r') | (ov, r') \<Rightarrow> (ov, Branch RBT_Impl.B l x y r'))
+     Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of (ov, l') \<Rightarrow>
+       (ov, if Option.is_none ov then balance l' x y r else Branch RBT_Impl.B l' x y r))
+   | Gt \<Rightarrow> (case rbt_comp_ins_lk F k r of (ov, r') \<Rightarrow>
+       (ov, if Option.is_none ov then balance l x y r' else Branch RBT_Impl.B l x y r'))
    | Eq \<Rightarrow> (Some y, Branch RBT_Impl.B l x (F (Some y)) r))"
 | "rbt_comp_ins_lk F k (Branch RBT_Impl.R l x y r) = (case c k x of
      Lt \<Rightarrow> (case rbt_comp_ins_lk F k l of (ov, l') \<Rightarrow> (ov, Branch RBT_Impl.R l' x y r))
@@ -62,10 +62,10 @@ fun rbt_comp_ins_lk2 :: "('b option \<Rightarrow> 'b) \<Rightarrow> 'a \<Rightar
   "rbt_comp_ins_lk2 F k RBT_Impl.Empty =
      (let nv = F None in (None, nv, Branch RBT_Impl.R RBT_Impl.Empty k nv RBT_Impl.Empty))"
 | "rbt_comp_ins_lk2 F k (Branch RBT_Impl.B l x y r) = (case c k x of
-     Lt \<Rightarrow> (case rbt_comp_ins_lk2 F k l of
-       (None, nv, l') \<Rightarrow> (None, nv, balance l' x y r) | (ov, nv, l') \<Rightarrow> (ov, nv, Branch RBT_Impl.B l' x y r))
-   | Gt \<Rightarrow> (case rbt_comp_ins_lk2 F k r of
-       (None, nv, r') \<Rightarrow> (None, nv, balance l x y r') | (ov, nv, r') \<Rightarrow> (ov, nv, Branch RBT_Impl.B l x y r'))
+     Lt \<Rightarrow> (case rbt_comp_ins_lk2 F k l of (ov, nv, l') \<Rightarrow>
+       (ov, nv, if Option.is_none ov then balance l' x y r else Branch RBT_Impl.B l' x y r))
+   | Gt \<Rightarrow> (case rbt_comp_ins_lk2 F k r of (ov, nv, r') \<Rightarrow>
+       (ov, nv, if Option.is_none ov then balance l x y r' else Branch RBT_Impl.B l x y r'))
    | Eq \<Rightarrow> (let nv = F (Some y) in (Some y, nv, Branch RBT_Impl.B l x nv r)))"
 | "rbt_comp_ins_lk2 F k (Branch RBT_Impl.R l x y r) = (case c k x of
      Lt \<Rightarrow> (case rbt_comp_ins_lk2 F k l of (ov, nv, l') \<Rightarrow> (ov, nv, Branch RBT_Impl.R l' x y r))
@@ -784,6 +784,80 @@ lemma cstep_ins_unfold[code_unfold]: "cstep gstep_ins = cstep_ins"
 
 lemma cstep_del_unfold[code_unfold]: "cstep gstep_del = cstep_del"
   by (simp add: cstep_del_def)
+
+subsection \<open>The aggregate's result, with the guard read off the value\<close>
+
+text \<open>The result of an aggregate writes each group's value into the group's tuple and keeps
+  what passes the node's guard.  @{thm [source] ugmr_code} lists the mapping's entries first,
+  builds every group's tuple by a @{const take}, an append and a @{const drop}, and evaluates the
+  guard on the tuple.  Here the walk is the tree's own fold, the tuple is built in one pass
+  (@{text ins_at}) and only for the groups that pass, and a guard's term that is the result
+  column or a constant is read off the value without the tuple.\<close>
+
+fun ins_at :: "nat \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "ins_at 0 v g = v # g"
+| "ins_at (Suc n) v [] = [v]"
+| "ins_at (Suc n) v (x # xs) = x # ins_at n v xs"
+
+lemma ins_at_eq: "ins_at p v g = take p g @ v # drop p g"
+  by (induct p v g rule: ins_at.induct) simp_all
+
+lemma ins_at_code[code]: "ins_at n v g = (if n = 0 then v # g
+    else case g of [] \<Rightarrow> [v] | x # xs \<Rightarrow> x # ins_at (n - 1) v xs)"
+  by (cases n; cases g) simp_all
+
+definition tval :: "nat \<Rightarrow> event_data list \<Rightarrow> event_data \<Rightarrow> Formula.trm \<Rightarrow> event_data" where
+  "tval p g v t = umeval_trm t (take p g @ v # drop p g)"
+
+lemma tval_code[code]: "tval p g v t = (case t of
+    Formula.Var i \<Rightarrow> (if i = p \<and> p \<le> length g then v else umeval_trm t (ins_at p v g))
+  | Formula.Const c \<Rightarrow> c
+  | _ \<Rightarrow> umeval_trm t (ins_at p v g))"
+  by (cases t) (auto simp: tval_def ins_at_eq nth_append)
+
+definition qval :: "uconstr option \<Rightarrow> nat \<Rightarrow> event_data list \<Rightarrow> event_data \<Rightarrow> bool" where
+  "qval q p g v = uqok q (take p g @ v # drop p g)"
+
+lemma qval_code[code]: "qval q p g v = (case q of None \<Rightarrow> True
+    | Some (t1, b, mc, t2) \<Rightarrow> (eval_constraint0 mc (tval p g v t1) (tval p g v t2) = b))"
+  by (simp add: qval_def uqok_def ueval_constraint_def tval_def split: option.splits prod.splits)
+
+definition ugmr_q :: "uconstr option \<Rightarrow> nat \<Rightarrow> ('b \<Rightarrow> event_data) \<Rightarrow>
+    (event_data list, 'b) mapping \<Rightarrow> event_data list set" where
+  "ugmr_q q p f m = ugmr (uqok q) p f m"
+
+lemma ugmr_q_code[code]:
+  fixes t :: "(event_data list, 'b) mapping_rbt"
+  shows "ugmr_q q p f (RBT_Mapping t) =
+    (case ID CCOMPARE(event_data list) of
+       None \<Rightarrow> Code.abort (STR ''ugmr_q RBT_Mapping: ccompare = None'')
+                (\<lambda>_. ugmr_q q p f (RBT_Mapping t))
+     | Some _ \<Rightarrow> RBT_Impl.fold (\<lambda>g a A. let v = f a
+                    in if qval q p g v then Set.insert (ins_at p v g) A else A)
+                  (mapping_rbt.impl_of t) {})"
+proof (cases "ID CCOMPARE(event_data list)")
+  case (Some c)
+  have "ugmr_q q p f (RBT_Mapping t) = fold (\<lambda>e A. let v = take p (fst e) @ f (snd e) # drop p (fst e)
+      in if uqok q v then Set.insert v A else A) (RBT_Mapping2.entries t) {}"
+    using ugmr_code[of "uqok q" p f t] Some by (simp add: ugmr_q_def)
+  also have "\<dots> = RBT_Impl.fold (\<lambda>g a A. let v = f a
+      in if qval q p g v then Set.insert (ins_at p v g) A else A) (mapping_rbt.impl_of t) {}"
+    unfolding ins_at_eq qval_def
+    by (simp add: RBT_Impl.fold_def RBT_Mapping2.entries.rep_eq split_def Let_def)
+  finally show ?thesis using Some by simp
+qed simp
+
+definition ugres_q :: "uconstr option \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> nat \<Rightarrow> ugagg \<Rightarrow>
+    event_data list set" where
+  "ugres_q q = ugres (uqok q)"
+
+lemma ugmr_q_unfold[code_unfold]: "ugmr (uqok q) = ugmr_q q"
+  by (simp add: ugmr_q_def fun_eq_iff)
+
+lemmas ugres_q_code[code] = ugres_code[of "uqok q" for q, folded ugres_q_def]
+
+lemma ugres_q_unfold[code_unfold]: "ugres (uqok q) = ugres_q q"
+  by (simp add: ugres_q_def)
 
 subsection \<open>The steps at the short tuples\<close>
 

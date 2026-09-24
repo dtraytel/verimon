@@ -6,6 +6,9 @@
 
 let depth = try int_of_string (Sys.getenv "MONPOLY_MEMPROF_DEPTH") with _ -> 4
 
+(* The number of call stacks printed (MONPOLY_MEMPROF_ROWS, default 40). *)
+let rows_shown = try int_of_string (Sys.getenv "MONPOLY_MEMPROF_ROWS") with _ -> 40
+
 let table : (string, int * int) Hashtbl.t = Hashtbl.create 1024
 
 let key bt =
@@ -39,7 +42,7 @@ let report () =
   let total = List.fold_left (fun acc (_, n, _) -> acc + n) 0 rows in
   Printf.eprintf "# samples: %d (each is one allocated word, sampled at the given rate)\n" total;
   List.iteri (fun i (k, n, blocks) ->
-    if i < 40 then
+    if i < rows_shown then
       Printf.eprintf "%10d %5.1f%% %8d  %s\n" n
         (100.0 *. float_of_int n /. float_of_int total) blocks k)
     rows
