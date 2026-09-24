@@ -24,7 +24,7 @@ introduction rule per production, with the semantic actions as values.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 22 minutes, most
+the inductive definitions of the relation; `MFODL_Parser` about 27 minutes, most
 of it in evaluating the LR tables and the static check), and neither needs to
 rerun unless the grammar changes.
 
@@ -98,29 +98,35 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-13 to 48 tokens), the verified parser takes 1.4 to 7.0 ms per formula (median
-2.9 ms), against 2 to 5 µs for MonPoly's parser; `monpoly -check` on
-`join-one` takes 7 ms with `-verified_parser` and 5 ms without, so the parser
-is negligible next to the suite's monitoring runs (0.2 to 0.6 s). The time is
-linear in the number of tokens, 0.13 to 0.21 ms per token; 90% of it is the LR
-driver and 8% the lexer. Measured with
+13 to 48 tokens), the verified parser takes 0.2 to 0.9 ms per formula (median
+0.4 ms), against 2 to 5 µs for MonPoly's parser; `monpoly -check` on
+`join-one` takes 4 ms with and without `-verified_parser`. The time is linear in
+the number of tokens, about 18 µs per token. The lexer model now takes most of
+it (62%, median 0.22 ms per formula), the LR driver 29% (median 0.1 ms).
+Measured with
 
 ```
 parser_difftest -time FILE...
 ```
 
 which prints, per formula, the CPU time of both parsers and that of the
-verified lexer, LR parser and the rest.
+verified lexer, LR parser and the rest (with a resolution of 0.1 ms).
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
 of state indices of two precomputed LR(0) automata, proved to compute the same
-result as the package's general driver. The general driver computes the
-closure of every new state with its layout anchors at run time and was 100 to
-170 times slower on the suite (197 ms to 1.01 s per formula). Most of the
-remaining time is spent on list lookups in the tables and on comparing
-nonterminal names as character lists; replacing names by indices at run time
-would be the next step.
+result as the package's general driver. Its code equation runs on indexed
+tables: productions and nonterminals are numbered, goto rows are keyed by
+terminal or nonterminal number, and the tables are arrays, so a step compares
+no names and finds its table rows by array index. Counted in instructions (callgrind, each suite
+formula parsed once), the LR driver went from 4.7 G with name-keyed list
+tables to 0.19 G (24x). The general driver, which computes the closure of
+every new state with its layout anchors at run time, was another 100 to 170
+times slower (197 ms to 1.01 s per formula).
 
-`src/verified_parser.ml` is large (about 11 MB), mostly the LR tables, in which
-every nonterminal name is a list of characters.
+`MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
+ocamlopt sees the tables as static data; the index arithmetic this costs is
+small next to the lexer.
+
+`src/verified_parser.ml` is large (about 5 MB), mostly the LR tables, whose
+numbers are binary numerals.
