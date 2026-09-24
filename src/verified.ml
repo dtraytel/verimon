@@ -10145,6 +10145,19 @@ let rec uebuf2T_take
                 (z, ((mbuf_t_Cons x xsa, ysa), mbuf_t_Cons t tsa))
               | (Some y, ysa) -> uebuf2T_take f (f x y t z) (xsa, ysa) tsa)));;
 
+let rec dq_upd
+  d k x =
+    (if less_nat k (dq_nf d)
+      then Dq (list_update (dq_f d) k x, dq_b d, dq_nf d, dq_nb d)
+      else Dq (dq_f d,
+                list_update (dq_b d)
+                  (minus_nata (minus_nata (dq_nb d) one_nata)
+                    (minus_nata k (dq_nf d)))
+                  x,
+                dq_nf d, dq_nb d));;
+
+let rec dq_len d = plus_nata (dq_nf d) (dq_nb d);;
+
 let edl_impl_of_tstp_v :
   (((event_data list), (nat, nat) sum) mapping_rbt ->
     ((event_data list), (nat, nat) sum) rbt)
@@ -10170,18 +10183,28 @@ let rec edl_lookup_tstp
   = function RBT_Mapping t -> edl_rbt_lookup_tstp t
     | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
 
-let rec dq_upd
-  d k x =
-    (if less_nat k (dq_nf d)
-      then Dq (list_update (dq_f d) k x, dq_b d, dq_nf d, dq_nb d)
-      else Dq (dq_f d,
-                list_update (dq_b d)
-                  (minus_nata (minus_nata (dq_nb d) one_nata)
-                    (minus_nata k (dq_nf d)))
-                  x,
-                dq_nf d, dq_nb d));;
+let rec edl_upd_lk_aux_tstp
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (let (ov, t) = edl_rbtc_ins_lk xd xc (unbox edl_impl_of_tstp_v xe) in
+        (ov, paint B t));;
 
-let rec dq_len d = plus_nata (dq_nf d) (dq_nb d);;
+let rec edl_upd_lk_tstp
+  x1 x2 x3 =
+    rep_isom (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_tstp x1 x2 x3);;
+
+let rec edl_mupd_tstp
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_tstp k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_tstp (Assoc_List_Mapping al) k,
+          edl_update_tstp k (f (edl_lookup_tstp (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_tstp (Mapping f) k,
+          edl_update_tstp k (fa (edl_lookup_tstp (Mapping f) k)) (Mapping f));;
 
 let rec nth_def
   x0 k z = match x0, k, z with [], k, z -> z
@@ -10204,8 +10227,9 @@ let rec de_gupd_nested_step_dq
         then (let i = minus_nata k base in
               let m = dq_nth_l dq i edl_mempty_tstp in
                dq_upd dq i
-                 (match edl_lookup_tstp m ka with None -> edl_update_tstp ka d m
-                   | Some v -> edl_update_tstp ka (f v) m))
+                 (snd (edl_mupd_tstp ka
+                        (fun a -> (match a with None -> d | Some aa -> f aa))
+                        m)))
         else dq));;
 
 let rec ed_max_nat a b = (if less_eq_nat a b then b else a);;
@@ -10243,57 +10267,62 @@ let rec de_guntil_elem_step_dq
                      asa))
             acca));;
 
+let rec de_guntil_a2_step
+  a1_map msk pos tp len d asa a2 =
+    (let a2a =
+       de_gupd_nested_step_dq (minus_nata tp len) d (max_tstp d) (tp, asa) a2 in
+      (match edl_lookup_nat a1_map (dproj msk asa)
+        with None ->
+          (if not pos
+            then de_gupd_nested_step_dq (minus_nata tp len) d (max_tstp d)
+                   (minus_nata tp len, asa) a2a
+            else a2a)
+        | Some tpa ->
+          de_gupd_nested_step_dq (minus_nata tp len) d (max_tstp d)
+            (if pos then (ed_max_nat (minus_nata tp len) tpa, asa)
+              else (ed_max_nat (minus_nata tp len) (plus_nata tpa one_nata),
+                     asa))
+            a2a));;
+
+let rec de_mrefresh_nat
+  v x1 m = match v, x1, m with
+    v, RBT_set rbt, m ->
+      RBT_Mapping
+        (mapb (ccompare_list ccompare_event_data)
+          (fun k _ -> (match edl_lookup_nat m k with None -> v | Some w -> w))
+          rbt)
+    | v, DList_set uu, m ->
+        de_mfilter_keys_nat true (DList_set uu)
+          (de_upd_set_nat m (fun _ -> v)
+            (edl_filter (fun k -> is_none (edl_lookup_nat m k)) (DList_set uu)))
+    | v, Set_Monad uu, m ->
+        de_mfilter_keys_nat true (Set_Monad uu)
+          (de_upd_set_nat m (fun _ -> v)
+            (edl_filter (fun k -> is_none (edl_lookup_nat m k)) (Set_Monad uu)))
+    | v, Collect_set uu, m ->
+        de_mfilter_keys_nat true (Collect_set uu)
+          (de_upd_set_nat m (fun _ -> v)
+            (edl_filter (fun k -> is_none (edl_lookup_nat m k))
+              (Collect_set uu)))
+    | v, Complement uu, m ->
+        de_mfilter_keys_nat true (Complement uu)
+          (de_upd_set_nat m (fun _ -> v)
+            (edl_filter (fun k -> is_none (edl_lookup_nat m k))
+              (Complement uu)));;
+
+let rec edl_rbt_delete_tstp
+  xb xc = Mapping_RBTa (edl_rbtc_delete xb (unbox edl_impl_of_tstp_v xc));;
+
+let rec edl_delete_tstp
+  k x1 = match k, x1 with
+    k, RBT_Mapping t -> RBT_Mapping (edl_rbt_delete_tstp k t)
+    | k, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
+    | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
+
 let rec de_mapping_delete_set_tstp
-  m x1 = match m, x1 with
-    m, RBT_set rbt ->
-      foldb (ccompare_list ccompare_event_data)
-        (delete
-          ((ccompare_list ccompare_event_data), (equal_list equal_event_data)))
-        rbt m
-    | m, DList_set uu ->
-        (if unbox edl_finite_v (DList_set uu)
-          then set_fold_cfi
-                 ((ceq_list ceq_event_data),
-                   (ccompare_list ccompare_event_data))
-                 (mapping_delete_set_cfi
-                   ((ccompare_list ccompare_event_data),
-                     (equal_list equal_event_data)))
-                 m (DList_set uu)
-          else failwith "mapping_delete_set: infinite"
-                 (fun _ -> de_mapping_delete_set_tstp m (DList_set uu)))
-    | m, Set_Monad uu ->
-        (if unbox edl_finite_v (Set_Monad uu)
-          then set_fold_cfi
-                 ((ceq_list ceq_event_data),
-                   (ccompare_list ccompare_event_data))
-                 (mapping_delete_set_cfi
-                   ((ccompare_list ccompare_event_data),
-                     (equal_list equal_event_data)))
-                 m (Set_Monad uu)
-          else failwith "mapping_delete_set: infinite"
-                 (fun _ -> de_mapping_delete_set_tstp m (Set_Monad uu)))
-    | m, Collect_set uu ->
-        (if unbox edl_finite_v (Collect_set uu)
-          then set_fold_cfi
-                 ((ceq_list ceq_event_data),
-                   (ccompare_list ccompare_event_data))
-                 (mapping_delete_set_cfi
-                   ((ccompare_list ccompare_event_data),
-                     (equal_list equal_event_data)))
-                 m (Collect_set uu)
-          else failwith "mapping_delete_set: infinite"
-                 (fun _ -> de_mapping_delete_set_tstp m (Collect_set uu)))
-    | m, Complement uu ->
-        (if unbox edl_finite_v (Complement uu)
-          then set_fold_cfi
-                 ((ceq_list ceq_event_data),
-                   (ccompare_list ccompare_event_data))
-                 (mapping_delete_set_cfi
-                   ((ccompare_list ccompare_event_data),
-                     (equal_list equal_event_data)))
-                 m (Complement uu)
-          else failwith "mapping_delete_set: infinite"
-                 (fun _ -> de_mapping_delete_set_tstp m (Complement uu)));;
+  m (RBT_set rbt) =
+    foldb (ccompare_list ccompare_event_data) edl_delete_tstp rbt m;;
 
 let edl_keys_tstp_v :
   (((event_data list), (nat, nat) sum) mapping -> (event_data list) set) boxed
@@ -10309,6 +10338,11 @@ let rec edl_rbt_join_tstp
 let rec de_combine_tstp
   f (RBT_Mapping t) (RBT_Mapping u) =
     RBT_Mapping (edl_rbt_join_tstp (fun _ -> f) t u);;
+
+let rec de_mdel_if_tstp
+  q x m =
+    (match edl_lookup_tstp m x with None -> m
+      | Some v -> (if q v then edl_delete_tstp x m else m));;
 
 let rec dq_norm
   d = (if null (dq_f d)
@@ -10368,16 +10402,22 @@ let rec de_geval_step_dq
                   set_impl_set)
              (mapa fst taken))
          in
-       let to_del =
-         edl_filter
-           (fun x ->
-             (match edl_lookup_tstp m x with None -> false
-               | Some tstp ->
-                 not (ts_tp_lt i ts (plus_nata (minus_nata tp len) one_nata)
-                       tstp)))
-           to_del_approx
+       let ma =
+         (if unbox edl_finite_v to_del_approx
+           then fold (de_mdel_if_tstp
+                       (fun tstp ->
+                         not (ts_tp_lt i ts
+                               (plus_nata (minus_nata tp len) one_nata) tstp)))
+                  (edl_csl to_del_approx) m
+           else de_mapping_delete_set_tstp m
+                  (edl_filter
+                    (fun x ->
+                      (match edl_lookup_tstp m x with None -> false
+                        | Some tstp ->
+                          not (ts_tp_lt i ts
+                                (plus_nata (minus_nata tp len) one_nata) tstp)))
+                    to_del_approx))
          in
-       let ma = de_mapping_delete_set_tstp m to_del in
        let a2_dqa = dq_tl a2_dq in
        let maa = dq_hd_s a2_dqa edl_mempty_tstp in
        let a2_dqb =
@@ -10432,24 +10472,24 @@ let rec de_gadd_new_dq
      let inz = memL i zero_nata in
      let new_tstp = (if inz then Inr tp else Inl nt) in
      let tstp_dqa = dq_push nt tstp_dq in
-     let p =
-       (fun t ->
-         memL i
-           (minus_nata nt
-             (dq_nth_s tstp_dqa (minus_nata t (minus_nata tp len)) zero_nata)))
-       in
      let (tbl, a2_dqa) =
-       fold (de_guntil_elem_step_dq a1_map msk pos tp len inz p new_tstp)
-         (edl_csl rel2) (edl_bot, a2_dq)
+       (if inz
+         then ((if unbox edl_finite_v rel2 then rel2 else edl_bot),
+                fold (de_guntil_a2_step a1_map msk pos tp len new_tstp)
+                  (edl_csl rel2) a2_dq)
+         else fold (de_guntil_elem_step_dq a1_map msk pos tp len inz
+                     (fun t ->
+                       memL i
+                         (minus_nata nt
+                           (dq_nth_s tstp_dqa (minus_nata t (minus_nata tp len))
+                             zero_nata)))
+                     new_tstp)
+                (edl_csl rel2) (edl_bot, a2_dq))
        in
      let tablesa = append_queue (tbl, new_tstp) tables in
      let a2_dqb = dq_push edl_mempty_tstp a2_dqa in
      let a1_mapa =
-       (if pos
-         then de_mfilter_keys_nat true rel1
-                (de_upd_set_nat a1_map (fun _ -> tp)
-                  (edl_filter (fun k -> is_none (edl_lookup_nat a1_map k))
-                    rel1))
+       (if pos then de_mrefresh_nat tp rel1 a1_map
          else de_upd_set_nat a1_map (fun _ -> tp) rel1)
        in
      let tssa = append_queue nt tss in

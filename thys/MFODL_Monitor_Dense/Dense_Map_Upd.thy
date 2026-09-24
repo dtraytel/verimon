@@ -210,6 +210,208 @@ lemma de_didx_add1_mupd[code]:
      snd (mupd k (\<lambda>ov. Set.insert x (case ov of None \<Rightarrow> {} | Some z \<Rightarrow> z)) i))"
   by (simp add: de_didx_add1_def didx_add1_def dbucket_def mupd_def Let_def split: option.splits)
 
+subsection \<open>The Until structure's time stamp maps\<close>
+
+text \<open>The Until deque keeps, per time point, a mapping from the tuples to time stamps.  A
+  tuple entering it updates its entry with a function of the old one -- a lookup and an update,
+  one descent through @{const mupd}.  And the deletion of a set of keys from such a mapping, at the
+  step, went through the generic deletion with the comparator built at every call; the Since
+  structure's two value types got the specialised deletion by hand, and this is the third.\<close>
+
+lemma de_gupd_nested_step_dq_mupd[code]:
+  "de_gupd_nested_step_dq base d f x dq = (case x of (k, k') \<Rightarrow>
+    if base \<le> k \<and> k - base < dq_len dq then
+      (let i = k - base; m' = dq_nth_l dq i Mapping.empty in
+       dq_upd dq i (snd (mupd k' (\<lambda>ov. case ov of Some v \<Rightarrow> f v | None \<Rightarrow> d) m')))
+    else dq)"
+  by (simp add: de_gupd_nested_step_dq_def gupd_nested_step_dq_def mupd_def Let_def
+      split: option.splits prod.splits)
+
+lemma de_mapping_delete_set_tstp_rbt[code]:
+  "de_mapping_delete_set_tstp m (RBT_set rbt) = RBT_Set2.fold edl_delete_tstp rbt m"
+  by (simp add: de_mapping_delete_set_tstp_def edl_delete_tstp_def mapping_delete_set_RBT_code
+      ccompare_edl ID_ccompare_edl ccomp_edl ceq_edl ID_ceq_edl ID_def)
+
+text \<open>For a positive left operand, the map from the tuples of the latest left table to the time
+  point since which they hold is refreshed at every step: the tuples new to it get the current
+  time point, and the others are dropped.  That is a filter, a set difference and an insertion per
+  new tuple; on a tree it is the table's own tree with the values filled in by a lookup.\<close>
+
+definition mrefresh :: "'v \<Rightarrow> 'k set \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
+  "mrefresh v Y m = mfilter_keys True Y (upd_set m (\<lambda>_. v) (Y - Mapping.keys m))"
+
+lemma lookup_mrefresh: "Mapping.lookup (mrefresh v Y m) k =
+  (if k \<in> Y then Some (case Mapping.lookup m k of None \<Rightarrow> v | Some w \<Rightarrow> w) else None)"
+  by (auto simp: mrefresh_def lookup_mfilter_keys Mapping_lookup_upd_set keys_is_none_rep
+      split: option.splits)
+
+lemma mrefresh_RBT_code[code]:
+  fixes rbt :: "'k :: ccompare set_rbt"
+  shows "mrefresh v (RBT_set rbt) m = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''mrefresh: ccompare = None'') (\<lambda>_. mrefresh v (RBT_set rbt) m)
+    | Some _ \<Rightarrow>
+      RBT_Mapping (RBT_Mapping2.map (\<lambda>k _. case Mapping.lookup m k of None \<Rightarrow> v | Some w \<Rightarrow> w) rbt))"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  have u: "z \<noteq> Some () \<longleftrightarrow> z = None" for z :: "unit option"
+    by (cases z) auto
+  from Some show ?thesis
+    by (intro mapping_eqI)
+      (auto simp: lookup_mrefresh RBT_set_def RBT_Set2.member_lookup Mapping.lookup.abs_eq u
+        split: option.splits)
+qed simp
+
+lemmas mrefresh_fallback_code[code] =
+  mrefresh_def[of _ "DList_set _"] mrefresh_def[of _ "Set_Monad _"]
+  mrefresh_def[of _ "Collect_set _"] mrefresh_def[of _ "Complement _"]
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("mrefresh", "de_mrefresh_nat", ["nat", "event_data list"])] ["edl_dict_simps"]\<close>
+
+text \<open>A tuple of the right operand enters the deque's map at a time point only if the time
+  stamp of that point lies in the interval's left end.  For an interval starting at 0, the common
+  case, that is always so, and the test -- a walk of the time stamp deque to the point -- is
+  dropped.\<close>
+
+lemma de_gadd_new_dq_inz:
+  "de_gadd_new_dq args msk rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
+       de_gshift_dq args nt aux;
+     I = args_ivl args; pos = args_pos args; inz = memL I 0;
+     new_tstp = (if inz then Inr tp else Inl nt);
+     tstp_dq = dq_push nt tstp_dq;
+     P = (if inz then (\<lambda>_. True) else (\<lambda>t. memL I (nt - dq_nth_s tstp_dq (t - (tp - len)) 0)));
+     (tbl, a2_dq') = fold (de_guntil_elem_step_dq a1_map msk pos tp len inz P new_tstp)
+       (csl rel2) ({}, a2_dq);
+     tables = append_queue (tbl, new_tstp) tables;
+     a2_dq = dq_push Mapping.empty a2_dq';
+     a1_map = (if pos then mrefresh tp rel1 a1_map else upd_set a1_map (\<lambda>_. tp) rel1);
+     tss = append_queue nt tss in
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn))"
+proof -
+  have "(\<lambda>t. memL (args_ivl args) (nt - dq_nth_s d (t - k) 0)) = (\<lambda>_. True)"
+    if "memL (args_ivl args) 0" for d k
+    using that by auto
+  then show ?thesis
+    unfolding de_gadd_new_dq_def gadd_new_dq_code de_gshift_dq_def de_guntil_elem_step_dq_def
+      mrefresh_def[symmetric]
+    by (simp add: Let_def split: prod.splits)
+qed
+
+text \<open>With the test dropped, every tuple of the right operand enters the new table, which is then
+  the operand's table itself; the fold keeps only the deque.\<close>
+
+definition guntil_a2_step :: "('b list, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    ts + tp \<Rightarrow> 'b list \<Rightarrow> ('b list, ts + tp) mapping dq \<Rightarrow> ('b list, ts + tp) mapping dq" where
+  "guntil_a2_step a1_map msk pos tp len d as a2 =
+    (let a2' = gupd_nested_step_dq (tp - len) d (max_tstp d) (tp, as) a2 in
+     case Mapping.lookup a1_map (dproj msk as) of
+        None \<Rightarrow> (if \<not>pos then gupd_nested_step_dq (tp - len) d (max_tstp d) (tp - len, as) a2' else a2')
+      | Some tp' \<Rightarrow> gupd_nested_step_dq (tp - len) d (max_tstp d) (if pos then (max (tp - len) tp', as)
+          else (max (tp - len) (tp' + 1), as)) a2')"
+
+lemma guntil_elem_step_dq_True:
+  "guntil_elem_step_dq a1_map msk pos tp len True (\<lambda>_. True) d as (tbl, a2) =
+    (Set.insert as tbl, guntil_a2_step a1_map msk pos tp len d as a2)"
+  by (simp add: guntil_elem_step_dq_def guntil_step_dq_def guntil_a2_step_def Let_def
+      split: option.splits)
+
+lemma fold_guntil_elem_step_dq_True:
+  "fold (guntil_elem_step_dq a1_map msk pos tp len True (\<lambda>_. True) d) xs (tbl, a2) =
+    (tbl \<union> set xs, fold (guntil_a2_step a1_map msk pos tp len d) xs a2)"
+  by (induction xs arbitrary: tbl a2) (simp_all add: guntil_elem_step_dq_True)
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("guntil_a2_step", "de_guntil_a2_step", ["event_data"])] ["edl_dict_simps"]\<close>
+
+lemma de_gadd_new_dq_code[code]:
+  "de_gadd_new_dq args msk rel1 rel2 nt aux =
+    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
+       de_gshift_dq args nt aux;
+     I = args_ivl args; pos = args_pos args; inz = memL I 0;
+     new_tstp = (if inz then Inr tp else Inl nt);
+     tstp_dq = dq_push nt tstp_dq;
+     (tbl, a2_dq') = (if inz
+       then (if finite rel2 then rel2 else {},
+             fold (de_guntil_a2_step a1_map msk pos tp len new_tstp) (csl rel2) a2_dq)
+       else fold (de_guntil_elem_step_dq a1_map msk pos tp len inz
+         (\<lambda>t. memL I (nt - dq_nth_s tstp_dq (t - (tp - len)) 0)) new_tstp) (csl rel2) ({}, a2_dq));
+     tables = append_queue (tbl, new_tstp) tables;
+     a2_dq = dq_push Mapping.empty a2_dq';
+     a1_map = (if pos then mrefresh tp rel1 a1_map else upd_set a1_map (\<lambda>_. tp) rel1);
+     tss = append_queue nt tss in
+     (tp + 1, tss, tables, len + 1, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn))"
+proof -
+  have "set (csl rel2) = (if finite rel2 then rel2 else {})"
+    by (simp add: set_csl_ed csl_infinite)
+  then show ?thesis
+    unfolding de_gadd_new_dq_inz de_guntil_a2_step_def de_guntil_elem_step_dq_def
+    by (simp add: fold_guntil_elem_step_dq_True Let_def split: prod.splits)
+qed
+
+text \<open>At a step, the tuples of the tables leaving the window are deleted from the front map if
+  their time stamp there has left it too.  The deletion went through the set of those tuples,
+  built by a filter; a fold over the tables' tuples deletes them as it finds them.  The fold looks
+  each tuple up in the map it has built so far, which is the original map at the tuples not yet
+  seen, since they are distinct.\<close>
+
+definition mdel_if :: "('v \<Rightarrow> bool) \<Rightarrow> 'k \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
+  "mdel_if Q x m = (case Mapping.lookup m x of Some v \<Rightarrow> if Q v then Mapping.delete x m else m
+     | None \<Rightarrow> m)"
+
+lemma lookup_delete_if:
+  "Mapping.lookup (Mapping.delete a m) k = (if a = k then None else Mapping.lookup m k)"
+  by simp
+
+lemma lookup_fold_mdel_if:
+  "distinct xs \<Longrightarrow> Mapping.lookup (fold (mdel_if Q) xs m) k =
+    (if k \<in> set xs \<and> (case Mapping.lookup m k of Some v \<Rightarrow> Q v | None \<Rightarrow> False) then None
+     else Mapping.lookup m k)"
+  by (induction xs arbitrary: m) (auto simp: mdel_if_def lookup_delete_if split: option.splits)
+
+lemma fold_mdel_if:
+  "distinct xs \<Longrightarrow> fold (mdel_if Q) xs m = mapping_delete_set m
+    (Set.filter (\<lambda>x. case Mapping.lookup m x of Some v \<Rightarrow> Q v | None \<Rightarrow> False) (set xs))"
+  by (rule mapping_eqI) (auto simp: lookup_fold_mdel_if delete_set_lookup split: option.splits)
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("mdel_if", "de_mdel_if_tstp", ["nat + nat", "event_data list"])] ["edl_dict_simps"]\<close>
+
+lemma de_geval_step_dq_code[code]:
+  "de_geval_step_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, dn) =
+    (case safe_hd tss of (Some ts, tss') \<Rightarrow>
+      (let m = dq_hd_s a2_dq Mapping.empty;
+        I = args_ivl args;
+        T = Mapping.keys m;
+        tss' = tl_queue tss';
+        (ts', tss'') = case safe_hd tss' of
+              (Some ts', tss'') \<Rightarrow> (ts', tss'') |
+              (None, tss'') \<Rightarrow> (0, tss'');
+        (tables, taken) = takedropWhile_queue
+           (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables;
+        to_del_approx = \<Union>(set (map fst taken));
+        m'' = (if finite to_del_approx
+          then fold (mdel_if (\<lambda>tstp. \<not> ts_tp_lt I ts' (tp - len + 1) tstp)) (csl to_del_approx) m
+          else mapping_delete_set m (Set.filter (\<lambda>x. case Mapping.lookup m x of
+              Some tstp \<Rightarrow> (\<not> ts_tp_lt I ts' (tp - len + 1) tstp) | None \<Rightarrow> False) to_del_approx));
+        a2_dq' = dq_tl a2_dq;
+        m' = dq_hd_s a2_dq' Mapping.empty;
+        a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
+          else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
+        tstp_dq = dq_tl tstp_dq in
+        (tp, tss'', tables, len - 1, maskL, maskR, result, a1_map, a2_dq, tstp_dq, T # dn)))"
+proof -
+  have eq: "(if finite X then fold (mdel_if Q) (csl X) m
+      else mapping_delete_set m (Set.filter (\<lambda>x. case Mapping.lookup m x of
+        Some tstp \<Rightarrow> Q tstp | None \<Rightarrow> False) X)) =
+    mapping_delete_set m (Set.filter (\<lambda>x. case Mapping.lookup m x of
+        Some tstp \<Rightarrow> Q tstp | None \<Rightarrow> False) X)"
+    for Q and X :: "event_data list set" and m :: "(event_data list, nat + nat) mapping"
+    using fold_mdel_if[OF distinct_csl_edl, of Q X m] set_csl_ed[of X] by simp
+  show ?thesis
+    unfolding de_geval_step_dq_def geval_step_dq.simps Let_def eq ..
+qed
+
 subsection \<open>At the short tuples\<close>
 
 definition edl_rbtc_ins_lk :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>

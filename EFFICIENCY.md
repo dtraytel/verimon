@@ -8664,3 +8664,51 @@ which MonPoly's mutable hash tables avoid, and neither a larger minor heap nor a
 overhead changes the wall time by more than 3%; the front end (lexer, `List.assoc_opt` in
 `Log_parser.parse_db`, `List.mem` in `Filter_rel.rel_OK`) costs both systems the same.  The corpus is
 unchanged (601 same, 141 skipped, 0 differing) and `dune test` passes.
+
+## 21.37 The Until group: the add step's per-tuple work
+
+On the Until formulas (1500 time points of `base.log`) the verified monitor took 5.0 to 7.8 G
+instructions against MonPoly's 4.5 to 6.4 G, with `until-nu20` (`B(x,y) AND ((NOT C(x))
+UNTIL[0,20] A(x,y))`) the worst at 1.21x.  The add step (`gadd_new_dq`) was two thirds of the
+evaluator, and most of it was per tuple of the right operand:
+
+| step | `until-nu20` share of the run |
+|---|---|
+| the tuple's entry in the deque's time stamp map: lookup, then update (`gupd_nested_step_dq`) | 17.1% |
+| the tuple into the step's table (`Set.insert`) | 5.2% |
+| the interval's left end at the tuple's time point: a walk of the time stamp deque (`P`) | 4.9% |
+| the step's expiry: the tuples to delete, filtered, then deleted with the generic deletion | 11.2% |
+| the left operand's map, for a positive left operand: filter, difference, insertions | (5.9% on `until-bb50`) |
+
+`Dense_Map_Upd.thy` gives the monomorphised step code equations for each, all proved by unfolding
+the definitions and the facts named:
+
+* the time stamp map's entry is `mupd` of 21.35, one descent (`de_gupd_nested_step_dq_mupd`), and
+  the expiry's deletion is the specialised one of the Since structure at the time stamps' value type
+  (`de_mapping_delete_set_tstp_rbt`);
+* for an interval that starts at 0 the left-end test always holds (`memL_mono`), and every tuple of
+  the right operand then enters the step's table, which is the operand's table itself: the fold keeps
+  only the deque (`guntil_a2_step`, `fold_guntil_elem_step_dq_True`, `de_gadd_new_dq_code`);
+* the expiry folds a conditional deletion (`mdel_if`) over the leaving tables' tuples instead of
+  filtering them into a set first; the fold looks each tuple up in the map it has built so far, which
+  is the original map at the tuples not yet seen, since the list is distinct (`lookup_fold_mdel_if`,
+  `de_geval_step_dq_code`);
+* the positive left operand's map, restricted to the latest left table with the new tuples at the
+  current time point, is the table's own tree with the values filled in by a lookup (`mrefresh`,
+  `RBT_Mapping2.map`), with no insertion and no rebalancing.
+
+| formula (instructions, 1500 time points) | before | after | MonPoly |
+|---|---|---|---|
+| `until-nu20` | 7.755 G | 6.680 G (−13.9%) | 6.429 G |
+| `until-u50` | 5.588 G | 4.955 G (−11.3%) | 4.806 G |
+| `until-u5` | 4.999 G | 4.336 G (−13.3%) | 4.534 G |
+| `until-bb5` | 5.394 G | 4.228 G (−21.6%) | 5.041 G |
+| `until-bb50` | 5.759 G | 4.620 G (−19.8%) | 5.223 G |
+| `until-bb500` | 5.656 G | 4.543 G (−19.7%) | 5.325 G |
+| `since-nu5`, `pol-sincefutb`, `once-rate80` (controls) | | 0.0% | |
+
+The instruction ratio of the group goes from 1.03–1.21 to 0.84–1.04.  `once_scale` (1.07 in the
+local run) is not in instructions: `once-rate80` executes 11.73 G against MonPoly's 11.33 G
+(1.035), and the rest of its wall-time gap is the garbage collector's and the cache's share of the
+trees' rebuilt paths, as for the policy group in 21.36.  The corpus is unchanged (601 same, 141
+skipped, 0 differing) and `dune test` passes.
