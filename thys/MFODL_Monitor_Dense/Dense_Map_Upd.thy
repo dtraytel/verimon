@@ -591,6 +591,45 @@ setup \<open>Monomorphize.monomorphize_cmd
      edl_value_types)
   ["edl_dict_simps"]\<close>
 
+subsection \<open>The result's upkeep, with the steps applied\<close>
+
+text \<open>The window's steps of @{theory MFODL_Monitor_Dense.Dense_Agg_Cache} pass the aggregate's
+  step to @{const cstep} as an argument, where the redirection to its copy at the short tuples
+  below does not reach it; these name the two instances with the step applied.\<close>
+
+definition cstep_ins :: "uconstr option \<Rightarrow> daggp \<Rightarrow> event_data list \<Rightarrow>
+    ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
+  "cstep_ins = cstep gstep_ins"
+
+definition cstep_del :: "uconstr option \<Rightarrow> daggp \<Rightarrow> event_data list \<Rightarrow>
+    ugagg option \<times> event_data list set \<Rightarrow> ugagg option \<times> event_data list set" where
+  "cstep_del = cstep gstep_del"
+
+lemma cstep_ins_code[code]: "cstep_ins q p t axC = (case axC of (ax, C) \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     (case ax of None \<Rightarrow> (None, C)
+      | Some a \<Rightarrow> (case gstep_ins k (umeval_trm f) t (Some a) of None \<Rightarrow> (None, C)
+         | Some a' \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) (gval \<omega> a (drop k t))
+              (gval \<omega> a' (drop k t)) C)))))"
+  by (simp add: cstep_ins_def cstep_def)
+
+lemma cstep_del_code[code]: "cstep_del q p t axC = (case axC of (ax, C) \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+     (case ax of None \<Rightarrow> (None, C)
+      | Some a \<Rightarrow> (case gstep_del k (umeval_trm f) t (Some a) of None \<Rightarrow> (None, C)
+         | Some a' \<Rightarrow> (Some a', cupd (uqok q) pos (drop k t) (gval \<omega> a (drop k t))
+              (gval \<omega> a' (drop k t)) C)))))"
+  by (simp add: cstep_del_def cstep_def)
+
+text \<open>The result table of a structure built afresh is the aggregate's result, as the read
+  computes it without the table.\<close>
+
+declare gcache_ugres[code]
+
+lemma cstep_ins_unfold[code_unfold]: "cstep gstep_ins = cstep_ins"
+  by (simp add: cstep_ins_def)
+
+lemma cstep_del_unfold[code_unfold]: "cstep gstep_del = cstep_del"
+  by (simp add: cstep_del_def)
+
 subsection \<open>The steps at the short tuples\<close>
 
 text \<open>The steps of @{theory MFODL_Monitor_Dense.Dense_Agg_Gen} are generic in the element

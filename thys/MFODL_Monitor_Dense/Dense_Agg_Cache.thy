@@ -218,8 +218,16 @@ definition gcache :: "uconstr option \<Rightarrow> daggp \<Rightarrow> ugagg \<R
 lemma gcache_ugres: "gcache q p a = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> ugres (uqok q) False \<omega> pos a)"
   by (simp add: gcache_def ugres_def gres_gvset split: prod.splits)
 
+text \<open>The table pays where a group's aggregate rarely changes with a tuple, which is MIN and MAX:
+  for them a tuple changes its group's value only when it is the group's extreme.  The count, the
+  sum and the average change with every tuple, and keeping the table then costs more than building
+  it; for those the structure keeps no table, and the read builds it as before.\<close>
+
+definition cachedp :: "daggp \<Rightarrow> bool" where
+  "cachedp p = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> fst \<omega> = Formula.Agg_Min \<or> fst \<omega> = Formula.Agg_Max)"
+
 typedef ucache = "{x :: (uconstr option \<times> daggp) \<times> ucnt \<times> ugagg option \<times> event_data list set.
-    case x of (k, c, ax, C) \<Rightarrow> \<forall>a. ax = Some a \<longrightarrow> C = gcache (fst k) (snd k) a}"
+    case x of (k, c, ax, C) \<Rightarrow> cachedp (snd k) \<longrightarrow> (\<forall>a. ax = Some a \<longrightarrow> C = gcache (fst k) (snd k) a)}"
   by (rule exI[of _ "(undefined, Mapping.empty, None, {})"]) simp
 
 lifting_forget mapping.lifting
@@ -231,7 +239,8 @@ lift_definition uc_cnt :: "ucache \<Rightarrow> ucnt" is "\<lambda>(k, c, ax, C)
 lift_definition uc_ax :: "ucache \<Rightarrow> ugagg option" is "\<lambda>(k, c, ax, C). ax" .
 lift_definition uc_set :: "ucache \<Rightarrow> event_data list set" is "\<lambda>(k, c, ax, C). C" .
 
-lemma uc_set_gcache: "uc_ax x = Some a \<Longrightarrow> uc_set x = gcache (fst (uc_key x)) (snd (uc_key x)) a"
+lemma uc_set_gcache: "cachedp (snd (uc_key x)) \<Longrightarrow> uc_ax x = Some a \<Longrightarrow>
+    uc_set x = gcache (fst (uc_key x)) (snd (uc_key x)) a"
   by transfer auto
 
 definition cset :: "uconstr option \<Rightarrow> daggp \<Rightarrow> ugagg option \<Rightarrow> event_data list set" where
@@ -366,16 +375,20 @@ lemma cset_gcache: "ax = Some a \<Longrightarrow> cset q p ax = gcache q p a"
 
 lift_definition uc_step_ins :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     ucache \<Rightarrow> ucache" is
-  "\<lambda>q p w X x. case x of (key, c, ax, C) \<Rightarrow> (if key = (q, p)
+  "\<lambda>q p w X x. case x of (key, c, ax, C) \<Rightarrow> (if cachedp p then (if key = (q, p)
      then (case cnt_ins_fold (cstep gstep_ins q p) (csl X) c (ax, C) of (c', axC') \<Rightarrow> (key, c', axC'))
-     else ((q, p), ucnt_add X c, uag_ins p w X c ax, cset q p (uag_ins p w X c ax)))"
+     else ((q, p), ucnt_add X c, uag_ins p w X c ax, cset q p (uag_ins p w X c ax)))
+     else (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+       (case cnt_ins_fold (gstep_ins k (umeval_trm f)) (csl X) c ax of (c', ax') \<Rightarrow> ((q, p), c', ax', C))))"
   by (auto split: prod.splits dest: cnt_ins_fold_cinv simp: cset_gcache)
 
 lift_definition uc_step_del :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
     ucache \<Rightarrow> ucache" is
-  "\<lambda>q p w X x. case x of (key, c, ax, C) \<Rightarrow> (if key = (q, p)
+  "\<lambda>q p w X x. case x of (key, c, ax, C) \<Rightarrow> (if cachedp p then (if key = (q, p)
      then (case cnt_del_fold (cstep gstep_del q p) (csl X) c (ax, C) of (c', axC') \<Rightarrow> (key, c', axC'))
-     else ((q, p), ucnt_del X c, uag_del p w X c ax, cset q p (uag_del p w X c ax)))"
+     else ((q, p), ucnt_del X c, uag_del p w X c ax, cset q p (uag_del p w X c ax)))
+     else (case p of (g0, \<omega>, f, k, pos) \<Rightarrow>
+       (case cnt_del_fold (gstep_del k (umeval_trm f)) (csl X) c ax of (c', ax') \<Rightarrow> ((q, p), c', ax', C))))"
   by (auto split: prod.splits dest: cnt_del_fold_cinv simp: cset_gcache)
 
 lemma uc_step_ins_cnt[simp]: "uc_cnt (uc_step_ins q p w X x) = ucnt_add X (uc_cnt x)"
@@ -389,12 +402,25 @@ qed
 lemma uc_step_ins_ax[simp]: "uc_ax (uc_step_ins q p w X x) = uag_ins p w X (uc_cnt x) (uc_ax x)"
 proof -
   obtain key c ax C where r: "Rep_ucache x = (key, c, ax, C)" by (cases "Rep_ucache x")
-  have "fst (fold (cstep gstep_ins q p) (filter (\<lambda>t. Mapping.lookup c t = None) (csl X)) (ax, C)) =
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p) auto
+  have h1: "fst (fold (cstep gstep_ins q p) (filter (\<lambda>t. Mapping.lookup c t = None) (csl X)) (ax, C)) =
       uag_ins p w X c ax"
     by (simp add: fst_fold_cstep_ins uag_ins_def)
-  then show ?thesis
-    by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_ins.rep_eq r cnt_ins_fold_eq[OF distinct_csl_edl]
-        split: prod.splits) (metis fst_conv)
+  have h2: "fold (gstep_ins k (umeval_trm f)) (filter (\<lambda>t. Mapping.lookup c t = None) (csl X)) ax =
+      uag_ins p w X c ax"
+    by (simp add: p uag_ins_def gins_def)
+  show ?thesis
+  proof (cases "cachedp p")
+    case True
+    with h1 show ?thesis
+      by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_ins.rep_eq r cnt_ins_fold_eq[OF distinct_csl_edl]
+          split: prod.splits) (metis fst_conv)
+  next
+    case False
+    with h2 show ?thesis
+      by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_ins.rep_eq r p cnt_ins_fold_eq[OF distinct_csl_edl]
+          split: prod.splits)
+  qed
 qed
 
 lemma uc_step_del_cnt[simp]: "uc_cnt (uc_step_del q p w X x) = ucnt_del X (uc_cnt x)"
@@ -408,12 +434,25 @@ qed
 lemma uc_step_del_ax[simp]: "uc_ax (uc_step_del q p w X x) = uag_del p w X (uc_cnt x) (uc_ax x)"
 proof -
   obtain key c ax C where r: "Rep_ucache x = (key, c, ax, C)" by (cases "Rep_ucache x")
-  have "fst (fold (cstep gstep_del q p) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl X)) (ax, C)) =
+  obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p) auto
+  have h1: "fst (fold (cstep gstep_del q p) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl X)) (ax, C)) =
       uag_del p w X c ax"
     by (simp add: fst_fold_cstep_del uag_del_def)
-  then show ?thesis
-    by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_del.rep_eq r cnt_del_fold_eq[OF distinct_csl_edl]
-        split: prod.splits) (metis fst_conv)
+  have h2: "fold (gstep_del k (umeval_trm f)) (filter (\<lambda>t. Mapping.lookup c t = Some 1) (csl X)) ax =
+      uag_del p w X c ax"
+    by (simp add: p uag_del_def gdel_def)
+  show ?thesis
+  proof (cases "cachedp p")
+    case True
+    with h1 show ?thesis
+      by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_del.rep_eq r cnt_del_fold_eq[OF distinct_csl_edl]
+          split: prod.splits) (metis fst_conv)
+  next
+    case False
+    with h2 show ?thesis
+      by (simp add: uc_ax.rep_eq uc_cnt.rep_eq uc_step_del.rep_eq r p cnt_del_fold_eq[OF distinct_csl_edl]
+          split: prod.splits)
+  qed
 qed
 
 
@@ -433,7 +472,7 @@ lemma gempty_gkeys: "gempty a \<longleftrightarrow> gkeys a = {}"
 definition uc_res :: "uconstr option \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ucache \<Rightarrow> event_data list set" where
   "uc_res q p w x = (case uc_ax x of
      None \<Rightarrow> ufilt q (udagg_p p (Mapping.keys (uc_cnt x)))
-   | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> if uc_key x = (q, p)
+   | Some a \<Rightarrow> (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> if uc_key x = (q, p) \<and> cachedp p
        then (if g0 \<and> gempty a then ufilt q {[eval_agg_op \<omega> {}]} else uc_set x)
        else ugres (uqok q) g0 \<omega> pos a))"
 
