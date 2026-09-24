@@ -59,10 +59,8 @@
 
   $ echo 'NOT ((NEXT[0,0] r()) OR NEXT[0,0] s()) UNTIL[0,0] r()' > test24_6.mfotl
   $ monpoly -verified -sig test24.sig -formula test24_6.mfotl -log test24.log -verbose -nonewlastts
-  The input formula is:
-    (NOT ((NEXT[0,0] r()) OR NEXT[0,0] s())) UNTIL[0,0] r()
   The analyzed formula is:
-    ((NOT NEXT[0,0] r()) AND (NOT NEXT[0,0] s())) UNTIL[0,0] r()
+    (NOT ((NEXT[0,0] r()) OR NEXT[0,0] s())) UNTIL[0,0] r()
   The sequence of free variables is: ()
   At time point 0:
   At time point 1:

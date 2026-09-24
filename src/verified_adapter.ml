@@ -150,12 +150,14 @@ and convert_re_vars fvl bvl lets = function
   | Star r -> Star (convert_re_vars fvl bvl lets r)
   in convert_formula_vars free_vars [] [] f
 
+(* A field that does not convert, or a wrong number of fields, with MonPoly's message. *)
+exception Conversion_error of string
+
 let uconvert_tuple (pname, tl) sl =
   let pos = ref 0 in
   let type_error tname =
-    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for\
-      \ predicate %s, field number %d") tname pname !pos in
-    failwith msg
+    raise (Conversion_error (Printf.sprintf "Wrong type for predicate %s: Expected type %s\
+      \ for field number %d" pname tname !pos))
   in
   try List.map2
     (fun (_, t) s ->
@@ -173,10 +175,8 @@ let uconvert_tuple (pname, tl) sl =
     )
     tl sl
   with Invalid_argument _ ->
-    let msg = Printf.sprintf "[convert_tuple] Wrong tuple length for\
-      \ predicate %s (expected: %d, actual: %d)"
-      pname (List.length tl) (List.length sl) in
-    failwith msg
+    raise (Conversion_error (Printf.sprintf "Wrong tuple length for predicate %s\
+      \ (expected: %d, actual: %d)" pname (List.length tl) (List.length sl)))
 
 type udb = ((string * nat), ((event_data list) set list)) mapping
 
@@ -297,6 +297,41 @@ let flush_batch b db = match b, db with
   | UB b, Short db ->
     Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
 
+(* The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
+   with the types of their arguments.  The verified monitor does not support regular
+   expressions: a formula that mentions a predicate with such an argument is refused, as
+   [convert_schema_into_sig] refuses it when the type checker looks the predicate up; the
+   arguments of the other such predicates are read as strings (the parser drops their events
+   unless -nofilterrel). *)
+let rec vpred_names acc (f : tysym Verified.Monitor.formula) = match f with
+  | Verified.Monitor.Pred (p, _) -> p :: acc
+  | Verified.Monitor.Let (_, a, b) | Verified.Monitor.Frz (_, a, b)
+  | Verified.Monitor.LetPast (_, a, b) | Verified.Monitor.Or (a, b) | Verified.Monitor.And (a, b)
+  | Verified.Monitor.Since (a, _, b) | Verified.Monitor.Until (a, _, b)
+  | Verified.Monitor.Trigger (a, _, b) | Verified.Monitor.Release (a, _, b) ->
+      vpred_names (vpred_names acc a) b
+  | Verified.Monitor.Neg a | Verified.Monitor.Exists (_, a) | Verified.Monitor.Agg (_, _, _, _, a)
+  | Verified.Monitor.Prev (_, a) | Verified.Monitor.Next (_, a) -> vpred_names acc a
+  | Verified.Monitor.Ands l -> List.fold_left vpred_names acc l
+  | Verified.Monitor.MatchF (_, r) | Verified.Monitor.MatchP (_, r) -> vregex_names acc r
+  | Verified.Monitor.Eq _ | Verified.Monitor.Less _ | Verified.Monitor.LessEq _
+  | Verified.Monitor.TP _ | Verified.Monitor.TS _ -> acc
+and vregex_names acc = function
+  | Verified.Monitor.Skip _ -> acc
+  | Verified.Monitor.Test a -> vpred_names acc a
+  | Verified.Monitor.Plusa (r, s) | Verified.Monitor.Times (r, s) -> vregex_names (vregex_names acc r) s
+  | Verified.Monitor.Star r -> vregex_names acc r
+
+let lsig_of_schema dbschema cf =
+  let names = vpred_names [] cf in
+  List.map (fun (pname, tl) -> (pname, List.map (fun (_, t) -> match t with
+      TInt -> Verified.Monitor.TInt
+    | TFloat -> Verified.Monitor.TFloat
+    | TStr -> Verified.Monitor.TString
+    | TRegexp ->
+        if List.mem pname names then unsupported "Regular expressions constants are not supported"
+        else Verified.Monitor.TString) tl)) dbschema
+
 let convert_into_tysym ty = 
   match ty with
     TInt -> Verified.Monitor.TCst (Verified.Monitor.TInt)
@@ -311,23 +346,26 @@ let rec convert_schema_into_sig sch =
                                       else (convert_schema_into_sig rest) k)
   | [] -> (fun k -> None)
 
-let type_check_formula dbschema f =
-  type_check (convert_schema_into_sig dbschema) f
-
 (* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
    Dense_Eval.thy, which drops the empty columns, run on the short tuples as
-   Dense_Unbox_Exec.thy states it.  [udminit_push] moves existential quantifiers into the past
-   and future diamonds they commute with (Dense_Push.thy) and compiles the formula the kernel's
-   [meinit0] builds from the result into the dense one; [udmstep] performs one step; both are
-   pure functions.  The
-   simulation theorem of Dense_Eval.thy covers the evaluator through the refinement theorems of
-   Dense_Exec.thy and Dense_Unbox_Exec.thy, provided the compiler placed every node:
-   [uvdfail_nodes] counts the ones it could not, and a formula with any is refused rather than
-   run outside the theorem. *)
+   Dense_Unbox_Exec.thy states it.  [udminit_verimon] prepares the formula as VeriMon does
+   (Dense_VeriMon.thy): it type checks it and, if it is not monitorable and [rw] is set,
+   normalizes and rewrites it; then, if [mw] is set, it converts it into multi-way joins; then
+   [udminit_push] moves existential quantifiers into the past and future diamonds they commute
+   with (Dense_Push.thy) and compiles the result into the dense one.  [udmstep] performs one
+   step; all of these are pure functions.  The theorem udminit_verimon_mverdicts of
+   Dense_VeriMon.thy states that the verdicts are those of the input formula, through the
+   simulation theorem of Dense_Eval.thy and the refinement theorems of Dense_Exec.thy and
+   Dense_Unbox_Exec.thy, provided the compiler placed every node: [uvdfail_nodes] counts the
+   ones it could not, and a formula with any is refused rather than run outside the theorem.
+   The front end therefore neither type checks nor rewrites the formula itself for this monitor
+   (see [Rewriting.check_formula]). *)
 type state = unit udmstate_ext
 
-let init cf =
-  let st = udminit_push cf in
+let init ~mw ~rw dbschema cf =
+  let st = match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
+    | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
+    | Inr st -> st in
   let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
   if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
     Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;
@@ -343,6 +381,8 @@ let uset_fold f s x = match s with
    converting to [Tuple.tuple] first.  The monitor over the short tuples produces them without
    the option around the fields. *)
 type verdict = UV of event_data list set
+
+let verdict_of_table t = UV t
 
 let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
@@ -532,6 +572,11 @@ let show_results posl _i q tsq (v: verdict) =
       show_results_gen uset_fold add_utuple compare_tuple_mp
         (fun () -> show_results_slow posl q tsq v) q tsq table
 
-let is_monitorable dbschema f =
-  let s = mmonitorable_exec (convert_formula dbschema f) in
-  (s, (if s then None else Some (f, "MFODL formula is not monitorable")))
+(* Monitorability as the verified monitor decides it: the formula is accepted if VeriMon's
+   preparation (type checking and, with [rw], normalization and rewriting) yields a monitorable
+   formula. *)
+let is_monitorable rw dbschema f =
+  match prepare_verimon rw (convert_schema_into_sig dbschema) (convert_formula dbschema f) with
+  | Inr _ -> (true, None)
+  | Inl e when e = "not monitorable" -> (false, Some (f, "MFODL formula is not monitorable"))
+  | Inl e -> (false, Some (f, "MFODL formula is not monitorable (" ^ e ^ ")"))

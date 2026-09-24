@@ -230,11 +230,13 @@ let _ =
     "-nofilteremptytp", Arg.Set nofilteremptytpopt, "\tDisable filter_empty_tp module";
     "-stats", Arg.Set statsarg, "\t\tShow stats at the end of stdout";
     "-ignore_parse_errors", Arg.Set Misc.ignore_parse_errors, "\tIgnore log parse errors";
+    "-old_log_parser", Arg.Unit (fun () -> Verified_log_parser.old := Some true), "\tRead the log with MonPoly's hand-written parser (the default without -verified)";
+    "-verified_log_parser", Arg.Unit (fun () -> Verified_log_parser.old := Some false), "\tRead the log with the verified parser (thys/Log_Parser; the default with -verified)";
     "-stop_at_out_of_order_ts", Arg.Set Misc.stop_at_out_of_order_ts, "\tStop monitoring when out-of-order timestamps encountered, otherwise issue warning";
     "-stop_at_first_viol", Arg.Set Misc.stop_at_first_viol, "\tStop at first encountered violation";
     "-load", Arg.Set_string Algorithm.resumefile, "\tLoad monitor state from file";
     "-combine", Arg.Set_string Algorithm.combine_files, "\tComma separated partition files to combine";
-    "-verified", Arg.Set Misc.verified, "\tRun the verified monitor (the dense evaluator of thys/MFODL_Monitor_Dense, proved to simulate MonPoly's verified kernel)";
+    "-verified", Arg.Set Misc.verified, "\tRun the verified monitor (the dense evaluator of thys/MFODL_Monitor_Dense, proved to simulate MonPoly's verified kernel) on the formula as VeriMon prepares it (verified normalization and rewriting, Dense_VeriMon.thy; -no_rw and -no_mw apply)";
     "-dense", Arg.Set Misc.dense_cols, "\tDeprecated, accepted and ignored: the verified kernel always represents tuples without the columns that are empty for the whole table";
     "-heap_maps", Arg.Set Misc.heap_all, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-vdense", Arg.Set Misc.verified_dense, "\tDeprecated, accepted and ignored: -verified always runs the verified dense evaluator";

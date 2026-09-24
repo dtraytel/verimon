@@ -1,19 +1,29 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_RBT_Code Dense_Push
+  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_RBT_Code Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
+    Log_Monitor
 begin
 (*>*)
 
 text \<open>
   The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's
   \<^verbatim>\<open>verified.ocaml\<close>, and @{text "-verified"} runs the verified dense evaluator it contains.
-  @{const udminit_push} builds the initial state -- moving existential quantifiers into the
-  windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and compiling the
-  resulting sparse formula into the short-tuple one -- and @{const udmstep} performs one step
-  on it, both pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
+  @{const udminit_verimon} prepares the input formula as VeriMon does -- type checking and, if
+  the formula is not monitorable, normalization and rewriting, then the conversion into
+  multi-way joins (@{theory MFODL_Monitor_Dense.Dense_VeriMon}) -- and builds the initial state
+  from it with @{const udminit_push}, which moves existential quantifiers into the windows they
+  commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and compiles the resulting sparse
+  formula into the short-tuple one; @{const udmstep} performs one step on it.  All of these are
+  pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
   must be zero for the correctness theorem @{text udeval_Rep} (@{theory
   MFODL_Monitor_Dense.Dense_Unbox_Exec}) to apply, and the front end refuses the formula
-  otherwise.
+  otherwise.  @{text "-verified"} runs them on the log through @{const vinit},
+  @{const vfeed_chunk} and @{const vfinish} (@{theory MFODL_Monitor_Dense.Log_Monitor}): the
+  verified log parser, which drops the events of the predicates the formula does not mention,
+  the conversion of the entries into the monitor's databases, and the monitor, with the
+  theorems @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} from the bytes
+  of the log to the verdicts; @{const vpending} tells the driver which part of the input it
+  still needs for locating errors.
 
   The export is entirely within this session.  The code-generator setup it relies on -- the
   monomorphised containers and tree primitives of @{theory MFODL_Monitor_Dense.Dense_Code_Opt}
@@ -66,8 +76,15 @@ export_code
   convert_multiway mmonitorable_exec type_check
   (*the verified dense monitor's own database, over the short tuples*)
   utable_of_list uempty_db uinsert_table_into_db urbt_fold
-  (*the verified dense monitor, over the short tuples*)
-  udminit_push udmstep uvdfail_nodes udmstate_m
+  (*the verified dense monitor, over the short tuples, and its initialization with VeriMon's
+    preparation of the formula*)
+  udminit_push udminit_verimon prepare_verimon udmstep uvdfail_nodes udmstate_m
+  (*the verified log parser (session Log_Parser), which reads the log in chunks*)
+  Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
+  Log_Exec.E_TOKEN Log_Exec.X_ENTRY
+  (*the verified monitor on the log: parser, conversion, and dense monitor*)
+  Log_Monitor.vinit Log_Monitor.vfeed_chunk Log_Monitor.vfinish Log_Monitor.vpending Log_Monitor.VO_VERDICTS
+  Log_Monitor.VE_PARSE Log_Monitor.VI_WF
   in OCaml module_name Monitor file_prefix "verified"
 
 (*<*)
