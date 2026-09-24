@@ -3862,8 +3862,6 @@ let rec nfv
 
 let rec fun_upd _A f a b = (fun x -> (if eq _A x a then b else f x));;
 
-let rec concat xss = foldr (fun a b -> a @ b) xss [];;
-
 let rec membera _A x0 y = match x0, y with [], y -> false
                      | x :: xs, y -> eq _A x y || membera _A xs y;;
 
@@ -10107,21 +10105,6 @@ let rec uinsert_table_into_db
     update_mapping_with (ccompare_prod ccompare_string8 ccompare_nat)
       (fun _ tbl _ -> mapa (edl_union x) tbl) p [x] db;;
 
-let rec strict_sorted_by
-  c x1 = match c, x1 with
-    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
-    | c, [] -> true
-    | c, [v] -> true;;
-
-let rec map_t f xs = rev (fold (fun x -> (fun a -> f x :: a)) xs []);;
-
-let rec urbt_of_sorted
-  xs = Mapping_RBTa
-         (if strict_sorted_by edl_comparator xs
-           then rbtreeify (map_t (fun x -> (x, ())) xs)
-           else rbt_comp_bulkload edl_comparator
-                  (map_t (fun x -> (x, ())) xs));;
-
 let rec mapping_impl_choose2
   x y = match x, y with Mapping_RBT, Mapping_RBT -> Mapping_RBT
     | Mapping_Assoc_List, Mapping_Assoc_List -> Mapping_Assoc_List
@@ -10137,6 +10120,86 @@ let uempty_db : ((string * nat), ((event_data list) set list)) mapping
   = mapping_empty (ccompare_prod ccompare_string8 ccompare_nat)
       (of_phantom (mapping_impl_prod mapping_impl_string8 mapping_impl_nat));;
 
+let rec rbtreeify_gi
+  n kvs =
+    (if Z.leq n (Z.of_int 1) then (Empty, kvs)
+      else (let (na, r) =
+              (fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem
+                (Z.abs k) (Z.abs l))
+                n (Z.of_int 2)
+              in
+             (if Z.equal r Z.zero
+               then (let (t1, (k, v) :: kvsa) = rbtreeify_gi na kvs in
+                      apfst (fun a -> Branch (B, t1, k, v, a))
+                        (rbtreeify_gi na kvsa))
+               else (let (t1, (k, v) :: kvsa) = rbtreeify_fi na kvs in
+                      apfst (fun a -> Branch (B, t1, k, v, a))
+                        (rbtreeify_gi na kvsa)))))
+and rbtreeify_fi
+  n kvs =
+    (if Z.leq n Z.zero then (Empty, kvs)
+      else (if Z.equal n (Z.of_int 1)
+             then (let (k, v) :: kvsa = kvs in
+                    (Branch (R, Empty, k, v, Empty), kvsa))
+             else (let (na, r) =
+                     (fun k l -> if Z.equal Z.zero l then (Z.zero, l) else
+                       Z.div_rem (Z.abs k) (Z.abs l))
+                       n (Z.of_int 2)
+                     in
+                    (if Z.equal r Z.zero
+                      then (let (t1, (k, v) :: kvsa) = rbtreeify_fi na kvs in
+                             apfst (fun a -> Branch (B, t1, k, v, a))
+                               (rbtreeify_gi na kvsa))
+                      else (let (t1, (k, v) :: kvsa) = rbtreeify_fi na kvs in
+                             apfst (fun a -> Branch (B, t1, k, v, a))
+                               (rbtreeify_fi na kvsa))))));;
+
+let rec ilen acc x1 = match acc, x1 with acc, [] -> acc
+               | acc, x :: xs -> ilen (Z.add acc (Z.of_int 1)) xs;;
+
+let rec rbtreeify_i kvs = fst (rbtreeify_gi (ilen (Z.of_int 1) kvs) kvs);;
+
+let rec map_t f xs = rev (fold (fun x -> (fun a -> f x :: a)) xs []);;
+
+let rec cmerge_rev
+  c acc x2 ys = match c, acc, x2, ys with
+    c, acc, [], ys -> fold (fun a b -> a :: b) ys acc
+    | c, acc, x :: xs, [] -> fold (fun a b -> a :: b) (x :: xs) acc
+    | c, acc, x :: xs, y :: ys ->
+        (match c x y with Eqa -> cmerge_rev c (x :: acc) xs ys
+          | Lt -> cmerge_rev c (x :: acc) xs (y :: ys)
+          | Gt -> cmerge_rev c (y :: acc) (x :: xs) ys);;
+
+let rec cmerge_pairs
+  c acc x2 = match c, acc, x2 with
+    c, acc, a :: b :: r -> cmerge_pairs c (cmerge_rev c [] a b :: acc) r
+    | c, acc, [a] -> rev a :: acc
+    | c, acc, [] -> acc;;
+
+let rec cmerge_all
+  c d x2 = match c, d, x2 with c, d, [] -> []
+    | c, d, [a] -> (if d then rev a else a)
+    | c, d, a :: b :: r ->
+        cmerge_all c (not d)
+          (cmerge_pairs (if d then (fun x y -> c y x) else c) []
+            (a :: b :: r));;
+
+let rec runs_tc
+  c x cur acc xa4 = match c, x, cur, acc, xa4 with
+    c, x, cur, acc, [] -> rev (x :: cur) :: acc
+    | c, x, cur, acc, y :: ys ->
+        (if equal_order (c x y) Lt then runs_tc c y (x :: cur) acc ys
+          else runs_tc c y [] (rev (x :: cur) :: acc) ys);;
+
+let rec csort
+  c xs =
+    (match xs with [] -> []
+      | x :: ys -> cmerge_all c false (runs_tc c x [] [] ys));;
+
+let rec urbt_sort
+  xs = Mapping_RBTa
+         (rbtreeify_i (map_t (fun x -> (x, ())) (csort edl_comparator xs)));;
+
 let rec add_evk
   k vs x2 = match k, vs, x2 with k, vs, [] -> [(k, [vs])]
     | ka, vs, (k, xs) :: g ->
@@ -10147,45 +10210,9 @@ let rec add_ev (p, vs) g = add_evk (p, size_lista vs) vs g;;
 
 let rec group_evs evs = fold add_ev evs [];;
 
-let rec merge_tc
-  c acc x2 ys = match c, acc, x2, ys with
-    c, acc, [], ys -> fold (fun a b -> a :: b) acc ys
-    | c, acc, x :: xs, [] -> fold (fun a b -> a :: b) acc (x :: xs)
-    | c, acc, x :: xs, y :: ys ->
-        (match c x y with Eqa -> merge_tc c (x :: acc) xs ys
-          | Lt -> merge_tc c (x :: acc) xs (y :: ys)
-          | Gt -> merge_tc c (y :: acc) (x :: xs) ys);;
-
-let rec merge_pairs_tc
-  c acc x2 = match c, acc, x2 with
-    c, acc, a :: b :: r -> merge_pairs_tc c (merge_tc c [] a b :: acc) r
-    | c, acc, [] -> [] @ acc
-    | c, acc, [v] -> [v] @ acc;;
-
-let rec merge_all_tc
-  c k xss =
-    (if equal_nata k zero_nata then concat xss
-      else (match xss with [] -> [] | [a] -> a
-             | _ :: _ :: _ ->
-               merge_all_tc c (minus_nata k one_nata)
-                 (merge_pairs_tc c [] xss)));;
-
-let rec runs_tc
-  c x cur acc xa4 = match c, x, cur, acc, xa4 with
-    c, x, cur, acc, [] -> rev (x :: cur) :: acc
-    | c, x, cur, acc, y :: ys ->
-        (if equal_order (c x y) Lt then runs_tc c y (x :: cur) acc ys
-          else runs_tc c y [] (rev (x :: cur) :: acc) ys);;
-
-let rec sort_tc
-  c xs =
-    (match xs with [] -> []
-      | x :: ys -> merge_all_tc c (size_lista xs) (runs_tc c x [] [] ys));;
-
 let rec build_db
   evs = fold (fun (k, xs) ->
-               uinsert_table_into_db k
-                 (RBT_set (urbt_of_sorted (sort_tc edl_comparator (rev xs)))))
+               uinsert_table_into_db k (RBT_set (urbt_sort (rev xs))))
           (group_evs evs) uempty_db;;
 
 let rec vtp
@@ -14089,6 +14116,12 @@ let rec vfeed_chunk
       (vs, (est, mst)));;
 
 let rec urbt_fold x = foldb (ccompare_list ccompare_event_data) x;;
+
+let rec strict_sorted_by
+  c x1 = match c, x1 with
+    c, x :: y :: zs -> equal_order (c x y) Lt && strict_sorted_by c (y :: zs)
+    | c, [] -> true
+    | c, [v] -> true;;
 
 let rec edl_rbt_of_sorted_list
   xa = Mapping_RBTa

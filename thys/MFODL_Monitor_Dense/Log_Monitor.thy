@@ -617,10 +617,279 @@ qed
 text \<open>The code sorts the tuples with @{const edl_comparator} rather than through the dictionaries
   of the comparator on lists.\<close>
 
-lemma build_db_code_edl[code]: "build_db evs =
+lemma build_db_code_edl: "build_db evs =
   fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_tc edl_comparator (rev xs)))) db)
     (group_evs evs) uempty_db"
   by (simp add: build_db_code sort_tc[symmetric] ccomp_edl)
+
+subsection \<open>Building the tables faster\<close>
+
+text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
+  natural numbers of the generated code, which wrap the integers. The copy below computes with the
+  integers directly, and is proved to build the same tree.\<close>
+
+lemma nat_of_integer_half: "\<not> n \<le> 0 \<Longrightarrow> n \<noteq> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
+  "\<not> n \<le> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
+  including integer.lifting by (transfer, auto)+
+
+function rbtreeify_fi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list"
+  and rbtreeify_gi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list" where
+  "rbtreeify_fi n kvs = (if n \<le> 0 then (RBT_Impl.Empty, kvs)
+    else if n = 1 then (case kvs of (k, v) # kvs' \<Rightarrow> (RBT_Impl.Branch RBT_Impl.R RBT_Impl.Empty k v RBT_Impl.Empty, kvs'))
+    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
+      if r = 0 then (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
+      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_fi n' kvs'))))"
+| "rbtreeify_gi n kvs = (if n \<le> 1 then (RBT_Impl.Empty, kvs)
+    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
+      if r = 0 then (case rbtreeify_gi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
+      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))))"
+  by pat_completeness auto
+termination
+  by (relation "measure (case_sum (\<lambda>(n, _). nat_of_integer n) (\<lambda>(n, _). nat_of_integer n))")
+    (auto simp: divmod_abs_def nat_of_integer_half)
+
+declare rbtreeify_fi.simps[simp del] rbtreeify_gi.simps[simp del]
+
+lemma integer_of_nat_rbt_simps:
+  "integer_of_nat n \<le> 0 \<longleftrightarrow> n = 0" "integer_of_nat n \<le> 1 \<longleftrightarrow> n = 0 \<or> n = 1"
+  "integer_of_nat n = 1 \<longleftrightarrow> n = 1"
+  "Code_Numeral.divmod_abs (integer_of_nat n) 2 = (integer_of_nat (n div 2), integer_of_nat (n mod 2))"
+  "integer_of_nat m = 0 \<longleftrightarrow> m = 0"
+  by (simp_all add: integer_eq_iff less_eq_integer.rep_eq divmod_abs_def integer_of_nat.rep_eq
+      zdiv_int zmod_int le_Suc_eq)
+
+lemma rbtreeify_fi: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+  and rbtreeify_gi: "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+proof (induction n kvs and n kvs rule: rbtreeify_f_rbtreeify_g.induct)
+  case (1 n kvs)
+  then show ?case
+    by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
+      (auto simp: integer_of_nat_rbt_simps split: list.splits prod.splits)
+next
+  case (2 n kvs)
+  then show ?case
+    by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
+      (auto simp: integer_of_nat_rbt_simps split: list.splits prod.splits)
+qed
+
+fun ilen :: "integer \<Rightarrow> 'a list \<Rightarrow> integer" where
+  "ilen acc [] = acc"
+| "ilen acc (x # xs) = ilen (acc + 1) xs"
+
+lemma ilen: "ilen acc xs = acc + integer_of_nat (length xs)"
+  by (induction acc xs rule: ilen.induct) (simp_all add: integer_of_nat_eq_of_nat)
+
+definition rbtreeify_i :: "('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt" where
+  "rbtreeify_i kvs = fst (rbtreeify_gi (ilen 1 kvs) kvs)"
+
+lemma rbtreeify_i: "rbtreeify_i kvs = rbtreeify kvs"
+proof -
+  have "ilen 1 kvs = integer_of_nat (Suc (length kvs))"
+    by (simp add: ilen integer_of_nat_eq_of_nat)
+  then show ?thesis
+    by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
+qed
+
+text \<open>The merge sort @{const sort_tc} reverses each merged list, as it merges tail recursively
+  onto an accumulator. The one below does not: merging onto an accumulator reverses the order, so a
+  round of merges turns lists that increase into lists that decrease, and the next round merges
+  those with the comparator turned around. Like @{const sort_tc}, it drops duplicates as it merges;
+  it is proved to sort strictly, so that the tree can be built without checking that it is.\<close>
+
+lemma comparator_converse:
+  assumes "comparator c"
+  shows "comparator (\<lambda>x y. c y x)"
+proof
+  fix x y z
+  show "invert_order (c y x) = c x y"
+    by (rule comparator.sym[OF assms])
+  show "c y x = order.Eq \<Longrightarrow> x = y"
+    using comparator.weak_eq[OF assms, of y x] by simp
+  show "c y x = order.Lt \<Longrightarrow> c z y = order.Lt \<Longrightarrow> c z x = order.Lt"
+    using comparator.comp_trans[OF assms, of z y x] by simp
+qed
+
+fun cmerge :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "cmerge c [] ys = ys"
+| "cmerge c (x # xs) [] = x # xs"
+| "cmerge c (x # xs) (y # ys) = (case c x y of
+     order.Lt \<Rightarrow> x # cmerge c xs (y # ys)
+   | order.Gt \<Rightarrow> y # cmerge c (x # xs) ys
+   | order.Eq \<Rightarrow> x # cmerge c xs ys)"
+
+lemma set_cmerge: "comparator c \<Longrightarrow> set (cmerge c xs ys) = set xs \<union> set ys"
+  by (induction c xs ys rule: cmerge.induct) (auto split: order.splits dest: comparator.weak_eq)
+
+lemma sorted_cmerge: "comparator c \<Longrightarrow> sorted_wrt (lt_of_comp c) xs \<Longrightarrow> sorted_wrt (lt_of_comp c) ys \<Longrightarrow>
+  sorted_wrt (lt_of_comp c) (cmerge c xs ys)"
+proof (induction c xs ys rule: cmerge.induct)
+  case (3 c x xs y ys)
+  have tr: "lt_of_comp c a b \<Longrightarrow> lt_of_comp c b d \<Longrightarrow> lt_of_comp c a d" for a b d
+    using comparator.comp_trans[OF 3(4), of a b d] by (simp add: comparator.Lt_lt_conv[OF 3(4)])
+  note conv = comparator.Lt_lt_conv[OF 3(4)] comparator.Gt_lt_conv[OF 3(4)] comparator.eq_Eq_conv[OF 3(4)]
+  from 3 show ?case
+    by (auto simp: set_cmerge conv split: order.splits intro: tr)
+qed simp_all
+
+lemma lt_of_comp_converse: "lt_of_comp (\<lambda>x y. c y x) a b = lt_of_comp c b a"
+  by (simp add: lt_of_comp_def)
+
+fun cmerge_rev :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "cmerge_rev c acc [] ys = fold Cons ys acc"
+| "cmerge_rev c acc (x # xs) [] = fold Cons (x # xs) acc"
+| "cmerge_rev c acc (x # xs) (y # ys) = (case c x y of
+     order.Lt \<Rightarrow> cmerge_rev c (x # acc) xs (y # ys)
+   | order.Gt \<Rightarrow> cmerge_rev c (y # acc) (x # xs) ys
+   | order.Eq \<Rightarrow> cmerge_rev c (x # acc) xs ys)"
+
+lemma cmerge_rev: "cmerge_rev c acc xs ys = rev (cmerge c xs ys) @ acc"
+  by (induction c acc xs ys rule: cmerge_rev.induct) (auto simp: fold_Cons_rev split: order.splits)
+
+fun cmerge_pairs :: "'a comparator \<Rightarrow> 'a list list \<Rightarrow> 'a list list \<Rightarrow> 'a list list" where
+  "cmerge_pairs c acc (a # b # r) = cmerge_pairs c (cmerge_rev c [] a b # acc) r"
+| "cmerge_pairs c acc [a] = rev a # acc"
+| "cmerge_pairs c acc [] = acc"
+
+lemma length_cmerge_pairs: "length (cmerge_pairs c acc xss) = length acc + (length xss + 1) div 2"
+  by (induction c acc xss rule: cmerge_pairs.induct) auto
+
+lemma set_cmerge_pairs: "comparator c \<Longrightarrow> \<Union> (set ` set (cmerge_pairs c acc xss)) = \<Union> (set ` set (acc @ xss))"
+  by (induction c acc xss rule: cmerge_pairs.induct) (auto simp: cmerge_rev set_cmerge)
+
+lemma sorted_rev_converse:
+  "sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp c) xs"
+  "sorted_wrt (lt_of_comp c) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) xs"
+proof -
+  have L: "lt_of_comp (\<lambda>x y. c y x) = (\<lambda>a b. lt_of_comp c b a)"
+    by (simp add: fun_eq_iff lt_of_comp_def)
+  show "sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp c) xs"
+    unfolding L sorted_wrt_rev by (rule refl)
+  show "sorted_wrt (lt_of_comp c) (rev xs) \<longleftrightarrow> sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) xs"
+    unfolding L sorted_wrt_rev by (rule refl)
+qed
+
+lemma sorted_cmerge_pairs: "comparator c \<Longrightarrow> \<forall>a \<in> set xss. sorted_wrt (lt_of_comp c) a \<Longrightarrow>
+    \<forall>a \<in> set acc. sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) a \<Longrightarrow>
+    \<forall>a \<in> set (cmerge_pairs c acc xss). sorted_wrt (lt_of_comp (\<lambda>x y. c y x)) a"
+proof (induction c acc xss rule: cmerge_pairs.induct)
+  case (1 c acc a b r)
+  then show ?case
+    using sorted_cmerge[of c a b] by (simp add: cmerge_rev sorted_rev_converse)
+qed (simp_all add: sorted_rev_converse)
+
+function cmerge_all :: "'a comparator \<Rightarrow> bool \<Rightarrow> 'a list list \<Rightarrow> 'a list" where
+  "cmerge_all c d [] = []"
+| "cmerge_all c d [a] = (if d then rev a else a)"
+| "cmerge_all c d (a # b # r) = cmerge_all c (\<not> d) (cmerge_pairs (if d then (\<lambda>x y. c y x) else c) [] (a # b # r))"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(c, d, xss). length xss)") (auto simp: length_cmerge_pairs)
+
+lemma cmerge_all: "comparator c \<Longrightarrow> \<forall>a \<in> set xss. sorted_wrt (lt_of_comp (if d then (\<lambda>x y. c y x) else c)) a \<Longrightarrow>
+  set (cmerge_all c d xss) = \<Union> (set ` set xss) \<and> sorted_wrt (lt_of_comp c) (cmerge_all c d xss)"
+proof (induction c d xss rule: cmerge_all.induct)
+  case (2 c d a)
+  then show ?case
+    by (cases d) (simp_all add: sorted_rev_converse)
+next
+  case (3 c d a b r)
+  let ?c = "if d then (\<lambda>x y. c y x) else c"
+  have comp: "comparator ?c"
+    using 3(2) comparator_converse[OF 3(2)] by (cases d) simp_all
+  have conv: "(\<lambda>x y. ?c y x) = (if \<not> d then (\<lambda>x y. c y x) else c)"
+    by auto
+  have "\<forall>a \<in> set (cmerge_pairs ?c [] (a # b # r)). sorted_wrt (lt_of_comp (if \<not> d then (\<lambda>x y. c y x) else c)) a"
+    using sorted_cmerge_pairs[OF comp, of "a # b # r" "[]"] 3(3) unfolding conv by simp
+  with 3(1)[OF 3(2)] set_cmerge_pairs[OF comp, of "[]" "a # b # r"] show ?case
+    by simp
+qed simp
+
+lemma sorted_runs_tc: "comparator c \<Longrightarrow> sorted_wrt (lt_of_comp c) (rev (x # cur)) \<Longrightarrow>
+  \<forall>a \<in> set acc. sorted_wrt (lt_of_comp c) a \<Longrightarrow> \<forall>a \<in> set (runs_tc c x cur acc ys). sorted_wrt (lt_of_comp c) a"
+proof (induction c x cur acc ys rule: runs_tc.induct)
+  case (2 c x cur acc y ys)
+  show ?case
+  proof (cases "c x y = order.Lt")
+    case True
+    have "lt_of_comp c z y" if "z \<in> set (x # cur)" for z
+    proof -
+      have "z = x \<or> lt_of_comp c z x"
+        using that 2(4) by (auto simp: sorted_wrt_append)
+      then show ?thesis
+        using True comparator.comp_trans[OF 2(3), of z x y] by (auto simp: comparator.Lt_lt_conv[OF 2(3)])
+    qed
+    then have "sorted_wrt (lt_of_comp c) (rev (y # x # cur))"
+      using 2(4) by (simp add: sorted_wrt_append)
+    with True 2 show ?thesis
+      by simp
+  next
+    case False
+    have A: "\<forall>a \<in> set (rev (x # cur) # acc). sorted_wrt (lt_of_comp c) a"
+      using 2(4,5) by simp
+    have S: "sorted_wrt (lt_of_comp c) (rev [y])"
+      by simp
+    have R: "runs_tc c x cur acc (y # ys) = runs_tc c y [] (rev (x # cur) # acc) ys"
+      using False by simp
+    show ?thesis
+      unfolding R by (rule 2(2)[OF False 2(3) S A])
+  qed
+qed simp
+
+lemma set_runs_tc: "\<Union> (set ` set (runs_tc c x cur acc ys)) = Set.insert x (set cur \<union> \<Union> (set ` set acc) \<union> set ys)"
+  by (induction c x cur acc ys rule: runs_tc.induct) auto
+
+definition csort :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "csort c xs = (case xs of [] \<Rightarrow> [] | x # ys \<Rightarrow> cmerge_all c False (runs_tc c x [] [] ys))"
+
+lemma csort:
+  assumes "comparator c"
+  shows "set (csort c xs) = set xs" and "sorted_wrt (lt_of_comp c) (csort c xs)"
+proof -
+  have "set (csort c xs) = set xs \<and> sorted_wrt (lt_of_comp c) (csort c xs)"
+  proof (cases xs)
+    case (Cons x ys)
+    have "\<forall>a \<in> set (runs_tc c x [] [] ys). sorted_wrt (lt_of_comp c) a"
+      by (rule sorted_runs_tc[OF assms]) simp_all
+    then have "set (cmerge_all c False (runs_tc c x [] [] ys)) = \<Union> (set ` set (runs_tc c x [] [] ys)) \<and>
+      sorted_wrt (lt_of_comp c) (cmerge_all c False (runs_tc c x [] [] ys))"
+      using cmerge_all[OF assms, of "runs_tc c x [] [] ys" False] by simp
+    then show ?thesis
+      unfolding Cons csort_def set_runs_tc by simp
+  qed (simp add: csort_def)
+  then show "set (csort c xs) = set xs" and "sorted_wrt (lt_of_comp c) (csort c xs)"
+    by simp_all
+qed
+
+text \<open>The tables of a time point are built with this sort and tree construction.\<close>
+
+lemma comparator_edl: "comparator edl_comparator"
+  by (rule ID_ccompare'[OF ID_ccompare_edl])
+
+definition urbt_sort :: "event_data list list \<Rightarrow> event_data list set_rbt" where
+  "urbt_sort xs = rbt_of_sorted_list (csort edl_comparator xs)"
+
+lemma urbt_sort_code[code abstract]:
+  "RBT_Mapping2.impl_of (urbt_sort xs) = rbtreeify_i (map_t (\<lambda>x. (x, ())) (csort edl_comparator xs))"
+proof -
+  have "strict_sorted_by edl_comparator (csort edl_comparator xs)"
+    using csort(2)[OF comparator_edl] strict_sorted_by_sorted_wrt[OF comparator_edl] by simp
+  then show ?thesis
+    by (simp add: urbt_sort_def rbt_of_sorted_list.rep_eq ccomp_edl rbtreeify_i)
+qed
+
+lemma build_db_code_sort[code]: "build_db evs =
+  fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_sort (rev xs))) db) (group_evs evs) uempty_db"
+proof -
+  have "RBT_set (urbt_of_sorted (sort_t (rev xs))) = RBT_set (urbt_sort (rev xs))" for xs
+    by (simp add: urbt_of_sorted_def urbt_sort_def RBT_set_rbt_of_sorted_list ID_ccompare_ed set_sort_t
+        csort(1)[OF comparator_edl])
+  then show ?thesis
+    by (simp add: build_db_code)
+qed
 
 subsection \<open>The predicates of the formula\<close>
 
