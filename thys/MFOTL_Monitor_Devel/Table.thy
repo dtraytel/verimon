@@ -449,12 +449,14 @@ next
   hence "c' = bc" "abc = Some a"
     using SNone(2,3) 
     by simp_all (metis join1_Cons_SomeD2 not_None_eq)
-  then show ?case
-    using SNone(1)[OF eq1[symmetric] eq2] SNone(2,3)
-    apply (clarsimp simp: c_eq jbc_eq)
-    by (smt (z3) join1.simps(1,3,5,6) join1_Cons_SomeD2 
-        join1_Cons_Some_exI join1_assoc1 list.inject option.distinct(1)  
-        option.exhaust_sel option.inject option.map_disc_iff)
+  moreover obtain ab where "join1 (as, bs) = Some ab"
+    using join1_assoc1[OF eq1[symmetric] eq2] by blast
+  moreover have "bc = None \<or> bc = Some a"
+    using join1_Cons_SomeD2[OF SNone(2)[symmetric, unfolded jabc_eq jbc_eq]]
+    by blast
+  ultimately show ?case
+    using SNone(1)[OF eq1[symmetric] eq2]
+    by (elim disjE) (simp_all add: c_eq jbc_eq)
 next
   case (NSome as b bs c jbc jabc)
   then obtain abc abcs bc bcs c' cs
@@ -603,29 +605,32 @@ lemma join_commute: "R1 \<bowtie> R2 = R2 \<bowtie> R1"
     fastforce+
 
 lemma join_assoc: "R1 \<bowtie> (R2 \<bowtie> R3) = R1 \<bowtie> R2 \<bowtie> R3"
-  unfolding join_def 
-  apply (clarsimp simp: Option.these_def)
-  apply (intro set_eqI iffI; clarsimp simp: image_iff)
-   apply (rename_tac a jabc b c jbc)
-   apply (rule_tac x="Some jabc" in exI, clarsimp)
-  apply (intro conjI)
-    apply (rule_tac x="join1 (a,b)" in exI; intro conjI; clarsimp?)
-     apply (rule_tac x=a in bexI; clarsimp?)
-      apply (rule_tac x=b in bexI; clarsimp)
-  using join1_assoc1 apply force
-    apply (rule_tac x=c in bexI; clarsimp?)
-  using join1_assoc2 apply force
-   apply metis
-   apply (rename_tac jabc a b c jab)
-   apply (rule_tac x="Some jabc" in exI, clarsimp)
-  apply (intro conjI)
-   apply (rule_tac x=a in bexI; clarsimp?)
-    apply (rule_tac x="join1 (b,c)" in exI; intro conjI; clarsimp?)
-     apply (rule_tac x=b in bexI; clarsimp?)
-     apply (rule_tac x=c in bexI; clarsimp?)
-    apply (metis join1_assoc1 join1_commute)
-  apply (smt (verit, best) join1_assoc2 join1_commute)
-  using join1_assoc1 by force
+proof -
+  have *: "A \<bowtie> (B \<bowtie> C) \<subseteq> A \<bowtie> B \<bowtie> C" for A B C :: "'a table"
+  proof
+    fix x
+    assume "x \<in> A \<bowtie> (B \<bowtie> C)"
+    then obtain a b c jbc where "a \<in> A" "b \<in> B" "c \<in> C"
+      and bc: "join1 (b, c) = Some jbc" and abc: "join1 (a, jbc) = Some x"
+      by (auto simp: join_True_code)
+    obtain jab where ab: "join1 (a, b) = Some jab"
+      using join1_assoc1[OF abc[symmetric] bc] by blast
+    have "join1 (jab, c) = Some x"
+      using join1_assoc2[OF abc[symmetric] bc] abc ab by simp
+    then show "x \<in> A \<bowtie> B \<bowtie> C"
+      using \<open>a \<in> A\<close> \<open>b \<in> B\<close> \<open>c \<in> C\<close> ab
+      by (auto simp: join_True_code)
+  qed
+  have "R1 \<bowtie> R2 \<bowtie> R3 = R3 \<bowtie> (R2 \<bowtie> R1)"
+    by (simp only: join_commute[of _ R3] join_commute[of R1])
+  also have "\<dots> \<subseteq> R3 \<bowtie> R2 \<bowtie> R1"
+    by (rule *)
+  also have "\<dots> = R1 \<bowtie> (R2 \<bowtie> R3)"
+    by (simp only: join_commute[of _ R1] join_commute[of R3])
+  finally have "R1 \<bowtie> R2 \<bowtie> R3 \<subseteq> R1 \<bowtie> (R2 \<bowtie> R3)" .
+  then show ?thesis
+    using *[of R1 R2 R3] by blast
+qed
 
 lemma join_wf_tuple: "x \<in> join X b Y \<Longrightarrow> \<forall>v \<in> X. wf_tuple n A v \<Longrightarrow> \<forall>v \<in> Y. wf_tuple n B v 
   \<Longrightarrow> (\<not> b \<Longrightarrow> B \<subseteq> A) \<Longrightarrow> A \<union> B = C \<Longrightarrow> wf_tuple n C x"
@@ -722,10 +727,18 @@ lemma join_empty_table:
 
 lemma join_sub_tables_eq:
   "table n X R\<^sub>1 \<Longrightarrow> table n Y R\<^sub>2 \<Longrightarrow> Y \<subseteq> X \<Longrightarrow> R\<^sub>1 \<bowtie> R\<^sub>2 = {v \<in> R\<^sub>1. (restrict Y v) \<in> R\<^sub>2 }"
-  using join1_Some_sub_tuples1 join1_Some_sub_tuples2
-  unfolding table_def join_def 
-  by (auto simp: Option.these_def image_iff)
-    (smt (z3) Un_absorb2 join1_Some_restrict option.sel restrict_idle)+
+proof -
+  assume R1: "table n X R\<^sub>1" and R2: "table n Y R\<^sub>2" and "Y \<subseteq> X"
+  show "R\<^sub>1 \<bowtie> R\<^sub>2 = {v \<in> R\<^sub>1. (restrict Y v) \<in> R\<^sub>2 }"
+  proof (rule set_eqI)
+    fix v
+    have "v \<in> R\<^sub>1 \<bowtie> R\<^sub>2 \<longleftrightarrow> wf_tuple n X v \<and> restrict X v \<in> R\<^sub>1 \<and> restrict Y v \<in> R\<^sub>2"
+      using join_restrict_table[OF R1 R2, where b=True] \<open>Y \<subseteq> X\<close> by (simp add: sup_absorb1)
+    also have "\<dots> \<longleftrightarrow> v \<in> {v \<in> R\<^sub>1. (restrict Y v) \<in> R\<^sub>2 }"
+      using R1 restrict_idle[of n X v] unfolding table_def by auto
+    finally show "v \<in> R\<^sub>1 \<bowtie> R\<^sub>2 \<longleftrightarrow> v \<in> {v \<in> R\<^sub>1. (restrict Y v) \<in> R\<^sub>2 }" .
+  qed
+qed
 
 lemma join_eq_interI: 
   "table n X R1 \<Longrightarrow> table n X R2 \<Longrightarrow> R1 \<bowtie> R2 = R1 \<inter> R2"
@@ -748,8 +761,7 @@ lemma join_union_distrib:
 lemma join_Un_distrib:
   "R \<bowtie> (\<Union>i\<in>\<I>. \<R> i) = (\<Union>i\<in>\<I>. R \<bowtie> (\<R> i))"
   "(\<Union>i\<in>\<I>. \<R> i) \<bowtie> R = (\<Union>i\<in>\<I>. (\<R> i) \<bowtie> R)"
-  unfolding Union_eq 
-  by (auto; smt (verit, best) UN_E UN_I join_True_code mem_Collect_eq)+
+  by (auto simp: join_True_code)
 
 
 subsection \<open> Union of tables \<close>
@@ -1383,12 +1395,30 @@ proof (induct Rs arbitrary: n X Q Qi)
 next
   case (Cons R Rs)
   let ?U = "\<Union> (X ` {..<Suc (length Rs)})"
-  have "\<Union> (X ` {..<Suc 0}) = X 0"
+  have X0: "\<Union> (X ` {..<Suc 0}) = X 0"
     by auto
-  hence "Rs = [] \<Longrightarrow> ?case"
-    using Cons.prems(1,4)
-      join_unit_table(1)[OF qtableD(1)[of n "X 0" P "Qi 0" R]]
-    by clarsimp (smt (verit, best) qtable_cong_strong restrict_idle)
+  have "Rs = [] \<Longrightarrow> ?case"
+  proof -
+    assume "Rs = []"
+    have R: "qtable n (X 0) P (Qi 0) R"
+      using Cons.prems(1)[of 0] by simp
+    have "qtable n (X 0) P (Qi 0) = qtable n (X 0) P Q"
+    proof (rule qtable_cong_strong[OF refl])
+      fix v
+      assume wf: "wf_tuple n (X 0) v" and "P v"
+      have "Qi 0 v \<longleftrightarrow> Qi 0 (restrict (X 0) v)"
+        by (simp only: restrict_idle[OF wf])
+      also have "\<dots> \<longleftrightarrow> Q v"
+        using Cons.prems(4)[of v] \<open>P v\<close> wf X0 \<open>Rs = []\<close> by simp
+      finally show "Qi 0 v \<longleftrightarrow> Q v" .
+    qed
+    with R have "qtable n (X 0) P Q R"
+      by simp
+    moreover have "nary_join n (set (R # Rs)) = R"
+      using join_unit_table(1)[OF qtableD(1)[OF R]] \<open>Rs = []\<close> by simp
+    ultimately show ?case
+      using X0 \<open>Rs = []\<close> by simp
+  qed
   moreover have "{} \<in> set (R # Rs) \<Longrightarrow> ?case"
   proof-
     assume hyp: "{} \<in> set (R # Rs)"
