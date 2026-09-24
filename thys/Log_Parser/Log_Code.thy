@@ -294,6 +294,13 @@ lemma idigits_code[code]: "idigits s n b i acc = (if idx_less i n then
   else acc)"
   unfolding idx_less_def idx_succ_def by (subst idigits.simps) (simp add: Let_def)
 
+lemma ddigits_code[code]: "ddigits s n i acc = (if idx_less i n then (let c = bytes_at s i in
+     if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' then ddigits s n (idx_succ i) (acc * 10 + (integer_of_char c - 48))
+     else if c = CHR ''_'' then ddigits s n (idx_succ i) acc
+     else -1)
+   else acc)"
+  unfolding idx_less_def idx_succ_def by (subst ddigits.simps) (simp add: Let_def)
+
 (*<*)
 end
 (*>*)

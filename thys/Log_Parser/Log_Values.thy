@@ -519,14 +519,79 @@ lemma ibunsigned: "(case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits 
   map_option integer_of_nat (bunsigned s n i)"
   by (simp add: ibbase_of_def bunsigned_def inat_of_digits split: prod.splits)
 
+text \<open>Most numerals in logs are short and decimal. For those, a loop specialised to base 10
+  recognises the digits by comparing characters, and so needs fewer operations on integers per
+  digit than the loop for an arbitrary base.\<close>
+
+function ddigits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer" where
+  "ddigits s n i acc = (if i < n then (let c = bytes_at s i in
+     if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' then ddigits s n (i + 1) (acc * 10 + (integer_of_char c - 48))
+     else if c = CHR ''_'' then ddigits s n (i + 1) acc
+     else -1)
+   else acc)"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(s, n, i, acc). nat_of_integer (n - i))") (auto simp: integer_simps)
+
+declare ddigits.simps[simp del]
+
+lemma idigit_10: "idigit 10 c = (if CHR ''0'' \<le> c \<and> c \<le> CHR ''9'' then integer_of_char c - 48 else -1)"
+proof -
+  have k: "integer_of_char c = integer_of_nat (of_char c)"
+    by (simp add: integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  show ?thesis
+    unfolding idigit_alt k Let_def less_eq_char_def
+    by (auto simp: integer_simps integer_of_nat_eq_of_nat)
+qed
+
+lemma ddigits: "ddigits s n i acc = idigits s n 10 i acc"
+proof (induction "nat_of_integer (n - i)" arbitrary: i acc)
+  case 0
+  then have "\<not> i < n"
+    by (auto simp: integer_simps)
+  then show ?case
+    by (simp add: ddigits.simps idigits.simps)
+next
+  case (Suc m)
+  then have i: "i < n" and m: "m = nat_of_integer (n - (i + 1))"
+    by (auto simp: integer_simps)
+  note IH = Suc.hyps(1)[OF m]
+  have k: "integer_of_char c = integer_of_nat (of_char c)" for c
+    by (simp add: integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  have "CHR ''_'' \<noteq> bytes_at s i \<and> 48 \<le> integer_of_char (bytes_at s i)"
+    if "CHR ''0'' \<le> bytes_at s i" "bytes_at s i \<le> CHR ''9''"
+    using that unfolding k by (auto simp: less_eq_char_def integer_simps integer_of_nat_eq_of_nat dest: sym)
+  with i IH show ?case
+    by (subst ddigits.simps, subst idigits.simps) (auto simp: Let_def idigit_10 mult.commute)
+qed
+
+definition iunsigned :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer option" where
+  "iunsigned s n i = (case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j)"
+
+lemma iunsigned_code[code]: "iunsigned s n i =
+    (if i < n \<and> n - i \<le> 256 \<and> CHR ''1'' \<le> bytes_at s i \<and> bytes_at s i \<le> CHR ''9'' then
+      (let r = ddigits s n i 0 in if r < 0 then None else Some r)
+    else (case ibbase_of s n i of (b, j) \<Rightarrow> inat_of_digits s n b j))"
+proof (cases "i < n \<and> n - i \<le> 256 \<and> CHR ''1'' \<le> bytes_at s i \<and> bytes_at s i \<le> CHR ''9''")
+  case True
+  then have "bytes_at s i \<noteq> CHR ''0''" "bytes_at s i \<noteq> CHR ''_''" "CHR ''0'' \<le> bytes_at s i"
+    by (auto simp: less_eq_char_def dest: sym)
+  with True show ?thesis
+    by (simp add: iunsigned_def ibbase_of_code inat_of_digits_def ddigits)
+next
+  case False
+  then show ?thesis
+    by (simp only: if_False iunsigned_def)
+qed
+
 lemma ibint_of_code[code]: "ibint_of s = (let n = bytes_length s in
      if 0 < n then
        (let c = bytes_at s 0 in
-        if c = CHR ''-'' then map_option uminus (case ibbase_of s n 1 of (b, j) \<Rightarrow> inat_of_digits s n b j)
-        else if c = CHR ''+'' then (case ibbase_of s n 1 of (b, j) \<Rightarrow> inat_of_digits s n b j)
-        else (case ibbase_of s n 0 of (b, j) \<Rightarrow> inat_of_digits s n b j))
+        if c = CHR ''-'' then map_option uminus (iunsigned s n 1)
+        else if c = CHR ''+'' then iunsigned s n 1
+        else iunsigned s n 0)
      else None)"
-  unfolding ibunsigned
+  unfolding iunsigned_def ibunsigned
   by (simp add: ibint_of_def bint_of_def Let_def option.map_comp comp_def integer_of_nat_eq_of_nat)
 
 (*<*)
