@@ -344,16 +344,16 @@ lemma sat_project: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> project \<p
 proof (induct \<phi> arbitrary: \<sigma> V v i)
 next
   case (MatchP I r)
-  then show ?case 
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchP)
+  then show ?case
+    by simp
 next
   case (MatchF I r)
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchF)
   then show ?case
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+    by simp
 qed (auto simp: fv_project nfv_project 
     simp del: fun_upd_apply 
     split: nat.splits)
@@ -1529,12 +1529,16 @@ lemma rsub_1: "f_conr P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i \<alpha
 proof -
   assume A: "f_conr P" "(\<And>v i. sat \<sigma> V v i \<alpha> = sat \<sigma> V v i \<beta>)"
   then obtain P2 where P2: "trans P P2" using trans3[OF A(1)] by auto
-  moreover have L1: "f_con P2" using trans1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
+  have L1: "f_con P2" using trans1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
     using A(2) sat_project by simp
-  ultimately show ?thesis
-    using Rewriting.trans2 sub_1
-    by (smt (verit, ccfv_SIG) sat_project)
+  have "sat \<sigma> V v i (P \<alpha>) = Formula.sat \<sigma> V v i (P2 (project \<alpha>))"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project \<beta>))"
+    by (rule sub_1[OF L1 L2])
+  also have "\<dots> = sat \<sigma> V v i (P \<beta>)"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  finally show ?thesis .
 qed
 
 
@@ -1582,16 +1586,20 @@ lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
 lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
 proof -
   assume A: "f_conr2 P" "(\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1)" "(\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2)"
-  then obtain P2 where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
-  moreover have L1: "f_con2 P2" using trans2_1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
+  then obtain P2 :: "ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula"
+    where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
+  have L1: "f_con2 P2" using trans2_1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
     using A(2) by (simp add: sat_project)
-  moreover have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
+  have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
     using A(3) by (simp add: sat_project)
-  ultimately show ?thesis
-    using Rewriting.trans2_2 sub_2
-    by (smt (verit, ccfv_SIG) Rewriting.trans2_1 sat_project
-        \<open>\<And>thesis. (\<And>P2. trans2 P P2 \<Longrightarrow> thesis) \<Longrightarrow> thesis\<close>) 
+  have "sat \<sigma> V v i (P a1 a2) = Formula.sat \<sigma> V v i (P2 (project a1) (project a2))"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project b1) (project b2))"
+    by (rule sub_2[OF L1 L2 L3])
+  also have "\<dots> = sat \<sigma> V v i (P b1 b2)"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  finally show ?thesis .
 qed
 
 
