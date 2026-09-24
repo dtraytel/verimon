@@ -7967,26 +7967,37 @@ let rec edl_member
     | x, DList_set dxs -> memberc (ceq_list ceq_event_data) dxs x
     | x, Collect_set a -> a x;;
 
-let rec rbt_comp_union_swap_rec
-  c f gamma t1 t2 =
+let rec edl_rbtc_split
+  x0 k = match x0, k with Empty, k -> (Empty, (None, Empty))
+    | Branch (cc, l, a, b, r), x ->
+        (match edl_comparator x a with Eqa -> (l, (Some b, r))
+          | Lt ->
+            (let (l1, (beta, l2)) = edl_rbtc_split l x in
+              (l1, (beta, rbt_join l2 a b r)))
+          | Gt ->
+            (let (r1, (beta, r2)) = edl_rbtc_split r x in
+              (rbt_join l a b r1, (beta, r2))));;
+
+let rec edl_rbtc_union_swap_rec
+  f gamma t1 t2 =
     (let (gammaa, (t2a, t1a)) =
        (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
      let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if small_rbt t2a then folda (rbt_comp_insert_with_key c fa) t2a t1a
+      (if small_rbt t2a then folda (edl_rbtc_insert_with_key fa) t2a t1a
         else (match t1a with Empty -> t2a
                | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                   rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
-                     (match beta with None -> b | Some ca -> fa a b ca)
-                     (rbt_comp_union_swap_rec c f gammaa r1 r2)))));;
+                 (let (l2, (beta, r2)) = edl_rbtc_split t2a a in
+                   rbt_join (edl_rbtc_union_swap_rec f gammaa l1 l2) a
+                     (match beta with None -> b | Some c -> fa a b c)
+                     (edl_rbtc_union_swap_rec f gammaa r1 r2)))));;
 
-let rec rbt_comp_union_with_key
-  c f t1 t2 = paint B (rbt_comp_union_swap_rec c f false t1 t2);;
+let rec edl_rbtc_union_with_key
+  f t1 t2 = paint B (edl_rbtc_union_swap_rec f false t1 t2);;
 
 let rec edl_rbt_join_unit
   xc xd xe =
     Mapping_RBTa
-      (rbt_comp_union_with_key edl_comparator xc (unbox edl_impl_of_unit_v xd)
+      (edl_rbtc_union_with_key xc (unbox edl_impl_of_unit_v xd)
         (unbox edl_impl_of_unit_v xe));;
 
 let rec edl_inter
@@ -8538,13 +8549,57 @@ let rec edl_update_table
     | k, v, Mapping m ->
         Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
 
-let rec de_dbucket
-  d k = (match edl_lookup_table d k with None -> edl_bot | Some z -> z);;
+let rec edl_rbtc_ins_lk
+  f k x2 = match f, k, x2 with
+    f, k, Empty -> (None, Branch (R, Empty, k, f None, Empty))
+    | f, k, Branch (B, l, x, y, r) ->
+        (match edl_comparator k x
+          with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
+          | Lt ->
+            (let (ov, la) = edl_rbtc_ins_lk f k l in (ov, balance la x y r))
+          | Gt ->
+            (let (ov, ra) = edl_rbtc_ins_lk f k r in (ov, balance l x y ra)))
+    | f, k, Branch (R, l, x, y, r) ->
+        (match edl_comparator k x
+          with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
+          | Lt ->
+            (let (ov, la) = edl_rbtc_ins_lk f k l in
+              (ov, Branch (R, la, x, y, r)))
+          | Gt ->
+            (let (ov, ra) = edl_rbtc_ins_lk f k r in
+              (ov, Branch (R, l, x, y, ra))));;
+
+let rec edl_upd_lk_aux_table
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (let (ov, t) = edl_rbtc_ins_lk xd xc (unbox edl_impl_of_table_v xe) in
+        (ov, paint B t));;
+
+let rec edl_upd_lk_table
+  x1 x2 x3 =
+    rep_isom (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_table x1 x2 x3);;
+
+let rec edl_mupd_table
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_table k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_table (Assoc_List_Mapping al) k,
+          edl_update_table k (f (edl_lookup_table (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_table (Mapping f) k,
+          edl_update_table k (fa (edl_lookup_table (Mapping f) k))
+            (Mapping f));;
 
 let rec de_didx_add1
   msk x i =
     (let k = dproj msk x in
-      edl_update_table k (edl_insert x (de_dbucket i k)) i);;
+      snd (edl_mupd_table k
+            (fun ov ->
+              edl_insert x (match ov with None -> edl_bot | Some z -> z))
+            i));;
 
 let rec ed_didx_add1_cfi xa = Abs_comp_fun_idem (de_didx_add1 xa);;
 
@@ -8609,26 +8664,6 @@ let rec de_gadd_new_table_msaux
                                     (idx_in,
                                       (tuple_in,
 (idx_sincea, tuple_sincea)))))))))));;
-
-let rec edl_rbtc_ins_lk
-  f k x2 = match f, k, x2 with
-    f, k, Empty -> (None, Branch (R, Empty, k, f None, Empty))
-    | f, k, Branch (B, l, x, y, r) ->
-        (match edl_comparator k x
-          with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
-          | Lt ->
-            (let (ov, la) = edl_rbtc_ins_lk f k l in (ov, balance la x y r))
-          | Gt ->
-            (let (ov, ra) = edl_rbtc_ins_lk f k r in (ov, balance l x y ra)))
-    | f, k, Branch (R, l, x, y, r) ->
-        (match edl_comparator k x
-          with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
-          | Lt ->
-            (let (ov, la) = edl_rbtc_ins_lk f k l in
-              (ov, Branch (R, la, x, y, r)))
-          | Gt ->
-            (let (ov, ra) = edl_rbtc_ins_lk f k r in
-              (ov, Branch (R, l, x, y, ra))));;
 
 let rec edl_upd_lk_aux_nat
   xc xd xe =
@@ -8997,26 +9032,30 @@ let rec edl_delete_table
         Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
     | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
 
+let rec de_dbucket
+  d k = (match edl_lookup_table d k with None -> edl_bot | Some z -> z);;
+
 let rec filter_comp_minus
   c t1 t2 =
     filtera (fun (k, _) -> is_none (rbt_comp_lookup c t2 k)) (entries t1);;
 
-let rec comp_minus
-  c t1 t2 =
-    (if small_rbt t2 then folda (fun k _ -> rbt_comp_delete c k) t2 t1
-      else (if small_rbt t1 then rbtreeify (filter_comp_minus c t1 t2)
+let rec edl_comp_minus
+  t1 t2 =
+    (if small_rbt t2 then folda (fun k _ -> edl_rbtc_delete k) t2 t1
+      else (if small_rbt t1
+             then rbtreeify (filter_comp_minus edl_comparator t1 t2)
              else (match t2 with Empty -> t1
                     | Branch (_, l2, a, _, r2) ->
-                      (let (l1, (_, r1)) = rbt_split_comp c t1 a in
-                        rbt_join2 (comp_minus c l1 l2)
-                          (comp_minus c r1 r2)))));;
+                      (let (l1, (_, r1)) = edl_rbtc_split t1 a in
+                        rbt_join2 (edl_comp_minus l1 l2)
+                          (edl_comp_minus r1 r2)))));;
 
-let rec rbt_comp_minus c t1 t2 = paint B (comp_minus c t1 t2);;
+let rec edl_rbtc_minus t1 t2 = paint B (edl_comp_minus t1 t2);;
 
 let rec edl_rbt_set_minus
   xb xc =
     Mapping_RBTa
-      (rbt_comp_minus edl_comparator (unbox edl_impl_of_unit_v xb)
+      (edl_rbtc_minus (unbox edl_impl_of_unit_v xb)
         (unbox edl_impl_of_unit_v xc));;
 
 let rec edl_minus
@@ -10264,7 +10303,7 @@ let edl_keys_tstp_v :
 let rec edl_rbt_join_tstp
   xc xd xe =
     Mapping_RBTa
-      (rbt_comp_union_with_key edl_comparator xc (unbox edl_impl_of_tstp_v xd)
+      (edl_rbtc_union_with_key xc (unbox edl_impl_of_tstp_v xd)
         (unbox edl_impl_of_tstp_v xe));;
 
 let rec de_combine_tstp

@@ -126,6 +126,90 @@ lemma gi_rank_mupd[code]:
      else (v, m))"
   by (auto simp: mupd_def Let_def split: option.splits event_data.splits type.splits list_aux.splits)
 
+subsection \<open>The tree union and difference at the short tuples' comparator\<close>
+
+text \<open>The union and the difference of two trees fall back, on a small operand, to inserting
+  or deleting its keys one by one, and they split the other tree at a key; both took the
+  comparator as an argument and called it through a closure at every node.  These are their
+  copies at the short tuples' comparator, with the specialised insertion, deletion and split.\<close>
+
+definition edl_rbtc_split :: "(event_data list, 'v) rbt \<Rightarrow> event_data list \<Rightarrow>
+    (event_data list, 'v) rbt \<times> 'v option \<times> (event_data list, 'v) rbt" where
+  "edl_rbtc_split = rbt_split_comp edl_comparator"
+
+lemma edl_rbtc_split_simps[code]:
+  "edl_rbtc_split RBT_Impl.Empty k = (RBT_Impl.Empty, None, RBT_Impl.Empty)"
+  "edl_rbtc_split (RBT_Impl.Branch cc l a b r) x = (case edl_comparator x a of
+    Lt \<Rightarrow> (case edl_rbtc_split l x of (l1, \<beta>, l2) \<Rightarrow> (l1, \<beta>, rbt_join l2 a b r))
+  | Gt \<Rightarrow> (case edl_rbtc_split r x of (r1, \<beta>, r2) \<Rightarrow> (rbt_join l a b r1, \<beta>, r2))
+  | Eq \<Rightarrow> (l, Some b, r))"
+  unfolding edl_rbtc_split_def by simp_all
+
+lemma edl_rbtc_split_unfold[code_unfold]: "rbt_split_comp edl_comparator = edl_rbtc_split"
+  by (simp add: edl_rbtc_split_def)
+
+definition edl_rbtc_union_swap_rec :: "(event_data list \<Rightarrow> 'v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow> bool \<Rightarrow>
+    (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_union_swap_rec = rbt_comp_union_swap_rec edl_comparator"
+
+lemma edl_rbtc_union_swap_rec_code[code]: "edl_rbtc_union_swap_rec f \<gamma> t1 t2 = (let (\<gamma>, t2, t1) =
+    if flip_rbt t2 t1 then (\<not>\<gamma>, t1, t2) else (\<gamma>, t2, t1);
+    f' = (if \<gamma> then (\<lambda>k v v'. f k v' v) else f) in
+    if small_rbt t2 then RBT_Impl.fold (edl_rbtc_insert_with_key f') t2 t1
+    else case t1 of rbt.Empty \<Rightarrow> t2
+      | Branch x l1 a b r1 \<Rightarrow>
+        case edl_rbtc_split t2 a of (l2, \<beta>, r2) \<Rightarrow>
+          rbt_join (edl_rbtc_union_swap_rec f \<gamma> l1 l2) a (case \<beta> of None \<Rightarrow> b | Some x \<Rightarrow> f' a b x)
+            (edl_rbtc_union_swap_rec f \<gamma> r1 r2))"
+  unfolding edl_rbtc_union_swap_rec_def edl_rbtc_insert_with_key_def edl_rbtc_split_def
+  by (rule rbt_comp_union_swap_rec.simps)
+
+definition edl_rbtc_union_with_key :: "(event_data list \<Rightarrow> 'v \<Rightarrow> 'v \<Rightarrow> 'v) \<Rightarrow>
+    (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt" where
+  "edl_rbtc_union_with_key = rbt_comp_union_with_key edl_comparator"
+
+lemma edl_rbtc_union_with_key_code[code]:
+  "edl_rbtc_union_with_key f t1 t2 = paint RBT_Impl.B (edl_rbtc_union_swap_rec f False t1 t2)"
+  by (simp add: edl_rbtc_union_with_key_def edl_rbtc_union_swap_rec_def rbt_comp_union_with_key_def)
+
+lemma edl_rbtc_union_with_key_unfold[code_unfold]:
+  "rbt_comp_union_with_key edl_comparator = edl_rbtc_union_with_key"
+  by (simp add: edl_rbtc_union_with_key_def)
+
+definition edl_comp_minus :: "(event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    (event_data list, 'v) rbt" where
+  "edl_comp_minus = comp_minus edl_comparator"
+
+lemma edl_comp_minus_code[code]: "edl_comp_minus t1 t2 =
+    (if small_rbt t2 then RBT_Impl.fold (\<lambda>k _ t. edl_rbtc_delete k t) t2 t1
+     else if small_rbt t1 then rbtreeify (filter_comp_minus edl_comparator t1 t2)
+     else case t2 of RBT_Impl.Empty \<Rightarrow> t1
+       | RBT_Impl.Branch _ l2 a b r2 \<Rightarrow>
+         case edl_rbtc_split t1 a of (l1, _, r1) \<Rightarrow>
+           rbt_join2 (edl_comp_minus l1 l2) (edl_comp_minus r1 r2))"
+  unfolding edl_comp_minus_def edl_rbtc_delete_def edl_rbtc_split_def
+  by (rule comp_minus.simps)
+
+definition edl_rbtc_minus :: "(event_data list, 'v) rbt \<Rightarrow> (event_data list, 'v) rbt \<Rightarrow>
+    (event_data list, 'v) rbt" where
+  "edl_rbtc_minus = rbt_comp_minus edl_comparator"
+
+lemma edl_rbtc_minus_code[code]: "edl_rbtc_minus t1 t2 = paint RBT_Impl.B (edl_comp_minus t1 t2)"
+  by (simp add: edl_rbtc_minus_def edl_comp_minus_def rbt_comp_minus_def)
+
+lemma edl_rbtc_minus_unfold[code_unfold]: "rbt_comp_minus edl_comparator = edl_rbtc_minus"
+  by (simp add: edl_rbtc_minus_def)
+
+subsection \<open>The Since index's insertion\<close>
+
+text \<open>A tuple entering the Since structure is added to the bucket of its key in the index:
+  the bucket's lookup and the index's update are one descent through @{const mupd}.\<close>
+
+lemma de_didx_add1_mupd[code]:
+  "de_didx_add1 msk x i = (let k = dproj msk x in
+     snd (mupd k (\<lambda>ov. Set.insert x (case ov of None \<Rightarrow> {} | Some z \<Rightarrow> z)) i))"
+  by (simp add: de_didx_add1_def didx_add1_def dbucket_def mupd_def Let_def split: option.splits)
+
 subsection \<open>At the short tuples\<close>
 
 definition edl_rbtc_ins_lk :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>

@@ -8625,3 +8625,42 @@ MonPoly, which is the price of comparison trees over short-tuple keys against ha
 this change does not close.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and
 `dune test` passes; the container's wall times move by up to 15% per formula from run to run, so
 the table gives instructions.
+
+## 21.36 `pol-sincefutb` and `pol-sincefut`: the Since node's trees
+
+The two formulas are `A(x,y) AND ((NOT C(x)) SINCE[0,b] B(x,y)) AND NOT EVENTUALLY[0,c] C(y)`, with a
+Since whose left operand is negated and covers only `x`, so that the structure keeps an index from
+`x` to the tuples it holds.  On `pol-sincefutb` (burst log) the verified monitor takes 7.84 G
+instructions against MonPoly's 6.98 G (1.12x; `pol-sincefut` 7.26 G against 6.93 G, 1.05x) while
+the local wall-time ratios are 1.25 and 1.18.  The Since node is 3.39 G of the evaluator's 4.12 G:
+
+| step | share of the run |
+|---|---|
+| a new table: the index's buckets (`didx_add`) | 7.5% |
+| a new table: the union into the window's table | 7.0% |
+| a new table: the time stamps of the tuples (`upd_set`) | 6.5% |
+| the join: dropping the buckets of the `C` tuples from the table and from the time stamps | 17.0% |
+
+Two of these went through code that the earlier rounds had not specialised.  The union and the
+difference of two trees (`rbt_comp_union_swap_rec`, `comp_minus`), on a small operand, insert or
+delete its keys one at a time and split the other tree at a key, and they took the comparator as an
+argument and called it through a closure at every node; `Dense_Map_Upd.thy` gives them copies at
+the short tuples' comparator with the specialised insertion, deletion and split (proved by unfolding
+the definitions).  And a tuple entering the index is added to its key's bucket by a lookup and an
+update of the index, which `mupd` of 21.35 does in one descent (`de_didx_add1_mupd`).
+
+| formula (instructions, 1500 time points) | before | after |
+|---|---|---|
+| `pol-sincefutb` | 7.838 G | 7.543 G (−3.8%) |
+| `since-nu5` | 5.930 G | 5.831 G (−1.7%) |
+| `pol-sincefut` | 7.258 G | 7.148 G (−1.5%) |
+| `since-nb5` | 5.705 G | 5.652 G (−0.9%) |
+| `since-bb500` | 4.275 G | 4.259 G (−0.4%) |
+| `once-g50`, `pol-threshold`, `join-both` (controls) | | 0.0% |
+
+What is left of the gap is not in instructions.  About a fifth of the run is the garbage
+collector -- minor-heap promotion, marking and the write barrier of the trees' rebuilt paths --
+which MonPoly's mutable hash tables avoid, and neither a larger minor heap nor a lower space
+overhead changes the wall time by more than 3%; the front end (lexer, `List.assoc_opt` in
+`Log_parser.parse_db`, `List.mem` in `Filter_rel.rel_OK`) costs both systems the same.  The corpus is
+unchanged (601 same, 141 skipped, 0 differing) and `dune test` passes.
