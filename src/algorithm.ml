@@ -1717,8 +1717,10 @@ module Monitor = struct
             if not !Misc.ignore_parse_errors then exit 1)
       | "LATENCY" ->
        (match params with
-        | Some (Arguments []) -> print_stats "" ctxt
-        | Some (Arguments (h::t)) -> print_stats (List.fold_right (fun a b -> a ^ " " ^ b) t h) ctxt
+        | Some (Arguments args) ->
+           (* MonPoly's former parser passes (at most two) arguments in reverse order *)
+           let args = if Verified_log_parser.use_old () then List.rev args else args in
+           print_stats (String.concat " " args) ctxt
         | _ ->
            prerr_endline "ERROR: Bad arguments for LATENCY command";
            if not !Misc.ignore_parse_errors then exit 1)
@@ -1744,7 +1746,18 @@ module Monitor = struct
 
 end
 
-module Parser = Log_parser.Make (Monitor)
+module Old_parser = Log_parser.Make (Monitor)
+module Verified_parser = Verified_log_parser.Make (Monitor)
+
+(* The log parser: MonPoly's hand-written one, or the verified one with -verified_log_parser. *)
+module Parser = struct
+  let parse_string dbschema log ctxt =
+    if Verified_log_parser.use_old () then Old_parser.parse dbschema (Lexing.from_string log) ctxt
+    else Verified_parser.parse_string dbschema log ctxt
+  let parse_file dbschema logfile ctxt =
+    if Verified_log_parser.use_old () then Old_parser.parse_file dbschema logfile ctxt
+    else Verified_parser.parse_file dbschema logfile ctxt
+end
 
 let init_monitor_state dbschema fv f =
   (* compute permutation for output tuples *)
@@ -1765,9 +1778,8 @@ let init_monitor_state dbschema fv f =
     s_stats = Log_parser.Stats.init (); }
 
 let monitor_string dbschema log fv f =
-  let lexbuf = Lexing.from_string log in
   let ctxt = init_monitor_state dbschema fv f in
-  ignore (Parser.parse dbschema lexbuf ctxt)
+  ignore (Parser.parse_string dbschema log ctxt)
 
 let monitor dbschema logfile fv f =
   let ctxt = init_monitor_state dbschema fv f in

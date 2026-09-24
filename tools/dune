@@ -24,3 +24,20 @@
   (package monpoly-tools)
   (modules Formula_stats)
   (libraries libmonpoly))
+
+; Differential testing of the verified log parser against MonPoly's hand-written one; the
+; runtest alias compares them on random logs.
+(executable
+  (name log_parser_diff)
+  (modules Log_parser_diff)
+  (libraries libmonpoly verified))
+
+(rule
+  (alias runtest)
+  (action (run %{exe:log_parser_diff.exe} -fuzz 20000 -seed 1 -q)))
+
+; Throughput of the two log parsers alone, without the monitor.
+(executable
+  (name log_parser_bench)
+  (modules Log_parser_bench)
+  (libraries libmonpoly verified unix))

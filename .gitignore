@@ -9,6 +9,7 @@ _coverage
 
 /thys/*/*.ocaml
 .DS_Store
+__pycache__/
 .vscode
 libmonpoly.install
 

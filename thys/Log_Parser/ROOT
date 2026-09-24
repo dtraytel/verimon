@@ -1,0 +1,18 @@
+chapter AFP
+
+session Log_Parser = "HOL-Library" +
+  description
+    "A verified lexer and parser for MonPoly's log format: a specification by two grammars, a
+     streaming lexer and parser proved sound and complete for it, and a refinement to byte strings
+     read in chunks, from which the log parser of the verified monitor is generated. Started from
+     the student projects BA_verimon_parsing (Jonathan Rappl, 2021) and POCS_verimon_parsing
+     (2023)."
+  theories
+    Log_Grammar
+    Log_Lexer
+    Log_Parser
+    Log_Stream
+    Log_Filter
+    Log_Exec
+    Log_Values
+    Log_Code

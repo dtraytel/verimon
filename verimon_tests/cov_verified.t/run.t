@@ -145,7 +145,10 @@ must agree.
   @1 (time point 1): (3,4)
   @1 (time point 2): (5,5)
   === P(x,y) AND ((NOT P(x,y)) TRIGGER[1,3] Q(x,y))
-  The formula is NOT monitorable. Use the -check or -verbose flags.
+  @0 (time point 0): (1,2) (2,3)
+  @1 (time point 2): (5,5)
+  @4 (time point 4): (2,3)
+  @7 (time point 6): (1,2)
   === z <- CNT x ONCE[0,2] R(x)
   @0 (time point 0): (1)
   @1 (time point 1): (2)
