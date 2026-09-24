@@ -3615,7 +3615,7 @@ proof -
     "f = (g \<circ> (f' \<circ> final_f))" 
     using half_wty assms(4-5) unfolding half_wty_trm_def by blast
   hence g_typ: "g \<circ> (f' \<circ> final_f \<circ> E) \<turnstile> t1 :: g ((f' \<circ> final_f) type)"
-    using wty_f(1) by (smt (verit, ccfv_SIG) comp_def image_subset_iff wty_trm_fv_cong)
+    using wty_f(1) by (simp add: g_def(3) comp_assoc)
   note t1_none = assms(1)[OF _ g_def(1) g_typ]
   obtain f'' where  f''_def: "check_trm (f' \<circ> final_f \<circ> E) ((f' \<circ> final_f) type) t1 = return f''" 
     using t1_none by (meson sumE)
@@ -3630,7 +3630,7 @@ proof -
     "f = g' \<circ> (f'' \<circ> (f' \<circ> final_f))"
     using half_wty_trm_trans[OF half_wty half_wty2] assms(4-5) unfolding half_wty_trm_def by auto
   hence g'_typ: "g' \<circ> (f'' \<circ> (f' \<circ> final_f) \<circ> E) \<turnstile> t2 :: g' ((f'' \<circ> (f' \<circ> final_f)) type)"
-    using wty_f(2) by (smt (verit, ccfv_SIG) comp_def image_subset_iff wty_trm_fv_cong)
+    using wty_f(2) by (simp add: g'_def(3) comp_assoc)
   note t2_none = assms(2)[OF _ g'_def(1) g'_typ]
   show False using t2_none assms(3, 6) f'_def f''_def 
     by(auto simp: check_binop_def comp_assoc image_image split:bind_splits) 
@@ -3651,14 +3651,14 @@ proof -
     using min_const min_comm apply(cases type; auto simp:clash_propagate_def)
   using assms(4) min_type.simps(10) min_type.simps(9) apply presburger by fastforce
   then obtain f' where f'_def: "clash_propagate (TCst a) type  E = return f' " "f' type = TCst a"
-    using cp_none clash_prop_comm clash_propagate_def by (smt (verit, best) catch_return old.prod.case return_bind update_env_def)
+    using min_comm[of "TCst a" type] by (simp add: clash_propagate_def update_env_def)
   have fa: "f type = a" using assms(3,4) by(auto elim:wty_trm.cases)
   obtain g where g_def: "wf_f (TCst \<circ> g)" "f = g \<circ> f'"
     using check_trm_step0_cst2[OF f'_def(1) assms(5) fa] unfolding resultless_trm_f_def by auto
   have "f \<circ> E  \<turnstile> t :: b" using assms(3,4) by (auto elim:wty_trm.cases)
   moreover have "g (TCst b) = b" using g_def(1) unfolding wf_f_def by auto
   ultimately have g_typ: "g \<circ> (f' \<circ> E) \<turnstile> t :: g (TCst b)" 
-    using assms(3-5) g_def(2) by auto (smt (verit, best) comp_def image_subset_iff wty_trm_fv_cong)+
+    by (simp add: g_def(2) comp_assoc)
   show False using cp_none f'_def assms(2, 4) assms(1)[OF _ g_def(1) g_typ] clash_prop_comm
     by (auto split: bind_splits) 
 qed
@@ -3705,14 +3705,14 @@ next
   then obtain f' where f'_def: "clash_propagate (TNum 0) (new_type_symbol type) (new_type_symbol \<circ> E) = return f'"
     using sum.exhaust_sel by blast
   have resless: "resultless_trm_f f (f' \<circ> new_type_symbol) type"
-    using check_trm_step0_num(1)[OF f'_def _ UMinus(3-4)] by (smt (verit, best) insert_iff numeric_ty_def trm.distinct(23) trm.distinct(7) wty_trm.simps)
+    by (rule check_trm_step0_num(1)[OF f'_def _ UMinus(3-4)]) (auto elim: wty_trm.cases)
   have none: "check_trm (f' \<circ> new_type_symbol \<circ> E) (f' (new_type_symbol type)) t = error e" 
     using f'_def UMinus(2) by(auto split:bind_splits)
   obtain g where g_def: "wf_f (TCst \<circ> g)" "f = g \<circ> (f' \<circ> new_type_symbol)"
     "f type = (g \<circ> (f' \<circ> new_type_symbol)) type" using resless unfolding resultless_trm_f_def by auto
   have typed': "E \<turnstile> trm.UMinus t :: ty \<Longrightarrow> E  \<turnstile> t :: ty" for E t ty by (auto elim:wty_trm.cases)
   have typed: "g \<circ> (f' \<circ> new_type_symbol \<circ> E) \<turnstile> t :: g (f' (new_type_symbol type))" 
-    using typed'[OF UMinus(4)] by (smt (verit, ccfv_SIG) UMinus.prems(2) comp_apply fvi_trm.simps(5) g_def(2) g_def(3) image_subset_iff wty_trm_fv_cong)
+    using typed'[OF UMinus(4)] unfolding g_def(2) comp_assoc comp_apply .
   show ?case using UMinus.IH[OF none g_def(1) typed] by auto
 next
   case (Mult t1 t2)
@@ -3907,7 +3907,14 @@ proof -
     using wty1 wty2 assms(3) 
     apply (auto simp: f'_def wty_form_iff wty_result_fX_def formula.set_map
         formula.map_comp intro: wf_f_comp)
-      apply (smt (z3) comp_apply comp_assoc)
+    subgoal premises prems for g
+    proof -
+      have "map_sig (g \<circ> f) S, g \<circ> (f \<circ> E) \<turnstile> formula.map_formula (g \<circ> f) \<psi>"
+        using prems(7) by (simp add: comp_assoc)
+      then obtain g' where "wf_f (TCst \<circ> g')" "g = g' \<circ> f1"
+        using prems(5,8) by blast
+      then show ?thesis by (metis comp_assoc)
+    qed
      apply (metis  comp_assoc wf_f_comp)
     subgoal premises prems for g
     proof -
@@ -4035,7 +4042,16 @@ proof(induction arbitrary: f S rule:check_pred.induct)
     hence *: "(map_sig (g \<circ> f') S', (g \<circ> (f' \<circ> E)) \<turnstile> formula.map_formula g (formula.Pred r trms))"
       using wty_formula.intros(1)[of "map_sig fa S'", OF sr] g_def(2) by (auto simp:map_sig_def)
     have "\<exists>g. wf_f (TCst \<circ> g) \<and> fa = g \<circ> f" 
-      using wty2 unfolding wty_result_fX_def f_def g_def using * g_def(1) by (smt (verit, ccfv_threshold) S'_def f''_def fun.map_comp fun_upd_apply map_option_o_map_upd map_sig_comp map_sig_def)
+    proof -
+      have "wty_result_fX (map_sig f' S') (f' \<circ> E) (formula.Pred r trms) f''"
+        by (rule wty2[OF _ f''_def]) (simp add: S'_def map_sig_def)
+      moreover have "map_sig g (map_sig f' S'), g \<circ> (f' \<circ> E) \<turnstile> formula.map_formula g (formula.Pred r trms)"
+        using * by simp
+      ultimately obtain g' where "wf_f (TCst \<circ> g')" "g = g' \<circ> f''"
+        using g_def(1) unfolding wty_result_fX_def by blast
+      then show ?thesis
+        unfolding f_def g_def(2) by (metis comp_assoc)
+    qed
   } moreover {
     fix f'''
     assume wf: "wf_f (TCst \<circ> f''')" and
@@ -4050,10 +4066,13 @@ proof(induction arbitrary: f S rule:check_pred.induct)
     have sr: "map_sig (g \<circ> f'' \<circ> f') S' (r, length trms) = Some (map (g \<circ> f'' \<circ> f') ts)"
       using S'_def by(auto simp:map_sig_def)
     have "map_sig (g \<circ> f'' \<circ> f') S', (g \<circ> f'') \<circ> (f' \<circ> E) \<turnstile> (formula.Pred r trms)"
-      using wty2 unfolding wty_result_fX_def 
-      using wf_comb g_def(1)
-      by (smt (verit, best) S'_def f''_def formula.simps(576) 
-          map_sig_comp map_sig_subst map_upd_Some_unfold) 
+    proof -
+      have "wty_result_fX (map_sig f' S') (f' \<circ> E) (formula.Pred r trms) f''"
+        by (rule wty2[OF _ f''_def]) (simp add: S'_def map_sig_def)
+      then have "map_sig (g \<circ> f'') (map_sig f' S'), (g \<circ> f'') \<circ> (f' \<circ> E) \<turnstile> formula.map_formula (g \<circ> f'') (formula.Pred r trms)"
+        using wf_comb g_def(1) unfolding wty_result_fX_def by blast
+      then show ?thesis by simp
+    qed
     hence la: "list_all2 (wty_trm (g \<circ> f'' \<circ> f' \<circ> E)) trms (map (g \<circ> f'' \<circ> f') ts)" 
       using sr using wty_formula.intros(1)[of "map_sig (g \<circ> f'' \<circ> f') S'", OF sr] 
       by (auto elim:wty_formula.cases simp:comp_assoc)
@@ -4647,7 +4666,14 @@ next
     hence prem1: "(fa \<circ> agg_tysenv E tys) \<turnstile> trm :: (fa \<circ> nn) (agg_trm_tysym agg_type)"
       using nn_n by (metis comp_id fun.map_comp)
     have prem2: "(fa \<circ> nn) (agg_trm_tysym agg_type) \<in> agg_trm_type agg_type" 
-      by (smt (z3) UNIV_I agg_trm_type.elims agg_trm_tysym.simps(1) agg_trm_tysym.simps(3) agg_trm_tysym.simps(4) comp_assoc eq_refinement_min_type local.wf min_consistent resless_wty_num_dir2 wf_f_comp wf_nn)
+    proof -
+      have "wf_f (TCst \<circ> fa \<circ> nn)"
+        by (rule wf_f_comp[OF wf wf_nn])
+      then have "(fa \<circ> nn) (TNum 0) \<in> numeric_ty"
+        by (simp add: wf_f_def)
+      then show ?thesis
+        by (cases agg_type) simp_all
+    qed
     have "(map_sig (g \<circ> f'''' \<circ> f''' \<circ> f'') (map_sig (f' \<circ> new_type_symbol) S), (g \<circ> f'''' \<circ> f''' \<circ> f'') \<circ> (f' \<circ> new_type_symbol \<circ> agg_tysenv E tys) \<turnstile> formula.map_formula (g \<circ> f'''' \<circ> f''' \<circ> f'') (formula.map_formula (f' \<circ> new_type_symbol) \<phi>))"
       using wty2 unfolding wty_result_fX_def by (metis (no_types, opaque_lifting) fun.map_comp g_def(1) wf_f_comp wfs(3) wfs(4))
     hence prem3: "map_sig fa S, agg_env (fa \<circ> E) (map fa tys) \<turnstile> formula.map_formula fa \<phi>"
@@ -4948,7 +4974,18 @@ next
   hence wtys: "map_sig f S, f \<circ> E \<turnstile> formula.map_formula f (formula.Ands \<phi>s)" "map_sig f S, f \<circ> E \<turnstile> formula.map_formula f a"
     by (auto intro!:wty_formula.intros)
   have "(foldr (check_ands_f check S E) \<phi>s (return id)) = error e \<Longrightarrow> False" for e
-    using Cons(1)[OF _  wtys(1) Cons(4) wfs(1)] Cons(6) by (smt (verit, del_insts) check_ands_def dual_order.trans le_add1 le_add_same_cancel2 list.size(2) zero_le)
+  proof -
+    assume "foldr (check_ands_f check S E) \<phi>s (return id) = error e"
+    then have "check_ands check S E \<phi>s = error e"
+      by (simp add: check_ands_def)
+    moreover have "False"
+      if "size \<phi> \<le> size_list size \<phi>s" "check S' E' \<phi> = error e'"
+        "map_sig f' S', f' \<circ> E' \<turnstile> formula.map_formula f' \<phi>" "wf_f (TCst \<circ> f')" "wf_formula \<phi>"
+      for \<phi> S' E' f' e'
+      using Cons(6)[OF _ that(2-5)] that(1) by simp
+    ultimately show False
+      by (rule Cons(1)[OF _ wtys(1) Cons(4) wfs(1)])
+  qed
   then obtain f' where f'_def: "foldr (check_ands_f check S E) \<phi>s (return id) = return f'"
     using sum.exhaust_sel by auto
   hence none: "check (map_sig f' S) (f' \<circ> E) (formula.map_formula f' a) = error e" 
@@ -5138,7 +5175,15 @@ next
   have t_res_eq: "t_res agg_type t = (f \<circ> nn) (t_res_tysym agg_type (agg_trm_tysym agg_type))"
     using 12(4) by(cases agg_type; auto simp:nn_def wf_f_def)
   have wty: "g' \<circ> (f'' \<circ> f' \<circ> new_type_symbol \<circ> E)  \<turnstile> trm.Var y :: g' (f'' (f' (t_res_tysym agg_type (agg_trm_tysym agg_type))))"
-    using wtys(1)[unfolded g_def' g'_def(2) comp_assoc[of g'] t_res_eq] by (smt (verit, best) Var comp_def g'_def(2) g_def' g_def(2))
+  proof (rule Var)
+    have "(g' \<circ> (f'' \<circ> f' \<circ> new_type_symbol \<circ> E)) y = (f \<circ> E) y"
+      by (simp add: g_def' g'_def(2))
+    also have "\<dots> = (f \<circ> nn) (t_res_tysym agg_type (agg_trm_tysym agg_type))"
+      using wtys(1) t_res_eq by (rule trans)
+    also have "\<dots> = g' (f'' (f' (t_res_tysym agg_type (agg_trm_tysym agg_type))))"
+      unfolding g_def(2) g'_def(2) by simp
+    finally show "(g' \<circ> (f'' \<circ> f' \<circ> new_type_symbol \<circ> E)) y = g' (f'' (f' (t_res_tysym agg_type (agg_trm_tysym agg_type))))" .
+  qed
   obtain f''' where f'''_def: "check_trm (f'' \<circ> f' \<circ> new_type_symbol \<circ> E) (f'' (f' (t_res_tysym agg_type (agg_trm_tysym agg_type)))) (trm.Var y) = return f'''" 
     using check_trm_complete'[OF _ g'_def(1) wty] using sum.exhaust_sel by auto 
   obtain g'' where g''_def: "wf_f (TCst \<circ> g'')" "g' = g'' \<circ> f'''" 
