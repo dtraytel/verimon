@@ -2888,12 +2888,18 @@ type uduaux_x =
                      (event_data list) set list)))))) *
           event_data gagg option);;
 
+type ucrep = UFlat of ((event_data list), nat) mapping * event_data gagg option
+  | UNCnt of
+      ((event_data list), (nat * ((event_data list), nat) mapping)) mapping
+  | UNSum of
+      ((event_data list), ((nat * Z.t) * ((event_data list), nat) mapping))
+        mapping;;
+
 type ucache =
   Abs_ucache of
     (((trm * (bool * (mconstraint * trm))) option *
        (bool * ((agg_type * ty) * (trm * (nat * nat))))) *
-      (((event_data list), nat) mapping *
-        (event_data gagg option * (event_data list) set)));;
+      (ucrep * (event_data list) set));;
 
 type udsaux_x =
   UDSX_gen of
@@ -7748,10 +7754,207 @@ let rec cstep_ins
             | Some (aa, (ov, nv)) ->
               (Some aa, cupd (uqok q) pos (drop k t) ov nv c))));;
 
+let edl_impl_of_gsum_v :
+  (((event_data list), ((nat * Z.t) * ((event_data list), nat) mapping))
+     mapping_rbt ->
+    ((event_data list), ((nat * Z.t) * ((event_data list), nat) mapping)) rbt)
+    boxed
+  = Box (impl_ofa (ccompare_list ccompare_event_data));;
+
+let rec edl_rbt_lookup_gsum
+  t k = edl_rbtc_lookup (unbox edl_impl_of_gsum_v t) k;;
+
+let rec edl_lookup_gsum
+  = function RBT_Mapping t -> edl_rbt_lookup_gsum t
+    | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
+
+let edl_keys_gsum_v :
+  (((event_data list), ((nat * Z.t) * ((event_data list), nat) mapping))
+     mapping ->
+    (event_data list) set)
+    boxed
+  = Box (keys (cenum_list, (ceq_list ceq_event_data),
+                (ccompare_list ccompare_event_data), set_impl_list));;
+
+let edl_mempty_nat : ((event_data list), nat) mapping
+  = RBT_Mapping (emptyb (ccompare_list ccompare_event_data));;
+
+let edl_keys_nat_v :
+  (((event_data list), nat) mapping -> (event_data list) set) boxed
+  = Box (keys (cenum_list, (ceq_list ceq_event_data),
+                (ccompare_list ccompare_event_data), set_impl_list));;
+
+let rec edl_nflat_x_gsum
+  m = fold (fun g c ->
+             (match edl_lookup_gsum m g with None -> c
+               | Some aI ->
+                 fold (fun t ca ->
+                        (match edl_lookup_nat (snd aI) t with None -> ca
+                          | Some n -> edl_update_nat t n ca))
+                   (edl_csl (unbox edl_keys_nat_v (snd aI))) c))
+        (edl_csl (unbox edl_keys_gsum_v m)) edl_mempty_nat;;
+
+let edl_impl_of_gcnt_v :
+  (((event_data list), (nat * ((event_data list), nat) mapping)) mapping_rbt ->
+    ((event_data list), (nat * ((event_data list), nat) mapping)) rbt)
+    boxed
+  = Box (impl_ofa (ccompare_list ccompare_event_data));;
+
+let rec edl_rbt_lookup_gcnt
+  t k = edl_rbtc_lookup (unbox edl_impl_of_gcnt_v t) k;;
+
+let rec edl_lookup_gcnt
+  = function RBT_Mapping t -> edl_rbt_lookup_gcnt t
+    | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
+
+let edl_keys_gcnt_v :
+  (((event_data list), (nat * ((event_data list), nat) mapping)) mapping ->
+    (event_data list) set)
+    boxed
+  = Box (keys (cenum_list, (ceq_list ceq_event_data),
+                (ccompare_list ccompare_event_data), set_impl_list));;
+
+let rec edl_nflat_x_gcnt
+  m = fold (fun g c ->
+             (match edl_lookup_gcnt m g with None -> c
+               | Some aI ->
+                 fold (fun t ca ->
+                        (match edl_lookup_nat (snd aI) t with None -> ca
+                          | Some n -> edl_update_nat t n ca))
+                   (edl_csl (unbox edl_keys_nat_v (snd aI))) c))
+        (edl_csl (unbox edl_keys_gcnt_v m)) edl_mempty_nat;;
+
+let rec rflat_x = function UFlat (c, ax) -> c
+                  | UNCnt m -> edl_nflat_x_gcnt m
+                  | UNSum m -> edl_nflat_x_gsum m;;
+
 let rec cachedp
   p = (let (_, (omega, (_, (_, _)))) = p in
         equal_agg_typea (fst omega) Agg_Min ||
           equal_agg_typea (fst omega) Agg_Max);;
+
+let rec edl_rbt_insert_gsum
+  xc xd xe =
+    Mapping_RBTa (edl_rbtc_insert xc xd (unbox edl_impl_of_gsum_v xe));;
+
+let rec edl_update_gsum
+  k v x2 = match k, v, x2 with
+    k, v, RBT_Mapping t -> RBT_Mapping (edl_rbt_insert_gsum k v t)
+    | k, v, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (updatea (equal_list equal_event_data) k v al)
+    | k, v, Mapping m ->
+        Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
+
+let rec edl_upd_lk_aux_gsum
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gsum_v xe)
+        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+
+let rec edl_upd_lk_gsum
+  x1 x2 x3 =
+    rep_isoma (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_gsum x1 x2 x3);;
+
+let rec edl_mupd_gsum
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_gsum k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_gsum (Assoc_List_Mapping al) k,
+          edl_update_gsum k (f (edl_lookup_gsum (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_gsum (Mapping f) k,
+          edl_update_gsum k (fa (edl_lookup_gsum (Mapping f) k)) (Mapping f));;
+
+let rec edl_nins_gsum
+  k si su t m =
+    snd (edl_mupd_gsum (drop k t)
+          (fun a ->
+            (match a
+              with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
+              | Some (aa, i) ->
+                (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
+                  | (Some _, ia) -> (aa, ia))))
+          m);;
+
+let rec edl_rbt_insert_gcnt
+  xc xd xe =
+    Mapping_RBTa (edl_rbtc_insert xc xd (unbox edl_impl_of_gcnt_v xe));;
+
+let rec edl_update_gcnt
+  k v x2 = match k, v, x2 with
+    k, v, RBT_Mapping t -> RBT_Mapping (edl_rbt_insert_gcnt k v t)
+    | k, v, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (updatea (equal_list equal_event_data) k v al)
+    | k, v, Mapping m ->
+        Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
+
+let rec edl_upd_lk_aux_gcnt
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gcnt_v xe)
+        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+
+let rec edl_upd_lk_gcnt
+  x1 x2 x3 =
+    rep_isoma (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_gcnt x1 x2 x3);;
+
+let rec edl_mupd_gcnt
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_gcnt k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_gcnt (Assoc_List_Mapping al) k,
+          edl_update_gcnt k (f (edl_lookup_gcnt (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_gcnt (Mapping f) k,
+          edl_update_gcnt k (fa (edl_lookup_gcnt (Mapping f) k)) (Mapping f));;
+
+let rec edl_nins_gcnt
+  k si su t m =
+    snd (edl_mupd_gcnt (drop k t)
+          (fun a ->
+            (match a
+              with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
+              | Some (aa, i) ->
+                (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
+                  | (Some _, ia) -> (aa, ia))))
+          m);;
+
+let rec edl_nlk_gsum
+  k m t =
+    (match edl_lookup_gsum m (drop k t) with None -> None
+      | Some aI -> edl_lookup_nat (snd aI) t);;
+
+let rec is_eint
+  e = (match e with EInt _ -> true | EFloat _ -> false | EString _ -> false);;
+
+let rec ival
+  e = (match e with EInt i -> i | EFloat _ -> Z.zero | EString _ -> Z.zero);;
+
+let rec cins
+  f t ca =
+    (let (c, acc) = ca in
+      (match edl_lookup_nat c t
+        with None -> (edl_update_nat t one_nata c, f t acc)
+        | Some k -> (edl_update_nat t (plus_nata k one_nata) c, acc)));;
+
+let rec rins
+  k ev t x3 = match k, ev, t, x3 with
+    k, ev, t, UFlat (c, ax) ->
+      (let (a, b) = cins (edl_gstep_ins k ev) t (c, ax) in UFlat (a, b))
+    | k, ev, t, UNCnt m ->
+        UNCnt (edl_nins_gcnt k (fun _ -> one_nata) (fun _ -> suc) t m)
+    | k, ev, t, UNSum m ->
+        (if is_eint (ev t) || not (is_none (edl_nlk_gsum k m t))
+          then UNSum (edl_nins_gsum k (fun ta -> (one_nata, ival (ev ta)))
+                       (fun ta a -> (suc (fst a), Z.add (snd a) (ival (ev ta))))
+                       t m)
+          else UFlat (ucnt_add1 t (edl_nflat_x_gsum m), None));;
 
 let rec is_emptyb (_A1, _A2) _B
   = function
@@ -7991,10 +8194,33 @@ let rec gcache
 
 let rec cset q p ax = (match ax with None -> edl_bot | Some a -> gcache q p a);;
 
+let rec map_valuesa
+  xb xc = Alist (mapa (fun (x, y) -> (x, xb x y)) (impl_of xc));;
+
+let rec map_values _A
+  f x1 = match f, x1 with
+    f, RBT_Mapping t ->
+      (match ccompare _A
+        with None ->
+          failwith "map_values RBT_Mapping: ccompare = None"
+            (fun _ -> map_values _A f (RBT_Mapping t))
+        | Some _ -> RBT_Mapping (mapb _A f t))
+    | f, Assoc_List_Mapping al -> Assoc_List_Mapping (map_valuesa f al)
+    | f, Mapping m -> Mapping (fun k -> map_option (f k) (m k));;
+
+let rec nsumm
+  m = map_values (ccompare_list ccompare_event_data) (fun _ -> fst) m;;
+
+let rec rax = function UFlat (c, ax) -> ax
+              | UNCnt m -> Some (GCnt (nsumm m))
+              | UNSum m -> Some (GSum (nsumm m));;
+
+let rec dk p = (let (_, (_, (_, (k, _)))) = p in k);;
+
 let rec uc_step_ins
   xc xf xg xh xi =
     Abs_ucache
-      (let (key, (c, (ax, ca))) = rep_ucache xi in
+      (let (key, (r, c)) = rep_ucache xi in
         (if cachedp xf
           then (if equal_proda
                      (equal_option
@@ -8006,20 +8232,24 @@ let rec uc_step_ins
                          (equal_prod equal_trm
                            (equal_prod equal_nat equal_nat))))
                      key (xc, xf)
-                 then (let (cb, axC) =
-                         cnt_ins_fold (cstep_ins xc xf) (edl_csl xh) c (ax, ca)
+                 then (let (cb, (ax, ca)) =
+                         cnt_ins_fold (cstep_ins xc xf) (edl_csl xh) (rflat_x r)
+                           (rax r, c)
                          in
-                        (key, (cb, axC)))
+                        (key, (UFlat (cb, ax), ca)))
                  else ((xc, xf),
-                        (ucnt_add xh c,
-                          (uag_ins xf xg xh c ax,
-                            cset xc xf (uag_ins xf xg xh c ax)))))
+                        (UFlat (ucnt_add xh (rflat_x r),
+                                 uag_ins xf xg xh (rflat_x r) (rax r)),
+                          cset xc xf (uag_ins xf xg xh (rflat_x r) (rax r)))))
           else (let (_, (_, (f, (k, _)))) = xf in
-                let (cb, axa) =
-                  cnt_ins_fold (edl_gstep_ins k (umeval_trm f)) (edl_csl xh) c
-                    ax
-                  in
-                 ((xc, xf), (cb, (axa, ca))))));;
+                 (if equal_nata (dk (snd key)) k
+                   then ((xc, xf),
+                          (fold (rins k (umeval_trm f)) (edl_csl xh) r, c))
+                   else (let (ca, ax) =
+                           cnt_ins_fold (edl_gstep_ins k (umeval_trm f))
+                             (edl_csl xh) (rflat_x r) (rax r)
+                           in
+                          ((xc, xf), (UFlat (ca, ax), c)))))));;
 
 let rec args_n
   (Args_ext (args_ivl, args_n, args_L, args_R, args_pos, args_agg, more)) =
@@ -8773,10 +9003,136 @@ let rec cstep_del
             | Some (aa, (ov, nv)) ->
               (Some aa, cupd (uqok q) pos (drop k t) ov nv c))));;
 
+let rec edl_rbt_delete_gsum
+  xb xc = Mapping_RBTa (edl_rbtc_delete xb (unbox edl_impl_of_gsum_v xc));;
+
+let rec edl_delete_gsum
+  k x1 = match k, x1 with
+    k, RBT_Mapping t -> RBT_Mapping (edl_rbt_delete_gsum k t)
+    | k, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
+    | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
+
+let rec edl_upd_lk2_aux_gsum
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_prod_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_prod_x_b_option_prod
+      (match edl_rbtc_ins_lk2 xd xc (unbox edl_impl_of_gsum_v xe)
+        with (None, (nv, t)) -> (None, (nv, paint B t))
+        | (Some v, (nv, t)) -> (Some v, (nv, t)));;
+
+let rec edl_upd_lk2_gsum
+  x1 x2 x3 =
+    rep_isomb (ccompare_list ccompare_event_data)
+      (edl_upd_lk2_aux_gsum x1 x2 x3);;
+
+let rec edl_mupd2_gsum
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, (nv, ta)) = edl_upd_lk2_gsum k f t in
+        (ov, (nv, RBT_Mapping ta)))
+    | k, f, Assoc_List_Mapping al ->
+        (let (ov, m) = edl_mupd_gsum k f (Assoc_List_Mapping al) in
+          (ov, (f ov, m)))
+    | k, fa, Mapping f ->
+        (let (ov, m) = edl_mupd_gsum k fa (Mapping f) in (ov, (fa ov, m)));;
+
+let rec edl_ndel_gsum
+  k sd t m =
+    (match
+      edl_mupd2_gsum (drop k t)
+        (fun a ->
+          (match a with None -> (failwith "undefined", edl_mempty_nat)
+            | Some (aa, i) ->
+              (match edl_mdel_lk_nat t i with (None, _) -> (aa, i)
+                | (Some ma, x) ->
+                  (if less_eq_nat ma one_nata then (sd t aa, x)
+                    else (aa, edl_update_nat t (minus_nata ma one_nata) i)))))
+        m
+      with (None, (_, _)) -> m
+      | (Some (_, i), ((_, ia), ma)) ->
+        (if unbox edl_mis_empty_nat_v ia && not (unbox edl_mis_empty_nat_v i)
+          then edl_delete_gsum (drop k t) m else ma));;
+
+let rec edl_rbt_delete_gcnt
+  xb xc = Mapping_RBTa (edl_rbtc_delete xb (unbox edl_impl_of_gcnt_v xc));;
+
+let rec edl_delete_gcnt
+  k x1 = match k, x1 with
+    k, RBT_Mapping t -> RBT_Mapping (edl_rbt_delete_gcnt k t)
+    | k, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
+    | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
+
+let rec edl_upd_lk2_aux_gcnt
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_prod_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_prod_x_b_option_prod
+      (match edl_rbtc_ins_lk2 xd xc (unbox edl_impl_of_gcnt_v xe)
+        with (None, (nv, t)) -> (None, (nv, paint B t))
+        | (Some v, (nv, t)) -> (Some v, (nv, t)));;
+
+let rec edl_upd_lk2_gcnt
+  x1 x2 x3 =
+    rep_isomb (ccompare_list ccompare_event_data)
+      (edl_upd_lk2_aux_gcnt x1 x2 x3);;
+
+let rec edl_mupd2_gcnt
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, (nv, ta)) = edl_upd_lk2_gcnt k f t in
+        (ov, (nv, RBT_Mapping ta)))
+    | k, f, Assoc_List_Mapping al ->
+        (let (ov, m) = edl_mupd_gcnt k f (Assoc_List_Mapping al) in
+          (ov, (f ov, m)))
+    | k, fa, Mapping f ->
+        (let (ov, m) = edl_mupd_gcnt k fa (Mapping f) in (ov, (fa ov, m)));;
+
+let rec edl_ndel_gcnt
+  k sd t m =
+    (match
+      edl_mupd2_gcnt (drop k t)
+        (fun a ->
+          (match a with None -> (failwith "undefined", edl_mempty_nat)
+            | Some (aa, i) ->
+              (match edl_mdel_lk_nat t i with (None, _) -> (aa, i)
+                | (Some ma, x) ->
+                  (if less_eq_nat ma one_nata then (sd t aa, x)
+                    else (aa, edl_update_nat t (minus_nata ma one_nata) i)))))
+        m
+      with (None, (_, _)) -> m
+      | (Some (_, i), ((_, ia), ma)) ->
+        (if unbox edl_mis_empty_nat_v ia && not (unbox edl_mis_empty_nat_v i)
+          then edl_delete_gcnt (drop k t) m else ma));;
+
+let rec cdel
+  f t ca =
+    (let (c, acc) = ca in
+      (match edl_lookup_nat c t with None -> (c, acc)
+        | Some k ->
+          (if less_eq_nat k one_nata
+            then (edl_delete_nat t c,
+                   (if equal_nata k one_nata then f t acc else acc))
+            else (edl_update_nat t (minus_nata k one_nata) c, acc))));;
+
+let rec rdel
+  k ev t x3 = match k, ev, t, x3 with
+    k, ev, t, UFlat (c, ax) ->
+      (let (a, b) = cdel (edl_gstep_del k ev) t (c, ax) in UFlat (a, b))
+    | k, ev, t, UNCnt m ->
+        UNCnt (edl_ndel_gcnt k (fun _ a -> minus_nata a one_nata) t m)
+    | k, ev, t, UNSum m ->
+        (if is_eint (ev t) ||
+              not (equal_optiona equal_nat (edl_nlk_gsum k m t) (Some one_nata))
+          then UNSum (edl_ndel_gsum k
+                       (fun ta a ->
+                         (minus_nata (fst a) one_nata,
+                           Z.sub (snd a) (ival (ev ta))))
+                       t m)
+          else UFlat (ucnt_del1 t (edl_nflat_x_gsum m), None));;
+
 let rec uc_step_del
   xc xf xg xh xi =
     Abs_ucache
-      (let (key, (c, (ax, ca))) = rep_ucache xi in
+      (let (key, (r, c)) = rep_ucache xi in
         (if cachedp xf
           then (if equal_proda
                      (equal_option
@@ -8788,20 +9144,24 @@ let rec uc_step_del
                          (equal_prod equal_trm
                            (equal_prod equal_nat equal_nat))))
                      key (xc, xf)
-                 then (let (cb, axC) =
-                         cnt_del_fold (cstep_del xc xf) (edl_csl xh) c (ax, ca)
+                 then (let (cb, (ax, ca)) =
+                         cnt_del_fold (cstep_del xc xf) (edl_csl xh) (rflat_x r)
+                           (rax r, c)
                          in
-                        (key, (cb, axC)))
+                        (key, (UFlat (cb, ax), ca)))
                  else ((xc, xf),
-                        (ucnt_del xh c,
-                          (uag_del xf xg xh c ax,
-                            cset xc xf (uag_del xf xg xh c ax)))))
+                        (UFlat (ucnt_del xh (rflat_x r),
+                                 uag_del xf xg xh (rflat_x r) (rax r)),
+                          cset xc xf (uag_del xf xg xh (rflat_x r) (rax r)))))
           else (let (_, (_, (f, (k, _)))) = xf in
-                let (cb, axa) =
-                  cnt_del_fold (edl_gstep_del k (umeval_trm f)) (edl_csl xh) c
-                    ax
-                  in
-                 ((xc, xf), (cb, (axa, ca))))));;
+                 (if equal_nata (dk (snd key)) k
+                   then ((xc, xf),
+                          (fold (rdel k (umeval_trm f)) (edl_csl xh) r, c))
+                   else (let (ca, ax) =
+                           cnt_del_fold (edl_gstep_del k (umeval_trm f))
+                             (edl_csl xh) (rflat_x r) (rax r)
+                           in
+                          ((xc, xf), (UFlat (ca, ax), c)))))));;
 
 let rec usc_expire
   args p q nt win x =
@@ -8846,10 +9206,15 @@ let rec de_gresult_msaux
 
 let rec de_gsw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
 
-let edl_keys_nat_v :
-  (((event_data list), nat) mapping -> (event_data list) set) boxed
-  = Box (keys (cenum_list, (ceq_list ceq_event_data),
-                (ccompare_list ccompare_event_data), set_impl_list));;
+let rec edl_nis_empty_gsum
+  = function RBT_Mapping t -> is_emptyd (ccompare_list ccompare_event_data) t
+    | Assoc_List_Mapping al ->
+        (match impl_of al with [] -> true | _ :: _ -> false);;
+
+let rec edl_nis_empty_gcnt
+  = function RBT_Mapping t -> is_emptyd (ccompare_list ccompare_event_data) t
+    | Assoc_List_Mapping al ->
+        (match impl_of al with [] -> true | _ :: _ -> false);;
 
 let edl_keys_table_v :
   (((event_data list), (event_data list) set) mapping -> (event_data list) set)
@@ -8938,22 +9303,58 @@ let rec edl_gempty = function GCnt m -> unbox edl_mis_empty_nat_v m
                      | GSum m -> unbox edl_mis_empty_nsum_v m
                      | GRank (m, ty) -> unbox edl_mis_empty_laux_v m;;
 
+let rec ugres_ns
+  q g0 omega p m =
+    (if g0 && edl_nis_empty_gsum m
+      then edl_filter (uqok q)
+             (edl_insert
+               [eval_agg_op omega
+                  (set_empty
+                    ((ceq_prod ceq_event_data ceq_enat),
+                      (ccompare_prod ccompare_event_data ccompare_enat))
+                    (of_phantom
+                      (set_impl_proda set_impl_event_data set_impl_enat)))]
+               edl_bot)
+      else (match fst omega with Agg_Cnt -> edl_bot | Agg_Min -> edl_bot
+             | Agg_Max -> edl_bot
+             | Agg_Sum -> ugmr_q q p (fun v -> EInt (snd (fst v))) m
+             | Agg_Avg ->
+               ugmr_q q p
+                 (fun v ->
+                   EFloat
+                     (Stdlib.(/.) (double_of_event_data (EInt (snd (fst v))))
+                       (double_of_int (int_of_nat (fst (fst v))))))
+                 m
+             | Agg_Med -> edl_bot));;
+
+let rec ugres_nc
+  q g0 omega p m =
+    (if g0 && edl_nis_empty_gcnt m
+      then edl_filter (uqok q)
+             (edl_insert
+               [eval_agg_op omega
+                  (set_empty
+                    ((ceq_prod ceq_event_data ceq_enat),
+                      (ccompare_prod ccompare_event_data ccompare_enat))
+                    (of_phantom
+                      (set_impl_proda set_impl_event_data set_impl_enat)))]
+               edl_bot)
+      else ugmr_q q p (fun v -> EInt (integer_of_int (int_of_nat (fst v)))) m);;
+
 let rec ufilt q x = edl_filter (uqok q) x;;
 
-let rec uc_set xa = (let (_, (_, (_, c))) = rep_ucache xa in c);;
+let rec uc_set xa = (let (_, (_, c)) = rep_ucache xa in c);;
 
-let rec uc_key xa = (let (k, (_, (_, _))) = rep_ucache xa in k);;
+let rec uc_rep xa = (let (_, (r, _)) = rep_ucache xa in r);;
 
-let rec uc_cnt xa = (let (_, (c, (_, _))) = rep_ucache xa in c);;
-
-let rec uc_ax xa = (let (_, (_, (ax, _))) = rep_ucache xa in ax);;
+let rec uc_key xa = (let (k, (_, _)) = rep_ucache xa in k);;
 
 let rec uc_res
   q p w x =
-    (match uc_ax x
-      with None -> ufilt q (udagg_p p (unbox edl_keys_nat_v (uc_cnt x)))
-      | Some a ->
-        (let (g0, (omega, (_, (_, pos)))) = p in
+    (let (g0, (omega, (_, (_, pos)))) = p in
+      (match uc_rep x
+        with UFlat (c, None) -> ufilt q (udagg_p p (unbox edl_keys_nat_v c))
+        | UFlat (_, Some a) ->
           (if equal_proda
                 (equal_option
                   (equal_prod equal_trm
@@ -8977,7 +9378,57 @@ let rec uc_res
                                      set_impl_enat)))]
                             edl_bot)
                    else uc_set x)
-            else ugres_q q g0 omega pos a)));;
+            else ugres_q q g0 omega pos a)
+        | UNCnt m ->
+          (if equal_proda
+                (equal_option
+                  (equal_prod equal_trm
+                    (equal_prod equal_bool
+                      (equal_prod equal_mconstraint equal_trm))))
+                (equal_prod equal_bool
+                  (equal_prod (equal_prod equal_agg_type equal_ty)
+                    (equal_prod equal_trm (equal_prod equal_nat equal_nat))))
+                (uc_key x) (q, p) &&
+                cachedp p
+            then (if g0 && edl_nis_empty_gcnt m
+                   then ufilt q
+                          (edl_insert
+                            [eval_agg_op omega
+                               (set_empty
+                                 ((ceq_prod ceq_event_data ceq_enat),
+                                   (ccompare_prod ccompare_event_data
+                                     ccompare_enat))
+                                 (of_phantom
+                                   (set_impl_proda set_impl_event_data
+                                     set_impl_enat)))]
+                            edl_bot)
+                   else uc_set x)
+            else ugres_nc q g0 omega pos m)
+        | UNSum m ->
+          (if equal_proda
+                (equal_option
+                  (equal_prod equal_trm
+                    (equal_prod equal_bool
+                      (equal_prod equal_mconstraint equal_trm))))
+                (equal_prod equal_bool
+                  (equal_prod (equal_prod equal_agg_type equal_ty)
+                    (equal_prod equal_trm (equal_prod equal_nat equal_nat))))
+                (uc_key x) (q, p) &&
+                cachedp p
+            then (if g0 && edl_nis_empty_gsum m
+                   then ufilt q
+                          (edl_insert
+                            [eval_agg_op omega
+                               (set_empty
+                                 ((ceq_prod ceq_event_data ceq_enat),
+                                   (ccompare_prod ccompare_event_data
+                                     ccompare_enat))
+                                 (of_phantom
+                                   (set_impl_proda set_impl_event_data
+                                     set_impl_enat)))]
+                            edl_bot)
+                   else uc_set x)
+            else ugres_ns q g0 omega pos m)));;
 
 let rec usc_result
   q args p aux = (let ((_, (_, _)), x) = aux in uc_res q p (args_n args) x);;
@@ -9110,9 +9561,6 @@ let rec mrestrict1 (_A1, _A2)
 
 let rec mrestrict1_cfi (_A1, _A2)
   xa = Abs_comp_fun_idem (mrestrict1 (_A1, _A2) xa);;
-
-let edl_mempty_nat : ((event_data list), nat) mapping
-  = RBT_Mapping (emptyb (ccompare_list ccompare_event_data));;
 
 let rec de_mfilter_keys_nat
   pos x1 m = match pos, x1, m with
@@ -9377,7 +9825,25 @@ let rec ginit _A
 
 let rec ag_init _A p w = (let (_, (omega, (_, (_, _)))) = p in ginit _A omega);;
 
-let rec uc_mk xc xd xe xf = Abs_ucache ((xc, xd), (xe, (xf, cset xc xd xf)));;
+let rec urmk
+  p c ax =
+    (if not (cachedp p) && unbox edl_mis_empty_nat_v c
+      then (match ax with None -> UFlat (c, ax)
+             | Some (GCnt m) ->
+               (if unbox edl_mis_empty_nat_v m
+                 then UNCnt (mapping_empty (ccompare_list ccompare_event_data)
+                              (of_phantom mapping_impl_list))
+                 else UFlat (c, ax))
+             | Some (GSum m) ->
+               (if unbox edl_mis_empty_nsum_v m
+                 then UNSum (mapping_empty (ccompare_list ccompare_event_data)
+                              (of_phantom mapping_impl_list))
+                 else UFlat (c, ax))
+             | Some (GRank (_, _)) -> UFlat (c, ax))
+      else UFlat (c, ax));;
+
+let rec uc_mk
+  xc xd xe xf = Abs_ucache ((xc, xd), (urmk xd xe xf, cset xc xd xf));;
 
 let rec usc_join
   args p q x aux =
@@ -10611,20 +11077,6 @@ let rec emb_msk p = mapa (fun q -> not (is_none q)) p;;
 
 let rec list_of_option = function None -> []
                          | Some x -> [x];;
-
-let rec map_valuesa
-  xb xc = Alist (mapa (fun (x, y) -> (x, xb x y)) (impl_of xc));;
-
-let rec map_values _A
-  f x1 = match f, x1 with
-    f, RBT_Mapping t ->
-      (match ccompare _A
-        with None ->
-          failwith "map_values RBT_Mapping: ccompare = None"
-            (fun _ -> map_values _A f (RBT_Mapping t))
-        | Some _ -> RBT_Mapping (mapb _A f t))
-    | f, Assoc_List_Mapping al -> Assoc_List_Mapping (map_valuesa f al)
-    | f, Mapping m -> Mapping (fun k -> map_option (f k) (m k));;
 
 let rec letpast_meval0 (_B1, _B2) _D
   eval j i ys xs p ts db phi =

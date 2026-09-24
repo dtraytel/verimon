@@ -328,7 +328,9 @@ ML \<open>
 val edl = "event_data list"
 val edl_value_types =
   [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data list set"),
-   ("tuples", "event_data list list"), ("nsum", "nat \<times> integer"), ("laux", "list_aux")]
+   ("tuples", "event_data list list"), ("nsum", "nat \<times> integer"), ("laux", "list_aux"),
+   ("gcnt", "nat \<times> (event_data list, nat) mapping"),
+   ("gsum", "(nat \<times> integer) \<times> (event_data list, nat) mapping")]
 \<close>
 
 text \<open>The images between the short and the wide tables, at the boundary to the kernel's

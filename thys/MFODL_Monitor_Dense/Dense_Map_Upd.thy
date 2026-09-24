@@ -627,6 +627,60 @@ lemma gd_sum_mupd[code]:
      else (v, m))"
   by (simp add: mupd_def Let_def split: option.splits event_data.splits prod.splits)
 
+text \<open>The count set by group: a tuple's step descends the outer map once, reading and writing the
+  group's entry, and the group's own map once; the group is deleted, in a second descent, only
+  when its last tuple leaves.\<close>
+
+lemma nis_empty_code[code]:
+  fixes t :: "(event_data list, 'a \<times> ucnt) mapping_rbt"
+  shows "nis_empty (RBT_Mapping t) = (case ID CCOMPARE(event_data list) of
+      None \<Rightarrow> Code.abort (STR ''nis_empty RBT_Mapping: ccompare = None'') (\<lambda>_. nis_empty (RBT_Mapping t))
+    | Some _ \<Rightarrow> RBT_Mapping2.is_empty t)"
+    "nis_empty (Assoc_List_Mapping al) = (case DAList.impl_of al of [] \<Rightarrow> True | _ \<Rightarrow> False)"
+proof -
+  show "nis_empty (RBT_Mapping t) = (case ID CCOMPARE(event_data list) of
+      None \<Rightarrow> Code.abort (STR ''nis_empty RBT_Mapping: ccompare = None'') (\<lambda>_. nis_empty (RBT_Mapping t))
+    | Some _ \<Rightarrow> RBT_Mapping2.is_empty t)"
+  proof (cases "ID CCOMPARE(event_data list)")
+    case None
+    then show ?thesis unfolding nis_empty_def by (simp only: option.case Code.abort_def)
+  next
+    case (Some c)
+    then show ?thesis unfolding nis_empty_def using is_empty_Mapping(1)[of t] by (simp only: option.case)
+  qed
+  have "al = DAList.empty \<longleftrightarrow> DAList.impl_of al = []"
+    by (metis DAList.empty.rep_eq DAList.impl_of_inject)
+  then show "nis_empty (Assoc_List_Mapping al) = (case DAList.impl_of al of [] \<Rightarrow> True | _ \<Rightarrow> False)"
+    unfolding nis_empty_def is_empty_Mapping(2) by (simp split: list.splits)
+qed
+
+lemma nins_mupd[code]: "nins k si su t M = snd (mupd (drop k t) (\<lambda>ov. case ov of
+     None \<Rightarrow> (si t, Mapping.update t 1 Mapping.empty)
+   | Some (a, I) \<Rightarrow> (case mupd t cnt_inc I of
+       (None, I') \<Rightarrow> (su t a, I') | (Some _, I') \<Rightarrow> (a, I'))) M)"
+  by (simp add: nins_def mupd_def cnt_inc_def Let_def split: option.splits prod.splits)
+
+lemma ndel_mupd2[code]: "ndel k sd t M = (case mupd2 (drop k t) (\<lambda>ov. case ov of
+     None \<Rightarrow> (undefined, Mapping.empty)
+   | Some (a, I) \<Rightarrow> (case mdel_lk t I of
+       (None, _) \<Rightarrow> (a, I)
+     | (Some m, I') \<Rightarrow> (if m \<le> 1 then (sd t a, I') else (a, Mapping.update t (m - 1) I)))) M of
+     (None, _, _) \<Rightarrow> M
+   | (Some (a, I), (a', I'), M') \<Rightarrow>
+       if Mapping.is_empty I' \<and> \<not> Mapping.is_empty I then Mapping.delete (drop k t) M else M')"
+proof -
+  have upd_same: "Mapping.update g v M = M" if "Mapping.lookup M g = Some v" for g v
+    using that by (intro mapping_eqI) (auto simp: lookup_update')
+  have ne: "\<not> Mapping.is_empty (Mapping.update t n I)" for n and I :: "(event_data list, nat) mapping"
+    by (simp add: Mapping.is_empty_def)
+  have e: "Mapping.lookup I t = None" if "Mapping.is_empty I" for I :: "(event_data list, nat) mapping"
+    using that by (auto simp: Mapping.is_empty_def in_keys_lookup)
+  show ?thesis
+    by (auto simp: ndel_def mupd2_def mupd_def mdel_lk_def Let_def ne upd_same e
+        split: option.splits prod.splits)
+qed
+
+
 subsection \<open>At the short tuples\<close>
 
 definition edl_rbtc_ins_lk :: "('v option \<Rightarrow> 'v) \<Rightarrow> event_data list \<Rightarrow>
@@ -680,8 +734,11 @@ setup \<open>Monomorphize.monomorphize_cmd
   ["edl_dict_simps"]\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
-  [("Dense_Map_Upd.upd_lk2_aux", "edl_upd_lk2_aux_laux", [edl, "list_aux"]),
-   ("upd_lk2", "edl_upd_lk2_laux", [edl, "list_aux"]), ("mupd2", "edl_mupd2_laux", [edl, "list_aux"])]
+  (maps (fn (tn, ty) =>
+     [("Dense_Map_Upd.upd_lk2_aux", "edl_upd_lk2_aux_" ^ tn, [edl, ty]),
+      ("upd_lk2", "edl_upd_lk2_" ^ tn, [edl, ty]), ("mupd2", "edl_mupd2_" ^ tn, [edl, ty])])
+     [("laux", "list_aux"), ("gcnt", "nat \<times> (event_data list, nat) mapping"),
+      ("gsum", "(nat \<times> integer) \<times> (event_data list, nat) mapping")])
   ["edl_dict_simps"]\<close>
 
 subsection \<open>The result's upkeep, with the steps applied\<close>
@@ -876,6 +933,21 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("gstep_del", "edl_gstep_del", ["event_data"]),
    ("gval", "edl_gval", ["event_data"]),
    ("gempty", "edl_gempty", ["event_data"])]
+  ["edl_dict_simps"]\<close>
+
+text \<open>The count set by group at its two value types, with the mapping operations above
+  specialised; and a tuple's count read through its group, where the specialised lookup took
+  the projection's place.\<close>
+
+lemma edl_lookup_nflat[code_unfold]: "edl_lookup_nat (nflat k M) t = nlk k M t"
+  by (simp add: edl_lookup_nat_def lookup_nflat_nlk)
+
+setup \<open>Monomorphize.monomorphize_cmd
+  (maps (fn (tn, ty) =>
+     [("nins", "edl_nins_" ^ tn, [ty]), ("ndel", "edl_ndel_" ^ tn, [ty]),
+      ("nlk", "edl_nlk_" ^ tn, [ty]), ("nis_empty", "edl_nis_empty_" ^ tn, [ty]),
+      ("nflat_x", "edl_nflat_x_" ^ tn, [ty])])
+     [("gcnt", "nat"), ("gsum", "nat \<times> integer")])
   ["edl_dict_simps"]\<close>
 
 (*<*)

@@ -8819,3 +8819,47 @@ MonPoly does the same work in two hash tables.  Keeping the count set per group 
 second descent's comparisons at the price of restating the count set and its naturality proofs;
 it is not done here.  The corpus is unchanged (601 same, 141 skipped, 0 differing) and `dune test`
 passes.
+
+## 21.40 The count set by group, for the counts and the sums over a past window
+
+21.39 ended on `pol-threshold` (`(r <- CNT y; x ONCE[0,60] A(x,y)) AND 40 < r`): a tuple entering
+or leaving the window costs a descent of the count set, keyed by the whole tuple, and one of the
+aggregate's map, keyed by its group.  Both trees are large, and the second descent repeats the
+first one's comparisons on the group's columns; the misses of the two dominate the node.
+
+**The count set by group.**  `Dense_Agg_Cache.thy` now represents the window's count set and
+aggregate, for `CNT`, `SUM` and `AVG`, as one map from each group to its summary (the count, or the
+count and the sum) together with the count set of the group's tuples (`'a nmap`, `ucrep`).  The
+flat count set and the aggregate are its projections (`nflat`, `nsumm`); a tuple's step (`nins`,
+`ndel`) is proved to project to the flat step (`nflat_nins`, `nsumm_nins`, `nflat_ndel`,
+`nsumm_ndel`), under an invariant that the summary's count is the size of the group's set and that
+each set holds only its group's tuples (`ninv`).  `ucache` keeps the representation in place of the
+flat pair; its interface (`uc_cnt`, `uc_ax`, `uc_step_ins`, `uc_step_del`, `uc_res`) and the lemmas
+about it are unchanged, so nothing above it moves.  A sum over a value that is not an integer goes
+back to the flat representation, as the flat aggregate does.  In code a step descends the outer
+map once with `mupd` or `mupd2` (21.35, 21.39) and the group's small map once, and deletes the group
+in a second descent only when its last tuple leaves (`nins_mupd`, `ndel_mupd2`); the result is read
+off the outer map directly (`uc_res_code`), and the mapping operations at the two new value types
+are specialised like the others.
+
+**The key of a step.**  The first build kept the flat representation on `pol-threshold`: the
+step compared the whole key the cache was made for, and the constraint on the result (`40 < r`) is
+pushed into the node after the cache is made, so the first step found a different key and went back
+to the flat pair.  For the aggregations that keep no result table the representation depends only
+on the group arity, which is what the step compares now.
+
+| formula (instr. + 10·D1 miss + 100·LL miss) | before | after | MonPoly |
+|---|---|---|---|
+| `pol-threshold` | 10.03 G | 8.73 G (−13.0%) | 6.72 G |
+| `pol-sumfilter` | 10.50 G | 9.34 G (−11.0%) | 9.64 G |
+| `aggonce-cnt50` | 13.61 G | 12.37 G (−9.1%) | 11.54 G |
+| `aggonce-sum50` | 13.37 G | 12.18 G (−8.9%) | 11.59 G |
+| `aggonce-min50` | 14.57 G | 14.58 G | 9.84 G |
+
+Instructions alone fall by 11% on `pol-threshold` (5.07 G to 4.50 G, MonPoly 5.10 G) and by 8% on the
+`aggonce` counts and sums.  A prototype written directly on the trees reached 7.95 G on
+`pol-threshold`; the rest is the mapping layer's per-operation overhead (the comparator check, the
+lifting's boxes), a few percent spread thinly.  The corpus is unchanged (652 same, 149 skipped, 0
+differing), `dune test` passes, and on a random log the grouped and ungrouped `CNT`, `SUM` and `AVG`
+over integer and float values, with and without a constraint, agree with the previous build and
+with MonPoly.
