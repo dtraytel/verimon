@@ -129,9 +129,16 @@ arithmetic on naturals and try only the rules that can match at the current
 character. They reduced the lexer from 427 M to 13 M instructions.
 
 `MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
-ocamlopt sees the tables as static data. About half of the LR driver's
-remaining time is the conversion of table indices to integers for array
-access.
+ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
+become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
+About half of the LR driver's remaining time is the conversion of table
+indices to integers for array access. The `grammar` package can instead run
+the driver on integer indices (`declare [[parser_int_tables]]`,
+`lr/LR_Int.thy`): the LR driver then executes half the instructions (95 M
+instead of 193 M on the suite), but converting the tables when the module is
+loaded adds about 4.5 ms to every run of `monpoly`, with or without
+`-verified_parser`, against 0.25 ms saved per parse. Since `monpoly` parses
+one formula per run, the parser is built without it.
 
 `src/verified_parser.ml` is large (about 5 MB), mostly the LR tables, whose
 numbers are binary numerals.
