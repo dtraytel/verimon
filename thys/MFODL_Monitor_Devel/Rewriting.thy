@@ -1727,12 +1727,12 @@ proof(induction r t arbitrary: V v i rule: rewrite.induct)
     using sat_main_1 by simp
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    by (auto simp: Let_def frz_name_fresh)
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    by (auto simp: Let_def frz_name_fresh)
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (4 \<alpha> t \<beta>)
   then show ?case
@@ -1755,11 +1755,11 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def frz_name_fresh)
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def frz_name_fresh)
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (8 \<alpha> I \<beta> t)
   then show ?case
