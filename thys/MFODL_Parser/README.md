@@ -23,9 +23,10 @@ introduction rule per production, with the semantic actions as values.
 | `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Parser_Code` | Examples checked by evaluation, and the code export |
 
 The sessions are separate because the `grammar` and `parser` commands are slow
-on a grammar of this size (each takes the better part of an hour, most of it in
-defining and proving the decoders and in evaluating the LR tables and the static
-check), and neither needs to rerun unless the grammar changes.
+on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
+the inductive definitions of the relation; `MFODL_Parser` about 16 minutes, most
+of it in evaluating the LR tables and the static check), and neither needs to
+rerun unless the grammar changes.
 
 Building and exporting the parser:
 

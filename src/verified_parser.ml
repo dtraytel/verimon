@@ -6545,110 +6545,31 @@ let rec suc n = plus_nata n (Nat_of_num One);;
 
 let rec comp f g = (fun x -> f (g x));;
 
+let rec nth
+  (x :: xs) n =
+    (if equal_nata n Zero_nat then x
+      else nth xs (minus_nata n (Nat_of_num One)));;
+
+let rec fold f x1 s = match f, x1, s with f, [], s -> s
+               | f, x :: xs, s -> fold f xs (f x s);;
+
+let rec rev xs = fold (fun a b -> a :: b) xs [];;
+
+let rec upt i j = (if less_nat i j then i :: upt (suc i) j else []);;
+
+let rec zip xs ys = match xs, ys with [], ys -> []
+              | xs, [] -> []
+              | x :: xs, y :: ys -> (x, y) :: zip xs ys;;
+
+let rec istart_ind
+  (Is_cfg_ext (iprods, istart, istart_ind, more)) = istart_ind;;
+
 let rec member _A x0 y = match x0, y with [], y -> false
                     | x :: xs, y -> eq _A x y || member _A xs y;;
 
 let rec irep_mem
   i x1 = match i, x1 with i, FinRep xs -> member equal_nat xs i
     | i, UpRep (xs, n) -> member equal_nat xs i || less_eq_nat n i;;
-
-let rec list_all p x1 = match p, x1 with p, [] -> true
-                   | p, x :: xs -> p x && list_all p xs;;
-
-let rec upt i j = (if less_nat i j then i :: upt (suc i) j else []);;
-
-let rec irep_subset
-  x0 r = match x0, r with FinRep xs, r -> list_all (fun i -> irep_mem i r) xs
-    | UpRep (xs, n), FinRep ys -> false
-    | UpRep (xs, n), UpRep (ys, m) ->
-        list_all (fun i -> irep_mem i (UpRep (ys, m))) xs &&
-          list_all (member equal_nat ys) (upt n m);;
-
-let rec iprods (Is_cfg_ext (iprods, istart, istart_ind, more)) = iprods;;
-
-let rec min _A a b = (if less_eq _A a b then a else b);;
-
-let rec irep_union
-  x0 x1 = match x0, x1 with FinRep xs, FinRep ys -> FinRep (xs @ ys)
-    | FinRep xs, UpRep (ys, n) -> UpRep (xs @ ys, n)
-    | UpRep (xs, n), FinRep ys -> UpRep (xs @ ys, n)
-    | UpRep (xs, n), UpRep (ys, m) -> UpRep (xs @ ys, min ord_nat n m);;
-
-let rec min_list _A
-  (x :: xs) = (match xs with [] -> x | _ :: _ -> min _A x (min_list _A xs));;
-
-let rec irep_img
-  x0 r = match x0, r with Eq, r -> r
-    | Gt, FinRep xs ->
-        (if null xs then FinRep [] else UpRep ([], suc (min_list ord_nat xs)))
-    | Gt, UpRep (xs, n) -> UpRep ([], suc (min_list ord_nat (n :: xs)))
-    | Ge, FinRep xs ->
-        (if null xs then FinRep [] else UpRep ([], min_list ord_nat xs))
-    | Ge, UpRep (xs, n) -> UpRep ([], min_list ord_nat (n :: xs))
-    | Any, FinRep xs -> (if null xs then FinRep [] else UpRep ([], Zero_nat))
-    | Any, UpRep (xs, n) -> UpRep ([], Zero_nat);;
-
-let rec length_tailrec x0 n = match x0, n with [], n -> n
-                         | x :: xs, n -> length_tailrec xs (suc n);;
-
-let rec size_list xs = length_tailrec xs Zero_nat;;
-
-let rec nth
-  (x :: xs) n =
-    (if equal_nata n Zero_nat then x
-      else nth xs (minus_nata n (Nat_of_num One)));;
-
-let rec xcontrib _A _B
-  pr ((a, rhs), (m, r)) acc =
-    (if less_nat m (size_list rhs) &&
-          equal_syma _A _B (fst (nth rhs m)) (Nt (fst pr))
-      then irep_union (irep_img (snd (nth rhs m)) r) acc else acc);;
-
-let rec map f x1 = match f, x1 with f, [] -> []
-              | f, x21 :: x22 -> f x21 :: map f x22;;
-
-let rec zip xs ys = match xs, ys with [], ys -> []
-              | xs, [] -> []
-              | x :: xs, y :: ys -> (x, y) :: zip xs ys;;
-
-let rec xslots
-  g xs cls =
-    xs @ map (fun (pr, r) -> (pr, (Zero_nat, r))) (zip (iprods g) cls);;
-
-let rec fold f x1 s = match f, x1, s with f, [], s -> s
-               | f, x :: xs, s -> fold f xs (f x s);;
-
-let rec xround _A _B
-  g xs cls =
-    map (fun (pr, a) -> fold (xcontrib _A _B pr) (xslots g xs cls) a)
-      (zip (iprods g) cls);;
-
-let rec list_all2 p xs ys = match p, xs, ys with p, [], ys -> null ys
-                    | p, xs, [] -> null xs
-                    | p, x :: xs, y :: ys -> p x y && list_all2 p xs ys;;
-
-let rec xstable _A _B
-  g xs cls = list_all2 irep_subset (xround _A _B g xs cls) cls;;
-
-let rec xiter _A _B
-  g xs s =
-    (if equal_nata s Zero_nat then map (fun _ -> FinRep []) (iprods g)
-      else xround _A _B g xs
-             (xiter _A _B g xs (minus_nata s (Nat_of_num One))));;
-
-let rec while_option b c s = (if b s then while_option b c (c s) else Some s);;
-
-let rec the (Some x2) = x2;;
-
-let rec nat_search p = the (while_option (fun n -> not (p n)) suc Zero_nat);;
-
-let rec xfuel _A _B
-  g xs = nat_search (fun t -> xstable _A _B g xs (xiter _A _B g xs t));;
-
-let rec rev xs = fold (fun a b -> a :: b) xs [];;
-
-let rec istart_ind
-  (Is_cfg_ext (iprods, istart, istart_ind, more)) = istart_ind;;
 
 let rec hd (x21 :: x22) = x21;;
 
@@ -6680,6 +6601,13 @@ let rec take
         (if equal_nata n Zero_nat then []
           else x :: take (minus_nata n (Nat_of_num One)) xs);;
 
+let rec length_tailrec x0 n = match x0, n with [], n -> n
+                         | x :: xs, n -> length_tailrec xs (suc n);;
+
+let rec size_list xs = length_tailrec xs Zero_nat;;
+
+let rec min _A a b = (if less_eq _A a b then a else b);;
+
 let rec map_of _A
   x0 k = match x0, k with [], k -> None
     | (l, v) :: ps, k -> (if eq _A l k then Some v else map_of _A ps k);;
@@ -6710,6 +6638,9 @@ let rec s_col (Span_ext (s_line, s_col, s_off, s_len, s_txt, more)) = s_col;;
 
 let rec tok (Token_ext (tok, span, more)) = tok;;
 
+let rec map f x1 = match f, x1 with f, [] -> []
+              | f, x21 :: x22 -> f x21 :: map f x22;;
+
 let rec tcols w = map (fun t -> (tok t, s_col (span t))) w;;
 
 let rec butlast = function [] -> []
@@ -6722,6 +6653,12 @@ let rec remdups _A
   = function [] -> []
     | x :: xs ->
         (if member _A xs x then remdups _A xs else x :: remdups _A xs);;
+
+let rec min_list _A
+  (x :: xs) = (match xs with [] -> x | _ :: _ -> min _A x (min_list _A xs));;
+
+let rec list_all p x1 = match p, x1 with p, [] -> true
+                   | p, x :: xs -> p x && list_all p xs;;
 
 let rec superset _A xs = list_all (member _A xs);;
 
@@ -6772,6 +6709,12 @@ let rec dnext _A _B
   gt sts i x =
     (if less_nat i (size_list gt) then la_next _A _B gt sts i x
       else size_list sts);;
+
+let rec irep_union
+  x0 x1 = match x0, x1 with FinRep xs, FinRep ys -> FinRep (xs @ ys)
+    | FinRep xs, UpRep (ys, n) -> UpRep (xs @ ys, n)
+    | UpRep (xs, n), FinRep ys -> UpRep (xs @ ys, n)
+    | UpRep (xs, n), UpRep (ys, m) -> UpRep (xs @ ys, min ord_nat n m);;
 
 let rec red_set _A _B
   cl pr =
@@ -7619,9 +7562,63 @@ and ok_r = function RTest f -> ok_f f
            | RStar r -> ok_r r
            | RSkip v -> true;;
 
-let rec xclosure _A _B g fuel xs = xslots g xs (xiter _A _B g xs fuel);;
+let rec irep_subset
+  x0 r = match x0, r with FinRep xs, r -> list_all (fun i -> irep_mem i r) xs
+    | UpRep (xs, n), FinRep ys -> false
+    | UpRep (xs, n), UpRep (ys, m) ->
+        list_all (fun i -> irep_mem i (UpRep (ys, m))) xs &&
+          list_all (member equal_nat ys) (upt n m);;
 
-let rec xclosure_auto _A _B g xs = xclosure _A _B g (xfuel _A _B g xs) xs;;
+let rec while_option b c s = (if b s then while_option b c (c s) else Some s);;
+
+let rec iprods (Is_cfg_ext (iprods, istart, istart_ind, more)) = iprods;;
+
+let rec xslots
+  g xs cls =
+    xs @ map (fun (pr, r) -> (pr, (Zero_nat, r))) (zip (iprods g) cls);;
+
+let rec irep_img
+  x0 r = match x0, r with Eq, r -> r
+    | Gt, FinRep xs ->
+        (if null xs then FinRep [] else UpRep ([], suc (min_list ord_nat xs)))
+    | Gt, UpRep (xs, n) -> UpRep ([], suc (min_list ord_nat (n :: xs)))
+    | Ge, FinRep xs ->
+        (if null xs then FinRep [] else UpRep ([], min_list ord_nat xs))
+    | Ge, UpRep (xs, n) -> UpRep ([], min_list ord_nat (n :: xs))
+    | Any, FinRep xs -> (if null xs then FinRep [] else UpRep ([], Zero_nat))
+    | Any, UpRep (xs, n) -> UpRep ([], Zero_nat);;
+
+let rec xcontrib _A _B
+  pr ((a, rhs), (m, r)) acc =
+    (if less_nat m (size_list rhs) &&
+          equal_syma _A _B (fst (nth rhs m)) (Nt (fst pr))
+      then irep_union (irep_img (snd (nth rhs m)) r) acc else acc);;
+
+let rec xround _A _B
+  g xs cls =
+    map (fun (pr, a) -> fold (xcontrib _A _B pr) (xslots g xs cls) a)
+      (zip (iprods g) cls);;
+
+let rec xiter _A _B
+  g xs s =
+    (if equal_nata s Zero_nat then map (fun _ -> FinRep []) (iprods g)
+      else xround _A _B g xs
+             (xiter _A _B g xs (minus_nata s (Nat_of_num One))));;
+
+let rec list_all2 p xs ys = match p, xs, ys with p, [], ys -> null ys
+                    | p, xs, [] -> null xs
+                    | p, x :: xs, y :: ys -> p x y && list_all2 p xs ys;;
+
+let rec the (Some x2) = x2;;
+
+let rec xclosure_auto _A _B
+  g xs =
+    xslots g xs
+      (fst (the (while_option
+                  (fun (cls, nxt) -> not (list_all2 irep_subset nxt cls))
+                  (fun (_, nxt) -> (nxt, xround _A _B g xs nxt))
+                  (xiter _A _B g xs Zero_nat,
+                    xround _A _B g xs (xiter _A _B g xs Zero_nat)))));;
 
 let rec dcands _A _B
   g i cells cl gc =
