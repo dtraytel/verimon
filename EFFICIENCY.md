@@ -8709,6 +8709,9 @@ the definitions and the facts named:
 
 The instruction ratio of the group goes from 1.03–1.21 to 0.84–1.04.  `once_scale` (1.07 in the
 local run) is not in instructions: `once-rate80` executes 11.73 G against MonPoly's 11.33 G
-(1.035), and the rest of its wall-time gap is the garbage collector's and the cache's share of the
-trees' rebuilt paths, as for the policy group in 21.36.  The corpus is unchanged (601 same, 141
+(1.035), and the collector executes fewer instructions than MonPoly's (2.78 G against 3.02 G).  The
+rest of the wall-time gap is the first-level data cache: 124 M misses against 86 M, of which 64 M
+against 34 M are writes -- the fresh lines of the red-black trees' rebuilt paths, which every update
+of the window's count set allocates and MonPoly's hash tables update in place.  A code equation does
+not change that; a structure that allocates less per update would.  The corpus is unchanged (601 same, 141
 skipped, 0 differing) and `dune test` passes.
