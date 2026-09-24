@@ -13809,6 +13809,43 @@ let rec ibbase_of
                              else ((Z.of_int 10), i)))))
       else ((Z.of_int 10), i));;
 
+let rec ddigits
+  s n i acc =
+    (if (fun i j -> if Obj.is_int (Obj.repr i) && Obj.is_int (Obj.repr j) then (Obj.magic i : Stdlib.Int.t) < (Obj.magic j : Stdlib.Int.t) else Z.lt i j)
+          i n
+      then (let c =
+              (fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                s i
+              in
+             (if (('\048' : char) <= c) && ((c : char) <= '\057')
+               then ddigits s n
+                      ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                        i)
+                      (Z.add (Z.mul acc (Z.of_int 10))
+                        (Z.sub ((Z.of_int (Char.code c))) (Z.of_int 48)))
+               else (if ((c : char) = '\095')
+                      then ddigits s n
+                             ((fun i -> if Obj.is_int (Obj.repr i) && (Obj.magic i : Stdlib.Int.t) < max_int then Z.of_int ((Obj.magic i : Stdlib.Int.t) + 1) else Z.succ i)
+                               i)
+                             acc
+                      else (Z.neg (Z.of_int 1)))))
+      else acc);;
+
+let rec iunsigned
+  s n i =
+    (if Z.lt i n &&
+          (Z.leq (Z.sub n i) (Z.of_int 256) &&
+            ((('\049' : char) <= ((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                                   s i)) &&
+              ((((fun s i -> String.get s (if Obj.is_int (Obj.repr i) then (let k = (Obj.magic i : Stdlib.Int.t) in if k < 0 then 0 else k)
+      else if Z.sign i < 0 then 0 else Z.to_int i))
+                  s i) : char) <= '\057')))
+      then (let r = ddigits s n i Z.zero in
+             (if Z.lt r Z.zero then None else Some r))
+      else (let (a, b) = ibbase_of s n i in inat_of_digits s n a b));;
+
 let rec ibint_of
   s = (let n = (Z.of_int (String.length s)) in
         (if Z.lt Z.zero n
@@ -13818,14 +13855,10 @@ let rec ibint_of
                     s Z.zero
                   in
                  (if ((c : char) = '\045')
-                   then map_option Z.neg
-                          (let (a, b) = ibbase_of s n (Z.of_int 1) in
-                            inat_of_digits s n a b)
+                   then map_option Z.neg (iunsigned s n (Z.of_int 1))
                    else (if ((c : char) = '\043')
-                          then (let (a, b) = ibbase_of s n (Z.of_int 1) in
-                                 inat_of_digits s n a b)
-                          else (let (a, b) = ibbase_of s n Z.zero in
-                                 inat_of_digits s n a b))))
+                          then iunsigned s n (Z.of_int 1)
+                          else iunsigned s n Z.zero)))
           else None));;
 
 let rec conv_field
