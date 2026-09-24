@@ -3,8 +3,8 @@
 201 hand-picked formulas in 23 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
 (`-verified`: `Dense_Eval.thy` over the short tuples of `Dense_Unbox_Exec.thy`; the system is
-called `verimon` in the reports, `vdense` in earlier ones) on the same log, with a 5-second timeout per run, best of three repetitions, in about a quarter of an
-hour on four cores.
+called `verimon` in the reports, `vdense` in earlier ones) on the same log, with a 5-second timeout per run, best of three repetitions, in 4 to 15 minutes on
+four cores depending on the machine.
 
 ```
 python3 gen_logs.py                 # eight synthetic logs (about 45 MB), a few seconds
@@ -20,44 +20,44 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-23 after 21.33 (348bc53),
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-24 after 21.34 (66d9b44),
 and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
-`-verified` is the original VeriMon.  Both ran on the same otherwise idle four-core container,
-with the same suite, logs and settings, so their numbers compare (master and a refine run after
-21.28 one after the other, then refine again after 21.29 to 21.33, with MonPoly's
-times within 3% of the previous run's each time); that
-container is not the one of the earlier pair of runs (after 21.27, geometric mean 1.33 with three
-timeouts), which runs MonPoly 1.31x as slowly (geometric mean over 194 formulas, up to 2.2x on
-the `long` log), so the two pairs compare with each other only through their ratios.
+`-verified` is the original VeriMon.  Both ran one after the other on the same local machine, with
+the same suite, logs and settings, so their numbers compare.  That machine is about twice as fast
+as the container of the runs up to 21.33 (the refine suite takes 231 s against 505 s there), so
+earlier runs compare with these only through their ratios.
 
 | | master | refine |
 |---|---|---|
-| VeriMon timeouts (5 s) | 64 | 0 |
+| VeriMon timeouts (5 s) | 5 | 0 |
 | MonPoly timeouts | 0 | 0 |
-| both finish | 132 | 196 |
-| geometric mean VeriMon/MonPoly | 2.71 | 1.00 |
-| VeriMon faster / more than 2x slower | 0 / 103 | 98 / 0 |
+| both finish | 191 | 196 |
+| geometric mean VeriMon/MonPoly | 2.63 | 0.95 |
+| VeriMon faster / more than 2x slower | 0 / 136 | 116 / 0 |
 
-MonPoly itself takes 0.91x its master time in the refine run, over the 196 formulas it finishes
-in both; the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not all of
-that is noise.  Over the 137 formulas the original VeriMon finishes, the verified monitor of
-refine takes 0.34x its time.  The master run has one verdict disagreement, `match-pcnt`, an
-end-of-stream difference between MonPoly and the verified monitor that the original VeriMon
-shares; the refine run has none since EFFICIENCY.md 21.31.  The `andtrigger` group has no ratio against MonPoly, which does not monitor TRIGGER;
-the reports record the verified monitor's times alone.
+This is the first run in which the verified monitor is faster than MonPoly on the geometric mean,
+and on more than half of the formulas; no group is slower than 1.10x (`once_scale`, then `until`
+at 1.09).  MonPoly itself takes 0.95x its master time in the refine run, over the 196 formulas it
+finishes in both; the branch changes `tuple.ml` and `predicate.ml`, which MonPoly shares, so not
+all of that is noise.  Over the 196 formulas the original VeriMon finishes, the verified monitor of
+refine takes 0.35x its time.  On this machine the original VeriMon times out on 5 formulas rather
+than the container's 64, so master's ratios cover 59 more formulas than they did there and its
+geometric mean is not the container's 2.71.  The master run has one verdict disagreement,
+`match-pcnt`, an end-of-stream difference between MonPoly and the verified monitor that the
+original VeriMon shares; the refine run has none since EFFICIENCY.md 21.31.  The `andtrigger` group
+has no ratio against MonPoly, which does not monitor TRIGGER; the reports record the verified
+monitor's times alone.  The reports give times to 10 ms, which at this machine's speed (typically
+0.2 s to 0.6 s per formula) makes a single formula's ratio uncertain by a few percent.
 
-Between the refine runs after 21.32 and after 21.33 only the verified monitor changed (the Since
-structure without its since-mappings when the interval contains zero, and the match of a predicate
-against its terms over trees, EFFICIENCY.md 21.33): the `since` group went from 1.23 to 0.94 -- the
-verified monitor takes 0.78x its previous time there -- with `since-nu5` from 1.89 to 1.22,
-`since-nu500` from 1.66 to 1.08 and `since-u50` from 1.50 to 1.04, and `pol-sincefutb` from 1.90 to
-1.33.  The geometric mean went from 1.05 to 1.00, and the formulas where the verified monitor is
-faster from 74 to 98; MonPoly ran 2% slower than in the previous run.  The largest ratios left are
-the aggregations over a past window: `aggonce-max50` (1.73), `aggonce-min50` (1.61) and
-`pol-threshold` (1.50).
-The refine run after 21.32 had taken the `until` group from 1.31 to 1.16, the earlier ones the
-geometric mean from 1.13 to 1.06 after 21.29 and 21.30 (the red-black trees' rebalancing), and the
-`match` group from 1.39 to 1.00 after 21.31.
+The largest ratios left are still the aggregations over a past window, now all below 1.5x:
+`pol-threshold` (1.48), `pol-sumfilter` (1.39), `aggonce-min50` and `aggonce-max50` (1.29), and
+the `agg_once` group is at 1.02.  21.34, the window's aggregate over the window's own tuples,
+measured on the container against the refine build before it, took `agg_once` to 0.91x,
+`agg_fut` to 0.86x and `policy` to 0.94x of their previous times.  The runs on the container
+before it had taken the geometric mean from 1.13 to 1.06 after 21.29 and 21.30 (the red-black
+trees' rebalancing), the `match` group from 1.39 to 1.00 after 21.31, the `until` group from 1.31
+to 1.16 after 21.32, and the `since` group from 1.23 to 0.94 and the geometric mean from 1.05 to
+1.00 after 21.33.
 
 ## The logs
 
