@@ -855,22 +855,22 @@ next
     phi_wty: "S, E' \<turnstile> \<phi>" using Let.prems(1) by cases auto
   have wtyenv: "x \<in> \<Gamma> \<sigma> i \<Longrightarrow> (case x of (p, xs) \<Rightarrow> (p, length xs) \<notin> dom V \<longrightarrow> (case S (p, length xs) of None \<Rightarrow> False | Some ts \<Rightarrow> wty_tuple ts xs))" for x i
     using Let.prems(3) by (auto simp add: wty_envs_def wty_event_def wty_tuple_def) 
-  have ty_of_phi: "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> ty_of (xs!x) = E' x" for x xs
-    apply (rule ty_of_sat_safe) using Let phi_wty by auto 
-  have "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> (tabulate E' 0 (Formula.nfv \<phi>)!x) = ty_of (xs!x)" for x xs 
-    using ty_of_phi[of x xs] apply(auto simp add: Formula.nfv_def split: nat.splits)
-    by (metis Formula.nfv_def add.left_neutral fvi_less_nfv nth_tabulate)
-  then  have list_all_tab:"length xs = Formula.nfv \<phi> \<Longrightarrow>
+  have list_all_tab:"length xs = Formula.nfv \<phi> \<Longrightarrow>
     Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi> \<Longrightarrow> list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs " for xs i 
   proof -
     assume a1: "Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi>"
     assume a2: "length xs = Formula.nfv \<phi>"
-    obtain nn :: "event_data list \<Rightarrow> ty list \<Rightarrow> (ty \<Rightarrow> event_data \<Rightarrow> bool) \<Rightarrow> nat" where
-      "\<forall>x0 x1 x2. (\<exists>v3<length x1. \<not> x2 (x1 ! v3) (x0 ! v3)) = (nn x0 x1 x2 < length x1 \<and> \<not> x2 (x1 ! nn x0 x1 x2) (x0 ! nn x0 x1 x2))" by moura
-    then have "\<forall>p ts es. (\<not> list_all2 p ts es \<or> length ts = length es \<and> (\<forall>n. \<not> n < length ts \<or> p (ts ! n) (es ! n))) \<and> (list_all2 p ts es \<or> length ts \<noteq> length es \<or> nn es ts p < length ts \<and> \<not> p (ts ! nn es ts p) (es ! nn es ts p))"
-      by (metis (no_types) list_all2_conv_all_nth)
-    then show ?thesis
-      using a2 a1 by (smt (z3) Let.hyps(1) Let.hyps(2) Let.prems(3) add.left_neutral atLeastLessThan_iff dual_order.refl length_tabulate less_nat_zero_code not_less nth_tabulate phi_wty subset_eq ty_of_sat'_safe ty_of_sat_safe)
+    have "ty_of (xs ! x) = E' x" if "x < Formula.nfv \<phi>" for x
+    proof -
+      have "x \<in> fv \<phi>"
+        by (rule subsetD[OF Let.hyps(1)]) (simp add: that)
+      with a1 show ?thesis
+        using ty_of_sat_safe[OF Let.hyps(2) phi_wty Let.prems(3)]
+          ty_of_sat'_safe[OF Let.hyps(2) phi_wty Let.prems(3)]
+        by blast
+    qed
+    with a2 show ?thesis
+      by (simp add: list_all2_conv_all_nth)
   qed
   have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
   proof -
@@ -907,22 +907,22 @@ next
     phi_wty: "S, E' \<turnstile> \<phi>" using Frz.prems(1) by cases auto
   have wtyenv: "x \<in> \<Gamma> \<sigma> i \<Longrightarrow> (case x of (p, xs) \<Rightarrow> (p, length xs) \<notin> dom V \<longrightarrow> (case S (p, length xs) of None \<Rightarrow> False | Some ts \<Rightarrow> wty_tuple ts xs))" for x i
     using Frz.prems(3) by (auto simp add: wty_envs_def wty_event_def wty_tuple_def) 
-  have ty_of_phi: "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> ty_of (xs!x) = E' x" for x xs
-    apply (rule ty_of_sat_safe) using Frz phi_wty by auto 
-  have "x \<in> Formula.fv \<phi> \<Longrightarrow>  Formula.sat \<sigma> V xs i \<phi> \<Longrightarrow> length xs = Formula.nfv \<phi> \<Longrightarrow> (tabulate E' 0 (Formula.nfv \<phi>)!x) = ty_of (xs!x)" for x xs 
-    using ty_of_phi[of x xs] apply(auto simp add: Formula.nfv_def split: nat.splits)
-    by (metis Formula.nfv_def add.left_neutral fvi_less_nfv nth_tabulate)
-  then  have list_all_tab:"length xs = Formula.nfv \<phi> \<Longrightarrow>
+  have list_all_tab:"length xs = Formula.nfv \<phi> \<Longrightarrow>
     Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi> \<Longrightarrow> list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs " for xs i 
   proof -
     assume a1: "Formula.sat \<sigma> V xs i \<phi> \<or> sat' \<sigma> V xs i \<phi>"
     assume a2: "length xs = Formula.nfv \<phi>"
-    obtain nn :: "event_data list \<Rightarrow> ty list \<Rightarrow> (ty \<Rightarrow> event_data \<Rightarrow> bool) \<Rightarrow> nat" where
-      "\<forall>x0 x1 x2. (\<exists>v3<length x1. \<not> x2 (x1 ! v3) (x0 ! v3)) = (nn x0 x1 x2 < length x1 \<and> \<not> x2 (x1 ! nn x0 x1 x2) (x0 ! nn x0 x1 x2))" by moura
-    then have "\<forall>p ts es. (\<not> list_all2 p ts es \<or> length ts = length es \<and> (\<forall>n. \<not> n < length ts \<or> p (ts ! n) (es ! n))) \<and> (list_all2 p ts es \<or> length ts \<noteq> length es \<or> nn es ts p < length ts \<and> \<not> p (ts ! nn es ts p) (es ! nn es ts p))"
-      by (metis (no_types) list_all2_conv_all_nth)
-    then show ?thesis
-      using a2 a1 by (smt (z3) Frz.hyps(1) Frz.hyps(2) Frz.prems(3) add.left_neutral atLeastLessThan_iff dual_order.refl length_tabulate less_nat_zero_code not_less nth_tabulate phi_wty subset_eq ty_of_sat'_safe ty_of_sat_safe)
+    have "ty_of (xs ! x) = E' x" if "x < Formula.nfv \<phi>" for x
+    proof -
+      have "x \<in> fv \<phi>"
+        by (rule subsetD[OF Frz.hyps(1)]) (simp add: that)
+      with a1 show ?thesis
+        using ty_of_sat_safe[OF Frz.hyps(2) phi_wty Frz.prems(3)]
+          ty_of_sat'_safe[OF Frz.hyps(2) phi_wty Frz.prems(3)]
+        by blast
+    qed
+    with a2 show ?thesis
+      by (simp add: list_all2_conv_all_nth)
   qed
   have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
   proof -
@@ -997,11 +997,11 @@ next
 next
   case (Ands l pos neg)
   have pos_IH: "\<phi> \<in> set pos \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)  \<Longrightarrow>  wty_envs S \<sigma> V
-\<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(1) Ball_set_list_all   by (smt (verit, best))
+\<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(1)[unfolded list_all_iff] by blast
   have pos_case: "\<phi> \<in> set pos \<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi> " for \<phi> using Ands pos_IH by (auto elim: wty_formula.cases)
   have neg_IH: "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y) \<Longrightarrow>  wty_envs S \<sigma> V
-\<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(2) Ball_set_list_all 
-    by (smt (verit, best))
+\<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(2)[unfolded list_all_iff]
+    by blast
   have "\<phi> \<in> set ( neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> using Ands by (auto elim: wty_formula.cases)
   then have "\<phi> \<in> set ( map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
     apply (auto simp add: Formula.nfv_def )
@@ -1055,16 +1055,22 @@ next
     }
     ultimately show ?thesis by auto
   qed
-  have "Formula.eval_trm (zs @ v) f = eval_trm' (zs @ v) f"  if a1:"Formula.sat \<sigma> V (zs @ v) i \<phi>" and a2:"length zs = length tys" for zs
+  have eval_eq: "Formula.eval_trm (zs @ v) f = eval_trm' (zs @ v) f"  if a1:"Formula.sat \<sigma> V (zs @ v) i \<phi>" and a2:"length zs = length tys" for zs
   proof -
     have fv_wty: "y\<in>fv_trm f \<Longrightarrow> ty_of ((zs @ v) ! y) = agg_env E tys y" for y 
       using ty_of_sat_safe  Agg(3,4,8) a1 a2 phi_wty by auto 
     show ?thesis using Agg.prems(1) fv_wty by (auto dest: eval_trm_sound elim: wty_formula.cases) 
   qed
-  then have 
+  have 
  "{(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x} \<and> Zs \<noteq> {}}
 = {(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> sat' \<sigma> V (zs @ v) i \<phi> \<and> eval_trm' (zs @ v) f = x} \<and> Zs \<noteq> {}}"
-    using phi_case  by (smt (z3) Collect_cong) 
+  proof -
+    have "{zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x}
+      = {zs. length zs = length tys \<and> sat' \<sigma> V (zs @ v) i \<phi> \<and> eval_trm' (zs @ v) f = x}" for x
+      by (rule Collect_cong) (metis phi_case eval_eq)
+    then show ?thesis
+      by simp
+  qed
   moreover obtain agg_op d where omega_def:"\<omega> = (agg_op,d)" using Agg.prems(1) by cases auto
   moreover have eval_agg_op_case: "M = {(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x} \<and> Zs \<noteq> {}}
  \<Longrightarrow> eval_agg_op (agg_op,d) M = eval_agg_op' (agg_op,d) M" for M
@@ -1095,10 +1101,32 @@ next
   have psi_eq: "Formula.sat \<sigma> V v i \<psi> = sat' \<sigma> V v i \<psi>" for i  
     using Trigger_0 by (auto elim: wty_formula.cases)
   have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i 
-    using Trigger_0
-    apply (cases "\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>'"; clarsimp simp: case_Neg_iff)
-    by (smt (verit, ccfv_SIG) ty_of_sat'_safe ty_of_sat_safe wty_formula_NegD wty_formula_TriggerD(1))
-      (meson ty_of_sat'_safe ty_of_sat_safe wty_formula_TriggerD(1))
+  proof -
+    have wty_phi: "S, E \<turnstile> \<phi>"
+      using Trigger_0.prems(1) by (rule wty_formula_TriggerD(1))
+    have fv_phi: "\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y"
+      using Trigger_0.prems(2) by simp
+    from Trigger_0.IH(1) show ?thesis
+    proof (elim disjE conjE case_NegE)
+      assume "\<forall>v V i S E. S, E \<turnstile> \<phi> \<longrightarrow> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y) \<longrightarrow>
+        wty_envs S \<sigma> V \<longrightarrow> Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>"
+      then show ?thesis
+        using wty_phi fv_phi Trigger_0.prems(3) by blast
+    next
+      fix \<phi>'
+      assume \<phi>_def: "\<phi> = Formula.Neg \<phi>'"
+        and IH': "\<forall>v V i S E. S, E \<turnstile> \<phi>' \<longrightarrow> (\<forall>y\<in>fv \<phi>'. ty_of (v ! y) = E y) \<longrightarrow>
+        wty_envs S \<sigma> V \<longrightarrow> Formula.sat \<sigma> V v i \<phi>' = sat' \<sigma> V v i \<phi>'"
+      have "S, E \<turnstile> \<phi>'"
+        using wty_phi unfolding \<phi>_def by (rule wty_formula_NegD)
+      moreover have "\<forall>y\<in>fv \<phi>'. ty_of (v ! y) = E y"
+        using fv_phi unfolding \<phi>_def by simp
+      ultimately have "Formula.sat \<sigma> V v i \<phi>' = sat' \<sigma> V v i \<phi>'"
+        using IH' Trigger_0.prems(3) by blast
+      then show ?thesis
+        unfolding \<phi>_def by simp
+    qed
+  qed
   show ?case
     by (auto simp: phi_eq psi_eq)
 next
