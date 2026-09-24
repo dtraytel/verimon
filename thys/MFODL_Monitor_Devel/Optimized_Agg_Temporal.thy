@@ -481,8 +481,14 @@ lemma valid_add_new_ts_mmasaux:
   assumes "valid_mmasaux args cur (mmsaux, aux) auxlist" "nt \<ge> cur"
   shows "valid_mmasaux args nt (add_new_ts_mmasaux args nt (mmsaux, aux))
     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
-  using valid_add_new_ts_mmasaux' valid_shift_end_mmasaux[OF assms]
-  unfolding add_new_ts_mmasaux_def by (smt (z3) assms(2) valid_mmasaux.elims(1))
+proof -
+  obtain mmsaux' aux' where shift: "shift_end_mmasaux args nt (mmsaux, aux) = (mmsaux', aux')"
+    by (cases "shift_end_mmasaux args nt (mmsaux, aux)")
+  have "valid_mmasaux args cur (mmsaux', aux') (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
+    using valid_shift_end_mmasaux[OF assms] unfolding shift .
+  then show ?thesis
+    unfolding add_new_ts_mmasaux_def shift by (rule valid_add_new_ts_mmasaux'[OF _ assms(2)])
+qed
 
 lemma valid_result_mmasaux_unfolded:
   assumes "valid_mmasaux args cur ((nt, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since), aggaux) auxlist"
@@ -662,7 +668,7 @@ proof -
   obtain m' where m'_def: "Mapping.lookup a2_map (tp - len + 1) = Some m'"
     using tp_minus_keys' by (auto dest: Mapping.in_keysD)
   obtain muaux' auxs' where updated_def: "(muaux', auxs') = eval_step_mmauaux args (?muaux, aggaux)" 
-    by (smt (z3) lin_ts_mmauaux.cases)
+    by (metis surj_pair)
   then obtain tp' tss''' tables' len' maskL' maskR' result' a1_map' a2_map' tstp_map' done' where split:
     "muaux' = (tp', tss''', tables', len', maskL', maskR', result', a1_map', a2_map', tstp_map', done')" 
     using lin_ts_mmuaux.cases by (smt (verit, ccfv_SIG) length_mmuaux.elims)
@@ -797,7 +803,7 @@ lemma valid_eval_step_mmauaux':
 proof -
   obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map donea 
     where "mmaux = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, donea)"
-    using lin_ts_mmuaux.cases by (smt (z3) prod_cases6)
+    by (cases mmaux) auto
   then show ?thesis 
     using valid_eval_step_mmauaux_unfolded
     assms by presburger
@@ -915,9 +921,11 @@ proof -
   let ?muaux = "(tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
   have *: "valid_mmauaux' args cur cur (?muaux, auxs) auxlist" using valid_before unfolding valid_mmauaux_def by auto
   obtain tp' tss' tables' len' maskL' maskR' result' a1_map' a2_map' tstp_map' done' aggaux' where updated_def: 
-    "add_new_mmauaux args rel1 rel2 nt (?muaux, auxs) = ((tp', tss', tables', len', maskL', maskR', result', a1_map', a2_map', tstp_map', done'), aggaux')" by (smt (z3) lin_ts_mmauaux.cases)
+    "add_new_mmauaux args rel1 rel2 nt (?muaux, auxs) = ((tp', tss', tables', len', maskL', maskR', result', a1_map', a2_map', tstp_map', done'), aggaux')"
+    by (cases "add_new_mmauaux args rel1 rel2 nt (?muaux, auxs)" rule: lin_ts_mmauaux.cases)
   obtain tp_i tss_i tables_i len_i maskL_i maskR_i result_i a1_map_i a2_map_i tstp_map_i done_i aggaux_i where inter_def: 
-    "shift_mmauaux args nt (?muaux, auxs) = ((tp_i, tss_i, tables_i, len_i, maskL_i, maskR_i, result_i, a1_map_i, a2_map_i, tstp_map_i, done_i), aggaux_i)" by (smt (z3) lin_ts_mmauaux.cases)
+    "shift_mmauaux args nt (?muaux, auxs) = ((tp_i, tss_i, tables_i, len_i, maskL_i, maskR_i, result_i, a1_map_i, a2_map_i, tstp_map_i, done_i), aggaux_i)"
+    by (cases "shift_mmauaux args nt (?muaux, auxs)" rule: lin_ts_mmauaux.cases)
   let ?muaux_i = "(tp_i, tss_i, tables_i, len_i, maskL_i, maskR_i, result_i, a1_map_i, a2_map_i, tstp_map_i, done_i)"
   let ?muaux' = "(tp', tss', tables', len', maskL', maskR', result', a1_map', a2_map', tstp_map', done')"
   have valid_shift: "valid_mmauaux' args cur nt (?muaux_i, aggaux_i) auxlist"
