@@ -29,7 +29,11 @@ module Monitor = struct
      themselves are kept, since end_tp still runs for every one. *)
   let tuple ctxt ((name, _) as s) sl =
     if not !Filter_rel.enabled || Filter_rel.rel_OK name then
-      Verified_adapter.add_to_batch ctxt.cur_batch s sl
+      try Verified_adapter.add_to_batch ctxt.cur_batch s sl
+      with Verified_adapter.Conversion_error msg ->
+        (* as MonPoly's monitor reports it (Algorithm.Monitor.tuple) *)
+        prerr_endline ("ERROR: " ^ msg);
+        exit 1
 
   let end_tp ctxt =
     let db = Verified_adapter.flush_batch ctxt.cur_batch ctxt.cur_db in

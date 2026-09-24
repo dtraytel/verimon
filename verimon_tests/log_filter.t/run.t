@@ -218,3 +218,25 @@ largest timestamp, unless -nonewlastts:
   $ monpoly -verified -sig s.sig -formula ev.mfotl -log l.log -nonewlastts
   @1 (time point 0): (1)
   @4 (time point 1): (1)
+
+With -old_log_parser, the verified monitor reports an event whose fields do not convert as
+MonPoly's monitor does:
+
+  $ printf '@1 P(1)\n@2 P(1,2)\n' > l.log
+  $ monpoly -verified -old_log_parser -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR: Wrong tuple length for predicate P (expected: 1, actual: 2)
+  [1]
+  $ monpoly -old_log_parser -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR: Wrong tuple length for predicate P (expected: 1, actual: 2)
+  [1]
+  $ printf '@1 P(1)\n@2 P(a)\n' > l.log
+  $ monpoly -verified -old_log_parser -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR: Wrong type for predicate P: Expected type int for field number 1
+  [1]
+  $ monpoly -old_log_parser -sig s.sig -formula p.mfotl -log l.log
+  @1 (time point 0): (1)
+  ERROR: Wrong type for predicate P: Expected type int for field number 1
+  [1]

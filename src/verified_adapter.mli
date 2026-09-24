@@ -14,6 +14,9 @@ val empty_db: unit -> db
 (* tuples of a time point, collected per predicate and inserted in bulk *)
 type batches
 val empty_batch: unit -> batches
+
+(* Raised by [add_to_batch] for an event whose fields do not convert, with MonPoly's message. *)
+exception Conversion_error of string
 val add_to_batch: batches -> Table.schema -> string list -> unit
 val flush_batch: batches -> db -> db
 

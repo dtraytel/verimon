@@ -150,12 +150,14 @@ and convert_re_vars fvl bvl lets = function
   | Star r -> Star (convert_re_vars fvl bvl lets r)
   in convert_formula_vars free_vars [] [] f
 
+(* A field that does not convert, or a wrong number of fields, with MonPoly's message. *)
+exception Conversion_error of string
+
 let uconvert_tuple (pname, tl) sl =
   let pos = ref 0 in
   let type_error tname =
-    let msg = Printf.sprintf ("[convert_tuple] Expected type %s for\
-      \ predicate %s, field number %d") tname pname !pos in
-    failwith msg
+    raise (Conversion_error (Printf.sprintf "Wrong type for predicate %s: Expected type %s\
+      \ for field number %d" pname tname !pos))
   in
   try List.map2
     (fun (_, t) s ->
@@ -173,10 +175,8 @@ let uconvert_tuple (pname, tl) sl =
     )
     tl sl
   with Invalid_argument _ ->
-    let msg = Printf.sprintf "[convert_tuple] Wrong tuple length for\
-      \ predicate %s (expected: %d, actual: %d)"
-      pname (List.length tl) (List.length sl) in
-    failwith msg
+    raise (Conversion_error (Printf.sprintf "Wrong tuple length for predicate %s\
+      \ (expected: %d, actual: %d)" pname (List.length tl) (List.length sl)))
 
 type udb = ((string * nat), ((event_data list) set list)) mapping
 
