@@ -35,3 +35,9 @@
 (rule
   (alias runtest)
   (action (run %{exe:log_parser_diff.exe} -fuzz 20000 -seed 1 -q)))
+
+; Throughput of the two log parsers alone, without the monitor.
+(executable
+  (name log_parser_bench)
+  (modules Log_parser_bench)
+  (libraries libmonpoly verified unix))
