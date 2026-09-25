@@ -1801,63 +1801,61 @@ next
     by (rule finite_subset)
 next
   case (Until \<phi> I \<psi>)
-  then obtain m j where m: "\<not> memR I m" and "m = (\<tau> \<sigma> j - \<tau> \<sigma> i)"
-    apply(auto)
-    apply(atomize_elim)
-    apply(simp add: bounded_memR)
-    by (metis (no_types, opaque_lifting) add_diff_cancel_right' diff_le_mono ex_le_\<tau> memR_antimono)
-  moreover from Until have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
+  from Until.prems(1) obtain m where m: "\<not> memR I m"
+    by (auto simp: bounded_memR)
+  obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
+    using ex_le_\<tau> by blast
+  \<comment> \<open>after @{term j}, the interval has been left\<close>
+  have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
+  proof (rule ccontr)
+    assume "\<not> j2 \<le> j"
+    then have "\<tau> \<sigma> j \<le> \<tau> \<sigma> j2"
+      by (intro \<tau>_mono) simp
+    with j have "m \<le> \<tau> \<sigma> j2 - \<tau> \<sigma> i"
+      by linarith
+    with that m show False
+      using memR_antimono by blast
+  qed
+  from Until have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
     by(simp)
-  moreover from Until have "finite (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
+  then have fin: "finite (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
     by(auto)
-  ultimately show ?case using Until
-    apply(elim finite_subset[rotated])
-    apply(simp add: Un_absorb1)
-    apply(auto)
-    subgoal for v j2
-      apply(cases "(\<tau> \<sigma> j2 - \<tau> \<sigma> i)\<le>m")
-      subgoal
-        apply(auto)
-        apply(subgoal_tac "j2\<le>j")
-         apply blast
-        by (metis \<tau>_mono diff_le_mono le_antisym nat_le_linear)
-      subgoal
-        apply(subgoal_tac "\<not> memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)")
-         apply blast
-        apply(auto)
-        by (meson memR_antimono nat_le_linear)
-      done
-    done
+  have "fv (Formula.Until \<phi> I \<psi>) = fv \<psi>"
+    using Until.hyps(1) by (simp add: Un_absorb1)
+  then have "{v. wf_tuple n (fv (Formula.Until \<phi> I \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Until \<phi> I \<psi>)}
+    \<subseteq> (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
+    using j2_le by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Not_Until \<phi> I \<psi>)
-  obtain m j where m: "\<not> memR I m" and "m = (\<tau> \<sigma> j - \<tau> \<sigma> i)"
-    using \<open>Safety.future_bounded (\<not>\<^sub>F \<phi> \<^bold>U I \<psi>)\<close>
-    apply(auto)
-    apply(atomize_elim)
-    apply(simp add: bounded_memR)
-    by (metis (no_types, opaque_lifting) add_diff_cancel_right' diff_le_mono ex_le_\<tau> memR_antimono)
-  moreover from Not_Until have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
+  from Not_Until.prems(1) obtain m where m: "\<not> memR I m"
+    by (auto simp: bounded_memR)
+  obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
+    using ex_le_\<tau> by blast
+  \<comment> \<open>after @{term j}, the interval has been left\<close>
+  have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
+  proof (rule ccontr)
+    assume "\<not> j2 \<le> j"
+    then have "\<tau> \<sigma> j \<le> \<tau> \<sigma> j2"
+      by (intro \<tau>_mono) simp
+    with j have "m \<le> \<tau> \<sigma> j2 - \<tau> \<sigma> i"
+      by linarith
+    with that m show False
+      using memR_antimono by blast
+  qed
+  from Not_Until have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
     by(simp)
-  moreover from Not_Until have "finite (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
+  then have fin: "finite (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
     by(auto)
-  ultimately show ?case using Not_Until
-    apply(elim finite_subset[rotated])
-    apply(simp add: Un_absorb1)
-    apply(auto)
-    subgoal for v j2
-      apply(cases "(\<tau> \<sigma> j2 - \<tau> \<sigma> i)\<le>m")
-      subgoal
-        apply(auto)
-        apply(subgoal_tac "j2\<le>j")
-         apply blast
-        by (metis \<tau>_mono diff_le_mono le_antisym nat_le_linear)
-      subgoal
-        apply(subgoal_tac "\<not> memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)")
-         apply blast
-        apply(auto)
-        by (meson memR_antimono nat_le_linear)
-      done
-    done
+  have "fv (Formula.Until (Formula.Neg \<phi>) I \<psi>) = fv \<psi>"
+    using Not_Until.hyps(1) by (simp add: Un_absorb1)
+  then have "{v. wf_tuple n (fv (Formula.Until (Formula.Neg \<phi>) I \<psi>)) v
+      \<and> Formula.sat \<sigma> V (map the v) i (Formula.Until (Formula.Neg \<phi>) I \<psi>)}
+    \<subseteq> (\<Union> j'\<le>j. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j' \<psi>})"
+    using j2_le by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Trigger \<phi> I \<psi>) (* notice the False at the end *)
   let ?sats = "{v. wf_tuple n (FV (\<phi> \<^bold>T I \<psi>)) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi> \<^bold>T I \<psi>}"
