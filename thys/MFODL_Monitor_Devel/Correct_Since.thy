@@ -684,19 +684,18 @@ next
   then show ?case by (auto simp add: progress_Sincep)
 next
   case ("4_4" zs v vd ve aux)
+  \<comment> \<open>no time-stamps are buffered and there is no skew, so all progresses coincide\<close>
+  have "j = 0 \<or> j \<le> pOut" "pOut = pIn"
+    using "4_4.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by auto
+  moreover have "progress \<sigma> P \<phi> j \<le> j" "progress \<sigma> P \<psi> j \<le> j" "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
+    using bounded by (rule progress_le_gen)+
+  ultimately have "pIn = progress \<sigma> P \<phi> j" "pIn = progress \<sigma> P \<psi> j"
+    and "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
+    using "4_4.prems"(4-6) by linarith+
   then have "pIn = min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
-    apply simp
-    by (metis bounded diff_diff_cancel length_upt min.absorb2 min.bounded_iff progress_le_gen upt_eq_Nil_conv)
-  moreover have "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
-  proof -
-    have "j = 0 \<or> j \<le> pOut"
-      using "4_4.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by blast
-    moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
-      using bounded by (rule progress_le_gen)
-    ultimately show ?thesis
-      using "4_4.prems"(6) by linarith
-  qed
-  ultimately show ?case
+    and "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
+    by simp_all
+  then show ?case
     using "4_4" by (simp only: eval_since.simps prod.inject)
 next
   case ("4_5" zs v ve aux)
@@ -715,19 +714,18 @@ next
     using "4_5" by (simp only: eval_since.simps prod.inject)
 next
   case ("4_6" zs v vb aux)
+  \<comment> \<open>no time-stamps are buffered and there is no skew, so all progresses coincide\<close>
+  have "j = 0 \<or> j \<le> pOut" "pOut = pIn"
+    using "4_6.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by auto
+  moreover have "progress \<sigma> P \<phi> j \<le> j" "progress \<sigma> P \<psi> j \<le> j" "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
+    using bounded by (rule progress_le_gen)+
+  ultimately have "pIn = progress \<sigma> P \<phi> j" "pIn = progress \<sigma> P \<psi> j"
+    and "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
+    using "4_6.prems"(4-6) by linarith+
   then have "pIn = min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
-    apply simp
-    by (metis bounded diff_diff_cancel diff_is_0_eq dual_order.refl dual_order.trans min.commute min_def progress_le_gen)
-  moreover have "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
-  proof -
-    have "j = 0 \<or> j \<le> pOut"
-      using "4_6.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by blast
-    moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
-      using bounded by (rule progress_le_gen)
-    ultimately show ?thesis
-      using "4_6.prems"(6) by linarith
-  qed
-  ultimately show ?case
+    and "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
+    by simp_all
+  then show ?case
     using "4_6" by (simp only: eval_since.simps prod.inject)
 qed
 
@@ -758,14 +756,19 @@ lemma (in maux) eval_since:
         [progress \<sigma> P (Sincep pos \<phi> I \<psi>) j..<progress \<sigma> P' (Sincep pos \<phi> I \<psi>) (j + \<delta>)] zs \<and>
       ?wf_buf P' (j + \<delta>) buf' \<and>
       ?wf_aux P' (j + \<delta>) aux'"
-  apply (rule eval_since_gen[OF _ _ pre(2)])
-  apply simp
-              apply (rule wf_mbuf2S_add[OF pre(1) bounded rm xs ys])
-             apply (simp add: min.coboundedI1 progress_mono_gen[OF _ bounded rm])
-            apply (simp add: min.coboundedI2 progress_mono_gen[OF _ bounded rm])
-           apply (simp add: progress_mono_gen[OF _ bounded rm])
-          apply simp
-  by fact+
+proof -
+  \<comment> \<open>the progresses only increase when the trace is extended\<close>
+  have "min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> P' \<phi> (j + \<delta>)"
+    by (simp add: min.coboundedI1 progress_mono_gen[OF _ bounded rm])
+  moreover have "min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> P' \<psi> (j + \<delta>)"
+    by (simp add: min.coboundedI2 progress_mono_gen[OF _ bounded rm])
+  moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> progress \<sigma> P' (Sincep pos \<phi> I \<psi>) (j + \<delta>)"
+    by (simp add: progress_mono_gen[OF _ bounded rm])
+  \<comment> \<open>the extended buffer is well-formed, so the general lemma applies with no initial results\<close>
+  ultimately show ?thesis
+    by (intro eval_since_gen[OF _ wf_mbuf2S_add[OF pre(1) bounded rm xs ys] pre(2) _ _ _ order.refl eq
+          bounded(2) fvi_subset args_ivl args_n args_L args_R args_pos agg_n mr]) simp_all
+qed
 
 (*<*)
 end
