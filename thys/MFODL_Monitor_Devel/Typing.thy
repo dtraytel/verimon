@@ -673,9 +673,22 @@ lemma poly_value_of: "E \<turnstile> x :: t\<Longrightarrow> E \<turnstile> y ::
 
 
 lemma nfv_exists: " Formula.nfv \<phi> \<le> Suc (Formula.nfv (Formula.Exists t \<phi>))"
-   apply (auto simp add: Formula.nfv_def fvi_Suc) 
-  by (metis Max.coboundedI finite_fvi finite_imageI finite_insert fvi_Suc imageI insertCI list_decode.cases)
-
+proof -
+  have "Suc a \<le> Suc (Formula.nfv (Formula.Exists t \<phi>))" if "a \<in> fv \<phi>" for a
+  proof (cases a)
+    case 0
+    then show ?thesis by simp
+  next
+    case (Suc b)
+    with that have "b \<in> fv (Formula.Exists t \<phi>)"
+      by (simp add: fvi_Suc)
+    with fvi_less_nfv have "b < Formula.nfv (Formula.Exists t \<phi>)"
+      by blast
+    with Suc show ?thesis by simp
+  qed
+  then show ?thesis
+    unfolding Formula.nfv_def[of \<phi>] by simp
+qed
 lemma match_safe_wty_nfv: assumes "\<phi> \<in> safe_atms r"   "safe_formula (formula.MatchP I r) \<or> safe_formula (formula.MatchF I r)" " S, E \<turnstile> formula.MatchP I r \<or>  S, E \<turnstile> formula.MatchF I r"
   shows "S, E \<turnstile> \<phi>"
 proof -
