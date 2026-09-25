@@ -533,7 +533,7 @@ next
   assume [simp]: "s \<in> Regex.lpd (sat \<sigma> V v) i r" and "sat \<sigma> V v (i + 1) (MatchF (subtract (\<Delta> \<sigma> (i + 1)) I) s)"
   then obtain j where "j > i" "Regex.match (sat \<sigma> V v) s (i + 1) j"
     "mem (subtract (\<Delta> \<sigma> (i + 1)) I) (\<tau> \<sigma> j - \<tau> \<sigma> (Suc i))"
-    by (auto simp: diff_le_mono memL_mono Suc_le_eq)
+    unfolding sat.simps Suc_eq_plus1[symmetric] Suc_le_eq by blast
   ultimately show ?L
     by (auto simp: le_diff_conv lpd_match intro!: exI[of _ j] bexI[of _ s])
 qed (auto simp: eps_match intro!: exI[of _ i])
