@@ -151,23 +151,47 @@ lemma wf_tuple_simple_match: "is_simple_pattern ts 0 \<Longrightarrow> \<forall>
 lemma eval_trm_simple_match_gen: "\<forall>t\<in>set ts. \<forall>i\<in>Formula.fv_trm t. i < n \<Longrightarrow>
   is_simple_pattern ts m \<Longrightarrow> length ys = length ts \<Longrightarrow>
   map (Formula.eval_trm (map the (replicate m None @ simple_match n m ts (map Some ys)))) ts = ys"
-  apply (induction n m ts "map Some ys" arbitrary: ys rule: simple_match.induct)
-                      apply simp
-  subgoal for n m x ts y ys ys'
-    supply simple_match.simps[simp del]
-    apply (cases "m < x")
-     apply (clarsimp simp add: replicate_app_Cons_same)
-    apply clarsimp
-    apply (intro conjI)
-     apply (metis length_replicate nth_append_length)
-    apply (erule trans[rotated])
-    apply (rule map_cong[OF refl])
-    apply (rule eval_trm_fv_cong)
-    apply clarsimp
-    apply (drule (2) is_simple_pattern_fv)
-    apply (simp add: nth_append)
-    by linarith
-  by simp_all
+proof (induction n m ts "map Some ys" arbitrary: ys rule: simple_match.induct)
+  case (2 n m x ts y ys' ys)
+  from "2.hyps"(3) obtain z zs where ys: "ys = z # zs" "y = Some z" "ys' = map Some zs"
+    by (auto simp: Cons_eq_map_conv)
+  from "2.prems"(2) have "m \<le> x" and ts: "is_simple_pattern ts (Suc x)"
+    by simp_all
+  show ?case
+  proof (cases "m < x")
+    case True
+    then have "simple_match n m (Formula.Var x # ts) (map Some ys) =
+      None # simple_match n (Suc m) (Formula.Var x # ts) (map Some ys)"
+      by (simp add: ys)
+    moreover have "map (Formula.eval_trm (map the (replicate (Suc m) None @
+      simple_match n (Suc m) (Formula.Var x # ts) (map Some ys)))) (Formula.Var x # ts) = ys"
+      using True "2.hyps"(3) "2.prems" by (intro "2.hyps"(1)) simp_all
+    ultimately show ?thesis
+      by (simp add: replicate_app_Cons_same)
+  next
+    case False
+    have IH: "map (Formula.eval_trm (map the (replicate (Suc m) None @
+      simple_match n (Suc m) ts (map Some zs)))) ts = zs"
+      using False "2.prems" ys by (intro "2.hyps"(2)) simp_all
+    from False \<open>m \<le> x\<close> have [simp]: "m = x" by simp
+    let ?r = "simple_match n (Suc x) ts (map Some zs)"
+    have "map (Formula.eval_trm (map the (replicate x None @ Some z # ?r))) ts =
+      map (Formula.eval_trm (map the (replicate (Suc x) None @ ?r))) ts"
+    proof (intro list.map_cong0 eval_trm_fv_cong ballI)
+      fix t i
+      assume "t \<in> set ts" "i \<in> fv_trm t"
+      then have "Suc x \<le> i"
+        by (rule is_simple_pattern_fv[OF ts])
+      then show "map the (replicate x None @ Some z # ?r) ! i =
+        map the (replicate (Suc x) None @ ?r) ! i"
+        by (cases i) (simp_all add: nth_append)
+    qed
+    also have "\<dots> = zs"
+      using IH by simp
+    finally show ?thesis
+      by (simp add: ys nth_append)
+  qed
+qed simp_all
 
 lemma eval_trm_simple_match: "\<forall>t\<in>set ts. \<forall>i\<in>Formula.fv_trm t. i < n \<Longrightarrow>
   is_simple_pattern ts 0 \<Longrightarrow> length ys = length ts \<Longrightarrow>
