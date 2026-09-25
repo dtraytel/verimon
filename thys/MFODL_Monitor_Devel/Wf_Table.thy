@@ -266,12 +266,27 @@ lemma idx_union:
 proof -
   show "set_of_idx (idx_union T T') = set_of_idx T \<union> set_of_idx T'"
     unfolding idx_union_def
-    apply (transfer)
-    apply (auto simp: ran_def combine_options_def split: option.splits)
-      apply (metis UnE option.exhaust)
-     apply (metis IntE Un_Int_eq(1) option.discI option.sel)
-    apply (metis IntE Un_Int_eq(2) option.discI option.sel)
-    done
+  proof transfer
+    fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
+    show "\<Union> (ran (\<lambda>x. combine_options (\<union>) (T x) (T' x))) = \<Union> (ran T) \<union> \<Union> (ran T')"
+    proof (rule set_eqI, rule iffI)
+      fix z
+      assume "z \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>) (T x) (T' x)))"
+      then obtain a Z where "combine_options (\<union>) (T a) (T' a) = Some Z" "z \<in> Z"
+        by (auto simp: ran_def)
+      then show "z \<in> \<Union> (ran T) \<union> \<Union> (ran T')"
+        by (cases "T a"; cases "T' a") (auto simp: ran_def)
+    next
+      fix z
+      assume "z \<in> \<Union> (ran T) \<union> \<Union> (ran T')"
+      then obtain a Z where Z: "T a = Some Z \<or> T' a = Some Z" "z \<in> Z"
+        by (auto simp: ran_def)
+      then obtain Z' where "combine_options (\<union>) (T a) (T' a) = Some Z'" "Z \<subseteq> Z'"
+        by (cases "T a"; cases "T' a") auto
+      with Z(2) show "z \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>) (T x) (T' x)))"
+        unfolding ran_def by blast
+    qed
+  qed
   show "\<And>x Y. Mapping.lookup (idx_union T T') x = Some Y \<Longrightarrow> table n C Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict X z)"
     using assms
     unfolding idx_union_def
