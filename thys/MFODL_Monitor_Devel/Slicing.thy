@@ -1214,53 +1214,69 @@ next
   have diff: "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>"
     using LetPast.prems(2) by simp
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.LetPast p \<phi> \<psi>)"
+  let ?L = "letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> ?L)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using LetPast.prems(3) by simp
   consider (left) pos' y where "lfp ?G pos' y" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "genvar \<psi> pos x q n c k"
     using LetPast.prems(2) by (auto simp add: pos_def)
   then show ?case proof cases
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
-      and pos': "pos' = letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) as j"
-      apply (rule LetPast.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified sat.simps Let_def]])
-      using LetPast.prems by (auto simp add: domIff)
-    have "lfp ?G \<le> (\<lambda>pos' y. \<forall>as j. pos' = letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) as j \<longrightarrow>
-        length as = Formula.nfv \<phi> \<longrightarrow>
-        (\<exists>as' j'.
-          ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
+      and pos': "pos' = ?L as j"
+    proof (rule LetPast.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def Let_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that) auto
+    qed
+    let ?Vj = "\<lambda>j. V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j'. j' < j \<and> ?L w j')"
+    have Vj: "?Vj j (q, n) = V (q, n)" for j
+      using diff by auto
+    have L: "?L as j = Formula.sat \<sigma> (?Vj j) as j \<phi>" for as j
+      by (subst letpast_sat.simps) (rule refl)
+    let ?P = "\<lambda>pos' y. \<forall>as j. pos' = ?L as j \<longrightarrow> length as = Formula.nfv \<phi> \<longrightarrow>
+        (\<exists>as' j'. ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
           ((q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c) \<and>
-          length as' = n \<and> k < n \<and> as' ! k = as ! y))"
-      apply (rule lfp_induct[OF mono_G])
-      apply clarsimp
-      apply (erule disjE)
-      subgoal for y as j
-        apply (rule LetPast.IH(1)[rotated])
-          apply (subst (asm) letpast_sat.simps)
-          apply assumption
-         apply simp
-        using diff apply (simp del: fun_upd_apply cong: conj_cong)
-        apply (auto simp add: compose_inputs_def split: if_splits)
-        done
-      apply clarsimp
-      subgoal premises h for y as j pos'' y'
-        apply (rule LetPast.IH(1)[rotated, where V="V((p, Formula.nfv \<phi>) \<mapsto>
-          \<lambda>w j'. j' < j \<and>
-             letpast_sat
-              (\<lambda>X u k.
-                  Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>)
-              w j')" and v=as and i=j])
-          apply (insert h(2,5))
-          apply (subst (asm) letpast_sat.simps)
-          apply (simp del: fun_upd_apply)
-        using h(1) apply simp
-        using diff apply (simp del: fun_upd_apply cong: conj_cong)
-        apply clarsimp
-        subgoal for as' j'
-          apply (rule h(4)[rule_format, THEN exE])
-            apply (rule exI[where x=j'], assumption)
-           apply (auto simp add: compose_inputs_def)
-          done
-        done
-      done
+          length as' = n \<and> k < n \<and> as' ! k = as ! y)"
+    have "lfp ?G \<le> ?P"
+    proof (rule lfp_induct[OF mono_G], intro le_funI le_boolI allI impI)
+      fix pos' y as j
+      assume "?G (inf (lfp ?G) ?P) pos' y" and pos': "pos' = ?L as j"
+        and len: "length as = Formula.nfv \<phi>"
+      then consider (base) "genvar \<phi> pos' y q n c k"
+        | (step) pos'' y' where "pos''" "?P pos'' y'" "genvar \<phi> pos' y p (Formula.nfv \<phi>) pos'' y'"
+        unfolding inf_fun_def inf_bool_def by blast
+      then show "\<exists>as' j'. ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
+          ((q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c) \<and>
+          length as' = n \<and> k < n \<and> as' ! k = as ! y"
+      proof cases
+        case base
+        show ?thesis
+        proof (rule LetPast.IH(1))
+          show "genvar \<phi> (Formula.sat \<sigma> (?Vj j) as j \<phi>) y q n c k"
+            using base by (simp only: pos' L[symmetric])
+          show "Formula.nfv \<phi> \<le> length as" by (simp add: len)
+        qed (simp only: Vj domIff, blast)
+      next
+        case step
+        obtain as1 j1 where "pos'' = ?L as1 j1" "length as1 = Formula.nfv \<phi>" "as1 ! y' = as ! y"
+        proof (rule LetPast.IH(1))
+          show "genvar \<phi> (Formula.sat \<sigma> (?Vj j) as j \<phi>) y p (Formula.nfv \<phi>) pos'' y'"
+            using step(3) by (simp only: pos' L[symmetric])
+          show "Formula.nfv \<phi> \<le> length as" by (simp add: len)
+          fix as1 j1
+          assume "(p, Formula.nfv \<phi>) \<in> dom (?Vj j) \<longrightarrow> the (?Vj j (p, Formula.nfv \<phi>)) as1 j1 = pos''"
+            and "length as1 = Formula.nfv \<phi>" "as1 ! y' = as ! y"
+          then show thesis using step(1) by (intro that[of as1 j1]) auto
+        qed
+        with step(2) show ?thesis by metis
+      qed
+    qed
     then obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
@@ -1274,13 +1290,17 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using diff by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule LetPast.IH(2)[rotated, OF right[unfolded pos_def, simplified sat.simps Let_def]])
-      using LetPast.prems apply simp
-      using LetPast.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule LetPast.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right by (simp add: pos_def Let_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right diff show ?thesis
       by (intro LetPast.prems(1)) (auto simp add: compose_inputs_def)
   qed
