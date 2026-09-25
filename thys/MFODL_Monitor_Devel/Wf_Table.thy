@@ -451,23 +451,22 @@ lift_definition wf_idx_join :: "'a wf_idx \<Rightarrow> 'a wf_idx \<Rightarrow> 
   "\<lambda>(n, A, I, T) (n', A', I', T'). if n = n' then
     (let I'' = I \<inter> I'; i = idx_reindex I'' I T; i' = idx_reindex I'' I' T' in (n, A \<union> A', I'', idx_join n A i A' i'))
   else (n, A, I, T)"
-  subgoal premises prems for prod1 prod2
-  proof -
-    obtain n A I T where prod1_def: "prod1 = (n, A, I, T)"
-      by (cases prod1) auto
-    obtain n' A' I' T' where prod2_def: "prod2 = (n', A', I', T')"
-      by (cases prod2) auto
+proof (goal_cases)
+  case prems: (1 prod1 prod2)
+  obtain n A I T where prod1_def: "prod1 = (n, A, I, T)"
+    by (cases prod1) auto
+  obtain n' A' I' T' where prod2_def: "prod2 = (n', A', I', T')"
+    by (cases prod2) auto
+  show ?case
+    using prems
+  proof (cases "n = n'")
+    case n_def: True
     show ?thesis
-      using prems
-    proof (cases "n = n'")
-      case n_def: True
-      show ?thesis
-        using idx_reindex(2) idx_join_reindex(2)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
-            OF inf.coboundedI1 inf.coboundedI2] prems
-        by (auto simp: Let_def n_def prod1_def prod2_def)
-    qed (auto simp: prod1_def prod2_def)
-  qed
-  done
+      using idx_reindex(2) idx_join_reindex(2)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
+          OF inf.coboundedI1 inf.coboundedI2] prems
+      by (auto simp: Let_def n_def prod1_def prod2_def)
+  qed (auto simp: prod1_def prod2_def)
+qed
 
 lemma wf_idx_sig_join: "wf_idx_sig (wf_idx_join t1 t2) = (case wf_idx_sig t1 of (n, A) \<Rightarrow> case wf_idx_sig t2 of (n', A') \<Rightarrow>
   if n = n' then (n, A \<union> A') else wf_idx_sig t1)"
@@ -735,35 +734,34 @@ lift_definition wf_idx_antijoin :: "'a wf_idx \<Rightarrow> 'a wf_idx \<Rightarr
     (let I'' = I \<inter> I' in if I'' = A' then (let i = idx_reindex I'' I T in (n, A, I'', mapping_antijoin i T'))
      else (let i = idx_reindex I'' I T; i' = idx_reindex I'' I' T' in (n, A, I'', idx_antijoin n A i A' i')))
   else (n, A, I, T)"
-  subgoal premises prems for prod1 prod2
-  proof -
-    obtain n A I T where prod1_def: "prod1 = (n, A, I, T)"
-      by (cases prod1) auto
-    obtain n' A' I' T' where prod2_def: "prod2 = (n', A', I', T')"
-      by (cases prod2) auto
+proof (goal_cases)
+  case prems: (1 prod1 prod2)
+  obtain n A I T where prod1_def: "prod1 = (n, A, I, T)"
+    by (cases prod1) auto
+  obtain n' A' I' T' where prod2_def: "prod2 = (n', A', I', T')"
+    by (cases prod2) auto
+  show ?case
+    using prems
+  proof (cases "n = n'")
+    case n_def: True
     show ?thesis
-      using prems
-    proof (cases "n = n'")
-      case n_def: True
+    proof (cases "A' = I \<inter> I'")
+      case A'_def: True
+      have sub: "I \<inter> I' \<subseteq> A" "I \<inter> I' = I'"
+        using prems
+        by (auto simp: Let_def n_def A'_def prod1_def prod2_def)
       show ?thesis
-      proof (cases "A' = I \<inter> I'")
-        case A'_def: True
-        have sub: "I \<inter> I' \<subseteq> A" "I \<inter> I' = I'"
-          using prems
-          by (auto simp: Let_def n_def A'_def prod1_def prod2_def)
-        show ?thesis
-          using prems idx_reindex(2) mapping_antijoin_reindex(2)[where ?T=T and ?T'=T' and ?n=n and ?B=A and ?C="I \<inter> I'" and ?A=I, OF sub(1)]
-          by (auto simp: Let_def n_def A'_def sub(2) prod1_def prod2_def)
-      next
-        case False
-        then show ?thesis
-          using prems idx_reindex(2) idx_antijoin_reindex(2)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
-              OF inf.coboundedI1 inf.coboundedI2]
-          by (auto simp: Let_def n_def prod1_def prod2_def)
-      qed
-    qed (auto simp: prod1_def prod2_def)
-  qed
-  done
+        using prems idx_reindex(2) mapping_antijoin_reindex(2)[where ?T=T and ?T'=T' and ?n=n and ?B=A and ?C="I \<inter> I'" and ?A=I, OF sub(1)]
+        by (auto simp: Let_def n_def A'_def sub(2) prod1_def prod2_def)
+    next
+      case False
+      then show ?thesis
+        using prems idx_reindex(2) idx_antijoin_reindex(2)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
+            OF inf.coboundedI1 inf.coboundedI2]
+        by (auto simp: Let_def n_def prod1_def prod2_def)
+    qed
+  qed (auto simp: prod1_def prod2_def)
+qed
 
 lemma wf_idx_sig_antijoin: "wf_idx_sig (wf_idx_antijoin t1 t2) = wf_idx_sig t1"
   by transfer (auto simp: Let_def split: if_splits)
