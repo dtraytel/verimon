@@ -899,11 +899,7 @@ proof -
           ((tuple \<in> hist_sat) \<or> tuple_since_lhs tuple (linearize data_in) args maskL (auxlist_data_in args mt auxlist))
         )"
           using assms(1)
-          unfolding valid_mmtaux_def prod.case
-          apply -
-          apply (erule conjE)+
-          apply assumption
-          done
+          unfolding valid_mmtaux_def prod.case by blast
         moreover have "length (linearize data_in) = length (auxlist_data_in args mt auxlist)"
         proof -
           have "map (\<lambda> (t, l, r). (t, r)) (auxlist_data_in args mt auxlist) = (linearize data_in)"
@@ -3710,14 +3706,7 @@ proof -
         tuple \<in> since_sat
       )"
       using assms(1)
-      unfolding valid_mmtaux_def prod.case
-      apply -
-      apply (erule conjE)+
-       apply assumption
-      apply -
-      apply (erule conjE)+
-       apply assumption
-      done
+      unfolding valid_mmtaux_def prod.case by blast+
 
     
     have mv_data_in'': "linearize data_in'' = lin_data_in''_mv move"
@@ -3734,10 +3723,13 @@ proof -
     ultimately have "length (lin_data_in''_mv move) + (idx_oldest_mv move) = (idx_mid_mv move)"
       using data_in''_len'
       by auto
-    moreover have "sorted (map fst move)" "\<forall>t\<in>fst ` set (linearize data_in). \<forall>t'\<in>fst ` set move. t < t'"
+    moreover have "sorted (map fst move)"
       unfolding move_filter
-      using data_sorted[OF assms(1)]
-       apply (auto simp add: sorted_filter)
+      using data_sorted(1)[OF assms(1)]
+      by (rule sorted_filter)
+    moreover have "\<forall>t\<in>fst ` set (linearize data_in). \<forall>t'\<in>fst ` set move. t < t'"
+      unfolding move_filter
+      using data_sorted(3)[OF assms(1)]
       by fastforce
     moreover have "\<forall>(t, l, r) \<in> set move. table (args_n args) (args_L args) l \<and> table (args_n args) (args_R args) r"
     proof -
@@ -3871,11 +3863,13 @@ proof -
           then show ?thesis using None by auto
         next
           case (Some idx)
-          then have "tuple_since_tp args as (linearize data_in) idx_oldest idx_mid idx"
-            using tuple_since_hist'_eq Nil idx_mid'_eq tuple_init_props
+          then have "Mapping.lookup tuple_since_hist as = Some idx"
+            using tuple_since_hist'_eq
             unfolding init_tuple_def
-            apply (auto simp add: option.case_eq_if)
-            by (metis option.sel option.simps(3))
+            by simp
+          then have "tuple_since_tp args as (linearize data_in) idx_oldest idx_mid idx"
+            using tuple_init_props[THEN spec[of _ as]]
+            by simp
           then have idx_props: "(linearize data_in) \<noteq> []" "idx < idx_mid"
               "(\<forall>(t, r) \<in> set (drop (idx-idx_oldest) (linearize data_in)). 
                 as \<in> r
@@ -5601,11 +5595,14 @@ proof -
       ultimately show ?thesis by auto
     qed
     moreover have "since_sat_mv move init_tuple = since_sat''"
-      using fold_tuple_res
-      unfolding since_sat''_def since_sat_mv_def mv_idx_oldest'[symmetric] mv_idx_mid'[symmetric]
-                init_tuple_def
-      apply (auto split: if_splits)
-      by (metis (full_types) snd_conv)+
+    proof -
+      have "(snd o snd o snd) (fold fold_op_f move init_tuple) = since_sat'"
+        unfolding init_tuple_def
+        by (simp flip: fold_tuple_res)
+      then show ?thesis
+        unfolding since_sat''_def since_sat_mv_def mv_idx_oldest'[symmetric] mv_idx_mid'[symmetric]
+        by simp
+    qed
     moreover have "(lin_data_in''_aux_mv move) = (auxlist_data_in args nt (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist))"
     proof -
 
@@ -6465,11 +6462,7 @@ proof -
           ((tuple \<in> hist_sat') \<or> tuple_since_lhs tuple (linearize data_in') args maskL (auxlist_data_in args nt auxlist'))
         )"
         using valid
-        unfolding valid_mmtaux_def prod.case
-        apply -
-        apply (erule conjE)+
-        apply assumption
-        done
+        unfolding valid_mmtaux_def prod.case by blast
       {
         fix tuple
         assume assm: "tuple \<in> since_sat''"
@@ -6621,9 +6614,16 @@ proof -
             unfolding tuple_since_lhs_def
             by blast
           moreover have "tuple \<in> r"
-            using n_l n_props auxlist_in_eq
-            apply (auto simp add: data_in'_len)
-            by meson
+          proof -
+            have "(nt, l, r) \<in> set (drop n (auxlist_data_in args nt auxlist''))"
+              using n_l data_in'_len
+              unfolding auxlist_in_eq(2)
+              by simp
+            then show ?thesis
+              using n_props(2)
+              unfolding Let_def
+              by blast
+          qed
           ultimately have "tuple \<in> since_sat' \<inter> r"
             by auto
         }
@@ -6872,11 +6872,12 @@ proof -
             using None
             unfolding tuple_in_once''_def
             by (metis Mapping_lookup_upd_set option.distinct(1))
-          then have "{tas \<in> ts_tuple_rel_binary_lhs (set (linearize data_prev')). tuple = snd tas} = {}"
+          then have "safe_max (fst ` {tas \<in> ts_tuple_rel_binary_lhs (set (linearize data_prev')). tuple = snd tas}) = None"
             using before
-            unfolding newest_tuple_in_mapping_def safe_max_def
-            apply (auto split: option.splits)
-            by (metis (no_types) option.distinct(1))
+            unfolding newest_tuple_in_mapping_def
+            by simp
+          then have "{tas \<in> ts_tuple_rel_binary_lhs (set (linearize data_prev')). tuple = snd tas} = {}"
+            by (simp add: safe_max_empty)
           then have "\<forall>tas \<in> ts_tuple_rel_binary_lhs (set (linearize data_prev')). tuple \<noteq> snd tas" 
             by blast
           then have "fst ` {tas \<in> ts_tuple_rel_binary_lhs (set (linearize data_prev'')). tuple = snd tas} = {}"
@@ -7064,11 +7065,7 @@ proof -
         ((tuple \<in> hist_sat') \<or> tuple_since_lhs tuple (linearize data_in') args maskL (auxlist_data_in args nt auxlist'))
       )"
         using valid
-        unfolding valid_mmtaux_def prod.case
-        apply -
-        apply (erule conjE)+
-        apply assumption
-        done
+        unfolding valid_mmtaux_def prod.case by blast
       then show ?thesis
         unfolding auxlist_in_eq
         by auto
