@@ -1861,17 +1861,34 @@ lemma filter_imp: "(\<forall>x. P x \<longrightarrow> Q x) \<longrightarrow> len
 lemma filter_take_drop:
   assumes "filter P xs = take n xs"
   shows "filter (\<lambda>x. \<not> P x) xs = drop n xs"
-  using assms apply (induction xs arbitrary: n)
-   apply (auto)
-  subgoal for a xs n
-    apply (cases n)
-     apply (auto simp add: filter_empty_conv filter_eq_Cons_iff)
-    done
-  subgoal for a xs n
-    apply (cases n)
-     apply (auto simp add: filter_empty_conv filter_eq_Cons_iff)
-    done
-  done
+  using assms
+proof (induction xs arbitrary: n)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons a xs)
+  show ?case
+  proof (cases "P a")
+    case True
+    with Cons.prems obtain m where "n = Suc m" "filter P xs = take m xs"
+      by (cases n) auto
+    with Cons.IH True show ?thesis by simp
+  next
+    case False
+    show ?thesis
+    proof (cases n)
+      case 0
+      with Cons.prems False have "\<forall>x\<in>set xs. \<not> P x"
+        by (simp add: filter_empty_conv)
+      with False 0 show ?thesis by simp
+    next
+      case (Suc m)
+      with Cons.prems False have "filter P xs = a # take m xs" by simp
+      then have "a \<in> set (filter P xs)" by simp
+      with False show ?thesis by simp
+    qed
+  qed
+qed
 
 lemma mem_mt_and_memR_imp_mem:
   assumes "nt \<ge> mt"
@@ -2002,20 +2019,21 @@ using assms proof (induction "filter f xs" arbitrary: xs i j)
       using idx_filter[of y f "(take n zs)" 0]
       by (auto)
 
-    show ?thesis
-      apply (rule bexI[of _ "n + i''"])
-       using i''_props j''_props
-       by (auto intro!: bexI[of _ "j''"])
+    have "n + i'' \<in> {0..<length zs}" "j'' \<in> {0..<n + i''}" "zs ! j'' = y" "zs ! (n + i'') = x"
+      using i''_props j''_props zs'_props(1) by auto
+    then show ?thesis by blast
       
   next
     case (Suc j')
-
-    show ?thesis
-      using Cons(1)[OF zs'_props(2), folded zs'_props(2), of i' j'] Cons(3-)[folded Cons(2)]
-      apply (auto simp: Suc i'_def)
-      subgoal for i'' j''
-        by (rule bexI[of _ "n + i''"]) auto
-      done
+    have "x = as ! i'" "y = as ! j'" "j' < i'" "i' < length as"
+      using Cons(3-)[folded Cons(2)] Suc i'_def by auto
+    then obtain i'' j'' where "i'' < length (drop n zs)" "j'' < i''"
+      "drop n zs ! j'' = y" "drop n zs ! i'' = x"
+      using Cons(1)[OF zs'_props(2), folded zs'_props(2), of i' j'] by auto
+    then have "n + i'' \<in> {0..<length zs}" "n + j'' \<in> {0..<n + i''}"
+      "zs ! (n + j'') = y" "zs ! (n + i'') = x"
+      using zs'_props(1) by auto
+    then show ?thesis by blast
   qed
 qed (simp)
 
