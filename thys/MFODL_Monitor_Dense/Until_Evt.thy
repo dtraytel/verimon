@@ -101,8 +101,14 @@ function evt_shift :: "args \<Rightarrow> ts \<Rightarrow> evtaux \<Rightarrow> 
          else evt_shift args nt (evt_step args ts0 (nts', win, rest, len, bend, cnt, cur, done)))))"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, done)). len)")
-     (auto simp: evt_step_def Let_def split: prod.splits option.splits)
+proof -
+  have len: "fst (snd (snd (snd (evt_step args ts0 (nts, win, rest, len, bend, cnt, cur, dn))))) = len - 1"
+    for args ts0 nts win rest len bend cnt cur dn
+    by (simp add: evt_step_def Let_def split: prod.split option.split)
+  show ?thesis
+    by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, done)). len)")
+      (auto simp: len case_prod_beta)
+qed
 
 declare evt_shift.simps[simp del]
 

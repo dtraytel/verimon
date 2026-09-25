@@ -474,7 +474,7 @@ next
    "next": "sat \<sigma> V v (i + 1) (Until \<phi> (subtract (\<Delta> \<sigma> (i + 1)) I) \<psi>)"
   from "next" obtain j where j: "i + 1 \<le> j" "mem ((subtract (\<Delta> \<sigma> (i + 1)) I)) (\<tau> \<sigma> j - \<tau> \<sigma> (i + 1))"
       "sat \<sigma> V v j \<psi>" "\<forall>k \<in> {i + 1 ..< j}. sat \<sigma> V v k \<phi>"
-    by (auto simp: diff_le_mono memL_mono)
+    unfolding sat.simps by blast
   from \<Delta> j(1,2) have "mem I (\<tau> \<sigma> j - \<tau> \<sigma> i)"
     by auto
   with now j(1,3,4) show ?L by (auto simp: le_eq_less_or_eq[of i] intro!: exI[of _ j])
@@ -505,7 +505,7 @@ next
    "prev": "sat \<sigma> V v (i - 1) (Since \<phi> (subtract (\<Delta> \<sigma> i) I) \<psi>)"
   from "prev" obtain j where j: "j \<le> i - 1" "mem (subtract (\<Delta> \<sigma> i) I) (\<tau> \<sigma> (i - 1) - \<tau> \<sigma> j)"
       "sat \<sigma> V v j \<psi>" "\<forall>k \<in> {j <.. i - 1}. sat \<sigma> V v k \<phi>"
-    by (auto simp: diff_le_mono2 memL_mono)
+    unfolding sat.simps by blast
   from \<Delta> i j(1,2) have "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)"
     by auto
   with now i j(1,3,4) show ?L by (auto simp: le_Suc_eq gr0_conv_Suc intro!: exI[of _ j])
@@ -533,7 +533,7 @@ next
   assume [simp]: "s \<in> Regex.lpd (sat \<sigma> V v) i r" and "sat \<sigma> V v (i + 1) (MatchF (subtract (\<Delta> \<sigma> (i + 1)) I) s)"
   then obtain j where "j > i" "Regex.match (sat \<sigma> V v) s (i + 1) j"
     "mem (subtract (\<Delta> \<sigma> (i + 1)) I) (\<tau> \<sigma> j - \<tau> \<sigma> (Suc i))"
-    by (auto simp: diff_le_mono memL_mono Suc_le_eq)
+    unfolding sat.simps Suc_eq_plus1[symmetric] Suc_le_eq by blast
   ultimately show ?L
     by (auto simp: le_diff_conv lpd_match intro!: exI[of _ j] bexI[of _ s])
 qed (auto simp: eps_match intro!: exI[of _ i])
@@ -1396,7 +1396,7 @@ next
           then have "\<tau> \<sigma> k \<le> \<tau> \<sigma> j" by simp
           then have "\<tau> \<sigma> i - \<tau> \<sigma> k \<ge> \<tau> \<sigma> i - \<tau> \<sigma> j" by auto
           then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> k)" using j_props I2_def
-            by (transfer' fixing: \<sigma>) (auto split: if_splits dest: memR_antimono)
+            by (transfer' fixing: I1 \<sigma>) (auto split: if_splits dest: memR_antimono[of I1])
           then have "False" using int_bounded k_props I2_def
             by (transfer' fixing: \<sigma>) (auto split: if_splits)
         }
@@ -1982,9 +1982,9 @@ next
       {
         assume j_leq_x: "x\<ge>j"
         then have "\<tau> \<sigma> x \<ge> \<tau> \<sigma> j" by auto
-        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using j_leq_x j_props assms
-          using flip_int_less_lower_props interval_0_bounded_geq memR_zero
-          by blast
+        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using interval_0_bounded_geq[OF j_props(1) j_leq_x _ _ j_props(2)]
+            flip_int_less_lower_props[OF _ assms(2)] assms(1)
+          by simp
         then have "False"
           using x_props assms flip_int_less_lower.rep_eq memR.rep_eq memR_zero
           by auto
@@ -2335,8 +2335,12 @@ next
       assume k_props: "k>j" "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
       then have t_geq: "(\<tau> \<sigma> k - \<tau> \<sigma> i) \<ge> (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using diff_le_mono by auto
       from j_props have "mem (flip_int I) (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)" by auto
-      then have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
-        by (metis \<tau>_mono assms(2) diff_le_mono2 flip_int.rep_eq j_props(1) memL.rep_eq memL_mono prod.sel(1))
+      then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)"
+        using assms(2) by (simp add: flip_int.rep_eq memL.rep_eq)
+      moreover have "\<tau> \<sigma> (j+1) - \<tau> \<sigma> j \<le> \<tau> \<sigma> (j+1) - \<tau> \<sigma> i"
+        using \<tau>_mono[OF j_props(1)] by (rule diff_le_mono2)
+      ultimately have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
+        using memR_antimono by blast
       then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using assms memL_mono by blast
       then have "\<not>memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" using t_geq memR_antimono by blast
       then have "False" using k_props by auto

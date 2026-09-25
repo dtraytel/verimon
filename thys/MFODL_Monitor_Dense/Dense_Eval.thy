@@ -277,7 +277,7 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
              daux (mbufn_add (map fst R) dbuf) t (nts @ ts);
           (zs, daux'') = geval_matchF I mr nt daux'
       in (map dsan zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: prod.inject dformula.inject dformula.distinct simp_thms)
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
   not a subterm of the node, so the recursion is not structural and termination goes by the
@@ -1524,7 +1524,7 @@ lemma dsim_wf_cols: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_cols n cs"
     (auto simp: ex_cols_sorted ex_cols_bound sorted_merge_cols set_merge_cols)
 
 lemma dsim_produces: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> produces n (set cs) tw \<phi>"
-  by (erule dsim.cases) auto
+  by (induct rule: dsim.induct) (unfold list.set(1), assumption+)
 
 text \<open>The unfused Since and Until nodes are related by one rule each, so the relation can be read
   backwards there: the operands are related at the node's own frame.  The compiler uses this to
@@ -1535,7 +1535,14 @@ lemma dsim_DSinceD:
     and "dsx_agg daux = None"
   obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
     and "wf_cols n cs_L" and "args_L args = set cs_L"
-  using assms(1) by (rule dsim.cases) (use assms(2) in auto)
+  using assms(1)
+proof (cases rule: dsim.cases)
+  case DsSince
+  then show ?thesis by (intro that) assumption+
+next
+  case DsSinceFused
+  then show ?thesis using assms(2) by (simp only: option.distinct)
+qed
 
 lemma dsim_DUntilD:
   assumes "dsim n cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
@@ -1543,7 +1550,14 @@ lemma dsim_DUntilD:
     and "dux_agg daux = None"
   obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
     and "wf_cols n cs_L" and "args_L args = set cs_L"
-  using assms(1) by (rule dsim.cases) (use assms(2) in auto)
+  using assms(1)
+proof (cases rule: dsim.cases)
+  case DsUntil
+  then show ?thesis by (intro that) assumption+
+next
+  case DsUntilFused
+  then show ?thesis using assms(2) by (simp only: option.distinct)
+qed
 
 section \<open>The simulation\<close>
 

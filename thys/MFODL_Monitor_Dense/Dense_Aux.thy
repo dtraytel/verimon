@@ -998,7 +998,29 @@ qed
 
 lemma djoin_dset_since:
   "\<exists>i' s'. djoin_msaux args Y (dset_since g i s daux) = dset_since g i' s' (djoin_msaux args Y daux)"
-  by (cases daux rule: dmsaux_cases) (auto simp: Let_def)
+proof (cases daux rule: dmsaux_cases)
+  case (1 t gc msk dp di ti ii tui idxs tus)
+  show ?thesis
+  proof (cases "\<forall>i \<in> set msk. \<not> i")
+    case True
+    show ?thesis
+      unfolding 1 dset_since.simps djoin_msaux.simps if_P[OF True] Let_def by simp
+  next
+    case nA: False
+    show ?thesis
+    proof (cases "\<forall>i \<in> set msk. i")
+      case True
+      show ?thesis
+        unfolding 1 dset_since.simps djoin_msaux.simps if_not_P[OF nA] if_P[OF True] Let_def
+        by simp
+    next
+      case False
+      show ?thesis
+        unfolding 1 dset_since.simps djoin_msaux.simps if_not_P[OF nA] if_not_P[OF False] Let_def
+        by simp
+    qed
+  qed
+qed
 
 lemma dgc_dset_since:
   "\<exists>g' i' s'. dgc_msaux args (dset_since g i s daux) = dset_since g' i' s' daux"
@@ -1884,7 +1906,15 @@ qed
 lemma duaux'_length:
   "duaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
      length_dq (dargs cs_R cs_L args) daux = length auxlist"
-  using dvalid_length_muaux by (fastforce simp: duaux'_def dauxlist3_def)
+proof -
+  assume "duaux' n cs_R cs_L args cur daux auxlist"
+  then have "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist3 n cs_R auxlist)"
+    unfolding duaux'_def by (rule conjunct2)
+  then have "length_dq (dargs cs_R cs_L args) daux = length (dauxlist3 n cs_R auxlist)"
+    by (rule dvalid_length_muaux)
+  then show ?thesis by (simp add: dauxlist3_def)
+qed
 
 section \<open>The match structures at the dense frame\<close>
 

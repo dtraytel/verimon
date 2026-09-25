@@ -432,25 +432,13 @@ proof(induction f q rule: takeWhile_queue.induct)
 qed
 
 lemma takeWhile_queue_rep_snd: "linearize (snd (takeWhile_queue f q)) = linearize q"
-proof(induction f q rule: takeWhile_queue.induct)
-  case (1 f q)
-  then obtain hd rm where safe_hd_eq: "safe_hd q = (hd, rm)" by (meson prod.exhaust_sel)
-  then show ?case 
-  proof(cases "hd")
-    case None
-    then show ?thesis using safe_hd_eq by (simp add: safe_hd_rep)
-  next
-    case (Some a)
-    then show ?thesis
-    proof(cases "f a")
-      case True
-      then show ?thesis apply(auto) using 1[OF safe_hd_eq[symmetric] Some True] safe_hd_eq Some
-        by(auto simp: safe_hd_rep split:prod.splits)
-    next
-      case False
-      then show ?thesis using safe_hd_eq Some by (simp add: safe_hd_rep)
-    qed
-  qed
+proof -
+  obtain x rm where safe_hd_eq: "safe_hd q = (x, rm)" by (cases "safe_hd q")
+  \<comment> \<open>no recursion needed: the second component is always the queue returned by @{const safe_hd}\<close>
+  have "snd (takeWhile_queue f q) = rm"
+    using safe_hd_eq by (simp add: case_prod_unfold split: option.split)
+  then show ?thesis
+    using safe_hd_rep[OF safe_hd_eq] by simp
 qed
 
 function takedropWhile_queue :: "('a \<Rightarrow> bool) \<Rightarrow> 'a queue \<Rightarrow> 'a queue \<times> 'a list" where
@@ -482,13 +470,13 @@ qed
 lemma not_empty_head_q:
   assumes "\<not>is_empty q"
   shows "\<exists>ts tss. safe_hd q = (Some ts, tss)"
-  using assms apply(transfer) apply(auto) 
 proof -
-  fix xs ys
-  assume "queue_invariant ((xs :: 'a list), ys)" "\<not> (case xs of [] \<Rightarrow> (case ys of [] \<Rightarrow> True | a # list \<Rightarrow> False) | aa # list \<Rightarrow> False)"
-  then obtain y ys' where "ys = y#ys'" unfolding queue_invariant_def by(auto split:list.splits)
-  then show "\<exists>ts aa ba. queue_invariant (aa, ba) \<and> safe_hd_t (xs, ys) = (Some ts, aa, ba) " 
-    by(cases xs; cases ys') (auto simp:queue_invariant_def Let_def list.case_eq_if) 
+  obtain x q' where safe_hd_eq: "safe_hd q = (x, q')" by (cases "safe_hd q")
+  have "linearize q \<noteq> []"
+    using assms by (simp add: is_empty_alt)
+  with safe_hd_rep[OF safe_hd_eq] obtain ts where "x = Some ts"
+    by (cases x) auto
+  with safe_hd_eq show ?thesis by blast
 qed
 
 fun pop_t :: "'a queue_t \<Rightarrow> 'a option \<times> 'a queue_t" where

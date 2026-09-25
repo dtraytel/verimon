@@ -940,7 +940,7 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
           (zs, dbf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add as ws dbf1)
       in (zs, UDAndTrigger pl \<alpha>' dbf1' dags \<phi>' \<psi>' dbf2' nts' daux'))"
-  by pat_completeness auto
+  by pat_completeness safe
 
 lemma psize_snd_udeval:
   "udeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (udeval j ts db \<phi>)) = size \<phi>"
@@ -1678,7 +1678,7 @@ function (sequential) udof ::
          then UDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
                 (map (\<lambda>_. mbuf_t_empty) L) nts t []
          else UDFail))"
-  by pat_completeness auto
+  by pat_completeness safe
 
 termination udof
   by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")

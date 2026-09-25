@@ -334,8 +334,9 @@ lemma match_cong_strong:
 proof (induction r arbitrary: i j)
   case (Times r s)
   from Times.prems show ?case
+    using  match_le[of t r i] match_le[of t s _ j]
     by (auto 0 4 simp: relcompp_apply intro: le_less_trans match_le less_Suc_eq_le
-      dest: Times.IH[THEN iffD1, rotated -1] Times.IH[THEN iffD2, rotated -1] match_le)
+      dest: Times.IH[THEN iffD1, rotated -1] Times.IH[THEN iffD2, rotated -1] match_le[of t])
 next
   case (Star r)
   show ?case unfolding match.simps

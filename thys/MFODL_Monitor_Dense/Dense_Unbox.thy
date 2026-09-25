@@ -523,8 +523,15 @@ function gevt_shift :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevta
          else gevt_shift args nt (gevt_step args ts0 (nts', win, rest, len, bend, cnt, cur, dn)))))"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, dn)). len)")
-     (auto simp: gevt_step_def Let_def split: prod.splits option.splits)
+proof -
+  have step: "\<And>args t nts win rest len bend cnt cur dn.
+    (case gevt_step args t (nts, win, rest, len, bend, cnt, cur, dn) of
+      (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow> len) = len - 1"
+    by (simp add: gevt_step_def Let_def split: prod.split option.split)
+  show ?thesis
+    by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, dn)). len)")
+      (auto simp: step)
+qed
 
 declare gevt_shift.simps[simp del]
 
@@ -1125,7 +1132,8 @@ fun gjoin_msaux_del :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \
            mapping_delete_set tuple_since since_del), Some in_del))))"
 
 lemma gjoin_msaux_del_fst: "fst (gjoin_msaux_del args Y s) = gjoin_msaux args Y s"
-  by (cases s rule: gmsaux_cases) (auto simp: Let_def split_beta)
+  by (cases s rule: gmsaux_cases)
+    (simp only: gjoin_msaux_del.simps gjoin_msaux.simps Let_def if_distrib[of fst] fst_conv)
 
 fun ggc_join_msaux_del :: "args \<Rightarrow> 'b list set \<Rightarrow> 'b gmsaux \<Rightarrow> 'b gmsaux \<times> 'b list set option" where
   "ggc_join_msaux_del args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,

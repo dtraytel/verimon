@@ -973,8 +973,46 @@ lift_definition uc_step_ins :: "uconstr option \<Rightarrow> daggp \<Rightarrow>
        then ((q, p), fold (rins k (umeval_trm f)) (csl X) R, C)
        else (case cnt_ins_fold (gstep_ins k (umeval_trm f)) (csl X) (rflat_x R) (rax R) of
          (c', ax') \<Rightarrow> ((q, p), UFlat c' ax', C))))"
-  by (auto simp: dk_def split: prod.splits dest: cnt_ins_fold_cinv simp: cset_gcache
-      intro: fold_rins[THEN conjunct2])
+  subgoal premises inv for q p w X x
+  proof -
+    obtain key R C where x: "x = (key, R, C)" by (cases x) auto
+    obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p) auto
+    have R: "rinv (dk (snd key)) R"
+      and C: "cachedp (snd key) \<Longrightarrow> rax R = Some a \<Longrightarrow> C = gcache (fst key) (snd key) a" for a
+      using inv by (simp_all add: x)
+    show ?thesis
+    proof (cases "cachedp p")
+      case cp: True
+      show ?thesis
+      proof (cases "key = (q, p)")
+        case True
+        obtain c' ax' C' where
+          c: "cnt_ins_fold (cstep gstep_ins q p) (csl X) (rflat_x R) (rax R, C) = (c', ax', C')"
+          by (metis prod.collapse)
+        have "\<forall>a. rax R = Some a \<longrightarrow> C = gcache q p a" using C cp True by simp
+        then have "\<forall>a. ax' = Some a \<longrightarrow> C' = gcache q p a" by (rule cnt_ins_fold_cinv[OF _ c])
+        then show ?thesis using cp True by (simp add: x c)
+      next
+        case False
+        then show ?thesis using cp by (simp add: x cset_gcache)
+      qed
+    next
+      case ncp: False
+      show ?thesis
+      proof (cases "dk (snd key) = k")
+        case True
+        then show ?thesis using ncp R fold_rins[of k R "umeval_trm f" "csl X"]
+          by (simp add: x p dk_def)
+      next
+        case False
+        obtain c' ax' where
+          c: "cnt_ins_fold (gstep_ins k (umeval_trm f)) (csl X) (rflat_x R) (rax R) = (c', ax')"
+          by (metis prod.collapse)
+        show ?thesis using ncp False by (simp add: x p c)
+      qed
+    qed
+  qed
+  done
 
 lemma uc_rep_inv: "rinv (dk (snd (uc_key x))) (uc_rep x)"
   by transfer auto
@@ -1066,8 +1104,46 @@ lift_definition uc_step_del :: "uconstr option \<Rightarrow> daggp \<Rightarrow>
        then ((q, p), fold (rdel k (umeval_trm f)) (csl X) R, C)
        else (case cnt_del_fold (gstep_del k (umeval_trm f)) (csl X) (rflat_x R) (rax R) of
          (c', ax') \<Rightarrow> ((q, p), UFlat c' ax', C))))"
-  by (auto simp: dk_def split: prod.splits dest: cnt_del_fold_cinv simp: cset_gcache
-      intro: fold_rdel[THEN conjunct2])
+  subgoal premises inv for q p w X x
+  proof -
+    obtain key R C where x: "x = (key, R, C)" by (cases x) auto
+    obtain g0 \<omega> f k pos where p: "p = (g0, \<omega>, f, k, pos)" by (cases p) auto
+    have R: "rinv (dk (snd key)) R"
+      and C: "cachedp (snd key) \<Longrightarrow> rax R = Some a \<Longrightarrow> C = gcache (fst key) (snd key) a" for a
+      using inv by (simp_all add: x)
+    show ?thesis
+    proof (cases "cachedp p")
+      case cp: True
+      show ?thesis
+      proof (cases "key = (q, p)")
+        case True
+        obtain c' ax' C' where
+          c: "cnt_del_fold (cstep gstep_del q p) (csl X) (rflat_x R) (rax R, C) = (c', ax', C')"
+          by (metis prod.collapse)
+        have "\<forall>a. rax R = Some a \<longrightarrow> C = gcache q p a" using C cp True by simp
+        then have "\<forall>a. ax' = Some a \<longrightarrow> C' = gcache q p a" by (rule cnt_del_fold_cinv[OF _ c])
+        then show ?thesis using cp True by (simp add: x c)
+      next
+        case False
+        then show ?thesis using cp by (simp add: x cset_gcache)
+      qed
+    next
+      case ncp: False
+      show ?thesis
+      proof (cases "dk (snd key) = k")
+        case True
+        then show ?thesis using ncp R fold_rdel[of k R "umeval_trm f" "csl X"]
+          by (simp add: x p dk_def)
+      next
+        case False
+        obtain c' ax' where
+          c: "cnt_del_fold (gstep_del k (umeval_trm f)) (csl X) (rflat_x R) (rax R) = (c', ax')"
+          by (metis prod.collapse)
+        show ?thesis using ncp False by (simp add: x p c)
+      qed
+    qed
+  qed
+  done
 
 lemma uc_step_del_nc:
   assumes "\<not> cachedp p" "p = (g0, \<omega>, f, k, pos)"

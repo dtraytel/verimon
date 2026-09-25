@@ -225,7 +225,33 @@ next
   from 1 \<open>safe_assignment (Formula.fv \<phi>) \<psi>\<close> obtain x t where
     xn: "x < n" and xf: "x \<notin> Formula.fv \<phi>" and tf: "Formula.fv_trm t \<subseteq> Formula.fv \<phi>"
     and eq: "\<psi> = Formula.Eq (Formula.Var x) t \<or> \<psi> = Formula.Eq t (Formula.Var x)"
-    unfolding safe_assignment_def by (force split: formula.splits trm.splits)
+  proof -
+    from \<open>safe_assignment (Formula.fv \<phi>) \<psi>\<close> consider
+        (a) x t where "x \<notin> Formula.fv \<phi>" "Formula.fv_trm t \<subseteq> Formula.fv \<phi>"
+          "\<psi> = Formula.Eq (Formula.Var x) t \<or> \<psi> = Formula.Eq t (Formula.Var x)"
+      | (b) x y where "x \<notin> Formula.fv \<phi> \<longleftrightarrow> y \<in> Formula.fv \<phi>"
+          "\<psi> = Formula.Eq (Formula.Var x) (Formula.Var y)"
+      unfolding safe_assignment_iff2 by blast
+    then show thesis
+    proof cases
+      case (a x t)
+      have "x < n" using 1 a(3) by auto
+      then show thesis using a by (rule that)
+    next
+      case (b x y)
+      have xy: "x < n" "y < n" using 1 b(2) by simp_all
+      show thesis
+      proof (cases "x \<in> Formula.fv \<phi>")
+        case True
+        then have "y \<notin> Formula.fv \<phi>" using b(1) by simp
+        then show thesis using xy True b(2) by (intro that[of y "Formula.Var x"]) simp_all
+      next
+        case False
+        then have "y \<in> Formula.fv \<phi>" using b(1) by simp
+        then show thesis using xy False b(2) by (intro that[of x "Formula.Var y"]) simp_all
+      qed
+    qed
+  qed
   have p: "mok n (Formula.fv \<phi>) tw (minit0 n \<phi>)" using And_assign by simp
   show ?case using xn xf tf eq p \<open>safe_assignment (Formula.fv \<phi>) \<psi>\<close>
     by (auto intro!: MokAndAssign split: trm.splits)
