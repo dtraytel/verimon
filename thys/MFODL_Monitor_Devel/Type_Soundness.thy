@@ -1212,7 +1212,7 @@ next
   moreover obtain agg_op d where omega_def:"\<omega> = (agg_op,d)" using Agg.prems(1) by cases auto
   moreover have eval_agg_op_case: "M = {(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x} \<and> Zs \<noteq> {}}
  \<Longrightarrow> eval_agg_op (agg_op,d) M = eval_agg_op' (agg_op,d) M" for M
-    apply (rule eval_agg_op_sound) using omega_def Agg(3,4,6,8) by auto 
+    by (rule eval_agg_op_sound[OF _ Agg.prems(1)[unfolded omega_def] Agg.prems(3) Agg.hyps(3,4)]) 
   ultimately show ?case by auto
 next
   case (Since \<phi> I \<psi>)
