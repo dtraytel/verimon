@@ -1535,7 +1535,14 @@ lemma dsim_DSinceD:
     and "dsx_agg daux = None"
   obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
     and "wf_cols n cs_L" and "args_L args = set cs_L"
-  using assms(1) by (rule dsim.cases) (use assms(2) in auto)
+  using assms(1)
+proof (cases rule: dsim.cases)
+  case DsSince
+  then show ?thesis by (intro that) assumption+
+next
+  case DsSinceFused
+  then show ?thesis using assms(2) by (simp only: option.distinct)
+qed
 
 lemma dsim_DUntilD:
   assumes "dsim n cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
@@ -1543,7 +1550,14 @@ lemma dsim_DUntilD:
     and "dux_agg daux = None"
   obtains cs_L where "dsim n cs_L tw \<phi>d \<phi>" and "dsim n cs tw \<psi>d \<psi>"
     and "wf_cols n cs_L" and "args_L args = set cs_L"
-  using assms(1) by (rule dsim.cases) (use assms(2) in auto)
+  using assms(1)
+proof (cases rule: dsim.cases)
+  case DsUntil
+  then show ?thesis by (intro that) assumption+
+next
+  case DsUntilFused
+  then show ?thesis using assms(2) by (simp only: option.distinct)
+qed
 
 section \<open>The simulation\<close>
 
