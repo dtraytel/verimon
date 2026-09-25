@@ -839,17 +839,16 @@ next
           And_Release.IH(4)[OF release_subformulas(2)]
       And_Release.prems(2)
     by auto
-  then obtain L\<^sub>M R\<^sub>M buf 
-    where obs: "wf_mbuf2' \<sigma> P V 0 n R (formula.And \<phi> (formula.Neg (Formula.eventually I Formula.TT))) (formula.And \<phi> (release_safe_bounded \<phi>' I \<psi>')) buf"
-      "wf_mformula \<sigma> 0 P V n R (MOr L\<^sub>M R\<^sub>M buf) (and_release_safe_bounded \<phi> \<phi>' I \<psi>')" 
-      "minit0 n (and_release_safe_bounded \<phi> \<phi>' I \<psi>') = MOr L\<^sub>M R\<^sub>M buf"
-    using safe_release_bdd And_Release(1-7) 
-    apply (atomize_elim)
-    apply (rule_tac x="([],[])" in exI)
-    apply (rule_tac x="(MAnd (fv \<phi>) (minit0 n \<phi>) True {} (MNeg (minit0 n (Formula.eventually I Formula.TT))) ([], []))" in exI)
-    apply (rule_tac x="(MAnd (fv \<phi>) (minit0 n \<phi>) True (fv \<phi>' \<union> fv \<psi>') (minit0 n (release_safe_bounded \<phi>' I \<psi>')) ([], []))" in exI)
-    by (auto simp: wf_mbuf2'_def wf_mbuf2_def eventually_def release_safe_bounded_def 
-        always_safe_bounded_def safe_assignment_iff and_release_safe_bounded_def)
+  let ?L = "MAnd (fv \<phi>) (minit0 n \<phi>) True {} (MNeg (minit0 n (Formula.eventually I Formula.TT))) ([], [])"
+  let ?R = "MAnd (fv \<phi>) (minit0 n \<phi>) True (fv \<phi>' \<union> fv \<psi>') (minit0 n (release_safe_bounded \<phi>' I \<psi>')) ([], [])"
+  have minit0_eq: "minit0 n (and_release_safe_bounded \<phi> \<phi>' I \<psi>') = MOr ?L ?R ([], [])"
+    using safe_release_bdd And_Release(1-7)
+    by (auto simp: eventually_def release_safe_bounded_def always_safe_bounded_def
+        safe_assignment_iff and_release_safe_bounded_def)
+  have buf: "wf_mbuf2' \<sigma> P V 0 n R (formula.And \<phi> (formula.Neg (Formula.eventually I Formula.TT)))
+      (formula.And \<phi> (release_safe_bounded \<phi>' I \<psi>')) ([], [])"
+    using And_Release.prems(2) by (simp add: wf_mbuf2'_def wf_mbuf2_def)
+  note obs = buf wf_formula(1)[unfolded minit0_eq] minit0_eq
   have "\<not> safe_assignment (fv \<phi>) (formula.Release \<phi>' I \<psi>')"
     unfolding safe_assignment_def
     by auto
@@ -1207,10 +1206,13 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
   let ?V = "V((p, m) \<mapsto> letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>'))"
   let ?S = "S((p, m) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>'))"
   have i'_j: "i + length xs \<le> j - length ts"
-    using invar letpast_progress_le[OF PP'(1), of \<sigma>] 
-    unfolding letpast_meval_invar_def Let_def
-    apply (auto elim: order_trans)
-    using le_trans by blast
+  proof -
+    from invar have "i + length xs \<le> letpast_progress \<sigma> P (p, m) \<phi>' (j - length ts)"
+      unfolding letpast_meval_invar_def Let_def by simp
+    also have "\<dots> \<le> j - length ts"
+      using PP'(1) by (rule letpast_progress_le)
+    finally show ?thesis .
+  qed
   have "list_all2
      (\<lambda>i. qtable m (fv \<phi>') (mem_restr UNIV)
            (\<lambda>v. letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) u k \<phi>') (map the v) i))
@@ -1218,6 +1220,10 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
     using invar unfolding letpast_meval_invar_def Let_def by simp
   then have xs: "list_all2 ?Q [i..<i + length xs] xs"
     by (smt (verit, del_insts) add_diff_cancel_left' eq_diff_iff length_upt list_all2_lengthD nat_le_linear upt_conv_Nil)
+  \<comment> \<open>results of @{term meval} can be stated in terms of @{term letpast_sat}\<close>
+  have sat_letpast: "Formula.sat \<sigma> ?V w k \<phi>' =
+    letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>') w k" for w k
+    by (subst letpast_sat.simps) (rule V_subst_letpast[OF safe], simp)
 
   show ?case
   proof (cases "fst ysp = [] \<or> j \<le> Suc (i + length xs)")
@@ -1238,21 +1244,16 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
     then have ysp: "case ysp of (ys, \<phi>\<^sub>n) \<Rightarrow> wf_mformula \<sigma> j ?P' ?V m UNIV \<phi>\<^sub>n \<phi>' \<and>
       list_all2 (\<lambda>i. qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>') (map the v) i))
       [progress \<sigma> ?P \<phi>' (j-length ts)..<progress \<sigma> ?P' \<phi>' j] ys"
-      apply (rule iffD1[OF prod.case_cong[OF refl], rotated])
-      apply (rule arg_cong[OF list.rel_cong, OF refl refl])
-      apply (rule fun_cong[OF qtable_cong_strong, OF refl])
-      apply (subst letpast_sat.simps)
-      apply (rule V_subst_letpast[OF safe])
-      by simp
+      unfolding sat_letpast .
     show ?thesis
       unfolding eqs
-      apply (rule invar_recursion_post)
-             apply fact+
-          apply (rule ysp[unfolded ysp_def eqs])
-         apply fact
-        apply (simp add: ysp_def)
-       apply simp
-      using stop by (auto split: list.splits)
+    proof (rule invar_recursion_post[OF safe PP' ysp[unfolded ysp_def eqs] invar])
+      show "(fst ysp, snd ysp) = meval j m ts (Mapping.update (p, m) xs db) \<phi>"
+        by (simp add: ysp_def)
+      show "case fst ysp of [] \<Rightarrow> (case fst ysp of [] \<Rightarrow> None | Z # _ \<Rightarrow> Some Z) = None
+        | Z # _ \<Rightarrow> (case fst ysp of [] \<Rightarrow> None | Z # _ \<Rightarrow> Some Z) = Some Z \<and> j \<le> Suc (i + length xs)"
+        using stop by (cases "fst ysp") simp_all
+    qed simp
   next
     case cont: False
     then have eqs: "(ys', i', buf', \<phi>f) =
@@ -1274,37 +1275,29 @@ proof (induction i ys xs "(p, m)" ts db \<phi> arbitrary: p i' buf' ys' \<phi>f 
     then have ysp: "case ysp of (ys, \<phi>\<^sub>n) \<Rightarrow> wf_mformula \<sigma> j ?P' ?V m UNIV \<phi>\<^sub>n \<phi>' \<and>
       list_all2 (\<lambda>i. qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>') (map the v) i))
       [progress \<sigma> ?P \<phi>' (j-length ts)..<progress \<sigma> ?P' \<phi>' j] ys"
-      apply (rule iffD1[OF prod.case_cong[OF refl], rotated])
-      apply (rule arg_cong[OF list.rel_cong, OF refl refl])
-      apply (rule fun_cong[OF qtable_cong_strong, OF refl])
-      apply (subst letpast_sat.simps)
-      apply (rule V_subst_letpast[OF safe])
-      by simp
+      unfolding sat_letpast .
+    have size_eq: "size (snd ysp) = size \<phi>"
+      by (simp add: ysp_def size_snd_meval)
     show ?thesis
-      apply (rule step.hyps[of "fst ysp" "snd ysp" P'])
-                     apply (simp add: ysp_def)
-      using cont apply simp
-      using cont apply simp
-      subgoal
-        apply (rule invar_recursion_invar)
-               apply fact+
-            defer
-            apply fact
-           apply (simp add: ysp_def)
-        using cont apply simp
-        using cont apply simp
-        apply (rule ysp[unfolded ysp_def])
-        done
-                apply fact+
-              apply simp
-              apply fact+
-            apply (simp add: rel_mapping_reflp reflp_def)
-           apply fact+
-      using ysp apply (simp add: ysp_def split_beta)
-        apply simp
-        apply (metis diff_add envs step.prems(12) wf_envs_empty)
-       apply (rule meval; simp add: ysp_def size_snd_meval)
-      apply simp using wty safe_formula by auto
+    proof (rule step.hyps[of "fst ysp" "snd ysp" P'], goal_cases)
+      show "(fst ysp, snd ysp) = meval j m ts (Mapping.update (p, m) xs db) \<phi>"
+        by (simp add: ysp_def)
+      from cont show "fst ysp \<noteq> []" and "Suc (i + length xs) < j"
+        by simp_all
+      from cont show "letpast_meval_invar n V \<sigma> P' \<phi>' m j (i + length xs) (ys @ fst ysp) (fst ysp) p []
+        (Mapping.map_values (\<lambda>_ _. []) db) (snd ysp) k"
+        by (intro invar_recursion_invar[OF PP' ysp[unfolded ysp_def] invar]) (simp_all add: ysp_def)
+      from ysp show "wf_mformula \<sigma> (j - length []) ?P' ?V m UNIV (snd ysp) \<phi>'"
+        by (simp add: split_beta)
+      from wf_envs_empty[OF envs] step.prems(12)
+      show "wf_envs S \<sigma> (j - length []) (length []) P' P' V (Mapping.map_values (\<lambda>_ _. []) db)"
+        by simp
+    next
+      case (14 \<phi>_m us)
+      \<comment> \<open>the induction hypothesis may use the assumption on @{term meval} for the next iteration\<close>
+      with size_eq show ?case
+        by (intro meval) simp_all
+    qed (use eqs safe PP'(2) fv wty safe_formula in \<open>simp_all add: rel_mapping_order_refl\<close>)
   qed
 qed
 
