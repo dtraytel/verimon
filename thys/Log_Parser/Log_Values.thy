@@ -244,11 +244,19 @@ lemma idigit_alt: "idigit b c = (let k = integer_of_char c in
      else if 65 \<le> k \<and> k \<le> 70 then (if k - 55 < b then k - 55 else -1)
      else -1)"
 proof -
-  have k: "integer_of_char c = integer_of_nat (of_char c)"
-    by (simp add: integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  define k :: nat where "k = of_char c"
+  have ic: "integer_of_char c = integer_of_nat k"
+    by (simp add: k_def integer_of_char_def integer_of_nat_eq_of_nat of_nat_of_char)
+  have le: "numeral n \<le> integer_of_nat k \<longleftrightarrow> numeral n \<le> k"
+    "integer_of_nat k \<le> numeral n \<longleftrightarrow> k \<le> numeral n" for n
+    by (simp_all add: integer_simps integer_of_nat_eq_of_nat)
+  have sub: "numeral n \<le> k \<Longrightarrow> integer_of_nat k - numeral n = integer_of_nat (k - numeral n)" for n
+    by (simp add: integer_simps integer_of_nat_eq_of_nat)
+  have lt: "integer_of_nat m < b \<longleftrightarrow> m < nat_of_integer b" for m
+    by (simp add: integer_simps integer_of_nat_eq_of_nat zless_nat_eq_int_zless)
   show ?thesis
-    unfolding idigit_def digit_val_def k Let_def
-    by (auto simp: integer_simps integer_of_nat_eq_of_nat nat_less_iff split: if_splits)
+    unfolding idigit_def digit_val_def ic k_def[symmetric] Let_def
+    by (simp add: le sub lt)
 qed
 
 function idigits :: "bytes \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer \<Rightarrow> integer" where

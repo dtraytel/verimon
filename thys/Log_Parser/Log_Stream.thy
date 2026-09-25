@@ -136,7 +136,7 @@ proof -
   have c: "\<not> isSimpleChar c" "c \<noteq> CHR 0x22"
     using assms(2) by (auto simp: isSimpleChar_def)
   have init: "lex_run [c] L_INIT = Some ([if c = CHR ''@'' then T_AT else T_RANGLE], L_INIT)"
-    using assms(2) by (auto simp: lex_init_def isWhiteSpace_def)
+    using assms(2) by (elim disjE) (simp_all add: lex_init_def isWhiteSpace_def)
   from ends show ?thesis
     unfolding lex_ends_def
   proof (elim disjE exE conjE)
