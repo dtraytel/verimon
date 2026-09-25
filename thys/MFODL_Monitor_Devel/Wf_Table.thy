@@ -969,11 +969,18 @@ lemma wf_table_antijoin_code[code]:
   by (auto simp: wf_table_sig_antijoin wf_idx_sig_antijoin wf_set_sig_antijoin wf_table_set_antijoin' wf_idx_set_antijoin' wf_set_set_antijoin' intro!: wf_table_eqI split: prod.splits if_splits)
 
 lemma wf_idx_set_wf: "wf_idx_sig t = (n, A) \<Longrightarrow> x \<in> wf_idx_set t \<Longrightarrow> wf_tuple n A x"
-  apply transfer
-  apply (auto simp: table_def inf_absorb1)
-  apply transfer
-  apply (auto simp: Map_To_Mapping.map_apply_def ran_def)
-  done
+proof -
+  assume sig: "wf_idx_sig t = (n, A)" and x: "x \<in> wf_idx_set t"
+  obtain I T where t: "Rep_wf_idx t = (n, A, I, T)"
+    and T: "\<And>x Y. Mapping.lookup T x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I z)"
+    using Rep_wf_idx[of t] sig by (auto simp: wf_idx_sig.rep_eq)
+  have "x \<in> set_of_idx T"
+    using x t by (simp add: wf_idx_set.rep_eq)
+  then have "\<exists>k Y. Mapping.lookup T k = Some Y \<and> x \<in> Y"
+    by transfer (auto simp: Map_To_Mapping.map_apply_def ran_def)
+  then show "wf_tuple n A x"
+    using T by (auto simp: table_def)
+qed
 
 lemma wf_table_set_wf: "wf_table_sig t = (n, A) \<Longrightarrow> x \<in> wf_table_set t \<Longrightarrow> wf_tuple n A x"
   by transfer (auto simp: table_def inf_absorb1)
