@@ -359,50 +359,54 @@ lemma unconvert_in_traces: "(\<And>i pn. pn \<in> A \<Longrightarrow> \<forall>v
   unfolding convert_def unconvert_def traces_def wty_envs_def by auto
 
 lemma M_alt: "Sat.M \<pi> = M (punconvert (preds \<phi>) \<pi>)"
-  unfolding Sat.M_def M_def
-  unfolding pprogress_punconvert sat_unconvert'
-  apply (auto simp: prefix_of_unconvert)
-  apply (use ex_prefix_of'[of \<pi>] in \<open>rule exE\<close>)
-  subgoal for i v \<sigma> \<tau>
-    apply (subgoal_tac "\<forall>i. i < plen \<pi> \<longrightarrow> \<Gamma> (unconvert (preds \<phi>) \<tau>) i = \<Gamma> \<sigma> i")
-     prefer 2
-    apply (erule thin_rl)
-    apply (erule thin_rl)
-    apply (erule thin_rl)
-     apply (erule thin_rl)
-     apply (drule conjunct1)
-     apply (unfold unconvert_def punconvert_def) []
-     apply transfer
-    apply (auto simp: list_eq_iff_nth_eq split: prod.splits) []
-  apply (drule spec)
-  apply (drule mp)
-  apply (rule unconvert_in_traces)
-  prefer 2
-   apply (drule mp)
-    apply (erule conjunct1)
-   apply (erule progress_sat_cong[THEN iffD1, rotated -1])
-         apply (auto simp: prefix_of_unconvert traces_def wty_envs_def)
-    subgoal for k p n
-      apply (cases "k < plen \<pi>")
-       apply (auto simp: not_less)
-      apply (auto simp: unconvert_def)
-      done
-    subgoal for k p n
-      apply (cases "k < plen \<pi>")
-       apply (auto simp: not_less)
-      apply (auto simp: unconvert_def)
-      apply (drule spec, drule mp, assumption)
-      apply (drule spec)
-      apply (drule bspec)
-       apply (erule set_mp[OF equalityD1])
-      apply (rule UN_I)
-        apply assumption
-       apply (unfold prod.case)
-       apply (rule imageI)
-      apply auto
-      done
-    done
-  done
+proof -
+  let ?\<pi> = "punconvert (preds \<phi>) \<pi>" and ?u = "unconvert (preds \<phi>)"
+  have "(\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>) \<longleftrightarrow>
+    (\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>)"
+    if i: "i < Correctness.pprogress \<phi> ?\<pi>" for i v
+  proof
+    assume "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>"
+    then show "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>"
+      by (auto simp: prefix_of_unconvert)
+  next
+    assume all: "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>"
+    show "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>"
+    proof (intro ballI impI)
+      fix \<sigma>'
+      assume \<sigma>': "\<sigma>' \<in> traces" "prefix_of ?\<pi> \<sigma>'"
+      \<comment> \<open>extend @{term \<pi>} by empty databases; its conversion agrees with @{term \<sigma>'} on the prefix\<close>
+      obtain \<sigma> where \<sigma>: "prefix_of \<pi> \<sigma>" "\<forall>x. \<forall>k \<ge> plen \<pi>. \<Gamma> \<sigma> k x = {}"
+        using ex_prefix_of'[of \<pi>] by blast
+      then have pre: "prefix_of ?\<pi> (?u \<sigma>)"
+        by (simp add: prefix_of_unconvert)
+      have "?u \<sigma> \<in> traces"
+      proof (rule unconvert_in_traces)
+        fix k pn
+        assume "pn \<in> preds \<phi>"
+        show "\<forall>w \<in> \<Gamma> \<sigma> k pn. length w = snd pn \<longrightarrow> wty_event SIG (fst pn) w"
+        proof (cases "k < plen \<pi>")
+          case True
+          then have "\<Gamma> (?u \<sigma>) k = \<Gamma> \<sigma>' k"
+            using \<Gamma>_prefix_conv[OF pre \<sigma>'(2)] by simp
+          then have "(fst pn, w) \<in> \<Gamma> \<sigma>' k" if "w \<in> \<Gamma> \<sigma> k pn" "length w = snd pn" for w
+            using that \<open>pn \<in> preds \<phi>\<close> by (force simp: unconvert_def)
+          with \<sigma>'(1) show ?thesis
+            by (auto simp: traces_def wty_envs_def)
+        next
+          case False
+          then show ?thesis
+            using \<sigma>(2)[rule_format, of k pn] by simp
+        qed
+      qed
+      with all \<sigma>(1) have "sat_the (?u \<sigma>) Map.empty v i \<phi>"
+        by blast
+      then show "sat_the \<sigma>' Map.empty v i \<phi>"
+        using progress_sat_cong[OF \<open>?u \<sigma> \<in> traces\<close> pre \<sigma>'(2) i] by simp
+    qed
+  qed
+  then show ?thesis
+    unfolding Sat.M_def M_def unfolding pprogress_punconvert sat_unconvert' by auto
+qed
 
 lemma Mt_alt: "Sat.Mt \<pi> = Mt (punconvert (preds \<phi>) \<pi>)"
   unfolding Sat.Mt_def Mt_def M_alt by simp
