@@ -1441,62 +1441,50 @@ next
     by auto
 next
   case (Since \<phi> I \<psi>)
-  show ?case
-    using Since.prems(2-)
-    apply clarsimp
-    apply (erule disjE)
-     apply clarsimp
-    subgoal for j
-      apply (rule Since.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Since.prems(1))
-      by simp_all
-    apply (cases "\<exists>j\<le>i. memL I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and> memR I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and>
-      Formula.sat \<sigma> V v j \<psi> \<and> (\<forall>k\<in>{j<..i}. Formula.sat \<sigma> V v k \<phi>)")
-     apply clarsimp
-    subgoal for j
-      apply (rule Since.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Since.prems(1))
-      by simp_all
-    apply (subgoal_tac "\<not> Formula.sat \<sigma> V v i \<psi>")
-     apply clarsimp
-     apply (rule Since.IH(2)[rotated, of V v i x q n c k])
-       apply simp
-      apply simp
-     apply (rule Since.prems(1))
-    by auto
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Since.prems(3) by simp
+  obtain j where gen: "genvar \<psi> (Formula.sat \<sigma> V v j \<psi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Since \<phi> I \<psi>)")
+    case True
+    then obtain j where "Formula.sat \<sigma> V v j \<psi>"
+      by auto
+    moreover from True Since.prems(2) have "genvar \<psi> True x q n c k"
+      by auto
+    ultimately show thesis
+      by (intro that[of j]) simp
+  next
+    case False
+    from Since.prems(2) have "mem I 0" and gen: "genvar \<psi> False x q n c k"
+      unfolding False[THEN eq_False[THEN iffD2]] by simp_all
+    with False have "\<not> Formula.sat \<sigma> V v i \<psi>"
+      by auto
+    with gen show thesis
+      by (intro that[of i]) simp
+  qed
+  from Since.IH(2)[OF Since.prems(1) gen nfv] show ?case .
 next
   case (Until \<phi> I \<psi>)
-  show ?case
-    using Until.prems(2-)
-    apply clarsimp
-    apply (erule disjE)
-     apply clarsimp
-    subgoal for j
-      apply (rule Until.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Until.prems(1))
-      by simp_all
-    apply (cases "\<exists>j\<ge>i. memL I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<and> memR I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<and>
-      Formula.sat \<sigma> V v j \<psi> \<and> (\<forall>k\<in>{i..<j}. Formula.sat \<sigma> V v k \<phi>)")
-     apply clarsimp
-    subgoal for j
-      apply (rule Until.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Until.prems(1))
-      by simp_all
-    apply (subgoal_tac "\<not> Formula.sat \<sigma> V v i \<psi>")
-     apply clarsimp
-     apply (rule Until.IH(2)[rotated, of V v i x q n c k])
-       apply simp
-      apply simp
-     apply (rule Until.prems(1))
-    by auto
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Until.prems(3) by simp
+  obtain j where gen: "genvar \<psi> (Formula.sat \<sigma> V v j \<psi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Until \<phi> I \<psi>)")
+    case True
+    then obtain j where "Formula.sat \<sigma> V v j \<psi>"
+      by auto
+    moreover from True Until.prems(2) have "genvar \<psi> True x q n c k"
+      by auto
+    ultimately show thesis
+      by (intro that[of j]) simp
+  next
+    case False
+    from Until.prems(2) have "mem I 0" and gen: "genvar \<psi> False x q n c k"
+      unfolding False[THEN eq_False[THEN iffD2]] by simp_all
+    with False have "\<not> Formula.sat \<sigma> V v i \<psi>"
+      by auto
+    with gen show thesis
+      by (intro that[of i]) simp
+  qed
+  from Until.IH(2)[OF Until.prems(1) gen nfv] show ?case .
 next
   case (Trigger \<phi> I \<psi>)
   hence "Formula.nfv \<psi> \<le> length v"
