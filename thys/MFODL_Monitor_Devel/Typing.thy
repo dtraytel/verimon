@@ -3694,10 +3694,9 @@ proof -
       "wf_f (TCst \<circ> ?ft2)"
       using wf_final wf_f' wty_res1 wty_res2 wf_f_comp g_def(1) 
       unfolding wty_result_fX_trm_def by (simp add: fun.map_comp)+
-    have 
-      "(\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft1 = (g \<circ> f'')))"
-      "(\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft2 = (g \<circ> f''')))"
-       apply (metis comp_assoc g_def(1) wf_f_comp wty_res2 wty_result_fX_trm_def)
+    have "(\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft1 = (g \<circ> f'')))"
+      using wfs(2) by blast
+    moreover have "(\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft2 = (g \<circ> f''')))"
       using g_def(1) by blast
     moreover have
       "(?ft1 \<circ> (f' \<circ> E_start) \<turnstile> t1 :: ?ft1 (f' type_start)) = (\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft1 = (g \<circ> f'')))"
@@ -3733,11 +3732,14 @@ proof -
   define a where [simp]: "a = (if trm = trm.F2i then TInt else TFloat)"
   define b where [simp]: "b = (if trm = trm.F2i then TFloat else TInt)"
   have neq: "trm.F2i \<noteq> trm.I2f" using trm.distinct by force
-  then obtain fp fp' where 
+  with assms(3) have check_eq: "check_trm E type (trm t) = clash_propagate type (TCst a) E \<bind>
+      (%fp. check_trm (fp o E) (TCst b) t \<bind> (%fp'. return (%k. if k = type then TCst a else (fp' o fp) k)))"
+    by (elim disjE) (simp_all cong: if_cong)
+  obtain fp fp' where 
     fp_def: "clash_propagate type (TCst a) E = return fp" and
     fp'_def: "check_trm (fp \<circ> E) (TCst b) t = return fp'" and
     f_def': "f = (\<lambda>k. if k = type then TCst a else (fp' \<circ> fp) k)" 
-    using assms(2-3) apply (auto split:bind_splits) using a_def by presburger+
+    using assms(2) unfolding check_eq by (auto split: bind_splits)
   hence prec_int: "fp type = TCst a" 
     using assms(3) by (cases type) (auto simp add: clash_propagate_def update_env_def split: if_splits)
   have wf_fp: "wf_f fp" using fp_def wf_f_clash_propagate by presburger
@@ -3842,8 +3844,12 @@ proof (induction t arbitrary:  E type f)
     by auto
 next
   case (Const x)
-  show ?case  apply (rule check_trm_step0_cst[where ty="ty_of x"]) 
-    using Const wty_trm.Const wty_trm_cong_aux by auto 
+  from Const have "clash_propagate (TCst (ty_of x)) type E = return f"
+    by simp
+  moreover have "(f'' \<circ> E \<turnstile> trm.Const x :: y) \<longleftrightarrow> y = ty_of x" for f'' y
+    using wty_trm.Const wty_trm_cong_aux by blast
+  ultimately show ?case
+    by (rule check_trm_step0_cst)
 next
   case (UMinus t)
   then obtain f' f'' where 
@@ -3854,21 +3860,58 @@ next
   note res = UMinus.IH[OF f''_def] 
   have f_def: "f = f'' \<circ> f' \<circ> new_type_symbol" using f'_def f''_def UMinus(2) by(auto split:option.splits)
   have wty_uminus: "wty_result_fX_trm (f' \<circ> new_type_symbol \<circ> E) ((f' \<circ> new_type_symbol) type) (trm.UMinus t) f''"
-    using res unfolding wty_result_fX_trm_def apply(auto elim: wty_trm.cases) 
   proof -
-    fix fa g
-    assume assm: "\<forall>f'a. wf_f (TCst \<circ> f'a) \<longrightarrow> (f'a \<circ> (f' \<circ> new_type_symbol \<circ> E) \<turnstile> t :: f'a (f' (new_type_symbol type))) = (\<exists>g. wf_f (TCst \<circ> g) \<and> f'a  = g \<circ> f'')"
-      "wf_f (TCst \<circ> (g \<circ> f''))" "wf_f (TCst \<circ> g)" 
-    have wf: "wf_f (TCst \<circ> (g \<circ> f'' \<circ> f' \<circ> new_type_symbol))" 
-      by (metis assm(3) comp_assoc f'_def res wf_f_clash_propagate wf_f_comp wf_new_type_symbol wty_result_fX_trm_def)
-    moreover have "g (f'' (f' (new_type_symbol type))) \<in> numeric_ty" 
-      using check_trm_step0_num(2)[OF f'_def _ wf] using assm wtynum unfolding resultless_trm_f_def apply(auto) by (meson rewriteR_comp_comp)
-    ultimately show "g \<circ> f'' \<circ> (f' \<circ> new_type_symbol \<circ> E) \<turnstile> trm.UMinus t :: g (f'' (f' (new_type_symbol type)))" using assm(3) wty_trm.UMinus by (metis assm(1) assm(2) comp_apply)
+    let ?E = "f' o new_type_symbol o E"
+    let ?ty = "f' (new_type_symbol type)"
+    have wf_f': "wf_f f'"
+      using f'_def by (rule wf_f_clash_propagate)
+    have IH: "(fa o ?E \<turnstile> t :: fa ?ty) = (EX g. wf_f (TCst o g) & fa = g o f'')"
+      if "wf_f (TCst o fa)" for fa
+      using res that unfolding wty_result_fX_trm_def by blast
+    have num: "fa ?ty : numeric_ty" if fa_wf: "wf_f (TCst o fa)" for fa
+    proof -
+      have wf: "wf_f (TCst o (fa o f' o new_type_symbol))"
+        using wf_f_comp[OF wf_f_comp[OF fa_wf wf_f'] wf_new_type_symbol] by (simp add: comp_assoc)
+      have res_fa: "resultless_trm_f (fa o f' o new_type_symbol) (f' o new_type_symbol) type"
+        using fa_wf unfolding resultless_trm_f_def by (intro exI[of _ fa]) (simp add: comp_assoc)
+      have "(fa o f' o new_type_symbol) type : numeric_ty"
+        by (rule check_trm_step0_num(2)[OF f'_def _ wf res_fa]) (rule wtynum)
+      then show ?thesis
+        by simp
+    qed
+    have "(fa o ?E \<turnstile> trm.UMinus t :: fa ?ty) = (EX g. wf_f (TCst o g) & fa = g o f'')"
+      if fa_wf: "wf_f (TCst o fa)" for fa
+    proof
+      assume "fa o ?E \<turnstile> trm.UMinus t :: fa ?ty"
+      then have "fa o ?E \<turnstile> t :: fa ?ty"
+        by (auto elim: wty_trm.cases)
+      with IH[OF fa_wf] show "EX g. wf_f (TCst o g) & fa = g o f''"
+        by blast
+    next
+      assume "EX g. wf_f (TCst o g) & fa = g o f''"
+      with IH[OF fa_wf] have "fa o ?E \<turnstile> t :: fa ?ty"
+        by blast
+      then show "fa o ?E \<turnstile> trm.UMinus t :: fa ?ty"
+        using num[OF fa_wf] by (rule wty_trm.UMinus)
+    qed
+    with res show ?thesis
+      unfolding wty_result_fX_trm_def by simp
   qed
   have half: "half_wty_trm E type (trm.UMinus t) (f' \<circ> new_type_symbol)"
-    using check_trm_step0_num(1)[OF f'_def] wtynum res 
-    unfolding wty_result_fX_trm_def half_wty_trm_def resultless_trm_f_def 
-    apply(auto) using f'_def wf_f_clash_propagate wf_f_comp wf_new_type_symbol by presburger
+  proof -
+    have "wf_f (f' o new_type_symbol)"
+      using f'_def by (simp add: wf_f_clash_propagate wf_f_comp)
+    moreover have "EX g. wf_f (TCst o g) & fa = g o (f' o new_type_symbol)"
+      if fa_wf: "wf_f (TCst o fa)" and fa_wty: "fa o E \<turnstile> trm.UMinus t :: fa type" for fa
+    proof -
+      have "resultless_trm_f fa (f' o new_type_symbol) type"
+        by (rule check_trm_step0_num(1)[OF f'_def _ fa_wf fa_wty]) (rule wtynum)
+      then show ?thesis
+        unfolding resultless_trm_f_def .
+    qed
+    ultimately show ?thesis
+      unfolding half_wty_trm_def by blast
+  qed
   show ?case using check_trm_step1[OF wty_uminus half] unfolding f_def by (metis comp_assoc)
 qed (auto simp: check_binop_sound check_conversion_sound)
 
