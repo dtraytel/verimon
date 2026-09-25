@@ -1583,9 +1583,7 @@ lemma trans2_2: "trans2 P P' \<Longrightarrow> project (P r r2) = P' (project r)
   by (induction P P' rule:trans2.induct;simp)
 
 lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
-  apply(induction P rule:f_conr2.induct)
-  using trans2.trans2_1 trans2.trans2_2 trans2.trans2_3 trans2.trans2_4 trans2.trans2_5 trans2.trans2_6 apply blast+
-  done
+  by (induction P rule: f_conr2.induct) (blast intro: trans2.intros)+
 
 lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
 proof -
@@ -1630,9 +1628,7 @@ lemma trans_agg_2: "trans_agg P P' \<Longrightarrow> project (P r) = P' (project
   by (induction P P' rule:trans_agg.induct;simp)
 
 lemma trans_agg_3: "f_conr_agg P \<Longrightarrow> \<exists>P'. trans_agg P P'"
-  apply(induction P rule:f_conr_agg.induct)
-  using trans_agg.trans_agg_1 apply blast
-  done
+  by (induction P rule: f_conr_agg.induct) (blast intro: trans_agg.intros)
 
 lemma rsub_agg: "f_conr_agg P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a = sat \<sigma> V v i b) 
   \<Longrightarrow> fv (project a) = fv (project b)
@@ -1815,14 +1811,16 @@ next
   qed
 next
   case (24 y \<omega> b' f \<phi> t)
+  have "sat \<sigma> V v i (Agg y \<omega> b' f (rewrite \<phi> Same)) = sat \<sigma> V v i (Agg y \<omega> b' f \<phi>)"
+    by (rule rsub_agg[OF f_conr_agg_t]) (simp_all add: 24 flip: rewrite_fv)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_agg[OF f_conr_agg_t 24[symmetric],simplified fix_r.simps, OF rewrite_fv])
-    done
+    by simp
 next
   case (25 I \<phi> t)
+  have "sat \<sigma> V v i (Prev I (rewrite \<phi> Same)) = sat \<sigma> V v i (Prev I \<phi>)"
+    by (rule rsub_1[OF f_conr_6_t]) (simp add: 25)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_1[OF f_conr_6_t 25])
-    done
+    by simp
 next
   case (34 I r t)
   then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
