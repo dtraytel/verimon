@@ -246,32 +246,23 @@ next
       (auto simp add: Let_def intro!: map_\<Gamma>i_map_\<Gamma>i_cong arg_cong[of _ _ "\<lambda>X. sat X v _ \<psi>"] split: if_splits)
 next
   case (LetPast p \<phi> \<psi>)
-  show ?case
-    unfolding sat.simps Let_def using LetPast(3)
-    apply (subst (1 2) LetPast(2)[symmetric])
-     apply simp
-    apply (rule arg_cong[of _ _ "\<lambda>X. sat X v i \<psi>"])
-    apply (simp add: o_def)
-    apply (rule map_\<Gamma>i_map_\<Gamma>i_cong)
-    apply (rule ext)
-    apply (simp only: split_beta)
-    apply (rule if_cong[OF refl _ refl])
-    apply (rule set_eqI)
-    apply (simp only: Int_iff conj_commute fun_upd_def)
-    apply (rule conj_cong[OF refl])
-    apply (unfold if_split_mem2)
-    apply (rule conj_cong)
-     apply (rule imp_cong[OF refl])
-     apply (rule arg_cong2[where f="(\<in>)", OF refl])
-     apply (rule subst_letpast_sat)
-     apply (rule Collect_cong)
-     apply (subst (1 2) LetPast(1)[symmetric])
-      apply simp
-     apply (rule conj_cong[OF refl])
-     apply (rule arg_cong[where f="\<lambda>X. sat X _ _ \<phi>"])
-     apply (auto simp: fun_eq_iff intro!: map_\<Gamma>i_map_\<Gamma>i_cong) []
-    apply auto
-    done
+  let ?fl = "map_\<Gamma> (fix_length A)" and ?pn = "(p, Formula.nfv \<phi>)"
+  from LetPast(3) have A: "preds \<phi> \<subseteq> A" "preds \<psi> \<subseteq> A"
+    by auto
+  \<comment> \<open>fixing the lengths commutes with updating @{term ?pn} (up to a final fixing of the lengths)\<close>
+  have fl_upd: "?fl ((?fl \<sigma>)(?pn \<Rrightarrow> X)) = ?fl (\<sigma>(?pn \<Rrightarrow> X))" for X
+    by (auto simp: fun_eq_iff intro!: map_\<Gamma>i_map_\<Gamma>i_cong)
+  have "sat ((?fl \<sigma>)(?pn \<Rrightarrow> X)) u k \<phi> = sat (\<sigma>(?pn \<Rrightarrow> X)) u k \<phi>" for X u k
+    using LetPast(1)[OF A(1), of "(?fl \<sigma>)(?pn \<Rrightarrow> X)"] LetPast(1)[OF A(1), of "\<sigma>(?pn \<Rrightarrow> X)"]
+    unfolding fl_upd by simp
+  then have L: "letpast_sat (\<lambda>X k. {u. sat ((?fl \<sigma>)(?pn \<Rrightarrow> X)) u k \<phi> \<and> length u = snd ?pn}) =
+    letpast_sat (\<lambda>X k. {u. sat (\<sigma>(?pn \<Rrightarrow> X)) u k \<phi> \<and> length u = snd ?pn})"
+    by (intro ext subst_letpast_sat) simp
+  have "sat ((?fl \<sigma>)(?pn \<Rrightarrow> Y)) v i \<psi> = sat (\<sigma>(?pn \<Rrightarrow> Y)) v i \<psi>" for Y
+    using LetPast(2)[OF A(2), of "(?fl \<sigma>)(?pn \<Rrightarrow> Y)"] LetPast(2)[OF A(2), of "\<sigma>(?pn \<Rrightarrow> Y)"]
+    unfolding fl_upd by simp
+  then show ?case
+    unfolding sat.simps Let_def L .
 qed (auto simp: subset_eq split: nat.splits cong: match_cong)
 
 lemma sat_unconvert:
