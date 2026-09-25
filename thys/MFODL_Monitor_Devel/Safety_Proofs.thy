@@ -1927,34 +1927,73 @@ next
     by (auto simp: Formula.nfv_def sat_release_rewrite_0[OF Release_0(1,2), symmetric])
 next
   case (MatchP I r)
-  from MatchP(1,3-) have IH: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
-    if "\<phi> \<in> safe_atms r" for k \<phi> using that
-    apply (intro MatchP(2)[rule_format, OF that])
-       apply (auto simp: regex.pred_set safe_atms_def Regex.nfv_regex_def fv_regex_alt Formula.nfv_def)
-     apply (auto split: Formula.formula.splits)
-    done
+  have IH: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
+    if "\<phi> \<in> safe_atms r" for k \<phi>
+  proof -
+    \<comment> \<open>@{term \<phi>} is an atom of @{term r} or the negation of @{term \<phi>} is one\<close>
+    from that obtain \<psi> where \<psi>: "\<psi> \<in> Regex.atms r"
+      and \<phi>\<psi>: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    from \<phi>\<psi> have "\<phi> = \<psi> \<or> \<psi> = Formula.Neg \<phi>"
+      by (cases \<psi> rule: Formula.formula.exhaust) (simp_all split: if_splits)
+    then have fv: "fv \<phi> = fv \<psi>" and fb: "Safety.future_bounded \<phi> = Safety.future_bounded \<psi>"
+      by auto
+    from MatchP.prems(1) \<psi> fb have "Safety.future_bounded \<phi>"
+      by (simp add: regex.pred_set)
+    moreover have "Formula.nfv \<phi> \<le> n"
+    proof -
+      have "\<forall>x\<in>fv \<phi>. x < n"
+        using fvi_less_nfv_regex[of r] MatchP.prems(2) \<psi> fv by (fastforce simp: fv_regex_alt)
+      then show ?thesis
+        by (simp add: Formula.nfv_def Suc_le_eq)
+    qed
+    ultimately show ?thesis
+      using MatchP.prems(3,4) by (intro MatchP.hyps(2)[rule_format, OF that]) simp_all
+  qed
   from MatchP(3-) show ?case
     by (intro finite_subset[OF _ safe_regex_Past_finite[OF MatchP(1) IH, of i]]) auto
 next
   case (MatchF I r)
-  then obtain m j where m: "\<not> memR I m" "m = (\<tau> \<sigma> j - \<tau> \<sigma> i)"
-    apply(auto)
-    apply(atomize_elim)
-    apply(simp add: bounded_memR)
-    by (metis (no_types, opaque_lifting) add_diff_cancel_right' diff_le_mono ex_le_\<tau> memR_antimono)
-  from MatchF(1,3-) have IH: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
-    if "\<phi> \<in> safe_atms r" for k \<phi> using that
-    apply (intro MatchF(2)[rule_format, OF that])
-       apply (auto simp: regex.pred_set safe_atms_def Regex.nfv_regex_def fv_regex_alt Formula.nfv_def)
-     apply (auto split: Formula.formula.splits)
-    done
-  from MatchF(3-) m show ?case
-    apply (intro finite_subset[OF _ safe_regex_Future_finite[OF MatchF(1) IH, of i j]])
-     apply clarsimp
-     apply (erule bexI[where A = "{i .. j}"])
-     apply auto
-    apply (meson \<tau>_mono diff_le_mono le_cases memR_antimono)
-    done
+  from MatchF.prems(1) obtain m where m: "\<not> memR I m"
+    by (auto simp: bounded_memR)
+  obtain j where j: "m + \<tau> \<sigma> i \<le> \<tau> \<sigma> j"
+    using ex_le_\<tau> by blast
+  \<comment> \<open>after @{term j}, the interval has been left\<close>
+  have j2_le: "j2 \<le> j" if "memR I (\<tau> \<sigma> j2 - \<tau> \<sigma> i)" for j2
+  proof (rule ccontr)
+    assume "\<not> j2 \<le> j"
+    then have "\<tau> \<sigma> j \<le> \<tau> \<sigma> j2"
+      by (intro \<tau>_mono) simp
+    with j have "m \<le> \<tau> \<sigma> j2 - \<tau> \<sigma> i"
+      by linarith
+    with that m show False
+      using memR_antimono by blast
+  qed
+  have IH: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) k \<phi>}"
+    if "\<phi> \<in> safe_atms r" for k \<phi>
+  proof -
+    \<comment> \<open>@{term \<phi>} is an atom of @{term r} or the negation of @{term \<phi>} is one\<close>
+    from that obtain \<psi> where \<psi>: "\<psi> \<in> Regex.atms r"
+      and \<phi>\<psi>: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<phi>' \<Rightarrow> {\<phi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    from \<phi>\<psi> have "\<phi> = \<psi> \<or> \<psi> = Formula.Neg \<phi>"
+      by (cases \<psi> rule: Formula.formula.exhaust) (simp_all split: if_splits)
+    then have fv: "fv \<phi> = fv \<psi>" and fb: "Safety.future_bounded \<phi> = Safety.future_bounded \<psi>"
+      by auto
+    from MatchF.prems(1) \<psi> fb have "Safety.future_bounded \<phi>"
+      by (simp add: regex.pred_set)
+    moreover have "Formula.nfv \<phi> \<le> n"
+    proof -
+      have "\<forall>x\<in>fv \<phi>. x < n"
+        using fvi_less_nfv_regex[of r] MatchF.prems(2) \<psi> fv by (fastforce simp: fv_regex_alt)
+      then show ?thesis
+        by (simp add: Formula.nfv_def Suc_le_eq)
+    qed
+    ultimately show ?thesis
+      using MatchF.prems(3,4) by (intro MatchF.hyps(2)[rule_format, OF that]) simp_all
+  qed
+  from MatchF(3-) show ?case
+    using j2_le by (intro finite_subset[OF _ safe_regex_Future_finite[OF MatchF(1) IH, of i j]]) auto
 next
   case (TP t)
   then show ?case
