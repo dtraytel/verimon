@@ -1689,31 +1689,45 @@ proof -
             then show ?thesis
             proof (cases "meval_trm f elem")
               case (EInt x1)
-              then obtain xa where [simp]:"a = LInt xa" using list_elem_restr(2) Some by(auto split:list_aux.splits) (meson list_aux.exhaust)
+              then obtain l where a_def: "a = LInt l"
+                using list_elem_restr(2) Some by (cases a) auto
               have "int_mset_conv ?M = add_mset x1 (int_mset_conv ?old_M)" 
                 using EInt M_insert_remove_def mset_conv_insert_remove[OF n_def _ not_in finite_old_M, of unpack_int]
                 by(simp add:int_mset_conv_def unpack_int_def)
-              then show ?thesis using Some k_in meval_def EInt valid_old filter_insert[of "(\<lambda>x. drop (length tys) x = k)"] mset_treelist_insert[of i]
-                apply(auto simp:k_def new_map_def  valid_list_aux_def valid_list_aux'_def 
-                      insort_mset split:option.splits simp del: Set.filter_eq)
-                apply(simp add:type_restr_mset_def k_def del: Set.filter_eq)
-                apply blast
-                done
+              moreover have "type_restr_mset EInt ?M"
+              proof -
+                have "type_restr_mset EInt ?old_M"
+                  using valid_old by (simp add: a_def valid_list_aux_def)
+                then show ?thesis
+                  using EInt unfolding M_insert_remove_def type_restr_mset_def by blast
+              qed
+              moreover have "Mapping.lookup m' k = Some (LInt (insert_treelist x1 l))"
+                using Some by (simp add: new_map_def k_def a_def EInt lookup_update')
+              ultimately show ?thesis
+                using valid_old mset_treelist_insert[of x1 l]
+                by (simp add: a_def valid_list_aux_def valid_list_aux'_def)
             next
               case (EFloat x2)
               then show ?thesis using meval_def by auto
             next
               case (EString x3)
-              then obtain xa where [simp]:"a = LString xa" using list_elem_restr(1) Some by(auto split:list_aux.splits) (meson list_aux.exhaust)
+              then obtain l where a_def: "a = LString l"
+                using list_elem_restr(1) Some by (cases a) auto
               have "str_mset_conv ?M = add_mset x3 (str_mset_conv ?old_M)" 
                 using EString M_insert_remove_def mset_conv_insert_remove[OF n_def _ not_in finite_old_M, of unpack_string]
                 by(simp add:str_mset_conv_def unpack_string_def)
-              then show ?thesis using Some k_in meval_def EString valid_old filter_insert[of "(\<lambda>x. drop (length tys) x = k)"] mset_treelist_insert[of s]
-                apply(auto simp:k_def new_map_def valid_list_aux_def valid_list_aux'_def 
-                      insort_mset split:option.splits simp del: Set.filter_eq)
-                apply (simp add:type_restr_mset_def k_def del: Set.filter_eq)
-                apply blast
-                done
+              moreover have "type_restr_mset EString ?M"
+              proof -
+                have "type_restr_mset EString ?old_M"
+                  using valid_old by (simp add: a_def valid_list_aux_def)
+                then show ?thesis
+                  using EString unfolding M_insert_remove_def type_restr_mset_def by blast
+              qed
+              moreover have "Mapping.lookup m' k = Some (LString (insert_treelist x3 l))"
+                using Some by (simp add: new_map_def k_def a_def EString lookup_update')
+              ultimately show ?thesis
+                using valid_old mset_treelist_insert[of x3 l]
+                by (simp add: a_def valid_list_aux_def valid_list_aux'_def)
             qed
           qed
         qed
