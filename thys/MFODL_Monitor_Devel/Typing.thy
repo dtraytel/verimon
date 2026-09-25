@@ -1440,6 +1440,9 @@ next
   case (And_assign \<phi> \<psi>)
   from And_assign.prems(1) have phi1: "S, E \<turnstile> \<phi>" by cases
   from And_assign.prems(3) have phi2: "sat' \<sigma> V v i \<psi>" by auto
+  from And_assign.prems(3) have sat_\<phi>: "sat' \<sigma> V v i \<phi>" by simp
+  have ty_\<phi>: "E y = ty_of (v ! y)" if "y \<in> fv \<phi>" for y
+    using And_assign.IH[OF phi1 And_assign.prems(2) sat_\<phi> that] by simp
   from And_assign.prems(4) have "x \<in> fv \<phi> \<or> x \<in> fv \<psi>" by auto
   from this show ?case
   proof cases
@@ -1455,8 +1458,8 @@ next
       from this  x_not_\<phi> have fvb: "fv_trm b \<subseteq> fv \<phi>" using And_assign(2) by  (auto simp: safe_assignment_def \<psi>_eq split: trm.splits) 
       have eval:" v! x = eval_trm' v b" using And_assign(6) a_def \<psi>_eq by auto
       have Ebx: "E \<turnstile> b :: E  x"  using And_assign(4) by (auto simp: \<psi>_eq a_def elim: wty_trm.cases wty_formula.cases)
-      have "(\<lambda>y. ty_of (v ! y)) \<turnstile> b :: E x" apply (rule  iffD1[OF wty_trm_fv_cong,OF _ Ebx]) apply (subst eq_commute) 
-        apply (rule And_assign(3)) using And_assign fvb by (auto elim: wty_formula.cases) 
+      have "(\<lambda>y. ty_of (v ! y)) \<turnstile> b :: E x"
+        using fvb by (intro iffD1[OF wty_trm_fv_cong Ebx] ty_\<phi>) blast
       hence ?case using ty_of_eval_trm unfolding eval
         using And_assign(4) by (auto simp: \<psi>_eq a_def eval_trm_sound elim: wty_formula.cases)
     }
@@ -1465,8 +1468,8 @@ next
       from this  x_not_\<phi> have fvb: "fv_trm a \<subseteq> fv \<phi>" using And_assign(2) by  (auto simp: safe_assignment_def \<psi>_eq split: trm.splits) 
       have eval:" v! x = eval_trm' v a" using And_assign(6) a_def \<psi>_eq by auto
       have Ebx: "E \<turnstile> a :: E  x"  using And_assign(4) by (auto simp: \<psi>_eq a_def elim: wty_trm.cases wty_formula.cases)
-      have "(\<lambda>y. ty_of (v ! y)) \<turnstile> a :: E x" apply (rule  iffD1[OF wty_trm_fv_cong,OF _ Ebx]) apply (subst eq_commute) 
-        apply (rule And_assign(3)) using And_assign fvb by (auto elim: wty_formula.cases) 
+      have "(\<lambda>y. ty_of (v ! y)) \<turnstile> a :: E x"
+        using fvb by (intro iffD1[OF wty_trm_fv_cong Ebx] ty_\<phi>) blast
       hence ?case using ty_of_eval_trm unfolding eval
         using And_assign(4)  by (auto simp: \<psi>_eq a_def eval_trm_sound elim: wty_formula.cases)
     }
