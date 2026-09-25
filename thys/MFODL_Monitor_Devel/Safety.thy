@@ -341,20 +341,27 @@ next
     then show ?thesis by (simp add: safe_letpast_Unused)
   next
     case NonFutuRec
-    have "\<And>v j. j \<le> i \<Longrightarrow> ?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
-      if "safe_letpast ?en \<psi> = NonFutuRec"
+    have "?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
+      if "safe_letpast ?en \<psi> = NonFutuRec" "j \<le> i" for v j
       using NonFutuRec(2)
-      apply (rule Let.IH(1))
-       apply (rule Let.prems(2))
-      using Let.prems(1) that apply (simp add: sup.absorb_iff1 split: if_splits)
-       apply simp
-      apply (rule Let.prems(3))
-      apply simp
-      done
-    moreover have "\<And>v j. j < i \<Longrightarrow> ?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j"
+    proof (rule Let.IH(1))
+      assume "safe_letpast p \<phi> = NonFutuRec"
+      with that(1) Let.prems(1) have "safe_letpast p (Formula.Let e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb_iff1 split: if_splits)
+      then show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+        using Let.prems(2) that \<open>j \<le> i\<close> by simp
+    next
+      show "f v' j' = g v' j'" if "j' < j" for v' j'
+        using Let.prems(3) that \<open>j \<le> i\<close> by simp
+    qed
+    moreover have "?s\<phi> (V(p \<mapsto> f)) v j = ?s\<phi> (V(p \<mapsto> g)) v j" if "j < i" for v j
       using NonFutuRec(2)
-      apply (rule Let.IH(1))
-      using Let.prems(3) by auto
+    proof (rule Let.IH(1))
+      show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+        using Let.prems(3) that \<open>j < i\<close> by simp
+      show "f v' j' = g v' j'" if "j' < j" for v' j'
+        using Let.prems(3) that \<open>j < i\<close> by simp
+    qed
     ultimately show ?thesis
       using NonFutuRec(1)
       by (intro Let.IH(2)) simp_all
@@ -365,13 +372,16 @@ next
     then show ?thesis by simp
   next
     case False
-    have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
-      apply (rule Let.IH(2))
-      using Let.prems(1) False apply simp
-       apply (rule Let.prems(2))
-      using Let.prems(1) False apply (simp add: sup.absorb2)
-      apply assumption
-      by (rule Let.prems(3))
+    from Let.prems(1) False have "safe_letpast p \<psi> \<le> NonFutuRec"
+      by simp
+    then have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
+    proof (rule Let.IH(2))
+      assume "safe_letpast p \<psi> = NonFutuRec"
+      with Let.prems(1) False have "safe_letpast p (Formula.Let e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb2)
+      then show "f v' j = g v' j" if "j \<le> i" for v' j
+        using that by (rule Let.prems(2))
+    qed (rule Let.prems(3))
     then show ?thesis
       using False by (simp add: fun_upd_twist[of p])
   qed
@@ -455,38 +465,62 @@ next
       with False show ?thesis by (simp add: safe_letpast_Unused fun_upd_twist[of p])
     next
       case NonFutuRec
-      have "\<And>v j. j \<le> i \<Longrightarrow> ?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j"
-        if "safe_letpast ?en \<psi> = NonFutuRec" for W
+      have \<phi>_le: "?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j"
+        if "safe_letpast ?en \<psi> = NonFutuRec" "j \<le> i" for W v j
         using NonFutuRec(2)
-        apply (rule LetPast.IH(1))
-         apply (rule LetPast.prems(2))
-        using LetPast.prems(1) that False apply simp
-          apply (metis sup.orderE)
-         apply simp
-        apply (rule LetPast.prems(3))
-        apply simp
-        done
-      moreover have "\<And>v j. j < i \<Longrightarrow> ?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j" for W
+      proof (rule LetPast.IH(1))
+        assume "safe_letpast p \<phi> = NonFutuRec"
+        with that(1) LetPast.prems(1) False
+        have "safe_letpast p (Formula.LetPast e \<phi> \<psi>) = NonFutuRec"
+          by (simp add: sup.absorb1)
+        then show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+          using LetPast.prems(2) that \<open>j \<le> i\<close> by simp
+      next
+        show "f v' j' = g v' j'" if "j' < j" for v' j'
+          using LetPast.prems(3) that \<open>j \<le> i\<close> by simp
+      qed
+      have \<phi>_less: "?s\<phi>1 (W(p \<mapsto> f)) v j = ?s\<phi>1 (W(p \<mapsto> g)) v j" if "j < i" for W v j
         using NonFutuRec(2)
-        apply (rule LetPast.IH(1))
-        using LetPast.prems(3) by auto
-      ultimately show ?thesis
+      proof (rule LetPast.IH(1))
+        show "f v' j' = g v' j'" if "j' \<le> j" for v' j'
+          using LetPast.prems(3) that \<open>j < i\<close> by simp
+        show "f v' j' = g v' j'" if "j' < j" for v' j'
+          using LetPast.prems(3) that \<open>j < i\<close> by simp
+      qed
+      have twist: "V(p \<mapsto> h, ?en \<mapsto> X) = (V(?en \<mapsto> X))(p \<mapsto> h)" for h X
+        using False by (rule fun_upd_twist)
+      show ?thesis
         using NonFutuRec(1)
-        apply (intro LetPast.IH(2))
-          apply assumption
-         apply (intro V_subst_letpast_sat)
-         apply (simp add: fun_upd_twist[of p, OF False])
-        apply (intro V_subst_letpast_sat)
-        apply (simp add: fun_upd_twist[of p, OF False])
-        done
+      proof (rule LetPast.IH(2))
+        assume en\<psi>: "safe_letpast ?en \<psi> = NonFutuRec"
+        show "?s\<phi> (V(p \<mapsto> f)) v' j = ?s\<phi> (V(p \<mapsto> g)) v' j" if "j \<le> i" for v' j
+          unfolding twist
+        proof (rule V_subst_letpast_sat)
+          show "?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> f)) v'' j' = ?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> g)) v'' j'"
+            if "j' \<le> j" for X v'' j'
+            using en\<psi> that \<open>j \<le> i\<close> by (intro \<phi>_le) simp_all
+        qed
+      next
+        show "?s\<phi> (V(p \<mapsto> f)) v' j = ?s\<phi> (V(p \<mapsto> g)) v' j" if "j < i" for v' j
+          unfolding twist
+        proof (rule V_subst_letpast_sat)
+          show "?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> f)) v'' j' = ?s\<phi>1 ((V(?en \<mapsto> X))(p \<mapsto> g)) v'' j'"
+            if "j' \<le> j" for X v'' j'
+            using that \<open>j < i\<close> by (intro \<phi>_less) simp
+        qed
+      qed
     qed
     moreover have "?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> f)) = ?s\<psi> (V(?en \<mapsto> ?s\<phi> (V(p \<mapsto> g)), p \<mapsto> g))"
-      apply (rule LetPast.IH(2))
-      using LetPast.prems(1) False apply simp
-       apply (rule LetPast.prems(2))
-      using LetPast.prems(1) False apply (simp add: sup.absorb2)
-       apply assumption
-      by (rule LetPast.prems(3))
+    proof (rule LetPast.IH(2))
+      show "safe_letpast p \<psi> \<le> NonFutuRec"
+        using LetPast.prems(1) False by simp
+    next
+      assume "safe_letpast p \<psi> = NonFutuRec"
+      with LetPast.prems(1) False have "safe_letpast p (Formula.LetPast e \<phi> \<psi>) = NonFutuRec"
+        by (simp add: sup.absorb2)
+      then show "f v' j = g v' j" if "j \<le> i" for v' j
+        using that by (rule LetPast.prems(2))
+    qed (rule LetPast.prems(3))
     ultimately show ?thesis
       by (simp add: Let_def fun_upd_twist[of p, OF False] del: fun_upd_apply)
   qed
