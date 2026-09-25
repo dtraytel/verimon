@@ -1221,7 +1221,10 @@ next
   show ?case by (auto simp add: phi_eq psi_eq) 
 next
   case (Not_Since \<phi> I \<psi>)
-  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i apply (rule Not_Since.IH(1)) using Not_Since by (auto elim: wty_formula.cases)
+  have phi_wty: "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_NegD[OF wty_formula_SinceD(1)[OF Not_Since.prems(1)]])
+  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i
+    by (rule Not_Since.IH(1)[OF phi_wty _ Not_Since.prems(3)]) (use Not_Since.prems(2) in simp)
   have psi_eq: "Formula.sat \<sigma> V v i \<psi> = sat' \<sigma> V v i \<psi>" for i  using Not_Since by (auto elim: wty_formula.cases)
   show ?case by (auto simp add: phi_eq psi_eq)
 next
@@ -1231,7 +1234,10 @@ next
   show ?case by (auto simp add: phi_eq psi_eq)
 next
   case (Not_Until \<phi> I \<psi>)
-  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i apply (rule Not_Until.IH(1)) using Not_Until by (auto elim: wty_formula.cases)
+  have phi_wty: "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_NegD[OF wty_formula_UntilD(1)[OF Not_Until.prems(1)]])
+  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i
+    by (rule Not_Until.IH(1)[OF phi_wty _ Not_Until.prems(3)]) (use Not_Until.prems(2) in simp)
   have psi_eq: "Formula.sat \<sigma> V v i \<psi> = sat' \<sigma> V v i \<psi>" for i  using Not_Until by (auto elim: wty_formula.cases)
   show ?case by (auto simp add: phi_eq psi_eq) 
 next
