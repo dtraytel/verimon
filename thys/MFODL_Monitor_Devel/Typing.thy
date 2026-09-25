@@ -1852,10 +1852,23 @@ proof -
 qed
 
 lemma sat_inst_of_sat': "Formula.sat \<sigma> V v i \<phi> = sat_inst.sat' \<sigma> V v i \<phi>"
- apply (induction \<phi> arbitrary: v V i)  apply  (auto simp add: eval_trm_inst less_event_data_def sat_inst.undef_less_def  split: nat.splits)
-  using eval_trm_inst apply presburger
-                      apply (metis eval_trm_inst) 
-  using eval_agg_op_inst apply presburger+  by  (metis match_cong_strong)+
+proof (induction \<phi> arbitrary: v V i)
+  case (Pred e ts)
+  then show ?case by (simp add: eval_trm_inst split: option.splits)
+next
+  case (Agg y \<omega> tys f \<phi>)
+  then show ?case by (cases \<omega>) (simp add: eval_trm_inst eval_agg_op_inst)
+next
+  case (MatchF I r)
+  have "Regex.match (Formula.sat \<sigma> V v) r i j = Regex.match (sat_inst.sat' \<sigma> V v) r i j" for i j
+    by (rule match_cong_strong) (rule MatchF.IH)
+  then show ?case by simp
+next
+  case (MatchP I r)
+  have "Regex.match (Formula.sat \<sigma> V v) r i j = Regex.match (sat_inst.sat' \<sigma> V v) r i j" for i j
+    by (rule match_cong_strong) (rule MatchP.IH)
+  then show ?case by simp
+qed (simp_all add: eval_trm_inst less_event_data_def sat_inst.undef_less_def split: nat.splits)
 
 
 (*Theorem 3.7 instantiated with sat*)
