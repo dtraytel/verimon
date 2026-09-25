@@ -133,7 +133,7 @@ proof -
   next
     case False
     have "dq_list (dq_tl d) = tl (dq_f (dq_norm d) @ rev (dq_b (dq_norm d)))"
-      using dq_f_norm[OF inv False] * by (simp add: tl_append2)
+      using dq_f_norm[OF inv False] * by simp
     then show ?thesis using dq_list_norm[of d] by (simp add: dq_list_def)
   qed
 qed
@@ -288,7 +288,7 @@ proof -
       have nthX: "dq_nth (dq_tl (dq_upd d 1 X)) k = X"
         unfolding nth'[OF klen] using 0 len_list assms(2) by simp
       show ?thesis
-        unfolding e nthX by (simp add: Mapping.lookup_update')
+        unfolding e nthX by simp
     next
       case (Suc k')
       have e: "tp - (len - 1) + k = tp - len + (k' + 2)" using Suc assms(2,3) by simp
@@ -296,7 +296,7 @@ proof -
         unfolding nth'[OF klen] using inv dlen Suc klen by (simp add: dq_nth)
       show ?thesis
         unfolding e nth2 using look[of "k' + 2"] klen Suc
-        by (simp add: Mapping.lookup_delete Mapping.lookup_update')
+        by simp
     qed
   qed
 qed
@@ -438,15 +438,14 @@ proof -
       have nthX: "dq_nth (dq_upd (dq_tl d) 0 X) k = X"
         unfolding nth'[OF klen] using 0 len_list assms(2) by simp
       show ?thesis
-        unfolding e nthX by (simp add: Mapping.lookup_update')
+        unfolding e nthX by simp
     next
       case (Suc k')
       have e: "tp - (len - 1) + k = tp - len + (k' + 2)" using Suc assms(2,3) by simp
       have nth2: "dq_nth (dq_upd (dq_tl d) 0 X) k = dq_nth d (k' + 2)"
         unfolding nth'[OF klen] using inv dlen Suc klen by (simp add: dq_nth)
       show ?thesis
-        unfolding e nth2 using look[of "k' + 2"] klen Suc
-        by (simp add: Mapping.lookup_delete Mapping.lookup_update')
+        unfolding e nth2 using look[of "k' + 2"] klen Suc by simp
     qed
   qed
 qed

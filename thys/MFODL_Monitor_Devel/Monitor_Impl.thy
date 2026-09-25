@@ -1325,11 +1325,6 @@ lemma filter_set'_code[code]:
 declare [[code drop: shift_end]]
 declare shift_end.simps[folded filter_mapping_def filter_set'_def, code]
 
-term filter_set
-
-lemma upd_set'_empty[simp]: "upd_set' m d f {} = m"
-  by (rule mapping_eqI) (auto simp add: upd_set'_lookup)
-
 lemma upd_set'_insert: "d = f d \<Longrightarrow> (\<And>x. f (f x) = f x) \<Longrightarrow> upd_set' m d f (Set.insert x A) =
   (let m' = (upd_set' m d f A) in case Mapping.lookup m' x of None \<Rightarrow> Mapping.update x d m'
   | Some v \<Rightarrow> Mapping.update x (f v) m')"

@@ -511,7 +511,7 @@ lemma (in maux) wf_mformula_wf_set: "wf_mformula \<sigma> j P V n R \<phi> \<phi
   unfolding wf_set_def
 proof (induction rule: wf_mformula.induct)
   case (AndRel P V n R \<phi> \<phi>' \<psi>' conf)
-  then show ?case by (auto simp: fv_formula_of_constraint dest!: subsetD)
+  then show ?case by (auto simp: fv_formula_of_constraint subset_eq)
 next
   case (And_Release I \<phi>' \<psi>' P V n R aux \<alpha>')
   then show ?case using release_fvi(3) by auto
