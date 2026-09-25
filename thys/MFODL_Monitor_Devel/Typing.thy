@@ -65,10 +65,17 @@ lemma  value_of_eval_trm: "E \<turnstile> x :: TInt \<Longrightarrow> \<forall>y
 \<exists> z .(Formula.eval_trm v x) = EFloat z"
 "E \<turnstile> x :: TString \<Longrightarrow> \<forall>y\<in>fv_trm x. ty_of (v ! y) = E y \<Longrightarrow> 
 \<exists> z .(Formula.eval_trm v x) = EString z"
-  subgoal using ty_of_eval_trm by (cases "Formula.eval_trm v x") fastforce+
-  subgoal using ty_of_eval_trm by (cases "Formula.eval_trm v x") fastforce+
-  subgoal using ty_of_eval_trm by (cases "Formula.eval_trm v x") fastforce+
-  done
+proof -
+  show "\<exists>z. Formula.eval_trm v x = EInt z"
+    if "E \<turnstile> x :: TInt" "\<forall>y\<in>fv_trm x. ty_of (v ! y) = E y"
+    using ty_of_eval_trm[OF that] by (cases "Formula.eval_trm v x") simp_all
+  show "\<exists>z. Formula.eval_trm v x = EFloat z"
+    if "E \<turnstile> x :: TFloat" "\<forall>y\<in>fv_trm x. ty_of (v ! y) = E y"
+    using ty_of_eval_trm[OF that] by (cases "Formula.eval_trm v x") simp_all
+  show "\<exists>z. Formula.eval_trm v x = EString z"
+    if "E \<turnstile> x :: TString" "\<forall>y\<in>fv_trm x. ty_of (v ! y) = E y"
+    using ty_of_eval_trm[OF that] by (cases "Formula.eval_trm v x") simp_all
+qed
 
 lemma wty_trm_fv_cong:
   assumes "\<And>y. y \<in> fv_trm x \<Longrightarrow> E y = E' y"
@@ -3172,7 +3179,10 @@ lemma trm_f_in_fv: assumes  "n \<in> set xs" "E n = t" "\<forall>n' \<in> set xs
   {assume "x = n"
     hence ?case using assms(2) by auto 
   }moreover {assume asm: "x \<noteq> n"
-    have " foldl (\<lambda>t' n. if E n = t then E2 n else t') t xs = E2 n" apply (rule snoc.IH) using snoc asm by auto
+    from snoc.prems asm have "n \<in> set xs" "\<forall>n' \<in> set xs. E n' = t \<longrightarrow> E2 n' = E2 n"
+      by auto
+    then have " foldl (\<lambda>t' n. if E n = t then E2 n else t') t xs = E2 n"
+      by (rule snoc.IH)
     hence ?case using asm snoc.prems(2) by auto
     }
   ultimately show ?case by blast
@@ -5289,10 +5299,15 @@ next
       unfolding fa'_def f0_def
       by (simp add: fun_eq_iff new_type_symbol_pow split: tysym.splits)
     have wty1': "map_sig fa' ((map_sig f0 S)((p, Formula.nfv \<phi>) \<mapsto> tabulate TAny 0 (Formula.nfv \<phi>))), fa' \<circ> TAny \<turnstile> formula.map_formula fa' (formula.map_formula f0 \<phi>)"
-      using wty_sub(1) 
-      apply (simp add: tabulate_alt formula.map_comp fa'_f0 map_sig_subst list_eq
-          flip: comp_assoc) 
-      using fv_eq fv_map wf_formula_map wf_sub(1) wty_formula_fv_cong by blast
+    proof -
+      have "\<And>y. y \<in> fv (formula.map_formula fa \<phi>) \<Longrightarrow> E' y = (fa' o TAny) y"
+        using fv_eq by (simp flip: fv_map)
+      with wty_sub(1) have "(map_sig fa S)((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>)),
+          fa' o TAny \<turnstile> formula.map_formula fa \<phi>"
+        using wty_formula_fv_cong[OF _ wf_formula_map[OF wf_sub(1)]] by blast
+      then show ?thesis
+        by (simp add: tabulate_alt formula.map_comp fa'_f0 map_sig_subst list_eq flip: comp_assoc)
+    qed
     then obtain g1 where wf_g1: "wf_f (TCst \<circ> g1)" and fa'_alt: "fa' = g1 \<circ> f1"
       using wty1 wf_fa' unfolding wty_result_fX_def by auto
     have "map_sig g1 (map_sig f1 ((map_sig f0 S)((p, Formula.nfv \<phi>) \<mapsto> map TAny [0..<Formula.nfv \<phi>]))),
@@ -5766,10 +5781,15 @@ next
   have wty1': "map_sig fa'
  ((map_sig f0 S)((p, Formula.nfv (formula.map_formula f0 \<phi>)) \<mapsto> tabulate TAny 0 (Formula.nfv \<phi>))),
 fa' \<circ> TAny \<turnstile> formula.map_formula fa' (formula.map_formula f0 \<phi>)"
-    using wtys(1) 
-      apply (simp add: tabulate_alt formula.map_comp fa'_f0 map_sig_subst list_eq
-          flip: comp_assoc) 
-    using fv_map wf_formula_map wfs(1) wty_formula_fv_cong fa'_TAny by blast
+  proof -
+    have "\<And>y. y \<in> fv (formula.map_formula f \<phi>) \<Longrightarrow> E' y = (fa' o TAny) y"
+      using fa'_TAny by (simp flip: fv_map)
+    with wtys(1) have "(map_sig f S)((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv (formula.map_formula f \<phi>))),
+        fa' o TAny \<turnstile> formula.map_formula f \<phi>"
+      using wty_formula_fv_cong[OF _ wf_formula_map[OF wfs(1)]] by blast
+    then show ?thesis
+      by (simp add: tabulate_alt formula.map_comp fa'_f0 map_sig_subst list_eq flip: comp_assoc)
+  qed
   obtain f1 
     where f1_def: "check ((map_sig f0 S)((p, Formula.nfv \<phi>) \<mapsto> tabulate TAny 0 (Formula.nfv \<phi>))) TAny (formula.map_formula f0 \<phi>) = return f1"
     using 21(1)[OF f0_def _ wty1'[unfolded nfv_map] wf_fa' 
