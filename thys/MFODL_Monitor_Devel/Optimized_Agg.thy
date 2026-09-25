@@ -491,8 +491,7 @@ proof -
   then have m_pos: "m > 0 \<and> m \<noteq> \<infinity>" 
     using elem_prop m_prop finite  by (auto simp: ecard_def)
   then have "the_enat m > 0"
-    apply(auto simp: the_enat_def)
-    using enat_0_iff(1) by blast
+    by (cases m) (simp_all add: zero_enat_def)
   then obtain n where n_def: "the_enat m = Suc n" using gr0_implies_Suc by auto
   have finite_m: "finite M" using finite by auto
   then have "(meval_trm f elem, m) \<in> set (linorder.sorted_list_of_set (le_of_comp c) M)"
@@ -545,8 +544,7 @@ lemma valid_list_aux_remove:
 
 lemma sort_remove_eq:
   shows "sort_treelist (remove_treelist t l) = remove_treelist t (sort_treelist l)"
-  apply(transfer) 
-proof -
+proof transfer
   fix t l
   show "sort (del_list (t :: 'a) l) = del_list t (sort l)"
     by(induction l; auto simp add: insort_del_inverse) (metis insort_del_comm sorted_sort)
@@ -556,8 +554,8 @@ lemma insort_remove_comm:
   assumes "t \<in> set_treelist l"
   and "sorted_treelist l"
   shows "(insert_treelist t ^^ i) (remove_treelist t l) = remove_treelist t ((insert_treelist t ^^ i) l)"
-  using assms apply(transfer)
-proof -
+  using assms
+proof transfer
   fix t l i
   assume "(t :: 'a) \<in> set l" and "sorted l"
   then show "(insort1 t ^^ i) (del_list t l) = del_list t ((insort1 t ^^ i) l)"
@@ -573,8 +571,8 @@ qed
 lemma bulk_remove_in_set:
   assumes "(count \<circ> mset_treelist) l t \<ge> Suc i"
   shows "t \<in> set_treelist ((remove_treelist t ^^ i) l)"
-  using assms unfolding comp_def apply(transfer)
-proof -
+  using assms unfolding comp_def
+proof transfer
   fix i l t
   assume "Suc i \<le> count (mset l) (t :: 'a)"
   then show "t \<in> set ((del_list t ^^ i) l)"
@@ -933,10 +931,16 @@ next
 qed
 
 lemma fn_comm_power: "fa \<circ> tr = tr \<circ> fr \<Longrightarrow> fa ^^ n \<circ> tr = tr \<circ> fr ^^ n"
-  apply (rule ext)
-  apply (induct n)
-   apply (auto dest: fun_cong)
-  done
+proof (induct n)
+  case 0
+  show ?case by simp
+next
+  case (Suc n)
+  have "fa ^^ Suc n \<circ> tr = fa \<circ> (fa ^^ n \<circ> tr)" by (simp only: funpow.simps(2) comp_assoc)
+  also have "\<dots> = (fa \<circ> tr) \<circ> fr ^^ n" by (simp only: Suc.hyps[OF Suc.prems] comp_assoc)
+  also have "\<dots> = tr \<circ> fr ^^ Suc n" by (simp only: Suc.prems funpow.simps(2) comp_assoc)
+  finally show ?case .
+qed
 
 lemmas fn_comm_power' =
   ext [THEN fn_comm_power, THEN fun_cong, unfolded o_def]
