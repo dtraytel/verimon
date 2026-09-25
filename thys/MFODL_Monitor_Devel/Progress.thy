@@ -810,21 +810,36 @@ lemma letpast_progress_mono:
     and "rel_mapping (\<le>) P1 P2"
   shows "letpast_progress \<sigma> P1 p \<phi> j1 \<le> letpast_progress \<sigma> P2 p \<phi> j2"
   unfolding letpast_progress_def
-  apply (intro cInf_mono)
-  using progress_fixpoint_ex[OF assms(2)] apply simp
-  apply blast
-   apply simp
-  subgoal for k
-    apply clarify
-    apply (subgoal_tac "\<exists>i \<le> min k j1. i = progress \<sigma> (P1(p \<mapsto> i)) \<phi> j1")
-     apply auto[]
-    apply (intro bounded_fixpoint_ex mono_onI progress_mono_gen)
-    using assms apply (simp_all del: fun_upd_apply)[4]
-    apply (cases "k \<le> j1")
-     apply clarsimp
-     apply (erule ssubst)
-    using assms by (auto simp add: progress_le_gen progress_mono_gen simp del: fun_upd_apply)
-  done
+proof (rule cInf_mono)
+  let ?F1 = "\<lambda>i. progress \<sigma> (P1(p \<mapsto> i)) \<phi> j1"
+  let ?F2 = "\<lambda>i. progress \<sigma> (P2(p \<mapsto> i)) \<phi> j2"
+  show "{i. i \<le> j2 \<and> i = ?F2 i} \<noteq> {}"
+    using progress_fixpoint_ex[OF assms(2)] by simp
+  show "bdd_below {i. i \<le> j1 \<and> i = ?F1 i}"
+    by simp
+  fix k
+  assume "k \<in> {i. i \<le> j2 \<and> i = ?F2 i}"
+  then have k: "k \<le> j2" "k = ?F2 k"
+    by simp_all
+  have "\<exists>i \<le> min k j1. i = ?F1 i"
+  proof (rule bounded_fixpoint_ex)
+    show "mono_on {..min k j1} ?F1"
+      using assms(1) by (intro mono_onI progress_mono_gen) (simp_all del: fun_upd_apply)
+    show "\<forall>x \<le> min k j1. ?F1 x \<le> min k j1"
+    proof (intro allI impI)
+      fix x
+      assume x: "x \<le> min k j1"
+      have "?F1 x \<le> ?F2 k"
+        using assms x k(1) by (intro progress_mono_gen) (simp_all del: fun_upd_apply)
+      moreover have "?F1 x \<le> j1"
+        using assms(1) x by (intro progress_le_gen) (simp del: fun_upd_apply)
+      ultimately show "?F1 x \<le> min k j1"
+        using k(2) by simp
+    qed
+  qed
+  then show "\<exists>a \<in> {i. i \<le> j1 \<and> i = ?F1 i}. a \<le> k"
+    by auto
+qed
 
 lemma le_letpast_progress_preservation:
   assumes P: "pred_mapping (\<lambda>x. x \<le> j) P"
@@ -834,39 +849,36 @@ lemma le_letpast_progress_preservation:
     and jj': "j \<le> j'"
   shows "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> letpast_progress \<sigma> P' p \<phi> j'"
   unfolding letpast_progress_def
-  apply (rule cInf_greatest)
-   apply simp
-   apply (rule progress_fixpoint_ex[OF P'])
-  apply clarsimp
-  apply (subgoal_tac "i \<le> j")
-   apply (rule order_trans)
-    apply (rule progress_mono_gen[where P'="P'(p \<mapsto> i)", OF jj'])
-  using P apply simp
-  using P' jj' apply simp
-  using PP' apply simp
-   apply (rule ssubst, assumption)
-   apply (rule progress_mono_gen[OF order_refl])
-     apply (rule pred_mapping_map_upd[OF _ P'])
-  using jj' apply simp
-  using P' apply simp
-   apply (rule rel_mapping_le_map_upd)
-   apply (subgoal_tac "i \<le> letpast_progress \<sigma> P' p \<phi> j'")
-    apply (subst (asm) letpast_progress_def)
-    apply (subst (asm) le_cInf_iff)
-      apply simp
-      apply (rule progress_fixpoint_ex[OF P'])
-     apply simp
-    apply auto[]
-   apply (rule order_trans[OF i])
-   apply (rule letpast_progress_mono[OF P P' jj' PP'])
-  using i letpast_progress_le[OF P] by (rule order_trans)
+proof (rule cInf_greatest)
+  show "{k. k \<le> j' \<and> k = progress \<sigma> (P'(p \<mapsto> k)) \<phi> j'} \<noteq> {}"
+    using progress_fixpoint_ex[OF P'] by simp
+  fix k
+  assume "k \<in> {k. k \<le> j' \<and> k = progress \<sigma> (P'(p \<mapsto> k)) \<phi> j'}"
+  then have k: "k \<le> j'" "k = progress \<sigma> (P'(p \<mapsto> k)) \<phi> j'"
+    by simp_all
+  have "i \<le> letpast_progress \<sigma> P' p \<phi> j'"
+    using i letpast_progress_mono[OF P P' jj' PP'] by (rule order_trans)
+  also have "\<dots> \<le> k"
+    unfolding letpast_progress_def using k by (intro cInf_lower) simp_all
+  finally have ik: "i \<le> k" .
+  have "i \<le> j"
+    using i letpast_progress_le[OF P] by (rule order_trans)
+  then have "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> progress \<sigma> (P'(p \<mapsto> k)) \<phi> j'"
+    using P P' PP' jj' k(1) ik by (intro progress_mono_gen) simp_all
+  then show "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> k"
+    using k(2)[symmetric] by (rule ord_le_eq_trans)
+qed
 
 lemma Least_antimono: "Q \<le> P \<Longrightarrow> \<exists>x. Q x \<Longrightarrow> Least P \<le> Least (Q :: nat \<Rightarrow> bool)"
-  apply (erule exE)
-  apply (rule Least_le)
-  apply (rule LeastI2_wellorder)
-   apply auto
-  done
+proof -
+  assume QP: "Q \<le> P" and ex: "\<exists>x. Q x"
+  from ex have "Q (Least Q)"
+    by (rule LeastI_ex)
+  with QP have "P (Least Q)"
+    by (rule predicate1D)
+  then show "Least P \<le> Least Q"
+    by (rule Least_le)
+qed
 
 lemma safe_letpast_progress_upd':
   fixes \<phi> :: "'t Formula.formula"
