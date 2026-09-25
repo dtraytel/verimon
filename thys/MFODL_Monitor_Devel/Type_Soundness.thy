@@ -57,35 +57,96 @@ lemma eval_agg_op_sound:
     "safe_formula \<phi>" 
   shows "eval_agg_op (agg_op,d) M = eval_agg_op' (agg_op,d) M"
 proof -
-  from assms(2) obtain t where t_def: "agg_env E tys  \<turnstile> f :: t" and t_wty:"t \<in> agg_trm_type agg_op" by cases auto
+  from assms(2) obtain t where t_def: "agg_env E tys  \<turnstile> f :: t" and t_wty:"t \<in> agg_trm_type agg_op"
+    and phi_wty: "S, agg_env E tys \<turnstile> \<phi>" by cases auto
+  let ?Zs = "\<lambda>x. {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x}"
   have fv_wty: "y\<in>fv_trm f \<Longrightarrow> length zs = length tys \<Longrightarrow> Formula.sat \<sigma> V (zs @ v) i \<phi> \<Longrightarrow> ty_of ((zs @ v) ! y) = agg_env E tys y" for y zs
-    apply (rule ty_of_sat_safe)
-    using assms by (auto elim: wty_formula.cases)
+    using ty_of_sat_safe[OF assms(5) phi_wty assms(3)] assms(4) by blast
   then have wty_M: "\<forall>(x,card) \<in>  M . ty_of x = t" 
     using assms(1) t_def by (auto dest!: ty_of_eval_trm)
   have "finite_multiset M \<Longrightarrow>set (flatten_multiset M) \<subseteq> fst ` M" 
-    apply (rule set_of_flatten_multiset)
-    using finite_set apply (auto simp add: assms(1)) 
-    using finite_fst by (auto simp add: finite_multiset_def assms(1)) 
+  proof -
+    assume "finite_multiset M"
+    moreover have "{(x, ecard (?Zs x)) | x. ?Zs x \<noteq> {}} = M"
+      unfolding assms(1) by blast
+    ultimately have "finite {(x, ecard (?Zs x)) | x. ?Zs x \<noteq> {}}"
+      by (simp add: finite_multiset_def)
+    then have "finite {x. ?Zs x \<noteq> {}}"
+      by (rule finite_fst)
+    then show ?thesis
+      by (rule set_of_flatten_multiset[OF assms(1)])
+  qed
   then have wty_flatten: "finite_multiset M \<Longrightarrow> \<forall>x \<in> set (flatten_multiset M). ty_of x = t" 
     using wty_M by fastforce
-  have avg: "finite_multiset M \<Longrightarrow> flatten_multiset M = x21 # x22 \<Longrightarrow> agg_op = Formula.Agg_Avg \<Longrightarrow>
-          double_of_event_data_agg (foldl (+) x21 x22) = undef_double_of_event_data_agg (foldl undef_plus x21 x22)" for x21 x22
-  proof -
-    assume assm: "finite_multiset M" "flatten_multiset M = x21 # x22" "agg_op = Formula.Agg_Avg" 
-    have foldl_plus: "foldl undef_plus x21 x22 = foldl (+) x21 x22" 
-      apply (rule  conjE[OF foldl_sound(3)]) using wty_flatten t_wty assm by auto
-    have foldl_ty: "ty_of (foldl (+) x21 x22) \<in> numeric_ty " 
-      apply (rule conjE[OF  foldl_sound(3)]) using assm wty_flatten t_wty by auto
-    show ?thesis apply (auto simp: foldl_plus) apply (cases "foldl (+) x21 x22") using  undef_double_of_event_data_agg_sound foldl_ty by (auto simp add: numeric_ty_def)
+  have dbl: "undef_double_of_event_data_agg z = double_of_event_data_agg z" if "ty_of z \<in> numeric_ty" for z
+    using that by (cases z) (simp_all add: numeric_ty_def undef_double_of_event_data_agg_sound)
+  show ?thesis
+  proof (cases "finite_multiset M")
+    case False
+    then show ?thesis by (cases agg_op) (simp_all add: Let_def split: list.split)
+  next
+    case True
+    then have wty: "\<forall>z \<in> set (flatten_multiset M). ty_of z = t"
+      by (rule wty_flatten)
+    show ?thesis
+    proof (cases "flatten_multiset M")
+      case Nil
+      then show ?thesis by (cases agg_op) simp_all
+    next
+      case (Cons x xs)
+      then have ty_x: "ty_of x = t" and ty_xs: "\<forall>z\<in>set xs. ty_of z = t"
+        using wty by simp_all
+      show ?thesis
+      proof (cases agg_op)
+        case Agg_Cnt
+        then show ?thesis using True Cons by simp
+      next
+        case Agg_Min
+        then show ?thesis using True Cons foldl_sound(1)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Max
+        then show ?thesis using True Cons foldl_sound(2)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Sum
+        then have "t \<in> numeric_ty" using t_wty by simp
+        then show ?thesis using True Cons Agg_Sum foldl_sound(3)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Avg
+        then have "t \<in> numeric_ty" using t_wty by simp
+        then have "foldl undef_plus x xs = foldl (+) x xs" and "ty_of (foldl (+) x xs) \<in> numeric_ty"
+          using foldl_sound(3)[OF ty_xs ty_x] by simp_all
+        then show ?thesis using True Cons Agg_Avg dbl by simp
+      next
+        case Agg_Med
+        then have num: "t \<in> numeric_ty" using t_wty by simp
+        have med: "undef_double_of_event_data_agg ((x # xs) ! k) = double_of_event_data_agg ((x # xs) ! k)"
+          if "k < length (x # xs)" for k
+        proof (rule dbl)
+          from that have "(x # xs) ! k \<in> set (flatten_multiset M)"
+            unfolding Cons by (rule nth_mem)
+          with wty num show "ty_of ((x # xs) ! k) \<in> numeric_ty" by simp
+        qed
+        define u where "u = length (x # xs)"
+        define u' where "u' = u div 2"
+        have "u' < u" "u' - 1 < u"
+          unfolding u_def u'_def by simp_all
+        then have e: "undef_double_of_event_data_agg ((x # xs) ! u') = double_of_event_data_agg ((x # xs) ! u')"
+          "undef_double_of_event_data_agg ((x # xs) ! (u' - 1)) = double_of_event_data_agg ((x # xs) ! (u' - 1))"
+          unfolding u_def by (simp_all add: med)
+        have "eval_agg_op (agg_op, d) M = EFloat (if even u
+          then (double_of_event_data_agg ((x # xs) ! (u' - 1)) + double_of_event_data_agg ((x # xs) ! u')) / double_of_int 2
+          else double_of_event_data_agg ((x # xs) ! u'))"
+          using True Cons Agg_Med by (simp add: u_def u'_def Let_def)
+        also have "\<dots> = EFloat (if even u
+          then (undef_double_of_event_data_agg ((x # xs) ! (u' - 1)) + undef_double_of_event_data_agg ((x # xs) ! u')) / double_of_int 2
+          else undef_double_of_event_data_agg ((x # xs) ! u'))"
+          by (simp only: e)
+        also have "\<dots> = eval_agg_op' (agg_op, d) M"
+          using True Cons Agg_Med by (simp add: u_def u'_def Let_def)
+        finally show ?thesis .
+      qed
+    qed
   qed
-  have med:"finite_multiset M \<Longrightarrow> flatten_multiset M = xs \<Longrightarrow> agg_op = Formula.Agg_Med \<Longrightarrow> i< length xs \<Longrightarrow>
-    double_of_event_data_agg (xs!i) = undef_double_of_event_data_agg (xs!i) " for xs i 
-    using t_wty wty_flatten undef_double_of_event_data_agg_sound nth_mem[where ?n=i and ?xs=xs] by (cases "xs!i")  (auto simp add: numeric_ty_def split:ty.splits) 
-  then show ?thesis
-    apply (cases agg_op) using wty_flatten t_wty avg apply (auto simp:Let_def split: list.splits bool.splits) 
-    using foldl_sound  apply presburger+ 
-    by (metis div2_less_self in_set_conv_nth list.set_intros(2))
 qed 
 
 (* TODO: move to formula *)
