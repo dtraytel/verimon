@@ -1352,6 +1352,7 @@ lemma (in maux) wf_mformula_and_release_safe_bddE:
   \<Longrightarrow> \<exists>\<phi>\<^sub>M' \<psi>\<^sub>M' buf1 buf2. \<phi>\<^sub>M = MOr \<phi>\<^sub>M' \<psi>\<^sub>M' (buf1, buf2)"
   by (erule wf_mformula.cases; clarsimp simp: and_release_safe_bounded_def
       packagg_def split: option.splits if_splits)
+
 lemma (in maux) wf_mformula_and_release_safe0E:
   "wf_mformula \<sigma> j P V n R \<phi>\<^sub>M (release_safe_0 \<phi>' I \<psi>') 
   \<Longrightarrow> \<exists>\<phi>\<^sub>M' \<psi>\<^sub>M' buf1 buf2. \<phi>\<^sub>M = MOr \<phi>\<^sub>M' \<psi>\<^sub>M' (buf1, buf2)"
@@ -4638,7 +4639,8 @@ next
       [progress \<sigma> P (Formula.Until \<phi>''' I \<psi>'') j..<progress \<sigma> P (Formula.Until \<phi>''' I \<psi>'') j + length zs] zs"
     and nt: "nt = (if j + \<delta> = 0 then 0 else \<tau> \<sigma> (min (j + \<delta> - 1)
       (min (progress \<sigma> P' \<phi>'' (j + \<delta>)) (progress \<sigma> P' \<psi>'' (j + \<delta>)))))"
-    unfolding Untilp_eq by blast  note buf'_nts' = mbuf2t_take_add'[OF eq1 wf_envs_P_simps[OF MUntil.prems(2)] buf nts_snoc
+    unfolding Untilp_eq by blast
+  note buf'_nts' = mbuf2t_take_add'[OF eq1 wf_envs_P_simps[OF MUntil.prems(2)] buf nts_snoc
       IH\<phi>[THEN conjunct2] IH\<psi>[THEN conjunct2] le_add1]
   have len: "progress \<sigma> P' (Formula.Until \<phi>''' I \<psi>'') (j + \<delta>) + length_muaux args aux'' =
       min (progress \<sigma> P' \<phi>'' (j + \<delta>)) (progress \<sigma> P' \<psi>'' (j + \<delta>))"
