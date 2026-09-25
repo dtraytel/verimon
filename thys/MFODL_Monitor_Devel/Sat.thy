@@ -711,7 +711,8 @@ next
     = min (progress \<sigma>' P \<phi>' j) (progress \<sigma>' P \<psi>' j)"
     unfolding prg .
   from Until.IH[OF conv] Until.hyps(3-11) buf' nts' t' aux' len' show ?case
-    by (rule wf_mformula.Until)next
+    by (rule wf_mformula.Until)
+next
   case (Trigger_0 P V n R \<psi> \<psi>' args \<phi>'' \<phi>' \<phi> I buf nts aux)
   hence "\<tau> \<sigma> = \<tau> \<sigma>'"
     by (metis \<tau>_convert)
