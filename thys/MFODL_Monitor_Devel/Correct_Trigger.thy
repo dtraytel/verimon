@@ -537,10 +537,21 @@ proof -
     by (simp add: fv_subset wf_tuple_restrict_simple)
 
   have proj_sat_equiv: "\<And>j''. Formula.sat \<sigma> V (map the x) j'' \<gamma> = Formula.sat \<sigma> V (map the proj_x) j'' \<gamma>"
-    apply (rule sat_fv_cong)
-    using nth_map wf_x args_L args_R fv_l_n fvi_subset proj_tuple_nth[OF _ _ len_x_eq]
-    unfolding proj_x_def
-    by (auto simp add: wf_tuple_def dest!: join_mask_fv_\<gamma>)
+  proof (rule sat_fv_cong, intro ballI)
+    fix y
+    assume "y \<in> fv \<gamma>"
+    then have y: "y < length proj_x" "y < length x" "join_mask (args_n args) (args_L args) ! y"
+      using join_mask_fv_\<gamma> args_L
+      unfolding proj_x_def
+      by auto
+    have "proj_x ! y = x ! y"
+      unfolding proj_x_def
+      using y(2,3)
+      by (rule proj_tuple_nth[OF _ _ len_x_eq])
+    then show "map the x ! y = map the proj_x ! y"
+      using y(1,2)
+      by simp
+  qed
 
   have "x \<in> z = Formula.sat \<sigma> V (map the x) k (formula.Trigger \<alpha> I \<beta>)"
   proof (rule iffI)
