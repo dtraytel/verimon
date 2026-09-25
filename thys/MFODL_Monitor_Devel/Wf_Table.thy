@@ -369,10 +369,20 @@ proof -
     unfolding idx_join_def
     apply (transfer fixing: n A B C)
     apply (auto simp: Map_To_Mapping.map_apply_def bin_join_table simp del: bin_join.simps split: option.splits if_splits)
-    apply (auto simp: table_def)
-     apply (smt (z3) join_restrict)
-     apply (auto simp: Table.join_def these_iff split: if_splits)
-    apply (smt (z3) New_max.nested_include_restrict join1_Some_restrict)
+    subgoal for x T T' Y1 Y2
+      by (blast intro: join_table)
+    subgoal premises prems for x T T' Y1 Y2 v z
+    proof -
+      have Y1: "table n B Y1" "\<forall>z \<in> Y1. x = restrict A z" and Y2: "table n C Y2"
+        using prems(3)[OF prems(5)] prems(4)[OF prems(6)] by blast+
+      have "restrict B z \<in> Y1"
+        using join_restrict_table[OF Y1(1) Y2, of True z] prems(8) by blast
+      then have "x = restrict A (restrict B z)"
+        using Y1(2) by blast
+      also have "\<dots> = restrict A z"
+        using prems(1) by (simp add: restrict_restrict Int_absorb2)
+      finally show ?thesis .
+    qed
     done
 qed
 
@@ -476,7 +486,27 @@ proof -
       using restrict assms(2)
       apply (auto simp: ran_def Table.join_def table_def these_iff Map_To_Mapping.map_apply_def split: option.splits)
       apply (metis New_max.nested_include_restrict join1_Some_restrict option.simps(3))
-      apply (smt (z3) New_max.nested_include_restrict join1_Some_restrict option.sel restrict_idle)
+      subgoal premises prems for Y' Y1 x1 a1 Y2 x2 a2
+      proof -
+        have x: "wf_tuple n B x" "a = restrict A x"
+          using prems(1)[OF prems(4)] prems(6) by blast+
+        have x1: "wf_tuple n B x1"
+          using prems(1)[OF prems(10)] prems(8) by blast
+        have x2: "wf_tuple n C x2" "a2 = restrict A x2"
+          using prems(2)[OF prems(12)] prems(9) by blast+
+        have "restrict B x = x1" "restrict C x = x2"
+          using prems(11) by (simp_all add: join1_Some_restrict[OF x1 x2(1)])
+        then have "x1 = x"
+          using restrict_idle[OF x(1)] by simp
+        have "a2 = restrict A (restrict C x)"
+          using x2(2) \<open>restrict C x = x2\<close> by simp
+        also have "\<dots> = a"
+          using x(2) prems(3) by (simp add: restrict_restrict Int_absorb2)
+        finally have "Y2 = Y'"
+          using prems(5,12) by simp
+        then show False
+          using prems(6,7,9,11) \<open>x1 = x\<close> by blast
+      qed
       done
   next
     fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
@@ -568,12 +598,31 @@ proof -
       using a_def
       apply (auto simp: ran_def split: option.splits)
        apply (metis option.inject option.simps(3))
-      subgoal for Y' z
-        using assms(1) restrict(1)[of a Y] restrict(2)[of a Y']
-        apply (auto dest!: spec[of _ "join Y False Y'"] spec[of _ a])
-        apply (auto simp: Map_To_Mapping.map_apply_def Table.join_def these_iff table_def)
-        apply (smt (z3) join1_Some_restrict restrict_idle sup.absorb_iff1)
-        done
+      subgoal premises prems for Y' z
+      proof -
+        have Y: "table n B Y" "\<forall>z \<in> Y. a = restrict C z"
+          using restrict(1)[of a Y] prems(1) by (simp_all add: Map_To_Mapping.map_apply_def)
+        have Y': "table n C Y'" "Y' \<noteq> {}" "\<forall>z \<in> Y'. a = restrict C z"
+          using restrict(2)[of a Y'] prems(2) by (simp_all add: Map_To_Mapping.map_apply_def)
+        have x: "wf_tuple n (B \<union> C) x" "restrict B x \<in> Y" "restrict C x \<notin> Y'"
+          using assms(1) prems(3) join_restrict_table[OF Y(1) Y'(1), of False x] by simp_all
+        then have "wf_tuple n B x"
+          using assms(1) by (simp add: sup_absorb1)
+        then have "x \<in> Y"
+          using x(2) by (simp add: restrict_idle)
+        obtain y where y: "y \<in> Y'"
+          using Y'(2) by blast
+        then have "wf_tuple n C y"
+          using Y'(1) by (simp add: table_def)
+        have "restrict C x = a"
+          using Y(2) \<open>x \<in> Y\<close> by simp
+        also have "a = restrict C y"
+          using Y'(3) y by blast
+        also have "\<dots> = y"
+          using \<open>wf_tuple n C y\<close> by (rule restrict_idle)
+        finally show False
+          using x(3) y by simp
+      qed
       done
   qed
   show "\<And>x Y. Mapping.lookup (mapping_antijoin T T') x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"

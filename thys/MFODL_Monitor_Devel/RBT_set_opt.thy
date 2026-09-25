@@ -1036,7 +1036,8 @@ lemma rbtreeify_keys_None:
   apply (auto simp: RBT_Impl.keys_def map_of_entries[OF assms, symmetric] split: prod.splits)
   using image_iff weak_map_of_SomeI
    apply fastforce
-  apply (smt fst_conv image_iff map_of_eq_None_iff mem_Collect_eq)
+  subgoal for a b
+    by (rule image_eqI[where x="(a, b)"]) (simp_all add: map_of_eq_None_iff)
   done
 
 lemma rbt_sorted_minus:

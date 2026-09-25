@@ -291,9 +291,20 @@ proof (induction ds arbitrary: ts Y)
     show ?thesis
     proof (cases "Mapping.lookup ts'' as")
       case None
-      have "False"
-        using Cons(2,3) None step
-        by (auto simp: Pair filter_set.simps Let_def) (smt (z3) Mapping_lookup_filter_Some option.distinct(1) option.inject)
+      have ts'': "ts'' = Mapping.filter (filter_cond X' ts t') ts"
+        using step by (simp add: Pair filter_set.simps Let_def)
+      have "as \<in> X' \<and> Mapping.lookup ts as = Some t'"
+      proof (rule ccontr)
+        assume "\<not> (as \<in> X' \<and> Mapping.lookup ts as = Some t')"
+        then have "Mapping.lookup ts'' as = Mapping.lookup ts as"
+          unfolding ts'' by (rule Mapping_lookup_filter_Some)
+        with None Cons(2) show False
+          by simp
+      qed
+      with Cons(2) Pair have "(t, X') \<in> set (a # ds)" and "as \<in> X'"
+        by simp_all
+      with Cons(3) have "False"
+        by blast
       then show ?thesis ..
     next
       case (Some t'')
@@ -481,7 +492,7 @@ lemma fold_pair_fst: "fst (fold (\<lambda> a (x, y). (f1 a x, f2 a x y)) as (x, 
 proof (induction as arbitrary: rule: rev_induct)
   case (snoc a as)
   then show ?case
-    by (smt (z3) fold.simps(1) fold.simps(2) fold_append fst_conv id_o o_apply split_beta)
+    by (simp add: split_beta)
 qed (auto)
 
 lemma Mapping_update_keys: "Mapping.keys (Mapping.update a b m) = Mapping.keys m \<union> {a}"
@@ -497,7 +508,7 @@ next
 qed
 
 lemma list_all_split: "list_all (\<lambda>(x, y). f x y \<and> g x y) xs \<longleftrightarrow> list_all (\<lambda>(x, y). f x y) xs \<and> list_all (\<lambda>(x, y). g x y) xs"
-  by (smt (z3) Ball_set case_prodI2 old.prod.case)
+  by (induction xs) auto
 
 lemma list_all2_weaken: "list_all2 f xs ys \<Longrightarrow>
   (\<And>x y. (x, y) \<in> set (zip xs ys) \<Longrightarrow> f x y \<Longrightarrow> f' x y) \<Longrightarrow> list_all2 f' xs ys"

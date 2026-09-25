@@ -505,9 +505,14 @@ next
     apply simp
     by (metis bounded diff_diff_cancel length_upt min.absorb2 min.bounded_iff progress_le_gen upt_eq_Nil_conv)
   moreover have "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
-    using "4_4"
-    apply (simp add: progress_Sincep)
-    by (smt (z3) calculation list.rel_distinct(1) min_def upt_eq_Nil_conv)
+  proof -
+    have "j = 0 \<or> j \<le> pOut"
+      using "4_4.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by blast
+    moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
+      using bounded by (rule progress_le_gen)
+    ultimately show ?thesis
+      using "4_4.prems"(6) by linarith
+  qed
   ultimately show ?case
     using "4_4" by (simp only: eval_since.simps prod.inject)
 next
@@ -515,9 +520,14 @@ next
   then have "pIn = min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)"
     by (simp) (metis le_antisym le_zero_eq min.absorb2)
   moreover have "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
-    using "4_5"
-    apply (simp add: progress_Sincep)
-    by (smt (z3) bot_nat_0.extremum_uniqueI bounded dual_order.trans min.commute min_def pred_mapping_mono_strong progress_le_gen)
+  proof -
+    have "j = 0 \<or> j \<le> pOut"
+      using "4_5.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by blast
+    moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
+      using bounded by (rule progress_le_gen)
+    ultimately show ?thesis
+      using "4_5.prems"(6) by linarith
+  qed
   ultimately show ?case
     using "4_5" by (simp only: eval_since.simps prod.inject)
 next
@@ -526,9 +536,14 @@ next
     apply simp
     by (metis bounded diff_diff_cancel diff_is_0_eq dual_order.refl dual_order.trans min.commute min_def progress_le_gen)
   moreover have "pOut = progress \<sigma> P (Sincep pos \<phi> I \<psi>) j"
-    using "4_6"
-    apply (simp add: progress_Sincep)
-    by (smt (z3) bot_nat_0.extremum_uniqueI bounded dual_order.trans min.commute min_def pred_mapping_mono_strong progress_le_gen)
+  proof -
+    have "j = 0 \<or> j \<le> pOut"
+      using "4_6.prems"(2) unfolding wf_mbuf2S.simps list_all2_Nil2 upt_eq_Nil_conv by blast
+    moreover have "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j \<le> j"
+      using bounded by (rule progress_le_gen)
+    ultimately show ?thesis
+      using "4_6.prems"(6) by linarith
+  qed
   ultimately show ?case
     using "4_6" by (simp only: eval_since.simps prod.inject)
 qed

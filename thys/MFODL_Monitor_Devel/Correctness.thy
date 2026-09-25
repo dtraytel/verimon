@@ -341,7 +341,7 @@ lemma (in maux) invar_recursion_invar:
         apply(simp add: rel_mapping_reflp reflp_def)
        apply (metis (no_types, lifting) length_upt list_all2_lengthD)
       apply (metis (no_types, lifting) length_upt list_all2_lengthD)
-     apply (smt (z3) add_cancel_left_right add_diff_inverse_nat add_lessD1 diff_is_0_eq' list_all2_Nil nat_le_linear nat_neq_iff rev_min_pm upt_conv_Nil zero_less_diff)
+     apply linarith
     apply (drule list_all2_lengthD[where ys=ys'])
     apply simp
     apply (subst (asm) le_imp_diff_is_add)

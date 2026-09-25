@@ -522,12 +522,46 @@ next
           fv_convert_multiway safe_dual_def split: if_splits)
   qed
 next
-  case (Ands l)
-  then show ?case
-    using convert_multiway_remove_neg fv_convert_multiway
-    apply (auto simp: list.pred_set filter_map filter_empty_conv subset_eq)
-     apply (smt (verit, del_insts) convert_multiway_remove_neg)(*metis fvi_remove_neg*)
-    by (smt (verit, del_insts) convert_multiway_remove_neg fv_convert_multiway fvi_remove_neg)
+  case (Ands l pos neg)
+  obtain pos' neg' where posneg': "(pos', neg') = partition safe_formula (map convert_multiway l)"
+    by simp
+  have pos: "\<phi> \<in> set pos \<longleftrightarrow> \<phi> \<in> set l \<and> safe_formula \<phi>"
+    and neg: "\<phi> \<in> set neg \<longleftrightarrow> \<phi> \<in> set l \<and> \<not> safe_formula \<phi>" for \<phi>
+    using Ands.hyps(1) by simp_all
+  have pos': "\<psi> \<in> set pos' \<longleftrightarrow> \<psi> \<in> convert_multiway ` set l \<and> safe_formula \<psi>"
+    and neg': "\<psi> \<in> set neg' \<longleftrightarrow> \<psi> \<in> convert_multiway ` set l \<and> \<not> safe_formula \<psi>" for \<psi>
+    using posneg' by simp_all
+  have safe_pos: "safe_formula (convert_multiway \<phi>)" if "\<phi> \<in> set pos" for \<phi>
+    using Ands.IH(1) that by (simp add: list_all_iff)
+  have safe_neg: "safe_formula (remove_neg (convert_multiway \<phi>))" if "\<phi> \<in> set neg" for \<phi>
+  proof -
+    have "safe_formula (remove_neg \<phi>)" and "safe_formula (convert_multiway (remove_neg \<phi>))"
+      using Ands.hyps(4) Ands.IH(2) that by (simp_all add: list_all_iff)
+    then show ?thesis
+      by (simp add: convert_multiway_remove_neg)
+  qed
+  have unsafe_neg: "\<phi> \<in> set neg" if "\<phi> \<in> set l" and "\<not> safe_formula (convert_multiway \<phi>)" for \<phi>
+    using that safe_pos pos neg by blast
+  have pos_pos': "convert_multiway ` set pos \<subseteq> set pos'"
+    using safe_pos pos pos' by blast
+  have neg'_neg: "set neg' \<subseteq> convert_multiway ` set neg"
+    using unsafe_neg by (auto simp: neg')
+  have "pos' \<noteq> []"
+    using hd_in_set[OF Ands.hyps(2)] pos_pos' by force
+  moreover have "list_all safe_formula (map remove_neg neg')"
+    using neg'_neg safe_neg by (auto simp: list_all_iff)
+  moreover have "\<Union>(set (map fv neg')) \<subseteq> \<Union>(set (map fv pos'))"
+  proof -
+    have "\<Union>(set (map fv neg')) \<subseteq> (\<Union>\<phi>\<in>set neg. fv (convert_multiway \<phi>))"
+      using neg'_neg by auto
+    also have "\<dots> \<subseteq> (\<Union>\<phi>\<in>set pos. fv (convert_multiway \<phi>))"
+      using Ands.hyps(5) by (simp add: fv_convert_multiway)
+    also have "\<dots> \<subseteq> \<Union>(set (map fv pos'))"
+      using pos_pos' by auto
+    finally show ?thesis .
+  qed
+  ultimately show ?case
+    unfolding convert_multiway.simps safe_formula.simps posneg'[symmetric] by simp
 next
   case (Neg \<phi>)
   with Neg show ?case 
@@ -945,15 +979,22 @@ next
     done
 next
   case (3 a)
-  then show ?case
-    apply(auto)
-      apply(simp add: wf_tuple_def)
-      apply (smt (verit, best) in_set_simps(2) list_all2_Cons2 list_all2_Nil2)
-      apply(simp add: wf_tuple_def)
-     apply (smt (z3) "3.prems" list_all2_Cons2 list_all2_Nil2 restrict_idle)
-    apply(simp add: wf_tuple_def)
-    apply(auto)
-    by (smt (z3) in_set_simps(2) list.inject list_all2_Cons2 list_all2_Nil2 nth_equalityI nth_restrict)
+  from "3.prems"(1) obtain b where bs: "bs = [b]" and wf: "wf_tuple n b a"
+    by (metis list_all2_Cons2 list_all2_Nil2)
+  show ?case
+  proof
+    assume "joinN [a] = Some z"
+    then have "z = a"
+      by simp
+    with wf show "wf_tuple n (\<Union> (set bs)) z \<and> list_all2 (\<lambda>b a. restrict b z = a) bs [a]"
+      by (simp add: bs restrict_idle)
+  next
+    assume "wf_tuple n (\<Union> (set bs)) z \<and> list_all2 (\<lambda>b a. restrict b z = a) bs [a]"
+    then have "wf_tuple n b z" and "restrict b z = a"
+      by (simp_all add: bs)
+    then show "joinN [a] = Some z"
+      by (simp add: restrict_idle)
+  qed
 qed
 
 lemma finite_letpast:
@@ -1147,7 +1188,7 @@ next
              apply(auto)
               apply(simp add: wf_tuple_def)
               apply (metis nth_list_update nth_list_update_neq)
-            apply (smt (verit, best) map_update nth_list_update_neq sat_fv_cong)
+            apply (simp add: sat_the_update)
             apply(rule sym)
             apply(subst list_update_same_conv)
             using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
@@ -1164,7 +1205,7 @@ next
              apply(auto)
               apply(simp add: wf_tuple_def)
               apply (metis nth_list_update nth_list_update_neq)
-            apply (smt (verit, best) map_update nth_list_update_neq sat_fv_cong)
+            apply (simp add: sat_the_update)
             apply(rule sym)
             apply(subst list_update_same_conv)
             using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
@@ -1185,7 +1226,7 @@ next
              apply(auto)
               apply(simp add: wf_tuple_def)
               apply (metis nth_list_update_eq nth_list_update_neq)
-             apply (smt (verit, best) map_update nth_list_update_neq sat_fv_cong)
+             apply (simp add: sat_the_update)
             apply(rule sym)
             apply(subst list_update_same_conv)
             using And_assign(5) apply(simp_all add: wf_tuple_def Formula.nfv_def)
@@ -1204,7 +1245,7 @@ next
              apply(auto)
               apply(simp add: wf_tuple_def)
               apply (metis nth_list_update_eq nth_list_update_neq)
-             apply (smt (verit, best) map_update nth_list_update_neq sat_fv_cong)
+             apply (simp add: sat_the_update)
             apply(rule sym)
             apply(subst list_update_same_conv)
             using And_assign(5) apply(simp_all add: wf_tuple_def Formula.nfv_def)
@@ -1251,22 +1292,24 @@ next
   case (And_Trigger \<phi> \<phi>' I \<psi>')
   hence obs: "finite {v. wf_tuple n (FV \<phi>) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>}"
     by simp
-  thus ?case
-    using And_Trigger
-    by (auto simp del: fvi.simps(18)) 
-      (smt (verit, best) Collect_mono_iff 
-        Diff_partition Un_Diff_cancel2 
-        Un_commute obs finite_subset)
+  have "FV (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>T I \<psi>')) = FV \<phi>"
+    using And_Trigger.hyps(4) by (simp add: Un_absorb2)
+  then have "{v. wf_tuple n (FV (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>T I \<psi>'))) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>T I \<psi>'))}
+    \<subseteq> {v. wf_tuple n (FV \<phi>) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>}"
+    by (simp add: Collect_mono_iff)
+  from this obs show ?case
+    by (rule finite_subset)
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
   hence obs: "finite {v. wf_tuple n (FV \<phi>) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>}"
     by simp
-  thus ?case
-    using And_Release
-    by (auto simp del: fvi.simps(18)) 
-      (smt (verit, best) Collect_mono_iff 
-        Diff_partition Un_Diff_cancel2 
-        Un_commute obs finite_subset)
+  have "FV (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>R I \<psi>')) = FV \<phi>"
+    using And_Release.hyps(7) by (simp add: Un_absorb2)
+  then have "{v. wf_tuple n (FV (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>R I \<psi>'))) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M (\<phi> \<and>\<^sub>F (\<phi>' \<^bold>R I \<psi>'))}
+    \<subseteq> {v. wf_tuple n (FV \<phi>) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>}"
+    by (simp add: Collect_mono_iff)
+  from this obs show ?case
+    by (rule finite_subset)
 next
   case (And_Not \<phi> \<psi>)
   then have "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
@@ -1349,8 +1392,7 @@ next
     done
   have final_subset: "finite (drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})})"
     using drop_b IH_alt
-    apply(auto)
-    by (smt (z3) Collect_cong b_def drop_b)
+    by (simp add: conj_disj_distribL Collect_disj_eq image_Un)
   have sat_eq: "Formula.sat \<sigma> V (zs @ map the (x[y := None])) i \<phi> = Formula.sat \<sigma> V (zs @ map the (x)) i \<phi>" if "length zs = b" and "y<length x" for x zs
     using Agg(1, 7) that
     apply -

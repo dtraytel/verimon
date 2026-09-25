@@ -805,12 +805,13 @@ proof -
           assume "xs \<in> Mapping.keys mc"
           then obtain tstp where tstp_def: "Mapping.lookup mc xs = Some tstp" by (meson Mapping.in_keysD)
           then have tstp_combine_def: "Some tstp = combine_options max_tstp (Mapping.lookup m'' xs) (Mapping.lookup m' xs)" unfolding mc_def Mapping.lookup_combine by auto
-          have "tp - len + 1 \<in> Mapping.keys a2_map" using m'_def by transfer auto
-          then have m'_restr: "\<forall>xs \<in> Mapping.keys m'. case Mapping.lookup m' xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
-            using valid_before m'_def unfolding valid_mmuaux'.simps by (smt (z3) option.case(2))
-          have "tp - len \<in> Mapping.keys a2_map" using m_def by transfer auto
-          then have m_restr: "\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
-            using valid_before m_def unfolding valid_mmuaux'.simps by (smt (z3) option.case(2))
+          have a2_restr: "\<forall>tp' \<in> Mapping.keys a2_map. case Mapping.lookup a2_map tp' of Some m \<Rightarrow>
+            \<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
+            using valid_before unfolding valid_mmuaux'.simps by blast
+          have m'_restr: "\<forall>xs \<in> Mapping.keys m'. case Mapping.lookup m' xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
+            using bspec[OF a2_restr tp_minus_keys'] unfolding m'_def by simp
+          have m_restr: "\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
+            using bspec[OF a2_restr tp_minus_keys] unfolding m_def by simp
           have "\<exists>(table, tstp')\<in>set (linearize tables'). tstp = tstp' \<and> xs \<in> table"
           proof(cases "Mapping.lookup m' xs")
             case none_m': None
@@ -880,8 +881,9 @@ proof -
         then show ?thesis by auto
       next
         case False
-        then have "Mapping.lookup a2_map'' tp' = Mapping.lookup a2_map tp'" using a unfolding a2_map''_def a2_map'_def
-          by (smt (z3) Mapping.lookup_update_neq Mapping_lookup_delete a2_map''_def m_aux_def option.simps(3))
+        have "tp' \<in> {tp - (len - 1) + 1..tp}"
+          using tp'_in a unfolding tp_len_assoc atLeastAtMost_iff by (simp add: Suc_le_eq)
+        then have "Mapping.lookup a2_map'' tp' = Mapping.lookup a2_map tp'" by (rule id)
         then have *: "Mapping.lookup a2_map tp' = Some m_aux" using m_aux_def by auto
         have "\<forall>tp'\<in>{tp - len..tp}. case Mapping.lookup a2_map tp' of Some m \<Rightarrow> \<forall>xs\<in>Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table" using valid_before by auto
         then have old_cond: "\<forall>xs\<in>Mapping.keys m_aux. case Mapping.lookup m_aux xs of Some tstp \<Rightarrow> \<exists>(table, tstp')\<in>set (linearize tables). tstp = tstp' \<and> xs \<in> table"
