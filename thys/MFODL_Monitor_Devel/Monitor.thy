@@ -1688,19 +1688,50 @@ lemma letpast_meval0_cong[fundef_cong]:
   assumes "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow>  eval ts db \<psi> = eval' ts db \<psi>)"
   shows "letpast_meval0 eval j i ys xs p ts db \<phi> = letpast_meval0 eval' j i ys xs p ts db \<phi>"
   using assms
-  apply (induct eval j i ys xs p ts db \<phi>  rule: letpast_meval0.induct)
-  subgoal premises IH for eval j i ys xs p ts db \<phi> 
-    apply (subst (1 2) letpast_meval0.simps)
-    apply (auto split: prod.splits list.splits simp: Let_def IH)
-    done
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have eval': "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    using 1(2)[of \<phi>] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval eval' by (subst (1 2) letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' =
+      letpast_meval0 eval' j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      if "size \<phi>' = size \<phi>" "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) that by simp
+    then show ?thesis
+      using eval eval' Cons by (subst (1 2) letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
 lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow> size (snd (eval ts db \<psi>)) = size \<psi>) \<Longrightarrow>
   size (snd (snd (snd (letpast_meval0 eval j i ys xs p ts db \<phi>)))) = size \<phi>"
-  apply (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  apply (subst letpast_meval0.simps)
-  apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have size: "size \<phi>' = size \<phi>"
+    using 1(2)[of \<phi> ts "Mapping.update p xs db"] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval size by (subst letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "size (snd (snd (snd (letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p []
+      (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))) = size \<phi>'" if "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) size that by simp
+    then show ?thesis
+      using eval size Cons by (subst letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
 fun freeze_meval0 where
   "freeze_meval0 eval k [] = ([], [])"
@@ -1857,11 +1888,32 @@ lemma map_split_eq_Pair_iff: "map_split f xs = (ys, zs) \<longleftrightarrow> ys
 
 lemma
   psize_snd_meval: "meval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meval n t db \<phi>)) = size \<phi>"
-  apply (induct rule: meval.pinduct)
-                      apply (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
-   apply (metis snd_conv size_letpast_meval)
-  apply simp
-  done
+proof (induct rule: meval.pinduct)
+  case (6 n ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>MLetPast\<close>\<close>
+  obtain xs i' buf' \<phi>' where lp: "letpast_meval0 (meval m) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd (letpast_meval0 (meval m) j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    using 6(2) by (rule size_letpast_meval)
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "meval n ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 6(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: meval.psimps(6)[OF 6(1)] lp \<psi>')
+next
+  case (15 n ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>MPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "meval n ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "mprev_next I (buf @ xs) (nts @ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 15(2) \<phi>' by simp
+  then show ?case
+    by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
+qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
   by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
