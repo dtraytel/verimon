@@ -8938,6 +8938,8 @@ the dense state is built (`udminit_push φ = udminit_safe (push_ex (frz_opt φ))
 * When afterwards the frozen predicate occurs under no temporal operator (`now_only`), the
   freeze is a `LET` (`sat_Frz_now_only`, `progress_Frz_now_only`), which the monitor evaluates
   incrementally.
+* The conjunct is also found under an existential quantifier whose variable it does not
+  mention (`EXISTS y. A(x,y) AND q(x)`); taken out, its variables are renumbered (`dec_trm`).
 * `frz_opt` applies the rewrite only when its result is monitorable, so safety need not be
   shown preserved.  Formulas have no executable equality, so the conjunct is taken out of a
   list of conjuncts by its position (`frz_find`).
@@ -8953,6 +8955,7 @@ the dense state is built (`udminit_push φ = udminit_safe (push_ex (frz_opt φ))
 | frz-since | 0.70 | 0.05 | 0.10 |
 | frz-nested | 16.66 | 0.04 | 0.98 |
 | frz-len1000 | 2.78 | 0.19 | 0.15 |
+| frz-outer | 0.61 | 0.05 | 0.05 |
 | frz-oncelb | 0.59 | 0.59 | 0.06 |
 | frz-prev | 0.44 | 0.39 | 0.05 |
 

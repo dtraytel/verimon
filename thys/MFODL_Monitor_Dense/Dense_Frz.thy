@@ -31,7 +31,21 @@ fun is_frz_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \
 text \<open>A conjunction with the frozen predicate as a conjunct, split into that conjunct and the rest;
   the front end makes a conjunction of more than two formulas a list.  Formulas have no
   executable equality -- their intervals have none -- so the conjunct is taken out of a list by
-  its position rather than with @{const remove1}.\<close>
+  its position rather than with @{const remove1}.  The conjunct is also found under an
+  existential quantifier whose variable it does not mention; taken out of the quantifier, its
+  variables are renumbered (@{text dec_trm}).\<close>
+
+fun dec_trm :: "Formula.trm \<Rightarrow> Formula.trm" where
+  "dec_trm (Formula.Var x) = Formula.Var (x - 1)"
+| "dec_trm (Formula.Const c) = Formula.Const c"
+| "dec_trm (Formula.Plus x y) = Formula.Plus (dec_trm x) (dec_trm y)"
+| "dec_trm (Formula.Minus x y) = Formula.Minus (dec_trm x) (dec_trm y)"
+| "dec_trm (Formula.UMinus x) = Formula.UMinus (dec_trm x)"
+| "dec_trm (Formula.Mult x y) = Formula.Mult (dec_trm x) (dec_trm y)"
+| "dec_trm (Formula.Div x y) = Formula.Div (dec_trm x) (dec_trm y)"
+| "dec_trm (Formula.Mod x y) = Formula.Mod (dec_trm x) (dec_trm y)"
+| "dec_trm (Formula.F2i x) = Formula.F2i (dec_trm x)"
+| "dec_trm (Formula.I2f x) = Formula.I2f (dec_trm x)"
 
 fun frz_find :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula list \<Rightarrow>
     ('t Formula.formula \<times> 't Formula.formula list) option" where
@@ -45,7 +59,12 @@ fun frz_split :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<R
      (if is_frz_pred pn \<beta> then Some (\<beta>, \<alpha>) else if is_frz_pred pn \<alpha> then Some (\<alpha>, \<beta>) else None)"
 | "frz_split pn (Formula.Ands l) = (case frz_find pn l of
      Some (q, r) \<Rightarrow> Some (q, Formula.Ands r) | None \<Rightarrow> None)"
+| "frz_split pn (Formula.Exists t \<alpha>) = (case frz_split pn \<alpha> of
+     Some (Formula.Pred e ts, \<beta>) \<Rightarrow> (if list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts
+       then Some (Formula.Pred e (map dec_trm ts), Formula.Exists t \<beta>) else None)
+   | _ \<Rightarrow> None)"
 | "frz_split pn _ = None"
+
 fun hoist :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula" where
   "hoist pn (Formula.Since \<phi> I \<psi>) = (let \<psi>' = hoist pn \<psi> in
      case (if memL I 0 then frz_split pn \<psi>' else None) of
@@ -118,56 +137,128 @@ lemma Min_insert_image:
   shows "Min (f ` set l) = min (f q) (Min (f ` set r))"
   using assms by simp
 
-lemma frz_split_Some:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)"
-  shows "is_frz_pred pn q \<and> (\<exists>l r. \<psi> = Formula.And \<alpha> q \<or> \<psi> = Formula.And q \<alpha> \<or>
-    (\<psi> = Formula.Ands l \<and> set l = insert q (set r) \<and> \<alpha> = Formula.Ands r))"
-  using assms by (cases "(pn, \<psi>)" rule: frz_split.cases)
-    (auto split: if_splits option.splits dest: frz_find_Some)
+lemma eval_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.eval_trm v (dec_trm s) = Formula.eval_trm (z # v) s"
+  by (induct s) (auto simp: nth_Cons')
 
-lemma frz_split_sat:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)"
-  shows "Formula.sat \<sigma> V v i \<psi> \<longleftrightarrow> Formula.sat \<sigma> V v i q \<and> Formula.sat \<sigma> V v i \<alpha>"
-  using frz_split_Some[OF assms] by auto
+lemma fvi_dec_trm: "0 \<notin> Formula.fv_trm s \<Longrightarrow> Formula.fvi_trm b (dec_trm s) = Formula.fvi_trm (Suc b) s"
+  by (induct s) auto
 
-lemma frz_split_fvi:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)"
-  shows "Formula.fvi b \<psi> = Formula.fvi b q \<union> Formula.fvi b \<alpha>"
-  using frz_split_Some[OF assms] by auto
+lemma wty_dec_trm: "case_nat t E \<turnstile> s :: ty \<Longrightarrow> 0 \<notin> Formula.fv_trm s \<Longrightarrow> E \<turnstile> dec_trm s :: ty"
+proof (induct rule: wty_trm.induct)
+  case (Var x ty)
+  then show ?case
+    by (cases x) (auto intro: wty_trm.Var)
+qed (auto intro: wty_trm.intros)
 
-lemma frz_split_wty:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "S, E \<turnstile> \<psi>"
-  shows "S, E \<turnstile> q" "S, E \<turnstile> \<alpha>"
-  using frz_split_Some[OF assms(1)] assms(2)
-  by (auto elim!: wty_formula.cases intro!: wty_formula.intros)
+lemma frz_split_Exists_Some:
+  assumes "frz_split pn (Formula.Exists t \<alpha>) = Some (q, \<alpha>')"
+  obtains e ts \<beta> where "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "\<alpha>' = Formula.Exists t \<beta>"
+  using assms by (auto split: option.splits prod.splits formula.splits if_splits)
 
-lemma frz_split_progress:
-  assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "pred_mapping (\<lambda>x. x \<le> j) P"
-  shows "progress \<sigma> P \<psi> j = min (progress \<sigma> P q j) (progress \<sigma> P \<alpha> j)"
+lemma frz_split_pred: "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> is_frz_pred pn q"
+proof (induct pn \<psi> arbitrary: q r rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "q = Formula.Pred e (map dec_trm ts)"
+    by (rule frz_split_Exists_Some)
+  with 3(1)[OF s(1)] show ?case
+    by simp
+qed (auto split: if_splits option.splits dest: frz_find_Some)
+
+lemma sat_Pred_dec_trm:
+  "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts \<Longrightarrow>
+    Formula.sat \<sigma> V v i (Formula.Pred e (map dec_trm ts)) = Formula.sat \<sigma> V (z # v) i (Formula.Pred e ts)"
 proof -
-  have le: "progress \<sigma> P q j \<le> j"
-    by (rule progress_le_gen[OF assms(2)])
-  from frz_split_Some[OF assms(1)] obtain l r where
-    "\<psi> = Formula.And \<alpha> q \<or> \<psi> = Formula.And q \<alpha> \<or>
-      (\<psi> = Formula.Ands l \<and> set l = insert q (set r) \<and> \<alpha> = Formula.Ands r)"
-    by blast
-  then show ?thesis
-  proof (elim disjE conjE)
-    assume l: "\<psi> = Formula.Ands l" "set l = insert q (set r)" "\<alpha> = Formula.Ands r"
-    show ?thesis
-    proof (cases "r = []")
-      case True
-      with l le show ?thesis
-        by (auto simp: min_absorb1)
-    next
-      case False
-      with l show ?thesis
-        by (auto simp: Min_insert_image)
-    qed
-  qed auto
+  assume "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts"
+  then have eq: "map (Formula.eval_trm v) (map dec_trm ts) = map (Formula.eval_trm (z # v)) ts"
+    by (auto simp: eval_dec_trm list_all_iff)
+  show ?thesis
+    by (simp only: Formula.sat.simps length_map eq)
 qed
 
-subsection \<open>Taking the frozen predicate out\<close>
+lemma frz_split_sat:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow>
+    Formula.sat \<sigma> V v i \<psi> \<longleftrightarrow> Formula.sat \<sigma> V v i q \<and> Formula.sat \<sigma> V v i r"
+proof (induct pn \<psi> arbitrary: q r v rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  show ?case
+    using 3(1)[OF s(1)] sat_Pred_dec_trm[OF s(2)] s(3,4) by auto
+qed (auto split: if_splits option.splits dest!: frz_find_Some)
+
+lemma frz_split_fvi:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> Formula.fvi b \<psi> = Formula.fvi b q \<union> Formula.fvi b r"
+proof (induct pn \<psi> arbitrary: q r b rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  have "Formula.fvi b q = Formula.fvi (Suc b) (Formula.Pred e ts)"
+    using s(2,3) by (auto simp: fvi_dec_trm list_all_iff)
+  then show ?case
+    using 3(1)[OF s(1)] s(4) by simp
+qed (auto split: if_splits option.splits dest!: frz_find_Some)
+
+lemma frz_split_wty:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> S, E \<turnstile> \<psi> \<Longrightarrow> S, E \<turnstile> q \<and> S, E \<turnstile> r"
+proof (induct pn \<psi> arbitrary: q r E rule: frz_split.induct)
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  from 3(3) have "S, case_nat t E \<turnstile> \<alpha>"
+    by (rule wty_formula_ExistsD)
+  with 3(1)[OF s(1)] have p: "S, case_nat t E \<turnstile> Formula.Pred e ts" and b: "S, case_nat t E \<turnstile> \<beta>"
+    by blast+
+  from p obtain tys where "S (e, length ts) = Some tys"
+    "list_all2 (\<lambda>tm ty. case_nat t E \<turnstile> tm :: ty) ts tys"
+    by (cases rule: wty_formula.cases) auto
+  moreover have "E \<turnstile> dec_trm tm :: ty" if "tm \<in> set ts" "case_nat t E \<turnstile> tm :: ty" for tm ty
+    using wty_dec_trm[OF that(2)] s(2) that(1) by (simp add: list_all_iff)
+  ultimately have "S, E \<turnstile> q"
+    using s(3) by (auto intro!: wty_formula.Pred simp: list.rel_map elim!: list.rel_mono_strong)
+  then show ?case
+    using b s(4) by (auto intro: wty_formula.Exists)
+qed (auto split: if_splits option.splits dest!: frz_find_Some elim!: wty_formula.cases
+  intro!: wty_formula.intros)
+
+lemma frz_split_progress:
+  "frz_split pn \<psi> = Some (q, r) \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
+    progress \<sigma> P \<psi> j = min (progress \<sigma> P q j) (progress \<sigma> P r j)"
+proof (induct pn \<psi> arbitrary: q r rule: frz_split.induct)
+  case (2 pn l)
+  from 2(1) obtain r' where f: "frz_find pn l = Some (q, r')" "r = Formula.Ands r'"
+    by (auto split: option.splits)
+  have l: "set l = insert q (set r')"
+    using frz_find_Some[OF f(1)] by blast
+  have le: "progress \<sigma> P q j \<le> j"
+    by (rule progress_le_gen[OF 2(2)])
+  show ?case
+  proof (cases "r' = []")
+    case True
+    with l f(2) le show ?thesis
+      by (auto simp: min_absorb1)
+  next
+    case False
+    with l f(2) show ?thesis
+      by (auto simp: Min_insert_image)
+  qed
+next
+  case (3 pn t \<alpha>)
+  from 3(2) obtain e ts \<beta> where s: "frz_split pn \<alpha> = Some (Formula.Pred e ts, \<beta>)"
+    "list_all (\<lambda>s. 0 \<notin> Formula.fv_trm s) ts" "q = Formula.Pred e (map dec_trm ts)"
+    "r = Formula.Exists t \<beta>"
+    by (rule frz_split_Exists_Some)
+  show ?case
+    using 3(1)[OF s(1) 3(3)] s(3,4) by simp
+qed (auto split: if_splits)
 
 lemma fvi_hoist[simp]: "Formula.fvi b (hoist pn \<phi>) = Formula.fvi b \<phi>"
   by (induct pn \<phi> arbitrary: b rule: hoist.induct)
@@ -230,7 +321,7 @@ lemma frz_split_sat_const:
   shows "Formula.sat \<sigma> V v j \<psi> \<longleftrightarrow> Formula.sat \<sigma> V v i q \<and> Formula.sat \<sigma> V v j \<alpha>"
 proof -
   have "is_frz_pred pn q"
-    using frz_split_Some[OF assms(1)] by blast
+    by (rule frz_split_pred[OF assms(1)])
   then show ?thesis
     using frz_split_sat[OF assms(1)] sat_frz_pred_const[of pn q V X \<sigma> v j i] assms(2,3)
     by blast
@@ -275,7 +366,7 @@ lemma progress_frz_pred: "is_frz_pred pn q \<Longrightarrow> P pn = Some k \<Lon
 lemma frz_split_progress_const:
   assumes "frz_split pn \<psi> = Some (q, \<alpha>)" "pred_mapping (\<lambda>x. x \<le> j) P" "P pn = Some k"
   shows "progress \<sigma> P \<psi> j = min k (progress \<sigma> P \<alpha> j)" "progress \<sigma> P q j = k"
-  using frz_split_progress[OF assms(1,2)] progress_frz_pred[of pn q P k \<sigma> j] assms(3) frz_split_Some[OF assms(1)]
+  using frz_split_progress[OF assms(1,2)] progress_frz_pred[of pn q P k \<sigma> j] assms(3) frz_split_pred[OF assms(1)]
   by auto
 
 text \<open>The frozen predicate's progress is either the whole prefix or none of it.\<close>

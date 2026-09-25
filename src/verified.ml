@@ -6251,6 +6251,17 @@ let rec frz_find
           else (match frz_find pn xs with None -> None
                  | Some (q, ys) -> Some (q, x :: ys)));;
 
+let rec dec_trm = function Var x -> Var (minus_nata x one_nata)
+                  | Const c -> Const c
+                  | Plus (x, y) -> Plus (dec_trm x, dec_trm y)
+                  | Minus (x, y) -> Minus (dec_trm x, dec_trm y)
+                  | UMinus x -> UMinus (dec_trm x)
+                  | Mult (x, y) -> Mult (dec_trm x, dec_trm y)
+                  | Div (x, y) -> Div (dec_trm x, dec_trm y)
+                  | Mod (x, y) -> Mod (dec_trm x, dec_trm y)
+                  | F2i x -> F2i (dec_trm x)
+                  | I2f x -> I2f (dec_trm x);;
+
 let rec frz_split
   pn x1 = match pn, x1 with
     pn, And (alpha, beta) ->
@@ -6259,6 +6270,26 @@ let rec frz_split
     | pn, Ands l ->
         (match frz_find pn l with None -> None
           | Some (q, r) -> Some (q, Ands r))
+    | pn, Exists (t, alpha) ->
+        (match frz_split pn alpha with None -> None
+          | Some (Pred (e, ts), beta) ->
+            (if list_all
+                  (fun s -> not (nat_member zero_nata (fvi_trm zero_nata s))) ts
+              then Some (Pred (e, mapa dec_trm ts), Exists (t, beta)) else None)
+          | Some (Let (_, _, _), _) -> None | Some (Frz (_, _, _), _) -> None
+          | Some (LetPast (_, _, _), _) -> None | Some (Eq (_, _), _) -> None
+          | Some (Less (_, _), _) -> None | Some (LessEq (_, _), _) -> None
+          | Some (Neg _, _) -> None | Some (Or (_, _), _) -> None
+          | Some (And (_, _), _) -> None | Some (Ands _, _) -> None
+          | Some (Exists (_, _), _) -> None
+          | Some (Agg (_, _, _, _, _), _) -> None
+          | Some (Prev (_, _), _) -> None | Some (Next (_, _), _) -> None
+          | Some (Since (_, _, _), _) -> None
+          | Some (Until (_, _, _), _) -> None
+          | Some (Trigger (_, _, _), _) -> None
+          | Some (Release (_, _, _), _) -> None
+          | Some (MatchF (_, _), _) -> None | Some (MatchP (_, _), _) -> None
+          | Some (TP _, _) -> None | Some (TS _, _) -> None)
     | pn, Pred (v, va) -> None
     | pn, Let (v, va, vb) -> None
     | pn, Frz (v, va, vb) -> None
@@ -6268,7 +6299,6 @@ let rec frz_split
     | pn, LessEq (v, va) -> None
     | pn, Neg v -> None
     | pn, Or (v, va) -> None
-    | pn, Exists (v, va) -> None
     | pn, Agg (v, va, vb, vc, vd) -> None
     | pn, Prev (v, va) -> None
     | pn, Next (v, va) -> None
