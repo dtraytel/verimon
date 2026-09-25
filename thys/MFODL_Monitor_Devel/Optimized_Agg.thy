@@ -2805,10 +2805,14 @@ proof(cases l)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_int t1)) (the (unpack_int t2))"
     using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EInt" using assms(1-3) LInt 
-    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
-    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
-    done
+  have "set (x # xs) \<subseteq> range EInt"
+  proof -
+    have "type_restr_mset EInt ?s" using assms(1) LInt by (simp add: valid_list_aux_def)
+    moreover have "finite ?s" using assms(2) by simp
+    ultimately have "set (flatten_multiset ?s) \<subseteq> range EInt"
+      by (intro flatten_multiset_range) (auto simp only: type_restr_mset_def)
+    then show ?thesis unfolding assms(3) .
+  qed
   then have type_restr: "x \<in> range EInt" "set xs \<subseteq> range EInt" by auto
   have "sorted_treelist (sort_treelist x1)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_int a)) (x # xs) = x' # xs'" "x' = the (unpack_int x)" "xs' = map (\<lambda>a. the (unpack_int a)) xs" by force
@@ -2825,10 +2829,14 @@ next
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_string t1)) (the (unpack_string t2))"
     using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EString" using assms(1-3) LString 
-    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
-    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
-    done
+  have "set (x # xs) \<subseteq> range EString"
+  proof -
+    have "type_restr_mset EString ?s" using assms(1) LString by (simp add: valid_list_aux_def)
+    moreover have "finite ?s" using assms(2) by simp
+    ultimately have "set (flatten_multiset ?s) \<subseteq> range EString"
+      by (intro flatten_multiset_range) (auto simp only: type_restr_mset_def)
+    then show ?thesis unfolding assms(3) .
+  qed
   then have type_restr: "x \<in> range EString" "set xs \<subseteq> range EString" by auto
   have "sorted_treelist (sort_treelist x2)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_string a)) (x # xs) = x' # xs'" "x' = the (unpack_string x)" "xs' = map (\<lambda>a. the (unpack_string a)) xs" by force
@@ -2858,10 +2866,14 @@ proof(cases l)
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_int t1)) (the (unpack_int t2))"
     using assms(1) LInt int_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EInt" using assms(1-3) LInt 
-    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
-    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
-    done
+  have "set (x # xs) \<subseteq> range EInt"
+  proof -
+    have "type_restr_mset EInt ?s" using assms(1) LInt by (simp add: valid_list_aux_def)
+    moreover have "finite ?s" using assms(2) by simp
+    ultimately have "set (flatten_multiset ?s) \<subseteq> range EInt"
+      by (intro flatten_multiset_range) (auto simp only: type_restr_mset_def)
+    then show ?thesis unfolding assms(3) .
+  qed
   then have type_restr: "x \<in> range EInt" "set xs \<subseteq> range EInt" by auto
   have "sorted_treelist (sort_treelist x1)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_int a)) (x # xs) = x' # xs'" "x' = the (unpack_int x)" "xs' = map (\<lambda>a. the (unpack_int a)) xs" by force
@@ -2878,10 +2890,14 @@ next
   have ord_preserve: " \<forall>t1 m1 t2 m2. (t1, m1) \<in> ?s \<and> (t2, m2) \<in> ?s \<longrightarrow> c t1 t2 = comp_of_ords (\<le>) (<) (the (unpack_string t1)) (the (unpack_string t2))"
     using assms(1) LString str_cmp_eq[OF c_def] by(auto simp:valid_list_aux_def type_restr_mset_def image_iff)
   note sort_eq = sort_flatten_mset_eq[OF c_def valid valid_finite_group_mset[OF assms(2)] surj ord_preserve]
-  have "set (x # xs) \<subseteq> range EString" using assms(1-3) LString
-    apply (simp add: valid_list_aux_def type_restr_mset_def del: Set.filter_eq)
-    apply (metis (no_types, lifting) finite_filter finite_imageI flatten_multiset_range insert_subset list.simps(15))
-    done
+  have "set (x # xs) \<subseteq> range EString"
+  proof -
+    have "type_restr_mset EString ?s" using assms(1) LString by (simp add: valid_list_aux_def)
+    moreover have "finite ?s" using assms(2) by simp
+    ultimately have "set (flatten_multiset ?s) \<subseteq> range EString"
+      by (intro flatten_multiset_range) (auto simp only: type_restr_mset_def)
+    then show ?thesis unfolding assms(3) .
+  qed
   then have type_restr: "x \<in> range EString" "set xs \<subseteq> range EString" by auto
   have "sorted_treelist (sort_treelist x2)" by(transfer) (metis sorted_sort)
   moreover obtain x' xs' where unpack_def: "map (\<lambda>a. the (unpack_string a)) (x # xs) = x' # xs'" "x' = the (unpack_string x)" "xs' = map (\<lambda>a. the (unpack_string a)) xs" by force
