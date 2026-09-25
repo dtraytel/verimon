@@ -1425,13 +1425,15 @@ next
   qed
 next
   case (Prev I \<phi>)
-  show ?case
-    apply (cases i)
-    using Prev apply simp
-    subgoal for i'
-      using Prev.IH[of q n V c k v x thesis i'] Prev.prems
-      by auto
-    done
+  from Prev.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Prev I \<phi>)"
+    by simp
+  then obtain i' where "i = Suc i'" and "Formula.sat \<sigma> V v i' \<phi>"
+    by (cases i) auto
+  with Prev.prems(2) have gen: "genvar \<phi> (Formula.sat \<sigma> V v i' \<phi>) x q n c k"
+    by auto
+  have nfv: "Formula.nfv \<phi> \<le> length v"
+    using Prev.prems(3) by simp
+  from Prev.IH[OF Prev.prems(1) gen nfv] show ?case .
 next
   case (Next I \<phi>)
   show ?case
