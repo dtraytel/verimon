@@ -1571,27 +1571,36 @@ next
   moreover from Or have "finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
     by(simp)
   ultimately have "finite ({v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>} \<union> {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>})"
+    (is "finite ?AB")
     by(simp)
-  then show ?case using Or
-    apply(elim finite_subset[rotated])
-    by(auto)
+  moreover have "{v. wf_tuple n (fv (\<phi> \<or>\<^sub>F \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<phi> \<or>\<^sub>F \<psi>)} \<subseteq> ?AB"
+    using Or.hyps(1) by auto
+  ultimately show ?case
+    by (rule finite_subset[rotated])
 next
   case (Exists t \<phi>)
- then have "finite (Formula.fvi (Suc 0) \<phi>)"
-   by(simp)
-  moreover from Exists have IH: "finite {v. wf_tuple (Suc n) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+  from Exists have IH: "finite {v. wf_tuple (Suc n) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
     by(simp add: Formula.nfv_def fvi_Suc_bound Suc_le_eq)
-  ultimately show ?case using Exists
-    apply(simp)
-    apply(rule finite_surj[OF IH, of _ "tl"])
-    apply(auto)
-    subgoal for v z
-      apply(rule image_eqI[of _ _ "(if 0 \<in> fv \<phi> then Some z else None)#v"])
-       apply(auto simp add: wf_tuple_def)
-      apply (metis fvi_Suc length_nth_simps(3) length_nth_simps(4) less_Suc_eq_0_disj option.discI)
-      apply (metis fvi_Suc length_nth_simps(4) less_Suc_eq_0_disj)
-      done
-    done
+  have "{v. wf_tuple n (fv (\<exists>\<^sub>F:t. \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<exists>\<^sub>F:t. \<phi>)}
+    \<subseteq> tl ` {v. wf_tuple (Suc n) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+  proof
+    fix v
+    assume "v \<in> {v. wf_tuple n (fv (\<exists>\<^sub>F:t. \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<exists>\<^sub>F:t. \<phi>)}"
+    then obtain z where wf: "wf_tuple n (Formula.fvi (Suc 0) \<phi>) v"
+      and sat: "Formula.sat \<sigma> V (z # map the v) i \<phi>"
+      by auto
+    \<comment> \<open>the bound variable 0 occurs in @{term \<phi>}, so it gets a defined value\<close>
+    from wf Exists.hyps(2) have "wf_tuple (Suc n) (fv \<phi>) (Some z # v)"
+      by (simp add: wf_tuple_def All_less_Suc2 fvi_Suc)
+    moreover from sat have "Formula.sat \<sigma> V (map the (Some z # v)) i \<phi>"
+      by simp
+    ultimately have "Some z # v \<in> {v. wf_tuple (Suc n) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+      by simp
+    then show "v \<in> tl ` {v. wf_tuple (Suc n) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+      by (rule rev_image_eqI) simp
+  qed
+  from this finite_imageI[OF IH] show ?case
+    by (rule finite_subset)
 next
   case (Agg y \<omega> tys f \<phi>)
   define b where [simp]: "b= length tys"
