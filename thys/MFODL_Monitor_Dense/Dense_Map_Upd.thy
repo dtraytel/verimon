@@ -950,6 +950,220 @@ setup \<open>Monomorphize.monomorphize_cmd
      [("gcnt", "nat"), ("gsum", "nat \<times> integer")])
   ["edl_dict_simps"]\<close>
 
+subsection \<open>MIN and MAX outside a window, in one pass\<close>
+
+text \<open>The minimum and the maximum of a group need neither the multiset of its values nor an
+  order-statistic tree: one pass over the table, keeping per group the extreme seen so far, has
+  them.  @{text mm_step} folds one tuple into that mapping with one descent (@{const mupd}).\<close>
+
+definition mm_step :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> nat \<Rightarrow> 'b list \<Rightarrow>
+    ('b list, 'c) mapping \<Rightarrow> ('b list, 'c) mapping" where
+  "mm_step ev op k t m =
+     snd (mupd (drop k t) (\<lambda>ov. case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t)) m)"
+
+definition mm_acc :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> 'c option \<Rightarrow> 'b list \<Rightarrow> 'c option" where
+  "mm_acc ev op ov t = Some (case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t))"
+
+lemma lookup_fold_mm_step:
+  "Mapping.lookup (fold (mm_step ev op k) xs m) g
+   = foldl (mm_acc ev op) (Mapping.lookup m g) (filter (\<lambda>t. drop k t = g) xs)"
+  by (induct xs arbitrary: m) (simp_all add: mm_step_def mupd_def mm_acc_def lookup_update')
+
+lemma foldl_mm_acc_Some: "foldl (mm_acc ev op) (Some u) ts = Some (foldl op u (map ev ts))"
+  by (induct ts arbitrary: u) (simp_all add: mm_acc_def)
+
+lemma keys_fold_mm_step: "Mapping.keys (fold (mm_step ev op k) xs m) = Mapping.keys m \<union> drop k ` set xs"
+  by (induct xs arbitrary: m) (auto simp: mm_step_def mupd_def)
+
+lemma foldl_max_Max: "foldl max u xs = Max (Set.insert u (set xs))" for u :: "'a :: linorder"
+proof -
+  have "foldl max u xs = fold max xs u"
+    by (induct xs arbitrary: u) (simp_all add: max.commute)
+  then show ?thesis
+    by (simp add: Max.set_eq_fold[symmetric])
+qed
+
+lemma foldl_min_Min: "foldl min u xs = Min (Set.insert u (set xs))" for u :: "'a :: linorder"
+proof -
+  have "foldl min u xs = fold min xs u"
+    by (induct xs arbitrary: u) (simp_all add: min.commute)
+  then show ?thesis
+    by (simp add: Min.set_eq_fold[symmetric])
+qed
+
+text \<open>The multiset of a finite, non-empty group's values lists each of its values at least once
+  and nothing else, so its minimum and maximum are those of the values.\<close>
+
+lemma set_csorted_list_of_set_mset:
+  "finite (M :: (event_data \<times> enat) set) \<Longrightarrow> set (csorted_list_of_set M) = M"
+proof -
+  obtain c where c_def: "ID ccompare = Some (c :: (event_data \<times> enat) comparator)"
+    by (simp add: ID_def ccompare_prod_def ccompare_event_data_def ccompare_enat_def
+        split: if_splits option.splits)
+  note c_class = comparator.linorder[OF ID_ccompare'[OF c_def]]
+  assume "finite M"
+  then show ?thesis
+    using linorder.set_sorted_list_of_set[OF c_class] by (simp add: csorted_list_of_set_def c_def)
+qed
+
+lemma flatten_uagg_values:
+  assumes "finite G" "G \<noteq> {}"
+  shows "set (flatten_multiset (uagg_values f G)) = umeval_trm f ` G"
+    and "finite_multiset (uagg_values f G)"
+proof -
+  let ?M = "uagg_values f G"
+  let ?c = "\<lambda>v. card {x \<in> G. umeval_trm f x = v}"
+  have M: "?M = (\<lambda>v. (v, enat (?c v))) ` umeval_trm f ` G"
+    using assms(1) by (simp add: uagg_values ecard_def)
+  have fM: "finite ?M"
+    using assms(1) by (simp add: M)
+  have pos: "0 < ?c (umeval_trm f x')" if "x' \<in> G" for x'
+    using assms(1) that by (auto simp: card_gt_0_iff)
+  have "set (flatten_multiset ?M) = {x. \<exists>c. (x, c) \<in> ?M \<and> the_enat c \<noteq> 0}"
+    unfolding flatten_multiset_def set_concat set_map set_csorted_list_of_set_mset[OF fM]
+    by (auto split: prod.splits)
+  then show "set (flatten_multiset ?M) = umeval_trm f ` G"
+    using pos by (auto simp: M image_iff)
+  show "finite_multiset ?M"
+    using fM by (auto simp: finite_multiset_def M)
+qed
+
+text \<open>The order on @{typ event_data} is total only within each kind of value, and not even there
+  on floats; on integers, the fold over the flattened multiset is the extreme of the integers.\<close>
+
+lemma foldl_max_ival: "\<forall>x \<in> set (u # xs). is_eint x \<Longrightarrow>
+    foldl max u xs = EInt (foldl max (ival u) (map ival xs))"
+  by (induct xs arbitrary: u) (auto simp: is_eint_def ival_def max_def split: event_data.splits)
+
+lemma foldl_min_ival: "\<forall>x \<in> set (u # xs). is_eint x \<Longrightarrow>
+    foldl min u xs = EInt (foldl min (ival u) (map ival xs))"
+  by (induct xs arbitrary: u) (auto simp: is_eint_def ival_def min_def split: event_data.splits)
+
+lemma eval_agg_op_uagg_values_Max_Min:
+  assumes "finite G" "G \<noteq> {}" "\<forall>x \<in> G. is_eint (umeval_trm f x)"
+  shows "eval_agg_op (Formula.Agg_Max, ty) (uagg_values f G) = EInt (Max (ival ` umeval_trm f ` G))"
+    and "eval_agg_op (Formula.Agg_Min, ty) (uagg_values f G) = EInt (Min (ival ` umeval_trm f ` G))"
+proof -
+  note fl = flatten_uagg_values[OF assms(1,2), of f]
+  obtain x xs where x: "flatten_multiset (uagg_values f G) = x # xs"
+    using fl(1) assms(2) by (cases "flatten_multiset (uagg_values f G)") auto
+  have s: "set (x # xs) = umeval_trm f ` G"
+    using fl(1) x by simp
+  then have i: "\<forall>y \<in> set (x # xs). is_eint y"
+    using assms(3) by auto
+  have "ival ` umeval_trm f ` G = Set.insert (ival x) (set (map ival xs))"
+    using s by (metis image_insert list.set(2) set_map)
+  then show "eval_agg_op (Formula.Agg_Max, ty) (uagg_values f G) = EInt (Max (ival ` umeval_trm f ` G))"
+    and "eval_agg_op (Formula.Agg_Min, ty) (uagg_values f G) = EInt (Min (ival ` umeval_trm f ` G))"
+    using fl x by (simp_all add: foldl_max_ival[OF i] foldl_min_ival[OF i] foldl_max_Max
+        foldl_min_Min)
+qed
+
+text \<open>The fold computes, per group, the extreme of the integers of the group's tuples; the
+  result table is read off the mapping as the window's is (@{const ugmr}).\<close>
+
+definition uagg_mm :: "(integer \<Rightarrow> integer \<Rightarrow> integer) \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    event_data list list \<Rightarrow> event_data list set" where
+  "uagg_mm op f k pos xs = ugmr (\<lambda>_. True) pos EInt
+     (fold (mm_step (\<lambda>t. ival (umeval_trm f t)) op k) xs Mapping.empty)"
+
+lemma uagg_mm_gen:
+  fixes F :: "integer set \<Rightarrow> integer"
+  assumes fX: "finite X" and ne: "X \<noteq> {}" and i: "\<forall>x \<in> X. is_eint (umeval_trm f x)"
+    and ev: "\<And>G. finite G \<Longrightarrow> G \<noteq> {} \<Longrightarrow> \<forall>x \<in> G. is_eint (umeval_trm f x) \<Longrightarrow>
+      eval_agg_op \<omega> (uagg_values f G) = EInt (F (ival ` umeval_trm f ` G))"
+    and op: "\<And>u xs. foldl op u xs = F (Set.insert u (set xs))"
+  shows "uagg g0 \<omega> f k pos X = uagg_mm op f k pos (csl X)"
+proof -
+  let ?ev = "\<lambda>t. ival (umeval_trm f t)"
+  let ?m = "fold (mm_step ?ev op k) (csl X) Mapping.empty"
+  have s: "set (csl X) = X"
+    by (rule set_csl_ed[OF fX])
+  have keys: "Mapping.keys ?m = drop k ` X"
+    by (simp add: keys_fold_mm_step s)
+  have lk: "Mapping.lookup ?m g = Some (F (ival ` umeval_trm f ` Set.filter (\<lambda>x. drop k x = g) X))"
+    if g: "g \<in> drop k ` X" for g
+  proof -
+    obtain t ts where tts: "filter (\<lambda>t. drop k t = g) (csl X) = t # ts"
+      using g s by (cases "filter (\<lambda>t. drop k t = g) (csl X)") (auto simp: filter_empty_conv)
+    have "set (t # ts) = Set.filter (\<lambda>x. drop k x = g) X"
+      using tts[symmetric] s by auto
+    then have "Set.insert (?ev t) (set (map ?ev ts)) = ival ` umeval_trm f ` Set.filter (\<lambda>x. drop k x = g) X"
+      by (metis image_image image_insert list.set(2) set_map)
+    then show ?thesis
+      by (simp add: lookup_fold_mm_step tts mm_acc_def foldl_mm_acc_Some op)
+  qed
+  have evG: "eval_agg_op \<omega> (uagg_values f {a \<in> X. drop k a = drop k x})
+      = EInt (F (ival ` umeval_trm f ` {a \<in> X. drop k a = drop k x}))" if "x \<in> X" for x
+    using ev[of "{a \<in> X. drop k a = drop k x}"] fX i that by auto
+  show ?thesis
+    unfolding uagg_def uagg_mm_def ugmr_def gmr_def Let_def keys_cluster
+    using ne by (auto simp: keys lk lookup_cluster_Some evG intro!: image_cong)
+qed
+
+lemma uagg_mm_Max_Min:
+  assumes "finite X" "X \<noteq> {}" "\<forall>x \<in> X. is_eint (umeval_trm f x)"
+  shows "uagg g0 (Formula.Agg_Max, ty) f k pos X = uagg_mm max f k pos (csl X)"
+    and "uagg g0 (Formula.Agg_Min, ty) f k pos X = uagg_mm min f k pos (csl X)"
+  by (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(1) foldl_max_Max]; assumption)
+    (rule uagg_mm_gen[OF assms eval_agg_op_uagg_values_Max_Min(2) foldl_min_Min]; assumption)
+text \<open>The code checks that the table is finite and not empty and that every value is an
+  integer; otherwise it computes the aggregation as @{const uagg} is defined.  The other
+  aggregations go through the window's structure (@{thm [source] uagg_g_code}).\<close>
+
+definition uagg_mm_or :: "(integer \<Rightarrow> integer \<Rightarrow> integer) \<Rightarrow> bool \<Rightarrow> ty Formula.agg_op \<Rightarrow>
+    Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> event_data list set" where
+  "uagg_mm_or op g0 \<omega> f k pos X = (let xs = csl X in
+     if xs \<noteq> [] \<and> list_all (\<lambda>t. is_eint (umeval_trm f t)) xs then uagg_mm op f k pos xs
+     else uagg_gen g0 \<omega> f k pos X)"
+
+lemma uagg_code[code]:
+  "uagg g0 \<omega> f k pos X = (case fst \<omega> of
+       Formula.Agg_Max \<Rightarrow> uagg_mm_or max g0 \<omega> f k pos X
+     | Formula.Agg_Min \<Rightarrow> uagg_mm_or min g0 \<omega> f k pos X
+     | _ \<Rightarrow> uagg_g g0 \<omega> f k pos X)"
+proof -
+  have pre: "finite X \<and> X \<noteq> {} \<and> (\<forall>x \<in> X. is_eint (umeval_trm f x))"
+    if "csl X \<noteq> [] \<and> list_all (\<lambda>t. is_eint (umeval_trm f t)) (csl X)"
+  proof -
+    have fX: "finite X"
+      using that csl_infinite by blast
+    then show ?thesis
+      using that set_csl_ed[OF fX] by (auto simp: list_all_iff)
+  qed
+  obtain a ty where \<omega>: "\<omega> = (a, ty)"
+    by (cases \<omega>)
+  let ?c = "csl X \<noteq> [] \<and> list_all (\<lambda>t. is_eint (umeval_trm f t)) (csl X)"
+  show ?thesis
+  proof (cases a)
+    case Agg_Max
+    show ?thesis
+    proof (cases ?c)
+      case True
+      with pre[OF True] show ?thesis
+        by (simp add: \<omega> Agg_Max uagg_mm_or_def uagg_mm_Max_Min(1))
+    next
+      case False
+      then show ?thesis
+        unfolding \<omega> Agg_Max uagg_mm_or_def Let_def
+        by (simp only: fst_conv agg_type.case if_False uagg_gen_def)
+    qed
+  next
+    case Agg_Min
+    show ?thesis
+    proof (cases ?c)
+      case True
+      with pre[OF True] show ?thesis
+        by (simp add: \<omega> Agg_Min uagg_mm_or_def uagg_mm_Max_Min(2))
+    next
+      case False
+      then show ?thesis
+        unfolding \<omega> Agg_Min uagg_mm_or_def Let_def
+        by (simp only: fst_conv agg_type.case if_False uagg_gen_def)
+    qed
+  qed (simp_all add: \<omega> uagg_g_def)
+qed
+
 (*<*)
 end
 (*>*)

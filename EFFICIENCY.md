@@ -8994,3 +8994,47 @@ carry over through `verimon_spec_share_opt` and `safe_share_opt_ψ`.
 
 The outputs are identical on every suite formula with a release or an ALWAYS, and on the 652
 `-verified` commands of the test corpus.  The cram tests pass.
+
+## 21.45 The aggregation outside a window, without the multiset
+
+An aggregation that is not over a window (`uagg`) clusters its operand's table by group.  It
+then clusters each group again by the aggregated value to count the multiplicities, flattens
+that multiset into a sorted list, and folds over the list.  On `agg-nested`
+(`s <- MAX r (r <- CNT y; x ONCE[0,10] A(x,y))`) the outer MAX spent half the run there
+(4.8G of 9.9G instructions): RBT insertions of whole tuples, comparing lists.
+
+Two code equations for `uagg` replace its definition:
+
+* MIN and MAX (`Dense_Map_Upd`, `uagg_code`): one pass over the table's sorted list keeps, per
+  group, the extreme seen so far (`mm_step`, one descent through `mupd`).  The order on
+  `event_data` is total only within one kind of value, and not on floats.  So the pass runs
+  only when every value is an integer; it folds `max`/`min` on `integer`, and the result is
+  wrapped back in `EInt`.  `uagg_mm_gen` proves the result equal to `uagg`'s from
+  `flatten_uagg_values`: the flattened multiset of a finite, non-empty group lists exactly
+  that group's values.  Otherwise the code falls back to `uagg`'s own equation (`uagg_gen`).
+* The other aggregations (`Dense_Agg_Code`, `uagg_g_code`) build the window aggregate's structure
+  (`gagg`: counts, count and sum, or an order-statistic tree per group) from scratch with
+  `gins` and read the result with `gres`.  `uagg_gins` gets the equality from the window's
+  invariant (`ag_inv_ins`, `ag_res_inv`) through the representation map `rgagg`, when all the
+  tuples have one width that the parameters fit (`dagg_ok`, checked at run time).  An
+  aggregation the structure cannot represent (`ginit ω = None`, e.g. a SUM of floats) goes to
+  `uagg_gen` directly.
+
+The structure was tried for MIN/MAX first and lost: the order-statistic tree's insertions
+cost more than the two clusterings (agg-nested +2.9%).
+
+| formula | before (s) | after (s) | MonPoly (s) | Ir before | Ir after | Ir MonPoly |
+|---|---|---|---|---|---|---|
+| agg-nested | 1.38 | 0.89 | 0.95 | 9.91G | 6.11G | 6.75G |
+| agg-max | 0.49 | 0.38 | 0.51 | 3.83G | 3.12G | 4.00G |
+| agg-min | 0.49 | 0.38 | 0.50 | 3.84G | 3.12G | 4.00G |
+| agg-nogroup | 0.42 | 0.28 | 0.38 | 3.30G | 2.48G | 3.05G |
+| agg-cnt | 0.49 | 0.44 | 0.48 | 3.91G | 3.38G | 3.97G |
+| agg-sum | 0.48 | 0.42 | 0.48 | 3.85G | 3.33G | 4.00G |
+| agg-med | 0.63 | 0.53 | 0.62 | 4.86G | 4.39G | 4.76G |
+| aggguard-cnt | | | | 5.01G | 4.47G | 4.56G |
+| agg-since | | | | 6.02G | 5.42G | 6.28G |
+| agg-float | | | | 5.09G | 5.09G | 4.75G |
+
+The outputs are identical on every aggregation formula of the suite and on the 652
+`-verified` commands of the test corpus.  The cram tests pass.

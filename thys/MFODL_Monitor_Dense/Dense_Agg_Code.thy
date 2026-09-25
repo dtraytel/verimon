@@ -163,6 +163,114 @@ text \<open>The result table of the aggregation is left as @{thm [source] ugmr_c
   @{const rbt_of_sorted_list} and the natural-number arithmetic of @{const rbtreeify} spend
   (0.7% of the run).  Section 21.27 of \<^file>\<open>../../EFFICIENCY.md\<close> has the numbers.\<close>
 
+subsection \<open>The aggregation outside a window, through the window's structure\<close>
+
+text \<open>An aggregation that is not over a window (@{const uagg}) clusters its operand's table by
+  the group, clusters each group again by the aggregated value to count the multiplicities, and
+  reads the aggregate off the multiset.  The window's structure (@{typ "'b gagg"}) keeps, per
+  group, the count, the count and the sum, or the order-statistic tree of the values; built
+  from scratch by inserting the table's tuples one at a time, it has the aggregate at hand.  The
+  invariant of the window's aggregation says that the result read off it is
+  @{const uagg}'s (@{thm [source] ag_res_inv}), when the tuples have one width that the
+  aggregation's parameters fit (@{const dagg_ok}).  The code below checks that and falls back
+  to @{const uagg}'s own equation, @{text uagg_gen}, otherwise, or when the structure cannot
+  represent the aggregation.\<close>
+
+definition uagg_gen :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    event_data list set \<Rightarrow> event_data list set" where
+  "uagg_gen = uagg"
+
+lemma uagg_gen_code[code]:
+  "uagg_gen g0 \<omega> f k pos rel =
+     (if g0 \<and> Set.is_empty rel then {[eval_agg_op \<omega> {}]}
+      else (let groups = cluster (Some \<circ> drop k) rel in
+        (\<lambda>g. case Mapping.lookup groups g of
+                None \<Rightarrow> g
+              | Some G \<Rightarrow> take pos g @ eval_agg_op \<omega> (uagg_values f G) # drop pos g)
+          ` Mapping.keys groups))"
+  by (simp add: uagg_gen_def uagg_def)
+
+lemma uagg_gins:
+  assumes ok: "dagg_ok (g0, \<omega>, f, k, pos) w" and fX: "finite X" and w: "\<forall>t\<in>X. length t = w"
+    and a: "gins k (umeval_trm f) (csl X) (ginit \<omega>) = Some a"
+  shows "gres g0 \<omega> pos (\<lambda>x. x) a = uagg g0 \<omega> f k pos X"
+proof -
+  let ?p = "(g0, \<omega>, f, k, pos)"
+  let ?T = "reopt_table X"
+  let ?cc = "(Mapping.empty, {}) :: cntset"
+  have fT: "finite ?T"
+    using fX by (simp add: reopt_table_def)
+  have T: "dwf_table w ?T"
+    using w by (auto simp: reopt_table_def dwf_tuple_def reopt_def)
+  have cr: "cnt_rep (\<lambda>_. 0) ?cc"
+    by (simp add: cnt_rep_def)
+  have inv: "ag_inv ?p w (cnt_add ?T ?cc) (ag_ins ?p w ?T ?cc (ag_init ?p w))"
+    by (rule ag_inv_ins[OF cr fT ok T _ ag_inv_init]) simp
+  have snd: "snd (cnt_add ?T ?cc) = ?T"
+    using cnt_rep_snd_add[OF cr fT] by simp
+  have ins: "ag_ins ?p w ?T ?cc (ag_init ?p w) = Some (rgagg a)"
+    using gins_rgagg[of k "umeval_trm f" "csl X" "ginit \<omega>"] a
+    by (simp add: ag_ins_def ag_init_def csl_reopt_table)
+  have "ag_res ?p w (cnt_add ?T ?cc) (Some (rgagg a)) = dagg_p ?p ?T"
+    using ag_res_inv[OF inv ok] snd T ins by simp
+  then have "reopt_table (gres g0 \<omega> pos (\<lambda>x. x) a) = reopt_table (uagg g0 \<omega> f k pos X)"
+    by (simp add: ag_res_def gres_rgagg dagg_def)
+  then show ?thesis
+    by (metis deopt_table_reopt_table)
+qed
+
+definition uagg_g :: "bool \<Rightarrow> ty Formula.agg_op \<Rightarrow> Formula.trm \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow>
+    event_data list set \<Rightarrow> event_data list set" where
+  "uagg_g = uagg"
+
+lemma uagg_g_eq:
+  "uagg_g g0 \<omega> f k pos X = (let xs = csl X in case xs of
+       [] \<Rightarrow> uagg_gen g0 \<omega> f k pos X
+     | t # _ \<Rightarrow> (let w = length t in
+         if dagg_ok (g0, \<omega>, f, k, pos) w \<and> list_all (\<lambda>u. length u = w) xs
+         then (case gins k (umeval_trm f) xs (ginit \<omega>) of
+                 Some a \<Rightarrow> gres g0 \<omega> pos (\<lambda>x. x) a
+               | None \<Rightarrow> uagg_gen g0 \<omega> f k pos X)
+         else uagg_gen g0 \<omega> f k pos X))"
+proof (cases "csl X")
+  case (Cons t ts)
+  then have fX: "finite X"
+    using csl_infinite by fastforce
+  then have s: "set (csl X) = X"
+    by (rule set_csl_ed)
+  show ?thesis
+  proof (cases "dagg_ok (g0, \<omega>, f, k, pos) (length t) \<and> list_all (\<lambda>u. length u = length t) (csl X)")
+    case True
+    then have w: "\<forall>u\<in>X. length u = length t"
+      using s by (simp add: list_all_iff)
+    show ?thesis
+    proof (cases "gins k (umeval_trm f) (csl X) (ginit \<omega>)")
+      case (Some a)
+      then show ?thesis
+        using True uagg_gins[OF _ fX w Some] by (simp add: Let_def Cons uagg_g_def)
+    qed (use True Cons in \<open>simp add: Let_def uagg_gen_def uagg_g_def\<close>)
+  next
+    case False
+    then show ?thesis
+      by (simp only: Cons Let_def list.case if_False uagg_gen_def uagg_g_def)
+  qed
+qed (simp add: uagg_gen_def uagg_g_def)
+
+text \<open>An aggregation the structure cannot represent at all (@{const ginit}) goes straight to
+  @{const uagg}'s own equation, without the checks.\<close>
+
+lemma uagg_g_code[code]:
+  "uagg_g g0 \<omega> f k pos X = (if Option.is_none (ginit \<omega> :: event_data gagg option) then uagg_gen g0 \<omega> f k pos X
+     else (let xs = csl X in case xs of
+       [] \<Rightarrow> uagg_gen g0 \<omega> f k pos X
+     | t # _ \<Rightarrow> (let w = length t in
+         if dagg_ok (g0, \<omega>, f, k, pos) w \<and> list_all (\<lambda>u. length u = w) xs
+         then (case gins k (umeval_trm f) xs (ginit \<omega>) of
+                 Some a \<Rightarrow> gres g0 \<omega> pos (\<lambda>x. x) a
+               | None \<Rightarrow> uagg_gen g0 \<omega> f k pos X)
+         else uagg_gen g0 \<omega> f k pos X)))"
+  by (simp add: uagg_g_eq[symmetric]) (simp add: uagg_g_def uagg_gen_def)
+
 (*<*)
 end
 (*>*)

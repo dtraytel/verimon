@@ -9399,7 +9399,7 @@ let rec edl_image
   h (RBT_set rbt) =
     unbox edl_rbt_fold_table_v (fun x -> edl_insert (h x)) rbt edl_bot;;
 
-let rec uagg
+let rec uagg_gen
   g0 omega f k pos rel =
     (if g0 && unbox edl_is_empty_v rel
       then edl_insert
@@ -9418,6 +9418,234 @@ let rec uagg
                      take pos g @
                        eval_agg_op omega (uagg_values f ga) :: drop pos g))
                (unbox edl_keys_table_v groups)));;
+
+let rec entriesa _A xa = entries (impl_ofa _A xa);;
+
+let rec ugmr
+  q p f (RBT_Mapping t) =
+    (match ccompare_lista ccompare_event_data
+      with None ->
+        failwith "ugmr RBT_Mapping: ccompare = None"
+          (fun _ -> ugmr q p f (RBT_Mapping t))
+      | Some _ ->
+        fold (fun e a ->
+               (let v = take p (fst e) @ f (snd e) :: drop p (fst e) in
+                 (if q v then edl_insert v a else a)))
+          (entriesa (ccompare_list ccompare_event_data) t) edl_bot);;
+
+let rec mm_step (_A1, _A2)
+  ev op k t m =
+    snd (mupd ((ccompare_list _A1), (equal_list _A2)) (drop k t)
+          (fun a -> (match a with None -> ev t | Some u -> op u (ev t))) m);;
+
+let rec uagg_mm
+  op f k pos xs =
+    ugmr (fun _ -> true) pos (fun a -> EInt a)
+      (fold (mm_step (ccompare_event_data, equal_event_data)
+              (fun t -> ival (umeval_trm f t)) op k)
+        xs (mapping_empty (ccompare_list ccompare_event_data)
+             (of_phantom mapping_impl_list)));;
+
+let rec uagg_mm_or
+  op g0 omega f k pos x =
+    (let xs = edl_csl x in
+      (if not (null xs) && list_all (fun t -> is_eint (umeval_trm f t)) xs
+        then uagg_mm op f k pos xs else uagg_gen g0 omega f k pos x));;
+
+let rec dagg_ok
+  (g0, (omega, (f, (k, pos)))) w =
+    less_eq_nat k w &&
+      (less_eq_nat pos (minus_nata w k) &&
+        (nat_subset (fvi_trm zero_nata f)
+           (unbox nat_atLeastLessThan_v zero_nata w) &&
+          (if g0 then equal_nata w k else true)));;
+
+let rec ginit _A
+  omega =
+    (match (fst omega, snd omega)
+      with (Agg_Cnt, _) ->
+        Some (GCnt (mapping_empty (ccompare_list _A)
+                     (of_phantom mapping_impl_list)))
+      | (Agg_Min, TInt) ->
+        Some (GRank
+               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
+                 IntT))
+      | (Agg_Min, TFloat) -> None
+      | (Agg_Min, TString) ->
+        Some (GRank
+               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
+                 StringT))
+      | (Agg_Max, TInt) ->
+        Some (GRank
+               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
+                 IntT))
+      | (Agg_Max, TFloat) -> None
+      | (Agg_Max, TString) ->
+        Some (GRank
+               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
+                 StringT))
+      | (Agg_Sum, TInt) ->
+        Some (GSum (mapping_empty (ccompare_list _A)
+                     (of_phantom mapping_impl_list)))
+      | (Agg_Sum, TFloat) -> None | (Agg_Sum, TString) -> None
+      | (Agg_Avg, TInt) ->
+        Some (GSum (mapping_empty (ccompare_list _A)
+                     (of_phantom mapping_impl_list)))
+      | (Agg_Avg, TFloat) ->
+        Some (GSum (mapping_empty (ccompare_list _A)
+                     (of_phantom mapping_impl_list)))
+      | (Agg_Avg, TString) -> None | (Agg_Med, TInt) -> None
+      | (Agg_Med, TFloat) ->
+        Some (GRank
+               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
+                 IntT))
+      | (Agg_Med, TString) -> None);;
+
+let rec gmr (_A1, _A2, _A3)
+  p ij f m =
+    image ((ceq_list _A1), (ccompare_list _A2))
+      ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+      (fun g ->
+        (match lookupa ((ccompare_list _A2), (equal_list _A3)) m g
+          with None -> g | Some i -> take p g @ ij (f i) :: drop p g))
+      (keys (cenum_list, (ceq_list _A1), (ccompare_list _A2), set_impl_list)
+        m);;
+
+let rec gres (_A1, _A2, _A3)
+  g0 omega p ij x4 = match g0, omega, p, ij, x4 with
+    g0, omega, p, ij, GCnt m ->
+      (if g0 && is_empty
+                  (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
+                  (keys (cenum_list, (ceq_list _A1), (ccompare_list _A2),
+                          set_impl_list)
+                    m)
+        then insert ((ceq_list _A1), (ccompare_list _A2))
+               [ij (eval_agg_op omega
+                     (set_empty
+                       ((ceq_prod ceq_event_data ceq_enat),
+                         (ccompare_prod ccompare_event_data ccompare_enat))
+                       (of_phantom
+                         (set_impl_proda set_impl_event_data set_impl_enat))))]
+               (set_empty ((ceq_list _A1), (ccompare_list _A2))
+                 (of_phantom set_impl_lista))
+        else gmr (_A1, _A2, _A3) p ij
+               (fun k -> EInt (integer_of_int (int_of_nat k))) m)
+    | g0, omega, p, ij, GSum m ->
+        (if g0 && is_empty
+                    (card_UNIV_list, (ceq_list _A1),
+                      (cproper_interval_list _A2))
+                    (keys (cenum_list, (ceq_list _A1), (ccompare_list _A2),
+                            set_impl_list)
+                      m)
+          then insert ((ceq_list _A1), (ccompare_list _A2))
+                 [ij (eval_agg_op omega
+                       (set_empty
+                         ((ceq_prod ceq_event_data ceq_enat),
+                           (ccompare_prod ccompare_event_data ccompare_enat))
+                         (of_phantom
+                           (set_impl_proda set_impl_event_data
+                             set_impl_enat))))]
+                 (set_empty ((ceq_list _A1), (ccompare_list _A2))
+                   (of_phantom set_impl_lista))
+          else (match fst omega
+                 with Agg_Cnt ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Min ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Max ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Sum -> gmr (_A1, _A2, _A3) p ij (fun k -> EInt (snd k)) m
+                 | Agg_Avg ->
+                   gmr (_A1, _A2, _A3) p ij
+                     (fun k ->
+                       EFloat
+                         (Stdlib.(/.) (double_of_event_data (EInt (snd k)))
+                           (double_of_int (int_of_nat (fst k)))))
+                     m
+                 | Agg_Med ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)))
+    | g0, omega, p, ij, GRank (m, ty) ->
+        (if g0 && is_empty
+                    (card_UNIV_list, (ceq_list _A1),
+                      (cproper_interval_list _A2))
+                    (keys (cenum_list, (ceq_list _A1), (ccompare_list _A2),
+                            set_impl_list)
+                      m)
+          then insert ((ceq_list _A1), (ccompare_list _A2))
+                 [ij (eval_agg_op omega
+                       (set_empty
+                         ((ceq_prod ceq_event_data ceq_enat),
+                           (ccompare_prod ccompare_event_data ccompare_enat))
+                         (of_phantom
+                           (set_impl_proda set_impl_event_data
+                             set_impl_enat))))]
+                 (set_empty ((ceq_list _A1), (ccompare_list _A2))
+                   (of_phantom set_impl_lista))
+          else (match fst omega
+                 with Agg_Cnt ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Min -> gmr (_A1, _A2, _A3) p ij get_edata_min m
+                 | Agg_Max -> gmr (_A1, _A2, _A3) p ij get_edata_max m
+                 | Agg_Sum ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Avg ->
+                   set_empty ((ceq_list _A1), (ccompare_list _A2))
+                     (of_phantom set_impl_lista)
+                 | Agg_Med ->
+                   gmr (_A1, _A2, _A3) p ij
+                     (fun k ->
+                       (let u = get_length k in
+                        let ua = divide_nat u (nat_of_integer (Z.of_int 2)) in
+                        let a =
+                          (if nat_dvd (nat_of_integer (Z.of_int 2)) u
+                            then Stdlib.(/.)
+                                   (Stdlib.(+.)
+                                     (double_of_event_data_agg
+                                       (get_edata_list k
+ (minus_nata ua one_nata)))
+                                     (double_of_event_data_agg
+                                       (get_edata_list k ua)))
+                                   (double_of_int (Int_of_integer (Z.of_int 2)))
+                            else double_of_event_data_agg (get_edata_list k ua))
+                          in
+                         EFloat a))
+                     m));;
+
+let rec uagg_g
+  g0 omega f k pos x =
+    (if is_none (ginit ccompare_event_data omega)
+      then uagg_gen g0 omega f k pos x
+      else (let xs = edl_csl x in
+             (match xs with [] -> uagg_gen g0 omega f k pos x
+               | t :: _ ->
+                 (let w = size_lista t in
+                   (if dagg_ok (g0, (omega, (f, (k, pos)))) w &&
+                         list_all (fun u -> equal_nata (size_lista u) w) xs
+                     then (match
+                            gins (ccompare_event_data, equal_event_data) k
+                              (umeval_trm f) xs
+                              (ginit ccompare_event_data omega)
+                            with None -> uagg_gen g0 omega f k pos x
+                            | Some a ->
+                              gres (ceq_event_data, ccompare_event_data,
+                                     equal_event_data)
+                                g0 omega pos (fun xa -> xa) a)
+                     else uagg_gen g0 omega f k pos x)))));;
+
+let rec uagg
+  g0 omega f k pos x =
+    (match fst omega with Agg_Cnt -> uagg_g g0 omega f k pos x
+      | Agg_Min -> uagg_mm_or (min ord_integer) g0 omega f k pos x
+      | Agg_Max -> uagg_mm_or (max ord_integer) g0 omega f k pos x
+      | Agg_Sum -> uagg_g g0 omega f k pos x
+      | Agg_Avg -> uagg_g g0 omega f k pos x
+      | Agg_Med -> uagg_g g0 omega f k pos x);;
 
 let rec udagg_p (g0, (omega, (f, (k, pos)))) = uagg g0 omega f k pos;;
 
@@ -9748,8 +9976,6 @@ let rec de_mfilter_keys_nat
                         (fun _ -> de_mfilter_keys_nat pos (Complement uu) m))
           else edl_mapping_delete_set m (Complement uu));;
 
-let rec entriesa _A xa = entries (impl_ofa _A xa);;
-
 let rec de_del_buckets1_nat
   (RBT_Mapping t) tm =
     fold (fun p tma -> edl_mapping_delete_set tma (snd p))
@@ -9903,47 +10129,6 @@ let rec de_gsw_join
             else unbox edl_is_empty_v x)
         then aux
         else (t, (empty_queue, (empty_queue, (edl_mempty_nat, edl_bot))))));;
-
-let rec ginit _A
-  omega =
-    (match (fst omega, snd omega)
-      with (Agg_Cnt, _) ->
-        Some (GCnt (mapping_empty (ccompare_list _A)
-                     (of_phantom mapping_impl_list)))
-      | (Agg_Min, TInt) ->
-        Some (GRank
-               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
-                 IntT))
-      | (Agg_Min, TFloat) -> None
-      | (Agg_Min, TString) ->
-        Some (GRank
-               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
-                 StringT))
-      | (Agg_Max, TInt) ->
-        Some (GRank
-               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
-                 IntT))
-      | (Agg_Max, TFloat) -> None
-      | (Agg_Max, TString) ->
-        Some (GRank
-               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
-                 StringT))
-      | (Agg_Sum, TInt) ->
-        Some (GSum (mapping_empty (ccompare_list _A)
-                     (of_phantom mapping_impl_list)))
-      | (Agg_Sum, TFloat) -> None | (Agg_Sum, TString) -> None
-      | (Agg_Avg, TInt) ->
-        Some (GSum (mapping_empty (ccompare_list _A)
-                     (of_phantom mapping_impl_list)))
-      | (Agg_Avg, TFloat) ->
-        Some (GSum (mapping_empty (ccompare_list _A)
-                     (of_phantom mapping_impl_list)))
-      | (Agg_Avg, TString) -> None | (Agg_Med, TInt) -> None
-      | (Agg_Med, TFloat) ->
-        Some (GRank
-               (mapping_empty (ccompare_list _A) (of_phantom mapping_impl_list),
-                 IntT))
-      | (Agg_Med, TString) -> None);;
 
 let rec ag_init _A p w = (let (_, (omega, (_, (_, _)))) = p in ginit _A omega);;
 
