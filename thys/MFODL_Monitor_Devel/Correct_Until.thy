@@ -196,16 +196,34 @@ next
   with assms show ?case by (cases "p' \<in> dom P") (auto simp: wf_envs_def lookup_update')
 next
   case (7 p')
-  from xs in_fv have "list_all2 (\<lambda>x y. y = map Some ` {v. length v = m \<and> letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V(p' \<mapsto> X)) v i \<phi>) v x})
+  let ?S = "\<lambda>X v i. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) v i \<phi>"
+  have "list_all2 (\<lambda>x y. y = map Some ` {v. length v = m \<and> letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V(p' \<mapsto> X)) v i \<phi>) v x})
       [i..<i'] xs" if "(p, m) = p'"
-    using that
-    apply (elim list.rel_mono_strong)
-    apply(auto 0 3 simp: wf_tuple_def nth_append
-        elim!: in_qtableE in_qtableI intro!: image_eqI[where x="map the _"])
-    apply (subst list.map_id[symmetric])
-    apply (rule map_cong[OF refl])
-    apply simp
-    by (metis atLeastLessThan_iff in_set_conv_nth le0 option.collapse subsetD)
+    unfolding that[symmetric] using xs
+  proof (rule list.rel_mono_strong)
+    fix k X
+    assume qt: "qtable m (fv \<phi>) (mem_restr UNIV) (\<lambda>v. letpast_sat ?S (map the v) k) X"
+    show "X = map Some ` {v. length v = m \<and> letpast_sat ?S v k}"
+    proof (intro set_eqI iffI)
+      fix x
+      assume "x \<in> X"
+      with qt have wf: "wf_tuple m (fv \<phi>) x" and sat: "letpast_sat ?S (map the x) k"
+        by (auto elim: in_qtableE)
+      from wf in_fv have "x = map Some (map the x)"
+        by (auto simp: wf_tuple_def intro!: nth_equalityI)
+      moreover from wf sat have "map the x \<in> {v. length v = m \<and> letpast_sat ?S v k}"
+        by (simp add: wf_tuple_length)
+      ultimately show "x \<in> map Some ` {v. length v = m \<and> letpast_sat ?S v k}"
+        by (rule image_eqI)
+    next
+      fix x
+      assume "x \<in> map Some ` {v. length v = m \<and> letpast_sat ?S v k}"
+      then obtain v where "x = map Some v" "length v = m" "letpast_sat ?S v k"
+        by blast
+      with in_fv show "x \<in> X"
+        by (auto intro!: in_qtableI[OF qt] wf_tuple_map_Some)
+    qed
+  qed
   moreover have "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd p' \<and> the (V p') v i}) [the (P p')..<the (P' p')] (the (Mapping.lookup db p'))"
     if "(p, m) \<noteq> p'"
   proof -
