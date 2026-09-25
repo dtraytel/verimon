@@ -482,7 +482,17 @@ lemma gresult_msaux_rmsaux: "gresult_msaux args (rmsaux s) = reopt_table (gresul
 
 lemma gjoin_msaux_rmsaux:
   "gjoin_msaux args (reopt_table Y) (rmsaux s) = rmsaux (gjoin_msaux args Y s)"
-  by (cases s rule: gmsaux_cases) (auto simp: Let_def)
+proof (cases s rule: gmsaux_cases)
+  case (1 t gc msk data_prev data_in table_in idx_in tuple_in idx_since tuple_since)
+  have e: "(if b then reopt_table X else {}) = reopt_table (if b then X else {})"
+    for b and X :: "event_data list set"
+    by simp
+  text \<open>Both sides take the same branch; push @{const rmsaux} into it and compare the parts.\<close>
+  show ?thesis
+    unfolding 1
+    by (simp add: Let_def e if_distrib[of rmsaux] if_distrib[of "rmk reopt_table"]
+        if_distrib[of "rmk (\<lambda>v. v)"] cong: if_cong split del: if_split)
+qed
 
 lemma ggc_join_msaux_rmsaux:
   "ggc_join_msaux args (reopt_table Y) (rmsaux s) = rmsaux (ggc_join_msaux args Y s)"
