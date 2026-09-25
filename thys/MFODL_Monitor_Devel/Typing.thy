@@ -3958,9 +3958,40 @@ lemma eq_refinement_min_type:
   shows "\<exists> t1 t2 . min_type typ typ' = return (t1,t2)"
 proof -
   obtain f g where typs: "wf_f f"  "wf_f g" "f typ = g typ'" using assms  by auto
-  then show ?thesis unfolding wf_f_def apply (induction "typ" typ' rule: min_type.induct) 
-    by (auto  simp add: eq_commute[where ?b=  "g (TAny _)"] eq_commute[where ?b=  "g (TNum _)"] numeric_ty_def 
-        split: tysym.splits nat.splits) 
+  have gnum: "case g (TNum n) of TCst x => x : numeric_ty | TNum x => True | _ => False" for n
+    using typs(2) unfolding wf_f_def by blast
+  have fnum: "case f (TNum n) of TCst x => x : numeric_ty | TNum x => True | _ => False" for n
+    using typs(1) unfolding wf_f_def by blast
+  show ?thesis
+  proof (cases "min_type typ typ'")
+    case (Inl e)
+    then consider (Cst) x y where "typ = TCst x" "typ' = TCst y" "x ~= y"
+      | (StrNum) n where "typ = TCst TString" "typ' = TNum n"
+      | (NumStr) n where "typ = TNum n" "typ' = TCst TString"
+      by (induction "typ" typ' rule: min_type.induct) (auto split: if_splits)
+    then show ?thesis
+    proof cases
+      case Cst
+      with typs show ?thesis
+        unfolding wf_f_def by simp
+    next
+      case (StrNum n)
+      with typs have "g (TNum n) = TCst TString"
+        unfolding wf_f_def by simp
+      with gnum[of n] show ?thesis
+        by (simp add: numeric_ty_def)
+    next
+      case (NumStr n)
+      with typs have "f (TNum n) = TCst TString"
+        unfolding wf_f_def by simp
+      with fnum[of n] show ?thesis
+        by (simp add: numeric_ty_def)
+    qed
+  next
+    case (Inr p)
+    then show ?thesis
+      by (cases p) auto
+  qed
 qed
 
 fun trivial_inst :: "(tysym \<Rightarrow> ty)"  
@@ -3984,10 +4015,14 @@ proof -
     using assms(1-4)  unfolding wf_f_def new_type_symbol_def numeric_ty_def 
     by(auto simp: clash_propagate_def split:tysym.splits)
   have "\<exists>EE tt. min_type constr type_start = return (EE, tt)" 
-    apply (rule eq_refinement_min_type)
-    apply (rule exI[of _ "(\<lambda> x. if x = constr then f type else x)"])
-    apply (rule exI[of _ "(\<lambda>x.  if x = type_start then f type else x)"])
-    using wf1 wf2 by auto
+  proof (rule eq_refinement_min_type, intro exI conjI)
+    show "wf_f (%x. if x = constr then f type else x)"
+      by (rule wf2)
+    show "wf_f (%x. if x = type_start then f type else x)"
+      by (rule wf1)
+    show "(%x. if x = constr then f type else x) constr = (%x. if x = type_start then f type else x) type_start"
+      by simp
+  qed
   then show False using assms(4) by (auto simp add: clash_propagate_def split: option.splits) 
 qed
 
