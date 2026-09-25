@@ -2974,15 +2974,35 @@ next
     proof (cases "fst \<omega> = Formula.Agg_Med")
       case True
       then obtain y0 where agg_type: "\<omega> = (Formula.Agg_Med, y0)" using RankAux by auto (metis prod.collapse)
+      let ?med = "\<lambda>l. let u = get_length l;
+                          u' = u div 2;
+                          aggval = if even u then ((double_of_event_data_agg (get_edata_list l (u' - 1)) + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2)
+                                    else double_of_event_data_agg (get_edata_list l u') in
+                          EFloat aggval"
+      have med_eq: "eval_agg_op \<omega> (group_multiset k b f X) = ?med l"
+        if valid_list_aux: "valid_list_aux l (group_multiset k b f X) type"
+          and not_empty: "flatten_multiset (group_multiset k b f X) \<noteq> []" for k l
+      proof -
+        let ?list = "flatten_multiset (group_multiset k b f X)"
+        have len: "length ?list = get_length l"
+          using valid_list_aux_length_eq[OF valid_list_aux finite_X] by simp
+        have nth: "?list ! i = get_edata_list l i" if "i < get_length l" for i
+          using valid_get_edata_list[OF valid_list_aux valid_finite_group_mset[OF finite_X] _ that] by simp
+        have "get_length l \<noteq> 0" using not_empty unfolding len[symmetric] by simp
+        then have *: "get_length l div 2 < get_length l" and **: "get_length l div 2 - 1 < get_length l"
+          by auto
+        have "eval_agg_op \<omega> (group_multiset k b f X) =
+          EFloat (let u = length ?list; u' = u div 2 in
+            if even u then (double_of_event_data_agg (?list ! (u' - 1)) + double_of_event_data_agg (?list ! u')) / double_of_int 2
+            else double_of_event_data_agg (?list ! u'))"
+          using not_empty finite_group_mset[OF finite_X] by (simp add: agg_type split: list.split)
+        also have "\<dots> = ?med l" by (simp only: Let_def len nth[OF *] nth[OF **])
+        finally show ?thesis .
+      qed
       show ?thesis
       proof (rule set_eqI, rule iffI)
         fix x
         assume x_in: "x \<in> result_maggaux ?args (RankAux aux)"
-        let ?med = "\<lambda>l. let u = get_length l;
-                            u' = u div 2;
-                            aggval = if even u then ((double_of_event_data_agg (get_edata_list l (u' - 1)) + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2)
-                                      else double_of_event_data_agg (get_edata_list l u') in
-                            EFloat aggval"
         obtain k l where x_def: "Mapping.lookup m k = Some l" "x = k[y:= Some (?med l)]"
         proof -
           have "x \<in> get_map_result m y ?med"
@@ -2998,11 +3018,8 @@ next
         have k_in: "k \<in> (drop b) ` X" using RankAux x_def b_def by (simp add: keys_is_none_rep) 
         have not_empty: "?list \<noteq> []"
           using flatten_multiset_not_empty[of _ b f m X k] RankAux finite using k_in b_def by simp blast
-        then have "get_length l \<noteq> 0" using valid_list_aux_length_eq[OF valid_list_aux finite_X] by auto
-        then have *: "get_length l div 2 < get_length l" by auto
-        then have "x = k[y:= Some (eval_agg_op \<omega> (group_multiset k b f X))]" 
-          using not_empty agg_type x_def not_empty valid_get_edata_list[OF valid_list_aux valid_finite_group_mset[OF finite_X, of k b f]] valid_list_aux_length_eq[OF valid_list_aux finite_X]
-          finite_group_mset[OF finite_X] b_def apply(cases ?list) apply(auto split:list_aux.splits) using * by auto
+        have "x = k[y:= Some (eval_agg_op \<omega> (group_multiset k b f X))]"
+          using x_def(2) med_eq[OF valid_list_aux not_empty] by simp
         then show "x \<in> eval_aggargs ?args X" 
           using k_in b_def by(simp add:eval_aggargs_def eval_agg_def not_singleton empty_table_def)
       next
@@ -3018,16 +3035,8 @@ next
         let ?list = "flatten_multiset (group_multiset k b f X)"
         have not_empty: "?list \<noteq> []"
           using flatten_multiset_not_empty[of _ b f m X k] b_def RankAux finite x_def by simp blast
-        then have "get_length l \<noteq> 0" using valid_list_aux_length_eq[OF valid_list_aux finite_X] by auto
-        then have *: "get_length l div 2 < get_length l" by auto
-        then have "x = k[y:= Some(let u = get_length l;
-                              u' = u div 2;
-                              aggval = (if even u then (double_of_event_data_agg (get_edata_list l (u' - 1)) + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2
-                                        else double_of_event_data_agg (get_edata_list l u')) in
-                              EFloat aggval)]"
-          using RankAux agg_type x_def(1) not_empty 
-          valid_get_edata_list[OF valid_list_aux valid_finite_group_mset[OF finite_X, of k b f]] valid_list_aux_length_eq[OF valid_list_aux finite_X]
-          finite_group_mset[OF finite_X] apply(cases ?list) apply(auto split:list_aux.splits) using * by auto
+        have "x = k[y:= Some (?med l)]"
+          using x_def(1) med_eq[OF valid_list_aux not_empty] by simp
         then show "x \<in> result_maggaux ?args (RankAux aux)" using k_in lookup
           by(simp add:not_singleton_map x_def(1) agg_type get_map_result_def lookup rev_image_eqI) 
       qed 
