@@ -1,5 +1,6 @@
 theory MFODL_Parser_Code
   imports MFODL_Parser.MFODL_Parser "HOL-Library.Code_Binary_Nat" "HOL-Library.Code_Target_Int"
+    "HOL-Library.Code_Abstract_Char"
 begin
 
 text \<open>Examples, checked by evaluation, and the code export. A separate session,
@@ -55,6 +56,10 @@ lemma count_digits_code [code]:
   \<open>count_digits [] = 0\<close>
   \<open>count_digits (c # s) = (if is_digit c then Suc (count_digits s) else 0)\<close>
   unfolding count_digits_def by simp_all
+
+lemma sign_len_code [code]:
+  \<open>sign_len s = (case s of c # _ \<Rightarrow> if c = CHR ''-'' then 1 else 0 | [] \<Rightarrow> 0)\<close>
+  unfolding sign_len_def by (cases s) (auto split: char.split bool.split)
 
 lemma drop_count_digits: \<open>drop (count_digits s) s = dropWhile is_digit s\<close>
   unfolding count_digits_def dropWhile_eq_drop ..
@@ -227,6 +232,24 @@ next
 qed
 
 
+section \<open>Code for the semantic actions\<close>
+
+text \<open>Integer literals: the character code as an integer, and a comparison
+  instead of a pattern match on a character literal, which the code generator
+  implements by taking the character apart into its bits.\<close>
+
+lemma digit_val_code [code]: \<open>digit_val c = int_of_integer (integer_of_char c) - 48\<close>
+proof -
+  have \<open>(of_char c :: integer) = of_nat (of_char c)\<close> by (rule of_nat_of_char[symmetric])
+  then show ?thesis unfolding digit_val_def integer_of_char_def by simp
+qed
+
+lemma int_of_lexeme_code [code]:
+  \<open>int_of_lexeme s = (case s of c # ds \<Rightarrow> if c = CHR ''-'' then - nat_of_digits ds else nat_of_digits s
+     | [] \<Rightarrow> 0)\<close>
+  unfolding int_of_lexeme_def by (cases s) (auto simp: nat_of_digits_def split: char.split bool.split)
+
+
 section \<open>Examples\<close>
 
 text \<open>
@@ -277,16 +300,17 @@ lemma mfodl_examples:
 section \<open>Code export\<close>
 
 text \<open>Entry points for \<^verbatim>\<open>src/verified_parser_adapter.ml\<close>. Strings are passed
-  as lists of characters, whose constructor is exported, so that every byte of
-  the input reaches the lexer (\<^typ>\<open>String.literal\<close> only holds 7-bit
-  characters). One constructor per datatype makes its constructors visible to
-  OCaml.\<close>
+  as lists of characters, so that every byte of the input reaches the lexer
+  (\<^typ>\<open>String.literal\<close> only holds 7-bit characters). Characters are
+  integers in the code (\<^verbatim>\<open>Code_Abstract_Char\<close>), converted by
+  \<^const>\<open>char_of_integer\<close> and \<^const>\<open>integer_of_char\<close>. One constructor per
+  datatype makes its constructors visible to OCaml.\<close>
 
 definition lex_chars :: \<open>string \<Rightarrow> (mtok \<times> string) list option\<close> where
   \<open>lex_chars s = map_option (map (\<lambda>t. (tok t, lexeme t))) (lex s)\<close>
 
 export_code parse_formula lex_chars lex mfodl_parse postprocess integer_of_int integer_of_nat
-  String.Char CInt TVar OBnd ACnt FEqual RSkip FALSE
+  char_of_integer integer_of_char CInt TVar OBnd ACnt FEqual RSkip FALSE
   in OCaml module_name Verified_parser file_prefix "verified_parser"
 
 end

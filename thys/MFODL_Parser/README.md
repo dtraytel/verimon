@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser is 8 to 17 times slower than MonPoly's
-parser (median 12): with MonPoly's parser at 1.4 to 5.6 µs per formula
-(median 2.4 µs), about 30 µs at the median. The LR driver takes 68% of the
-time, the lexer 22%, post-processing and conversion 10%. In a `monpoly -check`
+9 to 48 tokens), the verified parser is 6.5 to 13 times slower than MonPoly's
+parser (median 9): with MonPoly's parser at 1.4 to 5.6 µs per formula
+(median 2.4 µs), about 23 µs at the median. The LR driver takes 77% of the
+time, the lexer 15%, post-processing and conversion 8%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -121,19 +121,23 @@ the export, on the same suite (median per formula):
 | on trie tables (`lr/LR_Trie.thy`)         | 50 µs    | 11.2 ms  |
 | numbered tokens (`lr/LR_Tok.thy`)         | 40 µs    | 8.8 ms   |
 | product automaton (`lr/LR_Prod.thy`)      | 33 µs    | 7.2 ms   |
-| one saved stack (`LR_Loop.thy`, current)  | 30 µs    | 6.6 ms   |
+| one saved stack (`LR_Loop.thy`)           | 30 µs    | 6.6 ms   |
+| characters as integers (current)          | 23 µs    | 5.1 ms   |
 | MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 54 M, 37 M of them in the LR driver and 14 M in the lexer.
+parser executes 40 M, 32 M of them in the LR driver (with the semantic
+actions) and 5 M in the lexer.
 Numbering the lookahead token by a linear search in the list of terminals at
 every step took 24 M of the LR driver's instructions; numbering each token
 once, when it enters the input, takes 7 M. Running on the product automaton
 instead of pairs of states reduced the step from 20 M to 12 M. Detecting
 loops of reductions with one saved stack instead of all stacks since the last
-shift saved another 5 M. (The last row was measured against the previous
-version in alternating runs, 9% faster, and scaled to the earlier rows; the
-machine was slower at the time.)
+shift saved another 5 M. Exporting characters as integers, with the code
+equations described below, took the lexer from 14 M to 5 M and the semantic
+actions from 9 M to 4 M. (The last two rows were measured against the
+previous version in alternating runs, 9% and 24% faster, and scaled to the
+earlier rows; the machine was slower at the time.)
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -165,6 +169,13 @@ The lexer model (`MFODL_Lexer`) is written for readability; `MFODL_Parser_Code`
 gives it code equations, proved equal to its definitions, that avoid
 arithmetic on naturals and try only the rules that can match at the current
 character. They reduced the lexer from 427 M to 13 M instructions.
+`MFODL_Parser_Code` also imports `Code_Abstract_Char`, which exports a
+character as its code, an integer: comparing two characters then compares two
+integers instead of eight bits, and `integer_of_char` needs no arithmetic
+(the adapter converts OCaml strings with `char_of_integer`). A pattern match on
+a character literal, as in `int_of_lexeme` (`CHR ''-'' # ds`), still takes the
+character apart into its bits; `digit_val`, `int_of_lexeme` and `sign_len` get
+code equations that compare instead.
 
 `MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
 ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
@@ -173,5 +184,5 @@ The `grammar` package can also run the driver on arrays with integer indices
 (`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
 when the module is loaded adds about 4.5 ms to every run of `monpoly`.
 
-`src/verified_parser.ml` is about 2.4 MB, mostly the LR tables of the
+`src/verified_parser.ml` is about 2.2 MB, mostly the LR tables of the
 product automaton as tries.

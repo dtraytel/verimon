@@ -1,9 +1,8 @@
 module Verified_parser : sig
-  type int
   type num
-  val integer_of_int : int -> Z.t
   type nat
-  type char = Chara of bool * bool * bool * bool * bool * bool * bool * bool
+  type char
+  val integer_of_char : char -> Z.t
   type mtok = FALSE | TRUE | LPA | RPA | LSB | RSB | COM | SC | DOT | QM | LD |
     LESSEQ | EQ | LESS | GTR | GTREQ | STAR | LARROW | SUBSTRING | MATCHES |
     PLUS | MINUS | SLASH | MOD | F2I | I2F | DAY_OF_MONTH | MONTH | YEAR |
@@ -12,6 +11,7 @@ module Verified_parser : sig
     | IMPL | EQUIV | EXISTS | FORALL | PREV | NEXT | EVENTUALLY | ONCE | ALWAYS
     | PAST_ALWAYS | SINCE | TRIGGER | UNTIL | RELEASE | BAR | FREX | PREX | CNT
     | MIN_KW | MAX_KW | SUM_KW | AVG | MED
+  type int
   type ('a, 'b) ktabs
   type ('a, 'b) dact
   type cst = CInt of int | CStr of char list | CFloat of char list |
@@ -48,151 +48,16 @@ module Verified_parser : sig
   type ('a, 'b, 'c) token_ext
   type ('a, 'b, 'c, 'd) ast
   val lex : char list -> ((mtok, char, unit) token_ext list) option
+  val integer_of_int : int -> Z.t
   val postprocess : formula -> formula option
+  val char_of_integer : Z.t -> char
   val mfodl_parse : (mtok, char, unit) token_ext list -> formula option
   val parse_formula : char list -> formula option
   val integer_of_nat : nat -> Z.t
   val lex_chars : char list -> ((mtok * char list) list) option
 end = struct
 
-type int = Int_of_integer of Z.t;;
-
 type num = One | Bit0 of num | Bit1 of num;;
-
-let one_inta : int = Int_of_integer (Z.of_int 1);;
-
-type 'a one = {one : 'a};;
-let one _A = _A.one;;
-
-let one_int = ({one = one_inta} : int one);;
-
-let rec integer_of_int (Int_of_integer k) = k;;
-
-let rec plus_inta
-  k l = Int_of_integer (Z.add (integer_of_int k) (integer_of_int l));;
-
-type 'a plus = {plus : 'a -> 'a -> 'a};;
-let plus _A = _A.plus;;
-
-let plus_int = ({plus = plus_inta} : int plus);;
-
-let zero_inta : int = Int_of_integer Z.zero;;
-
-type 'a zero = {zero : 'a};;
-let zero _A = _A.zero;;
-
-let zero_int = ({zero = zero_inta} : int zero);;
-
-type 'a semigroup_add = {plus_semigroup_add : 'a plus};;
-
-type 'a numeral =
-  {one_numeral : 'a one; semigroup_add_numeral : 'a semigroup_add};;
-
-let semigroup_add_int = ({plus_semigroup_add = plus_int} : int semigroup_add);;
-
-let numeral_int =
-  ({one_numeral = one_int; semigroup_add_numeral = semigroup_add_int} :
-    int numeral);;
-
-let rec times_inta
-  k l = Int_of_integer (Z.mul (integer_of_int k) (integer_of_int l));;
-
-type 'a times = {times : 'a -> 'a -> 'a};;
-let times _A = _A.times;;
-
-type 'a power = {one_power : 'a one; times_power : 'a times};;
-
-let times_int = ({times = times_inta} : int times);;
-
-let power_int = ({one_power = one_int; times_power = times_int} : int power);;
-
-type 'a ab_semigroup_add = {semigroup_add_ab_semigroup_add : 'a semigroup_add};;
-
-type 'a semigroup_mult = {times_semigroup_mult : 'a times};;
-
-type 'a semiring =
-  {ab_semigroup_add_semiring : 'a ab_semigroup_add;
-    semigroup_mult_semiring : 'a semigroup_mult};;
-
-let ab_semigroup_add_int =
-  ({semigroup_add_ab_semigroup_add = semigroup_add_int} :
-    int ab_semigroup_add);;
-
-let semigroup_mult_int =
-  ({times_semigroup_mult = times_int} : int semigroup_mult);;
-
-let semiring_int =
-  ({ab_semigroup_add_semiring = ab_semigroup_add_int;
-     semigroup_mult_semiring = semigroup_mult_int}
-    : int semiring);;
-
-type 'a mult_zero = {times_mult_zero : 'a times; zero_mult_zero : 'a zero};;
-
-let mult_zero_int =
-  ({times_mult_zero = times_int; zero_mult_zero = zero_int} : int mult_zero);;
-
-type 'a monoid_add =
-  {semigroup_add_monoid_add : 'a semigroup_add; zero_monoid_add : 'a zero};;
-
-type 'a comm_monoid_add =
-  {ab_semigroup_add_comm_monoid_add : 'a ab_semigroup_add;
-    monoid_add_comm_monoid_add : 'a monoid_add};;
-
-type 'a semiring_0 =
-  {comm_monoid_add_semiring_0 : 'a comm_monoid_add;
-    mult_zero_semiring_0 : 'a mult_zero; semiring_semiring_0 : 'a semiring};;
-
-let monoid_add_int =
-  ({semigroup_add_monoid_add = semigroup_add_int; zero_monoid_add = zero_int} :
-    int monoid_add);;
-
-let comm_monoid_add_int =
-  ({ab_semigroup_add_comm_monoid_add = ab_semigroup_add_int;
-     monoid_add_comm_monoid_add = monoid_add_int}
-    : int comm_monoid_add);;
-
-let semiring_0_int =
-  ({comm_monoid_add_semiring_0 = comm_monoid_add_int;
-     mult_zero_semiring_0 = mult_zero_int; semiring_semiring_0 = semiring_int}
-    : int semiring_0);;
-
-type 'a monoid_mult =
-  {semigroup_mult_monoid_mult : 'a semigroup_mult;
-    power_monoid_mult : 'a power};;
-
-type 'a semiring_numeral =
-  {monoid_mult_semiring_numeral : 'a monoid_mult;
-    numeral_semiring_numeral : 'a numeral;
-    semiring_semiring_numeral : 'a semiring};;
-
-type 'a zero_neq_one =
-  {one_zero_neq_one : 'a one; zero_zero_neq_one : 'a zero};;
-
-type 'a semiring_1 =
-  {semiring_numeral_semiring_1 : 'a semiring_numeral;
-    semiring_0_semiring_1 : 'a semiring_0;
-    zero_neq_one_semiring_1 : 'a zero_neq_one};;
-
-let monoid_mult_int =
-  ({semigroup_mult_monoid_mult = semigroup_mult_int;
-     power_monoid_mult = power_int}
-    : int monoid_mult);;
-
-let semiring_numeral_int =
-  ({monoid_mult_semiring_numeral = monoid_mult_int;
-     numeral_semiring_numeral = numeral_int;
-     semiring_semiring_numeral = semiring_int}
-    : int semiring_numeral);;
-
-let zero_neq_one_int =
-  ({one_zero_neq_one = one_int; zero_zero_neq_one = zero_int} :
-    int zero_neq_one);;
-
-let semiring_1_int =
-  ({semiring_numeral_semiring_1 = semiring_numeral_int;
-     semiring_0_semiring_1 = semiring_0_int;
-     zero_neq_one_semiring_1 = zero_neq_one_int}
-    : int semiring_1);;
 
 let rec equal_num x0 x1 = match x0, x1 with Bit0 x2, Bit1 x3 -> false
                     | Bit1 x3, Bit0 x2 -> false
@@ -239,6 +104,9 @@ let rec times_nata
     | m, Zero_nat -> Zero_nat
     | Nat_of_num k, Nat_of_num l -> Nat_of_num (times_num k l);;
 
+type 'a times = {times : 'a -> 'a -> 'a};;
+let times _A = _A.times;;
+
 type 'a dvd = {times_dvd : 'a times};;
 
 let times_nat = ({times = times_nata} : nat times);;
@@ -247,21 +115,37 @@ let dvd_nat = ({times_dvd = times_nat} : nat dvd);;
 
 let one_nata : nat = Nat_of_num One;;
 
+type 'a one = {one : 'a};;
+let one _A = _A.one;;
+
 let one_nat = ({one = one_nata} : nat one);;
 
 let rec plus_nata m n = match m, n with Zero_nat, n -> n
                     | m, Zero_nat -> m
                     | Nat_of_num k, Nat_of_num l -> Nat_of_num (plus_num k l);;
 
+type 'a plus = {plus : 'a -> 'a -> 'a};;
+let plus _A = _A.plus;;
+
 let plus_nat = ({plus = plus_nata} : nat plus);;
 
+type 'a zero = {zero : 'a};;
+let zero _A = _A.zero;;
+
 let zero_nat = ({zero = Zero_nat} : nat zero);;
+
+type 'a semigroup_add = {plus_semigroup_add : 'a plus};;
+
+type 'a numeral =
+  {one_numeral : 'a one; semigroup_add_numeral : 'a semigroup_add};;
 
 let semigroup_add_nat = ({plus_semigroup_add = plus_nat} : nat semigroup_add);;
 
 let numeral_nat =
   ({one_numeral = one_nat; semigroup_add_numeral = semigroup_add_nat} :
     nat numeral);;
+
+type 'a power = {one_power : 'a one; times_power : 'a times};;
 
 let power_nat = ({one_power = one_nat; times_power = times_nat} : nat power);;
 
@@ -383,8 +267,46 @@ let rec less_nat m x1 = match m, x1 with m, Zero_nat -> false
 
 let ord_nat = ({less_eq = less_eq_nat; less = less_nat} : nat ord);;
 
+type 'a ab_semigroup_add = {semigroup_add_ab_semigroup_add : 'a semigroup_add};;
+
+type 'a monoid_add =
+  {semigroup_add_monoid_add : 'a semigroup_add; zero_monoid_add : 'a zero};;
+
+type 'a comm_monoid_add =
+  {ab_semigroup_add_comm_monoid_add : 'a ab_semigroup_add;
+    monoid_add_comm_monoid_add : 'a monoid_add};;
+
+type 'a mult_zero = {times_mult_zero : 'a times; zero_mult_zero : 'a zero};;
+
+type 'a semigroup_mult = {times_semigroup_mult : 'a times};;
+
+type 'a semiring =
+  {ab_semigroup_add_semiring : 'a ab_semigroup_add;
+    semigroup_mult_semiring : 'a semigroup_mult};;
+
+type 'a semiring_0 =
+  {comm_monoid_add_semiring_0 : 'a comm_monoid_add;
+    mult_zero_semiring_0 : 'a mult_zero; semiring_semiring_0 : 'a semiring};;
+
 type 'a semiring_no_zero_divisors =
   {semiring_0_semiring_no_zero_divisors : 'a semiring_0};;
+
+type 'a monoid_mult =
+  {semigroup_mult_monoid_mult : 'a semigroup_mult;
+    power_monoid_mult : 'a power};;
+
+type 'a semiring_numeral =
+  {monoid_mult_semiring_numeral : 'a monoid_mult;
+    numeral_semiring_numeral : 'a numeral;
+    semiring_semiring_numeral : 'a semiring};;
+
+type 'a zero_neq_one =
+  {one_zero_neq_one : 'a one; zero_zero_neq_one : 'a zero};;
+
+type 'a semiring_1 =
+  {semiring_numeral_semiring_1 : 'a semiring_numeral;
+    semiring_0_semiring_1 : 'a semiring_0;
+    zero_neq_one_semiring_1 : 'a zero_neq_one};;
 
 type 'a semiring_1_no_zero_divisors =
   {semiring_1_semiring_1_no_zero_divisors : 'a semiring_1;
@@ -1153,18 +1075,11 @@ let rec equal_lista _A
 
 let rec equal_list _A = ({equal = equal_lista _A} : ('a list) equal);;
 
-type char = Chara of bool * bool * bool * bool * bool * bool * bool * bool;;
+type char = Chr of Z.t;;
 
-let rec equal_chara
-  (Chara (x1, x2, x3, x4, x5, x6, x7, x8))
-    (Chara (y1, y2, y3, y4, y5, y6, y7, y8)) =
-    equal_boola x1 y1 &&
-      (equal_boola x2 y2 &&
-        (equal_boola x3 y3 &&
-          (equal_boola x4 y4 &&
-            (equal_boola x5 y5 &&
-              (equal_boola x6 y6 &&
-                (equal_boola x7 y7 && equal_boola x8 y8))))));;
+let rec integer_of_char (Chr x) = x;;
+
+let rec equal_chara c d = Z.equal (integer_of_char c) (integer_of_char d);;
 
 let equal_char = ({equal = equal_chara} : char equal);;
 
@@ -6471,6 +6386,8 @@ let rec equal_irela x0 x1 = match x0, x1 with Ge, Any -> false
 
 let equal_irel = ({equal = equal_irela} : irel equal);;
 
+type int = Int_of_integer of Z.t;;
+
 type 'a ntrie = NTip | NNode of 'a option * 'a ntrie * 'a ntrie;;
 
 type 'a ntab = NTab of 'a option * 'a ntrie;;
@@ -6531,8 +6448,6 @@ type ('a, 'b, 'c, 'd) ast = Leaf of ('d, 'b, 'a) token_ext |
 
 let rec suc n = plus_nata n (Nat_of_num One);;
 
-let rec comp f g = (fun x -> f (g x));;
-
 let rec fold f x1 s = match f, x1, s with f, [], s -> s
                | f, x :: xs, s -> fold f xs (f x s);;
 
@@ -6566,9 +6481,6 @@ let rec take
 
 let rec foldl f a x2 = match f, a, x2 with f, a, [] -> a
                 | f, a, x :: xs -> foldl f (f a x) xs;;
-
-let rec foldr f x1 = match f, x1 with f, [] -> id
-                | f, x :: xs -> comp (f x) (foldr f xs);;
 
 let rec map_of _A
   x0 k = match x0, k with [], k -> None
@@ -6742,417 +6654,238 @@ let rec length_tailrec x0 n = match x0, n with [], n -> n
 
 let rec size_list xs = length_tailrec xs Zero_nat;;
 
+let rec byte
+  b0 b1 b2 b3 b4 b5 b6 b7 =
+    (let s0 = (if b0 then (Z.of_int 1) else Z.zero) in
+     let s1 = (if b1 then Z.add s0 (Z.of_int 2) else s0) in
+     let s2 = (if b2 then Z.add s1 (Z.of_int 4) else s1) in
+     let s3 = (if b3 then Z.add s2 (Z.of_int 8) else s2) in
+     let s4 = (if b4 then Z.add s3 (Z.of_int 16) else s3) in
+     let s5 = (if b5 then Z.add s4 (Z.of_int 32) else s4) in
+     let s6 = (if b6 then Z.add s5 (Z.of_int 64) else s5) in
+     let s7 = (if b7 then Z.add s6 (Z.of_int 128) else s6) in
+      s7);;
+
 let rec char_of _A
-  n = Chara (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-               n Zero_nat,
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num One),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 One)),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 One)),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 (Bit0 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 (Bit0 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit0 (Bit1 One))),
-              bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
-                n (Nat_of_num (Bit1 (Bit1 One))));;
+  a = Chr (byte (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+                  a Zero_nat)
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num One))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit0 One)))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit1 One)))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit0 (Bit0 One))))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit1 (Bit0 One))))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit0 (Bit1 One))))
+            (bit _A.semiring_bit_operations_linordered_euclidean_semiring_bit_operations.semiring_bits_semiring_bit_operations
+              a (Nat_of_num (Bit1 (Bit1 One)))));;
+
+let char_0x72 : char = Chr (Z.of_int 114);;
+
+let char_0x28 : char = Chr (Z.of_int 40);;
+
+let char_0x23 : char = Chr (Z.of_int 35);;
+
+let char_0x22 : char = Chr (Z.of_int 34);;
+
+let char_0xE2 : char = Chr (Z.of_int 226);;
+
+let char_0xB7 : char = Chr (Z.of_int 183);;
+
+let char_0x97 : char = Chr (Z.of_int 151);;
+
+let char_0x96 : char = Chr (Z.of_int 150);;
+
+let char_0x81 : char = Chr (Z.of_int 129);;
+
+let char_0x7C : char = Chr (Z.of_int 124);;
+
+let char_0x73 : char = Chr (Z.of_int 115);;
+
+let char_0x69 : char = Chr (Z.of_int 105);;
+
+let char_0x66 : char = Chr (Z.of_int 102);;
+
+let char_0x5F : char = Chr (Z.of_int 95);;
+
+let char_0x5D : char = Chr (Z.of_int 93);;
+
+let char_0x5B : char = Chr (Z.of_int 91);;
+
+let char_0x5A : char = Chr (Z.of_int 90);;
+
+let char_0x59 : char = Chr (Z.of_int 89);;
+
+let char_0x58 : char = Chr (Z.of_int 88);;
+
+let char_0x57 : char = Chr (Z.of_int 87);;
+
+let char_0x56 : char = Chr (Z.of_int 86);;
+
+let char_0x55 : char = Chr (Z.of_int 85);;
+
+let char_0x54 : char = Chr (Z.of_int 84);;
+
+let char_0x53 : char = Chr (Z.of_int 83);;
+
+let char_0x52 : char = Chr (Z.of_int 82);;
+
+let char_0x51 : char = Chr (Z.of_int 81);;
+
+let char_0x50 : char = Chr (Z.of_int 80);;
+
+let char_0x4F : char = Chr (Z.of_int 79);;
+
+let char_0x4E : char = Chr (Z.of_int 78);;
+
+let char_0x4D : char = Chr (Z.of_int 77);;
+
+let char_0x4C : char = Chr (Z.of_int 76);;
+
+let char_0x4B : char = Chr (Z.of_int 75);;
+
+let char_0x49 : char = Chr (Z.of_int 73);;
+
+let char_0x48 : char = Chr (Z.of_int 72);;
+
+let char_0x47 : char = Chr (Z.of_int 71);;
+
+let char_0x46 : char = Chr (Z.of_int 70);;
+
+let char_0x45 : char = Chr (Z.of_int 69);;
+
+let char_0x44 : char = Chr (Z.of_int 68);;
+
+let char_0x43 : char = Chr (Z.of_int 67);;
+
+let char_0x42 : char = Chr (Z.of_int 66);;
+
+let char_0x41 : char = Chr (Z.of_int 65);;
+
+let char_0x3F : char = Chr (Z.of_int 63);;
+
+let char_0x3E : char = Chr (Z.of_int 62);;
+
+let char_0x3D : char = Chr (Z.of_int 61);;
+
+let char_0x3C : char = Chr (Z.of_int 60);;
+
+let char_0x3B : char = Chr (Z.of_int 59);;
+
+let char_0x32 : char = Chr (Z.of_int 50);;
+
+let char_0x2F : char = Chr (Z.of_int 47);;
+
+let char_0x2E : char = Chr (Z.of_int 46);;
+
+let char_0x2D : char = Chr (Z.of_int 45);;
+
+let char_0x2C : char = Chr (Z.of_int 44);;
+
+let char_0x2B : char = Chr (Z.of_int 43);;
+
+let char_0x2A : char = Chr (Z.of_int 42);;
+
+let char_0x29 : char = Chr (Z.of_int 41);;
 
 let keyword_table : (char list * mtok) list
-  = [([Chara (true, true, false, true, false, true, false, false)], PLUS);
-      ([Chara (true, false, true, true, false, true, false, false)], MINUS);
-      ([Chara (false, true, true, true, false, true, false, false)], DOT);
-      ([Chara (false, true, false, true, false, true, false, false)], STAR);
-      ([Chara (true, true, true, true, false, true, false, false)], SLASH);
-      ([Chara (false, false, false, true, false, true, false, false)], LPA);
-      ([Chara (true, false, false, true, false, true, false, false)], RPA);
-      ([Chara (true, true, false, true, true, false, true, false)], LSB);
-      ([Chara (true, false, true, true, true, false, true, false)], RSB);
-      ([Chara (false, false, true, true, true, true, true, false);
-         Chara (false, true, true, true, true, true, false, false)],
+  = [([char_0x2B], PLUS); ([char_0x2D], MINUS); ([char_0x2E], DOT);
+      ([char_0x2A], STAR); ([char_0x2F], SLASH); ([char_0x28], LPA);
+      ([char_0x29], RPA); ([char_0x5B], LSB); ([char_0x5D], RSB);
+      ([char_0x7C; char_0x3E], FREX); ([char_0xE2; char_0x96; char_0xB7], FREX);
+      ([char_0x46; char_0x4F; char_0x52; char_0x57; char_0x41; char_0x52;
+         char_0x44],
         FREX);
-      ([Chara (false, true, false, false, false, true, true, true);
-         Chara (false, true, true, false, true, false, false, true);
-         Chara (true, true, true, false, true, true, false, true)],
+      ([char_0x4D; char_0x41; char_0x54; char_0x43; char_0x48; char_0x46],
         FREX);
-      ([Chara (false, true, true, false, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, false, false, true, false)],
-        FREX);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (false, false, false, true, false, false, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
-        FREX);
-      ([Chara (false, false, true, true, true, true, false, false);
-         Chara (false, false, true, true, true, true, true, false)],
+      ([char_0x3C; char_0x7C], PREX); ([char_0xE2; char_0x97; char_0x81], PREX);
+      ([char_0x42; char_0x41; char_0x43; char_0x4B; char_0x57; char_0x41;
+         char_0x52; char_0x44],
         PREX);
-      ([Chara (false, true, false, false, false, true, true, true);
-         Chara (true, true, true, false, true, false, false, true);
-         Chara (true, false, false, false, false, false, false, true)],
+      ([char_0x4D; char_0x41; char_0x54; char_0x43; char_0x48; char_0x50],
         PREX);
-      ([Chara (false, true, false, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, true, false, true, false, false, true, false);
-         Chara (true, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, false, false, true, false)],
-        PREX);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (false, false, false, true, false, false, true, false);
-         Chara (false, false, false, false, true, false, true, false)],
-        PREX);
-      ([Chara (false, false, true, true, true, true, true, false)], BAR);
-      ([Chara (false, false, true, true, false, true, false, false)], COM);
-      ([Chara (true, true, false, true, true, true, false, false)], SC);
-      ([Chara (true, true, true, true, true, true, false, false)], QM);
-      ([Chara (true, true, true, true, true, false, true, false)], LD);
-      ([Chara (false, false, true, true, true, true, false, false);
-         Chara (true, false, true, true, false, true, false, false)],
-        LARROW);
-      ([Chara (false, false, true, true, true, true, false, false);
-         Chara (true, false, true, true, true, true, false, false)],
-        LESSEQ);
-      ([Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (false, true, false, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (true, true, true, false, false, false, true, false)],
+      ([char_0x7C], BAR); ([char_0x2C], COM); ([char_0x3B], SC);
+      ([char_0x3F], QM); ([char_0x5F], LD); ([char_0x3C; char_0x2D], LARROW);
+      ([char_0x3C; char_0x3D], LESSEQ);
+      ([char_0x53; char_0x55; char_0x42; char_0x53; char_0x54; char_0x52;
+         char_0x49; char_0x4E; char_0x47],
         SUBSTRING);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (false, false, false, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x4D; char_0x41; char_0x54; char_0x43; char_0x48; char_0x45;
+         char_0x53],
         MATCHES);
-      ([Chara (false, true, false, false, true, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (true, true, false, false, true, true, true, false)],
-        R2S);
-      ([Chara (true, true, false, false, true, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (false, true, false, false, true, true, true, false)],
-        S2R);
-      ([Chara (false, false, true, true, true, true, false, false)], LESS);
-      ([Chara (false, true, true, true, true, true, false, false);
-         Chara (true, false, true, true, true, true, false, false)],
-        GTREQ);
-      ([Chara (false, true, true, true, true, true, false, false)], GTR);
-      ([Chara (true, false, true, true, true, true, false, false)], EQ);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, false, false, true, false)],
-        MOD);
-      ([Chara (false, true, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (true, false, false, true, false, true, true, false)],
-        F2I);
-      ([Chara (true, false, false, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (false, true, true, false, false, true, true, false)],
-        I2F);
-      ([Chara (true, false, false, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (true, true, false, false, true, true, true, false)],
-        I2S);
-      ([Chara (true, true, false, false, true, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (true, false, false, true, false, true, true, false)],
-        S2I);
-      ([Chara (false, true, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (true, true, false, false, true, true, true, false)],
-        F2S);
-      ([Chara (true, true, false, false, true, true, true, false);
-         Chara (false, true, false, false, true, true, false, false);
-         Chara (false, true, true, false, false, true, true, false)],
-        S2F);
-      ([Chara (false, false, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, false, false, true, true, false, true, false);
-         Chara (true, true, true, true, true, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, true, false, false, false, true, false);
-         Chara (true, true, true, true, true, false, true, false);
-         Chara (true, false, true, true, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (false, false, false, true, false, false, true, false)],
+      ([char_0x72; char_0x32; char_0x73], R2S);
+      ([char_0x73; char_0x32; char_0x72], S2R); ([char_0x3C], LESS);
+      ([char_0x3E; char_0x3D], GTREQ); ([char_0x3E], GTR); ([char_0x3D], EQ);
+      ([char_0x4D; char_0x4F; char_0x44], MOD);
+      ([char_0x66; char_0x32; char_0x69], F2I);
+      ([char_0x69; char_0x32; char_0x66], I2F);
+      ([char_0x69; char_0x32; char_0x73], I2S);
+      ([char_0x73; char_0x32; char_0x69], S2I);
+      ([char_0x66; char_0x32; char_0x73], F2S);
+      ([char_0x73; char_0x32; char_0x66], S2F);
+      ([char_0x44; char_0x41; char_0x59; char_0x5F; char_0x4F; char_0x46;
+         char_0x5F; char_0x4D; char_0x4F; char_0x4E; char_0x54; char_0x48],
         DAY_OF_MONTH);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (false, false, false, true, false, false, true, false)],
-        MONTH);
-      ([Chara (true, false, false, true, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false)],
-        YEAR);
-      ([Chara (false, true, true, false, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, true, true, true, false, true, false);
-         Chara (false, false, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
+      ([char_0x4D; char_0x4F; char_0x4E; char_0x54; char_0x48], MONTH);
+      ([char_0x59; char_0x45; char_0x41; char_0x52], YEAR);
+      ([char_0x46; char_0x4F; char_0x52; char_0x4D; char_0x41; char_0x54;
+         char_0x5F; char_0x44; char_0x41; char_0x54; char_0x45],
         FORMAT_DATE);
-      ([Chara (false, true, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
-        FALSE);
-      ([Chara (false, false, true, false, true, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
-        TRUE);
-      ([Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-        LET);
-      ([Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (false, false, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
+      ([char_0x46; char_0x41; char_0x4C; char_0x53; char_0x45], FALSE);
+      ([char_0x54; char_0x52; char_0x55; char_0x45], TRUE);
+      ([char_0x4C; char_0x45; char_0x54], LET);
+      ([char_0x4C; char_0x45; char_0x54; char_0x50; char_0x41; char_0x53;
+         char_0x54],
         LETPAST);
-      ([Chara (false, true, true, false, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (false, true, false, true, true, false, true, false)],
-        FRZ);
-      ([Chara (true, false, false, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false)],
-        IN);
-      ([Chara (false, true, true, true, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-        NOT);
-      ([Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, false, false, true, false)],
-        AND);
-      ([Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false)],
-        OR);
-      ([Chara (true, false, false, true, false, false, true, false);
-         Chara (true, false, true, true, false, false, true, false);
-         Chara (false, false, false, false, true, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x46; char_0x52; char_0x5A], FRZ); ([char_0x49; char_0x4E], IN);
+      ([char_0x4E; char_0x4F; char_0x54], NOT);
+      ([char_0x41; char_0x4E; char_0x44], AND); ([char_0x4F; char_0x52], OR);
+      ([char_0x49; char_0x4D; char_0x50; char_0x4C; char_0x49; char_0x45;
+         char_0x53],
         IMPL);
-      ([Chara (true, false, true, false, false, false, true, false);
-         Chara (true, false, false, false, true, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (false, true, true, false, true, false, true, false)],
-        EQUIV);
-      ([Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, false, true, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x45; char_0x51; char_0x55; char_0x49; char_0x56], EQUIV);
+      ([char_0x45; char_0x58; char_0x49; char_0x53; char_0x54; char_0x53],
         EXISTS);
-      ([Chara (false, true, true, false, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false)],
+      ([char_0x46; char_0x4F; char_0x52; char_0x41; char_0x4C; char_0x4C],
         FORALL);
-      ([Chara (false, false, false, false, true, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, true, true, false, true, false, true, false)],
+      ([char_0x50; char_0x52; char_0x45; char_0x56], PREV);
+      ([char_0x50; char_0x52; char_0x45; char_0x56; char_0x49; char_0x4F;
+         char_0x55; char_0x53],
         PREV);
-      ([Chara (false, false, false, false, true, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-        PREV);
-      ([Chara (false, true, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, false, true, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-        NEXT);
-      ([Chara (true, false, true, false, false, false, true, false);
-         Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, true, false, true, false)],
+      ([char_0x4E; char_0x45; char_0x58; char_0x54], NEXT);
+      ([char_0x45; char_0x56; char_0x45; char_0x4E; char_0x54; char_0x55;
+         char_0x41; char_0x4C; char_0x4C; char_0x59],
         EVENTUALLY);
-      ([Chara (true, true, false, false, true, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x53; char_0x4F; char_0x4D; char_0x45; char_0x54; char_0x49;
+         char_0x4D; char_0x45; char_0x53],
         EVENTUALLY);
-      ([Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
-        ONCE);
-      ([Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, false, false, true, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x4F; char_0x4E; char_0x43; char_0x45], ONCE);
+      ([char_0x41; char_0x4C; char_0x57; char_0x41; char_0x59; char_0x53],
         ALWAYS);
-      ([Chara (false, false, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, true, true, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, false, false, true, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+      ([char_0x50; char_0x41; char_0x53; char_0x54; char_0x5F; char_0x41;
+         char_0x4C; char_0x57; char_0x41; char_0x59; char_0x53],
         PAST_ALWAYS);
-      ([Chara (false, false, false, true, false, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, true, true, true, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, true, false, true, false)],
+      ([char_0x48; char_0x49; char_0x53; char_0x54; char_0x4F; char_0x52;
+         char_0x49; char_0x43; char_0x41; char_0x4C; char_0x4C; char_0x59],
         PAST_ALWAYS);
-      ([Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
-        SINCE);
-      ([Chara (false, false, true, false, true, false, true, false);
-         Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (true, true, true, false, false, false, true, false);
-         Chara (true, true, true, false, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, true, false, false, true, false, true, false)],
+      ([char_0x53; char_0x49; char_0x4E; char_0x43; char_0x45], SINCE);
+      ([char_0x54; char_0x52; char_0x49; char_0x47; char_0x47; char_0x45;
+         char_0x52],
         TRIGGER);
-      ([Chara (true, false, true, false, true, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false)],
-        UNTIL);
-      ([Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, false, false, true, false)],
+      ([char_0x55; char_0x4E; char_0x54; char_0x49; char_0x4C], UNTIL);
+      ([char_0x52; char_0x45; char_0x4C; char_0x45; char_0x41; char_0x53;
+         char_0x45],
         RELEASE);
-      ([Chara (true, true, false, false, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-        CNT);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, false, false, true, false);
-         Chara (false, true, true, true, false, false, true, false)],
-        MIN_KW);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, false, true, true, false, true, false)],
-        MAX_KW);
-      ([Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, true, false, true, false, true, false);
-         Chara (true, false, true, true, false, false, true, false)],
-        SUM_KW);
-      ([Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, true, false, true, false, true, false);
-         Chara (true, true, true, false, false, false, true, false)],
-        AVG);
-      ([Chara (true, false, true, true, false, false, true, false);
-         Chara (true, false, true, false, false, false, true, false);
-         Chara (false, false, true, false, false, false, true, false)],
-        MED)];;
-
-let rec of_bool _A = function false -> zero _A.zero_zero_neq_one
-                     | true -> one _A.one_zero_neq_one;;
-
-let rec integer_of_char
-  (Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
-    Z.add (Z.mul
-            (Z.add
-              (Z.mul
-                (Z.add
-                  (Z.mul
-                    (Z.add
-                      (Z.mul
-                        (Z.add
-                          (Z.mul
-                            (Z.add
-                              (Z.mul
-                                (Z.add
-                                  (Z.mul (of_bool zero_neq_one_integer b7)
-                                    (Z.of_int 2))
-                                  (of_bool zero_neq_one_integer b6))
-                                (Z.of_int 2))
-                              (of_bool zero_neq_one_integer b5))
-                            (Z.of_int 2))
-                          (of_bool zero_neq_one_integer b4))
-                        (Z.of_int 2))
-                      (of_bool zero_neq_one_integer b3))
-                    (Z.of_int 2))
-                  (of_bool zero_neq_one_integer b2))
-                (Z.of_int 2))
-              (of_bool zero_neq_one_integer b1))
-            (Z.of_int 2))
-      (of_bool zero_neq_one_integer b0);;
+      ([char_0x43; char_0x4E; char_0x54], CNT);
+      ([char_0x4D; char_0x49; char_0x4E], MIN_KW);
+      ([char_0x4D; char_0x41; char_0x58], MAX_KW);
+      ([char_0x53; char_0x55; char_0x4D], SUM_KW);
+      ([char_0x41; char_0x56; char_0x47], AVG);
+      ([char_0x4D; char_0x45; char_0x44], MED)];;
 
 let rec is_letter
   c = (let k = integer_of_char c in
@@ -7164,32 +6897,23 @@ let rec is_digit
         Z.leq (Z.of_int 48) k && Z.leq k (Z.of_int 57));;
 
 let rec is_str_start
-  c = is_letter c ||
-        (is_digit c ||
-          equal_chara c
-            (Chara (true, true, true, true, true, false, true, false)));;
+  c = is_letter c || (is_digit c || equal_chara c char_0x5F);;
 
 let rec sign_len
   s = (match s with [] -> Zero_nat
-        | Chara (true, true, _, _, _, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, true, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, false, true, true, _) :: _ -> Zero_nat
-        | Chara (true, false, true, true, false, true, false, true) :: _ ->
-          Zero_nat
-        | Chara (true, false, true, true, false, true, false, false) :: _ ->
-          Nat_of_num One
-        | Chara (true, false, true, true, false, false, _, _) :: _ -> Zero_nat
-        | Chara (true, false, true, false, _, _, _, _) :: _ -> Zero_nat
-        | Chara (true, false, false, _, _, _, _, _) :: _ -> Zero_nat
-        | Chara (false, _, _, _, _, _, _, _) :: _ -> Zero_nat);;
+        | c :: _ ->
+          (if equal_chara c char_0x2D then Nat_of_num One else Zero_nat));;
+
+let char_0x20 : char = Chr (Z.of_int 32);;
+
+let char_0x0D : char = Chr (Z.of_int 13);;
+
+let char_0x0A : char = Chr (Z.of_int 10);;
+
+let char_0x09 : char = Chr (Z.of_int 9);;
 
 let rec is_space
-  c = member equal_char
-        [Chara (false, false, false, false, false, true, false, false);
-          Chara (true, false, false, true, false, false, false, false);
-          Chara (false, true, false, true, false, false, false, false);
-          Chara (true, false, true, true, false, false, false, false)]
-        c;;
+  c = member equal_char [char_0x20; char_0x09; char_0x0A; char_0x0D] c;;
 
 let rule_starts : (char -> bool) list
   = [is_space] @
@@ -7197,31 +6921,19 @@ let rule_starts : (char -> bool) list
         [is_digit;
           (fun c -> not (equal_nata (sign_len [c]) Zero_nat) || is_digit c);
           (fun c -> not (equal_nata (sign_len [c]) Zero_nat) || is_digit c);
-          (fun c ->
-            equal_chara c
-              (Chara (false, true, false, false, false, true, false, false)));
-          (fun c ->
-            equal_chara c
-              (Chara (false, true, false, false, true, true, true, false)));
-          is_str_start;
-          (fun c ->
-            equal_chara c
-              (Chara (false, false, false, true, false, true, false, false)));
-          (fun c ->
-            equal_chara c
-              (Chara (true, true, false, false, false, true, false, false)))];;
+          (fun c -> equal_chara c char_0x22);
+          (fun c -> equal_chara c char_0x72); is_str_start;
+          (fun c -> equal_chara c char_0x28);
+          (fun c -> equal_chara c char_0x23)];;
+
+let char_0x3A : char = Chr (Z.of_int 58);;
+
+let char_0x27 : char = Chr (Z.of_int 39);;
 
 let rec is_str_char
   c = is_str_start c ||
-        (member equal_char
-           [Chara (true, false, true, true, false, true, false, false);
-             Chara (true, true, true, true, false, true, false, false);
-             Chara (false, true, false, true, true, true, false, false)]
-           c ||
-          (equal_chara c
-             (Chara (true, true, true, false, false, true, false, false)) ||
-            equal_chara c
-              (Chara (false, true, false, false, false, true, false, false))));;
+        (member equal_char [char_0x2D; char_0x2F; char_0x3A] c ||
+          (equal_chara c char_0x27 || equal_chara c char_0x22));;
 
 let rec m_string
   s = (match s with [] -> None
@@ -7229,15 +6941,13 @@ let rec m_string
           (if is_str_start c
             then Some (suc (size_list (takeWhile is_str_char sa))) else None));;
 
+let char_0x5C : char = Chr (Z.of_int 92);;
+
 let rec q_body
   = function [] -> None
     | c :: s ->
-        (if equal_chara c
-              (Chara (false, true, false, false, false, true, false, false))
-          then Some (Nat_of_num One)
-          else (if equal_chara c
-                     (Chara
-                       (false, false, true, true, true, false, true, false))
+        (if equal_chara c char_0x22 then Some (Nat_of_num One)
+          else (if equal_chara c char_0x5C
                  then (match s with [] -> None
                         | _ :: sa ->
                           map_option
@@ -7248,16 +6958,14 @@ let rec q_body
 let rec m_quoted
   s = (match s with [] -> None
         | c :: sa ->
-          (if equal_chara c
-                (Chara (false, true, false, false, false, true, false, false))
-            then map_option suc (q_body sa) else None));;
+          (if equal_chara c char_0x22 then map_option suc (q_body sa)
+            else None));;
 
 let rec m_regexp
   s = (match s with [] -> None
         | c :: sa ->
-          (if equal_chara c
-                (Chara (false, true, false, false, true, true, true, false))
-            then map_option suc (m_quoted sa) else None));;
+          (if equal_chara c char_0x72 then map_option suc (m_quoted sa)
+            else None));;
 
 let rec m_space
   s = (match s with [] -> None
@@ -7288,11 +6996,7 @@ let rec m_rat
        let n = count_digits t in
        let u = dropWhile is_digit t in
         (if less_nat Zero_nat n &&
-              (match u with [] -> false
-                | c :: _ ->
-                  equal_chara c
-                    (Chara
-                      (false, true, true, true, false, true, false, false)))
+              (match u with [] -> false | c :: _ -> equal_chara c char_0x2E)
           then Some (plus_nata (plus_nata (plus_nata k n) (Nat_of_num One))
                       (count_digits (tl u)))
           else None));;
@@ -7307,14 +7011,8 @@ let rules : ((char list -> nat option) * action) list
       map (fun (k, t) -> (m_fixed k, Emit t)) keyword_table @
         [(m_unit, EmitTU); (m_int, Emit INTEGER); (m_rat, Emit RAT);
           (m_quoted, Emit STR_CST); (m_regexp, Emit REGEXP_CST);
-          (m_string, Emit NAME);
-          (m_fixed
-             [Chara (false, false, false, true, false, true, false, false);
-               Chara (false, true, false, true, false, true, false, false)],
-            Comment);
-          (m_fixed
-             [Chara (true, true, false, false, false, true, false, false)],
-            LineComment)];;
+          (m_string, Emit NAME); (m_fixed [char_0x28; char_0x2A], Comment);
+          (m_fixed [char_0x23], LineComment)];;
 
 let rec rules_for
   c = map_filter
@@ -7351,21 +7049,20 @@ let rec lex_match
 let rec comment_end
   = function
     c :: d :: s ->
-      (if equal_chara c
-            (Chara (false, true, false, true, false, true, false, false)) &&
-            equal_chara d
-              (Chara (true, false, false, true, false, true, false, false))
+      (if equal_chara c char_0x2A && equal_chara d char_0x29
         then Some (Nat_of_num (Bit0 One))
         else map_option suc (comment_end (d :: s)))
     | [] -> None
     | [v] -> None;;
 
+let char_0x6D : char = Chr (Z.of_int 109);;
+
+let char_0x68 : char = Chr (Z.of_int 104);;
+
+let char_0x64 : char = Chr (Z.of_int 100);;
+
 let rec valid_unit
-  lx = member equal_char
-         [Chara (false, false, true, false, false, true, true, false);
-           Chara (false, false, false, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, true, true, false)]
+  lx = member equal_char [char_0x64; char_0x68; char_0x6D; char_0x73]
          (last lx);;
 
 let rec mk_token
@@ -7377,14 +7074,7 @@ let rec line_end
          size_list
            (takeWhile
              (fun c ->
-               not (equal_chara c
-                     (Chara
-                       (false, true, false, true, false, false, false,
-                         false))) &&
-                 not (equal_chara c
-                       (Chara
-                         (true, false, true, true, false, false, false,
-                           false))))
+               not (equal_chara c char_0x0A) && not (equal_chara c char_0x0D))
              s)
          in
         (if less_nat n (size_list s) then suc n else n));;
@@ -7494,10 +7184,7 @@ and fv_r = function RSkip vp -> []
            | RStar r -> fv_r r;;
 
 let rec is_anon
-  v = (match v with [] -> false
-        | c :: _ ->
-          equal_chara c
-            (Chara (true, true, true, true, true, false, true, false)));;
+  v = (match v with [] -> false | c :: _ -> equal_chara c char_0x5F);;
 
 let rec anon_vars
   p = maps (fun a ->
@@ -7556,21 +7243,7 @@ let rec span (Token_ext (tok, span, more)) = span;;
 
 let wild : regex = RSkip (Nat_of_num One);;
 
-let rec digit0 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x1;;
-
-let rec digit1 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x2;;
-
-let rec digit2 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x3;;
-
-let rec digit3 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x4;;
-
-let rec digit4 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x5;;
-
-let rec digit5 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x6;;
-
-let rec digit6 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x7;;
-
-let rec digit7 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x8;;
+let rec apsnd f (x, y) = (x, f y);;
 
 let rec add_ex_f
   = function
@@ -7609,6 +7282,8 @@ and add_ex_r = function RTest f -> RTest (add_ex_f f)
                | RPlus (r, s) -> RPlus (add_ex_r r, add_ex_r s)
                | RStar r -> RStar (add_ex_r r)
                | RSkip v -> RSkip v;;
+
+let rec integer_of_int (Int_of_integer k) = k;;
 
 let rec equal_int k l = Z.equal (integer_of_int k) (integer_of_int l);;
 
@@ -8047,15 +7722,12 @@ let rec digits_of_nat
                   (plus_nata (Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One))))))
                     (modulo_nata n (Nat_of_num (Bit0 (Bit1 (Bit0 One))))))]);;
 
-let rec anon_name
-  k = Chara (true, true, true, true, true, false, true, false) ::
-        digits_of_nat k;;
+let rec anon_name k = char_0x5F :: digits_of_nat k;;
 
 let rec number_args
   x0 k = match x0, k with [], k -> ([], k)
     | t :: ts, k ->
-        (if equal_trm t
-              (TVar [Chara (true, true, true, true, true, false, true, false)])
+        (if equal_trm t (TVar [char_0x5F])
           then (let (tsa, a) = number_args ts (suc k) in
                  (TVar (anon_name (suc k)) :: tsa, a))
           else (let (tsa, a) = number_args ts k in (t :: tsa, a)));;
@@ -8145,7 +7817,9 @@ and number_r
     | RStar r, k -> (let (ra, a) = number_r r k in (RStar ra, a))
     | RSkip v, k -> (RSkip v, k);;
 
-let dfintv : bound * bound = (CBnd zero_inta, BInf);;
+let zero_int : int = Int_of_integer Z.zero;;
+
+let dfintv : bound * bound = (CBnd zero_int, BInf);;
 
 let rec lexeme t = s_txt (span t);;
 
@@ -8153,123 +7827,98 @@ let rec postprocess
   f = (let g = add_ex_f (fst (number_f f Zero_nat)) in
         (if ok_f g then Some g else None));;
 
+let rec divmod_integer
+  k l = (if Z.equal k Z.zero then (Z.zero, Z.zero)
+          else (if Z.lt Z.zero l
+                 then (if Z.lt Z.zero k
+                        then (fun k l -> if Z.equal Z.zero l then
+                               (Z.zero, l) else Z.div_rem (Z.abs k) (Z.abs l))
+                               k l
+                        else (let (r, s) =
+                                (fun k l -> if Z.equal Z.zero l then
+                                  (Z.zero, l) else Z.div_rem (Z.abs k)
+                                  (Z.abs l))
+                                  k l
+                                in
+                               (if Z.equal s Z.zero then (Z.neg r, Z.zero)
+                                 else (Z.sub (Z.neg r) (Z.of_int 1),
+Z.sub l s))))
+                 else (if Z.equal l Z.zero then (Z.zero, k)
+                        else apsnd Z.neg
+                               (if Z.lt k Z.zero
+                                 then (fun k l -> if Z.equal Z.zero l then
+(Z.zero, l) else Z.div_rem (Z.abs k) (Z.abs l))
+k l
+                                 else (let (r, s) =
+ (fun k l -> if Z.equal Z.zero l then (Z.zero, l) else Z.div_rem (Z.abs k)
+   (Z.abs l))
+   k l
+ in
+(if Z.equal s Z.zero then (Z.neg r, Z.zero)
+  else (Z.sub (Z.neg r) (Z.of_int 1), Z.sub (Z.neg l) s)))))));;
+
+let rec modulo_integer k l = snd (divmod_integer k l);;
+
+let rec char_of_integer
+  k = Chr (if Z.leq Z.zero k && Z.lt k (Z.of_int 256) then k
+            else modulo_integer k (Z.of_int 256));;
+
 let rec bare_atom
   f fut = (if fut then RConcat (RTest f, wild) else RConcat (wild, RTest f));;
-
-let rec horner_sum _B
-  f a xs =
-    foldr (fun x b ->
-            plus _B.semiring_0_comm_semiring_0.comm_monoid_add_semiring_0.monoid_add_comm_monoid_add.semigroup_add_monoid_add.plus_semigroup_add
-              (f x)
-              (times
-                _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.times_mult_zero
-                a b))
-      xs (zero _B.semiring_0_comm_semiring_0.mult_zero_semiring_0.zero_mult_zero);;
-
-let rec numeral _A
-  = function One -> one _A.one_numeral
-    | Bit0 n ->
-        (let m = numeral _A n in
-          plus _A.semigroup_add_numeral.plus_semigroup_add m m)
-    | Bit1 n ->
-        (let m = numeral _A n in
-          plus _A.semigroup_add_numeral.plus_semigroup_add
-            (plus _A.semigroup_add_numeral.plus_semigroup_add m m)
-            (one _A.one_numeral));;
-
-let rec of_char _A
-  c = horner_sum _A.comm_semiring_0_comm_semiring_1
-        (of_bool _A.semiring_1_comm_semiring_1.zero_neq_one_semiring_1)
-        (numeral
-          _A.semiring_1_comm_semiring_1.semiring_numeral_semiring_1.numeral_semiring_numeral
-          (Bit0 One))
-        [digit0 c; digit1 c; digit2 c; digit3 c; digit4 c; digit5 c; digit6 c;
-          digit7 c];;
 
 let rec minus_int
   k l = Int_of_integer (Z.sub (integer_of_int k) (integer_of_int l));;
 
-let rec of_nat _A
-  = function
-    Zero_nat ->
-      zero _A.semiring_0_semiring_1.mult_zero_semiring_0.zero_mult_zero
-    | Nat_of_num k ->
-        numeral _A.semiring_numeral_semiring_1.numeral_semiring_numeral k;;
-
 let rec digit_val
-  c = minus_int (of_nat semiring_1_int (of_char comm_semiring_1_nat c))
-        (of_nat semiring_1_int
-          (of_char comm_semiring_1_nat
-            (Chara (false, false, false, false, true, true, false, false))));;
+  c = minus_int (Int_of_integer (integer_of_char c))
+        (Int_of_integer (Z.of_int 48));;
+
+let one_int : int = Int_of_integer (Z.of_int 1);;
+
+let rec times_int
+  k l = Int_of_integer (Z.mul (integer_of_int k) (integer_of_int l));;
+
+let rec plus_int
+  k l = Int_of_integer (Z.add (integer_of_int k) (integer_of_int l));;
 
 let rec nat_of_digits
   ds = foldl (fun n c ->
-               plus_inta (times_inta (Int_of_integer (Z.of_int 10)) n)
+               plus_int (times_int (Int_of_integer (Z.of_int 10)) n)
                  (digit_val c))
-         zero_inta ds;;
+         zero_int ds;;
 
 let rec unit_factor
-  c = (if equal_chara c
-            (Chara (false, false, true, false, false, true, true, false))
-        then times_inta
-               (times_inta (Int_of_integer (Z.of_int 24))
+  c = (if equal_chara c char_0x64
+        then times_int
+               (times_int (Int_of_integer (Z.of_int 24))
                  (Int_of_integer (Z.of_int 60)))
                (Int_of_integer (Z.of_int 60))
-        else (if equal_chara c
-                   (Chara (false, false, false, true, false, true, true, false))
-               then times_inta (Int_of_integer (Z.of_int 60))
+        else (if equal_chara c char_0x68
+               then times_int (Int_of_integer (Z.of_int 60))
                       (Int_of_integer (Z.of_int 60))
-               else (if equal_chara c
-                          (Chara
-                            (true, false, true, true, false, true, true, false))
-                      then Int_of_integer (Z.of_int 60) else one_inta)));;
+               else (if equal_chara c char_0x6D
+                      then Int_of_integer (Z.of_int 60) else one_int)));;
 
 let rec units_of_lexeme
-  s = times_inta (unit_factor (last s)) (nat_of_digits (butlast s));;
+  s = times_int (unit_factor (last s)) (nat_of_digits (butlast s));;
+
+let char_0x74 : char = Chr (Z.of_int 116);;
+
+let char_0x6E : char = Chr (Z.of_int 110);;
 
 let rec uminus_int k = Int_of_integer (Z.neg (integer_of_int k));;
 
 let rec int_of_lexeme
-  s = (match s with [] -> nat_of_digits []
-        | Chara (true, true, bool3, bool4, bool5, bool6, bool7, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, true, bool3, bool4, bool5, bool6, bool7, bool8) :: ds)
-        | Chara (true, false, true, true, true, bool6, bool7, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, false, true, true, true, bool6, bool7, bool8) :: ds)
-        | Chara (true, false, true, true, false, true, true, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, false, true, true, false, true, true, bool8) :: ds)
-        | Chara (true, false, true, true, false, true, false, true) :: ds ->
-          nat_of_digits
-            (Chara (true, false, true, true, false, true, false, true) :: ds)
-        | Chara (true, false, true, true, false, true, false, false) :: ds ->
-          uminus_int (nat_of_digits ds)
-        | Chara (true, false, true, true, false, false, bool7, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, false, true, true, false, false, bool7, bool8) :: ds)
-        | Chara (true, false, true, false, bool5, bool6, bool7, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, false, true, false, bool5, bool6, bool7, bool8) :: ds)
-        | Chara (true, false, false, bool4, bool5, bool6, bool7, bool8) :: ds ->
-          nat_of_digits
-            (Chara (true, false, false, bool4, bool5, bool6, bool7, bool8) ::
-              ds)
-        | Chara (false, bool2, bool3, bool4, bool5, bool6, bool7, bool8) :: ds
-          -> nat_of_digits
-               (Chara (false, bool2, bool3, bool4, bool5, bool6, bool7,
-                        bool8) ::
-                 ds));;
+  s = (match s with [] -> zero_int
+        | c :: ds ->
+          (if equal_chara c char_0x2D then uminus_int (nat_of_digits ds)
+            else nat_of_digits s));;
 
 let rec mfodl_dec_Units
   = function
     Node (dnv_Units, dxs_Units) ->
       (if equal_lista equal_char dnv_Units
-            [Chara (true, false, true, false, true, false, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (true, false, false, true, false, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, false, false, true, true, true, false)]
+            [char_0x55; char_0x6E; char_0x69; char_0x74; char_0x73]
         then (match dxs_Units with [] -> None
                | [c_1] ->
                  (match
@@ -8291,16 +7940,15 @@ let rec mfodl_dec_Units
         else None)
     | Leaf dwild_Units -> None;;
 
+let char_0x75 : char = Chr (Z.of_int 117);;
+
+let char_0x6F : char = Chr (Z.of_int 111);;
+
 let rec mfodl_dec_RBound
   = function
     Node (dnv_RBound, dxs_RBound) ->
       (if equal_lista equal_char dnv_RBound
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (false, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (false, false, true, false, false, true, true, false)]
+            [char_0x52; char_0x42; char_0x6F; char_0x75; char_0x6E; char_0x64]
         then (match dxs_RBound with [] -> None | [_] -> None
                | [c_1; c_2] ->
                  (match
@@ -8352,12 +8000,7 @@ let rec mfodl_dec_LBound
   = function
     Node (dnv_LBound, dxs_LBound) ->
       (if equal_lista equal_char dnv_LBound
-            [Chara (false, false, true, true, false, false, true, false);
-              Chara (false, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (false, false, true, false, false, true, true, false)]
+            [char_0x4C; char_0x42; char_0x6F; char_0x75; char_0x6E; char_0x64]
         then (match dxs_LBound with [] -> None | [_] -> None
                | [c_1; c_2] ->
                  (match
@@ -8399,14 +8042,13 @@ then Some (OBnd (units_of_lexeme (lexeme dz_LBoundc))) else None)
         else None)
     | Leaf dwild_LBound -> None;;
 
+let char_0x76 : char = Chr (Z.of_int 118);;
+
 let rec mfodl_dec_Intv
   = function
     Node (dnv_Intv, dxs_Intv) ->
       (if equal_lista equal_char dnv_Intv
-            [Chara (true, false, false, true, false, false, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (false, true, true, false, true, true, true, false)]
+            [char_0x49; char_0x6E; char_0x74; char_0x76]
         then (match dxs_Intv with [] -> None | [_] -> None | [_; _] -> None
                | [c_1; c_2; c_3] ->
                  bind (mfodl_dec_LBound c_1)
@@ -8422,13 +8064,12 @@ let rec mfodl_dec_Intv
         else None)
     | Leaf dwild_Intv -> None;;
 
+let char_0x61 : char = Chr (Z.of_int 97);;
+
 let rec mfodl_dec_Var
   = function
     Node (dnv_Var, dxs_Var) ->
-      (if equal_lista equal_char dnv_Var
-            [Chara (false, true, true, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false)]
+      (if equal_lista equal_char dnv_Var [char_0x56; char_0x61; char_0x72]
         then (match dxs_Var with [] -> None
                | [Leaf dz_Var] ->
                  (if equal_mtoka (tok dz_Var) NAME then Some (lexeme dz_Var)
@@ -8440,10 +8081,7 @@ let rec mfodl_dec_Var
 let rec mfodl_dec_Fun
   = function
     Node (dnv_Fun, dxs_Fun) ->
-      (if equal_lista equal_char dnv_Fun
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (true, false, true, false, true, true, true, false);
-              Chara (false, true, true, true, false, true, true, false)]
+      (if equal_lista equal_char dnv_Fun [char_0x46; char_0x75; char_0x6E]
         then (match dxs_Fun with [] -> None
                | [c_1] ->
                  (match
@@ -8549,10 +8187,7 @@ let rec strip_quotes s = butlast (tl s);;
 let rec mfodl_dec_Cst
   = function
     Node (dnv_Cst, dxs_Cst) ->
-      (if equal_lista equal_char dnv_Cst
-            [Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false)]
+      (if equal_lista equal_char dnv_Cst [char_0x43; char_0x73; char_0x74]
         then (match dxs_Cst with [] -> None
                | [c_1] ->
                  (match
@@ -8593,14 +8228,13 @@ let rec mfodl_dec_Cst
         else None)
     | Leaf dwild_Cst -> None;;
 
+let char_0x65 : char = Chr (Z.of_int 101);;
+
 let rec mfodl_dec_Term
   = function
     Node (dnv_Term, dxs_Term) ->
       (if equal_lista equal_char dnv_Term
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D]
         then (match dxs_Term with [] -> None
                | [c_1] -> bind (mfodl_dec_TermM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -8635,11 +8269,7 @@ and mfodl_dec_TermP
   = function
     Node (dnv_TermP, dxs_TermP) ->
       (if equal_lista equal_char dnv_TermP
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, false, false, false, true, false, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x50]
         then (match dxs_TermP with [] -> None
                | [c_1] ->
                  (match
@@ -8682,11 +8312,7 @@ and mfodl_dec_TermU
   = function
     Node (dnv_TermU, dxs_TermU) ->
       (if equal_lista equal_char dnv_TermU
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, false, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55]
         then (match dxs_TermU with [] -> None
                | [c_1] -> bind (mfodl_dec_TermP c_1) (fun a -> Some a)
                | [Leaf dz_TermU; c_2] ->
@@ -8701,11 +8327,7 @@ and mfodl_dec_TermM
   = function
     Node (dnv_TermM, dxs_TermM) ->
       (if equal_lista equal_char dnv_TermM
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D]
         then (match dxs_TermM with [] -> None
                | [c_1] -> bind (mfodl_dec_TermU c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -8752,11 +8374,7 @@ let rec mfodl_dec_AtomT
   = function
     Node (dnv_AtomT, dxs_AtomT) ->
       (if equal_lista equal_char dnv_AtomT
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, false, true, false, true, false, true, false)]
+            [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x54]
         then (match dxs_AtomT with [] -> None | [_] -> None | [_; _] -> None
                | [c_1; c_2; c_3] ->
                  (match
@@ -8849,10 +8467,7 @@ let rec mfodl_dec_FCst
   = function
     Node (dnv_FCst, dxs_FCst) ->
       (if equal_lista equal_char dnv_FCst
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false)]
+            [char_0x46; char_0x43; char_0x73; char_0x74]
         then (match dxs_FCst with [] -> None
                | [c_1] ->
                  (match
@@ -8897,12 +8512,7 @@ let rec mfodl_dec_FTermP
   = function
     Node (dnv_FTermP, dxs_FTermP) ->
       (if equal_lista equal_char dnv_FTermP
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, false, false, false, true, false, true, false)]
+            [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x50]
         then (match dxs_FTermP with [] -> None
                | [c_1] ->
                  (match
@@ -8946,12 +8556,7 @@ let rec mfodl_dec_FTermU
   = function
     Node (dnv_FTermU, dxs_FTermU) ->
       (if equal_lista equal_char dnv_FTermU
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, false, true, false)]
+            [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55]
         then (match dxs_FTermU with [] -> None
                | [c_1] -> bind (mfodl_dec_FTermP c_1) (fun a -> Some a)
                | [Leaf dz_FTermU; c_2] ->
@@ -8967,12 +8572,7 @@ let rec mfodl_dec_FTermM
   = function
     Node (dnv_FTermM, dxs_FTermM) ->
       (if equal_lista equal_char dnv_FTermM
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+            [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D]
         then (match dxs_FTermM with [] -> None
                | [c_1] -> bind (mfodl_dec_FTermU c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -9019,11 +8619,7 @@ let rec mfodl_dec_FTerm
   = function
     Node (dnv_FTerm, dxs_FTerm) ->
       (if equal_lista equal_char dnv_FTerm
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D]
         then (match dxs_FTerm with [] -> None
                | [c_1] -> bind (mfodl_dec_FTermM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -9055,18 +8651,14 @@ Some (TMinus (dz_FTermc, dz_FTerme)))
         else None)
     | Leaf dwild_FTerm -> None;;
 
+let char_0x70 : char = Chr (Z.of_int 112);;
+
 let rec mfodl_dec_FOptTerm
   = function
     Node (dnv_FOptTerm, dxs_FOptTerm) ->
       (if equal_lista equal_char dnv_FOptTerm
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x46; char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65;
+              char_0x72; char_0x6D]
         then (match dxs_FOptTerm with [] -> None
                | [c_1] ->
                  (match
@@ -9087,13 +8679,8 @@ let rec mfodl_dec_OptTerm
   = function
     Node (dnv_OptTerm, dxs_OptTerm) ->
       (if equal_lista equal_char dnv_OptTerm
-            [Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65; char_0x72;
+              char_0x6D]
         then (match dxs_OptTerm with [] -> None
                | [c_1] ->
                  (match
@@ -9114,14 +8701,8 @@ let rec mfodl_dec_OptTerms
   = function
     Node (dnv_OptTerms, dxs_OptTerms) ->
       (if equal_lista equal_char dnv_OptTerms
-            [Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false)]
+            [char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65; char_0x72;
+              char_0x6D; char_0x73]
         then (match dxs_OptTerms with [] -> Some []
                | [c_1] ->
                  bind (mfodl_dec_FOptTerm c_1)
@@ -9146,12 +8727,7 @@ let rec mfodl_dec_PTermP
   = function
     Node (dnv_PTermP, dxs_PTermP) ->
       (if equal_lista equal_char dnv_PTermP
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, false, false, false, true, false, true, false)]
+            [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x50]
         then (match dxs_PTermP with [] -> None
                | [c_1] ->
                  (match
@@ -9198,12 +8774,7 @@ let rec mfodl_dec_PTermU
   = function
     Node (dnv_PTermU, dxs_PTermU) ->
       (if equal_lista equal_char dnv_PTermU
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, false, true, false)]
+            [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55]
         then (match dxs_PTermU with [] -> None
                | [c_1] -> bind (mfodl_dec_PTermP c_1) (fun a -> Some a)
                | [Leaf dz_PTermU; c_2] ->
@@ -9219,12 +8790,7 @@ let rec mfodl_dec_PTermM
   = function
     Node (dnv_PTermM, dxs_PTermM) ->
       (if equal_lista equal_char dnv_PTermM
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+            [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D]
         then (match dxs_PTermM with [] -> None
                | [c_1] -> bind (mfodl_dec_PTermU c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -9271,11 +8837,7 @@ let rec mfodl_dec_PTerm
   = function
     Node (dnv_PTerm, dxs_PTerm) ->
       (if equal_lista equal_char dnv_PTerm
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D]
         then (match dxs_PTerm with [] -> None
                | [c_1] -> bind (mfodl_dec_PTermM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -9307,17 +8869,14 @@ Some (TMinus (dz_PTermc, dz_PTerme)))
         else None)
     | Leaf dwild_PTerm -> None;;
 
+let char_0x67 : char = Chr (Z.of_int 103);;
+
 let rec mfodl_dec_TermArg
   = function
     Node (dnv_TermArg, dxs_TermArg) ->
       (if equal_lista equal_char dnv_TermArg
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, true, true, false, false, true, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+              char_0x67]
         then (match dxs_TermArg with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_Term c_1) (fun a -> Some a)
@@ -9325,9 +8884,7 @@ let rec mfodl_dec_TermArg
                      (match c_1
                        with Leaf dz_TermArga ->
                          (if equal_mtoka (tok dz_TermArga) LD
-                           then Some (TVar [Chara
-      (true, true, true, true, true, false, true, false)])
-                           else None)
+                           then Some (TVar [char_0x5F]) else None)
                        | Node (_, _) -> None)
                    | Some a -> Some a)
                | _ :: _ :: _ -> None)
@@ -9338,15 +8895,8 @@ let rec mfodl_dec_TermArgsR
   = function
     Node (dnv_TermArgsR, dxs_TermArgsR) ->
       (if equal_lista equal_char dnv_TermArgsR
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, true, false, false, true, false, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+              char_0x67; char_0x73; char_0x52]
         then (match dxs_TermArgsR with [] -> Some []
                | [c_1] ->
                  bind (mfodl_dec_TermArg c_1)
@@ -9371,10 +8921,7 @@ let rec mfodl_dec_FArg
   = function
     Node (dnv_FArg, dxs_FArg) ->
       (if equal_lista equal_char dnv_FArg
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, true, true, false, false, true, true, false)]
+            [char_0x46; char_0x41; char_0x72; char_0x67]
         then (match dxs_FArg with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_FTerm c_1) (fun a -> Some a)
@@ -9382,9 +8929,7 @@ let rec mfodl_dec_FArg
                      (match c_1
                        with Leaf dz_FArga ->
                          (if equal_mtoka (tok dz_FArga) LD
-                           then Some (TVar [Chara
-      (true, true, true, true, true, false, true, false)])
-                           else None)
+                           then Some (TVar [char_0x5F]) else None)
                        | Node (_, _) -> None)
                    | Some a -> Some a)
                | _ :: _ :: _ -> None)
@@ -9395,14 +8940,8 @@ let rec mfodl_dec_TermArgs
   = function
     Node (dnv_TermArgs, dxs_TermArgs) ->
       (if equal_lista equal_char dnv_TermArgs
-            [Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false)]
+            [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+              char_0x67; char_0x73]
         then (match dxs_TermArgs with [] -> Some []
                | [c_1] ->
                  bind (mfodl_dec_FArg c_1)
@@ -9427,10 +8966,7 @@ let rec mfodl_dec_Pred
   = function
     Node (dnv_Pred, dxs_Pred) ->
       (if equal_lista equal_char dnv_Pred
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, false, true, false, false, true, true, false)]
+            [char_0x50; char_0x72; char_0x65; char_0x64]
         then (match dxs_Pred with [] -> None | [_] -> None | [_; _] -> None
                | [_; _; _] -> None
                | [Leaf dz_Pred; c_2; c_3; c_4] ->
@@ -9453,16 +8989,13 @@ let rec mfodl_dec_Pred
         else None)
     | Leaf dwild_Pred -> None;;
 
+let char_0x63 : char = Chr (Z.of_int 99);;
+
 let rec mfodl_dec_RBareT
   = function
     Node (dnv_RBareT, dxs_RBareT) ->
       (if equal_lista equal_char dnv_RBareT
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (false, true, false, false, false, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, false, true, false, true, false, true, false)]
+            [char_0x52; char_0x42; char_0x61; char_0x72; char_0x65; char_0x54]
         then (match dxs_RBareT with [] -> None
                | [c_1] -> bind (mfodl_dec_AtomT c_1) (fun a -> Some a)
                | [Leaf dz_RBareT; c_2] ->
@@ -9474,17 +9007,16 @@ let rec mfodl_dec_RBareT
         else None)
     | Leaf dwild_RBareT -> None;;
 
+let char_0x78 : char = Chr (Z.of_int 120);;
+
+let char_0x31 : char = Chr (Z.of_int 49);;
+
 let rec mfodl_dec_VarList
   = function
     Node (dnv_VarList, dxs_VarList) ->
       (if equal_lista equal_char dnv_VarList
-            [Chara (false, true, true, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (false, false, true, true, false, false, true, false);
-              Chara (true, false, false, true, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false)]
+            [char_0x56; char_0x61; char_0x72; char_0x4C; char_0x69; char_0x73;
+              char_0x74]
         then (match dxs_VarList with [] -> Some []
                | [c_1] -> bind (mfodl_dec_VarList1 c_1) (fun a -> Some a)
                | _ :: _ :: _ -> None)
@@ -9494,14 +9026,8 @@ and mfodl_dec_VarList1
   = function
     Node (dnv_VarList1, dxs_VarList1) ->
       (if equal_lista equal_char dnv_VarList1
-            [Chara (false, true, true, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (false, false, true, true, false, false, true, false);
-              Chara (true, false, false, true, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, false, false, false, true, true, false, false)]
+            [char_0x56; char_0x61; char_0x72; char_0x4C; char_0x69; char_0x73;
+              char_0x74; char_0x31]
         then (match dxs_VarList1 with [] -> None
                | [Leaf dz_VarList1] ->
                  (if equal_mtoka (tok dz_VarList1) NAME
@@ -9530,11 +9056,7 @@ let rec mfodl_dec_Quant
   = function
     Node (dnv_Quant, dxs_Quant) ->
       (if equal_lista equal_char dnv_Quant
-            [Chara (true, false, false, false, true, false, true, false);
-              Chara (true, false, true, false, true, true, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (false, false, true, false, true, true, true, false)]
+            [char_0x51; char_0x75; char_0x61; char_0x6E; char_0x74]
         then (match dxs_Quant with [] -> None
                | [c_1] ->
                  (match
@@ -9557,10 +9079,7 @@ let rec mfodl_dec_Quant
 let rec mfodl_dec_UOp
   = function
     Node (dnv_UOp, dxs_UOp) ->
-      (if equal_lista equal_char dnv_UOp
-            [Chara (true, false, true, false, true, false, true, false);
-              Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false)]
+      (if equal_lista equal_char dnv_UOp [char_0x55; char_0x4F; char_0x70]
         then (match dxs_UOp with [] -> None
                | [c_1] ->
                  (match
@@ -9617,10 +9136,7 @@ let rec mfodl_dec_UOp
 let rec mfodl_dec_BOp
   = function
     Node (dnv_BOp, dxs_BOp) ->
-      (if equal_lista equal_char dnv_BOp
-            [Chara (false, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false)]
+      (if equal_lista equal_char dnv_BOp [char_0x42; char_0x4F; char_0x70]
         then (match dxs_BOp with [] -> None
                | [c_1] ->
                  (match
@@ -9659,15 +9175,13 @@ let rec mfodl_dec_BOp
         else None)
     | Leaf dwild_BOp -> None;;
 
+let char_0x6C : char = Chr (Z.of_int 108);;
+
 let rec mfodl_dec_AggOp
   = function
     Node (dnv_AggOp, dxs_AggOp) ->
       (if equal_lista equal_char dnv_AggOp
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, false, false, true, true, true, false)]
+            [char_0x41; char_0x67; char_0x67; char_0x4F; char_0x70]
         then (match dxs_AggOp with [] -> None
                | [c_1] ->
                  (match
@@ -9722,13 +9236,8 @@ let rec mfodl_dec_Formula
   = function
     Node (dnv_Formula, dxs_Formula) ->
       (if equal_lista equal_char dnv_Formula
-            [Chara (false, true, true, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (false, true, false, false, true, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, false, true, false, true, true, true, false);
-              Chara (false, false, true, true, false, true, true, false);
-              Chara (true, false, false, false, false, true, true, false)]
+            [char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75; char_0x6C;
+              char_0x61]
         then (match dxs_Formula with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_ECM c_1) (fun a -> Some a)
@@ -9761,11 +9270,7 @@ and mfodl_dec_AtomS
   = function
     Node (dnv_AtomS, dxs_AtomS) ->
       (if equal_lista equal_char dnv_AtomS
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, true, false, false, true, false, true, false)]
+            [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53]
         then (match dxs_AtomS with [] -> None
                | [c_1] ->
                  (match
@@ -9773,8 +9278,8 @@ and mfodl_dec_AtomS
                      with Leaf dz_AtomS ->
                        (if equal_mtoka (tok dz_AtomS) FALSE
                          then Some (FEqual
-                                     (TCst (CInt zero_inta),
-                                       TCst (CInt one_inta)))
+                                     (TCst (CInt zero_int),
+                                       TCst (CInt one_int)))
                          else None)
                      | Node (_, _) -> None)
                    with None ->
@@ -9783,7 +9288,7 @@ and mfodl_dec_AtomS
                          with Leaf dz_AtomSa ->
                            (if equal_mtoka (tok dz_AtomSa) TRUE
                              then Some (FEqual
- (TCst (CInt zero_inta), TCst (CInt zero_inta)))
+ (TCst (CInt zero_int), TCst (CInt zero_int)))
                              else None)
                          | Node (_, _) -> None)
                        with None ->
@@ -9834,11 +9339,7 @@ and mfodl_dec_RSafe
   = function
     Node (dnv_RSafe, dxs_RSafe) ->
       (if equal_lista equal_char dnv_RSafe
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, true, false, false, true, true, false);
-              Chara (true, false, true, false, false, true, true, false)]
+            [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65]
         then (match dxs_RSafe with [] -> None
                | [c_1] -> bind (mfodl_dec_AtomS c_1) (fun a -> Some a)
                | [Leaf dz_RSafe; c_2] ->
@@ -9853,12 +9354,7 @@ and mfodl_dec_RSafeF
   = function
     Node (dnv_RSafeF, dxs_RSafeF) ->
       (if equal_lista equal_char dnv_RSafeF
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, true, false, false, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, true, true, false, false, false, true, false)]
+            [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x46]
         then (match dxs_RSafeF with [] -> None
                | [c_1] -> bind (mfodl_dec_AtomS c_1) (fun a -> Some a)
                | [Leaf dz_RSafeF; c_2] ->
@@ -9873,12 +9369,7 @@ and mfodl_dec_RSafeS
   = function
     Node (dnv_RSafeS, dxs_RSafeS) ->
       (if equal_lista equal_char dnv_RSafeS
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, true, true, false);
-              Chara (false, true, true, false, false, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (true, true, false, false, true, false, true, false)]
+            [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x53]
         then (match dxs_RSafeS with [] -> None
                | [c_1] -> bind (mfodl_dec_AtomS c_1) (fun a -> Some a)
                | [Leaf dz_RSafeS; c_2] ->
@@ -9893,12 +9384,7 @@ and mfodl_dec_RTestF
   = function
     Node (dnv_RTestF, dxs_RTestF) ->
       (if equal_lista equal_char dnv_RTestF
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (false, false, true, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (true, true, false, false, true, true, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (false, true, true, false, false, false, true, false)]
+            [char_0x52; char_0x54; char_0x65; char_0x73; char_0x74; char_0x46]
         then (match dxs_RTestF with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_AtomS c_1) (fun a -> Some a)
@@ -9916,12 +9402,7 @@ and mfodl_dec_RAtom2
   = function
     Node (dnv_RAtom2, dxs_RAtom2) ->
       (if equal_lista equal_char dnv_RAtom2
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, true, false, false, true, true, false, false)]
+            [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x32]
         then (match dxs_RAtom2 with [] -> None
                | [Leaf dz_RAtom2] ->
                  (if equal_mtoka (tok dz_RAtom2) DOT then Some (fun _ -> wild)
@@ -9963,11 +9444,7 @@ and mfodl_dec_RAtom
   = function
     Node (dnv_RAtom, dxs_RAtom) ->
       (if equal_lista equal_char dnv_RAtom
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D]
         then (match dxs_RAtom with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_RAtom2 c_1) (fun a -> Some a)
@@ -9982,11 +9459,7 @@ and mfodl_dec_RConc
   = function
     Node (dnv_RConc, dxs_RConc) ->
       (if equal_lista equal_char dnv_RConc
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (true, true, false, false, false, true, true, false)]
+            [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63]
         then (match dxs_RConc with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_RAtom c_1) (fun a -> Some a)
@@ -10007,12 +9480,7 @@ and mfodl_dec_RConcN
   = function
     Node (dnv_RConcN, dxs_RConcN) ->
       (if equal_lista equal_char dnv_RConcN
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (true, true, false, false, false, true, true, false);
-              Chara (false, true, true, true, false, false, true, false)]
+            [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E]
         then (match dxs_RConcN with [] -> None
                | [c_1] -> bind (mfodl_dec_RAtom c_1) (fun a -> Some a)
                | [c_1; c_2] ->
@@ -10028,11 +9496,7 @@ and mfodl_dec_Regex
   = function
     Node (dnv_Regex, dxs_Regex) ->
       (if equal_lista equal_char dnv_Regex
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, false, false, true, true, true, true, false)]
+            [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78]
         then (match dxs_Regex with [] -> None
                | [c_1] -> bind (mfodl_dec_RConc c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10055,11 +9519,7 @@ and mfodl_dec_AtomR
   = function
     Node (dnv_AtomR, dxs_AtomR) ->
       (if equal_lista equal_char dnv_AtomR
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, true, false, false, true, false, true, false)]
+            [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x52]
         then (match dxs_AtomR with [] -> None | [_] -> None
                | [c_1; c_2] ->
                  (match
@@ -10112,10 +9572,7 @@ and mfodl_dec_Atom
   = function
     Node (dnv_Atom, dxs_Atom) ->
       (if equal_lista equal_char dnv_Atom
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false)]
+            [char_0x41; char_0x74; char_0x6F; char_0x6D]
         then (match dxs_Atom with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_AtomS c_1) (fun a -> Some a)
@@ -10130,9 +9587,7 @@ and mfodl_dec_Atom
 and mfodl_dec_NC
   = function
     Node (dnv_NC, dxs_NC) ->
-      (if equal_lista equal_char dnv_NC
-            [Chara (false, true, true, true, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false)]
+      (if equal_lista equal_char dnv_NC [char_0x4E; char_0x43]
         then (match dxs_NC with [] -> None
                | [c_1] -> bind (mfodl_dec_Atom c_1) (fun a -> Some a)
                | [Leaf dz_NC; c_2] ->
@@ -10146,9 +9601,7 @@ and mfodl_dec_NC
 and mfodl_dec_AC
   = function
     Node (dnv_AC, dxs_AC) ->
-      (if equal_lista equal_char dnv_AC
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false)]
+      (if equal_lista equal_char dnv_AC [char_0x41; char_0x43]
         then (match dxs_AC with [] -> None
                | [c_1] -> bind (mfodl_dec_NC c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10168,9 +9621,7 @@ and mfodl_dec_AC
 and mfodl_dec_OC
   = function
     Node (dnv_OC, dxs_OC) ->
-      (if equal_lista equal_char dnv_OC
-            [Chara (true, true, true, true, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false)]
+      (if equal_lista equal_char dnv_OC [char_0x4F; char_0x43]
         then (match dxs_OC with [] -> None
                | [c_1] -> bind (mfodl_dec_AC c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10190,9 +9641,7 @@ and mfodl_dec_OC
 and mfodl_dec_IC
   = function
     Node (dnv_IC, dxs_IC) ->
-      (if equal_lista equal_char dnv_IC
-            [Chara (true, false, false, true, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false)]
+      (if equal_lista equal_char dnv_IC [char_0x49; char_0x43]
         then (match dxs_IC with [] -> None
                | [c_1] -> bind (mfodl_dec_OC c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10213,9 +9662,7 @@ and mfodl_dec_IC
 and mfodl_dec_EC
   = function
     Node (dnv_EC, dxs_EC) ->
-      (if equal_lista equal_char dnv_EC
-            [Chara (true, false, true, false, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false)]
+      (if equal_lista equal_char dnv_EC [char_0x45; char_0x43]
         then (match dxs_EC with [] -> None
                | [c_1] -> bind (mfodl_dec_IC c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10235,9 +9682,7 @@ and mfodl_dec_EC
 and mfodl_dec_OL
   = function
     Node (dnv_OL, dxs_OL) ->
-      (if equal_lista equal_char dnv_OL
-            [Chara (true, true, true, true, false, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_OL [char_0x4F; char_0x4C]
         then (match dxs_OL with [] -> None
                | [c_1] -> bind (mfodl_dec_AL c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10257,9 +9702,7 @@ and mfodl_dec_OL
 and mfodl_dec_IL
   = function
     Node (dnv_IL, dxs_IL) ->
-      (if equal_lista equal_char dnv_IL
-            [Chara (true, false, false, true, false, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_IL [char_0x49; char_0x4C]
         then (match dxs_IL with [] -> None
                | [c_1] -> bind (mfodl_dec_OL c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10280,9 +9723,7 @@ and mfodl_dec_IL
 and mfodl_dec_EL
   = function
     Node (dnv_EL, dxs_EL) ->
-      (if equal_lista equal_char dnv_EL
-            [Chara (true, false, true, false, false, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_EL [char_0x45; char_0x4C]
         then (match dxs_EL with [] -> None
                | [c_1] -> bind (mfodl_dec_IL c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10302,9 +9743,7 @@ and mfodl_dec_EL
 and mfodl_dec_PL
   = function
     Node (dnv_PL, dxs_PL) ->
-      (if equal_lista equal_char dnv_PL
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_PL [char_0x50; char_0x4C]
         then (match dxs_PL with [] -> None | [_] -> None
                | [c_1; c_2] ->
                  bind (mfodl_dec_UOp c_1)
@@ -10486,9 +9925,7 @@ with Leaf dz_PLh ->
 and mfodl_dec_NL
   = function
     Node (dnv_NL, dxs_NL) ->
-      (if equal_lista equal_char dnv_NL
-            [Chara (false, true, true, true, false, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_NL [char_0x4E; char_0x4C]
         then (match dxs_NL with [] -> None
                | [c_1] -> bind (mfodl_dec_PL c_1) (fun a -> Some a)
                | [Leaf dz_NL; c_2] ->
@@ -10502,9 +9939,7 @@ and mfodl_dec_NL
 and mfodl_dec_AL
   = function
     Node (dnv_AL, dxs_AL) ->
-      (if equal_lista equal_char dnv_AL
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_AL [char_0x41; char_0x4C]
         then (match dxs_AL with [] -> None
                | [c_1] -> bind (mfodl_dec_NL c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10524,9 +9959,7 @@ and mfodl_dec_AL
 and mfodl_dec_OM
   = function
     Node (dnv_OM, dxs_OM) ->
-      (if equal_lista equal_char dnv_OM
-            [Chara (true, true, true, true, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_OM [char_0x4F; char_0x4D]
         then (match dxs_OM with [] -> None
                | [c_1] -> bind (mfodl_dec_AM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10546,9 +9979,7 @@ and mfodl_dec_OM
 and mfodl_dec_IM
   = function
     Node (dnv_IM, dxs_IM) ->
-      (if equal_lista equal_char dnv_IM
-            [Chara (true, false, false, true, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_IM [char_0x49; char_0x4D]
         then (match dxs_IM with [] -> None
                | [c_1] -> bind (mfodl_dec_OM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10569,9 +10000,7 @@ and mfodl_dec_IM
 and mfodl_dec_EM
   = function
     Node (dnv_EM, dxs_EM) ->
-      (if equal_lista equal_char dnv_EM
-            [Chara (true, false, true, false, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_EM [char_0x45; char_0x4D]
         then (match dxs_EM with [] -> None
                | [c_1] -> bind (mfodl_dec_IM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10591,10 +10020,7 @@ and mfodl_dec_EM
 and mfodl_dec_ECM
   = function
     Node (dnv_ECM, dxs_ECM) ->
-      (if equal_lista equal_char dnv_ECM
-            [Chara (true, false, true, false, false, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_ECM [char_0x45; char_0x43; char_0x4D]
         then (match dxs_ECM with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_EC c_1) (fun a -> Some a)
@@ -10606,9 +10032,7 @@ and mfodl_dec_ECM
 and mfodl_dec_PM
   = function
     Node (dnv_PM, dxs_PM) ->
-      (if equal_lista equal_char dnv_PM
-            [Chara (false, false, false, false, true, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_PM [char_0x50; char_0x4D]
         then (match dxs_PM with [] -> None | [_] -> None
                | [c_1; c_2] ->
                  bind (mfodl_dec_UOp c_1)
@@ -10640,9 +10064,7 @@ and mfodl_dec_PM
 and mfodl_dec_NM
   = function
     Node (dnv_NM, dxs_NM) ->
-      (if equal_lista equal_char dnv_NM
-            [Chara (false, true, true, true, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_NM [char_0x4E; char_0x4D]
         then (match dxs_NM with [] -> None
                | [c_1] -> bind (mfodl_dec_PM c_1) (fun a -> Some a)
                | [Leaf dz_NM; c_2] ->
@@ -10656,9 +10078,7 @@ and mfodl_dec_NM
 and mfodl_dec_AM
   = function
     Node (dnv_AM, dxs_AM) ->
-      (if equal_lista equal_char dnv_AM
-            [Chara (true, false, false, false, false, false, true, false);
-              Chara (true, false, true, true, false, false, true, false)]
+      (if equal_lista equal_char dnv_AM [char_0x41; char_0x4D]
         then (match dxs_AM with [] -> None
                | [c_1] -> bind (mfodl_dec_NM c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10679,12 +10099,7 @@ and mfodl_dec_RAtomF
   = function
     Node (dnv_RAtomF, dxs_RAtomF) ->
       (if equal_lista equal_char dnv_RAtomF
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (false, true, true, false, false, false, true, false)]
+            [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x46]
         then (match dxs_RAtomF with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_RAtom2 c_1) (fun a -> Some a)
@@ -10699,13 +10114,8 @@ and mfodl_dec_RConcNF
   = function
     Node (dnv_RConcNF, dxs_RConcNF) ->
       (if equal_lista equal_char dnv_RConcNF
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (true, true, false, false, false, true, true, false);
-              Chara (false, true, true, true, false, false, true, false);
-              Chara (false, true, true, false, false, false, true, false)]
+            [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E;
+              char_0x46]
         then (match dxs_RConcNF with [] -> None
                | [c_1] -> bind (mfodl_dec_RAtomF c_1) (fun a -> Some a)
                | [c_1; c_2] ->
@@ -10721,12 +10131,7 @@ and mfodl_dec_RAtomS
   = function
     Node (dnv_RAtomS, dxs_RAtomS) ->
       (if equal_lista equal_char dnv_RAtomS
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, false, false, false, false, true, false);
-              Chara (false, false, true, false, true, true, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (true, false, true, true, false, true, true, false);
-              Chara (true, true, false, false, true, false, true, false)]
+            [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53]
         then (match dxs_RAtomS with [] -> None
                | [c_1] ->
                  (match bind (mfodl_dec_RAtom2 c_1) (fun a -> Some a)
@@ -10741,12 +10146,7 @@ and mfodl_dec_RConc2
   = function
     Node (dnv_RConc2, dxs_RConc2) ->
       (if equal_lista equal_char dnv_RConc2
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, true, false, false, false, false, true, false);
-              Chara (true, true, true, true, false, true, true, false);
-              Chara (false, true, true, true, false, true, true, false);
-              Chara (true, true, false, false, false, true, true, false);
-              Chara (false, true, false, false, true, true, false, false)]
+            [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x32]
         then (match dxs_RConc2 with [] -> None
                | [c_1] -> bind (mfodl_dec_RAtom2 c_1) (fun a -> Some a)
                | [c_1; c_2] ->
@@ -10762,12 +10162,7 @@ and mfodl_dec_Regex2
   = function
     Node (dnv_Regex2, dxs_Regex2) ->
       (if equal_lista equal_char dnv_Regex2
-            [Chara (false, true, false, false, true, false, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (true, true, true, false, false, true, true, false);
-              Chara (true, false, true, false, false, true, true, false);
-              Chara (false, false, false, true, true, true, true, false);
-              Chara (false, true, false, false, true, true, false, false)]
+            [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78; char_0x32]
         then (match dxs_Regex2 with [] -> None
                | [c_1] -> bind (mfodl_dec_RConc2 c_1) (fun a -> Some a)
                | [_; _] -> None
@@ -10786,6 +10181,8 @@ and mfodl_dec_Regex2
                | _ :: _ :: _ :: _ :: _ -> None)
         else None)
     | Leaf dwild_Regex2 -> None;;
+
+let char_0x21 : char = Chr (Z.of_int 33);;
 
 let mfodl_parse_ktabs : ((char list), mtok) ktabs
   = KTabs ([(TU, Nat_of_num One); (SC, Nat_of_num (Bit0 One));
@@ -47733,3215 +47130,1231 @@ let mfodl_parse_ktabs : ((char list), mtok) ktabs
            NNode (None, NTip, NTip)),
    NNode (None, NNode (None, NTip, NTip), NNode (None, NTip, NTip)))))))),
    NTip, NTip))))))))),
-            NTab (Some (([Chara (true, false, true, false, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false);
-                           Chara (true, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, true, false, false, false,
-true, false);
-                                 Chara (true, false, true, true, false, false,
- true, false)],
-                             Any)]),
+            NTab (Some (([char_0x45; char_0x43; char_0x4D],
+                          [(Nt [char_0x45; char_0x4D], Any)]),
                          Zero_nat),
-                   NNode (Some (([Chara (true, false, true, false, false, false,
-  true, false);
-                                   Chara (true, true, false, false, false,
-   false, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, false, false, true, false);
- Chara (true, true, false, false, false, false, true, false)],
-                                     Any);
+                   NNode (Some (([char_0x45; char_0x43],
+                                  [(Nt [char_0x45; char_0x43], Any);
                                     (Tm EQUIV, Any);
-                                    (Nt [Chara
-   (true, false, false, true, false, false, true, false);
-  Chara (true, true, false, false, false, false, true, false)],
-                                      Any)]),
+                                    (Nt [char_0x49; char_0x43], Any)]),
                                  Nat_of_num One),
-                           NNode (Some (([Chara
-    (true, false, true, false, false, false, true, false);
-   Chara (true, false, true, true, false, false, true, false)],
-  [(Nt [Chara (true, false, true, false, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false)],
-     Any);
-    (Tm EQUIV, Any);
-    (Nt [Chara (true, false, false, true, false, false, true, false);
-          Chara (true, false, true, true, false, false, true, false)],
-      Any)]),
+                           NNode (Some (([char_0x45; char_0x4D],
+  [(Nt [char_0x45; char_0x43], Any); (Tm EQUIV, Any);
+    (Nt [char_0x49; char_0x4D], Any)]),
  Nat_of_num (Bit0 One)),
-                                   NNode (Some (([Chara
-            (true, false, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (true, false, true, false, false, false, true, false);
-                 Chara (true, true, false, false, false, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x45; char_0x43;
+           char_0x4D],
+          [(Nt [char_0x45; char_0x43], Any)]),
          Zero_nat),
-   NNode (Some (([Chara (true, false, true, false, false, false, true, false);
-                   Chara (false, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, false, false, true, false, false, true,
-                                false);
-                         Chara (false, false, true, true, false, false, true,
-                                 false)],
-                     Any)]),
+   NNode (Some (([char_0x45; char_0x4C], [(Nt [char_0x49; char_0x4C], Any)]),
                  Nat_of_num (Bit1 One)),
-           NNode (Some (([Chara (true, true, true, true, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, true, true, true, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any);
-                            (Tm OR, Any);
-                            (Nt [Chara (true, false, false, false, false, false,
- true, false);
-                                  Chara (true, true, false, false, false, false,
-  true, false)],
-                              Any)]),
+           NNode (Some (([char_0x4F; char_0x43],
+                          [(Nt [char_0x4F; char_0x43], Any); (Tm OR, Any);
+                            (Nt [char_0x41; char_0x43], Any)]),
                          Nat_of_num (Bit1 (Bit0 (Bit0 One)))),
-                   NNode (Some (([Chara (false, true, false, false, false,
-  false, true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x42; char_0x4F; char_0x70],
                                   [(Tm TRIGGER, Any)]),
                                  Nat_of_num (Bit1 (Bit0 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
-  [(Nt [Chara (true, false, true, false, true, false, true, false);
-         Chara (false, true, true, true, false, true, true, false);
-         Chara (true, false, false, true, false, true, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, false, false, true, true, true, false)],
-     Any);
+                           NNode (Some (([char_0x52; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
+  [(Nt [char_0x55; char_0x6E; char_0x69; char_0x74; char_0x73], Any);
     (Tm RPA, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x41; char_0x67;
+           char_0x67; char_0x4F; char_0x70],
           [(Tm MIN_KW, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm MINUS, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x4D],
               Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (true, true, false, false, true, true, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
-     Any);
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x32],
+  [(Nt [char_0x52; char_0x54; char_0x65; char_0x73; char_0x74; char_0x46], Any);
     (Tm QM, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x53],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm MATCHES, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm LPA, Any);
-            (Nt [Chara (true, true, true, true, false, false, true, false);
-                  Chara (false, false, false, false, true, true, true, false);
-                  Chara (false, false, true, false, true, true, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, true, false, false, true, true, true, false)],
+            (Nt [char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65;
+                  char_0x72; char_0x6D; char_0x73],
               Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm EVENTUALLY, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, false, true, true, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (false, true, true, true, false, true, true, false);
-         Chara (true, true, false, false, false, true, true, false);
-         Chara (false, true, true, true, false, false, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x65; char_0x67;
+   char_0x65; char_0x78; char_0x32],
+  [(Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E;
+         char_0x46],
      Any);
     (Tm PLUS, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, false, false, true, true, true, true, false)],
-      Any)]),
+    (Nt [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78], Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm S2F, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, true, true, true, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false)],
-          [(Tm NOT, Any);
-            (Nt [Chara (false, true, true, true, false, false, true, false);
-                  Chara (true, true, false, false, false, false, true, false)],
-              Any)]),
+                                   NNode (Some (([char_0x4E; char_0x43],
+          [(Tm NOT, Any); (Nt [char_0x4E; char_0x43], Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false)],
-  [(Nt [Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67],
+  [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x43;
+           char_0x73; char_0x74],
           [(Tm RAT, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, true, true, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (false, false, true, false, true, true,
- true, false);
-                                 Chara (true, true, true, true, false, true,
- true, false);
-                                 Chara (true, false, true, true, false, true,
- true, false)],
+           NNode (Some (([char_0x4E; char_0x43],
+                          [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D],
                              Any)]),
                          Nat_of_num
                            (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (true, false, true, true, false, false,
-   true, false)],
-                                  [(Nt [Chara
-  (true, false, false, false, true, false, true, false);
- Chara (true, false, true, false, true, true, true, false);
- Chara (true, false, false, false, false, true, true, false);
- Chara (false, true, true, true, false, true, true, false);
- Chara (false, false, true, false, true, true, true, false)],
+                   NNode (Some (([char_0x50; char_0x4D],
+                                  [(Nt [char_0x51; char_0x75; char_0x61;
+ char_0x6E; char_0x74],
                                      Any);
-                                    (Nt [Chara
-   (false, true, true, false, true, false, true, false);
-  Chara (true, false, false, false, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (false, false, true, true, false, false, true, false);
-  Chara (true, false, false, true, false, true, true, false);
-  Chara (true, true, false, false, true, true, true, false);
-  Chara (false, false, true, false, true, true, true, false)],
+                                    (Nt [char_0x56; char_0x61; char_0x72;
+  char_0x4C; char_0x69; char_0x73; char_0x74],
                                       Any);
                                     (Tm DOT, Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (true, true, false, false, false, false, true, false);
-  Chara (true, false, true, true, false, false, true, false)],
+                                    (Nt [char_0x45; char_0x43; char_0x4D],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit1 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D], Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm MONTH, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x50],
           [(Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (false, true, false, false, false, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63],
+  [(Nt [char_0x52; char_0x42; char_0x61; char_0x72; char_0x65; char_0x54],
      Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x4D],
              Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (true, true, false, false, true, false,
-   true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x53],
                                   [(Tm FALSE, Any)]),
                                  Nat_of_num
                                    (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65; char_0x46],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm LESS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, false, false, true, false, true, false);
-   Chara (false, false, true, true, false, false, true, false)],
-  [(Nt [Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false)],
-     Any);
-    (Tm LARROW, Any);
-    (Nt [Chara (true, false, false, false, false, false, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, true, false, false, true, false);
-          Chara (false, false, false, false, true, true, true, false)],
-      Any);
+                           NNode (Some (([char_0x50; char_0x4C],
+  [(Nt [char_0x56; char_0x61; char_0x72], Any); (Tm LARROW, Any);
+    (Nt [char_0x41; char_0x67; char_0x67; char_0x4F; char_0x70], Any);
     (Tm NAME, Any); (Tm SC, Any);
-    (Nt [Chara (false, true, true, false, true, false, true, false);
-          Chara (true, false, false, false, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (false, false, true, true, false, false, true, false);
-          Chara (true, false, false, true, false, true, true, false);
-          Chara (true, true, false, false, true, true, true, false);
-          Chara (false, false, true, false, true, true, true, false);
-          Chara (true, false, false, false, true, true, false, false)],
+    (Nt [char_0x56; char_0x61; char_0x72; char_0x4C; char_0x69; char_0x73;
+          char_0x74; char_0x31],
       Any);
-    (Nt [Chara (false, true, true, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, true, false, true, true, true, false);
-          Chara (false, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, true, true, false)],
+    (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75; char_0x6C;
+          char_0x61],
       Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
           [(Tm NAME, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
                                    NTip)))),
-   NNode (Some (([Chara (true, false, false, true, false, false, true, false);
-                   Chara (true, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (true, true, false, false, false, false, true,
-                                 false)],
-                     Any);
-                    (Tm IMPL, Any);
-                    (Nt [Chara (true, false, false, true, false, false, true,
-                                 false);
-                          Chara (true, false, true, true, false, false, true,
-                                  false)],
-                      Any)]),
+   NNode (Some (([char_0x49; char_0x4D],
+                  [(Nt [char_0x4F; char_0x43], Any); (Tm IMPL, Any);
+                    (Nt [char_0x49; char_0x4D], Any)]),
                  Nat_of_num (Bit0 (Bit0 One))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (true, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any);
-                            (Tm AND, Any);
-                            (Nt [Chara (false, true, true, true, false, false,
- true, false);
-                                  Chara (true, false, true, true, false, false,
-  true, false)],
-                              Any)]),
+           NNode (Some (([char_0x41; char_0x4D],
+                          [(Nt [char_0x41; char_0x43], Any); (Tm AND, Any);
+                            (Nt [char_0x4E; char_0x4D], Any)]),
                          Nat_of_num (Bit1 (Bit1 (Bit0 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (true, false, true, true, false, false,
-   true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, true, false, true, false);
- Chara (true, true, true, true, false, false, true, false);
- Chara (false, false, false, false, true, true, true, false)],
-                                     Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (true, true, false, false, false, false, true, false);
-  Chara (true, false, true, true, false, false, true, false)],
+                   NNode (Some (([char_0x50; char_0x4D],
+                                  [(Nt [char_0x55; char_0x4F; char_0x70], Any);
+                                    (Nt [char_0x45; char_0x43; char_0x4D],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit1 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (true, false, true, false, true, false, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, false, false, true, true, true, false)],
+                           NNode (Some (([char_0x55; char_0x6E; char_0x69;
+   char_0x74; char_0x73],
   [(Tm TU, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x41; char_0x67;
+           char_0x67; char_0x4F; char_0x70],
           [(Tm MED, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm STAR, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x55],
               Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65],
   [(Tm NOT, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, true, false, true, false);
-          Chara (true, false, false, false, false, true, true, false);
-          Chara (false, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false)],
-      Any)]),
+    (Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x46; char_0x4F;
+           char_0x70; char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, true, false,
-  true, false);
-                                   Chara (true, false, true, false, true, true,
-   true, false);
-                                   Chara (true, false, false, false, false,
-   true, true, false);
-                                   Chara (false, true, true, true, false, true,
-   true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false)],
+                   NNode (Some (([char_0x51; char_0x75; char_0x61; char_0x6E;
+                                   char_0x74],
                                   [(Tm EXISTS, Any)]),
                                  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, true, true, false, false, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x4E; char_0x46],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x46],
      Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x43; char_0x73;
+           char_0x74],
           [(Tm REGEXP_CST, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NNode (None, NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, true, false, false, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false)],
-  [(Nt [Chara (false, true, true, false, false, false, true, false);
-         Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x46; char_0x41; char_0x72;
+   char_0x67],
+  [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x4F; char_0x70;
+           char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x73],
           []),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, true, true, false, false, true,
-                                  false);
-                           Chara (false, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (false, false, false, false, true, false,
-true, false);
-                                 Chara (false, false, true, true, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x4E; char_0x4C],
+                          [(Nt [char_0x50; char_0x4C], Any)]),
                          Nat_of_num
                            (Bit1 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
+                   NNode (Some (([char_0x50; char_0x4C],
                                   [(Tm LETPAST, Any);
-                                    (Nt [Chara
-   (false, false, false, false, true, false, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, true, false, false, true, true, false)],
+                                    (Nt [char_0x50; char_0x72; char_0x65;
+  char_0x64],
                                       Any);
                                     (Tm EQ, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any);
                                     (Tm IN, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x32],
   [(Tm DOT, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm S2R, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm STAR, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, true, false, false, true, false, true, false)],
-  [(Nt [Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, true, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73; char_0x52],
+  [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+         char_0x67],
      Any);
     (Tm COM, Any);
-    (Nt [Chara (false, false, true, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, false, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, false, false, true, true, true, false);
-          Chara (false, true, false, false, true, false, true, false)],
+    (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+          char_0x67; char_0x73; char_0x52],
       Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (true, false, true, false, true, true, true, false);
-                 Chara (false, true, true, true, false, true, true, false)],
-             Any);
-            (Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x46; char_0x75; char_0x6E], Any); (Tm LPA, Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (false, true, false, false, true,
-   false, true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x52],
                                   [(Tm FREX, Any);
-                                    (Nt [Chara
-   (false, true, false, false, true, false, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (true, true, true, false, false, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, false, true, true, true, true, false)],
+                                    (Nt [char_0x52; char_0x65; char_0x67;
+  char_0x65; char_0x78],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x32],
      Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, true, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (true, true, true, true, false, false, true, false);
-                 Chara (false, false, false, false, true, true, true, false);
-                 Chara (false, false, true, false, true, true, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x4F; char_0x70;
+           char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x73],
+          [(Nt [char_0x46; char_0x4F; char_0x70; char_0x74; char_0x54;
+                 char_0x65; char_0x72; char_0x6D],
              Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, false, false, true, false, true, false);
-   Chara (false, false, true, true, false, false, true, false)],
-  [(Nt [Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false)],
-     Any);
-    (Tm LARROW, Any);
-    (Nt [Chara (true, false, false, false, false, false, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, true, false, false, true, false);
-          Chara (false, false, false, false, true, true, true, false)],
-      Any);
+                           NNode (Some (([char_0x50; char_0x4C],
+  [(Nt [char_0x56; char_0x61; char_0x72], Any); (Tm LARROW, Any);
+    (Nt [char_0x41; char_0x67; char_0x67; char_0x4F; char_0x70], Any);
     (Tm NAME, Any); (Tm SC, Any); (Tm LPA, Any);
-    (Nt [Chara (false, true, true, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, true, false, true, true, true, false);
-          Chara (false, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, true, true, false)],
+    (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75; char_0x6C;
+          char_0x61],
       Any);
     (Tm RPA, Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, false, true, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x55],
           [(Tm MINUS, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x55],
               Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))))),
-                                   NNode (Some (([Chara
-            (true, false, true, false, false, false, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (true, false, false, true, false, false, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x45; char_0x4D],
+          [(Nt [char_0x49; char_0x4D], Any)]),
          Nat_of_num (Bit0 One)),
-   NNode (Some (([Chara (true, true, true, true, false, false, true, false);
-                   Chara (true, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, false, false, false, false, false, true,
-                                false);
-                         Chara (true, false, true, true, false, false, true,
-                                 false)],
-                     Any)]),
+   NNode (Some (([char_0x4F; char_0x4D], [(Nt [char_0x41; char_0x4D], Any)]),
                  Nat_of_num (Bit0 (Bit1 One))),
-           NNode (Some (([Chara (true, true, true, true, false, false, true,
-                                  false);
-                           Chara (false, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (false, false, true, true, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x4F; char_0x4C],
+                          [(Nt [char_0x41; char_0x4C], Any)]),
                          Nat_of_num (Bit0 (Bit0 (Bit0 One)))),
-                   NNode (Some (([Chara (false, true, false, false, false,
-  false, true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x42; char_0x4F; char_0x70],
                                   [(Tm RELEASE, Any)]),
                                  Nat_of_num (Bit1 (Bit0 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x52; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
   [(Tm STAR, Any); (Tm RPA, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x41; char_0x67;
+           char_0x67; char_0x4F; char_0x70],
           [(Tm SUM_KW, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm SLASH, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x55],
               Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, false, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65; char_0x53],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm MINUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm ALWAYS, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, true, true, false, false, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
-     Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, true, true, false, true, true, false);
-          Chara (true, true, false, false, false, true, true, false);
-          Chara (false, true, true, true, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x4E; char_0x46],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x46], Any);
+    (Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E],
       Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x43; char_0x73;
+           char_0x74],
           [(Tm RAT, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, true, true, true, false, false, true, false);
-           Chara (false, false, true, true, false, false, true, false)],
-          [(Tm NOT, Any);
-            (Nt [Chara (false, true, true, true, false, false, true, false);
-                  Chara (false, false, true, true, false, false, true, false)],
-              Any)]),
+                                   NNode (Some (([char_0x4E; char_0x4C],
+          [(Tm NOT, Any); (Nt [char_0x4E; char_0x4C], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false)],
-  [(Nt [Chara (false, true, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, true, true, false, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73],
+  [(Nt [char_0x46; char_0x41; char_0x72; char_0x67], Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x43;
+           char_0x73; char_0x74],
           [(Tm REGEXP_CST, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, true, true, false, false, true,
-                                  false);
-                           Chara (true, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (false, false, false, false, true, false,
-true, false);
-                                 Chara (true, false, true, true, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x4E; char_0x4D],
+                          [(Nt [char_0x50; char_0x4D], Any)]),
                          Nat_of_num
                            (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
-                   NNode (Some (([Chara (false, true, true, false, false, false,
-  true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (false, true, false, false, true, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, false, true, true,
-   true, false);
-                                   Chara (false, false, true, true, false, true,
-   true, false);
-                                   Chara (true, false, false, false, false,
-   true, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, false, false, true, false);
- Chara (false, false, true, true, false, false, true, false)],
-                                     Any)]),
+                   NNode (Some (([char_0x46; char_0x6F; char_0x72; char_0x6D;
+                                   char_0x75; char_0x6C; char_0x61],
+                                  [(Nt [char_0x45; char_0x4C], Any)]),
                                  Nat_of_num (Bit1 (Bit1 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, false, true, true, false, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x4C; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
   [(Tm LPA, Any); (Tm TU, Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm FORMAT_DATE, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm SLASH, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, true, false, true, false, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x42; char_0x61;
+   char_0x72; char_0x65; char_0x54],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x54], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, false, true, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x55],
           [(Tm MINUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (true, true, false, false, true, false,
-   true, false)],
-                                  [(Nt [Chara
-  (false, false, false, false, true, false, true, false);
- Chara (false, true, false, false, true, true, true, false);
- Chara (true, false, true, false, false, true, true, false);
- Chara (false, false, true, false, false, true, true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x53],
+                                  [(Nt [char_0x50; char_0x72; char_0x65;
+ char_0x64],
                                      Any)]),
                                  Nat_of_num
                                    (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, false, true, true, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (false, true, true, true, false, true, true, false);
-         Chara (true, true, false, false, false, true, true, false);
-         Chara (false, true, true, true, false, false, true, false)],
-     Any);
+                           NNode (Some (([char_0x52; char_0x65; char_0x67;
+   char_0x65; char_0x78],
+  [(Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E], Any);
     (Tm PLUS, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, false, false, true, true, true, true, false)],
-      Any)]),
+    (Nt [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm GTREQ, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, true, true, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (false, false, true, true, false, false, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, false, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, false, true, true, false);
-         Chara (true, true, false, false, true, true, true, false);
-         Chara (false, false, true, false, true, true, true, false)],
+                           NNode (Some (([char_0x56; char_0x61; char_0x72;
+   char_0x4C; char_0x69; char_0x73; char_0x74; char_0x31],
+  [(Nt [char_0x56; char_0x61; char_0x72; char_0x4C; char_0x69; char_0x73;
+         char_0x74],
      Any);
     (Tm COM, Any); (Tm NAME, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (true, true, false, false, false, false, true, false);
-                 Chara (true, true, false, false, true, true, true, false);
-                 Chara (false, false, true, false, true, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x43; char_0x73; char_0x74], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
                                    NTip)))),
-   NNode (Some (([Chara (true, true, true, true, false, false, true, false);
-                   Chara (true, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (true, true, false, false, false, false, true,
-                                 false)],
-                     Any);
-                    (Tm OR, Any);
-                    (Nt [Chara (true, false, false, false, false, false, true,
-                                 false);
-                          Chara (true, false, true, true, false, false, true,
-                                  false)],
-                      Any)]),
+   NNode (Some (([char_0x4F; char_0x4D],
+                  [(Nt [char_0x4F; char_0x43], Any); (Tm OR, Any);
+                    (Nt [char_0x41; char_0x4D], Any)]),
                  Nat_of_num (Bit0 (Bit1 One))),
-           NNode (Some (([Chara (true, true, true, true, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x4F; char_0x43],
+                          [(Nt [char_0x41; char_0x43], Any)]),
                          Nat_of_num (Bit1 (Bit0 (Bit0 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (true, false, true, true, false, false,
-   true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, true, false, true, false);
- Chara (true, true, true, true, false, false, true, false);
- Chara (false, false, false, false, true, true, true, false)],
-                                     Any);
-                                    (Nt [Chara
-   (true, false, false, true, false, false, true, false);
-  Chara (false, true, true, true, false, true, true, false);
-  Chara (false, false, true, false, true, true, true, false);
-  Chara (false, true, true, false, true, true, true, false)],
+                   NNode (Some (([char_0x50; char_0x4D],
+                                  [(Nt [char_0x55; char_0x4F; char_0x70], Any);
+                                    (Nt [char_0x49; char_0x6E; char_0x74;
+  char_0x76],
                                       Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (true, true, false, false, false, false, true, false);
-  Chara (true, false, true, true, false, false, true, false)],
+                                    (Nt [char_0x45; char_0x43; char_0x4D],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit1 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, true, true, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, true, true, false, true, true, false);
-          Chara (true, true, false, false, false, true, true, false);
-          Chara (false, true, true, true, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x4E],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D], Any);
+    (Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x4E],
       Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm I2F, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
           [(Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x54; char_0x65;
+   char_0x73; char_0x74; char_0x46],
   [(Tm NOT, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (false, false, true, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, false, false, true, true, true, false);
-          Chara (false, false, true, false, true, true, true, false);
-          Chara (false, true, true, false, false, false, true, false)],
+    (Nt [char_0x52; char_0x54; char_0x65; char_0x73; char_0x74; char_0x46],
       Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x4D],
              Any);
             (Tm MOD, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false)],
-                                  [(Nt [Chara
-  (true, false, false, false, false, false, true, false);
- Chara (false, false, true, false, true, true, true, false);
- Chara (true, true, true, true, false, true, true, false);
- Chara (true, false, true, true, false, true, true, false);
- Chara (false, true, false, false, true, false, true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D],
+                                  [(Nt [char_0x41; char_0x74; char_0x6F;
+ char_0x6D; char_0x52],
                                      Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit0
    (Bit0 (Bit1 (Bit0 (Bit0 One))))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x46],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x32],
      Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
-            (Tm EQ, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any); (Tm EQ, Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, false, true, false)],
-  [(Nt [Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, false, false, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x55],
+  [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x50], Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit1 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, false, false, true, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, false, true, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x55],
              Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, true, false, false, false, true,
-                                  false);
-                           Chara (true, true, true, true, false, true, true,
-                                   false);
-                           Chara (false, true, false, false, true, true, true,
-                                   false);
-                           Chara (true, false, true, true, false, true, true,
-                                   false);
-                           Chara (true, false, true, false, true, true, true,
-                                   false);
-                           Chara (false, false, true, true, false, true, true,
-                                   false);
-                           Chara (true, false, false, false, false, true, true,
-                                   false)],
-                          [(Nt [Chara (true, false, true, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false);
-                                 Chara (true, false, true, true, false, false,
- true, false)],
-                             Any);
-                            (Nt [Chara (false, true, false, false, false, false,
- true, false);
-                                  Chara (true, true, true, true, false, false,
-  true, false);
-                                  Chara (false, false, false, false, true, true,
-  true, false)],
+           NNode (Some (([char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75;
+                           char_0x6C; char_0x61],
+                          [(Nt [char_0x45; char_0x43; char_0x4D], Any);
+                            (Nt [char_0x42; char_0x4F; char_0x70], Any);
+                            (Nt [char_0x49; char_0x6E; char_0x74; char_0x76],
                               Any);
-                            (Nt [Chara (true, false, false, true, false, false,
- true, false);
-                                  Chara (false, true, true, true, false, true,
-  true, false);
-                                  Chara (false, false, true, false, true, true,
-  true, false);
-                                  Chara (false, true, true, false, true, true,
-  true, false)],
-                              Any);
-                            (Nt [Chara (false, true, true, false, false, false,
- true, false);
-                                  Chara (true, true, true, true, false, true,
-  true, false);
-                                  Chara (false, true, false, false, true, true,
-  true, false);
-                                  Chara (true, false, true, true, false, true,
-  true, false);
-                                  Chara (true, false, true, false, true, true,
-  true, false);
-                                  Chara (false, false, true, true, false, true,
-  true, false);
-                                  Chara (true, false, false, false, false, true,
-  true, false)],
+                            (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D;
+                                  char_0x75; char_0x6C; char_0x61],
                               Any)]),
                          Nat_of_num (Bit1 (Bit1 (Bit1 One)))),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm PREV, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, false, false, true, false, true, false)],
+                           NNode (Some (([char_0x41; char_0x74; char_0x6F;
+   char_0x6D; char_0x52],
   [(Tm PREX, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, false, false, true, true, true, true, false)],
-      Any)]),
+    (Nt [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78], Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm S2I, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, true, false, true, false);
-                 Chara (true, false, false, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x56; char_0x61; char_0x72], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false)],
-  [(Nt [Chara (false, true, true, false, false, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, true, true, false, false, true, true, false)],
-     Any);
-    (Tm COM, Any);
-    (Nt [Chara (false, false, true, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, false, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, false, false, true, true, true, false);
-          Chara (false, true, false, false, true, false, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73],
+  [(Nt [char_0x46; char_0x41; char_0x72; char_0x67], Any); (Tm COM, Any);
+    (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+          char_0x67; char_0x73; char_0x52],
       Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, true, false, true, false);
-                 Chara (true, false, false, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x56; char_0x61; char_0x72], Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, true, false, false,
-  true, false);
-                                   Chara (false, true, true, true, false, true,
-   true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (false, true, true, false, true, true,
-   true, false)],
-                                  [(Nt [Chara
-  (false, false, true, true, false, false, true, false);
- Chara (false, true, false, false, false, false, true, false);
- Chara (true, true, true, true, false, true, true, false);
- Chara (true, false, true, false, true, true, true, false);
- Chara (false, true, true, true, false, true, true, false);
- Chara (false, false, true, false, false, true, true, false)],
+                   NNode (Some (([char_0x49; char_0x6E; char_0x74; char_0x76],
+                                  [(Nt [char_0x4C; char_0x42; char_0x6F;
+ char_0x75; char_0x6E; char_0x64],
                                      Any);
                                     (Tm COM, Any);
-                                    (Nt [Chara
-   (false, true, false, false, true, false, true, false);
-  Chara (false, true, false, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, true, true, true, false, true, true, false);
-  Chara (false, false, true, false, false, true, true, false)],
+                                    (Nt [char_0x52; char_0x42; char_0x6F;
+  char_0x75; char_0x6E; char_0x64],
                                       Any)]),
                                  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, true, false, false, true, true, false);
-         Chara (true, false, true, false, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D],
+  [(Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65], Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x4F; char_0x70;
+           char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D],
           [(Tm LD, Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, false, false, true, false, true, false);
-   Chara (false, false, true, true, false, false, true, false)],
-  [(Nt [Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false)],
-     Any);
-    (Tm LARROW, Any);
-    (Nt [Chara (true, false, false, false, false, false, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, true, true, false, false, true, false);
-          Chara (false, false, false, false, true, true, true, false)],
-      Any);
+                           NNode (Some (([char_0x50; char_0x4C],
+  [(Nt [char_0x56; char_0x61; char_0x72], Any); (Tm LARROW, Any);
+    (Nt [char_0x41; char_0x67; char_0x67; char_0x4F; char_0x70], Any);
     (Tm NAME, Any);
-    (Nt [Chara (false, true, true, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, true, false, true, true, true, false);
-          Chara (false, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, true, true, false)],
+    (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75; char_0x6C;
+          char_0x61],
       Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (true, false, true, false, true, true, true, false);
-                 Chara (false, true, true, true, false, true, true, false)],
-             Any);
-            (Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x46; char_0x75; char_0x6E], Any); (Tm LPA, Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
                                    NTip)))))),
-                           NNode (Some (([Chara
-    (true, false, true, false, false, false, true, false);
-   Chara (false, false, true, true, false, false, true, false)],
-  [(Nt [Chara (true, false, true, false, false, false, true, false);
-         Chara (true, true, false, false, false, false, true, false)],
-     Any);
-    (Tm EQUIV, Any);
-    (Nt [Chara (true, false, false, true, false, false, true, false);
-          Chara (false, false, true, true, false, false, true, false)],
-      Any)]),
+                           NNode (Some (([char_0x45; char_0x4C],
+  [(Nt [char_0x45; char_0x43], Any); (Tm EQUIV, Any);
+    (Nt [char_0x49; char_0x4C], Any)]),
  Nat_of_num (Bit1 One)),
-                                   NNode (Some (([Chara
-            (true, false, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false)],
-          [(Nt [Chara (true, false, false, true, false, false, true, false);
-                 Chara (true, true, false, false, false, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x45; char_0x43],
+          [(Nt [char_0x49; char_0x43], Any)]),
          Nat_of_num One),
-   NNode (Some (([Chara (true, false, false, true, false, false, true, false);
-                   Chara (false, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (false, false, true, true, false, false, true,
-                                 false)],
-                     Any)]),
+   NNode (Some (([char_0x49; char_0x4C], [(Nt [char_0x4F; char_0x4C], Any)]),
                  Nat_of_num (Bit1 (Bit0 One))),
-           NNode (Some (([Chara (true, false, false, true, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, true, true, true, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x49; char_0x43],
+                          [(Nt [char_0x4F; char_0x43], Any)]),
                          Nat_of_num (Bit1 (Bit1 One))),
-                   NNode (Some (([Chara (false, true, false, false, false,
-  false, true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x42; char_0x4F; char_0x70],
                                   [(Tm UNTIL, Any)]),
                                  Nat_of_num (Bit1 (Bit0 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x52; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
   [(Tm STAR, Any); (Tm RSB, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x41; char_0x67;
+           char_0x67; char_0x4F; char_0x70],
           [(Tm MAX_KW, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm PLUS, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x4D],
               Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x4F;
+           char_0x70; char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D],
           [(Tm LD, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm ONCE, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, false, true, true, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (false, true, true, true, false, true, true, false);
-         Chara (true, true, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x65; char_0x67;
+   char_0x65; char_0x78; char_0x32],
+  [(Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63; char_0x32],
      Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x43; char_0x73;
+           char_0x74],
           [(Tm INTEGER, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, true, true, true, false, false, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Tm NOT, Any);
-            (Nt [Chara (false, true, true, true, false, false, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
-              Any)]),
+                                   NNode (Some (([char_0x4E; char_0x4D],
+          [(Tm NOT, Any); (Nt [char_0x4E; char_0x4D], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, true, false, false, true, false, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73; char_0x52],
   []),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x43;
+           char_0x73; char_0x74],
           [(Tm STR_CST, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (true, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (false, true, true, true, false, false,
-true, false);
-                                 Chara (true, false, true, true, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x41; char_0x4D],
+                          [(Nt [char_0x4E; char_0x4D], Any)]),
                          Nat_of_num (Bit1 (Bit1 (Bit0 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
-                                  [(Nt [Chara
-  (true, false, false, false, true, false, true, false);
- Chara (true, false, true, false, true, true, true, false);
- Chara (true, false, false, false, false, true, true, false);
- Chara (false, true, true, true, false, true, true, false);
- Chara (false, false, true, false, true, true, true, false)],
+                   NNode (Some (([char_0x50; char_0x4C],
+                                  [(Nt [char_0x51; char_0x75; char_0x61;
+ char_0x6E; char_0x74],
                                      Any);
-                                    (Nt [Chara
-   (false, true, true, false, true, false, true, false);
-  Chara (true, false, false, false, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (false, false, true, true, false, false, true, false);
-  Chara (true, false, false, true, false, true, true, false);
-  Chara (true, true, false, false, true, true, true, false);
-  Chara (false, false, true, false, true, true, true, false)],
+                                    (Nt [char_0x56; char_0x61; char_0x72;
+  char_0x4C; char_0x69; char_0x73; char_0x74],
                                       Any);
                                     (Tm DOT, Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (false, false, true, true, false, false, true, false)],
-                                      Any)]),
+                                    (Nt [char_0x45; char_0x4C], Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, true, true, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x4E],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm YEAR, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, true, true, false, true, false, true, false);
-           Chara (true, false, false, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x56; char_0x61;
+           char_0x72],
           [(Tm NAME, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, false, true, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x54; char_0x65;
+   char_0x73; char_0x74; char_0x46],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x54], Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, false, true, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x55],
              Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (true, true, false, false, true, false,
-   true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x53],
                                   [(Tm TRUE, Any)]),
                                  Nat_of_num
                                    (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65; char_0x46],
   [(Tm NOT, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, true, false, true, false);
-          Chara (true, false, false, false, false, true, true, false);
-          Chara (false, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, true, true, false, false, false, true, false)],
+    (Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x46],
       Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm GTR, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, true, true, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (false, false, true, true, false, false, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false)],
-  [(Nt [Chara (false, true, true, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (false, false, true, true, false, false, true, false);
-         Chara (true, false, false, true, false, true, true, false);
-         Chara (true, true, false, false, true, true, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, false, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x56; char_0x61; char_0x72;
+   char_0x4C; char_0x69; char_0x73; char_0x74],
+  [(Nt [char_0x56; char_0x61; char_0x72; char_0x4C; char_0x69; char_0x73;
+         char_0x74; char_0x31],
      Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (true, true, false, false, false, false, true, false);
-                 Chara (true, true, false, false, true, true, true, false);
-                 Chara (false, false, true, false, true, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x43; char_0x73; char_0x74], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
                                    NTip)))),
-   NNode (Some (([Chara (true, false, false, true, false, false, true, false);
-                   Chara (false, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (true, true, false, false, false, false, true,
-                                 false)],
-                     Any);
-                    (Tm IMPL, Any);
-                    (Nt [Chara (true, false, false, true, false, false, true,
-                                 false);
-                          Chara (false, false, true, true, false, false, true,
-                                  false)],
-                      Any)]),
+   NNode (Some (([char_0x49; char_0x4C],
+                  [(Nt [char_0x4F; char_0x43], Any); (Tm IMPL, Any);
+                    (Nt [char_0x49; char_0x4C], Any)]),
                  Nat_of_num (Bit1 (Bit0 One))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (false, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any);
-                            (Tm AND, Any);
-                            (Nt [Chara (false, true, true, true, false, false,
- true, false);
-                                  Chara (false, false, true, true, false, false,
-  true, false)],
-                              Any)]),
+           NNode (Some (([char_0x41; char_0x4C],
+                          [(Nt [char_0x41; char_0x43], Any); (Tm AND, Any);
+                            (Nt [char_0x4E; char_0x4C], Any)]),
                          Nat_of_num (Bit0 (Bit0 (Bit1 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, true, false, true, false);
- Chara (true, true, true, true, false, false, true, false);
- Chara (false, false, false, false, true, true, true, false)],
-                                     Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (false, false, true, true, false, false, true, false)],
-                                      Any)]),
+                   NNode (Some (([char_0x50; char_0x4C],
+                                  [(Nt [char_0x55; char_0x4F; char_0x70], Any);
+                                    (Nt [char_0x45; char_0x4C], Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (true, false, true, false, true, false, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, false, false, true, true, true, false)],
+                           NNode (Some (([char_0x55; char_0x6E; char_0x69;
+   char_0x74; char_0x73],
   [(Tm INTEGER, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm F2I, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm MATCHES, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x53; char_0x61;
+   char_0x66; char_0x65; char_0x53],
   [(Tm NOT, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, true, false, true, false);
-          Chara (true, false, false, false, false, true, true, false);
-          Chara (false, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, false, false, true, false, true, false)],
+    (Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x53],
       Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x4D],
              Any);
             (Tm SLASH, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, true, false,
-  true, false);
-                                   Chara (true, false, true, false, true, true,
-   true, false);
-                                   Chara (true, false, false, false, false,
-   true, true, false);
-                                   Chara (false, true, true, true, false, true,
-   true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false)],
+                   NNode (Some (([char_0x51; char_0x75; char_0x61; char_0x6E;
+                                   char_0x74],
                                   [(Tm FORALL, Any)]),
                                  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x32],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x32],
      Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x53],
           [(Tm LPA, Any);
-            (Nt [Chara (false, true, true, false, false, false, true, false);
-                  Chara (true, true, true, true, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, true, true, false);
-                  Chara (false, false, true, true, false, true, true, false);
-                  Chara (true, false, false, false, false, true, true, false)],
+            (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75;
+                  char_0x6C; char_0x61],
               Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73],
   []),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, false, false, true, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x4D],
              Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, true, false, false, false, true,
-                                  false);
-                           Chara (true, true, true, true, false, true, true,
-                                   false);
-                           Chara (false, true, false, false, true, true, true,
-                                   false);
-                           Chara (true, false, true, true, false, true, true,
-                                   false);
-                           Chara (true, false, true, false, true, true, true,
-                                   false);
-                           Chara (false, false, true, true, false, true, true,
-                                   false);
-                           Chara (true, false, false, false, false, true, true,
-                                   false)],
-                          [(Nt [Chara (true, false, true, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false);
-                                 Chara (true, false, true, true, false, false,
- true, false)],
-                             Any);
-                            (Nt [Chara (false, true, false, false, false, false,
- true, false);
-                                  Chara (true, true, true, true, false, false,
-  true, false);
-                                  Chara (false, false, false, false, true, true,
-  true, false)],
-                              Any);
-                            (Nt [Chara (false, true, true, false, false, false,
- true, false);
-                                  Chara (true, true, true, true, false, true,
-  true, false);
-                                  Chara (false, true, false, false, true, true,
-  true, false);
-                                  Chara (true, false, true, true, false, true,
-  true, false);
-                                  Chara (true, false, true, false, true, true,
-  true, false);
-                                  Chara (false, false, true, true, false, true,
-  true, false);
-                                  Chara (true, false, false, false, false, true,
-  true, false)],
+           NNode (Some (([char_0x46; char_0x6F; char_0x72; char_0x6D; char_0x75;
+                           char_0x6C; char_0x61],
+                          [(Nt [char_0x45; char_0x43; char_0x4D], Any);
+                            (Nt [char_0x42; char_0x4F; char_0x70], Any);
+                            (Nt [char_0x46; char_0x6F; char_0x72; char_0x6D;
+                                  char_0x75; char_0x6C; char_0x61],
                               Any)]),
                          Nat_of_num (Bit1 (Bit1 (Bit1 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
+                   NNode (Some (([char_0x50; char_0x4C],
                                   [(Tm FRZ, Any);
-                                    (Nt [Chara
-   (false, false, false, false, true, false, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, true, false, false, true, true, false)],
+                                    (Nt [char_0x50; char_0x72; char_0x65;
+  char_0x64],
                                       Any);
                                     (Tm EQ, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any);
                                     (Tm IN, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-     Any);
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x32],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any);
     (Tm STAR, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm I2S, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm PLUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, true, false, false, true, false, true, false)],
-  [(Nt [Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, true, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67; char_0x73; char_0x52],
+  [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+         char_0x67],
      Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (true, true, false, false, false, false, true, false);
-                 Chara (true, true, false, false, true, true, true, false);
-                 Chara (false, false, true, false, true, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x46; char_0x43; char_0x73; char_0x74], Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (false, true, false, false, true,
-   false, true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x52],
                                   [(Tm PREX, Any);
-                                    (Nt [Chara
-   (true, false, false, true, false, false, true, false);
-  Chara (false, true, true, true, false, true, true, false);
-  Chara (false, false, true, false, true, true, true, false);
-  Chara (false, true, true, false, true, true, true, false)],
+                                    (Nt [char_0x49; char_0x6E; char_0x74;
+  char_0x76],
                                       Any);
-                                    (Nt [Chara
-   (false, true, false, false, true, false, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (true, true, true, false, false, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, false, true, true, true, true, false)],
+                                    (Nt [char_0x52; char_0x65; char_0x67;
+  char_0x65; char_0x78],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, true, false, false, true, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x53],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x32],
      Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, true, false, false, true, true, true, false)],
-          [(Nt [Chara (true, true, true, true, false, false, true, false);
-                 Chara (false, false, false, false, true, true, true, false);
-                 Chara (false, false, true, false, true, true, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, true, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x4F; char_0x70;
+           char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D; char_0x73],
+          [(Nt [char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65;
+                 char_0x72; char_0x6D; char_0x73],
              Any);
             (Tm COM, Any);
-            (Nt [Chara (true, true, true, true, false, false, true, false);
-                  Chara (false, false, false, false, true, true, true, false);
-                  Chara (false, false, true, false, true, true, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
+            (Nt [char_0x4F; char_0x70; char_0x74; char_0x54; char_0x65;
+                  char_0x72; char_0x6D],
               Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, true, true, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (false, false, true, true, false, false, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false)],
+                           NNode (Some (([char_0x56; char_0x61; char_0x72;
+   char_0x4C; char_0x69; char_0x73; char_0x74],
   []),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, false, true, false, true, false)],
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x55],
           [(Tm MINUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))))),
-                                   NNode (Some (([Chara
-            (true, false, false, true, false, false, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (true, true, true, true, false, false, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x49; char_0x4D],
+          [(Nt [char_0x4F; char_0x4D], Any)]),
          Nat_of_num (Bit0 (Bit0 One))),
-   NNode (Some (([Chara (true, false, false, true, false, false, true, false);
-                   Chara (true, true, false, false, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (true, true, false, false, false, false, true,
-                                 false)],
-                     Any);
-                    (Tm IMPL, Any);
-                    (Nt [Chara (true, false, false, true, false, false, true,
-                                 false);
-                          Chara (true, true, false, false, false, false, true,
-                                  false)],
-                      Any)]),
+   NNode (Some (([char_0x49; char_0x43],
+                  [(Nt [char_0x4F; char_0x43], Any); (Tm IMPL, Any);
+                    (Nt [char_0x49; char_0x43], Any)]),
                  Nat_of_num (Bit1 (Bit1 One))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (true, false, false, false, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any);
-                            (Tm AND, Any);
-                            (Nt [Chara (false, true, true, true, false, false,
- true, false);
-                                  Chara (true, true, false, false, false, false,
-  true, false)],
-                              Any)]),
+           NNode (Some (([char_0x41; char_0x43],
+                          [(Nt [char_0x41; char_0x43], Any); (Tm AND, Any);
+                            (Nt [char_0x4E; char_0x43], Any)]),
                          Nat_of_num (Bit0 (Bit1 (Bit0 One)))),
-                   NNode (Some (([Chara (false, true, true, false, false, false,
-  true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (false, true, false, false, true, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, false, true, true,
-   true, false);
-                                   Chara (false, false, true, true, false, true,
-   true, false);
-                                   Chara (true, false, false, false, false,
-   true, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, false, false, true, false);
- Chara (true, true, false, false, false, false, true, false);
- Chara (true, false, true, true, false, false, true, false)],
+                   NNode (Some (([char_0x46; char_0x6F; char_0x72; char_0x6D;
+                                   char_0x75; char_0x6C; char_0x61],
+                                  [(Nt [char_0x45; char_0x43; char_0x4D],
                                      Any)]),
                                  Nat_of_num (Bit1 (Bit1 (Bit1 One)))),
-                           NNode (Some (([Chara
-    (false, false, true, true, false, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x4C; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
   [(Tm LSB, Any);
-    (Nt [Chara (true, false, true, false, true, false, true, false);
-          Chara (false, true, true, true, false, true, true, false);
-          Chara (true, false, false, true, false, true, true, false);
-          Chara (false, false, true, false, true, true, true, false);
-          Chara (true, true, false, false, true, true, true, false)],
-      Any)]),
+    (Nt [char_0x55; char_0x6E; char_0x69; char_0x74; char_0x73], Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, false, false, true, true, false);
-           Chara (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false)],
+                                   NNode (Some (([char_0x41; char_0x67;
+           char_0x67; char_0x4F; char_0x70],
           [(Tm AVG, Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm MOD, Any);
-            (Nt [Chara (false, false, false, false, true, false, true, false);
-                  Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
+            (Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                  char_0x55],
               Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x54; char_0x65;
+   char_0x73; char_0x74; char_0x46],
+  [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm PLUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm PAST_ALWAYS, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
-     Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, true, true, false, true, true, false);
-          Chara (true, true, false, false, false, true, true, false)],
-      Any)]),
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63; char_0x32],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x46], Any);
+    (Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63], Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x43; char_0x73;
+           char_0x74],
           [(Tm STR_CST, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (true, false, false, false, false, false, true, false);
-                 Chara (false, false, true, false, true, true, true, false);
-                 Chara (true, true, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (false, false, true, false, true, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D],
+          [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x54], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, true, false, false, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x46; char_0x41; char_0x72;
+   char_0x67],
   [(Tm LD, Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x50],
           [(Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (false, false, true, true, false, false, true,
-                                   false)],
-                          [(Nt [Chara (false, true, true, true, false, false,
-true, false);
-                                 Chara (false, false, true, true, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x41; char_0x4C],
+                          [(Nt [char_0x4E; char_0x4C], Any)]),
                          Nat_of_num (Bit0 (Bit0 (Bit1 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
+                   NNode (Some (([char_0x50; char_0x4C],
                                   [(Tm LET, Any);
-                                    (Nt [Chara
-   (false, false, false, false, true, false, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, true, false, false, true, true, false)],
+                                    (Nt [char_0x50; char_0x72; char_0x65;
+  char_0x64],
                                       Any);
                                     (Tm EQ, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any);
                                     (Tm IN, Any);
-                                    (Nt [Chara
-   (false, true, true, false, false, false, true, false);
-  Chara (true, true, true, true, false, true, true, false);
-  Chara (false, true, false, false, true, true, true, false);
-  Chara (true, false, true, true, false, true, true, false);
-  Chara (true, false, true, false, true, true, true, false);
-  Chara (false, false, true, true, false, true, true, false);
-  Chara (true, false, false, false, false, true, true, false)],
+                                    (Nt [char_0x46; char_0x6F; char_0x72;
+  char_0x6D; char_0x75; char_0x6C; char_0x61],
                                       Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (false, false, true, true, false, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, false, true, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x4C; char_0x42; char_0x6F;
+   char_0x75; char_0x6E; char_0x64],
   [(Tm LPA, Any); (Tm INTEGER, Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 One))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm R2S, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any);
             (Tm MOD, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, false, false, true, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x50; char_0x72; char_0x65;
+   char_0x64],
   [(Tm NAME, Any); (Tm LPA, Any);
-    (Nt [Chara (false, false, true, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, true, false, true, true, false);
-          Chara (true, false, false, false, false, false, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, true, false, false, true, true, true, false)],
+    (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x41; char_0x72;
+          char_0x67; char_0x73],
       Any);
     (Tm RPA, Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x55],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x50],
              Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false,
-  false, true, false);
-                                   Chara (false, false, true, false, true, true,
-   true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, true, false, true,
-   true, false);
-                                   Chara (false, true, false, false, true,
-   false, true, false)],
+                   NNode (Some (([char_0x41; char_0x74; char_0x6F; char_0x6D;
+                                   char_0x52],
                                   [(Tm FREX, Any);
-                                    (Nt [Chara
-   (true, false, false, true, false, false, true, false);
-  Chara (false, true, true, true, false, true, true, false);
-  Chara (false, false, true, false, true, true, true, false);
-  Chara (false, true, true, false, true, true, true, false)],
+                                    (Nt [char_0x49; char_0x6E; char_0x74;
+  char_0x76],
                                       Any);
-                                    (Nt [Chara
-   (false, true, false, false, true, false, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (true, true, true, false, false, true, true, false);
-  Chara (true, false, true, false, false, true, true, false);
-  Chara (false, false, false, true, true, true, true, false)],
+                                    (Nt [char_0x52; char_0x65; char_0x67;
+  char_0x65; char_0x78],
                                       Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, false, true, true, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, false, false, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (false, true, true, true, false, true, true, false);
-         Chara (true, true, false, false, false, true, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x52; char_0x65; char_0x67;
+   char_0x65; char_0x78],
+  [(Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm SUBSTRING, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, true, true, false, true, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (false, false, true, true, false, false, true, false);
-   Chara (true, false, false, true, false, true, true, false);
-   Chara (true, true, false, false, true, true, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, false, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x56; char_0x61; char_0x72;
+   char_0x4C; char_0x69; char_0x73; char_0x74; char_0x31],
   [(Tm NAME, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
                                    NTip)))),
-   NNode (Some (([Chara (true, true, true, true, false, false, true, false);
-                   Chara (false, false, true, true, false, false, true, false)],
-                  [(Nt [Chara (true, true, true, true, false, false, true,
-                                false);
-                         Chara (true, true, false, false, false, false, true,
-                                 false)],
-                     Any);
-                    (Tm OR, Any);
-                    (Nt [Chara (true, false, false, false, false, false, true,
-                                 false);
-                          Chara (false, false, true, true, false, false, true,
-                                  false)],
-                      Any)]),
+   NNode (Some (([char_0x4F; char_0x4C],
+                  [(Nt [char_0x4F; char_0x43], Any); (Tm OR, Any);
+                    (Nt [char_0x41; char_0x4C], Any)]),
                  Nat_of_num (Bit0 (Bit0 (Bit0 One)))),
-           NNode (Some (([Chara (true, false, false, false, false, false, true,
-                                  false);
-                           Chara (true, true, false, false, false, false, true,
-                                   false)],
-                          [(Nt [Chara (false, true, true, true, false, false,
-true, false);
-                                 Chara (true, true, false, false, false, false,
- true, false)],
-                             Any)]),
+           NNode (Some (([char_0x41; char_0x43],
+                          [(Nt [char_0x4E; char_0x43], Any)]),
                          Nat_of_num (Bit0 (Bit1 (Bit0 One)))),
-                   NNode (Some (([Chara (false, false, false, false, true,
-  false, true, false);
-                                   Chara (false, false, true, true, false,
-   false, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, true, false, true, false);
- Chara (true, true, true, true, false, false, true, false);
- Chara (false, false, false, false, true, true, true, false)],
-                                     Any);
-                                    (Nt [Chara
-   (true, false, false, true, false, false, true, false);
-  Chara (false, true, true, true, false, true, true, false);
-  Chara (false, false, true, false, true, true, true, false);
-  Chara (false, true, true, false, true, true, true, false)],
+                   NNode (Some (([char_0x50; char_0x4C],
+                                  [(Nt [char_0x55; char_0x4F; char_0x70], Any);
+                                    (Nt [char_0x49; char_0x6E; char_0x74;
+  char_0x76],
                                       Any);
-                                    (Nt [Chara
-   (true, false, true, false, false, false, true, false);
-  Chara (false, false, true, true, false, false, true, false)],
-                                      Any)]),
+                                    (Nt [char_0x45; char_0x4C], Any)]),
                                  Nat_of_num
                                    (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, true, false, false, false, false, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (false, true, true, true, false, true, true, false);
-   Chara (true, true, false, false, false, true, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, false, true, false);
-         Chara (false, false, true, false, true, true, true, false);
-         Chara (true, true, true, true, false, true, true, false);
-         Chara (true, false, true, true, false, true, true, false)],
-     Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, true, false, false, false, false, true, false);
-          Chara (true, true, true, true, false, true, true, false);
-          Chara (false, true, true, true, false, true, true, false);
-          Chara (true, true, false, false, false, true, true, false)],
-      Any)]),
+                           NNode (Some (([char_0x52; char_0x43; char_0x6F;
+   char_0x6E; char_0x63],
+  [(Nt [char_0x52; char_0x41; char_0x74; char_0x6F; char_0x6D], Any);
+    (Nt [char_0x52; char_0x43; char_0x6F; char_0x6E; char_0x63], Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm DAY_OF_MONTH, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm MINUS, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, true, false, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x4D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (false, true, false, false, false, false, true, false);
-   Chara (true, false, false, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, false, true, false, true, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x42; char_0x61;
+   char_0x72; char_0x65; char_0x54],
   [(Tm NOT, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (false, true, false, false, false, false, true, false);
-          Chara (true, false, false, false, false, true, true, false);
-          Chara (false, true, false, false, true, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, false, true, false, true, false, true, false)],
+    (Nt [char_0x52; char_0x42; char_0x61; char_0x72; char_0x65; char_0x54],
       Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, false, true, false)],
+                                   NNode (Some (([char_0x46; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x4D],
+          [(Nt [char_0x46; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x4D],
              Any);
             (Tm STAR, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false);
-                  Chara (true, false, true, false, true, false, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (true, false, false, false, false, true,
-  false, false)],
-                                  [(Nt [Chara
-  (false, true, true, false, false, false, true, false);
- Chara (true, true, true, true, false, true, true, false);
- Chara (false, true, false, false, true, true, true, false);
- Chara (true, false, true, true, false, true, true, false);
- Chara (true, false, true, false, true, true, true, false);
- Chara (false, false, true, true, false, true, true, false);
- Chara (true, false, false, false, false, true, true, false)],
+                   NNode (Some (([char_0x21],
+                                  [(Nt [char_0x46; char_0x6F; char_0x72;
+ char_0x6D; char_0x75; char_0x6C; char_0x61],
                                      Eq)]),
                                  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, true, false, false, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, true, false, false, true, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, true, false, false, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x46],
+  [(Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x46],
      Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 One))))),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any);
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D; char_0x54],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm LESSEQ, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any)]),
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, false, true, false)],
-  [(Nt [Chara (false, false, true, false, true, false, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (false, true, false, false, true, true, true, false);
-         Chara (true, false, true, true, false, true, true, false);
-         Chara (true, false, true, false, true, false, true, false)],
-     Any)]),
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x4D],
+  [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D; char_0x55], Any)]),
  Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))),
-                                   NNode (Some (([Chara
-            (false, false, false, false, true, false, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (true, false, true, false, true, false, true, false)],
-          [(Nt [Chara (false, false, false, false, true, false, true, false);
-                 Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (false, false, false, false, true, false, true, false)],
+                                   NNode (Some (([char_0x50; char_0x54;
+           char_0x65; char_0x72; char_0x6D; char_0x55],
+          [(Nt [char_0x50; char_0x54; char_0x65; char_0x72; char_0x6D;
+                 char_0x50],
              Any)]),
          Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip))),
-           NNode (Some (([Chara (false, true, false, false, false, false, true,
-                                  false);
-                           Chara (true, true, true, true, false, false, true,
-                                   false);
-                           Chara (false, false, false, false, true, true, true,
-                                   false)],
-                          [(Tm SINCE, Any)]),
+           NNode (Some (([char_0x42; char_0x4F; char_0x70], [(Tm SINCE, Any)]),
                          Nat_of_num (Bit1 (Bit0 (Bit1 One)))),
-                   NNode (Some (([Chara (true, false, true, false, true, false,
-  true, false);
-                                   Chara (true, true, true, true, false, false,
-   true, false);
-                                   Chara (false, false, false, false, true,
-   true, true, false)],
+                   NNode (Some (([char_0x55; char_0x4F; char_0x70],
                                   [(Tm NEXT, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (false, true, false, false, true, true, false, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x32],
   [(Tm LPA, Any);
-    (Nt [Chara (false, true, false, false, true, false, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (true, true, true, false, false, true, true, false);
-          Chara (true, false, true, false, false, true, true, false);
-          Chara (false, false, false, true, true, true, true, false);
-          Chara (false, true, false, false, true, true, false, false)],
+    (Nt [char_0x52; char_0x65; char_0x67; char_0x65; char_0x78; char_0x32],
       Any);
     (Tm RPA, Any)]),
  Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, false, true, false, true, true, true, false);
-           Chara (false, true, true, true, false, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x75;
+           char_0x6E],
           [(Tm F2S, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
-                                   NNode (Some (([Chara
-            (true, false, false, false, false, false, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (true, true, true, true, false, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (true, false, false, false, false, false, true, false);
-                 Chara (false, false, true, false, true, true, true, false);
-                 Chara (true, true, true, true, false, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false);
-                 Chara (true, true, false, false, true, false, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x41; char_0x74;
+           char_0x6F; char_0x6D],
+          [(Nt [char_0x41; char_0x74; char_0x6F; char_0x6D; char_0x53], Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One))))))),
    NTip, NTip)),
-                           NNode (Some (([Chara
-    (false, false, true, false, true, false, true, false);
-   Chara (true, false, true, false, false, true, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, true, false, false, true, true, true, false);
-   Chara (true, true, true, false, false, true, true, false)],
+                           NNode (Some (([char_0x54; char_0x65; char_0x72;
+   char_0x6D; char_0x41; char_0x72; char_0x67],
   [(Tm LD, Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, true, true, false, false, false, true, false);
-           Chara (true, true, false, false, false, false, true, false);
-           Chara (true, true, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false)],
+                                   NNode (Some (([char_0x46; char_0x43;
+           char_0x73; char_0x74],
           [(Tm INTEGER, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit1 One)))))),
    NTip, NTip),
                                    NTip)),
-                   NNode (Some (([Chara (false, true, false, false, true, false,
-  true, false);
-                                   Chara (false, true, false, false, false,
-   false, true, false);
-                                   Chara (true, true, true, true, false, true,
-   true, false);
-                                   Chara (true, false, true, false, true, true,
-   true, false);
-                                   Chara (false, true, true, true, false, true,
-   true, false);
-                                   Chara (false, false, true, false, false,
-   true, true, false)],
-                                  [(Nt [Chara
-  (true, false, true, false, true, false, true, false);
- Chara (false, true, true, true, false, true, true, false);
- Chara (true, false, false, true, false, true, true, false);
- Chara (false, false, true, false, true, true, true, false);
- Chara (true, true, false, false, true, true, true, false)],
+                   NNode (Some (([char_0x52; char_0x42; char_0x6F; char_0x75;
+                                   char_0x6E; char_0x64],
+                                  [(Nt [char_0x55; char_0x6E; char_0x69;
+ char_0x74; char_0x73],
                                      Any);
                                     (Tm RSB, Any)]),
                                  Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 One))))),
-                           NNode (Some (([Chara
-    (false, true, false, false, true, false, true, false);
-   Chara (true, false, false, false, false, false, true, false);
-   Chara (false, false, true, false, true, true, true, false);
-   Chara (true, true, true, true, false, true, true, false);
-   Chara (true, false, true, true, false, true, true, false);
-   Chara (true, true, false, false, true, false, true, false)],
-  [(Nt [Chara (false, true, false, false, true, false, true, false);
-         Chara (true, true, false, false, true, false, true, false);
-         Chara (true, false, false, false, false, true, true, false);
-         Chara (false, true, true, false, false, true, true, false);
-         Chara (true, false, true, false, false, true, true, false);
-         Chara (true, true, false, false, true, false, true, false)],
+                           NNode (Some (([char_0x52; char_0x41; char_0x74;
+   char_0x6F; char_0x6D; char_0x53],
+  [(Nt [char_0x52; char_0x53; char_0x61; char_0x66; char_0x65; char_0x53],
      Any)]),
  Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (true, true, true, true, false, false, true, false);
-           Chara (false, false, false, false, true, true, true, false);
-           Chara (false, false, true, false, true, true, true, false);
-           Chara (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false)],
-          [(Nt [Chara (false, false, true, false, true, false, true, false);
-                 Chara (true, false, true, false, false, true, true, false);
-                 Chara (false, true, false, false, true, true, true, false);
-                 Chara (true, false, true, true, false, true, true, false)],
-             Any)]),
+                                   NNode (Some (([char_0x4F; char_0x70;
+           char_0x74; char_0x54; char_0x65; char_0x72; char_0x6D],
+          [(Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any)]),
          Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit1 One)))))),
    NTip, NTip),
                                    NTip),
-                           NNode (Some (([Chara
-    (true, false, false, false, false, false, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, true, false, false, true, true, false);
-   Chara (true, true, true, true, false, false, true, false);
-   Chara (false, false, false, false, true, true, true, false)],
+                           NNode (Some (([char_0x41; char_0x67; char_0x67;
+   char_0x4F; char_0x70],
   [(Tm CNT, Any)]),
  Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))),
-                                   NNode (Some (([Chara
-            (false, false, true, false, true, false, true, false);
-           Chara (true, false, true, false, false, true, true, false);
-           Chara (false, true, false, false, true, true, true, false);
-           Chara (true, false, true, true, false, true, true, false);
-           Chara (false, false, false, false, true, false, true, false)],
-          [(Nt [Chara (false, true, true, false, false, false, true, false);
-                 Chara (true, false, true, false, true, true, true, false);
-                 Chara (false, true, true, true, false, true, true, false)],
-             Any);
-            (Tm LPA, Any);
-            (Nt [Chara (false, false, true, false, true, false, true, false);
-                  Chara (true, false, true, false, false, true, true, false);
-                  Chara (false, true, false, false, true, true, true, false);
-                  Chara (true, false, true, true, false, true, true, false)],
-              Any);
+                                   NNode (Some (([char_0x54; char_0x65;
+           char_0x72; char_0x6D; char_0x50],
+          [(Nt [char_0x46; char_0x75; char_0x6E], Any); (Tm LPA, Any);
+            (Nt [char_0x54; char_0x65; char_0x72; char_0x6D], Any);
             (Tm RPA, Any)]),
          Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))),
    NTip, NTip),
@@ -51284,9 +48697,27 @@ let rec mfodl_parse
           mfodl_dec_Formula)
         x;;
 
+let rec numeral _A
+  = function One -> one _A.one_numeral
+    | Bit0 n ->
+        (let m = numeral _A n in
+          plus _A.semigroup_add_numeral.plus_semigroup_add m m)
+    | Bit1 n ->
+        (let m = numeral _A n in
+          plus _A.semigroup_add_numeral.plus_semigroup_add
+            (plus _A.semigroup_add_numeral.plus_semigroup_add m m)
+            (one _A.one_numeral));;
+
 let rec parse_formula
   s = (match lex s with None -> None
         | Some w -> bind (mfodl_parse w) postprocess);;
+
+let rec of_nat _A
+  = function
+    Zero_nat ->
+      zero _A.semiring_0_semiring_1.mult_zero_semiring_0.zero_mult_zero
+    | Nat_of_num k ->
+        numeral _A.semiring_numeral_semiring_1.numeral_semiring_numeral k;;
 
 let rec integer_of_nat x = of_nat semiring_1_integer x;;
 

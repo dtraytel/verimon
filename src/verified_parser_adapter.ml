@@ -3,16 +3,11 @@
 
 module V = Verified_parser.Verified_parser
 
-(* Strings are lists of bytes, each a Chara of its eight bits, least significant first. *)
+(* Strings are lists of bytes; a character is its code in the exported code. *)
 let chars_of_string s =
-  List.init (String.length s) (fun i ->
-      let c = Char.code s.[i] in
-      let b k = c land (1 lsl k) <> 0 in
-      V.Chara (b 0, b 1, b 2, b 3, b 4, b 5, b 6, b 7))
+  List.init (String.length s) (fun i -> V.char_of_integer (Z.of_int (Char.code s.[i])))
 
-let char_of (V.Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
-  let bit b k = if b then 1 lsl k else 0 in
-  Char.chr (bit b0 0 + bit b1 1 + bit b2 2 + bit b3 3 + bit b4 4 + bit b5 5 + bit b6 6 + bit b7 7)
+let char_of c = Char.chr (Z.to_int (V.integer_of_char c))
 
 let str cs = String.of_seq (Seq.map char_of (List.to_seq cs))
 let int i = V.integer_of_int i
