@@ -1205,15 +1205,12 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
           by (auto simp: 10 intro!: And_safe split: formula.splits)
       next
         case True
-        have "P \<phi>'" "safe_formula \<phi>'' \<Longrightarrow> P \<phi>''" "safe_formula \<psi>'' \<Longrightarrow> P \<psi>''"
-          using \<open>safe_formula \<phi>'\<close> 
+        from e(2) have "safe_formula \<psi>''"
+          by (simp add: safe_dual_def split: if_splits)
+        with \<open>safe_formula \<phi>'\<close> True have "P \<phi>'" "P \<phi>''" "P \<psi>''"
           by (auto simp: 10 e(1) intro!: IH)
-        thus ?thesis
-          using e True no_safe_assign_trigger[of \<phi>' \<phi>'' I]
-           apply (simp add: 10 safe_dual_def split: if_splits)
-          subgoal by (rule And_safe; clarsimp simp: safe_dual_def)
-              (rule IH; clarsimp simp: 10 safe_dual_def)
-          by (rule And_Trigger; clarsimp simp: 10 safe_dual_def)
+        with e(4) True e(2) e(3)[unfolded e(1)] show ?thesis
+          unfolding 10 e(1) by (rule And_Trigger)
       qed
     next
       case f
