@@ -304,13 +304,15 @@ proof -
     show "mono_on {i..j'} (\<lambda>x. progress \<sigma> (P'(p \<mapsto> x)) \<phi> j')"
       by (auto intro!: mono_onI assms(2,4,5) pred_mapping_map_upd rel_mapping_map_upd rel_mapping_reflp reflpI)
     show "\<forall>x\<in>{i..j'}. progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<in> {i..j'}"
-      unfolding Ball_def atLeastAtMost_iff
-    proof safe
-      fix x assume *: "i \<le> x" "x \<le> j'"
-      then show "i \<le> progress \<sigma> (P'(p \<mapsto> x)) \<phi> j'"
+    proof
+      fix x assume "x \<in> {i..j'}"
+      then have *: "i \<le> x" "x \<le> j'" by simp_all
+      then have "i \<le> progress \<sigma> (P'(p \<mapsto> x)) \<phi> j'"
         by (subst assms(7)) (auto intro!: assms(2-6,8) pred_mapping_map_upd rel_mapping_map_upd)
-      from * show "progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<le> j'"
+      moreover from * have "progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<le> j'"
         by (auto intro!: assms(1,5) pred_mapping_map_upd)
+      ultimately show "progress \<sigma> (P'(p \<mapsto> x)) \<phi> j' \<in> {i..j'}"
+        by simp
     qed
     show "i \<le> j'" using assms(3,8) by simp
   qed
@@ -1621,9 +1623,22 @@ qed
 lemma pred_mapping_max_mapping:
   "pred_mapping (\<lambda>x. x\<le>j1) P1 \<Longrightarrow> pred_mapping (\<lambda>x. x\<le>j2) P2 
   \<Longrightarrow> pred_mapping (\<lambda>x. x\<le>(max j1 j2)) (max_mapping P1 P2)"
-  apply(auto simp: pred_mapping_alt max_mapping_def)
-   apply (metis (full_types) domIff le_max_iff_disj option.discI option.sel)
-  by (metis domI max.coboundedI2 option.sel)
+proof -
+  assume P1: "pred_mapping (\<lambda>x. x\<le>j1) P1" and P2: "pred_mapping (\<lambda>x. x\<le>j2) P2"
+  show "pred_mapping (\<lambda>x. x\<le>(max j1 j2)) (max_mapping P1 P2)"
+    unfolding pred_mapping_alt
+  proof
+    fix p assume "p \<in> dom (max_mapping P1 P2)"
+    then obtain x y where xy: "P1 p = Some x" "P2 p = Some y"
+      by auto
+    with P1 P2 have "x \<le> j1" "y \<le> j2"
+      by (force simp: pred_mapping_alt)+
+    moreover from xy have "max_mapping P1 P2 p = Some (max x y)"
+      by (simp add: max_mapping_def)
+    ultimately show "the (max_mapping P1 P2 p) \<le> max j1 j2"
+      by (metis max.mono option.sel)
+  qed
+qed
 
 lemma range_mapping_to_pred_mapping: "range_mapping a j P \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P"
   by(auto simp add: pred_mapping_alt)
@@ -1686,18 +1701,21 @@ next
     "the (P2 ?pn) \<le> progress \<sigma> P1 \<phi> j1"
     by (atomize_elim, intro Let(1)) auto
   let ?P12 = "max_mapping P1 P2"
-  from P2 have P12_bound: "pred_mapping (\<lambda>x. x \<le> max j1 j2) ?P12"
-    apply (intro pred_mapping_mono[OF range_mapping_max_mapping[of i j1 P1 j2 P2]])
-      apply (auto intro!: pred_mapping_mono[OF P2(2)] pred_mapping_mono[OF P1(2)])
-    by (simp add: pred_mapping_alt)
   have P1j: "pred_mapping (\<lambda>x. x \<le> j1) P1"
     using P1(2) by (rule range_mapping_to_pred_mapping)
-  have le1: "progress \<sigma> P1 \<phi> j1 \<le> progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2)"
-  proof (rule progress_mono_gen[OF max.cobounded1 P1j])
+  have P2j: "pred_mapping (\<lambda>x. x \<le> j2) P2"
+    using P2(2) by (rule range_mapping_to_pred_mapping)
+  have P12_bound: "pred_mapping (\<lambda>x. x \<le> max j1 j2) ?P12"
+    using P1j P2j by (rule pred_mapping_max_mapping)
+  have P12'_bound: "pred_mapping (\<lambda>x. x \<le> max j1 j2) (?P12(?pn := P1 ?pn))"
+  proof -
     have "pred_mapping (\<lambda>x. x \<le> max j1 j2) P1"
       using P1j by (rule pred_mapping_mono) auto
-    with P12_bound show "pred_mapping (\<lambda>x. x \<le> max j1 j2) (?P12(?pn := P1 ?pn))"
+    with P12_bound show ?thesis
       by (auto simp: pred_mapping_def)
+  qed
+  have le1: "progress \<sigma> P1 \<phi> j1 \<le> progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2)"
+  proof (rule progress_mono_gen[OF max.cobounded1 P1j P12'_bound])
     have "rel_mapping (\<le>) P1 ?P12"
       using P1(1) P2(1) by (intro max_mapping_cobounded1) auto
     then show "rel_mapping (\<le>) P1 (?P12(?pn := P1 ?pn))"
@@ -1729,10 +1747,19 @@ next
       using le2 by blast
     also have "... \<le> progress \<sigma> 
       ((?P12(?pn := P1 ?pn))(?pn\<mapsto>progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2))) \<psi> (max j1 j2)"
-      using P12_bound P1 apply (auto intro!: progress_mono_gen pred_mapping_map_upd
-        pred_mapping_fun_upd max.coboundedI1 progress_le_gen
-      elim: pred_mapping_mono simp: le1 rel_mapping_alt split: option.splits)
-      by (metis (no_types, lifting) domI option.sel pred_mapping_alt)
+    proof (rule progress_mono_gen[OF order_refl])
+      have "progress \<sigma> P1 \<phi> j1 \<le> max j1 j2"
+        by (rule max.coboundedI1[OF progress_le_gen[OF P1j]])
+      with P12_bound show "pred_mapping (\<lambda>x. x \<le> max j1 j2) (?P12(?pn \<mapsto> progress \<sigma> P1 \<phi> j1))"
+        by simp
+      show "pred_mapping (\<lambda>x. x \<le> max j1 j2)
+        ((?P12(?pn := P1 ?pn))(?pn \<mapsto> progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2)))"
+        unfolding fun_upd_upd
+        by (intro pred_mapping_map_upd progress_le_gen P12'_bound P12_bound)
+      show "rel_mapping (\<le>) (?P12(?pn \<mapsto> progress \<sigma> P1 \<phi> j1))
+        ((?P12(?pn := P1 ?pn))(?pn \<mapsto> progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2)))"
+        using le1 by simp
+    qed
     finally show "i \<le> ..." .
   qed
 next
