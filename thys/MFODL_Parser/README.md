@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser takes 24 to 148 µs per formula (median
-50 µs, 2.6 µs per token), against 1.3 to 5.2 µs (median 2.3 µs) for MonPoly's
-parser: 15 to 30 times slower (median 22). The LR driver takes 80% of the
-time, the lexer 15%, post-processing and conversion 5%. In a `monpoly -check`
+9 to 48 tokens), the verified parser takes 20 to 107 µs per formula (median
+40 µs, 2.1 µs per token), against 1.3 to 5.3 µs (median 2.3 µs) for MonPoly's
+parser: 12 to 23 times slower (median 17). The LR driver takes 75% of the
+time, the lexer 18%, post-processing and conversion 7%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -118,13 +118,16 @@ the export, on the same suite (median per formula):
 | simple driver (`lr/LR_Simple.thy`)        | 2.9 ms   | 648 ms   |
 | simple driver on indexed tables           | 381 µs   | 84.1 ms  |
 | and code equations for the lexer          | 111 µs   | 24.7 ms  |
-| on trie tables (`lr/LR_Trie.thy`, current)| 50 µs    | 11.2 ms  |
+| on trie tables (`lr/LR_Trie.thy`)         | 50 µs    | 11.2 ms  |
+| numbered tokens (`lr/LR_Tok.thy`, current)| 40 µs    | 8.8 ms   |
 | MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 84 M, 69 M of them in the LR driver and 13 M in the lexer.
-About a third of the LR driver's instructions number the lookahead token,
-by a linear search in the list of tokens, at every step.
+parser executes 68 M, 52 M of them in the LR driver and 13 M in the lexer.
+Numbering the lookahead token by a linear search in the list of terminals at
+every step took 24 M of the LR driver's instructions; numbering each token
+once, when it enters the input, takes 7 M. The largest remaining item is the
+trie lookup (13 M).
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -135,7 +138,9 @@ static data, and with binary naturals a lookup follows the constructors of the
 numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
 `tlookup_binary`). Productions and nonterminals are numbered, goto rows are
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
-are tabulated by lookahead, so a step compares no names. The general driver,
+are tabulated by lookahead, so a step compares no names. Each input token
+is paired with its number before the run (`lr/LR_Tok.thy`), and the run on
+the paired input is proved equal to the run on the tokens. The general driver,
 which computes the closure of every new state with its layout anchors at run
 time, is about 8,000 times slower on the suite.
 

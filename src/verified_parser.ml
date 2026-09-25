@@ -6573,6 +6573,20 @@ let rec map_of _A
   x0 k = match x0, k with [], k -> None
     | (l, v) :: ps, k -> (if eq _A l k then Some v else map_of _A ps k);;
 
+let rec jt_miss (JTabs (x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)) = x2;;
+
+let rec jt_lal (JTabs (x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)) = x1;;
+
+let rec tok (Token_ext (tok, span, more)) = tok;;
+
+let rec jla _B
+  j v = (match v with [] -> Zero_nat
+          | x :: _ ->
+            (match map_of _B (jt_lal j) (tok x) with None -> jt_miss j
+              | Some l -> l));;
+
+let rec jenc _B j x = (x, jla _B j [x]);;
+
 let rec lookup_num x0 uu = match x0, uu with NTip, uu -> None
                      | NNode (x, l, r), One -> x
                      | NNode (x, l, r), Bit0 k -> lookup_num l k
@@ -6586,18 +6600,6 @@ let rec jgo
   tab n i k =
     (match tlookup tab i with None -> n
       | Some r -> (match tlookup r k with None -> n | Some j -> j));;
-
-let rec jt_miss (JTabs (x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)) = x2;;
-
-let rec jt_lal (JTabs (x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)) = x1;;
-
-let rec tok (Token_ext (tok, span, more)) = tok;;
-
-let rec jla _B
-  j v = (match v with [] -> Zero_nat
-          | x :: _ ->
-            (match map_of _B (jt_lal j) (tok x) with None -> jt_miss j
-              | Some l -> l));;
 
 let rec filter
   p x1 = match p, x1 with p, [] -> []
@@ -6664,11 +6666,11 @@ let rec jlicd
 let rec tl = function [] -> []
              | x21 :: x22 -> x22;;
 
-let rec jctl _B
+let rec jctl2
   j c = (let (stk, v) = c in
           (match stk with [] -> None
             | (i, p) :: _ ->
-              (let l = jla _B j v in
+              (let l = (match v with [] -> Zero_nat | (_, l) :: _ -> l) in
                let lics = jget (jt_lic j) i l in
                let comps =
                  (match tlookup (jt_pc j) p with None -> [] | Some cs -> cs) in
@@ -6693,6 +6695,16 @@ let rec jctl _B
                                       drop_as (snd pr) stk,
                                      v))))))));;
 
+let rec take_as x0 uu = match x0, uu with [], uu -> []
+                  | uv :: xs, [] -> []
+                  | uw :: xs, y :: ys -> y :: take_as xs ys;;
+
+let rec xtree
+  dec act v tstk =
+    (match act with DShift -> Leaf (dec (hd v)) :: tstk
+      | DReduce pr ->
+        Node (fst pr, rev (take_as (snd pr) tstk)) :: drop_as (snd pr) tstk);;
+
 let rec butlast = function [] -> []
                   | x :: xs -> (if null xs then [] else x :: butlast xs);;
 
@@ -6711,7 +6723,7 @@ let rec equal_option _A x0 x1 = match x0, x1 with None, Some x2 -> false
 
 let rec jt_pf (JTabs (x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11)) = x11;;
 
-let rec jfinal
+let rec jfinal2
   j c = (let (stk, v) = c in
           null v &&
             (match stk with [] -> false
@@ -6723,16 +6735,6 @@ let rec dropWhile p x1 = match p, x1 with p, [] -> []
 
 let rec takeWhile p x1 = match p, x1 with p, [] -> []
                     | p, x :: xs -> (if p x then x :: takeWhile p xs else []);;
-
-let rec take_as x0 uu = match x0, uu with [], uu -> []
-                  | uv :: xs, [] -> []
-                  | uw :: xs, y :: ys -> y :: take_as xs ys;;
-
-let rec stree
-  act v tstk =
-    (match act with DShift -> Leaf (hd v) :: tstk
-      | DReduce pr ->
-        Node (fst pr, rev (take_as (snd pr) tstk)) :: drop_as (snd pr) tstk);;
 
 let rec length_tailrec x0 n = match x0, n with [], n -> n
                          | x :: xs, n -> length_tailrec xs (suc n);;
@@ -7547,11 +7549,32 @@ and ok_r = function RTest f -> ok_f f
            | RStar r -> ok_r r
            | RSkip v -> true;;
 
+let rec equal_dact _A _B
+  x0 x1 = match x0, x1 with DShift, DReduce x2 -> false
+    | DReduce x2, DShift -> false
+    | DReduce x2, DReduce y2 ->
+        equal_proda _A (equal_list (equal_prod (equal_sym _A _B) equal_irel)) x2
+          y2
+    | DShift, DShift -> true;;
+
+let rec sresult tstk = (match tstk with [] -> None | t :: _ -> Some t);;
+
+let rec xrun_hist _B _C
+  ctl fin dec seen st =
+    (let (stk, (v, tstk)) = st in
+      (if fin (stk, v) then sresult tstk
+        else (if member (equal_list (equal_prod equal_nat equal_nat)) seen stk
+               then None
+               else bind (ctl (stk, v))
+                      (fun (act, (stka, va)) ->
+                        xrun_hist _B _C ctl fin dec
+                          (if equal_dact _B _C act DShift then []
+                            else stk :: seen)
+                          (stka, (va, xtree dec act v tstk))))));;
+
 let rec s_txt (Span_ext (s_line, s_col, s_off, s_len, s_txt, more)) = s_txt;;
 
 let rec span (Token_ext (tok, span, more)) = span;;
-
-let rec sresult tstk = (match tstk with [] -> None | t :: _ -> Some t);;
 
 let wild : regex = RSkip (Nat_of_num One);;
 
@@ -7570,27 +7593,6 @@ let rec digit5 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x6;;
 let rec digit6 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x7;;
 
 let rec digit7 (Chara (x1, x2, x3, x4, x5, x6, x7, x8)) = x8;;
-
-let rec equal_dact _A _B
-  x0 x1 = match x0, x1 with DShift, DReduce x2 -> false
-    | DReduce x2, DShift -> false
-    | DReduce x2, DReduce y2 ->
-        equal_proda _A (equal_list (equal_prod (equal_sym _A _B) equal_irel)) x2
-          y2
-    | DShift, DShift -> true;;
-
-let rec srun_hist _A _D
-  ctl fin seen st =
-    (let (stk, (v, tstk)) = st in
-      (if fin (stk, v) then sresult tstk
-        else (if member (equal_list (equal_prod equal_nat equal_nat)) seen stk
-               then None
-               else bind (ctl (stk, v))
-                      (fun (act, (stka, va)) ->
-                        srun_hist _A _D ctl fin
-                          (if equal_dact _D _A act DShift then []
-                            else stk :: seen)
-                          (stka, (va, stree act v tstk))))));;
 
 let rec add_ex_f
   = function
@@ -279260,9 +279262,10 @@ let mfodl_parse_i0 : nat
 
 let rec mfodl_parse
   x = (fun w ->
-        bind (srun_hist equal_mtok (equal_list equal_char)
-               (jctl equal_mtok mfodl_parse_jtabs) (jfinal mfodl_parse_jtabs) []
-               ([(mfodl_parse_i0, mfodl_parse_p0)], (w, [])))
+        bind (xrun_hist (equal_list equal_char) equal_mtok
+               (jctl2 mfodl_parse_jtabs) (jfinal2 mfodl_parse_jtabs) fst []
+               ([(mfodl_parse_i0, mfodl_parse_p0)],
+                 (map (jenc equal_mtok mfodl_parse_jtabs) w, [])))
           mfodl_dec_Formula)
         x;;
 
