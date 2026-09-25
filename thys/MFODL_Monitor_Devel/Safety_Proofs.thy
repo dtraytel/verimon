@@ -1754,44 +1754,51 @@ next
     by (rule finite_subset)
 next
   case (Prev I \<phi>)
-  then have "finite
+  then have fin: "finite
             {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) (i-1) \<phi>}"
-    apply(simp)
-    done
-  then show ?case
-    apply(simp)
-    apply(cases "i")
-     apply(simp)
-    apply(simp)
-    apply(elim finite_subset[rotated])
-    by(auto)
+    by simp
+  have "{v. wf_tuple n (fv (Formula.Prev I \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Prev I \<phi>)}
+    \<subseteq> {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) (i-1) \<phi>}"
+    by (cases i) auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Next I \<phi>)
-  then have "finite
+  then have fin: "finite
      {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) (Suc i) \<phi>}"
-    apply(simp)
-    done
-  then show ?case using Next
-    apply(elim finite_subset[rotated])
-    by(auto)
+    by simp
+  have "{v. wf_tuple n (fv (Formula.Next I \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Next I \<phi>)}
+    \<subseteq> {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) (Suc i) \<phi>}"
+    by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Since \<phi> I \<psi>)
   then have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
     by(simp)
-  then have "finite (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
+  then have fin: "finite (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
     by(auto)
-  then show ?case using Since
-    apply(elim finite_subset[rotated])
-    by(auto simp add: Un_absorb1)
+  have "fv (Formula.Since \<phi> I \<psi>) = fv \<psi>"
+    using Since.hyps(1) by (simp add: Un_absorb1)
+  then have "{v. wf_tuple n (fv (Formula.Since \<phi> I \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Since \<phi> I \<psi>)}
+    \<subseteq> (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
+    by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Not_Since \<phi> I \<psi>)
   then have "\<forall> j. finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>}"
     by(simp)
-  then have "finite (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
+  then have fin: "finite (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
     by(auto)
-  then show ?case using Not_Since
-    apply(elim finite_subset[rotated])
-    by(auto simp add: Un_absorb1)
+  have "fv (Formula.Since (Formula.Neg \<phi>) I \<psi>) = fv \<psi>"
+    using Not_Since.hyps(1) by (simp add: Un_absorb1)
+  then have "{v. wf_tuple n (fv (Formula.Since (Formula.Neg \<phi>) I \<psi>)) v
+      \<and> Formula.sat \<sigma> V (map the v) i (Formula.Since (Formula.Neg \<phi>) I \<psi>)}
+    \<subseteq> (\<Union> j\<le>i. {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) j \<psi>})"
+    by auto
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Until \<phi> I \<psi>)
   then obtain m j where m: "\<not> memR I m" and "m = (\<tau> \<sigma> j - \<tau> \<sigma> i)"
