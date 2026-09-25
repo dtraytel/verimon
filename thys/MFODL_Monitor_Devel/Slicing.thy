@@ -485,7 +485,7 @@ next
       using left(1)
     proof (rule Let.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v' ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>"
           using Let.prems(3) inputs_subset_fv fvi_less_nfv
@@ -555,7 +555,7 @@ next
       using left(1)
     proof (rule Frz.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v' ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>"
           using Frz.prems(3) inputs_subset_fv fvi_less_nfv
@@ -680,7 +680,7 @@ next
       using \<phi>0
     proof (rule LetPast.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v0 ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>" by (rule Y_less)
         show "v0 ! y = z"
@@ -1100,6 +1100,9 @@ proof (induction \<phi> arbitrary: V v i x q n c k thesis)
 next
   case (Let p \<phi> \<psi>)
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.Let p \<phi> \<psi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Let.prems(3) by simp
   consider (left) pos' y where "genvar \<phi> pos' y q n c k" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>" "genvar \<psi> pos x q n c k"
     using Let.prems(2) by (auto simp add: pos_def)
@@ -1107,14 +1110,25 @@ next
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
       and pos': "pos' = Formula.sat \<sigma> V as j \<phi>"
-      apply (rule Let.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified]])
-      using Let.prems by (auto simp add: domIff)
+    proof (rule Let.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that) auto
+    qed
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = as ! y"
-      apply (rule Let.IH(1)[rotated, OF left(1)[unfolded pos', simplified]])
-      using \<open>length as = Formula.nfv \<phi>\<close> by simp_all
+    proof (rule Let.IH(1))
+      show "genvar \<phi> (Formula.sat \<sigma> V as j \<phi>) y q n c k"
+        using left(1) by (simp add: pos')
+      show "Formula.nfv \<phi> \<le> length as"
+        by (simp add: \<open>length as = Formula.nfv \<phi>\<close>)
+    qed (rule that)
     show ?thesis proof (rule Let.prems(1))
       show "k < n" by fact
       show "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c" by fact
@@ -1123,19 +1137,26 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using right(1) by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule Let.IH(2)[rotated, OF right(2)[unfolded pos_def, simplified]])
-      using Let.prems apply simp
-      using Let.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule Let.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right(1) show ?thesis
       by (intro Let.prems(1)) (auto simp add: compose_inputs_def)
   qed
 next
   case (Frz p \<phi> \<psi>)
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Frz.prems(3) by simp
   consider (left) pos' y where "genvar \<phi> pos' y q n c k" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>" "genvar \<psi> pos x q n c k"
     using Frz.prems(2) by (auto simp add: pos_def)
@@ -1143,14 +1164,25 @@ next
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
       and pos': "pos' = Formula.sat \<sigma> V as j \<phi>"
-      apply (rule Frz.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified]])
-      using Frz.prems by (auto simp add: domIff)
+    proof (rule Frz.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that[of as i]) auto
+    qed
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = as ! y"
-      apply (rule Frz.IH(1)[rotated, OF left(1)[unfolded pos', simplified]])
-      using \<open>length as = Formula.nfv \<phi>\<close> by simp_all
+    proof (rule Frz.IH(1))
+      show "genvar \<phi> (Formula.sat \<sigma> V as j \<phi>) y q n c k"
+        using left(1) by (simp add: pos')
+      show "Formula.nfv \<phi> \<le> length as"
+        by (simp add: \<open>length as = Formula.nfv \<phi>\<close>)
+    qed (rule that)
     show ?thesis proof (rule Frz.prems(1))
       show "k < n" by fact
       show "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c" by fact
@@ -1159,13 +1191,17 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using right(1) by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule Frz.IH(2)[rotated, OF right(2)[unfolded pos_def, simplified]])
-      using Frz.prems apply simp
-      using Frz.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule Frz.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right(1) show ?thesis
       by (intro Frz.prems(1)) (auto simp add: compose_inputs_def)
   qed
@@ -1178,53 +1214,69 @@ next
   have diff: "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>"
     using LetPast.prems(2) by simp
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.LetPast p \<phi> \<psi>)"
+  let ?L = "letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> ?L)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using LetPast.prems(3) by simp
   consider (left) pos' y where "lfp ?G pos' y" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "genvar \<psi> pos x q n c k"
     using LetPast.prems(2) by (auto simp add: pos_def)
   then show ?case proof cases
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
-      and pos': "pos' = letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) as j"
-      apply (rule LetPast.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified sat.simps Let_def]])
-      using LetPast.prems by (auto simp add: domIff)
-    have "lfp ?G \<le> (\<lambda>pos' y. \<forall>as j. pos' = letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) as j \<longrightarrow>
-        length as = Formula.nfv \<phi> \<longrightarrow>
-        (\<exists>as' j'.
-          ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
+      and pos': "pos' = ?L as j"
+    proof (rule LetPast.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def Let_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that) auto
+    qed
+    let ?Vj = "\<lambda>j. V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j'. j' < j \<and> ?L w j')"
+    have Vj: "?Vj j (q, n) = V (q, n)" for j
+      using diff by auto
+    have L: "?L as j = Formula.sat \<sigma> (?Vj j) as j \<phi>" for as j
+      by (subst letpast_sat.simps) (rule refl)
+    let ?P = "\<lambda>pos' y. \<forall>as j. pos' = ?L as j \<longrightarrow> length as = Formula.nfv \<phi> \<longrightarrow>
+        (\<exists>as' j'. ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
           ((q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c) \<and>
-          length as' = n \<and> k < n \<and> as' ! k = as ! y))"
-      apply (rule lfp_induct[OF mono_G])
-      apply clarsimp
-      apply (erule disjE)
-      subgoal for y as j
-        apply (rule LetPast.IH(1)[rotated])
-          apply (subst (asm) letpast_sat.simps)
-          apply assumption
-         apply simp
-        using diff apply (simp del: fun_upd_apply cong: conj_cong)
-        apply (auto simp add: compose_inputs_def split: if_splits)
-        done
-      apply clarsimp
-      subgoal premises h for y as j pos'' y'
-        apply (rule LetPast.IH(1)[rotated, where V="V((p, Formula.nfv \<phi>) \<mapsto>
-          \<lambda>w j'. j' < j \<and>
-             letpast_sat
-              (\<lambda>X u k.
-                  Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>)
-              w j')" and v=as and i=j])
-          apply (insert h(2,5))
-          apply (subst (asm) letpast_sat.simps)
-          apply (simp del: fun_upd_apply)
-        using h(1) apply simp
-        using diff apply (simp del: fun_upd_apply cong: conj_cong)
-        apply clarsimp
-        subgoal for as' j'
-          apply (rule h(4)[rule_format, THEN exE])
-            apply (rule exI[where x=j'], assumption)
-           apply (auto simp add: compose_inputs_def)
-          done
-        done
-      done
+          length as' = n \<and> k < n \<and> as' ! k = as ! y)"
+    have "lfp ?G \<le> ?P"
+    proof (rule lfp_induct[OF mono_G], intro le_funI le_boolI allI impI)
+      fix pos' y as j
+      assume "?G (inf (lfp ?G) ?P) pos' y" and pos': "pos' = ?L as j"
+        and len: "length as = Formula.nfv \<phi>"
+      then consider (base) "genvar \<phi> pos' y q n c k"
+        | (step) pos'' y' where "pos''" "?P pos'' y'" "genvar \<phi> pos' y p (Formula.nfv \<phi>) pos'' y'"
+        unfolding inf_fun_def inf_bool_def by blast
+      then show "\<exists>as' j'. ((q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c) \<and>
+          ((q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c) \<and>
+          length as' = n \<and> k < n \<and> as' ! k = as ! y"
+      proof cases
+        case base
+        show ?thesis
+        proof (rule LetPast.IH(1))
+          show "genvar \<phi> (Formula.sat \<sigma> (?Vj j) as j \<phi>) y q n c k"
+            using base by (simp only: pos' L[symmetric])
+          show "Formula.nfv \<phi> \<le> length as" by (simp add: len)
+        qed (simp only: Vj domIff, blast)
+      next
+        case step
+        obtain as1 j1 where "pos'' = ?L as1 j1" "length as1 = Formula.nfv \<phi>" "as1 ! y' = as ! y"
+        proof (rule LetPast.IH(1))
+          show "genvar \<phi> (Formula.sat \<sigma> (?Vj j) as j \<phi>) y p (Formula.nfv \<phi>) pos'' y'"
+            using step(3) by (simp only: pos' L[symmetric])
+          show "Formula.nfv \<phi> \<le> length as" by (simp add: len)
+          fix as1 j1
+          assume "(p, Formula.nfv \<phi>) \<in> dom (?Vj j) \<longrightarrow> the (?Vj j (p, Formula.nfv \<phi>)) as1 j1 = pos''"
+            and "length as1 = Formula.nfv \<phi>" "as1 ! y' = as ! y"
+          then show thesis using step(1) by (intro that[of as1 j1]) auto
+        qed
+        with step(2) show ?thesis by metis
+      qed
+    qed
     then obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
@@ -1238,13 +1290,17 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using diff by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule LetPast.IH(2)[rotated, OF right[unfolded pos_def, simplified sat.simps Let_def]])
-      using LetPast.prems apply simp
-      using LetPast.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule LetPast.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right by (simp add: pos_def Let_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right diff show ?thesis
       by (intro LetPast.prems(1)) (auto simp add: compose_inputs_def)
   qed
@@ -1272,79 +1328,112 @@ next
     by (auto split: if_splits)
 next
   case (Ands \<phi>s)
-  show ?case
-    using Ands.IH[of _ q n V c k v x thesis i] Ands.prems
-    apply (auto split: if_splits)
-    apply (subgoal_tac "\<not> (\<forall>x\<in>set \<phi>s. Formula.sat \<sigma> V v i x)")
-    by auto
+  obtain \<phi> where \<phi>: "\<phi> \<in> set \<phi>s" and gen: "genvar \<phi> (Formula.sat \<sigma> V v i \<phi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Ands \<phi>s)")
+    case True
+    with Ands.prems(2) obtain \<phi> where "\<phi> \<in> set \<phi>s" "genvar \<phi> True x q n c k"
+      by auto
+    moreover from this(1) True have "Formula.sat \<sigma> V v i \<phi>"
+      by simp
+    ultimately show thesis
+      by (intro that[of \<phi>]) simp_all
+  next
+    case False
+    then obtain \<phi> where "\<phi> \<in> set \<phi>s" "\<not> Formula.sat \<sigma> V v i \<phi>"
+      by auto
+    moreover have "\<forall>\<phi>\<in>set \<phi>s. genvar \<phi> False x q n c k"
+      using Ands.prems(2) by (simp only: False genvar.simps if_False)
+    ultimately show thesis
+      by (intro that[of \<phi>]) simp_all
+  qed
+  have nfv: "Formula.nfv \<phi> \<le> length v"
+    using Ands.prems(3) \<phi> by simp
+  from Ands.IH[OF \<phi> Ands.prems(1) gen nfv] show ?case .
 next
   case (Exists t \<phi>)
   have 1: "Formula.nfv \<phi> \<le> Suc (length v)"
     using Exists.prems(3)
     by (simp add: Formula.nfv_def) (metis fvi_Suc Suc_le_D not_less_eq_eq)
-  show ?case proof (cases "\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>")
+  obtain z where gen: "genvar \<phi> (Formula.sat \<sigma> V (z # v) i \<phi>) (Suc x) q n c k"
+  proof (cases "\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>")
     case True
-    then obtain z where 2: "Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> True (Suc x) q n c k"
+    then obtain z where "Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> True (Suc x) q n c k"
       using Exists.prems(2) by auto
-    show ?thesis
-      apply (rule Exists.IH[rotated])
-        apply (subst 2)
-        apply (rule 2)
-       apply (simp add: 1)
-      apply (rule Exists.prems(1))
-      by simp_all
+    then show thesis by (intro that[of z]) simp
   next
     case False
-    then obtain z where 2: "\<not> Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> False (Suc x) q n c k"
+    then obtain z where "\<not> Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> False (Suc x) q n c k"
       using Exists.prems(2) by auto
-    show ?thesis
-      apply (rule Exists.IH[rotated])
-        apply (subst 2)
-        apply (rule 2)
-       apply (simp add: 1)
-      apply (rule Exists.prems(1))
-      by simp_all
+    then show thesis by (intro that[of z]) simp
+  qed
+  show ?case
+  proof (rule Exists.IH)
+    show "genvar \<phi> (Formula.sat \<sigma> V (z # v) i \<phi>) (Suc x) q n c k" by (fact gen)
+    show "Formula.nfv \<phi> \<le> length (z # v)" using 1 by simp
+    fix as j
+    assume "as ! k = (z # v) ! Suc x"
+    then have "as ! k = v ! x" by simp
+    moreover assume "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as j = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as) \<in> \<Gamma> \<sigma> j = c" "length as = n" "k < n"
+    ultimately show thesis by (intro Exists.prems(1))
   qed
 next
   case (Agg y \<omega> tys f \<phi>)
   have 1: "Formula.nfv \<phi> \<le> length tys + length v"
-    using Agg.prems(3)
-    apply (auto simp add: Formula.nfv_def)
-    subgoal for x
-      apply (cases "x \<le> length tys")
-       apply simp
-      apply (drule bspec[where x="x - length tys"], rule UnI1)
-       apply (metis fvi_iff_fv le_add_diff_inverse2 nat_le_linear)
-      by linarith
-    done
+  proof -
+    have "z < length tys + length v" if "z \<in> Formula.fv \<phi>" for z
+    proof (cases "z < length tys")
+      case False
+      then have "z - length tys + length tys = z"
+        by simp
+      with that have "z - length tys \<in> Formula.fvi (length tys) \<phi>"
+        by (simp only: fvi_iff_fv[of "z - length tys" "length tys" \<phi>])
+      then have "z - length tys \<in> Formula.fv (Formula.Agg y \<omega> tys f \<phi>)"
+        by simp
+      then have "z - length tys < length v"
+        using Agg.prems(3) by (rule less_le_trans[OF fvi_less_nfv[rule_format]])
+      with False show ?thesis by simp
+    qed simp
+    then show ?thesis
+      by (simp add: Formula.nfv_def Suc_le_eq)
+  qed
+  from Agg.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Agg y \<omega> tys f \<phi>)"
+    by simp
+  with Agg.prems(2) have fv: "x + length tys \<in> Formula.fv \<phi>"
+    and gen: "genvar \<phi> True (x + length tys) q n c k"
+    by (simp_all only: genvar.simps eqTrueI[OF sat] simp_thms)
   obtain zs where 2: "length zs = length tys" "Formula.sat \<sigma> V (zs @ v) i \<phi>"
-    "genvar \<phi> True (x + length tys) q n c k"
-    using Agg.prems(2)
-    apply (auto simp add: subset_iff)
-    subgoal for zs
-      apply (subgoal_tac "((\<forall>a x. length x = length tys \<longrightarrow>
-             Formula.sat \<sigma> V (x @ v) i \<phi> \<longrightarrow>
-             Formula.eval_trm (x @ v) f \<noteq> a) \<longrightarrow>
-             (\<forall>t. t \<in> fv \<phi> \<longrightarrow> t < length tys))")
+  proof -
+    from fv have "\<not> Formula.fv \<phi> \<subseteq> {0..<length tys}"
       by auto
-    done
+    with sat show thesis
+      by (auto simp: Let_def intro: that)
+  qed
   show ?case
-    apply (rule Agg.IH[rotated])
-      apply (subst 2)
-      apply (rule 2)
-     apply (simp add: 2)
-     apply (rule 1)
-    apply (rule Agg.prems(1))
-    using 2 by (simp_all add: nth_append)
+  proof (rule Agg.IH)
+    show "genvar \<phi> (Formula.sat \<sigma> V (zs @ v) i \<phi>) (x + length tys) q n c k"
+      using gen 2(2) by simp
+    show "Formula.nfv \<phi> \<le> length (zs @ v)"
+      using 1 2(1) by simp
+    fix as j
+    assume "as ! k = (zs @ v) ! (x + length tys)"
+    then have "as ! k = v ! x"
+      using 2(1) by (simp add: nth_append)
+    moreover assume "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as j = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as) \<in> \<Gamma> \<sigma> j = c" "length as = n" "k < n"
+    ultimately show thesis by (intro Agg.prems(1))
+  qed
 next
   case (Prev I \<phi>)
-  show ?case
-    apply (cases i)
-    using Prev apply simp
-    subgoal for i'
-      using Prev.IH[of q n V c k v x thesis i'] Prev.prems
-      by auto
-    done
+  from Prev.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Prev I \<phi>)"
+    by simp
+  then obtain i' where "i = Suc i'" and "Formula.sat \<sigma> V v i' \<phi>"
+    by (cases i) auto
+  with Prev.prems(2) have gen: "genvar \<phi> (Formula.sat \<sigma> V v i' \<phi>) x q n c k"
+    by auto
+  have nfv: "Formula.nfv \<phi> \<le> length v"
+    using Prev.prems(3) by simp
+  from Prev.IH[OF Prev.prems(1) gen nfv] show ?case .
 next
   case (Next I \<phi>)
   show ?case
@@ -1352,88 +1441,76 @@ next
     by auto
 next
   case (Since \<phi> I \<psi>)
-  show ?case
-    using Since.prems(2-)
-    apply clarsimp
-    apply (erule disjE)
-     apply clarsimp
-    subgoal for j
-      apply (rule Since.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Since.prems(1))
-      by simp_all
-    apply (cases "\<exists>j\<le>i. memL I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and> memR I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and>
-      Formula.sat \<sigma> V v j \<psi> \<and> (\<forall>k\<in>{j<..i}. Formula.sat \<sigma> V v k \<phi>)")
-     apply clarsimp
-    subgoal for j
-      apply (rule Since.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Since.prems(1))
-      by simp_all
-    apply (subgoal_tac "\<not> Formula.sat \<sigma> V v i \<psi>")
-     apply clarsimp
-     apply (rule Since.IH(2)[rotated, of V v i x q n c k])
-       apply simp
-      apply simp
-     apply (rule Since.prems(1))
-    by auto
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Since.prems(3) by simp
+  obtain j where gen: "genvar \<psi> (Formula.sat \<sigma> V v j \<psi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Since \<phi> I \<psi>)")
+    case True
+    then obtain j where "Formula.sat \<sigma> V v j \<psi>"
+      by auto
+    moreover from True Since.prems(2) have "genvar \<psi> True x q n c k"
+      by auto
+    ultimately show thesis
+      by (intro that[of j]) simp
+  next
+    case False
+    from Since.prems(2) have "mem I 0" and gen: "genvar \<psi> False x q n c k"
+      unfolding False[THEN eq_False[THEN iffD2]] by simp_all
+    with False have "\<not> Formula.sat \<sigma> V v i \<psi>"
+      by auto
+    with gen show thesis
+      by (intro that[of i]) simp
+  qed
+  from Since.IH(2)[OF Since.prems(1) gen nfv] show ?case .
 next
   case (Until \<phi> I \<psi>)
-  show ?case
-    using Until.prems(2-)
-    apply clarsimp
-    apply (erule disjE)
-     apply clarsimp
-    subgoal for j
-      apply (rule Until.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Until.prems(1))
-      by simp_all
-    apply (cases "\<exists>j\<ge>i. memL I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<and> memR I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<and>
-      Formula.sat \<sigma> V v j \<psi> \<and> (\<forall>k\<in>{i..<j}. Formula.sat \<sigma> V v k \<phi>)")
-     apply clarsimp
-    subgoal for j
-      apply (rule Until.IH(2)[rotated, of V v j x q n c k])
-        apply simp
-       apply simp
-      apply (rule Until.prems(1))
-      by simp_all
-    apply (subgoal_tac "\<not> Formula.sat \<sigma> V v i \<psi>")
-     apply clarsimp
-     apply (rule Until.IH(2)[rotated, of V v i x q n c k])
-       apply simp
-      apply simp
-     apply (rule Until.prems(1))
-    by auto
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Until.prems(3) by simp
+  obtain j where gen: "genvar \<psi> (Formula.sat \<sigma> V v j \<psi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Until \<phi> I \<psi>)")
+    case True
+    then obtain j where "Formula.sat \<sigma> V v j \<psi>"
+      by auto
+    moreover from True Until.prems(2) have "genvar \<psi> True x q n c k"
+      by auto
+    ultimately show thesis
+      by (intro that[of j]) simp
+  next
+    case False
+    from Until.prems(2) have "mem I 0" and gen: "genvar \<psi> False x q n c k"
+      unfolding False[THEN eq_False[THEN iffD2]] by simp_all
+    with False have "\<not> Formula.sat \<sigma> V v i \<psi>"
+      by auto
+    with gen show thesis
+      by (intro that[of i]) simp
+  qed
+  from Until.IH(2)[OF Until.prems(1) gen nfv] show ?case .
 next
   case (Trigger \<phi> I \<psi>)
-  hence "Formula.nfv \<psi> \<le> length v"
-    by (auto simp: Formula.nfv_def)
-  have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
-    using Trigger.prems(2) 
-    by (clarsimp, erule_tac x=i in allE)
-      clarsimp
-  show ?case
-    using Trigger.prems(2-)
-    apply clarsimp
-    by (rule Trigger.IH(2)[rotated, OF obs \<open>Formula.nfv \<psi> \<le> length v\<close>])
-      (auto intro!: Trigger.prems)
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Trigger.prems(3) by (auto simp: Formula.nfv_def)
+  from Trigger.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Trigger \<phi> I \<psi>)"
+    by (simp only: genvar.simps)
+  from Trigger.prems(2) have "mem I 0" and gen: "genvar \<psi> True x q n c k"
+    unfolding eqTrueI[OF sat] by simp_all
+  from sat \<open>mem I 0\<close> have "Formula.sat \<sigma> V v i \<psi>"
+    by (auto dest: spec[of _ i])
+  with gen have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
+    by simp
+  from Trigger.IH(2)[OF Trigger.prems(1) obs nfv] show ?case .
 next
   case (Release \<phi> I \<psi>)
-    hence "Formula.nfv \<psi> \<le> length v"
-    by (auto simp: Formula.nfv_def)
-  have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
-    using Release.prems(2) 
-    by (clarsimp, erule_tac x=i in allE)
-      clarsimp
-  show ?case
-    using Release.prems(2-)
-    apply clarsimp
-    by (rule Release.IH(2)[rotated, OF obs \<open>Formula.nfv \<psi> \<le> length v\<close>])
-      (auto intro!: Release.prems)
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Release.prems(3) by (auto simp: Formula.nfv_def)
+  from Release.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)"
+    by (simp only: genvar.simps)
+  from Release.prems(2) have "mem I 0" and gen: "genvar \<psi> True x q n c k"
+    unfolding eqTrueI[OF sat] by simp_all
+  from sat \<open>mem I 0\<close> have "Formula.sat \<sigma> V v i \<psi>"
+    by (auto simp del: sat_release_eq dest: spec[of _ i])
+  with gen have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
+    by simp
+  from Release.IH(2)[OF Release.prems(1) obs nfv] show ?case .
 next
   case (MatchF I r)
   then show ?case by simp
@@ -1475,14 +1552,22 @@ lemma sat_slice_inversion:
 proof -
   have "\<exists>v'\<in>S. v' ! x = v ! x" if x: "x \<in> Formula.fv \<phi>" for x
   proof -
+    let ?\<sigma> = "map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> S) \<sigma>"
     obtain q n k where "genvar \<phi> True x q n True k"
       and unique: "\<And>vs. (q, vs) \<in> inputs \<phi> \<Longrightarrow> length vs = n \<Longrightarrow> vs ! k = Some x"
       using assms(1) x by (auto simp add: guarded_by_unique_inputs_def)
-    then obtain v' as where
-      "v' \<in> S" "Safety.matches v' \<phi> (q, as)" "length as = n" "k < n" "as ! k = v ! x"
-      using assms(3,4) genvar_sat[of \<phi> "map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> S) \<sigma>" Map.empty v i x q n True k]
-      apply (auto simp add: set_eq_iff)
-      by (metis (opaque_lifting))
+    with assms(4) have "genvar \<phi> (Formula.sat ?\<sigma> Map.empty v i \<phi>) x q n True k"
+      by simp
+    then obtain as j where "(q, as) \<in> \<Gamma> ?\<sigma> j" "length as = n" "k < n" "as ! k = v ! x"
+      using assms(3)
+    proof (rule genvar_sat)
+      fix as j
+      assume "(q, n) \<notin> dom Map.empty \<longrightarrow> ((q, as) \<in> \<Gamma> ?\<sigma> j) = True"
+        and "length as = n" "k < n" "as ! k = v ! x"
+      then show thesis by (intro that[of as j]) simp_all
+    qed
+    then obtain v' where "v' \<in> S" "Safety.matches v' \<phi> (q, as)"
+      by auto
     note \<open>as ! k = v ! x\<close>
     also have "as ! k = v' ! x"
       using \<open>Safety.matches v' \<phi> (q, as)\<close>
@@ -1522,46 +1607,75 @@ lemma skip_joiner:
   assumes "\<pi> \<in> prefixes"
   shows "joiner (\<lambda>k. M (splitter \<pi> k)) = skip_joiner (\<lambda>k. M (splitter \<pi> k))"
   (is "?L = ?R")
-proof safe
-  fix i v
-  assume "(i, v) \<in> ?R"
-  then obtain k where in_M: "(i, v) \<in> M (splitter \<pi> k)"
-    unfolding skip_joiner_def by blast
-  obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>"
-    using assms by (auto simp add: prefixes_def)
-  with sound_monitor[OF _ in_M] wf_monitor[OF _ in_M] have
-    sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (map the v) i \<phi>"
-    and "ok \<phi> v"
-    by (auto simp: splitter_pslice)
-  then obtain w where "ok \<phi> w" "k \<in> strategy w" "\<forall>x\<in>Formula.fv \<phi>. v ! x = w ! x"
-    using sat_slice_inversion[OF guarded mergeable _ sat] fv_less_nfv
-    by (auto simp add: slice_set_def wf_tuple_def)
-  then have "k \<in> strategy v"
-    using \<open>ok \<phi> v\<close>
-    by (metis (mono_tags, lifting) wf_tuple_cong fv_less_nfv nth_map wf_tuple_length)
-  with in_M \<open>ok \<phi> v\<close> show "(i, v) \<in> ?L" unfolding joiner_def
-    by blast
-qed (auto simp: joiner_def skip_joiner_def)
+proof (rule equalityI)
+  show "?L \<subseteq> ?R"
+    by (auto simp: joiner_def skip_joiner_def)
+next
+  show "?R \<subseteq> ?L"
+  proof (rule subrelI)
+    fix i v
+    assume "(i, v) \<in> ?R"
+    then obtain k where in_M: "(i, v) \<in> M (splitter \<pi> k)"
+      unfolding skip_joiner_def by blast
+    obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>"
+      using assms by (auto simp add: prefixes_def)
+    with sound_monitor[OF _ in_M] wf_monitor[OF _ in_M] have
+      sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (map the v) i \<phi>"
+      and "ok \<phi> v"
+      by (auto simp: splitter_pslice)
+    then obtain w where "ok \<phi> w" "k \<in> strategy w" "\<forall>x\<in>Formula.fv \<phi>. v ! x = w ! x"
+      using sat_slice_inversion[OF guarded mergeable _ sat] fv_less_nfv
+      by (auto simp add: slice_set_def wf_tuple_def)
+    then have "k \<in> strategy v"
+      using \<open>ok \<phi> v\<close>
+      by (metis (mono_tags, lifting) wf_tuple_cong fv_less_nfv nth_map wf_tuple_length)
+    with in_M \<open>ok \<phi> v\<close> show "(i, v) \<in> ?L" unfolding joiner_def
+      by blast
+  qed
+qed
 
 sublocale skip_joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "\<lambda>\<pi>. skip_joiner (\<lambda>k. M (splitter \<pi> k))"
   "\<lambda>_. M" splitter skip_joiner
-  apply unfold_locales
-        apply (subst skip_joiner[symmetric], blast)+
-        apply (fact joint_monitor.mono_monitor)
-       apply (subst (asm) skip_joiner[symmetric], blast)
-       apply (fact joint_monitor.wf_monitor)
-      apply (subst (asm) skip_joiner[symmetric], blast)
-      apply (fact joint_monitor.sound_monitor)
-     apply (rule ex_cong[THEN iffD1])
-      apply (subst skip_joiner[symmetric])
-       apply blast
-      apply (rule refl)
-     apply (fact joint_monitor.complete_monitor)
-    apply (fact joint_slicer.mono_splitter)
-   apply (rule refl)
-  apply (fact joint_slicer.splitter_prefix)
-  done
+proof unfold_locales
+  fix \<pi> \<pi>'
+  assume \<pi>': "\<pi>' \<in> prefixes" and le: "\<pi> \<le> \<pi>'"
+  then have "\<pi> \<in> prefixes" by (rule prefixes_closed)
+  from \<pi>' le show "skip_joiner (\<lambda>k. M (splitter \<pi> k)) \<subseteq> skip_joiner (\<lambda>k. M (splitter \<pi>' k))"
+    unfolding skip_joiner[OF \<open>\<pi> \<in> prefixes\<close>, symmetric] skip_joiner[OF \<pi>', symmetric]
+    by (rule joint_monitor.mono_monitor)
+next
+  fix \<pi> i v
+  assume \<pi>: "\<pi> \<in> prefixes" and "(i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi> k))"
+  then show "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+    unfolding skip_joiner[OF \<pi>, symmetric] by (rule joint_monitor.wf_monitor)
+next
+  fix \<sigma> \<pi> i v
+  assume \<sigma>: "\<sigma> \<in> traces" and in_M: "(i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi> k))"
+    and prefix: "prefix_of \<pi> \<sigma>"
+  from \<sigma> prefix have \<pi>: "\<pi> \<in> prefixes" by (rule prefix_of_trace)
+  from in_M have "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi> k))"
+    by (simp only: skip_joiner[OF \<pi>])
+  with \<sigma> show "Formula.sat \<sigma> Map.empty (map the v) i \<phi>"
+    using prefix by (rule joint_monitor.sound_monitor)
+next
+  fix \<sigma> \<pi> v i
+  assume \<sigma>: "\<sigma> \<in> traces" and "prefix_of \<pi> \<sigma>" and "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+    and "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> Formula.sat \<sigma>' Map.empty (map the v) i \<phi>"
+  then obtain \<pi>' where "prefix_of \<pi>' \<sigma>" and "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi>' k))"
+    using joint_monitor.complete_monitor by blast
+  moreover from \<sigma> this(1) have "\<pi>' \<in> prefixes" by (rule prefix_of_trace)
+  ultimately show "\<exists>\<pi>'. prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi>' k))"
+    by (auto simp: skip_joiner)
+next
+  fix \<pi> \<pi>' :: Formula.prefix and k
+  assume "\<pi> \<le> \<pi>'"
+  then show "splitter \<pi> k \<le> splitter \<pi>' k" by (rule mono_splitter)
+next
+  fix \<pi> k
+  assume "\<pi> \<in> prefixes"
+  then show "splitter \<pi> k \<in> prefixes" by (rule splitter_prefixes)
+qed (rule refl)
 
 end
 

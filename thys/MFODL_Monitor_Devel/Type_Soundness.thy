@@ -33,12 +33,18 @@ proof -
 next
   assume "t \<in> numeric_ty"
   from this assms show "foldl undef_plus x21 x22 = foldl (+) x21 x22 \<and> ty_of (foldl (+) x21 x22 ) = t"
-  proof (induction x22 arbitrary: x21 t)
-  case (Cons a x22)
-  then show ?case using undef_plus_sound 
-    apply (cases x21; cases a; auto simp add: numeric_ty_def)
-    using ty_of.simps by presburger+
-  qed auto
+  proof (induction x22 arbitrary: x21)
+    case (Cons a x22)
+    have num: "t \<in> numeric_ty" and ty_x21: "ty_of x21 = t" and ty_a: "ty_of a = t"
+      using Cons.prems by simp_all
+    have "undef_plus x21 a = x21 + a"
+      using num ty_x21 ty_a
+      by (cases x21; cases a) (simp_all add: numeric_ty_def undef_plus_sound)
+    moreover have "ty_of (x21 + a) = t"
+      using ty_x21 ty_a num by (rule ty_of_plus)
+    ultimately show ?case
+      using Cons.IH[of "x21 + a"] Cons.prems by simp
+  qed simp
 qed
 
 lemma eval_agg_op_sound: 
@@ -51,35 +57,96 @@ lemma eval_agg_op_sound:
     "safe_formula \<phi>" 
   shows "eval_agg_op (agg_op,d) M = eval_agg_op' (agg_op,d) M"
 proof -
-  from assms(2) obtain t where t_def: "agg_env E tys  \<turnstile> f :: t" and t_wty:"t \<in> agg_trm_type agg_op" by cases auto
+  from assms(2) obtain t where t_def: "agg_env E tys  \<turnstile> f :: t" and t_wty:"t \<in> agg_trm_type agg_op"
+    and phi_wty: "S, agg_env E tys \<turnstile> \<phi>" by cases auto
+  let ?Zs = "\<lambda>x. {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x}"
   have fv_wty: "y\<in>fv_trm f \<Longrightarrow> length zs = length tys \<Longrightarrow> Formula.sat \<sigma> V (zs @ v) i \<phi> \<Longrightarrow> ty_of ((zs @ v) ! y) = agg_env E tys y" for y zs
-    apply (rule ty_of_sat_safe)
-    using assms by (auto elim: wty_formula.cases)
+    using ty_of_sat_safe[OF assms(5) phi_wty assms(3)] assms(4) by blast
   then have wty_M: "\<forall>(x,card) \<in>  M . ty_of x = t" 
     using assms(1) t_def by (auto dest!: ty_of_eval_trm)
   have "finite_multiset M \<Longrightarrow>set (flatten_multiset M) \<subseteq> fst ` M" 
-    apply (rule set_of_flatten_multiset)
-    using finite_set apply (auto simp add: assms(1)) 
-    using finite_fst by (auto simp add: finite_multiset_def assms(1)) 
+  proof -
+    assume "finite_multiset M"
+    moreover have "{(x, ecard (?Zs x)) | x. ?Zs x \<noteq> {}} = M"
+      unfolding assms(1) by blast
+    ultimately have "finite {(x, ecard (?Zs x)) | x. ?Zs x \<noteq> {}}"
+      by (simp add: finite_multiset_def)
+    then have "finite {x. ?Zs x \<noteq> {}}"
+      by (rule finite_fst)
+    then show ?thesis
+      by (rule set_of_flatten_multiset[OF assms(1)])
+  qed
   then have wty_flatten: "finite_multiset M \<Longrightarrow> \<forall>x \<in> set (flatten_multiset M). ty_of x = t" 
     using wty_M by fastforce
-  have avg: "finite_multiset M \<Longrightarrow> flatten_multiset M = x21 # x22 \<Longrightarrow> agg_op = Formula.Agg_Avg \<Longrightarrow>
-          double_of_event_data_agg (foldl (+) x21 x22) = undef_double_of_event_data_agg (foldl undef_plus x21 x22)" for x21 x22
-  proof -
-    assume assm: "finite_multiset M" "flatten_multiset M = x21 # x22" "agg_op = Formula.Agg_Avg" 
-    have foldl_plus: "foldl undef_plus x21 x22 = foldl (+) x21 x22" 
-      apply (rule  conjE[OF foldl_sound(3)]) using wty_flatten t_wty assm by auto
-    have foldl_ty: "ty_of (foldl (+) x21 x22) \<in> numeric_ty " 
-      apply (rule conjE[OF  foldl_sound(3)]) using assm wty_flatten t_wty by auto
-    show ?thesis apply (auto simp: foldl_plus) apply (cases "foldl (+) x21 x22") using  undef_double_of_event_data_agg_sound foldl_ty by (auto simp add: numeric_ty_def)
+  have dbl: "undef_double_of_event_data_agg z = double_of_event_data_agg z" if "ty_of z \<in> numeric_ty" for z
+    using that by (cases z) (simp_all add: numeric_ty_def undef_double_of_event_data_agg_sound)
+  show ?thesis
+  proof (cases "finite_multiset M")
+    case False
+    then show ?thesis by (cases agg_op) (simp_all add: Let_def split: list.split)
+  next
+    case True
+    then have wty: "\<forall>z \<in> set (flatten_multiset M). ty_of z = t"
+      by (rule wty_flatten)
+    show ?thesis
+    proof (cases "flatten_multiset M")
+      case Nil
+      then show ?thesis by (cases agg_op) simp_all
+    next
+      case (Cons x xs)
+      then have ty_x: "ty_of x = t" and ty_xs: "\<forall>z\<in>set xs. ty_of z = t"
+        using wty by simp_all
+      show ?thesis
+      proof (cases agg_op)
+        case Agg_Cnt
+        then show ?thesis using True Cons by simp
+      next
+        case Agg_Min
+        then show ?thesis using True Cons foldl_sound(1)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Max
+        then show ?thesis using True Cons foldl_sound(2)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Sum
+        then have "t \<in> numeric_ty" using t_wty by simp
+        then show ?thesis using True Cons Agg_Sum foldl_sound(3)[OF ty_xs ty_x] by simp
+      next
+        case Agg_Avg
+        then have "t \<in> numeric_ty" using t_wty by simp
+        then have "foldl undef_plus x xs = foldl (+) x xs" and "ty_of (foldl (+) x xs) \<in> numeric_ty"
+          using foldl_sound(3)[OF ty_xs ty_x] by simp_all
+        then show ?thesis using True Cons Agg_Avg dbl by simp
+      next
+        case Agg_Med
+        then have num: "t \<in> numeric_ty" using t_wty by simp
+        have med: "undef_double_of_event_data_agg ((x # xs) ! k) = double_of_event_data_agg ((x # xs) ! k)"
+          if "k < length (x # xs)" for k
+        proof (rule dbl)
+          from that have "(x # xs) ! k \<in> set (flatten_multiset M)"
+            unfolding Cons by (rule nth_mem)
+          with wty num show "ty_of ((x # xs) ! k) \<in> numeric_ty" by simp
+        qed
+        define u where "u = length (x # xs)"
+        define u' where "u' = u div 2"
+        have "u' < u" "u' - 1 < u"
+          unfolding u_def u'_def by simp_all
+        then have e: "undef_double_of_event_data_agg ((x # xs) ! u') = double_of_event_data_agg ((x # xs) ! u')"
+          "undef_double_of_event_data_agg ((x # xs) ! (u' - 1)) = double_of_event_data_agg ((x # xs) ! (u' - 1))"
+          unfolding u_def by (simp_all add: med)
+        have "eval_agg_op (agg_op, d) M = EFloat (if even u
+          then (double_of_event_data_agg ((x # xs) ! (u' - 1)) + double_of_event_data_agg ((x # xs) ! u')) / double_of_int 2
+          else double_of_event_data_agg ((x # xs) ! u'))"
+          using True Cons Agg_Med by (simp add: u_def u'_def Let_def)
+        also have "\<dots> = EFloat (if even u
+          then (undef_double_of_event_data_agg ((x # xs) ! (u' - 1)) + undef_double_of_event_data_agg ((x # xs) ! u')) / double_of_int 2
+          else undef_double_of_event_data_agg ((x # xs) ! u'))"
+          by (simp only: e)
+        also have "\<dots> = eval_agg_op' (agg_op, d) M"
+          using True Cons Agg_Med by (simp add: u_def u'_def Let_def)
+        finally show ?thesis .
+      qed
+    qed
   qed
-  have med:"finite_multiset M \<Longrightarrow> flatten_multiset M = xs \<Longrightarrow> agg_op = Formula.Agg_Med \<Longrightarrow> i< length xs \<Longrightarrow>
-    double_of_event_data_agg (xs!i) = undef_double_of_event_data_agg (xs!i) " for xs i 
-    using t_wty wty_flatten undef_double_of_event_data_agg_sound nth_mem[where ?n=i and ?xs=xs] by (cases "xs!i")  (auto simp add: numeric_ty_def split:ty.splits) 
-  then show ?thesis
-    apply (cases agg_op) using wty_flatten t_wty avg apply (auto simp:Let_def split: list.splits bool.splits) 
-    using foldl_sound  apply presburger+ 
-    by (metis div2_less_self in_set_conv_nth list.set_intros(2))
 qed 
 
 (* TODO: move to formula *)
@@ -846,8 +913,7 @@ proof (induction arbitrary: v V i S E rule: safe_formula_induct)
   from this Pred have tms_wty: "x \<in> set tms \<Longrightarrow> \<exists>t \<in> set tys. E \<turnstile> x :: t " for x 
     by (metis in_set_conv_nth list_all2_conv_all_nth) 
   have eval_tms_eq: "map (Formula.eval_trm v) tms = map (eval_trm' v) tms" using tms_wty Pred(3) by (auto dest!: eval_trm_sound)
-  then show ?case using Pred(1) apply (auto simp add: trm.is_Var_def trm.is_Const_def)
-    by (metis eval_tms_eq )+
+  show ?case by (simp only: Formula.sat.simps sat'.simps eval_tms_eq)
 next 
   case (Let p \<phi> \<psi>) 
   obtain E' where 
@@ -873,33 +939,64 @@ next
       by (simp add: list_all2_conv_all_nth)
   qed
   have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
-  proof -
-    {
-      assume sat: " Formula.sat \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        thm ty_of_sat_safe
-        apply (rule ty_of_sat_safe) using Let sat phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> " 
-        using phi_wty Let by auto
-    } moreover {
-      assume sat': "sat' \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        apply (rule ty_of_sat'_safe) using Let sat' phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> "   
-        using phi_wty Let by auto
-    } ultimately show ?thesis by auto
+  proof
+    assume sat': "sat' \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat'_safe[OF Let.hyps(2) phi_wty Let.prems(3) sat'] by blast
+    with sat' show "Formula.sat \<sigma> V v5 i5 \<phi>"
+      using Let.IH(1)[OF phi_wty _ Let.prems(3)] by blast
+  next
+    assume sat: "Formula.sat \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat_safe[OF Let.hyps(2) phi_wty Let.prems(3) sat] by blast
+    with sat show "sat' \<sigma> V v5 i5 \<phi>"
+      using Let.IH(1)[OF phi_wty _ Let.prems(3)] by blast
   qed
   have V_eq: "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. Formula.sat \<sigma> V v i \<phi>)) = V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))"
     using phi_case by auto
-  have "Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. Formula.sat \<sigma> V v i \<phi>))) v i \<psi> = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))) v i \<psi>"  
-    unfolding V_eq
-    apply (rule Let.IH(2))
-    using psi_wty phi_wty Let.prems apply (auto simp add: wty_envs_def wty_event_def wty_tuple_def domIff)
-    subgoal for i a b apply (cases "a = p") by auto
-    subgoal for i xs using list_all_tab by auto
-    subgoal for i xs using list_all_tab by presburger
-    done
-  then show ?case by auto
+  let ?S' = "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>))"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))"
+  have wty_envs': "wty_envs ?S' \<sigma> ?V'"
+  proof -
+    {
+      fix q xs j
+      assume in_\<Gamma>: "(q, xs) \<in> \<Gamma> \<sigma> j" and not_V': "(q, length xs) \<notin> dom ?V'"
+      then have "(q, length xs) \<noteq> (p, Formula.nfv \<phi>)" and "(q, length xs) \<notin> dom V"
+        by auto
+      moreover from in_\<Gamma> this(2) Let.prems(3) have "wty_event S q xs"
+        unfolding wty_envs_def by blast
+      ultimately have "wty_event ?S' q xs"
+        by (auto simp: wty_event_def)
+    } moreover {
+      fix q xs j
+      assume in_V': "(q, length xs) \<in> dom ?V'" and valid: "the (?V' (q, length xs)) xs j"
+      have "wty_event ?S' q xs"
+      proof (cases "(q, length xs) = (p, Formula.nfv \<phi>)")
+        case True
+        with valid have "sat' \<sigma> V xs j \<phi>" and "length xs = Formula.nfv \<phi>"
+          by auto
+        then have "list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs"
+          using list_all_tab by blast
+        with True show ?thesis
+          by (auto simp: wty_event_def wty_tuple_def)
+      next
+        case False
+        with in_V' valid have "(q, length xs) \<in> dom V" and "the (V (q, length xs)) xs j"
+          by auto
+        with Let.prems(3) have "wty_event S q xs"
+          unfolding wty_envs_def by blast
+        with False show ?thesis
+          by (auto simp: wty_event_def)
+      qed
+    } ultimately show ?thesis
+      unfolding wty_envs_def by blast
+  qed
+  have "\<forall>y\<in>fv \<psi>. ty_of (v ! y) = E y"
+    using Let.prems(2) by simp
+  then have "Formula.sat \<sigma> ?V' v i \<psi> = sat' \<sigma> ?V' v i \<psi>"
+    by (rule Let.IH(2)[OF psi_wty _ wty_envs'])
+  then show ?case
+    unfolding Formula.sat.simps sat'.simps V_eq .
 next 
   case (Frz p \<phi> \<psi>) 
   obtain E' where 
@@ -925,33 +1022,64 @@ next
       by (simp add: list_all2_conv_all_nth)
   qed
   have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
-  proof -
-    {
-      assume sat: " Formula.sat \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        thm ty_of_sat_safe
-        apply (rule ty_of_sat_safe) using Frz sat phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> " 
-        using phi_wty Frz by auto
-    } moreover {
-      assume sat': "sat' \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        apply (rule ty_of_sat'_safe) using Frz sat' phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> "   
-        using phi_wty Frz by auto
-    } ultimately show ?thesis by auto
+  proof
+    assume sat': "sat' \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat'_safe[OF Frz.hyps(2) phi_wty Frz.prems(3) sat'] by blast
+    with sat' show "Formula.sat \<sigma> V v5 i5 \<phi>"
+      using Frz.IH(1)[OF phi_wty _ Frz.prems(3)] by blast
+  next
+    assume sat: "Formula.sat \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat_safe[OF Frz.hyps(2) phi_wty Frz.prems(3) sat] by blast
+    with sat show "sat' \<sigma> V v5 i5 \<phi>"
+      using Frz.IH(1)[OF phi_wty _ Frz.prems(3)] by blast
   qed
   have V_eq: "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. Formula.sat \<sigma> V v i \<phi>)) = V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. sat' \<sigma> V v i \<phi>))"
     using phi_case by auto
-  have "Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. Formula.sat \<sigma> V v i \<phi>))) v i \<psi> = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. sat' \<sigma> V v i \<phi>))) v i \<psi>"  
-    unfolding V_eq
-    apply (rule Frz.IH(2))
-    using psi_wty phi_wty Frz.prems apply (auto simp add: wty_envs_def wty_event_def wty_tuple_def domIff)
-    subgoal for i a b apply (cases "a = p") by auto
-    subgoal for i xs using list_all_tab by auto
-    subgoal for i using list_all_tab by presburger
-    done
-  then show ?case by auto
+  let ?S' = "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>))"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v j. sat' \<sigma> V v i \<phi>))"
+  have wty_envs': "wty_envs ?S' \<sigma> ?V'"
+  proof -
+    {
+      fix q xs j
+      assume in_\<Gamma>: "(q, xs) \<in> \<Gamma> \<sigma> j" and not_V': "(q, length xs) \<notin> dom ?V'"
+      then have "(q, length xs) \<noteq> (p, Formula.nfv \<phi>)" and "(q, length xs) \<notin> dom V"
+        by auto
+      moreover from in_\<Gamma> this(2) Frz.prems(3) have "wty_event S q xs"
+        unfolding wty_envs_def by blast
+      ultimately have "wty_event ?S' q xs"
+        by (auto simp: wty_event_def)
+    } moreover {
+      fix q xs j
+      assume in_V': "(q, length xs) \<in> dom ?V'" and valid: "the (?V' (q, length xs)) xs j"
+      have "wty_event ?S' q xs"
+      proof (cases "(q, length xs) = (p, Formula.nfv \<phi>)")
+        case True
+        with valid have "sat' \<sigma> V xs i \<phi>" and "length xs = Formula.nfv \<phi>"
+          by auto
+        then have "list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs"
+          using list_all_tab by blast
+        with True show ?thesis
+          by (auto simp: wty_event_def wty_tuple_def)
+      next
+        case False
+        with in_V' valid have "(q, length xs) \<in> dom V" and "the (V (q, length xs)) xs j"
+          by auto
+        with Frz.prems(3) have "wty_event S q xs"
+          unfolding wty_envs_def by blast
+        with False show ?thesis
+          by (auto simp: wty_event_def)
+      qed
+    } ultimately show ?thesis
+      unfolding wty_envs_def by blast
+  qed
+  have "\<forall>y\<in>fv \<psi>. ty_of (v ! y) = E y"
+    using Frz.prems(2) by simp
+  then have "Formula.sat \<sigma> ?V' v i \<psi> = sat' \<sigma> ?V' v i \<psi>"
+    by (rule Frz.IH(2)[OF psi_wty _ wty_envs'])
+  then show ?case
+    unfolding Formula.sat.simps sat'.simps V_eq .
 next
   case (And_assign \<phi> \<psi>)
   obtain t1 t2 where eq: "\<psi> = formula.Eq t1 t2" using And_assign(2) by (auto simp add: safe_assignment_def split: formula.splits)
@@ -1002,10 +1130,20 @@ next
   have neg_IH: "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y) \<Longrightarrow>  wty_envs S \<sigma> V
 \<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(2)[unfolded list_all_iff]
     by blast
-  have "\<phi> \<in> set ( neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> using Ands by (auto elim: wty_formula.cases)
-  then have "\<phi> \<in> set ( map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply (auto simp add: Formula.nfv_def )
-    subgoal for x by (cases x) (auto elim: wty_formula.cases) done
+  have neg_wty: "\<phi> \<in> set ( neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> using Ands by (auto elim: wty_formula.cases)
+  have "S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" if "\<phi> \<in> set (map remove_neg neg)" for \<phi>
+  proof -
+    from that obtain \<psi> where \<psi>: "\<psi> \<in> set neg" and \<phi>_def: "\<phi> = remove_neg \<psi>"
+      by auto
+    have "S, E \<turnstile> remove_neg \<psi>"
+    proof (cases \<psi>)
+      case (Neg \<alpha>)
+      with neg_wty[OF \<psi>] show ?thesis
+        by (auto dest: wty_formula_NegD)
+    qed (use neg_wty[OF \<psi>] in simp_all)
+    with neg_wty[OF \<psi>] show ?thesis
+      unfolding \<phi>_def by simp
+  qed
   then have remove_neg_case: "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi> " for \<phi> using Ands.prems(3) neg_IH by auto
   have remove_neg_sat: " (Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi> )= ( Formula.sat \<sigma> V v i (remove_neg \<phi>) = sat' \<sigma> V v i (remove_neg \<phi>))  " 
     for \<phi>  by (cases \<phi>)  auto
@@ -1074,7 +1212,7 @@ next
   moreover obtain agg_op d where omega_def:"\<omega> = (agg_op,d)" using Agg.prems(1) by cases auto
   moreover have eval_agg_op_case: "M = {(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> Formula.sat \<sigma> V (zs @ v) i \<phi> \<and> Formula.eval_trm (zs @ v) f = x} \<and> Zs \<noteq> {}}
  \<Longrightarrow> eval_agg_op (agg_op,d) M = eval_agg_op' (agg_op,d) M" for M
-    apply (rule eval_agg_op_sound) using omega_def Agg(3,4,6,8) by auto 
+    by (rule eval_agg_op_sound[OF _ Agg.prems(1)[unfolded omega_def] Agg.prems(3) Agg.hyps(3,4)]) 
   ultimately show ?case by auto
 next
   case (Since \<phi> I \<psi>)
@@ -1083,7 +1221,10 @@ next
   show ?case by (auto simp add: phi_eq psi_eq) 
 next
   case (Not_Since \<phi> I \<psi>)
-  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i apply (rule Not_Since.IH(1)) using Not_Since by (auto elim: wty_formula.cases)
+  have phi_wty: "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_NegD[OF wty_formula_SinceD(1)[OF Not_Since.prems(1)]])
+  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i
+    by (rule Not_Since.IH(1)[OF phi_wty _ Not_Since.prems(3)]) (use Not_Since.prems(2) in simp)
   have psi_eq: "Formula.sat \<sigma> V v i \<psi> = sat' \<sigma> V v i \<psi>" for i  using Not_Since by (auto elim: wty_formula.cases)
   show ?case by (auto simp add: phi_eq psi_eq)
 next
@@ -1093,7 +1234,10 @@ next
   show ?case by (auto simp add: phi_eq psi_eq)
 next
   case (Not_Until \<phi> I \<psi>)
-  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i apply (rule Not_Until.IH(1)) using Not_Until by (auto elim: wty_formula.cases)
+  have phi_wty: "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_NegD[OF wty_formula_UntilD(1)[OF Not_Until.prems(1)]])
+  have phi_eq: "Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for i
+    by (rule Not_Until.IH(1)[OF phi_wty _ Not_Until.prems(3)]) (use Not_Until.prems(2) in simp)
   have psi_eq: "Formula.sat \<sigma> V v i \<psi> = sat' \<sigma> V v i \<psi>" for i  using Not_Until by (auto elim: wty_formula.cases)
   show ?case by (auto simp add: phi_eq psi_eq) 
 next
@@ -1160,10 +1304,46 @@ next
   from this have atms_safe: " \<phi> \<in> regex.atms r \<Longrightarrow> safe_formula \<phi> \<or> (\<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and> safe_formula \<psi>)" for \<phi>
     using case_NegE  by (induction r) auto
   have atms_regex_atms: " \<phi> \<in> safe_atms r \<or> ( \<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and>  \<psi>\<in> safe_atms r)" if assm: " \<phi> \<in> regex.atms r" for \<phi> 
-    using assm atms_safe apply (induction r) by auto
-  from MatchP(4) have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply auto apply (induction r) 
-        apply (auto) subgoal for x y apply (cases "safe_formula x") by (auto split: formula.splits  ) done
+  proof (cases "safe_formula \<phi>")
+    case True
+    with assm show ?thesis
+      unfolding safe_atms_def by auto
+  next
+    case False
+    with atms_safe[OF assm] obtain \<psi> where \<phi>_def: "\<phi> = Formula.Neg \<psi>"
+      by blast
+    have "\<psi> \<in> safe_atms r"
+      unfolding safe_atms_def
+    proof (rule UN_I[OF assm])
+      show "\<psi> \<in> (if safe_formula \<phi> then {\<phi>} else case \<phi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        using False \<phi>_def by simp
+    qed
+    with \<phi>_def show ?thesis
+      by blast
+  qed
+  have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
+  proof -
+    assume "\<phi> \<in> safe_atms r"
+    then obtain \<psi> where \<psi>: "\<psi> \<in> regex.atms r" and
+      \<phi>_in: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    have "fv \<phi> \<subseteq> fv \<psi>"
+    proof (cases "safe_formula \<psi>")
+      case True
+      with \<phi>_in show ?thesis by simp
+    next
+      case False
+      with atms_safe[OF \<psi>] obtain \<alpha> where \<psi>_def: "\<psi> = Formula.Neg \<alpha>"
+        by blast
+      from \<phi>_in have "\<phi> \<in> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        by (simp only: if_not_P[OF False])
+      with \<psi>_def show ?thesis by simp
+    qed
+    with \<psi> have "fv \<phi> \<subseteq> fv (Formula.MatchP I r)"
+      by (auto simp: fv_regex_alt)
+    with MatchP(4) show ?thesis
+      by blast
+  qed
   from this  MatchP have IH: "\<phi> \<in> safe_atms r \<Longrightarrow>Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5
     using match_safe_wty_nfv[of \<phi> r I S E] by auto
   have other_IH: "\<phi> \<in> regex.atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5 
@@ -1177,10 +1357,46 @@ next
     using case_NegE  by (induction r) auto
   have atms_regex_atms: " \<phi> \<in> safe_atms r \<or> ( \<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and>  \<psi>\<in> safe_atms r)" 
     if assm: " \<phi> \<in> regex.atms r" for \<phi> 
-    using assm atms_safe apply (induction r) by auto
-  from MatchF(4) have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply auto apply (induction r ) 
-        apply (auto) subgoal for x y apply (cases "safe_formula x") by (auto split: formula.splits  ) done
+  proof (cases "safe_formula \<phi>")
+    case True
+    with assm show ?thesis
+      unfolding safe_atms_def by auto
+  next
+    case False
+    with atms_safe[OF assm] obtain \<psi> where \<phi>_def: "\<phi> = Formula.Neg \<psi>"
+      by blast
+    have "\<psi> \<in> safe_atms r"
+      unfolding safe_atms_def
+    proof (rule UN_I[OF assm])
+      show "\<psi> \<in> (if safe_formula \<phi> then {\<phi>} else case \<phi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        using False \<phi>_def by simp
+    qed
+    with \<phi>_def show ?thesis
+      by blast
+  qed
+  have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
+  proof -
+    assume "\<phi> \<in> safe_atms r"
+    then obtain \<psi> where \<psi>: "\<psi> \<in> regex.atms r" and
+      \<phi>_in: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    have "fv \<phi> \<subseteq> fv \<psi>"
+    proof (cases "safe_formula \<psi>")
+      case True
+      with \<phi>_in show ?thesis by simp
+    next
+      case False
+      with atms_safe[OF \<psi>] obtain \<alpha> where \<psi>_def: "\<psi> = Formula.Neg \<alpha>"
+        by blast
+      from \<phi>_in have "\<phi> \<in> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        by (simp only: if_not_P[OF False])
+      with \<psi>_def show ?thesis by simp
+    qed
+    with \<psi> have "fv \<phi> \<subseteq> fv (Formula.MatchF I r)"
+      by (auto simp: fv_regex_alt)
+    with MatchF(4) show ?thesis
+      by blast
+  qed
   from this  MatchF have IH: "\<phi> \<in> safe_atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5
     using match_safe_wty_nfv[of \<phi> r I S E] by auto
   have other_IH: "\<phi> \<in> regex.atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5 

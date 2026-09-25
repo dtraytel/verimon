@@ -277,13 +277,11 @@ next
     by (auto simp: fvi_Suc Formula.fvi_Suc)
 next
   case (Agg y \<omega> b' f \<phi>)
-  hence "Formula.fvi (length b') (project \<phi>) \<subseteq> fvi (length b') \<phi>"
-    apply (clarsimp simp: subset_eq)
-    by (subst (asm) Formula.fvi_iff_fv, subst fvi_iff_fv) simp
-  moreover have "fvi (length b') \<phi> \<subseteq> Formula.fvi (length b') (project \<phi>)"
-    using Agg apply (clarsimp simp: subset_eq)
-    by (subst (asm) fvi_iff_fv, subst Formula.fvi_iff_fv, simp)
-  ultimately show ?case
+  have "x \<in> Formula.fvi (length b') (project \<phi>) \<longleftrightarrow> x \<in> fvi (length b') \<phi>" for x
+    using Agg by (simp add: Formula.fvi_iff_fv[of x] fvi_iff_fv[of x])
+  hence "Formula.fvi (length b') (project \<phi>) = fvi (length b') \<phi>"
+    by blast
+  then show ?case
     by auto
 next
   case (MatchP I r)
@@ -639,8 +637,7 @@ next
       Formula.sat \<sigma> V (zs @ xs @ v) i \<phi> \<and> Formula.eval_trm (zs @ xs @ v) x4 = x}"
     using rw11 rw12 by auto
   have rw2: "fv (shiftI (b + x3) \<phi>) \<subseteq> {0..<x3} \<longleftrightarrow> fv \<phi> \<subseteq> {0..<x3}" 
-    using no_shift[where b'=0]
-    apply (auto simp del:x3_def) using atLeastLessThan_iff by blast
+    using no_shift[of 0 x3 b \<phi>] by (simp del: x3_def)
   show ?case
     using Agg(2)
     by (auto simp add: rw1 rw2 nth_append simp flip:x3_def)
@@ -651,9 +648,7 @@ next
   case (MatchF I r)
   have rw: "Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchF
-    by auto
+    by (rule match_map_regex) (simp add: MatchF)
   show ?case
     using MatchF
     by (simp add: rw)
@@ -661,9 +656,7 @@ next
   case (MatchP I r)
   have rw: "\<And>j. Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchP
-    by auto
+    by (rule match_map_regex) (simp add: MatchP)
   show ?case
     by (simp add: rw)
 qed (auto simp: eval_trm_shiftTI)
@@ -673,9 +666,7 @@ lift_definition init_ivl :: "\<I> \<Rightarrow> \<I>" is "\<lambda>(_,r,n). ((\<
   using zero_enat_def upclosed_def by auto
 
 lemma left_init_ivl[simp]: "memL (init_ivl I) n"
-  apply (clarsimp simp: memL_def init_ivl_def split: prod.splits)
-  by (subst Abs_\<I>_inverse, transfer)
-    (auto simp: upclosed_def downclosed_def)
+  by (transfer fixing: n) (auto split: prod.splits)
 
 lemma right_init_ivl[simp]: "memR (init_ivl I) = memR I" 
   by (transfer; auto)+
@@ -1592,9 +1583,7 @@ lemma trans2_2: "trans2 P P' \<Longrightarrow> project (P r r2) = P' (project r)
   by (induction P P' rule:trans2.induct;simp)
 
 lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
-  apply(induction P rule:f_conr2.induct)
-  using trans2.trans2_1 trans2.trans2_2 trans2.trans2_3 trans2.trans2_4 trans2.trans2_5 trans2.trans2_6 apply blast+
-  done
+  by (induction P rule: f_conr2.induct) (blast intro: trans2.intros)+
 
 lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
 proof -
@@ -1639,9 +1628,7 @@ lemma trans_agg_2: "trans_agg P P' \<Longrightarrow> project (P r) = P' (project
   by (induction P P' rule:trans_agg.induct;simp)
 
 lemma trans_agg_3: "f_conr_agg P \<Longrightarrow> \<exists>P'. trans_agg P P'"
-  apply(induction P rule:f_conr_agg.induct)
-  using trans_agg.trans_agg_1 apply blast
-  done
+  by (induction P rule: f_conr_agg.induct) (blast intro: trans_agg.intros)
 
 lemma rsub_agg: "f_conr_agg P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a = sat \<sigma> V v i b) 
   \<Longrightarrow> fv (project a) = fv (project b)
@@ -1824,14 +1811,16 @@ next
   qed
 next
   case (24 y \<omega> b' f \<phi> t)
+  have "sat \<sigma> V v i (Agg y \<omega> b' f (rewrite \<phi> Same)) = sat \<sigma> V v i (Agg y \<omega> b' f \<phi>)"
+    by (rule rsub_agg[OF f_conr_agg_t]) (simp_all add: 24 flip: rewrite_fv)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_agg[OF f_conr_agg_t 24[symmetric],simplified fix_r.simps, OF rewrite_fv])
-    done
+    by simp
 next
   case (25 I \<phi> t)
+  have "sat \<sigma> V v i (Prev I (rewrite \<phi> Same)) = sat \<sigma> V v i (Prev I \<phi>)"
+    by (rule rsub_1[OF f_conr_6_t]) (simp add: 25)
   then show ?case
-    apply(simp only:rewrite.simps fix_r.simps rsub_1[OF f_conr_6_t 25])
-    done
+    by simp
 next
   case (34 I r t)
   then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
