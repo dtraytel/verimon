@@ -3746,10 +3746,15 @@ next
       bin_join n (fv \<phi>) r1 True V_trigger r2
   ) (mbuf2_add xs zs' buf1)"
 
-  have zs_eq: "zs = fst tuple'"
-    unfolding zs_def z'_def meval.simps tuple'_def Let_def \<open>X\<^sub>\<phi> = fv \<phi>\<close>
-    apply (auto simp only: xtuple_eq atuple_eq btuple_eq tuple_def[unfolded Let_def, symmetric] tuple_eq)
+  \<comment> \<open>the evaluation step of @{term z'} in terms of the intermediate results\<close>
+  have meval_z': "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j..<j + \<delta>]) db z' =
+      (fst tuple', MAndTrigger (fv \<phi>) \<phi>'' (snd tuple') args \<gamma>'' \<beta>'' buf2' nts' aux')"
+    unfolding z'_def meval.simps Let_def \<open>X\<^sub>\<phi> = fv \<phi>\<close> xtuple_eq atuple_eq btuple_eq prod.case
+      tuple_def[unfolded Let_def, symmetric] tuple_eq tuple'_def
     by (simp add: case_prod_beta')
+
+  have zs_eq: "zs = fst tuple'"
+    using meval_z' unfolding zs_def by simp
     
   define buf1' where "buf1' = snd tuple'"
 
@@ -3758,10 +3763,7 @@ next
     by auto
 
   have z''_eq: "z'' = MAndTrigger (fv \<phi>) \<phi>'' buf1' args \<gamma>'' \<beta>'' buf2' nts' aux'"
-    unfolding z''_def z'_def meval.simps Let_def \<open>X\<^sub>\<phi> = fv \<phi>\<close>
-    apply (auto simp only: xtuple_eq atuple_eq btuple_eq tuple_def[unfolded Let_def, symmetric]
-        tuple_eq tuple'_def[unfolded Let_def, symmetric] tuple'_eq)
-    by (simp add: case_prod_beta')
+    using meval_z' unfolding z''_def buf1'_def by simp
 
   have buf_and:
     "wf_mbuft2' \<sigma> P' V (j + \<delta>) n R \<phi> \<alpha> I \<beta> buf1'"
@@ -3962,8 +3964,16 @@ next
   have split: 
     "\<phi> \<in> set pos \<Longrightarrow> \<phi> \<in> set l'"
     "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow> Formula.Neg \<phi> \<in> set l' \<or> \<phi> \<in> set l'" for \<phi> 
-    using posneg
-    apply auto subgoal for x apply(cases x) by auto done
+  proof -
+    show "\<phi> \<in> set pos \<Longrightarrow> \<phi> \<in> set l'"
+      using posneg by simp
+  next
+    assume "\<phi> \<in> set (map remove_neg neg)"
+    then obtain \<psi> where \<psi>: "\<psi> \<in> set l'" "\<phi> = remove_neg \<psi>"
+      using posneg by auto
+    show "Formula.Neg \<phi> \<in> set l' \<or> \<phi> \<in> set l'"
+      by (cases \<psi>) (use \<psi> in simp_all)
+  qed
   from MAnds.prems(3) have all_wty: "\<forall>\<phi>\<in>set l'. S, E \<turnstile> \<phi>"
     unfolding \<phi>'_eq by (cases rule: wty_formula.cases) auto
   have "\<phi> \<in> set pos \<Longrightarrow> S, E \<turnstile> \<phi>" for \<phi> using split(1) all_wty by auto
@@ -4000,9 +4010,8 @@ next
   have wty_phi: "S, E \<turnstile> \<phi>''" 
     and wty_psi: "S, E \<turnstile> \<psi>''"
     and wty_alpha: "\<phi>' = \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'') \<Longrightarrow> S, E \<turnstile> \<alpha>'"
-     apply (cases rule: wty_formula.cases)
-    using \<phi>'_eq MOr.prems(3)
-    by (auto dest: wty_formulaD)
+    \<comment> \<open>in all three shapes of @{term \<phi>'}, these are subformulas of the well-typed @{term \<phi>'}\<close>
+    using \<phi>'_eq MOr.prems(3) by (auto dest: wty_formulaD)
   {assume phi'_eq: "\<phi>' = \<phi>'' \<or>\<^sub>F \<psi>''"
     from MOr.prems(3) and this
     obtain "S, E \<turnstile> \<phi>''" and "S, E \<turnstile> \<psi>''"
@@ -4090,17 +4099,19 @@ next
     (* translate encoding *)
     have key: "(\<lambda>i. qtable n (FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')))
       = (\<lambda>i. qtable n (FV ?AndRbdd) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M ?AndRbdd))"
-      apply (rule ext)+
-      apply (subst qtable_cong_strong[of "FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))" "FV ?AndRbdd" n "mem_restr R"])
-      using fvs \<open>\<not> mem J 0\<close> \<open>bounded J\<close> sat_and_release_rewrite by auto
+    proof (intro ext qtable_cong_strong[THEN fun_cong])
+      show "FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')) = FV ?AndRbdd"
+        using fvs by auto
+      show "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'') \<longleftrightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M ?AndRbdd" for i v
+        using sat_and_release_rewrite[OF \<open>bounded J\<close> \<open>\<not> mem J 0\<close>] .
+    qed
     have "wf_mformula \<sigma> (j + \<delta>) P' V n R (MOr \<phi>\<^sub>M \<psi>\<^sub>M buf') (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))"
       using wf_mformula.intros(10)[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close> fvs(1,2) safes mbuf'_obs(1) IH1] 
       by force
     moreover have "list_all2 (\<lambda>i. qtable n (FV (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>''))) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')))
        [Progress.progress \<sigma> P (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')) j..<Progress.progress \<sigma> P' (\<alpha>' \<and>\<^sub>F (\<phi>'' \<^bold>R J \<psi>'')) (j + \<delta>)] \<phi>\<psi>s"
-      unfolding progress_and_release_rewrite_bounded[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close>, symmetric]
-      apply (subst key)
-      using IH2 .
+      unfolding progress_and_release_rewrite_bounded[OF \<open>\<not> mem J 0\<close> \<open>bounded J\<close>, symmetric] key
+      by (rule IH2)
     ultimately have ?case
       unfolding phi'_eq meval.simps Let_def meval_defs prod.case by (rule conjI)
   } moreover {
