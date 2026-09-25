@@ -649,35 +649,58 @@ proof -
       using ivl_restr_impl
       by(intro list.pred_mono_strong[OF ivl_restr'']) (auto elim!: in_set_zipE split: prod.splits)
     have ivl_restr_old: "ivl_restr_a2_map I a (tp - (len - 1)) a2_map" using ivl_restr' unfolding Cons tp_len_eq by auto
-    have "ivl_restr_a2_map I a (tp - (len - 1)) a2_map''" unfolding ivl_restr_a2_map_def lookup''_tp_minus mc_def apply(auto simp:Mapping.lookup_combine)
-    proof -
-      fix xs
-      show "case combine_options max_tstp (Mapping.lookup m'' xs) (Mapping.lookup m' xs) of None \<Rightarrow> True
-          | Some x \<Rightarrow> ts_tp_lt I a (tp - (len - 1)) x "
-      proof (cases "Mapping.lookup m'' xs")
-        case none_m'': None
+    have "ivl_restr_a2_map I a (tp - (len - 1)) a2_map''"
+    proof (cases "len = 1")
+      case True
+      then show ?thesis
+        unfolding ivl_restr_a2_map_def lookup''_tp_minus by simp
+    next
+      case False
+      have m''_restr: "ts_tp_lt I a (tp - (len - 1)) tstp"
+        if "Mapping.lookup m'' xs = Some tstp" for xs tstp
+        using that unfolding m''_def Mapping.lookup_filter ts'_def hd_tl tp_len_assoc
+        by (auto split: option.splits if_splits)
+      have m'_restr: "ts_tp_lt I a (tp - (len - 1)) tstp"
+        if "Mapping.lookup m' xs = Some tstp" for xs tstp
+      proof -
+        have "case Mapping.lookup m' xs of None \<Rightarrow> True | Some tstp \<Rightarrow> ts_tp_lt I a (tp - (len - 1)) tstp"
+          using ivl_restr_old unfolding ivl_restr_a2_map_def m'_def[unfolded tp_len_assoc] by simp
         then show ?thesis
-        proof (cases "Mapping.lookup m' xs")
-          case None
-          then show ?thesis using none_m'' by auto
-        next
-          case (Some a')
-          then have "ts_tp_lt I a (tp - (len - 1)) a'" using m'_def ivl_restr_old unfolding ivl_restr_a2_map_def tp_len_assoc by(auto split:option.splits)
-          then show ?thesis using none_m'' Some by auto
-        qed
-      next
-        case some_m'': (Some a')
-        then have aux: "ts_tp_lt I a (tp - (len - 1)) a'" unfolding m''_def Let_def Mapping.lookup_filter I_def hd_tl tp_len_assoc ts'_def by(auto split:if_splits option.splits)
-        show ?thesis 
-        proof (cases "Mapping.lookup m' xs")
-          case None
-          then show ?thesis using some_m'' aux by auto
-        next
-          case (Some a'')
-          then have "ts_tp_lt I a (tp - (len - 1)) a''" using m'_def ivl_restr_old unfolding ivl_restr_a2_map_def tp_len_assoc by(auto split:option.splits)
-          then show ?thesis using some_m'' aux Some unfolding ts_tp_lt_def by(cases a'; cases a''; auto)
-        qed
+          using that by simp
       qed
+      have "\<forall>xs. case Mapping.lookup mc xs of None \<Rightarrow> True
+        | Some tstp \<Rightarrow> ts_tp_lt I a (tp - (len - 1)) tstp"
+      proof (intro allI)
+        fix xs
+        have "case combine_options max_tstp (Mapping.lookup m'' xs) (Mapping.lookup m' xs) of
+          None \<Rightarrow> True | Some tstp \<Rightarrow> ts_tp_lt I a (tp - (len - 1)) tstp"
+        proof (cases "Mapping.lookup m'' xs")
+          case None
+          then show ?thesis
+            using m'_restr by (cases "Mapping.lookup m' xs") simp_all
+        next
+          case some'': (Some tstp)
+          show ?thesis
+          proof (cases "Mapping.lookup m' xs")
+            case None
+            then show ?thesis
+              using some'' m''_restr by simp
+          next
+            case some': (Some tstp')
+            have "isl tstp \<longleftrightarrow> isl tstp'"
+              using m_upd_lookup[OF some''] m'_inst(2)[OF some'] by simp
+            then have "ts_tp_lt I a (tp - (len - 1)) (max_tstp tstp tstp')"
+              using m''_restr[OF some''] by (rule max_tstp_intro')
+            then show ?thesis
+              using some'' some' by simp
+          qed
+        qed
+        then show "case Mapping.lookup mc xs of None \<Rightarrow> True
+          | Some tstp \<Rightarrow> ts_tp_lt I a (tp - (len - 1)) tstp"
+          unfolding mc_def Mapping.lookup_combine .
+      qed
+      then show ?thesis
+        unfolding ivl_restr_a2_map_def lookup''_tp_minus using False by simp
     qed
     then have split1: "list_all (\<lambda>(ts', tp'). ivl_restr_a2_map I ts' tp' a2_map'') (zip (tl (linearize tss)) [tp - (len - 1)..<tp])" 
       using list_all_eq_1 Cons tp_len_eq by auto
