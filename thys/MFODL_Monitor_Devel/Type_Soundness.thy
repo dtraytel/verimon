@@ -913,8 +913,7 @@ proof (induction arbitrary: v V i S E rule: safe_formula_induct)
   from this Pred have tms_wty: "x \<in> set tms \<Longrightarrow> \<exists>t \<in> set tys. E \<turnstile> x :: t " for x 
     by (metis in_set_conv_nth list_all2_conv_all_nth) 
   have eval_tms_eq: "map (Formula.eval_trm v) tms = map (eval_trm' v) tms" using tms_wty Pred(3) by (auto dest!: eval_trm_sound)
-  then show ?case using Pred(1) apply (auto simp add: trm.is_Var_def trm.is_Const_def)
-    by (metis eval_tms_eq )+
+  show ?case by (simp only: Formula.sat.simps sat'.simps eval_tms_eq)
 next 
   case (Let p \<phi> \<psi>) 
   obtain E' where 
@@ -940,33 +939,64 @@ next
       by (simp add: list_all2_conv_all_nth)
   qed
   have phi_case: "sat' \<sigma> V v5 i5 \<phi> = Formula.sat \<sigma> V v5 i5 \<phi> " for v5 i5
-  proof -
-    {
-      assume sat: " Formula.sat \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        thm ty_of_sat_safe
-        apply (rule ty_of_sat_safe) using Let sat phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> " 
-        using phi_wty Let by auto
-    } moreover {
-      assume sat': "sat' \<sigma> V v5 i5 \<phi>"
-      have "y \<in> fv \<phi> \<Longrightarrow> ty_of (v5 ! y) = E' y" for y 
-        apply (rule ty_of_sat'_safe) using Let sat' phi_wty by auto
-      then have " Formula.sat \<sigma> V v5 i5 \<phi> = sat' \<sigma> V v5 i5 \<phi> "   
-        using phi_wty Let by auto
-    } ultimately show ?thesis by auto
+  proof
+    assume sat': "sat' \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat'_safe[OF Let.hyps(2) phi_wty Let.prems(3) sat'] by blast
+    with sat' show "Formula.sat \<sigma> V v5 i5 \<phi>"
+      using Let.IH(1)[OF phi_wty _ Let.prems(3)] by blast
+  next
+    assume sat: "Formula.sat \<sigma> V v5 i5 \<phi>"
+    have "\<forall>y\<in>fv \<phi>. ty_of (v5 ! y) = E' y"
+      using ty_of_sat_safe[OF Let.hyps(2) phi_wty Let.prems(3) sat] by blast
+    with sat show "sat' \<sigma> V v5 i5 \<phi>"
+      using Let.IH(1)[OF phi_wty _ Let.prems(3)] by blast
   qed
   have V_eq: "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. Formula.sat \<sigma> V v i \<phi>)) = V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))"
     using phi_case by auto
-  have "Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. Formula.sat \<sigma> V v i \<phi>))) v i \<psi> = sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))) v i \<psi>"  
-    unfolding V_eq
-    apply (rule Let.IH(2))
-    using psi_wty phi_wty Let.prems apply (auto simp add: wty_envs_def wty_event_def wty_tuple_def domIff)
-    subgoal for i a b apply (cases "a = p") by auto
-    subgoal for i xs using list_all_tab by auto
-    subgoal for i xs using list_all_tab by presburger
-    done
-  then show ?case by auto
+  let ?S' = "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E' 0 (Formula.nfv \<phi>))"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> (\<lambda>v i. sat' \<sigma> V v i \<phi>))"
+  have wty_envs': "wty_envs ?S' \<sigma> ?V'"
+  proof -
+    {
+      fix q xs j
+      assume in_\<Gamma>: "(q, xs) \<in> \<Gamma> \<sigma> j" and not_V': "(q, length xs) \<notin> dom ?V'"
+      then have "(q, length xs) \<noteq> (p, Formula.nfv \<phi>)" and "(q, length xs) \<notin> dom V"
+        by auto
+      moreover from in_\<Gamma> this(2) Let.prems(3) have "wty_event S q xs"
+        unfolding wty_envs_def by blast
+      ultimately have "wty_event ?S' q xs"
+        by (auto simp: wty_event_def)
+    } moreover {
+      fix q xs j
+      assume in_V': "(q, length xs) \<in> dom ?V'" and valid: "the (?V' (q, length xs)) xs j"
+      have "wty_event ?S' q xs"
+      proof (cases "(q, length xs) = (p, Formula.nfv \<phi>)")
+        case True
+        with valid have "sat' \<sigma> V xs j \<phi>" and "length xs = Formula.nfv \<phi>"
+          by auto
+        then have "list_all2 (\<lambda>t x. ty_of x = t) (tabulate E' 0 (Formula.nfv \<phi>)) xs"
+          using list_all_tab by blast
+        with True show ?thesis
+          by (auto simp: wty_event_def wty_tuple_def)
+      next
+        case False
+        with in_V' valid have "(q, length xs) \<in> dom V" and "the (V (q, length xs)) xs j"
+          by auto
+        with Let.prems(3) have "wty_event S q xs"
+          unfolding wty_envs_def by blast
+        with False show ?thesis
+          by (auto simp: wty_event_def)
+      qed
+    } ultimately show ?thesis
+      unfolding wty_envs_def by blast
+  qed
+  have "\<forall>y\<in>fv \<psi>. ty_of (v ! y) = E y"
+    using Let.prems(2) by simp
+  then have "Formula.sat \<sigma> ?V' v i \<psi> = sat' \<sigma> ?V' v i \<psi>"
+    by (rule Let.IH(2)[OF psi_wty _ wty_envs'])
+  then show ?case
+    unfolding Formula.sat.simps sat'.simps V_eq .
 next 
   case (Frz p \<phi> \<psi>) 
   obtain E' where 
