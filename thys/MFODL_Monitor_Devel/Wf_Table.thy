@@ -248,9 +248,13 @@ lemma wf_idx_sig_reindex: "wf_idx_sig (wf_idx_reindex I T) = wf_idx_sig T"
   by transfer (auto simp: Let_def)
 
 lemma wf_idx_set_reindex: "wf_idx_set (wf_idx_reindex I T) = wf_idx_set T"
-  apply transfer
-  using idx_reindex
-  by (auto simp: Let_def) blast+
+proof -
+  obtain n A J X where T: "Rep_wf_idx T = (n, A, J, X)"
+    and X: "\<And>x Y. Mapping.lookup X x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict J z)"
+    using Rep_wf_idx[of T] by blast
+  show ?thesis
+    using idx_reindex(1)[where T=X and I=J, OF X] by (simp add: wf_idx_set.rep_eq wf_idx_reindex.rep_eq T Let_def)
+qed
 
 definition "idx_union = Mapping.combine (\<union>)"
 
