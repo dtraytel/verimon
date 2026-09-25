@@ -850,10 +850,24 @@ lemma insert_treelist_comm: "(insert_treelist a (insert_treelist b x)) = (insert
   by(transfer) (simp add: insort_eq2 insort_left_comm)
 
 lemma insert_rank_comm': "(insert_rank args type x  \<circ> insert_rank args type y) (v, m)  = (insert_rank args type y \<circ> insert_rank args type x) (v, m)"
-  apply(cases type; auto split:event_data.splits)
-  apply(auto simp:lookup_update' mapping_eqI update_update split:option.splits)
-  by(auto simp:lookup_update' mapping_eqI update_update insert_treelist_comm split: list_aux.splits)
-  (* Slow *)
+proof (cases v)
+  case True
+  define gx gy where "gx = drop (length (aggargs_tys args)) x" and "gy = drop (length (aggargs_tys args)) y"
+  show ?thesis
+  proof (cases "gx = gy")
+    case True
+    \<comment> \<open>Both insertions act on the same list, where they commute.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_f args) x"; cases "meval_trm (aggargs_f args) y")
+        (simp_all add: gx_def gy_def lookup_update' update_update insert_treelist_comm split: option.splits list_aux.splits)
+  next
+    case False
+    \<comment> \<open>The insertions act on different keys of the mapping, where updates commute.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_f args) x"; cases "meval_trm (aggargs_f args) y")
+        (simp_all add: gx_def gy_def lookup_update' update_update split: option.splits list_aux.splits)
+  qed
+qed simp
 
 lemma aux1: "x \<in> set_treelist xs \<Longrightarrow> remove_treelist x xs = empty_treelist \<Longrightarrow> set_treelist xs = {x}"
   by(transfer; auto; metis del_list.elims in_set_simps(3) list.distinct(1) set_ConsD)
@@ -868,13 +882,32 @@ lemma auxa: "remove_treelist x empty_treelist \<noteq> empty_treelist \<Longrigh
 
 lemma delete_rank_comm': 
   shows "(delete_rank args type x \<circ> delete_rank args type y) (v, m) = (delete_rank args type y \<circ> delete_rank args type x) (v, m)"
-  apply(cases type; auto split:event_data.splits option.splits; auto split:list_aux.splits; auto split:event_data.splits)
-  apply(auto simp:lookup_update' lookup_delete mapping_eqI delete_update update_update)
-  apply(auto simp:remove_comm aux1)
-     apply(metis auxa)
-    apply(metis auxa remove_comm)
-   apply(metis auxa)
-  by(metis auxa remove_comm)
+proof (cases v)
+  case True
+  define gx gy where "gx = drop (length (aggargs_tys args)) x" and "gy = drop (length (aggargs_tys args)) y"
+  show ?thesis
+  proof (cases "gx = gy")
+    case True
+    \<comment> \<open>Both deletions act on the same list: removals commute, and a list that
+      became empty stays empty under further removals.\<close>
+    have remove_empty: "remove_treelist a empty_treelist = empty_treelist" for a :: "'a::linorder"
+      using auxa by blast
+    have remove_remove_empty: "remove_treelist a (remove_treelist b l) = empty_treelist"
+      if "remove_treelist a l = empty_treelist" for a b :: "'a::linorder" and l
+      using that by (metis remove_comm remove_empty)
+    from True \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_f args) x"; cases "meval_trm (aggargs_f args) y")
+        (auto simp: gx_def gy_def lookup_update' lookup_delete delete_update update_update
+          remove_comm remove_empty remove_remove_empty split: option.splits list_aux.splits)
+  next
+    case False
+    \<comment> \<open>The deletions act on different keys of the mapping.\<close>
+    with \<open>v\<close> show ?thesis
+      by (cases type; cases "meval_trm (aggargs_f args) x"; cases "meval_trm (aggargs_f args) y")
+        (auto simp: gx_def gy_def lookup_update' lookup_delete mapping_eqI delete_update update_update
+          split: option.splits list_aux.splits)
+  qed
+qed simp
  
                      
 lemma delete_rank_comm: 
@@ -1609,12 +1642,39 @@ proof -
             have not_in: "(meval_trm f elem, 1) \<notin> ?old_M" using True by auto
             have mset_rel: "?M = Set.insert (meval_trm f elem, 1) ?old_M"
               using multiset_new_term_insert[OF k_def True] by auto
-            then show ?thesis using Some k_in new_map_def meval_def valid_old list_elem_restr mset_treelist_insert[of i] mset_treelist_insert[of s]
-                Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of unpack_int] _ finite_old_M not_in] y0_restr
-                Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of unpack_string] _ finite_old_M not_in]
-              by(auto simp:k_def valid_list_aux_def valid_list_aux'_def int_mset_conv_def insort_mset
-                  unpack_int_def the_enat_one type_restr_mset_def str_mset_conv_def unpack_string_def type_restr_def mset_conv_def
-                  split:list_aux.splits event_data.splits type.splits) (* Slow *)
+            show ?thesis
+            proof (cases "meval_trm f elem")
+              case (EInt j)
+              then obtain l where a_def: "a = LInt l"
+                using list_elem_restr(2) Some by (cases a) auto
+              have "int_mset_conv ?M = add_mset j (int_mset_conv ?old_M)"
+                using Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of unpack_int] _ finite_old_M not_in]
+                unfolding mset_rel by (simp add: EInt int_mset_conv_def mset_conv_def unpack_int_def the_enat_one)
+              moreover have "type_restr_mset EInt ?M"
+                using valid_old unfolding mset_rel by (auto simp: a_def EInt valid_list_aux_def type_restr_mset_def)
+              moreover have "Mapping.lookup m' k = Some (LInt (insert_treelist j l))"
+                using Some by (simp add: new_map_def k_def a_def EInt lookup_update')
+              ultimately show ?thesis
+                using valid_old mset_treelist_insert[of j l]
+                by (simp add: a_def valid_list_aux_def valid_list_aux'_def)
+            next
+              case (EString j)
+              then obtain l where a_def: "a = LString l"
+                using list_elem_restr(1) Some by (cases a) auto
+              have "str_mset_conv ?M = add_mset j (str_mset_conv ?old_M)"
+                using Finite_Set.comp_fun_commute_on.fold_insert[OF mset_conv_comm[of unpack_string] _ finite_old_M not_in]
+                unfolding mset_rel by (simp add: EString str_mset_conv_def mset_conv_def unpack_string_def the_enat_one)
+              moreover have "type_restr_mset EString ?M"
+                using valid_old unfolding mset_rel by (auto simp: a_def EString valid_list_aux_def type_restr_mset_def)
+              moreover have "Mapping.lookup m' k = Some (LString (insert_treelist j l))"
+                using Some by (simp add: new_map_def k_def a_def EString lookup_update')
+              ultimately show ?thesis
+                using valid_old mset_treelist_insert[of j l]
+                by (simp add: a_def valid_list_aux_def valid_list_aux'_def)
+            next
+              case (EFloat x)
+              then show ?thesis using meval_def by simp
+            qed
           next
             case False
             then obtain n where n_def: "(meval_trm f elem, enat n) \<in> ?old_M" 

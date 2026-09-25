@@ -421,19 +421,47 @@ lemma match_sat_fv: assumes "Regex.safe_regex fv rgx_safe_pred temp Strict r"
   using assms
   proof (induction r arbitrary:i j)
 
-    case (Plus r1 r2)
-  moreover obtain k where "\<exists>j. Regex.match (Formula.sat \<sigma> V v) r1 j k \<or>  Regex.match (Formula.sat \<sigma> V v) r2 j k" using  Plus.prems(2)  by auto
-  moreover {
-    assume assm: "\<exists>j. Regex.match (Formula.sat \<sigma> V v) r1 j k"
-    hence ?case using Plus.prems(1,3) Plus.IH(1)  by (fastforce simp add: safe_atms_def) 
-  } moreover {
-    assume assm: "\<exists>j. Regex.match (Formula.sat \<sigma> V v) r2 j k"
-    from this have ?case using Plus.prems(1,3) Plus.IH(2) by (fastforce simp add: safe_atms_def)
-  }
-  ultimately show ?case by auto
+  case (Plus r1 r2)
+  from Plus.prems(1,3) have safe: "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+    and x: "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+    by auto
+  from Plus.prems(2) consider (r1) "Regex.match (Formula.sat \<sigma> V v) r1 j i"
+    | (r2) "Regex.match (Formula.sat \<sigma> V v) r2 j i"
+    by auto
+  then show ?case
+  proof cases
+    case r1
+    from Plus.IH(1)[OF safe(1) this x(1)] show ?thesis
+      by auto
+  next
+    case r2
+    from Plus.IH(2)[OF safe(2) this x(2)] show ?thesis
+      by auto
+  qed
 next
   case (Times r1 r2)
-  then show ?case  using Times.prems match_le Times.IH  by (cases temp) fastforce+
+  from Times.prems(2) obtain k where
+    m1: "Regex.match (Formula.sat \<sigma> V v) r1 j k" and
+    m2: "Regex.match (Formula.sat \<sigma> V v) r2 k i"
+    by auto
+  show ?case
+  proof (cases temp)
+    case Past
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      and "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      by auto
+    from Times.IH(1)[OF this(1) m1 this(2)] show ?thesis
+      by auto
+  next
+    case Futu
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+      and "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+      by auto
+    from Times.IH(2)[OF this(1) m2 this(2)] show ?thesis
+      by auto
+  qed
 qed  auto
 
 lemma finite_fst: assumes "finite  {(x,f x) | x. P x}" shows "finite {x . P x}"
@@ -631,19 +659,47 @@ lemma match_sat'_fv: assumes "Regex.safe_regex fv rgx_safe_pred temp Strict r"
   using assms
   proof (induction r arbitrary:i j)
 
-    case (Plus r1 r2)
-  moreover obtain k where "\<exists>j. Regex.match (sat' \<sigma> V v) r1 j k \<or>  Regex.match (sat' \<sigma> V v) r2 j k" using  Plus.prems(2)  by auto
-  moreover {
-    assume assm: "\<exists>j. Regex.match (sat' \<sigma> V v) r1 j k"
-    hence ?case using Plus.prems(1,3) Plus.IH(1)  by (fastforce simp add: safe_atms_def) 
-  } moreover {
-    assume assm: "\<exists>j. Regex.match (sat' \<sigma> V v) r2 j k"
-    from this have ?case using Plus.prems(1,3) Plus.IH(2) by (fastforce simp add: safe_atms_def)
-  }
-  ultimately show ?case by auto
+  case (Plus r1 r2)
+  from Plus.prems(1,3) have safe: "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+    and x: "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+    by auto
+  from Plus.prems(2) consider (r1) "Regex.match (sat' \<sigma> V v) r1 j i"
+    | (r2) "Regex.match (sat' \<sigma> V v) r2 j i"
+    by auto
+  then show ?case
+  proof cases
+    case r1
+    from Plus.IH(1)[OF safe(1) this x(1)] show ?thesis
+      by auto
+  next
+    case r2
+    from Plus.IH(2)[OF safe(2) this x(2)] show ?thesis
+      by auto
+  qed
 next
   case (Times r1 r2)
-  then show ?case  using Times.prems match_le Times.IH  by (cases temp) fastforce+
+  from Times.prems(2) obtain k where
+    m1: "Regex.match (sat' \<sigma> V v) r1 j k" and
+    m2: "Regex.match (sat' \<sigma> V v) r2 k i"
+    by auto
+  show ?case
+  proof (cases temp)
+    case Past
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r1"
+      and "x \<in> fv (formula.MatchP I r1) \<or> x \<in> fv (formula.MatchF I r1)"
+      by auto
+    from Times.IH(1)[OF this(1) m1 this(2)] show ?thesis
+      by auto
+  next
+    case Futu
+    with Times.prems(1,3) have "Regex.safe_regex fv rgx_safe_pred temp Strict r2"
+      and "x \<in> fv (formula.MatchP I r2) \<or> x \<in> fv (formula.MatchF I r2)"
+      by auto
+    from Times.IH(2)[OF this(1) m2 this(2)] show ?thesis
+      by auto
+  qed
 qed  auto
 
 lemma wty_event_letpast:
@@ -978,11 +1034,12 @@ next
       assume k_props: "k>j" "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
       hence t_geq: "(\<tau> \<sigma> k - \<tau> \<sigma> i) \<ge> (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using diff_le_mono by auto
       from j_props have "mem (flip_int I) (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)" by auto
-      hence "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
-        by (metis \<tau>_mono assms(2) diff_le_mono2 
-            flip_int.rep_eq j_props(1) memL.rep_eq memL_mono prod.sel(1))
-      hence "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" 
-        using assms memL_mono by blast
+      with assms(2) have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)"
+        by (simp add: memL.rep_eq flip_int.rep_eq)
+      moreover have "\<tau> \<sigma> (j+1) - \<tau> \<sigma> j \<le> \<tau> \<sigma> (j+1) - \<tau> \<sigma> i"
+        using j_props(1) by (simp add: diff_le_mono2)
+      ultimately have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
+        using memR_antimono by blast
       hence "\<not>memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
         using t_geq memR_antimono by blast
       hence "False" 
@@ -1390,21 +1447,24 @@ next
   from this xfree And_Not  show ?case by auto 
 next
   case (And_Trigger \<phi> \<phi>' I \<psi>')
-  have "S, E \<turnstile> \<phi>" 
-    using wty_formula_AndD 
-      \<open>S, E \<turnstile> formula.And \<phi> (formula.Trigger \<phi>' I \<psi>')\<close> 
-    by blast
-  thus ?case 
-    using And_Trigger 
-    by (auto simp: safe_dual_def split: if_splits)
+  from And_Trigger.prems(1) have "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_AndD(1))
+  from And_Trigger.prems(3) have "sat' \<sigma> V v i \<phi>"
+    by simp
+  from And_Trigger.prems(4) And_Trigger.hyps(4) have "x \<in> fv \<phi>"
+    by auto
+  show ?case
+    by (rule And_Trigger.IH(1)) fact+
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
-  have "S, E \<turnstile> \<phi>" 
-    using wty_formula_AndD \<open>S, E \<turnstile> formula.And \<phi> (formula.Release \<phi>' I \<psi>')\<close>
-    by blast
-  thus ?case 
-    using And_Release
-    by (auto simp: safe_dual_def split: if_splits)
+  from And_Release.prems(1) have "S, E \<turnstile> \<phi>"
+    by (rule wty_formula_AndD(1))
+  from And_Release.prems(3) have "sat' \<sigma> V v i \<phi>"
+    by simp
+  from And_Release.prems(4) And_Release.hyps(7) have "x \<in> fv \<phi>"
+    by auto
+  show ?case
+    by (rule And_Release.IH(2)) fact+
 next
   case (Ands l pos neg)
   from Ands have "\<exists>\<phi> \<in> set l . x \<in> fv \<phi>" by auto
@@ -1557,9 +1617,11 @@ next
            from Agg.prems(1) t_def eq omega_def have num_ty: "agg_type = agg_type.Agg_Sum \<Longrightarrow> t \<in> numeric_ty" by cases auto
          
     
-            from  num_ty  finite_M foldl_evaltrm foldl_evaltrm_Sum foldl_evaltrm_Min foldl_evaltrm_Max show  ?thesis apply (cases agg_type)
-               by (auto simp add: M_def  alist_def omega_def finite_multiset_def   
-                      t_def zs_def   split: list.splits) 
+            have M_eq: "flatten_multiset M = a # list"
+              using alist_def by (simp add: M_def(1))
+            show ?thesis
+              using finite_M num_ty foldl_evaltrm_Sum foldl_evaltrm_Min foldl_evaltrm_Max zs_def
+              by (cases agg_type) (simp_all add: M_def(2) omega_def t_def M_eq)
    
            qed
            from  finite_M th2  M_def t_def omega_def have ?case 
@@ -1922,20 +1984,48 @@ next
   then show ?case
     by (cases \<psi>) auto
 next
-  case (Let p \<phi>' \<phi> \<psi> )
-  then show ?case
-    by (cases \<psi>) (auto simp: Formula.nfv_def rel_formula_fv)
+  case (Let p \<phi>' \<phi> \<psi>)
+  from Let.prems obtain \<alpha> \<beta> where \<psi>_def: "\<psi> = Formula.Let p \<alpha> \<beta>"
+    and rel: "formula.rel_formula f \<phi>' \<alpha>" "formula.rel_formula f \<phi> \<beta>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel(1) have "safe_formula \<alpha>"
+    by (rule Let.IH(1))
+  moreover from rel(2) have "safe_formula \<beta>"
+    by (rule Let.IH(2))
+  moreover have "fv \<alpha> = fv \<phi>'" "Formula.nfv \<alpha> = Formula.nfv \<phi>'"
+    using rel(1) by (simp_all add: Formula.nfv_def rel_formula_fv)
+  ultimately show ?case
+    using Let.hyps(1) by (simp add: \<psi>_def)
 next
-  case (Frz p \<phi>' \<phi> \<psi> )
-  then show ?case
-    by (cases \<psi>) (auto simp: Formula.nfv_def rel_formula_fv)
+  case (Frz p \<phi>' \<phi> \<psi>)
+  from Frz.prems obtain \<alpha> \<beta> where \<psi>_def: "\<psi> = Formula.Frz p \<alpha> \<beta>"
+    and rel: "formula.rel_formula f \<phi>' \<alpha>" "formula.rel_formula f \<phi> \<beta>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel(1) have "safe_formula \<alpha>"
+    by (rule Frz.IH(1))
+  moreover from rel(2) have "safe_formula \<beta>"
+    by (rule Frz.IH(2))
+  moreover have "fv \<alpha> = fv \<phi>'" "Formula.nfv \<alpha> = Formula.nfv \<phi>'"
+    using rel(1) by (simp_all add: Formula.nfv_def rel_formula_fv)
+  ultimately show ?case
+    using Frz.hyps(1) by (simp add: \<psi>_def)
 next
   case (And_assign \<phi> \<phi>' \<psi>)
-  then show ?case
-    apply (cases \<psi>)
-                    apply (auto simp: rel_formula_fv)
-     apply (auto simp: safe_assignment_def split: formula.splits)
-    done
+  from And_assign.prems obtain \<alpha> \<beta> where \<psi>_def: "\<psi> = Formula.And \<alpha> \<beta>"
+    and rel\<alpha>: "formula.rel_formula f \<phi> \<alpha>" and rel\<beta>: "formula.rel_formula f \<phi>' \<beta>"
+    by (cases rule: formula.rel_cases) simp_all
+  from And_assign.hyps(2) obtain t1 t2 where \<phi>'_def: "\<phi>' = Formula.Eq t1 t2"
+    by (cases \<phi>') (simp_all add: safe_assignment_def)
+  with rel\<beta> have "\<beta> = Formula.Eq t1 t2"
+    by (cases rule: formula.rel_cases) simp_all
+  moreover have "fv \<alpha> = fv \<phi>"
+    using rel\<alpha> by (simp add: rel_formula_fv)
+  ultimately have "safe_assignment (fv \<alpha>) \<beta>"
+    using And_assign.hyps(2) by (simp add: \<phi>'_def safe_assignment_Eq_iff)
+  moreover have "safe_formula \<alpha>"
+    using rel\<alpha> by (rule And_assign.IH)
+  ultimately show ?case
+    by (simp add: \<psi>_def)
 next
   case (And_safe \<phi> \<psi>)
   then show ?case
@@ -1943,7 +2033,19 @@ next
 next
   case (And_constraint \<phi> \<phi>' \<psi>)
   moreover have "is_constraint \<phi>' \<Longrightarrow> formula.rel_formula f \<phi>' \<psi>' \<Longrightarrow> is_constraint \<psi>'" for \<psi>'
-    by (cases \<phi>' rule: is_constraint.cases; cases \<psi>' rule: is_constraint.cases) auto
+  proof -
+    assume constr: "is_constraint \<phi>'" and rel: "formula.rel_formula f \<phi>' \<psi>'"
+    from rel show "is_constraint \<psi>'"
+    proof (cases rule: formula.rel_cases)
+      case (Neg \<alpha> \<beta>)
+      from constr Neg(1) have "is_constraint (Formula.Neg \<alpha>)"
+        by simp
+      with Neg(3) have "is_constraint (Formula.Neg \<beta>)"
+        by (cases rule: formula.rel_cases) simp_all
+      with Neg(2) show ?thesis
+        by simp
+    qed (use constr in simp_all)
+  qed
   ultimately show ?case
     by (cases \<psi>) (auto simp: rel_formula_fv)
 next
@@ -1951,20 +2053,49 @@ next
   then show ?case
     by (cases \<psi>) (auto simp: rel_formula_fv elim!: formula.rel_cases[of _ "formula.Neg \<phi>'"])
 next
-  case (And_Trigger \<phi> \<phi>' I \<psi>')
-  then show ?case
-    by (cases \<psi>) 
-      (auto simp: rel_formula_fv safe_dual_def 
-        intro: formula.rel_intros(17) split: if_splits
-        elim!: formula.rel_cases[of _ "formula.Trigger _ I _"])
+  case (And_Trigger \<phi> \<phi>' I \<psi>' \<psi>)
+  from And_Trigger.prems obtain \<alpha> \<chi> where \<psi>_def: "\<psi> = Formula.And \<alpha> \<chi>"
+    and rel\<alpha>: "formula.rel_formula f \<phi> \<alpha>"
+    and rel\<chi>: "formula.rel_formula f (Formula.Trigger \<phi>' I \<psi>') \<chi>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel\<chi> obtain \<beta> \<gamma> where \<chi>_def: "\<chi> = Formula.Trigger \<beta> I \<gamma>"
+    and rel\<beta>: "formula.rel_formula f \<phi>' \<beta>" and rel\<gamma>: "formula.rel_formula f \<psi>' \<gamma>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel\<alpha> have "safe_formula \<alpha>"
+    by (rule And_Trigger.IH(1))
+  moreover from rel\<beta> have "safe_formula \<beta>"
+    by (rule And_Trigger.IH(2))
+  moreover from rel\<gamma> have "safe_formula \<gamma>"
+    by (rule And_Trigger.IH(3))
+  moreover have "fv \<beta> = fv \<phi>'" "fv \<gamma> = fv \<psi>'" "fv \<alpha> = fv \<phi>"
+    using rel_formula_fv[OF rel\<beta>] rel_formula_fv[OF rel\<gamma>] rel_formula_fv[OF rel\<alpha>] by simp_all
+  ultimately show ?case
+    using And_Trigger.hyps(2-4) by (auto simp: \<psi>_def \<chi>_def safe_dual_def)
 next
-  case (And_Release \<phi> \<phi>' I \<psi>')
-  then show ?case
-    by (cases \<psi>)
-      (auto simp: rel_formula_fv safe_dual_def and_release_safe_bounded_def 
-        release_safe_bounded_def
-        intro: formula.rel_intros(18)
-        elim!: formula.rel_cases[of _ "formula.Release _ I _"])
+  case (And_Release \<phi> \<phi>' I \<psi>' \<psi>)
+  from And_Release.prems obtain \<alpha> \<chi> where \<psi>_def: "\<psi> = Formula.And \<alpha> \<chi>"
+    and rel\<alpha>: "formula.rel_formula f \<phi> \<alpha>"
+    and rel\<chi>: "formula.rel_formula f (Formula.Release \<phi>' I \<psi>') \<chi>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel\<chi> obtain \<beta> \<gamma> where \<chi>_def: "\<chi> = Formula.Release \<beta> I \<gamma>"
+    and rel\<beta>: "formula.rel_formula f \<phi>' \<beta>" and rel\<gamma>: "formula.rel_formula f \<psi>' \<gamma>"
+    by (cases rule: formula.rel_cases) simp_all
+  have "formula.rel_formula f (and_release_safe_bounded \<phi> \<phi>' I \<psi>') (and_release_safe_bounded \<alpha> \<beta> I \<gamma>)"
+    using rel\<alpha> rel\<beta> rel\<gamma>
+    by (simp add: and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def
+        eventually_def once_def Formula.TT_def Formula.FF_def)
+  then have "safe_formula (and_release_safe_bounded \<alpha> \<beta> I \<gamma>)"
+    by (rule And_Release.IH(1))
+  moreover from rel\<alpha> have "safe_formula \<alpha>"
+    by (rule And_Release.IH(2))
+  moreover from rel\<beta> have "safe_formula \<beta>"
+    by (rule And_Release.IH(3))
+  moreover from rel\<gamma> have "safe_formula \<gamma>"
+    by (rule And_Release.IH(4))
+  moreover have "fv \<beta> = fv \<phi>'" "fv \<gamma> = fv \<psi>'" "fv \<alpha> = fv \<phi>"
+    using rel_formula_fv[OF rel\<beta>] rel_formula_fv[OF rel\<gamma>] rel_formula_fv[OF rel\<alpha>] by simp_all
+  ultimately show ?case
+    using And_Release.hyps(4-7) by (simp add: \<psi>_def \<chi>_def)
 next
   case (Ands l pos neg \<psi>)
   obtain l' pos' neg' where \<psi>_def: "\<psi> = formula.Ands l'" "partition safe_formula l' = (pos', neg')"
@@ -1986,7 +2117,7 @@ next
   proof -
     have "formula.rel_formula f (remove_neg g) (remove_neg h)" if "formula.rel_formula f g h" for g h
       using that
-      by (cases g; cases h) auto
+      by (cases rule: formula.rel_cases) simp_all
     then show ?thesis
       using neg'_neg[OF that] Ands(4,7)
       by (auto simp: list_all_def dest!: bspec spec[of _ "remove_neg x'"])
@@ -2083,17 +2214,32 @@ next
     by simp
 next
   case (Trigger_0 \<phi>' I \<psi>' \<psi>)
-  have "formula.rel_formula f (formula.Neg \<gamma>2) \<gamma>1 \<Longrightarrow>
-    \<phi>' = formula.Neg \<gamma>2 \<Longrightarrow>
-    \<forall>x. formula.rel_formula f \<gamma>2 x \<longrightarrow> safe_formula x \<Longrightarrow>
-    \<forall>\<gamma>'. \<gamma>1 = formula.Neg \<gamma>' \<longrightarrow> \<not> safe_formula \<gamma>' \<Longrightarrow> safe_formula \<gamma>1" 
-    for \<gamma>1 :: "'b Formula.formula" and \<gamma>2 :: "'a Formula.formula"
-    by (cases \<gamma>1; clarsimp)
-  thus ?case
-    using Trigger_0 
-    apply (cases \<psi>; clarsimp simp: case_Neg_iff 
-        rel_formula_fv safe_dual_def elim!: case_NegE)
-    using fvi.simps(7) rel_formula_fv by blast
+  from Trigger_0.prems obtain \<beta> \<gamma> where \<psi>_def: "\<psi> = Formula.Trigger \<beta> I \<gamma>"
+    and rel\<beta>: "formula.rel_formula f \<phi>' \<beta>" and rel\<gamma>: "formula.rel_formula f \<psi>' \<gamma>"
+    by (cases rule: formula.rel_cases) simp_all
+  from rel\<gamma> have "safe_formula \<gamma>"
+    by (rule Trigger_0.IH(2))
+  moreover have "fv \<beta> \<subseteq> fv \<gamma>"
+    using Trigger_0.hyps(3) rel_formula_fv[OF rel\<beta>] rel_formula_fv[OF rel\<gamma>] by simp
+  moreover from Trigger_0.IH(1)
+  have "safe_formula \<beta> \<or> (case \<beta> of Formula.Neg \<beta>' \<Rightarrow> safe_formula \<beta>' | _ \<Rightarrow> False)"
+  proof
+    assume "safe_formula \<phi>' \<and> (\<forall>\<psi>. formula.rel_formula f \<phi>' \<psi> \<longrightarrow> safe_formula \<psi>)"
+    with rel\<beta> show ?thesis
+      by blast
+  next
+    assume "case \<phi>' of Formula.Neg \<phi>'' \<Rightarrow> safe_formula \<phi>'' 
+      \<and> (\<forall>\<psi>. formula.rel_formula f \<phi>'' \<psi> \<longrightarrow> safe_formula \<psi>) | _ \<Rightarrow> False"
+    then obtain \<phi>'' where \<phi>'_def: "\<phi>' = Formula.Neg \<phi>''"
+      and IH'': "\<forall>\<psi>. formula.rel_formula f \<phi>'' \<psi> \<longrightarrow> safe_formula \<psi>"
+      by (elim case_NegE) blast
+    from rel\<beta> obtain \<beta>'' where "\<beta> = Formula.Neg \<beta>''" and "formula.rel_formula f \<phi>'' \<beta>''"
+      unfolding \<phi>'_def by (cases rule: formula.rel_cases) simp_all
+    with IH'' show ?thesis
+      by simp
+  qed
+  ultimately show ?case
+    using Trigger_0.hyps(1) by (simp add: \<psi>_def safe_dual_def)
 next
   case (Release \<phi>' I \<psi>')
   then show ?case
@@ -2279,8 +2425,48 @@ lemma wty_trm_cong: " (\<And>y. y \<in> fv_trm t \<Longrightarrow> E y = E' y) \
 
 lemma wty_safe_assignment_dest: "wty_formula S E \<psi> \<Longrightarrow> safe_assignment X \<psi> \<Longrightarrow> x \<in> fv \<psi> - X \<Longrightarrow>
   \<exists>t. E \<turnstile> t :: E x \<and> fv_trm t \<subseteq> X \<and> (\<psi> = formula.Eq (trm.Var x) t \<or> \<psi> = formula.Eq t (trm.Var x))"
-  by (auto simp: safe_assignment_def elim!: wty_formula.cases[of S E \<psi>])
-     (auto elim!: wty_trm.cases[of E "trm.Var x"] split: trm.splits)
+proof -
+  assume wty: "wty_formula S E \<psi>" and safe: "safe_assignment X \<psi>" and x: "x \<in> fv \<psi> - X"
+  from safe obtain t1 t2 where \<psi>_def: "\<psi> = formula.Eq t1 t2"
+    by (cases \<psi>) (simp_all add: safe_assignment_def)
+  from wty obtain \<tau> where t1: "E \<turnstile> t1 :: \<tau>" and t2: "E \<turnstile> t2 :: \<tau>"
+    unfolding \<psi>_def by cases
+  have Var_ty: "E \<turnstile> trm.Var y :: \<tau> \<longleftrightarrow> \<tau> = E y" for y \<tau>
+    by (auto intro: wty_trm.Var elim: wty_trm.cases)
+  from safe consider
+      (VarVar) y z where "t1 = trm.Var y" "t2 = trm.Var z" "y \<notin> X \<longleftrightarrow> z \<in> X"
+    | (VarT) y where "t1 = trm.Var y" "y \<notin> X" "fv_trm t2 \<subseteq> X"
+    | (TVar) y where "t2 = trm.Var y" "y \<notin> X" "fv_trm t1 \<subseteq> X"
+    unfolding \<psi>_def safe_assignment_Eq_iff by blast
+  then show ?thesis
+  proof cases
+    case (VarVar y z)
+    with t1 t2 have "E y = E z"
+      by (simp add: Var_ty)
+    show ?thesis
+    proof (cases "y \<in> X")
+      case True
+      with VarVar x have "x = z"
+        by (auto simp: \<psi>_def)
+      with True VarVar \<open>E y = E z\<close> show ?thesis
+        by (intro exI[of _ "trm.Var y"]) (simp add: \<psi>_def Var_ty)
+    next
+      case False
+      with VarVar x have "x = y"
+        by (auto simp: \<psi>_def)
+      with False VarVar \<open>E y = E z\<close> show ?thesis
+        by (intro exI[of _ "trm.Var z"]) (simp add: \<psi>_def Var_ty)
+    qed
+  next
+    case (VarT y)
+    with x t1 t2 show ?thesis
+      unfolding \<psi>_def by (auto simp: Var_ty)
+  next
+    case (TVar y)
+    with x t1 t2 show ?thesis
+      unfolding \<psi>_def by (auto simp: Var_ty)
+  qed
+qed
 
 (*Lemma 5.1
 lemma rel_formula_wty_unique_fv: "safe_formula \<phi> \<Longrightarrow> wty_formula S E \<phi> \<Longrightarrow> wty_formula S E' \<phi>' \<Longrightarrow>
@@ -2528,27 +2714,7 @@ lemma safe_regex_regex_atms_dest:
   shows "safe_formula a \<and> a \<in> safe_atms r 
     \<or> (\<not>safe_formula a \<and> (case a of formula.Neg \<phi> \<Rightarrow> \<phi> \<in> safe_atms r | _ \<Rightarrow> False))"
   using assms
-proof (induction m g r rule: safe_regex.induct)
-  case (2 m g \<phi>)
-  then show ?case
-    by (cases "safe_formula a") (auto split: formula.splits)
-next
-  case (3 m g r s)
-  then show ?case
-    by (cases a) auto
-next
-  case (4 g r s)
-  then show ?case
-    by (cases a) auto
-next
-  case (5 g r s)
-  then show ?case
-    by (cases a) auto
-next
-  case (6 m g r)
-  then show ?case
-    by (cases a) auto
-qed (auto split: formula.splits)
+  by (induction m g r rule: safe_regex.induct) (auto simp: case_Neg_iff)
 
 (*Lemma 5.2
 lemma rel_formula_wty_unique_bv_aux: "safe_formula \<phi> \<Longrightarrow> wty_formula S E \<phi> \<Longrightarrow> wty_formula S E' \<phi>' \<Longrightarrow>
@@ -3332,8 +3498,10 @@ proof -
       using g_def(1) by blast
     moreover have
       "(?ft1 \<circ> (f' \<circ> E_start) \<turnstile> t1 :: ?ft1 (f' type_start)) = (\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft1 = (g \<circ> f'')))"
+      using wty_res1 wfs(1) unfolding wty_result_fX_trm_def by blast
+    moreover have
       "(?ft2 \<circ> ((f'' \<circ> f') \<circ> E_start) \<turnstile> t2 :: ?ft2 ((f'' \<circ> f') type_start)) = (\<exists>g. wf_f (TCst \<circ> g) \<and> (?ft2 = (g \<circ> f''')))"
-      using wty_res1 wty_res2 wfs g_def(1) unfolding wty_result_fX_trm_def by(auto simp:comp_def)
+      using wty_res2 wfs(2) unfolding wty_result_fX_trm_def by blast
     ultimately have 
       "(g \<circ> f \<circ> E) \<turnstile> t1 :: (g \<circ> f) type" 
       "(g \<circ> f \<circ> E) \<turnstile> t2 :: (g \<circ> f) type" 
@@ -4430,9 +4598,9 @@ next
     then obtain g where wf_g: "wf_f (TCst \<circ> g)" and fa_alt: "fa = g \<circ> (f2 \<circ> f1 \<circ> f0)"
       unfolding f_def by blast
     have wf_g_f2: "wf_f (TCst \<circ> (g \<circ> f2))"
-      by (metis comp_assoc wf_f_comp wf_g wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g] wty2 unfolding wty_result_fX_def comp_assoc by blast
     have "wf_f (TCst \<circ> (g \<circ> f2 \<circ> f1))"
-      by (metis comp_assoc wf_f_comp wf_g wty1 wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g_f2] wty1 unfolding wty_result_fX_def comp_assoc by blast
     hence "map_sig (g \<circ> f2 \<circ> f1) (map_sig f0 S), (g \<circ> f2 \<circ> f1) \<circ> TAny
         \<turnstile> formula.map_formula (g \<circ> f2 \<circ> f1) (formula.map_formula f0 \<phi>)"
       using wty1 wf_g_f2 unfolding wty_result_fX_def by blast
@@ -4519,9 +4687,9 @@ next
     then obtain g where wf_g: "wf_f (TCst \<circ> g)" and fa_alt: "fa = g \<circ> (f2 \<circ> f1 \<circ> f0)"
       unfolding f_def by blast
     have wf_g_f2: "wf_f (TCst \<circ> (g \<circ> f2))"
-      by (metis comp_assoc wf_f_comp wf_g wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g] wty2 unfolding wty_result_fX_def comp_assoc by blast
     have "wf_f (TCst \<circ> (g \<circ> f2 \<circ> f1))"
-      by (metis comp_assoc wf_f_comp wf_g wty1 wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g_f2] wty1 unfolding wty_result_fX_def comp_assoc by blast
     hence "map_sig (g \<circ> f2 \<circ> f1) (map_sig f0 S), (g \<circ> f2 \<circ> f1) \<circ> TAny
         \<turnstile> formula.map_formula (g \<circ> f2 \<circ> f1) (formula.map_formula f0 \<phi>)"
       using wty1 wf_g_f2 unfolding wty_result_fX_def by blast
@@ -4800,9 +4968,9 @@ next
     then obtain g where wf_g: "wf_f (TCst \<circ> g)" and fa_alt: "fa = g \<circ> (f2 \<circ> f1 \<circ> f0)"
       unfolding f_def by blast
     have wf_g_f2: "wf_f (TCst \<circ> (g \<circ> f2))"
-      by (metis comp_assoc wf_f_comp wf_g wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g] wty2 unfolding wty_result_fX_def comp_assoc by blast
     have "wf_f (TCst \<circ> (g \<circ> f2 \<circ> f1))"
-      by (metis comp_assoc wf_f_comp wf_g wty1 wty2 wty_result_fX_def)
+      using wf_f_comp[OF wf_g_f2] wty1 unfolding wty_result_fX_def comp_assoc by blast
     hence "(map_sig (g \<circ> f2 \<circ> f1)
              ((map_sig f0 S)((p, Formula.nfv (formula.map_formula f0 \<phi>)) \<mapsto>
               tabulate TAny 0 (Formula.nfv \<phi>))),
@@ -4970,7 +5138,16 @@ next
   case (Cons a \<phi>s)
   have wfs: "wf_formula (formula.Ands \<phi>s)" "wf_formula a" using Cons(5) by auto
   have wty_pre: "\<forall>\<phi> \<in> set (a#\<phi>s). map_sig f S, f \<circ> E \<turnstile> formula.map_formula f \<phi>" 
-    using Cons(3) by(auto simp del:comp_apply elim:wty_formula.cases)
+  proof
+    fix \<phi>
+    assume "\<phi> \<in> set (a # \<phi>s)"
+    then have "formula.map_formula f \<phi> \<in> set (map (formula.map_formula f) (a # \<phi>s))"
+      unfolding set_map by (rule imageI)
+    moreover from Cons(3) have "map_sig f S, f \<circ> E \<turnstile> Formula.Ands (map (formula.map_formula f) (a # \<phi>s))"
+      by (simp del: comp_apply)
+    ultimately show "map_sig f S, f \<circ> E \<turnstile> formula.map_formula f \<phi>"
+      by (rule wty_formula_AndsD[rotated])
+  qed
   hence wtys: "map_sig f S, f \<circ> E \<turnstile> formula.map_formula f (formula.Ands \<phi>s)" "map_sig f S, f \<circ> E \<turnstile> formula.map_formula f a"
     by (auto intro!:wty_formula.intros)
   have "(foldr (check_ands_f check S E) \<phi>s (return id)) = error e \<Longrightarrow> False" for e

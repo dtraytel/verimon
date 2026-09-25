@@ -257,18 +257,26 @@ lemma qtable_no_pattern:
   using assms
 proof (auto intro!: qtableI, goal_cases)
   case (3 v)
-  then show ?case 
-    using ex_match[of n ts v] 
-    by (auto simp: in_these_eq image_iff
-        intro!: bexI[where P="\<lambda>x. _ = tabulate x 0 n"])
-      (metis length_map list.map_comp)
+  then obtain f where f: "match ts (map (Some \<circ> eval_trm_option v) ts) = Some f"
+    and v: "v = tabulate f 0 n"
+    using ex_match[of n ts v] by blast
+  have "map (Some \<circ> eval_trm_option v) ts \<in> map Some ` {v. length v = length ts \<and> P v i}"
+    unfolding map_map[symmetric] using 3 by (intro imageI) simp
+  then have "f \<in> Option.these (match ts ` map Some ` {v. length v = length ts \<and> P v i})"
+    unfolding in_these_eq f[symmetric] by (rule imageI)
+  then show ?case
+    unfolding v by (rule imageI)
 next
   case (6 v)
-  then show ?case 
-    using ex_match[of n ts v] 
-    by (auto simp: in_these_eq image_iff
-        intro!: bexI[where P="\<lambda>x. _ = tabulate x 0 n"])
-      (metis length_map list.map_comp)
+  then obtain f where f: "match ts (map (Some \<circ> eval_trm_option v) ts) = Some f"
+    and v: "v = tabulate f 0 n"
+    using ex_match[of n ts v] by blast
+  have "map (Some \<circ> eval_trm_option v) ts \<in> map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}"
+    unfolding map_map[symmetric] using 6 by (intro imageI) simp
+  then have "f \<in> Option.these (match ts ` map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts})"
+    unfolding in_these_eq f[symmetric] by (rule imageI)
+  then show ?case
+    unfolding v by (rule imageI)
 qed (auto simp: table_def in_these_eq match_eval_trm image_iff
         elim!: match_wf_tuple[of _ ts "(map Some _)" n])
 
@@ -357,9 +365,28 @@ next
   with 3 show ?case by auto
 next
   case (4 I x xs t t' ts)
-  from 4(1)[of "tl ys" xs' ts' "Suc i"] 4(2-6) show ?case
-    by (auto simp add: list_all2_Cons2 upt_eq_Cons_conv Suc_less_eq2
-        elim!: list.rel_mono_strong split: prod.splits if_splits)
+  from 4(2) obtain ys0 where rec: "mprev_next I xs (t' # ts) = (ys0, xs', ts')"
+    and ys: "ys = (if mem I (t' - t) then x else empty_table) # ys0"
+    by (cases "mprev_next I xs (t' # ts)") auto
+  from 4(3) have "i < j'" and Px: "P i x" and xs: "list_all2 P [Suc i..<j'] xs"
+    by (auto simp: list_all2_Cons2 upt_eq_Cons_conv)
+  from 4(4) have "Suc i < j" and t: "t = \<tau> \<sigma> i" "t' = \<tau> \<sigma> (Suc i)"
+    and ts: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [Suc i..<j] (t' # ts)"
+    by (auto simp: list_all2_Cons2 upt_eq_Cons_conv)
+  let ?m = "min j' (j - 1)"
+  have m: "min j' (if i = j then j else j - 1) = ?m" "min j' (if Suc i = j then j else j - 1) = ?m"
+    using \<open>Suc i < j\<close> by simp_all
+  have upt: "[i..<?m] = i # [Suc i..<?m]"
+    using \<open>i < j'\<close> \<open>Suc i < j\<close> by (intro upt_conv_Cons) simp
+  have IH: "list_all2 (\<lambda>i X. if mem I (\<tau> \<sigma> (Suc i) - \<tau> \<sigma> i) then P i X else X = empty_table)
+      [Suc i..<?m] ys0 \<and> list_all2 P [?m..<j'] xs' \<and> list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [?m..<j] ts'"
+    using 4(1)[OF rec xs ts Suc_leI[OF \<open>i < j'\<close>] less_imp_le[OF \<open>Suc i < j\<close>]]
+    unfolding m .
+  have hd: "if mem I (\<tau> \<sigma> (Suc i) - \<tau> \<sigma> i) then P i (if mem I (t' - t) then x else empty_table)
+    else (if mem I (t' - t) then x else empty_table) = empty_table"
+    using Px by (simp add: t)
+  show ?case
+    unfolding m upt ys list_all2_Cons using hd IH by blast
 qed (auto simp: gr0_conv_Suc)
 
 lemma mnext: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow>
@@ -378,9 +405,29 @@ next
   with 3 show ?case by auto
 next
   case (4 I x xs t t' ts)
-  from 4(1)[of "tl ys" xs' ts' "Suc i"] 4(2-6) show ?case
-    by (auto simp add: list_all2_Cons2 upt_eq_Cons_conv Suc_less_eq2
-        elim!: list.rel_mono_strong split: prod.splits if_splits) (* slow 10 sec *)
+  from 4(2) obtain ys0 where rec: "mprev_next I xs (t' # ts) = (ys0, xs', ts')"
+    and ys: "ys = (if mem I (t' - t) then x else empty_table) # ys0"
+    by (cases "mprev_next I xs (t' # ts)") auto
+  from 4(3) have "Suc i < j'" and Px: "P (Suc i) x" and xs: "list_all2 P [Suc (Suc i)..<j'] xs"
+    by (auto simp: list_all2_Cons2 upt_eq_Cons_conv)
+  from 4(4) have "Suc i < j" and t: "t = \<tau> \<sigma> i" "t' = \<tau> \<sigma> (Suc i)"
+    and ts: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [Suc i..<j] (t' # ts)"
+    by (auto simp: list_all2_Cons2 upt_eq_Cons_conv)
+  let ?m = "min (j' - 1) (j - 1)"
+  have m: "min (j' - 1) (if i = j then j else j - 1) = ?m"
+    "min (j' - 1) (if Suc i = j then j else j - 1) = ?m"
+    using \<open>Suc i < j\<close> by simp_all
+  have upt: "[i..<?m] = i # [Suc i..<?m]"
+    using \<open>Suc i < j'\<close> \<open>Suc i < j\<close> by (intro upt_conv_Cons) (simp add: less_diff_conv)
+  have IH: "list_all2 (\<lambda>i X. if mem I (\<tau> \<sigma> (Suc i) - \<tau> \<sigma> i) then P (Suc i) X else X = empty_table)
+      [Suc i..<?m] ys0 \<and> list_all2 P [Suc ?m..<j'] xs' \<and> list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [?m..<j] ts'"
+    using 4(1)[OF rec xs ts Suc_leI[OF \<open>Suc i < j'\<close>] less_imp_le[OF \<open>Suc i < j\<close>]]
+    unfolding m .
+  have hd: "if mem I (\<tau> \<sigma> (Suc i) - \<tau> \<sigma> i) then P (Suc i) (if mem I (t' - t) then x else empty_table)
+    else (if mem I (t' - t) then x else empty_table) = empty_table"
+    using Px by (simp add: t)
+  show ?case
+    unfolding m upt ys list_all2_Cons using hd IH by blast
 qed auto
 
 (*<*)

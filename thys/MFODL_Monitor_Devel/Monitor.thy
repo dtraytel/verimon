@@ -63,7 +63,7 @@ function (sequential) mmonitorable_exec :: "'t Formula.formula \<Rightarrow> boo
 | "mmonitorable_exec (Formula.TP t) = (Formula.is_Var t \<or> Formula.is_Const t)"
 | "mmonitorable_exec (Formula.TS t) = (Formula.is_Var t \<or> Formula.is_Const t)"
 | "mmonitorable_exec _ = False"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: formula.inject formula.distinct simp_thms)
 
 termination mmonitorable_exec
 proof ((relation "measure size'"; clarsimp dest!: sum_list_mem_leq[of _ _ size'] regex_atms_size'),
@@ -517,10 +517,36 @@ next
   qed
 next
   case (Plus r1 r2)
-  then show ?case by (fastforce split: if_splits prod.splits formula.splits simp: safe_atms_def elim: ok_mono)
+  obtain mr1 ys1 where 1: "to_mregex_exec r1 xs = (mr1, ys1)"
+    by (cases "to_mregex_exec r1 xs")
+  obtain mr2 ys2 where 2: "to_mregex_exec r2 ys1 = (mr2, ys2)"
+    by (cases "to_mregex_exec r2 ys1")
+  from Plus.prems have mr_ys: "mr = MPlus mr1 mr2" "ys = ys2"
+    by (simp_all add: 1 2)
+  obtain zs1 where zs1: "ys1 = xs @ zs1" "set zs1 = safe_atms r1" "ok (length ys1) mr1"
+    using Plus.hyps(1)[OF 1] by blast
+  obtain zs2 where zs2: "ys2 = ys1 @ zs2" "set zs2 = safe_atms r2" "ok (length ys2) mr2"
+    using Plus.hyps(2)[OF 2] by blast
+  have "ok (length ys2) mr1"
+    using zs1(3) by (rule ok_mono) (simp add: zs2(1))
+  with zs1 zs2 show ?case
+    unfolding mr_ys by (intro exI[of _ "zs1 @ zs2"]) simp
 next
   case (Times r1 r2)
-  then show ?case by (fastforce split: if_splits prod.splits formula.splits simp: safe_atms_def elim: ok_mono)
+  obtain mr1 ys1 where 1: "to_mregex_exec r1 xs = (mr1, ys1)"
+    by (cases "to_mregex_exec r1 xs")
+  obtain mr2 ys2 where 2: "to_mregex_exec r2 ys1 = (mr2, ys2)"
+    by (cases "to_mregex_exec r2 ys1")
+  from Times.prems have mr_ys: "mr = MTimes mr1 mr2" "ys = ys2"
+    by (simp_all add: 1 2)
+  obtain zs1 where zs1: "ys1 = xs @ zs1" "set zs1 = safe_atms r1" "ok (length ys1) mr1"
+    using Times.hyps(1)[OF 1] by blast
+  obtain zs2 where zs2: "ys2 = ys1 @ zs2" "set zs2 = safe_atms r2" "ok (length ys2) mr2"
+    using Times.hyps(2)[OF 2] by blast
+  have "ok (length ys2) mr1"
+    using zs1(3) by (rule ok_mono) (simp add: zs2(1))
+  with zs1 zs2 show ?case
+    unfolding mr_ys by (intro exI[of _ "zs1 @ zs2"]) simp
 next
   case (Star r)
   then show ?case by (auto split: if_splits prod.splits simp: safe_atms_def elim: ok_mono)
@@ -1818,7 +1844,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     in (zs, MMatchF I mr mrs \<phi>s buf nts' nt aux))"
 | "meval n ts db (MTP mt i) = (map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) [i..<j], MTP mt j)"
 | "meval n ts db (MTS mt) = (map (\<lambda>x. eval_mtrm n mt (EInt (integer_of_nat x))) ts, MTS mt)"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: prod.inject mformula.inject mformula.distinct simp_thms)
 
 lemma size_list_cong: "xs = ys \<Longrightarrow> (\<And>x. x \<in> set xs \<Longrightarrow> f x = g x) \<Longrightarrow> size_list f xs = size_list g ys"
   by (induct xs arbitrary: ys) auto
@@ -1874,12 +1900,84 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
    (\<And>mt i. P (MTP mt i)) \<Longrightarrow>
    (\<And>mt. P (MTS mt)) \<Longrightarrow>
    P mf"
-  apply (induct "size mf" arbitrary: mf rule: less_induct)
-  subgoal for mf
-    apply (cases mf) 
-    apply (auto simp: termination_simp)
-    done
-  done
+proof (induct "size mf" arbitrary: mf rule: less_induct)
+  case less
+  have IH: "P \<psi>" if "size \<psi> < size mf" for \<psi>
+    using that less.prems by (rule less.hyps)
+  have IH_set: "P \<phi>" if "\<phi> \<in> set \<phi>s" "size_list size \<phi>s < size mf" for \<phi> \<phi>s
+    using size_list_estimation'[OF that(1), of "size \<phi>" size] that(2) by (intro IH) simp
+  show ?case
+  proof (cases mf)
+    case (MRel rel)
+    show ?thesis unfolding MRel by (rule less.prems(1))
+  next
+    case (MPred e ts mode)
+    show ?thesis unfolding MPred by (rule less.prems(2))
+  next
+    case (MLet p m \<phi> \<psi>)
+    show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
+  next
+    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)
+    show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
+  next
+    case (MLetPast p m \<phi> \<psi> i buf)
+    show ?thesis unfolding MLetPast by (rule less.prems(5)) (rule IH, simp add: MLetPast)+
+  next
+    case (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)
+    show ?thesis unfolding MAnd by (rule less.prems(6)) (rule IH, simp add: MAnd)+
+  next
+    case (MAndAssign \<phi> conf)
+    show ?thesis unfolding MAndAssign by (rule less.prems(7)) (rule IH, simp add: MAndAssign)
+  next
+    case (MAndRel \<phi> conf)
+    show ?thesis unfolding MAndRel by (rule less.prems(8)) (rule IH, simp add: MAndRel)
+  next
+    case (MAndTrigger A_\<phi> \<phi> tbuf args \<phi>' \<psi>' buf nts aux)
+    show ?thesis unfolding MAndTrigger by (rule less.prems(9)) (rule IH, simp add: MAndTrigger)+
+  next
+    case (MAnds A_pos A_neg L buf)
+    show ?thesis unfolding MAnds by (rule less.prems(10)) (rule IH_set, assumption, simp add: MAnds)
+  next
+    case (MOr \<phi> \<psi> buf)
+    show ?thesis unfolding MOr by (rule less.prems(11)) (rule IH, simp add: MOr)+
+  next
+    case (MNeg \<phi>)
+    show ?thesis unfolding MNeg by (rule less.prems(12)) (rule IH, simp add: MNeg)
+  next
+    case (MExists \<phi>)
+    show ?thesis unfolding MExists by (rule less.prems(13)) (rule IH, simp add: MExists)
+  next
+    case (MAgg args \<phi>)
+    show ?thesis unfolding MAgg by (rule less.prems(14)) (rule IH, simp add: MAgg)
+  next
+    case (MPrev I \<phi> first buf nts)
+    show ?thesis unfolding MPrev by (rule less.prems(15)) (rule IH, simp add: MPrev)
+  next
+    case (MNext I \<phi> first nts)
+    show ?thesis unfolding MNext by (rule less.prems(16)) (rule IH, simp add: MNext)
+  next
+    case (MSince args \<phi> \<psi> buf aux)
+    show ?thesis unfolding MSince by (rule less.prems(17)) (rule IH, simp add: MSince)+
+  next
+    case (MUntil args \<phi> \<psi> buf nts t aux)
+    show ?thesis unfolding MUntil by (rule less.prems(18)) (rule IH, simp add: MUntil)+
+  next
+    case (MTrigger args \<phi> \<psi> buf nts aux)
+    show ?thesis unfolding MTrigger by (rule less.prems(19)) (rule IH, simp add: MTrigger)+
+  next
+    case (MMatchP I mr mrs \<phi>s buf nts aux)
+    show ?thesis unfolding MMatchP by (rule less.prems(20)) (rule IH_set, assumption, simp add: MMatchP)
+  next
+    case (MMatchF I mr mrs \<phi>s buf nts t aux)
+    show ?thesis unfolding MMatchF by (rule less.prems(21)) (rule IH_set, assumption, simp add: MMatchF)
+  next
+    case (MTP mt i)
+    show ?thesis unfolding MTP by (rule less.prems(22))
+  next
+    case (MTS mt)
+    show ?thesis unfolding MTS by (rule less.prems(23))
+  qed
+qed
 
 definition "letpast_meval m j = letpast_meval0 (meval j m) j"
 
