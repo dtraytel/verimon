@@ -283,15 +283,23 @@ proof -
     "Regex.safe_regex fv (\<lambda>g \<phi>. safe_formula \<phi> \<or>
       (g = Lax \<and> (case \<phi> of Formula.Neg \<phi>' \<Rightarrow> safe_formula \<phi>' | _ \<Rightarrow> False))) m g r" for m g
     using that
-    apply (induction r arbitrary: m g)
-        apply auto
-    subgoal for x
-      by (cases "safe_formula x") (auto split: formula.splits intro: wty_formula.intros)
-    subgoal for r1 r2 m g x
-      by (cases m) auto
-    subgoal for r1 r2 m g x
-      by (cases m) auto
-    done
+  proof (induction r arbitrary: m g)
+    case (Skip n)
+    then show ?case by simp
+  next
+    case (Test \<phi>)
+    then show ?case
+      by (cases "safe_formula \<phi>") (auto split: formula.splits intro: wty_formula.intros)
+  next
+    case (Plus r1 r2)
+    then show ?case by auto
+  next
+    case (Times r1 r2)
+    then show ?case by (cases m) auto
+  next
+    case (Star r)
+    then show ?case by auto
+  qed
   moreover have "\<forall>x \<in> Regex.atms r. S, E \<turnstile> x \<Longrightarrow> \<forall>x \<in> safe_atms r. S, E \<turnstile> x"
     by (induction r) (auto split: formula.splits elim: wty_formula.cases)
   ultimately show ?thesis
