@@ -762,10 +762,15 @@ proof(induction i arbitrary:xs rule: less_induct)
   let ?V' = "(V((p, length xs) \<mapsto> \<lambda>a b. b < x \<and> letpast_sat (\<lambda>X v i. sat' \<sigma> (V((p, length xs) \<mapsto> X)) v i \<phi>) a b))"
   {
     fix pa xsa i
-    assume "(pa, xsa) \<in> \<Gamma> \<sigma> i" and
-           "(pa, length xsa) \<notin> dom ?V'"
-    hence "wty_event (S((p, Formula.nfv \<phi>) \<mapsto> ?tys)) pa xsa"
-      using less(2,6) wty_event_def wty_envs_def apply(auto split:option.splits) by blast+
+    assume in_\<Gamma>: "(pa, xsa) \<in> \<Gamma> \<sigma> i" and
+           not_V': "(pa, length xsa) \<notin> dom ?V'"
+    from not_V' less(6) have ne: "(pa, length xsa) \<noteq> (p, Formula.nfv \<phi>)"
+      and not_V: "(pa, length xsa) \<notin> dom V"
+      by auto
+    from less(2) in_\<Gamma> not_V have "wty_event S pa xsa"
+      unfolding wty_envs_def by blast
+    with ne have "wty_event (S((p, Formula.nfv \<phi>) \<mapsto> ?tys)) pa xsa"
+      by (auto simp: wty_event_def)
   } moreover {
     fix pa xsa i
     assume in_V': "(pa, length xsa) \<in> dom ?V'" and
@@ -811,10 +816,14 @@ proof -
   let ?V' = "(V((p, Formula.nfv \<phi>) \<mapsto> letpast_sat (\<lambda>X v i. sat' \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) v i \<phi>)))"
   {
     fix pa xs i
-    assume "(pa, xs) \<in> \<Gamma> \<sigma> i" and
-           "(pa, length xs) \<notin> dom ?V'"
-    hence "wty_event (S((p, Formula.nfv \<phi>) \<mapsto> ?tys)) pa xs"
-      using wty_envs wty_event_def wty_envs_def apply(auto split:option.splits) by blast+
+    assume in_\<Gamma>: "(pa, xs) \<in> \<Gamma> \<sigma> i" and
+           not_V': "(pa, length xs) \<notin> dom ?V'"
+    then have ne: "(pa, length xs) \<noteq> (p, Formula.nfv \<phi>)" and not_V: "(pa, length xs) \<notin> dom V"
+      by auto
+    from wty_envs in_\<Gamma> not_V have "wty_event S pa xs"
+      unfolding wty_envs_def by blast
+    with ne have "wty_event (S((p, Formula.nfv \<phi>) \<mapsto> ?tys)) pa xs"
+      by (auto simp: wty_event_def)
   } moreover {
     fix pa xs i
     assume in_V': "(pa, length xs) \<in> dom ?V'" and
