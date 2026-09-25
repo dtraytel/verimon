@@ -1982,9 +1982,9 @@ next
       {
         assume j_leq_x: "x\<ge>j"
         then have "\<tau> \<sigma> x \<ge> \<tau> \<sigma> j" by auto
-        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using j_leq_x j_props assms
-          using flip_int_less_lower_props interval_0_bounded_geq memR_zero
-          by blast
+        then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> x)" using interval_0_bounded_geq[OF j_props(1) j_leq_x _ _ j_props(2)]
+            flip_int_less_lower_props[OF _ assms(2)] assms(1)
+          by simp
         then have "False"
           using x_props assms flip_int_less_lower.rep_eq memR.rep_eq memR_zero
           by auto
