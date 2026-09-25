@@ -949,39 +949,49 @@ subsection \<open> Finite @{term safe_formula} \<close>
 
 lemma inj_eval: " \<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t \<Longrightarrow>
     inj_on (\<lambda>v. map (Formula.eval_trm (map the v)) ts) {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
-  apply(intro inj_onI)
-      apply(rule nth_equalityI)
-       apply(auto simp add: wf_tuple_def)[]
-      subgoal for x y i
-        apply(cases "i \<in> (\<Union> (fv_trm ` set ts))")
-         apply(subgoal_tac "\<^bold>v i \<in> set ts")
-          apply(simp)
-        apply(rotate_tac)
-          apply(drule(1) bspec)
-          apply(simp add: wf_tuple_def)
-          apply (meson option.expand)
-         apply(auto simp add: Formula.is_Var_def Formula.is_Const_def)[]
-          apply(simp add: wf_tuple_def)
-        by metis
-      done
+proof (intro inj_onI)
+  fix x y
+  assume vars: "\<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t"
+    and x: "x \<in> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
+    and y: "y \<in> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
+    and eq: "map (Formula.eval_trm (map the x)) ts = map (Formula.eval_trm (map the y)) ts"
+  show "x = y"
+  proof (rule nth_equalityI)
+    show "length x = length y"
+      using x y by (simp add: wf_tuple_def)
+  next
+    fix i
+    assume "i < length x"
+    with x y have i: "i < n" "i < length y"
+      by (simp_all add: wf_tuple_def)
+    show "x ! i = y ! i"
+    proof (cases "i \<in> \<Union> (fv_trm ` set ts)")
+      case True
+      with vars have "\<^bold>v i \<in> set ts"
+        by (auto simp: Formula.is_Var_def Formula.is_Const_def)
+      moreover from eq have "\<forall>t\<in>set ts. Formula.eval_trm (map the x) t = Formula.eval_trm (map the y) t"
+        by simp
+      ultimately have "map the x ! i = map the y ! i"
+        by fastforce
+      with \<open>i < length x\<close> i have "the (x ! i) = the (y ! i)"
+        by simp
+      moreover have "x ! i \<noteq> None" "y ! i \<noteq> None"
+        using True x y i by (simp_all add: wf_tuple_def)
+      ultimately show ?thesis
+        by (metis option.expand)
+    next
+      case False
+      with x y i have "x ! i = None" "y ! i = None"
+        by (auto simp: wf_tuple_def)
+      then show ?thesis
+        by simp
+    qed
+  qed
+qed
 
 lemma inj_eval2: " \<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t \<Longrightarrow>
     inj_on (\<lambda>v. (e, map (Formula.eval_trm (map the v)) ts)) {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
-  apply(intro inj_onI)
-      apply(rule nth_equalityI)
-       apply(auto simp add: wf_tuple_def)[]
-      subgoal for x y i
-        apply(cases "i \<in> (\<Union> (fv_trm ` set ts))")
-         apply(subgoal_tac "\<^bold>v i \<in> set ts")
-          apply(simp)
-        apply(rotate_tac)
-          apply(drule(1) bspec)
-          apply(simp add: wf_tuple_def)
-          apply (meson option.expand)
-         apply(auto simp add: Formula.is_Var_def Formula.is_Const_def)[]
-          apply(simp add: wf_tuple_def)
-        by metis
-      done
+  using inj_eval[of ts n] by (simp add: inj_on_def)
 
 lemma finite_listset: "(\<And>A. A \<in> set xs \<Longrightarrow> finite A) \<Longrightarrow> finite (listset xs)"
   by (induct xs) (simp_all add: set_Cons_def finite_image_set2)
