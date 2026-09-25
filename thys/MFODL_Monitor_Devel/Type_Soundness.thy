@@ -1130,10 +1130,20 @@ next
   have neg_IH: "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<Longrightarrow> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y) \<Longrightarrow>  wty_envs S \<sigma> V
 \<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi>" for \<phi> using Ands.IH(2)[unfolded list_all_iff]
     by blast
-  have "\<phi> \<in> set ( neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> using Ands by (auto elim: wty_formula.cases)
-  then have "\<phi> \<in> set ( map remove_neg neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply (auto simp add: Formula.nfv_def )
-    subgoal for x by (cases x) (auto elim: wty_formula.cases) done
+  have neg_wty: "\<phi> \<in> set ( neg) \<Longrightarrow> S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> using Ands by (auto elim: wty_formula.cases)
+  have "S, E \<turnstile> \<phi> \<and> (\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" if "\<phi> \<in> set (map remove_neg neg)" for \<phi>
+  proof -
+    from that obtain \<psi> where \<psi>: "\<psi> \<in> set neg" and \<phi>_def: "\<phi> = remove_neg \<psi>"
+      by auto
+    have "S, E \<turnstile> remove_neg \<psi>"
+    proof (cases \<psi>)
+      case (Neg \<alpha>)
+      with neg_wty[OF \<psi>] show ?thesis
+        by (auto dest: wty_formula_NegD)
+    qed (use neg_wty[OF \<psi>] in simp_all)
+    with neg_wty[OF \<psi>] show ?thesis
+      unfolding \<phi>_def by simp
+  qed
   then have remove_neg_case: "\<phi> \<in> set (map remove_neg neg) \<Longrightarrow>  Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi> " for \<phi> using Ands.prems(3) neg_IH by auto
   have remove_neg_sat: " (Formula.sat \<sigma> V v i \<phi> = sat' \<sigma> V v i \<phi> )= ( Formula.sat \<sigma> V v i (remove_neg \<phi>) = sat' \<sigma> V v i (remove_neg \<phi>))  " 
     for \<phi>  by (cases \<phi>)  auto
