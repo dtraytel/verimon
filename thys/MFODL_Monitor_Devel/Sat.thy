@@ -692,18 +692,26 @@ next
     using Since.IH[OF conv] Since.hyps(3-11) buf' aux' by (rule wf_mformula.Since)
 next
   case (Until P V n R \<phi> \<phi>' \<psi> \<psi>' args \<phi>'' I R' buf nts t aux)
-  then have mr: "mem_restr (lift_envs' (length (agg_tys args)) R') = mem_restr R" by auto
-  have "Formula.sat \<sigma> V v i \<phi>' = Formula.sat \<sigma>' V' v i \<phi>'"
-    "Formula.sat \<sigma> V v i \<psi>' = Formula.sat \<sigma>' V' v i \<psi>'" for v i
-    by (simp_all add: fun_eq_iff Until.prems sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd del: fun_upd_apply)
-  moreover have "\<tau> \<sigma> = \<tau> \<sigma>'"
-    by (metis Until.prems \<tau>_convert)
-  ultimately show ?case using Until
-    apply (intro wf_mformula.Until)
-    apply (simp_all add: mr wf_mbuf2'_def wf_until_aux_def wf_until_auxlist_def wf_ts_def
-        progress_convert_cong[of \<sigma> V \<sigma>' V'] split del: if_split cong: if_cong) (* SLOW 30s *)
-    by presburger
-next
+  note conv = Until.prems
+  have tau: "\<tau> \<sigma> = \<tau> \<sigma>'"
+    by (metis conv \<tau>_convert)
+  have prg: "progress \<sigma> = progress \<sigma>'"
+    by (simp add: fun_eq_iff progress_convert_cong[OF conv])
+  have sat: "Formula.sat \<sigma> V = Formula.sat \<sigma>' V'"
+    by (simp add: fun_eq_iff sat_convert_cong[OF conv])
+  from Until.hyps(12) have buf': "wf_mbuf2' \<sigma>' P V' j n R \<phi>' \<psi>' buf"
+    unfolding wf_mbuf2'_def prg sat .
+  from Until.hyps(13) have nts': "wf_ts \<sigma>' P j \<phi>' \<psi>' nts"
+    unfolding wf_ts_def prg tau .
+  from Until.hyps(14) have t': "t = (if j = 0 then 0 else \<tau> \<sigma>' (min (j - 1) (min (progress \<sigma>' P \<phi>' j) (progress \<sigma>' P \<psi>' j))))"
+    unfolding prg tau .
+  from Until.hyps(15) have aux': "wf_until_aux \<sigma>' V' R args \<phi>' \<psi>' aux (progress \<sigma>' P (Formula.Until \<phi>'' I \<psi>') j)"
+    unfolding wf_until_aux_def wf_until_auxlist_def prg tau sat .
+  from Until.hyps(16) have len': "progress \<sigma>' P (Formula.Until \<phi>'' I \<psi>') j + length_muaux args aux
+    = min (progress \<sigma>' P \<phi>' j) (progress \<sigma>' P \<psi>' j)"
+    unfolding prg .
+  from Until.IH[OF conv] Until.hyps(3-11) buf' nts' t' aux' len' show ?case
+    by (rule wf_mformula.Until)next
   case (Trigger_0 P V n R \<psi> \<psi>' args \<phi>'' \<phi>' \<phi> I buf nts aux)
   hence "\<tau> \<sigma> = \<tau> \<sigma>'"
     by (metis \<tau>_convert)
@@ -778,13 +786,22 @@ lemma invar_mformula_Let:
    R \<psi> \<psi>' \<Longrightarrow> {0..<m} \<subseteq> fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow>
    safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow>
    invar_mformula \<sigma> j P n R (MLet p m \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
-  unfolding invar_mformula_def
-  apply (rule wf_mformula.Let; assumption?)
-  apply (simp add: progress_unconvert)
-  apply (erule wf_mformula_convert_cong_aux)
-  apply (simp add: convert_unconvert_shadow flip: sat_unconvert)
-  done
-
+proof -
+  let ?\<sigma> = "unconvert UNIV \<sigma>" and ?V = "unconvertV (dom P) \<sigma>"
+  let ?Q = "P((p, m) \<mapsto> Progress.progress \<sigma> P \<phi>' j)"
+  let ?\<sigma>' = "\<sigma>((p, m) \<Rrightarrow> \<lambda>j. {w. Sat.sat \<sigma> w j \<phi>' \<and> length w = m})"
+  assume phi: "invar_mformula \<sigma> j P m UNIV \<phi> \<phi>'"
+    and psi: "invar_mformula ?\<sigma>' j ?Q n R \<psi> \<psi>'"
+    and rest: "{0..<m} \<subseteq> fv \<phi>'" "m = Formula.nfv \<phi>'" "safe_formula \<phi>'" "safe_formula \<psi>'"
+  have "convert (unconvert UNIV ?\<sigma>') (unconvertV (dom ?Q) ?\<sigma>') =
+    convert ?\<sigma> (?V((p, m) \<mapsto> \<lambda>w j. Formula.sat ?\<sigma> ?V w j \<phi>'))"
+    by (simp add: convert_unconvert_shadow flip: sat_unconvert)
+  with psi have psi': "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> progress ?\<sigma> P \<phi>' j))
+    (?V((p, m) \<mapsto> \<lambda>w j. Formula.sat ?\<sigma> ?V w j \<phi>')) n R \<psi> \<psi>'"
+    unfolding invar_mformula_def progress_unconvert by (rule wf_mformula_convert_cong_aux)
+  from phi psi' rest show "invar_mformula \<sigma> j P n R (MLet p m \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
+    unfolding invar_mformula_def by (rule wf_mformula.Let)
+qed
 lemma invar_mformula_LetPast:
   "invar_mformula (\<sigma>((p, m) \<Rrightarrow> letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m}))) j
      (P((p, m) \<mapsto> i)) m UNIV \<phi> \<phi>' \<Longrightarrow>
