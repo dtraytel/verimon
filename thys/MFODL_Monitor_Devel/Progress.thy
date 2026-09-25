@@ -118,10 +118,10 @@ function (sequential) progress :: "(Formula.name \<times> nat \<rightharpoonup> 
 | "progress P (Formula.TS t) j = j"
   by pat_completeness auto
 termination
-  using size'_and_release size'_Release size'_Or size'_release_aux
+  using size'_Or
   by (relation "measure (\<lambda>(_, \<phi>, _). size' \<phi>)")
-  (auto simp add: Nat.less_Suc_eq_le eventually_def Formula.TT_def Formula.FF_def 
-    dest!: sum_list_mem_leq[of _ _ size'] regex_atms_size')
+    (simp_all add: less_Suc_eq_le sum_list_mem_leq size'_release_aux(3)
+      less_imp_le[OF regex_atms_size'])
 
 (* sanity check for trigger progress *)
 
@@ -557,7 +557,8 @@ next
        apply (erule ssubst)
       using LetPast 2 by (auto simp del: fun_upd_apply)
     done
-qed (fastforce simp: Min_le_iff progress_regex_def split: option.splits)+
+qed (simp_all add: Min_le_iff progress_regex_def min_le_iff_disj le_imp_diff_le diff_le_mono
+  ex_in_conv split: option.splits, fastforce)
 
 lemma progress_mono:
   "j \<le> j' \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
@@ -930,9 +931,8 @@ next
           by simp
       qed
       have r'_prop: "?r' \<le> j \<and> progress \<sigma> (P(p \<mapsto> ?a' ?r')) \<psi> j \<le> ?r'"
-        unfolding progress.simps Let_def
-        using r'_ex True
-        by (simp add: exists_least_iff')
+        unfolding progress.simps Let_def True fun_upd_upd
+        by (rule LeastI_ex[OF r'_ex])
       show ?thesis
       proof (cases "?r' < min y ?r")
         case less_min: True
@@ -1032,8 +1032,7 @@ next
       have r'_prop:
         "?r' \<le> j \<and> progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> ?a' ?r')) \<psi> j \<le> ?r'"
         unfolding progress.simps Let_def
-        using r'_ex False
-        by (simp add: exists_least_iff')
+        by (rule LeastI_ex[OF r'_ex])
       show ?thesis
       proof (cases "?r' < min y ?r")
         case True
@@ -1348,22 +1347,13 @@ next
     then have "min (min (Suc x) j) (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
       using Trigger.prems
       by (auto intro!: order.trans[rotated, OF Trigger.IH(1)])
-    moreover have "memL I 0 \<Longrightarrow> safe_letpast p \<psi> \<noteq> NonFutuRec"
-      using False Trigger.prems(1)
-      by (auto simp add: sup_eq_NonFutuRec_iff)
-    then have "if memL I 0
-        then min (min (Suc x) j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j
-        else min x (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
-      using Trigger.prems
-      by (auto simp add: mult_le_NonFutuRec_iff split: if_splits
-          intro!: order.trans[rotated, OF Trigger.IH(2)])
     moreover have "safe_letpast p \<psi> \<noteq> NonFutuRec"
       using False Trigger.prems by (auto simp add: sup_eq_NonFutuRec_iff)
     then have "min (min (Suc x) j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
       using Trigger.prems
       by (auto intro!: order.trans[rotated, OF Trigger.IH(2)] split: if_splits)
     ultimately show ?thesis
-      by (auto simp del: fun_upd_apply split: if_splits)
+      unfolding progress.simps by linarith
   qed
 next
   case (Release \<phi> I \<psi>)
@@ -1401,12 +1391,18 @@ qed simp_all
 lemma safe_letpast_progress_upd:
   "safe_letpast p \<phi> \<le> PastRec \<Longrightarrow> pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> x \<le> j \<Longrightarrow>
   progress \<sigma> (P(p \<mapsto> x)) \<phi> j \<ge> min (Suc x) (progress \<sigma> P \<phi> j)"
-  apply (subgoal_tac "progress \<sigma> (P(p \<mapsto> x)) \<phi> j \<ge> min (min (Suc x) j) (progress \<sigma> P \<phi> j)")
-   apply (subgoal_tac "progress \<sigma> P \<phi> j \<le> j")
-    apply simp
-   apply (simp add: progress_le_gen)
-  apply (rule safe_letpast_progress_upd')
-  by (auto intro: order_trans)
+proof -
+  assume past: "safe_letpast p \<phi> \<le> PastRec"
+    and Pj: "pred_mapping (\<lambda>x. x \<le> j) P" and "x \<le> j"
+  have "safe_letpast p \<phi> \<le> NonFutuRec" "safe_letpast p \<phi> \<noteq> NonFutuRec"
+    using past by (cases "safe_letpast p \<phi>"; simp)+
+  then have "min (min (Suc x) j) (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    by (intro safe_letpast_progress_upd'[OF _ Pj \<open>x \<le> j\<close>]) simp_all
+  moreover have "progress \<sigma> P \<phi> j \<le> j"
+    by (rule progress_le_gen[OF Pj])
+  ultimately show ?thesis
+    by linarith
+qed
 
 lemma letpast_progress_PastRec:
   assumes past: "safe_letpast p \<phi> \<le> PastRec"
@@ -1533,12 +1529,19 @@ next
     apply (intro pred_mapping_mono[OF range_mapping_max_mapping[of i j1 P1 j2 P2]])
       apply (auto intro!: pred_mapping_mono[OF P2(2)] pred_mapping_mono[OF P1(2)])
     by (simp add: pred_mapping_alt)
+  have P1j: "pred_mapping (\<lambda>x. x \<le> j1) P1"
+    using P1(2) by (rule range_mapping_to_pred_mapping)
   have le1: "progress \<sigma> P1 \<phi> j1 \<le> progress \<sigma> (?P12(?pn := P1 ?pn)) \<phi> (max j1 j2)"
-    using P1 P2 P12_bound
-    apply (intro progress_mono_gen)
-    apply (auto simp: rel_mapping_alt max_mapping_def
-      elim: pred_mapping_mono intro!: pred_mapping_fun_upd split: option.splits)
-    by (metis (no_types, lifting) domI max.coboundedI1 option.sel pred_mapping_alt)
+  proof (rule progress_mono_gen[OF max.cobounded1 P1j])
+    have "pred_mapping (\<lambda>x. x \<le> max j1 j2) P1"
+      using P1j by (rule pred_mapping_mono) auto
+    with P12_bound show "pred_mapping (\<lambda>x. x \<le> max j1 j2) (?P12(?pn := P1 ?pn))"
+      by (auto simp: pred_mapping_def)
+    have "rel_mapping (\<le>) P1 ?P12"
+      using P1(1) P2(1) by (intro max_mapping_cobounded1) auto
+    then show "rel_mapping (\<le>) P1 (?P12(?pn := P1 ?pn))"
+      by (auto simp: rel_mapping_def rel_fun_def intro: option.rel_refl)
+  qed
   have le2: "progress \<sigma> P2 \<psi> j2 \<le> progress \<sigma> (?P12(?pn \<mapsto> progress \<sigma> P1 \<phi> j1)) \<psi> (max j1 j2)"
     using P1 P2 P12_bound 
     by (intro progress_mono_gen) (auto simp: rel_mapping_alt max_mapping_def split: option.splits
@@ -1548,13 +1551,17 @@ next
     unfolding progress.simps
   proof (intro exI[of _ "?P12(?pn := P1 ?pn)"] exI[of _ "max j1 j2"] conjI)
     show "dom (?P12(?pn := P1 ?pn)) = S"
-      using P1
-      apply (auto simp: dom_def max_mapping_def split: option.splits)
-      using P2(1) by auto
+      using P1(1) P2(1) by auto
   next
+    have "i \<le> the (P2 ?pn)"
+      using P2(1,2) by (simp add: pred_mapping_alt)
+    with P1(2) have P1i: "range_mapping i j1 P1"
+      by (rule range_mapping_relax) simp
+    have "range_mapping i (max j1 j2) P1"
+      using P1i by (rule range_mapping_relax) simp_all
+    with range_mapping_max_mapping[OF P1i P2(2)]
     show "range_mapping i (max j1 j2) (?P12(?pn := P1 ?pn))"
-      using P1 P2 
-      by (force simp add: pred_mapping_alt dom_def max_mapping_def split: option.splits)
+      by (auto simp: pred_mapping_def)
   next
     have "i \<le> progress \<sigma> P2 \<psi> j2" by fact
     also have "... \<le> progress \<sigma> (?P12(?pn \<mapsto> progress \<sigma> P1 \<phi> j1)) \<psi> (max j1 j2)"
@@ -1671,33 +1678,20 @@ next
   show ?case
     unfolding progress.simps Let_def
   proof (intro exI[of _ "?P12'"] exI[of _ "max j1 j2"] conjI)
-    show "dom ?P12' = S"
-      using P1 P2 apply (auto simp: dom_def max_mapping_def split: option.splits)
-      using insert_absorb apply fastforce
-      using insert_absorb apply fastforce
-      using insert_absorb apply fastforce
-      using P2(1) apply blast
-      using P2(1) apply blast
-      using insert_absorb apply fastforce
-      using insert_absorb apply fastforce
-      using P2(1) apply blast
-      done
+    have "P1 ?pn \<noteq> None"
+      using P1(1) by auto
+    then show "dom ?P12' = S"
+      using P1(1) P2(1) by auto
   next
+    have "i \<le> the (P2 ?pn)"
+      using P2(1,2) by (simp add: pred_mapping_alt)
+    with P1(2) have P1i: "range_mapping i j1 P1"
+      by (rule range_mapping_relax) simp
+    have "range_mapping i (max j1 j2) P1"
+      using P1i by (rule range_mapping_relax) simp_all
+    with range_mapping_max_mapping[OF P1i P2(2)]
     show "range_mapping i (max j1 j2) ?P12'"
-      using P1 P2 apply (auto simp add: pred_mapping_alt dom_def max_mapping_def split: option.splits)
-                 apply (metis P2(1) domI insert_absorb max.coboundedI2 option.sel)
-                apply (metis P2(1) domI insert_absorb max.coboundedI1 option.sel)
-               apply (metis P2(1) domI insert_absorb max.coboundedI2 option.sel)
-              apply (metis P2(1) domI insert_absorb max.coboundedI2 option.sel)
-             apply (metis P2(1) domI insert_absorb max.coboundedI1 option.sel)
-            apply (metis P2(1) domI insert_absorb max.coboundedI2 option.sel)
-           apply (metis P2(1) domIff insert_iff max.coboundedI2 option.discI option.sel)
-          apply (metis P2(1) domIff insert_iff max.coboundedI1 option.discI option.sel)
-         apply (metis P2(1) domIff insert_iff max.coboundedI2 option.discI option.sel)
-        apply (metis P2(1) domIff insert_iff max.coboundedI2 option.discI option.sel)
-       apply (metis P2(1) domIff insert_iff max.coboundedI1 option.discI option.sel)
-      apply (metis P2(1) domIff insert_iff max.coboundedI2 option.discI option.sel)
-      done
+      by (auto simp: pred_mapping_def)
   next
     have "i \<le> progress \<sigma> P2 \<psi> j2" by fact
     also have "... \<le> progress \<sigma> (?P12(?pn \<mapsto> letpast_progress \<sigma> P1 ?pn \<phi> j1)) \<psi> (max j1 j2)"
@@ -2413,8 +2407,7 @@ next
     using that
     by (auto 0 3 elim!: order.strict_trans2[rotated] elim: contrapos_np intro!: less_\<tau>D[of \<sigma> k j])
   have 3: "k < plen \<pi>" if "memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" for k
-    using 1[OF that] Until(6) 
-    by (auto simp only: less_eq_Suc_le order.trans[OF _ progress_le_gen])
+    using 1[OF that] progress_le_gen[OF Until.prems(4)] by (rule order.strict_trans2)
 
   from Until.prems have "i < progress \<sigma>' P (Formula.Until \<phi>1 I \<phi>2) (plen \<pi>)"
     unfolding progress_prefix_conv[OF assms(1,2)] by simp
@@ -2428,20 +2421,33 @@ next
     using that
     by (auto 0 3 elim!: order.strict_trans2[rotated] elim: contrapos_np intro!: less_\<tau>D[of \<sigma>' k j])
   have 31: "k < plen \<pi>" if "memR I (\<tau> \<sigma>' k - \<tau> \<sigma>' i)" for k
-    using 11[OF that] Until(6) by (auto simp only: less_eq_Suc_le order.trans[OF _ progress_le_gen])
-  thm order.trans[OF _ progress_le_gen]
+    using 11[OF that] progress_le_gen[OF Until.prems(4)] by (rule order.strict_trans2)
 
   show ?case unfolding sat.simps
   proof ((intro ex_cong iffI; elim conjE), goal_cases LR RL)
     case (LR j)
-    with Until.IH(1)[OF 1] Until.IH(2)[OF 2] \<tau>_prefix_conv[OF assms(1,2) 3] Until.prems show ?case
-      by (auto 0 4 simp: le_diff_conv add.commute memR_antimono 
-          dest: less_imp_le order.trans[OF \<tau>_mono, rotated])
+    have memR_le: "memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" if "k \<le> j" for k
+      using LR(3) diff_le_mono[OF \<tau>_mono[OF that]] by (rule memR_antimono)
+    have \<tau>_eq: "\<tau> \<sigma> k = \<tau> \<sigma>' k" if "k \<le> j" for k
+      using memR_le[OF that] by (rule \<tau>_prefix_conv[OF assms(1,2) 3])
+    have sat1: "Formula.sat \<sigma> V v k \<phi>1 \<longleftrightarrow> Formula.sat \<sigma>' V' v k \<phi>1" if "k \<le> j" for k
+      using memR_le[OF that] by (rule Until.IH(1)[OF 1 Until.prems(2-5)])
+    have sat2: "Formula.sat \<sigma> V v j \<phi>2 \<longleftrightarrow> Formula.sat \<sigma>' V' v j \<phi>2"
+      using LR(3) by (rule Until.IH(2)[OF 2 Until.prems(2-5)])
+    show ?case
+      using LR(1-5) by (simp add: \<tau>_eq sat1 sat2)
   next
     case (RL j)
-    with Until.IH(1)[OF 11] Until.IH(2)[OF 21] \<tau>_prefix_conv[OF assms(1,2) 31] Until.prems show ?case
-      by (auto 0 4 simp: le_diff_conv add.commute memR_antimono 
-          dest: less_imp_le order.trans[OF \<tau>_mono, rotated])
+    have memR_le: "memR I (\<tau> \<sigma>' k - \<tau> \<sigma>' i)" if "k \<le> j" for k
+      using RL(3) diff_le_mono[OF \<tau>_mono[OF that]] by (rule memR_antimono)
+    have \<tau>_eq: "\<tau> \<sigma> k = \<tau> \<sigma>' k" if "k \<le> j" for k
+      using memR_le[OF that] by (rule \<tau>_prefix_conv[OF assms(1,2) 31])
+    have sat1: "Formula.sat \<sigma> V v k \<phi>1 \<longleftrightarrow> Formula.sat \<sigma>' V' v k \<phi>1" if "k \<le> j" for k
+      using memR_le[OF that] by (rule Until.IH(1)[OF 11 Until.prems(2-5)])
+    have sat2: "Formula.sat \<sigma> V v j \<phi>2 \<longleftrightarrow> Formula.sat \<sigma>' V' v j \<phi>2"
+      using RL(3) by (rule Until.IH(2)[OF 21 Until.prems(2-5)])
+    show ?case
+      using RL(1-5) by (simp add: \<tau>_eq sat1 sat2)
   qed
 next
   case (Trigger \<phi> I \<psi>)
@@ -2841,11 +2847,9 @@ next
       by auto
   
     have 3: "k < plen \<pi>" if "memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" for k
-      using 1[OF that] Release(6-) 
-      by (auto simp only: less_eq_Suc_le order.trans[OF _ progress_le_gen])
+      using 1[OF that] progress_le_gen[OF Release.prems(4)] by (rule order.strict_trans2)
     have 31: "k < plen \<pi>" if "memR I (\<tau> \<sigma>' k - \<tau> \<sigma>' i)" for k
-      using 11[OF that] Release(6-)
-      by (auto simp only: less_eq_Suc_le order.trans[OF _ progress_le_gen])
+      using 11[OF that] progress_le_gen[OF Release.prems(4)] by (rule order.strict_trans2)
   
     have t_eq1: "\<And>j. memR I (\<tau> \<sigma> j - \<tau> \<sigma> i) \<Longrightarrow> \<tau> \<sigma> j = \<tau> \<sigma>' j"
       using \<tau>_prefix_conv[OF assms(1,2) 3] memR_flip_int_double_upper
