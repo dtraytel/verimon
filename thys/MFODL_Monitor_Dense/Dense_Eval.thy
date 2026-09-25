@@ -1524,7 +1524,7 @@ lemma dsim_wf_cols: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> wf_cols n cs"
     (auto simp: ex_cols_sorted ex_cols_bound sorted_merge_cols set_merge_cols)
 
 lemma dsim_produces: "dsim n cs tw \<phi>d \<phi> \<Longrightarrow> produces n (set cs) tw \<phi>"
-  by (erule dsim.cases) auto
+  by (induct rule: dsim.induct) (unfold list.set(1), assumption+)
 
 text \<open>The unfused Since and Until nodes are related by one rule each, so the relation can be read
   backwards there: the operands are related at the node's own frame.  The compiler uses this to
