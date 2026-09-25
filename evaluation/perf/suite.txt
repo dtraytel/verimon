@@ -3,7 +3,8 @@
 # Logs (gen_logs.py): base has 40 A(x,y), 40 B(x,y), 10 C(x), 10 D(x,y,z) per time point,
 # one time point per second, values in 0..199; rate10/rate80 change the events per time point,
 # dom50/dom1000 the range, burst has sixty time points per timestamp, long has 30000 thin time
-# points.  A window bound b on base covers about 40(b+1) A tuples.
+# points, tp250/tp500/tp1000 are base's shape with 250, 500 and 1000 time points.  A window bound
+# b on base covers about 40(b+1) A tuples.
 
 ## join: what a conjunction costs by its shape, at one time point
 join-both     | base | A(x,y) AND B(x,y)                            | equi-join on both columns: a set intersection
@@ -251,3 +252,81 @@ atrig-50      | base | A(x,y) AND (A(x,y) TRIGGER[1,50] B(x,y))                 
 atrig-lb      | base | A(x,y) AND (A(x,y) TRIGGER[5,20] B(x,y))                       | a positive lower bound: the window starts empty
 atrig-inf     | base | A(x,y) AND (A(x,y) TRIGGER[1,*) B(x,y))                        | unbounded
 atrig-narrow  | base | A(x,y) AND (C(x) TRIGGER[1,10] (EXISTS y. B(x,y)))             | the trigger narrower than the conjunct
+
+## frz: FRZ, a predicate frozen to its value at the current time point; on short logs, since the verified monitor's cost grows with the square of the log's length
+frz-now       | tp500  | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | no temporal operator under the freeze: the cost of FRZ itself
+frz-once5     | tp500  | FRZ q(x) = C(x) IN ONCE[0,5] (A(x,y) AND q(x))                       | a past window over the frozen predicate
+frz-once20    | tp500  | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | a wider one
+frz-once100   | tp500  | FRZ q(x) = C(x) IN ONCE[0,100] (A(x,y) AND q(x))                     | wider still
+frz-onceinf   | tp500  | FRZ q(x) = C(x) IN ONCE[0,*) (A(x,y) AND q(x))                       | the unbounded past
+frz-oncelb    | tp500  | FRZ q(x) = C(x) IN ONCE[2,10] (A(x,y) AND q(x))                      | a window that misses the current time point
+frz-prev      | tp500  | FRZ q(x) = C(x) IN PREV[0,5] (A(x,y) AND q(x))                       | the previous time point
+frz-next      | tp500  | FRZ q(x) = C(x) IN NEXT[0,5] (A(x,y) AND q(x))                       | the next time point
+frz-ev5       | tp500  | FRZ q(x) = C(x) IN EVENTUALLY[0,5] (A(x,y) AND q(x))                 | a future window
+frz-since     | tp500  | FRZ q(x) = C(x) IN (B(x,y) SINCE[0,10] (A(x,y) AND q(x)))            | the frozen predicate in Since's right operand
+frz-until     | tp250  | FRZ q(x) = C(x) IN (B(x,y) UNTIL[0,5] (A(x,y) AND q(x)))             | and in Until's
+frz-tbody     | tp250  | FRZ q(x) = ONCE[0,10] C(x) IN ONCE[0,10] (A(x,y) AND q(x))           | a temporal formula frozen
+frz-nested    | tp250  | FRZ q(x) = C(x) IN FRZ r(y) = C(y) IN ONCE[0,10] (A(x,y) AND q(x) AND r(y)) | two freezes, nested
+frz-binary    | tp500  | FRZ q(x,y) = B(x,y) IN ONCE[0,10] (A(x,y) AND q(x,y))                | a binary frozen predicate
+frz-agg       | tp500  | FRZ q(x) = C(x) IN (r <- CNT y; x ONCE[0,10] (A(x,y) AND q(x)))      | an aggregation over the frozen window
+frz-exists    | tp500  | FRZ q(x) = C(x) IN EXISTS y. ONCE[0,10] (A(x,y) AND q(x))            | a projection over it
+frz-outer     | tp500  | C(x) AND (FRZ q(x) = C(x) IN ONCE[0,10] (EXISTS y. A(x,y) AND q(x))) | the freeze under a conjunction
+frz-len250    | tp250  | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | frz-once20 on 250 time points
+frz-len1000   | tp1000 | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | and on 1000
+frz-now250    | tp250  | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | frz-now on 250 time points
+frz-now1000   | tp1000 | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | and on 1000
+
+## past_inf: past operators with an unbounded interval
+inf-since     | base | A(x,y) SINCE[0,*) B(x,y)             | unbounded Since
+inf-sincelb   | base | A(x,y) SINCE[5,*) B(x,y)             | with a lower bound
+inf-negsince  | base | (NOT C(x)) SINCE[0,*) A(x,y)         | with a negated left operand
+inf-prev      | base | A(x,y) AND PREV[1,*) B(x,y)          | Prev with an unbounded interval
+inf-agg       | base | r <- CNT y; x ONCE[0,*) A(x,y)       | an aggregation over the whole past
+
+## derived: derived connectives, which both monitors rewrite
+der-implies    | base | A(x,y) AND (C(x) IMPLIES B(x,y))                         | an implication under a guard
+der-forall     | base | C(x) AND FORALL y. (A(x,y) IMPLIES y < 150)              | a universal quantifier: an anti-join with a filter
+der-true       | base | A(x,y) AND TRUE                                          | a trivially true conjunct
+der-false      | base | A(x,y) OR (FALSE AND B(x,y))                             | a trivially false disjunct
+der-guardhist  | base | C(x) AND HISTORICALLY[0,5] (EXISTS y. A(x,y) OR B(x,y))  | a guarded past Always
+der-guardalw   | base | C(x) AND ALWAYS[0,5] (EXISTS y. A(x,y) OR B(x,y))        | a guarded future Always
+
+## terms: arithmetic and conversions in assignments and constraints, and the time point and timestamp
+term-mul       | base | A(x,y) AND z = x * y                               | multiplication
+term-mod       | base | A(x,y) AND z = x MOD 7                             | remainder
+term-div       | base | A(x,y) AND z = x / 3                               | division
+term-neg       | base | A(x,y) AND z = -x                                  | negation
+term-i2f       | base | A(x,y) AND z = i2f(x)                              | to a float
+term-f2i       | base | A(x,y) AND z = f2i(i2f(x) + 0.5)                   | float arithmetic and back
+term-modfilt   | base | A(x,y) AND x MOD 10 = 0                            | a constraint over a term
+term-chain     | base | A(x,y) AND z = x + y AND w = z * 2 AND w < 300     | assignments feeding assignments and a filter
+term-tp        | base | A(x,y) AND tp(i)                                   | the time point as a column
+term-ts        | base | A(x,y) AND ts(t) AND t MOD 10 = 0                  | the timestamp as a column, filtered
+
+## agg_more: aggregations over Since and Until, over joins, nested, and over floats
+agg-avgonce    | base | r <- AVG y; x ONCE[0,20] A(x,y)                    | AVG over a past window
+agg-medonce    | base | r <- MED y; x ONCE[0,50] A(x,y)                    | MED over a wide one
+agg-since      | base | r <- CNT y; x (B(x,y) SINCE[0,10] A(x,y))          | over a Since
+agg-until      | base | r <- SUM y; x (B(x,y) UNTIL[0,5] A(x,y))           | over an Until
+agg-avgev      | base | r <- AVG y; x EVENTUALLY[0,20] A(x,y)              | AVG over a future window
+agg-minev      | base | r <- MIN y; x EVENTUALLY[0,20] A(x,y)              | MIN over a future window
+agg-nested     | base | s <- MAX r (r <- CNT y; x ONCE[0,10] A(x,y))       | an aggregation of an aggregation
+agg-exists     | base | r <- CNT x (EXISTS y. ONCE[0,10] A(x,y))           | over a projected window
+agg-empty      | base | r <- CNT y ONCE[0,5] (A(x,y) AND x < 0)            | over an always empty table: the default value
+agg-float      | base | r <- SUM z; x (A(x,y) AND z = i2f(y))              | a sum of floats
+
+## vm_only: operators MonPoly does not monitor (TRIGGER, RELEASE, LETPAST, an unguarded HISTORICALLY or ALWAYS, EQUIV); the verified monitor's times alone
+trig-plain     | base   | A(x,y) TRIGGER[0,5] B(x,y)                                              | Trigger
+trig-neg       | base   | (NOT A(x,y)) TRIGGER[0,5] B(x,y)                                        | with a negated left operand
+trig-inf       | base   | C(x) TRIGGER[0,*) (EXISTS y. B(x,y))                                    | over the unbounded past
+rel-plain      | base   | A(x,y) RELEASE[0,5] B(x,y)                                              | Release
+rel-neg        | base   | (NOT A(x,y)) RELEASE[0,5] B(x,y)                                        | with a negated left operand
+lp-reach       | base   | LETPAST r(x) = C(x) OR (EXISTS y. PREV[0,*) r(y) AND A(y,x)) IN r(x)     | recursion through the past: reachability along A
+lp-reach5      | base   | LETPAST r(x) = C(x) OR (EXISTS y. PREV[0,5] r(y) AND A(y,x)) IN r(x)     | with a bounded step
+lp-once        | base   | LETPAST r(x) = C(x) OR (EXISTS y. ONCE[1,5] r(y) AND A(y,x)) IN r(x)     | through a window
+lp-count       | base   | LETPAST r(x) = C(x) OR PREV[0,*) (r(x) AND NOT (EXISTS y. B(x,y))) IN r(x) | a state kept until B resets it
+lp-chain       | tp1000 | LETPAST r(x,y) = A(x,y) OR (PREV[0,1] r(x,y) AND NOT B(x,y)) IN r(x,y)   | a binary state; on a short log, its cost grows faster than the log
+der-hist5      | dom50  | HISTORICALLY[0,5] (EXISTS y. A(x,y))                                    | unguarded past Always
+der-hist20     | dom50  | HISTORICALLY[0,20] C(x)                                                 | over a wider window
+der-always5    | dom50  | ALWAYS[0,5] (EXISTS y. A(x,y))                                          | unguarded future Always
+der-equiv      | base   | A(x,y) AND (C(x) EQUIV C(y))                                            | an equivalence

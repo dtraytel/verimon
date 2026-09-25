@@ -1,16 +1,28 @@
 # Performance suite: the verified dense evaluator against MonPoly
 
-201 hand-picked formulas in 23 groups, each there for a stated reason (`suite.txt`, one
+267 hand-picked formulas in 29 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
 (`-verified`: `Dense_Eval.thy` over the short tuples of `Dense_Unbox_Exec.thy`; the system is
 called `verimon` in the reports, `vdense` in earlier ones) on the same log, with a 5-second timeout per run, best of three repetitions, in 4 to 15 minutes on
 four cores depending on the machine.
 
 ```
-python3 gen_logs.py                 # eight synthetic logs (about 45 MB), a few seconds
+python3 gen_logs.py                 # eleven synthetic logs (about 47 MB), a few seconds
 python3 run_suite.py                # results/{results.json,results.csv,report.md}
 python3 plot.py                     # results/ratios.svg, the ratios per group
 ```
+
+The groups cover the operators the verified monitor supports: joins, anti-joins, constraints,
+assignments and the arithmetic of terms (`terms`, with `tp` and `ts`), disjunction and the
+quantifiers, the derived connectives (`derived`), Prev and Next, the past and future windows,
+Since and Until with bounded and unbounded intervals (`past_inf`), the aggregations at one time
+point, over past and future windows and over Since and Until (`agg_once`, `agg_fut`, `agg_more`),
+Let, the temporal regexes, FRZ (`frz`), and, in `andtrigger` and `vm_only`, the operators MonPoly
+does not monitor (TRIGGER, RELEASE, LETPAST, an unguarded HISTORICALLY or ALWAYS, EQUIV), for which
+the reports record the verified monitor's times alone.  The verified monitor's cost of FRZ grows
+with the square of the log's length, so the `frz` group runs on the short logs `tp250`, `tp500`
+and `tp1000` (base's shape), and MonPoly runs FRZ with `-nofilteremptytp`, since its filter of
+empty time points rejects FRZ.
 
 `run_suite.py` takes `--bin` (default: the tree's `_build/default/src/main.exe`), `--suite`
 (`suite.txt`), `--reps` (default 3, at most 3), `--timeout` (5 s), `--jobs` (2 workers),

@@ -13,7 +13,9 @@ longer in the binary).  Run against a build of master, `-verified` is the origin
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
 classified as `refused` (outside the verified dense fragment), `unmonitorable` (the front end
-rejected the formula) or `error`.  The verdicts of the systems are compared (a hash of the
+rejected the formula, or MonPoly does not support an operator in it: TRIGGER, RELEASE, LETPAST)
+or `error`.  MonPoly runs a formula with FRZ with `-nofilteremptytp`, since its filter of empty
+time points rejects FRZ.  The verdicts of the systems are compared (a hash of the
 output) and disagreements are reported.  Repetitions are interleaved across systems, and
 formulas are handed to the workers in the suite's order.  When the projected wall time
 exceeds the budget, the remaining formulas run with one repetition; when even that would
@@ -62,12 +64,20 @@ def run_once(binary, flags, sig, formula, log, timeout):
         err = (p.stderr or b"").decode("utf-8", "replace") + (p.stdout or b"").decode("utf-8", "replace")
         if "outside the verified dense fragment" in err:
             return "refused", dt, None
-        if "not monitorable" in err.lower() or "monitorable" in err.lower():
+        if "monitorable" in err.lower() or "not supported" in err.lower():
             return "unmonitorable", dt, None
         return "error", dt, err.strip().splitlines()[-1][:200] if err.strip() else "exit %d" % p.returncode
-    if b"NOT monitorable" in p.stdout[:200]:
+    if b"NOT monitorable" in p.stdout[:200] or b"NOT monitorable" in (p.stderr or b"")[:2000]:
         return "unmonitorable", dt, None
     return "ok", dt, hashlib.md5(p.stdout).hexdigest()[:12]
+
+
+def flags_for(system, entry):
+    """MonPoly's filter of empty time points rejects FRZ, so a formula with FRZ runs without it."""
+    flags = list(SYSTEMS[system])
+    if system == "monpoly" and "FRZ" in entry["formula"]:
+        flags.append("-nofilteremptytp")
+    return flags
 
 
 def run_formula(entry, args, systems, reps_for):
@@ -81,7 +91,7 @@ def run_formula(entry, args, systems, reps_for):
         for s in systems:
             if r > 0 and res[s]["status"] != "ok":
                 continue
-            st, dt, h = run_once(args.bin, SYSTEMS[s], sig, formula, log, args.timeout)
+            st, dt, h = run_once(args.bin, flags_for(s, entry), sig, formula, log, args.timeout)
             if st == "ok":
                 res[s]["times"].append(dt)
                 res[s]["status"] = "ok"

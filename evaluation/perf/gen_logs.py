@@ -22,6 +22,10 @@ LOGS = {
     "rate80":   (6000,    1,    80, 80, 20, 20,  200),
     "burst":   (12000,   60,    20, 20,  5,  5,  200),
     "long":    (30000,    1,     8,  8,  4,  4,  200),
+    # short prefixes of base's shape, for the formulas whose cost grows faster than the log (FRZ)
+    "tp250":     (250,    1,    40, 40, 10, 10,  200),
+    "tp500":     (500,    1,    40, 40, 10, 10,  200),
+    "tp1000":   (1000,    1,    40, 40, 10, 10,  200),
 }
 
 SIG = "A(int,int)\nB(int,int)\nC(int)\nD(int,int,int)\n"

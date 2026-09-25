@@ -23,13 +23,13 @@ for r in R.values():
         fams.append(r["family"])
 W, LM, RM, TOP, RH = 900, 130, 40, 40, 16
 H = TOP + RH * len(fams) + 40
-lo, hi = math.log10(0.25), math.log10(8)
+lo, hi = math.log10(0.25), math.log10(32)
 def X(ratio):
     return LM + (W - LM - RM) * (min(max(math.log10(ratio), lo), hi) - lo) / (hi - lo)
 L = ['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" font-family="sans-serif" font-size="11">' % (W, H),
      '<rect width="100%" height="100%" fill="white"/>',
      '<text x="%d" y="18" font-size="13">runtime ratio %s / %s per formula (best of repetitions); x = timeout of %s, o = timeout of %s</text>' % (LM, e(s), e(ref), e(s), e(ref))]
-for t in [0.25, 0.5, 1, 2, 4, 8]:
+for t in [0.25, 0.5, 1, 2, 4, 8, 16, 32]:
     x = X(t)
     L.append('<line x1="%.1f" y1="%d" x2="%.1f" y2="%d" stroke="%s" stroke-width="%s"/>' % (x, TOP - 8, x, H - 30, "#333" if t == 1 else "#ccc", "1.2" if t == 1 else "0.6"))
     L.append('<text x="%.1f" y="%d" text-anchor="middle" fill="#333">%gx</text>' % (x, H - 16, t))
