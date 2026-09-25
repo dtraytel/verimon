@@ -1396,7 +1396,7 @@ next
           then have "\<tau> \<sigma> k \<le> \<tau> \<sigma> j" by simp
           then have "\<tau> \<sigma> i - \<tau> \<sigma> k \<ge> \<tau> \<sigma> i - \<tau> \<sigma> j" by auto
           then have "mem I2 (\<tau> \<sigma> i - \<tau> \<sigma> k)" using j_props I2_def
-            by (transfer' fixing: \<sigma>) (auto split: if_splits dest: memR_antimono)
+            by (transfer' fixing: I1 \<sigma>) (auto split: if_splits dest: memR_antimono[of I1])
           then have "False" using int_bounded k_props I2_def
             by (transfer' fixing: \<sigma>) (auto split: if_splits)
         }
