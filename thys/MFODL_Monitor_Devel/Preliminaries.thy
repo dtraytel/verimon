@@ -212,12 +212,14 @@ lemma finite_vimage_set: "finite {x. P x} \<Longrightarrow> inj f \<Longrightarr
   unfolding vimage_def by force
 
 lemma finite_vimage_\<tau>_nat: "finite {k. \<tau> \<sigma> k - c = n}"
-proof (transfer, clarsimp)
-  fix \<sigma> :: "('a \<times> nat) stream" 
-    and c :: nat 
+proof transfer
+  fix \<sigma> :: "('a \<times> nat) stream"
+    and c :: nat
     and n :: nat
-  assume h1: "ssorted (smap snd \<sigma>)"
+  assume "ssorted (smap snd \<sigma>) \<and> sincreasing (smap snd \<sigma>)"
+  then have h1: "ssorted (smap snd \<sigma>)"
     and h2: "sincreasing (smap snd \<sigma>)"
+    by simp_all
   have "\<exists>k. n < snd (\<sigma> !! k) - c"
     using h2 sincreasing_grD less_diff_conv 
     by (metis smap_alt)
