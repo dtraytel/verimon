@@ -1403,12 +1403,24 @@ next
 next
   case (7 q)
   from \<alpha> in_fv have "\<alpha> = map Some ` {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
-    apply(auto 0 3 simp: wf_tuple_def nth_append
-        elim!: in_qtableE in_qtableI intro!: image_eqI[where x="map the _"])
-    apply (subst list.map_id[symmetric])
-    apply (rule map_cong[OF refl])
-    apply simp
-    by (metis atLeastLessThan_iff in_set_conv_nth le0 option.collapse subsetD)
+  proof (intro set_eqI iffI)
+    fix x
+    assume "x \<in> \<alpha>"
+    with \<alpha> have wf: "wf_tuple m (FV \<phi>) x" and sat: "\<langle>\<sigma>, V, x, i\<rangle> \<Turnstile>\<^sub>M \<phi>"
+      by (auto elim: in_qtableE)
+    \<comment> \<open>all variables of the tuple are defined\<close>
+    from wf in_fv have "x = map Some (map the x)"
+      by (intro nth_equalityI) (auto simp: wf_tuple_def)
+    with wf sat show "x \<in> map Some ` {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
+      by (intro image_eqI[where x="map the x"]) (simp_all add: wf_tuple_def)
+  next
+    fix x
+    assume "x \<in> map Some ` {v. length v = m \<and> Formula.sat \<sigma> V v i \<phi>}"
+    then obtain v where "x = map Some v" "length v = m" "Formula.sat \<sigma> V v i \<phi>"
+      by blast
+    with \<alpha> in_fv show "x \<in> \<alpha>"
+      by (intro in_qtableI[OF \<alpha>]) (auto simp: wf_tuple_def)
+  qed
   moreover have "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd q \<and> the (V q) v i}) [the (P q)..<the (P' q)] (the (Mapping.lookup db q))"
     if "(p, m) \<noteq> q"
   proof -
