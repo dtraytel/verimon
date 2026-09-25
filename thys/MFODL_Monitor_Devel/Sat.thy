@@ -559,47 +559,50 @@ lemma sat_convert_cong:
 lemma wf_mformula_convert_cong_aux:
   "wf_mformula \<sigma> j P V m R \<phi> \<phi>' \<Longrightarrow> convert \<sigma> V = convert \<sigma>' V' \<Longrightarrow> wf_mformula \<sigma>' j P V' m R \<phi> \<phi>'"
 proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
-  case (Let P V m \<phi> \<phi>' p n R \<psi> \<psi>' b)
-  show ?case
-    apply (rule wf_mformula.Let)
-         apply (rule Let.IH(1); fact)
-       apply (rule Let.IH(2)[unfolded progress_convert_cong[OF Let.prems]])
-       apply (simp add: convert_fun_upd Let.prems del: fun_upd_apply cong: sat_convert_cong)
-    by fact+
+  case (Let P V m \<phi> \<phi>' p n R \<psi> \<psi>' V')
+  have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>')) =
+    convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w j \<phi>'))"
+    by (simp add: convert_fun_upd Let.prems del: fun_upd_apply cong: sat_convert_cong)
+  with Let.IH(2) have "wf_mformula \<sigma>' j (P((p, m) \<mapsto> progress \<sigma>' P \<phi>' j))
+    (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w j \<phi>')) n R \<psi> \<psi>'"
+    unfolding progress_convert_cong[OF Let.prems] .
+  with Let.IH(1)[OF Let.prems] show ?case
+    using Let.hyps(3-6) by (rule wf_mformula.Let)
 next
-  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0)
-  show ?case
-    apply (rule wf_mformula.Frz)
-            apply (rule Frz.IH(1); fact)
-           apply (rule allI Frz.IH(2)[unfolded progress_convert_cong[OF Frz.prems], rule_format, THEN conjunct2, rule_format])+
-           apply (simp add: convert_fun_upd Frz.prems del: fun_upd_apply cong: sat_convert_cong)
-    using Frz.hyps
-    apply (auto simp: wf_frz_state_def wf_frz_queue_def frz_qtable_def frz_progress_def
-         Let_def progress_convert_cong[OF Frz.prems] sat_convert_cong[OF Frz.prems])
-    done
+  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 V')
+  have prg: "progress \<sigma> = progress \<sigma>'"
+    by (simp add: fun_eq_iff progress_convert_cong[OF Frz.prems])
+  have sat: "Formula.sat \<sigma> V = Formula.sat \<sigma>' V'"
+    by (simp add: fun_eq_iff sat_convert_cong[OF Frz.prems])
+  have psi: "\<forall>i. wf_mformula \<sigma>' j (P((p, m) \<mapsto> 0)) (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w i \<phi>')) n R \<psi> \<psi>'"
+  proof
+    fix i
+    have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>')) =
+      convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w i \<phi>'))"
+      by (simp add: convert_fun_upd Frz.prems sat del: fun_upd_apply)
+    with Frz.IH(2) show "wf_mformula \<sigma>' j (P((p, m) \<mapsto> 0)) (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w i \<phi>')) n R \<psi> \<psi>'"
+      by blast
+  qed
+  from Frz.hyps(2) have state: "wf_frz_state \<sigma>' j P V' p m \<phi>' \<psi>' jphi \<alpha>s"
+    unfolding wf_frz_state_def wf_frz_queue_def frz_qtable_def prg sat .
+  from Frz.hyps(3,4) have "jfrz = progress \<sigma>' P (Formula.Frz p \<phi>' \<psi>') j"
+    and "jpsi0 = progress \<sigma>' (P((p, m) \<mapsto> 0)) \<psi>' j"
+    unfolding prg .
+  with Frz.IH(1)[OF Frz.prems] psi state show ?case
+    using Frz.hyps(5-8) by (rule wf_mformula.Frz)
 next
-  case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf b)
-  show ?case
-    apply (rule wf_mformula.LetPast)
-          apply (rule LetPast.IH(1))
-    subgoal 1
-      apply (simp add: convert_fun_upd LetPast.prems del: fun_upd_apply)
-      apply (rule arg_cong[where f="\<lambda>g. map_\<Gamma>i (\<lambda>i db. db(_ := g i)) _"])
-      apply (intro ext Collect_cong)
-      apply (rule arg_cong[where f="\<lambda>g. Formula.letpast_sat g _ _ \<and> _"])
-      apply (simp add: fun_eq_iff LetPast.prems sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd del: fun_upd_apply)
-      done
-         apply (simp only: letpast_progress_def)
-         apply (rule LetPast.IH(2)[unfolded letpast_progress_def progress_convert_cong[OF LetPast.prems]])
-         apply (rule 1)
-    subgoal
-      apply (insert LetPast.hyps(3))
-      apply (simp only: letpast_progress_def progress_convert_cong[OF LetPast.prems])
-      apply (erule option.case_cong[OF refl refl, THEN iffD1, rotated])
-      apply (rule arg_cong[of "\<lambda>a b c. Formula.sat \<sigma> (_ (Some a)) b c _" "\<lambda>a b c. Formula.sat \<sigma>' (_ (Some a)) b c _"])
-      apply (simp add: fun_eq_iff LetPast.prems sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd del: fun_upd_apply)
-      done
-    by fact+
+  case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf V')
+  have sat: "Formula.sat \<sigma> (V((p, m) \<mapsto> X)) = Formula.sat \<sigma>' (V'((p, m) \<mapsto> X))" for X
+    by (simp add: fun_eq_iff sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd LetPast.prems del: fun_upd_apply)
+  have prg: "letpast_progress \<sigma> P (p, m) \<phi>' j = letpast_progress \<sigma>' P (p, m) \<phi>' j"
+    by (simp only: letpast_progress_def progress_convert_cong[OF LetPast.prems])
+  let ?V' = "V'((p, m) \<mapsto> Formula.letpast_sat (\<lambda>X u k. Formula.sat \<sigma>' (V'((p, m) \<mapsto> X)) u k \<phi>'))"
+  have conv: "convert \<sigma> (V((p, m) \<mapsto> Formula.letpast_sat (\<lambda>X u k. Formula.sat \<sigma>' (V'((p, m) \<mapsto> X)) u k \<phi>'))) =
+    convert \<sigma>' ?V'"
+    by (simp add: convert_fun_upd LetPast.prems del: fun_upd_apply)
+  from LetPast.IH(1)[unfolded sat, OF conv] LetPast.IH(2)[unfolded sat prg, OF conv]
+    LetPast.hyps(3)[unfolded sat prg] show ?case
+    using LetPast.hyps(4-8) by (rule wf_mformula.LetPast)
 next
   case (And P V n R \<phi> \<phi>' \<psi> \<psi>' pos \<chi> buf)
   then show ?case
@@ -611,12 +614,10 @@ next
     "Formula.sat \<sigma> V = Formula.sat \<sigma>' V'"
     by (simp_all add: fun_eq_iff progress_convert_cong[of \<sigma> V \<sigma>' V'] Ands.prems
         sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd del: fun_upd_apply)
-  show ?case
-    apply (rule wf_mformula.Ands[where l_pos=l_pos and l_neg=l_neg])
-           apply (rule list.rel_mono_strong[OF Ands.IH])
-           apply (simp add: Ands.prems)
-    using Ands.hyps(1) apply (simp add: wf_mbufn_def 1)
-    by fact+
+  have "list_all2 (wf_mformula \<sigma>' j P V' n R) l (l_pos @ map remove_neg l_neg)"
+    using Ands.IH by (rule list.rel_mono_strong) (simp add: Ands.prems)
+  then show ?case
+    using Ands.hyps(1)[unfolded 1] Ands.hyps(2-7) by (rule wf_mformula.Ands)
 next
   case (And_Trigger P V n R \<alpha> \<alpha>' \<phi>'' I \<psi>' buf1 \<psi> args \<phi>' \<phi> buf2 nts aux)
   hence "\<tau> \<sigma> = \<tau> \<sigma>'"
