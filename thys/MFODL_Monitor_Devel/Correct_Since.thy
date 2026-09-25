@@ -96,29 +96,90 @@ definition "sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t x \<longleftrig
 
 lemma sat_since_point_Suc: "sat_since_point pos \<sigma> V \<phi> \<psi> (Suc i) i (\<tau> \<sigma> i) x =
     (sat_since_point pos \<sigma> V \<phi> \<psi> i i (\<tau> \<sigma> i) x \<or> Formula.sat \<sigma> V x i \<psi>)"
-  unfolding sat_since_point_def
-  apply auto
-  using less_antisym apply blast
-  by (meson less_Suc_eq)
+  \<comment> \<open>the extra witness allowed by @{term "Suc i"} is @{term i} itself, where the
+    condition on the points in between is vacuous\<close>
+  unfolding sat_since_point_def Ex_less_Suc by auto
 
 lemma sat_since_point_Suc': "t < \<tau> \<sigma> i \<Longrightarrow>
     sat_since_point pos \<sigma> V \<phi> \<psi> (Suc i) i t x = sat_since_point pos \<sigma> V \<phi> \<psi> i i t x"
-  unfolding sat_since_point_def
-  apply auto
-  using less_\<tau>D apply blast
-  by (metis less_Suc_eq)
+proof -
+  assume "t < \<tau> \<sigma> i"
+  then have "\<tau> \<sigma> i \<noteq> t"
+    by simp
+  then show ?thesis
+    \<comment> \<open>the extra witness i is excluded by its time-stamp\<close>
+    unfolding sat_since_point_def Ex_less_Suc by simp
+qed
 
 lemma sat_Sincep_alt: "pIn = Suc i \<or> \<not> memL I (\<tau> \<sigma> i - \<tau> \<sigma> pIn) \<Longrightarrow>
   Formula.sat \<sigma> V x i (Sincep pos \<phi> I \<psi>) \<longleftrightarrow>
   (\<exists>j\<le>i. mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and> sat_since_point pos \<sigma> V \<phi> \<psi> pIn i (\<tau> \<sigma> j) x)"
-  unfolding Sincep_def sat_since_point_def
-  apply (auto simp add: less_Suc_eq_le)
-  apply blast
-      apply blast
-     apply (metis (no_types, lifting) diff_le_mono2 less_\<tau>D memL_mono not_le)
-    apply (metis (no_types, lifting) \<tau>_mono diff_is_0_eq dual_order.strict_trans le_eq_less_or_eq not_le_imp_less)
-   apply (metis (no_types, lifting) diff_le_mono2 less_\<tau>D memL_mono not_le)
-  by (metis (no_types, lifting) \<tau>_mono diff_is_0_eq dual_order.strict_trans le_eq_less_or_eq linear)
+proof -
+  assume complete: "pIn = Suc i \<or> \<not> memL I (\<tau> \<sigma> i - \<tau> \<sigma> pIn)"
+  have sat_pos: "Formula.sat \<sigma> V x k (if pos then \<phi> else Formula.Neg \<phi>) \<longleftrightarrow>
+    (if pos then Formula.sat \<sigma> V x k \<phi> else \<not> Formula.sat \<sigma> V x k \<phi>)" for k
+    by simp
+  show ?thesis
+  proof
+    assume "Formula.sat \<sigma> V x i (Sincep pos \<phi> I \<psi>)"
+    then obtain j where j: "j \<le> i" "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)" "Formula.sat \<sigma> V x j \<psi>"
+      "\<forall>k\<in>{j<..i}. if pos then Formula.sat \<sigma> V x k \<phi> else \<not> Formula.sat \<sigma> V x k \<phi>"
+      unfolding Sincep_def sat.simps sat_pos by blast
+    \<comment> \<open>the witness j is also a witness for @{const sat_since_point}, as it lies before pIn\<close>
+    have "j < pIn"
+      using complete
+    proof
+      assume "pIn = Suc i"
+      with \<open>j \<le> i\<close> show ?thesis
+        by simp
+    next
+      assume not_memL: "\<not> memL I (\<tau> \<sigma> i - \<tau> \<sigma> pIn)"
+      show ?thesis
+      proof (rule ccontr)
+        assume "\<not> j < pIn"
+        then have "\<tau> \<sigma> i - \<tau> \<sigma> j \<le> \<tau> \<sigma> i - \<tau> \<sigma> pIn"
+          by (simp add: diff_le_mono2)
+        with \<open>mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)\<close> have "memL I (\<tau> \<sigma> i - \<tau> \<sigma> pIn)"
+          by auto
+        with not_memL show False
+          by contradiction
+      qed
+    qed
+    with j show "\<exists>j\<le>i. mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and> sat_since_point pos \<sigma> V \<phi> \<psi> pIn i (\<tau> \<sigma> j) x"
+      unfolding sat_since_point_def by blast
+  next
+    assume "\<exists>j\<le>i. mem I (\<tau> \<sigma> i - \<tau> \<sigma> j) \<and> sat_since_point pos \<sigma> V \<phi> \<psi> pIn i (\<tau> \<sigma> j) x"
+    then obtain j j' where j: "j \<le> i" "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)"
+      and j': "j' < pIn" "\<tau> \<sigma> j' = \<tau> \<sigma> j" "Formula.sat \<sigma> V x j' \<psi>"
+      "\<forall>k\<in>{j'<..i}. if pos then Formula.sat \<sigma> V x k \<phi> else \<not> Formula.sat \<sigma> V x k \<phi>"
+      unfolding sat_since_point_def by blast
+    \<comment> \<open>the witness j' of @{const sat_since_point} is a witness for the Since formula\<close>
+    have "j' \<le> i"
+    proof (rule ccontr)
+      assume "\<not> j' \<le> i"
+      then have "i < j'"
+        by simp
+      then have "\<tau> \<sigma> j \<le> \<tau> \<sigma> i" "\<tau> \<sigma> i \<le> \<tau> \<sigma> j'"
+        using \<open>j \<le> i\<close> by simp_all
+      then have "\<tau> \<sigma> i = \<tau> \<sigma> j"
+        using \<open>\<tau> \<sigma> j' = \<tau> \<sigma> j\<close> by linarith
+      moreover have "\<tau> \<sigma> i \<le> \<tau> \<sigma> pIn"
+        using \<open>i < j'\<close> \<open>j' < pIn\<close> by simp
+      ultimately have "\<tau> \<sigma> i - \<tau> \<sigma> pIn = \<tau> \<sigma> i - \<tau> \<sigma> j"
+        by simp
+      with \<open>mem I (\<tau> \<sigma> i - \<tau> \<sigma> j)\<close> have "memL I (\<tau> \<sigma> i - \<tau> \<sigma> pIn)"
+        by simp
+      moreover have "pIn \<noteq> Suc i"
+        using \<open>i < j'\<close> \<open>j' < pIn\<close> by simp
+      ultimately show False
+        using complete by simp
+    qed
+    moreover have "mem I (\<tau> \<sigma> i - \<tau> \<sigma> j')"
+      using j(2) j'(2) by simp
+    ultimately show "Formula.sat \<sigma> V x i (Sincep pos \<phi> I \<psi>)"
+      using j' unfolding Sincep_def sat.simps sat_pos by blast
+  qed
+qed
 
 definition (in msaux) wf_since_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
   ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> 'msaux \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
