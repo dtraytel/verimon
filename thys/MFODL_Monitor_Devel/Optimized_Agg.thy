@@ -1770,7 +1770,7 @@ proof -
       interpret comp_fun_commute "insert_cnt ?args"
         using insert_cnt_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', CntAux m') = insert_maggaux ?args F (CntAux m)" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        by (cases "Finite_Set.fold (insert_cnt ?args) (True, m) F") auto
       then have fold_def: "Finite_Set.fold (insert_cnt ?args) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = insert_cnt ?args x (v', m')" by auto metis
@@ -1804,7 +1804,7 @@ proof -
       interpret comp_fun_commute "insert_sum ?args"
         using insert_sum_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', SumAux m') = insert_maggaux ?args F (SumAux m)" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        by (cases "Finite_Set.fold (insert_sum ?args) (True, m) F") auto
       then have fold_def: "Finite_Set.fold (insert_sum ?args) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = insert_sum ?args x (v', m')" using prod.collapse by blast
@@ -1840,7 +1840,7 @@ proof -
       interpret comp_fun_commute "insert_rank ?args type"
         using insert_rank_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', RankAux (m', type)) = insert_maggaux ?args F (RankAux aux)" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        by (cases "Finite_Set.fold (insert_rank ?args type) (True, m) F") auto
       then have fold_def: "Finite_Set.fold (insert_rank ?args type) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = insert_rank ?args type x (v', m')" using prod.collapse by blast
@@ -1911,10 +1911,17 @@ proof -
       show "k \<in> Mapping.keys m'" 
       proof(cases "drop b elem = k")
         case True
-        then show ?thesis using length_flatten_multiset' assm valid_before valid
-          apply(auto simp: c_def new_map_def simp del: Set.filter_eq split:option.splits)
-          apply (metis (mono_tags, lifting) Set.filter_eq card_eq_Suc_0_ex1 in_set mem_Collect_eq)+
-          done
+        from assm obtain e where e: "e \<in> X" "e \<noteq> elem" "drop b e = k" by auto
+        have "c \<noteq> 1"
+        proof
+          assume "c = 1"
+          then obtain z where "group (drop b elem) b X = {z}"
+            unfolding c_def by (rule card_1_singletonE)
+          moreover have "elem \<in> group (drop b elem) b X" "e \<in> group (drop b elem) b X"
+            using in_set e True by auto
+          ultimately show False using e(2) by (metis singletonD)
+        qed
+        then show ?thesis using True new_map_def by simp
       next
         case False
         then have "k \<in> (drop b) ` X" using assm valid_before by auto
@@ -2053,10 +2060,17 @@ proof -
       show "k \<in> Mapping.keys m'" 
       proof(cases "drop b elem = k")
         case True
-        then show ?thesis using length_flatten_multiset' assm valid_before valid
-          apply(auto simp: c_def new_map_def simp del: Set.filter_eq split:option.splits)
-          apply (metis (mono_tags, lifting) Set.filter_eq card_eq_Suc_0_ex1 in_set mem_Collect_eq)+
-          done
+        from assm obtain e where e: "e \<in> X" "e \<noteq> elem" "drop b e = k" by auto
+        have "c \<noteq> 1"
+        proof
+          assume "c = 1"
+          then obtain z where "group (drop b elem) b X = {z}"
+            unfolding c_def by (rule card_1_singletonE)
+          moreover have "elem \<in> group (drop b elem) b X" "e \<in> group (drop b elem) b X"
+            using in_set e True by auto
+          ultimately show False using e(2) by (metis singletonD)
+        qed
+        then show ?thesis using True new_map_def by simp
       next
         case False
         then have "k \<in> (drop b) ` X" using assm valid_before by auto
@@ -2179,11 +2193,10 @@ lemma treelist_del1: "length_treelist l = 1 \<Longrightarrow> x \<in> set_treeli
   by(transfer) (metis Zero_not_Suc cancel_comm_monoid_add_class.diff_cancel insort_del_inverse insort_remove1 length_greater_0_conv length_remove1 less_nat_zero_code less_one sorted_iff_nth_Suc)
 
 lemma treelist_del2: "length_treelist l > 1 \<Longrightarrow> remove_treelist x l \<noteq> empty_treelist" 
-  apply(transfer)
-proof -
+proof transfer
   fix l x
   assume "length (l::'a list) > 1"
-  then show "del_list x l \<noteq> []" by(induction l; auto)
+  then show "del_list x l \<noteq> []" by (cases l) auto
 qed
 
 lemma mset_remove_treelist: 
@@ -2286,8 +2299,27 @@ proof -
       show "k \<in> (drop b) ` (X - {elem})"
       proof(cases "drop b elem = k")
         case True
-        then have not_1: "get_length l \<noteq> 1" using assm new_map_def elem_in meval_def restr treelist_del1
-          apply(auto simp:get_length_def split:list_aux.splits list.splits if_splits) by(blast) (simp add: treelist_del1)
+        have not_1: "get_length l \<noteq> 1"
+        proof
+          assume len: "get_length l = 1"
+          have "m' = Mapping.delete (drop b elem) m"
+          proof (cases l)
+            case (LInt t)
+            then obtain j where j: "meval_trm f elem = EInt j" using restr by auto
+            then have "j \<in> set_treelist t" "length_treelist t = 1"
+              using elem_in_treelist len LInt by (simp_all add: get_length_def)
+            then have "remove_treelist j t = empty_treelist" by (rule treelist_del1[rotated])
+            then show ?thesis using new_map_def LInt j \<open>j \<in> set_treelist t\<close> by simp
+          next
+            case (LString t)
+            then obtain j where j: "meval_trm f elem = EString j" using restr meval_def by auto
+            then have "j \<in> set_treelist t" "length_treelist t = 1"
+              using elem_in_treelist len LString by (simp_all add: get_length_def)
+            then have "remove_treelist j t = empty_treelist" by (rule treelist_del1[rotated])
+            then show ?thesis using new_map_def LString j \<open>j \<in> set_treelist t\<close> by simp
+          qed
+          then show False using assm True by simp
+        qed
         then have "card (group k b X) \<noteq> 1" using True valid_list_aux_length_eq[OF lookup_def(2) finite_X] length_flatten_multiset'[OF finite_X, of k b f] by(auto)
         moreover have "group k b X \<noteq> {}" using True assms by auto
         ultimately obtain k' where "k' \<in> group k b X" "k' \<noteq> elem" by (metis is_singletonI' is_singleton_altdef)
@@ -2325,9 +2357,18 @@ proof -
         have leq: "l = laux" using lookup_def(1) lookup_old k_def by auto
         then have "get_length l \<noteq> 1" using lookup_new[unfolded new_map_def] meval_def restr treelist_del1[of _ i] treelist_del1[of _ s]
           by(auto simp:get_length_def lookup_delete k_def split:list_aux.splits list.splits if_splits) 
-        moreover have "get_length l \<noteq> 0"using lookup_new[unfolded new_map_def] meval_def restr treelist_empty
-          apply(auto simp:get_length_def lookup_delete k_def split:list_aux.splits list.splits if_splits)
-          by(blast) (metis empty_iff neq0_conv treelist_empty)
+        moreover have "get_length l \<noteq> 0"
+        proof (cases l)
+          case (LInt t)
+          then obtain j where "meval_trm f elem = EInt j" using restr by auto
+          then have "j \<in> set_treelist t" using elem_in_treelist LInt by simp
+          then show ?thesis using LInt treelist_empty[of t] by (auto simp: get_length_def)
+        next
+          case (LString t)
+          then obtain j where "meval_trm f elem = EString j" using restr meval_def by auto
+          then have "j \<in> set_treelist t" using elem_in_treelist LString by simp
+          then show ?thesis using LString treelist_empty[of t] by (auto simp: get_length_def)
+        qed
         ultimately have geq1: "get_length l > 1" by auto
         have list_elem_restr: "\<forall>l. Mapping.lookup m k = Some (LInt l) \<longrightarrow> meval_trm f elem \<in> range EInt"
                             "\<forall>l. Mapping.lookup m k = Some (LString l) \<longrightarrow> meval_trm f elem \<in> range EString"
@@ -2437,7 +2478,7 @@ proof -
       interpret comp_fun_commute "delete_cnt ?args"
         using delete_cnt_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', CntAux m') = delete_maggaux ?args F (CntAux m)" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        by (cases "Finite_Set.fold (delete_cnt ?args) (True, m) F") auto
       then have fold_def: "Finite_Set.fold (delete_cnt ?args) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = delete_cnt ?args x (v', m')" by auto metis
@@ -2472,7 +2513,7 @@ proof -
       interpret comp_fun_commute "delete_sum ?args"
         using delete_sum_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', SumAux m') = delete_maggaux ?args F (SumAux m)" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        by (cases "Finite_Set.fold (delete_sum ?args) (True, m) F") auto
       then have fold_def: "Finite_Set.fold (delete_sum ?args) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = delete_sum ?args x (v', m')" using prod.collapse by blast
@@ -2508,7 +2549,7 @@ proof -
       interpret comp_fun_commute "delete_rank ?args type"
         using delete_rank_comm by unfold_locales auto
       obtain v' m' where intermediate_map_def: "(v', m') = Finite_Set.fold (delete_rank ?args type) (True, m) F" 
-        using insert(1) apply(induction F) by(auto) (metis (no_types, lifting) case_prod_conv surj_pair)
+        using prod.collapse by blast
       then have fold_def: "Finite_Set.fold (delete_rank ?args type) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = delete_rank ?args type x (v', m')" using prod.collapse by blast
