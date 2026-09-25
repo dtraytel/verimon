@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser takes 51 to 285 µs per formula (median
-111 µs, 5.7 µs per token), against 1.3 to 4.7 µs (median 2.3 µs) for MonPoly's
-parser: 35 to 71 times slower (median 48). The LR driver takes 88% of the
-time, the lexer 7%, post-processing and conversion 5%. In a `monpoly -check`
+9 to 48 tokens), the verified parser takes 24 to 148 µs per formula (median
+50 µs, 2.6 µs per token), against 1.3 to 5.2 µs (median 2.3 µs) for MonPoly's
+parser: 15 to 30 times slower (median 22). The LR driver takes 80% of the
+time, the lexer 15%, post-processing and conversion 5%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -117,23 +117,27 @@ the export, on the same suite (median per formula):
 | general driver of the `grammar` package   | 417 ms   | 93.6 s   |
 | simple driver (`lr/LR_Simple.thy`)        | 2.9 ms   | 648 ms   |
 | simple driver on indexed tables           | 381 µs   | 84.1 ms  |
-| and code equations for the lexer (current)| 111 µs   | 24.7 ms  |
+| and code equations for the lexer          | 111 µs   | 24.7 ms  |
+| on trie tables (`lr/LR_Trie.thy`, current)| 50 µs    | 11.2 ms  |
 | MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 207 M, 193 M of them in the LR driver and 13 M in the lexer.
+parser executes 84 M, 69 M of them in the LR driver and 13 M in the lexer.
+About a third of the LR driver's instructions number the lookahead token,
+by a linear search in the list of tokens, at every step.
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
 of state indices of two precomputed LR(0) automata, proved to compute the same
-result as the package's general driver. Its code equation runs on indexed
-tables: productions and nonterminals are numbered, goto rows are keyed by
-terminal or nonterminal number, and the tables are arrays, so a step compares
-no names and finds its table rows by array index. Counted in instructions
-(callgrind, each suite formula parsed once), the LR driver went from 4.7 G
-with name-keyed list tables to 0.19 G (24x). The general driver, which computes the closure of
-every new state with its layout anchors at run time, was another 100 to 170
-times slower (197 ms to 1.01 s per formula).
+result as the package's general driver. Its code equation runs on tables that
+are binary tries keyed by the bits of the index (`lr/LR_Trie.thy`): they are
+static data, and with binary naturals a lookup follows the constructors of the
+numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
+`tlookup_binary`). Productions and nonterminals are numbered, goto rows are
+keyed by lookahead or nonterminal number, and the reduces licensed at a state
+are tabulated by lookahead, so a step compares no names. The general driver,
+which computes the closure of every new state with its layout anchors at run
+time, is about 8,000 times slower on the suite.
 
 The lexer model (`MFODL_Lexer`) is written for readability; `MFODL_Parser_Code`
 gives it code equations, proved equal to its definitions, that avoid
@@ -143,14 +147,9 @@ character. They reduced the lexer from 427 M to 13 M instructions.
 `MFODL_Parser_Code` exports with binary naturals (`Code_Binary_Nat`), so that
 ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
 become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
-About half of the LR driver's remaining time is the conversion of table
-indices to integers for array access. The `grammar` package can instead run
-the driver on integer indices (`declare [[parser_int_tables]]`,
-`lr/LR_Int.thy`): the LR driver then executes half the instructions (95 M
-instead of 193 M on the suite), but converting the tables when the module is
-loaded adds about 4.5 ms to every run of `monpoly`, with or without
-`-verified_parser`, against 0.25 ms saved per parse. Since `monpoly` parses
-one formula per run, the parser is built without it.
+The `grammar` package can also run the driver on arrays with integer indices
+(`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
+when the module is loaded adds about 4.5 ms to every run of `monpoly`.
 
-`src/verified_parser.ml` is large (about 5 MB), mostly the LR tables, whose
-numbers are binary numerals.
+`src/verified_parser.ml` is large (about 13 MB), mostly the LR tables as
+tries.

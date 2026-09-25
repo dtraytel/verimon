@@ -6,6 +6,13 @@ text \<open>Examples, checked by evaluation, and the code export. A separate ses
   so that the heap image of \<^session>\<open>MFODL_Parser\<close>, whose \<^theory_text>\<open>parser\<close>
   command takes long, does not depend on them.\<close>
 
+section \<open>Code for the parser tables\<close>
+
+text \<open>The parser's tables are binary tries; with binary naturals, a lookup
+  follows the constructors of the index.\<close>
+
+declare tlookup_binary [code]
+
 section \<open>Code for the lexer\<close>
 
 text \<open>Code equations for the lexer model of \<^theory>\<open>MFODL_Parser.MFODL_Lexer\<close>,
