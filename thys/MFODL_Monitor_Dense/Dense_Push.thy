@@ -248,6 +248,10 @@ text \<open>The safety conditions look at a few syntactic shapes of their operan
   assignments and negations.  The quantifier's step never produces one of them, and the rest of
   the traversal keeps each of them as it is.\<close>
 
+lemma ex_into_shape: "(\<exists>\<psi>. ex_into t \<phi> = Formula.Exists t \<psi>) \<or>
+  (\<exists>I \<psi>. ex_into t \<phi> = Formula.Since Formula.TT I \<psi>) \<or> (\<exists>I \<psi>. ex_into t \<phi> = Formula.Until Formula.TT I \<psi>)"
+  by (cases "(t, \<phi>)" rule: ex_into.cases) simp_all
+
 lemma ex_into_shapes[simp]:
   "\<not> is_constraint (ex_into t \<phi>)"
   "\<not> safe_assignment X (ex_into t \<phi>)"
@@ -258,7 +262,7 @@ lemma ex_into_shapes[simp]:
   "ex_into t \<phi> \<noteq> Formula.Eq t1 t2"
   "ex_into t \<phi> \<noteq> Formula.Less t1 t2"
   "ex_into t \<phi> \<noteq> Formula.LessEq t1 t2"
-  by (induct t \<phi> rule: ex_into.induct) (simp_all add: safe_assignment_def)
+  using ex_into_shape[of t \<phi>] by (elim disjE exE; simp add: safe_assignment_def)+
 
 lemma push_ex_Neg_iff:
   "push_ex \<phi> = Formula.Neg \<psi> \<longleftrightarrow> (\<exists>\<phi>'. \<phi> = Formula.Neg \<phi>' \<and> \<psi> = push_ex \<phi>')"
