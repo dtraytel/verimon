@@ -1328,38 +1328,54 @@ next
     by (auto split: if_splits)
 next
   case (Ands \<phi>s)
-  show ?case
-    using Ands.IH[of _ q n V c k v x thesis i] Ands.prems
-    apply (auto split: if_splits)
-    apply (subgoal_tac "\<not> (\<forall>x\<in>set \<phi>s. Formula.sat \<sigma> V v i x)")
-    by auto
+  obtain \<phi> where \<phi>: "\<phi> \<in> set \<phi>s" and gen: "genvar \<phi> (Formula.sat \<sigma> V v i \<phi>) x q n c k"
+  proof (cases "Formula.sat \<sigma> V v i (Formula.Ands \<phi>s)")
+    case True
+    with Ands.prems(2) obtain \<phi> where "\<phi> \<in> set \<phi>s" "genvar \<phi> True x q n c k"
+      by auto
+    moreover from this(1) True have "Formula.sat \<sigma> V v i \<phi>"
+      by simp
+    ultimately show thesis
+      by (intro that[of \<phi>]) simp_all
+  next
+    case False
+    then obtain \<phi> where "\<phi> \<in> set \<phi>s" "\<not> Formula.sat \<sigma> V v i \<phi>"
+      by auto
+    moreover have "\<forall>\<phi>\<in>set \<phi>s. genvar \<phi> False x q n c k"
+      using Ands.prems(2) by (simp only: False genvar.simps if_False)
+    ultimately show thesis
+      by (intro that[of \<phi>]) simp_all
+  qed
+  have nfv: "Formula.nfv \<phi> \<le> length v"
+    using Ands.prems(3) \<phi> by simp
+  from Ands.IH[OF \<phi> Ands.prems(1) gen nfv] show ?case .
 next
   case (Exists t \<phi>)
   have 1: "Formula.nfv \<phi> \<le> Suc (length v)"
     using Exists.prems(3)
     by (simp add: Formula.nfv_def) (metis fvi_Suc Suc_le_D not_less_eq_eq)
-  show ?case proof (cases "\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>")
+  obtain z where gen: "genvar \<phi> (Formula.sat \<sigma> V (z # v) i \<phi>) (Suc x) q n c k"
+  proof (cases "\<exists>z. Formula.sat \<sigma> V (z # v) i \<phi>")
     case True
-    then obtain z where 2: "Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> True (Suc x) q n c k"
+    then obtain z where "Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> True (Suc x) q n c k"
       using Exists.prems(2) by auto
-    show ?thesis
-      apply (rule Exists.IH[rotated])
-        apply (subst 2)
-        apply (rule 2)
-       apply (simp add: 1)
-      apply (rule Exists.prems(1))
-      by simp_all
+    then show thesis by (intro that[of z]) simp
   next
     case False
-    then obtain z where 2: "\<not> Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> False (Suc x) q n c k"
+    then obtain z where "\<not> Formula.sat \<sigma> V (z # v) i \<phi>" "genvar \<phi> False (Suc x) q n c k"
       using Exists.prems(2) by auto
-    show ?thesis
-      apply (rule Exists.IH[rotated])
-        apply (subst 2)
-        apply (rule 2)
-       apply (simp add: 1)
-      apply (rule Exists.prems(1))
-      by simp_all
+    then show thesis by (intro that[of z]) simp
+  qed
+  show ?case
+  proof (rule Exists.IH)
+    show "genvar \<phi> (Formula.sat \<sigma> V (z # v) i \<phi>) (Suc x) q n c k" by (fact gen)
+    show "Formula.nfv \<phi> \<le> length (z # v)" using 1 by simp
+    fix as j
+    assume "as ! k = (z # v) ! Suc x"
+    then have "as ! k = v ! x" by simp
+    moreover assume "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as j = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as) \<in> \<Gamma> \<sigma> j = c" "length as = n" "k < n"
+    ultimately show thesis by (intro Exists.prems(1))
   qed
 next
   case (Agg y \<omega> tys f \<phi>)
