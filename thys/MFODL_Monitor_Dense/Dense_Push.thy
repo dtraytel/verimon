@@ -157,7 +157,7 @@ lemma and_cstr_shapes[simp]:
   "and_cstr X c \<noteq> Formula.Eq t1 t2"
   "and_cstr X c \<noteq> Formula.Less t1 t2"
   "and_cstr X c \<noteq> Formula.LessEq t1 t2"
-  using and_cstr_shape[of X c] by (auto simp: safe_assignment_def)
+  using and_cstr_shape[of X c] by (elim disjE exE; simp add: safe_assignment_def)+
 
 lemma is_cmp_cases:
   assumes "is_cmp c"
