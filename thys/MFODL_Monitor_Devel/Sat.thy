@@ -865,23 +865,34 @@ proof -
 qed
 
 end
+
 lemma letpast_progress_alt: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
   letpast_progress \<sigma> P p \<phi> j = \<Sqinter>{i. i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j}"
-  unfolding letpast_progress_def
-  apply (rule antisym)
-   apply (rule cInf_greatest)
-  apply (blast dest: progress_fixpoint_ex)
-  subgoal for x
-    apply (cases "x \<le> j")
-     apply (blast intro!: cInf_lower)
-    apply (drule progress_fixpoint_ex)
-   apply clarsimp
-    apply (intro cInf_lower2 CollectI conjI)
-    apply assumption+
-    by auto
-  apply (rule cInf_mono)
-  apply (blast dest: progress_fixpoint_ex)
-    apply simp
-  by auto
+proof -
+  let ?A = "{i. i \<le> j \<and> i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j}"
+  let ?B = "{i. i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j}"
+  assume "pred_mapping (\<lambda>x. x \<le> j) P"
+  then obtain i0 where i0: "i0 \<le> j" "i0 = progress \<sigma> (P(p \<mapsto> i0)) \<phi> j"
+    by (blast dest: progress_fixpoint_ex)
+  then have "i0 \<in> ?A" "i0 \<in> ?B"
+    by simp_all
+  \<comment> \<open>every fixpoint beyond @{term j} is bounded from below by the fixpoint @{term i0}\<close>
+  have "\<Sqinter>?A \<le> x" if "x \<in> ?B" for x
+  proof (cases "x \<le> j")
+    case True
+    with that show ?thesis
+      by (intro cInf_lower) simp_all
+  next
+    case False
+    with \<open>i0 \<in> ?A\<close> i0(1) show ?thesis
+      by (intro cInf_lower2[of i0]) simp_all
+  qed
+  with \<open>i0 \<in> ?B\<close> have "\<Sqinter>?A \<le> \<Sqinter>?B"
+    by (intro cInf_greatest) auto
+  moreover from \<open>i0 \<in> ?A\<close> have "\<Sqinter>?B \<le> \<Sqinter>?A"
+    by (intro cInf_superset_mono) auto
+  ultimately show "letpast_progress \<sigma> P p \<phi> j = \<Sqinter>?B"
+    unfolding letpast_progress_def by (rule antisym)
+qed
 
 end
