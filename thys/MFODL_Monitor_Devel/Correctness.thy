@@ -2273,11 +2273,11 @@ next
               proof -
                 have "?jpsi0 \<le> ?jfrz" using jpsi0_le .
                 also have "?jfrz \<le> j" unfolding jfrz_unfold
-                  using progress_le_gen[OF pm, of \<sigma> \<phi>1]
-                  unfolding a_def
-                  apply (intro LeastI_ex[THEN conjunct1] exI[of _ j])
-                  using \<open>Progress.progress \<sigma> (P((p, m) \<mapsto> 0)) \<psi>1 j < Progress.progress \<sigma> P (formula.Frz p \<phi>1 \<psi>1) j\<close>
-                     \<open>a ?jpsi0 = 0\<close> jfrz_unfold not_less_Least pm by fastforce
+                proof (rule LeastI2_ex)
+                  \<comment> \<open>@{term j} itself satisfies the condition of the @{term Least}\<close>
+                  show "\<exists>i. i \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a i)) \<psi>1 j \<le> i"
+                    using pm by (intro exI[of _ j]) (auto simp: a_def intro!: progress_le_gen)
+                qed simp
                 finally show ?thesis .
               qed
               have cand: "?jpsi0 \<le> j \<and> progress \<sigma> (P(?pn \<mapsto> a ?jpsi0)) \<psi>1 j \<le> ?jpsi0"
@@ -3037,10 +3037,20 @@ next
     e_letpast: "(ys', i', buf', \<phi>f1) = letpast_meval m (j+\<delta>) i [] (list_of_option buf) ?pn (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi>1" and
     e2: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.update ?pn ys' db) \<phi>2 = (xs', \<phi>f2)" and
     \<phi>f: "\<phi>f = MLetPast p m \<phi>f1 \<phi>f2 i' buf'"
-      apply(simp)
-    apply(atomize_elim)
-    apply (auto split: prod.splits)
-    done
+  proof -
+    obtain ys' i' buf' \<phi>f1 where e_letpast: "(ys', i', buf', \<phi>f1) =
+        letpast_meval m (j+\<delta>) i [] (list_of_option buf) ?pn (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi>1"
+      by (metis prod_cases4)
+    obtain xs' \<phi>f2 where
+      e2: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) (Mapping.update ?pn ys' db) \<phi>2 = (xs', \<phi>f2)"
+      by (metis surj_pair)
+    show thesis
+    proof (rule that[OF _ e_letpast e2 refl])
+      show "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MLetPast p m \<phi>1 \<phi>2 i buf) =
+        (xs', MLetPast p m \<phi>f1 \<phi>f2 i' buf')"
+        by (simp add: e_letpast[symmetric] e2)
+    qed
+  qed
   have pred_alt: "pred_mapping (\<lambda>x. x \<le> j + \<delta> - length (map (\<tau> \<sigma>) [j..<j + \<delta>])) P" 
     using pred by fastforce
   have pred_alt_2: "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'" 
@@ -3052,19 +3062,28 @@ next
   have wf_envs: "wf_envs S \<sigma> (j + \<delta> - length (map (\<tau> \<sigma>) [j..<j + \<delta>])) (length (map (\<tau> \<sigma>) [j..<j + \<delta>])) P P' V db" 
     using MLetPast.prems(2) by force
   have post: "letpast_meval_post n V \<sigma> P' \<phi>1' m (j+\<delta>) i' ys' buf' p \<phi>f1 (letpast_progress \<sigma> P ?pn \<phi>1' j)"
-    apply(rule letpast_meval_invar_post[OF safe pred_alt pred_alt_2 rel_map fv wf_form wf_envs _ _ wty1 safe1 invar e_letpast])
-    subgoal for xs db \<phi>_m us P P' V S
-      apply(cases "us=[]")
-       apply simp_all
-      subgoal
-        apply (intro MLetPast.IH(1)[where j5="j+\<delta>" and \<delta>5="0", simplified])
-          apply simp_all
-        done
-      apply(intro MLetPast.IH)
-        apply(simp_all)
-      done
-    apply simp
-    done
+  proof (rule letpast_meval_invar_post[OF safe pred_alt pred_alt_2 rel_map fv wf_form wf_envs _ _ wty1 safe1 invar e_letpast],
+      goal_cases)
+    case (1 xs db \<phi>_m us P P' V S E)
+    \<comment> \<open>the evaluation of @{term \<phi>1} in each iteration is covered by the induction hypothesis,
+      either for the new time-points (first iteration) or for no time-points (later iterations)\<close>
+    from 1(5) show ?case
+    proof
+      assume us: "us = []"
+      from 1(2,3) have wf: "wf_mformula \<sigma> (j + \<delta>) P V m UNIV \<phi>_m \<phi>1'"
+        and envs: "wf_envs S \<sigma> (j + \<delta>) 0 P P' V (Mapping.update (p, m) xs db)"
+        by (simp_all add: us)
+      from MLetPast.IH(1)[OF 1(1) wf envs 1(4)] show ?case
+        by (simp add: us mem_restr_UNIV[THEN eqTrueI, abs_def] split: prod.splits)
+    next
+      assume us: "us = map (\<tau> \<sigma>) [j..<j + \<delta>]"
+      from 1(2,3) have wf: "wf_mformula \<sigma> j P V m UNIV \<phi>_m \<phi>1'"
+        and envs: "wf_envs S \<sigma> j \<delta> P P' V (Mapping.update (p, m) xs db)"
+        by (simp_all add: us)
+      from MLetPast.IH(1)[OF 1(1) wf envs 1(4)] show ?case
+        by (simp add: us mem_restr_UNIV[THEN eqTrueI, abs_def] split: prod.splits)
+    qed
+  qed simp
 
   from e1 e_letpast e2 have
     wf_letpast: "wf_mformula \<sigma> (j+\<delta>) (P'(?pn\<mapsto>i')) (V(?pn \<mapsto> letpast_sat (\<lambda>X v i. Formula.sat \<sigma> (V(?pn \<mapsto> X)) v i \<phi>1'))) m UNIV \<phi>f1 \<phi>1'" and
