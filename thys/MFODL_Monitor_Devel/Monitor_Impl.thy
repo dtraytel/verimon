@@ -854,12 +854,29 @@ lemma letpast_meeval0_cong[fundef_cong]:
   assumes "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow>  eval ts db \<psi> = eval' ts db \<psi>)"
   shows "letpast_meeval0 eval j i ys xs p ts db \<phi> = letpast_meeval0 eval' j i ys xs p ts db \<phi>"
   using assms
-  apply (induct eval j i ys xs p ts db \<phi> arbitrary: eval' rule: letpast_meeval0.induct)
-  subgoal premises IH for eval j i ys xs p ts db \<phi> eval'
-    apply (subst (1 2) letpast_meeval0.simps)
-    apply (auto split: prod.splits list.splits simp: Let_def IH)
-    done
-  done
+proof (induction eval j i ys xs p ts db \<phi> rule: letpast_meeval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  note unf = letpast_meeval0.simps[of eval j i ys xs p ts db \<phi>]
+    letpast_meeval0.simps[of eval' j i ys xs p ts db \<phi>]
+  obtain zs \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (zs, \<phi>')"
+    by fastforce
+  have eval': "eval' ts (Mapping.update p xs db) \<phi> = (zs, \<phi>')"
+    using 1(2)[of \<phi>] eval by simp
+  show ?case
+  proof (cases zs)
+    case Nil
+    with eval eval' show ?thesis
+      by (simp add: unf)
+  next
+    case (Cons z zs')
+    have "letpast_meeval0 eval j (i + length xs) (ys @@ zs) zs p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' =
+      letpast_meeval0 eval' j (i + length xs) (ys @@ zs) zs p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      if "size \<phi>' = size \<phi>" "\<not> j \<le> Suc (i + length xs)"
+      by (rule 1(1)[OF eval[symmetric] refl _ Cons that(2)]) (simp_all add: that(1) 1(2))
+    with eval eval' Cons show ?thesis
+      by (simp add: unf)
+  qed
+qed
 
 lemma size_letpast_meeval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow> size (snd (eval ts db \<psi>)) = size \<psi>) \<Longrightarrow>
   size (snd (snd (snd (letpast_meeval0 eval j i ys xs p ts db \<phi>)))) = size \<phi>"
