@@ -1100,6 +1100,9 @@ proof (induction \<phi> arbitrary: V v i x q n c k thesis)
 next
   case (Let p \<phi> \<psi>)
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.Let p \<phi> \<psi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Let.prems(3) by simp
   consider (left) pos' y where "genvar \<phi> pos' y q n c k" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>" "genvar \<psi> pos x q n c k"
     using Let.prems(2) by (auto simp add: pos_def)
@@ -1107,14 +1110,25 @@ next
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
       and pos': "pos' = Formula.sat \<sigma> V as j \<phi>"
-      apply (rule Let.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified]])
-      using Let.prems by (auto simp add: domIff)
+    proof (rule Let.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that) auto
+    qed
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = as ! y"
-      apply (rule Let.IH(1)[rotated, OF left(1)[unfolded pos', simplified]])
-      using \<open>length as = Formula.nfv \<phi>\<close> by simp_all
+    proof (rule Let.IH(1))
+      show "genvar \<phi> (Formula.sat \<sigma> V as j \<phi>) y q n c k"
+        using left(1) by (simp add: pos')
+      show "Formula.nfv \<phi> \<le> length as"
+        by (simp add: \<open>length as = Formula.nfv \<phi>\<close>)
+    qed (rule that)
     show ?thesis proof (rule Let.prems(1))
       show "k < n" by fact
       show "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c" by fact
@@ -1123,19 +1137,26 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using right(1) by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule Let.IH(2)[rotated, OF right(2)[unfolded pos_def, simplified]])
-      using Let.prems apply simp
-      using Let.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule Let.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right(1) show ?thesis
       by (intro Let.prems(1)) (auto simp add: compose_inputs_def)
   qed
 next
   case (Frz p \<phi> \<psi>)
   define pos where "pos = Formula.sat \<sigma> V v i (Formula.Frz p \<phi> \<psi>)"
+  let ?V' = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)"
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Frz.prems(3) by simp
   consider (left) pos' y where "genvar \<phi> pos' y q n c k" "genvar \<psi> pos x p (Formula.nfv \<phi>) pos' y"
     | (right) "p \<noteq> q \<or> n \<noteq> Formula.nfv \<phi>" "genvar \<psi> pos x q n c k"
     using Frz.prems(2) by (auto simp add: pos_def)
@@ -1143,14 +1164,25 @@ next
     case left
     obtain as j where "y < Formula.nfv \<phi>" "length as = Formula.nfv \<phi>" "as ! y = v ! x"
       and pos': "pos' = Formula.sat \<sigma> V as j \<phi>"
-      apply (rule Frz.IH(2)[rotated, OF left(2)[unfolded pos_def, simplified]])
-      using Frz.prems by (auto simp add: domIff)
+    proof (rule Frz.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x p (Formula.nfv \<phi>) pos' y"
+        using left(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+      fix as j
+      assume "(p, Formula.nfv \<phi>) \<in> dom ?V' \<longrightarrow> the (?V' (p, Formula.nfv \<phi>)) as j = pos'"
+        and "length as = Formula.nfv \<phi>" "y < Formula.nfv \<phi>" "as ! y = v ! x"
+      then show thesis by (intro that[of as i]) auto
+    qed
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = as ! y"
-      apply (rule Frz.IH(1)[rotated, OF left(1)[unfolded pos', simplified]])
-      using \<open>length as = Formula.nfv \<phi>\<close> by simp_all
+    proof (rule Frz.IH(1))
+      show "genvar \<phi> (Formula.sat \<sigma> V as j \<phi>) y q n c k"
+        using left(1) by (simp add: pos')
+      show "Formula.nfv \<phi> \<le> length as"
+        by (simp add: \<open>length as = Formula.nfv \<phi>\<close>)
+    qed (rule that)
     show ?thesis proof (rule Frz.prems(1))
       show "k < n" by fact
       show "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c" by fact
@@ -1159,13 +1191,17 @@ next
     qed fact+
   next
     case right
+    have V': "?V' (q, n) = V (q, n)"
+      using right(1) by auto
     obtain as' j' where "k < n"
       "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as' j' = c"
       "(q, n) \<notin> dom V \<longrightarrow> (q, as') \<in> \<Gamma> \<sigma> j' = c"
       "length as' = n" "as' ! k = v ! x"
-      apply (rule Frz.IH(2)[rotated, OF right(2)[unfolded pos_def, simplified]])
-      using Frz.prems apply simp
-      using Frz.prems right(1) by (simp add: domIff split: if_splits)
+    proof (rule Frz.IH(2))
+      show "genvar \<psi> (Formula.sat \<sigma> ?V' v i \<psi>) x q n c k"
+        using right(2) by (simp add: pos_def)
+      show "Formula.nfv \<psi> \<le> length v" by (fact nfv)
+    qed (use V' in \<open>auto intro: that simp: domIff\<close>)
     with right(1) show ?thesis
       by (intro Frz.prems(1)) (auto simp add: compose_inputs_def)
   qed
