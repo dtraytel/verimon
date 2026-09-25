@@ -2040,10 +2040,14 @@ lemma letpast_meval_code[code]:
          [] \<Rightarrow> (ys @ ys', i + length xs, None, \<phi>')
        | y # _ \<Rightarrow> (if Suc (i + length xs) \<ge> j then (ys @ ys', i + length xs, Some y, \<phi>')
            else letpast_meval m j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))"
-  apply (subst letpast_meval0.simps[where eval="meval j m" and j=j for j m t, folded letpast_meval_def])
-  apply (auto split: prod.splits simp: Let_def)
-  apply (metis size_snd_meval snd_conv)+
-  done
+proof -
+  obtain ys' \<phi>' where ev: "meval j m ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have "size \<phi>' = size \<phi>"
+    using size_snd_meval[of j m ts "Mapping.update p xs db" \<phi>] ev by simp
+  then show ?thesis
+    unfolding letpast_meval_def by (subst (1) letpast_meval0.simps) (simp add: ev)
+qed
 
 declare meval.simps[simp del]
 lemmas meval_simps[simp] = meval.simps[folded letpast_meval_def]
@@ -2058,18 +2062,56 @@ lemma letpast_meval_induct[case_names step]:
           P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>') \<Longrightarrow>
       P i ys xs p ts db \<phi>"
   shows "P i ys xs p ts db \<phi>"
-  apply (induction eval\<equiv>"meval j m" j\<equiv>j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  apply (rule step, auto simp: neq_Nil_conv)
-  apply (metis size_snd_meval snd_conv)
-  done
+proof (induction eval\<equiv>"meval j m" j\<equiv>j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 i ys xs p ts db \<phi>)
+  show ?case
+  proof (rule step)
+    fix ys' \<phi>'
+    assume ev: "(ys', \<phi>') = meval j m ts (Mapping.update p xs db) \<phi>"
+      and ne: "ys' \<noteq> []" and lt: "Suc (i + length xs) < j"
+    from ne obtain y ys'' where ys': "ys' = y # ys''"
+      by (auto simp: neq_Nil_conv)
+    have "size \<phi>' = size \<phi>"
+      using size_snd_meval[of j m ts "Mapping.update p xs db" \<phi>] ev[symmetric] by simp
+    then show "P (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      using 1[OF ev refl _ ys'] lt by simp
+  qed
+qed
 
 
 lemma letpast_meval_ys: 
   "(ys', i', buf', \<phi>f) = letpast_meval m j i ys xs p ts db \<phi> \<Longrightarrow> \<exists> zs. ys' = ys@zs"
-  apply (induction i ys xs p ts db \<phi> arbitrary: i' buf' ys' \<phi>f taking: m j rule: letpast_meval_induct)
-  apply(subst(asm)(2) letpast_meval_code)
-  apply(fastforce simp add: Let_def split:prod.splits list.splits if_splits)
-  done
+proof (induction i ys xs p ts db \<phi> arbitrary: i' buf' ys' \<phi>f taking: m j rule: letpast_meval_induct)
+  case (step i ys xs p ts db \<phi>)
+  obtain zs \<phi>' where ev: "meval j m ts (Mapping.update p xs db) \<phi> = (zs, \<phi>')"
+    by fastforce
+  note code = letpast_meval_code[of m j i ys xs p ts db \<phi>]
+  show ?case
+  proof (cases zs)
+    case Nil
+    then show ?thesis
+      using step.prems ev by (simp add: code)
+  next
+    case (Cons y zs')
+    show ?thesis
+    proof (cases "j \<le> Suc (i + length xs)")
+      case True
+      then show ?thesis
+        using step.prems ev Cons by (simp add: code)
+    next
+      case False
+      then have "(ys', i', buf', \<phi>f) =
+        letpast_meval m j (i + length xs) (ys @ zs) zs p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+        using step.prems ev Cons by (simp add: code)
+      moreover have "zs \<noteq> []" "Suc (i + length xs) < j"
+        using Cons False by simp_all
+      ultimately obtain zs'' where "ys' = (ys @ zs) @ zs''"
+        using step.IH[OF ev[symmetric]] by blast
+      then show ?thesis
+        by simp
+    qed
+  qed
+qed
 
 end (* maux *)
 
