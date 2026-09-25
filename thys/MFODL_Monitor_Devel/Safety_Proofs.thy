@@ -1185,18 +1185,65 @@ qed
 lemma safe_regex_Future_finite: "Regex.safe_regex fv rgx_safe_pred Futu Strict r \<Longrightarrow>
   (\<And>i \<phi>. \<phi> \<in> safe_atms r \<Longrightarrow> finite {v. wf_tuple n (fv \<phi>) v \<and> test v i \<phi>}) \<Longrightarrow>
   finite {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) r i j)}"
-  apply (induct Futu Strict r arbitrary: i rule: safe_regex.induct)
-      apply (auto simp flip: in_unit_table simp add: unit_table_def Bex_def
-        conj_disj_distribL ex_disj_distrib relcompp_apply Un_absorb1 intro: rev_finite_subset)
-  subgoal for r s i
-  apply (rule finite_subset[rotated])
-     apply (rule finite_UN_I[where B="\<lambda>i. {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<ge>i. j \<le> thr \<and> Regex.match (test v) s i j)}"])
-      apply (rule finite_atLeastAtMost[of i thr])
-     apply assumption
-    apply (auto simp: Bex_def)
-    apply (meson match_le order_trans)
-    done
-  done
+proof (induct Futu Strict r arbitrary: i rule: safe_regex_induct)
+  case (Skip k)
+  have "{v. wf_tuple n (fv_regex (Regex.Skip k)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Skip k) i j)}
+    \<subseteq> unit_table n"
+    by (auto simp flip: in_unit_table)
+  then show ?case
+    by (rule finite_subset) (simp add: unit_table_def)
+next
+  case (Test \<phi>)
+  then have "\<phi> \<in> safe_atms (Regex.Test \<phi>)"
+    by simp
+  moreover have "{v. wf_tuple n (fv_regex (Regex.Test \<phi>)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Test \<phi>) i j)}
+    \<subseteq> {v. wf_tuple n (fv \<phi>) v \<and> test v i \<phi>}"
+    by auto
+  ultimately show ?case
+    using Test(2) by (blast intro: finite_subset)
+next
+  case (Plus r s)
+  have "finite {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) r i j)}"
+    by (rule Plus.hyps(1)) (use Plus.prems in auto)
+  moreover have "finite {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) s i j)}"
+    by (rule Plus.hyps(2)) (use Plus.prems in auto)
+  moreover have "{v. wf_tuple n (fv_regex (Regex.Plus r s)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Plus r s) i j)}
+    \<subseteq> {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) r i j)}
+      \<union> {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) s i j)}"
+    using Plus.prems(1) by auto
+  ultimately show ?case
+    by (simp add: finite_subset)
+next
+  case (TimesF r s)
+  have fv: "fv_regex (Regex.Times r s) = fv_regex s"
+    using TimesF.prems(1) by auto
+  have s: "finite {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{k..thr}. Regex.match (test v) s k j)}" for k
+    by (rule TimesF.hyps) (use TimesF.prems in auto)
+  have "{v. wf_tuple n (fv_regex (Regex.Times r s)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Times r s) i j)}
+    \<subseteq> (\<Union>k\<in>{i..thr}. {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{k..thr}. Regex.match (test v) s k j)})"
+  proof
+    fix v
+    assume "v \<in> {v. wf_tuple n (fv_regex (Regex.Times r s)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Times r s) i j)}"
+    then obtain j k where "wf_tuple n (fv_regex s) v" "j \<le> thr"
+      "Regex.match (test v) r i k" "Regex.match (test v) s k j"
+      unfolding fv by auto
+    moreover from this(3,4) have "i \<le> k" "k \<le> j"
+      by (simp_all add: match_le)
+    ultimately show "v \<in> (\<Union>k\<in>{i..thr}. {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{k..thr}. Regex.match (test v) s k j)})"
+      by fastforce
+  qed
+  moreover have "finite (\<Union>k\<in>{i..thr}. {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<in>{k..thr}. Regex.match (test v) s k j)})"
+    using s by simp
+  ultimately show ?case
+    by (rule finite_subset)
+next
+  case (Star r)
+  then have "{v. wf_tuple n (fv_regex (Regex.Star r)) v \<and> (\<exists>j\<in>{i..thr}. Regex.match (test v) (Regex.Star r) i j)}
+    \<subseteq> unit_table n"
+    by (auto simp flip: in_unit_table)
+  then show ?case
+    by (rule finite_subset) (simp add: unit_table_def)
+qed
 
 lemma Collect_singleton_tuple_eq_image: "i < n \<Longrightarrow> {v. wf_tuple n {i} v \<and> P (map the v ! i)} =
   (\<lambda>x. (replicate n None)[i := Some x]) ` Collect P"
