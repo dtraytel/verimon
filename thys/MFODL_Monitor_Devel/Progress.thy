@@ -1503,9 +1503,21 @@ next
       using MatchP.IH[of \<phi> p P x] MatchP.prems
       by (simp add: Sup_rec_safety_le_iff del: fun_upd_apply)
     moreover have "y \<le> ?y\<phi>"
-      using \<open>\<phi> \<in> regex.atms r\<close> MatchP.prems(1,3,4)
-      apply auto
-      by (metis Sup_rec_safety_le_iff imageI order.eq_iff)
+    proof (cases "safe_letpast p (Formula.MatchP I r) = NonFutuRec")
+      case True
+      then show ?thesis
+        using MatchP.prems(3,4) by simp
+    next
+      case False
+      have "safe_letpast p \<phi> \<le> safe_letpast p (Formula.MatchP I r)"
+        using \<open>\<phi> \<in> regex.atms r\<close>
+          Sup_rec_safety_le_iff[of "safe_letpast p ` regex.atms r" "safe_letpast p (Formula.MatchP I r)"]
+        by simp
+      with False MatchP.prems(1) have "safe_letpast p \<phi> \<noteq> NonFutuRec"
+        by (metis order.antisym)
+      with False MatchP.prems(4) show ?thesis
+        by simp
+    qed
     moreover have "(MIN \<phi>'\<in>regex.atms r. progress \<sigma> P \<phi>' j) \<le> progress \<sigma> P \<phi> j"
       using \<open>\<phi> \<in> regex.atms r\<close> by (simp add: Min_le_iff)
     ultimately have "min y (MIN \<phi>'\<in>regex.atms r. progress \<sigma> P \<phi>' j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
@@ -1536,13 +1548,18 @@ lemma letpast_progress_PastRec:
     and Pj: "pred_mapping (\<lambda>x. x \<le> j) P"
   shows "letpast_progress \<sigma> P p \<phi> j \<ge> min (progress \<sigma> P \<phi> j) j"
   unfolding letpast_progress_def
-  apply (rule cInf_greatest)
-  using progress_fixpoint_ex[OF Pj] apply simp
-  apply blast
-   apply clarify
-  apply (rule ssubst, assumption)
-  apply (frule safe_letpast_progress_upd[OF assms, of _ \<sigma>])
-  by simp
+proof (rule cInf_greatest)
+  show "{i. i \<le> j \<and> i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j} \<noteq> {}"
+    using progress_fixpoint_ex[OF Pj] by simp
+  fix i
+  assume "i \<in> {i. i \<le> j \<and> i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j}"
+  then have i: "i \<le> j" and fp: "i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j"
+    by simp_all
+  have "min (Suc i) (progress \<sigma> P \<phi> j) \<le> i"
+    using safe_letpast_progress_upd[OF past Pj i] fp[symmetric] by (rule ord_le_eq_trans)
+  then show "min (progress \<sigma> P \<phi> j) j \<le> i"
+    by (simp add: min_le_iff_disj)
+qed
 
 lemma letpast_progress_upd_idem: "letpast_progress \<sigma> (P(p \<mapsto> x)) p \<phi> j = letpast_progress \<sigma> P p \<phi> j"
   by (simp add: letpast_progress_def)
@@ -1552,19 +1569,36 @@ lemma progress_Suc_letpast_progress_eq:
     and Pj: "pred_mapping (\<lambda>x. x \<le> j) P"
     and Suc_i: "Suc i = letpast_progress \<sigma> P p \<phi> j"
   shows "progress \<sigma> (P(p \<mapsto> i)) \<phi> j = letpast_progress \<sigma> P p \<phi> j"
-  apply (subgoal_tac "i \<le> j")
-   apply (rule antisym)
-    apply (rule order_trans[rotated])
-     apply (rule letpast_progress_PastRec[OF past, where P="P(p \<mapsto> i)", unfolded letpast_progress_upd_idem])
-  using Pj apply simp
-  using Pj apply (simp add: progress_le_gen)
-   apply (rule order_trans[rotated])
-    apply (rule safe_letpast_progress_upd[OF past, where P="P(p \<mapsto> letpast_progress \<sigma> P p \<phi> j)", unfolded fun_upd_upd])
-  using Pj apply (simp add: progress_le_gen letpast_progress_le)
-    apply assumption
-  using Pj apply (simp add: letpast_progress_fixpoint Suc_i)
-  apply (rule order_trans[OF _ letpast_progress_le[OF Pj]])
-  by (rule lessI[of i, unfolded Suc_i, THEN less_imp_le])
+proof -
+  let ?lp = "letpast_progress \<sigma> P p \<phi> j"
+  have lp_le: "?lp \<le> j"
+    by (rule letpast_progress_le[OF Pj])
+  have "i < ?lp"
+    using Suc_i by simp
+  with lp_le have i: "i \<le> j"
+    by simp
+  have Pij: "pred_mapping (\<lambda>x. x \<le> j) (P(p \<mapsto> i))"
+    using Pj i by simp
+  have "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> j"
+    by (rule progress_le_gen[OF Pij])
+  then have "progress \<sigma> (P(p \<mapsto> i)) \<phi> j = min (progress \<sigma> (P(p \<mapsto> i)) \<phi> j) j"
+    by simp
+  also have "\<dots> \<le> letpast_progress \<sigma> (P(p \<mapsto> i)) p \<phi> j"
+    by (rule letpast_progress_PastRec[OF past Pij])
+  also have "\<dots> = ?lp"
+    by (rule letpast_progress_upd_idem)
+  finally have le: "progress \<sigma> (P(p \<mapsto> i)) \<phi> j \<le> ?lp" .
+  have "progress \<sigma> (P(p \<mapsto> ?lp)) \<phi> j = ?lp"
+    by (rule letpast_progress_fixpoint[OF Pj])
+  then have "?lp = min (Suc i) (progress \<sigma> (P(p \<mapsto> ?lp)) \<phi> j)"
+    using Suc_i by simp
+  also have "\<dots> \<le> progress \<sigma> (P(p \<mapsto> ?lp, p \<mapsto> i)) \<phi> j"
+    using Pj lp_le i by (intro safe_letpast_progress_upd[OF past]) simp_all
+  also have "\<dots> = progress \<sigma> (P(p \<mapsto> i)) \<phi> j"
+    by simp
+  finally show ?thesis
+    using le by (rule antisym[rotated])
+qed
 
 lemma letpast_progress_ge:
   assumes safe: "safe_letpast p \<phi> \<le> PastRec"
