@@ -2346,29 +2346,46 @@ next
     \<Longrightarrow> formula.rel_formula f (release_safe_0 \<phi>' I \<psi>') (release_safe_0 \<gamma>1 I \<gamma>2)" 
     for \<gamma>1 \<gamma>2 :: "'b Formula.formula"
     by (clarsimp simp: release_safe_0_def always_safe_0_def Formula.TT_def)
-  show ?case
-    using Release_0
-    apply (cases \<psi>) 
-    using obs
-    by (auto simp: case_Neg_iff rel_formula_fv)
-      (metis always_safe_0_safe release_safe_0_def safe_formula.simps(9))
+  from Release_0.prems obtain \<gamma>1 \<gamma>2 where \<psi>_def: "\<psi> = Formula.Release \<gamma>1 I \<gamma>2"
+    and rel1: "formula.rel_formula f \<phi>' \<gamma>1" and rel2: "formula.rel_formula f \<psi>' \<gamma>2"
+    by (cases \<psi>) auto
+  from obs[OF rel1 rel2] have safe0: "safe_formula (release_safe_0 \<gamma>1 I \<gamma>2)"
+    by (rule Release_0.IH)
+  then have "safe_formula \<gamma>2"
+    by (simp add: release_safe_0_def)
+  moreover have "fv \<gamma>1 \<subseteq> fv \<gamma>2"
+    using Release_0.hyps(4) rel_formula_fv[OF rel1] rel_formula_fv[OF rel2] by simp
+  ultimately show ?case
+    using Release_0.hyps(1,2) safe0 by (simp add: \<psi>_def)
 next
   case (MatchP I r)
-  have "regex.rel_regex (formula.rel_formula f) r r' 
-  \<Longrightarrow> Regex.safe_regex fv rgx_safe_pred Past Strict r'" for r'
-    apply (rule rel_regex_safe_aux[OF MatchP(1), where ?P="formula.rel_formula f"])
-    using MatchP(2)     
-    by (auto simp: rel_formula_fv split: formula.splits)
+  have "Regex.safe_regex fv rgx_safe_pred Past Strict r'"
+    if "regex.rel_regex (formula.rel_formula f) r r'" for r'
+  proof (rule rel_regex_safe_aux[OF MatchP(1) _ _ _ that])
+    show "safe_formula \<phi>'" if "\<phi> \<in> safe_atms r" "formula.rel_formula f \<phi> \<phi>'" for \<phi> \<phi>'
+      using MatchP(2) that by blast
+    show "fv \<phi> = fv \<phi>'" if "formula.rel_formula f \<phi> \<phi>'" for \<phi> \<phi>'
+      using that by (rule rel_formula_fv)
+    show "case \<phi>' of Formula.Neg \<phi>'' \<Rightarrow> formula.rel_formula f \<phi> \<phi>'' | _ \<Rightarrow> False"
+      if "formula.rel_formula f (Formula.Neg \<phi>) \<phi>'" for \<phi> \<phi>'
+      using that by (cases \<phi>') auto
+  qed
   then show ?case
     using MatchP
     by (cases \<psi>) auto
 next
   case (MatchF I r)
-  have "regex.rel_regex (formula.rel_formula f) r r' 
-  \<Longrightarrow> Regex.safe_regex fv rgx_safe_pred Futu Strict r'" for r'
-    apply (rule rel_regex_safe_aux[OF MatchF(1), where ?P="formula.rel_formula f"])
-    using MatchF(2)
-    by (auto simp: rel_formula_fv split: formula.splits)
+  have "Regex.safe_regex fv rgx_safe_pred Futu Strict r'"
+    if "regex.rel_regex (formula.rel_formula f) r r'" for r'
+  proof (rule rel_regex_safe_aux[OF MatchF(1) _ _ _ that])
+    show "safe_formula \<phi>'" if "\<phi> \<in> safe_atms r" "formula.rel_formula f \<phi> \<phi>'" for \<phi> \<phi>'
+      using MatchF(2) that by blast
+    show "fv \<phi> = fv \<phi>'" if "formula.rel_formula f \<phi> \<phi>'" for \<phi> \<phi>'
+      using that by (rule rel_formula_fv)
+    show "case \<phi>' of Formula.Neg \<phi>'' \<Rightarrow> formula.rel_formula f \<phi> \<phi>'' | _ \<Rightarrow> False"
+      if "formula.rel_formula f (Formula.Neg \<phi>) \<phi>'" for \<phi> \<phi>'
+      using that by (cases \<phi>') auto
+  qed
   then show ?case
     using MatchF
     by (cases \<psi>) auto
