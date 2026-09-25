@@ -534,14 +534,17 @@ next
       unfolding pos_def l_def
       by auto
     moreover have "list_all (\<lambda>\<phi>. (case \<phi> of \<not>\<^sub>F \<phi>' \<Rightarrow> safe_formula \<phi>' | _ \<Rightarrow> safe_formula \<phi>)) neg"
-      using And_Trigger mem
-      unfolding l_def neg_def t_def
-      apply (cases "convert_multiway \<phi>")
-      apply (auto simp add: safe_dual_def fv_convert_multiway
-          list_all_iff)
-      subgoal for \<phi>s \<gamma>
-        by (erule_tac x=\<gamma> in allE; cases \<gamma>; clarsimp simp del: safe_formula.simps)
-      done
+    proof -
+      have "safe_neg x" if "x \<in> set l" for x
+        using that safe_get_and[OF And_Trigger(5)]
+          safe_get_and[OF \<open>safe_formula (convert_multiway t)\<close>]
+        unfolding l_def by (auto simp: list_all_iff)
+      moreover have "(case x of \<not>\<^sub>F x' \<Rightarrow> safe_formula x' | _ \<Rightarrow> safe_formula x)
+        = safe_formula (remove_neg x)" for x :: "'a Formula.formula"
+        by (cases x) simp_all
+      ultimately show ?thesis
+        unfolding neg_def by (auto simp: list_all_iff safe_neg_def)
+    qed
     moreover have "\<Union>(set (map fv neg)) \<subseteq> \<Union>(set (map fv pos))"
       using \<phi>_fvs neg_fv
       unfolding l_def pos_def
