@@ -320,14 +320,16 @@ proof -
           elim!: list.rel_mono_strong wty_trm_fv_cong[THEN iffD1, rotated])
   next 
     case(Let S E'' \<phi>  p E  \<psi>)
-    then show ?case
-      using fvi.simps(2) apply(auto intro!: wty_formula.Let) 
-      using Let.IH(2) by blast
+    from Let.prems have "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E'' 0 (Formula.nfv \<phi>)), E' \<turnstile> \<psi>"
+      by (intro Let.IH(2)) simp_all
+    with Let.hyps(1) show ?case
+      by (rule wty_formula.Let)
   next 
     case(Frz S E'' \<phi>  p E  \<psi>)
-    then show ?case
-      using fvi.simps(2) apply(auto intro!: wty_formula.Frz) 
-      using Frz.IH(2) by blast
+    from Frz.prems have "S((p, Formula.nfv \<phi>) \<mapsto> tabulate E'' 0 (Formula.nfv \<phi>)), E' \<turnstile> \<psi>"
+      by (intro Frz.IH(2)) simp_all
+    with Frz.hyps(1) show ?case
+      by (rule wty_formula.Frz)
   next
     case(Eq E x t y' S)
     then show ?case by (fastforce intro!: wty_formula.Eq
