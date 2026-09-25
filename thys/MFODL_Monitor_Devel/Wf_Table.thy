@@ -512,73 +512,96 @@ proof -
   show "set_of_idx (idx_antijoin n B T C T') = join (set_of_idx T) False (set_of_idx T')"
     using assms(4,5)
     unfolding idx_antijoin_def
-    apply (transfer fixing: n A B C)
-  proof (rule set_eqI, rule iffI)
+  proof (transfer fixing: n A B C)
     fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
-    fix x
     assume restrict: "\<And>x Y. Map_To_Mapping.map_apply T x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict A z)"
       "\<And>x Y. Map_To_Mapping.map_apply T' x = Some Y \<Longrightarrow> table n C Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict A z)"
-    assume "x \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>)
+    have T_tab: "table n B Y" "\<forall>z \<in> Y. a = restrict A z" if "T a = Some Y" for a Y
+      using restrict(1)[of a Y] that by (simp_all add: Map_To_Mapping.map_apply_def)
+    have T'_tab: "table n C Y'" "\<forall>z \<in> Y'. a = restrict A z" if "T' a = Some Y'" for a Y'
+      using restrict(2)[of a Y'] that by (simp_all add: Map_To_Mapping.map_apply_def)
+    \<comment> \<open>since @{term "C \<subseteq> B"}, the antijoin keeps the tuples whose @{term C}-part is not matched\<close>
+    have antijoin: "x \<in> join Y False Y' \<longleftrightarrow> x \<in> Y \<and> restrict C x \<notin> Y'"
+      if "table n B Y" "table n C Y'" for x :: "'a option list" and Y Y'
+    proof -
+      have "x \<in> join Y False Y' \<longleftrightarrow> wf_tuple n B x \<and> restrict B x \<in> Y \<and> restrict C x \<notin> Y'"
+        using join_restrict_table[OF that, of False x] assms(3) by (simp add: sup_absorb1)
+      also have "\<dots> \<longleftrightarrow> x \<in> Y \<and> restrict C x \<notin> Y'"
+        using that(1) by (auto simp: table_def restrict_idle)
+      finally show ?thesis .
+    qed
+    have "table n B (\<Union> (ran T))" "table n C (\<Union> (ran T'))"
+      using T_tab(1) T'_tab(1) by (auto simp: table_def ran_def)
+    note join_S = antijoin[OF this]
+    \<comment> \<open>a tuple of @{term "T a"} can only be matched by a tuple of @{term "T' a"}\<close>
+    have S'_mem: "restrict C x \<in> \<Union> (ran T') \<longleftrightarrow> (\<exists>Y'. T' a = Some Y' \<and> restrict C x \<in> Y')"
+      if "T a = Some Y" "x \<in> Y" for a Y x
+    proof
+      assume "restrict C x \<in> \<Union> (ran T')"
+      then obtain a' Y' where a': "T' a' = Some Y'" "restrict C x \<in> Y'"
+        by (auto simp: ran_def)
+      have "a' = restrict A (restrict C x)"
+        using T'_tab(2)[OF a'(1)] a'(2) by blast
+      also have "\<dots> = restrict A x"
+        using assms(2) by (rule sub_restrict_restrict)
+      also have "\<dots> = a"
+        using T_tab(2)[OF that(1)] that(2) by simp
+      finally show "\<exists>Y'. T' a = Some Y' \<and> restrict C x \<in> Y'"
+        using a' by blast
+    qed (auto simp: ran_def)
+    show "\<Union> (ran (\<lambda>x. combine_options (\<union>)
       (case T x of None \<Rightarrow> None | Some y \<Rightarrow> (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x))
       (case case T x of None \<Rightarrow> None | Some y \<Rightarrow>
         (case T' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (bin_join n B y False C y')) of
-      None \<Rightarrow> None | Some v \<Rightarrow> if v \<noteq> {} then Some v else None)))"
-    then obtain a Y where a_def: "T a = Some Y" "case T' a of None \<Rightarrow> x \<in> Y | Some Y' \<Rightarrow> x \<in> join Y False Y'"
-      using restrict
-      by (auto simp: Map_To_Mapping.map_apply_def ran_def bin_join_table simp del: bin_join.simps split: option.splits if_splits)
-    then show "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
-      using restrict assms(2)
-      apply (auto simp: ran_def Table.join_def table_def these_iff Map_To_Mapping.map_apply_def split: option.splits)
-      apply (metis New_max.nested_include_restrict join1_Some_restrict option.simps(3))
-      subgoal premises prems for Y' Y1 x1 a1 Y2 x2 a2
-      proof -
-        have x: "wf_tuple n B x" "a = restrict A x"
-          using prems(1)[OF prems(4)] prems(6) by blast+
-        have x1: "wf_tuple n B x1"
-          using prems(1)[OF prems(10)] prems(8) by blast
-        have x2: "wf_tuple n C x2" "a2 = restrict A x2"
-          using prems(2)[OF prems(12)] prems(9) by blast+
-        have "restrict B x = x1" "restrict C x = x2"
-          using prems(11) by (simp_all add: join1_Some_restrict[OF x1 x2(1)])
-        then have "x1 = x"
-          using restrict_idle[OF x(1)] by simp
-        have "a2 = restrict A (restrict C x)"
-          using x2(2) \<open>restrict C x = x2\<close> by simp
-        also have "\<dots> = a"
-          using x(2) prems(3) by (simp add: restrict_restrict Int_absorb2)
-        finally have "Y2 = Y'"
-          using prems(5,12) by simp
-        then show False
-          using prems(6,7,9,11) \<open>x1 = x\<close> by blast
+      None \<Rightarrow> None | Some v \<Rightarrow> if v \<noteq> {} then Some v else None))) = join (\<Union> (ran T)) False (\<Union> (ran T'))"
+    proof (rule set_eqI, rule iffI)
+      fix x
+      assume "x \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>)
+        (case T x of None \<Rightarrow> None | Some y \<Rightarrow> (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x))
+        (case case T x of None \<Rightarrow> None | Some y \<Rightarrow>
+          (case T' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (bin_join n B y False C y')) of
+        None \<Rightarrow> None | Some v \<Rightarrow> if v \<noteq> {} then Some v else None)))"
+      then obtain a Y where a_def: "T a = Some Y" "case T' a of None \<Rightarrow> x \<in> Y | Some Y' \<Rightarrow> x \<in> join Y False Y'"
+        using restrict
+        by (auto simp: Map_To_Mapping.map_apply_def ran_def bin_join_table simp del: bin_join.simps split: option.splits if_splits)
+      have "x \<in> Y \<and> restrict C x \<notin> \<Union> (ran T')"
+      proof (cases "T' a")
+        case None
+        then show ?thesis
+          using a_def S'_mem[OF a_def(1)] by auto
+      next
+        case (Some Y')
+        then show ?thesis
+          using a_def S'_mem[OF a_def(1)] antijoin[OF T_tab(1)[OF a_def(1)] T'_tab(1)[OF Some]] by auto
       qed
-      done
-  next
-    fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
-    fix x
-    assume "\<And>x Y. Map_To_Mapping.map_apply T x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict A z)"
-      "\<And>x Y. Map_To_Mapping.map_apply T' x = Some Y \<Longrightarrow> table n C Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict A z)"
-      "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
-    then obtain a Y where a_def: "T a = Some Y" "case T' a of None \<Rightarrow> x \<in> Y | Some Y' \<Rightarrow> x \<in> bin_join n B Y False C Y'"
-      apply (auto simp: ran_def Table.join_def these_iff Map_To_Mapping.map_apply_def split: if_splits)
-      subgoal premises prems for X a
-        using prems(1)[OF prems(6)] prems(2,3,4,5,6)
-        apply (cases "T' a")
-         apply (auto simp: Table.join_def these_iff bin_join_table simp del: bin_join.simps)
-        apply blast
-        done
-      done
-    show "x \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>)
-      (case T x of None \<Rightarrow> None | Some y \<Rightarrow> (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x))
-      (case case T x of None \<Rightarrow> None | Some y \<Rightarrow>
-        (case T' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (bin_join n B y False C y')) of
-      None \<Rightarrow> None | Some v \<Rightarrow> if v \<noteq> {} then Some v else None)))"
-      using a_def
-      apply (auto simp: ran_def simp del: bin_join.simps split: option.splits)
-      subgoal
-        by (rule exI[of _ Y]) (auto simp del: bin_join.simps)
-      subgoal for Y'
-        by (rule exI[of _ "bin_join n B Y False C Y'"]) (auto simp: Table.join_def these_iff simp del: bin_join.simps)
-      done
+      then show "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
+        using a_def(1) join_S by (auto simp: ran_def)
+    next
+      fix x
+      assume "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
+      then have x: "x \<in> \<Union> (ran T)" "restrict C x \<notin> \<Union> (ran T')"
+        using join_S by blast+
+      then obtain a Y where a_def: "T a = Some Y" "x \<in> Y"
+        by (auto simp: ran_def)
+      show "x \<in> \<Union> (ran (\<lambda>x. combine_options (\<union>)
+        (case T x of None \<Rightarrow> None | Some y \<Rightarrow> (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x))
+        (case case T x of None \<Rightarrow> None | Some y \<Rightarrow>
+          (case T' x of None \<Rightarrow> None | Some y' \<Rightarrow> Some (bin_join n B y False C y')) of
+        None \<Rightarrow> None | Some v \<Rightarrow> if v \<noteq> {} then Some v else None)))"
+      proof (cases "T' a")
+        case None
+        then show ?thesis
+          using a_def by (intro UnionI[OF ranI[where a=a and b=Y]]) auto
+      next
+        case (Some Y')
+        have "bin_join n B Y False C Y' = join Y False Y'"
+          using T_tab(1)[OF a_def(1)] T'_tab(1)[OF Some] by (rule bin_join_table)
+        moreover have "x \<in> join Y False Y'"
+          using antijoin[OF T_tab(1)[OF a_def(1)] T'_tab(1)[OF Some]] a_def(2) x(2) ranI[of T' a Y', OF Some] by blast
+        ultimately show ?thesis
+          using a_def(1) Some by (intro UnionI[OF ranI[where a=a and b="join Y False Y'"]]) auto
+      qed
+    qed
   qed
   show "\<And>x Y. Mapping.lookup (idx_antijoin n B T C T') x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict A z)"
     using assms
