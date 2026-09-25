@@ -615,8 +615,8 @@ next
   have *: "i \<le> (count \<circ> mset_treelist) l t" using Suc(2) by auto
   have "t \<in> set_treelist ((insert_treelist t ^^ i) ?removed)" using bulk_insert_in_set[of t] in_set by auto
   moreover have "sorted_treelist ((insert_treelist t ^^ i) ?removed)" using sorted_bulk_insort sorted by auto
-  show ?case using Suc(1)[OF *] unfolding simp1 insort_remove_comm[OF in_set, OF sorted] apply(transfer) 
-  proof -
+  show ?case using Suc(1)[OF *] unfolding simp1 insort_remove_comm[OF in_set, OF sorted]
+  proof transfer
     fix l t i
     assume "sort (l :: 'a list) = (Sorting.insort1 t ^^ i) (sort ((del_list t ^^ i) l))"
     then show "sort l = del_list t ((Sorting.insort1 t ^^ Suc i) (sort ((del_list t ^^ i) l)))"
@@ -2553,6 +2553,8 @@ proof -
       then have fold_def: "Finite_Set.fold (delete_rank ?args type) (True, m) F = (v', m')" 
         by(auto split:prod.splits)
       obtain v_f m_f where final_map_def: "(v_f, m_f) = delete_rank ?args type x (v', m')" using prod.collapse by blast
+      have del: "delete_maggaux ?args (Set.insert x F) (RankAux aux) = (v_f, RankAux (m_f, type))"
+        by (simp add: fold_insert[OF insert(1-2)] fold_def final_map_def[symmetric] del: delete_rank.simps)
       show ?case
       proof (cases v_f)
         case True 
@@ -2564,12 +2566,10 @@ proof -
         have "valid_maggaux ?args (RankAux (m_f, type)) (X - F - {x})"
           using valid_delete_rank_unfolded[OF valid_inter x_in, of v'] final_map_def True int_true by (simp split:prod.splits)
         then have "valid_maggaux ?args (RankAux (m_f, type)) (X - Set.insert x F)" by (metis Diff_insert)
-        then show ?thesis unfolding delete_maggaux.simps apply(simp del:valid_maggaux.simps) 
-          unfolding fold_insert[OF insert(1-2)] fold_def final_map_def[symmetric] by simp
+        then show ?thesis using del True by simp
       next
         case False
-        then show ?thesis unfolding delete_maggaux.simps apply(simp del:valid_maggaux.simps) 
-          unfolding fold_insert[OF insert(1-2)] fold_def final_map_def[symmetric] by simp
+        then show ?thesis using del by simp
       qed
     qed
   qed
