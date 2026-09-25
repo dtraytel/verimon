@@ -457,28 +457,57 @@ lemma (in msaux) wf_since_aux_result':
     and args_n: "args_n args = n"
     and args_pos: "args_pos args = pos"
   shows "qtable n (fv (Sincep pos \<phi> I \<psi>)) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (Sincep pos \<phi> I \<psi>)) (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
-  using valid_msaux(1-4) subs using valid_msaux(5)
-  apply (clarsimp simp add: foldr_union)
-    apply (rule qtableI)
-    subgoal
-      apply (auto simp add: args_n table_def Sincep_def dest!: qtable_wf_tupleD) by (metis Un_absorb1 qtable_wf_tupleD)
-    subgoal for x
-      apply clarsimp
-      subgoal for a b
-        apply (drule spec2[of _ a b])
-        apply (clarsimp simp add: sat_Sincep_alt[OF complete] args_ivl args_n args_pos)
-        by (meson Suc_leI Suc_le_mono le_trans qtable_def)
-      done
-    subgoal for x
-      apply (clarsimp simp add: sat_Sincep_alt[OF complete] args_ivl args_n args_pos)
-      subgoal for j
-        apply (erule allE[of "\<lambda>i. i < pIn \<longrightarrow> _ i" j])
-        apply (erule impE)
-         apply (metis complete less_Suc_eq_le less_\<tau>D less_imp_not_less linorder_neqE_nat sat_since_point_def)
-        apply(auto simp add: fv_sinceP)
-        by (metis (no_types, lifting) Un_commute qtable_def sup.orderE)
-      done
-    done
+proof -
+  have in_auxlist: "(\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pOut - t) \<and>
+      qtable n (fv \<psi>) (mem_restr R) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+    if "(t, X) \<in> set auxlist" for t X
+    using valid_msaux(3) that by (simp add: args_ivl args_n args_pos)
+  have complete_aux: "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist"
+    if "i < pIn" "memR I (\<tau> \<sigma> pOut - \<tau> \<sigma> i)" for i
+    using valid_msaux(4) that by (simp add: args_ivl)
+  have fv_eq: "fv (Sincep pos \<phi> I \<psi>) = fv \<psi>"
+    using subs by (auto simp: fv_sinceP)
+  \<comment> \<open>the result is the union of all tables whose time-stamp satisfies the lower bound\<close>
+  have result_iff: "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {} \<longleftrightarrow>
+      (\<exists>t X. (t, X) \<in> set auxlist \<and> memL I (\<tau> \<sigma> pOut - t) \<and> x \<in> X)" for x
+    using valid_msaux(5) by (auto simp: foldr_union args_ivl)
+  show ?thesis
+    unfolding fv_eq
+  proof (rule qtableI)
+    show "table n (fv \<psi>) (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+      unfolding table_def Ball_def result_iff using in_auxlist by (blast dest: qtable_wf_tupleD)
+  next
+    fix x
+    assume "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {}"
+      and "mem_restr R x"
+    then obtain t X where "(t, X) \<in> set auxlist" "memL I (\<tau> \<sigma> pOut - t)" "x \<in> X"
+      unfolding result_iff by blast
+    moreover from in_auxlist[OF this(1)] obtain i where "i < pIn" "\<tau> \<sigma> i = t" "memR I (\<tau> \<sigma> pOut - t)"
+      and "qtable n (fv \<psi>) (mem_restr R) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+      by blast
+    ultimately have "i \<le> pOut" "mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> i)"
+      and "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> i) (map the x)"
+      using valid_msaux(1) \<open>mem_restr R x\<close> by (auto dest: qtableD(2))
+    then show "Formula.sat \<sigma> V (map the x) pOut (Sincep pos \<phi> I \<psi>)"
+      unfolding sat_Sincep_alt[OF complete] by blast
+  next
+    fix x
+    assume "wf_tuple n (fv \<psi>) x" "mem_restr R x" "Formula.sat \<sigma> V (map the x) pOut (Sincep pos \<phi> I \<psi>)"
+    from this(3) obtain j where "mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)"
+      and sp: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> j) (map the x)"
+      unfolding sat_Sincep_alt[OF complete] by blast
+    \<comment> \<open>the since point has a witness j' before pIn with the same time-stamp, which is in the list\<close>
+    from sp obtain j' where "j' < pIn" "\<tau> \<sigma> j' = \<tau> \<sigma> j"
+      unfolding sat_since_point_def by blast
+    with \<open>mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)\<close> obtain X where X: "(\<tau> \<sigma> j, X) \<in> set auxlist"
+      using complete_aux[of j'] by auto
+    with in_auxlist have "x \<in> X"
+      using \<open>wf_tuple n (fv \<psi>) x\<close> \<open>mem_restr R x\<close> sp by (blast intro: in_qtableI)
+    with X \<open>mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)\<close>
+    show "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {}"
+      unfolding result_iff by blast
+  qed
+qed
 
 lemma (in msaux) wf_since_aux_result:
   assumes wf: "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn (Suc pOut)"
