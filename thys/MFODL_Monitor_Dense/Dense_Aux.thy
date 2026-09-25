@@ -998,7 +998,29 @@ qed
 
 lemma djoin_dset_since:
   "\<exists>i' s'. djoin_msaux args Y (dset_since g i s daux) = dset_since g i' s' (djoin_msaux args Y daux)"
-  by (cases daux rule: dmsaux_cases) (auto simp: Let_def)
+proof (cases daux rule: dmsaux_cases)
+  case (1 t gc msk dp di ti ii tui idxs tus)
+  show ?thesis
+  proof (cases "\<forall>i \<in> set msk. \<not> i")
+    case True
+    show ?thesis
+      unfolding 1 dset_since.simps djoin_msaux.simps if_P[OF True] Let_def by simp
+  next
+    case nA: False
+    show ?thesis
+    proof (cases "\<forall>i \<in> set msk. i")
+      case True
+      show ?thesis
+        unfolding 1 dset_since.simps djoin_msaux.simps if_not_P[OF nA] if_P[OF True] Let_def
+        by simp
+    next
+      case False
+      show ?thesis
+        unfolding 1 dset_since.simps djoin_msaux.simps if_not_P[OF nA] if_not_P[OF False] Let_def
+        by simp
+    qed
+  qed
+qed
 
 lemma dgc_dset_since:
   "\<exists>g' i' s'. dgc_msaux args (dset_since g i s daux) = dset_since g' i' s' daux"
