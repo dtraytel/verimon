@@ -17,12 +17,11 @@ text \<open>
   tables of the run in a queue, the union of the run as a count per tuple, and the answer as the
   set of tuples whose count is positive.
 
-  The executable monitor of \<open>Dense_Imp\<close> has run these two structures since 20.34, as
-  definitions without proofs (\<open>Since_Imp2\<close> and \<open>Until_Imp2\<close>).  This theory defines them again for the verified
-  dense evaluator and proves them against the abstract specification the kernel's own structures
-  meet: the assumptions of the locales @{locale msaux} and @{locale muaux}, specialised to a
-  closed left operand.  The verified dense evaluator then picks them where the executable one
-  does, and the simulation theorem covers the choice.
+  This theory defines these two structures for the verified dense evaluator and proves them
+  against the abstract specification the kernel's own structures meet: the assumptions of the
+  locales @{locale msaux} and @{locale muaux}, specialised to a closed left operand.  The verified
+  dense evaluator picks them for a closed left operand, and the simulation theorem covers the
+  choice.
 \<close>
 
 subsection \<open>A multiset of tuples as a count mapping\<close>

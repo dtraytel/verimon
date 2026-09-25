@@ -1,5 +1,0 @@
-(executables
-  (names table_bench map_bench)
-  (modules table_bench map_bench verified_open)
-  (flags (:standard -w -a))
-  (libraries zarith unix))

@@ -14,11 +14,6 @@ text \<open>
   A table whose timestamp has not yet reached the interval is not part of the union yet, so the
   table waits in a second queue until its timestamp is old enough.
 
-  This is the pure half of what was one theory with the heap-resident maps of the downstream
-  Since\_Imp2 theory (session MFODL\_Monitor\_Imp): this structure touches no array or reference,
-  so it lives here, in a session that does not depend on Imperative\_HOL, and that theory imports
-  it back for its dispatch between the heap, the pure aggregation-aware and this structure.
-
   Definitions only, no proofs.
 \<close>
 

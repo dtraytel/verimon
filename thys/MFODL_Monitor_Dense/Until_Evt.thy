@@ -26,11 +26,6 @@ text \<open>
   a bounded-future interval over a coarse timestamp sequence looks like -- most steps then
   touch nothing at all.
 
-  This is the pure half of what was one theory with the heap-resident maps of the downstream
-  Until\_Imp2 theory (session MFODL\_Monitor\_Imp): this structure touches no array or reference,
-  so it lives here, in a session that does not depend on Imperative\_HOL, and that theory imports
-  it back for its dispatch between the heap, the pure deque-based and this structure.
-
   Definitions only, no proofs.
 \<close>
 

@@ -2,13 +2,8 @@ chapter AFP
 
 session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
   description
-    "The dense (short-tuple) representation of the monitor's evaluation function, and the pure
-     window-union structures shared with the heap-resident Since/Until refinement of
-     MFODL_Monitor_Imp: all of it definitions and proofs over plain HOL functions, with no
-     Imperative_HOL. Separate from MFODL_Monitor_Imp so that this material -- including the
-     verified dense evaluator udmstep/udeval -- can be checked and reused without ever touching
-     the Heap monad, and so that a change to the imperative refinement does not force this
-     session to be rebuilt. Monitor_Code_Dense is the code export the shipping binary is built
+    "The dense (short-tuple) representation of the monitor's evaluation function and the verified
+     dense evaluator udmstep/udeval over it, with the window structures it runs. Monitor_Code_Dense is the code export the shipping binary is built
      from (src/verified.ml), together with the verified log parser of session Log_Parser;
      Log_Monitor composes the two, from the bytes of the log to the verdicts, and
      Log_Monitor_Online states its correctness for the online interface."

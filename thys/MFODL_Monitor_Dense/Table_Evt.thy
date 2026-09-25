@@ -8,12 +8,7 @@ section \<open>The union of a window of tables, as a count per tuple\<close>
 
 text \<open>Adding a table to the union costs one update per tuple of that table, removing one costs
 the same, and the union itself changes only where a count reaches or leaves zero.  Both the
-Since and the Until structure for a closed left operand are built on this.
-
-This is the pure half of what was one theory with the heap-resident tables of the downstream
-Table\_Imp theory (session MFODL\_Monitor\_Imp): these two operations touch no array or
-reference, so they live here, in a session that does not depend on Imperative\_HOL, and that
-theory imports them back.\<close>
+Since and the Until structure for a closed left operand are built on this.\<close>
 
 definition evt_add :: "event_data table \<Rightarrow> (event_data tuple, nat) mapping \<times> event_data table \<Rightarrow>
     (event_data tuple, nat) mapping \<times> event_data table" where

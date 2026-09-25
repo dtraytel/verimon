@@ -183,6 +183,29 @@ qed simp
 lemma zero_fcompare: "is_zero x \<Longrightarrow> is_zero y \<Longrightarrow> fcompare x y = ccode.Eq"
   unfolding fcompare_def by (simp add: zero_not_infinity zero_not_nan is_zero_valof_conv)
 
+text \<open>@{const fcompare} compares non-NaN values lexicographically by a class
+  (negative infinity, finite, positive infinity) and, for finite values, by @{const valof}.\<close>
+
+lemma fcompare_Eq_cong:
+  fixes x y z :: "('e, 'f) float"
+  assumes "fcompare x y = ccode.Eq"
+  shows "fcompare x z = fcompare y z" "fcompare z x = fcompare z y"
+proof -
+  obtain k :: "('e, 'f) float \<Rightarrow> int" where k: "\<And>a. k a = (if is_infinity a \<and> sign a = 1 then -1
+    else if is_infinity a \<and> sign a = 0 then 1 else 0)"
+    by (rule that[OF refl])
+  have key: "fcompare a b = (if is_nan a \<or> is_nan b then Und
+    else if k a < k b then ccode.Lt else if k b < k a then ccode.Gt
+    else if k a \<noteq> 0 then ccode.Eq
+    else if valof a < valof b then ccode.Lt else if valof a = valof b then ccode.Eq else ccode.Gt)"
+    for a b
+    unfolding fcompare_def k by auto
+  from assms have "\<not> is_nan x" "\<not> is_nan y" "k x = k y" "k y = 0 \<Longrightarrow> valof x = valof y"
+    unfolding key by (simp_all split: if_splits)
+  then show "fcompare x z = fcompare y z" "fcompare z x = fcompare z y"
+    unfolding key by (cases "k y = 0"; simp)+
+qed
+
 
 subsection \<open>Doubles with a unified NaN value\<close>
 
@@ -311,10 +334,10 @@ lemma fcompare_double_refl: "\<not> is_nan x \<Longrightarrow> fcompare_double x
   by transfer (auto simp: fcompare_def)
 
 lemma fcompare_double_Eq1: "fcompare_double x y = ccode.Eq \<Longrightarrow> fcompare_double y z = c \<Longrightarrow> fcompare_double x z = c"
-  by transfer (auto simp: fcompare_def split: if_splits)
+  by transfer (erule (1) fcompare_Eq_cong(1)[THEN trans])
 
 lemma fcompare_double_Eq2: "fcompare_double y z = ccode.Eq \<Longrightarrow> fcompare_double x y = c \<Longrightarrow> fcompare_double x z = c"
-  by transfer (auto simp: fcompare_def split: if_splits)
+  by transfer (erule (1) fcompare_Eq_cong(2)[symmetric, THEN trans])
 
 lemma fcompare_double_Lt_trans: "fcompare_double x y = ccode.Lt \<Longrightarrow> fcompare_double y z = ccode.Lt \<Longrightarrow> fcompare_double x z = ccode.Lt"
   by transfer (auto simp: fcompare_def split: if_splits)
