@@ -710,7 +710,9 @@ next
   then show ?case
     by (auto simp: release_safe_bounded_def Formula.eventually_def
         intro!: arg_cong2[where f=min])
-      (clarsimp simp: always_safe_bounded_def progress_eventually)qed (simp_all add: progress_regex_def)
+      (clarsimp simp: always_safe_bounded_def progress_eventually)
+qed (simp_all add: progress_regex_def)
+
 lemma progress_regex_le: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress_regex \<sigma> P r j \<le> j"
   by (auto intro!: progress_le_gen simp: Min_le_iff progress_regex_def)
 
