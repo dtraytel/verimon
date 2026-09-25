@@ -708,8 +708,21 @@ lemma join_restrict_tables:
   assumes "table n A X" "table n B Y" "\<not> b \<Longrightarrow> B \<subseteq> A"
   shows "v \<in> join X b Y \<longleftrightarrow> wf_tuple n (A \<union> B) v \<and> restrict A v \<in> X \<and>
     (if b then restrict B v \<in> Y else restrict B v \<notin> Y)"
-  apply (rule join_restrict)
-  using assms by (auto simp: table_def)
+proof (rule join_restrict)
+  fix v
+  assume "v \<in> X"
+  then show "wf_tuple n A v"
+    using assms(1) by (simp add: table_def)
+next
+  fix v
+  assume "v \<in> Y"
+  then show "wf_tuple n B v"
+    using assms(2) by (simp add: table_def)
+next
+  assume "\<not> b"
+  then show "B \<subseteq> A"
+    by (rule assms(3))
+qed
 
 fun mmulti_join_pos :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> (nat set \<times> 'a table) list \<Rightarrow> nat set \<times> 'a table" where
   "mmulti_join_pos n A t [] = (A, t)"
