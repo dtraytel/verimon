@@ -1609,91 +1609,149 @@ next
   then have IH_alt: "finite (drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>})"
     by(auto)
   have drop_b: "finite (drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> fv \<phi> = {0..<b}})"
-    apply(rule finite_subset[of _ "{replicate n None}"])
-     apply(auto simp add: wf_tuple_def list_eq_iff_nth_eq[where ?ys="replicate n None"])
-    done
+  proof (rule finite_subset)
+    show "drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> fv \<phi> = {0..<b}} \<subseteq> {replicate n None}"
+      by (auto simp add: wf_tuple_def list_eq_iff_nth_eq[where ?ys="replicate n None"])
+  qed simp
   have final_subset: "finite (drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})})"
     using drop_b IH_alt
     by (simp add: conj_disj_distribL Collect_disj_eq image_Un)
-  have sat_eq: "Formula.sat \<sigma> V (zs @ map the (x[y := None])) i \<phi> = Formula.sat \<sigma> V (zs @ map the (x)) i \<phi>" if "length zs = b" and "y<length x" for x zs
-    using Agg(1, 7) that
-    apply -
-    apply(rule sat_fv_cong)
-    apply(simp add: nth_append)
-    apply(auto simp add: Formula.nfv_def Suc_le_eq)
-    by (metis add.commute add_diff_inverse_nat map_update nth_list_update_neq)
-  have eval_trm_eq: "Formula.eval_trm (zs @ map the (x[y := None])) f = Formula.eval_trm (zs @ map the (x)) f" if "length zs = b" and "y<length x" for x zs
-using Agg(1, 7) that
-    apply -
-    apply(rule eval_trm_fv_cong)
-    apply(simp add: nth_append)
-  apply(auto simp add: Formula.nfv_def Suc_le_eq)
-  by (metis Agg.hyps(3) add.commute add_diff_inverse_nat map_update nth_list_update_neq subset_iff)
-  then show ?case using Agg IH
-    apply(simp)
-    apply(rule finite_surj[ of "{v. wf_tuple n (Formula.fvi b \<phi> \<union> Formula.fvi_trm b f) v \<and>
-         ((\<forall>a x. length x = b \<longrightarrow> Formula.sat \<sigma> V (x @ map the v) i \<phi> \<longrightarrow> Formula.eval_trm (x @ map the v) f \<noteq> a) \<longrightarrow>
-          fv \<phi> = {0..<b})}" _ "\<lambda> v. v [y:= (Some (eval_agg_op \<omega>
-         {(x, ecard
-               {zs.
-                length zs = b \<and>
-                Formula.sat \<sigma> V (zs @ map the v) i \<phi> \<and> Formula.eval_trm (zs @ map the v) f = x}) |
-          x. \<exists>xa. Formula.sat \<sigma> V (xa @ map the v) i \<phi> \<and>
-                  length xa = b \<and> Formula.eval_trm (xa @ map the v) f = x}))]"])
-     defer
-     apply(intro subsetI)
-     apply(clarify)
-    subgoal for x
-      apply(frule wf_tuple_length)
-    apply(rule image_eqI[where x="x[y:=None]"])
-       apply(rule sym)
-      apply(simp add: ac_simps sat_eq eval_trm_eq Formula.nfv_def Suc_le_eq cong: conj_cong Collect_cong)
-     apply(subst list_update_same_conv)
-      apply(simp add: Formula.nfv_def Suc_le_eq wf_tuple_def)
-       apply(simp add: Formula.nfv_def Suc_le_eq wf_tuple_def)
-       apply (metis option.exhaust_sel)
-      apply(auto)
-      apply(auto simp add: sat_eq eval_trm_eq wf_tuple_def nth_list_update Formula.nfv_def Suc_le_eq  fvi_trm_iff_fv_trm[where b="length _"] fvi_iff_fv[where b="length _"])
-      done
-    apply(rule finite_subset[of _ "(drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})})"])
-     apply(intro subsetI)
-    apply(clarify)
-    subgoal for x
-      apply(erule impCE)
-       apply(simp)
-       apply(elim exE conjE)
-      subgoal for zs
-        apply(rule image_eqI[where x="map2 (\<lambda> i z. if i \<in> fv \<phi> then Some z else None) [0..<b] zs @ x"])
-         apply(simp)
-        apply(intro conjI[rotated] CollectI)
-        apply(subgoal_tac "Formula.sat \<sigma> V (map the (map2 (\<lambda>x y. if x \<in> fv \<phi> then Some y else None) [0..<b] zs @ x)) i \<phi>")
-        apply(simp)
-         apply(erule sat_fv_cong[THEN iffD1, rotated])
-         apply(simp add: Formula.nfv_def nth_append)
-         apply(auto simp add: wf_tuple_def nth_append Formula.nfv_def)
-           apply (metis add_diff_inverse_nat fvi_iff_fv le_add1 le_add_diff_inverse2)
-        apply (metis bot_nat_0.not_eq_extremum diff_is_0_eq fvi_iff_fv le_add_diff_inverse2 zero_less_diff)
-        subgoal for i
-          apply(subgoal_tac "i\<in>fv_trm f")
-           apply(auto)[]
-          by (metis bot_nat_0.not_eq_extremum diff_is_0_eq fvi_trm_iff_fv_trm le_add_diff_inverse2 zero_less_diff)
-        done
-      apply(subgoal_tac "wf_tuple n {} x")
-      subgoal
-        apply(subgoal_tac "x \<in> drop b ` {v. wf_tuple (n + b) (fv \<phi>) v \<and> fv \<phi> = {0..<b}}")
-          apply blast
-        apply(subgoal_tac "x\<in>{v. wf_tuple n {} v}")
-        subgoal
-          apply(subgoal_tac "{v. wf_tuple n {} v} \<subseteq> drop b ` {v. wf_tuple (n + b) (fv \<phi>) v}")
-           apply(auto )[]
-          by (auto simp: in_unit_table[symmetric] unit_table_def image_iff nth_append
-    intro!: exI[of _ "replicate b (Some undefined) @ replicate n None"] wf_tuple_def[THEN iffD2])
-        apply(auto)
-        done
-      apply(auto simp add: wf_tuple_def fvi_iff_fv[of _ "length tys"] fvi_trm_iff_fv_trm[of _ "length tys"])
-      done
-      using final_subset apply(auto)
-      done
+  \<comment> \<open>the variable @{term y} does not occur in @{term \<phi>} (shifted by @{term b})\<close>
+  have upd_eq: "(zs @ map the (x[y := None])) ! j = (zs @ map the x) ! j"
+    if "length zs = b" and "j \<in> fv \<phi>" for x and zs :: Formula.env and j
+  proof (cases "j < b")
+    case True
+    with that(1) show ?thesis
+      by (simp add: nth_append)
+  next
+    case False
+    with that Agg.hyps(1) have "y \<noteq> j - b"
+      by auto
+    with False that(1) show ?thesis
+      by (simp add: nth_append map_update)
+  qed
+  have sat_eq: "Formula.sat \<sigma> V (zs @ map the (x[y := None])) i \<phi> = Formula.sat \<sigma> V (zs @ map the (x)) i \<phi>" if "length zs = b" for x zs
+    using that by (intro sat_fv_cong) (simp add: upd_eq)
+  have eval_trm_eq: "Formula.eval_trm (zs @ map the (x[y := None])) f = Formula.eval_trm (zs @ map the (x)) f" if "length zs = b" for x zs
+    using upd_eq[OF that] Agg.hyps(3) by (intro eval_trm_fv_cong) blast
+  let ?M = "\<lambda>u. {(x, ecard Zs) | x Zs. Zs = {zs. length zs = b \<and> Formula.sat \<sigma> V (zs @ u) i \<phi> \<and> Formula.eval_trm (zs @ u) f = x} \<and> Zs \<noteq> {}}"
+  have sat_Agg: "Formula.sat \<sigma> V u i (Formula.Agg y \<omega> tys f \<phi>) \<longleftrightarrow>
+    (?M u = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b}) \<and> u ! y = eval_agg_op \<omega> (?M u)" for u
+    by (simp only: Formula.sat.simps Let_def b_def)
+  have M_upd: "?M (map the (v[y := None])) = ?M (map the v)" for v
+    by (simp only: sat_eq eval_trm_eq cong: conj_cong)
+  have fv_Agg: "fv (Formula.Agg y \<omega> tys f \<phi>) = insert y (Formula.fvi b \<phi>)"
+    using Agg.hyps(3) by (auto simp: fvi_iff_fv[of _ "length tys"] fvi_trm_iff_fv_trm[of _ "length tys"])
+  have y_notin: "y \<notin> Formula.fvi b \<phi>"
+    using Agg.hyps(1) by (simp add: fvi_iff_fv[of _ "length tys"])
+  have "y < n"
+    using fvi_less_nfv[of "Formula.Agg y \<omega> tys f \<phi>"] Agg.prems(2) fv_Agg by fastforce
+  \<comment> \<open>a satisfying tuple is determined by its group, i.e., the values of all other variables\<close>
+  let ?G = "{w. wf_tuple n (Formula.fvi b \<phi>) w \<and> (?M (map the w) = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b})}"
+  let ?g = "\<lambda>w. w[y := Some (eval_agg_op \<omega> (?M (map the w)))]"
+  have S_sub: "{v. wf_tuple n (fv (Formula.Agg y \<omega> tys f \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Agg y \<omega> tys f \<phi>)}
+    \<subseteq> ?g ` ?G"
+  proof
+    fix v
+    assume "v \<in> {v. wf_tuple n (fv (Formula.Agg y \<omega> tys f \<phi>)) v \<and> Formula.sat \<sigma> V (map the v) i (Formula.Agg y \<omega> tys f \<phi>)}"
+    then have wf: "wf_tuple n (insert y (Formula.fvi b \<phi>)) v"
+      and sat: "(?M (map the v) = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b}) \<and> map the v ! y = eval_agg_op \<omega> (?M (map the v))"
+      unfolding mem_Collect_eq fv_Agg sat_Agg by blast+
+    let ?w = "v[y := None]"
+    from wf y_notin \<open>y < n\<close> have "wf_tuple n (Formula.fvi b \<phi>) ?w"
+      by (auto simp: wf_tuple_def nth_list_update)
+    moreover from sat have "?M (map the ?w) = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b}"
+      unfolding M_upd by blast
+    ultimately have "?w \<in> ?G"
+      by blast
+    moreover have "?g ?w = v"
+    proof -
+      from wf \<open>y < n\<close> have "v ! y \<noteq> None"
+        by (simp add: wf_tuple_def)
+      with sat wf_tuple_length[OF wf] \<open>y < n\<close> have vy: "v ! y = Some (eval_agg_op \<omega> (?M (map the v)))"
+        by (cases "v ! y") auto
+      have "?g ?w = v[y := Some (eval_agg_op \<omega> (?M (map the v)))]"
+        by (simp only: list_update_overwrite M_upd)
+      also have "\<dots> = v"
+        using vy wf_tuple_length[OF wf] \<open>y < n\<close> by (simp add: list_update_same_conv)
+      finally show ?thesis .
+    qed
+    ultimately show "v \<in> ?g ` ?G"
+      by (rule rev_image_eqI[OF _ sym])
+  qed
+  \<comment> \<open>every group extends to a satisfying tuple of @{term \<phi>}, unless @{term \<phi>} only has the bound variables\<close>
+  have G_sub: "?G \<subseteq> drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})}"
+  proof
+    fix w
+    assume "w \<in> ?G"
+    then have wf: "wf_tuple n (Formula.fvi b \<phi>) w" and M: "?M (map the w) = {} \<longrightarrow> fv \<phi> \<subseteq> {0..<b}"
+      unfolding mem_Collect_eq by blast+
+    show "w \<in> drop b`{v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})}"
+    proof (cases "?M (map the w) = {}")
+      case False
+      then obtain zs where zs: "length zs = b" "Formula.sat \<sigma> V (zs @ map the w) i \<phi>"
+        by auto
+      let ?u = "map2 (\<lambda>j z. if j \<in> fv \<phi> then Some z else None) [0..<b] zs @ w"
+      have "wf_tuple (n+b) (fv \<phi>) ?u"
+        unfolding wf_tuple_def
+      proof (intro conjI allI impI)
+        show "length ?u = n + b"
+          using zs(1) wf_tuple_length[OF wf] by simp
+        fix j
+        assume "j < n + b"
+        show "?u ! j = None \<longleftrightarrow> j \<notin> fv \<phi>"
+        proof (cases "j < b")
+          case True
+          with zs(1) show ?thesis
+            by (simp add: nth_append)
+        next
+          case False
+          with \<open>j < n + b\<close> wf have "w ! (j - b) = None \<longleftrightarrow> j - b \<notin> Formula.fvi b \<phi>"
+            by (simp add: wf_tuple_def)
+          with False zs(1) show ?thesis
+            by (simp add: nth_append fvi_iff_fv[of _ "length tys"])
+        qed
+      qed
+      moreover have "Formula.sat \<sigma> V (map the ?u) i \<phi>"
+      proof -
+        have "\<forall>j\<in>fv \<phi>. map the ?u ! j = (zs @ map the w) ! j"
+          using zs(1) by (auto simp: nth_append)
+        then have "Formula.sat \<sigma> V (map the ?u) i \<phi> = Formula.sat \<sigma> V (zs @ map the w) i \<phi>"
+          by (rule sat_fv_cong)
+        with zs(2) show ?thesis
+          by simp
+      qed
+      ultimately have "?u \<in> {v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})}"
+        by blast
+      moreover have "drop b ?u = w"
+        using zs(1) by simp
+      ultimately show ?thesis
+        by (rule rev_image_eqI[OF _ sym])
+    next
+      case True
+      with M Agg.hyps(2) have fv_\<phi>: "fv \<phi> = {0..<b}"
+        by auto
+      then have "Formula.fvi b \<phi> = {}"
+        by (auto simp: fvi_iff_fv[of _ "length tys"])
+      with wf have w: "w = replicate n None"
+        by (simp add: wf_tuple_empty_iff)
+      let ?u = "replicate b (Some undefined) @ w"
+      have "wf_tuple (n+b) (fv \<phi>) ?u"
+        using w fv_\<phi> by (auto simp: wf_tuple_def nth_append)
+      with fv_\<phi> have "?u \<in> {v. wf_tuple (n+b) (fv \<phi>) v \<and> (Formula.sat \<sigma> V (map the v) i \<phi> \<or> fv \<phi> = {0..<b})}"
+        by blast
+      moreover have "drop b ?u = w"
+        by simp
+      ultimately show ?thesis
+        by (rule rev_image_eqI[OF _ sym])
+    qed
+  qed
+  from G_sub final_subset have "finite ?G"
+    by (rule finite_subset)
+  then have "finite (?g ` ?G)"
+    by (rule finite_imageI)
+  with S_sub show ?case
+    by (rule finite_subset)
 next
   case (Prev I \<phi>)
   then have "finite
