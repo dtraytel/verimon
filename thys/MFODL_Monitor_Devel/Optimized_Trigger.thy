@@ -2189,11 +2189,10 @@ proof -
       using idx_props(2) j_props(1) assms(4)
       unfolding tuple_since_tp_def
       by (metis One_nat_def Suc_leI add.right_neutral add_Suc_right add_diff_cancel_left' add_diff_cancel_right' diff_Suc_Suc diff_le_mono le_add_diff_inverse less_imp_le_nat nth_drop)
+    have "j - (idx - idx_oldest) < length (drop (idx - idx_oldest) (linearize data_in))"
+      using j_props(1) assm by auto
     then have "(linearize data_in)!j \<in> set (drop (idx - idx_oldest) (linearize data_in))"
-      using j_props(1) assm
-      apply (cases "idx_oldest < idx")
-       apply (auto)
-      by (smt (verit) Suc_pred j_th add_diff_inverse_nat add_le_cancel_left add_less_cancel_left le_add1 le_less_trans le_simps(2) length_drop nat_diff_split_asm nth_mem zero_less_diff zero_order(3))
+      unfolding j_th by (rule nth_mem)
     moreover have "(\<forall>(t, y)\<in>set (drop (idx - idx_oldest) (linearize data_in)). as \<in> y)"
       using idx_props(2)
       unfolding tuple_since_tp_def
