@@ -664,16 +664,34 @@ lemma integer_of_nat_rbt_simps:
 
 lemma rbtreeify_fi: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
   and rbtreeify_gi: "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-proof (induction n kvs and n kvs rule: rbtreeify_f_rbtreeify_g.induct)
-  case (1 n kvs)
-  then show ?case
-    by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
-      (auto simp: integer_of_nat_rbt_simps split: list.splits prod.splits)
-next
-  case (2 n kvs)
-  then show ?case
-    by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
-      (auto simp: integer_of_nat_rbt_simps split: list.splits prod.splits)
+proof -
+  have fg: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs \<and>
+      rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs" for n and kvs :: "('a \<times> 'b) list"
+  proof (induction n arbitrary: kvs rule: less_induct)
+    case (less n kvs)
+    consider "n = 0" | "n = 1" | "1 < n"
+      by linarith
+    then show ?case
+    proof cases
+      case 3
+      then have ne: "n \<noteq> 0" "n \<noteq> 1" and lt: "n div 2 < n"
+        by simp_all
+      show ?thesis
+      proof
+        show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+          by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
+            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case)
+        show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+          by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
+            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case simp_thms)
+      qed
+    qed (simp_all add: rbtreeify_fi.simps rbtreeify_gi.simps rbtreeify_f.simps rbtreeify_g.simps
+      integer_of_nat_rbt_simps)
+  qed
+  show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+    using fg by simp
+  show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+    using fg by simp
 qed
 
 fun ilen :: "integer \<Rightarrow> 'a list \<Rightarrow> integer" where
