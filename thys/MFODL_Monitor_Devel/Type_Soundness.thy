@@ -33,12 +33,18 @@ proof -
 next
   assume "t \<in> numeric_ty"
   from this assms show "foldl undef_plus x21 x22 = foldl (+) x21 x22 \<and> ty_of (foldl (+) x21 x22 ) = t"
-  proof (induction x22 arbitrary: x21 t)
-  case (Cons a x22)
-  then show ?case using undef_plus_sound 
-    apply (cases x21; cases a; auto simp add: numeric_ty_def)
-    using ty_of.simps by presburger+
-  qed auto
+  proof (induction x22 arbitrary: x21)
+    case (Cons a x22)
+    have num: "t \<in> numeric_ty" and ty_x21: "ty_of x21 = t" and ty_a: "ty_of a = t"
+      using Cons.prems by simp_all
+    have "undef_plus x21 a = x21 + a"
+      using num ty_x21 ty_a
+      by (cases x21; cases a) (simp_all add: numeric_ty_def undef_plus_sound)
+    moreover have "ty_of (x21 + a) = t"
+      using ty_x21 ty_a num by (rule ty_of_plus)
+    ultimately show ?case
+      using Cons.IH[of "x21 + a"] Cons.prems by simp
+  qed simp
 qed
 
 lemma eval_agg_op_sound: 
