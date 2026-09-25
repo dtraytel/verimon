@@ -389,18 +389,23 @@ next
   show ?case 
   proof (cases "mem I 0 \<or> \<not> bounded I")
     case True
-    thus ?thesis
-      using Release(2,4)[of _ _ P P'] Release(1,3)
-      apply (auto 0 3 dest: memR_nonzeroD less_\<tau>D spec[of _ j'] intro!: cInf_superset_mono)
-      subgoal for x k l
-        apply (subgoal_tac "l < j'")
-        using "2.prems" le_trans apply presburger
-        using "2.prems"(1) by linarith
-      subgoal for x k l
-        apply (subgoal_tac "k < j'")
-        using "2.prems" le_trans apply meson 
-        using "2.prems"(1) by linarith
-      by (meson bounded_memR)+
+    let ?A = "\<lambda>P j. {i. \<forall>k. k < j \<and> k \<le> min (progress \<sigma> P \<psi> j) (progress \<sigma> P \<phi> j)
+      \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
+    let ?B = "\<lambda>P j. {i. \<forall>k. k < j \<and> k \<le> progress \<sigma> P \<psi> j
+      \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
+    have \<phi>: "progress \<sigma> P \<phi> j \<le> progress \<sigma> P' \<phi> j'"
+      and \<psi>: "progress \<sigma> P \<psi> j \<le> progress \<sigma> P' \<psi> j'"
+      using Release(2,4)[OF 2] by auto
+    have "?A P' j' \<subseteq> ?A P j"
+      using \<phi> \<psi> 2(1) by auto
+    moreover have "?B P' j' \<subseteq> ?B P j"
+      using \<psi> 2(1) by auto
+    moreover have "?B P' j' \<noteq> {}"
+      by (rule progress_eventually_nempty)
+    ultimately have "Inf (?A P j \<union> ?B P j) \<le> Inf (?A P' j' \<union> ?B P' j')"
+      by (intro cInf_superset_mono) auto
+    with True show ?thesis
+      by simp
   next
     case False
     have fact1: "progress \<sigma> P (Formula.eventually I Formula.TT) j 
@@ -424,19 +429,28 @@ next
         \<le> (progress \<sigma> P' (always_safe_bounded I \<psi>) j')" 
       using Release(2,4)[OF 2] 2(1) 
       by (clarsimp simp: always_safe_bounded_def min_le_iff_disj)
-    thus ?thesis 
-      using Release(2,4)[OF 2] False
-      apply (clarsimp simp: release_safe_bounded_def)
-      apply (intro conjI impI allI iffI)
-      using fact1 min.coboundedI1 apply blast
-      apply linarith 
-      using fact2 apply (meson min_le_iff_disj)  
-      apply (subst min_le_iff_disj, intro disjI2)+ 
-      apply (rule fact5)
-      apply (clarsimp simp: Min_le_iff intro!: diff_le_mono )
-      apply (rule Inf_leq; clarsimp)
-      apply (metis \<tau>_mono diff_is_0_eq' memR_zero)
-      by (meson "2.prems"(1) le_trans order_less_le_trans)
+    moreover have "progress \<sigma> P (Formula.Next all (Formula.Until \<psi> (int_remove_lower_bound I) (Formula.And \<psi> \<phi>))) j
+      \<le> progress \<sigma> P' (Formula.Next all (Formula.Until \<psi> (int_remove_lower_bound I) (Formula.And \<psi> \<phi>))) j'"
+    proof -
+      let ?S = "\<lambda>P j. {i. \<forall>k. k < j \<and> k \<le> progress \<sigma> P \<psi> j \<and> k \<le> progress \<sigma> P \<phi> j
+        \<longrightarrow> memR (int_remove_lower_bound I) (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
+      have "?S P' j' \<subseteq> ?S P j"
+        using Release(2,4)[OF 2] 2(1) by auto
+      moreover have "?S P' j' \<noteq> {}"
+        by (auto intro!: exI[of _ j'])
+      ultimately have "Inf (?S P j) \<le> Inf (?S P' j')"
+        by (intro cInf_superset_mono) auto
+      then show ?thesis
+        by (simp add: diff_le_mono)
+    qed
+    then have "progress \<sigma> P (Formula.eventually (flip_int_less_lower I)
+        (Formula.Next all (Formula.Until \<psi> (int_remove_lower_bound I) (Formula.And \<psi> \<phi>)))) j
+      \<le> progress \<sigma> P' (Formula.eventually (flip_int_less_lower I)
+        (Formula.Next all (Formula.Until \<psi> (int_remove_lower_bound I) (Formula.And \<psi> \<phi>)))) j'"
+      by (rule fact5)
+    ultimately show ?thesis
+      using False fact1 fact2
+      by (simp add: release_safe_bounded_def del: min.bounded_iff) (intro min.mono; assumption)
   qed
 next
   case (MatchF I r) case 1
@@ -451,11 +465,11 @@ next
   case (LetPast p \<phi>1 \<phi>2) case 1
   obtain i where fp: "i = progress \<sigma> (P((p, Formula.nfv \<phi>1) \<mapsto> i)) \<phi>1 j" "i \<le> j"
     using progress_fixpoint_ex'[OF LetPast(1,2) 1] by blast
-  show ?case
-    apply (unfold progress.simps Let_def)
-    apply (rule LetPast(3))
-    apply (rule pred_mapping_map_upd[OF _ 1])
+  have "\<Sqinter>{i. i \<le> j \<and> i = progress \<sigma> (P((p, Formula.nfv \<phi>1) \<mapsto> i)) \<phi>1 j} \<le> j"
     using fp by (auto intro!: cInf_lower2[of i])
+  then show ?case
+    unfolding progress.simps Let_def
+    by (intro LetPast(3) pred_mapping_map_upd[OF _ 1])
 next
   case (Frz p \<phi> \<psi>) case 1
   let ?pn = "(p, Formula.nfv \<phi>)"
@@ -539,24 +553,46 @@ next
     using progress_fixpoint_ex'[OF LetPast(1,2)] 2 by blast
   obtain i' where fp': "i' = progress \<sigma> (P'((p, Formula.nfv \<phi>1) \<mapsto> i')) \<phi>1 j'" "i' \<le> j'"
     using progress_fixpoint_ex'[OF LetPast(1,2)] 2 by blast
+  let ?pn = "(p, Formula.nfv \<phi>1)"
+  let ?F = "\<lambda>i. progress \<sigma> (P(?pn \<mapsto> i)) \<phi>1 j"
+  let ?F' = "\<lambda>i. progress \<sigma> (P'(?pn \<mapsto> i)) \<phi>1 j'"
+  have le_j: "\<Sqinter>{i. i \<le> j \<and> i = ?F i} \<le> j"
+    using fp by (auto intro!: cInf_lower2[of i])
+  have le_j': "\<Sqinter>{i. i \<le> j' \<and> i = ?F' i} \<le> j'"
+    using fp' by (auto intro!: cInf_lower2[of i'])
+  have le: "\<Sqinter>{i. i \<le> j \<and> i = ?F i} \<le> \<Sqinter>{i. i \<le> j' \<and> i = ?F' i}"
+  proof (rule cInf_mono)
+    show "{i. i \<le> j' \<and> i = ?F' i} \<noteq> {}"
+      using fp' by auto
+    show "bdd_below {i. i \<le> j \<and> i = ?F i}"
+      by simp
+    fix k
+    assume "k \<in> {i. i \<le> j' \<and> i = ?F' i}"
+    then have k: "k \<le> j'" "k = ?F' k"
+      by simp_all
+    have "\<exists>i \<le> min k j. i = ?F i"
+    proof (rule bounded_fixpoint_ex)
+      show "mono_on {..min k j} ?F"
+        using 2 by (intro mono_onI LetPast(2)) (simp_all del: fun_upd_apply)
+      show "\<forall>x \<le> min k j. ?F x \<le> min k j"
+      proof (intro allI impI)
+        fix x
+        assume x: "x \<le> min k j"
+        have "?F x \<le> ?F' k"
+          using 2 x k(1) by (intro LetPast(2)) (simp_all del: fun_upd_apply)
+        moreover have "?F x \<le> j"
+          using 2 x by (intro LetPast(1)) (simp del: fun_upd_apply)
+        ultimately show "?F x \<le> min k j"
+          using k(2) by simp
+      qed
+    qed
+    then show "\<exists>a \<in> {i. i \<le> j \<and> i = ?F i}. a \<le> k"
+      by auto
+  qed
   show ?case
-    apply (unfold progress.simps Let_def)
-    apply (rule LetPast(4)[OF 2(1)])
-    using 2 fp apply (auto simp del: fun_upd_apply intro!: pred_mapping_map_upd cInf_lower2[of i])[]
-    using 2 fp' apply (auto simp del: fun_upd_apply intro!: pred_mapping_map_upd cInf_lower2[of i'])[]
-    apply (intro rel_mapping_map_upd cInf_mono 2)
-    using fp' apply auto[2]
-    subgoal for k
-      apply clarify
-      apply (subgoal_tac "\<exists>i \<le> min k j. i = progress \<sigma> (P((p, Formula.nfv \<phi>1) \<mapsto> i)) \<phi>1 j")
-       apply auto[]
-      apply (intro bounded_fixpoint_ex mono_onI)
-      using LetPast 2 apply (simp del: fun_upd_apply)
-      apply (cases "k \<le> j")
-       apply clarsimp
-       apply (erule ssubst)
-      using LetPast 2 by (auto simp del: fun_upd_apply)
-    done
+    unfolding progress.simps Let_def
+    using le_j le_j' le 2
+    by (intro LetPast(4)[OF 2(1)] pred_mapping_map_upd rel_mapping_map_upd) simp_all
 qed (simp_all add: Min_le_iff progress_regex_def min_le_iff_disj le_imp_diff_le diff_le_mono
   ex_in_conv split: option.splits, fastforce)
 
