@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser is 6 to 10.5 times slower than MonPoly's
-parser (median 8): with MonPoly's parser at 1.4 to 5.6 µs per formula
-(median 2.4 µs), about 19 µs at the median. The LR driver takes 75% of the
-time, the lexer 18%, post-processing and conversion 7%. In a `monpoly -check`
+9 to 48 tokens), the verified parser is 5 to 8.5 times slower than MonPoly's
+parser (median 6.7): with MonPoly's parser at 1.4 to 5.6 µs per formula
+(median 2.4 µs), about 16 µs at the median. The LR driver takes 71% of the
+time, the lexer 21%, post-processing and conversion 8%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -123,24 +123,26 @@ the export, on the same suite (median per formula):
 | product automaton (`lr/LR_Prod.thy`)       | 33 µs  | 7.2 ms  |
 | one saved stack (`LR_Loop.thy`)            | 30 µs  | 6.6 ms  |
 | characters as integers                     | 23 µs  | 5.1 ms  |
-| one action table (`LR_Plain.thy`, current) | 19 µs  | 4.2 ms  |
+| one action table (`LR_Plain.thy`)          | 19 µs  | 4.2 ms  |
+| tokens numbered by a case distinction      | 16 µs  | 3.6 ms  |
 | MonPoly's parser (ocamlyacc)               | 2.3 µs | 0.49 ms |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 36 M, 28 M of them in the LR driver (with the semantic
+parser executes 30 M, 22 M of them in the LR driver (with the semantic
 actions) and 5 M in the lexer.
 Numbering the lookahead token by a linear search in the list of terminals at
 every step took 24 M of the LR driver's instructions; numbering each token
-once, when it enters the input, takes 7 M. Running on the product automaton
+once, when it enters the input, took 7 M, and a case distinction on the
+token instead of the search takes almost nothing. Running on the product automaton
 instead of pairs of states reduced the step from 20 M to 12 M. Detecting
 loops of reductions with one saved stack instead of all stacks since the last
 shift saved another 5 M. Exporting characters as integers, with the code
 equations described below, took the lexer from 14 M to 5 M and the semantic
 actions from 9 M to 4 M. One action table instead of the tables of shifts,
 reduce candidates and productions took the step from 22 M to 18 M, 2.5 M of
-it in trie lookups. (The last three rows were measured against the previous
-version in alternating runs, 9%, 24% and 16% faster, and scaled to the earlier
-rows; the machine was slower at the time.)
+it in trie lookups. (The last four rows were measured against the previous
+version in alternating runs, 9%, 24%, 16% and 15% faster, and scaled to the
+earlier rows; the machine was slower at the time.)
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -153,7 +155,10 @@ numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
 are tabulated by lookahead, so a step compares no names. Each input token
 is paired with its number before the run (`lr/LR_Tok.thy`), and the run on
-the paired input is proved equal to the run on the tokens. Then the
+the paired input is proved equal to the run on the tokens. The number is
+computed by a case distinction on the token's constructor (`mfodl_parse_tnum`,
+defined by the `parser` command and proved equal to the search in the list of
+terminals constructor by constructor). Then the
 driver runs on the product of the two automata (`lr/LR_Prod.thy`): the 324
 reachable pairs of states are numbered, a stack entry is one pair number, and
 the tables give per pair number the shift and goto targets and, per

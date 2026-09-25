@@ -6482,10 +6482,6 @@ let rec take
 let rec foldl f a x2 = match f, a, x2 with f, a, [] -> a
                 | f, a, x :: xs -> foldl f (f a x) xs;;
 
-let rec map_of _A
-  x0 k = match x0, k with [], k -> None
-    | (l, v) :: ps, k -> (if eq _A l k then Some v else map_of _A ps k);;
-
 let rec filter
   p x1 = match p, x1 with p, [] -> []
     | p, x :: xs -> (if p x then x :: filter p xs else filter p xs);;
@@ -6604,15 +6600,9 @@ let rec pctl
                       (a, (stk, (match a with DShift -> va | DReduce _ -> v))))
                     (sfind (ptarget p kstk) (pcands p k l)))));;
 
-let rec pt_miss (PTabs (x1, x2, x3, x4, x5, x6)) = x2;;
-
-let rec pt_lal (PTabs (x1, x2, x3, x4, x5, x6)) = x1;;
-
 let rec tok (Token_ext (tok, span, more)) = tok;;
 
-let rec penc _B
-  p x = (x, (match map_of _B (pt_lal p) (tok x) with None -> pt_miss p
-              | Some l -> l));;
+let rec tenc f x = (x, f (tok x));;
 
 let rec map f x1 = match f, x1 with f, [] -> []
               | f, x21 :: x22 -> f x21 :: map f x22;;
@@ -54985,6 +54975,82 @@ Any)]),
    NNode (Some false, NTip, NTip), NTip),
                                    NNode (Some false, NTip, NTip))))))))));;
 
+let rec mfodl_parse_tnum
+  x = (fun a ->
+        (match a with FALSE -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit1 One)))))
+          | TRUE -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit1 One)))))
+          | LPA -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit1 One)))))
+          | RPA -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit1 One)))))
+          | LSB -> Nat_of_num (Bit0 (Bit1 (Bit0 One)))
+          | RSB -> Nat_of_num (Bit0 (Bit0 (Bit1 One)))
+          | COM -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 One))))
+          | SC -> Nat_of_num (Bit0 One)
+          | DOT -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit1 One)))))
+          | QM -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit1 One)))))
+          | LD -> Nat_of_num (Bit1 (Bit0 (Bit0 One)))
+          | LESSEQ -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 One))))
+          | EQ -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 One))))
+          | LESS -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 One))))
+          | GTR -> Nat_of_num (Bit1 (Bit1 (Bit1 One)))
+          | GTREQ -> Nat_of_num (Bit0 (Bit1 (Bit1 One)))
+          | STAR -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One)))))
+          | LARROW -> Nat_of_num (Bit1 (Bit1 (Bit0 One)))
+          | SUBSTRING -> Nat_of_num (Bit1 (Bit0 (Bit1 One)))
+          | MATCHES -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 One))))
+          | PLUS -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 One)))))
+          | MINUS -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit1 One)))))
+          | SLASH -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 One))))
+          | MOD -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 One))))
+          | F2I -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit1 One)))))
+          | I2F -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit1 One)))))
+          | DAY_OF_MONTH -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit1 One)))))
+          | MONTH -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit1 One)))))
+          | YEAR -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit1 One)))))
+          | FORMAT_DATE -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit1 One)))))
+          | R2S -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit1 One)))))
+          | S2R -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 (Bit0 One)))))
+          | I2S -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 (Bit0 One)))))
+          | S2I -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit0 One)))))
+          | F2S -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 (Bit0 One)))))
+          | S2F -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit0 One)))))
+          | NAME -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 One)))))
+          | STR_CST -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 One)))))
+          | REGEXP_CST -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit0 One)))))
+          | INTEGER -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 (Bit0 One)))))
+          | RAT -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 (Bit0 One)))))
+          | TU -> Nat_of_num One
+          | LET -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One)))))
+          | LETPAST -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One)))))
+          | FRZ -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One)))))
+          | IN -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 (Bit1 One)))))
+          | NOT -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 (Bit1 One)))))
+          | AND -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))
+          | OR -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 One))))))
+          | IMPL -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))
+          | EQUIV -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 One))))))
+          | EXISTS -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 One))))
+          | FORALL -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit0 One))))
+          | PREV -> Nat_of_num (Bit0 (Bit1 (Bit1 (Bit1 One))))
+          | NEXT -> Nat_of_num (Bit1 (Bit0 (Bit1 (Bit1 One))))
+          | EVENTUALLY -> Nat_of_num (Bit0 (Bit0 (Bit1 (Bit1 One))))
+          | ONCE -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit1 One))))
+          | ALWAYS -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit1 One))))
+          | PAST_ALWAYS -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit1 One))))
+          | SINCE -> Nat_of_num (Bit1 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))
+          | TRIGGER -> Nat_of_num (Bit0 (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 One))))))
+          | UNTIL -> Nat_of_num (Bit1 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))
+          | RELEASE -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One))))))
+          | BAR -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit1 (Bit0 (Bit0 One))))))
+          | FREX -> Nat_of_num (Bit0 (Bit0 (Bit0 (Bit0 (Bit0 One)))))
+          | PREX -> Nat_of_num (Bit1 (Bit1 (Bit1 (Bit1 One))))
+          | CNT -> Nat_of_num (Bit1 One)
+          | MIN_KW -> Nat_of_num (Bit0 (Bit0 One))
+          | MAX_KW -> Nat_of_num (Bit1 (Bit0 One))
+          | SUM_KW -> Nat_of_num (Bit0 (Bit1 One))
+          | AVG -> Nat_of_num (Bit1 (Bit1 One))
+          | MED -> Nat_of_num (Bit0 (Bit0 (Bit0 One)))))
+        x;;
+
 let mfodl_parse_k0 : nat = Zero_nat;;
 
 let rec mfodl_parse
@@ -54992,8 +55058,7 @@ let rec mfodl_parse
         bind (brun equal_nat (equal_list equal_char) equal_mtok
                (pctl mfodl_parse_ptabs) (pfinal mfodl_parse_ptabs) fst
                (None, (Nat_of_num One, Nat_of_num One))
-               ([mfodl_parse_k0],
-                 (map (penc equal_mtok mfodl_parse_ptabs) w, [])))
+               ([mfodl_parse_k0], (map (tenc mfodl_parse_tnum) w, [])))
           mfodl_dec_Formula)
         x;;
 
