@@ -202,48 +202,96 @@ lemma simple_match_eval_trm_gen: "\<forall>t\<in>set ts. \<forall>i\<in>Formula.
   is_simple_pattern ts m \<Longrightarrow>
   wf_tuple (n - m) (\<Union>t\<in>set ts. (\<lambda>x. x - m) ` Formula.fv_trm t) v \<Longrightarrow>
   simple_match n m ts (map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) ts) = v"
-  apply (induction n m ts "map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) ts" arbitrary: v rule: simple_match.induct)
-                      apply (simp add: wf_tuple_empty_iff)
-  subgoal for n m x ts y ys v
-    supply simple_match.simps[simp del]
-    apply (cases "m < x")
-     apply clarsimp
-     apply (subgoal_tac "\<exists>v'. v = None # v'")
-      apply (subgoal_tac "n - m = Suc (n - Suc m)")
-       apply (clarsimp simp add: replicate_app_Cons_same image_Union image_image)
-      apply (metis Suc_diff_Suc Suc_lessD less_trans_Suc)
-     apply (subgoal_tac "length v > 0 \<and> v ! 0 = None")
-      apply (metis list.set_cases nth_Cons_0 nth_mem)
-     apply (auto simp add: wf_tuple_def)[]
-     apply (meson Suc_leD is_simple_pattern_fv less_le_trans not_le)
-    apply (erule thin_rl)
-    apply (subgoal_tac "\<exists>z v'. v = Some z # v'")
-     apply (clarsimp simp add: nth_append)
-    subgoal for z v' m'
-      apply (drule meta_spec[where x=v'])
-      apply (drule meta_mp)
-       apply (intro ballI eval_trm_fv_cong)
-       apply (drule (2) is_simple_pattern_fv)
-       apply (simp add: nth_append)
-       apply linarith
-      apply (drule meta_mp)
-       apply (subgoal_tac "m' = n - Suc x")
-        apply (subgoal_tac "0 \<notin> (\<Union>xa\<in>set ts. (\<lambda>xa. xa - x) ` fv_trm xa)")
-         apply (simp add: image_Union image_image)
-        apply safe[]
-        apply (metis diff_is_0_eq is_simple_pattern_fv lessI less_irrefl less_le_trans)
-       apply (metis Suc_diff_Suc nat.inject)
-      apply (erule trans[rotated])
-      apply (rule arg_cong[where f="\<lambda>ys. simple_match n (Suc x) ts ys"])
-      apply (unfold comp_apply)
-      apply (intro map_cong[OF refl] arg_cong[where f=Some] eval_trm_fv_cong ballI)
-      apply (drule (2) is_simple_pattern_fv)
-      apply (simp add: nth_append)
-      by linarith
-    apply (subgoal_tac "length v > 0 \<and> v ! 0 \<noteq> None")
-     apply (clarsimp simp add: neq_Nil_conv)
-    by (auto simp add: wf_tuple_def)
-  by simp_all
+proof (induction n m ts "map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) ts"
+    arbitrary: v rule: simple_match.induct)
+  case (1 n m)
+  then show ?case by (simp add: wf_tuple_empty_iff)
+next
+  case (2 n m x ts y ys v)
+  note simple_match.simps[simp del]
+  let ?A = "\<lambda>k ts. \<Union>t\<in>set ts. (\<lambda>z. z - k) ` fv_trm t"
+  from "2.prems" have "m \<le> x" and ts: "is_simple_pattern ts (Suc x)" and "x < n"
+    by simp_all
+  have gt_x: "x < z" if "t \<in> set ts" "z \<in> fv_trm t" for t z
+    using is_simple_pattern_fv[OF ts that] by simp
+  let ?B = "?A m (Formula.Var x # ts)"
+  from \<open>m \<le> x\<close> \<open>x < n\<close> have n_m: "n - m = Suc (n - Suc m)"
+    by simp
+  from "2.prems"(3)[unfolded n_m wf_tuple_Suc] have "v \<noteq> []"
+    and wf_tl: "wf_tuple (n - Suc m) ((\<lambda>z. z - 1) ` (?B - {0})) (tl v)"
+    and hd: "0 \<in> ?B \<longleftrightarrow> hd v \<noteq> None"
+    by blast+
+  show ?case
+  proof (cases "m < x")
+    case True
+    have "0 \<notin> ?B"
+      using True gt_x by fastforce
+    with hd \<open>v \<noteq> []\<close> obtain v' where v: "v = None # v'"
+      by (cases v) simp_all
+    from \<open>0 \<notin> ?B\<close> have "(\<lambda>z. z - 1) ` (?B - {0}) = ?A (Suc m) (Formula.Var x # ts)"
+      by (simp add: image_Union image_image)
+    with wf_tl have wf': "wf_tuple (n - Suc m) (?A (Suc m) (Formula.Var x # ts)) v'"
+      by (simp add: v)
+    have env: "replicate m None @ v = replicate (Suc m) None @ v'"
+      by (simp add: v replicate_app_Cons_same)
+    from True have "simple_match n m (Formula.Var x # ts)
+      (map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) (Formula.Var x # ts)) =
+      None # simple_match n (Suc m) (Formula.Var x # ts)
+      (map (Some \<circ> Formula.eval_trm (map the (replicate (Suc m) None @ v'))) (Formula.Var x # ts))"
+      unfolding env by simp
+    also have "\<dots> = None # v'"
+      using True "2.hyps"(3) "2.prems"(1,2) wf' unfolding env
+      by (intro "2.hyps"(1) arg_cong2[where f=Cons] refl) simp_all
+    finally show ?thesis
+      by (simp add: v)
+  next
+    case False
+    with \<open>m \<le> x\<close> have m_x: "m = x" by simp
+    have "0 \<in> ?B"
+      using m_x by simp
+    with hd \<open>v \<noteq> []\<close> obtain z v' where v: "v = Some z # v'"
+      by (cases v) auto
+    have "0 \<notin> ?A m ts"
+      using gt_x m_x by fastforce
+    then have "(\<lambda>z. z - 1) ` (?B - {0}) = ?A (Suc m) ts"
+      using m_x by (simp add: image_Union image_image)
+    with wf_tl have wf': "wf_tuple (n - Suc m) (?A (Suc m) ts) v'"
+      by (simp add: v)
+    have env: "map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) ts =
+      map (Some \<circ> Formula.eval_trm (map the (replicate (Suc m) None @ v'))) ts"
+    proof (intro list.map_cong0)
+      fix t
+      assume "t \<in> set ts"
+      have "Formula.eval_trm (map the (replicate m None @ v)) t =
+        Formula.eval_trm (map the (replicate (Suc m) None @ v')) t"
+      proof (intro eval_trm_fv_cong ballI)
+        fix i
+        assume "i \<in> fv_trm t"
+        with \<open>t \<in> set ts\<close> have "Suc m \<le> i"
+          using gt_x m_x by fastforce
+        then show "map the (replicate m None @ v) ! i = map the (replicate (Suc m) None @ v') ! i"
+          by (cases i) (simp_all add: v nth_append)
+      qed
+      then show "(Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) t =
+        (Some \<circ> Formula.eval_trm (map the (replicate (Suc m) None @ v'))) t"
+        by simp
+    qed
+    have "map the (replicate m None @ v) ! x = z"
+      using m_x by (simp add: v nth_append)
+    with False have "simple_match n m (Formula.Var x # ts)
+      (map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) (Formula.Var x # ts)) =
+      Some z # simple_match n (Suc m) ts (map (Some \<circ> Formula.eval_trm (map the (replicate m None @ v))) ts)"
+      by simp
+    also have "\<dots> = Some z # simple_match n (Suc m) ts
+      (map (Some \<circ> Formula.eval_trm (map the (replicate (Suc m) None @ v'))) ts)"
+      unfolding env ..
+    also have "\<dots> = Some z # v'"
+      using False "2.hyps"(3) "2.prems"(1,2) wf' env
+      by (intro "2.hyps"(2) arg_cong2[where f=Cons] refl) simp_all
+    finally show ?thesis
+      by (simp add: v)
+  qed
+qed simp_all
 
 lemma simple_match_eval_trm: "\<forall>t\<in>set ts. \<forall>i\<in>Formula.fv_trm t. i < n \<Longrightarrow>
   is_simple_pattern ts 0 \<Longrightarrow>
