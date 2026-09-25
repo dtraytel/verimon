@@ -2418,12 +2418,14 @@ next
       with Let 2 show ?thesis by auto
     next
       case False
-      then show ?thesis
-        apply simp
-        apply (intro conjI)
-          apply auto[2]
-        apply (rule Let.prems(5))
-        using 1 2 3 by auto
+      from 1 False have "(p', n) \<in> dom V"
+        by auto
+      moreover from 2 False have "i < the (P (p', n))"
+        by auto
+      ultimately have "the (V (p', n)) v i = the (V' (p', n)) v i"
+        using 3 by (rule Let.prems(5))
+      with False show ?thesis
+        by auto
     qed
   qed
 next
@@ -2470,12 +2472,14 @@ next
       with True show ?thesis by simp
     next
       case False
-      then show ?thesis
-        apply simp
-        apply (intro conjI)
-          apply auto[2]
-        apply (rule Frz.prems(5))
-        using 1 2 3 by auto
+      from 1 False have "(p', n) \<in> dom V"
+        by auto
+      moreover from 2 False have "k < the (P (p', n))"
+        by auto
+      ultimately have "the (V (p', n)) w k = the (V' (p', n)) w k"
+        using 3 by (rule Frz.prems(5))
+      with False show ?thesis
+        by auto
     qed
   qed
 next
@@ -2513,24 +2517,39 @@ next
         case (1 w j)
         then have j_less: "j < progress \<sigma> (P(?pn \<mapsto>letpast_progress \<sigma> P ?pn \<phi> (plen \<pi>))) \<phi> (plen \<pi>)"
           using i_less by simp
+        let ?X = "\<lambda>w j'. j' < j \<and> letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V(?pn \<mapsto> X)) u k \<phi>) w j'"
+        let ?X' = "\<lambda>w j'. j' < j \<and> letpast_sat (\<lambda>X u k. Formula.sat \<sigma>' (V'(?pn \<mapsto> X)) u k \<phi>) w j'"
         show ?case
-          apply (subst (1 2) letpast_sat.simps)
-          apply (rule LetPast.IH(1)[OF j_less _ _ P'])
-          using LetPast.prems(2) apply (auto simp add: dom_def)[]
-          using LetPast.prems(3) apply (auto simp add: dom_def)[]
-          apply (simp del: fun_upd_apply)
-          subgoal for p'' n' v' i'
-            apply (cases "(p'', length v') = ?pn")
-             apply simp
-             apply (rule conj_cong[OF refl])
-             apply (rule "1"(1))
-              apply assumption
-            using "1"(2) apply simp
-            apply (subst (1 2) fun_upd_apply)
-            apply (simp only: if_not_P if_False)
-            apply (rule LetPast.prems(5))
-            by auto
-          done
+        proof (subst (1 2) letpast_sat.simps, rule LetPast.IH(1)[OF j_less _ _ P'])
+          show "dom (V(?pn \<mapsto> ?X)) = dom (V'(?pn \<mapsto> ?X'))"
+            using LetPast.prems(2) by simp
+          show "dom (P(?pn \<mapsto> letpast_progress \<sigma> P ?pn \<phi> (plen \<pi>))) = dom (V(?pn \<mapsto> ?X))"
+            using LetPast.prems(3) by simp
+        next
+          fix p'' n' v' i' \<phi>'
+          assume dom: "(p'', n') \<in> dom (V(?pn \<mapsto> ?X))"
+            and lt: "i' < the ((P(?pn \<mapsto> letpast_progress \<sigma> P ?pn \<phi> (plen \<pi>))) (p'', n'))"
+            and len: "n' = length (v' :: event_data list)"
+          show "the ((V(?pn \<mapsto> ?X)) (p'', n')) v' i' = the ((V'(?pn \<mapsto> ?X')) (p'', n')) v' i'"
+          proof (cases "(p'', n') = ?pn")
+            case True
+            have "letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V(?pn \<mapsto> X)) u k \<phi>) v' i' =
+              letpast_sat (\<lambda>X u k. Formula.sat \<sigma>' (V'(?pn \<mapsto> X)) u k \<phi>) v' i'" if "i' < j"
+              using that "1"(2) by (intro "1"(1)) simp_all
+            with True show ?thesis
+              by auto
+          next
+            case False
+            from dom False have "(p'', n') \<in> dom V"
+              by auto
+            moreover from lt False have "i' < the (P (p'', n'))"
+              by auto
+            ultimately have "the (V (p'', n')) v' i' = the (V' (p'', n')) v' i'"
+              using len by (rule LetPast.prems(5))
+            with False show ?thesis
+              by auto
+          qed
+        qed
       qed
       with True show ?thesis by simp
     next
