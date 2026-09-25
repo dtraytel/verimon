@@ -794,11 +794,24 @@ lemma progress_normalize: "progress \<sigma> P (normalize \<phi>) j = progress \
    conjunction can make progress (lemma progress_Frz_And); hence the progress of the rewritten formula
    coincides with the original one (lemma progress_rewrite). *)
 lemma progress_shift[simp]: "progress \<sigma> P (project (shiftI_r i \<phi>)) j = progress \<sigma> P (project \<phi>) j"
-  apply (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
-  using [[linarith_split_limit=17]]
-  by (auto simp: image_image regex.set_map regex.map_comp eventually_def historically_def always_def
-    always_safe_bounded_def release_safe_bounded_def progress_regex_def frz_progress_def
-    elim: list.pred_mono_strong regex.pred_mono_strong)
+proof (induction \<phi> arbitrary: i P j rule: Rewriting.formula.induct)
+  case (Ands \<phi>s)
+  then show ?case
+    by (simp add: image_image cong: image_cong)
+next
+  case (Release \<phi> I \<psi>)
+  then show ?case
+    by (simp only: project.simps shiftI_r.simps progress.simps release_safe_bounded_def
+      always_safe_bounded_def Formula.eventually_def once_def Formula.TT_def)
+next
+  case (MatchF I r)
+  then show ?case
+    by (simp add: progress_regex_def regex.set_map image_image cong: image_cong)
+next
+  case (MatchP I r)
+  then show ?case
+    by (simp add: progress_regex_def regex.set_map image_image cong: image_cong)
+qed (simp_all add: eventually_def historically_def always_def frz_progress_def)
 
 text \<open> The progress of a freeze operator whose body is not ahead of the frozen formula. \<close>
 
