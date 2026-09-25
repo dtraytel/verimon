@@ -3254,8 +3254,29 @@ definition wf_f :: "(tysym \<Rightarrow> tysym) \<Rightarrow> bool" where
 "wf_f f \<equiv> (\<forall>x. f (TCst x) = TCst x) \<and> (\<forall>n . case f (TNum n) of TCst x \<Rightarrow> x \<in> numeric_ty | TNum x \<Rightarrow> True | _ \<Rightarrow> False)"
 
 lemma wf_f_comp: "wf_f f \<Longrightarrow> wf_f g \<Longrightarrow> wf_f (f \<circ> g)"
-apply (auto simp add: comp_def wf_f_def split: tysym.splits) 
-  by (metis tysym.exhaust)+ 
+proof -
+  assume f: "wf_f f" and g: "wf_f g"
+  have "(f o g) (TCst x) = TCst x" for x
+    using f g by (simp add: wf_f_def)
+  moreover have "case (f o g) (TNum n) of TCst x => x : numeric_ty | TNum x => True | _ => False" for n
+  proof -
+    have gn: "case g (TNum n) of TCst x => x : numeric_ty | TNum x => True | _ => False"
+      using g unfolding wf_f_def by blast
+    show ?thesis
+    proof (cases "g (TNum n)")
+      case (TAny m)
+      with gn show ?thesis by simp
+    next
+      case (TNum m)
+      with f show ?thesis unfolding wf_f_def by simp
+    next
+      case (TCst x)
+      with f gn show ?thesis unfolding wf_f_def by simp
+    qed
+  qed
+  ultimately show ?thesis
+    unfolding wf_f_def by blast
+qed
 
 lemma[simp]: "wf_f id" 
   unfolding wf_f_def by auto
@@ -3264,8 +3285,15 @@ definition tysenvless where
 "tysenvless E' E \<longleftrightarrow> (\<exists>f. wf_f f \<and>  E' = (f \<circ> E))"
 
 lemma tysenvless_trans: "tysenvless E'' E' \<Longrightarrow> tysenvless E' E \<Longrightarrow> tysenvless E'' E"
-  apply (auto simp add: tysenvless_def) subgoal for f g apply (rule exI[of _ "f \<circ> g"]) 
-    using wf_f_comp by auto done
+proof -
+  assume "tysenvless E'' E'" "tysenvless E' E"
+  then obtain f g where "wf_f f" "E'' = f o E'" "wf_f g" "E' = g o E"
+    unfolding tysenvless_def by blast
+  then have "wf_f (f o g)" "E'' = (f o g) o E"
+    by (auto simp: wf_f_comp)
+  then show ?thesis
+    unfolding tysenvless_def by blast
+qed
 
 definition "resultless_trm E' E typ' typ \<longleftrightarrow> (\<exists>f. wf_f f \<and> E' = f \<circ> E \<and> typ' = f typ)"
 
@@ -3276,40 +3304,82 @@ lemma tysenvless_resultless_trm: assumes
   "case typ of TCst t' \<Rightarrow> typ = typ' | TNum n \<Rightarrow> t \<in> numeric_ty \<and> typ' = TCst t \<or> typ' = typ |_  \<Rightarrow> True "
   "(\<forall>x. E x \<noteq> typ) \<or> typ = TCst t"
   shows "resultless_trm E' E typ' typ"
-  using assms apply (auto simp add: tysenvless_def resultless_trm_def)  subgoal for g apply (rule exI[of _ "g(typ := typ')" ]) 
-    by (auto simp add: wf_f_def split: tysym.splits)  subgoal for g  apply (rule exI[of _ "g(typ := typ')" ]) 
-    by (auto simp add: wf_f_def) done
+proof -
+  from assms(1) obtain g where g: "wf_f g" "E' = g o E"
+    unfolding tysenvless_def by blast
+  from assms(3) show ?thesis
+  proof
+    assume "ALL x. E x ~= typ"
+    then have "E' = g(typ := typ') o E"
+      using g(2) by auto
+    moreover have "wf_f (g(typ := typ'))"
+      using g(1) assms(2) by (auto simp add: wf_f_def split: tysym.splits)
+    ultimately show ?thesis
+      unfolding resultless_trm_def by (intro exI[of _ "g(typ := typ')"]) simp
+  next
+    assume t: "typ = TCst t"
+    with assms(2) have "typ' = typ"
+      by simp
+    moreover have "g typ = typ"
+      using g(1) t by (simp add: wf_f_def)
+    ultimately show ?thesis
+      using g unfolding resultless_trm_def by metis
+  qed
+qed
 
 lemma some_min_resless: assumes "min_type typ z = return y"
   "f = update_env y E"
   shows "resultless_trm (f \<circ> E) E (fst y) typ "
 proof -
   obtain tnew told where y_def: "y = (tnew,told)" by (cases y)
-  define f where "f = (\<lambda>x . if x = told then tnew else x)"
-  have wf: "wf_f f" using assms  apply (induction "z"  "typ" rule: min_type.induct)
-    by (auto simp add: y_def f_def numeric_ty_def wf_f_def eq_commute[where ?b= "z"] split: if_splits tysym.splits)
-  show ?thesis unfolding resultless_trm_def apply (rule exI[of _ f])  
-    using assms wf apply (induction "z"  "typ" rule: min_type.induct)
-    by (auto simp add: y_def f_def comp_def update_env_def eq_commute[where ?b= "z"] split: if_splits)
+  have f_def: "f = (%x. if x = told then tnew else x)"
+    using assms(2) by (simp add: update_env_def y_def)
+  have "(EX n. told = TAny n) | (EX n. told = TNum n & ((EX m. tnew = TNum m) | (EX x. tnew = TCst x & x : numeric_ty)))
+    | tnew = told"
+    using assms(1) unfolding y_def
+    by (induction "typ" z rule: min_type.induct) (auto simp: numeric_ty_def split: if_splits)
+  then have "wf_f f"
+    unfolding f_def wf_f_def by (auto split: tysym.splits)
+  moreover have "f typ = tnew"
+    using min_consistent[OF assms(1)[unfolded y_def]] f_def by auto
+  ultimately show ?thesis
+    unfolding resultless_trm_def y_def by auto
 qed
 
 lemma resless_newtype: 
   "resultless_trm (new_type_symbol \<circ> E) E  (new_type_symbol typ) typ "
   "resultless_trm E (new_type_symbol \<circ> E) typ (new_type_symbol typ)"
-   unfolding resultless_trm_def  apply (rule exI[of _ "new_type_symbol "]) subgoal 
-     by (auto simp add:   wf_f_def new_type_symbol_def)
-   apply (rule exI[of _ "(\<lambda>x.  case x of TCst t \<Rightarrow> TCst t | TAny n \<Rightarrow> TAny (n-1)| TNum n \<Rightarrow> TNum (n-1) )"]) 
-   by (auto simp add: wf_f_def new_type_symbol_def  split: tysym.splits) 
+proof -
+  have "wf_f new_type_symbol"
+    by (simp add: wf_f_def new_type_symbol_def)
+  then show "resultless_trm (new_type_symbol o E) E (new_type_symbol typ) typ"
+    unfolding resultless_trm_def by blast
+next
+  define dec where "dec = (%x. case x of TCst t => TCst t | TAny n => TAny (n-1) | TNum n => TNum (n-1))"
+  have "wf_f dec"
+    by (simp add: wf_f_def dec_def)
+  moreover have "dec (new_type_symbol x) = x" for x
+    by (cases x) (simp_all add: dec_def new_type_symbol_def)
+  then have "E = dec o (new_type_symbol o E)" "typ = dec (new_type_symbol typ)"
+    by (simp_all add: fun_eq_iff)
+  ultimately show "resultless_trm E (new_type_symbol o E) typ (new_type_symbol typ)"
+    unfolding resultless_trm_def by blast
+qed
 
 
 lemma resultless_trm_refl: "resultless_trm E E type type"
-  apply (auto simp add: resultless_trm_def ) apply (rule exI[of _ id]) by (auto simp add: wf_f_def)
+  unfolding resultless_trm_def by (rule exI[of _ id]) simp
 
 lemma resultless_trm_trans: assumes " resultless_trm E'' E' type'' type'" "resultless_trm E' E type' type"   
   shows "resultless_trm E'' E type'' type"
-  using assms apply (auto simp add: resultless_trm_def) subgoal for f g 
- apply (rule exI[of _ "f \<circ> g"]) 
-    using wf_f_comp by auto done
+proof -
+  obtain f g where "wf_f f" "E'' = f o E'" "type'' = f type'" "wf_f g" "E' = g o E" "type' = g type"
+    using assms unfolding resultless_trm_def by blast
+  then have "wf_f (f o g)" "E'' = (f o g) o E" "type'' = (f o g) type"
+    by (auto simp: wf_f_comp)
+  then show ?thesis
+    unfolding resultless_trm_def by blast
+qed
 
 lemma resless_wty_num: assumes 
   "wf_f (TCst \<circ> f')"
@@ -3499,25 +3569,27 @@ proof -
   have "wf_f (f' \<circ> f)"
     using assms wf_f_comp unfolding wty_result_fX_trm_def half_wty_trm_def
     by auto
-  then show "wty_result_fX_trm E type t (f' \<circ> f)" unfolding wty_result_fX_trm_def half_wty_trm_def
-    apply(auto) 
-  proof -
-    fix fa
-    assume fa_assm: "wf_f (TCst \<circ> fa)" "fa \<circ> E \<turnstile> t :: fa type"
+  moreover have "(fa \<circ> E \<turnstile> t :: fa type) = (\<exists>g. wf_f (TCst \<circ> g) \<and> fa = g \<circ> (f' \<circ> f))"
+    if fa_wf: "wf_f (TCst \<circ> fa)" for fa
+  proof
+    assume fa_wty: "fa \<circ> E \<turnstile> t :: fa type"
     obtain g where g_def: "wf_f (TCst \<circ> g)" "fa = g \<circ> f"
-      using assms(2) fa_assm unfolding half_wty_trm_def by auto
+      using assms(2) fa_wf fa_wty unfolding half_wty_trm_def by auto
     hence "g \<circ> (f \<circ> E) \<turnstile> t :: g (f type)" 
-      using fa_assm(2) by (simp add: comp_assoc)
+      using fa_wty by (simp add: comp_assoc)
     then show "\<exists>g. wf_f (TCst \<circ> g) \<and> fa = g \<circ> (f' \<circ> f)"
       using assms(1) g_def unfolding wty_result_fX_trm_def by force
   next
-    fix fa g
-    assume fa_assm: "wf_f (f' \<circ> f)" "wf_f (TCst \<circ> (g \<circ> (f' \<circ> f)))" "wf_f (TCst \<circ> g)"
+    assume "\<exists>g. wf_f (TCst \<circ> g) \<and> fa = g \<circ> (f' \<circ> f)"
+    then obtain g where g_wf: "wf_f (TCst \<circ> g)" and fa_def: "fa = g \<circ> (f' \<circ> f)"
+      by blast
     have "(g \<circ> f') \<circ> (f \<circ> E) \<turnstile> t :: (g \<circ> f') (f type)" 
-      using assms(1) unfolding wty_result_fX_trm_def by (metis fa_assm(3) fun.map_comp wf_f_comp)
-    then show "g \<circ> (f' \<circ> f) \<circ> E \<turnstile> t :: g (f' (f type))" 
-      by (simp add: comp_assoc)
+      using assms(1) unfolding wty_result_fX_trm_def by (metis g_wf fun.map_comp wf_f_comp)
+    then show "fa \<circ> E \<turnstile> t :: fa type" 
+      by (simp add: fa_def comp_assoc)
   qed
+  ultimately show "wty_result_fX_trm E type t (f' \<circ> f)"
+    unfolding wty_result_fX_trm_def by blast
 qed
      
   
