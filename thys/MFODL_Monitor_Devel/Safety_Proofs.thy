@@ -1513,9 +1513,21 @@ next
   let ?A = "\<lambda>\<phi>. {v | v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
   let ?p = "\<lambda>v. (map (\<lambda> \<phi>.(restrict (fv \<phi>) v)) pos)"
   let ?A_list = "listset (map (\<lambda> \<phi>. ?A \<phi>) pos)"
-  have "finite (?A_list)" using Ands
-    apply(intro finite_listset)
-    by(auto simp add:list_all_def)
+  from Ands.hyps(1) have pos: "set pos = {\<phi> \<in> set l. safe_formula \<phi>}"
+    by simp
+  have "finite (?A \<phi>)" if "\<phi> \<in> set pos" for \<phi>
+  proof -
+    from that pos have "\<phi> \<in> set l"
+      by simp
+    with Ands.prems(1) have "Safety.future_bounded \<phi>"
+      by (simp add: list_all_iff)
+    moreover from \<open>\<phi> \<in> set l\<close> Ands.prems(2) have "Formula.nfv \<phi> \<le> n"
+      by (simp add: Max_ge_iff)
+    ultimately show ?thesis
+      using that Ands.hyps(6) Ands.prems(3,4) by (simp add: list_all_iff)
+  qed
+  then have "finite (?A_list)"
+    by (intro finite_listset) auto
   then have "finite (Option.these (joinN ` (?A_list)))"
     by(auto simp: Option.these_def)
   moreover have "{v. wf_tuple n (\<Union> (fv ` set l)) v \<and> (\<forall>x\<in>set l. Formula.sat \<sigma> V (map the v) i x)}
@@ -1523,20 +1535,30 @@ next
   proof
     fix v
     assume "v \<in> ?B"
-    then have "?p v \<in> ?A_list"
+    then have wf: "wf_tuple n (\<Union> (fv ` set l)) v"
+      by simp
+    from \<open>v \<in> ?B\<close> have "?p v \<in> ?A_list"
       using Ands(1)
       by (auto simp: sat_the_restrict in_listset_conv_list_all2 list.rel_map intro!: list.rel_refl_strong wf_tuple_restrict_simple)
     moreover have "joinN (?p v) = Some v"
-      using \<open>v \<in> ?B\<close> using Ands(1, 5) Ands.hyps(2)
-      apply(subst joinN_Some_restrict[of n "map fv pos" "map (\<lambda>\<phi>. restrict (fv \<phi>) v) pos" v])
-       apply(auto simp: wf_tuple_restrict_simple list.rel_map intro!: list.rel_refl_strong wf_tuple_restrict_simple)
-      apply(subgoal_tac "\<Union> (fv ` {x \<in> set l. safe_formula x}) = \<Union> (fv ` set l)")
-      by(auto)
-    ultimately show "v \<in> ?B'"
-      apply(simp)
-      by (force simp: Option.these_def)
+    proof -
+      have "set l = set pos \<union> set neg"
+        using Ands.hyps(1) by auto
+      with Ands.hyps(5) have fv_pos: "\<Union> (fv ` set pos) = \<Union> (fv ` set l)"
+        by blast
+      with wf have all2: "list_all2 (wf_tuple n) (map fv pos) (?p v)"
+        by (auto simp: list.rel_map intro!: list.rel_refl_strong wf_tuple_restrict_simple)
+      from Ands.hyps(2) have "?p v \<noteq> []"
+        by simp
+      with wf fv_pos show ?thesis
+        by (auto simp: joinN_Some_restrict[OF all2] list.rel_map intro!: list.rel_refl_strong)
+    qed
+    ultimately have "Some v \<in> joinN ` ?A_list"
+      by (rule rev_image_eqI[OF _ sym])
+    then show "v \<in> ?B'"
+      by (simp add: in_these_eq)
   qed
-   ultimately show ?case
+  ultimately show ?case
     by (auto elim!: finite_subset)
 next
   case (Neg \<phi>)
