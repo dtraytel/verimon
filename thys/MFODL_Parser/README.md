@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser takes 16 to 79 µs per formula (median
-33 µs, 1.7 µs per token), against 1.4 to 5.6 µs (median 2.4 µs) for MonPoly's
-parser: 9 to 18 times slower (median 14). The LR driver takes 70% of the
-time, the lexer 23%, post-processing and conversion 7%. In a `monpoly -check`
+9 to 48 tokens), the verified parser is 8 to 17 times slower than MonPoly's
+parser (median 12): with MonPoly's parser at 1.4 to 5.6 µs per formula
+(median 2.4 µs), about 30 µs at the median. The LR driver takes 68% of the
+time, the lexer 22%, post-processing and conversion 10%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -120,15 +120,20 @@ the export, on the same suite (median per formula):
 | and code equations for the lexer          | 111 µs   | 24.7 ms  |
 | on trie tables (`lr/LR_Trie.thy`)         | 50 µs    | 11.2 ms  |
 | numbered tokens (`lr/LR_Tok.thy`)         | 40 µs    | 8.8 ms   |
-| product automaton (`LR_Prod.thy`, current)| 33 µs    | 7.2 ms   |
+| product automaton (`lr/LR_Prod.thy`)      | 33 µs    | 7.2 ms   |
+| one saved stack (`LR_Loop.thy`, current)  | 30 µs    | 6.6 ms   |
 | MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 57 M, 42 M of them in the LR driver and 13 M in the lexer.
+parser executes 54 M, 37 M of them in the LR driver and 14 M in the lexer.
 Numbering the lookahead token by a linear search in the list of terminals at
 every step took 24 M of the LR driver's instructions; numbering each token
 once, when it enters the input, takes 7 M. Running on the product automaton
-instead of pairs of states reduced the step from 20 M to 12 M.
+instead of pairs of states reduced the step from 20 M to 12 M. Detecting
+loops of reductions with one saved stack instead of all stacks since the last
+shift saved another 5 M. (The last row was measured against the previous
+version in alternating runs, 9% faster, and scaled to the earlier rows; the
+machine was slower at the time.)
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -141,13 +146,18 @@ numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
 are tabulated by lookahead, so a step compares no names. Each input token
 is paired with its number before the run (`lr/LR_Tok.thy`), and the run on
-the paired input is proved equal to the run on the tokens. Finally, the
+the paired input is proved equal to the run on the tokens. Then the
 driver runs on the product of the two automata (`lr/LR_Prod.thy`): the 324
 reachable pairs of states are numbered, a stack entry is one pair number, and
 the tables give per pair number the shift and goto targets and, per
 lookahead, the candidate reduces. The step is proved equal to the step on
 pairs for stacks whose pairs are all reachable; that the list of pairs is
-closed under shifts and gotos is checked by evaluation. The general driver,
+closed under shifts and gotos is checked by evaluation. Finally, the driver
+stops a run that repeats a stack between two shifts (a loop of reductions) by
+comparing the stack with one saved stack, replaced after 1, 2, 4, ... steps
+(`lr/LR_Loop.thy`), instead of all stacks since the last shift: any check
+that fires only on a repeated stack gives the same result, since a run that
+repeats a stack loops. The general driver,
 which computes the closure of every new state with its layout anchors at run
 time, is about 8,000 times slower on the suite.
 

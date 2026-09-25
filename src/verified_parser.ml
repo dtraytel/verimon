@@ -1,5 +1,6 @@
 module Verified_parser : sig
   type int
+  type num
   val integer_of_int : int -> Z.t
   type nat
   type char = Chara of bool * bool * bool * bool * bool * bool * bool * bool
@@ -6583,6 +6584,57 @@ let rec member _A x0 y = match x0, y with [], y -> false
 let rec bind x0 f = match x0, f with None, f -> None
                | Some x, f -> f x;;
 
+let rec equal_option _A x0 x1 = match x0, x1 with None, Some x2 -> false
+                          | Some x2, None -> false
+                          | Some x2, Some y2 -> eq _A x2 y2
+                          | None, None -> true;;
+
+let rec equal_dact _A _B
+  x0 x1 = match x0, x1 with DShift, DReduce x2 -> false
+    | DReduce x2, DShift -> false
+    | DReduce x2, DReduce y2 ->
+        equal_proda _A (equal_list (equal_prod (equal_sym _A _B) equal_irel)) x2
+          y2
+    | DShift, DShift -> true;;
+
+let rec sresult tstk = (match tstk with [] -> None | t :: _ -> Some t);;
+
+let rec take_as x0 uu = match x0, uu with [], uu -> []
+                  | uv :: xs, [] -> []
+                  | uw :: xs, y :: ys -> y :: take_as xs ys;;
+
+let rec drop_as x0 ys = match x0, ys with [], ys -> ys
+                  | uu :: xs, [] -> []
+                  | uv :: xs, uw :: ys -> drop_as xs ys;;
+
+let rec hd (x21 :: x22) = x21;;
+
+let rec xtree
+  dec act v tstk =
+    (match act with DShift -> Leaf (dec (hd v)) :: tstk
+      | DReduce pr ->
+        Node (fst pr, rev (take_as (snd pr) tstk)) :: drop_as (snd pr) tstk);;
+
+let rec bupd
+  d stk =
+    (let (sv, (c, p)) = d in
+      (if equal_nata c p
+        then (Some stk, (Nat_of_num One, times_nata (Nat_of_num (Bit0 One)) p))
+        else (sv, (plus_nata c (Nat_of_num One), p))));;
+
+let rec brun _A _C _D
+  ctl fin dec d st =
+    (let (stk, (v, tstk)) = st in
+      (if fin (stk, v) then sresult tstk
+        else (if equal_option (equal_list _A) (fst d) (Some stk) then None
+               else bind (ctl (stk, v))
+                      (fun (act, (stka, va)) ->
+                        brun _A _C _D ctl fin dec
+                          (if equal_dact _C _D act DShift
+                            then (None, (Nat_of_num One, Nat_of_num One))
+                            else bupd d stk)
+                          (stka, (va, xtree dec act v tstk))))));;
+
 let rec spick
   f x1 = match f, x1 with f, [] -> None
     | f, a :: asa ->
@@ -6602,10 +6654,6 @@ let rec lookup_num x0 uu = match x0, uu with NTip, uu -> None
 let rec tlookup
   t x1 = match t, x1 with t, Zero_nat -> (let NTab (z, _) = t in z)
     | t, Nat_of_num k -> (let NTab (_, tr) = t in lookup_num tr k);;
-
-let rec drop_as x0 ys = match x0, ys with [], ys -> ys
-                  | uu :: xs, [] -> []
-                  | uv :: xs, uw :: ys -> drop_as xs ys;;
 
 let rec jget
   tab i k = (match tlookup tab i with None -> None | Some r -> tlookup r k);;
@@ -6660,18 +6708,6 @@ let rec kenc _B
   k x = (x, (match map_of _B (kt_lal k) (tok x) with None -> kt_miss k
               | Some l -> l));;
 
-let rec take_as x0 uu = match x0, uu with [], uu -> []
-                  | uv :: xs, [] -> []
-                  | uw :: xs, y :: ys -> y :: take_as xs ys;;
-
-let rec hd (x21 :: x22) = x21;;
-
-let rec xtree
-  dec act v tstk =
-    (match act with DShift -> Leaf (dec (hd v)) :: tstk
-      | DReduce pr ->
-        Node (fst pr, rev (take_as (snd pr) tstk)) :: drop_as (snd pr) tstk);;
-
 let rec butlast = function [] -> []
                   | x :: xs -> (if null xs then [] else x :: butlast xs);;
 
@@ -6679,11 +6715,6 @@ let rec list_all p x1 = match p, x1 with p, [] -> true
                    | p, x :: xs -> p x && list_all p xs;;
 
 let rec superset _A xs = list_all (member _A xs);;
-
-let rec equal_option _A x0 x1 = match x0, x1 with None, Some x2 -> false
-                          | Some x2, None -> false
-                          | Some x2, Some y2 -> eq _A x2 y2
-                          | None, None -> true;;
 
 let rec kt_pf (KTabs (x1, x2, x3, x4, x5, x6, x7)) = x7;;
 
@@ -7518,28 +7549,6 @@ and ok_r = function RTest f -> ok_f f
            | RPlus (r, s) -> ok_r r && ok_r s
            | RStar r -> ok_r r
            | RSkip v -> true;;
-
-let rec equal_dact _A _B
-  x0 x1 = match x0, x1 with DShift, DReduce x2 -> false
-    | DReduce x2, DShift -> false
-    | DReduce x2, DReduce y2 ->
-        equal_proda _A (equal_list (equal_prod (equal_sym _A _B) equal_irel)) x2
-          y2
-    | DShift, DShift -> true;;
-
-let rec sresult tstk = (match tstk with [] -> None | t :: _ -> Some t);;
-
-let rec xrun_hist _A _C _D
-  ctl fin dec seen st =
-    (let (stk, (v, tstk)) = st in
-      (if fin (stk, v) then sresult tstk
-        else (if member (equal_list _A) seen stk then None
-               else bind (ctl (stk, v))
-                      (fun (act, (stka, va)) ->
-                        xrun_hist _A _C _D ctl fin dec
-                          (if equal_dact _C _D act DShift then []
-                            else stk :: seen)
-                          (stka, (va, xtree dec act v tstk))))));;
 
 let rec s_txt (Span_ext (s_line, s_col, s_off, s_len, s_txt, more)) = s_txt;;
 
@@ -51267,8 +51276,9 @@ let mfodl_parse_k0 : nat = Zero_nat;;
 
 let rec mfodl_parse
   x = (fun w ->
-        bind (xrun_hist equal_nat (equal_list equal_char) equal_mtok
-               (kctl mfodl_parse_ktabs) (kfinal mfodl_parse_ktabs) fst []
+        bind (brun equal_nat (equal_list equal_char) equal_mtok
+               (kctl mfodl_parse_ktabs) (kfinal mfodl_parse_ktabs) fst
+               (None, (Nat_of_num One, Nat_of_num One))
                ([mfodl_parse_k0],
                  (map (kenc equal_mtok mfodl_parse_ktabs) w, [])))
           mfodl_dec_Formula)
