@@ -5063,9 +5063,13 @@ next
 next
   case (11 S E t \<phi>) 
   have case_nat_comp: "f'' \<circ> case_nat t E = case_nat (f'' t) (f'' \<circ> E)"   for f'' :: "tysym \<Rightarrow> ty"  by (auto split: nat.splits) 
-  show ?case using 11 unfolding wty_result_fX_def apply auto subgoal for f''  apply (drule spec[of _ "f''"]) 
-      by (auto simp add: case_nat_comp elim:  wty_formula.cases)
-    by (metis Exists case_nat_comp comp_apply)
+  from 11(2,3) have IH: "wty_result_fX S (case_nat t E) \<phi> f"
+    by (intro 11(1)) simp_all
+  have typing: "(map_sig h S, h o E \<turnstile> formula.map_formula h (Formula.Exists t \<phi>))
+    = (map_sig h S, h o case_nat t E \<turnstile> formula.map_formula h \<phi>)" for h :: "tysym => ty"
+    by (auto simp: case_nat_comp elim: wty_formula.cases intro: wty_formula.Exists)
+  from IH show ?case
+    unfolding wty_result_fX_def typing by blast
 next
   case (12 S E y agg_type d tys trm \<phi>)
   obtain f' f'' f''' f'''' where 
@@ -5144,9 +5148,26 @@ next
     have wf_nn: "wf_f nn" using wf_f_comp[OF g_def(1) wf_f_comp[OF wfs(4) wf_f_comp[OF wfs(3) wf_f_comp[OF wfs(2) wfs(1)]]]] by(cases agg_type; auto simp add: nn_def wf_f_def split:nat.splits) 
     have p1: "\<forall>t \<in> range new_type_symbol. (fa \<circ> nn) t = (g \<circ> f'''' \<circ> f''' \<circ> f'' \<circ> f') t" 
       using g_def(2)[unfolded f_def] by (simp add: nn_n pointfree_idE)
-    have "t \<notin> {TAny 0, TNum 0} \<Longrightarrow> t \<in> range new_type_symbol" for t 
-      apply(cases t; auto simp: new_type_symbol_def split:tysym.splits) 
-      by (metis Suc_pred rangeI tysym.simps(10)) (metis Nat.Suc_pred' rangeI tysym.simps(11))
+    have "t \<in> range new_type_symbol" if "t \<notin> {TAny 0, TNum 0}" for t
+    proof (cases t)
+      case (TAny n)
+      with that have "t = new_type_symbol (TAny (n - 1))"
+        by (simp add: new_type_symbol_def)
+      then show ?thesis
+        by (rule range_eqI)
+    next
+      case (TNum n)
+      with that have "t = new_type_symbol (TNum (n - 1))"
+        by (simp add: new_type_symbol_def)
+      then show ?thesis
+        by (rule range_eqI)
+    next
+      case (TCst x)
+      then have "t = new_type_symbol t"
+        by (simp add: new_type_symbol_def)
+      then show ?thesis
+        by (rule range_eqI)
+    qed
     hence aux: "t \<notin> range new_type_symbol \<Longrightarrow> t = TAny 0 \<or> t = TNum 0" for t 
       by auto
     have "t \<notin> range new_type_symbol \<Longrightarrow> (fa \<circ> nn) t = (g \<circ> f'''' \<circ> f''' \<circ> f'' \<circ> f') t" for t
@@ -5201,24 +5222,24 @@ next
   then show ?case unfolding wty_result_fX_def by (auto intro: wty_formula.intros elim: wty_formula.cases) 
 next
   case (15 S E \<phi> I \<psi>)
-  show ?case 
-    apply (rule check_binary_sound) 
-    using 15 by auto
+  have safe: "wf_formula \<phi>" "wf_formula \<psi>"
+    using 15(3) by auto
+  show ?case using check_binary_sound[OF _ 15(2) safe] 15(1) by auto
 next
   case (16 S E \<phi> I \<psi>)
-  show ?case 
-    apply (rule check_binary_sound)
-    using 16 by auto
+  have safe: "wf_formula \<phi>" "wf_formula \<psi>"
+    using 16(3) by auto
+  show ?case using check_binary_sound[OF _ 16(2) safe] 16(1) by auto
 next 
   case (17 S E \<phi> I \<psi>)
-  show ?case 
-    apply (rule check_binary_sound) 
-    using 17 by auto
+  have safe: "wf_formula \<phi>" "wf_formula \<psi>"
+    using 17(3) by auto
+  show ?case using check_binary_sound[OF _ 17(2) safe] 17(1) by auto
 next 
   case (18 S E \<phi> I \<psi>)
-  show ?case 
-    apply (rule check_binary_sound)
-    using 18 by auto
+  have safe: "wf_formula \<phi>" "wf_formula \<psi>"
+    using 18(3) by auto
+  show ?case using check_binary_sound[OF _ 18(2) safe] 18(1) by auto
 next 
   case (19 S E I r)
   then show ?case 
