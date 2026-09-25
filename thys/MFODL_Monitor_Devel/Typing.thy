@@ -689,6 +689,7 @@ proof -
   then show ?thesis
     unfolding Formula.nfv_def[of \<phi>] by simp
 qed
+
 lemma match_safe_wty_nfv: assumes "\<phi> \<in> safe_atms r"   "safe_formula (formula.MatchP I r) \<or> safe_formula (formula.MatchF I r)" " S, E \<turnstile> formula.MatchP I r \<or>  S, E \<turnstile> formula.MatchF I r"
   shows "S, E \<turnstile> \<phi>"
 proof -
@@ -3187,8 +3188,25 @@ lemma map_regex_map_formula_size[simp]: " size (regex.map_regex (formula.map_for
   by (induction r)  auto
 
 lemma map_formula_size[simp]:"size (formula.map_formula f \<psi>) = size \<psi>" 
-  apply (induction \<psi> arbitrary: f) 
- apply auto apply ( simp add: dual_order.eq_iff size_list_pointwise) using map_regex_size  by metis+
+proof (induction \<psi> arbitrary: f)
+  case (Ands \<phi>s)
+  \<comment> \<open>the sizes of the list elements agree pointwise, hence so do their sums\<close>
+  from Ands.IH show ?case
+    by (simp add: dual_order.eq_iff size_list_pointwise)
+next
+  case (Agg y \<omega> tys t \<phi>)
+  then show ?case by (cases \<omega>) simp
+next
+  case (MatchF I r)
+  have "regex.size_regex size r = regex.size_regex size (regex.map_regex (formula.map_formula f) r)"
+    by (rule map_regex_size) (rule MatchF.IH)
+  then show ?case by simp
+next
+  case (MatchP I r)
+  have "regex.size_regex size r = regex.size_regex size (regex.map_regex (formula.map_formula f) r)"
+    by (rule map_regex_size) (rule MatchP.IH)
+  then show ?case by simp
+qed simp_all
 
 definition check_binop :: "((nat \<Rightarrow> tysym) \<Rightarrow> tysym \<Rightarrow> Formula.trm \<Rightarrow> (tysym \<Rightarrow> tysym) option_err) \<Rightarrow> (nat \<Rightarrow> tysym) \<Rightarrow> tysym \<Rightarrow> Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> tysym \<Rightarrow> (tysym \<Rightarrow> tysym) option_err" where
 "check_binop check_trm E typ t1 t2 exp_typ  \<equiv> 
