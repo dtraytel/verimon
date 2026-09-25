@@ -318,9 +318,18 @@ lemma wf_idx_sig_union: "wf_idx_sig (wf_idx_union t1 t2) = wf_idx_sig t1"
   by transfer (auto simp: Let_def split: if_splits)
 
 lemma wf_idx_set_union: "wf_idx_sig t1 = wf_idx_sig t2 \<Longrightarrow> wf_idx_set (wf_idx_union t1 t2) = wf_idx_set t1 \<union> wf_idx_set t2"
-  apply transfer
-  using idx_union_reindex(1)
-  by (auto simp: Let_def split: prod.splits if_splits) blast+
+proof -
+  assume sig: "wf_idx_sig t1 = wf_idx_sig t2"
+  obtain n A I T where t1: "Rep_wf_idx t1 = (n, A, I, T)"
+    and T: "\<And>x Y. Mapping.lookup T x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I z)"
+    using Rep_wf_idx[of t1] by blast
+  obtain I' T' where t2: "Rep_wf_idx t2 = (n, A, I', T')"
+    and T': "\<And>x Y. Mapping.lookup T' x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I' z)"
+    using Rep_wf_idx[of t2] sig t1 by (auto simp: wf_idx_sig.rep_eq)
+  show ?thesis
+    using idx_union_reindex(1)[where T=T and X=I and T'=T' and X'=I' and I="I \<inter> I'", OF T T']
+    by (simp add: wf_idx_set.rep_eq wf_idx_union.rep_eq t1 t2 Let_def)
+qed
 
 lemma wf_idx_set_union_deg: "\<not>wf_idx_sig t1 = wf_idx_sig t2 \<Longrightarrow> wf_idx_set (wf_idx_union t1 t2) = wf_idx_set t1"
   by transfer (auto split: if_splits)
