@@ -1678,7 +1678,7 @@ function (sequential) udof ::
          then UDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
                 (map (\<lambda>_. mbuf_t_empty) L) nts t []
          else UDFail))"
-  by pat_completeness auto
+  by pat_completeness safe
 
 termination udof
   by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
