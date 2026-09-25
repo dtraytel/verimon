@@ -71,15 +71,19 @@ lemma mbuf_t_Cons_code[code]: "mbuf_t_Cons x (MBuf2_t xs) = MBuf2_t (prepend_que
   by transfer' (auto simp: prepend_queue_rep)
 
 lemma mbuf_t_append_code[code]: "mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (fold append_queue ys xs)"
-  apply transfer'
-  subgoal for xs ys
+proof transfer'
+  fix xs :: "'a queue" and ys :: "'a list"
+  show "linearize xs @ ys = linearize (fold append_queue ys xs)"
   proof (induction ys arbitrary: xs)
     case (Cons y ys)
-    show ?case
-      using Cons[of "append_queue y xs"]
-      by (auto simp: append_queue_rep)
+    have "linearize xs @ y # ys = linearize (append_queue y xs) @ ys"
+      by (simp add: append_queue_rep)
+    also have "\<dots> = linearize (fold append_queue ys (append_queue y xs))"
+      by (rule Cons)
+    finally show ?case
+      by simp
   qed simp
-  done
+qed
 
 lemma mbuf_t_cases_code[code]: "mbuf_t_cases (MBuf2_t xs) = (case safe_hd xs of (None, xs') \<Rightarrow> (None, MBuf2_t xs')
   | (Some x, xs') \<Rightarrow> (Some x, MBuf2_t (tl_queue xs')))"
@@ -358,33 +362,137 @@ lemma (in maux) init_since_code:
   assumes "(\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi>' + size' \<psi>' \<Longrightarrow> minit0 m \<alpha> = Monitor_Impl.Rep_meformula (meinit0 m \<alpha>))"
   shows "init_since minit0 n agg \<phi>' I \<psi>' 
   = Rep_meformula (init_since' meinit0 n agg \<phi>' I \<psi>')"
-  apply (cases \<phi>')
-  using assms[of \<phi>' n] assms[of \<psi>' n] assms
-  by (auto simp: init_since_def init_since'_def mbuf_t_empty.rep_eq)
+proof (cases "safe_formula \<phi>'")
+  case True
+  have "minit0 n \<phi>' = Rep_meformula (meinit0 n \<phi>')"
+    and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+    by (simp_all add: assms)
+  with True show ?thesis
+    by (simp add: init_since_def init_since'_def mbuf_t_empty.rep_eq)
+next
+  case unsafe: False
+  show ?thesis
+  proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+    case True
+    then obtain \<alpha> where \<phi>': "\<phi>' = Formula.Neg \<alpha>"
+      by blast
+    have "minit0 n \<alpha> = Rep_meformula (meinit0 n \<alpha>)"
+      and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+      by (simp_all add: assms \<phi>')
+    then show ?thesis
+      unfolding init_since_def init_since'_def Let_def if_not_P[OF unsafe]
+      unfolding \<phi>'
+      by (simp add: mbuf_t_empty.rep_eq)
+  next
+    case False
+    then show ?thesis
+      unfolding init_since_def init_since'_def Let_def if_not_P[OF unsafe]
+      by (simp split: formula.split)
+  qed
+qed
 
 lemma (in maux) init_until_code:
   assumes "(\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi>' + size' \<psi>' \<Longrightarrow> minit0 m \<alpha> = Monitor_Impl.Rep_meformula (meinit0 m \<alpha>))"
   shows "init_until minit0 n agg \<phi>' I \<psi>' 
   = Rep_meformula (init_until' meinit0 n agg \<phi>' I \<psi>')"
-  apply (cases \<phi>')
-  using assms[of \<phi>' n] assms[of \<psi>' n] assms
-  by (auto simp: init_until_def init_until'_def mbuf_t_empty.rep_eq)
+proof (cases "safe_formula \<phi>'")
+  case True
+  have "minit0 n \<phi>' = Rep_meformula (meinit0 n \<phi>')"
+    and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+    by (simp_all add: assms)
+  with True show ?thesis
+    by (simp add: init_until_def init_until'_def mbuf_t_empty.rep_eq)
+next
+  case unsafe: False
+  show ?thesis
+  proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+    case True
+    then obtain \<alpha> where \<phi>': "\<phi>' = Formula.Neg \<alpha>"
+      by blast
+    have "minit0 n \<alpha> = Rep_meformula (meinit0 n \<alpha>)"
+      and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+      by (simp_all add: assms \<phi>')
+    then show ?thesis
+      unfolding init_until_def init_until'_def Let_def if_not_P[OF unsafe]
+      unfolding \<phi>'
+      by (simp add: mbuf_t_empty.rep_eq)
+  next
+    case False
+    then show ?thesis
+      unfolding init_until_def init_until'_def Let_def if_not_P[OF unsafe]
+      by (simp split: formula.split)
+  qed
+qed
 
 lemma (in maux) init_and_trigger_code:
   assumes "(\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi> + size' \<phi>' + size' \<psi>' \<Longrightarrow> minit0 m \<alpha> = Monitor_Impl.Rep_meformula (meinit0 m \<alpha>))"
   shows "init_and_trigger minit0 n agg \<phi> \<phi>' I \<psi>' 
   = Rep_meformula (init_and_trigger' meinit0 n agg \<phi> \<phi>' I \<psi>')"
-  apply (cases \<phi>')
-  using assms[of \<phi> n] assms[of \<phi>' n] assms[of \<psi>' n] assms
-  by (auto simp: init_and_trigger_def init_and_trigger'_def mbuf_t_empty.rep_eq)
+proof -
+  have \<phi>: "minit0 n \<phi> = Rep_meformula (meinit0 n \<phi>)"
+    and \<psi>': "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+    by (simp_all add: assms)
+  show ?thesis
+  proof (cases "safe_formula \<phi>'")
+    case True
+    have "minit0 n \<phi>' = Rep_meformula (meinit0 n \<phi>')"
+      by (simp add: assms)
+    with True \<phi> \<psi>' show ?thesis
+      by (simp add: init_and_trigger_def init_and_trigger'_def mbuf_t_empty.rep_eq)
+  next
+    case unsafe: False
+    show ?thesis
+    proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+      case True
+      then obtain \<alpha> where \<phi>': "\<phi>' = Formula.Neg \<alpha>"
+        by blast
+      have "minit0 n \<alpha> = Rep_meformula (meinit0 n \<alpha>)"
+        by (simp add: assms \<phi>')
+      with \<phi> \<psi>' show ?thesis
+        unfolding init_and_trigger_def init_and_trigger'_def Let_def if_not_P[OF unsafe]
+        unfolding \<phi>'
+        by (simp add: mbuf_t_empty.rep_eq)
+    next
+      case False
+      then show ?thesis
+        unfolding init_and_trigger_def init_and_trigger'_def Let_def if_not_P[OF unsafe]
+        by (simp split: formula.split)
+    qed
+  qed
+qed
 
 lemma (in maux) init_trigger_code:
   assumes "(\<And>\<alpha> m. size' \<alpha> \<le> size' \<phi>' + size' \<psi>' \<Longrightarrow> minit0 m \<alpha> = Monitor_Impl.Rep_meformula (meinit0 m \<alpha>))"
   shows "init_trigger minit0 n agg \<phi>' I \<psi>' 
   = Rep_meformula (init_trigger' meinit0 n agg \<phi>' I \<psi>')"
-  apply (cases \<phi>')
-  using assms[of \<phi>' n] assms[of \<psi>' n] assms
-  by (auto simp: init_trigger_def init_trigger'_def mbuf_t_empty.rep_eq)
+proof (cases "safe_formula \<phi>'")
+  case True
+  have "minit0 n \<phi>' = Rep_meformula (meinit0 n \<phi>')"
+    and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+    by (simp_all add: assms)
+  with True show ?thesis
+    by (simp add: init_trigger_def init_trigger'_def mbuf_t_empty.rep_eq)
+next
+  case unsafe: False
+  show ?thesis
+  proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+    case True
+    then obtain \<alpha> where \<phi>': "\<phi>' = Formula.Neg \<alpha>"
+      by blast
+    have "minit0 n \<alpha> = Rep_meformula (meinit0 n \<alpha>)"
+      and "minit0 n \<psi>' = Rep_meformula (meinit0 n \<psi>')"
+      by (simp_all add: assms \<phi>')
+    then show ?thesis
+      unfolding init_trigger_def init_trigger'_def Let_def if_not_P[OF unsafe]
+      unfolding \<phi>'
+      by (simp add: mbuf_t_empty.rep_eq)
+  next
+    case False
+    then show ?thesis
+      unfolding init_trigger_def init_trigger'_def Let_def if_not_P[OF unsafe]
+      by (simp split: formula.split)
+  qed
+qed
 
 lemma (in maux) minit0_code[code]: "minit0 n \<phi> = Rep_meformula (meinit0 n \<phi>)"
   apply (induction n \<phi> rule: meinit0.induct; clarsimp simp: Let_def 
