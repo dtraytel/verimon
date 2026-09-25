@@ -190,7 +190,7 @@ next
   have x: "xs = zout @ ys"
     and f: "\<Phi>' = mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
       (f1 + length zs0) (f2 + length bs) as'"
-    using e X Phi m by simp_all
+    using e[unfolded Phi conjunct1[OF X] m] by simp_all
   show "list_all (ftable n' A') xs \<and>
       ((n' = n \<and> A' = A \<and>
           (\<exists>\<chi> \<eta> f0 f1 f2 as. \<Phi>' = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<and>
