@@ -295,91 +295,151 @@ lemma (in msaux) wf_since_aux_update2:
     and args_R: "args_R args = fv \<psi>"
     and safe: "fv \<phi> \<subseteq> fv \<psi>"
   shows "wf_since_aux \<sigma> V R args \<phi> \<psi> (add_new_table_msaux args rel2 aux) (Suc pIn) pOut"
-  using wf unfolding pOut_pIn wf_since_aux_def
-  apply clarsimp
-  subgoal for auxlist
-    apply (rule exI[where x="(case auxlist of
+proof -
+  from wf obtain auxlist where aggargs: "valid_aggargs n (fv \<psi>) (args_agg args)"
+    and valid: "valid_msaux args (\<tau> \<sigma> pIn) aux auxlist"
+    and sorted: "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
+    and in_auxlist: "\<And>t X. (t, X) \<in> set auxlist \<Longrightarrow>
+        (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
+        qtable n (fv \<psi>) (mem_restr R)
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn t (map the x)) X"
+    and complete: "\<And>i. i < pIn \<Longrightarrow> memR I (\<tau> \<sigma> pIn - \<tau> \<sigma> i) \<Longrightarrow>
+        \<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist"
+    unfolding pOut_pIn wf_since_aux_def args_ivl args_n by auto
+  have ts_le: "t \<le> \<tau> \<sigma> pIn" if "(t, X) \<in> set auxlist" for t X
+    using in_auxlist[OF that] by auto
+  \<comment> \<open>entries for earlier time-stamps are unaffected by the new time-point\<close>
+  have old_entry: "(\<exists>i<Suc pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
+      qtable n (fv \<psi>) (mem_restr R)
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (map the x)) X"
+    if "(t, X) \<in> set auxlist" "t < \<tau> \<sigma> pIn" for t X
+    using in_auxlist[OF that(1)] by (auto simp: sat_since_point_Suc'[OF that(2)] less_Suc_eq)
+  \<comment> \<open>the entry for the current time-stamp is extended by the new table\<close>
+  have new_entry: "qtable n (fv \<psi>) (mem_restr R)
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (map the x)) (y \<union> rel2)"
+    if "(\<tau> \<sigma> pIn, y) \<in> set auxlist" for y
+  proof -
+    from in_auxlist[OF that] have "qtable n (fv \<psi>) (mem_restr R)
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) (map the x)) y"
+      by blast
+    then show ?thesis
+      using rel2 by (rule qtable_union) (simp add: sat_since_point_Suc)
+  qed
+  \<comment> \<open>without an entry for the current time-stamp, the new table is the entry\<close>
+  have fresh_entry: "qtable n (fv \<psi>) (mem_restr R)
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (map the x)) rel2"
+    if "\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn"
+  proof -
+    have "\<not> sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) v" for v
+    proof
+      assume "sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) v"
+      then obtain j where "j < pIn" "\<tau> \<sigma> j = \<tau> \<sigma> pIn"
+        unfolding sat_since_point_def by blast
+      with complete[of j] obtain X where "(\<tau> \<sigma> pIn, X) \<in> set auxlist"
+        by auto
+      with that show False
+        by fastforce
+    qed
+    with rel2 show ?thesis
+      by (elim qtable_cong[OF _ refl]) (simp add: sat_since_point_Suc)
+  qed
+  have cur: "\<exists>i<Suc pIn. \<tau> \<sigma> i = \<tau> \<sigma> pIn"
+    by blast
+  define auxlist' where "auxlist' = (case auxlist of
         [] => [(\<tau> \<sigma> pIn, rel2)]
-      | ((t, y) # ts) \<Rightarrow> if t = \<tau> \<sigma> pIn then (t, y \<union> rel2) # ts else (\<tau> \<sigma> pIn, rel2) # auxlist)"])
-    apply (intro conjI)
-    subgoal
-      using rel2 by (auto simp add: args_n args_R qtable_def
-        intro!: valid_add_new_table_msaux)
-    subgoal
-      apply (clarsimp split: list.split if_split)
-      apply (intro conjI impI; simp)
-       apply (metis \<tau>_mono le_neq_implies_less less_imp_le_nat)
-      by (metis order.strict_trans less_\<tau>D less_imp_not_less linorder_neqE_nat)
-     apply (clarsimp simp only: args_ivl args_n)
-    subgoal for t X
-      apply (cases auxlist)
-      subgoal
-        apply simp
-        apply (intro conjI, auto)
-        apply (subst qtable_cong_strong[where Q'="\<lambda>v. Formula.sat \<sigma> V (map the v) pIn \<psi>", OF refl])
-         apply (simp add: sat_since_point_def)
-         apply (metis diff_self_eq_0 greaterThanAtMost_iff lessI less_antisym memR_zero not_le)
-        by (rule rel2)
-      apply clarsimp
-      subgoal for a b auxlist'
-        apply (cases "a = \<tau> \<sigma> pIn")
-         apply clarsimp
-         apply (elim disjE)
-          apply clarsimp
-          apply (intro conjI)
-           apply (metis lessI)
-          apply (rule qtable_union[where ?Q1.0="\<lambda>x. sat_since_point (args_pos args) \<sigma>
-                  V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn)
-                  (map the x)", OF _ rel2])
-           apply simp
-          apply (rule sat_since_point_Suc)
-         apply (drule spec2)
-         apply (drule conjunct2)
-         apply (drule (1) mp)
-         apply (elim conjE, intro conjI)
-           apply (metis less_Suc_eq)
-          apply assumption
-         apply (erule qtable_cong[OF _ refl])
-         apply (auto simp: sat_since_point_Suc')[]
-        apply clarsimp
-        apply (elim disjE)
-          apply clarsimp
-          apply (intro conjI, metis lessI)
-          apply (rule qtable_cong[OF rel2 refl])
-          apply (metis diff_self_eq_0 fst_conv less_\<tau>D less_imp_not_less memR_zero sat_since_point_Suc sat_since_point_def)
-         apply (drule spec2)
-         apply (drule conjunct1[of "_ \<longrightarrow> _"])
-         apply (drule (1) mp)
-         apply (elim conjE, intro conjI)
-           apply (metis less_Suc_eq)
-          apply simp
-        apply simp
-        apply (erule qtable_cong[OF _ refl])
-         apply (rule sat_since_point_Suc'[symmetric])
-        apply (meson less_\<tau>D less_imp_not_less linorder_neqE_nat)
-        apply (frule spec2)
-         apply (drule conjunct2[of "_ \<longrightarrow> _"])
-         apply (drule (1) mp)
-         apply (elim conjE, intro conjI)
-           apply (metis less_Suc_eq)
-          apply assumption
-        apply (erule qtable_cong[OF _ refl])
-        apply (rule sat_since_point_Suc'[symmetric])
-        by (metis fst_conv less_\<tau>D less_imp_not_less linorder_neqE_nat)
-      done
-    apply clarsimp
-    subgoal for i
-      apply (cases "i = pIn")
-       apply (auto split: list.split)[]
-      apply (subgoal_tac "i < pIn")
-       apply (drule spec[of "\<lambda>i. _ i \<longrightarrow> _ i"])
-       apply (drule (1) mp)+
-       apply (auto split: list.split)
-       apply blast
-      apply blast
-      done
-    done
-  done
+      | ((t, y) # ts) \<Rightarrow> if t = \<tau> \<sigma> pIn then (t, y \<union> rel2) # ts else (\<tau> \<sigma> pIn, rel2) # auxlist)"
+  \<comment> \<open>either a new entry is prepended, or the head entry for the current time-stamp is extended\<close>
+  have shape: "(auxlist' = (\<tau> \<sigma> pIn, rel2) # auxlist \<and> (\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn)) \<or>
+    (\<exists>y ps. auxlist = (\<tau> \<sigma> pIn, y) # ps \<and> auxlist' = (\<tau> \<sigma> pIn, y \<union> rel2) # ps \<and>
+      (\<forall>q\<in>set ps. fst q < \<tau> \<sigma> pIn))"
+  proof (cases auxlist)
+    case Nil
+    then show ?thesis
+      by (simp add: auxlist'_def)
+  next
+    case (Cons p ps)
+    obtain t0 y where p: "p = (t0, y)"
+      by fastforce
+    have ps_less: "\<forall>q\<in>set ps. fst q < t0"
+      using sorted by (simp add: Cons p)
+    show ?thesis
+    proof (cases "t0 = \<tau> \<sigma> pIn")
+      case True
+      with ps_less show ?thesis
+        by (simp add: auxlist'_def Cons p)
+    next
+      case False
+      have "t0 \<le> \<tau> \<sigma> pIn"
+        using ts_le[of t0 y] by (simp add: Cons p)
+      then have "t0 < \<tau> \<sigma> pIn"
+        using False by (rule le_neq_trans)
+      with ps_less have "\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn"
+        by (auto simp: Cons p intro: less_trans)
+      with False show ?thesis
+        by (simp add: auxlist'_def Cons p)
+    qed
+  qed
+  have "valid_msaux args (\<tau> \<sigma> pIn) (add_new_table_msaux args rel2 aux) auxlist'"
+    using rel2 valid unfolding auxlist'_def
+    by (auto simp add: args_n args_R qtable_def intro!: valid_add_new_table_msaux)
+  moreover have "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist'"
+    using shape sorted by auto
+  moreover have "(\<exists>i<Suc pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
+      qtable n (fv \<psi>) (mem_restr R)
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (map the x)) X"
+    if "(t, X) \<in> set auxlist'" for t X
+    using shape
+  proof (elim disjE exE conjE)
+    assume "auxlist' = (\<tau> \<sigma> pIn, rel2) # auxlist" and less: "\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn"
+    with that have "(t, X) = (\<tau> \<sigma> pIn, rel2) \<or> (t, X) \<in> set auxlist"
+      by simp
+    then show ?thesis
+    proof
+      assume "(t, X) = (\<tau> \<sigma> pIn, rel2)"
+      with cur fresh_entry[OF less] show ?thesis
+        by simp
+    next
+      assume mem: "(t, X) \<in> set auxlist"
+      with less have "t < \<tau> \<sigma> pIn"
+        by fastforce
+      with mem show ?thesis
+        by (rule old_entry)
+    qed
+  next
+    fix y ps
+    assume aux_eq: "auxlist = (\<tau> \<sigma> pIn, y) # ps" and "auxlist' = (\<tau> \<sigma> pIn, y \<union> rel2) # ps"
+      and less: "\<forall>q\<in>set ps. fst q < \<tau> \<sigma> pIn"
+    with that have "(t, X) = (\<tau> \<sigma> pIn, y \<union> rel2) \<or> (t, X) \<in> set ps"
+      by simp
+    then show ?thesis
+    proof
+      assume "(t, X) = (\<tau> \<sigma> pIn, y \<union> rel2)"
+      with cur new_entry[of y] show ?thesis
+        by (simp add: aux_eq)
+    next
+      assume mem: "(t, X) \<in> set ps"
+      with less have "t < \<tau> \<sigma> pIn"
+        by fastforce
+      moreover from mem have "(t, X) \<in> set auxlist"
+        by (simp add: aux_eq)
+      ultimately show ?thesis
+        by (rule old_entry[rotated])
+    qed
+  qed
+  moreover have "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist'"
+    if "i < Suc pIn" "memR I (\<tau> \<sigma> pIn - \<tau> \<sigma> i)" for i
+  proof -
+    \<comment> \<open>the new list contains the current time-stamp and all time-stamps of the old one\<close>
+    have "fst ` set auxlist' = insert (\<tau> \<sigma> pIn) (fst ` set auxlist)"
+      using shape by (elim disjE exE conjE) simp_all
+    moreover have "i = pIn \<or> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
+      using that complete by (auto simp: less_Suc_eq)
+    ultimately show ?thesis
+      by force
+  qed
+  ultimately show ?thesis
+    unfolding pOut_pIn wf_since_aux_def args_ivl args_n using aggargs by auto
+qed
 
 lemma (in msaux) wf_since_aux_result':
   assumes valid_msaux: 
