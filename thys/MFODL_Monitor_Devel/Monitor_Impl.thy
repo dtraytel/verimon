@@ -1933,7 +1933,14 @@ instance by(standard; transfer; auto)
 end
 
 lemma eq_treelist_code[code]: "equal_class.equal (Collapse y1) (Collapse y2) = (if y2 = empty_tree then (y1 = empty_tree) else (tree_inorder y1 = tree_inorder y2))"
-  apply(transfer) using Tree2.inorder.elims by auto
+proof -
+  have eq: "equal_class.equal (Collapse y1) (Collapse y2) \<longleftrightarrow> tree_inorder y1 = tree_inorder y2"
+    by transfer simp
+  have "tree_inorder y1 = tree_inorder empty_tree \<longleftrightarrow> y1 = empty_tree"
+    by transfer (auto elim: Tree2.inorder.elims)
+  then show ?thesis
+    by (simp add: eq)
+qed
 
 definition to_add_set where
   "to_add_set a m tmp = {b. (a, b) \<in> tmp \<and> Mapping.lookup m b = None}"
