@@ -1724,20 +1724,26 @@ proof -
           have m'_alt: "m' = upd_set' m new_tstp (max_tstp new_tstp) {b. (wtp, b) \<in> tmp'}"
             using m'_def[unfolded a2_map'_def Mapping.lookup_update_neq[OF wtp_neq]
               upd_nested_lookup m_def] by auto
+          have wtp_tmp': "(wtp, xs) \<in> tmp'"
+          proof -
+            have "wtp \<noteq> tp"
+              using tp'_lt_tp wtp_le by linarith
+            then have "Mapping.lookup tstp_map' wtp = Some ts"
+              using ts_def unfolding tstp_map'_def Mapping.lookup_update' by simp
+            then show ?thesis
+              using wtp_xs_in inL unfolding tmp'_def by simp
+          qed
           show ?thesis
           proof (cases "Mapping.lookup m xs")
             case None
-            thm ts_tp_lt_new_tstp
             have "Mapping.lookup m' xs = Some new_tstp"
-              using wtp_xs_in ts_def inL unfolding tmp'_def m'_alt upd_set'_lookup None tstp_map'_def Mapping.lookup_update'
-              apply auto using tp'_lt_tp wtp_le by linarith
+              using wtp_tmp' unfolding m'_alt upd_set'_lookup None by simp
             then show ?thesis
               unfolding filter_a2_map_def using wtp_le m'_def ts_tp_lt_new_tstp by auto
           next
             case (Some tstp')
             have "Mapping.lookup m' xs = Some (max_tstp new_tstp tstp')"
-              using wtp_xs_in ts_def inL unfolding tmp'_def m'_alt upd_set'_lookup Some tstp_map'_def Mapping.lookup_update'
-              apply auto using leD tp'_lt_tp wtp_le by blast
+              using wtp_tmp' unfolding m'_alt upd_set'_lookup Some by simp
             moreover have "ts_tp_lt I ts' tp' (max_tstp new_tstp tstp')"
               using max_tstp_intro' ts_tp_lt_new_tstp lookup_a2_map'[OF m_def Some] new_tstp_lt_isl
               by auto
@@ -1784,19 +1790,21 @@ proof -
             have m'_alt: "m' = upd_set' m new_tstp (max_tstp new_tstp) {b. (tp - len, b) \<in> tmp'}"
               using m'_def[unfolded a2_map'_def Mapping.lookup_update_neq[OF tp_neq]
                 upd_nested_lookup m_def] by auto
+            have "Mapping.lookup tstp_map' (tp - len) = Some ts"
+              using ts_def \<open>tp - len < tp\<close> unfolding tstp_map'_def Mapping.lookup_update' by simp
+            then have in_tmp': "(tp - len, xs) \<in> tmp'"
+              using in_tmp inL unfolding tmp'_def by simp
             show ?thesis
             proof (cases "Mapping.lookup m xs")
               case None
               have "Mapping.lookup m' xs = Some new_tstp"
-                unfolding tmp'_def m'_alt upd_set'_lookup None tstp_map'_def Mapping.lookup_update' 
-                using in_tmp inL ts_def apply auto using \<open>tp - len < tp\<close> nat_neq_iff by blast
+                using in_tmp' unfolding m'_alt upd_set'_lookup None by simp
               then show ?thesis
                 unfolding filter_a2_map_def using tp'_ge m'_def ts_tp_lt_new_tstp by auto
             next
               case (Some tstp')
               have "Mapping.lookup m' xs = Some (max_tstp new_tstp tstp')"
-                unfolding tmp'_def m'_alt upd_set'_lookup Some tstp_map'_def Mapping.lookup_update'
-                using in_tmp ts_def inL using \<open>tp - len < tp\<close> by force
+                using in_tmp' unfolding m'_alt upd_set'_lookup Some by simp
               moreover have "ts_tp_lt I ts' tp' (max_tstp new_tstp tstp')"
                 using max_tstp_intro' ts_tp_lt_new_tstp lookup_a2_map'[OF m_def Some] new_tstp_lt_isl
                 by auto
@@ -1847,19 +1855,26 @@ proof -
             have m'_alt: "m' = upd_set' m new_tstp (max_tstp new_tstp) {b. (wtp, b) \<in> tmp'}"
               using m'_def[unfolded a2_map'_def Mapping.lookup_update_neq[OF wtp_neq]
                 upd_nested_lookup m_def] by auto
+            have wtp_tmp': "(wtp, xs) \<in> tmp'"
+            proof -
+              have "wtp \<noteq> tp"
+                using tp'_lt_tp wtp_le by linarith
+              then have "Mapping.lookup tstp_map' wtp = Some ts"
+                using ts_def unfolding tstp_map'_def Mapping.lookup_update' by simp
+              then show ?thesis
+                using wtp_xs_in inL unfolding tmp'_def by simp
+            qed
             show ?thesis
             proof (cases "Mapping.lookup m xs")
               case None
               have "Mapping.lookup m' xs = Some new_tstp"
-                using wtp_xs_in ts_def inL unfolding tmp'_def m'_alt upd_set'_lookup None tstp_map'_def Mapping.lookup_update'
-                apply auto using leD tp'_lt_tp wtp_le by blast
+                using wtp_tmp' unfolding m'_alt upd_set'_lookup None by simp
               then show ?thesis
                 unfolding filter_a2_map_def using wtp_le m'_def ts_tp_lt_new_tstp by auto
             next
               case (Some tstp')
               have "Mapping.lookup m' xs = Some (max_tstp new_tstp tstp')"
-                using wtp_xs_in ts_def inL unfolding tmp'_def m'_alt upd_set'_lookup Some tstp_map'_def Mapping.lookup_update'
-                apply auto using leD tp'_lt_tp wtp_le by blast
+                using wtp_tmp' unfolding m'_alt upd_set'_lookup Some by simp
               moreover have "ts_tp_lt I ts' tp' (max_tstp new_tstp tstp')"
                 using max_tstp_intro' ts_tp_lt_new_tstp lookup_a2_map'[OF m_def Some] new_tstp_lt_isl
                 by auto
@@ -2109,8 +2124,8 @@ proof -
       qed 
     qed
     have valid_tstp_map: "valid_tstp_map ts' tp' tstp_map'" 
-      using restr(2) neq unfolding tstp_map'_def valid_tstp_map_def Mapping.lookup_update'
-      apply(auto) using tp'_lt_tp by fastforce
+      using restr(2) tp'_lt_tp unfolding tstp_map'_def valid_tstp_map_def Mapping.lookup_update'
+      by simp
     show "case z of (ts', tp') \<Rightarrow> ivl_restr_a2_map I ts' tp' a2_map' \<and> valid_tstp_map ts' tp' tstp_map'"
       using valid_tstp_map valid_ivl_restr defs(1) by auto
   qed
@@ -2122,28 +2137,22 @@ proof -
     by (auto dest: Mapping.in_keysD split: option.splits if_splits) (metis Mapping.in_keysD atLeastAtMost_iff diff_le_self le_eq_less_or_eq option.simps(3))
   have m_empty: "m = Mapping.empty" using m_def valid_shift_aux by auto
   have "ivl_restr_a2_map I nt tp a2_map'" 
-  proof (cases "memL I 0")
-    case True
-    show ?thesis unfolding a2_map'_def ivl_restr_a2_map_def Mapping.lookup_update' upd_nested_lookup 
-      using m_def apply(auto)
-    proof -
-      fix xs
-      show "case Mapping.lookup (upd_set' m new_tstp (max_tstp new_tstp) {b. (tp, b) \<in> tmp'}) xs of
-          None \<Rightarrow> True | Some x \<Rightarrow> ts_tp_lt I nt tp x"
-        unfolding upd_set'_lookup new_tstp_def ts_tp_lt_def using True m_empty by(auto split:option.splits)
+    unfolding ivl_restr_a2_map_def m'_def option.case m_def(2)
+  proof (intro allI)
+    fix xs
+    show "case Mapping.lookup (upd_set' m new_tstp (max_tstp new_tstp) {b. (tp, b) \<in> tmp'}) xs of
+        None \<Rightarrow> True | Some x \<Rightarrow> ts_tp_lt I nt tp x"
+    proof (cases "memL I 0")
+      case True
+      then show ?thesis
+        unfolding upd_set'_lookup new_tstp_def ts_tp_lt_def using m_empty by (auto split: option.splits)
+    next
+      case False
+      have "Mapping.lookup tstp_map' tp = Some nt"
+        unfolding tstp_map'_def by simp
+      then show ?thesis
+        unfolding upd_set'_lookup new_tstp_def ts_tp_lt_def tmp'_def using False m_empty by auto
     qed
-  next
-    case False
-     show ?thesis unfolding a2_map'_def ivl_restr_a2_map_def Mapping.lookup_update' upd_nested_lookup 
-       using m_def apply(auto)
-     proof -
-       fix xs
-       have "Mapping.lookup tstp_map' tp = Some nt" unfolding tstp_map'_def by transfer auto
-       then show "case Mapping.lookup (upd_set' m new_tstp (max_tstp new_tstp) {b. (tp, b) \<in> tmp'}) xs of
-          None \<Rightarrow> True | Some x \<Rightarrow> ts_tp_lt I nt tp x"
-         unfolding upd_set'_lookup new_tstp_def ts_tp_lt_def tmp'_def 
-         using False m_empty by auto
-     qed
   qed
   moreover have "valid_tstp_map nt tp tstp_map'"
     unfolding tstp_map'_def valid_tstp_map_def Mapping.lookup_update' by auto
