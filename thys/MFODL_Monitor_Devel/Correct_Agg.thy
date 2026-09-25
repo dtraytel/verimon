@@ -396,14 +396,27 @@ next
   have x_in_colsD: "x + length (aggargs_tys aggargs) \<in> aggargs_cols aggargs \<Longrightarrow> x < aggargs_n aggargs" for x
     using valid_aggargs
     by (auto simp: valid_aggargs_def Some safe_aggargs_def)
+  let ?b = "length (aggargs_tys aggargs)"
+  have cols: "fv \<psi> = aggargs_cols aggargs" and safe: "safe_aggargs aggargs"
+    using valid_aggargs by (simp_all add: valid_aggargs_def Some)
   show ?thesis
-    unfolding packagg_def Some eval_args_agg_def
-    apply (auto simp del: sat.simps fvi.simps simp: eval_aggargs_def n_def)
-    apply (rule qtable_eval_agg)
-    using q valid_aggargs mr
-    by (auto simp: n_def agg_tys_def Some valid_aggargs_def safe_aggargs_def
-        fvi_iff_fv[where ?b="length (aggargs_tys aggargs)"] fvi_trm_iff_fv_trm[where ?b="length (aggargs_tys aggargs)"]
-        dest!: x_in_colsD)
+    unfolding packagg_def eval_args_agg_def Some option.case eval_aggargs_def n_def(1)
+  proof (rule qtable_eval_agg)
+    show "qtable (?b + aggargs_n aggargs) (fv \<psi>) (mem_restr (lift_envs' ?b R'))
+      (\<lambda>v. Formula.sat \<sigma> V (map the v) ne \<psi>) rel"
+      using q mr by (simp add: n_def agg_tys_def Some)
+    show "\<forall>x\<in>fv (Formula.Agg (aggargs_y aggargs) (aggargs_\<omega> aggargs) (aggargs_tys aggargs)
+      (aggargs_f aggargs) \<psi>). x < aggargs_n aggargs"
+    proof
+      fix x
+      assume "x \<in> fv (Formula.Agg (aggargs_y aggargs) (aggargs_\<omega> aggargs) (aggargs_tys aggargs)
+        (aggargs_f aggargs) \<psi>)"
+      then consider "x + ?b \<in> fv \<psi>" | "x + ?b \<in> fv_trm (aggargs_f aggargs)" | "x = aggargs_y aggargs"
+        by (auto simp: fvi_iff_fv[where b= ?b] fvi_trm_iff_fv_trm[where b= ?b] split: if_splits)
+      then show "x < aggargs_n aggargs"
+        using safe by cases (auto simp: safe_aggargs_def cols intro: x_in_colsD)
+    qed
+  qed (use safe in \<open>simp_all add: safe_aggargs_def cols\<close>)
 qed
 
 
