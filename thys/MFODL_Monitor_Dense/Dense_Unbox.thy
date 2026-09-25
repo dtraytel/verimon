@@ -523,8 +523,15 @@ function gevt_shift :: "args \<Rightarrow> ts \<Rightarrow> 'b :: ccompare gevta
          else gevt_shift args nt (gevt_step args ts0 (nts', win, rest, len, bend, cnt, cur, dn)))))"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, dn)). len)")
-     (auto simp: gevt_step_def Let_def split: prod.splits option.splits)
+proof -
+  have step: "\<And>args t nts win rest len bend cnt cur dn.
+    (case gevt_step args t (nts, win, rest, len, bend, cnt, cur, dn) of
+      (nts, win, rest, len, bend, cnt, cur, dn) \<Rightarrow> len) = len - 1"
+    by (simp add: gevt_step_def Let_def split: prod.split option.split)
+  show ?thesis
+    by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cnt, cur, dn)). len)")
+      (auto simp: step)
+qed
 
 declare gevt_shift.simps[simp del]
 
