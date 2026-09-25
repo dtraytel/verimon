@@ -327,6 +327,33 @@ subsection \<open>The two evaluators agree\<close>
 lemma edeval_Rep:
   "deval j ts db (Rep_edformula \<phi>) = (let (zs, \<phi>') = edeval j ts db \<phi> in (zs, Rep_edformula \<phi>'))"
 proof (induction j ts db \<phi> rule: edeval.induct)
+  case (9 j ts db \<phi> \<psi> buf)
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  obtain zs buf' where u: "mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mebuf2_add xs ys buf) = (zs, buf')"
+    by (cases "mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mebuf2_add xs ys buf)")
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 9(1) x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 9(2) x y by simp
+  have u': "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (mbuf2_add xs ys (map_prod Rep_mbuf_t Rep_mbuf_t buf))
+      = (zs, map_prod Rep_mbuf_t Rep_mbuf_t buf')"
+    unfolding mbuf2_add by (rule mebuf2_take[OF u])
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y u u' prod.case)
+next
+  case (10 j ts db pl \<phi> pos \<psi> buf)
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  obtain zs buf' where u:
+    "mebuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (mebuf2_add xs ys buf) = (zs, buf')"
+    by (cases "mebuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (mebuf2_add xs ys buf)")
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 10(1) x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 10(2) x y by simp
+  have u': "mbuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2)
+      (mbuf2_add xs ys (map_prod Rep_mbuf_t Rep_mbuf_t buf)) = (zs, map_prod Rep_mbuf_t Rep_mbuf_t buf')"
+    unfolding mbuf2_add by (rule mebuf2_take[OF u])
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y u u' prod.case)
+next
   case (13 j ts db ps ns L buf)
   have "map fst (map (edeval j ts db) L) = map fst (map (deval j ts db) (map Rep_edformula L))"
     "map snd (map (deval j ts db) (map Rep_edformula L))
@@ -336,6 +363,41 @@ proof (induction j ts db \<phi> rule: edeval.induct)
     using 13
     by (auto simp only: Let_def deval.simps edeval.simps mbufn_add Rep_edformula.simps
         mbuf_t_empty.rep_eq split: prod.splits dest!: mebufn_take mbufn_take_app)
+next
+  case (14 j ts db dags \<phi> \<psi> buf aux)
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  obtain b1 b2 b3 b4 where b: "buf = (b1, b2, b3, b4)" by (cases buf)
+  obtain zs buf' aux' where e:
+    "edsx_eval_since dags [] (mebuf2S_add xs ys ts (b1, b2, b3, b4)) aux = (zs, buf', aux')"
+    by (cases "edsx_eval_since dags [] (mebuf2S_add xs ys ts (b1, b2, b3, b4)) aux"
+        rule: prod_cases3)
+  obtain c1 c2 c3 c4 where c: "buf' = (c1, c2, c3, c4)" by (cases buf')
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 14(1) x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 14(2) x y by simp
+  have e': "dsx_eval_since dags []
+      (mbuf2S_add xs ys ts (Rep_mbuf_t b1, Rep_mbuf_t b2, Rep_mbuf_t b3, b4)) aux
+      = (zs, (Rep_mbuf_t c1, Rep_mbuf_t c2, Rep_mbuf_t c3, c4), aux')"
+    using edsx_eval_since[OF e[unfolded c mebuf2S_add.simps]] by (simp add: mbuf_t_append.rep_eq)
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y b e c e' prod.case)
+next
+  case (15 j ts db dags msk \<phi> \<psi> buf nts t aux)
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  obtain aux' buf' nt nts' where u: "mebuf2t_take (dux_add_new dags msk) aux
+      (mebuf2_add xs ys buf) t (nts @@ ts) = (aux', buf', nt, nts')"
+    by (cases "mebuf2t_take (dux_add_new dags msk) aux (mebuf2_add xs ys buf) t (nts @@ ts)"
+        rule: prod_cases4)
+  obtain zs aux'' where v: "dux_eval dags nt aux' = (zs, aux'')" by (cases "dux_eval dags nt aux'")
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 15(1) x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 15(2) x y by simp
+  have u': "mbuf2t_take (dux_add_new dags msk) aux
+      (mbuf2_add xs ys (map_prod Rep_mbuf_t Rep_mbuf_t buf)) t (Rep_mbuf_t nts @ ts)
+      = (aux', map_prod Rep_mbuf_t Rep_mbuf_t buf', nt, Rep_mbuf_t nts')"
+    using mebuf2t_take[OF u] by (simp add: mbuf2_add mbuf_t_append.rep_eq)
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y u u' v prod.case)
 next
   case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)
   obtain xs \<phi>' where \<phi>: "edeval j ts db \<phi> = (xs, \<phi>')"
@@ -368,6 +430,23 @@ next
        (auto split: prod.splits
         dest!: letpast_meval0_cong_f[where ?eval="deval j" and ?eval'="edeval j" and \<phi>=\<phi>,
           OF IH size_Rep_edformula, simplified])
+next
+  case (22 j ts db dags pl \<phi> \<psi> dbuf nts daux)
+  obtain xs \<phi>' where x: "edeval j ts db \<phi> = (xs, \<phi>')" by (cases "edeval j ts db \<phi>")
+  obtain ys \<psi>' where y: "edeval j ts db \<psi> = (ys, \<psi>')" by (cases "edeval j ts db \<psi>")
+  let ?f = "\<lambda>r1 r2 t (zs, ax). let ax = gupdate_mmtaux dags t r1 r2 ax
+    in (zs @ [dsan (gresult_mmtaux dags ax)], ax)"
+  obtain zs daux' b nts' where t:
+    "mebuf2T_take ?f ([], daux) (mebuf2_add xs ys dbuf) (nts @@ ts) = ((zs, daux'), b, nts')"
+    by (cases "mebuf2T_take ?f ([], daux) (mebuf2_add xs ys dbuf) (nts @@ ts)") auto
+  have ix: "deval j ts db (Rep_edformula \<phi>) = (xs, Rep_edformula \<phi>')" using 22(1) x by simp
+  have iy: "deval j ts db (Rep_edformula \<psi>) = (ys, Rep_edformula \<psi>')" using 22(2) x y by simp
+  have t': "mbuf2T_take ?f ([], daux) (mbuf2_add xs ys (map_prod Rep_mbuf_t Rep_mbuf_t dbuf))
+      (Rep_mbuf_t nts @ ts) = ((zs, daux'), map_prod Rep_mbuf_t Rep_mbuf_t b, Rep_mbuf_t nts')"
+    using mebuf2T_take[OF t] by (simp add: mbuf2_add mbuf_t_append.rep_eq)
+  show ?case
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y
+        t[unfolded Let_def] t'[unfolded Let_def] prod.case)
 next
   case (23 j ts db m I mr mrs pls Ld dbuf nts daux)
   have "map fst (map (edeval j ts db) Ld) = map fst (map (deval j ts db) (map Rep_edformula Ld))"
