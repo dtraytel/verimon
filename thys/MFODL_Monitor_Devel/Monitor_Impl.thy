@@ -495,10 +495,65 @@ next
 qed
 
 lemma (in maux) minit0_code[code]: "minit0 n \<phi> = Rep_meformula (meinit0 n \<phi>)"
-  apply (induction n \<phi> rule: meinit0.induct; clarsimp simp: Let_def 
-    mbuf_t_empty.rep_eq split: prod.splits if_splits)
-  using init_and_trigger_code init_since_code init_until_code init_trigger_code
-  by (auto simp: mbuf_t_empty.rep_eq split: formula.splits)
+proof (induction n \<phi> rule: meinit0.induct)
+  case (8 n \<phi> \<psi>)
+  consider (assign) "safe_assignment (fv \<phi>) \<psi>"
+    | (safe) "\<not> safe_assignment (fv \<phi>) \<psi>" "safe_formula \<psi>"
+    | (constraint) "\<not> safe_assignment (fv \<phi>) \<psi>" "\<not> safe_formula \<psi>" "is_constraint \<psi>"
+    | (other) "\<not> safe_assignment (fv \<phi>) \<psi>" "\<not> safe_formula \<psi>" "\<not> is_constraint \<psi>"
+    by blast
+  then show ?case
+  proof cases
+    case assign
+    with 8(1) show ?thesis
+      by simp
+  next
+    case safe
+    with 8(2,3) show ?thesis
+      by (simp add: mbuf_t_empty.rep_eq)
+  next
+    case constraint
+    with 8(4) show ?thesis
+      by simp
+  next
+    case other
+    note unf = minit0.simps meinit0.simps if_not_P[OF other(1)] if_not_P[OF other(2)]
+      if_not_P[OF other(3)]
+    show ?thesis
+    proof (cases \<psi>)
+      case (Neg \<psi>')
+      show ?thesis
+        using 8(5)[OF other Neg] 8(6)[OF other Neg]
+        unfolding unf unfolding Neg
+        by (simp add: mbuf_t_empty.rep_eq)
+    next
+      case (Trigger \<alpha> I \<beta>)
+      show ?thesis
+        using init_and_trigger_code[OF 8(7)[OF other Trigger]]
+        unfolding unf unfolding Trigger
+        by simp
+    next
+      case (Release \<alpha> I \<beta>)
+      show ?thesis
+        using 8(8)[OF other Release]
+        unfolding unf unfolding Release
+        by simp
+    qed (unfold unf; simp)+
+  qed
+next
+  case (11 n y \<omega> tys f \<phi>)
+  have "init_since minit0 (length tys + n) agg \<alpha> I \<beta> =
+    Rep_meformula (init_since' meinit0 (length tys + n) agg \<alpha> I \<beta>)"
+    if "\<phi> = Formula.Since \<alpha> I \<beta>" for agg \<alpha> I \<beta>
+    by (rule init_since_code, rule 11(2)[OF refl that refl])
+  moreover have "init_until minit0 (length tys + n) agg \<alpha> I \<beta> =
+    Rep_meformula (init_until' meinit0 (length tys + n) agg \<alpha> I \<beta>)"
+    if "\<phi> = Formula.Until \<alpha> I \<beta>" for agg \<alpha> I \<beta>
+    by (rule init_until_code, rule 11(3)[OF refl that refl])
+  ultimately show ?case
+    by (simp add: 11(1) Let_def split: formula.split)
+qed (simp_all add: Let_def mbuf_t_empty.rep_eq init_since_code init_until_code
+    init_trigger_code split: prod.splits)
 
 definition mestate :: "nat \<Rightarrow> nat \<Rightarrow> ('a, 'b, 'c) mformula \<Rightarrow> nat \<Rightarrow> ts queue 
   \<Rightarrow> 'd \<Rightarrow> ('a, 'b, 'c, 'd) mstate_ext" 
