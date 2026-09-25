@@ -574,7 +574,8 @@ proof -
         unfolding cur len nt if_not_P[OF False] if_not_P[OF \<open>j + \<delta> \<noteq> 0\<close>]
         by (intro \<tau>_mono)
     qed
-  qed  have valid_aux'': "valid_muaux args cur aux'' auxlist''"
+  qed
+  have valid_aux'': "valid_muaux args cur aux'' auxlist''"
     using valid_eval_muaux[OF valid_aux' current_w_le eq2, of zs'' auxlist'']
     by (auto simp add: args_ivl zs''_def auxlist''_def)
   have length_aux'': "length_muaux args aux'' = length auxlist''"
