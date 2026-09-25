@@ -1491,52 +1491,53 @@ lemma wf_f_check_subst[simp]: "wf_f (TCst \<circ> (convert_tysym o check_subst))
 
 lemma verimon_spec_\<psi>:
   "verimon_spec \<psi> (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
-  unfolding \<psi>_def
-  apply unfold_locales
-  subgoal using prepare_Inr
-    apply (cases "prepare_verimon rw sig \<phi>")
-     apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize)
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
-    done
-  subgoal using prepare_Inr
-    by (cases "prepare_verimon rw sig \<phi>")
-      (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
-  done
-
+proof -
+  let ?f = "convert_tysym o check_subst"
+  let ?\<phi> = "Formula.formula.map_formula ?f \<phi>"
+  have type_check: "type_check sig \<phi> = Inr ?\<phi>"
+    using prepare_Inr check_check_subst
+    by (auto simp: prepare_verimon_def type_check_def bind_def split: if_splits)
+  have wty: "map_sig ?f sig, ?f o TAny \<turnstile> ?\<phi>"
+    using check_sound_proven[OF check_check_subst wf] wf_f_check_subst wf_f_TCst_convert_tysym
+    unfolding wty_result_fX_def by blast
+  have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+    using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
+  have "mmonitorable \<psi>"
+    using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def monitorable_formula_code
+      split: if_splits)
+  moreover have "map_sig ?f sig, ?f o TAny \<turnstile> \<psi>"
+    using \<psi>_cases by (elim disjE) (simp_all add: wty wty_normalize wty_rrewrite)
+  ultimately show ?thesis
+    by (intro verimon_spec.intro wty_mfodl.intro verimon_spec_axioms.intro)
+qed
 
 lemma future_bounded_\<phi>:
   "future_bounded_mfodl (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)
     (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
-  apply unfold_locales
-  subgoal
-    using prepare_\<psi>
-    apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"]
-          dest: spec[of _ "convert_tysym o check_subst"])
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
-    done
-  subgoal
-    using prepare_\<psi>[symmetric] check_check_subst[symmetric] unfolding prepare_verimon_def
-    by (auto simp add: prepare_verimon_def type_check_def Let_def bind_def mmonitorable_def
-        simp flip: monitorable_formula_code 
-        split: sum.splits if_splits intro: future_bounded_rrewrite future_bounded_normalize)
-  done
-
+proof -
+  let ?f = "convert_tysym o check_subst"
+  let ?\<phi> = "Formula.formula.map_formula ?f \<phi>"
+  have type_check: "type_check sig \<phi> = Inr ?\<phi>"
+    using prepare_Inr check_check_subst
+    by (auto simp: prepare_verimon_def type_check_def bind_def split: if_splits)
+  have "map_sig ?f sig, ?f o TAny \<turnstile> ?\<phi>"
+    using check_sound_proven[OF check_check_subst wf] wf_f_check_subst wf_f_TCst_convert_tysym
+    unfolding wty_result_fX_def by blast
+  moreover have "Safety.future_bounded ?\<phi>"
+  proof -
+    have \<psi>_cases: "\<psi> = ?\<phi> \<or> \<psi> = normalize ?\<phi> \<or> \<psi> = rrewrite (normalize ?\<phi>)"
+      using prepare_\<psi> by (auto simp: prepare_verimon_def type_check Let_def split: if_splits)
+    have "mmonitorable \<psi>"
+      using verimon_spec_\<psi> by (rule verimon_spec.monitorable)
+    then have "Safety.future_bounded \<psi>"
+      by (simp add: mmonitorable_def)
+    with \<psi>_cases show ?thesis
+      using future_bounded_normalize[OF future_bounded_rrewrite] future_bounded_normalize
+      by auto
+  qed
+  ultimately show ?thesis
+    by (intro future_bounded_mfodl.intro wty_mfodl.intro future_bounded_mfodl_axioms.intro)
+qed
 
 interpretation verimon_\<psi>: verimon_spec \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   using verimon_spec_\<psi> by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def)
@@ -1580,25 +1581,7 @@ locale verimon_rewrite = maux + verimon_prepare
 begin
 
 interpretation verimon_\<psi>: verimon \<psi> "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
-  unfolding \<psi>_def
-  apply standard
-  subgoal using prepare_Inr
-    apply (cases "prepare_verimon rw sig \<phi>")
-     apply (simp_all add: prepare_verimon_def type_check_def Let_def bind_def split: sum.splits if_splits)
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"])
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize)
-    subgoal
-      by (frule check_sound_proven[OF _ wf, unfolded wty_result_fX_def])
-        (auto simp: check_check_subst intro!: exI[of _ "convert_tysym"] wty_normalize wty_rrewrite)
-    done
-  subgoal using prepare_Inr
-    by (cases "prepare_verimon rw sig \<phi>")
-      (simp_all add: prepare_verimon_def monitorable_formula_code Let_def split: sum.splits if_splits)
-  done
+  by (intro verimon.intro verimon_spec_\<psi>) unfold_locales
 
 lemma verimon_wf_mstate_minit: "wf_mstate (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny) \<psi> pnil R (minit \<psi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
