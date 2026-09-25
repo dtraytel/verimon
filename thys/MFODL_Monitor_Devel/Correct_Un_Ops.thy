@@ -341,31 +341,62 @@ lemma qtable_no_pattern:
     and "V (p, length ts) = None \<Longrightarrow> 
   R = (\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` (map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts})) \<Longrightarrow>
   qtable n X (mem_restr UU) (\<lambda>v. Formula.sat \<sigma> V (map the v) i (Formula.Pred p ts)) R"
-  using assms
-proof (auto intro!: qtableI, goal_cases)
-  case (3 v)
-  then obtain f where f: "match ts (map (Some \<circ> eval_trm_option v) ts) = Some f"
-    and v: "v = tabulate f 0 n"
-    using ex_match[of n ts v] by blast
-  have "map (Some \<circ> eval_trm_option v) ts \<in> map Some ` {v. length v = length ts \<and> P v i}"
-    unfolding map_map[symmetric] using 3 by (intro imageI) simp
-  then have "f \<in> Option.these (match ts ` map Some ` {v. length v = length ts \<and> P v i})"
-    unfolding in_these_eq f[symmetric] by (rule imageI)
-  then show ?case
-    unfolding v by (rule imageI)
-next
-  case (6 v)
-  then obtain f where f: "match ts (map (Some \<circ> eval_trm_option v) ts) = Some f"
-    and v: "v = tabulate f 0 n"
-    using ex_match[of n ts v] by blast
-  have "map (Some \<circ> eval_trm_option v) ts \<in> map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}"
-    unfolding map_map[symmetric] using 6 by (intro imageI) simp
-  then have "f \<in> Option.these (match ts ` map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts})"
-    unfolding in_these_eq f[symmetric] by (rule imageI)
-  then show ?case
-    unfolding v by (rule imageI)
-qed (auto simp: table_def in_these_eq match_eval_trm image_iff
-        elim!: match_wf_tuple[of _ ts "(map Some _)" n])
+proof -
+  let ?Q = "qtable n X (mem_restr UU) (\<lambda>v. Formula.sat \<sigma> V (map the v) i (Formula.Pred p ts))"
+  have X: "X = (\<Union>t\<in>set ts. fv_trm t)"
+    using assms(1) by simp
+  have fv_n: "\<forall>t\<in>set ts. \<forall>x\<in>fv_trm t. x < n"
+    using assms(1,2) by simp
+  have qt: "?Q ((\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` map Some ` S))"
+    if sat: "\<And>v. Formula.sat \<sigma> V v i (Formula.Pred p ts) \<longleftrightarrow> map (Formula.eval_trm v) ts \<in> S"
+    for S
+  proof -
+    let ?R = "(\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` map Some ` S)"
+    have mem: "v \<in> ?R \<longleftrightarrow> (\<exists>f xs. xs \<in> S \<and> Some f = match ts (map Some xs) \<and> v = tabulate f 0 n)"
+      for v
+      unfolding image_iff Bex_def in_these_eq by blast
+    show ?thesis
+    proof (rule qtableI)
+      show "table n X ?R"
+      proof (rule tableI)
+        fix v
+        assume "v \<in> ?R"
+        then obtain f xs where "Some f = match ts (map Some xs)" "v = tabulate f 0 n"
+          unfolding mem by blast
+        then show "wf_tuple n X v"
+          unfolding X by (simp add: match_wf_tuple)
+      qed
+    next
+      fix v
+      assume "v \<in> ?R"
+      then obtain f xs where "xs \<in> S" and f: "Some f = match ts (map Some xs)"
+        and v: "v = tabulate f 0 n"
+        unfolding mem by blast
+      from fv_n f have "map (Formula.eval_trm (tabulate (\<lambda>i. the (f i)) 0 n)) ts = xs"
+        by (rule match_eval_trm)
+      moreover have "map the v = tabulate (\<lambda>i. the (f i)) 0 n"
+        unfolding v by (simp add: tabulate_alt)
+      ultimately show "Formula.sat \<sigma> V (map the v) i (Formula.Pred p ts)"
+        using \<open>xs \<in> S\<close> sat by simp
+    next
+      fix v
+      assume "wf_tuple n X v" and "Formula.sat \<sigma> V (map the v) i (Formula.Pred p ts)"
+      from this(2) have "map (Formula.eval_trm (map the v)) ts \<in> S"
+        by (rule sat[THEN iffD1])
+      moreover obtain f where "match ts (map (Some \<circ> Formula.eval_trm (map the v)) ts) = Some f"
+        and "v = tabulate f 0 n"
+        using ex_match[of n ts v] \<open>wf_tuple n X v\<close> fv_n assms(3) unfolding X by blast
+      ultimately show "v \<in> ?R"
+        unfolding mem by (metis map_map)
+    qed
+  qed
+  show "?Q R" if "V (p, length ts) = Some P" and
+    "R = (\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` (map Some ` {v. length v = length ts \<and> P v i}))"
+    unfolding that(2) by (rule qt) (simp add: that(1))
+  show "?Q R" if "V (p, length ts) = None" and
+    "R = (\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` (map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}))"
+    unfolding that(2) by (rule qt) (simp add: that(1))
+qed
 
 
 subsubsection \<open> Equalities \<close>
