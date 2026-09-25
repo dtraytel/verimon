@@ -1,10 +1,8 @@
 module Config : sig
   val generic_join : bool ref
-  val imperative_join : bool ref
   val bulk_min : int ref
 end = struct
   let generic_join = ref false
-  let imperative_join = ref false
   let bulk_min = ref 64
 end
 

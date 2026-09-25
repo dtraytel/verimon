@@ -31,9 +31,7 @@ text \<open>
   @{theory MFODL_Monitor_Dense.Dense_Agg_Code}, the one-descent updates of
   @{theory MFODL_Monitor_Dense.Dense_Map_Upd}, the red-black trees' rebalancing of
   @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, and the front end's entry
-  points -- is stated here too, so nothing of the imperative refinement of session
-  MFODL\_Monitor\_Imp, and in particular nothing of its unverified heap-resident dense monitor,
-  is imported, let alone reachable.
+  points -- is stated here too.
 
   The order of the first two imports matters.  Where a boxed operation of
   @{theory MFODL_Monitor_Dense.Dense_Code_Opt} and its monomorphic copy from the second pass of

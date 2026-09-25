@@ -14,10 +14,7 @@ text \<open>
 
   This theory proves that deleting them loses nothing: the projection and its inverse are
   mutually inverse on well-formed tuples and injective on a table, and the join over the short
-  tuples agrees with @{const join1} over the wide ones.  The definitions are the ones the
-  monitor of @{file "../MFODL_Monitor_Imp/Dense_Imp.thy"} runs; that theory will import this one
-  once the remaining layers (the table join, the aggregation, and the evaluation function) are
-  proved as well.
+  tuples agrees with @{const join1} over the wide ones.
 \<close>
 
 type_synonym cols = "nat list"

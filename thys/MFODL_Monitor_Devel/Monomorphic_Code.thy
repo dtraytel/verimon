@@ -1,8 +1,24 @@
 (*<*)
 theory Monomorphic_Code
-  imports Imperative_Join
+  imports Code_Opt
 begin
 (*>*)
+
+section \<open>Two adaptations of the generated code\<close>
+
+text \<open>
+  @{const literal_string8} is the identity on the common string representation; the adaptation
+  in @{text Event_Data} prints it as @{text id}, and the generated code prints a direct
+  identity instead.  And a union of the sets of two lists is built as the set of their
+  concatenation, in one pass (the Since structures' result over their two queues).  Both used
+  to come in with the libraries of the imperative join, which is no longer part of the session.
+\<close>
+
+code_printing
+  constant "literal_string8 :: string8 \<Rightarrow> String.literal" \<rightharpoonup> (OCaml) "(fun x -> x)"
+
+lemma set_union_code[code_unfold]: "set xs \<union> set ys = set (xs @ ys)"
+  by simp
 
 section \<open>Monomorphisation of the hot code as a refinement\<close>
 
@@ -359,6 +375,9 @@ lemma ed_keys_compat[code_unfold]:
   unfolding ed_member_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
   by (simp_all add: Mapping.keys_is_none_rep)
 
+lemma all_not_Some_pair_iff: "(\<forall>a b. y \<noteq> Some (a, b)) \<longleftrightarrow> y = None"
+  by (cases y) auto
+
 lemma ed_minus_keys_compat[code_unfold]:
   "unbox ed_minus_v X (unbox ed_keys_nat_v m1) = Set.filter (\<lambda>k. ed_lookup_nat m1 k = None) X"
   "unbox ed_minus_v X (unbox ed_keys_tstp_v m2) = Set.filter (\<lambda>k. ed_lookup_tstp m2 k = None) X"
@@ -366,7 +385,7 @@ lemma ed_minus_keys_compat[code_unfold]:
   "unbox ed_minus_v X (unbox ed_keys_sum_v m4) = Set.filter (\<lambda>k. ed_lookup_sum m4 k = None) X"
   "unbox ed_minus_v X (unbox ed_keys_rank_v m5) = Set.filter (\<lambda>k. ed_lookup_rank m5 k = None) X"
   unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
-  by (auto simp: Mapping.keys_dom_lookup)
+  by (auto simp: Mapping.keys_dom_lookup all_not_Some_pair_iff)
 
 section \<open>Bulk construction of tables\<close>
 
@@ -431,7 +450,8 @@ proof -
     using Some
     by (auto simp: RBT_set_def RBT_Set2.member.rep_eq rbt_of_sorted_list.rep_eq rbt_comp_lookup[OF comp]
         rbt_comp_bulkload[OF comp] strict_sorted_by_sorted_wrt[OF comp] linorder.strict_sorted_iff[OF lin] comp_def
-        linorder.rbt_lookup_rbtreeify[OF lin] linorder.rbt_lookup_rbt_bulkload[OF lin] dom_map_of_conv_image_fst)
+        linorder.rbt_lookup_rbtreeify[OF lin] linorder.rbt_lookup_rbt_bulkload[OF lin] dom_map_of_conv_image_fst
+        image_image)
 qed
 
 definition table_of_list :: "event_data tuple list \<Rightarrow> event_data table" where
@@ -794,8 +814,6 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("mmulti_join_pos", "ed_mmulti_join_pos", ["event_data"]),
    ("mmulti_join_neg", "ed_mmulti_join_neg", ["event_data"]),
    ("mmulti_join_gen", "ed_mmulti_join_gen", ["event_data"]),
-   ("hprobe_join", "ed_hprobe_join", ["event_data"]),
-   ("probe_join_imp", "ed_probe_join_imp", ["event_data"]),
    ("idx_create", "ed_idx_create", ["event_data"]),
    ("idx_reindex", "ed_idx_reindex", ["event_data"]),
    ("idx_join", "ed_idx_join", ["event_data tuple", "event_data"]),

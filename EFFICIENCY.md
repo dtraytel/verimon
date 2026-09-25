@@ -8902,3 +8902,21 @@ insertions into the table, the index's bucket and the time stamps, and a dropped
 deletion from the table and from the time stamps per tuple.  Keeping the time stamps in the index's
 buckets would save one of the three trees, at the price of restating the Since structure and its
 proofs.  The corpus is unchanged (652 same, 149 skipped, 0 differing) and `dune test` passes.
+
+## 21.42 The imperative refinement removed
+
+Since 21.26 the binary ships only the export of `MFODL_Monitor_Dense.Monitor_Code_Dense`, which
+imports nothing of Imperative HOL: the session `MFODL_Monitor_Imp` (the heap-resident Since and
+Until structures, tables and joins, and the unverified heap-resident dense monitor `Dense_Imp`)
+and the theory `Imperative_Join` of `MFODL_Monitor_Devel` (a hash-table probe join selected by a
+run-time flag that nothing set) were no longer reachable from it.  Both are removed, with the
+sessions only they needed (`HOL-Imperative_HOL`, `Separation_Logic_Imperative_HOL`,
+`Collections`, `Automatic_Refinement`, `Native_Word`) and the micro-benchmark of their tables
+(`evaluation/table_bench`); they remain in the history before this entry.  Two adaptations of the generated
+code had come in with those libraries and are restated in `Monomorphic_Code` (the direct identity
+for `literal_string8`, and `Automatic_Refinement`'s unfolding of `set xs ∪ set ys` into
+`set (xs @ ys)`), and two proofs there that had used simp rules of theirs are given the rules
+they need; the export is unchanged but for the flag `Config.imperative_join`, which nothing read.  The earlier entries'
+references to them describe the code as it was then.  The command-line flags that once selected
+the heap structures (`-heap_since`, `-heap_maps`, `-heap_join_min`, `-bulk_min`,
+`-imperative_join`) were already accepted and ignored, and stay so.

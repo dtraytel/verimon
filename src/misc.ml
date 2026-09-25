@@ -82,20 +82,20 @@ let checkf = ref false
 
 let verified = ref false
 
-(* Use the verified kernel whose Since structures for operators without join columns live on
-   the heap as hash tables (thys/MFODL_Monitor_Imp). *)
+(* Deprecated, accepted and ignored: selected the Since structures on the heap of the imperative
+   refinement, which is no longer part of the formalization (see the git history). *)
 let heap_since = ref false
 
-(* Use the verified kernel whose Since structures live on the heap-resident maps of
-   thys/MFODL_Monitor_Imp/Table_Imp.thy (unproved; for performance experiments). *)
+(* Deprecated, accepted and ignored: selected the heap-resident maps of the imperative
+   refinement. *)
 let heap_all = ref false
 
 (* Smallest table size for which a join builds a heap-resident index instead of probing the
-   comparison-based tree; below it the tree is cheaper (see thys/.../Join_Imp2.thy). *)
+   comparison-based tree (deprecated, accepted and ignored). *)
 let heap_join_min = ref 0
 
 (* Smallest table for which the tuples are sorted and the tree built in one pass instead of
-   being inserted one at a time (see thys/MFODL_Monitor_Imp/Table_Imp.thy). *)
+   being inserted one at a time (deprecated, accepted and ignored). *)
 let bulk_min = ref 64
 (* GC space overhead (percent) to set before monitoring; 0 keeps the OCaml default. The
    verified kernel allocates much more than MonPoly's own algorithm (persistent trees and
