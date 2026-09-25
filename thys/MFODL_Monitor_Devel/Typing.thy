@@ -4175,9 +4175,12 @@ case (Minus t1 t2)
     by auto (metis Minus.IH(1) Minus.IH(2))
 next
   case (UMinus t)
-  have "clash_propagate (TNum 0) (new_type_symbol type) (new_type_symbol \<circ> E) = error e \<Longrightarrow> False " for e
-    apply (rule constr_complete[where ?t=TInt and ?P="(\<lambda>x. x \<in> numeric_ty)"]) 
-    using  UMinus(2-4)  by (auto simp add: comp_def elim: wty_trm.cases) 
+  have num: "f type : numeric_ty"
+    using UMinus(4) by (auto elim: wty_trm.cases)
+  have "False" if "clash_propagate (TNum 0) (new_type_symbol type) (new_type_symbol \<circ> E) = error e" for e
+    using constr_complete[OF UMinus(3), of "%x. x : numeric_ty" type "TNum 0" "new_type_symbol o E" E
+        "new_type_symbol type" TInt e] num that
+    by simp
   then obtain f' where f'_def: "clash_propagate (TNum 0) (new_type_symbol type) (new_type_symbol \<circ> E) = return f'"
     using sum.exhaust_sel by blast
   have resless: "resultless_trm_f f (f' \<circ> new_type_symbol) type"
@@ -4369,39 +4372,55 @@ proof -
     f1_def: "check (map_sig f S) (f \<circ> E) (formula.map_formula f \<psi>) = return f1 \<and> f' = f1 \<circ> f " and
     f'_def: "f' = f1 \<circ> f"
     using assms(2, 5) by (auto simp add: check_two_formulas_def split: bind_splits)
-  have wty1: " wty_result_fX S E \<phi> f" apply (rule assms(1)[OF _ f_def])
-    using assms(2-)  unfolding used_tys_def
-    by (auto simp: check_two_formulas_def split: option.splits)
+  have wty1: " wty_result_fX S E \<phi> f"
+    by (rule assms(1)[OF _ f_def assms(3)]) simp
   have wty2:" wty_result_fX (map_sig f S) (f \<circ> E) (formula.map_formula f \<psi>) f1"
-    apply (rule assms(1)) using assms(3,4) f1_def
-    by (auto simp add: safe_formula_map)
+    by (rule assms(1)[OF _ conjunct1[OF f1_def] wf_formula_map[OF assms(4)]]) simp
   have wty_form_iff: "map_sig f'' S, f'' \<circ> E \<turnstile> formula.map_formula f'' form \<longleftrightarrow>
     map_sig f'' S, f'' \<circ> E \<turnstile> formula.map_formula f'' \<phi> \<and> map_sig f'' S, f'' \<circ> E \<turnstile> formula.map_formula f'' \<psi>" for f''
     using assms(5)
     by (auto elim: wty_formula.cases intro: wty_formula.intros)
+  have wf_f1: "wf_f f1"
+    using wty2 unfolding wty_result_fX_def by blast
   show ?thesis
-    using wty1 wty2 assms(3) 
-    apply (auto simp: f'_def wty_form_iff wty_result_fX_def formula.set_map
-        formula.map_comp intro: wf_f_comp)
-    subgoal premises prems for g
-    proof -
-      have "map_sig (g \<circ> f) S, g \<circ> (f \<circ> E) \<turnstile> formula.map_formula (g \<circ> f) \<psi>"
-        using prems(7) by (simp add: comp_assoc)
-      then obtain g' where "wf_f (TCst \<circ> g')" "g = g' \<circ> f1"
-        using prems(5,8) by blast
-      then show ?thesis by (metis comp_assoc)
+    unfolding wty_result_fX_def
+  proof (intro conjI allI impI)
+    show "wf_f f'"
+      using wty1 wf_f1 unfolding f'_def wty_result_fX_def by (blast intro: wf_f_comp)
+  next
+    fix h
+    assume h_wf: "wf_f (TCst o h)"
+    have IH1: "(map_sig h S, h o E \<turnstile> formula.map_formula h \<phi>) = (EX g. wf_f (TCst o g) & h = g o f)"
+      using wty1 h_wf unfolding wty_result_fX_def by blast
+    have IH2: "(map_sig (g o f) S, (g o f) o E \<turnstile> formula.map_formula (g o f) \<psi>)
+      = (EX g'. wf_f (TCst o g') & g = g' o f1)" if "wf_f (TCst o g)" for g
+      using wty2 that unfolding wty_result_fX_def by (simp add: formula.map_comp comp_assoc)
+    show "(map_sig h S, h o E \<turnstile> formula.map_formula h form) = (EX g. wf_f (TCst o g) & h = g o f')"
+    proof
+      assume "map_sig h S, h o E \<turnstile> formula.map_formula h form"
+      then have \<phi>: "map_sig h S, h o E \<turnstile> formula.map_formula h \<phi>"
+        and \<psi>: "map_sig h S, h o E \<turnstile> formula.map_formula h \<psi>"
+        using wty_form_iff by blast+
+      from \<phi> IH1 obtain g where g: "wf_f (TCst o g)" "h = g o f"
+        by blast
+      with \<psi> IH2[OF g(1)] obtain g' where "wf_f (TCst o g')" "g = g' o f1"
+        by blast
+      with g(2) show "EX g. wf_f (TCst o g) & h = g o f'"
+        unfolding f'_def by (metis comp_assoc)
+    next
+      assume "EX g. wf_f (TCst o g) & h = g o f'"
+      then obtain g where g: "wf_f (TCst o g)" "h = g o f1 o f"
+        unfolding f'_def by (auto simp: comp_assoc)
+      have wf_gf1: "wf_f (TCst o (g o f1))"
+        using wf_f_comp[OF g(1) wf_f1] by (simp add: comp_assoc)
+      have "map_sig h S, h o E \<turnstile> formula.map_formula h \<phi>"
+        using IH1 wf_gf1 g(2) by blast
+      moreover have "map_sig h S, h o E \<turnstile> formula.map_formula h \<psi>"
+        using IH2[OF wf_gf1] g by auto
+      ultimately show "map_sig h S, h o E \<turnstile> formula.map_formula h form"
+        using wty_form_iff by blast
     qed
-     apply (metis  comp_assoc wf_f_comp)
-    subgoal premises prems for g
-    proof -
-      have "wf_f (TCst \<circ> (g \<circ> f1))"
-        by (metis comp_assoc prems(4) prems(7) wf_f_comp)
-      hence "(map_sig (g \<circ> f1 \<circ> f) S, (g \<circ> f1 \<circ> f) \<circ> E \<turnstile> formula.map_formula (g \<circ> f1 \<circ> f) \<psi>)"
-        using prems(7) spec[OF prems(3), where ?x="g \<circ> f1"]
-        by (metis (no_types, lifting) fun.map_comp prems(5))
-      then show ?thesis by (simp add: fun.map_comp)
-    qed
-    done
+  qed
 qed
 
 lemma check_comparison_sound: 
