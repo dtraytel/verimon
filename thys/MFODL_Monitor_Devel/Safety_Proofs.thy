@@ -1081,32 +1081,42 @@ lemma finite_letpast:
     letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) v i}"
 proof (induction i rule: less_induct)
   case (less i)
-  note fun_upd_apply[simp del]
-  show ?case
-    apply (rule finite_surj[where f="map the"])
-     apply (rule IH[where i=i and V="(V((p, Formula.nfv \<phi>) \<mapsto>
-          \<lambda>w j. j < i \<and> letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>) w j))"])
-     apply (intro ballI)
-     apply clarsimp
-    subgoal for p' n k
-      apply (cases "(p', n) = (p, Formula.nfv \<phi>)")
-       apply (clarsimp simp add: fun_upd_apply)
-       apply (cases "k < i")
-        apply simp
-        apply (rule less[of k])
-        apply simp
-       apply clarsimp
-      apply (subst fun_upd_apply)
-      apply (simp only: if_False)
-      apply (rule V[rule_format, of "(p', n)", simplified])
-      by auto
-    apply (intro subsetI)
-    subgoal for v
-      apply (rule image_eqI[where x="map Some v"])
-       apply simp
-      apply (subst (asm) letpast_sat.simps)
-      using fv by (auto simp: wf_tuple_def)
-    done
+  let ?F = "\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>"
+  define X where "X = (\<lambda>w j. j < i \<and> letpast_sat ?F w j)"
+  let ?V = "V((p, Formula.nfv \<phi>) \<mapsto> X)"
+  have "\<forall>pn\<in>dom ?V. \<forall>k. finite {v. length v = snd pn \<and> the (?V pn) v k}"
+  proof (intro ballI allI)
+    fix pn k
+    assume "pn \<in> dom ?V"
+    show "finite {v. length v = snd pn \<and> the (?V pn) v k}"
+    proof (cases "pn = (p, Formula.nfv \<phi>)")
+      case True
+      then show ?thesis
+        using less[of k] by (cases "k < i") (simp_all add: X_def fun_upd_same del: fun_upd_apply)
+    next
+      case False
+      with \<open>pn \<in> dom ?V\<close> V show ?thesis
+        by simp
+    qed
+  qed
+  then have "finite {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<phi>}"
+    by (rule IH)
+  moreover have "{v. length v = Formula.nfv \<phi> \<and> letpast_sat ?F v i}
+    \<subseteq> map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<phi>}"
+  proof
+    fix v
+    assume "v \<in> {v. length v = Formula.nfv \<phi> \<and> letpast_sat ?F v i}"
+    then have len: "length v = Formula.nfv \<phi>" and "letpast_sat ?F v i"
+      by simp_all
+    then have "Formula.sat \<sigma> ?V v i \<phi>"
+      unfolding X_def by (subst (asm) letpast_sat.simps)
+    moreover have "wf_tuple (Formula.nfv \<phi>) (fv \<phi>) (map Some v)"
+      using fv len by (auto simp: wf_tuple_def)
+    ultimately show "v \<in> map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<phi>}"
+      by (intro image_eqI[where x = "map Some v"]) simp_all
+  qed
+  ultimately show ?case
+    by (rule finite_surj)
 qed
 
 lemma safe_regex_Past_finite: "Regex.safe_regex fv rgx_safe_pred Past Strict r \<Longrightarrow>
