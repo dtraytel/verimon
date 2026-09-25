@@ -8920,3 +8920,40 @@ they need; the export is unchanged but for the flag `Config.imperative_join`, wh
 references to them describe the code as it was then.  The command-line flags that once selected
 the heap structures (`-heap_since`, `-heap_maps`, `-heap_join_min`, `-bulk_min`,
 `-imperative_join`) were already accepted and ignored, and stay so.
+
+## 21.43 A frozen predicate taken out of the windows, and the freeze bound with `LET`
+
+The monitor evaluates `FRZ q = φ IN ψ` by replaying `ψ` over the whole prefix at every time
+point, with `q` fixed to `φ`'s value there: quadratic in the prefix.  The `frz` family ran
+0.4 to 17 s against MonPoly's 0.03 to 1 s.  A new theory `Dense_Frz` rewrites the formula before
+the dense state is built (`udminit_push φ = udminit_safe (push_ex (frz_opt φ))`):
+
+* `hoist` takes a conjunct `q(…)` of the frozen predicate out of the right operand of a Since
+  whose interval contains 0 (`ONCE[0,b]`, `S[0,b]`), of an Until (`EVENTUALLY`, `U`) and of a
+  Next: `φ S[0,b] (α ∧ q)` becomes `q ∧ φ S[0,b] α`.  The frozen predicate does not change over
+  time, so the satisfaction relation is the same; the progress is too, since the frozen
+  predicate's progress is always either the whole prefix or nothing (`progress_hoist`).  Prev
+  and a Since with a lower bound are left alone: there the original has a verdict at the first
+  time point without the frozen predicate and the rewritten formula does not.
+* When afterwards the frozen predicate occurs under no temporal operator (`now_only`), the
+  freeze is a `LET` (`sat_Frz_now_only`, `progress_Frz_now_only`), which the monitor evaluates
+  incrementally.
+* `frz_opt` applies the rewrite only when its result is monitorable, so safety need not be
+  shown preserved.  Formulas have no executable equality, so the conjunct is taken out of a
+  list of conjuncts by its position (`frz_find`).
+
+`dmonitor_mverdicts_push` now states the verdicts of the monitor started on
+`push_ex (frz_opt φ)`.  On the `frz` family (seconds; old binary, new, MonPoly):
+
+| formula | before | after | MonPoly |
+|---|---|---|---|
+| frz-now | 0.40 | 0.03 | 0.03 |
+| frz-once20 | 0.64 | 0.09 | 0.08 |
+| frz-ev5 | 1.14 | 0.06 | 0.06 |
+| frz-since | 0.70 | 0.05 | 0.10 |
+| frz-nested | 16.66 | 0.04 | 0.98 |
+| frz-len1000 | 2.78 | 0.19 | 0.15 |
+| frz-oncelb | 0.59 | 0.59 | 0.06 |
+| frz-prev | 0.44 | 0.39 | 0.05 |
+
+The outputs are identical on the family and on the 652 `-verified` commands of the test corpus.

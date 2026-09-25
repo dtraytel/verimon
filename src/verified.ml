@@ -217,9 +217,9 @@ module Monitor : sig
   val efinish :
     (string -> bool) ->
       Z.t * (elstate * (string fpstate option * Z.t)) -> out list
+  val mmonitorable_exec : 'a formula -> bool
   val interval : nat -> enat -> i
   val uvdfail_nodes : udformula -> nat
-  val mmonitorable_exec : 'a formula -> bool
   val type_check :
     (string * nat -> (tysym list) option) ->
       tysym formula -> (string, ty formula) sum
@@ -6217,6 +6217,108 @@ let rec wide_mask_at
 
 let rec wide_mask n cs = wide_mask_at zero_nata n cs;;
 
+let rec is_frz_pred
+  pn x1 = match pn, x1 with
+    pn, Pred (e, ts) ->
+      equal_proda equal_string8 equal_nat (e, size_lista ts) pn
+    | pn, Let (v, va, vb) -> false
+    | pn, Frz (v, va, vb) -> false
+    | pn, LetPast (v, va, vb) -> false
+    | pn, Eq (v, va) -> false
+    | pn, Less (v, va) -> false
+    | pn, LessEq (v, va) -> false
+    | pn, Neg v -> false
+    | pn, Or (v, va) -> false
+    | pn, And (v, va) -> false
+    | pn, Ands v -> false
+    | pn, Exists (v, va) -> false
+    | pn, Agg (v, va, vb, vc, vd) -> false
+    | pn, Prev (v, va) -> false
+    | pn, Next (v, va) -> false
+    | pn, Since (v, va, vb) -> false
+    | pn, Until (v, va, vb) -> false
+    | pn, Trigger (v, va, vb) -> false
+    | pn, Release (v, va, vb) -> false
+    | pn, MatchF (v, va) -> false
+    | pn, MatchP (v, va) -> false
+    | pn, TP v -> false
+    | pn, TS v -> false;;
+
+let rec frz_find
+  pn x1 = match pn, x1 with pn, [] -> None
+    | pn, x :: xs ->
+        (if is_frz_pred pn x then Some (x, xs)
+          else (match frz_find pn xs with None -> None
+                 | Some (q, ys) -> Some (q, x :: ys)));;
+
+let rec frz_split
+  pn x1 = match pn, x1 with
+    pn, And (alpha, beta) ->
+      (if is_frz_pred pn beta then Some (beta, alpha)
+        else (if is_frz_pred pn alpha then Some (alpha, beta) else None))
+    | pn, Ands l ->
+        (match frz_find pn l with None -> None
+          | Some (q, r) -> Some (q, Ands r))
+    | pn, Pred (v, va) -> None
+    | pn, Let (v, va, vb) -> None
+    | pn, Frz (v, va, vb) -> None
+    | pn, LetPast (v, va, vb) -> None
+    | pn, Eq (v, va) -> None
+    | pn, Less (v, va) -> None
+    | pn, LessEq (v, va) -> None
+    | pn, Neg v -> None
+    | pn, Or (v, va) -> None
+    | pn, Exists (v, va) -> None
+    | pn, Agg (v, va, vb, vc, vd) -> None
+    | pn, Prev (v, va) -> None
+    | pn, Next (v, va) -> None
+    | pn, Since (v, va, vb) -> None
+    | pn, Until (v, va, vb) -> None
+    | pn, Trigger (v, va, vb) -> None
+    | pn, Release (v, va, vb) -> None
+    | pn, MatchF (v, va) -> None
+    | pn, MatchP (v, va) -> None
+    | pn, TP v -> None
+    | pn, TS v -> None;;
+
+let rec hoist
+  pn x1 = match pn, x1 with
+    pn, Since (phi, i, psi) ->
+      (let psia = hoist pn psi in
+        (match (if memL i zero_nata then frz_split pn psia else None)
+          with None -> Since (hoist pn phi, i, psia)
+          | Some (q, alpha) -> And (q, Since (hoist pn phi, i, alpha))))
+    | pn, Until (phi, i, psi) ->
+        (let psia = hoist pn psi in
+          (match frz_split pn psia with None -> Until (hoist pn phi, i, psia)
+            | Some (q, alpha) -> And (q, Until (hoist pn phi, i, alpha))))
+    | pn, Next (i, psi) ->
+        (let psia = hoist pn psi in
+          (match frz_split pn psia with None -> Next (i, psia)
+            | Some (q, alpha) -> And (q, Next (i, alpha))))
+    | pn, Neg phi -> Neg (hoist pn phi)
+    | pn, And (phi, psi) -> And (hoist pn phi, hoist pn psi)
+    | pn, Or (phi, psi) -> Or (hoist pn phi, hoist pn psi)
+    | pn, Ands l -> Ands (mapa (hoist pn) l)
+    | pn, Exists (t, phi) -> Exists (t, hoist pn phi)
+    | pn, Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, hoist pn phi)
+    | pn, Let (e, phi, psi) ->
+        (if equal_proda equal_string8 equal_nat (e, nfv phi) pn
+          then Let (e, phi, psi) else Let (e, phi, hoist pn psi))
+    | pn, Pred (v, va) -> Pred (v, va)
+    | pn, Frz (v, va, vb) -> Frz (v, va, vb)
+    | pn, LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | pn, Eq (v, va) -> Eq (v, va)
+    | pn, Less (v, va) -> Less (v, va)
+    | pn, LessEq (v, va) -> LessEq (v, va)
+    | pn, Prev (v, va) -> Prev (v, va)
+    | pn, Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | pn, Release (v, va, vb) -> Release (v, va, vb)
+    | pn, MatchF (v, va) -> MatchF (v, va)
+    | pn, MatchP (v, va) -> MatchP (v, va)
+    | pn, TP v -> TP v
+    | pn, TS v -> TS v;;
+
 let rec sorted_wrt p x1 = match p, x1 with p, [] -> true
                      | p, x :: ys -> list_all (p x) ys && sorted_wrt p ys;;
 
@@ -11647,6 +11749,107 @@ let rec dands_cols acc x1 = match acc, x1 with acc, [] -> acc
 
 let rec mtrm_dcols mt = (match mt with MVar v -> [v] | MConst _ -> []);;
 
+let rec top_fun _B x = top _B;;
+
+let rec pred_regex p x1 = match p, x1 with p, Skip a -> top_fun top_bool a
+                     | p, Test a -> p a
+                     | p, Plusa (a, aa) -> pred_regex p a && pred_regex p aa
+                     | p, Times (a, aa) -> pred_regex p a && pred_regex p aa
+                     | p, Star a -> pred_regex p a;;
+
+let rec contains_pred
+  p x1 = match p, x1 with p, Eq (t1, t2) -> false
+    | p, Less (t1, t2) -> false
+    | p, LessEq (t1, t2) -> false
+    | p, Pred (e, ts) ->
+        equal_proda equal_string8 equal_nat p (e, size_lista ts)
+    | p, Let (e, phi, psi) ->
+        contains_pred p phi && contains_pred (e, nfv phi) psi ||
+          not (equal_proda equal_string8 equal_nat p (e, nfv phi)) &&
+            contains_pred p psi
+    | p, Frz (e, phi, psi) ->
+        contains_pred p phi && contains_pred (e, nfv phi) psi ||
+          not (equal_proda equal_string8 equal_nat p (e, nfv phi)) &&
+            contains_pred p psi
+    | p, LetPast (e, phi, psi) ->
+        not (equal_proda equal_string8 equal_nat p (e, nfv phi)) &&
+          (contains_pred p phi && contains_pred (e, nfv phi) psi ||
+            contains_pred p psi)
+    | p, Neg phi -> contains_pred p phi
+    | p, Or (phi, psi) -> contains_pred p phi || contains_pred p psi
+    | p, And (phi, psi) -> contains_pred p phi || contains_pred p psi
+    | p, Ands l -> list_ex (contains_pred p) l
+    | p, Exists (t, phi) -> contains_pred p phi
+    | p, Agg (y, omega, tys, f, phi) -> contains_pred p phi
+    | p, Prev (i, phi) -> contains_pred p phi
+    | p, Next (i, phi) -> contains_pred p phi
+    | p, Since (phi, i, psi) -> contains_pred p phi || contains_pred p psi
+    | p, Until (phi, i, psi) -> contains_pred p phi || contains_pred p psi
+    | p, Trigger (phi, i, psi) -> contains_pred p phi || contains_pred p psi
+    | p, Release (phi, i, psi) -> contains_pred p phi || contains_pred p psi
+    | p, MatchP (i, r) -> not (pred_regex (comp not (contains_pred p)) r)
+    | p, MatchF (i, r) -> not (pred_regex (comp not (contains_pred p)) r)
+    | p, TP t -> false
+    | p, TS t -> false;;
+
+let rec now_only
+  pn x1 = match pn, x1 with pn, Pred (e, ts) -> true
+    | pn, Neg phi -> now_only pn phi
+    | pn, And (phi, psi) -> now_only pn phi && now_only pn psi
+    | pn, Or (phi, psi) -> now_only pn phi && now_only pn psi
+    | pn, Ands l -> list_all (now_only pn) l
+    | pn, Exists (t, phi) -> now_only pn phi
+    | pn, Agg (y, omega, tys, f, phi) -> now_only pn phi
+    | pn, Let (e, phi, psi) ->
+        not (contains_pred pn (Let (e, phi, psi))) ||
+          not (equal_proda equal_string8 equal_nat (e, nfv phi) pn) &&
+            (not (contains_pred pn phi) && now_only pn psi)
+    | pn, Frz (v, va, vb) -> not (contains_pred pn (Frz (v, va, vb)))
+    | pn, LetPast (v, va, vb) -> not (contains_pred pn (LetPast (v, va, vb)))
+    | pn, Eq (v, va) -> not (contains_pred pn (Eq (v, va)))
+    | pn, Less (v, va) -> not (contains_pred pn (Less (v, va)))
+    | pn, LessEq (v, va) -> not (contains_pred pn (LessEq (v, va)))
+    | pn, Prev (v, va) -> not (contains_pred pn (Prev (v, va)))
+    | pn, Next (v, va) -> not (contains_pred pn (Next (v, va)))
+    | pn, Since (v, va, vb) -> not (contains_pred pn (Since (v, va, vb)))
+    | pn, Until (v, va, vb) -> not (contains_pred pn (Until (v, va, vb)))
+    | pn, Trigger (v, va, vb) -> not (contains_pred pn (Trigger (v, va, vb)))
+    | pn, Release (v, va, vb) -> not (contains_pred pn (Release (v, va, vb)))
+    | pn, MatchF (v, va) -> not (contains_pred pn (MatchF (v, va)))
+    | pn, MatchP (v, va) -> not (contains_pred pn (MatchP (v, va)))
+    | pn, TP v -> not (contains_pred pn (TP v))
+    | pn, TS v -> not (contains_pred pn (TS v));;
+
+let rec frz_rw
+  = function
+    Frz (p, phi, psi) ->
+      (let pn = (p, nfv phi) in
+       let psia = hoist pn (frz_rw psi) in
+        (if now_only pn psia then Let (p, frz_rw phi, psia)
+          else Frz (p, frz_rw phi, psia)))
+    | Let (p, phi, psi) -> Let (p, frz_rw phi, frz_rw psi)
+    | Neg phi -> Neg (frz_rw phi)
+    | And (phi, psi) -> And (frz_rw phi, frz_rw psi)
+    | Or (phi, psi) -> Or (frz_rw phi, frz_rw psi)
+    | Ands l -> Ands (mapa frz_rw l)
+    | Exists (t, phi) -> Exists (t, frz_rw phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, frz_rw phi)
+    | Prev (i, phi) -> Prev (i, frz_rw phi)
+    | Next (i, phi) -> Next (i, frz_rw phi)
+    | Since (phi, i, psi) -> Since (frz_rw phi, i, frz_rw psi)
+    | Until (phi, i, psi) -> Until (frz_rw phi, i, frz_rw psi)
+    | Pred (v, va) -> Pred (v, va)
+    | LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | Release (v, va, vb) -> Release (v, va, vb)
+    | MatchF (v, va) -> MatchF (v, va)
+    | MatchP (v, va) -> MatchP (v, va)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
 let rec is_TTa
   phi = (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
           | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
@@ -11815,75 +12018,6 @@ let rec reindex_trm
     | cs, F2i a -> F2i (reindex_trm cs a)
     | cs, I2f a -> I2f (reindex_trm cs a);;
 
-let rec is_cmp
-  c = (match c with Pred (_, _) -> false | Let (_, _, _) -> false
-        | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
-        | Eq (_, _) -> false | Less (_, _) -> true | LessEq (_, _) -> true
-        | Neg _ -> false | Or (_, _) -> false | And (_, _) -> false
-        | Ands _ -> false | Exists (_, _) -> false
-        | Agg (_, _, _, _, _) -> false | Prev (_, _) -> false
-        | Next (_, _) -> false | Since (_, _, _) -> false
-        | Until (_, _, _) -> false | Trigger (_, _, _) -> false
-        | Release (_, _, _) -> false | MatchF (_, _) -> false
-        | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
-
-let rec flip_int
-  xa = Abs_I (if bounded xa
-               then ((fun i -> not (memR xa i)), ((fun _ -> true), false))
-               else ((fun _ -> true), ((fun _ -> true), false)));;
-
-let rec less_eq_enat q x1 = match q, x1 with Enat m, Enat n -> less_eq_nat m n
-                       | q, Infinity_enat -> true
-                       | Infinity_enat, Enat n -> false;;
-
-let rec interval
-  xb xc =
-    Abs_I (if less_eq_enat (Enat xb) xc
-            then (less_eq_nat xb,
-                   ((fun i -> less_eq_enat (Enat i) xc),
-                     not (equal_enat xc Infinity_enat)))
-            else ((fun _ -> true), ((fun _ -> true), false)));;
-
-let rec nat_sum_list xs = foldr plus_nata xs zero_nata;;
-
-let rec uvdfail_nodes
-  = function UDFail -> one_nata
-    | UDAndRel (phi, conf) -> uvdfail_nodes phi
-    | UDNeg phi -> uvdfail_nodes phi
-    | UDExists (phi, b) -> uvdfail_nodes phi
-    | UDAgg (g0, omega, f, k, pos, phi) -> uvdfail_nodes phi
-    | UDOr (phi, psi, buf) -> plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDAnd (pl, phi, pos, psi, buf) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDPrev (i, phi, f, buf, nts) -> uvdfail_nodes phi
-    | UDNext (i, phi, f, nts) -> uvdfail_nodes phi
-    | UDAnds (ps, ns, l, buf) -> nat_sum_list (mapa uvdfail_nodes l)
-    | UDSince (args, phi, psi, buf, aux) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDUntil (args, msk, phi, psi, buf, nts, t, aux) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDAndAssign (p, t, phi) -> uvdfail_nodes phi
-    | UDLet (p, m, phi, psi) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDLetPast (p, m, phi, psi, i, buf) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDTrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
-        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDAndTrigger (pl, alpha, dbf1, dags, phi, psi, dbf2, nts, daux) ->
-        plus_nata (plus_nata (uvdfail_nodes alpha) (uvdfail_nodes phi))
-          (uvdfail_nodes psi)
-    | UDMatchP (m, i, mr, mrs, pls, l, dbuf, nts, daux) ->
-        nat_sum_list (mapa uvdfail_nodes l)
-    | UDMatchF (m, i, mr, mrs, pls, l, dbuf, nts, t, daux) ->
-        nat_sum_list (mapa uvdfail_nodes l)
-    | UDRel v -> zero_nata
-    | UDPredS (v, va) -> zero_nata
-    | UDPredM (v, va, vb, vc) -> zero_nata
-    | UDTP (v, va) -> zero_nata
-    | UDTS v -> zero_nata;;
-
 let rec less_eq_rec_safety x0 uu = match x0, uu with Unused, uu -> true
                              | PastRec, PastRec -> true
                              | PastRec, NonFutuRec -> true
@@ -12051,6 +12185,11 @@ let rec flip_int_double_upper
                       ((fun i ->
                          memR xa (divide_nat i (nat_of_integer (Z.of_int 2)))),
                         true))
+               else ((fun _ -> true), ((fun _ -> true), false)));;
+
+let rec flip_int
+  xa = Abs_I (if bounded xa
+               then ((fun i -> not (memR xa i)), ((fun _ -> true), false))
                else ((fun _ -> true), ((fun _ -> true), false)));;
 
 let rec always_safe_0
@@ -12409,6 +12548,74 @@ let rec mmonitorable_exec
     | TS t -> is_Var t || is_Const t
     | Less (v, va) -> false
     | LessEq (v, va) -> false;;
+
+let rec frz_opt
+  phi = (let phia = frz_rw phi in
+          (if mmonitorable_exec phia then phia else phi));;
+
+let rec is_cmp
+  c = (match c with Pred (_, _) -> false | Let (_, _, _) -> false
+        | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
+        | Eq (_, _) -> false | Less (_, _) -> true | LessEq (_, _) -> true
+        | Neg _ -> false | Or (_, _) -> false | And (_, _) -> false
+        | Ands _ -> false | Exists (_, _) -> false
+        | Agg (_, _, _, _, _) -> false | Prev (_, _) -> false
+        | Next (_, _) -> false | Since (_, _, _) -> false
+        | Until (_, _, _) -> false | Trigger (_, _, _) -> false
+        | Release (_, _, _) -> false | MatchF (_, _) -> false
+        | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
+
+let rec less_eq_enat q x1 = match q, x1 with Enat m, Enat n -> less_eq_nat m n
+                       | q, Infinity_enat -> true
+                       | Infinity_enat, Enat n -> false;;
+
+let rec interval
+  xb xc =
+    Abs_I (if less_eq_enat (Enat xb) xc
+            then (less_eq_nat xb,
+                   ((fun i -> less_eq_enat (Enat i) xc),
+                     not (equal_enat xc Infinity_enat)))
+            else ((fun _ -> true), ((fun _ -> true), false)));;
+
+let rec nat_sum_list xs = foldr plus_nata xs zero_nata;;
+
+let rec uvdfail_nodes
+  = function UDFail -> one_nata
+    | UDAndRel (phi, conf) -> uvdfail_nodes phi
+    | UDNeg phi -> uvdfail_nodes phi
+    | UDExists (phi, b) -> uvdfail_nodes phi
+    | UDAgg (g0, omega, f, k, pos, phi) -> uvdfail_nodes phi
+    | UDOr (phi, psi, buf) -> plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDAnd (pl, phi, pos, psi, buf) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDPrev (i, phi, f, buf, nts) -> uvdfail_nodes phi
+    | UDNext (i, phi, f, nts) -> uvdfail_nodes phi
+    | UDAnds (ps, ns, l, buf) -> nat_sum_list (mapa uvdfail_nodes l)
+    | UDSince (args, phi, psi, buf, aux) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDUntil (args, msk, phi, psi, buf, nts, t, aux) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDAndAssign (p, t, phi) -> uvdfail_nodes phi
+    | UDLet (p, m, phi, psi) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDLetPast (p, m, phi, psi, i, buf) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDTrigger (dags, pl, phi, psi, dbuf, nts, daux) ->
+        plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
+    | UDAndTrigger (pl, alpha, dbf1, dags, phi, psi, dbf2, nts, daux) ->
+        plus_nata (plus_nata (uvdfail_nodes alpha) (uvdfail_nodes phi))
+          (uvdfail_nodes psi)
+    | UDMatchP (m, i, mr, mrs, pls, l, dbuf, nts, daux) ->
+        nat_sum_list (mapa uvdfail_nodes l)
+    | UDMatchF (m, i, mr, mrs, pls, l, dbuf, nts, t, daux) ->
+        nat_sum_list (mapa uvdfail_nodes l)
+    | UDRel v -> zero_nata
+    | UDPredS (v, va) -> zero_nata
+    | UDPredM (v, va, vb, vc) -> zero_nata
+    | UDTP (v, va) -> zero_nata
+    | UDTS v -> zero_nata;;
 
 let rec elim_double_negation
   = function Neg (Neg phi) -> elim_double_negation phi
@@ -15032,7 +15239,7 @@ let rec push_ex
     | TP v -> TP v
     | TS v -> TS v;;
 
-let rec udminit_push phi = udminit_safe (push_ex phi);;
+let rec udminit_push phi = udminit_safe (push_ex (frz_opt phi));;
 
 let rec udminit_verimon
   mw rw siga phi =
@@ -15078,14 +15285,6 @@ let rec vskip_fun
                 (fun q -> member (ceq_string8, ccompare_string8) q a)));;
 
 let rec lsig_tsig s = map_sig (fun a -> TCst a) (lsig_lookup s);;
-
-let rec top_fun _B x = top _B;;
-
-let rec pred_regex p x1 = match p, x1 with p, Skip a -> top_fun top_bool a
-                     | p, Test a -> p a
-                     | p, Plusa (a, aa) -> pred_regex p a && pred_regex p aa
-                     | p, Times (a, aa) -> pred_regex p a && pred_regex p aa
-                     | p, Star a -> pred_regex p a;;
 
 let rec wf_formula
   = function

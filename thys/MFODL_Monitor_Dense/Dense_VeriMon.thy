@@ -11,8 +11,9 @@ text \<open>
   the input formula is type checked and, if it is not monitorable and rewriting is requested,
   normalized and rewritten until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The dense state is then built from it by
-  @{const udminit_push}, which also moves existential quantifiers into the windows they commute
-  with (@{theory MFODL_Monitor_Dense.Dense_Push}). The
+  @{const udminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
+  can (@{theory MFODL_Monitor_Dense.Dense_Frz}) and moves existential quantifiers into the
+  windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}). The
   theorem @{text udminit_verimon_mverdicts} below states that the verdicts of the dense monitor
   started from this state are those of the input formula, provided the dense compiler covered
   the whole formula.
@@ -80,7 +81,7 @@ proof -
   have ust: "ust = udminit_push (\<psi>_mw mw)"
     using init by (simp add: udminit_verimon_\<psi>_mw)
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv (\<psi>_mw mw))
-      (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (push_ex (\<psi>_mw mw))))) = 0"
+      (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (push_ex (frz_opt (\<psi>_mw mw)))))) = 0"
     using zf unfolding ust by (simp only: Rep_udminit_push[symmetric] vdfail_nodes_Rep_udmstate)
   from verimon_mw.dmonitor_mverdicts_push[OF zf' f wty, unfolded Mt_\<psi>_mw Mt_exchange] show ?thesis
     by (simp add: ust Rep_udminit_push nfv_\<psi>_mw fvi_\<psi>_mw)

@@ -11,7 +11,8 @@ text \<open>
   @{const udminit_verimon} prepares the input formula as VeriMon does -- type checking and, if
   the formula is not monitorable, normalization and rewriting, then the conversion into
   multi-way joins (@{theory MFODL_Monitor_Dense.Dense_VeriMon}) -- and builds the initial state
-  from it with @{const udminit_push}, which moves existential quantifiers into the windows they
+  from it with @{const udminit_push}, which binds frozen predicates with @{text LET} where it can
+  (@{theory MFODL_Monitor_Dense.Dense_Frz}), moves existential quantifiers into the windows they
   commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and compiles the resulting sparse
   formula into the short-tuple one; @{const udmstep} performs one step on it.  All of these are
   pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
