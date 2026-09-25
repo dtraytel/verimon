@@ -1298,10 +1298,46 @@ next
   from this have atms_safe: " \<phi> \<in> regex.atms r \<Longrightarrow> safe_formula \<phi> \<or> (\<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and> safe_formula \<psi>)" for \<phi>
     using case_NegE  by (induction r) auto
   have atms_regex_atms: " \<phi> \<in> safe_atms r \<or> ( \<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and>  \<psi>\<in> safe_atms r)" if assm: " \<phi> \<in> regex.atms r" for \<phi> 
-    using assm atms_safe apply (induction r) by auto
-  from MatchP(4) have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply auto apply (induction r) 
-        apply (auto) subgoal for x y apply (cases "safe_formula x") by (auto split: formula.splits  ) done
+  proof (cases "safe_formula \<phi>")
+    case True
+    with assm show ?thesis
+      unfolding safe_atms_def by auto
+  next
+    case False
+    with atms_safe[OF assm] obtain \<psi> where \<phi>_def: "\<phi> = Formula.Neg \<psi>"
+      by blast
+    have "\<psi> \<in> safe_atms r"
+      unfolding safe_atms_def
+    proof (rule UN_I[OF assm])
+      show "\<psi> \<in> (if safe_formula \<phi> then {\<phi>} else case \<phi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        using False \<phi>_def by simp
+    qed
+    with \<phi>_def show ?thesis
+      by blast
+  qed
+  have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
+  proof -
+    assume "\<phi> \<in> safe_atms r"
+    then obtain \<psi> where \<psi>: "\<psi> \<in> regex.atms r" and
+      \<phi>_in: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    have "fv \<phi> \<subseteq> fv \<psi>"
+    proof (cases "safe_formula \<psi>")
+      case True
+      with \<phi>_in show ?thesis by simp
+    next
+      case False
+      with atms_safe[OF \<psi>] obtain \<alpha> where \<psi>_def: "\<psi> = Formula.Neg \<alpha>"
+        by blast
+      from \<phi>_in have "\<phi> \<in> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        by (simp only: if_not_P[OF False])
+      with \<psi>_def show ?thesis by simp
+    qed
+    with \<psi> have "fv \<phi> \<subseteq> fv (Formula.MatchP I r)"
+      by (auto simp: fv_regex_alt)
+    with MatchP(4) show ?thesis
+      by blast
+  qed
   from this  MatchP have IH: "\<phi> \<in> safe_atms r \<Longrightarrow>Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5
     using match_safe_wty_nfv[of \<phi> r I S E] by auto
   have other_IH: "\<phi> \<in> regex.atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5 
@@ -1315,10 +1351,46 @@ next
     using case_NegE  by (induction r) auto
   have atms_regex_atms: " \<phi> \<in> safe_atms r \<or> ( \<exists> \<psi>. \<phi> = Formula.Neg \<psi> \<and>  \<psi>\<in> safe_atms r)" 
     if assm: " \<phi> \<in> regex.atms r" for \<phi> 
-    using assm atms_safe apply (induction r) by auto
-  from MatchF(4) have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
-    apply auto apply (induction r ) 
-        apply (auto) subgoal for x y apply (cases "safe_formula x") by (auto split: formula.splits  ) done
+  proof (cases "safe_formula \<phi>")
+    case True
+    with assm show ?thesis
+      unfolding safe_atms_def by auto
+  next
+    case False
+    with atms_safe[OF assm] obtain \<psi> where \<phi>_def: "\<phi> = Formula.Neg \<psi>"
+      by blast
+    have "\<psi> \<in> safe_atms r"
+      unfolding safe_atms_def
+    proof (rule UN_I[OF assm])
+      show "\<psi> \<in> (if safe_formula \<phi> then {\<phi>} else case \<phi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        using False \<phi>_def by simp
+    qed
+    with \<phi>_def show ?thesis
+      by blast
+  qed
+  have  " (\<phi> \<in> safe_atms r \<Longrightarrow>\<forall>y\<in>fv \<phi>. ty_of (v ! y) = E y)" for \<phi> 
+  proof -
+    assume "\<phi> \<in> safe_atms r"
+    then obtain \<psi> where \<psi>: "\<psi> \<in> regex.atms r" and
+      \<phi>_in: "\<phi> \<in> (if safe_formula \<psi> then {\<psi>} else case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+      unfolding safe_atms_def by blast
+    have "fv \<phi> \<subseteq> fv \<psi>"
+    proof (cases "safe_formula \<psi>")
+      case True
+      with \<phi>_in show ?thesis by simp
+    next
+      case False
+      with atms_safe[OF \<psi>] obtain \<alpha> where \<psi>_def: "\<psi> = Formula.Neg \<alpha>"
+        by blast
+      from \<phi>_in have "\<phi> \<in> (case \<psi> of Formula.Neg \<psi>' \<Rightarrow> {\<psi>'} | _ \<Rightarrow> {})"
+        by (simp only: if_not_P[OF False])
+      with \<psi>_def show ?thesis by simp
+    qed
+    with \<psi> have "fv \<phi> \<subseteq> fv (Formula.MatchF I r)"
+      by (auto simp: fv_regex_alt)
+    with MatchF(4) show ?thesis
+      by blast
+  qed
   from this  MatchF have IH: "\<phi> \<in> safe_atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5
     using match_safe_wty_nfv[of \<phi> r I S E] by auto
   have other_IH: "\<phi> \<in> regex.atms r \<Longrightarrow> Formula.sat \<sigma> V v i5 \<phi> = sat' \<sigma> V v i5 \<phi>" for \<phi> i5 
