@@ -1972,14 +1972,32 @@ next
       if "\<phi> \<in> set l" for \<phi>
       using Pjf[THEN bspec, OF that] 
       unfolding Pf_def jf_def by auto
-    with False show ?thesis
-      unfolding progress.simps eq_False[THEN iffD2, OF False] if_False
-      apply ((subst Min_ge_iff; simp add: False),
-          intro exI[where x="MAX \<phi>\<in>set l. jf \<phi>"] exI[where x="Max_mapping (Pf ` set l)"]
-          conjI ballI order.trans[OF *(3) progress_mono_gen] Max_mapping_coboundedI)
-              apply(auto simp: False *[OF \<open>\<phi> \<in> set l\<close>] \<open>\<phi> \<in> set l\<close>)
-      subgoal by (auto intro!: range_mapping_to_pred_mapping)
-      by (auto intro!: range_mapping_to_pred_mapping range_mapping_Max_mapping)
+    let ?P = "Max_mapping (Pf ` set l)" and ?j = "MAX \<phi>\<in>set l. jf \<phi>"
+    have dom: "dom ?P = S"
+      using False *(1) by auto
+    have rng: "range_mapping i ?j ?P"
+      using False *(2) by (intro range_mapping_Max_mapping[of "set l" i jf Pf]) auto
+    have "i \<le> progress \<sigma> ?P \<phi> ?j" if "\<phi> \<in> set l" for \<phi>
+    proof -
+      have "i \<le> progress \<sigma> (Pf \<phi>) \<phi> (jf \<phi>)"
+        using that by (rule *(3))
+      also have "\<dots> \<le> progress \<sigma> ?P \<phi> ?j"
+      proof (rule progress_mono_gen)
+        show "jf \<phi> \<le> ?j"
+          using that by simp
+        show "pred_mapping (\<lambda>x. x \<le> jf \<phi>) (Pf \<phi>)"
+          using *(2)[OF that] by (rule range_mapping_to_pred_mapping)
+        show "pred_mapping (\<lambda>x. x \<le> ?j) ?P"
+          using rng by (rule range_mapping_to_pred_mapping)
+        show "rel_mapping (\<le>) (Pf \<phi>) ?P"
+          using that *(1) by (intro Max_mapping_coboundedI) auto
+      qed
+      finally show ?thesis .
+    qed
+    with False have "i \<le> progress \<sigma> ?P (formula.Ands l) ?j"
+      by simp
+    with dom rng show ?thesis
+      by blast
   qed
 next
   case (Prev I \<phi>)
@@ -2141,11 +2159,12 @@ next
       by (intro exI[of _ "max_mapping P1 P2"] exI[of _ "max j1 j2"]) (auto simp: range_mapping_relax)
   next
     case False
-    have future_bounded: "Safety.future_bounded (release_safe_bounded \<phi>1 I \<phi>2)"
-      using Release(4)
-      apply (auto simp add: release_safe_bounded_def)
-      using False flip_int_less_lower_props memR_zero
-      by blast
+    have "\<not> memL I 0"
+      using False memR_zero by blast
+    then have "bounded (flip_int_less_lower I)"
+      using flip_int_less_lower_props by blast
+    with Release(4) False have future_bounded: "Safety.future_bounded (release_safe_bounded \<phi>1 I \<phi>2)"
+      by (simp add: release_safe_bounded_def)
     show ?thesis 
       using Release(3)[OF False future_bounded] False by auto
   qed
