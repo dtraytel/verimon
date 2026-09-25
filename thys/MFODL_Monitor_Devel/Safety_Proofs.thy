@@ -1446,26 +1446,35 @@ next
   proof
     fix v
     assume "v \<in> ?B"
-    then have "(restrict (fv \<phi>) v, restrict (fv \<psi>) v) \<in> ?A \<phi> \<times> ?A \<psi>"
+    then have wf: "wf_tuple n (fv \<phi> \<union> fv \<psi>) v"
+      by simp
+    from \<open>v \<in> ?B\<close> have "(restrict (fv \<phi>) v, restrict (fv \<psi>) v) \<in> ?A \<phi> \<times> ?A \<psi>"
       by (auto simp: wf_tuple_restrict_simple sat_the_restrict)
     moreover have "join1 (restrict (fv \<phi>) v, restrict (fv \<psi>) v) = Some v"
-      using \<open>v \<in> ?B\<close>
-      apply (subst join1_Some_restrict)
-      by(auto simp: wf_tuple_restrict_simple)
-    ultimately show "v \<in> ?B'"
-      apply(simp)
-      by (force simp: Option.these_def)
+    proof -
+      from wf have "wf_tuple n (fv \<phi>) (restrict (fv \<phi>) v)" "wf_tuple n (fv \<psi>) (restrict (fv \<psi>) v)"
+        by (auto intro: wf_tuple_restrict_simple)
+      with wf show ?thesis
+        by (simp add: join1_Some_restrict)
+    qed
+    ultimately have "Some v \<in> join1 ` (?A \<phi> \<times> ?A \<psi>)"
+      by (rule rev_image_eqI[OF _ sym])
+    then show "v \<in> ?B'"
+      by (simp add: in_these_eq)
   qed
   ultimately show ?case
     by (auto elim!: finite_subset)
 next
   case (And_constraint \<phi> \<psi>)
-  then have "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
-    by(simp)
-  then show ?case using And_constraint
-    apply(elim finite_subset[rotated])
-    apply(auto)
-    by (metis sup.order_iff)
+  then have fin: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    by simp
+  have "fv (\<phi> \<and>\<^sub>F \<psi>) = fv \<phi>"
+    using And_constraint.hyps(4) by (simp add: Un_absorb2)
+  then have "{v. wf_tuple n (fv (\<phi> \<and>\<^sub>F \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<phi> \<and>\<^sub>F \<psi>)}
+    \<subseteq> {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    by (simp add: Collect_mono_iff)
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (And_Trigger \<phi> \<phi>' I \<psi>')
   hence obs: "finite {v. wf_tuple n (FV \<phi>) v \<and> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>}"
@@ -1490,11 +1499,15 @@ next
     by (rule finite_subset)
 next
   case (And_Not \<phi> \<psi>)
-  then have "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
-    by(simp)
-  then show ?case using And_Not
-    apply(elim finite_subset[rotated])
-    by(auto simp add: Un_absorb2)
+  then have fin: "finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    by simp
+  have "fv (\<phi> \<and>\<^sub>F \<not>\<^sub>F \<psi>) = fv \<phi>"
+    using And_Not.hyps(4) by (simp add: Un_absorb2)
+  then have "{v. wf_tuple n (fv (\<phi> \<and>\<^sub>F \<not>\<^sub>F \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<phi> \<and>\<^sub>F \<not>\<^sub>F \<psi>)}
+    \<subseteq> {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    by (simp add: Collect_mono_iff)
+  from this fin show ?case
+    by (rule finite_subset)
 next
   case (Ands l pos neg)
   let ?A = "\<lambda>\<phi>. {v | v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
