@@ -1888,11 +1888,32 @@ lemma map_split_eq_Pair_iff: "map_split f xs = (ys, zs) \<longleftrightarrow> ys
 
 lemma
   psize_snd_meval: "meval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meval n t db \<phi>)) = size \<phi>"
-  apply (induct rule: meval.pinduct)
-                      apply (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
-   apply (metis snd_conv size_letpast_meval)
-  apply simp
-  done
+proof (induct rule: meval.pinduct)
+  case (6 n ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>MLetPast\<close>\<close>
+  obtain xs i' buf' \<phi>' where lp: "letpast_meval0 (meval m) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd (letpast_meval0 (meval m) j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    using 6(2) by (rule size_letpast_meval)
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "meval n ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 6(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: meval.psimps(6)[OF 6(1)] lp \<psi>')
+next
+  case (15 n ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>MPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "meval n ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "mprev_next I (buf @ xs) (nts @ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 15(2) \<phi>' by simp
+  then show ?case
+    by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
+qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
   by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
