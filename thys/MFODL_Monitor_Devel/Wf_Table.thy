@@ -770,33 +770,35 @@ lemma wf_idx_sig_antijoin: "wf_idx_sig (wf_idx_antijoin t1 t2) = wf_idx_sig t1"
 
 lemma wf_idx_set_antijoin: "wf_idx_sig t1 = (n, A) \<Longrightarrow> wf_idx_sig t2 = (n', A') \<Longrightarrow> n = n' \<Longrightarrow> A' \<subseteq> A \<Longrightarrow>
   wf_idx_set (wf_idx_antijoin t1 t2) = join (wf_idx_set t1) False (wf_idx_set t2)"
-  apply transfer
-  subgoal premises prems for prod1 n A prod2 n' A'
-  proof -
-    obtain I T where prod1_def: "prod1 = (n, A, I, T)"
-      using prems
-      by (cases prod1) auto
-    obtain I' T' where prod2_def: "prod2 = (n, A', I', T')"
-      using prems
-      by (cases prod2) auto
+proof -
+  assume sig: "wf_idx_sig t1 = (n, A)" "wf_idx_sig t2 = (n', A')" "n = n'" and "A' \<subseteq> A"
+  obtain I T where t1: "Rep_wf_idx t1 = (n, A, I, T)" "I \<subseteq> A"
+    and T: "\<And>x Y. Mapping.lookup T x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I z)"
+    using Rep_wf_idx[of t1] sig(1) by (auto simp: wf_idx_sig.rep_eq)
+  obtain I' T' where t2: "Rep_wf_idx t2 = (n, A', I', T')" "I' \<subseteq> A'"
+    and T': "\<And>x Y. Mapping.lookup T' x = Some Y \<Longrightarrow> table n A' Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I' z)"
+    using Rep_wf_idx[of t2] sig(2,3) by (auto simp: wf_idx_sig.rep_eq)
+  show ?thesis
+  proof (cases "I \<inter> I' = A'")
+    case True
+    \<comment> \<open>@{term t2} is indexed by all its columns\<close>
+    then have "A' = I'" "I \<inter> I' = I'"
+      using t2(2) by blast+
+    then have sub: "I' \<subseteq> A"
+      and T'': "\<And>x Y. Mapping.lookup T' x = Some Y \<Longrightarrow> table n I' Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I' z)"
+      using \<open>A' \<subseteq> A\<close> T' by auto
     show ?thesis
-    proof (cases "A' = I \<inter> I'")
-      case A'_def: True
-      have sub: "I \<inter> I' \<subseteq> A" "I \<inter> I' = I'"
-        using prems
-        by (auto simp: Let_def A'_def prod1_def prod2_def)
-      show ?thesis
-        using mapping_antijoin_reindex(1)[where ?T=T and ?T'=T' and ?n=n and ?B=A and ?C="I \<inter> I'" and ?A=I, OF sub(1)] prems
-        by (auto simp: Let_def A'_def sub(2) prod1_def prod2_def)
-    next
-      case False
-      then show ?thesis
-        using idx_antijoin_reindex(1)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
-            OF inf.coboundedI1 inf.coboundedI2] prems
-        by (auto simp: Let_def prod1_def prod2_def)
-    qed
+      using mapping_antijoin_reindex(1)[where T=T and T'=T' and A=I and C=I', OF sub T T''] True \<open>I \<inter> I' = I'\<close> \<open>A' \<subseteq> A\<close>
+      by (simp add: wf_idx_set.rep_eq wf_idx_antijoin.rep_eq t1(1) t2(1) Let_def)
+  next
+    case False
+    have sub: "I \<inter> I' \<subseteq> A" "I \<inter> I' \<subseteq> A'"
+      using t1(2) t2(2) by blast+
+    show ?thesis
+      using idx_antijoin_reindex(1)[where T=T and T'=T' and A=I and A'=I', OF sub \<open>A' \<subseteq> A\<close> T T'] False \<open>A' \<subseteq> A\<close>
+      by (simp add: wf_idx_set.rep_eq wf_idx_antijoin.rep_eq t1(1) t2(1) Let_def)
   qed
-  done
+qed
 
 lemma wf_idx_set_antijoin_deg: "wf_idx_sig t1 = (n, A) \<Longrightarrow> wf_idx_sig t2 = (n', A') \<Longrightarrow>
   \<not>(n = n' \<and> A' \<subseteq> A) \<Longrightarrow> wf_idx_set (wf_idx_antijoin t1 t2) = wf_idx_set t1"
