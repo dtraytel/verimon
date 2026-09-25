@@ -193,20 +193,20 @@ lemma convert_fun_upd: "convert \<sigma> (V(pn \<mapsto> X)) = (convert \<sigma>
 lemma letpast_sat_alt:
   "snd pn = n \<Longrightarrow> letpast_sat (\<lambda>X j. {w. sat (\<sigma>(pn \<Rrightarrow> X)) w j \<phi> \<and> length w = n})
   = (\<lambda>i. {v. Formula.letpast_sat (\<lambda>X w j. sat (\<sigma>(pn \<Rrightarrow> \<lambda>k. {u. X u k \<and> length u = n})) w j \<phi>) v i \<and> length v = n})"
-  apply (rule ext)
-  subgoal for i
-    apply (induction i rule: less_induct)
-    apply (subst Sat.letpast_sat.simps)
-    apply (subst Formula.letpast_sat.simps)
-    apply (intro Collect_cong conj_cong[OF _ refl])
-    apply (subst ext[where f="\<lambda>j db. db(pn := if j < _ then _ j else {})"])
-     apply (rule ext)
-     apply (rule arg_cong[where f="fun_upd _ pn"])
-     apply (rule if_cong[OF refl _ refl])
-     apply assumption
-    apply (rule arg_cong[where f="\<lambda>g. sat (_(pn \<Rrightarrow> g)) _ _ _"])
-    by (simp add: fun_eq_iff)
-  done
+proof (rule ext)
+  let ?F = "\<lambda>X j. {w. sat (\<sigma>(pn \<Rrightarrow> X)) w j \<phi> \<and> length w = n}"
+  let ?G = "\<lambda>X w j. sat (\<sigma>(pn \<Rrightarrow> \<lambda>k. {u. X u k \<and> length u = n})) w j \<phi>"
+  fix i
+  show "letpast_sat ?F i = {v. Formula.letpast_sat ?G v i \<and> length v = n}"
+  proof (induction i rule: less_induct)
+    case (less i)
+    have prev: "(if k < i then letpast_sat ?F k else {}) =
+      {u. (k < i \<and> Formula.letpast_sat ?G u k) \<and> length u = n}" for k
+      using less.IH[of k] by (cases "k < i") (simp_all del: fun_upd_apply)
+    show ?case
+      by (subst letpast_sat.simps, subst Formula.letpast_sat.simps) (simp only: prev)
+  qed
+qed
 
 lemma sat_convert: "Formula.sat \<sigma> V v i \<phi> \<longleftrightarrow> sat (convert \<sigma> V) v i \<phi>"
 proof (induct \<phi> arbitrary: V v i)
