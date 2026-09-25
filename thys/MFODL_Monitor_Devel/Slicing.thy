@@ -1552,14 +1552,22 @@ lemma sat_slice_inversion:
 proof -
   have "\<exists>v'\<in>S. v' ! x = v ! x" if x: "x \<in> Formula.fv \<phi>" for x
   proof -
+    let ?\<sigma> = "map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> S) \<sigma>"
     obtain q n k where "genvar \<phi> True x q n True k"
       and unique: "\<And>vs. (q, vs) \<in> inputs \<phi> \<Longrightarrow> length vs = n \<Longrightarrow> vs ! k = Some x"
       using assms(1) x by (auto simp add: guarded_by_unique_inputs_def)
-    then obtain v' as where
-      "v' \<in> S" "Safety.matches v' \<phi> (q, as)" "length as = n" "k < n" "as ! k = v ! x"
-      using assms(3,4) genvar_sat[of \<phi> "map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> S) \<sigma>" Map.empty v i x q n True k]
-      apply (auto simp add: set_eq_iff)
-      by (metis (opaque_lifting))
+    with assms(4) have "genvar \<phi> (Formula.sat ?\<sigma> Map.empty v i \<phi>) x q n True k"
+      by simp
+    then obtain as j where "(q, as) \<in> \<Gamma> ?\<sigma> j" "length as = n" "k < n" "as ! k = v ! x"
+      using assms(3)
+    proof (rule genvar_sat)
+      fix as j
+      assume "(q, n) \<notin> dom Map.empty \<longrightarrow> ((q, as) \<in> \<Gamma> ?\<sigma> j) = True"
+        and "length as = n" "k < n" "as ! k = v ! x"
+      then show thesis by (intro that[of as j]) simp_all
+    qed
+    then obtain v' where "v' \<in> S" "Safety.matches v' \<phi> (q, as)"
+      by auto
     note \<open>as ! k = v ! x\<close>
     also have "as ! k = v' ! x"
       using \<open>Safety.matches v' \<phi> (q, as)\<close>
