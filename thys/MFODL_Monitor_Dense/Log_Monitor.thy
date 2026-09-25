@@ -694,7 +694,7 @@ proof -
   have "ilen 1 kvs = integer_of_nat (Suc (length kvs))"
     by (simp add: ilen integer_of_nat_eq_of_nat)
   then show ?thesis
-    by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
+    by (simp only: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
 qed
 
 text \<open>The merge sort @{const sort_tc} reverses each merged list, as it merges tail recursively
