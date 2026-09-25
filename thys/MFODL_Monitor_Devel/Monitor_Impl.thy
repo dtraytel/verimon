@@ -880,10 +880,41 @@ qed
 
 lemma size_letpast_meeval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow> size (snd (eval ts db \<psi>)) = size \<psi>) \<Longrightarrow>
   size (snd (snd (snd (letpast_meeval0 eval j i ys xs p ts db \<phi>)))) = size \<phi>"
-  apply (induct eval j i ys xs p ts db \<phi> rule: letpast_meeval0.induct)
-  apply (subst letpast_meeval0.simps)
-  apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
-  done
+proof (induction eval j i ys xs p ts db \<phi> rule: letpast_meeval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  note unf = letpast_meeval0.simps[of eval j i ys xs p ts db \<phi>]
+  obtain zs \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (zs, \<phi>')"
+    by fastforce
+  show ?case
+  proof (cases "size \<phi>' = size \<phi>")
+    case False
+    with eval show ?thesis
+      by (simp add: unf)
+  next
+    case size: True
+    show ?thesis
+    proof (cases zs)
+      case Nil
+      with eval size show ?thesis
+        by (simp add: unf)
+    next
+      case (Cons z zs')
+      show ?thesis
+      proof (cases "j \<le> Suc (i + length xs)")
+        case True
+        with eval size Cons show ?thesis
+          by (simp add: unf)
+      next
+        case False
+        have "size (snd (snd (snd (letpast_meeval0 eval j (i + length xs) (ys @@ zs) zs p []
+          (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))) = size \<phi>'"
+          by (rule 1(1)[OF eval[symmetric] refl _ Cons False]) (simp_all add: size 1(2))
+        with eval size Cons False show ?thesis
+          by (simp add: unf)
+      qed
+    qed
+  qed
+qed
 
 lemma letpast_meval0_cong_f:
   assumes "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow>  eval ts db (f \<psi>) = (case eval' ts db \<psi> of (zs, \<psi>') \<Rightarrow> (zs, f \<psi>')))"
@@ -892,12 +923,50 @@ lemma letpast_meval0_cong_f:
     "letpast_meval0 eval' j i ys xs p ts db \<phi> = (ys'', i'', buf'', \<phi>'')"
   shows "ys' = ys'' \<and> i' = i'' \<and> buf' = buf'' \<and> \<phi>' = f \<phi>''"
   using assms
-  apply (induct eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  subgoal premises IH for eval j i ys xs p ts db \<phi>
-    using IH
-    by (auto simp: letpast_meval0.simps[where ?\<phi>=\<phi>] letpast_meval0.simps[where ?\<phi>="f \<phi>"]
-        split: prod.splits list.splits if_splits simp: Let_def)
-  done
+proof (induction eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval' j i ys xs p ts db \<phi>)
+  note unf = letpast_meval0.simps[of eval j i ys xs p ts db "f \<phi>"]
+    letpast_meval0.simps[of eval' j i ys xs p ts db \<phi>]
+  obtain zs \<phi>0 where eval': "eval' ts (Mapping.update p xs db) \<phi> = (zs, \<phi>0)"
+    by fastforce
+  have eval: "eval ts (Mapping.update p xs db) (f \<phi>) = (zs, f \<phi>0)"
+    using 1(2)[of \<phi>] eval' by simp
+  have size_f: "size (f \<phi>0) = size (f \<phi>) \<longleftrightarrow> size \<phi>0 = size \<phi>"
+    by (simp add: 1(3))
+  show ?case
+  proof (cases "size \<phi>0 = size \<phi>")
+    case False
+    with 1(4,5) eval eval' size_f show ?thesis
+      unfolding unf by auto
+  next
+    case size: True
+    show ?thesis
+    proof (cases zs)
+      case Nil
+      with 1(4,5) eval eval' size_f size show ?thesis
+        unfolding unf by auto
+    next
+      case (Cons z zs')
+      show ?thesis
+      proof (cases "j \<le> Suc (i + length xs)")
+        case True
+        with 1(4,5) eval eval' size_f size Cons show ?thesis
+          unfolding unf by auto
+      next
+        case False
+        let ?db = "Mapping.map_values (\<lambda>_ _. []) db"
+        from 1(4) eval size_f size Cons False
+        have rec: "letpast_meval0 eval j (i + length xs) (ys @ zs) zs p [] ?db (f \<phi>0) = (ys', i', buf', \<phi>')"
+          unfolding unf by simp
+        from 1(5) eval' size Cons False
+        have rec': "letpast_meval0 eval' j (i + length xs) (ys @ zs) zs p [] ?db \<phi>0 = (ys'', i'', buf'', \<phi>'')"
+          unfolding unf by simp
+        show ?thesis
+          by (rule 1(1)[OF eval'[symmetric] refl _ Cons False _ 1(3) rec rec']) (simp_all add: size 1(2))
+      qed
+    qed
+  qed
+qed
 
 context maux
 begin
