@@ -488,19 +488,44 @@ proof -
   from assms(1) have "wf_mformula (unconvert UNIV \<sigma>) j P (unconvertV (dom P) \<sigma>) n R \<phi> \<phi>'"
     unfolding invar_mformula_def by simp
   moreover
-  from assms(2) have "Correct_Until.wf_envs S (unconvert UNIV \<sigma>) j \<delta> P P' (unconvertV (dom P) \<sigma>) db"
-    unfolding wf_envs_def Correct_Until.wf_envs_def
-    apply clarsimp
-    apply safe
-    apply blast
-    apply force
-    apply force
-    apply (drule bspec)
-     apply (erule set_mp)
-    apply blast
-    apply (auto simp: list.rel_eq[symmetric] list.rel_map domIff unconvertV_def
-        elim!: list.rel_flip[THEN iffD1, OF list.rel_mono_strong])
-    done
+  have "Correct_Until.wf_envs S (unconvert UNIV \<sigma>) j \<delta> P P' (unconvertV (dom P) \<sigma>) db"
+  proof -
+    from assms(2) have keys: "dom P \<union> (\<Union>k \<in> {j ..< j + \<delta>}. {(p, n). \<exists>x. x \<in> \<Gamma> \<sigma> k (p, n) \<and> n = length x})
+        \<subseteq> Mapping.keys db"
+      and rel: "rel_mapping (\<le>) P P'" "pred_mapping (\<lambda>i. i \<le> j) P" "pred_mapping (\<lambda>i. i \<le> j + \<delta>) P'"
+      and lookup: "\<And>pn. pn \<in> Mapping.keys db \<Longrightarrow> the (Mapping.lookup db pn) =
+        map (\<lambda>k. map Some ` {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn})
+          (if pn \<in> dom P then [the (P pn)..<the (P' pn)] else [j ..< j + \<delta>])"
+      and wty: "wty_envs S (unconvert UNIV \<sigma>) (unconvertV (dom P) \<sigma>)"
+      unfolding wf_envs_def by auto
+    have ev: "{ts. (fst pn, ts) \<in> \<Gamma> (unconvert UNIV \<sigma>) k \<and> length ts = snd pn} =
+      {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn}" for pn k
+      by (cases pn) auto
+    have "(p, length x) \<in> Mapping.keys db" if "k \<in> {j ..< j + \<delta>}" "x \<in> \<Gamma> \<sigma> k (p, length x)" for p x k
+      using keys that by blast
+    with keys have "dom P \<union> (\<Union>k \<in> {j ..< j + \<delta>}. {(p, n). \<exists>x. (p, x) \<in> \<Gamma> (unconvert UNIV \<sigma>) k \<and> n = length x})
+      \<subseteq> Mapping.keys db"
+      by auto
+    moreover have "\<forall>pn \<in> Mapping.keys db - dom P. the (Mapping.lookup db pn) =
+      map (\<lambda>k. map Some ` {ts. (fst pn, ts) \<in> \<Gamma> (unconvert UNIV \<sigma>) k \<and> length ts = snd pn}) [j ..< j + \<delta>]"
+      by (simp add: lookup ev del: in_\<Gamma>_unconvert)
+    moreover have "\<forall>pn \<in> dom P. list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
+      [the (P pn)..<the (P' pn)] (the (Mapping.lookup db pn))"
+    proof
+      fix pn
+      assume "pn \<in> dom P"
+      moreover from this keys have "pn \<in> Mapping.keys db"
+        by auto
+      ultimately have "the (Mapping.lookup db pn) =
+        map (\<lambda>k. map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v k}) [the (P pn)..<the (P' pn)]"
+        by (simp add: lookup unconvertV_def conj_commute)
+      then show "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
+        [the (P pn)..<the (P' pn)] (the (Mapping.lookup db pn))"
+        by (simp add: list_all2_conv_all_nth)
+    qed
+    ultimately show ?thesis
+      using rel wty unfolding Correct_Until.wf_envs_def by simp
+  qed
   ultimately show ?thesis
     using assms(3)
     unfolding invar_mformula_def *
