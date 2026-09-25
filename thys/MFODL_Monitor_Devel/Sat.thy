@@ -770,10 +770,17 @@ qed (auto intro!: wf_mformula.intros)
 lemma convert_unconvert_shadow: "convert (unconvert UNIV \<sigma>) ((unconvertV A \<sigma>)(pn \<mapsto> R))
   = convert (unconvert UNIV (\<sigma>(pn \<Rrightarrow> \<lambda>j. {w. R w j \<and> length w = snd pn})))
     (unconvertV (insert pn A) (\<sigma>(pn \<Rrightarrow> \<lambda>j. {w. R w j \<and> length w = snd pn})))"
-  unfolding convert_def unconvert_def unconvertV_def
-  apply simp
-  apply (rule arg_cong[where f="\<lambda>g. map_\<Gamma>i g \<sigma>"])
-  by (auto simp add: fun_eq_iff \<Gamma>_map_\<Gamma>i split: option.split)
+proof -
+  let ?X = "\<lambda>j. {w. R w j \<and> length w = snd pn}"
+  have "convert (unconvert UNIV \<sigma>) ((unconvertV A \<sigma>)(pn \<mapsto> R)) = (map_\<Gamma> (fix_length UNIV) \<sigma>)(pn \<Rrightarrow> ?X)"
+    by (simp add: convert_fun_upd convert_unconvert)
+  also have "\<dots> = map_\<Gamma> (fix_length UNIV) (\<sigma>(pn \<Rrightarrow> ?X))"
+    \<comment> \<open>the updated predicate already has the right tuple length\<close>
+    by (auto simp: fun_eq_iff intro!: map_\<Gamma>i_map_\<Gamma>i_cong)
+  also have "\<dots> = convert (unconvert UNIV (\<sigma>(pn \<Rrightarrow> ?X))) (unconvertV (insert pn A) (\<sigma>(pn \<Rrightarrow> ?X)))"
+    by (simp add: convert_unconvert)
+  finally show ?thesis .
+qed
 
 lemma sat_unconvert_shadow: "Formula.sat (unconvert UNIV \<sigma>) ((unconvertV A \<sigma>)(pn \<mapsto> R)) v i \<phi>
   = Formula.sat (unconvert UNIV (\<sigma>(pn \<Rrightarrow> \<lambda>j. {w. R w j \<and> length w = snd pn})))
@@ -802,6 +809,7 @@ proof -
   from phi psi' rest show "invar_mformula \<sigma> j P n R (MLet p m \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
     unfolding invar_mformula_def by (rule wf_mformula.Let)
 qed
+
 lemma invar_mformula_LetPast:
   "invar_mformula (\<sigma>((p, m) \<Rrightarrow> letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m}))) j
      (P((p, m) \<mapsto> i)) m UNIV \<phi> \<phi>' \<Longrightarrow>
@@ -816,28 +824,47 @@ lemma invar_mformula_LetPast:
    {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow>
    safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow>
    invar_mformula \<sigma> j P n R (MLetPast p m \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
-  unfolding invar_mformula_def
-  apply (rule wf_mformula.LetPast; assumption?)
-    apply (simp_all add: letpast_progress_def progress_unconvert cong: option.case_cong)
-    apply (erule wf_mformula_convert_cong_aux)
-    apply (simp add: convert_unconvert_shadow letpast_sat_alt sat_unconvert_shadow)
-    apply (subst sat_unconvert[symmetric], blast)+
-    apply simp
-   apply (erule wf_mformula_convert_cong_aux)
-   apply (simp add: convert_unconvert_shadow letpast_sat_alt sat_unconvert_shadow)
-   apply (subst sat_unconvert[symmetric], blast)+
-   apply simp
-  apply (erule option.case_cong[OF refl refl, THEN iffD1, rotated])
-  apply (rule conj_cong[OF refl])
-  apply (rule fun_cong[of "qtable _ _ _ _"])
-  apply (intro qtable_cong_strong refl)
-  apply (simp add: letpast_sat_alt sat_unconvert_shadow del: fun_upd_apply)
-  apply (subst sat_unconvert[symmetric], blast)
-  apply (simp add: wf_tuple_def)
-  done
+proof -
+  let ?\<sigma> = "unconvert UNIV \<sigma>" and ?V = "unconvertV (dom P) \<sigma>"
+  let ?L = "letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m})"
+  let ?F = "Formula.letpast_sat (\<lambda>X u k. Formula.sat ?\<sigma> (?V((p, m) \<mapsto> X)) u k \<phi>')"
+  assume phi: "invar_mformula (\<sigma>((p, m) \<Rrightarrow> ?L)) j (P((p, m) \<mapsto> i)) m UNIV \<phi> \<phi>'"
+    and psi: "invar_mformula (\<sigma>((p, m) \<Rrightarrow> ?L)) j (P((p, m) \<mapsto> letpast_progress \<sigma> P (p, m) \<phi>' j)) n R \<psi> \<psi>'"
+    and buf: "case buf of
+      None \<Rightarrow> i = letpast_progress \<sigma> P (p, m) \<phi>' j
+    | Some Z \<Rightarrow> Suc i = letpast_progress \<sigma> P (p, m) \<phi>' j \<and>
+        qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. map the v \<in> ?L i) Z"
+    and rest: "safe_letpast (p, m) \<phi>' \<le> PastRec" "{0..<m} \<subseteq> Formula.fv \<phi>'" "m = Formula.nfv \<phi>'"
+      "safe_formula \<phi>'" "safe_formula \<psi>'"
+  have "Formula.sat ?\<sigma> (?V((p, m) \<mapsto> X)) u k \<phi>' =
+    Sat.sat (\<sigma>((p, m) \<Rrightarrow> \<lambda>k. {u. X u k \<and> length u = m})) u k \<phi>'" for X u k
+    by (simp add: sat_unconvert_shadow flip: sat_unconvert)
+  then have L: "?L = (\<lambda>k. {w. ?F w k \<and> length w = m})"
+    by (simp add: letpast_sat_alt)
+  have conv: "convert (unconvert UNIV (\<sigma>((p, m) \<Rrightarrow> ?L))) (unconvertV (dom (P((p, m) \<mapsto> k))) (\<sigma>((p, m) \<Rrightarrow> ?L))) =
+    convert ?\<sigma> (?V((p, m) \<mapsto> ?F))" for k
+    by (simp add: convert_unconvert_shadow L)
+  have prg: "letpast_progress ?\<sigma> P (p, m) \<phi>' j = letpast_progress \<sigma> P (p, m) \<phi>' j"
+    by (simp add: letpast_progress_def progress_unconvert)
+  have qt: "qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. map the v \<in> ?L i) =
+    qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. ?F (map the v) i)"
+    \<comment> \<open>tuples in the table have length @{term m}\<close>
+    unfolding L by (rule qtable_cong_strong) (auto simp: wf_tuple_def)
+  from phi conv have "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> i)) (?V((p, m) \<mapsto> ?F)) m UNIV \<phi> \<phi>'"
+    unfolding invar_mformula_def by (rule wf_mformula_convert_cong_aux)
+  moreover from psi conv have "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> letpast_progress ?\<sigma> P (p, m) \<phi>' j))
+    (?V((p, m) \<mapsto> ?F)) n R \<psi> \<psi>'"
+    unfolding invar_mformula_def prg by (rule wf_mformula_convert_cong_aux)
+  moreover from buf have "case buf of
+      None \<Rightarrow> i = letpast_progress ?\<sigma> P (p, m) \<phi>' j
+    | Some Z \<Rightarrow> Suc i = letpast_progress ?\<sigma> P (p, m) \<phi>' j \<and>
+        qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. ?F (map the v) i) Z"
+    unfolding prg qt .
+  ultimately show "invar_mformula \<sigma> j P n R (MLetPast p m \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
+    unfolding invar_mformula_def using rest by (rule wf_mformula.LetPast)
+qed
 
 end
-
 lemma letpast_progress_alt: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow>
   letpast_progress \<sigma> P p \<phi> j = \<Sqinter>{i. i = progress \<sigma> (P(p \<mapsto> i)) \<phi> j}"
   unfolding letpast_progress_def
