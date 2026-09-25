@@ -1062,11 +1062,14 @@ lemma rbtreeify_keys_Some:
   assumes "rbt_sorted t1"
   shows "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = Some ())
   (RBT_Impl.entries t2)))) = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2)"
-  apply (auto simp: RBT_Impl.keys_def map_of_entries[OF assms, symmetric])
-   apply (metis map_of_eq_None_iff not_None_eq)
-  using image_iff weak_map_of_SomeI
-  apply fastforce
-  done
+proof -
+  have "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = Some ())
+    (RBT_Impl.entries t2)))) = {k \<in> set (RBT_Impl.keys t2). rbt_lookup t1 k = Some ()}"
+    by (force simp: RBT_Impl.keys_def)
+  also have "\<dots> = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2)"
+    using rbt_lookup_keys[OF assms] by (auto simp: dom_def)
+  finally show ?thesis .
+qed
 
 lemma rbt_sorted_inter: "rbt_sorted t1 \<Longrightarrow> rbt_sorted t2 \<Longrightarrow>
   set (RBT_Impl.keys (inter t1 t2)) = set (RBT_Impl.keys t1) \<inter> set (RBT_Impl.keys t2) \<and>
@@ -1191,12 +1194,14 @@ lemma rbtreeify_keys_None:
   assumes "rbt_sorted t1"
   shows "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = None)
   (RBT_Impl.entries t2)))) = set (RBT_Impl.keys t2) - set (RBT_Impl.keys t1)"
-  apply (auto simp: RBT_Impl.keys_def map_of_entries[OF assms, symmetric] split: prod.splits)
-  using image_iff weak_map_of_SomeI
-   apply fastforce
-  subgoal for a b
-    by (rule image_eqI[where x="(a, b)"]) (simp_all add: map_of_eq_None_iff)
-  done
+proof -
+  have "set (RBT_Impl.keys (rbtreeify (filter (\<lambda>(k, _). rbt_lookup t1 k = None)
+    (RBT_Impl.entries t2)))) = {k \<in> set (RBT_Impl.keys t2). rbt_lookup t1 k = None}"
+    by (force simp: RBT_Impl.keys_def)
+  also have "\<dots> = set (RBT_Impl.keys t2) - set (RBT_Impl.keys t1)"
+    by (auto simp flip: rbt_lookup_keys[OF assms])
+  finally show ?thesis .
+qed
 
 lemma rbt_sorted_minus:
   "rbt t1 \<Longrightarrow> rbt_sorted t1 \<Longrightarrow> rbt_sorted t2 \<Longrightarrow>
