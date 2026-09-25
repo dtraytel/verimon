@@ -2977,48 +2977,21 @@ next
       show ?thesis
       proof (rule set_eqI, rule iffI)
         fix x
-        assume "x \<in> result_maggaux ?args (RankAux aux)"
-        then obtain k l where x_def: "Mapping.lookup m k = Some l" 
-          "x = k[y:= Some(let u = get_length l;
-                              u' = u div 2;
-                              aggval = if even u then ((double_of_event_data_agg (get_edata_list l (u' - 1)) + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2)
-                                        else double_of_event_data_agg (get_edata_list l u') in
-                              EFloat aggval)]"
-          using not_singleton_map RankAux
-          apply(simp add:agg_type get_map_result_def)
+        assume x_in: "x \<in> result_maggaux ?args (RankAux aux)"
+        let ?med = "\<lambda>l. let u = get_length l;
+                            u' = u div 2;
+                            aggval = if even u then ((double_of_event_data_agg (get_edata_list l (u' - 1)) + double_of_event_data_agg (get_edata_list l u')) / double_of_int 2)
+                                      else double_of_event_data_agg (get_edata_list l u') in
+                            EFloat aggval"
+        obtain k l where x_def: "Mapping.lookup m k = Some l" "x = k[y:= Some (?med l)]"
         proof -
-          assume assm: "(\<And>k l. Mapping.lookup m k = Some l \<Longrightarrow>
-            x = k
-            [y := Some
-                   (EFloat
-                     (if even (get_length l)
-                      then (double_of_event_data_agg (get_edata_list l (get_length l div 2 - 1)) +
-                            double_of_event_data_agg (get_edata_list l (get_length l div 2))) /
-                           double_of_int 2
-                      else double_of_event_data_agg (get_edata_list l (get_length l div 2))))] \<Longrightarrow>
-            thesis)" "x \<in> (\<lambda>x. case Mapping.lookup m x of None \<Rightarrow> x
-              | Some i \<Rightarrow> x
-                  [y := Some
-                         (EFloat
-                           (if even (get_length i)
-                            then (double_of_event_data_agg
-                                   (get_edata_list i (get_length i div 2 - 1)) +
-                                  double_of_event_data_agg (get_edata_list i (get_length i div 2))) /
-                                 double_of_int 2
-                            else double_of_event_data_agg
-                                  (get_edata_list i (get_length i div 2))))]) `
-         Mapping.keys m"
-          obtain l k where *: "Mapping.lookup m k = Some l" "k \<in> Mapping.keys m" "x = k[y := Some
-                         (EFloat
-                           (if even (get_length l)
-                            then (double_of_event_data_agg
-                                   (get_edata_list l (get_length l div 2 - 1)) +
-                                  double_of_event_data_agg (get_edata_list l (get_length l div 2))) /
-                                 double_of_int 2
-                            else double_of_event_data_agg
-                                  (get_edata_list l (get_length l div 2))))]"
-            using assm(2) by (smt (verit, best) image_iff in_keysD option.simps(5))
-          show thesis using assm(1)[OF *(1) *(3)] by auto
+          have "x \<in> get_map_result m y ?med"
+            using x_in not_singleton_map by (simp add: agg_type)
+          then obtain k where k: "k \<in> Mapping.keys m"
+            and x_k: "x = (case Mapping.lookup m k of Some l \<Rightarrow> k[y := Some (?med l)] | None \<Rightarrow> k)"
+            unfolding get_map_result_def by blast
+          from k obtain l where l: "Mapping.lookup m k = Some l" by (auto dest: in_keysD)
+          show thesis by (rule that[OF l]) (simp add: x_k l)
         qed
         let ?list = "flatten_multiset (group_multiset k b f X)"
         have valid_list_aux: "valid_list_aux l (group_multiset k b f X) type" using x_def RankAux b_def by(auto simp:keys_is_none_rep split:option.splits) 
