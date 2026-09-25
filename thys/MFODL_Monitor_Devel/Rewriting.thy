@@ -277,13 +277,11 @@ next
     by (auto simp: fvi_Suc Formula.fvi_Suc)
 next
   case (Agg y \<omega> b' f \<phi>)
-  hence "Formula.fvi (length b') (project \<phi>) \<subseteq> fvi (length b') \<phi>"
-    apply (clarsimp simp: subset_eq)
-    by (subst (asm) Formula.fvi_iff_fv, subst fvi_iff_fv) simp
-  moreover have "fvi (length b') \<phi> \<subseteq> Formula.fvi (length b') (project \<phi>)"
-    using Agg apply (clarsimp simp: subset_eq)
-    by (subst (asm) fvi_iff_fv, subst Formula.fvi_iff_fv, simp)
-  ultimately show ?case
+  have "x \<in> Formula.fvi (length b') (project \<phi>) \<longleftrightarrow> x \<in> fvi (length b') \<phi>" for x
+    using Agg by (simp add: Formula.fvi_iff_fv[of x] fvi_iff_fv[of x])
+  hence "Formula.fvi (length b') (project \<phi>) = fvi (length b') \<phi>"
+    by blast
+  then show ?case
     by auto
 next
   case (MatchP I r)
