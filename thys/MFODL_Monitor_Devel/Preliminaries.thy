@@ -200,8 +200,7 @@ lemma finite_bounded_\<I>: "bounded I \<Longrightarrow> finite {i |i. memL I i \
     (metis (lifting) infinite_nat_iff_unbounded_le mem_Collect_eq)
 
 lemma finite_bounded_\<I>2: "bounded I \<Longrightarrow> finite {f i |i. memL I (f i) \<and> memR I (f i)}"
-  apply (transfer, clarsimp simp: upclosed_def downclosed_def)
-  by (smt (verit, best) infinite_nat_iff_unbounded_le mem_Collect_eq)
+  by (erule finite_subset[rotated, OF finite_bounded_\<I>]) blast
 
 lemma finite_vimage_set: "finite {x. P x} \<Longrightarrow> inj f \<Longrightarrow> finite {x. P (f x)}"
   using finite_vimageI
@@ -219,10 +218,19 @@ proof (transfer, clarsimp)
     by (metis smap_alt)
   moreover have "\<forall>i j. i \<le> j \<longrightarrow> snd (\<sigma> !! i) \<le> snd (\<sigma> !! j)"
     using iffD1[OF ssorted_iff_mono h1] smap_alt by auto
-  ultimately show "finite {k. snd (\<sigma> !! k) - c = n}"
-    unfolding finite_nat_set_iff_bounded_le
-    by (smt (verit, del_insts) add_less_cancel_left diff_le_mono linorder_le_cases 
-        mem_Collect_eq nat_arith.rule0 order_less_le_trans zero_order(3))
+  ultimately obtain k where k: "n < snd (\<sigma> !! k) - c"
+    and mono: "\<forall>i j. i \<le> j \<longrightarrow> snd (\<sigma> !! i) \<le> snd (\<sigma> !! j)"
+    by blast
+  have "k' \<le> k" if "snd (\<sigma> !! k') - c = n" for k'
+  proof (rule ccontr)
+    assume "\<not> k' \<le> k"
+    then have "snd (\<sigma> !! k) \<le> snd (\<sigma> !! k')"
+      using mono by simp
+    with k that show False
+      by linarith
+  qed
+  then show "finite {k. snd (\<sigma> !! k) - c = n}"
+    unfolding finite_nat_set_iff_bounded_le by blast
 qed
 
 lemma finite_vimage_\<I>_Until:

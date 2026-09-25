@@ -133,9 +133,21 @@ qed
 
 lemma nonempty_add_to_rbt: "is_rbt t \<Longrightarrow> (a, {}) \<notin> set (RBT_Impl.entries t) \<Longrightarrow>
     (a, {}) \<notin> set (RBT_Impl.entries (add_to_rbt ab t))"
-  by (auto simp: add_to_rbt_def rbt_insert_entries_None split: prod.splits option.splits)
-     (smt insert_not_empty is_rbt_rbt_sorted rbt_insert_rbt_sorted rbt_lookup_in_tree
-      rbt_lookup_rbt_insert map_upd_Some_unfold)
+proof -
+  assume t: "is_rbt t" and a: "(a, {}) \<notin> set (RBT_Impl.entries t)"
+  obtain a' b where ab_def: "ab = (a', b)"
+    by fastforce
+  show ?thesis
+  proof (cases "rbt_lookup t a'")
+    case None
+    show ?thesis
+      using a by (simp add: add_to_rbt_def ab_def None rbt_insert_entries_None[OF t None])
+  next
+    case (Some B)
+    show ?thesis
+      using a by (simp add: add_to_rbt_def ab_def Some rbt_insert_entries_Some[OF t Some])
+  qed
+qed
 
 lemma flatten_fold_add_to_rbt: "is_rbt t' \<Longrightarrow> (a, {}) \<notin> set (RBT_Impl.entries t') \<Longrightarrow>
   flatten (set (RBT_Impl.entries (RBT_Impl.fold (\<lambda>ab _. add_to_rbt ab) t t'))) =

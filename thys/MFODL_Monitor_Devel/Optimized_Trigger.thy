@@ -1077,9 +1077,11 @@ proof -
               using data_in_equiv i_props'
               by simp
             ultimately have "suffix!(i-n) = auxlist!i" by auto
-            then have "auxlist!i \<in> set suffix"
-              using i_props'
-              by (smt atLeastLessThan_iff dual_order.trans less_diff_iff less_or_eq_imp_le nth_mem suffix_length(2))
+            moreover have "i - n < length suffix"
+              using i_props' suffix_length(2)
+              by auto
+            ultimately have "auxlist!i \<in> set suffix"
+              by (metis nth_mem)
             (* "\<forall>i\<in>{0..<length suffix}. suffix!i = (auxlist_data_in args mt auxlist)!(i+n)" *)
             then have "tuple \<in> (snd o snd) (auxlist!i)"
               using suffix_rhs
@@ -1390,9 +1392,14 @@ proof -
           have data_in_props: "auxlist_data_in args mt auxlist = take (length (linearize data_in)) auxlist"
             using assms(1)
             by (simp add: valid_mmtaux_def)
-          have "length (linearize data_prev) + length (linearize data_in) = length auxlist"
-            using data_in_props data_prev_props data_props
-            by (smt add.commute append_take_drop_id length_append length_map)
+          have "length (linearize data_prev) + length (linearize data_in) =
+            length (auxlist_data_prev args mt auxlist) + length (auxlist_data_in args mt auxlist)"
+            using data_props
+            by (metis length_map)
+          also have "\<dots> = length auxlist"
+            using data_in_props data_prev_props
+            by simp
+          finally have "length (linearize data_prev) + length (linearize data_in) = length auxlist" .
           then have j'_le: "j' < length (linearize data_prev)"
             using j_geq j_props(1)
             unfolding j'_def
@@ -1936,7 +1943,7 @@ lemma fold_alt: "fold f (xs @ [x]) acc = f x (fold f xs acc)"
   by simp
 
 lemma drop_last: "length xs \<ge> 1 \<Longrightarrow> drop (length xs - 1) xs = [last xs]"
-  by (smt One_nat_def append_butlast_last_id append_eq_append_conv append_take_drop_id diff_diff_cancel diff_is_0_eq' le_add_diff_inverse le_numeral_extra(4) length_drop length_greater_0_conv length_nth_simps(1) list.size(4) zero_le_one)
+  by (cases xs rule: rev_cases) simp_all
 
 lemma filter_sublist: "x#xs = filter f zs \<Longrightarrow> \<exists>n\<le>length zs. xs = filter f (drop n zs) \<and> [x] = filter f (take n zs)"
   proof (induction zs)
@@ -2184,7 +2191,7 @@ proof -
       using idx_l assms(4) in_nonempty assm
       by linarith
     ultimately have "linearize data_in ! (idx - idx_oldest - 1) = (drop (j + 1) (linearize data_in))!(idx - idx_oldest - 1 - j - 1)"
-      by (smt diff_diff_left le_add_diff_inverse le_less_trans less_imp_le_nat nth_drop)
+      by (simp add: Suc_diff_Suc)
     then have "(linearize data_in ! (idx - idx_oldest - 1)) \<in> set (drop (j + 1) (linearize data_in))"
       by (metis (no_types, lifting) l_len geq_drop diff_diff_left diff_less_mono length_drop nth_mem)
     then have "as \<in> snd (linearize data_in ! (idx - idx_oldest - 1))"
@@ -2525,15 +2532,17 @@ proof -
           assume "as \<in> {as \<in> keys. (filter_cond' (f3 X) mapping t) as}"
           then have "as \<in> keys" "(filter_cond' (f3 X) mapping t) as"
             by auto
-          then have "as \<in> Mapping.keys (Mapping.filter (filter_cond (f3 X) mapping t) mapping)"
+          then obtain v where "Mapping.lookup mapping as = Some v" "(filter_cond' (f3 X) mapping t) as"
             unfolding IH
-            by (smt (z3) Mapping.in_keysD Mapping_keys_intro Mapping_lookup_filter_Some option.simps(3))
+            by (blast dest: Mapping.in_keysD)
+          then have "as \<in> Mapping.keys (Mapping.filter (filter_cond (f3 X) mapping t) mapping)"
+            by (rule Mapping_keys_filterI)
         }
         moreover {
           fix as
           assume assm: "as \<in> Mapping.keys (Mapping.filter (filter_cond (f3 X) mapping t) mapping)"
           then have "as \<in> Mapping.keys mapping"
-            by (smt (z3) Mapping_lookup_filter_not_None domIff keys_dom_lookup)
+            by (rule subsetD[OF Mapping.keys_filter])
           moreover have "(filter_cond' (f3 X) mapping t) as"
             using assm
             by (metis (mono_tags, lifting) Mapping_lookup_filter_None domIff keys_dom_lookup)
@@ -2862,7 +2871,14 @@ proof -
     using not_memL_imp_memR[of args]
     by auto
   ultimately have filter_eq: "filter (\<lambda>x. (case x of (t, uu_) \<Rightarrow> memR (args_ivl args) (nt - t)) \<and> (case x of (t, uu_) \<Rightarrow> \<not> memL (args_ivl args) (nt - t))) auxlist = (linearize data_prev')"
-    by (smt filter_cong prod.case_eq_if)
+  proof -
+    have memR_eq: "(memR (args_ivl args) (nt - t) \<and> \<not> memL (args_ivl args) (nt - t)) \<longleftrightarrow> \<not> memL (args_ivl args) (nt - t)" for t
+      using not_memL_imp_memR[of args "nt - t"]
+      by blast
+    show ?thesis
+      using filter_auxlist_data_prev'
+      by (simp add: case_prod_unfold memR_eq)
+  qed
   then show auxlist_prev_eq: "auxlist_data_prev args nt (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist) = (linearize data_prev')"
     unfolding auxlist_data_prev_def
     using filter_filter[of "(\<lambda>(t, _). \<not>memL (args_ivl args) (nt - t))" "(\<lambda>(t, _). memR (args_ivl args) (nt - t))" auxlist]
@@ -2948,9 +2964,14 @@ proof -
       assume t_props: "Mapping.lookup tuple_in_once tuple = Some t" "memL (args_ivl args) (nt - t)"
       from assms(1) have "(\<forall>as \<in> Mapping.keys tuple_in_once. case Mapping.lookup tuple_in_once as of Some t \<Rightarrow> \<exists>l r. (t, l, r) \<in> set (linearize data_prev) \<and> join_cond (args_pos args) l (proj_tuple maskL as))"
         by (simp add: valid_mmtaux_def)
+      moreover have "tuple \<in> Mapping.keys tuple_in_once"
+        using t_props(1)
+        by (simp add: Mapping_keys_intro)
+      ultimately have "\<exists>l r. (t, l, r) \<in> set (linearize data_prev) \<and> join_cond (args_pos args) l (proj_tuple maskL tuple)"
+        using t_props(1)
+        by fastforce
       then obtain X where X_props: "(t, X) \<in> set (linearize data_prev)" "join_cond (args_pos args) (fst X) (proj_tuple maskL tuple)"
-        using t_props
-        by (smt Mapping_keys_intro fst_conv option.simps(3) option.simps(5))
+        by auto
       moreover have
         "(\<not>mem (args_ivl args) 0 \<longrightarrow> args_pos args)"
         "auxlist_data_prev args mt auxlist = (linearize data_prev)"
@@ -2981,8 +3002,8 @@ proof -
         then obtain j where j_props: "j<i" "\<not>memL (args_ivl args) (nt - (fst ((linearize data_prev)!j)))"
           by fastforce
         moreover have "fst ((linearize data_prev)!j) \<le> fst ((linearize data_prev)!i)"
-          using i_props(1) j_props(1) data_sorted[OF assms(1)]
-          by (smt atLeastLessThan_iff le_less_trans length_map less_imp_le_nat nth_map sorted_nth_mono)
+          using i_props(1) j_props(1) sorted_nth_mono[OF data_sorted(1)[OF assms(1)], of j i]
+          by simp
         ultimately have "\<not>memL (args_ivl args) (nt - (fst ((linearize data_prev)!i)))"
           using j_props memL_mono
           by auto
@@ -3500,8 +3521,7 @@ proof -
     using sorted_filter
     by blast
   have "length (filter (\<lambda>(t, _). mem (args_ivl args) (nt - t)) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist)) = length (linearize data_in'')"
-    using lin_data_in''_eq
-    by (smt length_map)
+    by (simp flip: lin_data_in''_eq)
 
   then have filter_take_eq: "filter (\<lambda>(t, _). mem (args_ivl args) (nt - t)) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist) = take (length (linearize data_in'')) (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist)"
     using take_filter_mem[OF memR sorted]
@@ -4296,9 +4316,11 @@ proof -
                   by (meson atLeastLessThan_iff nth_the_index the_index_bounded zero_le)
                 {
                   assume "i \<le> n"
+                  then have "(map fst (auxlist_data_in args mt auxlist))!i \<le> (map fst (auxlist_data_in args mt auxlist))!n"
+                    by (rule sorted_nth_mono[OF sorted_in]) (simp add: n_l)
                   then have "t \<le> fst ((auxlist_data_in args mt auxlist)!n)"
-                    using i_props(2) sorted_in n_l
-                    by (smt fst_conv le_less_trans length_map nth_map sorted_iff_nth_mono)
+                    using i_props n_l
+                    by simp
                   then have "(\<lambda>(t, _). memR (args_ivl args) (nt - t)) ((auxlist_data_in args mt auxlist)!n)"
                     using memR memR_antimono[of "args_ivl args"]
                     by auto
@@ -4365,8 +4387,16 @@ proof -
             by (simp add: add.commute)
 
           moreover have "l + n < length (linearize data_in)"
-            using n_props data_in''_aux_eq lin_data_in''_eq in_eq
-            by (smt add.commute atLeastLessThan_iff drop_drop length_drop length_map zero_less_diff)
+          proof -
+            have "n < length (lin_data_in''_mv [])"
+              using n_props(1) by simp
+            also have "length (lin_data_in''_mv []) = length (auxlist_data_in args mt auxlist) - l"
+              using lin_data_in''_eq by (simp flip: data_in''_aux_eq)
+            also have "\<dots> = length (linearize data_in) - l"
+              by (simp flip: in_eq)
+            finally show ?thesis
+              by linarith
+          qed
 
           ultimately have "tuple_since_lhs as (linearize data_in) args maskL (auxlist_data_in args mt auxlist)"
             using non_empty
@@ -4575,8 +4605,14 @@ proof -
             fix idx
             assume "idx < idx_mid_mv (xs @ [x])"
             then have "last (lin_data_in''_mv (xs @ [x])) \<in> set (drop (idx - idx_oldest_mv (xs @ [x])) (lin_data_in''_mv (xs @ [x])))"
-              using snoc(2) non_empty
-              by (smt add_cancel_left_left diff_is_0_eq dual_order.strict_iff_order last_drop last_in_set leI length_drop length_greater_0_conv less_diff_conv2)
+            proof -
+              have "idx_oldest_mv (xs @ [x]) < idx_mid_mv (xs @ [x])"
+                using snoc(2) non_empty by (metis le_add2 le_neq_implies_less)
+              then have "idx - idx_oldest_mv (xs @ [x]) < length (lin_data_in''_mv (xs @ [x]))"
+                using \<open>idx < idx_mid_mv (xs @ [x])\<close> snoc(2) by linarith
+              then show ?thesis
+                by (metis drop_eq_Nil last_drop last_in_set not_le)
+            qed
             moreover have "as \<notin> snd (last (lin_data_in''_mv (xs @ [x])))"
             using not_relR data_in''_last
               unfolding relR_def
@@ -5410,7 +5446,7 @@ proof -
           by auto
         moreover have "get_idx_move (fold_op_f x tuple) = (get_idx_move tuple) + 1"
           unfolding get_idx_move_def fold_op_f_def
-          by (smt case_prod_beta' comp_apply fst_conv prod.sel(2))
+          by (simp add: Let_def case_prod_beta)
         moreover have "(get_idx_move tuple) + 1 = idx_mid_mv (xs @ [x])"
           using IH(2)
           unfolding tuple_def idx_mid_mv_def
@@ -5487,8 +5523,16 @@ proof -
           by (metis list.sel(1))
 
         obtain dbs' where safe_hd_eq: "safe_hd data_in'' = (Some db, dbs')"
-          using safe_hd_rep[of data_in''] db_props
-          by (smt lin_non_empty case_optionE hd_in safe_hd_rep surjective_pairing)
+        proof (cases "safe_hd data_in''")
+          case (Pair hd_opt dbs')
+          moreover have "hd_opt = Some db"
+            using safe_hd_rep[OF Pair] lin_non_empty hd_in
+            by (cases hd_opt) simp_all
+          ultimately have "safe_hd data_in'' = (Some db, dbs')"
+            by simp
+          then show ?thesis
+            by (rule that)
+        qed
         
         have "x \<in> (fst \<circ> snd) (fold fold_op_f move init_tuple) \<union> {as \<in> snd db. case Mapping.lookup tuple_since_hist'' as of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> idx_oldest'}"
           using db_props assm since_hist''_eq mv_idx_oldest' mv_data_in''
@@ -5507,10 +5551,12 @@ proof -
       moreover {
         fix x
         assume assm: "x \<in> hist_sat''"
+        then have "fst (safe_hd data_in'') \<noteq> None"
+          unfolding hist_sat''_def
+          by (cases "fst (safe_hd data_in'')") simp_all
         then obtain db dbs' where safe_hd_eq:
           "safe_hd data_in'' = (Some db, dbs')"
-          unfolding hist_sat''_def
-          by (smt empty_iff eq_fst_iff option.exhaust option.simps(4))
+          by (metis not_None_eq prod.collapse)
         then have x_mem: "x \<in> hist_sat' \<union> {tuple \<in> snd db. case Mapping.lookup tuple_since_hist'' tuple of None \<Rightarrow> False | Some idx \<Rightarrow> idx \<le> idx_oldest'}"
           using assm
           unfolding hist_sat''_def
@@ -5621,9 +5667,10 @@ proof -
         by blast
       then have "(t, r) \<in> set (linearize data_in'')"
         by (metis idx_props(1) last_in_set)
+      then have "\<exists>l. (t, l, r) \<in> set (auxlist_data_in args nt (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist))"
+        unfolding auxlist_data_in[symmetric] by (simp add: image_iff Bex_def)
       then obtain l where "(t, l, r) \<in> set (auxlist_data_in args nt (filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) auxlist))"
-        using auxlist_data_in
-        by (smt case_prod_beta' fst_conv imageE prod.collapse set_map snd_conv)
+        by blast
       then have "(t, l, r) \<in> set auxlist"
         unfolding auxlist_data_in_def
         by auto
@@ -6975,9 +7022,14 @@ proof -
           then have "Mapping.lookup tuple_in_once'' as = Mapping.lookup tuple_in_once' as"
             unfolding tuple_in_once''_def
             by (simp add: Mapping_lookup_upd_set)
-          then have "\<exists>l r. (t, l, r) \<in> set (linearize data_prev') \<and> join_cond (args_pos args) l (proj_tuple maskL as)"
-            using before t_props
-            by (smt Mapping_keys_intro option.distinct(1) option.simps(5))
+          then have lookup_t: "Mapping.lookup tuple_in_once' as = Some t"
+            using t_props
+            by simp
+          then have "as \<in> Mapping.keys tuple_in_once'"
+            by (simp add: Mapping_keys_intro)
+          from lookup_t bspec[OF before this]
+          have "\<exists>l r. (t, l, r) \<in> set (linearize data_prev') \<and> join_cond (args_pos args) l (proj_tuple maskL as)"
+            by simp
           then show ?thesis
             using t_props
             unfolding data_prev''_def append_queue_rep

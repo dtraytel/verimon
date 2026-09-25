@@ -870,7 +870,11 @@ lemma delete_rank_comm':
   shows "(delete_rank args type x \<circ> delete_rank args type y) (v, m) = (delete_rank args type y \<circ> delete_rank args type x) (v, m)"
   apply(cases type; auto split:event_data.splits option.splits; auto split:list_aux.splits; auto split:event_data.splits)
   apply(auto simp:lookup_update' lookup_delete mapping_eqI delete_update update_update)
-  apply(auto simp:remove_comm aux1) by (smt (z3) auxa remove_comm)+
+  apply(auto simp:remove_comm aux1)
+     apply(metis auxa)
+    apply(metis auxa remove_comm)
+   apply(metis auxa)
+  by(metis auxa remove_comm)
  
                      
 lemma delete_rank_comm: 
@@ -1067,15 +1071,20 @@ proof (rule set_eqI, rule iffI)
     using old_term_eval by blast
   have group_ins: "new_group = old_group - {elem}" using elem_group by (auto simp: new_group_def old_group_def updated_data_def)
   have y_card: "enat y = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group)" using old_val by (auto simp: old_group_def)
-  have "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group = (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group) - {elem}"
+  let ?S = "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) old_group"
+  have S_fin: "finite ?S" using finite by (simp add: old_group_def)
+  have elem_in_S: "elem \<in> ?S" using inside elem_group by (simp add: old_group_def)
+  have y_eq: "y = card ?S" using y_card S_fin by (simp add: ecard_def)
+  have "Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group = ?S - {elem}"
     using group_ins by fastforce
   then have correct_card: "enat (y - 1) = ecard (Set.filter (\<lambda>xa. meval_trm f xa = meval_trm f elem) new_group)" 
-    using y_card by (smt (z3) Optimized_Agg.group_def card_Diff_singleton_if ecard_def elem_group enat.distinct(2) enat.inject filter_insert finite.emptyI finite.insertI finite_Diff2 insertCI insert_Diff inside old_group_def)
+    using S_fin elem_in_S y_eq by (simp add: ecard_def)
   obtain v' where v'_def: "(meval_trm f elem, v') \<in> group_multiset k b f updated_data" using elem'_def 
     by (simp add: updated_data_def) (metis (mono_tags, lifting) image_eqI mem_Collect_eq)
   then have "v' = y - 1" using correct_card by (auto simp: new_group_def)
   then have aux1: "(meval_trm f elem, enat (y - 1)) \<in> group_multiset k b f updated_data" using v'_def by auto
-  have "enat y \<noteq> enat (y - 1)" using y_card by (smt (z3) Diff_insert_absorb Optimized_Agg.group_def cancel_comm_monoid_add_class.diff_cancel card.insert card_Diff_singleton_if diff_add_inverse2 ecard_def elem'_def enat.inject enat_defs(2) finite_Diff finite_filter idiff_enat_enat local.finite mk_disjoint_insert old_group_def plus_1_eq_Suc zero_neq_one)
+  have "card ?S > 0" using S_fin elem_in_S card_gt_0_iff by blast
+  then have "enat y \<noteq> enat (y - 1)" using y_eq by simp
   then have aux2: "(meval_trm f elem, enat y) \<notin> group_multiset k b f (updated_data)" 
     using unique_term_multiset[of "meval_trm f elem" "enat (y - 1)" k b f updated_data y] y_card aux1 by auto
   show "x \<in> Set.insert (meval_trm f elem, enat (y - 1)) ((group_multiset k b f X) - {(meval_trm f elem, enat y)})"
@@ -1152,8 +1161,7 @@ proof (rule set_eqI, rule iffI)
   then have aux1: "(meval_trm f elem, enat(n + 1)) \<in> group_multiset k b f (Set.insert elem X)" using group_ins
     by (auto simp del: Set.filter_eq)
   have aux2: "(meval_trm f elem, enat n) \<notin> group_multiset k b f (Set.insert elem X)" 
-    using unique_term_multiset[of "meval_trm f elem" "enat (n + 1)" k b f updated_data "enat n"] aux1 y_card
-    by simp (smt (z3) the_enat.simps)
+    using unique_term_multiset[OF aux1, of "enat n"] by simp
   show "x \<in> Set.insert (meval_trm f elem, enat (n + 1)) ((group_multiset k b f X) - {(meval_trm f elem, enat n)})"
   proof (cases "t = meval_trm f elem")
     case True
@@ -1242,9 +1250,18 @@ next
       then have aux: "length(flatten_multiset(Set.insert (meval_trm f elem, enat n) old_M)) = length(flatten_multiset(old_M - {(meval_trm f elem, enat n)})) + n" 
         using both_finite finite_insert finite_remove Finite_Set.comp_fun_commute_on.fold_insert_remove[of UNIV "\<lambda>(t, m) y. y + the_enat m" "(meval_trm f elem, enat n)" old_M 0]
         by (simp only: length_flatten_multiset) (metis case_prod_conv comp_fun_commute_on_axioms the_enat.simps top_greatest)
-      have "(meval_trm f elem, enat (n + 1)) \<notin> old_M - {(meval_trm f elem, enat n)}" using n_def old_M_def by force
-      then show ?thesis using both_finite finite_remove M_insert_remove_def Finite_Set.comp_fun_commute_on.fold_insert[of UNIV "\<lambda>(t, m) y. y + the_enat m" "(meval_trm f elem, enat (n + 1))" "old_M - {(meval_trm f elem, enat n)}" 0]
-        by (smt (z3) UNIV_I case_prod_conv comp_fun_commute_on.fold_rec comp_fun_commute_on_axioms length_flatten_multiset n_def subsetI the_enat.simps)
+      have notin: "(meval_trm f elem, enat (n + 1)) \<notin> old_M - {(meval_trm f elem, enat n)}" using n_def old_M_def by force
+      have old_len: "length (flatten_multiset old_M) = length (flatten_multiset (old_M - {(meval_trm f elem, enat n)})) + n"
+        using aux by (simp only: insert_absorb[OF n_def])
+      have "length (flatten_multiset M) = Finite_Set.fold (\<lambda>(t, m) y. y + the_enat m) 0 M"
+        using both_finite by (simp only: length_flatten_multiset)
+      also have "\<dots> = Finite_Set.fold (\<lambda>(t, m) y. y + the_enat m) 0 (old_M - {(meval_trm f elem, enat n)}) + (n + 1)"
+        unfolding M_insert_remove_def fold_insert[OF finite_remove notin] by simp
+      also have "\<dots> = length (flatten_multiset (old_M - {(meval_trm f elem, enat n)})) + (n + 1)"
+        using finite_remove by (simp only: length_flatten_multiset)
+      also have "\<dots> = length (flatten_multiset old_M) + 1"
+        using old_len by linarith
+      finally show ?thesis .
     qed
     moreover have "group = Set.insert elem old_group"
       using True insert by(auto) 
@@ -2135,14 +2152,14 @@ proof -
     proof(cases l)
       case (LInt x1)
       then obtain i where i_def: "meval_trm f elem = EInt i" using restr by auto
-      have type_def: "type = IntT" using LInt by (smt (z3) lookup_def(2) list_aux.case(1) type.exhaust type.simps(4) valid_list_aux_def)
+      have type_def: "type = IntT" using lookup_def(2) LInt by (cases type) (simp_all only: valid_list_aux_def list_aux.case type.case simp_thms)
       have k_id: "drop b elem = drop b elem" by auto
       have in_s: "meval_trm f elem \<in> set (flatten_multiset (group_multiset (drop b elem) b f X))" using meval_in_set[OF in_set k_id finite_X, of f] by auto
       then show ?thesis using in_mset_in_list_int[OF in_s[unfolded i_def] finite_X lookup_def(2)[unfolded LInt type_def]]  LInt i_def by auto
     next
       case (LString x2)
       then obtain s where s_def: "meval_trm f elem = EString s" using restr meval_def by auto
-      have type_def: "type = StringT" using LString by (smt (z3) lookup_def(2) list_aux.simps(6) type.exhaust type.simps(3) valid_list_aux_def)
+      have type_def: "type = StringT" using lookup_def(2) LString by (cases type) (simp_all only: valid_list_aux_def list_aux.case type.case simp_thms)
       have k_id: "drop b elem = drop b elem" by auto
       have in_s: "meval_trm f elem \<in> set (flatten_multiset (group_multiset (drop b elem) b f X))" using meval_in_set[OF in_set k_id finite_X, of f] by auto
       then show ?thesis using in_mset_in_list_str[OF in_s[unfolded s_def] finite_X lookup_def(2)[unfolded LString type_def]] LString s_def by auto
@@ -2912,14 +2929,17 @@ next
         qed 
       next
         case False
-        then obtain y0 where agg_type: "\<omega> = (Formula.Agg_Max, y0)" using not_med RankAux by (smt (z3) aggaux.simps(12) case_prod_conv prod.collapse valid_maggaux.simps)
+        then have "fst \<omega> = Formula.Agg_Max" using not_med RankAux by simp
+        then obtain y0 where agg_type: "\<omega> = (Formula.Agg_Max, y0)" by (metis prod.collapse)
         show ?thesis
         proof (rule set_eqI, rule iffI)
           fix x
           assume "x \<in> result_maggaux ?args (RankAux aux)"
+          then have "x \<in> get_map_result m y (\<lambda>k. get_edata_list k (get_length k - 1))"
+            using not_singleton_map by (simp add: agg_type)
           then obtain k l where x_def: "Mapping.lookup m k = Some l" 
             "x = k[y:= Some(get_edata_list l (get_length l - 1))]"
-            using valid_rank_aux_lookup RankAux not_singleton_map by(simp add:agg_type get_map_result_def) (smt (z3) RankAux.prems \<open>aux = (m, type)\<close> imageE option.simps(5))
+            unfolding get_map_result_def by (auto dest: Mapping.in_keysD)
           let ?list = "flatten_multiset (group_multiset k b f X)"
           have valid_list_aux: "valid_list_aux l (group_multiset k b f X) type" using b_def x_def RankAux by(auto simp:keys_is_none_rep split:option.splits) 
           have k_in: "k \<in> (drop b) ` X" using RankAux x_def b_def by (simp add: keys_is_none_rep) 

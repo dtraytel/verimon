@@ -63,16 +63,36 @@ lemma proj_tuple_in_join_mask_idle:
 lemma join_sub:
   assumes "L \<subseteq> R" "table n L t1" "table n R t2"
   shows "join t2 pos t1 = {as \<in> t2. proj_tuple_in_join pos (join_mask n L) as t1}"
-  using assms proj_tuple_join_mask_restrict[of _ n L] join_restrict[of t2 n R t1 L pos]
-    wf_tuple_length restrict_idle
-  by (auto simp add: table_def proj_tuple_in_join_def sup.absorb1) fastforce+
+proof (rule set_eqI)
+  fix v
+  have "v \<in> join t2 pos t1 \<longleftrightarrow>
+    wf_tuple n R v \<and> restrict R v \<in> t2 \<and> join_cond pos t1 (restrict L v)"
+    using join_restrict_table[OF assms(3,2) assms(1)] by (simp add: Un_absorb2[OF assms(1)])
+  also have "\<dots> \<longleftrightarrow> v \<in> t2 \<and> proj_tuple_in_join pos (join_mask n L) v t1"
+    using assms(3) restrict_idle[of n R v] proj_tuple_join_mask_restrict[of v n L]
+      wf_tuple_length[of n R v]
+    by (auto simp: table_def proj_tuple_in_join_def)
+  finally show "v \<in> join t2 pos t1 \<longleftrightarrow>
+    v \<in> {as \<in> t2. proj_tuple_in_join pos (join_mask n L) as t1}"
+    by simp
+qed
 
 lemma join_sub':
   assumes "R \<subseteq> L" "table n L t1" "table n R t2"
   shows "join t2 True t1 = {as \<in> t1. proj_tuple_in_join True (join_mask n R) as t2}"
-  using assms proj_tuple_join_mask_restrict[of _ n R] join_restrict[of t2 n R t1 L True]
-    wf_tuple_length restrict_idle
-  by (auto simp add: table_def proj_tuple_in_join_def sup.absorb1 Un_absorb1) fastforce+
+proof (rule set_eqI)
+  fix v
+  have "v \<in> join t2 True t1 \<longleftrightarrow>
+    wf_tuple n L v \<and> restrict R v \<in> t2 \<and> restrict L v \<in> t1"
+    using join_restrict_table[OF assms(3,2), of True] by (simp add: Un_absorb1[OF assms(1)])
+  also have "\<dots> \<longleftrightarrow> v \<in> t1 \<and> proj_tuple_in_join True (join_mask n R) v t2"
+    using assms(2) restrict_idle[of n L v] proj_tuple_join_mask_restrict[of v n R]
+      wf_tuple_length[of n L v]
+    by (auto simp: table_def proj_tuple_in_join_def)
+  finally show "v \<in> join t2 True t1 \<longleftrightarrow>
+    v \<in> {as \<in> t1. proj_tuple_in_join True (join_mask n R) as t2}"
+    by simp
+qed
 
 lemma join_eq:
   assumes tab: "table n R t1" "table n R t2"
@@ -105,10 +125,47 @@ fun bin_join :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> 
 lemma bin_join_table:
   assumes tab: "table n A t" "table n A' t'"
   shows "bin_join n A t pos A' t' = join t pos t'"
-  using assms join_empty_left[of pos t'] join_empty_right[of t pos]
-    join_no_cols[OF _ assms(1), of t' pos] join_eq[of n A t' t pos] join_sub[OF _ assms(2,1)]
-    join_sub'[OF _ assms(2,1)]
-  by auto+
+proof (cases "t = {} \<or> t' = {}")
+  case True
+  then show ?thesis
+    by (cases "t = {}") (simp_all add: join_empty_left join_empty_right)
+next
+  case False
+  then have ne: "t \<noteq> {}" "t' \<noteq> {}"
+    by simp_all
+  consider (no_cols) "A' = {}"
+    | (eq) "A' \<noteq> {}" "A' = A"
+    | (sub) "A' \<noteq> {}" "A' \<noteq> A" "A' \<subseteq> A"
+    | (sub') "A' \<noteq> {}" "A' \<noteq> A" "\<not> A' \<subseteq> A" "A \<subseteq> A'" "pos"
+    | (other) "A' \<noteq> {}" "A' \<noteq> A" "\<not> A' \<subseteq> A" "\<not> (A \<subseteq> A' \<and> pos)"
+    by blast
+  then show ?thesis
+  proof cases
+    case no_cols
+    with tab(2) have "table n {} t'"
+      by simp
+    with ne no_cols show ?thesis
+      by (simp add: join_no_cols[OF _ tab(1)])
+  next
+    case eq
+    with tab(2) have "table n A t'"
+      by simp
+    with ne eq show ?thesis
+      by (simp add: join_eq[OF _ tab(1)])
+  next
+    case sub
+    with ne show ?thesis
+      by (simp add: join_sub[OF _ tab(2,1)])
+  next
+    case sub'
+    with ne show ?thesis
+      by (simp add: join_sub'[OF _ tab(2,1)])
+  next
+    case other
+    with ne show ?thesis
+      by auto
+  qed
+qed
 
 subsection \<open>Multi-way join\<close>
 
@@ -441,8 +498,17 @@ lemma dominate_True_sound:
     "length A_pos = length L_pos"
   shows "A_pos = A_zs @ A_x # A_xs @ A_y # A_ys" "L_pos = zs @ x # xs @ y # ys"
     "length A_xs = length xs" "length A_ys = length ys" "length A_zs = length zs"
-  using assms find_sub_True_sound find_sub_True_proj_list_5_same find_sub_True_proj_list_5_length
-  by (auto simp del: proj_list_5.simps split: option.splits) fast+
+proof -
+  have find: "find_sub_True A_pos = Some (A_zs, A_x, A_xs, A_y, A_ys)"
+    and proj: "proj_list_5 L_pos (A_zs, A_x, A_xs, A_y, A_ys) = (zs, x, xs, y, ys)"
+    using assms(1) by (auto simp del: proj_list_5.simps split: option.splits)
+  show "A_pos = A_zs @ A_x # A_xs @ A_y # A_ys"
+    using find_sub_True_sound[OF find] by simp
+  show "L_pos = zs @ x # xs @ y # ys"
+    using find_sub_True_proj_list_5_same[OF find assms(2) proj] .
+  show "length A_zs = length zs" "length A_xs = length xs" "length A_ys = length ys"
+    using find_sub_True_proj_list_5_length[OF find assms(2) proj] .
+qed
 
 fun dominate_False :: "nat set list \<Rightarrow> 'a table list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow>
   (((nat set list \<times> nat set \<times> nat set list) \<times> nat set list \<times> nat set \<times> nat set list) \<times>
@@ -495,10 +561,22 @@ lemma dominate_False_sound:
     "length A_ws = length ws" "length A_xs = length xs"
     "length A_ys = length ys" "length A_zs = length zs"
     "A_y \<subseteq> A_x"
-  using assms find_sub_False_proj_list_3_same_left find_sub_False_proj_list_3_same_right
-    find_sub_False_proj_list_3_length_left find_sub_False_proj_list_3_length_right
-    find_sub_False_sound
-  by (auto simp del: proj_list_3.simps split: option.splits) fast+
+proof -
+  have find: "find_sub_False A_pos A_neg = Some ((A_zs, A_x, A_xs), (A_ws, A_y, A_ys))"
+    and proj: "proj_list_3 L_pos (A_zs, A_x, A_xs) = (zs, x, xs)"
+      "proj_list_3 L_neg (A_ws, A_y, A_ys) = (ws, y, ys)"
+    using assms(1) by (auto simp del: proj_list_3.simps split: option.splits)
+  show "A_pos = A_zs @ A_x # A_xs" "A_neg = A_ws @ A_y # A_ys" "A_y \<subseteq> A_x"
+    using find_sub_False_sound[OF find] by simp_all
+  show "L_pos = zs @ x # xs"
+    using find_sub_False_proj_list_3_same_left[OF find assms(2) proj(1)] .
+  show "L_neg = ws @ y # ys"
+    using find_sub_False_proj_list_3_same_right[OF find assms(3) proj(2)] .
+  show "length A_zs = length zs" "length A_xs = length xs"
+    using find_sub_False_proj_list_3_length_left[OF find assms(2) proj(1)] .
+  show "length A_ws = length ws" "length A_ys = length ys"
+    using find_sub_False_proj_list_3_length_right[OF find assms(3) proj(2)] .
+qed
 function mmulti_join_gen :: "(nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
   "mmulti_join_gen n A_pos A_neg L = (if length A_pos + length A_neg \<noteq> length L then {} else
     let L_pos = take (length A_pos) L; L_neg = drop (length A_pos) L in

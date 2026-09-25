@@ -650,19 +650,25 @@ next
         intro!: wf_mformula.intros elim!: list.rel_mono_strong dest!: arg_cong[where f=\<tau>])
 next
   case (Since P V n R \<phi> \<phi>' \<psi> \<psi>' args \<phi>'' I R' buf aux)
-  then have mr: "mem_restr (lift_envs' (length (agg_tys args)) R') = mem_restr R" by auto
-  obtain buf\<phi> buf\<psi> ts skew where "buf = (buf\<phi>, buf\<psi>, ts, skew)"
-    by (cases buf)
-  moreover have "Formula.sat \<sigma> V v i \<phi>' = Formula.sat \<sigma>' V' v i \<phi>'"
-    "Formula.sat \<sigma> V v i \<psi>' = Formula.sat \<sigma>' V' v i \<psi>'" for v i
-    by (simp_all add: fun_eq_iff Since.prems sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd del: fun_upd_apply)
-  moreover have "\<tau> \<sigma> = \<tau> \<sigma>'"
-    by (metis Since.prems \<tau>_convert)
-  ultimately show ?case using Since
-    apply (intro wf_mformula.Since)
-              apply (simp_all add: wf_since_aux_def sat_since_point_def mr
-        progress_convert_cong[of \<sigma> V \<sigma>' V'] split del: if_split cong: if_cong) (* SLOW 20s *)
-    apply (smt (z3)) by blast
+  note conv = Since.prems
+  have tau: "\<tau> \<sigma> = \<tau> \<sigma>'"
+    by (metis conv \<tau>_convert)
+  have buf': "wf_mbuf2S \<sigma>' P V' j n R \<phi>' I \<psi>' buf (min (progress \<sigma>' P \<phi>' j) (progress \<sigma>' P \<psi>' j))
+    (progress \<sigma>' P (Formula.Since \<phi>'' I \<psi>') j)"
+  proof -
+    obtain buf\<phi> buf\<psi> ts skew where buf_eq: "buf = (buf\<phi>, buf\<psi>, ts, skew)"
+      by (cases buf)
+    show ?thesis
+      using Since.hyps(12)
+      unfolding buf_eq wf_mbuf2S.simps tau progress_convert_cong[OF conv] sat_convert_cong[OF conv] .
+  qed
+  have aux': "wf_since_aux \<sigma>' V' R args \<phi>' \<psi>' aux (min (progress \<sigma>' P \<phi>' j) (progress \<sigma>' P \<psi>' j))
+    (progress \<sigma>' P (Formula.Since \<phi>'' I \<psi>') j)"
+    using Since.hyps(13)
+    unfolding wf_since_aux_def sat_since_point_def tau progress_convert_cong[OF conv]
+      sat_convert_cong[OF conv] .
+  show ?case
+    using Since.IH[OF conv] Since.hyps(3-11) buf' aux' by (rule wf_mformula.Since)
 next
   case (Until P V n R \<phi> \<phi>' \<psi> \<psi>' args \<phi>'' I R' buf nts t aux)
   then have mr: "mem_restr (lift_envs' (length (agg_tys args)) R') = mem_restr R" by auto

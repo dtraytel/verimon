@@ -1218,16 +1218,28 @@ next
   qed
 next
   case (Or \<phi> \<psi>)
-  then show ?case
-    apply (simp add: min_le_iff_disj del: fun_upd_apply split: if_splits)
-     apply (smt (z3) le_antisym le_cases min_def not_less_eq_eq)
-    by (smt (z3) min_def sup.absorb_iff2 sup.commute)
+  let ?y\<phi> = "if safe_letpast p \<phi> = NonFutuRec then x else min (Suc x) j"
+  let ?y\<psi> = "if safe_letpast p \<psi> = NonFutuRec then x else min (Suc x) j"
+  have "min ?y\<phi> (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    using Or.IH(1)[of p P x] Or.prems by (simp del: fun_upd_apply)
+  moreover have "min ?y\<psi> (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
+    using Or.IH(2)[of p P x] Or.prems by (simp del: fun_upd_apply)
+  moreover have "y \<le> ?y\<phi>" and "y \<le> ?y\<psi>"
+    using Or.prems(1,3,4) by (simp_all add: sup_eq_NonFutuRec_iff)
+  ultimately show ?case
+    unfolding progress.simps by linarith
 next
   case (And \<phi> \<psi>)
-  then show ?case
-    apply (simp add: min_le_iff_disj del: fun_upd_apply split: if_splits)
-     apply (smt (z3) le_antisym le_cases min_def not_less_eq_eq)
-    by (smt (z3) min_def sup.absorb_iff2 sup.commute)
+  let ?y\<phi> = "if safe_letpast p \<phi> = NonFutuRec then x else min (Suc x) j"
+  let ?y\<psi> = "if safe_letpast p \<psi> = NonFutuRec then x else min (Suc x) j"
+  have "min ?y\<phi> (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    using And.IH(1)[of p P x] And.prems by (simp del: fun_upd_apply)
+  moreover have "min ?y\<psi> (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
+    using And.IH(2)[of p P x] And.prems by (simp del: fun_upd_apply)
+  moreover have "y \<le> ?y\<phi>" and "y \<le> ?y\<psi>"
+    using And.prems(1,3,4) by (simp_all add: sup_eq_NonFutuRec_iff)
+  ultimately show ?case
+    unfolding progress.simps by linarith
 next
   case (Ands l)
   {
@@ -1249,11 +1261,20 @@ next
   then show ?case by (simp del: fun_upd_apply)
 next
   case (Prev I \<phi>)
-  show ?case
-    using Prev.IH[of p P x] Prev.prems
-    apply (simp add: mult_le_NonFutuRec_iff mult_eq_NonFutuRec_iff del: fun_upd_apply)
-    by (smt (z3) Suc_le_mono le_SucI min.cobounded1 min.coboundedI2 min_def 
-        not_contains_pred_progress safe_letpast_Unused)
+  let ?y\<phi> = "if safe_letpast p \<phi> = NonFutuRec then x else min (Suc x) j"
+  have progress_Prev:
+    "progress \<sigma> P' (Formula.Prev I \<phi>) j = min (Suc (progress \<sigma> P' \<phi> j)) j" for P'
+    by simp
+  have "safe_letpast p \<phi> \<le> NonFutuRec"
+    using Prev.prems(1) by (cases "safe_letpast p \<phi>") simp_all
+  then have "min ?y\<phi> (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    using Prev.IH[of p P x] Prev.prems(2,3) by (simp del: fun_upd_apply)
+  moreover have "x \<le> ?y\<phi>"
+    using Prev.prems(3) by simp
+  moreover have "y = min (Suc x) j"
+    using Prev.prems(4) by (simp add: mult_eq_NonFutuRec_iff)
+  ultimately show ?case
+    unfolding progress_Prev by linarith
 next
   case (Next I \<phi>)
   then show ?case
@@ -1426,8 +1447,19 @@ lemma letpast_progress_ge:
   assumes safe: "safe_letpast p \<phi> \<le> PastRec"
     and ge_\<phi>: "\<exists>P j. dom P = S \<and> range_mapping x j P \<and> x \<le> progress \<sigma> P \<phi> j"
   shows "\<exists>P j. dom P = S \<and> range_mapping x j P \<and> x \<le> letpast_progress \<sigma> P p \<phi> j"
-  by (smt (z3) assms(1) ge_\<phi> letpast_progress_PastRec min.coboundedI2 
-      min_def pred_mapping_mono_strong progress_le_gen)
+proof -
+  from ge_\<phi> obtain P j where P: "dom P = S" "range_mapping x j P"
+    and x: "x \<le> progress \<sigma> P \<phi> j"
+    by blast
+  from P(2) have Pj: "pred_mapping (\<lambda>x. x \<le> j) P"
+    by (simp add: pred_mapping_alt)
+  from x have "x \<le> min (progress \<sigma> P \<phi> j) j"
+    by (simp add: min_absorb1 progress_le_gen[OF Pj])
+  also have "\<dots> \<le> letpast_progress \<sigma> P p \<phi> j"
+    by (rule letpast_progress_PastRec[OF safe Pj])
+  finally show ?thesis
+    using P by blast
+qed
 
 lemma pred_mapping_max_mapping:
   "pred_mapping (\<lambda>x. x\<le>j1) P1 \<Longrightarrow> pred_mapping (\<lambda>x. x\<le>j2) P2 
@@ -1682,8 +1714,19 @@ next
            apply (metis (no_types, lifting) domD insert_absorb max.coboundedI2 
           max.commute option.sel pred_mapping_alt pred_mapping_map_upd)
           apply simp
-         apply (smt (z3) domD fun_upd_triv insert_absorb 
-          max_mapping_cobounded1 nle_le rel_mapping_map_upd subsetI)
+         subgoal premises prems
+         proof -
+           from prems(2) have "?pn \<in> dom P1"
+             by simp
+           then obtain v where v: "P1 ?pn = Some v"
+             by (blast dest: domD)
+           from prems(2,5) have "rel_mapping (\<le>) P1 (max_mapping P1 P2)"
+             by (intro max_mapping_cobounded1) simp
+           then have "rel_mapping (\<le>) (P1(?pn \<mapsto> v)) ((max_mapping P1 P2)(?pn \<mapsto> v))"
+             by (rule rel_mapping_map_upd[of "(\<le>)", OF order_refl])
+           with v show ?thesis
+             by (simp add: map_upd_triv)
+         qed
         apply (simp add: letpast_progress_le max.coboundedI1 pred_mapping_mono_strong)
        apply (intro letpast_progress_le)
       apply force
@@ -2404,16 +2447,17 @@ next
   case (Trigger \<phi> I \<psi>)
   then have "i < plen \<pi>"
     by (auto elim!: order.strict_trans2[OF _ progress_le_gen])
-  with Trigger.prems \<tau>_prefix_conv[OF assms(1,2)] 
+  have \<tau>_eq: "\<tau> \<sigma> k = \<tau> \<sigma>' k" if "k \<le> i" for k
+    using that \<open>i < plen \<pi>\<close> by (simp add: \<tau>_prefix_conv[OF assms(1,2)])
+  from Trigger.prems(1)
+  have i_less: "i < progress \<sigma> P \<phi> (plen \<pi>)" "i < progress \<sigma> P \<psi> (plen \<pi>)"
+    by simp_all
+  have sat_\<phi>: "Formula.sat \<sigma> V v k \<phi> \<longleftrightarrow> Formula.sat \<sigma>' V' v k \<phi>" if "k \<le> i" for k
+    using le_less_trans[OF that i_less(1)] by (rule Trigger.IH(1)[OF _ Trigger.prems(2-5)])
+  have sat_\<psi>: "Formula.sat \<sigma> V v k \<psi> \<longleftrightarrow> Formula.sat \<sigma>' V' v k \<psi>" if "k \<le> i" for k
+    using le_less_trans[OF that i_less(2)] by (rule Trigger.IH(2)[OF _ Trigger.prems(2-5)])
   show ?case
-    unfolding sat.simps
-    thm conj_cong ex_cong iff_allI Trigger.IH[where P=P]
-    apply (intro conj_cong ex_cong iff_allI Trigger.IH[where P=P])
-    apply (auto split: if_splits)
-           apply (smt (verit) Trigger.IH(2) diff_diff_cancel less_imp_diff_less)
-    apply (smt (verit) Trigger.IH(1) diff_diff_cancel greaterThanAtMost_iff less_imp_diff_less)
-    apply (smt (verit, best) Trigger.IH(2) diff_diff_cancel less_imp_diff_less)
-    by (smt (verit) Trigger.IH(1) diff_diff_cancel greaterThanAtMost_iff less_imp_diff_less)
+    unfolding sat.simps by (simp add: \<tau>_eq sat_\<phi> sat_\<psi>)
 next
   case (Release \<phi> I \<psi>)
 

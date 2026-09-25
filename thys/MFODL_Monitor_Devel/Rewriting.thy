@@ -344,16 +344,16 @@ lemma sat_project: "\<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> project \<p
 proof (induct \<phi> arbitrary: \<sigma> V v i)
 next
   case (MatchP I r)
-  then show ?case 
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchP)
+  then show ?case
+    by simp
 next
   case (MatchF I r)
+  have "Regex.match (Formula.sat \<sigma> V v) (regex.map_regex project r) = Regex.match (sat \<sigma> V v) r"
+    unfolding match_map_regex by (rule match_cong[OF refl]) (simp add: MatchF)
   then show ?case
-    apply (induct r; clarsimp)
-    by blast
-      (smt (verit) match_cong match_map_regex)+
+    by simp
 qed (auto simp: fv_project nfv_project 
     simp del: fun_upd_apply 
     split: nat.splits)
@@ -975,6 +975,32 @@ lemma my_size_frz_atom[simp]: "my_size (frz_atom q n) = 1"
 definition frz_ok :: "'a formula \<Rightarrow> bool" where
   "frz_ok \<alpha> = ({0..<nfv \<alpha>} \<subseteq> fvi 0 \<alpha>)"
 
+text \<open> The sequential patterns of @{text rewrite} below expand to more than 150 equations,
+whose pairwise compatibility yields more than 10000 proof obligations. Methods like
+@{method simp_all} or @{method auto} integrate the solution of each subgoal separately into the
+proof state, which each time costs time proportional to the size of the entire proof state, and
+thus take minutes for that many subgoals. The following variant of @{method simp_all} proves
+each subgoal as a separate theorem and discharges all of them at once. It fails unless it
+solves all subgoals. \<close>
+
+method_setup simp_all_separately = \<open>
+  Method.sections Simplifier.simp_modifiers' >> K (fn ctxt => SIMPLE_METHOD (fn st =>
+    let
+      val goals = map (Thm.adjust_maxidx_cterm ~1) (Drule.strip_imp_prems (Thm.cprop_of st));
+      fun solve g =
+        (case Seq.pull (asm_full_simp_tac ctxt 1 (Goal.init g)) of
+          SOME (st', _) => if Thm.no_prems st' then SOME (Goal.conclude st') else NONE
+        | NONE => NONE);
+      val thms =
+        if forall (fn g => Thm.maxidx_of_cterm g = ~1) goals then Par_List.map solve goals
+        else [NONE];
+    in
+      if forall is_some thms
+      then Seq.single (fold (fn th => fn st => Thm.implies_elim st (the th)) thms st)
+      else Seq.empty
+    end))
+\<close> "simplify each subgoal separately; must solve all subgoals"
+
 (* The function is inspired from "Section 5.3.4:
 Propagation of Range Restrictions" of Samuel Mueller's
 ETH PhD-thesis: Theory and applications of runtime
@@ -1117,10 +1143,17 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 | "rewrite (Ands \<phi>s) t = Ands (map (\<lambda>r. rewrite r Same) \<phi>s)"
 
 | "rewrite f t =  f"
-  by pat_completeness auto
+  by pat_completeness
+    (simp_all_separately only: prod.inject formula.inject formula.distinct argpos.distinct simp_thms)
 
 (* 
-(* TODO: Replace function above with the faster-loading version below *)
+(* The following case-based variant of the function above has much fewer equations and
+   therefore loads faster. However, it is outdated: its temporal cases do not use the freeze
+   operator and thus do not match the current definition. Since the compatibility proof above
+   has been sped up using simp_all_separately, the main loading time issue of the function is
+   fixed. Switching to a case-based definition would still reduce the time spent on the
+   function command and its proof, but would change rewrite.simps and rewrite.induct, on which
+   later proofs rely. *)
 function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 'a formula"
   where "rewrite (And \<alpha> \<zeta>) t = (case \<zeta> of
       (Or \<beta> \<gamma>) \<Rightarrow> (if prop_cond \<alpha> \<beta> \<or> prop_cond \<alpha> \<gamma>
@@ -1529,12 +1562,16 @@ lemma rsub_1: "f_conr P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i \<alpha
 proof -
   assume A: "f_conr P" "(\<And>v i. sat \<sigma> V v i \<alpha> = sat \<sigma> V v i \<beta>)"
   then obtain P2 where P2: "trans P P2" using trans3[OF A(1)] by auto
-  moreover have L1: "f_con P2" using trans1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
+  have L1: "f_con P2" using trans1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project \<alpha>) = Formula.sat \<sigma> V v i (project \<beta>))" 
     using A(2) sat_project by simp
-  ultimately show ?thesis
-    using Rewriting.trans2 sub_1
-    by (smt (verit, ccfv_SIG) sat_project)
+  have "sat \<sigma> V v i (P \<alpha>) = Formula.sat \<sigma> V v i (P2 (project \<alpha>))"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project \<beta>))"
+    by (rule sub_1[OF L1 L2])
+  also have "\<dots> = sat \<sigma> V v i (P \<beta>)"
+    by (simp add: sat_project flip: Rewriting.trans2[OF P2])
+  finally show ?thesis .
 qed
 
 
@@ -1582,16 +1619,20 @@ lemma trans2_3: "f_conr2 P \<Longrightarrow> \<exists>P'. trans2 P P'"
 lemma rsub_2: "f_conr2 P \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1) \<Longrightarrow> (\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2) \<Longrightarrow> sat \<sigma> V v i (P a1 a2) = sat \<sigma> V v i (P b1 b2)"
 proof -
   assume A: "f_conr2 P" "(\<And>v i. sat \<sigma> V v i a1 = sat \<sigma> V v i b1)" "(\<And>v i. sat \<sigma> V v i a2 = sat \<sigma> V v i b2)"
-  then obtain P2 where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
-  moreover have L1: "f_con2 P2" using trans2_1[OF P2] by auto
-  moreover have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
+  then obtain P2 :: "ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> ty Formula.formula"
+    where P2: "trans2 P P2" using trans2_3[OF A(1)] by auto
+  have L1: "f_con2 P2" using trans2_1[OF P2] by auto
+  have L2:"(\<And>v i. Formula.sat \<sigma> V v i (project a1) = Formula.sat \<sigma> V v i (project b1))"
     using A(2) by (simp add: sat_project)
-  moreover have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
+  have L3:"(\<And>v i. Formula.sat \<sigma> V v i (project a2) = Formula.sat \<sigma> V v i (project b2))" 
     using A(3) by (simp add: sat_project)
-  ultimately show ?thesis
-    using Rewriting.trans2_2 sub_2
-    by (smt (verit, ccfv_SIG) Rewriting.trans2_1 sat_project
-        \<open>\<And>thesis. (\<And>P2. trans2 P P2 \<Longrightarrow> thesis) \<Longrightarrow> thesis\<close>) 
+  have "sat \<sigma> V v i (P a1 a2) = Formula.sat \<sigma> V v i (P2 (project a1) (project a2))"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  also have "\<dots> = Formula.sat \<sigma> V v i (P2 (project b1) (project b2))"
+    by (rule sub_2[OF L1 L2 L3])
+  also have "\<dots> = sat \<sigma> V v i (P b1 b2)"
+    by (simp add: sat_project flip: Rewriting.trans2_2[OF P2])
+  finally show ?thesis .
 qed
 
 
@@ -1686,12 +1727,12 @@ proof(induction r t arbitrary: V v i rule: rewrite.induct)
     using sat_main_1 by simp
 next
   case (2 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    by (auto simp: Let_def frz_name_fresh)
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (3 \<alpha> \<beta> I \<gamma> t)
-  then show ?case 
-    by (auto simp: Let_def frz_name_fresh)
+  then show ?case
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (4 \<alpha> t \<beta>)
   then show ?case
@@ -1714,11 +1755,11 @@ next
 next
   case (6 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def frz_name_fresh)
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (7 \<alpha> \<beta> I \<gamma> t)
   then show ?case
-    by (auto simp: Let_def frz_name_fresh)
+    by (simp add: Let_def frz_name_fresh ball_conj_distrib cong: conj_cong)
 next
   case (8 \<alpha> I \<beta> t)
   then show ?case
