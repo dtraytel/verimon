@@ -253,7 +253,7 @@ function (sequential) dof ::
 | "dof n cs (mformula.MTS mt) =
      (if cs = mtrm_dcols mt then DTS mt
       else DFail)"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: prod.inject mformula.inject mformula.distinct simp_thms)
 
 termination dof
   by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
@@ -2491,7 +2491,8 @@ next
             (simp add: table_def empty_table_def)
       qed
     qed
-  qed  show ?case
+  qed
+  show ?case
   proof (cases \<chi>)
     case (Since \<chi>1 J \<chi>2) show ?thesis by (rule E[of \<chi>1 J \<chi>2]) (use Since in blast)
   next
