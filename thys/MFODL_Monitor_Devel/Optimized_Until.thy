@@ -327,12 +327,16 @@ proof -
   have tp_len_assoc: "tp - len + 1 = tp - (len - 1)"
     using len_pos len_tp by auto
   have a2_map''_keys: "Mapping.keys a2_map'' = {tp - (len - 1)..tp}"
-    unfolding a2_map''_def a2_map'_def Mapping.keys_delete Mapping_update_keys a2_map_keys
-    using tp_len_assoc apply(auto split:if_splits) 
-      apply (metis a2_map_keys atLeastAtMost_iff le_antisym le_eq_less_or_eq less_Suc_eq_le)
-      apply (metis One_nat_def Suc_diff_eq_diff_pred a2_map_keys atLeastAtMost_iff le_antisym len_pos not_less_eq_eq)
-    using a2_map_keys atLeastAtMost_iff apply blast
-    by (metis Suc_le_mono a2_map_keys atLeastAtMost_iff le_SucI)
+  proof -
+    have "tp \<in> {tp - len..tp}" "tp - len + 1 \<in> {tp - len..tp}"
+      using len_pos len_tp by auto
+    then have "Mapping.keys a2_map' = {tp - len..tp}"
+      unfolding a2_map'_def by (simp add: Mapping_update_keys a2_map_keys insert_absorb)
+    moreover have "{tp - len..tp} - {tp - len} = {tp - len + 1..tp}"
+      by auto
+    ultimately show ?thesis
+      unfolding a2_map''_def Mapping.keys_delete tp_len_assoc by simp
+  qed
   have lin_tss_Cons: "linearize tss = ts # linearize (tl_queue tss')"
     using lin_tss_not_Nil
     by (auto simp add: tl_queue_rep lin_tss' ts_hd)
