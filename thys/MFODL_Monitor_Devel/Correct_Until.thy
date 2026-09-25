@@ -756,11 +756,18 @@ proof -
       [Progress.progress \<sigma> P (formula.Until \<phi>''' I \<psi>'') j..<
        Progress.progress \<sigma> P' (formula.Until \<phi>''' I \<psi>'') (j + \<delta>)] zs"
     unfolding zs_def list_all2_map2
-    apply (rule list_all2_mono)
-    apply (rule qtable_eval_args_agg[of _ _ R])
-      apply (auto simp: mr args_n fv valid_aggargs)
-
-    done
+  proof (rule list_all2_mono)
+    fix i X
+    assume "qtable n (fv \<psi>'') (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i (Untilp pos \<phi>'' I \<psi>'')) X"
+    then have "qtable (args_n args) (fv (Untilp pos \<phi>'' I \<psi>'')) (mem_restr R)
+      (\<lambda>v. Formula.sat \<sigma> V (map the v) i (Untilp pos \<phi>'' I \<psi>'')) X"
+      by (simp add: args_n fv)
+    moreover have "valid_aggargs (args_n args) (fv (Untilp pos \<phi>'' I \<psi>'')) (args_agg args)"
+      using valid_aggargs by (simp add: args_n fv)
+    ultimately show "qtable (agg_n args) (fv (packagg args (Untilp pos \<phi>'' I \<psi>''))) (mem_restr R')
+      (\<lambda>v. Formula.sat \<sigma> V (map the v) i (packagg args (Untilp pos \<phi>'' I \<psi>''))) (eval_args_agg args X)"
+      by (rule qtable_eval_args_agg[OF _ mr])
+  qed
   have "progress \<sigma> P (formula.Until \<phi>''' I \<psi>'') j + length auxlist' =
       progress \<sigma> P' (formula.Until \<phi>''' I \<psi>'') (j + \<delta>) + length auxlist''"
     using wf_aux'' valid_aux'' length_aux'_aux''
