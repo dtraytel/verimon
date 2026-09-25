@@ -1122,18 +1122,65 @@ qed
 lemma safe_regex_Past_finite: "Regex.safe_regex fv rgx_safe_pred Past Strict r \<Longrightarrow>
   (\<And>i \<phi>. \<phi> \<in> safe_atms r \<Longrightarrow> finite {v. wf_tuple n (fv \<phi>) v \<and> test v i \<phi>}) \<Longrightarrow>
   finite {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>i. Regex.match (test v) r j i)}"
-  apply (induct Past Strict r arbitrary: i rule: safe_regex.induct)
-      apply (auto simp flip: in_unit_table simp add: unit_table_def
-        conj_disj_distribL ex_disj_distrib relcompp_apply Un_absorb2)
-  subgoal for r s i
-  apply (rule finite_subset[rotated])
-     apply (rule finite_UN_I[where B="\<lambda>i. {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>i. Regex.match (test v) r j i)}"])
-      apply (rule finite_atLeastAtMost[of 0 i])
-     apply assumption
-    apply (auto simp: Bex_def)
-    apply (meson match_le)
-    done
-  done
+proof (induct Past Strict r arbitrary: i rule: safe_regex_induct)
+  case (Skip k)
+  have "{v. wf_tuple n (fv_regex (Regex.Skip k)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Skip k) j i)}
+    \<subseteq> unit_table n"
+    by (auto simp flip: in_unit_table)
+  then show ?case
+    by (rule finite_subset) (simp add: unit_table_def)
+next
+  case (Test \<phi>)
+  then have "\<phi> \<in> safe_atms (Regex.Test \<phi>)"
+    by simp
+  moreover have "{v. wf_tuple n (fv_regex (Regex.Test \<phi>)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Test \<phi>) j i)}
+    = {v. wf_tuple n (fv \<phi>) v \<and> test v i \<phi>}"
+    by auto
+  ultimately show ?case
+    using Test(2) by simp
+next
+  case (Plus r s)
+  have "finite {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>i. Regex.match (test v) r j i)}"
+    by (rule Plus.hyps(1)) (use Plus.prems in auto)
+  moreover have "finite {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<le>i. Regex.match (test v) s j i)}"
+    by (rule Plus.hyps(2)) (use Plus.prems in auto)
+  moreover have "{v. wf_tuple n (fv_regex (Regex.Plus r s)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Plus r s) j i)}
+    \<subseteq> {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>i. Regex.match (test v) r j i)}
+      \<union> {v. wf_tuple n (fv_regex s) v \<and> (\<exists>j\<le>i. Regex.match (test v) s j i)}"
+    using Plus.prems(1) by auto
+  ultimately show ?case
+    by (simp add: finite_subset)
+next
+  case (TimesP r s)
+  have fv: "fv_regex (Regex.Times r s) = fv_regex r"
+    using TimesP.prems(1) by auto
+  have r: "finite {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>k. Regex.match (test v) r j k)}" for k
+    by (rule TimesP.hyps) (use TimesP.prems in auto)
+  have "{v. wf_tuple n (fv_regex (Regex.Times r s)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Times r s) j i)}
+    \<subseteq> (\<Union>k\<in>{0..i}. {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>k. Regex.match (test v) r j k)})"
+  proof
+    fix v
+    assume "v \<in> {v. wf_tuple n (fv_regex (Regex.Times r s)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Times r s) j i)}"
+    then obtain j k where "wf_tuple n (fv_regex r) v" "j \<le> i"
+      "Regex.match (test v) r j k" "Regex.match (test v) s k i"
+      unfolding fv by auto
+    moreover from \<open>Regex.match (test v) s k i\<close> have "k \<le> i"
+      by (rule match_le)
+    ultimately show "v \<in> (\<Union>k\<in>{0..i}. {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>k. Regex.match (test v) r j k)})"
+      using match_le by fastforce
+  qed
+  moreover have "finite (\<Union>k\<in>{0..i}. {v. wf_tuple n (fv_regex r) v \<and> (\<exists>j\<le>k. Regex.match (test v) r j k)})"
+    using r by simp
+  ultimately show ?case
+    by (rule finite_subset)
+next
+  case (Star r)
+  then have "{v. wf_tuple n (fv_regex (Regex.Star r)) v \<and> (\<exists>j\<le>i. Regex.match (test v) (Regex.Star r) j i)}
+    \<subseteq> unit_table n"
+    by (auto simp flip: in_unit_table)
+  then show ?case
+    by (rule finite_subset) (simp add: unit_table_def)
+qed
 
 lemma safe_regex_Future_finite: "Regex.safe_regex fv rgx_safe_pred Futu Strict r \<Longrightarrow>
   (\<And>i \<phi>. \<phi> \<in> safe_atms r \<Longrightarrow> finite {v. wf_tuple n (fv \<phi>) v \<and> test v i \<phi>}) \<Longrightarrow>
