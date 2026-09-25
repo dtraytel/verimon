@@ -1513,9 +1513,27 @@ lemma RBT_set_sset:
   fixes xs :: "('a :: ccompare) sdlist"
   shows "RBT_set (sset xs) = set (Rep_sdlist xs)"
   unfolding RBT_set_def
-  apply transfer
-  using rbt_comp_lookup_iff_in_set
-  by (fastforce simp: rbtreeify_def split: option.splits)
+proof transfer
+  fix xs :: "'a list"
+  assume inv: "case ID CCOMPARE('a) of None \<Rightarrow> xs = []
+    | Some c \<Rightarrow> linorder.sorted cless_eq xs \<and> distinct xs"
+  show "(Collect \<circ> (\<lambda>t x. x \<in> dom (rbt_comp_lookup ccomp t)))
+    (rbtreeify (map (\<lambda>x. (x, ())) xs)) = set xs"
+  proof (cases "ID CCOMPARE('a)")
+    case None
+    from None inv show ?thesis
+      by (simp add: rbtreeify_def dom_def)
+  next
+    case (Some c)
+    from Some inv have sorted: "linorder.sorted cless_eq xs" and distinct: "distinct xs"
+      by simp_all
+    have "rbt_comp_lookup ccomp (rbtreeify (map (\<lambda>x. (x, ())) xs)) x = Some () \<longleftrightarrow> x \<in> set xs"
+      for x
+      using rbt_comp_lookup_iff_in_set[OF Some sorted distinct] .
+    then show ?thesis
+      by (auto simp: dom_def)
+  qed
+qed
 
 lemma set_code:
   fixes xs :: "('a :: ccompare) list"
