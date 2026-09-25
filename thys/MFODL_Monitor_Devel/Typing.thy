@@ -1580,10 +1580,15 @@ next
     from this have M: "{(x, ecard Zs) | 
   x Zs. Zs = {zs. length zs = length tys \<and> sat' \<sigma> V (zs @ v) i \<phi> \<and> eval_trm' (zs @ v) f = x} \<and> Zs \<noteq> {}} \<noteq> {}" using Agg.prems(3) by auto
     from this obtain zs where sat: "sat' \<sigma> V (zs @ v) i \<phi> \<and> length zs = length tys" by auto
+    from Agg.prems(1) have wty_\<phi>: "S, agg_env E tys \<turnstile> \<phi>" by cases
+    from asm have fv_x: "x + length tys \<in> fv \<phi>" by (rule fvi_iff_fv[THEN iffD1])
     have "ty_of ((zs@v) ! (x + length tys)) = agg_env E tys (x + length tys)"
-      apply (rule Agg.IH[of \<phi> S "agg_env E tys" V "zs @ v" i "x+ length tys"]) using Agg.prems(1) Agg(4) sat asm Agg.prems(1-2) fvi_iff_fv
-      by (auto elim: wty_formula.cases)
-    from this have ?case apply (auto simp add: agg_env_def) by (metis add.commute nth_append_length_plus sat)
+      by (rule Agg.IH[OF order.refl Agg(4) wty_\<phi> Agg.prems(2) conjunct1[OF sat] fv_x])
+    moreover have "(zs @ v) ! (x + length tys) = v ! x"
+      using sat by (simp add: nth_append)
+    moreover have "agg_env E tys (x + length tys) = E x"
+      by (simp add: agg_env_def)
+    ultimately have ?case by simp
   } 
   moreover {
     assume "x \<notin> Formula.fvi (length tys) \<phi>"
@@ -1591,8 +1596,9 @@ next
     obtain d agg_type where omega_def: "\<omega> = (agg_type, d)" using surjective_pairing by blast
     from Agg.prems(1) this have  "\<exists>t .E y = t_res agg_type t" by cases auto
     from this eq obtain t where t_def: "E x = t_res agg_type t" by blast
-    from  Agg.prems(1) have
- ty_of_d: "d = t_res agg_type t" apply cases using eq omega_def t_def by auto
+    from Agg.prems(1) have "d = E y"
+      unfolding omega_def by cases simp
+    with eq t_def have ty_of_d: "d = t_res agg_type t" by simp
     from Agg.prems(3) eq obtain M where  M_def: "M = {(x, ecard Zs) | x Zs. Zs = {zs. length zs = length tys \<and> sat' \<sigma> V (zs @ v) i \<phi>
         \<and> eval_trm' (zs @ v) f = x} \<and> Zs \<noteq> {}}"  "v!x = eval_agg_op' \<omega> M" by auto
    
@@ -1614,7 +1620,10 @@ next
       proof -
           assume z_def: "z=a \<or> z \<in> set list"
         from z_def obtain zs where zs_def: " length zs = length tys \<and> sat' \<sigma> V (zs @ v) i \<phi> \<and> eval_trm' (zs @ v) f = z" using alist_def evaltrm M_def by auto
-        from Agg.prems(1) have wty_f: " agg_env E tys  \<turnstile> f :: t" apply cases  using omega_def t_def minmaxsum eq  by auto  
+        from Agg.prems(1) obtain t' where "agg_env E tys \<turnstile> f :: t'" "E y = t_res agg_type t'"
+          unfolding omega_def by cases
+        moreover from minmaxsum have "t_res agg_type t' = t'" "t_res agg_type t = t" by auto
+        ultimately have wty_f: "agg_env E tys \<turnstile> f :: t" using eq t_def by simp
         have fv_ty:"\<forall>y\<in>fv_trm f. ty_of ((zs @ v) ! y) = agg_env E tys y"
         proof 
           fix y
@@ -1637,29 +1646,40 @@ next
             then show ?case using zs_def by auto
           next
             case (Cons aa tail)
-             have minmax: " ty_of (foldl foldfun (foldfun a aa) tail) = ty_of (eval_trm' (zs @ v) f)"
-              using Cons.IH[of _ "foldfun a aa"] Cons apply auto 
-               apply (metis min_def) by (metis max_def) 
-              then show ?case by auto
+            \<comment> \<open>@{term "foldfun a aa"} is @{term a} or @{term aa}, which both have type @{term t}\<close>
+            from Cons.prems have "foldfun a aa = a \<or> foldfun a aa = aa"
+              by (auto simp: min_def max_def)
+            with Cons.prems have "ty_of (foldfun a aa) = t \<and> (\<forall>z \<in> set tail. ty_of z = t)"
+              by auto
+            with Cons.prems have minmax: "ty_of (foldl foldfun (foldfun a aa) tail) = ty_of (eval_trm' (zs @ v) f)"
+              by (intro Cons.IH) auto
+            then show ?case by simp
             qed
 
           from indass have foldl_evaltrm_Sum: 
               "t \<in> numeric_ty \<Longrightarrow> ty_of (foldl undef_plus a list) = ty_of (eval_trm' (zs@v) f)" 
               proof (induction list arbitrary: a)
                   case (Cons aa tail)
-                  from this have "ty_of (undef_plus a aa) = t"  apply (cases aa)  apply ( auto simp add: numeric_ty_def ty_of_plus)
-                     apply (cases a) apply (auto simp add: undef_plus_sound)
-                    by (cases a)(auto simp add: undef_plus_sound)
-
-                  then show ?case using Cons.prems(1) Cons.IH[of "undef_plus a aa"] apply auto 
-                    by (metis Cons.prems(2) list.set_intros(2))
+                  from Cons.prems have ty: "ty_of a = t" "ty_of aa = t" and num: "t \<in> numeric_ty"
+                    by auto
+                  \<comment> \<open>both summands are integers or both are floats\<close>
+                  from ty num consider (int) x y where "a = EInt x" "aa = EInt y"
+                    | (float) x y where "a = EFloat x" "aa = EFloat y"
+                    by (cases a; cases aa) (auto simp: numeric_ty_def)
+                  then have "ty_of (undef_plus a aa) = t"
+                    using ty num by cases (simp_all add: undef_plus_sound ty_of_plus)
+                  with Cons.prems have "ty_of (foldl undef_plus (undef_plus a aa) tail) = ty_of (eval_trm' (zs@v) f)"
+                    by (intro Cons.IH) auto
+                  then show ?case by simp
                 qed (auto simp add: zs_def)
 
  from indass have foldl_evaltrm_Min: 
               " ty_of (foldl undef_min a list) = t" 
               proof (induction list arbitrary: a)
                   case (Cons aa tail)
-            from this have "ty_of (undef_min a aa) = t"  apply (cases aa) by ( auto simp add: numeric_ty_def undef_min_def undef_less_eq_sound)
+                  \<comment> \<open>the minimum is one of the two arguments\<close>
+                  from Cons.prems have "ty_of (undef_min a aa) = t"
+                    by (simp add: undef_min_def)
                   then show ?case using Cons.prems(1) Cons.IH[of "undef_min a aa"] by auto 
                 qed auto
 
@@ -1667,7 +1687,9 @@ next
               " ty_of (foldl undef_max a list) = t" 
               proof (induction list arbitrary: a)
                   case (Cons aa tail)
-            from this have "ty_of (undef_max a aa) = t"  apply (cases aa) by ( auto simp add: numeric_ty_def undef_max_def undef_less_eq_sound)
+                  \<comment> \<open>the maximum is one of the two arguments\<close>
+                  from Cons.prems have "ty_of (undef_max a aa) = t"
+                    by (simp add: undef_max_def)
                   then show ?case using Cons.prems(1) Cons.IH[of "undef_max a aa"] by auto 
               qed auto
            from Agg.prems(1) t_def eq omega_def have num_ty: "agg_type = agg_type.Agg_Sum \<Longrightarrow> t \<in> numeric_ty" by cases auto
