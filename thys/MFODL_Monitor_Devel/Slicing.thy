@@ -1380,34 +1380,49 @@ next
 next
   case (Agg y \<omega> tys f \<phi>)
   have 1: "Formula.nfv \<phi> \<le> length tys + length v"
-    using Agg.prems(3)
-    apply (auto simp add: Formula.nfv_def)
-    subgoal for x
-      apply (cases "x \<le> length tys")
-       apply simp
-      apply (drule bspec[where x="x - length tys"], rule UnI1)
-       apply (metis fvi_iff_fv le_add_diff_inverse2 nat_le_linear)
-      by linarith
-    done
+  proof -
+    have "z < length tys + length v" if "z \<in> Formula.fv \<phi>" for z
+    proof (cases "z < length tys")
+      case False
+      then have "z - length tys + length tys = z"
+        by simp
+      with that have "z - length tys \<in> Formula.fvi (length tys) \<phi>"
+        by (simp only: fvi_iff_fv[of "z - length tys" "length tys" \<phi>])
+      then have "z - length tys \<in> Formula.fv (Formula.Agg y \<omega> tys f \<phi>)"
+        by simp
+      then have "z - length tys < length v"
+        using Agg.prems(3) by (rule less_le_trans[OF fvi_less_nfv[rule_format]])
+      with False show ?thesis by simp
+    qed simp
+    then show ?thesis
+      by (simp add: Formula.nfv_def Suc_le_eq)
+  qed
+  from Agg.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Agg y \<omega> tys f \<phi>)"
+    by simp
+  with Agg.prems(2) have fv: "x + length tys \<in> Formula.fv \<phi>"
+    and gen: "genvar \<phi> True (x + length tys) q n c k"
+    by (simp_all only: genvar.simps eqTrueI[OF sat] simp_thms)
   obtain zs where 2: "length zs = length tys" "Formula.sat \<sigma> V (zs @ v) i \<phi>"
-    "genvar \<phi> True (x + length tys) q n c k"
-    using Agg.prems(2)
-    apply (auto simp add: subset_iff)
-    subgoal for zs
-      apply (subgoal_tac "((\<forall>a x. length x = length tys \<longrightarrow>
-             Formula.sat \<sigma> V (x @ v) i \<phi> \<longrightarrow>
-             Formula.eval_trm (x @ v) f \<noteq> a) \<longrightarrow>
-             (\<forall>t. t \<in> fv \<phi> \<longrightarrow> t < length tys))")
+  proof -
+    from fv have "\<not> Formula.fv \<phi> \<subseteq> {0..<length tys}"
       by auto
-    done
+    with sat show thesis
+      by (auto simp: Let_def intro: that)
+  qed
   show ?case
-    apply (rule Agg.IH[rotated])
-      apply (subst 2)
-      apply (rule 2)
-     apply (simp add: 2)
-     apply (rule 1)
-    apply (rule Agg.prems(1))
-    using 2 by (simp_all add: nth_append)
+  proof (rule Agg.IH)
+    show "genvar \<phi> (Formula.sat \<sigma> V (zs @ v) i \<phi>) (x + length tys) q n c k"
+      using gen 2(2) by simp
+    show "Formula.nfv \<phi> \<le> length (zs @ v)"
+      using 1 2(1) by simp
+    fix as j
+    assume "as ! k = (zs @ v) ! (x + length tys)"
+    then have "as ! k = v ! x"
+      using 2(1) by (simp add: nth_append)
+    moreover assume "(q, n) \<in> dom V \<longrightarrow> the (V (q, n)) as j = c"
+      "(q, n) \<notin> dom V \<longrightarrow> (q, as) \<in> \<Gamma> \<sigma> j = c" "length as = n" "k < n"
+    ultimately show thesis by (intro Agg.prems(1))
+  qed
 next
   case (Prev I \<phi>)
   show ?case
