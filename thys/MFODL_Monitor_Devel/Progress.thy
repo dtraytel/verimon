@@ -1049,11 +1049,10 @@ next
             using r'_prop by simp
           finally show ?thesis .
         qed
-        have "?r \<le> ?r'"
-          apply (subst progress.simps, unfold Let_def)
-          apply (intro Least_le conjI r'_le)
-          apply (rule order_trans[OF _ old_le])
-          using True by auto
+        have "?r' \<le> j \<and> progress \<sigma> (P(?en \<mapsto> ?a ?r')) \<psi> j \<le> ?r'"
+          using r'_le old_le True by simp
+        then have "?r \<le> ?r'"
+          unfolding progress.simps(3)[of \<sigma> P] Let_def by (rule Least_le)
         with r'_lt_r show ?thesis by simp
       next
         case False
@@ -1236,32 +1235,34 @@ next
           fix fp
           assume fp: "fp \<in> {i. i \<le> j \<and> i = ?p\<phi>1 (P(p \<mapsto> x, ?en \<mapsto> i))}"
           then have fp_unfold: "fp = ?p\<phi>1 (P(p \<mapsto> x, ?en \<mapsto> fp))" by simp
-          then have "fp = ?p\<phi>1 (P(?en \<mapsto> fp, p \<mapsto> x))"
+          then have fp_twist: "fp = ?p\<phi>1 (P(?en \<mapsto> fp, p \<mapsto> x))"
             using False by (simp add: fun_upd_twist[of p])
-          moreover have "\<dots> \<ge> min y\<phi> (?p\<phi>1 (P(?en \<mapsto> fp)))"
+          moreover have IH_fp: "\<dots> \<ge> min y\<phi> (?p\<phi>1 (P(?en \<mapsto> fp)))"
             using NonFutuRec(2) LetPast.prems(2,3) fp
             by (intro LetPast.IH(1)) (simp_all add: y\<phi>_def del: fun_upd_apply)
           moreover have "?p\<phi>1 (P(?en \<mapsto> fp)) \<ge> ?p\<phi> P" if *: "?p\<phi>1 (P(?en \<mapsto> fp)) \<le> y\<phi>"
           proof -
+            have "?p\<phi>1 (P(?en \<mapsto> fp)) = min y\<phi> (?p\<phi>1 (P(?en \<mapsto> fp)))"
+              using * by simp
+            also have "\<dots> \<le> ?p\<phi>1 (P(?en \<mapsto> fp, p \<mapsto> x))"
+              by (rule IH_fp)
+            also have "\<dots> = fp"
+              by (rule fp_twist[symmetric])
+            finally have fp_ge: "?p\<phi>1 (P(?en \<mapsto> fp)) \<le> fp" .
             have "\<exists>fp'\<le>fp. fp' = ?p\<phi>1 (P(?en \<mapsto> fp'))"
-              apply (rule bounded_fixpoint_ex)
-               apply (intro mono_onI progress_mono_gen; simp)
-              using LetPast.prems(2) fp apply simp
-              using LetPast.prems(2) fp apply simp
-              apply (intro allI impI)
-              apply (subst fp_unfold)
-              apply (rule order_trans)
-               apply (rule progress_mono_gen[where P'="P(?en \<mapsto> fp)", OF order_refl])
-              using LetPast.prems(2) fp apply simp
-              using LetPast.prems(2) fp apply simp
-               apply simp
-              using False apply (simp only: fun_upd_twist[of p])
-              apply (rule order_trans[rotated])
-               apply (rule LetPast.IH(1)[OF _ _ _ y\<phi>_def])
-                 apply (rule NonFutuRec)
-              using LetPast.prems(2) fp apply (simp del: fun_upd_apply)
-              apply (rule LetPast.prems(3))
-              using * by (simp del: fun_upd_apply)
+            proof (rule bounded_fixpoint_ex)
+              show "mono_on {..fp} (\<lambda>i. ?p\<phi>1 (P(?en \<mapsto> i)))"
+                using LetPast.prems(2) fp by (intro mono_onI progress_mono_gen) simp_all
+              show "\<forall>i \<le> fp. ?p\<phi>1 (P(?en \<mapsto> i)) \<le> fp"
+              proof (intro allI impI)
+                fix i
+                assume "i \<le> fp"
+                then have "?p\<phi>1 (P(?en \<mapsto> i)) \<le> ?p\<phi>1 (P(?en \<mapsto> fp))"
+                  using LetPast.prems(2) fp by (intro progress_mono_gen) simp_all
+                then show "?p\<phi>1 (P(?en \<mapsto> i)) \<le> fp"
+                  using fp_ge by (rule order_trans)
+              qed
+            qed
             then obtain fp' where fp': "fp' \<le> fp" "fp' = ?p\<phi>1 (P(?en \<mapsto> fp'))"
               by blast
             then have "?p\<phi>1 (P(?en \<mapsto> fp')) \<le> ?p\<phi>1 (P(?en \<mapsto> fp))"
@@ -1333,9 +1334,21 @@ next
       using Ands.IH[of \<phi> p P x] Ands.prems
       by (simp add: Sup_rec_safety_le_iff del: fun_upd_apply)
     moreover have "y \<le> ?y\<phi>"
-      using \<open>\<phi> \<in> set l\<close> Ands.prems(1,3,4)
-      apply auto
-      by (metis Sup_rec_safety_le_iff imageI order.eq_iff)
+    proof (cases "safe_letpast p (Formula.Ands l) = NonFutuRec")
+      case True
+      then show ?thesis
+        using Ands.prems(3,4) by simp
+    next
+      case False
+      have "safe_letpast p \<phi> \<le> safe_letpast p (Formula.Ands l)"
+        using \<open>\<phi> \<in> set l\<close>
+          Sup_rec_safety_le_iff[of "safe_letpast p ` set l" "safe_letpast p (Formula.Ands l)"]
+        by simp
+      with False Ands.prems(1) have "safe_letpast p \<phi> \<noteq> NonFutuRec"
+        by (metis order.antisym)
+      with False Ands.prems(4) show ?thesis
+        by simp
+    qed
     moreover have "(MIN \<phi>'\<in>set l. progress \<sigma> P \<phi>' j) \<le> progress \<sigma> P \<phi> j"
       using \<open>\<phi> \<in> set l\<close> by (simp add: Min_le_iff)
     ultimately have "min y (MIN \<phi>'\<in>set l. progress \<sigma> P \<phi>' j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
@@ -1380,25 +1393,55 @@ next
       by (force simp del: fun_upd_apply)
   next
     case False
-    then have "y = min (Suc x) j"
+    then have y: "y = min (Suc x) j"
       using Since.prems by simp
-    moreover have "safe_letpast p \<phi> \<noteq> NonFutuRec"
+    have "safe_letpast p \<phi> \<noteq> NonFutuRec"
       using False Since.prems by (auto simp add: sup_eq_NonFutuRec_iff)
-    then have "min (min (Suc x) j) (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    then have \<phi>_le: "min (min (Suc x) j) (progress \<sigma> P \<phi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
       using Since.prems
       by (auto intro!: order.trans[rotated, OF Since.IH(1)])
-    moreover have "memL I 0 \<Longrightarrow> safe_letpast p \<psi> \<noteq> NonFutuRec"
+    have "memL I 0 \<Longrightarrow> safe_letpast p \<psi> \<noteq> NonFutuRec"
       using False Since.prems(1)
       by (auto simp add: sup_eq_NonFutuRec_iff)
-    then have "if memL I 0
+    then have \<psi>_le: "if memL I 0
         then min (min (Suc x) j) (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j
         else min x (progress \<sigma> P \<psi> j) \<le> progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
-      using Since.prems thm Since.IH(2)
+      using Since.prems
       by (auto simp add: mult_le_NonFutuRec_iff split: if_splits
           intro!: order.trans[rotated, OF Since.IH(2)])
-    ultimately show ?thesis
-      apply (clarsimp simp del: fun_upd_apply)
-      by (force simp del: fun_upd_apply)
+    let ?p\<phi> = "progress \<sigma> P \<phi> j" and ?p\<phi>' = "progress \<sigma> (P(p \<mapsto> x)) \<phi> j"
+    let ?p\<psi> = "progress \<sigma> P \<psi> j" and ?p\<psi>' = "progress \<sigma> (P(p \<mapsto> x)) \<psi> j"
+    from \<phi>_le y have \<phi>': "min y ?p\<phi> \<le> ?p\<phi>'"
+      by simp
+    show ?thesis
+    proof (cases "memL I 0")
+      case True
+      with \<psi>_le y have \<psi>': "min y ?p\<psi> \<le> ?p\<psi>'"
+        by simp
+      have "min y (min ?p\<phi> ?p\<psi>) = min (min y ?p\<phi>) (min y ?p\<psi>)"
+        by (simp add: ac_simps)
+      also have "\<dots> \<le> min ?p\<phi>' ?p\<psi>'"
+        using \<phi>' \<psi>' by (rule min.mono)
+      finally show ?thesis
+        using True by (simp del: fun_upd_apply)
+    next
+      case False
+      with \<psi>_le have "min x ?p\<psi> \<le> ?p\<psi>'"
+        by simp
+      have "min y (Suc ?p\<psi>) \<le> min (Suc x) (Suc ?p\<psi>)"
+        unfolding y by (intro min.mono min.cobounded1 order_refl)
+      also have "\<dots> = Suc (min x ?p\<psi>)"
+        by simp
+      also have "\<dots> \<le> Suc ?p\<psi>'"
+        using \<open>min x ?p\<psi> \<le> ?p\<psi>'\<close> by simp
+      finally have \<psi>': "min y (Suc ?p\<psi>) \<le> Suc ?p\<psi>'" .
+      have "min y (min ?p\<phi> (Suc ?p\<psi>)) = min (min y ?p\<phi>) (min y (Suc ?p\<psi>))"
+        by (simp add: ac_simps)
+      also have "\<dots> \<le> min ?p\<phi>' (Suc ?p\<psi>')"
+        using \<phi>' \<psi>' by (rule min.mono)
+      finally show ?thesis
+        using False by (simp del: fun_upd_apply)
+    qed
   qed
 next
   case (Until \<phi> I \<psi>)
