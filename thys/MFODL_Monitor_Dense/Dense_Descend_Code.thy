@@ -245,12 +245,16 @@ termination edof
 lemma edof_dof: "Rep_edformula (edof n cs e) = dof n cs (Rep_meformula e)"
 proof (induct n cs e rule: edof.induct)
   case (12 n cs args \<phi> \<psi> buf aux)
-  then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq)
+  show ?case
+    by (simp only: edof.simps dof.simps Rep_meformula.simps Let_def
+        12(1)[OF refl refl] 12(2)[OF refl refl refl] if_distrib[of Rep_edformula]
+        option.case_distrib[of Rep_edformula] Rep_edformula.simps prod.case mbuf_t_empty.rep_eq)
 next
   case (13 n cs args \<phi> \<psi> buf nts t aux)
-  then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq)
+  show ?case
+    by (simp only: edof.simps dof.simps Rep_meformula.simps Let_def
+        13(1)[OF refl refl] 13(2)[OF refl refl refl] if_distrib[of Rep_edformula]
+        option.case_distrib[of Rep_edformula] Rep_edformula.simps map_prod_simp mbuf_t_empty.rep_eq)
 next
   case (6 n cs \<phi> \<psi> buf)
   then show ?case by (cases buf) (simp add: mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
@@ -259,8 +263,19 @@ next
   then show ?case by (cases buf) (simp add: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
 next
   case (19 n cs A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)
-  then show ?case
-    by (cases buf1; cases buf2) (auto simp: Let_def mbuf_t_empty.rep_eq mbuf_t_is_empty.rep_eq)
+  have e: "(mbuf_t_is_empty (fst buf1) \<and> mbuf_t_is_empty (snd buf1) \<and>
+      mbuf_t_is_empty (fst buf2) \<and> mbuf_t_is_empty (snd buf2) \<and> mbuf_t_is_empty nts) =
+    (map_prod Rep_mbuf_t Rep_mbuf_t buf1 = ([], []) \<and> map_prod Rep_mbuf_t Rep_mbuf_t buf2 = ([], []) \<and>
+      Rep_mbuf_t nts = [])"
+    by (cases buf1; cases buf2) (simp add: mbuf_t_is_empty.rep_eq)
+  show ?case
+    unfolding edof.simps dof.simps Rep_meformula.simps Let_def e if_distrib[of Rep_edformula]
+  proof (rule if_cong[OF refl], goal_cases)
+    case 1
+    show ?case
+      by (simp only: Rep_edformula.simps map_prod_simp mbuf_t_empty.rep_eq
+          19(1-3)[OF refl refl 1[folded e]])
+  qed (simp only: Rep_edformula.simps)
 qed (simp_all add: Let_def zip_map2 o_def mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
       mbuf_t_is_empty.rep_eq list_all_iff emfcols_mfcols
       split: list.splits option.splits prod.splits cong: map_cong)
