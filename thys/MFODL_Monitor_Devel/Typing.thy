@@ -1916,19 +1916,24 @@ proof (induction m g r arbitrary: r' rule: safe_regex_induct)
     by (cases r') auto
 next
   case (Test m g \<phi>)
-  then show ?case
-    apply (cases r')
-        apply auto
-    subgoal for \<psi>
-      apply (cases "safe_formula \<phi>")
-       apply simp
-      apply (cases \<phi>)
-                      apply (auto)
-      subgoal for \<phi>' 
-        using Test(4)[of \<phi>' \<psi>]
-        by (cases \<psi>) auto
-      done
-    done
+  from Test.prems(5) obtain \<psi> where r': "r' = Regex.Test \<psi>" and P\<phi>\<psi>: "P \<phi> \<psi>"
+    by (cases r') auto
+  show ?case
+  proof (cases "safe_formula \<phi>")
+    case True
+    with Test.prems(2)[OF _ P\<phi>\<psi>] have "safe_formula \<psi>" by simp
+    with r' show ?thesis by simp
+  next
+    case False
+    with Test.prems(1) obtain \<phi>' where \<phi>: "\<phi> = Formula.Neg \<phi>'" "safe_formula \<phi>'" "g = Lax"
+      by (auto split: formula.splits)
+    from P\<phi>\<psi> \<phi>(1) have "P (Formula.Neg \<phi>') \<psi>" by simp
+    from Test.prems(4)[OF this] obtain \<psi>' where \<psi>: "\<psi> = Formula.Neg \<psi>'" "P \<phi>' \<psi>'"
+      by (cases \<psi>) auto
+    from False \<phi>(1,2) have "\<phi>' \<in> safe_atms (Regex.Test \<phi>)" by simp
+    with Test.prems(2) \<psi>(2) \<phi>(2) have "safe_formula \<psi>'" by blast
+    with r' \<psi>(1) \<phi>(3) show ?thesis by simp
+  qed
 next
   case (Plus m g r s)
   then show ?case
