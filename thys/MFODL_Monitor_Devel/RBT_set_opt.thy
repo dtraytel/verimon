@@ -813,19 +813,73 @@ context linorder begin
 
 lemma rbt_sorted_baliL:
   "\<lbrakk>rbt_sorted l; rbt_sorted r; l |\<guillemotleft> a; a \<guillemotleft>| r\<rbrakk> \<Longrightarrow> rbt_sorted (baliL l a r)"
-  using rbt_greater_trans rbt_less_trans
-  apply (cases "(l,a,r)" rule: baliL.cases)
-            apply (auto simp: rbt_sorted_def)
-   apply blast+
-  done
+proof -
+  assume *: "rbt_sorted l" "rbt_sorted r" "l |\<guillemotleft> a" "a \<guillemotleft>| r"
+  have rot1: "rbt_sorted (MR (MB t1 a1 t2) b (MB t3 a r))"
+    if l: "l = MR (MR t1 a1 t2) b t3" for t1 a1 t2 b t3
+  proof -
+    from *(3) have "b < a" by (simp add: l)
+    then have "b \<guillemotleft>| r" using *(4) by (rule rbt_greater_trans)
+    with \<open>b < a\<close> * show ?thesis by (simp add: l)
+  qed
+  have rot2: "rbt_sorted (MR (MB t1 a1 t2) b (MB t3 a r))"
+    if l: "l = MR t1 a1 (MR t2 b t3)" for t1 a1 t2 b t3
+  proof -
+    from *(1) have "t1 |\<guillemotleft> a1" "a1 < b" by (simp_all add: l)
+    then have "t1 |\<guillemotleft> b" by (rule rbt_less_trans)
+    from *(3) have "b < a" by (simp add: l)
+    then have "b \<guillemotleft>| r" using *(4) by (rule rbt_greater_trans)
+    with \<open>t1 |\<guillemotleft> b\<close> \<open>b < a\<close> * show ?thesis by (simp add: l)
+  qed
+  have plain: "rbt_sorted (MB l a r)"
+    using * by simp
+  show "rbt_sorted (baliL l a r)"
+  proof (cases "(l,a,r)" rule: baliL.cases)
+    case (1 t1 a1 t2 b t3 c t4)
+    with rot1[of t1 a1 t2 b t3] show ?thesis by simp
+  next
+    case ("2_1" a1 t2 b t3 c t4)
+    with rot2[of RBT_Impl.Empty a1 t2 b t3] show ?thesis by simp
+  next
+    case ("2_2" va vb vc vd a1 t2 b t3 c t4)
+    with rot2[of "Branch color.B va vb vc vd" a1 t2 b t3] show ?thesis by simp
+  qed (use plain in simp_all)
+qed
 
 lemma rbt_sorted_baliR:
   "\<lbrakk>rbt_sorted l; rbt_sorted r; l |\<guillemotleft> a; a \<guillemotleft>| r\<rbrakk> \<Longrightarrow> rbt_sorted (baliR l a r)"
-  using rbt_greater_trans rbt_less_trans
-  apply (cases "(l,a,r)" rule: baliR.cases)
-            apply (auto simp: rbt_sorted_def)
-    apply blast+
-  done
+proof -
+  assume *: "rbt_sorted l" "rbt_sorted r" "l |\<guillemotleft> a" "a \<guillemotleft>| r"
+  have rot1: "rbt_sorted (MR (MB l a t2) b (MB t3 c t4))"
+    if r: "r = MR t2 b (MR t3 c t4)" for t2 b t3 c t4
+  proof -
+    from *(4) have "a < b" by (simp add: r)
+    with *(3) have "l |\<guillemotleft> b" by (rule rbt_less_trans)
+    with \<open>a < b\<close> * show ?thesis by (simp add: r)
+  qed
+  have rot2: "rbt_sorted (MR (MB l a t2) b (MB t3 c t4))"
+    if r: "r = MR (MR t2 b t3) c t4" for t2 b t3 c t4
+  proof -
+    from *(4) have "a < b" by (simp add: r)
+    with *(3) have "l |\<guillemotleft> b" by (rule rbt_less_trans)
+    from *(2) have "b < c" "c \<guillemotleft>| t4" by (simp_all add: r)
+    then have "b \<guillemotleft>| t4" by (rule rbt_greater_trans)
+    with \<open>l |\<guillemotleft> b\<close> \<open>a < b\<close> * show ?thesis by (simp add: r)
+  qed
+  have plain: "rbt_sorted (MB l a r)"
+    using * by simp
+  show "rbt_sorted (baliR l a r)"
+  proof (cases "(l,a,r)" rule: baliR.cases)
+    case (1 t1 a' t2 b t3 c t4)
+    with rot1[of t2 b t3 c t4] show ?thesis by simp
+  next
+    case ("2_1" t1 a' t2 b t3 c)
+    with rot2[of t2 b t3 c RBT_Impl.Empty] show ?thesis by simp
+  next
+    case ("2_2" t1 a' t2 b t3 c va vb vc vd)
+    with rot2[of t2 b t3 c "Branch color.B va vb vc vd"] show ?thesis by simp
+  qed (use plain in simp_all)
+qed
 
 lemma rbt_sorted_rbt_joinL:
   "\<lbrakk>rbt_sorted (RBT_Impl.Branch c l a () r); bheight l \<le> bheight r\<rbrakk>
