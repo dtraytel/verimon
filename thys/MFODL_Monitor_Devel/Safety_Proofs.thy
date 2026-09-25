@@ -98,17 +98,86 @@ subsection \<open> convert multiway and safety \<close>
 lemma pred_cmultiway_conjD: "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<psi>)) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway \<psi>)
   \<Longrightarrow> contains_pred p (convert_multiway \<phi>)"
- apply (cases \<psi>; clarsimp simp: safe_assignment_iff split: if_splits)
-  using not_contains_pred_get_and apply blast+
-  apply (clarsimp simp: is_constraint_iff; elim disjE; clarsimp)
-  using not_contains_pred_get_and apply blast+
-  subgoal for \<phi>' I \<psi>'
-    apply (clarsimp simp: and_release_safe_bounded_def split: if_splits)
-    using not_contains_pred_get_and apply blast
-    using not_contains_pred_get_and apply blast
-    apply (clarsimp simp: release_safe_bounded_def)
-    using not_contains_pred_get_and by blast
-  using not_contains_pred_get_and[of p "convert_multiway \<phi>"] by blast+
+proof -
+  \<comment> \<open>all cases of @{const convert_multiway} on a conjunction, except bounded release\<close>
+  have main: "contains_pred p (convert_multiway \<phi>)"
+    if cp: "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<chi>))"
+      and ncp: "\<not> contains_pred p (convert_multiway \<chi>)"
+      and rel: "\<And>\<phi>' I \<psi>'. \<chi> = \<phi>' \<^bold>R I \<psi>' \<Longrightarrow> mem I 0"
+    for \<chi>
+  proof (cases "safe_assignment (fv \<phi>) \<chi>")
+    case True
+    then have "\<not> contains_pred p \<chi>"
+      by (auto simp: safe_assignment_iff)
+    with True cp show ?thesis
+      by simp
+  next
+    case not_assign: False
+    show ?thesis
+    proof (cases "safe_formula \<chi>")
+      case True
+      with not_assign cp obtain x where "contains_pred p x"
+        "x \<in> set (get_and_list (convert_multiway \<phi>)) \<union> set (get_and_list (convert_multiway \<chi>))"
+        by auto
+      with ncp show ?thesis
+        using not_contains_pred_get_and by blast
+    next
+      case not_safe: False
+      show ?thesis
+      proof (cases "is_constraint \<chi>")
+        case True
+        then have "\<not> contains_pred p \<chi>"
+          by (auto simp: is_constraint_iff)
+        with True not_assign not_safe cp show ?thesis
+          by simp
+      next
+        case False
+        with not_assign not_safe rel
+        have "convert_multiway (\<phi> \<and>\<^sub>F \<chi>) = convert_multiway \<phi> \<and>\<^sub>F convert_multiway \<chi>
+          \<or> convert_multiway (\<phi> \<and>\<^sub>F \<chi>) = \<And>\<^sub>F (convert_multiway \<chi> # get_and_list (convert_multiway \<phi>))"
+          by (cases \<chi>) (simp_all del: safe_formula.simps)
+        with cp ncp have "contains_pred p (convert_multiway \<phi>)
+          \<or> (\<exists>x \<in> set (get_and_list (convert_multiway \<phi>)). contains_pred p x)"
+          by (auto simp del: convert_multiway.simps)
+        then show ?thesis
+          using not_contains_pred_get_and by blast
+      qed
+    qed
+  qed
+  assume cp: "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<psi>))"
+    and ncp: "\<not> contains_pred p (convert_multiway \<psi>)"
+  show "contains_pred p (convert_multiway \<phi>)"
+  proof (cases "\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>' \<and> \<not> mem I 0")
+    case False
+    then show ?thesis
+      using main cp ncp by blast
+  next
+    case True
+    then obtain \<phi>' I \<psi>' where \<psi>: "\<psi> = \<phi>' \<^bold>R I \<psi>'" "\<not> mem I 0"
+      by blast
+    then have "convert_multiway (\<phi> \<and>\<^sub>F \<psi>) = convert_multiway (\<phi> \<and>\<^sub>F \<not>\<^sub>F Formula.eventually I Formula.TT)
+      \<or>\<^sub>F convert_multiway (\<phi> \<and>\<^sub>F release_safe_bounded \<phi>' I \<psi>')"
+      by (simp add: and_release_safe_bounded_def safe_assignment_iff)
+    with cp consider
+      (left) "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F \<not>\<^sub>F Formula.eventually I Formula.TT))"
+      | (right) "contains_pred p (convert_multiway (\<phi> \<and>\<^sub>F release_safe_bounded \<phi>' I \<psi>'))"
+      by (auto simp del: convert_multiway.simps)
+    then show ?thesis
+    proof cases
+      case left
+      have "\<not> contains_pred p (convert_multiway (\<not>\<^sub>F Formula.eventually I Formula.TT))"
+        by (simp add: Formula.eventually_def Formula.TT_def Formula.FF_def)
+      with left show ?thesis
+        by (rule main) simp
+    next
+      case right
+      have "\<not> contains_pred p (convert_multiway (release_safe_bounded \<phi>' I \<psi>'))"
+        using ncp \<psi> by simp
+      with right show ?thesis
+        by (rule main) (simp add: release_safe_bounded_def)
+    qed
+  qed
+qed
 
 lemma no_pred_cmultiway_always_safe_0I: "\<not> contains_pred p (convert_multiway \<psi>) 
   \<Longrightarrow> \<not> contains_pred p (convert_multiway (always_safe_0 I \<psi>))"
