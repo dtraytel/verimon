@@ -1259,41 +1259,46 @@ proof(induct \<phi> arbitrary: i n V rule: safe_formula_induct)
     by(simp flip: in_unit_table add: unit_table_def)
 next
   case (Eq_Var1 c x)
-  then have "finite (singleton_table n x c)"
-    unfolding singleton_table_def by(simp)
-  then show ?case using Eq_Var1
-    apply(elim finite_subset[rotated])
-    apply(auto intro: nth_equalityI simp add: singleton_table_def wf_tuple_def 
-        tabulate_alt Formula.nfv_def Suc_le_eq)
-    done
+  then have "x < n"
+    by (simp add: Formula.nfv_def)
+  then show ?case
+    using Collect_singleton_tuple_eq_image[of x n "\<lambda>y. c = y"] by simp
 next
   case (Eq_Var2 c x)
-  then have "finite (singleton_table n x c)"
-    unfolding singleton_table_def by(simp)
+  then have "x < n"
+    by (simp add: Formula.nfv_def)
   then show ?case
-    apply(simp)
-    apply(elim finite_subset[rotated])
-    apply(auto intro: nth_equalityI simp add: singleton_table_def wf_tuple_def 
-        tabulate_alt Formula.nfv_def Suc_le_eq)
-    done
+    using Collect_singleton_tuple_eq_image[of x n "\<lambda>y. y = c"] by simp
 next
-case (Pred e ts)
-  then show ?case
-    apply(simp)
-    apply(cases "V (e, length ts)")
-     apply(simp)
-    subgoal
-      apply(rule finite_vimage_IntI[of "\<Gamma> \<sigma> i" "\<lambda> v. (e, map (Formula.eval_trm (map the v)) ts)" "{v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}", THEN finite_subset[rotated]])
-        apply simp
-       apply(auto simp add: inj_eval2)
-      done
-    apply(simp)
-    subgoal for a
-      apply(rule finite_vimage_IntI[of "{v. length v = length ts \<and> a v i}" "\<lambda> v. map (Formula.eval_trm (map the v)) ts" "{v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}", THEN finite_subset[rotated]])
-        apply (drule (1) bspec[OF _ domI])
-        apply(auto simp add: inj_eval)
-      done
-    done
+  case (Pred e ts)
+  then have vars: "\<forall>t\<in>set ts. Formula.is_Var t \<or> Formula.is_Const t"
+    by simp
+  show ?case
+  proof (cases "V (e, length ts)")
+    case None
+    then have "{v. wf_tuple n (fv (e \<dagger> ts)) v \<and> Formula.sat \<sigma> V (map the v) i (e \<dagger> ts)}
+      = (\<lambda>v. (e, map (Formula.eval_trm (map the v)) ts)) -` \<Gamma> \<sigma> i
+        \<inter> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
+      by auto
+    moreover have "finite ((\<lambda>v. (e, map (Formula.eval_trm (map the v)) ts)) -` \<Gamma> \<sigma> i
+        \<inter> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v})"
+      using Pred.prems inj_eval2[OF vars] by (intro finite_vimage_IntI) simp_all
+    ultimately show ?thesis
+      by simp
+  next
+    case (Some a)
+    then have "{v. wf_tuple n (fv (e \<dagger> ts)) v \<and> Formula.sat \<sigma> V (map the v) i (e \<dagger> ts)}
+      = (\<lambda>v. map (Formula.eval_trm (map the v)) ts) -` {v. length v = length ts \<and> a v i}
+        \<inter> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v}"
+      by auto
+    moreover from Pred.prems Some have "finite {v. length v = length ts \<and> a v i}"
+      by (auto dest!: bspec[OF _ domI])
+    then have "finite ((\<lambda>v. map (Formula.eval_trm (map the v)) ts) -` {v. length v = length ts \<and> a v i}
+        \<inter> {v. wf_tuple n (\<Union> (fv_trm ` set ts)) v})"
+      using inj_eval[OF vars] by (rule finite_vimage_IntI)
+    ultimately show ?thesis
+      by simp
+  qed
 next
   case (Let p \<phi> \<psi>)
   then have IH: " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
