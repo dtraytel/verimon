@@ -634,63 +634,80 @@ lemma mapping_antijoin:
     "\<And>x Y. Mapping.lookup (mapping_antijoin T T') x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
 proof -
   show "set_of_idx (mapping_antijoin T T') = join (set_of_idx T) False (set_of_idx T')"
-    using assms
-    apply (transfer fixing: n B C)
-  proof (rule set_eqI, rule iffI)
+    using assms(2,3)
+  proof (transfer fixing: n B C)
     fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
-    fix x
     assume restrict: "\<And>x Y. Map_To_Mapping.map_apply T x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
       "\<And>x Y. Map_To_Mapping.map_apply T' x = Some Y \<Longrightarrow> table n C Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
-    assume "x \<in> \<Union> (ran (\<lambda>x. case T x of None \<Rightarrow> None | Some y \<Rightarrow>
-      (case T' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> Map.empty x)))"
-    then obtain a Y where a_def: "T a = Some Y" "T' a = None" "x \<in> Y"
-      by (auto simp: ran_def split: option.splits)
-    then show "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
-      using restrict
-      by (auto simp: Map_To_Mapping.map_apply_def ran_def Table.join_def these_iff table_def)
-         (metis New_max.restrict_idle_include dual_order.refl join1_Some_restrict option.simps(3))
-  next
-    fix T T' :: "'a option list \<Rightarrow> 'a option list set option"
-    fix x
-    assume restrict: "\<And>x Y. Map_To_Mapping.map_apply T x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
-      "\<And>x Y. Map_To_Mapping.map_apply T' x = Some Y \<Longrightarrow> table n C Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
-    assume "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
-    then obtain a Y where a_def: "T a = Some Y" "Y \<noteq> {}" "case T' a of None \<Rightarrow> x \<in> Y | Some Y' \<Rightarrow> x \<in> join Y False Y'"
-      apply (auto simp: ran_def Table.join_def these_iff Map_To_Mapping.map_apply_def split: if_splits)
-      subgoal premises prems for X a
-        using prems(1)[OF prems(4)] prems(2,3,4)
-        by (cases "T' a") (auto simp: Table.join_def these_iff)
-      done
-    show "x \<in> \<Union> (ran (\<lambda>x. case T x of None \<Rightarrow> None | Some y \<Rightarrow> (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x)))"
-      using a_def
-      apply (auto simp: ran_def split: option.splits)
-       apply (metis option.inject option.simps(3))
-      subgoal premises prems for Y' z
-      proof -
-        have Y: "table n B Y" "\<forall>z \<in> Y. a = restrict C z"
-          using restrict(1)[of a Y] prems(1) by (simp_all add: Map_To_Mapping.map_apply_def)
-        have Y': "table n C Y'" "Y' \<noteq> {}" "\<forall>z \<in> Y'. a = restrict C z"
-          using restrict(2)[of a Y'] prems(2) by (simp_all add: Map_To_Mapping.map_apply_def)
-        have x: "wf_tuple n (B \<union> C) x" "restrict B x \<in> Y" "restrict C x \<notin> Y'"
-          using assms(1) prems(3) join_restrict_table[OF Y(1) Y'(1), of False x] by simp_all
-        then have "wf_tuple n B x"
-          using assms(1) by (simp add: sup_absorb1)
-        then have "x \<in> Y"
-          using x(2) by (simp add: restrict_idle)
-        obtain y where y: "y \<in> Y'"
-          using Y'(2) by blast
-        then have "wf_tuple n C y"
-          using Y'(1) by (simp add: table_def)
-        have "restrict C x = a"
-          using Y(2) \<open>x \<in> Y\<close> by simp
-        also have "a = restrict C y"
-          using Y'(3) y by blast
-        also have "\<dots> = y"
-          using \<open>wf_tuple n C y\<close> by (rule restrict_idle)
-        finally show False
-          using x(3) y by simp
-      qed
-      done
+    have T_tab: "table n B Y" "\<forall>z \<in> Y. a = restrict C z" if "T a = Some Y" for a Y
+      using restrict(1)[of a Y] that by (simp_all add: Map_To_Mapping.map_apply_def)
+    have T'_tab: "table n C Y'" "Y' \<noteq> {}" "\<forall>z \<in> Y'. a = restrict C z" if "T' a = Some Y'" for a Y'
+      using restrict(2)[of a Y'] that by (simp_all add: Map_To_Mapping.map_apply_def)
+    \<comment> \<open>since @{term "C \<subseteq> B"}, the antijoin keeps the tuples whose @{term C}-part is not matched\<close>
+    have antijoin: "x \<in> join Y False Y' \<longleftrightarrow> x \<in> Y \<and> restrict C x \<notin> Y'"
+      if "table n B Y" "table n C Y'" for x :: "'a option list" and Y Y'
+    proof -
+      have "x \<in> join Y False Y' \<longleftrightarrow> wf_tuple n B x \<and> restrict B x \<in> Y \<and> restrict C x \<notin> Y'"
+        using join_restrict_table[OF that, of False x] assms(1) by (simp add: sup_absorb1)
+      also have "\<dots> \<longleftrightarrow> x \<in> Y \<and> restrict C x \<notin> Y'"
+        using that(1) by (auto simp: table_def restrict_idle)
+      finally show ?thesis .
+    qed
+    have "table n B (\<Union> (ran T))" "table n C (\<Union> (ran T'))"
+      using T_tab(1) T'_tab(1) by (auto simp: table_def ran_def)
+    note join_S = antijoin[OF this]
+    \<comment> \<open>@{term T'} is indexed by all its columns, so @{term "T' a"} can only contain @{term a}\<close>
+    have S'_mem: "restrict C x \<in> \<Union> (ran T') \<longleftrightarrow> T' (restrict C x) \<noteq> None" for x
+    proof
+      assume "restrict C x \<in> \<Union> (ran T')"
+      then obtain a Y' where a: "T' a = Some Y'" "restrict C x \<in> Y'"
+        by (auto simp: ran_def)
+      then have "a = restrict C (restrict C x)"
+        using T'_tab(3) by blast
+      then show "T' (restrict C x) \<noteq> None"
+        using a(1) by (simp add: restrict_restrict)
+    next
+      assume "T' (restrict C x) \<noteq> None"
+      then obtain Y' where Y': "T' (restrict C x) = Some Y'"
+        by blast
+      then obtain y where y: "y \<in> Y'"
+        using T'_tab(2) by blast
+      have "restrict C x = restrict C y"
+        using T'_tab(3)[OF Y'] y by blast
+      also have "\<dots> = y"
+        using T'_tab(1)[OF Y'] y unfolding table_def by (blast intro: restrict_idle)
+      finally show "restrict C x \<in> \<Union> (ran T')"
+        using Y' y by (auto simp: ran_def)
+    qed
+    show "\<Union> (ran (\<lambda>x. case T x of None \<Rightarrow> None | Some y \<Rightarrow>
+      (case T' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> Map.empty x))) = join (\<Union> (ran T)) False (\<Union> (ran T'))"
+    proof (rule set_eqI, rule iffI)
+      fix x
+      assume "x \<in> \<Union> (ran (\<lambda>x. case T x of None \<Rightarrow> None | Some y \<Rightarrow>
+        (case T' x of None \<Rightarrow> Some y | Some y' \<Rightarrow> Map.empty x)))"
+      then obtain a Y where a_def: "T a = Some Y" "T' a = None" "x \<in> Y"
+        by (auto simp: ran_def split: option.splits)
+      have "a = restrict C x"
+        using T_tab(2)[OF a_def(1)] a_def(3) by blast
+      then have "restrict C x \<notin> \<Union> (ran T')"
+        using S'_mem[of x] a_def(2) by simp
+      moreover have "x \<in> \<Union> (ran T)"
+        using a_def(1,3) by (auto simp: ran_def)
+      ultimately show "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
+        using join_S by blast
+    next
+      fix x
+      assume "x \<in> join (\<Union> (ran T)) False (\<Union> (ran T'))"
+      then have x: "x \<in> \<Union> (ran T)" "T' (restrict C x) = None"
+        using join_S S'_mem by blast+
+      then obtain a Y where a_def: "T a = Some Y" "x \<in> Y"
+        by (auto simp: ran_def)
+      moreover have "a = restrict C x"
+        using T_tab(2)[OF a_def(1)] a_def(2) by blast
+      ultimately show "x \<in> \<Union> (ran (\<lambda>x. case T x of None \<Rightarrow> None | Some y \<Rightarrow>
+        (case T' x of None \<Rightarrow> Some y | Some x \<Rightarrow> Map.empty x)))"
+        using x(2) by (intro UnionI[OF ranI[where a=a and b=Y]]) auto
+    qed
   qed
   show "\<And>x Y. Mapping.lookup (mapping_antijoin T T') x = Some Y \<Longrightarrow> table n B Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict C z)"
     using assms
