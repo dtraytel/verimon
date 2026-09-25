@@ -573,7 +573,7 @@ proof -
       "Mapping.lookup m_bef xs = Some tstp" "ts_tp_lt I ts (tp - len) tstp"
       by (fastforce simp add: filter_a2_map_def split: option.splits)
     then have tp_bef_minus: "tp_bef = tp - len"
-      using valid_before Mapping_keys_intro by force
+      using a2_map_keys Mapping_keys_intro[of a2_map tp_bef] by auto
     have m_bef_m: "m_bef = m"
       using defs(2) m_def
       unfolding tp_bef_minus by auto
@@ -738,8 +738,9 @@ proof -
     by (auto simp: tables'_def taken_def)
   then have eval_step_mmuaux_eq: "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map,
     done) = (tp, tss''', tables', len - 1,  maskL, maskR, result', a1_map, a2_map'', tstp_map', T_agg # done)"
-    using safe_hd_eq m_def m'_def mc_def a2_map'_def a2_map''_def I_def tstp_map'_def m_eq[unfolded m_del_def to_del_def to_del_approx_def taken_def] tables'_def ts'_tss'''_def[symmetric]
-    by (auto simp add: t_agg_eq Let_def result'_def to_del_def to_del_approx_def split:prod.splits simp del: Set.filter_eq)
+    using safe_hd_eq m_def m'_def mc_def a2_map'_def a2_map''_def tstp_map'_def m_eq[unfolded m_del_def to_del_def to_del_approx_def] ts'_tss'''_def
+    unfolding I_def result'_def to_del_def to_del_approx_def
+    by (simp add: t_agg_eq Let_def del: Set.filter_eq takedropWhile_queue.simps)
   have lin_ts: "lin_ts_mmuaux (eval_step_mmuaux args aux) = tss''"
     using lin_tss_Cons assms(2) lin_tss''' unfolding aux_def eval_step_mmuaux_eq by auto
   have lookup_old: "Mapping.lookup a2_map tp = Some Mapping.empty" using valid_before by auto
@@ -935,19 +936,25 @@ proof -
   have result': "(case Mapping.lookup a2_map'' (tp - (len - 1)) of Some m \<Rightarrow> result' = Mapping.keys m | _ \<Rightarrow> False)"
     using len_not_0 m'_def Suc_diff_le[OF len_tp]
     by (auto simp: a2_map''_def a2_map'_def result'_def result_def mc_def m_eq m_del_def lookup_old Mapping_lookup_delete lookup_update' split: option.splits)
-  have "\<forall> (a, b) \<in> set (linearize tables). case b of Inl ts \<Rightarrow> ts \<le> cur | Inr tp' \<Rightarrow> tp' \<le> tp" using valid_before by auto
+  have "\<forall>tstp \<in> set (map snd (linearize tables)). case tstp of Inl ts \<Rightarrow> ts \<le> cur | Inr tp' \<Rightarrow> tp' \<le> tp" using valid_before by auto
   moreover have "set (linearize tables') \<subseteq> set (linearize tables)" unfolding tables_split by auto
-  ultimately have valid_table_restr: "\<forall>(a, b) \<in> set (linearize tables'). case b of Inl ts \<Rightarrow> ts \<le> cur | Inr tp' \<Rightarrow> tp' \<le> tp" by auto
+  ultimately have valid_table_restr: "\<forall>tstp \<in> set (map snd (linearize tables')). case tstp of Inl ts \<Rightarrow> ts \<le> cur | Inr tp' \<Rightarrow> tp' \<le> tp" by auto
   have "Mapping.keys tstp_map = {tp - len..tp - 1}" using valid_before len_not_0 by auto
-  then have "Mapping.keys tstp_map' = (if len - 1 > 0 then {tp - (len - 1)..tp - 1} else {})" unfolding tstp_map'_def tp_len_assoc[symmetric] using Suc_diff_le by auto
-  moreover have "Suc (length auxlist - Suc 0) = length auxlist"
-    using assms(2) valid_before
-    by (cases auxlist) (auto simp: aux_def)
-  ultimately show ?thesis
-    using valid_before a2_map''_keys sorted_tl list_all' lookup'' list_all2'' list_all'' lin_ts still_empty sorted_tables' isl_tables' valid_tables' valid_table_restr
-    unfolding eval_step_mmuaux_eq valid_mmuaux'.simps tl_aux_def aux_def I_def n_def R_def pos_def
-    using lin_tss_not_Nil safe_hd_eq len_pos Suc_diff_le result'_def result'
-    by (auto simp add: list.set_sel(2) lin_tss' lin_tss''' tl_queue_rep[of tss'] min_auxlist_done)
+  then have tstp_map'_keys: "Mapping.keys tstp_map' = (if len - 1 > 0 then {tp - (len - 1)..tp - 1} else {})" unfolding tstp_map'_def tp_len_assoc[symmetric] using Suc_diff_le by auto
+  have lin_tss'''_tl: "linearize tss''' = tl (linearize tss)"
+    using lin_tss_Cons lin_tss''' by simp
+  have tss''': "length (linearize tss''') = len - 1" "sorted (linearize tss''')"
+    "\<forall>t \<in> set (linearize tss'''). t \<le> cur \<and> memR I (cur - t)"
+    using valid_before lin_tss_not_Nil unfolding lin_tss'''_tl I_def by (auto simp: sorted_tl dest: list.set_sel(2))
+  have "length done + len = length auxlist" using valid_before by auto
+  then have length_done': "length (T_agg # done) + (len - 1) = length auxlist" using len_pos by simp
+  have "valid_mmuaux' args cur dt (eval_step_mmuaux args aux) auxlist"
+    using valid_before a2_map''_keys list_all' lookup'' list_all2'' list_all'' still_empty sorted_tables' isl_tables'
+      valid_tables' valid_table_restr result' tstp_map'_keys tss''' length_done'
+    unfolding aux_def eval_step_mmuaux_eq valid_mmuaux'.simps tl_aux_def I_def n_def R_def pos_def lin_tss'''_tl
+    by (simp add: lin_tss' tl_queue_rep[of tss'])
+  then show ?thesis
+    using lin_ts by simp
 qed
 
 lemma done_empty_valid_mmuaux'_intro:
@@ -1152,8 +1159,10 @@ proof -
     else {(max (tp - len) (tp' + 1), as)}) ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {})"
   define tstp_map' where "tstp_map' = Mapping.update tp nt tstp_map"
   define tmp' where "tmp' = Set.filter (\<lambda>(tp, as). case Mapping.lookup tstp_map' tp of Some ts \<Rightarrow> memL I (nt - ts)) tmp"
-  have a1_map_lookup: "\<And>as tp'. Mapping.lookup a1_map as = Some tp' \<Longrightarrow> tp' < tp"
-    using valid_shift_aux(1) Mapping_keys_intro by force
+  have "\<forall>xs \<in> Mapping.keys a1_map. case Mapping.lookup a1_map xs of Some tp' \<Rightarrow> tp' < tp"
+    using valid_shift_aux(1) unfolding valid_mmuaux'.simps by blast
+  then have a1_map_lookup: "\<And>as tp'. Mapping.lookup a1_map as = Some tp' \<Longrightarrow> tp' < tp"
+    using Mapping_keys_intro by force
   then have fst_tmp: "\<And>tp'. tp' \<in> fst ` tmp' \<Longrightarrow> tp - len \<le> tp' \<and> tp' < tp + 1"
     unfolding tmp'_def tmp_def by (auto simp add: less_SucI split: option.splits if_splits)
   have snd_tmp: "\<And>tp'. table n R (snd ` tmp')"
@@ -1262,7 +1271,7 @@ proof -
     using arg_cong[OF auxlist_split, of "map fst", unfolded map_append] map_fst_auxlist_take
       map_fst_auxlist_drop by auto
   have lookup_a1_map_keys: "\<And>xs tp'. Mapping.lookup a1_map xs = Some tp' \<Longrightarrow> tp' < tp"
-    using valid_shift_aux Mapping_keys_intro by force
+    by (fact a1_map_lookup)
   have lookup_a1_map_keys': "\<forall>xs \<in> Mapping.keys a1_map'.
     case Mapping.lookup a1_map' xs of Some tp' \<Rightarrow> tp' < tp + 1"
     using lookup_a1_map_keys unfolding a1_map'_def
@@ -1316,7 +1325,16 @@ proof -
   have lookup_a2_map: "\<And>tp' m. Mapping.lookup a2_map tp' = Some m \<Longrightarrow>
     table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
-    using valid_shift_aux(1) Mapping_keys_intro unfolding I_def n_def R_def by force
+  proof -
+    have "\<forall>tp' \<in> Mapping.keys a2_map. case Mapping.lookup a2_map tp' of Some m \<Rightarrow>
+      table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+      tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
+      using valid_shift_aux(1) unfolding valid_mmuaux'.simps I_def n_def R_def by blast
+    then show "\<And>tp' m. Mapping.lookup a2_map tp' = Some m \<Longrightarrow>
+      table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+      tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
+      using Mapping_keys_intro by force
+  qed
   then have lookup_a2_map': "\<And>tp' m xs tstp. Mapping.lookup a2_map tp' = Some m \<Longrightarrow>
     Mapping.lookup m xs = Some tstp \<Longrightarrow> tstp_lt tstp nt tp \<and>
     isl tstp = (\<not> memL I 0)"
@@ -2042,7 +2060,13 @@ proof -
     then obtain ts' tp' where defs: "z = (ts', tp')" "ts' \<in> set (linearize tss)" "tp' \<in> set [tp - len..<tp]"
       by (metis in_set_zipE prod_decode_aux.cases)
     then have restr: "ivl_restr_a2_map I ts' tp' a2_map" "valid_tstp_map ts' tp' tstp_map" using assms(2) by auto
-    have "Mapping.keys tstp_map = set [tp - len..<tp]" using valid_shift_aux by(auto) (metis Suc_pred le_0_eq le_imp_less_Suc length_0_conv neq0_conv)
+    have "Mapping.keys tstp_map = set [tp - len..<tp]"
+    proof -
+      have "Mapping.keys tstp_map = (if len > 0 then {tp - len..tp - 1} else {})" "len \<le> tp"
+        using valid_shift_aux(1) unfolding valid_mmuaux'.simps by blast+
+      then show ?thesis
+        by auto
+    qed
     then obtain ts where ts_def: "Mapping.lookup tstp_map tp' = Some ts" using defs(3) by (metis Mapping.in_keysD)
     then have ts_eq: "ts = ts'" using restr(2) unfolding valid_tstp_map_def by auto
     have neq: "(tp + 1 = tp') = False" using defs(3) by auto
