@@ -475,21 +475,20 @@ lemma wf_idx_sig_join: "wf_idx_sig (wf_idx_join t1 t2) = (case wf_idx_sig t1 of 
 
 lemma wf_idx_set_join: "wf_idx_sig t1 = (n, A) \<Longrightarrow> wf_idx_sig t2 = (n', A') \<Longrightarrow> n = n' \<Longrightarrow>
   wf_idx_set (wf_idx_join t1 t2) = join (wf_idx_set t1) True (wf_idx_set t2)"
-  apply transfer
-  subgoal premises prems for prod1 n A prod2 n' A'
-  proof -
-    obtain I T where prod1_def: "prod1 = (n, A, I, T)"
-      using prems
-      by (cases prod1) auto
-    obtain I' T' where prod2_def: "prod2 = (n, A', I', T')"
-      using prems
-      by (cases prod2) auto
-    show ?thesis
-      using idx_join_reindex(1)[where ?I="I \<inter> I'" and ?T=T and ?T'=T' and ?n=n and ?B=A and ?C=A' and ?A=I and ?A'=I',
-          OF inf.coboundedI1 inf.coboundedI2] prems
-      by (auto simp: Let_def prod1_def prod2_def)
-  qed
-  done
+proof -
+  assume sig: "wf_idx_sig t1 = (n, A)" "wf_idx_sig t2 = (n', A')" "n = n'"
+  obtain I T where t1: "Rep_wf_idx t1 = (n, A, I, T)" "I \<subseteq> A"
+    and T: "\<And>x Y. Mapping.lookup T x = Some Y \<Longrightarrow> table n A Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I z)"
+    using Rep_wf_idx[of t1] sig(1) by (auto simp: wf_idx_sig.rep_eq)
+  obtain I' T' where t2: "Rep_wf_idx t2 = (n, A', I', T')" "I' \<subseteq> A'"
+    and T': "\<And>x Y. Mapping.lookup T' x = Some Y \<Longrightarrow> table n A' Y \<and> Y \<noteq> {} \<and> (\<forall>z \<in> Y. x = restrict I' z)"
+    using Rep_wf_idx[of t2] sig(2,3) by (auto simp: wf_idx_sig.rep_eq)
+  have "I \<inter> I' \<subseteq> A" "I \<inter> I' \<subseteq> A'"
+    using t1(2) t2(2) by blast+
+  then show ?thesis
+    using idx_join_reindex(1)[where T=T and T'=T' and A=I and A'=I', OF _ _ T T']
+    by (simp add: wf_idx_set.rep_eq wf_idx_join.rep_eq t1(1) t2(1) Let_def)
+qed
 
 lemma wf_idx_set_join_deg: "wf_idx_sig t1 = (n, A) \<Longrightarrow> wf_idx_sig t2 = (n', A') \<Longrightarrow> \<not>n = n' \<Longrightarrow>
   wf_idx_set (wf_idx_join t1 t2) = wf_idx_set t1"
