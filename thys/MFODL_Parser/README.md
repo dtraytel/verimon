@@ -24,7 +24,7 @@ introduction rule per production, with the semantic actions as values.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 27 minutes, most
+the inductive definitions of the relation; `MFODL_Parser` about 33 minutes, most
 of it in evaluating the LR tables and the static check), and neither needs to
 rerun unless the grammar changes.
 
@@ -98,10 +98,10 @@ lexemes. `tests/verified_parser.t` runs a small instance of both.
 ## Performance
 
 On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
-9 to 48 tokens), the verified parser takes 20 to 107 µs per formula (median
-40 µs, 2.1 µs per token), against 1.3 to 5.3 µs (median 2.3 µs) for MonPoly's
-parser: 12 to 23 times slower (median 17). The LR driver takes 75% of the
-time, the lexer 18%, post-processing and conversion 7%. In a `monpoly -check`
+9 to 48 tokens), the verified parser takes 16 to 79 µs per formula (median
+33 µs, 1.7 µs per token), against 1.4 to 5.6 µs (median 2.4 µs) for MonPoly's
+parser: 9 to 18 times slower (median 14). The LR driver takes 70% of the
+time, the lexer 23%, post-processing and conversion 7%. In a `monpoly -check`
 run (about 5.5 ms) the difference is within the noise. Measured with
 
 ```
@@ -119,15 +119,16 @@ the export, on the same suite (median per formula):
 | simple driver on indexed tables           | 381 µs   | 84.1 ms  |
 | and code equations for the lexer          | 111 µs   | 24.7 ms  |
 | on trie tables (`lr/LR_Trie.thy`)         | 50 µs    | 11.2 ms  |
-| numbered tokens (`lr/LR_Tok.thy`, current)| 40 µs    | 8.8 ms   |
+| numbered tokens (`lr/LR_Tok.thy`)         | 40 µs    | 8.8 ms   |
+| product automaton (`LR_Prod.thy`, current)| 33 µs    | 7.2 ms   |
 | MonPoly's parser (ocamlyacc)              | 2.3 µs   | 0.49 ms  |
 
 In instructions (callgrind, each suite formula parsed once) the current
-parser executes 68 M, 52 M of them in the LR driver and 13 M in the lexer.
+parser executes 57 M, 42 M of them in the LR driver and 13 M in the lexer.
 Numbering the lookahead token by a linear search in the list of terminals at
 every step took 24 M of the LR driver's instructions; numbering each token
-once, when it enters the input, takes 7 M. The largest remaining item is the
-trie lookup (13 M).
+once, when it enters the input, takes 7 M. Running on the product automaton
+instead of pairs of states reduced the step from 20 M to 12 M.
 
 The grammar has no layout annotations, so the `parser` command generates code
 for the simple driver of the `grammar` package (`lr/LR_Simple.thy`): a stack
@@ -140,7 +141,13 @@ numeral without arithmetic (`MFODL_Parser_Code` declares the code equations
 keyed by lookahead or nonterminal number, and the reduces licensed at a state
 are tabulated by lookahead, so a step compares no names. Each input token
 is paired with its number before the run (`lr/LR_Tok.thy`), and the run on
-the paired input is proved equal to the run on the tokens. The general driver,
+the paired input is proved equal to the run on the tokens. Finally, the
+driver runs on the product of the two automata (`lr/LR_Prod.thy`): the 324
+reachable pairs of states are numbered, a stack entry is one pair number, and
+the tables give per pair number the shift and goto targets and, per
+lookahead, the candidate reduces. The step is proved equal to the step on
+pairs for stacks whose pairs are all reachable; that the list of pairs is
+closed under shifts and gotos is checked by evaluation. The general driver,
 which computes the closure of every new state with its layout anchors at run
 time, is about 8,000 times slower on the suite.
 
@@ -156,5 +163,5 @@ The `grammar` package can also run the driver on arrays with integer indices
 (`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
 when the module is loaded adds about 4.5 ms to every run of `monpoly`.
 
-`src/verified_parser.ml` is large (about 13 MB), mostly the LR tables as
-tries.
+`src/verified_parser.ml` is about 2.4 MB, mostly the LR tables of the
+product automaton as tries.
