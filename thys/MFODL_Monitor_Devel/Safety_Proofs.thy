@@ -31,66 +31,61 @@ lemma fv_convert_multiway: "Formula.fvi b (convert_multiway \<phi>) = Formula.fv
 proof (induction \<phi> arbitrary: b rule: convert_multiway.induct)
 next
   case (10 \<phi> \<psi>)
-  note IH_safe_assign = 10(1)
-  note IH_not_safe_assign = 10(2-6)
-  note IH_psi_eq_release = 10(7,8,9)
-  note IH_not_anything = 10(10,11)
-  have "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
-    "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
-    by (simp split: formula.splits)+
-  thus "Formula.fvi b (convert_multiway (\<phi> \<and>\<^sub>F \<psi>)) = Formula.fvi b (\<phi> \<and>\<^sub>F \<psi>)"
-    apply (simp only: Formula.fvi.simps convert_multiway.simps split: if_splits)
-  proof ((intro conjI impI allI iffI; clarsimp simp add: is_constraint_iff 
-        safe_assignment_iff fv_get_and sup.commute), goal_cases)
-    case (1 \<phi>' I \<psi>')
-    then show ?case 
-      using IH_not_safe_assign
-      by (clarsimp simp add: safe_assignment_iff)
+  show ?case
+  proof (cases "safe_assignment (fv \<phi>) \<psi>")
+    case True
+    then show ?thesis
+      using 10(1)[of b] by simp
   next
-    case (2 \<phi>' I \<psi>')
-    then show ?case 
-      using IH_psi_eq_release[of \<phi>' I \<psi>' b]
-      by (clarsimp simp add: safe_assignment_iff)
-  next
-    case (3 \<phi>' I \<psi>')
-    then show ?case 
-      using IH_not_safe_assign
-      by (clarsimp simp add: safe_assignment_iff)
-  next
-    case (4 \<phi>' I \<psi>')
-    then show ?case 
-      using IH_not_safe_assign
-      by (clarsimp simp add: safe_assignment_iff)
-  next
-    case (5 t1 t2)
-    then show ?case 
-      using IH_safe_assign
-      by (clarsimp simp add: safe_assignment_iff sup.commute)
-  next
-    case (6 t1 t2)
-    then show ?case 
-      using IH_not_safe_assign
-      by (clarsimp simp add: safe_assignment_iff)
-  next
-    case (7 t1 t2)
-    then show ?case 
-      using IH_safe_assign
-      by (clarsimp simp add: safe_assignment_iff sup.commute)
-  next
-    case (8 t1 t2)
-    then show ?case
-      using IH_not_safe_assign[of b]
-      by (auto simp add: safe_assignment_iff)
-  next
-    case 9
-    then show ?case 
-      using IH_not_safe_assign
-      by (clarsimp simp add: safe_assignment_iff)
-  next
-    case 10
-    then show ?case 
-      using IH_not_anything
-      by (clarsimp simp add: is_constraint_iff safe_assignment_iff)
+    case not_assign: False
+    show ?thesis
+    proof (cases "safe_formula \<psi>")
+      case True
+      then show ?thesis
+        using not_assign 10(2,3)[of b] by (simp add: fv_get_and)
+    next
+      case not_safe: False
+      show ?thesis
+      proof (cases "is_constraint \<psi>")
+        case True
+        then show ?thesis
+          using not_assign not_safe 10(4)[of b] by simp
+      next
+        case not_constraint: False
+        note not_sc = not_assign not_safe not_constraint
+        consider (Trigger) \<phi>' I \<psi>' where "\<psi> = \<phi>' \<^bold>T I \<psi>'"
+          | (Release) \<phi>' I \<psi>' where "\<psi> = \<phi>' \<^bold>R I \<psi>'"
+          | (Other) "\<not> (case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False)"
+            "\<not> (case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False)"
+          by (cases \<psi>) auto
+        then show ?thesis
+        proof cases
+          case Trigger
+          then show ?thesis
+            using not_sc 10(5,6)[of b] by simp
+        next
+          case (Release \<phi>' I \<psi>')
+          show ?thesis
+          proof (cases "mem I 0")
+            case True
+            then show ?thesis
+              using Release not_sc 10(7,8)[of \<phi>' I \<psi>' b]
+              by (simp del: safe_formula.simps)
+          next
+            case False
+            then show ?thesis
+              using Release not_sc 10(9)[of \<phi>' I \<psi>' b] by simp
+          qed
+        next
+          case Other
+          then have "convert_multiway (\<phi> \<and>\<^sub>F \<psi>)
+            = \<And>\<^sub>F (convert_multiway \<psi> # get_and_list (convert_multiway \<phi>))"
+            using not_sc by simp
+          then show ?thesis
+            using Other not_sc 10(10,11)[of b] by (simp add: fv_get_and sup_commute)
+        qed
+      qed
+    qed
   qed
 qed (simp_all add: fv_regex_alt regex.set_map)
 
