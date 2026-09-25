@@ -9038,3 +9038,16 @@ cost more than the two clusterings (agg-nested +2.9%).
 
 The outputs are identical on every aggregation formula of the suite and on the 652
 `-verified` commands of the test corpus.  The cram tests pass.
+
+## 21.46 `once-inf`: not done, and why
+
+`A(x,y) AND ONCE[0,*) B(x,y)` runs 1.14 s against MonPoly's 0.87 s, and `inf-agg` 1.17 s
+against 1.02 s.  The instruction counts are close (5.04G against 4.88G for once-inf), but the
+verified monitor's heap peaks at 9.4M words against MonPoly's 1.2M, and its last-level cache
+misses are twice MonPoly's.  The Since structure keeps each time point's table in its
+`data_in` queue until the table leaves the window.  With no right bound, no table ever leaves,
+so the queue holds the whole history even though the set of distinct tuples stays small.
+Dropping the tables when the interval has no right bound would need a new representation
+relation for the Since structure at all three levels (kernel, dense, short tuples).  Today
+that relation is a function of the state, and this change would make it non-injective.  Left
+for later.
