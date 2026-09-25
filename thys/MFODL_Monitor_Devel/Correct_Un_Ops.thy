@@ -102,31 +102,46 @@ lemma is_simple_pattern_fv: "is_simple_pattern ts x \<Longrightarrow> t \<in> se
 lemma wf_tuple_simple_match_gen: "is_simple_pattern ts m \<Longrightarrow> \<forall>t\<in>set ts. (\<forall>x\<in>Formula.fv_trm t. x < n) \<Longrightarrow>
   (\<forall>y\<in>set ys. y \<noteq> None) \<Longrightarrow> length ys = length ts \<Longrightarrow>
   wf_tuple (n - m) (\<Union>t\<in>set ts. (\<lambda>x. x - m) ` Formula.fv_trm t) (simple_match n m ts ys)"
-  apply (induction n m ts ys rule: simple_match.induct)
-                      apply (simp add: wf_tuple_empty_iff)
-  subgoal for n m x ts y ys
-    supply simple_match.simps[simp del]
-    apply (cases "m < x")
-    apply (clarsimp simp add: image_iff not_le)
-     apply (intro conjI)
-      apply (meson Suc_leD is_simple_pattern_fv less_le_trans)
-     apply (intro exI[where x="n - Suc m"] conjI)
-      apply (metis Suc_diff_Suc Suc_lessD less_trans_Suc)
-     apply (subgoal_tac "0 \<notin> insert (x - m) (\<Union>x\<in>set ts. (\<lambda>x. x - m) ` fv_trm x)")
-      apply (simp add: image_Union image_image)
-     apply safe[]
-      apply linarith
-     apply (metis Suc_leD is_simple_pattern_fv le_zero_eq less_le_trans not_le zero_less_diff)
-    apply (erule thin_rl)
-    apply clarsimp
-    apply (rule exI[where x="n - Suc m"])
-    apply (intro conjI)
-     apply simp
-    apply (subgoal_tac "0 \<notin> (\<Union>xa\<in>set ts. (\<lambda>xa. xa - x) ` fv_trm xa)")
-     apply (simp add: image_Union image_image)
-    apply safe
-    by (metis Suc_diff_le Zero_neq_Suc diff_is_0_eq is_simple_pattern_fv)
-  by simp_all
+proof (induction n m ts ys rule: simple_match.induct)
+  case (1 n m)
+  then show ?case by (simp add: wf_tuple_empty_iff)
+next
+  case (2 n m x ts y ys)
+  from "2.prems" have "m \<le> x" and ts: "is_simple_pattern ts (Suc x)" and "x < n"
+    by simp_all
+  have gt_x: "x < z" if "t \<in> set ts" "z \<in> fv_trm t" for t z
+    using is_simple_pattern_fv[OF ts that] by simp
+  show ?case
+  proof (cases "m < x")
+    case True
+    let ?A = "\<lambda>k. \<Union>t\<in>set (Formula.Var x # ts). (\<lambda>z. z - k) ` fv_trm t"
+    from True "2.prems" have IH: "wf_tuple (n - Suc m) (?A (Suc m))
+      (simple_match n (Suc m) (Formula.Var x # ts) (y # ys))"
+      by (intro "2.IH"(1)) simp_all
+    have "0 \<notin> ?A m"
+      using True gt_x by fastforce
+    then have "(\<lambda>z. z - 1) ` (?A m - {0}) = ?A (Suc m)"
+      by (simp add: image_Union image_image)
+    moreover have "n - m = Suc (n - Suc m)"
+      using True \<open>x < n\<close> by simp
+    ultimately show ?thesis
+      using True IH \<open>0 \<notin> ?A m\<close> by simp
+  next
+    case False
+    let ?A = "\<lambda>k. \<Union>t\<in>set ts. (\<lambda>z. z - k) ` fv_trm t"
+    from False "2.prems" have IH: "wf_tuple (n - Suc m) (?A (Suc m)) (simple_match n (Suc m) ts ys)"
+      by (intro "2.IH"(2)) simp_all
+    from False \<open>m \<le> x\<close> have [simp]: "m = x" by simp
+    have "0 \<notin> ?A x"
+      using gt_x by fastforce
+    then have "(\<lambda>z. z - 1) ` ?A x = ?A (Suc x)"
+      by (simp add: image_Union image_image)
+    moreover have "n - x = Suc (n - Suc x)"
+      using \<open>x < n\<close> by simp
+    ultimately show ?thesis
+      using "2.prems"(3) IH \<open>0 \<notin> ?A x\<close> by simp
+  qed
+qed simp_all
 
 lemma wf_tuple_simple_match: "is_simple_pattern ts 0 \<Longrightarrow> \<forall>t\<in>set ts. (\<forall>x\<in>Formula.fv_trm t. x < n) \<Longrightarrow>
   (\<forall>y\<in>set ys. y \<noteq> None) \<Longrightarrow> length ys = length ts \<Longrightarrow>
