@@ -621,26 +621,47 @@ fun sat' :: "Formula.trace \<Rightarrow> (Formula.name \<times> nat \<rightharpo
 lemma eval_trm_sound: 
   assumes "E \<turnstile> f :: t"  "\<forall>y\<in>fv_trm f. ty_of (v ! y) = E y"
   shows "Formula.eval_trm v f = eval_trm' v f"
-  using assms  
-  apply  (induction  rule: wty_trm.induct) apply (auto simp add: numeric_ty_def)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_plus_sound)
-    subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_plus_sound)
-  subgoal for x y
-    using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_minus_sound) 
- subgoal for x y
-   using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_minus_sound)
- subgoal for x 
-   using  value_of_eval_trm[of E x v]  by (auto simp add: undef_uminus_sound)
- subgoal for x 
-   using  value_of_eval_trm[of E x v]  by (auto simp add: undef_uminus_sound)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_times_sound)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_times_sound)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_divide_sound)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_divide_sound)
-  subgoal for x y  using  value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] by (auto simp add: undef_modulo_sound)
-  subgoal for x  using  value_of_eval_trm[of E x v] by (auto simp add: undef_integer_of_event_data_sound)
-  subgoal for x  using  value_of_eval_trm[of E x v] by (auto simp add: undef_double_of_event_data_sound)
-  done
+  using assms
+proof (induction rule: wty_trm.induct)
+  case (Var x t)
+  then show ?case by simp
+next
+  case (Const x t)
+  then show ?case by simp
+next
+  case (Plus x t y)
+  \<comment> \<open>both operands evaluate to integers or both to floats, where @{term undef_plus} is sound\<close>
+  with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
+    by (auto simp: numeric_ty_def undef_plus_sound)
+next
+  case (Minus x t y)
+  with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
+    by (auto simp: numeric_ty_def undef_minus_sound)
+next
+  case (UMinus x t)
+  with value_of_eval_trm[of E x v] show ?case
+    by (auto simp: numeric_ty_def undef_uminus_sound)
+next
+  case (Mult x t y)
+  with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
+    by (auto simp: numeric_ty_def undef_times_sound)
+next
+  case (Div x t y)
+  with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
+    by (auto simp: numeric_ty_def undef_divide_sound)
+next
+  case (Mod x y)
+  with value_of_eval_trm[of E x v] value_of_eval_trm[of E y v] show ?case
+    by (auto simp: undef_modulo_sound)
+next
+  case (F2i x)
+  with value_of_eval_trm[of E x v] show ?case
+    by (auto simp: undef_integer_of_event_data_sound)
+next
+  case (I2f x)
+  with value_of_eval_trm[of E x v] show ?case
+    by (auto simp: undef_double_of_event_data_sound)
+qed
 
 
 lemma poly_value_of: "E \<turnstile> x :: t\<Longrightarrow> E \<turnstile> y :: t \<Longrightarrow> \<forall>w\<in>fv_trm x \<union> fv_trm y. ty_of (v ! w) = E w \<Longrightarrow> 
