@@ -1884,7 +1884,15 @@ qed
 lemma duaux'_length:
   "duaux' n cs_R cs_L args cur daux auxlist \<Longrightarrow>
      length_dq (dargs cs_R cs_L args) daux = length auxlist"
-  using dvalid_length_muaux by (fastforce simp: duaux'_def dauxlist3_def)
+proof -
+  assume "duaux' n cs_R cs_L args cur daux auxlist"
+  then have "dvalid_muaux (dargs cs_R cs_L args) (dmsk cs_R cs_L) cur daux
+      (dauxlist3 n cs_R auxlist)"
+    unfolding duaux'_def by (rule conjunct2)
+  then have "length_dq (dargs cs_R cs_L args) daux = length (dauxlist3 n cs_R auxlist)"
+    by (rule dvalid_length_muaux)
+  then show ?thesis by (simp add: dauxlist3_def)
+qed
 
 section \<open>The match structures at the dense frame\<close>
 
