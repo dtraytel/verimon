@@ -4047,9 +4047,12 @@ proof -
     by (meson obj_sumE)
   have wf_f': "wf_f f'" using f'_def wf_f_clash_propagate by force
   hence wf_end: "wf_f (f' \<circ> final_f)" using assms(6) wf_f_comp by force
-  hence half_wty: "half_wty_trm E type (trm t1 t2) (f' \<circ> final_f)"
-    unfolding half_wty_trm_def apply (auto) 
-  proof -
+  have half_wty: "half_wty_trm E type (trm t1 t2) (f' \<circ> final_f)"
+    unfolding half_wty_trm_def
+  proof (intro conjI allI impI)
+    show "wf_f (f' \<circ> final_f)"
+      by (rule wf_end)
+  next
     fix fa
     assume asm: "wf_f (TCst \<circ> fa)" "fa \<circ> E \<turnstile> trm t1 t2 :: fa type"
     then show "\<exists>g. wf_f (TCst \<circ> g) \<and>
@@ -4072,7 +4075,12 @@ proof -
     using check_trm_sound[OF f''_def] unfolding wty_result_fX_trm_def half_wty_trm_def 
     by(simp add: image_image)
   hence "half_wty_trm (f' \<circ> final_f \<circ> E) ((f' \<circ> final_f) type) (trm t1 t2) f''"
-    apply(rule subterm_half_wty) using assms(6) by (auto elim: wty_trm.cases) 
+  proof (rule subterm_half_wty)
+    fix h
+    assume "h \<circ> (f' \<circ> final_f \<circ> E) \<turnstile> trm t1 t2 :: h ((f' \<circ> final_f) type)"
+    with assms(6) show "h \<circ> (f' \<circ> final_f \<circ> E) \<turnstile> t1 :: h ((f' \<circ> final_f) type)"
+      by (auto elim: wty_trm.cases)
+  qed
   hence half_wty2: "half_wty_trm (f' \<circ> final_f \<circ> E) ((f' \<circ> final_f) type) (trm t1 t2) f''"
     by (simp add: image_comp)
   obtain g' where g'_def: "wf_f (TCst \<circ> g')" "f type = (g' \<circ> (f'' \<circ> (f' \<circ> final_f))) type"
@@ -4093,15 +4101,34 @@ lemma check_conversion_complete: assumes
   "wf_f (TCst \<circ> f)"
  shows False
 proof -
- have cp_none: "clash_propagate (TCst a) type E = error e \<Longrightarrow> False" for e
-    apply (rule constr_complete[where ?t=a and ?P="(\<lambda>x. x = a)" and ?type="type" and ?E=E and ?f="TCst \<circ> f"]) 
-   using  assms(1-5) by (auto simp add: comp_def elim:wty_trm.cases) 
-  hence "min_type type (TCst a) = return (TCst a, type)"
-    using min_const min_comm apply(cases type; auto simp:clash_propagate_def)
-  using assms(4) min_type.simps(10) min_type.simps(9) apply presburger by fastforce
+  have fa: "f type = a" using assms(3,4) by(auto elim:wty_trm.cases)
+  have cp_none: "False" if "clash_propagate (TCst a) type E = error e" for e
+    using constr_complete[OF assms(5), of "%x. x = a" type "TCst a" E E type a e] fa that by simp
+  have "min_type (TCst a) type = return (TCst a, type)"
+  proof (cases type)
+    case (TAny n)
+    then show ?thesis by simp
+  next
+    case (TNum n)
+    with assms(4) show ?thesis by auto
+  next
+    case (TCst x)
+    show ?thesis
+    proof (cases "x = a")
+      case True
+      with TCst show ?thesis by simp
+    next
+      case False
+      with TCst have "EX e. clash_propagate (TCst a) type E = error e"
+        by (simp add: clash_propagate_def catch_def)
+      then show ?thesis
+        using cp_none by blast
+    qed
+  qed
+  then have "min_type type (TCst a) = return (TCst a, type)"
+    by (simp add: min_comm)
   then obtain f' where f'_def: "clash_propagate (TCst a) type  E = return f' " "f' type = TCst a"
     using min_comm[of "TCst a" type] by (simp add: clash_propagate_def update_env_def)
-  have fa: "f type = a" using assms(3,4) by(auto elim:wty_trm.cases)
   obtain g where g_def: "wf_f (TCst \<circ> g)" "f = g \<circ> f'"
     using check_trm_step0_cst2[OF f'_def(1) assms(5) fa] unfolding resultless_trm_f_def by auto
   have "f \<circ> E  \<turnstile> t :: b" using assms(3,4) by (auto elim:wty_trm.cases)
