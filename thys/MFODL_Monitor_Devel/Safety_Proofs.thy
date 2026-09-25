@@ -211,33 +211,16 @@ lemma no_pred_cmultiway_release_safe_boundedI: "\<not> contains_pred p (convert_
 lemma contains_pred_convert_multiway: "\<not> contains_pred p \<phi> \<Longrightarrow> \<not> contains_pred p (convert_multiway \<phi>)"
 proof (induction p \<phi> rule: contains_pred.induct)
   case(10 p \<phi> \<psi>)
-  have "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
-    and "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
-    by (auto split: formula.splits)
+  then have "\<not> contains_pred p (convert_multiway \<phi>)" "\<not> contains_pred p (convert_multiway \<psi>)"
+    by simp_all
   then show ?case
-    apply (simp only: convert_multiway.simps split: if_splits)
-    apply (intro conjI impI allI iffI; clarsimp simp add: is_constraint_iff 
-        safe_assignment_iff fv_get_and sup.commute)
-    using 10 apply (simp_all add: not_contains_pred_get_and split: if_splits)
-        apply (metis convert_multiway.simps(19) memR_zero not_contains_pred_get_and)
-       prefer 4 subgoal by (auto simp add: not_contains_pred_get_and)
-       prefer 3 subgoal by (auto simp add: not_contains_pred_get_and)
-     prefer 2 subgoal by (auto simp add: not_contains_pred_get_and)
-    unfolding and_release_safe_bounded_def 
-    apply (simp only: convert_multiway.simps(9) contains_pred.simps)
-    apply (erule disjE)
-    by (drule pred_cmultiway_conjD; simp)+
+    using pred_cmultiway_conjD by blast
 next
   case(19 p \<phi> I \<psi>)
-  have "(case \<psi> of \<phi>' \<^bold>R I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>R I \<psi>')"
-    and "(case \<psi> of \<phi>' \<^bold>T I \<psi>' \<Rightarrow> True | _ \<Rightarrow> False) \<Longrightarrow> (\<exists>\<phi>' I \<psi>'. \<psi> = \<phi>' \<^bold>T I \<psi>')"
-    by (auto split: formula.splits)
-  then show ?case 
-    using 19
-    apply (simp only: convert_multiway.simps split: if_splits)
-    apply (intro conjI impI allI iffI; clarsimp)
-    using no_pred_cmultiway_release_safe_0I apply blast
-    using no_pred_cmultiway_release_safe_boundedI by blast
+  then have "\<not> contains_pred p (convert_multiway \<phi>)" "\<not> contains_pred p (convert_multiway \<psi>)"
+    by simp_all
+  then show ?case
+    by (simp add: no_pred_cmultiway_release_safe_0I no_pred_cmultiway_release_safe_boundedI)
 next
   case(20 p I r)
   then show ?case by (auto simp add: regex.set_map)
