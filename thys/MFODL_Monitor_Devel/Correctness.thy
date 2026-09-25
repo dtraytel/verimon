@@ -5031,9 +5031,17 @@ next
     and aux: "wf_matchP_aux \<sigma> V n R I r aux (progress \<sigma> P (Formula.MatchP I r) j)"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
-  from MMatchP.prems(3) have wty: "\<forall>\<psi>\<in>set \<psi>s. S, E \<turnstile> \<psi>"
-    using mr apply (cases pred: wty_formula) apply(auto simp: eq) 
-    using pred_regex_wty_formula to_mregex_safe_atms by blast
+  have wty: "\<forall>\<psi>\<in>set \<psi>s. S, E \<turnstile> \<psi>"
+  proof
+    fix \<psi>
+    assume "\<psi> \<in> set \<psi>s"
+    from MMatchP.prems(3) have "Regex.pred_regex (wty_formula S E) r"
+      unfolding eq by (cases pred: wty_formula) simp_all
+    moreover from \<open>\<psi> \<in> set \<psi>s\<close> mr have "\<psi> \<in> safe_atms r"
+      by (rule to_mregex_safe_atms)
+    ultimately show "S, E \<turnstile> \<psi>"
+      by (rule pred_regex_wty_formula)
+  qed
   have nts_snoc: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [progress_regex \<sigma> P r j..< j + \<delta>] (nts @ map (\<tau> \<sigma>) [j ..< j + \<delta>])"
     using nts unfolding wf_ts_regex_def
     by (subst upt_add_eq_append) (auto simp add: wf_envs_progress_regex_le[OF MMatchP.prems(2)] list.rel_map
@@ -5087,9 +5095,17 @@ next
     and length_aux: "progress \<sigma> P (Formula.MatchF I r) j + length aux = progress_regex \<sigma> P r j"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
-  from MMatchF.prems(3) have wty: "\<forall>\<psi>\<in>set \<psi>s. S, E \<turnstile> \<psi>"
-    using mr apply (cases pred: wty_formula) apply(auto simp: eq) 
-    using pred_regex_wty_formula to_mregex_safe_atms by blast
+  have wty: "\<forall>\<psi>\<in>set \<psi>s. S, E \<turnstile> \<psi>"
+  proof
+    fix \<psi>
+    assume "\<psi> \<in> set \<psi>s"
+    from MMatchF.prems(3) have "Regex.pred_regex (wty_formula S E) r"
+      unfolding eq by (cases pred: wty_formula) simp_all
+    moreover from \<open>\<psi> \<in> set \<psi>s\<close> mr have "\<psi> \<in> safe_atms r"
+      by (rule to_mregex_safe_atms)
+    ultimately show "S, E \<turnstile> \<psi>"
+      by (rule pred_regex_wty_formula)
+  qed
   have nts_snoc: "list_all2 (\<lambda>i t. t = \<tau> \<sigma> i)
     [progress_regex \<sigma> P r j..< j + \<delta>] (nts @ map (\<tau> \<sigma>) [j ..< j + \<delta>])"
     using nts unfolding wf_ts_regex_def
@@ -5110,17 +5126,17 @@ next
           list_all3_map map2_map_map list_all3_list_all2_conv list.rel_map list.rel_flip[symmetric, of _ \<psi>s \<phi>s]
           dest!: MMatchF.IH[OF _ _ MMatchF.prems(2)]
           elim: wf_update_matchF[OF _ safe mr mrs] elim!: list.rel_mono_strong)
-    from MMatchF.prems(2) have nts': "wf_ts_regex \<sigma> P' (j + \<delta>) r nts'"
-      using eval eval nts_snoc \<psi>s wty
-      unfolding wf_ts_regex_def
-      apply (intro mbufnt_take_eqD(2)[OF eq1 wf_mbufn_add[where js'="map (\<lambda>\<phi>. progress \<sigma> P' \<phi> (j + \<delta>)) \<psi>s",
-              OF buf[unfolded wf_mbufn'_def mr prod.case]]])
-      apply (auto simp: to_mregex_progress[OF safe mr] Mini_def
-          list_all3_map map2_map_map list_all3_list_all2_conv list.rel_map list.rel_flip[symmetric, of _ \<psi>s \<phi>s]
-          list_all2_Cons1 elim!: list.rel_mono_strong intro!: list.rel_refl_strong
-          dest!: MMatchF.IH[OF _ _ MMatchF.prems(2)])
-      apply (auto simp: list_all2_conv_all_nth)
-      done
+    \<comment> \<open>the new results of the subformulas, by the induction hypothesis\<close>
+    have xss: "list_all3 list_all2
+        (map (\<lambda>\<psi> i r. qtable n (fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>) r) \<psi>s)
+        (map2 upt (map (\<lambda>\<psi>. progress \<sigma> P \<psi> j) \<psi>s) (map (\<lambda>\<psi>. progress \<sigma> P' \<psi> (j + \<delta>)) \<psi>s)) xss"
+      using eval \<psi>s wty
+      by (auto simp: list_all3_map map2_map_map list_all3_list_all2_conv list.rel_map
+          list.rel_flip[symmetric, of _ \<psi>s \<phi>s] dest!: MMatchF.IH[OF _ _ MMatchF.prems(2)]
+          elim!: list.rel_mono_strong split: prod.splits)
+    have nts': "wf_ts_regex \<sigma> P' (j + \<delta>) r nts'"
+      by (rule mbufnt_take_add'(2)[OF eq1 wf_envs_P_simps[OF MMatchF.prems(2)] safe mr buf nts_snoc xss])
+        simp
     have nt: "nt = (if j + \<delta> = 0 then 0 else \<tau> \<sigma> (min (j + \<delta> - 1) (progress_regex \<sigma> P' r (j + \<delta>))))"
     proof -
       let ?m = "progress_regex \<sigma> P r j"
