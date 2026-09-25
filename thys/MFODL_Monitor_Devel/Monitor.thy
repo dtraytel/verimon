@@ -1688,19 +1688,50 @@ lemma letpast_meval0_cong[fundef_cong]:
   assumes "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow>  eval ts db \<psi> = eval' ts db \<psi>)"
   shows "letpast_meval0 eval j i ys xs p ts db \<phi> = letpast_meval0 eval' j i ys xs p ts db \<phi>"
   using assms
-  apply (induct eval j i ys xs p ts db \<phi>  rule: letpast_meval0.induct)
-  subgoal premises IH for eval j i ys xs p ts db \<phi> 
-    apply (subst (1 2) letpast_meval0.simps)
-    apply (auto split: prod.splits list.splits simp: Let_def IH)
-    done
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have eval': "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    using 1(2)[of \<phi>] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval eval' by (subst (1 2) letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' =
+      letpast_meval0 eval' j (i + length xs) (ys @ ys') ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) \<phi>'"
+      if "size \<phi>' = size \<phi>" "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) that by simp
+    then show ?thesis
+      using eval eval' Cons by (subst (1 2) letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
 lemma size_letpast_meval: "(\<And>ts db \<psi>. size \<psi> = size \<phi> \<Longrightarrow> size (snd (eval ts db \<psi>)) = size \<psi>) \<Longrightarrow>
   size (snd (snd (snd (letpast_meval0 eval j i ys xs p ts db \<phi>)))) = size \<phi>"
-  apply (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
-  apply (subst letpast_meval0.simps)
-  apply (auto split: prod.splits list.splits simp: Let_def dest: sndI)
-  done
+proof (induct eval j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
+  case (1 eval j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where eval: "eval ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by fastforce
+  have size: "size \<phi>' = size \<phi>"
+    using 1(2)[of \<phi> ts "Mapping.update p xs db"] eval by simp
+  show ?case
+  proof (cases ys')
+    case Nil
+    then show ?thesis
+      using eval size by (subst letpast_meval0.simps) simp
+  next
+    case (Cons y ys'')
+    have "size (snd (snd (snd (letpast_meval0 eval j (i + length xs) (ys @ ys') ys' p []
+      (Mapping.map_values (\<lambda>_ _. []) db) \<phi>')))) = size \<phi>'" if "\<not> j \<le> Suc (i + length xs)"
+      using 1(1)[OF eval[symmetric] refl _ Cons] 1(2) size that by simp
+    then show ?thesis
+      using eval size Cons by (subst letpast_meval0.simps) (simp add: Let_def)
+  qed
+qed
 
 fun freeze_meval0 where
   "freeze_meval0 eval k [] = ([], [])"
