@@ -601,25 +601,36 @@ next
     by (simp add: mult_le_NonFutuRec_iff safe_letpast_Unused sup_eq_Unused_iff del: fun_upd_apply)
 next
   case (MatchF I r)
-  show ?case
-    using MatchF.IH[of _ p _ f g V] MatchF.prems
-    apply (simp add: mult_le_NonFutuRec_iff Sup_eq_Unused_iff del: fun_upd_apply)
-    apply (intro ex_cong conj_cong[OF refl] match_cong_strong)
-    by (metis image_eqD insertCI not_contains_pred_sat safe_letpast_Unused singletonD singleton_insert_inj_eq')
+  have atms: "\<not> contains_pred p \<phi>" if "\<phi> \<in> Regex.atms r" for \<phi>
+    using MatchF.prems(1) that
+    by (intro safe_letpast_Unused) (auto simp add: mult_le_NonFutuRec_iff Sup_eq_Unused_iff)
+  have "Regex.match (Formula.sat \<sigma> (V(p \<mapsto> f)) v) r i j = Regex.match (Formula.sat \<sigma> (V(p \<mapsto> g)) v) r i j" for j
+    by (intro match_cong_strong) (simp add: atms del: fun_upd_apply)
+  then show ?case
+    by (simp del: fun_upd_apply)
 next
   case (MatchP I r)
-  show ?case
-    using MatchP.IH[of _ p _ f g V v] MatchP.prems
-    apply (simp add: Sup_rec_safety_le_iff le_Sup_rec_safety_iff eq_iff[of _ NonFutuRec] del: fun_upd_apply)
-    apply (intro ex_cong conj_cong[OF refl] match_cong_strong)
-    subgoal for j k \<phi>
-      apply (drule meta_spec2[of _ \<phi> k])
-      apply (drule (1) meta_mp)
-      apply (drule meta_mp)
-       apply fastforce
-      apply (erule meta_mp)
-      by simp
-    done
+  have atms: "Formula.sat \<sigma> (V(p \<mapsto> f)) v k \<phi> = Formula.sat \<sigma> (V(p \<mapsto> g)) v k \<phi>"
+    if "\<phi> \<in> Regex.atms r" "k \<le> i" for \<phi> k
+  proof (rule MatchP.IH[OF that(1)])
+    show "safe_letpast p \<phi> \<le> NonFutuRec"
+      using MatchP.prems(1) that(1) by (simp add: Sup_rec_safety_le_iff)
+  next
+    assume "safe_letpast p \<phi> = NonFutuRec"
+    with that(1) have "NonFutuRec \<le> safe_letpast p (Formula.MatchP I r)"
+      by (auto simp add: le_Sup_rec_safety_iff intro!: bexI[where x = \<phi>])
+    with MatchP.prems(1) have "safe_letpast p (Formula.MatchP I r) = NonFutuRec"
+      by (rule order.antisym)
+    then show "f v' j = g v' j" if "j \<le> k" for v' j
+      using MatchP.prems(2) that \<open>k \<le> i\<close> by simp
+  next
+    show "f v' j = g v' j" if "j < k" for v' j
+      using MatchP.prems(3) that \<open>k \<le> i\<close> by simp
+  qed
+  have "Regex.match (Formula.sat \<sigma> (V(p \<mapsto> f)) v) r j i = Regex.match (Formula.sat \<sigma> (V(p \<mapsto> g)) v) r j i" for j
+    by (intro match_cong_strong) (simp add: atms del: fun_upd_apply)
+  then show ?case
+    by (simp del: fun_upd_apply)
 qed simp_all
 
 lemma V_subst_letpast:
