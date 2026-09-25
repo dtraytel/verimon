@@ -925,12 +925,64 @@ lemma split: "split t x = (l,xin,r) \<Longrightarrow> rbt_sorted t \<Longrightar
   set (RBT_Impl.keys l) = {a \<in> set (RBT_Impl.keys t). a < x} \<and>
   set (RBT_Impl.keys r) = {a \<in> set (RBT_Impl.keys t). x < a} \<and>
   (xin = (x \<in> set (RBT_Impl.keys t))) \<and> rbt_sorted l \<and> rbt_sorted r"
-  apply (induction t arbitrary: l xin r)
-  apply (force simp: Let_def set_rbt_join rbt_greater_prop rbt_less_prop
-      split: if_splits prod.splits intro!: rbt_sorted_rbt_join)
-  apply (intro conjI set_eqI; clarsimp split: prod.splits)
-  by (force simp: Let_def set_rbt_join rbt_greater_prop rbt_less_prop
-      split: if_splits prod.splits intro!: rbt_sorted_rbt_join)+
+proof (induction t arbitrary: l xin r)
+  case Empty
+  then show ?case by simp
+next
+  case (Branch c t1 k u t2)
+  have k1: "\<forall>y \<in> set (RBT_Impl.keys t1). y < k" and k2: "\<forall>y \<in> set (RBT_Impl.keys t2). k < y"
+    and s1: "rbt_sorted t1" and s2: "rbt_sorted t2"
+    using Branch.prems(2) by (simp_all add: rbt_less_prop rbt_greater_prop)
+  have keys: "set (RBT_Impl.keys (RBT_Impl.Branch c t1 k u t2)) =
+    set (RBT_Impl.keys t1) \<union> {k} \<union> set (RBT_Impl.keys t2)"
+    by auto
+  consider (lt) "x < k" | (gt) "k < x" | (eq) "x = k"
+    using less_linear by blast
+  then show ?case
+  proof cases
+    case lt
+    obtain l1 b l2 where split1: "split t1 x = (l1, b, l2)"
+      by (cases "split t1 x") auto
+    with lt Branch.prems(1) have lxr: "l = l1" "xin = b" "r = rbt_join l2 k t2"
+      by auto
+    from Branch.IH(1)[OF split1 s1]
+    have l1: "set (RBT_Impl.keys l1) = {a \<in> set (RBT_Impl.keys t1). a < x}"
+      and l2: "set (RBT_Impl.keys l2) = {a \<in> set (RBT_Impl.keys t1). x < a}"
+      and b: "b = (x \<in> set (RBT_Impl.keys t1))"
+      and "rbt_sorted l1" "rbt_sorted l2"
+      by auto
+    have "rbt_sorted (rbt_join l2 k t2)"
+      using l2 k1 k2 \<open>rbt_sorted l2\<close> s2
+      by (intro rbt_sorted_rbt_join) (simp add: rbt_less_prop rbt_greater_prop)
+    with lt k2 \<open>rbt_sorted l1\<close> show ?thesis
+      by (auto simp: lxr l1 l2 b keys set_rbt_join dest: less_trans)
+  next
+    case gt
+    obtain r1 b r2 where split2: "split t2 x = (r1, b, r2)"
+      by (cases "split t2 x") auto
+    moreover from gt have "\<not> x < k"
+      by (simp add: not_less less_imp_le)
+    ultimately have lxr: "l = rbt_join t1 k r1" "xin = b" "r = r2"
+      using gt Branch.prems(1) by auto
+    from Branch.IH(2)[OF split2 s2]
+    have r1: "set (RBT_Impl.keys r1) = {a \<in> set (RBT_Impl.keys t2). a < x}"
+      and r2: "set (RBT_Impl.keys r2) = {a \<in> set (RBT_Impl.keys t2). x < a}"
+      and b: "b = (x \<in> set (RBT_Impl.keys t2))"
+      and "rbt_sorted r1" "rbt_sorted r2"
+      by auto
+    have "rbt_sorted (rbt_join t1 k r1)"
+      using r1 k1 k2 \<open>rbt_sorted r1\<close> s1
+      by (intro rbt_sorted_rbt_join) (simp add: rbt_less_prop rbt_greater_prop)
+    with gt k1 \<open>rbt_sorted r2\<close> show ?thesis
+      by (auto simp: lxr r1 r2 b keys set_rbt_join dest: less_trans)
+  next
+    case eq
+    with Branch.prems(1) have lxr: "l = t1" "xin = True" "r = t2"
+      by auto
+    with eq k1 k2 s1 s2 show ?thesis
+      by (auto simp: keys dest: less_trans)
+  qed
+qed
 
 lemma keys_paint'[simp]: "RBT_Impl.keys (RBT_Impl.paint c t) = RBT_Impl.keys t"
   by (cases t) auto
