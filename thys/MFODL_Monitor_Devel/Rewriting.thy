@@ -637,8 +637,7 @@ next
       Formula.sat \<sigma> V (zs @ xs @ v) i \<phi> \<and> Formula.eval_trm (zs @ xs @ v) x4 = x}"
     using rw11 rw12 by auto
   have rw2: "fv (shiftI (b + x3) \<phi>) \<subseteq> {0..<x3} \<longleftrightarrow> fv \<phi> \<subseteq> {0..<x3}" 
-    using no_shift[where b'=0]
-    apply (auto simp del:x3_def) using atLeastLessThan_iff by blast
+    using no_shift[of 0 x3 b \<phi>] by (simp del: x3_def)
   show ?case
     using Agg(2)
     by (auto simp add: rw1 rw2 nth_append simp flip:x3_def)
@@ -649,9 +648,7 @@ next
   case (MatchF I r)
   have rw: "Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchF
-    by auto
+    by (rule match_map_regex) (simp add: MatchF)
   show ?case
     using MatchF
     by (simp add: rw)
@@ -659,9 +656,7 @@ next
   case (MatchP I r)
   have rw: "\<And>j. Regex.match (Formula.sat \<sigma> V (xs @ z # v)) (regex.map_regex (shiftI b) r) =
     Regex.match (Formula.sat \<sigma> V (xs @ v)) r"
-    apply (rule match_map_regex)
-    using MatchP
-    by auto
+    by (rule match_map_regex) (simp add: MatchP)
   show ?case
     by (simp add: rw)
 qed (auto simp: eval_trm_shiftTI)
@@ -671,9 +666,7 @@ lift_definition init_ivl :: "\<I> \<Rightarrow> \<I>" is "\<lambda>(_,r,n). ((\<
   using zero_enat_def upclosed_def by auto
 
 lemma left_init_ivl[simp]: "memL (init_ivl I) n"
-  apply (clarsimp simp: memL_def init_ivl_def split: prod.splits)
-  by (subst Abs_\<I>_inverse, transfer)
-    (auto simp: upclosed_def downclosed_def)
+  by (transfer fixing: n) (auto split: prod.splits)
 
 lemma right_init_ivl[simp]: "memR (init_ivl I) = memR I" 
   by (transfer; auto)+
