@@ -507,13 +507,26 @@ function union :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" where
         case split t1 a of (l1, _, r1) \<Rightarrow> rbt_join (union l1 l2) a (union r1 r2)))"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare union.simps[simp del]
 
@@ -547,13 +560,26 @@ function inter :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" where
       in if ain then rbt_join l' a r' else rbt_join2 l' r')"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc ord.split_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc ord.split_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare inter.simps[simp del]
 
@@ -631,13 +657,26 @@ function union_comp :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" whe
         case split_comp t1 a of (l1, _, r1) \<Rightarrow> rbt_join (union_comp l1 l2) a (union_comp r1 r2)))"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare union_comp.simps[simp del]
 
@@ -651,13 +690,26 @@ function inter_comp :: "'a urbt \<Rightarrow> 'a urbt \<Rightarrow> 'a urbt" whe
       in if ain then rbt_join l' a r' else rbt_join2 l' r')"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(t1, t2). size t1 + size t2)")
-    apply (auto split: if_splits)
-     apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add2)
-    apply (metis add_leD1 le_imp_less_Suc split_comp_size trans_le_add1)
-   apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add2)
-  apply (metis add_leD2 le_imp_less_Suc split_comp_size trans_le_add1)
-  done
+proof (relation "measure (\<lambda>(t1, t2). size t1 + size t2)", goal_cases)
+  case 1
+  show ?case by simp
+next
+  case (2 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 2(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 2(6,7) by simp
+  ultimately show ?case
+    using 2(4) by simp
+next
+  case (3 t1 t2 p t1' t2' c l2 a u r2 l1 q b r1)
+  have "size t1' + size t2' = size t1 + size t2"
+    using 3(1,2) by (auto split: if_splits)
+  moreover have "size l1 + size r1 \<le> size t1'"
+    using split_comp_size[of t1' a l1 b r1] 3(6,7) by simp
+  ultimately show ?case
+    using 3(4) by simp
+qed
 
 declare inter_comp.simps[simp del]
 
