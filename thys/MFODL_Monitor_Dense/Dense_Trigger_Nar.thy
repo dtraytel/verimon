@@ -201,7 +201,12 @@ lemma gsemi_join_dsemi:
   shows "gsemi_join msk pos r l = dsemi msk pos r l"
 proof (cases "\<forall>i \<in> set msk. i")
   case True
-  then show ?thesis using r by (auto simp: gsemi_join_def dsemi_def dproj_all_true)
+  have "dproj msk a = a" if "a \<in> r" for a
+    using dproj_all_true[OF r[OF that] True] .
+  then have "dsemi msk pos r l = (if pos then r \<inter> l else r - l)"
+    by (auto simp: dsemi_def)
+  then show ?thesis
+    unfolding gsemi_join_def if_P[OF True] by (rule sym)
 next
   case False
   then show ?thesis by (auto simp: gsemi_join_def dsemi_def dproj_all_false)
