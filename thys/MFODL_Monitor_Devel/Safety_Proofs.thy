@@ -1361,92 +1361,77 @@ next
 next
   case (And_assign \<phi> \<psi>)
   then have IH: " finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
-    apply(simp)
-    done
+    by simp
+  have fv_\<psi>_n: "\<forall>z\<in>fv \<psi>. z < n"
+    using fvi_less_nfv[of \<psi>] And_assign(5) by fastforce
+  \<comment> \<open>assigning a variable @{term x} that does not occur in @{term \<phi>} the value of a term over
+    the variables of @{term \<phi>} is injective on the tuples satisfying @{term \<phi>}\<close>
+  have assign: ?case
+    if x: "x < n" "x \<notin> fv \<phi>" and t: "fv_trm t \<subseteq> fv \<phi>" and fv_\<psi>: "fv \<psi> = insert x (fv_trm t)"
+      and sat_\<psi>: "\<And>v. Formula.sat \<sigma> V v i \<psi> \<longleftrightarrow> v ! x = Formula.eval_trm v t" for x t
+  proof (rule finite_subset)
+    let ?f = "\<lambda>v. v[x := Some (Formula.eval_trm (map the v) t)]"
+    let ?A = "{v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    show "finite (?f ` ?A)"
+      using IH by (rule finite_imageI)
+    show "{v. wf_tuple n (fv (\<phi> \<and>\<^sub>F \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<phi> \<and>\<^sub>F \<psi>)} \<subseteq> ?f ` ?A"
+    proof
+      fix v
+      assume "v \<in> {v. wf_tuple n (fv (\<phi> \<and>\<^sub>F \<psi>)) v \<and> Formula.sat \<sigma> V (map the v) i (\<phi> \<and>\<^sub>F \<psi>)}"
+      with t fv_\<psi> sat_\<psi> have wf: "wf_tuple n (insert x (fv \<phi>)) v"
+        and sat: "Formula.sat \<sigma> V (map the v) i \<phi>" and eq: "map the v ! x = Formula.eval_trm (map the v) t"
+        by (simp_all add: Un_absorb2)
+      let ?u = "v[x := None]"
+      from wf x have "wf_tuple n (fv \<phi>) ?u"
+        by (auto simp: wf_tuple_def nth_list_update)
+      moreover from sat x(2) have "Formula.sat \<sigma> V (map the ?u) i \<phi>"
+        by (simp add: sat_the_update)
+      ultimately have "?u \<in> ?A"
+        by simp
+      moreover have "v = ?f ?u"
+      proof (rule sym)
+        from x(2) t have "\<forall>z\<in>fv_trm t. map the ?u ! z = map the v ! z"
+          by (auto simp: map_update intro!: nth_list_update_neq)
+        then have "Formula.eval_trm (map the ?u) t = Formula.eval_trm (map the v) t"
+          by (rule eval_trm_fv_cong)
+        moreover from wf x(1) have "v ! x = Some (map the v ! x)"
+          by (auto simp: wf_tuple_def)
+        ultimately show "?f ?u = v"
+          using eq x(1) wf_tuple_length[OF wf] by (simp add: list_update_same_conv)
+      qed
+      ultimately show "v \<in> ?f ` ?A"
+        by (rule rev_image_eqI)
+    qed
+  qed
   consider x y where "\<psi> = \<^bold>v x =\<^sub>F (\<^bold>v y)" and  "(x \<notin> fv \<phi> \<longleftrightarrow> y \<in> fv \<phi>)"
     |x t where "\<psi> = \<^bold>v x =\<^sub>F t" and "\<not> Formula.is_Var t" and "(x \<notin> fv \<phi> \<and> fv_trm t \<subseteq> fv \<phi>)"
     |x t where "\<psi> = t =\<^sub>F (\<^bold>v x)" and "\<not> Formula.is_Var t" and "(x \<notin> fv \<phi> \<and> fv_trm t \<subseteq> fv \<phi>)"
     using And_assign(2)
     by(simp add: safe_assignment_def Formula.is_Var_def split: Formula.formula.splits trm.splits)
-      then show ?case proof cases
-        case 1
-        then show ?thesis
-          apply(simp)
-          apply(cases "(x \<notin> fv \<phi>)")
-           apply(simp add: insert_commute insert_absorb)
-           apply(rule finite_surj[OF IH, of _ "\<lambda> v. v [x:=v!y]"])
-           apply(auto)[]
-          subgoal for v
-            apply(rule rev_image_eqI[of "v [x:=None]"])
-             apply(auto)
-              apply(simp add: wf_tuple_def)
-              apply (metis nth_list_update nth_list_update_neq)
-            apply (simp add: sat_the_update)
-            apply(rule sym)
-            apply(subst list_update_same_conv)
-            using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
-            apply(simp add: wf_tuple_def)
-            apply(subst nth_list_update_neq)
-             apply blast
-            using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
-            by (metis Suc_le_lessD option.expand nth_map)
-          apply(simp add: insert_absorb)
-           apply(rule finite_surj[OF IH, of _ "\<lambda> v. v [y:=v!x]"])
-           apply(auto)[]
-          subgoal for v
-            apply(rule rev_image_eqI[of "v [y:=None]"])
-             apply(auto)
-              apply(simp add: wf_tuple_def)
-              apply (metis nth_list_update nth_list_update_neq)
-            apply (simp add: sat_the_update)
-            apply(rule sym)
-            apply(subst list_update_same_conv)
-            using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
-            apply(simp add: wf_tuple_def)
-            apply(subst nth_list_update_neq)
-             apply blast
-            using And_assign(5) apply(simp add: wf_tuple_def Formula.nfv_def)
-            by (metis Suc_le_eq nth_map option.expand)
-          done
-      next
-        case 2
-        then show ?thesis
-          apply(simp add: Un_absorb2)
-          apply(rule finite_surj[OF IH, of _ "\<lambda> v. v [x:=Some (Formula.eval_trm (map the v) t)]"])
-          apply(auto)[]
-          subgoal for v
-            apply(rule rev_image_eqI[of "v [x:=None]"])
-             apply(auto)
-              apply(simp add: wf_tuple_def)
-              apply (metis nth_list_update_eq nth_list_update_neq)
-             apply (simp add: sat_the_update)
-            apply(rule sym)
-            apply(subst list_update_same_conv)
-            using And_assign(5) apply(simp_all add: wf_tuple_def Formula.nfv_def)
-            apply(subst eval_trm_fv_cong[of _ _ "map the v"] )
-             apply (metis in_mono map_update nth_list_update_neq)
-            by (metis Suc_le_eq option.collapse)
-          done
-      next
-        case 3
-        then show ?thesis
-          apply(simp add: Un_absorb2)
-          apply(rule finite_surj[OF IH, of _ "\<lambda> v. v [x:=Some (Formula.eval_trm (map the v) t)]"])
-          apply(auto)[]
-          subgoal for v
-            apply(rule rev_image_eqI[of "v [x:=None]"])
-             apply(auto)
-              apply(simp add: wf_tuple_def)
-              apply (metis nth_list_update_eq nth_list_update_neq)
-             apply (simp add: sat_the_update)
-            apply(rule sym)
-            apply(subst list_update_same_conv)
-            using And_assign(5) apply(simp_all add: wf_tuple_def Formula.nfv_def)
-            apply(subst eval_trm_fv_cong[of _ _ "map the v"] )
-             apply (metis in_mono map_update nth_list_update_neq)
-            by (metis Suc_le_eq option.collapse)
-          done
-      qed
+  then show ?case
+  proof cases
+    case 1
+    with fv_\<psi>_n have "x < n" "y < n"
+      by simp_all
+    show ?thesis
+    proof (cases "x \<in> fv \<phi>")
+      case True
+      with 1 \<open>y < n\<close> show ?thesis
+        by (intro assign[of y "\<^bold>v x"]) auto
+    next
+      case False
+      with 1 \<open>x < n\<close> show ?thesis
+        by (intro assign[of x "\<^bold>v y"]) auto
+    qed
+  next
+    case 2
+    with fv_\<psi>_n show ?thesis
+      by (intro assign[of x t]) auto
+  next
+    case 3
+    with fv_\<psi>_n show ?thesis
+      by (intro assign[of x t]) auto
+  qed
 next
   case (And_safe \<phi> \<psi>)
   let ?A = "\<lambda>\<phi>. {v | v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
