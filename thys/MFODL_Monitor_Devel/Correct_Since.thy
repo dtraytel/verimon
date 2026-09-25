@@ -218,40 +218,73 @@ lemma (in msaux) wf_since_aux_update1:
     and args_L: "args_L args = fv \<phi>"
     and safe: "fv \<phi> \<subseteq> fv \<psi>"
   shows "wf_since_aux \<sigma> V R args \<phi> \<psi> (join_msaux args rel1 (add_new_ts_msaux args t aux)) pIn (Suc pOut)"
-  using wf unfolding t_eq wf_since_aux_def
-  apply (clarsimp split del: if_split)
-  subgoal for auxlist
-    apply (rule exI[where x="map (\<lambda>(t', rel). (t', join rel (args_pos args) rel1)) (filter (\<lambda>(t', rel). memR (args_ivl args) (\<tau> \<sigma> pOut - t')) auxlist)"])
-    apply (intro conjI)
-    subgoal
-      using rel1 by (auto simp add: args_n args_L qtable_def
-        intro!: valid_join_msaux valid_add_new_ts_msaux)
-    subgoal
-      by (simp add: sorted_wrt_map sorted_wrt_filter split_beta)
-    subgoal
-      apply (clarsimp simp add: args_n args_L)
-      subgoal for a b
-        apply (drule spec2[of _ a b])
-        apply clarify
-        apply (erule qtable_join[OF _ rel1])
-        using safe apply blast
-        using safe apply blast
-          apply simp
-         apply (simp add: sat_since_point_def sat_the_restrict safe; safe)
-           apply (meson diff_le_self order_trans greaterThanAtMost_iff)
-          apply (meson greaterThanAtMost_iff less_le_trans order_refl)
-         apply (metis greaterThanAtMost_iff Suc_pred bot_nat_0.extremum_uniqueI le_antisym not_le not_less_eq_eq)
-        apply (simp add: sat_since_point_def sat_the_restrict safe; safe)
-          apply (meson diff_le_self order_trans greaterThanAtMost_iff)
-         apply (meson greaterThanAtMost_iff less_le_trans order_refl)
-        apply (metis greaterThanAtMost_iff Suc_pred bot_nat_0.extremum_uniqueI le_antisym not_le not_less_eq_eq)
-        done
-      done
-    subgoal
-      by (clarsimp simp add: split_beta image_iff)
-        (meson memR_antimono \<tau>_mono diff_le_mono diff_le_self)
-    done
-  done
+proof -
+  from wf obtain auxlist where pIn_le: "pIn \<le> pOut"
+    and aggargs: "valid_aggargs (args_n args) (Formula.fv \<psi>) (args_agg args)"
+    and valid: "valid_msaux args (if pOut = 0 then 0 else \<tau> \<sigma> (pOut-1)) aux auxlist"
+    and sorted: "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
+    and in_auxlist: "\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow>
+        (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - t) \<and>
+        qtable (args_n args) (fv \<psi>) (mem_restr R)
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X"
+    and complete: "\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow>
+        (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
+    unfolding wf_since_aux_def by blast
+  \<comment> \<open>extending the since point by one time-point amounts to checking the left subformula there\<close>
+  have since_point_step: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t v \<longleftrightarrow>
+      sat_since_point pos \<sigma> V \<phi> \<psi> pIn (pOut - 1) t v \<and>
+      (if pos then Formula.sat \<sigma> V v pOut \<phi> else \<not> Formula.sat \<sigma> V v pOut \<phi>)" for pos t v
+  proof -
+    have interval_eq: "{j<..pOut} = insert pOut {j<..pOut - 1}" if "j < pIn" for j
+      using that pIn_le by auto
+    show ?thesis
+      unfolding sat_since_point_def by (simp add: interval_eq cong: conj_cong) blast
+  qed
+  have since_point_restrict: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t (map the (restrict (fv \<psi>) v)) \<longleftrightarrow>
+      sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t (map the v)" for pos i t v
+    unfolding sat_since_point_def using safe by (simp add: sat_the_restrict)
+  define auxlist' where "auxlist' = map (\<lambda>(t', rel). (t', join rel (args_pos args) rel1))
+    (filter (\<lambda>(t', rel). memR (args_ivl args) (\<tau> \<sigma> pOut - t')) auxlist)"
+  have "valid_msaux args (\<tau> \<sigma> pOut) (join_msaux args rel1 (add_new_ts_msaux args (\<tau> \<sigma> pOut) aux)) auxlist'"
+    unfolding auxlist'_def using rel1 valid
+    by (auto simp add: args_n args_L qtable_def intro!: valid_join_msaux valid_add_new_ts_msaux)
+  moreover have "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist'"
+    unfolding auxlist'_def using sorted by (simp add: sorted_wrt_map sorted_wrt_filter split_beta)
+  moreover have "(\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> pOut - t) \<and>
+      qtable (args_n args) (fv \<psi>) (mem_restr R)
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+    if "(t, X) \<in> set auxlist'" for t X
+  proof -
+    from that obtain X0 where X0: "(t, X0) \<in> set auxlist" and memR: "memR (args_ivl args) (\<tau> \<sigma> pOut - t)"
+      and X_eq: "X = join X0 (args_pos args) rel1"
+      unfolding auxlist'_def by auto
+    from X0 in_auxlist have "\<exists>i<pIn. \<tau> \<sigma> i = t"
+      and qt: "qtable n (fv \<psi>) (mem_restr R)
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X0"
+      by (auto simp: args_n)
+    moreover have "qtable n (fv \<psi>) (mem_restr R)
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+      unfolding X_eq using qt rel1 safe
+      by (rule qtable_join)
+        (use safe in \<open>auto simp: since_point_step since_point_restrict sat_the_restrict\<close>)
+    ultimately show ?thesis
+      using memR by (simp add: args_n)
+  qed
+  moreover have "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist'"
+    if "i < pIn" "memR (args_ivl args) (\<tau> \<sigma> pOut - \<tau> \<sigma> i)" for i
+  proof -
+    have "\<tau> \<sigma> (pOut - 1) - \<tau> \<sigma> i \<le> \<tau> \<sigma> pOut - \<tau> \<sigma> i"
+      by (simp add: diff_le_mono)
+    with that(2) have "memR (args_ivl args) (\<tau> \<sigma> (pOut - 1) - \<tau> \<sigma> i)"
+      by (rule memR_antimono)
+    with that(1) complete obtain X0 where "(\<tau> \<sigma> i, X0) \<in> set auxlist"
+      by auto
+    with that(2) show ?thesis
+      unfolding auxlist'_def by force
+  qed
+  ultimately show ?thesis
+    unfolding t_eq wf_since_aux_def using pIn_le aggargs by auto
+qed
 
 lemma (in msaux) wf_since_aux_update2:
   assumes wf: "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut"
