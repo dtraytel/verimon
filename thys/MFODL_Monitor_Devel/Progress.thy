@@ -618,65 +618,99 @@ lemma progress_fixpoint_ex:
 
 lemma not_contains_pred_progress[simp]: "\<not> contains_pred p \<phi> 
   \<Longrightarrow> progress \<sigma> (P(p \<mapsto> x)) \<phi> j = progress \<sigma> P \<phi> j"
-  apply(induct p \<phi> arbitrary: P x rule: contains_pred.induct)
-                   apply(simp_all add: progress_regex_def)
-   apply (erule conjE)
-   apply (erule disjE_Not2)
-   subgoal by clarsimp metis
-   subgoal by (metis fun_upd_twist)
-  apply (erule conjE)
-  apply (erule disjE_Not2)
-   apply auto[]
-  subgoal for e \<phi> \<psi> P x
-    unfolding frz_progress_def Let_def
-    by simp
-  subgoal for e \<phi> \<psi> P x
-    unfolding frz_progress_def Let_def
-    by simp
-  subgoal premises A for p e \<phi> \<psi> P x
+proof (induction p \<phi> arbitrary: P x rule: contains_pred.induct)
+  case (5 p e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  show ?case
   proof (cases "contains_pred p \<phi>")
     case True
-    then have "\<not> contains_pred (e, Formula.nfv \<phi>) \<psi>"
-      using A by simp
+    with "5.prems" have "\<not> contains_pred ?en \<psi>" "\<not> contains_pred p \<psi>"
+      by auto
     then show ?thesis
-      unfolding frz_progress_def Let_def
-      using A by (simp add: fun_upd_twist)
+      by (simp add: "5.IH"(2,3) del: fun_upd_apply)
   next
     case False
-    then show ?thesis
-      unfolding frz_progress_def Let_def
-      using A apply (simp add: fun_upd_twist)
-      apply (rule arg_cong[where f=Least])
-      apply (rule ext)
-      apply auto
-             apply (metis fun_upd_twist)+
-      done
-  qed
-  subgoal premises A for p e \<phi> \<psi> P x
-  proof (cases "p = (e, Formula.nfv \<phi>)")
-    case True
-    then show ?thesis
-      by (simp add: letpast_progress_def)
-  next
-    case neq: False
-    then show ?thesis
-    proof (cases "contains_pred p \<phi>")
+    then have \<phi>: "progress \<sigma> (P(p \<mapsto> x)) \<phi> j = progress \<sigma> P \<phi> j"
+      by (rule "5.IH"(1))
+    show ?thesis
+    proof (cases "p = ?en")
       case True
-      then have "\<not> contains_pred (e, Formula.nfv \<phi>) \<psi>"
-        using A neq by simp
       then show ?thesis
-        using A neq by (simp add: Let_def fun_upd_twist letpast_progress_def)
+        using \<phi> by (simp del: fun_upd_apply)
     next
-      case False
-      then show ?thesis
-        using A False neq
-        by (metis (no_types, lifting) ext fun_upd_twist letpast_progress_def)
+      case neq: False
+      with "5.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with neq \<phi> show ?thesis
+        by (simp add: fun_upd_twist[of p] "5.IH"(3) del: fun_upd_apply)
     qed
   qed
-  by (auto simp: release_safe_bounded_def Formula.eventually_def
-      intro!: arg_cong2[where f=min])
-    (clarsimp simp: always_safe_bounded_def progress_eventually)
-
+next
+  case (6 p e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  show ?case
+  proof (cases "contains_pred p \<phi>")
+    case True
+    with "6.prems" have "\<not> contains_pred ?en \<psi>" "\<not> contains_pred p \<psi>"
+      by auto
+    then show ?thesis
+      unfolding progress.simps Let_def
+      by (simp add: "6.IH"(2,3) del: fun_upd_apply)
+  next
+    case False
+    then have \<phi>: "progress \<sigma> (P(p \<mapsto> x)) \<phi> j = progress \<sigma> P \<phi> j"
+      by (rule "6.IH"(1))
+    have "progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> y)) \<psi> j = progress \<sigma> (P(?en \<mapsto> y)) \<psi> j" for y
+    proof (cases "p = ?en")
+      case True
+      then show ?thesis
+        by (simp del: fun_upd_apply)
+    next
+      case neq: False
+      with "6.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with neq show ?thesis
+        by (simp add: fun_upd_twist[of p] "6.IH"(3) del: fun_upd_apply)
+    qed
+    then show ?thesis
+      unfolding progress.simps Let_def \<phi>
+      by (simp del: fun_upd_apply)
+  qed
+next
+  case (7 p e \<phi> \<psi>)
+  let ?en = "(e, Formula.nfv \<phi>)"
+  show ?case
+  proof (cases "p = ?en")
+    case True
+    then show ?thesis
+      by (simp add: letpast_progress_def Let_def del: fun_upd_apply)
+  next
+    case neq: False
+    with "7.prems" have \<psi>: "\<not> contains_pred p \<psi>"
+      by simp
+    show ?thesis
+    proof (cases "contains_pred p \<phi>")
+      case True
+      with neq "7.prems" have "\<not> contains_pred ?en \<psi>"
+        by simp
+      with \<psi> show ?thesis
+        by (simp add: Let_def "7.IH"(2,3) del: fun_upd_apply)
+    next
+      case False
+      have "progress \<sigma> (P(p \<mapsto> x, ?en \<mapsto> i)) \<phi> j = progress \<sigma> (P(?en \<mapsto> i)) \<phi> j" for i
+        using neq False by (simp add: fun_upd_twist[of p] "7.IH"(1) del: fun_upd_apply)
+      then have "letpast_progress \<sigma> (P(p \<mapsto> x)) ?en \<phi> j = letpast_progress \<sigma> P ?en \<phi> j"
+        by (simp add: letpast_progress_def del: fun_upd_apply)
+      with neq \<psi> show ?thesis
+        by (simp add: Let_def fun_upd_twist[of p] "7.IH"(3) del: fun_upd_apply)
+    qed
+  qed
+next
+  case (19 p \<phi> I \<psi>)
+  then show ?case
+    by (auto simp: release_safe_bounded_def Formula.eventually_def
+        intro!: arg_cong2[where f=min])
+      (clarsimp simp: always_safe_bounded_def progress_eventually)qed (simp_all add: progress_regex_def)
 lemma progress_regex_le: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress_regex \<sigma> P r j \<le> j"
   by (auto intro!: progress_le_gen simp: Min_le_iff progress_regex_def)
 
