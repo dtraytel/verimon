@@ -2722,27 +2722,69 @@ lemma unpack_foldl_min_eq_int:
   assumes "x \<in> range EInt"
   and "set xs \<subseteq> range EInt"
   shows "EInt (foldl min (the (unpack_int x)) (map (\<lambda>a. the (unpack_int a)) xs)) = foldl min x xs"
-  using assms apply(induction xs arbitrary:x) by (auto simp: unpack_int_def) (metis (no_types, lifting) event_data.simps(10) less_eq_event_data.simps(1) min_def option.sel rangeI)
+  using assms
+proof (induction xs arbitrary: x)
+  case Nil
+  then show ?case by (auto simp: unpack_int_def)
+next
+  case (Cons a xs)
+  from Cons.prems obtain i j where x: "x = EInt i" and a: "a = EInt j" by auto
+  have min_eq: "min (EInt i) (EInt j) = EInt (min i j)" by (simp add: min_def)
+  have "EInt (foldl min (min i j) (map (\<lambda>a. the (unpack_int a)) xs)) = foldl min (EInt (min i j)) xs"
+    using Cons.IH[of "EInt (min i j)"] Cons.prems by (simp add: unpack_int_def)
+  then show ?case by (simp add: x a min_eq unpack_int_def)
+qed
 
 lemma unpack_foldl_min_eq_str:
   assumes "x \<in> range EString"
   and "set xs \<subseteq> range EString"
   shows "EString (foldl min (the (unpack_string x)) (map (\<lambda>a. the (unpack_string a)) xs)) = foldl min x xs"
-  using assms apply(induction xs arbitrary:x) 
-  by(auto simp: unpack_string_def) (metis (no_types, lifting) event_data.simps(12) less_eq_event_data.simps(3) min_def_raw option.sel rangeI)
+  using assms
+proof (induction xs arbitrary: x)
+  case Nil
+  then show ?case by (auto simp: unpack_string_def)
+next
+  case (Cons a xs)
+  from Cons.prems obtain i j where x: "x = EString i" and a: "a = EString j" by auto
+  have min_eq: "min (EString i) (EString j) = EString (min i j)" by (simp add: min_def)
+  have "EString (foldl min (min i j) (map (\<lambda>a. the (unpack_string a)) xs)) = foldl min (EString (min i j)) xs"
+    using Cons.IH[of "EString (min i j)"] Cons.prems by (simp add: unpack_string_def)
+  then show ?case by (simp add: x a min_eq unpack_string_def)
+qed
 
 lemma unpack_foldl_max_eq_int:
   assumes "x \<in> range EInt"
   and "set xs \<subseteq> range EInt"
   shows "EInt (foldl max (the (unpack_int x)) (map (\<lambda>a. the (unpack_int a)) xs)) = foldl max x xs"
-  using assms apply(induction xs arbitrary:x) by(auto simp: unpack_int_def) (metis (no_types, lifting) event_data.simps(10) less_eq_event_data.simps(1) max_def option.sel rangeI)
+  using assms
+proof (induction xs arbitrary: x)
+  case Nil
+  then show ?case by (auto simp: unpack_int_def)
+next
+  case (Cons a xs)
+  from Cons.prems obtain i j where x: "x = EInt i" and a: "a = EInt j" by auto
+  have max_eq: "max (EInt i) (EInt j) = EInt (max i j)" by (simp add: max_def)
+  have "EInt (foldl max (max i j) (map (\<lambda>a. the (unpack_int a)) xs)) = foldl max (EInt (max i j)) xs"
+    using Cons.IH[of "EInt (max i j)"] Cons.prems by (simp add: unpack_int_def)
+  then show ?case by (simp add: x a max_eq unpack_int_def)
+qed
 
 lemma unpack_foldl_max_eq_str:
   assumes "x \<in> range EString"
   and "set xs \<subseteq> range EString"
   shows "EString (foldl max (the (unpack_string x)) (map (\<lambda>a. the (unpack_string a)) xs)) = foldl max x xs"
-  using assms apply(induction xs arbitrary:x) 
-  by(auto simp: unpack_string_def) (metis (no_types, lifting) event_data.simps(12) less_eq_event_data.simps(3) max_def_raw option.sel rangeI)
+  using assms
+proof (induction xs arbitrary: x)
+  case Nil
+  then show ?case by (auto simp: unpack_string_def)
+next
+  case (Cons a xs)
+  from Cons.prems obtain i j where x: "x = EString i" and a: "a = EString j" by auto
+  have max_eq: "max (EString i) (EString j) = EString (max i j)" by (simp add: max_def)
+  have "EString (foldl max (max i j) (map (\<lambda>a. the (unpack_string a)) xs)) = foldl max (EString (max i j)) xs"
+    using Cons.IH[of "EString (max i j)"] Cons.prems by (simp add: unpack_string_def)
+  then show ?case by (simp add: x a max_eq unpack_string_def)
+qed
 
 lemma valid_list_aux_min:
   assumes "valid_list_aux l (group_multiset k b f X) type"
