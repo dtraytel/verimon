@@ -911,36 +911,105 @@ lemma contains_pred_release_safe_bounded [simp]: "contains_pred p (release_safe_
 
 lemma not_contains_pred_sat[simp]: 
   "\<not> contains_pred p \<phi> \<Longrightarrow> Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<phi> = Formula.sat \<sigma> V v i \<phi>"
-  apply(induct p \<phi> arbitrary: V v x i rule: contains_pred.induct)
-                      apply(simp_all add:  split: nat.splits cong: match_cong)
-    apply (erule conjE)
-    apply (erule disjE_Not2)
-     apply auto []
-    apply (auto) []
-       apply (metis (no_types, lifting) fun_upd_twist)
-      apply (metis (no_types, lifting) fun_upd_twist)
-     apply (metis (no_types, lifting) fun_upd_twist)
-    apply (metis (no_types, lifting) fun_upd_twist)
-   apply (erule conjE)
-   apply (erule disjE_Not2)
-    apply auto []
-   apply(clarsimp simp add: Let_def)
-   apply(erule impCE)
-  subgoal for p n e \<phi> \<psi> V v x i
-    apply(rule ccontr)
-    apply(simp add: fun_upd_twist[of "(p, n)" "(e, Formula.nfv \<phi>)"])
-    done
-   apply simp
-  apply (erule disjE_Not2)
-   apply auto []
-  apply(clarsimp simp add: Let_def)
-  apply(erule impCE)
-  subgoal for p n e \<phi> \<psi> V v x i
-    apply(rule ccontr)
-    apply(simp add: fun_upd_twist[of "(p, n)" "(e, Formula.nfv \<phi>)"])
-    done
-  apply simp
-  done
+  supply fun_upd_apply[simp del] \<comment> \<open>keep the updates of @{term V} symbolic\<close>
+proof (induction p \<phi> arbitrary: V v x i rule: contains_pred.induct)
+  case (5 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?F = "\<lambda>V w j. Formula.sat \<sigma> V w j \<phi>"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+  proof (cases "contains_pred p \<phi>")
+    case True
+    with "5.prems" have q: "\<not> contains_pred ?q \<psi>" and p: "p \<noteq> ?q \<Longrightarrow> \<not> contains_pred p \<psi>"
+      by auto
+    from q have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+      Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<psi>"
+      by (rule "5.IH"(2))
+    also have "\<dots> = Formula.sat \<sigma> V v i \<psi>"
+      using q p by (cases "p = ?q") (simp_all add: "5.IH"(2,3))
+    also have "\<dots> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+      using q by (rule "5.IH"(2)[symmetric])
+    finally show ?thesis .
+  next
+    case False
+    then have "\<And>w j. Formula.sat \<sigma> (V(p \<mapsto> x)) w j \<phi> = Formula.sat \<sigma> V w j \<phi>"
+      by (rule "5.IH"(1))
+    moreover have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F V)) v i \<psi> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+    proof (cases "p = ?q")
+      case False
+      with "5.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with False show ?thesis
+        by (simp add: fun_upd_twist[OF False] "5.IH"(3))
+    qed simp
+    ultimately show ?thesis
+      by simp
+  qed
+  then show ?case
+    by simp
+next
+  case (6 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?F = "\<lambda>V w j. Formula.sat \<sigma> V w i \<phi>"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+  proof (cases "contains_pred p \<phi>")
+    case True
+    with "6.prems" have q: "\<not> contains_pred ?q \<psi>" and p: "p \<noteq> ?q \<Longrightarrow> \<not> contains_pred p \<psi>"
+      by auto
+    from q have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F (V(p \<mapsto> x)))) v i \<psi> =
+      Formula.sat \<sigma> (V(p \<mapsto> x)) v i \<psi>"
+      by (rule "6.IH"(2))
+    also have "\<dots> = Formula.sat \<sigma> V v i \<psi>"
+      using q p by (cases "p = ?q") (simp_all add: "6.IH"(2,3))
+    also have "\<dots> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+      using q by (rule "6.IH"(2)[symmetric])
+    finally show ?thesis .
+  next
+    case False
+    then have "\<And>w. Formula.sat \<sigma> (V(p \<mapsto> x)) w i \<phi> = Formula.sat \<sigma> V w i \<phi>"
+      by (rule "6.IH"(1))
+    moreover have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?F V)) v i \<psi> = Formula.sat \<sigma> (V(?q \<mapsto> ?F V)) v i \<psi>"
+    proof (cases "p = ?q")
+      case False
+      with "6.prems" have "\<not> contains_pred p \<psi>"
+        by simp
+      with False show ?thesis
+        by (simp add: fun_upd_twist[OF False] "6.IH"(3))
+    qed simp
+    ultimately show ?thesis
+      by simp
+  qed
+  then show ?case
+    by simp
+next
+  case (7 p e \<phi> \<psi> V v x i)
+  let ?q = "(e, Formula.nfv \<phi>)"
+  let ?L = "\<lambda>V. letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V(?q \<mapsto> X)) u k \<phi>)"
+  have "Formula.sat \<sigma> (V(p \<mapsto> x, ?q \<mapsto> ?L (V(p \<mapsto> x)))) v i \<psi> =
+    Formula.sat \<sigma> (V(?q \<mapsto> ?L V)) v i \<psi>"
+  proof (cases "p = ?q")
+    case False
+    with "7.prems" have p: "\<not> contains_pred p \<psi>"
+      by simp
+    from False "7.prems" have "\<not> contains_pred p \<phi> \<or> \<not> contains_pred ?q \<psi>"
+      by simp
+    then show ?thesis
+    proof
+      assume "\<not> contains_pred p \<phi>"
+      then have "?L (V(p \<mapsto> x)) = ?L V"
+        by (simp add: fun_upd_twist[OF False] "7.IH"(1))
+      with p show ?thesis
+        by (simp add: fun_upd_twist[OF False] "7.IH"(3))
+    next
+      assume "\<not> contains_pred ?q \<psi>"
+      with p show ?thesis
+        by (simp add: "7.IH"(2,3))
+    qed
+  qed simp
+  then show ?case
+    by (simp add: Let_def)
+qed (simp_all add: fun_upd_apply split: nat.splits cong: match_cong)
 
 
 subsection \<open>Past-only formulas\<close>
