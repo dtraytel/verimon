@@ -12,28 +12,43 @@ text \<open>
   normalized and rewritten until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The dense state is then built from it by
   @{const udminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
-  can (@{theory MFODL_Monitor_Dense.Dense_Frz}) and moves existential quantifiers into the
-  windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}). The
+  can (@{theory MFODL_Monitor_Dense.Dense_Frz}), moves existential quantifiers into the
+  windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}), and binds the right
+  operand of a release so that it is evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}). The
   theorem @{text udminit_verimon_mverdicts} below states that the verdicts of the dense monitor
   started from this state are those of the input formula, provided the dense compiler covered
   the whole formula.
 \<close>
 
+text \<open>The multiway conversion expands a release into an until over several copies of its right
+  operand; @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies
+  are all occurrences of one predicate.\<close>
+
 definition udminit_verimon where
   "udminit_verimon mw rw sig \<phi> =
-     map_sum id (\<lambda>\<psi>. udminit_push (if mw then convert_multiway \<psi> else \<psi>)) (prepare_verimon rw sig \<phi>)"
+     map_sum id (\<lambda>\<psi>. udminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>))
+       (prepare_verimon rw sig \<phi>)"
+
+lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
+  by (auto simp: verimon_spec_def verimon_spec_axioms_def wty_mfodl_def wty_share_opt
+    mmonitorable_share_opt)
 
 context verimon_prepare
 begin
 
-definition "\<psi>_mw mw = (if mw then convert_multiway \<psi> else \<psi>)"
+definition "\<psi>_mw mw = (if mw then convert_multiway (share_opt \<psi>) else \<psi>)"
 
 lemma udminit_verimon_\<psi>_mw: "udminit_verimon mw rw sig \<phi> = Inr (udminit_push (\<psi>_mw mw))"
   by (simp add: udminit_verimon_def prepare_\<psi> \<psi>_mw_def)
 
 lemma verimon_spec_\<psi>_mw:
   "verimon_spec (\<psi>_mw mw) (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
-  by (cases mw) (simp_all add: \<psi>_mw_def verimon_spec_\<psi> verimon_spec_convert_multiway)
+  by (cases mw) (simp_all add: \<psi>_mw_def verimon_spec_\<psi> verimon_spec_convert_multiway
+    verimon_spec_share_opt)
+
+lemma safe_share_opt_\<psi>: "safe_formula (share_opt \<psi>)"
+  using verimon_spec.monitorable[OF verimon_spec_share_opt[OF verimon_spec_\<psi>]]
+  by (simp add: mmonitorable_def)
 
 lemma fvi_\<psi>_mw: "Formula.fvi b (\<psi>_mw mw) = Formula.fvi b \<phi>"
   by (simp add: \<psi>_mw_def fv_convert_multiway fvi_\<psi>)
@@ -42,10 +57,10 @@ lemma nfv_\<psi>_mw: "Formula.nfv (\<psi>_mw mw) = Formula.nfv \<phi>"
   by (simp add: \<psi>_mw_def nfv_convert_multiway nfv_\<psi>)
 
 lemma sat_\<psi>_mw: "Formula.sat \<sigma> V v i (\<psi>_mw mw) = Formula.sat \<sigma> V v i \<psi>"
-  by (simp add: \<psi>_mw_def sat_convert_multiway[OF safe_\<psi>])
+  by (simp add: \<psi>_mw_def sat_convert_multiway[OF safe_share_opt_\<psi>])
 
 lemma pprogress_\<psi>_mw: "pprogress (\<psi>_mw mw) \<pi> = pprogress \<psi> \<pi>"
-  by (simp add: \<psi>_mw_def pprogress_def progress_convert_multiway[OF safe_\<psi>])
+  by (simp add: \<psi>_mw_def pprogress_def progress_convert_multiway[OF safe_share_opt_\<psi>])
 
 context
   fixes mw :: bool
@@ -81,7 +96,7 @@ proof -
   have ust: "ust = udminit_push (\<psi>_mw mw)"
     using init by (simp add: udminit_verimon_\<psi>_mw)
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv (\<psi>_mw mw))
-      (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (push_ex (frz_opt (\<psi>_mw mw)))))) = 0"
+      (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (dense_prep (\<psi>_mw mw))))) = 0"
     using zf unfolding ust by (simp only: Rep_udminit_push[symmetric] vdfail_nodes_Rep_udmstate)
   from verimon_mw.dmonitor_mverdicts_push[OF zf' f wty, unfolded Mt_\<psi>_mw Mt_exchange] show ?thesis
     by (simp add: ust Rep_udminit_push nfv_\<psi>_mw fvi_\<psi>_mw)

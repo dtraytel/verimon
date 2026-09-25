@@ -1,6 +1,7 @@
 (*<*)
 theory Dense_Push
   imports "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Frz"
+    "MFODL_Monitor_Dense.Dense_Share"
 begin
 (*>*)
 
@@ -423,38 +424,57 @@ lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile>
 subsection \<open>The dense monitor on the rewritten formula\<close>
 
 text \<open>
-  The monitor is started on @{term "push_ex (frz_opt \<phi>)"}: the frozen predicates are taken out of
+  The monitor is started on @{term "dense_prep \<phi>"}: the frozen predicates are taken out of
   the temporal operators and bound with @{const Formula.Let} where they can be
-  (@{theory MFODL_Monitor_Dense.Dense_Frz}), and then the existential quantifiers are moved into
-  the windows.  Everything the specification of the monitor for @{term \<phi>} depends on -- the
-  number and set of free variables, the traces (through the signature), the satisfaction
-  relation and the progress -- is the same for the rewritten formula, which is monitorable and
-  well typed whenever @{term \<phi>} is.  So the dense monitor started on it computes exactly the
-  verdicts of @{term \<phi>}.
+  (@{theory MFODL_Monitor_Dense.Dense_Frz}), the existential quantifiers are moved into the
+  windows, and the right operand of a release is bound with @{const Formula.Let} so that it is
+  evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}).  Everything the specification of
+  the monitor for @{term \<phi>} depends on -- the number and set of free variables, the traces
+  (through the signature), the satisfaction relation and the progress -- is the same for the
+  rewritten formula, which is monitorable and well typed whenever @{term \<phi>} is.  So the dense
+  monitor started on it computes exactly the verdicts of @{term \<phi>}.
 \<close>
 
-lemma pprogress_frz_opt[simp]: "pprogress (frz_opt \<phi>) = pprogress \<phi>"
-  by (simp add: pprogress_def fun_eq_iff)
+definition dense_prep :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
+  "dense_prep \<phi> = share_opt (push_ex (frz_opt \<phi>))"
+
+lemma fvi_dense_prep[simp]: "Formula.fvi b (dense_prep \<phi>) = Formula.fvi b \<phi>"
+  by (simp add: dense_prep_def)
+
+lemma nfv_dense_prep[simp]: "Formula.nfv (dense_prep \<phi>) = Formula.nfv \<phi>"
+  by (simp add: dense_prep_def)
+
+lemma sat_dense_prep[simp]: "Formula.sat \<sigma> V v i (dense_prep \<phi>) = Formula.sat \<sigma> V v i \<phi>"
+  by (simp add: dense_prep_def)
+
+lemma pprogress_dense_prep[simp]: "pprogress (dense_prep \<phi>) = pprogress \<phi>"
+  by (simp add: pprogress_def fun_eq_iff dense_prep_def)
+
+lemma wty_dense_prep: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> dense_prep \<phi>"
+  by (simp add: dense_prep_def wty_share_opt wty_push_ex wty_frz_opt)
+
+lemma mmonitorable_dense_prep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (dense_prep \<phi>)"
+  by (simp add: dense_prep_def mmonitorable_share_opt mmonitorable_frz_opt)
 
 context verimon_spec
 begin
 
 theorem dmonitor_mverdicts_push:
   assumes zf: "vdfail_nodes (dmstate_m (dof_state (Formula.nfv \<phi>)
-      (set_cols (Formula.fv \<phi>)) (minit_safe (push_ex (frz_opt \<phi>))))) = 0"
+      (set_cols (Formula.fv \<phi>)) (minit_safe (dense_prep \<phi>)))) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
       (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
-         (minit_safe (push_ex (frz_opt \<phi>)))) \<pi>)) = Mt \<pi>"
+         (minit_safe (dense_prep \<phi>))) \<pi>)) = Mt \<pi>"
 proof -
-  interpret p: verimon_spec "push_ex (frz_opt \<phi>)" SIG ENV
+  interpret p: verimon_spec "dense_prep \<phi>" SIG ENV
     by unfold_locales
-      (simp_all add: wty_push_ex[OF wty_frz_opt[OF well_typed]] mmonitorable_frz_opt[OF monitorable])
+      (simp_all add: wty_dense_prep[OF well_typed] mmonitorable_dense_prep[OF monitorable])
   have "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
       (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
-         (minit_safe (push_ex (frz_opt \<phi>)))) \<pi>)) = p.Mt \<pi>"
+         (minit_safe (dense_prep \<phi>))) \<pi>)) = p.Mt \<pi>"
     using p.dmonitor_mverdicts_dof[OF _ f wty] zf by simp
   also have "p.Mt \<pi> = Mt \<pi>"
     by simp
@@ -467,12 +487,13 @@ text \<open>The front end's entry point: the monitor over the short tuples, star
   formula.  Its representation is the dense monitor of @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
 
 definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
-  "udminit_push \<phi> = udminit_safe (push_ex (frz_opt \<phi>))"
+  "udminit_push \<phi> = udminit_safe (dense_prep \<phi>)"
 
 lemma Rep_udminit_push:
   "Rep_udmstate (udminit_push \<phi>)
-   = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe (push_ex (frz_opt \<phi>)))"
+   = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe (dense_prep \<phi>))"
   by (simp add: udminit_push_def Rep_udminit_safe)
+
 (*<*)
 end
 (*>*)

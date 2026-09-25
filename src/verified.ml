@@ -6349,6 +6349,8 @@ let rec hoist
     | pn, TP v -> TP v
     | pn, TS v -> TS v;;
 
+let shr : string = id "__release";;
+
 let rec sorted_wrt p x1 = match p, x1 with p, [] -> true
                      | p, x :: ys -> list_all (p x) ys && sorted_wrt p ys;;
 
@@ -15132,6 +15134,122 @@ let rec minit_safe
 let rec udminit_safe
   phi = udof_state (nfv phi) (set_cols (fvi zero_nata phi)) (minit_safe phi);;
 
+let rec shr_pred
+  psi = Pred (shr, mapa (fun a -> Var a) (upt zero_nata (nfv psi)));;
+
+let rec occurs
+  pn x1 = match pn, x1 with
+    pn, Pred (e, ts) ->
+      equal_proda equal_string8 equal_nat (e, size_lista ts) pn
+    | pn, Let (e, phi, psi) -> occurs pn phi || occurs pn psi
+    | pn, Frz (e, phi, psi) -> occurs pn phi || occurs pn psi
+    | pn, LetPast (e, phi, psi) -> occurs pn phi || occurs pn psi
+    | pn, Neg phi -> occurs pn phi
+    | pn, Or (phi, psi) -> occurs pn phi || occurs pn psi
+    | pn, And (phi, psi) -> occurs pn phi || occurs pn psi
+    | pn, Ands l -> list_ex (occurs pn) l
+    | pn, Exists (t, phi) -> occurs pn phi
+    | pn, Agg (y, omega, tys, f, phi) -> occurs pn phi
+    | pn, Prev (i, phi) -> occurs pn phi
+    | pn, Next (i, phi) -> occurs pn phi
+    | pn, Since (phi, i, psi) -> occurs pn phi || occurs pn psi
+    | pn, Until (phi, i, psi) -> occurs pn phi || occurs pn psi
+    | pn, Trigger (phi, i, psi) -> occurs pn phi || occurs pn psi
+    | pn, Release (phi, i, psi) -> occurs pn phi || occurs pn psi
+    | pn, MatchP (i, r) -> not (pred_regex (comp not (occurs pn)) r)
+    | pn, MatchF (i, r) -> not (pred_regex (comp not (occurs pn)) r)
+    | pn, Eq (v, va) -> false
+    | pn, Less (v, va) -> false
+    | pn, LessEq (v, va) -> false
+    | pn, TP v -> false
+    | pn, TS v -> false;;
+
+let rec share_ok
+  alpha psi =
+    ball (ceq_nat, ccompare_nat)
+      (unbox nat_atLeastLessThan_v zero_nata (nfv psi))
+      (fun x -> nat_member x (fvi zero_nata psi)) &&
+      (not (occurs (shr, nfv psi) alpha) &&
+        (match psi with Pred (_, _) -> false | Let (_, _, _) -> true
+          | Frz (_, _, _) -> true | LetPast (_, _, _) -> true
+          | Eq (_, _) -> true | Less (_, _) -> true | LessEq (_, _) -> true
+          | Neg _ -> true | Or (_, _) -> true | And (_, _) -> true
+          | Ands _ -> true | Exists (_, _) -> true | Agg (_, _, _, _, _) -> true
+          | Prev (_, _) -> true | Next (_, _) -> true | Since (_, _, _) -> true
+          | Until (_, _, _) -> true | Trigger (_, _, _) -> true
+          | Release (_, _, _) -> true | MatchF (_, _) -> true
+          | MatchP (_, _) -> true | TP _ -> true | TS _ -> true));;
+
+let rec share_rw
+  = function
+    And (alpha, Release (phi, i, psi)) ->
+      (let alphaa = share_rw alpha in
+       let phia = share_rw phi in
+       let psia = share_rw psi in
+        (if share_ok (And (alphaa, phia)) psia
+          then Let (shr, psia, And (alphaa, Release (phia, i, shr_pred psia)))
+          else And (alphaa, Release (phia, i, psia))))
+    | Release (phi, i, psi) ->
+        (let phia = share_rw phi in
+         let psia = share_rw psi in
+          (if share_ok phia psia
+            then Let (shr, psia, Release (phia, i, shr_pred psia))
+            else Release (phia, i, psia)))
+    | Let (p, phi, psi) -> Let (p, share_rw phi, share_rw psi)
+    | Neg phi -> Neg (share_rw phi)
+    | And (phi, Pred (v, va)) -> And (share_rw phi, share_rw (Pred (v, va)))
+    | And (phi, Let (v, va, vb)) ->
+        And (share_rw phi, share_rw (Let (v, va, vb)))
+    | And (phi, Frz (v, va, vb)) ->
+        And (share_rw phi, share_rw (Frz (v, va, vb)))
+    | And (phi, LetPast (v, va, vb)) ->
+        And (share_rw phi, share_rw (LetPast (v, va, vb)))
+    | And (phi, Eq (v, va)) -> And (share_rw phi, share_rw (Eq (v, va)))
+    | And (phi, Less (v, va)) -> And (share_rw phi, share_rw (Less (v, va)))
+    | And (phi, LessEq (v, va)) -> And (share_rw phi, share_rw (LessEq (v, va)))
+    | And (phi, Neg v) -> And (share_rw phi, share_rw (Neg v))
+    | And (phi, Or (v, va)) -> And (share_rw phi, share_rw (Or (v, va)))
+    | And (phi, And (v, va)) -> And (share_rw phi, share_rw (And (v, va)))
+    | And (phi, Ands v) -> And (share_rw phi, share_rw (Ands v))
+    | And (phi, Exists (v, va)) -> And (share_rw phi, share_rw (Exists (v, va)))
+    | And (phi, Agg (v, va, vb, vc, vd)) ->
+        And (share_rw phi, share_rw (Agg (v, va, vb, vc, vd)))
+    | And (phi, Prev (v, va)) -> And (share_rw phi, share_rw (Prev (v, va)))
+    | And (phi, Next (v, va)) -> And (share_rw phi, share_rw (Next (v, va)))
+    | And (phi, Since (v, va, vb)) ->
+        And (share_rw phi, share_rw (Since (v, va, vb)))
+    | And (phi, Until (v, va, vb)) ->
+        And (share_rw phi, share_rw (Until (v, va, vb)))
+    | And (phi, Trigger (v, va, vb)) ->
+        And (share_rw phi, share_rw (Trigger (v, va, vb)))
+    | And (phi, MatchF (v, va)) -> And (share_rw phi, share_rw (MatchF (v, va)))
+    | And (phi, MatchP (v, va)) -> And (share_rw phi, share_rw (MatchP (v, va)))
+    | And (phi, TP v) -> And (share_rw phi, share_rw (TP v))
+    | And (phi, TS v) -> And (share_rw phi, share_rw (TS v))
+    | Or (phi, psi) -> Or (share_rw phi, share_rw psi)
+    | Ands l -> Ands (mapa share_rw l)
+    | Exists (t, phi) -> Exists (t, share_rw phi)
+    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, share_rw phi)
+    | Prev (i, phi) -> Prev (i, share_rw phi)
+    | Next (i, phi) -> Next (i, share_rw phi)
+    | Since (phi, i, psi) -> Since (share_rw phi, i, share_rw psi)
+    | Until (phi, i, psi) -> Until (share_rw phi, i, share_rw psi)
+    | Pred (v, va) -> Pred (v, va)
+    | Frz (v, va, vb) -> Frz (v, va, vb)
+    | LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | Eq (v, va) -> Eq (v, va)
+    | Less (v, va) -> Less (v, va)
+    | LessEq (v, va) -> LessEq (v, va)
+    | Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | MatchF (v, va) -> MatchF (v, va)
+    | MatchP (v, va) -> MatchP (v, va)
+    | TP v -> TP v
+    | TS v -> TS v;;
+
+let rec share_opt
+  phi = (let phia = share_rw phi in
+          (if mmonitorable_exec phia then phia else phi));;
+
 let rec is_wagg
   e = (match e with Pred (_, _) -> false | Let (_, _, _) -> false
         | Frz (_, _, _) -> false | LetPast (_, _, _) -> false
@@ -15269,12 +15387,15 @@ let rec push_ex
     | TP v -> TP v
     | TS v -> TS v;;
 
-let rec udminit_push phi = udminit_safe (push_ex (frz_opt phi));;
+let rec dense_prep phi = share_opt (push_ex (frz_opt phi));;
+
+let rec udminit_push phi = udminit_safe (dense_prep phi);;
 
 let rec udminit_verimon
   mw rw siga phi =
     map_sum id
-      (fun psi -> udminit_push (if mw then convert_multiway psi else psi))
+      (fun psi ->
+        udminit_push (if mw then convert_multiway (share_opt psi) else psi))
       (prepare_verimon rw siga phi);;
 
 let rec ix_list

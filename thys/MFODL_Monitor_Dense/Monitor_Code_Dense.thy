@@ -13,7 +13,8 @@ text \<open>
   multi-way joins (@{theory MFODL_Monitor_Dense.Dense_VeriMon}) -- and builds the initial state
   from it with @{const udminit_push}, which binds frozen predicates with @{text LET} where it can
   (@{theory MFODL_Monitor_Dense.Dense_Frz}), moves existential quantifiers into the windows they
-  commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and compiles the resulting sparse
+  commute with (@{theory MFODL_Monitor_Dense.Dense_Push}), binds the right operand of a release
+  so that it is evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}) and compiles the resulting sparse
   formula into the short-tuple one; @{const udmstep} performs one step on it.  All of these are
   pure functions over the short tuples.  @{const uvdfail_nodes} says whether the compiler covered the whole formula; it
   must be zero for the correctness theorem @{text udeval_Rep} (@{theory

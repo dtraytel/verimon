@@ -8960,3 +8960,37 @@ the dense state is built (`udminit_push φ = udminit_safe (push_ex (frz_opt φ))
 | frz-prev | 0.44 | 0.39 | 0.05 |
 
 The outputs are identical on the family and on the 652 `-verified` commands of the test corpus.
+
+## 21.44 The right operand of a release, evaluated once
+
+The monitor evaluates `φ R[a,b] ψ` by the formula that defines it through the past and future
+operators, and that formula has four or five copies of `ψ`.  Each copy is its own subformula,
+so each is evaluated.  VeriMon's rewriting turns `C(x) AND ALWAYS[0,5] (EXISTS y. A(x,y) OR B(x,y))`
+(`der-guardalw`) into a release, and the multiway conversion then expands it into
+`(ψ U ANDS[ψ; FF]) OR ((ψ U PREV ψ) OR (ψ U ANDS[ψ; NEXT TT]))`, which evaluates the quantified
+disjunction four times per time point.
+
+A new theory, `Dense_Share`, binds the operand with `LET` to a fresh predicate
+`__release(x₀,…)` and releases that predicate: `share_rw` rewrites `α AND (φ R ψ)` to
+`LET __release = ψ IN α AND (φ R __release(…))`, and a bare `φ R ψ` the same way.  The rewrite
+fires only when `ψ` is not already a predicate, when its free variables are exactly
+`0..nfv ψ - 1` (the predicate's arguments), and when the name is not used anywhere in the formula.
+`share_opt` keeps the result only if it is monitorable.  The proofs are congruences:
+satisfaction, progress, free variables and typing are all unchanged (`sat_share_rw`,
+`progress_share_rw`, `wty_share_rw`).
+
+In the first version the rewrite sat in `udminit_push` alone, which runs after the multiway
+conversion.  By then there is no release left, so it never fired.  `udminit_verimon` now
+applies `share_opt` to the prepared formula before `convert_multiway`
+(`ψ_mw mw = (if mw then convert_multiway (share_opt ψ) else ψ)`), and the lemmas of `ψ_mw`
+carry over through `verimon_spec_share_opt` and `safe_share_opt_ψ`.
+
+| formula | before (s) | after (s) | MonPoly (s) | Ir before | Ir after | Ir MonPoly |
+|---|---|---|---|---|---|---|
+| der-guardalw | 1.59 | 0.82 | 0.68 | 11.58G | 5.72G | 4.85G |
+| der-hist5 | 0.58 | 0.39 | not monitorable | | | |
+| der-always5 | 0.67 | 0.44 | not monitorable | | | |
+| der-guardhist | 0.79 | 0.76 | 0.70 | | | |
+
+The outputs are identical on every suite formula with a release or an ALWAYS, and on the 652
+`-verified` commands of the test corpus.  The cram tests pass.
