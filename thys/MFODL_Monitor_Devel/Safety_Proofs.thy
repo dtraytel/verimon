@@ -1301,38 +1301,32 @@ next
   qed
 next
   case (Let p \<phi> \<psi>)
-  then have IH: " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
-    apply(simp)
-    done
-  then have IH2: "\<forall>i.  finite (map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>})" using Let
-    by(auto)
-  then have "\<forall> i. {v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v i \<phi>} = map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
-    using Let
-    apply(simp)
-    by(auto simp add: wf_tuple_def intro!: image_eqI[where x="map Some _"])
-   then have " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>)) (map the v) i \<psi>}"
-     using Let IH2
-    by(auto)
-  then show ?case using Let
-    apply(elim finite_subset[rotated])
-    by(auto)
+  let ?V = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>)"
+  have "{v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v j \<phi>}
+    = map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) j \<phi>}" for j
+    using Let.hyps(1) by (auto simp: wf_tuple_def intro!: image_eqI[where x="map Some _"])
+  moreover have "finite {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) j \<phi>}" for j
+    using Let by auto
+  ultimately have "\<forall>pn\<in>dom ?V. \<forall>j. finite {v. length v = snd pn \<and> the (?V pn) v j}"
+    using Let.prems by simp
+  then have "finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<psi>}"
+    using Let by auto
+  then show ?case
+    by simp
 next
   case (Frz p \<phi> \<psi>)
-  then have IH: " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> V (map the v) i \<psi>}"
-    apply(simp)
-    done
-  then have IH2: "\<forall>i.  finite (map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>})" using Frz
-    by(auto)
-  then have "\<forall> i. {v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v i \<phi>} = map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
-    using Frz
-    apply(simp)
-    by(auto simp add: wf_tuple_def intro!: image_eqI[where x="map Some _"])
-   then have " finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)) (map the v) i \<psi>}"
-     using Frz IH2
-    by(auto)
-  then show ?case using Frz
-    apply(elim finite_subset[rotated])
-    by(auto)
+  let ?V = "V((p, Formula.nfv \<phi>) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w i \<phi>)"
+  have "{v. length v = Formula.nfv \<phi> \<and> Formula.sat \<sigma> V v i \<phi>}
+    = map the ` {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    using Frz.hyps(1) by (auto simp: wf_tuple_def intro!: image_eqI[where x="map Some _"])
+  moreover have "finite {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
+    using Frz by auto
+  ultimately have "\<forall>pn\<in>dom ?V. \<forall>j. finite {v. length v = snd pn \<and> the (?V pn) v j}"
+    using Frz.prems by simp
+  then have "finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<psi>}"
+    using Frz by auto
+  then show ?case
+    by simp
 next
   case (LetPast p \<phi> \<psi>)
   show ?case
