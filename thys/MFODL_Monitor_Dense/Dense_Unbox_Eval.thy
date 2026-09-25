@@ -192,7 +192,7 @@ lift_definition rmk :: "('v \<Rightarrow> 'w) \<Rightarrow> (event_data list, 'v
 
 lemma lookup_rmk: "Mapping.lookup (rmk f m) w =
     (case those w of None \<Rightarrow> None | Some k \<Rightarrow> map_option f (Mapping.lookup m k))"
-  by transfer simp
+  by (simp only: Mapping.lookup.rep_eq rmk.rep_eq)
 
 lemma lookup_rmk_reopt[simp]: "Mapping.lookup (rmk f m) (reopt k) = map_option f (Mapping.lookup m k)"
   by (simp add: lookup_rmk)
