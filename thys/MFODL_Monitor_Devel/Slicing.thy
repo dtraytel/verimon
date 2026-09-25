@@ -485,7 +485,7 @@ next
       using left(1)
     proof (rule Let.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v' ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>"
           using Let.prems(3) inputs_subset_fv fvi_less_nfv
@@ -555,7 +555,7 @@ next
       using left(1)
     proof (rule Frz.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v' ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>"
           using Frz.prems(3) inputs_subset_fv fvi_less_nfv
@@ -680,7 +680,7 @@ next
       using \<phi>0
     proof (rule LetPast.IH(1))
       show "\<forall>y\<in>Y. y < Formula.nfv \<phi> \<and> v0 ! y = z"
-      proof safe
+      proof (intro ballI conjI)
         fix y assume "y \<in> Y"
         then show "y < Formula.nfv \<phi>" by (rule Y_less)
         show "v0 ! y = z"
