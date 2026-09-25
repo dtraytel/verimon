@@ -1487,30 +1487,30 @@ next
   from Until.IH(2)[OF Until.prems(1) gen nfv] show ?case .
 next
   case (Trigger \<phi> I \<psi>)
-  hence "Formula.nfv \<psi> \<le> length v"
-    by (auto simp: Formula.nfv_def)
-  have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
-    using Trigger.prems(2) 
-    by (clarsimp, erule_tac x=i in allE)
-      clarsimp
-  show ?case
-    using Trigger.prems(2-)
-    apply clarsimp
-    by (rule Trigger.IH(2)[rotated, OF obs \<open>Formula.nfv \<psi> \<le> length v\<close>])
-      (auto intro!: Trigger.prems)
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Trigger.prems(3) by (auto simp: Formula.nfv_def)
+  from Trigger.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Trigger \<phi> I \<psi>)"
+    by (simp only: genvar.simps)
+  from Trigger.prems(2) have "mem I 0" and gen: "genvar \<psi> True x q n c k"
+    unfolding eqTrueI[OF sat] by simp_all
+  from sat \<open>mem I 0\<close> have "Formula.sat \<sigma> V v i \<psi>"
+    by (auto dest: spec[of _ i])
+  with gen have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
+    by simp
+  from Trigger.IH(2)[OF Trigger.prems(1) obs nfv] show ?case .
 next
   case (Release \<phi> I \<psi>)
-    hence "Formula.nfv \<psi> \<le> length v"
-    by (auto simp: Formula.nfv_def)
-  have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
-    using Release.prems(2) 
-    by (clarsimp, erule_tac x=i in allE)
-      clarsimp
-  show ?case
-    using Release.prems(2-)
-    apply clarsimp
-    by (rule Release.IH(2)[rotated, OF obs \<open>Formula.nfv \<psi> \<le> length v\<close>])
-      (auto intro!: Release.prems)
+  have nfv: "Formula.nfv \<psi> \<le> length v"
+    using Release.prems(3) by (auto simp: Formula.nfv_def)
+  from Release.prems(2) have sat: "Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)"
+    by (simp only: genvar.simps)
+  from Release.prems(2) have "mem I 0" and gen: "genvar \<psi> True x q n c k"
+    unfolding eqTrueI[OF sat] by simp_all
+  from sat \<open>mem I 0\<close> have "Formula.sat \<sigma> V v i \<psi>"
+    by (auto simp del: sat_release_eq dest: spec[of _ i])
+  with gen have obs: "genvar \<psi> (Formula.sat \<sigma> V v i \<psi>) x q n c k"
+    by simp
+  from Release.IH(2)[OF Release.prems(1) obs nfv] show ?case .
 next
   case (MatchF I r)
   then show ?case by simp
