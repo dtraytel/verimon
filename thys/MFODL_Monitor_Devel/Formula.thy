@@ -2335,8 +2335,12 @@ next
       assume k_props: "k>j" "mem I (\<tau> \<sigma> k - \<tau> \<sigma> i)"
       then have t_geq: "(\<tau> \<sigma> k - \<tau> \<sigma> i) \<ge> (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using diff_le_mono by auto
       from j_props have "mem (flip_int I) (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)" by auto
-      then have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
-        by (metis \<tau>_mono assms(2) diff_le_mono2 flip_int.rep_eq j_props(1) memL.rep_eq memL_mono prod.sel(1))
+      then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> j)"
+        using assms(2) by (simp add: flip_int.rep_eq memL.rep_eq)
+      moreover have "\<tau> \<sigma> (j+1) - \<tau> \<sigma> j \<le> \<tau> \<sigma> (j+1) - \<tau> \<sigma> i"
+        using \<tau>_mono[OF j_props(1)] by (rule diff_le_mono2)
+      ultimately have "\<not>mem I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)"
+        using memR_antimono by blast
       then have "\<not>memR I (\<tau> \<sigma> (j+1) - \<tau> \<sigma> i)" using assms memL_mono by blast
       then have "\<not>memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)" using t_geq memR_antimono by blast
       then have "False" using k_props by auto
