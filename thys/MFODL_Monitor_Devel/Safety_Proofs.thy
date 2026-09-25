@@ -1017,26 +1017,40 @@ proof (induct "as" arbitrary: n bs z rule: joinN.induct)
     by(auto)
 next
   case (2 a b cs)
-  then show ?case
-    apply(simp)
-    apply(cases "join1 (a, b)")
-     apply(simp_all)
-     apply(auto simp add: list_all2_Cons2)[]
-    subgoal for A B Cs
-      using join1_Some_restrict[of n A a B b "(restrict (A\<union>B) z)"] apply(auto simp add: restrict_restrict intro: wf_tuple_restrict_simple)
-      done
-    subgoal for c
-      apply(erule thin_rl)
-      apply(clarsimp simp add: list_all2_Cons2)[]
-      subgoal for A B Cs
-      using join1_Some_restrict[of n A a B b c] 2(1)[of c n "(A\<union>B)#Cs" z] apply(auto simp add: Un_assoc restrict_restrict intro: wf_tuple_restrict_simple)
-      apply(subgoal_tac "restrict (A\<union>B) z = restrict (A\<union>B) c")
-       apply(simp add: restrict_idle)
-      apply(simp add: list_eq_iff_nth_eq nth_restrict')
-      apply(simp split: if_splits)
-      by (metis nth_restrict)
-    done
-    done
+  from "2.prems"(1) obtain A B Cs where bs: "bs = A # B # Cs"
+    and wf: "wf_tuple n A a" "wf_tuple n B b" "list_all2 (wf_tuple n) Cs cs"
+    by (auto simp: list_all2_Cons2)
+  \<comment> \<open>the restriction of @{term z} to @{term "A \<union> B"} is the only candidate for the join of a and b\<close>
+  have join_restrict: "join1 (a, b) = Some (restrict (A \<union> B) z) \<longleftrightarrow> restrict A z = a \<and> restrict B z = b"
+    if "wf_tuple n (\<Union> (set bs)) z"
+  proof -
+    have "wf_tuple n (A \<union> B) (restrict (A \<union> B) z)"
+      using that by (auto simp: bs intro: wf_tuple_restrict_simple)
+    then show ?thesis
+      using join1_Some_restrict[OF wf(1,2)] by (simp add: restrict_restrict)
+  qed
+  show ?case
+  proof (cases "join1 (a, b)")
+    case None
+    then have "joinN (a # b # cs) \<noteq> Some z"
+      by simp
+    moreover have "\<not> (wf_tuple n (\<Union> (set bs)) z \<and> list_all2 (\<lambda>b a. restrict b z = a) bs (a # b # cs))"
+      using join_restrict None by (auto simp: bs)
+    ultimately show ?thesis
+      by blast
+  next
+    case (Some c)
+    with join1_Some_restrict[OF wf(1,2), of c] have c: "wf_tuple n (A \<union> B) c"
+      by simp
+    have IH: "joinN (c # cs) = Some z \<longleftrightarrow> wf_tuple n (A \<union> B \<union> \<Union> (set Cs)) z
+      \<and> restrict (A \<union> B) z = c \<and> list_all2 (\<lambda>b a. restrict b z = a) Cs cs"
+      using "2.hyps"[of c n "(A \<union> B) # Cs" z] Some c wf(3) by simp
+    have "restrict (A \<union> B) z = c \<longleftrightarrow> restrict A z = a \<and> restrict B z = b"
+      if "wf_tuple n (\<Union> (set bs)) z"
+      using join_restrict[OF that] Some by auto
+    with Some IH show ?thesis
+      by (auto simp: bs Un_assoc)
+  qed
 next
   case (3 a)
   from "3.prems"(1) obtain b where bs: "bs = [b]" and wf: "wf_tuple n b a"
