@@ -236,7 +236,7 @@ function (sequential) edof ::
          then EDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (edof n) css L)
                 (map (\<lambda>_. mbuf_t_empty) L) nts t []
          else EDFail))"
-  by pat_completeness auto
+  by pat_completeness (simp_all only: prod.inject meformula.inject meformula.distinct simp_thms)
 
 termination edof
   by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
