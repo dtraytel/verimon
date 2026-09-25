@@ -1206,19 +1206,52 @@ proof (induction "size' \<phi>" arbitrary: \<phi> rule: nat_less_induct)
       by (simp add: 11)
   next
     case (16 \<phi>' I \<psi>')
-    with IH show ?thesis
-    proof (cases \<phi>')
-      case (Ands l)
-      then show ?thesis using IH Since
-        by (auto simp: 16)
-    qed (auto 0 3 simp: 16 elim!: disjE_Not2 intro: Since Not_Since) (*SLOW*)
+    from IH(2) have fv: "fv \<phi>' \<subseteq> fv \<psi>'" and safe_\<psi>: "safe_formula \<psi>'"
+      and safe_\<phi>: "safe_formula \<phi>' \<or> (case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False)"
+      by (simp_all add: 16)
+    have P_\<psi>: "P \<psi>'"
+      using safe_\<psi> by (intro IH(1)) (simp_all add: 16)
+    from safe_\<phi> show ?thesis
+    proof (rule disjE_Not2)
+      assume safe_\<phi>': "safe_formula \<phi>'"
+      then have P_\<phi>: "P \<phi>'"
+        by (intro IH(1)) (simp_all add: 16)
+      from fv safe_\<phi>' safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 16 by (rule Since)
+    next
+      assume unsafe: "\<not> safe_formula \<phi>'"
+        and "case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False"
+      then obtain \<phi>'' where \<phi>': "\<phi>' = \<not>\<^sub>F \<phi>''" and safe_\<phi>'': "safe_formula \<phi>''"
+        by (elim case_NegE)
+      then have P_\<phi>: "P \<phi>''"
+        by (intro IH(1)) (simp_all add: 16)
+      from fv safe_\<phi>'' unsafe safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 16 \<phi>' by (rule Not_Since)
+    qed
   next
     case (17 \<phi>' I \<psi>')
-    with IH show ?thesis
-    proof (cases \<phi>')
-      case (Ands l)
-      then show ?thesis using IH Until by (auto simp: 17)
-    qed (auto 0 3 simp: 17 elim!: disjE_Not2 intro: Until Not_Until) (*SLOW*)
+    from IH(2) have fv: "fv \<phi>' \<subseteq> fv \<psi>'" and safe_\<psi>: "safe_formula \<psi>'"
+      and safe_\<phi>: "safe_formula \<phi>' \<or> (case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False)"
+      by (simp_all add: 17)
+    have P_\<psi>: "P \<psi>'"
+      using safe_\<psi> by (intro IH(1)) (simp_all add: 17)
+    from safe_\<phi> show ?thesis
+    proof (rule disjE_Not2)
+      assume safe_\<phi>': "safe_formula \<phi>'"
+      then have P_\<phi>: "P \<phi>'"
+        by (intro IH(1)) (simp_all add: 17)
+      from fv safe_\<phi>' safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 17 by (rule Until)
+    next
+      assume unsafe: "\<not> safe_formula \<phi>'"
+        and "case \<phi>' of \<not>\<^sub>F \<phi>'' \<Rightarrow> safe_formula \<phi>'' | _ \<Rightarrow> False"
+      then obtain \<phi>'' where \<phi>': "\<phi>' = \<not>\<^sub>F \<phi>''" and safe_\<phi>'': "safe_formula \<phi>''"
+        by (elim case_NegE)
+      then have P_\<phi>: "P \<phi>''"
+        by (intro IH(1)) (simp_all add: 17)
+      from fv safe_\<phi>'' unsafe safe_\<psi> P_\<phi> P_\<psi> show ?thesis
+        unfolding 17 \<phi>' by (rule Not_Until)
+    qed
   next
     case (18 \<phi>' I \<psi>')
     show ?thesis
@@ -1491,9 +1524,23 @@ function (sequential) convert_multiway :: "'t Formula.formula \<Rightarrow> 't F
   | "convert_multiway (Formula.TS t) = Formula.TS t"
   by pat_completeness auto
 termination
-  using size'_and_release size'_Release size'_Or size'_release_aux
-  apply (relation "measure size'")
-  by (auto simp add: Nat.less_Suc_eq_le dest!: sum_list_mem_leq[of _ _ size'] regex_atms_size')
+proof (relation "measure size'", simp_all only: in_measure size'_Or,
+    simp_all add: size'_release_aux, goal_cases Ands MatchP MatchF)
+  case (Ands \<phi>s \<phi>)
+  then show ?case
+    using sum_list_mem_leq[of \<phi> \<phi>s size']
+    by simp
+next
+  case (MatchP r \<phi>)
+  then show ?case
+    using regex_atms_size'[of \<phi> r]
+    by simp
+next
+  case (MatchF r \<phi>)
+  then show ?case
+    using regex_atms_size'[of \<phi> r]
+    by simp
+qed
 
 lemma convert_multiway_TT [simp]: 
   "convert_multiway Formula.TT = Formula.TT"
