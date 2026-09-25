@@ -1085,11 +1085,23 @@ function (sequential) meeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
   by pat_completeness auto
 
 lemma psize_snd_meeval: "meeval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meeval n t db \<phi>)) = size \<phi>"
-  apply (induct rule: meeval.pinduct)
-  apply (auto simp only: prod.inject meeval.psimps Let_def snd_conv meformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
-    apply (metis snd_conv size_letpast_meeval)
-    apply simp
-  done
+proof (induction rule: meeval.pinduct)
+  case (5 n ts db p m \<phi> \<psi> i buf)
+  let ?lp = "letpast_meeval0 (meeval m) j i mbuf_t_empty (list_of_option buf) (p, m) ts db \<phi>"
+  obtain xs i' buf' \<phi>' where lp: "?lp = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have size_\<phi>: "size \<phi>' = size \<phi>"
+    using size_letpast_meeval[of \<phi> "meeval m" j i mbuf_t_empty "list_of_option buf" "(p, m)" ts db,
+      OF 5(2)] lp
+    by simp
+  obtain ys \<psi>' where eval: "meeval n ts (Mapping.update (p, m) (Rep_mbuf_t xs) db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>: "size \<psi>' = size \<psi>"
+    using 5(3)[OF lp[symmetric] refl refl refl] eval by simp
+  from 5(1) lp eval size_\<phi> size_\<psi> show ?case
+    by (simp add: meeval.psimps)
+qed (auto simp only: prod.inject meeval.psimps Let_def snd_conv meformula.size map_split_map id_o
+    map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits if_split)
 
 lemma total_meeval: "All meeval_dom"
   by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meeval dest: sym)
@@ -1099,11 +1111,19 @@ termination meeval
 
 lemma freeze_meval0_cong_fst: "(\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (eval \<alpha>) = fst (eval' \<alpha>)) \<Longrightarrow>
   freeze_meval0 eval k \<alpha>s = freeze_meval0 eval' k \<alpha>s"
-  apply (induct eval k \<alpha>s rule: freeze_meval0.induct)
-   apply (auto simp: split_beta split: list.splits)
-  apply (metis eq_fst_iff)
-  apply (metis eq_fst_iff)
-  done
+proof (induction \<alpha>s arbitrary: k)
+  case Nil
+  show ?case
+    by simp
+next
+  case (Cons \<alpha> \<alpha>s)
+  have "fst (eval \<alpha>) = fst (eval' \<alpha>)"
+    using Cons.prems by simp
+  moreover have "freeze_meval0 eval (Suc k) \<alpha>s = freeze_meval0 eval' (Suc k) \<alpha>s"
+    using Cons by simp
+  ultimately show ?case
+    by (simp add: split_beta split: list.split)
+qed
 
 lemma meval_code[code]: "meval j n ts db (Rep_meformula \<phi>) = (let (zs, \<phi>') = meeval n ts db \<phi> in (zs, Rep_meformula \<phi>'))"
 proof (induction n ts db \<phi> rule: meeval.induct)
