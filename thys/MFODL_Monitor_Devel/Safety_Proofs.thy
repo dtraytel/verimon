@@ -1329,19 +1329,35 @@ next
     by simp
 next
   case (LetPast p \<phi> \<psi>)
-  show ?case
-    unfolding sat.simps fvi.simps Let_def
-    apply (rule LetPast.hyps(6))
-    using LetPast apply auto[3]
-    apply (intro ballI allI)
-    subgoal for pn i
-      apply (cases "pn = (p, Formula.nfv \<phi>)")
-       apply (simp add: dom_def)
-       apply (rule finite_letpast)
-      using LetPast apply auto[2]
-      apply (rule LetPast.hyps(5))
-      using LetPast by auto
-    done
+  let ?F = "\<lambda>X u k. Formula.sat \<sigma> (V((p, Formula.nfv \<phi>) \<mapsto> X)) u k \<phi>"
+  let ?V = "V((p, Formula.nfv \<phi>) \<mapsto> letpast_sat ?F)"
+  have dom_V: "\<forall>pn\<in>dom ?V. \<forall>j. finite {v. length v = snd pn \<and> the (?V pn) v j}"
+  proof (intro ballI allI)
+    fix pn j
+    assume "pn \<in> dom ?V"
+    show "finite {v. length v = snd pn \<and> the (?V pn) v j}"
+    proof (cases "pn = (p, Formula.nfv \<phi>)")
+      case True
+      have "finite {v. length v = Formula.nfv \<phi> \<and> letpast_sat ?F v j}"
+      proof (rule finite_letpast)
+        show "{0..<Formula.nfv \<phi>} \<subseteq> fv \<phi>" "\<forall>pn\<in>dom V. \<forall>i. finite {v. length v = snd pn \<and> the (V pn) v i}"
+          using LetPast by auto
+        show "finite {v. wf_tuple (Formula.nfv \<phi>) (fv \<phi>) v \<and> Formula.sat \<sigma> V' (map the v) k \<phi>}"
+          if "\<forall>pn\<in>dom V'. \<forall>i. finite {v. length v = snd pn \<and> the (V' pn) v i}" for V' k
+          using LetPast that by (intro LetPast.hyps(5)) auto
+      qed
+      with True show ?thesis
+        by simp
+    next
+      case False
+      with \<open>pn \<in> dom ?V\<close> LetPast.prems show ?thesis
+        by auto
+    qed
+  qed
+  have "finite {v. wf_tuple n (fv \<psi>) v \<and> Formula.sat \<sigma> ?V (map the v) i \<psi>}"
+    by (rule LetPast.hyps(6)[OF _ _ _ dom_V]) (use LetPast.prems in \<open>simp_all add: Formula.nfv_def\<close>)
+  then show ?case
+    by (simp add: Let_def)
 next
   case (And_assign \<phi> \<psi>)
   then have IH: " finite {v. wf_tuple n (fv \<phi>) v \<and> Formula.sat \<sigma> V (map the v) i \<phi>}"
