@@ -352,12 +352,16 @@ proof -
     show ?case
     proof (cases a)
       case (Pair t' X')
-      show ?thesis
-        using Cons(2)
-        apply (simp add: Pair upd_set_keys.simps)
-        apply (drule Cons(1))
-        apply (auto simp: Mapping_upd_set_keys)
-        done
+      let ?ts = "upd_set ts (\<lambda>_. t') (Z X' t')"
+      have "fold (upd_set_keys Z) mv (?ts, Y0 \<union> Z X' t') = (ts', Y)"
+        using Cons(2) by (simp add: Pair upd_set_keys.simps)
+      then have "Y0 \<union> Z X' t' \<subseteq> Y \<and> Mapping.keys ?ts \<subseteq> Mapping.keys ts' \<and>
+        Mapping.keys ts' \<union> (Y0 \<union> Z X' t') = Mapping.keys ?ts \<union> Y"
+        by (rule Cons(1))
+      moreover have "Mapping.keys ?ts = Mapping.keys ts \<union> Z X' t'"
+        by (rule Mapping_upd_set_keys)
+      ultimately show ?thesis
+        by blast
     qed
   qed simp
   show "Mapping.keys ts' = Mapping.keys ts \<union> Y"
