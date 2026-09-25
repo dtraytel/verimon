@@ -1522,46 +1522,75 @@ lemma skip_joiner:
   assumes "\<pi> \<in> prefixes"
   shows "joiner (\<lambda>k. M (splitter \<pi> k)) = skip_joiner (\<lambda>k. M (splitter \<pi> k))"
   (is "?L = ?R")
-proof safe
-  fix i v
-  assume "(i, v) \<in> ?R"
-  then obtain k where in_M: "(i, v) \<in> M (splitter \<pi> k)"
-    unfolding skip_joiner_def by blast
-  obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>"
-    using assms by (auto simp add: prefixes_def)
-  with sound_monitor[OF _ in_M] wf_monitor[OF _ in_M] have
-    sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (map the v) i \<phi>"
-    and "ok \<phi> v"
-    by (auto simp: splitter_pslice)
-  then obtain w where "ok \<phi> w" "k \<in> strategy w" "\<forall>x\<in>Formula.fv \<phi>. v ! x = w ! x"
-    using sat_slice_inversion[OF guarded mergeable _ sat] fv_less_nfv
-    by (auto simp add: slice_set_def wf_tuple_def)
-  then have "k \<in> strategy v"
-    using \<open>ok \<phi> v\<close>
-    by (metis (mono_tags, lifting) wf_tuple_cong fv_less_nfv nth_map wf_tuple_length)
-  with in_M \<open>ok \<phi> v\<close> show "(i, v) \<in> ?L" unfolding joiner_def
-    by blast
-qed (auto simp: joiner_def skip_joiner_def)
+proof (rule equalityI)
+  show "?L \<subseteq> ?R"
+    by (auto simp: joiner_def skip_joiner_def)
+next
+  show "?R \<subseteq> ?L"
+  proof (rule subrelI)
+    fix i v
+    assume "(i, v) \<in> ?R"
+    then obtain k where in_M: "(i, v) \<in> M (splitter \<pi> k)"
+      unfolding skip_joiner_def by blast
+    obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>"
+      using assms by (auto simp add: prefixes_def)
+    with sound_monitor[OF _ in_M] wf_monitor[OF _ in_M] have
+      sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (map the v) i \<phi>"
+      and "ok \<phi> v"
+      by (auto simp: splitter_pslice)
+    then obtain w where "ok \<phi> w" "k \<in> strategy w" "\<forall>x\<in>Formula.fv \<phi>. v ! x = w ! x"
+      using sat_slice_inversion[OF guarded mergeable _ sat] fv_less_nfv
+      by (auto simp add: slice_set_def wf_tuple_def)
+    then have "k \<in> strategy v"
+      using \<open>ok \<phi> v\<close>
+      by (metis (mono_tags, lifting) wf_tuple_cong fv_less_nfv nth_map wf_tuple_length)
+    with in_M \<open>ok \<phi> v\<close> show "(i, v) \<in> ?L" unfolding joiner_def
+      by blast
+  qed
+qed
 
 sublocale skip_joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "\<lambda>\<pi>. skip_joiner (\<lambda>k. M (splitter \<pi> k))"
   "\<lambda>_. M" splitter skip_joiner
-  apply unfold_locales
-        apply (subst skip_joiner[symmetric], blast)+
-        apply (fact joint_monitor.mono_monitor)
-       apply (subst (asm) skip_joiner[symmetric], blast)
-       apply (fact joint_monitor.wf_monitor)
-      apply (subst (asm) skip_joiner[symmetric], blast)
-      apply (fact joint_monitor.sound_monitor)
-     apply (rule ex_cong[THEN iffD1])
-      apply (subst skip_joiner[symmetric])
-       apply blast
-      apply (rule refl)
-     apply (fact joint_monitor.complete_monitor)
-    apply (fact joint_slicer.mono_splitter)
-   apply (rule refl)
-  apply (fact joint_slicer.splitter_prefix)
-  done
+proof unfold_locales
+  fix \<pi> \<pi>'
+  assume \<pi>': "\<pi>' \<in> prefixes" and le: "\<pi> \<le> \<pi>'"
+  then have "\<pi> \<in> prefixes" by (rule prefixes_closed)
+  from \<pi>' le show "skip_joiner (\<lambda>k. M (splitter \<pi> k)) \<subseteq> skip_joiner (\<lambda>k. M (splitter \<pi>' k))"
+    unfolding skip_joiner[OF \<open>\<pi> \<in> prefixes\<close>, symmetric] skip_joiner[OF \<pi>', symmetric]
+    by (rule joint_monitor.mono_monitor)
+next
+  fix \<pi> i v
+  assume \<pi>: "\<pi> \<in> prefixes" and "(i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi> k))"
+  then show "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+    unfolding skip_joiner[OF \<pi>, symmetric] by (rule joint_monitor.wf_monitor)
+next
+  fix \<sigma> \<pi> i v
+  assume \<sigma>: "\<sigma> \<in> traces" and in_M: "(i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi> k))"
+    and prefix: "prefix_of \<pi> \<sigma>"
+  from \<sigma> prefix have \<pi>: "\<pi> \<in> prefixes" by (rule prefix_of_trace)
+  from in_M have "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi> k))"
+    by (simp only: skip_joiner[OF \<pi>])
+  with \<sigma> show "Formula.sat \<sigma> Map.empty (map the v) i \<phi>"
+    using prefix by (rule joint_monitor.sound_monitor)
+next
+  fix \<sigma> \<pi> v i
+  assume \<sigma>: "\<sigma> \<in> traces" and "prefix_of \<pi> \<sigma>" and "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+    and "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> Formula.sat \<sigma>' Map.empty (map the v) i \<phi>"
+  then obtain \<pi>' where "prefix_of \<pi>' \<sigma>" and "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi>' k))"
+    using joint_monitor.complete_monitor by blast
+  moreover from \<sigma> this(1) have "\<pi>' \<in> prefixes" by (rule prefix_of_trace)
+  ultimately show "\<exists>\<pi>'. prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi>' k))"
+    by (auto simp: skip_joiner)
+next
+  fix \<pi> \<pi>' :: Formula.prefix and k
+  assume "\<pi> \<le> \<pi>'"
+  then show "splitter \<pi> k \<le> splitter \<pi>' k" by (rule mono_splitter)
+next
+  fix \<pi> k
+  assume "\<pi> \<in> prefixes"
+  then show "splitter \<pi> k \<in> prefixes" by (rule splitter_prefixes)
+qed (rule refl)
 
 end
 
