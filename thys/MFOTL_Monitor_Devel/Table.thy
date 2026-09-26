@@ -1168,8 +1168,14 @@ lemma qtable_cong: "qtable n A P Q X \<Longrightarrow> A = B \<Longrightarrow> (
 
 lemma qtable_cong_strong: "A = B \<Longrightarrow> (\<And>v. wf_tuple n A v \<Longrightarrow> P v \<Longrightarrow> Q v \<longleftrightarrow> Q' v) 
   \<Longrightarrow> qtable n A P Q = qtable n B P Q'"
-  apply (auto simp: qtable_def fun_eq_iff)
-  using table_def by blast+
+proof -
+  assume "A = B" and QQ': "\<And>v. wf_tuple n A v \<Longrightarrow> P v \<Longrightarrow> Q v \<longleftrightarrow> Q' v"
+  \<comment> \<open>on tuples of interest the two predicates agree\<close>
+  then have "Q v \<and> wf_tuple n A v \<longleftrightarrow> Q' v \<and> wf_tuple n B v" if "P v" for v
+    using that by blast
+  with \<open>A = B\<close> show "qtable n A P Q = qtable n B P Q'"
+    unfolding qtable_iff fun_eq_iff by simp
+qed
 
 lemma qtable_wf_tuple_cong: "qtable n A P Q X \<Longrightarrow> A = B 
   \<Longrightarrow> (\<And>v. wf_tuple n A v \<Longrightarrow> P v \<Longrightarrow> Q v = Q' v) \<Longrightarrow> qtable n B P Q' X"
@@ -1400,9 +1406,23 @@ proof (induct Rs arbitrary: n X Q Qi)
   hence "Rs = [] \<Longrightarrow> ?case"
     by clarsimp (metis qtable_cong_strong)
   moreover have "Rs \<noteq> [] \<Longrightarrow> ?case"
-    apply (simp, rule_tac qtable_inter[OF Cons.prems(2)[of 0, simplified]])
-     apply (rule Cons.hyps[of n X "\<lambda>i. Qi (Suc i)"]; clarsimp?)
-    using Cons.prems(2,3) by (force, auto simp: less_Suc_eq_0_disj)
+  proof -
+    assume "Rs \<noteq> []"
+    have "qtable n X P (Qi 0) R"
+      using Cons.prems(2)[of 0] by simp
+    moreover have "qtable n X P (\<lambda>x. \<forall>i<length Rs. Qi (Suc i) x) (\<Inter> (set Rs))"
+    proof (rule Cons.hyps[OF \<open>Rs \<noteq> []\<close>, where Qi="\<lambda>i. Qi (Suc i)"])
+      fix i
+      assume "i < length Rs"
+      then show "qtable n X P (Qi (Suc i)) (Rs ! i)"
+        using Cons.prems(2)[of "Suc i"] by simp
+    qed simp
+    \<comment> \<open>the intersection over @{term "R # Rs"} splits into @{term R} and the rest\<close>
+    ultimately have "qtable n X P Q (R \<inter> \<Inter> (set Rs))"
+      by (rule qtable_inter) (simp add: Cons.prems(3) All_less_Suc2)
+    then show ?case
+      by simp
+  qed
   ultimately show ?case
     by blast
 qed simp
