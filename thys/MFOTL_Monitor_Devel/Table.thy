@@ -1692,44 +1692,53 @@ next
         by (simp add: insert_absorb)
     next
       case False
-      then show ?thesis
-        using \<open>Rs \<noteq> []\<close>
-        apply simp
-        apply (rule qtable_join[OF qtableR, where b=True, simplified])
-           apply (rule Cons.hyps[of n "X \<circ> Suc" "Qi \<circ> Suc"])
-        using qtables apply force
-        using wf_vars apply force
-        using Cons.prems(3) apply force
-        apply force
-           prefer 2 subgoal for v
-          using Cons.prems(3)[of v ?U "\<Union>((X \<circ> Suc) ` {..<length Rs})"]
-            Cons.prems(3)[of v "\<Union> (X ` _)" "X 0"] by force
-         subgoal
-          apply (intro set_eqI iffI; clarsimp)
-          using less_Suc_eq_0_disj by force blast
-        subgoal for v
-          using Cons.prems(4)[of v, simplified] apply clarsimp
-          apply (intro conjI impI allI iffI; clarsimp)
-           apply (subst sub_restrict_restrict)
-          apply force
-           apply force
-          subgoal for j
-            apply (cases "j=length Rs", clarsimp)
-            apply (erule_tac x="j-1" in allE)
-            apply clarsimp
-            apply (subst (asm) sub_restrict_restrict)
-              apply auto[1]
-            apply (metis Suc_pred length_greater_0_conv lessI lessThan_iff)
-            apply (metis length_0_conv lessI lessThan_iff less_Suc_eq_0_disj)
-            apply fastforce
-            apply (erule_tac x="j-1" in allE)
-            apply clarsimp
-            apply (subst (asm) sub_restrict_restrict)
-             apply (clarsimp simp: subset_eq)
-            apply (metis lessThan_iff less_Suc_eq less_imp_diff_less)
-            by (metis Suc_pred gr0I less_SucE less_imp_diff_less)
-          done
-        done
+      let ?U' = "\<Union> ((X \<circ> Suc) ` {..<length Rs})"
+      let ?Q' = "\<lambda>v. \<forall>j<length Rs. Qi (Suc j) (restrict (X (Suc j)) v)"
+      have U: "?U = X 0 \<union> ?U'"
+        by (simp add: lessThan_Suc_eq_insert_0 image_comp)
+      have IH: "qtable n ?U' P ?Q' (nary_join n (set Rs))"
+      proof (rule Cons.hyps[where X="X \<circ> Suc" and Qi="Qi \<circ> Suc"])
+        fix j
+        assume "j < length Rs"
+        then show "qtable n ((X \<circ> Suc) j) P ((Qi \<circ> Suc) j) (Rs ! j)"
+          by (simp add: qtables)
+      next
+        fix j
+        assume "j < length Rs"
+        then show "(X \<circ> Suc) j \<subseteq> {m. m < n}"
+          by (rule wf_vars)
+      next
+        fix A B v
+        assume "P v" "wf_tuple n B v" "A \<subseteq> B"
+        then show "P (restrict A v)"
+          by (rule Cons.prems(3))
+      qed simp
+      \<comment> \<open>@{term R} is new, so the result is the join of @{term R} with the rest\<close>
+      have "qtable n ?U P Q (R \<bowtie> nary_join n (set Rs))"
+      proof (rule qtable_join[OF qtableR IH, where b=True])
+        show "?U = X 0 \<union> ?U'"
+          by (rule U)
+      next
+        fix v
+        assume "wf_tuple n ?U v" and "P v"
+        then show "P (restrict (X 0) v) \<and> P (restrict ?U' v)"
+          using Cons.prems(3) U by blast
+      next
+        fix v
+        assume wf: "wf_tuple n ?U v" and "P v"
+        have "Q v \<longleftrightarrow> Qi 0 (restrict (X 0) v) \<and> ?Q' v"
+          using Cons.prems(4)[of v] \<open>P v\<close> wf by (simp add: All_less_Suc2)
+        also have "?Q' v \<longleftrightarrow> ?Q' (restrict ?U' v)"
+        proof -
+          have "restrict (X (Suc j)) (restrict ?U' v) = restrict (X (Suc j)) v" if "j < length Rs" for j
+            using that by (intro sub_restrict_restrict) auto
+          then show ?thesis
+            by simp
+        qed
+        finally show "Q v \<longleftrightarrow> Qi 0 (restrict (X 0) v) \<and> ?Q' (restrict ?U' v)" .
+      qed simp_all
+      with False show ?thesis
+        by simp
     qed
   qed
   ultimately show ?case
