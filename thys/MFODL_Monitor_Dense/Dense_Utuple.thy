@@ -148,7 +148,7 @@ lemma reopt_table_simps[simp]:
   "(reopt \<circ> f) ` X = reopt_table (f ` X)"
   "(if b then reopt_table X else reopt_table Y) = reopt_table (if b then X else Y)"
   unfolding reopt_table_def
-  by (auto simp: image_Int image_set_diff inj_reopt Set.remove_eq Set.is_empty_iff
+  by (auto simp: image_Int image_set_diff inj_reopt
       card_image inj_on_def finite_image_iff image_iff inj_image_eq_iff[OF inj_reopt]
       intro!: inj_on_image_set_diff)
 
@@ -271,8 +271,7 @@ proof -
     by (auto simp: deopt_table_def ev)
   then have "ecard (Set.filter (\<lambda>x. umeval_trm f x = v) (deopt_table G))
       = ecard (Set.filter (\<lambda>x. meval_trm f x = v) G)" for v
-    by (simp add: ecard_def card_image inj_on_subset[OF inj] finite_image_iff
-        inj_on_subset[OF inj])
+    by (simp add: ecard_def card_image inj_on_subset[OF inj] finite_image_iff)
   moreover have "umeval_trm f ` deopt_table G = meval_trm f ` G"
     unfolding deopt_table_def image_image by (intro image_cong[OF refl] ev)
   ultimately show ?thesis unfolding uagg_values agg_values by simp
@@ -307,12 +306,12 @@ lemma uagg_deopt:
           ` Mapping.keys groups))"
 proof (cases "g0 \<and> Set.is_empty rel")
   case True
-  then show ?thesis by (simp add: uagg_def deopt_table_def reopt_table_def Set.is_empty_iff)
+  then show ?thesis by (simp add: uagg_def deopt_table_def reopt_table_def)
 next
   case False
   have rd: "\<And>x. x \<in> rel \<Longrightarrow> reopt (deopt x) = x" using hf by (simp add: reopt_deopt_iff)
   have ne: "\<not> (g0 \<and> Set.is_empty (deopt_table rel))"
-    using False by (simp add: deopt_table_def Set.is_empty_iff)
+    using False by (simp add: deopt_table_def)
   let ?gr = "\<lambda>x. {z \<in> rel. drop k z = drop k x}"
   have grp: "\<And>x. x \<in> rel \<Longrightarrow> {z \<in> deopt ` rel. drop k z = drop k (deopt x)} = deopt ` ?gr x"
     by (auto simp: drop_deopt_eq_iff[OF rd rd])
