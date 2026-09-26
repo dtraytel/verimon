@@ -1024,11 +1024,14 @@ lemma nary_join_union_diff:
   assumes "finite \<C>" and "finite \<D>" and "\<forall>R\<in>\<C>\<union>\<D>. table n (X R) R"
   shows "nary_join n (\<C> \<union> \<D>) = nary_join n (\<C> - \<D>) \<bowtie> nary_join n (\<D> - \<C>) \<bowtie> nary_join n (\<C> \<inter> \<D>)"
 proof -
-  have "\<C> \<union> \<D> = (\<C> - \<D>) \<union> (\<D> - \<C>) \<union> \<C> \<inter> \<D>"
+  have eq: "\<C> \<union> \<D> = (\<C> - \<D>) \<union> (\<D> - \<C>) \<union> \<C> \<inter> \<D>"
     by auto
-  with assms show ?thesis
-    apply simp
-    by (subst nary_join_union_disjoint, simp_all; (subst nary_join_union_disjoint)?) auto
+  \<comment> \<open>the three parts are pairwise disjoint\<close>
+  have "nary_join n (\<C> \<union> \<D>) = nary_join n ((\<C> - \<D>) \<union> (\<D> - \<C>)) \<bowtie> nary_join n (\<C> \<inter> \<D>)"
+    unfolding eq using assms by (intro nary_join_union_disjoint[where X=X]) auto
+  also have "nary_join n ((\<C> - \<D>) \<union> (\<D> - \<C>)) = nary_join n (\<C> - \<D>) \<bowtie> nary_join n (\<D> - \<C>)"
+    using assms by (intro nary_join_union_disjoint[where X=X]) auto
+  finally show ?thesis .
 qed
 
 lemma nary_join_subset_diff:
@@ -1061,10 +1064,28 @@ lemma nary_join_setdiff_irrelevant:
   assumes "finite \<C>" and "\<forall>R\<in>\<C>. table n (X R) R"
   shows "nary_join n (\<C> - {unit_table n}) = nary_join n \<C>"
   using assms 
-  apply (induct \<C>) 
-  by (simp_all add: insert_Diff_if)
-    (metis boolean_algebra.conj_zero_right empty_table_def finite.emptyI 
-      join_commute nary_join_empty nary_join_union_disjoint union_empty_table_eq(2))
+proof (induct \<C>)
+  case (insert R \<C>)
+  then have IH: "nary_join n (\<C> - {unit_table n}) = nary_join n \<C>"
+    by simp
+  show ?case
+  proof (cases "R = unit_table n")
+    case True
+    have "table n (\<Union>R\<in>\<C>. X R) (nary_join n \<C>)"
+      using insert by (intro table_nary_joinI) simp_all
+    \<comment> \<open>joining with the unit table has no effect\<close>
+    then have "unit_table n \<bowtie> nary_join n \<C> = nary_join n \<C>"
+      by (rule join_unit_table(2))
+    with True insert.hyps IH show ?thesis
+      by simp
+  next
+    case False
+    then have "insert R \<C> - {unit_table n} = insert R (\<C> - {unit_table n})"
+      by blast
+    with False insert.hyps IH show ?thesis
+      by simp
+  qed
+qed simp
 
 lemma nary_join_not_neutral_contains_not_neutral:
   assumes "nary_join n \<C> \<noteq> unit_table n"
@@ -1100,14 +1121,27 @@ proof (induction rule: finite_induct)
     using insert by auto
   have obs3: "\<forall>R\<in>\<C> i \<union> \<Union> (\<C> ` I). table n (X R) R"
     using insert by auto
-  hence obs4: "\<forall>R\<in>(\<lambda>x. nary_join n (\<C> x)) ` I. \<exists>X. table n X R"
-    apply (clarsimp, rename_tac j)
-    apply (rule_tac x="\<Union>R\<in>(\<C> j). X R" in exI)
-    using insert by (auto intro!: table_nary_joinI)
-  thus ?case
-    apply (simp, subst nary_join_union_disjoint[OF insert(4)[rule_format] obs2 obs3 obs1]; clarsimp)
-    apply(subst nary_join_insert_table)
-    using insert by force+
+  have obs4: "\<forall>R\<in>(\<lambda>x. nary_join n (\<C> x)) ` I. \<exists>X. table n X R"
+  proof
+    fix R
+    assume "R \<in> (\<lambda>x. nary_join n (\<C> x)) ` I"
+    then obtain j where "j \<in> I" and R: "R = nary_join n (\<C> j)"
+      by blast
+    have "table n (\<Union>R\<in>\<C> j. X R) (nary_join n (\<C> j))"
+      using insert.prems \<open>j \<in> I\<close> by (intro table_nary_joinI) auto
+    with R show "\<exists>X. table n X R"
+      by blast
+  qed
+  have "nary_join n (\<Union>(\<C> ` insert i I)) = nary_join n (\<C> i \<union> \<Union>(\<C> ` I))"
+    by simp
+  also have "\<dots> = nary_join n (\<C> i) \<bowtie> nary_join n (\<Union>(\<C> ` I))"
+    using insert.prems(1) obs2 obs3 obs1 by (intro nary_join_union_disjoint[where X=X]) simp_all
+  also have "nary_join n (\<Union>(\<C> ` I)) = nary_join n ((\<lambda>x. nary_join n (\<C> x)) ` I)"
+    using insert.prems by (intro insert.IH) auto
+  also have "nary_join n (\<C> i) \<bowtie> nary_join n ((\<lambda>x. nary_join n (\<C> x)) ` I)
+    = nary_join n ((\<lambda>x. nary_join n (\<C> x)) ` insert i I)"
+    using nary_join_insert_table[OF obs4] insert.hyps(1) by simp
+  finally show ?case .
 qed auto
 
 lemma foldr_join_tables_eq_nary_join[simp]: "\<forall>R\<in>set Rs. \<exists>X. table n X R 
