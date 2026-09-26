@@ -382,10 +382,19 @@ function floop :: "(bytes \<Rightarrow> bool) \<Rightarrow> bytes \<Rightarrow> 
    else (acc, l, p, sp)))"
   by pat_completeness auto
 termination
-  apply (relation "measure (\<lambda>(k, s, n, b, i, l, p, sp, acc). nat_of_integer (n - i))")
-  apply (simp_all add: idx_less_def idx_succ_def)
-  apply ((rule measure_succ_less(1); (assumption | intro eskip_ge' le_succ order_refl)))+
-  done
+proof -
+  text \<open>Each recursive call resumes after a byte below @{term n} that lies at or beyond the
+    current position, reached by one skip or, on the fast path, by two.\<close>
+  have step: "nat_of_integer (n - (eskip l s n i + 1)) < nat_of_integer (n - i)"
+    if "eskip l s n i < n" for l s n i
+    using eskip_ge that by (rule measure_succ_less(1))
+  have fast: "nat_of_integer (n - (eskip l' s n (eskip l s n i + 1) + 1)) < nat_of_integer (n - i)"
+    if "eskip l' s n (eskip l s n i + 1) < n" for l l' s n i
+    using eskip_ge eskip_ge that by (rule measure_succ_less(2))
+  show ?thesis
+    by (relation "measure (\<lambda>(k, s, n, b, i, l, p, sp, acc). nat_of_integer (n - i))")
+      (simp_all add: idx_less_def idx_succ_def step fast)
+qed
 
 declare floop.simps[simp del]
 
