@@ -2313,24 +2313,27 @@ next
     using tq_eq w_le by (simp add: tq1_def upt_add_eq_append'[of w j "j + \<delta>"])
   define a where "a = frz_adv d w jfrz1 (j + \<delta>) tq1"
   have a_facts: "w + a \<le> jfrz1 \<and> (\<forall>k<w + a. enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> jfrz1))"
-  proof (cases "d \<noteq> \<infinity> \<and> w \<le> jfrz1 \<and> jfrz1 < j + \<delta>")
+  proof (cases "d \<noteq> \<infinity> \<and> w \<le> jfrz1 \<and> w < j + \<delta>")
     case True
-    then have tq1: "tq1 = map (\<tau> \<sigma>) [w..<j + \<delta>]" and nth: "tq1 ! (jfrz1 - w) = \<tau> \<sigma> jfrz1"
-      by (auto simp: tq1_eq)
-    let ?P = "\<lambda>t. enat t + d < enat (\<tau> \<sigma> jfrz1)"
+    define c where "c = min jfrz1 (j + \<delta> - 1)"
+    have c: "w \<le> c" "c \<le> jfrz1" "c < j + \<delta>"
+      using True by (auto simp: c_def)
+    then have tq1: "tq1 = map (\<tau> \<sigma>) [w..<j + \<delta>]" and nth: "tq1 ! (c - w) = \<tau> \<sigma> c"
+      using True by (auto simp: tq1_eq)
+    let ?P = "\<lambda>t. enat t + d < enat (\<tau> \<sigma> c)"
     have a_eq: "a = length (takeWhile ?P tq1)"
-      using True unfolding a_def frz_adv_def nth by simp
-    have not_P: "\<not> ?P (\<tau> \<sigma> jfrz1)"
+      using True unfolding a_def frz_adv_def c_def[symmetric] nth by simp
+    have not_P: "\<not> ?P (\<tau> \<sigma> c)"
       by (simp add: not_less le_iff_add[symmetric])
-    have le: "a \<le> jfrz1 - w"
+    have le: "a \<le> c - w"
     proof (rule ccontr)
-      assume "\<not> a \<le> jfrz1 - w"
-      then have "jfrz1 - w < length (takeWhile ?P tq1)"
+      assume "\<not> a \<le> c - w"
+      then have "c - w < length (takeWhile ?P tq1)"
         by (simp add: a_eq)
-      then have "?P (takeWhile ?P tq1 ! (jfrz1 - w))"
+      then have "?P (takeWhile ?P tq1 ! (c - w))"
         by (meson nth_mem set_takeWhileD)
-      moreover have "takeWhile ?P tq1 ! (jfrz1 - w) = \<tau> \<sigma> jfrz1"
-        using \<open>jfrz1 - w < length (takeWhile ?P tq1)\<close> nth by (simp add: takeWhile_nth)
+      moreover have "takeWhile ?P tq1 ! (c - w) = \<tau> \<sigma> c"
+        using \<open>c - w < length (takeWhile ?P tq1)\<close> nth by (simp add: takeWhile_nth)
       ultimately show False
         using not_P by simp
     qed
@@ -2348,14 +2351,17 @@ next
       moreover have "takeWhile ?P tq1 ! (k - w) = \<tau> \<sigma> k"
       proof -
         have "k - w < j + \<delta> - w"
-          using that le True False by linarith
+          using that le c False by linarith
         then show ?thesis
           using k False unfolding tq1 by (simp add: takeWhile_nth)
       qed
-      ultimately show ?thesis
+      ultimately have "enat (\<tau> \<sigma> k) + d < enat (\<tau> \<sigma> c)"
         by simp
+      also have "\<dots> \<le> enat (\<tau> \<sigma> jfrz1)"
+        using c(2) by simp
+      finally show ?thesis .
     qed
-    with le True show ?thesis
+    with le c show ?thesis
       by auto
   next
     case False

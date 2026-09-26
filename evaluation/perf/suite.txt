@@ -277,6 +277,8 @@ frz-binary    | tp500  | FRZ q(x,y) = B(x,y) IN ONCE[0,10] (A(x,y) AND q(x,y))  
 frz-agg       | tp500  | FRZ q(x) = C(x) IN (r <- CNT y; x ONCE[0,10] (A(x,y) AND q(x)))      | an aggregation over the frozen window
 frz-exists    | tp500  | FRZ q(x) = C(x) IN EXISTS y. ONCE[0,10] (A(x,y) AND q(x))            | a projection over it
 frz-outer     | tp500  | C(x) AND (FRZ q(x) = C(x) IN ONCE[0,10] (EXISTS y. A(x,y) AND q(x))) | the freeze under a conjunction
+frz-rwonce    | tp1000 | C(x) AND ONCE[0,5] NOT B(x,x)                                        | as the rewriter freezes it: the guard's frozen predicate under the window, not hoistable
+frz-rwonce20  | tp1000 | C(x) AND ONCE[0,20] NOT B(x,x)                                       | a wider one
 frz-len250    | tp250  | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | frz-once20 on 250 time points
 frz-len1000   | tp1000 | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | and on 1000
 frz-now250    | tp250  | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | frz-now on 250 time points

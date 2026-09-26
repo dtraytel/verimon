@@ -9156,3 +9156,36 @@ the extra state (0.79 → 0.87 s).  The outputs are identical to the previous bi
 MonPoly on the `frz` family and on nine further FRZ shapes (negation, Since left operand, Prev,
 unbounded Once, a future window, a lower bound, nested freezes, an aggregation), and on the 652
 `-verified` commands of the test corpus.  The cram tests pass.
+
+## 21.49 The window also moves when the frozen formula does not lag
+
+The formulas the rewriter produces (`Rewriting.thy`, rules 2, 3, 10–13 and 18–21) freeze a guard
+α and conjoin its frozen predicate q with an operand β under the temporal operator, for example
+`C(x) AND ONCE[0,5] NOT B(x,x)` becomes `FRZ q(x) = C(x) IN C(x) AND ONCE[0,5] (q(x) AND NOT
+B(x,x))`.  The rewriter only does this when β has a free variable that α restricts and β does not
+(`prop_cond`), so taking q out of the operator again leaves it unsafe, and the hoisting of 21.43
+and 21.47 never applies to these formulas.  They were quadratic after 21.48: the window moved only
+while some verdict was still undecided (`jfrz < j`).  When the frozen formula keeps up, every
+verdict is out after each step (`jfrz = j`), so the window stayed at 0 and each copy replayed the
+whole prefix.
+
+`frz_adv` now moves the window whenever it is not empty.  It uses the timestamp of `min jfrz (j - 1)`:
+that of the first undecided time point, or, once all are decided, that of the last one.  The
+latter is no greater than the timestamp of any time point still to be decided, so the invariant
+of 21.48 (`∀k < w. τ k + d < τ jfrz`) is unchanged, and only the step lemma's `a_facts` changes
+(twelve lines of `Correctness.thy`).  Every other proof, including the dense layers, is untouched.
+
+| formula (tp1000) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `C(x) AND ONCE[0,5] NOT B(x,x)` (`frz-rwonce`) | 3.73 | 0.11 | 0.11 |
+| `C(x) AND ONCE[0,20] NOT B(x,x)` (`frz-rwonce20`) | 2.55 | 0.15 | 0.13 |
+| `FRZ q(x) = C(x) IN (C(x) AND ONCE[0,5] (q(x) AND NOT B(x,x)))` | 2.66 | 0.10 | 0.16 |
+| `FRZ q(x) = C(x) IN ONCE[0,5] (q(x) AND NOT B(x,x))` | 1.65 | 0.11 | 0.12 |
+
+The `frz` family of the suite is unchanged within noise.  All of its formulas are either hoisted
+or lagging, which is why the suite did not show the problem; the two rewriter-generated formulas
+above are added to it.  After the change, a profile of `frz-rwonce20` puts 44% of the
+instructions in the copies' evaluation (their Since windows and joins) and 31% in reading the
+log.  The frozen predicate's table (`replicate`) does not show up.  A constant result for the
+frozen predicate (the `xres` of the `const-relation-propagation` branch) would therefore save
+little on these shapes.

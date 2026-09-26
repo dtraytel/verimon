@@ -1750,11 +1750,14 @@ text \<open>The windowed replay of @{const MFrz}: a time point whose timestamp i
   reach @{term d} of the body before that of the first undecided time point @{term jfrz} is
   never looked at by a verdict still to be computed.  The number of such time points at the front
   of the window @{term "tq"} (the timestamps from time point @{term w} on), by which the window
-  can move forward.\<close>
+  can move forward.  Once every verdict is out (@{term "jfrz = j"}), the timestamp of
+  @{term jfrz} is not known yet; that of the last time point, @{term "j - 1"}, bounds it from
+  below.  Without this, a frozen formula that never lags would keep the window at its start, and
+  each copy would replay the whole prefix.\<close>
 
 definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> nat" where
-  "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> jfrz < j
-     then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (jfrz - w))) tq) else 0)"
+  "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> w < j
+     then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (min jfrz (j - 1) - w))) tq) else 0)"
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
