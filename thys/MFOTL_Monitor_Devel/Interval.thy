@@ -42,9 +42,57 @@ lift_definition point :: "nat \<Rightarrow> \<I>" is "\<lambda>n. ((\<le>) n, (\
   by (auto simp: upclosed_def downclosed_def not_le)
 lift_definition subtract :: "nat \<Rightarrow> \<I> \<Rightarrow> \<I>" is
   "\<lambda>n (memL, memR, b). (\<lambda>i. memL (i + n), \<lambda>i. i = 0 \<or> memR (i + n), b)"
-    apply (auto simp: upclosed_def downclosed_def)
-   apply (metis add.commute le_iff_add linear)
-  by (metis le0 linorder_neqE_nat nat_le_iff_add not_less0)
+proof -
+  fix n :: nat and I :: "(nat \<Rightarrow> bool) \<times> (nat \<Rightarrow> bool) \<times> bool"
+  obtain L R b where I: "I = (L, R, b)"
+    by (cases I)
+  assume "I \<in> {(l, r, c). (\<exists>m. l m \<and> r m) \<and> upclosed l \<and> downclosed r \<and> (c = (\<exists>m. \<not> r m))}"
+  then have ex: "\<exists>m. L m \<and> R m" and up: "upclosed L" and down: "downclosed R"
+    and bounded_iff: "b = (\<exists>m. \<not> R m)"
+    by (simp_all add: I)
+  have "\<exists>m. L (m + n) \<and> (m = 0 \<or> R (m + n))"
+  proof -
+    from ex obtain m where "L m" "R m"
+      by blast
+    show ?thesis
+    proof (cases "n \<le> m")
+      case True
+      with \<open>L m\<close> \<open>R m\<close> have "L (m - n + n)" "R (m - n + n)"
+        by simp_all
+      then show ?thesis
+        by blast
+    next
+      case False
+      with up \<open>L m\<close> have "L (0 + n)"
+        unfolding upclosed_def by simp
+      then show ?thesis
+        by blast
+    qed
+  qed
+  moreover have "upclosed (\<lambda>i. L (i + n))"
+    using up unfolding upclosed_def by simp
+  moreover have "downclosed (\<lambda>i. i = 0 \<or> R (i + n))"
+    using down unfolding downclosed_def by simp
+  moreover have "b = (\<exists>m. \<not> (m = 0 \<or> R (m + n)))"
+  proof
+    assume b
+    then obtain m where "\<not> R m"
+      using bounded_iff by blast
+    moreover have "m \<le> Suc m + n"
+      by simp
+    ultimately have "\<not> R (Suc m + n)"
+      using down unfolding downclosed_def by blast
+    then show "\<exists>m. \<not> (m = 0 \<or> R (m + n))"
+      by blast
+  next
+    assume "\<exists>m. \<not> (m = 0 \<or> R (m + n))"
+    then show b
+      using bounded_iff by blast
+  qed
+  ultimately show "(case I of (l, r, c) \<Rightarrow> (\<lambda>i. l (i + n), \<lambda>i. i = 0 \<or> r (i + n), c))
+    \<in> {(l, r, c). (\<exists>m. l m \<and> r m) \<and> upclosed l \<and> downclosed r \<and> (c = (\<exists>m. \<not> r m))}"
+    by (simp add: I)
+qed
 
 lemma point_simps[simp]:
   "memL (point n) = (\<le>) n"
@@ -67,10 +115,42 @@ lift_definition interval :: "nat \<Rightarrow> enat \<Rightarrow> \<I>" is
 
 lift_definition clopen_ivlR :: "nat \<Rightarrow> enat \<Rightarrow> \<I>" is
   "\<lambda>l. \<lambda>r. (if enat l < r then (\<lambda>i. l \<le> i, \<lambda>i. enat i < r, r \<noteq> \<infinity>) else (\<lambda>_. True, \<lambda>_. True, False))"
-  using enat_iless 
-  apply (auto simp: upclosed_def downclosed_def not_le order_subst2)
-  apply (meson enat_ord_simps(1) order_le_less_trans)
-  using not_less_iff_gr_or_eq by blast
+proof -
+  fix l :: nat and r :: enat
+  show "(if enat l < r then (\<lambda>i. l \<le> i, \<lambda>i. enat i < r, r \<noteq> \<infinity>) else (\<lambda>_. True, \<lambda>_. True, False))
+    \<in> {(l, r, c). (\<exists>m. l m \<and> r m) \<and> upclosed l \<and> downclosed r \<and> (c = (\<exists>m. \<not> r m))}"
+  proof (cases "enat l < r")
+    case True
+    have "\<exists>m. l \<le> m \<and> enat m < r"
+      using True by blast
+    moreover have "upclosed (\<lambda>i. l \<le> i)"
+      unfolding upclosed_def using order_trans by blast
+    moreover have "downclosed (\<lambda>i. enat i < r)"
+      unfolding downclosed_def by (meson enat_ord_simps(1) order_le_less_trans)
+    moreover have "(r \<noteq> \<infinity>) = (\<exists>m. \<not> enat m < r)"
+    proof
+      assume "r \<noteq> \<infinity>"
+      then obtain k where "r = enat k"
+        by blast
+      then show "\<exists>m. \<not> enat m < r"
+        by blast
+    next
+      assume "\<exists>m. \<not> enat m < r"
+      then obtain m where "\<not> enat m < r"
+        by blast
+      moreover have "enat m < \<infinity>"
+        by simp
+      ultimately show "r \<noteq> \<infinity>"
+        by meson
+    qed
+    ultimately show ?thesis
+      using True by simp
+  next
+    case False
+    then show ?thesis
+      by (simp add: upclosed_def downclosed_def)
+  qed
+qed
 
 lift_definition clopen_ivlL :: "nat \<Rightarrow> enat \<Rightarrow> \<I>" is
   "\<lambda>l. \<lambda>r. (if enat l < r then (\<lambda>i. l < i, \<lambda>i. enat i \<le> r, r \<noteq> \<infinity>) else (\<lambda>_. True, \<lambda>_. True, False))"
