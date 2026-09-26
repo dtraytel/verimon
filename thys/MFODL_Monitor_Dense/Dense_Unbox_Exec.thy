@@ -960,13 +960,37 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
 
 lemma psize_snd_udeval:
   "udeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (udeval j ts db \<phi>)) = size \<phi>"
-  apply (induct rule: udeval.pinduct)
-  apply (auto simp only: prod.inject udeval.psimps Let_def snd_conv fst_conv
-      udformula.size list.map map_map o_apply size_list_map cong: size_list_cong
-      split: prod.splits)
-   apply simp
-  apply (metis snd_conv size_letpast_meval)
-  done
+proof (induct rule: udeval.pinduct)
+  case (11 j ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>UDPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "udeval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "ueprev_next I (buf @@ xs) (nts @@ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 11(2) \<phi>' by simp
+  then show ?case
+    by (simp add: udeval.psimps(11)[OF 11(1)] \<phi>' mp del: ueprev_next.simps)
+next
+  case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>UDLetPast\<close>\<close>
+  obtain xs i' buf' \<phi>' where lp:
+    "letpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd
+      (letpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    by (rule size_letpast_meval) (simp add: 21(2))
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "udeval j ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 21(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: udeval.psimps(21)[OF 21(1)] lp \<psi>')
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
+    since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
+qed (auto simp only: prod.inject udeval.psimps Let_def snd_conv fst_conv
+    udformula.size list.map map_map o_apply size_list_map cong: size_list_cong
+    split: prod.splits)
 
 lemma total_udeval: "All udeval_dom"
   by (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)")
