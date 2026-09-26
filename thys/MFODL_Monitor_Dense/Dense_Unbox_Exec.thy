@@ -600,8 +600,24 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
     note IH = "1.hyps"[OF refl e[symmetric] _ _ _ "1.prems"(1) "1.prems"(2),
         unfolded map_append]
     show ?thesis
-      apply (subst (1 2) letpast_meval0.simps)
-      using IH "1.prems"(3) by (auto simp: Let_def L e s1 s2 Cons)
+    proof (cases "j \<le> Suc (i + length xs)")
+      case True
+      then show ?thesis
+        by (subst (1 2) letpast_meval0.simps) (simp add: Let_def L e s1 s2 Cons)
+    next
+      case False
+      have n: "size \<phi>' = n"
+        using s1 "1.prems"(3) by simp
+      have rec: "letpast_meval0 eval j (i + length xs) (map reopt_table (ys @ ys'))
+          (map reopt_table ys') p [] (rdb (Mapping.map_values (\<lambda>_ _. []) db)) (R \<phi>') =
+        (case letpast_meval0 eval' j (i + length xs) (ys @ ys') ys' p []
+            (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' of
+          (ys', i', b, \<phi>') \<Rightarrow> (map reopt_table ys', i', map_option reopt_table b, R \<phi>'))"
+        using IH[OF _ Cons False _ n] s1 by simp
+      show ?thesis
+        using False rec
+        by (subst (1 2) letpast_meval0.simps) (simp add: Let_def L e s1 s2 Cons)
+    qed
   qed
 qed
 
