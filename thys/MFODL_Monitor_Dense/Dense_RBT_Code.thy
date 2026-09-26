@@ -221,10 +221,13 @@ lemma edl_mapping_delete_set_code[code]:
      then set_fold_cfi mapping_delete_set_cfi m (Complement Q)
      else Code.abort (STR ''mapping_delete_set: infinite'')
        (\<lambda>_. edl_mapping_delete_set m (Complement Q)))"
-  unfolding edl_mapping_delete_set_def
-    apply (rule de_mapping_delete_set_nat_rbt[unfolded de_mapping_delete_set_nat_def])
-   apply (rule mapping_delete_set_code)+
-  done
+proof -
+  \<comment> \<open>The tree case is the specialised equation of the first copy.\<close>
+  show "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold edl_delete_nat rbt m"
+    using de_mapping_delete_set_nat_rbt
+    unfolding edl_mapping_delete_set_def de_mapping_delete_set_nat_def .
+  \<comment> \<open>The other four cases are instances of the generic equation.\<close>
+qed (unfold edl_mapping_delete_set_def, (rule mapping_delete_set_code)+)
 
 section \<open>The join-based set operations, without counting black heights\<close>
 
