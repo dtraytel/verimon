@@ -508,59 +508,103 @@ lemma join1_replicate_None:
 
 lemma join1_Some_sub_tuples1:
   "join1 (x, y) = Some z \<Longrightarrow> wf_tuple n X x \<Longrightarrow> wf_tuple n Y y \<Longrightarrow> Y \<subseteq> X \<Longrightarrow> x = z"
-  apply (induct "(x, y)" arbitrary: x y z n X Y rule: join1.induct; clarsimp split: if_splits)
-proof (goal_cases NoneNone SomeNone NoneSome SomeSome)
-  case nn: (NoneNone xs ys X Y w m)
-  show ?case 
-    apply(rule nn(1)[OF refl nn(6,7)])
-    using nn(2,3,4) leI zero_less_iff_neq_zero 
-    by (fastforce simp: subset_eq)+
-next
-  case sn: (SomeNone xs ys X Y w m)
-  show ?case
-    apply (rule sn(1)[OF refl sn(6,7)])
-    using sn(2,3,4,5) 
-    by (auto simp: subset_eq image_iff)
-next
-  case ns: (NoneSome xs ys X Y w m)
-  thus ?case 
+proof (induct "(x, y)" arbitrary: x y z n X Y rule: join1.induct)
+  case (2 xs ys)
+  from "2"(2) obtain z' where "z = None # z'" and "join1 (xs, ys) = Some z'"
     by auto
+  moreover from "2"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "2"(5) by blast
+  ultimately show ?case
+    using "2"(1) by blast
 next
-  case ss: (SomeSome x xs X Y w m)
-  show ?case 
-    apply(rule ss(2)[OF refl ss(5,6)])
-    using ss(1,2,4,5)
-    by (auto simp: subset_eq image_iff)
-qed
+  case (3 a xs ys)
+  from "3"(2) obtain z' where "z = Some a # z'" and "join1 (xs, ys) = Some z'"
+    by auto
+  moreover from "3"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "3"(5) by blast
+  ultimately show ?case
+    using "3"(1) by blast
+next
+  case (4 xs b ys)
+  \<comment> \<open>position 0 is in @{term Y} but not in @{term X}\<close>
+  from "4"(3,4) have "0 \<notin> X" and "0 \<in> Y"
+    by simp_all
+  with "4"(5) show ?case
+    by blast
+next
+  case (5 a xs b ys)
+  from "5"(2) obtain z' where "a = b" and "z = Some a # z'" and "join1 (xs, ys) = Some z'"
+    by (auto split: if_splits)
+  moreover from "5"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "5"(5) by blast
+  ultimately show ?case
+    using "5"(1) by blast
+qed simp_all
 
 lemma join1_Some_sub_tuples2:
   "join1 (x, y) = Some z \<Longrightarrow> wf_tuple n X x \<Longrightarrow> wf_tuple n Y y \<Longrightarrow> Y \<subseteq> X \<Longrightarrow> y = restrict Y z"
-  apply (induct "(x, y)" arbitrary: x y z n X Y rule: join1.induct; clarsimp split: if_splits)
-proof (goal_cases NoneNone SomeNone NoneSome SomeSome)
-  case nn: (NoneNone xs ys X Y w m)
-  show ?case 
-    apply(rule nn(1)[OF refl nn(6,7)])
-    using nn(2,3,4) leI zero_less_iff_neq_zero 
-    by (fastforce simp: subset_eq)+
+proof (induct "(x, y)" arbitrary: x y z n X Y rule: join1.induct)
+  case (2 xs ys)
+  from "2"(2) obtain z' where z: "z = None # z'" and "join1 (xs, ys) = Some z'"
+    by auto
+  moreover from "2"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "2"(5) by blast
+  ultimately have "ys = restrict ((\<lambda>x. x - 1) ` (Y - {0})) z'"
+    using "2"(1) by blast
+  moreover from "2"(4) have "0 \<notin> Y"
+    by simp
+  ultimately show ?case
+    using z by simp
 next
-  case sn: (SomeNone xs ys X Y w m)
-  show ?case
-    apply (rule sn(1)[OF refl sn(6,7)])
-    using sn(2,3,4,5) 
-    by (auto simp: subset_eq image_iff)
+  case (3 a xs ys)
+  from "3"(2) obtain z' where z: "z = Some a # z'" and "join1 (xs, ys) = Some z'"
+    by auto
+  moreover from "3"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "3"(5) by blast
+  ultimately have "ys = restrict ((\<lambda>x. x - 1) ` (Y - {0})) z'"
+    using "3"(1) by blast
+  moreover from "3"(4) have "0 \<notin> Y"
+    by simp
+  ultimately show ?case
+    using z by simp
 next
-  case ns: (NoneSome xs ys X Y w m)
-  show ?case 
-    apply (rule ns(1)[OF refl ns(6,7)])
-    using ns(2,3,4,5) 
-    by (auto simp: subset_eq image_iff)
+  case (4 xs b ys)
+  \<comment> \<open>position 0 is in @{term Y} but not in @{term X}\<close>
+  from "4"(3,4) have "0 \<notin> X" and "0 \<in> Y"
+    by simp_all
+  with "4"(5) show ?case
+    by blast
 next
-  case ss: (SomeSome x xs X Y w m)
-  show ?case 
-    apply(rule ss(2)[OF refl ss(5,6)])
-    using ss(1,2,4,5)
-    by (auto simp: subset_eq image_iff)
-qed
+  case (5 a xs b ys)
+  from "5"(2) obtain z' where "a = b" and z: "z = Some a # z'" and "join1 (xs, ys) = Some z'"
+    by (auto split: if_splits)
+  moreover from "5"(3,4) obtain m where "wf_tuple m ((\<lambda>x. x - 1) ` (X - {0})) xs"
+    and "wf_tuple m ((\<lambda>x. x - 1) ` (Y - {0})) ys"
+    by (auto simp only: wf_tuple_Cons)
+  moreover have "(\<lambda>x. x - 1) ` (Y - {0}) \<subseteq> (\<lambda>x. x - 1) ` (X - {0})"
+    using "5"(5) by blast
+  ultimately have "ys = restrict ((\<lambda>x. x - 1) ` (Y - {0})) z'"
+    using "5"(1) by blast
+  moreover from "5"(4) have "0 \<in> Y"
+    by simp
+  ultimately show ?case
+    using z \<open>a = b\<close> by simp
+qed simp_all
 
 
 subsubsection \<open> Joining tables \<close>
