@@ -1642,33 +1642,54 @@ next
         using no_empty Cons.prems(2)[of 0]
           Cons.prems(2)[of "Suc i"] \<open>i < length Rs\<close>
         by (auto simp: table_def wf_tuple_def subset_eq)
-      hence rw_vars: "?U = \<Union> ((X \<circ> Suc) ` {..<length Rs})" (is "_ = ?U'")
-        apply (rule_tac f=\<Union> in arg_cong)
-        using i_le less_Suc_eq_0_disj by auto
-      show ?thesis
-        using True
-        apply simp
-        unfolding rw_vars
-        apply (rule Cons.hyps[of n "X \<circ> Suc" "Qi \<circ> Suc"])
-        using qtables apply force
-        using wf_vars apply force
-        using Cons.prems(3) apply force
-        subgoal for v
-          using Cons.prems(4)[simplified, unfolded rw_vars, of v]
-          apply clarsimp
-          apply (intro conjI impI allI iffI)
-           apply force
-          subgoal for j
-            apply (cases "j=0"; clarsimp)
-             apply (erule_tac x=i in allE)
-            using i_le apply clarsimp
-            using qtable_unique_pred[OF qtables[OF i_le, unfolded i_def] qtableR[unfolded eq_vars]]
-              wf_tuple_restrict_simple[of n ?U' v "X 0", simplified]
-              Cons.prems(3)[of v ?U' "X 0", simplified]
-            apply (metis SUP_upper eq_vars lessThan_iff)
-            using less_Suc_eq_0_disj by auto
-          done
-        done
+      have sub: "X 0 \<subseteq> \<Union> ((X \<circ> Suc) ` {..<length Rs})"
+        using eq_vars i_le by auto
+      have rw_vars: "?U = \<Union> ((X \<circ> Suc) ` {..<length Rs})" (is "_ = ?U'")
+      proof -
+        have "?U = X 0 \<union> ?U'"
+          by (simp add: lessThan_Suc_eq_insert_0 image_comp)
+        with sub show ?thesis
+          by blast
+      qed
+      \<comment> \<open>@{term R} occurs in @{term Rs}, so the induction hypothesis covers the whole join\<close>
+      have "qtable n ?U' P Q (nary_join n (set Rs))"
+      proof (rule Cons.hyps[where X="X \<circ> Suc" and Qi="Qi \<circ> Suc"])
+        fix j
+        assume "j < length Rs"
+        then show "qtable n ((X \<circ> Suc) j) P ((Qi \<circ> Suc) j) (Rs ! j)"
+          by (simp add: qtables)
+      next
+        fix j
+        assume "j < length Rs"
+        then show "(X \<circ> Suc) j \<subseteq> {m. m < n}"
+          by (rule wf_vars)
+      next
+        fix A B v
+        assume "P v" "wf_tuple n B v" "A \<subseteq> B"
+        then show "P (restrict A v)"
+          by (rule Cons.prems(3))
+      next
+        fix v
+        assume "P v" and wf: "wf_tuple n ?U' v"
+        have "Q v \<longleftrightarrow> (\<forall>j<Suc (length Rs). Qi j (restrict (X j) v))"
+          using Cons.prems(4)[of v] \<open>P v\<close> wf rw_vars by simp
+        also have "\<dots> \<longleftrightarrow> Qi 0 (restrict (X 0) v) \<and> (\<forall>j<length Rs. Qi (Suc j) (restrict (X (Suc j)) v))"
+          by (rule All_less_Suc2)
+        also have "\<dots> \<longleftrightarrow> (\<forall>j<length Rs. Qi (Suc j) (restrict (X (Suc j)) v))"
+        proof -
+          \<comment> \<open>@{term R} also occurs at position @{term "Suc i"}, with the same variables\<close>
+          have "Qi 0 (restrict (X 0) v) \<longleftrightarrow> Qi (Suc i) (restrict (X (Suc i)) v)"
+            using qtable_unique_pred[OF qtableR qtables[OF i_le, unfolded i_def, folded eq_vars]]
+              Cons.prems(3)[OF \<open>P v\<close> wf sub] wf_tuple_restrict_simple[OF wf sub] eq_vars
+            by simp
+          then show ?thesis
+            using i_le by blast
+        qed
+        finally show "Q v \<longleftrightarrow> (\<forall>j<length Rs. (Qi \<circ> Suc) j (restrict ((X \<circ> Suc) j) v))"
+          by simp
+      qed
+      with True rw_vars show ?thesis
+        by (simp add: insert_absorb)
     next
       case False
       then show ?thesis
