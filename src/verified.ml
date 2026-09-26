@@ -6312,42 +6312,47 @@ let rec frz_split
     | pn, TS v -> None;;
 
 let rec hoist
-  pn x1 = match pn, x1 with
-    pn, Since (phi, i, psi) ->
-      (let psia = hoist pn psi in
-        (match (if memL i zero_nata then frz_split pn psia else None)
-          with None -> Since (hoist pn phi, i, psia)
-          | Some (q, alpha) -> And (q, Since (hoist pn phi, i, alpha))))
-    | pn, Until (phi, i, psi) ->
-        (let psia = hoist pn psi in
-          (match frz_split pn psia with None -> Until (hoist pn phi, i, psia)
-            | Some (q, alpha) -> And (q, Until (hoist pn phi, i, alpha))))
-    | pn, Next (i, psi) ->
-        (let psia = hoist pn psi in
+  fl pn x2 = match fl, pn, x2 with
+    fl, pn, Since (phi, i, psi) ->
+      (let psia = hoist fl pn psi in
+        (match (if memL i zero_nata || fl then frz_split pn psia else None)
+          with None -> Since (hoist fl pn phi, i, psia)
+          | Some (q, alpha) -> And (q, Since (hoist fl pn phi, i, alpha))))
+    | fl, pn, Until (phi, i, psi) ->
+        (let psia = hoist fl pn psi in
+          (match frz_split pn psia with None -> Until (hoist fl pn phi, i, psia)
+            | Some (q, alpha) -> And (q, Until (hoist fl pn phi, i, alpha))))
+    | fl, pn, Next (i, psi) ->
+        (let psia = hoist fl pn psi in
           (match frz_split pn psia with None -> Next (i, psia)
             | Some (q, alpha) -> And (q, Next (i, alpha))))
-    | pn, Neg phi -> Neg (hoist pn phi)
-    | pn, And (phi, psi) -> And (hoist pn phi, hoist pn psi)
-    | pn, Or (phi, psi) -> Or (hoist pn phi, hoist pn psi)
-    | pn, Ands l -> Ands (mapa (hoist pn) l)
-    | pn, Exists (t, phi) -> Exists (t, hoist pn phi)
-    | pn, Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, hoist pn phi)
-    | pn, Let (e, phi, psi) ->
+    | fl, pn, Neg phi -> Neg (hoist fl pn phi)
+    | fl, pn, And (phi, psi) -> And (hoist fl pn phi, hoist fl pn psi)
+    | fl, pn, Or (phi, psi) -> Or (hoist fl pn phi, hoist fl pn psi)
+    | fl, pn, Ands l -> Ands (mapa (hoist fl pn) l)
+    | fl, pn, Exists (t, phi) -> Exists (t, hoist fl pn phi)
+    | fl, pn, Agg (y, omega, tys, f, phi) ->
+        Agg (y, omega, tys, f, hoist fl pn phi)
+    | fl, pn, Let (e, phi, psi) ->
         (if equal_proda equal_string8 equal_nat (e, nfv phi) pn
-          then Let (e, phi, psi) else Let (e, phi, hoist pn psi))
-    | pn, Pred (v, va) -> Pred (v, va)
-    | pn, Frz (v, va, vb) -> Frz (v, va, vb)
-    | pn, LetPast (v, va, vb) -> LetPast (v, va, vb)
-    | pn, Eq (v, va) -> Eq (v, va)
-    | pn, Less (v, va) -> Less (v, va)
-    | pn, LessEq (v, va) -> LessEq (v, va)
-    | pn, Prev (v, va) -> Prev (v, va)
-    | pn, Trigger (v, va, vb) -> Trigger (v, va, vb)
-    | pn, Release (v, va, vb) -> Release (v, va, vb)
-    | pn, MatchF (v, va) -> MatchF (v, va)
-    | pn, MatchP (v, va) -> MatchP (v, va)
-    | pn, TP v -> TP v
-    | pn, TS v -> TS v;;
+          then Let (e, phi, psi) else Let (e, phi, hoist fl pn psi))
+    | fl, pn, Prev (i, psi) ->
+        (let psia = hoist fl pn psi in
+          (match (if fl then frz_split pn psia else None)
+            with None -> Prev (i, psia)
+            | Some (q, alpha) -> And (q, Prev (i, alpha))))
+    | fl, pn, Pred (v, va) -> Pred (v, va)
+    | fl, pn, Frz (v, va, vb) -> Frz (v, va, vb)
+    | fl, pn, LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | fl, pn, Eq (v, va) -> Eq (v, va)
+    | fl, pn, Less (v, va) -> Less (v, va)
+    | fl, pn, LessEq (v, va) -> LessEq (v, va)
+    | fl, pn, Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | fl, pn, Release (v, va, vb) -> Release (v, va, vb)
+    | fl, pn, MatchF (v, va) -> MatchF (v, va)
+    | fl, pn, MatchP (v, va) -> MatchP (v, va)
+    | fl, pn, TP v -> TP v
+    | fl, pn, TS v -> TS v;;
 
 let shr : string = id "__release";;
 
@@ -12037,35 +12042,63 @@ let rec now_only
     | pn, TP v -> not (contains_pred pn (TP v))
     | pn, TS v -> not (contains_pred pn (TS v));;
 
+let rec full_now
+  b x1 = match b, x1 with
+    b, Pred (e, ts) ->
+      not (membera (equal_prod equal_string8 equal_nat) b (e, size_lista ts))
+    | b, Eq (t1, t2) -> true
+    | b, Less (t1, t2) -> true
+    | b, LessEq (t1, t2) -> true
+    | b, Neg phi -> full_now b phi
+    | b, And (phi, psi) -> full_now b phi && full_now b psi
+    | b, Or (phi, psi) -> full_now b phi && full_now b psi
+    | b, Ands l -> list_all (full_now b) l
+    | b, Exists (t, phi) -> full_now b phi
+    | b, Agg (y, omega, tys, f, phi) -> full_now b phi
+    | b, Prev (i, phi) -> full_now b phi
+    | b, Since (phi, i, psi) -> full_now b phi && full_now b psi
+    | b, Let (v, va, vb) -> false
+    | b, Frz (v, va, vb) -> false
+    | b, LetPast (v, va, vb) -> false
+    | b, Next (v, va) -> false
+    | b, Until (v, va, vb) -> false
+    | b, Trigger (v, va, vb) -> false
+    | b, Release (v, va, vb) -> false
+    | b, MatchF (v, va) -> false
+    | b, MatchP (v, va) -> false
+    | b, TP v -> false
+    | b, TS v -> false;;
+
 let rec frz_rw
-  = function
-    Frz (p, phi, psi) ->
+  b x1 = match b, x1 with
+    b, Frz (p, phi, psi) ->
       (let pn = (p, nfv phi) in
-       let psia = hoist pn (frz_rw psi) in
-        (if now_only pn psia then Let (p, frz_rw phi, psia)
-          else Frz (p, frz_rw phi, psia)))
-    | Let (p, phi, psi) -> Let (p, frz_rw phi, frz_rw psi)
-    | Neg phi -> Neg (frz_rw phi)
-    | And (phi, psi) -> And (frz_rw phi, frz_rw psi)
-    | Or (phi, psi) -> Or (frz_rw phi, frz_rw psi)
-    | Ands l -> Ands (mapa frz_rw l)
-    | Exists (t, phi) -> Exists (t, frz_rw phi)
-    | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, frz_rw phi)
-    | Prev (i, phi) -> Prev (i, frz_rw phi)
-    | Next (i, phi) -> Next (i, frz_rw phi)
-    | Since (phi, i, psi) -> Since (frz_rw phi, i, frz_rw psi)
-    | Until (phi, i, psi) -> Until (frz_rw phi, i, frz_rw psi)
-    | Pred (v, va) -> Pred (v, va)
-    | LetPast (v, va, vb) -> LetPast (v, va, vb)
-    | Eq (v, va) -> Eq (v, va)
-    | Less (v, va) -> Less (v, va)
-    | LessEq (v, va) -> LessEq (v, va)
-    | Trigger (v, va, vb) -> Trigger (v, va, vb)
-    | Release (v, va, vb) -> Release (v, va, vb)
-    | MatchF (v, va) -> MatchF (v, va)
-    | MatchP (v, va) -> MatchP (v, va)
-    | TP v -> TP v
-    | TS v -> TS v;;
+       let phia = frz_rw b phi in
+       let psia = hoist (full_now b phia) pn (frz_rw (pn :: b) psi) in
+        (if now_only pn psia then Let (p, phia, psia) else Frz (p, phia, psia)))
+    | b, Let (p, phi, psi) ->
+        Let (p, frz_rw b phi, frz_rw ((p, nfv phi) :: b) psi)
+    | b, Neg phi -> Neg (frz_rw b phi)
+    | b, And (phi, psi) -> And (frz_rw b phi, frz_rw b psi)
+    | b, Or (phi, psi) -> Or (frz_rw b phi, frz_rw b psi)
+    | b, Ands l -> Ands (mapa (frz_rw b) l)
+    | b, Exists (t, phi) -> Exists (t, frz_rw b phi)
+    | b, Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, frz_rw b phi)
+    | b, Prev (i, phi) -> Prev (i, frz_rw b phi)
+    | b, Next (i, phi) -> Next (i, frz_rw b phi)
+    | b, Since (phi, i, psi) -> Since (frz_rw b phi, i, frz_rw b psi)
+    | b, Until (phi, i, psi) -> Until (frz_rw b phi, i, frz_rw b psi)
+    | b, Pred (v, va) -> Pred (v, va)
+    | b, LetPast (v, va, vb) -> LetPast (v, va, vb)
+    | b, Eq (v, va) -> Eq (v, va)
+    | b, Less (v, va) -> Less (v, va)
+    | b, LessEq (v, va) -> LessEq (v, va)
+    | b, Trigger (v, va, vb) -> Trigger (v, va, vb)
+    | b, Release (v, va, vb) -> Release (v, va, vb)
+    | b, MatchF (v, va) -> MatchF (v, va)
+    | b, MatchP (v, va) -> MatchP (v, va)
+    | b, TP v -> TP v
+    | b, TS v -> TS v;;
 
 let rec is_TTa
   phi = (match phi with Pred (_, _) -> false | Let (_, _, _) -> false
@@ -12767,7 +12800,7 @@ let rec mmonitorable_exec
     | LessEq (v, va) -> false;;
 
 let rec frz_opt
-  phi = (let phia = frz_rw phi in
+  phi = (let phia = frz_rw [] phi in
           (if mmonitorable_exec phia then phia else phi));;
 
 let rec is_cmp

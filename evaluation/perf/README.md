@@ -1,6 +1,6 @@
 # Performance suite: the verified dense evaluator against MonPoly
 
-267 hand-picked formulas in 29 groups, each there for a stated reason (`suite.txt`, one
+271 hand-picked formulas in 29 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
 (`-verified`: `Dense_Eval.thy` over the short tuples of `Dense_Unbox_Exec.thy`; the system is
 called `verimon` in the reports, `vdense` in earlier ones) on the same log, with a 5-second timeout per run, best of three repetitions, in 1 to 10 minutes

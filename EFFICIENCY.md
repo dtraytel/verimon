@@ -9051,3 +9051,50 @@ Dropping the tables when the interval has no right bound would need a new repres
 relation for the Since structure at all three levels (kernel, dense, short tuples).  Today
 that relation is a function of the state, and this change would make it non-injective.  Left
 for later.
+
+## 21.47 `frz-oncelb` and `frz-prev`: the frozen conjunct out of a lower-bounded Since and a Prev
+
+MonPoly evaluates `FRZ q = φ IN ψ` by starting a fresh copy of ψ at every time point, with q
+bound to φ's value there (`FrzPerInst` in `algorithm.ml`).  What makes that fast is its "fix #1":
+`past_reach ψ` sums the upper bounds of ψ's past operators (ONCE, SINCE, PREV, …; the future
+operators add nothing, since their future side is served by the drive's look-ahead).  When the
+sum d is finite, each copy is replayed only over the time points in `[τ_i − d, τ_i]` instead of the
+whole prefix.  The cost per time point is the window, not the prefix.  VeriMon's FRZ node
+(`MFrz`/`UDFrz`) has no such bound: each new frozen value replays ψ over the prefix of length j
+(`freeze_meval0` with `replicate j α`).
+
+21.43 avoided the replay where it could by hoisting the frozen conjunct out of the temporal
+operators and binding the freeze with `LET`.  It left out a Since whose interval misses 0 and
+a Prev.  There the original formula has a verdict at time point 0 (empty) before φ's value at 0
+is known, and the hoisted `q ∧ …` does not, so the progress differs.  The FRZ progress puts the
+frozen predicate's progress at j before φ's progress and at 0 after it.  So this can only happen
+when φ lags behind the prefix.  When it never does, the only i at which the frozen predicate
+counts as unavailable is i = j, where both formulas have progress at most j anyway.
+
+`hoist` now takes a flag, set when the frozen formula never lags (`full_now`).  A formula
+qualifies when it is built from the past operators, the connectives, the quantifiers and the
+aggregations over predicates that no enclosing `LET`/`FRZ` binds.  `frz_rw` carries the list of
+those bound names.  With the flag, the conjunct also comes out of a Since with any interval and
+out of a Prev.  `progress_frz_rw` now assumes that every unbound predicate is known at all of the
+prefix or at none of it (`full_env`), which the top level (`Map.empty`) satisfies.  On the future
+side nothing was missing: Until (and so EVENTUALLY) and Next were already hoisted for every
+interval.  The suite gains `frz-sincelb`, `frz-evlb`, `frz-untillb` and `frz-lagphi`.
+
+| formula | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| frz-oncelb | 0.69 | 0.08 | 0.07 |
+| frz-prev | 0.49 | 0.04 | 0.05 |
+| frz-sincelb | 1.25 | 0.07 | 0.08 |
+| frz-evlb | 0.08 | 0.08 | 0.07 |
+| frz-untillb | 0.05 | 0.05 | 0.13 |
+| frz-lagphi | 1.77 | 1.73 | 0.11 |
+
+`frz-lagphi` (`FRZ q(x) = EVENTUALLY[0,3] C(x) IN ONCE[2,10] (…)`) is the case that remains: the
+frozen formula lags, the original really does output time point 0 before it, and the replay
+stays quadratic.  MonPoly's windowed replay would cover it, and the other formulas where no
+conjunct can be hoisted (q under a negation or in the left operand of a Since).  But it would
+change the FRZ node at all three levels and its invariant: the stored state would have to be
+the ψ-state at the window's edge rather than at time point 0.
+
+The outputs are identical on the `frz` family and on the 652 `-verified` commands of the test
+corpus.  The cram tests pass.
