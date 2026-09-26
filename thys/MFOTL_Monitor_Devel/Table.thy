@@ -265,8 +265,7 @@ fun join1 :: "'a tuple \<times> 'a tuple \<Rightarrow> 'a tuple option" where
 
 lemma join1_Some_iff: "(\<exists>v. join1 (x, y) = Some v) \<longleftrightarrow> (length x = length y 
   \<and> (\<forall>i<length x. (x ! i = None \<or> y ! i = None) \<or> (\<exists>a. x ! i = Some a \<and> y ! i = Some a)))"
-  apply (induct "(x, y)" arbitrary: x y rule: join1.induct)
-  using less_Suc_eq_0_disj by auto
+  by (induct "(x, y)" arbitrary: x y rule: join1.induct) (simp_all add: All_less_Suc2)
 
 lemma join1_Some_wf_tuple_eqD:
   assumes "join1 (v1, v2) = Some v" 
@@ -286,36 +285,26 @@ lemma join1_replicate_None_iff_nth: "join1 (v1, v2) = Some (replicate n None)
   \<longleftrightarrow> (length v1 = length v2 \<and> length v1 = n \<and>  (\<forall>i<length v1. (v1 ! i = None \<and> v2 ! i = None)))"
 proof (induct "(v1, v2)" arbitrary: v1 v2 n rule: join1.induct)
   case (2 xs ys)
-  then show ?case
-    apply (intro iffI conjI; clarsimp)
-    using join1_eq_lengths apply blast
-    apply (metis length_Cons length_replicate list.inject replicate_Suc)
-    apply (metis eq_replicate_None_iff length_Cons list.inject replicate_Suc)
-    by auto
+  \<comment> \<open>both heads are @{term None}: strip one @{term None} from both sides\<close>
+  show ?case
+  proof (cases n)
+    case (Suc m)
+    then show ?thesis
+      using "2"[of m] by (simp add: All_less_Suc2)
+  qed simp
 next
   case (3 x xs ys)
-  then show ?case 
-    apply (intro iffI conjI; clarsimp)
-    using join1_Some_iff apply blast
-    apply (metis length_Cons length_replicate list.inject replicate_Suc)
-    apply (metis eq_replicate_None_iff length_Cons list.inject replicate_Suc)
-    by force
+  \<comment> \<open>the result starts with @{term "Some x"}, and so does @{term v1}\<close>
+  then show ?case
+    by (cases n) (simp_all add: All_less_Suc2)
 next
   case (4 xs y ys)
-  then show ?case 
-    apply (intro iffI conjI; clarsimp)
-    using join1_Some_iff apply blast
-    apply (metis length_Cons length_replicate list.inject replicate_Suc)
-    apply (metis eq_replicate_None_iff length_Cons list.inject replicate_Suc)
-    by force
+  then show ?case
+    by (cases n) (simp_all add: All_less_Suc2)
 next
   case (5 x xs y ys)
-  then show ?case 
-    apply (intro iffI conjI; clarsimp split: if_splits)
-    using join1_Some_iff apply blast
-    apply (metis length_Cons length_replicate list.inject replicate_Suc)
-    apply (metis eq_replicate_None_iff length_Cons list.inject replicate_Suc)
-    by force
+  then show ?case
+    by (cases n) (simp_all add: All_less_Suc2)
 qed simp_all
 
 lemma join1_replicate_None_iff: "join1 (v1, v2) = Some (replicate n None) 
@@ -335,8 +324,7 @@ lemma join1_commute: "join1 (x, y) = join1 (y, x)"
 lemma join1_Cons_None [simp]: 
   "join1 (None # as, b # bs) = map_option ((#) b) (join1 (as, bs))"
   "join1 (a # as, None # bs) = map_option ((#) a) (join1 (as, bs))"
-  apply (induct "(None # as, b # bs)" rule: join1.induct; clarsimp)
-  by (induct "(a # as, None # bs)" rule: join1.induct; clarsimp)
+  by (cases b; simp) (cases a; simp)
 
 lemma join1_Cons_SomeD1: 
   "join1 (a # as, b # bs) = Some (z # zs) \<Longrightarrow> join1 (as, bs) = Some zs"
