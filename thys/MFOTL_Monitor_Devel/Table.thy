@@ -1491,12 +1491,20 @@ lemma restrict_mem_restr[simp]: "mem_restr A x \<Longrightarrow> mem_restr A (re
   by (auto simp: list_all2_conv_all_nth elim!: bexI[rotated])
 
 lemma mem_restr_join1l: "mem_restr U z \<Longrightarrow> join1 (x, y) = Some z \<Longrightarrow> mem_restr U x"
-  apply (induct "(x, y)" arbitrary: x y z U rule: join1.induct)
-  by (auto simp: list_all2_Cons1 mem_restr_def split: if_splits) blast+
+proof -
+  assume "mem_restr U z" and join: "join1 (x, y) = Some z"
+  then obtain w where "w \<in> U" and zw: "list_all2 (\<lambda>a b. a \<noteq> None \<longrightarrow> a = Some b) z w"
+    unfolding mem_restr_def by blast
+  \<comment> \<open>every defined entry of @{term x} is also an entry of @{term z}\<close>
+  from join zw have "list_all2 (\<lambda>a b. a \<noteq> None \<longrightarrow> a = Some b) x w"
+    by (induct "(x, y)" arbitrary: x y z w rule: join1.induct)
+      (auto simp: list_all2_Cons1 split: if_splits)
+  with \<open>w \<in> U\<close> show "mem_restr U x"
+    unfolding mem_restr_def by blast
+qed
 
 lemma mem_restr_join1r: "mem_restr U z \<Longrightarrow> join1 (x, y) = Some z \<Longrightarrow> mem_restr U y"
-  apply (induct "(x, y)" arbitrary: x y z U rule: join1.induct)
-  by (auto simp: list_all2_Cons1 mem_restr_def split: if_splits) blast+
+  by (metis join1_commute mem_restr_join1l)
 
 lemma qtable_mem_restr_UNIV: "qtable n X (mem_restr UNIV) Q R = wf_table n X Q R"
   unfolding qtable_def by auto
