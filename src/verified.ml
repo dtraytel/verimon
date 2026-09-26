@@ -11448,13 +11448,14 @@ let rec plus_enat
 
 let rec frz_adv
   d w jfrz j tq =
-    (if not (equal_enat d Infinity_enat) &&
-          (less_eq_nat w jfrz && less_nat jfrz j)
+    (if not (equal_enat d Infinity_enat) && (less_eq_nat w jfrz && less_nat w j)
       then size_lista
              (takeWhile
                (fun t ->
                  less_enat (plus_enat (Enat t) d)
-                   (Enat (nth tq (minus_nata jfrz w))))
+                   (Enat (nth tq
+                           (minus_nata (ed_min_nat jfrz (minus_nata j one_nata))
+                             w))))
                tq)
       else zero_nata);;
 

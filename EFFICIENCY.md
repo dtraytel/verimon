@@ -9196,3 +9196,7 @@ instructions in the copies' evaluation (their Since windows and joins) and 31% i
 log.  The frozen predicate's table (`replicate`) does not show up.  A constant result for the
 frozen predicate (the `xres` of the `const-relation-propagation` branch) would therefore save
 little on these shapes.
+
+The outputs are identical to the previous binary on the 652 `-verified` commands of the test
+corpus, the verdicts agree with MonPoly on the `frz` and `frz_rw` families, and the cram tests
+pass.  The exported code differs from the previous export in `frz_adv` alone.
