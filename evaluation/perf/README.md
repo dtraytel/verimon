@@ -12,12 +12,15 @@ python3 run_suite.py                # results/{results.json,results.csv,report.m
 python3 plot.py                     # results/ratios.svg, the ratios per group
 ```
 
-`run_both.sh` does the comparison the reports below are: it builds the checkout and master
-(025a1423, in a temporary worktree), generates the logs if any are missing, runs the suite on
-master and then on the checkout, and installs `report0.md`/`ratios0.svg` (master) and
-`report.md`/`ratios.svg` (the checkout) with a provenance line.  `run_refine.sh` reruns the
-checkout alone, for experiments against an existing `report0.md`.  Both take `JOBS`, `REPS`,
-`TIMEOUT` and `BUDGET` from the environment, and `NAMES=a,b,c` for a smoke test that installs
+`run_both.sh` does the comparison the reports below are: it pulls the current branch
+(fast-forward only), builds the checkout and master (025a1423, in a temporary worktree),
+generates the logs if any are missing, runs the suite on master and then on the checkout,
+installs `report0.md`/`ratios0.svg` (master) and `report.md`/`ratios.svg` (the checkout) with a
+provenance line, commits those four files alone and pushes the branch (rebasing and retrying if
+the push is rejected).  It refuses to start with other uncommitted changes unless `PUSH=0`.
+`run_refine.sh` does the same for the checkout alone, for experiments against an existing
+`report0.md`.  Both take `JOBS`, `REPS`, `TIMEOUT`, `BUDGET`, `PULL` and `PUSH` (0 to skip)
+from the environment, and `NAMES=a,b,c` for a smoke test that installs, commits and pushes
 nothing.
 
 The groups cover the operators the verified monitor supports: joins, anti-joins, constraints,

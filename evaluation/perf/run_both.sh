@@ -10,10 +10,15 @@
 # and, as the README describes, report0.md/ratios0.svg (master) and report.md/ratios.svg
 # (refine) in this directory, with a provenance line under the title.
 #
+# The script first pulls the current branch (fast-forward only), builds, runs, and at the end
+# commits the four report files (only those) and pushes the branch.
+#
 # Usage: evaluation/perf/run_both.sh
 # Environment (defaults in brackets): MASTER [025a1423], JOBS [2], REPS [3], TIMEOUT [5],
 #   BUDGET [3600] (seconds of wall time per run), SKIP_MASTER=1 to rerun refine only,
-#   NAMES=a,b,c to run only those formulas (a smoke test: nothing is copied into this directory).
+#   PULL [1] and PUSH [1] (0 to skip the pull, or the commit and push),
+#   NAMES=a,b,c to run only those formulas (a smoke test: nothing is copied into this
+#   directory, committed or pushed).
 set -euo pipefail
 
 PERF=$(cd "$(dirname "$0")" && pwd)
@@ -26,10 +31,36 @@ BUDGET=${BUDGET:-3600}
 WORK=$(mktemp -d)
 trap 'git -C "$ROOT" worktree remove --force "$WORK/master" 2>/dev/null || true; rm -rf "$WORK"' EXIT
 
+PULL=${PULL:-1}
+PUSH=${PUSH:-1}
+[ -z "${NAMES:-}" ] || PUSH=0
+REPORTS="evaluation/perf/report.md evaluation/perf/ratios.svg"
+[ "${SKIP_MASTER:-0}" = 1 ] || REPORTS="$REPORTS evaluation/perf/report0.md evaluation/perf/ratios0.svg"
+
 cd "$ROOT"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+[ "$BRANCH" != HEAD ] || { echo "error: detached HEAD; check out a branch first" >&2; exit 1; }
+# tracked changes other than the report files themselves
+dirty=$(git status --porcelain --untracked-files=no | grep -Ev ' evaluation/perf/(report0?\.md|ratios0?\.svg)$' || true)
+if [ -n "$dirty" ]; then
+  if [ "$PUSH" = 1 ]; then
+    echo "error: uncommitted changes; commit or stash them, or run with PUSH=0:" >&2
+    echo "$dirty" >&2
+    exit 1
+  fi
+  echo "warning: the checkout has uncommitted changes; the refine run uses them"
+fi
+
+if [ "$PULL" = 1 ]; then
+  echo "== pulling $BRANCH"
+  git pull --ff-only origin "$BRANCH"
+fi
 REFINE=$(git rev-parse --short HEAD)
-MASTER_SHORT=$(git rev-parse --short "$MASTER")
-[ -z "$(git status --porcelain --untracked-files=no)" ] || echo "warning: the checkout has uncommitted changes; the refine run uses them"
+MASTER_SHORT=
+if [ "${SKIP_MASTER:-0}" != 1 ]; then
+  git rev-parse --verify -q "$MASTER^{commit}" >/dev/null || git fetch -q origin master
+  MASTER_SHORT=$(git rev-parse --short "$MASTER^{commit}")
+fi
 
 echo "== building refine ($REFINE)"
 dune build ./src/main.exe
@@ -83,3 +114,23 @@ install_report results/report.md results/ratios.svg report.md ratios.svg \
 
 echo "== done"
 grep -h "geometric mean" report0.md report.md || true
+
+if [ "$PUSH" = 1 ]; then
+  cd "$ROOT"
+  git add -- $REPORTS
+  if git diff --cached --quiet -- $REPORTS; then
+    echo "== the reports did not change; nothing to push"
+  else
+    what="refine $REFINE"
+    [ "${SKIP_MASTER:-0}" = 1 ] || what="master $MASTER_SHORT and $what"
+    git commit -q -m "perf: suite run on $what ($DAY, $HOST)" -- $REPORTS
+    echo "== pushing $BRANCH"
+    delay=2
+    for attempt in 1 2 3 4 5; do
+      if git push -u origin "$BRANCH"; then break; fi
+      [ "$attempt" = 5 ] && { echo "error: push failed; the results are committed locally" >&2; exit 1; }
+      git pull --rebase origin "$BRANCH" || { echo "error: rebase failed; resolve and push by hand" >&2; exit 1; }
+      sleep "$delay"; delay=$((delay * 2))
+    done
+  fi
+fi

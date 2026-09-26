@@ -6,6 +6,8 @@
 # ratios.svg in this directory with a provenance line.
 #
 # Usage: evaluation/perf/run_refine.sh
-# Environment: as for run_both.sh -- JOBS [2], REPS [3], TIMEOUT [5], BUDGET [3600], and
-#   NAMES=a,b,c to run only those formulas (nothing is copied into this directory then).
+# Like run_both.sh it pulls first and commits and pushes report.md/ratios.svg at the end.
+# Environment: as for run_both.sh -- JOBS [2], REPS [3], TIMEOUT [5], BUDGET [3600], PULL [1],
+#   PUSH [1], and NAMES=a,b,c to run only those formulas (nothing is copied, committed or
+#   pushed then).
 exec env SKIP_MASTER=1 "$(dirname "$0")/run_both.sh" "$@"
