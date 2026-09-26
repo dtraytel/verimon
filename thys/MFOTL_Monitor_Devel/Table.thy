@@ -771,16 +771,52 @@ qed
 
 lemma join_eq_interI: 
   "table n X R1 \<Longrightarrow> table n X R2 \<Longrightarrow> R1 \<bowtie> R2 = R1 \<inter> R2"
-  apply (intro set_eqI iffI; clarsimp simp: join_def image_def Option.these_def table_def)
-  using join1_Some_wf_tuple_eqD(2,3) apply blast
-  using join1_self by (metis option.sel)
+proof -
+  assume R1: "table n X R1" and R2: "table n X R2"
+  show "R1 \<bowtie> R2 = R1 \<inter> R2"
+  proof (intro set_eqI iffI)
+    fix v
+    assume "v \<in> R1 \<bowtie> R2"
+    then obtain v1 v2 where "v1 \<in> R1" and "v2 \<in> R2" and join: "join1 (v1, v2) = Some v"
+      by (auto simp: join_True_code)
+    from \<open>v1 \<in> R1\<close> \<open>v2 \<in> R2\<close> have wf1: "wf_tuple n X v1" and wf2: "wf_tuple n X v2"
+      using R1 R2 by (simp_all add: tableD)
+    \<comment> \<open>joining two tuples over the same variables only succeeds if they are equal\<close>
+    have "v = v1" and "v = v2"
+      using join1_Some_wf_tuple_eqD(2,3)[OF join wf1 wf2] .
+    with \<open>v1 \<in> R1\<close> \<open>v2 \<in> R2\<close> show "v \<in> R1 \<inter> R2"
+      by simp
+  next
+    fix v
+    assume "v \<in> R1 \<inter> R2"
+    \<comment> \<open>@{term v} joins with itself\<close>
+    then show "v \<in> R1 \<bowtie> R2"
+      using join1_self[of v] unfolding join_True_code by force
+  qed
+qed
 
 lemma foldr_join_tables_eq_InterI:
   "\<forall>R\<in>set Rs. table n X R \<Longrightarrow> foldr (\<bowtie>) Rs (unit_table n) = 
   (if Rs = [] then unit_table n else (\<Inter> (set Rs)))"
-  apply (induct Rs arbitrary: n X; clarsimp simp: join_unit_table(1))
-  using table_InterI[of "set _"] join_eq_interI
-  by (metis set_empty2)
+proof (induct Rs)
+  case (Cons R Rs)
+  then have R: "table n X R"
+    by simp
+  show ?case
+  proof (cases "Rs = []")
+    case True
+    then show ?thesis
+      using join_unit_table(1)[OF R] by simp
+  next
+    case False
+    with Cons.prems have "table n X (\<Inter> (set Rs))"
+      by (intro table_InterI) simp_all
+    moreover have "foldr (\<bowtie>) Rs (unit_table n) = \<Inter> (set Rs)"
+      using Cons False by simp
+    ultimately show ?thesis
+      using join_eq_interI[OF R] by simp
+  qed
+qed simp
 
 lemma join_union_distrib: 
   "R1 \<bowtie> (R2 \<union> R3) = R1 \<bowtie> R2 \<union> R1 \<bowtie> R3"
