@@ -286,13 +286,37 @@ text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open
 
 lemma psize_snd_deval:
   "deval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (deval j ts db \<phi>)) = size \<phi>"
-  apply (induct rule: deval.pinduct)
-  apply (auto simp only: prod.inject deval.psimps Let_def snd_conv fst_conv
-      dformula.size list.map map_map o_apply size_list_map cong: size_list_cong
-      split: prod.splits)
-   apply simp
-  apply (metis snd_conv size_letpast_meval)
-  done
+proof (induct rule: deval.pinduct)
+  case (11 j ts db I \<phi> first buf nts) \<comment> \<open>\<^const>\<open>DPrev\<close>\<close>
+  obtain xs \<phi>' where \<phi>': "deval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs buf' nts' where mp: "mprev_next I (buf @ xs) (nts @ ts) = (zs, buf', nts')"
+    by (metis prod_cases3)
+  have "size \<phi>' = size \<phi>"
+    using 11(2) \<phi>' by simp
+  then show ?case
+    by (simp add: deval.psimps(11)[OF 11(1)] \<phi>' mp)
+next
+  case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>DLetPast\<close>\<close>
+  obtain xs i' buf' \<phi>' where lp:
+    "letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
+    by (metis prod_cases4)
+  have "size (snd (snd (snd
+      (letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>)))) = size \<phi>"
+    by (rule size_letpast_meval) (simp add: 21(2))
+  then have size_\<phi>': "size \<phi>' = size \<phi>"
+    by (simp add: lp)
+  obtain ys \<psi>' where \<psi>': "deval j ts (Mapping.update (p, m) xs db) \<psi> = (ys, \<psi>')"
+    by fastforce
+  have size_\<psi>': "size \<psi>' = size \<psi>"
+    using 21(3)[OF lp[symmetric] refl refl refl] \<psi>' by simp
+  show ?case
+    using size_\<phi>' size_\<psi>' by (simp add: deval.psimps(21)[OF 21(1)] lp \<psi>')
+  \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
+    since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
+qed (auto simp only: prod.inject deval.psimps Let_def snd_conv fst_conv
+    dformula.size list.map map_map o_apply size_list_map cong: size_list_cong
+    split: prod.splits)
 
 lemma total_deval: "All deval_dom"
   by (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)")
