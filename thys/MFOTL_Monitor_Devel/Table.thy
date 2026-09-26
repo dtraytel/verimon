@@ -416,13 +416,12 @@ next
     using join1_Cons_Some_exI[OF Nones(3)] 
       join1_Cons_Some_exI[OF Nones(2)[symmetric]]
     by auto 
-  hence "c' = bc"
-    using Nones(3) by simp
-  then show ?case
-    using Nones(1)[OF eq1[symmetric] eq2] Nones(2,3)
-    apply (clarsimp simp: c_eq jbc_eq)
-    by (metis (no_types, lifting) eq1 join1_Cons_None(1) join1_assoc1 
-        option.discI option.map_sel)
+  from Nones(3) have "c' = bc"
+    by (simp add: c_eq jbc_eq)
+  moreover obtain ab where "join1 (as, bs) = Some ab"
+    using join1_assoc1[OF eq1[symmetric] eq2] by blast
+  ultimately show ?case
+    using Nones(1)[OF eq1[symmetric] eq2] by (simp add: c_eq jbc_eq)
 next
   case (SNone a as bs c jbc jabc)
   then obtain abc abcs bc bcs c' cs
@@ -461,12 +460,11 @@ next
   hence "abc = bc" and "bc = Some b" 
     and "c' = None \<or> c' = Some b"
     by blast+
-  then show ?case
-    using NSome(1)[OF eq1[symmetric] eq2] NSome(2,3)
-    unfolding c_eq jbc_eq
-    apply (elim disjE; clarsimp simp: c_eq jbc_eq)
-    by (metis (no_types, lifting) eq1 join1_Cons_None(2) join1_assoc1 option.distinct(1) option.map_sel)
-      (metis eq1 join1.simps(5) join1_assoc1 option.map_sel option.simps(3))
+  moreover obtain ab where "join1 (as, bs) = Some ab"
+    using join1_assoc1[OF eq1[symmetric] eq2] by blast
+  ultimately show ?case
+    using NSome(1)[OF eq1[symmetric] eq2]
+    by (elim disjE) (simp_all add: c_eq jbc_eq)
 next
   case (SSome a as b bs c jbc jabc)
     then obtain abc abcs bc bcs c' cs
@@ -483,12 +481,11 @@ next
   hence "a = b" and "abc = bc" 
     and "bc = Some b" and "c' = None \<or> c' = Some b"
     by blast+
-  then show ?case
-    using SSome(1)[OF _ eq1[symmetric] eq2] SSome(2,3)
-    unfolding c_eq jbc_eq
-    apply (elim disjE; clarsimp simp: c_eq jbc_eq)
-    by (metis (no_types, lifting) eq1 join1_Cons_None(2) join1_assoc1 option.distinct(1) option.map_sel)
-      (metis eq1 join1.simps(5) join1_assoc1 option.map_sel option.simps(3))
+  moreover obtain ab where "join1 (as, bs) = Some ab"
+    using join1_assoc1[OF eq1[symmetric] eq2] by blast
+  ultimately show ?case
+    using SSome(1)[OF _ eq1[symmetric] eq2]
+    by (elim disjE) (simp_all add: c_eq jbc_eq)
 qed (auto dest: join1_assoc1)
 
 lemma join1_wf_tuple:
