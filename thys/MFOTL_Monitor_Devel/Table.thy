@@ -838,8 +838,7 @@ lemma table_union_must_subset:
 
 lemma union_unit_iff: "R1 \<union> R2 = unit_table n 
   \<longleftrightarrow> (R1 = unit_table n \<and> R2 = {}) \<or> (R1 = {} \<and> R2 = unit_table n) \<or> (R1 = unit_table n \<and> R2 = unit_table n)"
-  apply (clarsimp simp: unit_table_def, intro iffI)
-  by (metis singleton_Un_iff) auto
+  using singleton_Un_iff[of "replicate n None" R1 R2] unfolding unit_table_def by metis
 
 lemma union_unitD: 
   assumes "R1 \<union> R2 = unit_table n"
@@ -852,9 +851,24 @@ lemma union_unitD:
 corollary 
   "R\<^sub>1 \<noteq> {} \<Longrightarrow> R\<^sub>2 \<noteq> {} \<Longrightarrow> \<forall>x\<in>X\<union>Y. x < n \<Longrightarrow> table n X R\<^sub>1 \<Longrightarrow> table n Y R\<^sub>2 
   \<Longrightarrow> X = Y \<longleftrightarrow> table n (X \<union> Y) (R\<^sub>1 \<union> R\<^sub>2)"
-  apply (rule iffI)
-  apply (auto simp: table_def wf_tuple_def)[1]
-  using table_union_must_subset(1,2)[of _ X Y n _] by auto blast
+proof -
+  assume R1: "R\<^sub>1 \<noteq> {}" and R2: "R\<^sub>2 \<noteq> {}" and n: "\<forall>x\<in>X\<union>Y. x < n"
+    and t1: "table n X R\<^sub>1" and t2: "table n Y R\<^sub>2"
+  show "X = Y \<longleftrightarrow> table n (X \<union> Y) (R\<^sub>1 \<union> R\<^sub>2)"
+  proof
+    assume "X = Y"
+    with t1 t2 show "table n (X \<union> Y) (R\<^sub>1 \<union> R\<^sub>2)"
+      by (simp add: table_def ball_Un)
+  next
+    assume t: "table n (X \<union> Y) (R\<^sub>1 \<union> R\<^sub>2)"
+    have "Y \<subseteq> X"
+      using table_union_must_subset(1)[OF R1 n t1 t] .
+    moreover have "X \<subseteq> Y"
+      using table_union_must_subset(2)[OF R2 n t2 t] .
+    ultimately show "X = Y"
+      by blast
+  qed
+qed
 
 
 subsection \<open> N-ary join \<close>
@@ -864,12 +878,20 @@ term comm_monoid_set.F
 term Finite_Set.fold
 
 interpretation join_comp_fun: comp_fun_commute_on "UNIV" "(\<bowtie>)"
-  apply standard
-  apply (rule ext; clarsimp)
-  apply (subst join_assoc)
-  apply (subst join_assoc)
-  apply (subst join_commute)
-  by simp
+proof
+  show "(\<bowtie>) y \<circ> (\<bowtie>) x = (\<bowtie>) x \<circ> (\<bowtie>) y" for x y :: "'a table"
+  proof
+    fix z
+    have "y \<bowtie> (x \<bowtie> z) = (y \<bowtie> x) \<bowtie> z"
+      by (rule join_assoc)
+    also have "\<dots> = (x \<bowtie> y) \<bowtie> z"
+      by (simp only: join_commute[of y x])
+    also have "\<dots> = x \<bowtie> (y \<bowtie> z)"
+      by (rule join_assoc[symmetric])
+    finally show "((\<bowtie>) y \<circ> (\<bowtie>) x) z = ((\<bowtie>) x \<circ> (\<bowtie>) y) z"
+      by simp
+  qed
+qed
 
 interpretation join_ab_semigroup: ab_semigroup_mult "(\<bowtie>)"
   by (standard, clarsimp simp: join_assoc, clarsimp simp: join_commute)
@@ -879,9 +901,7 @@ interpretation join_monoid: comm_monoid_set "(\<bowtie>)" "unit_table n"
   oops
 
 lemma join_idemp[simp]: "table n X R \<Longrightarrow> R \<bowtie> R = R"
-  apply (intro set_eqI iffI; clarsimp simp: join_def Option.these_def image_iff table_def)
-  using join1_Some_wf_tuple_eqD(2)
-  by blast (metis join1_self option.sel)
+  using join_eq_interI[of n X R R] by simp
 
 definition nary_join :: "nat \<Rightarrow> 'a option list set set \<Rightarrow> 'a option list set"
   where eq_fold: "nary_join n \<R> = Finite_Set.fold (\<bowtie>) (unit_table n) \<R>"
@@ -924,8 +944,24 @@ qed simp_all
 
 lemma nary_join_insert_table: 
   "\<forall>R\<in>\<R>. \<exists>X. table n X R \<Longrightarrow> finite \<R> \<Longrightarrow> nary_join n (insert R \<R>) = R \<bowtie> nary_join n \<R>"
-  apply (induct \<R> arbitrary: R rule: infinite_finite_induct)
-  by (simp, simp) (metis insert_absorb join_nary_join_elem nary_join_insert(1))
+proof -
+  assume tables: "\<forall>R\<in>\<R>. \<exists>X. table n X R" and fin: "finite \<R>"
+  show "nary_join n (insert R \<R>) = R \<bowtie> nary_join n \<R>"
+  proof (cases "R \<in> \<R>")
+    case True
+    from bchoice[OF tables] obtain X where "\<forall>R\<in>\<R>. table n (X R) R"
+      by blast
+    \<comment> \<open>@{term R} is already absorbed by the n-ary join\<close>
+    then have "R \<bowtie> nary_join n \<R> = nary_join n \<R>"
+      using fin True by (rule join_nary_join_elem)
+    with True show ?thesis
+      by (simp add: insert_absorb)
+  next
+    case False
+    with fin show ?thesis
+      by simp
+  qed
+qed
 
 lemma nary_join_remove:
   assumes "finite \<R>" and "R \<in> \<R>"
