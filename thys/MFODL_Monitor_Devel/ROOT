@@ -19,6 +19,7 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Queue
     Regex
     Formula
+    Frz_Locality
     Rewriting
     Safety
     Slicing

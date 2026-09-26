@@ -110,8 +110,8 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
     (\<forall>y. buf = Some y \<longrightarrow> ftable m {0..<m} y) \<Longrightarrow>
     mok n A tw (mformula.MLetPast p m \<phi> \<psi> i buf)"
 | MokFrz: "mok m {0..<m} tw \<phi> \<Longrightarrow> mok n A tw \<psi> \<Longrightarrow>
-    list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow>
-    mok n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)"
+    list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow> mok n A tw \<rho> \<Longrightarrow> list_all (ftable n A) rb \<Longrightarrow>
+    mok n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d)"
 | MokMatchP: "Regex.safe_regex fv rgx_safe_pred Past Strict
       (from_mregex mr (\<psi>s :: ty Formula.formula list)) \<Longrightarrow>
     ok (length \<psi>s) mr \<Longrightarrow> A = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>
@@ -222,7 +222,7 @@ next
   show ?case by (rule produces_MLetPast[OF MokLetPast(2) MokLetPast(4) MokLetPast(5)])
 next
   case MokFrz
-  show ?case by (rule produces_MFrz[OF MokFrz(2) MokFrz(4) MokFrz(5)])
+  show ?case by (rule produces_MFrz[OF MokFrz(2) MokFrz(4) MokFrz(5) MokFrz(7) MokFrz(8)])
 next
   case (MokMatchP mr \<psi>s A mrs L n tw buf aux I nts)
   have pL: "\<forall>i < length \<psi>s. produces n (Formula.fv (\<psi>s ! i)) tw (L ! i)"

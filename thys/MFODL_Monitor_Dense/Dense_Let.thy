@@ -116,37 +116,42 @@ next
 qed
 
 text \<open>
-  The freeze node evaluates its body once against the database with the bound predicate empty,
-  and then once more per stored operand table, each time against a database in which the bound
-  predicate holds that table and everything else is empty.  Every one of those databases is well
-  formed as soon as the stored tables are, so the body's own invariant applies to all of them,
-  and the states the repeated evaluations produce are discarded rather than threaded.
+  The freeze node evaluates its body, and its replay base, against the database with the bound
+  predicate empty; then the replay base once more per stored operand table, against a database
+  in which the bound predicate holds that table over the window and everything else is empty;
+  and finally the replay base against a database that moves the window forward with empty tables.
+  Every one of those databases is well formed as soon as the stored tables are, so the body's own
+  invariant applies to all of them; the states of the replays are discarded rather than threaded.
 \<close>
 
 lemma produces_MFrz:
   assumes p1: "produces m {0..<m} tw \<phi>" and p2: "produces n A tw \<psi>"
     and pa: "list_all (ftable m {0..<m}) \<alpha>s"
-  shows "produces n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)"
+    and p3: "produces n A tw \<rho>" and pb: "list_all (ftable n A) rb"
+  shows "produces n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d)"
 proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
-    (\<exists>\<chi> \<eta> f0 f1 f2 as. \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<and>
+    (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb'. \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d \<and>
        produces m {0..<m} u \<chi> \<and> produces n A u \<eta> \<and>
-       list_all (ftable m {0..<m}) as)"])
-  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> f0 f1 f2 as.
-      mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<and>
+       list_all (ftable m {0..<m}) as \<and> produces n A u \<rho>' \<and> list_all (ftable n A) rb')"])
+  show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb'.
+      mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d \<and>
       produces m {0..<m} tw \<chi> \<and> produces n A tw \<eta> \<and>
-      list_all (ftable m {0..<m}) as)"
-    using p1 p2 pa by blast
+      list_all (ftable m {0..<m}) as \<and> produces n A tw \<rho>' \<and> list_all (ftable n A) rb')"
+    using p1 p2 pa p3 pb by blast
 next
   fix n' A' u \<Phi> j ts db xs \<Phi>'
   assume X: "n' = n \<and> A' = A \<and>
-      (\<exists>\<chi> \<eta> f0 f1 f2 as. \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<and>
+      (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb'. \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d \<and>
          produces m {0..<m} u \<chi> \<and> produces n A u \<eta> \<and>
-         list_all (ftable m {0..<m}) as)"
+         list_all (ftable m {0..<m}) as \<and> produces n A u \<rho>' \<and> list_all (ftable n A) rb')"
     and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
     and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
-  from X obtain \<chi> \<eta> f0 f1 f2 as where Phi: "\<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as"
+  from X obtain \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' where
+    Phi: "\<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d"
     and pc: "produces m {0..<m} u \<chi>" and pe: "produces n A u \<eta>"
-    and la: "list_all (ftable m {0..<m}) as" by blast
+    and la: "list_all (ftable m {0..<m}) as" and pr: "produces n A u \<rho>'"
+    and lb: "list_all (ftable n A) rb'" by blast
+  let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
   obtain bs \<chi>' where e1: "meval j m ts db \<chi> = (bs, \<chi>')" by (cases "meval j m ts db \<chi>")
   have tb: "list_all (ftable m {0..<m}) bs" by (rule produces_tables[OF pc w sts mts e1])
   have nc: "produces m {0..<m} (dnext u ts) \<chi>'" by (rule produces_next[OF pc w sts mts e1])
@@ -155,10 +160,17 @@ next
     by (cases "meval j n ts (Mapping.update (p, m) [] db) \<eta>")
   have tz0: "list_all (ftable n A) zs0" by (rule produces_tables[OF pe w0 sts mts e2])
   have ne: "produces n A (dnext u ts) \<eta>'" by (rule produces_next[OF pe w0 sts mts e2])
+  obtain rs \<rho>1 where e4: "meval j n ts (Mapping.update (p, m) [] db) \<rho>' = (rs, \<rho>1)"
+    by (cases "meval j n ts (Mapping.update (p, m) [] db) \<rho>'")
+  have trs: "list_all (ftable n A) rs" by (rule produces_tables[OF pr w0 sts mts e4])
+  have nr: "produces n A (dnext u ts) \<rho>1" by (rule produces_next[OF pr w0 sts mts e4])
+  have wa: "wf_db (Mapping.update (p, m) (replicate k \<alpha>) ?dbe)" if "ftable m {0..<m} \<alpha>" for k \<alpha>
+    by (rule wf_db_update[OF wf_db_map_values_empty]) (use that in \<open>simp add: list_all_iff\<close>)
   define zout where "zout = drop (f0 - f1) zs0"
   define as1 where "as1 = drop (f0 - f2 + length zout) (as @ bs)"
-  define ev where "ev = (\<lambda>\<alpha>. meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
-    (Mapping.map_values (\<lambda>_ _. []) db)) \<eta>')"
+  define rb0 where "rb0 = pR' - length rb'"
+  define ev where "ev = (\<lambda>\<alpha>. (rb' @ rs @ fst (meval j n [] (Mapping.update (p, m) (replicate (j - w') \<alpha>)
+    ?dbe) \<rho>1), ()))"
   have tzout: "list_all (ftable n A) zout"
     using tz0 by (auto simp: zout_def list_all_iff dest: set_drop_subset[THEN subsetD])
   have las1: "list_all (ftable m {0..<m}) as1"
@@ -167,37 +179,49 @@ next
   proof -
     fix \<alpha> assume a: "\<alpha> \<in> set as1"
     then have ta: "ftable m {0..<m} \<alpha>" using las1 by (simp add: list_all_iff)
-    have wa: "wf_db (Mapping.update (p, m) (replicate j \<alpha>)
-        (Mapping.map_values (\<lambda>_ _. []) db))"
-      by (rule wf_db_update[OF wf_db_map_values_empty])
-        (use ta in \<open>simp add: list_all_iff\<close>)
-    obtain cs st where ec: "ev \<alpha> = (cs, st)" by (cases "ev \<alpha>")
+    obtain cs st where ec: "meval j n [] (Mapping.update (p, m) (replicate (j - w') \<alpha>) ?dbe) \<rho>1 = (cs, st)"
+      by (cases "meval j n [] (Mapping.update (p, m) (replicate (j - w') \<alpha>) ?dbe) \<rho>1")
     have "list_all (ftable n A) cs"
-      by (rule produces_tables[OF ne wa _ _ ec[unfolded ev_def]]) simp_all
-    then show "list_all (ftable n A) (fst (ev \<alpha>))" using ec by simp
+      by (rule produces_tables[OF nr wa[OF ta] _ _ ec]) simp_all
+    then show "list_all (ftable n A) (fst (ev \<alpha>))" using ec lb trs by (simp add: ev_def)
   qed
-  obtain ys as' where e3: "freeze_meval0 ev (f0 - (f1 + length zs0)) as1 = (ys, as')"
-    by (cases "freeze_meval0 ev (f0 - (f1 + length zs0)) as1")
+  obtain ys as' where e3: "freeze_meval0 ev (f0 + length zout - rb0) as1 = (ys, as')"
+    by (cases "freeze_meval0 ev (f0 + length zout - rb0) as1")
   have fz: "list_all (ftable n A) ys \<and> set as' \<subseteq> set as1"
     by (rule freeze_meval0_ftable[OF e3 evt])
   have tys: "list_all (ftable n A) ys" using fz by simp
   have las': "list_all (ftable m {0..<m}) as'"
     using fz las1 by (auto simp: list_all_iff)
-  have m: "meval j n ts db (mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as)
+  define tq1 where "tq1 = (if d = \<infinity> then [] else tq' @ ts)"
+  define a where "a = frz_adv d w' (f0 + length zout + length ys) j tq1"
+  obtain rs2 \<rho>2 where e5: "meval j n [] (Mapping.update (p, m) (replicate a {}) ?dbe) \<rho>1 = (rs2, \<rho>2)"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate a {}) ?dbe) \<rho>1")
+  have trs2: "list_all (ftable n A) rs2"
+    by (rule produces_tables[OF nr wa[of "{}"] _ _ e5]) (simp_all add: table_def)
+  have nr2: "produces n A (dnext u ts) \<rho>2"
+    using produces_next[OF nr wa[of "{}"] _ _ e5] by (simp add: dnext_def table_def)
+  define rb2 where "rb2 = drop (min (f0 + length zout + length ys) (pR' + length rs + length rs2) - rb0)
+    ((rb' @ rs) @ rs2)"
+  have trb2: "list_all (ftable n A) rb2"
+    using lb trs trs2 by (auto simp: rb2_def list_all_iff dest: set_drop_subset[THEN subsetD])
+  have m: "meval j n ts db (mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d)
       = (zout @ ys, mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
-          (f1 + length zs0) (f2 + length bs) as')"
-    using e1 e2 e3 unfolding zout_def as1_def ev_def by (simp add: Let_def)
+          (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
+          (drop a tq1) rb2 d)"
+    using e1 e2 e3 e4 e5 unfolding zout_def as1_def ev_def rb0_def tq1_def a_def rb2_def
+    by (simp add: Let_def add.assoc)
   have x: "xs = zout @ ys"
     and f: "\<Phi>' = mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
-      (f1 + length zs0) (f2 + length bs) as'"
+          (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
+          (drop a tq1) rb2 d"
     using e[unfolded Phi conjunct1[OF X] m] by simp_all
   show "list_all (ftable n' A') xs \<and>
       ((n' = n \<and> A' = A \<and>
-          (\<exists>\<chi> \<eta> f0 f1 f2 as. \<Phi>' = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<and>
+          (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb'. \<Phi>' = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d \<and>
              produces m {0..<m} (dnext u ts) \<chi> \<and> produces n A (dnext u ts) \<eta> \<and>
-             list_all (ftable m {0..<m}) as)) \<or>
+             list_all (ftable m {0..<m}) as \<and> produces n A (dnext u ts) \<rho>' \<and> list_all (ftable n A) rb')) \<or>
        produces n' A' (dnext u ts) \<Phi>')"
-    using X tzout tys nc ne las' by (auto simp: x f)
+    using X tzout tys nc ne las' nr2 trb2 by (auto simp: x f)
 qed
 
 subsection \<open>The recursive let node\<close>

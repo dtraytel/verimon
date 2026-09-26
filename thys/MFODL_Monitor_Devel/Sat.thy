@@ -569,7 +569,9 @@ proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
   with Let.IH(1)[OF Let.prems] show ?case
     using Let.hyps(3-6) by (rule wf_mformula.Let)
 next
-  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 V')
+  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 w \<rho> pR tq rb d V')
+  have tau: "\<tau> \<sigma> = \<tau> \<sigma>'"
+    using arg_cong[where f=\<tau>, OF Frz.prems] by simp
   have prg: "progress \<sigma> = progress \<sigma>'"
     by (simp add: fun_eq_iff progress_convert_cong[OF Frz.prems])
   have sat: "Formula.sat \<sigma> V = Formula.sat \<sigma>' V'"
@@ -585,11 +587,25 @@ next
   qed
   from Frz.hyps(2) have state: "wf_frz_state \<sigma>' j P V' p m \<phi>' \<psi>' jphi \<alpha>s"
     unfolding wf_frz_state_def wf_frz_queue_def frz_qtable_def prg sat .
+  have rho: "\<forall>i w'. w \<le> w' \<longrightarrow> wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
+    (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>')) n R \<rho> \<psi>'"
+  proof (intro allI impI)
+    fix i w'
+    assume "w \<le> w'"
+    have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma> V v i \<phi>')) =
+      convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>'))"
+      by (simp add: convert_fun_upd Frz.prems sat del: fun_upd_apply)
+    with Frz.IH(3) \<open>w \<le> w'\<close> show "wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
+      (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>')) n R \<rho> \<psi>'"
+      by blast
+  qed
+  from Frz.hyps have win: "wf_frz_win \<sigma>' j P V' n R p m \<phi>' \<psi>' jfrz w pR tq rb d"
+    unfolding wf_frz_win_def prg sat tau by blast
   from Frz.hyps(3,4) have "jfrz = progress \<sigma>' P (Formula.Frz p \<phi>' \<psi>') j"
     and "jpsi0 = progress \<sigma>' (P((p, m) \<mapsto> 0)) \<psi>' j"
     unfolding prg .
-  with Frz.IH(1)[OF Frz.prems] psi state show ?case
-    using Frz.hyps(5-8) by (rule wf_mformula.Frz)
+  with Frz.IH(1)[OF Frz.prems] psi state rho win show ?case
+    using Frz.hyps by (intro wf_mformula.Frz) blast+
 next
   case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf V')
   have sat: "Formula.sat \<sigma> (V((p, m) \<mapsto> X)) = Formula.sat \<sigma>' (V'((p, m) \<mapsto> X))" for X

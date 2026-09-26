@@ -125,6 +125,7 @@ datatype dformula =
   | DTS mtrm
   | DLet Formula.name nat dformula dformula
   | DFrz Formula.name nat dformula dformula nat nat nat "event_data table list"
+      dformula nat nat "ts list" "event_data table list" enat
   | DLetPast Formula.name nat dformula dformula nat "event_data table option"
   | DTrigger args "nat option list" dformula dformula "event_data mbuf2" "ts list"
       "event_data option gmmtaux"
@@ -154,7 +155,8 @@ fun vdfail_nodes :: "dformula \<Rightarrow> nat" where
 | "vdfail_nodes (DUntil args msk \<phi> \<psi> buf nts t aux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DAndAssign p t \<phi>) = vdfail_nodes \<phi>"
 | "vdfail_nodes (DLet p m \<phi> \<psi>) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
-| "vdfail_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
+| "vdfail_nodes (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d) =
+    vdfail_nodes \<phi> + vdfail_nodes \<psi> + vdfail_nodes \<rho>"
 | "vdfail_nodes (DLetPast p m \<phi> \<psi> i buf) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DTrigger dags pl \<phi> \<psi> dbuf nts daux) = vdfail_nodes \<phi> + vdfail_nodes \<psi>"
 | "vdfail_nodes (DAndTrigger pl \<alpha> dbuf1 dags \<phi> \<psi> dbuf2 nts daux) =
@@ -228,19 +230,29 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
      (let (xs, \<phi>') = deval j ts db \<phi>;
           (ys, \<psi>') = deval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, DLet p m \<phi>' \<psi>'))"
-| "deval j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
+| "deval j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d) =
      (let (xs, \<phi>) = deval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = deval j ts db0 \<psi>;
           zs0_out = drop (jfrz - jpsi0) zs0;
           jpsi0 = jpsi0 + length zs0;
           \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. deval j []
-            (Mapping.update (p, m) (replicate j \<alpha>)
-              (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0) \<alpha>s;
+          jfrz = jfrz + length zs0_out;
+          (rs, \<rho>) = deval j ts db0 \<rho>;
+          rb0 = pR - length rb;
+          rb = rb @ rs;
+          pR = pR + length rs;
+          dbe = Mapping.map_values (\<lambda>_ _. []) db;
+          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (deval j []
+            (Mapping.update (p, m) (replicate (j - w) \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s;
           jphi = jphi + length xs;
-          jfrz = jfrz + length zs0_out + length ys
-      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
+          jfrz = jfrz + length ys;
+          tq = (if d = \<infinity> then [] else tq @ ts);
+          a = frz_adv d w jfrz j tq;
+          (rs2, \<rho>) = deval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>;
+          rb = rb @ rs2;
+          pR = pR + length rs2
+      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s' \<rho> (w + a) pR (drop a tq) (drop (min jfrz pR - rb0) rb) d))"
 | "deval j ts db (DLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -1476,11 +1488,11 @@ inductive dsim :: "nat \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> dformul
     dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
     dsim n cs tw (DLet p m \<phi>d \<psi>d) (mformula.MLet p m \<phi> \<psi>)"
 | DsFrz: "wf_cols n cs \<Longrightarrow>
-    produces n (set cs) tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) \<Longrightarrow>
+    produces n (set cs) tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d) \<Longrightarrow>
     dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
-    list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow>
-    dsim n cs tw (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s)
-      (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)"
+    list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow> dsim n cs tw \<rho>d \<rho> \<Longrightarrow>
+    dsim n cs tw (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d w pR tq (map (dtabc n cs) rb) d)
+      (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d)"
 | DsLetPast: "wf_cols n cs \<Longrightarrow>
     produces n (set cs) tw (mformula.MLetPast p m \<phi> \<psi> i buf) \<Longrightarrow>
     dsim m [0..<m] tw \<phi>d \<phi> \<Longrightarrow> dsim n cs tw \<psi>d \<psi> \<Longrightarrow>
@@ -3147,15 +3159,16 @@ next
       by (rule dsim.DsLet[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2])
   qed
 next
-  case (DsFrz n cs tw p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<phi>d \<psi>d)
+  case (DsFrz n cs tw p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> wv pR tq rb d \<phi>d \<psi>d \<rho>d)
   note wf = DsFrz.hyps(1) and pr = DsFrz.hyps(2) and sim1 = DsFrz.hyps(3)
     and IH1 = DsFrz.hyps(4) and sim2 = DsFrz.hyps(5) and IH2 = DsFrz.hyps(6)
-    and tas = DsFrz.hyps(7)
+    and tas = DsFrz.hyps(7) and sim3 = DsFrz.hyps(8) and IH3 = DsFrz.hyps(9)
     and w = DsFrz.prems(1) and sts = DsFrz.prems(2)
     and mts = DsFrz.prems(3) and mv = DsFrz.prems(4) and le = DsFrz.prems(5)
-  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
+  let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
+  have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN" and sz3: "size \<rho> \<le> NN"
     by (rule order_trans[OF _ le], simp)+
-  have szs: "size \<psi> < NN" by (rule order.strict_trans2[OF _ le]) simp
+  have szr: "size \<rho> < NN" by (rule order.strict_trans2[OF _ le]) simp
   \<comment> \<open>the left operand: at its own full frame, so its tables are their own dense form\<close>
   obtain as \<phi>2 where e1: "meval j m ts db \<phi> = (as, \<phi>2)" by (cases "meval j m ts db \<phi>")
   have ta: "list_all (ftable m {0..<m}) as"
@@ -3164,7 +3177,7 @@ next
   obtain \<phi>d2 where d1: "deval j ts db \<phi>d = (as, \<phi>d2)"
     and s1: "dsim m [0..<m] (dnext tw ts) \<phi>d2 \<phi>2"
     using IH1[OF w sts mts e1 sz1] unfolding dt by blast
-  \<comment> \<open>the body, against the database in which the bound predicate is empty\<close>
+  \<comment> \<open>the body and the replay base, against the database in which the bound predicate is empty\<close>
   have w0: "wf_db (Mapping.update (p, m) [] db)" by (rule wf_db_update'[OF w]) simp
   obtain zs0 \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) [] db) \<psi> = (zs0, \<psi>2)"
     by (cases "meval j n ts (Mapping.update (p, m) [] db) \<psi>")
@@ -3172,70 +3185,79 @@ next
         = (map (dtabc n cs) zs0, \<psi>d2)"
     and s2: "dsim n cs (dnext tw ts) \<psi>d2 \<psi>2"
     using IH2[OF w0 sts mts e2 sz2] by blast
-  have szp: "size \<psi>2 < NN"
-    using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<psi>] e2 szs
+  obtain rs \<rho>2 where e4: "meval j n ts (Mapping.update (p, m) [] db) \<rho> = (rs, \<rho>2)"
+    by (cases "meval j n ts (Mapping.update (p, m) [] db) \<rho>")
+  obtain \<rho>d2 where d4: "deval j ts (Mapping.update (p, m) [] db) \<rho>d
+        = (map (dtabc n cs) rs, \<rho>d2)"
+    and s4: "dsim n cs (dnext tw ts) \<rho>d2 \<rho>2"
+    using IH3[OF w0 sts mts e4 sz3] by blast
+  have szp: "size \<rho>2 < NN"
+    using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<rho>] e4 szr
     by simp
   \<comment> \<open>the frozen tuples the two runs are handed are the same list\<close>
-  let ?as1 = "drop (jfrz - jphi + length (drop (jfrz - jpsi0) zs0)) (\<alpha>s @ as)"
+  let ?zout = "drop (jfrz - jpsi0) zs0"
+  let ?as1 = "drop (jfrz - jphi + length ?zout) (\<alpha>s @ as)"
+  let ?rb1 = "rb @ rs"
   have tas1: "list_all (ftable m {0..<m}) ?as1"
     using tas ta by (auto simp: list_all_iff dest!: in_set_dropD)
+  have wa: "wf_db (Mapping.update (p, m) (replicate k \<alpha>) ?dbe)" if "ftable m {0..<m} \<alpha>" for k \<alpha>
+    by (rule wf_db_update'[OF wf_db_map_values_empty]) (use that in \<open>simp add: list_all_iff\<close>)
   have agree: "\<And>\<alpha>. \<alpha> \<in> set ?as1 \<Longrightarrow>
-      fst (deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
-             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
-        = map (dtabc n cs) (fst (meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
-             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2))"
+      fst (map (dtabc n cs) ?rb1 @ fst (deval j [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>d2), ())
+        = map (dtabc n cs) (fst (?rb1 @ fst (meval j n [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2), ()))"
   proof -
     fix \<alpha> assume a: "\<alpha> \<in> set ?as1"
-    have wa: "wf_db (Mapping.update (p, m) (replicate j \<alpha>)
-        (Mapping.map_values (\<lambda>_ _. []) db))"
-      by (rule wf_db_update'[OF wf_db_map_values_empty]) (use tas1 a in \<open>simp add: list_all_iff\<close>)
-    obtain us \<chi> where eu: "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
-        (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2 = (us, \<chi>)"
-      by (cases "meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
-        (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2")
-    obtain dus where du: "deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
-          (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2 = (map (dtabc n cs) us, dus)"
-      using Q[OF szp s2 wa _ _ eu] by auto
-    show "fst (deval j [] (Mapping.update (p, m) (replicate j \<alpha>)
-             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
-        = map (dtabc n cs) (fst (meval j n [] (Mapping.update (p, m) (replicate j \<alpha>)
-             (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2))"
+    obtain us \<chi> where eu: "meval j n [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2 = (us, \<chi>)"
+      by (cases "meval j n [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2")
+    obtain dus where du: "deval j [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>d2
+        = (map (dtabc n cs) us, dus)"
+      using Q[OF szp s4 wa _ _ eu] tas1 a by (auto simp: list_all_iff)
+    show "fst (map (dtabc n cs) ?rb1 @ fst (deval j [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>d2), ())
+        = map (dtabc n cs) (fst (?rb1 @ fst (meval j n [] (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2), ()))"
       using du eu by simp
   qed
-  obtain ys as' where e3: "freeze_meval0 (\<lambda>\<alpha>. meval j n []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2)
-        (jfrz - (jpsi0 + length zs0)) ?as1 = (ys, as')"
-    by (cases "freeze_meval0 (\<lambda>\<alpha>. meval j n []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>2)
-        (jfrz - (jpsi0 + length zs0)) ?as1")
-  obtain dys das' where d3: "freeze_meval0 (\<lambda>\<alpha>. deval j []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
-        (jfrz - (jpsi0 + length zs0)) ?as1 = (dys, das')"
-    by (cases "freeze_meval0 (\<lambda>\<alpha>. deval j []
-        (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>d2)
-        (jfrz - (jpsi0 + length zs0)) ?as1")
+  obtain ys as' where e3: "freeze_meval0 (\<lambda>\<alpha>. (?rb1 @ fst (meval j n []
+        (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2), ()))
+        (jfrz + length ?zout - (pR - length rb)) ?as1 = (ys, as')"
+    by (cases "freeze_meval0 (\<lambda>\<alpha>. (?rb1 @ fst (meval j n []
+        (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>2), ()))
+        (jfrz + length ?zout - (pR - length rb)) ?as1")
+  obtain dys das' where d3: "freeze_meval0 (\<lambda>\<alpha>. (map (dtabc n cs) ?rb1 @ fst (deval j []
+        (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>d2), ()))
+        (jfrz + length ?zout - (pR - length rb)) ?as1 = (dys, das')"
+    by (cases "freeze_meval0 (\<lambda>\<alpha>. (map (dtabc n cs) ?rb1 @ fst (deval j []
+        (Mapping.update (p, m) (replicate (j - wv) \<alpha>) ?dbe) \<rho>d2), ()))
+        (jfrz + length ?zout - (pR - length rb)) ?as1")
   have frel: "dys = map (dtabc n cs) ys \<and> das' = as'"
     by (rule freeze_meval0_rel[OF e3 d3 agree])
   have tas': "list_all (ftable m {0..<m}) as'"
     using freeze_meval0_sub[OF e3] tas1 by (auto simp: list_all_iff)
+  \<comment> \<open>the window moves by the same amount in both runs\<close>
+  let ?jfrz1 = "jfrz + length ?zout + length ys"
+  let ?tq1 = "if d = \<infinity> then [] else tq @ ts"
+  let ?a = "frz_adv d wv ?jfrz1 j ?tq1"
+  obtain rs2 \<rho>3 where e5: "meval j n [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>2 = (rs2, \<rho>3)"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>2")
+  obtain \<rho>d3 where d5: "deval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>d2
+        = (map (dtabc n cs) rs2, \<rho>d3)"
+    and s5: "dsim n cs (dnext tw ts) \<rho>d3 \<rho>3"
+    using Q[OF szp s4 wa[of "{}"] _ _ e5] by (auto simp: dnext_def table_def)
+  let ?rb2 = "drop (min ?jfrz1 (pR + length rs + length rs2) - (pR - length rb)) (?rb1 @ rs2)"
   \<comment> \<open>the two runs agree, component by component\<close>
-  have x: "xs = drop (jfrz - jpsi0) zs0 @ ys"
-    and f: "\<phi>' = mformula.MFrz p m \<phi>2 \<psi>2
-        (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
-        (jpsi0 + length zs0) (jphi + length as) as'"
-    using mv e1 e2 e3 by (simp_all add: Let_def)
+  have x: "xs = ?zout @ ys"
+    and f: "\<phi>' = mformula.MFrz p m \<phi>2 \<psi>2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
+        \<rho>3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) ?rb2 d"
+    using mv e1 e2 e3 e4 e5 by (simp_all add: Let_def add.assoc)
   show ?case
   proof (intro exI conjI)
-    show "deval j ts db (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s)
-        = (map (dtabc n cs) xs, DFrz p m \<phi>d2 \<psi>d2
-             (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
-             (jpsi0 + length zs0) (jphi + length as) as')"
-      using d1 d2 d3 frel dt unfolding x by (simp add: Let_def drop_map)
-    show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2
-             (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys)
-             (jpsi0 + length zs0) (jphi + length as) as') \<phi>'"
+    show "deval j ts db (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (dtabc n cs) rb) d)
+        = (map (dtabc n cs) xs, DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
+            \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d)"
+      using d1 d2 d3 d4 d5 frel dt unfolding x by (simp add: Let_def drop_map add.assoc)
+    show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
+            \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d) \<phi>'"
       unfolding f
-      by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas'])
+      by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas' s5])
   qed
 next
   case (DsLetPast n cs tw p m \<phi> \<psi> i buf \<phi>d \<psi>d)

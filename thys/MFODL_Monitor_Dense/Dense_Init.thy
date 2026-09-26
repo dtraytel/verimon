@@ -209,7 +209,7 @@ next
     using Frz.IH(1)[OF nf] unfolding e .
   have p2: "mok n (Formula.fv \<psi>) tw (minit0 n \<psi>)"
     using Frz.prems by (intro Frz.IH(2)) simp
-  show ?case by (simp add: MokFrz[OF p1 p2])
+  show ?case by (simp add: MokFrz[OF p1 p2 _ p2])
 next
   case (LetPast p \<phi> \<psi>)
   have nf: "\<forall>x \<in> Formula.fv \<phi>. x < Formula.nfv \<phi>" by (simp add: fvi_less_nfv)

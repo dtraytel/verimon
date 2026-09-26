@@ -9098,3 +9098,61 @@ the ψ-state at the window's edge rather than at time point 0.
 
 The outputs are identical on the `frz` family and on the 652 `-verified` commands of the test
 corpus.  The cram tests pass.
+
+## 21.48 Windowed replay for FRZ
+
+`frz-lagphi` was the case 21.47 left open: when the frozen formula lags, the FRZ node replays
+the body once per frozen table, and each replay started from the state at time point 0 and fed
+it the whole prefix, so the node cost O(j) per frozen time point and the run was quadratic.
+MonPoly replays only a window: a time point whose timestamp lies more than the body's past
+reach before the first undecided one can never influence a verdict still to be computed.
+The verified monitor now does the same, at all three levels (kernel, dense, unboxed).
+
+**The locality lemma** (`Frz_Locality.thy`, new, before `Monitor`).  `past_reach φ :: enat` is
+the furthest a formula looks back in time: 0 for predicates and the future operators (for
+their own interval; their operands count), the upper bound of the interval plus the operand's
+reach for Prev, Since, Trigger and MatchP, the sum along a `LET`, and ∞ for `LETPAST` and an
+unbounded past interval.  `sat_agree_from`: if two valuations agree on every time point whose
+timestamp is at most `past_reach φ` before that of i, then φ has the same truth value at i
+under both.  The proof is by induction on φ; the only non-trivial cases are Let (reaches add
+up) and the regular expressions (`match_cong_between`).  `ivl_ub` computes an interval's upper
+bound by a linear search for the first difference outside it (`while_option`), once per
+operator at initialisation.
+
+**The node.**  `MFrz` gains a *replay base* ρ (a second copy of the body's state) and its window
+data: `w` (the replay base has absorbed time points before w with the frozen predicate empty),
+`pR` (its progress), `tq` (the timestamps from w on), `rb` (its verdicts from the first undecided
+time point on) and `d = past_reach ψ`.  Per step:
+1. The body state with the frozen predicate empty (`zs0`) is unchanged; it decides the time
+   points that do not depend on the frozen predicate.
+2. The replay base absorbs the new time points with the frozen predicate empty.
+3. Each frozen table α is replayed from the replay base, feeding α over the window
+   `[w, j)` only (was: from the time-0 state over `[0, j)`); the verdict for α's own time point
+   is read from `rb` or from the replay's output.
+4. The window moves forward over the time points whose timestamp plus d lies before that of the
+   first undecided time point (`frz_adv`); the replay base absorbs them with empty tables.
+
+With d = ∞ the window never moves and the node behaves as before (with one extra state).
+
+**The invariant** (`wf_frz_win`): the replay base is well formed for every frozen value i and
+every w' ≥ w under the valuation "empty before w', φ at i after"; the time points before w lie
+beyond the reach seen from the first undecided time point; `rb` holds the freeze's verdicts on
+`[min jfrz pR, pR)`.  `qtable_Frz_window` turns a replay verdict into the freeze's verdict via
+the locality lemma.  The MFrz case of `meval_correct` was rewritten around `progress_Frz_eq`,
+a closed form of the freeze's progress (the `LEAST` in `frz_progress` is one of three values),
+and is shorter than before (about 460 lines instead of 1190).  The dense layers follow by
+simulation (`DsFrz` relates the two replay bases and `rb` modulo the dense table view).
+
+| formula | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| frz-lagphi | 2.36 | 0.15 | 0.12 |
+| frz-neglag | 7.52 | 0.35 | 0.13 |
+| frz-sincelag | 8.30 | 0.39 | 0.13 |
+
+`frz-neglag` (the frozen predicate under a negation) and `frz-sincelag` (in the left operand of a
+Since) are new in the suite: no conjunct can be hoisted there, so 21.47 did not help them.  The
+other formulas of the `frz` family are unchanged within noise; `frz-onceinf` (d = ∞) pays for
+the extra state (0.79 → 0.87 s).  The outputs are identical to the previous binary and to
+MonPoly on the `frz` family and on nine further FRZ shapes (negation, Since left operand, Prev,
+unbounded Once, a future window, a lower bound, nested freezes, an aggregation), and on the 652
+`-verified` commands of the test corpus.  The cram tests pass.

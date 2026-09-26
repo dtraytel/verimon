@@ -2,6 +2,7 @@
 theory Monitor
   imports
     Typing
+    Frz_Locality
     Optimized_Join
     "HOL-Library.While_Combinator"
     "HOL-Library.Mapping"
@@ -960,6 +961,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
   | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
      nat nat nat "event_data table list"
+     "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MAndAssign "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
@@ -1339,7 +1341,8 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
-| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []"
+| "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
+    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>)"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1743,6 +1746,16 @@ fun freeze_meval0 where
           (let (zs, \<alpha>s') = freeze_meval0 eval (Suc k) \<alpha>s
           in (y # zs, \<alpha>s')))"
 
+text \<open>The windowed replay of @{const MFrz}: a time point whose timestamp is more than the past
+  reach @{term d} of the body before that of the first undecided time point @{term jfrz} is
+  never looked at by a verdict still to be computed.  The number of such time points at the front
+  of the window @{term "tq"} (the timestamps from time point @{term w} on), by which the window
+  can move forward.\<close>
+
+definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ts list \<Rightarrow> nat" where
+  "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> jfrz < j
+     then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (jfrz - w))) tq) else 0)"
+
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
@@ -1782,17 +1795,29 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
-| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s) =
+| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
          zs0_out = drop (jfrz - jpsi0) zs0;
          jpsi0 = jpsi0 + length zs0;
          \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. meval n [] (Mapping.update (p, m) (replicate j \<alpha>) (Mapping.map_values (\<lambda>_ _. []) db)) \<psi>) (jfrz - jpsi0) \<alpha>s;
+         jfrz = jfrz + length zs0_out;
+         (rs, \<rho>) = meval n ts db0 \<rho>;
+         rb0 = pR - length rb;
+         rb = rb @ rs;
+         pR = pR + length rs;
+         dbe = Mapping.map_values (\<lambda>_ _. []) db;
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n [] (Mapping.update (p, m) (replicate (j - w) \<alpha>) dbe) \<rho>), ()))
+           (jfrz - rb0) \<alpha>s;
          jphi = jphi + length xs;
-         jfrz = jfrz + length zs0_out + length ys
-     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s'))"
+         jfrz = jfrz + length ys;
+         tq = (if d = \<infinity> then [] else tq @ ts);
+         a = frz_adv d w jfrz j tq;
+         (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>;
+         rb = rb @ rs2;
+         pR = pR + length rs2
+     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s' \<rho> (w + a) pR (drop a tq) (drop (min jfrz pR - rb0) rb) d))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -1931,7 +1956,8 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m \<phi> \<psi>)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)) \<Longrightarrow>
+   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
    (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign \<phi> conf)) \<Longrightarrow>
@@ -1969,7 +1995,7 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
     case (MLet p m \<phi> \<psi>)
     show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
   next
-    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s)
+    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d)
     show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
   next
     case (MLetPast p m \<phi> \<psi> i buf)
