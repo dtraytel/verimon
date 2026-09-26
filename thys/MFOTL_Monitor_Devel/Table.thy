@@ -1552,9 +1552,11 @@ lemma qtable_nary_join_list:
   \<Longrightarrow> qtable n (\<Union>i<length Rs. X i) P Q (nary_join n (set Rs))"
 proof (induct Rs arbitrary: n X Q Qi)
   case Nil
+  \<comment> \<open>the empty join is the unit table, whose only tuple has no variables\<close>
+  have "Q (replicate n None)" if "P (replicate n None)"
+    using Nil.prems(4)[OF that] by (simp add: wf_tuple_empty_iff)
   then show ?case
-    apply (clarsimp simp: qtable_unit_iff)
-    using wf_tuple_empty_iff by blast
+    by (simp add: qtable_unit_iff)
 next
   case (Cons R Rs)
   let ?U = "\<Union> (X ` {..<Suc (length Rs)})"
@@ -1591,22 +1593,29 @@ next
         and "qtable n (X i) P (Qi i) {}"
       unfolding in_set_conv_nth[of "{}" "R # Rs"]
       using Cons.prems(1) by force
-    hence "\<forall>v. P v \<longrightarrow> wf_tuple n (X i) v \<longrightarrow> \<not> Qi i v"
+    hence noQi: "\<forall>v. P v \<longrightarrow> wf_tuple n (X i) v \<longrightarrow> \<not> Qi i v"
       unfolding qtable_iff by auto
-    moreover have "\<forall>v. P v \<longrightarrow> wf_tuple n ?U v \<longrightarrow> P (restrict (X i) v)"
+    have P_restr: "\<forall>v. P v \<longrightarrow> wf_tuple n ?U v \<longrightarrow> P (restrict (X i) v)"
       using i_le Cons.prems(3)[of _ ?U "X i"] 
       by auto
-    moreover have "\<forall>v. P v \<longrightarrow> wf_tuple n ?U v \<longrightarrow> wf_tuple n (X i) (restrict (X i) v)"
+    have wf_restr: "\<forall>v. P v \<longrightarrow> wf_tuple n ?U v \<longrightarrow> wf_tuple n (X i) (restrict (X i) v)"
       using i_le wf_tuple_restrict_simple[of n ?U _ "X i"] 
       by auto
-    moreover have nary_simp: "nary_join n (set (R # Rs)) = {}"
+    have nary_simp: "nary_join n (set (R # Rs)) = {}"
       using hyp
       by (subst nary_join_with_empty) 
         simp_all
-    ultimately show ?thesis
-      apply (clarsimp simp: qtable_iff)
-      apply (erule_tac x="restrict (X i) v" in allE)
-      using Cons.prems(4) i_le by auto
+    \<comment> \<open>no tuple satisfies @{term Q}, as its restriction to @{term "X i"} would satisfy @{term "Qi i"}\<close>
+    have "\<not> Q v" if "P v" and wf: "wf_tuple n ?U v" for v
+    proof
+      assume "Q v"
+      with Cons.prems(4)[of v] \<open>P v\<close> wf i_le have "Qi i (restrict (X i) v)"
+        by simp
+      with noQi P_restr wf_restr \<open>P v\<close> wf show False
+        by blast
+    qed
+    then show ?thesis
+      unfolding nary_simp qtable_iff by (simp add: table_def) blast
   qed
   moreover have "Rs \<noteq> [] \<Longrightarrow> {} \<notin> set (R # Rs) \<Longrightarrow> ?case"
   proof-
