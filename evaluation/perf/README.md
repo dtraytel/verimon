@@ -1,6 +1,6 @@
 # Performance suite: the verified dense evaluator against MonPoly
 
-275 hand-picked formulas in 29 groups, each there for a stated reason (`suite.txt`, one
+283 hand-picked formulas in 30 groups, each there for a stated reason (`suite.txt`, one
 annotated line per formula), run under MonPoly and under the verified dense evaluator
 (`-verified`: `Dense_Eval.thy` over the short tuples of `Dense_Unbox_Exec.thy`; the system is
 called `verimon` in the reports, `vdense` in earlier ones) on the same log, with a 5-second timeout per run, best of three repetitions, in 1 to 10 minutes
@@ -28,7 +28,7 @@ assignments and the arithmetic of terms (`terms`, with `tp` and `ts`), disjuncti
 quantifiers, the derived connectives (`derived`), Prev and Next, the past and future windows,
 Since and Until with bounded and unbounded intervals (`past_inf`), the aggregations at one time
 point, over past and future windows and over Since and Until (`agg_once`, `agg_fut`, `agg_more`),
-Let, the temporal regexes, FRZ (`frz`), and, in `andtrigger` and `vm_only`, the operators MonPoly
+Let, the temporal regexes, FRZ (`frz`, and `frz_rw` for the freezes the rewriter introduces), and, in `andtrigger` and `vm_only`, the operators MonPoly
 does not monitor (TRIGGER, RELEASE, LETPAST, an unguarded HISTORICALLY or ALWAYS, EQUIV), for which
 the reports record the verified monitor's times alone.  The verified monitor's cost of FRZ grows
 with the square of the log's length, so the `frz` group runs on the short logs `tp250`, `tp500`

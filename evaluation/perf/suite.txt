@@ -277,12 +277,20 @@ frz-binary    | tp500  | FRZ q(x,y) = B(x,y) IN ONCE[0,10] (A(x,y) AND q(x,y))  
 frz-agg       | tp500  | FRZ q(x) = C(x) IN (r <- CNT y; x ONCE[0,10] (A(x,y) AND q(x)))      | an aggregation over the frozen window
 frz-exists    | tp500  | FRZ q(x) = C(x) IN EXISTS y. ONCE[0,10] (A(x,y) AND q(x))            | a projection over it
 frz-outer     | tp500  | C(x) AND (FRZ q(x) = C(x) IN ONCE[0,10] (EXISTS y. A(x,y) AND q(x))) | the freeze under a conjunction
-frz-rwonce    | tp1000 | C(x) AND ONCE[0,5] NOT B(x,x)                                        | as the rewriter freezes it: the guard's frozen predicate under the window, not hoistable
-frz-rwonce20  | tp1000 | C(x) AND ONCE[0,20] NOT B(x,x)                                       | a wider one
 frz-len250    | tp250  | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | frz-once20 on 250 time points
 frz-len1000   | tp1000 | FRZ q(x) = C(x) IN ONCE[0,20] (A(x,y) AND q(x))                      | and on 1000
 frz-now250    | tp250  | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | frz-now on 250 time points
 frz-now1000   | tp1000 | FRZ q(x) = C(x) IN (A(x,y) AND q(x))                                 | and on 1000
+
+## frz_rw: FRZ as the rewriter introduces it (Rewriting.thy): a guard's frozen predicate under the temporal operator, where it is needed for monitorability and cannot be taken out again; unmonitorable without the rewrite, so on the full log
+frzrw-once    | base | C(x) AND ONCE[0,5] NOT B(x,x)                          | the guard frozen into a past window
+frzrw-once20  | base | C(x) AND ONCE[0,20] NOT B(x,x)                         | a wider one
+frzrw-oncelb  | base | C(x) AND ONCE[2,10] NOT B(x,x)                         | a window that misses the current time point
+frzrw-once2   | base | A(x,y) AND ONCE[0,5] NOT B(x,y)                        | a binary guard
+frzrw-sincer  | base | C(x) AND (C(x) SINCE[0,5] NOT B(x,x))                  | into Since's right operand
+frzrw-sincelb | base | C(x) AND ((EXISTS y. A(x,y)) SINCE[1,5] NOT B(x,x))    | and with an interval that misses the current time point
+frzrw-ev      | base | C(x) AND EVENTUALLY[0,5] NOT B(x,x)                    | into a future window
+frzrw-untilr  | base | C(x) AND (C(x) UNTIL[0,5] NOT B(x,x))                  | into Until's right operand
 
 ## past_inf: past operators with an unbounded interval
 inf-since     | base | A(x,y) SINCE[0,*) B(x,y)             | unbounded Since
@@ -338,3 +346,5 @@ der-hist5      | dom50  | HISTORICALLY[0,5] (EXISTS y. A(x,y))                  
 der-hist20     | dom50  | HISTORICALLY[0,20] C(x)                                                 | over a wider window
 der-always5    | dom50  | ALWAYS[0,5] (EXISTS y. A(x,y))                                          | unguarded future Always
 der-equiv      | base   | A(x,y) AND (C(x) EQUIV C(y))                                            | an equivalence
+vm-frztrig    | base | C(x) AND (NOT B(x,x) TRIGGER[0,5] C(x))                | the rewriter's freeze into a trigger
+vm-frzrel     | base | C(x) AND (NOT B(x,x) RELEASE[0,5] C(x))                | and into a release

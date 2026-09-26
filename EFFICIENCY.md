@@ -9177,14 +9177,21 @@ of 21.48 (`∀k < w. τ k + d < τ jfrz`) is unchanged, and only the step lemma'
 
 | formula (tp1000) | before (s) | after (s) | MonPoly (s) |
 |---|---|---|---|
-| `C(x) AND ONCE[0,5] NOT B(x,x)` (`frz-rwonce`) | 3.73 | 0.11 | 0.11 |
-| `C(x) AND ONCE[0,20] NOT B(x,x)` (`frz-rwonce20`) | 2.55 | 0.15 | 0.13 |
+| `C(x) AND ONCE[0,5] NOT B(x,x)` (`frzrw-once`) | 3.73 | 0.11 | 0.11 |
+| `C(x) AND ONCE[0,20] NOT B(x,x)` (`frzrw-once20`) | 2.55 | 0.15 | 0.13 |
 | `FRZ q(x) = C(x) IN (C(x) AND ONCE[0,5] (q(x) AND NOT B(x,x)))` | 2.66 | 0.10 | 0.16 |
 | `FRZ q(x) = C(x) IN ONCE[0,5] (q(x) AND NOT B(x,x))` | 1.65 | 0.11 | 0.12 |
 
 The `frz` family of the suite is unchanged within noise.  All of its formulas are either hoisted
-or lagging, which is why the suite did not show the problem; the two rewriter-generated formulas
-above are added to it.  After the change, a profile of `frz-rwonce20` puts 44% of the
+or lagging, which is why the suite did not show the problem.  A new group, `frz_rw`, has eight
+formulas that the rewriter freezes (Once with and without a lower bound, a binary guard, the right
+operand of Since with and without a lower bound, Eventually, the right operand of Until); two more,
+into a Trigger and a Release, are in `vm_only`.  None of them is monitorable without the rewrite.
+Now linear, they run on the full `base` log (6000 time points), where the verified monitor is
+within 0.8–1.7× of MonPoly with the same verdicts; the previous binary takes more than the
+timeout on most of them (on `tp1000` already: 19 s for `A(x,y) AND ONCE[0,10] NOT B(x,y)`,
+11 s for `frzrw-sincelb`, against 0.37 and 0.27 s now).  An unbounded window
+(`C(x) AND ONCE[0,*) NOT B(x,x)`, d = ∞) stays quadratic; MonPoly refuses it.  After the change, a profile of `frz-rwonce20` puts 44% of the
 instructions in the copies' evaluation (their Since windows and joins) and 31% in reading the
 log.  The frozen predicate's table (`replicate`) does not show up.  A constant result for the
 frozen predicate (the `xres` of the `const-relation-propagation` branch) would therefore save
