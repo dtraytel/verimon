@@ -65,7 +65,8 @@ lag-30 versions of `frz-sincelag` and `frz-neglag`: the frozen formula lags
 (`EVENTUALLY[0,30] C(x)`) and the frozen predicate sits in a Since's left operand or under a
 negation, so each frozen table has its own replay of the window.  21.50 (the copies stop at the
 last pending verdict) took `frz-sincelag` from 2.45 to 1.60 and `frz-neglag` from 2.12 to 1.59;
-without it the two lag-30 formulas would be at about 11x and 4x.  Every other formula is at most
+on the two lag-30 formulas, it took the verified monitor from 2.90 s and 0.52 s to 0.52 s and 0.29 s
+(measured separately, 21.50).  Every other formula is at most
 1.28x (`frz-agg`); then come `frz-exists` (1.27), `frzrw-untilr` (1.25), `der-guardalw` (1.24)
 and `pol-sincefutb` (1.19).  The fastest formulas are `frz-nested` (0.05) and `onceex-not50`
 (0.26).  There are no verdict disagreements; master's run has one, `match-pcnt`, an end-of-stream
