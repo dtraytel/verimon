@@ -1822,7 +1822,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          pR = pR + length rs;
          dbe = Mapping.map_values (\<lambda>_ _. []) db;
          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n []
-           (Mapping.update (p, m) (replicate (frz_cut po w (jfrz + length \<alpha>s) j) \<alpha>) dbe) \<rho>), ()))
+           (Mapping.update (p, m) (replicate (frz_cut po w (jphi + length xs) j) \<alpha>) dbe) \<rho>), ()))
            (jfrz - rb0) \<alpha>s;
          jphi = jphi + length xs;
          jfrz = jfrz + length ys;
@@ -1956,7 +1956,8 @@ qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map
 
 lemma total_meval: "All meval_dom"
   apply (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)")
-  apply (tactic \<open>print_tac @{context} "GOALS"\<close>)
+  prefer 7
+  apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
   sorry
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
