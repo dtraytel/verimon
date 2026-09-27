@@ -43,7 +43,7 @@ datatype edformula =
   | EDTS mtrm
   | EDLet Formula.name nat edformula edformula
   | EDFrz Formula.name nat edformula edformula nat nat nat "event_data table list"
-      edformula nat nat "ts list" "event_data table list" enat bool
+      edformula nat nat "ts list" "event_data table list" enat bool "nat option" edformula
   | EDLetPast Formula.name nat edformula edformula nat "event_data table option"
   | EDTrigger args "nat option list" edformula edformula "event_data mebuf2" "ts mbuf_t"
       "event_data option gmmtaux"
@@ -83,8 +83,9 @@ fun Rep_edformula :: "edformula \<Rightarrow> dformula" where
 | "Rep_edformula (EDTP mt i) = DTP mt i"
 | "Rep_edformula (EDTS mt) = DTS mt"
 | "Rep_edformula (EDLet p m \<phi> \<psi>) = DLet p m (Rep_edformula \<phi>) (Rep_edformula \<psi>)"
-| "Rep_edformula (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) =
-     DFrz p m (Rep_edformula \<phi>) (Rep_edformula \<psi>) jfrz jpsi0 jphi \<alpha>s (Rep_edformula \<rho>) w pR tq rb d po"
+| "Rep_edformula (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+     DFrz p m (Rep_edformula \<phi>) (Rep_edformula \<psi>) jfrz jpsi0 jphi \<alpha>s (Rep_edformula \<rho>) w pR tq rb d po
+       lv (Rep_edformula \<rho>L)"
 | "Rep_edformula (EDLetPast p m \<phi> \<psi> i buf) =
      DLetPast p m (Rep_edformula \<phi>) (Rep_edformula \<psi>) i buf"
 | "Rep_edformula (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
@@ -117,7 +118,7 @@ fun evdfail_nodes :: "edformula \<Rightarrow> nat" where
 | "evdfail_nodes (EDUntil args msk \<phi> \<psi> buf nts t aux) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDAndAssign p t \<phi>) = evdfail_nodes \<phi>"
 | "evdfail_nodes (EDLet p m \<phi> \<psi>) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
-| "evdfail_nodes (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) =
+| "evdfail_nodes (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
     evdfail_nodes \<phi> + evdfail_nodes \<psi> + evdfail_nodes \<rho>"
 | "evdfail_nodes (EDLetPast p m \<phi> \<psi> i buf) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
 | "evdfail_nodes (EDTrigger dags pl \<phi> \<psi> dbuf nts daux) = evdfail_nodes \<phi> + evdfail_nodes \<psi>"
@@ -254,12 +255,12 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
      (let (xs, \<phi>') = edeval j ts db \<phi>;
           (ys, \<psi>') = edeval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, EDLet p m \<phi>' \<psi>'))"
-| "edeval j ts db (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) =
+| "edeval j ts db (EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
      (let (xs, \<phi>) = edeval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = edeval j ts db0 \<psi>;
           (rs, \<rho>) = edeval j ts db0 \<rho>;
-          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s') =
+          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L) =
             (let zs0_out = drop (jfrz - jpsi0) zs0;
                  \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
                  jfrz = jfrz + length zs0_out;
@@ -267,16 +268,22 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
                  rb = rb @ rs;
                  dbe = Mapping.map_values (\<lambda>_ _. []) db;
                  c = frz_cut po w jphi (length xs) j;
-                 (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (edeval j []
-                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s
-             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s'));
+                 (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case edeval j []
+                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho> of (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
+                   (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+                     if zs0_out = [] \<and> \<alpha>s \<noteq> []
+                     then Some (g, edeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
+                     else None);
+                 lv = (if po then None else lv)
+             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', frz_keep_lv lv \<rho>L, frz_keep_st lv \<rho>L));
           (a, tq, rs2, \<rho>) =
             (let tq = (if d = \<infinity> then [] else tq @ ts);
                  a = frz_adv d w jfrz j tq;
                  (rs2, \<rho>) = edeval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
              in (a, tq, rs2, \<rho>))
       in (zs0_out @ ys, EDFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
-        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po))"
+        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po
+        lv \<rho>L))"
 | "edeval j ts db (EDLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (edeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -346,21 +353,25 @@ next
   \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas,
     since evaluation keeps the node's constructor and its non-formula arguments do not count\<close>
 qed (auto simp only: prod.inject edeval.psimps Let_def snd_conv fst_conv
-    edformula.size list.map map_map o_apply size_list_map cong: size_list_cong
+    edformula.size list.map map_map o_apply size_list_map size_frz_keep_st cong: size_list_cong
     split: prod.splits)
 
 lemma total_edeval: "All edeval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
   text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
+  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_edeval[OF 23(15)] 23(6,7) by (metis snd_conv)
   then show ?case
     by simp
 next
-  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
+  case 24 \<comment> \<open>the live copy, a subterm\<close>
+  then show ?case
+    by simp
+next
+  case (25 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
-    using psize_snd_edeval[OF 24(18)] 24(6,7) by (metis snd_conv)
+    using psize_snd_edeval[OF 25(21)] 25(6,7) by (metis snd_conv)
   then show ?case
     by simp
 qed (auto simp: termination_simp dest!: psize_snd_edeval dest: sym)
@@ -447,7 +458,7 @@ next
   show ?case
     by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def ix iy x y u u' v prod.case)
 next
-  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po)
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
   let ?db0 = "Mapping.update (p, m) [] db"
   let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
   obtain xs \<phi>' where \<phi>: "edeval j ts db \<phi> = (xs, \<phi>')"
@@ -465,19 +476,52 @@ next
     using 20(2)[OF refl \<phi>[symmetric] refl] \<psi> by simp
   have IH3: "deval j ts ?db0 (Rep_edformula \<rho>) = (rs, Rep_edformula \<rho>')"
     using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric]] \<rho> by simp
-  have IH4: "fst (deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) (Rep_edformula \<rho>')) =
-    fst (edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>')" for \<alpha>
+  define cpe where "cpe \<alpha> = (case edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>' of
+    (us, \<sigma>) \<Rightarrow> ((rb @ rs) @ us, \<sigma>))" for \<alpha>
+  define cpk where "cpk \<alpha> = (case deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe)
+    (Rep_edformula \<rho>') of (us, \<sigma>) \<Rightarrow> ((rb @ rs) @ us, \<sigma>))" for \<alpha>
+  have IH4: "cpk \<alpha> = apsnd Rep_edformula (cpe \<alpha>)" for \<alpha>
     using 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
         refl refl refl refl refl refl refl, of \<alpha>]
-    by (simp split: prod.splits)
-  obtain ys \<alpha>s' where fr: "freeze_meval0 (\<lambda>\<alpha>. ((rb @ rs) @
-      fst (edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>'), ())) ?k ?as = (ys, \<alpha>s')"
-    by (cases "freeze_meval0 (\<lambda>\<alpha>. ((rb @ rs) @
-      fst (edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>'), ())) ?k ?as")
-  have fr': "freeze_meval0 (\<lambda>\<alpha>. ((rb @ rs) @
-      fst (deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) (Rep_edformula \<rho>')), ())) ?k ?as
-    = (ys, \<alpha>s')"
-    unfolding fr[symmetric] by (rule default_maux.freeze_meval0_cong_fst) (simp add: IH4)
+    by (simp add: cpk_def cpe_def split: prod.splits)
+  let ?z = "drop (jfrz - jpsi0) zs0"
+  let ?dbL = "Mapping.update (p, m) (replicate (length ts) (hd ?as)) db"
+  define lre where "lre = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+    if ?z = [] \<and> ?as \<noteq> [] then Some (g, edeval j ts ?dbL \<rho>L) else None)"
+  define lrk where "lrk = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+    if ?z = [] \<and> ?as \<noteq> [] then Some (g, deval j ts ?dbL (Rep_edformula \<rho>L)) else None)"
+  have IHL: "lrk = map_option (\<lambda>(g, us, st). (g, us, Rep_edformula st)) lre"
+  proof (cases lv)
+    case (Some g)
+    show ?thesis
+    proof (cases "?z = [] \<and> ?as \<noteq> []")
+      case True
+      have "deval j ts ?dbL (Rep_edformula \<rho>L) = apsnd Rep_edformula (edeval j ts ?dbL \<rho>L)"
+        using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
+            refl refl refl refl refl refl refl Some True]
+        by (simp split: prod.splits)
+      then show ?thesis
+        using Some True by (simp add: lrk_def lre_def split: prod.splits)
+    qed (simp add: lrk_def lre_def Some)
+  qed (simp add: lrk_def lre_def)
+  obtain ys \<alpha>s' lve where fr: "frz_live_step cpe ?k ?as lre = (ys, \<alpha>s', lve)"
+    by (metis prod_cases3)
+  have fr': "frz_live_step cpk ?k ?as lrk = (ys, \<alpha>s', map_option (apsnd Rep_edformula) lve)"
+    unfolding IHL using default_maux.frz_live_step_map[of cpk Rep_edformula cpe ?k ?as lre] IH4 fr by simp
+  have keep: "frz_keep_lv (if po then None else map_option (apsnd Rep_edformula) lve) (Rep_edformula \<rho>L) =
+      frz_keep_lv (if po then None else lve) \<rho>L"
+    "frz_keep_st (if po then None else map_option (apsnd Rep_edformula) lve) (Rep_edformula \<rho>L) =
+      Rep_edformula (frz_keep_st (if po then None else lve) \<rho>L)"
+  proof -
+    have ifm: "(if po then None else map_option (apsnd Rep_edformula) lve) =
+      map_option (apsnd Rep_edformula) (if po then None else lve)"
+      by simp
+    show "frz_keep_lv (if po then None else map_option (apsnd Rep_edformula) lve) (Rep_edformula \<rho>L) =
+      frz_keep_lv (if po then None else lve) \<rho>L"
+      "frz_keep_st (if po then None else map_option (apsnd Rep_edformula) lve) (Rep_edformula \<rho>L) =
+      Rep_edformula (frz_keep_st (if po then None else lve) \<rho>L)"
+      by (simp_all only: ifm default_maux.frz_keep_map[OF size_Rep_edformula])
+  qed
   let ?a = "frz_adv d w (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys) j (if d = \<infinity> then [] else tq @ ts)"
   obtain rs2 \<rho>2 where adv: "edeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>' = (rs2, \<rho>2)"
     by (cases "edeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>'")
@@ -488,18 +532,24 @@ next
         rb = rb @ rs;
         dbe = ?dbe;
         c = ?c;
-        (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (edeval j [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>'), ()))
-          (jfrz - rb0) \<alpha>s
-      in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s')) =
+        (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case edeval j [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>' of
+          (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
+          (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+            if zs0_out = [] \<and> \<alpha>s \<noteq> []
+            then Some (g, edeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
+            else None);
+        lv = (if po then None else lv)
+      in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', frz_keep_lv lv \<rho>L, frz_keep_st lv \<rho>L)) =
     (drop (jfrz - jpsi0) zs0, jfrz + length (drop (jfrz - jpsi0) zs0) + length ys, pR - length rb, rb @ rs,
-      ?dbe, ys, \<alpha>s')"
-    by (simp only: Let_def fr prod.case)
+      ?dbe, ys, \<alpha>s', frz_keep_lv (if po then None else lve) \<rho>L, frz_keep_st (if po then None else lve) \<rho>L)"
+    by (simp only: Let_def cpe_def[symmetric] lre_def[symmetric] fr prod.case)
   have IH5: "deval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) (Rep_edformula \<rho>') = (rs2, Rep_edformula \<rho>2)"
-    using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
-        refl refl refl refl refl refl refl] adv
+    using 20(6)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
+        refl refl refl refl refl refl refl refl refl] adv
     by simp
   show ?case
-    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def \<phi> \<psi> \<rho> IH1 IH2 IH3 fr fr' adv IH5
+    by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def \<phi> \<psi> \<rho> IH1 IH2 IH3
+        cpe_def[symmetric] cpk_def[symmetric] lre_def[symmetric] lrk_def[symmetric] fr fr' keep adv IH5
         prod.case)
 next
   case (21 j ts db p m \<phi> \<psi> i buf)

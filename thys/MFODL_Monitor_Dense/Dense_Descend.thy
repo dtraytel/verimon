@@ -67,7 +67,7 @@ function (sequential) mfcols ::
      (case mode of Copy \<Rightarrow> Some [0..<n]
       | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set tms. Formula.fv_trm t)))"
 | "mfcols n (mformula.MLet p m \<phi> \<psi>) = mfcols n \<psi>"
-| "mfcols n (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) = mfcols n \<psi>"
+| "mfcols n (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) = mfcols n \<psi>"
 | "mfcols n (mformula.MLetPast p m \<phi> \<psi> i buf) = mfcols n \<psi>"
 | "mfcols n (mformula.MAnd A1 \<phi> pos A2 \<psi> buf) =
      (case (mfcols n \<phi>, mfcols n \<psi>) of
@@ -211,9 +211,9 @@ function (sequential) dof ::
       then DAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (dof n cs0 \<phi>)
       else DFail)"
 | "dof n cs (mformula.MLet p m \<phi> \<psi>) = DLet p m (dof m [0..<m] \<phi>) (dof n cs \<psi>)"
-| "dof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) =
+| "dof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
      (if \<alpha>s = [] \<and> rb = [] then DFrz p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) jfrz jpsi0 jphi []
-        (dof n cs \<rho>) w pR tq [] d po else DFail)"
+        (dof n cs \<rho>) w pR tq [] d po lv (dof n cs \<rho>L) else DFail)"
 | "dof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
      (if buf = None then DLetPast p m (dof m [0..<m] \<phi>) (dof n cs \<psi>) i None else DFail)"
 | "dof n cs (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
@@ -1636,7 +1636,7 @@ text \<open>The freeze binds its own formula the same way, and starts with no fr
 lemma dsim_dof_minit0_Frz:
   assumes sf: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 []
-      (minit0 n \<eta>) 0 0 [] [] r b"
+      (minit0 n \<eta>) 0 0 [] [] r b None (minit0 n \<eta>)"
     and A: "Formula.fv \<chi> = {0..<k}" and B: "Formula.fv \<phi> = Formula.fv \<eta>"
     and z: "dofz n \<phi>"
     and i1: "dofz k \<chi> \<Longrightarrow> dofc k tw \<chi>" and i2: "dofz n \<eta> \<Longrightarrow> dofc n tw \<eta>"
@@ -1645,17 +1645,18 @@ proof -
   let ?cs = "set_cols (Formula.fv \<phi>)"
   have w: "wf_cols n ?cs" by (rule wf_cols_set_cols[OF finite_fvi b])
   have pr: "produces n (set ?cs) tw (mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 []
-      (minit0 n \<eta>) 0 0 [] [] r b)"
+      (minit0 n \<eta>) 0 0 [] [] r b None (minit0 n \<eta>))"
     using produces_minit0[OF sf b] unfolding m by simp
-  have d: "dof n ?cs (mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 [] (minit0 n \<eta>) 0 0 [] [] r b)
+  have d: "dof n ?cs (mformula.MFrz p k (minit0 k \<chi>) (minit0 n \<eta>) 0 0 0 [] (minit0 n \<eta>) 0 0 [] [] r b
+        None (minit0 n \<eta>))
       = DFrz p k (dof k [0..<k] (minit0 k \<chi>)) (dof n ?cs (minit0 n \<eta>)) 0 0 0 []
-          (dof n ?cs (minit0 n \<eta>)) 0 0 [] [] r b" by simp
+          (dof n ?cs (minit0 n \<eta>)) 0 0 [] [] r b None (dof n ?cs (minit0 n \<eta>))" by simp
   have z1: "dofz k \<chi>" and z2: "dofz n \<eta>"
     using z unfolding m d A set_cols_upt B[symmetric] by simp_all
   have s1: "dsim k [0..<k] tw (dof k [0..<k] (minit0 k \<chi>)) (minit0 k \<chi>)"
     using i1[OF z1] unfolding A set_cols_upt .
   have s2: "dsim n ?cs tw (dof n ?cs (minit0 n \<eta>)) (minit0 n \<eta>)" using i2[OF z2] unfolding B .
-  show ?thesis unfolding m d using dsim.DsFrz[OF w pr s1 s2 _ s2] by simp
+  show ?thesis unfolding m d using dsim.DsFrz[OF w pr s1 s2 _ s2 refl refl] by simp
 qed
 
 text \<open>The recursive let starts with an empty buffer, which is trivially a table over the
@@ -2157,7 +2158,8 @@ next
     using Frz.hyps(1) fvi_less_nfv[of \<phi>] by auto
   have m: "minit0 n (Formula.Frz p \<phi> \<psi>)
       = mformula.MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
-        (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)"
+        (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
+        None (minit0 n \<psi>)"
     by simp
   show ?case
     by (rule dsim_dof_minit0_Frz[OF sfa Frz.prems(1) m A _ Frz.prems(2)
