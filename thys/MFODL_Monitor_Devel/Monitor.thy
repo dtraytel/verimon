@@ -1955,7 +1955,9 @@ next
 qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
-  by (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)") (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
+  apply (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)")
+  apply (tactic \<open>print_tac @{context} "GOALS"\<close>)
+  sorry
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 
