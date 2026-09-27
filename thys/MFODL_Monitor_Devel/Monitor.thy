@@ -1342,7 +1342,7 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
 | "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
-    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (past_only \<psi>)"
+    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1755,8 +1755,10 @@ text \<open>The windowed replay of @{const MFrz}: a time point whose timestamp i
   below.  Without this, a frozen formula that never lags would keep the window at its start, and
   each copy would replay the whole prefix.
 
-  When the body has no future operators (the flag @{term po}, @{const past_only}), a copy's verdict
-  at a time point i needs the frozen predicate only up to i.  The copies are then fed it only up to
+  When the body does not use the frozen predicate beyond the current time point (the flag
+  @{term po}: @{const safe_letpast} of the frozen predicate is at most @{const NonFutuRec}, as for
+  the recursive predicate of @{const Formula.LetPast}), a copy's verdict at a time point i needs the
+  frozen predicate only up to i.  The copies are then fed it only up to
   the last pending verdict, not up to the last time point: this matters when the frozen formula
   lags, and the frozen table of a time point only arrives several time points later.\<close>
 
@@ -1819,8 +1821,8 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          rb = rb @ rs;
          pR = pR + length rs;
          dbe = Mapping.map_values (\<lambda>_ _. []) db;
-         c = frz_cut po w (jfrz + length \<alpha>s) j;
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ()))
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n []
+           (Mapping.update (p, m) (replicate (frz_cut po w (jfrz + length \<alpha>s) j) \<alpha>) dbe) \<rho>), ()))
            (jfrz - rb0) \<alpha>s;
          jphi = jphi + length xs;
          jfrz = jfrz + length ys;
