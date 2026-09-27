@@ -1958,13 +1958,17 @@ proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
   text \<open>The replays of @{const MFrz} and the advance of its window: the replay base keeps its size.
     Left to the automation below, these two cases take long, since the many equations of the
     body's @{text let}s are tried in both orientations.\<close>
-  case 7
-  show ?case
-    sorry
+  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 7(15)] 7(6,7) by (metis snd_conv)
+  then show ?case
+    by simp
 next
-  case 8
-  show ?case
-    sorry
+  case (8 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 8(18)] 8(6,7) by (metis snd_conv)
+  then show ?case
+    by simp
 qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
