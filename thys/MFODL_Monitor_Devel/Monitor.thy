@@ -1766,8 +1766,8 @@ definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> na
   "frz_adv d w jfrz j tq = (if d \<noteq> \<infinity> \<and> w \<le> jfrz \<and> w < j
      then length (takeWhile (\<lambda>t. enat t + d < enat (tq ! (min jfrz (j - 1) - w))) tq) else 0)"
 
-definition frz_cut :: "bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
-  "frz_cut po w k j = (if po then min (j - w) (k - w) else j - w)"
+definition frz_cut :: "bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
+  "frz_cut po w k l j = (if po then min (j - w) (k + l - w) else j - w)"
 
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
@@ -1822,7 +1822,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          pR = pR + length rs;
          dbe = Mapping.map_values (\<lambda>_ _. []) db;
          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n []
-           (Mapping.update (p, m) (replicate (frz_cut po w (jphi + length xs) j) \<alpha>) dbe) \<rho>), ()))
+           (Mapping.update (p, m) (replicate (frz_cut po w jphi (length xs) j) \<alpha>) dbe) \<rho>), ()))
            (jfrz - rb0) \<alpha>s;
          jphi = jphi + length xs;
          jfrz = jfrz + length ys;
@@ -1957,6 +1957,8 @@ qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map
 lemma total_meval: "All meval_dom"
   apply (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)")
   prefer 8
+  apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
+  prefer 7
   apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
   sorry
 
