@@ -9262,3 +9262,54 @@ block of each dense layer in 20–30 s.  `MFODL_Monitor_Dense` builds in 11 minu
 Correctness, `DsFrz` and Dense_Let go through unchanged.  The termination cases and the three
 `Rep_…` simulations only needed their premise lists adjusted; the simulations also needed a
 lemma that evaluates the copies' stage to its tuple.
+
+## 21.51 The live copy
+
+MonPoly monitors a freeze whose body looks into the future (`frzrw-untilr`, `frzrw-ev`: the
+rewriter's guard frozen into an Until or an Eventually) with one instance of the body per
+pending anchor.  Each instance is fed the new time points as they arrive.  VeriMon instead
+rebuilt the copy for the first pending anchor jfrz at every step.  It replayed the replay base
+over the whole window, with the frozen predicate holding jfrz's tuples.  The copies stop at
+the first anchor whose verdict is not out yet, so only that anchor's copy is ever carried from
+one step to the next.
+
+`MFrz` now keeps that copy (the live copy) in a slot of its own, `ρL`, next to `lv`, the number
+of its verdicts still to come before jfrz's.  At the next step `frz_live_step` resumes it: if no
+verdict of the body without the frozen predicate is new and a frozen table is pending
+(`zs0_out = [] ∧ αs ≠ []`), the live copy is fed the new time points with the frozen predicate
+holding the first pending table.  It is not replayed from the replay base.  When its verdict
+for jfrz is out, the remaining anchors are copied as before (`freeze_meval1` is
+`freeze_meval0` that also returns the state of the copy it stopped at).  Otherwise it stays the
+live copy.  With `po` (a past-only body, §21.50) the copies are cut short and no live copy is
+kept, so those formulas run as before.
+
+*Termination.*  The node's size must not change under evaluation, since the parent evaluates
+the replay base's result again.  A new live copy has the size of the replay base, but the slot
+may hold anything.  So `frz_keep_lv` and `frz_keep_st` replace the slot only when the sizes
+agree, which they always do in a monitor state.  The unboxed layer's Rep map does not keep the
+size: a guarded Since node stands for two boxed nodes.  The unboxed evaluator therefore
+compares, and terminates by, `ursize`, the size of the boxed formula computed on the short one.
+The same holds for the size guard of its recursive let (`uletpast_meval0`).  So both guards
+take the boxed evaluator's branches on every formula, and `udeval_Rep` stays unconditional.
+
+*Correctness.*  The Frz rule of `wf_mformula` gets one premise.  If `lv = Some g`, then `po`
+is false and, for some wL before which every time point is out of the body's reach from jfrz,
+`ρL` is well formed at `j` with the frozen predicate defined up to `j` and holding jfrz's
+tuples from wL on, and `jfrz` is `g` past its progress.  Without `po` the body's progress
+under the live copy is exactly that of a fresh copy (`jpsic = jpsij'`).  So the live copy has
+its verdict exactly when a fresh one would (`frz_live_step_spec`), and the verdict is right by
+the same argument as a fresh copy's (`qtable_Frz_window`).  The step's remaining verdicts are
+the fresh copies' ones, unchanged.  The gap `g` turns out to be 0 whenever it is kept.
+`Dense_Eval`'s simulation carries `size ρL = size ρ` on both sides and relates the live copies
+when `lv ≠ None`.  `produces` and `mok` carry the live copy under the same condition.
+
+| formula | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frzrw-untilr` | 1.16 | 0.92 | 0.73 |
+| `frzrw-ev` | 0.82 | 0.73 | 0.74 |
+
+(minimum of 7 interleaved runs; MonPoly from the suite run.)  The rest of `frz` and `frz_rw`
+is unchanged within noise, and the verdicts agree with MonPoly on both groups.  On the 652
+`-verified` commands of the test corpus, the outputs are identical to the previous binary.
+The cram tests pass.  `MFODL_Monitor_Devel` builds in 27 minutes and `MFODL_Monitor_Dense` in
+11.
