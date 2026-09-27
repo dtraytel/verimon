@@ -1539,7 +1539,7 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: uletpast_meval0.induct)
   proof (cases "ursize \<phi>' = ursize \<phi>")
     case False
     then show ?thesis
-      by (subst (1 2) letpast_meval0.simps uletpast_meval0.simps) (simp add: Let_def L e g)
+      by (subst letpast_meval0.simps, subst uletpast_meval0.simps) (simp add: Let_def L e g)
   next
     case True
     show ?thesis
@@ -1604,7 +1604,8 @@ proof -
       (map reopt_table (fst (eval' \<alpha>)), Rep_udformula (snd (eval' \<alpha>)))"
     using AG by (cases \<alpha>s) auto
   show ?thesis
-    using freeze_meval1_rdb[OF AG, of k] freeze_meval1_rdb[OF AG', of "Suc k"] L
+    using freeze_meval1_rdb[where \<alpha>s = \<alpha>s and eval = eval and eval' = eval' and k = k, OF AG]
+      freeze_meval1_rdb[where \<alpha>s = "tl \<alpha>s" and eval = eval and eval' = eval' and k = "Suc k", OF AG'] L
     by (auto simp: frz_live_step_def drop_map map_tl split: option.splits prod.splits list.splits)
 qed
 
@@ -1663,7 +1664,7 @@ next
     proof (cases "?z = [] \<and> ?as \<noteq> []")
       case True
       have hd: "hd (map reopt_table ?as) = reopt_table (hd ?as)"
-        using True by (simp add: hd_map)
+        using True hd_map[of "?as" reopt_table] by blast
       have "edeval j ts (rdb ?dbL) (Rep_udformula \<rho>L) =
           (case udeval j ts ?dbL \<rho>L of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
         by (rule 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
