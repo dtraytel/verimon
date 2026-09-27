@@ -1919,6 +1919,9 @@ lemma safe_letpast_code[code]:
   "safe_letpast p (Formula.Let e \<phi> \<psi>) =
       (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion>
       (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
+  "safe_letpast p (Formula.Frz e \<phi> \<psi>) =
+      (frz_dep (safe_letpast (e, Formula.nfv \<phi>) \<psi>) (safe_letpast p \<phi>)) \<squnion>
+      (if p = (e, Formula.nfv \<phi>) then Unused else safe_letpast p \<psi>)"
   "safe_letpast p (Formula.LetPast e \<phi> \<psi>) =
       (if p = (e, Formula.nfv \<phi>) then Unused else
         (safe_letpast (e, Formula.nfv \<phi>) \<psi> * safe_letpast p \<phi>) \<squnion> safe_letpast p \<psi>)"
@@ -1933,6 +1936,8 @@ lemma safe_letpast_code[code]:
   "safe_letpast p (Formula.Since \<phi> I \<psi>) = safe_letpast p \<phi> \<squnion>
     (if memL I 0 then NonFutuRec else PastRec) * safe_letpast p \<psi>"
   "safe_letpast p (Formula.Until \<phi> I \<psi>) = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
+  "safe_letpast p (Formula.Trigger \<phi> I \<psi>) = safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>"
+  "safe_letpast p (Formula.Release \<phi> I \<psi>) = AnyRec * (safe_letpast p \<phi> \<squnion> safe_letpast p \<psi>)"
   "safe_letpast p (Formula.MatchP I r) = \<Squnion> Regex.atms (Regex.map_regex (safe_letpast p) r)"
   "safe_letpast p (Formula.MatchF I r) =  AnyRec * \<Squnion> Regex.atms (Regex.map_regex (safe_letpast p) r)"
   "safe_letpast p (Formula.TP t) = Unused"
