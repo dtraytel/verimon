@@ -250,7 +250,7 @@ next
           (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
           (drop a tq1) rb2 d po (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L'))"
     using e1 e2 e3 e4 e5 unfolding zout_def as1_def ev_def rb0_def tq1_def a_def rb2_def c_def lr_def dbL_def
-    by (simp add: Let_def add.assoc)
+    by (simp add: Let_def add.assoc cong: option.case_cong)
   have x: "xs = zout @ ys"
     and f: "\<Phi>' = mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
           (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
