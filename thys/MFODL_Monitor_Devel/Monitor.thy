@@ -1856,12 +1856,12 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
                 rb = rb @ rs;
                 dbe = Mapping.map_values (\<lambda>_ _. []) db;
                 c = frz_cut po w jphi (length xs) j;
-                lr = (case lv of None \<Rightarrow> None | Some (g, \<sigma>) \<Rightarrow>
-                  if zs0_out = [] \<and> \<alpha>s \<noteq> []
-                  then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<sigma>)
-                  else None);
                 (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho> of
-                  (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s lr
+                  (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
+                  (case lv of None \<Rightarrow> None | Some (g, \<sigma>) \<Rightarrow>
+                    if zs0_out = [] \<and> \<alpha>s \<noteq> []
+                    then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<sigma>)
+                    else None)
             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', if po then None else lv));
          (a, tq, rs2, \<rho>) =
            (let tq = (if d = \<infinity> then [] else tq @ ts);
