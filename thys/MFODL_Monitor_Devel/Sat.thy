@@ -601,8 +601,8 @@ next
   qed
   from Frz.hyps have win: "wf_frz_win \<sigma>' j P V' n R p m \<phi>' \<psi>' jfrz w pR tq rb d"
     unfolding wf_frz_win_def prg sat tau by blast
-  from Frz.hyps(3,4) have "jfrz = progress \<sigma>' P (Formula.Frz p \<phi>' \<psi>') j"
-    and "jpsi0 = progress \<sigma>' (P((p, m) \<mapsto> 0)) \<psi>' j"
+  from Frz.hyps(3,4) have prog1: "jfrz = progress \<sigma>' P (Formula.Frz p \<phi>' \<psi>') j"
+    and prog2: "jpsi0 = progress \<sigma>' (P((p, m) \<mapsto> 0)) \<psi>' j"
     unfolding prg .
   have live: "\<forall>g. lv = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma>' k) + past_reach \<psi>' < enat (\<tau> \<sigma>' jfrz)) \<and>
       jfrz = progress \<sigma>' (P((p, m) \<mapsto> j)) \<psi>' j + g \<and>
@@ -624,7 +624,7 @@ next
       wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) (V'((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma>' V' v jfrz \<phi>')) n R \<rho>L \<psi>')"
       using npo w1 g1 IHL unfolding tau prg by blast
   qed
-  with Frz.IH(1)[OF Frz.prems] psi state rho win show ?case
+  with Frz.IH(1)[OF Frz.prems] psi state rho win prog1 prog2 show ?case
     using Frz.hyps by (intro wf_mformula.Frz) blast+
 next
   case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf V')
