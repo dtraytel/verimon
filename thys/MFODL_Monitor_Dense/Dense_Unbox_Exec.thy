@@ -885,7 +885,7 @@ lemma ursize_Rep: "ursize \<phi> = size (Rep_udformula \<phi>)"
   by (induction \<phi> rule: ursize.induct)
     (auto simp: edandrel_def size_list_sum_list comp_def split: option.splits intro!: arg_cong[of _ _ sum_list])
 
-lemma ursize_in_set: "x \<in> set L \<Longrightarrow> ursize x < sum_list (map ursize L) + length L + 1"
+lemma ursize_in_set: "x \<in> set L \<Longrightarrow> ursize x < Suc (sum_list (map ursize L) + length L)"
   by (induction L) auto
 
 definition ufrz_keep_lv :: "(nat \<times> udformula) option \<Rightarrow> udformula \<Rightarrow> nat option" where
@@ -1124,7 +1124,7 @@ next
   obtain zs buf' aux' where e: "uedsx_eval_since dags [] (uebuf2S_add xs ys ts buf) aux = (zs, buf', aux')"
     by (metis prod_cases3)
   have "ursize \<phi>' = ursize \<phi>" "ursize \<psi>' = ursize \<psi>"
-    using 14(2) 14(3)[OF refl \<phi>'[symmetric] refl] \<phi>' \<psi>' by simp_all
+    using 14(2) 14(3)[OF refl \<phi>'[symmetric]] \<phi>' \<psi>' by simp_all
   then show ?case
     using usx_q_uedsx_eval_since'[OF e] by (simp add: udeval.psimps(14)[OF 14(1)] \<phi>' \<psi>' e)
 next
