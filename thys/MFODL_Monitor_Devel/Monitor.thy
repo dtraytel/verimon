@@ -1785,6 +1785,9 @@ definition frz_keep :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Righ
 lemma size_frz_keep[simp]: "size (snd (frz_keep lv \<rho>L)) = size \<rho>L"
   by (auto simp: frz_keep_def split: option.splits)
 
+lemma frz_keep_sizeD: "frz_keep lv \<rho>L = (g, st) \<Longrightarrow> size st = size \<rho>L"
+  using size_frz_keep[of lv \<rho>L] by simp
+
 lemma freeze_meval1_freeze_meval0:
   "(case freeze_meval1 eval k \<alpha>s of (ys, \<alpha>s', _) \<Rightarrow> (ys, \<alpha>s')) = freeze_meval0 eval k \<alpha>s"
   by (induction eval k \<alpha>s rule: freeze_meval1.induct) (auto split: prod.splits list.splits)
@@ -2005,7 +2008,7 @@ next
   then show ?case
     by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
   \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
-qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
+qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits dest!: frz_keep_sizeD)
 
 lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
