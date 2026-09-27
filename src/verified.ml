@@ -2983,7 +2983,7 @@ type udformula = UDFail | UDRel of (event_data list) set |
   UDFrz of
     string * nat * udformula * udformula * nat * nat * nat *
       (event_data list) set list * udformula * nat * nat * nat list *
-      (event_data list) set list * enat
+      (event_data list) set list * enat * bool
   | UDLetPast of
       string * nat * udformula * udformula * nat * (event_data list) set option
   | UDTrigger of
@@ -3072,7 +3072,7 @@ let rec size_udformulaa
         plus_nata (plus_nata (size_udformulaa x193) (size_udformulaa x194))
           (suc zero_nata)
     | UDFrz (x201, x202, x203, x204, x205, x206, x207, x208, x209, x2010, x2011,
-              x2012, x2013, x2014)
+              x2012, x2013, x2014, x2015)
         -> plus_nata
              (plus_nata
                (plus_nata (size_udformulaa x203) (size_udformulaa x204))
@@ -3171,7 +3171,7 @@ type ('a, 'b, 'c) meformula = MRel of ((event_data option) list) set |
   MFrz of
     string * nat * ('a, 'b, 'c) meformula * ('a, 'b, 'c) meformula * nat * nat *
       nat * ((event_data option) list) set list * ('a, 'b, 'c) meformula * nat *
-      nat * nat list * ((event_data option) list) set list * enat
+      nat * nat list * ((event_data option) list) set list * enat * bool
   | MLetPast of
       string * nat * ('a, 'b, 'c) meformula * ('a, 'b, 'c) meformula * nat *
         ((event_data option) list) set option
@@ -6167,6 +6167,8 @@ let rec tl_queue_t
         | (_ :: asa, ls) -> (asa, ls));;
 
 let rec tl_queue xa = Abs_queue (tl_queue_t (rep_queue xa));;
+
+let rec frz_dep x y = (if equal_rec_safety x Unused then Unused else y);;
 
 let rec implode
   cs = Str_Literal.literal_of_asciis
@@ -11441,6 +11443,11 @@ let rec umtrm
     | MConst c, x ->
         (if equal_event_dataa c x then edl_insert [] edl_bot else edl_bot);;
 
+let rec frz_cut
+  po w k l j =
+    (if po then ed_min_nat (minus_nata j w) (minus_nata (plus_nata k l) w)
+      else minus_nata j w);;
+
 let rec plus_enat
   q qa = match q, qa with Enat m, Enat n -> Enat (plus_nata m n)
     | Infinity_enat, q -> Infinity_enat
@@ -11579,7 +11586,7 @@ let rec udeval
           (ys, UDLet (p, m, phia, psia)))
     | j, ts, db,
         UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb,
-                d)
+                d, po)
         -> (let (xs, phia) = udeval j ts db phi in
             let db0 =
               updateb
@@ -11588,51 +11595,65 @@ let rec udeval
                 (p, m) [] db
               in
             let (zs0, psia) = udeval j ts db0 psi in
-            let zs0_out = drop (minus_nata jfrz jpsi0) zs0 in
-            let jpsi0a = plus_nata jpsi0 (size_lista zs0) in
-            let alpha_sa =
-              drop (plus_nata (minus_nata jfrz jphi) (size_lista zs0_out))
-                (alpha_s @ xs)
-              in
-            let jfrza = plus_nata jfrz (size_lista zs0_out) in
             let (rs, rhoa) = udeval j ts db0 rho in
-            let rb0 = minus_nata pR (size_lista rb) in
-            let rba = rb @ rs in
-            let pRa = plus_nata pR (size_lista rs) in
-            let dbe =
-              map_values (ccompare_prod ccompare_string8 ccompare_nat)
-                (fun _ _ -> []) db
+            let (zs0_out, (jfrza, (rb0, (rba, (dbe, (ys, alpha_sa)))))) =
+              (let zs0_out = drop (minus_nata jfrz jpsi0) zs0 in
+               let alpha_sa =
+                 drop (plus_nata (minus_nata jfrz jphi) (size_lista zs0_out))
+                   (alpha_s @ xs)
+                 in
+               let jfrza = plus_nata jfrz (size_lista zs0_out) in
+               let rb0 = minus_nata pR (size_lista rb) in
+               let rba = rb @ rs in
+               let dbe =
+                 map_values (ccompare_prod ccompare_string8 ccompare_nat)
+                   (fun _ _ -> []) db
+                 in
+               let c = frz_cut po w jphi (size_lista xs) j in
+               let (ys, alpha_sb) =
+                 freeze_meval0
+                   (fun alpha ->
+                     (rba @ fst (udeval j []
+                                  (updateb
+                                    ((ccompare_prod ccompare_string8
+                                       ccompare_nat),
+                                      (equal_prod equal_string8 equal_nat))
+                                    (p, m) (replicate c alpha) dbe)
+                                  rhoa),
+                       ()))
+                   (minus_nata jfrza rb0) alpha_sa
+                 in
+                (zs0_out,
+                  (plus_nata jfrza (size_lista ys),
+                    (rb0, (rba, (dbe, (ys, alpha_sb)))))))
               in
-            let (ys, alpha_sb) =
-              freeze_meval0
-                (fun alpha ->
-                  (rba @ fst (udeval j []
-                               (updateb
-                                 ((ccompare_prod ccompare_string8 ccompare_nat),
-                                   (equal_prod equal_string8 equal_nat))
-                                 (p, m) (replicate (minus_nata j w) alpha) dbe)
-                               rhoa),
-                    ()))
-                (minus_nata jfrza rb0) alpha_sa
+            let (a, (tqa, (rs2, rhob))) =
+              (let tqa = (if equal_enat d Infinity_enat then [] else tq @ ts) in
+               let a = frz_adv d w jfrza j tqa in
+               let (rs2, rhob) =
+                 udeval j []
+                   (updateb
+                     ((ccompare_prod ccompare_string8 ccompare_nat),
+                       (equal_prod equal_string8 equal_nat))
+                     (p, m) (replicate a edl_bot) dbe)
+                   rhoa
+                 in
+                (a, (tqa, (rs2, rhob))))
               in
-            let jphia = plus_nata jphi (size_lista xs) in
-            let jfrzb = plus_nata jfrza (size_lista ys) in
-            let tqa = (if equal_enat d Infinity_enat then [] else tq @ ts) in
-            let a = frz_adv d w jfrzb j tqa in
-            let (rs2, rhob) =
-              udeval j []
-                (updateb
-                  ((ccompare_prod ccompare_string8 ccompare_nat),
-                    (equal_prod equal_string8 equal_nat))
-                  (p, m) (replicate a edl_bot) dbe)
-                rhoa
-              in
-            let rbb = rba @ rs2 in
-            let pRb = plus_nata pRa (size_lista rs2) in
              (zs0_out @ ys,
-               UDFrz (p, m, phia, psia, jfrzb, jpsi0a, jphia, alpha_sb, rhob,
-                       plus_nata w a, pRb, drop a tqa,
-                       drop (minus_nata (ed_min_nat jfrzb pRb) rb0) rbb, d)))
+               UDFrz (p, m, phia, psia, jfrza, plus_nata jpsi0 (size_lista zs0),
+                       plus_nata jphi (size_lista xs), alpha_sa, rhob,
+                       plus_nata w a,
+                       plus_nata (plus_nata pR (size_lista rs))
+                         (size_lista rs2),
+                       drop a tqa,
+                       drop (minus_nata
+                              (ed_min_nat jfrza
+                                (plus_nata (plus_nata pR (size_lista rs))
+                                  (size_lista rs2)))
+                              rb0)
+                         (rba @ rs2),
+                       d, po)))
     | j, ts, db, UDLetPast (p, m, phi, psi, i, buf) ->
         (let (xs, (ia, (bufa, phia))) =
            letpast_meval0
@@ -12621,6 +12642,11 @@ let rec safe_letpast
             (safe_letpast p phi))
           (if equal_proda equal_string8 equal_nat p (e, nfv phi) then Unused
             else safe_letpast p psi)
+    | p, Frz (e, phi, psi) ->
+        sup_rec_safety
+          (frz_dep (safe_letpast (e, nfv phi) psi) (safe_letpast p phi))
+          (if equal_proda equal_string8 equal_nat p (e, nfv phi) then Unused
+            else safe_letpast p psi)
     | p, LetPast (e, phi, psi) ->
         (if equal_proda equal_string8 equal_nat p (e, nfv phi) then Unused
           else sup_rec_safety
@@ -12642,6 +12668,11 @@ let rec safe_letpast
           (times_rec_safety (if memL i zero_nata then NonFutuRec else PastRec)
             (safe_letpast p psi))
     | p, Until (phi, i, psi) ->
+        times_rec_safety AnyRec
+          (sup_rec_safety (safe_letpast p phi) (safe_letpast p psi))
+    | p, Trigger (phi, i, psi) ->
+        sup_rec_safety (safe_letpast p phi) (safe_letpast p psi)
+    | p, Release (phi, i, psi) ->
         times_rec_safety AnyRec
           (sup_rec_safety (safe_letpast p phi) (safe_letpast p psi))
     | p, MatchP (i, r) ->
@@ -12902,7 +12933,8 @@ let rec uvdfail_nodes
     | UDAndAssign (p, t, phi) -> uvdfail_nodes phi
     | UDLet (p, m, phi, psi) ->
         plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
-    | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d)
+    | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
+              po)
         -> plus_nata (plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi))
              (uvdfail_nodes rho)
     | UDLetPast (p, m, phi, psi, i, buf) ->
@@ -14227,7 +14259,7 @@ let rec emfcols
                        (set (ceq_trm, ccompare_trm, set_impl_trm) tms)))))
     | n, MLet (p, m, phi, psi) -> emfcols n psi
     | n, MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb,
-                d)
+                d, po)
         -> emfcols n psi
     | n, MLetPast (p, m, phi, psi, i, buf) -> emfcols n psi
     | n, MAnd (a1, phi, pos, a2, psi, buf) ->
@@ -14362,7 +14394,8 @@ let rec uset_q
     | c, UDTP (v, va) -> None
     | c, UDTS v -> None
     | c, UDLet (v, va, vb, vc) -> None
-    | c, UDFrz (v, va, vb, vc, vd, ve, vf, vg, vh, vi, vj, vk, vl, vm) -> None
+    | c, UDFrz (v, va, vb, vc, vd, ve, vf, vg, vh, vi, vj, vk, vl, vm, vn) ->
+        None
     | c, UDLetPast (v, va, vb, vc, vd, ve) -> None
     | c, UDTrigger (v, va, vb, vc, vd, ve, vf) -> None
     | c, UDAndTrigger (v, va, vb, vc, vd, ve, vf, vg, vh) -> None
@@ -14663,11 +14696,12 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
     | n, cs, MLet (p, m, phi, psi) ->
         UDLet (p, m, udof m (upt zero_nata m) phi, udof n cs psi)
     | n, cs,
-        MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d)
+        MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
+               po)
         -> (if null alpha_s && null rb
              then UDFrz (p, m, udof m (upt zero_nata m) phi, udof n cs psi,
                           jfrz, jpsi0, jphi, [], udof n cs rho, w, pR, tq, [],
-                          d)
+                          d, po)
              else UDFail)
     | n, cs, MLetPast (p, m, phi, psi, i, buf) ->
         (if is_none buf
@@ -15142,7 +15176,8 @@ let rec meinit0
     | n, Frz (p, phi, psi) ->
         MFrz (p, nfv phi, meinit0 (nfv phi) phi, meinit0 n psi, zero_nata,
                zero_nata, zero_nata, [], meinit0 n psi, zero_nata, zero_nata,
-               [], [], past_reach psi)
+               [], [], past_reach psi,
+               less_eq_rec_safety (safe_letpast (p, nfv phi) psi) NonFutuRec)
     | n, LetPast (p, phi, psi) ->
         MLetPast
           (p, nfv phi, meinit0 (nfv phi) phi, meinit0 n psi, zero_nata, None)

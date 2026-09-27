@@ -9200,3 +9200,65 @@ little on these shapes.
 The outputs are identical to the previous binary on the 652 `-verified` commands of the test
 corpus, the verdicts agree with MonPoly on the `frz` and `frz_rw` families, and the cram tests
 pass.  The exported code differs from the previous export in `frz_adv` alone.
+
+## 21.50 The copies stop at the last pending verdict
+
+When the frozen formula lags (`frz-neglag`, `frz-sincelag`), each of the copies that
+decides the pending time points replays the window up to the current time point `j`.  But the
+copy for the frozen tuples of time point k only has to produce the verdicts from k up to the
+last time point whose frozen tuples have arrived (`k + length xs` in `frz_cut`).  If the frozen
+predicate is used only in the past or at the current time point, the later time points
+cannot change these verdicts.  That is exactly LetPast's notion `safe_letpast (q, nfv φ) ψ ≤
+NonFutuRec`.  `MFrz` now carries this flag (`po`, computed once by `minit0`), and the copies
+are fed `frz_cut po w jphi (length xs) j` time points instead of `j - w`.
+
+The proof reuses `safe_letpast_progress_upd'` (Progress.thy): with the flag, the body's
+progress with q defined up to the cut is at least that with q defined up to `j`, as far as
+the pending verdicts are concerned.  The step lemma of `Correctness.thy` changes where the
+copies are built (thirty lines); the dense layers follow by simulation.
+
+| formula (tp500) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frz-neglag` | 0.40 | 0.31 | 0.16 |
+| `frz-sincelag` | 0.39 | 0.26 | 0.16 |
+| `frz-neglag30` (lag 30) | 0.52 | 0.29 | 0.10 |
+| `frz-sincelag30` (lag 30) | 2.90 | 0.52 | 0.16 |
+
+The two lag-30 formulas are new in the `frz` group.  The rest of `frz` and `frz_rw` is
+unchanged within noise, and the verdicts agree with MonPoly on both groups.  On the 652
+`-verified` commands of the test corpus, the outputs are identical to the previous binary.
+The cram tests pass.
+
+The flag exposed a gap in the code setup: the code equations `safe_letpast_code` in
+`Monitor_Impl.thy` had no cases for `Frz`, `Trigger` and `Release`.  So far the function was
+applied only to LetPast bodies.  Applied to a freeze whose body holds a nested freeze
+(`frz42`) or a trigger (the rewriter's freeze into a trigger), the exported code failed with a
+match failure.  The three equations are now there.
+
+### The FRZ equations, laid out for the function package
+
+The function package took about three minutes on each of `meval`, `meeval`, `deval`,
+`edeval` and `udeval`, and nearly all of it went into their FRZ equation.
+`pat_completeness` and the compatibility proof take a few seconds; the rest is the
+package's own work after the proof.  In a scratch copy of `udeval` with the FRZ equation
+alone (plus a catch-all), the definition took 186 s.  Bisecting the equation showed that the
+cost comes from the chain of `let`s after a recursive call's binding.  The same chain before
+the call costs almost nothing (9 s with the copy call last, over 180 s with seven more
+`let`s after it).  The package's congruence steps (`split_cong`, `let_cong`) unify over that
+whole remaining chain.
+
+Each stage now computes the values it needs inside the bound term of its call and returns
+them as a tuple.  Only the pair `let`s of the φ, ψ and ρ calls, the copies' stage and the
+advance's stage remain at the top level:
+
+    (zs0_out, jfrz, rb0, rb, dbe, ys, αs') =
+      (let zs0_out = ...; ...; (ys, αs') = freeze_meval0 (...) (jfrz - rb0) αs
+       in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, αs'));
+    (a, tq, rs2, ρ) = (let tq = ...; a = frz_adv ...; (rs2, ρ) = ... in (a, tq, rs2, ρ))
+
+The computation is the same.  The scratch definition now takes 9 s instead of 186 s.
+`Monitor.thy`'s whole `meval` block, with its termination proof, checks in 19 s, and the
+block of each dense layer in 20–30 s.  `MFODL_Monitor_Dense` builds in 11 minutes.
+Correctness, `DsFrz` and Dense_Let go through unchanged.  The termination cases and the three
+`Rep_…` simulations only needed their premise lists adjusted; the simulations also needed a
+lemma that evaluates the copies' stage to its tuple.
