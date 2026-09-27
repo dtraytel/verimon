@@ -1821,8 +1821,8 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          rb = rb @ rs;
          pR = pR + length rs;
          dbe = Mapping.map_values (\<lambda>_ _. []) db;
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n []
-           (Mapping.update (p, m) (replicate (frz_cut po w jphi (length xs) j) \<alpha>) dbe) \<rho>), ()))
+         c = frz_cut po w jphi (length xs) j;
+         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ()))
            (jfrz - rb0) \<alpha>s;
          jphi = jphi + length xs;
          jfrz = jfrz + length ys;
