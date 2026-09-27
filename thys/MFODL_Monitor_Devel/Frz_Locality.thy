@@ -422,4 +422,31 @@ next
     by auto
 qed auto
 
+
+subsection \<open>Formulas without future operators\<close>
+
+text \<open>A formula without future operators, nested freezes, recursive lets and regular expressions.
+  Its verdict at a time point i does not wait for input beyond i: once all of its predicates are
+  known up to i, so is its verdict (@{text progress_past_only} in @{text Correctness}).  The
+  replay of the freeze's body stops at the last pending verdict then.\<close>
+
+fun past_only :: "'t Formula.formula \<Rightarrow> bool" where
+  "past_only (Formula.Pred e ts) = True"
+| "past_only (Formula.Let p \<phi> \<psi>) = (past_only \<phi> \<and> past_only \<psi>)"
+| "past_only (Formula.Eq t1 t2) = True"
+| "past_only (Formula.Less t1 t2) = True"
+| "past_only (Formula.LessEq t1 t2) = True"
+| "past_only (Formula.Neg \<phi>) = past_only \<phi>"
+| "past_only (Formula.Or \<phi> \<psi>) = (past_only \<phi> \<and> past_only \<psi>)"
+| "past_only (Formula.And \<phi> \<psi>) = (past_only \<phi> \<and> past_only \<psi>)"
+| "past_only (Formula.Ands l) = list_all past_only l"
+| "past_only (Formula.Exists t \<phi>) = past_only \<phi>"
+| "past_only (Formula.Agg y \<omega> tys f \<phi>) = past_only \<phi>"
+| "past_only (Formula.Prev I \<phi>) = past_only \<phi>"
+| "past_only (Formula.Since \<phi> I \<psi>) = (past_only \<phi> \<and> past_only \<psi>)"
+| "past_only (Formula.Trigger \<phi> I \<psi>) = (past_only \<phi> \<and> past_only \<psi>)"
+| "past_only (Formula.TP t) = True"
+| "past_only (Formula.TS t) = True"
+| "past_only _ = False"
+
 end
