@@ -91,7 +91,10 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> wf_frz_win \<sigma> j P V n R p m \<phi>' \<psi>' jfrz w pR tq rb d
     \<Longrightarrow> {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow> safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>'
     \<Longrightarrow> (po \<longrightarrow> safe_letpast (p, m) \<psi>' \<le> NonFutuRec)
-    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po) (Formula.Frz p \<phi>' \<psi>')"
+    \<Longrightarrow> (\<forall>g. lv = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>' < enat (\<tau> \<sigma> jfrz)) \<and>
+      jfrz = progress \<sigma> (P((p, m) \<mapsto> j)) \<psi>' j + g \<and>
+      wf_mformula \<sigma> j (P((p, m) \<mapsto> j)) (V((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma> V v jfrz \<phi>')) n R \<rho>L \<psi>'))
+    \<Longrightarrow> wf_mformula \<sigma> j P V n R (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) (Formula.Frz p \<phi>' \<psi>')"
   | LetPast: "wf_mformula \<sigma> j (P((p, m)\<mapsto>i)) 
       (V((p, m) \<mapsto> letpast_sat (\<lambda>X u k. Formula.sat \<sigma> (V((p, m) \<mapsto> X)) u k \<phi>'))) m UNIV \<phi> \<phi>'
     \<Longrightarrow> wf_mformula \<sigma> j (P((p, m) \<mapsto> letpast_progress \<sigma> P (p, m) \<phi>' j)) 
@@ -702,7 +705,8 @@ next
     using wf_\<psi>0 by blast
   have minit0_eq: "minit0 n (Formula.Frz p \<phi> \<psi>) =
       MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
-        (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)"
+        (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
+        None (minit0 n \<psi>)"
     by simp
   show ?case
     unfolding minit0_eq
@@ -716,7 +720,7 @@ next
       using wf_\<psi>0 by blast
     show "wf_frz_win \<sigma> 0 P V n R p (Formula.nfv \<phi>) \<phi> \<psi> 0 0 0 [] [] (past_reach \<psi>)"
       using progress_0_gen[OF pm, of \<sigma> \<psi>] by (simp add: wf_frz_win_def)
-  qed simp
+  qed simp_all
 next
   case (LetPast p \<phi> \<psi>)
   then show ?case
@@ -1580,6 +1584,75 @@ next
   qed
 qed
 
+lemma freeze_meval0_drop: "freeze_meval0 eval k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow> \<alpha>s' = drop (length ys) \<alpha>s"
+  by (induction eval k \<alpha>s arbitrary: ys \<alpha>s' rule: freeze_meval0.induct)
+    (auto split: prod.splits list.splits)
+
+text \<open>Resuming the live copy: the step computes the verdicts of the fresh copies, except for the
+  first one, which is read off the live copy, as long as the live copy has its verdict exactly when
+  the fresh copy of the first frozen table would have it.\<close>
+
+lemma frz_live_step_spec:
+  assumes st: "frz_live_step eval k \<alpha>s lr = (ys, \<alpha>s', lv)"
+    and live: "case lr of None \<Rightarrow> True | Some (g, us, st) \<Rightarrow>
+      \<alpha>s \<noteq> [] \<and> (length us \<le> g \<longleftrightarrow> length (fst (eval (hd \<alpha>s))) \<le> k)"
+  shows "\<exists>ys0. freeze_meval0 eval k \<alpha>s = (ys0, \<alpha>s') \<and> length ys0 = length ys \<and>
+      (\<forall>i<length ys. ys ! i = (case lr of Some (g, us, _) \<Rightarrow> if i = 0 then us ! g else ys0 ! i
+        | None \<Rightarrow> ys0 ! i))" (is ?A)
+    and "(\<exists>g us st. lr = Some (g, us, st) \<and> ys = [] \<and> length us \<le> g \<and> lv = Some (g - length us, st)) \<or>
+      lv = (case \<alpha>s' of [] \<Rightarrow> None | \<alpha> # _ \<Rightarrow> (case eval \<alpha> of (us, st) \<Rightarrow> Some (k + length ys - length us, st)))"
+      (is ?B)
+    and "\<And>g us st. lr = Some (g, us, st) \<Longrightarrow> ys \<noteq> [] \<Longrightarrow> g < length us"
+proof -
+  have "?A \<and> ?B \<and> (\<forall>g us st. lr = Some (g, us, st) \<longrightarrow> ys \<noteq> [] \<longrightarrow> g < length us)"
+  proof (cases lr)
+    case None
+    with st have "freeze_meval1 eval k \<alpha>s = (ys, \<alpha>s', lv)"
+      by (simp add: frz_live_step_def)
+    with None show ?thesis
+      using freeze_meval1_freeze_meval0[of eval k \<alpha>s] freeze_meval1_live[of eval k \<alpha>s ys \<alpha>s' lv]
+      by (auto intro!: exI[of _ ys])
+  next
+    case (Some x)
+    then obtain g us st where lr: "lr = Some (g, us, st)"
+      by (cases x) auto
+    from live lr obtain \<alpha> \<alpha>t where \<alpha>s: "\<alpha>s = \<alpha> # \<alpha>t"
+      and iff: "length us \<le> g \<longleftrightarrow> length (fst (eval \<alpha>)) \<le> k"
+      by (cases \<alpha>s) auto
+    obtain us0 st0 where ev: "eval \<alpha> = (us0, st0)"
+      by (cases "eval \<alpha>")
+    show ?thesis
+    proof (cases "length us \<le> g")
+      case True
+      with st lr \<alpha>s ev iff show ?thesis
+        by (auto simp: frz_live_step_def)
+    next
+      case False
+      then obtain y ut where dg: "drop g us = y # ut"
+        by (cases "drop g us") auto
+      obtain y0 ut0 where dk: "drop k us0 = y0 # ut0"
+        using False iff ev by (cases "drop k us0") auto
+      obtain zs \<alpha>s'' lv' where rec: "freeze_meval1 eval (Suc k) \<alpha>t = (zs, \<alpha>s'', lv')"
+        by (cases "freeze_meval1 eval (Suc k) \<alpha>t")
+      from st lr \<alpha>s dg rec have ys: "ys = y # zs" and \<alpha>s': "\<alpha>s' = \<alpha>s''" and lv: "lv = lv'"
+        by (auto simp: frz_live_step_def)
+      have y: "y = us ! g"
+        using dg False by (metis hd_drop_conv_nth list.sel(1) not_le)
+      have f0: "freeze_meval0 eval (Suc k) \<alpha>t = (zs, \<alpha>s'')"
+        using freeze_meval1_freeze_meval0[of eval "Suc k" \<alpha>t] rec by simp
+      have "freeze_meval0 eval k \<alpha>s = (y0 # zs, \<alpha>s'')"
+        using \<alpha>s ev dk f0 by simp
+      moreover have "lv = (case \<alpha>s' of [] \<Rightarrow> None
+        | \<alpha> # _ \<Rightarrow> (case eval \<alpha> of (us, st) \<Rightarrow> Some (k + length ys - length us, st)))"
+        using freeze_meval1_live[OF rec] unfolding lv \<alpha>s' ys by (auto split: list.splits prod.splits)
+      ultimately show ?thesis
+        using False lr ys y \<alpha>s' by (auto simp: nth_Cons split: nat.splits)
+    qed
+  qed
+  then show ?A ?B "\<And>g us st. lr = Some (g, us, st) \<Longrightarrow> ys \<noteq> [] \<Longrightarrow> g < length us"
+    by blast+
+qed
+
 lemma (in maux) frz_step_post:
   assumes state: "wf_frz_state \<sigma> j P V p m \<phi> \<psi> jphi0 alphas"
     and phi_res: "list_all2 (\<lambda>i. qtable m (FV \<phi>) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>))
@@ -2012,7 +2085,7 @@ next
   show ?case unfolding Let
     by (auto simp: fun_upd_def intro!: wf_mformula.Let)
 next
-  case (MFrz p m \<phi> \<psi> jfrz0 jpsi0_val jphi0 \<alpha>s \<rho> w pR tq rb d po)
+  case (MFrz p m \<phi> \<psi> jfrz0 jpsi0_val jphi0 \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
   let ?pn = "(p, m)"
   let ?db0 = "Mapping.update ?pn [] db"
   let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
@@ -2028,7 +2101,10 @@ next
     win: "wf_frz_win \<sigma> j P V n R p m \<phi>1 \<psi>1 jfrz0 w pR tq rb d" and
     fv: "m = Formula.nfv \<phi>1" "{0..<m} \<subseteq> fv \<phi>1" and
     safe1: "safe_formula \<phi>1" and safe2: "safe_formula \<psi>1" and
-    po: "po \<longrightarrow> safe_letpast (p, m) \<psi>1 \<le> NonFutuRec"
+    po: "po \<longrightarrow> safe_letpast (p, m) \<psi>1 \<le> NonFutuRec" and
+    live: "\<And>g. lv = Some g \<Longrightarrow> \<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)) \<and>
+      jfrz0 = progress \<sigma> (P(?pn \<mapsto> j)) \<psi>1 j + g \<and>
+      wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1)) n R \<rho>L \<psi>1)"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
   from win have w_le: "w \<le> j" and d_eq: "d = past_reach \<psi>1"
@@ -2264,9 +2340,14 @@ next
       using jfrz_jphi jpsi0_le jpsi0'_pR1 pR1_jpsic unfolding jfrzM_eq by simp
   qed
   \<comment> \<open>the replays: the window from @{term w} on, with the frozen table\<close>
-  define cp where "cp \<alpha> = (rb1 @ fst (meval (j + \<delta>) n []
-      (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1), ())" for \<alpha>
-  have cp_res: "list_all2 (\<lambda>k'. qtable n (FV \<psi>1) (mem_restr R)
+  define cp where "cp \<alpha> = (case meval (j + \<delta>) n []
+      (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1 of (us, \<rho>') \<Rightarrow> (rb1 @ us, \<rho>'))" for \<alpha>
+  have cp_eq: "cp \<alpha> = (rb1 @ fst (meval (j + \<delta>) n [] (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1),
+      snd (meval (j + \<delta>) n [] (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1))" for \<alpha>
+    by (simp add: cp_def split: prod.splits)
+  have cp_full: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> w + c)) (V(?pn \<mapsto> \<lambda>v k'. w \<le> k' \<and> \<langle>\<sigma>, V, v, k\<rangle> \<Turnstile> \<phi>1)) n R
+      (snd (meval (j + \<delta>) n [] (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1)) \<psi>1 \<and>
+    list_all2 (\<lambda>k'. qtable n (FV \<psi>1) (mem_restr R)
       (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k'. w \<le> k' \<and> \<langle>\<sigma>, V, v, k\<rangle> \<Turnstile> \<phi>1), v, k'\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [pR1..<jpsic]
       (fst (meval (j + \<delta>) n [] (Mapping.update ?pn (replicate c \<alpha>) ?dbe) \<rho>1))"
     if \<alpha>: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, k\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>" for \<alpha> k
@@ -2285,17 +2366,81 @@ next
       using MFrz(3)[OF size_\<rho>1 conjunct1[OF IH\<rho>[OF order_refl, of k]] envs wty2] ev
       by (simp add: pR1_def jpsic_def fun_upd_def)
   qed
+  note cp_res = conjunct2[OF cp_full]
   define L where "L = jpsic - rb0"
   define k0 where "k0 = jfrzM - rb0"
-  obtain ys \<alpha>s2 where ef: "freeze_meval0 cp k0 \<alpha>s1 = (ys, \<alpha>s2)"
-    by (cases "freeze_meval0 cp k0 \<alpha>s1")
   have replay: "\<exists>us \<rho>'. cp \<alpha> = (us, \<rho>') \<and> length us = L" if "\<alpha> \<in> set \<alpha>s1" for \<alpha>
   proof -
     from \<alpha>s1_qtab[OF that] obtain k where
       "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, k\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>" ..
     from cp_res[OF this] show ?thesis
-      using len_rb1 rb0_le pR1_jpsic by (auto simp: cp_def L_def dest!: list_all2_lengthD)
+      using len_rb1 rb0_le pR1_jpsic by (auto simp: cp_eq L_def dest!: list_all2_lengthD)
   qed
+  \<comment> \<open>the live copy: the copy of the first frozen table, fed the new time points\<close>
+  define lr where "lr = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+    if zs0_out = [] \<and> \<alpha>s1 \<noteq> [] then Some (g, meval (j + \<delta>) n ?ts
+      (Mapping.update ?pn (replicate (length ?ts) (hd \<alpha>s1)) db) \<rho>L) else None)"
+  have jpsij_le: "jpsij \<le> jpsij'"
+    unfolding jpsij_def jpsij'_def using pm pm' rm
+    by (intro progress_mono_gen[OF le_add1]) (auto intro!: rel_mapping_map_upd)
+  have nopo_jpsic: "jpsic = jpsij'" if "\<not> po"
+    using w_le that by (simp add: c_def frz_cut_def jpsic_def jpsij'_def)
+  have lr_facts: "\<exists>wL. \<not> po \<and> (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)) \<and>
+      jfrz0 = jpsij + g \<and> zs0_out = [] \<and> \<alpha>s1 \<noteq> [] \<and>
+      wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1)) n R st \<psi>1 \<and>
+      list_all2 (\<lambda>k. qtable n (FV \<psi>1) (mem_restr R)
+        (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1), v, k\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [jpsij..<jpsij'] us"
+    if "lr = Some (g, us, st)" for g us st
+  proof -
+    from that have lv: "lv = Some g" and cond: "zs0_out = [] \<and> \<alpha>s1 \<noteq> []" and
+      ev: "meval (j + \<delta>) n ?ts (Mapping.update ?pn (replicate (length ?ts) (hd \<alpha>s1)) db) \<rho>L = (us, st)"
+      by (auto simp: lr_def split: option.splits if_splits)
+    from live[OF lv] obtain wL where npo: "\<not> po"
+      and winL: "\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)"
+      and gap: "jfrz0 = jpsij + g"
+      and wfL: "wf_mformula \<sigma> j (P(?pn \<mapsto> j)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1)) n R \<rho>L \<psi>1"
+      by (auto simp: jpsij_def)
+    have wL_le: "wL \<le> jfrz0"
+      by (rule frz_win_le[OF winL])
+    have jfrz0_j: "jfrz0 \<le> j"
+      unfolding jfrz0_eq by (rule progress_le_gen[OF pm])
+    have hd_q: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile>\<^sub>M \<phi>1) (hd \<alpha>s1)"
+      using qtab_\<alpha>s1[of 0] cond by (simp add: hd_conv_nth jfrzM_def)
+    have envs: "wf_envs (S(?pn \<mapsto> tabulate E' 0 (Formula.nfv \<phi>1))) \<sigma> j \<delta> (P(?pn \<mapsto> j)) (P'(?pn \<mapsto> j + \<delta>))
+      (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1))
+      (Mapping.update ?pn (replicate (length ?ts) (hd \<alpha>s1)) db)"
+    proof (rule wf_envs_update_frz[OF MFrz.prems(2) fv safe1 wty1])
+      show "list_all2 (\<lambda>k Y. Y = map Some ` {v. length v = m \<and> wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1})
+        [j..<j + \<delta>] (replicate (length ?ts) (hd \<alpha>s1))"
+        using qtable_frz_alpha[OF hd_q fv(2)] wL_le jfrz0_j by (auto simp: list_all2_conv_all_nth)
+    qed auto
+    show ?thesis
+      using MFrz(4)[OF wfL envs wty2] ev npo winL gap cond
+      by (auto simp: jpsij_def jpsij'_def fun_upd_def)
+  qed
+  have lr_iff: "case lr of None \<Rightarrow> True | Some (g, us, st) \<Rightarrow>
+    \<alpha>s1 \<noteq> [] \<and> (length us \<le> g \<longleftrightarrow> length (fst (cp (hd \<alpha>s1))) \<le> k0)"
+  proof (cases lr)
+    case (Some x)
+    then obtain g us st where lr: "lr = Some (g, us, st)"
+      by (cases x) auto
+    from lr_facts[OF lr] have npo: "\<not> po" and gap: "jfrz0 = jpsij + g"
+      and cond: "zs0_out = [] \<and> \<alpha>s1 \<noteq> []" and len_us: "length us = jpsij' - jpsij"
+      by (auto dest: list_all2_lengthD)
+    have "length (fst (cp (hd \<alpha>s1))) = L"
+      using replay[OF hd_in_set[OF conjunct2[OF cond]]] by auto
+    then show ?thesis
+      using cond gap len_us jpsij_le nopo_jpsic[OF npo] rb0_le pR1_jpsic unfolding lr
+      by (auto simp: L_def k0_def jfrzM_def)
+  qed simp
+  obtain ysL \<alpha>s2 lv1 where els: "frz_live_step cp k0 \<alpha>s1 lr = (ysL, \<alpha>s2, lv1)"
+    by (metis prod_cases3)
+  obtain ys where ef: "freeze_meval0 cp k0 \<alpha>s1 = (ys, \<alpha>s2)" and len_ysL: "length ys = length ysL"
+    and nth_ysL: "\<forall>i<length ysL. ysL ! i = (case lr of Some (g, us, _) \<Rightarrow> if i = 0 then us ! g else ys ! i
+      | None \<Rightarrow> ys ! i)"
+    using frz_live_step_spec(1)[OF els lr_iff] by blast
+  note lv1_cases = frz_live_step_spec(2)[OF els lr_iff]
+  note lr_len = frz_live_step_spec(3)[OF els lr_iff]
   have diag: "length ys = min (length \<alpha>s1) (L - k0) \<and>
       (\<forall>i < length ys. ys ! i = fst (cp (\<alpha>s1 ! i)) ! (k0 + i))"
     by (rule freeze_meval0_diagonal[OF ef replay])
@@ -2332,7 +2477,7 @@ next
       (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k'. w \<le> k' \<and> \<langle>\<sigma>, V, v, ?k\<rangle> \<Turnstile> \<phi>1), v, k'\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [pR1..<jpsic] ?us"
       by (rule cp_res[OF qtab_\<alpha>s1[OF i\<alpha>]])
     have ys_i: "ys ! i = (rb1 @ ?us) ! (k0 + i)"
-      using diag i by (simp add: cp_def)
+      using diag i by (simp add: cp_eq)
     show "good ([jfrzM..<jfrz1] ! i) (ys ! i)"
     proof (cases "k0 + i < length rb1")
       case True
@@ -2354,6 +2499,46 @@ next
           (simp_all add: fv(1) frz_win_mono[OF win_old[unfolded d_eq] jfrz0_k])
       then show ?thesis
         using False i unfolding ys_i jfrz1_def by (simp add: nth_append)
+    qed
+  qed
+  have ysL_rows: "list_all2 good [jfrzM..<jfrz1] ysL"
+  proof (unfold list_all2_conv_all_nth, intro conjI allI impI)
+    show "length [jfrzM..<jfrz1] = length ysL"
+      using len_ysL unfolding jfrz1_def by simp
+  next
+    fix i
+    assume "i < length [jfrzM..<jfrz1]"
+    then have i: "i < length ysL" and i': "i < length ys"
+      using len_ysL unfolding jfrz1_def by simp_all
+    show "good ([jfrzM..<jfrz1] ! i) (ysL ! i)"
+    proof (cases "\<exists>g us st. lr = Some (g, us, st) \<and> i = 0")
+      case False
+      then have "ysL ! i = ys ! i"
+        using nth_ysL i by (auto split: option.splits)
+      then show ?thesis
+        using list_all2_nthD[OF ys_rows, of i] i' unfolding jfrz1_def by simp
+    next
+      case True
+      then obtain g us st where lr: "lr = Some (g, us, st)" and i0: "i = 0"
+        by blast
+      from lr_facts[OF lr] obtain wL where
+        winL: "\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)" and
+        gap: "jfrz0 = jpsij + g" and cond: "zs0_out = [] \<and> \<alpha>s1 \<noteq> []" and
+        us: "list_all2 (\<lambda>k. qtable n (FV \<psi>1) (mem_restr R)
+          (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1), v, k\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [jpsij..<jpsij'] us"
+        by blast
+      have g: "g < length us"
+        using lr_len[OF lr] i by (cases ysL) auto
+      have idx: "g < length [jpsij..<jpsij']" and pos: "[jpsij..<jpsij'] ! g = jfrz0"
+        using g us gap by (auto dest: list_all2_lengthD)
+      have "qtable n (FV \<psi>1) (mem_restr R)
+        (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1), v, jfrz0\<rangle> \<Turnstile>\<^sub>M \<psi>1) (us ! g)"
+        using list_all2_nthD[OF us idx] unfolding pos .
+      then have "good jfrz0 (us ! g)"
+        unfolding good_def fv_Frz[symmetric]
+        by (intro qtable_Frz_window[of n \<psi>1 _ \<sigma> V p \<phi>1 wL jfrz0]) (simp_all add: fv(1) winL)
+      then show ?thesis
+        using nth_ysL i lr i0 cond len_ysL unfolding jfrz1_def jfrzM_def by simp
     qed
   qed
   \<comment> \<open>the window moves forward\<close>
@@ -2488,20 +2673,88 @@ next
     using IH\<rho>[OF order_refl, of 0] IH\<rho>2[OF order_refl, of 0] by (auto dest: list_all2_lengthD)
   have pR_code: "pR + length rs + length rs2 = pR2"
     using pR_le pR1_pR2 len_rs len_rs2 by simp
-  have meq: "meval (j + \<delta>) n ?ts db (MFrz p m \<phi> \<psi> jfrz0 jpsi0_val jphi0 \<alpha>s \<rho> w pR tq rb d po) =
-    (zs0_out @ ys, MFrz p m \<phi>_new \<psi>_new jfrz1 jpsi0_val1 jphi1 \<alpha>s2 \<rho>2 (w + a) (pR + length rs + length rs2)
-      (drop a tq1) (drop (min jfrz1 (pR + length rs + length rs2) - rb0) rb2) d po)"
+  \<comment> \<open>the new live copy\<close>
+  let ?lvp = "if po then None else lv1"
+  have live_new: "\<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz1)) \<and>
+      jfrz1 = progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>) + g' \<and>
+      wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz1\<rangle> \<Turnstile> \<phi>1)) n R
+        (frz_keep_st ?lvp \<rho>L) \<psi>1)"
+    if "frz_keep_lv ?lvp \<rho>L = Some g'" for g'
+  proof -
+    from that obtain st where npo: "\<not> po" and lv1: "lv1 = Some (g', st)"
+      and st: "frz_keep_st ?lvp \<rho>L = st"
+      by (auto simp: frz_keep_lv_def frz_keep_st_def split: if_splits option.splits)
+    from lv1_cases[unfolded lv1] show ?thesis
+    proof (elim disjE exE conjE)
+      fix g us st'
+      assume lr: "lr = Some (g, us, st')" and ysL: "ysL = []" and len: "length us \<le> g"
+        and eq: "Some (g', st) = Some (g - length us, st')"
+      from lr_facts[OF lr] obtain wL where
+        winL: "\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz0)" and
+        gap: "jfrz0 = jpsij + g" and cond: "zs0_out = [] \<and> \<alpha>s1 \<noteq> []" and
+        wfL: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1)) n R st' \<psi>1"
+        and us: "list_all2 (\<lambda>k. qtable n (FV \<psi>1) (mem_restr R)
+          (\<lambda>v. \<langle>\<sigma>, V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz0\<rangle> \<Turnstile> \<phi>1), v, k\<rangle> \<Turnstile>\<^sub>M \<psi>1)) [jpsij..<jpsij'] us"
+        by blast
+      have len_us: "length us = jpsij' - jpsij"
+        using us by (auto dest: list_all2_lengthD)
+      have j1: "jfrz1 = jfrz0"
+        using ysL len_ysL cond unfolding jfrz1_def jfrzM_def by simp
+      show ?thesis
+        using npo winL gap wfL len_us len eq st jpsij_le unfolding j1
+        by (intro conjI exI[of _ wL]) (auto simp: jpsij'_def)
+    next
+      assume "Some (g', st) = (case \<alpha>s2 of [] \<Rightarrow> None
+        | \<alpha> # _ \<Rightarrow> (case cp \<alpha> of (us, st) \<Rightarrow> Some (k0 + length ysL - length us, st)))"
+      then obtain \<alpha> \<alpha>t where \<alpha>s2: "\<alpha>s2 = \<alpha> # \<alpha>t" and g': "g' = k0 + length ysL - length (fst (cp \<alpha>))"
+        and st': "st = snd (cp \<alpha>)"
+        by (cases \<alpha>s2) (auto split: prod.splits)
+      have dr: "drop (length ys) \<alpha>s1 = \<alpha> # \<alpha>t"
+        using freeze_meval0_drop[OF ef] \<alpha>s2 by simp
+      then have i: "length ys < length \<alpha>s1"
+        by (metis drop_all list.distinct(1) not_le)
+      have \<alpha>: "\<alpha> = \<alpha>s1 ! length ys"
+        using dr i by (metis hd_drop_conv_nth list.sel(1))
+      have q\<alpha>: "qtable m (FV \<phi>1) (mem_restr UNIV) (\<lambda>v. \<langle>\<sigma>, V, v, jfrz1\<rangle> \<Turnstile>\<^sub>M \<phi>1) \<alpha>"
+        using qtab_\<alpha>s1[OF i] unfolding \<alpha> jfrz1_def .
+      have wc: "w + c = j + \<delta>"
+        using npo w_le by (simp add: c_def frz_cut_def)
+      have wf_st: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>v k'. w \<le> k' \<and> \<langle>\<sigma>, V, v, jfrz1\<rangle> \<Turnstile> \<phi>1))
+        n R st \<psi>1"
+        using conjunct1[OF cp_full[OF q\<alpha>]] unfolding st' cp_eq wc by simp
+      have len_cp: "length (fst (cp \<alpha>)) = L"
+        using replay[of \<alpha>] \<alpha> i by auto
+      have j1: "jfrz1 = jpsij'"
+        using i len_ys len_\<alpha>s1 jfrzM_jpsic jpsic_le unfolding jfrz1_def by linarith
+      have g'0: "g' = 0"
+        using g' len_cp len_ysL j1 nopo_jpsic[OF npo] rb0_le jfrz_le
+        unfolding L_def k0_def jfrz1_def jfrzM_def by linarith
+      show ?thesis
+        using frz_win_mono[OF win_old[unfolded d_eq], of jfrz1] jfrz_le jfrz1_eq wf_st st j1 g'0 npo
+        by (intro conjI exI[of _ w]) (auto simp: jpsij'_def)
+    qed
+  qed
+  have meq: "meval (j + \<delta>) n ?ts db (MFrz p m \<phi> \<psi> jfrz0 jpsi0_val jphi0 \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+    (zs0_out @ ysL, MFrz p m \<phi>_new \<psi>_new jfrz1 jpsi0_val1 jphi1 \<alpha>s2 \<rho>2 (w + a) (pR + length rs + length rs2)
+      (drop a tq1) (drop (min jfrz1 (pR + length rs + length rs2) - rb0) rb2) d po
+      (frz_keep_lv ?lvp \<rho>L) (frz_keep_st ?lvp \<rho>L))"
     by (simp only: meval.simps Let_def e\<phi> e\<psi>0 e\<rho>1 prod.case zs0_out_def[symmetric] jfrzM_def[symmetric]
         \<alpha>s1_def[symmetric] rb0_def[symmetric] rb1_def[symmetric] c_def[symmetric] cp_def[symmetric]
-        k0_def[symmetric] ef
+        k0_def[symmetric] lr_def[symmetric] els len_ysL[symmetric]
         jfrz1_def[symmetric] tq1_def[symmetric] a_def[symmetric] e\<rho>2 rb2_def[symmetric]
         jpsi0_val1_def[symmetric] jphi1_def[symmetric])
   show ?case
     unfolding meq Frz_eq prod.case pR_code
   proof (intro conjI)
     show "wf_mformula \<sigma> (j + \<delta>) P' V n R (MFrz p m \<phi>_new \<psi>_new jfrz1 jpsi0_val1 jphi1 \<alpha>s2 \<rho>2 (w + a) pR2
-      (drop a tq1) (drop (min jfrz1 pR2 - rb0) rb2) d po) (Formula.Frz p \<phi>1 \<psi>1)"
+      (drop a tq1) (drop (min jfrz1 pR2 - rb0) rb2) d po (frz_keep_lv ?lvp \<rho>L) (frz_keep_st ?lvp \<rho>L))
+      (Formula.Frz p \<phi>1 \<psi>1)"
     proof (rule wf_mformula.Frz[OF wf_\<phi>_new])
+      show "\<forall>g. frz_keep_lv ?lvp \<rho>L = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>1 < enat (\<tau> \<sigma> jfrz1)) \<and>
+        jfrz1 = progress \<sigma> (P'(?pn \<mapsto> j + \<delta>)) \<psi>1 (j + \<delta>) + g \<and>
+        wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> j + \<delta>)) (V(?pn \<mapsto> \<lambda>v k. wL \<le> k \<and> \<langle>\<sigma>, V, v, jfrz1\<rangle> \<Turnstile> \<phi>1)) n R
+          (frz_keep_st ?lvp \<rho>L) \<psi>1)"
+        using live_new by blast
       show "\<forall>i. wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> 0)) (V(?pn \<mapsto> \<lambda>w j. \<langle>\<sigma>, V, w, i\<rangle> \<Turnstile> \<phi>1)) n R \<psi>_new \<psi>1"
         using IH\<psi> by blast
       have frz_prog: "progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>) =
@@ -2532,9 +2785,9 @@ next
     qed (use fv safe1 safe2 po in simp_all)
   next
     show "list_all2 (\<lambda>i. qtable n (FV (Formula.Frz p \<phi>1 \<psi>1)) (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M Formula.Frz p \<phi>1 \<psi>1))
-      [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0_out @ ys)"
+      [progress \<sigma> P (Formula.Frz p \<phi>1 \<psi>1) j..<progress \<sigma> P' (Formula.Frz p \<phi>1 \<psi>1) (j + \<delta>)] (zs0_out @ ysL)"
       unfolding jfrz0_eq[symmetric] jfrz'_def[symmetric] jfrz1_eq[symmetric] fv_Frz
-      by (rule list_all2_upt_append[OF zs0_out_rows[unfolded good_def] ys_rows[unfolded good_def]])
+      by (rule list_all2_upt_append[OF zs0_out_rows[unfolded good_def] ysL_rows[unfolded good_def]])
         (simp_all add: jfrzM_def jfrz1_def)
   qed
 next
