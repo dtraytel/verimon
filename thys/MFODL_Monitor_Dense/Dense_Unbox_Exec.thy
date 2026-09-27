@@ -978,10 +978,8 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
   apply pat_completeness
   apply (tactic \<open>fn st => (writeln ("AFTER " ^ string_of_int (Thm.nprems_of st)); all_tac st)\<close>)
   apply safe
-  apply (tactic \<open>fn st => (Options.put_default "profiling" "time"; all_tac st)\<close>)
+  apply (tactic \<open>fn st => (Options.put_default "profiling" ""; all_tac st)\<close>)
   done
-
-ML \<open>Options.put_default "profiling" ""\<close>
 
 lemma psize_snd_udeval:
   "udeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (udeval j ts db \<phi>)) = size \<phi>"
