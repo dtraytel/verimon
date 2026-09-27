@@ -1957,7 +1957,13 @@ lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
   text \<open>The replays of @{const MFrz} and the advance of its window: the replay base keeps its size.
     Left to the automation below, these two cases take long, since the many equations of the
-    body's @{text let}s are tried in both orientations.\<close>
+    body's @{text let}s are tried in both orientations.
+
+    The equation for @{const MFrz} computes the values each stage needs inside the bound term of
+    that stage's recursive call and returns them as a tuple, so that only a few pair @{text let}s
+    follow the calls.  With the values bound one by one at the top level, the definition takes
+    minutes instead of seconds: the function package's congruence steps unify over the whole
+    chain of @{text let}s that follows a call.\<close>
   case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_meval[OF 7(15)] 7(6,7) by (metis snd_conv)
