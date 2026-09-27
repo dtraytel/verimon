@@ -423,6 +423,9 @@ qed
 text \<open>The live copy: the two runs take the same branches, and the states they keep are related
   whenever the copies' states are.\<close>
 
+lemma in_set_tlD: "x \<in> set (tl xs) \<Longrightarrow> x \<in> set xs"
+  by (cases xs) auto
+
 lemma freeze_meval1_rel:
   "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv) \<Longrightarrow> freeze_meval1 dv k \<alpha>s = (dys, d\<alpha>s', dlv) \<Longrightarrow>
    (\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (dv \<alpha>) = map g (fst (ev \<alpha>)) \<and> R (snd (ev \<alpha>)) (snd (dv \<alpha>))) \<Longrightarrow>
@@ -464,8 +467,10 @@ lemma frz_live_step_rel:
 proof (cases lr)
   case None
   then have "dlr = None" using L by (cases dlr) auto
-  with None E D show ?thesis
-    by (auto simp: frz_live_step_def intro: freeze_meval1_rel[OF _ _ AG])
+  with None E D have "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv)" "freeze_meval1 dv k \<alpha>s = (dys, d\<alpha>s', dlv)"
+    by (simp_all add: frz_live_step_def)
+  then show ?thesis
+    by (rule freeze_meval1_rel) (rule AG)
 next
   case (Some x)
   then obtain a us st where lr: "lr = Some (a, us, st)" by (cases x) auto
@@ -516,10 +521,35 @@ lemma freeze_meval1_set:
     (fastforce split: prod.splits list.splits dest: drop_Cons_in_set)+
 
 lemma frz_live_step_set:
-  "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv) \<Longrightarrow>
-   set ys \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>))) \<union> (case lr of None \<Rightarrow> {} | Some (g, us, st) \<Rightarrow> set us)"
-  by (auto simp: frz_live_step_def split: option.splits prod.splits list.splits
-      dest!: freeze_meval1_set dest: in_set_tlD drop_Cons_in_set)
+  assumes E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv)"
+  shows "set ys \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>))) \<union> (case lr of None \<Rightarrow> {} | Some (g, us, st) \<Rightarrow> set us)"
+proof (cases lr)
+  case None
+  with E show ?thesis
+    by (auto simp: frz_live_step_def dest!: freeze_meval1_set)
+next
+  case (Some x)
+  then obtain a us st where lr: "lr = Some (a, us, st)"
+    by (cases x) auto
+  show ?thesis
+  proof (cases "drop a us")
+    case Nil
+    then show ?thesis
+      using E lr by (simp add: frz_live_step_def)
+  next
+    case (Cons y r)
+    obtain ws \<beta>s l where e2: "freeze_meval1 ev (Suc k) (tl \<alpha>s) = (ws, \<beta>s, l)"
+      by (metis prod_cases3)
+    have "set ws \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>)))"
+      using freeze_meval1_set[OF e2] by (auto dest: in_set_tlD)
+    moreover have "y \<in> set us"
+      using Cons by (rule drop_Cons_in_set)
+    moreover have "ys = y # ws"
+      using E lr Cons e2 by (simp add: frz_live_step_def)
+    ultimately show ?thesis
+      using lr by auto
+  qed
+qed
 
 lemma frz_live_step_state:
   "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', Some (g, st)) \<Longrightarrow>
@@ -527,7 +557,7 @@ lemma frz_live_step_state:
 proof -
   have f1: "\<exists>\<alpha> \<in> set \<alpha>s. st = snd (ev \<alpha>)" if "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', Some (g, st))" for ev k \<alpha>s ys \<alpha>s'
     using freeze_meval1_live[OF that] freeze_meval1_sub[OF that]
-    by (auto split: list.splits prod.splits)
+    by (auto split: list.splits prod.splits) (metis snd_conv)
   assume E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', Some (g, st))"
   then show ?thesis
     by (auto simp: frz_live_step_def split: option.splits prod.splits list.splits
@@ -3384,8 +3414,12 @@ next
       using DsFrz.hyps(12) True by blast
     have szl: "size \<rho>L < NN"
       by (rule order.strict_trans2[OF _ le]) simp
+    have hin: "hd ?as1 \<in> set ?as1"
+      by (rule hd_in_set) (use True in blast)
+    have hdt: "ftable m {0..<m} (hd ?as1)"
+      using tas1 hin unfolding list_all_iff by blast
     have wL: "wf_db ?dbL"
-      by (rule wf_db_update'[OF w]) (use tas1 True in \<open>auto simp: list_all_iff dest: hd_in_set\<close>)
+      by (rule wf_db_update'[OF w]) (use hdt in \<open>simp add: list_all_iff\<close>)
     obtain us \<chi> where eL: "meval j n ts ?dbL \<rho>L = (us, \<chi>)"
       by (cases "meval j n ts ?dbL \<rho>L")
     obtain dus where dL: "deval j ts ?dbL \<rho>Ld = (map (dtabc n cs) us, dus)"
@@ -3435,7 +3469,7 @@ next
     and f: "\<phi>' = mformula.MFrz p m \<phi>2 \<psi>2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
         \<rho>3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) ?rb2 d po
         (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L)"
-    using mv e1 e2 e3 e4 e5 by (simp_all add: Let_def add.assoc cpk_def lrk_def)
+    using mv e1 e2 e3 e4 e5 by (simp_all add: Let_def add.assoc cpk_def[abs_def] lrk_def)
   have sz3: "size \<rho>3 = size \<rho>"
     using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate ?a {}) ?dbe" \<rho>2]
       e5 sz2 by simp
@@ -3448,7 +3482,7 @@ next
             \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po
             (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld))"
       using d1 d2 d3 d4 d5 frel dt keep(1) unfolding x
-      by (simp add: Let_def drop_map add.assoc cpd_def lrd_def)
+      by (simp add: Let_def drop_map add.assoc cpd_def[abs_def] lrd_def)
     show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
             \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po
             (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
