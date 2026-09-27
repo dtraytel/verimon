@@ -962,7 +962,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
      nat nat nat "event_data table list"
      "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat bool
-     "(nat \<times> ('msaux, 'muaux, 'mtaux) mformula) option"
+     "nat option" "('msaux, 'muaux, 'mtaux) mformula"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
   | MAndAssign "('msaux, 'muaux, 'mtaux) mformula" "nat \<times> Formula.trm"
@@ -1343,7 +1343,7 @@ function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula 
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
 | "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
-    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec) None"
+    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec) None (minit0 n \<psi>)"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1771,6 +1771,20 @@ definition frz_live_step where
        [] \<Rightarrow> ([], \<alpha>s, Some (g - length us, st))
      | y # _ \<Rightarrow> (let (zs, \<alpha>s', lv) = freeze_meval1 eval (Suc k) (tl \<alpha>s) in (y # zs, \<alpha>s', lv))))"
 
+text \<open>The live copy is kept in a slot of its own, @{text \<rho>L}, next to the number of its verdicts
+  still to come; without a live copy the slot keeps its previous contents.  A new live copy
+  replaces the slot only if it has the same size, which the live copies of a well-formed state
+  always have (they are replays of the replay base): so evaluation keeps the size of the state,
+  which the termination argument needs.\<close>
+
+definition frz_keep :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option \<times> 'a" where
+  "frz_keep lv \<rho>L = (case lv of
+     Some (g, st) \<Rightarrow> if size st = size \<rho>L then (Some g, st) else (None, \<rho>L)
+   | None \<Rightarrow> (None, \<rho>L))"
+
+lemma size_frz_keep[simp]: "size (snd (frz_keep lv \<rho>L)) = size \<rho>L"
+  by (auto simp: frz_keep_def split: option.splits)
+
 lemma freeze_meval1_freeze_meval0:
   "(case freeze_meval1 eval k \<alpha>s of (ys, \<alpha>s', _) \<Rightarrow> (ys, \<alpha>s')) = freeze_meval0 eval k \<alpha>s"
   by (induction eval k \<alpha>s rule: freeze_meval1.induct) (auto split: prod.splits list.splits)
@@ -1843,12 +1857,12 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
-| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv) =
+| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
          (rs, \<rho>) = meval n ts db0 \<rho>;
-         (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s', lv) =
+         (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L) =
            (let zs0_out = drop (jfrz - jpsi0) zs0;
                 \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
                 jfrz = jfrz + length zs0_out;
@@ -1858,18 +1872,19 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
                 c = frz_cut po w jphi (length xs) j;
                 (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho> of
                   (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
-                  (case lv of None \<Rightarrow> None | Some (g, \<sigma>) \<Rightarrow>
+                  (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
                     if zs0_out = [] \<and> \<alpha>s \<noteq> []
-                    then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<sigma>)
-                    else None)
-            in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', if po then None else lv));
+                    then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
+                    else None);
+                (lv, \<rho>L) = frz_keep (if po then None else lv) \<rho>L
+            in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L));
          (a, tq, rs2, \<rho>) =
            (let tq = (if d = \<infinity> then [] else tq @ ts);
                 a = frz_adv d w jfrz j tq;
                 (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
             in (a, tq, rs2, \<rho>))
      in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
-       (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po lv))"
+       (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po lv \<rho>L))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -2029,8 +2044,8 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m \<phi> \<psi>)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
-     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv)) \<Longrightarrow>
+   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
    (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign \<phi> conf)) \<Longrightarrow>
@@ -2068,7 +2083,7 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
     case (MLet p m \<phi> \<psi>)
     show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
   next
-    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv)
+    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
     show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
   next
     case (MLetPast p m \<phi> \<psi> i buf)
