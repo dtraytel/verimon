@@ -1956,7 +1956,7 @@ qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map
 
 lemma total_meval: "All meval_dom"
   apply (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)")
-  prefer 7
+  prefer 8
   apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
   sorry
 
