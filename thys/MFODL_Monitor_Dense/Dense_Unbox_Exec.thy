@@ -974,7 +974,11 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
           (zs, dbf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add as ws dbf1)
       in (zs, UDAndTrigger pl \<alpha>' dbf1' dags \<phi>' \<psi>' dbf2' nts' daux'))"
-  by pat_completeness safe
+  apply (tactic \<open>fn st => (writeln ("BEFORE " ^ string_of_int (Thm.nprems_of st)); all_tac st)\<close>)
+  apply pat_completeness
+  apply (tactic \<open>fn st => (writeln ("AFTER " ^ string_of_int (Thm.nprems_of st)); all_tac st)\<close>)
+  apply safe
+  done
 
 lemma psize_snd_udeval:
   "udeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (udeval j ts db \<phi>)) = size \<phi>"
