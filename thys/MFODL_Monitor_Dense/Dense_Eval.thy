@@ -290,7 +290,7 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
              daux (mbufn_add (map fst R) dbuf) t (nts @ ts);
           (zs, daux'') = geval_matchF I mr nt daux'
       in (map dsan zs, DMatchF m I mr mrs pls (map snd R) dbuf' nts' nt daux''))"
-  by pat_completeness safe
+  by pat_completeness (simp_all only: prod.inject dformula.inject dformula.distinct simp_thms)
 
 text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open>updated\<close> state, which is
   not a subterm of the node, so the recursion is not structural and termination goes by the

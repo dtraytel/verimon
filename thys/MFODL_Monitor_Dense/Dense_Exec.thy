@@ -314,7 +314,7 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
           (zs, dbf1') = mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
             | Some z \<Rightarrow> dbin_join pl r1 True z) (mebuf2_add as ws dbf1)
       in (zs, EDAndTrigger pl \<alpha>' dbf1' dags \<phi>' \<psi>' dbf2' nts' daux'))"
-  by pat_completeness safe
+  by pat_completeness (simp_all only: prod.inject edformula.inject edformula.distinct simp_thms)
 
 lemma psize_snd_edeval:
   "edeval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (edeval j ts db \<phi>)) = size \<phi>"
