@@ -351,9 +351,20 @@ qed (auto simp only: prod.inject edeval.psimps Let_def snd_conv fst_conv
     split: prod.splits)
 
 lemma total_edeval: "All edeval_dom"
-  apply (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)")
-  apply (tactic \<open>print_tac @{context} "GOALS"\<close>)
-  sorry
+proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
+  text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
+  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  have "size yb = size \<rho>"
+    using psize_snd_edeval[OF 23(17)] 23(10,11) by (metis snd_conv)
+  then show ?case
+    by simp
+next
+  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  have "size yb = size \<rho>"
+    using psize_snd_edeval[OF 24(24)] 24(10,11) by (metis snd_conv)
+  then show ?case
+    by simp
+qed (auto simp: termination_simp dest!: psize_snd_edeval dest: sym)
 
 termination edeval by (rule total_edeval)
 
