@@ -3470,7 +3470,7 @@ next
         \<rho>3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) ?rb2 d po
         (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L)"
     using mv e1 e2 e3 e4 e5
-    by (simp_all add: Let_def add.assoc cpk_def[abs_def] lrk_def cong: option.case_cong)
+    by (simp_all add: Let_def add.assoc cpk_def[abs_def] lrk_def cong: option.case_cong if_cong)
   have sz3: "size \<rho>3 = size \<rho>"
     using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate ?a {}) ?dbe" \<rho>2]
       e5 sz2 by simp
@@ -3483,7 +3483,7 @@ next
             \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po
             (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld))"
       using d1 d2 d3 d4 d5 frel dt keep(1) unfolding x
-      by (simp add: Let_def drop_map add.assoc cpd_def[abs_def] lrd_def cong: option.case_cong)
+      by (simp add: Let_def drop_map add.assoc cpd_def[abs_def] lrd_def cong: option.case_cong if_cong)
     show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
             \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po
             (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
