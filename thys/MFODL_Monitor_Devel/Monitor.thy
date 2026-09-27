@@ -1955,12 +1955,22 @@ next
 qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
-  apply (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)")
-  prefer 8
-  apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
-  prefer 7
-  apply (auto simp: termination_simp dest!: psize_snd_meval dest: sym)[1]
-  sorry
+proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
+  text \<open>The replays of @{const MFrz} and the advance of its window: the replay base keeps its size.
+    Left to the automation below, these two cases take long, since the many equations of the
+    body's @{text let}s are tried in both orientations.\<close>
+  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 7(17)] 7(10,11) by (metis snd_conv)
+  then show ?case
+    by simp
+next
+  case (8 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 8(24)] 8(10,11) by (metis snd_conv)
+  then show ?case
+    by simp
+qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
 
