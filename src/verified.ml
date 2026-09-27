@@ -9794,65 +9794,6 @@ let rec edl_mapping_delete_set
           else failwith "mapping_delete_set: infinite"
                  (fun _ -> edl_mapping_delete_set m (Complement q)));;
 
-let rec de_mapping_delete_set_table
-  m (RBT_set rbt) =
-    foldb (ccompare_list ccompare_event_data) edl_delete_table rbt m;;
-
-let rec de_mrestrict1_table
-  m k acc =
-    (match edl_lookup_table m k with None -> acc
-      | Some v -> edl_update_table k v acc);;
-
-let rec edl_mrestrict1_cfi xa = Abs_comp_fun_idem (de_mrestrict1_table xa);;
-
-let rec de_mfilter_keys_table
-  pos x1 m = match pos, x1, m with
-    pos, RBT_set rbt, m ->
-      (if pos
-        then foldb (ccompare_list ccompare_event_data) (de_mrestrict1_table m)
-               rbt edl_mempty_table
-        else de_mapping_delete_set_table m (RBT_set rbt))
-    | pos, DList_set uu, m ->
-        (if pos
-          then (if unbox edl_finite_v (DList_set uu)
-                 then set_fold_cfi
-                        ((ceq_list ceq_event_data),
-                          (ccompare_list ccompare_event_data))
-                        (edl_mrestrict1_cfi m) edl_mempty_table (DList_set uu)
-                 else failwith "mfilter_keys: infinite"
-                        (fun _ -> de_mfilter_keys_table pos (DList_set uu) m))
-          else de_mapping_delete_set_table m (DList_set uu))
-    | pos, Set_Monad uu, m ->
-        (if pos
-          then (if unbox edl_finite_v (Set_Monad uu)
-                 then set_fold_cfi
-                        ((ceq_list ceq_event_data),
-                          (ccompare_list ccompare_event_data))
-                        (edl_mrestrict1_cfi m) edl_mempty_table (Set_Monad uu)
-                 else failwith "mfilter_keys: infinite"
-                        (fun _ -> de_mfilter_keys_table pos (Set_Monad uu) m))
-          else de_mapping_delete_set_table m (Set_Monad uu))
-    | pos, Collect_set uu, m ->
-        (if pos
-          then (if unbox edl_finite_v (Collect_set uu)
-                 then set_fold_cfi
-                        ((ceq_list ceq_event_data),
-                          (ccompare_list ccompare_event_data))
-                        (edl_mrestrict1_cfi m) edl_mempty_table (Collect_set uu)
-                 else failwith "mfilter_keys: infinite"
-                        (fun _ -> de_mfilter_keys_table pos (Collect_set uu) m))
-          else de_mapping_delete_set_table m (Collect_set uu))
-    | pos, Complement uu, m ->
-        (if pos
-          then (if unbox edl_finite_v (Complement uu)
-                 then set_fold_cfi
-                        ((ceq_list ceq_event_data),
-                          (ccompare_list ccompare_event_data))
-                        (edl_mrestrict1_cfi m) edl_mempty_table (Complement uu)
-                 else failwith "mfilter_keys: infinite"
-                        (fun _ -> de_mfilter_keys_table pos (Complement uu) m))
-          else de_mapping_delete_set_table m (Complement uu));;
-
 let rec de_mrestrict1_nat
   m k acc =
     (match edl_lookup_nat m k with None -> acc
@@ -9930,16 +9871,103 @@ let rec de_mfilter_keys_nat
                         (fun _ -> de_mfilter_keys_nat pos (Complement uu) m))
           else edl_mapping_delete_set m (Complement uu));;
 
+let rec de_mapping_delete_set_table
+  m (RBT_set rbt) =
+    foldb (ccompare_list ccompare_event_data) edl_delete_table rbt m;;
+
+let rec de_mrestrict1_table
+  m k acc =
+    (match edl_lookup_table m k with None -> acc
+      | Some v -> edl_update_table k v acc);;
+
+let rec edl_mrestrict1_cfi xa = Abs_comp_fun_idem (de_mrestrict1_table xa);;
+
+let rec de_mfilter_keys_table
+  pos x1 m = match pos, x1, m with
+    pos, RBT_set rbt, m ->
+      (if pos
+        then foldb (ccompare_list ccompare_event_data) (de_mrestrict1_table m)
+               rbt edl_mempty_table
+        else de_mapping_delete_set_table m (RBT_set rbt))
+    | pos, DList_set uu, m ->
+        (if pos
+          then (if unbox edl_finite_v (DList_set uu)
+                 then set_fold_cfi
+                        ((ceq_list ceq_event_data),
+                          (ccompare_list ccompare_event_data))
+                        (edl_mrestrict1_cfi m) edl_mempty_table (DList_set uu)
+                 else failwith "mfilter_keys: infinite"
+                        (fun _ -> de_mfilter_keys_table pos (DList_set uu) m))
+          else de_mapping_delete_set_table m (DList_set uu))
+    | pos, Set_Monad uu, m ->
+        (if pos
+          then (if unbox edl_finite_v (Set_Monad uu)
+                 then set_fold_cfi
+                        ((ceq_list ceq_event_data),
+                          (ccompare_list ccompare_event_data))
+                        (edl_mrestrict1_cfi m) edl_mempty_table (Set_Monad uu)
+                 else failwith "mfilter_keys: infinite"
+                        (fun _ -> de_mfilter_keys_table pos (Set_Monad uu) m))
+          else de_mapping_delete_set_table m (Set_Monad uu))
+    | pos, Collect_set uu, m ->
+        (if pos
+          then (if unbox edl_finite_v (Collect_set uu)
+                 then set_fold_cfi
+                        ((ceq_list ceq_event_data),
+                          (ccompare_list ccompare_event_data))
+                        (edl_mrestrict1_cfi m) edl_mempty_table (Collect_set uu)
+                 else failwith "mfilter_keys: infinite"
+                        (fun _ -> de_mfilter_keys_table pos (Collect_set uu) m))
+          else de_mapping_delete_set_table m (Collect_set uu))
+    | pos, Complement uu, m ->
+        (if pos
+          then (if unbox edl_finite_v (Complement uu)
+                 then set_fold_cfi
+                        ((ceq_list ceq_event_data),
+                          (ccompare_list ccompare_event_data))
+                        (edl_mrestrict1_cfi m) edl_mempty_table (Complement uu)
+                 else failwith "mfilter_keys: infinite"
+                        (fun _ -> de_mfilter_keys_table pos (Complement uu) m))
+          else de_mapping_delete_set_table m (Complement uu));;
+
 let rec de_del_buckets1_nat
   (RBT_Mapping t) tm =
     fold (fun p tma -> edl_mapping_delete_set tma (snd p))
       (entriesa (ccompare_list ccompare_event_data) t) tm;;
+
+let rec de_gjoin_idx1_nat
+  pos y (RBT_Mapping t) tm =
+    (if pos
+      then (let d =
+              filtera (fun p -> not (edl_member (fst p) y))
+                (entriesa (ccompare_list ccompare_event_data) t)
+              in
+             (fold (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
+               fold (fun p tma -> edl_mapping_delete_set tma (snd p)) d tm))
+      else (de_mfilter_keys_table pos y (RBT_Mapping t),
+             de_del_buckets1_nat
+               (de_mfilter_keys_table (not pos) y (RBT_Mapping t)) tm));;
 
 let rec de_del_buckets_nat
   (RBT_Mapping t) =
     fold (fun p (ta, tm) ->
            (edl_minus ta (snd p), edl_mapping_delete_set tm (snd p)))
       (entriesa (ccompare_list ccompare_event_data) t);;
+
+let rec de_gjoin_idx_nat
+  pos y (RBT_Mapping t) acc =
+    (if pos
+      then (let d =
+              filtera (fun p -> not (edl_member (fst p) y))
+                (entriesa (ccompare_list ccompare_event_data) t)
+              in
+             (fold (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
+               fold (fun p (ta, tm) ->
+                      (edl_minus ta (snd p), edl_mapping_delete_set tm (snd p)))
+                 d acc))
+      else (de_mfilter_keys_table pos y (RBT_Mapping t),
+             de_del_buckets_nat
+               (de_mfilter_keys_table (not pos) y (RBT_Mapping t)) acc));;
 
 let rec de_gjoin_msaux
   args y
@@ -9970,19 +9998,13 @@ let rec de_gjoin_msaux
  (data_in,
    (edl_minus table_in in_del,
      (edl_mempty_table, (tuple_ina, (edl_mempty_table, tuple_sincea))))))))))
-                 else (let (table_ina, tuple_ina) =
-                         de_del_buckets_nat
-                           (de_mfilter_keys_table (not pos) y idx_in)
-                           (table_in, tuple_in)
-                         in
+                 else (let (idx_ina, (table_ina, tuple_ina)) =
+                         de_gjoin_idx_nat pos y idx_in (table_in, tuple_in) in
+                       let (idx_sincea, tuple_sincea) =
+                         de_gjoin_idx1_nat pos y idx_since tuple_since in
                         (t, (gc, (msk, (data_prev,
  (data_in,
-   (table_ina,
-     (de_mfilter_keys_table pos y idx_in,
-       (tuple_ina,
-         (de_mfilter_keys_table pos y idx_since,
-           de_del_buckets1_nat (de_mfilter_keys_table (not pos) y idx_since)
-             tuple_since)))))))))))));;
+   (table_ina, (idx_ina, (tuple_ina, (idx_sincea, tuple_sincea)))))))))))));;
 
 let edl_mfilter_nat_v :
   ((event_data list -> nat -> bool) ->

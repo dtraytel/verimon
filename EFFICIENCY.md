@@ -9313,3 +9313,40 @@ is unchanged within noise, and the verdicts agree with MonPoly on both groups.  
 `-verified` commands of the test corpus, the outputs are identical to the previous binary.
 The cram tests pass.  `MFODL_Monitor_Devel` builds in 27 minutes and `MFODL_Monitor_Dense` in
 11.
+
+## 21.52 The Since join walks the index
+
+After 21.51 the two worst ratios of the suite were `frz-sincelag30` (2.79) and `frz-neglag30`
+(2.13).  In `frz-sincelag30` (`FRZ q(x) = EVENTUALLY[0,30] C(x) IN (q(x) SINCE[0,4] A(x,y))`)
+each copy of the body joins its Since node's state with the frozen table q at every step.  Since q
+binds only one of the node's two variables, the join goes through the node's indices, which cluster
+the stored tuples by the value of x.  With a lag of 30, q holds about three quarters of the 200
+values of x, while a copy's index holds the x-values of about five time points.
+`mfilter_keys_RBT_code` computed the part of each index to keep by looking up every tuple of q and
+inserting it into a new tree.  It computed the part to drop by deleting every tuple of q from a
+copy of the index.  That is four passes over q per join, two for each of the two indices, however
+few keys actually drop out.  A profile put 48% of the instructions in this join.  From lag 3 to
+lag 30 the lookups and deletions grew fivefold, from 223k and 219k to 1.15M and 1.12M, for 1.3
+times the joins.  MonPoly's join (`idx_table_inv_semijoin`) walks the index instead and removes
+only the buckets whose key fails the probe.
+
+The join now does the same for a positive left operand (`gjoin_idx`, `gjoin_idx1` in
+`Dense_Idx_Code.thy`).  One pass over the index's entries collects those whose key is not in q.
+Their keys are deleted from the index, and their buckets from the window's table and the time
+stamps.  The two operations are stated as `mfilter_keys` and `del_buckets` of their definitions,
+with code equations on the tree (`lookup_fold_delete_fst`, `set_of_idx_mfilter_keys_False_RBT`).
+`gjoin_msaux_code` calls them.  The verified algorithm is unchanged.  Rebuilding the kept part
+from the filtered entries (`RBT_Mapping2.filter`, linear in the index) was measured too: 0.32 s
+against 0.27 s on `frz-sincelag30`, since few keys drop.  A negated left operand keeps the old
+equations, which visit only the left table: there the left table is typically the smaller one.
+
+| formula (tp500, min of 7) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frz-sincelag30` | 0.377 | 0.269 | 0.131 |
+| `frz-sincelag` | 0.179 | 0.174 | 0.098 |
+
+Over the 133 suite formulas with Since, Once, Trigger, a freeze or a policy, timed against the
+previous binary, the geometric mean of new over old is 0.99.  The largest apparent slowdowns
+were 1.19 (`since-nb5`) and 1.16 (`once-raw5`); timed again with 9 interleaved runs they are 1.00
+and 0.95.  The outputs are identical on those formulas and on the 652 `-verified` commands of the
+test corpus.  The benchmark formulas agree with MonPoly, and the cram tests pass.

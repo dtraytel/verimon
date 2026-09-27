@@ -436,6 +436,107 @@ proof (cases "ID CCOMPARE('k)")
   show ?thesis unfolding Some option.case del_buckets1_def S by (simp add: fold_del_buckets1)
 qed simp
 
+subsection \<open>The probe by a positive left operand, driven by the index\<close>
+
+text \<open>
+  With a positive left operand the join keeps the index entries whose keys are in the left
+  table and deletes the tuples of the others.  @{thm [source] mfilter_keys_RBT_code} computes the
+  kept part by visiting the left table's tuples, and the dropped part by deleting all of them from
+  a copy of the index: work in the size of the left table, twice for each of the two indices,
+  however few keys drop out.  Under a freeze whose frozen formula lags, the left operand is a
+  large frozen table and the index is small.  MonPoly's join walks the index and removes only the
+  buckets whose key fails the probe; the two operations below do the same: one pass over the
+  index's entries collects the entries whose keys fail, whose keys are then deleted from the index
+  and whose buckets from the window's table and time stamps.  Rebuilding the kept part instead
+  (@{const RBT_Mapping2.filter}, linear in the index) costs more when few keys drop out.
+\<close>
+
+definition gjoin_idx :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b set) mapping \<Rightarrow> 'b set \<times> ('b, 'v) mapping \<Rightarrow>
+    ('k, 'b set) mapping \<times> 'b set \<times> ('b, 'v) mapping" where
+  "gjoin_idx pos Y M acc = (mfilter_keys pos Y M, del_buckets (mfilter_keys (\<not> pos) Y M) acc)"
+
+definition gjoin_idx1 :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'b set) mapping \<Rightarrow> ('b, 'v) mapping \<Rightarrow>
+    ('k, 'b set) mapping \<times> ('b, 'v) mapping" where
+  "gjoin_idx1 pos Y M tm = (mfilter_keys pos Y M, del_buckets1 (mfilter_keys (\<not> pos) Y M) tm)"
+
+lemma lookup_fold_delete_fst:
+  "Mapping.lookup (fold (\<lambda>p. Mapping.delete (fst p)) D M) k =
+    (if k \<in> fst ` set D then None else Mapping.lookup M k)"
+  by (induct D arbitrary: M) (auto simp: lookup_delete)
+
+lemma mfilter_keys_True_RBT:
+  fixes t :: "('k :: ccompare, 'v) mapping_rbt"
+  assumes "ID CCOMPARE('k) \<noteq> None"
+  shows "mfilter_keys True Y (RBT_Mapping t) =
+    fold (\<lambda>p. Mapping.delete (fst p)) (List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t))
+      (RBT_Mapping t)"
+proof (intro mapping_eqI)
+  fix k
+  have "k \<in> fst ` set (RBT_Mapping2.entries t) \<longleftrightarrow> RBT_Mapping2.lookup t k \<noteq> None"
+    using dom_map_of_conv_image_fst[of "RBT_Mapping2.entries t"] assms by (auto simp: dom_def)
+  then show "Mapping.lookup (mfilter_keys True Y (RBT_Mapping t)) k =
+    Mapping.lookup (fold (\<lambda>p. Mapping.delete (fst p)) (List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t))
+      (RBT_Mapping t)) k"
+    by (auto simp: lookup_mfilter_keys lookup_fold_delete_fst lookup_Mapping_code(1)
+        simp del: RBT_Mapping_def)
+qed
+
+lemma entries_filter_RBT:
+  "RBT_Mapping2.entries (RBT_Mapping2.filter P t) = List.filter P (RBT_Mapping2.entries t)"
+  by transfer simp
+
+lemma set_of_idx_mfilter_keys_False_RBT:
+  fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
+  assumes "ID CCOMPARE('k) \<noteq> None"
+  shows "set_of_idx (mfilter_keys False Y (RBT_Mapping t)) =
+    \<Union>(snd ` set (List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t)))"
+proof -
+  have "mfilter_keys False Y (RBT_Mapping t) = RBT_Mapping (RBT_Mapping2.filter (\<lambda>p. fst p \<notin> Y) t)"
+    using assms by (intro mapping_eqI) (simp add: lookup_mfilter_keys Mapping.lookup.abs_eq split: option.splits)
+  then show ?thesis
+    using set_of_idx_code[of "RBT_Mapping2.filter (\<lambda>p. fst p \<notin> Y) t"] assms
+    by (simp add: entries_filter_RBT del: RBT_Mapping_def split: option.splits)
+qed
+
+lemma gjoin_idx_code[code]:
+  fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
+  shows "gjoin_idx pos Y (RBT_Mapping t) acc = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''gjoin_idx RBT_Mapping: ccompare = None'')
+        (\<lambda>_. gjoin_idx pos Y (RBT_Mapping t) acc)
+    | Some _ \<Rightarrow> (if pos then
+        (let D = List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t) in
+         (fold (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
+          fold (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p))) D acc))
+      else (mfilter_keys pos Y (RBT_Mapping t), del_buckets (mfilter_keys (\<not> pos) Y (RBT_Mapping t)) acc)))"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  then have n: "ID CCOMPARE('k) \<noteq> None" by simp
+  obtain T tm where acc: "acc = (T, tm)" by (cases acc)
+  show ?thesis
+    using Some by (simp add: acc gjoin_idx_def mfilter_keys_True_RBT[OF n]
+        set_of_idx_mfilter_keys_False_RBT[OF n] del_buckets_def fold_del_buckets
+        Let_def del: RBT_Mapping_def)
+qed simp
+
+lemma gjoin_idx1_code[code]:
+  fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
+  shows "gjoin_idx1 pos Y (RBT_Mapping t) tm = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''gjoin_idx1 RBT_Mapping: ccompare = None'')
+        (\<lambda>_. gjoin_idx1 pos Y (RBT_Mapping t) tm)
+    | Some _ \<Rightarrow> (if pos then
+        (let D = List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t) in
+         (fold (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
+          fold (\<lambda>p tm. mapping_delete_set tm (snd p)) D tm))
+      else (mfilter_keys pos Y (RBT_Mapping t), del_buckets1 (mfilter_keys (\<not> pos) Y (RBT_Mapping t)) tm)))"
+proof (cases "ID CCOMPARE('k)")
+  case (Some c)
+  then have n: "ID CCOMPARE('k) \<noteq> None" by simp
+  show ?thesis
+    using Some by (simp add: gjoin_idx1_def mfilter_keys_True_RBT[OF n]
+        set_of_idx_mfilter_keys_False_RBT[OF n] del_buckets1_def fold_del_buckets1
+        Let_def del: RBT_Mapping_def)
+qed simp
+
 lemma gjoin_msaux_code[code]:
   "gjoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
@@ -455,18 +556,17 @@ lemma gjoin_msaux_code[code]:
          (t, gc, msk, data_prev, data_in, table_in - in_del, Mapping.empty, tuple_in',
           Mapping.empty, tuple_since'))
       else
-        (let (table_in', tuple_in') = del_buckets (mfilter_keys (\<not> pos) Y idx_in) (table_in, tuple_in) in
-         (t, gc, msk, data_prev, data_in, table_in',
-          mfilter_keys pos Y idx_in, tuple_in',
-          mfilter_keys pos Y idx_since,
-          del_buckets1 (mfilter_keys (\<not> pos) Y idx_since) tuple_since))))"
+        (let (idx_in', table_in', tuple_in') = gjoin_idx pos Y idx_in (table_in, tuple_in);
+             (idx_since', tuple_since') = gjoin_idx1 pos Y idx_since tuple_since in
+         (t, gc, msk, data_prev, data_in, table_in', idx_in', tuple_in', idx_since',
+          tuple_since'))))"
 proof -
   have D: "\<And>M. del_buckets M (table_in, tuple_in)
       = (table_in - set_of_idx M, mapping_delete_set tuple_in (set_of_idx M))"
     by (simp add: del_buckets_def)
   show ?thesis
-    by (simp only: gjoin_msaux.simps Let_def D del_buckets1_def mfilter_keys_def dsemi_idx_def
-        prod.case)
+    by (simp only: gjoin_msaux.simps Let_def D gjoin_idx_def gjoin_idx1_def del_buckets1_def
+        mfilter_keys_def dsemi_idx_def prod.case)
 qed
 
 subsection \<open>The Until structure's map of the left operand\<close>
