@@ -1777,16 +1777,14 @@ text \<open>The live copy is kept in a slot of its own, @{text \<rho>L}, next to
   always have (they are replays of the replay base): so evaluation keeps the size of the state,
   which the termination argument needs.\<close>
 
-definition frz_keep :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option \<times> 'a" where
-  "frz_keep lv \<rho>L = (case lv of
-     Some (g, st) \<Rightarrow> if size st = size \<rho>L then (Some g, st) else (None, \<rho>L)
-   | None \<Rightarrow> (None, \<rho>L))"
+definition frz_keep_lv :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> nat option" where
+  "frz_keep_lv lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then Some g else None | None \<Rightarrow> None)"
 
-lemma size_frz_keep[simp]: "size (snd (frz_keep lv \<rho>L)) = size \<rho>L"
-  by (auto simp: frz_keep_def split: option.splits)
+definition frz_keep_st :: "(nat \<times> 'a :: size) option \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "frz_keep_st lv \<rho>L = (case lv of Some (g, st) \<Rightarrow> if size st = size \<rho>L then st else \<rho>L | None \<Rightarrow> \<rho>L)"
 
-lemma frz_keep_sizeD: "frz_keep lv \<rho>L = (g, st) \<Longrightarrow> size st = size \<rho>L"
-  using size_frz_keep[of lv \<rho>L] by simp
+lemma size_frz_keep_st[simp]: "size (frz_keep_st lv \<rho>L) = size \<rho>L"
+  by (auto simp: frz_keep_st_def split: option.splits)
 
 lemma freeze_meval1_freeze_meval0:
   "(case freeze_meval1 eval k \<alpha>s of (ys, \<alpha>s', _) \<Rightarrow> (ys, \<alpha>s')) = freeze_meval0 eval k \<alpha>s"
@@ -1879,8 +1877,8 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
                     if zs0_out = [] \<and> \<alpha>s \<noteq> []
                     then Some (g, meval n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
                     else None);
-                (lv, \<rho>L) = frz_keep (if po then None else lv) \<rho>L
-            in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L));
+                lv = (if po then None else lv)
+            in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', frz_keep_lv lv \<rho>L, frz_keep_st lv \<rho>L));
          (a, tq, rs2, \<rho>) =
            (let tq = (if d = \<infinity> then [] else tq @ ts);
                 a = frz_adv d w jfrz j tq;
@@ -2008,7 +2006,7 @@ next
   then show ?case
     by (simp add: meval.psimps(15)[OF 15(1)] \<phi>' mp)
   \<comment> \<open>in all other cases, the claim follows directly from the IHs for the subformulas\<close>
-qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply cong: size_list_cong split: prod.splits dest!: frz_keep_sizeD)
+qed (auto simp only: prod.inject meval.psimps Let_def snd_conv mformula.size map_split_map id_o map_split_eq_Pair_iff size_list_map o_apply size_frz_keep_st cong: size_list_cong split: prod.splits)
 
 lemma total_meval: "All meval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
@@ -2021,17 +2019,21 @@ proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
     follow the calls.  With the values bound one by one at the top level, the definition takes
     minutes instead of seconds: the function package's congruence steps unify over the whole
     chain of @{text let}s that follows a call.\<close>
-  case 7
-  show ?case
-    sorry
+  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 7(15)] 7(6,7) by (metis snd_conv)
+  then show ?case
+    by simp
 next
-  case 8
-  show ?case
-    sorry
+  case 8 \<comment> \<open>the live copy, a subterm\<close>
+  then show ?case
+    by simp
 next
-  case 9
-  show ?case
-    sorry
+  case (9 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  have "size yb = size \<rho>"
+    using psize_snd_meval[OF 9(21)] 9(6,7) by (metis snd_conv)
+  then show ?case
+    by simp
 qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
