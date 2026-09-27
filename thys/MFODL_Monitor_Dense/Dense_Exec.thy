@@ -258,26 +258,25 @@ function (sequential) edeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
      (let (xs, \<phi>) = edeval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = edeval j ts db0 \<psi>;
-          zs0_out = drop (jfrz - jpsi0) zs0;
-          jpsi0 = jpsi0 + length zs0;
-          \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-          jfrz = jfrz + length zs0_out;
           (rs, \<rho>) = edeval j ts db0 \<rho>;
-          rb0 = pR - length rb;
-          rb = rb @ rs;
-          pR = pR + length rs;
-          dbe = Mapping.map_values (\<lambda>_ _. []) db;
-          c = frz_cut po w jphi (length xs) j;
-          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (edeval j []
-            (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s;
-          jphi = jphi + length xs;
-          jfrz = jfrz + length ys;
-          tq = (if d = \<infinity> then [] else tq @ ts);
-          a = frz_adv d w jfrz j tq;
-          (rs2, \<rho>) = edeval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>;
-          rb = rb @ rs2;
-          pR = pR + length rs2
-      in (zs0_out @ ys, EDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s' \<rho> (w + a) pR (drop a tq) (drop (min jfrz pR - rb0) rb) d po))"
+          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s') =
+            (let zs0_out = drop (jfrz - jpsi0) zs0;
+                 \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+                 jfrz = jfrz + length zs0_out;
+                 rb0 = pR - length rb;
+                 rb = rb @ rs;
+                 dbe = Mapping.map_values (\<lambda>_ _. []) db;
+                 c = frz_cut po w jphi (length xs) j;
+                 (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (edeval j []
+                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s
+             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s'));
+          (a, tq, rs2, \<rho>) =
+            (let tq = (if d = \<infinity> then [] else tq @ ts);
+                 a = frz_adv d w jfrz j tq;
+                 (rs2, \<rho>) = edeval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+             in (a, tq, rs2, \<rho>))
+      in (zs0_out @ ys, EDFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
+        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po))"
 | "edeval j ts db (EDLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (edeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -353,15 +352,15 @@ qed (auto simp only: prod.inject edeval.psimps Let_def snd_conv fst_conv
 lemma total_edeval: "All edeval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
   text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
-    using psize_snd_edeval[OF 23(17)] 23(10,11) by (metis snd_conv)
+    using psize_snd_edeval[OF 23(15)] 23(6,7) by (metis snd_conv)
   then show ?case
     by simp
 next
-  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
-    using psize_snd_edeval[OF 24(24)] 24(10,11) by (metis snd_conv)
+    using psize_snd_edeval[OF 24(18)] 24(6,7) by (metis snd_conv)
   then show ?case
     by simp
 qed (auto simp: termination_simp dest!: psize_snd_edeval dest: sym)
@@ -465,11 +464,11 @@ next
   have IH2: "deval j ts ?db0 (Rep_edformula \<psi>) = (zs0, Rep_edformula \<psi>')"
     using 20(2)[OF refl \<phi>[symmetric] refl] \<psi> by simp
   have IH3: "deval j ts ?db0 (Rep_edformula \<rho>) = (rs, Rep_edformula \<rho>')"
-    using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl refl refl refl] \<rho> by simp
+    using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric]] \<rho> by simp
   have IH4: "fst (deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) (Rep_edformula \<rho>')) =
     fst (edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>')" for \<alpha>
-    using 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl refl refl refl refl \<rho>[symmetric]
-        refl refl refl refl refl, of \<alpha>]
+    using 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
+        refl refl refl refl refl refl refl, of \<alpha>]
     by (simp split: prod.splits)
   obtain ys \<alpha>s' where fr: "freeze_meval0 (\<lambda>\<alpha>. ((rb @ rs) @
       fst (edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>'), ())) ?k ?as = (ys, \<alpha>s')"
@@ -482,9 +481,22 @@ next
   let ?a = "frz_adv d w (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys) j (if d = \<infinity> then [] else tq @ ts)"
   obtain rs2 \<rho>2 where adv: "edeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>' = (rs2, \<rho>2)"
     by (cases "edeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>'")
+  have tup: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+        \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+        jfrz = jfrz + length zs0_out;
+        rb0 = pR - length rb;
+        rb = rb @ rs;
+        dbe = ?dbe;
+        c = ?c;
+        (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (edeval j [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>'), ()))
+          (jfrz - rb0) \<alpha>s
+      in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s')) =
+    (drop (jfrz - jpsi0) zs0, jfrz + length (drop (jfrz - jpsi0) zs0) + length ys, pR - length rb, rb @ rs,
+      ?dbe, ys, \<alpha>s')"
+    by (simp only: Let_def fr prod.case)
   have IH5: "deval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) (Rep_edformula \<rho>') = (rs2, Rep_edformula \<rho>2)"
-    using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl refl refl refl refl \<rho>[symmetric]
-        refl refl refl refl refl refl fr[symmetric] refl refl refl refl] adv
+    using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
+        refl refl refl refl refl refl refl] adv
     by simp
   show ?case
     by (simp only: Rep_edformula.simps deval.simps edeval.simps Let_def \<phi> \<psi> \<rho> IH1 IH2 IH3 fr fr' adv IH5

@@ -234,26 +234,25 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
      (let (xs, \<phi>) = deval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = deval j ts db0 \<psi>;
-          zs0_out = drop (jfrz - jpsi0) zs0;
-          jpsi0 = jpsi0 + length zs0;
-          \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-          jfrz = jfrz + length zs0_out;
           (rs, \<rho>) = deval j ts db0 \<rho>;
-          rb0 = pR - length rb;
-          rb = rb @ rs;
-          pR = pR + length rs;
-          dbe = Mapping.map_values (\<lambda>_ _. []) db;
-          c = frz_cut po w jphi (length xs) j;
-          (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (deval j []
-            (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s;
-          jphi = jphi + length xs;
-          jfrz = jfrz + length ys;
-          tq = (if d = \<infinity> then [] else tq @ ts);
-          a = frz_adv d w jfrz j tq;
-          (rs2, \<rho>) = deval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>;
-          rb = rb @ rs2;
-          pR = pR + length rs2
-      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s' \<rho> (w + a) pR (drop a tq) (drop (min jfrz pR - rb0) rb) d po))"
+          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s') =
+            (let zs0_out = drop (jfrz - jpsi0) zs0;
+                 \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+                 jfrz = jfrz + length zs0_out;
+                 rb0 = pR - length rb;
+                 rb = rb @ rs;
+                 dbe = Mapping.map_values (\<lambda>_ _. []) db;
+                 c = frz_cut po w jphi (length xs) j;
+                 (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (deval j []
+                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ())) (jfrz - rb0) \<alpha>s
+             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s'));
+          (a, tq, rs2, \<rho>) =
+            (let tq = (if d = \<infinity> then [] else tq @ ts);
+                 a = frz_adv d w jfrz j tq;
+                 (rs2, \<rho>) = deval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+             in (a, tq, rs2, \<rho>))
+      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
+        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po))"
 | "deval j ts db (DLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -334,15 +333,15 @@ qed (auto simp only: prod.inject deval.psimps Let_def snd_conv fst_conv
 lemma total_deval: "All deval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
   text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
-    using psize_snd_deval[OF 23(17)] 23(10,11) by (metis snd_conv)
+    using psize_snd_deval[OF 23(15)] 23(6,7) by (metis snd_conv)
   then show ?case
     by simp
 next
-  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
+  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
-    using psize_snd_deval[OF 24(24)] 24(10,11) by (metis snd_conv)
+    using psize_snd_deval[OF 24(18)] 24(6,7) by (metis snd_conv)
   then show ?case
     by simp
 qed (auto simp: termination_simp dest!: psize_snd_deval dest: sym)
