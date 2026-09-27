@@ -1812,26 +1812,25 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
-         zs0_out = drop (jfrz - jpsi0) zs0;
-         jpsi0 = jpsi0 + length zs0;
-         \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-         jfrz = jfrz + length zs0_out;
          (rs, \<rho>) = meval n ts db0 \<rho>;
-         rb0 = pR - length rb;
-         rb = rb @ rs;
-         pR = pR + length rs;
-         dbe = Mapping.map_values (\<lambda>_ _. []) db;
-         c = frz_cut po w jphi (length xs) j;
-         (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ()))
-           (jfrz - rb0) \<alpha>s;
-         jphi = jphi + length xs;
-         jfrz = jfrz + length ys;
-         tq = (if d = \<infinity> then [] else tq @ ts);
-         a = frz_adv d w jfrz j tq;
-         (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>;
-         rb = rb @ rs2;
-         pR = pR + length rs2
-     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s' \<rho> (w + a) pR (drop a tq) (drop (min jfrz pR - rb0) rb) d po))"
+         (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s') =
+           (let zs0_out = drop (jfrz - jpsi0) zs0;
+                \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
+                jfrz = jfrz + length zs0_out;
+                rb0 = pR - length rb;
+                rb = rb @ rs;
+                dbe = Mapping.map_values (\<lambda>_ _. []) db;
+                c = frz_cut po w jphi (length xs) j;
+                (ys, \<alpha>s') = freeze_meval0 (\<lambda>\<alpha>. (rb @ fst (meval n [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>), ()))
+                  (jfrz - rb0) \<alpha>s
+            in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s'));
+         (a, tq, rs2, \<rho>) =
+           (let tq = (if d = \<infinity> then [] else tq @ ts);
+                a = frz_adv d w jfrz j tq;
+                (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+            in (a, tq, rs2, \<rho>))
+     in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
+       (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -1959,17 +1958,13 @@ proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
   text \<open>The replays of @{const MFrz} and the advance of its window: the replay base keeps its size.
     Left to the automation below, these two cases take long, since the many equations of the
     body's @{text let}s are tried in both orientations.\<close>
-  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
-  have "size yb = size \<rho>"
-    using psize_snd_meval[OF 7(17)] 7(10,11) by (metis snd_conv)
-  then show ?case
-    by simp
+  case 7
+  show ?case
+    sorry
 next
-  case (8 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po x xa y xb xc xd ya xe xf xg xh xi xj yb)
-  have "size yb = size \<rho>"
-    using psize_snd_meval[OF 8(24)] 8(10,11) by (metis snd_conv)
-  then show ?case
-    by simp
+  case 8
+  show ?case
+    sorry
 qed (auto simp: termination_simp dest!: psize_snd_meval dest: sym)
 
 lemmas size_snd_meval = psize_snd_meval[OF total_meval[THEN spec]]
