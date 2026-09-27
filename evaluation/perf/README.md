@@ -43,49 +43,53 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-26 on refine f52e017d, after
-21.46, and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-27 on refine 0af2c4ee, after
+21.49, and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
 `-verified` is the original VeriMon.  Both ran with `run_both.sh` on the same machine, one after the
-other, with the whole suite of 267 formulas, the same logs and the same settings (8 workers), so
-their numbers compare.  The refine suite took 71 s of wall time, master's 187 s.
+other, with the whole suite of 283 formulas, the same logs and the same settings (8 workers), so
+their numbers compare.  The refine suite took 74 s of wall time, master's 197 s.
 
 | | master | refine |
 |---|---|---|
-| VeriMon timeouts (5 s) | 17 | 0 |
+| VeriMon timeouts (5 s) | 22 | 0 |
 | MonPoly timeouts | 0 | 0 |
-| MonPoly does not monitor | 19 | 19 |
-| both finish | 232 | 248 |
-| geometric mean VeriMon/MonPoly | 3.60 | 0.84 |
-| median VeriMon/MonPoly | 3.32 | 0.85 |
-| VeriMon faster / more than 2x slower | 0 / 187 | 206 / 2 |
+| MonPoly does not monitor | 21 | 21 |
+| both finish | 241 | 262 |
+| geometric mean VeriMon/MonPoly | 3.68 | 0.83 |
+| median VeriMon/MonPoly | 3.34 | 0.85 |
+| VeriMon faster / more than 2x slower | 0 / 197 | 216 / 2 |
 
-The verified monitor is faster than MonPoly on the geometric mean and on 206 of the 248 formulas
-both finish.  Every group is at or below 1.00x (the highest are `once_scale` at 1.00 and `frz` at
-0.97), but `frz` only on average: of its 21 formulas, `frz-oncelb` (6.7x) and `frz-prev` (6.0x) are the two formulas more than 2x slower.  There
-the frozen predicate sits under a Since with a lower bound or under a Prev, where taking it out of
-the window would change the first verdicts (21.43), so the monitor still replays the window.
-Every other formula is at most 1.27x (`frz-agg`); then come `der-guardalw` (1.25, 21.44),
-`frz-exists` (1.24) and `frz-once5` (1.21).  After them, the largest ratios outside `frz` are
-`pol-sincefutb` (1.18), `since-nu5` and `pol-sincefut`, `once-g500` and `once-inf` (1.12 to 1.13;
-`once-inf` keeps the whole history, 21.46).  The fastest formulas are `frz-nested` (0.05), which
-master's VeriMon times out on, and `onceex-not50` (0.26).
+The verified monitor is faster than MonPoly on the geometric mean and on 216 of the 262 formulas
+both finish.  None is more than 2.45x slower.  The two above 2x are `frz-sincelag` (2.45) and
+`frz-neglag` (2.12), where the frozen formula lags (`EVENTUALLY[0,3] C(x)`) and the frozen predicate
+sits under a negation or in a Since's left operand, so every frozen table has its own replay of the
+window (21.48).  On master both time out.  `frz-oncelb` and `frz-prev`, the two formulas above 2x in
+the previous run (6.7x and 6.0x), are now at 1.13 and 0.71 (21.47).  Every other formula is at
+most 1.26x (`frz-agg`); then come `der-guardalw` (1.25), `frz-exists` (1.24), `frzrw-untilr` (1.21)
+and `pol-sincefutb` (1.20).  The fastest formulas are `frz-nested` (0.05) and `onceex-not50` (0.26).
 There are no verdict disagreements; master's run has one, `match-pcnt`, an end-of-stream
-difference that the original VeriMon has.  The `andtrigger` and `vm_only` groups (TRIGGER,
-RELEASE, LETPAST, an unguarded HISTORICALLY or ALWAYS, EQUIV) have no ratio, since MonPoly does
-not monitor them.  There the verified monitor takes 0.10 to 0.60 s, against 0.25 to 1.73 s and one
-timeout (`lp-chain`) for master's; `rel-neg` went from 1.73 to 0.35 s, `der-always5` from 1.32 to
-0.23 s.
+difference that the original VeriMon has.
 
-The 66 formulas added since the last runs (the groups `frz`, `past_inf`, `derived`, `terms`,
-`agg_more` and `vm_only`, and a few in the older groups) have a geometric mean of 0.87 over the 52
-with a ratio.  On master they stood at 41x for `frz` (three timeouts), 2.2x to 3.2x for the others,
-with three more timeouts (`agg-avgonce`, `agg-avgev`, `lp-chain`).  On the 196 formulas the previous refine run had in common with this one, the
-geometric mean is 0.84 here against 0.80 there.  Master's rose on the same formulas from 2.55 to
-2.98, so this machine and its 8 workers favour MonPoly more than the previous machine and its 2
-workers did; the two runs compare only within themselves.  Within that shift, the aggregations
-that 21.45 changed moved against the rest: `agg-nogroup` 1.04 to 0.78, `agg-max` 0.86 to 0.79 and
-`agg-min` 0.84 to 0.79.  The largest increases (`join-self3` 0.63 to 0.76, `once-raw20` 0.51 to 0.61,
-`next-burst` 0.78 to 0.92) are in code that nothing since then has touched.
+The new group `frz_rw` (21.49) holds eight freezes as the rewriter introduces them, with the guard's
+frozen predicate under the temporal operator, on the full `base` log.  Its geometric mean is 0.86
+(0.63 to 1.21); master's is 3.21 over seven, with `frzrw-once2` timing out.  Without 21.49 the
+refine binary was quadratic on six of the eight (19 s on `tp1000` alone for a variant of
+`frzrw-once2`).  The `frz` group is at 0.88.  Of the 16 formulas added since the previous run (six
+in `frz`, eight in `frz_rw`, two in `vm_only`), the 14 with a ratio have a geometric mean of 0.96.
+On the 248 formulas the two runs have in common, the geometric mean went from 0.845 to 0.827, and
+master's is 3.60 in both runs, so the machine was the same.  Apart from `frz-oncelb` and `frz-prev`,
+no formula moved by more than 0.15.
+The `andtrigger` and `vm_only` groups (TRIGGER, RELEASE, LETPAST, an unguarded HISTORICALLY or
+ALWAYS, EQUIV) have no ratio, since MonPoly does not monitor them.  There the verified monitor takes
+0.10 to 0.59 s, against 0.26 to 1.73 s, one timeout (`lp-chain`) and one refusal (`der-equiv`) for
+master's.
+
+The previous refine run (2026-09-26, f52e017d, after 21.46, the same machine and 267 formulas) had a
+geometric mean of 0.84 against master's 3.60, 206 of 248 formulas faster and `frz-oncelb` and
+`frz-prev` the only two above 2x.  The run before that, on the same machine at 8 workers, had shown
+that this machine favours MonPoly more than the earlier 2-worker machine did: on 196 common
+formulas master's geometric mean rose from 2.55 to 2.98 there.  The two machines' runs compare only
+within themselves.
 
 The previous refine run, on another machine with 2 workers and the 201 formulas of the suite then
 (4192d9d6, after 21.41), had a geometric mean of 0.80 against master's 2.63, 176 of 196 formulas
