@@ -9502,3 +9502,61 @@ The rest of the allocation is the trees': each insertion or deletion copies the 
 in the index, the time stamp mapping and the window's table.  Keeping fewer of them (the time
 stamps in the index's buckets, say) would change the Since node's state and its invariant at all
 levels; this entry stops here.
+
+## 21.57 The frozen conjunct out of a quantifier, the diamonds inside a Let, and ALWAYS without its dead until
+
+A profile of the slowest formulas of the suite against MonPoly found two rewrites that stopped
+short.  On `frz-exists` (`FRZ q(x) = C(x) IN EXISTS y. ONCE[0,10] (A(x,y) AND q(x))`) the FRZ
+rewrite (21.40) took `q(x)` out of the ONCE but not out of the quantifier, leaving
+`LET q = C IN EXISTS y. (q(x) AND ONCE A(x,y))`: a join of `q` with the window's pairs, then a
+projection.  And `push_ex` (21.43), which moves a quantifier into a ONCE or EVENTUALLY, had no
+case for `Let`, so under the Let that the FRZ rewrite makes of most freezes it did nothing.  With
+the conjunct written outside the quantifier by hand, the window still kept every pair and
+projected it at every time point (579 M instructions against 466 M).  The formula written without
+FRZ, `C(x) AND EXISTS y. ONCE[0,10] A(x,y)`, runs in 311 M and faster than MonPoly.
+
+* `hoist` (`Dense_Frz.thy`) now takes the frozen conjunct out of an existential quantifier too,
+  with the split the Since and Until cases already use (`frz_split`, which renumbers the
+  conjunct's variables).  Outside any temporal operator that is plain first-order reasoning, so
+  it needs no condition; the lemmas get the two outcomes of the split from `hoist_Exists_cases`.
+* `push_ex` (`Dense_Push.thy`) goes into both operands of a `Let`.  Its structural lemmas carry
+  over; the one on relevant events is now proved for every event, since a Let's body is matched
+  against the events its definition produces.
+
+`der-guardalw` (`C(x) AND ALWAYS[0,5] (EXISTS y. A(x,y) OR B(x,y))`) spent 1.23 G of its
+2.6 G of evaluation in three until nodes.  The front end makes `ALWAYS[I] ψ` the release
+`(NOT "x" = "x") R[I] ψ`, and with 0 in the interval the multiway conversion expands a release to
+`(ψ U[I] (ψ AND φ)) OR always_safe_0 I ψ`.  With `φ` false the first disjunct never holds, but its
+until node keeps every tuple of `ψ` over the interval all the same.  `share_rw`
+(`Dense_Share.thy`, 21.44), which already binds the release's right operand, now produces
+`rel_op`: `always_safe_0 I ψ` when the left operand is false (`is_ff`, the front end's shape or
+`0 = 1`) and the interval is bounded and contains 0, and the release otherwise.  The satisfaction
+is VeriMon's own `always_rewrite_0`; the progress is the release's, because the release's
+progress is the least of two sets of time points of which the first, the dead disjunct's, is
+contained in the second (`progress_rel_op`, by `memR_flip_int_double_upper`).  MonPoly monitors
+the formula as `C(x) AND NOT (C(x) AND EVENTUALLY[0,5] (ONCE[0,5] C(x) AND NOT ψ))`, which would
+have one eventually window instead of two until nodes; it is not an admissible rewrite here,
+because VeriMon's progress for a release waits for twice the interval and the rewrites before the
+dense monitor keep the progress.
+
+| formula (min of 7) | before (s) | after (s) | MonPoly (s) | Ir before | Ir after |
+|---|---|---|---|---|---|
+| frz-exists | 0.087 | 0.061 | 0.071 | 466 M | 315 M |
+| der-guardalw | 0.852 | 0.793 | 0.698 | 5.72 G | 5.43 G |
+| der-always5 | 0.564 | 0.531 | not monitorable | | |
+
+`frz-exists` now runs in the instructions of the formula written without FRZ.  Over 157 formulas
+(the 37 with a freeze, the 93 aggregation, Since and Once formulas, and the Let, LetPast,
+release and derived ones) the geometric mean of new over old is 1.003 (0.984 on the freezes).
+The moves of up to 17% either way elsewhere are noise: on four of them (`agg-min`,
+`once-raw20`, `frz-outer`, `rel-two`) the instruction counts agree to within 0.001%.  The
+outputs are identical on all 157 formulas and on the 652 `-verified` commands of the test
+corpus, and the cram tests pass.
+
+The other slow formulas have no such gap.  `frz-once5`, `frz-ev5` and `frz-agg` already run
+their direct form (`frz-once5` executes 371 M instructions, the formula without FRZ 374 M);
+MonPoly is faster on them than on its own direct form because its copies filter `A` by that
+point's `C` before the window, which keeps its windows tiny on this log.  `frz-neglag`,
+`frz-sincelag` and `pol-sincefutb` spend the rest of their gap in the Since node's persistent
+trees (21.56).  GC settings (`o=120`, `o=200`, no compaction, a 1 M-word minor heap) make no
+measurable difference on any of them.
