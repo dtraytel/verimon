@@ -81,6 +81,19 @@ proof (induct F k t rule: rbt_comp_ins_lk2.induct)
     by (auto simp: Let_def split: order.splits prod.splits option.splits)
 qed (auto simp: Let_def split: order.splits prod.splits option.splits)
 
+text \<open>A caller that does not read the old value needs no pair at every node: the insertion
+  that combines the old value with the new one computes the same tree as the insertion of the
+  value computed from the lookup, since both descend by the same comparisons.\<close>
+
+lemma rbt_comp_ins_upd_w:
+  "rbt_comp_ins c (\<lambda>_ y _. F (Some y)) k (F None) t =
+    rbt_comp_ins c (\<lambda>_ _ nv. nv) k (F (rbt_comp_lookup c t k)) t"
+proof (induct t)
+  case (Branch col l x y r)
+  then show ?case
+    by (cases col) (auto split: order.splits)
+qed simp
+
 end
 
 subsection \<open>On the lifted trees\<close>
@@ -111,7 +124,16 @@ lift_definition (code_dt) upd_lk2 :: "'a :: ccompare \<Rightarrow> ('b option \<
   by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare is_rbt_rbt_comp_map_entry
       simp: paint_rbt_comp_ins rbt_comp_insert[OF ID_ccompare'] split: option.splits)
 
+lift_definition upd_w :: "'a :: ccompare \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping_rbt \<Rightarrow>
+    ('a, 'b) mapping_rbt" is
+  "\<lambda>k F t. rbt_comp_insert_with_key ccomp (\<lambda>_ y _. F (Some y)) k (F None) t"
+  unfolding rbt_comp_insert_with_key_def rbt_comp_ins_upd_w paint_rbt_comp_ins
+  by (auto 4 3 intro: linorder.rbt_insert_is_rbt ID_ccompare simp: rbt_comp_insert[OF ID_ccompare'])
+
 declare [[typedef_overloaded = false]]
+
+lemma upd_w_eq: "upd_w k F t = RBT_Mapping2.insert k (F (RBT_Mapping2.lookup t k)) t"
+  by transfer (simp add: rbt_comp_insert_with_key_def rbt_comp_ins_upd_w paint_rbt_comp_ins)
 
 lemma upd_lk2_eq: "upd_lk2 k F t = (case upd_lk k F t of (ov, t') \<Rightarrow> (ov, F ov, t'))"
   by transfer (simp add: rbt_comp_ins_lk2 split: prod.splits option.splits)
@@ -161,16 +183,36 @@ proof -
   qed simp
 qed (simp_all add: mupd2_def)
 
+text \<open>The update that does not return the old value: one descent that combines the old value
+  with the new one, without the pair @{const upd_lk} builds at every node.\<close>
+
+definition mupdw :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> ('a, 'b) mapping"
+  where "mupdw k F m = Mapping.update k (F (Mapping.lookup m k)) m"
+
+lemma snd_mupd: "snd (mupd k F m) = mupdw k F m"
+  by (simp add: mupd_def mupdw_def)
+
+lemma mupdw_code[code]:
+  fixes t :: "('a :: ccompare, 'b) mapping_rbt"
+  shows "mupdw k F (RBT_Mapping t) = (case ID CCOMPARE('a) of
+      None \<Rightarrow> Code.abort (STR ''mupdw RBT_Mapping: ccompare = None'') (\<lambda>_. mupdw k F (RBT_Mapping t))
+    | Some _ \<Rightarrow> RBT_Mapping (upd_w k F t))"
+    "mupdw k F (Assoc_List_Mapping al) =
+      Mapping.update k (F (Mapping.lookup (Assoc_List_Mapping al) k)) (Assoc_List_Mapping al)"
+    "mupdw k F (Mapping f) = Mapping.update k (F (Mapping.lookup (Mapping f) k)) (Mapping f)"
+  by (auto simp: mupdw_def upd_w_eq lookup_Mapping_code update_Mapping Mapping.lookup.abs_eq
+      fun_eq_iff split: option.splits)
+
 subsection \<open>The updates of the count sets and of the aggregates\<close>
 
-text \<open>Each of these reads a key's value and writes one computed from it; through @{const mupd}
+text \<open>Each of these reads a key's value and writes one computed from it; through @{const mupd} (or @{const mupdw}, where the old value is not read)
   they do both in the one descent.  The code equations are proved against the definitions.\<close>
 
 definition cnt_inc :: "nat option \<Rightarrow> nat" where
   "cnt_inc ov = (case ov of None \<Rightarrow> 1 | Some k \<Rightarrow> k + 1)"
 
-lemma ucnt_add1_mupd[code]: "ucnt_add1 t c = snd (mupd t cnt_inc c)"
-  by (simp add: ucnt_add1_def mupd_def cnt_inc_def split: option.splits)
+lemma ucnt_add1_mupd[code]: "ucnt_add1 t c = (mupdw t cnt_inc c)"
+  by (simp add: ucnt_add1_def mupdw_def cnt_inc_def split: option.splits)
 
 lemma de_gcnt_add1_mupd[code]:
   "de_gcnt_add1 t cc = (case cc of (c, s) \<Rightarrow> (case mupd t cnt_inc c of
@@ -185,16 +227,16 @@ lemma cnt_ins_fold_mupd[code]:
     (auto simp: fun_eq_iff mupd_def cnt_inc_def split: option.splits)
 
 lemma gi_cnt_mupd[code]:
-  "gi_cnt k t (v, m) = (if v then (v, snd (mupd (drop k t) cnt_inc m)) else (v, m))"
-  by (simp add: mupd_def cnt_inc_def split: option.splits)
+  "gi_cnt k t (v, m) = (if v then (v, (mupdw (drop k t) cnt_inc m)) else (v, m))"
+  by (simp add: mupdw_def cnt_inc_def split: option.splits)
 
 lemma gi_sum_mupd[code]:
   "gi_sum k ev t (v, m) = (if v then (case ev t of
-       EInt i \<Rightarrow> (True, snd (mupd (drop k t)
+       EInt i \<Rightarrow> (True, (mupdw (drop k t)
          (\<lambda>ov. case ov of None \<Rightarrow> (1, i) | Some (cnt, s) \<Rightarrow> (cnt + 1, s + i)) m))
      | _ \<Rightarrow> (False, Mapping.empty))
      else (v, m))"
-  by (simp add: mupd_def Let_def split: option.splits event_data.splits)
+  by (simp add: mupdw_def Let_def split: option.splits event_data.splits)
 
 lemma gi_rank_mupd[code]:
   "gi_rank k ev ty t (v, m) = (if v then (case (ev t, ty) of
@@ -306,18 +348,18 @@ lemma edl_rbtc_minus_unfold[code_unfold]: "rbt_comp_minus edl_comparator = edl_r
 subsection \<open>The Since index's insertion\<close>
 
 text \<open>A tuple entering the Since structure is added to the bucket of its key in the index:
-  the bucket's lookup and the index's update are one descent through @{const mupd}.\<close>
+  the bucket's lookup and the index's update are one descent through @{const mupdw}.\<close>
 
 lemma de_didx_add1_mupd[code]:
   "de_didx_add1 msk x i = (let k = dproj msk x in
-     snd (mupd k (\<lambda>ov. Set.insert x (case ov of None \<Rightarrow> {} | Some z \<Rightarrow> z)) i))"
-  by (simp add: de_didx_add1_def didx_add1_def dbucket_def mupd_def Let_def split: option.splits)
+     (mupdw k (\<lambda>ov. Set.insert x (case ov of None \<Rightarrow> {} | Some z \<Rightarrow> z)) i))"
+  by (simp add: de_didx_add1_def didx_add1_def dbucket_def mupdw_def Let_def split: option.splits)
 
 subsection \<open>The Until structure's time stamp maps\<close>
 
 text \<open>The Until deque keeps, per time point, a mapping from the tuples to time stamps.  A
   tuple entering it updates its entry with a function of the old one -- a lookup and an update,
-  one descent through @{const mupd}.  And the deletion of a set of keys from such a mapping, at the
+  one descent through @{const mupdw}.  And the deletion of a set of keys from such a mapping, at the
   step, went through the generic deletion with the comparator built at every call; the Since
   structure's two value types got the specialised deletion by hand, and this is the third.\<close>
 
@@ -325,9 +367,9 @@ lemma de_gupd_nested_step_dq_mupd[code]:
   "de_gupd_nested_step_dq base d f x dq = (case x of (k, k') \<Rightarrow>
     if base \<le> k \<and> k - base < dq_len dq then
       (let i = k - base; m' = dq_nth_l dq i Mapping.empty in
-       dq_upd dq i (snd (mupd k' (\<lambda>ov. case ov of Some v \<Rightarrow> f v | None \<Rightarrow> d) m')))
+       dq_upd dq i ((mupdw k' (\<lambda>ov. case ov of Some v \<Rightarrow> f v | None \<Rightarrow> d) m')))
     else dq)"
-  by (simp add: de_gupd_nested_step_dq_def gupd_nested_step_dq_def mupd_def Let_def
+  by (simp add: de_gupd_nested_step_dq_def gupd_nested_step_dq_def mupdw_def Let_def
       split: option.splits prod.splits)
 
 lemma de_mapping_delete_set_tstp_rbt[code]:
@@ -654,11 +696,11 @@ proof -
     unfolding nis_empty_def is_empty_Mapping(2) by (simp split: list.splits)
 qed
 
-lemma nins_mupd[code]: "nins k si su t M = snd (mupd (drop k t) (\<lambda>ov. case ov of
+lemma nins_mupd[code]: "nins k si su t M = (mupdw (drop k t) (\<lambda>ov. case ov of
      None \<Rightarrow> (si t, Mapping.update t 1 Mapping.empty)
    | Some (a, I) \<Rightarrow> (case mupd t cnt_inc I of
        (None, I') \<Rightarrow> (su t a, I') | (Some _, I') \<Rightarrow> (a, I'))) M)"
-  by (simp add: nins_def mupd_def cnt_inc_def Let_def split: option.splits prod.splits)
+  by (simp add: nins_def mupd_def mupdw_def cnt_inc_def Let_def split: option.splits prod.splits)
 
 lemma ndel_mupd2[code]: "ndel k sd t M = (case mupd2 (drop k t) (\<lambda>ov. case ov of
      None \<Rightarrow> (undefined, Mapping.empty)
@@ -728,6 +770,7 @@ setup \<open>Monomorphize.monomorphize_cmd
   (maps (fn (tn, ty) =>
      [("Dense_Map_Upd.upd_lk_aux", "edl_upd_lk_aux_" ^ tn, [edl, ty]),
       ("upd_lk", "edl_upd_lk_" ^ tn, [edl, ty]), ("mupd", "edl_mupd_" ^ tn, [edl, ty]),
+      ("upd_w", "edl_upd_w_" ^ tn, [edl, ty]), ("mupdw", "edl_mupdw_" ^ tn, [edl, ty]),
       ("Dense_Map_Upd.del_lk_aux", "edl_del_lk_aux_" ^ tn, [edl, ty]),
       ("del_lk", "edl_del_lk_" ^ tn, [edl, ty]), ("mdel_lk", "edl_mdel_lk_" ^ tn, [edl, ty])])
      edl_value_types)
@@ -954,12 +997,12 @@ subsection \<open>MIN and MAX outside a window, in one pass\<close>
 
 text \<open>The minimum and the maximum of a group need neither the multiset of its values nor an
   order-statistic tree: one pass over the table, keeping per group the extreme seen so far, has
-  them.  @{text mm_step} folds one tuple into that mapping with one descent (@{const mupd}).\<close>
+  them.  @{text mm_step} folds one tuple into that mapping with one descent (@{const mupdw}).\<close>
 
 definition mm_step :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> nat \<Rightarrow> 'b list \<Rightarrow>
     ('b list, 'c) mapping \<Rightarrow> ('b list, 'c) mapping" where
   "mm_step ev op k t m =
-     snd (mupd (drop k t) (\<lambda>ov. case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t)) m)"
+     (mupdw (drop k t) (\<lambda>ov. case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t)) m)"
 
 definition mm_acc :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow> 'c \<Rightarrow> 'c) \<Rightarrow> 'c option \<Rightarrow> 'b list \<Rightarrow> 'c option" where
   "mm_acc ev op ov t = Some (case ov of None \<Rightarrow> ev t | Some u \<Rightarrow> op u (ev t))"
@@ -967,13 +1010,13 @@ definition mm_acc :: "('b list \<Rightarrow> 'c) \<Rightarrow> ('c \<Rightarrow>
 lemma lookup_fold_mm_step:
   "Mapping.lookup (fold (mm_step ev op k) xs m) g
    = foldl (mm_acc ev op) (Mapping.lookup m g) (filter (\<lambda>t. drop k t = g) xs)"
-  by (induct xs arbitrary: m) (simp_all add: mm_step_def mupd_def mm_acc_def lookup_update')
+  by (induct xs arbitrary: m) (simp_all add: mm_step_def mupdw_def mm_acc_def lookup_update')
 
 lemma foldl_mm_acc_Some: "foldl (mm_acc ev op) (Some u) ts = Some (foldl op u (map ev ts))"
   by (induct ts arbitrary: u) (simp_all add: mm_acc_def)
 
 lemma keys_fold_mm_step: "Mapping.keys (fold (mm_step ev op k) xs m) = Mapping.keys m \<union> drop k ` set xs"
-  by (induct xs arbitrary: m) (auto simp: mm_step_def mupd_def)
+  by (induct xs arbitrary: m) (auto simp: mm_step_def mupdw_def)
 
 lemma foldl_max_Max: "foldl max u xs = Max (Set.insert u (set xs))" for u :: "'a :: linorder"
 proof -

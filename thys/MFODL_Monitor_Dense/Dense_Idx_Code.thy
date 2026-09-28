@@ -498,15 +498,30 @@ proof -
     by (simp add: entries_filter_RBT del: RBT_Mapping_def split: option.splits)
 qed
 
+text \<open>The entries whose keys fail are collected by a fold over the index that conses only
+  them, not by filtering the list of all its entries, which the join would build at every time
+  point however few keys drop out.  The fold collects them in reverse order, so they are
+  processed by a right fold.\<close>
+
+lemma fold_cons_fails:
+  "List.fold (\<lambda>(k, v) acc. if k \<in> Y then acc else (k, v) # acc) xs a =
+    rev (List.filter (\<lambda>p. fst p \<notin> Y) xs) @ a"
+  by (induct xs arbitrary: a) auto
+
+lemma entries_fails_fold:
+  "List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t) =
+    rev (RBT_Mapping2.fold (\<lambda>k v acc. if k \<in> Y then acc else (k, v) # acc) t [])"
+  by transfer (simp add: RBT_Impl.fold_def fold_cons_fails)
+
 lemma gjoin_idx_code[code]:
   fixes t :: "('k :: ccompare, 'b set) mapping_rbt"
   shows "gjoin_idx pos Y (RBT_Mapping t) acc = (case ID CCOMPARE('k) of
       None \<Rightarrow> Code.abort (STR ''gjoin_idx RBT_Mapping: ccompare = None'')
         (\<lambda>_. gjoin_idx pos Y (RBT_Mapping t) acc)
     | Some _ \<Rightarrow> (if pos then
-        (let D = List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t) in
-         (fold (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
-          fold (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p))) D acc))
+        (let D = RBT_Mapping2.fold (\<lambda>k v acc. if k \<in> Y then acc else (k, v) # acc) t [] in
+         (foldr (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
+          foldr (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p))) D acc))
       else (mfilter_keys pos Y (RBT_Mapping t), del_buckets (mfilter_keys (\<not> pos) Y (RBT_Mapping t)) acc)))"
 proof (cases "ID CCOMPARE('k)")
   case (Some c)
@@ -515,7 +530,7 @@ proof (cases "ID CCOMPARE('k)")
   show ?thesis
     using Some by (simp add: acc gjoin_idx_def mfilter_keys_True_RBT[OF n]
         set_of_idx_mfilter_keys_False_RBT[OF n] del_buckets_def fold_del_buckets
-        Let_def del: RBT_Mapping_def)
+        Let_def entries_fails_fold foldr_conv_fold del: RBT_Mapping_def)
 qed simp
 
 lemma gjoin_idx1_code[code]:
@@ -524,9 +539,9 @@ lemma gjoin_idx1_code[code]:
       None \<Rightarrow> Code.abort (STR ''gjoin_idx1 RBT_Mapping: ccompare = None'')
         (\<lambda>_. gjoin_idx1 pos Y (RBT_Mapping t) tm)
     | Some _ \<Rightarrow> (if pos then
-        (let D = List.filter (\<lambda>p. fst p \<notin> Y) (RBT_Mapping2.entries t) in
-         (fold (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
-          fold (\<lambda>p tm. mapping_delete_set tm (snd p)) D tm))
+        (let D = RBT_Mapping2.fold (\<lambda>k v acc. if k \<in> Y then acc else (k, v) # acc) t [] in
+         (foldr (\<lambda>p. Mapping.delete (fst p)) D (RBT_Mapping t),
+          foldr (\<lambda>p tm. mapping_delete_set tm (snd p)) D tm))
       else (mfilter_keys pos Y (RBT_Mapping t), del_buckets1 (mfilter_keys (\<not> pos) Y (RBT_Mapping t)) tm)))"
 proof (cases "ID CCOMPARE('k)")
   case (Some c)
@@ -534,7 +549,7 @@ proof (cases "ID CCOMPARE('k)")
   show ?thesis
     using Some by (simp add: gjoin_idx1_def mfilter_keys_True_RBT[OF n]
         set_of_idx_mfilter_keys_False_RBT[OF n] del_buckets1_def fold_del_buckets1
-        Let_def del: RBT_Mapping_def)
+        Let_def entries_fails_fold foldr_conv_fold del: RBT_Mapping_def)
 qed simp
 
 lemma gjoin_msaux_code[code]:
