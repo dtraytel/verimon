@@ -9626,3 +9626,28 @@ constructor.  The other 1692 items, among them `udeval`, `udmstep` and every str
 are textually the old ones.  `dune test` passes (848 cram tests), and on the benchmark formulas of
 Section 21.1 the verdicts are identical and the times the same up to noise (best of three, new
 over old: geometric mean 0.996, all within 0.91–1.08).
+
+### 22.1 The initial state without the kernel's formulas
+
+`udof` compiles the kernel's initial state, `minit0`'s formula, into the short formula, so the
+export still contained `mformula`, `minit0`, `mfcols` and the kernel's initial window structures
+(`init_mmasaux`, `init_muaux_dq`, `init_mmtaux` with the `wf_table` and `wf_idx` types they
+build), all only to be taken apart once at startup.  `udinit` (`Dense_Unbox_Exec.thy`) fuses the
+two: `udinit n cs φ` is by definition `udof n cs (minit0 n φ)`, and its equations, one per
+connective, descend the input formula the way `minit0` does and place each node the way `udof`
+does (`fcols` is `mfcols` on the kernel's initial state, for the match nodes' atoms).  Each
+equation is proved from the definition by unfolding it on the left, `minit0`'s and `udof`'s
+equations, and folding the operands' `udof (minit0 …)` back into `udinit` (`udinit_fold_simps`);
+the aggregation's default case, where `minit0` looks through the operand for a Since or Until,
+is proved separately (`udinit_Agg_default`).  The equations are the code equations, and
+`udminit_safe` gets the code equation `udminit_safe_code` that builds the state record from
+`udinit`.  Nothing else changes: `udminit_safe`'s definition and every correctness theorem stay
+as they are.  The code setup that made `minit0` executable (`minit0_code_simps` and the
+`[code_unfold]` instances of `init_since` and friends at the end of `Monitor_Impl.thy`) is gone.
+
+The export loses 46 items (1703 become 1660) and gains three (`udinit`, `fcols`,
+`udminit_safe`); the other 1657 are textually the old ones.  The guards of `udof` that compared
+the kernel's (empty) buffers with generic equality on `event_data option list set` disappear with
+it: the initial buffers are now built empty rather than checked empty.  `dune test` passes, and
+on the benchmark formulas of Section 21.1 the verdicts are identical and the times the same up to
+noise.

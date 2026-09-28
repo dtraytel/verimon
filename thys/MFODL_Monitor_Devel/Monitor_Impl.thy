@@ -1198,21 +1198,6 @@ lemma finite_multiset_code[code]:
   "finite_multiset M = (if finite M then set_fold_cfi finite_multiset_cfi True M else False)"
   using finite_multiset_def finite_multiset_eq by transfer auto
 
-text \<open>The initial state is computed by @{const minit0} itself.  It builds its temporal nodes
-  through the locale's @{text init_since}, @{text init_until}, @{text init_trigger} and
-  @{text init_and_trigger}, whose definitions hold only under the locale's assumptions; the
-  interpretations' instances of them are unfolded into the code instead.  The fused
-  And-Trigger's is unfolded into the equations of @{const minit0} directly, where the
-  preprocessor does not reach it.\<close>
-
-declare default_mmasaux.init_since_def[code_unfold] dq_muaux.init_until_def[code_unfold]
-  verimon_maux.init_trigger_def[code_unfold]
-
-lemmas minit0_code_simps = default_maux.minit0.simps[unfolded verimon_maux.init_and_trigger_def]
-
-declare [[code drop: minit0]]
-declare minit0_code_simps[code]
-
 (*<*)
 end
 (*>*)
