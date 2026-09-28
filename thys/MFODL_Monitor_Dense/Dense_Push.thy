@@ -19,10 +19,12 @@ text \<open>
 
   @{text push_ex} makes that move everywhere it applies, and the lemmas below show that it
   changes nothing the monitor's specification depends on: the free variables, the satisfaction
-  relation, the progress, the relevant events, safety, future-boundedness and typing.  It leaves
-  alone the subformulas whose treatment builds new formulas from their operands (@{text Let},
-  @{text LetPast}, @{text Frz}, the regular expressions, the trigger and release operators, and
-  a conjunction with a trigger or release on the right), which keeps those lemmas structural.
+  relation, the progress, the relevant events, safety, future-boundedness and typing.  It goes
+  into both operands of a @{text Let}: the rewrite of @{theory MFODL_Monitor_Dense.Dense_Frz}
+  turns most freezes into one, and its body is where their windows are.  It leaves alone the
+  subformulas whose treatment builds new formulas from their operands (@{text LetPast},
+  @{text Frz}, the regular expressions, the trigger and release operators, and a conjunction
+  with a trigger or release on the right), which keeps those lemmas structural.
 \<close>
 
 text \<open>Equality on formulas is not executable -- the intervals have no equality in the generated
@@ -86,6 +88,7 @@ fun push_ex :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
     | Formula.Release _ _ _ \<Rightarrow> Formula.And \<phi> \<psi>
     | _ \<Rightarrow> and_cstr (push_ex \<phi>) (push_ex \<psi>))"
 | "push_ex (Formula.Ands l) = Formula.Ands (map push_ex l)"
+| "push_ex (Formula.Let p \<phi> \<psi>) = Formula.Let p (push_ex \<phi>) (push_ex \<psi>)"
 | "push_ex (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (push_ex \<phi>)"
 | "push_ex (Formula.Prev I \<phi>) = Formula.Prev I (push_ex \<phi>)"
 | "push_ex (Formula.Next I \<phi>) = Formula.Next I (push_ex \<phi>)"

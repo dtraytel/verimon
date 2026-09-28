@@ -88,7 +88,10 @@ fun hoist :: "bool \<Rightarrow> Formula.name \<times> nat \<Rightarrow> 't Form
 | "hoist fl pn (Formula.And \<phi> \<psi>) = Formula.And (hoist fl pn \<phi>) (hoist fl pn \<psi>)"
 | "hoist fl pn (Formula.Or \<phi> \<psi>) = Formula.Or (hoist fl pn \<phi>) (hoist fl pn \<psi>)"
 | "hoist fl pn (Formula.Ands l) = Formula.Ands (map (hoist fl pn) l)"
-| "hoist fl pn (Formula.Exists t \<phi>) = Formula.Exists t (hoist fl pn \<phi>)"
+| "hoist fl pn (Formula.Exists t \<phi>) = (let \<phi>' = hoist fl pn \<phi> in
+     case frz_split pn (Formula.Exists t \<phi>') of
+       Some (q, \<alpha>) \<Rightarrow> Formula.And q \<alpha>
+     | None \<Rightarrow> Formula.Exists t \<phi>')"
 | "hoist fl pn (Formula.Agg y \<omega> tys f \<phi>) = Formula.Agg y \<omega> tys f (hoist fl pn \<phi>)"
 | "hoist fl pn (Formula.Let e \<phi> \<psi>) =
      (if (e, Formula.nfv \<phi>) = pn then Formula.Let e \<phi> \<psi> else Formula.Let e \<phi> (hoist fl pn \<psi>))"
@@ -291,6 +294,30 @@ next
     using 3(1)[OF s(1) 3(3)] s(3,4) by simp
 qed (auto split: if_splits)
 
+text \<open>Out of an existential quantifier the conjunct is taken whether or not a temporal operator
+  follows: that is first-order reasoning, and the split already renumbers its variables.  The
+  equation is not a simplification rule, so that the lemmas below see the two outcomes of the
+  split rather than the split's own equations.\<close>
+
+declare hoist.simps(8)[simp del]
+
+lemma hoist_Exists_cases:
+  obtains (None) "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = None"
+    "hoist fl pn (Formula.Exists t \<phi>) = Formula.Exists t (hoist fl pn \<phi>)"
+  | (Some) q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
+    "hoist fl pn (Formula.Exists t \<phi>) = Formula.And q \<alpha>"
+proof (cases "frz_split pn (Formula.Exists t (hoist fl pn \<phi>))")
+  case None
+  then show thesis
+    by (intro that(1)) (simp_all only: hoist.simps(8) Let_def option.case)
+next
+  case (Some x)
+  then obtain q \<alpha> where "frz_split pn (Formula.Exists t (hoist fl pn \<phi>)) = Some (q, \<alpha>)"
+    by (cases x) simp
+  then show thesis
+    by (intro that(2)) (simp_all only: hoist.simps(8) Let_def option.case prod.case)
+qed
+
 lemma fvi_hoist[simp]: "Formula.fvi b (hoist fl pn \<phi>) = Formula.fvi b \<phi>"
 proof (induct fl pn \<phi> arbitrary: b rule: hoist.induct)
   case (1 fl pn \<phi> I \<psi>)
@@ -306,6 +333,16 @@ next
     by (cases "frz_split pn (hoist fl pn \<psi>)") auto
   show ?case
     using 2(1) \<phi> by (auto simp: Let_def split: option.splits dest!: frz_split_fvi)
+next
+  case (8 fl pn t \<phi>)
+  show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    have "Formula.fvi b (Formula.Exists t (hoist fl pn \<phi>)) = Formula.fvi b q \<union> Formula.fvi b \<alpha>"
+      by (rule frz_split_fvi[OF Some(1)])
+    then show ?thesis
+      using 8 by (simp only: Some(2) Formula.fvi.simps)
+  qed (use 8 in simp)
 qed (auto simp: Let_def split: option.splits if_splits dest!: frz_split_fvi)
 
 lemma nfv_hoist[simp]: "Formula.nfv (hoist fl pn \<phi>) = Formula.nfv \<phi>"
@@ -348,6 +385,17 @@ next
   case (7 fl pn l)
   show ?case
     using 7(1) wty_formula_AndsD[OF 7(2)] by (auto intro!: wty_formula.Ands)
+next
+  case (8 fl pn t \<phi>)
+  have "S, E \<turnstile> Formula.Exists t (hoist fl pn \<phi>)"
+    using 8(1)[OF wty_formula_ExistsD[OF 8(2)]] by (rule wty_formula.Exists)
+  then show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    then show ?thesis
+      using frz_split_wty[OF Some(1) \<open>S, E \<turnstile> Formula.Exists t (hoist fl pn \<phi>)\<close>]
+      by (auto intro: wty_formula.And)
+  qed simp
 next
   case (11 fl pn I \<psi>)
   then have "S, E \<turnstile> hoist fl pn \<psi>"
@@ -409,6 +457,16 @@ next
   show ?case
     using \<psi> frz_split_sat_const[where V=V and pn=pn and \<psi>="hoist fl pn \<psi>" and \<sigma>=\<sigma> and v=v and i=i] 3(2,3)
     by (auto simp: Let_def split: option.splits)
+next
+  case (8 fl pn t \<phi>)
+  have \<phi>: "Formula.sat \<sigma> V v i (Formula.Exists t (hoist fl pn \<phi>)) = Formula.sat \<sigma> V v i (Formula.Exists t \<phi>)"
+    using 8 by simp
+  show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    then show ?thesis
+      using frz_split_sat[OF Some(1), of \<sigma> V v i] \<phi> by simp
+  qed (use \<phi> in simp)
 next
   case (11 fl pn I \<psi>)
   have \<psi>: "Formula.sat \<sigma> V v' j (hoist fl pn \<psi>) = Formula.sat \<sigma> V v' j \<psi>" for v' j
@@ -515,6 +573,16 @@ next
     from 3(4) show ?thesis
       using s c(2) \<psi>\<alpha> le by (auto simp: Let_def min_absorb2)
   qed (use \<psi> in \<open>simp add: Let_def\<close>)
+next
+  case (8 fl pn t \<phi>)
+  have \<phi>: "progress \<sigma> P (Formula.Exists t (hoist fl pn \<phi>)) j = progress \<sigma> P \<phi> j"
+    using 8 by simp
+  show ?case
+  proof (cases rule: hoist_Exists_cases[of pn t fl \<phi>])
+    case (Some q \<alpha>)
+    then show ?thesis
+      using frz_split_progress[OF Some(1) 8(2), of \<sigma>] \<phi> by simp
+  qed (use \<phi> in simp)
 next
   case (10 fl pn e \<phi> \<psi>)
   show ?case

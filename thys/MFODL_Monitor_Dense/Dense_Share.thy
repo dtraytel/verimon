@@ -54,14 +54,81 @@ definition share_ok :: "'t Formula.formula \<Rightarrow> 't Formula.formula \<Ri
 definition shr_pred :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "shr_pred \<psi> = Formula.Pred shr (map Formula.Var [0..<Formula.nfv \<psi>])"
 
+text \<open>The front end turns @{text "ALWAYS[I] \<psi>"} into a release whose left operand is false,
+  @{text "(NOT ''x'' = ''x'') R[I] \<psi>"}.  With @{text "0 \<in> I"}, the multiway conversion expands a
+  release into @{text "(\<psi> U[I] (\<psi> \<and> \<phi>)) \<or> always_safe_0 I \<psi>"}, whose first disjunct cannot hold
+  when @{text \<phi>} is false, but whose until node keeps every tuple of @{text \<psi>} over the
+  interval all the same.  So such a release is replaced by @{const always_safe_0} directly
+  (@{text rel_op}); its progress is the release's (@{text progress_rel_op}), because the first
+  disjunct never has less progress than the second.\<close>
+
+fun str_eq_trm :: "Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> bool" where
+  "str_eq_trm (Formula.Const (EString s)) (Formula.Const (EString s')) = (s = s')"
+| "str_eq_trm _ _ = False"
+
+fun int_neq_trm :: "Formula.trm \<Rightarrow> Formula.trm \<Rightarrow> bool" where
+  "int_neq_trm (Formula.Const (EInt i)) (Formula.Const (EInt i')) = (i \<noteq> i')"
+| "int_neq_trm _ _ = False"
+
+fun is_ff :: "'t Formula.formula \<Rightarrow> bool" where
+  "is_ff (Formula.Neg (Formula.Eq t u)) = str_eq_trm t u"
+| "is_ff (Formula.Eq t u) = int_neq_trm t u"
+| "is_ff _ = False"
+
+lemma str_eq_trmD: "str_eq_trm t u \<Longrightarrow> \<exists>s. t = Formula.Const (EString s) \<and> u = t"
+  by (induct t u rule: str_eq_trm.induct) auto
+
+lemma int_neq_trmD: "int_neq_trm t u \<Longrightarrow> \<exists>i i'. t = Formula.Const (EInt i) \<and> u = Formula.Const (EInt i') \<and> i \<noteq> i'"
+  by (induct t u rule: int_neq_trm.induct) auto
+
+lemma is_ffE:
+  assumes "is_ff \<phi>"
+  obtains s where "\<phi> = Formula.Neg (Formula.Eq (Formula.Const (EString s)) (Formula.Const (EString s)))"
+  | i i' where "\<phi> = Formula.Eq (Formula.Const (EInt i)) (Formula.Const (EInt i'))" "i \<noteq> i'"
+  using assms by (cases \<phi> rule: is_ff.cases) (auto dest!: str_eq_trmD int_neq_trmD)
+
+lemma is_ff_sat: "is_ff \<phi> \<Longrightarrow> \<not> Formula.sat \<sigma> V v i \<phi>"
+  by (erule is_ffE) auto
+
+lemma is_ff_fvi: "is_ff \<phi> \<Longrightarrow> Formula.fvi b \<phi> = {}"
+  by (erule is_ffE) auto
+
+lemma is_ff_progress: "is_ff \<phi> \<Longrightarrow> progress \<sigma> P \<phi> j = j"
+  by (erule is_ffE) auto
+
+definition rel_op :: "'t Formula.formula \<Rightarrow> \<I> \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.formula" where
+  "rel_op \<phi> I \<psi> = (if is_ff \<phi> \<and> mem I 0 \<and> bounded I then always_safe_0 I \<psi> else Formula.Release \<phi> I \<psi>)"
+
+lemma fvi_rel_op[simp]: "Formula.fvi b (rel_op \<phi> I \<psi>) = Formula.fvi b (Formula.Release \<phi> I \<psi>)"
+  by (auto simp: rel_op_def always_safe_0_def is_ff_fvi)
+
+lemma sat_rel_op[simp]: "Formula.sat \<sigma> V v i (rel_op \<phi> I \<psi>) = Formula.sat \<sigma> V v i (Formula.Release \<phi> I \<psi>)"
+  using always_rewrite_0[of I \<sigma> V v i \<psi>] is_ff_sat[of \<phi> \<sigma> V v] by (auto simp: rel_op_def)
+
+lemma progress_rel_op[simp]: "progress \<sigma> P (rel_op \<phi> I \<psi>) j = progress \<sigma> P (Formula.Release \<phi> I \<psi>) j"
+proof (cases "is_ff \<phi> \<and> mem I 0 \<and> bounded I")
+  case True
+  let ?A = "{i. \<forall>k. k < j \<and> k \<le> min (progress \<sigma> P \<psi> j) (progress \<sigma> P \<phi> j) \<longrightarrow> memR I (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
+  let ?B = "{i. \<forall>k. k < j \<and> k \<le> progress \<sigma> P \<psi> j \<longrightarrow> memR (flip_int_double_upper I) (\<tau> \<sigma> k - \<tau> \<sigma> i)}"
+  have "?A \<subseteq> ?B"
+    using True is_ff_progress[of \<phi> \<sigma> P j] by (auto intro: memR_flip_int_double_upper)
+  then have "?A \<union> ?B = ?B"
+    by blast
+  then show ?thesis
+    using True by (simp add: rel_op_def)
+qed (simp only: rel_op_def if_not_P if_False)
+
+lemma wty_rel_op: "S, E \<turnstile> Formula.Release \<phi> I \<psi> \<Longrightarrow> S, E \<turnstile> rel_op \<phi> I \<psi>"
+  by (auto simp: rel_op_def always_safe_0_def intro!: wty_formula.intros dest: wty_formulaD)
+
 fun share_rw :: "'t Formula.formula \<Rightarrow> 't Formula.formula" where
   "share_rw (Formula.And \<alpha> (Formula.Release \<phi> I \<psi>)) = (let \<alpha>' = share_rw \<alpha>; \<phi>' = share_rw \<phi>; \<psi>' = share_rw \<psi> in
      if share_ok (Formula.And \<alpha>' \<phi>') \<psi>'
-     then Formula.Let shr \<psi>' (Formula.And \<alpha>' (Formula.Release \<phi>' I (shr_pred \<psi>')))
-     else Formula.And \<alpha>' (Formula.Release \<phi>' I \<psi>'))"
+     then Formula.Let shr \<psi>' (Formula.And \<alpha>' (rel_op \<phi>' I (shr_pred \<psi>')))
+     else Formula.And \<alpha>' (rel_op \<phi>' I \<psi>'))"
 | "share_rw (Formula.Release \<phi> I \<psi>) = (let \<phi>' = share_rw \<phi>; \<psi>' = share_rw \<psi> in
-     if share_ok \<phi>' \<psi>' then Formula.Let shr \<psi>' (Formula.Release \<phi>' I (shr_pred \<psi>'))
-     else Formula.Release \<phi>' I \<psi>')"
+     if share_ok \<phi>' \<psi>' then Formula.Let shr \<psi>' (rel_op \<phi>' I (shr_pred \<psi>'))
+     else rel_op \<phi>' I \<psi>')"
 | "share_rw (Formula.Let p \<phi> \<psi>) = Formula.Let p (share_rw \<phi>) (share_rw \<psi>)"
 | "share_rw (Formula.Neg \<phi>) = Formula.Neg (share_rw \<phi>)"
 | "share_rw (Formula.And \<phi> \<psi>) = Formula.And (share_rw \<phi>) (share_rw \<psi>)"
@@ -350,14 +417,14 @@ proof (induct \<phi> arbitrary: S E rule: share_rw.induct)
     case True
     then have "\<not> occurs (shr, Formula.nfv ?\<psi>) ?\<alpha>" "\<not> occurs (shr, Formula.nfv ?\<psi>) ?\<phi>"
       by (auto simp: share_ok_def)
-    then have "?S, E \<turnstile> Formula.And ?\<alpha> (Formula.Release ?\<phi> I (shr_pred ?\<psi>))"
-      by (intro wty_formula.And wty_formula.Release wty_fresh[OF \<alpha>] wty_fresh[OF \<phi>] wty_shr_pred)
+    then have "?S, E \<turnstile> Formula.And ?\<alpha> (rel_op ?\<phi> I (shr_pred ?\<psi>))"
+      by (intro wty_formula.And wty_rel_op wty_formula.Release wty_fresh[OF \<alpha>] wty_fresh[OF \<phi>] wty_shr_pred)
     then show ?thesis
       using True \<psi> by (auto simp: Let_def intro!: wty_formula.Let[where E'=E])
   next
     case False
     then show ?thesis
-      using \<alpha> \<phi> \<psi> by (auto simp: Let_def intro!: wty_formula.And wty_formula.Release)
+      using \<alpha> \<phi> \<psi> by (auto simp: Let_def intro!: wty_formula.And wty_rel_op wty_formula.Release)
   qed
 next
   case (2 \<phi> I \<psi>)
@@ -372,14 +439,14 @@ next
     case True
     then have "\<not> occurs (shr, Formula.nfv ?\<psi>) ?\<phi>"
       by (auto simp: share_ok_def)
-    then have "?S, E \<turnstile> Formula.Release ?\<phi> I (shr_pred ?\<psi>)"
-      by (intro wty_formula.Release wty_fresh[OF \<phi>] wty_shr_pred)
+    then have "?S, E \<turnstile> rel_op ?\<phi> I (shr_pred ?\<psi>)"
+      by (intro wty_rel_op wty_formula.Release wty_fresh[OF \<phi>] wty_shr_pred)
     then show ?thesis
       using True \<psi> by (auto simp: Let_def intro!: wty_formula.Let[where E'=E])
   next
     case False
     then show ?thesis
-      using \<phi> \<psi> by (auto simp: Let_def intro!: wty_formula.Release)
+      using \<phi> \<psi> by (auto simp: Let_def intro!: wty_rel_op wty_formula.Release)
   qed
 next
   case (3 p \<phi> \<psi>)
