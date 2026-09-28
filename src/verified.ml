@@ -11446,47 +11446,6 @@ let rec emb_msk p = mapa (fun q -> not (is_none q)) p;;
 let rec list_of_option = function None -> []
                          | Some x -> [x];;
 
-let rec freeze_meval1
-  eval k x2 = match eval, k, x2 with eval, k, [] -> ([], ([], None))
-    | eval, k, alpha :: alpha_s ->
-        (let (ys, st) = eval alpha in
-          (match drop k ys
-            with [] ->
-              ([], (alpha :: alpha_s, Some (minus_nata k (size_list ys), st)))
-            | y :: _ ->
-              (let (zs, (alpha_sa, lv)) = freeze_meval1 eval (suc k) alpha_s in
-                (y :: zs, (alpha_sa, lv)))));;
-
-let rec frz_live_step
-  eval k alpha_s lr =
-    (match lr with None -> freeze_meval1 eval k alpha_s
-      | Some (g, (us, st)) ->
-        (match drop g us
-          with [] -> ([], (alpha_s, Some (minus_nata g (size_list us), st)))
-          | y :: _ ->
-            (let (zs, (alpha_sa, lv)) = freeze_meval1 eval (suc k) (tla alpha_s)
-               in
-              (y :: zs, (alpha_sa, lv)))));;
-
-let rec uassign1 p t d = take p d @ umeval_trm t d :: drop p d;;
-
-let rec uassign p t d = edl_image (uassign1 p t) d;;
-
-let rec umtrm
-  xa0 x = match xa0, x with MVar v, x -> edl_insert [x] edl_bot
-    | MConst c, x ->
-        (if equal_event_dataa c x then edl_insert [] edl_bot else edl_bot);;
-
-let rec frz_fill (_A1, _A2, _A3)
-  ng alpha_s =
-    (if ng then last (bot_set (_A1, _A2, _A3) :: alpha_s)
-      else bot_set (_A1, _A2, _A3));;
-
-let rec frz_cut
-  po w k l j =
-    (if po then ed_min_nat (minus_nata j w) (minus_nata (plus_nata k l) w)
-      else minus_nata j w);;
-
 let rec plus_enat
   q qa = match q, qa with Enat m, Enat n -> Enat (plus_nata m n)
     | Infinity_enat, q -> Infinity_enat
@@ -11504,6 +11463,86 @@ let rec frz_adv
                              w))))
                tq)
       else zero_nata);;
+
+let rec frz_adv_st (_B1, _B2)
+  sz ev pm dbe fl d j i s =
+    (let (rho, (w, (pR, (tq, rb)))) = s in
+     let a = frz_adv d w i j tq in
+     let (rs, rhoa) = ev [] (updateb (_B1, _B2) pm (replicate a fl) dbe) rho in
+      (if equal_nata (sz rhoa) (sz rho)
+        then (rhoa,
+               (plus_nata w a,
+                 (plus_nata pR (size_list rs),
+                   (drop a tq,
+                     drop (minus_nata
+                            (ed_min_nat i (plus_nata pR (size_list rs)))
+                            (minus_nata pR (size_list rb)))
+                       (rb @ rs)))))
+        else s));;
+
+let rec frz_cut
+  po w i j =
+    (if po then ed_min_nat (minus_nata j w) (minus_nata (suc i) w)
+      else minus_nata j w);;
+
+let rec frz_loop (_B1, _B2)
+  sz ev pm dbe fl d po j i x9 s = match sz, ev, pm, dbe, fl, d, po, j, i, x9, s
+    with
+    sz, ev, pm, dbe, fl, d, po, j, i, [], s ->
+      ([], ([], (None, frz_adv_st (_B1, _B2) sz ev pm dbe fl d j i s)))
+    | sz, ev, pm, dbe, fl, d, po, j, i, alpha :: alpha_s, s ->
+        (let (rho, (w, (pR, (tq, rb)))) =
+           frz_adv_st (_B1, _B2) sz ev pm dbe fl d j i s in
+         let (us, sigma) =
+           ev [] (updateb (_B1, _B2) pm (replicate (frz_cut po w i j) alpha)
+                   dbe)
+             rho
+           in
+          (match drop (minus_nata i (minus_nata pR (size_list rb))) (rb @ us)
+            with [] ->
+              ([], (alpha :: alpha_s,
+                     (Some (minus_nata
+                              (minus_nata i (minus_nata pR (size_list rb)))
+                              (size_list (rb @ us)),
+                             sigma),
+                       (rho, (w, (pR, (tq, rb)))))))
+            | y :: _ ->
+              (let (zs, (alpha_sa, (lv, sa))) =
+                 frz_loop (_B1, _B2) sz ev pm dbe fl d po j (suc i) alpha_s
+                   (rho, (w, (pR, (tq, rb))))
+                 in
+                (y :: zs, (alpha_sa, (lv, sa))))));;
+
+let rec frz_live_loop (_B1, _B2)
+  sz ev pm dbe fl d po j i alpha_s lr s =
+    (match lr
+      with None -> frz_loop (_B1, _B2) sz ev pm dbe fl d po j i alpha_s s
+      | Some (g, (us, st)) ->
+        (match drop g us
+          with [] ->
+            ([], (alpha_s,
+                   (Some (minus_nata g (size_list us), st),
+                     frz_adv_st (_B1, _B2) sz ev pm dbe fl d j i s)))
+          | y :: _ ->
+            (let (zs, (alpha_sa, (lv, sa))) =
+               frz_loop (_B1, _B2) sz ev pm dbe fl d po j (suc i) (tla alpha_s)
+                 s
+               in
+              (y :: zs, (alpha_sa, (lv, sa))))));;
+
+let rec uassign1 p t d = take p d @ umeval_trm t d :: drop p d;;
+
+let rec uassign p t d = edl_image (uassign1 p t) d;;
+
+let rec umtrm
+  xa0 x = match xa0, x with MVar v, x -> edl_insert [x] edl_bot
+    | MConst c, x ->
+        (if equal_event_dataa c x then edl_insert [] edl_bot else edl_bot);;
+
+let rec frz_fill (_A1, _A2, _A3)
+  ng alpha_s =
+    (if ng then last (bot_set (_A1, _A2, _A3) :: alpha_s)
+      else bot_set (_A1, _A2, _A3));;
 
 let rec udeval
   j ts db x3 = match j, ts, db, x3 with j, ts, db, UDFail -> ([], UDFail)
@@ -11635,83 +11674,55 @@ let rec udeval
               in
             let (zs0, psia) = udeval j ts db0 psi in
             let (rs, rhoa) = udeval j ts db0 rho in
-            let (zs0_out,
-                  (jfrza, (rb0, (rba, (dbe, (ys, (alpha_sa, (lva, rho_La))))))))
-              = (let zs0_out = drop (minus_nata jfrz jpsi0) zs0 in
-                 let alpha_sa =
-                   drop (plus_nata (minus_nata jfrz jphi) (size_list zs0_out))
-                     (alpha_s @ xs)
-                   in
-                 let jfrza = plus_nata jfrz (size_list zs0_out) in
-                 let rb0 = minus_nata pR (size_list rb) in
-                 let rba = rb @ rs in
-                 let dbe =
-                   map_values (ccompare_prod ccompare_string8 ccompare_nat)
-                     (fun _ _ -> []) db
-                   in
-                 let c = frz_cut po w jphi (size_list xs) j in
-                 let (ys, (alpha_sb, lva)) =
-                   frz_live_step
-                     (fun alpha ->
-                       (let (us, a) =
-                          udeval j []
-                            (updateb
-                              ((ccompare_prod ccompare_string8 ccompare_nat),
-                                (equal_prod equal_string8 equal_nat))
-                              (p, m) (replicate c alpha) dbe)
-                            rhoa
-                          in
-                         (rba @ us, a)))
-                     (minus_nata jfrza rb0) alpha_sa
-                     (match lv with None -> None
-                       | Some g ->
-                         (if null zs0_out && not (null alpha_sa)
-                           then Some (g, udeval j ts
-   (updateb
-     ((ccompare_prod ccompare_string8 ccompare_nat),
-       (equal_prod equal_string8 equal_nat))
-     (p, m) (replicate (size_list ts) (hda alpha_sa)) db)
-   rho_L)
-                           else None))
-                   in
-                 let lvb = (if po then None else lva) in
-                  (zs0_out,
-                    (plus_nata jfrza (size_list ys),
-                      (rb0, (rba, (dbe, (ys,
-  (alpha_sb, (ufrz_keep_lv lvb rho_L, ufrz_keep_st lvb rho_L)))))))))
-              in
-            let (a, (tqa, (rs2, rhob))) =
-              (let tqa = (if equal_enat d Infinity_enat then [] else tq @ ts) in
-               let a = frz_adv d w jfrza j tqa in
-               let (rs2, rhob) =
-                 udeval j []
-                   (updateb
-                     ((ccompare_prod ccompare_string8 ccompare_nat),
-                       (equal_prod equal_string8 equal_nat))
-                     (p, m)
-                     (replicate a
-                       (frz_fill
-                         ((ceq_list ceq_event_data),
-                           (ccompare_list ccompare_event_data), set_impl_list)
-                         ng (alpha_s @ xs)))
-                     dbe)
-                   rhoa
+            let (zs0_out, (jfrza, (fl, (alpha_sa, lr)))) =
+              (let zs0_out = drop (minus_nata jfrz jpsi0) zs0 in
+               let alpha_s1 =
+                 drop (plus_nata (minus_nata jfrz jphi) (size_list zs0_out))
+                   (alpha_s @ xs)
                  in
-                (a, (tqa, (rs2, rhob))))
+                (zs0_out,
+                  (plus_nata jfrz (size_list zs0_out),
+                    (frz_fill
+                       ((ceq_list ceq_event_data),
+                         (ccompare_list ccompare_event_data), set_impl_list)
+                       ng (alpha_s @ xs),
+                      (alpha_s1,
+                        (match lv with None -> None
+                          | Some g ->
+                            (if null zs0_out && not (null alpha_s1)
+                              then Some (g,
+  udeval j ts
+    (updateb
+      ((ccompare_prod ccompare_string8 ccompare_nat),
+        (equal_prod equal_string8 equal_nat))
+      (p, m) (replicate (size_list ts) (hda alpha_s1)) db)
+    rho_L)
+                              else None)))))))
+              in
+            let (ys, (alpha_sb, (lva, (rhob, (wa, (pRa, (tqa, rba))))))) =
+              frz_live_loop
+                ((ccompare_prod ccompare_string8 ccompare_nat),
+                  (equal_prod equal_string8 equal_nat))
+                ursize (udeval j) (p, m)
+                (map_values (ccompare_prod ccompare_string8 ccompare_nat)
+                  (fun _ _ -> []) db)
+                fl d po j jfrza alpha_sa lr
+                (rhoa,
+                  (w, (plus_nata pR (size_list rs),
+                        ((if equal_enat d Infinity_enat then [] else tq @ ts),
+                          drop (minus_nata
+                                 (ed_min_nat jfrza
+                                   (plus_nata pR (size_list rs)))
+                                 (minus_nata pR (size_list rb)))
+                            (rb @ rs)))))
               in
              (zs0_out @ ys,
-               UDFrz (p, m, phia, psia, jfrza, plus_nata jpsi0 (size_list zs0),
-                       plus_nata jphi (size_list xs), alpha_sa, rhob,
-                       plus_nata w a,
-                       plus_nata (plus_nata pR (size_list rs)) (size_list rs2),
-                       drop a tqa,
-                       drop (minus_nata
-                              (ed_min_nat jfrza
-                                (plus_nata (plus_nata pR (size_list rs))
-                                  (size_list rs2)))
-                              rb0)
-                         (rba @ rs2),
-                       d, po, ng, lva, rho_La)))
+               UDFrz (p, m, phia, psia, plus_nata jfrza (size_list ys),
+                       plus_nata jpsi0 (size_list zs0),
+                       plus_nata jphi (size_list xs), alpha_sb, rhob, wa, pRa,
+                       tqa, rba, d, po, ng,
+                       ufrz_keep_lv (if po then None else lva) rho_L,
+                       ufrz_keep_st (if po then None else lva) rho_L)))
     | j, ts, db, UDLetPast (p, m, phi, psi, i, buf) ->
         (let (xs, (ia, (bufa, phia))) =
            uletpast_meval0

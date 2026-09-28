@@ -9424,3 +9424,37 @@ last 31 frozen tables arrive in one step, and each copy replays from the same wi
 Over the 37 formulas with a freeze, the geometric mean of new over old is 0.958; `frzrw-oncelb` and
 `frzrw-once2` gain 9-11%.  The outputs are identical on all 37 formulas and on the 652 `-verified`
 commands of the test corpus.  The cram tests pass.
+
+## 21.55 Each copy is cut at its own anchor, and the window moves between copies
+
+Before, a step of the freeze node replayed all its copies from the same window, which only moved
+at the end of the step (`frz_adv`, §21.49).  When the frozen formula lags, many frozen tables
+arrive in one step: in `frz-sincelag30`, the last 31 arrive at once, and each of their copies
+replayed the 35 time points of the window.  With a past-only body (`po`), the copy of time point i
+now gets the frozen predicate only up to i (`frz_cut`), and the window moves up to i's anchor
+before the copy is made.  The copies and the moves run in one loop, `frz_loop` (`Monitor.thy`),
+over a state of the replay base, window, time stamps and the verdicts buffered from the base
+(`frz_adv_st`).  Only a move that keeps the size of the replay base is kept, as in
+`letpast_meval0`, so that the termination argument still goes by the formula's size.  The live
+copy (§21.51) enters the loop through `frz_live_loop`.
+
+The loop is generic in the evaluator and its state.  So the executable and the three dense
+evaluators run the kernel's loop on their own states, and one simulation lemma relates any two
+runs (`frz_live_loop_rel`, with the functional corollary `frz_live_loop_map` and the invariant
+version `frz_live_loop_inv`).  These lemmas replace the per-evaluator lemmas on
+`freeze_meval0`/`frz_live_step`, which are removed.  The correctness proof of the step
+(`Correctness.thy`) carries a relaxed invariant through the loop: the rows of the buffered verdicts
+from the loop's time point on are exact.
+
+| formula (tp500, min of 3) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frz-sincelag30` | 0.252 | 0.195 | 0.116 |
+| `frz-sincelag` | 0.166 | 0.151 | 0.106 |
+| `frz-neglag30` | 0.114 | 0.094 | 0.068 |
+| `frz-neglag` | 0.188 | 0.172 | 0.097 |
+
+Over the 37 formulas with a freeze, the geometric mean of new over old is 0.966.  Formulas whose
+frozen formula does not lag are unchanged within noise.  The outputs are identical on all 37
+formulas and on the 652 `-verified` commands of the test corpus, and the cram tests pass.  What is
+left of the gap on the lagging formulas is mostly the Since node's expiry of the replay base's old
+tables in each copy (§21.54), which a cheaper expiry would address.
