@@ -561,6 +561,9 @@ lemma rdb_update_replicate[simp]:
   "Mapping.update k (replicate j (reopt_table \<alpha>)) (rdb db) = rdb (Mapping.update k (replicate j \<alpha>) db)"
   using rdb_update[of k "replicate j \<alpha>"] by simp
 
+lemma frz_fill_reopt: "frz_fill ng (map reopt_table \<alpha>s) = reopt_table (frz_fill ng \<alpha>s)"
+  by (cases \<alpha>s rule: rev_cases) (simp_all add: frz_fill_def)
+
 lemma rdb_update_replicate_empty[simp]:
   "Mapping.update k (replicate j {}) (rdb db) = rdb (Mapping.update k (replicate j {}) db)"
   using rdb_update_replicate[of k j "{}"] by (simp add: reopt_table_def)
@@ -664,7 +667,7 @@ datatype udformula =
   | UDTS mtrm
   | UDLet Formula.name nat udformula udformula
   | UDFrz Formula.name nat udformula udformula nat nat nat "utable list"
-      udformula nat nat "ts list" "utable list" enat bool "nat option" udformula
+      udformula nat nat "ts list" "utable list" enat bool bool "nat option" udformula
   | UDLetPast Formula.name nat udformula udformula nat "utable option"
   | UDTrigger args "nat option list" udformula udformula uebuf2 "ts mbuf_t"
       "event_data gmmtaux"
@@ -735,9 +738,9 @@ fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
 | "Rep_udformula (UDTP mt i) = EDTP mt i"
 | "Rep_udformula (UDTS mt) = EDTS mt"
 | "Rep_udformula (UDLet p m \<phi> \<psi>) = EDLet p m (Rep_udformula \<phi>) (Rep_udformula \<psi>)"
-| "Rep_udformula (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "Rep_udformula (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      EDFrz p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) jfrz jpsi0 jphi (map reopt_table \<alpha>s)
-       (Rep_udformula \<rho>) w pR tq (map reopt_table rb) d po lv (Rep_udformula \<rho>L)"
+       (Rep_udformula \<rho>) w pR tq (map reopt_table rb) d po ng lv (Rep_udformula \<rho>L)"
 | "Rep_udformula (UDLetPast p m \<phi> \<psi> i buf) =
      EDLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
 | "Rep_udformula (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
@@ -766,7 +769,7 @@ fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
 | "uvdfail_nodes (UDUntil args msk \<phi> \<psi> buf nts t aux) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
 | "uvdfail_nodes (UDAndAssign p t \<phi>) = uvdfail_nodes \<phi>"
 | "uvdfail_nodes (UDLet p m \<phi> \<psi>) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
-| "uvdfail_nodes (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "uvdfail_nodes (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
     uvdfail_nodes \<phi> + uvdfail_nodes \<psi> + uvdfail_nodes \<rho>"
 | "uvdfail_nodes (UDLetPast p m \<phi> \<psi> i buf) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
 | "uvdfail_nodes (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) = uvdfail_nodes \<phi> + uvdfail_nodes \<psi>"
@@ -869,7 +872,7 @@ fun ursize :: "udformula \<Rightarrow> nat" where
 | "ursize (UDUntil args msk \<phi> \<psi> buf nts t aux) = ursize \<phi> + ursize \<psi> + 1"
 | "ursize (UDAndAssign p t \<phi>) = ursize \<phi> + 1"
 | "ursize (UDLet p m \<phi> \<psi>) = ursize \<phi> + ursize \<psi> + 1"
-| "ursize (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "ursize (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      ursize \<phi> + ursize \<psi> + ursize \<rho> + ursize \<rho>L + 1"
 | "ursize (UDLetPast p m \<phi> \<psi> i buf) = ursize \<phi> + ursize \<psi> + 1"
 | "ursize (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) = ursize \<phi> + ursize \<psi> + 1"
@@ -1033,7 +1036,7 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
      (let (xs, \<phi>') = udeval j ts db \<phi>;
           (ys, \<psi>') = udeval j ts (Mapping.update (p, m) xs db) \<psi>
       in (ys, UDLet p m \<phi>' \<psi>'))"
-| "udeval j ts db (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "udeval j ts db (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      (let (xs, \<phi>) = udeval j ts db \<phi>;
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = udeval j ts db0 \<psi>;
@@ -1057,11 +1060,11 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
           (a, tq, rs2, \<rho>) =
             (let tq = (if d = \<infinity> then [] else tq @ ts);
                  a = frz_adv d w jfrz j tq;
-                 (rs2, \<rho>) = udeval j [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+                 (rs2, \<rho>) = udeval j [] (Mapping.update (p, m) (replicate a (frz_fill ng (\<alpha>s @ xs))) dbe) \<rho>
              in (a, tq, rs2, \<rho>))
       in (zs0_out @ ys, UDFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
         (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po
-        lv \<rho>L))"
+        ng lv \<rho>L))"
 | "udeval j ts db (UDLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -1150,7 +1153,7 @@ qed (auto simp only: prod.inject udeval.psimps Let_def snd_conv fst_conv
 lemma total_udeval: "All udeval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). ursize \<phi>)", goal_cases)
   text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "ursize yb = ursize \<rho>"
     using psize_snd_udeval[OF 23(15)] 23(6,7) by (metis snd_conv)
   then show ?case
@@ -1160,7 +1163,7 @@ next
   then show ?case
     by simp
 next
-  case (25 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (25 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "ursize yb = ursize \<rho>"
     using psize_snd_udeval[OF 25(21)] 25(6,7) by (metis snd_conv)
   then show ?case
@@ -1623,7 +1626,7 @@ proof (induction j ts db \<phi> rule: udeval.induct)
     by (auto simp only: Let_def edeval.simps udeval.simps Rep_udformula.simps
         mebufn_add_map_mbuf mebufn_take_ands Rep_map_mbuf split: prod.splits)
 next
-  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
   let ?db0 = "Mapping.update (p, m) [] db"
   let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
   obtain xs \<phi>' where \<phi>: "udeval j ts db \<phi> = (xs, \<phi>')"
@@ -1711,16 +1714,16 @@ next
       ?dbe, ys, \<alpha>s', ufrz_keep_lv (if po then None else lvu) \<rho>L, ufrz_keep_st (if po then None else lvu) \<rho>L)"
     by (simp only: Let_def cpu_def[symmetric] lru_def[symmetric] fr0 prod.case)
   let ?a = "frz_adv d w (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys) j (if d = \<infinity> then [] else tq @ ts)"
-  obtain rs2 \<rho>2 where adv: "udeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>' = (rs2, \<rho>2)"
-    by (cases "udeval j [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>'")
-  have IH5: "edeval j [] (rdb (Mapping.update (p, m) (replicate ?a {}) ?dbe)) (Rep_udformula \<rho>') =
+  obtain rs2 \<rho>2 where adv: "udeval j [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>' = (rs2, \<rho>2)"
+    by (cases "udeval j [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>'")
+  have IH5: "edeval j [] (rdb (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe)) (Rep_udformula \<rho>') =
     (map reopt_table rs2, Rep_udformula \<rho>2)"
     using 20(6)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
         refl refl refl refl refl refl refl refl refl] adv
     by simp
   show ?case
     by (simp only: Rep_udformula.simps edeval.simps udeval.simps Let_def rdb_update_Nil rdb_map_values_Nil
-        rdb_update_replicate_empty IH1 IH2 IH3 map_append[symmetric] drop_map length_map \<phi> \<psi> \<rho>
+        rdb_update_replicate_empty IH1 IH2 IH3 map_append[symmetric] frz_fill_reopt rdb_update_replicate drop_map length_map \<phi> \<psi> \<rho>
         cpe_def[symmetric] lre_def[symmetric] fr cpu_def[symmetric] lru_def[symmetric] fr0 keep adv IH5
         prod.case)
 next
@@ -2004,9 +2007,9 @@ function (sequential) udof ::
       then UDAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (udof n cs0 \<phi>)
       else UDFail)"
 | "udof n cs (meformula.MLet p m \<phi> \<psi>) = UDLet p m (udof m [0..<m] \<phi>) (udof n cs \<psi>)"
-| "udof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "udof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      (if \<alpha>s = [] \<and> rb = [] then UDFrz p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) jfrz jpsi0 jphi []
-        (udof n cs \<rho>) w pR tq [] d po lv (udof n cs \<rho>L) else UDFail)"
+        (udof n cs \<rho>) w pR tq [] d po ng lv (udof n cs \<rho>L) else UDFail)"
 | "udof n cs (meformula.MLetPast p m \<phi> \<psi> i buf) =
      (if buf = None then UDLetPast p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) i None else UDFail)"
 | "udof n cs (meformula.MTrigger args \<phi> \<psi> buf nts aux) =
@@ -2083,9 +2086,9 @@ fun Abs_meformula :: "('msaux, 'muaux, 'mtaux) mformula \<Rightarrow> ('msaux, '
   "Abs_meformula (mformula.MRel rel) = MRel rel"
 | "Abs_meformula (mformula.MPred e tms mode) = MPred e tms mode"
 | "Abs_meformula (mformula.MLet p m \<phi> \<psi>) = MLet p m (Abs_meformula \<phi>) (Abs_meformula \<psi>)"
-| "Abs_meformula (mformula.MFrz p m \<phi> \<psi> i j k \<alpha> \<rho> w pR tq rb d po lv \<rho>L) =
+| "Abs_meformula (mformula.MFrz p m \<phi> \<psi> i j k \<alpha> \<rho> w pR tq rb d po ng lv \<rho>L) =
     MFrz p m (Abs_meformula \<phi>) (Abs_meformula \<psi>) i j k \<alpha> (Abs_meformula \<rho>) w pR tq rb d po
-      lv (Abs_meformula \<rho>L)"
+      ng lv (Abs_meformula \<rho>L)"
 | "Abs_meformula (mformula.MLetPast p m \<phi> \<psi> i buf) = MLetPast p m (Abs_meformula \<phi>) (Abs_meformula \<psi>) i buf"
 | "Abs_meformula (mformula.MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
      MAnd A_\<phi> (Abs_meformula \<phi>) pos A_\<psi> (Abs_meformula \<psi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf)"

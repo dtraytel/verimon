@@ -9350,3 +9350,47 @@ previous binary, the geometric mean of new over old is 0.99.  The largest appare
 were 1.19 (`since-nb5`) and 1.16 (`once-raw5`); timed again with 9 interleaved runs they are 1.00
 and 0.95.  The outputs are identical on those formulas and on the 652 `-verified` commands of the
 test corpus.  The benchmark formulas agree with MonPoly, and the cram tests pass.
+
+## 21.53 The replay base advances with a frozen table under a negation
+
+`frz-neglag30` (`FRZ q(x) = EVENTUALLY[0,30] C(x) IN ONCE[0,5] (A(x,y) AND NOT q(x))`) was the other
+of the two worst ratios after 21.51.  The FRZ copies start from the replay base.  The replay base holds the
+buffered input of the time points from the window's start w on.  When the window moves, it absorbs the time points that leave it, with some
+value of the frozen predicate.  Until now that value was the empty table.  Under a negation,
+`A(x,y) AND NOT q(x)` with q empty is all of A, so the replay base's Once window held every A tuple
+of the last five time points.  Each copy then expired those tuples one by one: a profile showed
+165k window deletions against 75k insertions, and 43% of the instructions in `de_gsw_expire`.
+MonPoly starts each copy empty and injects only the window's history.
+
+Which value the replay base absorbs does not matter for the verdicts: those time points lie beyond
+the body's past reach from every pending verdict.  So the node now takes the latest frozen table it
+knows when the frozen predicate occurs under a negation (`neg_pred`, a new flag `ng` of `MFrz`,
+computed once by `minit0`), and the empty table otherwise (`frz_fill ng (αs @ xs)`).  Consecutive
+frozen tables of a lagging formula overlap heavily, so the replay base's window then holds about what
+a copy keeps itself.  For a positive occurrence (`frz-sincelag30`, the left operand of a Since), the
+empty table leaves the least, and a prototype that took the latest table there slowed it from 0.37 to
+0.53 s.
+
+*Correctness.*  The replay base's invariant said that it is well formed with the frozen predicate
+empty before w and equal to the frozen formula's value from some point on.  It now says: for some fixed
+N, and for every M, the replay base is well formed with the frozen predicate given, at each time
+point k, by the frozen formula's value at the time point `(if k < w then N k else M k)`, or empty
+where that is `None` (`frz_val`).  The prefix N records what the replay base absorbed.  M covers
+everything from w on, so a copy for the frozen table of i picks `M = (λ_. Some i)` (`frz_cv`), and
+the advance picks the fill's time point on `[w, w + a)`.  `frz_fill_val` shows that the fill is the
+value of the frozen formula at some time point, or empty.  `qtable_Frz_window` now takes any
+valuation that agrees with the frozen value from w on.  The live copy's invariant carries its own
+prefix in the same way.  In the step lemma, the changes are local, and so are they in the transfer
+lemma of `Sat.thy`.  The dense layers only thread the flag and the fill through
+(`frz_fill_cases` for their table invariants, `frz_fill_reopt` for the unboxed one).
+
+| formula (tp500, min of 5) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frz-neglag30` | 0.186 | 0.112 | 0.078 |
+| `frz-neglag` | 0.231 | 0.197 | 0.115 |
+
+Over the 37 formulas with a freeze in the suite, the geometric mean of new over old is 0.975.  Only
+the two formulas above have the frozen predicate under a negation.  The others run the same code, and
+their spread (0.85–1.10, on runs of 0.02–0.3 s timed while a PIDE session was running) is noise.
+The outputs are identical on all 37 formulas, on the 652 `-verified` commands of the test corpus, and
+on the benchmark formulas, which agree with MonPoly.  The cram tests pass.

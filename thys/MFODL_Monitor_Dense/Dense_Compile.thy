@@ -112,7 +112,7 @@ inductive mok :: "nat \<Rightarrow> nat set \<Rightarrow> ts \<Rightarrow>
 | MokFrz: "mok m {0..<m} tw \<phi> \<Longrightarrow> mok n A tw \<psi> \<Longrightarrow>
     list_all (ftable m {0..<m}) \<alpha>s \<Longrightarrow> mok n A tw \<rho> \<Longrightarrow> list_all (ftable n A) rb \<Longrightarrow>
     (lv \<noteq> None \<longrightarrow> mok n A tw \<rho>L) \<Longrightarrow>
-    mok n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)"
+    mok n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)"
 | MokMatchP: "Regex.safe_regex fv rgx_safe_pred Past Strict
       (from_mregex mr (\<psi>s :: ty Formula.formula list)) \<Longrightarrow>
     ok (length \<psi>s) mr \<Longrightarrow> A = fv_regex (from_mregex mr \<psi>s) \<Longrightarrow>

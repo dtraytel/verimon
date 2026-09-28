@@ -129,16 +129,16 @@ lemma produces_MFrz:
     and pa: "list_all (ftable m {0..<m}) \<alpha>s"
     and p3: "produces n A tw \<rho>" and pb: "list_all (ftable n A) rb"
     and p4: "lv \<noteq> None \<longrightarrow> produces n A tw \<rho>L"
-  shows "produces n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)"
+  shows "produces n A tw (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)"
 proof (rule producesI[where X = "\<lambda>n' A' u \<Phi>. n' = n \<and> A' = A \<and>
     (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' lv' \<rho>L'.
-       \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L' \<and>
+       \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L' \<and>
        produces m {0..<m} u \<chi> \<and> produces n A u \<eta> \<and>
        list_all (ftable m {0..<m}) as \<and> produces n A u \<rho>' \<and> list_all (ftable n A) rb' \<and>
        (lv' \<noteq> None \<longrightarrow> produces n A u \<rho>L'))"])
   show "n = n \<and> A = A \<and> (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' lv' \<rho>L'.
-      mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L =
-        mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L' \<and>
+      mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L =
+        mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L' \<and>
       produces m {0..<m} tw \<chi> \<and> produces n A tw \<eta> \<and>
       list_all (ftable m {0..<m}) as \<and> produces n A tw \<rho>' \<and> list_all (ftable n A) rb' \<and>
       (lv' \<noteq> None \<longrightarrow> produces n A tw \<rho>L'))"
@@ -147,14 +147,14 @@ next
   fix n' A' u \<Phi> j ts db xs \<Phi>'
   assume X: "n' = n \<and> A' = A \<and>
       (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' lv' \<rho>L'.
-         \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L' \<and>
+         \<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L' \<and>
          produces m {0..<m} u \<chi> \<and> produces n A u \<eta> \<and>
          list_all (ftable m {0..<m}) as \<and> produces n A u \<rho>' \<and> list_all (ftable n A) rb' \<and>
          (lv' \<noteq> None \<longrightarrow> produces n A u \<rho>L'))"
     and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
     and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
   from X obtain \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' lv' \<rho>L' where
-    Phi: "\<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L'"
+    Phi: "\<Phi> = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L'"
     and pc: "produces m {0..<m} u \<chi>" and pe: "produces n A u \<eta>"
     and la: "list_all (ftable m {0..<m}) as" and pr: "produces n A u \<rho>'"
     and lb: "list_all (ftable n A) rb'" and pL: "lv' \<noteq> None \<longrightarrow> produces n A u \<rho>L'" by blast
@@ -235,31 +235,33 @@ next
   qed
   define tq1 where "tq1 = (if d = \<infinity> then [] else tq' @ ts)"
   define a where "a = frz_adv d w' (f0 + length zout + length ys) j tq1"
-  obtain rs2 \<rho>2 where e5: "meval j n [] (Mapping.update (p, m) (replicate a {}) ?dbe) \<rho>1 = (rs2, \<rho>2)"
-    by (cases "meval j n [] (Mapping.update (p, m) (replicate a {}) ?dbe) \<rho>1")
+  have tF: "ftable m {0..<m} (frz_fill ng (as @ bs))"
+    using frz_fill_cases[of ng "as @ bs"] la tb by (auto simp: list_all_iff table_def)
+  obtain rs2 \<rho>2 where e5: "meval j n [] (Mapping.update (p, m) (replicate a (frz_fill ng (as @ bs))) ?dbe) \<rho>1 = (rs2, \<rho>2)"
+    by (cases "meval j n [] (Mapping.update (p, m) (replicate a (frz_fill ng (as @ bs))) ?dbe) \<rho>1")
   have trs2: "list_all (ftable n A) rs2"
-    by (rule produces_tables[OF nr wa[of "{}"] _ _ e5]) (simp_all add: table_def)
+    by (rule produces_tables[OF nr wa[OF tF] _ _ e5]) (simp_all add: table_def)
   have nr2: "produces n A (dnext u ts) \<rho>2"
-    using produces_next[OF nr wa[of "{}"] _ _ e5] by (simp add: dnext_def table_def)
+    using produces_next[OF nr wa[OF tF] _ _ e5] by (simp add: dnext_def table_def)
   define rb2 where "rb2 = drop (min (f0 + length zout + length ys) (pR' + length rs + length rs2) - rb0)
     ((rb' @ rs) @ rs2)"
   have trb2: "list_all (ftable n A) rb2"
     using lb trs trs2 by (auto simp: rb2_def list_all_iff dest: set_drop_subset[THEN subsetD])
-  have m: "meval j n ts db (mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L')
+  have m: "meval j n ts db (mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L')
       = (zout @ ys, mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
           (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
-          (drop a tq1) rb2 d po (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L'))"
+          (drop a tq1) rb2 d po ng (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L'))"
     using e1 e2 e3 e4 e5 unfolding zout_def as1_def ev_def rb0_def tq1_def a_def rb2_def c_def lr_def dbL_def
     by (simp add: Let_def add.assoc cong: option.case_cong if_cong)
   have x: "xs = zout @ ys"
     and f: "\<Phi>' = mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
           (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
-          (drop a tq1) rb2 d po (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L')"
+          (drop a tq1) rb2 d po ng (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L')"
     using e[unfolded Phi conjunct1[OF X] m] by simp_all
   show "list_all (ftable n' A') xs \<and>
       ((n' = n \<and> A' = A \<and>
           (\<exists>\<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' lv' \<rho>L'.
-             \<Phi>' = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po lv' \<rho>L' \<and>
+             \<Phi>' = mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L' \<and>
              produces m {0..<m} (dnext u ts) \<chi> \<and> produces n A (dnext u ts) \<eta> \<and>
              list_all (ftable m {0..<m}) as \<and> produces n A (dnext u ts) \<rho>' \<and> list_all (ftable n A) rb' \<and>
              (lv' \<noteq> None \<longrightarrow> produces n A (dnext u ts) \<rho>L'))) \<or>

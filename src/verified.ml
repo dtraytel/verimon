@@ -2949,7 +2949,7 @@ type ('a, 'b, 'c) meformula = MRel of ((event_data option) list) set |
     string * nat * ('a, 'b, 'c) meformula * ('a, 'b, 'c) meformula * nat * nat *
       nat * ((event_data option) list) set list * ('a, 'b, 'c) meformula * nat *
       nat * nat list * ((event_data option) list) set list * enat * bool *
-      nat option * ('a, 'b, 'c) meformula
+      bool * nat option * ('a, 'b, 'c) meformula
   | MLetPast of
       string * nat * ('a, 'b, 'c) meformula * ('a, 'b, 'c) meformula * nat *
         ((event_data option) list) set option
@@ -3170,7 +3170,7 @@ type udformula = UDFail | UDRel of (event_data list) set |
   UDFrz of
     string * nat * udformula * udformula * nat * nat * nat *
       (event_data list) set list * udformula * nat * nat * nat list *
-      (event_data list) set list * enat * bool * nat option * udformula
+      (event_data list) set list * enat * bool * bool * nat option * udformula
   | UDLetPast of
       string * nat * udformula * udformula * nat * (event_data list) set option
   | UDTrigger of
@@ -10246,7 +10246,7 @@ let rec ursize
     | UDLet (p, m, phi, psi) ->
         plus_nata (plus_nata (ursize phi) (ursize psi)) one_nata
     | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
-              po, lv, rho_L)
+              po, ng, lv, rho_L)
         -> plus_nata
              (plus_nata
                (plus_nata (plus_nata (ursize phi) (ursize psi)) (ursize rho))
@@ -11477,6 +11477,11 @@ let rec umtrm
     | MConst c, x ->
         (if equal_event_dataa c x then edl_insert [] edl_bot else edl_bot);;
 
+let rec frz_fill (_A1, _A2, _A3)
+  ng alpha_s =
+    (if ng then last (bot_set (_A1, _A2, _A3) :: alpha_s)
+      else bot_set (_A1, _A2, _A3));;
+
 let rec frz_cut
   po w k l j =
     (if po then ed_min_nat (minus_nata j w) (minus_nata (plus_nata k l) w)
@@ -11620,7 +11625,7 @@ let rec udeval
           (ys, UDLet (p, m, phia, psia)))
     | j, ts, db,
         UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb,
-                d, po, lv, rho_L)
+                d, po, ng, lv, rho_L)
         -> (let (xs, phia) = udeval j ts db phi in
             let db0 =
               updateb
@@ -11683,7 +11688,13 @@ let rec udeval
                    (updateb
                      ((ccompare_prod ccompare_string8 ccompare_nat),
                        (equal_prod equal_string8 equal_nat))
-                     (p, m) (replicate a edl_bot) dbe)
+                     (p, m)
+                     (replicate a
+                       (frz_fill
+                         ((ceq_list ceq_event_data),
+                           (ccompare_list ccompare_event_data), set_impl_list)
+                         ng (alpha_s @ xs)))
+                     dbe)
                    rhoa
                  in
                 (a, (tqa, (rs2, rhob))))
@@ -11700,7 +11711,7 @@ let rec udeval
                                   (size_list rs2)))
                               rb0)
                          (rba @ rs2),
-                       d, po, lva, rho_La)))
+                       d, po, ng, lva, rho_La)))
     | j, ts, db, UDLetPast (p, m, phi, psi, i, buf) ->
         (let (xs, (ia, (bufa, phia))) =
            uletpast_meval0
@@ -12297,6 +12308,31 @@ let rec istep
       istep xs ((Z.add (Z.mul v1 p2) v2, Z.mul p1 p2) :: acc)
     | [], acc -> rev acc @ []
     | [v], acc -> rev acc @ [v];;
+
+let rec neg_pred
+  p x1 = match p, x1 with p, Neg phi -> contains_pred p phi
+    | p, Let (e, phi, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Frz (e, phi, psi) -> neg_pred p phi || neg_pred p psi
+    | p, LetPast (e, phi, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Or (phi, psi) -> neg_pred p phi || neg_pred p psi
+    | p, And (phi, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Ands l -> list_ex (neg_pred p) l
+    | p, Exists (t, phi) -> neg_pred p phi
+    | p, Agg (y, omega, tys, f, phi) -> neg_pred p phi
+    | p, Prev (i, phi) -> neg_pred p phi
+    | p, Next (i, phi) -> neg_pred p phi
+    | p, Since (phi, i, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Until (phi, i, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Trigger (phi, i, psi) -> neg_pred p phi || neg_pred p psi
+    | p, Release (phi, i, psi) -> neg_pred p phi || neg_pred p psi
+    | p, MatchP (i, r) -> not (pred_regex (comp not (neg_pred p)) r)
+    | p, MatchF (i, r) -> not (pred_regex (comp not (neg_pred p)) r)
+    | p, Pred (v, va) -> false
+    | p, Eq (v, va) -> false
+    | p, Less (v, va) -> false
+    | p, LessEq (v, va) -> false
+    | p, TP v -> false
+    | p, TS v -> false;;
 
 let rec atms (_A1, _A2, _A3)
   = function Skip x1 -> bot_set (_A1, _A2, _A3)
@@ -12976,7 +13012,7 @@ let rec uvdfail_nodes
     | UDLet (p, m, phi, psi) ->
         plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi)
     | UDFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
-              po, lv, rho_L)
+              po, ng, lv, rho_L)
         -> plus_nata (plus_nata (uvdfail_nodes phi) (uvdfail_nodes psi))
              (uvdfail_nodes rho)
     | UDLetPast (p, m, phi, psi, i, buf) ->
@@ -14300,7 +14336,7 @@ let rec emfcols
                        (set (ceq_trm, ccompare_trm, set_impl_trm) tms)))))
     | n, MLet (p, m, phi, psi) -> emfcols n psi
     | n, MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb,
-                d, po, lv, rho_L)
+                d, po, ng, lv, rho_L)
         -> emfcols n psi
     | n, MLetPast (p, m, phi, psi, i, buf) -> emfcols n psi
     | n, MAnd (a1, phi, pos, a2, psi, buf) ->
@@ -14436,7 +14472,7 @@ let rec uset_q
     | c, UDTS v -> None
     | c, UDLet (v, va, vb, vc) -> None
     | c, UDFrz (v, va, vb, vc, vd, ve, vf, vg, vh, vi, vj, vk, vl, vm, vn, vo,
-                 vp)
+                 vp, vq)
         -> None
     | c, UDLetPast (v, va, vb, vc, vd, ve) -> None
     | c, UDTrigger (v, va, vb, vc, vd, ve, vf) -> None
@@ -14739,11 +14775,11 @@ nat_subset (fvi_trm zero_nata (aggargs_f ag))
         UDLet (p, m, udof m (upt zero_nata m) phi, udof n cs psi)
     | n, cs,
         MFrz (p, m, phi, psi, jfrz, jpsi0, jphi, alpha_s, rho, w, pR, tq, rb, d,
-               po, lv, rho_L)
+               po, ng, lv, rho_L)
         -> (if null alpha_s && null rb
              then UDFrz (p, m, udof m (upt zero_nata m) phi, udof n cs psi,
                           jfrz, jpsi0, jphi, [], udof n cs rho, w, pR, tq, [],
-                          d, po, lv, udof n cs rho_L)
+                          d, po, ng, lv, udof n cs rho_L)
              else UDFail)
     | n, cs, MLetPast (p, m, phi, psi, i, buf) ->
         (if is_none buf
@@ -15220,7 +15256,7 @@ let rec meinit0
                zero_nata, zero_nata, [], meinit0 n psi, zero_nata, zero_nata,
                [], [], past_reach psi,
                less_eq_rec_safety (safe_letpast (p, nfv phi) psi) NonFutuRec,
-               None, meinit0 n psi)
+               neg_pred (p, nfv phi) psi, None, meinit0 n psi)
     | n, LetPast (p, phi, psi) ->
         MLetPast
           (p, nfv phi, meinit0 (nfv phi) phi, meinit0 n psi, zero_nata, None)

@@ -35,7 +35,7 @@ function (sequential) emfcols ::
      (case mode of Copy \<Rightarrow> Some [0..<n]
       | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set tms. Formula.fv_trm t)))"
 | "emfcols n (meformula.MLet p m \<phi> \<psi>) = emfcols n \<psi>"
-| "emfcols n (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) = emfcols n \<psi>"
+| "emfcols n (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) = emfcols n \<psi>"
 | "emfcols n (meformula.MLetPast p m \<phi> \<psi> i buf) = emfcols n \<psi>"
 | "emfcols n (meformula.MAnd A1 \<phi> pos A2 \<psi> buf) =
      (case (emfcols n \<phi>, emfcols n \<psi>) of
@@ -191,9 +191,9 @@ function (sequential) edof ::
       then EDAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (edof n cs0 \<phi>)
       else EDFail)"
 | "edof n cs (meformula.MLet p m \<phi> \<psi>) = EDLet p m (edof m [0..<m] \<phi>) (edof n cs \<psi>)"
-| "edof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "edof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      (if \<alpha>s = [] \<and> rb = [] then EDFrz p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) jfrz jpsi0 jphi []
-        (edof n cs \<rho>) w pR tq [] d po lv (edof n cs \<rho>L) else EDFail)"
+        (edof n cs \<rho>) w pR tq [] d po ng lv (edof n cs \<rho>L) else EDFail)"
 | "edof n cs (meformula.MLetPast p m \<phi> \<psi> i buf) =
      (if buf = None then EDLetPast p m (edof m [0..<m] \<phi>) (edof n cs \<psi>) i None else EDFail)"
 | "edof n cs (meformula.MTrigger args \<phi> \<psi> buf nts aux) =
