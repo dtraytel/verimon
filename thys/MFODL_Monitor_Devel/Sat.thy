@@ -569,7 +569,7 @@ proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
   with Let.IH(1)[OF Let.prems] show ?case
     using Let.hyps(3-6) by (rule wf_mformula.Let)
 next
-  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 w \<rho> pR tq rb d po lv \<rho>L V')
+  case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 w N \<rho> pR tq rb d po lv \<rho>L ng V')
   have tau: "\<tau> \<sigma> = \<tau> \<sigma>'"
     using arg_cong[where f=\<tau>, OF Frz.prems] by simp
   have prg: "progress \<sigma> = progress \<sigma>'"
@@ -587,16 +587,17 @@ next
   qed
   from Frz.hyps(2) have state: "wf_frz_state \<sigma>' j P V' p m \<phi>' \<psi>' jphi \<alpha>s"
     unfolding wf_frz_state_def wf_frz_queue_def frz_qtable_def prg sat .
-  have rho: "\<forall>i w'. w \<le> w' \<longrightarrow> wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
-    (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>')) n R \<rho> \<psi>'"
-  proof (intro allI impI)
-    fix i w'
-    assume "w \<le> w'"
-    have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma> V v i \<phi>')) =
-      convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>'))"
-      by (simp add: convert_fun_upd Frz.prems sat del: fun_upd_apply)
-    with Frz.IH(3) \<open>w \<le> w'\<close> show "wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
-      (V'((p, m) \<mapsto> \<lambda>v k. w' \<le> k \<and> Formula.sat \<sigma>' V' v i \<phi>')) n R \<rho> \<psi>'"
+  have fval: "frz_val \<sigma> V \<phi>' = frz_val \<sigma>' V' \<phi>'"
+    unfolding frz_val_def sat ..
+  have rho: "\<forall>M. wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
+    (V'((p, m) \<mapsto> frz_val \<sigma>' V' \<phi>' (\<lambda>k. if k < w then N k else M k))) n R \<rho> \<psi>'"
+  proof
+    fix M
+    have "convert \<sigma> (V((p, m) \<mapsto> frz_val \<sigma> V \<phi>' (\<lambda>k. if k < w then N k else M k))) =
+      convert \<sigma>' (V'((p, m) \<mapsto> frz_val \<sigma>' V' \<phi>' (\<lambda>k. if k < w then N k else M k)))"
+      by (simp add: convert_fun_upd Frz.prems fval del: fun_upd_apply)
+    with Frz.IH(3) show "wf_mformula \<sigma>' j (P((p, m) \<mapsto> w))
+      (V'((p, m) \<mapsto> frz_val \<sigma>' V' \<phi>' (\<lambda>k. if k < w then N k else M k))) n R \<rho> \<psi>'"
       by blast
   qed
   from Frz.hyps have win: "wf_frz_win \<sigma>' j P V' n R p m \<phi>' \<psi>' jfrz w pR tq rb d"
@@ -604,24 +605,24 @@ next
   from Frz.hyps(3,4) have prog1: "jfrz = progress \<sigma>' P (Formula.Frz p \<phi>' \<psi>') j"
     and prog2: "jpsi0 = progress \<sigma>' (P((p, m) \<mapsto> 0)) \<psi>' j"
     unfolding prg .
-  have live: "\<forall>g. lv = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma>' k) + past_reach \<psi>' < enat (\<tau> \<sigma>' jfrz)) \<and>
+  have live: "\<forall>g. lv = Some g \<longrightarrow> \<not> po \<and> (\<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma>' k) + past_reach \<psi>' < enat (\<tau> \<sigma>' jfrz)) \<and>
       jfrz = progress \<sigma>' (P((p, m) \<mapsto> j)) \<psi>' j + g \<and>
-      wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) (V'((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma>' V' v jfrz \<phi>')) n R \<rho>L \<psi>')"
+      wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) (V'((p, m) \<mapsto> frz_cv \<sigma>' V' \<phi>' NL wL jfrz)) n R \<rho>L \<psi>')"
   proof (intro allI impI)
     fix g
     assume lv: "lv = Some g"
-    from Frz.IH(4) lv obtain wL where npo: "\<not> po"
+    from Frz.IH(4) lv obtain wL NL where npo: "\<not> po"
       and w1: "\<forall>k<wL. enat (\<tau> \<sigma> k) + past_reach \<psi>' < enat (\<tau> \<sigma> jfrz)"
       and g1: "jfrz = progress \<sigma> (P((p, m) \<mapsto> j)) \<psi>' j + g"
-      and IHL: "\<forall>V''. convert \<sigma> (V((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma> V v jfrz \<phi>')) = convert \<sigma>' V'' \<longrightarrow>
+      and IHL: "\<forall>V''. convert \<sigma> (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>' NL wL jfrz)) = convert \<sigma>' V'' \<longrightarrow>
         wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) V'' n R \<rho>L \<psi>'"
       by blast
-    have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma> V v jfrz \<phi>')) =
-      convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma>' V' v jfrz \<phi>'))"
-      by (simp add: convert_fun_upd Frz.prems sat del: fun_upd_apply)
-    then show "\<not> po \<and> (\<exists>wL. (\<forall>k<wL. enat (\<tau> \<sigma>' k) + past_reach \<psi>' < enat (\<tau> \<sigma>' jfrz)) \<and>
+    have "convert \<sigma> (V((p, m) \<mapsto> frz_cv \<sigma> V \<phi>' NL wL jfrz)) =
+      convert \<sigma>' (V'((p, m) \<mapsto> frz_cv \<sigma>' V' \<phi>' NL wL jfrz))"
+      by (simp add: convert_fun_upd Frz.prems fval del: fun_upd_apply)
+    then show "\<not> po \<and> (\<exists>wL NL. (\<forall>k<wL. enat (\<tau> \<sigma>' k) + past_reach \<psi>' < enat (\<tau> \<sigma>' jfrz)) \<and>
       jfrz = progress \<sigma>' (P((p, m) \<mapsto> j)) \<psi>' j + g \<and>
-      wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) (V'((p, m) \<mapsto> \<lambda>v k. wL \<le> k \<and> Formula.sat \<sigma>' V' v jfrz \<phi>')) n R \<rho>L \<psi>')"
+      wf_mformula \<sigma>' j (P((p, m) \<mapsto> j)) (V'((p, m) \<mapsto> frz_cv \<sigma>' V' \<phi>' NL wL jfrz)) n R \<rho>L \<psi>')"
       using npo w1 g1 IHL unfolding tau prg by blast
   qed
   with Frz.IH(1)[OF Frz.prems] psi state rho win prog1 prog2 show ?case

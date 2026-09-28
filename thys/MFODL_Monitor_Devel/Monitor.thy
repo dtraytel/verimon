@@ -961,7 +961,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) mformula =
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
   | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula"
      nat nat nat "event_data table list"
-     "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat bool
+     "('msaux, 'muaux, 'mtaux) mformula" nat nat "ts list" "event_data table list" enat bool bool
      "nat option" "('msaux, 'muaux, 'mtaux) mformula"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) mformula" "('msaux, 'muaux, 'mtaux) mformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) mformula" bool "nat set" "('msaux, 'muaux, 'mtaux) mformula" "event_data mbuf2"
@@ -1337,13 +1337,40 @@ fun mtrm_of_trm :: "Formula.trm \<Rightarrow> mtrm" where
 | "mtrm_of_trm (Formula.Const x) = MConst x"
 | "mtrm_of_trm _ = undefined"
 
+text \<open>Whether a predicate occurs under a negation.  A freeze's replay base absorbs the time
+  points that leave its window with some value of the frozen predicate; which value does not matter
+  for the verdicts (they lie beyond the body's past reach), but it decides how much of the replay
+  base's state the copies inherit and then throw away.  Under a negation the frozen predicate
+  keeps the least with a large table, elsewhere with an empty one (@{text frz_fill} below).\<close>
+
+fun neg_pred :: "Formula.name \<times> nat \<Rightarrow> 't Formula.formula \<Rightarrow> bool" where
+  "neg_pred p (Formula.Neg \<phi>) = Formula.contains_pred p \<phi>"
+| "neg_pred p (Formula.Let e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Frz e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.LetPast e \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Or \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.And \<phi> \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Ands l) = (\<exists>\<phi>\<in>set l. neg_pred p \<phi>)"
+| "neg_pred p (Formula.Exists t \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Agg y \<omega> tys f \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Prev I \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Next I \<phi>) = neg_pred p \<phi>"
+| "neg_pred p (Formula.Since \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Until \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Trigger \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.Release \<phi> I \<psi>) = (neg_pred p \<phi> \<or> neg_pred p \<psi>)"
+| "neg_pred p (Formula.MatchP I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
+| "neg_pred p (Formula.MatchF I r) = (\<exists>\<phi>\<in>Regex.atms r. neg_pred p \<phi>)"
+| "neg_pred p _ = False"
+
 function (in maux) (sequential) minit0 :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> ('msaux, 'muaux, 'mtaux) mformula" where
   "minit0 n (Formula.Neg \<phi>) = (if fv \<phi> = {} then MNeg (minit0 n \<phi>) else MRel empty_table)"
 | "minit0 n (Formula.Eq t1 t2) = MRel (eq_rel n t1 t2)"
 | "minit0 n (Formula.Pred e ts) = MPred e ts (pred_mode_of n ts)"
 | "minit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>)"
 | "minit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 0 0 []
-    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec) None (minit0 n \<psi>)"
+    (minit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
+    (neg_pred (p, Formula.nfv \<phi>) \<psi>) None (minit0 n \<psi>)"
 | "minit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (minit0 (Formula.nfv \<phi>) \<phi>) (minit0 n \<psi>) 0 None"
 | "minit0 n (Formula.Or \<phi> \<psi>) = MOr (minit0 n \<phi>) (minit0 n \<psi>) ([], [])"
 | "minit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -1819,6 +1846,19 @@ definition frz_adv :: "enat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> na
 definition frz_cut :: "bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat" where
   "frz_cut po w k l j = (if po then min (j - w) (k + l - w) else j - w)"
 
+text \<open>The value of the frozen predicate with which the replay base absorbs the time points that
+  leave the window.  They lie beyond the past reach of every verdict still to be computed, so any
+  table of the frozen formula will do.  The copies start from the replay base and throw away what
+  it holds for those time points.  With the frozen predicate under a negation
+  (@{const neg_pred}), the latest frozen table leaves the least of that: a copy's own frozen table
+  is typically close to it.  Otherwise the empty table does.\<close>
+
+definition frz_fill :: "bool \<Rightarrow> 'a set list \<Rightarrow> 'a set" where
+  "frz_fill ng \<alpha>s = (if ng then last ({} # \<alpha>s) else {})"
+
+lemma frz_fill_cases: "frz_fill ng \<alpha>s = {} \<or> frz_fill ng \<alpha>s \<in> set \<alpha>s"
+  by (cases \<alpha>s rule: rev_cases) (auto simp: frz_fill_def)
+
 fun list_of_option :: "'a option \<Rightarrow> 'a list" where
   "list_of_option None = []"
 | "list_of_option (Some x) = [x]"
@@ -1858,7 +1898,7 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
     (let (xs, \<phi>) = meval m ts db \<phi>;
       (ys, \<psi>) = meval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
-| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "meval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
     (let (xs, \<phi>) = meval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meval n ts db0 \<psi>;
@@ -1882,10 +1922,10 @@ function (sequential) meval :: "nat \<Rightarrow> ts list \<Rightarrow> database
          (a, tq, rs2, \<rho>) =
            (let tq = (if d = \<infinity> then [] else tq @ ts);
                 a = frz_adv d w jfrz j tq;
-                (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+                (rs2, \<rho>) = meval n [] (Mapping.update (p, m) (replicate a (frz_fill ng (\<alpha>s @ xs))) dbe) \<rho>
             in (a, tq, rs2, \<rho>))
      in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
-       (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po lv \<rho>L))"
+       (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po ng lv \<rho>L))"
 | "meval n ts db (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
     (let (xs, \<phi>) = meval n ts db \<phi>; (ys, \<psi>) = meval n ts db \<psi>;
       (zs, buf) = mbuf2_take (\<lambda>r1 r2. bin_join n A_\<phi> r1 pos A_\<psi> r2) (mbuf2_add xs ys buf)
@@ -2019,7 +2059,7 @@ proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
     follow the calls.  With the values bound one by one at the top level, the definition takes
     minutes instead of seconds: the function package's congruence steps unify over the whole
     chain of @{text let}s that follows a call.\<close>
-  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_meval[OF 7(15)] 7(6,7) by (metis snd_conv)
   then show ?case
@@ -2029,7 +2069,7 @@ next
   then show ?case
     by simp
 next
-  case (9 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (9 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_meval[OF 9(21)] 9(6,7) by (metis snd_conv)
   then show ?case
@@ -2049,8 +2089,8 @@ lemma mformula_induct[case_names MRel MPred MLet MFrz MLetPast
   "(\<And>rel. P (MRel rel)) \<Longrightarrow>
    (\<And>e ts mode. P (MPred e ts mode)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi>. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLet p m \<phi> \<psi>)) \<Longrightarrow>
-   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
-     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)) \<Longrightarrow>
+   (\<And>p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L. P \<phi> \<Longrightarrow> (\<And>\<psi>'. size \<psi>' = size \<psi> \<Longrightarrow> P \<psi>') \<Longrightarrow>
+     (\<And>\<rho>'. size \<rho>' = size \<rho> \<Longrightarrow> P \<rho>') \<Longrightarrow> P \<rho>L \<Longrightarrow> P (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) \<Longrightarrow>
    (\<And>p m \<phi> \<psi> i buf. (\<And>\<phi>'. size \<phi>' = size \<phi> \<Longrightarrow> P \<phi>') \<Longrightarrow> P \<psi> \<Longrightarrow> P (MLetPast p m \<phi> \<psi> i buf)) \<Longrightarrow>
    (\<And>A_\<phi> \<phi> pos A_\<psi> \<psi> buf. P \<phi> \<Longrightarrow> P \<psi> \<Longrightarrow> P (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf)) \<Longrightarrow>
    (\<And>\<phi> conf. P \<phi> \<Longrightarrow> P (MAndAssign \<phi> conf)) \<Longrightarrow>
@@ -2088,7 +2128,7 @@ proof (induct "size mf" arbitrary: mf rule: less_induct)
     case (MLet p m \<phi> \<psi>)
     show ?thesis unfolding MLet by (rule less.prems(3)) (rule IH, simp add: MLet)+
   next
-    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
+    case (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
     show ?thesis unfolding MFrz by (rule less.prems(4)) (rule IH, simp add: MFrz)+
   next
     case (MLetPast p m \<phi> \<psi> i buf)

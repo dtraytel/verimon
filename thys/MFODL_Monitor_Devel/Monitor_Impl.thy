@@ -131,7 +131,7 @@ datatype (dead 'msaux, dead 'muaux, dead 'mtaux) meformula =
   | MPred Formula.name "Formula.trm list" pred_mode
   | MLet Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula"
   | MFrz Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula" nat nat nat "event_data table list"
-      "('msaux, 'muaux, 'mtaux) meformula" nat nat "ts list" "event_data table list" enat bool
+      "('msaux, 'muaux, 'mtaux) meformula" nat nat "ts list" "event_data table list" enat bool bool
       "nat option" "('msaux, 'muaux, 'mtaux) meformula"
   | MLetPast Formula.name nat "('msaux, 'muaux, 'mtaux) meformula" "('msaux, 'muaux, 'mtaux) meformula" nat "event_data table option"
   | MAnd "nat set" "('msaux, 'muaux, 'mtaux) meformula" bool "nat set" "('msaux, 'muaux, 'mtaux) meformula" "event_data mebuf2"
@@ -157,9 +157,9 @@ fun Rep_meformula :: "('msaux, 'muaux, 'mtaux) meformula \<Rightarrow> ('msaux, 
   "Rep_meformula (MRel rel) = mformula.MRel rel"
 | "Rep_meformula (MPred e tms mode) = mformula.MPred e tms mode"
 | "Rep_meformula (MLet p m \<phi> \<psi>) = mformula.MLet p m (Rep_meformula \<phi>) (Rep_meformula \<psi>)"
-| "Rep_meformula (MFrz p m \<phi> \<psi> i j k \<alpha> \<rho> w pR tq rb d po lv \<rho>L) =
+| "Rep_meformula (MFrz p m \<phi> \<psi> i j k \<alpha> \<rho> w pR tq rb d po ng lv \<rho>L) =
     mformula.MFrz p m (Rep_meformula \<phi>) (Rep_meformula \<psi>) i j k \<alpha> (Rep_meformula \<rho>) w pR tq rb d po
-      lv (Rep_meformula \<rho>L)"
+      ng lv (Rep_meformula \<rho>L)"
 | "Rep_meformula (MLetPast p m \<phi> \<psi> i buf) = mformula.MLetPast p m (Rep_meformula \<phi>) (Rep_meformula \<psi>) i buf"
 | "Rep_meformula (MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) = mformula.MAnd A_\<phi> (Rep_meformula \<phi>) pos A_\<psi> (Rep_meformula \<psi>) (map_prod Rep_mbuf_t Rep_mbuf_t buf)"
 | "Rep_meformula (MAndAssign \<phi> conf) = mformula.MAndAssign (Rep_meformula \<phi>) conf"
@@ -258,7 +258,7 @@ function (in maux) (sequential) meinit0 :: "nat \<Rightarrow> ty Formula.formula
 | "meinit0 n (Formula.Let p \<phi> \<psi>) = MLet p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>)"
 | "meinit0 n (Formula.Frz p \<phi> \<psi>) = MFrz p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>) 0 0 0 []
     (meinit0 n \<psi>) 0 0 [] [] (past_reach \<psi>) (safe_letpast (p, Formula.nfv \<phi>) \<psi> \<le> NonFutuRec)
-    None (meinit0 n \<psi>)"
+    (neg_pred (p, Formula.nfv \<phi>) \<psi>) None (meinit0 n \<psi>)"
 | "meinit0 n (Formula.LetPast p \<phi> \<psi>) = MLetPast p (Formula.nfv \<phi>) (meinit0 (Formula.nfv \<phi>) \<phi>) (meinit0 n \<psi>) 0 None"
 | "meinit0 n (Formula.Or \<phi> \<psi>) = MOr (meinit0 n \<phi>) (meinit0 n \<psi>) (mbuf_t_empty, mbuf_t_empty)"
 | "meinit0 n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi> then
@@ -996,7 +996,7 @@ function (sequential) meeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
     (let (xs, \<phi>) = meeval m ts db \<phi>;
       (ys, \<psi>) = meeval n ts (Mapping.update (p, m) xs db) \<psi>
     in (ys, MLet p m \<phi> \<psi>))"
-| "meeval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L) =
+| "meeval n ts db (MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
     (let (xs, \<phi>) = meeval m ts db \<phi>;
          db0 = Mapping.update (p, m) [] db;
          (zs0, \<psi>) = meeval n ts db0 \<psi>;
@@ -1020,11 +1020,11 @@ function (sequential) meeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
          (a, tq, rs2, \<rho>) =
            (let tq = (if d = \<infinity> then [] else tq @ ts);
                 a = frz_adv d w jfrz j tq;
-                (rs2, \<rho>) = meeval n [] (Mapping.update (p, m) (replicate a {}) dbe) \<rho>
+                (rs2, \<rho>) = meeval n [] (Mapping.update (p, m) (replicate a (frz_fill ng (\<alpha>s @ xs))) dbe) \<rho>
             in (a, tq, rs2, \<rho>))
      in (zs0_out @ ys, MFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po
-       lv \<rho>L))"
+       ng lv \<rho>L))"
 | "meeval n ts db (MLetPast p m \<phi> \<psi> i buf) =
     (let (xs, i, buf, \<phi>) = letpast_meeval0 (meeval m) j i mbuf_t_empty (list_of_option buf) (p, m) ts db \<phi>;
          (ys, \<psi>) = meeval n ts (Mapping.update (p, m) (Rep_mbuf_t xs) db) \<psi>
@@ -1110,7 +1110,7 @@ function (sequential) meeval :: "nat \<Rightarrow> ts list \<Rightarrow> databas
 
 lemma psize_snd_meeval: "meeval_dom (n, t, db, \<phi>) \<Longrightarrow> size (snd (meeval n t db \<phi>)) = size \<phi>"
 proof (induction rule: meeval.pinduct)
-  case (4 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
+  case (4 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
   then show ?case
     by (auto simp only: prod.inject meeval.psimps Let_def snd_conv meformula.size id_o o_apply
         size_frz_keep_st split: prod.splits)
@@ -1135,7 +1135,7 @@ qed (auto simp only: prod.inject meeval.psimps Let_def snd_conv meformula.size m
 lemma total_meeval: "All meeval_dom"
 proof (relation "measure (\<lambda>(_, _, _, \<phi>). size \<phi>)", goal_cases)
   text \<open>The replays of @{const MFrz} and the advance of its window, as for @{const meval}.\<close>
-  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (7 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_meeval[OF 7(15)] 7(6,7) by (metis snd_conv)
   then show ?case
@@ -1145,7 +1145,7 @@ next
   then show ?case
     by simp
 next
-  case (9 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (9 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
   have "size yb = size \<rho>"
     using psize_snd_meeval[OF 9(21)] 9(6,7) by (metis snd_conv)
   then show ?case
@@ -1199,7 +1199,7 @@ qed
 lemma meval_code[code]: "meval j n ts db (Rep_meformula \<phi>) = (let (zs, \<phi>') = meeval n ts db \<phi> in (zs, Rep_meformula \<phi>'))"
 proof (induction n ts db \<phi> rule: meeval.induct)
 next
-  case (4 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po lv \<rho>L)
+  case (4 n ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
   let ?db0 = "Mapping.update (p, m) [] db"
   let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
   obtain xs \<phi>' where \<phi>: "meeval m ts db \<phi> = (xs, \<phi>')"
@@ -1264,8 +1264,8 @@ next
       by (simp_all only: ifm frz_keep_map[OF size_Rep_meformula])
   qed
   let ?a = "frz_adv d w (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys) j (if d = \<infinity> then [] else tq @ ts)"
-  obtain rs2 \<rho>2 where adv: "meeval n [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>' = (rs2, \<rho>2)"
-    by (cases "meeval n [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) \<rho>'")
+  obtain rs2 \<rho>2 where adv: "meeval n [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>' = (rs2, \<rho>2)"
+    by (cases "meeval n [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>'")
   have tup: "(let zs0_out = drop (jfrz - jpsi0) zs0;
         \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
         jfrz = jfrz + length zs0_out;
@@ -1284,7 +1284,7 @@ next
     (drop (jfrz - jpsi0) zs0, jfrz + length (drop (jfrz - jpsi0) zs0) + length ys, pR - length rb, rb @ rs,
       ?dbe, ys, \<alpha>s', frz_keep_lv (if po then None else lve) \<rho>L, frz_keep_st (if po then None else lve) \<rho>L)"
     by (simp only: Let_def cpe_def[symmetric] lre_def[symmetric] fr prod.case)
-  have IH5: "meval j n [] (Mapping.update (p, m) (replicate ?a {}) ?dbe) (Rep_meformula \<rho>') = (rs2, Rep_meformula \<rho>2)"
+  have IH5: "meval j n [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) (Rep_meformula \<rho>') = (rs2, Rep_meformula \<rho>2)"
     using 4(6)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
         refl refl refl refl refl refl refl refl refl] adv
     by simp
