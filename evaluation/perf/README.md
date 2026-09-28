@@ -43,11 +43,11 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-28 on refine 02686f21, after
-21.56, and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
-`-verified` is the original VeriMon.  Both ran with `run_both.sh` on the same machine, one after the
-other, with the whole suite of 285 formulas, the same logs and the same settings (8 workers), so
-their numbers compare.  The refine suite took 74 s of wall time, master's 198 s.
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-28 on refine b2394a8c, after
+21.57, and `report0.md` and `ratios0.svg` the starting point: a build of master (025a1423), where
+`-verified` is the original VeriMon.  Both ran on the same machine, with the whole suite of 285
+formulas, the same logs and the same settings (8 workers), so their numbers compare.  The refine
+suite took 73 s of wall time, master's 198 s.
 
 | | master | refine |
 |---|---|---|
@@ -56,25 +56,33 @@ their numbers compare.  The refine suite took 74 s of wall time, master's 198 s.
 | MonPoly does not monitor | 21 | 21 |
 | both finish | 240 | 264 |
 | geometric mean VeriMon/MonPoly | 3.69 | 0.82 |
-| median VeriMon/MonPoly | 3.35 | 0.84 |
-| VeriMon faster / more than 2x slower | 0 / 196 | 219 / 0 |
+| median VeriMon/MonPoly | 3.35 | 0.83 |
+| VeriMon faster / more than 2x slower | 0 / 196 | 222 / 0 |
 
-The verified monitor is faster than MonPoly on the geometric mean and on 219 of the 264 formulas
-both finish, and no formula is more than 2x slower.  The largest ratios are `frz-neglag` (1.32),
-`frz-sincelag` (1.27), `frz-agg` (1.27), `der-guardalw` (1.23) and `frz-exists` (1.20); every other
-formula is at most 1.19x (`frz-sincelag30`).  The fastest formulas are `frz-nested` (0.05) and
+The verified monitor is faster than MonPoly on the geometric mean and on 222 of the 264 formulas
+both finish, and no formula is more than 2x slower.  The largest ratios are `frz-neglag` (1.30),
+`frz-agg` (1.28), `frz-sincelag30` (1.28), `frz-sincelag` (1.21) and `frz-once5` (1.20); every
+other formula is at most 1.19x (`pol-sincefutb`).  The fastest formulas are `frz-nested` (0.05) and
 `onceex-not50` (0.26).  There are no verdict disagreements; master's run has one, `match-pcnt`, an
 end-of-stream difference that the original VeriMon has.
 
+21.57 (the frozen conjunct taken out of an existential quantifier, the quantifier moved into the
+windows under a Let, and ALWAYS without the until node that never holds) took `frz-exists` from
+1.20 to 0.85 and `der-guardalw` from 1.23 to 1.16, as the entry's own measurements predicted
+(0.85 and 1.14).  On the 264 formulas both runs finish, the geometric mean is 0.820 against 0.823
+before, and 222 formulas are faster against 219.  The other moves of 0.10 or more (`frz-evlb`
+1.13 to 0.99, `frz-ev5` 1.17 to 1.04, `frz-oncelb` 1.10 to 0.98, `frz-tbody`, and the other way
+`frz-next` 0.75 to 0.85, `frz-sincelag30` 1.19 to 1.28) are on formulas 21.57 does not change,
+with runs of 0.02 to 0.10 s where a few milliseconds show.  What remains above 1.1 is the Since
+node's persistent trees on the lagging freezes and `pol-sincefutb`, and on `frz-agg`, `frz-once5`
+and `frz-ev5` MonPoly's copies, which filter `A` by each time point's `C` before the window and
+beat its own direct form on this log (21.57).
+
+The run before (2026-09-28, 02686f21, after 21.56, the same machine and 285 formulas) had a
+geometric mean of 0.82 against master's 3.69, 219 of 264 formulas faster and none above 2x;
 21.56 (the Since node's bucket update in one descent without the old value, and the join's deleted
-entries collected by a fold) cut the allocation of `frz-sincelag30` by 9% without a measurable
-change in time, and the suite agrees: on the 264 formulas both runs finish, the geometric mean is
-0.823 against 0.826 before, the `agg` formulas are at 0.827 (0.837 before) and the `since` ones at
-0.862 (0.875).  No formula moved by more than 0.14, and the moves of 0.10 to 0.14 (`frz-sincelag30`
-1.33 to 1.19, `frz-once5` 1.04 to 1.18, `frz-exists`, `frz-prev`) go both ways on runs of 0.02 to
-0.10 s, where a few milliseconds show.  What remains of the gap on the lagging freezes is the Since
-node's persistent trees: VeriMon executes about as many instructions as MonPoly there, but
-allocates about four times as much (21.56).
+entries collected by a fold) had cut the allocation of `frz-sincelag30` by 9% without a
+measurable change in time.
 The `andtrigger` and `vm_only` groups (TRIGGER, RELEASE, LETPAST, an unguarded HISTORICALLY or
 ALWAYS, EQUIV) have no ratio, since MonPoly does not monitor them.
 
