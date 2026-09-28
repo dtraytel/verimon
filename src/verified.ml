@@ -14601,9 +14601,6 @@ let rec fcols
     | n, Let (p, phi, psi) -> fcols n psi
     | n, Frz (p, phi, psi) -> fcols n psi
     | n, LetPast (p, phi, psi) -> fcols n psi
-    | n, Eq (t1, t2) -> None
-    | n, Less (t1, t2) -> None
-    | n, LessEq (t1, t2) -> None
     | n, Neg phi ->
         (if is_empty (card_UNIV_nat, ceq_nat, cproper_interval_nat)
               (fvi zero_nata phi)
@@ -14653,60 +14650,14 @@ let rec fcols
                                | MatchF (_, _) -> None | MatchP (_, _) -> None
                                | TP _ -> None | TS _ -> None))))
     | n, Ands l ->
-        (let (pos, _) = partition safe_formula l in
-          (match those (mapa (fcols n) pos) with None -> None | Some [] -> None
-            | Some (c0 :: cs) -> Some (dands_cols c0 cs)))
+        (match
+          those (map_filter
+                  (fun x -> (if safe_formula x then Some (fcols n x) else None))
+                  l)
+          with None -> None | Some [] -> None
+          | Some (c0 :: cs) -> Some (dands_cols c0 cs))
     | n, Exists (t, phi) ->
         map_option (ungroup_cols (suc zero_nata)) (fcols (suc n) phi)
-    | n, Prev (i, phi) -> fcols n phi
-    | n, Next (i, phi) -> fcols n phi
-    | n, Since (phi, i, psi) ->
-        (if safe_formula phi then fcols n psi
-          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
-                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
-                 | Eq (_, _) -> None | Less (_, _) -> None
-                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
-                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
-                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
-                 | Prev (_, _) -> None | Next (_, _) -> None
-                 | Since (_, _, _) -> None | Until (_, _, _) -> None
-                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
-                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
-                 | TS _ -> None))
-    | n, Until (phi, i, psi) ->
-        (if safe_formula phi then fcols n psi
-          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
-                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
-                 | Eq (_, _) -> None | Less (_, _) -> None
-                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
-                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
-                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
-                 | Prev (_, _) -> None | Next (_, _) -> None
-                 | Since (_, _, _) -> None | Until (_, _, _) -> None
-                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
-                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
-                 | TS _ -> None))
-    | n, Trigger (phi, i, psi) ->
-        (if safe_formula phi then fcols n psi
-          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
-                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
-                 | Eq (_, _) -> None | Less (_, _) -> None
-                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
-                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
-                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
-                 | Prev (_, _) -> None | Next (_, _) -> None
-                 | Since (_, _, _) -> None | Until (_, _, _) -> None
-                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
-                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
-                 | TS _ -> None))
-    | n, Release (phi, i, psi) ->
-        (if memL i zero_nata && memR i zero_nata
-          then fcols n (release_safe_0 phi i psi)
-          else fcols n (release_safe_bounded phi i psi))
-    | n, MatchP (i, r) -> None
-    | n, MatchF (i, r) -> None
-    | n, TP t -> Some (mtrm_dcols (mtrm_of_trm t))
-    | n, TS t -> Some (mtrm_dcols (mtrm_of_trm t))
     | n, Agg (y, omega, tys, f, phi) ->
         (let m = size_list tys in
          let col = map_option (fun r -> merge_cols (ungroup_cols m r) [y]) in
@@ -14758,7 +14709,59 @@ let rec fcols
             | MatchF (_, _) -> col (fcols (plus_nata m n) phi)
             | MatchP (_, _) -> col (fcols (plus_nata m n) phi)
             | TP _ -> col (fcols (plus_nata m n) phi)
-            | TS _ -> col (fcols (plus_nata m n) phi)));;
+            | TS _ -> col (fcols (plus_nata m n) phi)))
+    | n, Prev (i, phi) -> fcols n phi
+    | n, Next (i, phi) -> fcols n phi
+    | n, Since (phi, i, psi) ->
+        (if safe_formula phi then fcols n psi
+          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
+                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
+                 | Eq (_, _) -> None | Less (_, _) -> None
+                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
+                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
+                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
+                 | Prev (_, _) -> None | Next (_, _) -> None
+                 | Since (_, _, _) -> None | Until (_, _, _) -> None
+                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
+                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
+                 | TS _ -> None))
+    | n, Until (phi, i, psi) ->
+        (if safe_formula phi then fcols n psi
+          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
+                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
+                 | Eq (_, _) -> None | Less (_, _) -> None
+                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
+                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
+                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
+                 | Prev (_, _) -> None | Next (_, _) -> None
+                 | Since (_, _, _) -> None | Until (_, _, _) -> None
+                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
+                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
+                 | TS _ -> None))
+    | n, Trigger (phi, i, psi) ->
+        (if safe_formula phi then fcols n psi
+          else (match phi with Pred (_, _) -> None | Let (_, _, _) -> None
+                 | Frz (_, _, _) -> None | LetPast (_, _, _) -> None
+                 | Eq (_, _) -> None | Less (_, _) -> None
+                 | LessEq (_, _) -> None | Neg _ -> fcols n psi
+                 | Or (_, _) -> None | And (_, _) -> None | Ands _ -> None
+                 | Exists (_, _) -> None | Agg (_, _, _, _, _) -> None
+                 | Prev (_, _) -> None | Next (_, _) -> None
+                 | Since (_, _, _) -> None | Until (_, _, _) -> None
+                 | Trigger (_, _, _) -> None | Release (_, _, _) -> None
+                 | MatchF (_, _) -> None | MatchP (_, _) -> None | TP _ -> None
+                 | TS _ -> None))
+    | n, Release (phi, i, psi) ->
+        (if memL i zero_nata && memR i zero_nata
+          then fcols n (release_safe_0 phi i psi)
+          else fcols n (release_safe_bounded phi i psi))
+    | n, TP t -> Some (mtrm_dcols (mtrm_of_trm t))
+    | n, TS t -> Some (mtrm_dcols (mtrm_of_trm t))
+    | n, Eq (v, va) -> None
+    | n, Less (v, va) -> None
+    | n, LessEq (v, va) -> None
+    | n, MatchF (v, va) -> None
+    | n, MatchP (v, va) -> None;;
 
 let rec tok
   cs_R cs_L args =
@@ -14847,23 +14850,6 @@ let rec udinit
           else UDRel (ed_deopt_table ed_bot))
     | n, cs, Or (phi, psi) ->
         UDOr (udinit n cs phi, udinit n cs psi, (mbuf_t_empty, mbuf_t_empty))
-    | n, cs, Exists (t, phi) ->
-        UDExists (udinit (suc n) (zero_nata :: mapa suc cs) phi, true)
-    | n, cs, Prev (i, phi) ->
-        UDPrev (i, udinit n cs phi, true, mbuf_t_empty, mbuf_t_empty)
-    | n, cs, Next (i, phi) -> UDNext (i, udinit n cs phi, true, mbuf_t_empty)
-    | n, cs, Release (phi, i, psi) ->
-        (if memL i zero_nata && memR i zero_nata
-          then udinit n cs (release_safe_0 phi i psi)
-          else udinit n cs (release_safe_bounded phi i psi))
-    | n, cs, TP t ->
-        (let mt = mtrm_of_trm t in
-          (if equal_lista equal_nat cs (mtrm_dcols mt) then UDTP (mt, zero_nata)
-            else UDFail))
-    | n, cs, TS t ->
-        (let mt = mtrm_of_trm t in
-          (if equal_lista equal_nat cs (mtrm_dcols mt) then UDTS mt
-            else UDFail))
     | n, cs, And (phi, psi) ->
         (if safe_assignment (fvi zero_nata phi) psi
           then (let conf = split_assignment (fvi zero_nata phi) psi in
@@ -14931,12 +14917,13 @@ let rec udinit
                                | Until (_, _, _) ->
                                  UDRel (ed_deopt_table ed_bot)
                                | Trigger (phia, i, psia) ->
-                                 (let tr =
-                                    (fun b alpha ->
+                                 (let cs_R = set_cols (fvi zero_nata psia) in
+                                  let phi_d = udinit n cs phi in
+                                  let psi_d = udinit n cs_R psia in
+                                  let tr =
+                                    (fun b alpha alpha_d ->
                                       (let args =
  init_args i n (fvi zero_nata alpha) (fvi zero_nata psia) b None in
-                                       let cs_R = set_cols (fvi zero_nata psia)
- in
                                        let cs_L = set_cols (fvi zero_nata alpha)
  in
 (if equal_lista equal_nat cs (set_cols (fvi zero_nata phi)) &&
@@ -14946,13 +14933,15 @@ let rec udinit
            (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R) &&
           tok cs_R cs_L args))
   then UDAndTrigger
-         (mk_djoin cs cs_R, udinit n cs phi, (mbuf_t_empty, mbuf_t_empty),
-           dargs cs_R cs_L args, udinit n cs_L alpha, udinit n cs_R psia,
-           (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty,
+         (mk_djoin cs cs_R, phi_d, (mbuf_t_empty, mbuf_t_empty),
+           dargs cs_R cs_L args, alpha_d, psi_d, (mbuf_t_empty, mbuf_t_empty),
+           mbuf_t_empty,
            de_ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
   else UDFail)))
                                     in
-                                   (if safe_formula phia then tr true phia
+                                   (if safe_formula phia
+                                     then tr true phia
+    (udinit n (set_cols (fvi zero_nata phia)) phia)
                                      else (match phia
     with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
     | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
@@ -14960,7 +14949,9 @@ let rec udinit
     | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
     | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
     | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
-    | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot) | Neg a -> tr false a
+    | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
+    | Neg alpha ->
+      tr false alpha (udinit n (set_cols (fvi zero_nata alpha)) alpha)
     | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
     | And (_, _) -> UDRel (ed_deopt_table ed_bot)
     | Ands _ -> UDRel (ed_deopt_table ed_bot)
@@ -14983,134 +14974,6 @@ let rec udinit
                                | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
                                | TP _ -> UDRel (ed_deopt_table ed_bot)
                                | TS _ -> UDRel (ed_deopt_table ed_bot)))))
-    | n, cs, Since (phi, i, psi) ->
-        (let sn =
-           (fun b alpha ->
-             (let args =
-                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
-                in
-              let cs_L = set_cols (fvi zero_nata alpha) in
-              let cs_R = set_cols (fvi zero_nata psi) in
-               (if equal_lista equal_nat cs cs_R &&
-                     nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
-                       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R)
-                 then UDSince
-                        (dargs cs cs_L args, udinit n cs_L alpha,
-                          udinit n cs psi,
-                          (mbuf_t_empty, (mbuf_t_empty, (mbuf_t_empty, false))),
-                          udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
-                 else UDFail)))
-           in
-          (if safe_formula phi then sn true phi
-            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Neg a -> sn false a
-                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
-                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | TP _ -> UDRel (ed_deopt_table ed_bot)
-                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
-    | n, cs, Until (phi, i, psi) ->
-        (let un =
-           (fun b alpha ->
-             (let args =
-                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
-                in
-              let cs_L = set_cols (fvi zero_nata alpha) in
-              let cs_R = set_cols (fvi zero_nata psi) in
-               (if equal_lista equal_nat cs cs_R &&
-                     nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
-                       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R)
-                 then UDUntil
-                        (dargs cs cs_L args, dmsk cs cs_L, udinit n cs_L alpha,
-                          udinit n cs psi, (mbuf_t_empty, mbuf_t_empty),
-                          mbuf_t_empty, zero_nata,
-                          udux_init (dargs cs cs_L args))
-                 else UDFail)))
-           in
-          (if safe_formula phi then un true phi
-            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Neg a -> un false a
-                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
-                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | TP _ -> UDRel (ed_deopt_table ed_bot)
-                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
-    | n, cs, Trigger (phi, i, psi) ->
-        (let tr =
-           (fun b alpha ->
-             (let args =
-                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
-                in
-              let cs_L = set_cols (fvi zero_nata alpha) in
-               (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (fvi zero_nata psi)
-                     (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
-                     (nat_subset
-                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
-                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
-                       (memL i zero_nata && memR i zero_nata))
-                 then UDTrigger
-                        (dargs cs cs_L args, emb_plan cs cs_L,
-                          udinit n cs_L alpha, udinit n cs psi,
-                          (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty,
-                          de_ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
-                 else UDFail)))
-           in
-          (if safe_formula phi then tr true phi
-            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Neg a -> tr false a
-                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
-                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
-                   | TP _ -> UDRel (ed_deopt_table ed_bot)
-                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
     | n, cs, Ands l ->
         (let (pos, neg) = partition safe_formula l in
           (match pos with [] -> UDFail
@@ -15127,39 +14990,8 @@ let rec udinit
                                (pos @ mapa remove_neg neg)),
                            mapa (fun _ -> mbuf_t_empty) (pos @ neg))
                   else UDFail))))
-    | n, cs, MatchP (i, r) ->
-        (let (mr, phi_s) = to_mregex r in
-          (match those (mapa (fcols n) phi_s) with None -> UDFail
-            | Some css ->
-              (if list_all
-                    (fun c ->
-                      nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) c)
-                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
-                    css
-                then UDMatchP
-                       (size_list cs, i, mr,
-                         mregex_sorted_list_of_set (rPDs mr),
-                         mapa (emb_plan cs) css,
-                         mapa (fun (a, b) -> udinit n a b) (zip css phi_s),
-                         mapa (fun _ -> mbuf_t_empty) phi_s, mbuf_t_empty, [])
-                else UDFail)))
-    | n, cs, MatchF (i, r) ->
-        (let (mr, phi_s) = to_mregex r in
-          (match those (mapa (fcols n) phi_s) with None -> UDFail
-            | Some css ->
-              (if list_all
-                    (fun c ->
-                      nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) c)
-                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
-                    css
-                then UDMatchF
-                       (size_list cs, i, mr,
-                         mregex_sorted_list_of_set (lPDs mr),
-                         mapa (emb_plan cs) css,
-                         mapa (fun (a, b) -> udinit n a b) (zip css phi_s),
-                         mapa (fun _ -> mbuf_t_empty) phi_s, mbuf_t_empty,
-                         zero_nata, [])
-                else UDFail)))
+    | n, cs, Exists (t, phi) ->
+        UDExists (udinit (suc n) (zero_nata :: mapa suc cs) phi, true)
     | n, cs, Agg (y, omega, tys, f, phi) ->
         (let m = size_list tys in
          let g0 =
@@ -15412,17 +15244,16 @@ let rec udinit
                                phi)
                 else UDFail)
             | Since (phia, i, psi) ->
-              (let sn =
-                 (fun b alpha ->
+              (let cs_R = set_cols (fvi zero_nata psi) in
+               let psi_d = udinit (plus_nata m n) cs_R psi in
+               let sn =
+                 (fun b alpha phi_d ->
                    (let args =
                       init_args i (plus_nata m n) (fvi zero_nata alpha)
                         (fvi zero_nata psi) b (Some ag)
                       in
                     let cs_L = set_cols (fvi zero_nata alpha) in
-                    let cs_R = set_cols (fvi zero_nata psi) in
                     let da = dargs cs_R cs_L args in
-                    let phi_d = udinit (plus_nata m n) cs_L alpha in
-                    let psi_d = udinit (plus_nata m n) cs_R psi in
                      (if ok cs_L cs_R
                        then (if is_empty
                                   (card_UNIV_nat, ceq_nat, cproper_interval_nat)
@@ -15442,7 +15273,10 @@ let rec udinit
        udsx_init da (dmsk cs_R cs_L))))
                        else UDFail)))
                  in
-                (if safe_formula phia then sn true phia
+                (if safe_formula phia
+                  then sn true phia
+                         (udinit (plus_nata m n) (set_cols (fvi zero_nata phia))
+                           phia)
                   else (match phia
                          with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
@@ -15451,7 +15285,10 @@ let rec udinit
                          | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                         | Neg a -> sn false a
+                         | Neg alpha ->
+                           sn false alpha
+                             (udinit (plus_nata m n)
+                               (set_cols (fvi zero_nata alpha)) alpha)
                          | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | And (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Ands _ -> UDRel (ed_deopt_table ed_bot)
@@ -15468,17 +15305,16 @@ let rec udinit
                          | TP _ -> UDRel (ed_deopt_table ed_bot)
                          | TS _ -> UDRel (ed_deopt_table ed_bot))))
             | Until (phia, i, psi) ->
-              (let un =
-                 (fun b alpha ->
+              (let cs_R = set_cols (fvi zero_nata psi) in
+               let psi_d = udinit (plus_nata m n) cs_R psi in
+               let un =
+                 (fun b alpha phi_d ->
                    (let args =
                       init_args i (plus_nata m n) (fvi zero_nata alpha)
                         (fvi zero_nata psi) b (Some ag)
                       in
                     let cs_L = set_cols (fvi zero_nata alpha) in
-                    let cs_R = set_cols (fvi zero_nata psi) in
                     let da = dargs cs_R cs_L args in
-                    let phi_d = udinit (plus_nata m n) cs_L alpha in
-                    let psi_d = udinit (plus_nata m n) cs_R psi in
                      (if ok cs_L cs_R
                        then (if is_empty
                                   (card_UNIV_nat, ceq_nat, cproper_interval_nat)
@@ -15499,7 +15335,10 @@ let rec udinit
        mbuf_t_empty, zero_nata, udux_init da)))
                        else UDFail)))
                  in
-                (if safe_formula phia then un true phia
+                (if safe_formula phia
+                  then un true phia
+                         (udinit (plus_nata m n) (set_cols (fvi zero_nata phia))
+                           phia)
                   else (match phia
                          with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
@@ -15508,7 +15347,10 @@ let rec udinit
                          | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
-                         | Neg a -> un false a
+                         | Neg alpha ->
+                           un false alpha
+                             (udinit (plus_nata m n)
+                               (set_cols (fvi zero_nata alpha)) alpha)
                          | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | And (_, _) -> UDRel (ed_deopt_table ed_bot)
                          | Ands _ -> UDRel (ed_deopt_table ed_bot)
@@ -15613,7 +15455,192 @@ let rec udinit
                                (upt zero_nata m @
                                  mapa (fun c -> plus_nata c m) g)
                                phi)
-                else UDFail)));;
+                else UDFail)))
+    | n, cs, Prev (i, phi) ->
+        UDPrev (i, udinit n cs phi, true, mbuf_t_empty, mbuf_t_empty)
+    | n, cs, Next (i, phi) -> UDNext (i, udinit n cs phi, true, mbuf_t_empty)
+    | n, cs, Since (phi, i, psi) ->
+        (let cs_R = set_cols (fvi zero_nata psi) in
+         let psi_d = udinit n cs_R psi in
+         let sn =
+           (fun b alpha phi_d ->
+             (let args =
+                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
+                in
+              let cs_L = set_cols (fvi zero_nata alpha) in
+               (if equal_lista equal_nat cs cs_R &&
+                     nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
+                       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R)
+                 then UDSince
+                        (dargs cs cs_L args, phi_d, psi_d,
+                          (mbuf_t_empty, (mbuf_t_empty, (mbuf_t_empty, false))),
+                          udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
+                 else UDFail)))
+           in
+          (if safe_formula phi
+            then sn true phi (udinit n (set_cols (fvi zero_nata phi)) phi)
+            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Neg alpha ->
+                     sn false alpha
+                       (udinit n (set_cols (fvi zero_nata alpha)) alpha)
+                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
+                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | TP _ -> UDRel (ed_deopt_table ed_bot)
+                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
+    | n, cs, Until (phi, i, psi) ->
+        (let cs_R = set_cols (fvi zero_nata psi) in
+         let psi_d = udinit n cs_R psi in
+         let un =
+           (fun b alpha phi_d ->
+             (let args =
+                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
+                in
+              let cs_L = set_cols (fvi zero_nata alpha) in
+               (if equal_lista equal_nat cs cs_R &&
+                     nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
+                       (set (ceq_nat, ccompare_nat, set_impl_nat) cs_R)
+                 then UDUntil
+                        (dargs cs cs_L args, dmsk cs cs_L, phi_d, psi_d,
+                          (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty, zero_nata,
+                          udux_init (dargs cs cs_L args))
+                 else UDFail)))
+           in
+          (if safe_formula phi
+            then un true phi (udinit n (set_cols (fvi zero_nata phi)) phi)
+            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Neg alpha ->
+                     un false alpha
+                       (udinit n (set_cols (fvi zero_nata alpha)) alpha)
+                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
+                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | TP _ -> UDRel (ed_deopt_table ed_bot)
+                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
+    | n, cs, Trigger (phi, i, psi) ->
+        (let psi_d = udinit n cs psi in
+         let tr =
+           (fun b alpha phi_d ->
+             (let args =
+                init_args i n (fvi zero_nata alpha) (fvi zero_nata psi) b None
+                in
+              let cs_L = set_cols (fvi zero_nata alpha) in
+               (if set_eq (cenum_nat, ceq_nat, ccompare_nat) (fvi zero_nata psi)
+                     (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
+                     (nat_subset
+                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs_L)
+                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs) &&
+                       (memL i zero_nata && memR i zero_nata))
+                 then UDTrigger
+                        (dargs cs cs_L args, emb_plan cs cs_L, phi_d, psi_d,
+                          (mbuf_t_empty, mbuf_t_empty), mbuf_t_empty,
+                          de_ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
+                 else UDFail)))
+           in
+          (if safe_formula phi
+            then tr true phi (udinit n (set_cols (fvi zero_nata phi)) phi)
+            else (match phi with Pred (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Let (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Frz (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LetPast (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Eq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Less (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | LessEq (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Neg alpha ->
+                     tr false alpha
+                       (udinit n (set_cols (fvi zero_nata alpha)) alpha)
+                   | Or (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | And (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Ands _ -> UDRel (ed_deopt_table ed_bot)
+                   | Exists (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Agg (_, _, _, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Prev (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Next (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Since (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Until (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Trigger (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | Release (_, _, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchF (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | MatchP (_, _) -> UDRel (ed_deopt_table ed_bot)
+                   | TP _ -> UDRel (ed_deopt_table ed_bot)
+                   | TS _ -> UDRel (ed_deopt_table ed_bot))))
+    | n, cs, Release (phi, i, psi) ->
+        (if memL i zero_nata && memR i zero_nata
+          then udinit n cs (release_safe_0 phi i psi)
+          else udinit n cs (release_safe_bounded phi i psi))
+    | n, cs, MatchP (i, r) ->
+        (let (mr, phi_s) = to_mregex r in
+          (match those (mapa (fcols n) phi_s) with None -> UDFail
+            | Some css ->
+              (if list_all
+                    (fun c ->
+                      nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) c)
+                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
+                    css
+                then UDMatchP
+                       (size_list cs, i, mr,
+                         mregex_sorted_list_of_set (rPDs mr),
+                         mapa (emb_plan cs) css,
+                         mapa (fun (a, b) -> udinit n a b) (zip css phi_s),
+                         mapa (fun _ -> mbuf_t_empty) phi_s, mbuf_t_empty, [])
+                else UDFail)))
+    | n, cs, MatchF (i, r) ->
+        (let (mr, phi_s) = to_mregex r in
+          (match those (mapa (fcols n) phi_s) with None -> UDFail
+            | Some css ->
+              (if list_all
+                    (fun c ->
+                      nat_subset (set (ceq_nat, ccompare_nat, set_impl_nat) c)
+                        (set (ceq_nat, ccompare_nat, set_impl_nat) cs))
+                    css
+                then UDMatchF
+                       (size_list cs, i, mr,
+                         mregex_sorted_list_of_set (lPDs mr),
+                         mapa (emb_plan cs) css,
+                         mapa (fun (a, b) -> udinit n a b) (zip css phi_s),
+                         mapa (fun _ -> mbuf_t_empty) phi_s, mbuf_t_empty,
+                         zero_nata, [])
+                else UDFail)))
+    | n, cs, TP t ->
+        (let mt = mtrm_of_trm t in
+          (if equal_lista equal_nat cs (mtrm_dcols mt) then UDTP (mt, zero_nata)
+            else UDFail))
+    | n, cs, TS t ->
+        (let mt = mtrm_of_trm t in
+          (if equal_lista equal_nat cs (mtrm_dcols mt) then UDTS mt
+            else UDFail));;
 
 let rec udminit_safe
   phi = (if mmonitorable_exec phi
@@ -15622,8 +15649,7 @@ let rec udminit_safe
                  Udmstate_ext
                    (zero_nata, zero_nata, udinit n cs phi, n, cs, mbuf_t_empty,
                      ()))
-          else failwith "udminit_safe: the formula is not monitorable"
-                 (fun _ -> udminit_safe phi));;
+          else failwith "undefined");;
 
 let rec shr_pred
   psi = Pred (shr, mapa (fun a -> Var a) (upt zero_nata (nfv psi)));;

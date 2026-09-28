@@ -493,9 +493,10 @@ definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
   "udminit_push \<phi> = udminit_safe (dense_prep \<phi>)"
 
 lemma Rep_udminit_push:
-  "Rep_udmstate (udminit_push \<phi>)
+  assumes "mmonitorable \<phi>"
+  shows "Rep_udmstate (udminit_push \<phi>)
    = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe (dense_prep \<phi>))"
-  by (simp add: udminit_push_def Rep_udminit_safe)
+  by (simp add: udminit_push_def Rep_udminit_safe[OF mmonitorable_dense_prep[OF assms]])
 
 (*<*)
 end

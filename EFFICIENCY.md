@@ -9629,25 +9629,35 @@ over old: geometric mean 0.996, all within 0.91–1.08).
 
 ### 22.1 The initial state without the kernel's formulas
 
-`udof` compiles the kernel's initial state, `minit0`'s formula, into the short formula, so the
+`udof` compiled the kernel's initial state, `minit0`'s formula, into the short formula, so the
 export still contained `mformula`, `minit0`, `mfcols` and the kernel's initial window structures
 (`init_mmasaux`, `init_muaux_dq`, `init_mmtaux` with the `wf_table` and `wf_idx` types they
-build), all only to be taken apart once at startup.  `udinit` (`Dense_Unbox_Exec.thy`) fuses the
-two: `udinit n cs φ` is by definition `udof n cs (minit0 n φ)`, and its equations, one per
-connective, descend the input formula the way `minit0` does and place each node the way `udof`
-does (`fcols` is `mfcols` on the kernel's initial state, for the match nodes' atoms).  Each
-equation is proved from the definition by unfolding it on the left, `minit0`'s and `udof`'s
-equations, and folding the operands' `udof (minit0 …)` back into `udinit` (`udinit_fold_simps`);
-the aggregation's default case, where `minit0` looks through the operand for a Since or Until,
-is proved separately (`udinit_Agg_default`).  The equations are the code equations, and
-`udminit_safe` gets the code equation `udminit_safe_code` that builds the state record from
-`udinit`.  Nothing else changes: `udminit_safe`'s definition and every correctness theorem stay
-as they are.  The code setup that made `minit0` executable (`minit0_code_simps` and the
-`[code_unfold]` instances of `init_since` and friends at the end of `Monitor_Impl.thy`) is gone.
+build), all only to be taken apart once at startup.  `udof` is gone.  `udinit`
+(`Dense_Unbox_Exec.thy`) compiles the input formula itself: a function on `Formula.formula`, one
+equation per connective, that descends the formula the way `minit0` does and places each node the
+way `dof` (`Dense_Descend.thy`) places the kernel's node.  Its theorem is stated against the
+kernel's initial state directly,
+
+    udinit_dof: Rep_udformula (udinit n cs φ) = dof n cs (minit0 n φ)
+
+by induction on `udinit`, and `fcols` (the column list of a match node's atoms) likewise,
+`fcols_mfcols: fcols n φ = mfcols n (minit0 n φ)`.  The termination proofs are `minit0`'s.  Where
+a node is built under a choice of the left operand (a positive or a negated Since, Until or
+Trigger), the builder is a `let`-bound function of the compiled operand, and every call that does
+not depend on that choice (the right operand, the conjunct of an And-Trigger) is made outside it,
+once, so that the induction hypotheses are unconditional.  `udminit_safe` builds the state record
+from `udinit`; `Rep_udminit_safe` and `Rep_udminit_push` now assume the formula monitorable, which
+`udminit_verimon_mverdicts` has at hand.  The code setup that made `minit0` executable
+(`minit0_code_simps` and the `[code_unfold]` instances of `init_since` and friends at the end of
+`Monitor_Impl.thy`) is gone, and with `udof` its guards on the kernel's (empty) buffers, which
+compared them by generic equality on `event_data option list set`.
 
 The export loses 46 items (1703 become 1660) and gains three (`udinit`, `fcols`,
-`udminit_safe`); the other 1657 are textually the old ones.  The guards of `udof` that compared
-the kernel's (empty) buffers with generic equality on `event_data option list set` disappear with
-it: the initial buffers are now built empty rather than checked empty.  `dune test` passes, and
-on the benchmark formulas of Section 21.1 the verdicts are identical and the times the same up to
-noise.
+`udminit_safe`); the other 1657 are textually the old ones.  The initial buffers are built empty
+rather than checked empty.  `dune test` passes, and on the benchmark formulas of Section 21.1 the
+verdicts are identical and the times the same up to noise.  The price is proof text: `udof` and
+`udof_dof` (177 lines) are replaced by `fcols` with `fcols_mfcols` (145 lines), `udinit` with its
+termination (200) and `udinit_dof` (258), and `Dense_Unbox_Exec.thy` grows from 2205 to 2644
+lines.  Most of `udinit_dof` is the case analysis `minit0` performs inside a node (the left
+operand of a temporal node positive or negated, the aggregation's operand a Since, an Until or
+neither), which `udof` found already done in the kernel's formula.

@@ -97,9 +97,9 @@ proof -
     using init by (simp add: udminit_verimon_\<psi>_mw)
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv (\<psi>_mw mw))
       (set_cols (Formula.fv (\<psi>_mw mw))) (minit_safe (dense_prep (\<psi>_mw mw))))) = 0"
-    using zf unfolding ust by (simp only: Rep_udminit_push[symmetric] vdfail_nodes_Rep_udmstate)
+    using zf unfolding ust by (simp only: Rep_udminit_push[OF verimon_mw.monitorable, symmetric] vdfail_nodes_Rep_udmstate)
   from verimon_mw.dmonitor_mverdicts_push[OF zf' f wty, unfolded Mt_\<psi>_mw Mt_exchange] show ?thesis
-    by (simp add: ust Rep_udminit_push nfv_\<psi>_mw fvi_\<psi>_mw)
+    by (simp add: ust Rep_udminit_push[OF verimon_mw.monitorable] nfv_\<psi>_mw fvi_\<psi>_mw)
 qed
 
 end

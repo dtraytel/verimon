@@ -1940,250 +1940,196 @@ lemma Rep_uset_q:
   "uset_q c d = Some d' \<Longrightarrow> Rep_udformula d' = DAndRel (Rep_udformula d) c"
   by (cases d) (auto simp: dandrel_def split: udsaux_x.splits option.splits)
 
-text \<open>The compiler @{const dof} of @{theory MFODL_Monitor_Dense.Dense_Descend} into the short
-  formula: the same placement, with the structures initialised on short tuples.  It descends the
-  kernel's formula; the code does not run it, but its fusion @{text udinit} with the kernel's
-  initial state below.\<close>
-
-function (sequential) udof ::
-    "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> udformula" where
-  "udof n cs (mformula.MRel rel) = UDRel (deopt_table (dtabc n cs rel))"
-| "udof n cs (mformula.MPred e tms mode) =
-     (if mode = Match then UDPredM e (length tms) tms cs
-      else if (mode = Copy \<and> tms = map Formula.Var [0..<n] \<and> cs = [0..<n])
-           \<or> (mode = Simple \<and> is_simple_pattern tms 0 \<and> cs = smp_cols tms)
-      then UDPredS e (length tms)
-      else UDFail)"
-| "udof n cs (mformula.MAndRel \<phi> conf) =
-     (if Formula.fv_trm (fst conf) \<subseteq> set cs \<and> Formula.fv_trm (snd (snd (snd conf))) \<subseteq> set cs
-      then (let d = udof n cs \<phi>; c = reindex_constraint cs conf
-            in case uset_q c d of Some d' \<Rightarrow> d' | None \<Rightarrow> UDAndRel d c)
-      else UDFail)"
-| "udof n cs (mformula.MNeg \<phi>) =
-     (if cs = [] then UDNeg (udof n [] \<phi>)
-      else UDFail)"
-| "udof n cs (mformula.MExists \<phi>) = UDExists (udof (Suc n) (0 # map Suc cs) \<phi>) True"
-| "udof n cs (mformula.MOr \<phi> \<psi> buf) =
-     (if buf = ([], []) then UDOr (udof n cs \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty)
-      else UDFail)"
-| "udof n cs (mformula.MAnd A \<phi> pos B \<psi> buf) =
-     (let cs1 = set_cols A; cs2 = set_cols B in
-      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A) \<and> buf = ([], [])
-      then UDAnd (mk_djoin cs1 cs2) (udof n cs1 \<phi>) pos (udof n cs2 \<psi>)
-             (mbuf_t_empty, mbuf_t_empty)
-      else UDFail)"
-| "udof n cs (mformula.MPrev I \<phi> first buf nts) =
-     (if buf = [] then UDPrev I (udof n cs \<phi>) first mbuf_t_empty (mbuf_t_empty @@ nts)
-      else UDFail)"
-| "udof n cs (mformula.MNext I \<phi> first nts) =
-     UDNext I (udof n cs \<phi>) first (mbuf_t_empty @@ nts)"
-| "udof n cs (mformula.MAnds A_pos A_neg L buf) =
-     (case A_pos of [] \<Rightarrow> UDFail
-      | A # As \<Rightarrow>
-        (let c0 = set_cols A; css = map set_cols As; nss = map set_cols A_neg in
-         if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg \<and>
-            (\<forall>b \<in> set buf. b = [])
-         then UDAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-                (map2 (udof n) (c0 # css @ nss) L) (map (\<lambda>_. mbuf_t_empty) L)
-         else UDFail))"
-| "udof n cs (mformula.MAgg args \<phi>) =
-     (let m = length (aggargs_tys args); g = dagg_gcols args; y = aggargs_y args in
-      if cs = merge_cols g [y] \<and> set_cols (aggargs_cols args) = agg_cols m g
-      then UDAgg (aggargs_g0 args) (aggargs_\<omega> args)
-             (reindex_trm (agg_cols m g) (aggargs_f args)) m (ins_pos g y)
-             (udof (m + n) (agg_cols m g) \<phi>)
-      else UDFail)"
-| "udof n cs (mformula.MSince args \<phi> \<psi> buf aux) =
-     (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
-          \<phi>d = udof (dnode_n n args) cs_L \<phi>; \<psi>d = udof (dnode_n n args) cs_R \<psi> in
-      case args_agg args of
-        None \<Rightarrow>
-          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> buf = init_mbuf2S
-           then UDSince (dargs cs cs_L args) \<phi>d \<psi>d init_mebuf2S
-                  (udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
-           else UDFail)
-      | Some ag \<Rightarrow>
-          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
-           if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
-              buf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
-              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
-              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then (if cpos cs_R (set cs_L) = {}
-                 then UDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
-                        (udsx_init_agg (dargs cs_R cs_L args)
-                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
-                           m, ins_pos g y) None)
-                 else UDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
-                        m (ins_pos g y)
-                        (UDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
-                          (udsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L))))
-           else UDFail))"
-| "udof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
-     (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
-          \<phi>d = udof (dnode_n n args) cs_L \<phi>; \<psi>d = udof (dnode_n n args) cs_R \<psi> in
-      case args_agg args of
-        None \<Rightarrow>
-          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and>
-              buf = ([], []) \<and> nts = [] \<and> t = 0
-           then UDUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
-                  mbuf_t_empty 0 (udux_init (dargs cs cs_L args))
-           else UDFail)
-      | Some ag \<Rightarrow>
-          (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
-           if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
-              buf = ([], []) \<and> nts = [] \<and> t = 0 \<and>
-              agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
-              wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
-              Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
-           then (if cpos cs_R (set cs_L) = {} \<and> memL (args_ivl args) 0
-                 then UDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
-                        (udux_init_agg (dargs cs_R cs_L args)
-                          (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cs_R (aggargs_f ag),
-                           m, ins_pos g y))
-                 else UDAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cs_R (aggargs_f ag))
-                  m (ins_pos g y)
-                  (UDUntil (dargs cs_R cs_L args) (dmsk cs_R cs_L) \<phi>d \<psi>d
-                    (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
-                    (udux_init (dargs cs_R cs_L args))))
-           else UDFail))"
-| "udof n cs (mformula.MAndAssign \<phi> conf) =
-     (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
-      if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
-      then UDAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (udof n cs0 \<phi>)
-      else UDFail)"
-| "udof n cs (mformula.MLet p m \<phi> \<psi>) = UDLet p m (udof m [0..<m] \<phi>) (udof n cs \<psi>)"
-| "udof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
-     (if \<alpha>s = [] \<and> rb = [] then UDFrz p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) jfrz jpsi0 jphi []
-        (udof n cs \<rho>) w pR tq [] d po ng lv (udof n cs \<rho>L) else UDFail)"
-| "udof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
-     (if buf = None then UDLetPast p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) i None else UDFail)"
-| "udof n cs (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
-     (let cs_L = set_cols (args_L args) in
-      if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
-         mem (args_ivl args) 0 \<and> buf = ([], []) \<and> nts = []
-      then UDTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
-             (udof n cs_L \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
-      else UDFail)"
-| "udof n cs (mformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
-     (let cs_R = set_cols (args_R args); cs_L = set_cols (args_L args) in
-      if args_n args = n \<and> cs = set_cols A \<and> set cs_R \<subseteq> set cs \<and> set cs_L \<subseteq> set cs_R \<and>
-         tok cs_R cs_L args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
-      then UDAndTrigger (mk_djoin cs cs_R) (udof n cs \<alpha>) (mbuf_t_empty, mbuf_t_empty)
-             (dargs cs_R cs_L args) (udof n cs_L \<phi>) (udof n cs_R \<psi>)
-             (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-             (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
-      else UDFail)"
-| "udof n cs (mformula.MTP mt i) =
-     (if cs = mtrm_dcols mt then UDTP mt i
-      else UDFail)"
-| "udof n cs (mformula.MTS mt) =
-     (if cs = mtrm_dcols mt then UDTS mt
-      else UDFail)"
-| "udof n cs (mformula.MMatchP I mr mrs L buf nts aux) =
-     (case those (map (mfcols n) L) of None \<Rightarrow> UDFail
-      | Some css \<Rightarrow>
-        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
-            (\<forall>c \<in> set css. set c \<subseteq> set cs)
-         then UDMatchP (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
-                (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ nts) []
-         else UDFail))"
-| "udof n cs (mformula.MMatchF I mr mrs L buf nts t aux) =
-     (case those (map (mfcols n) L) of None \<Rightarrow> UDFail
-      | Some css \<Rightarrow>
-        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
-            (\<forall>c \<in> set css. set c \<subseteq> set cs)
-         then UDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
-                (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ nts) t []
-         else UDFail))"
-  by pat_completeness (simp_all only: prod.inject mformula.inject mformula.distinct simp_thms)
-
-termination udof
-  by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
-    (auto simp: termination_simp dest!: set_zip_rightD)
-
-lemma udof_dof: "Rep_udformula (udof n cs \<phi>) = dof n cs \<phi>"
-proof (induct n cs \<phi> rule: udof.induct)
-  case (3 n cs \<phi> conf)
-  then show ?case
-    by (auto simp: Let_def Rep_uset_q split: option.splits)
-next
-  case (12 n cs args \<phi> \<psi> buf aux)
-  then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def dsx_init_rdsx mbuf_t_empty.rep_eq)
-next
-  case (13 n cs args \<phi> \<psi> buf nts t aux)
-  then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux dux_init_agg_rdux mbuf_t_empty.rep_eq)
-next
-  case (19 n cs A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)
-  then show ?case by (auto simp: Let_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
-qed (simp_all add: Let_def dsan_def dsx_init_rdsx ginit_mmtaux_bmm[symmetric] zip_map2 o_def
-      mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
-      split: list.splits option.splits prod.splits cong: map_cong)
-
-text \<open>The initial state of the short formula, compiled from the input formula directly:
-  @{text "udinit n cs \<phi>"} is by definition @{const udof} on the kernel's initial state
-  @{term "minit0 n \<phi>"}.  Its equations below descend the formula as @{const minit0} does and
-  place each node as @{const udof} does, with @{text fcols}, @{const mfcols} on the kernel's
-  initial state, for the columns of a match node's atoms.  They are the code equations, so the
-  export contains neither the kernel's formulas nor @{const minit0}.  Each is proved by unfolding
-  the definition on the left and folding the operands' compilations back into @{text udinit}.\<close>
-
-definition udinit :: "nat \<Rightarrow> cols \<Rightarrow> ty Formula.formula \<Rightarrow> udformula" where
-  "udinit n cs \<phi> = udof n cs (minit0 n \<phi>)"
-
-definition fcols :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> cols option" where
-  "fcols n \<phi> = mfcols n (minit0 n \<phi>)"
+text \<open>The initial state of the short formula, compiled from the input formula.  The function
+  @{text udinit} places each node the way the compiler @{const dof} of
+  @{theory MFODL_Monitor_Dense.Dense_Descend} places the kernel's initial state @{const minit0},
+  with the structures initialised on short tuples, and descends the formula the way @{const minit0}
+  does; @{text fcols} is the column list @{const mfcols} reads off the kernel's initial state, for
+  the atoms of a match node.  Both are proved against the kernel's initial state
+  (@{text fcols_mfcols}, @{text udinit_dof}) and are the code, so the kernel's formulas are not
+  exported.\<close>
 
 lemmas minit0_init_defs = default_mmasaux.init_since_def dq_muaux.init_until_def
   verimon_maux.init_trigger_def verimon_maux.init_and_trigger_def
 
-lemmas udinit_fold_simps = minit0_init_defs Let_def
-  if_distrib[where f="udof n cs" for n cs] if_distrib[where f="mfcols n" for n]
-  formula.case_distrib[where h="udof n cs" for n cs] formula.case_distrib[where h="mfcols n" for n]
-  udinit_def[symmetric] fcols_def[symmetric]
-
 lemma mbuf_t_empty_append_Nil[simp]: "mbuf_t_empty @@ [] = mbuf_t_empty"
   by transfer simp
 
-lemma udinit_simple:
+lemma minit0_Agg_default:
+  assumes "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
+  shows "minit0 n (Formula.Agg y \<omega> tys f \<phi>) =
+    MAgg (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) (minit0 (length tys + n) \<phi>)"
+  using assms by (cases \<phi>) (simp_all add: Let_def)
+
+function (sequential) fcols :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> cols option" where
+  "fcols n (Formula.Pred e ts) = (case pred_mode_of n ts of Copy \<Rightarrow> Some [0..<n]
+     | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set ts. Formula.fv_trm t)))"
+| "fcols n (Formula.Let p \<phi> \<psi>) = fcols n \<psi>"
+| "fcols n (Formula.Frz p \<phi> \<psi>) = fcols n \<psi>"
+| "fcols n (Formula.LetPast p \<phi> \<psi>) = fcols n \<psi>"
+| "fcols n (Formula.Neg \<phi>) = (if fv \<phi> = {} then Some [] else None)"
+| "fcols n (Formula.Or \<phi> \<psi>) = fcols n \<phi>"
+| "fcols n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi>
+       then map_option (\<lambda>c. merge_cols c [fst (split_assignment (fv \<phi>) \<psi>)]) (fcols n \<phi>)
+     else if safe_formula \<psi> then
+       (case (fcols n \<phi>, fcols n \<psi>) of (Some c1, Some c2) \<Rightarrow> Some (merge_cols c1 c2) | _ \<Rightarrow> None)
+     else if is_constraint \<psi> then fcols n \<phi>
+     else (case \<psi> of
+         Formula.Neg \<psi>' \<Rightarrow> (case (fcols n \<phi>, fcols n \<psi>') of (Some c1, Some c2) \<Rightarrow> Some c1 | _ \<Rightarrow> None)
+       | Formula.Trigger \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then fcols n \<phi>
+           else case \<phi>' of Formula.Neg _ \<Rightarrow> fcols n \<phi> | _ \<Rightarrow> None)
+       | Formula.Release \<phi>' I \<psi>' \<Rightarrow> fcols n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
+       | _ \<Rightarrow> None))"
+| "fcols n (Formula.Ands l) = (case those (map (fcols n) (filter safe_formula l)) of
+     Some (c0 # cs') \<Rightarrow> Some (dands_cols c0 cs') | _ \<Rightarrow> None)"
+| "fcols n (Formula.Exists T \<phi>) = map_option (ungroup_cols (Suc 0)) (fcols (Suc n) \<phi>)"
+| "fcols n (Formula.Agg y \<omega> tys f \<phi>) =
+    (let m = length tys; col = map_option (\<lambda>r. merge_cols (ungroup_cols m r) [y]) in
+     case \<phi> of
+       Formula.Since \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then col (fcols (m + n) \<psi>')
+         else case \<phi>' of Formula.Neg _ \<Rightarrow> col (fcols (m + n) \<psi>') | _ \<Rightarrow> None)
+     | Formula.Until \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then col (fcols (m + n) \<psi>')
+         else case \<phi>' of Formula.Neg _ \<Rightarrow> col (fcols (m + n) \<psi>') | _ \<Rightarrow> None)
+     | _ \<Rightarrow> col (fcols (m + n) \<phi>))"
+| "fcols n (Formula.Prev I \<phi>) = fcols n \<phi>"
+| "fcols n (Formula.Next I \<phi>) = fcols n \<phi>"
+| "fcols n (Formula.Since \<phi> I \<psi>) =
+     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
+| "fcols n (Formula.Until \<phi> I \<psi>) =
+     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
+| "fcols n (Formula.Trigger \<phi> I \<psi>) =
+     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
+| "fcols n (Formula.Release \<phi> I \<psi>) = (if mem I 0
+     then fcols n (release_safe_0 \<phi> I \<psi>) else fcols n (release_safe_bounded \<phi> I \<psi>))"
+| "fcols n (Formula.TP t) = Some (mtrm_dcols (mtrm_of_trm t))"
+| "fcols n (Formula.TS t) = Some (mtrm_dcols (mtrm_of_trm t))"
+| "fcols n _ = None"
+  by pat_completeness auto
+
+termination
+proof ((relation "measure (\<lambda>(_, \<phi>). size' \<phi>)"; clarsimp), goal_cases)
+  case (5 \<phi> \<phi>' I \<psi>')
+  then show ?case using size'_and_release[of \<phi> \<phi>' I \<psi>'] by simp
+next
+  case (6 l x)
+  then show ?case unfolding less_Suc_eq_le using sum_list_mem_leq[of x l size'] by simp
+next
+  case (7 \<phi> I \<psi>)
+  then show ?case using size'_release_aux(4)[of \<phi> I \<psi>] by simp
+next
+  case (8 \<phi> I \<psi>)
+  then show ?case using size'_release_aux(3)[of \<phi> I \<psi>] by simp
+qed (case_tac \<psi>; clarsimp)+
+
+lemma fcols_mfcols: "fcols n \<phi> = mfcols n (minit0 n \<phi>)"
+proof (induct n \<phi> rule: fcols.induct)
+  case (10 n y \<omega> tys f \<phi>)
+  show ?case
+  proof (cases "\<exists>\<phi>' I \<psi>'. \<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'")
+    case True
+    then obtain \<phi>' I \<psi>' where "\<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'" by blast
+    then show ?thesis
+    proof
+      assume S: "\<phi> = Formula.Since \<phi>' I \<psi>'"
+      show ?thesis unfolding S using 10(16,17)[OF refl refl S]
+        by (auto simp: minit0_init_defs init_args_def init_aggargs_def dnode_n_def Let_def
+            split: formula.splits)
+    next
+      assume U: "\<phi> = Formula.Until \<phi>' I \<psi>'"
+      show ?thesis unfolding U using 10(18,19)[OF refl refl U]
+        by (auto simp: minit0_init_defs init_args_def init_aggargs_def dnode_n_def Let_def
+            split: formula.splits)
+    qed
+  next
+    case False
+    then have nS: "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" and nU: "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
+      by blast+
+    have ih: "fcols (length tys + n) \<phi> = mfcols (length tys + n) (minit0 (length tys + n) \<phi>)"
+      using False by (cases \<phi>) (rule 10[OF refl refl], assumption | simp)+
+    have "fcols n (Formula.Agg y \<omega> tys f \<phi>) =
+        map_option (\<lambda>r. merge_cols (ungroup_cols (length tys) r) [y]) (fcols (length tys + n) \<phi>)"
+      using nS nU by (cases \<phi>) (simp_all add: Let_def)
+    then show ?thesis unfolding minit0_Agg_default[OF nS nU] ih by (simp add: init_aggargs_def)
+  qed
+next
+  case (7 n \<phi> \<psi>)
+  show ?case
+  proof (cases "safe_assignment (fv \<phi>) \<psi>")
+    case True
+    then show ?thesis using 7(1) by simp
+  next
+    case sa: False
+    show ?thesis
+    proof (cases "safe_formula \<psi>")
+      case True
+      then show ?thesis using sa 7(2,3) by (simp split: option.splits)
+    next
+      case sf: False
+      show ?thesis
+      proof (cases "is_constraint \<psi>")
+        case True
+        then show ?thesis using sa sf 7(4) by simp
+      next
+        case ic: False
+        have l: "fcols n (Formula.And \<phi> \<psi>) = (case \<psi> of
+            Formula.Neg \<psi>' \<Rightarrow> (case (fcols n \<phi>, fcols n \<psi>') of (Some c1, Some c2) \<Rightarrow> Some c1 | _ \<Rightarrow> None)
+          | Formula.Trigger \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then fcols n \<phi>
+              else case \<phi>' of Formula.Neg _ \<Rightarrow> fcols n \<phi> | _ \<Rightarrow> None)
+          | Formula.Release \<phi>' I \<psi>' \<Rightarrow> fcols n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
+          | _ \<Rightarrow> None)"
+          using sa sf ic by simp
+        have r: "minit0 n (Formula.And \<phi> \<psi>) = (case \<psi> of
+            Formula.Neg \<psi> \<Rightarrow> MAnd (fv \<phi>) (minit0 n \<phi>) False (fv \<psi>) (minit0 n \<psi>) ([], [])
+          | Formula.Trigger \<phi>' I \<psi>' \<Rightarrow> verimon_maux.init_and_trigger minit0 n None \<phi> \<phi>' I \<psi>'
+          | Formula.Release \<phi>' I \<psi>' \<Rightarrow> minit0 n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
+          | _ \<Rightarrow> MRel empty_table)"
+          using sa sf ic by simp
+        show ?thesis unfolding l r
+          by (cases \<psi>) (simp_all add: 7(5-)[OF sa sf ic] minit0_init_defs init_args_def Let_def
+              split: option.splits formula.splits)
+      qed
+    qed
+  qed
+next
+  case (8 n l)
+  have m: "map (\<lambda>x. mfcols n (minit0 n x)) (filter safe_formula l) = map (fcols n) (filter safe_formula l)"
+    by (intro map_cong refl) (simp add: 8)
+  show ?case by (simp add: Let_def o_def m)
+next
+  case (13 n \<phi> I \<psi>)
+  then show ?case by (auto simp: minit0_init_defs init_args_def Let_def split: formula.splits)
+next
+  case (14 n \<phi> I \<psi>)
+  then show ?case by (auto simp: minit0_init_defs init_args_def Let_def split: formula.splits)
+next
+  case (15 n \<phi> I \<psi>)
+  then show ?case by (auto simp: minit0_init_defs init_args_def Let_def split: formula.splits)
+qed (simp_all add: Let_def split: prod.splits)
+
+function (sequential) udinit :: "nat \<Rightarrow> cols \<Rightarrow> ty Formula.formula \<Rightarrow> udformula" where
   "udinit n cs (Formula.Pred e ts) = (let mode = pred_mode_of n ts in
      if mode = Match then UDPredM e (length ts) ts cs
      else if (mode = Copy \<and> ts = map Formula.Var [0..<n] \<and> cs = [0..<n])
           \<or> (mode = Simple \<and> is_simple_pattern ts 0 \<and> cs = smp_cols ts)
      then UDPredS e (length ts)
      else UDFail)"
-  "udinit n cs (Formula.Let p \<phi> \<psi>) =
+| "udinit n cs (Formula.Let p \<phi> \<psi>) =
      (let m = Formula.nfv \<phi> in UDLet p m (udinit m [0..<m] \<phi>) (udinit n cs \<psi>))"
-  "udinit n cs (Formula.Frz p \<phi> \<psi>) =
+| "udinit n cs (Formula.Frz p \<phi> \<psi>) =
      (let m = Formula.nfv \<phi>; d = udinit n cs \<psi> in
       UDFrz p m (udinit m [0..<m] \<phi>) d 0 0 0 [] d 0 0 [] [] (past_reach \<psi>)
         (safe_letpast (p, m) \<psi> \<le> NonFutuRec) (neg_pred (p, m) \<psi>) None d)"
-  "udinit n cs (Formula.LetPast p \<phi> \<psi>) =
+| "udinit n cs (Formula.LetPast p \<phi> \<psi>) =
      (let m = Formula.nfv \<phi> in UDLetPast p m (udinit m [0..<m] \<phi>) (udinit n cs \<psi>) 0 None)"
-  "udinit n cs (Formula.Eq t1 t2) = UDRel (deopt_table (dtabc n cs (eq_rel n t1 t2)))"
-  "udinit n cs (Formula.Less t1 t2) = UDRel (deopt_table empty_table)"
-  "udinit n cs (Formula.LessEq t1 t2) = UDRel (deopt_table empty_table)"
-  "udinit n cs (Formula.Neg \<phi>) = (if fv \<phi> = {}
+| "udinit n cs (Formula.Eq t1 t2) = UDRel (deopt_table (dtabc n cs (eq_rel n t1 t2)))"
+| "udinit n cs (Formula.Less t1 t2) = UDRel (deopt_table empty_table)"
+| "udinit n cs (Formula.LessEq t1 t2) = UDRel (deopt_table empty_table)"
+| "udinit n cs (Formula.Neg \<phi>) = (if fv \<phi> = {}
      then (if cs = [] then UDNeg (udinit n [] \<phi>) else UDFail)
      else UDRel (deopt_table empty_table))"
-  "udinit n cs (Formula.Or \<phi> \<psi>) =
+| "udinit n cs (Formula.Or \<phi> \<psi>) =
      UDOr (udinit n cs \<phi>) (udinit n cs \<psi>) (mbuf_t_empty, mbuf_t_empty)"
-  "udinit n cs (Formula.Exists T \<phi>) = UDExists (udinit (Suc n) (0 # map Suc cs) \<phi>) True"
-  "udinit n cs (Formula.Prev I \<phi>) = UDPrev I (udinit n cs \<phi>) True mbuf_t_empty mbuf_t_empty"
-  "udinit n cs (Formula.Next I \<phi>) = UDNext I (udinit n cs \<phi>) True mbuf_t_empty"
-  "udinit n cs (Formula.Release \<phi> I \<psi>) = (if mem I 0
-     then udinit n cs (release_safe_0 \<phi> I \<psi>)
-     else udinit n cs (release_safe_bounded \<phi> I \<psi>))"
-  "udinit n cs (Formula.TP t) =
-     (let mt = mtrm_of_trm t in if cs = mtrm_dcols mt then UDTP mt 0 else UDFail)"
-  "udinit n cs (Formula.TS t) =
-     (let mt = mtrm_of_trm t in if cs = mtrm_dcols mt then UDTS mt else UDFail)"
-  by (subst udinit_def; simp add: udinit_fold_simps cong: if_cong formula.case_cong)+
-
-lemma udinit_And:
-  "udinit n cs (Formula.And \<phi> \<psi>) =
+| "udinit n cs (Formula.And \<phi> \<psi>) =
     (if safe_assignment (fv \<phi>) \<psi> then
        (let conf = split_assignment (fv \<phi>) \<psi>; y = fst conf; t = snd conf; cs0 = rem_col cs y in
         if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
@@ -2209,60 +2155,21 @@ lemma udinit_And:
                  (mbuf_t_empty, mbuf_t_empty)
           else UDFail)
      | Formula.Trigger \<phi>' I \<psi>' \<Rightarrow>
-         (let tr = (\<lambda>b \<alpha>.
-            let args = init_args I n (fv \<alpha>) (fv \<psi>') b None;
-                cs_R = set_cols (fv \<psi>'); cs_L = set_cols (fv \<alpha>) in
+         (let cs_R = set_cols (fv \<psi>'); \<phi>d = udinit n cs \<phi>; \<psi>d = udinit n cs_R \<psi>';
+              tr = (\<lambda>b \<alpha> \<alpha>d.
+            let args = init_args I n (fv \<alpha>) (fv \<psi>') b None; cs_L = set_cols (fv \<alpha>) in
             if cs = set_cols (fv \<phi>) \<and> set cs_R \<subseteq> set cs \<and> set cs_L \<subseteq> set cs_R \<and> tok cs_R cs_L args
-            then UDAndTrigger (mk_djoin cs cs_R) (udinit n cs \<phi>) (mbuf_t_empty, mbuf_t_empty)
-                   (dargs cs_R cs_L args) (udinit n cs_L \<alpha>) (udinit n cs_R \<psi>')
+            then UDAndTrigger (mk_djoin cs cs_R) \<phi>d (mbuf_t_empty, mbuf_t_empty)
+                   (dargs cs_R cs_L args) \<alpha>d \<psi>d
                    (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
                    (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
             else UDFail) in
-          if safe_formula \<phi>' then tr True \<phi>'
-          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> tr False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))
+          if safe_formula \<phi>' then tr True \<phi>' (udinit n (set_cols (fv \<phi>')) \<phi>')
+          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> tr False \<alpha> (udinit n (set_cols (fv \<alpha>)) \<alpha>)
+            | _ \<Rightarrow> UDRel (deopt_table empty_table))
      | Formula.Release \<phi>' I \<psi>' \<Rightarrow> udinit n cs (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
      | _ \<Rightarrow> UDRel (deopt_table empty_table)))"
-  by (subst udinit_def; simp add: udinit_fold_simps init_args_def cong: if_cong formula.case_cong)
-
-lemma udinit_temporal:
-  "udinit n cs (Formula.Since \<phi> I \<psi>) =
-    (let sn = (\<lambda>b \<alpha>.
-       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>);
-           cs_R = set_cols (fv \<psi>) in
-       if cs = cs_R \<and> set cs_L \<subseteq> set cs_R
-       then UDSince (dargs cs cs_L args) (udinit n cs_L \<alpha>) (udinit n cs \<psi>) init_mebuf2S
-              (udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
-       else UDFail) in
-     if safe_formula \<phi> then sn True \<phi>
-     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> sn False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))"
-  "udinit n cs (Formula.Until \<phi> I \<psi>) =
-    (let un = (\<lambda>b \<alpha>.
-       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>);
-           cs_R = set_cols (fv \<psi>) in
-       if cs = cs_R \<and> set cs_L \<subseteq> set cs_R
-       then UDUntil (dargs cs cs_L args) (dmsk cs cs_L) (udinit n cs_L \<alpha>) (udinit n cs \<psi>)
-              (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init (dargs cs cs_L args))
-       else UDFail) in
-     if safe_formula \<phi> then un True \<phi>
-     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> un False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))"
-  "udinit n cs (Formula.Trigger \<phi> I \<psi>) =
-    (let tr = (\<lambda>b \<alpha>.
-       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>) in
-       if fv \<psi> = set cs \<and> set cs_L \<subseteq> set cs \<and> mem I 0
-       then UDTrigger (dargs cs cs_L args) (emb_plan cs cs_L) (udinit n cs_L \<alpha>) (udinit n cs \<psi>)
-              (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
-              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
-       else UDFail) in
-     if safe_formula \<phi> then tr True \<phi>
-     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> tr False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))"
-  by (rule trans[OF udinit_def], simp add: udinit_fold_simps init_args_def dnode_n_def
-      cong: if_cong formula.case_cong)+
-
-lemma map2_map_right: "map2 f xs (map g ys) = map2 (\<lambda>x y. f x (g y)) xs ys"
-  by (simp add: zip_map2 split_def)
-
-lemma udinit_Ands:
-  "udinit n cs (Formula.Ands l) =
+| "udinit n cs (Formula.Ands l) =
     (let (pos, neg) = partition safe_formula l in
      case pos of [] \<Rightarrow> UDFail
      | p # ps \<Rightarrow>
@@ -2273,121 +2180,17 @@ lemma udinit_Ands:
                (map2 (udinit n) (c0 # css @ nss) (pos @ map remove_neg neg))
                (map (\<lambda>_. mbuf_t_empty) (pos @ neg))
         else UDFail))"
-  by (subst udinit_def; simp add: udinit_fold_simps o_def map2_map_right split: list.splits prod.splits)
-
-lemma fcols_code:
-  "fcols n (Formula.Pred e ts) = (case pred_mode_of n ts of Copy \<Rightarrow> Some [0..<n]
-     | _ \<Rightarrow> Some (set_cols (\<Union>t \<in> set ts. Formula.fv_trm t)))"
-  "fcols n (Formula.Let p \<phi> \<psi>) = fcols n \<psi>"
-  "fcols n (Formula.Frz p \<phi> \<psi>) = fcols n \<psi>"
-  "fcols n (Formula.LetPast p \<phi> \<psi>) = fcols n \<psi>"
-  "fcols n (Formula.Eq t1 t2) = None"
-  "fcols n (Formula.Less t1 t2) = None"
-  "fcols n (Formula.LessEq t1 t2) = None"
-  "fcols n (Formula.Neg \<phi>) = (if fv \<phi> = {} then Some [] else None)"
-  "fcols n (Formula.Or \<phi> \<psi>) = fcols n \<phi>"
-  "fcols n (Formula.And \<phi> \<psi>) = (if safe_assignment (fv \<phi>) \<psi>
-       then map_option (\<lambda>c. merge_cols c [fst (split_assignment (fv \<phi>) \<psi>)]) (fcols n \<phi>)
-     else if safe_formula \<psi> then
-       (case (fcols n \<phi>, fcols n \<psi>) of (Some c1, Some c2) \<Rightarrow> Some (merge_cols c1 c2) | _ \<Rightarrow> None)
-     else if is_constraint \<psi> then fcols n \<phi>
-     else (case \<psi> of
-         Formula.Neg \<psi>' \<Rightarrow> (case (fcols n \<phi>, fcols n \<psi>') of (Some c1, Some c2) \<Rightarrow> Some c1 | _ \<Rightarrow> None)
-       | Formula.Trigger \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then fcols n \<phi>
-           else case \<phi>' of Formula.Neg _ \<Rightarrow> fcols n \<phi> | _ \<Rightarrow> None)
-       | Formula.Release \<phi>' I \<psi>' \<Rightarrow> fcols n (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
-       | _ \<Rightarrow> None))"
-  "fcols n (Formula.Ands l) = (let (pos, neg) = partition safe_formula l in
-     case those (map (fcols n) pos) of Some (c0 # cs') \<Rightarrow> Some (dands_cols c0 cs') | _ \<Rightarrow> None)"
-  "fcols n (Formula.Exists T \<phi>) = map_option (ungroup_cols (Suc 0)) (fcols (Suc n) \<phi>)"
-  "fcols n (Formula.Prev I \<phi>) = fcols n \<phi>"
-  "fcols n (Formula.Next I \<phi>) = fcols n \<phi>"
-  "fcols n (Formula.Since \<phi> I \<psi>) =
-     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
-  "fcols n (Formula.Until \<phi> I \<psi>) =
-     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
-  "fcols n (Formula.Trigger \<phi> I \<psi>) =
-     (if safe_formula \<phi> then fcols n \<psi> else case \<phi> of Formula.Neg _ \<Rightarrow> fcols n \<psi> | _ \<Rightarrow> None)"
-  "fcols n (Formula.Release \<phi> I \<psi>) = (if mem I 0
-     then fcols n (release_safe_0 \<phi> I \<psi>) else fcols n (release_safe_bounded \<phi> I \<psi>))"
-  "fcols n (Formula.MatchP I r) = None"
-  "fcols n (Formula.MatchF I r) = None"
-  "fcols n (Formula.TP t) = Some (mtrm_dcols (mtrm_of_trm t))"
-  "fcols n (Formula.TS t) = Some (mtrm_dcols (mtrm_of_trm t))"
-  by (rule trans[OF fcols_def], simp add: udinit_fold_simps init_args_def o_def
-      cong: if_cong formula.case_cong option.case_cong split: prod.splits)+
-
-lemma minit0_Agg_default:
-  assumes "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
-  shows "minit0 n (Formula.Agg y \<omega> tys f \<phi>) =
-    MAgg (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f) (minit0 (length tys + n) \<phi>)"
-  using assms by (cases \<phi>) (simp_all add: Let_def)
-
-lemma fcols_Agg_default:
-  assumes "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
-  shows "fcols n (Formula.Agg y \<omega> tys f \<phi>) =
-    map_option (\<lambda>r. merge_cols (ungroup_cols (length tys) r) [y]) (fcols (length tys + n) \<phi>)"
-  unfolding fcols_def minit0_Agg_default[OF assms] by (simp add: init_aggargs_def)
-
-lemma udinit_Agg_default:
-  assumes "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
-  shows "udinit n cs (Formula.Agg y \<omega> tys f \<phi>) =
-    (let m = length tys; g0 = fv \<phi> \<subseteq> {0..<m}; ag = init_aggargs (fv \<phi>) n g0 y \<omega> tys f;
-         g = dagg_gcols ag in
-     if cs = merge_cols g [y] \<and> set_cols (fv \<phi>) = agg_cols m g
-     then UDAgg g0 \<omega> (reindex_trm (agg_cols m g) f) m (ins_pos g y) (udinit (m + n) (agg_cols m g) \<phi>)
-     else UDFail)"
-  unfolding udinit_def minit0_Agg_default[OF assms] by (simp add: Let_def init_aggargs_def)
-
-lemma fcols_Agg:
-  "fcols n (Formula.Agg y \<omega> tys f \<phi>) =
-    (let m = length tys; col = map_option (\<lambda>r. merge_cols (ungroup_cols m r) [y]) in
-     case \<phi> of
-       Formula.Since \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then col (fcols (m + n) \<psi>')
-         else case \<phi>' of Formula.Neg _ \<Rightarrow> col (fcols (m + n) \<psi>') | _ \<Rightarrow> None)
-     | Formula.Until \<phi>' I \<psi>' \<Rightarrow> (if safe_formula \<phi>' then col (fcols (m + n) \<psi>')
-         else case \<phi>' of Formula.Neg _ \<Rightarrow> col (fcols (m + n) \<psi>') | _ \<Rightarrow> None)
-     | _ \<Rightarrow> col (fcols (m + n) \<phi>))"
-proof (cases "\<exists>\<phi>' I \<psi>'. \<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'")
-  case True
-  then obtain \<phi>' I \<psi>' where "\<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'" by blast
-  then show ?thesis
-    by (rule disjE) (simp only:, rule trans[OF fcols_def], simp add: udinit_fold_simps init_args_def
-      init_aggargs_def dnode_n_def cong: if_cong formula.case_cong option.case_cong)+
-next
-  case False
-  then show ?thesis by (cases \<phi>) (simp_all add: fcols_Agg_default Let_def)
-qed
-
-lemma udinit_Match:
-  "udinit n cs (Formula.MatchP I r) =
-    (let (mr, \<phi>s) = to_mregex r in
-     case those (map (fcols n) \<phi>s) of None \<Rightarrow> UDFail
-     | Some css \<Rightarrow> (if \<forall>c \<in> set css. set c \<subseteq> set cs
-         then UDMatchP (length cs) I mr (sorted_list_of_set (RPDs mr)) (map (emb_plan cs) css)
-                (map2 (udinit n) css \<phi>s) (map (\<lambda>_. mbuf_t_empty) \<phi>s) mbuf_t_empty []
-         else UDFail))"
-  "udinit n cs (Formula.MatchF I r) =
-    (let (mr, \<phi>s) = to_mregex r in
-     case those (map (fcols n) \<phi>s) of None \<Rightarrow> UDFail
-     | Some css \<Rightarrow> (if \<forall>c \<in> set css. set c \<subseteq> set cs
-         then UDMatchF (length cs) I mr (sorted_list_of_set (LPDs mr)) (map (emb_plan cs) css)
-                (map2 (udinit n) css \<phi>s) (map (\<lambda>_. mbuf_t_empty) \<phi>s) mbuf_t_empty 0 []
-         else UDFail))"
-  by (subst udinit_def; simp add: udinit_fold_simps o_def map2_map_right split: prod.splits option.splits)+
-
-lemma udinit_Agg:
-  "udinit n cs (Formula.Agg y \<omega> tys f \<phi>) =
+| "udinit n cs (Formula.Exists T \<phi>) = UDExists (udinit (Suc n) (0 # map Suc cs) \<phi>) True"
+| "udinit n cs (Formula.Agg y \<omega> tys f \<phi>) =
     (let m = length tys; g0 = fv \<phi> \<subseteq> {0..<m}; ag = init_aggargs (fv \<phi>) n g0 y \<omega> tys f;
          g = dagg_gcols ag;
          ok = (\<lambda>cs_L cs_R. set cs_L \<subseteq> set cs_R \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
            wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (g0 \<longrightarrow> g = []) \<and> Formula.fv_trm f \<subseteq> set cs_R) in
      case \<phi> of
        Formula.Since \<phi>' I \<psi>' \<Rightarrow>
-         (let sn = (\<lambda>b \<alpha>.
+         (let cs_R = set_cols (fv \<psi>'); \<psi>d = udinit (m + n) cs_R \<psi>'; sn = (\<lambda>b \<alpha> \<phi>d.
             let args = init_args I (m + n) (fv \<alpha>) (fv \<psi>') b (Some ag);
-                cs_L = set_cols (fv \<alpha>); cs_R = set_cols (fv \<psi>'); da = dargs cs_R cs_L args;
-                \<phi>d = udinit (m + n) cs_L \<alpha>; \<psi>d = udinit (m + n) cs_R \<psi>' in
+                cs_L = set_cols (fv \<alpha>); da = dargs cs_R cs_L args in
             if ok cs_L cs_R
             then (if cpos cs_R (set cs_L) = {}
                   then UDSince da \<phi>d \<psi>d init_mebuf2S
@@ -2395,13 +2198,13 @@ lemma udinit_Agg:
                   else UDAgg g0 \<omega> (reindex_trm cs_R f) m (ins_pos g y)
                          (UDSince da \<phi>d \<psi>d init_mebuf2S (udsx_init da (dmsk cs_R cs_L))))
             else UDFail) in
-          if safe_formula \<phi>' then sn True \<phi>'
-          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> sn False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))
+          if safe_formula \<phi>' then sn True \<phi>' (udinit (m + n) (set_cols (fv \<phi>')) \<phi>')
+          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> sn False \<alpha> (udinit (m + n) (set_cols (fv \<alpha>)) \<alpha>)
+            | _ \<Rightarrow> UDRel (deopt_table empty_table))
      | Formula.Until \<phi>' I \<psi>' \<Rightarrow>
-         (let un = (\<lambda>b \<alpha>.
+         (let cs_R = set_cols (fv \<psi>'); \<psi>d = udinit (m + n) cs_R \<psi>'; un = (\<lambda>b \<alpha> \<phi>d.
             let args = init_args I (m + n) (fv \<alpha>) (fv \<psi>') b (Some ag);
-                cs_L = set_cols (fv \<alpha>); cs_R = set_cols (fv \<psi>'); da = dargs cs_R cs_L args;
-                \<phi>d = udinit (m + n) cs_L \<alpha>; \<psi>d = udinit (m + n) cs_R \<psi>' in
+                cs_L = set_cols (fv \<alpha>); da = dargs cs_R cs_L args in
             if ok cs_L cs_R
             then (if cpos cs_R (set cs_L) = {} \<and> memL I 0
                   then UDUntil da (dmsk cs_R cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
@@ -2410,26 +2213,356 @@ lemma udinit_Agg:
                          (UDUntil da (dmsk cs_R cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
                            mbuf_t_empty 0 (udux_init da)))
             else UDFail) in
-          if safe_formula \<phi>' then un True \<phi>'
-          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> un False \<alpha> | _ \<Rightarrow> UDRel (deopt_table empty_table))
+          if safe_formula \<phi>' then un True \<phi>' (udinit (m + n) (set_cols (fv \<phi>')) \<phi>')
+          else case \<phi>' of Formula.Neg \<alpha> \<Rightarrow> un False \<alpha> (udinit (m + n) (set_cols (fv \<alpha>)) \<alpha>)
+            | _ \<Rightarrow> UDRel (deopt_table empty_table))
      | _ \<Rightarrow> (if cs = merge_cols g [y] \<and> set_cols (fv \<phi>) = agg_cols m g
             then UDAgg g0 \<omega> (reindex_trm (agg_cols m g) f) m (ins_pos g y)
                    (udinit (m + n) (agg_cols m g) \<phi>)
             else UDFail))"
-proof (cases "\<exists>\<phi>' I \<psi>'. \<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'")
-  case True
-  then obtain \<phi>' I \<psi>' where "\<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'" by blast
-  then show ?thesis
-    by (rule disjE) (simp only:, rule trans[OF udinit_def], simp add: udinit_fold_simps init_args_def
-      init_aggargs_def dnode_n_def cong: if_cong formula.case_cong option.case_cong)+
-next
-  case False
-  then show ?thesis by (cases \<phi>) (simp_all add: udinit_Agg_default Let_def)
-qed
+| "udinit n cs (Formula.Prev I \<phi>) = UDPrev I (udinit n cs \<phi>) True mbuf_t_empty mbuf_t_empty"
+| "udinit n cs (Formula.Next I \<phi>) = UDNext I (udinit n cs \<phi>) True mbuf_t_empty"
+| "udinit n cs (Formula.Since \<phi> I \<psi>) =
+    (let cs_R = set_cols (fv \<psi>); \<psi>d = udinit n cs_R \<psi>; sn = (\<lambda>b \<alpha> \<phi>d.
+       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>) in
+       if cs = cs_R \<and> set cs_L \<subseteq> set cs_R
+       then UDSince (dargs cs cs_L args) \<phi>d \<psi>d init_mebuf2S
+              (udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
+       else UDFail) in
+     if safe_formula \<phi> then sn True \<phi> (udinit n (set_cols (fv \<phi>)) \<phi>)
+     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> sn False \<alpha> (udinit n (set_cols (fv \<alpha>)) \<alpha>)
+       | _ \<Rightarrow> UDRel (deopt_table empty_table))"
+| "udinit n cs (Formula.Until \<phi> I \<psi>) =
+    (let cs_R = set_cols (fv \<psi>); \<psi>d = udinit n cs_R \<psi>; un = (\<lambda>b \<alpha> \<phi>d.
+       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>) in
+       if cs = cs_R \<and> set cs_L \<subseteq> set cs_R
+       then UDUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d
+              (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init (dargs cs cs_L args))
+       else UDFail) in
+     if safe_formula \<phi> then un True \<phi> (udinit n (set_cols (fv \<phi>)) \<phi>)
+     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> un False \<alpha> (udinit n (set_cols (fv \<alpha>)) \<alpha>)
+       | _ \<Rightarrow> UDRel (deopt_table empty_table))"
+| "udinit n cs (Formula.Trigger \<phi> I \<psi>) =
+    (let \<psi>d = udinit n cs \<psi>; tr = (\<lambda>b \<alpha> \<phi>d.
+       let args = init_args I n (fv \<alpha>) (fv \<psi>) b None; cs_L = set_cols (fv \<alpha>) in
+       if fv \<psi> = set cs \<and> set cs_L \<subseteq> set cs \<and> mem I 0
+       then UDTrigger (dargs cs cs_L args) (emb_plan cs cs_L) \<phi>d \<psi>d
+              (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
+              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
+       else UDFail) in
+     if safe_formula \<phi> then tr True \<phi> (udinit n (set_cols (fv \<phi>)) \<phi>)
+     else case \<phi> of Formula.Neg \<alpha> \<Rightarrow> tr False \<alpha> (udinit n (set_cols (fv \<alpha>)) \<alpha>)
+       | _ \<Rightarrow> UDRel (deopt_table empty_table))"
+| "udinit n cs (Formula.Release \<phi> I \<psi>) = (if mem I 0
+     then udinit n cs (release_safe_0 \<phi> I \<psi>)
+     else udinit n cs (release_safe_bounded \<phi> I \<psi>))"
+| "udinit n cs (Formula.MatchP I r) =
+    (let (mr, \<phi>s) = to_mregex r in
+     case those (map (fcols n) \<phi>s) of None \<Rightarrow> UDFail
+     | Some css \<Rightarrow> (if \<forall>c \<in> set css. set c \<subseteq> set cs
+         then UDMatchP (length cs) I mr (sorted_list_of_set (RPDs mr)) (map (emb_plan cs) css)
+                (map2 (udinit n) css \<phi>s) (map (\<lambda>_. mbuf_t_empty) \<phi>s) mbuf_t_empty []
+         else UDFail))"
+| "udinit n cs (Formula.MatchF I r) =
+    (let (mr, \<phi>s) = to_mregex r in
+     case those (map (fcols n) \<phi>s) of None \<Rightarrow> UDFail
+     | Some css \<Rightarrow> (if \<forall>c \<in> set css. set c \<subseteq> set cs
+         then UDMatchF (length cs) I mr (sorted_list_of_set (LPDs mr)) (map (emb_plan cs) css)
+                (map2 (udinit n) css \<phi>s) (map (\<lambda>_. mbuf_t_empty) \<phi>s) mbuf_t_empty 0 []
+         else UDFail))"
+| "udinit n cs (Formula.TP t) =
+     (let mt = mtrm_of_trm t in if cs = mtrm_dcols mt then UDTP mt 0 else UDFail)"
+| "udinit n cs (Formula.TS t) =
+     (let mt = mtrm_of_trm t in if cs = mtrm_dcols mt then UDTS mt else UDFail)"
+  by pat_completeness auto
 
-lemmas udinit_code[code] = udinit_simple udinit_And udinit_temporal udinit_Ands udinit_Match
-  udinit_Agg
-lemmas fcols_code_eqs[code] = fcols_code fcols_Agg
+termination
+proof ((relation "measure (\<lambda>(_, _, \<phi>). size' \<phi>)"; clarsimp), goal_cases)
+  case (5 \<phi> \<phi>' I \<psi>')
+  then show ?case using size'_and_release[of \<phi> \<phi>' I \<psi>'] by simp
+next
+  case (6 l x xs c \<psi>)
+  then have "\<psi> \<in> set (filter safe_formula l @ map remove_neg (filter (Not \<circ> safe_formula) l))"
+    by (auto dest: set_zip_rightD)
+  then obtain x where "x \<in> set l" "size' \<psi> \<le> size' x"
+    using size'_remove_neg by fastforce
+  then show ?case using sum_list_mem_leq[of x l size'] by linarith
+next
+  case (7 \<phi> I \<psi>)
+  then show ?case using size'_release_aux(4)[of \<phi> I \<psi>] by simp
+next
+  case (8 \<phi> I \<psi>)
+  then show ?case using size'_release_aux(3)[of \<phi> I \<psi>] by simp
+next
+  case (9 n cs r a b xa y x2 aa ba)
+  then show ?case by (clarsimp dest!: to_mregex_ok[OF sym] atms_size' set_zip_rightD)
+next
+  case (10 n cs r a b xa y x2 aa ba)
+  then show ?case by (clarsimp dest!: to_mregex_ok[OF sym] atms_size' set_zip_rightD)
+qed (case_tac \<psi>; clarsimp)+
+
+lemma map_Rep_map2_udinit:
+  "(\<And>c \<psi>. (c, \<psi>) \<in> set (zip cs \<psi>s) \<Longrightarrow> Rep_udformula (udinit n c \<psi>) = dof n c (minit0 n \<psi>)) \<Longrightarrow>
+   map Rep_udformula (map2 (udinit n) cs \<psi>s) = map2 (dof n) cs (map (minit0 n) \<psi>s)"
+  by (unfold zip_map2 map_map, rule map_cong[OF refl]) auto
+
+lemma udinit_dof: "Rep_udformula (udinit n cs \<phi>) = dof n cs (minit0 n \<phi>)"
+proof (induct n cs \<phi> rule: udinit.induct)
+  case (10 n cs \<phi> \<psi>)
+  show ?case
+  proof (cases "safe_assignment (fv \<phi>) \<psi>")
+    case True
+    then show ?thesis using 10(1)[OF True refl refl refl refl] by (auto simp: Let_def)
+  next
+    case sa: False
+    show ?thesis
+    proof (cases "safe_formula \<psi>")
+      case True
+      then show ?thesis using sa 10(2,3)[OF sa True refl refl]
+        by (auto simp: Let_def mbuf_t_empty.rep_eq)
+    next
+      case sf: False
+      show ?thesis
+      proof (cases "is_constraint \<psi>")
+        case True
+        then show ?thesis using sa sf 10(4)[OF sa sf True refl]
+          by (auto simp: Let_def Rep_uset_q split: option.splits)
+      next
+        case ic: False
+        note eqs = udinit.simps(10) default_maux.minit0.simps(8) if_not_P[OF sa] if_not_P[OF sf]
+            if_not_P[OF ic]
+        note ih = 10(5-)[OF sa sf ic]
+        consider (N) \<chi> where "\<psi> = Formula.Neg \<chi>"
+          | (T) \<phi>' I \<psi>' where "\<psi> = Formula.Trigger \<phi>' I \<psi>'"
+          | (R) \<phi>' I \<psi>' where "\<psi> = Formula.Release \<phi>' I \<psi>'"
+          | (O) "\<forall>\<chi>. \<psi> \<noteq> Formula.Neg \<chi>" "\<forall>\<phi>' I \<psi>'. \<psi> \<noteq> Formula.Trigger \<phi>' I \<psi>'"
+            "\<forall>\<phi>' I \<psi>'. \<psi> \<noteq> Formula.Release \<phi>' I \<psi>'"
+          by (cases \<psi>) auto
+        then show ?thesis
+        proof cases
+          case N
+          then show ?thesis unfolding eqs unfolding N formula.case using ih(1,2)[OF N]
+            by (simp add: Let_def mbuf_t_empty.rep_eq)
+        next
+          case T
+          note eqT = eqs verimon_maux.init_and_trigger_def Let_def
+          have ih3: "cs = set_cols (fv \<phi>) \<Longrightarrow>
+              Rep_udformula (udinit n (set_cols (fv \<phi>)) \<phi>) = dof n (set_cols (fv \<phi>)) (minit0 n \<phi>)"
+            using ih(3)[OF T refl] by simp
+          show ?thesis
+          proof (cases "safe_formula \<phi>'")
+            case True
+            then show ?thesis unfolding eqT unfolding T formula.case if_P[OF True]
+              using ih(3,4,5)[OF T] ih3
+              by (auto simp: Let_def init_args_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
+          next
+            case sf': False
+            show ?thesis
+            proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+              case True
+              then obtain \<alpha> where N': "\<phi>' = Formula.Neg \<alpha>" by blast
+              show ?thesis unfolding eqT unfolding T formula.case if_not_P[OF sf'] unfolding N'
+                using ih(3,4,6)[OF T] ih3 sf' N'
+                by (auto simp: Let_def init_args_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
+            next
+              case False
+              then show ?thesis unfolding eqT unfolding T formula.case if_not_P[OF sf']
+                by (cases \<phi>') (simp_all add: dsan_def)
+            qed
+          qed
+        next
+          case R
+          then show ?thesis unfolding eqs unfolding R formula.case using ih(7)[OF R] by (simp add: Let_def)
+        next
+          case O
+          then show ?thesis unfolding eqs by (cases \<psi>) (simp_all add: dsan_def)
+        qed
+      qed
+    qed
+  qed
+next
+  case (13 n cs y \<omega> tys f \<phi>)
+  show ?case
+  proof (cases "\<exists>\<phi>' I \<psi>'. \<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'")
+    case True
+    then obtain \<phi>' I \<psi>' where "\<phi> = Formula.Since \<phi>' I \<psi>' \<or> \<phi> = Formula.Until \<phi>' I \<psi>'" by blast
+    then show ?thesis
+    proof
+      assume S: "\<phi> = Formula.Since \<phi>' I \<psi>'"
+      note eqs = udinit.simps(13) default_maux.minit0.simps(11) default_mmasaux.init_since_def Let_def formula.case
+      show ?thesis
+      proof (cases "safe_formula \<phi>'")
+        case True
+        then show ?thesis unfolding S eqs if_P[OF True] using 13(16,17)[unfolded S]
+          by (simp add: Let_def init_args_def init_aggargs_def dnode_n_def dsx_init_rdsx mbuf_t_empty.rep_eq
+                if_distrib[where f=Rep_udformula] cong: if_cong split del: if_split)
+      next
+        case sf: False
+        show ?thesis
+        proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+          case True
+          then obtain \<alpha> where N: "\<phi>' = Formula.Neg \<alpha>" by blast
+          show ?thesis unfolding S eqs if_not_P[OF sf] unfolding N
+            using 13(16)[OF refl refl refl refl refl S refl]
+              13(18)[OF refl refl refl refl refl S refl refl refl sf N]
+            by (simp add: Let_def init_args_def init_aggargs_def dnode_n_def dsx_init_rdsx mbuf_t_empty.rep_eq
+                if_distrib[where f=Rep_udformula] cong: if_cong split del: if_split)
+        next
+          case False
+          then show ?thesis unfolding S eqs if_not_P[OF sf] by (cases \<phi>') (simp_all add: dsan_def)
+        qed
+      qed
+    next
+      assume U: "\<phi> = Formula.Until \<phi>' I \<psi>'"
+      note eqs = udinit.simps(13) default_maux.minit0.simps(11) dq_muaux.init_until_def Let_def formula.case
+      show ?thesis
+      proof (cases "safe_formula \<phi>'")
+        case True
+        then show ?thesis unfolding U eqs if_P[OF True] using 13(19,20)[unfolded U]
+          by (simp add: Let_def init_args_def init_aggargs_def dnode_n_def dux_init_rdux dux_init_agg_rdux mbuf_t_empty.rep_eq
+                if_distrib[where f=Rep_udformula] cong: if_cong split del: if_split)
+      next
+        case sf: False
+        show ?thesis
+        proof (cases "\<exists>\<alpha>. \<phi>' = Formula.Neg \<alpha>")
+          case True
+          then obtain \<alpha> where N: "\<phi>' = Formula.Neg \<alpha>" by blast
+          show ?thesis unfolding U eqs if_not_P[OF sf] unfolding N
+            using 13(19)[OF refl refl refl refl refl U refl]
+              13(21)[OF refl refl refl refl refl U refl refl refl sf N]
+            by (simp add: Let_def init_args_def init_aggargs_def dnode_n_def dux_init_rdux dux_init_agg_rdux mbuf_t_empty.rep_eq
+                if_distrib[where f=Rep_udformula] cong: if_cong split del: if_split)
+        next
+          case False
+          then show ?thesis unfolding U eqs if_not_P[OF sf] by (cases \<phi>') (simp_all add: dsan_def)
+        qed
+      qed
+    qed
+  next
+    case False
+    then have nS: "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Since \<phi>' I \<psi>'" and nU: "\<forall>\<phi>' I \<psi>'. \<phi> \<noteq> Formula.Until \<phi>' I \<psi>'"
+      by blast+
+    define g where "g = dagg_gcols (init_aggargs (fv \<phi>) n (fv \<phi> \<subseteq> {0..<length tys}) y \<omega> tys f)"
+    have ih: "cs = merge_cols g [y] \<and> set_cols (fv \<phi>) = agg_cols (length tys) g \<Longrightarrow>
+        Rep_udformula (udinit (length tys + n) (agg_cols (length tys) g) \<phi>) =
+        dof (length tys + n) (agg_cols (length tys) g) (minit0 (length tys + n) \<phi>)"
+      using False unfolding g_def
+      by (cases \<phi>) (rule 13[OF refl refl refl refl refl], assumption, assumption | simp)+
+    have "udinit n cs (Formula.Agg y \<omega> tys f \<phi>) =
+        (if cs = merge_cols g [y] \<and> set_cols (fv \<phi>) = agg_cols (length tys) g
+         then UDAgg (fv \<phi> \<subseteq> {0..<length tys}) \<omega> (reindex_trm (agg_cols (length tys) g) f)
+           (length tys) (ins_pos g y) (udinit (length tys + n) (agg_cols (length tys) g) \<phi>)
+         else UDFail)"
+      using nS nU unfolding g_def by (cases \<phi>) (simp_all add: Let_def)
+    then show ?thesis unfolding minit0_Agg_default[OF nS nU] using ih
+      by (auto simp: g_def Let_def init_aggargs_def)
+  qed
+next
+  case (11 n cs l)
+  show ?case
+  proof (cases "filter safe_formula l")
+    case Nil
+    then show ?thesis by (simp add: Let_def)
+  next
+    case (Cons p ps)
+    show ?thesis
+    proof (cases "cs = dands_cols (set_cols (fv p)) (map (\<lambda>\<psi>. set_cols (fv \<psi>)) ps)")
+      case False
+      then show ?thesis using Cons by (simp add: Let_def o_def)
+    next
+      case True
+      define negl where "negl = filter (\<lambda>x. \<not> safe_formula x) l"
+      define c0 where "c0 = set_cols (fv p)"
+      define css where "css = map (\<lambda>\<psi>. set_cols (fv \<psi>)) ps"
+      define nss where "nss = map (\<lambda>\<psi>. set_cols (fv \<psi>)) negl"
+      define L where "L = p # ps @ map remove_neg negl"
+      have part: "partition safe_formula l = (p # ps, negl)"
+        using Cons by (simp add: negl_def o_def)
+      note ih = 11[OF refl part[symmetric] refl refl refl refl True _ refl]
+      have m: "map Rep_udformula (map2 (udinit n) (c0 # css @ nss) L) =
+          map2 (dof n) (c0 # css @ nss) (map (minit0 n) L)"
+        unfolding c0_def css_def nss_def L_def by (rule map_Rep_map2_udinit) (rule ih, simp)
+      have l: "udinit n cs (Formula.Ands l) = UDAnds (dands_plans c0 css)
+          (dands_plans (dands_cols c0 css) nss) (map2 (udinit n) (c0 # css @ nss) L)
+          (map (\<lambda>_. mbuf_t_empty) ((p # ps) @ negl))"
+        using Cons True by (simp add: Let_def c0_def css_def nss_def L_def negl_def o_def)
+      have r: "minit0 n (Formula.Ands l) =
+          MAnds (map fv (p # ps)) (map fv negl) (map (minit0 n) L) (replicate (length l) [])"
+        using Cons by (simp add: L_def negl_def o_def)
+      have len: "length l = Suc (length ps) + length negl"
+        using sum_length_filter_compl[of safe_formula l] Cons by (simp add: negl_def o_def)
+      show ?thesis unfolding l r Rep_udformula.simps m using True len
+        by (simp add: c0_def css_def nss_def L_def Let_def mbuf_t_empty.rep_eq o_def
+            map_replicate_const)
+    qed
+  qed
+next
+  case (16 n cs \<phi> I \<psi>)
+  note eqs = udinit.simps(16) default_maux.minit0.simps(14) default_mmasaux.init_since_def Let_def
+  show ?case
+  proof (cases "safe_formula \<phi>")
+    case True
+    then show ?thesis unfolding eqs if_P[OF True] using 16
+      by (simp add: Let_def init_args_def dnode_n_def dsx_init_rdsx mbuf_t_empty.rep_eq)
+  next
+    case sf: False
+    show ?thesis
+    proof (cases "\<exists>\<alpha>. \<phi> = Formula.Neg \<alpha>")
+      case True
+      then obtain \<alpha> where N: "\<phi> = Formula.Neg \<alpha>" by blast
+      show ?thesis unfolding eqs if_not_P[OF sf] unfolding N using sf[unfolded N] 16[unfolded N]
+        by (simp add: Let_def init_args_def dnode_n_def dsx_init_rdsx mbuf_t_empty.rep_eq)
+    next
+      case False
+      then show ?thesis unfolding eqs if_not_P[OF sf] by (cases \<phi>) (simp_all add: dsan_def)
+    qed
+  qed
+next
+  case (17 n cs \<phi> I \<psi>)
+  note eqs = udinit.simps(17) default_maux.minit0.simps(15) dq_muaux.init_until_def Let_def
+  show ?case
+  proof (cases "safe_formula \<phi>")
+    case True
+    then show ?thesis unfolding eqs if_P[OF True] using 17
+      by (simp add: Let_def init_args_def dnode_n_def dux_init_rdux mbuf_t_empty.rep_eq)
+  next
+    case sf: False
+    show ?thesis
+    proof (cases "\<exists>\<alpha>. \<phi> = Formula.Neg \<alpha>")
+      case True
+      then obtain \<alpha> where N: "\<phi> = Formula.Neg \<alpha>" by blast
+      show ?thesis unfolding eqs if_not_P[OF sf] unfolding N using sf[unfolded N] 17[unfolded N]
+        by (simp add: Let_def init_args_def dnode_n_def dux_init_rdux mbuf_t_empty.rep_eq)
+    next
+      case False
+      then show ?thesis unfolding eqs if_not_P[OF sf] by (cases \<phi>) (simp_all add: dsan_def)
+    qed
+  qed
+next
+  case (18 n cs \<phi> I \<psi>)
+  note eqs = udinit.simps(18) default_maux.minit0.simps(16) verimon_maux.init_trigger_def Let_def
+  show ?case
+  proof (cases "safe_formula \<phi>")
+    case True
+    then show ?thesis unfolding eqs if_P[OF True] using 18
+      by (simp add: Let_def init_args_def dnode_n_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
+  next
+    case sf: False
+    show ?thesis
+    proof (cases "\<exists>\<alpha>. \<phi> = Formula.Neg \<alpha>")
+      case True
+      then obtain \<alpha> where N: "\<phi> = Formula.Neg \<alpha>" by blast
+      show ?thesis unfolding eqs if_not_P[OF sf] unfolding N using sf[unfolded N] 18[unfolded N]
+        by (simp add: Let_def init_args_def dnode_n_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
+    next
+      case False
+      then show ?thesis unfolding eqs if_not_P[OF sf] by (cases \<phi>) (simp_all add: dsan_def)
+    qed
+  qed
+qed (simp_all add: minit0_init_defs init_args_def dnode_n_def Let_def dsan_def
+    ginit_mmtaux_bmm[symmetric] zip_map2 o_def fcols_mfcols
+    mbuf_t_empty.rep_eq mbuf_t_append.rep_eq split: list.splits option.splits prod.splits
+    cong: map_cong)
 
 record udmstate =
   udmstate_i :: nat
@@ -2445,31 +2578,19 @@ definition Rep_udmstate :: "udmstate \<Rightarrow> dmstate" where
        dmstate_m = Rep_udformula (udmstate_m st),
        dmstate_n = udmstate_n st, dmstate_cs = udmstate_cs st, dmstate_t = udmstate_t st \<rparr>"
 
-definition udof_state :: "nat \<Rightarrow> cols \<Rightarrow>
-    (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> udmstate" where
-  "udof_state n cs st =
-     \<lparr> udmstate_i = mstate_i st, udmstate_j = mstate_j st,
-       udmstate_m = udof n cs (mstate_m st),
-       udmstate_n = n, udmstate_cs = cs, udmstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
-
-lemma Rep_udof_state: "Rep_udmstate (udof_state n cs st) = dof_state n cs st"
-  by (simp add: Rep_udmstate_def udof_state_def dof_state_def udof_dof)
-
 definition udminit_safe :: "ty Formula.formula \<Rightarrow> udmstate" where
-  "udminit_safe \<phi> = udof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
-
-lemma Rep_udminit_safe:
-  "Rep_udmstate (udminit_safe \<phi>) = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
-  by (simp add: udminit_safe_def Rep_udof_state)
-
-lemma udminit_safe_code[code]:
   "udminit_safe \<phi> = (if mmonitorable_exec \<phi>
-     then (let n = Formula.nfv \<phi>; cs = set_cols (fv \<phi>) in
+     then (let n = Formula.nfv \<phi>; cs = set_cols (Formula.fv \<phi>) in
        \<lparr>udmstate_i = 0, udmstate_j = 0, udmstate_m = udinit n cs \<phi>, udmstate_n = n,
         udmstate_cs = cs, udmstate_t = mbuf_t_empty\<rparr>)
-     else Code.abort (STR ''udminit_safe: the formula is not monitorable'') (\<lambda>_. udminit_safe \<phi>))"
-  by (simp add: udminit_safe_def udof_state_def default_maux.minit_safe_def default_maux.minit_def
-      udinit_def Let_def)
+     else undefined)"
+
+lemma Rep_udminit_safe:
+  assumes "mmonitorable \<phi>"
+  shows "Rep_udmstate (udminit_safe \<phi>) = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
+  using assms
+  by (simp add: udminit_safe_def Rep_udmstate_def dof_state_def default_maux.minit_safe_def
+      default_maux.minit_def udinit_dof monitorable_formula_code Let_def)
 
 lemma vdfail_nodes_Rep_udmstate:
   "vdfail_nodes (dmstate_m (Rep_udmstate st)) = uvdfail_nodes (udmstate_m st)"
