@@ -9560,3 +9560,69 @@ point's `C` before the window, which keeps its windows tiny on this log.  `frz-n
 `frz-sincelag` and `pol-sincefutb` spend the rest of their gap in the Since node's persistent
 trees (21.56).  GC settings (`o=120`, `o=200`, no compaction, a 1 M-word minor heap) make no
 measurable difference on any of them.
+
+## 22. Two refinement layers removed
+
+Since 21.26 the binary runs one evaluator, `udeval` on `udformula` (`Dense_Unbox_Exec.thy`), and
+its correctness came down through four formula types:
+
+| layer | type | evaluator | what it was for |
+|---|---|---|---|
+| kernel | `mformula` | `meval` | the specification, with the correctness proof |
+| kernel, executable | `meformula` (`Monitor_Impl.thy`) | `meeval` | the kernel's buffers in queues, for the kernel's own export |
+| dense | `dformula` (`Dense_Eval.thy`) | `deval` | the simulation of the kernel on the node's columns (`dsim_deval`) |
+| dense, executable | `edformula` (`Dense_Exec.thy`) | `edeval` | `deval` with its buffers in queues |
+| short tuples | `udformula` (`Dense_Unbox_Exec.thy`) | `udeval` | what runs |
+
+Two of them were copies that nothing ran.  `meeval` was the executable kernel of the time before
+the dense monitor; the shipping export reached the kernel only for the initial state, through
+`meinit0` and the compiler's patterns on `meformula`, and the initial state's buffers are empty.
+`edeval` existed only as the middle of `udeval_Rep ∘ edeval_Rep`; `udeval` already keeps its
+buffers in queues.  Both had to be kept in step with every change of the layer below them (the
+freeze's live copy, for instance, was written four times).
+
+**What changed.**
+
+* `Monitor_Impl.thy` keeps the queue buffers (`mbuf_t` and its operations, which `udeval` uses)
+  and the kernel's instantiations and code setup, and loses `meformula`, `Rep_meformula`,
+  `meinit0` and the `init_*'` variants, `mestate`, `eeval_since`, `letpast_meeval0` and `meeval`
+  with their code equations: 2249 lines become 1218.  `mformula`'s constructors are its own code
+  constructors again, and the initial state is computed by `minit0` itself.  Its temporal nodes
+  are built by the locale constants `init_since`, `init_until`, `init_trigger` and
+  `init_and_trigger`, whose definitions hold only under the locale's assumptions and so cannot
+  be code equations; the interpretations' instances are unfolded into the code instead
+  (`[code_unfold]`), and the fused And-Trigger's into `minit0`'s code equations
+  (`minit0_code_simps`), where the preprocessor does not reach it.  This is what `meinit0` did.
+* `Rep_udformula` maps `udformula` straight into `dformula`: a buffer of short tables stands for
+  the list of their boxed versions, `map reopt_table (Rep_mbuf_t b)` (`rbl`, `rbuf2`, `rbufS`).
+  `udeval_Rep` is stated against `deval`; each buffer case composes the queue operation's
+  naturality, as before, with its agreement with the list operation (`Monitor_Impl`'s
+  `mebuf2_take` and friends), in the list-level lemmas `mbuf2_take_rbuf2`, `mbuf2t_take_until`,
+  `mbuf2T_take_rbuf2`, `mprev_next_prev`, `mbufn_take_rbl`, `mbufnt_take_rbl` and
+  `dsx_eval_since_rdsx`.
+* `udof` descends `mformula` and is proved equal to `dof` up to `Rep_udformula` (`udof_dof`),
+  replacing `udof_edof`, `edof_dof`, `emfcols`, `Abs_meformula` and `udof_m`.
+* `Dense_Exec.thy` (662 lines) and `Dense_Descend_Code.thy` (289 lines) are gone.
+* The kernel's own export, `Monitor_Code.thy`, is gone too: nothing read it, and without
+  `meeval` it would have exported a kernel quadratic in its buffers.  `Monitor_Code_Dense`
+  imported it only for the order in which the code preprocessor's rules are merged; it imports
+  Monitor_Code's two imports, `Monomorphic_Code` and `RBT_set_opt`, in its place.  So Section 5's
+  recipe is now: build `MFODL_Monitor_Dense` with `-e` and copy
+  `MFODL_Monitor_Dense/verified.ocaml` to `src/verified.ml`.
+* `Dense_Agg_Cache` ends its use of `ucache`'s lifting with `lifting_update mapping.lifting`
+  after a `lifting_forget` of it, which leaves the bundle empty; the Mapping transfer rules came
+  back in `Dense_Unbox_Exec` only through the import of `Dense_Descend_Code`.  The one lemma that
+  used them there, `gmrtabulate_reopt`, moves to `Dense_Unbox_Eval`.
+
+So the chain is now `mformula` →(`dsim`)→ `dformula` →(`Rep_udformula`)→ `udformula`, and a change
+of the kernel is mirrored in two places instead of four.  In all, 2493 lines of theory go and 492
+come in.
+
+**The generated code.**  Compared item by item (the export's order of items is not
+deterministic), the new `src/verified.ml` differs from the old one only in the initial state:
+`minit0` in place of `Rep_meformula ∘ meinit0`, `udof` on `mformula` in place of `udof_m`/`udof` on
+`meformula`, `mfcols` in place of `emfcols`, and the kernel's state record with its own
+constructor.  The other 1692 items, among them `udeval`, `udmstep` and every structure they run,
+are textually the old ones.  `dune test` passes (848 cram tests), and on the benchmark formulas of
+Section 21.1 the verdicts are identical and the times the same up to noise (best of three, new
+over old: geometric mean 0.996, all within 0.91–1.08).

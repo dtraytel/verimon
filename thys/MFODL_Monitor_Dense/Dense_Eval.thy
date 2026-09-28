@@ -291,6 +291,10 @@ text \<open>The freeze node re-enters the evaluator on its body's \<^emph>\<open
   formula's size -- exactly as the kernel's own evaluator does it.  Evaluation preserves that
   size, which is the fact that makes the measure decrease.\<close>
 
+lemma size_list_cong:
+  "xs = ys \<Longrightarrow> (\<And>x. x \<in> set xs \<Longrightarrow> f x = g x) \<Longrightarrow> size_list f xs = size_list g ys"
+  by (induct xs arbitrary: ys) auto
+
 lemma psize_snd_deval:
   "deval_dom (j, ts, db, \<phi>) \<Longrightarrow> size (snd (deval j ts db \<phi>)) = size \<phi>"
 proof (induct rule: deval.pinduct)

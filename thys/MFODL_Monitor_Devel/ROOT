@@ -49,10 +49,6 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Monitor_Impl
     Code_Opt
     Monomorphic_Code
-  theories [document=false]
-    Monitor_Code
   document_files
     "root.tex"
     "root.bib"
-  export_files (in ".") [2]
-    "MFODL_Monitor_Devel.Monitor_Code:code/**"

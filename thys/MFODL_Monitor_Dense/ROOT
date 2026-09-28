@@ -33,8 +33,6 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Compile
     Dense_Init
     Dense_Descend
-    Dense_Exec
-    Dense_Descend_Code
     Dense_Unbox_Eval
     Dense_Unbox_UAgg
     Dense_Agg_Cache

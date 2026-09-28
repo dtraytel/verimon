@@ -1,19 +1,20 @@
 (*<*)
 theory Dense_Unbox_Eval
-  imports Dense_Exec Dense_Unbox
+  imports Dense_Descend Dense_Unbox
 begin
 (*>*)
 
 section \<open>The verified dense evaluator, without the option\<close>
 
 text \<open>
-  @{const edeval} of @{theory MFODL_Monitor_Dense.Dense_Exec} is the verified dense evaluator with
-  its buffers in queues; its tables are the kernel's, @{typ "event_data option list set"}, and a
-  dense tuple never has a hole.  This theory states the evaluator once more over
-  @{typ "event_data list set"} and proves that on a formula whose tables are the short ones with
-  the option put back, @{const edeval} computes what the short evaluator computes with the option
-  put back.  The proof is a naturality argument, node by node: every operation the evaluator
-  runs commutes with @{const reopt_table}.  The operations that read a field are
+  @{const deval} of @{theory MFODL_Monitor_Dense.Dense_Eval} is the verified dense evaluator; its
+  tables are the kernel's, @{typ "event_data option list set"}, and a dense tuple never has a
+  hole.  The executable evaluator of @{text Dense_Unbox_Exec} runs over
+  @{typ "event_data list set"} and keeps its buffers in queues, and on a formula whose tables are
+  the short ones with the option put back, @{const deval} computes what it computes with the
+  option put back.  This theory provides the operations it is built from, and the proof is a
+  naturality argument, node by node: every operation the evaluator runs commutes with
+  @{const reopt_table}.  The operations that read a field are
   @{theory MFODL_Monitor_Dense.Dense_Utuple}'s twins read through @{const deopt}, so for them the
   commutation is by definition; the ones that move fields are the generic ones of
   @{theory MFODL_Monitor_Dense.Dense_Unbox} and @{theory MFODL_Monitor_Dense.Dense_Until_Gen}, whose
@@ -1931,6 +1932,14 @@ lemma gmmtaux_empty_bmm: "gmmtaux_empty (bmm ax) = gmmtaux_empty ax"
 
 lemma ginit_mmtaux_bmm: "ginit_mmtaux args msk = bmm (ginit_mmtaux args msk)"
   by (simp add: ginit_mmtaux_def bmm.simps)
+
+text \<open>The tabulation of the past-match window commutes with putting the option back on the
+  fields.\<close>
+
+lemma gmrtabulate_reopt[simp]:
+  "gmrtabulate xs (\<lambda>ms. reopt_table (f ms))
+   = Mapping.map_values (\<lambda>_. reopt_table) (gmrtabulate xs f)"
+  by transfer (rule ext, induct_tac xs, auto simp: Let_def)
 
 (*<*)
 end

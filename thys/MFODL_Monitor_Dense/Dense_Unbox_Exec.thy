@@ -1,23 +1,25 @@
 (*<*)
 theory Dense_Unbox_Exec
-  imports Dense_Agg_Cache Dense_Descend_Code
+  imports Dense_Agg_Cache
 begin
 (*>*)
 
 section \<open>The verified dense evaluator, on short tuples\<close>
 
 text \<open>
-  @{const edeval} evaluates over tables of @{typ "event_data tuple"}, every field boxed in an
-  option that never holds @{const None}.  This theory states the same evaluator over tables of
-  @{typ "event_data list"}: every node keeps its tables and structures on short tuples, and
-  every operation is the generic one at @{typ event_data}, or the twin of the field reader of
+  @{const deval} evaluates over tables of @{typ "event_data tuple"}, every field boxed in an
+  option that never holds @{const None}, and buffers them in lists.  This theory states the same
+  evaluator over tables of @{typ "event_data list"}, with its buffers in queues
+  (@{typ "'a mbuf_t"}): every node keeps its tables and structures on short tuples, and every
+  operation is the generic one at @{typ event_data}, or the twin of the field reader of
   @{theory MFODL_Monitor_Dense.Dense_Utuple}.  The theorem @{text udeval_Rep} at the end says
   that the two evaluators agree exactly: embedding the state and the database, running
-  @{const edeval}, is running @{text udeval} and embedding its results.  No invariant is needed,
+  @{const deval}, is running @{text udeval} and embedding its results.  No invariant is needed,
   because every operation commutes with the embedding on every input (the naturality lemmas of
-  @{theory MFODL_Monitor_Dense.Dense_Unbox_Eval}).  So the simulation of the specification by
-  @{const edeval} is a simulation by @{text udeval}, on the embedded database, and the
-  generated code runs the latter.
+  @{theory MFODL_Monitor_Dense.Dense_Unbox_Eval}) and every queue operation is the list
+  operation read through @{const Rep_mbuf_t}.  So the simulation of the kernel by @{const deval}
+  (@{theory MFODL_Monitor_Dense.Dense_Eval}) is a simulation by @{text udeval}, on the embedded
+  database, and the generated code runs the latter.
 \<close>
 
 subsection \<open>The Since and Until structures, dispatched\<close>
@@ -184,11 +186,6 @@ type_synonym uebuf2 = "utable mbuf_t \<times> utable mbuf_t"
 type_synonym uebufn = "utable mbuf_t list"
 type_synonym uebuf2S = "utable mbuf_t \<times> utable mbuf_t \<times> ts mbuf_t \<times> bool"
 
-lemma mebuf2_add_map_mbuf:
-  "mebuf2_add (map g xs) (map g ys) (map_mbuf g a, map_mbuf g b)
-   = map_prod (map_mbuf g) (map_mbuf g) (mebuf2_add xs ys (a, b))"
-  by simp
-
 lemma mebuf2_take_map_mbuf:
   "(\<And>x y. f (g x) (g y) = g' (f' x y)) \<Longrightarrow>
    mebuf2_take f (map_mbuf g xs, map_mbuf g ys)
@@ -221,10 +218,6 @@ qed
 
 fun uebufn_add :: "utable list list \<Rightarrow> uebufn \<Rightarrow> uebufn" where
   "uebufn_add xs' xs = List.map2 (@@) xs xs'"
-
-lemma mebufn_add_map_mbuf:
-  "mebufn_add (map (map g) xss) (map (map_mbuf g) buf) = map (map_mbuf g) (uebufn_add xss buf)"
-  by (induct buf xss rule: list_induct2') auto
 
 lemma mbuf_t_cases_None[simp]: "fst (mbuf_t_cases b) = None \<longleftrightarrow> mbuf_t_is_empty b"
   by transfer (auto split: list.splits)
@@ -327,13 +320,6 @@ qed
 fun uebuf2S_add :: "utable list \<Rightarrow> utable list \<Rightarrow> ts list \<Rightarrow> uebuf2S \<Rightarrow> uebuf2S" where
   "uebuf2S_add xs' ys' ts' (xs, ys, ts, skew) = (xs @@ xs', ys @@ ys', ts @@ ts', skew)"
 
-lemma mebuf2S_add_map_mbuf:
-  "mebuf2S_add (map reopt_table xs) (map reopt_table ys) ts
-     (map_mbuf reopt_table a, map_mbuf reopt_table b, c, d)
-   = (case uebuf2S_add xs ys ts (a, b, c, d) of
-        (a', b', c', d') \<Rightarrow> (map_mbuf reopt_table a', map_mbuf reopt_table b', c', d'))"
-  by simp
-
 fun uebuf2t_take :: "(utable \<Rightarrow> utable \<Rightarrow> ts \<Rightarrow> 'b \<Rightarrow> 'b) \<Rightarrow> 'b \<Rightarrow>
     uebuf2 \<Rightarrow> ts \<Rightarrow> ts mbuf_t \<Rightarrow> 'b \<times> uebuf2 \<times> ts \<times> ts mbuf_t" where
   "uebuf2t_take f z (xs, ys) t0 ts =
@@ -349,18 +335,6 @@ lemma mebuf2t_take_map_mbuf:
         (z', (xs', ys'), t', ts') \<Rightarrow> (h z', (map_mbuf reopt_table xs', map_mbuf reopt_table ys'), t', ts'))"
 proof (induct f' z "(xs, ys)" t ts arbitrary: xs ys rule: uebuf2t_take.induct)
   case (1 f' z xs ys t0 ts)
-  obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
-  obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
-  obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
-  show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
-qed
-
-lemma mebuf2T_take_acc:
-  "(\<And>x y t z. f x y t (h z) = h (f' x y t z)) \<Longrightarrow>
-   mebuf2T_take f (h z) buf ts
-   = (case mebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', buf', ts'))"
-proof (induct f' z buf ts rule: mebuf2T_take.induct)
-  case (1 f' z xs ys ts)
   obtain x xs' where x: "mbuf_t_cases xs = (x, xs')" by (cases "mbuf_t_cases xs")
   obtain y ys' where y: "mbuf_t_cases ys = (y, ys')" by (cases "mbuf_t_cases ys")
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
@@ -392,11 +366,6 @@ proof (induct f' z "(xs, ys)" ts arbitrary: xs ys rule: uebuf2T_take.induct)
   show ?case using 1 x y t by (cases x; cases y; cases t) (auto simp: x y t split: prod.splits)
 qed
 
-lemma mebuf2_add_rbuf:
-  "mebuf2_add (map reopt_table xs) (map reopt_table ys) (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf)
-   = map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) (mebuf2_add xs ys buf)"
-  by (cases buf) simp
-
 lemma mebuf2_take_rbuf:
   assumes "\<And>x y. f (reopt_table x) (reopt_table y) = reopt_table (f' x y)"
   shows "mebuf2_take f (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) (buf :: uebuf2))
@@ -406,13 +375,13 @@ lemma mebuf2_take_rbuf:
     (simp add: mebuf2_take_map_mbuf[where f = f and g = reopt_table and g' = reopt_table and f' = f',
        OF assms] split: prod.splits del: mebuf2_take.simps)
 
-fun rbufS :: "uebuf2S \<Rightarrow> event_data mebuf2S" where
-  "rbufS (a, b, c, d) = (map_mbuf reopt_table a, map_mbuf reopt_table b, c, d)"
+fun rbufS :: "uebuf2S \<Rightarrow> event_data mbuf2S" where
+  "rbufS (a, b, c, d) =
+     (map reopt_table (Rep_mbuf_t a), map reopt_table (Rep_mbuf_t b), Rep_mbuf_t c, d)"
 
-lemma mebuf2S_add_rbufS:
-  "mebuf2S_add (map reopt_table xs) (map reopt_table ys) ts (rbufS buf) = rbufS (uebuf2S_add xs ys ts buf)"
-  by (cases buf) simp
-
+lemma mbuf2S_add_rbufS:
+  "mbuf2S_add (map reopt_table xs) (map reopt_table ys) ts (rbufS buf) = rbufS (uebuf2S_add xs ys ts buf)"
+  by (cases buf) (simp add: mbuf_t_append.rep_eq)
 lemma mebuf2t_take_rbuf:
   assumes "\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)"
   shows "mebuf2t_take f (h z) (map_prod (map_mbuf reopt_table) (map_mbuf reopt_table) buf) t ts
@@ -673,8 +642,19 @@ definition rmrd :: "event_data gmrdaux \<Rightarrow> event_data mr\<delta>aux" w
 definition rmld :: "event_data gmldaux \<Rightarrow> event_data ml\<delta>aux" where
   "rmld = map (\<lambda>(t, rls, rel). (t, map reopt_table rls, reopt_table rel))"
 
-abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
-  "rbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
+text \<open>A buffer of short tables stands for the list of their boxed versions.\<close>
+
+abbreviation rbl :: "utable mbuf_t \<Rightarrow> event_data table list" where
+  "rbl b \<equiv> map reopt_table (Rep_mbuf_t b)"
+
+abbreviation rbuf2 :: "uebuf2 \<Rightarrow> event_data mbuf2" where
+  "rbuf2 \<equiv> map_prod (\<lambda>b. rbl b) (\<lambda>b. rbl b)"
+
+text \<open>The same relabelling of a buffer, as a queue: the buffer lemmas are proved on queues first,
+  and read back as lists through @{const Rep_mbuf_t}.\<close>
+
+abbreviation qbuf2 :: "uebuf2 \<Rightarrow> event_data mebuf2" where
+  "qbuf2 \<equiv> map_prod (map_mbuf reopt_table) (map_mbuf reopt_table)"
 
 text \<open>The trigger's buffers are the short ones like every other node's: its left operand stays
   at its own frame, so nothing it holds has a hole, and @{const bmm} relabels the structure.\<close>
@@ -683,61 +663,61 @@ text \<open>A guarded Since node stands for the boxed node read through the cons
   the short evaluator's alone, and the two agree because filtering the whole result is filtering
   the groups as they are read.\<close>
 
-definition edandrel :: "uconstr option \<Rightarrow> edformula \<Rightarrow> edformula" where
-  "edandrel q e = (case q of None \<Rightarrow> e | Some c \<Rightarrow> EDAndRel e c)"
+definition dandrel :: "uconstr option \<Rightarrow> dformula \<Rightarrow> dformula" where
+  "dandrel q e = (case q of None \<Rightarrow> e | Some c \<Rightarrow> DAndRel e c)"
 
-lemma edandrel_None[simp]: "edandrel None e = e"
-  by (simp add: edandrel_def)
+lemma dandrel_None[simp]: "dandrel None e = e"
+  by (simp add: dandrel_def)
 
-lemma edeval_edandrel:
-  "edeval j ts db (edandrel q e)
-   = (case edeval j ts db e of (zs, e') \<Rightarrow> (map (dfilt q) zs, edandrel q e'))"
-  by (simp add: edandrel_def dfilt_Some split: option.splits prod.splits)
+lemma deval_dandrel:
+  "deval j ts db (dandrel q e)
+   = (case deval j ts db e of (zs, e') \<Rightarrow> (map (dfilt q) zs, dandrel q e'))"
+  by (simp add: dandrel_def dfilt_Some split: option.splits prod.splits)
 
-lemma evdfail_nodes_edandrel[simp]: "evdfail_nodes (edandrel q e) = evdfail_nodes e"
-  by (simp add: edandrel_def split: option.splits)
+lemma vdfail_nodes_dandrel[simp]: "vdfail_nodes (dandrel q e) = vdfail_nodes e"
+  by (simp add: dandrel_def split: option.splits)
 
-fun Rep_udformula :: "udformula \<Rightarrow> edformula" where
-  "Rep_udformula UDFail = EDFail"
-| "Rep_udformula (UDRel rel) = EDRel (reopt_table rel)"
-| "Rep_udformula (UDPredS e ar) = EDPredS e ar"
-| "Rep_udformula (UDPredM e ar tms cs) = EDPredM e ar tms cs"
-| "Rep_udformula (UDAndRel \<phi> conf) = EDAndRel (Rep_udformula \<phi>) conf"
-| "Rep_udformula (UDNeg \<phi>) = EDNeg (Rep_udformula \<phi>)"
-| "Rep_udformula (UDExists \<phi> b) = EDExists (Rep_udformula \<phi>) b"
-| "Rep_udformula (UDAgg g0 \<omega> f k pos \<phi>) = EDAgg g0 \<omega> f k pos (Rep_udformula \<phi>)"
-| "Rep_udformula (UDOr \<phi> \<psi> buf) = EDOr (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 buf)"
+fun Rep_udformula :: "udformula \<Rightarrow> dformula" where
+  "Rep_udformula UDFail = DFail"
+| "Rep_udformula (UDRel rel) = DRel (reopt_table rel)"
+| "Rep_udformula (UDPredS e ar) = DPredS e ar"
+| "Rep_udformula (UDPredM e ar tms cs) = DPredM e ar tms cs"
+| "Rep_udformula (UDAndRel \<phi> conf) = DAndRel (Rep_udformula \<phi>) conf"
+| "Rep_udformula (UDNeg \<phi>) = DNeg (Rep_udformula \<phi>)"
+| "Rep_udformula (UDExists \<phi> b) = DExists (Rep_udformula \<phi>) b"
+| "Rep_udformula (UDAgg g0 \<omega> f k pos \<phi>) = DAgg g0 \<omega> f k pos (Rep_udformula \<phi>)"
+| "Rep_udformula (UDOr \<phi> \<psi> buf) = DOr (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 buf)"
 | "Rep_udformula (UDAnd pl \<phi> pos \<psi> buf) =
-     EDAnd pl (Rep_udformula \<phi>) pos (Rep_udformula \<psi>) (rbuf2 buf)"
+     DAnd pl (Rep_udformula \<phi>) pos (Rep_udformula \<psi>) (rbuf2 buf)"
 | "Rep_udformula (UDPrev I \<phi> first buf nts) =
-     EDPrev I (Rep_udformula \<phi>) first (map_mbuf reopt_table buf) nts"
-| "Rep_udformula (UDNext I \<phi> first nts) = EDNext I (Rep_udformula \<phi>) first nts"
+     DPrev I (Rep_udformula \<phi>) first (rbl buf) (Rep_mbuf_t nts)"
+| "Rep_udformula (UDNext I \<phi> first nts) = DNext I (Rep_udformula \<phi>) first (Rep_mbuf_t nts)"
 | "Rep_udformula (UDAnds ps ns L buf) =
-     EDAnds ps ns (map Rep_udformula L) (map (map_mbuf reopt_table) buf)"
+     DAnds ps ns (map Rep_udformula L) (map (\<lambda>b. rbl b) buf)"
 | "Rep_udformula (UDSince args \<phi> \<psi> buf aux) =
-     edandrel (usx_q aux)
-       (EDSince args (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbufS buf) (rdsx aux))"
+     dandrel (usx_q aux)
+       (DSince args (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbufS buf) (rdsx aux))"
 | "Rep_udformula (UDUntil args msk \<phi> \<psi> buf nts t aux) =
-     EDUntil args msk (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 buf) nts t (rdux aux)"
-| "Rep_udformula (UDAndAssign p t \<phi>) = EDAndAssign p t (Rep_udformula \<phi>)"
-| "Rep_udformula (UDTP mt i) = EDTP mt i"
-| "Rep_udformula (UDTS mt) = EDTS mt"
-| "Rep_udformula (UDLet p m \<phi> \<psi>) = EDLet p m (Rep_udformula \<phi>) (Rep_udformula \<psi>)"
+     DUntil args msk (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 buf) (Rep_mbuf_t nts) t (rdux aux)"
+| "Rep_udformula (UDAndAssign p t \<phi>) = DAndAssign p t (Rep_udformula \<phi>)"
+| "Rep_udformula (UDTP mt i) = DTP mt i"
+| "Rep_udformula (UDTS mt) = DTS mt"
+| "Rep_udformula (UDLet p m \<phi> \<psi>) = DLet p m (Rep_udformula \<phi>) (Rep_udformula \<psi>)"
 | "Rep_udformula (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
-     EDFrz p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) jfrz jpsi0 jphi (map reopt_table \<alpha>s)
+     DFrz p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) jfrz jpsi0 jphi (map reopt_table \<alpha>s)
        (Rep_udformula \<rho>) w pR tq (map reopt_table rb) d po ng lv (Rep_udformula \<rho>L)"
 | "Rep_udformula (UDLetPast p m \<phi> \<psi> i buf) =
-     EDLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
+     DLetPast p m (Rep_udformula \<phi>) (Rep_udformula \<psi>) i (map_option reopt_table buf)"
 | "Rep_udformula (UDTrigger dags pl \<phi> \<psi> dbuf nts daux) =
-     EDTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbuf) nts (bmm daux)"
+     DTrigger dags pl (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbuf) (Rep_mbuf_t nts) (bmm daux)"
 | "Rep_udformula (UDAndTrigger pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux) =
-     EDAndTrigger pl (Rep_udformula \<alpha>)
-       (map_prod (map_mbuf reopt_table) (map_mbuf (map_option reopt_table)) dbf1) dags
-       (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbf2) nts (bmm daux)"
+     DAndTrigger pl (Rep_udformula \<alpha>)
+       (map_prod (\<lambda>b. rbl b) (\<lambda>b. map (map_option reopt_table) (Rep_mbuf_t b)) dbf1) dags
+       (Rep_udformula \<phi>) (Rep_udformula \<psi>) (rbuf2 dbf2) (Rep_mbuf_t nts) (bmm daux)"
 | "Rep_udformula (UDMatchP m I mr mrs pls Ld dbuf nts daux) =
-     EDMatchP m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts (rmrd daux)"
+     DMatchP m I mr mrs pls (map Rep_udformula Ld) (map (\<lambda>b. rbl b) dbuf) (Rep_mbuf_t nts) (rmrd daux)"
 | "Rep_udformula (UDMatchF m I mr mrs pls Ld dbuf nts t daux) =
-     EDMatchF m I mr mrs pls (map Rep_udformula Ld) (map (map_mbuf reopt_table) dbuf) nts t (rmld daux)"
+     DMatchF m I mr mrs pls (map Rep_udformula Ld) (map (\<lambda>b. rbl b) dbuf) (Rep_mbuf_t nts) t (rmld daux)"
 
 fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
   "uvdfail_nodes UDFail = 1"
@@ -764,9 +744,8 @@ fun uvdfail_nodes :: "udformula \<Rightarrow> nat" where
 | "uvdfail_nodes (UDMatchF m I mr mrs pls L dbuf nts t daux) = sum_list (map uvdfail_nodes L)"
 | "uvdfail_nodes \<phi> = 0"
 
-lemma evdfail_nodes_Rep: "evdfail_nodes (Rep_udformula \<phi>) = uvdfail_nodes \<phi>"
+lemma vdfail_nodes_Rep: "vdfail_nodes (Rep_udformula \<phi>) = uvdfail_nodes \<phi>"
   by (induct \<phi>) (auto simp: comp_def intro: arg_cong[of _ _ sum_list])
-
 subsection \<open>The Since buffer\<close>
 
 fun uedsx_eval_since :: "args \<Rightarrow> utable list \<Rightarrow> uebuf2S \<Rightarrow> udsaux_x \<Rightarrow>
@@ -812,9 +791,9 @@ text \<open>The two agree on the whole run: the boxed evaluator's results, read 
   guard, are the short evaluator's.  The accumulator is carried the same way, so the statement
   relates the two lists it is started with.\<close>
 
-lemma edsx_eval_since_rdsx:
+lemma dsx_eval_since_rdsx:
   "map (dfilt (usx_q aux)) Rs = map reopt_table rs \<Longrightarrow>
-   (case edsx_eval_since args Rs (rbufS buf) (rdsx aux) of
+   (case dsx_eval_since args Rs (rbufS buf) (rdsx aux) of
       (Zs, bf, a) \<Rightarrow> (map (dfilt (usx_q aux)) Zs, bf, a))
    = (case uedsx_eval_since args rs buf aux of
         (zs, buf', aux') \<Rightarrow> (map reopt_table zs, rbufS buf', rdsx aux'))"
@@ -825,13 +804,13 @@ proof (induct args rs buf aux arbitrary: Rs rule: uedsx_eval_since.induct)
   obtain t ts' where t: "mbuf_t_cases ts = (t, ts')" by (cases "mbuf_t_cases ts")
   show ?case
     using 1 x y t
-    by (cases y; cases x; cases t; simp only: rbufS.simps;
-        subst edsx_eval_since.simps; subst uedsx_eval_since.simps)
+    by (cases y; cases x; cases t; simp only: rbufS.simps; subst uedsx_eval_since.simps)
       (auto simp: x y t Let_def rev_map[symmetric] dsx_join_rdsx dsx_add_new_ts_rdsx
-        dsx_add_new_table_rdsx dsx_result_rdsx
-        simp del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
+        dsx_add_new_table_rdsx dsx_result_rdsx mbuf_t_Cons.rep_eq mbuf_t_empty.rep_eq
+        Rep_mbuf_t_cases(1,2)[where xs = ts and xs' = ts'] Rep_mbuf_t_cases(1,2)[where xs = xs and xs' = xs']
+        Rep_mbuf_t_cases(1,2)[where xs = ys and xs' = ys']
+        simp del: uedsx_eval_since.simps split: prod.splits)
 qed
-
 subsection \<open>The evaluator\<close>
 
 subsection \<open>The size of the boxed formula\<close>
@@ -871,7 +850,7 @@ lemma size_list_sum_list: "size_list f xs = sum_list (map f xs) + length xs"
 
 lemma ursize_Rep: "ursize \<phi> = size (Rep_udformula \<phi>)"
   by (induction \<phi> rule: ursize.induct)
-    (auto simp: edandrel_def size_list_sum_list comp_def split: option.splits intro!: arg_cong[of _ _ sum_list])
+    (auto simp: dandrel_def size_list_sum_list comp_def split: option.splits intro!: arg_cong[of _ _ sum_list])
 
 lemma ursize_in_set: "x \<in> set L \<Longrightarrow> ursize x < Suc (sum_list (map ursize L) + length L)"
   by (induction L) auto
@@ -1186,25 +1165,6 @@ lemma ursize_snd_udeval[simp]: "ursize (snd (udeval j ts db \<phi>)) = ursize \<
 
 subsection \<open>The two evaluators agree\<close>
 
-lemma mebuf2_take_or:
-  "mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) (rbuf2 buf)
-   = (case mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) buf of (zs, buf') \<Rightarrow> (map reopt_table zs, rbuf2 buf'))"
-  by (rule mebuf2_take_rbuf) simp
-
-lemma mebuf2_take_and:
-  "mebuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (rbuf2 buf)
-   = (case mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2) buf of
-        (zs, buf') \<Rightarrow> (map reopt_table zs, rbuf2 buf'))"
-  by (rule mebuf2_take_rbuf) (simp add: dbin_join_reopt_table)
-
-lemma mebufn_take_ands:
-  "mebufn_take (\<lambda>as zs. zs @@ [dmulti_join ps ns as]) mbuf_t_empty (map (map_mbuf reopt_table) buf)
-   = (case uebufn_take (\<lambda>as zs. zs @@ [gmulti_join ps ns as]) mbuf_t_empty buf of
-        (zs, buf') \<Rightarrow> (map_mbuf reopt_table zs, map (map_mbuf reopt_table) buf'))"
-  using mebufn_take_map_mbuf[of "\<lambda>as zs. zs @@ [dmulti_join ps ns as]" reopt_table
-      "map_mbuf reopt_table" "\<lambda>as zs. zs @@ [gmulti_join ps ns as]" mbuf_t_empty buf]
-  by (simp add: dmulti_join_reopt_table)
-
 text \<open>The past-match window commutes with putting the option back on the fields: the semi-join,
   the unions and intersections, the unit table and the tabulation all do, for every argument.\<close>
 
@@ -1222,11 +1182,6 @@ lemma glookup_rmap[simp]:
   "glookup (Mapping.map_values (\<lambda>_. reopt_table) X) ms = reopt_table (glookup X ms)"
   by (simp add: glookup_def Mapping.lookup_default_def Mapping.lookup_map_values
       split: option.splits)
-
-lemma gmrtabulate_reopt[simp]:
-  "gmrtabulate xs (\<lambda>ms. reopt_table (f ms))
-   = Mapping.map_values (\<lambda>_. reopt_table) (gmrtabulate xs f)"
-  by transfer (rule ext, induct_tac xs, auto simp: Let_def)
 
 lemma geps_lax_reopt[simp]:
   "geps_lax msks (reopt_table g) (map reopt_table \<phi>s) r = reopt_table (geps_lax msks g \<phi>s r)"
@@ -1270,16 +1225,6 @@ proof -
     unfolding gupdate_matchP_def Let_def unfolding W unfolding H gmrtabulate_reopt rmrd_case
     by (simp only: foldr_glookup_rmrd map_prod_simp)
 qed
-
-lemma mebufnt_take_matchP:
-  "mebufnt_take (\<lambda>rels t (zs, ax).
-       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-     (map_prod (map_mbuf reopt_table) rmrd z0) (map (map_mbuf reopt_table) buf) t0 ts
-   = (case uebufnt_take (\<lambda>rels t (zs, ax).
-       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax))) z0 buf t0 ts of
-        (z', buf', t', ts') \<Rightarrow>
-          (map_prod (map_mbuf reopt_table) rmrd z', map (map_mbuf reopt_table) buf', t', ts'))"
-  by (rule mebufnt_take_map_mbuf) (auto simp: gupdate_matchP_reopt split: prod.splits)
 
 text \<open>The future window likewise; it keeps the operands' tables of every time point it has not
   decided yet, so the relabelling covers those too.\<close>
@@ -1347,106 +1292,26 @@ lemma geval_matchF_reopt:
   "geval_matchF I mr nt (rmld aux) = map_prod (map reopt_table) rmld (geval_matchF I mr nt aux)"
   by (induct aux) (auto split: prod.splits)
 
-lemma mebufnt_take_matchF:
-  "mebufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels)
-     (rmld z0) (map (map_mbuf reopt_table) buf) t0 ts
-   = (case uebufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels) z0 buf t0 ts of
-        (z', buf', t', ts') \<Rightarrow> (rmld z', map (map_mbuf reopt_table) buf', t', ts'))"
-  by (rule mebufnt_take_map_mbuf) (simp add: gupdate_matchF_reopt)
-
-lemma mebufnt_take_matchP':
-  assumes "uebufnt_take (\<lambda>rels t (zs, ax).
-       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-     (mbuf_t_empty, a0) buf t0 ts = ((zs', a'), buf', t', ts')"
-  shows "mebufnt_take (\<lambda>rels t (zs, ax).
-       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
-     (mbuf_t_empty, rmrd a0) (map (map_mbuf reopt_table) buf) t0 ts
-     = ((map_mbuf reopt_table zs', rmrd a'), map (map_mbuf reopt_table) buf', t', ts')"
-  using mebufnt_take_matchP[of msks I mr mrs "(mbuf_t_empty, a0)" buf t0 ts] assms
-  by simp
-
-lemma mebufnt_take_matchF':
-  assumes "uebufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels) z0 buf t0 ts = (z', buf', t', ts')"
-  shows "mebufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels)
-      (rmld z0) (map (map_mbuf reopt_table) buf) t0 ts
-    = (rmld z', map (map_mbuf reopt_table) buf', t', ts')"
-  using mebufnt_take_matchF[of msks I mr mrs z0 buf t0 ts] assms by simp
-
 lemma map_dsan_reopt_deopt: "map dsan xs = map reopt_table (map deopt_table xs)"
   by (simp add: dsan_def)
 
 lemma mebuf2t_take_until:
-  "mebuf2t_take (dux_add_new dags msk) (rdux aux) (rbuf2 buf) t ts
+  "mebuf2t_take (dux_add_new dags msk) (rdux aux) (qbuf2 buf) t ts
    = (case uebuf2t_take (udux_add_new dags msk) aux buf t ts of
-        (aux', buf', t', ts') \<Rightarrow> (rdux aux', rbuf2 buf', t', ts'))"
+        (aux', buf', t', ts') \<Rightarrow> (rdux aux', qbuf2 buf', t', ts'))"
   by (rule mebuf2t_take_rbuf) (simp add: dux_add_new_rdux)
 
 lemma mebuf2T_take_rbuf:
   assumes "\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)"
-  shows "mebuf2T_take f (h z) (rbuf2 buf) ts
-   = (case uebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', rbuf2 buf', ts'))"
+  shows "mebuf2T_take f (h z) (qbuf2 buf) ts
+   = (case uebuf2T_take f' z buf ts of (z', buf', ts') \<Rightarrow> (h z', qbuf2 buf', ts'))"
   by (cases buf)
     (simp add: mebuf2T_take_map_mbuf[where f = f and h = h and f' = f', OF assms]
        split: prod.splits del: mebuf2T_take.simps uebuf2T_take.simps)
 
-text \<open>The trigger's buffer traversal, relabelled: the structure by @{const bmm} and the output
-  list tablewise.  The step commutes with the pair of them by @{thm [source] gupdate_mmtaux_bmm}
-  and @{thm [source] gresult_mmtaux_bmm}, with no invariant.\<close>
-
-lemma mebuf2T_take_trigger:
-  "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
-     ([], bmm daux) (rbuf2 buf) ts
-   = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf ts of
-        (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', ts'))"
-proof -
-  have "mebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-        let ax = gupdate_mmtaux dags t r1 r2 ax
-        in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
-        (map_prod (map reopt_table) bmm ([], daux)) (rbuf2 buf) ts
-      = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
-        let ax = gupdate_mmtaux dags t r1 r2 ax
-        in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf ts of
-          (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', ts'))"
-    by (rule mebuf2T_take_rbuf)
-      (simp add: Let_def case_prod_beta map_prod_def gupdate_mmtaux_bmm gresult_mmtaux_bmm)
-  then show ?thesis by simp
-qed
-
 text \<open>The fused And-Trigger's two traversals.  The inner one is the trigger's, with the empty
   window kept as @{term None}; the outer one relabels its two sides differently, the left
   operand's tables and the trigger's optional reads.\<close>
-
-lemma mebuf2T_take_andtrigger:
-  "mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None
-                else Some (dsan (gresult_mmtaux dags ax))], ax))
-     ([], bmm daux) (rbuf2 buf) ts
-   = (case uebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-      let ax = gupdate_mmtaux dags t r1 r2 ax
-      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
-      ([], daux) buf ts of
-        (z', buf', ts') \<Rightarrow> (map_prod (map (map_option reopt_table)) bmm z', rbuf2 buf', ts'))"
-proof -
-  have "mebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-        let ax = gupdate_mmtaux dags t r1 r2 ax
-        in (ws @ [if gmmtaux_empty ax then None
-                  else Some (dsan (gresult_mmtaux dags ax))], ax))
-        (map_prod (map (map_option reopt_table)) bmm ([], daux)) (rbuf2 buf) ts
-      = (case uebuf2T_take (\<lambda>r1 r2 t (ws, ax).
-        let ax = gupdate_mmtaux dags t r1 r2 ax
-        in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
-        ([], daux) buf ts of
-          (z', buf', ts') \<Rightarrow> (map_prod (map (map_option reopt_table)) bmm z', rbuf2 buf', ts'))"
-    by (rule mebuf2T_take_rbuf)
-      (simp add: Let_def case_prod_beta map_prod_def gupdate_mmtaux_bmm gresult_mmtaux_bmm
-        gmmtaux_empty_bmm)
-  then show ?thesis by simp
-qed
 
 lemma mebuf2_take_map_mbuf2:
   "(\<And>x y. f (ga x) (gb y) = g' (f' x y)) \<Longrightarrow>
@@ -1478,59 +1343,251 @@ proof -
   show ?thesis by (cases buf) (simp split: prod.splits del: mebuf2_take.simps)
 qed
 
-lemma mebuf2_add_map_prod:
-  "mebuf2_add (map g1 xs) (map g2 ys) (map_prod (map_mbuf g1) (map_mbuf g2) buf)
-   = map_prod (map_mbuf g1) (map_mbuf g2) (mebuf2_add xs ys buf)"
+text \<open>The list operations of @{const deval} on the buffers the short ones stand for, in the shapes
+  the simplifier leaves the evaluator's buffers in.  Each is the naturality of the queue operation
+  above, read back through @{const Rep_mbuf_t} by the agreement of the queue operation with the
+  list one (@{theory MFODL_Monitor_Devel.Monitor_Impl}).\<close>
+
+lemma rbuf2_qbuf2: "rbuf2 buf = map_prod Rep_mbuf_t Rep_mbuf_t (qbuf2 buf)"
   by (cases buf) simp
 
-text \<open>The buffer lemmas in the shapes the simplifier leaves the evaluator's buffers in.\<close>
+lemma mbuf2_add_rbuf2:
+  "mbuf2_add (map reopt_table xs) (map reopt_table ys) (rbuf2 buf) = rbuf2 (mebuf2_add xs ys buf)"
+  by (cases buf) (simp add: mbuf_t_append.rep_eq)
 
-lemma meprev_next_prev:
-  "meprev_next I (map_mbuf reopt_table buf @@ map reopt_table xs) ts
-   = (case ueprev_next I (buf @@ xs) ts of
-        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
-  using meprev_next_map_mbuf[of I "buf @@ xs" ts] unfolding map_mbuf_append .
+lemma mbuf2_take_rbuf2:
+  assumes "\<And>x y. f (reopt_table x) (reopt_table y) = reopt_table (f' x y)"
+  shows "mbuf2_take f (rbuf2 buf)
+   = (case mebuf2_take f' buf of (zs, buf') \<Rightarrow> (map reopt_table zs, rbuf2 buf'))"
+proof -
+  obtain zs buf' where e: "mebuf2_take f' buf = (zs, buf')" by (cases "mebuf2_take f' buf")
+  have "mebuf2_take f (qbuf2 buf) = (map reopt_table zs, qbuf2 buf')"
+    using mebuf2_take_rbuf[where f = f and f' = f' and buf = buf, OF assms] e by simp
+  from mebuf2_take[OF this] show ?thesis
+    unfolding rbuf2_qbuf2 e by (simp only: prod.case)
+qed
 
-lemma meprev_next_next1:
-  "meprev_next I (mbuf_t_empty @@ map reopt_table xs) ts
-   = (case ueprev_next I (mbuf_t_empty @@ xs) ts of
-        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
-  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ xs" ts] unfolding map_mbuf_append map_mbuf_empty .
+lemma mbuf2_take_or:
+  "mbuf2_take (\<lambda>r1 r2. r1 \<union> r2) (rbuf2 buf)
+   = (case mebuf2_take (\<lambda>r1 r2. r1 \<union> r2) buf of (zs, buf') \<Rightarrow> (map reopt_table zs, rbuf2 buf'))"
+  by (rule mbuf2_take_rbuf2) simp
 
-lemma meprev_next_next2:
-  "meprev_next I (mbuf_t_empty @@ []) ts
-   = (case ueprev_next I (mbuf_t_empty @@ []) ts of
-        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
-  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ []" ts]
-  unfolding map_mbuf_append map_mbuf_empty list.map .
+lemma mbuf2_take_and:
+  "mbuf2_take (\<lambda>r1 r2. dbin_join pl r1 pos r2) (rbuf2 buf)
+   = (case mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2) buf of
+        (zs, buf') \<Rightarrow> (map reopt_table zs, rbuf2 buf'))"
+  by (rule mbuf2_take_rbuf2) (simp add: dbin_join_reopt_table)
 
-lemma meprev_next_next3:
-  "meprev_next I (mbuf_t_empty @@ reopt_table x # map reopt_table xs) ts
-   = (case ueprev_next I (mbuf_t_empty @@ x # xs) ts of
-        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, map_mbuf reopt_table xs', ts'))"
-  using meprev_next_map_mbuf[of I "mbuf_t_empty @@ x # xs" ts]
-  unfolding map_mbuf_append map_mbuf_empty list.map .
+lemma mbuf2t_take_until:
+  "mbuf2t_take (dux_add_new dags msk) (rdux aux) (rbuf2 buf) t (Rep_mbuf_t nts @ ts)
+   = (case uebuf2t_take (udux_add_new dags msk) aux buf t (nts @@ ts) of
+        (aux', buf', t', nts') \<Rightarrow> (rdux aux', rbuf2 buf', t', Rep_mbuf_t nts'))"
+proof -
+  obtain aux' buf' t' nts' where e:
+    "uebuf2t_take (udux_add_new dags msk) aux buf t (nts @@ ts) = (aux', buf', t', nts')"
+    by (metis prod_cases4)
+  have "mebuf2t_take (dux_add_new dags msk) (rdux aux) (qbuf2 buf) t (nts @@ ts)
+      = (rdux aux', qbuf2 buf', t', nts')"
+    using mebuf2t_take_until[of dags msk aux buf t "nts @@ ts"] e by simp
+  from mebuf2t_take[OF this] show ?thesis
+    unfolding rbuf2_qbuf2 e by (simp only: prod.case mbuf_t_append.rep_eq)
+qed
 
-lemma edsx_eval_since_rdsx0:
-  "(case edsx_eval_since args [] (rbufS buf) (rdsx aux) of
+lemma mbuf2T_take_rbuf2:
+  assumes "\<And>x y t z. f (reopt_table x) (reopt_table y) t (h z) = h (f' x y t z)"
+  shows "mbuf2T_take f (h z) (rbuf2 buf) (Rep_mbuf_t nts @ ts)
+   = (case uebuf2T_take f' z buf (nts @@ ts) of
+        (z', buf', nts') \<Rightarrow> (h z', rbuf2 buf', Rep_mbuf_t nts'))"
+proof -
+  obtain z' buf' nts' where e: "uebuf2T_take f' z buf (nts @@ ts) = (z', buf', nts')"
+    by (metis prod_cases3)
+  have "mebuf2T_take f (h z) (qbuf2 buf) (nts @@ ts) = (h z', qbuf2 buf', nts')"
+    using mebuf2T_take_rbuf[where f = f and h = h and f' = f' and z = z and buf = buf
+        and ts = "nts @@ ts", OF assms] e by simp
+  from mebuf2T_take[OF this] show ?thesis
+    unfolding rbuf2_qbuf2 e by (simp only: prod.case mbuf_t_append.rep_eq)
+qed
+
+lemma mbuf2T_take_trigger:
+  "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
+     ([], bmm daux) (rbuf2 buf) (Rep_mbuf_t nts @ ts)
+   = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf (nts @@ ts) of
+        (z', buf', nts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', Rep_mbuf_t nts'))"
+proof -
+  have "mbuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (zs @ [dsan (gresult_mmtaux dags ax)], ax))
+        (map_prod (map reopt_table) bmm ([], daux)) (rbuf2 buf) (Rep_mbuf_t nts @ ts)
+      = (case uebuf2T_take (\<lambda>r1 r2 t (zs, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (zs @ [gresult_mmtaux dags ax], ax)) ([], daux) buf (nts @@ ts) of
+          (z', buf', nts') \<Rightarrow> (map_prod (map reopt_table) bmm z', rbuf2 buf', Rep_mbuf_t nts'))"
+    by (rule mbuf2T_take_rbuf2)
+      (simp add: Let_def case_prod_beta map_prod_def gupdate_mmtaux_bmm gresult_mmtaux_bmm)
+  then show ?thesis by simp
+qed
+
+lemma mbuf2T_take_andtrigger:
+  "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (ws @ [if gmmtaux_empty ax then None
+                else Some (dsan (gresult_mmtaux dags ax))], ax))
+     ([], bmm daux) (rbuf2 buf) (Rep_mbuf_t nts @ ts)
+   = (case uebuf2T_take (\<lambda>r1 r2 t (ws, ax).
+      let ax = gupdate_mmtaux dags t r1 r2 ax
+      in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+      ([], daux) buf (nts @@ ts) of
+        (z', buf', nts') \<Rightarrow>
+          (map_prod (map (map_option reopt_table)) bmm z', rbuf2 buf', Rep_mbuf_t nts'))"
+proof -
+  have "mbuf2T_take (\<lambda>r1 r2 t (ws, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (ws @ [if gmmtaux_empty ax then None
+                  else Some (dsan (gresult_mmtaux dags ax))], ax))
+        (map_prod (map (map_option reopt_table)) bmm ([], daux)) (rbuf2 buf) (Rep_mbuf_t nts @ ts)
+      = (case uebuf2T_take (\<lambda>r1 r2 t (ws, ax).
+        let ax = gupdate_mmtaux dags t r1 r2 ax
+        in (ws @ [if gmmtaux_empty ax then None else Some (gresult_mmtaux dags ax)], ax))
+        ([], daux) buf (nts @@ ts) of
+          (z', buf', nts') \<Rightarrow>
+            (map_prod (map (map_option reopt_table)) bmm z', rbuf2 buf', Rep_mbuf_t nts'))"
+    by (rule mbuf2T_take_rbuf2)
+      (simp add: Let_def case_prod_beta map_prod_def gupdate_mmtaux_bmm gresult_mmtaux_bmm
+        gmmtaux_empty_bmm)
+  then show ?thesis by simp
+qed
+
+abbreviation rbufo :: "utable mbuf_t \<times> utable option mbuf_t \<Rightarrow>
+    event_data table list \<times> event_data table option list" where
+  "rbufo \<equiv> map_prod (\<lambda>b. rbl b) (\<lambda>b. map (map_option reopt_table) (Rep_mbuf_t b))"
+
+lemma mbuf2_add_andtrigger:
+  "mbuf2_add (map reopt_table as) (map (map_option reopt_table) ws) (rbufo buf)
+   = rbufo (mebuf2_add as ws buf)"
+  by (cases buf) (simp add: mbuf_t_append.rep_eq)
+
+lemma mbuf2_take_andtrigger:
+  "mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> dbin_join pl r1 True z) (rbufo buf)
+   = (case mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> gbin_join pl r1 True z) buf of
+        (zs, buf') \<Rightarrow> (map reopt_table zs, rbufo buf'))"
+proof -
+  obtain zs buf' where e:
+    "mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> gbin_join pl r1 True z) buf = (zs, buf')"
+    by (cases "mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> gbin_join pl r1 True z) buf")
+  have "mebuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> dbin_join pl r1 True z)
+      (map_prod (map_mbuf reopt_table) (map_mbuf (map_option reopt_table)) buf)
+      = (map reopt_table zs, map_prod (map_mbuf reopt_table) (map_mbuf (map_option reopt_table)) buf')"
+    using mebuf2_take_andtrigger[of pl buf] e by (simp del: mebuf2_take.simps)
+  moreover have "rbufo b = map_prod Rep_mbuf_t Rep_mbuf_t
+      (map_prod (map_mbuf reopt_table) (map_mbuf (map_option reopt_table)) b)" for b
+    by (cases b) simp
+  ultimately show ?thesis
+    using mebuf2_take by (simp only: e prod.case)
+qed
+
+lemma mprev_next_prev:
+  "mprev_next I (rbl buf @ map reopt_table xs) (Rep_mbuf_t nts @ ts)
+   = (case ueprev_next I (buf @@ xs) (nts @@ ts) of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, rbl xs', Rep_mbuf_t ts'))"
+proof -
+  obtain zs xs' ts' where e: "ueprev_next I (buf @@ xs) (nts @@ ts) = (zs, xs', ts')"
+    by (metis prod_cases3)
+  have "meprev_next I (map_mbuf reopt_table (buf @@ xs)) (nts @@ ts)
+      = (map reopt_table zs, map_mbuf reopt_table xs', ts')"
+    using meprev_next_map_mbuf[of I "buf @@ xs" "nts @@ ts"] e
+    by (simp del: meprev_next.simps ueprev_next.simps map_mbuf_append)
+  from meprev_next[OF this] show ?thesis
+    by (simp add: e mbuf_t_append.rep_eq del: mprev_next.simps ueprev_next.simps)
+qed
+
+lemma mprev_next_next:
+  "mprev_next I (map reopt_table xs) (Rep_mbuf_t nts @ ts)
+   = (case ueprev_next I (mbuf_t_empty @@ xs) (nts @@ ts) of
+        (zs, xs', ts') \<Rightarrow> (map reopt_table zs, rbl xs', Rep_mbuf_t ts'))"
+  using mprev_next_prev[of I mbuf_t_empty xs nts ts]
+  by (simp add: mbuf_t_empty.rep_eq del: mprev_next.simps ueprev_next.simps)
+lemma dsx_eval_since_rdsx0:
+  "(case dsx_eval_since args [] (rbufS buf) (rdsx aux) of
       (Zs, bf, a) \<Rightarrow> (map (dfilt (usx_q aux)) Zs, bf, a))
    = (case uedsx_eval_since args [] buf aux of
         (zs, buf', aux') \<Rightarrow> (map reopt_table zs, rbufS buf', rdsx aux'))"
-  using edsx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
+  using dsx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
-lemma mebuf2T_take_acc0:
-  assumes "\<And>x y t zs ax. f x y t (map reopt_table zs, ax)
-    = map_prod (map reopt_table) (\<lambda>a. a) (f' x y t (zs, ax))"
-  shows "mebuf2T_take f ([], daux) buf ts
-    = (case mebuf2T_take f' ([], daux) buf ts of
-        (z', buf', ts') \<Rightarrow> (map_prod (map reopt_table) (\<lambda>a. a) z', buf', ts'))"
+lemma mbufn_add_rbl:
+  "mbufn_add (map (map reopt_table) xss) (map (\<lambda>b. rbl b) buf) = map (\<lambda>b. rbl b) (uebufn_add xss buf)"
+  by (induct buf xss rule: list_induct2') (auto simp: mbuf_t_append.rep_eq)
+
+lemma mbufn_take_rbl:
+  assumes "\<And>as z. f (map reopt_table as) (h z) = h (f' as z)"
+  shows "mbufn_take f (h z) (map (\<lambda>b. rbl b) buf)
+   = (case uebufn_take f' z buf of (z', buf') \<Rightarrow> (h z', map (\<lambda>b. rbl b) buf'))"
 proof -
-  have "f x y t (map_prod (map reopt_table) (\<lambda>a. a) z)
-      = map_prod (map reopt_table) (\<lambda>a. a) (f' x y t z)" for x y t z
-    by (cases z) (simp add: assms)
-  then show ?thesis
-    using mebuf2T_take_acc[of f "map_prod (map reopt_table) (\<lambda>a. a)" f' "([], daux)" buf ts] by simp
+  obtain z' buf' where e: "uebufn_take f' z buf = (z', buf')" by (cases "uebufn_take f' z buf")
+  have "mebufn_take f (h z) (map (map_mbuf reopt_table) buf) = (h z', map (map_mbuf reopt_table) buf')"
+    using mebufn_take_map_mbuf[of f reopt_table h f' z buf, OF assms] e
+    by (simp del: mebufn_take.simps)
+  from mebufn_take[OF this] show ?thesis
+    by (simp add: e comp_def del: mbufn_take.simps)
 qed
+
+lemma mbufn_take_ands:
+  "mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as]) [] (map (\<lambda>b. rbl b) buf)
+   = (case uebufn_take (\<lambda>as zs. zs @@ [gmulti_join ps ns as]) mbuf_t_empty buf of
+        (zs, buf') \<Rightarrow> (rbl zs, map (\<lambda>b. rbl b) buf'))"
+proof -
+  have "mbufn_take (\<lambda>as zs. zs @ [dmulti_join ps ns as]) (rbl mbuf_t_empty) (map (\<lambda>b. rbl b) buf)
+   = (case uebufn_take (\<lambda>as zs. zs @@ [gmulti_join ps ns as]) mbuf_t_empty buf of
+        (zs, buf') \<Rightarrow> (rbl zs, map (\<lambda>b. rbl b) buf'))"
+    by (rule mbufn_take_rbl) (simp add: mbuf_t_append.rep_eq dmulti_join_reopt_table)
+  then show ?thesis by (simp add: mbuf_t_empty.rep_eq del: mbufn_take.simps)
+qed
+
+lemma mbufnt_take_rbl:
+  assumes "\<And>as t z. f (map reopt_table as) t (h z) = h (f' as t z)"
+  shows "mbufnt_take f (h z) (map (\<lambda>b. rbl b) buf) t0 (Rep_mbuf_t nts @ ts)
+   = (case uebufnt_take f' z buf t0 (nts @@ ts) of
+        (z', buf', t', ts') \<Rightarrow> (h z', map (\<lambda>b. rbl b) buf', t', Rep_mbuf_t ts'))"
+proof -
+  obtain z' buf' t' ts' where e: "uebufnt_take f' z buf t0 (nts @@ ts) = (z', buf', t', ts')"
+    by (metis prod_cases4)
+  have "mebufnt_take f (h z) (map (map_mbuf reopt_table) buf) t0 (nts @@ ts)
+      = (h z', map (map_mbuf reopt_table) buf', t', ts')"
+    using mebufnt_take_map_mbuf[of f reopt_table h f' z buf t0 "nts @@ ts", OF assms] e
+    by (simp del: mebufnt_take.simps uebufnt_take.simps)
+  from mebufnt_take[OF this] show ?thesis
+    by (simp add: e comp_def mbuf_t_append.rep_eq del: mbufnt_take.simps uebufnt_take.simps)
+qed
+lemma mbufnt_take_matchP:
+  "mbufnt_take (\<lambda>rels t (zs, ax).
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @ [z], ax)))
+     ([], rmrd a0) (map (\<lambda>b. rbl b) buf) t0 (Rep_mbuf_t nts @ ts)
+   = (case uebufnt_take (\<lambda>rels t (zs, ax).
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+       (mbuf_t_empty, a0) buf t0 (nts @@ ts) of
+        ((zs', a'), buf', t', ts') \<Rightarrow> ((rbl zs', rmrd a'), map (\<lambda>b. rbl b) buf', t', Rep_mbuf_t ts'))"
+proof -
+  have "mbufnt_take (\<lambda>rels t (zs, ax).
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @ [z], ax)))
+     (map_prod (\<lambda>b. rbl b) rmrd (mbuf_t_empty, a0)) (map (\<lambda>b. rbl b) buf) t0 (Rep_mbuf_t nts @ ts)
+   = (case uebufnt_take (\<lambda>rels t (zs, ax).
+       (case gupdate_matchP msks I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @@ [z], ax)))
+       (mbuf_t_empty, a0) buf t0 (nts @@ ts) of
+        (z', buf', t', ts') \<Rightarrow> (map_prod (\<lambda>b. rbl b) rmrd z', map (\<lambda>b. rbl b) buf', t', Rep_mbuf_t ts'))"
+    by (rule mbufnt_take_rbl)
+      (auto simp: gupdate_matchP_reopt mbuf_t_append.rep_eq split: prod.splits)
+  then show ?thesis by (simp add: mbuf_t_empty.rep_eq split: prod.splits)
+qed
+
+lemma mbufnt_take_matchF:
+  "mbufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels)
+     (rmld z0) (map (\<lambda>b. rbl b) buf) t0 (Rep_mbuf_t nts @ ts)
+   = (case uebufnt_take (\<lambda>rels. gupdate_matchF msks I mr mrs rels) z0 buf t0 (nts @@ ts) of
+        (z', buf', t', ts') \<Rightarrow> (rmld z', map (\<lambda>b. rbl b) buf', t', Rep_mbuf_t ts'))"
+  by (rule mbufnt_take_rbl) (simp add: gupdate_matchF_reopt)
 
 lemma uletpast_meval0_rdb:
   "(\<And>ts db \<psi>. ursize \<psi> = n \<Longrightarrow>
@@ -1586,18 +1643,18 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: uletpast_meval0.induct)
 qed
 
 lemma udeval_Rep:
-  "edeval j ts (rdb db) (Rep_udformula \<phi>)
+  "deval j ts (rdb db) (Rep_udformula \<phi>)
    = (case udeval j ts db \<phi> of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
 proof (induction j ts db \<phi> rule: udeval.induct)
   case (13 j ts db ps ns L buf)
-  have "map fst (map (edeval j ts (rdb db)) (map Rep_udformula L))
+  have "map fst (map (deval j ts (rdb db)) (map Rep_udformula L))
       = map (map reopt_table) (map fst (map (udeval j ts db) L))"
-    "map snd (map (edeval j ts (rdb db)) (map Rep_udformula L))
+    "map snd (map (deval j ts (rdb db)) (map Rep_udformula L))
       = map Rep_udformula (map snd (map (udeval j ts db) L))"
     by (auto simp: 13 split: prod.splits)
   then show ?case
-    by (auto simp only: Let_def edeval.simps udeval.simps Rep_udformula.simps
-        mebufn_add_map_mbuf mebufn_take_ands Rep_map_mbuf split: prod.splits)
+    by (auto simp only: Let_def deval.simps udeval.simps Rep_udformula.simps
+        mbufn_add_rbl mbufn_take_ands split: prod.splits)
 next
   case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
   let ?db0 = "Mapping.update (p, m) [] db"
@@ -1608,11 +1665,11 @@ next
     by (cases "udeval j ts ?db0 \<psi>")
   obtain rs \<rho>' where \<rho>: "udeval j ts ?db0 \<rho> = (rs, \<rho>')"
     by (cases "udeval j ts ?db0 \<rho>")
-  have IH1: "edeval j ts (rdb db) (Rep_udformula \<phi>) = (map reopt_table xs, Rep_udformula \<phi>')"
+  have IH1: "deval j ts (rdb db) (Rep_udformula \<phi>) = (map reopt_table xs, Rep_udformula \<phi>')"
     using 20(1) \<phi> by simp
-  have IH2: "edeval j ts (rdb ?db0) (Rep_udformula \<psi>) = (map reopt_table zs0, Rep_udformula \<psi>')"
+  have IH2: "deval j ts (rdb ?db0) (Rep_udformula \<psi>) = (map reopt_table zs0, Rep_udformula \<psi>')"
     using 20(2)[OF refl \<phi>[symmetric] refl] \<psi> by simp
-  have IH3: "edeval j ts (rdb ?db0) (Rep_udformula \<rho>) = (map reopt_table rs, Rep_udformula \<rho>')"
+  have IH3: "deval j ts (rdb ?db0) (Rep_udformula \<rho>) = (map reopt_table rs, Rep_udformula \<rho>')"
     using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric]] \<rho> by simp
   let ?z = "drop (jfrz - jpsi0) zs0"
   let ?as = "drop (jfrz - jphi + length ?z) (\<alpha>s @ xs)"
@@ -1621,7 +1678,7 @@ next
     if ?z = [] \<and> ?as \<noteq> [] then Some (g, udeval j ts ?dbL \<rho>L) else None)"
   define lre where "lre = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
     if map reopt_table ?z = [] \<and> map reopt_table ?as \<noteq> []
-    then Some (g, edeval j ts (Mapping.update (p, m) (replicate (length ts) (hd (map reopt_table ?as)))
+    then Some (g, deval j ts (Mapping.update (p, m) (replicate (length ts) (hd (map reopt_table ?as)))
       (rdb db)) (Rep_udformula \<rho>L)) else None)"
   have st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
        \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
@@ -1639,14 +1696,14 @@ next
       case True
       have hd: "hd (map reopt_table ?as) = reopt_table (hd ?as)"
         using True hd_map[of "?as" reopt_table] by blast
-      have "edeval j ts (rdb ?dbL) (Rep_udformula \<rho>L) =
+      have "deval j ts (rdb ?dbL) (Rep_udformula \<rho>L) =
           (case udeval j ts ?dbL \<rho>L of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
         by (rule 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl refl Some True])
       then show ?thesis
         using Some True hd by (simp add: lru_def lre_def split: prod.splits)
     qed (use Some in \<open>auto simp: lru_def lre_def\<close>)
   qed (simp add: lru_def lre_def)
-  have IHloop: "edeval j ts' (rdb db') (Rep_udformula \<chi>) =
+  have IHloop: "deval j ts' (rdb db') (Rep_udformula \<chi>) =
       (case udeval j ts' db' \<chi> of (zs, \<chi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<chi>'))"
     if "ursize \<chi> = ursize \<rho>'" for ts' db' \<chi>
     using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl st[symmetric]
@@ -1658,7 +1715,7 @@ next
       (frz_fill ng (\<alpha>s @ xs)) d po j (jfrz + length ?z) ?as lru (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs))
       = (ys, as', lvu, \<rho>2, w2, pR2, tq2, rb2)"
     by (metis prod_cases4 prod_cases5)
-  obtain yse ase lve se where fre: "frz_live_loop size (edeval j) (p, m) (rdb ?dbe)
+  obtain yse ase lve se where fre: "frz_live_loop size (deval j) (p, m) (rdb ?dbe)
       (reopt_table (frz_fill ng (\<alpha>s @ xs))) d po j (jfrz + length ?z) (map reopt_table ?as) lre
       (Rep_udformula \<rho>', w, pR + length rs, ?tq, map reopt_table (drop ?k (rb @ rs))) = (yse, ase, lve, se)"
     by (metis prod_cases4)
@@ -1668,9 +1725,9 @@ next
   proof (rule frz_live_loop_rel[OF _ _ _ _ fr0 fre])
     fix \<chi> \<chi>' c X
     assume "ursize \<chi> = ursize (fst (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs)))" and "\<chi>' = Rep_udformula \<chi>"
-    then show "fst (edeval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
+    then show "fst (deval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
         map reopt_table (fst (udeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>)) \<and>
-      snd (edeval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
+      snd (deval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
         Rep_udformula (snd (udeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>))"
       using IHloop[of \<chi> "[]" "Mapping.update (p, m) (replicate c X) ?dbe"] by (simp split: prod.splits)
   qed (use IHL in \<open>auto simp: ursize_Rep option.rel_map intro: option.rel_refl\<close>)
@@ -1693,20 +1750,20 @@ next
       by (simp_all only: ifm frz_keep_Rep)
   qed
   show ?case
-    by (simp only: Rep_udformula.simps edeval.simps udeval.simps Let_def rdb_update_Nil rdb_map_values_Nil
+    by (simp only: Rep_udformula.simps deval.simps udeval.simps Let_def rdb_update_Nil rdb_map_values_Nil
         rdb_update_replicate_empty IH1 IH2 IH3 map_append[symmetric] frz_fill_reopt drop_map length_map \<phi> \<psi> \<rho>
         lre_def[symmetric] lru_def[symmetric] fr0 fre rel[THEN conjunct1] rel[THEN conjunct2, THEN conjunct1]
         se \<rho>e2 lve keep prod.case)
 next
   case (21 j ts db p m \<phi> \<psi> i buf)
-  have IH: "ursize \<psi> = ursize \<phi> \<Longrightarrow> edeval j ts (rdb db) (Rep_udformula \<psi>) =
+  have IH: "ursize \<psi> = ursize \<phi> \<Longrightarrow> deval j ts (rdb db) (Rep_udformula \<psi>) =
     (case udeval j ts db \<psi> of (zs, \<psi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<psi>'))" for ts db \<psi>
     using 21 by auto
-  have lp: "letpast_meval0 (edeval j) j i [] (list_of_option (map_option reopt_table buf)) (p, m) ts
+  have lp: "letpast_meval0 (deval j) j i [] (list_of_option (map_option reopt_table buf)) (p, m) ts
       (rdb db) (Rep_udformula \<phi>)
     = (case uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> of
         (ys', i', b, \<phi>') \<Rightarrow> (map reopt_table ys', i', map_option reopt_table b, Rep_udformula \<phi>'))"
-    using uletpast_meval0_rdb[where n = "ursize \<phi>" and eval = "edeval j"
+    using uletpast_meval0_rdb[where n = "ursize \<phi>" and eval = "deval j"
         and eval' = "udeval j" and j = j and i = i and ys = "[]" and xs = "list_of_option buf"
         and p = "(p, m)" and ts = ts and db = db and \<phi> = \<phi>, OF IH refl]
     by (cases buf) simp_all
@@ -1740,42 +1797,56 @@ next
   then show ?case by (simp add: dagg_reopt_table split: prod.splits)
 next
   case (9 j ts db \<phi> \<psi> buf)
-  then show ?case by (simp add: mebuf2_add_rbuf mebuf2_take_or split: prod.splits)
+  then show ?case by (simp add: mbuf2_add_rbuf2 mbuf2_take_or split: prod.splits)
 next
   case (10 j ts db pl \<phi> pos \<psi> buf)
-  then show ?case by (simp add: mebuf2_add_rbuf mebuf2_take_and split: prod.splits)
+  then show ?case by (simp add: mbuf2_add_rbuf2 mbuf2_take_and split: prod.splits)
 next
   case (11 j ts db I \<phi> first buf nts)
   then show ?case
-    by (simp add: meprev_next_prev empty_table_def
-        del: meprev_next.simps ueprev_next.simps split: prod.splits)
+    by (simp add: mprev_next_prev empty_table_def mbuf_t_append.rep_eq
+        del: mprev_next.simps ueprev_next.simps split: prod.splits)
 next
   case (12 j ts db I \<phi> first nts)
-  then show ?case
-    by (simp add: meprev_next_next1 meprev_next_next2 meprev_next_next3
-        del: meprev_next.simps ueprev_next.simps split: prod.splits list.splits bool.splits)
-next
-  case (14 j ts db dags \<phi> \<psi> buf aux)
+  obtain xs \<phi>' where e: "udeval j ts db \<phi> = (xs, \<phi>')" by (cases "udeval j ts db \<phi>")
+  obtain xs1 f1 where c: "(case xs of [] \<Rightarrow> ([], first)
+      | x # xs' \<Rightarrow> (case first of True \<Rightarrow> (xs', False) | False \<Rightarrow> (x # xs', False))) = (xs1, f1)"
+    by (cases "case xs of [] \<Rightarrow> ([], first)
+      | x # xs' \<Rightarrow> (case first of True \<Rightarrow> (xs', False) | False \<Rightarrow> (x # xs', False))")
+  have c': "(case map reopt_table xs of [] \<Rightarrow> ([], first)
+      | x # xs' \<Rightarrow> (case first of True \<Rightarrow> (xs', False) | False \<Rightarrow> (x # xs', False)))
+      = (map reopt_table xs1, f1)"
+    using c by (cases xs; cases first) auto
+  obtain zs b nts' where u: "ueprev_next I (mbuf_t_empty @@ xs1) (nts @@ ts) = (zs, b, nts')"
+    by (metis prod_cases3)
+  have IH: "deval j ts (rdb db) (Rep_udformula \<phi>) = (map reopt_table xs, Rep_udformula \<phi>')"
+    using 12 e by simp
+  have p: "mprev_next I (map reopt_table xs1) (Rep_mbuf_t nts @ ts) = (map reopt_table zs, rbl b, Rep_mbuf_t nts')"
+    using mprev_next_next[of I xs1 nts ts] u by simp
+  show ?case
+    by (simp only: Rep_udformula.simps deval.simps udeval.simps Let_def IH e c c' u p prod.case)
+next  case (14 j ts db dags \<phi> \<psi> buf aux)
   obtain xs \<phi>' where e1: "udeval j ts db \<phi> = (xs, \<phi>')" by (cases "udeval j ts db \<phi>")
   obtain ys \<psi>' where e2: "udeval j ts db \<psi> = (ys, \<psi>')" by (cases "udeval j ts db \<psi>")
   obtain zs buf' aux' where e3: "uedsx_eval_since dags [] (uebuf2S_add xs ys ts buf) aux
       = (zs, buf', aux')"
     by (cases "uedsx_eval_since dags [] (uebuf2S_add xs ys ts buf) aux")
-  obtain Zs Bf Ax where E3: "edsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)
+  obtain Zs Bf Ax where E3: "dsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)
       = (Zs, Bf, Ax)"
-    by (cases "edsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)")
+    by (cases "dsx_eval_since dags [] (rbufS (uebuf2S_add xs ys ts buf)) (rdsx aux)")
   have Z: "map (dfilt (usx_q aux)) Zs = map reopt_table zs" and B: "Bf = rbufS buf'"
     and A: "Ax = rdsx aux'"
-    using edsx_eval_since_rdsx0[where args = dags and buf = "uebuf2S_add xs ys ts buf" and aux = aux] by (simp_all add: e3 E3)
+    using dsx_eval_since_rdsx0[where args = dags and buf = "uebuf2S_add xs ys ts buf" and aux = aux]
+    by (simp_all add: e3 E3)
   have q: "usx_q aux' = usx_q aux" by (rule usx_q_uedsx_eval_since'[OF e3])
   show ?case
     using 14
-    by (simp add: e1 e2 e3 E3 Z B A q mebuf2S_add_rbufS edeval_edandrel
-        del: edsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
+    by (simp add: e1 e2 e3 E3 Z B A q mbuf2S_add_rbufS deval_dandrel
+        del: dsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
 next
   case (15 j ts db dags msk \<phi> \<psi> buf nts t aux)
   then show ?case
-    by (simp add: mebuf2_add_rbuf mebuf2t_take_until dux_eval_rdux split: prod.splits)
+    by (simp add: mbuf2_add_rbuf2 mbuf2t_take_until dux_eval_rdux split: prod.splits)
 next
   case (16 j ts db p t \<phi>)
   then show ?case by (simp add: dassign_reopt_table split: prod.splits)
@@ -1791,13 +1862,13 @@ next
 next
   case (22 j ts db dags pl \<phi> \<psi> dbuf nts daux)
   then show ?case
-    by (simp add: mebuf2_add_rbuf mebuf2T_take_trigger
-        del: mebuf2T_take.simps uebuf2T_take.simps split: prod.splits)
+    by (simp add: mbuf2_add_rbuf2 mbuf2T_take_trigger
+        del: mbuf2T_take.simps uebuf2T_take.simps split: prod.splits)
 next
   case (23 j ts db m I mr mrs pls Ld dbuf nts daux)
-  have R: "map fst (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+  have R: "map fst (map (deval j ts (rdb db)) (map Rep_udformula Ld))
       = map (map reopt_table) (map fst (map (udeval j ts db) Ld))"
-    "map snd (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+    "map snd (map (deval j ts (rdb db)) (map Rep_udformula Ld))
       = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
     by (auto simp: 23 split: prod.splits)
   let ?F = "\<lambda>rels t (zs, ax).
@@ -1806,19 +1877,21 @@ next
   obtain zs daux' dbuf' tt nts' where U:
     "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts) = ((zs, daux'), dbuf', tt, nts')"
     by (cases "uebufnt_take ?F (mbuf_t_empty, daux) ?B 0 (nts @@ ts)") auto
-  have E: "mebufnt_take ?F (mbuf_t_empty, rmrd daux) (map (map_mbuf reopt_table) ?B) 0 (nts @@ ts)
-      = ((map_mbuf reopt_table zs, rmrd daux'), map (map_mbuf reopt_table) dbuf', tt, nts')"
-    by (rule mebufnt_take_matchP'[OF U])
-  have Z: "map dsan (Rep_mbuf_t (map_mbuf reopt_table zs)) = map reopt_table (Rep_mbuf_t zs)"
+  have E: "mbufnt_take (\<lambda>rels t (zs, ax).
+      (case gupdate_matchP (map emb_msk pls) I mr mrs rels t ax of (z, ax) \<Rightarrow> (zs @ [z], ax)))
+      ([], rmrd daux) (map (\<lambda>b. rbl b) ?B) 0 (Rep_mbuf_t nts @ ts)
+      = ((rbl zs, rmrd daux'), map (\<lambda>b. rbl b) dbuf', tt, Rep_mbuf_t nts')"
+    using mbufnt_take_matchP[of "map emb_msk pls" I mr mrs daux ?B 0 nts ts] U by simp
+  have Z: "map dsan (rbl zs) = rbl zs"
     by simp
   show ?case
-    by (simp only: Let_def edeval.simps udeval.simps R mebufn_add_map_mbuf U E
+    by (simp only: Let_def deval.simps udeval.simps R mbufn_add_rbl U E
         prod.case Z Rep_udformula.simps)
 next
   case (24 j ts db m I mr mrs pls Ld dbuf nts t daux)
-  have R: "map fst (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+  have R: "map fst (map (deval j ts (rdb db)) (map Rep_udformula Ld))
       = map (map reopt_table) (map fst (map (udeval j ts db) Ld))"
-    "map snd (map (edeval j ts (rdb db)) (map Rep_udformula Ld))
+    "map snd (map (deval j ts (rdb db)) (map Rep_udformula Ld))
       = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
     by (auto simp: 24 split: prod.splits)
   let ?F = "\<lambda>rels. gupdate_matchF (map emb_msk pls) I mr mrs rels"
@@ -1826,9 +1899,9 @@ next
   obtain daux' dbuf' nt nts' where U:
     "uebufnt_take ?F daux ?B t (nts @@ ts) = (daux', dbuf', nt, nts')"
     by (cases "uebufnt_take ?F daux ?B t (nts @@ ts)") auto
-  have E: "mebufnt_take ?F (rmld daux) (map (map_mbuf reopt_table) ?B) t (nts @@ ts)
-      = (rmld daux', map (map_mbuf reopt_table) dbuf', nt, nts')"
-    by (rule mebufnt_take_matchF'[OF U])
+  have E: "mbufnt_take ?F (rmld daux) (map (\<lambda>b. rbl b) ?B) t (Rep_mbuf_t nts @ ts)
+      = (rmld daux', map (\<lambda>b. rbl b) dbuf', nt, Rep_mbuf_t nts')"
+    using mbufnt_take_matchF[of "map emb_msk pls" I mr mrs daux ?B t nts ts] U by simp
   obtain zs daux'' where V: "geval_matchF I mr nt daux' = (zs, daux'')"
     by (cases "geval_matchF I mr nt daux'") auto
   have V': "geval_matchF I mr nt (rmld daux') = (map reopt_table zs, rmld daux'')"
@@ -1836,14 +1909,14 @@ next
   have Z: "map dsan (map reopt_table zs) = map reopt_table zs"
     by simp
   show ?case
-    by (simp only: Let_def edeval.simps udeval.simps R mebufn_add_map_mbuf U E V V'
+    by (simp only: Let_def deval.simps udeval.simps R mbufn_add_rbl U E V V'
         prod.case Z Rep_udformula.simps)
 next
   case (25 j ts db pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux)
   then show ?case
-    by (simp add: mebuf2_add_rbuf mebuf2_add_map_prod mebuf2T_take_andtrigger
-        mebuf2_take_andtrigger
-        del: mebuf2T_take.simps uebuf2T_take.simps mebuf2_take.simps split: prod.splits)
+    by (simp add: mbuf2_add_rbuf2 mbuf2_add_andtrigger mbuf2T_take_andtrigger
+        mbuf2_take_andtrigger
+        del: mbuf2T_take.simps uebuf2T_take.simps mbuf2_take.simps split: prod.splits)
 qed
 
 subsection \<open>The compiler, the state and the step\<close>
@@ -1853,8 +1926,8 @@ text \<open>
   filter above it, when the node is a fused aggregating Since: the constraint is on the node's
   own columns, which are exactly the aggregation's, so the groups that fail it never have to be
   built.  Nothing else is fused -- every other node keeps the filter above it -- and the boxed
-  compiler of @{theory MFODL_Monitor_Dense.Dense_Descend_Code} keeps it above this one too,
-  which is what @{const edandrel} in @{const Rep_udformula} says.
+  compiler @{const dof} keeps it above this one too, which is what @{const dandrel} in
+  @{const Rep_udformula} says.
 \<close>
 
 fun uset_q :: "uconstr \<Rightarrow> udformula \<Rightarrow> udformula option" where
@@ -1864,74 +1937,75 @@ fun uset_q :: "uconstr \<Rightarrow> udformula \<Rightarrow> udformula option" w
 | "uset_q c \<phi> = None"
 
 lemma Rep_uset_q:
-  "uset_q c d = Some d' \<Longrightarrow> Rep_udformula d' = EDAndRel (Rep_udformula d) c"
-  by (cases d) (auto simp: edandrel_def split: udsaux_x.splits option.splits)
+  "uset_q c d = Some d' \<Longrightarrow> Rep_udformula d' = DAndRel (Rep_udformula d) c"
+  by (cases d) (auto simp: dandrel_def split: udsaux_x.splits option.splits)
 
-text \<open>The compiler of @{theory MFODL_Monitor_Dense.Dense_Descend_Code} into the short formula: the
-  same placement, with the structures initialised on short tuples.\<close>
+text \<open>The compiler @{const dof} of @{theory MFODL_Monitor_Dense.Dense_Descend} into the short
+  formula: the same placement, with the structures initialised on short tuples.  It descends the
+  kernel's formula, which the code generator runs as it is: only the initial state is ever
+  compiled, and there every buffer is empty.\<close>
 
 function (sequential) udof ::
-    "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) meformula \<Rightarrow> udformula" where
-  "udof n cs (meformula.MRel rel) = UDRel (deopt_table (dtabc n cs rel))"
-| "udof n cs (meformula.MPred e tms mode) =
+    "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> udformula" where
+  "udof n cs (mformula.MRel rel) = UDRel (deopt_table (dtabc n cs rel))"
+| "udof n cs (mformula.MPred e tms mode) =
      (if mode = Match then UDPredM e (length tms) tms cs
       else if (mode = Copy \<and> tms = map Formula.Var [0..<n] \<and> cs = [0..<n])
            \<or> (mode = Simple \<and> is_simple_pattern tms 0 \<and> cs = smp_cols tms)
       then UDPredS e (length tms)
       else UDFail)"
-| "udof n cs (meformula.MAndRel \<phi> conf) =
+| "udof n cs (mformula.MAndRel \<phi> conf) =
      (if Formula.fv_trm (fst conf) \<subseteq> set cs \<and> Formula.fv_trm (snd (snd (snd conf))) \<subseteq> set cs
       then (let d = udof n cs \<phi>; c = reindex_constraint cs conf
             in case uset_q c d of Some d' \<Rightarrow> d' | None \<Rightarrow> UDAndRel d c)
       else UDFail)"
-| "udof n cs (meformula.MNeg \<phi>) =
+| "udof n cs (mformula.MNeg \<phi>) =
      (if cs = [] then UDNeg (udof n [] \<phi>)
       else UDFail)"
-| "udof n cs (meformula.MExists \<phi>) = UDExists (udof (Suc n) (0 # map Suc cs) \<phi>) True"
-| "udof n cs (meformula.MOr \<phi> \<psi> buf) =
-     (if mbuf_t_is_empty (fst buf) \<and> mbuf_t_is_empty (snd buf)
-      then UDOr (udof n cs \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) else UDFail)"
-| "udof n cs (meformula.MAnd A \<phi> pos B \<psi> buf) =
+| "udof n cs (mformula.MExists \<phi>) = UDExists (udof (Suc n) (0 # map Suc cs) \<phi>) True"
+| "udof n cs (mformula.MOr \<phi> \<psi> buf) =
+     (if buf = ([], []) then UDOr (udof n cs \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty)
+      else UDFail)"
+| "udof n cs (mformula.MAnd A \<phi> pos B \<psi> buf) =
      (let cs1 = set_cols A; cs2 = set_cols B in
-      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A) \<and>
-         mbuf_t_is_empty (fst buf) \<and> mbuf_t_is_empty (snd buf)
+      if cs = merge_cols cs1 cs2 \<and> (pos \<or> B \<subseteq> A) \<and> buf = ([], [])
       then UDAnd (mk_djoin cs1 cs2) (udof n cs1 \<phi>) pos (udof n cs2 \<psi>)
              (mbuf_t_empty, mbuf_t_empty)
       else UDFail)"
-| "udof n cs (meformula.MPrev I \<phi> first buf nts) =
-     (if mbuf_t_is_empty buf then UDPrev I (udof n cs \<phi>) first mbuf_t_empty nts else UDFail)"
-| "udof n cs (meformula.MNext I \<phi> first nts) =
-     UDNext I (udof n cs \<phi>) first nts"
-| "udof n cs (meformula.MAnds A_pos A_neg L buf) =
+| "udof n cs (mformula.MPrev I \<phi> first buf nts) =
+     (if buf = [] then UDPrev I (udof n cs \<phi>) first mbuf_t_empty (mbuf_t_empty @@ nts)
+      else UDFail)"
+| "udof n cs (mformula.MNext I \<phi> first nts) =
+     UDNext I (udof n cs \<phi>) first (mbuf_t_empty @@ nts)"
+| "udof n cs (mformula.MAnds A_pos A_neg L buf) =
      (case A_pos of [] \<Rightarrow> UDFail
       | A # As \<Rightarrow>
         (let c0 = set_cols A; css = map set_cols As; nss = map set_cols A_neg in
          if cs = dands_cols c0 css \<and> length L = length A_pos + length A_neg \<and>
-            list_all mbuf_t_is_empty buf
+            (\<forall>b \<in> set buf. b = [])
          then UDAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
                 (map2 (udof n) (c0 # css @ nss) L) (map (\<lambda>_. mbuf_t_empty) L)
          else UDFail))"
-| "udof n cs (meformula.MAgg args \<phi>) =
+| "udof n cs (mformula.MAgg args \<phi>) =
      (let m = length (aggargs_tys args); g = dagg_gcols args; y = aggargs_y args in
       if cs = merge_cols g [y] \<and> set_cols (aggargs_cols args) = agg_cols m g
       then UDAgg (aggargs_g0 args) (aggargs_\<omega> args)
              (reindex_trm (agg_cols m g) (aggargs_f args)) m (ins_pos g y)
              (udof (m + n) (agg_cols m g) \<phi>)
       else UDFail)"
-| "udof n cs (meformula.MSince args \<phi> \<psi> buf aux) =
+| "udof n cs (mformula.MSince args \<phi> \<psi> buf aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
-          \<phi>d = udof (dnode_n n args) cs_L \<phi>; \<psi>d = udof (dnode_n n args) cs_R \<psi>;
-          bf = (case buf of (a, b, c, d) \<Rightarrow> (Rep_mbuf_t a, Rep_mbuf_t b, Rep_mbuf_t c, d)) in
+          \<phi>d = udof (dnode_n n args) cs_L \<phi>; \<psi>d = udof (dnode_n n args) cs_R \<psi> in
       case args_agg args of
         None \<Rightarrow>
-          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> bf = init_mbuf2S
+          (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and> buf = init_mbuf2S
            then UDSince (dargs cs cs_L args) \<phi>d \<psi>d init_mebuf2S
                   (udsx_init (dargs cs cs_L args) (dmsk cs cs_L))
            else UDFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
            if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
-              bf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
+              buf = init_mbuf2S \<and> agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
            then (if cpos cs_R (set cs_L) = {}
@@ -1944,20 +2018,20 @@ function (sequential) udof ::
                         (UDSince (dargs cs_R cs_L args) \<phi>d \<psi>d init_mebuf2S
                           (udsx_init (dargs cs_R cs_L args) (dmsk cs_R cs_L))))
            else UDFail))"
-| "udof n cs (meformula.MUntil args \<phi> \<psi> buf nts t aux) =
+| "udof n cs (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
      (let cs_L = set_cols (args_L args); cs_R = set_cols (args_R args);
           \<phi>d = udof (dnode_n n args) cs_L \<phi>; \<psi>d = udof (dnode_n n args) cs_R \<psi> in
       case args_agg args of
         None \<Rightarrow>
           (if args_n args = n \<and> cs = cs_R \<and> set cs_L \<subseteq> set cs_R \<and>
-              map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and> Rep_mbuf_t nts = [] \<and> t = 0
+              buf = ([], []) \<and> nts = [] \<and> t = 0
            then UDUntil (dargs cs cs_L args) (dmsk cs cs_L) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
                   mbuf_t_empty 0 (udux_init (dargs cs cs_L args))
            else UDFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
            if args_n args = m + aggargs_n ag \<and> aggargs_n ag = n \<and> set cs_L \<subseteq> set cs_R \<and>
-              map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and> Rep_mbuf_t nts = [] \<and> t = 0 \<and>
+              buf = ([], []) \<and> nts = [] \<and> t = 0 \<and>
               agg_cols m g = cs_R \<and> cs = merge_cols g [y] \<and>
               wf_cols n g \<and> y < n \<and> y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and>
               Formula.fv_trm (aggargs_f ag) \<subseteq> set cs_R
@@ -1972,147 +2046,81 @@ function (sequential) udof ::
                     (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
                     (udux_init (dargs cs_R cs_L args))))
            else UDFail))"
-| "udof n cs (meformula.MAndAssign \<phi> conf) =
+| "udof n cs (mformula.MAndAssign \<phi> conf) =
      (let y = fst conf; t = snd conf; cs0 = rem_col cs y in
       if y \<in> set cs \<and> Formula.fv_trm t \<subseteq> set cs0
       then UDAndAssign (ins_pos cs0 y) (reindex_trm cs0 t) (udof n cs0 \<phi>)
       else UDFail)"
-| "udof n cs (meformula.MLet p m \<phi> \<psi>) = UDLet p m (udof m [0..<m] \<phi>) (udof n cs \<psi>)"
-| "udof n cs (meformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
+| "udof n cs (mformula.MLet p m \<phi> \<psi>) = UDLet p m (udof m [0..<m] \<phi>) (udof n cs \<psi>)"
+| "udof n cs (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) =
      (if \<alpha>s = [] \<and> rb = [] then UDFrz p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) jfrz jpsi0 jphi []
         (udof n cs \<rho>) w pR tq [] d po ng lv (udof n cs \<rho>L) else UDFail)"
-| "udof n cs (meformula.MLetPast p m \<phi> \<psi> i buf) =
+| "udof n cs (mformula.MLetPast p m \<phi> \<psi> i buf) =
      (if buf = None then UDLetPast p m (udof m [0..<m] \<phi>) (udof n cs \<psi>) i None else UDFail)"
-| "udof n cs (meformula.MTrigger args \<phi> \<psi> buf nts aux) =
+| "udof n cs (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
      (let cs_L = set_cols (args_L args) in
       if args_n args = n \<and> args_R args = set cs \<and> set cs_L \<subseteq> set cs \<and>
-         mem (args_ivl args) 0 \<and> map_prod Rep_mbuf_t Rep_mbuf_t buf = ([], []) \<and>
-         Rep_mbuf_t nts = []
+         mem (args_ivl args) 0 \<and> buf = ([], []) \<and> nts = []
       then UDTrigger (dargs cs cs_L args) (emb_plan cs cs_L)
              (udof n cs_L \<phi>) (udof n cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
              (ginit_mmtaux (dargs cs cs_L args) (dmsk cs cs_L))
       else UDFail)"
-| "udof n cs (meformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
+| "udof n cs (mformula.MAndTrigger A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
      (let cs_R = set_cols (args_R args); cs_L = set_cols (args_L args) in
       if args_n args = n \<and> cs = set_cols A \<and> set cs_R \<subseteq> set cs \<and> set cs_L \<subseteq> set cs_R \<and>
-         tok cs_R cs_L args \<and> mbuf_t_is_empty (fst buf1) \<and> mbuf_t_is_empty (snd buf1) \<and>
-         mbuf_t_is_empty (fst buf2) \<and> mbuf_t_is_empty (snd buf2) \<and> mbuf_t_is_empty nts
+         tok cs_R cs_L args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
       then UDAndTrigger (mk_djoin cs cs_R) (udof n cs \<alpha>) (mbuf_t_empty, mbuf_t_empty)
              (dargs cs_R cs_L args) (udof n cs_L \<phi>) (udof n cs_R \<psi>)
              (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
              (ginit_mmtaux (dargs cs_R cs_L args) (dmsk cs_R cs_L))
       else UDFail)"
-| "udof n cs (meformula.MTP mt i) =
+| "udof n cs (mformula.MTP mt i) =
      (if cs = mtrm_dcols mt then UDTP mt i
       else UDFail)"
-| "udof n cs (meformula.MTS mt) =
+| "udof n cs (mformula.MTS mt) =
      (if cs = mtrm_dcols mt then UDTS mt
       else UDFail)"
-| "udof n cs (meformula.MMatchP I mr mrs L buf nts aux) =
-     (case those (map (emfcols n) L) of None \<Rightarrow> UDFail
+| "udof n cs (mformula.MMatchP I mr mrs L buf nts aux) =
+     (case those (map (mfcols n) L) of None \<Rightarrow> UDFail
       | Some css \<Rightarrow>
-        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
             (\<forall>c \<in> set css. set c \<subseteq> set cs)
          then UDMatchP (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
-                (map (\<lambda>_. mbuf_t_empty) L) nts []
+                (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ nts) []
          else UDFail))"
-| "udof n cs (meformula.MMatchF I mr mrs L buf nts t aux) =
-     (case those (map (emfcols n) L) of None \<Rightarrow> UDFail
+| "udof n cs (mformula.MMatchF I mr mrs L buf nts t aux) =
+     (case those (map (mfcols n) L) of None \<Rightarrow> UDFail
       | Some css \<Rightarrow>
-        (if length buf = length L \<and> list_all mbuf_t_is_empty buf \<and> aux = [] \<and>
+        (if length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and> aux = [] \<and>
             (\<forall>c \<in> set css. set c \<subseteq> set cs)
          then UDMatchF (length cs) I mr mrs (map (emb_plan cs) css) (map2 (udof n) css L)
-                (map (\<lambda>_. mbuf_t_empty) L) nts t []
+                (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ nts) t []
          else UDFail))"
-  by pat_completeness safe
+  by pat_completeness (simp_all only: prod.inject mformula.inject mformula.distinct simp_thms)
 
 termination udof
   by (relation "measure (\<lambda>(n, cs, \<phi>). size \<phi>)")
     (auto simp: termination_simp dest!: set_zip_rightD)
 
-lemma udof_edof: "Rep_udformula (udof n cs e) = edof n cs e"
-proof (induct n cs e rule: udof.induct)
+lemma udof_dof: "Rep_udformula (udof n cs \<phi>) = dof n cs \<phi>"
+proof (induct n cs \<phi> rule: udof.induct)
   case (3 n cs \<phi> conf)
   then show ?case
     by (auto simp: Let_def Rep_uset_q split: option.splits)
 next
   case (12 n cs args \<phi> \<psi> buf aux)
   then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def dsx_init_rdsx dsx_init_agg_rdsx)
+    by (cases "args_agg args") (simp_all add: Let_def dsx_init_rdsx mbuf_t_empty.rep_eq)
 next
   case (13 n cs args \<phi> \<psi> buf nts t aux)
   then show ?case
-    by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux dux_init_agg_rdux)
+    by (cases "args_agg args") (simp_all add: Let_def dux_init_rdux dux_init_agg_rdux mbuf_t_empty.rep_eq)
 next
   case (19 n cs A \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)
-  then show ?case by (auto simp: Let_def ginit_mmtaux_bmm[symmetric])
+  then show ?case by (auto simp: Let_def ginit_mmtaux_bmm[symmetric] mbuf_t_empty.rep_eq)
 qed (simp_all add: Let_def dsan_def dsx_init_rdsx ginit_mmtaux_bmm[symmetric] zip_map2 o_def
+      mbuf_t_empty.rep_eq mbuf_t_append.rep_eq
       split: list.splits option.splits prod.splits cong: map_cong)
-
-text \<open>The kernel's executable formula, rebuilt from the specification's: the inverse of
-  @{const Rep_meformula}, so that the compiler can be stated on the specification's state and
-  run on the executable one.\<close>
-
-fun Abs_meformula :: "('msaux, 'muaux, 'mtaux) mformula \<Rightarrow> ('msaux, 'muaux, 'mtaux) meformula" where
-  "Abs_meformula (mformula.MRel rel) = MRel rel"
-| "Abs_meformula (mformula.MPred e tms mode) = MPred e tms mode"
-| "Abs_meformula (mformula.MLet p m \<phi> \<psi>) = MLet p m (Abs_meformula \<phi>) (Abs_meformula \<psi>)"
-| "Abs_meformula (mformula.MFrz p m \<phi> \<psi> i j k \<alpha> \<rho> w pR tq rb d po ng lv \<rho>L) =
-    MFrz p m (Abs_meformula \<phi>) (Abs_meformula \<psi>) i j k \<alpha> (Abs_meformula \<rho>) w pR tq rb d po
-      ng lv (Abs_meformula \<rho>L)"
-| "Abs_meformula (mformula.MLetPast p m \<phi> \<psi> i buf) = MLetPast p m (Abs_meformula \<phi>) (Abs_meformula \<psi>) i buf"
-| "Abs_meformula (mformula.MAnd A_\<phi> \<phi> pos A_\<psi> \<psi> buf) =
-     MAnd A_\<phi> (Abs_meformula \<phi>) pos A_\<psi> (Abs_meformula \<psi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf)"
-| "Abs_meformula (mformula.MAndAssign \<phi> conf) = MAndAssign (Abs_meformula \<phi>) conf"
-| "Abs_meformula (mformula.MAndRel \<phi> conf) = MAndRel (Abs_meformula \<phi>) conf"
-| "Abs_meformula (mformula.MAndTrigger fv\<phi> \<phi> buf1 args \<phi>' \<psi>' buf2 nts aux) =
-     MAndTrigger fv\<phi> (Abs_meformula \<phi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf1) args (Abs_meformula \<phi>')
-       (Abs_meformula \<psi>') (map_prod Abs_mbuf_t Abs_mbuf_t buf2) (Abs_mbuf_t nts) aux"
-| "Abs_meformula (mformula.MAnds A_pos A_neg L buf) =
-     MAnds A_pos A_neg (map Abs_meformula L) (map Abs_mbuf_t buf)"
-| "Abs_meformula (mformula.MOr \<phi> \<psi> buf) =
-     MOr (Abs_meformula \<phi>) (Abs_meformula \<psi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf)"
-| "Abs_meformula (mformula.MNeg \<phi>) = MNeg (Abs_meformula \<phi>)"
-| "Abs_meformula (mformula.MExists \<phi>) = MExists (Abs_meformula \<phi>)"
-| "Abs_meformula (mformula.MAgg args \<phi>) = MAgg args (Abs_meformula \<phi>)"
-| "Abs_meformula (mformula.MPrev I \<phi> first buf nts) =
-     MPrev I (Abs_meformula \<phi>) first (Abs_mbuf_t buf) (Abs_mbuf_t nts)"
-| "Abs_meformula (mformula.MNext I \<phi> first nts) = MNext I (Abs_meformula \<phi>) first (Abs_mbuf_t nts)"
-| "Abs_meformula (mformula.MSince args \<phi> \<psi> buf aux) =
-     MSince args (Abs_meformula \<phi>) (Abs_meformula \<psi>)
-       (case buf of (a, b, c, d) \<Rightarrow> (Abs_mbuf_t a, Abs_mbuf_t b, Abs_mbuf_t c, d)) aux"
-| "Abs_meformula (mformula.MUntil args \<phi> \<psi> buf nts t aux) =
-     MUntil args (Abs_meformula \<phi>) (Abs_meformula \<psi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf)
-       (Abs_mbuf_t nts) t aux"
-| "Abs_meformula (mformula.MTrigger args \<phi> \<psi> buf nts aux) =
-     MTrigger args (Abs_meformula \<phi>) (Abs_meformula \<psi>) (map_prod Abs_mbuf_t Abs_mbuf_t buf)
-       (Abs_mbuf_t nts) aux"
-| "Abs_meformula (mformula.MMatchP I mr mrs \<phi>s buf nts aux) =
-     MMatchP I mr mrs (map Abs_meformula \<phi>s) (map Abs_mbuf_t buf) (Abs_mbuf_t nts) aux"
-| "Abs_meformula (mformula.MMatchF I mr mrs \<phi>s buf nts t aux) =
-     MMatchF I mr mrs (map Abs_meformula \<phi>s) (map Abs_mbuf_t buf) (Abs_mbuf_t nts) t aux"
-| "Abs_meformula (mformula.MTP mt i) = MTP mt i"
-| "Abs_meformula (mformula.MTS mt) = MTS mt"
-
-lemma Rep_Abs_mbuf_t[simp]: "Rep_mbuf_t (Abs_mbuf_t xs) = xs"
-  by (rule Abs_mbuf_t_inverse) simp
-
-lemma Rep_Abs_meformula[simp]: "Rep_meformula (Abs_meformula m) = m"
-  by (induct m) (auto simp: comp_def map_prod_def Rep_mbuf_t_inverse split: prod.splits
-      intro: map_idI)
-
-lemma Abs_Rep_meformula[simp]: "Abs_meformula (Rep_meformula e) = e"
-  by (induct e) (auto simp: comp_def map_prod_def Rep_mbuf_t_inverse split: prod.splits
-      intro: map_idI)
-
-definition udof_m :: "nat \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> udformula" where
-  "udof_m n cs m = udof n cs (Abs_meformula m)"
-
-lemma udof_m_code[code]: "udof_m n cs (Rep_meformula e) = udof n cs e"
-  by (simp add: udof_m_def)
-
-lemma udof_m_dof: "Rep_edformula (Rep_udformula (udof_m n cs m)) = dof n cs m"
-  by (simp add: udof_m_def udof_edof edof_dof)
 
 record udmstate =
   udmstate_i :: nat
@@ -2125,18 +2133,18 @@ record udmstate =
 definition Rep_udmstate :: "udmstate \<Rightarrow> dmstate" where
   "Rep_udmstate st =
      \<lparr> dmstate_i = udmstate_i st, dmstate_j = udmstate_j st,
-       dmstate_m = Rep_edformula (Rep_udformula (udmstate_m st)),
+       dmstate_m = Rep_udformula (udmstate_m st),
        dmstate_n = udmstate_n st, dmstate_cs = udmstate_cs st, dmstate_t = udmstate_t st \<rparr>"
 
 definition udof_state :: "nat \<Rightarrow> cols \<Rightarrow>
     (mmasaux, muaux_dq, event_data mmtaux) mstate \<Rightarrow> udmstate" where
   "udof_state n cs st =
      \<lparr> udmstate_i = mstate_i st, udmstate_j = mstate_j st,
-       udmstate_m = udof_m n cs (mstate_m st),
+       udmstate_m = udof n cs (mstate_m st),
        udmstate_n = n, udmstate_cs = cs, udmstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
 
 lemma Rep_udof_state: "Rep_udmstate (udof_state n cs st) = dof_state n cs st"
-  by (simp add: Rep_udmstate_def udof_state_def dof_state_def udof_m_dof)
+  by (simp add: Rep_udmstate_def udof_state_def dof_state_def udof_dof)
 
 definition udminit_safe :: "ty Formula.formula \<Rightarrow> udmstate" where
   "udminit_safe \<phi> = udof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe \<phi>)"
@@ -2147,8 +2155,7 @@ lemma Rep_udminit_safe:
 
 lemma vdfail_nodes_Rep_udmstate:
   "vdfail_nodes (dmstate_m (Rep_udmstate st)) = uvdfail_nodes (udmstate_m st)"
-  by (simp add: Rep_udmstate_def vdfail_nodes_Rep evdfail_nodes_Rep)
-
+  by (simp add: Rep_udmstate_def vdfail_nodes_Rep)
 definition udmstep :: "udatabase \<times> ts \<Rightarrow> udmstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> udmstate" where
   "udmstep tdb st =
     (case udeval (udmstate_j st + 1) [snd tdb] (fst tdb) (udmstate_m st) of
@@ -2190,7 +2197,7 @@ proof -
     by (metis prod_cases3)
   show ?thesis
     unfolding dmstep_def udmstep_def Rep_udmstate_def
-    by (simp add: edeval_Rep udeval_Rep e dannotate_map[where acc = "[]", simplified] d)
+    by (simp add: udeval_Rep e dannotate_map[where acc = "[]", simplified] d)
 qed
 
 (*<*)

@@ -43,7 +43,8 @@ If the dependency graph changed, update pairs below. You can see the graph by co
     "Optimized_Until" -> "Optimized_Agg_Temporal"
     "Optimized_Trigger" -> "Monitor_Impl"
     "Optimized_Agg_Temporal" -> "Monitor_Impl"
-    "Monitor_Impl" -> "Monitor_Code"
+    "Monitor_Impl" -> "Code_Opt"
+    "Code_Opt" -> "Monomorphic_Code"
 
 ## 2. Update ROOT file
 Add any new theories to the `ROOT` file. All theory-files should appear in the `ROOT` file in the order of the dependency graph.

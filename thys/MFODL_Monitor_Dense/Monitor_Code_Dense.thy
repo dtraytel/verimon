@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monitor_Code" Dense_RBT_Code Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
+  imports "MFODL_Monitor_Devel.Monomorphic_Code" "MFODL_Monitor_Devel.RBT_set_opt" Dense_RBT_Code Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
     Log_Monitor
 begin
 (*>*)
@@ -35,11 +35,12 @@ text \<open>
   @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, and the front end's entry
   points -- is stated here too.
 
-  The order of the first two imports matters.  Where a boxed operation of
+  The order of the imports matters.  Where a boxed operation of
   @{theory MFODL_Monitor_Dense.Dense_Code_Opt} and its monomorphic copy from the second pass of
   @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep} both rewrite the same term, the code
   preprocessor takes whichever rule the merge of the two branches puts first.  Importing
-  @{theory MFODL_Monitor_Devel.Monitor_Code} first leaves the monomorphic copies in front, as
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Devel.RBT_set_opt}
+  first leaves the monomorphic copies in front, as
   they were when the export was made in session MFODL\_Monitor\_Imp; the other order would
   reinstate the boxed versions of @{const card}, @{const Set.remove}, @{const cluster} and a
   few more.
@@ -47,7 +48,7 @@ text \<open>
   A merge also takes the union of the two preprocessor simpsets, so it brings back rules one
   branch deleted: the redirections of the set operations on the wide tuples to their boxes,
   which @{theory MFODL_Monitor_Dense.Dense_Code_Opt} takes out of the preprocessor so that the
-  monomorphic copies apply, return with @{theory MFODL_Monitor_Devel.Monitor_Code}.  They are
+  monomorphic copies apply, return with @{theory MFODL_Monitor_Devel.Monomorphic_Code}.  They are
   taken out again here, after the merge.
 \<close>
 
@@ -55,17 +56,6 @@ setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
   @{thms ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold ed_filter_v_unfold
     ed_image_v_unfold})\<close>
 
-text \<open>@{thm [source] mestate_def} is the kernel's code constructor for its state record, so the
-  selectors the export's own dependency closure reaches need their equations stated against it;
-  the record's own are about a constructor the code generator does not have.\<close>
-
-lemma mstate_sel_code[code]:
-  "mstate_i (mestate i j m n t \<zeta>) = i"
-  "mstate_j (mestate i j m n t \<zeta>) = j"
-  "mstate_m (mestate i j m n t \<zeta>) = m"
-  "mstate_n (mestate i j m n t \<zeta>) = n"
-  "mstate_t (mestate i j m n t \<zeta>) = linearize t"
-  by (simp_all add: mestate_def)
 export_code
   (*basic types*)
   nat_of_integer integer_of_nat int_of_integer integer_of_int enat
