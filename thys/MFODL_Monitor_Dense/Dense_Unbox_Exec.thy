@@ -628,21 +628,6 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: letpast_meval0.induct)
   qed
 qed
 
-lemma freeze_meval0_rdb:
-  "(\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (eval (reopt_table \<alpha>)) = map reopt_table (fst (eval' \<alpha>))) \<Longrightarrow>
-   freeze_meval0 eval k (map reopt_table \<alpha>s)
-   = (case freeze_meval0 eval' k \<alpha>s of (ys, \<alpha>s') \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s'))"
-proof (induct eval' k \<alpha>s rule: freeze_meval0.induct)
-  case (2 eval' k \<alpha> \<alpha>s)
-  obtain ys \<psi> where e: "eval' \<alpha> = (ys, \<psi>)" by (cases "eval' \<alpha>")
-  obtain ys' \<psi>' where e': "eval (reopt_table \<alpha>) = (ys', \<psi>')" by (cases "eval (reopt_table \<alpha>)")
-  have ys': "ys' = map reopt_table ys" using 2(2)[of \<alpha>] e e' by simp
-  have IH: "freeze_meval0 eval (Suc k) (map reopt_table \<alpha>s)
-      = (case freeze_meval0 eval' (Suc k) \<alpha>s of (ys, \<alpha>s') \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s'))"
-    if "drop k ys = y # ys''" for y ys''
-    by (rule 2(1)[OF refl e[symmetric] that]) (auto simp: 2(2))
-  show ?case by (cases "drop k ys") (auto simp: e e' ys' drop_map IH split: prod.splits)
-qed simp
 
 subsection \<open>The formula\<close>
 
@@ -1041,30 +1026,19 @@ function (sequential) udeval :: "nat \<Rightarrow> ts list \<Rightarrow> udataba
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = udeval j ts db0 \<psi>;
           (rs, \<rho>) = udeval j ts db0 \<rho>;
-          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L) =
+          (zs0_out, jfrz, fl, \<alpha>s, lr) =
             (let zs0_out = drop (jfrz - jpsi0) zs0;
-                 \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-                 jfrz = jfrz + length zs0_out;
-                 rb0 = pR - length rb;
-                 rb = rb @ rs;
-                 dbe = Mapping.map_values (\<lambda>_ _. []) db;
-                 c = frz_cut po w jphi (length xs) j;
-                 (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case udeval j []
-                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho> of (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
-                   (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
-                     if zs0_out = [] \<and> \<alpha>s \<noteq> []
-                     then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
-                     else None);
-                 lv = (if po then None else lv)
-             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', ufrz_keep_lv lv \<rho>L, ufrz_keep_st lv \<rho>L));
-          (a, tq, rs2, \<rho>) =
-            (let tq = (if d = \<infinity> then [] else tq @ ts);
-                 a = frz_adv d w jfrz j tq;
-                 (rs2, \<rho>) = udeval j [] (Mapping.update (p, m) (replicate a (frz_fill ng (\<alpha>s @ xs))) dbe) \<rho>
-             in (a, tq, rs2, \<rho>))
-      in (zs0_out @ ys, UDFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
-        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po
-        ng lv \<rho>L))"
+                 \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+             in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+               case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+                 if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+                 then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+                 else None));
+          (ys, \<alpha>s', lv, \<rho>, w, pR, tq, rb) = frz_live_loop ursize (udeval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+            fl d po j jfrz \<alpha>s lr (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+              drop (min jfrz (pR + length rs) - (pR - length rb)) (rb @ rs))
+      in (zs0_out @ ys, UDFrz p m \<phi> \<psi> (jfrz + length ys) (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> w pR tq rb d po ng
+        (ufrz_keep_lv (if po then None else lv) \<rho>L) (ufrz_keep_st (if po then None else lv) \<rho>L)))"
 | "udeval j ts db (UDLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -1131,6 +1105,46 @@ next
   then show ?case
     using usx_q_uedsx_eval_since'[OF e] by (simp add: udeval.psimps(14)[OF 14(1)] \<phi>' \<psi>' e)
 next
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) \<comment> \<open>\<^const>\<open>UDFrz\<close>\<close>
+  let ?db0 = "Mapping.update (p, m) [] db"
+  obtain xs \<phi>' where \<phi>': "udeval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs0 \<psi>' where \<psi>': "udeval j ts ?db0 \<psi> = (zs0, \<psi>')"
+    by fastforce
+  obtain rs \<rho>' where \<rho>': "udeval j ts ?db0 \<rho> = (rs, \<rho>')"
+    by fastforce
+  have s\<phi>: "ursize \<phi>' = ursize \<phi>"
+    using 20(2) \<phi>' by simp
+  have s\<psi>: "ursize \<psi>' = ursize \<psi>"
+    using 20(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
+  have s\<rho>: "ursize \<rho>' = ursize \<rho>"
+    using 20(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
+  obtain zo jf fl as lr where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (zo, jf, fl, as, lr)"
+    by (rule prod_cases5)
+  obtain ys as' lv' s' where lp0: "frz_live_loop ursize (udeval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+      fl d po j jf as lr (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s')"
+    by (metis prod_cases4)
+  obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
+    by (metis prod_cases5)
+  have s\<rho>'': "ursize \<rho>'' = ursize \<rho>"
+    using frz_live_loop_size[OF lp0] s\<rho> s' by simp
+  have "snd (udeval j ts db (UDFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) =
+    UDFrz p m \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng
+      (ufrz_keep_lv (if po then None else lv') \<rho>L) (ufrz_keep_st (if po then None else lv') \<rho>L)"
+    by (simp only: udeval.psimps(20)[OF 20(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
+        Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
+        Let_def[where s = "(zo, jf, fl, as, lr)"] Let_def[where s = "(ys, as', lv', \<rho>'', w', pR', tq', rb')"]
+        prod.case snd_conv)
+  then show ?case
+    using s\<phi> s\<psi> s\<rho>'' by simp
+next
   case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>UDLetPast\<close>\<close>
   obtain xs i' buf' \<phi>' where lp:
     "uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
@@ -1152,22 +1166,17 @@ qed (auto simp only: prod.inject udeval.psimps Let_def snd_conv fst_conv
 
 lemma total_udeval: "All udeval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). ursize \<phi>)", goal_cases)
-  text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
-  have "ursize yb = ursize \<rho>"
-    using psize_snd_udeval[OF 23(15)] 23(6,7) by (metis snd_conv)
+  text \<open>The live copy and the replays of @{const UDFrz}, as for @{const meval}.\<close>
+  case 23 \<comment> \<open>the live copy, a subterm\<close>
   then show ?case
     by simp
 next
-  case 24 \<comment> \<open>the live copy, a subterm\<close>
-  then show ?case
-    by simp
-next
-  case (25 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb xg xh
+    yc xi yd xj yca xk ycb tsa dba \<psi>')
   have "ursize yb = ursize \<rho>"
-    using psize_snd_udeval[OF 25(21)] 25(6,7) by (metis snd_conv)
+    using psize_snd_udeval[of j ts xb \<rho>] 24 by (metis snd_conv)
   then show ?case
-    by simp
+    using 24 by simp
 qed (auto simp: ursize_in_set dest!: psize_snd_udeval dest: sym split: option.splits)
 
 termination udeval by (rule total_udeval)
@@ -1576,42 +1585,6 @@ proof (induct eval' j i ys xs p ts db \<phi> rule: uletpast_meval0.induct)
   qed
 qed
 
-lemma freeze_meval1_rdb:
-  "(\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> eval (reopt_table \<alpha>) =
-      (map reopt_table (fst (eval' \<alpha>)), Rep_udformula (snd (eval' \<alpha>)))) \<Longrightarrow>
-   freeze_meval1 eval k (map reopt_table \<alpha>s)
-   = (case freeze_meval1 eval' k \<alpha>s of
-       (ys, \<alpha>s', lv) \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s', map_option (apsnd Rep_udformula) lv))"
-proof (induct eval' k \<alpha>s rule: freeze_meval1.induct)
-  case (2 eval' k \<alpha> \<alpha>s)
-  obtain ys \<psi> where e: "eval' \<alpha> = (ys, \<psi>)" by (cases "eval' \<alpha>")
-  have e': "eval (reopt_table \<alpha>) = (map reopt_table ys, Rep_udformula \<psi>)"
-    using 2(2)[of \<alpha>] e by simp
-  have IH: "freeze_meval1 eval (Suc k) (map reopt_table \<alpha>s)
-      = (case freeze_meval1 eval' (Suc k) \<alpha>s of
-          (ys, \<alpha>s', lv) \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s', map_option (apsnd Rep_udformula) lv))"
-    if "drop k ys = y # ys''" for y ys''
-    by (rule 2(1)[OF refl e[symmetric] that]) (auto simp: 2(2))
-  show ?case by (cases "drop k ys") (auto simp: e e' drop_map IH split: prod.splits)
-qed simp
-
-lemma frz_live_step_rdb:
-  assumes AG: "\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> eval (reopt_table \<alpha>) =
-      (map reopt_table (fst (eval' \<alpha>)), Rep_udformula (snd (eval' \<alpha>)))"
-    and L: "lr = map_option (\<lambda>(g, us, st). (g, map reopt_table us, Rep_udformula st)) lr'"
-  shows "frz_live_step eval k (map reopt_table \<alpha>s) lr
-   = (case frz_live_step eval' k \<alpha>s lr' of
-       (ys, \<alpha>s', lv) \<Rightarrow> (map reopt_table ys, map reopt_table \<alpha>s', map_option (apsnd Rep_udformula) lv))"
-proof -
-  have AG': "\<And>\<alpha>. \<alpha> \<in> set (tl \<alpha>s) \<Longrightarrow> eval (reopt_table \<alpha>) =
-      (map reopt_table (fst (eval' \<alpha>)), Rep_udformula (snd (eval' \<alpha>)))"
-    using AG by (cases \<alpha>s) auto
-  show ?thesis
-    using freeze_meval1_rdb[where \<alpha>s = \<alpha>s and eval = eval and eval' = eval' and k = k, OF AG]
-      freeze_meval1_rdb[where \<alpha>s = "tl \<alpha>s" and eval = eval and eval' = eval' and k = "Suc k", OF AG'] L
-    by (auto simp: frz_live_step_def drop_map map_tl split: option.splits prod.splits list.splits)
-qed
-
 lemma udeval_Rep:
   "edeval j ts (rdb db) (Rep_udformula \<phi>)
    = (case udeval j ts db \<phi> of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
@@ -1635,24 +1608,14 @@ next
     by (cases "udeval j ts ?db0 \<psi>")
   obtain rs \<rho>' where \<rho>: "udeval j ts ?db0 \<rho> = (rs, \<rho>')"
     by (cases "udeval j ts ?db0 \<rho>")
-  let ?k = "jfrz + length (drop (jfrz - jpsi0) zs0) - (pR - length rb)"
-  let ?as = "drop (jfrz - jphi + length (drop (jfrz - jpsi0) zs0)) (\<alpha>s @ xs)"
-  let ?c = "frz_cut po w jphi (length xs) j"
   have IH1: "edeval j ts (rdb db) (Rep_udformula \<phi>) = (map reopt_table xs, Rep_udformula \<phi>')"
     using 20(1) \<phi> by simp
   have IH2: "edeval j ts (rdb ?db0) (Rep_udformula \<psi>) = (map reopt_table zs0, Rep_udformula \<psi>')"
     using 20(2)[OF refl \<phi>[symmetric] refl] \<psi> by simp
   have IH3: "edeval j ts (rdb ?db0) (Rep_udformula \<rho>) = (map reopt_table rs, Rep_udformula \<rho>')"
     using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric]] \<rho> by simp
-  define cpu where "cpu \<alpha> = (case udeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>' of
-    (us, \<sigma>) \<Rightarrow> ((rb @ rs) @ us, \<sigma>))" for \<alpha>
-  define cpe where "cpe \<alpha> = (case edeval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) (rdb ?dbe))
-    (Rep_udformula \<rho>') of (us, \<sigma>) \<Rightarrow> (map reopt_table (rb @ rs) @ us, \<sigma>))" for \<alpha>
-  have IH4: "cpe (reopt_table \<alpha>) = (map reopt_table (fst (cpu \<alpha>)), Rep_udformula (snd (cpu \<alpha>)))" for \<alpha>
-    using 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
-        refl refl refl refl refl refl refl, of \<alpha>]
-    by (simp add: cpu_def cpe_def split: prod.splits)
   let ?z = "drop (jfrz - jpsi0) zs0"
+  let ?as = "drop (jfrz - jphi + length ?z) (\<alpha>s @ xs)"
   let ?dbL = "Mapping.update (p, m) (replicate (length ts) (hd ?as)) db"
   define lru where "lru = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
     if ?z = [] \<and> ?as \<noteq> [] then Some (g, udeval j ts ?dbL \<rho>L) else None)"
@@ -1660,6 +1623,14 @@ next
     if map reopt_table ?z = [] \<and> map reopt_table ?as \<noteq> []
     then Some (g, edeval j ts (Mapping.update (p, m) (replicate (length ts) (hd (map reopt_table ?as)))
       (rdb db)) (Rep_udformula \<rho>L)) else None)"
+  have st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (?z, jfrz + length ?z, frz_fill ng (\<alpha>s @ xs), ?as, lru)"
+    by (simp only: Let_def lru_def)
   have IHL: "lre = map_option (\<lambda>(g, us, st). (g, map reopt_table us, Rep_udformula st)) lru"
   proof (cases lv)
     case (Some g)
@@ -1670,17 +1641,43 @@ next
         using True hd_map[of "?as" reopt_table] by blast
       have "edeval j ts (rdb ?dbL) (Rep_udformula \<rho>L) =
           (case udeval j ts ?dbL \<rho>L of (zs, \<phi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<phi>'))"
-        by (rule 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric]
-            refl refl refl refl refl refl refl Some True])
+        by (rule 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl refl Some True])
       then show ?thesis
         using Some True hd by (simp add: lru_def lre_def split: prod.splits)
     qed (use Some in \<open>auto simp: lru_def lre_def\<close>)
   qed (simp add: lru_def lre_def)
-  obtain ys \<alpha>s' lvu where fr0: "frz_live_step cpu ?k ?as lru = (ys, \<alpha>s', lvu)"
-    by (metis prod_cases3)
-  have fr: "frz_live_step cpe ?k (map reopt_table ?as) lre =
-      (map reopt_table ys, map reopt_table \<alpha>s', map_option (apsnd Rep_udformula) lvu)"
-    using frz_live_step_rdb[of ?as cpe cpu lre lru ?k] IH4 IHL fr0 by simp
+  have IHloop: "edeval j ts' (rdb db') (Rep_udformula \<chi>) =
+      (case udeval j ts' db' \<chi> of (zs, \<chi>') \<Rightarrow> (map reopt_table zs, Rep_udformula \<chi>'))"
+    if "ursize \<chi> = ursize \<rho>'" for ts' db' \<chi>
+    using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl st[symmetric]
+        refl refl refl, of \<chi> ts' db'] that
+    by simp
+  let ?k = "min (jfrz + length ?z) (pR + length rs) - (pR - length rb)"
+  let ?tq = "if d = \<infinity> then [] else tq @ ts"
+  obtain ys as' lvu \<rho>2 w2 pR2 tq2 rb2 where fr0: "frz_live_loop ursize (udeval j) (p, m) ?dbe
+      (frz_fill ng (\<alpha>s @ xs)) d po j (jfrz + length ?z) ?as lru (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs))
+      = (ys, as', lvu, \<rho>2, w2, pR2, tq2, rb2)"
+    by (metis prod_cases4 prod_cases5)
+  obtain yse ase lve se where fre: "frz_live_loop size (edeval j) (p, m) (rdb ?dbe)
+      (reopt_table (frz_fill ng (\<alpha>s @ xs))) d po j (jfrz + length ?z) (map reopt_table ?as) lre
+      (Rep_udformula \<rho>', w, pR + length rs, ?tq, map reopt_table (drop ?k (rb @ rs))) = (yse, ase, lve, se)"
+    by (metis prod_cases4)
+  have rel: "yse = map reopt_table ys \<and> ase = map reopt_table as' \<and>
+      rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> \<sigma>' = Rep_udformula \<sigma>) lvu lve \<and>
+      frz_st_rel (\<lambda>\<sigma> \<sigma>'. \<sigma>' = Rep_udformula \<sigma>) reopt_table (\<rho>2, w2, pR2, tq2, rb2) se"
+  proof (rule frz_live_loop_rel[OF _ _ _ _ fr0 fre])
+    fix \<chi> \<chi>' c X
+    assume "ursize \<chi> = ursize (fst (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs)))" and "\<chi>' = Rep_udformula \<chi>"
+    then show "fst (edeval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
+        map reopt_table (fst (udeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>)) \<and>
+      snd (edeval j [] (Mapping.update (p, m) (replicate c (reopt_table X)) (rdb ?dbe)) \<chi>') =
+        Rep_udformula (snd (udeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>))"
+      using IHloop[of \<chi> "[]" "Mapping.update (p, m) (replicate c X) ?dbe"] by (simp split: prod.splits)
+  qed (use IHL in \<open>auto simp: ursize_Rep option.rel_map intro: option.rel_refl\<close>)
+  obtain \<rho>e2 where se: "se = (\<rho>e2, w2, pR2, tq2, map reopt_table rb2)" and \<rho>e2: "\<rho>e2 = Rep_udformula \<rho>2"
+    using rel by (cases se) auto
+  have lve: "lve = map_option (apsnd Rep_udformula) lvu"
+    using rel by (cases lvu; cases lve) auto
   have keep: "frz_keep_lv (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
       ufrz_keep_lv (if po then None else lvu) \<rho>L"
     "frz_keep_st (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
@@ -1695,37 +1692,11 @@ next
       Rep_udformula (ufrz_keep_st (if po then None else lvu) \<rho>L)"
       by (simp_all only: ifm frz_keep_Rep)
   qed
-  have tup: "(let zs0_out = drop (jfrz - jpsi0) zs0;
-        \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-        jfrz = jfrz + length zs0_out;
-        rb0 = pR - length rb;
-        rb = rb @ rs;
-        dbe = ?dbe;
-        c = ?c;
-        (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case udeval j [] (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho>' of
-          (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
-          (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
-            if zs0_out = [] \<and> \<alpha>s \<noteq> []
-            then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
-            else None);
-        lv = (if po then None else lv)
-      in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', ufrz_keep_lv lv \<rho>L, ufrz_keep_st lv \<rho>L)) =
-    (drop (jfrz - jpsi0) zs0, jfrz + length (drop (jfrz - jpsi0) zs0) + length ys, pR - length rb, rb @ rs,
-      ?dbe, ys, \<alpha>s', ufrz_keep_lv (if po then None else lvu) \<rho>L, ufrz_keep_st (if po then None else lvu) \<rho>L)"
-    by (simp only: Let_def cpu_def[symmetric] lru_def[symmetric] fr0 prod.case)
-  let ?a = "frz_adv d w (jfrz + length (drop (jfrz - jpsi0) zs0) + length ys) j (if d = \<infinity> then [] else tq @ ts)"
-  obtain rs2 \<rho>2 where adv: "udeval j [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>' = (rs2, \<rho>2)"
-    by (cases "udeval j [] (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe) \<rho>'")
-  have IH5: "edeval j [] (rdb (Mapping.update (p, m) (replicate ?a (frz_fill ng (\<alpha>s @ xs))) ?dbe)) (Rep_udformula \<rho>') =
-    (map reopt_table rs2, Rep_udformula \<rho>2)"
-    using 20(6)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl tup[symmetric]
-        refl refl refl refl refl refl refl refl refl] adv
-    by simp
   show ?case
     by (simp only: Rep_udformula.simps edeval.simps udeval.simps Let_def rdb_update_Nil rdb_map_values_Nil
-        rdb_update_replicate_empty IH1 IH2 IH3 map_append[symmetric] frz_fill_reopt rdb_update_replicate drop_map length_map \<phi> \<psi> \<rho>
-        cpe_def[symmetric] lre_def[symmetric] fr cpu_def[symmetric] lru_def[symmetric] fr0 keep adv IH5
-        prod.case)
+        rdb_update_replicate_empty IH1 IH2 IH3 map_append[symmetric] frz_fill_reopt drop_map length_map \<phi> \<psi> \<rho>
+        lre_def[symmetric] lru_def[symmetric] fr0 fre rel[THEN conjunct1] rel[THEN conjunct2, THEN conjunct1]
+        se \<rho>e2 lve keep prod.case)
 next
   case (21 j ts db p m \<phi> \<psi> i buf)
   have IH: "ursize \<psi> = ursize \<phi> \<Longrightarrow> edeval j ts (rdb db) (Rep_udformula \<psi>) =

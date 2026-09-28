@@ -235,30 +235,19 @@ function (sequential) deval :: "nat \<Rightarrow> ts list \<Rightarrow> database
           db0 = Mapping.update (p, m) [] db;
           (zs0, \<psi>) = deval j ts db0 \<psi>;
           (rs, \<rho>) = deval j ts db0 \<rho>;
-          (zs0_out, jfrz, rb0, rb, dbe, ys, \<alpha>s', lv, \<rho>L) =
+          (zs0_out, jfrz, fl, \<alpha>s, lr) =
             (let zs0_out = drop (jfrz - jpsi0) zs0;
-                 \<alpha>s = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs);
-                 jfrz = jfrz + length zs0_out;
-                 rb0 = pR - length rb;
-                 rb = rb @ rs;
-                 dbe = Mapping.map_values (\<lambda>_ _. []) db;
-                 c = frz_cut po w jphi (length xs) j;
-                 (ys, \<alpha>s', lv) = frz_live_step (\<lambda>\<alpha>. case deval j []
-                   (Mapping.update (p, m) (replicate c \<alpha>) dbe) \<rho> of (us, \<sigma>) \<Rightarrow> (rb @ us, \<sigma>)) (jfrz - rb0) \<alpha>s
-                   (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
-                     if zs0_out = [] \<and> \<alpha>s \<noteq> []
-                     then Some (g, deval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s)) db) \<rho>L)
-                     else None);
-                 lv = (if po then None else lv)
-             in (zs0_out, jfrz + length ys, rb0, rb, dbe, ys, \<alpha>s', frz_keep_lv lv \<rho>L, frz_keep_st lv \<rho>L));
-          (a, tq, rs2, \<rho>) =
-            (let tq = (if d = \<infinity> then [] else tq @ ts);
-                 a = frz_adv d w jfrz j tq;
-                 (rs2, \<rho>) = deval j [] (Mapping.update (p, m) (replicate a (frz_fill ng (\<alpha>s @ xs))) dbe) \<rho>
-             in (a, tq, rs2, \<rho>))
-      in (zs0_out @ ys, DFrz p m \<phi> \<psi> jfrz (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> (w + a)
-        (pR + length rs + length rs2) (drop a tq) (drop (min jfrz (pR + length rs + length rs2) - rb0) (rb @ rs2)) d po ng
-        lv \<rho>L))"
+                 \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+             in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+               case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+                 if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+                 then Some (g, deval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+                 else None));
+          (ys, \<alpha>s', lv, \<rho>, w, pR, tq, rb) = frz_live_loop size (deval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+            fl d po j jfrz \<alpha>s lr (\<rho>, w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+              drop (min jfrz (pR + length rs) - (pR - length rb)) (rb @ rs))
+      in (zs0_out @ ys, DFrz p m \<phi> \<psi> (jfrz + length ys) (jpsi0 + length zs0) (jphi + length xs) \<alpha>s' \<rho> w pR tq rb d po ng
+        (frz_keep_lv (if po then None else lv) \<rho>L) (frz_keep_st (if po then None else lv) \<rho>L)))"
 | "deval j ts db (DLetPast p m \<phi> \<psi> i buf) =
      (let (xs, i, buf, \<phi>) =
             letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi>;
@@ -315,6 +304,46 @@ proof (induct rule: deval.pinduct)
   then show ?case
     by (simp add: deval.psimps(11)[OF 11(1)] \<phi>' mp)
 next
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L) \<comment> \<open>\<^const>\<open>DFrz\<close>\<close>
+  let ?db0 = "Mapping.update (p, m) [] db"
+  obtain xs \<phi>' where \<phi>': "deval j ts db \<phi> = (xs, \<phi>')"
+    by fastforce
+  obtain zs0 \<psi>' where \<psi>': "deval j ts ?db0 \<psi> = (zs0, \<psi>')"
+    by fastforce
+  obtain rs \<rho>' where \<rho>': "deval j ts ?db0 \<rho> = (rs, \<rho>')"
+    by fastforce
+  have s\<phi>: "size \<phi>' = size \<phi>"
+    using 20(2) \<phi>' by simp
+  have s\<psi>: "size \<psi>' = size \<psi>"
+    using 20(3)[OF \<phi>'[symmetric] refl refl] \<psi>' by simp
+  have s\<rho>: "size \<rho>' = size \<rho>"
+    using 20(4)[OF \<phi>'[symmetric] refl refl \<psi>'[symmetric] refl] \<rho>' by simp
+  obtain zo jf fl as lr where st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, deval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (zo, jf, fl, as, lr)"
+    by (rule prod_cases5)
+  obtain ys as' lv' s' where lp0: "frz_live_loop size (deval j) (p, m) (Mapping.map_values (\<lambda>_ _. []) db)
+      fl d po j jf as lr (\<rho>', w, pR + length rs, if d = \<infinity> then [] else tq @ ts,
+        drop (min jf (pR + length rs) - (pR - length rb)) (rb @ rs)) = (ys, as', lv', s')"
+    by (metis prod_cases4)
+  obtain \<rho>'' w' pR' tq' rb' where s': "s' = (\<rho>'', w', pR', tq', rb')"
+    by (metis prod_cases5)
+  have s\<rho>'': "size \<rho>'' = size \<rho>"
+    using frz_live_loop_size[OF lp0] s\<rho> s' by simp
+  have "snd (deval j ts db (DFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)) =
+    DFrz p m \<phi>' \<psi>' (jf + length ys) (jpsi0 + length zs0) (jphi + length xs) as' \<rho>'' w' pR' tq' rb' d po ng
+      (frz_keep_lv (if po then None else lv') \<rho>L) (frz_keep_st (if po then None else lv') \<rho>L)"
+    by (simp only: deval.psimps(20)[OF 20(1)] \<phi>' \<psi>' \<rho>' st lp0[unfolded s'] Let_def[where s = ?db0]
+        Let_def[where s = "(xs, \<phi>')"] Let_def[where s = "(zs0, \<psi>')"] Let_def[where s = "(rs, \<rho>')"]
+        Let_def[where s = "(zo, jf, fl, as, lr)"] Let_def[where s = "(ys, as', lv', \<rho>'', w', pR', tq', rb')"]
+        prod.case snd_conv)
+  then show ?case
+    using s\<phi> s\<psi> s\<rho>'' by simp
+next
   case (21 j ts db p m \<phi> \<psi> i buf) \<comment> \<open>\<^const>\<open>DLetPast\<close>\<close>
   obtain xs i' buf' \<phi>' where lp:
     "letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db \<phi> = (xs, i', buf', \<phi>')"
@@ -338,231 +367,22 @@ qed (auto simp only: prod.inject deval.psimps Let_def snd_conv fst_conv
 
 lemma total_deval: "All deval_dom"
 proof (relation "measure (\<lambda>(j, ts, db, \<phi>). size \<phi>)", goal_cases)
-  text \<open>The freeze's replays and the advance of its window, as for @{const meval}.\<close>
-  case (23 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
-  have "size yb = size \<rho>"
-    using psize_snd_deval[OF 23(15)] 23(6,7) by (metis snd_conv)
+  text \<open>The live copy and the replays of @{const DFrz}, as for @{const meval}.\<close>
+  case 23 \<comment> \<open>the live copy, a subterm\<close>
   then show ?case
     by simp
 next
-  case 24 \<comment> \<open>the live copy, a subterm\<close>
-  then show ?case
-    by simp
-next
-  case (25 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb)
+  case (24 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L x xa y xb xc xd ya xe xf yb xg xh
+    yc xi yd xj yca xk ycb tsa dba \<psi>')
   have "size yb = size \<rho>"
-    using psize_snd_deval[OF 25(21)] 25(6,7) by (metis snd_conv)
+    using psize_snd_deval[of j ts xb \<rho>] 24 by (metis snd_conv)
   then show ?case
-    by simp
+    using 24 by simp
 qed (auto simp: termination_simp dest!: psize_snd_deval dest: sym)
 
 lemmas size_snd_deval = psize_snd_deval[OF total_deval[THEN spec]]
 
 termination deval by (rule total_deval)
-
-text \<open>The freeze's own recursion is polymorphic in the evaluator and in the state it discards,
-  so the dense side reuses @{const freeze_meval0} itself; all that is needed is that the two
-  runs take the same branches, which they do because narrowing a list preserves its length.\<close>
-
-lemma freeze_meval0_sub: "freeze_meval0 ev k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow> set \<alpha>s' \<subseteq> set \<alpha>s"
-proof (induct ev k \<alpha>s arbitrary: ys \<alpha>s' rule: freeze_meval0.induct)
-  case (2 ev k \<alpha> r)
-  note IH = 2(1) and E = 2(2)
-  obtain zs st where ev: "ev \<alpha> = (zs, st)" by (cases "ev \<alpha>")
-  show ?case
-  proof (cases "drop k zs")
-    case Nil
-    then show ?thesis using E ev by simp
-  next
-    case (Cons y rr)
-    obtain ws \<beta>s where e2: "freeze_meval0 ev (Suc k) r = (ws, \<beta>s)"
-      by (cases "freeze_meval0 ev (Suc k) r")
-    have "set \<beta>s \<subseteq> set r" by (rule IH[OF ev[symmetric] refl Cons e2])
-    moreover have "\<alpha>s' = \<beta>s" using E ev Cons e2 by auto
-    ultimately show ?thesis by auto
-  qed
-qed simp
-
-lemma freeze_meval0_rel:
-  "freeze_meval0 ev k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow> freeze_meval0 dv k \<alpha>s = (dys, d\<alpha>s') \<Longrightarrow>
-   (\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (dv \<alpha>) = map (dtabc n cs) (fst (ev \<alpha>))) \<Longrightarrow>
-   dys = map (dtabc n cs) ys \<and> d\<alpha>s' = \<alpha>s'"
-proof (induct \<alpha>s arbitrary: k ys \<alpha>s' dys d\<alpha>s')
-  case Nil
-  then show ?case by simp
-next
-  case (Cons \<alpha> r)
-  note IH = Cons(1) and E = Cons(2) and D = Cons(3) and AG = Cons(4)
-  obtain zs st where ev: "ev \<alpha> = (zs, st)" by (cases "ev \<alpha>")
-  obtain dzs dst where dv: "dv \<alpha> = (dzs, dst)" by (cases "dv \<alpha>")
-  have dz: "dzs = map (dtabc n cs) zs" using AG[of \<alpha>] ev dv by simp
-  show ?case
-  proof (cases "drop k zs")
-    case Nil
-    then have dn: "drop k dzs = []" unfolding dz by (simp add: drop_map)
-    have "ys = []" and "\<alpha>s' = \<alpha> # r" using E ev Nil by auto
-    moreover have "dys = []" and "d\<alpha>s' = \<alpha> # r" using D dv dn by auto
-    ultimately show ?thesis by simp
-  next
-    case (Cons y rr)
-    obtain ws \<beta>s where e2: "freeze_meval0 ev (Suc k) r = (ws, \<beta>s)"
-      by (cases "freeze_meval0 ev (Suc k) r")
-    obtain dws d\<beta>s where d2: "freeze_meval0 dv (Suc k) r = (dws, d\<beta>s)"
-      by (cases "freeze_meval0 dv (Suc k) r")
-    have rel: "dws = map (dtabc n cs) ws \<and> d\<beta>s = \<beta>s"
-      by (rule IH[OF e2 d2]) (use AG in auto)
-    have dd: "drop k dzs = dtabc n cs y # map (dtabc n cs) rr"
-      unfolding dz using Cons by (simp add: drop_map)
-    have y1: "ys = y # ws" and y2: "\<alpha>s' = \<beta>s" using E ev Cons e2 by auto
-    have y3: "dys = dtabc n cs y # dws" and y4: "d\<alpha>s' = d\<beta>s"
-      using D dv dd d2 by auto
-    show ?thesis using rel y1 y2 y3 y4 by simp
-  qed
-qed
-
-text \<open>The live copy: the two runs take the same branches, and the states they keep are related
-  whenever the copies' states are.\<close>
-
-lemma in_set_tlD: "x \<in> set (tl xs) \<Longrightarrow> x \<in> set xs"
-  by (cases xs) auto
-
-lemma freeze_meval1_rel:
-  "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv) \<Longrightarrow> freeze_meval1 dv k \<alpha>s = (dys, d\<alpha>s', dlv) \<Longrightarrow>
-   (\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (dv \<alpha>) = map g (fst (ev \<alpha>)) \<and> R (snd (ev \<alpha>)) (snd (dv \<alpha>))) \<Longrightarrow>
-   dys = map g ys \<and> d\<alpha>s' = \<alpha>s' \<and> rel_option (\<lambda>(a, st) (b, dst). a = b \<and> R st dst) lv dlv"
-proof (induct \<alpha>s arbitrary: k ys \<alpha>s' lv dys d\<alpha>s' dlv)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons \<alpha> r)
-  note IH = Cons(1) and E = Cons(2) and D = Cons(3) and AG = Cons(4)
-  obtain zs st where ev: "ev \<alpha> = (zs, st)" by (cases "ev \<alpha>")
-  obtain dzs dst where dv: "dv \<alpha> = (dzs, dst)" by (cases "dv \<alpha>")
-  have dz: "dzs = map g zs" and R: "R st dst" using AG[of \<alpha>] ev dv by simp_all
-  show ?case
-  proof (cases "drop k zs")
-    case Nil
-    then have "drop k dzs = []" unfolding dz by (simp add: drop_map)
-    then show ?thesis using E D ev dv Nil R dz by auto
-  next
-    case (Cons y rr)
-    obtain ws \<beta>s l where e2: "freeze_meval1 ev (Suc k) r = (ws, \<beta>s, l)"
-      by (metis prod_cases3)
-    obtain dws d\<beta>s dl where d2: "freeze_meval1 dv (Suc k) r = (dws, d\<beta>s, dl)"
-      by (metis prod_cases3)
-    have rel: "dws = map g ws \<and> d\<beta>s = \<beta>s \<and> rel_option (\<lambda>(a, st) (b, dst). a = b \<and> R st dst) l dl"
-      by (rule IH[OF e2 d2]) (use AG in auto)
-    have dd: "drop k dzs = g y # map g rr"
-      unfolding dz using Cons by (simp add: drop_map)
-    show ?thesis using E D ev dv Cons dd e2 d2 rel by auto
-  qed
-qed
-
-lemma frz_live_step_rel:
-  assumes E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv)"
-    and D: "frz_live_step dv k \<alpha>s dlr = (dys, d\<alpha>s', dlv)"
-    and AG: "\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> fst (dv \<alpha>) = map g (fst (ev \<alpha>)) \<and> R (snd (ev \<alpha>)) (snd (dv \<alpha>))"
-    and L: "rel_option (\<lambda>(a, us, st) (b, dus, dst). a = b \<and> dus = map g us \<and> R st dst) lr dlr"
-  shows "dys = map g ys \<and> d\<alpha>s' = \<alpha>s' \<and> rel_option (\<lambda>(a, st) (b, dst). a = b \<and> R st dst) lv dlv"
-proof (cases lr)
-  case None
-  then have "dlr = None" using L by (cases dlr) auto
-  with None E D have "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv)" "freeze_meval1 dv k \<alpha>s = (dys, d\<alpha>s', dlv)"
-    by (simp_all add: frz_live_step_def)
-  then show ?thesis
-    by (rule freeze_meval1_rel) (rule AG)
-next
-  case (Some x)
-  then obtain a us st where lr: "lr = Some (a, us, st)" by (cases x) auto
-  with L obtain dus dst where dlr: "dlr = Some (a, dus, dst)" and dus: "dus = map g us"
-    and R: "R st dst"
-    by (cases dlr) auto
-  show ?thesis
-  proof (cases "drop a us")
-    case Nil
-    then have "drop a dus = []" by (simp add: dus drop_map)
-    then show ?thesis using E D lr dlr Nil R dus by (auto simp: frz_live_step_def)
-  next
-    case (Cons y rr)
-    then have dd: "drop a dus = g y # map g rr" by (simp add: dus drop_map)
-    obtain ws \<beta>s l where e2: "freeze_meval1 ev (Suc k) (tl \<alpha>s) = (ws, \<beta>s, l)"
-      by (metis prod_cases3)
-    obtain dws d\<beta>s dl where d2: "freeze_meval1 dv (Suc k) (tl \<alpha>s) = (dws, d\<beta>s, dl)"
-      by (metis prod_cases3)
-    have rel: "dws = map g ws \<and> d\<beta>s = \<beta>s \<and> rel_option (\<lambda>(a, st) (b, dst). a = b \<and> R st dst) l dl"
-      by (rule freeze_meval1_rel[OF e2 d2]) (use AG in \<open>auto dest: in_set_tlD\<close>)
-    show ?thesis using E D lr dlr Cons dd e2 d2 rel by (auto simp: frz_live_step_def)
-  qed
-qed
-
-lemma freeze_meval1_sub: "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv) \<Longrightarrow> set \<alpha>s' \<subseteq> set \<alpha>s"
-  using freeze_meval0_sub[of ev k \<alpha>s ys \<alpha>s'] freeze_meval1_freeze_meval0[of ev k \<alpha>s] by simp
-
-lemma frz_live_step_sub: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv) \<Longrightarrow> set \<alpha>s' \<subseteq> set \<alpha>s"
-proof (cases lr)
-  case (Some x)
-  assume E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv)"
-  obtain a us st where lr: "lr = Some (a, us, st)"
-    using Some by (cases x) auto
-  obtain ws \<beta>s l where e2: "freeze_meval1 ev (Suc k) (tl \<alpha>s) = (ws, \<beta>s, l)"
-    by (metis prod_cases3)
-  have "set \<beta>s \<subseteq> set \<alpha>s"
-    using freeze_meval1_sub[OF e2] by (auto dest: in_set_tlD)
-  with E lr e2 show ?thesis
-    by (auto simp: frz_live_step_def split: list.splits)
-qed (auto simp: frz_live_step_def dest: freeze_meval1_sub)
-
-lemma drop_Cons_in_set: "drop k xs = y # r \<Longrightarrow> y \<in> set xs"
-  by (metis in_set_dropD list.set_intros(1))
-
-lemma freeze_meval1_set:
-  "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', lv) \<Longrightarrow> set ys \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>)))"
-  by (induction ev k \<alpha>s arbitrary: ys \<alpha>s' lv rule: freeze_meval1.induct)
-    (fastforce split: prod.splits list.splits dest: drop_Cons_in_set)+
-
-lemma frz_live_step_set:
-  assumes E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', lv)"
-  shows "set ys \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>))) \<union> (case lr of None \<Rightarrow> {} | Some (g, us, st) \<Rightarrow> set us)"
-proof (cases lr)
-  case None
-  with E show ?thesis
-    by (auto simp: frz_live_step_def dest!: freeze_meval1_set)
-next
-  case (Some x)
-  then obtain a us st where lr: "lr = Some (a, us, st)"
-    by (cases x) auto
-  show ?thesis
-  proof (cases "drop a us")
-    case Nil
-    then show ?thesis
-      using E lr by (simp add: frz_live_step_def)
-  next
-    case (Cons y r)
-    obtain ws \<beta>s l where e2: "freeze_meval1 ev (Suc k) (tl \<alpha>s) = (ws, \<beta>s, l)"
-      by (metis prod_cases3)
-    have "set ws \<subseteq> (\<Union>\<alpha> \<in> set \<alpha>s. set (fst (ev \<alpha>)))"
-      using freeze_meval1_set[OF e2] by (auto dest: in_set_tlD)
-    moreover have "y \<in> set us"
-      using Cons by (rule drop_Cons_in_set)
-    moreover have "ys = y # ws"
-      using E lr Cons e2 by (simp add: frz_live_step_def)
-    ultimately show ?thesis
-      using lr by auto
-  qed
-qed
-
-lemma frz_live_step_state:
-  "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', Some (g, st)) \<Longrightarrow>
-   (\<exists>\<alpha> \<in> set \<alpha>s. st = snd (ev \<alpha>)) \<or> (\<exists>a us. lr = Some (a, us, st))"
-proof -
-  have f1: "\<exists>\<alpha> \<in> set \<alpha>s. st = snd (ev \<alpha>)" if "freeze_meval1 ev k \<alpha>s = (ys, \<alpha>s', Some (g, st))" for ev k \<alpha>s ys \<alpha>s'
-    using freeze_meval1_live[OF that] freeze_meval1_sub[OF that]
-    by (auto split: list.splits prod.splits) (metis snd_conv)
-  assume E: "frz_live_step ev k \<alpha>s lr = (ys, \<alpha>s', Some (g, st))"
-  then show ?thesis
-    by (auto simp: frz_live_step_def split: option.splits prod.splits list.splits
-        dest!: f1 dest: in_set_tlD)
-qed
 
 section \<open>The simulation relation\<close>
 
@@ -3359,44 +3179,46 @@ next
         = (map (dtabc n cs) rs, \<rho>d2)"
     and s4: "dsim n cs (dnext tw ts) \<rho>d2 \<rho>2"
     using IH3[OF w0 sts mts e4 sz3] by blast
-  have szp: "size \<rho>2 < NN"
-    using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<rho>] e4 szr
-    by simp
   \<comment> \<open>the frozen tuples the two runs are handed are the same list\<close>
   let ?zout = "drop (jfrz - jpsi0) zs0"
   let ?as1 = "drop (jfrz - jphi + length ?zout) (\<alpha>s @ as)"
-  let ?rb1 = "rb @ rs"
-  let ?c = "frz_cut po wv jphi (length as) j"
+  let ?F = "frz_fill ng (\<alpha>s @ as)"
   have tas1: "list_all (ftable m {0..<m}) ?as1"
     using tas ta by (auto simp: list_all_iff dest!: in_set_dropD)
+  have tF: "ftable m {0..<m} ?F"
+    using frz_fill_cases[of ng "\<alpha>s @ as"] tas ta by (auto simp: list_all_iff table_def)
   have wa: "wf_db (Mapping.update (p, m) (replicate k \<alpha>) ?dbe)" if "ftable m {0..<m} \<alpha>" for k \<alpha>
     by (rule wf_db_update'[OF wf_db_map_values_empty]) (use that in \<open>simp add: list_all_iff\<close>)
-  have sz2: "size \<rho>2 = size \<rho>"
+  have sz\<rho>2: "size \<rho>2 = size \<rho>"
     using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<rho>] e4 by simp
-  have szd2: "size \<rho>d2 = size \<rho>d"
+  have sz\<rho>d2: "size \<rho>d2 = size \<rho>d"
     using size_snd_deval[of j ts "Mapping.update (p, m) [] db" \<rho>d] d4 by simp
-  \<comment> \<open>the copies, and the states they leave behind\<close>
-  define cpk where "cpk \<alpha> = (case meval j n [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>2 of
-    (us, \<sigma>) \<Rightarrow> (?rb1 @ us, \<sigma>))" for \<alpha>
-  define cpd where "cpd \<alpha> = (case deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>d2 of
-    (us, \<sigma>) \<Rightarrow> (map (dtabc n cs) ?rb1 @ us, \<sigma>))" for \<alpha>
+  \<comment> \<open>the copies and the window's moves: the two runs evaluate related states on the same tables\<close>
   define R where "R st dst \<longleftrightarrow> dsim n cs (dnext tw ts) dst st \<and> size st = size \<rho> \<and> size dst = size \<rho>d"
     for st dst
-  have agree: "fst (cpd \<alpha>) = map (dtabc n cs) (fst (cpk \<alpha>)) \<and> R (snd (cpk \<alpha>)) (snd (cpd \<alpha>))"
-    if a: "\<alpha> \<in> set ?as1" for \<alpha>
+  have agree: "fst (deval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d) =
+      map (dtabc n cs) (fst (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>)) \<and>
+      R (snd (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>))
+        (snd (deval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d))"
+    if r: "R \<chi> \<chi>d" and X: "X \<in> Set.insert ?F (set ?as1)" for \<chi> \<chi>d c X
   proof -
-    obtain us \<chi> where eu: "meval j n [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>2 = (us, \<chi>)"
-      by (cases "meval j n [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>2")
-    obtain dus where du: "deval j [] (Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe) \<rho>d2
-        = (map (dtabc n cs) us, dus)" and sdu: "dsim n cs (dnext (dnext tw ts) []) dus \<chi>"
-      using Q[OF szp s4 wa _ _ eu] tas1 a by (auto simp: list_all_iff)
-    have "size \<chi> = size \<rho>"
-      using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe" \<rho>2]
-        eu sz2 by simp
+    have tX: "ftable m {0..<m} X"
+      using X tas1 tF by (auto simp: list_all_iff)
+    obtain us \<chi>' where eu: "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi> = (us, \<chi>')"
+      by (cases "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>")
+    have sz\<chi>: "size \<chi> < NN"
+      using r szr by (simp add: R_def)
+    obtain dus where du: "deval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d
+        = (map (dtabc n cs) us, dus)" and sdu: "dsim n cs (dnext (dnext tw ts) []) dus \<chi>'"
+      using Q[OF sz\<chi> conjunct1[OF r[unfolded R_def]] wa[OF tX] _ _ eu] by auto
+    have "size \<chi>' = size \<rho>"
+      using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate c X) ?dbe" \<chi>]
+        eu r by (simp add: R_def)
     moreover have "size dus = size \<rho>d"
-      using size_snd_deval[of j "[]" "Mapping.update (p, m) (replicate ?c \<alpha>) ?dbe" \<rho>d2] du szd2 by simp
+      using size_snd_deval[of j "[]" "Mapping.update (p, m) (replicate c X) ?dbe" \<chi>d] du r
+      by (simp add: R_def)
     ultimately show ?thesis
-      using du eu sdu by (simp add: cpk_def cpd_def R_def dnext_def)
+      using du eu sdu by (simp add: R_def dnext_def)
   qed
   \<comment> \<open>the live copy, fed the new time points\<close>
   let ?dbL = "Mapping.update (p, m) (replicate (length ts) (hd ?as1)) db"
@@ -3404,7 +3226,7 @@ next
     if ?zout = [] \<and> ?as1 \<noteq> [] then Some (g, meval j n ts ?dbL \<rho>L) else None)"
   define lrd where "lrd = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
     if ?zout = [] \<and> ?as1 \<noteq> [] then Some (g, deval j ts ?dbL \<rho>Ld) else None)"
-  have lrel: "rel_option (\<lambda>(a, us, st) (b, dus, dst). a = b \<and> dus = map (dtabc n cs) us \<and> R st dst)
+  have lrel: "rel_option (\<lambda>(k, us, \<sigma>) (k', us', \<sigma>'). k' = k \<and> us' = map (dtabc n cs) us \<and> R \<sigma> \<sigma>')
       lrk lrd"
   proof (cases "lv \<noteq> None \<and> ?zout = [] \<and> ?as1 \<noteq> []")
     case True
@@ -3436,63 +3258,87 @@ next
     then show ?thesis
       by (auto simp: lrk_def lrd_def split: option.splits)
   qed
-  obtain ys as' lvk where e3: "frz_live_step cpk (jfrz + length ?zout - (pR - length rb)) ?as1 lrk
-      = (ys, as', lvk)"
-    by (metis prod_cases3)
-  obtain dys das' lvd where d3: "frz_live_step cpd (jfrz + length ?zout - (pR - length rb)) ?as1 lrd
-      = (dys, das', lvd)"
-    by (metis prod_cases3)
-  have frel: "dys = map (dtabc n cs) ys \<and> das' = as' \<and>
-      rel_option (\<lambda>(a, st) (b, dst). a = b \<and> R st dst) lvk lvd"
-    by (rule frz_live_step_rel[OF e3 d3 agree lrel])
+  let ?k = "min (jfrz + length ?zout) (pR + length rs) - (pR - length rb)"
+  let ?tq1 = "if d = \<infinity> then [] else tq @ ts"
+  let ?s = "(\<rho>2, wv, pR + length rs, ?tq1, drop ?k (rb @ rs))"
+  let ?sd = "(\<rho>d2, wv, pR + length rs, ?tq1, drop ?k (map (dtabc n cs) rb @ map (dtabc n cs) rs))"
+  obtain ys as' lvk \<rho>3 w3 pR3 tq3 rb3 where e3: "frz_live_loop size (meval j n) (p, m) ?dbe ?F d po j
+      (jfrz + length ?zout) ?as1 lrk ?s = (ys, as', lvk, \<rho>3, w3, pR3, tq3, rb3)"
+    by (metis prod_cases4 prod_cases5)
+  obtain dys das' lvd sd3 where d3: "frz_live_loop size (deval j) (p, m) ?dbe ?F d po j
+      (jfrz + length ?zout) ?as1 lrd ?sd = (dys, das', lvd, sd3)"
+    by (metis prod_cases4)
+  have d3': "frz_live_loop size (deval j) (p, m) ?dbe (id ?F) d po j
+      (jfrz + length ?zout) (map id ?as1) lrd ?sd = (dys, das', lvd, sd3)"
+    using d3 by simp
+  have st0: "frz_st_rel R (dtabc n cs) ?s ?sd"
+    using s4 sz\<rho>2 sz\<rho>d2 by (simp add: R_def drop_map flip: map_append)
+  have frel: "dys = map (dtabc n cs) ys \<and> das' = map id as' \<and>
+      rel_option (\<lambda>(k, \<sigma>) (k', \<sigma>'). k' = k \<and> R \<sigma> \<sigma>') lvk lvd \<and>
+      frz_st_rel R (dtabc n cs) (\<rho>3, w3, pR3, tq3, rb3) sd3"
+    by (rule frz_live_loop_rel[OF _ _ st0 lrel e3 d3']) (simp add: agree, simp add: R_def)
+  have sub: "set as' \<subseteq> set ?as1"
+    using frz_live_loop_inv[where P = "\<lambda>_. True" and T = "\<lambda>_. True", OF _ _ _ e3] by (simp add: list_all_iff)
   have tas': "list_all (ftable m {0..<m}) as'"
-    using frz_live_step_sub[OF e3] tas1 by (auto simp: list_all_iff)
+    using sub tas1 by (auto simp: list_all_iff)
+  obtain \<rho>d3 where sd3: "sd3 = (\<rho>d3, w3, pR3, tq3, map (dtabc n cs) rb3)" and R3: "R \<rho>3 \<rho>d3"
+    using frel by (cases sd3) auto
   let ?lvk = "if po then None else lvk"
   let ?lvd = "if po then None else lvd"
   have keep: "frz_keep_lv ?lvd \<rho>Ld = frz_keep_lv ?lvk \<rho>L"
     "frz_keep_lv ?lvk \<rho>L \<noteq> None \<longrightarrow> dsim n cs (dnext tw ts) (frz_keep_st ?lvd \<rho>Ld) (frz_keep_st ?lvk \<rho>L)"
     using frel szL szLd
     by (cases po; cases lvk; cases lvd; auto simp: frz_keep_lv_def frz_keep_st_def R_def)+
-  \<comment> \<open>the window moves by the same amount in both runs\<close>
-  let ?jfrz1 = "jfrz + length ?zout + length ys"
-  let ?tq1 = "if d = \<infinity> then [] else tq @ ts"
-  let ?a = "frz_adv d wv ?jfrz1 j ?tq1"
-  let ?F = "frz_fill ng (\<alpha>s @ as)"
-  have tF: "ftable m {0..<m} ?F"
-    using frz_fill_cases[of ng "\<alpha>s @ as"] tas ta by (auto simp: list_all_iff table_def)
-  obtain rs2 \<rho>3 where e5: "meval j n [] (Mapping.update (p, m) (replicate ?a ?F) ?dbe) \<rho>2 = (rs2, \<rho>3)"
-    by (cases "meval j n [] (Mapping.update (p, m) (replicate ?a ?F) ?dbe) \<rho>2")
-  obtain \<rho>d3 where d5: "deval j [] (Mapping.update (p, m) (replicate ?a ?F) ?dbe) \<rho>d2
-        = (map (dtabc n cs) rs2, \<rho>d3)"
-    and s5: "dsim n cs (dnext tw ts) \<rho>d3 \<rho>3"
-    using Q[OF szp s4 wa[OF tF] _ _ e5] by (auto simp: dnext_def table_def)
-  let ?rb2 = "drop (min ?jfrz1 (pR + length rs + length rs2) - (pR - length rb)) (?rb1 @ rs2)"
   \<comment> \<open>the two runs agree, component by component\<close>
+  let ?jfrz1 = "jfrz + length ?zout + length ys"
+  have stk: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ as)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ as), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, meval j n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (?zout, jfrz + length ?zout, ?F, ?as1, lrk)"
+    by (simp only: Let_def lrk_def)
+  have std: "(let zs0_out = drop (jfrz - jpsi0) (map (dtabc n cs) zs0);
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ as)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ as), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, deval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>Ld)
+         else None)) = (map (dtabc n cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd)"
+    by (simp only: Let_def lrd_def drop_map length_map map_is_Nil_conv)
+  have mq: "meval j n ts db (mformula.MFrz p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> wv pR tq rb d po ng lv \<rho>L) =
+      (?zout @ ys, mformula.MFrz p m \<phi>2 \<psi>2 (jfrz + length ?zout + length ys) (jpsi0 + length zs0)
+        (jphi + length as) as' \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L))"
+    by (simp only: default_maux.meval.simps e1 e2 e4 stk e3 Let_def[where s = "Mapping.update (p, m) [] db"]
+        Let_def[where s = "(as, \<phi>2)"] Let_def[where s = "(zs0, \<psi>2)"] Let_def[where s = "(rs, \<rho>2)"]
+        Let_def[where s = "(?zout, jfrz + length ?zout, ?F, ?as1, lrk)"]
+        Let_def[where s = "(ys, as', lvk, \<rho>3, w3, pR3, tq3, rb3)"] prod.case)
   have x: "xs = ?zout @ ys"
     and f: "\<phi>' = mformula.MFrz p m \<phi>2 \<psi>2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
-        \<rho>3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) ?rb2 d po ng
-        (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L)"
-    using mv e1 e2 e3 e4 e5
-    by (simp_all add: Let_def add.assoc cpk_def[abs_def] lrk_def cong: option.case_cong if_cong)
-  have sz3: "size \<rho>3 = size \<rho>"
-    using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate ?a ?F) ?dbe" \<rho>2]
-      e5 sz2 by simp
-  have szd3: "size \<rho>d3 = size \<rho>d"
-    using size_snd_deval[of j "[]" "Mapping.update (p, m) (replicate ?a ?F) ?dbe" \<rho>d2] d5 szd2 by simp
+        \<rho>3 w3 pR3 tq3 rb3 d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvk \<rho>L)"
+    using mv unfolding mq by simp_all
+  have dq: "deval j ts db (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (dtabc n cs) rb) d po ng lv \<rho>Ld) =
+      (map (dtabc n cs) ?zout @ dys, DFrz p m \<phi>d2 \<psi>d2 (jfrz + length ?zout + length dys) (jpsi0 + length zs0)
+        (jphi + length as) das' \<rho>d3 w3 pR3 tq3 (map (dtabc n cs) rb3) d po ng
+        (frz_keep_lv ?lvd \<rho>Ld) (frz_keep_st ?lvd \<rho>Ld))"
+    by (simp only: deval.simps d1 d2 d4 std length_map d3[unfolded sd3]
+        Let_def[where s = "Mapping.update (p, m) [] db"]
+        Let_def[where s = "(as, \<phi>d2)"] Let_def[where s = "(map (dtabc n cs) zs0, \<psi>d2)"]
+        Let_def[where s = "(map (dtabc n cs) rs, \<rho>d2)"]
+        Let_def[where s = "(map (dtabc n cs) ?zout, jfrz + length ?zout, ?F, ?as1, lrd)"]
+        Let_def[where s = "(dys, das', lvd, \<rho>d3, w3, pR3, tq3, map (dtabc n cs) rb3)"] prod.case)
   show ?case
   proof (intro exI conjI)
     show "deval j ts db (DFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d wv pR tq (map (dtabc n cs) rb) d po ng lv \<rho>Ld)
         = (map (dtabc n cs) xs, DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
-            \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po ng
-            (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld))"
-      using d1 d2 d3 d4 d5 frel dt keep(1) unfolding x
-      by (simp add: Let_def drop_map add.assoc cpd_def[abs_def] lrd_def cong: option.case_cong if_cong)
+            \<rho>d3 w3 pR3 tq3 (map (dtabc n cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld))"
+      unfolding dq x using frel keep(1) by simp
     show "dsim n cs (dnext tw ts) (DFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as) as'
-            \<rho>d3 (wv + ?a) (pR + length rs + length rs2) (drop ?a ?tq1) (map (dtabc n cs) ?rb2) d po ng
-            (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
+            \<rho>d3 w3 pR3 tq3 (map (dtabc n cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
       unfolding f
-      by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas' s5])
-        (use sz3 szd3 szL szLd keep(2) in simp_all)
+      by (rule dsim.DsFrz[OF wf produces_next[OF pr w sts mts mv, unfolded f] s1 s2 tas'])
+        (use R3 szL szLd keep(2) in \<open>simp_all add: R_def\<close>)
   qed
 next
   case (DsLetPast n cs tw p m \<phi> \<psi> i buf \<phi>d \<psi>d)

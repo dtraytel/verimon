@@ -86,42 +86,14 @@ qed
 
 subsection \<open>The freeze node\<close>
 
-lemma freeze_meval0_ftable:
-  "freeze_meval0 eval k \<alpha>s = (ys, \<alpha>s') \<Longrightarrow>
-   (\<And>\<alpha>. \<alpha> \<in> set \<alpha>s \<Longrightarrow> list_all (ftable n A) (fst (eval \<alpha>))) \<Longrightarrow>
-   list_all (ftable n A) ys \<and> set \<alpha>s' \<subseteq> set \<alpha>s"
-proof (induct eval k \<alpha>s arbitrary: ys \<alpha>s' rule: freeze_meval0.induct)
-  case (1 eval k)
-  then show ?case by simp
-next
-  case (2 eval k \<alpha> \<alpha>s)
-  note IH = 2(1) and E = 2(2) and OPS = 2(3)
-  obtain zs st where ev: "eval \<alpha> = (zs, st)" by (cases "eval \<alpha>")
-  have tz: "list_all (ftable n A) zs" using OPS[of \<alpha>] ev by simp
-  show ?case
-  proof (cases "drop k zs")
-    case Nil
-    then show ?thesis using E ev by simp
-  next
-    case (Cons y r)
-    obtain ws \<beta>s where e2: "freeze_meval0 eval (Suc k) \<alpha>s = (ws, \<beta>s)"
-      by (cases "freeze_meval0 eval (Suc k) \<alpha>s")
-    have "list_all (ftable n A) ws \<and> set \<beta>s \<subseteq> set \<alpha>s"
-      by (rule IH[OF ev[symmetric] refl Cons e2]) (use OPS in auto)
-    moreover have "ftable n A y" using tz Cons
-      by (metis list.set_intros(1) list_all_iff set_drop_subset subsetD)
-    moreover have "ys = y # ws" and "\<alpha>s' = \<beta>s" using E ev Cons e2 by auto
-    ultimately show ?thesis by auto
-  qed
-qed
-
 text \<open>
   The freeze node evaluates its body, and its replay base, against the database with the bound
-  predicate empty; then the replay base once more per stored operand table, against a database
-  in which the bound predicate holds that table over the window and everything else is empty;
-  and finally the replay base against a database that moves the window forward with empty tables.
-  Every one of those databases is well formed as soon as the stored tables are, so the body's own
-  invariant applies to all of them; the states of the replays are discarded rather than threaded.
+  predicate empty; then it runs @{const frz_loop}: the replay base once more per stored operand
+  table, against a database in which the bound predicate holds that table over the window and
+  everything else is empty, and between these copies against databases that move the window
+  forward with the filler table.  Every one of those databases is well formed as soon as the
+  stored tables are, so the body's own invariant applies to all of them, and it carries over to
+  the states the loop threads (@{thm [source] frz_live_loop_inv}).
 \<close>
 
 lemma produces_MFrz:
@@ -175,26 +147,31 @@ next
     by (rule wf_db_update[OF wf_db_map_values_empty]) (use that in \<open>simp add: list_all_iff\<close>)
   define zout where "zout = drop (f0 - f1) zs0"
   define as1 where "as1 = drop (f0 - f2 + length zout) (as @ bs)"
-  define rb0 where "rb0 = pR' - length rb'"
-  define c where "c = frz_cut po w' f2 (length bs) j"
-  define ev where "ev = (\<lambda>\<alpha>. case meval j n [] (Mapping.update (p, m) (replicate c \<alpha>) ?dbe) \<rho>1 of
-    (us, \<sigma>) \<Rightarrow> ((rb' @ rs) @ us, \<sigma>))"
+  define fl where "fl = frz_fill ng (as @ bs)"
   have tzout: "list_all (ftable n A) zout"
     using tz0 by (auto simp: zout_def list_all_iff dest: set_drop_subset[THEN subsetD])
   have las1: "list_all (ftable m {0..<m}) as1"
     using la tb by (auto simp: as1_def list_all_iff dest: set_drop_subset[THEN subsetD])
-  have evt: "list_all (ftable n A) (fst (ev \<alpha>)) \<and> produces n A (dnext u ts) (snd (ev \<alpha>))"
-    if a: "\<alpha> \<in> set as1" for \<alpha>
+  have tF: "ftable m {0..<m} fl"
+    using frz_fill_cases[of ng "as @ bs"] la tb by (auto simp: fl_def list_all_iff table_def)
+  define s0 where "s0 = (\<rho>1, w', pR' + length rs, if d = \<infinity> then [] else tq' @ ts,
+    drop (min (f0 + length zout) (pR' + length rs) - (pR' - length rb')) (rb' @ rs))"
+  have evt: "list_all (ftable n A) (fst (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>)) \<and>
+      produces n A (dnext u ts) (snd (meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>))"
+    if "size \<chi> = size (fst s0)" and p\<chi>: "produces n A (dnext u ts) \<chi>" and X: "X \<in> Set.insert fl (set as1)"
+    for \<chi> c X
   proof -
-    have ta: "ftable m {0..<m} \<alpha>" using a las1 by (simp add: list_all_iff)
-    obtain cs st where ec: "meval j n [] (Mapping.update (p, m) (replicate c \<alpha>) ?dbe) \<rho>1 = (cs, st)"
-      by (cases "meval j n [] (Mapping.update (p, m) (replicate c \<alpha>) ?dbe) \<rho>1")
+    have tX: "ftable m {0..<m} X" using X tF las1 by (auto simp: list_all_iff)
+    obtain cs st where ec: "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi> = (cs, st)"
+      by (cases "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>")
     have "list_all (ftable n A) cs"
-      by (rule produces_tables[OF nr wa[OF ta] _ _ ec]) simp_all
+      by (rule produces_tables[OF p\<chi> wa[OF tX] _ _ ec]) simp_all
     moreover have "produces n A (dnext u ts) st"
-      using produces_next[OF nr wa[OF ta] _ _ ec] by (simp add: dnext_def)
-    ultimately show ?thesis using ec lb trs by (simp add: ev_def)
+      using produces_next[OF p\<chi> wa[OF tX] _ _ ec] by (simp add: dnext_def)
+    ultimately show ?thesis using ec by simp
   qed
+  have st0: "frz_st_inv (produces n A (dnext u ts)) (ftable n A) s0"
+    using nr lb trs by (auto simp: s0_def list_all_iff dest: set_drop_subset[THEN subsetD])
   define dbL where "dbL = Mapping.update (p, m) (replicate (length ts) (hd as1)) db"
   define lr where "lr = (case lv' of None \<Rightarrow> None | Some g \<Rightarrow>
     if zout = [] \<and> as1 \<noteq> [] then Some (g, meval j n ts dbL \<rho>L') else None)"
@@ -208,55 +185,48 @@ next
     show ?thesis
       using produces_step[OF pL[rule_format, OF lv] wL sts mts eL] by blast
   qed
-  obtain ys as' lv1 where e3: "frz_live_step ev (f0 + length zout - rb0) as1 lr = (ys, as', lv1)"
-    by (metis prod_cases3)
-  have tys: "list_all (ftable n A) ys"
-    unfolding list_all_iff
-  proof
-    fix x
-    assume "x \<in> set ys"
-    with frz_live_step_set[OF e3] have "x \<in> (\<Union>\<alpha> \<in> set as1. set (fst (ev \<alpha>))) \<or>
-        (\<exists>g us st. lr = Some (g, us, st) \<and> x \<in> set us)"
-      by (auto split: option.splits)
-    then show "ftable n A x"
-      using evt lrt by (fastforce simp: list_all_iff)
-  qed
+  obtain ys as' lv1 \<rho>2 w2 pR2 tq2 rb2 where e3: "frz_live_loop size (meval j n) (p, m) ?dbe fl d po j
+      (f0 + length zout) as1 lr s0 = (ys, as', lv1, \<rho>2, w2, pR2, tq2, rb2)"
+    by (metis prod_cases4 prod_cases5)
+  have inv: "list_all (ftable n A) ys \<and> set as' \<subseteq> set as1 \<and>
+      (\<forall>k \<sigma>. lv1 = Some (k, \<sigma>) \<longrightarrow> produces n A (dnext u ts) \<sigma>) \<and>
+      frz_st_inv (produces n A (dnext u ts)) (ftable n A) (\<rho>2, w2, pR2, tq2, rb2)"
+    by (rule frz_live_loop_inv[OF evt st0 lrt e3])
+  have tys: "list_all (ftable n A) ys" and nr2: "produces n A (dnext u ts) \<rho>2"
+    and trb2: "list_all (ftable n A) rb2"
+    using inv by simp_all
   have las': "list_all (ftable m {0..<m}) as'"
-    using frz_live_step_sub[OF e3] las1 by (auto simp: list_all_iff)
+    using inv las1 by (auto simp: list_all_iff)
   let ?lvp = "if po then None else lv1"
   have pL': "frz_keep_lv ?lvp \<rho>L' \<noteq> None \<longrightarrow> produces n A (dnext u ts) (frz_keep_st ?lvp \<rho>L')"
   proof
     assume "frz_keep_lv ?lvp \<rho>L' \<noteq> None"
     then obtain g st where lv1: "lv1 = Some (g, st)" and st: "frz_keep_st ?lvp \<rho>L' = st"
       by (auto simp: frz_keep_lv_def frz_keep_st_def split: if_splits option.splits)
-    from frz_live_step_state[OF e3[unfolded lv1]]
     show "produces n A (dnext u ts) (frz_keep_st ?lvp \<rho>L')"
-      unfolding st using evt lrt by fastforce
+      unfolding st using inv lv1 by blast
   qed
-  define tq1 where "tq1 = (if d = \<infinity> then [] else tq' @ ts)"
-  define a where "a = frz_adv d w' (f0 + length zout + length ys) j tq1"
-  have tF: "ftable m {0..<m} (frz_fill ng (as @ bs))"
-    using frz_fill_cases[of ng "as @ bs"] la tb by (auto simp: list_all_iff table_def)
-  obtain rs2 \<rho>2 where e5: "meval j n [] (Mapping.update (p, m) (replicate a (frz_fill ng (as @ bs))) ?dbe) \<rho>1 = (rs2, \<rho>2)"
-    by (cases "meval j n [] (Mapping.update (p, m) (replicate a (frz_fill ng (as @ bs))) ?dbe) \<rho>1")
-  have trs2: "list_all (ftable n A) rs2"
-    by (rule produces_tables[OF nr wa[OF tF] _ _ e5]) (simp_all add: table_def)
-  have nr2: "produces n A (dnext u ts) \<rho>2"
-    using produces_next[OF nr wa[OF tF] _ _ e5] by (simp add: dnext_def table_def)
-  define rb2 where "rb2 = drop (min (f0 + length zout + length ys) (pR' + length rs + length rs2) - rb0)
-    ((rb' @ rs) @ rs2)"
-  have trb2: "list_all (ftable n A) rb2"
-    using lb trs trs2 by (auto simp: rb2_def list_all_iff dest: set_drop_subset[THEN subsetD])
+  have stk: "(let zs0_out = drop (f0 - f1) zs0;
+       \<alpha>s1 = drop (f0 - f2 + length zs0_out) (as @ bs)
+     in (zs0_out, f0 + length zs0_out, frz_fill ng (as @ bs), \<alpha>s1,
+       case lv' of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, meval j n ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L')
+         else None)) = (zout, f0 + length zout, fl, as1, lr)"
+    by (simp only: Let_def zout_def as1_def fl_def lr_def dbL_def)
   have m: "meval j n ts db (mformula.MFrz p m \<chi> \<eta> f0 f1 f2 as \<rho>' w' pR' tq' rb' d po ng lv' \<rho>L')
       = (zout @ ys, mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
-          (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
-          (drop a tq1) rb2 d po ng (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L'))"
-    using e1 e2 e3 e4 e5 unfolding zout_def as1_def ev_def rb0_def tq1_def a_def rb2_def c_def lr_def dbL_def
-    by (simp add: Let_def add.assoc cong: option.case_cong if_cong)
+          (f1 + length zs0) (f2 + length bs) as' \<rho>2 w2 pR2 tq2 rb2 d po ng
+          (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L'))"
+    by (simp only: default_maux.meval.simps e1 e2 e4 stk e3[unfolded s0_def]
+        Let_def[where s = "Mapping.update (p, m) [] db"]
+        Let_def[where s = "(bs, \<chi>')"] Let_def[where s = "(zs0, \<eta>')"] Let_def[where s = "(rs, \<rho>1)"]
+        Let_def[where s = "(zout, f0 + length zout, fl, as1, lr)"]
+        Let_def[where s = "(ys, as', lv1, \<rho>2, w2, pR2, tq2, rb2)"] prod.case)
   have x: "xs = zout @ ys"
     and f: "\<Phi>' = mformula.MFrz p m \<chi>' \<eta>' (f0 + length zout + length ys)
-          (f1 + length zs0) (f2 + length bs) as' \<rho>2 (w' + a) (pR' + length rs + length rs2)
-          (drop a tq1) rb2 d po ng (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L')"
+          (f1 + length zs0) (f2 + length bs) as' \<rho>2 w2 pR2 tq2 rb2 d po ng
+          (frz_keep_lv ?lvp \<rho>L') (frz_keep_st ?lvp \<rho>L')"
     using e[unfolded Phi conjunct1[OF X] m] by simp_all
   show "list_all (ftable n' A') xs \<and>
       ((n' = n \<and> A' = A \<and>
