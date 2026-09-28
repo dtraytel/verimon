@@ -15150,7 +15150,9 @@ let rec regex_reach
 let rec while_option b c s = (if b s then while_option b c (c s) else Some s);;
 
 let rec ivl_ub
-  i = (if bounded i then Enat (the (while_option (memR i) suc zero_nata))
+  i = (if bounded i
+        then Enat (minus_nata (the (while_option (memR i) suc zero_nata))
+                    one_nata)
         else Infinity_enat);;
 
 let rec past_reach

@@ -9394,3 +9394,33 @@ the two formulas above have the frozen predicate under a negation.  The others r
 their spread (0.85–1.10, on runs of 0.02–0.3 s timed while a PIDE session was running) is noise.
 The outputs are identical on all 37 formulas, on the 652 `-verified` commands of the test corpus, and
 on the benchmark formulas, which agree with MonPoly.  The cram tests pass.
+
+## 21.54 The past reach of a bounded interval is its largest member
+
+The freeze's window keeps the time points whose timestamp is at least that of the first pending
+verdict minus the body's past reach d (`past_reach`, `Frz_Locality.thy`).  For a bounded interval,
+`ivl_ub` was the least time difference not in it, so d was one more than the body reaches: for
+`ONCE[0,4]`, 5 instead of 4.  Each copy then replayed one time point too many.  In its last step,
+the Since node expired that point's tuples again, one lookup each.  A profile of `frz-sincelag30`
+showed 4415 Since steps against MonPoly's 2490, and 78k instructions per step in the Since's expiry
+(`gshift_end`), against 1k in MonPoly's.  `ivl_ub` is now the largest member,
+`(LEAST t. ¬ memR I t) - 1`.  The locality lemma needs only that every member is at most `ivl_ub`
+(`memR_le_ivl_ub`, and `ub_add_le` with the non-strict bound).  No other theory depends on the
+value.
+
+The copies now replay five time points, and the Since steps drop to 3920.  The expiry still costs
+66k instructions per step.  Most of that is not the extra point: a copy starts from the replay base,
+whose Since node still holds the tables of the time points before w.  Those expire while the copy
+replays.  MonPoly starts each copy from an empty clone.  The rest of the gap is the final flush: the
+last 31 frozen tables arrive in one step, and each copy replays from the same window, 35 time points.
+
+| formula (tp500, min of 3) | before (s) | after (s) | MonPoly (s) |
+|---|---|---|---|
+| `frz-sincelag30` | 0.290 | 0.262 | 0.114 |
+| `frz-sincelag` | 0.197 | 0.167 | 0.101 |
+| `frz-neglag30` | 0.125 | 0.113 | 0.066 |
+| `frz-neglag` | 0.196 | 0.188 | 0.093 |
+
+Over the 37 formulas with a freeze, the geometric mean of new over old is 0.958; `frzrw-oncelb` and
+`frzrw-once2` gain 9-11%.  The outputs are identical on all 37 formulas and on the 652 `-verified`
+commands of the test corpus.  The cram tests pass.
