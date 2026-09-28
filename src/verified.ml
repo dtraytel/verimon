@@ -6819,76 +6819,20 @@ let rec edl_lookup_table
   = function RBT_Mapping t -> edl_rbt_lookup_table t
     | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
 
-let rec
-  rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-  _A (Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-       x)
-       = x;;
-
-let rec sel12a _A
-  xa = Mapping_RBTa
-         (let (_, x2) =
-            rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-              _A xa
-            in
-           x2);;
-
-let rec sel11a _A
-  xa = (let (x1, _) =
-          rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-            _A xa
-          in
-         x1);;
-
-let rec rep_isoma _A x = (sel11a _A x, sel12a _A x);;
-
-let rec edl_rbtc_ins_lk
-  f k x2 = match f, k, x2 with
-    f, k, Empty -> (None, Branch (R, Empty, k, f None, Empty))
-    | f, k, Branch (B, l, x, y, r) ->
-        (match edl_comparator k x
-          with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
-          | Lt ->
-            (let (ov, la) = edl_rbtc_ins_lk f k l in
-              (ov, (if is_none ov then balance la x y r
-                     else Branch (B, la, x, y, r))))
-          | Gt ->
-            (let (ov, ra) = edl_rbtc_ins_lk f k r in
-              (ov, (if is_none ov then balance l x y ra
-                     else Branch (B, l, x, y, ra)))))
-    | f, k, Branch (R, l, x, y, r) ->
-        (match edl_comparator k x
-          with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
-          | Lt ->
-            (let (ov, la) = edl_rbtc_ins_lk f k l in
-              (ov, Branch (R, la, x, y, r)))
-          | Gt ->
-            (let (ov, ra) = edl_rbtc_ins_lk f k r in
-              (ov, Branch (R, l, x, y, ra))));;
-
-let rec edl_upd_lk_aux_table
+let rec edl_upd_w_table
   xc xd xe =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_table_v xe)
-        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_table_v xe));;
 
-let rec edl_upd_lk_table
-  x1 x2 x3 =
-    rep_isoma (ccompare_list ccompare_event_data)
-      (edl_upd_lk_aux_table x1 x2 x3);;
-
-let rec edl_mupd_table
+let rec edl_mupdw_table
   k f x2 = match k, f, x2 with
-    k, f, RBT_Mapping t ->
-      (let (ov, ta) = edl_upd_lk_table k f t in (ov, RBT_Mapping ta))
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_table k f t)
     | k, f, Assoc_List_Mapping al ->
-        (edl_lookup_table (Assoc_List_Mapping al) k,
-          edl_update_table k (f (edl_lookup_table (Assoc_List_Mapping al) k))
-            (Assoc_List_Mapping al))
+        edl_update_table k (f (edl_lookup_table (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
     | k, fa, Mapping f ->
-        (edl_lookup_table (Mapping f) k,
-          edl_update_table k (fa (edl_lookup_table (Mapping f) k))
-            (Mapping f));;
+        edl_update_table k (fa (edl_lookup_table (Mapping f) k)) (Mapping f);;
 
 let edl_remove_v :
   (event_data list -> (event_data list) set -> (event_data list) set) boxed
@@ -6910,10 +6854,9 @@ let edl_bot : (event_data list) set
 let rec de_didx_add1
   msk x i =
     (let k = dproj msk x in
-      snd (edl_mupd_table k
-            (fun ov ->
-              edl_insert x (match ov with None -> edl_bot | Some z -> z))
-            i));;
+      edl_mupdw_table k
+        (fun ov -> edl_insert x (match ov with None -> edl_bot | Some z -> z))
+        i);;
 
 let rec ed_didx_add1_cfi xa = Abs_comp_fun_idem (de_didx_add1 xa);;
 
@@ -6981,6 +6924,53 @@ let rec de_gadd_new_table_msaux
                                     (idx_in,
                                       (tuple_in,
 (idx_sincea, tuple_sincea)))))))))));;
+
+let rec
+  rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+  _A (Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+       x)
+       = x;;
+
+let rec sel12a _A
+  xa = Mapping_RBTa
+         (let (_, x2) =
+            rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+              _A xa
+            in
+           x2);;
+
+let rec sel11a _A
+  xa = (let (x1, _) =
+          rep_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+            _A xa
+          in
+         x1);;
+
+let rec rep_isoma _A x = (sel11a _A x, sel12a _A x);;
+
+let rec edl_rbtc_ins_lk
+  f k x2 = match f, k, x2 with
+    f, k, Empty -> (None, Branch (R, Empty, k, f None, Empty))
+    | f, k, Branch (B, l, x, y, r) ->
+        (match edl_comparator k x
+          with Eqa -> (Some y, Branch (B, l, x, f (Some y), r))
+          | Lt ->
+            (let (ov, la) = edl_rbtc_ins_lk f k l in
+              (ov, (if is_none ov then balance la x y r
+                     else Branch (B, la, x, y, r))))
+          | Gt ->
+            (let (ov, ra) = edl_rbtc_ins_lk f k r in
+              (ov, (if is_none ov then balance l x y ra
+                     else Branch (B, l, x, y, ra)))))
+    | f, k, Branch (R, l, x, y, r) ->
+        (match edl_comparator k x
+          with Eqa -> (Some y, Branch (R, l, x, f (Some y), r))
+          | Lt ->
+            (let (ov, la) = edl_rbtc_ins_lk f k l in
+              (ov, Branch (R, la, x, y, r)))
+          | Gt ->
+            (let (ov, ra) = edl_rbtc_ins_lk f k r in
+              (ov, Branch (R, l, x, y, ra))));;
 
 let rec edl_upd_lk_aux_nat
   xc xd xe =
@@ -7253,40 +7243,32 @@ let rec edl_lookup_nsum
   = function RBT_Mapping t -> edl_rbt_lookup_nsum t
     | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
 
-let rec edl_upd_lk_aux_nsum
+let rec edl_upd_w_nsum
   xc xd xe =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_nsum_v xe)
-        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_nsum_v xe));;
 
-let rec edl_upd_lk_nsum
-  x1 x2 x3 =
-    rep_isoma (ccompare_list ccompare_event_data)
-      (edl_upd_lk_aux_nsum x1 x2 x3);;
-
-let rec edl_mupd_nsum
+let rec edl_mupdw_nsum
   k f x2 = match k, f, x2 with
-    k, f, RBT_Mapping t ->
-      (let (ov, ta) = edl_upd_lk_nsum k f t in (ov, RBT_Mapping ta))
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_nsum k f t)
     | k, f, Assoc_List_Mapping al ->
-        (edl_lookup_nsum (Assoc_List_Mapping al) k,
-          edl_update_nsum k (f (edl_lookup_nsum (Assoc_List_Mapping al) k))
-            (Assoc_List_Mapping al))
+        edl_update_nsum k (f (edl_lookup_nsum (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
     | k, fa, Mapping f ->
-        (edl_lookup_nsum (Mapping f) k,
-          edl_update_nsum k (fa (edl_lookup_nsum (Mapping f) k)) (Mapping f));;
+        edl_update_nsum k (fa (edl_lookup_nsum (Mapping f) k)) (Mapping f);;
 
 let rec edl_gi_sum
   k ev t (v, m) =
     (if v then (match ev t
                  with EInt i ->
                    (true,
-                     snd (edl_mupd_nsum (drop k t)
-                           (fun a ->
-                             (match a with None -> (one_nata, i)
-                               | Some (cnt, s) ->
-                                 (plus_nata cnt one_nata, Z.add s i)))
-                           m))
+                     edl_mupdw_nsum (drop k t)
+                       (fun a ->
+                         (match a with None -> (one_nata, i)
+                           | Some (cnt, s) ->
+                             (plus_nata cnt one_nata, Z.add s i)))
+                       m)
                  | EFloat _ ->
                    (false,
                      mapping_empty (ccompare_list ccompare_event_data)
@@ -7297,9 +7279,23 @@ let rec edl_gi_sum
                        (of_phantom mapping_impl_list)))
       else (v, m));;
 
+let rec edl_upd_w_nat
+  xc xd xe =
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_nat_v xe));;
+
+let rec edl_mupdw_nat
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_nat k f t)
+    | k, f, Assoc_List_Mapping al ->
+        edl_update_nat k (f (edl_lookup_nat (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
+    | k, fa, Mapping f ->
+        edl_update_nat k (fa (edl_lookup_nat (Mapping f) k)) (Mapping f);;
+
 let rec edl_gi_cnt
-  k t (v, m) =
-    (if v then (v, snd (edl_mupd_nat (drop k t) cnt_inc m)) else (v, m));;
+  k t (v, m) = (if v then (v, edl_mupdw_nat (drop k t) cnt_inc m) else (v, m));;
 
 let rec edl_gstep_ins
   k ev t ax =
@@ -7314,7 +7310,7 @@ let rec edl_gstep_ins
         (match edl_gi_rank k ev ty t (true, m)
           with (true, ma) -> Some (GRank (ma, ty)) | (false, _) -> None));;
 
-let rec ucnt_add1 t c = snd (edl_mupd_nat t cnt_inc c);;
+let rec ucnt_add1 t c = edl_mupdw_nat t cnt_inc c;;
 
 let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
 
@@ -7430,18 +7426,38 @@ let rec gi_rank (_A1, _A2)
                      | (Some (LString _), xa) -> (true, xa)))
       else (v, m));;
 
+let rec upd_w _A
+  xc xd xe =
+    Mapping_RBTa
+      (rbt_comp_insert_with_key (the (ccompare _A)) (fun _ y _ -> xd (Some y))
+        xc (xd None) (impl_ofa _A xe));;
+
+let rec mupdw (_A1, _A2)
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (match ccompare _A1
+        with None ->
+          failwith "mupdw RBT_Mapping: ccompare = None"
+            (fun _ -> mupdw (_A1, _A2) k f (RBT_Mapping t))
+        | Some _ -> RBT_Mapping (upd_w _A1 k f t))
+    | k, f, Assoc_List_Mapping al ->
+        updateb (_A1, _A2) k (f (lookupa (_A1, _A2) (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
+    | k, fa, Mapping f ->
+        updateb (_A1, _A2) k (fa (lookupa (_A1, _A2) (Mapping f) k))
+          (Mapping f);;
+
 let rec gi_sum (_A1, _A2)
   k ev t (v, m) =
     (if v then (match ev t
                  with EInt i ->
                    (true,
-                     snd (mupd ((ccompare_list _A1), (equal_list _A2))
-                           (drop k t)
-                           (fun a ->
-                             (match a with None -> (one_nata, i)
-                               | Some (cnt, s) ->
-                                 (plus_nata cnt one_nata, Z.add s i)))
-                           m))
+                     mupdw ((ccompare_list _A1), (equal_list _A2)) (drop k t)
+                       (fun a ->
+                         (match a with None -> (one_nata, i)
+                           | Some (cnt, s) ->
+                             (plus_nata cnt one_nata, Z.add s i)))
+                       m)
                  | EFloat _ ->
                    (false,
                      mapping_empty (ccompare_list _A1)
@@ -7454,8 +7470,8 @@ let rec gi_sum (_A1, _A2)
 
 let rec gi_cnt (_A1, _A2)
   k t (v, m) =
-    (if v then (v, snd (mupd ((ccompare_list _A1), (equal_list _A2)) (drop k t)
-                         cnt_inc m))
+    (if v then (v, mupdw ((ccompare_list _A1), (equal_list _A2)) (drop k t)
+                     cnt_inc m)
       else (v, m));;
 
 let rec gstep_ins (_A1, _A2)
@@ -7931,39 +7947,30 @@ let rec edl_update_gsum
     | k, v, Mapping m ->
         Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
 
-let rec edl_upd_lk_aux_gsum
+let rec edl_upd_w_gsum
   xc xd xe =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gsum_v xe)
-        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_gsum_v xe));;
 
-let rec edl_upd_lk_gsum
-  x1 x2 x3 =
-    rep_isoma (ccompare_list ccompare_event_data)
-      (edl_upd_lk_aux_gsum x1 x2 x3);;
-
-let rec edl_mupd_gsum
+let rec edl_mupdw_gsum
   k f x2 = match k, f, x2 with
-    k, f, RBT_Mapping t ->
-      (let (ov, ta) = edl_upd_lk_gsum k f t in (ov, RBT_Mapping ta))
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_gsum k f t)
     | k, f, Assoc_List_Mapping al ->
-        (edl_lookup_gsum (Assoc_List_Mapping al) k,
-          edl_update_gsum k (f (edl_lookup_gsum (Assoc_List_Mapping al) k))
-            (Assoc_List_Mapping al))
+        edl_update_gsum k (f (edl_lookup_gsum (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
     | k, fa, Mapping f ->
-        (edl_lookup_gsum (Mapping f) k,
-          edl_update_gsum k (fa (edl_lookup_gsum (Mapping f) k)) (Mapping f));;
+        edl_update_gsum k (fa (edl_lookup_gsum (Mapping f) k)) (Mapping f);;
 
 let rec edl_nins_gsum
   k si su t m =
-    snd (edl_mupd_gsum (drop k t)
-          (fun a ->
-            (match a
-              with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
-              | Some (aa, i) ->
-                (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
-                  | (Some _, ia) -> (aa, ia))))
-          m);;
+    edl_mupdw_gsum (drop k t)
+      (fun a ->
+        (match a with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
+          | Some (aa, i) ->
+            (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
+              | (Some _, ia) -> (aa, ia))))
+      m;;
 
 let rec edl_rbt_insert_gcnt
   xc xd xe =
@@ -7977,39 +7984,30 @@ let rec edl_update_gcnt
     | k, v, Mapping m ->
         Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
 
-let rec edl_upd_lk_aux_gcnt
+let rec edl_upd_w_gcnt
   xc xd xe =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gcnt_v xe)
-        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_gcnt_v xe));;
 
-let rec edl_upd_lk_gcnt
-  x1 x2 x3 =
-    rep_isoma (ccompare_list ccompare_event_data)
-      (edl_upd_lk_aux_gcnt x1 x2 x3);;
-
-let rec edl_mupd_gcnt
+let rec edl_mupdw_gcnt
   k f x2 = match k, f, x2 with
-    k, f, RBT_Mapping t ->
-      (let (ov, ta) = edl_upd_lk_gcnt k f t in (ov, RBT_Mapping ta))
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_gcnt k f t)
     | k, f, Assoc_List_Mapping al ->
-        (edl_lookup_gcnt (Assoc_List_Mapping al) k,
-          edl_update_gcnt k (f (edl_lookup_gcnt (Assoc_List_Mapping al) k))
-            (Assoc_List_Mapping al))
+        edl_update_gcnt k (f (edl_lookup_gcnt (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
     | k, fa, Mapping f ->
-        (edl_lookup_gcnt (Mapping f) k,
-          edl_update_gcnt k (fa (edl_lookup_gcnt (Mapping f) k)) (Mapping f));;
+        edl_update_gcnt k (fa (edl_lookup_gcnt (Mapping f) k)) (Mapping f);;
 
 let rec edl_nins_gcnt
   k si su t m =
-    snd (edl_mupd_gcnt (drop k t)
-          (fun a ->
-            (match a
-              with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
-              | Some (aa, i) ->
-                (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
-                  | (Some _, ia) -> (aa, ia))))
-          m);;
+    edl_mupdw_gcnt (drop k t)
+      (fun a ->
+        (match a with None -> (si t, edl_update_nat t one_nata edl_mempty_nat)
+          | Some (aa, i) ->
+            (match edl_mupd_nat t cnt_inc i with (None, ia) -> (su t aa, ia)
+              | (Some _, ia) -> (aa, ia))))
+      m;;
 
 let rec edl_nlk_gsum
   k m t =
@@ -8775,6 +8773,29 @@ let rec edl_delete_nsum
         Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
     | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
 
+let rec edl_upd_lk_aux_nsum
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_nsum_v xe)
+        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+
+let rec edl_upd_lk_nsum
+  x1 x2 x3 =
+    rep_isoma (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_nsum x1 x2 x3);;
+
+let rec edl_mupd_nsum
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_nsum k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_nsum (Assoc_List_Mapping al) k,
+          edl_update_nsum k (f (edl_lookup_nsum (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_nsum (Mapping f) k,
+          edl_update_nsum k (fa (edl_lookup_nsum (Mapping f) k)) (Mapping f));;
+
 let rec edl_gd_sum
   k ev t (v, m) =
     (if v then (match ev t
@@ -9101,6 +9122,29 @@ let rec edl_upd_lk2_gsum
     rep_isomb (ccompare_list ccompare_event_data)
       (edl_upd_lk2_aux_gsum x1 x2 x3);;
 
+let rec edl_upd_lk_aux_gsum
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gsum_v xe)
+        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+
+let rec edl_upd_lk_gsum
+  x1 x2 x3 =
+    rep_isoma (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_gsum x1 x2 x3);;
+
+let rec edl_mupd_gsum
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_gsum k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_gsum (Assoc_List_Mapping al) k,
+          edl_update_gsum k (f (edl_lookup_gsum (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_gsum (Mapping f) k,
+          edl_update_gsum k (fa (edl_lookup_gsum (Mapping f) k)) (Mapping f));;
+
 let rec edl_mupd2_gsum
   k f x2 = match k, f, x2 with
     k, f, RBT_Mapping t ->
@@ -9150,6 +9194,29 @@ let rec edl_upd_lk2_gcnt
   x1 x2 x3 =
     rep_isomb (ccompare_list ccompare_event_data)
       (edl_upd_lk2_aux_gcnt x1 x2 x3);;
+
+let rec edl_upd_lk_aux_gcnt
+  xc xd xe =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_gcnt_v xe)
+        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+
+let rec edl_upd_lk_gcnt
+  x1 x2 x3 =
+    rep_isoma (ccompare_list ccompare_event_data)
+      (edl_upd_lk_aux_gcnt x1 x2 x3);;
+
+let rec edl_mupd_gcnt
+  k f x2 = match k, f, x2 with
+    k, f, RBT_Mapping t ->
+      (let (ov, ta) = edl_upd_lk_gcnt k f t in (ov, RBT_Mapping ta))
+    | k, f, Assoc_List_Mapping al ->
+        (edl_lookup_gcnt (Assoc_List_Mapping al) k,
+          edl_update_gcnt k (f (edl_lookup_gcnt (Assoc_List_Mapping al) k))
+            (Assoc_List_Mapping al))
+    | k, fa, Mapping f ->
+        (edl_lookup_gcnt (Mapping f) k,
+          edl_update_gcnt k (fa (edl_lookup_gcnt (Mapping f) k)) (Mapping f));;
 
 let rec edl_mupd2_gcnt
   k f x2 = match k, f, x2 with
@@ -9389,8 +9456,8 @@ let rec ugmr
 
 let rec mm_step (_A1, _A2)
   ev op k t m =
-    snd (mupd ((ccompare_list _A1), (equal_list _A2)) (drop k t)
-          (fun a -> (match a with None -> ev t | Some u -> op u (ev t))) m);;
+    mupdw ((ccompare_list _A1), (equal_list _A2)) (drop k t)
+      (fun a -> (match a with None -> ev t | Some u -> op u (ev t))) m;;
 
 let rec uagg_mm
   op f k pos xs =
@@ -9935,15 +10002,18 @@ let rec de_del_buckets1_nat
     fold (fun p tma -> edl_mapping_delete_set tma (snd p))
       (entriesa (ccompare_list ccompare_event_data) t) tm;;
 
+let rec foldd _A xb xc = folda xb (impl_ofa _A xc);;
+
 let rec de_gjoin_idx1_nat
   pos y (RBT_Mapping t) tm =
     (if pos
       then (let d =
-              filtera (fun p -> not (edl_member (fst p) y))
-                (entriesa (ccompare_list ccompare_event_data) t)
+              foldd (ccompare_list ccompare_event_data)
+                (fun k v acc -> (if edl_member k y then acc else (k, v) :: acc))
+                t []
               in
-             (fold (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
-               fold (fun p tma -> edl_mapping_delete_set tma (snd p)) d tm))
+             (foldr (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
+               foldr (fun p tma -> edl_mapping_delete_set tma (snd p)) d tm))
       else (de_mfilter_keys_table pos y (RBT_Mapping t),
              de_del_buckets1_nat
                (de_mfilter_keys_table (not pos) y (RBT_Mapping t)) tm));;
@@ -9958,12 +10028,15 @@ let rec de_gjoin_idx_nat
   pos y (RBT_Mapping t) acc =
     (if pos
       then (let d =
-              filtera (fun p -> not (edl_member (fst p) y))
-                (entriesa (ccompare_list ccompare_event_data) t)
+              foldd (ccompare_list ccompare_event_data)
+                (fun k v acca ->
+                  (if edl_member k y then acca else (k, v) :: acca))
+                t []
               in
-             (fold (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
-               fold (fun p (ta, tm) ->
-                      (edl_minus ta (snd p), edl_mapping_delete_set tm (snd p)))
+             (foldr (fun p -> edl_delete_table (fst p)) d (RBT_Mapping t),
+               foldr (fun p (ta, tm) ->
+                       (edl_minus ta (snd p),
+                         edl_mapping_delete_set tm (snd p)))
                  d acc))
       else (de_mfilter_keys_table pos y (RBT_Mapping t),
              de_del_buckets_nat
@@ -10724,28 +10797,20 @@ let rec edl_lookup_tstp
   = function RBT_Mapping t -> edl_rbt_lookup_tstp t
     | Assoc_List_Mapping al -> lookup (equal_list equal_event_data) al;;
 
-let rec edl_upd_lk_aux_tstp
+let rec edl_upd_w_tstp
   xc xd xe =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (match edl_rbtc_ins_lk xd xc (unbox edl_impl_of_tstp_v xe)
-        with (None, t) -> (None, paint B t) | (Some v, t) -> (Some v, t));;
+    Mapping_RBTa
+      (edl_rbtc_insert_with_key (fun _ y _ -> xd (Some y)) xc (xd None)
+        (unbox edl_impl_of_tstp_v xe));;
 
-let rec edl_upd_lk_tstp
-  x1 x2 x3 =
-    rep_isoma (ccompare_list ccompare_event_data)
-      (edl_upd_lk_aux_tstp x1 x2 x3);;
-
-let rec edl_mupd_tstp
+let rec edl_mupdw_tstp
   k f x2 = match k, f, x2 with
-    k, f, RBT_Mapping t ->
-      (let (ov, ta) = edl_upd_lk_tstp k f t in (ov, RBT_Mapping ta))
+    k, f, RBT_Mapping t -> RBT_Mapping (edl_upd_w_tstp k f t)
     | k, f, Assoc_List_Mapping al ->
-        (edl_lookup_tstp (Assoc_List_Mapping al) k,
-          edl_update_tstp k (f (edl_lookup_tstp (Assoc_List_Mapping al) k))
-            (Assoc_List_Mapping al))
+        edl_update_tstp k (f (edl_lookup_tstp (Assoc_List_Mapping al) k))
+          (Assoc_List_Mapping al)
     | k, fa, Mapping f ->
-        (edl_lookup_tstp (Mapping f) k,
-          edl_update_tstp k (fa (edl_lookup_tstp (Mapping f) k)) (Mapping f));;
+        edl_update_tstp k (fa (edl_lookup_tstp (Mapping f) k)) (Mapping f);;
 
 let rec nth_def
   x0 k z = match x0, k, z with [], k, z -> z
@@ -10768,9 +10833,8 @@ let rec de_gupd_nested_step_dq
         then (let i = minus_nata k base in
               let m = dq_nth_l dq i edl_mempty_tstp in
                dq_upd dq i
-                 (snd (edl_mupd_tstp ka
-                        (fun a -> (match a with None -> d | Some aa -> f aa))
-                        m)))
+                 (edl_mupdw_tstp ka
+                   (fun a -> (match a with None -> d | Some aa -> f aa)) m))
         else dq));;
 
 let rec ed_max_nat a b = (if less_eq_nat a b then b else a);;

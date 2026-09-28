@@ -9458,3 +9458,47 @@ frozen formula does not lag are unchanged within noise.  The outputs are identic
 formulas and on the 652 `-verified` commands of the test corpus, and the cram tests pass.  What is
 left of the gap on the lagging formulas is mostly the Since node's expiry of the replay base's old
 tables in each copy (§21.54), which a cheaper expiry would address.
+
+## 21.56 The Since node's allocation: a one-pass bucket update and the join's deleted entries
+
+After 21.55, `frz-sincelag30` executes about as many instructions as MonPoly (1.02 G against
+0.98 G under callgrind), but takes about 1.9 times as long once the start-up is subtracted.  The
+difference is memory: the verified run allocates 60 M words against MonPoly's 14 M, and its L1
+write misses (7.8 M against 2.0 M) are that allocation divided by the words per cache line; its
+read misses are 6.0 M against 2.5 M, and its branch mispredictions 10.8 M against 8.3 M.  The
+minor heap's size makes no difference.  A sampled allocation profile (`Gc.Memprof`) puts 79% of
+the allocation in the Since node: the index insertion about 12 M words, the join 11.6 M, the
+expiry 7.4 M, the time stamp mapping 6.4 M and the window's table 4 M.  MonPoly keeps the same
+three structures, two of them as hash tables where an insertion allocates a bucket cell; the
+persistent trees copy a path.
+
+Two of the costs were not the trees' own.  The index insertion (`didx_add1`) went through
+`mupd`, the lookup and update in one descent (21.35), and discarded the old value it returns: the
+descent built a pair at every node, and every call built the comparator's dictionary for the
+lifting's representation.  `mupdw` (`Dense_Map_Upd.thy`) is the update without the old value: on
+a tree it is the insertion that combines the old value with the new one (`upd_w`, with
+`rbt_comp_insert_with_key`), which is the insertion of the value computed from the lookup
+because both descend by the same comparisons (`rbt_comp_ins_upd_w`).  The five code equations
+that took `snd` of `mupd` now use it: the index insertion, the count set's and the aggregates'
+updates, and the Until structure's time stamp maps.  And with a positive left operand the join
+collected the index entries whose keys fail by filtering the list of all entries, which it built
+at every time point however few keys drop out; it now collects them with a fold over the index
+that conses only them (`entries_fails_fold`, `Dense_Idx_Code.thy`), and deletes them with a right
+fold, since the fold collects them in reverse order.
+
+| `frz-sincelag30` (tp500) | before | after |
+|---|---|---|
+| minor words allocated | 59.8 M | 54.5 M |
+| time (best of 3) | 0.212 s | 0.211 s |
+
+The allocation drops by 9%, the time does not move beyond noise.  Over the 37 formulas with a
+freeze the geometric mean of new over old is 0.983, and over the 93 aggregation, Since and Once
+formulas of the suite, where `mupdw` also serves the count sets and the aggregates, 0.986; no
+formula moves by more than 10%, which is within the noise of these runs.  The outputs are
+identical on all 130 formulas and on the 652 `-verified` commands of the test corpus, and the cram
+tests pass.
+
+The rest of the allocation is the trees': each insertion or deletion copies the path to its key,
+in the index, the time stamp mapping and the window's table.  Keeping fewer of them (the time
+stamps in the index's buckets, say) would change the Since node's state and its invariant at all
+levels; this entry stops here.
