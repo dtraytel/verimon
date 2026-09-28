@@ -394,7 +394,7 @@ lemma matches_ex_into[simp]:
   by (induct t \<phi> arbitrary: v rule: ex_into.induct) (auto simp: Formula.TT_def)
 
 lemma matches_push_ex[simp]: "Safety.matches v (push_ex \<phi>) e = Safety.matches v \<phi> e"
-  by (induct \<phi> arbitrary: v) (auto simp: push_ex_And)
+  by (induct \<phi> arbitrary: v e) (auto simp: push_ex_And)
 
 subsection \<open>Progress\<close>
 
@@ -422,7 +422,7 @@ qed (auto intro: wty_formula.Exists)
 
 lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_ex \<phi>"
   by (induct rule: wty_formula.induct)
-    (auto simp: push_ex_And intro!: wty_formula.intros wty_ex_into wty_and_cstr elim: regex.pred_mono_strong)
+    (auto simp: push_ex_And fun_upd_def intro!: wty_formula.intros wty_ex_into wty_and_cstr elim: regex.pred_mono_strong)
 
 subsection \<open>The dense monitor on the rewritten formula\<close>
 
