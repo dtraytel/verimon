@@ -17,10 +17,14 @@ text \<open>
 
 subsection \<open>The upper bound of an interval\<close>
 
-definition ivl_ub :: "\<I> \<Rightarrow> enat" where
-  "ivl_ub I = (if bounded I then enat (LEAST t. \<not> memR I t) else \<infinity>)"
+text \<open>The largest time difference in a bounded interval: one less than the first one outside it.
+  A past operator at @{term i} looks at time points @{term k} with @{term "\<tau> \<sigma> i - \<tau> \<sigma> k"} at most
+  this far.\<close>
 
-lemma memR_less_ivl_ub: "memR I t \<Longrightarrow> enat t < ivl_ub I"
+definition ivl_ub :: "\<I> \<Rightarrow> enat" where
+  "ivl_ub I = (if bounded I then enat ((LEAST t. \<not> memR I t) - 1) else \<infinity>)"
+
+lemma memR_le_ivl_ub: "memR I t \<Longrightarrow> enat t \<le> ivl_ub I"
 proof (cases "bounded I")
   case True
   then obtain m where m: "\<not> memR I m"
@@ -64,7 +68,7 @@ next
 qed
 
 lemma ivl_ub_code[code]:
-  "ivl_ub I = (if bounded I then enat (the (while_option (memR I) Suc 0)) else \<infinity>)"
+  "ivl_ub I = (if bounded I then enat (the (while_option (memR I) Suc 0) - 1) else \<infinity>)"
 proof (cases "bounded I")
   case True
   then obtain m where "\<not> memR I m"
@@ -269,8 +273,8 @@ lemma tau_fwd:
   using assms by simp
 
 lemma ub_add_le: "memR I t \<Longrightarrow> ivl_ub I + x \<le> d \<Longrightarrow> x + enat t \<le> d"
-  using memR_less_ivl_ub[of I t]
-  by (metis add.commute add_left_mono dual_order.trans less_imp_le)
+  using memR_le_ivl_ub[of I t]
+  by (metis add.commute add_left_mono dual_order.trans)
 
 lemma sat_agree_from:
   "past_reach \<phi> \<le> d \<Longrightarrow> agree_from \<sigma> d i V V' \<Longrightarrow> Formula.sat \<sigma> V v i \<phi> = Formula.sat \<sigma> V' v i \<phi>"
