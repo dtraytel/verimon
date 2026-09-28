@@ -6279,7 +6279,10 @@ let rec hoist
     | fl, pn, And (phi, psi) -> And (hoist fl pn phi, hoist fl pn psi)
     | fl, pn, Or (phi, psi) -> Or (hoist fl pn phi, hoist fl pn psi)
     | fl, pn, Ands l -> Ands (mapa (hoist fl pn) l)
-    | fl, pn, Exists (t, phi) -> Exists (t, hoist fl pn phi)
+    | fl, pn, Exists (t, phi) ->
+        (let phia = hoist fl pn phi in
+          (match frz_split pn (Exists (t, phia)) with None -> Exists (t, phia)
+            | Some (a, b) -> And (a, b)))
     | fl, pn, Agg (y, omega, tys, f, phi) ->
         Agg (y, omega, tys, f, hoist fl pn phi)
     | fl, pn, Let (e, phi, psi) ->
@@ -13059,6 +13062,104 @@ let rec is_cmp
         | Release (_, _, _) -> false | MatchF (_, _) -> false
         | MatchP (_, _) -> false | TP _ -> false | TS _ -> false);;
 
+let rec int_neq_trm
+  uu uv = match uu, uv with
+    Const (EInt ia), Const (EInt i) -> not (Z.equal ia i)
+    | Var v, uv -> false
+    | Const (EFloat va), uv -> false
+    | Const (EString va), uv -> false
+    | Plus (v, va), uv -> false
+    | Minus (v, va), uv -> false
+    | UMinus v, uv -> false
+    | Mult (v, va), uv -> false
+    | Div (v, va), uv -> false
+    | Mod (v, va), uv -> false
+    | F2i v, uv -> false
+    | I2f v, uv -> false
+    | uu, Var v -> false
+    | uu, Const (EFloat va) -> false
+    | uu, Const (EString va) -> false
+    | uu, Plus (v, va) -> false
+    | uu, Minus (v, va) -> false
+    | uu, UMinus v -> false
+    | uu, Mult (v, va) -> false
+    | uu, Div (v, va) -> false
+    | uu, Mod (v, va) -> false
+    | uu, F2i v -> false
+    | uu, I2f v -> false;;
+
+let rec str_eq_trm
+  uu uv = match uu, uv with
+    Const (EString sa), Const (EString s) -> Stdlib.(=) sa s
+    | Var v, uv -> false
+    | Const (EInt va), uv -> false
+    | Const (EFloat va), uv -> false
+    | Plus (v, va), uv -> false
+    | Minus (v, va), uv -> false
+    | UMinus v, uv -> false
+    | Mult (v, va), uv -> false
+    | Div (v, va), uv -> false
+    | Mod (v, va), uv -> false
+    | F2i v, uv -> false
+    | I2f v, uv -> false
+    | uu, Var v -> false
+    | uu, Const (EInt va) -> false
+    | uu, Const (EFloat va) -> false
+    | uu, Plus (v, va) -> false
+    | uu, Minus (v, va) -> false
+    | uu, UMinus v -> false
+    | uu, Mult (v, va) -> false
+    | uu, Div (v, va) -> false
+    | uu, Mod (v, va) -> false
+    | uu, F2i v -> false
+    | uu, I2f v -> false;;
+
+let rec is_ff = function Neg (Eq (t, u)) -> str_eq_trm t u
+                | Eq (t, u) -> int_neq_trm t u
+                | Pred (v, va) -> false
+                | Let (v, va, vb) -> false
+                | Frz (v, va, vb) -> false
+                | LetPast (v, va, vb) -> false
+                | Less (v, va) -> false
+                | LessEq (v, va) -> false
+                | Neg (Pred (va, vb)) -> false
+                | Neg (Let (va, vb, vc)) -> false
+                | Neg (Frz (va, vb, vc)) -> false
+                | Neg (LetPast (va, vb, vc)) -> false
+                | Neg (Less (va, vb)) -> false
+                | Neg (LessEq (va, vb)) -> false
+                | Neg (Neg va) -> false
+                | Neg (Or (va, vb)) -> false
+                | Neg (And (va, vb)) -> false
+                | Neg (Ands va) -> false
+                | Neg (Exists (va, vb)) -> false
+                | Neg (Agg (va, vb, vc, vd, ve)) -> false
+                | Neg (Prev (va, vb)) -> false
+                | Neg (Next (va, vb)) -> false
+                | Neg (Since (va, vb, vc)) -> false
+                | Neg (Until (va, vb, vc)) -> false
+                | Neg (Trigger (va, vb, vc)) -> false
+                | Neg (Release (va, vb, vc)) -> false
+                | Neg (MatchF (va, vb)) -> false
+                | Neg (MatchP (va, vb)) -> false
+                | Neg (TP va) -> false
+                | Neg (TS va) -> false
+                | Or (v, va) -> false
+                | And (v, va) -> false
+                | Ands v -> false
+                | Exists (v, va) -> false
+                | Agg (v, va, vb, vc, vd) -> false
+                | Prev (v, va) -> false
+                | Next (v, va) -> false
+                | Since (v, va, vb) -> false
+                | Until (v, va, vb) -> false
+                | Trigger (v, va, vb) -> false
+                | Release (v, va, vb) -> false
+                | MatchF (v, va) -> false
+                | MatchP (v, va) -> false
+                | TP v -> false
+                | TS v -> false;;
+
 let rec interval
   xb xc =
     Abs_I (if less_eq_enat (Enat xb) xc
@@ -15687,6 +15788,11 @@ let rec share_ok
           | Release (_, _, _) -> true | MatchF (_, _) -> true
           | MatchP (_, _) -> true | TP _ -> true | TS _ -> true));;
 
+let rec rel_op
+  phi i psi =
+    (if is_ff phi && (memL i zero_nata && memR i zero_nata && bounded i)
+      then always_safe_0 i psi else Release (phi, i, psi));;
+
 let rec share_rw
   = function
     And (alpha, Release (phi, i, psi)) ->
@@ -15694,14 +15800,14 @@ let rec share_rw
        let phia = share_rw phi in
        let psia = share_rw psi in
         (if share_ok (And (alphaa, phia)) psia
-          then Let (shr, psia, And (alphaa, Release (phia, i, shr_pred psia)))
-          else And (alphaa, Release (phia, i, psia))))
+          then Let (shr, psia, And (alphaa, rel_op phia i (shr_pred psia)))
+          else And (alphaa, rel_op phia i psia)))
     | Release (phi, i, psi) ->
         (let phia = share_rw phi in
          let psia = share_rw psi in
           (if share_ok phia psia
-            then Let (shr, psia, Release (phia, i, shr_pred psia))
-            else Release (phia, i, psia)))
+            then Let (shr, psia, rel_op phia i (shr_pred psia))
+            else rel_op phia i psia))
     | Let (p, phi, psi) -> Let (p, share_rw phi, share_rw psi)
     | Neg phi -> Neg (share_rw phi)
     | And (phi, Pred (v, va)) -> And (share_rw phi, share_rw (Pred (v, va)))
@@ -15875,13 +15981,13 @@ let rec push_ex
           | TP _ -> and_cstr (push_ex phi) (push_ex psi)
           | TS _ -> and_cstr (push_ex phi) (push_ex psi))
     | Ands l -> Ands (mapa push_ex l)
+    | Let (p, phi, psi) -> Let (p, push_ex phi, push_ex psi)
     | Agg (y, omega, tys, f, phi) -> Agg (y, omega, tys, f, push_ex phi)
     | Prev (i, phi) -> Prev (i, push_ex phi)
     | Next (i, phi) -> Next (i, push_ex phi)
     | Since (phi, i, psi) -> Since (push_ex phi, i, push_ex psi)
     | Until (phi, i, psi) -> Until (push_ex phi, i, push_ex psi)
     | Pred (v, va) -> Pred (v, va)
-    | Let (v, va, vb) -> Let (v, va, vb)
     | Frz (v, va, vb) -> Frz (v, va, vb)
     | LetPast (v, va, vb) -> LetPast (v, va, vb)
     | Eq (v, va) -> Eq (v, va)
