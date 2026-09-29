@@ -411,6 +411,26 @@ lemma fvi_list_Suc: "fvi_list (Suc b) \<phi> = ex_cols (fvi_list b \<phi>)"
     (auto simp: ex_cols_Cons ex_cols_cols_union ex_cols_fold_cols_union fvi_trm_list_Suc
       ex_cols_fv_regex_list cong: fold_cong fv_regex_list_cong)
 
+text \<open>Under @{term k} binders, the columns are those at least @{term k}, shifted down.\<close>
+
+definition shift_cols :: "nat \<Rightarrow> nat list \<Rightarrow> nat list" where
+  "shift_cols k cs = map (\<lambda>x. x - k) (filter (\<lambda>x. k \<le> x) cs)"
+
+lemma shift_cols_0[simp]: "shift_cols 0 cs = cs"
+  by (simp add: shift_cols_def)
+
+lemma shift_cols_Suc: "shift_cols (Suc k) cs = ex_cols (shift_cols k cs)"
+  by (induction cs) (auto simp: shift_cols_def ex_cols_Cons)
+
+lemma set_shift_cols: "set (shift_cols k cs) = (\<lambda>x. x - k) ` {x \<in> set cs. k \<le> x}"
+  by (auto simp: shift_cols_def)
+
+lemma distinct_shift_cols: "distinct cs \<Longrightarrow> distinct (shift_cols k cs)"
+  by (auto simp: shift_cols_def distinct_map inj_on_def)
+
+lemma fvi_list_plus: "fvi_list (b + k) \<phi> = shift_cols k (fvi_list b \<phi>)"
+  by (induction k) (simp_all add: fvi_list_Suc shift_cols_Suc)
+
 qualified definition nfv :: "'t formula \<Rightarrow> nat" where
   "nfv \<phi> = Max (insert 0 (Suc ` fv \<phi>))"
 
