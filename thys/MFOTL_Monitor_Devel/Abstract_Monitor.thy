@@ -18,16 +18,20 @@ text \<open>
 
 locale fo_spec =
   fixes
-    nfv :: nat and fv :: "nat set" and
+    nfv :: nat and cols :: "nat list" and
     traces :: "'a trace set" and
     sat :: "'a trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool"
   assumes
-    fv_less_nfv: "x \<in> fv \<Longrightarrow> x < nfv" and
-    sat_fv_cong: "\<sigma> \<in> traces \<Longrightarrow> (\<And>x. x \<in> fv \<Longrightarrow> v!x = v'!x) \<Longrightarrow> sat \<sigma> v i = sat \<sigma> v' i"
+    distinct_cols: "distinct cols" and
+    fv_less_nfv: "x \<in> set cols \<Longrightarrow> x < nfv" and
+    sat_fv_cong: "\<sigma> \<in> traces \<Longrightarrow> (\<And>x. x \<in> set cols \<Longrightarrow> v!x = v'!x) \<Longrightarrow> sat \<sigma> v i = sat \<sigma> v' i"
 begin
 
+text \<open>A verdict is a time-point and a tuple over the specification's free variables, listed in
+  the order @{term cols}; @{term "val nfv cols"} reads it as a valuation.\<close>
+
 definition verdicts :: "'a trace \<Rightarrow> (nat \<times> 'b tuple) set" where
-  "verdicts \<sigma> = {(i, v). wf_tuple nfv fv v \<and> sat \<sigma> (map the v) i}"
+  "verdicts \<sigma> = {(i, v). wf_tuple cols v \<and> sat \<sigma> (val nfv cols v) i}"
 
 definition prefixes :: "'a prefix set" where
   "prefixes = {\<pi>. \<exists>\<sigma> \<in> traces. prefix_of \<pi> \<sigma>}"
@@ -71,10 +75,10 @@ locale monitor = fo_spec +
   fixes M :: "'a prefix \<Rightarrow> (nat \<times> 'b tuple) set"
   assumes
     mono_monitor: "\<pi>' \<in> prefixes \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> M \<pi> \<subseteq> M \<pi>'" and
-    wf_monitor: "\<pi> \<in> prefixes \<Longrightarrow> (i, v) \<in> M \<pi> \<Longrightarrow> wf_tuple nfv fv v" and
-    sound_monitor: "\<sigma> \<in> traces \<Longrightarrow> (i, v) \<in> M \<pi> \<Longrightarrow> prefix_of \<pi> \<sigma> \<Longrightarrow> sat \<sigma> (map the v) i" and
-    complete_monitor: "\<sigma> \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma> \<Longrightarrow> wf_tuple nfv fv v \<Longrightarrow>
-      (\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> sat \<sigma>' (map the v) i) \<Longrightarrow>
+    wf_monitor: "\<pi> \<in> prefixes \<Longrightarrow> (i, v) \<in> M \<pi> \<Longrightarrow> wf_tuple cols v" and
+    sound_monitor: "\<sigma> \<in> traces \<Longrightarrow> (i, v) \<in> M \<pi> \<Longrightarrow> prefix_of \<pi> \<sigma> \<Longrightarrow> sat \<sigma> (val nfv cols v) i" and
+    complete_monitor: "\<sigma> \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma> \<Longrightarrow> wf_tuple cols v \<Longrightarrow>
+      (\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> sat \<sigma>' (val nfv cols v) i) \<Longrightarrow>
       \<exists>\<pi>'. prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> M \<pi>'"
 
 text \<open>
@@ -98,10 +102,10 @@ next
     unfolding verdicts_def
   proof safe
     fix i v
-    assume "wf_tuple nfv fv v" and "sat \<sigma> (map the v) i"
-    then obtain \<pi> where "prefix_of \<pi> \<sigma> \<and> (\<forall>\<sigma>'\<in>traces. prefix_of \<pi> \<sigma>' \<longrightarrow> sat \<sigma>' (map the v) i)"
+    assume "wf_tuple cols v" and "sat \<sigma> (val nfv cols v) i"
+    then obtain \<pi> where "prefix_of \<pi> \<sigma> \<and> (\<forall>\<sigma>'\<in>traces. prefix_of \<pi> \<sigma>' \<longrightarrow> sat \<sigma>' (val nfv cols v) i)"
       using assms cosafety_lr by blast
-    with \<open>wf_tuple nfv fv v\<close> obtain \<pi>' where "prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> M \<pi>'"
+    with \<open>wf_tuple cols v\<close> obtain \<pi>' where "prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> M \<pi>'"
       using assms complete_monitor by blast
     then show "(i, v) \<in> \<Union>{M \<pi> | \<pi>. prefix_of \<pi> \<sigma>}"
       by blast
@@ -132,14 +136,14 @@ locale progress = fo_spec _ _ _ sat for sat :: "'a trace \<Rightarrow> 'b list \
 begin
 
 definition M :: "'a prefix \<Rightarrow> (nat \<times> 'b tuple) set" where
-  "M \<pi> = {(i, v). i < progress \<pi> \<and> wf_tuple nfv fv v \<and>
-    (\<forall>\<sigma> \<in> traces. prefix_of \<pi> \<sigma> \<longrightarrow> sat \<sigma> (map the v) i)}"
+  "M \<pi> = {(i, v). i < progress \<pi> \<and> wf_tuple cols v \<and>
+    (\<forall>\<sigma> \<in> traces. prefix_of \<pi> \<sigma> \<longrightarrow> sat \<sigma> (val nfv cols v) i)}"
 
 definition Mt :: "'a prefix \<Rightarrow> (nat \<times> nat \<times> 'b tuple) set" where
   "Mt \<pi> = (\<lambda>(i, v). (i, pts \<pi> ! i, v)) ` M \<pi>"
 
-lemma M_alt: "\<pi> \<in> prefixes \<Longrightarrow> M \<pi> = {(i, v). i < progress \<pi> \<and> wf_tuple nfv fv v \<and>
-    (\<exists>\<sigma> \<in> traces. prefix_of \<pi> \<sigma> \<and> sat \<sigma> (map the v) i)}"
+lemma M_alt: "\<pi> \<in> prefixes \<Longrightarrow> M \<pi> = {(i, v). i < progress \<pi> \<and> wf_tuple cols v \<and>
+    (\<exists>\<sigma> \<in> traces. prefix_of \<pi> \<sigma> \<and> sat \<sigma> (val nfv cols v) i)}"
   using ex_prefix_of[of \<pi>]
   by (auto simp: prefixes_def M_def cong: progress_sat_cong)
 
@@ -164,17 +168,17 @@ next
 next
   fix i v \<pi>
   assume "\<pi> \<in> prefixes" and "(i, v) \<in> M \<pi>"
-  then show "wf_tuple nfv fv v"
+  then show "wf_tuple cols v"
     by (simp add: M_def)
 next
   fix i v \<pi> and \<sigma> :: "'a trace"
   assume "\<sigma> \<in> traces" and "(i, v) \<in> M \<pi>" and "prefix_of \<pi> \<sigma>"
-  then show "sat \<sigma> (map the v) i"
+  then show "sat \<sigma> (val nfv cols v) i"
     by (simp add: M_def)
 next
   fix i v \<pi> and \<sigma> :: "'a trace"
-  assume *: "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>" "wf_tuple nfv fv v"
-    "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> sat \<sigma>' (map the v) i"
+  assume *: "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>" "wf_tuple cols v"
+    "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> sat \<sigma>' (val nfv cols v) i"
   show "\<exists>\<pi>'. prefix_of \<pi>' \<sigma> \<and> (i, v) \<in> M \<pi>'"
   proof (cases "i < progress \<pi>")
     case True
@@ -217,8 +221,8 @@ lemma pslice_pnil[simp]: "pslice S pnil = pnil"
 lemma last_ts_pslice[simp]: "last_ts (pslice S \<pi>) = last_ts \<pi>"
   by (transfer fixing: S) (simp add: last_map case_prod_beta split: list.split)
 
-abbreviation verdict_filter :: "'b list set \<Rightarrow> (nat \<times> 'b tuple) set \<Rightarrow> (nat \<times> 'b tuple) set" where
-  "verdict_filter S V \<equiv> {(i, v) \<in> V. mem_restr S v}"
+abbreviation verdict_filter :: "'b list set \<Rightarrow> nat list \<Rightarrow> (nat \<times> 'b tuple) set \<Rightarrow> (nat \<times> 'b tuple) set" where
+  "verdict_filter S cs V \<equiv> {(i, v) \<in> V. mem_restr S cs v}"
 
 end
 
@@ -232,44 +236,55 @@ begin
 lemma pslice_closed[simp, intro]: "\<pi> \<in> prefixes \<Longrightarrow> pslice S \<pi> \<in> prefixes"
   using prefix_of_pmap_\<Gamma> by (fastforce simp: prefixes_def)
 
+text \<open>A verdict tuple that agrees with a valuation of the slice is satisfied on the slice
+  exactly when it is on the whole trace.\<close>
+
+lemma sat_slice_val:
+  assumes "\<sigma> \<in> traces" "mem_restr S cols v"
+  shows "sat (slice S \<sigma>) (val nfv cols v) i \<longleftrightarrow> sat \<sigma> (val nfv cols v) i"
+proof -
+  obtain w where w: "w \<in> S" "\<forall>c\<in>set cols. c < length w \<and> w ! c = tup_get cols v c"
+    using assms(2) distinct_cols by (auto elim: mem_restrE)
+  have eq: "val nfv cols v ! x = w ! x" if "x \<in> set cols" for x
+    using w(2) that fv_less_nfv[OF that] by simp
+  have "sat (slice S \<sigma>) (val nfv cols v) i \<longleftrightarrow> sat (slice S \<sigma>) w i"
+    using eq by (intro sat_fv_cong) (simp_all add: assms(1))
+  also have "\<dots> \<longleftrightarrow> sat \<sigma> w i"
+    by (rule sliceable[OF assms(1) w(1)])
+  also have "\<dots> \<longleftrightarrow> sat \<sigma> (val nfv cols v) i"
+    using eq by (intro sat_fv_cong[symmetric]) (simp_all add: assms(1))
+  finally show ?thesis .
+qed
+
+text \<open>A tuple is covered by the slice its valuation belongs to.\<close>
+
+lemma mem_restr_val:
+  assumes "wf_tuple cols v" "val nfv cols v \<in> S"
+  shows "mem_restr S cols v"
+  using assms fv_less_nfv by (intro mem_restrI[OF distinct_cols assms(2,1)]) auto
+
 lemma union_verdicts_slice:
   assumes part: "\<And>v. length v = nfv \<Longrightarrow> v \<in> \<Union>\<S>"
     and trace: "\<sigma> \<in> traces"
-  shows "\<Union>((\<lambda>S. verdict_filter S (verdicts (slice S \<sigma>))) ` \<S>) = verdicts \<sigma>"
+  shows "\<Union>((\<lambda>S. verdict_filter S cols (verdicts (slice S \<sigma>))) ` \<S>) = verdicts \<sigma>"
 proof safe
   fix S i and v :: "'b tuple"
-  assume "(i, v) \<in> verdicts (slice S \<sigma>)"
-  then have tuple: "wf_tuple nfv fv v" and "sat (slice S \<sigma>) (map the v) i"
-    by (auto simp: verdicts_def)
-  assume "mem_restr S v"
-  then obtain v' where "v' \<in> S" and 1: "\<forall>i\<in>fv. v ! i = Some (v' ! i)"
-    using tuple by (auto simp: fv_less_nfv elim: mem_restrE)
-  then have "sat (slice S \<sigma>) v' i"
-    using trace \<open>sat (slice S \<sigma>) (map the v) i\<close> tuple
-    by (auto simp: wf_tuple_length fv_less_nfv cong: sat_fv_cong)
-  then have "sat \<sigma> v' i"
-    using sliceable[OF trace \<open>v' \<in> S\<close>] by simp
-  then have "sat \<sigma> (map the v) i"
-    using trace tuple 1
-    by (auto simp: wf_tuple_length fv_less_nfv cong: sat_fv_cong)
+  assume "(i, v) \<in> verdicts (slice S \<sigma>)" "mem_restr S cols v"
   then show "(i, v) \<in> verdicts \<sigma>"
-    using tuple by (simp add: verdicts_def)
+    using sat_slice_val[OF trace] by (auto simp: verdicts_def)
 next
   fix i and v :: "'b tuple"
   assume "(i, v) \<in> verdicts \<sigma>"
-  then have tuple: "wf_tuple nfv fv v" and "sat \<sigma> (map the v) i"
+  then have tuple: "wf_tuple cols v" and sat: "sat \<sigma> (val nfv cols v) i"
     by (auto simp: verdicts_def)
-  then obtain S where "S \<in> \<S>" and "map the v \<in> S"
-    using part[of "map the v"] by (auto simp add: wf_tuple_def)
-  then have "mem_restr S v"
-    using mem_restrI[of "map the v" S nfv fv] tuple
-    by (auto simp: wf_tuple_def fv_less_nfv)
-  moreover have "sat (slice S \<sigma>) (map the v) i"
-    using \<open>sat \<sigma> (map the v) i\<close> sliceable[OF trace \<open>map the v \<in> S\<close>] by simp
+  obtain S where "S \<in> \<S>" and "val nfv cols v \<in> S"
+    using part[of "val nfv cols v"] by auto
+  then have "mem_restr S cols v"
+    using mem_restr_val[OF tuple] by blast
   then have "(i, v) \<in> verdicts (slice S \<sigma>)"
-    using tuple by (simp add: verdicts_def)
-  ultimately show "(i, v) \<in> (\<Union>S\<in>\<S>. verdict_filter S (verdicts (slice S \<sigma>)))"
-    using \<open>S \<in> \<S>\<close> by blast
+    using tuple sat sat_slice_val[OF trace] by (simp add: verdicts_def)
+  then show "(i, v) \<in> (\<Union>S\<in>\<S>. verdict_filter S cols (verdicts (slice S \<sigma>)))"
+    using \<open>S \<in> \<S>\<close> \<open>mem_restr S cols v\<close> by blast
 qed
 
 end
@@ -281,31 +296,30 @@ text \<open>
 
 locale sliceable_monitor = monitor _ _ _ sat M + abstract_slicer relevant_events
   for relevant_events :: "'b list set \<Rightarrow> 'a set" and sat :: "'a set trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool" and M +
-  assumes sliceable_M: "\<pi> \<in> prefixes \<Longrightarrow> mem_restr S v \<Longrightarrow> (i, v) \<in> M (pslice S \<pi>) \<longleftrightarrow> (i, v) \<in> M \<pi>"
+  assumes sliceable_M: "\<pi> \<in> prefixes \<Longrightarrow> mem_restr S cols v \<Longrightarrow> (i, v) \<in> M (pslice S \<pi>) \<longleftrightarrow> (i, v) \<in> M \<pi>"
 begin
 
 lemma union_M_pslice:
   assumes part: "\<And>v. length v = nfv \<Longrightarrow> v \<in> \<Union>\<S>"
     and prefix: "\<pi> \<in> prefixes"
-  shows "\<Union>((\<lambda>S. verdict_filter S (M (pslice S \<pi>))) ` \<S>) = M \<pi>"
+  shows "\<Union>((\<lambda>S. verdict_filter S cols (M (pslice S \<pi>))) ` \<S>) = M \<pi>"
 proof safe
   fix S i and v :: "'b tuple"
-  assume "mem_restr S v" and "(i, v) \<in> M (pslice S \<pi>)"
+  assume "mem_restr S cols v" and "(i, v) \<in> M (pslice S \<pi>)"
   then show "(i, v) \<in> M \<pi>" using sliceable_M prefix by blast
 next
   fix i and v :: "'b tuple"
   assume "(i, v) \<in> M \<pi>"
-  then have tuple: "wf_tuple nfv fv v"
+  then have tuple: "wf_tuple cols v"
     using prefix wf_monitor by blast
-  then obtain S where "S \<in> \<S>" and "map the v \<in> S"
-    using part[of "map the v"] by (auto simp add: wf_tuple_def)
-  then have "mem_restr S v"
-    using mem_restrI[of "map the v" S nfv fv] tuple
-    by (auto simp: wf_tuple_def fv_less_nfv)
+  obtain S where "S \<in> \<S>" and "val nfv cols v \<in> S"
+    using part[of "val nfv cols v"] by auto
+  then have "mem_restr S cols v"
+    using tuple fv_less_nfv by (intro mem_restrI[OF distinct_cols]) auto
   then have "(i, v) \<in> M (pslice S \<pi>)"
     using \<open>(i, v) \<in> M \<pi>\<close> sliceable_M prefix by blast
-  then show "(i, v) \<in> (\<Union>S\<in>\<S>. verdict_filter S (M (pslice S \<pi>)))"
-    using \<open>S \<in> \<S>\<close> \<open>mem_restr S v\<close> by blast
+  then show "(i, v) \<in> (\<Union>S\<in>\<S>. verdict_filter S cols (M (pslice S \<pi>)))"
+    using \<open>S \<in> \<S>\<close> \<open>mem_restr S cols v\<close> by blast
 qed
 
 end
@@ -330,20 +344,29 @@ end
 sublocale sliceable_timed_progress \<subseteq> sliceable_monitor _ _ _ _ _ M
 proof
   fix S :: "'b list set" and v i \<pi>
-  assume *: "\<pi> \<in> prefixes" "mem_restr S v"
+  assume *: "\<pi> \<in> prefixes" "mem_restr S cols v"
   show "(i, v) \<in> M (pslice S \<pi>) \<longleftrightarrow> (i, v) \<in> M \<pi>" (is "?L \<longleftrightarrow> ?R")
   proof
     assume ?L
-    with * show ?R
-      by (auto 0 4 simp: M_def wf_tuple_def elim!: mem_restrE
-          box_equals[OF sliceable sat_fv_cong sat_fv_cong, THEN iffD1, rotated -1]
-          intro: prefix_of_psliceI dest: fv_less_nfv spec[of _ "slice S _"]) (* SLOW *)
+    then have i: "i < progress \<pi>" and tuple: "wf_tuple cols v"
+      and sat: "\<And>\<sigma>. \<sigma> \<in> traces \<Longrightarrow> prefix_of (pslice S \<pi>) \<sigma> \<Longrightarrow> sat \<sigma> (val nfv cols v) i"
+      using *(1) by (auto simp: M_def)
+    have "sat \<sigma> (val nfv cols v) i" if "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>" for \<sigma>
+      using sat[of "slice S \<sigma>"] that prefix_of_psliceI sat_slice_val[OF that(1) *(2)] by blast
+    with i tuple show ?R
+      by (simp add: M_def)
   next
     assume ?R
-    with * show ?L
-      by (auto 0 4 simp: M_alt wf_tuple_def elim!: mem_restrE
-        box_equals[OF sliceable sat_fv_cong sat_fv_cong, THEN iffD2, rotated -1]
-        intro: exI[of _ "slice S _"] prefix_of_psliceI dest: fv_less_nfv) (* SLOW *)
+    then have i: "i < progress \<pi>" and tuple: "wf_tuple cols v"
+      and sat: "\<exists>\<sigma> \<in> traces. prefix_of \<pi> \<sigma> \<and> sat \<sigma> (val nfv cols v) i"
+      using *(1) by (auto simp: M_alt)
+    then obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>" "sat \<sigma> (val nfv cols v) i"
+      by blast
+    then have "slice S \<sigma> \<in> traces" "prefix_of (pslice S \<pi>) (slice S \<sigma>)"
+      "sat (slice S \<sigma>) (val nfv cols v) i"
+      using prefix_of_psliceI sat_slice_val[OF _ *(2)] by auto
+    with i tuple *(1) show ?L
+      by (auto simp: M_alt)
   qed
 qed
 
