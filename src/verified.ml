@@ -4066,6 +4066,35 @@ let wild : 'a regex = Skip one_nata;;
 
 let rec filter (_A1, _A2) p a = inf_seta (_A1, _A2) a (Collect_set p);;
 
+let rec minus_comp
+  comp t1 t2 =
+    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
+      else (if small_rbta t1
+             then rbtreeify
+                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
+                      (entries t1))
+             else (match t2 with Empty -> t1
+                    | Branch (_, l2, a, (), r2) ->
+                      (let (l1, (_, r1)) = split_comp comp t1 a in
+                        rbt_join2a (minus_comp comp l1 l2)
+                          (minus_comp comp r1 r2)))));;
+
+let rec rbt_minus_rbt_join2 _A
+  xb xc =
+    Mapping_RBTa
+      (rbt_recolor
+        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
+
+let rec minus_set (_A1, _A2)
+  a b = match a, b with
+    RBT_set t1, RBT_set t2 ->
+      (match ccompare _A2
+        with None ->
+          failwith "minus RBT_set RBT_set: ccompare = None"
+            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
+        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
+    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
+
 let rec tup_get cs x i = the (map_of equal_nat (zip cs x) i);;
 
 let rec restrict ds cs x = mapa (tup_get cs x) ds;;
@@ -4399,46 +4428,67 @@ let rec card (_A1, _A2, _A3)
 
 let rec superset _A xs = list_all (membera _A xs);;
 
+let rec distinct _A = function [] -> true
+                      | x :: xs -> not (membera _A xs x) && distinct _A xs;;
+
 let rec join (_A1, _A2, _A3)
   cs a x2 ds b = match cs, a, x2, ds, b with
     cs, a, true, ds, b ->
-      (if superset equal_nat cs ds
-        then (let k =
-                image ((ceq_list _A1), (ccompare_list _A2))
-                  ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-                  (restrict (join_key cs ds) ds) b
-                in
-               filter ((ceq_list _A1), (ccompare_list _A2))
-                 (fun aa ->
-                   member ((ceq_list _A1), (ccompare_list _A2))
-                     (restrict (join_key cs ds) cs aa) k)
-                 a)
-        else (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
-                   a &&
-                   finite
-                     (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) b
-               then (if less_eq_nat
-                          (card (card_UNIV_list, (ceq_list _A1),
-                                  (ccompare_list _A2))
-                            a)
-                          (card (card_UNIV_list, (ceq_list _A1),
-                                  (ccompare_list _A2))
-                            b)
-                      then probe_join (_A1, _A2, _A3) cs a ds b
-                      else probe_joina (_A1, _A2, _A3) cs a ds b)
-               else failwith "join: infinite table"
-                      (fun _ -> join (_A1, _A2, _A3) cs a true ds b)))
+      (if equal_lista equal_nat ds cs &&
+            (distinct equal_nat cs &&
+              (ball ((ceq_list _A1), (ccompare_list _A2)) a
+                 (fun aa -> equal_nata (size_lista aa) (size_lista cs)) &&
+                ball ((ceq_list _A1), (ccompare_list _A2)) b
+                  (fun ba -> equal_nata (size_lista ba) (size_lista cs))))
+        then inf_seta ((ceq_list _A1), (ccompare_list _A2)) a b
+        else (if superset equal_nat cs ds
+               then (let k =
+                       image ((ceq_list _A1), (ccompare_list _A2))
+                         ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+                         (restrict (join_key cs ds) ds) b
+                       in
+                      filter ((ceq_list _A1), (ccompare_list _A2))
+                        (fun aa ->
+                          member ((ceq_list _A1), (ccompare_list _A2))
+                            (restrict (join_key cs ds) cs aa) k)
+                        a)
+               else (if finite
+                          (finite_UNIV_list, (ceq_list _A1),
+                            (ccompare_list _A2))
+                          a &&
+                          finite
+                            (finite_UNIV_list, (ceq_list _A1),
+                              (ccompare_list _A2))
+                            b
+                      then (if less_eq_nat
+                                 (card (card_UNIV_list, (ceq_list _A1),
+ (ccompare_list _A2))
+                                   a)
+                                 (card (card_UNIV_list, (ceq_list _A1),
+ (ccompare_list _A2))
+                                   b)
+                             then probe_join (_A1, _A2, _A3) cs a ds b
+                             else probe_joina (_A1, _A2, _A3) cs a ds b)
+                      else failwith "join: infinite table"
+                             (fun _ -> join (_A1, _A2, _A3) cs a true ds b))))
     | cs, a, false, ds, b ->
-        (let k =
-           image ((ceq_list _A1), (ccompare_list _A2))
-             ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-             (restrict (join_key cs ds) ds) b
-           in
-          filter ((ceq_list _A1), (ccompare_list _A2))
-            (fun aa ->
-              not (member ((ceq_list _A1), (ccompare_list _A2))
-                    (restrict (join_key cs ds) cs aa) k))
-            a);;
+        (if equal_lista equal_nat ds cs &&
+              (distinct equal_nat cs &&
+                (ball ((ceq_list _A1), (ccompare_list _A2)) a
+                   (fun aa -> equal_nata (size_lista aa) (size_lista cs)) &&
+                  ball ((ceq_list _A1), (ccompare_list _A2)) b
+                    (fun ba -> equal_nata (size_lista ba) (size_lista cs))))
+          then minus_set ((ceq_list _A1), (ccompare_list _A2)) a b
+          else (let k =
+                  image ((ceq_list _A1), (ccompare_list _A2))
+                    ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+                    (restrict (join_key cs ds) ds) b
+                  in
+                 filter ((ceq_list _A1), (ccompare_list _A2))
+                   (fun aa ->
+                     not (member ((ceq_list _A1), (ccompare_list _A2))
+                           (restrict (join_key cs ds) cs aa) k))
+                   a));;
 
 let rec sup_cfi _A
   = Abs_comp_fun_idem (sup _A.semilattice_sup_lattice.sup_semilattice_sup);;
@@ -5492,9 +5542,6 @@ let rec updatea _A xc xd xe = Alist (update _A xc xd (impl_of xe));;
 let rec ecard (_A1, _A2, _A3)
   a = (if finite (_A1.finite_UNIV_card_UNIV, _A2, _A3) a
         then Enat (card (_A1, _A2, _A3) a) else Infinity_enat);;
-
-let rec distinct _A = function [] -> true
-                      | x :: xs -> not (membera _A xs x) && distinct _A xs;;
 
 let rec is_r
   pre s st i =
@@ -7135,35 +7182,6 @@ let rec proj_tuple_in_join (_A1, _A2)
       then member ((ceq_list _A1), (ccompare_list _A2)) (restrict l r asa) t
       else not (member ((ceq_list _A1), (ccompare_list _A2)) (restrict l r asa)
                  t));;
-
-let rec minus_comp
-  comp t1 t2 =
-    (if small_rbta t2 then folda (fun k _ -> rbt_comp_delete comp k) t2 t1
-      else (if small_rbta t1
-             then rbtreeify
-                    (filtera (fun (k, _) -> is_none (rbt_comp_lookup comp t2 k))
-                      (entries t1))
-             else (match t2 with Empty -> t1
-                    | Branch (_, l2, a, (), r2) ->
-                      (let (l1, (_, r1)) = split_comp comp t1 a in
-                        rbt_join2a (minus_comp comp l1 l2)
-                          (minus_comp comp r1 r2)))));;
-
-let rec rbt_minus_rbt_join2 _A
-  xb xc =
-    Mapping_RBTa
-      (rbt_recolor
-        (minus_comp (the (ccompare _A)) (impl_ofa _A xb) (impl_ofa _A xc)));;
-
-let rec minus_set (_A1, _A2)
-  a b = match a, b with
-    RBT_set t1, RBT_set t2 ->
-      (match ccompare _A2
-        with None ->
-          failwith "minus RBT_set RBT_set: ccompare = None"
-            (fun _ -> minus_set (_A1, _A2) (RBT_set t1) (RBT_set t2))
-        | Some _ -> RBT_set (rbt_minus_rbt_join2 _A2 t1 t2))
-    | a, b -> inf_seta (_A1, _A2) a (uminus_set b);;
 
 let rec proj_tuple_in_join_optim (_A1, _A2)
   pos ra r la l =

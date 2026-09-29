@@ -71,17 +71,39 @@ lemma join_False_key:
     (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<notin> K) A)"
   by (auto simp: join_False_code join1_None_key Let_def)
 
+text \<open>With the same columns on both sides and tuples of the right length, the key of a tuple is
+  the tuple itself: the join is the intersection, the anti-join the difference.\<close>
+
+lemma join_same_cols:
+  assumes "distinct cs" "\<forall>a \<in> A. length a = length cs" "\<forall>b \<in> B. length b = length cs"
+  shows "join cs A True cs B = A \<inter> B" "join cs A False cs B = A - B"
+proof -
+  have k: "join_key cs cs = cs" by (simp add: join_key_def)
+  have "\<And>x. length x = length cs \<Longrightarrow> restrict cs cs x = x"
+    using assms(1) by (simp add: restrict_idle wf_tuple_def)
+  then have A: "\<And>a. a \<in> A \<Longrightarrow> restrict cs cs a = a" and B: "\<And>b. b \<in> B \<Longrightarrow> restrict cs cs b = b"
+    using assms(2,3) by auto
+  show "join cs A True cs B = A \<inter> B"
+    unfolding join_sub_key[OF order_refl] k Let_def by (auto simp: A B image_iff)
+  show "join cs A False cs B = A - B"
+    unfolding join_False_key k Let_def by (auto simp: A B image_iff)
+qed
+
 declare [[code drop: join]]
 
 lemma join_key_code[code]:
-  "join cs A True ds B = (if set ds \<subseteq> set cs
+  "join cs A True ds B = (if ds = cs \<and> distinct cs \<and> (\<forall>a \<in> A. length a = length cs)
+       \<and> (\<forall>b \<in> B. length b = length cs) then A \<inter> B
+     else if set ds \<subseteq> set cs
      then (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<in> K) A)
      else if finite A \<and> finite B then
        (if card A \<le> card B then probe_join cs A ds B else probe_join' cs A ds B)
      else Code.abort (STR ''join: infinite table'') (\<lambda>_. join cs A True ds B))"
-  "join cs A False ds B =
-    (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<notin> K) A)"
-  by (simp_all add: join_sub_key probe_join_join probe_join'_join join_False_key)
+  "join cs A False ds B = (if ds = cs \<and> distinct cs \<and> (\<forall>a \<in> A. length a = length cs)
+       \<and> (\<forall>b \<in> B. length b = length cs) then A - B
+     else (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<notin> K) A))"
+  by (simp_all add: join_same_cols join_sub_key probe_join_join probe_join'_join)
+    (simp add: join_False_key)
 
 subsection \<open>Matching a predicate's table\<close>
 
