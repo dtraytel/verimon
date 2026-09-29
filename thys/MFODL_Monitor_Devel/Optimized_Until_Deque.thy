@@ -167,7 +167,7 @@ lemma dq_list_of_list[simp]: "dq_list (dq_of_list xs) = xs"
 
 section \<open>The Until structure with deques for the time-point-indexed mappings\<close>
 
-type_synonym 'a mmuaux_dq = "tp \<times> ts queue \<times> ('a table \<times> (ts + tp)) queue \<times> nat \<times> bool list \<times> bool list \<times>
+type_synonym 'a mmuaux_dq = "tp \<times> ts queue \<times> ('a table \<times> (ts + tp)) queue \<times> nat \<times>
   'a table \<times> ('a tuple, tp) mapping \<times> ('a tuple, ts + tp) mapping dq \<times> ts dq \<times> 'a table list"
 
 definition rel_a2 :: "tp \<Rightarrow> nat \<Rightarrow> ('a tuple, ts + tp) mapping dq \<Rightarrow> (tp, ('a tuple, ts + tp) mapping) mapping \<Rightarrow> bool" where
@@ -179,9 +179,9 @@ definition rel_tstp :: "tp \<Rightarrow> nat \<Rightarrow> ts dq \<Rightarrow> (
     (\<forall>k < len. Mapping.lookup m (tp - len + k) = Some (dq_nth d k))"
 
 fun rel_uaux :: "event_data mmuaux_dq \<Rightarrow> event_data mmuaux \<Rightarrow> bool" where
-  "rel_uaux (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)
-     (tp', tss', tables', len', maskL', maskR', result', a1_map', a2_map, tstp_map, done') \<longleftrightarrow>
-   tp' = tp \<and> tss' = tss \<and> tables' = tables \<and> len' = len \<and> maskL' = maskL \<and> maskR' = maskR \<and>
+  "rel_uaux (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done)
+     (tp', tss', tables', len', result', a1_map', a2_map, tstp_map, done') \<longleftrightarrow>
+   tp' = tp \<and> tss' = tss \<and> tables' = tables \<and> len' = len \<and>
    result' = result \<and> a1_map' = a1_map \<and> done' = done \<and> len \<le> tp \<and>
    rel_a2 tp len a2_dq a2_map \<and> rel_tstp tp len tstp_dq tstp_map"
 
@@ -466,7 +466,7 @@ qed
 subsection \<open>Operations\<close>
 
 fun eval_step_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
-  "eval_step_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) =
+  "eval_step_dq args (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) =
     (case safe_hd tss of (Some ts, tss') \<Rightarrow>
       (let m = dq_nth a2_dq 0;
         I = args_ivl args;
@@ -486,16 +486,16 @@ fun eval_step_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event
         a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
           else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
         tstp_dq = dq_tl tstp_dq in
-        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # done)))"
+        (tp, tss'', tables, len - 1, result', a1_map, a2_dq, tstp_dq, T # done)))"
 
 lemma eval_step_sim:
   assumes rel: "rel_uaux d a" and valid: "valid_mmuaux' args cur dt a auxlist" and tss: "lin_ts_mmuaux a = ts # tss''"
   shows "rel_uaux (eval_step_dq args d) (eval_step_mmuaux args a)"
 proof -
-  obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map "done" where a:
-    "a = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp tss tables len result a1_map a2_map tstp_map "done" where a:
+    "a = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases a) auto
-  obtain a2_dq tstp_dq where d: "d = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)"
+  obtain a2_dq tstp_dq where d: "d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done)"
     using rel unfolding a by (cases d) auto
   have ra2: "rel_a2 tp len a2_dq a2_map" and rt: "rel_tstp tp len tstp_dq tstp_map" and lentp: "len \<le> tp"
     using rel unfolding a d by auto
@@ -522,9 +522,9 @@ proof -
 qed
 
 fun shift_dq :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
-  "shift_dq args nt (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) =
+  "shift_dq args nt (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) =
     (let (tss_queue, tss') = takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss in
-    foldl (\<lambda>aux _. eval_step_dq args aux) (tp, tss', tables, len, maskL, maskR,
+    foldl (\<lambda>aux _. eval_step_dq args aux) (tp, tss', tables, len,
       result, a1_map, a2_dq, tstp_dq, done) (linearize tss_queue))"
 
 lemma foldl_eval_step_sim:
@@ -547,17 +547,17 @@ lemma shift_sim:
   assumes rel: "rel_uaux d a" and valid: "valid_mmuaux' args cur cur a auxlist" and nt: "nt \<ge> cur"
   shows "rel_uaux (shift_dq args nt d) (shift_mmuaux args nt a)"
 proof -
-  obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map "done" where a:
-    "a = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp tss tables len result a1_map a2_map tstp_map "done" where a:
+    "a = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases a) auto
-  obtain a2_dq tstp_dq where d: "d = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)"
+  obtain a2_dq tstp_dq where d: "d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done)"
     using rel unfolding a by (cases d) auto
   define P where "P = (\<lambda>t. \<not> memR (args_ivl args) (nt - t))"
   define tss_queue where "tss_queue = fst (takeWhile_queue P tss)"
   define tss' where "tss' = snd (takeWhile_queue P tss)"
   have tq: "takeWhile_queue P tss = (tss_queue, tss')" by (simp add: tss_queue_def tss'_def)
-  let ?a = "(tp, tss', tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
-  let ?d = "(tp, tss', tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)"
+  let ?a = "(tp, tss', tables, len, result, a1_map, a2_map, tstp_map, done)"
+  let ?d = "(tp, tss', tables, len, result, a1_map, a2_dq, tstp_dq, done)"
   have lin': "linearize tss' = linearize tss" unfolding tss'_def by (rule takeWhile_queue_rep_snd)
   have valid_nt: "valid_mmuaux' args cur nt a auxlist" using valid_mmuaux'_mono[OF valid nt] .
   have valid': "valid_mmuaux' args cur nt ?a auxlist"
@@ -575,8 +575,8 @@ qed
 
 fun eval_dq :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data table list \<times> event_data mmuaux_dq" where
   "eval_dq args nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) = shift_dq args nt aux in
-    (rev done, (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, [])))"
+    (let (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) = shift_dq args nt aux in
+    (rev done, (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, [])))"
 
 lemma eval_sim:
   assumes rel: "rel_uaux d a" and valid: "valid_mmuaux args cur a auxlist" and nt: "nt \<ge> cur"
@@ -585,10 +585,10 @@ lemma eval_sim:
 proof -
   have rel': "rel_uaux (shift_dq args nt d) (shift_mmuaux args nt a)"
     using shift_sim[OF rel _ nt] valid unfolding valid_mmuaux_def by blast
-  obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map "done" where a:
-    "shift_mmuaux args nt a = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp tss tables len result a1_map a2_map tstp_map "done" where a:
+    "shift_mmuaux args nt a = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases "shift_mmuaux args nt a") auto
-  obtain a2_dq tstp_dq where d: "shift_dq args nt d = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)"
+  obtain a2_dq tstp_dq where d: "shift_dq args nt d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done)"
     using rel' unfolding a by (cases "shift_dq args nt d") auto
   show "fst (eval_dq args nt d) = fst (eval_mmuaux' args nt a)"
     "rel_uaux (snd (eval_dq args nt d)) (snd (eval_mmuaux' args nt a))"
@@ -597,7 +597,6 @@ qed
 
 definition init_dq :: "args \<Rightarrow> event_data mmuaux_dq" where
   "init_dq args = (0, empty_queue, empty_queue, 0,
-  join_mask (args_n args) (args_L args), join_mask (args_n args) (args_R args),
   {}, Mapping.empty, dq_push Mapping.empty dq_empty, dq_empty, [])"
 
 lemma init_sim: "rel_uaux (init_dq args) (init_mmuaux args)"
@@ -605,7 +604,7 @@ lemma init_sim: "rel_uaux (init_dq args) (init_mmuaux args)"
   by (auto simp: dq_nth dq_len_list Mapping.lookup_update' dq_len_push)
 
 fun length_dq :: "args \<Rightarrow> event_data mmuaux_dq \<Rightarrow> nat" where
-  "length_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) = length done + len"
+  "length_dq args (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) = length done + len"
 
 lemma length_sim: "rel_uaux d a \<Longrightarrow> length_dq args d = length_mmuaux args a"
   by (cases d; cases a) auto
@@ -718,8 +717,8 @@ definition tstp_of_dq :: "tp \<Rightarrow> nat \<Rightarrow> 'a dq \<Rightarrow>
   "tstp_of_dq tp len dq = Mapping.tabulate [tp - len..<tp] (\<lambda>t. dq_nth dq (t - (tp - len)))"
 
 fun uaux_of_dq :: "event_data mmuaux_dq \<Rightarrow> event_data mmuaux" where
-  "uaux_of_dq (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) =
-    (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_of_dq tp len a2_dq, tstp_of_dq tp len tstp_dq, done)"
+  "uaux_of_dq (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) =
+    (tp, tss, tables, len, result, a1_map, a2_of_dq tp len a2_dq, tstp_of_dq tp len tstp_dq, done)"
 
 definition dq_of_a2 :: "tp \<Rightarrow> nat \<Rightarrow> (tp, 'a) mapping \<Rightarrow> 'a dq" where
   "dq_of_a2 tp len m = dq_of_list (map (\<lambda>k. the (Mapping.lookup m (tp - len + k))) [0..<len + 1])"
@@ -728,8 +727,8 @@ definition dq_of_tstp :: "tp \<Rightarrow> nat \<Rightarrow> (tp, 'a) mapping \<
   "dq_of_tstp tp len m = dq_of_list (map (\<lambda>k. the (Mapping.lookup m (tp - len + k))) [0..<len])"
 
 fun dq_of_uaux :: "event_data mmuaux \<Rightarrow> event_data mmuaux_dq" where
-  "dq_of_uaux (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
-    (tp, tss, tables, len, maskL, maskR, result, a1_map, dq_of_a2 tp len a2_map, dq_of_tstp tp len tstp_map, done)"
+  "dq_of_uaux (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
+    (tp, tss, tables, len, result, a1_map, dq_of_a2 tp len a2_map, dq_of_tstp tp len tstp_map, done)"
 
 lemma rel_a2_det:
   assumes "rel_a2 tp len dq m"
@@ -807,7 +806,7 @@ proof (intro conjI allI impI)
 qed (auto simp: dq_of_tstp_def dq_len_list keys)
 
 lemma valid_mmuaux'_facts:
-  assumes "valid_mmuaux' args cur dt (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) auxlist"
+  assumes "valid_mmuaux' args cur dt (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) auxlist"
   shows "len \<le> tp" "Mapping.keys a2_map = {tp - len..tp}" "Mapping.keys tstp_map = {tp - len..<tp}"
     "\<And>as tp'. Mapping.lookup a1_map as = Some tp' \<Longrightarrow> tp' < tp"
 proof -
@@ -827,8 +826,8 @@ lemma rel_uaux_of:
   assumes "valid_mmuaux' args cur dt a auxlist"
   shows "rel_uaux (dq_of_uaux a) a"
 proof -
-  obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map "done" where a:
-    "a = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp tss tables len result a1_map a2_map tstp_map "done" where a:
+    "a = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases a) auto
   note facts = valid_mmuaux'_facts[OF assms[unfolded a]]
   show ?thesis
@@ -854,33 +853,33 @@ definition until_step_dq :: "(nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Ri
       if fst p = t0 then Set.insert (snd p) res else res)
    else acc)"
 
-definition until_cand :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "until_cand a1_map maskL pos tp len as = (case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+definition until_cand :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "until_cand a1_map L R pos tp len as = (case Mapping.lookup a1_map (restrict L R as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)})"
 
-definition until_pairs_list :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) list" where
-  "until_pairs_list a1_map maskL pos tp len inz as =
-    (case Mapping.lookup a1_map (proj_tuple maskL as) of
+definition until_pairs_list :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) list" where
+  "until_pairs_list a1_map L R pos tp len inz as =
+    (case Mapping.lookup a1_map (restrict L R as) of
         None \<Rightarrow> (if \<not>pos then [(tp - len, as)] else [])
       | Some tp' \<Rightarrow> [if pos then (max (tp - len) tp', as) else (max (tp - len) (tp' + 1), as)]) @
     (if inz then [(tp, as)] else [])"
 
-lemma set_until_pairs_list: "set (until_pairs_list a1_map maskL pos tp len inz as) =
-  until_cand a1_map maskL pos tp len as \<union> (if inz then {(tp, as)} else {})"
+lemma set_until_pairs_list: "set (until_pairs_list a1_map L R pos tp len inz as) =
+  until_cand a1_map L R pos tp len as \<union> (if inz then {(tp, as)} else {})"
   by (auto simp: until_pairs_list_def until_cand_def split: option.splits)
 
-definition until_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+definition until_elem_step_dq :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
   (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc_dq \<Rightarrow> 'a until_acc_dq" where
-  "until_elem_step_dq a1_map maskL pos tp len inz P d as acc =
+  "until_elem_step_dq a1_map L R pos tp len inz P d as acc =
     (let acc' = (if inz then until_step_dq P d (tp - len) (tp, as) acc else acc) in
-     case Mapping.lookup a1_map (proj_tuple maskL as) of
+     case Mapping.lookup a1_map (restrict L R as) of
         None \<Rightarrow> (if \<not>pos then until_step_dq P d (tp - len) (tp - len, as) acc' else acc')
       | Some tp' \<Rightarrow> until_step_dq P d (tp - len) (if pos then (max (tp - len) tp', as) else (max (tp - len) (tp' + 1), as)) acc')"
 
-lemma until_elem_step_dq_foldr: "until_elem_step_dq a1_map maskL pos tp len inz P d as acc =
-  foldr (until_step_dq P d (tp - len)) (until_pairs_list a1_map maskL pos tp len inz as) acc"
+lemma until_elem_step_dq_foldr: "until_elem_step_dq a1_map L R pos tp len inz P d as acc =
+  foldr (until_step_dq P d (tp - len)) (until_pairs_list a1_map L R pos tp len inz as) acc"
   by (auto simp: until_elem_step_dq_def until_pairs_list_def split: option.splits)
 
 lemma foldr_until_step_dq:
@@ -891,35 +890,35 @@ lemma foldr_until_step_dq:
   by (induction ps) (auto simp: until_step_dq_def upd_nested_dq_Cons)
 
 lemma fold_until_elem_step_dq:
-  "fold (until_elem_step_dq a1_map maskL pos tp len inz P d) xs acc =
-    foldr (until_step_dq P d (tp - len)) (concat (map (until_pairs_list a1_map maskL pos tp len inz) (rev xs))) acc"
+  "fold (until_elem_step_dq a1_map L R pos tp len inz P d) xs acc =
+    foldr (until_step_dq P d (tp - len)) (concat (map (until_pairs_list a1_map L R pos tp len inz) (rev xs))) acc"
 proof -
-  have "foldr (until_elem_step_dq a1_map maskL pos tp len inz P d) ys acc =
-    foldr (until_step_dq P d (tp - len)) (concat (map (until_pairs_list a1_map maskL pos tp len inz) ys)) acc" for ys
+  have "foldr (until_elem_step_dq a1_map L R pos tp len inz P d) ys acc =
+    foldr (until_step_dq P d (tp - len)) (concat (map (until_pairs_list a1_map L R pos tp len inz) ys)) acc" for ys
     by (induction ys arbitrary: acc) (simp_all add: until_elem_step_dq_foldr)
   from this[of "rev xs"] show ?thesis by (simp add: foldr_conv_fold)
 qed
 
 lemma set_concat_until_pairs_list:
-  "set (concat (map (until_pairs_list a1_map maskL pos tp len inz) xs)) =
-    \<Union>(until_cand a1_map maskL pos tp len ` set xs) \<union> (if inz then {tp} \<times> set xs else {})"
+  "set (concat (map (until_pairs_list a1_map L R pos tp len inz) xs)) =
+    \<Union>(until_cand a1_map L R pos tp len ` set xs) \<union> (if inz then {tp} \<times> set xs else {})"
   by (cases inz) (auto simp: set_until_pairs_list)
 
 definition add_new_dq :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow> event_data mmuaux_dq" where
   "add_new_dq args rel1 rel2 nt aux = (if finite rel2 then
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) = shift_dq args nt aux;
+    (let (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) = shift_dq args nt aux;
     I = args_ivl args; pos = args_pos args; inz = memL I 0;
     new_tstp = (if inz then Inr tp else Inl nt);
     tstp_dq = dq_push nt tstp_dq;
     P = (\<lambda>t. memL I (nt - dq_nth tstp_dq (t - (tp - len))));
-    (tbl, a2_dq', result') = fold (until_elem_step_dq a1_map maskL pos tp len inz P new_tstp)
+    (tbl, a2_dq', result') = fold (until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P new_tstp)
       (csorted_list_of_set rel2) ({}, a2_dq, result);
     tables = append_queue (tbl, new_tstp) tables;
     a2_dq = dq_push Mapping.empty a2_dq';
     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
     tss = append_queue nt tss in
-    (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, done))
+    (tp + 1, tss, tables, len + 1, result', a1_map, a2_dq, tstp_dq, done))
   else dq_of_uaux (add_new_mmuaux args rel1 rel2 nt (uaux_of_dq aux)))"
 
 lemma ID_ccompare_etuple_dq: "ID CCOMPARE(event_data tuple) \<noteq> None"
@@ -930,7 +929,7 @@ lemma set_csorted_list_of_set_etuple: "finite (X :: event_data table) \<Longrigh
 
 lemma add_new_sim:
   assumes rel: "rel_uaux d a" and valid: "valid_mmuaux args cur a auxlist" and nt: "nt \<ge> cur"
-    and tabs: "table (args_n args) (args_L args) rel1" "table (args_n args) (args_R args) rel2"
+    and tabs: "table (args_L args) rel1" "table (args_R args) rel2"
   shows "rel_uaux (add_new_dq args rel1 rel2 nt d) (add_new_mmuaux args rel1 rel2 nt a)"
 proof (cases "finite rel2")
   case False
@@ -944,10 +943,10 @@ next
   have rel': "rel_uaux (shift_dq args nt d) (shift_mmuaux args nt a)" by (rule shift_sim[OF rel valid0 nt])
   have valid': "valid_mmuaux' args cur nt (shift_mmuaux args nt a) auxlist"
     using valid_shift_mmuaux'[OF valid0 nt] by simp
-  obtain tp tss tables len maskL maskR result a1_map a2_map tstp_map "done" where a:
-    "shift_mmuaux args nt a = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp tss tables len result a1_map a2_map tstp_map "done" where a:
+    "shift_mmuaux args nt a = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases "shift_mmuaux args nt a") auto
-  obtain a2_dq tstp_dq where d: "shift_dq args nt d = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done)"
+  obtain a2_dq tstp_dq where d: "shift_dq args nt d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done)"
     using rel' unfolding a by (cases "shift_dq args nt d") auto
   have ra2: "rel_a2 tp len a2_dq a2_map" and rt: "rel_tstp tp len tstp_dq tstp_map" and lentp: "len \<le> tp"
     using rel' unfolding a d by auto
@@ -963,8 +962,8 @@ next
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1)"
   define xs where "xs = csorted_list_of_set rel2"
   have set_xs: "set xs = rel2" unfolding xs_def by (rule set_csorted_list_of_set_etuple[OF True])
-  define ps where "ps = concat (map (until_pairs_list a1_map maskL pos tp len inz) (rev xs))"
-  define tmp0 where "tmp0 = \<Union>(until_cand a1_map maskL pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})"
+  define ps where "ps = concat (map (until_pairs_list a1_map (args_L args) (args_R args) pos tp len inz) (rev xs))"
+  define tmp0 where "tmp0 = \<Union>(until_cand a1_map (args_L args) (args_R args) pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})"
   have set_ps: "set ps = tmp0" unfolding ps_def tmp0_def set_concat_until_pairs_list set_rev set_xs ..
   define qs where "qs = filter (\<lambda>p. P (fst p)) ps"
   define tmp where "tmp = Set.filter (\<lambda>p. P (fst p)) tmp0"
@@ -979,11 +978,11 @@ next
     ultimately show "Mapping.lookup tstp_map' t = Some (dq_nth tstp_dq' (t - (tp - len)))"
       using rt' unfolding rel_tstp_def by metis
   qed
-  have rng_cand: "\<And>t as x. (t, as) \<in> until_cand a1_map maskL pos tp len x \<Longrightarrow> tp - len \<le> t \<and> t \<le> tp"
+  have rng_cand: "\<And>t as x. (t, as) \<in> until_cand a1_map (args_L args) (args_R args) pos tp len x \<Longrightarrow> tp - len \<le> t \<and> t \<le> tp"
   proof -
-    fix t as x assume mem: "(t, as) \<in> until_cand a1_map maskL pos tp len x"
+    fix t as x assume mem: "(t, as) \<in> until_cand a1_map (args_L args) (args_R args) pos tp len x"
     show "tp - len \<le> t \<and> t \<le> tp"
-    proof (cases "Mapping.lookup a1_map (proj_tuple maskL x)")
+    proof (cases "Mapping.lookup a1_map (restrict (args_L args) (args_R args) x)")
       case None
       then show ?thesis using mem unfolding until_cand_def by (auto split: if_splits)
     next
@@ -997,7 +996,7 @@ next
     unfolding tmp_def P_def using rng0 look_tstp by (auto split: prod.splits)
   have res_eq: "set (filter (\<lambda>p. P (fst p) \<and> fst p = tp - len) ps) = Set.filter (\<lambda>(t, x). t = tp - len) tmp"
     unfolding tmp_def set_ps[symmetric] by (auto simp: split_beta)
-  have fold_eq: "fold (until_elem_step_dq a1_map maskL pos tp len inz P new_tstp) xs ({}, a2_dq, result) =
+  have fold_eq: "fold (until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P new_tstp) xs ({}, a2_dq, result) =
     (snd ` tmp, upd_nested_dq (tp - len) new_tstp (max_tstp new_tstp) qs a2_dq,
      result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp)"
     unfolding fold_until_elem_step_dq foldr_until_step_dq ps_def[symmetric] qs_def[symmetric] set_qs res_eq by simp
@@ -1009,20 +1008,20 @@ next
     using rel_a2_push[OF rel_a2_upd_nested[where d = new_tstp and f = "max_tstp new_tstp",
       OF ra2 max_tstp_d_d[symmetric] max_tstp_idem' rng_qs] lentp]
     unfolding set_qs .
-  have cand_eta: "(\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+  have cand_eta: "(\<lambda>as. case Mapping.lookup a1_map (restrict (args_L args) (args_R args) as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
-      else {(max (tp - len) (tp' + 1), as)}) = until_cand a1_map maskL pos tp len"
+      else {(max (tp - len) (tp' + 1), as)}) = until_cand a1_map (args_L args) (args_R args) pos tp len"
     by (simp add: fun_eq_iff until_cand_def)
   have dq_eq: "add_new_dq args rel1 rel2 nt d = (tp + 1, append_queue nt tss, append_queue (snd ` tmp, new_tstp) tables,
-    len + 1, maskL, maskR, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp, a1_map',
+    len + 1, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp, a1_map',
     dq_push Mapping.empty (upd_nested_dq (tp - len) new_tstp (max_tstp new_tstp) qs a2_dq), tstp_dq', done)"
     unfolding add_new_dq_def if_P[OF True] d Let_def prod.case
     unfolding I_def[symmetric] pos_def[symmetric] inz_def[symmetric] new_tstp_def[symmetric] tstp_dq'_def[symmetric]
       xs_def[symmetric] P_def[symmetric] a1_map'_def[symmetric]
     unfolding fold_eq prod.case ..
   have mm_eq: "add_new_mmuaux args rel1 rel2 nt a = (tp + 1, append_queue nt tss, append_queue (snd ` tmp, new_tstp) tables,
-    len + 1, maskL, maskR, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp, a1_map',
+    len + 1, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp, a1_map',
     Mapping.update (tp + 1) Mapping.empty (upd_nested a2_map new_tstp (max_tstp new_tstp) tmp), tstp_map', done)"
     unfolding add_new_mmuaux_def a Let_def prod.case
     unfolding I_def[symmetric] pos_def[symmetric] inz_def[symmetric] new_tstp_def[symmetric] tstp_map'_def[symmetric]
@@ -1055,7 +1054,7 @@ fun valid_muaux_dq :: "args \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow
 | "valid_muaux_dq args cur (MU_agg a) auxlist \<longleftrightarrow> valid_mmauaux args cur a auxlist"
 
 lemma valid_init_muaux_dq:
-  assumes LR: "L \<subseteq> R"
+  assumes LR: "set L \<subseteq> set R" "distinct L" "distinct R"
   shows "valid_muaux_dq (init_args I n L R pos aggargs) 0 (init_muaux_dq (init_args I n L R pos aggargs)) []"
 proof (cases "args_agg (init_args I n L R pos aggargs) = None")
   case True
@@ -1068,8 +1067,8 @@ next
 qed
 
 lemma valid_add_new_muaux_dq:
-  assumes "valid_muaux_dq args cur aux auxlist" "table (args_n args) (args_L args) rel1"
-    "table (args_n args) (args_R args) rel2" "nt \<ge> cur"
+  assumes "valid_muaux_dq args cur aux auxlist" "table (args_L args) rel1"
+    "table (args_R args) rel2" "nt \<ge> cur"
   shows "valid_muaux_dq args nt (add_new_muaux_dq args rel1 rel2 nt aux) (update_until args rel1 rel2 nt auxlist)"
 proof (cases aux)
   case (MU_dq d)
