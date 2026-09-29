@@ -31,9 +31,14 @@ val convert_schema_into_sig: Db.schema -> tyssig
 
 type state
 (** [init ~mw ~rw schema f] prepares [f] as VeriMon does (type checking, and with [rw]
-    normalization and rewriting, and with [mw] the conversion into multi-way joins) and builds
-    the verified dense monitor's state from it. *)
-val init: mw:bool -> rw:bool -> Db.schema -> Verified.Monitor.tysym Verified.Monitor.formula -> state
+    normalization and rewriting; with [mw] the conversion into multi-way joins), rewrites it
+    for the monitor and returns the columns of the verdicts' tuples together with the kernel's
+    initial state. *)
+val init: mw:bool -> rw:bool -> Db.schema -> Verified.Monitor.tysym Verified.Monitor.formula ->
+  Verified.Monitor.nat list * state
+(** [verdict_positions cols fv_pos]: the positions in the verdicts' tuples, over the columns
+    [cols], of the variables with the indices [fv_pos]. *)
+val verdict_positions: Verified.Monitor.nat list -> int list -> int list
 type verdict
 val verdict_of_table: Verified.Monitor.event_data list Verified.Monitor.set -> verdict
 val step: MFOTL.timestamp -> db -> state -> (int * MFOTL.timestamp * verdict) list * state

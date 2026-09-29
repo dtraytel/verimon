@@ -359,6 +359,17 @@ let rec convert_schema_into_sig sch =
    therefore neither type checks nor rewrites the formula itself for this monitor (see
    [Rewriting.check_formula]). *)
 
+(* The kernel's state, as the export types it: the Since, Until and trigger structures of
+   Monitor_Impl's default instance. *)
+type sstate = (nat * (nat * ((nat * (event_data list) set) queue *
+  ((nat * (event_data list) set) queue * ((event_data list) set * (event_data wf_table *
+  (((event_data list), nat) mapping * (event_data wf_table * ((event_data list), nat) mapping)))))))) *
+  aggaux option
+type tstate = nat * (nat * (nat * (nat * ((nat * ((event_data list) set * (event_data list) set)) queue *
+  ((nat * (event_data list) set) queue * (((event_data list), nat) mapping * ((event_data list) set *
+  (((event_data list), nat) mapping * ((event_data list) set * (event_data list) set)))))))))
+type state = (sstate, muaux_dq, tstate, unit) mstate_ext
+
 let init ~mw ~rw dbschema cf =
   match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
   | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
@@ -375,6 +386,7 @@ let verdict_positions cols fv_pos =
 
 let uset_fold f s x = match s with
   | RBT_set r -> rbt_fold f r x
+  | Set_Monad xs -> List.fold_left (fun acc t -> f t acc) x xs
   | _ -> failwith "[uset_fold] unexpected set representation"
 
 (* Verdicts are kept in the kernel's representation; [show_results] below prints them without

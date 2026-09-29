@@ -1,7 +1,6 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monomorphic_Code" "MFODL_Monitor_Devel.RBT_set_opt" Dense_VeriMon
-    "Log_Parser.Log_Code" Log_Monitor
+  imports Kernel_Code Dense_VeriMon "Log_Parser.Log_Code" Log_Monitor
 begin
 (*>*)
 
@@ -27,29 +26,9 @@ text \<open>
   tells the driver which part of the input it still needs for locating errors.
 
   The code-generator setup -- the monomorphised containers and tree primitives -- is that of
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Devel.RBT_set_opt}.
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and @{theory MFODL_Monitor_Devel.RBT_set_opt},
+  with the additions of @{theory MFODL_Monitor_Dense.Kernel_Code}.
 \<close>
-
-text \<open>The initial state is computed by @{const minit0} itself.  It builds its temporal nodes
-  through the locales' @{text init_since}, @{text init_until}, @{text init_trigger} and
-  @{text init_and_trigger}, whose definitions hold only under the locales' assumptions; the
-  interpretations' instances of them are unfolded into the code instead.  The fused
-  And-Trigger's is unfolded into the equations of @{const minit0} directly, where the
-  preprocessor does not reach it.\<close>
-
-declare default_mmasaux.init_since_def[code_unfold] dq_muaux.init_until_def[code_unfold]
-  verimon_maux.init_trigger_def[code_unfold]
-
-lemmas minit0_code_simps = default_maux.minit0.simps[unfolded verimon_maux.init_and_trigger_def]
-
-declare [[code drop: minit0]]
-declare minit0_code_simps[code]
-
-text \<open>@{theory MFODL_Monitor_Devel.Monomorphic_Code} replaces the probe of the joins over red-black
-  trees by @{const probe_step_key}, which computes the join key once; the probe over other sets
-  goes through it too.\<close>
-
-declare probe_step_key[symmetric, code]
 
 export_code
   (*basic types*)
