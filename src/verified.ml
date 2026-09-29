@@ -3654,7 +3654,14 @@ type dsaux =
       (nat *
         ((nat * (event_data list) set) queue *
           ((nat * (event_data list) set) queue *
-            (((event_data list), nat) mapping * (event_data list) set))));;
+            (((event_data list), nat) mapping * (event_data list) set))))
+  | DS_agg of
+      unit aggargs_ext *
+        (nat *
+          ((nat * (event_data list) set) queue *
+            ((nat * (event_data list) set) queue *
+              ((((event_data list), nat) mapping * (event_data list) set) *
+                aggaux option))));;
 
 type 'a dq = Dq of 'a list * 'a list * nat * nat;;
 
@@ -10904,6 +10911,18 @@ let rec add_new_table_mmasaux
                        aggaux
                 else aggaux))));;
 
+let rec acnt_add
+  ag t ca =
+    (let (cc, ax) = ca in
+      (cnt_add t cc, insert_maggauxa ag (unbox ed_minus_v t (snd cc)) ax));;
+
+let rec swa_add_new_table
+  ag args x aux =
+    (let (t, (pend, (win, ca))) = aux in
+      (if memL (args_ivl args) zero_nata
+        then (t, (pend, (append_queue (t, x) win, acnt_add ag x ca)))
+        else (t, (append_queue (t, x) pend, (win, ca)))));;
+
 let rec sw_add_new_table
   args x aux =
     (let (t, (pend, (win, cc))) = aux in
@@ -10914,7 +10933,9 @@ let rec sw_add_new_table
 let rec add_new_table_dsaux
   args x xa2 = match args, x, xa2 with
     args, x, DS_gen aux -> DS_gen (add_new_table_mmasaux args x aux)
-    | args, x, DS_win aux -> DS_win (sw_add_new_table args x aux);;
+    | args, x, DS_win aux -> DS_win (sw_add_new_table args x aux)
+    | args, x, DS_agg (ag, aux) ->
+        DS_agg (ag, swa_add_new_table ag args x aux);;
 
 let rec upd_set_keys (_C1, _C2, _C3, _C4)
   z (t, x) (m, y) =
@@ -11497,6 +11518,44 @@ let rec shift_end_mmasaux
 let rec add_new_ts_mmasaux
   args nt aux = add_new_ts_mmasauxa args nt (shift_end_mmasaux args nt aux);;
 
+let rec cnt_leave
+  t cc =
+    unbox ed_filter_v
+      (fun x ->
+        equal_option equal_nat (ed_lookup_nat (fst cc) x) (Some one_nata))
+      t;;
+
+let rec acnt_del
+  ag t ca =
+    (let (cc, ax) = ca in
+      (cnt_del t cc, delete_maggauxa ag (cnt_leave t cc) ax));;
+
+let rec swa_expire
+  ag args nt win ca =
+    (match safe_hd win with (None, wina) -> (wina, ca)
+      | (Some e, wina) ->
+        (if memR (args_ivl args) (minus_nata nt (fst e)) then (wina, ca)
+          else swa_expire ag args nt (tl_queue wina)
+                 (acnt_del ag (snd e) ca)));;
+
+let rec swa_move
+  ag args nt pend win ca =
+    (match safe_hd pend with (None, penda) -> (penda, (win, ca))
+      | (Some e, penda) ->
+        (if memL (args_ivl args) (minus_nata nt (fst e))
+          then (if memR (args_ivl args) (minus_nata nt (fst e))
+                 then swa_move ag args nt (tl_queue penda) (append_queue e win)
+                        (acnt_add ag (snd e) ca)
+                 else swa_move ag args nt (tl_queue penda) win ca)
+          else (penda, (win, ca))));;
+
+let rec swa_add_new_ts
+  ag args nt aux =
+    (let (_, (pend, (win, ca))) = aux in
+     let (penda, (wina, caa)) = swa_move ag args nt pend win ca in
+     let (winb, cab) = swa_expire ag args nt wina caa in
+      (nt, (penda, (winb, cab))));;
+
 let rec sw_expire
   args nt win cc =
     (match safe_hd win with (None, wina) -> (wina, cc)
@@ -11525,7 +11584,8 @@ let rec sw_add_new_ts
 let rec add_new_ts_dsaux
   args nt x2 = match args, nt, x2 with
     args, nt, DS_gen aux -> DS_gen (add_new_ts_mmasaux args nt aux)
-    | args, nt, DS_win aux -> DS_win (sw_add_new_ts args nt aux);;
+    | args, nt, DS_win aux -> DS_win (sw_add_new_ts args nt aux)
+    | args, nt, DS_agg (ag, aux) -> DS_agg (ag, swa_add_new_ts ag args nt aux);;
 
 let rec result_mmasaux
   args ((nt, (gc, (data_prev,
@@ -11538,11 +11598,18 @@ let rec result_mmasaux
         | (Some aggargs, None) -> eval_aggargs aggargs table_in
         | (Some aggargs, Some a) -> result_maggaux aggargs a);;
 
+let rec swa_result
+  ag args aux =
+    (let (_, (_, (_, (cc, ax)))) = aux in
+      (match result_maggauxa ag ax with None -> eval_aggargs ag (snd cc)
+        | Some r -> r));;
+
 let rec sw_result args aux = (let (_, (_, (_, a))) = aux in snd a);;
 
 let rec result_dsaux
   args x1 = match args, x1 with args, DS_gen aux -> result_mmasaux args aux
-    | args, DS_win aux -> sw_result args aux;;
+    | args, DS_win aux -> sw_result args aux
+    | args, DS_agg (ag, aux) -> swa_result ag args aux;;
 
 let rec filter_join (_A1, _A2)
   pos x m =
@@ -11982,6 +12049,16 @@ let rec gc_join_mmasaux
                                    (wf_table_since, tuple_since)))))))),
                  aux));;
 
+let rec swa_join
+  ag args x aux =
+    (let (t, (_, (_, _))) = aux in
+      (if (if args_pos args then not (unbox ed_is_empty_v x)
+            else unbox ed_is_empty_v x)
+        then aux
+        else (t, (empty_queue,
+                   (empty_queue,
+                     ((ed_mempty_nat, ed_bot), init_maggauxa ag))))));;
+
 let rec sw_join
   args x aux =
     (let (t, (_, (_, _))) = aux in
@@ -11993,7 +12070,8 @@ let rec sw_join
 let rec join_dsaux
   args x xa2 = match args, x, xa2 with
     args, x, DS_gen aux -> DS_gen (gc_join_mmasaux args x aux)
-    | args, x, DS_win aux -> DS_win (sw_join args x aux);;
+    | args, x, DS_win aux -> DS_win (sw_join args x aux)
+    | args, x, DS_agg (ag, aux) -> DS_agg (ag, swa_join ag args x aux);;
 
 let rec dmeval_since
   args rs x2 aux = match args, rs, x2, aux with
@@ -14080,14 +14158,20 @@ let rec init_mmasaux
     (match args_agg args with None -> (ed_init_mmsaux args, None)
       | Some aggargs -> (ed_init_mmsaux args, init_maggauxa aggargs));;
 
-let rec ds_win_args args = null (args_L args) && is_none (args_agg args);;
+let rec swa_init
+  ag args =
+    (zero_nata,
+      (empty_queue,
+        (empty_queue, ((ed_mempty_nat, ed_bot), init_maggauxa ag))));;
 
 let rec sw_init
   args = (zero_nata, (empty_queue, (empty_queue, (ed_mempty_nat, ed_bot))));;
 
 let rec init_dsaux
   args =
-    (if ds_win_args args then DS_win (sw_init args)
+    (if null (args_L args)
+      then (match args_agg args with None -> DS_win (sw_init args)
+             | Some ag -> DS_agg (ag, swa_init ag args))
       else DS_gen (init_mmasaux args));;
 
 let rec is_simple_pattern

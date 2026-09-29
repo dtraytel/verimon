@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Maux
-  imports Dense_Win "MFODL_Monitor_Devel.Monitor_Impl"
+  imports Dense_Win_Agg "MFODL_Monitor_Devel.Monitor_Impl"
 begin
 (*>*)
 
@@ -13,14 +13,15 @@ section \<open>The window structures the monitor runs\<close>
 
 text \<open>
   The kernel is generic in its window structures (locale @{locale maux}).  The monitor runs it
-  with the kernel's own structures, except that a Since whose left operand is closed and which
-  carries no aggregation uses the sliding window of @{theory MFODL_Monitor_Dense.Dense_Win}: the
-  choice is made once, when the structure is initialised, from the operator's arguments.
+  with the kernel's own structures, except that a Since or an Until whose left operand is closed
+  uses the sliding windows of @{theory MFODL_Monitor_Dense.Dense_Win} (for a Since with an
+  aggregation, the window of @{theory MFODL_Monitor_Dense.Dense_Win_Agg}): the choice is made once,
+  when the structure is initialised, from the operator's arguments.
 \<close>
 
 subsection \<open>Since\<close>
 
-datatype dsaux = DS_gen mmasaux | DS_win swaux
+datatype dsaux = DS_gen mmasaux | DS_win swaux | DS_agg aggargs swaaux
 
 definition ds_win_args :: "args \<Rightarrow> bool" where
   "ds_win_args args \<longleftrightarrow> args_L args = [] \<and> args_agg args = None"
@@ -28,38 +29,54 @@ definition ds_win_args :: "args \<Rightarrow> bool" where
 fun valid_dsaux :: "args \<Rightarrow> ts \<Rightarrow> dsaux \<Rightarrow> event_data msaux \<Rightarrow> bool" where
   "valid_dsaux args cur (DS_gen aux) auxlist = valid_mmasaux args cur aux auxlist"
 | "valid_dsaux args cur (DS_win aux) auxlist = (ds_win_args args \<and> valid_sw args cur aux auxlist)"
+| "valid_dsaux args cur (DS_agg ag aux) auxlist =
+    (args_L args = [] \<and> args_agg args = Some ag \<and> valid_swa ag args cur aux auxlist)"
 
 definition init_dsaux :: "args \<Rightarrow> dsaux" where
-  "init_dsaux args = (if ds_win_args args then DS_win (sw_init args) else DS_gen (init_mmasaux args))"
+  "init_dsaux args = (if args_L args = []
+     then (case args_agg args of None \<Rightarrow> DS_win (sw_init args) | Some ag \<Rightarrow> DS_agg ag (swa_init ag args))
+     else DS_gen (init_mmasaux args))"
 
 fun add_new_ts_dsaux :: "args \<Rightarrow> ts \<Rightarrow> dsaux \<Rightarrow> dsaux" where
   "add_new_ts_dsaux args nt (DS_gen aux) = DS_gen (add_new_ts_mmasaux args nt aux)"
 | "add_new_ts_dsaux args nt (DS_win aux) = DS_win (sw_add_new_ts args nt aux)"
+| "add_new_ts_dsaux args nt (DS_agg ag aux) = DS_agg ag (swa_add_new_ts ag args nt aux)"
 
 fun join_dsaux :: "args \<Rightarrow> event_data table \<Rightarrow> dsaux \<Rightarrow> dsaux" where
   "join_dsaux args X (DS_gen aux) = DS_gen (gc_join_mmasaux args X aux)"
 | "join_dsaux args X (DS_win aux) = DS_win (sw_join args X aux)"
+| "join_dsaux args X (DS_agg ag aux) = DS_agg ag (swa_join ag args X aux)"
 
 fun add_new_table_dsaux :: "args \<Rightarrow> event_data table \<Rightarrow> dsaux \<Rightarrow> dsaux" where
   "add_new_table_dsaux args X (DS_gen aux) = DS_gen (add_new_table_mmasaux args X aux)"
 | "add_new_table_dsaux args X (DS_win aux) = DS_win (sw_add_new_table args X aux)"
+| "add_new_table_dsaux args X (DS_agg ag aux) = DS_agg ag (swa_add_new_table ag args X aux)"
 
 fun result_dsaux :: "args \<Rightarrow> dsaux \<Rightarrow> event_data table" where
   "result_dsaux args (DS_gen aux) = result_mmasaux args aux"
 | "result_dsaux args (DS_win aux) = sw_result args aux"
+| "result_dsaux args (DS_agg ag aux) = swa_result ag args aux"
 
 lemma valid_init_dsaux:
-  "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow> valid_aggargs n R agg \<Longrightarrow>
-    valid_dsaux (init_args I n L R pos agg) 0 (init_dsaux (init_args I n L R pos agg)) []"
-  by (cases "ds_win_args (init_args I n L R pos agg)")
-    (simp_all only: init_dsaux_def if_True if_False valid_dsaux.simps valid_sw_init
-      default_mmasaux.valid_init_msaux simp_thms)
+  assumes "set L \<subseteq> set R" "distinct L" "distinct R" "valid_aggargs n R agg"
+  shows "valid_dsaux (init_args I n L R pos agg) 0 (init_dsaux (init_args I n L R pos agg)) []"
+proof (cases "args_L (init_args I n L R pos agg) = []")
+  case True
+  then show ?thesis
+    by (cases agg) (simp_all add: init_dsaux_def ds_win_args_def valid_sw_init valid_swa_init
+      init_args_def)
+next
+  case False
+  then show ?thesis using default_mmasaux.valid_init_msaux[OF assms]
+    by (simp only: init_dsaux_def if_False valid_dsaux.simps)
+qed
 
 lemma valid_add_new_ts_dsaux: "valid_dsaux args cur aux auxlist \<Longrightarrow> nt \<ge> cur \<Longrightarrow>
     valid_dsaux args nt (add_new_ts_dsaux args nt aux)
     (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
   by (cases aux) (simp_all only: valid_dsaux.simps add_new_ts_dsaux.simps
-    default_mmasaux.valid_add_new_ts_msaux simp_thms, blast intro: valid_sw_add_new_ts)
+    default_mmasaux.valid_add_new_ts_msaux simp_thms,
+    blast intro: valid_sw_add_new_ts, blast intro: valid_swa_add_new_ts)
 
 lemma valid_join_dsaux: "valid_dsaux args cur aux auxlist \<Longrightarrow> table (args_L args) rel1 \<Longrightarrow>
     valid_dsaux args cur (join_dsaux args rel1 aux)
@@ -72,6 +89,14 @@ proof (cases aux)
     by (simp_all add: ds_win_args_def)
   with DS_win show ?thesis
     by (simp only: valid_dsaux.simps join_dsaux.simps simp_thms) (auto intro: valid_sw_join)
+next
+  case (DS_agg ag w)
+  assume "valid_dsaux args cur aux auxlist" "table (args_L args) rel1"
+  with DS_agg have "args_agg args = Some ag" "valid_swa ag args cur w auxlist" "table [] rel1"
+    "args_L args = []"
+    by simp_all
+  with DS_agg show ?thesis
+    by (simp only: valid_dsaux.simps join_dsaux.simps simp_thms) (auto intro: valid_swa_join)
 qed (simp only: valid_dsaux.simps join_dsaux.simps default_mmasaux.valid_join_msaux)
 
 lemma valid_add_new_table_dsaux: "valid_dsaux args cur aux auxlist \<Longrightarrow> table (args_R args) rel2 \<Longrightarrow>
@@ -80,7 +105,8 @@ lemma valid_add_new_table_dsaux: "valid_dsaux args cur aux auxlist \<Longrightar
       [] => [(cur, rel2)]
     | ((t, y) # ts) \<Rightarrow> if t = cur then (t, y \<union> rel2) # ts else (cur, rel2) # auxlist)"
   by (cases aux) (simp_all only: valid_dsaux.simps add_new_table_dsaux.simps
-    default_mmasaux.valid_add_new_table_msaux valid_sw_add_new_table simp_thms)
+    default_mmasaux.valid_add_new_table_msaux valid_sw_add_new_table valid_swa_add_new_table
+    simp_thms)
 
 lemma valid_result_dsaux: "valid_dsaux args cur aux auxlist \<Longrightarrow> result_dsaux args aux =
     eval_args_agg args (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
@@ -91,6 +117,13 @@ proof (cases aux)
     by (simp_all add: ds_win_args_def)
   with DS_win show ?thesis
     by (simp only: result_dsaux.simps valid_sw_result eval_args_agg_def option.case)
+next
+  case (DS_agg ag w)
+  assume "valid_dsaux args cur aux auxlist"
+  with DS_agg have "args_agg args = Some ag" "valid_swa ag args cur w auxlist"
+    by simp_all
+  with DS_agg show ?thesis
+    by (simp only: result_dsaux.simps valid_swa_result eval_args_agg_def option.case)
 qed (simp only: valid_dsaux.simps result_dsaux.simps default_mmasaux.valid_result_msaux)
 
 interpretation dense_msaux: msaux valid_dsaux init_dsaux add_new_ts_dsaux join_dsaux
