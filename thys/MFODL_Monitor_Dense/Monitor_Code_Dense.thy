@@ -1,6 +1,6 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports "MFODL_Monitor_Devel.Monomorphic_Code" "MFODL_Monitor_Devel.RBT_set_opt" Dense_RBT_Code Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
+  imports "MFODL_Monitor_Devel.Monomorphic_Code" "MFODL_Monitor_Devel.RBT_set_opt" Dense_Mono_Hot Dense_Push Dense_VeriMon "Log_Parser.Log_Code"
     Log_Monitor
 begin
 (*>*)
@@ -32,8 +32,9 @@ text \<open>
   and @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, the rank trees of the aggregations of
   @{theory MFODL_Monitor_Dense.Dense_Agg_Code}, the one-descent updates of
   @{theory MFODL_Monitor_Dense.Dense_Map_Upd}, the red-black trees' rebalancing of
-  @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, and the front end's entry
-  points -- is stated here too.
+  @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, the copies of
+  @{theory MFODL_Monitor_Dense.Dense_Mono_Hot} for the generic operations a profile still found
+  on the inner loops, and the front end's entry points -- is stated here too.
 
   The order of the imports matters.  Where a boxed operation of
   @{theory MFODL_Monitor_Dense.Dense_Code_Opt} and its monomorphic copy from the second pass of
@@ -48,13 +49,16 @@ text \<open>
   A merge also takes the union of the two preprocessor simpsets, so it brings back rules one
   branch deleted: the redirections of the set operations on the wide tuples to their boxes,
   which @{theory MFODL_Monitor_Dense.Dense_Code_Opt} takes out of the preprocessor so that the
-  monomorphic copies apply, return with @{theory MFODL_Monitor_Devel.Monomorphic_Code}.  They are
-  taken out again here, after the merge.
+  monomorphic copies apply, return with @{theory MFODL_Monitor_Devel.Monomorphic_Code}, and the
+  boxes of @{theory MFODL_Monitor_Dense.Dense_Code_Opt} that
+  @{theory MFODL_Monitor_Dense.Dense_Mono_Hot} takes out return with
+  @{theory MFODL_Monitor_Dense.Log_Monitor}.  Both are taken out again here, after the merge.
 \<close>
 
 setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
   @{thms ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold ed_filter_v_unfold
-    ed_image_v_unfold})\<close>
+    ed_image_v_unfold edl_remove_v_unfold edl_csorted_list_of_set_v_unfold
+    edl_mfilter_nat_v_unfold})\<close>
 
 export_code
   (*basic types*)

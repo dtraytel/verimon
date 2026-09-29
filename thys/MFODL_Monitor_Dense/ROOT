@@ -48,6 +48,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Map_Upd
     Dense_VeriMon
     Dense_RBT_Code
+    Dense_Mono_Hot
     Log_Monitor
     Log_Monitor_Online
   theories [document=false]

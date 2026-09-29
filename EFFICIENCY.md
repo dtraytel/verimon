@@ -9661,3 +9661,58 @@ termination (200) and `udinit_dof` (258), and `Dense_Unbox_Exec.thy` grows from 
 lines.  Most of `udinit_dof` is the case analysis `minit0` performs inside a node (the left
 operand of a temporal node positive or negated, the aggregation's operand a Since, an Until or
 neither), which `udof` found already done in the kernel's formula.
+
+### 22.2 The generic operations left on the inner loops
+
+The export still had 202 definitions that take a type class dictionary (`_A`).  Most never run
+in a monitoring step: the fallback branches of Containers' set and mapping representations
+(`Assoc_List_Mapping`, `DList_set`, …) that the RBT-backed representations never take, the
+compiler's code at `nat`, `mregex`, `trm` and `rec_safety`, and the dictionary constructors
+(`ccompare_list` and friends) that feed them.  A callgrind attribution on ten synthetic formulas
+(`evaluation/synthetic`, one each for aggregation, ONCE, FRZ, Since, Until, Trigger, And-Trigger,
+MATCH and the `complex` mix) found the ones that do, and they came in three kinds, all at the short
+tuples.
+
+* **A box shadows a monomorphic copy.**  `Dense_Code_Opt` monomorphises `Set.remove` at
+  `event_data list` (`edl_remove`) and later boxes it at the same type (`edl_remove_v`); the box's
+  rule is the one the preprocessor applies, so `edl_remove` was never called and deletion from a
+  table ran the generic tree deletion with the composite comparator `comparator_list
+  comparator_event_data` behind a closure: 4–9% of the run, inclusive, on ONCE, FRZ and `complex`.
+  The sorted list of a table (`csorted_list_of_set`) and the count map's filter
+  (`Mapping.filter` at `nat`) were boxed without a copy; the Since structure's `filter_set` folded
+  through the generic `set_fold_cfi`.
+* **A fold is generic while its step is not.**  `Dense_Map_Upd` specialises the grouped
+  aggregation's steps (`gstep_ins`, `gstep_del`, `gi_sum`, …) but not the folds over them
+  (`gins`, `gdel`), the result (`gres`, `gmr`) or the initial state (`ginit`), and the window
+  aggregate calls those at `event_data`: so it ran the generic steps and their generic updates
+  and lookups after all, about a tenth of the aggregation benchmark inclusive.
+* **A dictionary built per call.**  The one-descent updates (`upd_lk`, `upd_lk2`, `del_lk`) are
+  `lift_definition (code_dt)`s; the pair they return sits behind an isomorphism whose projection
+  takes the key's `ccompare` dictionary without using it, and the monomorphic updates built that
+  dictionary (a record, a `Some` and a closure) on every call.
+
+`Dense_Mono_Hot.thy`, the last theory before the export, adds the copies: `csorted_list_of_set`,
+the tree's `keys` and `fold`, `set_fold_cfi` at the Since filter's type, `Mapping.filter` and
+`RBT_Mapping2.filter` at `nat`, and `gins`, `gdel`, `ginit`, `gres` and `gmr` (at its three value
+types) at `event_data`, with the empty maps at the SUM and rank value types that `ginit` starts
+from; it boxes the two isomorphisms' projections at the value types the updates are used at, and
+takes the three shadowing box rules out of the preprocessor.  `Monitor_Code_Dense` takes them out
+again after its merge of the imports, which brings them back through `Log_Monitor`.  No proofs:
+each copy is its original by definition (Section 21.16).
+
+The dictionary-taking definitions go from 202 to 186; the generic chain of the grouped
+aggregation (`gins`, `gstep_ins`, `gi_sum`, `mupd`, `upd_lk`, `rbt_comp_ins_lk`, …: 20
+definitions, 16 of them taking a dictionary) leaves the export.  On the ten profiled formulas the self time in dictionary-taking
+definitions drops from 0.1–2.8% to 0.1–0.5% (the rest is the boxed projections themselves and
+`equal_option` on a count), `ccompare_lista` and `comparator_list` drop to zero, and the
+instruction counts change by −4.5% (aggregation), −1.9% (FRZ), −1.7% (ONCE), −1.0% (`complex`)
+and under ±0.4% on the other six.  `dune test` passes; on the 22 formulas of Section 21.1 the
+verdicts are identical and the wall times the same up to noise (best of three, new over old:
+geometric mean 0.99).
+
+What is left generic on these paths is not a dictionary: the intersection of two short tables
+(`edl_rbt_meet_unit`) runs `rbt_comp_inter_swap_rec` with `edl_comparator` passed as an argument,
+so its lookups go through a closure (0.6–0.9% self on Trigger and FRZ).  It would get a
+comparator-specialised copy the way the union did (`edl_rbtc_union_swap_rec`).  The export is not
+dictionary-free as a whole: the fallback branches, the compiler's code and the constants that
+`monomorphize` cannot instantiate (Section 21.16) remain, and none of them runs per event.
