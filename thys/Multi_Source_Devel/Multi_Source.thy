@@ -317,7 +317,7 @@ qed
 lemma i\<tau>_of_i\<iota>_eq: "i\<tau>_of_i\<iota> \<sigma> (i\<iota> \<sigma> j) = i\<tau> \<sigma> j"
   by (fastforce simp: i\<tau>_of_i\<iota>_def intro: i\<iota>_eq_imp_i\<tau>_eq LeastI2_ex[where P="\<lambda>j'. i\<iota> \<sigma> j = i\<iota> \<sigma> j'"])
 
-lift_definition collapse :: "'a itrace \<Rightarrow> 'a trace" is collapse'
+lift_definition collapse :: "'a itrace \<Rightarrow> 'a set trace" is collapse'
 proof (intro conjI)
   fix \<sigma> :: "'a itrace"
   have "i\<tau>_of_i\<iota> \<sigma> ((next_i\<iota> \<sigma> ^^ a) (least_i\<iota> \<sigma>)) \<le> i\<tau>_of_i\<iota> \<sigma> ((next_i\<iota> \<sigma> ^^ b) (least_i\<iota> \<sigma>))"
@@ -480,17 +480,26 @@ text \<open>
   stream positions.
 \<close>
 
-lift_definition forget_idx :: "'a itrace \<Rightarrow> 'a trace" is "smap (\<lambda>x. (db x, ts x))"
+lift_definition forget_idx :: "'a itrace \<Rightarrow> 'a set trace" is "smap (\<lambda>x. (db x, ts x))"
   by (simp add: stream.map_comp comp_def ssorted_iff_mono)
 
-definition (in fo_spec) adequate :: "'a itrace \<Rightarrow> bool" where
+text \<open>Specifications over traces whose databases are sets of events.\<close>
+
+locale set_fo_spec = fo_spec _ _ _ sat for sat :: "'a set trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool"
+
+locale set_cosafety_monitor = cosafety_monitor _ _ _ sat M
+  for sat :: "'a set trace \<Rightarrow> 'b list \<Rightarrow> nat \<Rightarrow> bool" and M
+
+sublocale set_cosafety_monitor \<subseteq> set_fo_spec ..
+
+definition (in set_fo_spec) adequate :: "'a itrace \<Rightarrow> bool" where
   "adequate \<sigma> \<longleftrightarrow> (\<forall>v i. sat (collapse \<sigma>) v i \<longleftrightarrow> (\<exists>j. collapse_map \<sigma> j = i \<and> sat (forget_idx \<sigma>) v j))"
 
-lemma (in fo_spec) adequate_verdicts_collapse: "adequate \<sigma> \<Longrightarrow>
+lemma (in set_fo_spec) adequate_verdicts_collapse: "adequate \<sigma> \<Longrightarrow>
   verdicts (collapse \<sigma>) = apfst (collapse_map \<sigma>) ` verdicts (forget_idx \<sigma>)"
   unfolding adequate_def verdicts_def by (auto intro: rev_image_eqI)
 
-lemma (in cosafety_monitor) adequate_verdicts_collapse_M: "traces = UNIV \<Longrightarrow> adequate \<sigma> \<Longrightarrow>
+lemma (in set_cosafety_monitor) adequate_verdicts_collapse_M: "traces = UNIV \<Longrightarrow> adequate \<sigma> \<Longrightarrow>
   M_limit (collapse \<sigma>) = apfst (collapse_map \<sigma>) ` M_limit (forget_idx \<sigma>)"
   using adequate_verdicts_collapse by (simp add: M_limit_eq)
 
@@ -498,7 +507,7 @@ subsubsection \<open>Adding indexes\<close>
 
 text \<open>Time-points as indexes:\<close>
 
-lift_definition add_timepoints :: "'a trace \<Rightarrow> 'a itrace" is
+lift_definition add_timepoints :: "'a set trace \<Rightarrow> 'a itrace" is
   "smap2 (\<lambda>i (db, ts). \<lparr>db=db, ts=ts, idx=i\<rparr>) nats"
   by (auto simp: split_beta smap2_szip stream.map_comp smap_szip_fst[of id, simplified]
       stream.map_ident smap_szip_snd ssorted_iff_mono cong: stream.map_cong)
@@ -537,7 +546,7 @@ qed
 
 text \<open>Time-stamps as indexes:\<close>
 
-lift_definition add_timestamps :: "'a trace \<Rightarrow> 'a itrace" is
+lift_definition add_timestamps :: "'a set trace \<Rightarrow> 'a itrace" is
   "smap (\<lambda>(db, ts). \<lparr>db=db, ts=ts, idx=ts\<rparr>)"
   by (auto simp: split_beta stream.map_comp cong: stream.map_cong)
 
@@ -1698,7 +1707,7 @@ lift_definition init_reorder_state :: "'a mwtrace \<Rightarrow> 'a reorder_state
   "\<lambda>\<sigma>. (\<lparr>wmarks = init_alist (mworigins \<sigma>) 0, buffer = DAList.empty\<rparr>, \<sigma>)"
   by (simp add: keyset_init_alist lookup_init_alist)
 
-definition reorder' :: "'a mwtrace \<Rightarrow> 'a trace" where
+definition reorder' :: "'a mwtrace \<Rightarrow> 'a set trace" where
   "reorder' \<sigma> = Abs_trace (reorder (init_reorder_state \<sigma>))"
 
 subsubsection \<open>Specification\<close>
@@ -2341,7 +2350,7 @@ lemma mwpartition_reorder': "mwpartition n \<circ>\<then> determ reorder' \<le> 
 
 subsubsection \<open>Main result\<close>
 
-definition multi_source_slicer :: "'a set list \<Rightarrow> 'a wtrace list \<Rightarrow> 'a trace list set" where
+definition multi_source_slicer :: "'a set list \<Rightarrow> 'a wtrace list \<Rightarrow> 'a set trace list set" where
   "multi_source_slicer Xs = determ (map (wslice Xs)) !\<then> determ transpose !\<then>
     mapM_set merge !\<then> determ (map reorder')"
 
@@ -2476,7 +2485,7 @@ lemma tslice_relevant_events: "tslice (map relevant_events Xs) \<sigma> = map (\
 
 definition multi_source_monitor :: "'b list set list \<Rightarrow> 'a wtrace list \<Rightarrow> (nat \<times> 'b tuple) set set" where
   "multi_source_monitor Xs = multi_source_slicer (map relevant_events Xs) \<circ>\<then>
-    determ (map2 (\<lambda>X. verdicts \<circ>> verdict_filter X) Xs \<circ>> (Union \<circ> set))"
+    determ (map2 (\<lambda>X. verdicts \<circ>> verdict_filter X cols) Xs \<circ>> (Union \<circ> set))"
 
 theorem multi_source_monitor_eq:
   assumes "\<Union>(set Xs) = UNIV" and "wpartitionp \<sigma> n ps" and [simp]: "traces = UNIV"
@@ -2489,7 +2498,7 @@ proof -
     unfolding tslice_relevant_events
     by (simp add: multi_source_monitor_def kleisli_set_def determ_def
         map2_map_map[where f=id, simplified] del: set_map)
-      (simp add: union_verdicts_slice[OF assms(1)])
+      (simp add: union_verdicts_slice assms(1))
 qed
 
 end
@@ -2499,7 +2508,7 @@ begin
 
 definition multi_source_monitor_M :: "'b list set list \<Rightarrow> 'a wtrace list \<Rightarrow> (nat \<times> 'b tuple) set set" where
   "multi_source_monitor_M Xs = multi_source_slicer (map relevant_events Xs) \<circ>\<then>
-    determ (map2 (\<lambda>X. M_limit \<circ>> verdict_filter X) Xs \<circ>> (Union \<circ> set))"
+    determ (map2 (\<lambda>X. M_limit \<circ>> verdict_filter X cols) Xs \<circ>> (Union \<circ> set))"
 
 corollary multi_source_monitor_eq_alt: "\<Union>(set Xs) = UNIV \<Longrightarrow> wpartitionp_alt \<sigma> n ps \<Longrightarrow> traces = UNIV \<Longrightarrow>
   multi_source_monitor_M Xs (wpartitionp_alt.ps' ps) = {M_limit (collapse \<sigma>)}"
