@@ -1,7 +1,7 @@
 (*<*)
 theory Dense_Push
-  imports "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Frz"
-    "MFODL_Monitor_Dense.Dense_Share"
+  imports "MFODL_Monitor_Dense.Dense_Frz" "MFODL_Monitor_Dense.Dense_Share"
+    "MFODL_Monitor_Devel.Correctness"
 begin
 (*>*)
 
@@ -54,9 +54,8 @@ fun ex_into :: "'t \<Rightarrow> 't Formula.formula \<Rightarrow> 't Formula.for
 text \<open>A comparison conjoined to a multiway conjunction is moved onto the first of its safe
   operands that binds the comparison's variables and is an aggregation over a window:
   @{text "(\<psi>\<^sub>1 AND \<dots> AND \<phi> AND \<dots>) AND c"} becomes the conjunction with @{text \<phi>} replaced by
-  @{text "\<phi> AND c"}.  There the comparison becomes the aggregate's guard (@{const uset_q}), so the
-  groups that fail it are never built, where above the conjunction it filtered the join's and the
-  anti-joins' result.  Onto other operands the move is not made: filtering an operand instead of
+  @{text "\<phi> AND c"}.  There the comparison can filter the aggregate's groups before they are
+  built, where above the conjunction it filters the join's and the anti-joins' result.  Onto other operands the move is not made: filtering an operand instead of
   the join's result pays off only when the operand is the smaller of the two, which the rewrite
   cannot know.  The multiway conjunction is what the front end's @{const convert_multiway} makes of
   @{text "\<phi> AND NOT \<psi> AND c"}.\<close>
@@ -424,7 +423,7 @@ lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile>
   by (induct rule: wty_formula.induct)
     (auto simp: push_ex_And fun_upd_def intro!: wty_formula.intros wty_ex_into wty_and_cstr elim: regex.pred_mono_strong)
 
-subsection \<open>The dense monitor on the rewritten formula\<close>
+subsection \<open>The rewritten formula\<close>
 
 text \<open>
   The monitor is started on @{term "dense_prep \<phi>"}: the frozen predicates are taken out of
@@ -434,8 +433,8 @@ text \<open>
   evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}).  Everything the specification of
   the monitor for @{term \<phi>} depends on -- the number and set of free variables, the traces
   (through the signature), the satisfaction relation and the progress -- is the same for the
-  rewritten formula, which is monitorable and well typed whenever @{term \<phi>} is.  So the dense
-  monitor started on it computes exactly the verdicts of @{term \<phi>}.
+  rewritten formula, which is monitorable and well typed whenever @{term \<phi>} is.  Only the order
+  in which @{const Formula.fv_list} lists the free variables may change.
 \<close>
 
 definition dense_prep :: "ty Formula.formula \<Rightarrow> ty Formula.formula" where
@@ -458,46 +457,6 @@ lemma wty_dense_prep: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnsti
 
 lemma mmonitorable_dense_prep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (dense_prep \<phi>)"
   by (simp add: dense_prep_def mmonitorable_share_opt mmonitorable_frz_opt)
-
-context verimon_spec
-begin
-
-theorem dmonitor_mverdicts_push:
-  assumes zf: "vdfail_nodes (dmstate_m (dof_state (Formula.nfv \<phi>)
-      (set_cols (Formula.fv \<phi>)) (minit_safe (dense_prep \<phi>)))) = 0"
-    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
-  shows "flatten_verdicts (map (\<lambda>(i, t, X).
-      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
-      (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
-         (minit_safe (dense_prep \<phi>))) \<pi>)) = Mt \<pi>"
-proof -
-  interpret p: verimon_spec "dense_prep \<phi>" SIG ENV
-    by unfold_locales
-      (simp_all add: wty_dense_prep[OF well_typed] mmonitorable_dense_prep[OF monitorable])
-  have "flatten_verdicts (map (\<lambda>(i, t, X).
-      (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
-      (dmonitor (dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>))
-         (minit_safe (dense_prep \<phi>))) \<pi>)) = p.Mt \<pi>"
-    using p.dmonitor_mverdicts_dof[OF _ f wty] zf by simp
-  also have "p.Mt \<pi> = Mt \<pi>"
-    by simp
-  finally show ?thesis .
-qed
-
-end
-
-text \<open>The front end's entry point: the monitor over the short tuples, started on the rewritten
-  formula.  Its representation is the dense monitor of @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
-
-definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
-  "udminit_push \<phi> = udminit_safe (dense_prep \<phi>)"
-
-lemma Rep_udminit_push:
-  assumes "mmonitorable \<phi>"
-  shows "Rep_udmstate (udminit_push \<phi>)
-   = dof_state (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) (minit_safe (dense_prep \<phi>))"
-  by (simp add: udminit_push_def Rep_udminit_safe[OF mmonitorable_dense_prep[OF assms]])
-
 (*<*)
 end
 (*>*)

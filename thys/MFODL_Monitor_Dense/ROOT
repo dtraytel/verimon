@@ -2,53 +2,19 @@ chapter AFP
 
 session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
   description
-    "The dense (short-tuple) representation of the monitor's evaluation function and the verified
-     dense evaluator udmstep/udeval over it, with the window structures it runs. Monitor_Code_Dense is the code export the shipping binary is built
+    "The monitor the shipping binary runs. Dense_VeriMon prepares the formula as VeriMon does,
+     rewrites it (Dense_Frz, Dense_Push, Dense_Share) and runs the kernel of session
+     MFODL_Monitor_Devel on it. Monitor_Code_Dense is the code export the binary is built
      from (src/verified.ml), together with the verified log parser of session Log_Parser;
      Log_Monitor composes the two, from the bytes of the log to the verdicts, and
      Log_Monitor_Online states its correctness for the online interface."
   sessions
     Log_Parser
   theories
-    Table_Evt
-    Since_Evt
-    Until_Evt
-    Dense_Utuple
-    Dense
-    Dense_Aux
-    Dense_Until_Gen
-    Dense_Evt
-    Dense_Agg_Gen
-    Dense_Evt_Agg
-    Dense_Evt_UAgg
-    Dense_Evt_Aux
-    Dense_Trigger_Nar
-    Dense_Match_Gen
-    Dense_Eval
-    Dense_Produces
-    Dense_Match
-    Dense_Let
-    Dense_Agg
-    Dense_Correct
-    Dense_Compile
-    Dense_Init
-    Dense_Descend
-    Dense_Unbox_Eval
-    Dense_Unbox_UAgg
-    Dense_Agg_Cache
-    Dense_Unbox_Exec
-    Dense_Unbox
-    Dense_Idx_Code
     Dense_Frz
     Dense_Share
     Dense_Push
-    Dense_Code_Opt
-    Dense_Mono_Sweep
-    Dense_Agg_Code
-    Dense_Map_Upd
     Dense_VeriMon
-    Dense_RBT_Code
-    Dense_Mono_Hot
     Log_Monitor
     Log_Monitor_Online
   theories [document=false]
