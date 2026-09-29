@@ -231,4 +231,138 @@ proof -
   qed
 qed
 
+
+subsection \<open>The recursive calls\<close>
+
+lemma mem_filterQuery[simp]: "X \<in> filterQuery I Q \<longleftrightarrow> X \<in> Q \<and> set (fst X) \<inter> I \<noteq> {}"
+  by auto
+
+lemma mem_filterQueryNeg[simp]: "X \<in> filterQueryNeg I Q \<longleftrightarrow> X \<in> Q \<and> set (fst X) \<subseteq> I"
+  by auto
+
+declare filterQuery.simps[simp del] filterQueryNeg.simps[simp del]
+
+lemma wf_atable_projectTable: "wf_atable X \<Longrightarrow> wf_atable (projectTable I X)"
+  by (cases X) (auto simp: wf_atable_def table_def)
+
+lemma wf_atable_semiJoin: "wf_atable X \<Longrightarrow> wf_atable (semiJoin X (I, t))"
+  by (cases X) (auto simp: wf_atable_def table_def)
+
+lemma fst_projectTable[simp]: "fst (projectTable I X) = cols_in I (fst X)"
+  by (cases X) simp
+
+lemma fst_semiJoin[simp]: "fst (semiJoin X (I, t)) = fst X"
+  by (cases X) simp
+
+lemma mem_projectQuery: "X \<in> projectQuery I Q \<longleftrightarrow> (\<exists>Y\<in>Q. X = projectTable I Y)"
+  by auto
+
+lemma mem_newQuery: "X \<in> newQuery J Q (I, t) \<longleftrightarrow> (\<exists>Y\<in>Q. X = projectTable J (semiJoin Y (I, t)))"
+  by auto
+
+declare projectTable.simps[simp del] semiJoin.simps[simp del] projectQuery.simps[simp del]
+  newQuery.simps[simp del]
+
+context getIJ
+begin
+
+lemma rwf_query_I:
+  assumes rwf: "rwf_query V Q Qn" and card: "card V \<ge> 2" and IJ: "(I, J) = getIJ Q Qn V"
+  shows "rwf_query I (projectQuery I (filterQuery I Q)) (filterQueryNeg I Qn)"
+proof -
+  note Q = rwf_queryD[OF rwf]
+  note IJ' = getIJProperties[OF card IJ]
+  have wf: "wf_atable X" if "X \<in> Q \<union> Qn" for X
+    using rwf that by (auto simp: rwf_query_def)
+  have "finite I"
+    using Q(1) IJ'(5) by auto
+  obtain i where "i \<in> I"
+    using IJ'(1) by (metis card.empty ex_in_conv not_one_le_zero)
+  then obtain X0 where "X0 \<in> Q" "i \<in> set (fst X0)"
+    using Q(5) IJ'(5) by blast
+  with \<open>i \<in> I\<close> have "projectTable I X0 \<in> projectQuery I (filterQuery I Q)"
+    unfolding mem_projectQuery mem_filterQuery by (intro bexI[of _ X0]) auto
+  then have ne: "projectQuery I (filterQuery I Q) \<noteq> {}"
+    by blast
+  have fin: "finite (projectQuery I (filterQuery I Q))"
+    using Q(3) by (simp add: projectQuery.simps filterQuery.simps)
+  show ?thesis
+    unfolding rwf_query_def
+  proof (intro conjI)
+    show "finite I" by fact
+    show "card (projectQuery I (filterQuery I Q)) \<ge> 1"
+      using ne fin by (simp add: Suc_le_eq card_gt_0_iff)
+    show "\<forall>X\<in>projectQuery I (filterQuery I Q) \<union> filterQueryNeg I Qn. wf_atable X"
+    proof
+      fix X
+      assume "X \<in> projectQuery I (filterQuery I Q) \<union> filterQueryNeg I Qn"
+      then show "wf_atable X"
+        unfolding Un_iff mem_projectQuery mem_filterQuery mem_filterQueryNeg
+        using wf wf_atable_projectTable mem_filterQuery[THEN iffD1] by blast
+    qed
+    show "covering I (projectQuery I (filterQuery I Q))"
+      using Q(5) IJ'(5) by (fastforce simp: covering_def mem_projectQuery projectTable.simps)
+    show "included I (projectQuery I (filterQuery I Q))" "included I (filterQueryNeg I Qn)"
+      by (auto simp: included_def mem_projectQuery projectTable.simps)
+    show "non_empty_query (projectQuery I (filterQuery I Q))"
+      by (auto simp: non_empty_query_def mem_projectQuery projectTable.simps filter_empty_conv
+        empty_filter_conv)
+    show "non_empty_query (filterQueryNeg I Qn)"
+      using rwf by (auto simp: rwf_query_def non_empty_query_def)
+  qed
+qed
+
+lemma rwf_query_J:
+  assumes rwf: "rwf_query V Q Qn" and card: "card V \<ge> 2" and IJ: "(I, J) = getIJ Q Qn V"
+  shows "rwf_query J (newQuery J (filterQuery J Q) (I, t)) (newQuery J (Qn - filterQueryNeg I Qn) (I, t))"
+proof -
+  note Q = rwf_queryD[OF rwf]
+  note IJ' = getIJProperties[OF card IJ]
+  have wf: "wf_atable X" if "X \<in> Q \<union> Qn" for X
+    using rwf that by (auto simp: rwf_query_def)
+  have "finite J"
+    using Q(1) IJ'(5) by auto
+  obtain j where "j \<in> J"
+    using IJ'(2) by (metis card.empty ex_in_conv not_one_le_zero)
+  then obtain X0 where "X0 \<in> Q" "j \<in> set (fst X0)"
+    using Q(5) IJ'(5) by blast
+  with \<open>j \<in> J\<close> have "projectTable J (semiJoin X0 (I, t)) \<in> newQuery J (filterQuery J Q) (I, t)"
+    unfolding mem_newQuery mem_filterQuery by (intro bexI[of _ X0]) auto
+  then have ne: "newQuery J (filterQuery J Q) (I, t) \<noteq> {}"
+    by blast
+  have fin: "finite (newQuery J (filterQuery J Q) (I, t))"
+    using Q(3) by (simp add: newQuery.simps filterQuery.simps)
+  have neg: "set (fst X) \<inter> J \<noteq> {}" if "X \<in> Qn" "\<not> set (fst X) \<subseteq> I" for X
+    using that Q(4)[of "fst X" "snd X"] IJ'(5) by auto
+  show ?thesis
+    unfolding rwf_query_def
+  proof (intro conjI)
+    show "finite J" by fact
+    show "card (newQuery J (filterQuery J Q) (I, t)) \<ge> 1"
+      using ne fin by (simp add: Suc_le_eq card_gt_0_iff)
+    show "\<forall>X\<in>newQuery J (filterQuery J Q) (I, t) \<union> newQuery J (Qn - filterQueryNeg I Qn) (I, t). wf_atable X"
+    proof
+      fix X
+      assume "X \<in> newQuery J (filterQuery J Q) (I, t) \<union> newQuery J (Qn - filterQueryNeg I Qn) (I, t)"
+      then show "wf_atable X"
+        unfolding Un_iff mem_newQuery mem_filterQuery Diff_iff
+        using wf wf_atable_projectTable wf_atable_semiJoin mem_filterQuery[THEN iffD1] by blast
+    qed
+    show "covering J (newQuery J (filterQuery J Q) (I, t))"
+      using Q(5) IJ'(5)
+      by (fastforce simp: covering_def mem_newQuery projectTable.simps semiJoin.simps)
+    show "included J (newQuery J (filterQuery J Q) (I, t))"
+      "included J (newQuery J (Qn - filterQueryNeg I Qn) (I, t))"
+      by (auto simp: included_def mem_newQuery projectTable.simps semiJoin.simps)
+    show "non_empty_query (newQuery J (filterQuery J Q) (I, t))"
+      by (auto simp: non_empty_query_def mem_newQuery projectTable.simps semiJoin.simps
+        filter_empty_conv empty_filter_conv)
+    show "non_empty_query (newQuery J (Qn - filterQueryNeg I Qn) (I, t))"
+      using neg by (fastforce simp: non_empty_query_def mem_newQuery projectTable.simps
+        semiJoin.simps filter_empty_conv empty_filter_conv)
+  qed
+qed
+
+end
+
 end

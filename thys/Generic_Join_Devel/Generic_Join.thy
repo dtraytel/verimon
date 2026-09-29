@@ -29,6 +29,28 @@ text \<open>A tuple over @{term "cols I"} and one over @{term "cols J"} combined
 definition merge :: "vertices \<Rightarrow> vertices \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
   "merge I J t1 t2 = restrict (cols (I \<union> J)) (cols I @ cols J) (t1 @ t2)"
 
+fun projectTable :: "vertices \<Rightarrow> 'a atable \<Rightarrow> 'a atable" where
+  "projectTable V (cs, t) = (cols_in V cs, restrict (cols_in V cs) cs ` t)"
+
+fun filterQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "filterQuery V Q = Set.filter (\<lambda>(cs, _). \<not> Set.is_empty (set cs \<inter> V)) Q"
+
+fun filterQueryNeg :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "filterQueryNeg V Q = Set.filter (\<lambda>(cs, _). set cs \<subseteq> V) Q"
+
+fun projectQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
+  "projectQuery V s = Set.image (projectTable V) s"
+
+text \<open>The rows of a table that agree with a tuple over @{term "cols I"} on the table's columns
+  among @{term I}.\<close>
+
+fun semiJoin :: "'a atable \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a atable" where
+  "semiJoin (cs, tab) (I, tup) =
+    (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t = restrict (cols_in I cs) (cols I) tup) tab)"
+
+fun newQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a query" where
+  "newQuery V Q (I, t) = Set.image (\<lambda>tab. projectTable V (semiJoin tab (I, t))) Q"
+
 subsection \<open>Generic algorithm\<close>
 
 locale getIJ =
@@ -53,28 +75,6 @@ proof -
   show "V = I \<union> J" by (metis assms(1) assms(2) getIJ.coreProperties getIJ_axioms)
   show "I \<inter> J = {}" by (metis assms(1) assms(2) getIJ_axioms getIJ_def)
 qed
-
-fun projectTable :: "vertices \<Rightarrow> 'a atable \<Rightarrow> 'a atable" where
-  "projectTable V (cs, t) = (cols_in V cs, restrict (cols_in V cs) cs ` t)"
-
-fun filterQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "filterQuery V Q = Set.filter (\<lambda>(cs, _). \<not> Set.is_empty (set cs \<inter> V)) Q"
-
-fun filterQueryNeg :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "filterQueryNeg V Q = Set.filter (\<lambda>(cs, _). set cs \<subseteq> V) Q"
-
-fun projectQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query" where
-  "projectQuery V s = Set.image (projectTable V) s"
-
-text \<open>The rows of a table that agree with a tuple over @{term "cols I"} on the table's columns
-  among @{term I}.\<close>
-
-fun semiJoin :: "'a atable \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a atable" where
-  "semiJoin (cs, tab) (I, tup) =
-    (cs, Set.filter (\<lambda>t. restrict (cols_in I cs) cs t = restrict (cols_in I cs) (cols I) tup) tab)"
-
-fun newQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a query" where
-  "newQuery V Q (I, t) = Set.image (\<lambda>tab. projectTable V (semiJoin tab (I, t))) Q"
 
 function (sequential) genericJoin :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query \<Rightarrow> 'a table" where
   "genericJoin V Q_pos Q_neg =
