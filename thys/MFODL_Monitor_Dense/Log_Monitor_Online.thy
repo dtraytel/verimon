@@ -21,91 +21,88 @@ text \<open>
   the end.
 \<close>
 
-subsection \<open>The dense monitor's state after a prefix\<close>
+subsection \<open>The monitor's state after a prefix\<close>
 
-primrec dmsteps0_state :: "(Formula.database \<times> nat) list \<Rightarrow> dmstate \<Rightarrow> dmstate" where
-  "dmsteps0_state [] ds = ds"
-| "dmsteps0_state (tdb # \<pi>) ds = dmsteps0_state \<pi> (snd (dmstep (apfst mk_db tdb) ds))"
+primrec msteps0_state :: "(Formula.database \<times> nat) list \<Rightarrow> udmstate \<Rightarrow> udmstate" where
+  "msteps0_state [] ms = ms"
+| "msteps0_state (tdb # \<pi>) ms = msteps0_state \<pi> (snd (mstep (apfst mk_db tdb) ms))"
 
-lift_definition dmsteps_state :: "Formula.prefix \<Rightarrow> dmstate \<Rightarrow> dmstate" is dmsteps0_state .
+definition msteps_state :: "Formula.prefix \<Rightarrow> udmstate \<Rightarrow> udmstate" where
+  "msteps_state \<pi> ms = msteps0_state (Rep_prefix \<pi>) ms"
 
-lemma dmsteps0_stateless_append: "dmsteps0_stateless (\<pi> @ \<pi>') ds =
-  dmsteps0_stateless \<pi> ds @ dmsteps0_stateless \<pi>' (dmsteps0_state \<pi> ds)"
-  by (induction \<pi> arbitrary: ds) (simp_all add: split_beta)
+lemma msteps0_stateless_append: "msteps0_stateless (\<pi> @ \<pi>') ms =
+  msteps0_stateless \<pi> ms @ msteps0_stateless \<pi>' (msteps0_state \<pi> ms)"
+  by (induction \<pi> arbitrary: ms) (simp_all add: split_beta)
 
-lemma dmsteps0_state_append: "dmsteps0_state (\<pi> @ \<pi>') ds = dmsteps0_state \<pi>' (dmsteps0_state \<pi> ds)"
-  by (induction \<pi> arbitrary: ds) simp_all
+lemma msteps0_state_append: "msteps0_state (\<pi> @ \<pi>') ms = msteps0_state \<pi>' (msteps0_state \<pi> ms)"
+  by (induction \<pi> arbitrary: ms) simp_all
 
 text \<open>A step outputs the verdicts of time points from the index of the first one whose verdict
   is pending on, which only increases.\<close>
 
-lemma dmstep_indices:
-  assumes "dmstep tdb ds = (vs, ds')"
-  shows "dmstate_i ds \<le> dmstate_i ds'" and "(k, t, X) \<in> set vs \<Longrightarrow> dmstate_i ds \<le> k \<and> k < dmstate_i ds'"
+lemma mstep_indices:
+  assumes "mstep tdb ms = (vs, ms')"
+  shows "mstate_i ms \<le> mstate_i ms'" and "(k, t, X) \<in> set vs \<Longrightarrow> mstate_i ms \<le> k \<and> k < mstate_i ms'"
 proof -
-  obtain xs m where d: "deval (dmstate_j ds + 1) [snd tdb] (fst tdb) (dmstate_m ds) = (xs, m)"
+  obtain xs m where d: "meval (mstate_j ms + 1) (mstate_n ms) [snd tdb] (fst tdb) (mstate_m ms) = (xs, m)"
     by fastforce
-  obtain i' tq vs' where a: "dannotate (dmstate_i ds) (dmstate_t ds @@ [snd tdb]) xs [] = (i', tq, vs')"
-    by (metis prod.exhaust)
-  have "fst (dmstep tdb ds) = vs'" "dmstate_i (snd (dmstep tdb ds)) = i'"
-    using d a by (simp_all add: dmstep_def)
-  then have vs: "vs = vs'" and i': "dmstate_i ds' = i'"
-    by (simp_all add: assms)
-  note e = dannotate_eq[OF a]
-  show "dmstate_i ds \<le> dmstate_i ds'"
-    using e by (simp add: i')
+  have vs: "vs = List.enumerate (mstate_i ms) (zip (mstate_t ms @ [snd tdb]) xs)"
+    and i': "mstate_i ms' = mstate_i ms + length xs"
+    using assms d by (auto simp: default_maux.mstep_def)
+  show "mstate_i ms \<le> mstate_i ms'"
+    by (simp add: i')
   assume "(k, t, X) \<in> set vs"
-  then show "dmstate_i ds \<le> k \<and> k < dmstate_i ds'"
-    using e by (auto simp: vs i' List.in_set_enumerate_eq)
+  then show "mstate_i ms \<le> k \<and> k < mstate_i ms'"
+    by (auto simp: vs i' List.in_set_enumerate_eq)
 qed
 
-lemma dmsteps0_state_mono: "dmstate_i ds \<le> dmstate_i (dmsteps0_state \<pi> ds)"
-proof (induction \<pi> arbitrary: ds)
+lemma msteps0_state_mono: "mstate_i ms \<le> mstate_i (msteps0_state \<pi> ms)"
+proof (induction \<pi> arbitrary: ms)
   case (Cons tdb \<pi>)
-  obtain vs ds1 where s: "dmstep (apfst mk_db tdb) ds = (vs, ds1)"
+  obtain vs ms1 where s: "mstep (apfst mk_db tdb) ms = (vs, ms1)"
     by fastforce
   show ?case
-    using Cons.IH[of ds1] dmstep_indices(1)[OF s] by (simp add: s)
+    using Cons.IH[of ms1] mstep_indices(1)[OF s] by (simp add: s)
 qed simp
 
-lemma dmsteps0_indices:
-  "(k, t, X) \<in> set (dmsteps0_stateless \<pi> ds) \<Longrightarrow> dmstate_i ds \<le> k \<and> k < dmstate_i (dmsteps0_state \<pi> ds)"
-proof (induction \<pi> arbitrary: ds)
+lemma msteps0_indices:
+  "(k, t, X) \<in> set (msteps0_stateless \<pi> ms) \<Longrightarrow> mstate_i ms \<le> k \<and> k < mstate_i (msteps0_state \<pi> ms)"
+proof (induction \<pi> arbitrary: ms)
   case (Cons tdb \<pi>)
-  obtain vs ds1 where s: "dmstep (apfst mk_db tdb) ds = (vs, ds1)"
+  obtain vs ms1 where s: "mstep (apfst mk_db tdb) ms = (vs, ms1)"
     by fastforce
-  from Cons.prems have "(k, t, X) \<in> set vs \<or> (k, t, X) \<in> set (dmsteps0_stateless \<pi> ds1)"
+  from Cons.prems have "(k, t, X) \<in> set vs \<or> (k, t, X) \<in> set (msteps0_stateless \<pi> ms1)"
     by (simp add: s)
   then show ?case
   proof
     assume "(k, t, X) \<in> set vs"
-    with dmstep_indices[OF s] dmsteps0_state_mono[of ds1 \<pi>] show ?thesis
+    with mstep_indices[OF s] msteps0_state_mono[of ms1 \<pi>] show ?thesis
       by (fastforce simp: s)
   next
-    assume "(k, t, X) \<in> set (dmsteps0_stateless \<pi> ds1)"
-    with Cons.IH[of ds1] dmstep_indices(1)[OF s] show ?thesis
+    assume "(k, t, X) \<in> set (msteps0_stateless \<pi> ms1)"
+    with Cons.IH[of ms1] mstep_indices(1)[OF s] show ?thesis
       by (fastforce simp: s)
   qed
 qed simp
 
 text \<open>So the verdicts output after a prefix are disjoint from those output for it.\<close>
 
-lemma flatten_verdicts_dmsteps0_append:
+lemma flatten_verdicts_msteps0_append:
   fixes f :: "event_data table \<Rightarrow> event_data table"
   defines "W \<equiv> map (\<lambda>(i, t, X). (i, t, f X))"
-  shows "flatten_verdicts (W (dmsteps0_stateless \<pi>' (dmsteps0_state \<pi> ds))) =
-    flatten_verdicts (W (dmsteps0_stateless (\<pi> @ \<pi>') ds)) - flatten_verdicts (W (dmsteps0_stateless \<pi> ds))"
+  shows "flatten_verdicts (W (msteps0_stateless \<pi>' (msteps0_state \<pi> ms))) =
+    flatten_verdicts (W (msteps0_stateless (\<pi> @ \<pi>') ms)) - flatten_verdicts (W (msteps0_stateless \<pi> ms))"
 proof -
-  let ?k = "dmstate_i (dmsteps0_state \<pi> ds)"
-  let ?A = "flatten_verdicts (W (dmsteps0_stateless \<pi> ds))"
-  let ?B = "flatten_verdicts (W (dmsteps0_stateless \<pi>' (dmsteps0_state \<pi> ds)))"
+  let ?k = "mstate_i (msteps0_state \<pi> ms)"
+  let ?A = "flatten_verdicts (W (msteps0_stateless \<pi> ms))"
+  let ?B = "flatten_verdicts (W (msteps0_stateless \<pi>' (msteps0_state \<pi> ms)))"
   have A: "x \<in> ?A \<Longrightarrow> fst x < ?k" for x
-    using dmsteps0_indices[of _ _ _ \<pi> ds] by (fastforce simp: W_def flatten_verdicts_def)
+    using msteps0_indices[of _ _ _ \<pi> ms] by (fastforce simp: W_def flatten_verdicts_def)
   have B: "x \<in> ?B \<Longrightarrow> ?k \<le> fst x" for x
-    using dmsteps0_indices[of _ _ _ \<pi>' "dmsteps0_state \<pi> ds"] dmsteps0_state_mono[of ds \<pi>]
+    using msteps0_indices[of _ _ _ \<pi>' "msteps0_state \<pi> ms"] msteps0_state_mono[of ms \<pi>]
     by (fastforce simp: W_def flatten_verdicts_def)
-  have "flatten_verdicts (W (dmsteps0_stateless (\<pi> @ \<pi>') ds)) = ?A \<union> ?B"
-    by (simp add: dmsteps0_stateless_append W_def)
+  have "flatten_verdicts (W (msteps0_stateless (\<pi> @ \<pi>') ms)) = ?A \<union> ?B"
+    by (simp add: msteps0_stateless_append W_def)
   moreover have "?A \<inter> ?B = {}"
     using A B by fastforce
   ultimately show ?thesis
@@ -115,19 +112,12 @@ qed
 subsection \<open>The executable monitor from any state\<close>
 
 lemma usteps_state:
-  "Rep_udmstate (snd (usteps tps ust)) = dmsteps0_state (map (apfst set) tps) (Rep_udmstate ust)"
+  "snd (usteps tps ust) = msteps0_state (map (apfst set) tps) ust"
 proof (induction tps arbitrary: ust)
   case (Cons tp tps)
-  obtain xs t where tp: "tp = (xs, t)"
-    by (cases tp)
-  obtain vs1 ust1 where u: "udmstep (build_db xs, t) ust = (vs1, ust1)"
-    by fastforce
-  have "dmstep (mk_db (set xs), t) (Rep_udmstate ust) = (reopt_verdicts vs1, Rep_udmstate ust1)"
-    using udmstep_Rep[of "build_db xs" t ust] u by (simp add: rdb_build_db)
   then show ?case
-    using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
+    by (cases tp) (simp add: build_db_mk_db split_beta)
 qed simp
-
 text \<open>The items that the parser outputs are converted, and the time points they denote are fed
   to the monitor, as long as their timestamps do not decrease from the last one fed.\<close>
 
@@ -251,7 +241,7 @@ proof -
       using A B by (auto simp: V_def fin_tps_def)
   next
     case (Some t)
-    obtain vs1 ust1 where u: "udmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
+    obtain vs1 ust1 where u: "mstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
       by (metis prod.exhaust)
     have S1: "sorted (lt # map snd tps) \<Longrightarrow> sorted (lt # map snd (tps @ fin_tps fin)) \<longleftrightarrow> \<not> t < last (lt # map snd tps)"
       using sorted_snoc_last[of lt "map snd tps" t] by (auto simp: Some fin_tps_def not_less)
@@ -276,16 +266,15 @@ definition stream_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \
 
 lemma vinit_Inr_state:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, (e, ust, n))"
-  shows "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and "e = einit" and "n = 0"
-    and "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "uvdfail_nodes (udmstate_m ust) = 0"
+  shows "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf (vc_cols cf)" and "e = einit" and "n = 0"
+    and "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr (vc_cols cf, ust)"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
-lemma dmsteps_state_Rep: "dmsteps_state \<pi> ds = dmsteps0_state (Rep_prefix \<pi>) ds"
-  by (simp add: dmsteps_state_def)
+lemma msteps_state_Rep: "msteps_state \<pi> ms = msteps0_state (Rep_prefix \<pi>) ms"
+  by (simp add: msteps_state_def)
 
-lemma dmonitor_Rep: "dmonitor ds \<pi> = dmsteps0_stateless (Rep_prefix \<pi>) ds"
-  by (simp add: dmonitor_def dmsteps_stateless.rep_eq)
-
+lemma msteps_stateless_Rep: "msteps_stateless \<pi> ms = msteps0_stateless (Rep_prefix \<pi>) ms"
+  by (simp add: default_maux.msteps_stateless.rep_eq)
 lemma prefix_of_list_Nil: "prefix_of_list [] = pnil"
   by transfer simp
 
@@ -403,7 +392,7 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
 text \<open>The state @{text z} is the one after the bytes @{text s} are read, whose events that the
   parser keeps denote the prefix @{text \<pi>}, from the state @{const vinit} started with the
   configuration @{text cf}: its parser state is the streaming parser's after @{text s}, and its
-  monitor state is the dense monitor's after @{text \<pi>}, with the last timestamp of @{text \<pi>}.\<close>
+  monitor state is the kernel's after @{text \<pi>}, with the last timestamp of @{text \<pi>}.\<close>
 
 definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> vconf \<Rightarrow> string \<Rightarrow> Formula.prefix \<Rightarrow> vstate \<Rightarrow> bool" where
   "wf_vstate filt pf cf s \<pi> z \<longleftrightarrow> (\<exists>ust0 b l ps sp ust es.
@@ -411,22 +400,21 @@ definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) 
      z = ((b, l, Some ps, sp), (ust, last_ts \<pi>)) \<and> wf0 l \<and>
      fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps) \<and>
      prefix_of_items (sf pf) S None es = Some \<pi> \<and>
-     Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0))"
+     ust = msteps_state \<pi> ust0)"
 
-text \<open>The verdicts of the dense monitor on a prefix that items denote are those the
+text \<open>The verdicts of the monitor on a prefix that items denote are those the
   specification prescribes (@{thm [source] udminit_verimon_mverdicts}).\<close>
 
-lemma dmonitor_Mt:
+lemma msteps_stateless_Mt:
   assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<rho>"
-  shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))
-    (dmonitor (Rep_udmstate ust0) \<rho>)) = monitor_\<phi>.Mt \<rho>"
+  shows "flatten_verdicts (vreorder cf \<phi> (msteps_stateless \<rho> ust0)) = monitor_\<phi>.Mt \<rho>"
 proof -
   note w = prefix_of_items_wty[OF p]
   have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<rho>"
     using w(1) by (simp add: map_sig_lsig)
   then show ?thesis
-    by (rule udminit_verimon_mverdicts[OF vinit_Inr_state(4,5)[OF init] w(2)])
+    using udminit_verimon_mverdicts[OF vinit_Inr_state(4)[OF init]] by (simp add: vreorder_def)
 qed
 
 text \<open>The verdicts are monotone in the prefix.\<close>
@@ -440,8 +428,8 @@ proof -
   obtain xs where R: "Rep_prefix \<pi>' = Rep_prefix \<pi> @ xs"
     using less_eq_prefix_Rep[OF le] ..
   show ?thesis
-    unfolding dmonitor_Mt[OF init p, symmetric] dmonitor_Mt[OF init p', symmetric]
-    by (auto simp: dmonitor_Rep R dmsteps0_stateless_append)
+    unfolding msteps_stateless_Mt[OF init p, symmetric] msteps_stateless_Mt[OF init p', symmetric]
+    by (auto simp: msteps_stateless_Rep R msteps0_stateless_append vreorder_def)
 qed
 
 text \<open>The verdicts of the time points that follow a prefix are those that the specification
@@ -452,27 +440,22 @@ lemma usteps_mverdicts:
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
     and p': "prefix_of_items (sf pf) S fin es' = Some \<pi>'"
     and R: "Rep_prefix \<pi>' = Rep_prefix \<pi> @ map (apfst set) tps"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
-  shows "flatten_verdicts (vwiden \<phi> (fst (usteps tps ust))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    and D: "ust = msteps_state \<pi> ust0"
+  shows "flatten_verdicts (vreorder cf \<phi> (fst (usteps tps ust))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
-  let ?W = "map (\<lambda>(i, t, X). (i, t, dtabw (Formula.nfv \<phi>) (set_cols (Formula.fv \<phi>)) X))"
-  note M = dmonitor_Mt[OF init]
-  have "vwiden \<phi> (fst (usteps tps ust)) = ?W (reopt_verdicts (fst (usteps tps ust)))"
-    by (simp add: vwiden_def comp_def split_def)
-  also have "reopt_verdicts (fst (usteps tps ust)) =
-    dmsteps0_stateless (map (apfst set) tps) (dmsteps0_state (Rep_prefix \<pi>) (Rep_udmstate ust0))"
-    by (simp add: usteps_dmsteps0 D dmsteps_state_Rep)
-  finally have V: "vwiden \<phi> (fst (usteps tps ust)) =
-    ?W (dmsteps0_stateless (map (apfst set) tps) (dmsteps0_state (Rep_prefix \<pi>) (Rep_udmstate ust0)))" .
-  have A: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi>) (Rep_udmstate ust0))) = monitor_\<phi>.Mt \<pi>"
-    using M[OF p] by (simp only: dmonitor_Rep)
-  have B: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) (Rep_udmstate ust0))) =
+  let ?W = "vreorder cf \<phi>"
+  note M = msteps_stateless_Mt[OF init]
+  have V: "fst (usteps tps ust) =
+    msteps0_stateless (map (apfst set) tps) (msteps0_state (Rep_prefix \<pi>) ust0)"
+    by (simp add: usteps_msteps0 D msteps_state_Rep)
+  have A: "flatten_verdicts (?W (msteps0_stateless (Rep_prefix \<pi>) ust0)) = monitor_\<phi>.Mt \<pi>"
+    using M[OF p] by (simp only: msteps_stateless_Rep)
+  have B: "flatten_verdicts (?W (msteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) ust0)) =
     monitor_\<phi>.Mt \<pi>'"
-    using M[OF p'] by (simp only: dmonitor_Rep R)
+    using M[OF p'] by (simp only: msteps_stateless_Rep R)
   show ?thesis
-    unfolding V flatten_verdicts_dmsteps0_append A B ..
+    unfolding V vreorder_def flatten_verdicts_msteps0_append A[unfolded vreorder_def] B[unfolded vreorder_def] ..
 qed
-
 text \<open>The initial state is the one after no bytes, which denote the empty prefix.\<close>
 
 theorem wf_vstate_vinit:
@@ -489,7 +472,7 @@ proof -
     unfolding wf_vstate_def
     by (rule exI[of _ ust], rule exI[of _ 0], rule exI[of _ E_INIT], rule exI[of _ F_INIT], rule exI[of _ 0],
         rule exI[of _ ust], rule exI[of _ "[]"])
-      (simp add: init' Z fstream_init_def abs_l0_def prefix_of_items_Nil dmsteps_state_Rep pnil.rep_eq)
+      (simp add: init' Z fstream_init_def abs_l0_def prefix_of_items_Nil msteps_state_Rep pnil.rep_eq)
 qed
 
 text \<open>A chunk of the input: if the bytes read so far no longer denote a prefix, the monitor
@@ -502,15 +485,16 @@ theorem vfeed_chunk_online:
   shows "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ Rep_bytes c) = None \<Longrightarrow> has_verror outs"
     and "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ Rep_bytes c) = Some \<pi>' \<Longrightarrow>
       \<not> has_verror outs \<and> \<pi> \<le> \<pi>' \<and> wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>' z' \<and>
-      flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+      flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   obtain ust0 b l ps sp ust es where init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
+    and D: "ust = msteps_state \<pi> (ust0)"
     using wf unfolding wf_vstate_def by blast
-  note cf = vinit_Inr_state(1)[OF init]
+  obtain cs where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf cs"
+    using vinit_Inr_state(1)[OF init] by blast
   let ?K = "keep_spec filt \<phi> S" and ?k = "vkeep cf"
   have K: "sk ?k = ?K"
     by (simp add: cf sk_vkeep)
@@ -535,7 +519,7 @@ proof -
   have main: "case stream_prefix ?K (sf pf) S (s @ Rep_bytes c) of
       None \<Rightarrow> has_verror outs
     | Some \<pi>' \<Rightarrow> \<not> has_verror outs \<and> \<pi> \<le> \<pi>' \<and> wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>' z' \<and>
-        flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+        flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
   proof (cases "fstream_run ?K (Rep_bytes c) (abs_l0 l, map_fpstate Rep_bytes ps)")
     case None
     with C have "has_err xs"
@@ -589,8 +573,8 @@ proof -
         have vv: "vverdicts vs = fst (usteps tps ust)"
           and mst: "mst = (snd (usteps tps ust), last (last_ts \<pi> # map snd tps))"
           using vitems_from(3)[OF oks v Some ok] by auto
-        have D': "Rep_udmstate (snd (usteps tps ust)) = dmsteps_state ?\<pi>' (Rep_udmstate ust0)"
-          by (simp add: usteps_state D dmsteps_state_Rep Rep' dmsteps0_state_append)
+        have D': "(snd (usteps tps ust)) = msteps_state ?\<pi>' (ust0)"
+          by (simp add: usteps_state D msteps_state_Rep Rep' msteps0_state_append)
         have mst': "mst = (snd (usteps tps ust), last_ts ?\<pi>')"
           using mst last_ts_append[OF Rep'] by simp
         have wf': "wf_vstate filt pf cf (s @ Rep_bytes c) ?\<pi>' z'"
@@ -598,7 +582,7 @@ proof -
           by (rule exI[of _ ust0], rule exI[of _ "b + bytes_length c"], rule exI[of _ l'], rule exI[of _ ps'],
               rule exI[of _ sp'], rule exI[of _ "snd (usteps tps ust)"], rule exI[of _ "es @ abs_items es2'"])
             (simp add: init z' est mst' w0' R' P' D')
-        have V: "flatten_verdicts (vwiden \<phi> (vverdicts vs)) = monitor_\<phi>.Mt ?\<pi>' - monitor_\<phi>.Mt \<pi>"
+        have V: "flatten_verdicts (vreorder cf \<phi> (vverdicts vs)) = monitor_\<phi>.Mt ?\<pi>' - monitor_\<phi>.Mt \<pi>"
           using usteps_mverdicts[OF init p P' Rep' D] by (simp add: vv)
         show ?thesis
           using ok wf' V less_eq_prefix_append[OF Rep'] by (simp add: SP' P' outs)
@@ -609,7 +593,7 @@ proof -
     using main by simp
   show "stream_prefix ?K (sf pf) S (s @ Rep_bytes c) = Some \<pi>' \<Longrightarrow>
       \<not> has_verror outs \<and> \<pi> \<le> \<pi>' \<and> wf_vstate filt pf cf (s @ Rep_bytes c) \<pi>' z' \<and>
-      flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+      flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     using main by simp
 qed
 
@@ -623,15 +607,16 @@ theorem vfinish_online:
   shows "log_prefix (keep_spec filt \<phi> S) (sf pf) S fin s = None \<Longrightarrow> has_verror (vfinish cf fin z)"
     and "log_prefix (keep_spec filt \<phi> S) (sf pf) S fin s = Some \<pi>' \<Longrightarrow>
       \<not> has_verror (vfinish cf fin z) \<and> \<pi> \<le> \<pi>' \<and>
-      flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+      flatten_verdicts (vreorder cf \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   obtain ust0 b l ps sp ust es where init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
+    and D: "ust = msteps_state \<pi> (ust0)"
     using wf unfolding wf_vstate_def by blast
-  note cf = vinit_Inr_state(1)[OF init]
+  obtain cs where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf cs"
+    using vinit_Inr_state(1)[OF init] by blast
   let ?K = "keep_spec filt \<phi> S" and ?k = "vkeep cf"
   let ?xs = "efinish ?k (b, l, Some ps, sp)"
   have K: "sk ?k = ?K"
@@ -656,7 +641,7 @@ proof -
   have main: "case log_prefix ?K (sf pf) S fin s of
       None \<Rightarrow> has_verror V
     | Some \<pi>' \<Rightarrow> \<not> has_verror V \<and> \<pi> \<le> \<pi>' \<and>
-        flatten_verdicts (vwiden \<phi> (vverdicts V)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+        flatten_verdicts (vreorder cf \<phi> (vverdicts V)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
   proof (cases "fstream_finish ?K (abs_l0 l, map_fpstate Rep_bytes ps)")
     case None
     with C have "has_err ?xs"
@@ -698,7 +683,7 @@ proof -
           using VF(2)[OF Some] True by simp
         have vv: "vverdicts V = fst (usteps (tps @ fin_tps fin) ust)"
           using VF(3)[OF Some ok] .
-        have "flatten_verdicts (vwiden \<phi> (vverdicts V)) = monitor_\<phi>.Mt ?\<pi>' - monitor_\<phi>.Mt \<pi>"
+        have "flatten_verdicts (vreorder cf \<phi> (vverdicts V)) = monitor_\<phi>.Mt ?\<pi>' - monitor_\<phi>.Mt \<pi>"
           using usteps_mverdicts[OF init p P' Rep' D] by (simp add: vv)
         then show ?thesis
           using ok less_eq_prefix_append[OF Rep'] by (simp add: LP' P')
@@ -709,7 +694,7 @@ proof -
     using main by (simp add: fz)
   show "log_prefix ?K (sf pf) S fin s = Some \<pi>' \<Longrightarrow>
       \<not> has_verror (vfinish cf fin z) \<and> \<pi> \<le> \<pi>' \<and>
-      flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+      flatten_verdicts (vreorder cf \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     using main by (simp add: fz)
 qed
 
@@ -739,14 +724,14 @@ theorem vfeed_chunks_online_step:
   assumes "wf_vstate filt pf cf s \<pi> z" and "vfeed_chunks cf cs z = (outs, z')"
     and "stream_prefix (keep_spec filt \<phi> S) (sf pf) S (s @ concat (map Rep_bytes cs)) = Some \<pi>'"
   shows "\<not> has_verror outs \<and> \<pi> \<le> \<pi>' \<and> wf_vstate filt pf cf (s @ concat (map Rep_bytes cs)) \<pi>' z' \<and>
-    flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
   using assms
 proof (induction cs arbitrary: s \<pi> z outs)
   case Nil
   then have "\<pi>' = \<pi>" and "outs = []" and "z' = z"
     using wf_vstate_stream_prefix[OF Nil.prems(1)] by simp_all
   with Nil.prems(1) show ?case
-    by (simp add: flatten_verdicts_def vwiden_def)
+    by (simp add: flatten_verdicts_def vreorder_def)
 next
   case (Cons c cs)
   obtain outs1 z1 where s1: "vfeed_chunk cf c z = (outs1, z1)"
@@ -759,18 +744,18 @@ next
     by (rule stream_prefix_append_Some)
   note O1 = vfeed_chunk_online(2)[OF Cons.prems(1) s1 sp1]
   have O2: "\<not> has_verror outs2 \<and> \<pi>1 \<le> \<pi>' \<and> wf_vstate filt pf cf ((s @ Rep_bytes c) @ concat (map Rep_bytes cs)) \<pi>' z' \<and>
-    flatten_verdicts (vwiden \<phi> (vverdicts outs2)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>1"
+    flatten_verdicts (vreorder cf \<phi> (vverdicts outs2)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>1"
     by (rule Cons.IH) (use O1 s2 Cons.prems(3) in simp_all)
   have m1: "monitor_\<phi>.Mt \<pi> \<subseteq> monitor_\<phi>.Mt \<pi>1"
     using wf_vstate_Mt_mono[OF Cons.prems(1)] O1 by blast
   have m2: "monitor_\<phi>.Mt \<pi>1 \<subseteq> monitor_\<phi>.Mt \<pi>'"
     using wf_vstate_Mt_mono O1 O2 by blast
-  have V: "flatten_verdicts (vwiden \<phi> (vverdicts outs)) =
-    flatten_verdicts (vwiden \<phi> (vverdicts outs1)) \<union> flatten_verdicts (vwiden \<phi> (vverdicts outs2))"
-    by (simp add: outs vwiden_def)
-  have F1: "flatten_verdicts (vwiden \<phi> (vverdicts outs1)) = monitor_\<phi>.Mt \<pi>1 - monitor_\<phi>.Mt \<pi>"
+  have V: "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) =
+    flatten_verdicts (vreorder cf \<phi> (vverdicts outs1)) \<union> flatten_verdicts (vreorder cf \<phi> (vverdicts outs2))"
+    by (simp add: outs vreorder_def)
+  have F1: "flatten_verdicts (vreorder cf \<phi> (vverdicts outs1)) = monitor_\<phi>.Mt \<pi>1 - monitor_\<phi>.Mt \<pi>"
     using O1 by blast
-  have F2: "flatten_verdicts (vwiden \<phi> (vverdicts outs2)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>1"
+  have F2: "flatten_verdicts (vreorder cf \<phi> (vverdicts outs2)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>1"
     using O2 by blast
   have "\<not> has_verror outs"
     using O1 O2 by (simp add: outs)
@@ -778,7 +763,7 @@ next
     using O1 O2 by (blast intro: order.trans)
   moreover have "wf_vstate filt pf cf (s @ concat (map Rep_bytes (c # cs))) \<pi>' z'"
     using O2 by simp
-  moreover have "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+  moreover have "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     unfolding V F1 F2 using m1 m2 by blast
   ultimately show ?case
     by blast
@@ -839,7 +824,7 @@ theorem vfeed_chunk_online_log:
     and p': "stream_prefix (\<lambda>_. True) (sf pf) S (s @ Rep_bytes c) = Some \<pi>'"
   shows "\<not> has_verror outs" and "\<pi> \<le> \<pi>'"
     and "wf_vstate filt pf cf (s @ Rep_bytes c) (pmap_\<Gamma> (\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}) \<pi>') z'"
-    and "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    and "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   let ?g = "\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}"
   have f: "stream_prefix (keep_spec filt \<phi> S) (sf pf) S s = Some (pmap_\<Gamma> ?g \<pi>)"
@@ -859,9 +844,9 @@ proof -
     using O by blast+
   show "\<pi> \<le> \<pi>'"
     by (rule stream_prefix_mono[OF p p'])
-  have "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
+  have "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
     using O unfolding \<pi>0 by blast
-  then show "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+  then show "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     by (simp only: M M')
 qed
 
@@ -870,7 +855,7 @@ theorem vfinish_online_log:
     and p: "stream_prefix (\<lambda>_. True) (sf pf) S s = Some \<pi>"
     and p': "log_prefix (\<lambda>_. True) (sf pf) S fin s = Some \<pi>'"
   shows "\<not> has_verror (vfinish cf fin z)"
-    and "flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    and "flatten_verdicts (vreorder cf \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   let ?g = "\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}"
   have f: "stream_prefix (keep_spec filt \<phi> S) (sf pf) S s = Some (pmap_\<Gamma> ?g \<pi>)"
@@ -888,10 +873,10 @@ proof -
   note M' = Mt_filter[OF this]
   show "\<not> has_verror (vfinish cf fin z)"
     using O by blast
-  have "flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) =
+  have "flatten_verdicts (vreorder cf \<phi> (vverdicts (vfinish cf fin z))) =
     monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
     using O unfolding \<pi>0 by blast
-  then show "flatten_verdicts (vwiden \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+  then show "flatten_verdicts (vreorder cf \<phi> (vverdicts (vfinish cf fin z))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     by (simp only: M M')
 qed
 
@@ -902,7 +887,7 @@ theorem vfeed_chunks_online_log:
   shows "\<not> has_verror outs" and "\<pi> \<le> \<pi>'"
     and "wf_vstate filt pf cf (s @ concat (map Rep_bytes cs))
       (pmap_\<Gamma> (\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}) \<pi>') z'"
-    and "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+    and "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   let ?g = "\<lambda>D. D \<inter> {e. keep_spec filt \<phi> S (Rep_string8 (fst e))}"
   have f: "stream_prefix (keep_spec filt \<phi> S) (sf pf) S s = Some (pmap_\<Gamma> ?g \<pi>)"
@@ -923,9 +908,9 @@ proof -
     using O by blast+
   show "\<pi> \<le> \<pi>'"
     by (rule stream_prefix_mono[OF p p'])
-  have "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
+  have "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>') - monitor_\<phi>.Mt (pmap_\<Gamma> ?g \<pi>)"
     using O unfolding \<pi>0 by blast
-  then show "flatten_verdicts (vwiden \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
+  then show "flatten_verdicts (vreorder cf \<phi> (vverdicts outs)) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
     by (simp only: M M')
 qed
 

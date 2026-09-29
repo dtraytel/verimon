@@ -1063,8 +1063,8 @@ lemma vitems_code[code]: "vitems cf xs z = vitems_acc cf xs z []"
   by (simp add: vitems_acc split: prod.splits)
 
 text \<open>A chunk of the input, the end of the input, with an optional last time point with no events,
-  and the initial state, if the formula is well-formed, its preparation succeeds, and the dense
-  compiler covers it. Unless @{text filt} is set, the parser keeps all events.\<close>
+  and the initial state, if the formula is well-formed, and its preparation succeeds.
+  Unless @{text filt} is set, the parser keeps all events.\<close>
 
 definition vfeed_chunk :: "vconf \<Rightarrow> bytes \<Rightarrow> vstate \<Rightarrow> vout list \<times> vstate" where
   "vfeed_chunk cf s z = (case efeed_chunk (vkeep cf) s (fst z) of
@@ -1197,7 +1197,7 @@ proof (induction cf xs z rule: vitems.induct)
 qed simp
 
 text \<open>Without errors, the items are converted and their timestamps do not decrease, and the
-  verdicts are those of the dense monitor on the time points.\<close>
+  verdicts are those of the monitor on the time points.\<close>
 
 lemma vitems_ok:
   assumes "oks xs = Some es" "vitems cf xs (ust, lt) = (vs, z')" "\<not> has_verror vs"
@@ -1328,7 +1328,7 @@ proof -
     by (simp_all add: wty_prefix.rep_eq pfinite.rep_eq)
 qed
 
-subsubsection \<open>The monitor on the log implements the dense monitor on the prefix\<close>
+subsubsection \<open>The monitor on the log implements the kernel on the prefix\<close>
 
 lemma vfeed_chunks_efeed:
   "vfeed_chunks cf ss (est, z) = (case efeed_chunks (vkeep cf) ss est of (xs, est') \<Rightarrow>
