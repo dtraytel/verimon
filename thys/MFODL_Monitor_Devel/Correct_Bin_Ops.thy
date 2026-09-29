@@ -36,13 +36,6 @@ lemma mbuf2_take_eqD:
   by (induction f buf arbitrary: i xs buf' rule: mbuf2_take.induct)
     (fastforce simp add: list_all2_Cons2 upt_eq_Cons_conv min_absorb1 min_absorb2 split: prod.splits)+
 
-text \<open>The table of a formula @{term \<phi>} at time point @{term i}: its tuples are over the columns
-  @{term "Formula.fv_list \<phi>"} and denote, read as valuations of the first @{term n} variables, the
-  satisfying valuations in the slice @{term R}.\<close>
-
-abbreviation sat_table where
-  "sat_table \<sigma> V n R cs i \<phi> \<equiv> qtable cs (mem_restr R cs) (\<lambda>v. Formula.sat \<sigma> V (val n cs v) i \<phi>)"
-
 definition wf_mbuf2' :: "Formula.trace \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
   ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> event_data mbuf2 \<Rightarrow> bool" where
   "wf_mbuf2' \<sigma> P V j n R \<phi> \<psi> buf \<longleftrightarrow> wf_mbuf2 (min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j))

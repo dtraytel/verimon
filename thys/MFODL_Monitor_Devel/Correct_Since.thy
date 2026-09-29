@@ -21,9 +21,9 @@ lemma progress_Sincep: "progress \<sigma> P (Sincep pos \<phi> I \<psi>) j = pro
 fun wf_mbuf2S :: "Formula.trace \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow>
   ty Formula.formula \<Rightarrow> \<I> \<Rightarrow> ty Formula.formula \<Rightarrow> event_data mbuf2S \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
   "wf_mbuf2S \<sigma> P V j n R \<phi> I \<psi> (buf\<phi>, buf\<psi>, ts, skew) pIn pOut \<longleftrightarrow>
-    list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>))
+    list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi>)
       [pOut ..< progress \<sigma> P \<phi> j] buf\<phi> \<and>
-    list_all2 (\<lambda>i. qtable n (Formula.fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>))
+    list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi>)
       [pIn ..< progress \<sigma> P \<psi> j] buf\<psi> \<and>
     list_all2 (\<lambda>i t. t = \<tau> \<sigma> i) [pOut ..< j] ts \<and>
     pOut = (if skew then Suc pIn else pIn)"
@@ -32,9 +32,9 @@ lemma wf_mbuf2S_add:
   assumes wf: "wf_mbuf2S \<sigma> P V j n R \<phi> I \<psi> buf (min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)) (progress \<sigma> P (Sincep pos \<phi> I \<psi>) j)"
     and bounded: "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'"
     and rm: "rel_mapping (\<le>) P P'"
-    and xs: "list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>))
+    and xs: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi>)
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
-    and ys: "list_all2 (\<lambda>i. qtable n (Formula.fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>))
+    and ys: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi>)
       [progress \<sigma> P \<psi> j..<progress \<sigma> P' \<psi> (j + \<delta>)] ys"
   shows "wf_mbuf2S \<sigma> P' V (j + \<delta>) n R \<phi> I \<psi> (mbuf2S_add xs ys (map (\<tau> \<sigma>) [j..<j + \<delta>]) buf)
     (min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)) (progress \<sigma> P (Sincep pos \<phi> I \<psi>) j)"
@@ -49,7 +49,7 @@ proof -
   show ?thesis
     unfolding result_eq wf_mbuf2S.simps
   proof (intro conjI)
-    show "list_all2 (\<lambda>i. qtable n (fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>))
+    show "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi>)
         [?pOut..<progress \<sigma> P' \<phi> (j + \<delta>)] (buf\<phi> @ xs)" (is "?P [?pOut..<?p\<phi>'] (buf\<phi> @ xs)")
       unfolding list_all2_append2
     proof (intro exI)
@@ -60,9 +60,8 @@ proof -
         using wf xs by (auto simp: buf_eq progress_Sincep upt_add_eq_append' 
             progress_mono_gen[OF _ bounded rm] dest: list_all2_lengthD)
     qed
-    show "list_all2 (\<lambda>i. qtable n (fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>))
-        [?pIn..<progress \<sigma> P' \<psi> (j + \<delta>)] (buf\<psi> @ ys)" (is "?P [?pIn..<?p\<psi>'] (buf\<psi> @ ys)")
-      unfolding list_all2_append2
+    show "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi>)
+        [?pIn..<progress \<sigma> P' \<psi> (j + \<delta>)] (buf\<psi> @ ys)" (is "?P [?pIn..<?p\<psi>'] (buf\<psi> @ ys)")      unfolding list_all2_append2
     proof (intro exI)
       let ?p\<psi> = "progress \<sigma> P \<psi> j"
       show "[?pIn..<?p\<psi>'] = [?pIn..<?p\<psi>] @ [?p\<psi>..<?p\<psi>'] \<and>
@@ -181,52 +180,57 @@ proof -
   qed
 qed
 
+text \<open>The tables of the auxiliary state are over the columns of the right operand.\<close>
+
 definition (in msaux) wf_since_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>
   ty Formula.formula \<Rightarrow> ty Formula.formula \<Rightarrow> 'msaux \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool" where
   "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut \<longleftrightarrow> pIn \<le> pOut \<and>
-    valid_aggargs (args_n args) (Formula.fv \<psi>) (args_agg args) \<and> 
+    valid_aggargs (args_n args) (Formula.fv_list \<psi>) (args_agg args) \<and> 
     (\<exists>auxlist. valid_msaux args (if pOut = 0 then 0 else \<tau> \<sigma> (pOut-1)) aux auxlist \<and>
       sorted_wrt (\<lambda>x y. fst x > fst y) auxlist \<and>
       (\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow>
         (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - t) \<and>
-        qtable (args_n args) (fv \<psi>) (mem_restr R)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X) \<and>
+        qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X) \<and>
       (\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)))"
 
 lemma (in msaux) wf_since_aux_Nil: "Formula.fv \<phi>' \<subseteq> Formula.fv \<psi>' \<Longrightarrow>
-  valid_aggargs n (Formula.fv \<psi>') agg \<Longrightarrow> 
-  wf_since_aux \<sigma> V R (init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') b agg) \<phi>' \<psi>' (init_msaux (init_args I n (Formula.fv \<phi>') (Formula.fv \<psi>') b agg)) 0 0"
-  unfolding wf_since_aux_def by (auto intro!: valid_init_msaux) (simp add:init_args_def)
+  valid_aggargs n (Formula.fv_list \<psi>') agg \<Longrightarrow> 
+  wf_since_aux \<sigma> V R (init_args I n (Formula.fv_list \<phi>') (Formula.fv_list \<psi>') b agg) \<phi>' \<psi>'
+    (init_msaux (init_args I n (Formula.fv_list \<phi>') (Formula.fv_list \<psi>') b agg)) 0 0"
+  unfolding wf_since_aux_def
+  by (auto simp: init_args_def intro!: exI[of _ "[]"] valid_init_msaux[unfolded init_args_def])
 
 lemma (in msaux) wf_since_aux_UNIV_alt:
   "wf_since_aux \<sigma> V UNIV args \<phi> \<psi> aux pIn pOut \<longleftrightarrow> pIn \<le> pOut \<and>
-    valid_aggargs (args_n args) (Formula.fv \<psi>) (args_agg args) \<and>
+    valid_aggargs (args_n args) (Formula.fv_list \<psi>) (args_agg args) \<and>
     (\<exists>auxlist. valid_msaux args (if pOut = 0 then 0 else \<tau> \<sigma> (pOut-1)) aux auxlist \<and>
       sorted_wrt (\<lambda>x y. fst x > fst y) auxlist \<and>
       (\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow>
         (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - t) \<and>
-        wf_table (args_n args) (fv \<psi>)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X) \<and>
+        wf_table (Formula.fv_list \<psi>)
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X) \<and>
       (\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)))"
-  unfolding wf_since_aux_def qtable_mem_restr_UNIV ..
+  unfolding wf_since_aux_def qtable_mem_restr_UNIV[OF distinct_fvi_list] ..
 
 lemma (in msaux) wf_since_aux_update1:
   assumes wf: "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut"
     and t_eq: "t = \<tau> \<sigma> pOut"
-    and rel1: "qtable n (fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut \<phi>) rel1"
+    and rel1: "sat_table \<sigma> V n R (Formula.fv_list \<phi>) pOut \<phi> rel1"
     and args_n: "args_n args = n"
-    and args_L: "args_L args = fv \<phi>"
+    and args_L: "args_L args = Formula.fv_list \<phi>"
+    and args_R: "args_R args = Formula.fv_list \<psi>"
     and safe: "fv \<phi> \<subseteq> fv \<psi>"
   shows "wf_since_aux \<sigma> V R args \<phi> \<psi> (join_msaux args rel1 (add_new_ts_msaux args t aux)) pIn (Suc pOut)"
 proof -
   from wf obtain auxlist where pIn_le: "pIn \<le> pOut"
-    and aggargs: "valid_aggargs (args_n args) (Formula.fv \<psi>) (args_agg args)"
+    and aggargs: "valid_aggargs (args_n args) (Formula.fv_list \<psi>) (args_agg args)"
     and valid: "valid_msaux args (if pOut = 0 then 0 else \<tau> \<sigma> (pOut-1)) aux auxlist"
     and sorted: "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
     and in_auxlist: "\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow>
         (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - t) \<and>
-        qtable (args_n args) (fv \<psi>) (mem_restr R)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X"
+        qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X"
     and complete: "\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (pOut-1) - \<tau> \<sigma> i) \<longrightarrow>
         (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
     unfolding wf_since_aux_def by blast
@@ -240,33 +244,32 @@ proof -
     show ?thesis
       unfolding sat_since_point_def by (simp add: interval_eq cong: conj_cong) blast
   qed
-  have since_point_restrict: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t (map the (restrict (fv \<psi>) v)) \<longleftrightarrow>
-      sat_since_point pos \<sigma> V \<phi> \<psi> pIn i t (map the v)" for pos i t v
-    unfolding sat_since_point_def using safe by (simp add: sat_the_restrict)
-  define auxlist' where "auxlist' = map (\<lambda>(t', rel). (t', join rel (args_pos args) rel1))
+  have sat_\<phi>: "Formula.sat \<sigma> V (val n (Formula.fv_list \<phi>) (restrict (Formula.fv_list \<phi>) (Formula.fv_list \<psi>) x)) pOut \<phi> \<longleftrightarrow>
+    Formula.sat \<sigma> V (val n (Formula.fv_list \<psi>) x) pOut \<phi>" for x
+    by (rule sat_restrict) simp
+  define auxlist' where "auxlist' = map (\<lambda>(t', rel). (t', join (Formula.fv_list \<psi>) rel (args_pos args) (Formula.fv_list \<phi>) rel1))
     (filter (\<lambda>(t', rel). memR (args_ivl args) (\<tau> \<sigma> pOut - t')) auxlist)"
   have "valid_msaux args (\<tau> \<sigma> pOut) (join_msaux args rel1 (add_new_ts_msaux args (\<tau> \<sigma> pOut) aux)) auxlist'"
     unfolding auxlist'_def using rel1 valid
-    by (auto simp add: args_n args_L qtable_def intro!: valid_join_msaux valid_add_new_ts_msaux)
+    by (auto simp add: args_n qtable_def intro!: valid_join_msaux[where args=args, unfolded args_L args_R] valid_add_new_ts_msaux)
   moreover have "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist'"
     unfolding auxlist'_def using sorted by (simp add: sorted_wrt_map sorted_wrt_filter split_beta)
   moreover have "(\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> pOut - t) \<and>
-      qtable (args_n args) (fv \<psi>) (mem_restr R)
-        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+      qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (val (args_n args) (Formula.fv_list \<psi>) x)) X"
     if "(t, X) \<in> set auxlist'" for t X
   proof -
     from that obtain X0 where X0: "(t, X0) \<in> set auxlist" and memR: "memR (args_ivl args) (\<tau> \<sigma> pOut - t)"
-      and X_eq: "X = join X0 (args_pos args) rel1"
+      and X_eq: "X = join (Formula.fv_list \<psi>) X0 (args_pos args) (Formula.fv_list \<phi>) rel1"
       unfolding auxlist'_def by auto
     from X0 in_auxlist have "\<exists>i<pIn. \<tau> \<sigma> i = t"
-      and qt: "qtable n (fv \<psi>) (mem_restr R)
-        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (map the x)) X0"
+      and qt: "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (pOut-1) t (val n (Formula.fv_list \<psi>) x)) X0"
       by (auto simp: args_n)
-    moreover have "qtable n (fv \<psi>) (mem_restr R)
-        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
-      unfolding X_eq using qt rel1 safe
-      by (rule qtable_join)
-        (use safe in \<open>auto simp: since_point_step since_point_restrict sat_the_restrict\<close>)
+    moreover have "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pOut t (val n (Formula.fv_list \<psi>) x)) X"
+      unfolding X_eq using qt rel1
+      by (rule qtable_join_sub) (use safe in \<open>auto simp: since_point_step sat_\<phi>\<close>)
     ultimately show ?thesis
       using memR by (simp add: args_n)
   qed
@@ -285,24 +288,22 @@ proof -
   ultimately show ?thesis
     unfolding t_eq wf_since_aux_def using pIn_le aggargs by auto
 qed
-
 lemma (in msaux) wf_since_aux_update2:
   assumes wf: "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut"
-    and rel2: "qtable n (fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) pIn \<psi>) rel2"
+    and rel2: "sat_table \<sigma> V n R (Formula.fv_list \<psi>) pIn \<psi> rel2"
     and pOut_pIn: "pOut = Suc pIn"
     and args_ivl: "args_ivl args = I"
     and args_n: "args_n args = n"
-    and args_R: "args_R args = fv \<psi>"
+    and args_R: "args_R args = Formula.fv_list \<psi>"
     and safe: "fv \<phi> \<subseteq> fv \<psi>"
   shows "wf_since_aux \<sigma> V R args \<phi> \<psi> (add_new_table_msaux args rel2 aux) (Suc pIn) pOut"
 proof -
-  from wf obtain auxlist where aggargs: "valid_aggargs n (fv \<psi>) (args_agg args)"
-    and valid: "valid_msaux args (\<tau> \<sigma> pIn) aux auxlist"
+  from wf obtain auxlist where aggargs: "valid_aggargs n (Formula.fv_list \<psi>) (args_agg args)"    and valid: "valid_msaux args (\<tau> \<sigma> pIn) aux auxlist"
     and sorted: "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
     and in_auxlist: "\<And>t X. (t, X) \<in> set auxlist \<Longrightarrow>
         (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
-        qtable n (fv \<psi>) (mem_restr R)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn t (map the x)) X"
+        qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn t (val n (Formula.fv_list \<psi>) x)) X"
     and complete: "\<And>i. i < pIn \<Longrightarrow> memR I (\<tau> \<sigma> pIn - \<tau> \<sigma> i) \<Longrightarrow>
         \<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist"
     unfolding pOut_pIn wf_since_aux_def args_ivl args_n by auto
@@ -310,24 +311,24 @@ proof -
     using in_auxlist[OF that] by auto
   \<comment> \<open>entries for earlier time-stamps are unaffected by the new time-point\<close>
   have old_entry: "(\<exists>i<Suc pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
-      qtable n (fv \<psi>) (mem_restr R)
-        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (map the x)) X"
+      qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (val n (Formula.fv_list \<psi>) x)) X"
     if "(t, X) \<in> set auxlist" "t < \<tau> \<sigma> pIn" for t X
     using in_auxlist[OF that(1)] by (auto simp: sat_since_point_Suc'[OF that(2)] less_Suc_eq)
   \<comment> \<open>the entry for the current time-stamp is extended by the new table\<close>
-  have new_entry: "qtable n (fv \<psi>) (mem_restr R)
-      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (map the x)) (y \<union> rel2)"
+  have new_entry: "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (val n (Formula.fv_list \<psi>) x)) (y \<union> rel2)"
     if "(\<tau> \<sigma> pIn, y) \<in> set auxlist" for y
   proof -
-    from in_auxlist[OF that] have "qtable n (fv \<psi>) (mem_restr R)
-      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) (map the x)) y"
+    from in_auxlist[OF that] have "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) (val n (Formula.fv_list \<psi>) x)) y"
       by blast
     then show ?thesis
       using rel2 by (rule qtable_union) (simp add: sat_since_point_Suc)
   qed
   \<comment> \<open>without an entry for the current time-stamp, the new table is the entry\<close>
-  have fresh_entry: "qtable n (fv \<psi>) (mem_restr R)
-      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (map the x)) rel2"
+  have fresh_entry: "qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+      (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn (\<tau> \<sigma> pIn) (val n (Formula.fv_list \<psi>) x)) rel2"
     if "\<forall>q\<in>set auxlist. fst q < \<tau> \<sigma> pIn"
   proof -
     have "\<not> sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn pIn (\<tau> \<sigma> pIn) v" for v
@@ -385,8 +386,8 @@ proof -
   moreover have "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist'"
     using shape sorted by auto
   moreover have "(\<exists>i<Suc pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pIn - t) \<and>
-      qtable n (fv \<psi>) (mem_restr R)
-        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (map the x)) X"
+      qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+        (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> (Suc pIn) pIn t (val n (Formula.fv_list \<psi>) x)) X"
     if "(t, X) \<in> set auxlist'" for t X
     using shape
   proof (elim disjE exE conjE)
@@ -446,55 +447,52 @@ lemma (in msaux) wf_since_aux_result':
     "pIn \<le> Suc pOut"
     "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
       "\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow> (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (Suc pOut-1) - t)
-      \<and> qtable (args_n args) (fv \<psi>) (mem_restr R)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (Suc pOut-1) t (map the x)) X"
+      \<and> qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (Suc pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X"
       "\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (Suc pOut-1) - \<tau> \<sigma> i) \<longrightarrow> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
       "cur = (if Suc pOut = 0 then 0 else \<tau> \<sigma> (Suc pOut-1))"
-    and subs: "fv \<phi> \<subseteq> fv \<psi>"
     and complete: "pIn = Suc pOut \<or> \<not> memL I (\<tau> \<sigma> pOut - \<tau> \<sigma> pIn)"
     and args_ivl: "args_ivl args = I"
-    and agg_n: "agg_n args = n'"
     and args_n: "args_n args = n"
     and args_pos: "args_pos args = pos"
-  shows "qtable n (fv (Sincep pos \<phi> I \<psi>)) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (Sincep pos \<phi> I \<psi>)) (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+  shows "sat_table \<sigma> V n R (Formula.fv_list \<psi>) pOut (Sincep pos \<phi> I \<psi>)
+    (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
 proof -
+  let ?cs = "Formula.fv_list \<psi>"
   have in_auxlist: "(\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR I (\<tau> \<sigma> pOut - t) \<and>
-      qtable n (fv \<psi>) (mem_restr R) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+      qtable ?cs (mem_restr R ?cs) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (val n ?cs x)) X"
     if "(t, X) \<in> set auxlist" for t X
     using valid_msaux(3) that by (simp add: args_ivl args_n args_pos)
   have complete_aux: "\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist"
     if "i < pIn" "memR I (\<tau> \<sigma> pOut - \<tau> \<sigma> i)" for i
     using valid_msaux(4) that by (simp add: args_ivl)
-  have fv_eq: "fv (Sincep pos \<phi> I \<psi>) = fv \<psi>"
-    using subs by (auto simp: fv_sinceP)
   \<comment> \<open>the result is the union of all tables whose time-stamp satisfies the lower bound\<close>
   have result_iff: "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {} \<longleftrightarrow>
       (\<exists>t X. (t, X) \<in> set auxlist \<and> memL I (\<tau> \<sigma> pOut - t) \<and> x \<in> X)" for x
     using valid_msaux(5) by (auto simp: foldr_union args_ivl)
   show ?thesis
-    unfolding fv_eq
   proof (rule qtableI)
-    show "table n (fv \<psi>) (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+    show "table ?cs (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
       unfolding table_def Ball_def result_iff using in_auxlist by (blast dest: qtable_wf_tupleD)
   next
     fix x
     assume "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {}"
-      and "mem_restr R x"
+      and "wf_tuple ?cs x" "mem_restr R ?cs x"
     then obtain t X where "(t, X) \<in> set auxlist" "memL I (\<tau> \<sigma> pOut - t)" "x \<in> X"
       unfolding result_iff by blast
     moreover from in_auxlist[OF this(1)] obtain i where "i < pIn" "\<tau> \<sigma> i = t" "memR I (\<tau> \<sigma> pOut - t)"
-      and "qtable n (fv \<psi>) (mem_restr R) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (map the x)) X"
+      and "qtable ?cs (mem_restr R ?cs) (\<lambda>x. sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut t (val n ?cs x)) X"
       by blast
     ultimately have "i \<le> pOut" "mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> i)"
-      and "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> i) (map the x)"
-      using valid_msaux(1) \<open>mem_restr R x\<close> by (auto dest: qtableD(2))
-    then show "Formula.sat \<sigma> V (map the x) pOut (Sincep pos \<phi> I \<psi>)"
+      and "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> i) (val n ?cs x)"
+      using valid_msaux(1) \<open>mem_restr R ?cs x\<close> by (auto dest: qtableD(2))
+    then show "Formula.sat \<sigma> V (val n ?cs x) pOut (Sincep pos \<phi> I \<psi>)"
       unfolding sat_Sincep_alt[OF complete] by blast
   next
     fix x
-    assume "wf_tuple n (fv \<psi>) x" "mem_restr R x" "Formula.sat \<sigma> V (map the x) pOut (Sincep pos \<phi> I \<psi>)"
+    assume "wf_tuple ?cs x" "mem_restr R ?cs x" "Formula.sat \<sigma> V (val n ?cs x) pOut (Sincep pos \<phi> I \<psi>)"
     from this(3) obtain j where "mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)"
-      and sp: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> j) (map the x)"
+      and sp: "sat_since_point pos \<sigma> V \<phi> \<psi> pIn pOut (\<tau> \<sigma> j) (val n ?cs x)"
       unfolding sat_Sincep_alt[OF complete] by blast
     \<comment> \<open>the since point has a witness j' before pIn with the same time-stamp, which is in the list\<close>
     from sp obtain j' where "j' < pIn" "\<tau> \<sigma> j' = \<tau> \<sigma> j"
@@ -502,7 +500,7 @@ proof -
     with \<open>mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)\<close> obtain X where X: "(\<tau> \<sigma> j, X) \<in> set auxlist"
       using complete_aux[of j'] by auto
     with in_auxlist have "x \<in> X"
-      using \<open>wf_tuple n (fv \<psi>) x\<close> \<open>mem_restr R x\<close> sp by (blast intro: in_qtableI)
+      using \<open>wf_tuple ?cs x\<close> \<open>mem_restr R ?cs x\<close> sp by (blast intro: in_qtableI)
     with X \<open>mem I (\<tau> \<sigma> pOut - \<tau> \<sigma> j)\<close>
     show "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {}"
       unfolding result_iff by blast
@@ -516,32 +514,35 @@ lemma (in msaux) wf_since_aux_result:
     and agg_n: "agg_n args = n'"
     and args_n: "args_n args = n"
     and args_pos: "args_pos args = pos"
+    and args_R: "args_R args = Formula.fv_list \<psi>"
     and subs: "fv \<phi> \<subseteq> fv \<psi>"
     and mr: "mem_restr R = mem_restr (lift_envs' (length (agg_tys args)) R')"
-  shows "qtable n' (fv (packagg args (Sincep pos \<phi> I \<psi>))) (mem_restr R') (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (packagg args (Sincep pos \<phi> I \<psi>))) (result_msaux args aux)"
+  shows "sat_table \<sigma> V n' R' (args_cols args) pOut (packagg args (Sincep pos \<phi> I \<psi>)) (result_msaux args aux)"
 proof -
   obtain cur auxlist where *:
     "pIn \<le> Suc pOut"
     "sorted_wrt (\<lambda>x y. fst x > fst y) auxlist"
       "\<forall>t X. (t, X) \<in> set auxlist \<longrightarrow> (\<exists>i<pIn. \<tau> \<sigma> i = t) \<and> memR (args_ivl args) (\<tau> \<sigma> (Suc pOut-1) - t)
-      \<and> qtable (args_n args) (fv \<psi>) (mem_restr R)
-          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (Suc pOut-1) t (map the x)) X"
+      \<and> qtable (Formula.fv_list \<psi>) (mem_restr R (Formula.fv_list \<psi>))
+          (\<lambda>x. sat_since_point (args_pos args) \<sigma> V \<phi> \<psi> pIn (Suc pOut-1) t (val (args_n args) (Formula.fv_list \<psi>) x)) X"
       "\<forall>i<pIn. memR (args_ivl args) (\<tau> \<sigma> (Suc pOut-1) - \<tau> \<sigma> i) \<longrightarrow> (\<exists>X. (\<tau> \<sigma> i, X) \<in> set auxlist)"
       "cur = (if Suc pOut = 0 then 0 else \<tau> \<sigma> (Suc pOut-1))" and
-    valid_aggargs: "valid_aggargs (args_n args) (fv \<psi>) (args_agg args)" and
+    valid_aggargs: "valid_aggargs (args_n args) (Formula.fv_list \<psi>) (args_agg args)" and
     valid_ms: "valid_msaux args cur aux auxlist"
     using wf unfolding wf_since_aux_def by auto
-  have valid_aggargs': "valid_aggargs (args_n args) (fv (Sincep pos \<phi> I \<psi>)) (args_agg args)"
-    using valid_aggargs subs by(auto simp: Sincep_def sup.absorb_iff2)
-  have **: "qtable (args_n args) (fv (Sincep pos \<phi> I \<psi>)) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (Sincep pos \<phi> I \<psi>)) (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
-    using wf_since_aux_result'[OF * subs complete args_ivl agg_n args_n args_pos] args_n by auto
-  show ?thesis using qtable_eval_args_agg[OF ** mr valid_aggargs'] valid_result_msaux[OF valid_ms] agg_n
+  have **: "sat_table \<sigma> V (args_n args) R (args_R args) pOut (Sincep pos \<phi> I \<psi>)
+    (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+    using wf_since_aux_result'[OF * complete args_ivl args_n args_pos] args_n args_R by auto
+  have fv: "set (args_R args) = fv (Sincep pos \<phi> I \<psi>)"
+    using subs by (auto simp: args_R fv_sinceP)
+  show ?thesis
+    using qtable_eval_args_agg[OF ** mr valid_aggargs[folded args_R] fv] valid_result_msaux[OF valid_ms] agg_n
     by auto
 qed 
 
 lemma (in maux) eval_since_gen:
   assumes pre:
-      "list_all2 (\<lambda>i. qtable n' (Formula.fv (packagg args (Sincep pos \<phi> I \<psi>))) (mem_restr R') (\<lambda>v. Formula.sat \<sigma> V (map the v) i (packagg args (Sincep pos \<phi> I \<psi>))))
+      "list_all2 (\<lambda>i. sat_table \<sigma> V n' R' (args_cols args) i (packagg args (Sincep pos \<phi> I \<psi>)))
         [start..<pOut] (rev zs)" (is "?A pOut (rev zs)")
       "wf_mbuf2S \<sigma> P V j n R \<phi> I \<psi> buf pIn pOut" (is "?B buf pIn pOut")
       "wf_since_aux \<sigma> V R args \<phi> \<psi> aux pIn pOut" (is "?C aux pIn pOut")
@@ -553,8 +554,8 @@ lemma (in maux) eval_since_gen:
     and fvi_subset: "fv \<phi> \<subseteq> fv \<psi>"
     and args_ivl: "args_ivl args = I"
     and args_n: "args_n args = n"
-    and args_L: "args_L args = Formula.fv \<phi>"
-    and args_R: "args_R args = Formula.fv \<psi>"
+    and args_L: "args_L args = Formula.fv_list \<phi>"
+    and args_R: "args_R args = Formula.fv_list \<psi>"
     and args_pos: "args_pos args = pos"
     and agg_n: "agg_n args = n'"
     and mr: "mem_restr R = mem_restr (lift_envs' (length (agg_tys args)) R')"
@@ -592,12 +593,12 @@ proof (induction zs buf aux arbitrary: pIn pOut zs' buf' aux' taking: args rule:
       by (auto simp add: progress_Sincep args_ivl list_all2_Cons2 upt_eq_Cons_conv)
     have C: "?C aux' pIn (Suc pOut)"
       unfolding eqs using wf_buf
-      by (intro wf_since_aux_update1[OF wf_aux _ _ args_n args_L fvi_subset])
+      by (intro wf_since_aux_update1[OF wf_aux _ _ args_n args_L args_R fvi_subset])
         (auto simp add: list_all2_Cons2 upt_eq_Cons_conv)
-    then have "qtable n' (fv (packagg args (Sincep pos \<phi> I \<psi>))) (mem_restr R') (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (packagg args (Sincep pos \<phi> I \<psi>)))
+    then have "sat_table \<sigma> V n' R' (args_cols args) pOut (packagg args (Sincep pos \<phi> I \<psi>))
         (result_msaux args aux')"
       using wf_buf False
-      by (intro wf_since_aux_result[OF C _ args_ivl agg_n args_n args_pos fvi_subset mr]) (auto simp:args_ivl)
+      by (intro wf_since_aux_result[OF C _ args_ivl agg_n args_n args_pos args_R fvi_subset mr]) (auto simp:args_ivl)
     then have "?A (Suc pOut) zs'"
       unfolding eqs using wf_result leqs
       by (simp add: list_all2_appendI)
@@ -644,12 +645,12 @@ next
     show s: "?C ?arg_aux (Suc pIn) (Suc pOut)"
       using wf_buf
       by (intro wf_since_aux_update2[OF _ _ _ args_ivl args_n args_R fvi_subset]
-          wf_since_aux_update1[OF wf_aux _ _ args_n args_L fvi_subset])
+          wf_since_aux_update1[OF wf_aux _ _ args_n args_L args_R fvi_subset])
         (auto simp add: list_all2_Cons2 upt_eq_Cons_conv)
-    then have "qtable n' (fv (packagg args (Sincep pos \<phi> I \<psi>))) (mem_restr R') (\<lambda>v. Formula.sat \<sigma> V (map the v) pOut (packagg args (Sincep pos \<phi> I \<psi>)))
+    then have "sat_table \<sigma> V n' R' (args_cols args) pOut (packagg args (Sincep pos \<phi> I \<psi>))
         (result_msaux args ?arg_aux)"
       using wf_buf
-      by (intro wf_since_aux_result[OF s _ args_ivl agg_n args_n args_pos fvi_subset mr])
+      by (intro wf_since_aux_result[OF s _ args_ivl agg_n args_n args_pos args_R fvi_subset mr])
         (auto simp add: args_ivl)
     then show "?A (Suc pOut) (rev (result_msaux args ?arg_aux # zs))"
       using wf_result leqs
@@ -737,23 +738,22 @@ lemma (in maux) eval_since:
         (is "?wf_buf P j buf")
       "wf_since_aux \<sigma> V R args \<phi> \<psi> aux (min (progress \<sigma> P \<phi> j) (progress \<sigma> P \<psi> j)) (progress \<sigma> P (Sincep pos \<phi> I \<psi>) j)"
         (is "?wf_aux P j aux")
-    and xs: "list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>))
+    and xs: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>) i \<phi>)
       [progress \<sigma> P \<phi> j..<progress \<sigma> P' \<phi> (j + \<delta>)] xs"
-    and ys: "list_all2 (\<lambda>i. qtable n (Formula.fv \<psi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<psi>))
+    and ys: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<psi>) i \<psi>)
       [progress \<sigma> P \<psi> j..<progress \<sigma> P' \<psi> (j + \<delta>)] ys"
     and bounded: "pred_mapping (\<lambda>x. x \<le> j) P" "pred_mapping (\<lambda>x. x \<le> j + \<delta>) P'"
     and rm: "rel_mapping (\<le>) P P'"
     and fvi_subset: "fv \<phi> \<subseteq> fv \<psi>"
     and args_ivl: "args_ivl args = I"
     and args_n: "args_n args = n"
-    and args_L: "args_L args = Formula.fv \<phi>"
-    and args_R: "args_R args = Formula.fv \<psi>"
+    and args_L: "args_L args = Formula.fv_list \<phi>"
+    and args_R: "args_R args = Formula.fv_list \<psi>"
     and args_pos: "args_pos args = pos"
     and mr: "mem_restr R = mem_restr (lift_envs' (length (agg_tys args)) R')" 
     and agg_n: "agg_n args = n'"
   shows
-      "list_all2 (\<lambda>i. qtable n' (Formula.fv (packagg args (Sincep pos \<phi> I \<psi>))) (mem_restr R') (\<lambda>v. Formula.sat \<sigma> V (map the v) i (packagg args (Sincep pos \<phi> I \<psi>))))
-        [progress \<sigma> P (Sincep pos \<phi> I \<psi>) j..<progress \<sigma> P' (Sincep pos \<phi> I \<psi>) (j + \<delta>)] zs \<and>
+      "list_all2 (\<lambda>i. sat_table \<sigma> V n' R' (args_cols args) i (packagg args (Sincep pos \<phi> I \<psi>)))        [progress \<sigma> P (Sincep pos \<phi> I \<psi>) j..<progress \<sigma> P' (Sincep pos \<phi> I \<psi>) (j + \<delta>)] zs \<and>
       ?wf_buf P' (j + \<delta>) buf' \<and>
       ?wf_aux P' (j + \<delta>) aux'"
 proof -

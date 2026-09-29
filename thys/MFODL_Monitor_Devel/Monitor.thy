@@ -1000,7 +1000,60 @@ record ('msaux, 'muaux, 'mtaux) mstate =
   mstate_n :: nat
   mstate_t :: "ts list"
 
+text \<open>The table of a formula @{term \<phi>} at time point @{term i} over the columns @{term cs}: its
+  tuples, read as valuations of the first @{term n} variables, are the satisfying valuations in
+  the slice @{term R}.\<close>
 
+abbreviation sat_table :: "Formula.trace \<Rightarrow> _ \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> nat list \<Rightarrow> nat \<Rightarrow>
+  ty Formula.formula \<Rightarrow> event_data table \<Rightarrow> bool" where
+  "sat_table \<sigma> V n R cs i \<phi> \<equiv> qtable cs (mem_restr R cs) (\<lambda>v. Formula.sat \<sigma> V (val n cs v) i \<phi>)"
+
+text \<open>Two valuations of the same length agree beyond it, so reading a restricted tuple needs no
+  bound on the variables.\<close>
+
+lemma nth_beyond_length: "length xs = length ys \<Longrightarrow> length xs \<le> i \<Longrightarrow> xs ! i = ys ! i"
+proof (induct xs arbitrary: ys i)
+  case (Cons x xs)
+  then obtain y ys' where ys: "ys = y # ys'"
+    by (cases ys) auto
+  obtain i' where i: "i = Suc i'"
+    using Cons.prems(2) by (cases i) auto
+  show ?case
+    using Cons.hyps[of ys' i'] Cons.prems by (simp add: ys i)
+qed simp
+
+lemma val_restrict_nth:
+  assumes "c \<in> set ds"
+  shows "val n ds (restrict ds cs x) ! c = val n cs x ! c"
+proof (cases "c < n")
+  case False
+  then show ?thesis
+    by (intro nth_beyond_length) simp_all
+qed (simp add: tup_get_restrict assms)
+lemma sat_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow>
+  Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
+  by (rule sat_fv_cong) (auto simp: val_restrict_nth)
+
+lemma eval_trm_restrict: "fv_trm t \<subseteq> set ds \<Longrightarrow>
+  Formula.eval_trm (val n ds (restrict ds cs v)) t = Formula.eval_trm (val n cs v) t"
+  by (rule eval_trm_fv_cong) (auto simp: val_restrict_nth)
+
+text \<open>A join whose second operand's columns are among the first's keeps the first's columns.\<close>
+
+lemma qtable_join_sub:
+  assumes "qtable A (mem_restr R A) Q1 X" "qtable B (mem_restr R B) Q2 Y" "distinct A" "distinct B"
+    "set B \<subseteq> set A"
+    "\<And>x. b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> Q2 (restrict B A x)"
+    "\<And>x. \<not> b \<Longrightarrow> wf_tuple A x \<Longrightarrow> mem_restr R A x \<Longrightarrow> Q x \<longleftrightarrow> Q1 x \<and> \<not> Q2 (restrict B A x)"
+  shows "qtable A (mem_restr R A) Q (join A X b B Y)"
+proof -
+  have A: "A = cols_union A B"
+    using assms(5) by (simp add: cols_union_subset)
+  show ?thesis
+    using assms(1-5)
+    by (rule qtable_join[where es=A, OF _ _ _ _ _ A])
+      (auto simp: restrict_idle[OF assms(3)] assms(6,7) intro!: restrict_mem_restr)
+qed
 subsection \<open> Init \<close>
 
 definition init_args :: "\<I> \<Rightarrow> nat \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> aggargs option \<Rightarrow> args" where
