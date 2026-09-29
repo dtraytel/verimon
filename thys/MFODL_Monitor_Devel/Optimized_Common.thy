@@ -547,6 +547,18 @@ lemma list_appendE: "xs = ys @ zs \<Longrightarrow> x \<in> set xs \<Longrightar
   (x \<in> set ys \<Longrightarrow> P) \<Longrightarrow> (x \<in> set zs \<Longrightarrow> P) \<Longrightarrow> P"
   by auto
 
+text \<open>The join of two tables over the same columns is their intersection or difference.\<close>
+
+lemma join_eq:
+  assumes "table cs t1" "table cs t2" "distinct cs"
+  shows "join cs t2 pos cs t1 = (if pos then t2 \<inter> t1 else t2 - t1)"
+proof -
+  have idle: "restrict cs cs x = x" if "x \<in> t2" for x
+    using restrict_idle[OF assms(3) tableD[OF assms(2) that]] .
+  show ?thesis
+    using join_sub[OF assms(3,3,2,1) subset_refl, of pos] by (auto simp: idle)
+qed
+
 (*<*)
 end
 (*>*)
