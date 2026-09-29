@@ -402,7 +402,7 @@ definition add_new_ts_vmsaux :: "args \<Rightarrow> nat \<Rightarrow> event_data
 
 definition join_vmsaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data vmsaux \<Rightarrow> event_data vmsaux" where
   "join_vmsaux = (\<lambda>args rel1 (t, auxlist). (t, map (\<lambda>(t, rel).
-    (t, join rel (args_pos args) rel1)) auxlist))"
+    (t, join (args_R args) rel (args_pos args) (args_L args) rel1)) auxlist))"
 
 definition add_new_table_vmsaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data vmsaux \<Rightarrow>
   event_data vmsaux" where
@@ -895,19 +895,19 @@ next
     by (auto simp: t_def(2))
 qed
 
-lemma eval_agg_code[code]: "eval_agg n g0 y \<omega> tys f rel = (if g0 \<and> rel = empty_table
-  then singleton_table n y (eval_agg_op \<omega> {})
-  else (\<lambda>(k, group). let M = (\<lambda>(e, ts). (e, ecard ts)) ` images ((\<lambda>t. (meval_trm f t, t)) ` group) in
-    k[y:=Some (eval_agg_op \<omega> M)]) ` images ((\<lambda>t. (drop (length tys) t, t)) ` rel))"
+lemma eval_agg_code[code]: "eval_agg cs g0 \<omega> tys f rel = (if g0 \<and> rel = empty_table
+  then singleton_table (eval_agg_op \<omega> {})
+  else (\<lambda>(k, group). let M = (\<lambda>(e, ts). (e, ecard ts)) ` images ((\<lambda>t. (meval_trm cs f t, t)) ` group) in
+    eval_agg_op \<omega> M # k) ` images ((\<lambda>t. (agg_key (length tys) cs t, t)) ` rel))"
 proof -
-  have "(\<lambda>k. let group = Set.filter (\<lambda>x. drop (length tys) x = k) rel;
-      M = (\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm f x = y) group))) ` meval_trm f ` group in
-      k[y:=Some (eval_agg_op \<omega> M)]) ` (drop (length tys)) ` rel =
-    (\<lambda>(k, group). let M = (\<lambda>(e, ts). (e, ecard ts)) ` images ((\<lambda>t. (meval_trm f t, t)) ` group) in
-      k[y:=Some (eval_agg_op \<omega> M)]) ` images ((\<lambda>t. (drop (length tys) t, t)) ` rel)"
-    unfolding Let_def group_images[of "drop (length tys)" rel
-      "(\<lambda>k g. k[y := Some (eval_agg_op \<omega> ((\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm f x = y) g))) ` meval_trm f ` g))])", unfolded Let_def]
-    unfolding group_images[of "meval_trm f" _ "(\<lambda>y g. (y, ecard g))", unfolded Let_def]
+  have "(\<lambda>k. let group = Set.filter (\<lambda>x. agg_key (length tys) cs x = k) rel;
+      M = (\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm cs f x = y) group))) ` meval_trm cs f ` group in
+      eval_agg_op \<omega> M # k) ` agg_key (length tys) cs ` rel =
+    (\<lambda>(k, group). let M = (\<lambda>(e, ts). (e, ecard ts)) ` images ((\<lambda>t. (meval_trm cs f t, t)) ` group) in
+      eval_agg_op \<omega> M # k) ` images ((\<lambda>t. (agg_key (length tys) cs t, t)) ` rel)"
+    unfolding Let_def group_images[of "agg_key (length tys) cs" rel
+      "(\<lambda>k g. eval_agg_op \<omega> ((\<lambda>y. (y, ecard (Set.filter (\<lambda>x. meval_trm cs f x = y) g))) ` meval_trm cs f ` g) # k)", unfolded Let_def]
+    unfolding group_images[of "meval_trm cs f" _ "(\<lambda>y g. (y, ecard g))", unfolded Let_def]
     by simp
   then show ?thesis
     by (auto simp: eval_agg_def)
@@ -1067,12 +1067,12 @@ lemma to_add_set_code[code]: "to_add_set a m tmp = (if finite tmp then set_fold_
 
 lemma add_new_mmuaux_code[code]: 
   "add_new_mmuaux args rel1 rel2 nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux;
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
-    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (restrict (args_L args) (args_R args) as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)}) ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {});
@@ -1084,21 +1084,21 @@ lemma add_new_mmuaux_code[code]:
     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
     tss = append_queue nt tss in
-    (tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
+    (tp + 1, tss, tables, len + 1, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
   by(auto simp: upd_nested_max_tstp_def add_new_mmuaux_def split:option.splits prod.splits)
 
 lemma add_new_mmauaux_code[code]:
   "add_new_mmauaux args rel1 rel2 nt (mmuaux, aggaux) =
     (case args_agg args of 
-     None \<Rightarrow> let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) = add_new_mmuaux args rel1 rel2 nt mmuaux in
-  ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) |
+     None \<Rightarrow> let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) = add_new_mmuaux args rel1 rel2 nt mmuaux in
+  ((tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) |
      Some aggargs \<Rightarrow>
-    (let ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) = shift_mmauaux args nt (mmuaux, aggaux);
+    (let ((tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) = shift_mmauaux args nt (mmuaux, aggaux);
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
     m = case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow> m;
-    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (restrict (args_L args) (args_R args) as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)}) ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {});
@@ -1112,7 +1112,7 @@ lemma add_new_mmauaux_code[code]:
     to_add = to_add_set (tp - len) m tmp;
     aggaux = insert_maggaux' aggargs to_add aggaux;
     tss = append_queue nt tss in
-    ((tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map', tstp_map, done), aggaux)))"
+    ((tp + 1, tss, tables, len + 1, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map', tstp_map, done), aggaux)))"
   by(auto simp add: to_add_set_def  upd_nested_max_tstp_def split:option.splits prod.splits)
 
 
