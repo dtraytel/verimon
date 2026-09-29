@@ -8,7 +8,7 @@ subsection \<open>Optimized data structure for Until\<close>
 
 type_synonym tp = nat
 
-type_synonym 'a mmuaux = "tp \<times> ts queue \<times> ('a table \<times> (ts + tp)) queue \<times> nat \<times> bool list \<times> bool list \<times>
+type_synonym 'a mmuaux = "tp \<times> ts queue \<times> ('a table \<times> (ts + tp)) queue \<times> nat \<times>
   'a table \<times> ('a tuple, tp) mapping \<times> (tp, ('a tuple, ts + tp) mapping) mapping \<times> (tp, ts) mapping \<times> 'a table list"
 
 definition tstp_lt :: "ts + tp \<Rightarrow> ts \<Rightarrow> tp \<Rightarrow> bool" where
@@ -84,14 +84,14 @@ fun triple_eq_pair :: "('a \<times> 'b \<times> 'c) \<Rightarrow> ('a \<times> '
 
 
 fun valid_mmuaux' :: "args \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data muaux \<Rightarrow> bool" where
-  "valid_mmuaux' args cur dt (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) auxlist \<longleftrightarrow>
-    args_L args \<subseteq> args_R args \<and>
-    maskL = join_mask (args_n args) (args_L args) \<and>
-    maskR = join_mask (args_n args) (args_R args) \<and>
+  "valid_mmuaux' args cur dt (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) auxlist \<longleftrightarrow>
+    set (args_L args) \<subseteq> set (args_R args) \<and>
+    distinct (args_L args) \<and>
+    distinct (args_R args) \<and>
     len \<le> tp \<and>
     length (linearize tss) = len \<and> sorted (linearize tss) \<and>
     (\<forall>t \<in> set (linearize tss). t \<le> cur \<and> memR (args_ivl args) (cur - t)) \<and>
-    table (args_n args) (args_L args) (Mapping.keys a1_map) \<and>
+    table (args_L args) (Mapping.keys a1_map) \<and>
     Mapping.keys tstp_map = (if len > 0 then {tp - len..tp - 1} else {}) \<and>
     Mapping.keys a2_map = {tp - len..tp} \<and>
     sorted (map (tstp_unpack \<circ> snd) (linearize tables)) \<and>
@@ -105,7 +105,7 @@ fun valid_mmuaux' :: "args \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow> event
       (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
         \<exists>(table, tstp') \<in> set (linearize tables). tstp = tstp' \<and> xs \<in> table)) \<and>
     (\<forall>tp' \<in> Mapping.keys a2_map. case Mapping.lookup a2_map tp' of Some m \<Rightarrow>
-      table (args_n args) (args_R args) (Mapping.keys m) \<and>
+      table (args_R args) (Mapping.keys m) \<and>
       (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL (args_ivl args) 0))) \<and>
     length done + len = length auxlist \<and>
@@ -122,7 +122,7 @@ definition valid_mmuaux :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuau
   "valid_mmuaux args cur = valid_mmuaux' args cur cur"
 
 fun eval_step_mmuaux :: "args \<Rightarrow> event_data mmuaux \<Rightarrow> event_data mmuaux" where
-  "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+  "eval_step_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     (case safe_hd tss of (Some ts, tss') \<Rightarrow>
       (case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow>
         let I = args_ivl args;
@@ -143,10 +143,10 @@ fun eval_step_mmuaux :: "args \<Rightarrow> event_data mmuaux \<Rightarrow> even
           Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m') a2_map;
         a2_map = Mapping.delete (tp - len) a2_map;
         tstp_map = Mapping.delete (tp - len) tstp_map in
-        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done)))"
+        (tp, tss'', tables, len - 1, result', a1_map, a2_map, tstp_map, T # done)))"
 
 fun lin_ts_mmuaux :: "event_data mmuaux \<Rightarrow> ts list" where
-  "lin_ts_mmuaux (tp, tss, len, maskL, maskR, result, a1_map, a2_map, done, done_length) =
+  "lin_ts_mmuaux (tp, tss, len, result, a1_map, a2_map, done, done_length) =
     linearize tss"
 
 lemma list_length_eq_split:
@@ -207,8 +207,8 @@ proof -
   define L where "L = args_L args"
   define R where "R = args_R args"
   define pos where "pos = args_pos args"
-  obtain tp len tss tables maskL maskR result a1_map a2_map tstp_map "done" where aux_def:
-    "aux = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp len tss tables result a1_map a2_map tstp_map "done" where aux_def:
+    "aux = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases aux) auto
   then obtain tss' where safe_hd_eq: "safe_hd tss = (Some ts, tss')"
     using assms(2) safe_hd_rep case_optionE
@@ -237,12 +237,12 @@ proof -
   have result_def: "result = Mapping.keys m"
     using valid_before
     by (auto simp: m_def)
-  have "table n R (Mapping.keys m)"
+  have "table R (Mapping.keys m)"
     "(\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
     tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
     using tp_minus_keys m_def valid_before
     unfolding valid_mmuaux'.simps n_def I_def R_def by fastforce+
-  then have m_inst: "table n R (Mapping.keys m)"
+  then have m_inst: "table R (Mapping.keys m)"
     "\<And>xs tstp. Mapping.lookup m xs = Some tstp \<Longrightarrow>
     tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0)"
     using Mapping_keys_intro by fastforce+
@@ -250,12 +250,12 @@ proof -
     using m_inst(2) by fastforce
   obtain m' where m'_def: "Mapping.lookup a2_map (tp - len + 1) = Some m'"
     using tp_minus_keys' by (auto dest: Mapping.in_keysD)
-  have "table n R (Mapping.keys m')"
+  have "table R (Mapping.keys m')"
     "(\<forall>xs \<in> Mapping.keys m'. case Mapping.lookup m' xs of Some tstp \<Rightarrow>
     tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
     using tp_minus_keys' m'_def valid_before
     unfolding valid_mmuaux'.simps I_def n_def R_def by fastforce+
-  then have m'_inst: "table n R (Mapping.keys m')"
+  then have m'_inst: "table R (Mapping.keys m')"
     "\<And>xs tstp. Mapping.lookup m' xs = Some tstp \<Longrightarrow>
     tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0)"
     using Mapping_keys_intro by fastforce+
@@ -510,7 +510,7 @@ proof -
     using filter_a2_map_cong 
     by (intro list_all2_weaken[OF list_all2']) (auto elim!: in_set_zipE split: prod.splits)
   have lookup'': "\<forall>tp' \<in> Mapping.keys a2_map''. case Mapping.lookup a2_map'' tp' of Some m \<Rightarrow>
-    table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+    table R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
     tstp_lt tstp cur tp \<and> isl tstp = (\<not> memL I 0))"
   proof (rule ballI)
     fix tp'
@@ -521,7 +521,7 @@ proof -
       using assm unfolding a2_map''_keys .
     then have tp'_in_keys: "tp' \<in> Mapping.keys a2_map"
       using valid_before by auto
-    have "table n R (Mapping.keys f) \<and>
+    have "table R (Mapping.keys f) \<and>
       (\<forall>xs \<in> Mapping.keys f. case Mapping.lookup f xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> isl tstp = (\<not> memL I 0))"
     proof (cases "tp' = tp - (len - 1)")
@@ -530,7 +530,7 @@ proof -
         using f_def Mapping.lookup_update'[of _ _ a2_map]
         unfolding a2_map''_def a2_map'_def Mapping_lookup_delete Mapping.lookup_update' tp_len_assoc
         by (auto split: if_splits)
-      have "table n R (Mapping.keys f)"
+      have "table R (Mapping.keys f)"
         unfolding f_mc
         using mc_keys m_def m'_def m_inst m'_inst
         by (auto simp add: table_def)
@@ -562,7 +562,7 @@ proof -
         unfolding valid_mmuaux'.simps I_def n_def R_def by fastforce
     qed
     then show "case Mapping.lookup a2_map'' tp' of Some m \<Rightarrow>
-      table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+      table R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> isl tstp = (\<not> memL I 0))"
       using f_def by auto
   qed
@@ -763,8 +763,8 @@ proof -
   ultimately have m_eq: "m'' = m_del" unfolding m''_def m_del_def by auto
   have "takedropWhile_queue (\<lambda>(table, tstp). \<not> ts_tp_lt I ts' (tp - len + 1) tstp) tables = (tables', taken)"
     by (auto simp: tables'_def taken_def)
-  then have eval_step_mmuaux_eq: "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map,
-    done) = (tp, tss''', tables', len - 1,  maskL, maskR, result', a1_map, a2_map'', tstp_map', T_agg # done)"
+  then have eval_step_mmuaux_eq: "eval_step_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map,
+    done) = (tp, tss''', tables', len - 1, result', a1_map, a2_map'', tstp_map', T_agg # done)"
     using safe_hd_eq m_def m'_def mc_def a2_map'_def a2_map''_def tstp_map'_def m_eq[unfolded m_del_def to_del_def to_del_approx_def] ts'_tss'''_def
     unfolding I_def result'_def to_del_def to_del_approx_def
     by (simp add: t_agg_eq Let_def del: Set.filter_eq takedropWhile_queue.simps)
@@ -986,9 +986,9 @@ qed
 
 lemma done_empty_valid_mmuaux'_intro:
   assumes "valid_mmuaux' args cur dt
-    (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) auxlist"
+    (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) auxlist"
   shows "valid_mmuaux' args cur dt'
-    (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, [])
+    (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, [])
     (drop (length done) auxlist)"
   using assms sorted_wrt_drop by (auto simp add: drop_map[symmetric])
 
@@ -1034,9 +1034,9 @@ proof (induction xs)
 qed auto
 
 fun shift_mmuaux :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data mmuaux" where
-  "shift_mmuaux args nt (tp, tss, len, maskL, maskR, result, a1_map, a2_map, done, done_length) =
+  "shift_mmuaux args nt (tp, tss, len, result, a1_map, a2_map, done, done_length) =
     (let (tss_queue, tss') = takeWhile_queue (\<lambda>t. \<not> memR (args_ivl args) (nt - t)) tss in
-    foldl (\<lambda>aux _. eval_step_mmuaux args aux) (tp, tss', len, maskL, maskR,
+    foldl (\<lambda>aux _. eval_step_mmuaux args aux) (tp, tss', len,
       result, a1_map, a2_map, done, done_length) (linearize tss_queue))"
 
 lemma valid_shift_mmuaux':
@@ -1048,21 +1048,21 @@ proof -
   define pos where "pos = args_pos args"
   have valid_folded: "valid_mmuaux' args cur nt aux auxlist"
     using assms(1,2) valid_mmuaux'_mono unfolding valid_mmuaux_def by blast
-  obtain tp len tss tables maskL maskR result a1_map a2_map tstp_map "done" where aux_def:
-    "aux = (tp, tss, len, tables, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp len tss tables result a1_map a2_map tstp_map "done" where aux_def:
+    "aux = (tp, tss, len, tables, result, a1_map, a2_map, tstp_map, done)"
     by (cases aux) auto
   note valid_before = valid_folded[unfolded aux_def]
   define tss_list where "tss_list =
     linearize (fst (takeWhile_queue (\<lambda>t. \<not> memR I (nt - t)) tss))"
   define tss' where "tss' = snd (takeWhile_queue (\<lambda>t. \<not> memR I (nt - t)) tss)"
-  let ?aux = "(tp, tss', len, tables, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  let ?aux = "(tp, tss', len, tables, result, a1_map, a2_map, tstp_map, done)"
   have tss_list_takeWhile: "tss_list = takeWhile (\<lambda>t. \<not> memR I (nt - t)) (linearize tss)"
     using tss_list_def unfolding takeWhile_queue_rep_fst .
   then obtain tss_list' where tss_list'_def: "linearize tss = tss_list @ tss_list'"
     "tss_list' = dropWhile (\<lambda>t. \<not> memR I (nt - t)) (linearize tss)"
     by auto
-  obtain tp' len' tss' tables' maskL' maskR' a1_map' a2_map' "done'" done_length' where
-    foldl_aux_def: "(tp', tss', tables', len', maskL', maskR', a1_map', a2_map',
+  obtain tp' len' tss' tables' a1_map' a2_map' "done'" done_length' where
+    foldl_aux_def: "(tp', tss', tables', len', a1_map', a2_map',
       done', done_length') = foldl (\<lambda>aux _. eval_step_mmuaux args aux) ?aux tss_list"
     by (cases "foldl (\<lambda>aux _. eval_step_mmuaux args aux) ?aux tss_list") auto
   have lin_tss_aux: "lin_ts_mmuaux ?aux = linearize tss"
@@ -1113,12 +1113,12 @@ lemma upd_nested_keys: "Mapping.keys (upd_nested m d f X) = Mapping.keys m \<uni
 
 definition add_new_mmuaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data mmuaux" where
   "add_new_mmuaux args rel1 rel2 nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux;
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
-    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+    tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (restrict (args_L args) (args_R args) as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)}) ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {});
@@ -1130,7 +1130,7 @@ definition add_new_mmuaux :: "args \<Rightarrow> event_data table \<Rightarrow> 
     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
     tss = append_queue nt tss in
-    (tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))"
+    (tp + 1, tss, tables, len + 1, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))"
 
 lemma fst_case: "(\<lambda>x. fst (case x of (t, a1, a2) \<Rightarrow> (t, y t a1 a2, z t a1 a2))) = fst"
   by auto
@@ -1156,7 +1156,7 @@ qed
 
 lemma valid_add_new_mmuaux:
   assumes valid_before: "valid_mmuaux args cur aux auxlist"
-    and tabs: "table (args_n args) (args_L args) rel1" "table (args_n args) (args_R args) rel2"
+    and tabs: "table (args_L args) rel1" "table (args_R args) rel2"
     and nt_mono: "nt \<ge> cur"
   shows "valid_mmuaux args nt (add_new_mmuaux args rel1 rel2 nt aux)
     (update_until args rel1 rel2 nt auxlist)"
@@ -1168,10 +1168,10 @@ proof -
   define pos where "pos = args_pos args"
   have valid_folded: "valid_mmuaux' args cur nt aux auxlist"
     using assms(1,4) valid_mmuaux'_mono unfolding valid_mmuaux_def by blast
-  obtain tp len tss tables maskL maskR result a1_map a2_map tstp_map "done" where shift_aux_def:
-    "shift_mmuaux args nt aux = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp len tss tables result a1_map a2_map tstp_map "done" where shift_aux_def:
+    "shift_mmuaux args nt aux = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases "shift_mmuaux args nt aux") auto
-  have valid_shift_aux: "valid_mmuaux' args cur nt (tp, tss, tables, len, maskL, maskR,
+  have valid_shift_aux: "valid_mmuaux' args cur nt (tp, tss, tables, len,
     result, a1_map, a2_map, tstp_map, done) auxlist"
     "\<And>ts. ts \<in> set (linearize tss) \<Longrightarrow> memR (args_ivl args) (nt - ts)"
     using valid_shift_mmuaux'[OF assms(1)[unfolded valid_mmuaux_def] assms(4)]
@@ -1180,7 +1180,7 @@ proof -
   have new_tstp_lt_isl: "tstp_lt new_tstp nt (tp + 1)"
     "isl new_tstp \<longleftrightarrow> \<not> memL I 0"
     by (auto simp add: new_tstp_def tstp_lt_def)
-  define tmp where "tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+  define tmp where "tmp = \<Union>((\<lambda>as. case Mapping.lookup a1_map (restrict (args_L args) (args_R args) as) of None \<Rightarrow>
     (if \<not>pos then {(tp - len, as)} else {})
     | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
     else {(max (tp - len) (tp' + 1), as)}) ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {})"
@@ -1192,7 +1192,7 @@ proof -
     using Mapping_keys_intro by force
   then have fst_tmp: "\<And>tp'. tp' \<in> fst ` tmp' \<Longrightarrow> tp - len \<le> tp' \<and> tp' < tp + 1"
     unfolding tmp'_def tmp_def by (auto simp add: less_SucI split: option.splits if_splits)
-  have snd_tmp: "\<And>tp'. table n R (snd ` tmp')"
+  have snd_tmp: "\<And>tp'. table R (snd ` tmp')"
     using tabs(2) unfolding tmp'_def tmp_def n_def R_def
     by(auto simp add: table_def split: if_splits option.splits)
   define a2_map' where "a2_map' = Mapping.update (tp + 1) Mapping.empty
@@ -1202,15 +1202,15 @@ proof -
   define tss' where "tss' = append_queue nt tss"
   define tables' where "tables' = append_queue (snd ` tmp', if memL I 0 then Inr tp else Inl nt) tables"
   have add_new_mmuaux_eq: "add_new_mmuaux args rel1 rel2 nt aux = (tp + 1, tss', tables', len + 1,
-    maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp'), a1_map', a2_map', tstp_map', done)"
+    result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp'), a1_map', a2_map', tstp_map', done)"
     using shift_aux_def new_tstp_def tmp_def a2_map'_def a1_map'_def tss'_def tmp'_def tables'_def
     unfolding I_def pos_def tstp_map'_def
     by (auto simp only: add_new_mmuaux_def Let_def)
   have update_until_eq: "update_until args rel1 rel2 nt auxlist =
-    (map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if mem I ((nt - t)) then a2 \<union> join rel2 pos a1 else a2)) auxlist) @
+    (map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if mem I ((nt - t)) then a2 \<union> join R rel2 pos L a1 else a2)) auxlist) @
     [(nt, rel1, if memL I 0 then rel2 else empty_table)]"
-    unfolding update_until_def I_def pos_def by simp
+    unfolding update_until_def I_def pos_def L_def R_def by simp
   have len_done_auxlist: "length done \<le> length auxlist"
     using valid_shift_aux by auto
   have auxlist_split: "auxlist = take (length done) auxlist @ drop (length done) auxlist"
@@ -1233,7 +1233,7 @@ proof -
   have a1_map'_keys: "Mapping.keys a1_map' \<subseteq> Mapping.keys a1_map \<union> rel1"
     unfolding a1_map'_def using Mapping.keys_filter Mapping_upd_set_keys
     by (auto simp add: Mapping_upd_set_keys split: if_splits dest: Mapping_keys_filterD)
-  then have tab_a1_map'_keys: "table n L (Mapping.keys a1_map')"
+  then have tab_a1_map'_keys: "table L (Mapping.keys a1_map')"
     using valid_shift_aux(1) tabs(1) by (auto simp add: table_def n_def L_def)
   have a2_map_keys: "Mapping.keys a2_map = {tp - len..tp}"
     using valid_shift_aux by auto
@@ -1350,15 +1350,15 @@ proof -
   have new_table_restr2: "list_all (\<lambda>k. isl k = (\<not> memL (args_ivl args) 0)) (map snd (linearize tables'))" 
     using old_tables_restr(2) unfolding tables'_def append_queue_rep I_def by auto
   have lookup_a2_map: "\<And>tp' m. Mapping.lookup a2_map tp' = Some m \<Longrightarrow>
-    table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+    table R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
   proof -
     have "\<forall>tp' \<in> Mapping.keys a2_map. case Mapping.lookup a2_map tp' of Some m \<Rightarrow>
-      table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+      table R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
       using valid_shift_aux(1) unfolding valid_mmuaux'.simps I_def n_def R_def by blast
     then show "\<And>tp' m. Mapping.lookup a2_map tp' = Some m \<Longrightarrow>
-      table n R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
+      table R (Mapping.keys m) \<and> (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp cur tp \<and> (isl tstp \<longleftrightarrow> \<not> memL I 0))"
       using Mapping_keys_intro by force
   qed
@@ -1367,7 +1367,7 @@ proof -
     isl tstp = (\<not> memL I 0)"
     using Mapping_keys_intro assms(4) by (force simp add: tstp_lt_def split: sum.splits)
   have lookup_a2_map'_keys: "\<forall>tp' \<in> Mapping.keys a2_map'.
-    case Mapping.lookup a2_map' tp' of Some m \<Rightarrow> table n R (Mapping.keys m) \<and>
+    case Mapping.lookup a2_map' tp' of Some m \<Rightarrow> table R (Mapping.keys m) \<and>
     (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
     tstp_lt tstp nt (tp + 1) \<and> isl tstp = (\<not> memL I 0))"
   proof (rule ballI)
@@ -1375,7 +1375,7 @@ proof -
     assume tp'_assm: "tp' \<in> Mapping.keys a2_map'"
     then obtain m' where m'_def: "Mapping.lookup a2_map' tp' = Some m'"
       by (auto dest: Mapping.in_keysD)
-    have "table n R (Mapping.keys m') \<and>
+    have "table R (Mapping.keys m') \<and>
       (\<forall>xs \<in> Mapping.keys m'. case Mapping.lookup m' xs of Some tstp \<Rightarrow>
       tstp_lt tstp nt (tp + 1) \<and> isl tstp = (\<not> memL I 0))"
     proof (cases "tp' = tp + 1")
@@ -1393,7 +1393,7 @@ proof -
         using m_def m'_def unfolding a2_map'_def Mapping.lookup_update_neq[OF False[symmetric]]
           upd_nested_lookup
         by auto
-      have "table n R (Mapping.keys m')"
+      have "table R (Mapping.keys m')"
         using lookup_a2_map[OF m_def] snd_tmp unfolding m'_alt upd_set'_keys
         by (auto simp add: table_def)
       moreover have "\<forall>xs \<in> Mapping.keys m'. case Mapping.lookup m' xs of Some tstp \<Rightarrow>
@@ -1434,28 +1434,28 @@ proof -
       ultimately show ?thesis
         by auto
     qed
-    then show "case Mapping.lookup a2_map' tp' of Some m \<Rightarrow> table n R (Mapping.keys m) \<and>
+    then show "case Mapping.lookup a2_map' tp' of Some m \<Rightarrow> table R (Mapping.keys m) \<and>
       (\<forall>xs \<in> Mapping.keys m. case Mapping.lookup m xs of Some tstp \<Rightarrow>
       tstp_lt tstp nt (tp + 1) \<and> isl tstp = (\<not> memL I 0))"
       using m'_def by auto
   qed
   have tp_upt_Suc: "[tp + 1 - (len + 1)..<tp + 1] = [tp - len..<tp] @ [tp]"
     using upt_Suc by auto
-  have map_eq: "map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if mem I ((nt - t)) then a2 \<union> join rel2 pos a1 else a2)) (drop (length done) auxlist) =
-    map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if memL I (nt - t) then a2 \<union> join rel2 pos a1 else a2)) (drop (length done) auxlist)"
+  have map_eq: "map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if mem I ((nt - t)) then a2 \<union> join R rel2 pos L a1 else a2)) (drop (length done) auxlist) =
+    map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if memL I (nt - t) then a2 \<union> join R rel2 pos L a1 else a2)) (drop (length done) auxlist)"
     using set_drop_auxlist_cong by auto
   have "drop (length done) (update_until args rel1 rel2 nt auxlist) =
-    map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if mem I ((nt - t)) then a2 \<union> join rel2 pos a1 else a2)) (drop (length done) auxlist) @
+    map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if mem I ((nt - t)) then a2 \<union> join R rel2 pos L a1 else a2)) (drop (length done) auxlist) @
     [(nt, rel1, if memL I 0 then rel2 else empty_table)]"
     unfolding update_until_eq using len_done_auxlist drop_map by auto
   note drop_update_until = this[unfolded map_eq]
   have list_all2_old: "list_all2 (\<lambda>x y. triple_eq_pair x y (\<lambda>tp'. filter_a1_map pos tp' a1_map')
     (\<lambda>ts' tp'. filter_a2_map I ts' tp' a2_map'))
-    (map (\<lambda>(t, a1, a2). (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if memL I (nt - t) then a2 \<union> join rel2 pos a1 else a2)) (drop (length done) auxlist))
+    (map (\<lambda>(t, a1, a2). (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if memL I (nt - t) then a2 \<union> join R rel2 pos L a1 else a2)) (drop (length done) auxlist))
     (zip (linearize tss) [tp - len..<tp])"
     unfolding list_all2_map1
     using list_all2_triple
@@ -1491,15 +1491,15 @@ proof -
     then have t_nt: "t \<le> nt"
       unfolding eqs(1) .
     have tp'_set: "tp' \<in> set [tp - len..<tp]" by (simp add: tp'_ge tp'_lt_tp)
-    have "table n L (Mapping.keys a1_map)"
+    have "table L (Mapping.keys a1_map)"
       using valid_shift_aux unfolding n_def L_def by auto
-    then have a1_tab: "table n L a1"
+    then have a1_tab: "table L a1"
       unfolding eqs(2) filter_a1_map_def by (auto simp add: table_def)
     note tabR = tabs(2)[unfolded n_def[symmetric] R_def[symmetric]]
-    have join_rel2_assms: "L \<subseteq> R" "maskL = join_mask n L"
+    have join_rel2_assms: "set L \<subseteq> set R" "distinct L" "distinct R"
       using valid_shift_aux unfolding n_def L_def R_def by auto
-    have join_rel2_eq: "join rel2 pos a1 = {xs \<in> rel2. proj_tuple_in_join pos maskL xs a1}"
-      using join_sub[OF join_rel2_assms(1) a1_tab tabR] join_rel2_assms(2) by auto
+    have join_rel2_eq: "join R rel2 pos L a1 = {xs \<in> rel2. join_cond pos a1 (restrict (args_L args) (args_R args) xs)}"
+      using join_sub[OF join_rel2_assms(3,2) tabR a1_tab join_rel2_assms(1)] by (simp add: L_def R_def)
     have filter_sub_a2: "\<And>xs m' tp'' tstp. tp'' \<le> tp' \<Longrightarrow>
       Mapping.lookup a2_map' tp'' = Some m' \<Longrightarrow> Mapping.lookup m' xs = Some tstp \<Longrightarrow>
       ts_tp_lt I ts' tp' tstp \<Longrightarrow> (tstp = new_tstp \<Longrightarrow> False) \<Longrightarrow>
@@ -1592,14 +1592,11 @@ proof -
           unfolding filter_a2_map_def using m_def(1) m'_def m_def by auto
       qed
     qed
-    have "pos \<Longrightarrow> filter_a1_map pos tp' a1_map' = join a1 True rel1"
+    have "pos \<Longrightarrow> filter_a1_map pos tp' a1_map' = a1 \<inter> rel1"
     proof -
       assume pos: pos
-      note tabL = tabs(1)[unfolded n_def[symmetric] L_def[symmetric]]
-      have join_eq: "join a1 True rel1 = a1 \<inter> rel1"
-        using join_eq[OF tabL a1_tab] by auto
-      show "filter_a1_map pos tp' a1_map' = join a1 True rel1"
-        using eqs(2) pos tp'_lt_tp unfolding filter_a1_map_def a1_map'_def join_eq
+      show "filter_a1_map pos tp' a1_map' = a1 \<inter> rel1"
+        using eqs(2) pos tp'_lt_tp unfolding filter_a1_map_def a1_map'_def
         by (auto simp add: Mapping.lookup_filter Mapping_lookup_upd_set split: if_splits option.splits
             intro: Mapping_keys_intro dest: Mapping.in_keysD Mapping_keys_filterD)
     qed
@@ -1607,7 +1604,7 @@ proof -
       using eqs(2) tp'_lt_tp unfolding filter_a1_map_def a1_map'_def
       by (auto simp add: Mapping.lookup_filter Mapping_lookup_upd_set intro: Mapping_keys_intro
           dest: Mapping_keys_filterD Mapping.in_keysD split: option.splits)
-    moreover have "memL I (nt - t) \<Longrightarrow> filter_a2_map I ts' tp' a2_map' = a2 \<union> join rel2 pos a1"
+    moreover have "memL I (nt - t) \<Longrightarrow> filter_a2_map I ts' tp' a2_map' = a2 \<union> join R rel2 pos L a1"
     proof (rule set_eqI, rule iffI)
       fix xs
       assume in_int: "memL I (nt - t)"
@@ -1615,7 +1612,7 @@ proof -
       then obtain m' tp'' tstp where m'_def: "tp'' \<le> tp'" "Mapping.lookup a2_map' tp'' = Some m'"
         "Mapping.lookup m' xs = Some tstp" "ts_tp_lt I ts' tp' tstp"
         unfolding filter_a2_map_def by (fastforce split: option.splits)
-      show "xs \<in> a2 \<union> join rel2 pos a1"
+      show "xs \<in> a2 \<union> join R rel2 pos L a1"
       proof (cases "tstp = new_tstp")
         case True
         note tstp_new_tstp = True
@@ -1646,23 +1643,23 @@ proof -
           show ?thesis
           proof (cases pos)
             case True
-            obtain tp''' where tp'''_def: "Mapping.lookup a1_map (proj_tuple maskL xs) = Some tp'''"
+            obtain tp''' where tp'''_def: "Mapping.lookup a1_map (restrict (args_L args) (args_R args) xs) = Some tp'''"
               "if pos then tp'' = max (tp - len) tp''' else tp'' = max (tp - len) (tp''' + 1)"
               using xs_in_snd_tmp m'_def(1) tp'_lt_tp True
               unfolding tmp'_def tmp_def by (auto split: option.splits if_splits)
-            have "proj_tuple maskL xs \<in> a1"
+            have "restrict (args_L args) (args_R args) xs \<in> a1"
               using eqs(2)[unfolded filter_a1_map_def] True m'_def(1) tp'''_def
               by (auto intro: Mapping_keys_intro)
             then show ?thesis
-              using True xs_in_rel2 unfolding proj_tuple_in_join_def join_rel2_eq by auto
+              using True xs_in_rel2 unfolding join_rel2_eq by auto
           next
             case False
             show ?thesis
-            proof (cases "Mapping.lookup a1_map (proj_tuple maskL xs)")
+            proof (cases "Mapping.lookup a1_map (restrict (args_L args) (args_R args) xs)")
               case None
               then show ?thesis
                 using xs_in_rel2 False eqs(2)[unfolded filter_a1_map_def]
-                unfolding proj_tuple_in_join_def join_rel2_eq
+                unfolding join_rel2_eq
                 by (auto dest: Mapping.in_keysD)
             next
               case (Some tp''')
@@ -1671,11 +1668,11 @@ proof -
                 unfolding tmp'_def tmp_def by (auto split: option.splits if_splits)
               then have "tp''' < tp'"
                 using m'_def(1) by auto
-              then have "proj_tuple maskL xs \<notin> a1"
+              then have "restrict (args_L args) (args_R args) xs \<notin> a1"
                 using eqs(2)[unfolded filter_a1_map_def] True m'_def(1) Some False
                 by (auto intro: Mapping_keys_intro)
               then show ?thesis
-                using xs_in_rel2 False unfolding proj_tuple_in_join_def join_rel2_eq by auto
+                using xs_in_rel2 False unfolding join_rel2_eq by auto
             qed
           qed
         qed
@@ -1687,8 +1684,8 @@ proof -
     next
       fix xs
       assume in_int: "memL I (nt - t)"
-      assume xs_in: "xs \<in> a2 \<union> join rel2 pos a1"
-      then have "xs \<in> a2 \<union> (join rel2 pos a1 - a2)"
+      assume xs_in: "xs \<in> a2 \<union> join R rel2 pos L a1"
+      then have "xs \<in> a2 \<union> (join R rel2 pos L a1 - a2)"
         by auto
       then show "xs \<in> filter_a2_map I ts' tp' a2_map'"
       proof (rule UnE)
@@ -1696,8 +1693,8 @@ proof -
         then show "xs \<in> filter_a2_map I ts' tp' a2_map'"
           using a2_sub_filter by auto
       next
-        assume "xs \<in> join rel2 pos a1 - a2"
-        then have xs_props: "xs \<in> rel2" "xs \<notin> a2" "proj_tuple_in_join pos maskL xs a1"
+        assume "xs \<in> join R rel2 pos L a1 - a2"
+        then have xs_props: "xs \<in> rel2" "xs \<notin> a2" "join_cond pos a1 (restrict (args_L args) (args_R args) xs)"
           unfolding join_rel2_eq by auto
         have ts_tp_lt_new_tstp: "ts_tp_lt I ts' tp' new_tstp"
           using tp'_lt_tp in_int t_nt eqs(1) unfolding new_tstp_def
@@ -1706,8 +1703,8 @@ proof -
         proof (cases pos)
           case True
           then obtain tp''' where tp'''_def: "tp''' \<le> tp'"
-            "Mapping.lookup a1_map (proj_tuple maskL xs) = Some tp'''"
-            using eqs(2)[unfolded filter_a1_map_def] xs_props(3)[unfolded proj_tuple_in_join_def]
+            "Mapping.lookup a1_map (restrict (args_L args) (args_R args) xs) = Some tp'''"
+            using eqs(2)[unfolded filter_a1_map_def] xs_props(3)
             by (auto dest: Mapping.in_keysD)
           define wtp where "wtp \<equiv> max (tp - len) tp'''"
           have wtp_xs_in: "(wtp, xs) \<in> tmp"
@@ -1777,7 +1774,7 @@ proof -
         next
           case False
           show ?thesis
-          proof (cases "Mapping.lookup a1_map (proj_tuple maskL xs)")
+          proof (cases "Mapping.lookup a1_map (restrict (args_L args) (args_R args) xs)")
             case None
             then have in_tmp: "(tp - len, xs) \<in> tmp"
               using tmp_def False xs_props(1) by fastforce
@@ -1837,7 +1834,7 @@ proof -
           next
             case (Some tp''')
             then have tp'_gt: "tp' > tp'''"
-              using xs_props(3)[unfolded proj_tuple_in_join_def] eqs(2)[unfolded filter_a1_map_def]
+              using xs_props(3) eqs(2)[unfolded filter_a1_map_def]
                 False by (auto intro: Mapping_keys_intro)
             define wtp where "wtp \<equiv> max (tp - len) (tp''' + 1)"
             have wtp_xs_in: "(wtp, xs) \<in> tmp"
@@ -1929,8 +1926,8 @@ proof -
         using a2_sub_filter by auto
     qed
     ultimately show "triple_eq_pair (case tri of (t, a1, a2) \<Rightarrow>
-      (t, if pos then join a1 True rel1 else a1 \<union> rel1,
-      if memL I (nt - t) then a2 \<union> join rel2 pos a1 else a2))
+      (t, if pos then a1 \<inter> rel1 else a1 \<union> rel1,
+      if memL I (nt - t) then a2 \<union> join R rel2 pos L a1 else a2))
       pair (\<lambda>tp'. filter_a1_map pos tp' a1_map') (\<lambda>ts' tp'. filter_a2_map I ts' tp' a2_map')"
       using eqs unfolding tri_def pair_def by auto
   qed
@@ -2276,9 +2273,9 @@ lemma list_all2_check_before: "list_all2 (\<lambda>x y. triple_eq_pair x y f g) 
 
 fun eval_mmuaux' :: "args \<Rightarrow> ts \<Rightarrow> event_data mmuaux \<Rightarrow> event_data table list \<times> event_data mmuaux" where
   "eval_mmuaux' args nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux in
-    (rev done, (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, [])))"
+    (rev done, (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, [])))"
 
 lemma valid_eval_mmuaux':
   assumes "valid_mmuaux args cur aux auxlist" "nt \<ge> cur"
@@ -2289,10 +2286,10 @@ proof -
   define pos where "pos = args_pos args"
   have valid_folded: "valid_mmuaux' args cur nt aux auxlist"
     using assms(1,2) valid_mmuaux'_mono unfolding valid_mmuaux_def by blast
-  obtain tp len tss tables maskL maskR result a1_map a2_map tstp_map "done" where shift_aux_def:
-    "shift_mmuaux args nt aux = (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done)"
+  obtain tp len tss tables result a1_map a2_map tstp_map "done" where shift_aux_def:
+    "shift_mmuaux args nt aux = (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done)"
     by (cases "shift_mmuaux args nt aux") auto
-  have valid_shift_aux: "valid_mmuaux' args cur nt (tp, tss, tables, len, maskL, maskR,
+  have valid_shift_aux: "valid_mmuaux' args cur nt (tp, tss, tables, len,
     result, a1_map, a2_map, tstp_map, done) auxlist"
     "\<And>ts. ts \<in> set (linearize tss) \<Longrightarrow> memR (args_ivl args) (nt - ts)"
     using valid_shift_mmuaux'[OF assms(1)[unfolded valid_mmuaux_def] assms(2)]
@@ -2313,7 +2310,7 @@ proof -
     using eval_until_res[OF assms(4)] unfolding take_auxlist_takeWhile I_def by auto
   then have auxlist'_def: "auxlist' = drop (length done) auxlist"
     using eval_until_auxlist'[OF assms(4)] by (metis length_map length_rev)
-  have eval_mmuaux_eq: "eval_mmuaux' args nt aux = (rev done, (tp, tss, tables, len, maskL, maskR,
+  have eval_mmuaux_eq: "eval_mmuaux' args nt aux = (rev done, (tp, tss, tables, len,
     result, a1_map, a2_map, tstp_map, []))"
     using shift_aux_def by auto
   show ?thesis
@@ -2323,16 +2320,15 @@ qed
 
 definition init_mmuaux :: "args \<Rightarrow> event_data mmuaux" where
   "init_mmuaux args = (0, empty_queue, empty_queue, 0,
-  join_mask (args_n args) (args_L args), join_mask (args_n args) (args_R args),
   {}, Mapping.empty, Mapping.update 0 Mapping.empty Mapping.empty, Mapping.empty, [])"
 
-lemma valid_init_mmuaux: "L \<subseteq> R \<Longrightarrow> valid_mmuaux (init_args I n L R b agg) 0
-  (init_mmuaux (init_args I n L R b agg)) []"
+lemma valid_init_mmuaux: "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow>
+  valid_mmuaux (init_args I n L R b agg) 0 (init_mmuaux (init_args I n L R b agg)) []"
   unfolding init_mmuaux_def valid_mmuaux_def
   by (auto simp add: init_args_def empty_queue_rep table_def)
 
 fun length_mmuaux :: "args \<Rightarrow> event_data mmuaux \<Rightarrow> nat" where
-  "length_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+  "length_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     length done + len"
 
 lemma valid_length_mmuaux:
