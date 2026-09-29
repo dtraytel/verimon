@@ -23,6 +23,12 @@ text \<open>The columns of a table among a set of variables, in the table's orde
 abbreviation cols_in :: "vertices \<Rightarrow> nat list \<Rightarrow> nat list" where
   "cols_in V cs \<equiv> filter (\<lambda>c. c \<in> V) cs"
 
+text \<open>A tuple over @{term "cols I"} and one over @{term "cols J"} combined into one over
+  @{term "cols (I \<union> J)"}.\<close>
+
+definition merge :: "vertices \<Rightarrow> vertices \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
+  "merge I J t1 t2 = restrict (cols (I \<union> J)) (cols I @ cols J) (t1 @ t2)"
+
 subsection \<open>Generic algorithm\<close>
 
 locale getIJ =
@@ -69,12 +75,6 @@ fun semiJoin :: "'a atable \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarr
 
 fun newQuery :: "vertices \<Rightarrow> 'a query \<Rightarrow> (vertices \<times> 'a tuple) \<Rightarrow> 'a query" where
   "newQuery V Q (I, t) = Set.image (\<lambda>tab. projectTable V (semiJoin tab (I, t))) Q"
-
-text \<open>A tuple over @{term "cols I"} and one over @{term "cols J"} combined into one over
-  @{term "cols (I \<union> J)"}.\<close>
-
-definition merge :: "vertices \<Rightarrow> vertices \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
-  "merge I J t1 t2 = restrict (cols (I \<union> J)) (cols I @ cols J) (t1 @ t2)"
 
 function (sequential) genericJoin :: "vertices \<Rightarrow> 'a query \<Rightarrow> 'a query \<Rightarrow> 'a table" where
   "genericJoin V Q_pos Q_neg =
