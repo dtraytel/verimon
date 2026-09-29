@@ -4087,35 +4087,56 @@ next
     using \<phi>'_eq by metis
 next
   case (MNeg \<phi>)
-  have *: "qtable n {} (mem_restr R) (\<lambda>v. P v) X \<Longrightarrow>
-    \<not> qtable n {} (mem_restr R) (\<lambda>v. \<not> P v) empty_table \<Longrightarrow> x \<in> X \<Longrightarrow> False" for P x X
+  have *: "qtable [] R' (\<lambda>v. P v) (X :: event_data table) \<Longrightarrow>
+    \<not> qtable [] R' (\<lambda>v. \<not> P v) empty_table \<Longrightarrow> x \<in> X \<Longrightarrow> False" for P x X R'
     using nullary_qtable_cases qtable_unit_empty_table by fastforce
   from MNeg.prems obtain \<phi>'' where \<phi>'_eq: "\<phi>' = formula.Neg \<phi>''"
+    and wf: "wf_mformula \<sigma> j P V n R \<phi> \<phi>''" and fv: "fv \<phi>'' = {}" and safe: "safe_formula \<phi>''"
     by (cases rule: wf_mformula.cases) 
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
+  from fv have fvl: "Formula.fv_list \<phi>'' = []"
+    using set_fvi_list[of 0 \<phi>''] by (simp del: set_fvi_list)
   from MNeg.prems(3) have "S, E \<turnstile> \<phi>''"
     by (cases rule: wty_formula.cases) (auto simp: \<phi>'_eq)
-  with MNeg.prems show ?case
+  with wf MNeg.prems(2) show ?case
     unfolding \<phi>'_eq
-    by (cases rule: wf_mformula.cases)
-      (auto 0 4 intro!: wf_mformula.Neg dest!: MNeg.IH
-        simp add: list.rel_map
+    by (auto 0 4 intro!: wf_mformula.Neg[OF _ fv safe] dest!: MNeg.IH
+        simp add: list.rel_map fvl
         dest: nullary_qtable_cases qtable_unit_empty_table intro!: qtable_empty_unit_table
         elim!: list.rel_mono_strong elim: *)
 next
-  case (MExists P V n R \<phi> \<phi>')
+  case (MExists cs \<phi>)
   from MExists.prems obtain \<phi>'' t where \<phi>'_eq: "\<phi>' = formula.Exists t \<phi>''"
+    and wf: "wf_mformula \<sigma> j P V (Suc n) (lift_envs R) \<phi> \<phi>''" and safe: "safe_formula \<phi>''"
+    and cs: "cs = Formula.fv_list \<phi>''"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
-  from MExists.prems(3) obtain t where "S, case_nat t E \<turnstile> \<phi>''"
+  from MExists.prems(3) obtain t' where wty: "S, case_nat t' E \<turnstile> \<phi>''"
     by (cases rule: wty_formula.cases) (auto simp: \<phi>'_eq)
-  with MExists.prems show ?case
-    unfolding \<phi>'_eq
-    by (cases rule: wf_mformula.cases)
-      (force simp: list.rel_map fvi_Suc sat_fv_cong nth_Cons'
-        intro!: wf_mformula.Exists dest!: MExists.IH qtable_project_fv
-        elim!: list.rel_mono_strong table_fvi_tl qtable_cong sat_fv_cong[THEN iffD1, rotated -1]
-        split: if_splits)+
+  obtain xs \<phi>n where eq_\<phi>: "meval (j + \<delta>) (Suc n) (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> = (xs, \<phi>n)"
+    by (elim prod.exhaust)
+  note IH = MExists.IH[OF wf MExists.prems(2) wty, unfolded eq_\<phi> prod.case]
+  have meval_eq: "meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db (MExists cs \<phi>) =
+      (map (\<lambda>r. ex_proj cs ` r) xs, MExists cs \<phi>n)"
+    by (simp only: meval.simps Let_def eq_\<phi> prod.case)
+  have fvl: "Formula.fv_list \<phi>' = ex_cols cs"
+    by (simp add: \<phi>'_eq cs fvi_list_Suc)
+  have fv_n: "\<forall>x\<in>fv \<phi>''. x < Suc n"
+    using wf_mformula_wf_set[OF wf] .
+  have prog: "progress \<sigma> Q \<phi>' k = progress \<sigma> Q \<phi>'' k" for Q k
+    by (simp add: \<phi>'_eq)
+  show ?case
+    unfolding meval_eq prod.case
+  proof (intro conjI)
+    show "wf_mformula \<sigma> (j + \<delta>) P' V n R (MExists cs \<phi>n) \<phi>'"
+      unfolding \<phi>'_eq cs by (rule wf_mformula.Exists[OF IH[THEN conjunct1] safe])
+    show "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
+        [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] (map (\<lambda>r. ex_proj cs ` r) xs)"
+      unfolding list.rel_map fvl prog
+      using IH[THEN conjunct2]
+      by (rule list.rel_mono_strong)
+        (unfold \<phi>'_eq cs, erule qtable_project_fv[OF distinct_fvi_list set_fvi_list fv_n])
+  qed
 next
   case (MAgg args \<phi>)
   let ?tys = "aggargs_tys args"
@@ -4126,7 +4147,7 @@ next
     and b_fv: "{0..<length ?tys} \<subseteq> Formula.fv \<phi>''"
     and f_fv: "Formula.fv_trm (aggargs_f args) \<subseteq> Formula.fv \<phi>''"
     and g0: "aggargs_g0 args = (Formula.fv \<phi>'' \<subseteq> {0..<length ?tys})"
-    and cols: "aggargs_cols args = Formula.fv \<phi>''" and an: "aggargs_n args = n"
+    and cols: "aggargs_cols args = Formula.fv_list \<phi>''" and an: "aggargs_n args = n"
     and safe: "safe_formula \<phi>''"
     by (cases rule: wf_mformula.cases) auto
   from MAgg.prems(3) have wty: "S, agg_env E ?tys \<turnstile> \<phi>''"
@@ -4141,16 +4162,32 @@ next
     unfolding \<phi>'_eq
     by (rule wf_mformula.Agg[OF IH[THEN conjunct1] y fresh b_fv f_fv g0 cols an refl refl refl refl safe])
   have fv_bound: "\<forall>x\<in>Formula.fv \<phi>'. x < n"
-    using wf_mformula_wf_set[OF MAgg.prems(1), unfolded wf_set_def] .
+    using wf_mformula_wf_set[OF MAgg.prems(1)] .
   have prog: "progress \<sigma> Q \<phi>' k = progress \<sigma> Q \<phi>'' k" for Q k
     by (simp add: \<phi>'_eq)
-  have step: "qtable n (Formula.fv \<phi>') (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>')
-      (eval_aggargs args X)"
-    if "qtable (length ?tys + n) (Formula.fv \<phi>'') (mem_restr (lift_envs' (length ?tys) R))
-      (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>'') X" for i X
-    unfolding \<phi>'_eq eval_aggargs_def an
-    by (rule qtable_eval_agg[OF that fv_bound[unfolded \<phi>'_eq] fresh b_fv f_fv g0])
-  have out: "list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>') (mem_restr R) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>'))
+  have fvl: "Formula.fv_list \<phi>' = aggargs_y args # shift_cols (length ?tys) (Formula.fv_list \<phi>'')"
+  proof -
+    have sub: "set (Formula.fvi_trm_list (length ?tys) (aggargs_f args)) \<subseteq>
+        set (Formula.fvi_list (length ?tys) \<phi>'')"
+      using f_fv
+      by (auto simp: fvi_trm_iff_fv_trm[of _ "length ?tys"] fvi_iff_fv[of _ "length ?tys"])
+    have y_notin: "aggargs_y args \<notin> set (Formula.fvi_list (length ?tys) \<phi>'')"
+      using fresh fvi_iff_fv[of "aggargs_y args" "length ?tys" \<phi>''] by simp
+    have "Formula.fv_list \<phi>' = cols_union [aggargs_y args] (Formula.fvi_list (length ?tys) \<phi>'')"
+      by (simp add: \<phi>'_eq cols_union_subset[OF sub])
+    also have "\<dots> = aggargs_y args # Formula.fvi_list (length ?tys) \<phi>''"
+      using y_notin by (auto simp: cols_union_def filter_id_conv)
+    finally have "Formula.fv_list \<phi>' = aggargs_y args # Formula.fvi_list (length ?tys) \<phi>''" .
+    then show ?thesis
+      using fvi_list_plus[of 0 "length ?tys" \<phi>''] by simp
+  qed
+  have step: "sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>' (eval_aggargs args X)"
+    if "sat_table \<sigma> V (length ?tys + n) (lift_envs' (length ?tys) R) (Formula.fv_list \<phi>'') i \<phi>'' X"
+    for i X
+    unfolding fvl unfolding \<phi>'_eq eval_aggargs_def cols
+    by (rule qtable_eval_agg[OF that distinct_fvi_list set_fvi_list fv_bound[unfolded \<phi>'_eq]
+          fresh b_fv f_fv g0])
+  have out: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
       [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] (map (eval_aggargs args) xs)"
     unfolding prog list.rel_map using IH[THEN conjunct2] by (rule list_all2_mono) (rule step)
   show ?case
