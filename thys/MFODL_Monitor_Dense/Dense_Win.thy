@@ -753,6 +753,772 @@ proof -
   then show ?thesis unfolding r foldr_Un_filter .
 qed
 
+subsection \<open>The Until structure for a closed left operand\<close>
+
+text \<open>
+  One entry per pending time point, oldest first, holding the time point's timestamp, the right
+  operand's table and whether the left operand held: the entries already in the window of the
+  oldest pending time point, and the rest.  The window is extended lazily, one entry at a time,
+  and stops at the first entry out of the interval's range or at the one after which the left
+  operand fails; both ends only move forward.  When the oldest time point can no longer be
+  affected by the future, its answer is the window's union, and the window slides.  The answers
+  accumulate, newest first, until the evaluator reads them.
+\<close>
+
+type_synonym uw_entry = "ts \<times> event_data table \<times> bool"
+
+type_synonym uwaux = "ts queue \<times> uw_entry queue \<times> uw_entry queue \<times> nat \<times> bool \<times> cntset \<times>
+  event_data table list"
+
+function uw_extend :: "args \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow> cntset \<Rightarrow>
+    uw_entry queue \<times> uw_entry queue \<times> bool \<times> cntset" where
+  "uw_extend args ts0 win rest bend cc =
+     (if \<not> bend then (win, rest, bend, cc)
+      else (case safe_hd rest of
+              (None, rest') \<Rightarrow> (win, rest', bend, cc)
+            | (Some e, rest') \<Rightarrow>
+                (if memR (args_ivl args) (fst e - ts0)
+                 then uw_extend args ts0 (append_queue e win) (tl_queue rest')
+                        (snd (snd e)) (cnt_add (fst (snd e)) cc)
+                 else (win, rest', bend, cc))))"
+  by pat_completeness auto
+termination
+  using length_tl_queue_safe_hd[OF sym]
+  by (relation "measure (\<lambda>(args, ts0, win, rest, bend, cc). length (linearize rest))")
+     (fastforce split: prod.splits)+
+
+declare uw_extend.simps[simp del]
+
+definition uw_init :: "args \<Rightarrow> uwaux" where
+  "uw_init args = (empty_queue, empty_queue, empty_queue, 0, True, (Mapping.empty, {}), [])"
+
+definition uw_length :: "args \<Rightarrow> uwaux \<Rightarrow> nat" where
+  "uw_length args aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow> length dn + len)"
+
+text \<open>The oldest pending time point leaves: its window is extended as far as its timestamp
+  allows, the window's union is its answer, and its own entry is dropped from the window.\<close>
+
+definition uw_step :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> uwaux" where
+  "uw_step args ts0 aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+     (case uw_extend args ts0 win rest bend cc of (win, rest, bend, cc) \<Rightarrow>
+        (case safe_hd win of
+           (None, win') \<Rightarrow> (tl_queue nts, win', rest, len - 1, bend, cc, {} # dn)
+         | (Some e, win') \<Rightarrow>
+           (let win'' = tl_queue win';
+                cc' = cnt_del (fst (snd e)) cc;
+                bend' = (if Queue.is_empty win'' then True else bend)
+            in (tl_queue nts, win'', rest, len - 1, bend', cc', snd cc # dn)))))"
+
+function uw_shift :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> uwaux" where
+  "uw_shift args nt aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+     (case safe_hd nts of
+        (None, nts') \<Rightarrow> (nts', win, rest, len, bend, cc, dn)
+      | (Some ts0, nts') \<Rightarrow>
+        (if memR (args_ivl args) (nt - ts0) \<or> len = 0
+         then (nts', win, rest, len, bend, cc, dn)
+         else uw_shift args nt (uw_step args ts0 (nts', win, rest, len, bend, cc, dn)))))"
+  by pat_completeness auto
+termination
+  by (relation "measure (\<lambda>(args, nt, (nts, win, rest, len, bend, cc, dn)). len)")
+     (auto simp: uw_step_def split: prod.splits option.splits)
+
+declare uw_shift.simps[simp del]
+
+definition uw_add_new :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> uwaux" where
+  "uw_add_new args rel1 rel2 nt aux =
+     (case uw_shift args nt aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+       (let b = (if args_pos args then \<not> Set.is_empty rel1 else Set.is_empty rel1)
+        in (append_queue nt nts, win, append_queue (nt, rel2, b) rest, len + 1, bend, cc, dn)))"
+
+definition uw_eval :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> event_data table list \<times> uwaux" where
+  "uw_eval args nt aux =
+     (case uw_shift args nt aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+       (rev dn, (nts, win, rest, len, bend, cc, [])))"
+
+subsubsection \<open>The abstract auxiliary list of a run of entries\<close>
+
+text \<open>
+  The kernel's auxiliary list holds, for each pending time point, the accumulated left operand
+  and the accumulated answer.  With a closed left operand the first is the unit table or empty
+  according to whether the left operand held at every pending time point from this one on, and
+  the second is the union of the right operand's tables over the run that starts at this time
+  point and stops at the first one out of range or the first one after which the left operand
+  fails.
+\<close>
+
+definition uw_a1 :: "args \<Rightarrow> bool list \<Rightarrow> event_data table" where
+  "uw_a1 args bs = (if (\<forall>b \<in> set bs. b) = args_pos args then unit_table else {})"
+
+fun uw_a2 :: "\<I> \<Rightarrow> ts \<Rightarrow> uw_entry list \<Rightarrow> event_data table" where
+  "uw_a2 I t0 [] = {}"
+| "uw_a2 I t0 ((t, R, b) # es) =
+     (if memR I (t - t0) then R \<union> (if b then uw_a2 I t0 es else {}) else {})"
+
+fun uw_abs :: "args \<Rightarrow> uw_entry list \<Rightarrow> event_data muaux" where
+  "uw_abs args [] = []"
+| "uw_abs args ((t, R, b) # es) =
+     (t, uw_a1 args (b # map (snd \<circ> snd) es), uw_a2 (args_ivl args) t ((t, R, b) # es)) # uw_abs args es"
+
+lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
+  by (induct es rule: uw_abs.induct) simp_all
+
+text \<open>Appending an entry to a run extends every answer by the new table exactly when the new
+  timestamp is in range from the run's start and the left operand held throughout the run.\<close>
+
+lemma uw_a2_snoc:
+  assumes "\<forall>e \<in> set es. fst e \<le> nt"
+  shows "uw_a2 I t0 (es @ [(nt, R, b)])
+    = uw_a2 I t0 es \<union> (if memR I (nt - t0) \<and> (\<forall>e \<in> set es. snd (snd e)) then R else {})"
+  using assms
+proof (induct es)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons e es)
+  obtain t R' b' where e: "e = (t, R', b')" by (cases e)
+  have tnt: "t \<le> nt" using Cons.prems e by simp
+  show ?case
+  proof (cases "memR I (t - t0)")
+    case True
+    then show ?thesis using Cons unfolding e by (auto simp: Un_assoc)
+  next
+    case False
+    have "\<not> memR I (nt - t0)"
+      using False tnt memR_antimono[of I "nt - t0" "t - t0"] diff_le_mono by blast
+    then show ?thesis using False unfolding e by simp
+  qed
+qed
+
+lemma uw_a1_snoc:
+  assumes t1: "table [] rel1"
+    and b: "b = ((rel1 \<noteq> {}) = args_pos args)"
+  shows "(if args_pos args then uw_a1 args bs \<inter> rel1 else uw_a1 args bs \<union> rel1)
+    = uw_a1 args (bs @ [b])"
+proof -
+  from t1 consider "rel1 = {}" | "rel1 = unit_table"
+    by (auto simp: table_empty_vars_iff empty_table_def)
+  then show ?thesis
+    by cases (auto simp: b uw_a1_def unit_table_def)
+qed
+
+lemma uw_abs_snoc:
+  assumes ts: "\<forall>e \<in> set es. fst e \<le> nt"
+    and tbl: "\<forall>e \<in> set es. table (args_R args) (fst (snd e))"
+    and t1: "table [] rel1" and t2: "table (args_R args) rel2"
+    and inz: "memL (args_ivl args) 0" and L: "args_L args = []"
+    and b: "b = ((rel1 \<noteq> {}) = args_pos args)"
+  shows "update_until args rel1 rel2 nt (uw_abs args es) = uw_abs args (es @ [(nt, rel2, b)])"
+  using ts tbl
+proof (induct es)
+  case Nil
+  have a1: "uw_a1 args [b] = rel1"
+  proof -
+    have r1: "rel1 = {} \<or> rel1 = unit_table"
+      using t1 by (auto simp: table_empty_vars_iff empty_table_def)
+    have ne: "unit_table \<noteq> {}" by (simp add: unit_table_def)
+    from r1 show ?thesis unfolding b uw_a1_def using ne by (cases "args_pos args") auto
+  qed
+  show ?case using inz by (simp add: update_until_def a1 empty_table_def)
+next
+  case (Cons e es)
+  obtain t R b' where e: "e = (t, R, b')" by (cases e)
+  note IH = Cons(1) and ts = Cons(2)[unfolded e] and tbl = Cons(3)[unfolded e]
+  let ?I = "args_ivl args"
+  have tnt: "t \<le> nt" using ts by simp
+  have upd: "update_until args rel1 rel2 nt (uw_abs args ((t, R, b') # es))
+      = (t, if args_pos args then uw_a1 args (b' # map (snd \<circ> snd) es) \<inter> rel1
+            else uw_a1 args (b' # map (snd \<circ> snd) es) \<union> rel1,
+         if mem ?I (nt - t) then uw_a2 ?I t ((t, R, b') # es) \<union>
+            join (args_R args) rel2 (args_pos args) (args_L args) (uw_a1 args (b' # map (snd \<circ> snd) es))
+         else uw_a2 ?I t ((t, R, b') # es))
+        # update_until args rel1 rel2 nt (uw_abs args es)"
+    by (simp add: update_until_def)
+  have a1: "(if args_pos args then uw_a1 args (b' # map (snd \<circ> snd) es) \<inter> rel1
+      else uw_a1 args (b' # map (snd \<circ> snd) es) \<union> rel1)
+      = uw_a1 args ((b' # map (snd \<circ> snd) es) @ [b])"
+    by (rule uw_a1_snoc[OF t1 b])
+  have jc: "join (args_R args) rel2 (args_pos args) (args_L args) (uw_a1 args (b' # map (snd \<circ> snd) es))
+      = (if b' \<and> (\<forall>e \<in> set es. snd (snd e)) then rel2 else {})"
+  proof -
+    have "table [] (uw_a1 args (b' # map (snd \<circ> snd) es))"
+      by (auto simp: uw_a1_def)
+    from join_closed[OF this, of "args_R args" rel2 "args_pos args"] show ?thesis
+      by (cases "args_pos args") (auto simp: L uw_a1_def unit_table_def)
+  qed
+  have mem: "mem ?I (nt - t) = memR ?I (nt - t)" using memL_mono[OF inz] by auto
+  have a2: "uw_a2 ?I t (es @ [(nt, rel2, b)])
+      = uw_a2 ?I t es \<union> (if memR ?I (nt - t) \<and> (\<forall>e \<in> set es. snd (snd e)) then rel2 else {})"
+    using uw_a2_snoc[of es nt ?I t rel2 b] ts by simp
+  have IH': "update_until args rel1 rel2 nt (uw_abs args es) = uw_abs args (es @ [(nt, rel2, b)])"
+    by (rule IH) (use ts tbl in auto)
+  show ?case unfolding e upd a1 IH' mem jc
+    by (cases b'; cases "memR ?I (nt - t)"; cases "\<forall>e \<in> set es. snd (snd e)")
+      (simp_all add: a2 Un_ac)
+qed
+
+subsubsection \<open>Extending the window\<close>
+
+text \<open>The entries the extension adds: from the rest, while in range from the window's start and
+  while the left operand keeps holding.\<close>
+
+fun uw_ext :: "\<I> \<Rightarrow> ts \<Rightarrow> bool \<Rightarrow> uw_entry list \<Rightarrow> uw_entry list" where
+  "uw_ext I ts0 False rl = []"
+| "uw_ext I ts0 True [] = []"
+| "uw_ext I ts0 True (e # rl) =
+     (if memR I (fst e - ts0) then e # uw_ext I ts0 (snd (snd e)) rl else [])"
+
+lemma uw_ext_prefix: "\<exists>sfx. rl = uw_ext I ts0 bend rl @ sfx"
+  by (induct I ts0 bend rl rule: uw_ext.induct) (auto simp: fun_eq_iff)
+
+lemma uw_ext_range: "e \<in> set (uw_ext I ts0 bend rl) \<Longrightarrow> memR I (fst e - ts0)"
+  by (induct I ts0 bend rl rule: uw_ext.induct) (auto split: if_splits)
+
+lemma uw_ext_bend: "uw_ext I ts0 False rl = []"
+  by simp
+
+lemma uw_extend_rep:
+  "linearize rest = rl \<Longrightarrow> uw_extend args ts0 win rest bend cc = (win', rest', bend', cc') \<Longrightarrow>
+     linearize win' = linearize win @ uw_ext (args_ivl args) ts0 bend rl \<and>
+     linearize rest' = drop (length (uw_ext (args_ivl args) ts0 bend rl)) rl \<and>
+     bend' = (if uw_ext (args_ivl args) ts0 bend rl = [] then bend
+              else snd (snd (last (uw_ext (args_ivl args) ts0 bend rl)))) \<and>
+     cc' = fold cnt_add (map (fst \<circ> snd) (uw_ext (args_ivl args) ts0 bend rl)) cc \<and>
+     (bend' \<longrightarrow> linearize rest' = [] \<or> \<not> memR (args_ivl args) (fst (hd (linearize rest')) - ts0))"
+proof (induct rl arbitrary: win rest bend cc win' rest' bend' cc')
+  case Nil
+  obtain ho rest0 where sh: "safe_hd rest = (ho, rest0)" by (cases "safe_hd rest")
+  have ho: "ho = None" and l0: "linearize rest0 = []"
+    using safe_hd_rep[OF sh] Nil(1) by (auto split: option.splits)
+  show ?case
+  proof (cases bend)
+    case False
+    then have "(win, rest, bend, cc) = (win', rest', bend', cc')"
+      using Nil(2) by (subst (asm) uw_extend.simps) simp
+    then show ?thesis using False Nil(1) by simp
+  next
+    case True
+    then have "(win, rest0, bend, cc) = (win', rest', bend', cc')"
+      using Nil(2) by (subst (asm) uw_extend.simps) (simp add: sh ho)
+    then show ?thesis using True l0 by simp
+  qed
+next
+  case (Cons e rl)
+  show ?case
+  proof (cases bend)
+    case False
+    then show ?thesis using Cons(2,3) by (subst (asm) uw_extend.simps) simp
+  next
+    case True
+    obtain ho rest0 where sh: "safe_hd rest = (ho, rest0)" by (cases "safe_hd rest")
+    have l0: "linearize rest0 = e # rl" using safe_hd_rep[OF sh] Cons(2) by simp
+    have ho: "ho = Some e" using safe_hd_rep[OF sh] l0 by (cases ho) auto
+    have lt: "linearize (tl_queue rest0) = rl" by (simp add: tl_queue_rep l0)
+    show ?thesis
+    proof (cases "memR (args_ivl args) (fst e - ts0)")
+      case r: True
+      have "uw_extend args ts0 (append_queue e win) (tl_queue rest0) (snd (snd e))
+          (cnt_add (fst (snd e)) cc) = (win', rest', bend', cc')"
+        using Cons(3) by (subst (asm) uw_extend.simps) (simp add: True sh ho r)
+      from Cons(1)[OF lt this] show ?thesis using True r
+        by (auto simp: append_queue_rep)
+    next
+      case r: False
+      have "(win, rest0, bend, cc) = (win', rest', bend', cc')"
+        using Cons(3) by (subst (asm) uw_extend.simps) (simp add: True sh ho r)
+      then show ?thesis using True r l0 by simp
+    qed
+  qed
+qed
+
+subsubsection \<open>The window invariant\<close>
+
+text \<open>
+  Relative to a start timestamp: every entry of the window is in range from it, every entry
+  but the last saw the left operand hold, and the flag says whether the last one did (or the
+  window is empty).
+\<close>
+
+definition uw_win :: "\<I> \<Rightarrow> ts \<Rightarrow> uw_entry list \<Rightarrow> bool \<Rightarrow> bool" where
+  "uw_win I ts0 wl bend \<longleftrightarrow>
+     (\<forall>e \<in> set wl. memR I (fst e - ts0)) \<and>
+     (\<forall>e \<in> set (butlast wl). snd (snd e)) \<and>
+     bend = (wl = [] \<or> snd (snd (last wl)))"
+
+lemma uw_win_Nil: "uw_win I ts0 [] True"
+  by (simp add: uw_win_def)
+
+lemma uw_a2_ext_True:
+  "uw_a2 I ts0 rl = \<Union> (set (map (fst \<circ> snd) (uw_ext I ts0 True rl)))"
+proof (induct rl)
+  case (Cons e rl)
+  obtain t R b where e: "e = (t, R, b)" by (cases e)
+  show ?case unfolding e using Cons by (cases b; cases "memR I (t - ts0)") auto
+qed simp
+
+text \<open>After the extension the window is the whole run the answer is the union of.\<close>
+
+lemma uw_win_a2:
+  assumes w: "uw_win I ts0 wl bend"
+  shows "uw_a2 I ts0 (wl @ rl) = \<Union> (set (map (fst \<circ> snd) (wl @ uw_ext I ts0 bend rl)))"
+  using w
+proof (induct wl)
+  case Nil
+  then have "bend" by (simp add: uw_win_def)
+  then show ?case by (simp add: uw_a2_ext_True)
+next
+  case (Cons e wl)
+  obtain t R b where e: "e = (t, R, b)" by (cases e)
+  have r: "memR I (t - ts0)" using Cons.prems unfolding e uw_win_def by simp
+  show ?case
+  proof (cases wl)
+    case Nil
+    then have "bend = b" using Cons.prems unfolding e uw_win_def by simp
+    then show ?thesis unfolding e Nil using r
+      by (cases b) (simp_all add: uw_a2_ext_True)
+  next
+    case (Cons e' wl')
+    have b: "b" using Cons.prems unfolding e Cons uw_win_def by simp
+    have w': "uw_win I ts0 wl bend" using Cons.prems unfolding e Cons uw_win_def by simp
+    show ?thesis unfolding e using r b Cons.hyps[OF w'] by simp
+  qed
+qed
+
+lemma uw_win_extend:
+  assumes w: "uw_win I ts0 wl bend"
+  shows "uw_win I ts0 (wl @ uw_ext I ts0 bend rl)
+    (if uw_ext I ts0 bend rl = [] then bend else snd (snd (last (uw_ext I ts0 bend rl))))"
+proof (cases "uw_ext I ts0 bend rl = []")
+  case True
+  then show ?thesis using w by simp
+next
+  case False
+  define ex where "ex = uw_ext I ts0 bend rl"
+  have bend: "bend" using False by (cases bend) simp_all
+  have ex: "\<forall>e \<in> set (butlast ex). snd (snd e)"
+    unfolding ex_def using bend
+  proof (induct I ts0 bend rl rule: uw_ext.induct)
+    case (3 I ts0 e rl)
+    show ?case
+    proof (cases "memR I (fst e - ts0)")
+      case True
+      show ?thesis
+      proof (cases "uw_ext I ts0 (snd (snd e)) rl = []")
+        case True
+        then show ?thesis using \<open>memR I (fst e - ts0)\<close> by simp
+      next
+        case False
+        then have b: "snd (snd e)" by (cases "snd (snd e)") simp_all
+        then show ?thesis using True 3(1)[OF True b] False by simp
+      qed
+    qed simp
+  qed simp_all
+  have wl_last: "\<forall>e \<in> set wl. snd (snd e)"
+    using w bend unfolding uw_win_def by (cases wl rule: rev_cases) auto
+  show ?thesis using w ex wl_last False uw_ext_range[of _ I ts0 bend rl]
+    unfolding uw_win_def ex_def[symmetric] by (auto simp: butlast_append)
+qed
+
+subsubsection \<open>Validity\<close>
+
+text \<open>
+  The pending entries are the window followed by the rest; the pending timestamps are theirs,
+  sorted; the count set is the window's; the window invariant holds relative to the oldest
+  pending timestamp.  The abstract auxiliary list is the abstract list of the expired entries,
+  whose answers are in the accumulator, followed by the abstract list of the pending ones.
+\<close>
+
+fun uw_es :: "uwaux \<Rightarrow> uw_entry list" where
+  "uw_es (nts, win, rest, len, bend, cc, dn) = linearize win @ linearize rest"
+
+definition valid_uw :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> event_data muaux \<Rightarrow> bool" where
+  "valid_uw args cur aux auxlist \<longleftrightarrow> (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
+     (let es = linearize win @ linearize rest in
+      linearize nts = map fst es \<and> len = length es \<and>
+      sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es \<and>
+      (\<forall>e \<in> set es. fst e \<le> cur \<and> table (args_R args) (fst (snd e))) \<and>
+      cnt_inv (map (fst \<circ> snd) (linearize win)) cc \<and>
+      uw_win (args_ivl args) (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend \<and>
+      (\<exists>ex. auxlist = ex @ uw_abs args es \<and> map proj_thd ex = rev dn \<and>
+         (\<forall>e \<in> set ex. \<not> memR (args_ivl args) (cur - fst e)))))"
+
+lemma valid_uw_init: "valid_uw args 0 (uw_init args) []"
+  by (simp add: valid_uw_def uw_init_def empty_queue_rep cnt_inv_empty uw_win_Nil)
+
+lemma valid_uw_length:
+  "valid_uw args cur aux auxlist \<Longrightarrow> uw_length args aux = length auxlist"
+  by (auto simp: valid_uw_def uw_length_def split: prod.splits)
+    (metis length_map length_rev)
+
+text \<open>One step: the oldest pending time point's answer is its abstract entry's.\<close>
+
+lemma valid_uw_step:
+  assumes v: "valid_uw args cur aux auxlist"
+    and aux: "aux = (nts, win, rest, len, bend, cc, dn)"
+    and ne: "len \<noteq> 0" and hd: "safe_hd nts = (Some ts0, nts')"
+    and old: "\<not> memR (args_ivl args) (cur' - ts0)" and cc': "cur \<le> cur'"
+  shows "valid_uw args cur' (uw_step args ts0 (nts', win, rest, len, bend, cc, dn)) auxlist \<and>
+    set (uw_es (uw_step args ts0 (nts', win, rest, len, bend, cc, dn))) \<subseteq> set (uw_es aux)"
+proof -
+  let ?I = "args_ivl args"
+  define es where "es = linearize win @ linearize rest"
+  have nl: "linearize nts = map fst es" and lenes: "len = length es"
+    and srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    and wf: "\<forall>e \<in> set es. fst e \<le> cur \<and> table (args_R args) (fst (snd e))"
+    and cnt: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and wi: "uw_win ?I (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    using v unfolding valid_uw_def aux es_def by auto
+  obtain ex where al: "auxlist = ex @ uw_abs args es" and exd: "map proj_thd ex = rev dn"
+    and exo: "\<forall>e \<in> set ex. \<not> memR ?I (cur - fst e)"
+    using v unfolding valid_uw_def aux es_def by auto
+  have es_ne: "es \<noteq> []" using ne lenes by simp
+  then obtain e0 es' where es: "es = e0 # es'" by (cases es) auto
+  have nts': "linearize nts' = map fst es" and ts0: "ts0 = fst e0"
+    using safe_hd_rep[OF hd] nl es by auto
+  have wi': "uw_win ?I ts0 (linearize win) bend" using wi unfolding es ts0 by simp
+  obtain win1 rest1 bend1 cc1 where ext: "uw_extend args ts0 win rest bend cc = (win1, rest1, bend1, cc1)"
+    by (cases "uw_extend args ts0 win rest bend cc")
+  define ex1 where "ex1 = uw_ext ?I ts0 bend (linearize rest)"
+  have er: "linearize win1 = linearize win @ ex1 \<and>
+     linearize rest1 = drop (length ex1) (linearize rest) \<and>
+     bend1 = (if ex1 = [] then bend else snd (snd (last ex1))) \<and>
+     cc1 = fold cnt_add (map (fst \<circ> snd) ex1) cc \<and>
+     (bend1 \<longrightarrow> linearize rest1 = [] \<or> \<not> memR ?I (fst (hd (linearize rest1)) - ts0))"
+    using uw_extend_rep[OF refl ext] unfolding ex1_def .
+  have w1: "linearize win1 = linearize win @ ex1"
+    and r1: "linearize rest1 = drop (length ex1) (linearize rest)"
+    and b1: "bend1 = (if ex1 = [] then bend else snd (snd (last ex1)))"
+    and c1: "cc1 = fold cnt_add (map (fst \<circ> snd) ex1) cc"
+    using er by blast+
+  obtain sfx where sfx: "linearize rest = ex1 @ sfx"
+    using uw_ext_prefix[of "linearize rest" ?I ts0 bend] unfolding ex1_def by blast
+  have ex1_pre: "linearize rest = ex1 @ drop (length ex1) (linearize rest)"
+    using sfx by simp
+  have es1: "linearize win1 @ linearize rest1 = es"
+    unfolding w1 r1 es_def using ex1_pre by simp
+  have sub1: "set ex1 \<subseteq> set (linearize rest)" using sfx by simp
+  have cnt1: "cnt_inv (map (fst \<circ> snd) (linearize win1)) cc1"
+    unfolding w1 c1 map_append by (rule cnt_inv_adds[OF cnt])
+  have wi1: "uw_win ?I ts0 (linearize win1) bend1"
+    unfolding w1 b1 ex1_def by (rule uw_win_extend[OF wi'])
+  \<comment> \<open>the window is not empty\<close>
+  have w1_ne: "linearize win1 \<noteq> []"
+  proof (cases "linearize win")
+    case Nil
+    then have bend: "bend" using wi' by (simp add: uw_win_def)
+    have "linearize rest = es" using Nil es_def by simp
+    then have "uw_ext ?I ts0 bend (linearize rest) \<noteq> []"
+      unfolding es ts0 using bend by simp
+    then show ?thesis unfolding w1 ex1_def by simp
+  qed (simp add: w1)
+  then obtain e1 wl1 where wl1: "linearize win1 = e1 # wl1" by (cases "linearize win1") auto
+  have e1: "e1 = e0" using es1 wl1 es by simp
+  obtain ho win2 where sh2: "safe_hd win1 = (ho, win2)" by (cases "safe_hd win1")
+  have lw2: "linearize win2 = e1 # wl1" using safe_hd_rep[OF sh2] wl1 by simp
+  have ho: "ho = Some e1" using safe_hd_rep[OF sh2] lw2 by (cases ho) auto
+  have lw3: "linearize (tl_queue win2) = wl1" by (simp add: tl_queue_rep lw2)
+  \<comment> \<open>the answer\<close>
+  have ans: "snd cc1 = uw_a2 ?I ts0 es"
+    using cnt_inv_set[OF cnt1] uw_win_a2[OF wi', of "linearize rest"]
+    unfolding w1 ex1_def es_def by simp
+  have abs0: "uw_abs args es = (ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es) # uw_abs args es'"
+    unfolding es ts0 by (cases e0) simp
+  \<comment> \<open>the result\<close>
+  define res where "res = (tl_queue nts', tl_queue win2, rest1, len - 1,
+     if Queue.is_empty (tl_queue win2) then True else bend1, cnt_del (fst (snd e1)) cc1, snd cc1 # dn)"
+  have step: "uw_step args ts0 (nts', win, rest, len, bend, cc, dn) = res"
+    unfolding uw_step_def res_def by (simp add: ext sh2 ho)
+  have es'_eq: "wl1 @ linearize rest1 = es'" using es1 wl1 es by simp
+  have nts'': "linearize (tl_queue nts') = map fst es'"
+    by (simp add: tl_queue_rep nts' es)
+  have cnt2: "cnt_inv (map (fst \<circ> snd) wl1) (cnt_del (fst (snd e1)) cc1)"
+    using cnt_inv_tl[OF cnt1[unfolded wl1, simplified]] by simp
+  have wi2: "uw_win ?I (case es' of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) wl1
+      (if Queue.is_empty (tl_queue win2) then True else bend1)"
+  proof (cases wl1)
+    case Nil
+    then show ?thesis by (simp add: is_empty_alt lw3 uw_win_Nil)
+  next
+    case (Cons e2 wl2)
+    have ne2: "\<not> Queue.is_empty (tl_queue win2)" by (simp add: is_empty_alt lw3 Cons)
+    have es'2: "es' = e2 # (wl2 @ linearize rest1)" using es'_eq Cons by simp
+    have r: "\<forall>e \<in> set wl1. memR ?I (fst e - ts0)" and bl: "\<forall>e \<in> set (butlast wl1). snd (snd e)"
+      and bd: "bend1 = (wl1 = [] \<or> snd (snd (last wl1)))"
+      using wi1 unfolding uw_win_def wl1 by (simp_all add: Cons)
+    have le: "ts0 \<le> fst e2" using srt unfolding es es'2 ts0 by simp
+    have r': "\<forall>e \<in> set wl1. memR ?I (fst e - fst e2)"
+      using r le memR_mono_ts by blast
+    show ?thesis unfolding es'2 using ne2 r' bl bd by (simp add: uw_win_def)
+  qed
+  have sub: "set (uw_es res) \<subseteq> set (uw_es aux)"
+    unfolding res_def aux uw_es.simps lw3 es'_eq es_def[symmetric] es by auto
+  have "valid_uw args cur' res auxlist" unfolding res_def valid_uw_def
+  proof (simp only: prod.case Let_def lw3, intro conjI)
+    show "linearize (tl_queue nts') = map fst (wl1 @ linearize rest1)"
+      unfolding es'_eq nts'' ..
+    show "len - 1 = length (wl1 @ linearize rest1)" unfolding es'_eq lenes es by simp
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (wl1 @ linearize rest1)"
+      unfolding es'_eq using srt es by simp
+    show "\<forall>e \<in> set (wl1 @ linearize rest1). fst e \<le> cur' \<and>
+        table (args_R args) (fst (snd e))"
+      unfolding es'_eq using wf cc' es by auto
+    show "cnt_inv (map (fst \<circ> snd) wl1) (cnt_del (fst (snd e1)) cc1)" by (rule cnt2)
+    show "uw_win ?I (case wl1 @ linearize rest1 of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) wl1
+        (if Queue.is_empty (tl_queue win2) then True else bend1)"
+      unfolding es'_eq by (rule wi2)
+    show "\<exists>ex. auxlist = ex @ uw_abs args (wl1 @ linearize rest1) \<and>
+        map proj_thd ex = rev (snd cc1 # dn) \<and> (\<forall>e \<in> set ex. \<not> memR ?I (cur' - fst e))"
+    proof (intro exI[of _ "ex @ [(ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es)]"] conjI)
+      show "auxlist = (ex @ [(ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es)])
+          @ uw_abs args (wl1 @ linearize rest1)"
+        unfolding es'_eq al abs0 by simp
+      show "map proj_thd (ex @ [(ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es)])
+          = rev (snd cc1 # dn)" unfolding ans[symmetric] using exd by simp
+      show "\<forall>e \<in> set (ex @ [(ts0, uw_a1 args (map (snd \<circ> snd) es), uw_a2 ?I ts0 es)]).
+          \<not> memR ?I (cur' - fst e)"
+        using exo old not_memR_mono[OF cc'] by auto
+    qed
+  qed
+  then show ?thesis using sub unfolding step by simp
+qed
+
+lemma valid_uw_mono:
+  assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"
+  shows "valid_uw args nt aux auxlist"
+proof -
+  obtain nts win rest len bend cc dn where aux: "aux = (nts, win, rest, len, bend, cc, dn)"
+    by (cases aux)
+  define es where "es = linearize win @ linearize rest"
+  have c1: "linearize nts = map fst es" and c2: "len = length es"
+    and c3: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    and c4: "\<forall>e \<in> set es. fst e \<le> cur \<and> table (args_R args) (fst (snd e))"
+    and c5: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and c6: "uw_win (args_ivl args) (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    using v unfolding valid_uw_def aux es_def by auto
+  obtain ex where c7: "auxlist = ex @ uw_abs args es" and c8: "map proj_thd ex = rev dn"
+    and c9: "\<forall>e \<in> set ex. \<not> memR (args_ivl args) (cur - fst e)"
+    using v unfolding valid_uw_def aux es_def by auto
+  have c4': "\<forall>e \<in> set es. fst e \<le> nt \<and> table (args_R args) (fst (snd e))" using c4 cn by auto
+  have c9': "\<forall>e \<in> set ex. \<not> memR (args_ivl args) (nt - fst e)"
+    using c9 not_memR_mono[OF cn] by blast
+  show ?thesis unfolding valid_uw_def aux
+  proof (simp only: prod.case Let_def, intro conjI)
+    show "linearize nts = map fst (linearize win @ linearize rest)" using c1 by (simp add: es_def)
+    show "len = length (linearize win @ linearize rest)" using c2 by (simp add: es_def)
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (linearize win @ linearize rest)"
+      using c3 by (simp add: es_def)
+    show "\<forall>e \<in> set (linearize win @ linearize rest). fst e \<le> nt \<and>
+        table (args_R args) (fst (snd e))"
+      using c4' by (simp add: es_def)
+    show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule c5)
+    show "uw_win (args_ivl args) (case linearize win @ linearize rest of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e)
+        (linearize win) bend" using c6 by (simp add: es_def)
+    show "\<exists>ex. auxlist = ex @ uw_abs args (linearize win @ linearize rest) \<and>
+        map proj_thd ex = rev dn \<and> (\<forall>e \<in> set ex. \<not> memR (args_ivl args) (nt - fst e))"
+      using c7 c8 c9' unfolding es_def by blast
+  qed
+qed
+
+fun uw_len :: "uwaux \<Rightarrow> nat" where
+  "uw_len (nts, win, rest, len, bend, cc, dn) = len"
+
+lemma uw_len_step: "uw_len (uw_step args ts0 (nts, win, rest, len, bend, cc, dn)) = len - 1"
+  by (simp add: uw_step_def split: prod.splits option.splits)
+
+text \<open>The shift pops the pending time points that no later one can affect, in order.\<close>
+
+lemma valid_uw_shift:
+  assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"
+  shows "valid_uw args nt (uw_shift args nt aux) auxlist \<and>
+    (\<forall>e \<in> set (uw_es (uw_shift args nt aux)). memR (args_ivl args) (nt - fst e)) \<and>
+    set (uw_es (uw_shift args nt aux)) \<subseteq> set (uw_es aux)"
+  using v cn
+proof (induct "uw_len aux" arbitrary: aux cur rule: less_induct)
+  case less
+  note IH = less.hyps and v = less.prems(1) and cn = less.prems(2)
+  let ?I = "args_ivl args"
+  obtain nts win rest len bend cc dn where aux: "aux = (nts, win, rest, len, bend, cc, dn)"
+    by (cases aux)
+  define es where "es = linearize win @ linearize rest"
+  have nl: "linearize nts = map fst es" and lenes: "len = length es"
+    and srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    using v unfolding valid_uw_def aux es_def by auto
+  obtain ho nts' where sh: "safe_hd nts = (ho, nts')" by (cases "safe_hd nts")
+  have nts': "linearize nts' = linearize nts" using safe_hd_rep[OF sh] by simp
+  have v': "valid_uw args nt aux auxlist" by (rule valid_uw_mono[OF v cn])
+  have v'': "valid_uw args nt (nts', win, rest, len, bend, cc, dn) auxlist"
+    using v' unfolding valid_uw_def aux by (simp add: nts')
+  show ?case
+  proof (cases ho)
+    case None
+    then have "es = []" using safe_hd_rep[OF sh] nl by (auto split: option.splits)
+    moreover have "uw_shift args nt aux = (nts', win, rest, len, bend, cc, dn)"
+      using None by (subst uw_shift.simps) (simp add: aux sh)
+    ultimately show ?thesis using v'' unfolding aux es_def by simp
+  next
+    case (Some ts0)
+    have ts0: "ts0 = hd (linearize nts)" using safe_hd_rep[OF sh] Some by auto
+    have es_ne: "es \<noteq> []" using safe_hd_rep[OF sh] Some nl by auto
+    have ts0': "ts0 = fst (hd es)" using ts0 nl es_ne by (simp add: hd_map)
+    show ?thesis
+    proof (cases "memR ?I (nt - ts0) \<or> len = 0")
+      case True
+      have len_ne: "len \<noteq> 0" using lenes es_ne by simp
+      have r: "memR ?I (nt - ts0)" using True len_ne by simp
+      have "uw_shift args nt aux = (nts', win, rest, len, bend, cc, dn)"
+        using Some True by (subst uw_shift.simps) (simp add: aux sh)
+      moreover have "\<forall>e \<in> set es. memR ?I (nt - fst e)"
+      proof
+        fix e assume "e \<in> set es"
+        then have "ts0 \<le> fst e" using srt es_ne ts0' by (cases es) auto
+        then show "memR ?I (nt - fst e)" using r memR_mono_ts by blast
+      qed
+      ultimately show ?thesis using v'' unfolding aux es_def by simp
+    next
+      case False
+      have len_ne: "len \<noteq> 0" and old: "\<not> memR ?I (nt - ts0)" using False by auto
+      have sh': "safe_hd nts = (Some ts0, nts')" using sh Some by simp
+      let ?st = "uw_step args ts0 (nts', win, rest, len, bend, cc, dn)"
+      have st: "valid_uw args nt ?st auxlist" and sub: "set (uw_es ?st) \<subseteq> set (uw_es aux)"
+        using valid_uw_step[OF v aux len_ne sh' old cn] by simp_all
+      have lt: "uw_len ?st < uw_len aux" unfolding aux uw_len_step using len_ne by simp
+      have eq: "uw_shift args nt aux = uw_shift args nt ?st"
+        using Some False by (subst uw_shift.simps) (simp add: aux sh)
+      show ?thesis unfolding eq using IH[OF lt st order_refl] sub by auto
+    qed
+  qed
+qed
+
+lemma valid_uw_add_new:
+  assumes v: "valid_uw args cur aux auxlist"
+    and t1: "table [] rel1" and X: "(X = {}) = (rel1 = {})"
+    and t2: "table (args_R args) rel2"
+    and inz: "memL (args_ivl args) 0" and L: "args_L args = []" and cn: "cur \<le> nt"
+  shows "valid_uw args nt (uw_add_new args X rel2 nt aux) (update_until args rel1 rel2 nt auxlist)"
+proof -
+  let ?I = "args_ivl args"
+  obtain nts win rest len bend cc dn where sft: "uw_shift args nt aux = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uw_shift args nt aux")
+  have vs: "valid_uw args nt (nts, win, rest, len, bend, cc, dn) auxlist"
+    using valid_uw_shift[OF v cn] sft by simp
+  define es where "es = linearize win @ linearize rest"
+  have nl: "linearize nts = map fst es" and lenes: "len = length es"
+    and srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    and wf: "\<forall>e \<in> set es. fst e \<le> nt \<and> table (args_R args) (fst (snd e))"
+    and cnt: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and wi: "uw_win ?I (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    using vs unfolding valid_uw_def es_def by auto
+  obtain ex where al: "auxlist = ex @ uw_abs args es" and exd: "map proj_thd ex = rev dn"
+    and exo: "\<forall>e \<in> set ex. \<not> memR ?I (nt - fst e)"
+    using vs unfolding valid_uw_def es_def by auto
+  define b where "b = (if args_pos args then \<not> Set.is_empty X else Set.is_empty X)"
+  have b: "b = ((rel1 \<noteq> {}) = args_pos args)" unfolding b_def Set.is_empty_iff using X by auto
+  have res: "uw_add_new args X rel2 nt aux
+      = (append_queue nt nts, win, append_queue (nt, rel2, b) rest, len + 1, bend, cc, dn)"
+    unfolding uw_add_new_def sft b_def by simp
+  have upd: "update_until args rel1 rel2 nt auxlist
+      = map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if args_pos args then a1 \<inter> rel1 else a1 \<union> rel1,
+            if mem ?I (nt - t) then a2 \<union> join (args_R args) rel2 (args_pos args) (args_L args) a1 else a2)) ex
+        @ update_until args rel1 rel2 nt (uw_abs args es)"
+    unfolding al update_until_def by simp
+  have abs': "update_until args rel1 rel2 nt (uw_abs args es) = uw_abs args (es @ [(nt, rel2, b)])"
+    by (rule uw_abs_snoc[OF _ _ t1 t2 inz L b]) (use wf in auto)
+  have es': "linearize win @ linearize (append_queue (nt, rel2, b) rest) = es @ [(nt, rel2, b)]"
+    by (simp add: append_queue_rep es_def)
+  show ?thesis unfolding res valid_uw_def
+  proof (simp only: prod.case Let_def es', intro conjI)
+    show "linearize (append_queue nt nts) = map fst (es @ [(nt, rel2, b)])"
+      by (simp add: append_queue_rep nl)
+    show "len + 1 = length (es @ [(nt, rel2, b)])" by (simp add: lenes)
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (es @ [(nt, rel2, b)])"
+      unfolding sorted_wrt_append using srt wf by auto
+    show "\<forall>e \<in> set (es @ [(nt, rel2, b)]). fst e \<le> nt \<and>
+        table (args_R args) (fst (snd e))"
+      using wf t2 by auto
+    show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule cnt)
+    show "uw_win ?I (case es @ [(nt, rel2, b)] of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    proof (cases es)
+      case Nil
+      then have "linearize win = []" using es_def by simp
+      then show ?thesis using wi Nil by (simp add: uw_win_def)
+    next
+      case Cons
+      then show ?thesis using wi by simp
+    qed
+    show "\<exists>ex'. update_until args rel1 rel2 nt auxlist = ex' @ uw_abs args (es @ [(nt, rel2, b)]) \<and>
+        map proj_thd ex' = rev dn \<and> (\<forall>e \<in> set ex'. \<not> memR ?I (nt - fst e))"
+    proof (intro exI conjI)
+      let ?ex = "map (\<lambda>x. case x of (t, a1, a2) \<Rightarrow> (t, if args_pos args then a1 \<inter> rel1 else a1 \<union> rel1,
+            if mem ?I (nt - t) then a2 \<union> join (args_R args) rel2 (args_pos args) (args_L args) a1 else a2)) ex"
+      show "update_until args rel1 rel2 nt auxlist = ?ex @ uw_abs args (es @ [(nt, rel2, b)])"
+        unfolding upd abs' ..
+      show "map proj_thd ?ex = rev dn"
+        unfolding exd[symmetric] map_map
+        by (intro map_cong[OF refl]) (use exo in \<open>auto split: prod.splits\<close>)
+      show "\<forall>e \<in> set ?ex. \<not> memR ?I (nt - fst e)" using exo by (auto split: prod.splits)
+    qed
+  qed
+qed
+
+lemma valid_uw_eval:
+  assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"
+    and ev: "uw_eval args nt aux = (res, aux')"
+    and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
+  shows "valid_uw args cur aux' auxlist' \<and> res = res'"
+proof -
+  let ?I = "args_ivl args"
+  obtain nts win rest len bend cc dn where sft: "uw_shift args nt aux = (nts, win, rest, len, bend, cc, dn)"
+    by (cases "uw_shift args nt aux")
+  have vs: "valid_uw args nt (nts, win, rest, len, bend, cc, dn) auxlist"
+    and inr: "\<forall>e \<in> set (linearize win @ linearize rest). memR ?I (nt - fst e)"
+    and sub: "set (linearize win @ linearize rest) \<subseteq> set (uw_es aux)"
+    using valid_uw_shift[OF v cn] sft by simp_all
+  define es where "es = linearize win @ linearize rest"
+  have nl: "linearize nts = map fst es" and lenes: "len = length es"
+    and srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
+    and wf: "\<forall>e \<in> set es. fst e \<le> nt \<and> table (args_R args) (fst (snd e))"
+    and cnt: "cnt_inv (map (fst \<circ> snd) (linearize win)) cc"
+    and wi: "uw_win ?I (case es of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e) (linearize win) bend"
+    using vs unfolding valid_uw_def es_def by auto
+  obtain ex where al: "auxlist = ex @ uw_abs args es" and exd: "map proj_thd ex = rev dn"
+    and exo: "\<forall>e \<in> set ex. \<not> memR ?I (nt - fst e)"
+    using vs unfolding valid_uw_def es_def by auto
+  have wf0: "\<forall>e \<in> set (uw_es aux). fst e \<le> cur"
+    using v unfolding valid_uw_def by (cases aux) auto
+  have wf': "\<forall>e \<in> set es. fst e \<le> cur \<and> table (args_R args) (fst (snd e))"
+    using wf wf0 sub unfolding es_def by auto
+  have r: "res = rev dn" and a': "aux' = (nts, win, rest, len, bend, cc, [])"
+    using ev unfolding uw_eval_def sft by simp_all
+  have tw1: "takeWhile (check_before ?I nt) ex = ex"
+    using exo by (simp add: check_before_fst)
+  have tw2: "takeWhile (check_before ?I nt) (uw_abs args es) = []"
+    using inr[folded es_def] by (cases es) (auto simp: check_before_fst split: prod.splits)
+  have tw: "takeWhile (check_before ?I nt) auxlist = ex"
+    unfolding al takeWhile_append tw1 tw2 by simp
+  have res': "res' = rev dn" unfolding eval_until_res[OF eu] tw exd ..
+  have lr: "length res' = length ex" unfolding res' exd[symmetric] by simp
+  have al': "auxlist' = uw_abs args es"
+    unfolding eval_until_auxlist'[OF eu] al lr by simp
+  have "valid_uw args cur aux' auxlist'"
+    unfolding a' al'[unfolded es_def] valid_uw_def
+  proof (simp only: prod.case Let_def, intro conjI)
+    show "linearize nts = map fst (linearize win @ linearize rest)" using nl by (simp add: es_def)
+    show "len = length (linearize win @ linearize rest)" using lenes by (simp add: es_def)
+    show "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') (linearize win @ linearize rest)"
+      using srt by (simp add: es_def)
+    show "\<forall>e \<in> set (linearize win @ linearize rest). fst e \<le> cur \<and>
+        table (args_R args) (fst (snd e))"
+      using wf' by (simp add: es_def)
+    show "cnt_inv (map (fst \<circ> snd) (linearize win)) cc" by (rule cnt)
+    show "uw_win ?I (case linearize win @ linearize rest of [] \<Rightarrow> 0 | e # _ \<Rightarrow> fst e)
+        (linearize win) bend" using wi by (simp add: es_def)
+    show "\<exists>ex. uw_abs args (linearize win @ linearize rest)
+        = ex @ uw_abs args (linearize win @ linearize rest) \<and>
+        map proj_thd ex = rev [] \<and> (\<forall>e \<in> set ex. \<not> memR ?I (cur - fst e))"
+      by (intro exI[of _ "[]"]) simp
+  qed
+  then show ?thesis using r res' by simp
+qed
+
 (*<*)
 end
 (*>*)

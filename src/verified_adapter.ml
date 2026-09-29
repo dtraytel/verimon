@@ -364,7 +364,7 @@ let rec convert_schema_into_sig sch =
 type tstate = nat * (nat * (nat * (nat * ((nat * ((event_data list) set * (event_data list) set)) queue *
   ((nat * (event_data list) set) queue * (((event_data list), nat) mapping * ((event_data list) set *
   (((event_data list), nat) mapping * ((event_data list) set * (event_data list) set)))))))))
-type state = (dsaux, muaux_dq, tstate, unit) mstate_ext
+type state = (dsaux, duaux, tstate, unit) mstate_ext
 
 let init ~mw ~rw dbschema cf =
   match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with

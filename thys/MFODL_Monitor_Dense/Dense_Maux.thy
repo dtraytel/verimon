@@ -98,31 +98,112 @@ interpretation dense_msaux: msaux valid_dsaux init_dsaux add_new_ts_dsaux join_d
   by unfold_locales (fact valid_init_dsaux valid_add_new_ts_dsaux valid_join_dsaux
     valid_add_new_table_dsaux valid_result_dsaux)+
 
+subsection \<open>Until\<close>
+
+text \<open>An Until whose left operand is closed, which carries no aggregation, and whose interval
+  contains 0 uses the window of @{theory MFODL_Monitor_Dense.Dense_Win}.\<close>
+
+datatype duaux = DU_gen muaux_dq | DU_win uwaux
+
+definition du_win_args :: "args \<Rightarrow> bool" where
+  "du_win_args args \<longleftrightarrow> args_L args = [] \<and> args_agg args = None \<and> memL (args_ivl args) 0"
+
+fun valid_duaux :: "args \<Rightarrow> ts \<Rightarrow> duaux \<Rightarrow> event_data muaux \<Rightarrow> bool" where
+  "valid_duaux args cur (DU_gen aux) auxlist = valid_muaux_dq args cur aux auxlist"
+| "valid_duaux args cur (DU_win aux) auxlist = (du_win_args args \<and> valid_uw args cur aux auxlist)"
+
+definition init_duaux :: "args \<Rightarrow> duaux" where
+  "init_duaux args = (if du_win_args args then DU_win (uw_init args) else DU_gen (init_muaux_dq args))"
+
+fun add_new_duaux :: "args \<Rightarrow> event_data table \<Rightarrow> event_data table \<Rightarrow> ts \<Rightarrow> duaux \<Rightarrow> duaux" where
+  "add_new_duaux args rel1 rel2 nt (DU_gen aux) = DU_gen (add_new_muaux_dq args rel1 rel2 nt aux)"
+| "add_new_duaux args rel1 rel2 nt (DU_win aux) = DU_win (uw_add_new args rel1 rel2 nt aux)"
+
+fun length_duaux :: "args \<Rightarrow> duaux \<Rightarrow> nat" where
+  "length_duaux args (DU_gen aux) = length_muaux_dq args aux"
+| "length_duaux args (DU_win aux) = uw_length args aux"
+
+fun eval_duaux :: "args \<Rightarrow> ts \<Rightarrow> duaux \<Rightarrow> event_data table list \<times> duaux" where
+  "eval_duaux args nt (DU_gen aux) = map_prod id DU_gen (eval_muaux_dq args nt aux)"
+| "eval_duaux args nt (DU_win aux) = map_prod id DU_win (uw_eval args nt aux)"
+
+lemma valid_init_duaux:
+  "set L \<subseteq> set R \<Longrightarrow> distinct L \<Longrightarrow> distinct R \<Longrightarrow> valid_aggargs n R agg \<Longrightarrow>
+    valid_duaux (init_args I n L R pos agg) 0 (init_duaux (init_args I n L R pos agg)) []"
+  by (cases "du_win_args (init_args I n L R pos agg)")
+    (simp_all only: init_duaux_def if_True if_False valid_duaux.simps valid_uw_init
+      dq_muaux.valid_init_muaux simp_thms)
+
+lemma valid_add_new_duaux: "valid_duaux args cur aux auxlist \<Longrightarrow> table (args_L args) rel1 \<Longrightarrow>
+    table (args_R args) rel2 \<Longrightarrow> nt \<ge> cur \<Longrightarrow>
+    valid_duaux args nt (add_new_duaux args rel1 rel2 nt aux) (update_until args rel1 rel2 nt auxlist)"
+proof (cases aux)
+  case (DU_win w)
+  assume "valid_duaux args cur aux auxlist" "table (args_L args) rel1" "table (args_R args) rel2"
+    "nt \<ge> cur"
+  with DU_win have "du_win_args args" "valid_uw args cur w auxlist" "table [] rel1"
+    "args_L args = []" "memL (args_ivl args) 0" "table (args_R args) rel2" "cur \<le> nt"
+    by (simp_all add: du_win_args_def)
+  with DU_win show ?thesis
+    by (simp only: valid_duaux.simps add_new_duaux.simps simp_thms)
+      (auto intro: valid_uw_add_new)
+qed (simp only: valid_duaux.simps add_new_duaux.simps dq_muaux.valid_add_new_muaux)
+
+lemma valid_length_duaux: "valid_duaux args cur aux auxlist \<Longrightarrow> length_duaux args aux = length auxlist"
+  by (cases aux) (simp_all only: valid_duaux.simps length_duaux.simps
+    dq_muaux.valid_length_muaux, blast dest: valid_uw_length)
+
+lemma valid_eval_duaux: "valid_duaux args cur aux auxlist \<Longrightarrow> nt \<ge> cur \<Longrightarrow>
+    eval_duaux args nt aux = (res, aux') \<Longrightarrow> eval_until (args_ivl args) nt auxlist = (res', auxlist') \<Longrightarrow>
+    valid_duaux args cur aux' auxlist' \<and> res = map (eval_args_agg args) res'"
+proof (cases aux)
+  case (DU_gen w)
+  assume v: "valid_duaux args cur aux auxlist" and cn: "nt \<ge> cur"
+    and ev: "eval_duaux args nt aux = (res, aux')"
+    and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
+  obtain r w' where e: "eval_muaux_dq args nt w = (r, w')" by fastforce
+  with ev DU_gen have "res = r" "aux' = DU_gen w'" by simp_all
+  with dq_muaux.valid_eval_muaux[OF _ cn e eu] v DU_gen show ?thesis by simp
+next
+  case (DU_win w)
+  assume v: "valid_duaux args cur aux auxlist" and cn: "nt \<ge> cur"
+    and ev: "eval_duaux args nt aux = (res, aux')"
+    and eu: "eval_until (args_ivl args) nt auxlist = (res', auxlist')"
+  obtain r w' where e: "uw_eval args nt w = (r, w')" by (cases "uw_eval args nt w")
+  with ev DU_win have "res = r" "aux' = DU_win w'" by simp_all
+  moreover have "du_win_args args" "valid_uw args cur w auxlist" using v DU_win by simp_all
+  moreover have "eval_args_agg args = id"
+    using \<open>du_win_args args\<close> by (auto simp: du_win_args_def eval_args_agg_def)
+  ultimately show ?thesis using valid_uw_eval[OF _ cn e eu] by simp
+qed
+
+interpretation dense_muaux: muaux valid_duaux init_duaux add_new_duaux length_duaux eval_duaux
+  by unfold_locales (fact valid_init_duaux valid_add_new_duaux valid_length_duaux valid_eval_duaux)+
+
 subsection \<open>The monitor's instance of the kernel\<close>
 
 global_interpretation dense_maux: maux
   (* msaux *) valid_dsaux init_dsaux add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux
-  (* muaux *) valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq
-    length_muaux_dq eval_muaux_dq
+  (* muaux *) valid_duaux init_duaux add_new_duaux length_duaux eval_duaux
   (* mtaux *) valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
-  defines dminit0 = "maux.minit0 init_dsaux (init_muaux_dq :: _ \<Rightarrow> muaux_dq) (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: _ \<Rightarrow> ty Formula.formula \<Rightarrow> _"
-  and dminit = "maux.minit init_dsaux (init_muaux_dq :: _ \<Rightarrow> muaux_dq) (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: ty Formula.formula \<Rightarrow> _"
-  and dminit_safe = "maux.minit_safe init_dsaux (init_muaux_dq :: _ \<Rightarrow> muaux_dq) (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: ty Formula.formula \<Rightarrow> _"
+  defines dminit0 = "maux.minit0 init_dsaux init_duaux (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: _ \<Rightarrow> ty Formula.formula \<Rightarrow> _"
+  and dminit = "maux.minit init_dsaux init_duaux (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: ty Formula.formula \<Rightarrow> _"
+  and dminit_safe = "maux.minit_safe init_dsaux init_duaux (init_mmtaux :: _ \<Rightarrow> event_data mmtaux) :: ty Formula.formula \<Rightarrow> _"
   and dmeval_since = "maux.eval_since add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux"
-  and dmeval = "maux.meval add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux"
-  and dletpast_meval = "maux.letpast_meval add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux"
-  and dmstep = "maux.mstep add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux"
-  and dmsteps0_stateless = "maux.msteps0_stateless add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux"
-  and dmsteps_stateless = "maux.msteps_stateless add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) update_mmtaux result_mmtaux"
-  and dmonitor = "maux.monitor init_dsaux add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux init_muaux_dq add_new_muaux_dq (eval_muaux_dq :: _ \<Rightarrow> _ \<Rightarrow> muaux_dq \<Rightarrow> _) init_mmtaux update_mmtaux result_mmtaux"
+  and dmeval = "maux.meval add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_duaux eval_duaux update_mmtaux result_mmtaux"
+  and dletpast_meval = "maux.letpast_meval add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_duaux eval_duaux update_mmtaux result_mmtaux"
+  and dmstep = "maux.mstep add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_duaux eval_duaux update_mmtaux result_mmtaux"
+  and dmsteps0_stateless = "maux.msteps0_stateless add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_duaux eval_duaux update_mmtaux result_mmtaux"
+  and dmsteps_stateless = "maux.msteps_stateless add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux add_new_duaux eval_duaux update_mmtaux result_mmtaux"
+  and dmonitor = "maux.monitor init_dsaux add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux init_duaux add_new_duaux eval_duaux init_mmtaux update_mmtaux result_mmtaux"
   by unfold_locales
 
-type_synonym dmstate = "(dsaux, muaux_dq, event_data mmtaux) mstate"
+type_synonym dmstate = "(dsaux, duaux, event_data mmtaux) mstate"
 
 text \<open>The initial state is computed by @{const dminit0} itself; the locales' initialisers of the
   temporal nodes are unfolded into its code, as for the kernel's default instance.\<close>
 
-declare dense_msaux.init_since_def[code_unfold] dq_muaux.init_until_def[code_unfold]
+declare dense_msaux.init_since_def[code_unfold] dense_muaux.init_until_def[code_unfold]
   verimon_maux.init_trigger_def[code_unfold]
 
 lemmas dminit0_code_simps = dense_maux.minit0.simps[unfolded verimon_maux.init_and_trigger_def]

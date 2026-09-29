@@ -164,7 +164,7 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
 interpretation verimon_mw: verimon "\<psi>_mw mw" "map_sig (convert_tysym o check_subst) sig"
   "convert_tysym o check_subst o TAny"
   valid_dsaux init_dsaux add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux
-  valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
+  valid_duaux init_duaux add_new_duaux length_duaux eval_duaux
   valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
   by (intro verimon.intro verimon_spec_\<psi>_mw) unfold_locales
 
