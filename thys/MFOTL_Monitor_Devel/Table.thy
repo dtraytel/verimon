@@ -131,6 +131,9 @@ proof (induct cs arbitrary: x)
   qed
 qed simp
 
+lemma tup_get_map_self: "c \<in> set cs \<Longrightarrow> tup_get cs (map f cs) c = f c"
+  by (simp add: tup_get_def map_of_zip_map)
+
 lemma wf_tuple_cong:
   assumes "distinct cs" "wf_tuple cs v" "wf_tuple cs w" "\<forall>c\<in>set cs. tup_get cs v c = tup_get cs w c"
   shows "v = w"
@@ -849,13 +852,42 @@ lemma restrict_mem_restr:
 
 lemma qtable_mem_restr_UNIV:
   assumes "distinct cs"
-  shows "qtable cs (mem_restr UNIV cs) Q R = wf_table cs Q R"
+  shows "qtable cs (mem_restr UNIV cs) Q = wf_table cs Q"
 proof -
   have "mem_restr UNIV cs v \<longleftrightarrow> wf_tuple cs v" for v :: "'a tuple"
     using mem_restr_UNIV[OF assms, of v] mem_restr_wf_tuple[of UNIV cs v] by blast
   then show ?thesis
-    unfolding qtable_iff table_def by blast
+    unfolding qtable_iff table_def fun_eq_iff by blast
 qed
+
+
+subsubsection \<open>Semijoin\<close>
+
+text \<open>A join whose right operand's columns are among the left one's keeps the left columns,
+  in their order; with the operands restricted to the same set of valuations.\<close>
+
+lemma qtable_semijoin:
+  assumes "qtable cs (mem_restr R cs) Q1 X" "qtable ds (mem_restr R ds) Q2 Y"
+    "distinct cs" "distinct ds" "set ds \<subseteq> set cs"
+    "\<And>x. wf_tuple cs x \<Longrightarrow> mem_restr R cs x \<Longrightarrow>
+      Q x \<longleftrightarrow> Q1 x \<and> (if b then Q2 (restrict ds cs x) else \<not> Q2 (restrict ds cs x))"
+  shows "qtable cs (mem_restr R cs) Q (join cs X b ds Y)"
+proof -
+  have U: "cols_union cs ds = cs"
+    by (rule cols_union_subset[OF assms(5)])
+  have "qtable (cols_union cs ds) (mem_restr R cs) Q (join cs X b ds Y)"
+    using assms(3-6)
+    by (intro qtable_join[OF assms(1-4)]) (auto simp: U restrict_idle[OF assms(3)] intro: restrict_mem_restr)
+  then show ?thesis
+    by (simp only: U)
+qed
+
+lemma qtable_semijoin_fixed:
+  assumes "qtable cs (mem_restr R cs) Q1 X" "qtable ds (mem_restr R ds) Q2 Y"
+    "distinct cs" "distinct ds" "set ds \<subseteq> set cs"
+  shows "qtable cs (mem_restr R cs)
+    (\<lambda>x. Q1 x \<and> (if b then Q2 (restrict ds cs x) else \<not> Q2 (restrict ds cs x))) (join cs X b ds Y)"
+  by (rule qtable_semijoin[OF assms]) simp
 
 
 subsubsection \<open>Projection\<close>
