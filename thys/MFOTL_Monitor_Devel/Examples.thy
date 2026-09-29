@@ -23,7 +23,7 @@ lift_definition \<pi>\<^sub>e\<^sub>x :: "string MFOTL.prefix" is
   ]"
   by simp
 
-lemma "monitor \<phi>\<^sub>e\<^sub>x \<pi>\<^sub>e\<^sub>x = {(0, [Some ''e''])}" by eval
+lemma "monitor \<phi>\<^sub>e\<^sub>x \<pi>\<^sub>e\<^sub>x = {(0, [''e''])}" by eval
 
 text \<open>Online monitoring:\<close>
 
@@ -33,37 +33,15 @@ definition "m3 = mstep ({(''B'', [''e'', ''f''])}, 5) (snd m2)"
 
 lemma "fst m1 = {}" by eval
 lemma "fst m2 = {}" by eval
-lemma "fst m3 = {(0, [Some ''e''])}" by eval
+lemma "fst m3 = {(0, [''e''])}" by eval
 
 
 text \<open>Operation of the monitor:\<close>
 
 value "minit \<phi>\<^sub>e\<^sub>x"
-value "\<lparr>mstate_i = 0,
-  mstate_m =
-    MAnd (MPred ''A'' [MFOTL.Var 0]) False
-     (MUntil True (MRel {[None]}) (interval 1 2) (MExists (MPred ''B'' [MFOTL.Var 1, MFOTL.Var 0]))
-       ([], []) [] [])
-     ([], []),
-  mstate_n = 1\<rparr> :: string mstate"
-
 value "mstate_m (snd m1)"
-value "MAnd (MPred ''A'' [MFOTL.Var 0]) False
-  (MUntil True (MRel {[None]}) (interval 1 2) (MExists (MPred ''B'' [MFOTL.Var 1, MFOTL.Var 0]))
-    ([], []) [] [(1, {[None]}, {})])
-  ([{[Some ''d''], [Some ''e'']}], [])"
-
 value "mstate_m (snd m2)"
-value "MAnd (MPred ''A'' [MFOTL.Var 0]) False
-  (MUntil True (MRel {[None]}) (interval 1 2) (MExists (MPred ''B'' [MFOTL.Var 1, MFOTL.Var 0]))
-   ([], []) [] [(1, {[None]}, {[Some ''d'']}), (2, {[None]}, {})])
-  ([{[Some ''d''], [Some ''e'']}, {}], [])"
-
 value "mstate_m (snd m3)"
-value "MAnd (MPred ''A'' [MFOTL.Var 0]) False
-  (MUntil True (MRel {[None]}) (interval 1 2) (MExists (MPred ''B'' [MFOTL.Var 1, MFOTL.Var 0]))
-    ([], []) [] [(5, {[None]}, {})])
-  ([{}], []) :: string mformula"
 
 (*<*)
 end
