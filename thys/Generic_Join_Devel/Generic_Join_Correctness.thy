@@ -616,6 +616,155 @@ proof (induction V Q Qn arbitrary: z rule: genericJoin.induct)
   qed
 qed
 
+text \<open>The wrapper's result is over the variables of the positive tables, so the columns of the
+  negative tables must be among them.\<close>
+
+lemma wrapper_correctness:
+  assumes card: "card Q_pos \<ge> 1" and wf: "\<forall>X\<in>Q_pos \<union> Q_neg. wf_atable X"
+    and neg_vars: "\<forall>(A, X)\<in>Q_neg. set A \<subseteq> (\<Union>(A, X)\<in>Q_pos. set A)"
+  shows "z \<in> wrapperGenericJoin Q_pos Q_neg \<longleftrightarrow> wf_tuple (cols (\<Union>(A, X)\<in>Q_pos. set A)) z \<and>
+    (\<forall>(A, X)\<in>Q_pos. restrict A (cols (\<Union>(A, X)\<in>Q_pos. set A)) z \<in> X) \<and>
+    (\<forall>(A, X)\<in>Q_neg. restrict A (cols (\<Union>(A, X)\<in>Q_pos. set A)) z \<notin> X)"
+proof -
+  define W where "W = (\<Union>(A, X)\<in>Q_pos. set A)"
+  have fin: "finite Q_pos" "Q_pos \<noteq> {}"
+    using card by (auto simp: Suc_le_eq card_gt_0_iff)
+  have tabs: "distinct A" "table A X" if "(A, X) \<in> Q_pos \<union> Q_neg" for A X
+    using bspec[OF wf, of "(A, X)"] that by (auto simp: wf_atable_def)
+  have unit: "X \<subseteq> {[]}" if "table [] X" for X :: "'a table"
+    using that by (auto simp: table_def)
+  have negW: "set A \<subseteq> W" if "(A, X) \<in> Q_neg" for A X
+    using neg_vars[unfolded Ball_def split_paired_All case_prod_conv] that unfolding W_def by blast
+  have "z \<in> wrapperGenericJoin Q_pos Q_neg \<longleftrightarrow> wf_tuple (cols W) z \<and>
+    (\<forall>A X. (A, X) \<in> Q_pos \<longrightarrow> restrict A (cols W) z \<in> X) \<and>
+    (\<forall>A X. (A, X) \<in> Q_neg \<longrightarrow> restrict A (cols W) z \<notin> X)"
+  proof (cases "(\<exists>(A, X)\<in>Q_pos. Set.is_empty X) \<or> (\<exists>(A, X)\<in>Q_neg. A = [] \<and> \<not> Set.is_empty X)")
+    case True
+    then have "wrapperGenericJoin Q_pos Q_neg = {}"
+      by (subst wrapperGenericJoin.simps) (rule if_P)
+    moreover have False
+      if pos: "\<forall>A X. (A, X) \<in> Q_pos \<longrightarrow> restrict A (cols W) z \<in> X"
+        and neg: "\<forall>A X. (A, X) \<in> Q_neg \<longrightarrow> restrict A (cols W) z \<notin> X"
+      using True
+    proof
+      assume "\<exists>(A, X)\<in>Q_pos. Set.is_empty X"
+      with pos show False
+        by auto
+    next
+      assume "\<exists>(A, X)\<in>Q_neg. A = [] \<and> \<not> Set.is_empty X"
+      then obtain X where X: "([], X) \<in> Q_neg" "X \<noteq> {}"
+        by auto
+      with unit[OF tabs(2)[of "[]" X]] have "[] \<in> X"
+        by auto
+      with neg[rule_format, OF X(1)] show False
+        by simp
+    qed
+    ultimately show ?thesis
+      by blast
+  next
+    case False
+    note ok = False
+    define Q where "Q = Set.filter (\<lambda>(A, _). A \<noteq> []) Q_pos"
+    define Qn where "Qn = Set.filter (\<lambda>(A, _). set A \<subseteq> W \<and> A \<noteq> []) Q_neg"
+    have pos_unit: "restrict [] (cols W) z \<in> X" if "([], X) \<in> Q_pos" for X
+      using unit[OF tabs(2)[of "[]" X]] that ok by auto
+    have neg_unit: "X = {}" if "([], X) \<in> Q_neg" for X
+      using that ok by auto
+    have posQ: "(\<forall>A X. (A, X) \<in> Q_pos \<longrightarrow> restrict A (cols W) z \<in> X) \<longleftrightarrow>
+      (\<forall>A X. (A, X) \<in> Q \<longrightarrow> restrict A (cols W) z \<in> X)"
+      using pos_unit unfolding Q_def by (fastforce simp: set_eq_iff)
+    have negQ: "(\<forall>A X. (A, X) \<in> Q_neg \<longrightarrow> restrict A (cols W) z \<notin> X) \<longleftrightarrow>
+      (\<forall>A X. (A, X) \<in> Qn \<longrightarrow> restrict A (cols W) z \<notin> X)"
+    proof (intro iffI allI impI)
+      fix A X
+      assume "\<forall>A X. (A, X) \<in> Q_neg \<longrightarrow> restrict A (cols W) z \<notin> X" "(A, X) \<in> Qn"
+      then show "restrict A (cols W) z \<notin> X"
+        unfolding Qn_def by simp
+    next
+      fix A X
+      assume H: "\<forall>A X. (A, X) \<in> Qn \<longrightarrow> restrict A (cols W) z \<notin> X" and AX: "(A, X) \<in> Q_neg"
+      show "restrict A (cols W) z \<notin> X"
+      proof (cases "A = []")
+        case True
+        with neg_unit[of X] AX show ?thesis
+          by simp
+      next
+        case False
+        with AX negW have "(A, X) \<in> Qn"
+          unfolding Qn_def by simp
+        with H show ?thesis
+          by simp
+      qed
+    qed
+    have wrapper_eq: "wrapperGenericJoin Q_pos Q_neg = (if Set.is_empty Q
+      then (\<Inter>(A, X)\<in>Q_pos. X) - (\<Union>(A, X)\<in>Q_neg. X)
+      else genericJoin (\<Union>(A, X)\<in>Q. set A) Q
+        (Set.filter (\<lambda>(A, _). set A \<subseteq> (\<Union>(A, X)\<in>Q. set A) \<and> A \<noteq> []) Q_neg))"
+      unfolding Q_def by (subst wrapperGenericJoin.simps, subst if_not_P[OF ok]) (simp only: Let_def)
+    show ?thesis
+    proof (cases "Q = {}")
+      case True
+      have posA: "A = [] \<and> X = {[]}" if "(A, X) \<in> Q_pos" for A X
+      proof -
+        from that True have "A = []"
+          unfolding Q_def by (auto simp: set_eq_iff)
+        with that show ?thesis
+          using pos_unit[of X] unit[OF tabs(2)[of "[]" X]] by auto
+      qed
+      then have W: "W = {}"
+        unfolding W_def by fastforce
+      have negA: "A = [] \<and> X = {}" if "(A, X) \<in> Q_neg" for A X
+        using negW[OF that] neg_unit[of X] that W by simp
+      have "wrapperGenericJoin Q_pos Q_neg = (\<Inter>(A, X)\<in>Q_pos. X) - (\<Union>(A, X)\<in>Q_neg. X)"
+        using wrapper_eq True by simp
+      also have "\<dots> = {[]}"
+        using fin(2) posA negA by fastforce
+      finally have "z \<in> wrapperGenericJoin Q_pos Q_neg \<longleftrightarrow> z = []"
+        by simp
+      moreover have "wf_tuple (cols W) z \<longleftrightarrow> z = []"
+        using W by simp
+      moreover have "restrict A (cols W) z \<in> X" if "(A, X) \<in> Q_pos" for A X
+        using posA[OF that] by simp
+      moreover have "restrict A (cols W) z \<notin> X" if "(A, X) \<in> Q_neg" for A X
+        using negA[OF that] by simp
+      ultimately show ?thesis
+        by blast
+    next
+      case False
+      have VW: "(\<Union>(A, X)\<in>Q. set A) = W"
+        unfolding W_def Q_def by fastforce
+      have res: "wrapperGenericJoin Q_pos Q_neg = genericJoin W Q Qn"
+        using wrapper_eq False unfolding VW Qn_def by simp
+      have finW: "finite W"
+        unfolding W_def using fin(1) by (auto simp: split_beta)
+      have QQ: "Q \<subseteq> Q_pos" "Qn \<subseteq> Q_neg"
+        unfolding Q_def Qn_def by auto
+      have cardQ: "card Q \<ge> 1"
+        using False finite_subset[OF QQ(1) fin(1)] by (auto simp: Suc_le_eq card_gt_0_iff)
+      moreover have "rwf_query W Q Qn"
+        unfolding rwf_query_def covering_def included_def non_empty_query_def
+        using finW cardQ wf QQ VW by (auto simp: Q_def Qn_def split_beta)
+      moreover have "card W \<ge> 1"
+      proof -
+        from False obtain A X where "(A, X) \<in> Q" "A \<noteq> []"
+          unfolding Q_def by auto
+        then have "W \<noteq> {}"
+          unfolding VW[symmetric] by (auto intro!: bexI[of _ "(A, X)"])
+        with finW show ?thesis
+          by (auto simp: Suc_le_eq card_gt_0_iff)
+      qed
+      ultimately have "z \<in> wrapperGenericJoin Q_pos Q_neg \<longleftrightarrow> wf_tuple (cols W) z \<and>
+        (\<forall>A X. (A, X) \<in> Q \<longrightarrow> restrict A (cols W) z \<in> X) \<and>
+        (\<forall>A X. (A, X) \<in> Qn \<longrightarrow> restrict A (cols W) z \<notin> X)"
+        using res correctness[of W Q Qn z] unfolding Ball_def split_paired_All case_prod_conv
+        by (simp del: genericJoin.simps wrapperGenericJoin.simps)
+      then show ?thesis
+        using posQ negQ by (simp del: wrapperGenericJoin.simps)
+    qed
+  qed  then show ?thesis
+    unfolding W_def Ball_def split_paired_All case_prod_conv .
+qed
+
 end
 
 end
