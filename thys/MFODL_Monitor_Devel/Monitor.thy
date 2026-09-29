@@ -1052,7 +1052,7 @@ proof -
   show ?thesis
     using assms(1-5)
     by (rule qtable_join[where es=A, OF _ _ _ _ _ A])
-      (auto simp: restrict_idle[OF assms(3)] assms(6,7) intro!: restrict_mem_restr)
+      (auto simp: restrict_idle[OF assms(3)] assms(3-7) intro!: restrict_mem_restr subsetD[OF assms(5)])
 qed
 subsection \<open> Init \<close>
 
@@ -1214,7 +1214,7 @@ locale mtaux =
       then
         set L \<subseteq> set R
       else 
-        L = R
+        set L = set R
     ) \<Longrightarrow>
     distinct L \<Longrightarrow> distinct R \<Longrightarrow>
     \<not>mem I 0 \<longrightarrow> pos \<Longrightarrow>
