@@ -353,22 +353,18 @@ let rec convert_schema_into_sig sch =
    existential quantifiers into the windows they commute with, and binds the right operand of a
    release once (dense_prep).  It returns the columns of the verdicts' tuples -- the free
    variables in the order Formula.fv_list lists them for the prepared formula -- along with the
-   kernel's initial state.  [mstep] performs one step; all of these are pure functions.  The
+   kernel's initial state.  [dmstep] performs one step; all of these are pure functions.  The
    theorem udminit_verimon_mverdicts of Dense_VeriMon.thy states that the verdicts, with their
    columns reordered to the input formula's, are those of the input formula.  The front end
    therefore neither type checks nor rewrites the formula itself for this monitor (see
    [Rewriting.check_formula]). *)
 
-(* The kernel's state, as the export types it: the Since, Until and trigger structures of
-   Monitor_Impl's default instance. *)
-type sstate = (nat * (nat * ((nat * (event_data list) set) queue *
-  ((nat * (event_data list) set) queue * ((event_data list) set * (event_data wf_table *
-  (((event_data list), nat) mapping * (event_data wf_table * ((event_data list), nat) mapping)))))))) *
-  aggaux option
+(* The kernel's state, as the export types it: the Since structure of Dense_Maux.thy (dsaux),
+   and the Until and trigger structures of Monitor_Impl's default instance. *)
 type tstate = nat * (nat * (nat * (nat * ((nat * ((event_data list) set * (event_data list) set)) queue *
   ((nat * (event_data list) set) queue * (((event_data list), nat) mapping * ((event_data list) set *
   (((event_data list), nat) mapping * ((event_data list) set * (event_data list) set)))))))))
-type state = (sstate, muaux_dq, tstate, unit) mstate_ext
+type state = (dsaux, muaux_dq, tstate, unit) mstate_ext
 
 let init ~mw ~rw dbschema cf =
   match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
@@ -400,7 +396,7 @@ let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
 
 let step t (Short db) st =
-  let (vs, st') = mstep (db, nat_of_integer t) st in
+  let (vs, st') = dmstep (db, nat_of_integer t) st in
   (annotate (fun v -> UV v) vs, st')
 
 (* Direct output of verdicts.

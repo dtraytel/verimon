@@ -14,10 +14,11 @@ text \<open>
   quantifiers into the windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}) and
   binds the right operand of a release so that it is evaluated once
   (@{theory MFODL_Monitor_Dense.Dense_Share}), and starts the kernel of
-  @{theory MFODL_Monitor_Devel.Monitor_Impl} on the result (@{theory MFODL_Monitor_Dense.Dense_VeriMon}).
+  @{theory MFODL_Monitor_Devel.Monitor_Impl} on the result (@{theory MFODL_Monitor_Dense.Dense_VeriMon}),
+  with the window structures of @{theory MFODL_Monitor_Dense.Dense_Maux}.
   It returns the columns of the verdicts' tuples along with the state: the free variables in the
   order in which @{const Formula.fv_list} lists them for the rewritten formula.
-  @{const mstep} performs one step.  @{text "-verified"} runs them on the log through
+  @{const dmstep} performs one step.  @{text "-verified"} runs them on the log through
   @{const vinit}, @{const vfeed_chunk} and @{const vfinish}
   (@{theory MFODL_Monitor_Dense.Log_Monitor}): the verified log parser, which drops the events of
   the predicates the formula does not mention, the conversion of the entries into the monitor's
@@ -41,7 +42,7 @@ export_code
   (*the monitor's databases*)
   table_of_list empty_db insert_table_into_db rbt_fold
   (*the monitor, and its initialization with VeriMon's preparation of the formula*)
-  udminit_verimon prepare_verimon mstep mstate_m
+  udminit_verimon prepare_verimon dmstep mstate_m
   (*the verified log parser (session Log_Parser), which reads the log in chunks*)
   Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
   Log_Exec.E_TOKEN Log_Exec.X_ENTRY

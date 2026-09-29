@@ -25,13 +25,13 @@ subsection \<open>The monitor's state after a prefix\<close>
 
 primrec msteps0_state :: "(Formula.database \<times> nat) list \<Rightarrow> udmstate \<Rightarrow> udmstate" where
   "msteps0_state [] ms = ms"
-| "msteps0_state (tdb # \<pi>) ms = msteps0_state \<pi> (snd (mstep (apfst mk_db tdb) ms))"
+| "msteps0_state (tdb # \<pi>) ms = msteps0_state \<pi> (snd (dmstep (apfst mk_db tdb) ms))"
 
 definition msteps_state :: "Formula.prefix \<Rightarrow> udmstate \<Rightarrow> udmstate" where
   "msteps_state \<pi> ms = msteps0_state (Rep_prefix \<pi>) ms"
 
-lemma msteps0_stateless_append: "msteps0_stateless (\<pi> @ \<pi>') ms =
-  msteps0_stateless \<pi> ms @ msteps0_stateless \<pi>' (msteps0_state \<pi> ms)"
+lemma msteps0_stateless_append: "dmsteps0_stateless (\<pi> @ \<pi>') ms =
+  dmsteps0_stateless \<pi> ms @ dmsteps0_stateless \<pi>' (msteps0_state \<pi> ms)"
   by (induction \<pi> arbitrary: ms) (simp_all add: split_beta)
 
 lemma msteps0_state_append: "msteps0_state (\<pi> @ \<pi>') ms = msteps0_state \<pi>' (msteps0_state \<pi> ms)"
@@ -41,14 +41,14 @@ text \<open>A step outputs the verdicts of time points from the index of the fir
   is pending on, which only increases.\<close>
 
 lemma mstep_indices:
-  assumes "mstep tdb ms = (vs, ms')"
+  assumes "dmstep tdb ms = (vs, ms')"
   shows "mstate_i ms \<le> mstate_i ms'" and "(k, t, X) \<in> set vs \<Longrightarrow> mstate_i ms \<le> k \<and> k < mstate_i ms'"
 proof -
-  obtain xs m where d: "meval (mstate_j ms + 1) (mstate_n ms) [snd tdb] (fst tdb) (mstate_m ms) = (xs, m)"
+  obtain xs m where d: "dmeval (mstate_j ms + 1) (mstate_n ms) [snd tdb] (fst tdb) (mstate_m ms) = (xs, m)"
     by fastforce
   have vs: "vs = List.enumerate (mstate_i ms) (zip (mstate_t ms @ [snd tdb]) xs)"
     and i': "mstate_i ms' = mstate_i ms + length xs"
-    using assms d by (auto simp: default_maux.mstep_def)
+    using assms d by (auto simp: dense_maux.mstep_def)
   show "mstate_i ms \<le> mstate_i ms'"
     by (simp add: i')
   assume "(k, t, X) \<in> set vs"
@@ -59,19 +59,19 @@ qed
 lemma msteps0_state_mono: "mstate_i ms \<le> mstate_i (msteps0_state \<pi> ms)"
 proof (induction \<pi> arbitrary: ms)
   case (Cons tdb \<pi>)
-  obtain vs ms1 where s: "mstep (apfst mk_db tdb) ms = (vs, ms1)"
+  obtain vs ms1 where s: "dmstep (apfst mk_db tdb) ms = (vs, ms1)"
     by fastforce
   show ?case
     using Cons.IH[of ms1] mstep_indices(1)[OF s] by (simp add: s)
 qed simp
 
 lemma msteps0_indices:
-  "(k, t, X) \<in> set (msteps0_stateless \<pi> ms) \<Longrightarrow> mstate_i ms \<le> k \<and> k < mstate_i (msteps0_state \<pi> ms)"
+  "(k, t, X) \<in> set (dmsteps0_stateless \<pi> ms) \<Longrightarrow> mstate_i ms \<le> k \<and> k < mstate_i (msteps0_state \<pi> ms)"
 proof (induction \<pi> arbitrary: ms)
   case (Cons tdb \<pi>)
-  obtain vs ms1 where s: "mstep (apfst mk_db tdb) ms = (vs, ms1)"
+  obtain vs ms1 where s: "dmstep (apfst mk_db tdb) ms = (vs, ms1)"
     by fastforce
-  from Cons.prems have "(k, t, X) \<in> set vs \<or> (k, t, X) \<in> set (msteps0_stateless \<pi> ms1)"
+  from Cons.prems have "(k, t, X) \<in> set vs \<or> (k, t, X) \<in> set (dmsteps0_stateless \<pi> ms1)"
     by (simp add: s)
   then show ?case
   proof
@@ -79,7 +79,7 @@ proof (induction \<pi> arbitrary: ms)
     with mstep_indices[OF s] msteps0_state_mono[of ms1 \<pi>] show ?thesis
       by (fastforce simp: s)
   next
-    assume "(k, t, X) \<in> set (msteps0_stateless \<pi> ms1)"
+    assume "(k, t, X) \<in> set (dmsteps0_stateless \<pi> ms1)"
     with Cons.IH[of ms1] mstep_indices(1)[OF s] show ?thesis
       by (fastforce simp: s)
   qed
@@ -90,18 +90,18 @@ text \<open>So the verdicts output after a prefix are disjoint from those output
 lemma flatten_verdicts_msteps0_append:
   fixes f :: "event_data table \<Rightarrow> event_data table"
   defines "W \<equiv> map (\<lambda>(i, t, X). (i, t, f X))"
-  shows "flatten_verdicts (W (msteps0_stateless \<pi>' (msteps0_state \<pi> ms))) =
-    flatten_verdicts (W (msteps0_stateless (\<pi> @ \<pi>') ms)) - flatten_verdicts (W (msteps0_stateless \<pi> ms))"
+  shows "flatten_verdicts (W (dmsteps0_stateless \<pi>' (msteps0_state \<pi> ms))) =
+    flatten_verdicts (W (dmsteps0_stateless (\<pi> @ \<pi>') ms)) - flatten_verdicts (W (dmsteps0_stateless \<pi> ms))"
 proof -
   let ?k = "mstate_i (msteps0_state \<pi> ms)"
-  let ?A = "flatten_verdicts (W (msteps0_stateless \<pi> ms))"
-  let ?B = "flatten_verdicts (W (msteps0_stateless \<pi>' (msteps0_state \<pi> ms)))"
+  let ?A = "flatten_verdicts (W (dmsteps0_stateless \<pi> ms))"
+  let ?B = "flatten_verdicts (W (dmsteps0_stateless \<pi>' (msteps0_state \<pi> ms)))"
   have A: "x \<in> ?A \<Longrightarrow> fst x < ?k" for x
     using msteps0_indices[of _ _ _ \<pi> ms] by (fastforce simp: W_def flatten_verdicts_def)
   have B: "x \<in> ?B \<Longrightarrow> ?k \<le> fst x" for x
     using msteps0_indices[of _ _ _ \<pi>' "msteps0_state \<pi> ms"] msteps0_state_mono[of ms \<pi>]
     by (fastforce simp: W_def flatten_verdicts_def)
-  have "flatten_verdicts (W (msteps0_stateless (\<pi> @ \<pi>') ms)) = ?A \<union> ?B"
+  have "flatten_verdicts (W (dmsteps0_stateless (\<pi> @ \<pi>') ms)) = ?A \<union> ?B"
     by (simp add: msteps0_stateless_append W_def)
   moreover have "?A \<inter> ?B = {}"
     using A B by fastforce
@@ -241,7 +241,7 @@ proof -
       using A B by (auto simp: V_def fin_tps_def)
   next
     case (Some t)
-    obtain vs1 ust1 where u: "mstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
+    obtain vs1 ust1 where u: "dmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
       by (metis prod.exhaust)
     have S1: "sorted (lt # map snd tps) \<Longrightarrow> sorted (lt # map snd (tps @ fin_tps fin)) \<longleftrightarrow> \<not> t < last (lt # map snd tps)"
       using sorted_snoc_last[of lt "map snd tps" t] by (auto simp: Some fin_tps_def not_less)
@@ -273,8 +273,8 @@ lemma vinit_Inr_state:
 lemma msteps_state_Rep: "msteps_state \<pi> ms = msteps0_state (Rep_prefix \<pi>) ms"
   by (simp add: msteps_state_def)
 
-lemma msteps_stateless_Rep: "msteps_stateless \<pi> ms = msteps0_stateless (Rep_prefix \<pi>) ms"
-  by (simp add: default_maux.msteps_stateless.rep_eq)
+lemma msteps_stateless_Rep: "dmsteps_stateless \<pi> ms = dmsteps0_stateless (Rep_prefix \<pi>) ms"
+  by (simp add: dense_maux.msteps_stateless.rep_eq)
 lemma prefix_of_list_Nil: "prefix_of_list [] = pnil"
   by transfer simp
 
@@ -408,7 +408,7 @@ text \<open>The verdicts of the monitor on a prefix that items denote are those 
 lemma msteps_stateless_Mt:
   assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<rho>"
-  shows "flatten_verdicts (vreorder cf \<phi> (msteps_stateless \<rho> ust0)) = monitor_\<phi>.Mt \<rho>"
+  shows "flatten_verdicts (vreorder cf \<phi> (dmsteps_stateless \<rho> ust0)) = monitor_\<phi>.Mt \<rho>"
 proof -
   note w = prefix_of_items_wty[OF p]
   have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<rho>"
@@ -446,11 +446,11 @@ proof -
   let ?W = "vreorder cf \<phi>"
   note M = msteps_stateless_Mt[OF init]
   have V: "fst (usteps tps ust) =
-    msteps0_stateless (map (apfst set) tps) (msteps0_state (Rep_prefix \<pi>) ust0)"
+    dmsteps0_stateless (map (apfst set) tps) (msteps0_state (Rep_prefix \<pi>) ust0)"
     by (simp add: usteps_msteps0 D msteps_state_Rep)
-  have A: "flatten_verdicts (?W (msteps0_stateless (Rep_prefix \<pi>) ust0)) = monitor_\<phi>.Mt \<pi>"
+  have A: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi>) ust0)) = monitor_\<phi>.Mt \<pi>"
     using M[OF p] by (simp only: msteps_stateless_Rep)
-  have B: "flatten_verdicts (?W (msteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) ust0)) =
+  have B: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) ust0)) =
     monitor_\<phi>.Mt \<pi>'"
     using M[OF p'] by (simp only: msteps_stateless_Rep R)
   show ?thesis

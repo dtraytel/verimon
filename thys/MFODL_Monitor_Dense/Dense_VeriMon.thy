@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_VeriMon
-  imports Dense_Push "MFODL_Monitor_Devel.VeriMon" "MFODL_Monitor_Devel.Monitor_Impl"
+  imports Dense_Push "MFODL_Monitor_Devel.VeriMon" Dense_Maux
 begin
 (*>*)
 
@@ -15,7 +15,8 @@ text \<open>
   quantifiers into the windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}), and
   binds the right operand of a release so that it is evaluated once
   (@{theory MFODL_Monitor_Dense.Dense_Share}).  The kernel of
-  @{theory MFODL_Monitor_Devel.Monitor_Impl} is started on the result.
+  @{theory MFODL_Monitor_Devel.Monitor_Impl}, with the window structures of
+  @{theory MFODL_Monitor_Dense.Dense_Maux}, is started on the result.
 
   Every rewrite preserves the free variables but not necessarily the order in which
   @{const Formula.fv_list} lists them, and the kernel's verdicts are tuples over that list.  So
@@ -100,7 +101,7 @@ qed (auto simp: fold_map comp_def cong: fold_cong)
 
 subsection \<open>The monitor's state and its initialization\<close>
 
-type_synonym udmstate = "(mmasaux, muaux_dq, event_data mmtaux) mstate"
+type_synonym udmstate = dmstate
 
 text \<open>The multiway conversion expands a release into an until over several copies of its right
   operand; @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies
@@ -111,7 +112,7 @@ definition prep_mw :: "bool \<Rightarrow> ty Formula.formula \<Rightarrow> ty Fo
 
 definition udminit_verimon where
   "udminit_verimon mw rw sig \<phi> =
-     map_sum id (\<lambda>\<psi>. let \<chi> = prep_mw mw \<psi> in (Formula.fv_list \<chi>, minit_safe \<chi> :: udmstate))
+     map_sum id (\<lambda>\<psi>. let \<chi> = prep_mw mw \<psi> in (Formula.fv_list \<chi>, dminit_safe \<chi> :: udmstate))
        (prepare_verimon rw sig \<phi>)"
 
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
@@ -128,7 +129,7 @@ begin
 definition "\<psi>_mw mw = prep_mw mw \<psi>"
 
 lemma udminit_verimon_\<psi>_mw:
-  "udminit_verimon mw rw sig \<phi> = Inr (Formula.fv_list (\<psi>_mw mw), minit_safe (\<psi>_mw mw))"
+  "udminit_verimon mw rw sig \<phi> = Inr (Formula.fv_list (\<psi>_mw mw), dminit_safe (\<psi>_mw mw))"
   by (simp add: udminit_verimon_def prepare_\<psi> \<psi>_mw_def Let_def)
 
 lemma verimon_spec_\<psi>_mw:
@@ -162,8 +163,7 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
 
 interpretation verimon_mw: verimon "\<psi>_mw mw" "map_sig (convert_tysym o check_subst) sig"
   "convert_tysym o check_subst o TAny"
-  valid_mmasaux "init_mmasaux :: _ \<Rightarrow> mmasaux" add_new_ts_mmasaux gc_join_mmasaux
-    add_new_table_mmasaux result_mmasaux
+  valid_dsaux init_dsaux add_new_ts_dsaux join_dsaux add_new_table_dsaux result_dsaux
   valid_muaux_dq "init_muaux_dq :: _ \<Rightarrow> muaux_dq" add_new_muaux_dq length_muaux_dq eval_muaux_dq
   valid_mmtaux init_mmtaux update_mmtaux result_mmtaux
   by (intro verimon.intro verimon_spec_\<psi>_mw) unfold_locales
@@ -177,12 +177,12 @@ theorem udminit_verimon_mverdicts:
     and wty: "wty_prefix (map_sig (convert_tysym o check_subst) sig) \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, restrict
       (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)) cs ` X))
-      (msteps_stateless \<pi> ust)) = monitor_\<phi>.Mt \<pi>"
+      (dmsteps_stateless \<pi> ust)) = monitor_\<phi>.Mt \<pi>"
 proof -
-  have cs: "cs = Formula.fv_list (\<psi>_mw mw)" and ust: "ust = minit_safe (\<psi>_mw mw)"
+  have cs: "cs = Formula.fv_list (\<psi>_mw mw)" and ust: "ust = dminit_safe (\<psi>_mw mw)"
     using init by (simp_all add: udminit_verimon_\<psi>_mw)
-  have "flatten_verdicts (msteps_stateless \<pi> ust) = verimon_mw.Mt \<pi>"
-    using verimon_mw.monitor_mverdicts[OF wty] by (simp add: ust default_maux.monitor_def)
+  have "flatten_verdicts (dmsteps_stateless \<pi> ust) = verimon_mw.Mt \<pi>"
+    using verimon_mw.monitor_mverdicts[OF wty] by (simp add: ust dense_maux.monitor_def)
   moreover have "monitor_\<phi>.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict
       (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>))
       (Formula.fv_list (\<psi>_mw mw)) v)) ` verimon_mw.Mt \<pi>"

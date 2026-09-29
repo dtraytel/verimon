@@ -14,7 +14,7 @@ text \<open>
   @{text vfinish} the end of the log. The parser skips the events of the predicates that the
   signature declares but whose names do not occur freely in the formula
   (@{theory Log_Parser.Log_Filter}); the time points it outputs are converted by the signature
-  into the monitor's databases and fed to the kernel's @{const mstep}.
+  into the monitor's databases and fed to the kernel's step @{const dmstep}.
 
   The main theorem, @{text verimon_log.vrun_log}, states that for the bytes of a log that
   denotes a prefix -- its items are those the parser reads (@{const parse_log}, which accepts
@@ -1023,7 +1023,7 @@ datatype vout = VO_VERDICTS "(nat \<times> ts \<times> event_data table) list" |
 
 definition vtp :: "integer \<Rightarrow> Formula.event list \<Rightarrow> nat \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vtp sp xs t z = (if t < snd z then (VO_ERROR sp (VE_ORDER t (snd z)), z)
-     else (case mstep (build_db xs, t) (fst z) of (vs, ust) \<Rightarrow> (VO_VERDICTS vs, (ust, t))))"
+     else (case dmstep (build_db xs, t) (fst z) of (vs, ust) \<Rightarrow> (VO_VERDICTS vs, (ust, t))))"
 definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list \<times> nat" where
   "conv_entry cf ts evs = (case bnat_of ts of
      None \<Rightarrow> Inl (VE_TIMESTAMP ts)
@@ -1125,7 +1125,7 @@ subsubsection \<open>The monitor on a list of time points\<close>
 
 fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> udmstate \<Rightarrow> (nat \<times> ts \<times> event_data table) list \<times> udmstate" where
   "usteps [] ust = ([], ust)"
-| "usteps ((xs, t) # tps) ust = (case mstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
+| "usteps ((xs, t) # tps) ust = (case dmstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
      (case usteps tps ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
 
 lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, ust1) \<Rightarrow>
@@ -1133,7 +1133,7 @@ lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, 
   by (induction tps1 ust rule: usteps.induct) (auto split: prod.splits)
 
 lemma usteps_msteps0:
-  "fst (usteps tps ust) = msteps0_stateless (map (apfst set) tps) ust"
+  "fst (usteps tps ust) = dmsteps0_stateless (map (apfst set) tps) ust"
 proof (induction tps arbitrary: ust)
   case (Cons tp tps)
   then show ?case
@@ -1217,7 +1217,7 @@ proof (induction xs arbitrary: es ust lt vs z')
     using Cons.prems(3) vs by simp
   obtain ys t where c: "conv_item cf e = Some (ys, t)"
     using vitem_None[of cf e sp "(ust, lt)"] v ok x by (cases "conv_item cf e") auto
-  obtain vs1 ust1 where u: "mstep (build_db ys, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db ys, t) ust = (vs1, ust1)"
     by fastforce
   have t: "\<not> t < lt" and v1: "v = VO_VERDICTS vs1" and z1: "z1 = (ust1, t)"
     using v ok vitem_Some[OF c, of sp "(ust, lt)"] u x by (auto simp: vtp_def split: if_splits)
@@ -1243,7 +1243,7 @@ proof (induction xs arbitrary: es tps ust lt)
   from Cons.prems(2) es obtain ys t tps' where c: "conv_item cf e = Some (ys, t)"
     and tps: "those (map (conv_item cf) es') = Some tps'" "tps = (ys, t) # tps'"
     by (auto split: option.splits)
-  obtain vs1 ust1 where u: "mstep (build_db ys, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db ys, t) ust = (vs1, ust1)"
     by fastforce
   from Cons.prems(3) tps have "lt \<le> t" "sorted (t # map snd tps')"
     by auto
@@ -1384,7 +1384,7 @@ lemma vitems_cases:
       (vs, z') \<Rightarrow> vs @ (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [fst (vtp pos [] t z')]))"
     and "L \<equiv> Option.bind (oks xs) (\<lambda>es. prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) fin (abs_items es))"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = msteps_stateless \<pi> ust"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmsteps_stateless \<pi> ust"
 proof -
   let ?xs = xs
   obtain vs z' where vs: "vitems cf ?xs (ust, 0) = (vs, z')"
@@ -1436,7 +1436,7 @@ proof -
       next
         case (Some t)
         note fin = this
-        obtain vs1 ust1 where u: "mstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
+        obtain vs1 ust1 where u: "dmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
           by (metis prod.exhaust)
         have S1: "sorted (0 # map snd tps) \<Longrightarrow> sorted (map snd ?tps) \<longleftrightarrow> \<not> t < last (0 # map snd tps)"
           using sorted_snoc_last[of 0 "map snd tps" t] by (auto simp: fin fin_tps_def not_less)
@@ -1448,8 +1448,8 @@ proof -
       show thesis
       proof (cases "sorted (map snd ?tps)")
         case True
-        then have "vverdicts V = msteps_stateless (prefix_of_list (map (apfst set) ?tps)) ust"
-          using E by (simp add: usteps_msteps0 default_maux.msteps_stateless.rep_eq Rep_prefix_of_list comp_def)
+        then have "vverdicts V = dmsteps_stateless (prefix_of_list (map (apfst set) ?tps)) ust"
+          using E by (simp add: usteps_msteps0 dense_maux.msteps_stateless.rep_eq Rep_prefix_of_list comp_def)
         with True E L' show thesis
           by (intro ok) auto
       next
@@ -1467,7 +1467,7 @@ lemma vrun_cases:
   defines "L \<equiv> log_prefix (sk (vkeep cf)) (sf (vc_pf cf)) (vc_lsig cf) fin (concat (map Rep_bytes ss))"
     and "V \<equiv> vrun cf fin (einit, (ust, 0)) ss"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = msteps_stateless \<pi> ust"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmsteps_stateless \<pi> ust"
 proof -
   let ?k = "vkeep cf"
   let ?xs = "eparse ?k ss"
@@ -1496,7 +1496,7 @@ lemma vfeed_chunks_cases:
     and "L \<equiv> Option.bind (fstream_run (sk (vkeep cf)) (concat (map Rep_bytes ss)) fstream_init)
       (\<lambda>(es, _). prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) None es)"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = msteps_stateless \<pi> ust"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmsteps_stateless \<pi> ust"
 proof -
   let ?k = "vkeep cf"
   let ?xs = "fst (efeed_chunks ?k ss einit)"
@@ -1727,7 +1727,7 @@ proof -
       by (simp add: L)
   next
     case (ok \<pi>')
-    with \<open>L = Some \<pi>\<close> have R: "vverdicts (vrun cf fin z ss) = msteps_stateless \<pi> ust"
+    with \<open>L = Some \<pi>\<close> have R: "vverdicts (vrun cf fin z ss) = dmsteps_stateless \<pi> ust"
       by (simp add: L z)
     have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<pi>"
       using w(1) by (simp add: map_sig_lsig)
@@ -1796,7 +1796,7 @@ proof -
       by (simp add: L)
   next
     case (ok \<pi>')
-    with \<open>L = Some \<pi>\<close> have R: "vverdicts (fst (vfeed_chunks cf ss z)) = msteps_stateless \<pi> ust"
+    with \<open>L = Some \<pi>\<close> have R: "vverdicts (fst (vfeed_chunks cf ss z)) = dmsteps_stateless \<pi> ust"
       by (simp add: L z)
     have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<pi>"
       using w(1) by (simp add: map_sig_lsig)
