@@ -174,17 +174,17 @@ text \<open>
   double fold that inserts the joined tuples directly into the result.
 \<close>
 
-definition join1_insert :: "'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "join1_insert a b acc = (case join1 (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> Set.insert z acc)"
+definition join1_insert :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join1_insert cs ds a b acc = (case join1 cs ds (a, b) of None \<Rightarrow> acc | Some z \<Rightarrow> Set.insert z acc)"
 
-lemma comp_fun_idem_join1_insert: "comp_fun_idem (join1_insert a)"
+lemma comp_fun_idem_join1_insert: "comp_fun_idem (join1_insert cs ds a)"
   by unfold_locales (auto simp: fun_eq_iff join1_insert_def Set.insert_commute split: option.splits)
 
 lemma fold_join1_insert:
   assumes "finite B"
-  shows "Finite_Set.fold (join1_insert a) acc B = acc \<union> (\<Union>b \<in> B. set_option (join1 (a, b)))"
+  shows "Finite_Set.fold (join1_insert cs ds a) acc B = acc \<union> (\<Union>b \<in> B. set_option (join1 cs ds (a, b)))"
 proof -
-  interpret comp_fun_idem "join1_insert a"
+  interpret comp_fun_idem "join1_insert cs ds a"
     by (rule comp_fun_idem_join1_insert)
   from assms show ?thesis
   proof (induction B arbitrary: acc)
@@ -195,37 +195,41 @@ proof -
   qed simp
 qed
 
-lift_definition join1_insert_cfi :: "'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join1_insert
+lift_definition join1_insert_cfi :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+  is join1_insert
   by (rule comp_fun_idem_join1_insert)
 
-definition join_row :: "'a table \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "join_row B a acc = set_fold_cfi (join1_insert_cfi a) acc B"
+definition join_row :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join_row cs ds B a acc = set_fold_cfi (join1_insert_cfi cs ds a) acc B"
 
-lemma join_row_alt: "join_row B a acc = (if finite B then acc \<union> (\<Union>b \<in> B. set_option (join1 (a, b))) else acc)"
+lemma join_row_alt: "join_row cs ds B a acc =
+  (if finite B then acc \<union> (\<Union>b \<in> B. set_option (join1 cs ds (a, b))) else acc)"
   unfolding join_row_def set_fold_cfi.rep_eq join1_insert_cfi.rep_eq
   by (cases "finite B") (auto simp: fold_join1_insert)
 
-lemma comp_fun_idem_join_row: "comp_fun_idem (join_row B)"
+lemma comp_fun_idem_join_row: "comp_fun_idem (join_row cs ds B)"
   by unfold_locales (auto simp: fun_eq_iff join_row_alt)
 
-lift_definition join_row_cfi :: "'a table \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join_row
+lift_definition join_row_cfi :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+  is join_row
   by (rule comp_fun_idem_join_row)
 
 lemma fold_join_row:
   assumes "finite A" "finite B"
-  shows "Finite_Set.fold (join_row B) {} A = join A True B"
+  shows "Finite_Set.fold (join_row cs ds B) {} A = join cs A True ds B"
 proof -
-  interpret comp_fun_idem "join_row B"
+  interpret comp_fun_idem "join_row cs ds B"
     by (rule comp_fun_idem_join_row)
   from assms(1) show ?thesis
     unfolding join_True_code
   proof (induction A)
     case (insert x F)
-    have "Finite_Set.fold (join_row B) {} (Set.insert x F) = join_row B x (Finite_Set.fold (join_row B) {} F)"
+    have "Finite_Set.fold (join_row cs ds B) {} (Set.insert x F) =
+      join_row cs ds B x (Finite_Set.fold (join_row cs ds B) {} F)"
       by (rule fold_insert[OF insert.hyps(1,2)])
-    also have "\<dots> = join_row B x (\<Union>a\<in>F. \<Union>b\<in>B. set_option (join1 (a, b)))"
+    also have "\<dots> = join_row cs ds B x (\<Union>a\<in>F. \<Union>b\<in>B. set_option (join1 cs ds (a, b)))"
       unfolding insert.IH ..
-    also have "\<dots> = (\<Union>a\<in>Set.insert x F. \<Union>b\<in>B. set_option (join1 (a, b)))"
+    also have "\<dots> = (\<Union>a\<in>Set.insert x F. \<Union>b\<in>B. set_option (join1 cs ds (a, b)))"
       unfolding join_row_alt using assms(2) by auto
     finally show ?case .
   qed simp
@@ -234,11 +238,11 @@ qed
 declare [[code drop: join]]
 
 lemma join_True_fold_code[code]:
-  "join A True B = (if finite A \<and> finite B then set_fold_cfi (join_row_cfi B) {} A
-     else Code.abort (STR ''join: infinite table'') (\<lambda>_. join A True B))"
+  "join cs A True ds B = (if finite A \<and> finite B then set_fold_cfi (join_row_cfi cs ds B) {} A
+     else Code.abort (STR ''join: infinite table'') (\<lambda>_. join cs A True ds B))"
 proof (cases "finite A \<and> finite B")
   case True
-  have "set_fold_cfi (join_row_cfi B) {} A = Finite_Set.fold (join_row B) {} A"
+  have "set_fold_cfi (join_row_cfi cs ds B) {} A = Finite_Set.fold (join_row cs ds B) {} A"
     unfolding set_fold_cfi.rep_eq join_row_cfi.rep_eq ..
   then show ?thesis
     using True by (simp add: fold_join_row)
@@ -250,56 +254,36 @@ qed
 
 lemmas join_False_code'[code] = join_False_code
 
-subsection \<open>Index-based binary join\<close>
-
-text \<open>
-  The general case of @{const bin_join} (neither column set contains the other) clusters the
-  smaller table by the common columns and probes the resulting index with the tuples of the
-  larger table. The code equation is unconditional: it checks that all tuples are defined on
-  the join columns (which holds for well-formed tables) and otherwise falls back to the
-  nested loop.
-\<close>
-
-definition complete_on :: "nat set \<Rightarrow> 'a tuple \<Rightarrow> bool" where
-  "complete_on I t \<longleftrightarrow> (\<forall>i \<in> I. i < length t \<and> t ! i \<noteq> None)"
-
-lemma join1_Some_restrict_complete:
-  assumes "join1 (x, y) = Some z" "complete_on I x" "complete_on I y"
-  shows "restrict I x = restrict I y"
-proof -
-  have len: "length x = length y"
-    and nth: "\<And>i. i < length x \<Longrightarrow> x ! i = None \<or> y ! i = None \<or> (\<exists>a. x ! i = Some a \<and> y ! i = Some a)"
-    using join1_Some_iff[of x y] assms(1) by auto
-  have eq: "x ! i = y ! i" if "i \<in> I" for i
-  proof -
-    have "i < length x" "x ! i \<noteq> None" "y ! i \<noteq> None"
-      using assms(2,3) that by (auto simp: complete_on_def)
-    then show ?thesis
-      using nth[of i] by auto
-  qed
-  show ?thesis
-    unfolding restrict_def len
-    by (rule map_cong[OF refl]) (simp add: eq)
-qed
-
-lemma lookup_cluster: "Mapping.lookup (cluster f Y) x =
-  (if Some x \<in> f ` Y then Some {y \<in> Y. f y = Some x} else None)"
-  by transfer simp
-
 subsection \<open>Probe join: index the smaller table, probe with the larger one\<close>
 
-definition join1_insert' :: "'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "join1_insert' b a acc = join1_insert a b acc"
+text \<open>
+  The general case of @{const bin_join} (neither column list is among the other's) clusters
+  one table by its projection to the common columns, taken in the order of the left columns,
+  and probes the resulting index with the tuples of the other table. Joining tuples agree on
+  these columns (@{text join1_Some_key}), so no pair is missed.
+\<close>
 
-lemma comp_fun_idem_join1_insert': "comp_fun_idem (join1_insert' b)"
+definition join_key :: "nat list \<Rightarrow> nat list \<Rightarrow> nat list" where
+  "join_key cs ds = filter (\<lambda>c. c \<in> set ds) cs"
+
+lemma join1_Some_key:
+  assumes "join1 cs ds (x, y) = Some z"
+  shows "restrict (join_key cs ds) cs x = restrict (join_key cs ds) ds y"
+  using assms unfolding restrict_def join_key_def
+  by (auto simp: join1.simps split: if_splits intro!: map_cong)
+
+definition join1_insert' :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "join1_insert' cs ds b a acc = join1_insert cs ds a b acc"
+
+lemma comp_fun_idem_join1_insert': "comp_fun_idem (join1_insert' cs ds b)"
   by unfold_locales
     (auto simp: fun_eq_iff join1_insert'_def join1_insert_def Set.insert_commute split: option.splits)
 
 lemma fold_join1_insert':
   assumes "finite T"
-  shows "Finite_Set.fold (join1_insert' b) acc T = acc \<union> (\<Union>a \<in> T. set_option (join1 (a, b)))"
+  shows "Finite_Set.fold (join1_insert' cs ds b) acc T = acc \<union> (\<Union>a \<in> T. set_option (join1 cs ds (a, b)))"
 proof -
-  interpret comp_fun_idem "join1_insert' b"
+  interpret comp_fun_idem "join1_insert' cs ds b"
     by (rule comp_fun_idem_join1_insert')
   from assms show ?thesis
   proof (induction T arbitrary: acc)
@@ -310,174 +294,154 @@ proof -
   qed simp
 qed
 
-lift_definition join1_insert_cfi' :: "'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem" is join1_insert'
+lift_definition join1_insert_cfi' :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+  is join1_insert'
   by (rule comp_fun_idem_join1_insert')
 
-definition probe_step :: "nat set \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_step I m b acc = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> acc
-     | Some T \<Rightarrow> set_fold_cfi (join1_insert_cfi' b) acc T)"
+text \<open>Index the left table and probe it with the tuples of the right one.\<close>
 
-lemma probe_step_alt: "probe_step I m b acc = (case Mapping.lookup m (restrict I b) of None \<Rightarrow> acc
-     | Some T \<Rightarrow> if finite T then acc \<union> (\<Union>a \<in> T. set_option (join1 (a, b))) else acc)"
+definition probe_step :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_step cs ds m b acc = (case Mapping.lookup m (restrict (join_key cs ds) ds b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> set_fold_cfi (join1_insert_cfi' cs ds b) acc T)"
+
+lemma probe_step_alt: "probe_step cs ds m b acc = (case Mapping.lookup m (restrict (join_key cs ds) ds b) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> if finite T then acc \<union> (\<Union>a \<in> T. set_option (join1 cs ds (a, b))) else acc)"
   unfolding probe_step_def set_fold_cfi.rep_eq join1_insert_cfi'.rep_eq
   by (auto simp: fold_join1_insert' split: option.splits)
 
-lemma comp_fun_idem_probe_step: "comp_fun_idem (probe_step I m)"
+lemma comp_fun_idem_probe_step: "comp_fun_idem (probe_step cs ds m)"
   by unfold_locales (auto simp: fun_eq_iff probe_step_alt split: option.splits)
 
-lift_definition probe_step_cfi :: "nat set \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+lift_definition probe_step_cfi :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
   is probe_step
   by (rule comp_fun_idem_probe_step)
 
-definition probe_join :: "nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_join I t t' = set_fold_cfi (probe_step_cfi I (cluster (Some \<circ> restrict I) t)) {} t'"
+definition probe_join :: "nat list \<Rightarrow> 'a table \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_join cs t ds t' = set_fold_cfi (probe_step_cfi cs ds (cluster (Some \<circ> restrict (join_key cs ds) cs) t)) {} t'"
 
 lemma fold_probe_step:
   assumes "finite t" "finite t'"
-  shows "Finite_Set.fold (probe_step I (cluster (Some \<circ> restrict I) t)) {} t' =
-    (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+  shows "Finite_Set.fold (probe_step cs ds (cluster (Some \<circ> restrict (join_key cs ds) cs) t)) {} t' =
+    (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict (join_key cs ds) cs a = restrict (join_key cs ds) ds b}. set_option (join1 cs ds (a, b)))"
 proof -
-  interpret comp_fun_idem "probe_step I (cluster (Some \<circ> restrict I) t)"
+  let ?k = "join_key cs ds"
+  let ?m = "cluster (Some \<circ> restrict ?k cs) t"
+  interpret comp_fun_idem "probe_step cs ds ?m"
     by (rule comp_fun_idem_probe_step)
-  let ?m = "cluster (Some \<circ> restrict I) t"
   from assms(2) show ?thesis
   proof (induction t')
     case (insert b F)
-    have fin: "finite {a \<in> t. restrict I a = restrict I b}"
+    have fin: "finite {a \<in> t. restrict ?k cs a = restrict ?k ds b}"
       using assms(1) by simp
-    have "Finite_Set.fold (probe_step I ?m) {} (Set.insert b F) = probe_step I ?m b (Finite_Set.fold (probe_step I ?m) {} F)"
+    have "Finite_Set.fold (probe_step cs ds ?m) {} (Set.insert b F) =
+      probe_step cs ds ?m b (Finite_Set.fold (probe_step cs ds ?m) {} F)"
       by (rule fold_insert[OF insert.hyps(1,2)])
-    also have "\<dots> = probe_step I ?m b (\<Union>b \<in> F. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+    also have "\<dots> = probe_step cs ds ?m b
+      (\<Union>b \<in> F. \<Union>a \<in> {a \<in> t. restrict ?k cs a = restrict ?k ds b}. set_option (join1 cs ds (a, b)))"
       unfolding insert.IH ..
-    also have "\<dots> = (\<Union>b \<in> Set.insert b F. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
+    also have "\<dots> = (\<Union>b \<in> Set.insert b F. \<Union>a \<in> {a \<in> t. restrict ?k cs a = restrict ?k ds b}. set_option (join1 cs ds (a, b)))"
       unfolding probe_step_alt lookup_cluster using fin by (auto split: if_splits simp: image_iff)
     finally show ?case .
   qed simp
 qed
 
 lemma probe_join_join:
-  assumes "finite t" "finite t'" "\<forall>x \<in> t. complete_on I x" "\<forall>y \<in> t'. complete_on I y"
-  shows "probe_join I t t' = join t True t'"
+  assumes "finite t" "finite t'"
+  shows "probe_join cs t ds t' = join cs t True ds t'"
   unfolding probe_join_def set_fold_cfi.rep_eq probe_step_cfi.rep_eq fold_probe_step[OF assms(1,2)]
 proof (intro set_eqI iffI)
   fix z
-  assume "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
-  then show "z \<in> join t True t'"
+  assume "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict (join_key cs ds) cs a = restrict (join_key cs ds) ds b}.
+    set_option (join1 cs ds (a, b)))"
+  then show "z \<in> join cs t True ds t'"
     unfolding join_True_code by auto
 next
   fix z
-  assume "z \<in> join t True t'"
-  then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 (a, b) = Some z"
+  assume "z \<in> join cs t True ds t'"
+  then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 cs ds (a, b) = Some z"
     unfolding join_True_code by auto
-  then have "restrict I a = restrict I b"
-    using assms(3,4) join1_Some_restrict_complete by blast
-  then show "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict I a = restrict I b}. set_option (join1 (a, b)))"
-    using ab by (intro UN_I[of b] UN_I[of a]) auto
+  then show "z \<in> (\<Union>b \<in> t'. \<Union>a \<in> {a \<in> t. restrict (join_key cs ds) cs a = restrict (join_key cs ds) ds b}.
+    set_option (join1 cs ds (a, b)))"
+    using join1_Some_key[OF ab(3)] by (intro UN_I[of b] UN_I[of a]) auto
 qed
 
-section \<open>Projections without index arithmetic\<close>
+text \<open>Index the right table and probe it with the tuples of the left one.\<close>
 
-text \<open>
-  @{const restrict} is defined through @{term "[0..<length v]"} and @{const nth}, i.e. with
-  big-integer index arithmetic and quadratic list access per tuple; it is evaluated for every
-  tuple of both operands of a probe join and for every tuple entering a tuple index. The code
-  equation below walks the tuple once. For the probe join the column set is additionally
-  turned into a mask once per join (@{text restrict_with}), which is the same function as
-  @{const restrict} (it falls back to it for tuples of an unexpected length), so that the
-  projection of a tuple is a single traversal without set membership tests.
-\<close>
+definition probe_row :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_row cs ds m a acc = (case Mapping.lookup m (restrict (join_key cs ds) cs a) of None \<Rightarrow> acc
+     | Some T \<Rightarrow> join_row cs ds T a acc)"
 
-fun restrict_aux :: "nat \<Rightarrow> nat set \<Rightarrow> 'a option list \<Rightarrow> 'a option list" where
-  "restrict_aux i A [] = []"
-| "restrict_aux i A (x # xs) = (if i \<in> A then x else None) # restrict_aux (Suc i) A xs"
+lemma comp_fun_idem_probe_row: "comp_fun_idem (probe_row cs ds m)"
+  by unfold_locales (auto simp: fun_eq_iff probe_row_def join_row_alt split: option.splits)
 
-lemma length_restrict_aux[simp]: "length (restrict_aux i A v) = length v"
-  by (induction v arbitrary: i) auto
+lift_definition probe_row_cfi :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow> ('a tuple, 'a table) comp_fun_idem"
+  is probe_row
+  by (rule comp_fun_idem_probe_row)
 
-lemma nth_restrict_aux: "j < length v \<Longrightarrow> restrict_aux i A v ! j = (if i + j \<in> A then v ! j else None)"
-  by (induction v arbitrary: i j) (auto simp: nth_Cons split: nat.splits)
+definition probe_join' :: "nat list \<Rightarrow> 'a table \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "probe_join' cs t ds t' = set_fold_cfi (probe_row_cfi cs ds (cluster (Some \<circ> restrict (join_key cs ds) ds) t')) {} t"
 
-declare [[code drop: restrict]]
-
-lemma restrict_code[code]: "restrict A v = restrict_aux 0 A v"
-  by (rule nth_equalityI) (auto simp: restrict_def nth_restrict_aux)
-
-fun proj_tuple_chk :: "bool list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple option" where
-  "proj_tuple_chk [] [] = Some []"
-| "proj_tuple_chk (b # bs) (x # xs) = map_option ((#) (if b then x else None)) (proj_tuple_chk bs xs)"
-| "proj_tuple_chk _ _ = None"
-
-lemma proj_tuple_chk: "proj_tuple_chk bs xs = (if length bs = length xs then Some (proj_tuple bs xs) else None)"
-  by (induction bs xs rule: proj_tuple_chk.induct) auto
-
-definition restrict_with :: "nat set \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
-  "restrict_with I n = (let mask = join_mask n I in
-    (\<lambda>v. case proj_tuple_chk mask v of Some r \<Rightarrow> r | None \<Rightarrow> restrict I v))"
-
-lemma restrict_with[simp]: "restrict_with I n = restrict I"
+lemma fold_probe_row:
+  assumes "finite t" "finite t'"
+  shows "Finite_Set.fold (probe_row cs ds (cluster (Some \<circ> restrict (join_key cs ds) ds) t')) {} t =
+    (\<Union>a \<in> t. \<Union>b \<in> {b \<in> t'. restrict (join_key cs ds) ds b = restrict (join_key cs ds) cs a}. set_option (join1 cs ds (a, b)))"
 proof -
-  have len: "length (join_mask n I) = n"
-    by (simp add: join_mask_def)
-  show ?thesis
-    by (auto simp: restrict_with_def Let_def fun_eq_iff proj_tuple_chk len proj_tuple_join_mask_restrict
-        split: option.splits if_splits)
+  let ?k = "join_key cs ds"
+  let ?m = "cluster (Some \<circ> restrict ?k ds) t'"
+  interpret comp_fun_idem "probe_row cs ds ?m"
+    by (rule comp_fun_idem_probe_row)
+  from assms(1) show ?thesis
+  proof (induction t)
+    case (insert a F)
+    have fin: "finite {b \<in> t'. restrict ?k ds b = restrict ?k cs a}"
+      using assms(2) by simp
+    have "Finite_Set.fold (probe_row cs ds ?m) {} (Set.insert a F) =
+      probe_row cs ds ?m a (Finite_Set.fold (probe_row cs ds ?m) {} F)"
+      by (rule fold_insert[OF insert.hyps(1,2)])
+    also have "\<dots> = probe_row cs ds ?m a
+      (\<Union>a \<in> F. \<Union>b \<in> {b \<in> t'. restrict ?k ds b = restrict ?k cs a}. set_option (join1 cs ds (a, b)))"
+      unfolding insert.IH ..
+    also have "\<dots> = (\<Union>a \<in> Set.insert a F. \<Union>b \<in> {b \<in> t'. restrict ?k ds b = restrict ?k cs a}. set_option (join1 cs ds (a, b)))"
+      unfolding probe_row_def join_row_alt lookup_cluster using fin by (auto split: if_splits simp: image_iff)
+    finally show ?case .
+  qed simp
 qed
 
-text \<open>
-  The probe join requires all join columns to be defined in every tuple of both operands
-  (@{const complete_on}); @{const bin_join} checks this for every tuple on every join, with
-  @{const length} and @{const nth} on big-integer indices. @{text complete_with} builds the mask
-  once per join and checks a tuple in one traversal; it equals @{const complete_on}
-  unconditionally (a tuple of an unexpected length or a column set outside the arity falls
-  back to the definition).
-\<close>
-
-fun complete_chk :: "bool list \<Rightarrow> 'a option list \<Rightarrow> bool option" where
-  "complete_chk [] [] = Some True"
-| "complete_chk (b # bs) (x # xs) = (case complete_chk bs xs of None \<Rightarrow> None
-    | Some r \<Rightarrow> Some ((b \<longrightarrow> x \<noteq> None) \<and> r))"
-| "complete_chk _ _ = None"
-
-lemma complete_chk: "complete_chk bs xs =
-  (if length bs = length xs then Some (\<forall>i < length bs. bs ! i \<longrightarrow> xs ! i \<noteq> None) else None)"
-  by (induction bs xs rule: complete_chk.induct) (auto simp: less_Suc_eq_0_disj nth_Cons split: nat.splits)
-
-lemma complete_on_mask:
-  assumes "\<forall>i \<in> I. i < n" "length t = n"
-  shows "complete_on I t \<longleftrightarrow> (\<forall>i < n. join_mask n I ! i \<longrightarrow> t ! i \<noteq> None)"
-  using assms by (auto simp: complete_on_def join_mask_def)
-
-definition complete_with :: "nat set \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> bool" where
-  "complete_with I n = (let mask = join_mask n I; ok = (\<forall>i \<in> I. i < n) in
-    (\<lambda>t. if ok then (case complete_chk mask t of Some b \<Rightarrow> b | None \<Rightarrow> complete_on I t)
-     else complete_on I t))"
-
-lemma complete_with[simp]: "complete_with I n = complete_on I"
-proof -
-  have len: "length (join_mask m I) = m" for m
-    by (simp add: join_mask_def)
-  show ?thesis
-    by (auto simp: complete_with_def Let_def fun_eq_iff complete_chk len complete_on_mask split: option.splits if_splits)
+lemma probe_join'_join:
+  assumes "finite t" "finite t'"
+  shows "probe_join' cs t ds t' = join cs t True ds t'"
+  unfolding probe_join'_def set_fold_cfi.rep_eq probe_row_cfi.rep_eq fold_probe_row[OF assms(1,2)]
+proof (intro set_eqI iffI)
+  fix z
+  assume "z \<in> (\<Union>a \<in> t. \<Union>b \<in> {b \<in> t'. restrict (join_key cs ds) ds b = restrict (join_key cs ds) cs a}.
+    set_option (join1 cs ds (a, b)))"
+  then show "z \<in> join cs t True ds t'"
+    unfolding join_True_code by auto
+next
+  fix z
+  assume "z \<in> join cs t True ds t'"
+  then obtain a b where ab: "a \<in> t" "b \<in> t'" "join1 cs ds (a, b) = Some z"
+    unfolding join_True_code by auto
+  then show "z \<in> (\<Union>a \<in> t. \<Union>b \<in> {b \<in> t'. restrict (join_key cs ds) ds b = restrict (join_key cs ds) cs a}.
+    set_option (join1 cs ds (a, b)))"
+    using join1_Some_key[OF ab(3)] by (intro UN_I[of a] UN_I[of b]) auto
 qed
-
-definition probe_join_n :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_join_n n I t t' = probe_join I t t'"
 
 declare [[code drop: bin_join]]
 
 lemma bin_join_code[code]:
-  "bin_join n A t pos A' t' =
+  "bin_join cs t pos ds t' =
     (if t = {} then {}
     else if t' = {} then (if pos then {} else t)
-    else if A' = {} then (if (pos \<longleftrightarrow> replicate n None \<in> t') then t else {})
-    else if A' = A then (if pos then t \<inter> t' else t - t')
-    else if A' \<subseteq> A then (let m = join_mask n A' in {as \<in> t. proj_tuple_in_join pos m as t'})
-    else if A \<subseteq> A' \<and> pos then (let m = join_mask n A in {as \<in> t'. proj_tuple_in_join pos m as t})
-    else if pos \<and> finite t \<and> finite t' \<and>
-        (let c = complete_with (A \<inter> A') n in (\<forall>x \<in> t. c x) \<and> (\<forall>y \<in> t'. c y))
-      then (if card t \<le> card t' then probe_join_n n (A \<inter> A') t t' else probe_join_n n (A \<inter> A') t' t)
-    else join t pos t')"
-  by (subst bin_join.simps) (auto simp: Let_def probe_join_n_def probe_join_join join_commute)
+    else if ds = [] then (if (pos \<longleftrightarrow> [] \<in> t') then t else {})
+    else if ds = cs then (if pos then t \<inter> t' else t - t')
+    else if set ds \<subseteq> set cs then {as \<in> t. join_cond pos t' (restrict ds cs as)}
+    else if set cs \<subseteq> set ds \<and> pos then
+      restrict (cols_union cs ds) ds ` {as \<in> t'. restrict cs ds as \<in> t}
+    else if pos \<and> finite t \<and> finite t' then
+      (if card t \<le> card t' then probe_join cs t ds t' else probe_join' cs t ds t')
+    else join cs t pos ds t')"
+  by (subst bin_join.simps) (auto simp: probe_join_join probe_join'_join)
 
 section \<open>Code equations for the auxiliary structures\<close>
 
@@ -489,31 +453,31 @@ text \<open>
   evaluates through a set of sets (and its expensive comparator). We build it with a fold.
 \<close>
 
-definition tmp_elem :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "tmp_elem a1_map maskL pos tp len as = (case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+definition tmp_elem :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_elem a1_map L R pos tp len as = (case Mapping.lookup a1_map (restrict L R as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)})"
 
-lemma tmp_elem_eta: "tmp_elem a1_map maskL pos tp len = (\<lambda>as. case Mapping.lookup a1_map (proj_tuple maskL as) of None \<Rightarrow>
+lemma tmp_elem_eta: "tmp_elem a1_map L R pos tp len = (\<lambda>as. case Mapping.lookup a1_map (restrict L R as) of None \<Rightarrow>
       (if \<not>pos then {(tp - len, as)} else {})
       | Some tp' \<Rightarrow> if pos then {(max (tp - len) tp', as)}
       else {(max (tp - len) (tp' + 1), as)})"
   by (simp add: fun_eq_iff tmp_elem_def)
 
-definition tmp_step :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "tmp_step a1_map maskL pos tp len as acc = (case Mapping.lookup a1_map (proj_tuple maskL as) of
+definition tmp_step :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_step a1_map L R pos tp len as acc = (case Mapping.lookup a1_map (restrict L R as) of
       None \<Rightarrow> (if \<not>pos then Set.insert (tp - len, as) acc else acc)
     | Some tp' \<Rightarrow> (if pos then Set.insert (max (tp - len) tp', as) acc else Set.insert (max (tp - len) (tp' + 1), as) acc))"
 
-lemma comp_fun_idem_tmp_step: "comp_fun_idem (tmp_step a1_map maskL pos tp len)"
+lemma comp_fun_idem_tmp_step: "comp_fun_idem (tmp_step a1_map L R pos tp len)"
   by unfold_locales (auto simp: fun_eq_iff tmp_step_def Set.insert_commute split: option.splits)
 
 lemma fold_tmp_step:
   assumes "finite X"
-  shows "Finite_Set.fold (tmp_step a1_map maskL pos tp len) acc X = acc \<union> \<Union>(tmp_elem a1_map maskL pos tp len ` X)"
+  shows "Finite_Set.fold (tmp_step a1_map L R pos tp len) acc X = acc \<union> \<Union>(tmp_elem a1_map L R pos tp len ` X)"
 proof -
-  interpret comp_fun_idem "tmp_step a1_map maskL pos tp len"
+  interpret comp_fun_idem "tmp_step a1_map L R pos tp len"
     by (rule comp_fun_idem_tmp_step)
   from assms show ?thesis
   proof (induction X arbitrary: acc)
@@ -524,28 +488,28 @@ proof -
   qed simp
 qed
 
-lift_definition tmp_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ('a tuple, (nat \<times> 'a tuple) set) comp_fun_idem"
+lift_definition tmp_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> ('a tuple, (nat \<times> 'a tuple) set) comp_fun_idem"
   is tmp_step
   by (rule comp_fun_idem_tmp_step)
 
-definition tmp_set :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "tmp_set a1_map maskL pos tp len B rel2 = \<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> B"
+definition tmp_set :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> (nat \<times> 'a tuple) set \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "tmp_set a1_map L R pos tp len B rel2 = \<Union>(tmp_elem a1_map L R pos tp len ` rel2) \<union> B"
 
 lemma tmp_set_code[code]:
-  "tmp_set a1_map maskL pos tp len B rel2 = (if finite rel2 then set_fold_cfi (tmp_step_cfi a1_map maskL pos tp len) B rel2
-     else Code.abort (STR ''tmp_set: infinite table'') (\<lambda>_. tmp_set a1_map maskL pos tp len B rel2))"
+  "tmp_set a1_map L R pos tp len B rel2 = (if finite rel2 then set_fold_cfi (tmp_step_cfi a1_map L R pos tp len) B rel2
+     else Code.abort (STR ''tmp_set: infinite table'') (\<lambda>_. tmp_set a1_map L R pos tp len B rel2))"
   unfolding set_fold_cfi.rep_eq tmp_step_cfi.rep_eq by (simp add: fold_tmp_step tmp_set_def Un_commute)
 
 declare [[code drop: add_new_mmuaux add_new_mmauaux]]
 
 lemma add_new_mmuaux_fold_code:
   "add_new_mmuaux args rel1 rel2 nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux;
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
-    tmp = tmp_set a1_map maskL pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
+    tmp = tmp_set a1_map (args_L args) (args_R args) pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
     tmp = Set.filter (\<lambda>(tp, as). case Mapping.lookup tstp_map tp of Some ts \<Rightarrow> memL I (nt - ts)) tmp;
     table = snd ` tmp;
     tables = append_queue (table, if memL I 0 then Inr tp else Inl nt) tables;
@@ -554,7 +518,7 @@ lemma add_new_mmuaux_fold_code:
     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
     tss = append_queue nt tss in
-    (tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
+    (tp + 1, tss, tables, len + 1, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map, tstp_map, done))" 
   by (subst add_new_mmuaux_code) (simp only: tmp_set_def tmp_elem_eta)
 
 text \<open>
@@ -616,26 +580,26 @@ proof -
   qed (simp add: upd_nested_max_tstp_def)
 qed
 
-definition until_pairs :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "until_pairs a1_map maskL pos tp len inz as = tmp_elem a1_map maskL pos tp len as \<union> (if inz then {(tp, as)} else {})"
+definition until_pairs :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a tuple \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "until_pairs a1_map L R pos tp len inz as = tmp_elem a1_map L R pos tp len as \<union> (if inz then {(tp, as)} else {})"
 
-lemma finite_tmp_elem: "finite (tmp_elem a1_map maskL pos tp len as)"
+lemma finite_tmp_elem: "finite (tmp_elem a1_map L R pos tp len as)"
   by (auto simp: tmp_elem_def split: option.splits)
 
-lemma finite_until_pairs: "finite (until_pairs a1_map maskL pos tp len inz as)"
+lemma finite_until_pairs: "finite (until_pairs a1_map L R pos tp len inz as)"
   by (auto simp: until_pairs_def finite_tmp_elem)
 
-definition until_elem_step :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+definition until_elem_step :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
   (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> 'a tuple \<Rightarrow> 'a until_acc \<Rightarrow> 'a until_acc" where
-  "until_elem_step a1_map maskL pos tp len inz P d as acc =
-    (let acc' = (case Mapping.lookup a1_map (proj_tuple maskL as) of
+  "until_elem_step a1_map L R pos tp len inz P d as acc =
+    (let acc' = (case Mapping.lookup a1_map (restrict L R as) of
         None \<Rightarrow> (if \<not>pos then until_step P d (tp - len) (tp - len, as) acc else acc)
       | Some tp' \<Rightarrow> until_step P d (tp - len) (if pos then (max (tp - len) tp', as) else (max (tp - len) (tp' + 1), as)) acc)
      in if inz then until_step P d (tp - len) (tp, as) acc' else acc')"
 
 lemma until_elem_step_fold:
-  "until_elem_step a1_map maskL pos tp len inz P d as acc =
-    Finite_Set.fold (until_step P d (tp - len)) acc (until_pairs a1_map maskL pos tp len inz as)"
+  "until_elem_step a1_map L R pos tp len inz P d as acc =
+    Finite_Set.fold (until_step P d (tp - len)) acc (until_pairs a1_map L R pos tp len inz as)"
 proof -
   interpret comp_fun_idem "until_step P d (tp - len)" by (rule comp_fun_idem_until_step)
   show ?thesis
@@ -651,7 +615,7 @@ proof -
     using assms(2) by (induction B) auto
 qed
 
-lemma comp_fun_idem_until_elem_step: "comp_fun_idem (until_elem_step a1_map maskL pos tp len inz P d)"
+lemma comp_fun_idem_until_elem_step: "comp_fun_idem (until_elem_step a1_map L R pos tp len inz P d)"
 proof -
   note cfi = comp_fun_idem_until_step[of P d "tp - len"]
   show ?thesis
@@ -659,39 +623,39 @@ proof -
       (auto simp: fun_eq_iff until_elem_step_fold fold_fold_union[OF cfi finite_until_pairs finite_until_pairs] Un_commute)
 qed
 
-lift_definition until_elem_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
+lift_definition until_elem_step_cfi :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow>
   (nat \<Rightarrow> bool) \<Rightarrow> ts + tp \<Rightarrow> ('a tuple, 'a until_acc) comp_fun_idem"
   is until_elem_step
   by (rule comp_fun_idem_until_elem_step)
 
-definition until_tmp :: "('a tuple, nat) mapping \<Rightarrow> bool list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
-  "until_tmp a1_map maskL pos tp len inz rel2 = \<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})"
+definition until_tmp :: "('a tuple, nat) mapping \<Rightarrow> nat list \<Rightarrow> nat list \<Rightarrow> bool \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> (nat \<times> 'a tuple) set" where
+  "until_tmp a1_map L R pos tp len inz rel2 = \<Union>(tmp_elem a1_map L R pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})"
 
-lemma until_tmp_insert: "until_tmp a1_map maskL pos tp len inz (Set.insert as rel2) =
-  until_tmp a1_map maskL pos tp len inz rel2 \<union> until_pairs a1_map maskL pos tp len inz as"
+lemma until_tmp_insert: "until_tmp a1_map L R pos tp len inz (Set.insert as rel2) =
+  until_tmp a1_map L R pos tp len inz rel2 \<union> until_pairs a1_map L R pos tp len inz as"
   by (auto simp: until_tmp_def until_pairs_def)
 
-lemma finite_until_tmp: "finite rel2 \<Longrightarrow> finite (until_tmp a1_map maskL pos tp len inz rel2)"
+lemma finite_until_tmp: "finite rel2 \<Longrightarrow> finite (until_tmp a1_map L R pos tp len inz rel2)"
   by (auto simp: until_tmp_def finite_tmp_elem)
 
 lemma fold_until_elem_step:
   assumes "finite rel2"
-  shows "Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc rel2 =
-    Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz rel2)"
+  shows "Finite_Set.fold (until_elem_step a1_map L R pos tp len inz P d) acc rel2 =
+    Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map L R pos tp len inz rel2)"
 proof -
-  interpret e: comp_fun_idem "until_elem_step a1_map maskL pos tp len inz P d" by (rule comp_fun_idem_until_elem_step)
+  interpret e: comp_fun_idem "until_elem_step a1_map L R pos tp len inz P d" by (rule comp_fun_idem_until_elem_step)
   note cfi = comp_fun_idem_until_step[of P d "tp - len"]
   from assms show ?thesis
   proof (induction rel2)
     case (insert as rel2)
-    have "Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc (Set.insert as rel2) =
-      until_elem_step a1_map maskL pos tp len inz P d as (Finite_Set.fold (until_elem_step a1_map maskL pos tp len inz P d) acc rel2)"
+    have "Finite_Set.fold (until_elem_step a1_map L R pos tp len inz P d) acc (Set.insert as rel2) =
+      until_elem_step a1_map L R pos tp len inz P d as (Finite_Set.fold (until_elem_step a1_map L R pos tp len inz P d) acc rel2)"
       by (rule e.fold_insert[OF insert.hyps(1,2)])
     also have "\<dots> = Finite_Set.fold (until_step P d (tp - len))
-      (Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz rel2))
-      (until_pairs a1_map maskL pos tp len inz as)"
+      (Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map L R pos tp len inz rel2))
+      (until_pairs a1_map L R pos tp len inz as)"
       unfolding insert.IH by (rule until_elem_step_fold)
-    also have "\<dots> = Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map maskL pos tp len inz (Set.insert as rel2))"
+    also have "\<dots> = Finite_Set.fold (until_step P d (tp - len)) acc (until_tmp a1_map L R pos tp len inz (Set.insert as rel2))"
       unfolding until_tmp_insert by (rule fold_fold_union[OF cfi finite_until_tmp[OF insert.hyps(1)] finite_until_pairs])
     finally show ?case .
   qed (simp add: until_tmp_def)
@@ -699,8 +663,8 @@ qed
 
 lemma until_fused:
   assumes "finite rel2"
-  shows "set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len inz P d) ({}, a2, res) rel2 =
-    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})) in
+  shows "set_fold_cfi (until_elem_step_cfi a1_map L R pos tp len inz P d) ({}, a2, res) rel2 =
+    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map L R pos tp len ` rel2) \<union> (if inz then {tp} \<times> rel2 else {})) in
      (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))"
   unfolding set_fold_cfi.rep_eq until_elem_step_cfi.rep_eq fold_until_elem_step[OF assms]
   unfolding fold_until_step[OF finite_until_tmp[OF assms]]
@@ -711,32 +675,32 @@ declare [[code drop: add_new_mmuaux]]
 
 lemma add_new_mmuaux_fused_code[code]:
   "add_new_mmuaux args rel1 rel2 nt aux =
-    (let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+    (let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     shift_mmuaux args nt aux;
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
     P = (\<lambda>t. case Mapping.lookup tstp_map t of Some ts \<Rightarrow> memL I (nt - ts));
     (tbl, a2_map', result') = (if finite rel2
-      then set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len (memL I 0) P new_tstp) ({}, a2_map, result) rel2
+      then set_fold_cfi (until_elem_step_cfi a1_map (args_L args) (args_R args) pos tp len (memL I 0) P new_tstp) ({}, a2_map, result) rel2
       else Code.abort (STR ''add_new_mmuaux: infinite table'') (\<lambda>_.
-        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {})) in
+        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map (args_L args) (args_R args) pos tp len ` rel2) \<union> (if memL I 0 then {tp} \<times> rel2 else {})) in
         (snd ` tmp, upd_nested_max_tstp a2_map new_tstp tmp, result \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp)));
     tables = append_queue (tbl, if memL I 0 then Inr tp else Inl nt) tables;
     a2_map = Mapping.update (tp + 1) Mapping.empty a2_map';
     a1_map = (if pos then Mapping.filter (\<lambda>as _. as \<in> rel1)
       (upd_set a1_map (\<lambda>_. tp) (rel1 - Mapping.keys a1_map)) else upd_set a1_map (\<lambda>_. tp) rel1);
     tss = append_queue nt tss in
-    (tp + 1, tss, tables, len + 1, maskL, maskR, result', a1_map, a2_map, tstp_map, done))"
+    (tp + 1, tss, tables, len + 1, result', a1_map, a2_map, tstp_map, done))"
 proof -
-  have *: "(if finite R
-      then set_fold_cfi (until_elem_step_cfi a1_map maskL pos tp len inz P d) ({}, a2, res) R
+  have *: "(if finite rel
+      then set_fold_cfi (until_elem_step_cfi a1_map L R pos tp len inz P d) ({}, a2, res) rel
       else Code.abort msg (\<lambda>_.
-        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` R) \<union> (if inz then {tp} \<times> R else {})) in
+        let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map L R pos tp len ` rel) \<union> (if inz then {tp} \<times> rel else {})) in
         (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))) =
-    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map maskL pos tp len ` R) \<union> (if inz then {tp} \<times> R else {})) in
+    (let tmp = Set.filter (\<lambda>(t, as). P t) (\<Union>(tmp_elem a1_map L R pos tp len ` rel) \<union> (if inz then {tp} \<times> rel else {})) in
      (snd ` tmp, upd_nested_max_tstp a2 d tmp, res \<union> snd ` Set.filter (\<lambda>(t, x). t = tp - len) tmp))"
-    for a1_map :: "(event_data tuple, nat) mapping" and maskL pos tp len inz P d a2 res msg R
+    for a1_map :: "(event_data tuple, nat) mapping" and L R pos tp len inz P d a2 res msg rel
     by (auto simp: until_fused)
   show ?thesis
     unfolding *
@@ -747,15 +711,15 @@ qed
 lemma add_new_mmauaux_fold_code[code]:
   "add_new_mmauaux args rel1 rel2 nt (mmuaux, aggaux) =
     (case args_agg args of 
-     None \<Rightarrow> let (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) = add_new_mmuaux args rel1 rel2 nt mmuaux in
-  ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) |
+     None \<Rightarrow> let (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) = add_new_mmuaux args rel1 rel2 nt mmuaux in
+  ((tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) |
      Some aggargs \<Rightarrow>
-    (let ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) = shift_mmauaux args nt (mmuaux, aggaux);
+    (let ((tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) = shift_mmauaux args nt (mmuaux, aggaux);
     I = args_ivl args; pos = args_pos args;
     new_tstp = (if memL I 0 then Inr tp else Inl nt);
     tstp_map = Mapping.update tp nt tstp_map;
     m = case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow> m;
-    tmp = tmp_set a1_map maskL pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
+    tmp = tmp_set a1_map (args_L args) (args_R args) pos tp len (if memL I 0 then {tp} \<times> rel2 else {}) rel2;
     tmp = Set.filter (\<lambda>(tp, as). case Mapping.lookup tstp_map tp of Some ts \<Rightarrow> memL I (nt - ts)) tmp;
     table = snd ` tmp;
     tables = append_queue (table, if memL I 0 then Inr tp else Inl nt) tables;
@@ -766,7 +730,7 @@ lemma add_new_mmauaux_fold_code[code]:
     to_add = to_add_set (tp - len) m tmp;
     aggaux = insert_maggaux' aggargs to_add aggaux;
     tss = append_queue nt tss in
-    ((tp + 1, tss, tables, len + 1, maskL, maskR, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map', tstp_map, done), aggaux)))"
+    ((tp + 1, tss, tables, len + 1, result \<union> snd ` (Set.filter (\<lambda>(t, x). t = tp - len) tmp), a1_map, a2_map', tstp_map, done), aggaux)))"
   by (subst add_new_mmauaux_code) (simp only: tmp_set_def tmp_elem_eta)
 
 subsection \<open>Unions of families of tables as folds\<close>
@@ -812,15 +776,15 @@ lemma set_of_idx_fold_code[code]:
 declare [[code drop: gc_mmsaux eval_step_mmuaux eval_step_mmauaux]]
 
 lemma gc_mmsaux_fold_code[code]:
-  "gc_mmsaux args (nt, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) =
+  "gc_mmsaux args (nt, gc, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since, tuple_since) =
     (let all_tuples = fold (\<lambda>p acc. snd p \<union> acc) (linearize data_prev @ linearize data_in) {};
     tuple_since' = Mapping.filter (\<lambda>as _. as \<in> all_tuples) tuple_since in
-    (nt, nt, maskL, maskR, data_prev, data_in, table_in, wf_table_in, tuple_in,
+    (nt, nt, data_prev, data_in, table_in, wf_table_in, tuple_in,
      wf_table_upd args tuple_since' (\<lambda>_. wf_table_of_set_args args (Mapping.keys tuple_since')), tuple_since'))"
   by (subst gc_mmsaux.simps) (simp only: set_append[symmetric] Union_image_snd_fold)
 
 lemma eval_step_mmuaux_fold_code[code]:
-  "eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done) =
+  "eval_step_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done) =
     (case safe_hd tss of (Some ts, tss') \<Rightarrow>
       (case Mapping.lookup a2_map (tp - len) of Some m \<Rightarrow>
         let I = args_ivl args;
@@ -841,15 +805,15 @@ lemma eval_step_mmuaux_fold_code[code]:
           Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m') a2_map;
         a2_map = Mapping.delete (tp - len) a2_map;
         tstp_map = Mapping.delete (tp - len) tstp_map in
-        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done)))"
+        (tp, tss'', tables, len - 1, result', a1_map, a2_map, tstp_map, T # done)))"
   by (subst eval_step_mmuaux.simps) (simp only: Union_set_fold)
 
 lemma eval_step_mmauaux_fold_code[code]:
-  "eval_step_mmauaux args ((tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) = 
+  "eval_step_mmauaux args ((tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) = 
   (case safe_hd tss of 
   (Some ts, tss') \<Rightarrow>
     (case args_agg args of 
-    None \<Rightarrow> (eval_step_mmuaux args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_map, tstp_map, done), aggaux) |
+    None \<Rightarrow> (eval_step_mmuaux args (tp, tss, tables, len, result, a1_map, a2_map, tstp_map, done), aggaux) |
     Some aggargs \<Rightarrow>
       (case Mapping.lookup a2_map (tp - len) of 
       Some m \<Rightarrow> 
@@ -875,7 +839,7 @@ lemma eval_step_mmauaux_fold_code[code]:
                                None \<Rightarrow> eval_args_agg args (Mapping.keys m);
         to_ins = Mapping.filter (\<lambda>k v. Mapping.lookup m'' k = None) to_ins;
         aggaux = (if len = 1 then init_maggaux' aggargs else insert_maggaux' aggargs (Mapping.keys to_ins) (delete_maggaux' aggargs to_del aggaux)) in
-        ((tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_map, tstp_map, T # done), aggaux))))"
+        ((tp, tss'', tables, len - 1, result', a1_map, a2_map, tstp_map, T # done), aggaux))))"
   by (subst eval_step_mmauaux.simps) (simp only: Union_set_fold)
 
 text \<open>
@@ -886,7 +850,7 @@ text \<open>
 declare [[code drop: eval_step_dq]]
 
 lemma eval_step_dq_fold_code[code]:
-  "eval_step_dq args (tp, tss, tables, len, maskL, maskR, result, a1_map, a2_dq, tstp_dq, done) =
+  "eval_step_dq args (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, done) =
     (case safe_hd tss of (Some ts, tss') \<Rightarrow>
       (let m = dq_nth a2_dq 0;
         I = args_ivl args;
@@ -906,7 +870,7 @@ lemma eval_step_dq_fold_code[code]:
         a2_dq = dq_upd a2_dq' 0 (if len = 1 then Mapping.empty
           else Mapping.combine (\<lambda>tstp tstp'. max_tstp tstp tstp') m'' m');
         tstp_dq = dq_tl tstp_dq in
-        (tp, tss'', tables, len - 1, maskL, maskR, result', a1_map, a2_dq, tstp_dq, T # done)))"
+        (tp, tss'', tables, len - 1, result', a1_map, a2_dq, tstp_dq, T # done)))"
   by (subst eval_step_dq.simps) (simp only: Union_set_fold)
 
 
@@ -915,9 +879,9 @@ section \<open>Since without join columns\<close>
 text \<open>
   The Since structure keeps two @{typ "'a wf_table"}s indexed by the join columns
   @{term "args_L args"}. They are consulted by @{const join_mmsaux} only when there are join
-  columns that do not cover all columns; without them (@{term "args_L args = {}"}, e.g. for
+  columns that do not cover all columns; without them (@{term "args_L args = []"}, e.g. for
   @{text ONCE}) or when all columns are join columns (@{term "args_L args = args_R args"}) the
-  operations of @{text Optimized_Since} maintain them as @{term "wf_table_of_keys n R m"}, the
+  operations of @{text Optimized_Since} maintain them as @{term "wf_table_of_keys R m"}, the
   set of keys of the corresponding mapping. Both @{const wf_table_of_set} and @{const wf_table_of_keys} are made
   representations of @{typ "'a wf_table"} for the code generator: constructing them costs
   nothing, the (never taken) reads filter lazily, and the binary operations convert them to the
@@ -925,22 +889,32 @@ text \<open>
   set is also replaced by the plain representation.
 \<close>
 
-lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set n A I X) = wf_table_of_set n A X"
-  by (rule wf_table_eqI) (simp_all add: wf_idx_sig_of_set wf_idx_set_of_set wf_table_sig_of_set wf_table_set_of_set)
+lemma wf_table_of_idx_of_set: "wf_table_of_idx (wf_idx_of_set cs I X) = wf_table_of_set cs X"
+proof (cases "distinct cs")
+  case True
+  then show ?thesis
+    by (intro wf_table_eqI) (simp_all add: wf_idx_sig_of_set wf_idx_set_of_set wf_table_sig_of_set wf_table_set_of_set)
+next
+  case False
+  have e: "set_of_idx (Mapping.empty :: ('a list, 'a table) mapping) = {}"
+    by transfer simp
+  show ?thesis
+    by (rule Rep_wf_table_inject[THEN iffD1])
+      (simp add: wf_table_of_idx.rep_eq wf_table_of_set.rep_eq wf_idx_of_set.rep_eq False e)
+qed
 
 declare [[code drop: wf_table_of_set_args]]
 
 lemma wf_table_of_set_args_code[code]:
-  "wf_table_of_set_args args X = (if args_L args = {} \<or> args_L args = args_R args
-     then wf_table_of_set (args_n args) (args_R args) X
-     else wf_table_of_idx (wf_idx_of_set (args_n args) (args_R args) (args_L args) X))"
+  "wf_table_of_set_args args X = (if args_L args = [] \<or> args_L args = args_R args
+     then wf_table_of_set (args_R args) X
+     else wf_table_of_idx (wf_idx_of_set (args_R args) (args_L args) X))"
   by (simp add: wf_table_of_set_args_def wf_table_of_idx_of_set)
 
 declare [[code drop: init_mmsaux]]
 
 lemma init_mmsaux_code[code]:
-  "init_mmsaux args = (0, 0, join_mask (args_n args) (args_L args),
-    join_mask (args_n args) (args_R args), empty_queue, empty_queue,
+  "init_mmsaux args = (0, 0, empty_queue, empty_queue,
     {}, wf_table_of_set_args args {}, Mapping.empty, wf_table_of_set_args args {}, Mapping.empty)"
   by (simp add: wf_table_of_set_args_def)
 
@@ -951,54 +925,43 @@ code_datatype wf_table_of_wf_set wf_table_of_idx wf_table_of_set wf_table_of_key
 text \<open>Re-declaring the representations drops the existing code equations that match on them.\<close>
 
 declare wf_table_sig_code[code] wf_table_set_code[code] wf_table_union_code[code]
-  wf_table_join_code[code] wf_table_antijoin_code[code] wf_table_permute_code[code] wf_table_idx_code[code]
+  wf_table_join_code[code] wf_table_antijoin_code[code]
 
 lemma wf_table_conv:
-  "wf_table_of_set n A X = wf_table_of_wf_set (wf_set_of_set n A X)"
-  "wf_table_of_keys n A m = wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))"
+  "wf_table_of_set cs X = wf_table_of_wf_set (wf_set_of_set cs X)"
+  "wf_table_of_keys cs m = wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m))"
   by (simp_all add: wf_table_of_set_code wf_table_of_keys_def)
 
 lemma wf_table_sig_code'[code]:
-  "wf_table_sig (wf_table_of_set n A X) = (n, A)"
-  "wf_table_sig (wf_table_of_keys n A m) = (n, A)"
-  by (simp_all add: wf_table_sig_of_set)
+  "wf_table_sig (wf_table_of_set cs X) = (if distinct cs then cs else [])"
+  "wf_table_sig (wf_table_of_keys cs m) = (if distinct cs then cs else [])"
+  unfolding wf_table_of_keys_def by (transfer, simp)+
 
 lemma wf_table_set_code'[code]:
-  "wf_table_set (wf_table_of_set n A X) = Set.filter (wf_tuple n A) X"
-  "wf_table_set (wf_table_of_keys n A m) = Set.filter (wf_tuple n A) (Mapping.keys m)"
-  by (simp_all add: wf_table_set_of_set wf_table_of_keys_def)
+  "wf_table_set (wf_table_of_set cs X) = (if distinct cs then Set.filter (wf_tuple cs) X else {})"
+  "wf_table_set (wf_table_of_keys cs m) = (if distinct cs then Set.filter (wf_tuple cs) (Mapping.keys m) else {})"
+  unfolding wf_table_of_keys_def by (transfer, simp)+
 
 lemma wf_table_union_code'[code]:
-  "wf_table_union (wf_table_of_set n A X) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set n A X)) t"
-  "wf_table_union (wf_table_of_keys n A m) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
-  "wf_table_union t (wf_table_of_set n A X) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set n A X))"
-  "wf_table_union t (wf_table_of_keys n A m) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  "wf_table_union (wf_table_of_set cs X) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set cs X)) t"
+  "wf_table_union (wf_table_of_keys cs m) t = wf_table_union (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m))) t"
+  "wf_table_union t (wf_table_of_set cs X) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set cs X))"
+  "wf_table_union t (wf_table_of_keys cs m) = wf_table_union t (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m)))"
   by (simp_all only: wf_table_conv)
 
 lemma wf_table_join_code'[code]:
-  "wf_table_join (wf_table_of_set n A X) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set n A X)) t"
-  "wf_table_join (wf_table_of_keys n A m) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
-  "wf_table_join t (wf_table_of_set n A X) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set n A X))"
-  "wf_table_join t (wf_table_of_keys n A m) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  "wf_table_join (wf_table_of_set cs X) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set cs X)) t"
+  "wf_table_join (wf_table_of_keys cs m) t = wf_table_join (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m))) t"
+  "wf_table_join t (wf_table_of_set cs X) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set cs X))"
+  "wf_table_join t (wf_table_of_keys cs m) = wf_table_join t (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m)))"
   by (simp_all only: wf_table_conv)
 
 lemma wf_table_antijoin_code'[code]:
-  "wf_table_antijoin (wf_table_of_set n A X) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set n A X)) t"
-  "wf_table_antijoin (wf_table_of_keys n A m) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m))) t"
-  "wf_table_antijoin t (wf_table_of_set n A X) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set n A X))"
-  "wf_table_antijoin t (wf_table_of_keys n A m) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
+  "wf_table_antijoin (wf_table_of_set cs X) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set cs X)) t"
+  "wf_table_antijoin (wf_table_of_keys cs m) t = wf_table_antijoin (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m))) t"
+  "wf_table_antijoin t (wf_table_of_set cs X) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set cs X))"
+  "wf_table_antijoin t (wf_table_of_keys cs m) = wf_table_antijoin t (wf_table_of_wf_set (wf_set_of_set cs (Mapping.keys m)))"
   by (simp_all only: wf_table_conv)
-
-lemma wf_table_idx_code'[code]:
-  "wf_table_idx I (wf_table_of_set n A X) = wf_table_idx I (wf_table_of_wf_set (wf_set_of_set n A X))"
-  "wf_table_idx I (wf_table_of_keys n A m) = wf_table_idx I (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
-  by (simp_all only: wf_table_conv)
-
-lemma wf_table_permute_code'[code]:
-  "wf_table_permute ns (wf_table_of_set n A X) = wf_table_permute ns (wf_table_of_wf_set (wf_set_of_set n A X))"
-  "wf_table_permute ns (wf_table_of_keys n A m) = wf_table_permute ns (wf_table_of_wf_set (wf_set_of_set n A (Mapping.keys m)))"
-  by (simp_all only: wf_table_conv)
-
 
 section \<open>Aggregations by clustering\<close>
 
@@ -1017,20 +980,21 @@ lemma keys_cluster: "Mapping.keys (cluster (Some \<circ> g) X) = g ` X"
 lemma lookup_cluster_Some: "k \<in> g ` X \<Longrightarrow> Mapping.lookup (cluster (Some \<circ> g) X) k = Some (Set.filter (\<lambda>x. g x = k) X)"
   by (auto simp: lookup_cluster image_iff)
 
-definition agg_values :: "Formula.trm \<Rightarrow> event_data table \<Rightarrow> (event_data \<times> enat) set" where
-  "agg_values f G = (let vals = cluster (Some \<circ> meval_trm f) G in
+definition agg_values :: "nat list \<Rightarrow> Formula.trm \<Rightarrow> event_data table \<Rightarrow> (event_data \<times> enat) set" where
+  "agg_values cs f G = (let vals = cluster (Some \<circ> meval_trm cs f) G in
      (\<lambda>v. case Mapping.lookup vals v of Some S \<Rightarrow> (v, ecard S)) ` Mapping.keys vals)"
 
-lemma agg_values: "agg_values f G = (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. meval_trm f x = v) G))) ` meval_trm f ` G"
+lemma agg_values: "agg_values cs f G =
+  (\<lambda>v. (v, ecard (Set.filter (\<lambda>x. meval_trm cs f x = v) G))) ` meval_trm cs f ` G"
   unfolding agg_values_def Let_def keys_cluster
   by (intro image_cong refl) (simp add: lookup_cluster_Some)
 
 declare [[code drop: eval_agg]]
 
 lemma eval_agg_code[code]:
-  "eval_agg n g0 y \<omega> tys f rel = (if g0 \<and> rel = empty_table then singleton_table n y (eval_agg_op \<omega> {})
-    else (let groups = cluster (Some \<circ> drop (length tys)) rel in
-      (\<lambda>k. case Mapping.lookup groups k of Some G \<Rightarrow> list_update k y (Some (eval_agg_op \<omega> (agg_values f G))))
+  "eval_agg cs g0 \<omega> tys f rel = (if g0 \<and> rel = empty_table then singleton_table (eval_agg_op \<omega> {})
+    else (let groups = cluster (Some \<circ> agg_key (length tys) cs) rel in
+      (\<lambda>k. case Mapping.lookup groups k of Some G \<Rightarrow> eval_agg_op \<omega> (agg_values cs f G) # k)
         ` Mapping.keys groups))"
   unfolding eval_agg_def Let_def keys_cluster
   by (intro if_cong refl image_cong) (simp add: lookup_cluster_Some agg_values)
@@ -1164,18 +1128,18 @@ qed simp
 declare [[code drop: add_new_ts_mmsaux']]
 
 lemma add_new_ts_mmsaux'_code[code]:
-  "add_new_ts_mmsaux' args nt (t, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in,
+  "add_new_ts_mmsaux' args nt (t, gc, data_prev, data_in, table_in, wf_table_in,
      tuple_in, wf_table_since, tuple_since) =
     (let I = args_ivl args;
      (data_prev', move) = takedropWhile_queue (\<lambda>(t, X). memL I (nt - t)) data_prev;
      data_in' = fold (\<lambda>(t, X) data_in. append_queue (t, X) data_in) move data_in in
-     if args_L args = {} \<or> args_L args = args_R args
+     if args_L args = [] \<or> args_L args = args_R args
      then (let (tuple_in', table_in') = fold (move_tbl tuple_since) move (tuple_in, table_in)
-           in (nt, gc, maskL, maskR, data_prev', data_in', table_in',
-               wf_table_of_keys (args_n args) (args_R args) tuple_in', tuple_in',
+           in (nt, gc, data_prev', data_in', table_in',
+               wf_table_of_keys (args_R args) tuple_in', tuple_in',
                wf_table_since, tuple_since))
      else (let (tuple_in', add) = fold (move_tbl tuple_since) move (tuple_in, {})
-           in (nt, gc, maskL, maskR, data_prev', data_in', table_in \<union> add,
+           in (nt, gc, data_prev', data_in', table_in \<union> add,
                wf_table_union wf_table_in (wf_table_of_set_args args add), tuple_in',
                wf_table_since, tuple_since)))"
 proof -
@@ -1201,7 +1165,7 @@ text \<open>
 declare [[code drop: add_new_table_mmsaux]]
 
 lemma add_new_table_mmsaux_code[code]:
-  "add_new_table_mmsaux args X (t, gc, maskL, maskR, data_prev, data_in, table_in, wf_table_in,
+  "add_new_table_mmsaux args X (t, gc, data_prev, data_in, table_in, wf_table_in,
      tuple_in, wf_table_since, tuple_since) =
     (let X' = minus_keys X tuple_since;
          tuple_since' = upd_set tuple_since (\<lambda>_. t) X';
@@ -1209,11 +1173,11 @@ lemma add_new_table_mmsaux_code[code]:
            (\<lambda>_. wf_table_union wf_table_since (wf_table_of_set_args args X')) in
      if memL (args_ivl args) 0
      then (let tuple_in' = upd_set tuple_in (\<lambda>_. t) X in
-           (t, gc, maskL, maskR, data_prev, append_queue (t, X) data_in, table_in \<union> X,
+           (t, gc, data_prev, append_queue (t, X) data_in, table_in \<union> X,
             wf_table_upd args tuple_in'
               (\<lambda>_. wf_table_union wf_table_in (wf_table_of_set_args args X)),
             tuple_in', wf_table_since', tuple_since'))
-     else (t, gc, maskL, maskR, append_queue (t, X) data_prev, data_in, table_in, wf_table_in,
+     else (t, gc, append_queue (t, X) data_prev, data_in, table_in, wf_table_in,
            tuple_in, wf_table_since', tuple_since'))"
   by (simp add: Let_def)
 
