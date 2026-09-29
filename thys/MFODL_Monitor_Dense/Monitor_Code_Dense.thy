@@ -1,8 +1,13 @@
 (*<*)
 theory Monitor_Code_Dense
-  imports Kernel_Code Dense_VeriMon "Log_Parser.Log_Code" Log_Monitor
+  imports Kernel_Code Dense_VeriMon Dense_Mono "Log_Parser.Log_Code" Log_Monitor
 begin
 (*>*)
+
+text \<open>The merge of the imports brings back the box that @{theory MFODL_Monitor_Dense.Dense_Mono}
+  takes out of the preprocessor.\<close>
+
+setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps @{thms ed_cluster_v_unfold})\<close>
 
 text \<open>
   The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's

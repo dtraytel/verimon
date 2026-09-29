@@ -19,6 +19,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Share
     Dense_Push
     Dense_VeriMon
+    Dense_Mono
     Log_Monitor
     Log_Monitor_Online
   theories [document=false]
