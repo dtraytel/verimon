@@ -305,17 +305,20 @@ lemma pprogress_eq: "prefix_of \<pi> \<sigma> \<Longrightarrow> pprogress \<phi>
 lemma wty_trace_restrict: "(\<And>i. f (\<Gamma> \<sigma> i) \<subseteq> (\<Gamma> \<sigma> i)) \<Longrightarrow> wty_trace SIG \<sigma> \<Longrightarrow> wty_trace SIG (map_\<Gamma> f \<sigma>)"
   unfolding wty_envs_def by force
 
-sublocale future_bounded_mfodl \<subseteq> Sat: timed_progress "Formula.nfv \<phi>" "Formula.fv \<phi>" "{\<sigma>. unconvert (preds \<phi>) \<sigma> \<in> traces}"
+sublocale future_bounded_mfodl \<subseteq> Sat: timed_progress "Formula.nfv \<phi>" "Formula.fv_list \<phi>" "{\<sigma>. unconvert (preds \<phi>) \<sigma> \<in> traces}"
   "\<lambda>\<sigma> v i. sat \<sigma> v i \<phi>" "pprogress \<phi>"
 proof (unfold_locales, goal_cases)
-  case (1 x)
+  case 1
+  then show ?case by simp
+next
+  case (2 x)
   then show ?case by (simp add: fvi_less_nfv)
 next
-  case (2 v v' \<sigma> i)
+  case 3
   then show ?case
     unfolding sat_unconvert' by (auto intro!: sat_fv_cong)
 next
-  case (3 \<pi>' \<pi>)
+  case (4 \<pi>' \<pi>)
   moreover obtain \<sigma> where "prefix_of \<pi>' \<sigma>"
     using ex_prefix_of ..
   moreover have "prefix_of \<pi> \<sigma>"
@@ -323,27 +326,27 @@ next
   ultimately show ?case
     by (simp add: pprogress_eq plen_mono Progress.progress_mono)
 next
-  case (4 \<sigma> x)
+  case (5 \<sigma> x)
   obtain j where "x \<le> progress (unconvert (preds \<phi>) \<sigma>) Map.empty \<phi> j"
     using future_bounded progress_ge by blast
   then have "x \<le> pprogress \<phi> (take_prefix j \<sigma>)"
     by (simp add: pprogress_eq[of _ \<sigma>])
   then show ?case by force
 next
-  case (5 \<sigma> \<pi> \<sigma>' i v)
+  case (6 \<sigma> \<pi> \<sigma>' i v)
   then have "i < progress (unconvert (preds \<phi>) \<sigma>) Map.empty \<phi> (plen \<pi>)"
     by (simp add: pprogress_eq)
-  with 5 show ?case
+  with 6 show ?case
     unfolding sat_unconvert' unconvertV_empty
     by (intro sat_prefix_conv) (auto elim!: prefix_of_unconvert)
 next
-  case (6 \<pi> \<pi>')
-  from 6(3) have "plen \<pi> = plen \<pi>'"
+  case (7 \<pi> \<pi>')
+  from 7(3) have "plen \<pi> = plen \<pi>'"
     by transfer (simp add: list_eq_iff_nth_eq)
   moreover obtain \<sigma> \<sigma>' where "prefix_of \<pi> \<sigma>" "prefix_of \<pi>' \<sigma>'"
     using ex_prefix_of by blast+
   moreover have "\<forall>i < plen \<pi>. \<tau> \<sigma> i = \<tau> \<sigma>' i"
-    using 6(3) calculation
+    using 7(3) calculation
     by transfer (simp add: list_eq_iff_nth_eq)
   ultimately show ?case
     by (simp add: pprogress_eq Progress.progress_time_conv[where j="plen (punconvert (preds \<phi>) _)", simplified])
@@ -361,16 +364,16 @@ lemma unconvert_in_traces: "(\<And>i pn. pn \<in> A \<Longrightarrow> \<forall>v
 lemma M_alt: "Sat.M \<pi> = M (punconvert (preds \<phi>) \<pi>)"
 proof -
   let ?\<pi> = "punconvert (preds \<phi>) \<pi>" and ?u = "unconvert (preds \<phi>)"
-  have "(\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>) \<longleftrightarrow>
-    (\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>)"
+  have "(\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> Formula.sat (?u \<sigma>) Map.empty v i \<phi>) \<longleftrightarrow>
+    (\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> Formula.sat \<sigma>' Map.empty v i \<phi>)"
     if i: "i < Correctness.pprogress \<phi> ?\<pi>" for i v
   proof
-    assume "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>"
-    then show "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>"
+    assume "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> Formula.sat \<sigma>' Map.empty v i \<phi>"
+    then show "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> Formula.sat (?u \<sigma>) Map.empty v i \<phi>"
       by (auto simp: prefix_of_unconvert)
   next
-    assume all: "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> sat_the (?u \<sigma>) Map.empty v i \<phi>"
-    show "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> sat_the \<sigma>' Map.empty v i \<phi>"
+    assume all: "\<forall>\<sigma>. ?u \<sigma> \<in> traces \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow> Formula.sat (?u \<sigma>) Map.empty v i \<phi>"
+    show "\<forall>\<sigma>'\<in>traces. prefix_of ?\<pi> \<sigma>' \<longrightarrow> Formula.sat \<sigma>' Map.empty v i \<phi>"
     proof (intro ballI impI)
       fix \<sigma>'
       assume \<sigma>': "\<sigma>' \<in> traces" "prefix_of ?\<pi> \<sigma>'"
@@ -398,9 +401,9 @@ proof -
             using \<sigma>(2)[rule_format, of k pn] by simp
         qed
       qed
-      with all \<sigma>(1) have "sat_the (?u \<sigma>) Map.empty v i \<phi>"
+      with all \<sigma>(1) have "Formula.sat (?u \<sigma>) Map.empty v i \<phi>"
         by blast
-      then show "sat_the \<sigma>' Map.empty v i \<phi>"
+      then show "Formula.sat \<sigma>' Map.empty v i \<phi>"
         using progress_sat_cong[OF \<open>?u \<sigma> \<in> traces\<close> pre \<sigma>'(2) i] by simp
     qed
   qed
@@ -444,7 +447,8 @@ theorem invar_mstep:
   by (auto simp: monitor_invar_def monitor_step_def)
 
 theorem mstep_mverdicts:
-  assumes "monitor_invar SIG ENV \<phi> \<pi> R st" "last_ts \<pi> \<le> t" "wty_db SIG (fst (to_db (snd st) db, t))" "mem_restr R v"
+  assumes "monitor_invar SIG ENV \<phi> \<pi> R st" "last_ts \<pi> \<le> t" "wty_db SIG (fst (to_db (snd st) db, t))"
+    "mem_restr R (Formula.fv_list \<phi>) v"
   shows "((i, t, v) \<in> flatten_verdicts (fst (monitor_step db t st))) =
          ((i, t, v) \<in> Sat.Mt (psnoc \<pi> (db, t)) - Sat.Mt \<pi>)"
   using assms mstep_mverdicts[of "punconvert (snd st) \<pi>" R "fst st" "(to_db (snd st) db, t)"]
@@ -459,7 +463,7 @@ definition wf_envs where "wf_envs S \<sigma> j \<delta> P P' db =
    rel_mapping (\<le>) P P' \<and>
    pred_mapping (\<lambda>i. i \<le> j) P \<and>
    pred_mapping (\<lambda>i. i \<le> j + \<delta>) P' \<and>
-   (\<forall>pn \<in> Mapping.keys db. the (Mapping.lookup db pn) = map (\<lambda>k. map Some ` {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn})
+   (\<forall>pn \<in> Mapping.keys db. the (Mapping.lookup db pn) = map (\<lambda>k. {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn})
      (if pn \<in> dom P then [the (P pn)..<the (P' pn)] else [j ..< j + \<delta>])) \<and>
    wty_envs S (unconvert UNIV \<sigma>) (unconvertV (dom P) \<sigma>))"
 
@@ -480,7 +484,8 @@ lemma in_\<Gamma>_unconvert[simp]:
 lemma meval:
   assumes "invar_mformula \<sigma> j P n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' db" "S, E \<turnstile> \<phi>'"
   shows "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>\<^sub>n) \<Rightarrow> invar_mformula \<sigma> (j + \<delta>) P' n R \<phi>\<^sub>n \<phi>' \<and>
-    list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>') (mem_restr R) (\<lambda>v. Sat.sat \<sigma> (map the v) i \<phi>'))
+    list_all2 (\<lambda>i. qtable (Formula.fv_list \<phi>') (mem_restr R (Formula.fv_list \<phi>'))
+      (\<lambda>v. Sat.sat \<sigma> (val n (Formula.fv_list \<phi>') v) i \<phi>'))
     [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] xs"
 proof -
   from assms have *: "dom P' = dom P"
@@ -494,7 +499,7 @@ proof -
         \<subseteq> Mapping.keys db"
       and rel: "rel_mapping (\<le>) P P'" "pred_mapping (\<lambda>i. i \<le> j) P" "pred_mapping (\<lambda>i. i \<le> j + \<delta>) P'"
       and lookup: "\<And>pn. pn \<in> Mapping.keys db \<Longrightarrow> the (Mapping.lookup db pn) =
-        map (\<lambda>k. map Some ` {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn})
+        map (\<lambda>k. {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn})
           (if pn \<in> dom P then [the (P pn)..<the (P' pn)] else [j ..< j + \<delta>])"
       and wty: "wty_envs S (unconvert UNIV \<sigma>) (unconvertV (dom P) \<sigma>)"
       unfolding wf_envs_def by auto
@@ -507,9 +512,9 @@ proof -
       \<subseteq> Mapping.keys db"
       by auto
     moreover have "\<forall>pn \<in> Mapping.keys db - dom P. the (Mapping.lookup db pn) =
-      map (\<lambda>k. map Some ` {ts. (fst pn, ts) \<in> \<Gamma> (unconvert UNIV \<sigma>) k \<and> length ts = snd pn}) [j ..< j + \<delta>]"
+      map (\<lambda>k. {ts. (fst pn, ts) \<in> \<Gamma> (unconvert UNIV \<sigma>) k \<and> length ts = snd pn}) [j ..< j + \<delta>]"
       by (simp add: lookup ev del: in_\<Gamma>_unconvert)
-    moreover have "\<forall>pn \<in> dom P. list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
+    moreover have "\<forall>pn \<in> dom P. list_all2 (\<lambda>i X. X = {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
       [the (P pn)..<the (P' pn)] (the (Mapping.lookup db pn))"
     proof
       fix pn
@@ -517,9 +522,9 @@ proof -
       moreover from this keys have "pn \<in> Mapping.keys db"
         by auto
       ultimately have "the (Mapping.lookup db pn) =
-        map (\<lambda>k. map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v k}) [the (P pn)..<the (P' pn)]"
+        map (\<lambda>k. {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v k}) [the (P pn)..<the (P' pn)]"
         by (simp add: lookup unconvertV_def conj_commute)
-      then show "list_all2 (\<lambda>i X. X = map Some ` {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
+      then show "list_all2 (\<lambda>i X. X = {v. length v = snd pn \<and> the (unconvertV (dom P) \<sigma> pn) v i})
         [the (P pn)..<the (P' pn)] (the (Mapping.lookup db pn))"
         by (simp add: list_all2_conv_all_nth)
     qed
@@ -538,9 +543,10 @@ corollary meval_Map_empty:
   assumes "invar_mformula \<sigma> j Map.empty n R \<phi> \<phi>'" "wty_trace S (unconvert UNIV \<sigma>)" "S, E \<turnstile> \<phi>'"
     "Mapping.keys db \<supseteq> (\<Union>k \<in> {j ..< j + \<delta>}. {(p, n). \<exists>x. x \<in> \<Gamma> \<sigma> k (p, n) \<and> n = length x})"
     "\<forall>pn \<in> Mapping.keys db. the (Mapping.lookup db pn)
-      = map (\<lambda>k. map Some ` {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn}) [j ..< j + \<delta>]"
+      = map (\<lambda>k. {ts. ts \<in> \<Gamma> \<sigma> k pn \<and> length ts = snd pn}) [j ..< j + \<delta>]"
   shows "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> of (xs, \<phi>\<^sub>n) \<Rightarrow> invar_mformula \<sigma> (j + \<delta>) Map.empty n R \<phi>\<^sub>n \<phi>' \<and>
-    list_all2 (\<lambda>i. qtable n (Formula.fv \<phi>') (mem_restr R) (\<lambda>v. Sat.sat \<sigma> (map the v) i \<phi>'))
+    list_all2 (\<lambda>i. qtable (Formula.fv_list \<phi>') (mem_restr R (Formula.fv_list \<phi>'))
+      (\<lambda>v. Sat.sat \<sigma> (val n (Formula.fv_list \<phi>') v) i \<phi>'))
     [progress \<sigma> Map.empty \<phi>' j..<progress \<sigma> Map.empty \<phi>' (j + \<delta>)] xs"
   using assms by (intro meval) (auto simp add: wf_envs_def rel_mapping_reflp reflp_def)
 
@@ -559,7 +565,7 @@ lemma sat_convert_cong:
 lemma wf_mformula_convert_cong_aux:
   "wf_mformula \<sigma> j P V m R \<phi> \<phi>' \<Longrightarrow> convert \<sigma> V = convert \<sigma>' V' \<Longrightarrow> wf_mformula \<sigma>' j P V' m R \<phi> \<phi>'"
 proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
-  case (Let P V m \<phi> \<phi>' p n R \<psi> \<psi>' V')
+  case (Let P V m \<phi> \<phi>' p n R \<psi> \<psi>' cs V')
   have "convert \<sigma> (V((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>')) =
     convert \<sigma>' (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w j \<phi>'))"
     by (simp add: convert_fun_upd Let.prems del: fun_upd_apply cong: sat_convert_cong)
@@ -567,7 +573,7 @@ proof (induction P V m R \<phi> \<phi>' arbitrary: V' rule: wf_mformula.induct)
     (V'((p, m) \<mapsto> \<lambda>w j. Formula.sat \<sigma>' V' w j \<phi>')) n R \<psi> \<psi>'"
     unfolding progress_convert_cong[OF Let.prems] .
   with Let.IH(1)[OF Let.prems] show ?case
-    using Let.hyps(3-6) by (rule wf_mformula.Let)
+    using Let.hyps(3-7) by (rule wf_mformula.Let)
 next
   case (Frz P V m \<phi> \<phi>' p n R \<psi> \<psi>' jphi \<alpha>s jfrz jpsi0 w N \<rho> pR tq rb d po lv \<rho>L ng V')
   have tau: "\<tau> \<sigma> = \<tau> \<sigma>'"
@@ -628,7 +634,7 @@ next
   with Frz.IH(1)[OF Frz.prems] psi state rho win prog1 prog2 show ?case
     using Frz.hyps by (intro wf_mformula.Frz) blast+
 next
-  case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf V')
+  case (LetPast P p m i V \<phi>' \<phi> n R \<psi> \<psi>' buf cs V')
   have sat: "Formula.sat \<sigma> (V((p, m) \<mapsto> X)) = Formula.sat \<sigma>' (V'((p, m) \<mapsto> X))" for X
     by (simp add: fun_eq_iff sat_convert_cong[of \<sigma> _ \<sigma>'] convert_fun_upd LetPast.prems del: fun_upd_apply)
   have prg: "letpast_progress \<sigma> P (p, m) \<phi>' j = letpast_progress \<sigma>' P (p, m) \<phi>' j"
@@ -639,7 +645,7 @@ next
     by (simp add: convert_fun_upd LetPast.prems del: fun_upd_apply)
   from LetPast.IH(1)[unfolded sat, OF conv] LetPast.IH(2)[unfolded sat prg, OF conv]
     LetPast.hyps(3)[unfolded sat prg] show ?case
-    using LetPast.hyps(4-8) by (rule wf_mformula.LetPast)
+    using LetPast.hyps(4-9) by (rule wf_mformula.LetPast)
 next
   case (And P V n R \<phi> \<phi>' \<psi> \<psi>' pos \<chi> buf)
   then show ?case
@@ -654,7 +660,7 @@ next
   have "list_all2 (wf_mformula \<sigma>' j P V' n R) l (l_pos @ map remove_neg l_neg)"
     using Ands.IH by (rule list.rel_mono_strong) (simp add: Ands.prems)
   then show ?case
-    using Ands.hyps(1)[unfolded 1] Ands.hyps(2-7) by (rule wf_mformula.Ands)
+    using Ands.hyps(1)[unfolded 1] Ands.hyps(2-8) by (rule wf_mformula.Ands)
 next
   case (And_Trigger P V n R \<alpha> \<alpha>' \<phi>'' I \<psi>' buf1 \<psi> args \<phi>' \<phi> buf2 nts aux)
   hence "\<tau> \<sigma> = \<tau> \<sigma>'"
@@ -829,8 +835,8 @@ lemma invar_mformula_Let:
   "invar_mformula \<sigma> j P m UNIV \<phi> \<phi>' \<Longrightarrow>
    invar_mformula (\<sigma>((p, m) \<Rrightarrow> \<lambda>j. {w. Sat.sat \<sigma> w j \<phi>' \<and> length w = m})) j (P((p, m) \<mapsto> Progress.progress \<sigma> P \<phi>' j)) n
    R \<psi> \<psi>' \<Longrightarrow> {0..<m} \<subseteq> fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow>
-   safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow>
-   invar_mformula \<sigma> j P n R (MLet p m \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
+   safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow> cs = Formula.fv_list \<phi>' \<Longrightarrow>
+   invar_mformula \<sigma> j P n R (MLet p m cs \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
 proof -
   let ?\<sigma> = "unconvert UNIV \<sigma>" and ?V = "unconvertV (dom P) \<sigma>"
   let ?Q = "P((p, m) \<mapsto> Progress.progress \<sigma> P \<phi>' j)"
@@ -838,16 +844,16 @@ proof -
   assume phi: "invar_mformula \<sigma> j P m UNIV \<phi> \<phi>'"
     and psi: "invar_mformula ?\<sigma>' j ?Q n R \<psi> \<psi>'"
     and rest: "{0..<m} \<subseteq> fv \<phi>'" "m = Formula.nfv \<phi>'" "safe_formula \<phi>'" "safe_formula \<psi>'"
+      "cs = Formula.fv_list \<phi>'"
   have "convert (unconvert UNIV ?\<sigma>') (unconvertV (dom ?Q) ?\<sigma>') =
     convert ?\<sigma> (?V((p, m) \<mapsto> \<lambda>w j. Formula.sat ?\<sigma> ?V w j \<phi>'))"
     by (simp add: convert_unconvert_shadow flip: sat_unconvert)
   with psi have psi': "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> progress ?\<sigma> P \<phi>' j))
     (?V((p, m) \<mapsto> \<lambda>w j. Formula.sat ?\<sigma> ?V w j \<phi>')) n R \<psi> \<psi>'"
     unfolding invar_mformula_def progress_unconvert by (rule wf_mformula_convert_cong_aux)
-  from phi psi' rest show "invar_mformula \<sigma> j P n R (MLet p m \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
+  from phi psi' rest show "invar_mformula \<sigma> j P n R (MLet p m cs \<phi> \<psi>) (formula.Let p \<phi>' \<psi>')"
     unfolding invar_mformula_def by (rule wf_mformula.Let)
 qed
-
 lemma invar_mformula_LetPast:
   "invar_mformula (\<sigma>((p, m) \<Rrightarrow> letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m}))) j
      (P((p, m) \<mapsto> i)) m UNIV \<phi> \<phi>' \<Longrightarrow>
@@ -856,12 +862,12 @@ lemma invar_mformula_LetPast:
    (case buf of
       None \<Rightarrow> i = letpast_progress \<sigma> P (p, m) \<phi>' j
     | Some Z \<Rightarrow> Suc i = letpast_progress \<sigma> P (p, m) \<phi>' j \<and>
-        qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. map the v \<in>
+        qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. val m [0..<m] v \<in>
           letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m}) i) Z) \<Longrightarrow>
    safe_letpast (p, m) \<phi>' \<le> PastRec \<Longrightarrow>
    {0..<m} \<subseteq> Formula.fv \<phi>' \<Longrightarrow> m = Formula.nfv \<phi>' \<Longrightarrow>
-   safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow>
-   invar_mformula \<sigma> j P n R (MLetPast p m \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
+   safe_formula \<phi>' \<Longrightarrow> safe_formula \<psi>' \<Longrightarrow> cs = Formula.fv_list \<phi>' \<Longrightarrow>
+   invar_mformula \<sigma> j P n R (MLetPast p m cs \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
 proof -
   let ?\<sigma> = "unconvert UNIV \<sigma>" and ?V = "unconvertV (dom P) \<sigma>"
   let ?L = "letpast_sat (\<lambda>R j. {w. Sat.sat (\<sigma>((p, m) \<Rrightarrow> R)) w j \<phi>' \<and> length w = m})"
@@ -871,9 +877,9 @@ proof -
     and buf: "case buf of
       None \<Rightarrow> i = letpast_progress \<sigma> P (p, m) \<phi>' j
     | Some Z \<Rightarrow> Suc i = letpast_progress \<sigma> P (p, m) \<phi>' j \<and>
-        qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. map the v \<in> ?L i) Z"
+        qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. val m [0..<m] v \<in> ?L i) Z"
     and rest: "safe_letpast (p, m) \<phi>' \<le> PastRec" "{0..<m} \<subseteq> Formula.fv \<phi>'" "m = Formula.nfv \<phi>'"
-      "safe_formula \<phi>'" "safe_formula \<psi>'"
+      "safe_formula \<phi>'" "safe_formula \<psi>'" "cs = Formula.fv_list \<phi>'"
   have "Formula.sat ?\<sigma> (?V((p, m) \<mapsto> X)) u k \<phi>' =
     Sat.sat (\<sigma>((p, m) \<Rrightarrow> \<lambda>k. {u. X u k \<and> length u = m})) u k \<phi>'" for X u k
     by (simp add: sat_unconvert_shadow flip: sat_unconvert)
@@ -884,10 +890,10 @@ proof -
     by (simp add: convert_unconvert_shadow L)
   have prg: "letpast_progress ?\<sigma> P (p, m) \<phi>' j = letpast_progress \<sigma> P (p, m) \<phi>' j"
     by (simp add: letpast_progress_def progress_unconvert)
-  have qt: "qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. map the v \<in> ?L i) =
-    qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. ?F (map the v) i)"
+  have qt: "qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. val m [0..<m] v \<in> ?L i) =
+    qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. ?F (val m [0..<m] v) i)"
     \<comment> \<open>tuples in the table have length @{term m}\<close>
-    unfolding L by (rule qtable_cong_strong) (auto simp: wf_tuple_def)
+    unfolding L by (rule qtable_cong_strong) (auto simp: wf_tuple_def val_upt)
   from phi conv have "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> i)) (?V((p, m) \<mapsto> ?F)) m UNIV \<phi> \<phi>'"
     unfolding invar_mformula_def by (rule wf_mformula_convert_cong_aux)
   moreover from psi conv have "wf_mformula ?\<sigma> j (P((p, m) \<mapsto> letpast_progress ?\<sigma> P (p, m) \<phi>' j))
@@ -896,9 +902,9 @@ proof -
   moreover from buf have "case buf of
       None \<Rightarrow> i = letpast_progress ?\<sigma> P (p, m) \<phi>' j
     | Some Z \<Rightarrow> Suc i = letpast_progress ?\<sigma> P (p, m) \<phi>' j \<and>
-        qtable m (Formula.fv \<phi>') (mem_restr UNIV) (\<lambda>v. ?F (map the v) i) Z"
+        qtable [0..<m] (mem_restr UNIV [0..<m]) (\<lambda>v. ?F (val m [0..<m] v) i) Z"
     unfolding prg qt .
-  ultimately show "invar_mformula \<sigma> j P n R (MLetPast p m \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
+  ultimately show "invar_mformula \<sigma> j P n R (MLetPast p m cs \<phi> \<psi> i buf) (formula.LetPast p \<phi>' \<psi>')"
     unfolding invar_mformula_def using rest by (rule wf_mformula.LetPast)
 qed
 

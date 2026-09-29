@@ -48,6 +48,16 @@ lemma rrewrite_nfv:
   "Formula.nfv (rrewrite \<phi>) = Formula.nfv \<phi>"
   unfolding Formula.nfv_def rrewrite_fvi ..
 
+lemma val_restrict_perm: "set ds = set cs \<Longrightarrow> val n ds (restrict ds cs x) = val n cs x"
+proof (rule nth_equalityI)
+  fix i
+  assume set: "set ds = set cs" and "i < length (val n ds (restrict ds cs x))"
+  have none: "map_of (zip xs ys) i = None" if "i \<notin> set xs" for xs :: "nat list" and ys :: "'a list"
+    using that by (auto simp: map_of_eq_None_iff dest: set_zip_leftD)
+  from set show "val n ds (restrict ds cs x) ! i = val n cs x ! i"
+    using \<open>i < length _\<close> by (cases "i \<in> set ds") (simp add: tup_get_restrict, simp add: tup_get_def none)
+qed simp
+
 (* Elimination rules for well-typed formulas*)
 inductive_cases wty_formula_PredE[elim!]: "S, E \<turnstile> Formula.Pred p tms"
 inductive_cases wty_formula_EqE[elim!]: "S, E \<turnstile> Formula.Eq t1 t2"
@@ -1554,8 +1564,8 @@ lemma nfv_\<psi>: "Formula.nfv \<psi> = Formula.nfv \<phi>"
   using prepare_\<psi>[symmetric] unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def normalize_nfv rrewrite_nfv type_check_def check_check_subst)
 
-lemma sat_the_\<psi>:
-  "sat_the \<sigma> V v i \<psi> = sat_the \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
+lemma sat_\<psi>:
+  "Formula.sat \<sigma> V v i \<psi> = Formula.sat \<sigma> V v i (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
   using prepare_\<psi>[symmetric] safe_\<psi> unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: Let_def final_sat normalize_sat type_check_def check_check_subst)
 
@@ -1563,9 +1573,46 @@ lemma pprogress_\<psi>: "pprogress \<psi> \<pi> = pprogress (Formula.formula.map
   using prepare_\<psi>[symmetric] unfolding pprogress_def unfolding prepare_verimon_def
   by (auto split: sum.splits if_splits simp: progress_normalize progress_rrewrite Let_def type_check_def check_check_subst)
 
-lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = monitor_\<phi>.Mt \<pi>"
-  unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def verimon_\<psi>.M_def monitor_\<phi>.M_def
-  by (auto simp: sat_the_\<psi> fvi_\<psi> nfv_\<psi> pprogress_\<psi>)
+text \<open>The rewriting preserves the free variables, but not necessarily the order in which
+  @{const Formula.fv_list} lists them: the kernel's verdicts on @{term \<psi>} are those of the
+  specification of the input formula, with their columns reordered.\<close>
+
+lemma M_exchange: "verimon_\<psi>.M \<pi> = (\<lambda>(i, v). (i, restrict (Formula.fv_list \<psi>)
+  (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)) v)) ` monitor_\<phi>.M \<pi>"
+proof -
+  let ?ds = "Formula.fv_list \<psi>"
+  let ?cs = "Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)"
+  have set_cs: "set ?ds = set ?cs" "set ?cs = set ?ds"
+    by (simp_all add: fvi_\<psi>)
+  have restrict_back: "restrict ?ds ?cs (restrict ?cs ?ds v) = v"
+    if "wf_tuple ?ds v" for v :: "event_data list"
+    using that by (subst restrict_restrict) (simp_all add: fvi_\<psi> restrict_idle)
+  have val_ds: "val (Formula.nfv \<phi>) ?ds (restrict ?ds ?cs v) = val (Formula.nfv \<phi>) ?cs v"
+    for v :: "event_data list"
+    by (rule val_restrict_perm) (rule set_cs)
+  have val_cs: "val (Formula.nfv \<phi>) ?cs (restrict ?cs ?ds v) = val (Formula.nfv \<phi>) ?ds v"
+    for v :: "event_data list"
+    by (rule val_restrict_perm) (rule set_cs)
+  have to_\<phi>: "wf_tuple ?ds v \<and> (i, restrict ?cs ?ds v) \<in> monitor_\<phi>.M \<pi>"
+    if "(i, v) \<in> verimon_\<psi>.M \<pi>" for i v
+    using that unfolding verimon_\<psi>.M_def monitor_\<phi>.M_def
+    by (simp add: sat_\<psi> nfv_\<psi> pprogress_\<psi> val_cs)
+  have to_\<psi>: "(i, restrict ?ds ?cs v) \<in> verimon_\<psi>.M \<pi>" if "(i, v) \<in> monitor_\<phi>.M \<pi>" for i v
+    using that unfolding verimon_\<psi>.M_def monitor_\<phi>.M_def
+    by (simp add: sat_\<psi> nfv_\<psi> pprogress_\<psi> val_ds)
+  show ?thesis
+  proof (rule set_eqI, safe)
+    fix i v
+    assume "(i, v) \<in> verimon_\<psi>.M \<pi>"
+    with to_\<phi>[OF this] show "(i, v) \<in> (\<lambda>(i, v). (i, restrict ?ds ?cs v)) ` monitor_\<phi>.M \<pi>"
+      by (auto simp: restrict_back intro!: image_eqI[where x = "(i, restrict ?cs ?ds v)"])
+  qed (rule to_\<psi>)
+qed
+
+lemma Mt_exchange: "verimon_\<psi>.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict (Formula.fv_list \<psi>)
+  (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>)) v)) ` monitor_\<phi>.Mt \<pi>"
+  unfolding verimon_\<psi>.Mt_def monitor_\<phi>.Mt_def M_exchange image_image
+  by (simp add: split_beta)
 
 (* Correctness of specification of the monitor *)
 lemmas mono_monitor = monitor_\<phi>.mono_monitor
