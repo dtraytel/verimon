@@ -260,8 +260,49 @@ lemma mem_projectQuery: "X \<in> projectQuery I Q \<longleftrightarrow> (\<exist
 lemma mem_newQuery: "X \<in> newQuery J Q (I, t) \<longleftrightarrow> (\<exists>Y\<in>Q. X = projectTable J (semiJoin Y (I, t)))"
   by auto
 
+lemma snd_projectTable_semiJoin: "snd (projectTable J (semiJoin X (I, t))) =
+  restrict (cols_in J (fst X)) (fst X) ` {x \<in> snd X. restrict (cols_in I (fst X)) (fst X) x =
+    restrict (cols_in I (fst X)) (cols I) t}"
+  by (cases X) simp
+
+lemma snd_projectTable: "snd (projectTable I X) = restrict (cols_in I (fst X)) (fst X) ` snd X"
+  by (cases X) simp
+
 declare projectTable.simps[simp del] semiJoin.simps[simp del] projectQuery.simps[simp del]
   newQuery.simps[simp del]
+
+lemma ball_image_iff: "(\<forall>x\<in>f ` A. P x) \<longleftrightarrow> (\<forall>y\<in>A. P (f y))"
+  by auto
+
+lemma ball_filter_iff: "(\<forall>x\<in>Set.filter Q A. P x) \<longleftrightarrow> (\<forall>y\<in>A. Q y \<longrightarrow> P y)"
+  by auto
+
+lemma ball_Diff_iff: "(\<forall>x\<in>A - B. P x) \<longleftrightarrow> (\<forall>y\<in>A. y \<notin> B \<longrightarrow> P y)"
+  by auto
+
+text \<open>The conditions the recursive calls impose, table by table of the original query.\<close>
+
+lemma all_projectQuery: "(\<forall>(A, X)\<in>projectQuery I (filterQuery I Q). restrict A (cols I) t \<in> X) \<longleftrightarrow>
+  (\<forall>(cs, X)\<in>Q. set cs \<inter> I \<noteq> {} \<longrightarrow> restrict (cols_in I cs) (cols I) t \<in> restrict (cols_in I cs) cs ` X)"
+  unfolding projectQuery.simps filterQuery.simps ball_image_iff ball_filter_iff
+  by (intro ball_cong[OF refl]) (auto simp: split_beta snd_projectTable)
+
+lemma all_filterQueryNeg: "(\<forall>(A, X)\<in>filterQueryNeg I Qn. restrict A (cols I) t \<notin> X) \<longleftrightarrow>
+  (\<forall>(cs, X)\<in>Qn. set cs \<subseteq> I \<longrightarrow> restrict cs (cols I) t \<notin> X)"
+  unfolding filterQueryNeg.simps ball_filter_iff
+  by (intro ball_cong[OF refl]) (auto simp: split_beta)
+
+lemma all_newQuery: "(\<forall>(A, X)\<in>newQuery J (filterQuery J Q) (I, t). restrict A (cols J) y \<in> X) \<longleftrightarrow>
+  (\<forall>(cs, X)\<in>Q. set cs \<inter> J \<noteq> {} \<longrightarrow> restrict (cols_in J cs) (cols J) y \<in> restrict (cols_in J cs) cs `
+    {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t})"
+  unfolding newQuery.simps filterQuery.simps ball_image_iff ball_filter_iff
+  by (intro ball_cong[OF refl]) (auto simp: split_beta snd_projectTable_semiJoin)
+
+lemma all_newQuery_neg: "(\<forall>(A, X)\<in>newQuery J (Qn - filterQueryNeg I Qn) (I, t). restrict A (cols J) y \<notin> X) \<longleftrightarrow>
+  (\<forall>(cs, X)\<in>Qn. \<not> set cs \<subseteq> I \<longrightarrow> restrict (cols_in J cs) (cols J) y \<notin> restrict (cols_in J cs) cs `
+    {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t})"
+  unfolding newQuery.simps ball_image_iff ball_Diff_iff
+  by (intro ball_cong[OF refl]) (auto simp: split_beta snd_projectTable_semiJoin)
 
 context getIJ
 begin
