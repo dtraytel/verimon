@@ -4,10 +4,13 @@ theory Monitor_Code_Dense
 begin
 (*>*)
 
-text \<open>The merge of the imports brings back the box that @{theory MFODL_Monitor_Dense.Dense_Mono}
-  takes out of the preprocessor.\<close>
+text \<open>The merge of the imports brings back the boxes that
+  @{theory MFODL_Monitor_Dense.Dense_Tree_Code} and @{theory MFODL_Monitor_Dense.Dense_Mono}
+  take out of the preprocessor.\<close>
 
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps @{thms ed_cluster_v_unfold})\<close>
+setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
+  @{thms ed_cluster_v_unfold ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold
+    ed_filter_v_unfold ed_image_v_unfold ed_csorted_list_of_set_v_unfold ed_mfilter_nat_v_unfold})\<close>
 
 text \<open>
   The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's
