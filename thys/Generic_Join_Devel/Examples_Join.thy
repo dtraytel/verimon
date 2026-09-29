@@ -19,25 +19,17 @@ global_interpretation Min_getIJ: getIJ "\<lambda>_ _ V. ({Min V}, V - {Min V})"
 
 subsection \<open>Queries\<close>
 
-value "Max_getIJ.genericJoin {0, 1} {({0 , 1}, {[Some (0 :: nat), Some 0], [Some 1, Some 1]}), ({0 , 1}, {[Some 0, Some 0], [Some 0, Some 1]})} {} :: nat table"
-value "Min_getIJ.genericJoin {0, 1} {({0 , 1}, {[Some (0 :: nat), Some 0], [Some 1, Some 1]}), ({0 , 1}, {[Some 0, Some 0], [Some 0, Some 1]})} {} :: nat table"
+value "Max_getIJ.genericJoin {0, 1} {([0, 1], {[0 :: nat, 0], [1, 1]}), ([1, 0], {[0, 0], [1, 0]})} {} :: nat table"
+value "Min_getIJ.genericJoin {0, 1} {([0, 1], {[0 :: nat, 0], [1, 1]}), ([1, 0], {[0, 0], [1, 0]})} {} :: nat table"
 
 fun protoTableTriangle :: "nat \<Rightarrow> nat table" where
-  "protoTableTriangle 0 = {[Some 0, Some 0]}"
-| "protoTableTriangle (Suc n) = (protoTableTriangle n) \<union> {[Some (Suc n), Some 0], [Some 0, Some (Suc n)]}"
+  "protoTableTriangle 0 = {[0, 0]}"
+| "protoTableTriangle (Suc n) = (protoTableTriangle n) \<union> {[Suc n, 0], [0, Suc n]}"
 
-fun auxInsertNoneTriangle :: "nat tuple \<Rightarrow> nat \<Rightarrow> nat tuple" where
-  "auxInsertNoneTriangle l 0 = None # l"
-| "auxInsertNoneTriangle (x # q) (Suc n) = x # (auxInsertNoneTriangle q n)"
-| "auxInsertNoneTriangle [] (Suc v) = undefined"
-
-fun insertNoneTriangle :: "nat table \<Rightarrow> nat \<Rightarrow> nat table" where
-  "insertNoneTriangle t n = {auxInsertNoneTriangle x n | x . x \<in> t}"
-
-value "set [0 ..< 5]"
+text \<open>The edges of the triangle query: the table without vertex @{term i}.\<close>
 
 fun getTableTriangle :: "nat \<Rightarrow> nat \<Rightarrow> nat atable" where
-  "getTableTriangle n i = ({0, 1, 2} - {i}, insertNoneTriangle (protoTableTriangle n) i)"
+  "getTableTriangle n i = (filter (\<lambda>c. c \<noteq> i) [0, 1, 2], protoTableTriangle n)"
 
 fun getQueryTriangle :: "nat \<Rightarrow> nat query" where
   "getQueryTriangle n = {getTableTriangle n 0, getTableTriangle n 1, getTableTriangle n 2}"
@@ -46,10 +38,10 @@ definition verticesTriangle :: vertices where "verticesTriangle = {0, 1, 2}"
 
 value "getQueryTriangle 2"
 
-value "Max_getIJ.genericJoin verticesTriangle (getQueryTriangle 2) {({0, 2}, {[Some 0, None, Some 0]})}"
+value "Max_getIJ.genericJoin verticesTriangle (getQueryTriangle 2) {([0, 2], {[0, 0]})}"
 
-value "let n = 2 in let ((_, A), (_, B), (_, C)) = (getTableTriangle n 0, getTableTriangle n 1, getTableTriangle n 2) in
-let AB = join A True B in join AB True C"
+value "let n = 2 in let ((cs, A), (ds, B), (es, C)) = (getTableTriangle n 0, getTableTriangle n 1, getTableTriangle n 2) in
+let AB = join cs A True ds B in join (cols_union cs ds) AB True es C"
 value "Min_getIJ.wrapperGenericJoin (getQueryTriangle 2) {}"
 value "Max_getIJ.wrapperGenericJoin (getQueryTriangle 2) {}"
 value "New_max.wrapperGenericJoin (getQueryTriangle 2) {}"
