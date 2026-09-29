@@ -185,12 +185,12 @@ type db = Short of udb
 
 type tyssig = string * nat -> (tysym list) option
 
-let empty_db () = Short uempty_db
+let empty_db () = Short empty_db
 
 (* Bulk construction of the tables of a time point.
 
    The tuples of each predicate are collected, sorted with [compare_utuple] (which mirrors the
-   verified comparator on [event_data list]) and handed to the verified [utable_of_list],
+   verified comparator on [event_data list]) and handed to the verified [table_of_list],
    which checks the sortedness in linear time and then builds the red-black tree in linear
    time; if the check fails (the comparators disagree), it falls back to repeated insertion,
    so the result is [set xs] either way. Duplicates are removed only when they are equal as
@@ -295,7 +295,7 @@ let flush_gen cmp eq tbl_of ins b db =
 
 let flush_batch b db = match b, db with
   | UB b, Short db ->
-    Short (flush_gen compare_utuple equal_utuple utable_of_list uinsert_table_into_db b db)
+    Short (flush_gen compare_utuple equal_utuple table_of_list insert_table_into_db b db)
 
 (* The signature as the verified monitor on the log reads it (Log_Monitor.thy): the predicates
    with the types of their arguments.  The verified monitor does not support regular
@@ -346,35 +346,35 @@ let rec convert_schema_into_sig sch =
                                       else (convert_schema_into_sig rest) k)
   | [] -> (fun k -> None)
 
-(* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
-   Dense_Eval.thy, which drops the empty columns, run on the short tuples as
-   Dense_Unbox_Exec.thy states it.  [udminit_verimon] prepares the formula as VeriMon does
-   (Dense_VeriMon.thy): it type checks it and, if it is not monitorable and [rw] is set,
-   normalizes and rewrites it; then, if [mw] is set, it converts it into multi-way joins; then
-   [udminit_push] moves existential quantifiers into the past and future diamonds they commute
-   with (Dense_Push.thy) and compiles the result into the dense one.  [udmstep] performs one
-   step; all of these are pure functions.  The theorem udminit_verimon_mverdicts of
-   Dense_VeriMon.thy states that the verdicts are those of the input formula, through the
-   simulation theorem of Dense_Eval.thy and the refinement theorems of Dense_Exec.thy and
-   Dense_Unbox_Exec.thy, provided the compiler placed every node: [uvdfail_nodes] counts the
-   ones it could not, and a formula with any is refused rather than run outside the theorem.
-   The front end therefore neither type checks nor rewrites the formula itself for this monitor
-   (see [Rewriting.check_formula]). *)
-type state = unit udmstate_ext
+(* The monitor is the kernel of thys/MFODL_Monitor_Devel (Monitor_Impl.thy), run on the formula
+   that [udminit_verimon] prepares (thys/MFODL_Monitor_Dense/Dense_VeriMon.thy): it type checks
+   it and, if it is not monitorable and [rw] is set, normalizes and rewrites it; then, if [mw]
+   is set, it converts it into multi-way joins; then it binds frozen predicates with LET, moves
+   existential quantifiers into the windows they commute with, and binds the right operand of a
+   release once (dense_prep).  It returns the columns of the verdicts' tuples -- the free
+   variables in the order Formula.fv_list lists them for the prepared formula -- along with the
+   kernel's initial state.  [mstep] performs one step; all of these are pure functions.  The
+   theorem udminit_verimon_mverdicts of Dense_VeriMon.thy states that the verdicts, with their
+   columns reordered to the input formula's, are those of the input formula.  The front end
+   therefore neither type checks nor rewrites the formula itself for this monitor (see
+   [Rewriting.check_formula]). *)
 
 let init ~mw ~rw dbschema cf =
-  let st = match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
-    | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
-    | Inr st -> st in
-  let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
-  if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
-    Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;
-  if nf <> 0 then
-    failwith "the formula is outside the verified dense fragment";
-  st
+  match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
+  | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
+  | Inr (cols, st) -> (cols, st)
+
+(* The positions in the verdicts' tuples of the requested output variables: [fv_pos] lists the
+   variables' indices (their positions in [MFOTL.free_vars]), [cols] the verdicts' columns. *)
+let verdict_positions cols fv_pos =
+  let cols = List.map int_of_nat cols in
+  let rec pos k j = function
+    | [] -> failwith "[verdict_positions] a free variable is not among the verdicts' columns"
+    | c :: cs -> if c = j then k else pos (k + 1) j cs in
+  List.map (fun j -> pos 0 j cols) fv_pos
 
 let uset_fold f s x = match s with
-  | RBT_set r -> urbt_fold f r x
+  | RBT_set r -> rbt_fold f r x
   | _ -> failwith "[uset_fold] unexpected set representation"
 
 (* Verdicts are kept in the kernel's representation; [show_results] below prints them without
@@ -388,7 +388,7 @@ let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
 
 let step t (Short db) st =
-  let (vs, st') = udmstep (db, nat_of_integer t) st in
+  let (vs, st') = mstep (db, nat_of_integer t) st in
   (annotate (fun v -> UV v) vs, st')
 
 (* Direct output of verdicts.
