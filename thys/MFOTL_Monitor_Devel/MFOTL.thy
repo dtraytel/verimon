@@ -57,6 +57,55 @@ lemma finite_fvi_trm[simp]: "finite (fvi_trm b t)"
 lemma finite_fvi[simp]: "finite (fvi b \<phi>)"
   by (induction \<phi> arbitrary: b) simp_all
 
+text \<open>The free variables as a list without duplicates, in the order in which MonPoly lists
+  them: a predicate's in the order of their first occurrence among its arguments, a
+  disjunction's left operand's first, and a temporal connective's right operand's first.  The
+  monitor's tables have their columns in this order.\<close>
+
+qualified primrec fvi_trm_list :: "nat \<Rightarrow> 'a trm \<Rightarrow> nat list" where
+  "fvi_trm_list b (Var x) = (if b \<le> x then [x - b] else [])"
+| "fvi_trm_list b (Const _) = []"
+
+qualified primrec fvi_list :: "nat \<Rightarrow> 'a formula \<Rightarrow> nat list" where
+  "fvi_list b (Pred r ts) = fold (\<lambda>t cs. cols_union cs (fvi_trm_list b t)) ts []"
+| "fvi_list b (Eq t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (Neg \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Or \<phi> \<psi>) = cols_union (fvi_list b \<phi>) (fvi_list b \<psi>)"
+| "fvi_list b (Exists \<phi>) = fvi_list (Suc b) \<phi>"
+| "fvi_list b (Prev I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Next I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Since \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Until \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+
+abbreviation "fv_list \<equiv> fvi_list 0"
+
+lemma set_fvi_trm_list[simp]: "set (fvi_trm_list b t) = fvi_trm b t"
+  by (cases t) simp_all
+
+lemma distinct_fvi_trm_list[simp]: "distinct (fvi_trm_list b t)"
+  by (cases t) simp_all
+
+lemma set_fold_cols_union:
+  "set (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = set cs0 \<union> (\<Union>t\<in>set ts. set (f t))"
+  by (induct ts arbitrary: cs0) auto
+
+lemma distinct_fold_cols_union:
+  "distinct cs0 \<Longrightarrow> (\<And>t. t \<in> set ts \<Longrightarrow> distinct (f t)) \<Longrightarrow> distinct (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0)"
+  by (induct ts arbitrary: cs0) auto
+
+lemma set_fvi_list[simp]: "set (fvi_list b \<phi>) = fvi b \<phi>"
+  by (induction \<phi> arbitrary: b) (simp_all add: set_fold_cols_union Un_commute)
+
+lemma distinct_fvi_list[simp]: "distinct (fvi_list b \<phi>)"
+  by (induction \<phi> arbitrary: b) (simp_all add: distinct_fold_cols_union)
+
+lemma fvi_trm_list_Suc: "fvi_trm_list (Suc b) t = ex_cols (fvi_trm_list b t)"
+  by (cases t) (auto simp: ex_cols_def)
+
+lemma fvi_list_Suc: "fvi_list (Suc b) \<phi> = ex_cols (fvi_list b \<phi>)"
+  by (induction \<phi> arbitrary: b)
+    (simp_all add: ex_cols_cols_union ex_cols_fold_cols_union fvi_trm_list_Suc)
+
 lemma fvi_trm_Suc: "x \<in> fvi_trm (Suc b) t \<longleftrightarrow> Suc x \<in> fvi_trm b t"
   by (cases t) auto
 

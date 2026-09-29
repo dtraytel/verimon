@@ -877,6 +877,44 @@ lemma inj_on_minus_one: "inj_on (\<lambda>x. x - Suc 0) {x \<in> A. 0 < x}"
 
 lemma distinct_ex_cols: "distinct cs \<Longrightarrow> distinct (ex_cols cs)"
   unfolding ex_cols_def by (auto simp: distinct_map inj_on_minus_one)
+
+lemma ex_cols_Nil[simp]: "ex_cols [] = []"
+  by (simp add: ex_cols_def)
+
+lemma ex_cols_Cons: "ex_cols (c # cs) = (if c = 0 then ex_cols cs else (c - 1) # ex_cols cs)"
+  by (simp add: ex_cols_def)
+
+lemma mem_ex_cols_iff:
+  assumes "0 < x"
+  shows "x - 1 \<in> set (ex_cols cs) \<longleftrightarrow> x \<in> set cs"
+proof
+  assume "x - 1 \<in> set (ex_cols cs)"
+  then obtain y where "y \<in> set cs" "y \<noteq> 0" "x - 1 = y - 1"
+    by (auto simp: set_ex_cols)
+  moreover from this assms have "x = y"
+    by linarith
+  ultimately show "x \<in> set cs"
+    by simp
+next
+  assume "x \<in> set cs"
+  with assms show "x - 1 \<in> set (ex_cols cs)"
+    by (auto simp: set_ex_cols)
+qed
+
+lemma ex_cols_filter: "ex_cols (filter (\<lambda>x. x \<notin> set xs) ys) = filter (\<lambda>x. x \<notin> set (ex_cols xs)) (ex_cols ys)"
+  by (induct ys) (auto simp: ex_cols_Cons mem_ex_cols_iff simp del: One_nat_def)
+
+lemma ex_cols_append: "ex_cols (xs @ ys) = ex_cols xs @ ex_cols ys"
+  by (simp add: ex_cols_def)
+
+lemma ex_cols_cols_union: "ex_cols (cols_union xs ys) = cols_union (ex_cols xs) (ex_cols ys)"
+  by (simp only: cols_union_def ex_cols_append ex_cols_filter)
+
+lemma ex_cols_fold_cols_union:
+  "(\<And>t. t \<in> set ts \<Longrightarrow> ex_cols (f t) = g t) \<Longrightarrow>
+    ex_cols (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = fold (\<lambda>t cs. cols_union cs (g t)) ts (ex_cols cs0)"
+  by (induct ts arbitrary: cs0) (simp_all add: ex_cols_cols_union)
+
 lemma wf_tuple_ex_proj[simp]: "wf_tuple (ex_cols cs) (ex_proj cs x)"
   by (simp add: ex_cols_def ex_proj_def wf_tuple_def)
 
