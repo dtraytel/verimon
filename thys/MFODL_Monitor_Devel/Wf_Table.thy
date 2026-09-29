@@ -605,4 +605,121 @@ proof -
   show ?thesis
     using sub by (simp add: wf_idx_set.rep_eq wf_idx_sig.rep_eq wf_idx_antijoin.rep_eq t1 t2)
 qed
+subsection \<open>Plain tables\<close>
+
+typedef 'a wf_set = "{(cs :: nat list, T :: 'a table) | cs T. distinct cs \<and> table cs T}"
+  by (rule exI[of _ "([], {})"]) auto
+
+setup_lifting type_definition_wf_set
+
+lift_definition wf_set_sig :: "'a wf_set \<Rightarrow> nat list" is fst .
+
+lift_definition wf_set_set :: "'a wf_set \<Rightarrow> 'a table" is snd .
+
+lift_definition wf_table_of_wf_set :: "'a wf_set \<Rightarrow> 'a wf_table" is "\<lambda>t. t" .
+
+lemma wf_set_sig[simp]: "wf_table_sig (wf_table_of_wf_set t) = wf_set_sig t"
+  by transfer auto
+
+lemma wf_set_set[simp]: "wf_table_set (wf_table_of_wf_set t) = wf_set_set t"
+  by transfer auto
+
+lift_definition wf_set_of_set :: "nat list \<Rightarrow> 'a table \<Rightarrow> 'a wf_set" is
+  "\<lambda>cs T. if distinct cs then (cs, Set.filter (wf_tuple cs) T) else ([], {})"
+  by (auto simp: table_def)
+
+lift_definition wf_set_union :: "'a wf_set \<Rightarrow> 'a wf_set \<Rightarrow> 'a wf_set" is
+  "\<lambda>(cs, T) (ds, T'). if cs = ds then (cs, T \<union> T') else (cs, T)"
+  by auto
+
+lift_definition wf_set_join :: "'a wf_set \<Rightarrow> 'a wf_set \<Rightarrow> 'a wf_set" is
+  "\<lambda>(cs, T) (ds, T'). (cols_union cs ds, bin_join cs T True ds T')"
+  by (fastforce simp del: bin_join.simps simp: bin_join_table intro: join_table)
+
+lift_definition wf_set_antijoin :: "'a wf_set \<Rightarrow> 'a wf_set \<Rightarrow> 'a wf_set" is
+  "\<lambda>(cs, T) (ds, T'). if set ds \<subseteq> set cs then (cs, bin_join cs T False ds T') else (cs, T)"
+  by (fastforce simp del: bin_join.simps simp: bin_join_table cols_union_subset intro: join_table)
+
+lift_definition wf_idx_of_wf_set :: "nat list \<Rightarrow> 'a wf_set \<Rightarrow> 'a wf_idx" is
+  "\<lambda>I (cs, T). let I' = filter (\<lambda>c. c \<in> set cs) I in (cs, I', idx_create cs I' T)"
+  by (auto simp: Let_def idx_create)
+
+lemma wf_table_of_idx_of_wf_set[simp]: "wf_table_of_idx (wf_idx_of_wf_set I t) = wf_table_of_wf_set t"
+  by (rule wf_table_eqI; transfer) (auto simp: Let_def idx_create(1))
+
+lift_definition wf_set_of_idx :: "'a wf_idx \<Rightarrow> 'a wf_set" is
+  "\<lambda>(cs, I, T). (cs, set_of_idx T)"
+  by (auto intro: idx_wf_table)
+
+lemma wf_table_of_wf_set_of_idx[simp]: "wf_table_of_wf_set (wf_set_of_idx t) = wf_table_of_idx t"
+  by (rule wf_table_eqI; transfer) auto
+
+text \<open>The operations on the two representations.\<close>
+
+lemma wf_table_of_wf_set_of_set: "wf_table_of_set cs T = wf_table_of_wf_set (wf_set_of_set cs T)"
+  by transfer auto
+
+lemma wf_table_union_wf_set: "wf_table_union (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
+  wf_table_of_wf_set (wf_set_union t t')"
+  by transfer auto
+
+lemma wf_table_join_wf_set: "wf_table_join (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
+  wf_table_of_wf_set (wf_set_join t t')"
+  by transfer auto
+
+lemma wf_table_antijoin_wf_set: "wf_table_antijoin (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
+  wf_table_of_wf_set (wf_set_antijoin t t')"
+  by transfer auto
+
+lemma wf_table_union_idx: "wf_table_union (wf_table_of_idx i) (wf_table_of_idx i') =
+  wf_table_of_idx (wf_idx_union i i')"
+  by (rule wf_table_eqI)
+    (simp_all add: wf_table_sig_union wf_idx_sig_union wf_table_set_union' wf_idx_set_union')
+
+lemma wf_table_join_idx: "wf_table_join (wf_table_of_idx i) (wf_table_of_idx i') =
+  wf_table_of_idx (wf_idx_join i i')"
+  by (rule wf_table_eqI) (simp_all add: wf_table_sig_join wf_idx_sig_join wf_table_set_join wf_idx_set_join)
+
+lemma wf_table_antijoin_idx: "wf_table_antijoin (wf_table_of_idx i) (wf_table_of_idx i') =
+  wf_table_of_idx (wf_idx_antijoin i i')"
+  by (rule wf_table_eqI)
+    (simp_all add: wf_table_sig_antijoin wf_idx_sig_antijoin wf_table_set_antijoin' wf_idx_set_antijoin
+      wf_idx_set_antijoin_deg)
+
+subsection \<open>Code setup\<close>
+
+code_datatype wf_table_of_wf_set wf_table_of_idx
+
+lemmas wf_table_sig_code[code] = wf_table_sig_of_idx wf_set_sig
+lemmas wf_table_set_code[code] = wf_table_set_of_idx wf_set_set
+lemmas wf_table_of_set_code[code] = wf_table_of_wf_set_of_set
+
+lemma wf_table_union_code[code]:
+  "wf_table_union (wf_table_of_idx i) (wf_table_of_idx i') = wf_table_of_idx (wf_idx_union i i')"
+  "wf_table_union (wf_table_of_idx i) (wf_table_of_wf_set t') =
+    wf_table_of_idx (wf_idx_union i (wf_idx_of_wf_set (wf_idx_cols i) t'))"
+  "wf_table_union (wf_table_of_wf_set t) (wf_table_of_wf_set t') = wf_table_of_wf_set (wf_set_union t t')"
+  "wf_table_union (wf_table_of_wf_set t) (wf_table_of_idx i') =
+    wf_table_of_idx (wf_idx_union (wf_idx_of_wf_set (wf_idx_cols i') t) i')"
+  by (simp_all flip: wf_table_union_idx add: wf_table_union_wf_set)
+
+lemma wf_table_join_code[code]:
+  "wf_table_join (wf_table_of_idx i) (wf_table_of_idx i') = wf_table_of_idx (wf_idx_join i i')"
+  "wf_table_join (wf_table_of_idx i) (wf_table_of_wf_set t') =
+    wf_table_of_idx (wf_idx_join i (wf_idx_of_wf_set (wf_idx_cols i) t'))"
+  "wf_table_join (wf_table_of_wf_set t) (wf_table_of_wf_set t') = wf_table_of_wf_set (wf_set_join t t')"
+  "wf_table_join (wf_table_of_wf_set t) (wf_table_of_idx i') =
+    wf_table_of_idx (wf_idx_join (wf_idx_of_wf_set (wf_idx_cols i') t) i')"
+  by (simp_all flip: wf_table_join_idx add: wf_table_join_wf_set)
+
+lemma wf_table_antijoin_code[code]:
+  "wf_table_antijoin (wf_table_of_idx i) (wf_table_of_idx i') = wf_table_of_idx (wf_idx_antijoin i i')"
+  "wf_table_antijoin (wf_table_of_idx i) (wf_table_of_wf_set t') =
+    wf_table_of_idx (wf_idx_antijoin i (wf_idx_of_wf_set (wf_idx_cols i) t'))"
+  "wf_table_antijoin (wf_table_of_wf_set t) (wf_table_of_wf_set t') =
+    wf_table_of_wf_set (wf_set_antijoin t t')"
+  "wf_table_antijoin (wf_table_of_wf_set t) (wf_table_of_idx i') =
+    wf_table_of_idx (wf_idx_antijoin (wf_idx_of_wf_set (wf_idx_cols i') t) i')"
+  by (simp_all flip: wf_table_antijoin_idx add: wf_table_antijoin_wf_set)
+
 end
