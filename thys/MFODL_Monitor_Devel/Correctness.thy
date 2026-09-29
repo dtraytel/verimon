@@ -5024,10 +5024,12 @@ lemma flatten_verdicts_append[simp]:
   unfolding flatten_verdicts_def by simp
 
 lemma (in maux) mstep_output_iff:
-  assumes "wf_mstate S E \<phi> \<pi> R st" "last_ts \<pi> \<le> snd tdb" "prefix_of (psnoc \<pi> tdb) \<sigma>" "wty_trace S \<sigma>" "mem_restr R v"
+  assumes "wf_mstate S E \<phi> \<pi> R st" "last_ts \<pi> \<le> snd tdb" "prefix_of (psnoc \<pi> tdb) \<sigma>" "wty_trace S \<sigma>"
+    "mem_restr R (Formula.fv_list \<phi>) v"
   shows "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st)) \<longleftrightarrow>
     progress \<sigma> Map.empty \<phi> (plen \<pi>) \<le> i \<and> i < progress \<sigma> Map.empty \<phi> (Suc (plen \<pi>)) \<and> t = \<tau> \<sigma> i \<and>
-    wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v \<and> Formula.sat \<sigma> Map.empty (map the v) i \<phi>"
+    wf_tuple (Formula.fv_list \<phi>) v \<and>
+    Formula.sat \<sigma> Map.empty (val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v) i \<phi>"
   (is "?L \<longleftrightarrow> ?R")
 proof -
   let ?p = "progress \<sigma> Map.empty \<phi> (plen \<pi>)"
@@ -5045,15 +5047,17 @@ proof -
   obtain Vs st' where
     meval_eq: "meval (Suc (plen \<pi>)) (Formula.nfv \<phi>) [snd tdb] (mk_db (fst tdb)) (mstate_m st) = (Vs, st')"
     and wf_m': "wf_mformula \<sigma> (Suc (plen \<pi>)) Map.empty Map.empty (Formula.nfv \<phi>) R st' \<phi>"
-    and "list_all2 (\<lambda>i. qtable (Formula.nfv \<phi>) (fv \<phi>) (mem_restr R) (\<lambda>v. Formula.sat \<sigma> Map.empty (map the v) i \<phi>))
+    and "list_all2 (\<lambda>i. sat_table \<sigma> Map.empty (Formula.nfv \<phi>) R (Formula.fv_list \<phi>) i \<phi>)
       [progress \<sigma> Map.empty \<phi> (plen \<pi>)..<progress \<sigma> Map.empty \<phi> (Suc (plen \<pi>))] Vs"
     by (auto simp add: tdb_eqs state_eqs)
   then have
     length_Vs: "length Vs = ?p' - ?p"
     and set_Vs: "\<forall>i < ?p'-?p. v \<in> Vs ! i \<longleftrightarrow>
-      wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v \<and> Formula.sat \<sigma> Map.empty (map the v) (?p + i) \<phi>"
+      wf_tuple (Formula.fv_list \<phi>) v \<and>
+      Formula.sat \<sigma> Map.empty (val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v) (?p + i) \<phi>"
     using assms(5)
-    by (auto simp add: list_all2_conv_all_nth in_set_conv_nth elim!: in_qtableE in_qtableI)
+    by (auto simp add: list_all2_conv_all_nth in_set_conv_nth mem_restr_wf_tuple
+        elim!: in_qtableE in_qtableI)
   have \<tau>_eq: "(drop ?p (pts \<pi>) @ [snd tdb]) ! (i - ?p) = \<tau> \<sigma> i" if "?p \<le> i" "i < ?p'"
   proof (cases "i = plen \<pi>")
     case True
@@ -5085,6 +5089,37 @@ proof -
   qed
 qed
 
+text \<open>Every verdict tuple is over the formula's columns.\<close>
+
+lemma (in maux) mstep_output_wf:
+  assumes "wf_mstate S E \<phi> \<pi> R st" "wty_db S (fst tdb)" "last_ts \<pi> \<le> snd tdb"
+    "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st))"
+  shows "wf_tuple (Formula.fv_list \<phi>) v"
+proof -
+  have "wty_prefix S (psnoc \<pi> tdb)"
+    using assms(1-3) by (auto simp: wf_mstate_def intro!: wty_psnoc)
+  then obtain \<sigma> where p2: "prefix_of (psnoc \<pi> tdb) \<sigma>" and wty_\<sigma>: "wty_trace S \<sigma>"
+    using ex_prefix_of_wty by blast
+  from prefix_of_psnocE[OF p2 assms(3)] have "prefix_of \<pi> \<sigma>"
+    and tdb_eqs: "\<Gamma> \<sigma> (plen \<pi>) = fst tdb" "\<tau> \<sigma> (plen \<pi>) = snd tdb" by auto
+  from assms(1) wty_\<sigma> \<open>prefix_of \<pi> \<sigma>\<close> have
+    state_eqs: "mstate_n st = Formula.nfv \<phi>" "mstate_j st = plen \<pi>"
+    and wf_m: "wf_mformula \<sigma> (plen \<pi>) Map.empty Map.empty (Formula.nfv \<phi>) R (mstate_m st) \<phi>" and
+    wty: "S, E \<turnstile> \<phi>"
+    unfolding wf_mstate_def by auto
+  from meval_correct[OF wf_m wf_envs_mk_db[OF wty_\<sigma>] wty]
+  obtain Vs st' where
+    meval_eq: "meval (Suc (plen \<pi>)) (Formula.nfv \<phi>) [snd tdb] (mk_db (fst tdb)) (mstate_m st) = (Vs, st')"
+    and "list_all2 (\<lambda>i. sat_table \<sigma> Map.empty (Formula.nfv \<phi>) R (Formula.fv_list \<phi>) i \<phi>)
+      [progress \<sigma> Map.empty \<phi> (plen \<pi>)..<progress \<sigma> Map.empty \<phi> (Suc (plen \<pi>))] Vs"
+    by (auto simp add: tdb_eqs state_eqs)
+  then have "\<forall>X\<in>set Vs. table (Formula.fv_list \<phi>) X"
+    by (auto simp: list_all2_conv_all_nth in_set_conv_nth qtable_def)
+  then show ?thesis
+    using assms(4) unfolding flatten_verdicts_def mstep_def
+    by (auto simp: state_eqs meval_eq in_set_enumerate_eq table_def)
+      (use nth_mem[of "i - mstate_i st" Vs] in auto)
+qed
 
 section \<open> Specification \<close>
 
@@ -5110,7 +5145,7 @@ end
 locale future_bounded_mfodl = wty_mfodl +
    assumes future_bounded: "Safety.future_bounded \<phi>"
 
-sublocale future_bounded_mfodl \<subseteq> sliceable_timed_progress "Formula.nfv \<phi>" "Formula.fv \<phi>" traces "relevant_events \<phi>"
+sublocale future_bounded_mfodl \<subseteq> sliceable_timed_progress "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces "relevant_events \<phi>"
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "pprogress \<phi>"
 proof (unfold_locales, goal_cases)
   case (1 \<pi>' \<pi>)
@@ -5193,7 +5228,7 @@ lemma (in verimon) mstep_mverdicts:
   assumes wf: "wf_mstate SIG ENV \<phi> \<pi> R st"
     and wty: "wty_db SIG (fst tdb)"
     and le[simp]: "last_ts \<pi> \<le> snd tdb"
-    and restrict: "mem_restr R v"
+    and restrict: "mem_restr R (Formula.fv_list \<phi>) v"
   shows "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st)) \<longleftrightarrow>
     (i, t, v) \<in> Mt (psnoc \<pi> tdb) - Mt \<pi>"
 proof -
@@ -5215,17 +5250,19 @@ proof -
 qed
 
 lemma (in verimon) wf_mstate_msteps: 
-  "wf_mstate SIG ENV \<phi> \<pi> R st \<Longrightarrow> mem_restr R v \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> wty_prefix SIG \<pi>' \<Longrightarrow>
+  "wf_mstate SIG ENV \<phi> \<pi> R st \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> wty_prefix SIG \<pi>' \<Longrightarrow>
   X = msteps (pdrop (plen \<pi>) \<pi>') st \<Longrightarrow> wf_mstate SIG ENV \<phi> \<pi>' R (snd X) \<and>
-  ((i, t, v) \<in> flatten_verdicts (fst X)) = ((i, t, v) \<in> Mt \<pi>' - Mt \<pi>)"
+  ((i, t, v) \<in> flatten_verdicts (fst X) \<longrightarrow> wf_tuple (Formula.fv_list \<phi>) v) \<and>
+  (mem_restr R (Formula.fv_list \<phi>) v \<longrightarrow>
+    ((i, t, v) \<in> flatten_verdicts (fst X)) = ((i, t, v) \<in> Mt \<pi>' - Mt \<pi>))"
 proof (induct "plen \<pi>' - plen \<pi>" arbitrary: X st \<pi> \<pi>')
   case 0
-  from 0(1,4,5,6) have "\<pi> = \<pi>'"  "X = ([], st)"
+  from 0(1,3,4,5) have "\<pi> = \<pi>'"  "X = ([], st)"
     by (transfer; auto)+
   with 0(2) show ?case unfolding flatten_verdicts_def by simp
 next
   case (Suc x)
-  from Suc(2,5,6) obtain \<pi>'' tdb where "x = plen \<pi>'' - plen \<pi>"  "\<pi> \<le> \<pi>''" "wty_prefix SIG \<pi>''" "wty_db SIG (fst tdb)"
+  from Suc(2,4,5) obtain \<pi>'' tdb where "x = plen \<pi>'' - plen \<pi>"  "\<pi> \<le> \<pi>''" "wty_prefix SIG \<pi>''" "wty_db SIG (fst tdb)"
     "\<pi>' = psnoc \<pi>'' tdb" "pdrop (plen \<pi>) (psnoc \<pi>'' tdb) = psnoc (pdrop (plen \<pi>) \<pi>'') tdb"
     "last_ts (pdrop (plen \<pi>) \<pi>'') \<le> snd tdb" "last_ts \<pi>'' \<le> snd tdb"
     "\<pi>'' \<le> psnoc \<pi>'' tdb"
@@ -5239,21 +5276,42 @@ next
           (force simp: sorted_append append_eq_Cons_conv split: list.splits if_splits)+
     qed simp
   qed
-  with Suc(1)[OF this(1) Suc.prems(1,2) this(2,3) refl] Suc.prems show ?case
+  with Suc(1)[OF this(1) Suc.prems(1) this(2,3) refl] Suc.prems show ?case
     by (auto simp: msteps_psnoc split_beta mstep_mverdicts
-        dest: mono_monitor'[THEN set_mp, rotated, unfolded prefixes_alt] intro!: wf_mstate_mstep)
+        dest: mono_monitor'[THEN set_mp, rotated, unfolded prefixes_alt] mstep_output_wf
+        intro!: wf_mstate_mstep)
 qed
 
 lemma (in verimon) wf_mstate_msteps_stateless:
-  assumes "wf_mstate SIG ENV \<phi> \<pi> R st" "mem_restr R v" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'"
+  assumes "wf_mstate SIG ENV \<phi> \<pi> R st" "mem_restr R (Formula.fv_list \<phi>) v" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'"
   shows "(i, t, v) \<in> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st) \<longleftrightarrow>
     (i, t, v) \<in> Mt \<pi>' - Mt \<pi>"
-  using wf_mstate_msteps[OF assms refl] unfolding msteps_msteps_stateless by simp
+  using wf_mstate_msteps[OF assms(1,3,4) refl] assms(2) unfolding msteps_msteps_stateless by simp
 
 lemma (in verimon) wf_mstate_msteps_stateless_UNIV: 
-  "wf_mstate SIG ENV \<phi> \<pi> UNIV st \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> wty_prefix SIG \<pi>' 
-  \<Longrightarrow> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st) = Mt \<pi>' - Mt \<pi>"
-  by (auto dest: wf_mstate_msteps_stateless[OF _ mem_restr_UNIV])
+  assumes "wf_mstate SIG ENV \<phi> \<pi> UNIV st" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'"
+  shows "flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st) = Mt \<pi>' - Mt \<pi>"
+proof (intro set_eqI iffI)
+  fix x
+  assume x: "x \<in> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st)"
+  obtain i t v where x_eq: "x = (i, t, v)"
+    by (cases x)
+  have "wf_tuple (Formula.fv_list \<phi>) v"
+    using x wf_mstate_msteps[OF assms refl, of i t v] unfolding x_eq msteps_msteps_stateless by simp
+  then show "x \<in> Mt \<pi>' - Mt \<pi>"
+    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3)]
+    unfolding x_eq by blast
+next
+  fix x
+  assume x: "x \<in> Mt \<pi>' - Mt \<pi>"
+  obtain i t v where x_eq: "x = (i, t, v)"
+    by (cases x)
+  have "wf_tuple (Formula.fv_list \<phi>) v"
+    using x unfolding x_eq by (auto simp: Mt_def M_def)
+  then show "x \<in> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st)"
+    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3)]
+    unfolding x_eq by blast
+qed
 
 lemma (in verimon) monitor_mverdicts: 
   "wty_prefix SIG \<pi> \<Longrightarrow> flatten_verdicts (monitor \<phi> \<pi>) = Mt \<pi>"
