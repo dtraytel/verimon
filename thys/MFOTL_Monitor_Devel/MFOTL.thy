@@ -411,6 +411,9 @@ lemma sat_slice_iff:
   shows "MFOTL.sat \<sigma> v i \<phi> \<longleftrightarrow> MFOTL.sat (MFOTL_slicer.slice \<phi> S \<sigma>) v i \<phi>"
   by (rule sat_slice_strong[of S, OF subset_refl assms])
 
+lemma fo_spec_sat: "fo_spec (MFOTL.nfv \<phi>) (MFOTL.fv_list \<phi>) T (\<lambda>\<sigma> v i. MFOTL.sat \<sigma> v i \<phi>)"
+  by unfold_locales (auto simp: fvi_less_nfv intro: sat_fvi_cong)
+
 lemma slice_replace_prefix:
   "prefix_of (MFOTL_slicer.pslice \<phi> R \<pi>) \<sigma> \<Longrightarrow>
     MFOTL_slicer.slice \<phi> R (replace_prefix \<pi> \<sigma>) = MFOTL_slicer.slice \<phi> R \<sigma>"
