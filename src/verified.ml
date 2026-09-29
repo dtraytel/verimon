@@ -6344,11 +6344,11 @@ let rec edl_rbt_inter_list
           xc)
         Empty);;
 
-let rec map_filter_comp_inter
-  c f t1 t2 =
+let rec edl_map_filter_comp_inter
+  f t1 t2 =
     map_filter
       (fun (k, v) ->
-        (match rbt_comp_lookup c t1 k with None -> None
+        (match edl_rbtc_lookup t1 k with None -> None
           | Some va -> Some (k, f k va v)))
       (entries t2);;
 
@@ -6449,15 +6449,15 @@ let rec rbt_join
       else (if not (bh_le_g r l) then paint B (rbt_joinL l a b r)
              else Branch (B, l, a, b, r)));;
 
-let rec rbt_split_comp
-  c x1 k = match c, x1, k with c, Empty, k -> (Empty, (None, Empty))
-    | c, Branch (uu, l, a, b, r), x ->
-        (match c x a with Eqa -> (l, (Some b, r))
+let rec edl_rbtc_split
+  x0 k = match x0, k with Empty, k -> (Empty, (None, Empty))
+    | Branch (cc, l, a, b, r), x ->
+        (match edl_comparator x a with Eqa -> (l, (Some b, r))
           | Lt ->
-            (let (l1, (beta, l2)) = rbt_split_comp c l x in
+            (let (l1, (beta, l2)) = edl_rbtc_split l x in
               (l1, (beta, rbt_join l2 a b r)))
           | Gt ->
-            (let (r1, (beta, r2)) = rbt_split_comp c r x in
+            (let (r1, (beta, r2)) = edl_rbtc_split r x in
               (rbt_join l a b r1, (beta, r2))));;
 
 let rec bh_lt_g
@@ -6484,34 +6484,34 @@ let rec rbt_join2
 
 let rec flip_rbt t1 t2 = not (bh_le_g t1 t2);;
 
-let rec rbt_comp_inter_swap_rec
-  c f gamma t1 t2 =
+let rec edl_rbtc_inter_swap_rec
+  f gamma t1 t2 =
     (let (gammaa, (t2a, t1a)) =
        (if flip_rbt t2 t1 then (not gamma, (t1, t2)) else (gamma, (t2, t1))) in
      let fa = (if gammaa then (fun k v va -> f k va v) else f) in
-      (if small_rbt t2a then rbtreeify (map_filter_comp_inter c fa t1a t2a)
+      (if small_rbt t2a then rbtreeify (edl_map_filter_comp_inter fa t1a t2a)
         else (match t1a with Empty -> Empty
                | Branch (_, l1, a, b, r1) ->
-                 (let (l2, (beta, r2)) = rbt_split_comp c t2a a in
-                  let l = rbt_comp_inter_swap_rec c f gammaa l1 l2 in
-                  let r = rbt_comp_inter_swap_rec c f gammaa r1 r2 in
+                 (let (l2, (beta, r2)) = edl_rbtc_split t2a a in
+                  let l = edl_rbtc_inter_swap_rec f gammaa l1 l2 in
+                  let r = edl_rbtc_inter_swap_rec f gammaa r1 r2 in
                    (match beta with None -> rbt_join2 l r
                      | Some ba -> rbt_join l a (fa a b ba) r)))));;
 
-let rec rbt_comp_inter_with_key
-  c f t1 t2 = paint B (rbt_comp_inter_swap_rec c f false t1 t2);;
+let rec edl_rbtc_inter_with_key
+  f t1 t2 = paint B (edl_rbtc_inter_swap_rec f false t1 t2);;
 
 let rec edl_rbt_meet_unit
   xc xd xe =
     Mapping_RBTa
-      (rbt_comp_inter_with_key edl_comparator xc (unbox edl_impl_of_unit_v xd)
+      (edl_rbtc_inter_with_key xc (unbox edl_impl_of_unit_v xd)
         (unbox edl_impl_of_unit_v xe));;
 
 let rec edl_rbt_lookup_unit
   t k = edl_rbtc_lookup (unbox edl_impl_of_unit_v t) k;;
 
 let rec edl_rbt_member
-  t x = equal_optiona equal_unit (edl_rbt_lookup_unit t x) (Some ());;
+  t x = (match edl_rbt_lookup_unit t x with None -> false | Some _ -> true);;
 
 let rec edl_member
   x xa1 = match x, xa1 with
@@ -6524,17 +6524,6 @@ let rec edl_member
 let rec edl_rbt_insert_unit
   xc xd xe =
     Mapping_RBTa (edl_rbtc_insert xc xd (unbox edl_impl_of_unit_v xe));;
-
-let rec edl_rbtc_split
-  x0 k = match x0, k with Empty, k -> (Empty, (None, Empty))
-    | Branch (cc, l, a, b, r), x ->
-        (match edl_comparator x a with Eqa -> (l, (Some b, r))
-          | Lt ->
-            (let (l1, (beta, l2)) = edl_rbtc_split l x in
-              (l1, (beta, rbt_join l2 a b r)))
-          | Gt ->
-            (let (r1, (beta, r2)) = edl_rbtc_split r x in
-              (rbt_join l a b r1, (beta, r2))));;
 
 let rec edl_rbtc_union_swap_rec
   f gamma t1 t2 =

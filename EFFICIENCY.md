@@ -9710,9 +9710,16 @@ and under ±0.4% on the other six.  `dune test` passes; on the 22 formulas of Se
 verdicts are identical and the wall times the same up to noise (best of three, new over old:
 geometric mean 0.99).
 
-What is left generic on these paths is not a dictionary: the intersection of two short tables
-(`edl_rbt_meet_unit`) runs `rbt_comp_inter_swap_rec` with `edl_comparator` passed as an argument,
-so its lookups go through a closure (0.6–0.9% self on Trigger and FRZ).  It would get a
-comparator-specialised copy the way the union did (`edl_rbtc_union_swap_rec`).  The export is not
+What was then left generic on these paths was not a dictionary: the intersection of two short
+tables (`edl_rbt_meet_unit`) ran `rbt_comp_inter_swap_rec` with `edl_comparator` passed as an
+argument, so its lookups and splits went through a closure (0.6–0.9% self on Trigger and FRZ),
+and the membership test on a short table compared its lookup with `Some ()` by the generic
+`equal_option`.  `Dense_Mono_Hot` gives the intersection comparator-specialised copies
+(`edl_map_filter_comp_inter`, `edl_rbtc_inter_swap_rec`, `edl_rbtc_inter_with_key`), as
+`Dense_Map_Upd` has them for the union and the difference, and the membership test a code
+equation that matches on the lookup.  The generic intersection and `rbt_split_comp` leave the
+export; `rbt_comp_*` drops to zero on Trigger, And-Trigger and FRZ, and the instruction counts
+change by a further −0.5% (FRZ), −0.4% (Trigger), −0.3% (And-Trigger) and under 0.1% elsewhere.
+Verdicts identical, wall times the same up to noise.  The export is not
 dictionary-free as a whole: the fallback branches, the compiler's code and the constants that
 `monomorphize` cannot instantiate (Section 21.16) remain, and none of them runs per event.
