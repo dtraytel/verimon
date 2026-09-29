@@ -404,6 +404,218 @@ proof -
   qed
 qed
 
+lemma genericJoin_step:
+  assumes "card V \<ge> 2" "(I, J) = getIJ Q Qn V"
+  shows "genericJoin V Q Qn = (\<Union>t\<in>genericJoin I (projectQuery I (filterQuery I Q)) (filterQueryNeg I Qn).
+    merge I J t ` genericJoin J (newQuery J (filterQuery J Q) (I, t)) (newQuery J (Qn - filterQueryNeg I Qn) (I, t)))"
+  using assms by (subst genericJoin.simps) (auto simp: Let_def assms(2)[symmetric] simp del: genericJoin.simps)
+
+subsection \<open>Correctness\<close>
+
+lemma restrict_image_sub:
+  assumes "set cs \<subseteq> I" "distinct cs" "table cs X"
+  shows "restrict (cols_in I cs) (cols I) t \<in> restrict (cols_in I cs) cs ` X \<longleftrightarrow> restrict cs (cols I) t \<in> X"
+proof -
+  have "cols_in I cs = cs"
+    using assms(1) by (auto intro: filter_True)
+  moreover have "restrict cs cs ` X = X"
+  proof -
+    have id: "restrict cs cs x = x" if "x \<in> X" for x
+      using restrict_idle[OF assms(2) tableD[OF assms(3) that]] .
+    then show ?thesis
+      by (force intro: rev_image_eqI)
+  qed
+  ultimately show ?thesis
+    by simp
+qed
+
+lemma correctness:
+  "rwf_query V Q Qn \<Longrightarrow> card V \<ge> 1 \<Longrightarrow> z \<in> genericJoin V Q Qn \<longleftrightarrow> wf_tuple (cols V) z \<and>
+    (\<forall>(A, X)\<in>Q. restrict A (cols V) z \<in> X) \<and> (\<forall>(A, X)\<in>Qn. restrict A (cols V) z \<notin> X)"
+proof (induction V Q Qn arbitrary: z rule: genericJoin.induct)
+  case (1 V Q Qn)
+  show ?case
+  proof (cases "card V \<le> 1")
+    case True
+    with "1.prems"(2) have "card V = 1"
+      by simp
+    moreover have "genericJoin V Q Qn = (\<Inter>(_, x)\<in>Q. x) - (\<Union>(_, x)\<in>Qn. x)"
+      using True by (subst genericJoin.simps) simp
+    ultimately show ?thesis
+      using base_correctness[OF "1.prems"(1)] by simp
+  next
+    case False
+    then have card: "card V \<ge> 2"
+      by simp
+    obtain I J where IJ: "(I, J) = getIJ Q Qn V"
+      by (metis surj_pair)
+    note IJ' = getIJProperties[OF card IJ]
+    note Q = rwf_queryD[OF "1.prems"(1)]
+    have fin: "finite I" "finite J" and V: "V = I \<union> J" and disj: "I \<inter> J = {}"
+      using Q(1) IJ'(5,6) by auto
+    define R_I where "R_I = genericJoin I (projectQuery I (filterQuery I Q)) (filterQueryNeg I Qn)"
+    define R_J where "R_J t = genericJoin J (newQuery J (filterQuery J Q) (I, t))
+      (newQuery J (Qn - filterQueryNeg I Qn) (I, t))" for t
+    have R_I: "t \<in> R_I \<longleftrightarrow> wf_tuple (cols I) t \<and>
+      (\<forall>(cs, X)\<in>Q. set cs \<inter> I \<noteq> {} \<longrightarrow> restrict (cols_in I cs) (cols I) t \<in> restrict (cols_in I cs) cs ` X) \<and>
+      (\<forall>(cs, X)\<in>Qn. set cs \<subseteq> I \<longrightarrow> restrict cs (cols I) t \<notin> X)" for t
+      unfolding R_I_def all_projectQuery[symmetric] all_filterQueryNeg[symmetric]
+      by (rule "1.IH"(1)[OF False refl IJ refl refl rwf_query_I[OF "1.prems"(1) card IJ] IJ'(1)])
+    have R_J: "y \<in> R_J t \<longleftrightarrow> wf_tuple (cols J) y \<and>
+      (\<forall>(cs, X)\<in>Q. set cs \<inter> J \<noteq> {} \<longrightarrow> restrict (cols_in J cs) (cols J) y \<in> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t}) \<and>
+      (\<forall>(cs, X)\<in>Qn. \<not> set cs \<subseteq> I \<longrightarrow> restrict (cols_in J cs) (cols J) y \<notin> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t})" for t y
+      unfolding R_J_def all_newQuery[symmetric] all_newQuery_neg[symmetric]
+      by (rule "1.IH"(2)[OF False refl IJ refl refl refl refl refl rwf_query_J[OF "1.prems"(1) card IJ] IJ'(2)])
+    have eq: "genericJoin V Q Qn = (\<Union>t\<in>R_I. merge I J t ` R_J t)"
+      unfolding R_I_def R_J_def by (rule genericJoin_step[OF card IJ])
+    have R_I_D: "wf_tuple (cols I) t"
+      "(cs, X) \<in> Q \<Longrightarrow> set cs \<inter> I \<noteq> {} \<Longrightarrow>
+        restrict (cols_in I cs) (cols I) t \<in> restrict (cols_in I cs) cs ` X"
+      "(cs, X) \<in> Qn \<Longrightarrow> set cs \<subseteq> I \<Longrightarrow> restrict cs (cols I) t \<notin> X"
+      if "t \<in> R_I" for t cs X
+      using that unfolding R_I Ball_def split_paired_All case_prod_conv by blast+
+    have R_I_I: "t \<in> R_I" if "wf_tuple (cols I) t"
+      "\<And>cs X. (cs, X) \<in> Q \<Longrightarrow> set cs \<inter> I \<noteq> {} \<Longrightarrow>
+        restrict (cols_in I cs) (cols I) t \<in> restrict (cols_in I cs) cs ` X"
+      "\<And>cs X. (cs, X) \<in> Qn \<Longrightarrow> set cs \<subseteq> I \<Longrightarrow> restrict cs (cols I) t \<notin> X" for t
+      using that unfolding R_I Ball_def split_paired_All case_prod_conv by blast
+    have R_J_D: "wf_tuple (cols J) y"
+      "(cs, X) \<in> Q \<Longrightarrow> set cs \<inter> J \<noteq> {} \<Longrightarrow> restrict (cols_in J cs) (cols J) y \<in> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t}"
+      "(cs, X) \<in> Qn \<Longrightarrow> \<not> set cs \<subseteq> I \<Longrightarrow> restrict (cols_in J cs) (cols J) y \<notin> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t}"
+      if "y \<in> R_J t" for t y cs X
+      using that unfolding R_J Ball_def split_paired_All case_prod_conv by blast+
+    have R_J_I: "y \<in> R_J t" if "wf_tuple (cols J) y"
+      "\<And>cs X. (cs, X) \<in> Q \<Longrightarrow> set cs \<inter> J \<noteq> {} \<Longrightarrow> restrict (cols_in J cs) (cols J) y \<in> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t}"
+      "\<And>cs X. (cs, X) \<in> Qn \<Longrightarrow> \<not> set cs \<subseteq> I \<Longrightarrow> restrict (cols_in J cs) (cols J) y \<notin> restrict (cols_in J cs) cs `
+        {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) t}" for t y
+      using that unfolding R_J Ball_def split_paired_All case_prod_conv by blast
+    text \<open>How a tuple over @{term V} meets the tables, in terms of its parts over @{term I} and
+      @{term J}.\<close>
+    have tab: "wf_atable (cs, X) \<and> distinct cs \<and> table cs X \<and> set cs \<subseteq> I \<union> J \<and> cs \<noteq> []"
+      if "(cs, X) \<in> Q \<union> Qn" for cs X
+      using Q(4)[OF that] V by (simp add: wf_atable_def)
+    let ?I = "\<lambda>z. restrict (cols I) (cols V) z" and ?J = "\<lambda>z. restrict (cols J) (cols V) z"
+    have split: "restrict cs (cols V) z \<in> X \<longleftrightarrow>
+      (if set cs \<inter> J = {} then restrict cs (cols I) (?I z) \<in> X
+       else restrict (cols_in J cs) (cols J) (?J z) \<in> restrict (cols_in J cs) cs `
+         {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) (?I z)})"
+      if "(cs, X) \<in> Q \<union> Qn" for cs X z
+    proof (cases "set cs \<inter> J = {}")
+      case True
+      with tab[OF that] have "set cs \<subseteq> I"
+        by auto
+      with True show ?thesis
+        using restrict_sub[OF Q(1), of I cs z] V by auto
+    next
+      case False
+      then show ?thesis
+        using mem_table_split[OF fin, of cs X z] tab[OF that] V by simp
+    qed
+    have partI: "restrict (cols_in I cs) (cols I) (?I z) \<in> restrict (cols_in I cs) cs ` X"
+      if "(cs, X) \<in> Q \<union> Qn" "restrict cs (cols V) z \<in> X" for cs X z
+      using that restrict_cols_in[OF Q(1), of I cs z] tab[OF that(1)] V by auto
+    have "I \<subseteq> V"
+      using V by simp
+    show ?thesis
+    proof
+      assume "z \<in> genericJoin V Q Qn"
+      then obtain t y where t: "t \<in> R_I" and y: "y \<in> R_J t" and z: "z = merge I J t y"
+        unfolding eq by blast
+      have wf: "wf_tuple (cols I) t" "wf_tuple (cols J) y"
+        using R_I_D(1)[OF t] R_J_D(1)[OF y] .
+      have parts: "?I z = t" "?J z = y"
+        using restrict_merge1[OF fin disj wf(1)] restrict_merge2[OF fin disj wf] by (simp_all add: z V)
+      have pos: "restrict cs (cols V) z \<in> X" if X: "(cs, X) \<in> Q" for cs X
+      proof (cases "set cs \<inter> J = {}")
+        case True
+        with tab[of cs X] X have sub: "set cs \<subseteq> I"
+          by auto
+        with tab[of cs X] X have "set cs \<inter> I \<noteq> {}"
+          by (simp add: Int_absorb2)
+        with R_I_D(2)[OF t X] have "restrict cs (cols I) t \<in> X"
+          using restrict_image_sub[OF sub, of X t] tab[of cs X] X by simp
+        with True show ?thesis
+          using split[of cs X z] X by (simp add: parts)
+      next
+        case False
+        with R_J_D(2)[OF y X] show ?thesis
+          using split[of cs X z] X by (simp add: parts)
+      qed
+      have neg: "restrict cs (cols V) z \<notin> X" if X: "(cs, X) \<in> Qn" for cs X
+      proof
+        assume Xz: "restrict cs (cols V) z \<in> X"
+        show False
+        proof (cases "set cs \<subseteq> I")
+          case True
+          with R_I_D(3)[OF t X] Xz show False
+            using restrict_sub[OF Q(1) \<open>I \<subseteq> V\<close> True, of z] by (simp add: parts)
+        next
+          case False
+          with tab[of cs X] X have "set cs \<inter> J \<noteq> {}"
+            by auto
+          with R_J_D(3)[OF y X False] Xz show False
+            using split[of cs X z] X by (simp add: parts)
+        qed
+      qed
+      have "wf_tuple (cols V) z"
+        by (simp add: z V wf_tuple_merge[OF fin disj])
+      with pos neg show "wf_tuple (cols V) z \<and> (\<forall>(A, X)\<in>Q. restrict A (cols V) z \<in> X) \<and>
+        (\<forall>(A, X)\<in>Qn. restrict A (cols V) z \<notin> X)"
+        unfolding Ball_def split_paired_All case_prod_conv by blast
+    next
+      assume "wf_tuple (cols V) z \<and> (\<forall>(A, X)\<in>Q. restrict A (cols V) z \<in> X) \<and>
+        (\<forall>(A, X)\<in>Qn. restrict A (cols V) z \<notin> X)"
+      then have wf: "wf_tuple (cols V) z"
+        and pos: "\<And>cs X. (cs, X) \<in> Q \<Longrightarrow> restrict cs (cols V) z \<in> X"
+        and neg: "\<And>cs X. (cs, X) \<in> Qn \<Longrightarrow> restrict cs (cols V) z \<notin> X"
+        unfolding Ball_def split_paired_All case_prod_conv by blast+
+      have "?I z \<in> R_I"
+      proof (rule R_I_I)
+        show "wf_tuple (cols I) (?I z)"
+          by simp
+      next
+        fix cs X
+        assume X: "(cs, X) \<in> Q" "set cs \<inter> I \<noteq> {}"
+        then show "restrict (cols_in I cs) (cols I) (?I z) \<in> restrict (cols_in I cs) cs ` X"
+          using partI[of cs X z] pos[OF X(1)] by simp
+      next
+        fix cs X
+        assume X: "(cs, X) \<in> Qn" "set cs \<subseteq> I"
+        then show "restrict cs (cols I) (?I z) \<notin> X"
+          using restrict_sub[OF Q(1) \<open>I \<subseteq> V\<close> X(2), of z] neg[OF X(1)] by simp
+      qed
+      moreover have "?J z \<in> R_J (?I z)"
+      proof (rule R_J_I)
+        show "wf_tuple (cols J) (?J z)"
+          by simp
+      next
+        fix cs X
+        assume X: "(cs, X) \<in> Q" "set cs \<inter> J \<noteq> {}"
+        then show "restrict (cols_in J cs) (cols J) (?J z) \<in> restrict (cols_in J cs) cs `
+          {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) (?I z)}"
+          using split[of cs X z] pos[OF X(1)] by simp
+      next
+        fix cs X
+        assume X: "(cs, X) \<in> Qn" "\<not> set cs \<subseteq> I"
+        with tab[of cs X] have "set cs \<inter> J \<noteq> {}"
+          by auto
+        with X show "restrict (cols_in J cs) (cols J) (?J z) \<notin> restrict (cols_in J cs) cs `
+          {x \<in> X. restrict (cols_in I cs) cs x = restrict (cols_in I cs) (cols I) (?I z)}"
+          using split[of cs X z] neg[OF X(1)] by simp
+      qed
+      moreover have "z = merge I J (?I z) (?J z)"
+        using merge_restrict[OF fin disj, of z] wf by (simp add: V)
+      ultimately show "z \<in> genericJoin V Q Qn"
+        unfolding eq by blast
+    qed
+  qed
+qed
+
 end
 
 end
