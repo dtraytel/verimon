@@ -3,7 +3,7 @@
     "isabelle-pide-mcp": {
       "command": "isabelle",
       "args": ["pide_mcp", "-o", "pide_mcp_await_option_sessions=false",
-               "-d", "thys", "-l", "MFODL_Monitor_Devel"]
+               "-d", "thys", "-R", "MFODL_Monitor_Devel"]
     }
   }
 }
