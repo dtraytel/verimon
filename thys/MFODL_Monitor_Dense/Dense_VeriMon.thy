@@ -84,6 +84,20 @@ lemma flatten_verdicts_map_image:
   "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, f ` X)) Vs) = (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts Vs"
   by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
 
+text \<open>Changing the formula's type annotations changes none of its column lists.\<close>
+
+lemma fvi_list_map_formula[simp]:
+  "Formula.fvi_list b (Formula.formula.map_formula g \<phi>) = Formula.fvi_list b \<phi>"
+proof (induction b \<phi> rule: Formula.fvi_list.induct)
+  case (20 b I r)
+  then show ?case
+    by (induction r) auto
+next
+  case (21 b I r)
+  then show ?case
+    by (induction r) auto
+qed (auto simp: fold_map comp_def cong: fold_cong)
+
 subsection \<open>The monitor's state and its initialization\<close>
 
 type_synonym udmstate = "(mmasaux, muaux_dq, event_data mmtaux) mstate"
