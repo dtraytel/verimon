@@ -43,11 +43,11 @@ heap-resident dense monitor that `-verified` ran then; it is no longer in the bi
 the systems.  When the projected wall time exceeds the budget the remaining formulas get one
 repetition, and if even that would exceed it they are skipped; the report says which happened.
 
-`report.md` and `ratios.svg` in this directory are a run of 2026-09-28 on refine b4f4ca14, after
-EFFICIENCY.md 22, and `report0.md` and `ratios0.svg` the starting point: a build of master
+`report.md` and `ratios.svg` in this directory are a run of 2026-09-29 on refine 8c15b7af, after
+EFFICIENCY.md 22.2, and `report0.md` and `ratios0.svg` the starting point: a build of master
 (025a1423), where `-verified` is the original VeriMon.  Both ran on the same machine, with the
 whole suite of 285 formulas, the same logs and the same settings (8 workers), so their numbers
-compare.  The refine suite took 74 s of wall time, master's 198 s.
+compare.  The refine suite took 73 s of wall time, master's 198 s.
 
 | | master | refine |
 |---|---|---|
@@ -56,25 +56,32 @@ compare.  The refine suite took 74 s of wall time, master's 198 s.
 | MonPoly does not monitor | 21 | 21 |
 | both finish | 240 | 264 |
 | geometric mean VeriMon/MonPoly | 3.69 | 0.82 |
-| median VeriMon/MonPoly | 3.35 | 0.84 |
-| VeriMon faster / more than 2x slower | 0 / 196 | 219 / 0 |
+| median VeriMon/MonPoly | 3.35 | 0.83 |
+| VeriMon faster / more than 2x slower | 0 / 196 | 222 / 0 |
 
-The verified monitor is faster than MonPoly on the geometric mean and on 219 of the 264 formulas
-both finish, and no formula is more than 2x slower.  The largest ratios are `frz-sincelag` (1.30),
-`frz-agg` (1.23), `frz-sincelag30` (1.22), `frz-neglag` (1.20) and `pol-sincefutb` (1.18); every
-other formula is at most 1.18x (`frz-once5`).  The fastest formulas are `frz-nested` (0.05) and
-`onceex-not50` (0.26).  There are no verdict disagreements; master's run has one, `match-pcnt`, an
-end-of-stream difference that the original VeriMon has.
+The verified monitor is faster than MonPoly on the geometric mean and on 222 of the 264 formulas
+both finish, and no formula is more than 2x slower.  The largest ratios are `frz-agg` (1.39),
+`frz-sincelag` (1.30), `frz-neglag` (1.26), `frz-sincelag30` (1.25) and `pol-sincefutb` (1.17);
+every other formula is at most 1.16x (`frz-once5`, `der-guardalw`).  The fastest formulas are
+`frz-nested` (0.05) and `onceex-not50` (0.26).  There are no verdict disagreements; master's run
+has one, `match-pcnt`, an end-of-stream difference that the original VeriMon has.
 
+22.1 (the initial state compiled from the formula by `udinit`, without the kernel's `mformula`)
+and 22.2 (monomorphic copies of the generic operations a profile still found on the inner loops,
+and the short tables' intersection specialised on their comparator) change the per-event code
+only by the second, which cuts the instruction counts of the aggregation, FRZ, ONCE and `complex`
+benchmarks by 1 to 4.5%.  That is below what this suite resolves: on the 264 formulas both runs
+finish, the geometric mean is 0.819 against 0.822 on b4f4ca14, VeriMon's own times are 0.9%
+shorter on the geometric mean and MonPoly's 0.3%, no family moved by more than 0.02, and 222
+formulas are faster against 219.  Three formulas moved by 0.10 or more, both ways, on runs of
+0.03 to 0.06 s: `frz-once20` 1.15 to 1.03 and the other way `frz-outer` 0.83 to 0.96 and
+`frz-agg` 1.23 to 1.39.  The two runs in between, on 7427e589 (22.1) and 6576fc0e (22.2 without
+the intersection), had geometric means of 0.826 and 0.822.
+
+The run before (2026-09-28, b4f4ca14, after 22, the same machine and 285 formulas) had a
+geometric mean of 0.82 against master's 3.69, 219 of 264 formulas faster and none above 2x;
 22 (the executable kernel `meformula` and the queue-buffered `edformula` removed, `udformula`
-refining `dformula` directly) changes the proofs and the code of the initial state only: the
-exported evaluator, `udeval` and `udmstep` and every structure they run, is textually the one
-before.  The suite agrees.  On the 264 formulas both runs finish, the geometric mean is 0.822
-against 0.820 before, VeriMon's own times are 1.1% longer on the geometric mean and MonPoly's
-0.3%, and 219 formulas are faster against 222.  Three formulas moved by 0.10 or more, both ways,
-on runs of 0.05 to 0.10 s: `frz-neglag` 1.30 to 1.20, `frz-neglag30` 1.12 to 1.02, and the other
-way `frz-once20` 1.02 to 1.15.
-
+refining `dformula` directly) had changed the proofs and the code of the initial state only.
 The run before (2026-09-28, b2394a8c, after 21.57, the same machine and 285 formulas) had a
 geometric mean of 0.82 against master's 3.69, 222 of 264 formulas faster and none above 2x;
 21.57 (the frozen conjunct taken out of an existential quantifier, the quantifier moved into the
