@@ -1823,12 +1823,12 @@ lemma (in maux) meval_correct:
   assumes "wf_mformula \<sigma> j P V n R \<phi> \<phi>'" "wf_envs S \<sigma> j \<delta> P P' V db" "S, E \<turnstile> \<phi>'"
   shows "case meval (j + \<delta>) n (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi> 
     of (xs, \<phi>\<^sub>n) \<Rightarrow> wf_mformula \<sigma> (j + \<delta>) P' V n R \<phi>\<^sub>n \<phi>' 
-      \<and> list_all2 (\<lambda>i. qtable n (FV \<phi>') (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>'))
+      \<and> list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>')
           [progress \<sigma> P \<phi>' j..<progress \<sigma> P' \<phi>' (j + \<delta>)] xs"
   using assms
 proof (induction \<phi> arbitrary: db P P' V n R \<phi>' j \<delta> S E rule: mformula_induct)
-  case (MRel rel) (* other repo-branches have ?case2 and ?case3 *)
-  let ?case1 = "\<lambda>t1 t2. \<phi>' = t1 =\<^sub>F t2 \<and> rel = eq_rel n t1 t2
+  case (MRel rel)
+  let ?case1 = "\<lambda>t1 t2. \<phi>' = t1 =\<^sub>F t2 \<and> rel = eq_rel t1 t2
   \<and> is_simple_eq t1 t2 \<and> (\<forall>x\<in>FV\<^sub>t t1. x < n) \<and> (\<forall>x\<in>FV\<^sub>t t2. x < n)"
   obtain t1 and t2 where cases: "?case1 t1 t2"
     using MRel(1)
@@ -1851,74 +1851,97 @@ next
     "MPred p ts mode = MPred p ts (pred_mode_of n ts)"
     using MPred(1) by (cases rule: wf_mformula.cases, auto intro!: wf_mformula.Pred
         dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)+
+  have mode: "is_copy_pattern n ts \<or> is_simple_pattern ts 0" if "mode \<noteq> Match"
+    using that wfmf(2) by (auto simp: pred_mode_of_def split: if_splits)
   show ?case
   proof (cases "?p \<in> dom P") \<comment> \<open>notice @{term "dom P = dom V"}\<close>
     case True
     hence "?p \<in> Mapping.keys db" "?p \<in> dom P'" "?p \<in> dom V" and
-      "list_all2 (\<lambda>i X. X = map Some ` {v. length v = length ts \<and> the (V ?p) v i}) 
+      "list_all2 (\<lambda>i X. X = {v. length v = length ts \<and> the (V ?p) v i}) 
         [the (P ?p)..<the (P' ?p)] (the (Mapping.lookup db ?p))" 
       using MPred(2) unfolding wf_envs_def 
       by (auto simp: dom_def rel_mapping_alt dest: bspec[where x="?p"])
     then obtain m m' Rs and pred 
       where wtnss: "P ?p = Some m" "P' ?p = Some m'" 
         "V ?p = Some pred" "Mapping.lookup db ?p = Some Rs" 
-        and key: "list_all2 (\<lambda>i X. X = map Some ` {v. length v = length ts \<and> pred v i}) [m..<m'] Rs"
+        and key: "list_all2 (\<lambda>i X. X = {v. length v = length ts \<and> pred v i}) [m..<m'] Rs"
       using True by (auto simp: dom_def keys_dom_lookup)
-    hence case1: "is_copy_pattern n ts 
-      \<Longrightarrow> list_all2 (\<lambda>i. qtable n (FV \<phi>') (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>')) [m..<m'] Rs"
-      using qtable_copy_pattern(1)
-      by - (erule list.rel_mono_strong, clarsimp simp: inits)
-    moreover have case2: "is_simple_pattern ts 0 
-      \<Longrightarrow> list_all2 (\<lambda>i T. qtable n (FV \<phi>') (mem_restr R) 
-        (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>') (simple_match n 0 ts ` T)) [m..<m'] Rs"
-      using key wtnss inits qtable_simple_pattern 
-      by - (erule list.rel_mono_strong, clarsimp)
-    moreover have case3: "\<not> is_copy_pattern n ts \<Longrightarrow> \<not> is_simple_pattern ts 0 
-      \<Longrightarrow> list_all2 (\<lambda>i T. qtable n (FV \<phi>') (mem_restr R) (\<lambda>v. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile>\<^sub>M \<phi>')
-             ((\<lambda>x. tabulate x 0 n) ` Option.these (match ts ` T)))
-          [m..<m'] Rs"
-      using key wtnss inits qtable_no_pattern(1)
-      by - (erule list.rel_mono_strong, clarsimp)
-    ultimately show ?thesis
-      using wtnss wfmf inits 
-      by (clarsimp simp: list.rel_map split: pred_mode.split)
+    have case12: "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>') [m..<m'] Rs"
+      if "is_copy_pattern n ts \<or> is_simple_pattern ts 0"
+    proof -
+      from that have simple: "is_simple_pattern ts 0"
+        using is_copy_pattern_simple by blast
+      show ?thesis
+        using key unfolding inits(1)
+        by (rule list.rel_mono_strong)
+          (rule qtable_simple_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple wtnss(3)], simp)
+    qed
+    have case3: "list_all2 (\<lambda>i T. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>'
+        (tabulate_match (Formula.fv_list \<phi>') ` Option.these (match ts ` T))) [m..<m'] Rs"
+      using key unfolding inits(1)
+      by (rule list.rel_mono_strong)
+        (rule qtable_no_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) wtnss(3)], simp)
+    show ?thesis
+    proof (cases "mode = Match")
+      case True
+      with wtnss wfmf inits case3 show ?thesis
+        by (simp add: list.rel_map pred_cols_def)
+    next
+      case False
+      with wtnss wfmf inits case12 mode show ?thesis
+        by (cases mode) simp_all
+    qed
   next
     let ?next_keys = "\<Union>k \<in> {j ..< j + \<delta>}. {(p, n). \<exists>x. (p, x) \<in> \<Gamma> \<sigma> k \<and> n = length x}"
-    let "?option_sats_at" = "\<lambda>k. map Some ` {v. (p, v) \<in> \<Gamma> \<sigma> k \<and> length v = length ts}"
+    let "?sats_at" = "\<lambda>k. {v. (p, v) \<in> \<Gamma> \<sigma> k \<and> length v = length ts}"
     case False
     hence obs: "?p \<notin> dom P'" "?p \<notin> dom V" "?p \<in> ?next_keys \<longrightarrow> ?p \<in> Mapping.keys db"
       using MPred(2)
       unfolding wf_envs_def rel_mapping_alt 
       by (auto simp: subset_iff)
     have key: "?p \<in> Mapping.keys db \<Longrightarrow> Mapping.lookup db ?p 
-      = Some (map ?option_sats_at [j ..< j + \<delta>])"
+      = Some (map ?sats_at [j ..< j + \<delta>])"
       using False MPred(2) 
       unfolding wf_envs_def keys_dom_lookup
       by (clarsimp, erule_tac x="?p" in ballE, auto)
-    hence case1: "Mapping.lookup db ?p = None \<Longrightarrow> ?thesis"
+    have case1: "Mapping.lookup db ?p = None \<Longrightarrow> ?thesis"
       using wfmf inits obs False
-      by (clarsimp simp: keys_dom_lookup dom_def list.rel_map wf_tuple_def 
+      by (clarsimp simp: keys_dom_lookup dom_def list.rel_map
           qtable_empty_iff[unfolded empty_table_def])
         (erule_tac x="j+i" in ballE; force)
-    moreover have case2: "\<exists>x. Mapping.lookup db ?p = Some x \<Longrightarrow> is_copy_pattern n ts \<Longrightarrow> ?thesis"
-      using wfmf inits False obs key qtable_copy_pattern(2) 
-      by (clarsimp simp: keys_dom_lookup dom_def list.rel_map image_image 
-          split: pred_mode.split intro!: list.rel_refl_strong)
-    moreover have case3: "\<exists>x. Mapping.lookup db ?p = Some x \<Longrightarrow> \<not> is_copy_pattern n ts 
-      \<Longrightarrow> is_simple_pattern ts 0 \<Longrightarrow> ?thesis"
-      using wfmf inits False obs key qtable_simple_pattern(2)
-      by (clarsimp simp: keys_dom_lookup dom_def list.rel_map image_image 
-          split: pred_mode.split intro!: list.rel_refl_strong)
-    moreover have case4: "\<exists>x. Mapping.lookup db ?p = Some x \<Longrightarrow> \<not> is_copy_pattern n ts 
-      \<Longrightarrow> \<not> is_simple_pattern ts 0 \<Longrightarrow> ?thesis"
-      using wfmf inits False obs key qtable_no_pattern(2)
-      by (clarsimp simp: keys_dom_lookup dom_def list.rel_map image_image 
-          split: pred_mode.split intro!: list.rel_refl_strong)
-    ultimately show ?thesis
-      by (meson not_None_eq)
+    have P_None: "P ?p = None" "P' ?p = None" "V ?p = None"
+      using False obs by (simp_all add: domIff)
+    have case23: "?thesis" if lk: "Mapping.lookup db ?p = Some Rs" for Rs
+    proof -
+      from lk key have Rs: "Rs = map ?sats_at [j ..< j + \<delta>]"
+        by (simp add: keys_dom_lookup domI)
+      show ?thesis
+      proof (cases "mode = Match")
+        case True
+        have "list_all2 (\<lambda>i T. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>'
+          (tabulate_match (Formula.fv_list \<phi>') ` Option.these (match ts ` T))) [j..<j + \<delta>] Rs"
+          unfolding Rs list.rel_map inits(1)
+          by (rule list.rel_refl_strong)
+            (rule qtable_no_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) P_None(3)], simp)
+        with True lk wfmf inits P_None show ?thesis
+          by (simp add: list.rel_map pred_cols_def)
+      next
+        case False
+        then have simple: "is_simple_pattern ts 0"
+          using mode is_copy_pattern_simple by blast
+        have "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>') [j..<j + \<delta>] Rs"
+          unfolding Rs list.rel_map inits(1)
+          by (rule list.rel_refl_strong)
+            (rule qtable_simple_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple P_None(3)], simp)
+        with False lk wfmf inits P_None show ?thesis
+          by (cases mode) simp_all
+      qed
+    qed
+    show ?thesis
+      using case1 case23 by (cases "Mapping.lookup db ?p") auto
   qed
 next
-  case (MLet p m \<phi>1 \<phi>2)
+  case (MLet p m cs \<phi>1 \<phi>2)
   let ?pn = "(p, m)"
   from MLet.prems(1) obtain \<phi>1' \<phi>2' where Let: "\<phi>' = Formula.Let p \<phi>1' \<phi>2'" and
     1: "wf_mformula \<sigma> j P V m UNIV \<phi>1 \<phi>1'" and
@@ -1927,7 +1950,8 @@ next
       (V(?pn \<mapsto> \<lambda>w j. Formula.sat \<sigma> V w j \<phi>1'))
       n R \<phi>2 \<phi>2'" and
     safe1: "safe_formula \<phi>1'" and
-    safe2: "safe_formula \<phi>2'" 
+    safe2: "safe_formula \<phi>2'" and
+    cs: "cs = Formula.fv_list \<phi>1'"
     by (cases rule: wf_mformula.cases) 
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)
   from MLet.prems(3) Let obtain E' where
@@ -1936,10 +1960,13 @@ next
     unfolding fv by (cases pred: wty_formula) simp_all
   obtain xs \<phi>1_new where e1: "meval (j + \<delta>) m (map (\<tau> \<sigma>) [j ..< j + \<delta>]) db \<phi>1 = (xs, \<phi>1_new)" and
       wf1: "wf_mformula \<sigma> (j + \<delta>) P' V m UNIV \<phi>1_new \<phi>1'" and
-      res1: "list_all2 (\<lambda>i. qtable m (fv \<phi>1') (mem_restr UNIV) (\<lambda>v. Formula.sat \<sigma> V (map the v) i \<phi>1'))
+      res1: "list_all2 (\<lambda>i. sat_table \<sigma> V m UNIV (Formula.fv_list \<phi>1') i \<phi>1')
        [progress \<sigma> P \<phi>1' j..<progress \<sigma> P' \<phi>1' (j + \<delta>)] xs"
-    using MLet(1)[OF 1(1) MLet.prems(2) wty1] by (auto simp: eqTrueI[OF mem_restr_UNIV, abs_def])
-  from MLet(2)[OF 2 wf_envs_update[OF MLet.prems(2) fv res1 safe1 wty1] wty2] wf1 e1 fv safe1 safe2
+    using MLet(1)[OF 1(1) MLet.prems(2) wty1] by auto
+  have res1': "list_all2 (\<lambda>i. sat_table \<sigma> V m UNIV [0..<m] i \<phi>1')
+       [progress \<sigma> P \<phi>1' j..<progress \<sigma> P' \<phi>1' (j + \<delta>)] (map (reorder [0..<m] cs) xs)"
+    unfolding list.rel_map cs by (rule list.rel_mono_strong[OF res1]) (rule sat_table_reorder_upt[OF _ fv(2,1)])
+  from MLet(2)[OF 2 wf_envs_update[OF MLet.prems(2) fv res1' safe1 wty1] wty2] wf1 e1 fv safe1 safe2 cs
   show ?case unfolding Let
     by (auto simp: fun_upd_def intro!: wf_mformula.Let)
 next
