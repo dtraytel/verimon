@@ -337,8 +337,29 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("set_of_idx", "ed_set_of_idx_m", [etuple, etuple]),
    ("mapping_of_cluster", "ed_mapping_of_cluster", [etuple, etuple]),
    ("cluster_rbt_comp", "ed_cluster_rbt_comp", [etuple, etuple]),
-   ("add_to_rbt_comp", "ed_add_to_rbt_comp", [etuple, etuple])]
+   ("add_to_rbt_comp", "ed_add_to_rbt_comp", [etuple, etuple]),
+   ("idx_bucket", "ed_idx_bucket", ["event_data"]),
+   ("idx_add1", "ed_idx_add1", ["event_data"]),
+   ("idx_del1", "ed_idx_del1", ["event_data"]),
+   ("idx_ins", "ed_idx_ins", ["event_data"]),
+   ("idx_dels", "ed_idx_dels", ["event_data"]),
+   ("wf_idx_ins", "ed_wf_idx_ins", ["event_data"]),
+   ("wf_idx_rem", "ed_wf_idx_rem", ["event_data"]),
+   ("wf_table_union0", "ed_wf_table_union0", ["event_data"]),
+   ("wf_table_antijoin0", "ed_wf_table_antijoin0", ["event_data"]),
+   ("wf_table_add", "ed_wf_table_add", ["event_data"]),
+   ("wf_table_del", "ed_wf_table_del", ["event_data"])]
   ["etuple_dict_simps"]\<close>
+
+text \<open>The preprocessor rewrites bottom-up, so the index's argument is redirected to its copy
+  before the key-driven forms of \<^verbatim>\<open>Dense_Idx\<close> get to match; they are restated in terms of the
+  copies.\<close>
+
+lemma ed_wf_table_add_compat[code_unfold]:
+  "ed_wf_table_union t (ed_wf_table_of_set_args args X) = ed_wf_table_add args t X"
+  "ed_wf_table_antijoin t (ed_wf_table_of_set_args args X) = ed_wf_table_del args t X"
+  by (simp_all add: ed_wf_table_union_def ed_wf_table_antijoin_def ed_wf_table_of_set_args_def
+      ed_wf_table_add_def ed_wf_table_del_def wf_table_add_def wf_table_del_def)
 
 declare [[code drop: ed_upd_set_nat_v ed_minus_keys_v ed_mapping_delete_set_tstp_v ed_filter_set_v
   ed_set_of_idx_v]]

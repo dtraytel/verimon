@@ -10874,6 +10874,23 @@ let rec match_table
     | tms, Collect_set p -> match_table tms (Collect_set p)
     | tms, Complement q -> match_table tms (Complement q);;
 
+let rec ed_minus_keys_m
+  x m = ed_filter
+          (fun xa ->
+            (match ed_lookup_nat m xa with None -> true | Some _ -> false))
+          x;;
+
+let ed_minus_keys_v :
+  ((event_data list) set ->
+    ((event_data list), nat) mapping -> (event_data list) set)
+    boxed
+  = Box ed_minus_keys_m;;
+
+let rec wf_table_upd
+  args m w =
+    (if null (args_L args) || equal_lista equal_nat (args_L args) (args_R args)
+      then Wf_table_of_keys (args_R args, m) else w ());;
+
 let ed_mempty_table : ((event_data list), (event_data list) set) mapping
   = RBT_Mapping (emptyc (ccompare_list ccompare_event_data));;
 
@@ -10898,23 +10915,6 @@ let rec ed_wf_table_of_set_args
     (if null (args_L args) || equal_lista equal_nat (args_L args) (args_R args)
       then Wf_table_of_set (args_R args, x)
       else Wf_table_of_idx (ed_wf_idx_of_set (args_R args) (args_L args) x));;
-
-let rec ed_minus_keys_m
-  x m = ed_filter
-          (fun xa ->
-            (match ed_lookup_nat m xa with None -> true | Some _ -> false))
-          x;;
-
-let ed_minus_keys_v :
-  ((event_data list) set ->
-    ((event_data list), nat) mapping -> (event_data list) set)
-    boxed
-  = Box ed_minus_keys_m;;
-
-let rec wf_table_upd
-  args m w =
-    (if null (args_L args) || equal_lista equal_nat (args_L args) (args_R args)
-      then Wf_table_of_keys (args_R args, m) else w ());;
 
 let rec rep_wf_set (Abs_wf_set x) = x;;
 
@@ -11023,6 +11023,122 @@ let rec ed_wf_table_union
         ed_wf_table_union t
           (Wf_table_of_wf_set (ed_wf_set_of_set cs (unbox ed_keys_nat_v m)));;
 
+let rec ed_wf_table_union0 t u = ed_wf_table_union t u;;
+
+let rec ed_rbt_insert_table
+  xc xd xe = Mapping_RBTa (ed_rbtc_insert xc xd (unbox ed_impl_of_table_v xe));;
+
+let rec ed_update_table
+  k v x2 = match k, v, x2 with
+    k, v, RBT_Mapping t -> RBT_Mapping (ed_rbt_insert_table k v t)
+    | k, v, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (updatea (equal_list equal_event_data) k v al)
+    | k, v, Mapping m ->
+        Mapping (fun_upd (equal_list equal_event_data) m k (Some v));;
+
+let rec ed_idx_bucket
+  t k = (match ed_lookup_table t k with None -> ed_bot | Some y -> y);;
+
+let rec ed_idx_add1
+  cs i x t =
+    (let k = restrict i cs x in
+      ed_update_table k (ed_insert x (ed_idx_bucket t k)) t);;
+
+let rec idx_bucket (_A1, _A2, _A3)
+  t k = (match lookupa ((ccompare_list _A2), (equal_list _A3)) t k
+          with None ->
+            set_empty ((ceq_list _A1), (ccompare_list _A2))
+              (of_phantom set_impl_lista)
+          | Some y -> y);;
+
+let rec idx_add1 (_A1, _A2, _A3)
+  cs i x t =
+    (let k = restrict i cs x in
+      updateb ((ccompare_list _A2), (equal_list _A3)) k
+        (insert ((ceq_list _A1), (ccompare_list _A2)) x
+          (idx_bucket (_A1, _A2, _A3) t k))
+        t);;
+
+let rec idx_add1_cfi (_A1, _A2, _A3)
+  xb xc = Abs_comp_fun_idem (idx_add1 (_A1, _A2, _A3) xb xc);;
+
+let rec ed_idx_ins
+  cs i t x3 = match cs, i, t, x3 with
+    cs, i, t, RBT_set rbt ->
+      foldb (ccompare_list ccompare_event_data) (ed_idx_add1 cs i) rbt t
+    | cs, i, t, DList_set uu ->
+        (if unbox ed_finite_v (DList_set uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_add1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (DList_set uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> ed_idx_ins cs i t (DList_set uu)))
+    | cs, i, t, Set_Monad uu ->
+        (if unbox ed_finite_v (Set_Monad uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_add1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Set_Monad uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> ed_idx_ins cs i t (Set_Monad uu)))
+    | cs, i, t, Collect_set uu ->
+        (if unbox ed_finite_v (Collect_set uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_add1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Collect_set uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> ed_idx_ins cs i t (Collect_set uu)))
+    | cs, i, t, Complement uu ->
+        (if unbox ed_finite_v (Complement uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_add1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Complement uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> ed_idx_ins cs i t (Complement uu)));;
+
+let rec ed_wf_idx_ins
+  xb xc =
+    Abs_wf_idx
+      ((let (cs, (i, t)) = rep_wf_idx xb in
+         (fun x -> (cs, (i, ed_idx_ins cs i t (ed_filter (wf_tuple cs) x)))))
+        xc);;
+
+let rec wf_idx_sig x = (let (cs, (_, _)) = rep_wf_idx x in cs);;
+
+let rec ed_wf_table_add
+  args xa1 x = match args, xa1, x with
+    args, Wf_table_of_idx i, x ->
+      (if equal_lista equal_nat (wf_idx_sig i) (args_R args) &&
+            equal_lista equal_nat (wf_idx_cols i)
+              (filtera
+                (fun c ->
+                  nat_member c
+                    (set (ceq_nat, ccompare_nat, set_impl_nat) (args_R args)))
+                (args_L args))
+        then Wf_table_of_idx (ed_wf_idx_ins i x)
+        else ed_wf_table_union0 (Wf_table_of_idx i)
+               (ed_wf_table_of_set_args args x))
+    | args, Wf_table_of_wf_set s, x ->
+        ed_wf_table_union0 (Wf_table_of_wf_set s)
+          (ed_wf_table_of_set_args args x)
+    | args, Wf_table_of_set (cs, y), x ->
+        ed_wf_table_union0 (Wf_table_of_set (cs, y))
+          (ed_wf_table_of_set_args args x)
+    | args, Wf_table_of_keys (cs, m), x ->
+        ed_wf_table_union0 (Wf_table_of_keys (cs, m))
+          (ed_wf_table_of_set_args args x);;
+
 let rec ed_add_new_table_mmsaux
   args x
     (t, (gc, (data_prev,
@@ -11033,8 +11149,7 @@ let rec ed_add_new_table_mmsaux
        let tuple_sincea = unbox ed_upd_set_nat_v tuple_since (fun _ -> t) xa in
        let wf_table_sincea =
          wf_table_upd args tuple_sincea
-           (fun _ ->
-             ed_wf_table_union wf_table_since (ed_wf_table_of_set_args args xa))
+           (fun _ -> ed_wf_table_add args wf_table_since xa)
          in
         (if memL (args_ivl args) zero_nata
           then (let tuple_ina = unbox ed_upd_set_nat_v tuple_in (fun _ -> t) x
@@ -11044,8 +11159,7 @@ let rec ed_add_new_table_mmsaux
                               (ed_union table_in x,
                                 (wf_table_upd args tuple_ina
                                    (fun _ ->
-                                     ed_wf_table_union wf_table_in
-                                       (ed_wf_table_of_set_args args x)),
+                                     ed_wf_table_add args wf_table_in x),
                                   (tuple_ina,
                                     (wf_table_sincea, tuple_sincea)))))))))
           else (t, (gc, (append_queue (t, x) data_prev,
@@ -11279,6 +11393,79 @@ let rec wf_table_union (_A1, _A2)
                       set_impl_list)
                 m)));;
 
+let rec wf_table_union0 (_A1, _A2) t u = wf_table_union (_A1, _A2) t u;;
+
+let rec idx_ins (_A1, _A2, _A3)
+  cs i t x3 = match cs, i, t, x3 with
+    cs, i, t, RBT_set rbt ->
+      (match ccompare_lista _A2
+        with None ->
+          failwith "idx_ins: ccompare = None"
+            (fun _ -> idx_ins (_A1, _A2, _A3) cs i t (RBT_set rbt))
+        | Some _ ->
+          foldb (ccompare_list _A2) (idx_add1 (_A1, _A2, _A3) cs i) rbt t)
+    | cs, i, t, DList_set uu ->
+        (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
+              (DList_set uu)
+          then set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+                 (idx_add1_cfi (_A1, _A2, _A3) cs i) t (DList_set uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> idx_ins (_A1, _A2, _A3) cs i t (DList_set uu)))
+    | cs, i, t, Set_Monad uu ->
+        (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
+              (Set_Monad uu)
+          then set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+                 (idx_add1_cfi (_A1, _A2, _A3) cs i) t (Set_Monad uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> idx_ins (_A1, _A2, _A3) cs i t (Set_Monad uu)))
+    | cs, i, t, Collect_set uu ->
+        (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
+              (Collect_set uu)
+          then set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+                 (idx_add1_cfi (_A1, _A2, _A3) cs i) t (Collect_set uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> idx_ins (_A1, _A2, _A3) cs i t (Collect_set uu)))
+    | cs, i, t, Complement uu ->
+        (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
+              (Complement uu)
+          then set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+                 (idx_add1_cfi (_A1, _A2, _A3) cs i) t (Complement uu)
+          else failwith "idx_ins: infinite"
+                 (fun _ -> idx_ins (_A1, _A2, _A3) cs i t (Complement uu)));;
+
+let rec wf_idx_ins (_A1, _A2, _A3)
+  xb xc =
+    Abs_wf_idx
+      ((let (cs, (i, t)) = rep_wf_idx xb in
+         (fun x ->
+           (cs, (i, idx_ins (_A1, _A2, _A3) cs i t
+                      (filter ((ceq_list _A1), (ccompare_list _A2))
+                        (wf_tuple cs) x)))))
+        xc);;
+
+let rec wf_table_add (_A1, _A2, _A3)
+  args xa1 x = match args, xa1, x with
+    args, Wf_table_of_idx i, x ->
+      (if equal_lista equal_nat (wf_idx_sig i) (args_R args) &&
+            equal_lista equal_nat (wf_idx_cols i)
+              (filtera
+                (fun c ->
+                  nat_member c
+                    (set (ceq_nat, ccompare_nat, set_impl_nat) (args_R args)))
+                (args_L args))
+        then Wf_table_of_idx (wf_idx_ins (_A1, _A2, _A3) i x)
+        else wf_table_union0 (_A1, _A2) (Wf_table_of_idx i)
+               (wf_table_of_set_args (_A1, _A2) args x))
+    | args, Wf_table_of_wf_set s, x ->
+        wf_table_union0 (_A1, _A2) (Wf_table_of_wf_set s)
+          (wf_table_of_set_args (_A1, _A2) args x)
+    | args, Wf_table_of_set (cs, y), x ->
+        wf_table_union0 (_A1, _A2) (Wf_table_of_set (cs, y))
+          (wf_table_of_set_args (_A1, _A2) args x)
+    | args, Wf_table_of_keys (cs, m), x ->
+        wf_table_union0 (_A1, _A2) (Wf_table_of_keys (cs, m))
+          (wf_table_of_set_args (_A1, _A2) args x);;
+
 let rec upd_set_keys (_C1, _C2, _C3, _C4)
   z (t, x) (m, y) =
     (upd_set (_C1, _C2, _C3, _C4) m (fun _ -> t) (z x t),
@@ -11349,8 +11536,8 @@ let rec add_new_ts_mmsaux (_A1, _A2, _A3)
                              (data_ina,
                                (sup_seta ((ceq_list _A1), (ccompare_list _A2))
                                   table_in add,
-                                 (wf_table_union (_A1, _A2) wf_table_in
-                                    (wf_table_of_set_args (_A1, _A2) args add),
+                                 (wf_table_add (_A1, _A2, _A3) args wf_table_in
+                                    add,
                                    (tuple_ina,
                                      (wf_table_since, tuple_since)))))))))));;
 
@@ -11408,12 +11595,29 @@ let rec add_new_ts_mmasauxa
                          (data_ina,
                            (ed_union table_in add,
                              (wf_table_upd args tuple_ina
-                                (fun _ ->
-                                  ed_wf_table_union wf_table_in
-                                    (ed_wf_table_of_set_args args add)),
+                                (fun _ -> ed_wf_table_add args wf_table_in add),
                                (tuple_ina, (wf_table_since, tuple_since)))))))),
               insert_maggauxa aggargs
                 (ed_minus add (unbox ed_keys_nat_v tuple_in)) aggaux)));;
+
+let rec filter_cfi _B (_A1, _A2, _A3, _A4)
+  xa = Abs_comp_fun_idem
+         (fun a (m, y) ->
+           (match lookupa (_A2, _A3) m a with None -> (m, y)
+             | Some u ->
+               (if eq _B xa u
+                 then (delete (_A2, _A3) a m,
+                        sup_seta (_A1, _A2) y
+                          (insert (_A1, _A2) a (bot_set (_A1, _A2, _A4))))
+                 else (m, y))));;
+
+let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
+  (t, a) (m, y) =
+    (if finite (_B1, _B2, _B3) a
+      then set_fold_cfi (_B2, _B3) (filter_cfi _A (_B2, _B3, _B4, _B5) t) (m, y)
+             a
+      else failwith "upd_set: infinite"
+             (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
 
 let rec filter_comp_minus
   c t1 t2 =
@@ -11644,24 +11848,115 @@ let rec ed_wf_table_antijoin
         ed_wf_table_antijoin t
           (Wf_table_of_wf_set (ed_wf_set_of_set cs (unbox ed_keys_nat_v m)));;
 
-let rec filter_cfi _B (_A1, _A2, _A3, _A4)
-  xa = Abs_comp_fun_idem
-         (fun a (m, y) ->
-           (match lookupa (_A2, _A3) m a with None -> (m, y)
-             | Some u ->
-               (if eq _B xa u
-                 then (delete (_A2, _A3) a m,
-                        sup_seta (_A1, _A2) y
-                          (insert (_A1, _A2) a (bot_set (_A1, _A2, _A4))))
-                 else (m, y))));;
+let rec ed_wf_table_antijoin0 t u = ed_wf_table_antijoin t u;;
 
-let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
-  (t, a) (m, y) =
-    (if finite (_B1, _B2, _B3) a
-      then set_fold_cfi (_B2, _B3) (filter_cfi _A (_B2, _B3, _B4, _B5) t) (m, y)
-             a
-      else failwith "upd_set: infinite"
-             (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
+let rec ed_rbt_delete_table
+  xb xc = Mapping_RBTa (ed_rbtc_delete xb (unbox ed_impl_of_table_v xc));;
+
+let rec ed_delete_table
+  k x1 = match k, x1 with
+    k, RBT_Mapping t -> RBT_Mapping (ed_rbt_delete_table k t)
+    | k, Assoc_List_Mapping al ->
+        Assoc_List_Mapping (deletea (equal_list equal_event_data) k al)
+    | k, Mapping m -> Mapping (fun_upd (equal_list equal_event_data) m k None);;
+
+let rec ed_idx_del1
+  cs i x t =
+    (let k = restrict i cs x in
+     let b = ed_minus (ed_idx_bucket t k) (ed_insert x ed_bot) in
+      (if unbox ed_is_empty_v b then ed_delete_table k t
+        else ed_update_table k b t));;
+
+let rec idx_del1 (_A1, _A2, _A3)
+  cs i x t =
+    (let k = restrict i cs x in
+     let b =
+       minus_set ((ceq_list _A1), (ccompare_list _A2))
+         (idx_bucket (_A1, _A2, _A3) t k)
+         (insert ((ceq_list _A1), (ccompare_list _A2)) x
+           (set_empty ((ceq_list _A1), (ccompare_list _A2))
+             (of_phantom set_impl_lista)))
+       in
+      (if is_empty (card_UNIV_list, (ceq_list _A1), (cproper_interval_list _A2))
+            b
+        then delete ((ccompare_list _A2), (equal_list _A3)) k t
+        else updateb ((ccompare_list _A2), (equal_list _A3)) k b t));;
+
+let rec idx_del1_cfi (_A1, _A2, _A3)
+  xb xc = Abs_comp_fun_idem (idx_del1 (_A1, _A2, _A3) xb xc);;
+
+let rec ed_idx_dels
+  cs i t x3 = match cs, i, t, x3 with
+    cs, i, t, RBT_set rbt ->
+      foldb (ccompare_list ccompare_event_data) (ed_idx_del1 cs i) rbt t
+    | cs, i, t, DList_set uu ->
+        (if unbox ed_finite_v (DList_set uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_del1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (DList_set uu)
+          else t)
+    | cs, i, t, Set_Monad uu ->
+        (if unbox ed_finite_v (Set_Monad uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_del1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Set_Monad uu)
+          else t)
+    | cs, i, t, Collect_set uu ->
+        (if unbox ed_finite_v (Collect_set uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_del1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Collect_set uu)
+          else t)
+    | cs, i, t, Complement uu ->
+        (if unbox ed_finite_v (Complement uu)
+          then set_fold_cfi
+                 ((ceq_list ceq_event_data),
+                   (ccompare_list ccompare_event_data))
+                 (idx_del1_cfi
+                   (ceq_event_data, ccompare_event_data, equal_event_data) cs i)
+                 t (Complement uu)
+          else t);;
+
+let rec ed_wf_idx_rem
+  i d = Abs_wf_idx
+          (let (cs, (ia, t)) = rep_wf_idx i in
+           let da = ed_filter (wf_tuple cs) d in
+            (if unbox ed_finite_v da then (cs, (ia, ed_idx_dels cs ia t da))
+              else (cs, (ia, ed_idx_antijoin cs t cs
+                               (ed_idx_create cs ia da)))));;
+
+let rec ed_wf_table_del
+  args x1 d = match args, x1, d with
+    args, Wf_table_of_idx i, d ->
+      (if equal_lista equal_nat (wf_idx_sig i) (args_R args) &&
+            (equal_lista equal_nat (wf_idx_cols i)
+               (filtera
+                 (fun c ->
+                   nat_member c
+                     (set (ceq_nat, ccompare_nat, set_impl_nat) (args_R args)))
+                 (args_L args)) &&
+              not (equal_lista equal_nat (wf_idx_cols i) (args_R args)))
+        then Wf_table_of_idx (ed_wf_idx_rem i d)
+        else ed_wf_table_antijoin0 (Wf_table_of_idx i)
+               (ed_wf_table_of_set_args args d))
+    | args, Wf_table_of_wf_set s, d ->
+        ed_wf_table_antijoin0 (Wf_table_of_wf_set s)
+          (ed_wf_table_of_set_args args d)
+    | args, Wf_table_of_set (cs, y), d ->
+        ed_wf_table_antijoin0 (Wf_table_of_set (cs, y))
+          (ed_wf_table_of_set_args args d)
+    | args, Wf_table_of_keys (cs, m), d ->
+        ed_wf_table_antijoin0 (Wf_table_of_keys (cs, m))
+          (ed_wf_table_of_set_args args d);;
 
 let rec ed_shift_end
   args nt
@@ -11689,9 +11984,7 @@ let rec ed_shift_end
                    (data_ina,
                      (ed_minus table_in del,
                        (wf_table_upd args tuple_ina
-                          (fun _ ->
-                            ed_wf_table_antijoin wf_table_in
-                              (ed_wf_table_of_set_args args del)),
+                          (fun _ -> ed_wf_table_del args wf_table_in del),
                          (tuple_ina, (wf_table_since, tuple_since)))))))));;
 
 let rec shift_end_mmasaux
@@ -11732,9 +12025,7 @@ let rec shift_end_mmasaux
                         (data_ina,
                           (ed_minus table_in del,
                             (wf_table_upd args tuple_ina
-                               (fun _ ->
-                                 ed_wf_table_antijoin wf_table_in
-                                   (ed_wf_table_of_set_args args del)),
+                               (fun _ -> ed_wf_table_del args wf_table_in del),
                               (tuple_ina, (wf_table_since, tuple_since)))))))),
               delete_maggauxa aggargs del aggaux)));;
 

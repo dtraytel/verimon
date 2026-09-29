@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Tree_Code
-  imports Kernel_Code
+  imports Dense_Idx
 begin
 (*>*)
 
