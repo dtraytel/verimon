@@ -338,6 +338,221 @@ lemma wf_table_del_code[code]:
   by (simp_all add: wf_table_del_def wf_table_antijoin0_def wf_table_of_set_args_def
       wf_table_antijoin_code(1)) (auto simp: wf_idx_antijoin_of_set)
 
+subsection \<open>The probe by the left operand\<close>
+
+text \<open>
+  The join of the Since structure with the left operand's table \<^term>\<open>X\<close> indexes \<^term>\<open>X\<close>,
+  joins or antijoins each of the two indexed tables with it to find the tuples that fail the
+  probe, and antijoins the table with those.  The index is keyed by the left operand's columns,
+  so a tuple fails the probe exactly when its key's membership in \<^term>\<open>X\<close> differs from the
+  probe's polarity: the probe splits the index by its keys.
+\<close>
+
+definition mfilter_keys :: "bool \<Rightarrow> 'k set \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
+  "mfilter_keys pos Y m = Mapping.filter (\<lambda>k _. (k \<in> Y) = pos) m"
+
+lemma lookup_mfilter_keys: "Mapping.lookup (mfilter_keys pos Y m) k =
+  (if (k \<in> Y) = pos then Mapping.lookup m k else None)"
+  by (auto simp: mfilter_keys_def Mapping.lookup_filter split: option.splits)
+
+lemma mfilter_keys_False: "mfilter_keys False Y m = mapping_delete_set m Y"
+  by (intro mapping_eqI) (simp add: lookup_mfilter_keys delete_set_lookup)
+
+text \<open>Either part is computed by visiting the probing set's elements: the kept part of a
+  positive probe is collected from the index's entries at those keys, the kept part of a negative
+  one is the index without them.\<close>
+
+definition mrestrict1 :: "('k, 'v) mapping \<Rightarrow> 'k \<Rightarrow> ('k, 'v) mapping \<Rightarrow> ('k, 'v) mapping" where
+  "mrestrict1 m k acc = (case Mapping.lookup m k of None \<Rightarrow> acc | Some v \<Rightarrow> Mapping.update k v acc)"
+
+lemma lookup_mrestrict1: "Mapping.lookup (mrestrict1 m k acc) k' =
+  (if k' = k \<and> Mapping.lookup m k \<noteq> None then Mapping.lookup m k else Mapping.lookup acc k')"
+  by (auto simp: mrestrict1_def Mapping.lookup_update' split: option.splits)
+
+lemma comp_fun_idem_mrestrict1: "comp_fun_idem (mrestrict1 m)"
+  by unfold_locales (auto simp: fun_eq_iff lookup_mrestrict1 intro!: mapping_eqI)
+
+lift_definition mrestrict1_cfi :: "('k, 'v) mapping \<Rightarrow> ('k, ('k, 'v) mapping) comp_fun_idem"
+  is mrestrict1
+  by (rule comp_fun_idem_mrestrict1)
+
+lemma lookup_fold_mrestrict1:
+  assumes "finite Y"
+  shows "Mapping.lookup (Finite_Set.fold (mrestrict1 m) Mapping.empty Y) k =
+    (if k \<in> Y then Mapping.lookup m k else None)"
+  using assms
+proof (induction Y)
+  case (insert x Y)
+  interpret comp_fun_idem "mrestrict1 m" by (rule comp_fun_idem_mrestrict1)
+  show ?case
+    unfolding fold_insert[OF insert.hyps] lookup_mrestrict1 insert.IH by auto
+qed simp
+
+lemma mfilter_keys_True_fold:
+  "finite Y \<Longrightarrow> mfilter_keys True Y m = Finite_Set.fold (mrestrict1 m) Mapping.empty Y"
+  by (intro mapping_eqI) (simp add: lookup_mfilter_keys lookup_fold_mrestrict1)
+
+lemma mfilter_keys_code:
+  "mfilter_keys pos Y m = (if pos then
+     (if finite Y then set_fold_cfi (mrestrict1_cfi m) Mapping.empty Y
+      else Code.abort (STR ''mfilter_keys: infinite'') (\<lambda>_. mfilter_keys pos Y m))
+   else mapping_delete_set m Y)"
+  by (simp add: set_fold_cfi.rep_eq mrestrict1_cfi.rep_eq mfilter_keys_True_fold mfilter_keys_False)
+
+lemma mfilter_keys_RBT_code[code]:
+  fixes rbt :: "'k :: ccompare set_rbt"
+  shows "mfilter_keys pos (RBT_set rbt) m = (case ID CCOMPARE('k) of
+      None \<Rightarrow> Code.abort (STR ''mfilter_keys: ccompare = None'') (\<lambda>_. mfilter_keys pos (RBT_set rbt) m)
+    | Some _ \<Rightarrow> (if pos then RBT_Set2.fold (mrestrict1 m) rbt Mapping.empty
+        else mapping_delete_set m (RBT_set rbt)))"
+proof (cases "ID CCOMPARE('k)")
+  case None
+  then show ?thesis by simp
+next
+  case (Some c)
+  then have "finite (RBT_set rbt)" by (subst RBT_set_conv_keys) auto
+  with Some show ?thesis
+    by (subst mfilter_keys_code)
+      (simp add: set_fold_cfi_RBT[OF mrestrict1_cfi.rep_eq, where s = "STR ''x''"])
+qed
+
+lemmas mfilter_keys_fallback_code[code] =
+  mfilter_keys_code[of _ "DList_set _"] mfilter_keys_code[of _ "Set_Monad _"]
+  mfilter_keys_code[of _ "Collect_set _"] mfilter_keys_code[of _ "Complement _"]
+
+lift_definition wf_idx_keep :: "bool \<Rightarrow> 'a table \<Rightarrow> 'a wf_idx \<Rightarrow> 'a wf_idx" is
+  "\<lambda>pos X (cs, I, T). (cs, I, mfilter_keys pos X T)"
+  by (auto simp: idx_wf_def lookup_mfilter_keys split: if_splits)
+
+definition wf_idx_drop :: "bool \<Rightarrow> 'a table \<Rightarrow> 'a wf_idx \<Rightarrow> 'a table" where
+  "wf_idx_drop pos X i = wf_idx_set (wf_idx_keep (\<not> pos) X i)"
+
+lemma wf_idx_sig_keep[simp]: "wf_idx_sig (wf_idx_keep pos X i) = wf_idx_sig i"
+  by transfer auto
+
+lemma wf_idx_set_keep:
+  assumes "Rep_wf_idx i = (cs, I, T)"
+  shows "wf_idx_set (wf_idx_keep pos X i) = {x \<in> wf_idx_set i. (restrict I cs x \<in> X) = pos}"
+proof -
+  obtain cs' I' T' where r: "Rep_wf_idx i = (cs', I', T')" "distinct cs'" "set I' \<subseteq> set cs'"
+    "idx_wf cs' I' T'"
+    by (rule wf_idx_rep)
+  have [simp]: "cs' = cs" "I' = I" "T' = T" using r(1) assms by simp_all
+  have "z \<in> set_of_idx (mfilter_keys pos X T) \<longleftrightarrow> z \<in> set_of_idx T \<and> (restrict I cs z \<in> X) = pos"
+    for z
+  proof
+    assume "z \<in> set_of_idx (mfilter_keys pos X T)"
+    then obtain k Y where "Mapping.lookup (mfilter_keys pos X T) k = Some Y" "z \<in> Y"
+      by (auto simp: mem_set_of_idx)
+    then have "Mapping.lookup T k = Some Y" "(k \<in> X) = pos" "z \<in> Y"
+      by (auto simp: lookup_mfilter_keys split: if_splits)
+    then show "z \<in> set_of_idx T \<and> (restrict I cs z \<in> X) = pos"
+      using idx_wfD(3)[OF r(4)[simplified]] by (auto simp: mem_set_of_idx)
+  next
+    assume z: "z \<in> set_of_idx T \<and> (restrict I cs z \<in> X) = pos"
+    then obtain Y where "Mapping.lookup T (restrict I cs z) = Some Y" "z \<in> Y"
+      using idx_wf_lookup[OF r(4)[simplified]] by blast
+    with z show "z \<in> set_of_idx (mfilter_keys pos X T)"
+      by (auto simp: mem_set_of_idx lookup_mfilter_keys)
+  qed
+  then show ?thesis
+    by (auto simp: wf_idx_set.rep_eq wf_idx_keep.rep_eq assms)
+qed
+
+text \<open>The kernel's probe: the tuples that fail it, and the table without them.\<close>
+
+definition wf_table_probe :: "nat list \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> 'a wf_table \<Rightarrow> 'a table \<times> 'a wf_table" where
+  "wf_table_probe L pos X t = (let d = (if pos then wf_table_antijoin else wf_table_join) t
+     (wf_table_of_idx (wf_idx_of_set L L X)) in (wf_table_set d, wf_table_antijoin t d))"
+
+lemma wf_table_probe_idx:
+  assumes L: "wf_idx_cols i = L" "distinct L"
+  shows "wf_table_probe L pos X (wf_table_of_idx i) =
+    (wf_idx_drop pos X i, wf_table_of_idx (wf_idx_keep pos X i))"
+proof -
+  obtain cs I T where r: "Rep_wf_idx i = (cs, I, T)" "distinct cs" "set I \<subseteq> set cs" "idx_wf cs I T"
+    by (rule wf_idx_rep)
+  have I: "I = L" using L(1) by (simp add: wf_idx_cols.rep_eq r(1))
+  have sub: "set L \<subseteq> set cs" using r(3) I by simp
+  let ?S = "wf_idx_set i"
+  let ?X = "Set.filter (wf_tuple L) X"
+  let ?D = "{x \<in> ?S. (restrict L cs x \<in> X) \<noteq> pos}"
+  have sig: "wf_idx_sig i = cs" by (simp add: wf_idx_sig.rep_eq r(1))
+  have tS: "table cs ?S" using wf_idx_set_table[OF sig] .
+  have tX: "table L ?X" by (auto simp: table_def)
+  have mem: "restrict L cs x \<in> ?X \<longleftrightarrow> restrict L cs x \<in> X" for x by simp
+  define d where "d = (if pos then wf_table_antijoin else wf_table_join) (wf_table_of_idx i)
+    (wf_table_of_idx (wf_idx_of_set L L X))"
+  have wX: "wf_idx_sig (wf_idx_of_set L L X) = L" "wf_idx_set (wf_idx_of_set L L X) = ?X"
+    using L(2) by (simp_all add: wf_idx_sig_of_set wf_idx_set_of_set)
+  have d: "wf_table_sig d = cs" "wf_table_set d = ?D"
+  proof -
+    show "wf_table_sig d = cs"
+      using sub by (simp add: d_def wf_table_sig_antijoin wf_table_sig_join wX sig cols_union_subset)
+    show "wf_table_set d = ?D"
+    proof (cases pos)
+      case True
+      have "v \<in> join cs ?S False L ?X \<longleftrightarrow> v \<in> ?S \<and> restrict L cs v \<notin> X" for v
+        using join_False_iff[OF r(2) L(2) tS tX sub, of v] by simp
+      with True sub show ?thesis
+        by (auto simp: d_def wf_table_set_antijoin wX sig)
+    next
+      case False
+      have "v \<in> join cs ?S True L ?X \<longleftrightarrow> v \<in> ?S \<and> restrict L cs v \<in> X" for v
+        using join_True_iff[OF r(2) L(2) tS tX, of v] restrict_idle[OF r(2), of v]
+          tableD[OF tS, of v]
+        by (auto simp: cols_union_subset[OF sub])
+      with False show ?thesis
+        by (auto simp: d_def wf_table_set_join wX sig)
+    qed
+  qed
+  have keep: "wf_idx_set (wf_idx_keep pos X i) = ?S - ?D"
+    unfolding wf_idx_set_keep[OF r(1)] I by auto
+  have drop: "wf_idx_drop pos X i = ?D"
+    unfolding wf_idx_drop_def wf_idx_set_keep[OF r(1)] I by auto
+  have "wf_table_set (wf_table_antijoin (wf_table_of_idx i) d) = ?S - ?D"
+    using tS d join_same_cols(2)[OF r(2), of ?S ?D]
+    by (auto simp: wf_table_set_antijoin sig table_def wf_tuple_def)
+  then have "wf_table_antijoin (wf_table_of_idx i) d = wf_table_of_idx (wf_idx_keep pos X i)"
+    by (intro wf_table_eqI) (simp_all add: wf_table_sig_antijoin keep)
+  then show ?thesis
+    by (simp add: wf_table_probe_def d_def[symmetric] d(2) drop)
+qed
+
+definition wf_table_probe0 :: "nat list \<Rightarrow> bool \<Rightarrow> 'a table \<Rightarrow> 'a wf_table \<Rightarrow> 'a table \<times> 'a wf_table" where
+  "wf_table_probe0 = wf_table_probe"
+
+lemma wf_table_probe0_code[code]: "wf_table_probe0 L pos X t =
+  (let d = (if pos then wf_table_antijoin else wf_table_join) t (wf_table_of_idx (wf_idx_of_set L L X))
+   in (wf_table_set d, wf_table_antijoin t d))"
+  by (simp add: wf_table_probe0_def wf_table_probe_def)
+
+lemma wf_table_probe_code[code]:
+  "wf_table_probe L pos X (wf_table_of_idx i) = (if wf_idx_cols i = L \<and> distinct L
+     then (wf_idx_drop pos X i, wf_table_of_idx (wf_idx_keep pos X i))
+     else wf_table_probe0 L pos X (wf_table_of_idx i))"
+  "wf_table_probe L pos X (wf_table_of_wf_set s) = wf_table_probe0 L pos X (wf_table_of_wf_set s)"
+  "wf_table_probe L pos X (wf_table_of_set cs Y) = wf_table_probe0 L pos X (wf_table_of_set cs Y)"
+  "wf_table_probe L pos X (wf_table_of_keys cs m) = wf_table_probe0 L pos X (wf_table_of_keys cs m)"
+  by (simp_all add: wf_table_probe0_def wf_table_probe_idx)
+
+text \<open>The Since structure's join, with the probe in its general case.\<close>
+
+definition join_mmsaux0 :: "args \<Rightarrow> 'a table \<Rightarrow> 'a mmsaux \<Rightarrow> 'a mmsaux" where
+  "join_mmsaux0 = join_mmsaux"
+
+lemmas join_mmsaux0_code[code] = join_mmsaux.simps[folded filter_join_def join_mmsaux0_def]
+
+lemma join_mmsaux_probe: "join_mmsaux args X aux = (if args_L args = [] \<or> args_L args = args_R args
+    then join_mmsaux0 args X aux
+    else (case aux of (t, gc, data_prev, data_in, table_in, wf_table_in, tuple_in, wf_table_since,
+        tuple_since) \<Rightarrow>
+      let (in_del, wf_table_in') = wf_table_probe (args_L args) (args_pos args) X wf_table_in;
+        (since_del, wf_table_since') = wf_table_probe (args_L args) (args_pos args) X wf_table_since
+      in (t, gc, data_prev, data_in, table_in - in_del, wf_table_in', mapping_delete_set tuple_in in_del,
+        wf_table_since', mapping_delete_set tuple_since since_del)))"
+  by (cases aux) (simp add: join_mmsaux0_def wf_table_probe_def Let_def split: prod.splits)
+
 (*<*)
 end
 (*>*)

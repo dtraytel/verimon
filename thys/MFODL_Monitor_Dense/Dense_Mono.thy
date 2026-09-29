@@ -361,6 +361,27 @@ lemma ed_wf_table_add_compat[code_unfold]:
   by (simp_all add: ed_wf_table_union_def ed_wf_table_antijoin_def ed_wf_table_of_set_args_def
       ed_wf_table_add_def ed_wf_table_del_def wf_table_add_def wf_table_del_def)
 
+text \<open>The Since structure's join (@{thm [source] join_mmsaux_probe}), with the operations it
+  calls.  Its copy from \<^verbatim>\<open>Monomorphic_Code\<close> keeps the kernel's equation; it is re-derived.\<close>
+
+setup \<open>Monomorphize.monomorphize_cmd
+  [("mrestrict1", "ed_mrestrict1", [etuple, "event_data table"]),
+   ("mfilter_keys", "ed_mfilter_keys", [etuple, "event_data table"]),
+   ("wf_idx_keep", "ed_wf_idx_keep", ["event_data"]),
+   ("wf_idx_drop", "ed_wf_idx_drop", ["event_data"]),
+   ("wf_table_probe0", "ed_wf_table_probe0", ["event_data"]),
+   ("wf_table_probe", "ed_wf_table_probe", ["event_data"]),
+   ("mapping_delete_set", "ed_mapping_delete_set_nat_m", [etuple, "nat"]),
+   ("filter_join", "ed_filter_join_nat", [etuple, "nat"]),
+   ("wf_table_upd", "ed_wf_table_upd", ["event_data"]),
+   ("join_mmsaux0", "ed_join_mmsaux0", ["event_data"])]
+  ["etuple_dict_simps"]\<close>
+
+declare [[code drop: ed_join_mmsaux]]
+
+lemmas ed_join_mmsaux_code[code] =
+  join_mmsaux_probe[where 'a = event_data, folded ed_join_mmsaux_def]
+
 declare [[code drop: ed_upd_set_nat_v ed_minus_keys_v ed_mapping_delete_set_tstp_v ed_filter_set_v
   ed_set_of_idx_v]]
 
