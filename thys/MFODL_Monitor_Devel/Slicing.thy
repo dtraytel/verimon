@@ -49,7 +49,11 @@ end
 
 section \<open>Section 4.3\<close>
 
-abbreviation (input) "ok \<phi> v \<equiv> wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+text \<open>A verdict of @{term \<phi>} is a tuple over the columns @{term "Formula.fv_list \<phi>"}, and
+  @{text env} reads it as a valuation.\<close>
+
+abbreviation (input) "ok \<phi> v \<equiv> wf_tuple (Formula.fv_list \<phi>) v"
+abbreviation (input) "env \<phi> v \<equiv> val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v"
 
 locale splitting_strategy =
   fixes \<phi> :: "'a Formula.formula" and strategy :: "event_data tuple \<Rightarrow> 'k :: finite set"
@@ -58,22 +62,22 @@ begin
 
 definition slice_set where
   "slice_set k = {v. length v = Formula.nfv \<phi> \<and>
-    (\<exists>v'. ok \<phi> v' \<and> (\<forall>i\<in>Formula.fv \<phi>. v' ! i = Some (v ! i)) \<and> k \<in> strategy v')}"
+    (\<exists>v'. ok \<phi> v' \<and> (\<forall>i\<in>Formula.fv \<phi>. v ! i = env \<phi> v' ! i) \<and> k \<in> strategy v')}"
 
-lemma slice_setI: "ok \<phi> v \<Longrightarrow> k \<in> strategy v \<Longrightarrow> map the v \<in> slice_set k"
-  by (auto simp add: slice_set_def wf_tuple_def fvi_less_nfv)
+lemma slice_setI: "ok \<phi> v \<Longrightarrow> k \<in> strategy v \<Longrightarrow> env \<phi> v \<in> slice_set k"
+  by (auto simp add: slice_set_def)
 
 lemma UN_slice_setI:
   assumes "length v = Formula.nfv \<phi>"
   shows "v \<in> \<Union>(range slice_set)"
 proof -
-  let ?v' = "tabulate (\<lambda>i. if i \<in> Formula.fv \<phi> then Some (v ! i) else None) 0 (Formula.nfv \<phi>)"
+  let ?v' = "map ((!) v) (Formula.fv_list \<phi>)"
   have "ok \<phi> ?v'"
     by (simp add: wf_tuple_def)
   then obtain k where "k \<in> strategy ?v'"
     using strategy_nonempty by blast
-  moreover have "\<forall>i\<in>Formula.fv \<phi>. ?v' ! i = Some (v ! i)"
-    by (auto simp add: fvi_less_nfv)
+  moreover have "\<forall>i\<in>Formula.fv \<phi>. v ! i = env \<phi> ?v' ! i"
+    by (auto simp add: fvi_less_nfv tup_get_map_self)
   ultimately show ?thesis
     using assms \<open>ok \<phi> ?v'\<close> by (auto simp add: slice_set_def)
 qed
@@ -82,13 +86,13 @@ end
 
 subsection \<open>Definition 4\<close>
 
-locale joint_data_slicer = monitor "Formula.nfv \<phi>" "Formula.fv \<phi>" traces "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" M +
+locale joint_data_slicer = monitor "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" M +
   traces_downward_closed traces + splitting_strategy \<phi> strategy for \<phi> traces M strategy +
   assumes replace_prefix_traces: "\<pi> \<in> prefixes \<Longrightarrow> \<sigma> \<in> traces \<Longrightarrow> replace_prefix \<pi> \<sigma> \<in> traces"
 begin
 
 definition event_splitter where
-  "event_splitter e = (\<Union>(strategy ` {v. ok \<phi> v \<and> Safety.matches (map the v) \<phi> e}))"
+  "event_splitter e = (\<Union>(strategy ` {v. ok \<phi> v \<and> Safety.matches (env \<phi> v) \<phi> e}))"
 
 sublocale event_separable_splitter where event_splitter = event_splitter .
 
@@ -97,8 +101,7 @@ definition joiner where
 
 lemma splitter_pslice: "splitter \<pi> k = formula_slicer.pslice \<phi> (slice_set k) \<pi>"
   by transfer (auto simp add: event_splitter_def intro!: slice_setI,
-      auto simp add: slice_set_def fv_less_nfv wf_tuple_def
-      elim!: matches_cong[THEN iffD1, rotated])
+      auto simp add: slice_set_def elim!: matches_cong[THEN iffD1, rotated])
 
 lemma splitter_prefixes: "\<pi> \<in> prefixes \<Longrightarrow> splitter \<pi> k \<in> prefixes"
   unfolding splitter_pslice by blast
@@ -112,7 +115,7 @@ text \<open>Corresponds to the following theorem @{thm[source] sat_slice_strong}
 
 subsection \<open>Theorem 1\<close>
 
-sublocale joint_monitor: monitor "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
+sublocale joint_monitor: monitor "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "\<lambda>\<pi>. joiner (\<lambda>k. M (splitter \<pi> k))"
 proof (standard, goal_cases mono wf_tuple sound complete)
   case (mono \<pi>' \<pi>)
@@ -131,28 +134,28 @@ next
     unfolding joiner_def by auto
   then have "ok \<phi> v"
     using sound wf_monitor[OF splitter_prefixes] by blast
-  with k have slice_set: "map the v \<in> slice_set k"
+  with k have slice_set: "env \<phi> v \<in> slice_set k"
     by (blast intro!: slice_setI)
   let ?\<sigma>' = "formula_slicer.slice \<phi> (slice_set k) \<sigma>"
   have "?\<sigma>' \<in> traces" and "prefix_of (splitter \<pi> k) ?\<sigma>'"
     using sound by (auto simp add: splitter_pslice)
-  then have "sat_the ?\<sigma>' Map.empty v i \<phi>"
+  then have "Formula.sat ?\<sigma>' Map.empty (env \<phi> v) i \<phi>"
     using sound_monitor in_M by blast
   then show ?case
     using sound slice_set by (simp add: formula_slicer.sliceable)
 next
   case (complete \<sigma> \<pi> v i)
   with strategy_nonempty obtain k where k: "k \<in> strategy v" by blast
-  with k have slice_set: "map the v \<in> slice_set k"
+  with k have slice_set: "env \<phi> v \<in> slice_set k"
     using \<open>ok \<phi> v\<close> by (blast intro!: slice_setI)
-  have "sat_the \<sigma>' Map.empty v i \<phi>" if prefix: "prefix_of (formula_slicer.pslice \<phi> (slice_set k) \<pi>) \<sigma>'"
+  have "Formula.sat \<sigma>' Map.empty (env \<phi> v) i \<phi>" if prefix: "prefix_of (formula_slicer.pslice \<phi> (slice_set k) \<pi>) \<sigma>'"
       and trace: "\<sigma>' \<in> traces" for \<sigma>'
   proof -
-    have "sat_the \<sigma>' Map.empty v i \<phi> = sat_the (formula_slicer.slice \<phi> (slice_set k) \<sigma>') Map.empty v i \<phi>"
+    have "Formula.sat \<sigma>' Map.empty (env \<phi> v) i \<phi> = Formula.sat (formula_slicer.slice \<phi> (slice_set k) \<sigma>') Map.empty (env \<phi> v) i \<phi>"
       using slice_set trace by (simp add: formula_slicer.sliceable)
-    also have "\<dots> = sat_the (formula_slicer.slice \<phi> (slice_set k) (replace_prefix \<pi> \<sigma>')) Map.empty v i \<phi>"
+    also have "\<dots> = Formula.sat (formula_slicer.slice \<phi> (slice_set k) (replace_prefix \<pi> \<sigma>')) Map.empty (env \<phi> v) i \<phi>"
       using prefix by (simp add: map_\<Gamma>_replace_prefix)
-    also have "\<dots> = sat_the (replace_prefix \<pi> \<sigma>') Map.empty v i \<phi>"
+    also have "\<dots> = Formula.sat (replace_prefix \<pi> \<sigma>') Map.empty (env \<phi> v) i \<phi>"
       using complete prefix trace slice_set
       by (simp add: formula_slicer.sliceable replace_prefix_traces)
     also have "\<dots>"
@@ -170,7 +173,7 @@ qed
 
 subsection \<open>Corollary 1\<close>
 
-sublocale joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
+sublocale joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "\<lambda>\<pi>. joiner (\<lambda>k. M (splitter \<pi> k))"
   "\<lambda>_. M" splitter joiner
   by unfold_locales (auto simp add: mono_splitter splitter_prefixes)
@@ -182,7 +185,7 @@ subsection \<open>Definition 5\<close>
 text \<open>Corresponds to locale @{locale sliceable_monitor} defined in theory
    @{theory "MFOTL_Monitor_Devel.Abstract_Monitor"}.\<close>
 
-locale sliceable_joint_data_slicer = sliceable_monitor "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
+locale sliceable_joint_data_slicer = sliceable_monitor "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces
   "relevant_events \<phi>" "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" M + joint_data_slicer \<phi> traces M strategy
   for \<phi> traces M strategy
 begin
@@ -190,11 +193,11 @@ begin
 lemma monitor_split: "\<pi> \<in> prefixes \<Longrightarrow> ok \<phi> v \<Longrightarrow> k \<in> strategy v \<Longrightarrow> (i, v) \<in> M (splitter \<pi> k) \<longleftrightarrow> (i, v) \<in> M \<pi>"
   unfolding splitter_pslice
   by (rule sliceable_M)
-    (auto simp: wf_tuple_def fvi_less_nfv intro!: mem_restrI[rotated 2, where y="map the v"] slice_setI)
+    (auto simp: fvi_less_nfv[rule_format] intro!: mem_restrI[where y="env \<phi> v"] slice_setI)
 
 subsection \<open>Theorem 2\<close>
 
-sublocale self_slicer "Formula.nfv \<phi>" "Formula.fv \<phi>" traces "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>"
+sublocale self_slicer "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>"
   M splitter joiner
 proof (standard, safe, goal_cases mono sound complete closed)
   case (sound \<pi> i v)
@@ -1620,21 +1623,22 @@ next
     obtain \<sigma> where "\<sigma> \<in> traces" "prefix_of \<pi> \<sigma>"
       using assms by (auto simp add: prefixes_def)
     with sound_monitor[OF _ in_M] wf_monitor[OF _ in_M] have
-      sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (map the v) i \<phi>"
+      sat: "Formula.sat (map_\<Gamma> (\<lambda>D. D \<inter> relevant_events \<phi> (slice_set k)) \<sigma>) Map.empty (env \<phi> v) i \<phi>"
       and "ok \<phi> v"
       by (auto simp: splitter_pslice)
-    then obtain w where "ok \<phi> w" "k \<in> strategy w" "\<forall>x\<in>Formula.fv \<phi>. v ! x = w ! x"
-      using sat_slice_inversion[OF guarded mergeable _ sat] fv_less_nfv
-      by (auto simp add: slice_set_def wf_tuple_def)
-    then have "k \<in> strategy v"
-      using \<open>ok \<phi> v\<close>
-      by (metis (mono_tags, lifting) wf_tuple_cong fv_less_nfv nth_map wf_tuple_length)
+    then obtain w where w: "ok \<phi> w" "k \<in> strategy w" and eq: "\<forall>x\<in>Formula.fv \<phi>. env \<phi> w ! x = env \<phi> v ! x"
+      using sat_slice_inversion[OF guarded mergeable _ sat]
+      by (auto simp add: slice_set_def)
+    have "w = v"
+      using eq fvi_less_nfv[of \<phi>] by (intro wf_tuple_cong[OF distinct_fvi_list w(1) \<open>ok \<phi> v\<close>]) auto
+    with w(2) have "k \<in> strategy v"
+      by simp
     with in_M \<open>ok \<phi> v\<close> show "(i, v) \<in> ?L" unfolding joiner_def
       by blast
   qed
 qed
 
-sublocale skip_joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv \<phi>" traces
+sublocale skip_joint_slicer: slicer "Formula.nfv \<phi>" "Formula.fv_list \<phi>" traces
   "\<lambda>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<phi>" "\<lambda>\<pi>. skip_joiner (\<lambda>k. M (splitter \<pi> k))"
   "\<lambda>_. M" splitter skip_joiner
 proof unfold_locales
@@ -1647,7 +1651,7 @@ proof unfold_locales
 next
   fix \<pi> i v
   assume \<pi>: "\<pi> \<in> prefixes" and "(i, v) \<in> skip_joiner (\<lambda>k. M (splitter \<pi> k))"
-  then show "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
+  then show "wf_tuple (Formula.fv_list \<phi>) v"
     unfolding skip_joiner[OF \<pi>, symmetric] by (rule joint_monitor.wf_monitor)
 next
   fix \<sigma> \<pi> i v
@@ -1656,12 +1660,12 @@ next
   from \<sigma> prefix have \<pi>: "\<pi> \<in> prefixes" by (rule prefix_of_trace)
   from in_M have "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi> k))"
     by (simp only: skip_joiner[OF \<pi>])
-  with \<sigma> show "Formula.sat \<sigma> Map.empty (map the v) i \<phi>"
+  with \<sigma> show "Formula.sat \<sigma> Map.empty (env \<phi> v) i \<phi>"
     using prefix by (rule joint_monitor.sound_monitor)
 next
   fix \<sigma> \<pi> v i
-  assume \<sigma>: "\<sigma> \<in> traces" and "prefix_of \<pi> \<sigma>" and "wf_tuple (Formula.nfv \<phi>) (Formula.fv \<phi>) v"
-    and "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> Formula.sat \<sigma>' Map.empty (map the v) i \<phi>"
+  assume \<sigma>: "\<sigma> \<in> traces" and "prefix_of \<pi> \<sigma>" and "wf_tuple (Formula.fv_list \<phi>) v"
+    and "\<And>\<sigma>'. \<sigma>' \<in> traces \<Longrightarrow> prefix_of \<pi> \<sigma>' \<Longrightarrow> Formula.sat \<sigma>' Map.empty (env \<phi> v) i \<phi>"
   then obtain \<pi>' where "prefix_of \<pi>' \<sigma>" and "(i, v) \<in> joiner (\<lambda>k. M (splitter \<pi>' k))"
     using joint_monitor.complete_monitor by blast
   moreover from \<sigma> this(1) have "\<pi>' \<in> prefixes" by (rule prefix_of_trace)
