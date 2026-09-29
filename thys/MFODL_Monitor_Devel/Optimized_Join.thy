@@ -8,158 +8,110 @@ section \<open>Optimized relational join\<close>
 
 subsection \<open>Binary join\<close>
 
-definition join_mask :: "nat \<Rightarrow> nat set \<Rightarrow> bool list" where
-  "join_mask n X = map (\<lambda>i. i \<in> X) [0..<n]"
-
-fun proj_tuple :: "bool list \<Rightarrow> 'a tuple \<Rightarrow> 'a tuple" where
-  "proj_tuple [] [] = []"
-| "proj_tuple (True # bs) (a # as) = a # proj_tuple bs as"
-| "proj_tuple (False # bs) (a # as) = None # proj_tuple bs as"
-| "proj_tuple (b # bs) [] = []"
-| "proj_tuple [] (a # as) = []"
-
-lemma proj_tuple_replicate: "(\<And>i. i \<in> set bs \<Longrightarrow> \<not>i) \<Longrightarrow> length bs = length as \<Longrightarrow>
-  proj_tuple bs as = replicate (length bs) None"
-  by (induction bs as rule: proj_tuple.induct) fastforce+
-
-lemma proj_tuple_join_mask_empty: "length as = n \<Longrightarrow>
-  proj_tuple (join_mask n {}) as = replicate n None"
-  using proj_tuple_replicate[of "join_mask n {}"] by (auto simp add: join_mask_def)
-
-lemma proj_tuple_alt: "proj_tuple bs as = map2 (\<lambda>b a. if b then a else None) bs as"
-  by (induction bs as rule: proj_tuple.induct) auto
-
-lemma map2_map: "map2 f (map g [0..<length as]) as = map (\<lambda>i. f (g i) (as ! i)) [0..<length as]"
-  by (rule nth_equalityI) auto
-
-lemma proj_tuple_join_mask_restrict: "length as = n \<Longrightarrow>
-  proj_tuple (join_mask n X) as = restrict X as"
-  by (auto simp add: restrict_def proj_tuple_alt join_mask_def map2_map)
-
-lemma wf_tuple_proj_idle:
-  assumes wf: "wf_tuple n X as"
-  shows "proj_tuple (join_mask n X) as = as"
-  using proj_tuple_join_mask_restrict[of as n X, unfolded restrict_idle[OF wf]] wf
-  by (auto simp add: wf_tuple_def)
-
-lemma wf_tuple_change_base:
-  assumes wf: "wf_tuple n X as"
-  and mask: "join_mask n X = join_mask n Y"
-  shows "wf_tuple n Y as"
-  using wf mask by (auto simp add: wf_tuple_def join_mask_def)
-
-definition proj_tuple_in_join :: "bool \<Rightarrow> bool list \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> bool" where
-  "proj_tuple_in_join pos bs as t = (if pos then proj_tuple bs as \<in> t else proj_tuple bs as \<notin> t)"
-
 abbreviation "join_cond pos t \<equiv> (\<lambda>as. if pos then as \<in> t else as \<notin> t)"
 
 abbreviation "join_filter_cond pos t \<equiv> (\<lambda>as _. join_cond pos t as)"
 
-lemma proj_tuple_in_join_mask_idle:
-  assumes wf: "wf_tuple n X as"
-  shows "proj_tuple_in_join pos (join_mask n X) as t \<longleftrightarrow> join_cond pos t as"
-  using wf_tuple_proj_idle[OF wf] by (auto simp add: proj_tuple_in_join_def)
+text \<open>The join of @{term t} over the columns @{term cs} with @{term t'} over @{term ds}, with
+  shortcuts for the cases in which one table's columns are among the other's.  The last but one
+  case filters the right table and brings its tuples into the join's column order
+  @{term "cols_union cs ds"}.\<close>
+
+fun bin_join :: "nat list \<Rightarrow> 'a table \<Rightarrow> bool \<Rightarrow> nat list \<Rightarrow> 'a table \<Rightarrow> 'a table" where
+  "bin_join cs t pos ds t' =
+    (if t = {} then {}
+    else if t' = {} then (if pos then {} else t)
+    else if ds = [] then (if (pos \<longleftrightarrow> [] \<in> t') then t else {})
+    else if ds = cs then (if pos then t \<inter> t' else t - t')
+    else if set ds \<subseteq> set cs then {as \<in> t. join_cond pos t' (restrict ds cs as)}
+    else if set cs \<subseteq> set ds \<and> pos then
+      restrict (cols_union cs ds) ds ` {as \<in> t'. restrict cs ds as \<in> t}
+    else join cs t pos ds t')"
 
 lemma join_sub:
-  assumes "L \<subseteq> R" "table n L t1" "table n R t2"
-  shows "join t2 pos t1 = {as \<in> t2. proj_tuple_in_join pos (join_mask n L) as t1}"
+  assumes "distinct cs" "distinct ds" "table cs t" "table ds t'" "set ds \<subseteq> set cs"
+  shows "join cs t pos ds t' = {as \<in> t. join_cond pos t' (restrict ds cs as)}"
 proof (rule set_eqI)
   fix v
-  have "v \<in> join t2 pos t1 \<longleftrightarrow>
-    wf_tuple n R v \<and> restrict R v \<in> t2 \<and> join_cond pos t1 (restrict L v)"
-    using join_restrict_table[OF assms(3,2) assms(1)] by (simp add: Un_absorb2[OF assms(1)])
-  also have "\<dots> \<longleftrightarrow> v \<in> t2 \<and> proj_tuple_in_join pos (join_mask n L) v t1"
-    using assms(3) restrict_idle[of n R v] proj_tuple_join_mask_restrict[of v n L]
-      wf_tuple_length[of n R v]
-    by (auto simp: table_def proj_tuple_in_join_def)
-  finally show "v \<in> join t2 pos t1 \<longleftrightarrow>
-    v \<in> {as \<in> t2. proj_tuple_in_join pos (join_mask n L) as t1}"
-    by simp
+  have "cols_union cs ds = cs"
+    by (rule cols_union_subset[OF assms(5)])
+  then show "v \<in> join cs t pos ds t' \<longleftrightarrow> v \<in> {as \<in> t. join_cond pos t' (restrict ds cs as)}"
+    using join_restrict[OF assms(1-4), of pos v] assms(5) tableD[OF assms(3), of v]
+      restrict_idle[OF assms(1), of v]
+    by auto
 qed
 
 lemma join_sub':
-  assumes "R \<subseteq> L" "table n L t1" "table n R t2"
-  shows "join t2 True t1 = {as \<in> t1. proj_tuple_in_join True (join_mask n R) as t2}"
+  assumes "distinct cs" "distinct ds" "table cs t" "table ds t'" "set cs \<subseteq> set ds"
+  shows "join cs t True ds t' = restrict (cols_union cs ds) ds ` {as \<in> t'. restrict cs ds as \<in> t}"
+    (is "_ = ?R")
 proof (rule set_eqI)
   fix v
-  have "v \<in> join t2 True t1 \<longleftrightarrow>
-    wf_tuple n L v \<and> restrict R v \<in> t2 \<and> restrict L v \<in> t1"
-    using join_restrict_table[OF assms(3,2), of True] by (simp add: Un_absorb1[OF assms(1)])
-  also have "\<dots> \<longleftrightarrow> v \<in> t1 \<and> proj_tuple_in_join True (join_mask n R) v t2"
-    using assms(2) restrict_idle[of n L v] proj_tuple_join_mask_restrict[of v n R]
-      wf_tuple_length[of n L v]
-    by (auto simp: table_def proj_tuple_in_join_def)
-  finally show "v \<in> join t2 True t1 \<longleftrightarrow>
-    v \<in> {as \<in> t1. proj_tuple_in_join True (join_mask n R) as t2}"
-    by simp
+  let ?U = "cols_union cs ds"
+  have U: "set ?U = set ds" "distinct ?U"
+    using assms(1,2,5) by auto
+  show "v \<in> join cs t True ds t' \<longleftrightarrow> v \<in> ?R"
+  proof
+    assume "v \<in> join cs t True ds t'"
+    then have v: "wf_tuple ?U v" "restrict cs ?U v \<in> t" "restrict ds ?U v \<in> t'"
+      using join_restrict[OF assms(1-4), of True v] by simp_all
+    have "restrict cs ds (restrict ds ?U v) = restrict cs ?U v"
+      using assms(5) by (simp add: restrict_restrict)
+    moreover have "restrict ?U ds (restrict ds ?U v) = v"
+      using U v(1) by (simp add: restrict_restrict restrict_idle)
+    ultimately show "v \<in> ?R"
+      using v(2,3) by (auto intro!: image_eqI[where x = "restrict ds ?U v"])
+  next
+    assume "v \<in> ?R"
+    then obtain y where y: "y \<in> t'" "restrict cs ds y \<in> t" and v: "v = restrict ?U ds y"
+      by blast
+    have "restrict cs ?U v = restrict cs ds y"
+      using U assms(5) by (simp add: v restrict_restrict)
+    moreover have "restrict ds ?U v = y"
+      using U y(1) tableD[OF assms(4)] by (simp add: v restrict_restrict restrict_idle assms(2))
+    ultimately show "v \<in> join cs t True ds t'"
+      using join_restrict[OF assms(1-4), of True v] y by (simp add: v)
+  qed
 qed
 
-lemma join_eq:
-  assumes tab: "table n R t1" "table n R t2"
-  shows "join t2 pos t1 = (if pos then t2 \<inter> t1 else t2 - t1)"
-  using join_sub[OF _ tab, of pos] tab(2) proj_tuple_in_join_mask_idle[of n R _ pos t1]
-  by (auto simp add: table_def)
-
-lemma join_no_cols:
-  assumes tab: "table n {} t1" "table n R t2"
-  shows "join t2 pos t1 = (if (pos \<longleftrightarrow> replicate n None \<in> t1) then t2 else {})"
-  using join_sub[OF _ tab, of pos] tab(2)
-  by (auto simp add: table_def proj_tuple_in_join_def wf_tuple_length proj_tuple_join_mask_empty)
-
-lemma join_empty_left: "join {} pos t = {}"
-  by (auto simp add: join_def)
-
-lemma join_empty_right: "join t pos {} = (if pos then {} else t)"
-  by (auto simp add: join_def)
-
-fun bin_join :: "nat \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> bool \<Rightarrow> nat set \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "bin_join n A t pos A' t' =
-    (if t = {} then {}
-    else if t' = {} then (if pos then {} else t)
-    else if A' = {} then (if (pos \<longleftrightarrow> replicate n None \<in> t') then t else {})
-    else if A' = A then (if pos then t \<inter> t' else t - t')
-    else if A' \<subseteq> A then {as \<in> t. proj_tuple_in_join pos (join_mask n A') as t'}
-    else if A \<subseteq> A' \<and> pos then {as \<in> t'. proj_tuple_in_join pos (join_mask n A) as t}
-    else join t pos t')"
-
 lemma bin_join_table:
-  assumes tab: "table n A t" "table n A' t'"
-  shows "bin_join n A t pos A' t' = join t pos t'"
+  assumes "distinct cs" "distinct ds" "table cs t" "table ds t'"
+  shows "bin_join cs t pos ds t' = join cs t pos ds t'"
 proof (cases "t = {} \<or> t' = {}")
   case True
   then show ?thesis
-    by (cases "t = {}") (simp_all add: join_empty_left join_empty_right)
+    by (auto simp: join_def)
 next
   case False
   then have ne: "t \<noteq> {}" "t' \<noteq> {}"
     by simp_all
-  consider (no_cols) "A' = {}"
-    | (eq) "A' \<noteq> {}" "A' = A"
-    | (sub) "A' \<noteq> {}" "A' \<noteq> A" "A' \<subseteq> A"
-    | (sub') "A' \<noteq> {}" "A' \<noteq> A" "\<not> A' \<subseteq> A" "A \<subseteq> A'" "pos"
-    | (other) "A' \<noteq> {}" "A' \<noteq> A" "\<not> A' \<subseteq> A" "\<not> (A \<subseteq> A' \<and> pos)"
+  note sub = join_sub[OF assms]
+  consider (no_cols) "ds = []"
+    | (eq) "ds \<noteq> []" "ds = cs"
+    | (sub) "ds \<noteq> []" "ds \<noteq> cs" "set ds \<subseteq> set cs"
+    | (sub') "ds \<noteq> []" "ds \<noteq> cs" "\<not> set ds \<subseteq> set cs" "set cs \<subseteq> set ds" "pos"
+    | (other) "ds \<noteq> []" "ds \<noteq> cs" "\<not> set ds \<subseteq> set cs" "\<not> (set cs \<subseteq> set ds \<and> pos)"
     by blast
   then show ?thesis
   proof cases
     case no_cols
-    with tab(2) have "table n {} t'"
-      by simp
-    with ne no_cols show ?thesis
-      by (simp add: join_no_cols[OF _ tab(1)])
-  next
+    with assms(4) ne(2) have t': "t' = {[]}"
+      by (auto simp: table_def)
+    have "join cs t pos ds t' = {as \<in> t. join_cond pos t' (restrict ds cs as)}"
+      by (rule sub) (simp add: no_cols)
+    with ne no_cols t' show ?thesis
+      by simp  next
     case eq
-    with tab(2) have "table n A t'"
-      by simp
-    with ne eq show ?thesis
-      by (simp add: join_eq[OF _ tab(1)])
+    with ne sub[of pos] assms(1,3) show ?thesis
+      by (auto simp: restrict_idle table_def)
   next
     case sub
     with ne show ?thesis
-      by (simp add: join_sub[OF _ tab(2,1)])
+      by (simp add: join_sub[OF assms])
   next
     case sub'
     with ne show ?thesis
-      by (simp add: join_sub'[OF _ tab(2,1)])
+      by (simp add: join_sub'[OF assms])
   next
     case other
     with ne show ?thesis
@@ -169,7 +121,12 @@ qed
 
 subsection \<open>Multi-way join\<close>
 
-fun mmulti_join' :: "(nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
+text \<open>The columns of the positive tables, in the order of the generic join's result.\<close>
+
+abbreviation mcols :: "nat list list \<Rightarrow> nat list" where
+  "mcols A_pos \<equiv> cols (\<Union>A\<in>set A_pos. set A)"
+
+fun mmulti_join' :: "(nat list list \<Rightarrow> nat list list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
   "mmulti_join' A_pos A_neg L = (
     let Q = set (zip A_pos L) in
     let Q_neg = set (zip A_neg (drop (length A_pos) L)) in
@@ -177,44 +134,40 @@ fun mmulti_join' :: "(nat set list \<Rightarrow> nat set list \<Rightarrow> 'a t
 
 lemma mmulti_join'_correct:
   assumes "A_pos \<noteq> []"
-      and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
-  shows "z \<in> mmulti_join' A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
-    list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
-    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
+      and "list_all2 (\<lambda>A X. distinct A \<and> table A X) (A_pos @ A_neg) L"
+      and "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set A_pos. set A)"
+  shows "z \<in> mmulti_join' A_pos A_neg L \<longleftrightarrow> wf_tuple (mcols A_pos) z \<and>
+    list_all2 (\<lambda>A X. restrict A (mcols A_pos) z \<in> X) A_pos (take (length A_pos) L) \<and>
+    list_all2 (\<lambda>A X. restrict A (mcols A_pos) z \<notin> X) A_neg (drop (length A_pos) L)"
 proof -
   define Q where "Q = set (zip A_pos L)"
   have Q_alt: "Q = set (zip A_pos (take (length A_pos) L))"
     unfolding Q_def by (fastforce simp: in_set_zip)
   define Q_neg where "Q_neg = set (zip A_neg (drop (length A_pos) L))"
-  let ?r = "mmulti_join' A_pos A_neg L"
-  have "?r = New_max_getIJ_wrapperGenericJoin Q Q_neg"
+  have len: "length L = length A_pos + length A_neg"
+    using list_all2_lengthD[OF assms(2)] by simp
+  have eq: "mmulti_join' A_pos A_neg L = New_max_getIJ_wrapperGenericJoin Q Q_neg"
     unfolding Q_def Q_neg_def by (simp del: New_max.wrapperGenericJoin.simps)
-  moreover have "card Q \<ge> 1"
-    unfolding Q_def using assms(1,2)
-    by (auto simp: Suc_le_eq card_gt_0_iff)
-  moreover have "\<forall>(A, X)\<in>(Q \<union> Q_neg). table n A X \<and> wf_set n A"
-    unfolding Q_alt Q_neg_def using assms(2) by (simp add: zip_append1 list_all2_iff)
-  ultimately have "z \<in> ?r \<longleftrightarrow> wf_tuple n (\<Union>(A, X)\<in>Q. A) z \<and>
-      (\<forall>(A, X)\<in>Q. restrict A z \<in> X) \<and> (\<forall>(A, X)\<in>Q_neg. restrict A z \<notin> X)"
-    using New_max.wrapper_correctness case_prod_beta' by blast
-  moreover have "(\<Union>A\<in>set A_pos. A) = (\<Union>(A, X)\<in>Q. A)" proof -
-    from assms(2) have "length A_pos \<le> length L" by (auto dest!: list_all2_lengthD)
-    then show ?thesis
-      unfolding Q_alt
-      by (auto elim: in_set_impl_in_set_zip1[rotated, where ys="take (length A_pos) L"]
-          dest: set_zip_leftD)
-  qed
-  moreover have "\<And>z. (\<forall>(A, X)\<in>Q. restrict A z \<in> X) \<longleftrightarrow>
-    list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L)"
-    unfolding Q_alt using assms(2) by (auto simp add: list_all2_iff)
-  moreover have "\<And>z. (\<forall>(A, X)\<in>Q_neg. restrict A z \<notin> X) \<longleftrightarrow>
-    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
-    unfolding Q_neg_def using assms(2) by (auto simp add: list_all2_iff)
-  ultimately show ?thesis
-    unfolding Q_def Q_neg_def using assms(2) by simp
+  have card: "card Q \<ge> 1"
+    unfolding Q_def using assms(1) len
+    by (cases A_pos; cases L) (auto simp: Suc_le_eq card_gt_0_iff)
+  have wf: "\<forall>X\<in>Q \<union> Q_neg. wf_atable X"
+    unfolding Q_alt Q_neg_def using assms(2)
+    by (auto simp: zip_append1 list_all2_iff wf_atable_def)
+  have vars: "(\<Union>(A, X)\<in>Q. set A) = (\<Union>A\<in>set A_pos. set A)"
+    unfolding Q_alt using len
+    by (force elim: in_set_impl_in_set_zip1[rotated, where ys="take (length A_pos) L"]
+        dest: set_zip_leftD)
+  have neg_vars: "\<forall>(A, X)\<in>Q_neg. set A \<subseteq> (\<Union>(A, X)\<in>Q. set A)"
+    unfolding vars Q_neg_def using assms(3) by (auto dest: set_zip_leftD)
+  have pos_iff: "(\<forall>(A, X)\<in>Q. P A X) \<longleftrightarrow> list_all2 P A_pos (take (length A_pos) L)" for P
+    unfolding Q_alt using len by (auto simp: list_all2_iff)
+  have neg_iff: "(\<forall>(A, X)\<in>Q_neg. P A X) \<longleftrightarrow> list_all2 P A_neg (drop (length A_pos) L)" for P
+    unfolding Q_neg_def using len by (auto simp: list_all2_iff)
+  show ?thesis
+    using New_max.wrapper_correctness[OF card wf neg_vars, of z]
+    unfolding eq vars pos_iff neg_iff .
 qed
-
-lemmas restrict_nested = restrict_restrict
 
 lemma list_all2_opt_True:
   assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)

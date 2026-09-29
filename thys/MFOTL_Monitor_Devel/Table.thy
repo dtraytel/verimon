@@ -45,6 +45,14 @@ lemma cols_union_subset: "set ys \<subseteq> set xs \<Longrightarrow> cols_union
 lemma cols_union_self[simp]: "cols_union xs xs = xs"
   by (simp add: cols_union_subset)
 
+lemma set_fold_cols_union:
+  "set (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = set cs0 \<union> (\<Union>t\<in>set ts. set (f t))"
+  by (induct ts arbitrary: cs0) auto
+
+lemma distinct_fold_cols_union:
+  "distinct cs0 \<Longrightarrow> (\<And>t. t \<in> set ts \<Longrightarrow> distinct (f t)) \<Longrightarrow> distinct (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0)"
+  by (induct ts arbitrary: cs0) auto
+
 
 subsection \<open>Well-formed tuples and tables\<close>
 

@@ -315,6 +315,102 @@ lemma fvi_Suc_bound:
 lemma fvi_iff_fv: "x \<in> fvi b \<phi> \<longleftrightarrow> x + b \<in> fv \<phi>"
   using fvi_plus[where b=0 and c=b] by simp_all
 
+subsubsection \<open>Free variables as column lists\<close>
+
+text \<open>The free variables in the order in which MonPoly lists them (its @{text free_vars}):
+  by first occurrence from left to right, except that the temporal operators Since, Until,
+  Trigger and Release list the variables of their right operand first, and an aggregation
+  lists its result variable first.  The OCaml adapter numbers the free variables of the
+  monitored formula by their position in MonPoly's list, so the columns of a formula at the
+  top level are then @{term "[0..<n]"} (up to the order of the group variables of an
+  aggregation, which MonPoly takes from the formula's syntax).\<close>
+
+qualified primrec fvi_trm_list :: "nat \<Rightarrow> trm \<Rightarrow> nat list" where
+  "fvi_trm_list b (Var x) = (if b \<le> x then [x - b] else [])"
+| "fvi_trm_list b (Const _) = []"
+| "fvi_trm_list b (Plus x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Minus x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (UMinus x) = fvi_trm_list b x"
+| "fvi_trm_list b (Mult x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Div x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (Mod x y) = cols_union (fvi_trm_list b x) (fvi_trm_list b y)"
+| "fvi_trm_list b (F2i x) = fvi_trm_list b x"
+| "fvi_trm_list b (I2f x) = fvi_trm_list b x"
+
+abbreviation "fv_trm_list \<equiv> fvi_trm_list 0"
+
+qualified primrec fv_regex_list :: "('a \<Rightarrow> nat list) \<Rightarrow> 'a Regex.regex \<Rightarrow> nat list" where
+  "fv_regex_list f (Regex.Skip n) = []"
+| "fv_regex_list f (Regex.Test \<phi>) = f \<phi>"
+| "fv_regex_list f (Regex.Plus r s) = cols_union (fv_regex_list f r) (fv_regex_list f s)"
+| "fv_regex_list f (Regex.Times r s) = cols_union (fv_regex_list f r) (fv_regex_list f s)"
+| "fv_regex_list f (Regex.Star r) = fv_regex_list f r"
+
+lemma fv_regex_list_cong[fundef_cong]:
+  "r = r' \<Longrightarrow> (\<And>z. z \<in> Regex.atms r \<Longrightarrow> f z = f' z) \<Longrightarrow> fv_regex_list f r = fv_regex_list f' r'"
+  by (induct r arbitrary: r') auto
+
+qualified fun fvi_list :: "nat \<Rightarrow> 't formula \<Rightarrow> nat list" where
+  "fvi_list b (Pred r ts) = fold (\<lambda>t cs. cols_union cs (fvi_trm_list b t)) ts []"
+| "fvi_list b (Let p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (Frz p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (LetPast p \<phi> \<psi>) = fvi_list b \<psi>"
+| "fvi_list b (Eq t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (Less t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (LessEq t1 t2) = cols_union (fvi_trm_list b t1) (fvi_trm_list b t2)"
+| "fvi_list b (Neg \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Or \<phi> \<psi>) = cols_union (fvi_list b \<phi>) (fvi_list b \<psi>)"
+| "fvi_list b (And \<phi> \<psi>) = cols_union (fvi_list b \<phi>) (fvi_list b \<psi>)"
+| "fvi_list b (Ands \<phi>s) = fold (\<lambda>\<phi> cs. cols_union cs (fvi_list b \<phi>)) \<phi>s []"
+| "fvi_list b (Exists t \<phi>) = fvi_list (Suc b) \<phi>"
+| "fvi_list b (Agg y \<omega> tys f \<phi>) = cols_union (if b \<le> y then [y - b] else [])
+    (cols_union (fvi_list (b + length tys) \<phi>) (fvi_trm_list (b + length tys) f))"
+| "fvi_list b (Prev I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Next I \<phi>) = fvi_list b \<phi>"
+| "fvi_list b (Since \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Until \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Trigger \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (Release \<phi> I \<psi>) = cols_union (fvi_list b \<psi>) (fvi_list b \<phi>)"
+| "fvi_list b (MatchF I r) = fv_regex_list (fvi_list b) r"
+| "fvi_list b (MatchP I r) = fv_regex_list (fvi_list b) r"
+| "fvi_list b (TP t) = fvi_trm_list b t"
+| "fvi_list b (TS t) = fvi_trm_list b t"
+
+abbreviation "fv_list \<equiv> fvi_list 0"
+
+lemma set_fvi_trm_list[simp]: "set (fvi_trm_list b t) = fvi_trm b t"
+  by (induction t) simp_all
+
+lemma distinct_fvi_trm_list[simp]: "distinct (fvi_trm_list b t)"
+  by (induction t) simp_all
+
+lemma set_fv_regex_list[simp]: "set (fv_regex_list f r) = Regex.fv_regex (\<lambda>\<phi>. set (f \<phi>)) r"
+  by (induction r) simp_all
+
+lemma distinct_fv_regex_list:
+  "(\<And>z. z \<in> Regex.atms r \<Longrightarrow> distinct (f z)) \<Longrightarrow> distinct (fv_regex_list f r)"
+  by (induction r) simp_all
+
+lemma set_fvi_list[simp]: "set (fvi_list b \<phi>) = fvi b \<phi>"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (auto simp: set_fold_cols_union fv_regex_alt)
+
+lemma distinct_fvi_list[simp]: "distinct (fvi_list b \<phi>)"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (simp_all add: distinct_fold_cols_union distinct_fv_regex_list)
+
+lemma fvi_trm_list_Suc: "fvi_trm_list (Suc b) t = ex_cols (fvi_trm_list b t)"
+  by (induction t) (auto simp: ex_cols_Cons ex_cols_cols_union)
+
+lemma ex_cols_fv_regex_list:
+  "(\<And>z. z \<in> Regex.atms r \<Longrightarrow> ex_cols (f z) = g z) \<Longrightarrow> ex_cols (fv_regex_list f r) = fv_regex_list g r"
+  by (induction r) (simp_all add: ex_cols_cols_union)
+
+lemma fvi_list_Suc: "fvi_list (Suc b) \<phi> = ex_cols (fvi_list b \<phi>)"
+  by (induction b \<phi> rule: fvi_list.induct)
+    (auto simp: ex_cols_Cons ex_cols_cols_union ex_cols_fold_cols_union fvi_trm_list_Suc
+      ex_cols_fv_regex_list cong: fold_cong fv_regex_list_cong)
+
 qualified definition nfv :: "'t formula \<Rightarrow> nat" where
   "nfv \<phi> = Max (insert 0 (Suc ` fv \<phi>))"
 
@@ -657,9 +753,9 @@ next
   then show ?case unfolding fvi.simps sat.simps by (metis eval_trm_fv_cong)
 qed (auto 10 0 simp: Let_def split: nat.splits intro!: iff_exI)
 
-lemma sat_the_restrict: "fv \<phi> \<subseteq> A \<Longrightarrow> Formula.sat \<sigma> V (map the (restrict A v)) i \<phi> = Formula.sat \<sigma> V (map the v) i \<phi>"
-  by (rule sat_fv_cong) (auto intro!: map_the_restrict)
-
+lemma sat_val_restrict: "fv \<phi> \<subseteq> set ds \<Longrightarrow> fv \<phi> \<subseteq> {..<n} \<Longrightarrow>
+  Formula.sat \<sigma> V (val n ds (restrict ds cs v)) i \<phi> = Formula.sat \<sigma> V (val n cs v) i \<phi>"
+  by (rule sat_fv_cong) (auto intro!: val_restrict)
 lemma sat_the_update: "y \<notin> fv \<phi> \<Longrightarrow> Formula.sat \<sigma> V (map the (x[y:=z])) i \<phi> = Formula.sat \<sigma> V (map the x) i \<phi>"
   by (rule sat_fv_cong) (metis map_update nth_list_update_neq)
 

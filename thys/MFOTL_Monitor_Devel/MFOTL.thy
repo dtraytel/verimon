@@ -85,14 +85,6 @@ lemma set_fvi_trm_list[simp]: "set (fvi_trm_list b t) = fvi_trm b t"
 lemma distinct_fvi_trm_list[simp]: "distinct (fvi_trm_list b t)"
   by (cases t) simp_all
 
-lemma set_fold_cols_union:
-  "set (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0) = set cs0 \<union> (\<Union>t\<in>set ts. set (f t))"
-  by (induct ts arbitrary: cs0) auto
-
-lemma distinct_fold_cols_union:
-  "distinct cs0 \<Longrightarrow> (\<And>t. t \<in> set ts \<Longrightarrow> distinct (f t)) \<Longrightarrow> distinct (fold (\<lambda>t cs. cols_union cs (f t)) ts cs0)"
-  by (induct ts arbitrary: cs0) auto
-
 lemma set_fvi_list[simp]: "set (fvi_list b \<phi>) = fvi b \<phi>"
   by (induction \<phi> arbitrary: b) (simp_all add: set_fold_cols_union Un_commute)
 
