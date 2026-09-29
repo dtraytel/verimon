@@ -4066,30 +4066,6 @@ let wild : 'a regex = Skip one_nata;;
 
 let rec filter (_A1, _A2) p a = inf_seta (_A1, _A2) a (Collect_set p);;
 
-let rec comp_fun_idem_apply (Abs_comp_fun_idem x) = x;;
-
-let rec set_fold_cfi (_A1, _A2)
-  f b x2 = match f, b, x2 with
-    f, b, RBT_set rbt ->
-      (match ccompare _A2
-        with None ->
-          failwith "set_fold_cfi RBT_set: ccompare = None"
-            (fun _ -> set_fold_cfi (_A1, _A2) f b (RBT_set rbt))
-        | Some _ -> foldb _A2 (comp_fun_idem_apply f) rbt b)
-    | f, b, DList_set dxs ->
-        (match ceq _A1
-          with None ->
-            failwith "set_fold_cfi DList_set: ceq = None"
-              (fun _ -> set_fold_cfi (_A1, _A2) f b (DList_set dxs))
-          | Some _ -> foldc _A1 (comp_fun_idem_apply f) dxs b)
-    | f, b, Set_Monad xs -> fold (comp_fun_idem_apply f) xs b
-    | f, b, Collect_set p ->
-        failwith "set_fold_cfi not supported on Collect_set"
-          (fun _ -> set_fold_cfi (_A1, _A2) f b (Collect_set p))
-    | f, b, Complement a ->
-        failwith "set_fold_cfi not supported on Complement"
-          (fun _ -> set_fold_cfi (_A1, _A2) f b (Complement a));;
-
 let rec tup_get cs x i = the (map_of equal_nat (zip cs x) i);;
 
 let rec restrict ds cs x = mapa (tup_get cs x) ds;;
@@ -4134,6 +4110,30 @@ let rec join1_insert (_A1, _A2, _A3)
 let rec join1_insert_cfi (_A1, _A2, _A3)
   xc xd xe = Abs_comp_fun_idem (join1_insert (_A1, _A2, _A3) xc xd xe);;
 
+let rec comp_fun_idem_apply (Abs_comp_fun_idem x) = x;;
+
+let rec set_fold_cfi (_A1, _A2)
+  f b x2 = match f, b, x2 with
+    f, b, RBT_set rbt ->
+      (match ccompare _A2
+        with None ->
+          failwith "set_fold_cfi RBT_set: ccompare = None"
+            (fun _ -> set_fold_cfi (_A1, _A2) f b (RBT_set rbt))
+        | Some _ -> foldb _A2 (comp_fun_idem_apply f) rbt b)
+    | f, b, DList_set dxs ->
+        (match ceq _A1
+          with None ->
+            failwith "set_fold_cfi DList_set: ceq = None"
+              (fun _ -> set_fold_cfi (_A1, _A2) f b (DList_set dxs))
+          | Some _ -> foldc _A1 (comp_fun_idem_apply f) dxs b)
+    | f, b, Set_Monad xs -> fold (comp_fun_idem_apply f) xs b
+    | f, b, Collect_set p ->
+        failwith "set_fold_cfi not supported on Collect_set"
+          (fun _ -> set_fold_cfi (_A1, _A2) f b (Collect_set p))
+    | f, b, Complement a ->
+        failwith "set_fold_cfi not supported on Complement"
+          (fun _ -> set_fold_cfi (_A1, _A2) f b (Complement a));;
+
 let rec join_row (_A1, _A2, _A3)
   cs ds x2 a acc = match cs, ds, x2, a, acc with
     cs, ds, RBT_set rbt, a, acc ->
@@ -4157,27 +4157,288 @@ let rec join_row (_A1, _A2, _A3)
         set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
           (join1_insert_cfi (_A1, _A2, _A3) cs ds a) acc (Complement uu);;
 
-let rec join_row_cfi (_A1, _A2, _A3)
-  xc xd xe = Abs_comp_fun_idem (join_row (_A1, _A2, _A3) xc xd xe);;
+let rec impl_of (Alist x) = x;;
+
+let rec lookup _A xa = map_of _A (impl_of xa);;
+
+let rec lookupa (_A1, _A2) = function RBT_Mapping t -> lookupc _A1 t
+                             | Assoc_List_Mapping al -> lookup _A2 al;;
+
+let rec probe_row_key (_A1, _A2, _A3)
+  cs ds key m a acc =
+    (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (key a)
+      with None -> acc | Some t -> join_row (_A1, _A2, _A3) cs ds t a acc);;
+
+let rec join_key cs ds = filtera (membera equal_nat ds) cs;;
+
+let rec probe_row (_A1, _A2, _A3)
+  cs ds m a acc =
+    (match
+      lookupa ((ccompare_list _A2), (equal_list _A3)) m
+        (restrict (join_key cs ds) cs a)
+      with None -> acc | Some t -> join_row (_A1, _A2, _A3) cs ds t a acc);;
+
+let rec probe_row_cfi (_A1, _A2, _A3)
+  xc xd xe = Abs_comp_fun_idem (probe_row (_A1, _A2, _A3) xc xd xe);;
+
+let rec add_to_rbt_comp (_B1, _B2, _B3)
+  c = (fun (a, b) t ->
+        (match rbt_comp_lookup c t a
+          with None ->
+            rbt_comp_insert c a (insert (_B1, _B2) b (bot_set (_B1, _B2, _B3)))
+              t
+          | Some x -> rbt_comp_insert c a (insert (_B1, _B2) b x) t));;
+
+let rec cluster_rbt_comp (_B1, _B2, _B3)
+  c f t =
+    folda (fun b _ ta ->
+            (match f b with None -> ta
+              | Some a -> add_to_rbt_comp (_B1, _B2, _B3) c (a, b) ta))
+      t Empty;;
+
+let rec mapping_of_cluster (_B1, _B2, _B3) _A
+  xb xc =
+    Mapping_RBTa (cluster_rbt_comp (_B1, _B2, _B3) (the (ccompare _A)) xb xc);;
+
+let rec cluster (_A1, _A2, _A3) _B
+  f (RBT_set t) =
+    (match ccompare _B
+      with None ->
+        failwith "cluster: ccompare = None"
+          (fun _ -> cluster (_A1, _A2, _A3) _B f (RBT_set t))
+      | Some _ ->
+        (match ccompare _A2
+          with None ->
+            failwith "cluster: ccompare = None"
+              (fun _ -> cluster (_A1, _A2, _A3) _B f (RBT_set t))
+          | Some _ ->
+            RBT_Mapping
+              (mapping_of_cluster (_A1, _A2, _A3) _B f (impl_ofa _A2 t))));;
+
+let rec probe_joina (_A1, _A2, _A3)
+  cs x1 ds t = match cs, x1, ds, t with
+    cs, RBT_set rbt, ds, t ->
+      (match ccompare_lista _A2
+        with None ->
+          failwith "probe_join: ccompare = None"
+            (fun _ -> probe_joina (_A1, _A2, _A3) cs (RBT_set rbt) ds t)
+        | Some _ ->
+          (let k = join_key cs ds in
+            foldb (ccompare_list _A2)
+              (probe_row_key (_A1, _A2, _A3) cs ds (restrict k cs)
+                (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+                  (ccompare_list _A2) (comp (fun a -> Some a) (restrict k ds))
+                  t))
+              rbt (set_empty ((ceq_list _A1), (ccompare_list _A2))
+                    (of_phantom set_impl_lista))))
+    | cs, DList_set uu, ds, t ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_row_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (DList_set uu)
+    | cs, Set_Monad uu, ds, t ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_row_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Set_Monad uu)
+    | cs, Collect_set uu, ds, t ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_row_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Collect_set uu)
+    | cs, Complement uu, ds, t ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_row_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Complement uu);;
+
+let rec join1_inserta (_A1, _A2, _A3)
+  cs ds b a acc = join1_insert (_A1, _A2, _A3) cs ds a b acc;;
+
+let rec join1_insert_cfia (_A1, _A2, _A3)
+  xc xd xe = Abs_comp_fun_idem (join1_inserta (_A1, _A2, _A3) xc xd xe);;
+
+let rec probe_fold (_A1, _A2, _A3)
+  cs ds b acc x4 = match cs, ds, b, acc, x4 with
+    cs, ds, b, acc, RBT_set rbt ->
+      (match ccompare_lista _A2
+        with None ->
+          failwith "probe_fold: ccompare = None"
+            (fun _ -> probe_fold (_A1, _A2, _A3) cs ds b acc (RBT_set rbt))
+        | Some _ ->
+          foldb (ccompare_list _A2) (join1_inserta (_A1, _A2, _A3) cs ds b) rbt
+            acc)
+    | cs, ds, b, acc, DList_set uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (DList_set uu)
+    | cs, ds, b, acc, Set_Monad uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Set_Monad uu)
+    | cs, ds, b, acc, Collect_set uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Collect_set uu)
+    | cs, ds, b, acc, Complement uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Complement uu);;
+
+let rec probe_step_key (_A1, _A2, _A3)
+  cs ds key m b acc =
+    (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (key b)
+      with None -> acc | Some a -> probe_fold (_A1, _A2, _A3) cs ds b acc a);;
+
+let rec probe_step (_A1, _A2, _A3)
+  cs ds = probe_step_key (_A1, _A2, _A3) cs ds (restrict (join_key cs ds) ds);;
+
+let rec probe_step_cfi (_A1, _A2, _A3)
+  xc xd xe = Abs_comp_fun_idem (probe_step (_A1, _A2, _A3) xc xd xe);;
+
+let rec probe_join (_A1, _A2, _A3)
+  cs t ds x3 = match cs, t, ds, x3 with
+    cs, t, ds, RBT_set rbt ->
+      (match ccompare_lista _A2
+        with None ->
+          failwith "probe_join: ccompare = None"
+            (fun _ -> probe_join (_A1, _A2, _A3) cs t ds (RBT_set rbt))
+        | Some _ ->
+          (let k = join_key cs ds in
+            foldb (ccompare_list _A2)
+              (probe_step_key (_A1, _A2, _A3) cs ds (restrict k ds)
+                (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+                  (ccompare_list _A2) (comp (fun a -> Some a) (restrict k cs))
+                  t))
+              rbt (set_empty ((ceq_list _A1), (ccompare_list _A2))
+                    (of_phantom set_impl_lista))))
+    | cs, t, ds, DList_set uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_step_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (DList_set uu)
+    | cs, t, ds, Set_Monad uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_step_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Set_Monad uu)
+    | cs, t, ds, Collect_set uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_step_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Collect_set uu)
+    | cs, t, ds, Complement uu ->
+        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
+          (probe_step_cfi (_A1, _A2, _A3) cs ds
+            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+              (ccompare_list _A2)
+              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
+          (set_empty ((ceq_list _A1), (ccompare_list _A2))
+            (of_phantom set_impl_lista))
+          (Complement uu);;
+
+let rec list_remdups
+  equal x1 = match equal, x1 with equal, [] -> []
+    | equal, x :: xs ->
+        (if list_member equal xs x then list_remdups equal xs
+          else x :: list_remdups equal xs);;
+
+let rec length _A xa = size_lista (list_of_dlist _A xa);;
+
+let rec card (_A1, _A2, _A3)
+  = function
+    Complement a ->
+      (let aa = card (_A1, _A2, _A3) a in
+       let s = of_phantom (card_UNIVa _A1) in
+        (if less_nat zero_nata s then minus_nata s aa
+          else (if finite (_A1.finite_UNIV_card_UNIV, _A2, _A3) a then zero_nata
+                 else failwith "card Complement: infinite"
+                        (fun _ -> card (_A1, _A2, _A3) (Complement a)))))
+    | Set_Monad xs ->
+        (match ceq _A2
+          with None ->
+            failwith "card Set_Monad: ceq = None"
+              (fun _ -> card (_A1, _A2, _A3) (Set_Monad xs))
+          | Some eq -> size_lista (list_remdups eq xs))
+    | RBT_set rbt ->
+        (match ccompare _A3
+          with None ->
+            failwith "card RBT_set: ccompare = None"
+              (fun _ -> card (_A1, _A2, _A3) (RBT_set rbt))
+          | Some _ -> size_lista (keysb _A3 rbt))
+    | DList_set dxs ->
+        (match ceq _A2
+          with None ->
+            failwith "card DList_set: ceq = None"
+              (fun _ -> card (_A1, _A2, _A3) (DList_set dxs))
+          | Some _ -> length _A2 dxs);;
+
+let rec superset _A xs = list_all (membera _A xs);;
 
 let rec join (_A1, _A2, _A3)
   cs a x2 ds b = match cs, a, x2, ds, b with
     cs, a, true, ds, b ->
-      (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) a &&
-            finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) b
-        then set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-               (join_row_cfi (_A1, _A2, _A3) cs ds b)
-               (set_empty ((ceq_list _A1), (ccompare_list _A2))
-                 (of_phantom set_impl_lista))
-               a
-        else failwith "join: infinite table"
-               (fun _ -> join (_A1, _A2, _A3) cs a true ds b))
+      (if superset equal_nat cs ds
+        then (let k =
+                image ((ceq_list _A1), (ccompare_list _A2))
+                  ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+                  (restrict (join_key cs ds) ds) b
+                in
+               filter ((ceq_list _A1), (ccompare_list _A2))
+                 (fun aa ->
+                   member ((ceq_list _A1), (ccompare_list _A2))
+                     (restrict (join_key cs ds) cs aa) k)
+                 a)
+        else (if finite (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2))
+                   a &&
+                   finite
+                     (finite_UNIV_list, (ceq_list _A1), (ccompare_list _A2)) b
+               then (if less_eq_nat
+                          (card (card_UNIV_list, (ceq_list _A1),
+                                  (ccompare_list _A2))
+                            a)
+                          (card (card_UNIV_list, (ceq_list _A1),
+                                  (ccompare_list _A2))
+                            b)
+                      then probe_join (_A1, _A2, _A3) cs a ds b
+                      else probe_joina (_A1, _A2, _A3) cs a ds b)
+               else failwith "join: infinite table"
+                      (fun _ -> join (_A1, _A2, _A3) cs a true ds b)))
     | cs, a, false, ds, b ->
-        filter ((ceq_list _A1), (ccompare_list _A2))
-          (fun aa ->
-            ball ((ceq_list _A1), (ccompare_list _A2)) b
-              (fun ba -> is_none (join1 _A3 cs ds (aa, ba))))
-          a;;
+        (let k =
+           image ((ceq_list _A1), (ccompare_list _A2))
+             ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
+             (restrict (join_key cs ds) ds) b
+           in
+          filter ((ceq_list _A1), (ccompare_list _A2))
+            (fun aa ->
+              not (member ((ceq_list _A1), (ccompare_list _A2))
+                    (restrict (join_key cs ds) cs aa) k))
+            a);;
 
 let rec sup_cfi _A
   = Abs_comp_fun_idem (sup _A.semilattice_sup_lattice.sup_semilattice_sup);;
@@ -4454,8 +4715,6 @@ let rec map
     | f, Branch (c, lt, k, v, rt) -> Branch (c, map f lt, k, f k v, map f rt);;
 
 let rec mapb _A xb xc = Mapping_RBTa (map xb (impl_ofa _A xc));;
-
-let rec impl_of (Alist x) = x;;
 
 let rec keysc (_A1, _A2, _A3) xa = set (_A1, _A2, _A3) (mapa fst (impl_of xa));;
 
@@ -4853,42 +5112,6 @@ let rec exhaustive_fusion
         not (proper_interval None (Some x)) &&
           exhaustive_above_fusion proper_interval g x sa);;
 
-let rec list_remdups
-  equal x1 = match equal, x1 with equal, [] -> []
-    | equal, x :: xs ->
-        (if list_member equal xs x then list_remdups equal xs
-          else x :: list_remdups equal xs);;
-
-let rec length _A xa = size_lista (list_of_dlist _A xa);;
-
-let rec card (_A1, _A2, _A3)
-  = function
-    Complement a ->
-      (let aa = card (_A1, _A2, _A3) a in
-       let s = of_phantom (card_UNIVa _A1) in
-        (if less_nat zero_nata s then minus_nata s aa
-          else (if finite (_A1.finite_UNIV_card_UNIV, _A2, _A3) a then zero_nata
-                 else failwith "card Complement: infinite"
-                        (fun _ -> card (_A1, _A2, _A3) (Complement a)))))
-    | Set_Monad xs ->
-        (match ceq _A2
-          with None ->
-            failwith "card Set_Monad: ceq = None"
-              (fun _ -> card (_A1, _A2, _A3) (Set_Monad xs))
-          | Some eq -> size_lista (list_remdups eq xs))
-    | RBT_set rbt ->
-        (match ccompare _A3
-          with None ->
-            failwith "card RBT_set: ccompare = None"
-              (fun _ -> card (_A1, _A2, _A3) (RBT_set rbt))
-          | Some _ -> size_lista (keysb _A3 rbt))
-    | DList_set dxs ->
-        (match ceq _A2
-          with None ->
-            failwith "card DList_set: ceq = None"
-              (fun _ -> card (_A1, _A2, _A3) (DList_set dxs))
-          | Some _ -> length _A2 dxs);;
-
 let rec is_UNIV (_A1, _A2, _A3)
   = function
     RBT_set rbt ->
@@ -5264,8 +5487,6 @@ let rec check
 
 let rec filterb xb xc = Alist (filtera xb (impl_of xc));;
 
-let rec lookup _A xa = map_of _A (impl_of xa);;
-
 let rec updatea _A xc xd xe = Alist (update _A xc xd (impl_of xe));;
 
 let rec ecard (_A1, _A2, _A3)
@@ -5274,8 +5495,6 @@ let rec ecard (_A1, _A2, _A3)
 
 let rec distinct _A = function [] -> true
                       | x :: xs -> not (membera _A xs x) && distinct _A xs;;
-
-let rec superset _A xs = list_all (membera _A xs);;
 
 let rec is_r
   pre s st i =
@@ -6436,9 +6655,6 @@ let rec filterc _A
             (match m k with None -> None
               | Some v -> (if p k v then Some v else None)));;
 
-let rec lookupa (_A1, _A2) = function RBT_Mapping t -> lookupc _A1 t
-                             | Assoc_List_Mapping al -> lookup _A2 al;;
-
 let rec updateb (_A1, _A2)
   k v x2 = match k, v, x2 with
     k, v, RBT_Mapping t ->
@@ -6547,40 +6763,6 @@ let rec implode
          (mapa (fun a -> (Z.of_int (Char.code a))) cs);;
 
 let rec wf_tuple cs x = equal_nata (size_lista x) (size_lista cs);;
-
-let rec add_to_rbt_comp (_B1, _B2, _B3)
-  c = (fun (a, b) t ->
-        (match rbt_comp_lookup c t a
-          with None ->
-            rbt_comp_insert c a (insert (_B1, _B2) b (bot_set (_B1, _B2, _B3)))
-              t
-          | Some x -> rbt_comp_insert c a (insert (_B1, _B2) b x) t));;
-
-let rec cluster_rbt_comp (_B1, _B2, _B3)
-  c f t =
-    folda (fun b _ ta ->
-            (match f b with None -> ta
-              | Some a -> add_to_rbt_comp (_B1, _B2, _B3) c (a, b) ta))
-      t Empty;;
-
-let rec mapping_of_cluster (_B1, _B2, _B3) _A
-  xb xc =
-    Mapping_RBTa (cluster_rbt_comp (_B1, _B2, _B3) (the (ccompare _A)) xb xc);;
-
-let rec cluster (_A1, _A2, _A3) _B
-  f (RBT_set t) =
-    (match ccompare _B
-      with None ->
-        failwith "cluster: ccompare = None"
-          (fun _ -> cluster (_A1, _A2, _A3) _B f (RBT_set t))
-      | Some _ ->
-        (match ccompare _A2
-          with None ->
-            failwith "cluster: ccompare = None"
-              (fun _ -> cluster (_A1, _A2, _A3) _B f (RBT_set t))
-          | Some _ ->
-            RBT_Mapping
-              (mapping_of_cluster (_A1, _A2, _A3) _B f (impl_ofa _A2 t))));;
 
 let rec is_frz_pred
   pn x1 = match pn, x1 with
@@ -7443,18 +7625,6 @@ let ed_cluster_v :
             set_impl_list)
           (ccompare_list ccompare_event_data));;
 
-let rec join_key cs ds = filtera (membera equal_nat ds) cs;;
-
-let rec probe_row (_A1, _A2, _A3)
-  cs ds m a acc =
-    (match
-      lookupa ((ccompare_list _A2), (equal_list _A3)) m
-        (restrict (join_key cs ds) cs a)
-      with None -> acc | Some t -> join_row (_A1, _A2, _A3) cs ds t a acc);;
-
-let rec probe_row_cfi (_A1, _A2, _A3)
-  xc xd xe = Abs_comp_fun_idem (probe_row (_A1, _A2, _A3) xc xd xe);;
-
 let rec ed_probe_joina
   cs x1 ds t = match cs, x1, ds, t with
     cs, RBT_set rbt, ds, t ->
@@ -7494,12 +7664,6 @@ let rec ed_probe_joina
 
 let rec ed_join1_inserta cs ds b a acc = ed_join1_insert cs ds a b acc;;
 
-let rec join1_inserta (_A1, _A2, _A3)
-  cs ds b a acc = join1_insert (_A1, _A2, _A3) cs ds a b acc;;
-
-let rec join1_insert_cfia (_A1, _A2, _A3)
-  xc xd xe = Abs_comp_fun_idem (join1_inserta (_A1, _A2, _A3) xc xd xe);;
-
 let rec ed_probe_fold
   cs ds b acc x4 = match cs, ds, b, acc, x4 with
     cs, ds, b, acc, RBT_set rbt ->
@@ -7529,40 +7693,6 @@ let rec ed_probe_step_key
   cs ds key m b acc =
     (match ed_lookup_table m (key b) with None -> acc
       | Some a -> ed_probe_fold cs ds b acc a);;
-
-let rec probe_fold (_A1, _A2, _A3)
-  cs ds b acc x4 = match cs, ds, b, acc, x4 with
-    cs, ds, b, acc, RBT_set rbt ->
-      (match ccompare_lista _A2
-        with None ->
-          failwith "probe_fold: ccompare = None"
-            (fun _ -> probe_fold (_A1, _A2, _A3) cs ds b acc (RBT_set rbt))
-        | Some _ ->
-          foldb (ccompare_list _A2) (join1_inserta (_A1, _A2, _A3) cs ds b) rbt
-            acc)
-    | cs, ds, b, acc, DList_set uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (DList_set uu)
-    | cs, ds, b, acc, Set_Monad uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Set_Monad uu)
-    | cs, ds, b, acc, Collect_set uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Collect_set uu)
-    | cs, ds, b, acc, Complement uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (join1_insert_cfia (_A1, _A2, _A3) cs ds b) acc (Complement uu);;
-
-let rec probe_step_key (_A1, _A2, _A3)
-  cs ds key m b acc =
-    (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (key b)
-      with None -> acc | Some a -> probe_fold (_A1, _A2, _A3) cs ds b acc a);;
-
-let rec probe_step (_A1, _A2, _A3)
-  cs ds = probe_step_key (_A1, _A2, _A3) cs ds (restrict (join_key cs ds) ds);;
-
-let rec probe_step_cfi (_A1, _A2, _A3)
-  xc xd xe = Abs_comp_fun_idem (probe_step (_A1, _A2, _A3) xc xd xe);;
 
 let rec ed_probe_join
   cs t ds x3 = match cs, t, ds, x3 with
@@ -7625,6 +7755,9 @@ let ed_Ball_v :
   ((event_data list) set -> (event_data list -> bool) -> bool) boxed
   = Box (ball ((ceq_list ceq_event_data),
                 (ccompare_list ccompare_event_data)));;
+
+let rec join_row_cfi (_A1, _A2, _A3)
+  xc xd xe = Abs_comp_fun_idem (join_row (_A1, _A2, _A3) xc xd xe);;
 
 let rec ed_join
   cs a x2 ds b = match cs, a, x2, ds, b with
@@ -11097,117 +11230,6 @@ let rec filter_set _A (_B1, _B2, _B3, _B4, _B5)
              a
       else failwith "upd_set: infinite"
              (fun _ -> filter_set _A (_B1, _B2, _B3, _B4, _B5) (t, a) (m, y)));;
-
-let rec probe_row_key (_A1, _A2, _A3)
-  cs ds key m a acc =
-    (match lookupa ((ccompare_list _A2), (equal_list _A3)) m (key a)
-      with None -> acc | Some t -> join_row (_A1, _A2, _A3) cs ds t a acc);;
-
-let rec probe_joina (_A1, _A2, _A3)
-  cs x1 ds t = match cs, x1, ds, t with
-    cs, RBT_set rbt, ds, t ->
-      (match ccompare_lista _A2
-        with None ->
-          failwith "probe_join: ccompare = None"
-            (fun _ -> probe_joina (_A1, _A2, _A3) cs (RBT_set rbt) ds t)
-        | Some _ ->
-          (let k = join_key cs ds in
-            foldb (ccompare_list _A2)
-              (probe_row_key (_A1, _A2, _A3) cs ds (restrict k cs)
-                (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-                  (ccompare_list _A2) (comp (fun a -> Some a) (restrict k ds))
-                  t))
-              rbt (set_empty ((ceq_list _A1), (ccompare_list _A2))
-                    (of_phantom set_impl_lista))))
-    | cs, DList_set uu, ds, t ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_row_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (DList_set uu)
-    | cs, Set_Monad uu, ds, t ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_row_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Set_Monad uu)
-    | cs, Collect_set uu, ds, t ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_row_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Collect_set uu)
-    | cs, Complement uu, ds, t ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_row_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) ds)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Complement uu);;
-
-let rec probe_join (_A1, _A2, _A3)
-  cs t ds x3 = match cs, t, ds, x3 with
-    cs, t, ds, RBT_set rbt ->
-      (match ccompare_lista _A2
-        with None ->
-          failwith "probe_join: ccompare = None"
-            (fun _ -> probe_join (_A1, _A2, _A3) cs t ds (RBT_set rbt))
-        | Some _ ->
-          (let k = join_key cs ds in
-            foldb (ccompare_list _A2)
-              (probe_step_key (_A1, _A2, _A3) cs ds (restrict k ds)
-                (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-                  (ccompare_list _A2) (comp (fun a -> Some a) (restrict k cs))
-                  t))
-              rbt (set_empty ((ceq_list _A1), (ccompare_list _A2))
-                    (of_phantom set_impl_lista))))
-    | cs, t, ds, DList_set uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_step_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (DList_set uu)
-    | cs, t, ds, Set_Monad uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_step_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Set_Monad uu)
-    | cs, t, ds, Collect_set uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_step_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Collect_set uu)
-    | cs, t, ds, Complement uu ->
-        set_fold_cfi ((ceq_list _A1), (ccompare_list _A2))
-          (probe_step_cfi (_A1, _A2, _A3) cs ds
-            (cluster ((ceq_list _A1), (ccompare_list _A2), set_impl_list)
-              (ccompare_list _A2)
-              (comp (fun a -> Some a) (restrict (join_key cs ds) cs)) t))
-          (set_empty ((ceq_list _A1), (ccompare_list _A2))
-            (of_phantom set_impl_lista))
-          (Complement uu);;
 
 let rec bin_join (_A1, _A2, _A3)
   cs ta pos ds t =

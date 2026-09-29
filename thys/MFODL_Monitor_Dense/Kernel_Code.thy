@@ -39,6 +39,50 @@ text \<open>@{theory MFODL_Monitor_Devel.Monomorphic_Code} replaces the probe of
 
 declare probe_step_key[symmetric, code]
 
+subsection \<open>The plain join\<close>
+
+text \<open>The joins of the operators go through @{const bin_join}; the regular expressions' tests
+  and concatenations (@{const \<epsilon>_lax}) use @{const join} itself, whose code equations were a
+  nested loop over both tables.  Two tuples join if and only if they agree on the join key, so
+  the join with a table whose columns are among the other's, and the anti-join, filter the
+  left table by the right table's set of keys; the other joins probe an index on the key.\<close>
+
+lemma join1_None_key:
+  "join1 cs ds (x, y) = None \<longleftrightarrow> restrict (join_key cs ds) cs x \<noteq> restrict (join_key cs ds) ds y"
+  by (auto simp: join1.simps restrict_def join_key_def)
+
+lemma join1_sub_key:
+  assumes "set ds \<subseteq> set cs"
+  shows "join1 cs ds (x, y) = (if restrict (join_key cs ds) cs x = restrict (join_key cs ds) ds y
+    then Some x else None)"
+proof -
+  have "filter (\<lambda>d. d \<notin> set cs) ds = []" using assms by (auto simp: filter_empty_conv)
+  then show ?thesis
+    using join1_None_key[of cs ds x y] by (auto simp: join1.simps restrict_def split: if_splits)
+qed
+
+lemma join_sub_key:
+  "set ds \<subseteq> set cs \<Longrightarrow> join cs A True ds B =
+    (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<in> K) A)"
+  by (auto simp: join_True_code join1_sub_key Let_def split: if_splits) blast
+
+lemma join_False_key:
+  "join cs A False ds B =
+    (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<notin> K) A)"
+  by (auto simp: join_False_code join1_None_key Let_def)
+
+declare [[code drop: join]]
+
+lemma join_key_code[code]:
+  "join cs A True ds B = (if set ds \<subseteq> set cs
+     then (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<in> K) A)
+     else if finite A \<and> finite B then
+       (if card A \<le> card B then probe_join cs A ds B else probe_join' cs A ds B)
+     else Code.abort (STR ''join: infinite table'') (\<lambda>_. join cs A True ds B))"
+  "join cs A False ds B =
+    (let K = restrict (join_key cs ds) ds ` B in Set.filter (\<lambda>a. restrict (join_key cs ds) cs a \<notin> K) A)"
+  by (simp_all add: join_sub_key probe_join_join probe_join'_join join_False_key)
+
 subsection \<open>Matching a predicate's table\<close>
 
 text \<open>The match of a predicate's table against the atom's terms is an image followed by
