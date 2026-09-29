@@ -169,188 +169,129 @@ proof -
     unfolding eq vars pos_iff neg_iff .
 qed
 
+lemma Cons_ne_append: "xs @ y # ys \<noteq> []"
+  by simp
+
+text \<open>Merging two positive tables into their join, and a negative table into a positive one
+  that covers its columns, leaves the result unchanged.\<close>
+
 lemma list_all2_opt_True:
-  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)
+  assumes "list_all2 (\<lambda>A X. distinct A \<and> table A X) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)
     ((zs @ x # xs @ y # ys) @ L_neg)"
     "length A_xs = length xs" "length A_ys = length ys" "length A_zs = length zs"
-  shows "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) @ A_neg) ((zs @ join x True y # xs @ ys) @ L_neg)"
+  shows "list_all2 (\<lambda>A X. distinct A \<and> table A X)
+    ((A_zs @ cols_union A_x A_y # A_xs @ A_ys) @ A_neg) ((zs @ join A_x x True A_y y # xs @ ys) @ L_neg)"
 proof -
-  have assms_dest: "table n A_x x" "table n A_y y" "wf_set n A_x" "wf_set n A_y"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 dest: list_all2_lengthD)
-  then have tabs: "table n (A_x \<union> A_y) (join x True y)" "wf_set n (A_x \<union> A_y)"
-    using join_table[of n A_x x A_y y True "A_x \<union> A_y", OF assms_dest(1,2)] assms_dest(3,4)
-    by (auto simp add: wf_set_def)
-  then show "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) @ A_neg) ((zs @ join x True y # xs @ ys) @ L_neg)"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 list_all2_append2
-        list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD) fastforce
+  have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
+    using assms by (auto simp: list_all2_append1 list_all2_append2 dest: list_all2_lengthD)
+  then have "table (cols_union A_x A_y) (join A_x x True A_y y)"
+    by (intro join_table) auto
+  with tabs assms show ?thesis
+    by (auto simp: list_all2_append list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD)
 qed
 
 lemma mmulti_join'_opt_True:
-  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)
+  assumes "list_all2 (\<lambda>A X. distinct A \<and> table A X) ((A_zs @ A_x # A_xs @ A_y # A_ys) @ A_neg)
     ((zs @ x # xs @ y # ys) @ L_neg)"
     "length A_xs = length xs" "length A_ys = length ys" "length A_zs = length zs"
+    "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set (A_zs @ A_x # A_xs @ A_y # A_ys). set A)"
   shows "mmulti_join' (A_zs @ A_x # A_xs @ A_y # A_ys) A_neg ((zs @ x # xs @ y # ys) @ L_neg) =
-    mmulti_join' (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
-    ((zs @ join x True y # xs @ ys) @ L_neg)"
+    mmulti_join' (A_zs @ cols_union A_x A_y # A_xs @ A_ys) A_neg
+    ((zs @ join A_x x True A_y y # xs @ ys) @ L_neg)"
 proof -
-  have assms_dest: "table n A_x x" "table n A_y y" "wf_set n A_x" "wf_set n A_y"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 dest: list_all2_lengthD)
-  then have tabs: "table n (A_x \<union> A_y) (join x True y)" "wf_set n (A_x \<union> A_y)"
-    using join_table[of n A_x x A_y y True "A_x \<union> A_y", OF assms_dest(1,2)] assms_dest(3,4)
-    by (auto simp add: wf_set_def)
-  then have list_all2': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) @ A_neg) ((zs @ join x True y # xs @ ys) @ L_neg)"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 list_all2_append2
-        list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD) fastforce
-  have res: "\<And>z Z. wf_tuple n Z z \<Longrightarrow> A_x \<union> A_y \<subseteq> Z \<Longrightarrow>
-    restrict (A_x \<union> A_y) z \<in> join x True y \<longleftrightarrow> restrict A_x z \<in> x \<and> restrict A_y z \<in> y"
-    using join_restrict[of x n A_x y A_y True] wf_tuple_restrict_simple[of n _ _ "A_x \<union> A_y"]
-      assms_dest(1,2)
-    by (auto simp add: table_def restrict_restrict Int_absorb2)
+  let ?A = "A_zs @ A_x # A_xs @ A_y # A_ys" and ?A' = "A_zs @ cols_union A_x A_y # A_xs @ A_ys"
+  let ?L = "zs @ x # xs @ y # ys" and ?L' = "zs @ join A_x x True A_y y # xs @ ys"
+  have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
+    using assms(1-4) by (auto simp: list_all2_append1 list_all2_append2 dest: list_all2_lengthD)
+  have W: "(\<Union>A\<in>set ?A'. set A) = (\<Union>A\<in>set ?A. set A)"
+    by auto
+  have take_drop: "take (length ?A) (?L @ L_neg) = ?L" "drop (length ?A) (?L @ L_neg) = L_neg"
+    "take (length ?A') (?L' @ L_neg) = ?L'" "drop (length ?A') (?L' @ L_neg) = L_neg"
+    using assms(2-4) by simp_all
+  have res: "restrict (cols_union A_x A_y) W z \<in> join A_x x True A_y y \<longleftrightarrow>
+    restrict A_x W z \<in> x \<and> restrict A_y W z \<in> y" for W z
+  proof -
+    have sub: "set A_x \<subseteq> set (cols_union A_x A_y)" "set A_y \<subseteq> set (cols_union A_x A_y)"
+      by auto
+    show ?thesis
+      using join_restrict[OF tabs(1,3,2,4), of True "restrict (cols_union A_x A_y) W z"]
+      by (simp add: restrict_restrict[OF sub(1)] restrict_restrict[OF sub(2)])
+  qed
   show ?thesis
-  proof (rule set_eqI, rule iffI)
+  proof (rule set_eqI)
     fix z
-    assume "z \<in> mmulti_join' (A_zs @ A_x # A_xs @ A_y # A_ys) A_neg
-      ((zs @ x # xs @ y # ys) @ L_neg)"
-    then have z_in_dest: "wf_tuple n (\<Union>(set (A_zs @ A_x # A_xs @ A_y # A_ys))) z"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_zs zs"
-      "restrict A_x z \<in> x"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_ys ys"
-      "restrict A_y z \<in> y"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_xs xs"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_neg L_neg"
-      using mmulti_join'_correct[OF _ assms(1), of z]
-      by (auto simp del: mmulti_join'.simps simp add: assms list_all2_append1
-          dest: list_all2_lengthD)
-    then show "z \<in> mmulti_join' (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
-      ((zs @ join x True y # xs @ ys) @ L_neg)"
-      using mmulti_join'_correct[OF _ list_all2', of z] res[OF z_in_dest(1)]
-      by (auto simp add: assms list_all2_appendI le_supI2 Un_assoc simp del: mmulti_join'.simps
-          dest: list_all2_lengthD)
-  next
-    fix z
-    assume "z \<in> mmulti_join' (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
-      ((zs @ join x True y # xs @ ys) @ L_neg)"
-    then have z_in_dest: "wf_tuple n (\<Union>(set (A_zs @ A_x # A_xs @ A_y # A_ys))) z"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_zs zs"
-      "restrict (A_x \<union> A_y) z \<in> join x True y"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_ys ys"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_xs xs"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_neg L_neg"
-      using mmulti_join'_correct[OF _ list_all2', of z]
-      by (auto simp del: mmulti_join'.simps simp add: assms list_all2_append Un_assoc
-          dest: list_all2_lengthD)
-    then show "z \<in> mmulti_join' (A_zs @ A_x # A_xs @ A_y # A_ys) A_neg
-      ((zs @ x # xs @ y # ys) @ L_neg)"
-      using mmulti_join'_correct[OF _ assms(1), of z] res[OF z_in_dest(1)]
-      by (auto simp add: assms list_all2_appendI le_supI2 Un_assoc simp del: mmulti_join'.simps
-          dest: list_all2_lengthD)
+    show "z \<in> mmulti_join' ?A A_neg (?L @ L_neg) \<longleftrightarrow> z \<in> mmulti_join' ?A' A_neg (?L' @ L_neg)"
+      unfolding mmulti_join'_correct[OF Cons_ne_append assms(1,5)]
+        mmulti_join'_correct[OF Cons_ne_append list_all2_opt_True[OF assms(1-4)] assms(5)[folded W]]
+        W take_drop
+      using assms(2-4) by (auto simp: list_all2_append res simp del: mmulti_join'.simps)
   qed
 qed
 
 lemma list_all2_opt_False:
-  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+  assumes "list_all2 (\<lambda>A X. distinct A \<and> table A X)
     ((A_zs @ A_x # A_xs) @ (A_ws @ A_y # A_ys)) ((zs @ x # xs) @ (ws @ y # ys))"
     "length A_ws = length ws" "length A_xs = length xs"
     "length A_ys = length ys" "length A_zs = length zs"
-    "A_y \<subseteq> A_x"
-  shows "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join x False y # xs) @ (ws @ ys))"
+    "set A_y \<subseteq> set A_x"
+  shows "list_all2 (\<lambda>A X. distinct A \<and> table A X)
+    ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join A_x x False A_y y # xs) @ (ws @ ys))"
 proof -
-  have assms_dest: "table n A_x x" "table n A_y y" "wf_set n A_x" "wf_set n A_y"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append dest: list_all2_lengthD)
-  have tabs: "table n A_x (join x False y)"
-    using join_table[of n A_x x A_y y False A_x, OF assms_dest(1,2) assms(6)] assms(6) by auto
-  then show "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join x False y # xs) @ (ws @ ys))"
-    using assms assms_dest(3)
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 list_all2_append2
-        list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD) fastforce
+  have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
+    using assms by (auto simp: list_all2_append1 list_all2_append2 dest: list_all2_lengthD)
+  then have "table A_x (join A_x x False A_y y)"
+    using assms(6) by (intro join_table) (auto simp: cols_union_subset)
+  with tabs assms show ?thesis
+    by (auto simp: list_all2_append list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD)
 qed
 
 lemma mmulti_join'_opt_False:
-  assumes "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
+  assumes "list_all2 (\<lambda>A X. distinct A \<and> table A X)
     ((A_zs @ A_x # A_xs) @ (A_ws @ A_y # A_ys)) ((zs @ x # xs) @ (ws @ y # ys))"
     "length A_ws = length ws" "length A_xs = length xs"
     "length A_ys = length ys" "length A_zs = length zs"
-    "A_y \<subseteq> A_x"
+    "set A_y \<subseteq> set A_x"
+    "(\<Union>A\<in>set (A_ws @ A_y # A_ys). set A) \<subseteq> (\<Union>A\<in>set (A_zs @ A_x # A_xs). set A)"
   shows "mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_y # A_ys) ((zs @ x # xs) @ (ws @ y # ys)) =
-    mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_ys) ((zs @ join x False y # xs) @ (ws @ ys))"
+    mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_ys) ((zs @ join A_x x False A_y y # xs) @ (ws @ ys))"
 proof -
-  have assms_dest: "table n A_x x" "table n A_y y" "wf_set n A_x" "wf_set n A_y"
-    using assms
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append dest: list_all2_lengthD)
-  have tabs: "table n A_x (join x False y)"
-    using join_table[of n A_x x A_y y False A_x, OF assms_dest(1,2) assms(6)] assms(6) by auto
-  then have list_all2': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-    ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join x False y # xs) @ (ws @ ys))"
-    using assms assms_dest(3)
-    by (auto simp del: mmulti_join'.simps simp add: list_all2_append1 list_all2_append2
-        list_all2_Cons1 list_all2_Cons2 dest: list_all2_lengthD) fastforce
-  have res: "\<And>z. restrict A_x z \<in> join x False y \<longleftrightarrow> restrict A_x z \<in> x \<and> restrict A_y z \<notin> y"
-    using join_restrict[of x n A_x y A_y False, OF _ _ assms(6)] assms_dest(1,2) assms(6)
-    by (auto simp add: table_def restrict_restrict Int_absorb2 Un_absorb2)
+  let ?A = "A_zs @ A_x # A_xs" and ?L = "zs @ x # xs" and ?L' = "zs @ join A_x x False A_y y # xs"
+  have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
+    using assms(1-5) by (auto simp: list_all2_append1 list_all2_append2 dest: list_all2_lengthD)
+  have take_drop: "take (length ?A) (?L @ ws @ y # ys) = ?L" "drop (length ?A) (?L @ ws @ y # ys) = ws @ y # ys"
+    "take (length ?A) (?L' @ ws @ ys) = ?L'" "drop (length ?A) (?L' @ ws @ ys) = ws @ ys"
+    using assms(3,5) by simp_all
+  have neg: "(\<Union>A\<in>set (A_ws @ A_ys). set A) \<subseteq> (\<Union>A\<in>set ?A. set A)"
+    using assms(7) by auto
+  have res: "restrict A_x W z \<in> join A_x x False A_y y \<longleftrightarrow>
+    restrict A_x W z \<in> x \<and> restrict A_y W z \<notin> y" for W z
+    using join_sub[OF tabs(1,3,2,4) assms(6), of False] assms(6)
+    by (simp add: restrict_restrict)
   show ?thesis
-  proof (rule set_eqI, rule iffI)
+  proof (rule set_eqI)
     fix z
-    assume "z \<in> mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_y # A_ys)
-      ((zs @ x # xs) @ ws @ y # ys)"
-    then have z_in_dest: "wf_tuple n (\<Union>(set (A_zs @ A_x # A_xs))) z"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_zs zs"
-      "restrict A_x z \<in> x"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_xs xs"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_ws ws"
-      "restrict A_y z \<notin> y"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_ys ys"
-      using mmulti_join'_correct[OF _ assms(1), of z]
-      by (auto simp del: mmulti_join'.simps simp add: assms list_all2_append1
-          dest: list_all2_lengthD)
-    then show "z \<in> mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_ys)
-      ((zs @ join x False y # xs) @ ws @ ys)"
-      using mmulti_join'_correct[OF _ list_all2', of z] res
-      by (auto simp add: assms list_all2_appendI Un_assoc simp del: mmulti_join'.simps
-          dest: list_all2_lengthD)
-  next
-    fix z
-    assume "z \<in> mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_ys)
-      ((zs @ join x False y # xs) @ ws @ ys)"
-    then have z_in_dest: "wf_tuple n (\<Union>(set (A_zs @ A_x # A_xs))) z"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_zs zs"
-      "restrict A_x z \<in> join x False y"
-      "list_all2 (\<lambda>A. (\<in>) (restrict A z)) A_xs xs"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_ws ws"
-      "list_all2 (\<lambda>A. (\<notin>) (restrict A z)) A_ys ys"
-      using mmulti_join'_correct[OF _ list_all2', of z]
-      by (auto simp del: mmulti_join'.simps simp add: assms list_all2_append1
-          dest: list_all2_lengthD)
-    then show "z \<in> mmulti_join' (A_zs @ A_x # A_xs) (A_ws @ A_y # A_ys)
-      ((zs @ x # xs) @ ws @ y # ys)"
-      using mmulti_join'_correct[OF _ assms(1), of z] res
-      by (auto simp add: assms list_all2_appendI Un_assoc simp del: mmulti_join'.simps
-          dest: list_all2_lengthD)
+    show "z \<in> mmulti_join' ?A (A_ws @ A_y # A_ys) (?L @ ws @ y # ys) \<longleftrightarrow>
+      z \<in> mmulti_join' ?A (A_ws @ A_ys) (?L' @ ws @ ys)"
+      unfolding mmulti_join'_correct[OF Cons_ne_append assms(1) assms(7)]
+        mmulti_join'_correct[OF Cons_ne_append list_all2_opt_False[OF assms(1-6)] neg]
+        take_drop
+      using assms(2-5) by (auto simp: list_all2_append res simp del: mmulti_join'.simps)
   qed
 qed
 
-fun find_sub_in :: "'a set \<Rightarrow> 'a set list \<Rightarrow> bool \<Rightarrow>
-  ('a set list \<times> 'a set \<times> 'a set list) option" where
+fun find_sub_in :: "'a list \<Rightarrow> 'a list list \<Rightarrow> bool \<Rightarrow>
+  ('a list list \<times> 'a list \<times> 'a list list) option" where
   "find_sub_in X [] b = None"
-| "find_sub_in X (x # xs) b = (if (x \<subseteq> X \<or> (b \<and> X \<subseteq> x)) then Some ([], x, xs)
+| "find_sub_in X (x # xs) b = (if (set x \<subseteq> set X \<or> (b \<and> set X \<subseteq> set x)) then Some ([], x, xs)
     else (case find_sub_in X xs b of None \<Rightarrow> None | Some (ys, z, zs) \<Rightarrow> Some (x # ys, z, zs)))"
 
 lemma find_sub_in_sound: "find_sub_in X xs b = Some (ys, z, zs) \<Longrightarrow>
-  xs = ys @ z # zs \<and> (z \<subseteq> X \<or> (b \<and> X \<subseteq> z))"
+  xs = ys @ z # zs \<and> (set z \<subseteq> set X \<or> (b \<and> set X \<subseteq> set z))"
   by (induction X xs b arbitrary: ys z zs rule: find_sub_in.induct)
      (fastforce split: if_splits option.splits)+
 
-fun find_sub_True :: "'a set list \<Rightarrow>
-  ('a set list \<times> 'a set \<times> 'a set list \<times> 'a set \<times> 'a set list) option" where
+fun find_sub_True :: "'a list list \<Rightarrow>
+  ('a list list \<times> 'a list \<times> 'a list list \<times> 'a list \<times> 'a list list) option" where
   "find_sub_True [] = None"
 | "find_sub_True (x # xs) = (case find_sub_in x xs True of None \<Rightarrow>
     (case find_sub_True xs of None \<Rightarrow> None
@@ -358,13 +299,13 @@ fun find_sub_True :: "'a set list \<Rightarrow>
   | Some (ys, z, zs) \<Rightarrow> Some ([], x, ys, z, zs))"
 
 lemma find_sub_True_sound: "find_sub_True xs = Some (ys, w, ws, z, zs) \<Longrightarrow>
-  xs = ys @ w # ws @ z # zs \<and> (z \<subseteq> w \<or> w \<subseteq> z)"
+  xs = ys @ w # ws @ z # zs \<and> (set z \<subseteq> set w \<or> set w \<subseteq> set z)"
   using find_sub_in_sound
   by (induction xs arbitrary: ys w ws z zs rule: find_sub_True.induct)
      (fastforce split: option.splits)+
 
-fun find_sub_False :: "'a set list \<Rightarrow> 'a set list \<Rightarrow>
-  (('a set list \<times> 'a set \<times> 'a set list) \<times> ('a set list \<times> 'a set \<times> 'a set list)) option" where
+fun find_sub_False :: "'a list list \<Rightarrow> 'a list list \<Rightarrow>
+  (('a list list \<times> 'a list \<times> 'a list list) \<times> ('a list list \<times> 'a list \<times> 'a list list)) option" where
   "find_sub_False [] ns = None"
 | "find_sub_False (x # xs) ns = (case find_sub_in x ns False of None \<Rightarrow>
     (case find_sub_False xs ns of None \<Rightarrow> None
@@ -372,11 +313,10 @@ fun find_sub_False :: "'a set list \<Rightarrow> 'a set list \<Rightarrow>
   | Some (ys, z, zs) \<Rightarrow> Some (([], x, xs), (ys, z, zs)))"
 
 lemma find_sub_False_sound: "find_sub_False xs ns = Some ((rs, w, ws), (ys, z, zs)) \<Longrightarrow>
-  xs = rs @ w # ws \<and> ns = ys @ z # zs \<and> (z \<subseteq> w)"
+  xs = rs @ w # ws \<and> ns = ys @ z # zs \<and> (set z \<subseteq> set w)"
   using find_sub_in_sound
   by (induction xs ns arbitrary: rs w ws ys z zs rule: find_sub_False.induct)
      (fastforce split: option.splits)+
-
 fun proj_list_3 :: "'a list \<Rightarrow> ('b list \<times> 'b \<times> 'b list) \<Rightarrow> ('a list \<times> 'a \<times> 'a list)" where
   "proj_list_3 xs (ys, z, zs) = (take (length ys) xs, xs ! (length ys),
     take (length zs) (drop (length ys + 1) xs))"
@@ -422,10 +362,9 @@ lemma proj_list_5_length:
     "length zs = length zs'"
   using assms by auto
 
-fun dominate_True :: "nat set list \<Rightarrow> 'a table list \<Rightarrow>
-  ((nat set list \<times> nat set \<times> nat set list \<times> nat set \<times> nat set list) \<times>
-  ('a table list \<times> 'a table \<times> 'a table list \<times> 'a table \<times> 'a table list)) option" where
-  "dominate_True A_pos L_pos = (case find_sub_True A_pos of None \<Rightarrow> None
+fun dominate_True :: "nat list list \<Rightarrow> 'a table list \<Rightarrow>
+  ((nat list list \<times> nat list \<times> nat list list \<times> nat list \<times> nat list list) \<times>
+  ('a table list \<times> 'a table \<times> 'a table list \<times> 'a table \<times> 'a table list)) option" where  "dominate_True A_pos L_pos = (case find_sub_True A_pos of None \<Rightarrow> None
   | Some split \<Rightarrow> Some (split, proj_list_5 L_pos split))"
 
 lemma find_sub_True_proj_list_5_same:
@@ -463,8 +402,8 @@ proof -
     using find_sub_True_proj_list_5_length[OF find assms(2) proj] .
 qed
 
-fun dominate_False :: "nat set list \<Rightarrow> 'a table list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow>
-  (((nat set list \<times> nat set \<times> nat set list) \<times> nat set list \<times> nat set \<times> nat set list) \<times>
+fun dominate_False :: "nat list list \<Rightarrow> 'a table list \<Rightarrow> nat list list \<Rightarrow> 'a table list \<Rightarrow>
+  (((nat list list \<times> nat list \<times> nat list list) \<times> nat list list \<times> nat list \<times> nat list list) \<times>
   (('a table list \<times> 'a table \<times> 'a table list) \<times>
   'a table list \<times> 'a table \<times> 'a table list)) option" where
   "dominate_False A_pos L_pos A_neg L_neg = (case find_sub_False A_pos A_neg of None \<Rightarrow> None
@@ -513,13 +452,13 @@ lemma dominate_False_sound:
     "L_pos = (zs @ x # xs)" "L_neg = ws @ y # ys"
     "length A_ws = length ws" "length A_xs = length xs"
     "length A_ys = length ys" "length A_zs = length zs"
-    "A_y \<subseteq> A_x"
+    "set A_y \<subseteq> set A_x"
 proof -
   have find: "find_sub_False A_pos A_neg = Some ((A_zs, A_x, A_xs), (A_ws, A_y, A_ys))"
     and proj: "proj_list_3 L_pos (A_zs, A_x, A_xs) = (zs, x, xs)"
       "proj_list_3 L_neg (A_ws, A_y, A_ys) = (ws, y, ys)"
     using assms(1) by (auto simp del: proj_list_3.simps split: option.splits)
-  show "A_pos = A_zs @ A_x # A_xs" "A_neg = A_ws @ A_y # A_ys" "A_y \<subseteq> A_x"
+  show "A_pos = A_zs @ A_x # A_xs" "A_neg = A_ws @ A_y # A_ys" "set A_y \<subseteq> set A_x"
     using find_sub_False_sound[OF find] by simp_all
   show "L_pos = zs @ x # xs"
     using find_sub_False_proj_list_3_same_left[OF find assms(2) proj(1)] .
@@ -530,29 +469,31 @@ proof -
   show "length A_ws = length ws" "length A_ys = length ys"
     using find_sub_False_proj_list_3_length_right[OF find assms(3) proj(2)] .
 qed
-function mmulti_join_gen :: "(nat \<Rightarrow> nat set list \<Rightarrow> nat set list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
-  "mmulti_join_gen n A_pos A_neg L = (if length A_pos + length A_neg \<noteq> length L then {} else
+
+function mmulti_join_gen :: "(nat list list \<Rightarrow> nat list list \<Rightarrow> 'a table list \<Rightarrow> 'a table)" where
+  "mmulti_join_gen A_pos A_neg L = (if length A_pos + length A_neg \<noteq> length L then {} else
     let L_pos = take (length A_pos) L; L_neg = drop (length A_pos) L in
     (case dominate_True A_pos L_pos of None \<Rightarrow>
       (case dominate_False A_pos L_pos A_neg L_neg of None \<Rightarrow> mmulti_join' A_pos A_neg L
       | Some (((A_zs, A_x, A_xs), A_ws, A_y, A_ys), ((zs, x, xs), ws, y, ys)) \<Rightarrow>
-        mmulti_join_gen n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
-        ((zs @ bin_join n A_x x False A_y y # xs) @ (ws @ ys)))
+        mmulti_join_gen (A_zs @ A_x # A_xs) (A_ws @ A_ys)
+        ((zs @ bin_join A_x x False A_y y # xs) @ (ws @ ys)))
     | Some ((A_zs, A_x, A_xs, A_y, A_ys), (zs, x, xs, y, ys)) \<Rightarrow>
-      mmulti_join_gen n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) A_neg
-      ((zs @ bin_join n A_x x True A_y y # xs @ ys) @ L_neg)))"
+      mmulti_join_gen (A_zs @ cols_union A_x A_y # A_xs @ A_ys) A_neg
+      ((zs @ bin_join A_x x True A_y y # xs @ ys) @ L_neg)))"
   by pat_completeness auto
 termination
-  by (relation "measure (\<lambda>(n, A_pos, A_neg, L). length A_pos + length A_neg)")
+  by (relation "measure (\<lambda>(A_pos, A_neg, L). length A_pos + length A_neg)")
     (use find_sub_True_sound find_sub_False_sound in \<open>fastforce split: option.splits\<close>)+
 
 lemma mmulti_join_gen_link:
   assumes "A_pos \<noteq> []"
-      and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
-    shows "mmulti_join_gen n A_pos A_neg L = mmulti_join' A_pos A_neg L"
+      and "list_all2 (\<lambda>A X. distinct A \<and> table A X) (A_pos @ A_neg) L"
+      and "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set A_pos. set A)"
+    shows "mmulti_join_gen A_pos A_neg L = mmulti_join' A_pos A_neg L"
   using assms
 proof (induction A_pos A_neg L rule: mmulti_join_gen.induct)
-  case (1 n A_pos A_neg L)
+  case (1 A_pos A_neg L)
   define L_pos where "L_pos = take (length A_pos) L"
   define L_neg where "L_neg = drop (length A_pos) L"
   have L_def: "L = L_pos @ L_neg"
@@ -579,30 +520,35 @@ proof (induction A_pos A_neg L rule: mmulti_join_gen.induct)
         dom_False: "dominate_False A_pos L_pos A_neg L_neg =
         Some (((A_zs, A_x, A_xs), A_ws, A_y, A_ys), ((zs, x, xs), ws, y, ys))"
         by (cases a) auto
-      note list_all2 = 1(4)[unfolded L_def dominate_False_sound[OF dom_False lens_match]]
+      note sound = dominate_False_sound[OF dom_False lens_match]
+      note list_all2 = 1(4)[unfolded L_def sound(1-4)]
       have lens: "length A_ws = length ws" "length A_xs = length xs"
         "length A_ys = length ys" "length A_zs = length zs"
-        using dominate_False_sound[OF dom_False lens_match] by auto
-      have sub: "A_y \<subseteq> A_x"
-        using dominate_False_sound[OF dom_False lens_match] by auto
-      have list_all2': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-        ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join x False y # xs) @ (ws @ ys))"
+        using sound by auto
+      have sub: "set A_y \<subseteq> set A_x"
+        using sound by auto
+      have neg: "(\<Union>A\<in>set (A_ws @ A_y # A_ys). set A) \<subseteq> (\<Union>A\<in>set (A_zs @ A_x # A_xs). set A)"
+        using 1(5) unfolding sound(1,2) .
+      have neg': "(\<Union>A\<in>set (A_ws @ A_ys). set A) \<subseteq> (\<Union>A\<in>set (A_zs @ A_x # A_xs). set A)"
+        using neg by auto
+      have list_all2': "list_all2 (\<lambda>A X. distinct A \<and> table A X)
+        ((A_zs @ A_x # A_xs) @ (A_ws @ A_ys)) ((zs @ join A_x x False A_y y # xs) @ (ws @ ys))"
         using list_all2_opt_False[OF list_all2 lens sub] .
-      have tabs: "table n A_x x" "table n A_y y"
+      have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
         using list_all2 by (auto simp add: lens list_all2_append)
-      have bin_join_conv: "join x False y = bin_join n A_x x False A_y y"
-        using bin_join_table[OF tabs, symmetric] .
-      have mmulti: "mmulti_join_gen n A_pos A_neg L = mmulti_join_gen n (A_zs @ A_x # A_xs) (A_ws @ A_ys)
-        ((zs @ bin_join n A_x x False A_y y # xs) @ (ws @ ys))"
+      have bin_join_conv: "join A_x x False A_y y = bin_join A_x x False A_y y"
+        using bin_join_table[OF tabs(1,3,2,4), symmetric] .
+      have mmulti: "mmulti_join_gen A_pos A_neg L = mmulti_join_gen (A_zs @ A_x # A_xs) (A_ws @ A_ys)
+        ((zs @ bin_join A_x x False A_y y # xs) @ (ws @ ys))"
         by (subst mmulti_join_gen.simps)
            (simp del: dominate_True.simps dominate_False.simps mmulti_join_gen.simps
             add: Let_def dom_True L_pos_def[symmetric] L_neg_def[symmetric] dom_False lens_sum)
       show ?thesis
         unfolding mmulti
-        unfolding L_def dominate_False_sound[OF dom_False lens_match]
+        unfolding L_def sound(1-4)
         by (rule 1(1)[OF _ L_pos_def L_neg_def dom_True dom_False,
-            OF _ _ _ _ _ _ _ _ _ _ _ _ _ list_all2'[unfolded bin_join_conv],
-            unfolded mmulti_join'_opt_False[OF list_all2 lens sub, symmetric,
+            OF _ _ _ _ _ _ _ _ _ _ _ _ _ list_all2'[unfolded bin_join_conv] neg',
+            unfolded mmulti_join'_opt_False[OF list_all2 lens sub neg, symmetric,
             unfolded bin_join_conv]])
            (auto simp add: lens_sum)
     qed
@@ -611,27 +557,32 @@ proof (induction A_pos A_neg L rule: mmulti_join_gen.induct)
     then obtain A_zs A_x A_xs A_y A_ys zs x xs y ys where dom_True: "dominate_True A_pos L_pos =
       Some ((A_zs, A_x, A_xs, A_y, A_ys), (zs, x, xs, y, ys))"
       by (cases a) auto
-    note list_all2 = 1(4)[unfolded L_def dominate_True_sound[OF dom_True lens_match(1)]]
+    note sound = dominate_True_sound[OF dom_True lens_match(1)]
+    note list_all2 = 1(4)[unfolded L_def sound(1,2)]
     have lens: "length A_xs = length xs" "length A_ys = length ys" "length A_zs = length zs"
-      using dominate_True_sound[OF dom_True lens_match(1)] by auto
-    have list_all2': "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A)
-      ((A_zs @ (A_x \<union> A_y) # A_xs @ A_ys) @ A_neg) ((zs @ join x True y # xs @ ys) @ L_neg)"
+      using sound by auto
+    have neg: "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set (A_zs @ A_x # A_xs @ A_y # A_ys). set A)"
+      using 1(5) unfolding sound(1) .
+    have neg': "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set (A_zs @ cols_union A_x A_y # A_xs @ A_ys). set A)"
+      using neg by auto
+    have list_all2': "list_all2 (\<lambda>A X. distinct A \<and> table A X)
+      ((A_zs @ cols_union A_x A_y # A_xs @ A_ys) @ A_neg) ((zs @ join A_x x True A_y y # xs @ ys) @ L_neg)"
       using list_all2_opt_True[OF list_all2 lens] .
-    have tabs: "table n A_x x" "table n A_y y"
+    have tabs: "distinct A_x" "table A_x x" "distinct A_y" "table A_y y"
         using list_all2 by (auto simp add: lens list_all2_append)
-    have bin_join_conv: "join x True y = bin_join n A_x x True A_y y"
-      using bin_join_table[OF tabs, symmetric] .
-    have mmulti: "mmulti_join_gen n A_pos A_neg L = mmulti_join_gen n (A_zs @ (A_x \<union> A_y) # A_xs @ A_ys)
-      A_neg ((zs @ bin_join n A_x x True A_y y # xs @ ys) @ L_neg)"
+    have bin_join_conv: "join A_x x True A_y y = bin_join A_x x True A_y y"
+      using bin_join_table[OF tabs(1,3,2,4), symmetric] .
+    have mmulti: "mmulti_join_gen A_pos A_neg L = mmulti_join_gen (A_zs @ cols_union A_x A_y # A_xs @ A_ys)
+      A_neg ((zs @ bin_join A_x x True A_y y # xs @ ys) @ L_neg)"
       by (subst mmulti_join_gen.simps)
          (simp del: dominate_True.simps dominate_False.simps mmulti_join_gen.simps
           add: Let_def dom_True L_pos_def[symmetric] L_neg_def lens_sum)
     show ?thesis
       unfolding mmulti
-      unfolding L_def dominate_True_sound[OF dom_True lens_match(1)]
+      unfolding L_def sound(1,2)
       by (rule 1(2)[OF _ L_pos_def L_neg_def dom_True,
-          OF _ _ _ _ _ _ _ _ _ _ _ list_all2'[unfolded bin_join_conv],
-          unfolded mmulti_join'_opt_True[OF list_all2 lens, symmetric,
+          OF _ _ _ _ _ _ _ _ _ _ _ list_all2'[unfolded bin_join_conv] neg',
+          unfolded mmulti_join'_opt_True[OF list_all2 lens neg, symmetric,
           unfolded bin_join_conv]])
          (auto simp add: lens_sum)
   qed
@@ -639,12 +590,12 @@ qed
 
 lemma mmulti_join_gen_correct:
   assumes "A_pos \<noteq> []"
-      and "list_all2 (\<lambda>A X. table n A X \<and> wf_set n A) (A_pos @ A_neg) L"
-  shows "z \<in> mmulti_join_gen n A_pos A_neg L \<longleftrightarrow> wf_tuple n (\<Union>A\<in>set A_pos. A) z \<and>
-    list_all2 (\<lambda>A X. restrict A z \<in> X) A_pos (take (length A_pos) L) \<and>
-    list_all2 (\<lambda>A X. restrict A z \<notin> X) A_neg (drop (length A_pos) L)"
+      and "list_all2 (\<lambda>A X. distinct A \<and> table A X) (A_pos @ A_neg) L"
+      and "(\<Union>A\<in>set A_neg. set A) \<subseteq> (\<Union>A\<in>set A_pos. set A)"
+  shows "z \<in> mmulti_join_gen A_pos A_neg L \<longleftrightarrow> wf_tuple (mcols A_pos) z \<and>
+    list_all2 (\<lambda>A X. restrict A (mcols A_pos) z \<in> X) A_pos (take (length A_pos) L) \<and>
+    list_all2 (\<lambda>A X. restrict A (mcols A_pos) z \<notin> X) A_neg (drop (length A_pos) L)"
   unfolding mmulti_join_gen_link[OF assms] using mmulti_join'_correct[OF assms] .
-
 
 subsection \<open>Multi-way join as a sequence of binary joins\<close>
 
