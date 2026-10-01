@@ -12,6 +12,8 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Log_Parser
   theories
     Kernel_Code
+    Dense_Utuple
+    Dense
     Dense_Idx
     Dense_Tree_Code
     Dense_Win
