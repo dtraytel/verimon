@@ -1386,6 +1386,977 @@ proof -
   qed
 qed
 
+section \<open>Predicates, relations, and the existential\<close>
+
+subsection \<open>Turning a set of columns into a column list\<close>
+
+definition set_cols :: "nat set \<Rightarrow> cols" where
+  "set_cols A = csorted_list_of_set A"
+
+lemma set_cols:
+  assumes "finite A"
+  shows "sorted_wrt (<) (set_cols A)" "set (set_cols A) = A"
+  using assms unfolding set_cols_def
+  by (subst csorted_list_of_set_split;
+      auto simp: ccompare_nat_def ID_Some ord_defs strict_sorted_iff)+
+
+lemma set_cols_eqI:
+  assumes f: "finite A" and s: "sorted_wrt (<) xs" and e: "set xs = A"
+  shows "xs = set_cols A"
+  by (rule strict_sorted_equal) (use s e set_cols[OF f] in auto)
+
+lemma set_cols_empty: "set_cols {} = []"
+  by (rule set_cols_eqI[symmetric]) simp_all
+
+lemma set_cols_singleton: "set_cols {x} = [x]"
+  by (rule set_cols_eqI[symmetric]) simp_all
+
+lemma set_cols_upt: "set_cols {0..<m} = [0..<m]"
+  by (rule set_cols_eqI[symmetric]) (simp_all add: strict_sorted_iff)
+
+lemma dframe_set_cols: "distinct ks \<Longrightarrow> dframe ks (set_cols (set ks))"
+  by (simp add: dframe_def set_cols)
+
+subsection \<open>Matching a predicate's arguments\<close>
+
+text \<open>The kernel tabulates a match at the predicate's columns in their order of occurrence; the
+  dense match reads it off at the same columns in ascending order.\<close>
+
+theorem umatch_table_dtabc:
+  assumes "set cs \<subseteq> set ks"
+  shows "umatch_table tms cs X = dtabc ks cs (tabulate_match ks ` Option.these (match tms ` X))"
+proof -
+  have "umatch_table tms cs X = Option.these (map_option (\<lambda>f. map (\<lambda>c. the (f c)) cs) ` match tms ` X)"
+    by (simp add: umatch_table_def umatch_match image_image)
+  also have "\<dots> = (\<lambda>f. map (\<lambda>c. the (f c)) cs) ` Option.these (match tms ` X)"
+    by (rule these_map_option_image)
+  also have "\<dots> = dtabc ks cs (tabulate_match ks ` Option.these (match tms ` X))"
+    unfolding dtabc_def image_image restrict_map tabulate_match_def
+    using assms by (intro image_cong[OF refl] map_cong[OF refl]) (auto simp: tup_get_map_self)
+  finally show ?thesis .
+qed
+
+subsection \<open>A predicate whose arguments are distinct variables in ascending order\<close>
+
+text \<open>Then the kernel's columns are already ascending: the argument tuples of the database are
+  the dense tuples.\<close>
+
+fun smp_cols :: "Formula.trm list \<Rightarrow> cols" where
+  "smp_cols [] = []"
+| "smp_cols (Formula.Var y # ts) = y # smp_cols ts"
+| "smp_cols (t # ts) = []"
+
+lemma smp_cols_sorted:
+  "is_simple_pattern tms m \<Longrightarrow> sorted_wrt (<) (smp_cols tms) \<and> (\<forall>y \<in> set (smp_cols tms). m \<le> y)"
+  by (induct tms m rule: is_simple_pattern.induct) force+
+
+lemma fold_pred_cols_simple:
+  "is_simple_pattern tms m \<Longrightarrow> \<forall>c \<in> set acc. c < m \<Longrightarrow>
+     fold (\<lambda>t cs. cols_union cs (Formula.fv_trm_list t)) tms acc = acc @ smp_cols tms"
+proof (induct tms m arbitrary: acc rule: is_simple_pattern.induct)
+  case (2 y ts x)
+  have "y \<notin> set acc" using 2(2,3) by auto
+  then have "cols_union acc [y] = acc @ [y]" by (simp add: cols_union_def)
+  moreover have "\<forall>c \<in> set (acc @ [y]). c < Suc y" using 2(2,3) by auto
+  ultimately show ?case using 2(1)[of "acc @ [y]"] 2(2) by simp
+qed simp_all
+
+lemma pred_cols_simple: "is_simple_pattern tms 0 \<Longrightarrow> pred_cols tms = smp_cols tms"
+  using fold_pred_cols_simple[of tms 0 "[]"] by (simp add: pred_cols_def)
+
+lemma dframe_smp_cols: "is_simple_pattern tms 0 \<Longrightarrow> dframe (pred_cols tms) (smp_cols tms)"
+  using smp_cols_sorted[of tms 0] by (simp add: dframe_def pred_cols_simple strict_sorted_iff)
+
+lemma dtabc_simple_match:
+  assumes "is_simple_pattern tms 0" and "table (pred_cols tms) X"
+  shows "dtabc (pred_cols tms) (smp_cols tms) X = X"
+proof -
+  have "distinct (pred_cols tms)" by (rule dframeD(1)[OF dframe_smp_cols[OF assms(1)]])
+  then show ?thesis using dtabc_same[of "pred_cols tms" X] assms by (simp add: pred_cols_simple)
+qed
+
+subsection \<open>The existential\<close>
+
+text \<open>
+  The kernel drops the column of variable @{term 0} and shifts the others down by one.  Over
+  ascending columns the first column is either variable @{term 0} -- and then it is the head,
+  which is dropped -- or not, and then there is nothing to do.
+\<close>
+
+definition ex_drop0 :: "cols \<Rightarrow> bool" where
+  "ex_drop0 ccs = (case ccs of [] \<Rightarrow> False | c # _ \<Rightarrow> c = 0)"
+
+definition dex_cols :: "cols \<Rightarrow> cols" where
+  "dex_cols ccs = map (\<lambda>c. c - Suc 0) (if ex_drop0 ccs then tl ccs else ccs)"
+
+lemma ex_drop0_pos: "sorted_wrt (<) ccs \<Longrightarrow> \<forall>c \<in> set (if ex_drop0 ccs then tl ccs else ccs). 0 < c"
+  by (cases ccs) (auto simp: ex_drop0_def)
+
+lemma ex_drop0_filter:
+  "sorted_wrt (<) ccs \<Longrightarrow> (if ex_drop0 ccs then tl ccs else ccs) = filter (\<lambda>x. x \<noteq> 0) ccs"
+  by (cases ccs) (auto simp: ex_drop0_def intro!: filter_True[symmetric])
+
+lemma dex_cols_ex_cols: "sorted_wrt (<) ccs \<Longrightarrow> dex_cols ccs = ex_cols ccs"
+  by (simp add: dex_cols_def ex_cols_def ex_drop0_filter)
+
+lemma dframe_ex_cols: "dframe ks ccs \<Longrightarrow> dframe (ex_cols ks) (ex_cols ccs)"
+proof -
+  assume f: "dframe ks ccs"
+  have s: "sorted_wrt (<) (filter (\<lambda>x. x \<noteq> 0) ccs)" using dframeD(2)[OF f] by (rule sorted_wrt_filter)
+  have "sorted_wrt (\<lambda>x y. x - 1 < y - 1) (filter (\<lambda>x. x \<noteq> 0) ccs)"
+    by (rule sorted_wrt_mono_rel[OF _ s]) auto
+  then have "sorted_wrt (<) (ex_cols ccs)" by (simp add: ex_cols_def sorted_wrt_map)
+  then show ?thesis using f by (simp add: dframe_def distinct_ex_cols set_ex_cols)
+qed
+
+theorem dtabc_exists:
+  assumes f: "dframe ks ccs"
+  shows "(if ex_drop0 ccs then tl ` dtabc ks ccs T else dtabc ks ccs T)
+       = dtabc (ex_cols ks) (dex_cols ccs) (ex_proj ks ` T)"
+proof -
+  let ?c = "if ex_drop0 ccs then tl ccs else ccs"
+  have s: "sorted_wrt (<) ccs" using dframeD(2)[OF f] .
+  have l: "(if ex_drop0 ccs then tl ` dtabc ks ccs T else dtabc ks ccs T)
+      = (\<lambda>x. map (tup_get ks x) ?c) ` T"
+    by (auto simp: dtabc_def restrict_map map_tl)
+  have mem: "c \<in> set ks" "c \<noteq> 0" if "c \<in> set ?c" for c
+    using that ex_drop0_pos[OF s] dframeD(3)[OF f]
+    by (cases ccs) (auto simp: ex_drop0_def split: if_splits)
+  have e: "tup_get (ex_cols ks) (ex_proj ks x) (c - Suc 0) = tup_get ks x c" if "c \<in> set ?c" for x c
+    using tup_get_ex_proj[of c ks x] mem[OF that] by simp
+  show ?thesis
+    unfolding l unfolding dtabc_def restrict_map dex_cols_def image_image
+  proof (intro image_cong[OF refl])
+    fix x
+    show "map (tup_get ks x) ?c = map (tup_get (ex_cols ks) (ex_proj ks x)) (map (\<lambda>c. c - Suc 0) ?c)"
+      unfolding map_map o_def by (rule map_cong[OF refl]) (rule e[symmetric])
+  qed
+qed
+
+section \<open>The temporal operators over ascending columns\<close>
+
+text \<open>
+  The @{locale msaux} and @{locale muaux} specifications are stated over an abstract auxiliary
+  list of timestamped tables, and everything they do to it is a join, a union, an intersection,
+  or a filter on timestamps.  All of them commute with the reordering, so the verified structures
+  can be run unchanged over the ascending columns -- which is what the theorems of this section
+  say, one per operation of the two locales.
+\<close>
+
+definition dargs :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> args" where
+  "dargs cs_R cs_L args = init_args (args_ivl args) (length cs_R) cs_L cs_R (args_pos args) None"
+
+lemma dargs_simps[simp]:
+  "args_ivl (dargs cs_R cs_L args) = args_ivl args"
+  "args_n (dargs cs_R cs_L args) = length cs_R"
+  "args_L (dargs cs_R cs_L args) = cs_L"
+  "args_R (dargs cs_R cs_L args) = cs_R"
+  "args_pos (dargs cs_R cs_L args) = args_pos args"
+  "args_agg (dargs cs_R cs_L args) = None"
+  by (simp_all add: dargs_def init_args_def)
+
+lemma eval_args_agg_None[simp]: "args_agg args = None \<Longrightarrow> eval_args_agg args X = X"
+  by (simp add: eval_args_agg_def)
+
+text \<open>A join whose right operand's columns are among the left one's keeps the left one's columns;
+  it commutes with the reordering.\<close>
+
+theorem dtabc_join_sub:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and tR: "table kR T" and tL: "table kL U"
+  shows "dtabc kR cR (join kR T pos kL U) = join cR (dtabc kR cR T) pos cL (dtabc kL cL U)"
+proof -
+  have sub': "set cL \<subseteq> set cR" using sub dframeD(3)[OF fR] dframeD(3)[OF fL] by simp
+  have tR': "table cR (dtabc kR cR T)" and tL': "table cL (dtabc kL cL U)"
+    using dtable_dtabc by (simp_all add: dtable_table[symmetric])
+  have key: "restrict cL cR (restrict cR kR a) = restrict cL kL (restrict kL kR a)" for a :: "'a list"
+    using sub sub' dframeD(3)[OF fR] dframeD(3)[OF fL] by (simp add: restrict_restrict)
+  have mem: "(restrict cL kL (restrict kL kR a) \<in> dtabc kL cL U) = (restrict kL kR a \<in> U)" for a :: "'a list"
+    by (rule dtabc_in_iff[OF fL tL]) simp
+  show ?thesis
+    unfolding join_sub_eq[OF dframeD(1)[OF fR] dframeD(1)[OF fL] tR tL sub]
+      join_sub_eq[OF dframeD(4)[OF fR] dframeD(4)[OF fL] tR' tL' sub']
+  proof (intro equalityI subsetI)
+    fix d assume "d \<in> dtabc kR cR {a \<in> T. (restrict kL kR a \<in> U) = pos}"
+    then obtain a where a: "a \<in> T" "(restrict kL kR a \<in> U) = pos" "d = restrict cR kR a"
+      by (auto simp: dtabc_def)
+    have "d \<in> dtabc kR cR T" using a(1,3) by (auto simp: dtabc_def)
+    then show "d \<in> {d \<in> dtabc kR cR T. (restrict cL cR d \<in> dtabc kL cL U) = pos}"
+      using a(2,3) by (simp add: key mem)
+  next
+    fix d assume d: "d \<in> {d \<in> dtabc kR cR T. (restrict cL cR d \<in> dtabc kL cL U) = pos}"
+    then obtain a where a: "a \<in> T" "d = restrict cR kR a" by (auto simp: dtabc_def)
+    then have "(restrict kL kR a \<in> U) = pos" using d by (simp add: key mem)
+    then show "d \<in> dtabc kR cR {a \<in> T. (restrict kL kR a \<in> U) = pos}"
+      using a unfolding dtabc_def by blast
+  qed
+qed
+
+lemma table_join_sub: "table kR X \<Longrightarrow> table kL Y \<Longrightarrow> set kL \<subseteq> set kR \<Longrightarrow> table kR (join kR X b kL Y)"
+  by (rule join_table[of kR X kL Y b kR]) (auto simp: cols_union_def filter_empty_conv)
+
+subsection \<open>The Since structure's auxiliary list\<close>
+
+definition dauxlist :: "cols \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set) list \<Rightarrow> (ts \<times> 'b list set) list" where
+  "dauxlist ks cs aux = map (\<lambda>(t, rel). (t, dtabc ks cs rel)) aux"
+
+lemma dauxlist_filter:
+  "dauxlist ks cs (filter (\<lambda>(t, rel). P t) aux) = filter (\<lambda>(t, rel). P t) (dauxlist ks cs aux)"
+  by (induct aux) (auto simp: dauxlist_def)
+
+lemma dauxlist_join:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and wf: "\<forall>(t, rel) \<in> set aux. table kR rel" and t1: "table kL rel1"
+  shows "dauxlist kR cR (map (\<lambda>(t, rel). (t, join kR rel pos kL rel1)) aux)
+       = map (\<lambda>(t, rel). (t, join cR rel pos cL (dtabc kL cL rel1))) (dauxlist kR cR aux)"
+  using wf by (induct aux) (auto simp: dauxlist_def dtabc_join_sub[OF fR fL sub _ t1])
+
+lemma dauxlist_add_new_table:
+  "dauxlist ks cs (case aux of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # aux)
+   = (case dauxlist ks cs aux of [] \<Rightarrow> [(cur, dtabc ks cs rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc ks cs rel2) # r
+                         else (cur, dtabc ks cs rel2) # dauxlist ks cs aux)"
+  by (cases aux) (auto simp: dauxlist_def dtabc_Un_img)
+
+lemma dtabc_result:
+  "dtabc ks cs (foldr (\<union>) [rel. (t, rel) \<leftarrow> aux, P t] {})
+     = foldr (\<union>) [rel. (t, rel) \<leftarrow> dauxlist ks cs aux, P t] {}"
+  by (induct aux) (auto simp: dauxlist_def dtabc_Un_img)
+
+lemma dauxlist_wf_join:
+  assumes "\<forall>(t, rel) \<in> set aux. table kR rel" and "set kL \<subseteq> set kR" and "table kL rel1"
+  shows "\<forall>(t, rel) \<in> set (map (\<lambda>(t, rel). (t, join kR rel pos kL rel1)) aux). table kR rel"
+  using assms by (auto intro: table_join_sub)
+
+lemma dauxlist_wf_add_new_table:
+  assumes "\<forall>(t, rel) \<in> set aux. table ks rel" and "table ks rel2"
+  shows "\<forall>(t, rel) \<in> set (case aux of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # aux). table ks rel"
+  using assms by (cases aux) (auto simp: table_def)
+
+subsection \<open>The Until structure's auxiliary list\<close>
+
+definition dauxlist3 :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> (ts \<times> 'b list set \<times> 'b list set) list \<Rightarrow>
+    (ts \<times> 'b list set \<times> 'b list set) list" where
+  "dauxlist3 kL cL kR cR aux = map (\<lambda>(t, a1, a2). (t, dtabc kL cL a1, dtabc kR cR a2)) aux"
+
+lemma dauxlist3_update_until:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and wf: "\<forall>(t, a1, a2) \<in> set aux. table kL a1 \<and> table kR a2"
+    and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and aL': "args_L args' = cL" and aR': "args_R args' = cR"
+    and iv: "args_ivl args' = args_ivl args" and po: "args_pos args' = args_pos args"
+  shows "dauxlist3 kL cL kR cR (update_until args rel1 rel2 nt aux)
+       = update_until args' (dtabc kL cL rel1) (dtabc kR cR rel2) nt (dauxlist3 kL cL kR cR aux)"
+  using wf
+  by (induct aux)
+    (auto simp: dauxlist3_def update_until_def iv po aL aR aL' aR' empty_table_def dtabc_Un_img
+       dtabc_Int[OF fL _ t1] dtabc_join_sub[OF fR fL sub t2])
+
+lemma dauxlist3_eval_until:
+  "eval_until I nt aux = (res, aux') \<Longrightarrow>
+     eval_until I nt (dauxlist3 kL cL kR cR aux) = (map (dtabc kR cR) res, dauxlist3 kL cL kR cR aux')"
+  by (induct I nt aux arbitrary: res aux' rule: eval_until.induct)
+    (auto simp: dauxlist3_def split: if_splits prod.splits)
+
+lemma table_Un: "table ks X \<Longrightarrow> table ks Y \<Longrightarrow> table ks (X \<union> Y)"
+  by (auto simp: table_def)
+
+lemma table_Int: "table ks X \<Longrightarrow> table ks (X \<inter> Y)"
+  by (auto simp: table_def)
+
+lemma dauxlist3_wf_update_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. table kL a1 \<and> table kR a2"
+    and sub: "set kL \<subseteq> set kR" and t1: "table kL rel1" and t2: "table kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+  shows "\<forall>(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux). table kL a1 \<and> table kR a2"
+proof safe
+  have w: "\<And>t b1 b2. (t, b1, b2) \<in> set aux \<Longrightarrow> table kL b1 \<and> table kR b2"
+    using wf by auto
+  fix t a1 a2 assume m: "(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux)"
+  show "table kL a1"
+    using m t1 by (auto simp: update_until_def dest!: w intro: table_Int table_Un)
+  show "table kR a2"
+    using m t1 t2 sub
+    by (auto simp: update_until_def aL aR dest!: w intro!: table_Un intro: table_join_sub)
+qed
+
+section \<open>Buffers of reordered tables\<close>
+
+text \<open>
+  A buffer never looks inside a tuple: it lines up the tables the operands produce and hands
+  matching pairs to the node's operation.  So a buffer of reordered tables behaves as the
+  reordering of a buffer of the kernel's.  These are map-fusion lemmas for the kernel's own
+  list-level buffers, which is where its verified @{const meval} lives.
+\<close>
+
+lemma mbuf2_add_map:
+  "mbuf2_add (map h xs') (map k ys') (map h xs, map k ys) = (map h (xs @ xs'), map k (ys @ ys'))"
+  by simp
+
+lemma mbuf2_take_map:
+  "(\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> g (h a) (k b) = m (f a b)) \<Longrightarrow>
+   mbuf2_take f (xs, ys) = (zs, (xs', ys')) \<Longrightarrow>
+   mbuf2_take g (map h xs, map k ys) = (map m zs, (map h xs', map k ys'))"
+proof (induct xs arbitrary: ys zs xs' ys')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 by simp
+  next
+    case (Cons y ys2)
+    note e = Cons
+    obtain ws as bs where w: "mbuf2_take f (xs, ys2) = (ws, (as, bs))"
+      by (cases "mbuf2_take f (xs, ys2)") auto
+    have p1: "\<And>a b. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> g (h a) (k b) = m (f a b)"
+      using P1 e by simp
+    have ih: "mbuf2_take g (map h xs, map k ys2) = (map m ws, (map h as, map k bs))"
+      by (rule IH[OF p1 w])
+    have d: "zs = f x y # ws" "xs' = as" "ys' = bs" using P2 e w by auto
+    show ?thesis using P1 e w ih d by simp
+  qed
+qed
+
+lemma mprev_next_map:
+  "h empty_table = empty_table \<Longrightarrow> mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow>
+     mprev_next I (map h xs) ts = (map h ys, map h xs', ts')"
+  by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
+    (auto split: prod.splits)
+
+lemma mbuf2t_take_rel:
+  "(\<And>a b t z z'. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R z z' \<Longrightarrow>
+      R (f a b t z) (g (h a) (k b) t z')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4) and P4 = Cons(5)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 by (auto split: list.splits)
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P3 P4 ysC by simp
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have r: "R (f x y t z) (g (h x) (k y) t z')" using P1 P2 ysC by simp
+      have p1: "\<And>a b t' za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R za z'a \<Longrightarrow>
+          R (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2t_take f (f x y t z) (xs, ys2) t ts3 = (w, (xs', ys'), nt, ts')"
+        using P3 ysC tsC by simp
+      have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
+          = (w2, buf2, nt2, ts2)"
+        using P4 ysC tsC by simp
+      show ?thesis by (rule IH[OF p1 r s1 s2])
+    qed
+  qed
+qed
+
+text \<open>
+  The Until node's operation is the one place where the step condition is not uniform in the
+  timestamp: the verified structure accepts a new timestamp only at or after the one it is already
+  at.  So the accumulator relation is indexed by that timestamp, the step may assume the new one
+  is no smaller, and the conclusion says where the accumulator ended up -- at or before the
+  timestamp the buffer reports and at or before every timestamp it did not consume.
+\<close>
+
+lemma mbuf2t_take_rel_ts:
+  "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
+      R t (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R u0 z z' \<Longrightarrow> u0 \<le> t0 \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>t \<in> set ts. u0 \<le> t) \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
+   (\<exists>u. R u w w2 \<and> u \<le> nt \<and> (\<forall>t \<in> set ts'. u \<le> t)) \<and> sorted ts' \<and>
+     (nt = t0 \<or> nt \<in> set ts) \<and> set ts' \<subseteq> set ts \<and>
+     buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' u0 t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
+  case Nil
+  then show ?case by (cases ts) (auto intro!: exI[of _ u0])
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4)
+    and P4 = Cons(5) and P5 = Cons(6) and P6 = Cons(7) and P7 = Cons(8)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 P5 P6 P7 by (cases ts) (auto intro!: exI[of _ u0])
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P3 P6 P7 ysC by (auto intro!: exI[of _ u0])
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have ut: "u0 \<le> t" using P5 tsC by simp
+      have r: "R t (f x y t z) (g (h x) (k y) t z')"
+        using P1[of x y u0 z z' t] P2 ut ysC by simp
+      have p1: "\<And>a b t' u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t' \<Longrightarrow>
+          R t' (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2t_take f (f x y t z) (xs, ys2) t ts3 = (w, (xs', ys'), nt, ts')"
+        using P6 ysC tsC by simp
+      have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
+          = (w2, buf2, nt2, ts2)"
+        using P7 ysC tsC by simp
+      have "(\<exists>u. R u w w2 \<and> u \<le> nt \<and> (\<forall>t' \<in> set ts'. u \<le> t')) \<and> sorted ts' \<and>
+          (nt = t \<or> nt \<in> set ts3) \<and> set ts' \<subseteq> set ts3 \<and>
+          buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
+        by (rule IH[OF p1 r order_refl _ _ s1 s2]) (use P4 tsC in auto)
+      then show ?thesis using tsC by auto
+    qed
+  qed
+qed
+
+lemma mbuf2t_take_sub:
+  "mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+     set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
+proof (induct xs arbitrary: ys z t0 ts w xs' ys' nt ts')
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P = Cons(2)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P by (auto split: list.splits)
+  next
+    case (Cons y ys0)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P ysC by simp
+    next
+      case (Cons t ts0)
+      have "mbuf2t_take f (f x y t z) (xs, ys0) t ts0 = (w, (xs', ys'), nt, ts')"
+        using P ysC Cons by simp
+      from IH[OF this] show ?thesis using ysC by auto
+    qed
+  qed
+qed
+
+subsection \<open>The multi-way buffer\<close>
+
+text \<open>
+  @{const mbufn_take} lines up one table per conjunct, and each conjunct has its own column list,
+  so the morphism is a list of reorderings applied slotwise.  The step condition is relational for
+  the same reason as @{thm [source] mbuf2t_take_rel}, and it is restricted to tables drawn from
+  fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
+  formed for the multi-way join theorem to apply and the buffer only ever shrinks.
+\<close>
+
+lemma length_map2_map[simp]: "length hs = length buf \<Longrightarrow> length (map2 map hs buf) = length buf"
+  by simp
+
+lemma map2_map_empty_iff:
+  "length hs = length buf \<Longrightarrow> ([] \<in> set (map2 map hs buf)) = ([] \<in> set buf)"
+  by (induct hs buf rule: list_induct2) auto
+
+lemma map2_map_nil_iff: "length hs = length buf \<Longrightarrow> (map2 map hs buf = []) = (buf = [])"
+  by (induct hs buf rule: list_induct2) auto
+
+lemma map2_map_hd:
+  "length hs = length buf \<Longrightarrow> [] \<notin> set buf \<Longrightarrow>
+     map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+  by (induct hs buf rule: list_induct2) (auto simp: hd_map)
+
+lemma map2_map_tl:
+  "length hs = length buf \<Longrightarrow> [] \<notin> set buf \<Longrightarrow>
+     map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+  by (induct hs buf rule: list_induct2) (auto simp: map_tl)
+
+lemma mbufn_take_rel:
+  "length hs = length buf \<Longrightarrow> length Ss = length buf \<Longrightarrow>
+   (\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i) \<Longrightarrow>
+   (\<And>as u u'. length as = length hs \<Longrightarrow> (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+      R (f as u) (g (map2 (\<lambda>h a. h a) hs as) u')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbufn_take f z buf = (w, buf') \<Longrightarrow>
+   mbufn_take g z' (map2 map hs buf) = (w2, buf2) \<Longrightarrow>
+   R w w2 \<and> buf2 = map2 map hs buf'"
+proof (induct f z buf arbitrary: z' w buf' w2 buf2 rule: mbufn_take.induct)
+  case (1 f z buf)
+  note IH = 1(1) and L1 = 1(2) and L2 = 1(3) and SUB = 1(4)
+    and STEP = 1(5) and RZ = 1(6) and E1 = 1(7) and E2 = 1(8)
+  show ?case
+  proof (cases "buf = [] \<or> [] \<in> set buf")
+    case True
+    then have "map2 map hs buf = [] \<or> [] \<in> set (map2 map hs buf)"
+      by (simp only: map2_map_nil_iff[OF L1] map2_map_empty_iff[OF L1])
+    then show ?thesis using True RZ E1 E2 by simp
+  next
+    case False
+    then have ne: "\<not> (map2 map hs buf = [] \<or> [] \<in> set (map2 map hs buf))"
+      by (simp only: map2_map_nil_iff[OF L1] map2_map_empty_iff[OF L1]) simp
+    have las: "length (map hd buf) = length hs" using L1 by simp
+    have mem: "\<forall>i < length (map hd buf). map hd buf ! i \<in> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map hd buf)"
+      then have i': "i < length buf" by simp
+      then have "buf ! i \<noteq> []" using False by (auto simp: in_set_conv_nth)
+      then have "hd (buf ! i) \<in> set (buf ! i)" by simp
+      then show "map hd buf ! i \<in> Ss ! i" using SUB i' by auto
+    qed
+    have r: "R (f (map hd buf) z) (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z')"
+      by (rule STEP[OF las mem RZ])
+    have sub': "\<forall>i < length (map tl buf). set (map tl buf ! i) \<subseteq> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map tl buf)"
+      then have i': "i < length buf" by simp
+      have "set (tl (buf ! i)) \<subseteq> set (buf ! i)" by (cases "buf ! i") auto
+      then show "set (map tl buf ! i) \<subseteq> Ss ! i" using SUB i' by auto
+    qed
+    have e1: "mbufn_take f (f (map hd buf) z) (map tl buf) = (w, buf')"
+      using E1 False by simp
+    have e2: "mbufn_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z') (map2 map hs (map tl buf))
+        = (w2, buf2)"
+    proof -
+      have u: "mbufn_take g z' (map2 map hs buf)
+          = mbufn_take g (g (map hd (map2 map hs buf)) z') (map tl (map2 map hs buf))"
+        using ne by (subst mbufn_take.simps) simp
+      have hd': "map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+        by (rule map2_map_hd[OF L1]) (use False in simp)
+      have tl': "map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+        by (rule map2_map_tl[OF L1]) (use False in simp)
+      have "mbufn_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) z') (map2 map hs (map tl buf))
+          = mbufn_take g (g (map hd (map2 map hs buf)) z') (map tl (map2 map hs buf))"
+        by (simp only: hd' tl')
+      also have "\<dots> = mbufn_take g z' (map2 map hs buf)" by (simp only: u)
+      also have "\<dots> = (w2, buf2)" by (rule E2)
+      finally show ?thesis .
+    qed
+    show ?thesis
+      by (rule IH[OF False _ _ sub' STEP r e1 e2]) (use L1 L2 in simp_all)
+  qed
+qed
+
+subsection \<open>Leftovers of a buffer\<close>
+
+text \<open>A take only ever removes a prefix, so whatever stays in the buffer was already there.\<close>
+
+lemma mbuf2_take_sub:
+  "mbuf2_take f (xs, ys) = (zs, (xs', ys')) \<Longrightarrow> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
+proof (induct xs arbitrary: ys zs xs' ys')
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P = Cons(2)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P by simp
+  next
+    case (Cons y ys0)
+    obtain ws b1 b2 where w: "mbuf2_take f (xs, ys0) = (ws, (b1, b2))"
+      by (cases "mbuf2_take f (xs, ys0)") auto
+    have "xs' = b1" "ys' = b2" using P Cons w by simp_all
+    then show ?thesis using IH[OF w] Cons by auto
+  qed
+qed
+
+lemma set_tl_sub: "set (tl xs) \<subseteq> set xs"
+  by (cases xs) auto
+
+lemma mbufn_add_map2:
+  "length hs = length buf \<Longrightarrow> length hs = length xss \<Longrightarrow>
+     map2 map hs (mbufn_add xss buf) = mbufn_add (map2 map hs xss) (map2 map hs buf)"
+proof (induct hs arbitrary: buf xss)
+  case (Cons h hs)
+  obtain b bs where b: "buf = b # bs" using Cons(2) by (cases buf) auto
+  obtain x xs where x: "xss = x # xs" using Cons(3) by (cases xss) auto
+  show ?case using Cons(1)[of bs xs] Cons(2,3) unfolding b x by simp
+qed simp
+
+lemma mbufn_take_sub:
+  "mbufn_take f z buf = (w, buf') \<Longrightarrow>
+     length buf' = length buf \<and> (\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i))"
+proof (induct f z buf arbitrary: w buf' rule: mbufn_take.induct)
+  case (1 f z buf)
+  note IH = 1(1) and E = 1(2)
+  show ?case
+  proof (cases "buf = [] \<or> [] \<in> set buf")
+    case True
+    have "(z, buf) = (w, buf')" using E by (subst (asm) mbufn_take.simps) (simp add: True)
+    then show ?thesis by auto
+  next
+    case False
+    have e: "mbufn_take f (f (map hd buf) z) (map tl buf) = (w, buf')"
+      using E by (subst (asm) mbufn_take.simps) (simp add: False)
+    have "length buf' = length (map tl buf) \<and>
+        (\<forall>i < length (map tl buf). set (buf' ! i) \<subseteq> set (map tl buf ! i))"
+      by (rule IH[OF False e])
+    then show ?thesis using set_tl_sub by fastforce
+  qed
+qed
+
+text \<open>The same two facts for the timestamped take: what it leaves in the buffers is a
+  sublist of what it found there, and two runs whose buffers differ by a map on each operand
+  step together, consume the same timestamps and leave buffers that differ by the same map.
+  The past and future match nodes need them, as the conjunction nodes need the untimed ones.\<close>
+
+lemma mbufnt_take_sub:
+  "mbufnt_take f z buf t0 ts = (w, buf', t', ts') \<Longrightarrow>
+     length buf' = length buf \<and> (\<forall>i < length buf. set (buf' ! i) \<subseteq> set (buf ! i))"
+proof (induct f z buf t0 ts arbitrary: w buf' t' ts' rule: mbufnt_take.induct)
+  case (1 f z buf t0 ts)
+  note IH = 1(1) and E = 1(2)
+  show ?case
+  proof (cases "[] \<in> set buf \<or> ts = []")
+    case True
+    have q: "mbufnt_take f z buf t0 ts = (z, buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using True by (subst mbufnt_take.simps) simp
+    show ?thesis using E unfolding q by auto
+  next
+    case False
+    have e: "mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts)
+        = (w, buf', t', ts')"
+      using E by (subst (asm) mbufnt_take.simps) (simp add: False)
+    have "length buf' = length (map tl buf) \<and>
+        (\<forall>i < length (map tl buf). set (buf' ! i) \<subseteq> set (map tl buf ! i))"
+      by (rule IH[OF False e])
+    then show ?thesis using set_tl_sub by fastforce
+  qed
+qed
+
+lemma mbufnt_take_rel:
+  "length hs = length buf \<Longrightarrow> length Ss = length buf \<Longrightarrow>
+   (\<forall>i < length buf. set (buf ! i) \<subseteq> Ss ! i) \<Longrightarrow>
+   (\<And>as t u u'. length as = length hs \<Longrightarrow> (\<forall>i < length as. as ! i \<in> Ss ! i) \<Longrightarrow> R u u' \<Longrightarrow>
+      R (f as t u) (g (map2 (\<lambda>h a. h a) hs as) t u')) \<Longrightarrow>
+   R z z' \<Longrightarrow>
+   mbufnt_take f z buf t0 ts = (w, buf', t', ts') \<Longrightarrow>
+   mbufnt_take g z' (map2 map hs buf) t0 ts = (w2, buf2, t2, ts2) \<Longrightarrow>
+   R w w2 \<and> buf2 = map2 map hs buf' \<and> t2 = t' \<and> ts2 = ts'"
+proof (induct f z buf t0 ts arbitrary: z' w buf' t' ts' w2 buf2 t2 ts2
+    rule: mbufnt_take.induct)
+  case (1 f z buf t0 ts)
+  note IH = 1(1) and L1 = 1(2) and L2 = 1(3) and SUB = 1(4)
+    and STEP = 1(5) and RZ = 1(6) and E1 = 1(7) and E2 = 1(8)
+  show ?case
+  proof (cases "[] \<in> set buf \<or> ts = []")
+    case True
+    then have ne': "[] \<in> set (map2 map hs buf) \<or> ts = []"
+      by (simp only: map2_map_empty_iff[OF L1])
+    have q1: "mbufnt_take f z buf t0 ts = (z, buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using True by (subst mbufnt_take.simps) simp
+    have q2: "mbufnt_take g z' (map2 map hs buf) t0 ts
+        = (z', map2 map hs buf, (case ts of [] \<Rightarrow> t0 | t # _ \<Rightarrow> t), ts)"
+      using ne' by (subst mbufnt_take.simps) simp
+    show ?thesis using E1 E2 RZ unfolding q1 q2 by auto
+  next
+    case False
+    then have ne: "\<not> ([] \<in> set (map2 map hs buf) \<or> ts = [])"
+      by (simp only: map2_map_empty_iff[OF L1]) simp
+    have las: "length (map hd buf) = length hs" using L1 by simp
+    have mem: "\<forall>i < length (map hd buf). map hd buf ! i \<in> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map hd buf)"
+      then have i': "i < length buf" by simp
+      then have "buf ! i \<noteq> []" using False by (auto simp: in_set_conv_nth)
+      then have "hd (buf ! i) \<in> set (buf ! i)" by simp
+      then show "map hd buf ! i \<in> Ss ! i" using SUB i' by auto
+    qed
+    have r: "R (f (map hd buf) (hd ts) z) (g (map2 (\<lambda>h a. h a) hs (map hd buf)) (hd ts) z')"
+      by (rule STEP[OF las mem RZ])
+    have sub': "\<forall>i < length (map tl buf). set (map tl buf ! i) \<subseteq> Ss ! i"
+    proof (intro allI impI)
+      fix i assume i: "i < length (map tl buf)"
+      then have i': "i < length buf" by simp
+      have "set (tl (buf ! i)) \<subseteq> set (buf ! i)" by (cases "buf ! i") auto
+      then show "set (map tl buf ! i) \<subseteq> Ss ! i" using SUB i' by auto
+    qed
+    have e1: "mbufnt_take f (f (map hd buf) (hd ts) z) (map tl buf) (hd ts) (tl ts)
+        = (w, buf', t', ts')"
+      using E1 False by simp
+    have e2: "mbufnt_take g (g (map2 (\<lambda>h a. h a) hs (map hd buf)) (hd ts) z')
+        (map2 map hs (map tl buf)) (hd ts) (tl ts) = (w2, buf2, t2, ts2)"
+    proof -
+      have u: "mbufnt_take g z' (map2 map hs buf) t0 ts
+          = mbufnt_take g (g (map hd (map2 map hs buf)) (hd ts) z')
+              (map tl (map2 map hs buf)) (hd ts) (tl ts)"
+        using ne by (subst mbufnt_take.simps) simp
+      have hd': "map hd (map2 map hs buf) = map2 (\<lambda>h a. h a) hs (map hd buf)"
+        by (rule map2_map_hd[OF L1]) (use False in simp)
+      have tl': "map tl (map2 map hs buf) = map2 map hs (map tl buf)"
+        by (rule map2_map_tl[OF L1]) (use False in simp)
+      show ?thesis using E2 unfolding u hd' tl' .
+    qed
+    show ?thesis
+      by (rule IH[OF False _ _ sub' STEP r e1 e2]) (use L1 L2 in simp_all)
+  qed
+qed
+
+subsection \<open>Leftovers of the shift buffer\<close>
+
+lemma mprev_next_sub: "mprev_next I xs ts = (ys, xs', ts') \<Longrightarrow> set xs' \<subseteq> set xs"
+  by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
+    (auto split: prod.splits)
+
+section \<open>The unit and empty tables\<close>
+
+lemma dtabc_unit_table: "dtabc [] [] unit_table = unit_table"
+  by (simp add: dtabc_def unit_table_def)
+
+text \<open>Hence a negation node, whose operand has no columns at all, only has to look at
+  emptiness -- which the reordering preserves in both directions.\<close>
+
+lemma dtabc_neg:
+  "dtabc [] [] (if T = empty_table then unit_table else empty_table)
+     = (if dtabc [] [] T = empty_table then unit_table else empty_table)"
+  by (simp add: dtabc_unit_table dtabc_empty_iff empty_table_def)
+
+lemma dtabc_empty_table[simp]: "dtabc ks cs empty_table = empty_table"
+  by (simp add: empty_table_def)
+
+lemma dtabc_upt: "table [0..<n] T \<Longrightarrow> dtabc [0..<n] [0..<n] T = T"
+  by (rule dtabc_same) simp_all
+
+section \<open>The multi-way join the monitor runs\<close>
+
+text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
+  the negative ones, and the operand tables as a single list.\<close>
+
+definition dmulti_join :: "djoin_plan list \<Rightarrow> djoin_plan list \<Rightarrow>
+    event_data table list \<Rightarrow> event_data table" where
+  "dmulti_join ps ns us = (case us of [] \<Rightarrow> empty_table
+     | t # r \<Rightarrow> dands_neg ns (dands_pos ps t (take (length ps) r)) (drop (length ps) r))"
+
+lemma length_dands_plans[simp]: "length (dands_plans acc css) = length css"
+  by (induct css arbitrary: acc) auto
+
+lemma map2_append:
+  "length as = length xs \<Longrightarrow> map2 f (as @ bs) (xs @ ys) = map2 f as xs @ map2 f bs ys"
+  by simp
+
+lemma finite_kands_pos:
+  "finite T \<Longrightarrow> \<forall>(k, u) \<in> set us. finite u \<Longrightarrow> finite (kands_pos acc T us)"
+  by (induct us arbitrary: acc T) (auto simp: finite_join)
+
+lemma wf_operands_zip:
+  assumes "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Us"
+  shows "\<forall>(k, u) \<in> set (zip (map fst kcs) Us). distinct k \<and> table k u \<and> finite u"
+    and "length (map fst kcs) = length Us"
+    and "list_all2 dframe (map fst kcs) (map snd kcs)"
+  using assms by (auto simp: list_all2_conv_all_nth set_zip wf_operand_def case_prod_beta
+      dframe_def)
+
+theorem dmulti_join_eq:
+  assumes f0: "dframe k0 c0" and t0: "table k0 T0" and fT0: "finite T0"
+    and pos: "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Us"
+    and neg: "list_all2 (\<lambda>(k, c) U. wf_operand k c U) nkcs Vs"
+    and sub: "\<forall>c \<in> set (map snd nkcs). set c \<subseteq> set (dands_cols c0 (map snd kcs))"
+    and cs: "distinct cs" "set cs = set (kands_cols k0 (map fst kcs))"
+  shows "dmulti_join (dands_plans c0 (map snd kcs))
+           (dands_plans (dands_cols c0 (map snd kcs)) (map snd nkcs))
+           (map2 (\<lambda>(k, c). dtabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs))
+       = dtabc cs (dands_cols c0 (map snd kcs))
+           (mmulti_join cs (k0 # map fst kcs) (map fst nkcs) ((T0 # Us) @ Vs))"
+proof -
+  let ?K = "kands_cols k0 (map fst kcs)" and ?C = "dands_cols c0 (map snd kcs)"
+  let ?P = "kands_pos k0 T0 (zip (map fst kcs) Us)"
+  have lp: "length kcs = length Us" using pos by (rule list_all2_lengthD)
+  have ln: "length nkcs = length Vs" using neg by (rule list_all2_lengthD)
+  note wp = wf_operands_zip[OF pos] and wn = wf_operands_zip[OF neg]
+  have dk0: "distinct k0" using dframeD(1)[OF f0] .
+  have fK: "dframe ?K ?C" by (rule dframe_dands_cols[OF wp(3) f0])
+  have wp1: "\<forall>(k, u) \<in> set (zip (map fst kcs) Us). distinct k \<and> table k u" using wp(1) by auto
+  have tP: "table ?K ?P"
+    unfolding table_def using kands_pos_iff[OF dk0 t0 wp1] wp(2) by simp
+  have fP: "finite ?P" by (rule finite_kands_pos[OF fT0]) (use wp(1) in auto)
+  have subK: "\<forall>(k, u) \<in> set (zip (map fst nkcs) Vs). distinct k \<and> table k u \<and> set k \<subseteq> set ?K"
+  proof (intro ballI, clarify)
+    fix k u assume ku: "(k, u) \<in> set (zip (map fst nkcs) Vs)"
+    then obtain i where i: "i < length nkcs" "k = fst (nkcs ! i)" "u = Vs ! i"
+      using ln by (auto simp: in_set_zip)
+    have "dframe k (snd (nkcs ! i))" using wn(3) i by (auto simp: list_all2_conv_all_nth)
+    moreover have "set (snd (nkcs ! i)) \<subseteq> set ?C" using sub i by auto
+    moreover have "set ?C = set ?K" using dframeD(3)[OF fK] .
+    ultimately show "distinct k \<and> table k u \<and> set k \<subseteq> set ?K"
+      using wn(1) ku by (auto simp: dframe_def)
+  qed
+  have m: "map2 (\<lambda>(k, c). dtabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs)
+      = dtabc k0 c0 T0 # (map2 (\<lambda>(k, c). dtabc k c) kcs Us @ map2 (\<lambda>(k, c). dtabc k c) nkcs Vs)"
+    by (simp add: map2_append[OF lp])
+  have "dmulti_join (dands_plans c0 (map snd kcs)) (dands_plans ?C (map snd nkcs))
+          (map2 (\<lambda>(k, c). dtabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs))
+      = dands_neg (dands_plans ?C (map snd nkcs))
+          (dands_pos (dands_plans c0 (map snd kcs)) (dtabc k0 c0 T0)
+            (map2 (\<lambda>(k, c). dtabc k c) kcs Us))
+          (map2 (\<lambda>(k, c). dtabc k c) nkcs Vs)"
+    unfolding dmulti_join_def m using lp by simp
+  also have "\<dots> = dands_neg (dands_plans ?C (map snd nkcs)) (dtabc ?K ?C ?P)
+      (map2 (\<lambda>(k, c). dtabc k c) nkcs Vs)"
+    by (simp only: dands_pos_dtabc[OF f0 t0 fT0 pos])
+  also have "\<dots> = dtabc ?K ?C (kands_neg ?K ?P (zip (map fst nkcs) Vs))"
+    by (rule dands_neg_dtabc[OF fK tP fP neg sub])
+  also have "\<dots> = dtabc cs ?C (restrict cs ?K ` kands_neg ?K ?P (zip (map fst nkcs) Vs))"
+  proof -
+    have "table ?K (kands_neg ?K ?P (zip (map fst nkcs) Vs))"
+      using kands_neg_iff[OF dframeD(1)[OF fK] tP subK] tP by (auto simp: table_def)
+    then show ?thesis by (rule dtabc_restrict[OF fK cs(2), symmetric])
+  qed
+  also have "\<dots> = dtabc cs ?C (mmulti_join cs (k0 # map fst kcs) (map fst nkcs) ((T0 # Us) @ Vs))"
+  proof -
+    have "mmulti_join cs (k0 # map fst kcs) (map fst nkcs) ((T0 # Us) @ Vs)
+        = restrict cs ?K ` kands_neg ?K ?P (zip (map fst nkcs) Vs)"
+      by (rule mmulti_join_kands[OF dk0 t0 wp1 wp(2) subK _ cs]) (simp add: ln)
+    then show ?thesis by (simp only:)
+  qed
+  finally show ?thesis .
+qed
+
+section \<open>Comparisons on dense tuples\<close>
+
+text \<open>
+  A constraint node only filters; it never changes a tuple.  Reindexing its two terms against
+  the node's column list makes the filter read the dense tuple at the position the column
+  occupies there, which by @{thm [source] umeval_trm_reindex} evaluates to the same value.
+  Filtering commutes with an image without any injectivity, so the reordering passes through.
+\<close>
+
+definition reindex_constraint ::
+    "cols \<Rightarrow> Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm \<Rightarrow>
+     Formula.trm \<times> bool \<times> mconstraint \<times> Formula.trm" where
+  "reindex_constraint cs conf = (case conf of (t1, p, c, t2) \<Rightarrow>
+     (reindex_trm cs t1, p, c, reindex_trm cs t2))"
+
+theorem ueval_constraint_reindex:
+  assumes fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
+  shows "dtabc ks cs (Set.filter (eval_constraint ks (t1, p, c, t2)) T)
+       = Set.filter (ueval_constraint (reindex_constraint cs (t1, p, c, t2))) (dtabc ks cs T)"
+proof -
+  have "ueval_constraint (reindex_constraint cs (t1, p, c, t2)) (restrict cs ks x)
+      = eval_constraint ks (t1, p, c, t2) x" for x
+    by (simp add: reindex_constraint_def ueval_constraint_def
+        umeval_trm_reindex[OF fv1] umeval_trm_reindex[OF fv2])
+  then show ?thesis unfolding dtabc_def by auto
+qed
+
+section \<open>The plan of a left operand inside the right one's frame\<close>
+
+text \<open>A Since structure joins its left operand into the running tables: the plan records, for each
+  column of the right operand, the position the column occupies among the left operand's, if any.
+  It is computed once, when the formula is compiled.\<close>
+
+definition emb_plan :: "cols \<Rightarrow> cols \<Rightarrow> nat option list" where
+  "emb_plan cs_R cs_L = map (\<lambda>c. if c \<in> set cs_L then Some (col_pos cs_L c) else None) cs_R"
+
+section \<open>The assignment, the time point and the timestamp\<close>
+
+subsection \<open>Assigning a term to a fresh column\<close>
+
+text \<open>
+  The kernel's assignment appends the value at the end of its tuple:
+  @{thm eval_assignment.simps}.  The dense tuple has it at the position the new column occupies
+  in the merged column list -- the same insertion the aggregation's output does, at the same
+  @{const ins_pos}.
+\<close>
+
+lemma restrict_merge_single_append:
+  assumes s: "sorted_wrt (<) cs" and yg: "y \<notin> set ks" and sub: "set cs \<subseteq> set ks"
+    and w: "wf_tuple ks x"
+  shows "restrict (merge_cols cs [y]) (ks @ [y]) (x @ [v])
+       = take (ins_pos cs y) (restrict cs ks x) @ v # drop (ins_pos cs y) (restrict cs ks x)"
+proof -
+  have "restrict (merge_cols cs [y]) (ks @ [y]) (x @ [v]) = restrict (merge_cols cs [y]) (y # ks) (v # x)"
+    using yg sub by (intro restrict_cong) (auto simp: tup_get_append[OF w] tup_get_Cons set_merge_cols)
+  also have "\<dots> = take (ins_pos cs y) (restrict cs ks x) @ v # drop (ins_pos cs y) (restrict cs ks x)"
+    using yg sub by (intro restrict_merge_single[OF s]) auto
+  finally show ?thesis .
+qed
+
+theorem uassign_eval_assignment:
+  assumes f: "dframe ks cs" and y: "y \<notin> set ks" and fv: "Formula.fv_trm t \<subseteq> set cs"
+    and tT: "table ks T"
+  shows "uassign (ins_pos cs y) (reindex_trm cs t) (dtabc ks cs T)
+       = dtabc (ks @ [y]) (merge_cols cs [y]) (eval_assignment ks (y, t) ` T)"
+proof -
+  have "uassign1 (ins_pos cs y) (reindex_trm cs t) (restrict cs ks x)
+      = restrict (merge_cols cs [y]) (ks @ [y]) (eval_assignment ks (y, t) x)" if "x \<in> T" for x
+  proof -
+    have w: "wf_tuple ks x" using tT that by (simp add: table_def)
+    show ?thesis
+      unfolding uassign1_def eval_assignment.simps umeval_trm_reindex[OF fv]
+      by (rule restrict_merge_single_append[symmetric, OF dframeD(2)[OF f] y _ w])
+        (use dframeD(3)[OF f] in simp)
+  qed
+  then show ?thesis unfolding uassign_def dtabc_def image_image by (auto intro!: image_cong)
+qed
+
+lemma finite_uassign: "finite D \<Longrightarrow> finite (uassign p t D)"
+  by (simp add: uassign_def)
+
+lemma dframe_assign:
+  "dframe ks cs \<Longrightarrow> y \<notin> set ks \<Longrightarrow> dframe (ks @ [y]) (merge_cols cs [y])"
+  by (auto simp: dframe_def sorted_merge_cols set_merge_cols)
+
+text \<open>The operand's column list is the node's without the assigned column, and putting the
+  latter back is the merge the theorem above asks for.\<close>
+
+definition rem_col :: "cols \<Rightarrow> nat \<Rightarrow> cols" where
+  "rem_col cs y = filter (\<lambda>c. c \<noteq> y) cs"
+
+lemma sorted_rem_col: "sorted_wrt (<) cs \<Longrightarrow> sorted_wrt (<) (rem_col cs y)"
+  unfolding rem_col_def by (induct cs) auto
+
+lemma set_rem_col: "set (rem_col cs y) = set cs - {y}"
+  unfolding rem_col_def by auto
+
+lemma rem_col_set_cols:
+  "finite A \<Longrightarrow> y \<notin> A \<Longrightarrow> rem_col (set_cols (Set.insert y A)) y = set_cols A"
+  by (rule set_cols_eqI)
+    (auto simp: set_rem_col sorted_rem_col set_cols(1)[of "Set.insert y A"]
+      set_cols(2)[of "Set.insert y A"])
+
+lemma merge_rem_col:
+  "sorted_wrt (<) cs \<Longrightarrow> y \<in> set cs \<Longrightarrow> merge_cols (rem_col cs y) [y] = cs"
+  by (rule strict_sorted_equal)
+    (auto simp: set_merge_cols sorted_merge_cols set_rem_col sorted_rem_col)
+
+subsection \<open>The time point and the timestamp\<close>
+
+text \<open>
+  The two nodes that turn a number into a table produce either a one-column table holding that
+  number or a zero-column truth value; the kernel's tables are already the dense ones.
+\<close>
+
+definition mtrm_dcols :: "mtrm \<Rightarrow> cols" where
+  "mtrm_dcols mt = (case mt of MVar v \<Rightarrow> [v] | MConst c \<Rightarrow> [])"
+
+lemma sorted_mtrm_dcols: "sorted_wrt (<) (mtrm_dcols mt)"
+  by (cases mt) (simp_all add: mtrm_dcols_def)
+
+lemma dframe_mtrm_dcols: "dframe (mtrm_dcols mt) (mtrm_dcols mt)"
+  by (cases mt) (simp_all add: mtrm_dcols_def dframe_def)
+
+lemma finite_umtrm: "finite (umtrm mt x)"
+  by (cases mt) simp_all
+
+theorem umtrm_eval_mtrm: "umtrm mt x = eval_mtrm mt x"
+  by (cases mt) (simp_all add: singleton_table_def unit_table_def empty_table_def)
+
 (*<*)
 end
 (*>*)
