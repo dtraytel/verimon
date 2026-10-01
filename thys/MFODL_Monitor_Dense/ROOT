@@ -18,6 +18,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Utuple
     Dense
     Dense_Aux
+    Dense_Until_Gen
     Dense_Idx
     Dense_Tree_Code
     Dense_Win
