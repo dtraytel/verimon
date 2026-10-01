@@ -1519,9 +1519,10 @@ proof -
   have l: "(if ex_drop0 ccs then tl ` dtabc ks ccs T else dtabc ks ccs T)
       = (\<lambda>x. map (tup_get ks x) ?c) ` T"
     by (auto simp: dtabc_def restrict_map map_tl)
+  have cc: "c \<in> set ccs" if "c \<in> set ?c" for c
+    using that by (cases ccs) (auto split: if_splits)
   have mem: "c \<in> set ks" "c \<noteq> 0" if "c \<in> set ?c" for c
-    using that ex_drop0_pos[OF s] dframeD(3)[OF f]
-    by (cases ccs) (auto simp: ex_drop0_def split: if_splits)
+    using cc[OF that] that ex_drop0_pos[OF s] dframeD(3)[OF f] by auto
   have e: "tup_get (ex_cols ks) (ex_proj ks x) (c - Suc 0) = tup_get ks x c" if "c \<in> set ?c" for x c
     using tup_get_ex_proj[of c ks x] mem[OF that] by simp
   show ?thesis
@@ -2356,6 +2357,408 @@ lemma finite_umtrm: "finite (umtrm mt x)"
 
 theorem umtrm_eval_mtrm: "umtrm mt x = eval_mtrm mt x"
   by (cases mt) (simp_all add: singleton_table_def unit_table_def empty_table_def)
+
+section \<open>The verified Since structure over ascending columns\<close>
+
+text \<open>
+  Putting the pieces together: the invariant the dense Since node carries is that the verified
+  @{typ mmasaux}, run at @{const dargs}, is valid for the reordering of the auxiliary list the
+  kernel's one is valid for.  Each of the structure's four operations preserves it, and the result
+  it computes is the reordering of the result the kernel's one computes.  The aggregation is the
+  one thing that does not transport -- @{const dargs} has no aggregation -- so a Since with an
+  aggregation pushed into it stays a kernel node.
+\<close>
+
+definition dsaux :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> mmasaux \<Rightarrow>
+    (ts \<times> event_data table) list \<Rightarrow> bool" where
+  "dsaux kR cR cL args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, rel) \<in> set auxlist. table kR rel) \<and>
+     valid_mmasaux (dargs cR cL args) cur daux (dauxlist kR cR auxlist)"
+
+lemma table_dtabc: "table cs (dtabc ks cs T)"
+  using dtable_dtabc by (simp add: dtable_table[symmetric])
+
+lemma dsaux_init:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+  shows "dsaux kR cR cL args 0 (init_mmasaux (dargs cR cL args)) []"
+proof -
+  have "set cL \<subseteq> set cR" using sub dframeD(3)[OF fR] dframeD(3)[OF fL] by simp
+  then have "valid_mmasaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None) 0
+      (init_mmasaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)) []"
+    by (intro default_mmasaux.valid_init_msaux)
+      (simp_all add: dframeD(4)[OF fR] dframeD(4)[OF fL] valid_aggargs_def)
+  then show ?thesis by (simp add: dsaux_def dargs_def dauxlist_def)
+qed
+
+lemma dsaux_add_new_ts:
+  assumes v: "dsaux kR cR cL args cur daux auxlist" and nt: "cur \<le> nt"
+  shows "dsaux kR cR cL args nt (add_new_ts_mmasaux (dargs cR cL args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table kR rel"
+    and d: "valid_mmasaux (dargs cR cL args) cur daux (dauxlist kR cR auxlist)"
+    using v by (auto simp: dsaux_def)
+  have "valid_mmasaux (dargs cR cL args) nt (add_new_ts_mmasaux (dargs cR cL args) nt daux)
+      (filter (\<lambda>(t, rel). memR (args_ivl (dargs cR cL args)) (nt - t)) (dauxlist kR cR auxlist))"
+    by (rule default_mmasaux.valid_add_new_ts_msaux[OF d nt])
+  then show ?thesis using w by (simp add: dsaux_def dauxlist_filter)
+qed
+
+lemma dsaux_join:
+  assumes v: "dsaux kR cR cL args cur daux auxlist"
+    and fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and t1: "table kL rel1"
+  shows "dsaux kR cR cL args cur (gc_join_mmasaux (dargs cR cL args) (dtabc kL cL rel1) daux)
+      (map (\<lambda>(t, rel). (t, join kR rel (args_pos args) kL rel1)) auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table kR rel"
+    and d: "valid_mmasaux (dargs cR cL args) cur daux (dauxlist kR cR auxlist)"
+    using v by (auto simp: dsaux_def)
+  have tt: "table (args_L (dargs cR cL args)) (dtabc kL cL rel1)" by (simp add: table_dtabc)
+  have "valid_mmasaux (dargs cR cL args) cur
+      (gc_join_mmasaux (dargs cR cL args) (dtabc kL cL rel1) daux)
+      (map (\<lambda>(t, rel). (t, join (args_R (dargs cR cL args)) rel (args_pos (dargs cR cL args))
+        (args_L (dargs cR cL args)) (dtabc kL cL rel1))) (dauxlist kR cR auxlist))"
+    by (rule default_mmasaux.valid_join_msaux[OF d tt])
+  then show ?thesis using w
+    by (simp add: dsaux_def dauxlist_join[OF fR fL sub w t1] dauxlist_wf_join[OF w sub t1])
+qed
+
+lemma dsaux_add_new_table:
+  assumes v: "dsaux kR cR cL args cur daux auxlist" and t2: "table kR rel2"
+  shows "dsaux kR cR cL args cur
+      (add_new_table_mmasaux (dargs cR cL args) (dtabc kR cR rel2) daux)
+      (case auxlist of [] \<Rightarrow> [(cur, rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> rel2) # r else (cur, rel2) # auxlist)"
+proof -
+  have w: "\<forall>(t, rel) \<in> set auxlist. table kR rel"
+    and d: "valid_mmasaux (dargs cR cL args) cur daux (dauxlist kR cR auxlist)"
+    using v by (auto simp: dsaux_def)
+  have tt: "table (args_R (dargs cR cL args)) (dtabc kR cR rel2)" by (simp add: table_dtabc)
+  have "valid_mmasaux (dargs cR cL args) cur
+      (add_new_table_mmasaux (dargs cR cL args) (dtabc kR cR rel2) daux)
+      (case dauxlist kR cR auxlist of [] \<Rightarrow> [(cur, dtabc kR cR rel2)]
+       | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> dtabc kR cR rel2) # r
+                         else (cur, dtabc kR cR rel2) # dauxlist kR cR auxlist)"
+    by (rule default_mmasaux.valid_add_new_table_msaux[OF d tt])
+  then show ?thesis using w t2
+    by (simp add: dsaux_def dauxlist_add_new_table[symmetric]
+        dauxlist_wf_add_new_table[OF w t2])
+qed
+
+lemma dsaux_result:
+  assumes v: "dsaux kR cR cL args cur daux auxlist"
+  shows "result_mmasaux (dargs cR cL args) daux
+      = dtabc kR cR (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+proof -
+  have d: "valid_mmasaux (dargs cR cL args) cur daux (dauxlist kR cR auxlist)"
+    using v by (auto simp: dsaux_def)
+  have "result_mmasaux (dargs cR cL args) daux
+      = eval_args_agg (dargs cR cL args) (foldr (\<union>)
+          [rel. (t, rel) \<leftarrow> dauxlist kR cR auxlist, memL (args_ivl (dargs cR cL args)) (cur - t)] {})"
+    by (rule default_mmasaux.valid_result_msaux[OF d])
+  then show ?thesis by (simp add: dtabc_result)
+qed
+
+section \<open>The verified Until structure over ascending columns\<close>
+
+text \<open>
+  The same argument for the Until structure.  Its auxiliary list carries two tables per time
+  point -- the left operand's accumulated intersection or union and the right operand's
+  accumulated union -- each reordered at its own columns, which is where @{const dauxlist3} puts
+  them.
+\<close>
+
+definition duaux :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow>
+    event_data muaux \<Rightarrow> bool" where
+  "duaux kL cL kR cR args cur daux auxlist \<longleftrightarrow>
+     (\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2) \<and>
+     valid_muaux_dq (dargs cR cL args) cur daux (dauxlist3 kL cL kR cR auxlist)"
+
+lemma duaux_init:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+  shows "duaux kL cL kR cR args 0 (init_muaux_dq (dargs cR cL args)) []"
+proof -
+  have "set cL \<subseteq> set cR" using sub dframeD(3)[OF fR] dframeD(3)[OF fL] by simp
+  then have "valid_muaux_dq (init_args (args_ivl args) (length cR) cL cR (args_pos args) None) 0
+      (init_muaux_dq (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)) []"
+    by (intro valid_init_muaux_dq) (simp_all add: dframeD(4)[OF fR] dframeD(4)[OF fL])
+  then show ?thesis by (simp add: duaux_def dargs_def dauxlist3_def)
+qed
+
+lemma duaux_add_new:
+  assumes v: "duaux kL cL kR cR args cur daux auxlist"
+    and fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and t1: "table kL rel1" and t2: "table kR rel2" and nt: "cur \<le> nt"
+  shows "duaux kL cL kR cR args nt
+      (add_new_muaux_dq (dargs cR cL args) (dtabc kL cL rel1) (dtabc kR cR rel2) nt daux)
+      (update_until args rel1 rel2 nt auxlist)"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
+    and d: "valid_muaux_dq (dargs cR cL args) cur daux (dauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: duaux_def)
+  have tt1: "table (args_L (dargs cR cL args)) (dtabc kL cL rel1)" by (simp add: table_dtabc)
+  have tt2: "table (args_R (dargs cR cL args)) (dtabc kR cR rel2)" by (simp add: table_dtabc)
+  have "valid_muaux_dq (dargs cR cL args) nt
+      (add_new_muaux_dq (dargs cR cL args) (dtabc kL cL rel1) (dtabc kR cR rel2) nt daux)
+      (update_until (dargs cR cL args) (dtabc kL cL rel1) (dtabc kR cR rel2) nt
+        (dauxlist3 kL cL kR cR auxlist))"
+    by (rule valid_add_new_muaux_dq[OF d tt1 tt2 nt])
+  moreover have "dauxlist3 kL cL kR cR (update_until args rel1 rel2 nt auxlist)
+      = update_until (dargs cR cL args) (dtabc kL cL rel1) (dtabc kR cR rel2) nt
+          (dauxlist3 kL cL kR cR auxlist)"
+    by (rule dauxlist3_update_until[OF fR fL sub w t1 t2 aL aR]) simp_all
+  ultimately show ?thesis using dauxlist3_wf_update_until[OF w sub t1 t2 aL aR]
+    by (simp add: duaux_def)
+qed
+
+lemma duaux_eval:
+  assumes v: "duaux kL cL kR cR args cur daux auxlist" and nt: "cur \<le> nt"
+    and de: "eval_muaux_dq (dargs cR cL args) nt daux = (dres, daux')"
+    and we: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+  shows "dres = map (dtabc kR cR) res \<and> duaux kL cL kR cR args cur daux' auxlist'"
+proof -
+  have w: "\<forall>(t, a1, a2) \<in> set auxlist. table kL a1 \<and> table kR a2"
+    and d: "valid_muaux_dq (dargs cR cL args) cur daux (dauxlist3 kL cL kR cR auxlist)"
+    using v by (auto simp: duaux_def)
+  have de': "eval_until (args_ivl (dargs cR cL args)) nt (dauxlist3 kL cL kR cR auxlist)
+      = (map (dtabc kR cR) res, dauxlist3 kL cL kR cR auxlist')"
+    using dauxlist3_eval_until[OF we] by simp
+  have vd: "valid_muaux_dq (dargs cR cL args) cur daux' (dauxlist3 kL cL kR cR auxlist')"
+    and r: "dres = map (eval_args_agg (dargs cR cL args)) (map (dtabc kR cR) res)"
+    using valid_eval_muaux_dq[OF d nt de de'] by simp_all
+  have "set auxlist' \<subseteq> set auxlist"
+    using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
+  then show ?thesis using vd r w by (auto simp: duaux_def)
+qed
+
+section \<open>The verified Trigger structure over ascending columns\<close>
+
+text \<open>
+  The trigger's auxiliary list carries two tables per time point, like the Until's, but the
+  structure reads its answer off that list rather than accumulating it, so what has to transport
+  is @{const trigger_results} itself.  Its \<^emph>\<open>then\<close> branch is a set comprehension over tuples of
+  the right operand's columns, and the two conditions it puts on a tuple -- membership in a
+  stored right table, and a join against a stored left table -- both commute with the reordering.
+\<close>
+
+lemma trigger_results_eq:
+  "trigger_results args cur auxlist =
+     (if 0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)
+      then (args_R args, {tuple. wf_tuple (args_R args) tuple \<and>
+        (\<forall>i < length auxlist. mem (args_ivl args) (cur - fst (auxlist ! i)) \<longrightarrow>
+           (tuple \<in> snd (snd (auxlist ! i)) \<or>
+            (\<exists>j. i < j \<and> j < length auxlist \<and>
+               join_cond (args_pos args) (fst (snd (auxlist ! j)))
+                 (restrict (args_L args) (args_R args) tuple))))})
+      else ([], unit_table))"
+  by (auto simp: Let_def case_prod_beta)
+
+lemma length_filter_dauxlist3:
+  "length (filter (\<lambda>(t, _, _). P t) (dauxlist3 kL cL kR cR auxlist))
+     = length (filter (\<lambda>(t, _, _). P t) auxlist)"
+  by (induct auxlist) (auto simp: dauxlist3_def)
+
+lemma nth_dauxlist3:
+  "i < length auxlist \<Longrightarrow> dauxlist3 kL cL kR cR auxlist ! i =
+     (fst (auxlist ! i), dtabc kL cL (fst (snd (auxlist ! i))), dtabc kR cR (snd (snd (auxlist ! i))))"
+  by (simp add: dauxlist3_def case_prod_beta)
+
+lemma length_dauxlist3[simp]: "length (dauxlist3 kL cL kR cR auxlist) = length auxlist"
+  by (simp add: dauxlist3_def)
+
+theorem dtabc_trigger_results:
+  assumes fR: "dframe kR cR" and fL: "dframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and wf: "\<forall>(t, l, r) \<in> set auxlist. table kL l \<and> table kR r"
+  shows "dframe (fst (trigger_results args cur auxlist))
+           (fst (trigger_results (dargs cR cL args) cur (dauxlist3 kL cL kR cR auxlist)))"
+    and "snd (trigger_results (dargs cR cL args) cur (dauxlist3 kL cL kR cR auxlist))
+       = dtabc (fst (trigger_results args cur auxlist))
+           (fst (trigger_results (dargs cR cL args) cur (dauxlist3 kL cL kR cR auxlist)))
+           (snd (trigger_results args cur auxlist))"
+proof -
+  let ?I = "args_ivl args" and ?p = "args_pos args"
+  let ?da = "dauxlist3 kL cL kR cR auxlist"
+  have sub': "set cL \<subseteq> set cR" using sub dframeD(3)[OF fR] dframeD(3)[OF fL] by simp
+  have tl: "table kL (fst (snd (auxlist ! i)))" and tr: "table kR (snd (snd (auxlist ! i)))"
+    if "i < length auxlist" for i
+    using wf nth_mem[OF that] by (auto simp: case_prod_beta)
+  have key: "restrict cL cR (restrict cR kR a) = restrict cL kL (restrict kL kR a)" for a :: "event_data tuple"
+    using sub sub' dframeD(3)[OF fR] dframeD(3)[OF fL] by (simp add: restrict_restrict)
+  define P where "P a \<longleftrightarrow> (\<forall>i < length auxlist. mem ?I (cur - fst (auxlist ! i)) \<longrightarrow>
+      (a \<in> snd (snd (auxlist ! i)) \<or>
+       (\<exists>j. i < j \<and> j < length auxlist \<and>
+          join_cond ?p (fst (snd (auxlist ! j))) (restrict kL kR a))))" for a :: "event_data tuple"
+  define Q where "Q d \<longleftrightarrow> (\<forall>i < length auxlist. mem ?I (cur - fst (auxlist ! i)) \<longrightarrow>
+      (d \<in> dtabc kR cR (snd (snd (auxlist ! i))) \<or>
+       (\<exists>j. i < j \<and> j < length auxlist \<and>
+          join_cond ?p (dtabc kL cL (fst (snd (auxlist ! j)))) (restrict cL cR d))))"
+    for d :: "event_data tuple"
+  \<comment> \<open>the two conditions the comprehension puts on a tuple\<close>
+  have cond: "Q (restrict cR kR a) = P a" if wa: "wf_tuple kR a" for a :: "event_data tuple"
+  proof -
+    have inR: "(restrict cR kR a \<in> dtabc kR cR (snd (snd (auxlist ! i)))) = (a \<in> snd (snd (auxlist ! i)))"
+      if "i < length auxlist" for i
+      by (rule dtabc_in_iff[OF fR tr[OF that] wa])
+    have inL: "(restrict cL cR (restrict cR kR a) \<in> dtabc kL cL (fst (snd (auxlist ! j))))
+        = (restrict kL kR a \<in> fst (snd (auxlist ! j)))" if "j < length auxlist" for j
+      unfolding key by (rule dtabc_in_iff[OF fL tl[OF that]]) simp
+    show ?thesis unfolding P_def Q_def by (auto simp: inR inL)
+  qed
+  have DS: "{d. wf_tuple cR d \<and> Q d} = dtabc kR cR {a. wf_tuple kR a \<and> P a}"
+  proof (intro set_eqI iffI)
+    fix d assume d: "d \<in> {d. wf_tuple cR d \<and> Q d}"
+    let ?a = "restrict kR cR d"
+    have ld: "length d = length cR" using d by (simp add: wf_tuple_def)
+    have da: "restrict cR kR ?a = d" by (rule restrict_inv'[OF fR ld])
+    have "P ?a" using d cond[of ?a] da by simp
+    then have "?a \<in> {a. wf_tuple kR a \<and> P a}" by simp
+    then show "d \<in> dtabc kR cR {a. wf_tuple kR a \<and> P a}"
+      unfolding dtabc_def using da by (metis image_eqI)
+  next
+    fix d assume "d \<in> dtabc kR cR {a. wf_tuple kR a \<and> P a}"
+    then obtain a where a: "wf_tuple kR a" "P a" and da: "d = restrict cR kR a"
+      unfolding dtabc_def by auto
+    show "d \<in> {d. wf_tuple cR d \<and> Q d}" using cond[OF a(1)] a(2) da by simp
+  qed
+  have flt: "length (filter (\<lambda>(t, _, _). mem ?I (cur - t)) ?da)
+      = length (filter (\<lambda>(t, _, _). mem ?I (cur - t)) auxlist)"
+    by (rule length_filter_dauxlist3)
+  have dset: "{tuple. wf_tuple cR tuple \<and>
+      (\<forall>i < length ?da. mem ?I (cur - fst (?da ! i)) \<longrightarrow>
+         (tuple \<in> snd (snd (?da ! i)) \<or>
+          (\<exists>j. i < j \<and> j < length ?da \<and>
+             join_cond ?p (fst (snd (?da ! j))) (restrict cL cR tuple))))}
+    = {d. wf_tuple cR d \<and> Q d}"
+    by (auto simp: Q_def nth_dauxlist3)
+  have dsimp: "trigger_results (dargs cR cL args) cur ?da
+      = (if 0 < length (filter (\<lambda>(t, _, _). mem ?I (cur - t)) auxlist)
+         then (cR, {d. wf_tuple cR d \<and> Q d}) else ([], unit_table))"
+    by (simp only: trigger_results_eq flt dargs_simps dset)
+  have ssimp: "trigger_results args cur auxlist
+      = (if 0 < length (filter (\<lambda>(t, _, _). mem ?I (cur - t)) auxlist)
+         then (kR, {a. wf_tuple kR a \<and> P a}) else ([], unit_table))"
+    by (simp only: trigger_results_eq aL aR P_def)
+  show "dframe (fst (trigger_results args cur auxlist))
+      (fst (trigger_results (dargs cR cL args) cur ?da))"
+    unfolding dsimp ssimp using fR by (simp add: dframe_def)
+  show "snd (trigger_results (dargs cR cL args) cur ?da)
+       = dtabc (fst (trigger_results args cur auxlist)) (fst (trigger_results (dargs cR cL args) cur ?da))
+           (snd (trigger_results args cur auxlist))"
+    unfolding dsimp ssimp using DS by (simp add: dtabc_unit_table)
+qed
+
+
+text \<open>The structure over ascending columns, related to the kernel's through the abstract
+  auxiliary list they are both valid for, exactly as for the Since and the Until.\<close>
+
+lemma dauxlist3_filter_append:
+  "dauxlist3 kL cL kR cR (filter (\<lambda>(t, _). P t) auxlist @ [(nt, l, r)])
+     = filter (\<lambda>(t, _). P t) (dauxlist3 kL cL kR cR auxlist) @ [(nt, dtabc kL cL l, dtabc kR cR r)]"
+  by (induct auxlist) (auto simp: dauxlist3_def)
+
+text \<open>The trigger's buffer traversal, stepped over both column orders at once.  It is
+  @{thm [source] mbuf2t_take_rel_ts} without the timestamp bookkeeping.\<close>
+
+lemma mbuf2T_take_rel:
+  "(\<And>a b t u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t \<Longrightarrow>
+      R t (f a b t za) (g (h a) (k b) t z'a)) \<Longrightarrow>
+   R u0 z z' \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>t \<in> set ts. u0 \<le> t) \<Longrightarrow> (\<forall>t \<in> set ts. t \<le> tb) \<Longrightarrow> u0 \<le> tb \<Longrightarrow>
+   mbuf2T_take f z (xs, ys) ts = (w, (xs', ys'), ts') \<Longrightarrow>
+   mbuf2T_take g z' (map h xs, map k ys) ts = (w2, buf2, ts2) \<Longrightarrow>
+   (\<exists>u. R u w w2 \<and> u \<le> tb \<and> (\<forall>t \<in> set ts'. u \<le> t)) \<and> sorted ts' \<and>
+     set ts' \<subseteq> set ts \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys \<and>
+     buf2 = (map h xs', map k ys') \<and> ts2 = ts'"
+proof (induct xs arbitrary: ys z z' u0 ts w xs' ys' ts' w2 buf2 ts2)
+  case Nil
+  then show ?case by (cases ts) (auto intro!: exI[of _ u0])
+next
+  case (Cons x xs)
+  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4)
+    and P4 = Cons(5) and P5 = Cons(6) and P6 = Cons(7) and P7 = Cons(8) and P8 = Cons(9)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P2 P3 P4 P6 P7 P8 by (cases ts) (auto intro!: exI[of _ u0])
+  next
+    case (Cons y ys2)
+    note ysC = Cons
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P2 P6 P7 P8 ysC by (auto intro!: exI[of _ u0])
+    next
+      case (Cons t ts3)
+      note tsC = Cons
+      have ut: "u0 \<le> t" using P4 tsC by simp
+      have r: "R t (f x y t z) (g (h x) (k y) t z')"
+        using P1[of x y u0 z z' t] P2 ut ysC by simp
+      have p1: "\<And>a b t' u za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R u za z'a \<Longrightarrow> u \<le> t' \<Longrightarrow>
+          R t' (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
+      have s1: "mbuf2T_take f (f x y t z) (xs, ys2) ts3 = (w, (xs', ys'), ts')"
+        using P7 ysC tsC by simp
+      have s2: "mbuf2T_take g (g (h x) (k y) t z') (map h xs, map k ys2) ts3
+          = (w2, buf2, ts2)"
+        using P8 ysC tsC by simp
+      have "(\<exists>u. R u w w2 \<and> u \<le> tb \<and> (\<forall>t' \<in> set ts'. u \<le> t')) \<and> sorted ts' \<and>
+          set ts' \<subseteq> set ts3 \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys2 \<and>
+          buf2 = (map h xs', map k ys') \<and> ts2 = ts'"
+        by (rule IH[OF p1 r _ _ _ _ s1 s2]) (use P3 P5 P6 tsC in auto)
+      then show ?thesis using tsC ysC by auto
+    qed
+  qed
+qed
+
+section \<open>An index for the dense semi-join\<close>
+
+text \<open>
+  The Since and the Until probe their stored tables with the left operand's table.  Over ascending
+  columns the probe table \<^emph>\<open>is\<close> the key set: a stored tuple is kept exactly when its projection at
+  the merge plan's key mask is in the probe table, or, for a negative operand, out of it.  So the
+  index is a plain clustering of the stored table by that projection, and the probe is a
+  restriction of the mapping.
+\<close>
+
+definition didx :: "bool list \<Rightarrow> 'b list set \<Rightarrow> ('b list, 'b list set) mapping" where
+  "didx msk T = cluster (Some \<circ> dproj msk) T"
+
+lemma set_of_idx_cluster: "set_of_idx (cluster (Some \<circ> f) X) = X"
+  by transfer (auto simp: ran_def)
+
+lemma set_of_idx_didx: "set_of_idx (didx msk T) = T"
+  unfolding didx_def by (rule set_of_idx_cluster)
+
+definition dsemi_idx :: "bool list \<Rightarrow> bool \<Rightarrow> ('b list, 'b list set) mapping \<Rightarrow> 'b list set \<Rightarrow>
+    'b list set" where
+  "dsemi_idx msk pos idx X = set_of_idx (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) idx)"
+
+lemma in_set_of_idx: "(y \<in> set_of_idx m) = (\<exists>k Y. Mapping.lookup m k = Some Y \<and> y \<in> Y)"
+  by transfer (auto simp: ran_def)
+
+lemma lookup_didx: "Mapping.lookup (didx msk T) k =
+  (if k \<in> dproj msk ` T then Some {y \<in> T. dproj msk y = k} else None)"
+  unfolding didx_def by transfer auto
+
+text \<open>The index computes the semi-join: a stored tuple's bucket survives the restriction exactly
+  when the tuple itself survives the filter.\<close>
+
+theorem dsemi_idx_dsemi: "dsemi_idx msk pos (didx msk T) X = dsemi msk pos T X"
+proof (intro set_eqI iffI)
+  fix y assume "y \<in> dsemi_idx msk pos (didx msk T) X"
+  then show "y \<in> dsemi msk pos T X"
+    by (auto simp: dsemi_idx_def dsemi_def in_set_of_idx Mapping.lookup_filter lookup_didx
+        split: if_splits option.splits)
+next
+  fix y assume "y \<in> dsemi msk pos T X"
+  then have yT: "y \<in> T" and yp: "(dproj msk y \<in> X) = pos" by (auto simp: dsemi_def)
+  have "Mapping.lookup (Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (didx msk T)) (dproj msk y)
+      = Some {z \<in> T. dproj msk z = dproj msk y}"
+    using yT yp by (simp add: Mapping.lookup_filter lookup_didx)
+  then show "y \<in> dsemi_idx msk pos (didx msk T) X"
+    using yT by (auto simp: dsemi_idx_def in_set_of_idx)
+qed
 
 (*<*)
 end
