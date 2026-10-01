@@ -22,6 +22,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Evt
     Dense_Agg_Gen
     Dense_Evt_Agg
+    Dense_Evt_UAgg
     Dense_Idx
     Dense_Tree_Code
     Dense_Win
