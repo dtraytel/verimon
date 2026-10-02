@@ -347,26 +347,25 @@ let rec convert_schema_into_sig sch =
   | [] -> (fun k -> None)
 
 (* The monitor is the verified dense evaluator (thys/MFODL_Monitor_Dense): the algorithm of
-   Dense_Eval.thy, which drops the empty columns, run on the short tuples as
-   Dense_Unbox_Exec.thy states it.  [udminit_verimon] prepares the formula as VeriMon does
-   (Dense_VeriMon.thy): it type checks it and, if it is not monitorable and [rw] is set,
-   normalizes and rewrites it; then, if [mw] is set, it converts it into multi-way joins; then
-   [udminit_push] moves existential quantifiers into the past and future diamonds they commute
-   with (Dense_Push.thy) and compiles the result into the dense one.  [udmstep] performs one
-   step; all of these are pure functions.  The theorem udminit_verimon_mverdicts of
-   Dense_VeriMon.thy states that the verdicts are those of the input formula, through the
-   simulation theorem of Dense_Eval.thy and the refinement theorems of Dense_Exec.thy and
-   Dense_Unbox_Exec.thy, provided the compiler placed every node: [uvdfail_nodes] counts the
-   ones it could not, and a formula with any is refused rather than run outside the theorem.
-   The front end therefore neither type checks nor rewrites the formula itself for this monitor
-   (see [Rewriting.check_formula]). *)
-type state = unit udmstate_ext
+   Dense_Eval.thy, which drops the empty columns and runs on the short tuples.
+   [dminit_verimon] prepares the formula as VeriMon does (Dense_VeriMon.thy): it type checks
+   it and, if it is not monitorable and [rw] is set, normalizes and rewrites it; then, if [mw]
+   is set, it converts it into multi-way joins; then [dminit_push] moves existential
+   quantifiers into the past and future diamonds they commute with (Dense_Push.thy) and
+   compiles the result into the dense one.  [dmstep] performs one step; all of these are pure
+   functions.  The theorem dminit_verimon_mverdicts of Dense_VeriMon.thy states that the
+   verdicts are those of the input formula, through the simulation theorem of Dense_Eval.thy,
+   provided the compiler placed every node: [vdfail_nodes] counts the ones it could not, and a
+   formula with any is refused rather than run outside the theorem.  The front end therefore
+   neither type checks nor rewrites the formula itself for this monitor (see
+   [Rewriting.check_formula]). *)
+type state = unit dmstate_ext
 
 let init ~mw ~rw dbschema cf =
-  let st = match udminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
+  let st = match dminit_verimon mw rw (convert_schema_into_sig dbschema) cf with
     | Inl e -> failwith ("Error during the verified preparation of the formula: " ^ e)
     | Inr st -> st in
-  let nf = int_of_nat (uvdfail_nodes (udmstate_m st)) in
+  let nf = int_of_nat (vdfail_nodes (dmstate_m st)) in
   if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
     Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" nf;
   if nf <> 0 then
@@ -388,7 +387,7 @@ let annotate wrap vs =
   List.map (fun (tp, (ts, v)) -> (int_of_nat tp, integer_of_nat ts, wrap v)) vs
 
 let step t (Short db) st =
-  let (vs, st') = udmstep (db, nat_of_integer t) st in
+  let (vs, st') = dmstep (db, nat_of_integer t) st in
   (annotate (fun v -> UV v) vs, st')
 
 (* Direct output of verdicts.

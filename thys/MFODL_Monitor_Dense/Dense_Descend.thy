@@ -1456,4 +1456,10 @@ qed
 
 end
 
+text \<open>The executable monitor's initial state: the compiled kernel state.\<close>
+
+definition dminit_safe :: "ty Formula.formula \<Rightarrow> dmstate" where
+  "dminit_safe \<phi> = dof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>))
+     (minit_safe \<phi>)"
+
 end

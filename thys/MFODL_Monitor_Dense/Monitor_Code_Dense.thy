@@ -8,17 +8,17 @@ begin
 text \<open>
   The code export the shipping binary is built from: \<^verbatim>\<open>src/verified.ml\<close> is this theory's
   \<^verbatim>\<open>verified.ocaml\<close>, and @{text "-verified"} runs the verified dense evaluator it contains.
-  @{const udminit_verimon} prepares the input formula as VeriMon does -- type checking and, if
+  @{const dminit_verimon} prepares the input formula as VeriMon does -- type checking and, if
   the formula is not monitorable, normalization and rewriting, then the conversion into
   multi-way joins (@{theory MFODL_Monitor_Dense.Dense_VeriMon}) -- and builds the initial state
-  from it with @{const udminit_push}, which binds frozen predicates with @{text LET} where it can
+  from it with @{const dminit_push}, which binds frozen predicates with @{text LET} where it can
   (@{theory MFODL_Monitor_Dense.Dense_Frz}), moves existential quantifiers into the windows they
   commute with (@{theory MFODL_Monitor_Dense.Dense_Push}), binds the right operand of a release
   so that it is evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}) and compiles the
-  resulting formula into the executable dense one; @{const udmstep} performs one step on it.  All
-  of these are pure functions over the tuples.  @{const uvdfail_nodes} says whether the compiler
-  covered the whole formula; it must be zero for the correctness theorem @{text udeval_Rep}
-  (@{theory MFODL_Monitor_Dense.Dense_Unbox_Exec}) to apply, and the front end refuses the
+  resulting formula into the dense one; @{const dmstep} performs one step on it.  All
+  of these are pure functions over the tuples.  @{const vdfail_nodes} says whether the compiler
+  covered the whole formula; it must be zero for the correctness theorem
+  @{text dmonitor_mverdicts_dof} (@{theory MFODL_Monitor_Dense.Dense_Descend}) to apply, and the front end refuses the
   formula otherwise.  @{text "-verified"} runs them on the log through @{const vinit},
   @{const vfeed_chunk} and @{const vfinish} (@{theory MFODL_Monitor_Dense.Log_Monitor}): the
   verified log parser, which drops the events of the predicates the formula does not mention,
@@ -65,7 +65,7 @@ export_code
   (*the verified dense monitor's own database*)
   utable_of_list uempty_db uinsert_table_into_db urbt_fold
   (*the verified dense monitor, and its initialization with VeriMon's preparation of the formula*)
-  udminit_push udminit_verimon prepare_verimon udmstep uvdfail_nodes udmstate_m
+  dminit_push dminit_verimon prepare_verimon dmstep vdfail_nodes dmstate_m
   (*the verified log parser (session Log_Parser), which reads the log in chunks*)
   Log_Exec.einit Log_Exec.efeed_chunk Log_Exec.efinish Log_Exec.O_ITEM Log_Grammar.Entry Log_Grammar.T_AT
   Log_Exec.E_TOKEN Log_Exec.X_ENTRY

@@ -1,6 +1,6 @@
 (*<*)
 theory Dense_Push
-  imports "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Frz"
+  imports "MFODL_Monitor_Dense.Dense_Descend" "MFODL_Monitor_Dense.Dense_Frz"
     "MFODL_Monitor_Dense.Dense_Share" "MFODL_Monitor_Devel.VeriMon"
 begin
 (*>*)
@@ -566,19 +566,17 @@ qed
 
 end
 
-text \<open>The front end's entry point: the monitor over the short tuples, started on the rewritten
-  formula.  Its representation is the dense monitor of
-  @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
+text \<open>The front end's entry point: the dense monitor started on the rewritten formula, the state
+  of @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
 
-definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
-  "udminit_push \<phi> = udminit_safe (dense_prep \<phi>)"
+definition dminit_push :: "ty Formula.formula \<Rightarrow> dmstate" where
+  "dminit_push \<phi> = dminit_safe (dense_prep \<phi>)"
 
-lemma Rep_udminit_push:
-  assumes "mmonitorable \<phi>"
-  shows "Rep_udmstate (udminit_push \<phi>)
+lemma dminit_push_eq:
+  "dminit_push \<phi>
    = dof_state (Formula.nfv \<phi>) (Formula.fv_list (dense_prep \<phi>))
        (dcols (Formula.fv_list (dense_prep \<phi>))) (minit_safe (dense_prep \<phi>))"
-  by (simp add: udminit_push_def Rep_udminit_safe[OF mmonitorable_dense_prep[OF assms]])
+  by (simp add: dminit_push_def dminit_safe_def)
 (*<*)
 end
 (*>*)

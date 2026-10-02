@@ -13,7 +13,7 @@ text \<open>
   @{text vfinish} the end of the log. The parser skips the events of the predicates that the
   signature declares but whose names do not occur freely in the formula
   (@{theory Log_Parser.Log_Filter}); the time points it outputs are converted by the signature
-  into the monitor's databases and fed to @{const udmstep}.
+  into the monitor's databases and fed to @{const dmstep}.
 
   The main theorem, @{text verimon_log.vrun_log}, states that for the bytes of a log that
   denotes a prefix -- its items are those the parser reads (@{const parse_log}, which accepts
@@ -21,7 +21,7 @@ text \<open>
   timestamps are natural numbers that do not decrease, and their events are those of the
   signature with fields of the declared types (@{text log_prefix}) -- the monitor reports no
   error, and its verdicts are those that the specification of the formula prescribes for the
-  prefix (@{text Mt}, as in @{thm [source] verimon_prepare.udminit_verimon_mverdicts}).
+  prefix (@{text Mt}, as in @{thm [source] verimon_prepare.dminit_verimon_mverdicts}).
   @{text verimon_log.vrun_filtered} states the same for the logs whose events of the other
   declared predicates are arbitrary, and that the monitor reports an error on every other log;
   @{text verimon_log.Mt_preds} states that the verdicts do not depend on these events.
@@ -1012,7 +1012,7 @@ lemma vskip_fun: "vskip_fun xs q \<longleftrightarrow> q \<in> set xs"
 text \<open>The state of the monitor proper is that of the dense monitor and the last timestamp; that of
   the whole monitor includes the parser's.\<close>
 
-type_synonym vmstate = "udmstate \<times> nat"
+type_synonym vmstate = "dmstate \<times> nat"
 type_synonym vstate = "estate \<times> vmstate"
 
 text \<open>The output: the verdicts of a time point, or an error at an offset in the input.\<close>
@@ -1021,7 +1021,7 @@ datatype vout = VO_VERDICTS "(nat \<times> ts \<times> utable) list" | VO_ERROR 
 
 definition vtp :: "integer \<Rightarrow> Formula.event list \<Rightarrow> nat \<Rightarrow> vmstate \<Rightarrow> vout \<times> vmstate" where
   "vtp sp xs t z = (if t < snd z then (VO_ERROR sp (VE_ORDER t (snd z)), z)
-     else (case udmstep (build_db xs, t) (fst z) of (vs, ust) \<Rightarrow> (VO_VERDICTS vs, (ust, t))))"
+     else (case dmstep (build_db xs, t) (fst z) of (vs, ust) \<Rightarrow> (VO_VERDICTS vs, (ust, t))))"
 
 definition conv_entry :: "vconf \<Rightarrow> bytes \<Rightarrow> (bytes \<times> bytes list) list \<Rightarrow> verror + Formula.event list \<times> nat" where
   "conv_entry cf ts evs = (case bnat_of ts of
@@ -1078,9 +1078,9 @@ datatype vinit_error = VI_WF | VI_PREPARE String.literal | VI_FRAGMENT nat
 definition vinit :: "bool \<Rightarrow> bool \<Rightarrow> bool \<Rightarrow> lsig \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> tysym Formula.formula \<Rightarrow>
     vinit_error + vconf \<times> vstate" where
   "vinit mw rw filt S pf \<phi> = (if \<not> wf_formula \<phi> then Inl VI_WF else
-     (case udminit_verimon mw rw (lsig_tsig S) \<phi> of
+     (case dminit_verimon mw rw (lsig_tsig S) \<phi> of
        Inl e \<Rightarrow> Inl (VI_PREPARE e)
-     | Inr ust \<Rightarrow> (let n = uvdfail_nodes (udmstate_m ust) in
+     | Inr ust \<Rightarrow> (let n = vdfail_nodes (dmstate_m ust) in
          if n = 0 then Inr (VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf, (einit, ust, 0))
          else Inl (VI_FRAGMENT n))))"
 
@@ -1125,9 +1125,9 @@ subsection \<open>Correctness\<close>
 
 subsubsection \<open>The dense monitor on a list of time points\<close>
 
-fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> udmstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> udmstate" where
+fun usteps :: "(Formula.event list \<times> nat) list \<Rightarrow> dmstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> dmstate" where
   "usteps [] ust = ([], ust)"
-| "usteps ((xs, t) # tps) ust = (case udmstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
+| "usteps ((xs, t) # tps) ust = (case dmstep (build_db xs, t) ust of (vs1, ust1) \<Rightarrow>
      (case usteps tps ust1 of (vs2, ust2) \<Rightarrow> (vs1 @ vs2, ust2)))"
 
 lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, ust1) \<Rightarrow>
@@ -1135,15 +1135,15 @@ lemma usteps_append: "usteps (tps1 @ tps2) ust = (case usteps tps1 ust of (vs1, 
   by (induction tps1 ust rule: usteps.induct) (auto split: prod.splits)
 
 lemma usteps_dmsteps0:
-  "fst (usteps tps ust) = dmsteps0_stateless (map (apfst set) tps) (Rep_udmstate ust)"
+  "fst (usteps tps ust) = dmsteps0_stateless (map (apfst set) tps) (ust)"
 proof (induction tps arbitrary: ust)
   case (Cons tp tps)
   obtain xs t where tp: "tp = (xs, t)"
     by (cases tp)
-  obtain vs1 ust1 where u: "udmstep (build_db xs, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db xs, t) ust = (vs1, ust1)"
     by fastforce
-  have "dmstep (mk_db (set xs), t) (Rep_udmstate ust) = (vs1, Rep_udmstate ust1)"
-    using udmstep_Rep[of "build_db xs" t ust] u by (simp add: build_db_mk_db)
+  have "dmstep (mk_db (set xs), t) ust = (vs1, ust1)"
+    using u by (simp add: build_db_mk_db)
   then show ?case
     using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
 qed simp
@@ -1225,7 +1225,7 @@ proof (induction xs arbitrary: es ust lt vs z')
     using Cons.prems(3) vs by simp
   obtain ys t where c: "conv_item cf e = Some (ys, t)"
     using vitem_None[of cf e sp "(ust, lt)"] v ok x by (cases "conv_item cf e") auto
-  obtain vs1 ust1 where u: "udmstep (build_db ys, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db ys, t) ust = (vs1, ust1)"
     by fastforce
   have t: "\<not> t < lt" and v1: "v = VO_VERDICTS vs1" and z1: "z1 = (ust1, t)"
     using v ok vitem_Some[OF c, of sp "(ust, lt)"] u x by (auto simp: vtp_def split: if_splits)
@@ -1251,7 +1251,7 @@ proof (induction xs arbitrary: es tps ust lt)
   from Cons.prems(2) es obtain ys t tps' where c: "conv_item cf e = Some (ys, t)"
     and tps: "those (map (conv_item cf) es') = Some tps'" "tps = (ys, t) # tps'"
     by (auto split: option.splits)
-  obtain vs1 ust1 where u: "udmstep (build_db ys, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db ys, t) ust = (vs1, ust1)"
     by fastforce
   from Cons.prems(3) tps have "lt \<le> t" "sorted (t # map snd tps')"
     by auto
@@ -1388,7 +1388,7 @@ lemma vitems_cases:
       (vs, z') \<Rightarrow> vs @ (case fin of None \<Rightarrow> [] | Some t \<Rightarrow> [fst (vtp pos [] t z')]))"
     and "L \<equiv> Option.bind (oks xs) (\<lambda>es. prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) fin (abs_items es))"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (Rep_udmstate ust) \<pi>"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (ust) \<pi>"
 proof -
   let ?xs = xs
   obtain vs z' where vs: "vitems cf ?xs (ust, 0) = (vs, z')"
@@ -1440,7 +1440,7 @@ proof -
       next
         case (Some t)
         note fin = this
-        obtain vs1 ust1 where u: "udmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
+        obtain vs1 ust1 where u: "dmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
           by (metis prod.exhaust)
         have S1: "sorted (0 # map snd tps) \<Longrightarrow> sorted (map snd ?tps) \<longleftrightarrow> \<not> t < last (0 # map snd tps)"
           using sorted_snoc_last[of 0 "map snd tps" t] by (auto simp: fin fin_tps_def not_less)
@@ -1452,7 +1452,7 @@ proof -
       show thesis
       proof (cases "sorted (map snd ?tps)")
         case True
-        then have "vverdicts V = dmonitor (Rep_udmstate ust) (prefix_of_list (map (apfst set) ?tps))"
+        then have "vverdicts V = dmonitor (ust) (prefix_of_list (map (apfst set) ?tps))"
           using E by (simp add: usteps_dmsteps0 dmonitor_def dmsteps_stateless.rep_eq Rep_prefix_of_list comp_def)
         with True E L' show thesis
           by (intro ok) auto
@@ -1471,7 +1471,7 @@ lemma vrun_cases:
   defines "L \<equiv> log_prefix (sk (vkeep cf)) (sf (vc_pf cf)) (vc_lsig cf) fin (concat (map Rep_bytes ss))"
     and "V \<equiv> vrun cf fin (einit, (ust, 0)) ss"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (Rep_udmstate ust) \<pi>"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (ust) \<pi>"
 proof -
   let ?k = "vkeep cf"
   let ?xs = "eparse ?k ss"
@@ -1500,7 +1500,7 @@ lemma vfeed_chunks_cases:
     and "L \<equiv> Option.bind (fstream_run (sk (vkeep cf)) (concat (map Rep_bytes ss)) fstream_init)
       (\<lambda>(es, _). prefix_of_items (sf (vc_pf cf)) (vc_lsig cf) None es)"
   obtains (err) "has_verror V" "L = None"
-  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (Rep_udmstate ust) \<pi>"
+  | (ok) \<pi> where "\<not> has_verror V" "L = Some \<pi>" "vverdicts V = dmonitor (ust) \<pi>"
 proof -
   let ?k = "vkeep cf"
   let ?xs = "fst (efeed_chunks ?k ss einit)"
@@ -1601,7 +1601,7 @@ definition vwiden :: "'t Formula.formula \<Rightarrow> (nat \<times> ts \<times>
 lemma vinit_Inr:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
   obtains ust where "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" "z = (einit, ust, 0)"
-    "wf_formula \<phi>" "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "uvdfail_nodes (udmstate_m ust) = 0"
+    "wf_formula \<phi>" "dminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" "vdfail_nodes (dmstate_m ust) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma sk_vkeep: "sk (vkeep (VConf (vskip_fun (vskip filt \<phi> S)) S' L pf)) = keep_spec filt \<phi> S"
@@ -1710,7 +1710,7 @@ theorem vrun_filtered:
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = monitor_\<phi>.Mt \<pi>"
 proof -
   obtain ust where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and z: "z = (einit, ust, 0)"
-    and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
+    and u: "dminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "vdfail_nodes (dmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
   have lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
     by (simp add: cf)
@@ -1729,12 +1729,12 @@ proof -
       by (simp add: L)
   next
     case (ok \<pi>')
-    with \<open>L = Some \<pi>\<close> have R: "vverdicts (vrun cf fin z ss) = dmonitor (Rep_udmstate ust) \<pi>"
+    with \<open>L = Some \<pi>\<close> have R: "vverdicts (vrun cf fin z ss) = dmonitor (ust) \<pi>"
       by (simp add: L z)
     have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<pi>"
       using w(1) by (simp add: map_sig_lsig)
     then show ?thesis
-      using udminit_verimon_mverdicts[OF u zf w(2)] by (simp add: vwiden_def R)  qed
+      using dminit_verimon_mverdicts[OF u zf w(2)] by (simp add: vwiden_def R)  qed
 qed
 
 text \<open>The monitor on a log that denotes a prefix: it reports no error, and its verdicts are those
@@ -1777,7 +1777,7 @@ theorem vfeed_chunks_online:
     and "L = Some \<pi> \<Longrightarrow> flatten_verdicts (vwiden \<phi> (vverdicts (fst (vfeed_chunks cf ss z)))) = monitor_\<phi>.Mt \<pi>"
 proof -
   obtain ust where cf: "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and z: "z = (einit, ust, 0)"
-    and u: "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "uvdfail_nodes (udmstate_m ust) = 0"
+    and u: "dminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and zf: "vdfail_nodes (dmstate_m ust) = 0"
     using vinit_Inr[OF init] by blast
   have lk: "vc_lookup cf = lsig_lookup (vc_lsig cf)"
     by (simp add: cf)
@@ -1798,12 +1798,12 @@ proof -
       by (simp add: L)
   next
     case (ok \<pi>')
-    with \<open>L = Some \<pi>\<close> have R: "vverdicts (fst (vfeed_chunks cf ss z)) = dmonitor (Rep_udmstate ust) \<pi>"
+    with \<open>L = Some \<pi>\<close> have R: "vverdicts (fst (vfeed_chunks cf ss z)) = dmonitor (ust) \<pi>"
       by (simp add: L z)
     have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<pi>"
       using w(1) by (simp add: map_sig_lsig)
     then show ?thesis
-      using udminit_verimon_mverdicts[OF u zf w(2)] by (simp add: vwiden_def R)  qed
+      using dminit_verimon_mverdicts[OF u zf w(2)] by (simp add: vwiden_def R)  qed
 qed
 
 text \<open>At the level of the grammar: if the input read so far extends to a log, the verdicts output
@@ -1873,11 +1873,11 @@ lemma vinit_verimon_log:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, z)"
   shows "verimon_log rw S \<phi>"
 proof -
-  obtain ust where "wf_formula \<phi>" "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust"
+  obtain ust where "wf_formula \<phi>" "dminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust"
     using vinit_Inr[OF assms] by metis
   then show ?thesis
     by (cases "prepare_verimon rw (lsig_tsig S) \<phi>")
-      (auto simp: verimon_log_def verimon_prepare_def udminit_verimon_def)
+      (auto simp: verimon_log_def verimon_prepare_def dminit_verimon_def)
 qed
 
 (*<*)

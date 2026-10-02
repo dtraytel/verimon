@@ -11,11 +11,11 @@ text \<open>
   the input formula is type checked and, if it is not monitorable and rewriting is requested,
   normalized and rewritten until it becomes monitorable. Optionally (@{text mw}), the prepared
   formula is converted into multi-way joins. The dense state is then built from it by
-  @{const udminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
+  @{const dminit_push}, which also binds frozen predicates with @{const Formula.Let} where it
   can (@{theory MFODL_Monitor_Dense.Dense_Frz}), moves existential quantifiers into the
   windows they commute with (@{theory MFODL_Monitor_Dense.Dense_Push}), and binds the right
   operand of a release so that it is evaluated once (@{theory MFODL_Monitor_Dense.Dense_Share}). The
-  theorem @{text udminit_verimon_mverdicts} below states that the verdicts of the dense monitor
+  theorem @{text dminit_verimon_mverdicts} below states that the verdicts of the dense monitor
   started from this state are those of the input formula, provided the dense compiler covered
   the whole formula.
 
@@ -42,9 +42,9 @@ text \<open>The multiway conversion expands a release into an until over several
   operand; @{const share_opt} binds that operand with @{const Formula.Let} first, so that the copies
   are all occurrences of one predicate.\<close>
 
-definition udminit_verimon where
-  "udminit_verimon mw rw sig \<phi> =
-     map_sum id (\<lambda>\<psi>. udminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>))
+definition dminit_verimon where
+  "dminit_verimon mw rw sig \<phi> =
+     map_sum id (\<lambda>\<psi>. dminit_push (if mw then convert_multiway (share_opt \<psi>) else \<psi>))
        (prepare_verimon rw sig \<phi>)"
 
 lemma verimon_spec_share_opt: "verimon_spec \<phi> S E \<Longrightarrow> verimon_spec (share_opt \<phi>) S E"
@@ -56,8 +56,8 @@ begin
 
 definition "\<psi>_mw mw = (if mw then convert_multiway (share_opt \<psi>) else \<psi>)"
 
-lemma udminit_verimon_\<psi>_mw: "udminit_verimon mw rw sig \<phi> = Inr (udminit_push (\<psi>_mw mw))"
-  by (simp add: udminit_verimon_def prepare_\<psi> \<psi>_mw_def)
+lemma dminit_verimon_\<psi>_mw: "dminit_verimon mw rw sig \<phi> = Inr (dminit_push (\<psi>_mw mw))"
+  by (simp add: dminit_verimon_def prepare_\<psi> \<psi>_mw_def)
 
 lemma verimon_spec_\<psi>_mw:
   "verimon_spec (\<psi>_mw mw) (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"
@@ -92,30 +92,30 @@ interpretation monitor_\<phi>: future_bounded_mfodl "Formula.formula.map_formula
   "map_sig (convert_tysym o check_subst) sig" "convert_tysym o check_subst o TAny"
   using future_bounded_\<phi> by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
 
-text \<open>The verdicts of the dense monitor started from the state @{const udminit_verimon} builds
+text \<open>The verdicts of the dense monitor started from the state @{const dminit_verimon} builds
   are the verdicts the specification of the input formula prescribes.\<close>
 
-theorem udminit_verimon_mverdicts:
-  assumes init: "udminit_verimon mw rw sig \<phi> = Inr ust"
-    and zf: "uvdfail_nodes (udmstate_m ust) = 0"
+theorem dminit_verimon_mverdicts:
+  assumes init: "dminit_verimon mw rw sig \<phi> = Inr ust"
+    and zf: "vdfail_nodes (dmstate_m ust) = 0"
     and f: "pfinite \<pi>" and wty: "wty_prefix (map_sig (convert_tysym o check_subst) sig) \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>)) X))
-      (dmonitor (Rep_udmstate ust) \<pi>)) = monitor_\<phi>.Mt \<pi>"
+      (dmonitor ust \<pi>)) = monitor_\<phi>.Mt \<pi>"
 proof -
   let ?\<psi> = "\<psi>_mw mw"
   let ?\<chi> = "dense_prep ?\<psi>"
-  have ust: "ust = udminit_push ?\<psi>"
-    using init by (simp add: udminit_verimon_\<psi>_mw)
-  have R: "Rep_udmstate ust = dof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
+  have ust: "ust = dminit_push ?\<psi>"
+    using init by (simp add: dminit_verimon_\<psi>_mw)
+  have R: "ust = dof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
       (dcols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>)"
-    unfolding ust by (rule Rep_udminit_push[OF verimon_mw.monitorable])
+    unfolding ust by (rule dminit_push_eq)
   have zf': "vdfail_nodes (dmstate_m (dof_state (Formula.nfv ?\<psi>) (Formula.fv_list ?\<chi>)
       (dcols (Formula.fv_list ?\<chi>)) (minit_safe ?\<chi>))) = 0"
-    using zf by (simp only: R[symmetric] vdfail_nodes_Rep_udmstate)
+    using zf by (simp only: R)
   have A: "flatten_verdicts (map (\<lambda>(i, t, X).
       (i, t, dtabw (Formula.fv_list ?\<psi>) (dcols (Formula.fv_list ?\<psi>)) X))
-      (dmonitor (Rep_udmstate ust) \<pi>)) = verimon_mw.Mt \<pi>"
+      (dmonitor ust \<pi>)) = verimon_mw.Mt \<pi>"
     using verimon_mw.dmonitor_mverdicts_push[OF zf' f wty] by (simp only: R)
   have Mt: "monitor_\<phi>.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict
       (Formula.fv_list (Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>))

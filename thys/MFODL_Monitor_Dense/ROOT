@@ -3,7 +3,7 @@ chapter AFP
 session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
   description
     "The dense (short-tuple) representation of the monitor's evaluation function and the verified
-     dense evaluator udmstep/udeval over it, with the window structures it runs. Monitor_Code_Dense is the code export the shipping binary is built
+     dense evaluator dmstep/deval over it, with the window structures it runs. Monitor_Code_Dense is the code export the shipping binary is built
      from (src/verified.ml), together with the verified log parser of session Log_Parser;
      Log_Monitor composes the two, from the bytes of the log to the verdicts, and
      Log_Monitor_Online states its correctness for the online interface."
@@ -34,7 +34,6 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Compile
     Dense_Init
     Dense_Descend
-    Dense_Unbox_Exec
     Dense_Idx_Code
     Dense_Frz
     Dense_Share

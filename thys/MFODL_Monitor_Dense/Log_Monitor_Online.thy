@@ -115,15 +115,15 @@ qed
 subsection \<open>The executable monitor from any state\<close>
 
 lemma usteps_state:
-  "Rep_udmstate (snd (usteps tps ust)) = dmsteps0_state (map (apfst set) tps) (Rep_udmstate ust)"
+  "(snd (usteps tps ust)) = dmsteps0_state (map (apfst set) tps) (ust)"
 proof (induction tps arbitrary: ust)
   case (Cons tp tps)
   obtain xs t where tp: "tp = (xs, t)"
     by (cases tp)
-  obtain vs1 ust1 where u: "udmstep (build_db xs, t) ust = (vs1, ust1)"
+  obtain vs1 ust1 where u: "dmstep (build_db xs, t) ust = (vs1, ust1)"
     by fastforce
-  have "dmstep (mk_db (set xs), t) (Rep_udmstate ust) = (vs1, Rep_udmstate ust1)"
-    using udmstep_Rep[of "build_db xs" t ust] u by (simp add: build_db_mk_db)
+  have "dmstep (mk_db (set xs), t) ust = (vs1, ust1)"
+    using u by (simp add: build_db_mk_db)
   then show ?case
     using Cons.IH[of ust1] u by (cases "usteps tps ust1") (simp add: tp)
 qed simp
@@ -251,7 +251,7 @@ proof -
       using A B by (auto simp: V_def fin_tps_def)
   next
     case (Some t)
-    obtain vs1 ust1 where u: "udmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
+    obtain vs1 ust1 where u: "dmstep (build_db [], t) (snd (usteps tps ust)) = (vs1, ust1)"
       by (metis prod.exhaust)
     have S1: "sorted (lt # map snd tps) \<Longrightarrow> sorted (lt # map snd (tps @ fin_tps fin)) \<longleftrightarrow> \<not> t < last (lt # map snd tps)"
       using sorted_snoc_last[of lt "map snd tps" t] by (auto simp: Some fin_tps_def not_less)
@@ -277,7 +277,7 @@ definition stream_prefix :: "(string \<Rightarrow> bool) \<Rightarrow> (string \
 lemma vinit_Inr_state:
   assumes "vinit mw rw filt S pf \<phi> = Inr (cf, (e, ust, n))"
   shows "cf = VConf (vskip_fun (vskip filt \<phi> S)) S (lsig_lookup_fun S) pf" and "e = einit" and "n = 0"
-    and "udminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "uvdfail_nodes (udmstate_m ust) = 0"
+    and "dminit_verimon mw rw (lsig_tsig S) \<phi> = Inr ust" and "vdfail_nodes (dmstate_m ust) = 0"
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma dmsteps_state_Rep: "dmsteps_state \<pi> ds = dmsteps0_state (Rep_prefix \<pi>) ds"
@@ -411,22 +411,22 @@ definition wf_vstate :: "bool \<Rightarrow> (bytes \<Rightarrow> double option) 
      z = ((b, l, Some ps, sp), (ust, last_ts \<pi>)) \<and> wf0 l \<and>
      fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps) \<and>
      prefix_of_items (sf pf) S None es = Some \<pi> \<and>
-     Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0))"
+     ust = dmsteps_state \<pi> (ust0))"
 
 text \<open>The verdicts of the dense monitor on a prefix that items denote are those the
-  specification prescribes (@{thm [source] udminit_verimon_mverdicts}).\<close>
+  specification prescribes (@{thm [source] dminit_verimon_mverdicts}).\<close>
 
 lemma dmonitor_Mt:
   assumes init: "vinit mw rw filt S pf \<phi> = Inr (cf, (einit, ust0, 0))"
     and p: "prefix_of_items (sf pf) S fin es = Some \<rho>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>)) X))
-    (dmonitor (Rep_udmstate ust0) \<rho>)) = monitor_\<phi>.Mt \<rho>"
+    (dmonitor (ust0) \<rho>)) = monitor_\<phi>.Mt \<rho>"
 proof -
   note w = prefix_of_items_wty[OF p]
   have "wty_prefix (map_sig (convert_tysym o check_subst) (lsig_tsig S)) \<rho>"
     using w(1) by (simp add: map_sig_lsig)
   then show ?thesis
-    by (rule udminit_verimon_mverdicts[OF vinit_Inr_state(4,5)[OF init] w(2)])
+    by (rule dminit_verimon_mverdicts[OF vinit_Inr_state(4,5)[OF init] w(2)])
 qed
 
 text \<open>The verdicts are monotone in the prefix.\<close>
@@ -452,17 +452,17 @@ lemma usteps_mverdicts:
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
     and p': "prefix_of_items (sf pf) S fin es' = Some \<pi>'"
     and R: "Rep_prefix \<pi>' = Rep_prefix \<pi> @ map (apfst set) tps"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
+    and D: "ust = dmsteps_state \<pi> (ust0)"
   shows "flatten_verdicts (vwiden \<phi> (fst (usteps tps ust))) = monitor_\<phi>.Mt \<pi>' - monitor_\<phi>.Mt \<pi>"
 proof -
   let ?W = "map (\<lambda>(i, t, X). (i, t, dtabw (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>)) X))"
   note M = dmonitor_Mt[OF init]
   have V: "vwiden \<phi> (fst (usteps tps ust)) =
-    ?W (dmsteps0_stateless (map (apfst set) tps) (dmsteps0_state (Rep_prefix \<pi>) (Rep_udmstate ust0)))"
+    ?W (dmsteps0_stateless (map (apfst set) tps) (dmsteps0_state (Rep_prefix \<pi>) (ust0)))"
     by (simp add: vwiden_def usteps_dmsteps0 D dmsteps_state_Rep)
-  have A: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi>) (Rep_udmstate ust0))) = monitor_\<phi>.Mt \<pi>"
+  have A: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi>) (ust0))) = monitor_\<phi>.Mt \<pi>"
     using M[OF p] by (simp only: dmonitor_Rep)
-  have B: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) (Rep_udmstate ust0))) =
+  have B: "flatten_verdicts (?W (dmsteps0_stateless (Rep_prefix \<pi> @ map (apfst set) tps) (ust0))) =
     monitor_\<phi>.Mt \<pi>'"
     using M[OF p'] by (simp only: dmonitor_Rep R)
   show ?thesis
@@ -504,7 +504,7 @@ proof -
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
+    and D: "ust = dmsteps_state \<pi> (ust0)"
     using wf unfolding wf_vstate_def by blast
   note cf = vinit_Inr_state(1)[OF init]
   let ?K = "keep_spec filt \<phi> S" and ?k = "vkeep cf"
@@ -585,7 +585,7 @@ proof -
         have vv: "vverdicts vs = fst (usteps tps ust)"
           and mst: "mst = (snd (usteps tps ust), last (last_ts \<pi> # map snd tps))"
           using vitems_from(3)[OF oks v Some ok] by auto
-        have D': "Rep_udmstate (snd (usteps tps ust)) = dmsteps_state ?\<pi>' (Rep_udmstate ust0)"
+        have D': "(snd (usteps tps ust)) = dmsteps_state ?\<pi>' (ust0)"
           by (simp add: usteps_state D dmsteps_state_Rep Rep' dmsteps0_state_append)
         have mst': "mst = (snd (usteps tps ust), last_ts ?\<pi>')"
           using mst last_ts_append[OF Rep'] by simp
@@ -625,7 +625,7 @@ proof -
     and z: "z = ((b, l, Some ps, sp), (ust, last_ts \<pi>))" and w0: "wf0 l"
     and R: "fstream_run (keep_spec filt \<phi> S) s fstream_init = Some (es, abs_l0 l, map_fpstate Rep_bytes ps)"
     and p: "prefix_of_items (sf pf) S None es = Some \<pi>"
-    and D: "Rep_udmstate ust = dmsteps_state \<pi> (Rep_udmstate ust0)"
+    and D: "ust = dmsteps_state \<pi> (ust0)"
     using wf unfolding wf_vstate_def by blast
   note cf = vinit_Inr_state(1)[OF init]
   let ?K = "keep_spec filt \<phi> S" and ?k = "vkeep cf"
