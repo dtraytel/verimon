@@ -89,97 +89,6 @@ next
   then show ?thesis by (subst set_fold_cfi_code(1)) (simp add: assms)
 qed
 
-declare [[code drop: join_row probe_step probe_join probe_join' tmp_set]]
-
-lemma join_row_RBT_code[code]:
-  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
-  shows "join_row cs ds (RBT_set rbt) a acc = (case ID CCOMPARE('a tuple) of
-      None \<Rightarrow> Code.abort (STR ''join_row: ccompare = None'') (\<lambda>_. join_row cs ds (RBT_set rbt) a acc)
-    | Some _ \<Rightarrow> RBT_Set2.fold (join1_insert cs ds a) rbt acc)"
-  unfolding join_row_def by (rule set_fold_cfi_RBT[OF join1_insert_cfi.rep_eq])
-
-lemmas join_row_fallback_code[code] =
-  join_row_def[where B = "DList_set _"] join_row_def[where B = "Set_Monad _"]
-  join_row_def[where B = "Collect_set _"] join_row_def[where B = "Complement _"]
-
-definition probe_fold :: "nat list \<Rightarrow> nat list \<Rightarrow> 'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_fold cs ds b acc T = set_fold_cfi (join1_insert_cfi' cs ds b) acc T"
-
-lemma probe_fold_RBT_code[code]:
-  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
-  shows "probe_fold cs ds b acc (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
-      None \<Rightarrow> Code.abort (STR ''probe_fold: ccompare = None'') (\<lambda>_. probe_fold cs ds b acc (RBT_set rbt))
-    | Some _ \<Rightarrow> RBT_Set2.fold (join1_insert' cs ds b) rbt acc)"
-  unfolding probe_fold_def by (rule set_fold_cfi_RBT[OF join1_insert_cfi'.rep_eq])
-
-lemmas probe_fold_fallback_code[code] =
-  probe_fold_def[where T = "DList_set _"] probe_fold_def[where T = "Set_Monad _"]
-  probe_fold_def[where T = "Collect_set _"] probe_fold_def[where T = "Complement _"]
-
-text \<open>The projection to the join columns is built once per join.\<close>
-
-definition probe_step_key :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple \<Rightarrow> 'a tuple) \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow>
-  'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_step_key cs ds key m b acc = (case Mapping.lookup m (key b) of None \<Rightarrow> acc
-     | Some T \<Rightarrow> probe_fold cs ds b acc T)"
-
-lemma probe_step_key: "probe_step_key cs ds (restrict (join_key cs ds) ds) = probe_step cs ds"
-  unfolding probe_step_key_def probe_step_def probe_fold_def by (simp add: fun_eq_iff)
-
-lemma probe_join_RBT_code[code]:
-  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
-  shows "probe_join cs t ds (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
-      None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join cs t ds (RBT_set rbt))
-    | Some _ \<Rightarrow> (let k = join_key cs ds in
-        RBT_Set2.fold (probe_step_key cs ds (restrict k ds) (cluster (Some \<circ> restrict k cs) t)) rbt {}))"
-  unfolding probe_join_def Let_def probe_step_key
-  by (rule set_fold_cfi_RBT[OF probe_step_cfi.rep_eq])
-
-lemmas probe_join_fallback_code[code] =
-  probe_join_def[where t' = "DList_set _"] probe_join_def[where t' = "Set_Monad _"]
-  probe_join_def[where t' = "Collect_set _"] probe_join_def[where t' = "Complement _"]
-
-definition probe_row_key :: "nat list \<Rightarrow> nat list \<Rightarrow> ('a tuple \<Rightarrow> 'a tuple) \<Rightarrow> ('a tuple, 'a table) mapping \<Rightarrow>
-  'a tuple \<Rightarrow> 'a table \<Rightarrow> 'a table" where
-  "probe_row_key cs ds key m a acc = (case Mapping.lookup m (key a) of None \<Rightarrow> acc
-     | Some T \<Rightarrow> join_row cs ds T a acc)"
-
-lemma probe_row_key: "probe_row_key cs ds (restrict (join_key cs ds) cs) = probe_row cs ds"
-  by (simp add: fun_eq_iff probe_row_key_def probe_row_def)
-
-lemma probe_join'_RBT_code[code]:
-  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
-  shows "probe_join' cs (RBT_set rbt) ds t' = (case ID CCOMPARE('a tuple) of
-      None \<Rightarrow> Code.abort (STR ''probe_join: ccompare = None'') (\<lambda>_. probe_join' cs (RBT_set rbt) ds t')
-    | Some _ \<Rightarrow> (let k = join_key cs ds in
-        RBT_Set2.fold (probe_row_key cs ds (restrict k cs) (cluster (Some \<circ> restrict k ds) t')) rbt {}))"
-  unfolding probe_join'_def Let_def probe_row_key
-  by (rule set_fold_cfi_RBT[OF probe_row_cfi.rep_eq])
-
-lemmas probe_join'_fallback_code[code] =
-  probe_join'_def[where t = "DList_set _"] probe_join'_def[where t = "Set_Monad _"]
-  probe_join'_def[where t = "Collect_set _"] probe_join'_def[where t = "Complement _"]
-
-lemma tmp_set_RBT_code[code]:
-  fixes rbt :: "('a :: {ccompare, ceq}) tuple set_rbt"
-  shows "tmp_set a1_map L R pos tp len B (RBT_set rbt) = (case ID CCOMPARE('a tuple) of
-      None \<Rightarrow> Code.abort (STR ''tmp_set: ccompare = None'') (\<lambda>_. tmp_set a1_map L R pos tp len B (RBT_set rbt))
-    | Some _ \<Rightarrow> RBT_Set2.fold (tmp_step a1_map L R pos tp len) rbt B)"
-proof (cases "ID CCOMPARE('a tuple)")
-  case None
-  then show ?thesis by simp
-next
-  case (Some c)
-  then have "finite (RBT_set rbt)"
-    by (subst RBT_set_conv_keys) auto
-  with Some show ?thesis
-    by (subst tmp_set_code) (simp add: set_fold_cfi_RBT[OF tmp_step_cfi.rep_eq, where s = "STR ''x''"])
-qed
-
-lemmas tmp_set_fallback_code[code] =
-  tmp_set_code[of _ _ _ _ _ _ _ "DList_set _"] tmp_set_code[of _ _ _ _ _ _ _ "Set_Monad _"]
-  tmp_set_code[of _ _ _ _ _ _ _ "Collect_set _"] tmp_set_code[of _ _ _ _ _ _ _ "Complement _"]
-
 datatype 'a boxed = Box (unbox: 'a)
 
 ML_file \<open>monomorphize.ML\<close>
@@ -204,7 +113,6 @@ lemma ed_bot_unfold[code_unfold]:
   "(bot :: (nat \<times> event_data tuple) set) = ed_bot_pair"
   "set_empty (of_phantom SET_IMPL(nat \<times> event_data tuple)) = ed_bot_pair"
   by (simp_all add: ed_bot_def ed_bot_pair_def empty_table_def)
-
 
 definition ed_mempty_nat :: "(event_data tuple, nat) mapping" where "ed_mempty_nat = Mapping.empty"
 lemma ed_mempty_nat_code[code]: "ed_mempty_nat = RBT_Mapping RBT_Mapping2.empty"
@@ -245,7 +153,6 @@ lemma ed_mempty_rank_unfold[code_unfold]:
   "(Mapping.empty :: (event_data tuple, list_aux) mapping) = ed_mempty_rank"
   "(mapping_empty (of_phantom MAPPING_IMPL(event_data tuple)) :: (event_data tuple, list_aux) mapping) = ed_mempty_rank"
   by (simp_all add: ed_mempty_rank_def)
-
 
 ML \<open>
 val etuple = "event_data tuple"
@@ -463,7 +370,6 @@ definition table_of_list :: "event_data tuple list \<Rightarrow> event_data tabl
 lemma table_of_list_code[code]: "table_of_list xs = RBT_set (rbt_of_sorted_list xs)"
   by (simp add: table_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple)
 
-
 section \<open>Tables built in one pass\<close>
 
 text \<open>
@@ -575,7 +481,6 @@ lemma set_of_list_eq:
   shows "set_of_list (xs :: 'a list) = set xs"
   by (simp add: set_of_list_def RBT_set_rbt_of_sorted_list[OF assms] set_sort_c[OF assms])
 
-
 text \<open>
   A second round of boxes, for operations whose definitions come after the first one: the bulk
   construction of a table, the projection out of a red-black tree that @{const rbt_fold} needs,
@@ -617,58 +522,15 @@ setup \<open>Monomorphize.monomorphize_cmd
   [("Set.insert", "ed_insert", [etuple]),
    ("RBT_Mapping2.insert", "ed_rbt_insert", [etuple, "unit"]),
    ("RBT_Set2.member", "ed_rbt_member", [etuple]),
-   ("upd_nested_step_dq", "ed_upd_nested_step_dq", ["nat + nat", etuple]),
    ("max", "ed_max_integer", ["integer"]),
-   ("min", "ed_min_integer", ["integer"]),
    ("max", "ed_max_nat", ["nat"]),
    ("min", "ed_min_nat", ["nat"]),
-   ("max", "ed_max_event_data", ["event_data"]),
-   ("min", "ed_min_event_data", ["event_data"]),
-   ("until_step_dq", "ed_until_step_dq", ["event_data"]),
-   ("until_elem_step_dq", "ed_until_elem_step_dq", ["event_data"]),
-   ("join1_insert", "ed_join1_insert", ["event_data"]),
-   ("join1_insert'", "ed_join1_insert'", ["event_data"]),
-   ("join_row", "ed_join_row", ["event_data"]),
-   ("join", "ed_join", ["event_data"]),
-   ("probe_fold", "ed_probe_fold", ["event_data"]),
-   ("probe_join", "ed_probe_join", ["event_data"]),
-   ("probe_step_key", "ed_probe_step_key", ["event_data"]),
-   ("probe_row_key", "ed_probe_row_key", ["event_data"]),
-   ("probe_join'", "ed_probe_join'", ["event_data"]),
-   ("bin_join", "ed_bin_join", ["event_data"]),
-   ("tmp_step", "ed_tmp_step", ["event_data"]),
-   ("tmp_set", "ed_tmp_set", ["event_data"]),
-   ("proj_tuple_in_join", "ed_proj_tuple_in_join", ["event_data"]),
-   ("proj_tuple_in_join_optim", "ed_proj_tuple_in_join_optim", ["event_data"]),
    ("singleton_table", "ed_singleton_table", ["event_data"]),
    ("unit_table", "ed_unit_table", ["event_data"]),
    ("valid_tuple", "ed_valid_tuple", ["event_data"]),
-   ("mmulti_join", "ed_mmulti_join", ["event_data"]),
-   ("mmulti_join_pw", "ed_mmulti_join_pw", ["event_data"]),
-   ("mmulti_join_pos", "ed_mmulti_join_pos", ["event_data"]),
-   ("mmulti_join_neg", "ed_mmulti_join_neg", ["event_data"]),
-   ("mmulti_join_gen", "ed_mmulti_join_gen", ["event_data"]),
-   ("idx_create", "ed_idx_create", ["event_data"]),
-   ("idx_reindex", "ed_idx_reindex", ["event_data"]),
-   ("idx_join", "ed_idx_join", ["event_data tuple", "event_data"]),
-   ("idx_antijoin", "ed_idx_antijoin", ["event_data tuple", "event_data"]),
-   ("idx_union", "ed_idx_union", ["event_data tuple", "event_data tuple"]),
-   ("wf_idx_set", "ed_wf_idx_set", ["event_data"]),
-   ("join_mmsaux", "ed_join_mmsaux", ["event_data"]),
-   ("add_new_table_mmsaux", "ed_add_new_table_mmsaux", ["event_data"]),
-   ("add_new_ts_mmsaux", "ed_add_new_ts_mmsaux", ["event_data"]),
-   ("shift_end", "ed_shift_end", ["event_data"]),
-   ("gc_mmsaux", "ed_gc_mmsaux", ["event_data"]),
    ("init_mmsaux", "ed_init_mmsaux", ["event_data"]),
-   ("update_nmtaux", "ed_update_nmtaux", ["event_data"]),
-   ("trigger_lhs", "ed_trigger_lhs", ["event_data"]),
-   ("init_mmtaux", "ed_init_mmtaux", ["event_data"]),
-   ("update_matchF_step", "ed_update_matchF_step", ["event_data"]),
-   ("update_matchF_base", "ed_update_matchF_base", ["event_data"]),
-   ("mrtabulate", "ed_mrtabulate", ["event_data"]),
-   ("get_map_result", "ed_get_map_result", ["event_data"])]
+   ("init_mmtaux", "ed_init_mmtaux", ["event_data"])]
   ["etuple_dict_simps"]\<close>
-
 
 definition insert_table_into_db :: "string8 \<times> nat \<Rightarrow> event_data table \<Rightarrow> database \<Rightarrow> database" where
   "insert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"

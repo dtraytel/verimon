@@ -175,8 +175,7 @@ setup \<open>mono
    ("mrestrict1_cfi", "edl_mrestrict1_cfi", ["event_data list", "event_data list set"]),
    ("dtabc", "eo_dtabc", ["event_data"]),
    ("didx_add1_cfi", "ed_didx_add1_cfi", ["event_data"]),
-   ("didx_del1_cfi", "ed_didx_del1_cfi", ["event_data"]),
-   ("shift_end", "ed_shift_end", ["event_data"])]  dicts\<close>
+   ("didx_del1_cfi", "ed_didx_del1_cfi", ["event_data"])]  dicts\<close>
 
 text \<open>Three more are recorded as not done for the same reason as @{text all_interval}:
   @{text these}, @{text gadd_new_ts_msaux_add} and @{text safe_regex} are resolved to constants

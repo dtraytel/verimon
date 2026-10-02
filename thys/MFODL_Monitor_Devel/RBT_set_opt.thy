@@ -1461,107 +1461,6 @@ lemma rbt_minus_code:
   using rbt_minus_rbt_join2_set
   by (auto split: option.splits)
 
-typedef (overloaded) 'a sdlist = "{xs :: ('a :: ccompare) list.
-  case ID CCOMPARE('a) of None \<Rightarrow> xs = [] | Some _ \<Rightarrow> linorder.sorted cless_eq xs \<and> distinct xs}"
-  by (auto intro!: exI[of _ "[]"] split: option.splits)
-
-setup_lifting type_definition_sdlist
-
-lift_definition sdlist_of_list :: "('a :: ccompare) list \<Rightarrow> 'a sdlist" is
-  "\<lambda>xs. case ID CCOMPARE('a) of None \<Rightarrow> [] | Some _ \<Rightarrow> remdups (linorder.sort cless_eq xs)"
-  using linorder.sorted_sort[OF ID_ccompare] linorder.sorted_remdups[OF ID_ccompare]
-  by (auto split: option.splits)
-
-lemma set_sdlist_of_list:
-  fixes xs :: "('a :: ccompare) list"
-    and c :: "'a comparator"
-  assumes assms: "ID ccompare = Some c"
-  shows "set (Rep_sdlist (sdlist_of_list xs)) = set xs"
-  using assms
-  by transfer (fastforce simp: linorder.set_sort[OF ID_ccompare])
-
-lemma sset_rbt:
-  fixes xs :: "('a :: ccompare) list"
-    and c :: "'a comparator"
-  assumes assms: "ID ccompare = Some c" "linorder.sorted cless_eq xs" "distinct xs"
-  shows "ord.is_rbt cless (rbtreeify (map (\<lambda>x. (x, ())) xs))"
-  using assms linorder.is_rbt_rbtreeify[OF ID_ccompare[OF assms(1)], of "map (\<lambda>x. (x, ())) xs"]
-  by (auto simp: comp_def)
-
-lift_definition sset :: "('a :: ccompare) sdlist \<Rightarrow> 'a set_rbt" is
-  "\<lambda>xs. rbtreeify (map (\<lambda>x. (x, ())) xs)"
-  using sset_rbt
-  by fastforce
-
-lemma Rep_sdlist_keys:
-  fixes xs :: "('a :: ccompare) sdlist"
-  shows "Rep_sdlist xs = RBT_Set2.keys (sset xs)"
-  by transfer (auto simp: RBT_Impl.keys_def comp_def)
-
-lemma rbt_comp_lookup_iff_in_set:
-  fixes x :: "'a :: ccompare"
-    and xs :: "'a list"
-    and c :: "'a comparator"
-  assumes "ID ccompare = Some c" "linorder.sorted cless_eq xs" "distinct xs"
-  shows "rbt_comp_lookup ccomp (rbtreeify (map (\<lambda>x. (x, ())) xs)) x = Some () \<longleftrightarrow> x \<in> set xs"
-  using linorder.rbt_lookup_rbtreeify[OF ID_ccompare[OF assms(1)], of "map (\<lambda>x. (x, ())) xs"]
-      assms(2,3)
-  by (auto simp: rbt_comp_lookup[OF ID_ccompare'[OF assms(1)]] assms(1) map_of_map_Pair_const
-      comp_def)
-
-lemma RBT_set_sset:
-  fixes xs :: "('a :: ccompare) sdlist"
-  shows "RBT_set (sset xs) = set (Rep_sdlist xs)"
-  unfolding RBT_set_def
-proof transfer
-  fix xs :: "'a list"
-  assume inv: "case ID CCOMPARE('a) of None \<Rightarrow> xs = []
-    | Some c \<Rightarrow> linorder.sorted cless_eq xs \<and> distinct xs"
-  show "(Collect \<circ> (\<lambda>t x. x \<in> dom (rbt_comp_lookup ccomp t)))
-    (rbtreeify (map (\<lambda>x. (x, ())) xs)) = set xs"
-  proof (cases "ID CCOMPARE('a)")
-    case None
-    from None inv show ?thesis
-      by (simp add: rbtreeify_def dom_def)
-  next
-    case (Some c)
-    from Some inv have sorted: "linorder.sorted cless_eq xs" and distinct: "distinct xs"
-      by simp_all
-    have "rbt_comp_lookup ccomp (rbtreeify (map (\<lambda>x. (x, ())) xs)) x = Some () \<longleftrightarrow> x \<in> set xs"
-      for x
-      using rbt_comp_lookup_iff_in_set[OF Some sorted distinct] .
-    then show ?thesis
-      by (auto simp: dom_def)
-  qed
-qed
-
-lemma set_code:
-  fixes xs :: "('a :: ccompare) list"
-  shows "set xs = (case ID CCOMPARE('a) of None \<Rightarrow> Code.abort (STR ''set: ccompare = None'')
-    (\<lambda>_. set xs)
-  | Some _ \<Rightarrow> RBT_set (sset (sdlist_of_list xs)))"
-  by (auto simp: RBT_set_sset set_sdlist_of_list split: option.splits)
-
-lemma linorder_sorted_upt: "linorder.sorted (le_of_comp compare) [n..<n']"
-proof -
-  define c :: "nat comparator" where "c = compare"
-  have cl: "class.linorder (le_of_comp c) (lt_of_comp c)"
-    by (auto simp: c_def ID_ccompare ID_Some ccompare_nat_def)
-  show ?thesis
-    using sorted_wrt_mono_rel[OF _ sorted_wrt_upt]
-    by (auto simp: c_def ord_defs(1))
-qed
-
-lift_definition upt_sdlist :: "nat \<Rightarrow> nat \<Rightarrow> nat sdlist" is upt
-  using linorder_sorted_upt
-  by (auto simp: ID_Some ccompare_nat_def split: option.splits)
-
-definition nat_set_upt :: "nat \<Rightarrow> nat \<Rightarrow> nat set" where
-  "nat_set_upt i j = {i..<j}"
-
-lemma nat_set_upt_prop: "nat_set_upt i j = RBT_set (sset (upt_sdlist i j))"
-  by (auto simp: nat_set_upt_def RBT_set_sset upt_sdlist.rep_eq)
-
 declare Set_union_code(3)[code drop]
 lemmas union_code[code equation] = rbt_union_code Set_union_code(1-2,4-)
 declare Set_inter_code(6)[code drop]
@@ -1569,20 +1468,13 @@ lemmas inter_code[code equation] = rbt_inter_code Set_inter_code(1-5,7-)
 
 (* Set_minus on RBTs not supported in Set_Impl! *)
 
-(* definition "my_fun b t1 t2 = (if b then {0::nat,1,2,3,4} - {0::nat,1,2,5} else RBT_set t1 - RBT_set t2)"
-code_thms my_fun *)
-thm Set_minus_code
 declare Set_minus_code(1) [code drop]
 lemmas minus_code[code equation] = rbt_minus_code Set_minus_code(2)
-
-
 
 (*
 The following code equation requires an executable sorting algorithm for ccompare.
 declare Set_Impl.set_code[code drop]
 declare set_code[code]
 *)
-
-declare nat_set_upt_prop[code]
 
 end
