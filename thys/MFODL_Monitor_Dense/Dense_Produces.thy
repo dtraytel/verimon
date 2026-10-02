@@ -917,4 +917,736 @@ next
     by (auto simp: x f)
 qed
 
+subsection \<open>The Until node\<close>
+
+text \<open>
+  The Until node's invariant is again the wide half of the relation
+  @{theory MFODL_Monitor_Dense.Dense_Eval} carries: the verified structure is valid for an abstract
+  auxiliary list whose two table components are finite tables over the operands' columns.  The
+  structure is stepped from inside a buffer traversal, so the traversal gets its own invariant
+  lemma first.
+\<close>
+
+lemma mbuf2t_take_inv:
+  "(\<And>a b v w z. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (f a b v z)) \<Longrightarrow>
+   Q u0 z \<Longrightarrow> u0 \<le> t0 \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>v \<in> set ts. u0 \<le> v) \<Longrightarrow>
+   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
+   (\<exists>v. Q v w \<and> v \<le> nt \<and> (\<forall>u \<in> set ts'. v \<le> u)) \<and> sorted ts' \<and>
+     (nt = t0 \<or> nt \<in> set ts) \<and> set ts' \<subseteq> set ts"
+proof (induct xs arbitrary: ys z u0 t0 ts w xs' ys' nt ts')
+  case Nil
+  note r = Nil(2) and le = Nil(3) and s = Nil(4) and mb = Nil(5) and P = Nil(6)
+  have w: "w = z" and ts': "ts' = ts"
+    and nt: "nt = (case ts of [] \<Rightarrow> t0 | v # _ \<Rightarrow> v)"
+    using P by (auto split: list.splits)
+  have "u0 \<le> nt" using le mb unfolding nt by (cases ts) auto
+  then show ?case using r s mb unfolding w ts' nt by (cases ts) auto
+next
+  case (Cons x xs)
+  note step = Cons(2) and r = Cons(3) and le = Cons(4) and s = Cons(5)
+    and mb = Cons(6) and P = Cons(7) and IH = Cons(1)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P r le s mb by (auto split: list.splits)
+  next
+    case (Cons y ys0)
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P r le s mb \<open>ys = y # ys0\<close> by (auto split: list.splits)
+    next
+      case (Cons v ts0)
+      have e: "mbuf2t_take f (f x y v z) (xs, ys0) v ts0 = (w, (xs', ys'), nt, ts')"
+        using P \<open>ys = y # ys0\<close> Cons by simp
+      have rt: "Q v (f x y v z)"
+        using step[of x y u0 z v] r mb Cons \<open>ys = y # ys0\<close> by simp
+      have s0: "sorted ts0" using s Cons by simp
+      have mb0: "\<forall>u \<in> set ts0. v \<le> u" using s Cons by simp
+      have "(\<exists>u. Q u w \<and> u \<le> nt \<and> (\<forall>u' \<in> set ts'. u \<le> u')) \<and> sorted ts' \<and>
+          (nt = v \<or> nt \<in> set ts0) \<and> set ts' \<subseteq> set ts0"
+        by (rule IH[OF _ rt order_refl s0 mb0 e]) (use step \<open>ys = y # ys0\<close> in auto)
+      then show ?thesis using Cons by auto
+    qed
+  qed
+qed
+
+lemma fauxlist3_update_until:
+  assumes wf: "\<forall>(t, a1, a2) \<in> set aux. ftable kL a1 \<and> ftable kR a2"
+    and sub: "set kL \<subseteq> set kR" and t1: "ftable kL rel1" and t2: "ftable kR rel2"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+  shows "\<forall>(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux).
+      ftable kL a1 \<and> ftable kR a2"
+proof safe
+  have w: "\<And>t b1 b2. (t, b1, b2) \<in> set aux \<Longrightarrow> ftable kL b1 \<and> ftable kR b2"
+    using wf by auto
+  fix t a1 a2 assume m: "(t, a1, a2) \<in> set (update_until args rel1 rel2 nt aux)"
+  show "table kL a1"
+    using m t1 t2 by (auto simp: update_until_def table_def split: if_splits dest!: w)
+  show "finite a1"
+    using m t1 t2 by (auto simp: update_until_def dest!: w)
+  show "table kR a2"
+    using m t1 t2 sub aL aR
+    by (auto simp: update_until_def dest!: w intro!: table_Un intro: table_join_sub)
+  show "finite a2"
+    using m t1 t2 by (auto simp: update_until_def finite_join empty_table_def dest!: w)
+qed
+
+definition uaux_inv :: "args \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> muaux_dq \<Rightarrow> bool" where
+  "uaux_inv args kL kR cur aux \<longleftrightarrow>
+     (\<exists>auxlist. valid_muaux_dq args cur aux auxlist \<and>
+        (\<forall>(t, a1, a2) \<in> set auxlist. ftable kL a1 \<and> ftable kR a2))"
+
+lemma uaux_inv_step:
+  assumes v: "uaux_inv args kL kR u aux"
+    and sub: "set kL \<subseteq> set kR" and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and t1: "ftable kL a" and t2: "ftable kR b" and ut: "u \<le> t"
+  shows "uaux_inv args kL kR t (add_new_muaux_dq args a b t aux)"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
+    and wf: "\<forall>(v, a1, a2) \<in> set auxlist. ftable kL a1 \<and> ftable kR a2"
+    using v unfolding uaux_inv_def by blast
+  have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux)
+      (update_until args a b t auxlist)"
+    by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 aL aR in simp_all)
+  moreover have "\<forall>(v, a1, a2) \<in> set (update_until args a b t auxlist).
+      ftable kL a1 \<and> ftable kR a2"
+    by (rule fauxlist3_update_until[OF wf sub t1 t2 aL aR])
+  ultimately show ?thesis unfolding uaux_inv_def by blast
+qed
+
+lemma eval_until_ftable:
+  "eval_until I nt auxlist = (res, auxlist') \<Longrightarrow>
+   (\<forall>(t, a1, a2) \<in> set auxlist. ftable kL a1 \<and> ftable kR a2) \<Longrightarrow>
+   list_all (ftable kR) res \<and>
+     (\<forall>(t, a1, a2) \<in> set auxlist'. ftable kL a1 \<and> ftable kR a2)"
+  by (induct I nt auxlist arbitrary: res auxlist' rule: eval_until.induct)
+    (auto split: if_splits prod.splits)
+
+lemma uaux_inv_eval:
+  assumes v: "uaux_inv args kL kR cur aux" and nt: "cur \<le> nt"
+    and agg: "\<And>X. ftable kR X \<Longrightarrow> ftable ko (eval_args_agg args X)"
+    and we: "eval_muaux_dq args nt aux = (zs, aux')"
+  shows "list_all (ftable ko) zs \<and> uaux_inv args kL kR cur aux'"
+proof -
+  obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
+    and wf: "\<forall>(t, a1, a2) \<in> set auxlist. ftable kL a1 \<and> ftable kR a2"
+    using v unfolding uaux_inv_def by blast
+  obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
+    by (cases "eval_until (args_ivl args) nt auxlist")
+  have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
+    by (rule valid_eval_muaux_dq[OF vw nt we eu])
+  have u: "list_all (ftable kR) res \<and>
+      (\<forall>(t, a1, a2) \<in> set auxlist'. ftable kL a1 \<and> ftable kR a2)"
+    by (rule eval_until_ftable[OF eu wf])
+  show ?thesis using w u agg unfolding uaux_inv_def
+    by (auto simp: list_all_iff)
+qed
+
+definition until_inv :: "args \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> ts \<Rightarrow>
+    muaux_dq \<Rightarrow> event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
+  "until_inv args kL kR u t aux buf nts \<longleftrightarrow>
+     (\<exists>cur. uaux_inv args kL kR cur aux \<and> cur \<le> t \<and> t \<le> u \<and>
+        list_all (ftable kL) (fst buf) \<and> list_all (ftable kR) (snd buf) \<and>
+        sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u))"
+
+text \<open>
+  One firing of the Until node: the buffer traversal steps the structure at each timestamp it
+  consumes, and one evaluation at the timestamp the traversal reports yields the node's output.
+\<close>
+
+lemma until_step_ftable:
+  fixes args :: args
+  assumes sub: "set kL \<subseteq> set kR"
+    and agg: "\<And>X. ftable kR X \<Longrightarrow> ftable ko (eval_args_agg args X)"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and rel: "until_inv args kL kR u t aux buf nts"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and s: "sorted tss" and bnd: "\<forall>v \<in> set tss. u \<le> v"
+    and we: "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ tss)
+      = (aux1, buf1, nt, nts1)"
+    and wev: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+  shows "list_all (ftable ko) zs \<and> until_inv args kL kR (dnext u tss) nt aux2 buf1 nts1"
+proof -
+  obtain cur where vr: "uaux_inv args kL kR cur aux" and ct: "cur \<le> t" and ttw: "t \<le> u"
+    and lu: "list_all (ftable kL) (fst buf)"
+    and lv: "list_all (ftable kR) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u"
+    using rel unfolding until_inv_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b v w z. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow>
+      uaux_inv args kL kR w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      uaux_inv args kL kR v (add_new_muaux_dq args a b v z)"
+    using lus lvs by (intro uaux_inv_step[OF _ sub aL aR]) (auto simp: list_all_iff)
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ct ttw by fastforce
+  have tdn: "t \<le> dnext u tss" using ttw dnext_ge[OF bnd] by simp
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext u tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have we': "mbuf2t_take (add_new_muaux_dq args) aux (us, vs) t (nts @ tss)
+      = (aux1, (b1, b2), nt, nts1)" using we unfolding ma bfs by simp
+  have Rr: "(\<exists>v. uaux_inv args kL kR v aux1 \<and> v \<le> nt \<and> (\<forall>w \<in> set nts1. v \<le> w)) \<and>
+      sorted nts1 \<and> (nt = t \<or> nt \<in> set (nts @ tss)) \<and> set nts1 \<subseteq> set (nts @ tss)"
+    by (rule mbuf2t_take_inv[OF step vr ct sts cts we'])
+  obtain v where vu: "uaux_inv args kL kR v aux1" and unt: "v \<le> nt"
+    and un: "\<forall>w \<in> set nts1. v \<le> w" using Rr by blast
+  have sn1: "sorted nts1" and sub1: "set nts1 \<subseteq> set (nts @ tss)" using Rr by blast+
+  have ntdn: "nt \<le> dnext u tss" using Rr tdn bound by blast
+  have ev: "list_all (ftable ko) zs \<and> uaux_inv args kL kR v aux2"
+    by (rule uaux_inv_eval[OF vu unt _ wev]) (use agg in auto)
+  have sb: "set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs" by (rule mbuf2t_take_sub[OF we'])
+  have lb1: "list_all (ftable kL) b1" using sb lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable kR) b2" using sb lvs by (auto simp: list_all_iff)
+  have "uaux_inv args kL kR v aux2 \<and> v \<le> nt \<and> nt \<le> dnext u tss \<and>
+      list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+      sorted nts1 \<and> (\<forall>w \<in> set nts1. v \<le> w \<and> w \<le> dnext u tss)"
+    using ev unt ntdn lb1 lb2 sn1 un sub1 bound bfs by auto
+  then have "until_inv args kL kR (dnext u tss) nt aux2 buf1 nts1"
+    unfolding until_inv_def by blast
+  then show ?thesis using ev by simp
+qed
+
+lemma produces_MUntil:
+  fixes args :: args
+  assumes p1: "produces n kL tw \<phi>" and p2: "produces n kR tw \<psi>"
+    and r: "until_inv args kL kR tw t aux buf nts"
+    and agg: "\<And>X. ftable kR X \<Longrightarrow> ftable ko (eval_args_agg args X)"
+    and an: "args_n args = n" and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and sub: "set kL \<subseteq> set kR"
+  shows "produces m ko tw (MUntil args \<phi> \<psi> buf nts t aux)"
+proof (rule producesI[where X = "\<lambda>m' ks' u \<Phi>. m' = m \<and> ks' = ko \<and>
+    (\<exists>\<chi> \<eta> bf ns tt ax. \<Phi> = MUntil args \<chi> \<eta> bf ns tt ax \<and>
+       produces n kL u \<chi> \<and> produces n kR u \<eta> \<and> until_inv args kL kR u tt ax bf ns)"])
+  show "m = m \<and> ko = ko \<and> (\<exists>\<chi> \<eta> bf ns tt ax.
+      MUntil args \<phi> \<psi> buf nts t aux = MUntil args \<chi> \<eta> bf ns tt ax \<and>
+      produces n kL tw \<chi> \<and> produces n kR tw \<eta> \<and> until_inv args kL kR tw tt ax bf ns)"
+    using p1 p2 r by blast
+next
+  fix m' ks' u \<Phi> j ts db xs \<Phi>'
+  assume X: "m' = m \<and> ks' = ko \<and> (\<exists>\<chi> \<eta> bf ns tt ax.
+      \<Phi> = MUntil args \<chi> \<eta> bf ns tt ax \<and>
+      produces n kL u \<chi> \<and> produces n kR u \<eta> \<and> until_inv args kL kR u tt ax bf ns)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
+    and e: "meval j m' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf ns tt ax where Phi: "\<Phi> = MUntil args \<chi> \<eta> bf ns tt ax"
+    and pc: "produces n kL u \<chi>" and pe: "produces n kR u \<eta>"
+    and inv: "until_inv args kL kR u tt ax bf ns" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain ax1 bf1 nt ns1 where e3:
+    "mbuf2t_take (add_new_muaux_dq args) ax (mbuf2_add as bs bf) tt (ns @ ts)
+       = (ax1, bf1, nt, ns1)"
+    by (cases "mbuf2t_take (add_new_muaux_dq args) ax (mbuf2_add as bs bf) tt (ns @ ts)")
+      auto
+  obtain zs ax2 where e4: "eval_muaux_dq args nt ax1 = (zs, ax2)"
+    by (cases "eval_muaux_dq args nt ax1")
+  have x: "xs = zs" and f: "\<Phi>' = MUntil args \<chi>' \<eta>' bf1 ns1 nt ax2"
+    using e X Phi e1 e2 e3 e4 an by simp_all
+  have ta: "list_all (ftable kL) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable kR) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have step: "list_all (ftable ko) zs \<and> until_inv args kL kR (dnext u ts) nt ax2 bf1 ns1"
+    by (rule until_step_ftable[OF sub _ aL aR inv ta tb sts mts e3 e4]) (use agg in auto)
+  show "list_all (ftable ks') xs \<and>
+      ((m' = m \<and> ks' = ko \<and>
+          (\<exists>\<chi> \<eta> bf ns tt ax. \<Phi>' = MUntil args \<chi> \<eta> bf ns tt ax \<and>
+             produces n kL (dnext u ts) \<chi> \<and> produces n kR (dnext u ts) \<eta> \<and>
+             until_inv args kL kR (dnext u ts) tt ax bf ns)) \<or>
+       produces m' ks' (dnext u ts) \<Phi>')"
+    using X step produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
+subsection \<open>The let node\<close>
+
+text \<open>
+  A let node evaluates its body against a database extended by the bound predicate.  Since
+  @{const produces} quantifies over every well-formed database, the body's own invariant applies
+  to the extended one as soon as the extension is well formed -- which it is, because the
+  node reorders the bound formula's tables to the positions @{term "[0..<m]"}, exactly the shape
+  @{const wf_db} asks of a stored relation of arity @{term m}.
+\<close>
+
+lemma list_all_ftable_reorder_upt:
+  "list_all (ftable kks) xs \<Longrightarrow> list_all (\<lambda>T. table [0..<m] T \<and> finite T) (map (reorder [0..<m] kks) xs)"
+  using ftable_reorder[of kks _ "[0..<m]"] by (auto simp: list_all_iff)
+
+lemma produces_MLet:
+  assumes p1: "produces m kks tw \<phi>" and p2: "produces n ks tw \<psi>"
+  shows "produces n ks tw (MLet p m kks \<phi> \<psi>)"
+proof (rule producesI[where X = "\<lambda>n' ks' u \<Phi>. n' = n \<and> ks' = ks \<and>
+    (\<exists>\<chi> \<eta>. \<Phi> = MLet p m kks \<chi> \<eta> \<and> produces m kks u \<chi> \<and> produces n ks u \<eta>)"])
+  show "n = n \<and> ks = ks \<and> (\<exists>\<chi> \<eta>. MLet p m kks \<phi> \<psi> = MLet p m kks \<chi> \<eta> \<and>
+      produces m kks tw \<chi> \<and> produces n ks tw \<eta>)" using p1 p2 by blast
+next
+  fix n' ks' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> ks' = ks \<and> (\<exists>\<chi> \<eta>. \<Phi> = MLet p m kks \<chi> \<eta> \<and>
+      produces m kks u \<chi> \<and> produces n ks u \<eta>)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. u \<le> t"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> where Phi: "\<Phi> = MLet p m kks \<chi> \<eta>"
+    and pc: "produces m kks u \<chi>" and pe: "produces n ks u \<eta>" by blast
+  obtain as \<chi>' where e1: "meval j m ts db \<chi> = (as, \<chi>')" by (cases "meval j m ts db \<chi>")
+  have ta: "list_all (ftable kks) as" by (rule produces_tables[OF pc w sts mts e1])
+  let ?db = "Mapping.update (p, m) (map (reorder [0..<m] kks) as) db"
+  have w2: "wf_db ?db"
+    by (rule wf_db_update'[OF w]) (use list_all_ftable_reorder_upt[OF ta] in simp)
+  obtain bs \<eta>' where e2: "meval j n ts ?db \<eta> = (bs, \<eta>')" by (cases "meval j n ts ?db \<eta>")
+  have tb: "list_all (ftable ks) bs" by (rule produces_tables[OF pe w2 sts mts e2])
+  have x: "xs = bs" and f: "\<Phi>' = MLet p m kks \<chi>' \<eta>'"
+    using e X Phi e1 e2 by simp_all
+  show "list_all (ftable ks') xs \<and>
+      ((n' = n \<and> ks' = ks \<and> (\<exists>\<chi> \<eta>. \<Phi>' = MLet p m kks \<chi> \<eta> \<and>
+          produces m kks (dnext u ts) \<chi> \<and> produces n ks (dnext u ts) \<eta>)) \<or>
+       produces n' ks' (dnext u ts) \<Phi>')"
+    using X tb produces_next[OF pc w sts mts e1] produces_next[OF pe w2 sts mts e2]
+    by (auto simp: x f)
+qed
+
+subsection \<open>The trigger node\<close>
+
+text \<open>
+  The trigger structure's result is not a table over a fixed column list in general: when nothing
+  in its window lies in the interval it reports the unit table, and the column list it reports
+  alongside says so.  For an interval containing zero the entry the update has just appended is
+  itself in the interval, so the window is never empty, the result is always a table over the
+  right operand's columns, and it is finite because that entry's own table bounds it
+  (@{thm [source] ftable_trigger_results}).
+\<close>
+
+lemma mbuf2T_take_inv:
+  "(\<And>a b v w z. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (f a b v z)) \<Longrightarrow>
+   Q u0 z \<Longrightarrow> sorted ts \<Longrightarrow> (\<forall>v \<in> set ts. u0 \<le> v) \<Longrightarrow>
+   (\<forall>v \<in> set ts. v \<le> tb) \<Longrightarrow> u0 \<le> tb \<Longrightarrow>
+   mbuf2T_take f z (xs, ys) ts = (w, (xs', ys'), ts') \<Longrightarrow>
+   (\<exists>v. Q v w \<and> v \<le> tb \<and> (\<forall>u \<in> set ts'. v \<le> u)) \<and> sorted ts' \<and>
+     set ts' \<subseteq> set ts \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys"
+proof (induct xs arbitrary: ys z u0 ts w xs' ys' ts')
+  case Nil
+  then show ?case by (auto split: list.splits)
+next
+  case (Cons x xs)
+  note step = Cons(2) and r = Cons(3) and s = Cons(4) and mb = Cons(5)
+    and ub = Cons(6) and le = Cons(7) and P = Cons(8) and IH = Cons(1)
+  show ?case
+  proof (cases ys)
+    case Nil
+    then show ?thesis using P r le s mb by auto
+  next
+    case (Cons y ys0)
+    show ?thesis
+    proof (cases ts)
+      case Nil
+      then show ?thesis using P r le s mb \<open>ys = y # ys0\<close> by auto
+    next
+      case (Cons v ts0)
+      have e: "mbuf2T_take f (f x y v z) (xs, ys0) ts0 = (w, (xs', ys'), ts')"
+        using P \<open>ys = y # ys0\<close> Cons by simp
+      have rt: "Q v (f x y v z)"
+        using step[of x y u0 z v] r mb Cons \<open>ys = y # ys0\<close> by simp
+      have s0: "sorted ts0" using s Cons by simp
+      have mb0: "\<forall>u \<in> set ts0. v \<le> u" using s Cons by simp
+      have ub0: "\<forall>u \<in> set ts0. u \<le> tb" using ub Cons by simp
+      have vb: "v \<le> tb" using ub Cons by simp
+      have "(\<exists>u. Q u w \<and> u \<le> tb \<and> (\<forall>u' \<in> set ts'. u \<le> u')) \<and> sorted ts' \<and>
+          set ts' \<subseteq> set ts0 \<and> set xs' \<subseteq> set xs \<and> set ys' \<subseteq> set ys0"
+        by (rule IH[OF _ rt s0 mb0 ub0 vb e]) (use step \<open>ys = y # ys0\<close> in auto)
+      then show ?thesis using Cons \<open>ys = y # ys0\<close> by auto
+    qed
+  qed
+qed
+
+definition taux_inv :: "args \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow> event_data mmtaux \<Rightarrow> bool" where
+  "taux_inv args kL kR cur aux \<longleftrightarrow>
+     (\<exists>auxlist. valid_mmtaux args cur aux auxlist \<and>
+        (\<forall>(t, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r))"
+
+lemma taux_inv_step:
+  fixes args :: args
+  assumes v: "taux_inv args kL kR u aux"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and m0: "mem (args_ivl args) 0"
+    and t1: "ftable kL a" and t2: "ftable kR b" and ut: "u \<le> t"
+  shows "taux_inv args kL kR t (update_mmtaux args t a b aux) \<and>
+     ftable kR (snd (result_mmtaux args (update_mmtaux args t a b aux))) \<and>
+     fst (result_mmtaux args (update_mmtaux args t a b aux)) = kR"
+proof -
+  obtain auxlist where vw: "valid_mmtaux args u aux auxlist"
+    and wf: "\<forall>(v, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
+    using v unfolding taux_inv_def by blast
+  define al where "al = filter (\<lambda>(v, _). memR (args_ivl args) (t - v)) auxlist @ [(t, a, b)]"
+  have vw': "valid_mmtaux args t (update_mmtaux args t a b aux) al"
+    unfolding al_def by (rule valid_update_mmtaux[OF ut _ _ vw]) (use t1 t2 aL aR in simp_all)
+  have wf': "\<forall>(v, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
+    using wf t1 t2 unfolding al_def by auto
+  have ne: "al \<noteq> []" by (simp add: al_def)
+  have lst: "fst (last al) = t" by (simp add: al_def)
+  have ftr: "ftable kR (snd (trigger_results args t al))"
+    and fstR: "fst (trigger_results args t al) = kR"
+    by (rule ftable_trigger_results[OF wf' ne m0 lst aR])+
+  have res: "result_mmtaux args (update_mmtaux args t a b aux) = trigger_results args t al"
+    by (rule valid_result_mmtaux[OF vw'])
+  have "taux_inv args kL kR t (update_mmtaux args t a b aux)"
+    unfolding taux_inv_def using vw' wf' by blast
+  then show ?thesis using ftr fstR unfolding res by simp
+qed
+
+definition trigger_inv :: "args \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<Rightarrow>
+    event_data mmtaux \<Rightarrow> event_data mbuf2 \<Rightarrow> ts list \<Rightarrow> bool" where
+  "trigger_inv args kL kR u aux buf nts \<longleftrightarrow>
+     (\<exists>cur. taux_inv args kL kR cur aux \<and> cur \<le> u \<and>
+        list_all (ftable kL) (fst buf) \<and> list_all (ftable kR) (snd buf) \<and>
+        sorted nts \<and> (\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u))"
+
+lemma trigger_step_ftable:
+  fixes args :: args
+  assumes aL: "args_L args = kL" and aR: "args_R args = kR"
+    and m0: "mem (args_ivl args) 0"
+    and rel: "trigger_inv args kL kR u aux buf nts"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and s: "sorted tss" and bnd: "\<forall>v \<in> set tss. u \<le> v"
+    and we: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+        let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+        in (zs @ [z], aux)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
+      = ((zs, aux1), buf1, nts1)"
+  shows "list_all (ftable kR) zs \<and> trigger_inv args kL kR (dnext u tss) aux1 buf1 nts1"
+proof -
+  obtain cur where vr: "taux_inv args kL kR cur aux" and ct: "cur \<le> u"
+    and lu: "list_all (ftable kL) (fst buf)"
+    and lv: "list_all (ftable kR) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u"
+    using rel unfolding trigger_inv_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  define g where "g = (\<lambda>r1 r2 t (zs :: event_data table list, ax).
+    let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+    in (zs @ [z], ax))"
+  define Q where "Q = (\<lambda>v (pr :: event_data table list \<times> event_data mmtaux).
+    list_all (ftable kR) (fst pr) \<and> taux_inv args kL kR v (snd pr))"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b v w z. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (g a b v z)"
+  proof -
+    fix a b v w and z :: "event_data table list \<times> event_data mmtaux"
+    assume au: "a \<in> set us" and bv: "b \<in> set vs" and q: "Q w z" and wv: "w \<le> v"
+    have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
+    have t2: "ftable kR b" using bv lvs by (simp add: list_all_iff)
+    have "taux_inv args kL kR v (update_mmtaux args v a b (snd z)) \<and>
+        ftable kR (snd (result_mmtaux args (update_mmtaux args v a b (snd z)))) \<and>
+        fst (result_mmtaux args (update_mmtaux args v a b (snd z))) = kR"
+      by (rule taux_inv_step[OF _ aL aR m0 t1 t2 wv]) (use q in \<open>simp add: Q_def\<close>)
+    then show "Q v (g a b v z)" using q
+      by (cases z) (auto simp: Q_def g_def Let_def split: prod.splits)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ct by fastforce
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext u tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have cdn: "cur \<le> dnext u tss" using ct dnext_ge[OF bnd] by simp
+  have q0: "Q cur ([], aux)" using vr by (simp add: Q_def)
+  have we': "mbuf2T_take g ([], aux) (us, vs) (nts @ tss) = ((zs, aux1), (b1, b2), nts1)"
+    using we unfolding ma bfs g_def by simp
+  have Rr: "(\<exists>v. Q v (zs, aux1) \<and> v \<le> dnext u tss \<and> (\<forall>w \<in> set nts1. v \<le> w)) \<and>
+      sorted nts1 \<and> set nts1 \<subseteq> set (nts @ tss) \<and> set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs"
+    by (rule mbuf2T_take_inv[where Q = Q and f = g and xs = us and ys = vs,
+        OF step q0 sts cts bound cdn we'])
+  obtain v where qv: "Q v (zs, aux1)" and vb: "v \<le> dnext u tss"
+    and un: "\<forall>w \<in> set nts1. v \<le> w" using Rr by blast
+  have sn1: "sorted nts1" and sb1: "set b1 \<subseteq> set us" and sb2: "set b2 \<subseteq> set vs"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)" using Rr by blast+
+  have lb1: "list_all (ftable kL) b1" using sb1 lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
+  have tz: "list_all (ftable kR) zs" using qv by (simp add: Q_def)
+  have "taux_inv args kL kR v aux1 \<and> v \<le> dnext u tss \<and>
+      list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+      sorted nts1 \<and> (\<forall>w \<in> set nts1. v \<le> w \<and> w \<le> dnext u tss)"
+    using qv vb lb1 lb2 sn1 un sub1 bound bfs by (auto simp: Q_def)
+  then have "trigger_inv args kL kR (dnext u tss) aux1 buf1 nts1"
+    unfolding trigger_inv_def by blast
+  then show ?thesis using tz by simp
+qed
+
+lemma produces_MTrigger:
+  fixes args :: args
+  assumes p1: "produces n kL tw \<phi>" and p2: "produces n kR tw \<psi>"
+    and r: "trigger_inv args kL kR tw aux buf nts"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and m0: "mem (args_ivl args) 0"
+  shows "produces n kR tw (MTrigger args \<phi> \<psi> buf nts aux)"
+proof (rule producesI[where X = "\<lambda>n' ks' u \<Phi>. n' = n \<and> ks' = kR \<and>
+    (\<exists>\<chi> \<eta> bf ns ax. \<Phi> = MTrigger args \<chi> \<eta> bf ns ax \<and>
+       produces n kL u \<chi> \<and> produces n kR u \<eta> \<and> trigger_inv args kL kR u ax bf ns)"])
+  show "n = n \<and> kR = kR \<and> (\<exists>\<chi> \<eta> bf ns ax.
+      MTrigger args \<phi> \<psi> buf nts aux = MTrigger args \<chi> \<eta> bf ns ax \<and>
+      produces n kL tw \<chi> \<and> produces n kR tw \<eta> \<and> trigger_inv args kL kR tw ax bf ns)"
+    using p1 p2 r by blast
+next
+  fix n' ks' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> ks' = kR \<and> (\<exists>\<chi> \<eta> bf ns ax.
+      \<Phi> = MTrigger args \<chi> \<eta> bf ns ax \<and>
+      produces n kL u \<chi> \<and> produces n kR u \<eta> \<and> trigger_inv args kL kR u ax bf ns)"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<chi> \<eta> bf ns ax where Phi: "\<Phi> = MTrigger args \<chi> \<eta> bf ns ax"
+    and pc: "produces n kL u \<chi>" and pe: "produces n kR u \<eta>"
+    and inv: "trigger_inv args kL kR u ax bf ns" by blast
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain zs ax1 bf1 ns1 where e3: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [z], aux)) ([], ax) (mbuf2_add as bs bf) (ns @ ts)
+        = ((zs, ax1), bf1, ns1)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [z], aux)) ([], ax) (mbuf2_add as bs bf) (ns @ ts)") auto
+  have x: "xs = zs" and f: "\<Phi>' = MTrigger args \<chi>' \<eta>' bf1 ns1 ax1"
+    using e X Phi e1 e2 e3 by simp_all
+  have ta: "list_all (ftable kL) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable kR) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have step: "list_all (ftable kR) zs \<and> trigger_inv args kL kR (dnext u ts) ax1 bf1 ns1"
+    by (rule trigger_step_ftable[OF aL aR m0 inv ta tb sts mts e3])
+  show "list_all (ftable ks') xs \<and>
+      ((n' = n \<and> ks' = kR \<and>
+          (\<exists>\<chi> \<eta> bf ns ax. \<Phi>' = MTrigger args \<chi> \<eta> bf ns ax \<and>
+             produces n kL (dnext u ts) \<chi> \<and> produces n kR (dnext u ts) \<eta> \<and>
+             trigger_inv args kL kR (dnext u ts) ax bf ns)) \<or>
+       produces n' ks' (dnext u ts) \<Phi>')"
+    using X step produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
+subsection \<open>The conjunction with a trigger\<close>
+
+text \<open>
+  The kernel fuses a conjunction whose right operand is a trigger into one node, and there the
+  trigger's own varying column list is not discarded: the buffer holds the pairs the structure
+  reports and the join reads each pair's column list off the pair.  Besides an interval
+  containing zero, the node also admits a positive trigger whose operands have the same
+  columns; then an empty window reports the unit table over no columns, and the join with it is
+  the identity or empty.  Either way the result stays over the conjunction's columns.
+\<close>
+
+definition tpair :: "cols \<Rightarrow> cols \<times> event_data table \<Rightarrow> bool" where
+  "tpair kR p \<longleftrightarrow> (fst p = kR \<or> fst p = []) \<and> ftable (fst p) (snd p)"
+
+lemma taux_inv_step_weak:
+  fixes args :: args
+  assumes v: "taux_inv args kL kR u aux"
+    and aL: "args_L args = kL" and aR: "args_R args = kR" and dR: "distinct kR"
+    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> set kL = set kR)"
+    and t1: "ftable kL a" and t2: "ftable kR b" and ut: "u \<le> t"
+  shows "taux_inv args kL kR t (update_mmtaux args t a b aux) \<and>
+     tpair kR (result_mmtaux args (update_mmtaux args t a b aux))"
+proof -
+  obtain auxlist where vw: "valid_mmtaux args u aux auxlist"
+    and wf: "\<forall>(v, l, r) \<in> set auxlist. ftable kL l \<and> ftable kR r"
+    using v unfolding taux_inv_def by blast
+  define al where "al = filter (\<lambda>(v, _). memR (args_ivl args) (t - v)) auxlist @ [(t, a, b)]"
+  have vw': "valid_mmtaux args t (update_mmtaux args t a b aux) al"
+    unfolding al_def by (rule valid_update_mmtaux[OF ut _ _ vw]) (use t1 t2 aL aR in simp_all)
+  have wf': "\<forall>(v, l, r) \<in> set al. ftable kL l \<and> ftable kR r"
+    using wf t1 t2 unfolding al_def by auto
+  have ne: "al \<noteq> []" by (simp add: al_def)
+  have lst: "fst (last al) = t" by (simp add: al_def)
+  have tr: "tpair kR (trigger_results args t al)"
+    using ftable_trigger_results_weak[OF wf' ne lst aL aR dR wkc] by (auto simp: tpair_def)
+  have res: "result_mmtaux args (update_mmtaux args t a b aux) = trigger_results args t al"
+    by (rule valid_result_mmtaux[OF vw'])
+  have "taux_inv args kL kR t (update_mmtaux args t a b aux)"
+    unfolding taux_inv_def using vw' wf' by blast
+  then show ?thesis using tr unfolding res by simp
+qed
+
+lemma trigger_pairs_step:
+  fixes args :: args
+  assumes aL: "args_L args = kL" and aR: "args_R args = kR" and dR: "distinct kR"
+    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> set kL = set kR)"
+    and rel: "trigger_inv args kL kR u aux buf nts"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and s: "sorted tss" and bnd: "\<forall>v \<in> set tss. u \<le> v"
+    and we: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+        let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+        in (zs @ [(fv_z, z)], aux)) ([], aux) (mbuf2_add as bs buf) (nts @ tss)
+      = ((zs, aux1), buf1, nts1)"
+  shows "list_all (tpair kR) zs \<and> trigger_inv args kL kR (dnext u tss) aux1 buf1 nts1"
+proof -
+  obtain cur where vr: "taux_inv args kL kR cur aux" and ct: "cur \<le> u"
+    and lu: "list_all (ftable kL) (fst buf)"
+    and lv: "list_all (ftable kR) (snd buf)"
+    and sn: "sorted nts" and cn: "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> u"
+    using rel unfolding trigger_inv_def by blast
+  obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
+  define us where "us = fst buf @ as"
+  define vs where "vs = snd buf @ bs"
+  define g where "g = (\<lambda>r1 r2 t (zs :: (cols \<times> event_data table) list, ax).
+    let ax = update_mmtaux args t r1 r2 ax; (fv_z, z) = result_mmtaux args ax
+    in (zs @ [(fv_z, z)], ax))"
+  define Q where "Q = (\<lambda>v (pr :: (cols \<times> event_data table) list \<times> event_data mmtaux).
+    list_all (tpair kR) (fst pr) \<and> taux_inv args kL kR v (snd pr))"
+  have ma: "mbuf2_add as bs buf = (us, vs)" by (cases buf) (simp add: us_def vs_def)
+  have lus: "list_all (ftable kL) us" using lu ta by (simp add: us_def)
+  have lvs: "list_all (ftable kR) vs" using lv tb by (simp add: vs_def)
+  have step: "\<And>a b v w z. a \<in> set us \<Longrightarrow> b \<in> set vs \<Longrightarrow> Q w z \<Longrightarrow> w \<le> v \<Longrightarrow>
+      Q v (g a b v z)"
+  proof -
+    fix a b v w and z :: "(cols \<times> event_data table) list \<times> event_data mmtaux"
+    assume au: "a \<in> set us" and bv: "b \<in> set vs" and q: "Q w z" and wv: "w \<le> v"
+    have t1: "ftable kL a" using au lus by (simp add: list_all_iff)
+    have t2: "ftable kR b" using bv lvs by (simp add: list_all_iff)
+    have "taux_inv args kL kR v (update_mmtaux args v a b (snd z)) \<and>
+        tpair kR (result_mmtaux args (update_mmtaux args v a b (snd z)))"
+      by (rule taux_inv_step_weak[OF _ aL aR dR wkc t1 t2 wv]) (use q in \<open>simp add: Q_def\<close>)
+    then show "Q v (g a b v z)" using q
+      by (cases z) (auto simp: Q_def g_def Let_def split: prod.splits)
+  qed
+  have sts: "sorted (nts @ tss)"
+    using sn s cn bnd by (fastforce simp: sorted_append intro: order_trans)
+  have cts: "\<forall>v \<in> set (nts @ tss). cur \<le> v" using cn bnd ct by fastforce
+  have bound: "\<forall>v \<in> set (nts @ tss). v \<le> dnext u tss"
+    using cn dnext_ge[OF bnd] dnext_bound[OF s] by fastforce
+  have cdn: "cur \<le> dnext u tss" using ct dnext_ge[OF bnd] by simp
+  have q0: "Q cur ([], aux)" using vr by (simp add: Q_def)
+  have we': "mbuf2T_take g ([], aux) (us, vs) (nts @ tss) = ((zs, aux1), (b1, b2), nts1)"
+    using we unfolding ma bfs g_def by simp
+  have Rr: "(\<exists>v. Q v (zs, aux1) \<and> v \<le> dnext u tss \<and> (\<forall>w \<in> set nts1. v \<le> w)) \<and>
+      sorted nts1 \<and> set nts1 \<subseteq> set (nts @ tss) \<and> set b1 \<subseteq> set us \<and> set b2 \<subseteq> set vs"
+    by (rule mbuf2T_take_inv[where Q = Q and f = g and xs = us and ys = vs,
+        OF step q0 sts cts bound cdn we'])
+  obtain v where qv: "Q v (zs, aux1)" and vb: "v \<le> dnext u tss"
+    and un: "\<forall>w \<in> set nts1. v \<le> w" using Rr by blast
+  have sn1: "sorted nts1" and sb1: "set b1 \<subseteq> set us" and sb2: "set b2 \<subseteq> set vs"
+    and sub1: "set nts1 \<subseteq> set (nts @ tss)" using Rr by blast+
+  have lb1: "list_all (ftable kL) b1" using sb1 lus by (auto simp: list_all_iff)
+  have lb2: "list_all (ftable kR) b2" using sb2 lvs by (auto simp: list_all_iff)
+  have tz: "list_all (tpair kR) zs" using qv by (simp add: Q_def)
+  have "taux_inv args kL kR v aux1 \<and> v \<le> dnext u tss \<and>
+      list_all (ftable kL) (fst buf1) \<and> list_all (ftable kR) (snd buf1) \<and>
+      sorted nts1 \<and> (\<forall>w \<in> set nts1. v \<le> w \<and> w \<le> dnext u tss)"
+    using qv vb lb1 lb2 sn1 un sub1 bound bfs by (auto simp: Q_def)
+  then have "trigger_inv args kL kR (dnext u tss) aux1 buf1 nts1"
+    unfolding trigger_inv_def by blast
+  then show ?thesis using tz by simp
+qed
+
+lemma ftable_bin_join_tpair:
+  fixes a :: "event_data table"
+  assumes tA: "ftable ks a" and p: "tpair kR p"
+    and dks: "distinct ks" and dR: "distinct kR" and sub: "set kR \<subseteq> set ks"
+  shows "ftable ks (bin_join ks a True (fst p) (snd p))"
+proof -
+  have d: "distinct (fst p)" and t: "ftable (fst p) (snd p)" and s: "set (fst p) \<subseteq> set ks"
+    using p dR sub by (auto simp: tpair_def)
+  have cu: "cols_union ks (fst p) = ks" by (rule cols_union_subset[OF s])
+  have "ftable (cols_union ks (fst p)) (bin_join ks a True (fst p) (snd p))"
+    by (rule ftable_bin_join[OF tA t dks d]) simp
+  then show ?thesis unfolding cu .
+qed
+
+lemma produces_MAndTrigger:
+  fixes args :: args
+  assumes pa: "produces n ks tw \<alpha>" and p1: "produces n kL tw \<phi>" and p2: "produces n kR tw \<psi>"
+    and r: "trigger_inv args kL kR tw aux buf2 nts"
+    and b1a: "list_all (ftable ks) (fst buf1)" and b1b: "list_all (tpair kR) (snd buf1)"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and dks: "distinct ks" and dR: "distinct kR"
+    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> set kL = set kR)"
+    and sub: "set kR \<subseteq> set ks"
+  shows "produces n ks tw (MAndTrigger ks \<alpha> buf1 args \<phi> \<psi> buf2 nts aux)"
+proof (rule producesI[where X = "\<lambda>n' ks' u \<Phi>. n' = n \<and> ks' = ks \<and>
+    (\<exists>\<alpha>' \<chi> \<eta> c1 c2 ns ax. \<Phi> = MAndTrigger ks \<alpha>' c1 args \<chi> \<eta> c2 ns ax \<and>
+       produces n ks u \<alpha>' \<and> produces n kL u \<chi> \<and> produces n kR u \<eta> \<and>
+       trigger_inv args kL kR u ax c2 ns \<and>
+       list_all (ftable ks) (fst c1) \<and> list_all (tpair kR) (snd c1))"])
+  show "n = n \<and> ks = ks \<and> (\<exists>\<alpha>' \<chi> \<eta> c1 c2 ns ax.
+      MAndTrigger ks \<alpha> buf1 args \<phi> \<psi> buf2 nts aux = MAndTrigger ks \<alpha>' c1 args \<chi> \<eta> c2 ns ax \<and>
+      produces n ks tw \<alpha>' \<and> produces n kL tw \<chi> \<and> produces n kR tw \<eta> \<and>
+      trigger_inv args kL kR tw ax c2 ns \<and> list_all (ftable ks) (fst c1) \<and>
+      list_all (tpair kR) (snd c1))"
+    using pa p1 p2 r b1a b1b by blast
+next
+  fix n' ks' u \<Phi> j ts db xs \<Phi>'
+  assume X: "n' = n \<and> ks' = ks \<and>
+      (\<exists>\<alpha>' \<chi> \<eta> c1 c2 ns ax. \<Phi> = MAndTrigger ks \<alpha>' c1 args \<chi> \<eta> c2 ns ax \<and>
+         produces n ks u \<alpha>' \<and> produces n kL u \<chi> \<and> produces n kR u \<eta> \<and>
+         trigger_inv args kL kR u ax c2 ns \<and> list_all (ftable ks) (fst c1) \<and>
+         list_all (tpair kR) (snd c1))"
+    and w: "wf_db db" and sts: "sorted ts" and mts: "\<forall>v \<in> set ts. u \<le> v"
+    and e: "meval j n' ts db \<Phi> = (xs, \<Phi>')"
+  from X obtain \<alpha>' \<chi> \<eta> c1 c2 ns ax
+    where Phi: "\<Phi> = MAndTrigger ks \<alpha>' c1 args \<chi> \<eta> c2 ns ax"
+      and pal: "produces n ks u \<alpha>'" and pc: "produces n kL u \<chi>" and pe: "produces n kR u \<eta>"
+      and inv: "trigger_inv args kL kR u ax c2 ns"
+      and lc1: "list_all (ftable ks) (fst c1)" and lc2: "list_all (tpair kR) (snd c1)" by blast
+  obtain aas \<alpha>2 where e0: "meval j n ts db \<alpha>' = (aas, \<alpha>2)"
+    by (cases "meval j n ts db \<alpha>'")
+  obtain as \<chi>' where e1: "meval j n ts db \<chi> = (as, \<chi>')" by (cases "meval j n ts db \<chi>")
+  obtain bs \<eta>' where e2: "meval j n ts db \<eta> = (bs, \<eta>')" by (cases "meval j n ts db \<eta>")
+  obtain zt ax1 d2 ns1 where e3: "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [(fv_z, z)], aux)) ([], ax) (mbuf2_add as bs c2) (ns @ ts)
+        = ((zt, ax1), d2, ns1)"
+    by (cases "mbuf2T_take (\<lambda>r1 r2 t (zs, aux).
+      let aux = update_mmtaux args t r1 r2 aux; (fv_z, z) = result_mmtaux args aux
+      in (zs @ [(fv_z, z)], aux)) ([], ax) (mbuf2_add as bs c2) (ns @ ts)") auto
+  obtain zs d1 where e4: "mbuf2_take (\<lambda>r1 (V, r2). bin_join ks r1 True V r2)
+      (mbuf2_add aas zt c1) = (zs, d1)"
+    by (cases "mbuf2_take (\<lambda>r1 (V, r2). bin_join ks r1 True V r2) (mbuf2_add aas zt c1)")
+  have x: "xs = zs" and f: "\<Phi>' = MAndTrigger ks \<alpha>2 d1 args \<chi>' \<eta>' d2 ns1 ax1"
+    using e X Phi e0 e1 e2 e3 e4 by (simp_all del: bin_join.simps)
+  have taa: "list_all (ftable ks) aas" by (rule produces_tables[OF pal w sts mts e0])
+  have ta: "list_all (ftable kL) as" by (rule produces_tables[OF pc w sts mts e1])
+  have tb: "list_all (ftable kR) bs" by (rule produces_tables[OF pe w sts mts e2])
+  have tstep: "list_all (tpair kR) zt \<and> trigger_inv args kL kR (dnext u ts) ax1 d2 ns1"
+    by (rule trigger_pairs_step[OF aL aR dR wkc inv ta tb sts mts e3])
+  have add: "mbuf2_add aas zt c1 = (fst c1 @ aas, snd c1 @ zt)" by (cases c1) simp
+  have la: "list_all (ftable ks) (fst c1 @ aas)" using lc1 taa by simp
+  have lb: "list_all (tpair kR) (snd c1 @ zt)" using lc2 tstep by simp
+  have e4': "mbuf2_take (\<lambda>r1 (V, r2). bin_join ks r1 True V r2)
+      (fst c1 @ aas, snd c1 @ zt) = (zs, d1)" using e4 unfolding add by simp
+  have jt: "\<And>a p. a \<in> set (fst c1 @ aas) \<Longrightarrow> p \<in> set (snd c1 @ zt) \<Longrightarrow>
+      ftable ks ((\<lambda>r1 (V, r2). bin_join ks r1 True V r2) a p)"
+  proof -
+    fix a and p :: "cols \<times> event_data table"
+    assume ma: "a \<in> set (fst c1 @ aas)" and mp: "p \<in> set (snd c1 @ zt)"
+    have tA: "ftable ks a" using ma la by (simp add: list_all_iff)
+    have tp: "tpair kR p" using mp lb by (simp add: list_all_iff)
+    show "ftable ks ((\<lambda>r1 (V, r2). bin_join ks r1 True V r2) a p)"
+      using ftable_bin_join_tpair[OF tA tp dks dR sub] by (cases p) (simp del: bin_join.simps)
+  qed
+  have tz: "list_all (ftable ks) zs"
+    by (rule mbuf2_take_out[where P = "\<lambda>X :: event_data table. table ks X \<and> finite X"
+        and f = "\<lambda>r1 (V, r2). bin_join ks r1 True V r2", OF e4' jt])
+  have sb: "set (fst d1) \<subseteq> set (fst c1 @ aas) \<and> set (snd d1) \<subseteq> set (snd c1 @ zt)"
+  proof -
+    obtain dd1 dd2 where d: "d1 = (dd1, dd2)" by (cases d1)
+    have "mbuf2_take (\<lambda>r1 (V, r2). bin_join ks r1 True V r2)
+        (fst c1 @ aas, snd c1 @ zt) = (zs, dd1, dd2)" using e4' d by simp
+    from mbuf2_take_sub[OF this] show ?thesis using d by simp
+  qed
+  have ld1: "list_all (ftable ks) (fst d1)" using sb la by (auto simp: list_all_iff)
+  have ld2: "list_all (tpair kR) (snd d1)" using sb lb by (auto simp: list_all_iff)
+  show "list_all (ftable ks') xs \<and>
+      ((n' = n \<and> ks' = ks \<and>
+          (\<exists>\<alpha>' \<chi> \<eta> c1 c2 ns ax. \<Phi>' = MAndTrigger ks \<alpha>' c1 args \<chi> \<eta> c2 ns ax \<and>
+             produces n ks (dnext u ts) \<alpha>' \<and> produces n kL (dnext u ts) \<chi> \<and>
+             produces n kR (dnext u ts) \<eta> \<and>
+             trigger_inv args kL kR (dnext u ts) ax c2 ns \<and>
+             list_all (ftable ks) (fst c1) \<and> list_all (tpair kR) (snd c1))) \<or>
+       produces n' ks' (dnext u ts) \<Phi>')"
+    using X tz tstep ld1 ld2 produces_next[OF pal w sts mts e0]
+      produces_next[OF pc w sts mts e1] produces_next[OF pe w sts mts e2]
+    by (auto simp: x f)
+qed
+
 end
