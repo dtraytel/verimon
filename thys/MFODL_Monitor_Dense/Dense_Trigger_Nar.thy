@@ -528,7 +528,7 @@ lemma ftable_trigger_results_weak:
   assumes wf: "\<forall>(t, l, r) \<in> set auxlist. ftable L l \<and> ftable R r"
     and ne: "auxlist \<noteq> []" and lst: "fst (last auxlist) = cur"
     and aL: "args_L args = L" and aR: "args_R args = R" and dR: "distinct R"
-    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> L = R)"
+    and wkc: "mem (args_ivl args) 0 \<or> (args_pos args \<and> set L = set R)"
   shows "ftable (fst (trigger_results args cur auxlist)) (snd (trigger_results args cur auxlist)) \<and>
     (fst (trigger_results args cur auxlist) = R \<or> fst (trigger_results args cur auxlist) = [])"
 proof (cases "mem (args_ivl args) 0")
@@ -536,7 +536,7 @@ proof (cases "mem (args_ivl args) 0")
   show ?thesis using ftable_trigger_results[OF wf ne True lst aR] by simp
 next
   case False
-  then have pos: "args_pos args" and LR: "L = R" using wkc by auto
+  then have pos: "args_pos args" and LR: "set L = set R" using wkc by auto
   show ?thesis
   proof (cases "filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist = []")
     case True
@@ -556,12 +556,12 @@ next
     have tb: "table R (snd (trigger_results args cur auxlist))"
       using fl aR by (auto simp: table_def)
     have sub: "snd (trigger_results args cur auxlist)
-        \<subseteq> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
+        \<subseteq> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. restrict R L ` (fst \<circ> snd) (auxlist ! j))"
     proof
       fix tu assume tu: "tu \<in> snd (trigger_results args cur auxlist)"
       have wt: "wf_tuple R tu" using tu fl aR by simp
-      have pj: "restrict (args_L args) (args_R args) tu = tu"
-        using restrict_idle[OF dR wt] aL aR LR by simp
+      have pj: "restrict R L (restrict (args_L args) (args_R args) tu) = tu"
+        using restrict_restrict[of R L R tu] restrict_idle[OF dR wt] aL aR LR by simp
       have H: "\<forall>i \<in> {0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
           mem (args_ivl args) (cur - t) \<longrightarrow>
           (tu \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
@@ -572,15 +572,15 @@ next
           join_cond (args_pos args) ((fst \<circ> snd) (auxlist ! j))
             (restrict (args_L args) (args_R args) tu))"
         using H[rule_format, of i0] i0 xi mm by simp
-      show "tu \<in> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
-        using step pos unfolding pj by auto
+      show "tu \<in> r0 \<union> (\<Union>j \<in> {0..<length auxlist}. restrict R L ` (fst \<circ> snd) (auxlist ! j))"
+        using step pos by (auto intro: image_eqI[where f = "restrict R L", OF pj[symmetric]])
     qed
-    have finl: "finite (\<Union>j \<in> {0..<length auxlist}. (fst \<circ> snd) (auxlist ! j))"
+    have finl: "finite (\<Union>j \<in> {0..<length auxlist}. restrict R L ` (fst \<circ> snd) (auxlist ! j))"
     proof (rule finite_UN_I[OF finite_atLeastLessThan])
       fix j assume "j \<in> {0..<length auxlist}"
       then have m: "auxlist ! j \<in> set auxlist" by simp
       obtain vj lj rj where e: "auxlist ! j = (vj, lj, rj)" by (cases "auxlist ! j")
-      show "finite ((fst \<circ> snd) (auxlist ! j))" using wf m unfolding e by force
+      show "finite (restrict R L ` (fst \<circ> snd) (auxlist ! j))" using wf m unfolding e by force
     qed
     have fin: "finite (snd (trigger_results args cur auxlist))"
       by (rule finite_subset[OF sub]) (use tr0 finl in simp)

@@ -27,6 +27,7 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
     Dense_Unbox
     Dense_Trigger_Nar
     Dense_Match_Gen
+    Dense_Eval
     Dense_Idx
     Dense_Tree_Code
     Dense_Win
