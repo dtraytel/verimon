@@ -1,9 +1,7 @@
 module Config : sig
   val generic_join : bool ref
-  val bulk_min : int ref
 end = struct
   let generic_join = ref false
-  let bulk_min = ref 64
 end
 
 module Uint32 : sig
@@ -4623,33 +4621,6 @@ let rec umeval_trm
     | F2i x, v -> EInt (integer_of_event_data (umeval_trm x v))
     | I2f x, v -> EFloat (double_of_event_data (umeval_trm x v));;
 
-let rec ucnt_add1 t c = edl_mupdw_nat t cnt_inc c;;
-
-let rec edl_rbt_keys xa = keysa (unbox ed_impl_of_v xa);;
-
-let rec edl_csorted_list_of_set
-  = function
-    Set_Monad xs ->
-      remdups_sorted (lt_of_comp ed_comparator)
-        (quicksort (lt_of_comp ed_comparator) xs)
-    | DList_set dxs ->
-        quicksort (lt_of_comp ed_comparator)
-          (list_of_dlist (ceq_list ceq_event_data) dxs)
-    | RBT_set rbt -> edl_rbt_keys rbt;;
-
-let rec edl_csl
-  x = (if unbox ed_finite_v x then edl_csorted_list_of_set x else []);;
-
-let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
-
-let rec edl_gins k ev xs ax = fold (edl_gstep_ins k ev) xs ax;;
-
-let rec uag_ins
-  p w t c ax =
-    (let (_, (_, (f, (k, _)))) = p in
-      edl_gins k (umeval_trm f)
-        (filtera (fun ta -> is_none (ed_lookup_nat c ta)) (edl_csl t)) ax);;
-
 let rec edl_rbtc_ins_lk2
   f k x2 = match f, k, x2 with
     f, k, Empty ->
@@ -5052,6 +5023,33 @@ let rec cnt_ins_fold
            (match edl_mupd_nat t cnt_inc ca with (None, cb) -> (cb, f t acc)
              | (Some _, cb) -> (cb, acc)))
       xs (c, b);;
+
+let rec ucnt_add1 t c = edl_mupdw_nat t cnt_inc c;;
+
+let rec edl_rbt_keys xa = keysa (unbox ed_impl_of_v xa);;
+
+let rec edl_csorted_list_of_set
+  = function
+    Set_Monad xs ->
+      remdups_sorted (lt_of_comp ed_comparator)
+        (quicksort (lt_of_comp ed_comparator) xs)
+    | DList_set dxs ->
+        quicksort (lt_of_comp ed_comparator)
+          (list_of_dlist (ceq_list ceq_event_data) dxs)
+    | RBT_set rbt -> edl_rbt_keys rbt;;
+
+let rec edl_csl
+  x = (if unbox ed_finite_v x then edl_csorted_list_of_set x else []);;
+
+let rec ucnt_add t c = fold ucnt_add1 (edl_csl t) c;;
+
+let rec edl_gins k ev xs ax = fold (edl_gstep_ins k ev) xs ax;;
+
+let rec uag_ins
+  p w t c ax =
+    (let (_, (_, (f, (k, _)))) = p in
+      edl_gins k (umeval_trm f)
+        (filtera (fun ta -> is_none (ed_lookup_nat c ta)) (edl_csl t)) ax);;
 
 let ed_mempty_nat : ((event_data list), nat) mapping
   = RBT_Mapping (emptyb (ccompare_list ccompare_event_data));;
@@ -6113,66 +6111,6 @@ let rec edl_gstep_del
         (match edl_gd_rank k ev ty t (true, m)
           with (true, ma) -> Some (GRank (ma, ty)) | (false, _) -> None));;
 
-let rec edl_rbtc_del_lk
-  x xa1 = match x, xa1 with x, Empty -> (None, Empty)
-    | x, Branch (uu, a, y, s, b) ->
-        (match ed_comparator x y with Eqa -> (Some s, combine a b)
-          | Lt -> edl_rbtc_del_lk_fl x a y s b
-          | Gt -> edl_rbtc_del_lk_fr x a y s b)
-and edl_rbtc_del_lk_fl
-  x a y s b =
-    (match a with Empty -> (None, Branch (R, Empty, y, s, b))
-      | Branch (R, _, _, _, _) ->
-        (let (ov, aa) = edl_rbtc_del_lk x a in (ov, Branch (R, aa, y, s, b)))
-      | Branch (B, _, _, _, _) ->
-        (let (ov, l) = edl_rbtc_del_lk x a in (ov, balance_left l y s b)))
-and edl_rbtc_del_lk_fr
-  x a y s b =
-    (match b with Empty -> (None, Branch (R, a, y, s, Empty))
-      | Branch (R, _, _, _, _) ->
-        (let (ov, ba) = edl_rbtc_del_lk x b in (ov, Branch (R, a, y, s, ba)))
-      | Branch (B, _, _, _, _) ->
-        (let (ov, r) = edl_rbtc_del_lk x b in (ov, balance_right a y s r)));;
-
-let rec edl_del_lk_aux_nat
-  xb xc =
-    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
-      (let (ov, t) = edl_rbtc_del_lk xb (unbox ed_impl_of_nat_v xc) in
-        (ov, paint B t));;
-
-let rec edl_del_lk_nat
-  x1 x2 = unbox edl_upd_iso_nat_v (edl_del_lk_aux_nat x1 x2);;
-
-let rec edl_mdel_lk_nat
-  k x1 = match k, x1 with
-    k, RBT_Mapping t ->
-      (let (ov, ta) = edl_del_lk_nat k t in (ov, RBT_Mapping ta))
-    | k, Assoc_List_Mapping al ->
-        (ed_lookup_nat (Assoc_List_Mapping al) k,
-          ed_delete_nat k (Assoc_List_Mapping al))
-    | k, Mapping f ->
-        (ed_lookup_nat (Mapping f) k, ed_delete_nat k (Mapping f));;
-
-let rec ucnt_del1
-  t c = (match edl_mdel_lk_nat t c with (None, _) -> c
-          | (Some k, x) ->
-            (if less_eq_nat k one_nata then x
-              else ed_update_nat t (minus_nata k one_nata) c));;
-
-let rec ucnt_del t c = fold ucnt_del1 (edl_csl t) c;;
-
-let rec edl_gdel k ev xs ax = fold (edl_gstep_del k ev) xs ax;;
-
-let rec uag_del
-  p w t c ax =
-    (let (_, (_, (f, (k, _)))) = p in
-      edl_gdel k (umeval_trm f)
-        (filtera
-          (fun ta ->
-            equal_optiona equal_nat (ed_lookup_nat c ta) (Some one_nata))
-          (edl_csl t))
-        ax);;
-
 let rec gstepv_del
   omega k ev t a =
     (match a
@@ -6233,6 +6171,46 @@ let rec cstep_del
             | Some (aa, (ov, nv)) ->
               (Some aa, cupd (uqok q) pos (drop k t) ov nv c))));;
 
+let rec edl_rbtc_del_lk
+  x xa1 = match x, xa1 with x, Empty -> (None, Empty)
+    | x, Branch (uu, a, y, s, b) ->
+        (match ed_comparator x y with Eqa -> (Some s, combine a b)
+          | Lt -> edl_rbtc_del_lk_fl x a y s b
+          | Gt -> edl_rbtc_del_lk_fr x a y s b)
+and edl_rbtc_del_lk_fl
+  x a y s b =
+    (match a with Empty -> (None, Branch (R, Empty, y, s, b))
+      | Branch (R, _, _, _, _) ->
+        (let (ov, aa) = edl_rbtc_del_lk x a in (ov, Branch (R, aa, y, s, b)))
+      | Branch (B, _, _, _, _) ->
+        (let (ov, l) = edl_rbtc_del_lk x a in (ov, balance_left l y s b)))
+and edl_rbtc_del_lk_fr
+  x a y s b =
+    (match b with Empty -> (None, Branch (R, a, y, s, Empty))
+      | Branch (R, _, _, _, _) ->
+        (let (ov, ba) = edl_rbtc_del_lk x b in (ov, Branch (R, a, y, s, ba)))
+      | Branch (B, _, _, _, _) ->
+        (let (ov, r) = edl_rbtc_del_lk x b in (ov, balance_right a y s r)));;
+
+let rec edl_del_lk_aux_nat
+  xb xc =
+    Abs_x_b_x_ccompare_x_x_a_mapping_rbt_x_b_option_prod_x_x_x_b_x_ccompare_x_x_a_rbt_x_b_option_prod
+      (let (ov, t) = edl_rbtc_del_lk xb (unbox ed_impl_of_nat_v xc) in
+        (ov, paint B t));;
+
+let rec edl_del_lk_nat
+  x1 x2 = unbox edl_upd_iso_nat_v (edl_del_lk_aux_nat x1 x2);;
+
+let rec edl_mdel_lk_nat
+  k x1 = match k, x1 with
+    k, RBT_Mapping t ->
+      (let (ov, ta) = edl_del_lk_nat k t in (ov, RBT_Mapping ta))
+    | k, Assoc_List_Mapping al ->
+        (ed_lookup_nat (Assoc_List_Mapping al) k,
+          ed_delete_nat k (Assoc_List_Mapping al))
+    | k, Mapping f ->
+        (ed_lookup_nat (Mapping f) k, ed_delete_nat k (Mapping f));;
+
 let rec cnt_del_fold
   f xs c b =
     fold (fun t (ca, acc) ->
@@ -6242,6 +6220,26 @@ let rec cnt_del_fold
                  then (x, (if equal_nata k one_nata then f t acc else acc))
                  else (ed_update_nat t (minus_nata k one_nata) ca, acc))))
       xs (c, b);;
+
+let rec ucnt_del1
+  t c = (match edl_mdel_lk_nat t c with (None, _) -> c
+          | (Some k, x) ->
+            (if less_eq_nat k one_nata then x
+              else ed_update_nat t (minus_nata k one_nata) c));;
+
+let rec ucnt_del t c = fold ucnt_del1 (edl_csl t) c;;
+
+let rec edl_gdel k ev xs ax = fold (edl_gstep_del k ev) xs ax;;
+
+let rec uag_del
+  p w t c ax =
+    (let (_, (_, (f, (k, _)))) = p in
+      edl_gdel k (umeval_trm f)
+        (filtera
+          (fun ta ->
+            equal_optiona equal_nat (ed_lookup_nat c ta) (Some one_nata))
+          (edl_csl t))
+        ax);;
 
 let rec edl_upd_lk2_aux_gsum
   xc xd xe =
@@ -6567,8 +6565,6 @@ let rec edl_nis_empty_gcnt
 let rec edl_gempty = function GCnt m -> unbox ed_mis_empty_nat_v m
                      | GSum m -> unbox ed_mis_empty_sum_v m
                      | GRank (m, ty) -> unbox ed_mis_empty_rank_v m;;
-
-let rec ufilt q x = ed_filter (uqok q) x;;
 
 let rec ugres_ns
   q g0 omega p m =
@@ -7032,6 +7028,8 @@ let rec uc_set x = (let (_, (_, c)) = rep_ucache x in c);;
 let rec uc_rep x = (let (_, (r, _)) = rep_ucache x in r);;
 
 let rec uc_key x = (let (k, (_, _)) = rep_ucache x in k);;
+
+let rec ufilt q x = ed_filter (uqok q) x;;
 
 let rec uc_res
   q p w x =
@@ -7695,80 +7693,6 @@ let rec uedsx_eval_since
 
 let rec rep_mbuf_t (MBuf2_t x) = linearize x;;
 
-let rec uua_extend
-  args p w ts0 win rest bend cc ax =
-    (if not bend then (win, (rest, (bend, (cc, ax))))
-      else (match safe_hd rest
-             with (None, resta) -> (win, (resta, (bend, (cc, ax))))
-             | (Some e, resta) ->
-               (if memR (args_ivl args) (minus_nata (fst e) ts0)
-                 then uua_extend args p w ts0 (append_queue e win)
-                        (tl_queue resta) (snd (snd e))
-                        (ucnt_add (fst (snd e)) cc)
-                        (uag_ins p w (fst (snd e)) cc ax)
-                 else (win, (resta, (bend, (cc, ax)))))));;
-
-let rec uag_res
-  q p w c ax =
-    (match ax with None -> ufilt q (eagg_p p (unbox ed_keys_nat_v c))
-      | Some a ->
-        (let (g0, (omega, (_, (_, pos)))) = p in ugres_q q g0 omega pos a));;
-
-let rec is_emptya
-  x = (match rep_queue x with ([], []) -> true | ([], _ :: _) -> false
-        | (_ :: _, _) -> false);;
-
-let rec uua_step
-  args p w ts0 a =
-    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
-     let (wina, (resta, (benda, (cca, axa)))) =
-       uua_extend args p w ts0 win rest bend cc ax in
-      (match safe_hd wina
-        with (None, winb) ->
-          ((tl_queue nts,
-             (winb,
-               (resta,
-                 (minus_nata len one_nata,
-                   (benda, (cca, uag_res None p w cca axa :: dn)))))),
-            axa)
-        | (Some e, winb) ->
-          (let winc = tl_queue winb in
-           let r = uag_res None p w cca axa in
-           let ccaa = ucnt_del (fst (snd e)) cca in
-           let axb = uag_del p w (fst (snd e)) cca axa in
-           let bendb = (if is_emptya winc then true else benda) in
-            ((tl_queue nts,
-               (winc,
-                 (resta, (minus_nata len one_nata, (bendb, (ccaa, r :: dn)))))),
-              axb))));;
-
-let rec uua_shift
-  args p w nt a =
-    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
-      (match safe_hd nts
-        with (None, ntsa) ->
-          ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
-        | (Some ts0, ntsa) ->
-          (if memR (args_ivl args) (minus_nata nt ts0) ||
-                equal_nata len zero_nata
-            then ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
-            else uua_shift args p w nt
-                   (uua_step args p w ts0
-                     ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)))));;
-
-let rec uua_add_new
-  args p w rel1 rel2 nt a =
-    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
-       uua_shift args p w nt a in
-     let b =
-       (if args_pos args then not (unbox ed_is_empty_v rel1)
-         else unbox ed_is_empty_v rel1)
-       in
-      ((append_queue nt nts,
-         (win, (append_queue (nt, (rel2, b)) rest,
-                 (plus_nata len one_nata, (bend, (cc, dn)))))),
-        ax));;
-
 let ed_mempty_tstp : ((event_data list), (nat, nat) sum) mapping
   = RBT_Mapping (emptyb (ccompare_list ccompare_event_data));;
 
@@ -8128,6 +8052,80 @@ let rec de_gadd_new_dq
           (tablesa,
             (plus_nata len one_nata,
               (result, (a1_mapa, (a2_dqb, (tstp_dqa, dn)))))))));;
+
+let rec uua_extend
+  args p w ts0 win rest bend cc ax =
+    (if not bend then (win, (rest, (bend, (cc, ax))))
+      else (match safe_hd rest
+             with (None, resta) -> (win, (resta, (bend, (cc, ax))))
+             | (Some e, resta) ->
+               (if memR (args_ivl args) (minus_nata (fst e) ts0)
+                 then uua_extend args p w ts0 (append_queue e win)
+                        (tl_queue resta) (snd (snd e))
+                        (ucnt_add (fst (snd e)) cc)
+                        (uag_ins p w (fst (snd e)) cc ax)
+                 else (win, (resta, (bend, (cc, ax)))))));;
+
+let rec uag_res
+  q p w c ax =
+    (match ax with None -> ufilt q (eagg_p p (unbox ed_keys_nat_v c))
+      | Some a ->
+        (let (g0, (omega, (_, (_, pos)))) = p in ugres_q q g0 omega pos a));;
+
+let rec is_emptya
+  x = (match rep_queue x with ([], []) -> true | ([], _ :: _) -> false
+        | (_ :: _, _) -> false);;
+
+let rec uua_step
+  args p w ts0 a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
+     let (wina, (resta, (benda, (cca, axa)))) =
+       uua_extend args p w ts0 win rest bend cc ax in
+      (match safe_hd wina
+        with (None, winb) ->
+          ((tl_queue nts,
+             (winb,
+               (resta,
+                 (minus_nata len one_nata,
+                   (benda, (cca, uag_res None p w cca axa :: dn)))))),
+            axa)
+        | (Some e, winb) ->
+          (let winc = tl_queue winb in
+           let r = uag_res None p w cca axa in
+           let ccaa = ucnt_del (fst (snd e)) cca in
+           let axb = uag_del p w (fst (snd e)) cca axa in
+           let bendb = (if is_emptya winc then true else benda) in
+            ((tl_queue nts,
+               (winc,
+                 (resta, (minus_nata len one_nata, (bendb, (ccaa, r :: dn)))))),
+              axb))));;
+
+let rec uua_shift
+  args p w nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) = a in
+      (match safe_hd nts
+        with (None, ntsa) ->
+          ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
+        | (Some ts0, ntsa) ->
+          (if memR (args_ivl args) (minus_nata nt ts0) ||
+                equal_nata len zero_nata
+            then ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)
+            else uua_shift args p w nt
+                   (uua_step args p w ts0
+                     ((ntsa, (win, (rest, (len, (bend, (cc, dn)))))), ax)))));;
+
+let rec uua_add_new
+  args p w rel1 rel2 nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
+       uua_shift args p w nt a in
+     let b =
+       (if args_pos args then not (unbox ed_is_empty_v rel1)
+         else unbox ed_is_empty_v rel1)
+       in
+      ((append_queue nt nts,
+         (win, (append_queue (nt, (rel2, b)) rest,
+                 (plus_nata len one_nata, (bend, (cc, dn)))))),
+        ax));;
 
 let rec uw_extend
   args ts0 win rest bend cc =
@@ -8559,12 +8557,6 @@ let rec append_queue_list
 
 let rec mbuf_t_append (MBuf2_t xs) ys = MBuf2_t (append_queue_list ys xs);;
 
-let rec uua_eval
-  args p w nt a =
-    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
-       uua_shift args p w nt a in
-      (rev dn, ((nts, (win, (rest, (len, (bend, (cc, [])))))), ax)));;
-
 let rec de_geval_dq
   args nt aux =
     (let (tp, (tss, (tables,
@@ -8573,6 +8565,12 @@ let rec de_geval_dq
       (rev dn,
         (tp, (tss, (tables,
                      (len, (result, (a1_map, (a2_dq, (tstp_dq, []))))))))));;
+
+let rec uua_eval
+  args p w nt a =
+    (let ((nts, (win, (rest, (len, (bend, (cc, dn)))))), ax) =
+       uua_shift args p w nt a in
+      (rev dn, ((nts, (win, (rest, (len, (bend, (cc, [])))))), ax)));;
 
 let rec uw_eval
   args nt aux =
