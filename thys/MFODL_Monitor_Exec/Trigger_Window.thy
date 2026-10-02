@@ -1,10 +1,125 @@
 (*<*)
 theory Trigger_Window
-  imports Generic_Ops
+  imports Until_Gen
 begin
 (*>*)
 
 section \<open>The kernel's trigger structure at the ascending frame\<close>
+
+subsection \<open>The trigger structure over short tuples\<close>
+
+text \<open>
+  The kernel's trigger structure of @{theory MFODL_Monitor_Devel.Optimized_Trigger} keeps its
+  tuples over the node's kernel columns.  Its queues, its two mappings and the shift it performs
+  on them only ever test membership and look keys up, so they carry over unchanged to the
+  ascending columns.  Two things do not.
+
+  The first is the semi-join that decides which of the right operand's tuples the left one
+  admits.  The kernel restricts to the left operand's columns; over the ascending columns the
+  projection is @{const eproj} through a mask.  Where the left operand has the node's columns
+  the projection is the identity, where it has none the whole table is taken or dropped on one
+  test of the empty tuple, and otherwise each tuple is projected.
+
+  The second is the result at an empty window, which is every valuation of the node's columns.
+  A table of tuples cannot say that, so the result is split in two: @{term gresult_mmtaux}
+  returns the union of the three sets, which is the kernel's answer on a non-empty window, and
+  @{term gmmtaux_empty} says whether the window is empty, so that a node which can face an empty
+  one recognises the case rather than reading a wrong table.  The standalone trigger cannot face
+  it -- its interval contains zero, so the update always appends to the window -- and reads the
+  result directly; the conjunction with a trigger can, and treats the empty window as the
+  identity on its other operand.
+\<close>
+
+type_synonym 'b gmmtaux = "
+  ts \<times> nat \<times> nat \<times> nat \<times>
+  bool list \<times>
+  (ts \<times> 'b list set \<times> 'b list set) queue \<times>
+  (ts \<times> 'b list set) queue \<times>
+  (('b list, ts) mapping) \<times>
+  'b list set \<times>
+  (('b list, nat) mapping) \<times>
+  'b list set \<times>
+  'b list set"
+
+definition gsemi_join :: "bool list \<Rightarrow> bool \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
+  "gsemi_join msk pos r l =
+     (if \<forall>i \<in> set msk. i then (if pos then r \<inter> l else r - l)
+      else if \<forall>i \<in> set msk. \<not> i then (if pos = ([] \<in> l) then r else {})
+      else esemi msk pos r l)"
+
+definition ginit_mmtaux :: "args \<Rightarrow> bool list \<Rightarrow> 'b gmmtaux" where
+  "ginit_mmtaux args msk = (0, 0, 0, 0, msk, empty_queue, empty_queue,
+     Mapping.empty, {}, Mapping.empty, {}, {})"
+
+definition gupdate_mmtaux' :: "args \<Rightarrow> ts \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> bool list \<Rightarrow>
+    (ts \<times> 'b list set \<times> 'b list set) queue \<Rightarrow> (ts \<times> 'b list set) queue \<Rightarrow>
+    (('b list, ts) mapping) \<Rightarrow> 'b list set \<Rightarrow> (('b list, nat) mapping) \<Rightarrow> 'b list set \<Rightarrow>
+    'b list set \<Rightarrow>
+    (nat \<times> nat \<times> (ts \<times> 'b list set \<times> 'b list set) queue \<times> (ts \<times> 'b list set) queue \<times>
+     (('b list, ts) mapping) \<times> 'b list set \<times> (('b list, nat) mapping) \<times> 'b list set \<times>
+     'b list set)" where
+  "gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tuple_in_once
+     tuple_in_once_keys tuple_since_hist hist_sat since_sat = (
+    let (_, data_prev', move, tuple_in_once', tuple_in_once_keys') = shift_end'
+      (flip_int_less_lower (args_ivl args)) nt fst
+      (empty_queue :: (ts \<times> 'b list set \<times> 'b list set) queue,
+       data_prev, tuple_in_once, tuple_in_once_keys);
+    move_len = length move;
+    idx_mid' = idx_mid + move_len;
+    (data_in', drop) = takedropWhile_queue (\<lambda>(t, _). \<not> memR (args_ivl args) (nt - t)) data_in;
+    move' = filter (\<lambda>(t, _). memR (args_ivl args) (nt - t)) move;
+    drop_prev_len = move_len - length move';
+    idx_oldest' = idx_oldest + length drop + drop_prev_len;
+    data_in'' = fold (\<lambda>(t, l, r) data_in. append_queue (t, r) data_in) move' data_in';
+    (tuple_since_hist', hist_sat', idx_move, since_sat') =
+      fold (\<lambda>(t, l, r) (tuple_since_hist, hist_sat, idx_move, since_sat).
+        let tuple_since_hist = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist;
+            hist_sat = hist_sat \<inter> r;
+            since_sat = since_sat \<inter> r
+        in (upd_set tuple_since_hist (\<lambda>_. idx_move) (r - Mapping.keys tuple_since_hist),
+            hist_sat, idx_move + 1,
+            since_sat \<union> gsemi_join msk (args_pos args) r l))
+      move (tuple_since_hist, hist_sat, idx_mid, since_sat);
+    tuple_since_hist'' = (if idx_mid' = idx_oldest' then Mapping.empty else tuple_since_hist');
+    since_sat'' = (if idx_mid' = idx_oldest' then {} else since_sat');
+    hist_sat'' = (case fst (safe_hd data_in'') of None \<Rightarrow> {}
+      | Some db \<Rightarrow> hist_sat' \<union> {tuple \<in> snd db.
+          case Mapping.lookup tuple_since_hist'' tuple of
+            Some idx \<Rightarrow> idx \<le> idx_oldest' | None \<Rightarrow> False})
+    in
+    (idx_mid', idx_oldest', data_prev', data_in'', tuple_in_once', tuple_in_once_keys',
+     tuple_since_hist'', hist_sat'', since_sat''))"
+
+definition gupdate_mmtaux :: "args \<Rightarrow> ts \<Rightarrow> 'b list set \<Rightarrow> 'b list set \<Rightarrow> 'b gmmtaux \<Rightarrow>
+    'b gmmtaux" where
+  "gupdate_mmtaux args nt l r = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
+      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
+    (let (idx_mid', idx_oldest', data_prev', data_in', tuple_in_once', tuple_in_once_keys',
+          tuple_since_hist', hist_sat', since_sat') =
+       gupdate_mmtaux' args nt idx_mid idx_oldest msk data_prev data_in tuple_in_once
+         tuple_in_once_keys tuple_since_hist hist_sat since_sat
+     in (if mem (args_ivl args) 0
+       then (let tuple_since_hist'' = Mapping.filter (\<lambda>as _. as \<in> r) tuple_since_hist' in
+         (nt, idx_next + 1, idx_mid' + 1, idx_oldest', msk, data_prev',
+          append_queue (nt, r) data_in', tuple_in_once', tuple_in_once_keys',
+          upd_set tuple_since_hist'' (\<lambda>_. idx_mid') (r - Mapping.keys tuple_since_hist''),
+          (if Queue.is_empty data_in' then r else hist_sat' \<inter> r),
+          (since_sat' \<inter> r) \<union> gsemi_join msk (args_pos args) r l))
+       else
+         (nt, idx_next + 1, idx_mid', idx_oldest', msk,
+          append_queue (nt, l, r) data_prev', data_in',
+          upd_set tuple_in_once' (\<lambda>_. nt) l, tuple_in_once_keys' \<union> l,
+          tuple_since_hist', hist_sat', since_sat'))))"
+
+definition gresult_mmtaux :: "args \<Rightarrow> 'b gmmtaux \<Rightarrow> 'b list set" where
+  "gresult_mmtaux args = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
+      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
+    tuple_in_once_keys \<union> hist_sat \<union> since_sat)"
+
+definition gmmtaux_empty :: "'b gmmtaux \<Rightarrow> bool" where
+  "gmmtaux_empty = (\<lambda>(cur, idx_next, idx_mid, idx_oldest, msk, data_prev, data_in,
+      tuple_in_once, tuple_in_once_keys, tuple_since_hist, hist_sat, since_sat).
+    Queue.is_empty data_in)"
 
 text \<open>A table is used throughout with the two properties every theorem about the executable
   representation needs of it: it is well formed over its columns, and it is finite.\<close>

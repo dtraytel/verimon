@@ -470,6 +470,13 @@ next
     by simp
 qed simp
 
+text \<open>The runs of increasing elements of the list.\<close>
+
+fun runs_tc :: "'a comparator \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
+  "runs_tc c x cur acc [] = rev (x # cur) # acc"
+| "runs_tc c x cur acc (y # ys) = (if c x y = order.Lt then runs_tc c y (x # cur) acc ys
+     else runs_tc c y [] (rev (x # cur) # acc) ys)"
+
 lemma sorted_runs_tc: "comparator c \<Longrightarrow> sorted_wrt (lt_of_comp c) (rev (x # cur)) \<Longrightarrow>
   \<forall>a \<in> set acc. sorted_wrt (lt_of_comp c) a \<Longrightarrow> \<forall>a \<in> set (runs_tc c x cur acc ys). sorted_wrt (lt_of_comp c) a"
 proof (induction c x cur acc ys rule: runs_tc.induct)

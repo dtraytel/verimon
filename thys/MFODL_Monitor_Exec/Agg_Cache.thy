@@ -1,6 +1,6 @@
 (*<*)
 theory Agg_Cache
-  imports Until_Agg_Exec
+  imports Until_Agg
 begin
 (*>*)
 
@@ -19,7 +19,7 @@ text \<open>
   built for one node, its key: a structure built for a different constraint or aggregation is
   rebuilt by the first step.  The window over it, @{text uswaggc}, is the window of
   @{theory MFODL_Monitor_Exec.Since_Agg} with the count set over a mapping
-  (@{theory MFODL_Monitor_Exec.Since_Agg_Exec}) and the aggregate moved into the new type, and
+  (Section ``The executable fused Since window'' of @{theory MFODL_Monitor_Exec.Since_Agg}) and the aggregate moved into the new type, and
   it maps onto that window (@{text rsc}) with every operation commuting.
 
   The per-group reading rests on the result tuple of a group, @{text mkr}: the group with the
@@ -205,7 +205,7 @@ lemma distinct_csl_edl: "distinct (csl (X :: event_data list set))"
 proof (cases "finite X")
   case True
   then show ?thesis
-    using Generic_Ops.ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
+    using ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 qed (simp add: csl_infinite)
 
 subsection \<open>The aggregate with its result\<close>

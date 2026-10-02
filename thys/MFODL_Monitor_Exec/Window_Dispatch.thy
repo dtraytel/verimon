@@ -513,7 +513,7 @@ section \<open>The structures the evaluator runs\<close>
 
 text \<open>
   The evaluator runs the structures above in the representations of
-  @{theory MFODL_Monitor_Exec.Since_Agg_Exec}, @{theory MFODL_Monitor_Exec.Until_Agg_Exec}
+  the executable windows of @{theory MFODL_Monitor_Exec.Since_Agg}, @{theory MFODL_Monitor_Exec.Until_Agg}
   and @{theory MFODL_Monitor_Exec.Agg_Cache}, and its buffers in queues
   (@{typ "'a mbuf_t"}).  Each is related to the structure above by a function -- @{text rdsx},
   @{text rdux} and @{const Rep_mbuf_t} -- with which every operation commutes on every input,
