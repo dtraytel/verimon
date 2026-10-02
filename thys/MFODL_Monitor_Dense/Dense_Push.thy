@@ -417,7 +417,7 @@ next
   case (2 t \<phi> I \<psi>)
   then show ?case
     by (auto intro!: wty_formula.intros elim: wty_formula.cases)
-qed (auto intro: wty_formula.Exists)
+qed (simp only: ex_into.simps, rule wty_formula.Exists, assumption)+
 
 lemma wty_push_ex: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> push_ex \<phi>"
   by (induct rule: wty_formula.induct)
