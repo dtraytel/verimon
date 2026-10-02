@@ -1,7 +1,7 @@
 (*<*)
 theory Dense_Push
-  imports "MFODL_Monitor_Dense.Dense_Frz" "MFODL_Monitor_Dense.Dense_Share"
-    "MFODL_Monitor_Devel.Correctness"
+  imports "MFODL_Monitor_Dense.Dense_Unbox_Exec" "MFODL_Monitor_Dense.Dense_Frz"
+    "MFODL_Monitor_Dense.Dense_Share" "MFODL_Monitor_Devel.VeriMon"
 begin
 (*>*)
 
@@ -457,6 +457,128 @@ lemma wty_dense_prep: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnsti
 
 lemma mmonitorable_dense_prep: "mmonitorable \<phi> \<Longrightarrow> mmonitorable (dense_prep \<phi>)"
   by (simp add: dense_prep_def mmonitorable_share_opt mmonitorable_frz_opt)
+
+subsection \<open>Reordering the verdicts' columns\<close>
+
+text \<open>Two formulas with the same number and set of free variables, the same satisfaction
+  relation and the same progress have the same verdicts, up to the order of their columns.\<close>
+
+context
+  fixes \<phi> \<psi> :: "ty Formula.formula" and S :: sig and E :: tyenv
+  assumes fb: "future_bounded_mfodl \<phi> S E" "future_bounded_mfodl \<psi> S E"
+    and fv: "Formula.fv \<psi> = Formula.fv \<phi>" and nfv: "Formula.nfv \<psi> = Formula.nfv \<phi>"
+    and sat: "\<And>\<sigma> v i. Formula.sat \<sigma> Map.empty v i \<psi> = Formula.sat \<sigma> Map.empty v i \<phi>"
+    and pp: "pprogress \<psi> = pprogress \<phi>"
+begin
+
+interpretation p: future_bounded_mfodl \<phi> S E
+  by (rule fb(1))
+
+interpretation q: future_bounded_mfodl \<psi> S E
+  by (rule fb(2))
+
+lemma M_perm: "q.M \<pi> = (\<lambda>(i, v). (i, restrict (Formula.fv_list \<psi>) (Formula.fv_list \<phi>) v)) ` p.M \<pi>"
+proof -
+  let ?ds = "Formula.fv_list \<psi>"
+  let ?cs = "Formula.fv_list \<phi>"
+  have set_cs: "set ?ds = set ?cs" "set ?cs = set ?ds"
+    by (simp_all add: fv)
+  have restrict_back: "restrict ?ds ?cs (restrict ?cs ?ds v) = v"
+    if "wf_tuple ?ds v" for v :: "event_data list"
+    using that by (subst restrict_restrict) (simp_all add: fv restrict_idle)
+  have val_ds: "val (Formula.nfv \<phi>) ?ds (restrict ?ds ?cs v) = val (Formula.nfv \<phi>) ?cs v"
+    for v :: "event_data list"
+    by (rule val_restrict_perm) (rule set_cs)
+  have val_cs: "val (Formula.nfv \<phi>) ?cs (restrict ?cs ?ds v) = val (Formula.nfv \<phi>) ?ds v"
+    for v :: "event_data list"
+    by (rule val_restrict_perm) (rule set_cs)
+  have to_\<phi>: "wf_tuple ?ds v \<and> (i, restrict ?cs ?ds v) \<in> p.M \<pi>" if "(i, v) \<in> q.M \<pi>" for i v
+    using that unfolding q.M_def p.M_def
+    by (simp add: sat nfv pp val_cs)
+  have to_\<psi>: "(i, restrict ?ds ?cs v) \<in> q.M \<pi>" if "(i, v) \<in> p.M \<pi>" for i v
+    using that unfolding q.M_def p.M_def
+    by (simp add: sat nfv pp val_ds)
+  show ?thesis
+  proof (rule set_eqI, safe)
+    fix i v
+    assume "(i, v) \<in> q.M \<pi>"
+    with to_\<phi>[OF this] show "(i, v) \<in> (\<lambda>(i, v). (i, restrict ?ds ?cs v)) ` p.M \<pi>"
+      by (auto simp: restrict_back intro!: image_eqI[where x = "(i, restrict ?cs ?ds v)"])
+  qed (rule to_\<psi>)
+qed
+
+lemma Mt_perm: "q.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict (Formula.fv_list \<psi>) (Formula.fv_list \<phi>) v)) ` p.Mt \<pi>"
+  unfolding q.Mt_def p.Mt_def M_perm image_image
+  by (simp add: split_beta)
+
+end
+
+lemma flatten_verdicts_map_image:
+  "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, f ` X)) Vs) = (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts Vs"
+  by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
+
+lemma flatten_verdicts_map_comp:
+  "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, f ` g X)) Vs) =
+    (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts (map (\<lambda>(i, t, X). (i, t, g X)) Vs)"
+  by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
+
+subsection \<open>The dense monitor on the rewritten formula\<close>
+
+text \<open>The dense state is compiled from the rewritten formula at its own column list, but the
+  dense columns are the free variables in ascending order, which the rewriting does not change.
+  So the dense verdicts, read at the columns of @{term \<phi>}, are those of @{term \<phi>}.\<close>
+
+lemma fv_list_dense_prep_dcols: "dcols (Formula.fv_list (dense_prep \<phi>)) = dcols (Formula.fv_list \<phi>)"
+  by (rule dcols_cong) simp
+
+context verimon_spec
+begin
+
+theorem dmonitor_mverdicts_push:
+  assumes zf: "vdfail_nodes (dmstate_m (dof_state (Formula.nfv \<phi>) (Formula.fv_list (dense_prep \<phi>))
+      (dcols (Formula.fv_list (dense_prep \<phi>))) (minit_safe (dense_prep \<phi>)))) = 0"
+    and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
+  shows "flatten_verdicts (map (\<lambda>(i, t, X).
+      (i, t, dtabw (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>)) X))
+      (dmonitor (dof_state (Formula.nfv \<phi>) (Formula.fv_list (dense_prep \<phi>))
+         (dcols (Formula.fv_list (dense_prep \<phi>))) (minit_safe (dense_prep \<phi>))) \<pi>)) = Mt \<pi>"
+proof -
+  let ?\<chi> = "dense_prep \<phi>"
+  interpret p: verimon_spec ?\<chi> SIG ENV
+    by unfold_locales
+      (simp_all add: wty_dense_prep[OF well_typed] mmonitorable_dense_prep[OF monitorable])
+  let ?ks = "Formula.fv_list ?\<chi>" and ?ls = "Formula.fv_list \<phi>" and ?cs = "dcols (Formula.fv_list \<phi>)"
+  have cs: "dcols ?ks = ?cs"
+    by (rule fv_list_dense_prep_dcols)
+  have v: "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, dtabw ?ks ?cs X))
+      (dmonitor (dof_state (Formula.nfv \<phi>) ?ks ?cs (minit_safe ?\<chi>)) \<pi>)) = p.Mt \<pi>"
+    using p.dmonitor_mverdicts_dof[OF _ f wty] zf by (simp add: cs)
+  have Mt: "Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict ?ls ?ks v)) ` p.Mt \<pi>"
+    by (rule Mt_perm[where S = SIG and E = ENV])
+      (simp_all add: future_bounded_mfodl_axioms p.future_bounded_mfodl_axioms fun_eq_iff)
+  have r: "restrict ?ls ?ks (restrict ?ks ?cs d) = restrict ?ls ?cs d" for d :: "event_data list"
+    by (rule restrict_restrict) simp
+  have w: "dtabw ?ls ?cs X = restrict ?ls ?ks ` dtabw ?ks ?cs X" for X :: "event_data list set"
+    by (simp add: dtabw_def image_image r)
+  show ?thesis
+    unfolding cs w flatten_verdicts_map_comp v Mt ..
+qed
+
+end
+
+text \<open>The front end's entry point: the monitor over the short tuples, started on the rewritten
+  formula.  Its representation is the dense monitor of
+  @{thm [source] verimon_spec.dmonitor_mverdicts_push}.\<close>
+
+definition udminit_push :: "ty Formula.formula \<Rightarrow> udmstate" where
+  "udminit_push \<phi> = udminit_safe (dense_prep \<phi>)"
+
+lemma Rep_udminit_push:
+  assumes "mmonitorable \<phi>"
+  shows "Rep_udmstate (udminit_push \<phi>)
+   = dof_state (Formula.nfv \<phi>) (Formula.fv_list (dense_prep \<phi>))
+       (dcols (Formula.fv_list (dense_prep \<phi>))) (minit_safe (dense_prep \<phi>))"
+  by (simp add: udminit_push_def Rep_udminit_safe[OF mmonitorable_dense_prep[OF assms]])
 (*<*)
 end
 (*>*)
