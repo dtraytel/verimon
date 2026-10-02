@@ -1,18 +1,16 @@
 (*<*)
 theory Dense_Unbox_Eval
-  imports Dense_Descend Dense_Unbox
+  imports Dense_Evt_UAgg Dense_Unbox
 begin
 (*>*)
 
 section \<open>The fused Since window of the executable evaluator\<close>
 
 text \<open>
-  The dense evaluator of @{theory MFODL_Monitor_Dense.Dense_Eval} already runs on short tuples,
-  so the executable evaluator differs from it only where it keeps a structure the dense one does
-  not: buffers in queues rather than lists, a fused aggregation window whose count structure is
-  a mapping alone and whose read is guarded by the node's constraint, and the result cache of
-  \<^verbatim>\<open>Dense_Agg_Cache\<close>.  This theory provides the window, and proves
-  that it refines the window of @{theory MFODL_Monitor_Dense.Dense_Evt_Agg}.
+  The fused aggregation window the dense evaluator runs: its count structure is a mapping alone,
+  and its read is guarded by the node's constraint; the result cache of
+  @{text Dense_Agg_Cache} is built on it.  This theory provides the window, and proves that it
+  refines the window of @{theory MFODL_Monitor_Dense.Dense_Evt_Agg}.
 \<close>
 
 subsection \<open>The count mapping\<close>
