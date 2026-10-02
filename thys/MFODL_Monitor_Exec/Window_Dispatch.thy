@@ -532,7 +532,7 @@ datatype udsaux_x = UDSX_gen "event_data emsaux" | UDSX_win swaux
 fun rdsx :: "udsaux_x \<Rightarrow> esaux_x" where
   "rdsx (UDSX_gen d) = ESX_gen d"
 | "rdsx (UDSX_win w) = ESX_win w"
-| "rdsx (UDSX_wagg p q a) = ESX_wagg p (rsa (ucs a))"
+| "rdsx (UDSX_wagg p q a) = ESX_wagg p (rsc a)"
 
 fun usx_q :: "udsaux_x \<Rightarrow> uconstr option" where
   "usx_q (UDSX_wagg p q a) = q"
@@ -578,7 +578,7 @@ lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
   by (simp add: esx_init_def udsx_init_def)
 
 lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
-  by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsa usc_init_ucs)
+  by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsc[symmetric])
 
 lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
   by (simp add: udsx_init_agg_def)
@@ -587,21 +587,21 @@ lemma usx_q_init[simp]: "usx_q (udsx_init args msk) = None"
   by (simp add: udsx_init_def)
 
 lemma esx_add_new_ts_rdsx: "esx_add_new_ts args nt (rdsx d) = rdsx (udsx_add_new_ts args nt d)"
-  by (cases d) (simp_all add: sa_add_new_ts_rsa usc_add_new_ts_ucs)
+  by (cases d) (simp_all add: sa_add_new_ts_rsc)
 
 lemma esx_join_rdsx: "esx_join args X (rdsx d) = rdsx (udsx_join args X d)"
-  by (cases d) (simp_all add: sa_join_rsa usc_join_ucs)
+  by (cases d) (simp_all add: sa_join_rsc)
 
 lemma esx_add_new_table_rdsx:
   "esx_add_new_table args X (rdsx d) = rdsx (udsx_add_new_table args X d)"
-  by (cases d) (simp_all add: sa_add_new_table_rsa usc_add_new_table_ucs)
+  by (cases d) (simp_all add: sa_add_new_table_rsc)
 
 text \<open>The structure above reports the node's whole result; this one reports it read through the
   guard straight away.\<close>
 
 lemma esx_result_rdsx:
   "usx_q d = q \<Longrightarrow> ufilt q (esx_result args (rdsx d)) = udsx_result args d"
-  by (cases d) (auto simp: sa_result_rsa usc_result_ucs)
+  by (cases d) (auto simp: sa_result_rsc)
 
 datatype uduaux_x = UDUX_gen "event_data mmuaux_dq" | UDUX_win uwaux | UDUX_wagg eaggp uuwagg
 
@@ -702,7 +702,7 @@ lemma mbufn_add_rbl: "mbufn_add xss (map Rep_mbuf_t buf) = map Rep_mbuf_t (mebuf
   by (rule mbufn_add)
 
 lemma mbufn_take_ands:
-  "mbufn_take (\<lambda>as zs. zs @ [emulti_join ps ns as]) [] (map Rep_mbuf_t buf)
+  "mbufn_take (\<lambda>as zs. zs @ [gmulti_join ps ns as]) [] (map Rep_mbuf_t buf)
    = (case mebufn_take (\<lambda>as zs. zs @@ [gmulti_join ps ns as]) mbuf_t_empty buf of
         (zs, buf') \<Rightarrow> (Rep_mbuf_t zs, map Rep_mbuf_t buf'))"
 proof -
@@ -718,7 +718,7 @@ proof -
   have "zs'' = Rep_mbuf_t zs \<and> buf'' = map Rep_mbuf_t buf'"
     using mbufn_take_app[OF m m'] .
   then show ?thesis using m' e
-    by (simp add: mbuf_t_empty.rep_eq gmulti_join_eq[abs_def] del: mbufn_take.simps)
+    by (simp add: mbuf_t_empty.rep_eq del: mbufn_take.simps)
 qed
 
 lemma mbufnt_take_rbl:
@@ -874,9 +874,6 @@ lemma mbuf2_add_rbufo: "mbuf2_add xs ys (rbufo buf) = rbufo (mebuf2_add xs ys bu
 lemma mbuf2_take_rbufo:
   "mbuf2_take f (rbufo buf) = (case mebuf2_take f buf of (zs, buf') \<Rightarrow> (zs, rbufo buf'))"
   by (cases "mebuf2_take f buf") (simp add: mebuf2_take)
-
-lemma gbin_join_eq': "(gbin_join :: _ \<Rightarrow> event_data table \<Rightarrow> _) = ebin_join"
-  by (intro ext) (rule gbin_join_eq)
 
 (*<*)
 end

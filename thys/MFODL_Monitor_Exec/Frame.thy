@@ -564,28 +564,25 @@ proof (induct p arbitrary: a b)
   qed
 qed simp
 
-definition eindex_step :: "bool list \<Rightarrow> event_data tuple \<Rightarrow>
-    (event_data tuple, event_data tuple list) mapping \<Rightarrow>
-    (event_data tuple, event_data tuple list) mapping" where
-  "eindex_step msk b m = (let k = eproj msk b in
+definition gindex_step :: "bool list \<Rightarrow> 'b list \<Rightarrow>
+    ('b list, 'b list list) mapping \<Rightarrow> ('b list, 'b list list) mapping" where
+  "gindex_step msk b m = (let k = eproj msk b in
      (case Mapping.lookup m k of None \<Rightarrow> Mapping.update k [b] m
       | Some l \<Rightarrow> Mapping.update k (b # l) m))"
 
-definition eindex :: "bool list \<Rightarrow> event_data table \<Rightarrow>
-    (event_data tuple, event_data tuple list) mapping" where
-  "eindex msk B = fold (eindex_step msk) (csl B) Mapping.empty"
+definition gindex :: "bool list \<Rightarrow> 'b :: ccompare list set \<Rightarrow>
+    ('b list, 'b list list) mapping" where
+  "gindex msk B = fold (gindex_step msk) (csl B) Mapping.empty"
 
-definition eprobe_step :: "mrg list \<Rightarrow> bool list \<Rightarrow>
-    (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
-    event_data table \<Rightarrow> event_data table" where
-  "eprobe_step p msk m a acc = (case Mapping.lookup m (eproj msk a) of
+definition gprobe_step :: "mrg list \<Rightarrow> bool list \<Rightarrow>
+    ('b list, 'b list list) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
+  "gprobe_step p msk m a acc = (case Mapping.lookup m (eproj msk a) of
       None \<Rightarrow> acc
     | Some l \<Rightarrow> fold (\<lambda>b acc. Set.insert (emerge p a b) acc) l acc)"
 
-definition eprobe_step_l :: "mrg list \<Rightarrow> bool list \<Rightarrow>
-    (event_data tuple, event_data tuple list) mapping \<Rightarrow> event_data tuple \<Rightarrow>
-    event_data table \<Rightarrow> event_data table" where
-  "eprobe_step_l p rk m y acc = (case Mapping.lookup m (eproj rk y) of
+definition gprobe_step_l :: "mrg list \<Rightarrow> bool list \<Rightarrow>
+    ('b list, 'b list list) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
+  "gprobe_step_l p rk m y acc = (case Mapping.lookup m (eproj rk y) of
       None \<Rightarrow> acc
     | Some l \<Rightarrow> fold (\<lambda>x acc. Set.insert (emerge p x y) acc) l acc)"
 
@@ -593,12 +590,12 @@ text \<open>The index is built on the smaller side and the larger one probes it:
   lookup per tuple of the indexed side and probing one per tuple of the other, so indexing the
   larger side buys a big index that is read a few times.\<close>
 
-definition egen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool list \<Rightarrow>
-    event_data table \<Rightarrow> event_data table \<Rightarrow> event_data table" where
-  "egen_join p lk rk A B =
+definition ggen_join :: "mrg list \<Rightarrow> bool list \<Rightarrow> bool list \<Rightarrow>
+    'b :: ccompare list set \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
+  "ggen_join p lk rk A B =
      (if card A \<le> card B
-      then (let m = eindex lk A in fold (eprobe_step_l p rk m) (csl B) empty_table)
-      else (let m = eindex rk B in fold (eprobe_step p lk m) (csl A) empty_table))"
+      then (let m = gindex lk A in fold (gprobe_step_l p rk m) (csl B) {})
+      else (let m = gindex rk B in fold (gprobe_step p lk m) (csl A) {}))"
 
 definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Rightarrow>
     event_data tuple \<Rightarrow> event_data tuple list" where
@@ -607,43 +604,43 @@ definition bucket :: "(event_data tuple, event_data tuple list) mapping \<Righta
 lemma fold_insert_image: "fold (\<lambda>b acc. Set.insert (f b) acc) l acc = f ` set l \<union> acc"
   by (induct l arbitrary: acc) auto
 
-lemma bucket_eindex_step:
-  "bucket (eindex_step msk x m) k = (if eproj msk x = k then x # bucket m k else bucket m k)"
-  by (auto simp: bucket_def eindex_step_def Let_def Mapping.lookup_update'
+lemma bucket_gindex_step:
+  "bucket (gindex_step msk x m) k = (if eproj msk x = k then x # bucket m k else bucket m k)"
+  by (auto simp: bucket_def gindex_step_def Let_def Mapping.lookup_update'
       split: option.splits)
 
-lemma eindex_fold_lookup:
-  "set (bucket (fold (eindex_step msk) xs m) k)
+lemma gindex_fold_lookup:
+  "set (bucket (fold (gindex_step msk) xs m) k)
    = {b \<in> set xs. eproj msk b = k} \<union> set (bucket m k)"
-  by (induct xs arbitrary: m) (auto simp: bucket_eindex_step)
+  by (induct xs arbitrary: m) (auto simp: bucket_gindex_step)
 
-lemma eindex_lookup:
+lemma gindex_lookup:
   assumes "set (csl B) = B"
-  shows "set (bucket (eindex msk B) k) = {b \<in> B. eproj msk b = k}"
-  using eindex_fold_lookup[of msk "csl B" Mapping.empty k] assms
-  by (simp add: eindex_def bucket_def)
+  shows "set (bucket (gindex msk B) k) = {b \<in> B. eproj msk b = k}"
+  using gindex_fold_lookup[of msk "csl B" Mapping.empty k] assms
+  by (simp add: gindex_def bucket_def)
 
 lemma eprobe_fold:
-  "fold (eprobe_step p lk m) xs acc
+  "fold (gprobe_step p lk m) xs acc
    = acc \<union> (\<Union>a \<in> set xs. (\<lambda>b. emerge p a b) ` set (bucket m (eproj lk a)))"
   by (induct xs arbitrary: acc)
-    (auto simp: eprobe_step_def bucket_def fold_insert_image split: option.splits)
+    (auto simp: gprobe_step_def bucket_def fold_insert_image split: option.splits)
 
 lemma eprobe_l_fold:
-  "fold (eprobe_step_l p rk m) ys acc
+  "fold (gprobe_step_l p rk m) ys acc
    = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. emerge p x y) ` set (bucket m (eproj rk y)))"
   by (induct ys arbitrary: acc)
-    (auto simp: eprobe_step_l_def bucket_def fold_insert_image split: option.splits)
+    (auto simp: gprobe_step_l_def bucket_def fold_insert_image split: option.splits)
 
 text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
   columns, merged.\<close>
 
-lemma egen_join_eq:
+lemma ggen_join_eq:
   assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
-  shows "egen_join p lk rk A B
+  shows "ggen_join p lk rk A B
        = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
-  by (auto simp: egen_join_def Let_def eprobe_fold eprobe_l_fold empty_table_def
-      eindex_lookup[OF cA] eindex_lookup[OF cB] cA cB) force
+  by (auto simp: ggen_join_def Let_def eprobe_fold eprobe_l_fold empty_table_def
+      gindex_lookup[OF cA] gindex_lookup[OF cB] cA cB) force
 
 lemma set_option_ejoin1:
   "length a = length (filter (\<lambda>m. m \<noteq> MRgt) p) \<Longrightarrow>
@@ -660,7 +657,7 @@ theorem etabc_gen_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
     and t1: "table ks1 T" and t2: "table ks2 T'"
     and fT: "finite T" and fT': "finite T'"
-  shows "egen_join (mrg_plan cs1 cs2) (mrg_left_key (mrg_plan cs1 cs2))
+  shows "ggen_join (mrg_plan cs1 cs2) (mrg_left_key (mrg_plan cs1 cs2))
            (mrg_right_key (mrg_plan cs1 cs2)) (etabc ks1 cs1 T) (etabc ks2 cs2 T')
        = etabc (cols_union ks1 ks2) (merge_cols cs1 cs2) (join ks1 T True ks2 T')"
 proof -
@@ -669,9 +666,9 @@ proof -
     by (auto simp: etabc_def length_filter_mrg_plan_left)
   have lb: "\<And>b. b \<in> etabc ks2 cs2 T' \<Longrightarrow> length b = length (filter (\<lambda>m. m \<noteq> MLft) ?p)"
     by (auto simp: etabc_def length_filter_mrg_plan_right)
-  have "egen_join ?p (mrg_left_key ?p) (mrg_right_key ?p) (etabc ks1 cs1 T) (etabc ks2 cs2 T')
+  have "ggen_join ?p (mrg_left_key ?p) (mrg_right_key ?p) (etabc ks1 cs1 T) (etabc ks2 cs2 T')
       = (\<Union>a \<in> etabc ks1 cs1 T. \<Union>b \<in> etabc ks2 cs2 T'. set_option (ejoin1 ?p a b))"
-    unfolding egen_join_eq[OF set_csl_etabc[OF fT] set_csl_etabc[OF fT']]
+    unfolding ggen_join_eq[OF set_csl_etabc[OF fT] set_csl_etabc[OF fT']]
     by (auto simp: set_option_ejoin1[OF la lb] split: if_splits)
   also have "\<dots> = etabc (cols_union ks1 ks2) (merge_cols cs1 cs2) (join ks1 T True ks2 T')"
     by (rule etabc_join[OF f1 f2 t1, symmetric])
@@ -697,36 +694,35 @@ definition mk_djoin :: "cols \<Rightarrow> cols \<Rightarrow> ejoin_plan" where
        else if no_left p then EJSup (mrg_right_key p)
        else EJGen p (mrg_left_key p) (mrg_right_key p)))"
 
-fun ebin_join0 :: "ejoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
-    event_data table" where
-  "ebin_join0 EJEq A pos B = (if pos then A \<inter> B else A - B)"
-| "ebin_join0 EJEmp A pos B = (if pos = ([] \<in> B) then A else empty_table)"
-| "ebin_join0 (EJSub msk) A pos B = esemi msk pos A B"
-| "ebin_join0 (EJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. eproj msk b \<in> A) B else A)"
-| "ebin_join0 (EJGen p lk rk) A pos B = (if pos then egen_join p lk rk A B else A)"
+fun gbin_join0 :: "ejoin_plan \<Rightarrow> 'b :: ccompare list set \<Rightarrow> bool \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
+  "gbin_join0 EJEq A pos B = (if pos then A \<inter> B else A - B)"
+| "gbin_join0 EJEmp A pos B = (if pos = ([] \<in> B) then A else {})"
+| "gbin_join0 (EJSub msk) A pos B = esemi msk pos A B"
+| "gbin_join0 (EJSup msk) A pos B = (if pos then Set.filter (\<lambda>b. eproj msk b \<in> A) B else A)"
+| "gbin_join0 (EJGen p lk rk) A pos B = (if pos then ggen_join p lk rk A B else A)"
 
-definition ebin_join :: "ejoin_plan \<Rightarrow> event_data table \<Rightarrow> bool \<Rightarrow> event_data table \<Rightarrow>
-    event_data table" where
-  "ebin_join pl A pos B = (if Set.is_empty A then empty_table
-     else if Set.is_empty B then (if pos then empty_table else A)
-     else ebin_join0 pl A pos B)"
+definition gbin_join :: "ejoin_plan \<Rightarrow> 'b :: ccompare list set \<Rightarrow> bool \<Rightarrow> 'b list set \<Rightarrow>
+    'b list set" where
+  "gbin_join pl A pos B = (if Set.is_empty A then {}
+     else if Set.is_empty B then (if pos then {} else A)
+     else gbin_join0 pl A pos B)"
 
 text \<open>Every shape of the plan computes the short form of the kernel's join.  A negative join
   needs the right operand's columns among the left's, which is what the safety condition of
   @{text "\<phi> AND NOT \<psi>"} provides; the other shapes then arise only for a positive join.\<close>
 
-theorem ebin_join0_join:
+theorem gbin_join0_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
     and t1: "table ks1 T" and t2: "table ks2 T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
     and fT: "finite T" and fT': "finite T'"
-  shows "ebin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
+  shows "gbin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
        = etabc (cols_union ks1 ks2) (merge_cols cs1 cs2) (join ks1 T pos ks2 T')"
 proof (cases "cs1 = cs2")
   case True
   then have f2': "eframe ks2 cs1" using f2 by simp
   have sub: "set cs2 \<subseteq> set cs1" using True by simp
-  have "ebin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
+  have "gbin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
       = (if pos then etabc ks1 cs1 T \<inter> etabc ks2 cs1 T' else etabc ks1 cs1 T - etabc ks2 cs1 T')"
     using True by (simp add: mk_djoin_def)
   also have "\<dots> = etabc ks1 cs1 (join ks1 T pos ks2 T')"
@@ -740,7 +736,7 @@ next
     case True
     then have k2: "ks2 = []" using f2 by (simp add: eframe_def)
     then have tt: "table [] T'" using t2 by simp
-    have "ebin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
+    have "gbin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
         = (if pos = ([] \<in> etabc [] [] T') then etabc ks1 cs1 T else {})"
       using ne True k2 by (simp add: mk_djoin_def empty_table_def)
     also have "\<dots> = etabc ks1 cs1 (join ks1 T pos [] T')" by (rule etabc_join_no_cols[OF f1 t1 tt])
@@ -775,17 +771,17 @@ next
   qed
 qed
 
-theorem ebin_join_join:
+theorem gbin_join_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
     and t1: "table ks1 T" and t2: "table ks2 T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
     and fT: "finite T" and fT': "finite T'"
-  shows "ebin_join (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
+  shows "gbin_join (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
        = etabc (cols_union ks1 ks2) (merge_cols cs1 cs2) (join ks1 T pos ks2 T')"
 proof (cases "T = {}")
   case True
   then show ?thesis
-    by (cases pos) (simp_all add: ebin_join_def etabc_empty_iff join_False_code empty_table_def)
+    by (cases pos) (simp_all add: gbin_join_def etabc_empty_iff join_False_code empty_table_def)
 next
   case T: False
   show ?thesis
@@ -796,12 +792,12 @@ next
       case False
       then have sub: "set cs2 \<subseteq> set cs1" by (rule neg)
       show ?thesis using T True False etabc_join_sub_res[OF f1 f2 sub]
-        by (simp add: ebin_join_def etabc_empty_iff join_False_code empty_table_def)
-    qed (use T True in \<open>simp add: ebin_join_def etabc_empty_iff empty_table_def\<close>)
+        by (simp add: gbin_join_def etabc_empty_iff join_False_code empty_table_def)
+    qed (use T True in \<open>simp add: gbin_join_def etabc_empty_iff empty_table_def\<close>)
   next
     case False
     then show ?thesis using T
-      by (simp add: ebin_join_def etabc_empty_iff ebin_join0_join[OF f1 f2 t1 t2 neg fT fT'])
+      by (simp add: gbin_join_def etabc_empty_iff gbin_join0_join[OF f1 f2 t1 t2 neg fT fT'])
   qed
 qed
 
@@ -824,17 +820,17 @@ fun eands_cols :: "cols \<Rightarrow> cols list \<Rightarrow> cols" where
   "eands_cols acc [] = acc"
 | "eands_cols acc (c # cs) = eands_cols (merge_cols acc c) cs"
 
-fun eands_pos :: "ejoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
-    event_data table" where
-  "eands_pos [] t us = t"
-| "eands_pos (p # ps) t [] = t"
-| "eands_pos (p # ps) t (u # us) = eands_pos ps (ebin_join p t True u) us"
+fun gands_pos :: "ejoin_plan list \<Rightarrow> 'b :: ccompare list set \<Rightarrow> 'b list set list \<Rightarrow>
+    'b list set" where
+  "gands_pos [] t us = t"
+| "gands_pos (p # ps) t [] = t"
+| "gands_pos (p # ps) t (u # us) = gands_pos ps (gbin_join p t True u) us"
 
-fun eands_neg :: "ejoin_plan list \<Rightarrow> event_data table \<Rightarrow> event_data table list \<Rightarrow>
-    event_data table" where
-  "eands_neg [] t us = t"
-| "eands_neg (p # ps) t [] = t"
-| "eands_neg (p # ps) t (u # us) = eands_neg ps (ebin_join p t False u) us"
+fun gands_neg :: "ejoin_plan list \<Rightarrow> 'b :: ccompare list set \<Rightarrow> 'b list set list \<Rightarrow>
+    'b list set" where
+  "gands_neg [] t us = t"
+| "gands_neg (p # ps) t [] = t"
+| "gands_neg (p # ps) t (u # us) = gands_neg ps (gbin_join p t False u) us"
 
 text \<open>The kernel's tables of the same folds, over the kernel's column orders.\<close>
 
@@ -913,10 +909,10 @@ proof (induct us arbitrary: t)
   show ?case using Cons(1)[OF Cons(2) tj] Cons(4) by (auto simp: ku j)
 qed simp
 
-theorem eands_pos_dtabc:
+theorem gands_pos_dtabc:
   assumes "eframe acc c" and "table acc T" and "finite T"
     and "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Us"
-  shows "eands_pos (eands_plans c (map snd kcs)) (etabc acc c T) (map2 (\<lambda>(k, c). etabc k c) kcs Us)
+  shows "gands_pos (eands_plans c (map snd kcs)) (etabc acc c T) (map2 (\<lambda>(k, c). etabc k c) kcs Us)
        = etabc (kands_cols acc (map fst kcs)) (eands_cols c (map snd kcs)) (kands_pos acc T (zip (map fst kcs) Us))"
   using assms
 proof (induct kcs arbitrary: acc c T Us)
@@ -926,9 +922,9 @@ proof (induct kcs arbitrary: acc c T Us)
     and rest: "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Us'"
     by (cases Us) (auto simp: kc)
   have f': "eframe k c'" and tU: "table k U" and fU: "finite U" using wf by (auto simp: wf_operand_def)
-  have j: "ebin_join (mk_djoin c c') (etabc acc c T) True (etabc k c' U)
+  have j: "gbin_join (mk_djoin c c') (etabc acc c T) True (etabc k c' U)
       = etabc (cols_union acc k) (merge_cols c c') (join acc T True k U)"
-    by (rule ebin_join_join[OF Cons(2) f' Cons(3) tU _ Cons(4) fU]) simp
+    by (rule gbin_join_join[OF Cons(2) f' Cons(3) tU _ Cons(4) fU]) simp
   have t: "table (cols_union acc k) (join acc T True k U)"
     using Cons(3) tU by (intro join_table) auto
   show ?case
@@ -936,10 +932,10 @@ proof (induct kcs arbitrary: acc c T Us)
     by (simp add: j)
 qed simp
 
-theorem eands_neg_dtabc:
+theorem gands_neg_dtabc:
   assumes "eframe acc c" and "table acc T" and "finite T"
     and "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Vs" and "\<forall>c' \<in> set (map snd kcs). set c' \<subseteq> set c"
-  shows "eands_neg (eands_plans c (map snd kcs)) (etabc acc c T) (map2 (\<lambda>(k, c). etabc k c) kcs Vs)
+  shows "gands_neg (eands_plans c (map snd kcs)) (etabc acc c T) (map2 (\<lambda>(k, c). etabc k c) kcs Vs)
        = etabc acc c (kands_neg acc T (zip (map fst kcs) Vs))"
   using assms
 proof (induct kcs arbitrary: T Vs)
@@ -951,9 +947,9 @@ proof (induct kcs arbitrary: T Vs)
   have f': "eframe k c'" and tV: "table k V" and fV: "finite V" using wf by (auto simp: wf_operand_def)
   have sub: "set c' \<subseteq> set c" using Cons(6) kc by simp
   note res = etabc_join_sub_res[OF Cons(2) f' sub]
-  have j: "ebin_join (mk_djoin c c') (etabc acc c T) False (etabc k c' V)
+  have j: "gbin_join (mk_djoin c c') (etabc acc c T) False (etabc k c' V)
       = etabc acc c (join acc T False k V)"
-    using ebin_join_join[OF Cons(2) f' Cons(3) tV _ Cons(4) fV, of False] sub res by simp
+    using gbin_join_join[OF Cons(2) f' Cons(3) tV _ Cons(4) fV, of False] sub res by simp
   have t: "table acc (join acc T False k V)"
     using Cons(3) tV sub Cons(2) f' by (intro join_table) (auto simp: eframe_def res)
   show ?case
@@ -2027,10 +2023,10 @@ section \<open>The multi-way join the monitor runs\<close>
 text \<open>This is the shape the evaluator calls: one plan list for the positive operands, one for
   the negative ones, and the operand tables as a single list.\<close>
 
-definition emulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Rightarrow>
-    event_data table list \<Rightarrow> event_data table" where
-  "emulti_join ps ns us = (case us of [] \<Rightarrow> empty_table
-     | t # r \<Rightarrow> eands_neg ns (eands_pos ps t (take (length ps) r)) (drop (length ps) r))"
+definition gmulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Rightarrow> 'b :: ccompare list set list \<Rightarrow>
+    'b list set" where
+  "gmulti_join ps ns us = (case us of [] \<Rightarrow> {}
+     | t # r \<Rightarrow> gands_neg ns (gands_pos ps t (take (length ps) r)) (drop (length ps) r))"
 
 lemma length_eands_plans[simp]: "length (eands_plans acc css) = length css"
   by (induct css arbitrary: acc) auto
@@ -2051,13 +2047,13 @@ lemma wf_operands_zip:
   using assms by (auto simp: list_all2_conv_all_nth set_zip wf_operand_def case_prod_beta
       eframe_def)
 
-theorem emulti_join_eq:
+theorem gmulti_join_eq:
   assumes f0: "eframe k0 c0" and t0: "table k0 T0" and fT0: "finite T0"
     and pos: "list_all2 (\<lambda>(k, c) U. wf_operand k c U) kcs Us"
     and neg: "list_all2 (\<lambda>(k, c) U. wf_operand k c U) nkcs Vs"
     and sub: "\<forall>c \<in> set (map snd nkcs). set c \<subseteq> set (eands_cols c0 (map snd kcs))"
     and cs: "distinct cs" "set cs = set (kands_cols k0 (map fst kcs))"
-  shows "emulti_join (eands_plans c0 (map snd kcs))
+  shows "gmulti_join (eands_plans c0 (map snd kcs))
            (eands_plans (eands_cols c0 (map snd kcs)) (map snd nkcs))
            (map2 (\<lambda>(k, c). etabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs))
        = etabc cs (eands_cols c0 (map snd kcs))
@@ -2088,18 +2084,18 @@ proof -
   have m: "map2 (\<lambda>(k, c). etabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs)
       = etabc k0 c0 T0 # (map2 (\<lambda>(k, c). etabc k c) kcs Us @ map2 (\<lambda>(k, c). etabc k c) nkcs Vs)"
     by (simp add: map2_append[OF lp])
-  have "emulti_join (eands_plans c0 (map snd kcs)) (eands_plans ?C (map snd nkcs))
+  have "gmulti_join (eands_plans c0 (map snd kcs)) (eands_plans ?C (map snd nkcs))
           (map2 (\<lambda>(k, c). etabc k c) ((k0, c0) # kcs @ nkcs) ((T0 # Us) @ Vs))
-      = eands_neg (eands_plans ?C (map snd nkcs))
-          (eands_pos (eands_plans c0 (map snd kcs)) (etabc k0 c0 T0)
+      = gands_neg (eands_plans ?C (map snd nkcs))
+          (gands_pos (eands_plans c0 (map snd kcs)) (etabc k0 c0 T0)
             (map2 (\<lambda>(k, c). etabc k c) kcs Us))
           (map2 (\<lambda>(k, c). etabc k c) nkcs Vs)"
-    unfolding emulti_join_def m using lp by simp
-  also have "\<dots> = eands_neg (eands_plans ?C (map snd nkcs)) (etabc ?K ?C ?P)
+    unfolding gmulti_join_def m using lp by simp
+  also have "\<dots> = gands_neg (eands_plans ?C (map snd nkcs)) (etabc ?K ?C ?P)
       (map2 (\<lambda>(k, c). etabc k c) nkcs Vs)"
-    by (simp only: eands_pos_dtabc[OF f0 t0 fT0 pos])
+    by (simp only: gands_pos_dtabc[OF f0 t0 fT0 pos])
   also have "\<dots> = etabc ?K ?C (kands_neg ?K ?P (zip (map fst nkcs) Vs))"
-    by (rule eands_neg_dtabc[OF fK tP fP neg sub])
+    by (rule gands_neg_dtabc[OF fK tP fP neg sub])
   also have "\<dots> = etabc cs ?C (restrict cs ?K ` kands_neg ?K ?P (zip (map fst nkcs) Vs))"
   proof -
     have "table ?K (kands_neg ?K ?P (zip (map fst nkcs) Vs))"

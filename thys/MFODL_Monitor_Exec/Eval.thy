@@ -960,7 +960,7 @@ lemma etres_join:
   assumes fK: "eframe ks cs" and fR: "eframe kR cR" and sub: "set kR \<subseteq> set ks"
     and t: "ftable ks a" and r: "etres kR cR p q"
   shows "(case q of None \<Rightarrow> etabc ks cs a
-        | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) (etabc ks cs a) True z)
+        | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) (etabc ks cs a) True z)
       = etabc ks cs (bin_join ks a True (fst p) (snd p))"
 proof (cases q)
   case None
@@ -975,9 +975,9 @@ next
   then have fp: "fst p = kR" and tp: "ftable kR (snd p)"
     and d: "d = etabc kR cR (snd p)" using r by (auto simp: etres_def)
   have sc: "set cR \<subseteq> set cs" using sub eframeD(3)[OF fK] eframeD(3)[OF fR] by simp
-  have "ebin_join (mk_djoin cs cR) (etabc ks cs a) True (etabc kR cR (snd p))
+  have "gbin_join (mk_djoin cs cR) (etabc ks cs a) True (etabc kR cR (snd p))
       = etabc (cols_union ks kR) (merge_cols cs cR) (join ks a True kR (snd p))"
-    by (rule ebin_join_join[OF fK fR _ _ _ _ _]) (use t tp in auto)
+    by (rule gbin_join_join[OF fK fR _ _ _ _ _]) (use t tp in auto)
   moreover have "bin_join ks a True kR (snd p) = join ks a True kR (snd p)"
     by (rule bin_join_table[OF eframeD(1)[OF fK] eframeD(1)[OF fR] conjunct1[OF t] conjunct1[OF tp]])
   ultimately show ?thesis using Some fp d
@@ -1041,7 +1041,7 @@ lemma eandbuf_take:
     and bf: "eandbuf ks cs kR cR buf dbuf"
     and t: "mbuf2_take (\<lambda>r1 (V, r2). bin_join ks r1 True V r2) buf = (zs, buf')"
   shows "\<exists>dbuf'. mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
-        | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) r1 True z) dbuf
+        | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) r1 True z) dbuf
       = (map (etabc ks cs) zs, dbuf') \<and> eandbuf ks cs kR cR buf' dbuf'"
 proof -
   obtain b1 b2 where bu: "buf = (b1, b2)" by (cases buf)
@@ -1050,23 +1050,23 @@ proof -
     and q: "list_all2 (etres kR cR) b2 (snd dbuf)"
     using bf bu by (auto simp: eandbuf_def)
   have eq: "\<And>a p q. a \<in> set b1 \<Longrightarrow> etres kR cR p q \<Longrightarrow>
-      (case q of None \<Rightarrow> etabc ks cs a | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) (etabc ks cs a) True z)
+      (case q of None \<Rightarrow> etabc ks cs a | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) (etabc ks cs a) True z)
         = etabc ks cs ((\<lambda>r1 (V, r2). bin_join ks r1 True V r2) a p)"
   proof -
     fix a p q assume au: "a \<in> set b1" and dr: "etres kR cR p q"
     have ta: "ftable ks a" using l1 au by (simp add: list_all_iff)
     show "(case q of None \<Rightarrow> etabc ks cs a
-          | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) (etabc ks cs a) True z)
+          | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) (etabc ks cs a) True z)
         = etabc ks cs ((\<lambda>r1 (V, r2). bin_join ks r1 True V r2) a p)"
       using etres_join[OF fK fR sub ta dr] by (simp add: case_prod_beta)
   qed
   obtain dys' where r: "mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
-        | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) r1 True z) (map (etabc ks cs) b1, snd dbuf)
+        | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) r1 True z) (map (etabc ks cs) b1, snd dbuf)
       = (map (etabc ks cs) zs, (map (etabc ks cs) c1, dys'))"
     and q': "list_all2 (etres kR cR) c2 dys'"
     using mbuf2_take_rel2[where h = "etabc ks cs" and m = "etabc ks cs"
         and Q = "etres kR cR" and f = "\<lambda>r1 (V, r2). bin_join ks r1 True V r2"
-        and g = "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> ebin_join (mk_djoin cs cR) r1 True z"
+        and g = "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> gbin_join (mk_djoin cs cR) r1 True z"
         and xs = b1 and ys = b2 and dys = "snd dbuf" and zs = zs and xs' = c1 and ys' = c2,
         OF eq q t[unfolded bu bu']] by blast
   have sc: "set c1 \<subseteq> set b1" using mbuf2_take_sub t bu bu' by blast
@@ -2104,7 +2104,7 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
 qed
 
 text \<open>One firing of the multi-way join: the operands at their own columns, split into the
-  positive and the negative ones, as @{thm [source] emulti_join_eq} takes them.\<close>
+  positive and the negative ones, as @{thm [source] gmulti_join_eq} takes them.\<close>
 
 lemma map2_zip_etabcs:
   "length K = length as \<Longrightarrow> length C = length as \<Longrightarrow>
@@ -2119,7 +2119,7 @@ lemma eands_step:
     and las: "length as = length (c0 # css @ nss)"
     and mas: "\<forall>i < length (c0 # css @ nss). ftable ((k0 # kss @ nkss) ! i) (as ! i)"
   shows "etabc ks (eands_cols c0 css) (mmulti_join ks (k0 # kss) nkss as)
-    = emulti_join (eands_plans c0 css) (eands_plans (eands_cols c0 css) nss)
+    = gmulti_join (eands_plans c0 css) (eands_plans (eands_cols c0 css) nss)
         (etabcs (k0 # kss @ nkss) (c0 # css @ nss) as)"
 proof -
   obtain T0 r where a0: "as = T0 # r" using las by (cases as) auto
@@ -2149,12 +2149,12 @@ proof -
     by (rule eframe_eands_cols[OF _ f0]) (use lk fp in \<open>auto simp: list_all2_conv_all_nth\<close>)
   have cs: "distinct ks" "set ks = set (kands_cols k0 (map fst (zip kss css)))"
     using eframeD(1,3)[OF fK] eframeD(3)[OF fd] lk by simp_all
-  have DJ: "emulti_join (eands_plans c0 (map snd (zip kss css)))
+  have DJ: "gmulti_join (eands_plans c0 (map snd (zip kss css)))
         (eands_plans (eands_cols c0 (map snd (zip kss css))) (map snd (zip nkss nss)))
         (map2 (\<lambda>(k, c). etabc k c) ((k0, c0) # zip kss css @ zip nkss nss) ((T0 # Us) @ Vs))
       = etabc ks (eands_cols c0 (map snd (zip kss css)))
           (mmulti_join ks (k0 # map fst (zip kss css)) (map fst (zip nkss nss)) ((T0 # Us) @ Vs))"
-    by (rule emulti_join_eq[OF f0 t0 fT0 pos neg sub cs])
+    by (rule gmulti_join_eq[OF f0 t0 fT0 pos neg sub cs])
   have z: "(k0, c0) # zip kss css @ zip nkss nss = zip (k0 # kss @ nkss) (c0 # css @ nss)"
     using lk by simp
   have "map2 (\<lambda>(k, c). etabc k c) ((k0, c0) # zip kss css @ zip nkss nss) as
@@ -2437,19 +2437,19 @@ next
   have tb: "list_all (ftable k2) bs"
     by (rule produces_tables[OF esim_produces[OF sim2] w sts mts e2])
   have step: "\<And>a b. ftable k1 a \<Longrightarrow> ftable k2 b \<Longrightarrow>
-      ebin_join pl (etabc k1 c1 a) pos (etabc k2 c2 b) = etabc ks cs (bin_join k1 a pos k2 b)"
+      gbin_join pl (etabc k1 c1 a) pos (etabc k2 c2 b) = etabc ks cs (bin_join k1 a pos k2 b)"
   proof -
     fix a b :: "event_data table" assume a: "ftable k1 a" and b: "ftable k2 b"
     have "bin_join k1 a pos k2 b = join k1 a pos k2 b"
       by (rule bin_join_table[OF eframeD(1)[OF f1] eframeD(1)[OF f2] conjunct1[OF a] conjunct1[OF b]])
-    then show "ebin_join pl (etabc k1 c1 a) pos (etabc k2 c2 b) = etabc ks cs (bin_join k1 a pos k2 b)"
-      unfolding ple cse kse using ebin_join_join[OF f1 f2 _ _ neg] a b by simp
+    then show "gbin_join pl (etabc k1 c1 a) pos (etabc k2 c2 b) = etabc ks cs (bin_join k1 a pos k2 b)"
+      unfolding ple cse kse using gbin_join_join[OF f1 f2 _ _ neg] a b by simp
   qed
   obtain dbuf2' where dt: "mebuf2_take (\<lambda>r1 r2. gbin_join pl r1 pos r2)
         (mebuf2_add (map (etabc k1 c1) as) (map (etabc k2 c2) bs) dbuf)
       = (map (etabc ks cs) zs, dbuf2')"
     and bf': "ebuf2 k1 c1 k2 c2 buf2 (rbuf2 dbuf2')"
-    using ebuf2_estep[OF bf ta tb step[folded gbin_join_eq'] e3] by blast
+    using ebuf2_estep[OF bf ta tb step e3] by blast
   show ?case using d1 d2 dt bf' s1 s2 produces_next[OF pr w sts mts m] wf kse cse ple neg x f
     by (auto intro!: esim.EsAnd simp del: mebuf2_take.simps)
 next
@@ -2592,9 +2592,9 @@ next
     using la0 l2 by (auto dest: esim_dframe)
   have step: "\<And>as :: event_data table list. length as = length ?cs' \<Longrightarrow>
       (\<forall>i < length ?cs'. ftable (?ks' ! i) (as ! i)) \<Longrightarrow>
-      etabc ks cs (mmulti_join ks (k0 # kss) nkss as) = emulti_join ps ns (etabcs ?ks' ?cs' as)"
+      etabc ks cs (mmulti_join ks (k0 # kss) nkss as) = gmulti_join ps ns (etabcs ?ks' ?cs' as)"
     unfolding cse pse nse by (rule eands_step[OF fs lk lnk sb wf[unfolded cse]])
-  obtain dbuf' where dt: "mbufn_take (\<lambda>as zs. zs @ [emulti_join ps ns as])
+  obtain dbuf' where dt: "mbufn_take (\<lambda>as zs. zs @ [gmulti_join ps ns as])
         ([] :: event_data table list)
         (map Rep_mbuf_t (mebufn_add (map fst (map (eeval j ts db) Ld)) dbuf))
       = (map (etabc ks cs) zs, dbuf')"
@@ -3629,7 +3629,7 @@ next
       (rbufo (mebuf2_add (map (etabc ks cs) as) dws dbf1))"
     using badd0 by (simp only: mbuf2_add_rbufo)
   obtain dbf1' where d4: "mbuf2_take (\<lambda>r1 r2. case r2 of None \<Rightarrow> r1
-        | Some z \<Rightarrow> ebin_join pl r1 True z) (rbufo (mebuf2_add (map (etabc ks cs) as) dws dbf1))
+        | Some z \<Rightarrow> gbin_join pl r1 True z) (rbufo (mebuf2_add (map (etabc ks cs) as) dws dbf1))
       = (map (etabc ks cs) zs, dbf1')"
     and bf1': "eandbuf ks cs kR cR buf1' dbf1'"
     using eandbuf_take[OF wf fR subR badd e4] unfolding ple by blast
@@ -3637,8 +3637,8 @@ next
         | Some z \<Rightarrow> gbin_join pl r1 True z) (mebuf2_add (map (etabc ks cs) as) dws dbf1) = (zs', ub1)"
     by (metis surj_pair)
   have r1: "zs' = map (etabc ks cs) zs \<and> rbufo ub1 = dbf1'"
-    using eu1[unfolded gbin_join_eq'] d4 mbuf2_take_rbufo[of
-        "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> ebin_join pl r1 True z"
+    using eu1 d4 mbuf2_take_rbufo[of
+        "\<lambda>r1 r2. case r2 of None \<Rightarrow> r1 | Some z \<Rightarrow> gbin_join pl r1 True z"
         "mebuf2_add (map (etabc ks cs) as) dws dbf1"]
     by (simp del: mbuf2_take.simps mebuf2_take.simps)
   show ?case

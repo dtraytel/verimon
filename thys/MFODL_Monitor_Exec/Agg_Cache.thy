@@ -7,7 +7,7 @@ begin
 section \<open>The window's aggregate with its result table\<close>
 
 text \<open>
-  A fused aggregation over a past window (@{const usa_result}) reads its result at every time
+  A fused aggregation over a past window (@{const sa_result}) reads its result at every time
   point, and the read builds the table of all groups afresh from the aggregate's mapping, one
   insertion per group.  From one time point to the next only the groups of the tuples entering
   and leaving the window can change -- and for MIN and MAX few of those do.  This theory keeps the
@@ -18,8 +18,9 @@ text \<open>
   every value of the type and no invariant has to be carried through the evaluator.  The table is
   built for one node, its key: a structure built for a different constraint or aggregation is
   rebuilt by the first step.  The window over it, @{text uswaggc}, is the window of
-  @{theory MFODL_Monitor_Exec.Since_Agg_Exec} with the count set and the aggregate moved into
-  the new type, and it projects onto that window (@{text ucs}) with every operation commuting.
+  @{theory MFODL_Monitor_Exec.Since_Agg} with the count set over a mapping
+  (@{theory MFODL_Monitor_Exec.Since_Agg_Exec}) and the aggregate moved into the new type, and
+  it maps onto that window (@{text rsc}) with every operation commuting.
 
   The per-group reading rests on the result tuple of a group, @{text mkr}: the group with the
   aggregate inserted at the result's position, which determines the group and the value
@@ -1296,8 +1297,8 @@ subsection \<open>The window over it\<close>
 type_synonym uswaggc = "(ts \<times> (ts \<times> event_data list set) queue \<times> (ts \<times> event_data list set) queue) \<times>
   ucache"
 
-fun ucs :: "uswaggc \<Rightarrow> uswagg" where
-  "ucs ((t, pend, win), x) = ((t, pend, win, uc_cnt x), uc_ax x)"
+fun rsc :: "uswaggc \<Rightarrow> swagg" where
+  "rsc ((t, pend, win), x) = ((t, pend, win, ucc (uc_cnt x)), uc_ax x)"
 
 function usc_move :: "args \<Rightarrow> eaggp \<Rightarrow> uconstr option \<Rightarrow> ts \<Rightarrow> (ts \<times> event_data list set) queue \<Rightarrow>
     (ts \<times> event_data list set) queue \<Rightarrow> ucache \<Rightarrow>
@@ -1336,51 +1337,37 @@ termination
 
 declare usc_expire.simps[simp del]
 
-lemma usc_move: "usa_move args p nt pend win (uc_cnt x) (uc_ax x) =
-    (case usc_move args p q nt pend win x of (pend', win', x') \<Rightarrow> (pend', win', uc_cnt x', uc_ax x'))"
+lemma sa_move_rsc: "sa_move args p nt pend win (ucc (uc_cnt x)) (uc_ax x) =
+    (case usc_move args p q nt pend win x of (pend', win', x') \<Rightarrow> (pend', win', ucc (uc_cnt x'), uc_ax x'))"
 proof (induct args p q nt pend win x rule: usc_move.induct)
   case (1 args p q nt pend win x)
   obtain h pend' where hd: "safe_hd pend = (h, pend')" by (cases "safe_hd pend")
   show ?case
   proof (cases h)
     case None
-    then show ?thesis by (subst usa_move.simps, subst usc_move.simps) (simp add: hd)
+    then show ?thesis by (subst sa_move.simps, subst usc_move.simps) (simp add: hd)
   next
     case (Some e)
-    have IH1: "memL (args_ivl args) (nt - fst e) \<Longrightarrow> memR (args_ivl args) (nt - fst e) \<Longrightarrow>
-        usa_move args p nt (tl_queue pend') (append_queue e win)
-          (uc_cnt (uc_step_ins q p (args_n args) (snd e) x)) (uc_ax (uc_step_ins q p (args_n args) (snd e) x)) =
-        (case usc_move args p q nt (tl_queue pend') (append_queue e win) (uc_step_ins q p (args_n args) (snd e) x)
-         of (pend', win', x') \<Rightarrow> (pend', win', uc_cnt x', uc_ax x'))"
-      using 1(1)[OF hd[symmetric] Some] by blast
-    have IH2: "memL (args_ivl args) (nt - fst e) \<Longrightarrow> \<not> memR (args_ivl args) (nt - fst e) \<Longrightarrow>
-        usa_move args p nt (tl_queue pend') win (uc_cnt x) (uc_ax x) =
-        (case usc_move args p q nt (tl_queue pend') win x of (pend', win', x') \<Rightarrow> (pend', win', uc_cnt x', uc_ax x'))"
-      using 1(2)[OF hd[symmetric] Some] by blast
+    note IH = 1[OF hd[symmetric] Some]
     show ?thesis
-      using IH1 IH2 by (subst usa_move.simps, subst usc_move.simps) (simp add: hd Some)
+      using IH by (subst sa_move.simps, subst usc_move.simps) (simp add: hd Some)
   qed
 qed
 
-lemma usc_expire: "usa_expire args p nt win (uc_cnt x) (uc_ax x) =
-    (case usc_expire args p q nt win x of (win', x') \<Rightarrow> (win', uc_cnt x', uc_ax x'))"
+lemma sa_expire_rsc: "sa_expire args p nt win (ucc (uc_cnt x)) (uc_ax x) =
+    (case usc_expire args p q nt win x of (win', x') \<Rightarrow> (win', ucc (uc_cnt x'), uc_ax x'))"
 proof (induct args p q nt win x rule: usc_expire.induct)
   case (1 args p q nt win x)
   obtain h win' where hd: "safe_hd win = (h, win')" by (cases "safe_hd win")
   show ?case
   proof (cases h)
     case None
-    then show ?thesis by (subst usa_expire.simps, subst usc_expire.simps) (simp add: hd)
+    then show ?thesis by (subst sa_expire.simps, subst usc_expire.simps) (simp add: hd)
   next
     case (Some e)
-    have IH: "\<not> memR (args_ivl args) (nt - fst e) \<Longrightarrow>
-        usa_expire args p nt (tl_queue win') (uc_cnt (uc_step_del q p (args_n args) (snd e) x))
-          (uc_ax (uc_step_del q p (args_n args) (snd e) x)) =
-        (case usc_expire args p q nt (tl_queue win') (uc_step_del q p (args_n args) (snd e) x)
-         of (win', x') \<Rightarrow> (win', uc_cnt x', uc_ax x'))"
-      using 1[OF hd[symmetric] Some] by blast
+    note IH = 1[OF hd[symmetric] Some]
     show ?thesis
-      using IH by (subst usa_expire.simps, subst usc_expire.simps) (simp add: hd Some)
+      using IH by (subst sa_expire.simps, subst usc_expire.simps) (simp add: hd Some)
   qed
 qed
 
@@ -1407,33 +1394,29 @@ definition usc_add_new_table :: "args \<Rightarrow> eaggp \<Rightarrow> uconstr 
 definition usc_result :: "uconstr option \<Rightarrow> args \<Rightarrow> eaggp \<Rightarrow> uswaggc \<Rightarrow> event_data list set" where
   "usc_result q args p aux = (case aux of ((t, pend, win), x) \<Rightarrow> uc_res q p (args_n args) x)"
 
-lemma usc_init_ucs: "ucs (usc_init args p q) = usa_init args p"
-  by (simp add: usc_init_def usa_init_def usw_init_def)
+lemma sa_init_rsc: "sa_init args p = rsc (usc_init args p q)"
+  by (simp add: sa_init_def usc_init_def sw_init_def ucc.simps)
 
-lemma usc_add_new_ts_ucs: "ucs (usc_add_new_ts args p q nt aux) = usa_add_new_ts args p nt (ucs aux)"
+lemma sa_add_new_ts_rsc: "sa_add_new_ts args p nt (rsc aux) = rsc (usc_add_new_ts args p q nt aux)"
 proof -
   obtain t pend win x where aux: "aux = ((t, pend, win), x)" by (cases aux) auto
   obtain pend' win' x' where m: "usc_move args p q nt pend win x = (pend', win', x')"
     by (cases "usc_move args p q nt pend win x") auto
   obtain win'' x'' where e: "usc_expire args p q nt win' x' = (win'', x'')"
     by (cases "usc_expire args p q nt win' x'") auto
-  have "usa_move args p nt pend win (uc_cnt x) (uc_ax x) = (pend', win', uc_cnt x', uc_ax x')"
-    using usc_move[of args p nt pend win x q] m by simp
-  moreover have "usa_expire args p nt win' (uc_cnt x') (uc_ax x') = (win'', uc_cnt x'', uc_ax x'')"
-    using usc_expire[of args p nt win' x' q] e by simp
-  ultimately show ?thesis
-    by (simp add: aux m e usc_add_new_ts_def usa_add_new_ts_def)
+  show ?thesis
+    using sa_move_rsc[of args p nt pend win x q] sa_expire_rsc[of args p nt win' x' q]
+    by (simp add: aux m e sa_add_new_ts_def usc_add_new_ts_def)
 qed
 
-lemma usc_join_ucs: "ucs (usc_join args p q X aux) = usa_join args p X (ucs aux)"
-  by (cases aux) (auto simp: usc_join_def usa_join_def usw_join_def)
+lemma sa_join_rsc: "sa_join args p X (rsc aux) = rsc (usc_join args p q X aux)"
+  by (cases aux) (auto simp: sa_join_def sw_join_def usc_join_def ucc.simps)
 
-lemma usc_add_new_table_ucs:
-  "ucs (usc_add_new_table args p q X aux) = usa_add_new_table args p X (ucs aux)"
-  by (cases aux) (auto simp: usc_add_new_table_def usa_add_new_table_def)
+lemma sa_add_new_table_rsc: "sa_add_new_table args p X (rsc aux) = rsc (usc_add_new_table args p q X aux)"
+  by (cases aux) (auto simp: sa_add_new_table_def usc_add_new_table_def)
 
-lemma usc_result_ucs: "usc_result q args p aux = usa_result q args p (ucs aux)"
-  by (cases aux) (auto simp: usc_result_def usa_result_def uc_res)
+lemma sa_result_rsc: "ufilt q (sa_result args p (rsc aux)) = usc_result q args p aux"
+  by (cases aux) (auto simp: sa_result_def usc_result_def uc_res ag_res_ucc simp del: ag_res_ucc_None)
 
 (*<*)
 end
