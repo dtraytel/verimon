@@ -22,11 +22,9 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Frz_Locality
     Rewriting
     Safety
-    Slicing
     Progress
     Safety_Proofs
     Typing
-    Type_Soundness
     Optimized_Join
     Monitor
     Correct_Un_Ops
@@ -38,7 +36,6 @@ session MFODL_Monitor_Devel (AFP) = MFOTL_Monitor_Devel +
     Correct_Agg
     Correctness
     VeriMon
-    Sat
     Optimized_Agg
     Optimized_Common
     Optimized_Since
