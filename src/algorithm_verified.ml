@@ -79,10 +79,10 @@ let monitor_gen parse dbschema logfile fv f =
   assert (List.length fv_pos = List.length fv);
 
   let cf = Verified_adapter.convert_formula dbschema f in
-  let (cols, cur_state) =
+  let cur_state =
     Verified_adapter.init ~mw:(not !no_mw) ~rw:(not !Rewriting.no_rw) dbschema cf in
   let ctxt = Monitor.{
-    fv_pos = Verified_adapter.verdict_positions cols fv_pos;
+    fv_pos;
     cur_tp = 0;
     cur_ts = MFOTL.ts_invalid;
     cur_db = Verified_adapter.empty_db ();
@@ -96,7 +96,7 @@ let monitor_gen parse dbschema logfile fv f =
    log.  All three are generated code: the verified log parser, which skips the events of the
    predicates the signature declares but whose names do not occur freely in the formula (unless
    -nofilterrel) before they are even stored, the conversion of the timestamps and fields and
-   the construction of the monitor's databases, and the verified monitor (the kernel on the prepared formula).  Theorems
+   the construction of the monitor's databases, and the verified dense monitor.  Theorems
    verimon_log.vrun_log and vrun_filtered state that the verdicts output for the bytes of a log
    are those the specification of the formula prescribes for the prefix the log denotes, and
    that an error is reported exactly when the log restricted to the predicates it keeps denotes
@@ -133,18 +133,23 @@ let init_verified dbschema f =
   let cf = Verified_adapter.convert_formula dbschema f in
   let lsig = Verified_adapter.lsig_of_schema dbschema cf in
   let pf s = float_of_string_opt s in
+  let stats n =
+    if Sys.getenv_opt "MONPOLY_DENSE_STATS" <> None then
+      Printf.eprintf "[verified] nodes outside the verified dense fragment: %d\n%!" n in
   match VM.vinit (not !no_mw) (not !Rewriting.no_rw) !Filter_rel.enabled lsig pf cf with
-  | VM.Inr x -> x
+  | VM.Inr x -> stats 0; x
   | VM.Inl VM.VI_WF ->
       failwith "Error during the verified preparation of the formula: the formula is not well-formed"
   | VM.Inl (VM.VI_PREPARE e) -> failwith ("Error during the verified preparation of the formula: " ^ e)
+  | VM.Inl (VM.VI_FRAGMENT n) ->
+      stats (Verified_adapter.int_of_nat n);
+      failwith "the formula is outside the verified dense fragment"
 
 let run_verified dbschema fname read fv f =
   (* compute permutation for output tuples *)
   let fv_pos = List.map snd (Table.get_matches (MFOTL.free_vars f) fv) in
   assert (List.length fv_pos = List.length fv);
   let (conf, st) = init_verified dbschema f in
-  let fv_pos = Verified_adapter.verdict_positions (VM.vc_cols conf) fv_pos in
   let arities = Hashtbl.create 64 in
   List.iter (fun (p, tl) -> if not (Hashtbl.mem arities p) then Hashtbl.add arities p (List.length tl))
     dbschema;
