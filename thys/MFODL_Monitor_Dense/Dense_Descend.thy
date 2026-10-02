@@ -47,6 +47,19 @@ definition dnode_n :: "nat \<Rightarrow> args \<Rightarrow> nat" where
   "dnode_n n args = (case args_agg args of None \<Rightarrow> n
      | Some ag \<Rightarrow> length (aggargs_tys ag) + aggargs_n ag)"
 
+text \<open>A constraint over a fused aggregating Since becomes the node's guard rather than a filter
+  above it: the constraint is on the node's own columns, which are exactly the aggregation's, so
+  the groups that fail it never have to be built.  Nothing else takes a guard.\<close>
+
+fun dset_q :: "uconstr \<Rightarrow> dformula \<Rightarrow> dformula option" where
+  "dset_q c (DSince args \<phi> \<psi> buf aux) =
+     (case aux of UDSX_wagg p None a \<Rightarrow> Some (DSince args \<phi> \<psi> buf (UDSX_wagg p (Some c) a))
+      | _ \<Rightarrow> None)"
+| "dset_q c \<phi> = None"
+
+lemma vdfail_nodes_dset_q: "dset_q c d = Some d' \<Longrightarrow> vdfail_nodes d' = vdfail_nodes d"
+  by (cases d) (auto split: udsaux_x.splits option.splits)
+
 function (sequential) dof ::
     "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> (mmasaux, muaux_dq, event_data mmtaux) mformula \<Rightarrow> dformula" where
   "dof n ks cs (MRel rel) = DRel (dtabc ks cs rel)"
@@ -58,7 +71,8 @@ function (sequential) dof ::
       else DFail)"
 | "dof n ks cs (MAndRel k \<phi> conf) =
      (if k = ks \<and> Formula.fv_trm (fst conf) \<subseteq> set cs \<and> Formula.fv_trm (snd (snd (snd conf))) \<subseteq> set cs
-      then DAndRel (dof n ks cs \<phi>) (reindex_constraint cs conf)
+      then (let d = dof n ks cs \<phi>; c = reindex_constraint cs conf in
+        case dset_q c d of Some d' \<Rightarrow> d' | None \<Rightarrow> DAndRel d c)
       else DFail)"
 | "dof n ks cs (MNeg \<phi>) =
      (if ks = [] \<and> cs = [] then DNeg (dof n [] [] \<phi>) else DFail)"
@@ -68,15 +82,15 @@ function (sequential) dof ::
       then DExists (dof (Suc n) kks ccs \<phi>) (ex_drop0 ccs) else DFail)"
 | "dof n ks cs (MOr k1 \<phi> k2 \<psi> buf) =
      (if k1 = ks \<and> set k2 = set ks \<and> buf = ([], [])
-      then DOr (dof n ks cs \<phi>) (dof n k2 cs \<psi>) ([], []) else DFail)"
+      then DOr (dof n ks cs \<phi>) (dof n k2 cs \<psi>) (mbuf_t_empty, mbuf_t_empty) else DFail)"
 | "dof n ks cs (MAnd k1 \<phi> pos k2 \<psi> buf) =
      (let c1 = dcols k1; c2 = dcols k2 in
       if ks = cols_union k1 k2 \<and> cs = merge_cols c1 c2 \<and> (pos \<or> set k2 \<subseteq> set k1) \<and> buf = ([], [])
-      then DAnd (mk_djoin c1 c2) (dof n k1 c1 \<phi>) pos (dof n k2 c2 \<psi>) ([], [])
+      then DAnd (mk_djoin c1 c2) (dof n k1 c1 \<phi>) pos (dof n k2 c2 \<psi>) (mbuf_t_empty, mbuf_t_empty)
       else DFail)"
 | "dof n ks cs (MPrev I \<phi> first buf nts) =
-     (if buf = [] then DPrev I (dof n ks cs \<phi>) first [] nts else DFail)"
-| "dof n ks cs (MNext I \<phi> first nts) = DNext I (dof n ks cs \<phi>) first nts"
+     (if buf = [] then DPrev I (dof n ks cs \<phi>) first mbuf_t_empty (mbuf_t_empty @@ nts) else DFail)"
+| "dof n ks cs (MNext I \<phi> first nts) = DNext I (dof n ks cs \<phi>) first (mbuf_t_empty @@ nts)"
 | "dof n ks cs (MAnds k kpos kneg L buf) =
      (case kpos of [] \<Rightarrow> DFail
       | k0 # kss \<Rightarrow>
@@ -85,7 +99,7 @@ function (sequential) dof ::
             length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and>
             (\<forall>c \<in> set nss. set c \<subseteq> set (dands_cols c0 css))
          then DAnds (dands_plans c0 css) (dands_plans (dands_cols c0 css) nss)
-                (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip (kpos @ kneg) L)) (map (\<lambda>_. []) L)
+                (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip (kpos @ kneg) L)) (map (\<lambda>_. mbuf_t_empty) L)
          else DFail))"
 | "dof n ks cs (MAgg args \<phi>) =
      (let m = length (aggargs_tys args); k0 = aggargs_cols args; g = dagg_gcols args;
@@ -102,8 +116,8 @@ function (sequential) dof ::
       case args_agg args of
         None \<Rightarrow>
           (if args_n args = n \<and> ks = kR \<and> cs = cR \<and> set kL \<subseteq> set kR \<and> buf = init_mbuf2S
-           then DSince (dargs cR cL args) \<phi>d \<psi>d init_mbuf2S
-                  (dsx_init (dargs cR cL args) (dmsk cR cL))
+           then DSince (dargs cR cL args) \<phi>d \<psi>d init_mebuf2S
+                  (udsx_init (dargs cR cL args) (dmsk cR cL))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -111,14 +125,14 @@ function (sequential) dof ::
               agg_cols m g = cR \<and> ks = y # shift_cols m kR \<and> cs = merge_cols g [y] \<and>
               y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and> Formula.fv_trm (aggargs_f ag) \<subseteq> set kR
            then (if cpos cR (set cL) = {}
-                 then DSince (dargs cR cL args) \<phi>d \<psi>d init_mbuf2S
-                        (dsx_init_agg (dargs cR cL args)
+                 then DSince (dargs cR cL args) \<phi>d \<psi>d init_mebuf2S
+                        (udsx_init_agg (dargs cR cL args)
                           (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cR (aggargs_f ag),
-                           m, ins_pos g y))
+                           m, ins_pos g y) None)
                  else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cR (aggargs_f ag))
                         m (ins_pos g y)
-                        (DSince (dargs cR cL args) \<phi>d \<psi>d init_mbuf2S
-                          (dsx_init (dargs cR cL args) (dmsk cR cL))))
+                        (DSince (dargs cR cL args) \<phi>d \<psi>d init_mebuf2S
+                          (udsx_init (dargs cR cL args) (dmsk cR cL))))
            else DFail))"
 | "dof n ks cs (MUntil args \<phi> \<psi> buf nts t aux) =
      (let kL = args_L args; kR = args_R args; cL = dcols kL; cR = dcols kR;
@@ -127,8 +141,8 @@ function (sequential) dof ::
         None \<Rightarrow>
           (if args_n args = n \<and> ks = kR \<and> cs = cR \<and> set kL \<subseteq> set kR \<and>
               buf = ([], []) \<and> nts = [] \<and> t = 0
-           then DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d ([], []) [] 0
-                  (dux_init (dargs cR cL args))
+           then DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0
+                  (udux_init (dargs cR cL args))
            else DFail)
       | Some ag \<Rightarrow>
           (let m = length (aggargs_tys ag); g = dagg_gcols ag; y = aggargs_y ag in
@@ -136,14 +150,15 @@ function (sequential) dof ::
               agg_cols m g = cR \<and> ks = y # shift_cols m kR \<and> cs = merge_cols g [y] \<and>
               y \<notin> set g \<and> (aggargs_g0 ag \<longrightarrow> g = []) \<and> Formula.fv_trm (aggargs_f ag) \<subseteq> set kR
            then (if cpos cR (set cL) = {} \<and> memL (args_ivl args) 0
-                 then DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d ([], []) [] 0
-                        (dux_init_agg (dargs cR cL args)
+                 then DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
+                        mbuf_t_empty 0
+                        (udux_init_agg (dargs cR cL args)
                           (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cR (aggargs_f ag),
                            m, ins_pos g y))
                  else DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cR (aggargs_f ag))
                   m (ins_pos g y)
-                  (DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d ([], []) [] 0
-                    (dux_init (dargs cR cL args))))
+                  (DUntil (dargs cR cL args) (dmsk cR cL) \<phi>d \<psi>d (mbuf_t_empty, mbuf_t_empty)
+                    mbuf_t_empty 0 (udux_init (dargs cR cL args))))
            else DFail))"
 | "dof n ks cs (MAndAssign k0 \<phi> conf) =
      (let y = fst conf; t = snd conf; c0 = dcols k0 in
@@ -164,15 +179,15 @@ function (sequential) dof ::
       if ks = kR \<and> cs = dcols kR \<and> set kL \<subseteq> set kR \<and> mem (args_ivl args) 0 \<and>
          buf = ([], []) \<and> nts = []
       then DTrigger (dargs cs cL args) (emb_plan cs cL)
-             (dof n kL cL \<phi>) (dof n kR cs \<psi>) ([], []) []
+             (dof n kL cL \<phi>) (dof n kR cs \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
              (ginit_mmtaux (dargs cs cL args) (dmsk cs cL))
       else DFail)"
 | "dof n ks cs (MAndTrigger k \<alpha> buf1 args \<phi> \<psi> buf2 nts aux) =
      (let kL = args_L args; kR = args_R args; cR = dcols kR; cL = dcols kL in
       if k = ks \<and> set kR \<subseteq> set ks \<and> set kL \<subseteq> set kR \<and>
          tok cR cL args \<and> buf1 = ([], []) \<and> buf2 = ([], []) \<and> nts = []
-      then DAndTrigger (mk_djoin cs cR) (dof n ks cs \<alpha>) ([], []) (dargs cR cL args)
-             (dof n kL cL \<phi>) (dof n kR cR \<psi>) ([], []) []
+      then DAndTrigger (mk_djoin cs cR) (dof n ks cs \<alpha>) (mbuf_t_empty, mbuf_t_empty) (dargs cR cL args)
+             (dof n kL cL \<phi>) (dof n kR cR \<psi>) (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty
              (ginit_mmtaux (dargs cR cL args) (dmsk cR cL))
       else DFail)"
 | "dof n ks cs (MMatchP I k dss mr mrs L buf nts aux) =
@@ -180,14 +195,16 @@ function (sequential) dof ::
       if k = ks \<and> length dss = length L \<and> length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and>
          aux = [] \<and> (\<forall>c \<in> set css. set c \<subseteq> set cs)
       then DMatchP (length cs) I mr mrs (map (emb_plan cs) css)
-             (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip dss L)) (map (\<lambda>_. []) L) nts []
+             (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip dss L)) (map (\<lambda>_. mbuf_t_empty) L)
+             (mbuf_t_empty @@ nts) []
       else DFail)"
 | "dof n ks cs (MMatchF I k dss mr mrs L buf nts t aux) =
      (let css = map dcols dss in
       if k = ks \<and> length dss = length L \<and> length buf = length L \<and> (\<forall>b \<in> set buf. b = []) \<and>
          aux = [] \<and> (\<forall>c \<in> set css. set c \<subseteq> set cs)
       then DMatchF (length cs) I mr mrs (map (emb_plan cs) css)
-             (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip dss L)) (map (\<lambda>_. []) L) nts t []
+             (map (\<lambda>(k, \<phi>). dof n k (dcols k) \<phi>) (zip dss L)) (map (\<lambda>_. mbuf_t_empty) L)
+             (mbuf_t_empty @@ nts) t []
       else DFail)"
 | "dof n ks cs (MTP mt i) = (if ks = mtrm_dcols mt \<and> cs = ks then DTP mt i else DFail)"
 | "dof n ks cs (MTS mt) = (if ks = mtrm_dcols mt \<and> cs = ks then DTS mt else DFail)"
@@ -196,6 +213,26 @@ function (sequential) dof ::
 termination dof
   by (relation "measure (\<lambda>(n, ks, cs, \<phi>). size \<phi>)")
     (auto simp: termination_simp dest!: set_zip_rightD)
+
+text \<open>The structures the compiler starts the nodes with, read through their representations.\<close>
+
+lemma Rep_mbuf_t_empty[simp]: "Rep_mbuf_t mbuf_t_empty = []"
+  by (rule mbuf_t_empty.rep_eq)
+
+lemma Rep_mbuf_t_empty_append[simp]: "Rep_mbuf_t (mbuf_t_empty @@ xs) = xs"
+  by (simp add: mbuf_t_append.rep_eq)
+
+lemma rbufS_init[simp]: "rbufS init_mebuf2S = init_mbuf2S"
+  by simp
+
+lemma rdsx_udsx_init[simp]: "rdsx (udsx_init args msk) = dsx_init args msk"
+  by (rule dsx_init_rdsx[symmetric])
+
+lemma rdux_udux_init[simp]: "rdux (udux_init args) = dux_init args"
+  by (rule dux_init_rdux[symmetric])
+
+lemma rdux_udux_init_agg[simp]: "rdux (udux_init_agg args p) = dux_init_agg args p"
+  by (rule dux_init_agg_rdux[symmetric])
 
 subsection \<open>Column lists in ascending order\<close>
 
@@ -374,7 +411,7 @@ proof -
     by (rule dsince_rel_init[OF a dframe_dcols[OF dR] dframe_dcols[OF dL] sub])
   show ?thesis
     by (simp add: ag sub Let_def del: init_mmasaux.simps)
-      (rule DsSince[OF dframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl rl], use s1 s2 in \<open>simp_all add: ag\<close>)
+      (rule DsSince[OF dframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
 qed
 
 lemma dsim_dof_until:
@@ -393,7 +430,7 @@ proof -
     by (rule duntil_rel_init[OF a dframe_dcols[OF dR] dframe_dcols[OF dL] sub])
   show ?thesis
     by (simp add: ag sub Let_def)
-      (rule DsUntil[OF dframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl refl rl], use s1 s2 in \<open>simp_all add: ag\<close>)
+      (rule DsUntil[OF dframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
 qed
 
 lemma dsim_dof_neg:
@@ -433,7 +470,7 @@ proof -
     by (rule dtrigger_rel_init[OF a dframe_dcols[OF dR] dframe_dcols[OF dL] sub ok])
   show ?thesis
     by (simp add: ag sub m0 Let_def)
-      (rule DsTrigger[OF dframe_dcols[OF dR] pr s1 s2 sub ag(1,2) _ refl refl rl], simp add: ag m0)
+      (rule DsTrigger[OF dframe_dcols[OF dR] pr s1 s2 sub ag(1,2) _ refl refl], use rl in \<open>simp_all add: ag m0\<close>)
 qed
 
 lemma dsim_dof_minit0_trigger:
@@ -523,22 +560,23 @@ proof -
         (dsx_init_agg (dargs ?cR ?cL args) ?p) init_mbuf2S init_mbuf2S"
       by (rule dsince_rel_init_agg[OF a dframe_dcols[OF dR] dframe_dcols[OF dL] sub cL ok])
     have d: "dof n ks (dcols ks) (MSince args \<phi> \<psi> init_mbuf2S (init_mmasaux args)) =
-        DSince (dargs ?cR ?cL args) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) init_mbuf2S
-          (dsx_init_agg (dargs ?cR ?cL args) ?p)"
+        DSince (dargs ?cR ?cL args) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) init_mebuf2S
+          (udsx_init_agg (dargs ?cR ?cL args) ?p None)"
       using True c by (simp add: ag sub Let_def del: init_mmasaux.simps)
     show ?thesis unfolding d
-      by (rule DsSinceFused[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl rla c(1) refl c(5) _ c(7)
-            c(2)[symmetric] c(3,4)], use s1 s2 c(6) in \<open>simp_all add: ag\<close>)
+      by (rule DsSinceFused[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
+            c(2)[symmetric] c(3,4)], use s1 s2 c(6) rla in \<open>simp_all add: ag\<close>)
   next
     case False
     have d: "dof n ks (dcols ks) (MSince args \<phi> \<psi> init_mbuf2S (init_mmasaux args)) =
         DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?m (ins_pos ?g ?y)
-          (DSince (dargs ?cR ?cL args) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) init_mbuf2S
-            (dsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
+          (DSince (dargs ?cR ?cL args) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) init_mebuf2S
+            (udsx_init (dargs ?cR ?cL args) (dmsk ?cR ?cL)))"
       using False c by (simp add: ag sub Let_def del: init_mmasaux.simps)
     show ?thesis unfolding d
-      by (rule DsSinceAgg[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl rl c(1) refl c(5) _ c(7)
-            c(2)[symmetric] c(3,4)], use s1 s2 c(6) in \<open>simp_all add: ag\<close>)  qed
+      by (rule DsSinceAgg[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
+            c(2)[symmetric] c(3,4)], use s1 s2 c(6) rl in \<open>simp_all add: ag\<close>)
+  qed
 qed
 
 lemma dsim_dof_until_agg:
@@ -575,23 +613,62 @@ proof -
       by (rule duntil_rel_init_agg[OF a dframe_dcols[OF dR] dframe_dcols[OF dL] sub cL
             conjunct2[OF True] ok])
     have d: "dof n ks (dcols ks) (MUntil args \<phi> \<psi> ([], []) [] 0 (init_muaux_dq args)) =
-        DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) ([], []) [] 0
-          (dux_init_agg (dargs ?cR ?cL args) ?p)"
+        DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>)
+          (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init_agg (dargs ?cR ?cL args) ?p)"
       using True c by (simp add: ag sub Let_def)
     show ?thesis unfolding d
-      by (rule DsUntilFused[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl refl rla c(1) refl c(5) _
-            c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) in \<open>simp_all add: ag\<close>)
+      by (rule DsUntilFused[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
+            c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) rla in \<open>simp_all add: ag\<close>)
   next
     case False
     have d: "dof n ks (dcols ks) (MUntil args \<phi> \<psi> ([], []) [] 0 (init_muaux_dq args)) =
         DAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm ?cR (aggargs_f ag)) ?m (ins_pos ?g ?y)
-          (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>) ([], []) [] 0
-            (dux_init (dargs ?cR ?cL args)))"
+          (DUntil (dargs ?cR ?cL args) (dmsk ?cR ?cL) (dof nn kL ?cL \<phi>) (dof nn kR ?cR \<psi>)
+            (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init (dargs ?cR ?cL args)))"
       using False c by (simp add: ag sub Let_def)
     show ?thesis unfolding d
-      by (rule DsUntilAgg[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl refl rl c(1) refl c(5) _
-            c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) in \<open>simp_all add: ag\<close>)
+      by (rule DsUntilAgg[OF dframe_dcols[OF dk] pr _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
+            c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) rl in \<open>simp_all add: ag\<close>)
   qed
+qed
+
+subsection \<open>The guard\<close>
+
+text \<open>A constraint over a node goes into the node as its guard exactly when the node is a fused
+  aggregating Since without one; the node is then related to the kernel's constraint over the
+  kernel's node by the rule for the guarded Since, and otherwise the constraint stays above it.\<close>
+
+lemma dsim_dset_q:
+  assumes s: "dsim n ks cs tw d \<phi>" and pr: "produces n ks tw (MAndRel ks \<phi> (t1, p, c, t2))"
+    and wf: "dframe ks cs"
+    and fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
+  shows "dsim n ks cs tw (case dset_q (reindex_constraint cs (t1, p, c, t2)) d of
+      Some d' \<Rightarrow> d' | None \<Rightarrow> DAndRel d (reindex_constraint cs (t1, p, c, t2)))
+    (MAndRel ks \<phi> (t1, p, c, t2))"
+proof (cases "dset_q (reindex_constraint cs (t1, p, c, t2)) d")
+  case None
+  then show ?thesis using DsAndRel[OF wf pr s fv1 fv2] by simp
+next
+  case (Some d')
+  then obtain dags \<phi>d \<psi>d dbuf ap a where d: "d = DSince dags \<phi>d \<psi>d dbuf (UDSX_wagg ap None a)"
+    and d': "d' = DSince dags \<phi>d \<psi>d dbuf (UDSX_wagg ap (Some (reindex_constraint cs (t1, p, c, t2))) a)"
+    using Some by (cases d) (auto split: udsaux_x.splits option.splits)
+  have "dsim n ks cs tw d' (MAndRel ks \<phi> (t1, p, c, t2))"
+    using s[unfolded d]
+  proof (cases rule: dsim.cases)
+    case DsSince
+    then show ?thesis by simp
+  next
+    case (DsSinceFused args \<phi>' \<psi> buf aux kL cL kR cR ag y gcols)
+    from DsSinceFused(1) pr have prA: "produces n ks tw (MAndRel ks (MSince args \<phi>' \<psi> buf aux) (t1, p, c, t2))"
+      by simp
+    show ?thesis unfolding d' DsSinceFused(1)
+      by (rule dsim.DsSinceGuard[OF wf prA]) (use DsSinceFused fv1 fv2 in simp_all)
+  next
+    case DsSinceGuard
+    then show ?thesis by simp
+  qed
+  then show ?thesis using Some by simp
 qed
 
 subsection \<open>The compiler produces a simulation\<close>
@@ -683,10 +760,14 @@ next
     using And_constraint.hyps(4) by (simp add: cols_union_subset)
   have pr: "produces n (Formula.fv_list (Formula.And \<phi> \<psi>)) tw (minit0 n (Formula.And \<phi> \<psi>))"
     using produces_minit0[of "Formula.And \<phi> \<psi>" n tw] And_constraint by simp
-  have z: "dofz n \<phi>" using And_constraint.prems(2) unfolding m e by (simp split: if_splits)
+  have z: "dofz n \<phi>" using And_constraint.prems(2) unfolding m e
+    by (auto simp: Let_def vdfail_nodes_dset_q split: if_splits option.splits)
   have s: "dofc n tw \<phi>" using And_constraint.prems(1) z by (intro And_constraint.IH) simp_all
-  show ?case using And_constraint.prems(2) s pr dframe_fv_list[of \<phi>] unfolding m e
-    by (auto split: if_splits intro!: DsAndRel)
+  have fv: "Formula.fv_trm t1 \<subseteq> set (dcols (Formula.fv_list \<phi>))"
+    "Formula.fv_trm t2 \<subseteq> set (dcols (Formula.fv_list \<phi>))"
+    using And_constraint.prems(2) unfolding m e by (simp_all split: if_splits)
+  show ?case unfolding m e using fv
+    by (simp add: Let_def dsim_dset_q[OF s pr[unfolded m e] dframe_fv_list])
 next
   case (And_Not \<phi> \<psi>)
   have m: "minit0 n (Formula.And \<phi> (Formula.Neg \<psi>)) = MAnd (Formula.fv_list \<phi>)
@@ -773,8 +854,8 @@ next
       by (rule dtrigger_rel_init[OF refl dframe_fv_list dframe_fv_list _ ok]) (simp add: sub)
     show ?thesis unfolding m e
       by (simp add: Let_def ag sub subR ok)
-        (rule DsAndTrigger[OF dframe_fv_list pr s1 s2 s3 _ _ ag(1,2) ok refl refl _ rl],
-          simp_all add: sub subR dandbuf_def)
+        (rule DsAndTrigger[OF dframe_fv_list pr s1 s2 s3 _ _ ag(1,2) ok refl refl],
+          use rl in \<open>simp_all add: sub subR dandbuf_def\<close>)
   qed
 next
   case (And_Release \<phi> \<phi>' I \<psi>')
@@ -827,7 +908,7 @@ next
   have d: "dof n (Formula.fv_list (Formula.Ands l)) (dcols (Formula.fv_list (Formula.Ands l)))
       (MAnds (Formula.fv_list (Formula.Ands l)) (Formula.fv_list p # map Formula.fv_list ps)
         (map Formula.fv_list neg) L (replicate (length l) []))
-    = DAnds (dands_plans ?c0 ?css) (dands_plans (dands_cols ?c0 ?css) ?nss) Ld (map (\<lambda>_. []) L)"
+    = DAnds (dands_plans ?c0 ?css) (dands_plans (dands_cols ?c0 ?css) ?nss) Ld (map (\<lambda>_. mbuf_t_empty) L)"
     using chk lenL lenl pl unfolding Ld_def e1[symmetric] by (simp add: Let_def)
   have zall: "\<forall>x \<in> set Ld. vdfail_nodes x = 0" using zz unfolding d by simp
   have zi: "\<And>i. i < length L \<Longrightarrow> vdfail_nodes (dof n (Ks ! i) (dcols (Ks ! i)) (L ! i)) = 0"
@@ -869,11 +950,12 @@ next
         (map Formula.fv_list neg) L (replicate (length l) []))"
     using produces_minit0[OF sfa Ands.prems(1), of tw] unfolding m .
   have bf: "dbufn (Formula.fv_list p # map Formula.fv_list ps @ map Formula.fv_list neg)
-      (?c0 # ?css @ ?nss) (replicate (length l) []) (map (\<lambda>_. []) L)"
+      (?c0 # ?css @ ?nss) (replicate (length l) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     unfolding e1 e2 using lK lenL by (auto simp: dbufn_def intro!: nth_equalityI)
   show ?case unfolding m d
     by (rule DsAnds[OF dframe_fv_list pr pL' _ _ _ _ _ _ refl refl bf])
-      (use chk lK lLd lenL pl in \<open>simp_all add: Ks_def\<close>)next
+      (use chk lK lLd lenL pl in \<open>simp_all add: Ks_def\<close>)
+next
   case (Neg \<phi>)
   show ?case by (rule dsim_dof_neg[OF Neg.hyps(1,2) Neg.prems]) (use Neg.IH Neg.hyps(1) in simp)
 next
@@ -1225,7 +1307,7 @@ next
   have d: "dof n ks (dcols ks)
       (MMatchP I ks dss mr (sorted_list_of_set (RPDs mr)) L (replicate (length \<phi>s) []) [] [])
     = DMatchP (length (dcols ks)) I mr (sorted_list_of_set (RPDs mr))
-        (map (emb_plan (dcols ks)) (map dcols dss)) Ld (map (\<lambda>_. []) L) [] []"
+        (map (emb_plan (dcols ks)) (map dcols dss)) Ld (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ []) []"
     using chk lL ld unfolding Ld_def by (simp add: Let_def)
   have zall: "\<forall>x \<in> set Ld. vdfail_nodes x = 0" using zz unfolding d by simp
   have pL: "\<forall>i < length L. dsim n (dss ! i) (map dcols dss ! i) tw (Ld ! i) (L ! i)"
@@ -1246,7 +1328,7 @@ next
     by simp
   have A: "set ks = Formula.fv_regex (from_mregex mr \<phi>s)"
     unfolding ks_def Formula.set_fvi_list fm by simp
-  have bf: "dbufn dss (map dcols dss) (replicate (length \<phi>s) []) (map (\<lambda>_. []) L)"
+  have bf: "dbufn dss (map dcols dss) (replicate (length \<phi>s) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     using lL ld by (auto simp: dbufn_def intro!: nth_equalityI)
   show ?case unfolding m ks_def[symmetric] d
     by (rule DsMatchP[OF dframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchP I r", folded ks_def]] pr
@@ -1283,7 +1365,7 @@ next
   have d: "dof n ks (dcols ks)
       (MMatchF I ks dss mr (sorted_list_of_set (LPDs mr)) L (replicate (length \<phi>s) []) [] 0 [])
     = DMatchF (length (dcols ks)) I mr (sorted_list_of_set (LPDs mr))
-        (map (emb_plan (dcols ks)) (map dcols dss)) Ld (map (\<lambda>_. []) L) [] 0 []"
+        (map (emb_plan (dcols ks)) (map dcols dss)) Ld (map (\<lambda>_. mbuf_t_empty) L) (mbuf_t_empty @@ []) 0 []"
     using chk lL ld unfolding Ld_def by (simp add: Let_def)
   have zall: "\<forall>x \<in> set Ld. vdfail_nodes x = 0" using zz unfolding d by simp
   have pL: "\<forall>i < length L. dsim n (dss ! i) (map dcols dss ! i) tw (Ld ! i) (L ! i)"
@@ -1304,7 +1386,7 @@ next
     by simp
   have A: "set ks = Formula.fv_regex (from_mregex mr \<phi>s)"
     unfolding ks_def Formula.set_fvi_list fm by simp
-  have bf: "dbufn dss (map dcols dss) (replicate (length \<phi>s) []) (map (\<lambda>_. []) L)"
+  have bf: "dbufn dss (map dcols dss) (replicate (length \<phi>s) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     using lL ld by (auto simp: dbufn_def intro!: nth_equalityI)
   show ?case unfolding m ks_def[symmetric] d
     by (rule DsMatchF[OF dframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchF I r", folded ks_def]] pr
@@ -1342,7 +1424,7 @@ definition dof_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow>
 lemma dmsim_state_dof_state:
   assumes n: "mstate_n st = n" and p: "dsim n ks cs tw (dof n ks cs (mstate_m st)) (mstate_m st)"
   shows "dmsim_state n ks cs tw st (dof_state n ks cs st)"
-  by (simp add: dmsim_state_def dof_state_def n p mbuf_t_append.rep_eq mbuf_t_empty.rep_eq)
+  by (simp add: dmsim_state_def dof_state_def n p mbuf_t_append.rep_eq)
 
 context verimon_spec
 begin
