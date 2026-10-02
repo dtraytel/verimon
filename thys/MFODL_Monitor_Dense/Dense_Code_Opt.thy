@@ -49,10 +49,8 @@ setup \<open>Monomorphize.monomorphize_cmd
   (let val etuple = "event_data tuple"; val tl = "event_data tuple list" in
     [("Mapping.lookup", "ed_lookup_tuples", [etuple, tl]),
      ("Mapping.update", "ed_update_tuples", [etuple, tl]),
-     ("Mapping.delete", "ed_delete_tuples", [etuple, tl]),
      ("RBT_Mapping2.lookup", "ed_rbt_lookup_tuples", [etuple, tl]),
-     ("RBT_Mapping2.insert", "ed_rbt_insert_tuples", [etuple, tl]),
-     ("RBT_Mapping2.delete", "ed_rbt_delete_tuples", [etuple, tl])] end)
+     ("RBT_Mapping2.insert", "ed_rbt_insert_tuples", [etuple, tl])] end)
   ["etuple_dict_simps"]\<close>
 
 text \<open>
@@ -202,22 +200,17 @@ lemma ed_rbtc_delete_unfold[code_unfold]: "rbt_comp_delete ed_comparator = ed_rb
 section \<open>The set operations, monomorphised rather than boxed\<close>
 
 text \<open>
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} boxes the set operations -- @{term "(\<union>)"},
-  @{term "(\<inter>)"}, @{term "(-)"}, @{const Set.filter}, @{const image} -- and monomorphises only
-  membership and lookup.  A box builds the dictionary once, when the program starts, which
+  The set operations -- @{term "(\<union>)"}, @{term "(\<inter>)"}, @{term "(-)"},
+  @{const Set.filter}, @{const image} -- are monomorphised like membership and lookup in
+  @{theory MFODL_Monitor_Devel.Monomorphic_Code}, not boxed.  A box builds the dictionary once, when the program starts, which
   removes the construction cost; but it still *passes* the dictionary, so the comparator that
   reaches the red-black tree inside is the composite one on lists, reached through a closure for
   every element.
 
   Monomorphising them instead fixes the type, which lets @{thm [source] ccomp_etuple} rewrite the
   comparator to @{const ed_comparator} and the rules of the previous section then pick up the
-  specialised tree primitives.  The boxes' redirect rules have to leave the code preprocessor
-  first, or the two would compete for the same term.
+  specialised tree primitives.
 \<close>
-
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
-  @{thms ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold ed_filter_v_unfold
-    ed_image_v_unfold})\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   (let val etuple = "event_data tuple" in
@@ -262,11 +255,8 @@ val edl_value_types =
    ("gsum", "(nat \<times> integer) \<times> (event_data list, nat) mapping")]
 \<close>
 
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps @{thms ed_remove_v_unfold})\<close>
-
 setup \<open>Monomorphize.monomorphize_cmd
-  ([("Set.remove", "edl_remove", [edl]),
-    ("RBT_Mapping2.join", "edl_rbt_join_tuples", [edl, "event_data list list"])]
+  ([("Set.remove", "edl_remove", [edl])]
    @ maps (fn (tn, ty) =>
        [("Mapping.lookup", "edl_lookup_" ^ tn, [edl, ty]),
         ("Mapping.update", "edl_update_" ^ tn, [edl, ty]),
@@ -336,9 +326,7 @@ text \<open>
 
   and the generality is paid for once per probed tuple.  Specialising each operation at
   @{typ event_data} lets @{thm [source] etuple_dict_simps} fix the dictionaries and the rules above
-  pick up @{const ed_comparator} and the specialised tree primitives.  A few of the operations are
-  boxed in @{theory MFODL_Monitor_Devel.Monomorphic_Code} at the same type, for the kernel; their
-  boxes leave the preprocessor so that the copies apply.
+  pick up @{const ed_comparator} and the specialised tree primitives.
 \<close>
 
 ML \<open>
@@ -360,10 +348,6 @@ val dense_elem_consts =
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
 \<close>
 
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
-  @{thms ed_mapping_delete_set_tstp_v_unfold ed_upd_set_nat_v_unfold ed_upd_set_keys_v_unfold
-    ed_filter_set_v_unfold ed_minus_keys_v_unfold})\<close>
-
 setup \<open>Monomorphize.monomorphize_cmd
   (map (fn c => (c, mono_name "de_" c, ["event_data"])) dense_elem_consts
    @ [("gupd_nested_step_dq", "de_gupd_nested_step_dq", ["nat + nat", "event_data list"]),
@@ -377,7 +361,6 @@ setup \<open>Monomorphize.monomorphize_cmd
       ("minus_keys", "de_minus_keys", ["event_data list", "nat"]),
       ("filter_set", "de_filter_set", ["nat", "event_data list"]),
       ("filter_cfi", "de_filter_cfi", ["nat", "event_data list"]),
-      ("mapping_delete_set", "de_mapping_delete_set_nat", ["event_data list", "nat"]),
       ("del_buckets", "de_del_buckets_nat", ["event_data list", "event_data list", "nat"]),
       ("del_buckets1", "de_del_buckets1_nat", ["event_data list", "event_data list", "nat"]),
       ("gjoin_idx", "de_gjoin_idx_nat", ["event_data list", "event_data list", "nat"]),
@@ -388,11 +371,6 @@ setup \<open>Monomorphize.monomorphize_cmd
 
 text \<open>The deletion of a key set passes the deletion to the tree's fold unapplied; at the two
   value types of the Since structure it gets the specialised deletion by hand.\<close>
-
-lemma de_mapping_delete_set_nat_rbt[code]:
-  "de_mapping_delete_set_nat m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
-  by (simp add: de_mapping_delete_set_nat_def ed_delete_nat_def mapping_delete_set_RBT_code
-      ID_ccompare_etuple ccomp_etuple)
 
 lemma de_mapping_delete_set_table_rbt[code]:
   "de_mapping_delete_set_table m (RBT_set rbt) = RBT_Set2.fold ed_delete_table rbt m"

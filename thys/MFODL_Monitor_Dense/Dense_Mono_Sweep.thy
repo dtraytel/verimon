@@ -90,9 +90,6 @@ text \<open>The time points are @{typ nat}: the buffers, the interval arithmetic
 
 setup \<open>mono
   [("Set.member", "nat_member", ["nat"]),
-   ("Set.remove", "nat_remove", ["nat"]),
-   ("List.member", "nat_list_member", ["nat"]),
-   ("List.superset", "nat_superset", ["nat"]),
    ("comparator_of", "nat_comparator_of", ["nat"]),
    ("sum_list", "nat_sum_list", ["nat"]),
    ("Max", "nat_Max", ["nat"]),
@@ -106,9 +103,7 @@ setup \<open>Monomorphize.box_cmd
 subsection \<open>The operations over the tuples that the two earlier passes left\<close>
 
 setup \<open>mono
-  [("wf_table_of_set_args", "ed_wf_table_of_set_args", ["event_data"]),
-   ("Set.equal_set_inst.equal_set", "etuple_equal_set", ["event_data list"]),
-   ("RBT_Mapping2.entries", "etuple_rbt_entries", ["event_data list", "unit"])]
+  [("wf_table_of_set_args", "ed_wf_table_of_set_args", ["event_data"])]
   dicts\<close>
 
 subsection \<open>The regular expressions and the predicate table of the compiler\<close>
@@ -124,10 +119,7 @@ setup \<open>mono
   [("Set.bind", "mregex_bind", ["mregex", "mregex"]),
    ("sorted_list_of_set", "mregex_sorted_list_of_set", ["mregex"]),
    ("less_eq :: _ set \<Rightarrow> _", "mregex_subset", ["mregex"]),
-   ("Mapping.lookup_default", "mregex_lookup_default", ["mregex", "event_data list set"]),
-   ("RBT_Mapping2.bulkload", "mregex_rbt_bulkload", ["mregex", "event_data list set"]),
-   ("Mapping.map_values", "pn_map_values",
-      ["string8 \<times> nat", "event_data list set", "event_data list set"])]
+   ("RBT_Mapping2.bulkload", "mregex_rbt_bulkload", ["mregex", "event_data list set"])]
   dicts\<close>
 
 subsection \<open>The treelists of the rank aggregations\<close>
@@ -144,7 +136,6 @@ setup \<open>mono
    ("remove_treelist", "int_remove_treelist", ["integer"]),
    ("empty_treelist", "int_empty_treelist", ["integer"]),
    ("get_treelist", "int_get_treelist", ["integer"]),
-   ("length_treelist", "int_length_treelist", ["integer"]),
    ("insert_treelist", "s8_insert_treelist", ["string8"]),
    ("remove_treelist", "s8_remove_treelist", ["string8"]),
    ("empty_treelist", "s8_empty_treelist", ["string8"])]

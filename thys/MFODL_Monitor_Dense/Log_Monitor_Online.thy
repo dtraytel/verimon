@@ -295,9 +295,6 @@ lemma prefix_of_items_Nil: "prefix_of_items pf S None [] = Some pnil"
 lemma sorted_Rep_prefix: "sorted (map snd (Rep_prefix \<pi>))"
   using Rep_prefix[of \<pi>] by simp
 
-lemma fstream_init_abs: "fstream_init = (abs_l0 E_INIT, map_fpstate Rep_bytes F_INIT)"
-  by (simp add: fstream_init_def abs_l0_def)
-
 lemma prefix_of_items_append_Some:
   assumes "prefix_of_items pf S None (es @ es') = Some \<pi>'"
   obtains \<pi> where "prefix_of_items pf S None es = Some \<pi>"

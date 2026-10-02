@@ -313,9 +313,6 @@ lemma case_Neg_push_ex:
    = (case \<phi> of Formula.Neg \<psi> \<Rightarrow> f (push_ex \<psi>) | _ \<Rightarrow> False)"
   by (simp add: case_Neg_iff push_ex_Neg_iff) blast
 
-lemma size_remove_neg: "size (remove_neg \<phi>) \<le> size \<phi>"
-  by (cases \<phi>) simp_all
-
 subsection \<open>Safety\<close>
 
 lemma safe_ex_into[simp]: "safe_formula (ex_into t \<phi>) = (safe_formula \<phi> \<and> 0 \<in> Formula.fv \<phi>)"
@@ -512,10 +509,6 @@ lemma Mt_perm: "q.Mt \<pi> = (\<lambda>(i, t, v). (i, t, restrict (Formula.fv_li
   by (simp add: split_beta)
 
 end
-
-lemma flatten_verdicts_map_image:
-  "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, f ` X)) Vs) = (\<lambda>(i, t, v). (i, t, f v)) ` flatten_verdicts Vs"
-  by (auto simp: flatten_verdicts_def image_UN image_image split_beta)
 
 lemma flatten_verdicts_map_comp:
   "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, f ` g X)) Vs) =

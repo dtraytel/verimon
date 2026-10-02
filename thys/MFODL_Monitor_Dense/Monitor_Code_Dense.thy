@@ -35,24 +35,7 @@ text \<open>
   @{theory MFODL_Monitor_Dense.Dense_RBT_Code}, the copies of
   @{theory MFODL_Monitor_Dense.Dense_Mono_Hot} for the generic operations a profile still found
   on the inner loops, and the front end's entry points -- is stated here too.
-
-  The order of the imports matters.  Where a boxed operation of
-  @{theory MFODL_Monitor_Devel.Monomorphic_Code} and its monomorphic copy both rewrite the same
-  term, the code preprocessor takes whichever rule the merge of the branches puts first.
-  Importing @{theory MFODL_Monitor_Devel.Monomorphic_Code} and
-  @{theory MFODL_Monitor_Devel.RBT_set_opt} first leaves the monomorphic copies in front.
-
-  A merge also takes the union of the preprocessor simpsets, so it brings back rules one branch
-  deleted: the boxes of @{theory MFODL_Monitor_Devel.Monomorphic_Code} that the theories of the
-  import chain take out of the preprocessor, so that the monomorphic copies apply, return with
-  the branches that do not take them out.  They are taken out again here, after the merge.
 \<close>
-
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
-  @{thms ed_union_v_unfold ed_inter_v_unfold ed_minus_v_unfold ed_filter_v_unfold
-    ed_image_v_unfold ed_remove_v_unfold ed_csorted_list_of_set_v_unfold ed_mfilter_nat_v_unfold
-    ed_mapping_delete_set_tstp_v_unfold ed_upd_set_nat_v_unfold ed_upd_set_keys_v_unfold
-    ed_filter_set_v_unfold ed_minus_keys_v_unfold})\<close>
 
 export_code
   (*basic types*)

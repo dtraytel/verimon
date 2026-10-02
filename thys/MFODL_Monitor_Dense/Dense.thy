@@ -1565,9 +1565,6 @@ lemma dauxlist3_eval_until:
   by (induct I nt aux arbitrary: res aux' rule: eval_until.induct)
     (auto simp: dauxlist3_def split: if_splits prod.splits)
 
-lemma table_Un: "table ks X \<Longrightarrow> table ks Y \<Longrightarrow> table ks (X \<union> Y)"
-  by (auto simp: table_def)
-
 lemma table_Int: "table ks X \<Longrightarrow> table ks (X \<inter> Y)"
   by (auto simp: table_def)
 

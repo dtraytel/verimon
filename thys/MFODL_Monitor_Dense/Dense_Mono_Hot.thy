@@ -11,11 +11,10 @@ text \<open>
   is cold.  A profile of the export says otherwise for a handful of operations, all of them at
   the tuples, and all for one of three reasons.
 
-  \<^item> \<^emph>\<open>A box shadows a monomorphic copy.\<close>  @{theory MFODL_Monitor_Devel.Monomorphic_Code}
-    boxes the sorted list of a table and the filter of a count map at @{typ "event_data list"};
-    a box passes the dictionary down, so the tree operations inside reach the composite
-    comparator @{text "comparator_list comparator_event_data"} through a closure.  They become
-    copies, and the boxes leave the preprocessor.
+  \<^item> \<^emph>\<open>A copy is missing.\<close>  Without copies of their own at @{typ "event_data list"},
+    the sorted list of a table and the filter of a count map pass the dictionary down, so the
+    tree operations inside reach the composite comparator
+    @{text "comparator_list comparator_event_data"} through a closure.
   \<^item> \<^emph>\<open>A fold is generic while its step is not.\<close>  @{theory MFODL_Monitor_Dense.Dense_Map_Upd}
     specialises the grouped aggregation's steps @{const gstep_ins} and @{const gstep_del} at
     @{typ event_data}, but not the folds @{const gins} and @{const gdel} over them, nor the
@@ -34,9 +33,6 @@ subsection \<open>The copies\<close>
 
 text \<open>The tree's key list and fold, which the sorted list of a table and the Since
   structure's filter reach, need copies of their own, or the dictionary moves one frame down.\<close>
-
-setup \<open>Code_Preproc.map_pre (fn ctxt => ctxt delsimps
-  @{thms ed_csorted_list_of_set_v_unfold ed_mfilter_nat_v_unfold})\<close>
 
 setup \<open>Monomorphize.monomorphize_cmd
   (let val cnt_set = "(event_data list, nat) mapping \<times> event_data list set" in

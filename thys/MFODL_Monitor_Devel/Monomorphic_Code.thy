@@ -99,20 +99,15 @@ lemma RBT_Mapping_empty: "RBT_Mapping RBT_Mapping2.empty = Mapping.empty"
   by (simp add: Mapping.empty_def)
 
 definition ed_bot :: "event_data table" where "ed_bot = {}"
-definition ed_bot_pair :: "(nat \<times> event_data tuple) set" where "ed_bot_pair = {}"
 
 lemma ed_bot_code[code]: "ed_bot = RBT_set RBT_Set2.empty"
   by (simp add: ed_bot_def)
-lemma ed_bot_pair_code[code]: "ed_bot_pair = RBT_set RBT_Set2.empty"
-  by (simp add: ed_bot_pair_def)
 
 lemma ed_bot_unfold[code_unfold]:
   "(bot :: event_data table) = ed_bot"
   "set_empty (of_phantom SET_IMPL(event_data tuple)) = ed_bot"
   "(empty_table :: event_data table) = ed_bot"
-  "(bot :: (nat \<times> event_data tuple) set) = ed_bot_pair"
-  "set_empty (of_phantom SET_IMPL(nat \<times> event_data tuple)) = ed_bot_pair"
-  by (simp_all add: ed_bot_def ed_bot_pair_def empty_table_def)
+  by (simp_all add: ed_bot_def empty_table_def)
 
 definition ed_mempty_nat :: "(event_data tuple, nat) mapping" where "ed_mempty_nat = Mapping.empty"
 lemma ed_mempty_nat_code[code]: "ed_mempty_nat = RBT_Mapping RBT_Mapping2.empty"
@@ -160,53 +155,18 @@ val ed_value_types =
   [("nat", "nat"), ("tstp", "nat + nat"), ("table", "event_data table"),
    ("sum", "nat \<times> integer"), ("rank", "list_aux")]
 val ed_mapping_ops =
-  [("Mapping.filter", "mfilter"), ("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
-val ed_agg_maps =
-  ["nat agg_map", "(nat \<times> integer) agg_map", "list_aux agg_map",
-   "bool \<times> nat agg_map", "bool \<times> (nat \<times> integer) agg_map", "bool \<times> list_aux agg_map"]
+  [("Mapping.keys", "keys"), ("Mapping.is_empty", "mis_empty")]
 val ed_box_specs =
   [
-   ("Set.remove", "ed_remove_v", [etuple]),
-   ("sup :: _ set \<Rightarrow> _", "ed_union_v", [etuple]),
-   ("inf :: _ set \<Rightarrow> _", "ed_inter_v", [etuple]),
-   ("minus :: _ set \<Rightarrow> _", "ed_minus_v", [etuple]),
-   ("Set.filter", "ed_filter_v", [etuple]),
-   ("image", "ed_image_v", [etuple, etuple]),
-   ("Ball", "ed_Ball_v", [etuple]),
-   ("Bex", "ed_Bex_v", [etuple]),
    ("finite", "ed_finite_v", [etuple]),
-   ("card", "ed_card_v", [etuple]),
    ("set_eq", "ed_set_eq_v", [etuple]),
    ("Set.is_empty", "ed_is_empty_v", [etuple]),
-   ("less_eq :: _ set \<Rightarrow> _", "ed_subset_v", [etuple]),
-   ("csorted_list_of_set", "ed_csorted_list_of_set_v", [etuple]),
    ("RBT_Set2.fold", "ed_rbt_fold_table_v", [etuple, "event_data table"]),
-   ("RBT_Set2.fold", "ed_rbt_fold_pair_v", [etuple, "(nat \<times> event_data tuple) set"]),
-   ("set_fold_cfi", "ed_fold_cfi_table_v", [etuple, "event_data table"]),
-   ("set_fold_cfi", "ed_fold_cfi_pair_v", [etuple, "(nat \<times> event_data tuple) set"]),
-   ("cluster", "ed_cluster_v", [etuple, etuple]),
    ("cluster", "ed_cluster_ed_v", [etuple, "event_data"]),
    ("Mapping.keys", "ed_keys_ed_table_v", ["event_data", "event_data table"]),
-   ("Mapping.lookup", "ed_lookup_ed_table_v", ["event_data", "event_data table"]),
-   ("set_of_idx", "ed_set_of_idx_v", [etuple, etuple]),
-   ("mapping_join", "ed_mapping_join_v", [etuple, "event_data table"]),
-   ("mapping_antijoin", "ed_mapping_antijoin_v", [etuple, "event_data table"]),
-   ("mapping_delete_set", "ed_mapping_delete_set_tstp_v", [etuple, "nat + nat"]),
-   ("upd_set", "ed_upd_set_nat_v", [etuple, "nat"]),
-   ("upd_set_keys", "ed_upd_set_keys_v", ["event_data table", "nat", etuple]),
-   ("upd_nested_max_tstp", "ed_upd_nested_max_tstp_v", ["nat", etuple]),
-   ("filter_set", "ed_filter_set_v", ["nat", etuple]),
-   ("minus_keys", "ed_minus_keys_v", [etuple, "nat"]),
-   (* sets of (time point, tuple) pairs of the Until structure *)
-   ("Set.insert", "ed_insert_pair_v", ["nat \<times> event_data tuple"]),
-   ("Set.filter", "ed_filter_pair_v", ["nat \<times> event_data tuple"]),
-   ("sup :: _ set \<Rightarrow> _", "ed_union_pair_v", ["nat \<times> event_data tuple"]),
-   ("image", "ed_image_pair_snd_v", ["nat \<times> event_data tuple", etuple]),
-   ("image", "ed_image_pair_v", [etuple, "nat \<times> event_data tuple"]),
-   ("finite", "ed_finite_pair_v", ["nat \<times> event_data tuple"])]
+   ("Mapping.lookup", "ed_lookup_ed_table_v", ["event_data", "event_data table"])]
   @ maps (fn (c, nm) => map (fn (tn, ty) => (c, "ed_" ^ nm ^ "_" ^ tn ^ "_v", [etuple, ty])) ed_value_types)
       ed_mapping_ops
-  @ map_index (fn (i, ty) => ("set_fold_cfc", "ed_fold_cfc_agg" ^ string_of_int i ^ "_v", [etuple, ty])) ed_agg_maps
 \<close>
 
 setup \<open>Monomorphize.box_cmd ed_box_specs\<close>
@@ -258,23 +218,15 @@ lemma ed_member_compat[code_unfold]:
   "Collect (\<lambda>a. ed_member a A) = A"
   "ed_member a (Collect Q) = Q a"
   "ed_member x (set xs) = List.member xs x"
-  "unbox ed_Ball_v (set xs) P = list_all P xs"
-  "unbox ed_Bex_v (set xs) P = list_ex P xs"
-  "unbox ed_union_v (set xs) (set ys) = set (xs @ ys)"
-  unfolding ed_member_unfold[symmetric] ed_Ball_v_unfold[symmetric] ed_Bex_v_unfold[symmetric]
-    ed_union_v_unfold[symmetric]
-  by (auto simp: list_all_iff list_ex_iff)
+  unfolding ed_member_unfold[symmetric]
+  by (auto simp: List.member_def)
 
 lemma ed_bot_compat[code_unfold]:
   "(A = ed_bot) = Set.is_empty A"
   "(ed_bot = A) = Set.is_empty A"
   "set_eq A ed_bot = Set.is_empty A"
   "set_eq ed_bot A = Set.is_empty A"
-  "(B = ed_bot_pair) = Set.is_empty B"
-  "(ed_bot_pair = B) = Set.is_empty B"
-  "set_eq B ed_bot_pair = Set.is_empty B"
-  "set_eq ed_bot_pair B = Set.is_empty B"
-  by (auto simp: ed_bot_def ed_bot_pair_def)
+  by (auto simp: ed_bot_def)
 
 lemma ed_keys_compat[code_unfold]:
   "ed_member k (unbox ed_keys_nat_v m1) = (\<not> Option.is_none (ed_lookup_nat m1 k))"
@@ -285,23 +237,11 @@ lemma ed_keys_compat[code_unfold]:
   unfolding ed_member_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
   by (simp_all add: Mapping.keys_is_none_rep)
 
-lemma all_not_Some_pair_iff: "(\<forall>a b. y \<noteq> Some (a, b)) \<longleftrightarrow> y = None"
-  by (cases y) auto
-
-lemma ed_minus_keys_compat[code_unfold]:
-  "unbox ed_minus_v X (unbox ed_keys_nat_v m1) = Set.filter (\<lambda>k. ed_lookup_nat m1 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_tstp_v m2) = Set.filter (\<lambda>k. ed_lookup_tstp m2 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_table_v m3) = Set.filter (\<lambda>k. ed_lookup_table m3 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_sum_v m4) = Set.filter (\<lambda>k. ed_lookup_sum m4 k = None) X"
-  "unbox ed_minus_v X (unbox ed_keys_rank_v m5) = Set.filter (\<lambda>k. ed_lookup_rank m5 k = None) X"
-  unfolding ed_minus_v_unfold[symmetric] ed_keys_nat_v_unfold[symmetric] ed_lookup_nat_unfold[symmetric] ed_keys_tstp_v_unfold[symmetric] ed_lookup_tstp_unfold[symmetric] ed_keys_table_v_unfold[symmetric] ed_lookup_table_unfold[symmetric] ed_keys_sum_v_unfold[symmetric] ed_lookup_sum_unfold[symmetric] ed_keys_rank_v_unfold[symmetric] ed_lookup_rank_unfold[symmetric]
-  by (auto simp: Mapping.keys_dom_lookup all_not_Some_pair_iff)
-
 section \<open>Bulk construction of tables\<close>
 
 text \<open>
   The front end builds the database of a time point by inserting tuples one at a time
-  (@{const insert_into_db}). @{text table_of_list} builds a table from a list in one step: if
+  (@{const insert_into_db}). @{const rbt_of_sorted_list} builds a table from a list in one step: if
   the list is strictly sorted with respect to the comparator (checked in linear time; the
   front end sorts with an unverified comparator), the red-black tree is built in linear time
   by @{const rbtreeify}, otherwise by the usual repeated insertion. Either way the result is
@@ -363,12 +303,6 @@ proof -
         linorder.rbt_lookup_rbtreeify[OF lin] linorder.rbt_lookup_rbt_bulkload[OF lin] dom_map_of_conv_image_fst
         image_image)
 qed
-
-definition table_of_list :: "event_data tuple list \<Rightarrow> event_data table" where
-  "table_of_list xs = set xs"
-
-lemma table_of_list_code[code]: "table_of_list xs = RBT_set (rbt_of_sorted_list xs)"
-  by (simp add: table_of_list_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple)
 
 section \<open>Tables built in one pass\<close>
 
@@ -513,8 +447,7 @@ text \<open>
 
 setup \<open>Monomorphize.box_cmd
   (map (fn (tn, ty) => ("RBT_Mapping2.impl_of", "ed_impl_of_" ^ tn ^ "_v", [etuple, ty])) ed_value_types
-   @ [("rbt_of_sorted_list", "ed_rbt_of_sorted_list_v", [etuple]),
-   ("RBT_Mapping2.impl_of", "ed_impl_of_v", [etuple, "unit"]),
+   @ [("RBT_Mapping2.impl_of", "ed_impl_of_v", [etuple, "unit"]),
    ("Mapping.lookup", "db_lookup_v", ["string8 \<times> nat", "event_data table list"]),
    ("update_mapping_with", "db_update_with_v", ["string8 \<times> nat", "event_data table list"])])\<close>
 
@@ -532,31 +465,10 @@ setup \<open>Monomorphize.monomorphize_cmd
    ("init_mmtaux", "ed_init_mmtaux", ["event_data"])]
   ["etuple_dict_simps"]\<close>
 
-definition insert_table_into_db :: "string8 \<times> nat \<Rightarrow> event_data table \<Rightarrow> database \<Rightarrow> database" where
-  "insert_table_into_db p X db = update_mapping_with (\<lambda>_ tbl _. map ((\<union>) X) tbl) p [X] db"
-
 lemma lookup_update_mapping_with:
   "Mapping.lookup (update_mapping_with f k v m) k' =
     (if k' = k then (case Mapping.lookup m k of None \<Rightarrow> Some v | Some v' \<Rightarrow> Some (f k v' v)) else Mapping.lookup m k')"
   by transfer (auto split: option.splits)
-
-lemma insert_table_into_db_insert:
-  "insert_table_into_db p Y (insert_into_db p x db) = insert_table_into_db p (Set.insert x Y) db"
-  by (rule mapping_eqI)
-    (auto simp: insert_table_into_db_def insert_into_db_def lookup_update_mapping_with split: option.splits)
-
-lemma insert_table_into_db_fold:
-  "fold (insert_into_db p) (x # xs) db = insert_table_into_db p (set (x # xs)) db"
-proof (induction xs arbitrary: x db)
-  case Nil
-  show ?case
-    by (auto simp: insert_table_into_db_def insert_into_db_def lookup_update_mapping_with
-        intro!: mapping_eqI split: option.splits)
-next
-  case (Cons y ys)
-  show ?case
-    using Cons.IH[of y "insert_into_db p x db"] by (simp add: insert_table_into_db_insert)
-qed
 
 (*<*)
 end

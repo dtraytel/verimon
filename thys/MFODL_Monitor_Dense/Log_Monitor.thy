@@ -164,9 +164,6 @@ definition conv_field :: "(bytes \<Rightarrow> double option) \<Rightarrow> ty \
    | TFloat \<Rightarrow> map_option EFloat (pf f)
    | TString \<Rightarrow> Some (EString (string8_of_bytes f)))"
 
-lemma conv_field_ty: "conv_field pf t f = Some x \<Longrightarrow> ty_of x = t"
-  by (cases t) (auto simp: conv_field_def)
-
 text \<open>The field conversion uses the fused integer conversion.\<close>
 
 lemma conv_field_code[code]: "conv_field pf t f = (case t of
@@ -756,9 +753,6 @@ proof (induction c xs ys rule: cmerge.induct)
     by (auto simp: set_cmerge conv split: order.splits intro: tr)
 qed simp_all
 
-lemma lt_of_comp_converse: "lt_of_comp (\<lambda>x y. c y x) a b = lt_of_comp c b a"
-  by (simp add: lt_of_comp_def)
-
 fun cmerge_rev :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
   "cmerge_rev c acc [] ys = fold Cons ys acc"
 | "cmerge_rev c acc (x # xs) [] = fold Cons (x # xs) acc"
@@ -947,7 +941,6 @@ lemma lsig_find_fast[code]: "lsig_find [] q n = None"
 
 lemma add_ev_fast[code]: "add_ev (p, vs) g = add_evk (p, nat_of_integer (ilen 0 vs)) vs g"
   by (simp add: add_ev_code ilen)
-
 
 subsection \<open>The predicates of the formula\<close>
 

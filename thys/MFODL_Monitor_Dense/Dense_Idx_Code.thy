@@ -393,9 +393,6 @@ lemma mapping_delete_set_Un:
   "mapping_delete_set m (A \<union> B) = mapping_delete_set (mapping_delete_set m A) B"
   by (intro mapping_eqI) (simp add: delete_set_lookup)
 
-lemma mapping_delete_set_empty: "mapping_delete_set m {} = m"
-  by (intro mapping_eqI) (simp add: delete_set_lookup)
-
 lemma fold_del_buckets:
   "fold (\<lambda>p (T, tm). (T - snd p, mapping_delete_set tm (snd p))) xs (T, tm)
    = (T - \<Union>(snd ` set xs), mapping_delete_set tm (\<Union>(snd ` set xs)))"
