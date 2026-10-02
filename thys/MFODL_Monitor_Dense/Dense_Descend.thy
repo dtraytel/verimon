@@ -1457,10 +1457,20 @@ qed
 end
 
 text \<open>The executable monitor's initial state: the compiled kernel state.  The kernel's
-  initialization is executed for it, so the definitions it is stated through become code.\<close>
+  initialization is executed for it.  Its window initializations are locale definitions, so they
+  are given code through constants for the interpretation the kernel state uses.\<close>
 
-lemmas [code] = msaux.init_since_def muaux.init_until_def mtaux.init_trigger_def
-  mtaux.init_and_trigger_def
+definition "kinit_since = msaux.init_since (init_mmasaux :: _ \<Rightarrow> mmasaux)"
+definition "kinit_until = muaux.init_until (init_muaux_dq :: _ \<Rightarrow> muaux_dq)"
+definition "kinit_trigger = mtaux.init_trigger (init_mmtaux :: _ \<Rightarrow> event_data mmtaux)"
+definition "kinit_and_trigger = mtaux.init_and_trigger (init_mmtaux :: _ \<Rightarrow> event_data mmtaux)"
+
+lemmas [code] = msaux.init_since_def[OF default_mmasaux.msaux_axioms, folded kinit_since_def]
+  muaux.init_until_def[OF dq_muaux.muaux_axioms, folded kinit_until_def]
+  mtaux.init_trigger_def[OF verimon_maux.mtaux_axioms, folded kinit_trigger_def]
+  mtaux.init_and_trigger_def[OF verimon_maux.mtaux_axioms, folded kinit_and_trigger_def]
+lemmas [code_unfold] = kinit_since_def[symmetric] kinit_until_def[symmetric]
+  kinit_trigger_def[symmetric] kinit_and_trigger_def[symmetric]
 
 definition dminit_safe :: "ty Formula.formula \<Rightarrow> dmstate" where
   "dminit_safe \<phi> = dof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>))
