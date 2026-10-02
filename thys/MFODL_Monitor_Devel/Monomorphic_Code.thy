@@ -219,7 +219,7 @@ lemma ed_member_compat[code_unfold]:
   "ed_member a (Collect Q) = Q a"
   "ed_member x (set xs) = List.member xs x"
   unfolding ed_member_unfold[symmetric]
-  by (auto simp: List.member_def)
+  by auto
 
 lemma ed_bot_compat[code_unfold]:
   "(A = ed_bot) = Set.is_empty A"
@@ -241,7 +241,7 @@ section \<open>Bulk construction of tables\<close>
 
 text \<open>
   The front end builds the database of a time point by inserting tuples one at a time
-  (@{const insert_into_db}). @{const rbt_of_sorted_list} builds a table from a list in one step: if
+  (@{const insert_into_db}). @{text rbt_of_sorted_list} builds a table from a list in one step: if
   the list is strictly sorted with respect to the comparator (checked in linear time; the
   front end sorts with an unverified comparator), the red-black tree is built in linear time
   by @{const rbtreeify}, otherwise by the usual repeated insertion. Either way the result is
