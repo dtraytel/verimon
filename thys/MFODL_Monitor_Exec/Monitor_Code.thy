@@ -23,8 +23,8 @@ text \<open>
   @{const vfeed_chunk} and @{const vfinish} (@{theory MFODL_Monitor_Exec.Log_Monitor}): the
   verified log parser, which drops the events of the predicates the formula does not mention,
   the conversion of the entries into the monitor's databases, and the monitor, with the
-  theorems @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} from the bytes
-  of the log to the verdicts; @{const vpending} tells the driver which part of the input it
+  theorems @{text verimon_log.vrun_log} and @{text verimon_log.vrun_filtered} (theory
+  @{text Log_Monitor_Online}) from the bytes of the log to the verdicts; @{const vpending} tells the driver which part of the input it
   still needs for locating errors.
 
   The export is entirely within this session.  The code-generator setup it relies on -- the
