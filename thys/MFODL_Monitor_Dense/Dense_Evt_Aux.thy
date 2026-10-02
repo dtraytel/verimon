@@ -853,6 +853,53 @@ lemma dsx_eval_since_rdsx0:
         (zs, buf', aux') \<Rightarrow> (zs, rbufS buf', rdsx aux'))"
   using dsx_eval_since_rdsx[where rs = "[]" and Rs = "[]"] by simp
 
+subsection \<open>The Until buffer's traversal, and the two buffers of the fused And-Trigger\<close>
+
+lemma mebuf2t_take_nat:
+  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
+  shows "mebuf2t_take f (h z) buf t ts
+    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
+  using assms
+proof (induct g z buf t ts rule: mebuf2t_take.induct)
+  case (1 g z xs ys t0 ts)
+  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
+  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
+  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
+  show ?case
+  proof (cases "ot = None \<or> ox = None \<or> oy = None")
+    case True
+    then show ?thesis
+      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
+  next
+    case False
+    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
+      by auto
+    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
+        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
+      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
+    show ?thesis
+      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
+  qed
+qed
+
+lemma mbuf2t_take_until:
+  "mbuf2t_take (dux_add_new dags msk) (rdux aux) (rbuf2 buf) t (Rep_mbuf_t nts @ ts)
+   = (case mebuf2t_take (udux_add_new dags msk) aux buf t (nts @@ ts) of
+        (aux', buf', t', nts') \<Rightarrow> (rdux aux', rbuf2 buf', t', Rep_mbuf_t nts'))"
+  using mbuf2t_take_rbuf2[of "dux_add_new dags msk" "rdux aux" buf t nts ts]
+    mebuf2t_take_nat[of "dux_add_new dags msk" rdux "udux_add_new dags msk" aux buf t "nts @@ ts"]
+  by (simp add: dux_add_new_rdux split: prod.splits)
+
+lemma mbuf2_add_rbufo: "mbuf2_add xs ys (rbufo buf) = rbufo (mebuf2_add xs ys buf)"
+  by (rule mbuf2_add)
+
+lemma mbuf2_take_rbufo:
+  "mbuf2_take f (rbufo buf) = (case mebuf2_take f buf of (zs, buf') \<Rightarrow> (zs, rbufo buf'))"
+  by (cases "mebuf2_take f buf") (simp add: mebuf2_take)
+
+lemma gbin_join_eq': "(gbin_join :: _ \<Rightarrow> event_data table \<Rightarrow> _) = dbin_join"
+  by (intro ext) (rule gbin_join_eq)
+
 (*<*)
 end
 (*>*)
