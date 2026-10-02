@@ -346,15 +346,8 @@ val dense_elem_consts =
   ["gbin_join", "gbin_join0", "ggen_join", "gindex", "gindex_step",
    "gprobe_step", "gprobe_step_l", "gands_pos", "gands_neg", "gmulti_join",
    "dsemi", "dsemi_idx",
-   "ginit_msaux", "gvalid_tuple", "gidx_upd", "gshift_end",
-   "gadd_new_ts_msaux'", "gadd_new_ts_msaux", "ggc_msaux",
-   "gadd_new_table_msaux", "gresult_msaux", "gjoin_msaux", "ggc_join_msaux",
    "ginit_dq", "geval_step_dq", "gshift_dq", "geval_dq",
    "guntil_step_dq", "guntil_elem_step_dq", "gadd_new_dq",
-   "gevt_add", "gevt_del", "gsevt_move", "gsevt_expire", "ginit_sevt",
-   "gadd_new_ts_sevt", "gjoin_sevt", "gadd_new_table_sevt", "gresult_sevt",
-   "gevt_extend", "ginit_evt", "glength_evt", "gevt_step", "gevt_shift",
-   "gadd_new_evt", "geval_evt",
    "gsemi_join", "ginit_mmtaux", "gupdate_mmtaux'", "gupdate_mmtaux", "gresult_mmtaux",
    "gmmtaux_empty",
    "gnth", "glookup", "gmrtabulate", "geps_lax", "greps_strict", "gleps_strict",
@@ -364,7 +357,6 @@ val dense_elem_consts =
    "dinit_msaux", "djoin_msaux", "dadd_new_ts_msaux'", "dadd_new_ts_msaux",
    "dadd_new_table_msaux", "dadd_new_table_lz", "dgc_msaux", "dgc_join_msaux", "dgc_join_lz",
    "dshift_end", "didx_upd", "didx"]
-
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
 \<close>
 

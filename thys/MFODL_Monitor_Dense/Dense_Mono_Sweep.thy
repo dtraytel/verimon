@@ -176,10 +176,7 @@ setup \<open>mono
    ("dtabc", "eo_dtabc", ["event_data"]),
    ("didx_add1_cfi", "ed_didx_add1_cfi", ["event_data"]),
    ("didx_del1_cfi", "ed_didx_del1_cfi", ["event_data"]),
-   ("shift_end", "ed_shift_end", ["event_data"]),
-   ("gshift_end_del", "ed_gshift_end_del", ["event_data"]),
-   ("ggc_join_msaux_del", "ed_ggc_join_msaux_del", ["event_data"])]
-  dicts\<close>
+   ("shift_end", "ed_shift_end", ["event_data"])]  dicts\<close>
 
 text \<open>Three more are recorded as not done for the same reason as @{text all_interval}:
   @{text these}, @{text gadd_new_ts_msaux_add} and @{text safe_regex} are resolved to constants

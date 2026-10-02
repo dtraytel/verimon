@@ -10,9 +10,6 @@ session MFODL_Monitor_Dense = MFODL_Monitor_Devel +
   sessions
     Log_Parser
   theories
-    Table_Evt
-    Since_Evt
-    Until_Evt
     Dense_Utuple
     Dense
     Dense_Aux

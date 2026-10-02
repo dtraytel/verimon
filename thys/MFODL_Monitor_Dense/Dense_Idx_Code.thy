@@ -334,7 +334,7 @@ lemmas upd_set_fallback_code[code] =
 
 subsection \<open>The expiry's fold, applied\<close>
 
-text \<open>@{const gshift_end} folds @{const filter_set} over the expired time points with the step
+text \<open>@{const dshift_end} folds @{const filter_set} over the expired time points with the step
   unapplied, which no rule on an applied occurrence reaches; the fold gets a name whose code
   equation applies the step.\<close>
 
@@ -347,19 +347,18 @@ lemma fold_filter_set_code[code]:
   "fold_filter_set (x # xs) acc = fold_filter_set xs (filter_set x acc)"
   by (simp_all add: fold_filter_set_def)
 
-declare [[code drop: gshift_end]]
+declare [[code drop: dshift_end]]
 
-lemma gshift_end_code[code]:
-  "gshift_end args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+lemma dshift_end_code[code]:
+  "dshift_end args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
       idx_since, tuple_since) =
     (let I = args_ivl args;
      data_prev' = dropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_prev;
      (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
      (tuple_in, del) = fold_filter_set discard (tuple_in, {}) in
      (t, gc, msk, data_prev', data_in, table_in - del,
-      gidx_upd args (\<lambda>_. didx_minus idx_in (didx msk del)), tuple_in, idx_since, tuple_since))"
+      didx_upd args (\<lambda>_. didx_minus idx_in (didx msk del)), tuple_in, idx_since, tuple_since))"
   unfolding fold_filter_set_def by simp
-
 subsection \<open>The probes, restated\<close>
 
 text \<open>
@@ -370,7 +369,7 @@ text \<open>
   restated with @{const mfilter_keys}, which is what they mean.
 \<close>
 
-declare [[code drop: dsemi_idx gjoin_msaux]]
+declare [[code drop: dsemi_idx djoin_msaux]]
 
 lemma dsemi_idx_code[code]: "dsemi_idx msk pos idx X = set_of_idx (mfilter_keys pos X idx)"
   by (simp add: dsemi_idx_def mfilter_keys_def)
@@ -551,54 +550,6 @@ proof (cases "ID CCOMPARE('k)")
         set_of_idx_mfilter_keys_False_RBT[OF n] del_buckets1_def fold_del_buckets1
         Let_def entries_fails_fold foldr_conv_fold del: RBT_Mapping_def)
 qed simp
-
-lemma gjoin_msaux_code[code]:
-  "gjoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
-      idx_since, tuple_since) =
-    (let pos = args_pos args in
-     (if \<forall>i \<in> set msk. \<not> i then
-        (let take_all = (([] \<in> Y) = pos) in
-         (t, gc, msk, data_prev, data_in,
-          if take_all then table_in else {},
-          if take_all then idx_in else Mapping.empty,
-          if take_all then tuple_in else Mapping.empty,
-          if take_all then idx_since else Mapping.empty,
-          if take_all then tuple_since else Mapping.empty))
-      else if \<forall>i \<in> set msk. i then
-        (let in_del = (if pos then table_in - Y else table_in \<inter> Y);
-         tuple_in' = mapping_delete_set tuple_in in_del;
-         tuple_since' = mfilter_keys pos Y tuple_since in
-         (t, gc, msk, data_prev, data_in, table_in - in_del, Mapping.empty, tuple_in',
-          Mapping.empty, tuple_since'))
-      else
-        (let (idx_in', table_in', tuple_in') = gjoin_idx pos Y idx_in (table_in, tuple_in);
-             (idx_since', tuple_since') = gjoin_idx1 pos Y idx_since tuple_since in
-         (t, gc, msk, data_prev, data_in, table_in', idx_in', tuple_in', idx_since',
-          tuple_since'))))"
-proof -
-  have D: "\<And>M. del_buckets M (table_in, tuple_in)
-      = (table_in - set_of_idx M, mapping_delete_set tuple_in (set_of_idx M))"
-    by (simp add: del_buckets_def)
-  show ?thesis
-    by (simp only: gjoin_msaux.simps Let_def D gjoin_idx_def gjoin_idx1_def del_buckets1_def
-        mfilter_keys_def dsemi_idx_def prod.case)
-qed
-
-text \<open>The dense evaluator's own Since structure (@{theory MFODL_Monitor_Dense.Dense_Aux}) has the
-  same shift and join as the generic one above; they get the same code equations.\<close>
-
-declare [[code drop: dshift_end djoin_msaux]]
-
-lemma dshift_end_code[code]:
-  "dshift_end args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
-      idx_since, tuple_since) =
-    (let I = args_ivl args;
-     data_prev' = dropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_prev;
-     (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
-     (tuple_in, del) = fold_filter_set discard (tuple_in, {}) in
-     (t, gc, msk, data_prev', data_in, table_in - del,
-      didx_upd args (\<lambda>_. didx_minus idx_in (didx msk del)), tuple_in, idx_since, tuple_since))"
-  unfolding fold_filter_set_def by simp
 
 lemma djoin_msaux_code[code]:
   "djoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
