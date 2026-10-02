@@ -12,7 +12,7 @@ text \<open>
   fields without looking at them and are generic in the element type.  The ones below read a
   field -- the term evaluation, the match, the constraint, the assignment and the aggregation --
   and are stated here, over the short tuples, once.  Their agreement with the kernel's
-  operations is proved in @{theory MFODL_Monitor_Exec.Frame}, through the reordering that relates the two column
+  operations is proved in @{text Frame}, through the reordering that relates the two column
   orders.
 \<close>
 
