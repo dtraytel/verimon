@@ -167,13 +167,13 @@ text \<open>The structures over the short tuples that the first pass left: the i
 
 setup \<open>mono
   [("csl", "edl_csl", ["event_data list"]),
+   ("ecard", "edl_ecard", ["event_data list"]),
    ("card", "edl_card", ["event_data list"]),
    ("cluster", "edl_cluster", ["event_data list", "event_data list"]),
    ("rbt_of_sorted_list", "edl_rbt_of_sorted_list", ["event_data list"]),
    ("mapping_delete_set", "edl_mapping_delete_set", ["event_data list", "nat"]),
    ("mrestrict1_cfi", "edl_mrestrict1_cfi", ["event_data list", "event_data list set"]),
    ("dtabc", "eo_dtabc", ["event_data"]),
-   ("didx", "ed_didx", ["event_data"]),
    ("didx_add1_cfi", "ed_didx_add1_cfi", ["event_data"]),
    ("didx_del1_cfi", "ed_didx_del1_cfi", ["event_data"]),
    ("shift_end", "ed_shift_end", ["event_data"]),

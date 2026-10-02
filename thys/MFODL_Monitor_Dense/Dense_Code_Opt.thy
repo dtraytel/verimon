@@ -360,7 +360,10 @@ val dense_elem_consts =
    "gnth", "glookup", "gmrtabulate", "geps_lax", "greps_strict", "gleps_strict",
    "grdelta", "gldelta", "gupdate_matchP", "gupdate_matchF_base", "gupdate_matchF_step",
    "gupdate_matchF", "geval_matchF",
-   "didx_add1", "didx_add", "didx_del1", "didx_del", "dbucket", "fold_filter_set"]
+   "didx_add1", "didx_add", "didx_del1", "didx_del", "dbucket", "fold_filter_set",
+   "dinit_msaux", "djoin_msaux", "dadd_new_ts_msaux'", "dadd_new_ts_msaux",
+   "dadd_new_table_msaux", "dadd_new_table_lz", "dgc_msaux", "dgc_join_msaux", "dgc_join_lz",
+   "dshift_end", "didx_upd", "didx"]
 
 fun mono_name pre c = pre ^ String.translate (fn #"'" => "a" | ch => String.str ch) c
 \<close>
