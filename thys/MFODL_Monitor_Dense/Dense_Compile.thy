@@ -120,7 +120,7 @@ proof (induct rule: mok.induct)
 next
   case MokNeg then show ?case by (simp add: produces_MNeg)
 next
-  case MokAndRel then show ?case by (rule produces_MAndRel)
+  case MokAndRel then show ?case by (simp add: produces_MAndRel)
 next
   case MokAndAssign then show ?case by (simp add: produces_MAndAssign)
 next

@@ -1838,4 +1838,68 @@ next
   qed
 qed (simp_all add: Let_def mbuf_t_empty.rep_eq)
 
+subsection \<open>The state and the step\<close>
+
+record udmstate =
+  udmstate_i :: nat
+  udmstate_j :: nat
+  udmstate_m :: udformula
+  udmstate_n :: nat
+  udmstate_cs :: cols
+  udmstate_t :: "ts mbuf_t"
+
+definition Rep_udmstate :: "udmstate \<Rightarrow> dmstate" where
+  "Rep_udmstate st =
+     \<lparr> dmstate_i = udmstate_i st, dmstate_j = udmstate_j st,
+       dmstate_m = Rep_udformula (udmstate_m st),
+       dmstate_n = udmstate_n st, dmstate_cs = udmstate_cs st, dmstate_t = udmstate_t st \<rparr>"
+
+definition udminit_safe :: "ty Formula.formula \<Rightarrow> udmstate" where
+  "udminit_safe \<phi> = (if mmonitorable_exec \<phi>
+     then (let n = Formula.nfv \<phi>; ks = Formula.fv_list \<phi>; cs = dcols ks in
+       \<lparr>udmstate_i = 0, udmstate_j = 0, udmstate_m = udinit n ks cs \<phi>, udmstate_n = n,
+        udmstate_cs = cs, udmstate_t = mbuf_t_empty\<rparr>)
+     else undefined)"
+
+lemma mbuf_t_empty_append_Nil[simp]: "mbuf_t_empty @@ [] = mbuf_t_empty"
+  by transfer simp
+
+lemma Rep_udminit_safe:
+  assumes "mmonitorable \<phi>"
+  shows "Rep_udmstate (udminit_safe \<phi>) = dof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>)
+    (dcols (Formula.fv_list \<phi>)) (minit_safe \<phi>)"
+  using assms
+  by (simp add: udminit_safe_def Rep_udmstate_def dof_state_def default_maux.minit_safe_def
+      default_maux.minit_def udinit_dof monitorable_formula_code Let_def)
+
+lemma vdfail_nodes_Rep_udmstate:
+  "vdfail_nodes (dmstate_m (Rep_udmstate st)) = uvdfail_nodes (udmstate_m st)"
+  by (simp add: Rep_udmstate_def vdfail_nodes_Rep)
+
+definition udmstep :: "database \<times> ts \<Rightarrow> udmstate \<Rightarrow> (nat \<times> ts \<times> utable) list \<times> udmstate" where
+  "udmstep tdb st =
+    (case udeval (udmstate_j st + 1) [snd tdb] (fst tdb) (udmstate_m st) of
+      (xs, m) \<Rightarrow>
+      (case dannotate (udmstate_i st) (udmstate_t st @@ [snd tdb]) xs [] of
+        (i', tq, vs) \<Rightarrow> (vs,
+        \<lparr> udmstate_i = i',
+          udmstate_j = udmstate_j st + 1,
+          udmstate_m = m,
+          udmstate_n = udmstate_n st,
+          udmstate_cs = udmstate_cs st,
+          udmstate_t = tq \<rparr>)))"
+
+theorem udmstep_Rep:
+  "dmstep (db, t) (Rep_udmstate st)
+   = (case udmstep (db, t) st of (vs, st') \<Rightarrow> (vs, Rep_udmstate st'))"
+proof -
+  obtain xs m where e: "udeval (Suc (udmstate_j st)) [t] db (udmstate_m st) = (xs, m)"
+    by (cases "udeval (Suc (udmstate_j st)) [t] db (udmstate_m st)")
+  obtain i' tq vs where d: "dannotate (udmstate_i st) (udmstate_t st @@ [t]) xs [] = (i', tq, vs)"
+    by (metis prod_cases3)
+  show ?thesis
+    unfolding dmstep_def udmstep_def Rep_udmstate_def
+    by (simp add: udeval_Rep e d)
+qed
+
 end
