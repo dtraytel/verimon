@@ -91,7 +91,7 @@ let monitor_gen parse dbschema logfile fv f =
   } in
   ignore (parse dbschema logfile ctxt)
 
-(* The verified path (thys/MFODL_Monitor_Dense/Log_Monitor.thy): [vinit] prepares the formula
+(* The verified path (thys/MFODL_Monitor_Exec/Log_Monitor.thy): [vinit] prepares the formula
    and starts the monitor, [vfeed_chunk] reads a chunk of the log and [vfinish] the end of the
    log.  All three are generated code: the verified log parser, which skips the events of the
    predicates the signature declares but whose names do not occur freely in the formula (unless

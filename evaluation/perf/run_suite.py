@@ -7,12 +7,12 @@ run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
                        [--families once,since] [--out results]
 
 Systems: monpoly is the binary without flags; verimon is `-verified`, the verified dense evaluator
-of thys/MFODL_Monitor_Dense (reports before 2026-09-23 call it `vdense`, from when it needed
+of thys/MFODL_Monitor_Exec (reports before 2026-09-23 call it `vdense`, from when it needed
 `-vdense` next to a second, unverified dense monitor under `-verified`; that monitor is no
 longer in the binary).  Run against a build of master, `-verified` is the original VeriMon.
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
-classified as `refused` (outside the verified dense fragment), `unmonitorable` (the front end
+classified as `refused` (outside the verified executable fragment), `unmonitorable` (the front end
 rejected the formula, or MonPoly does not support an operator in it: TRIGGER, RELEASE, LETPAST)
 or `error`.  MonPoly runs a formula with FRZ with `-nofilteremptytp`, since its filter of empty
 time points rejects FRZ.  The verdicts of the systems are compared (a hash of the
@@ -62,7 +62,7 @@ def run_once(binary, flags, sig, formula, log, timeout):
     dt = time.perf_counter() - t0
     if p.returncode != 0:
         err = (p.stderr or b"").decode("utf-8", "replace") + (p.stdout or b"").decode("utf-8", "replace")
-        if "outside the verified dense fragment" in err:
+        if "outside the verified executable fragment" in err:
             return "refused", dt, None
         if "monitorable" in err.lower() or "not supported" in err.lower():
             return "unmonitorable", dt, None

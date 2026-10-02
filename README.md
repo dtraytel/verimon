@@ -170,7 +170,7 @@ parameters of commands, and locating errors by line and column.  Without
 compares the two.
 
 With `-verified`, more of this is verified (theory `Log_Monitor` in
-`thys/MFODL_Monitor_Dense`): the parser skips the events of the
+`thys/MFODL_Monitor_Exec`): the parser skips the events of the
 predicates that the signature declares but whose names do not occur
 freely in the formula (unless `-nofilterrel`) without storing them, and
 the conversion of the timestamps and fields, the construction of the

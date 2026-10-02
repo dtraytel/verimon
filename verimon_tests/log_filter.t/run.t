@@ -1,5 +1,5 @@
 Under -verified, the log is read, converted and monitored by the code of
-thys/MFODL_Monitor_Dense/Log_Monitor.thy.  The parser drops the events of the predicates that
+thys/MFODL_Monitor_Exec/Log_Monitor.thy.  The parser drops the events of the predicates that
 are in the signature but whose names do not occur freely in the formula before it stores them:
 their fields are neither converted nor checked.
 

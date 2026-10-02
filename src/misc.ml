@@ -109,7 +109,7 @@ let gc_space_overhead = ref 0
 let gc_minor_heap = ref 0
 
 (* Set by the deprecated -dense, which the verified monitor ignores: it always represents each
-   table's tuples without the positions that are None for all of them (thys/MFODL_Monitor_Dense). *)
+   table's tuples without the positions that are None for all of them (thys/MFODL_Monitor_Exec). *)
 let dense_cols = ref false
 
 (* Set by the deprecated -vdense, which is ignored: -verified always runs the verified dense

@@ -1,0 +1,54 @@
+chapter AFP
+
+session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
+  description
+    "The verified executable monitor: the evaluator emstep/eeval, which refines the kernel's
+     evaluation function over short tuples with executable window structures, its compiler from
+     the kernel's state, and the formula rewrites it runs with.  Monitor_Code is the code export
+     the shipping binary is built from (src/verified.ml), together with the verified log parser
+     of session Log_Parser; Log_Monitor composes the two, from the bytes of the log to the
+     verdicts, and Log_Monitor_Online states its correctness for the online interface."
+  sessions
+    Log_Parser
+  theories
+    Tuple_Fields
+    Frame
+    Frame_Aux
+    Until_Gen
+    Window
+    Agg_Gen
+    Since_Agg
+    Until_Agg
+    Generic_Ops
+    Since_Agg_Exec
+    Until_Agg_Exec
+    Agg_Cache
+    Window_Dispatch
+    Trigger_Window
+    Match_Window
+    Eval
+    Produces
+    Produces_Match
+    Produces_Let
+    Produces_Agg
+    Correct
+    Compile_Check
+    Init
+    Compile
+    Idx_Code
+    Frz_Rewrite
+    Share_Rewrite
+    Push_Rewrite
+    Prepare
+    Tuple_Code
+    Mono_Sweep
+    Agg_Code
+    Map_Upd_Code
+    RBT_Code
+    Mono_Hot
+    Log_Monitor
+    Log_Monitor_Online
+  theories [document=false]
+    Monitor_Code
+  export_files (in ".") [2]
+    "MFODL_Monitor_Exec.Monitor_Code:code/**"
