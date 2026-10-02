@@ -1456,7 +1456,11 @@ qed
 
 end
 
-text \<open>The executable monitor's initial state: the compiled kernel state.\<close>
+text \<open>The executable monitor's initial state: the compiled kernel state.  The kernel's
+  initialization is executed for it, so the definitions it is stated through become code.\<close>
+
+lemmas [code] = msaux.init_since_def muaux.init_until_def mtaux.init_trigger_def
+  mtaux.init_and_trigger_def
 
 definition dminit_safe :: "ty Formula.formula \<Rightarrow> dmstate" where
   "dminit_safe \<phi> = dof_state (Formula.nfv \<phi>) (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>))
