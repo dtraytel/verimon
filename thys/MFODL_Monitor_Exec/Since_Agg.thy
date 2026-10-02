@@ -88,7 +88,7 @@ lemma map_add_upt': "map (\<lambda>c. c + k) [a..<b] = [a + k..<b + k]"
 lemma upt_split: "a \<le> b \<Longrightarrow> b \<le> c \<Longrightarrow> [a..<b] @ [b..<c] = [a..<c]"
   using upt_add_eq_append[of a b "c - b"] by simp
 
-lemma agg_cols_dagg_gcols:
+lemma agg_cols_eagg_gcols:
   assumes "k \<le> w" and "pos \<le> w - k"
   shows "agg_cols k (eagg_gcols (g0, \<omega>, f, k, pos) w) = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
 proof -
@@ -116,7 +116,7 @@ lemma reindex_shift_trm:
    reindex_trm ([0..<b] @ [Suc b..<Suc w]) (shift_trm b f) = f"
   by (induct f) (simp_all add: col_pos_shift del: upt_Suc)
 
-lemma ins_pos_dagg_gcols: "ins_pos ([0..<pos] @ [Suc pos..<Suc m]) pos = pos"
+lemma ins_pos_eagg_gcols: "ins_pos ([0..<pos] @ [Suc pos..<Suc m]) pos = pos"
 proof -
   have "filter (\<lambda>c. c < pos) [0..<pos] = [0..<pos]" by (rule filter_True) simp
   moreover have "filter (\<lambda>c. c < pos) [Suc pos..<Suc m] = []"
@@ -124,10 +124,10 @@ proof -
   ultimately show ?thesis by (simp add: ins_pos_def del: upt_Suc)
 qed
 
-lemma sorted_wrt_dagg_gcols: "sorted_wrt (<) ([0..<pos] @ [Suc pos..<Suc m])"
+lemma sorted_wrt_eagg_gcols: "sorted_wrt (<) ([0..<pos] @ [Suc pos..<Suc m])"
   by (auto simp: sorted_wrt_append simp del: upt_Suc)
 
-lemma merge_cols_dagg_gcols:
+lemma merge_cols_eagg_gcols:
   assumes "pos \<le> m"
   shows "merge_cols ([0..<pos] @ [Suc pos..<Suc m]) [pos] = [0..<Suc m]"
 proof -
@@ -136,7 +136,7 @@ proof -
     using assms by (simp add: upt_conv_Cons del: upt_Suc)
   also have "\<dots> = [0..<Suc m]" using assms by (intro upt_split) simp_all
   finally show ?thesis
-    unfolding merge_cols_single[OF sorted_wrt_dagg_gcols nin] ins_pos_dagg_gcols
+    unfolding merge_cols_single[OF sorted_wrt_eagg_gcols nin] ins_pos_eagg_gcols
     by (simp del: upt_Suc)
 qed
 
@@ -156,7 +156,7 @@ proof -
   have kw: "k \<le> w" and pw: "pos \<le> w - k" using assms by (auto simp: p)
   have kpw: "k + pos \<le> w" using kw pw by arith
   have cc: "eagg_ccols p w = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
-    unfolding p eagg_ccols.simps by (rule agg_cols_dagg_gcols[OF kw pw])
+    unfolding p eagg_ccols.simps by (rule agg_cols_eagg_gcols[OF kw pw])
   show s: "sorted_wrt (<) (eagg_ccols p w)" unfolding cc
     by (auto simp: sorted_wrt_append simp del: upt_Suc)
   show "distinct (eagg_ccols p w)" using s by (simp add: strict_sorted_iff)
@@ -204,7 +204,7 @@ proof -
   have kw: "k \<le> w" and pw: "pos \<le> w - k" and fv: "Formula.fv_trm f \<subseteq> {0..<w}" using ok by auto
   have kpw: "k + pos \<le> w" using kw pw by arith
   have cc: "?cc = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
-    unfolding eagg_ccols.simps by (rule agg_cols_dagg_gcols[OF kw pw])
+    unfolding eagg_ccols.simps by (rule agg_cols_eagg_gcols[OF kw pw])
   have fv': "Formula.fv_trm (shift_trm (k + pos) f) \<subseteq> set ?cc"
     unfolding cc fv_shift_trm using fv kpw by (auto simp del: upt_Suc)
   have r: "reindex_trm ?cc (shift_trm (k + pos) f) = f"
@@ -254,7 +254,7 @@ proof (rule nth_equalityI)
   qed
 qed
 
-lemma length_filter_dagg_ccols:
+lemma length_filter_eagg_ccols:
   assumes ok: "eagg_ok (g0, \<omega>, f, k, pos) w"
   shows "length (filter (\<lambda>x. k \<le> x) (eagg_ccols (g0, \<omega>, f, k, pos) w)) = w - k"
 proof -
@@ -277,7 +277,7 @@ next
   obtain d v where "x = v # agg_key k ?cc d"
     using x False by (auto simp: eval_agg_def Let_def simp del: eagg_ccols.simps)
   moreover have "length (agg_key k ?cc d) = w - k"
-    using length_filter_dagg_ccols[OF ok] by (simp add: agg_key_def del: eagg_ccols.simps)
+    using length_filter_eagg_ccols[OF ok] by (simp add: agg_key_def del: eagg_ccols.simps)
   ultimately show ?thesis by blast
 qed
 
@@ -297,7 +297,7 @@ proof -
   have ccd: "cc = eagg_ccols ?p w" by (simp add: cc_def G_def)
   note P = eagg_ccols_props[OF ok, folded ccd]
   have ccE: "cc = [0..<k + pos] @ [Suc (k + pos)..<Suc w]"
-    unfolding cc_def G_def by (rule agg_cols_dagg_gcols[OF kw pw])
+    unfolding cc_def G_def by (rule agg_cols_eagg_gcols[OF kw pw])
   have GE: "G = [0..<pos] @ [Suc pos..<Suc (w - k)]" by (simp add: G_def)
   have fr: "eframe cc (agg_cols k G)" using P by (simp add: eframe_def cc_def[symmetric])
   have tb: "table cc D" using D P(3) by (simp add: table_def wf_tuple_def)
@@ -309,12 +309,12 @@ proof -
       simplified length_replicate, OF fr tb fv' yg g0']
   have 1: "reindex_trm (agg_cols k G) (shift_trm (k + pos) f) = f"
     unfolding cc_def[symmetric] ccE by (rule reindex_shift_trm[OF fv kpw])
-  have 2: "ins_pos G pos = pos" unfolding GE by (rule ins_pos_dagg_gcols)
+  have 2: "ins_pos G pos = pos" unfolding GE by (rule ins_pos_eagg_gcols)
   have 3: "etabc cc (agg_cols k G) D = D"
     using tb P(2) unfolding cc_def[symmetric]
     by (force simp: etabc_def table_def restrict_idle)
   have 4: "shift_cols k cc = G" unfolding cc_def by (rule shift_cols_agg_cols)
-  have 5: "merge_cols G [pos] = [0..<Suc (w - k)]" unfolding GE by (rule merge_cols_dagg_gcols[OF pw])
+  have 5: "merge_cols G [pos] = [0..<Suc (w - k)]" unfolding GE by (rule merge_cols_eagg_gcols[OF pw])
   define E where "E = eval_agg cc g0 \<omega> (replicate k Formula.TInt) (shift_trm (k + pos) f) D"
   have main: "uagg g0 \<omega> f k pos D = etabc (pos # G) [0..<Suc (w - k)] E"
     using uea unfolding 1 2 3 4 5 E_def .

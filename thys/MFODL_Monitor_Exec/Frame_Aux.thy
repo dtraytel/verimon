@@ -448,24 +448,24 @@ lemma emsaux_cases:
   by (metis prod.collapse)
 
 lemma emsaux_of_dinit: "emsaux_of args (einit_msaux args msk) = init_mmsaux args"
-  by (simp add: dinit_msaux_def wf_table_of_set_args_def)
+  by (simp add: einit_msaux_def wf_table_of_set_args_def)
 
 lemma emsaux_inv_dinit: "emsaux_inv args msk (einit_msaux args msk)"
-  by (simp add: dinit_msaux_def)
+  by (simp add: einit_msaux_def)
 
-lemma valid_dinit_msaux:
+lemma valid_einit_msaux:
   assumes "set L \<subseteq> set R" "distinct L" "distinct R"
   shows "valid_emsaux (init_args I n L R b agg) msk 0
     (einit_msaux (init_args I n L R b agg) msk) []"
   unfolding valid_emsaux_def emsaux_of_dinit
   by (rule conjI[OF valid_init_mmsaux[OF assms] emsaux_inv_dinit])
 
-lemma emsaux_of_dshift_end:
+lemma emsaux_of_eshift_end:
   "emsaux_of args (eshift_end args nt daux)
    = mmsaux_norm args (shift_end args nt (emsaux_of args daux))"
   by (cases daux rule: emsaux_cases) (simp add: Let_def split: prod.splits)
 
-lemma emsaux_inv_dshift_end:
+lemma emsaux_inv_eshift_end:
   assumes "emsaux_inv args msk daux"
   shows "emsaux_inv args msk (eshift_end args nt daux)"
 proof (cases daux rule: emsaux_cases)
@@ -491,12 +491,12 @@ lemma valid_dmsauxD:
 lemma valid_emsaux_inv: "valid_emsaux args msk cur daux ys \<Longrightarrow> emsaux_inv args msk daux"
   by (simp add: valid_emsaux_def)
 
-lemma valid_dshift_end:
+lemma valid_eshift_end:
   assumes "valid_emsaux args msk cur daux ys" and "nt \<ge> cur"
   shows "valid_emsaux args msk cur (eshift_end args nt daux)
      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) ys)"
   by (rule valid_dmsauxI[OF valid_shift_end_mmsaux[OF valid_dmsauxD[OF assms(1)] assms(2)]
-      emsaux_of_dshift_end emsaux_inv_dshift_end[OF valid_emsaux_inv[OF assms(1)]]])
+      emsaux_of_eshift_end emsaux_inv_eshift_end[OF valid_emsaux_inv[OF assms(1)]]])
 
 lemma emsaux_of_dadd_new_ts':
   "emsaux_of args (eadd_new_ts_msaux' args nt daux)
@@ -524,8 +524,8 @@ lemma valid_dadd_new_ts:
   assumes "valid_emsaux args msk cur daux ys" and "nt \<ge> cur"
   shows "valid_emsaux args msk nt (eadd_new_ts_msaux args nt daux)
      (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) ys)"
-  unfolding dadd_new_ts_msaux_def
-  by (rule valid_dadd_new_ts'[OF valid_dshift_end[OF assms] assms(2)])
+  unfolding eadd_new_ts_msaux_def
+  by (rule valid_dadd_new_ts'[OF valid_eshift_end[OF assms] assms(2)])
 
 lemma emsaux_of_dgc:
   "emsaux_of args (egc_msaux args daux) = mmsaux_norm args (gc_mmsaux args (emsaux_of args daux))"
@@ -562,7 +562,7 @@ lemma valid_dadd_new_table:
 lemma eresult_msaux_eq: "eresult_msaux args daux = result_mmsaux args (emsaux_of args daux)"
   by (cases daux rule: emsaux_cases) simp
 
-lemma valid_dresult_msaux:
+lemma valid_eresult_msaux:
   "valid_emsaux args msk cur daux ys \<Longrightarrow> eresult_msaux args daux
     = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
   by (simp add: eresult_msaux_eq valid_result_mmsaux[OF valid_dmsauxD])
@@ -851,18 +851,18 @@ lemma valid_emsaux_lz_intro:
     \<Longrightarrow> valid_emsaux_lz args msk cur daux ys"
   unfolding valid_emsaux_lz_def by (cases daux rule: emsaux_cases) (simp, metis)
 
-lemma valid_dinit_msaux_lz:
+lemma valid_einit_msaux_lz:
   assumes "set L \<subseteq> set R" "distinct L" "distinct R"
   shows "valid_emsaux_lz (init_args I n L R b agg) msk 0
     (einit_msaux (init_args I n L R b agg) msk) []"
-  by (rule valid_emsaux_lz_intro[OF valid_dinit_msaux[OF assms]])
-    (simp add: dinit_msaux_def empty_queue_rep)
+  by (rule valid_emsaux_lz_intro[OF valid_einit_msaux[OF assms]])
+    (simp add: einit_msaux_def empty_queue_rep)
 
-lemma eshift_end_dset_since:
+lemma eshift_end_eset_since:
   "eshift_end args nt (eset_since g i s daux) = eset_since g i s (eshift_end args nt daux)"
   by (cases daux rule: emsaux_cases) (simp add: Let_def split: prod.splits)
 
-lemma eadd_new_ts'_dset_since:
+lemma eadd_new_ts'_eset_since:
   assumes e: "linearize (eprev_of daux) = []"
   shows "eadd_new_ts_msaux' args nt (eset_since g i s daux)
     = eset_since g i s (eadd_new_ts_msaux' args nt daux)"
@@ -877,7 +877,7 @@ proof (cases daux rule: emsaux_cases)
     by (simp add: tdw mv Let_def del: takedropWhile_queue.simps)
 qed
 
-lemma eprev_of_dshift_end:
+lemma eprev_of_eshift_end:
   assumes e: "linearize (eprev_of daux) = []"
   shows "linearize (eprev_of (eshift_end args nt daux)) = []"
 proof (cases daux rule: emsaux_cases)
@@ -911,28 +911,28 @@ proof (cases "memL (args_ivl args) 0")
     and dp: "linearize (eprev_of daux) = []"
     using v True unfolding valid_emsaux_lz_def by auto
   have dp': "linearize (eprev_of (eshift_end args nt daux)) = []"
-    by (rule eprev_of_dshift_end[OF dp])
+    by (rule eprev_of_eshift_end[OF dp])
   have "eadd_new_ts_msaux args nt (eset_since g i s daux)
       = eset_since g i s (eadd_new_ts_msaux args nt daux)"
-    unfolding dadd_new_ts_msaux_def eshift_end_dset_since eadd_new_ts'_dset_since[OF dp'] ..
+    unfolding eadd_new_ts_msaux_def eshift_end_eset_since eadd_new_ts'_eset_since[OF dp'] ..
   then have "valid_emsaux args msk nt (eset_since g i s (eadd_new_ts_msaux args nt daux))
       (filter (\<lambda>(t, rel). memR (args_ivl args) (nt - t)) ys)"
     using valid_dadd_new_ts[OF vw nt] by simp
   moreover have "linearize (eprev_of (eadd_new_ts_msaux args nt daux)) = []"
-    unfolding dadd_new_ts_msaux_def by (rule eprev_of_dadd_new_ts'[OF dp'])
+    unfolding eadd_new_ts_msaux_def by (rule eprev_of_dadd_new_ts'[OF dp'])
   ultimately show ?thesis unfolding valid_emsaux_lz_def if_P[OF True] by blast
 next
   case False
   then show ?thesis using v valid_dadd_new_ts[OF _ nt] by (simp add: valid_emsaux_lz_def)
 qed
 
-lemma eadd_new_table_lz_dset_since:
+lemma eadd_new_table_lz_eset_since:
   assumes "memL (args_ivl args) 0"
   shows "\<exists>i' s'. eadd_new_table_msaux args X (eset_since g i s daux)
     = eset_since g i' s' (eadd_new_table_lz args X daux)"
   using assms by (cases daux rule: emsaux_cases) (auto simp: Let_def)
 
-lemma valid_dadd_new_table_lz:
+lemma valid_eadd_new_table_lz:
   assumes v: "valid_emsaux_lz args msk cur daux ys" and X: "table (args_R args) X"
   shows "valid_emsaux_lz args msk cur (eadd_new_table_lz args X daux)
     (case ys of [] \<Rightarrow> [(cur, X)]
@@ -944,7 +944,7 @@ proof (cases "memL (args_ivl args) 0")
     using v True unfolding valid_emsaux_lz_def by auto
   obtain i' s' where e: "eadd_new_table_msaux args X (eset_since g i s daux)
       = eset_since g i' s' (eadd_new_table_lz args X daux)"
-    using eadd_new_table_lz_dset_since[OF True] by blast
+    using eadd_new_table_lz_eset_since[OF True] by blast
   have "linearize (eprev_of (eadd_new_table_lz args X daux)) = []"
     using dp True by (cases daux rule: emsaux_cases) simp
   then show ?thesis using valid_dadd_new_table[OF vw X]
@@ -957,7 +957,7 @@ next
     by (simp add: valid_emsaux_lz_def)
 qed
 
-lemma ejoin_dset_since:
+lemma ejoin_eset_since:
   "\<exists>i' s'. ejoin_msaux args Y (eset_since g i s daux) = eset_since g i' s' (ejoin_msaux args Y daux)"
 proof (cases daux rule: emsaux_cases)
   case (1 t gc msk dp di ti ii tui idxs tus)
@@ -983,11 +983,11 @@ proof (cases daux rule: emsaux_cases)
   qed
 qed
 
-lemma egc_dset_since:
+lemma egc_eset_since:
   "\<exists>g' i' s'. egc_msaux args (eset_since g i s daux) = eset_since g' i' s' daux"
   by (cases daux rule: emsaux_cases) (auto simp: Let_def)
 
-lemma valid_dgc_join_lz:
+lemma valid_egc_join_lz:
   assumes v: "valid_emsaux_lz args msk cur daux ys" and dm: "emsk_args args msk"
     and tY: "table (args_L args) Y"
   shows "valid_emsaux_lz args msk cur (egc_join_lz args Y daux)
@@ -1005,8 +1005,8 @@ proof (cases "memL (args_ivl args) 0")
       \<or> egc_join_msaux args Y (eset_since g i s daux) = ejoin_msaux args Y (eset_since g i s daux)"
       by (cases daux rule: emsaux_cases) auto
     obtain g1 i1 s1 where c: "egc_msaux args (eset_since g i s daux) = eset_since g1 i1 s1 daux"
-      using egc_dset_since by blast
-    show ?thesis using alt unfolding c by (metis ejoin_dset_since)
+      using egc_eset_since by blast
+    show ?thesis using alt unfolding c by (metis ejoin_eset_since)
   qed
   then obtain g' i' s' where e: "egc_join_msaux args Y (eset_since g i s daux)
       = eset_since g' i' s' (ejoin_msaux args Y daux)" by blast
@@ -1016,18 +1016,18 @@ proof (cases "memL (args_ivl args) 0")
       (map (\<lambda>(t, rel). (t, join (args_R args) rel (args_pos args) (args_L args) Y)) ys)"
     by (rule valid_dgc_join[OF vw dm tY])
   ultimately show ?thesis
-    unfolding e dgc_join_lz_def valid_emsaux_lz_def if_P[OF True] by blast
+    unfolding e egc_join_lz_def valid_emsaux_lz_def if_P[OF True] by blast
 next
   case False
   then show ?thesis using v valid_dgc_join[OF _ dm tY]
-    by (simp add: valid_emsaux_lz_def dgc_join_lz_def)
+    by (simp add: valid_emsaux_lz_def egc_join_lz_def)
 qed
 
-lemma valid_dresult_msaux_lz:
+lemma valid_eresult_msaux_lz:
   "valid_emsaux_lz args msk cur daux ys \<Longrightarrow> eresult_msaux args daux
     = foldr (\<union>) [rel. (t, rel) \<leftarrow> ys, memL (args_ivl args) (cur - t)] {}"
   unfolding valid_emsaux_lz_def
-  by (cases daux rule: emsaux_cases) (auto dest: valid_dresult_msaux split: if_splits)
+  by (cases daux rule: emsaux_cases) (auto dest: valid_eresult_msaux split: if_splits)
 
 section \<open>The executable Since structure over ascending columns\<close>
 
@@ -1055,7 +1055,7 @@ proof -
   have "valid_emsaux_lz (init_args (args_ivl args) (length cR) cL cR (args_pos args) None)
       (emsk cR cL) 0
       (einit_msaux (init_args (args_ivl args) (length cR) cL cR (args_pos args) None) (emsk cR cL)) []"
-    by (rule valid_dinit_msaux_lz[OF eframe_sub[OF fR fL sub] eframeD(4)[OF fL] eframeD(4)[OF fR]])
+    by (rule valid_einit_msaux_lz[OF eframe_sub[OF fR fL sub] eframeD(4)[OF fL] eframeD(4)[OF fR]])
   then show ?thesis by (simp add: esaux'_def eargs_def eauxlist_def)
 qed
 
@@ -1092,7 +1092,7 @@ proof -
       (egc_join_lz (eargs cR cL args) (etabc kL cL rel1) daux)
       (map (\<lambda>(t, rel). (t, join cR rel (args_pos args) cL (etabc kL cL rel1)))
         (eauxlist kR cR auxlist))"
-    using valid_dgc_join_lz[OF d dm tY] by simp
+    using valid_egc_join_lz[OF d dm tY] by simp
   then show ?thesis using w
     by (simp add: esaux'_def eauxlist_join[OF fR fL sub w t1] eauxlist_wf_join[OF w sub t1])
 qed
@@ -1112,7 +1112,7 @@ proof -
       (case eauxlist kR cR auxlist of [] \<Rightarrow> [(cur, etabc kR cR rel2)]
        | ((t, y) # r) \<Rightarrow> if t = cur then (t, y \<union> etabc kR cR rel2) # r
                          else (cur, etabc kR cR rel2) # eauxlist kR cR auxlist)"
-    by (rule valid_dadd_new_table_lz[OF d tt])
+    by (rule valid_eadd_new_table_lz[OF d tt])
   then show ?thesis using w t2
     by (simp add: esaux'_def eauxlist_add_new_table[symmetric] eauxlist_wf_add_new_table[OF w t2])
 qed
@@ -1127,7 +1127,7 @@ proof -
   have "eresult_msaux (eargs cR cL args) daux
       = foldr (\<union>) [rel. (t, rel) \<leftarrow> eauxlist kR cR auxlist,
           memL (args_ivl (eargs cR cL args)) (cur - t)] {}"
-    by (rule valid_dresult_msaux_lz[OF d])
+    by (rule valid_eresult_msaux_lz[OF d])
   then show ?thesis by (simp add: etabc_result)
 qed
 
@@ -1160,9 +1160,9 @@ lemma euntil_elem_step_dq_eq:
   "emsk_args args msk \<Longrightarrow> length as = length (args_R args) \<Longrightarrow>
      euntil_elem_step_dq a1_map msk pos tp len inz P d as acc
      = until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P d as acc"
-  by (simp add: duntil_elem_step_dq_def until_elem_step_dq_def emsk_args_dproj)
+  by (simp add: euntil_elem_step_dq_def until_elem_step_dq_def emsk_args_dproj)
 
-lemma fold_duntil_elem_step_dq:
+lemma fold_euntil_elem_step_dq:
   "emsk_args args msk \<Longrightarrow> (\<And>as. as \<in> set xs \<Longrightarrow> length as = length (args_R args)) \<Longrightarrow>
      fold (euntil_elem_step_dq a1_map msk pos tp len inz P d) xs acc
      = fold (until_elem_step_dq a1_map (args_L args) (args_R args) pos tp len inz P d) xs acc"
@@ -1207,9 +1207,9 @@ proof (cases "shift_dq args nt aux" rule: mmuaux_dq_cases)
         (\<lambda>t. memL (args_ivl args) (nt - dq_nth (dq_push nt tstp_dq) (t - (tp - len))))
         (if memL (args_ivl args) 0 then Inr tp else Inl nt))
       (csorted_list_of_set rel2) ({}, a2_dq, result)"
-    by (rule fold_duntil_elem_step_dq[OF dm]) (use rs r2 in auto)
+    by (rule fold_euntil_elem_step_dq[OF dm]) (use rs r2 in auto)
   show ?thesis
-    unfolding dadd_new_dq_def add_new_dq_def if_P[OF fin] 1 csl_finite[OF fin]
+    unfolding eadd_new_dq_def add_new_dq_def if_P[OF fin] 1 csl_finite[OF fin]
     by (simp add: Let_def fl split: prod.splits)
 qed
 
@@ -1226,7 +1226,7 @@ proof -
   have "valid_muaux_dq (init_args I n L R pos None) 0 (init_muaux_dq (init_args I n L R pos None)) []"
     by (rule valid_init_muaux_dq[OF LR])
   then show ?thesis
-    unfolding dvalid_muaux_def init_muaux_dq_def by (simp add: init_args_def)
+    unfolding evalid_muaux_def init_muaux_dq_def by (simp add: init_args_def)
 qed
 
 lemma evalid_add_new_muaux:
@@ -1241,9 +1241,9 @@ proof -
     using t2 by (auto simp: table_def wf_tuple_def)
   have "valid_muaux_dq args nt (add_new_muaux_dq args rel1 rel2 nt (MU_dq daux))
       (update_until args rel1 rel2 nt auxlist)"
-    by (rule valid_add_new_muaux_dq[OF v[unfolded dvalid_muaux_def] t1 t2 nt])
+    by (rule valid_add_new_muaux_dq[OF v[unfolded evalid_muaux_def] t1 t2 nt])
   then show ?thesis
-    by (simp add: dvalid_muaux_def eadd_new_dq_eq[OF fin dm r2])
+    by (simp add: evalid_muaux_def eadd_new_dq_eq[OF fin dm r2])
 qed
 
 lemma evalid_eval_muaux:
@@ -1255,8 +1255,8 @@ proof -
   have e: "eval_muaux_dq args nt (MU_dq daux) = (res, MU_dq daux')"
     using ev by (simp del: eval_dq.simps)
   show ?thesis
-    using valid_eval_muaux_dq[OF v[unfolded dvalid_muaux_def] nt e eu]
-    by (simp add: dvalid_muaux_def)
+    using valid_eval_muaux_dq[OF v[unfolded evalid_muaux_def] nt e eu]
+    by (simp add: evalid_muaux_def)
 qed
 
 section \<open>The executable Until structure over ascending columns\<close>
@@ -1710,16 +1710,16 @@ definition emrd_rel :: "cols \<Rightarrow> cols \<Rightarrow> event_data mr\<del
      (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)))"
 
 lemma emrd_rel_Nil[simp]: "emrd_rel ks cs [] []"
-  by (simp add: dmrd_rel_def)
+  by (simp add: emrd_rel_def)
 
 lemma emrd_rel_Cons[simp]:
   "emrd_rel ks cs ((t, X) # aux) ((t', X') # daux) \<longleftrightarrow> t = t' \<and>
      (\<forall>ms. table ks (lookup X ms)) \<and> (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<and>
      emrd_rel ks cs aux daux"
-  by (simp add: dmrd_rel_def)
+  by (simp add: emrd_rel_def)
 
 lemma emrd_rel_length: "emrd_rel ks cs aux daux \<Longrightarrow> length aux = length daux"
-  by (simp add: dmrd_rel_def list_all2_lengthD)
+  by (simp add: emrd_rel_def list_all2_lengthD)
 
 lemma emrd_rel_induct[consumes 1, case_names Nil Cons]:
   assumes "emrd_rel ks cs aux daux"
@@ -1728,8 +1728,8 @@ lemma emrd_rel_induct[consumes 1, case_names Nil Cons]:
        (\<forall>ms. lookup X' ms = etabc ks cs (lookup X ms)) \<Longrightarrow> emrd_rel ks cs aux daux \<Longrightarrow>
        P aux daux \<Longrightarrow> P ((t, X) # aux) ((t, X') # daux)"
   shows "P aux daux"
-  using assms(1)[unfolded dmrd_rel_def]
-  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: dmrd_rel_def\<close>)
+  using assms(1)[unfolded emrd_rel_def]
+  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: emrd_rel_def\<close>)
 
 text \<open>Reordering a tabulation entry by entry is reordering what it tabulates.\<close>
 
@@ -1869,14 +1869,14 @@ definition emld_rel :: "cols \<Rightarrow> cols \<Rightarrow> ty Formula.formula
      drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel)"
 
 lemma emld_rel_Nil[simp]: "emld_rel ks cs \<psi>s css [] []"
-  by (simp add: dmld_rel_def)
+  by (simp add: emld_rel_def)
 
 lemma emld_rel_Cons[simp]:
   "emld_rel ks cs \<psi>s css ((t, rls, rel) # aux) ((t', drls, drel) # daux) \<longleftrightarrow> t = t' \<and>
      list_all2 (\<lambda>\<psi> r. table (Formula.fv_list \<psi>) r) \<psi>s rls \<and>
      drls = etabcs (map Formula.fv_list \<psi>s) css rls \<and> drel = etabc ks cs rel \<and>
      emld_rel ks cs \<psi>s css aux daux"
-  by (simp add: dmld_rel_def)
+  by (simp add: emld_rel_def)
 
 lemma emld_rel_induct[consumes 1, case_names Nil Cons]:
   assumes "emld_rel ks cs \<psi>s css aux daux"
@@ -1885,8 +1885,8 @@ lemma emld_rel_induct[consumes 1, case_names Nil Cons]:
        emld_rel ks cs \<psi>s css aux daux \<Longrightarrow> P aux daux \<Longrightarrow>
        P ((t, rls, rel) # aux) ((t, etabcs (map Formula.fv_list \<psi>s) css rls, etabc ks cs rel) # daux)"
   shows "P aux daux"
-  using assms(1)[unfolded dmld_rel_def]
-  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: dmld_rel_def\<close>)
+  using assms(1)[unfolded emld_rel_def]
+  by (induct rule: list_all2_induct) (use assms(2,3) in \<open>auto simp: emld_rel_def\<close>)
 
 locale ematchF_frame = eregex_frame ks cs \<psi>s css
   for ks cs :: cols and \<psi>s :: "ty Formula.formula list" and css :: "cols list" +

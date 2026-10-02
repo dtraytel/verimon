@@ -535,7 +535,7 @@ lemma esince_relI:
    sorted tss \<Longrightarrow> \<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw \<Longrightarrow>
    esince_rel kR cR kL cL args tw aux daux (xs, ys, tss, sk)
      (map (etabc kL cL) xs, map (etabc kR cR) ys, tss, sk)"
-  unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
+  unfolding esince_rel_def by (auto simp del: valid_mmasaux.simps)
 
 lemma esince_relE:
   assumes "esince_rel kR cR kL cL args tw aux daux (xs, ys, tss, sk) dbuf"
@@ -544,7 +544,7 @@ lemma esince_relE:
     and "list_all (ftable kL) xs" and "list_all (ftable kR) ys"
     and "sorted tss" and "\<forall>t \<in> set tss. cur \<le> t \<and> t \<le> tw"
     and "dbuf = (map (etabc kL cL) xs, map (etabc kR cR) ys, tss, sk)"
-  using assms unfolding dsince_rel_def by (auto simp del: valid_mmasaux.simps)
+  using assms unfolding esince_rel_def by (auto simp del: valid_mmasaux.simps)
 
 lemma esince_relD_buf:
   "esince_rel kR cR kL cL args tw aux daux buf dbuf \<Longrightarrow>
@@ -610,7 +610,7 @@ lemma euaux_rel_step:
 proof -
   obtain auxlist where vw: "valid_muaux_dq args u aux auxlist"
     and vd: "euxaux' kL cL kR cR args u daux auxlist"
-    using v unfolding duaux_rel_def by blast
+    using v unfolding euaux_rel_def by blast
   have "valid_muaux_dq args t (add_new_muaux_dq args a b t aux) (update_until args a b t auxlist)"
     by (rule valid_add_new_muaux_dq[OF vw _ _ ut]) (use t1 t2 aL aR in simp_all)
   moreover have "euxaux' kL cL kR cR args t
@@ -618,7 +618,7 @@ proof -
         (etabc kL cL a) (etabc kR cR b) t daux)
       (update_until args a b t auxlist)"
     by (rule euxaux'_add_new[OF vd fR fL sub aL aR t1 t2 f2 ut])
-  ultimately show ?thesis unfolding duaux_rel_def by blast
+  ultimately show ?thesis unfolding euaux_rel_def by blast
 qed
 
 lemma eux_agg_mbuf2t_take:
@@ -641,7 +641,7 @@ lemma euaux_rel_eval:
 proof -
   obtain auxlist where vw: "valid_muaux_dq args cur aux auxlist"
     and vd: "euxaux' kL cL kR cR args cur daux auxlist"
-    using v unfolding duaux_rel_def by blast
+    using v unfolding euaux_rel_def by blast
   obtain res auxlist' where eu: "eval_until (args_ivl args) nt auxlist = (res, auxlist')"
     by (cases "eval_until (args_ivl args) nt auxlist")
   have w: "valid_muaux_dq args cur aux' auxlist' \<and> zs = map (eval_args_agg args) res"
@@ -656,7 +656,7 @@ proof -
       unfolding eval_until_res[OF eu] by (auto dest!: set_takeWhileD)
     then show "table kR x" using euxaux'_tables[OF vd] by auto
   qed
-  show ?thesis using w d tr unfolding duaux_rel_def esresh_def by blast
+  show ?thesis using w d tr unfolding euaux_rel_def esresh_def by blast
 qed
 
 text \<open>The node relation.  The stored timestamp is at or after the structure's current one and
@@ -701,7 +701,7 @@ proof -
     and lv: "list_all (ftable kR) (snd buf)"
     and dbe: "dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))"
     and sn: "sorted nts" and cn: "\<forall>u \<in> set nts. cur \<le> u \<and> u \<le> tw"
-    using rel unfolding duntil_rel_def by blast
+    using rel unfolding euntil_rel_def by blast
   obtain b1 b2 where bfs: "buf1 = (b1, b2)" by (cases buf1)
   define us where "us = fst buf @ as"
   define vs where "vs = snd buf @ bs"
@@ -753,7 +753,7 @@ proof -
       sorted nts1 \<and> (\<forall>v \<in> set nts1. u \<le> v \<and> v \<le> enext tw tss)"
     using ev unt ntdn lb1 lb2 dbf sn1 un sub1 bound bfs by auto
   then have "euntil_rel kR cR kL cL args (enext tw tss) nt aux2 daux2 buf1 dbuf1 nts1"
-    unfolding duntil_rel_def by blast
+    unfolding euntil_rel_def by blast
   then show ?thesis using ev dn dns dbf bfs by simp
 qed
 
@@ -787,7 +787,7 @@ lemma etrigger_relI:
    sorted nts \<Longrightarrow> \<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw \<Longrightarrow>
    etrigger_rel kR cR kL cL args tw aux daux (xs, ys)
      (map (etabc kL cL) xs, map (etabc kR cR) ys) nts"
-  unfolding dtrigger_rel_def
+  unfolding etrigger_rel_def
   by (intro exI[where x = cur] exI[where x = auxlist] conjI) simp_all
 
 lemma etrigger_relE:
@@ -799,7 +799,7 @@ lemma etrigger_relE:
     and "list_all (ftable kR) (snd buf)"
     and "sorted nts" and "\<forall>v \<in> set nts. cur \<le> v \<and> v \<le> tw"
     and "dbuf = (map (etabc kL cL) (fst buf), map (etabc kR cR) (snd buf))"
-  using assms unfolding dtrigger_rel_def by (elim exE conjE) (rule that)
+  using assms unfolding etrigger_rel_def by (elim exE conjE) (rule that)
 
 text \<open>One firing of the trigger structure: the buffer traversal that steps it once per pending
   timestamp and collects what it answers.  The two runs stay in step by
@@ -2146,7 +2146,7 @@ proof -
   have sub: "\<forall>c \<in> set (map snd (zip nkss nss)). set c \<subseteq> set (eands_cols c0 (map snd (zip kss css)))"
     using sb lk lnk by simp
   have fd: "eframe (kands_cols k0 kss) (eands_cols c0 css)"
-    by (rule eframe_dands_cols[OF _ f0]) (use lk fp in \<open>auto simp: list_all2_conv_all_nth\<close>)
+    by (rule eframe_eands_cols[OF _ f0]) (use lk fp in \<open>auto simp: list_all2_conv_all_nth\<close>)
   have cs: "distinct ks" "set ks = set (kands_cols k0 (map fst (zip kss css)))"
     using eframeD(1,3)[OF fK] eframeD(3)[OF fd] lk by simp_all
   have DJ: "emulti_join (eands_plans c0 (map snd (zip kss css)))

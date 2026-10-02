@@ -31,13 +31,13 @@ lemma lookup_eidx_add1: "Mapping.lookup (eidx_add1 msk x i) k =
   (if k = eproj msk x then Some (Set.insert x (ebucket i k)) else Mapping.lookup i k)"
   by (simp add: eidx_add1_def Let_def Mapping.lookup_update')
 
-lemma ebucket_didx_add1: "ebucket (eidx_add1 msk x i) k =
+lemma ebucket_eidx_add1: "ebucket (eidx_add1 msk x i) k =
   (if k = eproj msk x then Set.insert x (ebucket i k) else ebucket i k)"
   by (simp add: ebucket_def lookup_eidx_add1)
 
 lemma comp_fun_idem_eidx_add1: "comp_fun_idem (eidx_add1 msk)"
   by unfold_locales
-    (auto simp: fun_eq_iff lookup_eidx_add1 ebucket_didx_add1 intro!: mapping_eqI)
+    (auto simp: fun_eq_iff lookup_eidx_add1 ebucket_eidx_add1 intro!: mapping_eqI)
 
 lift_definition eidx_add1_cfi :: "bool list \<Rightarrow>
     ('b list, ('b list, 'b list set) mapping) comp_fun_idem" is eidx_add1
@@ -114,13 +114,13 @@ lemma lookup_eidx_del1: "Mapping.lookup (eidx_del1 msk x i) k =
    else Mapping.lookup i k)"
   by (simp add: eidx_del1_def Let_def Mapping.lookup_update')
 
-lemma ebucket_didx_del1: "ebucket (eidx_del1 msk x i) k =
+lemma ebucket_eidx_del1: "ebucket (eidx_del1 msk x i) k =
   (if k = eproj msk x then ebucket i k - {x} else ebucket i k)"
   by (simp add: ebucket_def lookup_eidx_del1)
 
 lemma comp_fun_idem_eidx_del1: "comp_fun_idem (eidx_del1 msk)"
   by unfold_locales
-    (auto simp: fun_eq_iff lookup_eidx_del1 ebucket_didx_del1 intro!: mapping_eqI)
+    (auto simp: fun_eq_iff lookup_eidx_del1 ebucket_eidx_del1 intro!: mapping_eqI)
 
 lift_definition eidx_del1_cfi :: "bool list \<Rightarrow>
     ('b list, ('b list, 'b list set) mapping) comp_fun_idem" is eidx_del1

@@ -159,7 +159,7 @@ proof -
     and t: "Rep_mbuf_t (emstate_t dst) = mstate_t st" and mn: "mstate_n st = n"
     and dn: "emstate_n dst = n"
     and dcs: "emstate_cs dst = cs" and sim: "esim n ks cs tw (emstate_m dst) (mstate_m st)"
-    using r unfolding dmsim_state_def by auto
+    using r unfolding emsim_state_def by auto
   obtain xs m where e: "meval (mstate_j st + 1) n [snd tdb] (fst tdb) (mstate_m st) = (xs, m)"
     by (cases "meval (mstate_j st + 1) n [snd tdb] (fst tdb) (mstate_m st)")
   obtain dm where d: "eeval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)
@@ -189,12 +189,12 @@ proof -
   show ?thesis
     unfolding E D fst_conv snd_conv ie ve
     using sim'[unfolded dnx] tb te
-    by (auto simp: dmsim_state_def enumerate_zip_map List.in_set_enumerate_eq list_all_iff
+    by (auto simp: emsim_state_def enumerate_zip_map List.in_set_enumerate_eq list_all_iff
         set_zip)
 qed
 
 lemma emsim_state_dframe: "emsim_state n ks cs tw st dst \<Longrightarrow> eframe ks cs"
-  unfolding dmsim_state_def by (auto dest: esim_dframe)
+  unfolding emsim_state_def by (auto dest: esim_dframe)
 
 
 subsection \<open>The whole prefix\<close>

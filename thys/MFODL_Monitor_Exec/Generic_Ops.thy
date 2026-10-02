@@ -91,21 +91,21 @@ lemma gindex_eq: "gindex msk (B :: event_data table) = eindex msk B"
   by (simp add: gindex_def eindex_def gindex_step_eq)
 
 lemma gprobe_step_eq: "gprobe_step p msk m (a :: event_data tuple) acc = eprobe_step p msk m a acc"
-  by (simp add: gprobe_step_def dprobe_step_def)
+  by (simp add: gprobe_step_def eprobe_step_def)
 
 lemma gprobe_step_l_eq:
   "gprobe_step_l p rk m (y :: event_data tuple) acc = eprobe_step_l p rk m y acc"
-  by (simp add: gprobe_step_l_def dprobe_step_l_def)
+  by (simp add: gprobe_step_l_def eprobe_step_l_def)
 
 lemma ggen_join_eq: "ggen_join p lk rk (A :: event_data table) B = egen_join p lk rk A B"
-  by (simp add: ggen_join_def dgen_join_def gindex_eq empty_table_def
+  by (simp add: ggen_join_def egen_join_def gindex_eq empty_table_def
       gprobe_step_eq[abs_def] gprobe_step_l_eq[abs_def])
 
 lemma gbin_join0_eq: "gbin_join0 pl (A :: event_data table) pos B = ebin_join0 pl A pos B"
   by (cases pl) (simp_all add: ggen_join_eq empty_table_def)
 
 lemma gbin_join_eq: "gbin_join pl (A :: event_data table) pos B = ebin_join pl A pos B"
-  by (simp add: gbin_join_def dbin_join_def gbin_join0_eq empty_table_def)
+  by (simp add: gbin_join_def ebin_join_def gbin_join0_eq empty_table_def)
 
 lemma gands_pos_eq: "gands_pos ps (t :: event_data table) us = eands_pos ps t us"
   by (induct ps t us rule: gands_pos.induct) (simp_all add: gbin_join_eq)
@@ -119,7 +119,7 @@ definition gmulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Right
      | t # r \<Rightarrow> gands_neg ns (gands_pos ps t (take (length ps) r)) (drop (length ps) r))"
 
 lemma gmulti_join_eq: "gmulti_join ps ns (us :: event_data table list) = emulti_join ps ns us"
-  by (simp add: gmulti_join_def dmulti_join_def gands_pos_eq gands_neg_eq empty_table_def
+  by (simp add: gmulti_join_def emulti_join_def gands_pos_eq gands_neg_eq empty_table_def
       split: list.splits)
 
 text \<open>What the join computes, over a bare element type.\<close>

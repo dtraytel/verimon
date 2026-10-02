@@ -569,7 +569,7 @@ lemma eminit_push_eq:
   "eminit_push \<phi>
    = eof_state (Formula.nfv \<phi>) (Formula.fv_list (eprep \<phi>))
        (ecols (Formula.fv_list (eprep \<phi>))) (minit_safe (eprep \<phi>))"
-  by (simp add: dminit_push_def dminit_safe_def)
+  by (simp add: eminit_push_def eminit_safe_def)
 (*<*)
 end
 (*>*)

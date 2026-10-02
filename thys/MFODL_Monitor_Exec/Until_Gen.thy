@@ -393,13 +393,13 @@ proof -
     by (rule until_step_dq_lift(2)[OF refl])
   show "euntil_elem_step_dq a1_map msk pos tp len inz P' d as (lift_acc acc)
        = lift_acc (guntil_elem_step_dq a1_map msk pos tp len inz P d as acc)"
-    unfolding guntil_elem_step_dq_def duntil_elem_step_dq_def Let_def
+    unfolding guntil_elem_step_dq_def euntil_elem_step_dq_def Let_def
     by (auto simp: s1 s2 q Suc_le_eq dest!: a1 split: option.splits)
   show "qacc n (guntil_elem_step_dq a1_map msk pos tp len inz P d as acc)"
     unfolding guntil_elem_step_dq_def Let_def by (auto simp: s2 q split: option.splits)
 qed
 
-lemma fold_duntil_elem_step_dq_lift:
+lemma fold_euntil_elem_step_dq_lift:
   assumes P: "\<And>t. t \<le> tp \<Longrightarrow> P t = P' t"
     and a1: "\<And>k v. Mapping.lookup a1_map k = Some v \<Longrightarrow> v < tp"
   shows "qacc n acc \<Longrightarrow>
@@ -445,7 +445,7 @@ proof -
   have q0: "qacc (len + 1) ({}, a2_dq)" using inva la by (simp add: qacc_def)
   have fl: "fold (euntil_elem_step_dq a1_map msk (args_pos args) tp len (memL (args_ivl args) 0) Pk
       nts) (csl rel2) (lift_acc ({}, a2_dq)) = lift_acc (tbl, a2') \<and> qacc (len + 1) (tbl, a2')"
-    using fold_duntil_elem_step_dq_lift[where P = Pg and P' = Pk and a1_map = a1_map and tp = tp,
+    using fold_euntil_elem_step_dq_lift[where P = Pg and P' = Pk and a1_map = a1_map and tp = tp,
       OF P a1' q0, where msk = msk and pos = "args_pos args" and len = len
       and inz = "memL (args_ivl args) 0" and d = nts and xs = "csl rel2"]
     unfolding g_def[symmetric] f .
@@ -463,7 +463,7 @@ proof -
     unfolding gadd_new_dq_def s Let_def using f unfolding g_def Pg_def nts_def
     by (simp split: prod.splits)
   show "fix_res (gadd_new_dq args msk rel1 rel2 nt d) = eadd_new_dq args msk rel1 rel2 nt (fix_res d)"
-    unfolding ga dadd_new_dq_def fs Let_def using fd unfolding Pk_def nts_def
+    unfolding ga eadd_new_dq_def fs Let_def using fd unfolding Pk_def nts_def
     by (simp add: dq_hd_s_push[OF q1(1,2)] split: prod.splits)
   show "ushape (gadd_new_dq args msk rel1 rel2 nt d)"
     unfolding ga using q1 invt lt lts by (simp add: dq_len_push append_queue_rep)
@@ -479,7 +479,7 @@ proof -
     where d: "d = (tp, tss, tables, len, result, a1_map, a2_dq, tstp_dq, dn)"
     by (cases d rule: mmuaux_dq_cases)
   obtain a where rel: "rel_uaux d a" and va: "valid_mmuaux args cur a auxlist"
-    using v by (auto simp: dvalid_muaux_def)
+    using v by (auto simp: evalid_muaux_def)
   obtain tp' tss' tables' len' result' a1' a2m tstpm dn'
     where a: "a = (tp', tss', tables', len', result', a1', a2m, tstpm, dn')"
     by (cases a) auto

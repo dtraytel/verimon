@@ -281,7 +281,7 @@ lemma vinit_Inr_state:
   using assms by (auto simp: vinit_def Let_def split: if_splits sum.splits)
 
 lemma emsteps_state_Rep: "emsteps_state \<pi> ds = emsteps0_state (Rep_prefix \<pi>) ds"
-  by (simp add: dmsteps_state_def)
+  by (simp add: emsteps_state_def)
 
 lemma emonitor_Rep: "emonitor ds \<pi> = emsteps0_stateless (Rep_prefix \<pi>) ds"
   by (simp add: emonitor_def emsteps_stateless.rep_eq)

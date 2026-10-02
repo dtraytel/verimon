@@ -57,7 +57,7 @@ begin
 definition "\<psi>_mw mw = (if mw then convert_multiway (share_opt \<psi>) else \<psi>)"
 
 lemma eminit_verimon_\<psi>_mw: "eminit_verimon mw rw sig \<phi> = Inr (eminit_push (\<psi>_mw mw))"
-  by (simp add: dminit_verimon_def prepare_\<psi> \<psi>_mw_def)
+  by (simp add: eminit_verimon_def prepare_\<psi> \<psi>_mw_def)
 
 lemma verimon_spec_\<psi>_mw:
   "verimon_spec (\<psi>_mw mw) (map_sig (convert_tysym o check_subst) sig) (convert_tysym o check_subst o TAny)"

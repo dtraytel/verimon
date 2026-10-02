@@ -1870,7 +1870,7 @@ proof -
     using vinit_Inr[OF assms] by metis
   then show ?thesis
     by (cases "prepare_verimon rw (lsig_tsig S) \<phi>")
-      (auto simp: verimon_log_def verimon_prepare_def dminit_verimon_def)
+      (auto simp: verimon_log_def verimon_prepare_def eminit_verimon_def)
 qed
 
 (*<*)

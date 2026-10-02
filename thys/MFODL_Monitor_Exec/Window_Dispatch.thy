@@ -69,10 +69,10 @@ lemma esx_post_add_new_table[simp]: "esx_post (esx_add_new_table args X d) = esx
   by (cases d) simp_all
 
 lemma esx_post_init[simp]: "esx_post (esx_init args msk) = id"
-  by (simp add: dsx_init_def)
+  by (simp add: esx_init_def)
 
 lemma esx_post_init_agg[simp]: "esx_post (esx_init_agg args p) = eagg_p p"
-  by (simp add: dsx_init_agg_def)
+  by (simp add: esx_init_agg_def)
 
 text \<open>Which aggregate, if any, a structure reports; the compiler and the simulation tell the
   structures apart by it.\<close>
@@ -95,10 +95,10 @@ lemma esx_agg_add_new_table[simp]: "esx_agg (esx_add_new_table args X d) = esx_a
   by (cases d) simp_all
 
 lemma esx_agg_init[simp]: "esx_agg (esx_init args msk) = None"
-  by (simp add: dsx_init_def)
+  by (simp add: esx_init_def)
 
 lemma esx_agg_init_agg[simp]: "esx_agg (esx_init_agg args p) = Some p"
-  by (simp add: dsx_init_agg_def)
+  by (simp add: esx_init_agg_def)
 
 text \<open>The windows are used for a closed left operand, whose kernel columns are then empty as
   well.\<close>
@@ -120,13 +120,13 @@ lemma esxaux'_init:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
   shows "esxaux' kR cR cL args 0 (esx_init (eargs cR cL args) (emsk cR cL)) []"
   using esaux'_init[OF fR fL sub, of args] valid_sw_init
-  by (auto simp: esxaux'_def dsx_init_def eauxlist_def)
+  by (auto simp: esxaux'_def esx_init_def eauxlist_def)
 
 lemma esxaux'_init_agg:
   assumes c: "cL = []" and ok: "eagg_ok p (length cR)"
   shows "esxaux' kR cR cL args 0 (esx_init_agg (eargs cR cL args) p) []"
   using valid_sa_init[of "eargs cR cL args" p] c ok
-  by (auto simp: esxaux'_def dsx_init_agg_def eauxlist_def)
+  by (auto simp: esxaux'_def esx_init_agg_def eauxlist_def)
 
 lemma esxaux'_add_new_ts:
   assumes v: "esxaux' kR cR cL args cur daux auxlist" and nt: "cur \<le> nt"
@@ -334,16 +334,16 @@ lemma eux_agg_add_new[simp]: "eux_agg (eux_add_new args msk rel1 rel2 nt d) = eu
   by (cases d) simp_all
 
 lemma eux_post_init[simp]: "eux_post (eux_init args) = id"
-  by (simp add: dux_init_def)
+  by (simp add: eux_init_def)
 
 lemma eux_agg_init[simp]: "eux_agg (eux_init args) = None"
-  by (simp add: dux_init_def)
+  by (simp add: eux_init_def)
 
 lemma eux_post_init_agg[simp]: "eux_post (eux_init_agg args p) = eagg_p p"
-  by (simp add: dux_init_agg_def)
+  by (simp add: eux_init_agg_def)
 
 lemma eux_agg_init_agg[simp]: "eux_agg (eux_init_agg args p) = Some p"
-  by (simp add: dux_init_agg_def)
+  by (simp add: eux_init_agg_def)
 
 lemma eux_post_eval[simp]: "eux_post (snd (eux_eval args nt d)) = eux_post d"
   by (cases d) (simp_all split: prod.splits)
@@ -371,14 +371,14 @@ lemma euxaux'_init:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
   shows "euxaux' kL cL kR cR args 0 (eux_init (eargs cR cL args)) []"
   using euaux'_init[OF fR fL sub, of args, folded ginit_dq_eq] valid_uw_init
-  by (auto simp: euxaux'_def dux_init_def eauxlist3_def)
+  by (auto simp: euxaux'_def eux_init_def eauxlist3_def)
 
 lemma euxaux'_init_agg:
   assumes c: "cL = []" and inz: "memL (args_ivl args) 0"
     and ok: "eagg_ok p (length cR)"
   shows "euxaux' kL cL kR cR args 0 (eux_init_agg (eargs cR cL args) p) []"
   using valid_ua_init[of "eargs cR cL args" p] c inz ok
-  by (auto simp: euxaux'_def dux_init_agg_def eauxlist3_def)
+  by (auto simp: euxaux'_def eux_init_agg_def eauxlist3_def)
 
 lemma euxaux'_add_new:
   assumes v: "euxaux' kL cL kR cR args cur daux auxlist"
@@ -575,10 +575,10 @@ lemma usx_q_add_new_table[simp]: "usx_q (udsx_add_new_table args X d) = usx_q d"
   by (cases d) simp_all
 
 lemma esx_init_rdsx: "esx_init args msk = rdsx (udsx_init args msk)"
-  by (simp add: dsx_init_def udsx_init_def)
+  by (simp add: esx_init_def udsx_init_def)
 
 lemma esx_init_agg_rdsx[simp]: "rdsx (udsx_init_agg args p q) = esx_init_agg args p"
-  by (simp add: dsx_init_agg_def udsx_init_agg_def sa_init_rsa usc_init_ucs)
+  by (simp add: esx_init_agg_def udsx_init_agg_def sa_init_rsa usc_init_ucs)
 
 lemma usx_q_init_agg[simp]: "usx_q (udsx_init_agg args p q) = q"
   by (simp add: udsx_init_agg_def)
@@ -630,10 +630,10 @@ fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uta
      (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
 
 lemma eux_init_rdux: "eux_init args = rdux (udux_init args)"
-  by (simp add: dux_init_def udux_init_def)
+  by (simp add: eux_init_def udux_init_def)
 
 lemma eux_init_agg_rdux: "eux_init_agg args p = rdux (udux_init_agg args p)"
-  by (simp add: dux_init_agg_def udux_init_agg_def rua_init)
+  by (simp add: eux_init_agg_def udux_init_agg_def rua_init)
 
 lemma eux_add_new_rdux:
   "eux_add_new args msk rel1 rel2 nt (rdux d) = rdux (udux_add_new args msk rel1 rel2 nt d)"

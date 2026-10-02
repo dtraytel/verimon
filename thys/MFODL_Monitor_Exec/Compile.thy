@@ -53,7 +53,7 @@ fun eset_q :: "uconstr \<Rightarrow> eformula \<Rightarrow> eformula option" whe
       | _ \<Rightarrow> None)"
 | "eset_q c \<phi> = None"
 
-lemma efail_nodes_dset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d' = efail_nodes d"
+lemma efail_nodes_eset_q: "eset_q c d = Some d' \<Longrightarrow> efail_nodes d' = efail_nodes d"
   by (cases d) (auto split: udsaux_x.splits option.splits)
 
 function (sequential) eof ::
@@ -335,7 +335,7 @@ proof -
     unfolding a by (rule valid_init_muaux_dq[OF sub eframeD(1)[OF fL] eframeD(1)[OF fR]])
   have s: "euxaux' kL cL kR cR args 0 (eux_init (eargs cR cL args)) []"
     by (rule euxaux'_init[OF fR fL sub])
-  show ?thesis unfolding duntil_rel_def duaux_rel_def using v s by auto
+  show ?thesis unfolding euntil_rel_def euaux_rel_def using v s by auto
 qed
 
 lemma euntil_rel_init_agg:
@@ -349,7 +349,7 @@ proof -
     unfolding a by (rule valid_init_muaux_dq[OF sub eframeD(1)[OF fL] eframeD(1)[OF fR]])
   have s: "euxaux' kL cL kR cR args 0 (eux_init_agg (eargs cR cL args) p) []"
     by (rule euxaux'_init_agg[OF c inz ok])
-  show ?thesis unfolding duntil_rel_def duaux_rel_def using v s by auto
+  show ?thesis unfolding euntil_rel_def euaux_rel_def using v s by auto
 qed
 
 lemma etrigger_rel_init:
@@ -629,7 +629,7 @@ text \<open>A constraint over a node goes into the node as its guard exactly whe
   aggregating Since without one; the node is then related to the kernel's constraint over the
   kernel's node by the rule for the guarded Since, and otherwise the constraint stays above it.\<close>
 
-lemma esim_dset_q:
+lemma esim_eset_q:
   assumes s: "esim n ks cs tw d \<phi>" and pr: "produces n ks tw (MAndRel ks \<phi> (t1, p, c, t2))"
     and wf: "eframe ks cs"
     and fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
@@ -752,13 +752,13 @@ next
   have pr: "produces n (Formula.fv_list (Formula.And \<phi> \<psi>)) tw (minit0 n (Formula.And \<phi> \<psi>))"
     using produces_minit0[of "Formula.And \<phi> \<psi>" n tw] And_constraint by simp
   have z: "eofz n \<phi>" using And_constraint.prems(2) unfolding m e
-    by (auto simp: Let_def efail_nodes_dset_q split: if_splits option.splits)
+    by (auto simp: Let_def efail_nodes_eset_q split: if_splits option.splits)
   have s: "eofc n tw \<phi>" using And_constraint.prems(1) z by (intro And_constraint.IH) simp_all
   have fv: "Formula.fv_trm t1 \<subseteq> set (ecols (Formula.fv_list \<phi>))"
     "Formula.fv_trm t2 \<subseteq> set (ecols (Formula.fv_list \<phi>))"
     using And_constraint.prems(2) unfolding m e by (simp_all split: if_splits)
   show ?case unfolding m e using fv
-    by (simp add: Let_def esim_dset_q[OF s pr[unfolded m e] eframe_fv_list])
+    by (simp add: Let_def esim_eset_q[OF s pr[unfolded m e] eframe_fv_list])
 next
   case (And_Not \<phi> \<psi>)
   have m: "minit0 n (Formula.And \<phi> (Formula.Neg \<psi>)) = MAnd (Formula.fv_list \<phi>)
@@ -1412,10 +1412,10 @@ definition eof_state :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow>
        emstate_m = eof n ks cs (mstate_m st),
        emstate_n = n, emstate_cs = cs, emstate_t = mbuf_t_empty @@ mstate_t st \<rparr>"
 
-lemma emsim_state_dof_state:
+lemma emsim_state_eof_state:
   assumes n: "mstate_n st = n" and p: "esim n ks cs tw (eof n ks cs (mstate_m st)) (mstate_m st)"
   shows "emsim_state n ks cs tw st (eof_state n ks cs st)"
-  by (simp add: dmsim_state_def eof_state_def n p mbuf_t_append.rep_eq)
+  by (simp add: emsim_state_def eof_state_def n p mbuf_t_append.rep_eq)
 
 context verimon_spec
 begin
@@ -1442,7 +1442,7 @@ proof -
       (mstate_m (minit_safe \<phi>))"
     unfolding mm0 by (rule esim_dof_minit0[OF s b zf'])
   show ?thesis
-    by (rule emonitor_mverdicts[OF emsim_state_dof_state[OF ni p] f wty])
+    by (rule emonitor_mverdicts[OF emsim_state_eof_state[OF ni p] f wty])
 qed
 
 end

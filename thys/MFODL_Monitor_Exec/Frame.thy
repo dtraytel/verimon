@@ -627,13 +627,13 @@ lemma eprobe_fold:
   "fold (eprobe_step p lk m) xs acc
    = acc \<union> (\<Union>a \<in> set xs. (\<lambda>b. emerge p a b) ` set (bucket m (eproj lk a)))"
   by (induct xs arbitrary: acc)
-    (auto simp: dprobe_step_def bucket_def fold_insert_image split: option.splits)
+    (auto simp: eprobe_step_def bucket_def fold_insert_image split: option.splits)
 
 lemma eprobe_l_fold:
   "fold (eprobe_step_l p rk m) ys acc
    = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. emerge p x y) ` set (bucket m (eproj rk y)))"
   by (induct ys arbitrary: acc)
-    (auto simp: dprobe_step_l_def bucket_def fold_insert_image split: option.splits)
+    (auto simp: eprobe_step_l_def bucket_def fold_insert_image split: option.splits)
 
 text \<open>Both sides of the size test compute the same table: the pairs that agree on the shared
   columns, merged.\<close>
@@ -642,7 +642,7 @@ lemma egen_join_eq:
   assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
   shows "egen_join p lk rk A B
        = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
-  by (auto simp: dgen_join_def Let_def eprobe_fold eprobe_l_fold empty_table_def
+  by (auto simp: egen_join_def Let_def eprobe_fold eprobe_l_fold empty_table_def
       eindex_lookup[OF cA] eindex_lookup[OF cB] cA cB) force
 
 lemma set_option_ejoin1:
@@ -785,7 +785,7 @@ theorem ebin_join_join:
 proof (cases "T = {}")
   case True
   then show ?thesis
-    by (cases pos) (simp_all add: dbin_join_def etabc_empty_iff join_False_code empty_table_def)
+    by (cases pos) (simp_all add: ebin_join_def etabc_empty_iff join_False_code empty_table_def)
 next
   case T: False
   show ?thesis
@@ -796,12 +796,12 @@ next
       case False
       then have sub: "set cs2 \<subseteq> set cs1" by (rule neg)
       show ?thesis using T True False etabc_join_sub_res[OF f1 f2 sub]
-        by (simp add: dbin_join_def etabc_empty_iff join_False_code empty_table_def)
-    qed (use T True in \<open>simp add: dbin_join_def etabc_empty_iff empty_table_def\<close>)
+        by (simp add: ebin_join_def etabc_empty_iff join_False_code empty_table_def)
+    qed (use T True in \<open>simp add: ebin_join_def etabc_empty_iff empty_table_def\<close>)
   next
     case False
     then show ?thesis using T
-      by (simp add: dbin_join_def etabc_empty_iff ebin_join0_join[OF f1 f2 t1 t2 neg fT fT'])
+      by (simp add: ebin_join_def etabc_empty_iff ebin_join0_join[OF f1 f2 t1 t2 neg fT fT'])
   qed
 qed
 
@@ -860,7 +860,7 @@ lemma distinct_kands_cols:
   "distinct acc \<Longrightarrow> \<forall>k \<in> set kss. distinct k \<Longrightarrow> distinct (kands_cols acc kss)"
   by (induct kss arbitrary: acc) auto
 
-lemma eframe_dands_cols:
+lemma eframe_eands_cols:
   assumes "list_all2 eframe kss css" and "eframe acc c"
   shows "eframe (kands_cols acc kss) (eands_cols c css)"
   using assms
@@ -1429,7 +1429,7 @@ proof -
   have e: "tup_get (ex_cols ks) (ex_proj ks x) (c - Suc 0) = tup_get ks x c" if "c \<in> set ?c" for x c
     using tup_get_ex_proj[of c ks x] mem[OF that] by simp
   show ?thesis
-    unfolding l unfolding etabc_def restrict_map dex_cols_def image_image
+    unfolding l unfolding etabc_def restrict_map eex_cols_def image_image
   proof (intro image_cong[OF refl])
     fix x
     show "map (tup_get ks x) ?c = map (tup_get (ex_cols ks) (ex_proj ks x)) (map (\<lambda>c. c - Suc 0) ?c)"
@@ -2032,7 +2032,7 @@ definition emulti_join :: "ejoin_plan list \<Rightarrow> ejoin_plan list \<Right
   "emulti_join ps ns us = (case us of [] \<Rightarrow> empty_table
      | t # r \<Rightarrow> eands_neg ns (eands_pos ps t (take (length ps) r)) (drop (length ps) r))"
 
-lemma length_dands_plans[simp]: "length (eands_plans acc css) = length css"
+lemma length_eands_plans[simp]: "length (eands_plans acc css) = length css"
   by (induct css arbitrary: acc) auto
 
 lemma map2_append:
@@ -2069,7 +2069,7 @@ proof -
   have ln: "length nkcs = length Vs" using neg by (rule list_all2_lengthD)
   note wp = wf_operands_zip[OF pos] and wn = wf_operands_zip[OF neg]
   have dk0: "distinct k0" using eframeD(1)[OF f0] .
-  have fK: "eframe ?K ?C" by (rule eframe_dands_cols[OF wp(3) f0])
+  have fK: "eframe ?K ?C" by (rule eframe_eands_cols[OF wp(3) f0])
   have wp1: "\<forall>(k, u) \<in> set (zip (map fst kcs) Us). distinct k \<and> table k u" using wp(1) by auto
   have tP: "table ?K ?P"
     unfolding table_def using kands_pos_iff[OF dk0 t0 wp1] wp(2) by simp
@@ -2094,7 +2094,7 @@ proof -
           (eands_pos (eands_plans c0 (map snd kcs)) (etabc k0 c0 T0)
             (map2 (\<lambda>(k, c). etabc k c) kcs Us))
           (map2 (\<lambda>(k, c). etabc k c) nkcs Vs)"
-    unfolding dmulti_join_def m using lp by simp
+    unfolding emulti_join_def m using lp by simp
   also have "\<dots> = eands_neg (eands_plans ?C (map snd nkcs)) (etabc ?K ?C ?P)
       (map2 (\<lambda>(k, c). etabc k c) nkcs Vs)"
     by (simp only: eands_pos_dtabc[OF f0 t0 fT0 pos])
