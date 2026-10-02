@@ -156,8 +156,8 @@ setup \<open>mono
 subsection \<open>The result table, left as it is\<close>
 
 text \<open>The result table of the aggregation is left as @{thm [source] ugmr_code} builds it, by
-  inserting its rows one at a time.  Collecting the rows in a list, sorting them with the
-  comparator merge sort @{const sort_c} and building the tree with @{const rbt_of_sorted_list}
+  inserting its rows one at a time.  Collecting the rows in a list, sorting them with a
+  comparator merge sort and building the tree with @{const rbt_of_sorted_list}
   was proved and measured, and it does not pay: on @{text "CNT"} over a window of 50 it saves
   about as many instructions in the insertions as the sort, the sortedness check of
   @{const rbt_of_sorted_list} and the natural-number arithmetic of @{const rbtreeify} spend

@@ -636,7 +636,7 @@ text \<open>Both sides of the size test compute the same table: the pairs that a
   columns, merged.\<close>
 
 lemma ggen_join_eq:
-  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
+  assumes cA: "set (csl A) = (A :: event_data table)" and cB: "set (csl B) = B"
   shows "ggen_join p lk rk A B
        = {emerge p a b | a b. a \<in> A \<and> b \<in> B \<and> eproj lk a = eproj rk b}"
   by (auto simp: ggen_join_def Let_def eprobe_fold eprobe_l_fold empty_table_def
@@ -655,7 +655,7 @@ lemma set_csl_etabc:
 
 theorem etabc_gen_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
-    and t1: "table ks1 T" and t2: "table ks2 T'"
+    and t1: "table ks1 (T :: event_data table)" and t2: "table ks2 T'"
     and fT: "finite T" and fT': "finite T'"
   shows "ggen_join (mrg_plan cs1 cs2) (mrg_left_key (mrg_plan cs1 cs2))
            (mrg_right_key (mrg_plan cs1 cs2)) (etabc ks1 cs1 T) (etabc ks2 cs2 T')
@@ -713,7 +713,7 @@ text \<open>Every shape of the plan computes the short form of the kernel's join
 
 theorem gbin_join0_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
-    and t1: "table ks1 T" and t2: "table ks2 T'"
+    and t1: "table ks1 (T :: event_data table)" and t2: "table ks2 T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
     and fT: "finite T" and fT': "finite T'"
   shows "gbin_join0 (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')
@@ -773,7 +773,7 @@ qed
 
 theorem gbin_join_join:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2"
-    and t1: "table ks1 T" and t2: "table ks2 T'"
+    and t1: "table ks1 (T :: event_data table)" and t2: "table ks2 T'"
     and neg: "\<not> pos \<Longrightarrow> set cs2 \<subseteq> set cs1"
     and fT: "finite T" and fT': "finite T'"
   shows "gbin_join (mk_djoin cs1 cs2) (etabc ks1 cs1 T) pos (etabc ks2 cs2 T')

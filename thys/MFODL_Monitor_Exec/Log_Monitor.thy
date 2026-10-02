@@ -358,365 +358,12 @@ fun conv_error :: "(bytes \<Rightarrow> double option) \<Rightarrow> (Formula.na
 subsection \<open>Sorting\<close>
 
 text \<open>The tuples of a table are sorted, without duplicates, before the table is built, so that
-  @{const utable_of_list} builds the tree directly. The merge sort @{const sort_c} is not tail
-  recursive; the variant below is, since a time point may hold many events.\<close>
-
-fun merge_t :: "('a :: ccompare) list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
-  "merge_t acc [] ys = fold Cons acc ys"
-| "merge_t acc (x # xs) [] = fold Cons acc (x # xs)"
-| "merge_t acc (x # xs) (y # ys) = (case ccomp x y of
-     order.Lt \<Rightarrow> merge_t (x # acc) xs (y # ys)
-   | order.Gt \<Rightarrow> merge_t (y # acc) (x # xs) ys
-   | order.Eq \<Rightarrow> merge_t (x # acc) xs ys)"
-
-fun merge_pairs_t :: "('a :: ccompare) list list \<Rightarrow> 'a list list \<Rightarrow> 'a list list" where
-  "merge_pairs_t acc (a # b # r) = merge_pairs_t (merge_t [] a b # acc) r"
-| "merge_pairs_t acc r = r @ acc"
-
-fun merge_all_t :: "nat \<Rightarrow> ('a :: ccompare) list list \<Rightarrow> 'a list" where
-  "merge_all_t 0 xss = concat xss"
-| "merge_all_t (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
-     | _ \<Rightarrow> merge_all_t k (merge_pairs_t [] xss))"
-
-text \<open>The sort merges the runs of increasing elements of the list: a sorted list is one run.\<close>
-
-fun runs_t :: "('a :: ccompare) \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
-  "runs_t x cur acc [] = rev (x # cur) # acc"
-| "runs_t x cur acc (y # ys) = (if ccomp x y = order.Lt then runs_t y (x # cur) acc ys
-     else runs_t y [] (rev (x # cur) # acc) ys)"
-
-definition sort_t :: "('a :: ccompare) list \<Rightarrow> 'a list" where
-  "sort_t xs = (case xs of [] \<Rightarrow> [] | x # ys \<Rightarrow> merge_all_t (length xs) (runs_t x [] [] ys))"
-
-lemma set_runs_t: "\<Union> (set ` set (runs_t x cur acc ys)) = Set.insert x (set cur \<union> \<Union> (set ` set acc) \<union> set ys)"
-  by (induction x cur acc ys rule: runs_t.induct) auto
-
-lemma merge_t: "merge_t acc xs ys = rev acc @ merge_c xs ys"
-  by (induction acc xs ys rule: merge_t.induct) (auto simp: fold_Cons_rev split: order.splits)
-
-context
-  assumes ID: "ID CCOMPARE('a :: ccompare) \<noteq> None"
-begin
-
-lemma set_merge_pairs_t: "\<Union> (set ` set (merge_pairs_t acc (xss :: 'a list list))) = \<Union> (set ` set (acc @ xss))"
-  by (induction acc xss rule: merge_pairs_t.induct) (auto simp: merge_t set_merge_c[OF ID])
-
-lemma set_merge_all_t: "set (merge_all_t k (xss :: 'a list list)) = \<Union> (set ` set xss)"
-proof (induction k arbitrary: xss)
-  case (Suc k)
-  show ?case
-  proof (cases xss rule: remdups_adj.cases)
-    case (3 a b r)
-    then show ?thesis
-      using Suc.IH[of "merge_pairs_t [] xss"] set_merge_pairs_t[of "[]" xss] by simp
-  qed auto
-qed simp
-
-lemma set_sort_t: "set (sort_t (xs :: 'a list)) = set xs"
-  by (cases xs) (simp_all add: sort_t_def set_merge_all_t set_runs_t del: merge_all_t.simps)
-
-end
-
-text \<open>The sort with an explicit comparator, so that the code sorts the tuples with
-  @{const ed_comparator}.\<close>
-
-fun merge_tc :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
-  "merge_tc c acc [] ys = fold Cons acc ys"
-| "merge_tc c acc (x # xs) [] = fold Cons acc (x # xs)"
-| "merge_tc c acc (x # xs) (y # ys) = (case c x y of
-     order.Lt \<Rightarrow> merge_tc c (x # acc) xs (y # ys)
-   | order.Gt \<Rightarrow> merge_tc c (y # acc) (x # xs) ys
-   | order.Eq \<Rightarrow> merge_tc c (x # acc) xs ys)"
-
-fun merge_pairs_tc :: "'a comparator \<Rightarrow> 'a list list \<Rightarrow> 'a list list \<Rightarrow> 'a list list" where
-  "merge_pairs_tc c acc (a # b # r) = merge_pairs_tc c (merge_tc c [] a b # acc) r"
-| "merge_pairs_tc c acc r = r @ acc"
-
-fun merge_all_tc :: "'a comparator \<Rightarrow> nat \<Rightarrow> 'a list list \<Rightarrow> 'a list" where
-  "merge_all_tc c 0 xss = concat xss"
-| "merge_all_tc c (Suc k) xss = (case xss of [] \<Rightarrow> [] | [a] \<Rightarrow> a
-     | _ \<Rightarrow> merge_all_tc c k (merge_pairs_tc c [] xss))"
-
-fun runs_tc :: "'a comparator \<Rightarrow> 'a \<Rightarrow> 'a list \<Rightarrow> 'a list list \<Rightarrow> 'a list \<Rightarrow> 'a list list" where
-  "runs_tc c x cur acc [] = rev (x # cur) # acc"
-| "runs_tc c x cur acc (y # ys) = (if c x y = order.Lt then runs_tc c y (x # cur) acc ys
-     else runs_tc c y [] (rev (x # cur) # acc) ys)"
-
-definition sort_tc :: "'a comparator \<Rightarrow> 'a list \<Rightarrow> 'a list" where
-  "sort_tc c xs = (case xs of [] \<Rightarrow> [] | x # ys \<Rightarrow> merge_all_tc c (length xs) (runs_tc c x [] [] ys))"
-
-lemma merge_tc: "merge_tc ccomp acc xs ys = merge_t acc xs ys"
-  by (induction acc xs ys rule: merge_t.induct) (simp_all split: order.splits)
-
-lemma merge_pairs_tc: "merge_pairs_tc ccomp acc xss = merge_pairs_t acc xss"
-  by (induction acc xss rule: merge_pairs_t.induct) (simp_all add: merge_tc)
-
-lemma merge_all_tc: "merge_all_tc ccomp k xss = merge_all_t k xss"
-  by (induction k xss rule: merge_all_t.induct) (simp_all add: merge_pairs_tc split: list.splits)
-
-lemma runs_tc: "runs_tc ccomp x cur acc ys = runs_t x cur acc ys"
-  by (induction x cur acc ys rule: runs_t.induct) simp_all
-
-lemma sort_tc: "sort_tc ccomp xs = sort_t xs"
-  by (cases xs) (simp_all add: sort_tc_def sort_t_def merge_all_tc runs_tc del: merge_all_tc.simps merge_all_t.simps)
-
-subsection \<open>Databases\<close>
-
-text \<open>The events of a time point, grouped by predicate and arity.\<close>
-
-fun add_ev :: "Formula.event \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
-    ((Formula.name \<times> nat) \<times> event_data list list) list" where
-  "add_ev (p, vs) [] = [((p, length vs), [vs])]"
-| "add_ev (p, vs) ((k, xs) # g) = (if k = (p, length vs) then (k, vs # xs) # g else (k, xs) # add_ev (p, vs) g)"
-
-definition group_evs :: "Formula.event list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list" where
-  "group_evs evs = fold add_ev evs []"
-
-text \<open>The code computes the key of an event once.\<close>
-
-fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
-    ((Formula.name \<times> nat) \<times> event_data list list) list" where
-  "add_evk k vs [] = [(k, [vs])]"
-| "add_evk k vs ((k', xs) # g) = (if str8_eq (fst k') (fst k) \<and> snd k' = snd k then (k', vs # xs) # g
-     else (k', xs) # add_evk k vs g)"
-
-lemma add_ev_code: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
-  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
-
-definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
-  "build_db evs = fold (\<lambda>(k, xs) db. uinsert_table_into_db k (utable_of_list (sort_t xs)) db) (group_evs evs) uempty_db"
-
-text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
-
-lemma map_of_add_ev:
-  "map_of (add_ev (p, vs) g) k =
-   (if k = (p, length vs) then Some (vs # (case map_of g k of None \<Rightarrow> [] | Some xs \<Rightarrow> xs)) else map_of g k)"
-  by (induction "(p, vs)" g rule: add_ev.induct) auto
-
-lemma keys_add_ev: "fst ` set (add_ev (p, vs) g) = Set.insert (p, length vs) (fst ` set g)"
-  by (induction "(p, vs)" g rule: add_ev.induct) auto
-
-lemma distinct_add_ev: "distinct (map fst g) \<Longrightarrow> distinct (map fst (add_ev (p, vs) g))"
-  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: keys_add_ev)
-
-lemma map_of_fold_add_ev:
-  "map_of (fold add_ev evs g) k = (case filter (\<lambda>e. (fst e, length (snd e)) = k) evs of
-     [] \<Rightarrow> map_of g k
-   | fs \<Rightarrow> Some (rev (map snd fs) @ (case map_of g k of None \<Rightarrow> [] | Some xs \<Rightarrow> xs)))"
-proof (induction evs arbitrary: g)
-  case (Cons e evs)
-  obtain p vs where e: "e = (p, vs)"
-    by (cases e)
-  show ?case
-    using Cons[of "add_ev (p, vs) g"]
-    by (auto simp: e map_of_add_ev split: list.splits option.splits)
-qed simp
-
-lemma map_of_group_evs:
-  "map_of (group_evs evs) k = (case filter (\<lambda>e. (fst e, length (snd e)) = k) evs of
-     [] \<Rightarrow> None | fs \<Rightarrow> Some (rev (map snd fs)))"
-  by (simp add: group_evs_def map_of_fold_add_ev split: list.splits)
-
-lemma distinct_group_evs: "distinct (map fst (group_evs evs))"
-proof -
-  have "distinct (map fst (fold add_ev evs g))" if "distinct (map fst g)" for g
-    using that
-  proof (induction evs arbitrary: g)
-    case (Cons e evs)
-    then show ?case
-      by (cases e) (simp add: distinct_add_ev)
-  qed simp
-  then show ?thesis
-    by (simp add: group_evs_def)
-qed
-
-lemma lookup_fold_uinsert:
-  assumes "distinct (map fst g)"
-  shows "Mapping.lookup (fold (\<lambda>(k, xs) db. uinsert_table_into_db k (f xs) db) g db) k =
-    (case map_of g k of Some xs \<Rightarrow> Some (case Mapping.lookup db k of None \<Rightarrow> [f xs] | Some T \<Rightarrow> map ((\<union>) (f xs)) T)
-     | None \<Rightarrow> Mapping.lookup db k)"
-  using assms
-proof (induction g arbitrary: db)
-  case (Cons a g)
-  obtain k' xs' where a: "a = (k', xs')"
-    by (cases a)
-  from Cons.prems a have "k' \<notin> fst ` set g"
-    by auto
-  then have "map_of g k' = None"
-    by (simp add: map_of_eq_None_iff)
-  with Cons a show ?case
-    by (auto simp: uinsert_table_into_db_def lookup_update_mapping_with split: option.splits)
-qed simp
-
-theorem build_db_mk_db: "build_db evs = mk_db (set evs)"
-proof (rule mapping_eqI)
-  fix k :: "Formula.name \<times> nat"
-  obtain p n where k: "k = (p, n)"
-    by (cases k)
-  have lk: "Mapping.lookup (build_db evs) k = map_option (\<lambda>xs. [set xs]) (map_of (group_evs evs) k)"
-    using lookup_fold_uinsert[of "group_evs evs" "\<lambda>xs. utable_of_list (sort_t xs)" uempty_db k] distinct_group_evs
-    by (auto simp: build_db_def uempty_db_def utable_of_list_def set_sort_t ID_ccompare_etuple
-      split: option.splits)
-  have mk: "Mapping.lookup (mk_db (set evs)) (p, n) = (if \<exists>ts. (p, ts) \<in> set evs \<and> n = length ts
-    then Some [{ts. (p, ts) \<in> set evs \<and> n = length ts}] else None)"
-    by (simp add: Mapping.lookup.rep_eq mk_db.rep_eq)
-  have f: "set (map snd (filter (\<lambda>e. (fst e, length (snd e)) = k) evs)) = {ts. (p, ts) \<in> set evs \<and> n = length ts}"
-    by (force simp: k)
-  have e: "filter (\<lambda>e. (fst e, length (snd e)) = k) evs = [] \<longleftrightarrow> \<not> (\<exists>ts. (p, ts) \<in> set evs \<and> n = length ts)"
-    by (force simp: k filter_empty_conv)
-  show "Mapping.lookup (build_db evs) k = Mapping.lookup (mk_db (set evs)) k"
-  proof (cases "filter (\<lambda>e. (fst e, length (snd e)) = k) evs = []")
-    case True
-    then show ?thesis
-      using lk mk e by (simp add: map_of_group_evs k)
-  next
-    case False
-    then have "map_of (group_evs evs) k = Some (rev (map snd (filter (\<lambda>e. (fst e, length (snd e)) = k) evs)))"
-      by (simp add: map_of_group_evs split: list.splits)
-    then show ?thesis
-      using lk mk e f False by (simp add: k)
-  qed
-qed
-
-text \<open>The groups hold their tuples in the reverse order of the log. The code reverses them before
-  sorting them, so that tuples that come sorted in the log are sorted in linear time, and builds
-  the tree from the sorted list with the comparator of @{theory MFODL_Monitor_Devel.Monomorphic_Code}
-  and without a recursion as deep as the list.\<close>
-
-definition map_t :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
-  "map_t f xs = rev (fold (\<lambda>x acc. f x # acc) xs [])"
-
-lemma map_t[simp]: "map_t f xs = map f xs"
-proof -
-  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
-    by (induction xs arbitrary: acc) auto
-  then show ?thesis
-    by (simp add: map_t_def)
-qed
-
-definition urbt_of_sorted :: "event_data list list \<Rightarrow> event_data list set_rbt" where
-  "urbt_of_sorted = rbt_of_sorted_list"
-
-lemma urbt_of_sorted_code[code abstract]: "RBT_Mapping2.impl_of (urbt_of_sorted xs) =
-  (if strict_sorted_by ed_comparator xs then rbtreeify (map_t (\<lambda>x. (x, ())) xs)
-   else rbt_comp_bulkload ed_comparator (map_t (\<lambda>x. (x, ())) xs))"
-  by (simp add: urbt_of_sorted_def rbt_of_sorted_list.rep_eq ccomp_etuple)
-
-lemma build_db_code: "build_db evs =
-  fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_t (rev xs)))) db) (group_evs evs) uempty_db"
-proof -
-  have "utable_of_list (sort_t xs) = RBT_set (urbt_of_sorted (sort_t (rev xs)))" for xs
-    by (simp add: urbt_of_sorted_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple utable_of_list_def set_sort_t)
-  then show ?thesis
-    by (simp add: build_db_def)
-qed
-
-text \<open>The code sorts the tuples with @{const ed_comparator} rather than through the dictionaries
-  of the comparator on lists.\<close>
-
-lemma build_db_code_edl: "build_db evs =
-  fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_of_sorted (sort_tc ed_comparator (rev xs)))) db)
-    (group_evs evs) uempty_db"
-  by (simp add: build_db_code sort_tc[symmetric] ccomp_etuple)
-
-subsection \<open>Building the tables faster\<close>
-
-text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
-  natural numbers of the generated code, which wrap the integers. The copy below computes with the
-  integers directly, and is proved to build the same tree.\<close>
-
-lemma nat_of_integer_half: "\<not> n \<le> 0 \<Longrightarrow> n \<noteq> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
-  "\<not> n \<le> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
-  including integer.lifting by (transfer, auto)+
-
-function rbtreeify_fi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list"
-  and rbtreeify_gi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list" where
-  "rbtreeify_fi n kvs = (if n \<le> 0 then (RBT_Impl.Empty, kvs)
-    else if n = 1 then (case kvs of (k, v) # kvs' \<Rightarrow> (RBT_Impl.Branch RBT_Impl.R RBT_Impl.Empty k v RBT_Impl.Empty, kvs'))
-    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
-      if r = 0 then (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
-        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
-      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
-        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_fi n' kvs'))))"
-| "rbtreeify_gi n kvs = (if n \<le> 1 then (RBT_Impl.Empty, kvs)
-    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
-      if r = 0 then (case rbtreeify_gi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
-        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
-      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
-        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))))"
-  by pat_completeness auto
-termination
-  by (relation "measure (case_sum (\<lambda>(n, _). nat_of_integer n) (\<lambda>(n, _). nat_of_integer n))")
-    (auto simp: divmod_abs_def nat_of_integer_half)
-
-declare rbtreeify_fi.simps[simp del] rbtreeify_gi.simps[simp del]
-
-lemma integer_of_nat_rbt_simps:
-  "integer_of_nat n \<le> 0 \<longleftrightarrow> n = 0" "integer_of_nat n \<le> 1 \<longleftrightarrow> n = 0 \<or> n = 1"
-  "integer_of_nat n = 1 \<longleftrightarrow> n = 1"
-  "Code_Numeral.divmod_abs (integer_of_nat n) 2 = (integer_of_nat (n div 2), integer_of_nat (n mod 2))"
-  "integer_of_nat m = 0 \<longleftrightarrow> m = 0"
-  by (simp_all add: integer_eq_iff less_eq_integer.rep_eq divmod_abs_def integer_of_nat.rep_eq
-      zdiv_int zmod_int le_Suc_eq)
-
-lemma rbtreeify_fi: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-  and rbtreeify_gi: "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-proof -
-  have fg: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs \<and>
-      rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs" for n and kvs :: "('a \<times> 'b) list"
-  proof (induction n arbitrary: kvs rule: less_induct)
-    case (less n kvs)
-    consider "n = 0" | "n = 1" | "1 < n"
-      by linarith
-    then show ?case
-    proof cases
-      case 3
-      then have ne: "n \<noteq> 0" "n \<noteq> 1" and lt: "n div 2 < n"
-        by simp_all
-      show ?thesis
-      proof
-        show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-          by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
-            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case)
-        show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-          by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
-            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case simp_thms)
-      qed
-    qed (simp_all add: rbtreeify_fi.simps rbtreeify_gi.simps rbtreeify_f.simps rbtreeify_g.simps
-      integer_of_nat_rbt_simps)
-  qed
-  show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
-    using fg by simp
-  show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
-    using fg by simp
-qed
-
-fun ilen :: "integer \<Rightarrow> 'a list \<Rightarrow> integer" where
-  "ilen acc [] = acc"
-| "ilen acc (x # xs) = ilen (acc + 1) xs"
-
-lemma ilen: "ilen acc xs = acc + integer_of_nat (length xs)"
-  by (induction acc xs rule: ilen.induct) (simp_all add: integer_of_nat_eq_of_nat)
-
-lemma ilen_code[code]: "ilen acc [] = acc" "ilen acc (x # xs) = ilen (idx_succ acc) xs"
-  by (simp_all add: idx_succ_def)
-
-definition rbtreeify_i :: "('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt" where
-  "rbtreeify_i kvs = fst (rbtreeify_gi (ilen 1 kvs) kvs)"
-
-lemma rbtreeify_i: "rbtreeify_i kvs = rbtreeify kvs"
-proof -
-  have "ilen 1 kvs = integer_of_nat (Suc (length kvs))"
-    by (simp add: ilen integer_of_nat_eq_of_nat)
-  then show ?thesis
-    by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
-qed
-
-text \<open>The merge sort @{const sort_tc} reverses each merged list, as it merges tail recursively
-  onto an accumulator. The one below does not: merging onto an accumulator reverses the order, so a
-  round of merges turns lists that increase into lists that decrease, and the next round merges
-  those with the comparator turned around. Like @{const sort_tc}, it drops duplicates as it merges;
-  it is proved to sort strictly, so that the tree can be built without checking that it is.\<close>
+  the tree is built in one pass. The merge sort below merges the runs of increasing elements of
+  the list, so that a sorted list is one run, and is tail recursive, since a time point may hold
+  many events: merging onto an accumulator reverses the order, so a round of merges turns lists
+  that increase into lists that decrease, and the next round merges those with the comparator
+  turned around. It drops duplicates as it merges, and is proved to sort strictly, so that the
+  tree can be built without checking that it is.\<close>
 
 lemma comparator_converse:
   assumes "comparator c"
@@ -879,7 +526,231 @@ proof -
     by simp_all
 qed
 
-text \<open>The tables of a time point are built with this sort and tree construction.\<close>
+subsection \<open>Databases\<close>
+
+text \<open>The events of a time point, grouped by predicate and arity.\<close>
+
+fun add_ev :: "Formula.event \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
+    ((Formula.name \<times> nat) \<times> event_data list list) list" where
+  "add_ev (p, vs) [] = [((p, length vs), [vs])]"
+| "add_ev (p, vs) ((k, xs) # g) = (if k = (p, length vs) then (k, vs # xs) # g else (k, xs) # add_ev (p, vs) g)"
+
+definition group_evs :: "Formula.event list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list" where
+  "group_evs evs = fold add_ev evs []"
+
+text \<open>The code computes the key of an event once.\<close>
+
+fun add_evk :: "Formula.name \<times> nat \<Rightarrow> event_data list \<Rightarrow> ((Formula.name \<times> nat) \<times> event_data list list) list \<Rightarrow>
+    ((Formula.name \<times> nat) \<times> event_data list list) list" where
+  "add_evk k vs [] = [(k, [vs])]"
+| "add_evk k vs ((k', xs) # g) = (if str8_eq (fst k') (fst k) \<and> snd k' = snd k then (k', vs # xs) # g
+     else (k', xs) # add_evk k vs g)"
+
+lemma add_ev_code: "add_ev (p, vs) g = add_evk (p, length vs) vs g"
+  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: str8_eq_def prod_eq_iff)
+
+definition build_db :: "Formula.event list \<Rightarrow> udatabase" where
+  "build_db evs = fold (\<lambda>(k, xs) db. uinsert_table_into_db k (utable_of_list xs) db) (group_evs evs) uempty_db"
+
+text \<open>The groups have distinct keys, and each holds the tuples of its key.\<close>
+
+lemma map_of_add_ev:
+  "map_of (add_ev (p, vs) g) k =
+   (if k = (p, length vs) then Some (vs # (case map_of g k of None \<Rightarrow> [] | Some xs \<Rightarrow> xs)) else map_of g k)"
+  by (induction "(p, vs)" g rule: add_ev.induct) auto
+
+lemma keys_add_ev: "fst ` set (add_ev (p, vs) g) = Set.insert (p, length vs) (fst ` set g)"
+  by (induction "(p, vs)" g rule: add_ev.induct) auto
+
+lemma distinct_add_ev: "distinct (map fst g) \<Longrightarrow> distinct (map fst (add_ev (p, vs) g))"
+  by (induction "(p, vs)" g rule: add_ev.induct) (auto simp: keys_add_ev)
+
+lemma map_of_fold_add_ev:
+  "map_of (fold add_ev evs g) k = (case filter (\<lambda>e. (fst e, length (snd e)) = k) evs of
+     [] \<Rightarrow> map_of g k
+   | fs \<Rightarrow> Some (rev (map snd fs) @ (case map_of g k of None \<Rightarrow> [] | Some xs \<Rightarrow> xs)))"
+proof (induction evs arbitrary: g)
+  case (Cons e evs)
+  obtain p vs where e: "e = (p, vs)"
+    by (cases e)
+  show ?case
+    using Cons[of "add_ev (p, vs) g"]
+    by (auto simp: e map_of_add_ev split: list.splits option.splits)
+qed simp
+
+lemma map_of_group_evs:
+  "map_of (group_evs evs) k = (case filter (\<lambda>e. (fst e, length (snd e)) = k) evs of
+     [] \<Rightarrow> None | fs \<Rightarrow> Some (rev (map snd fs)))"
+  by (simp add: group_evs_def map_of_fold_add_ev split: list.splits)
+
+lemma distinct_group_evs: "distinct (map fst (group_evs evs))"
+proof -
+  have "distinct (map fst (fold add_ev evs g))" if "distinct (map fst g)" for g
+    using that
+  proof (induction evs arbitrary: g)
+    case (Cons e evs)
+    then show ?case
+      by (cases e) (simp add: distinct_add_ev)
+  qed simp
+  then show ?thesis
+    by (simp add: group_evs_def)
+qed
+
+lemma lookup_fold_uinsert:
+  assumes "distinct (map fst g)"
+  shows "Mapping.lookup (fold (\<lambda>(k, xs) db. uinsert_table_into_db k (f xs) db) g db) k =
+    (case map_of g k of Some xs \<Rightarrow> Some (case Mapping.lookup db k of None \<Rightarrow> [f xs] | Some T \<Rightarrow> map ((\<union>) (f xs)) T)
+     | None \<Rightarrow> Mapping.lookup db k)"
+  using assms
+proof (induction g arbitrary: db)
+  case (Cons a g)
+  obtain k' xs' where a: "a = (k', xs')"
+    by (cases a)
+  from Cons.prems a have "k' \<notin> fst ` set g"
+    by auto
+  then have "map_of g k' = None"
+    by (simp add: map_of_eq_None_iff)
+  with Cons a show ?case
+    by (auto simp: uinsert_table_into_db_def lookup_update_mapping_with split: option.splits)
+qed simp
+
+theorem build_db_mk_db: "build_db evs = mk_db (set evs)"
+proof (rule mapping_eqI)
+  fix k :: "Formula.name \<times> nat"
+  obtain p n where k: "k = (p, n)"
+    by (cases k)
+  have lk: "Mapping.lookup (build_db evs) k = map_option (\<lambda>xs. [set xs]) (map_of (group_evs evs) k)"
+    using lookup_fold_uinsert[of "group_evs evs" "\<lambda>xs. utable_of_list xs" uempty_db k] distinct_group_evs
+    by (auto simp: build_db_def uempty_db_def utable_of_list_def ID_ccompare_etuple
+      split: option.splits)
+  have mk: "Mapping.lookup (mk_db (set evs)) (p, n) = (if \<exists>ts. (p, ts) \<in> set evs \<and> n = length ts
+    then Some [{ts. (p, ts) \<in> set evs \<and> n = length ts}] else None)"
+    by (simp add: Mapping.lookup.rep_eq mk_db.rep_eq)
+  have f: "set (map snd (filter (\<lambda>e. (fst e, length (snd e)) = k) evs)) = {ts. (p, ts) \<in> set evs \<and> n = length ts}"
+    by (force simp: k)
+  have e: "filter (\<lambda>e. (fst e, length (snd e)) = k) evs = [] \<longleftrightarrow> \<not> (\<exists>ts. (p, ts) \<in> set evs \<and> n = length ts)"
+    by (force simp: k filter_empty_conv)
+  show "Mapping.lookup (build_db evs) k = Mapping.lookup (mk_db (set evs)) k"
+  proof (cases "filter (\<lambda>e. (fst e, length (snd e)) = k) evs = []")
+    case True
+    then show ?thesis
+      using lk mk e by (simp add: map_of_group_evs k)
+  next
+    case False
+    then have "map_of (group_evs evs) k = Some (rev (map snd (filter (\<lambda>e. (fst e, length (snd e)) = k) evs)))"
+      by (simp add: map_of_group_evs split: list.splits)
+    then show ?thesis
+      using lk mk e f False by (simp add: k)
+  qed
+qed
+
+definition map_t :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
+  "map_t f xs = rev (fold (\<lambda>x acc. f x # acc) xs [])"
+
+lemma map_t[simp]: "map_t f xs = map f xs"
+proof -
+  have "fold (\<lambda>x acc. f x # acc) xs acc = rev (map f xs) @ acc" for acc
+    by (induction xs arbitrary: acc) auto
+  then show ?thesis
+    by (simp add: map_t_def)
+qed
+
+subsection \<open>Building the tables faster\<close>
+
+text \<open>The tree of a table is built by @{const rbtreeify}, whose generated code computes with the
+  natural numbers of the generated code, which wrap the integers. The copy below computes with the
+  integers directly, and is proved to build the same tree.\<close>
+
+lemma nat_of_integer_half: "\<not> n \<le> 0 \<Longrightarrow> n \<noteq> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
+  "\<not> n \<le> 1 \<Longrightarrow> nat_of_integer (n div 2) < nat_of_integer n"
+  including integer.lifting by (transfer, auto)+
+
+function rbtreeify_fi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list"
+  and rbtreeify_gi :: "integer \<Rightarrow> ('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt \<times> ('a \<times> 'b) list" where
+  "rbtreeify_fi n kvs = (if n \<le> 0 then (RBT_Impl.Empty, kvs)
+    else if n = 1 then (case kvs of (k, v) # kvs' \<Rightarrow> (RBT_Impl.Branch RBT_Impl.R RBT_Impl.Empty k v RBT_Impl.Empty, kvs'))
+    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
+      if r = 0 then (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
+      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_fi n' kvs'))))"
+| "rbtreeify_gi n kvs = (if n \<le> 1 then (RBT_Impl.Empty, kvs)
+    else (case Code_Numeral.divmod_abs n 2 of (n', r) \<Rightarrow>
+      if r = 0 then (case rbtreeify_gi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))
+      else (case rbtreeify_fi n' kvs of (t1, (k, v) # kvs') \<Rightarrow>
+        apfst (RBT_Impl.Branch RBT_Impl.B t1 k v) (rbtreeify_gi n' kvs'))))"
+  by pat_completeness auto
+termination
+  by (relation "measure (case_sum (\<lambda>(n, _). nat_of_integer n) (\<lambda>(n, _). nat_of_integer n))")
+    (auto simp: divmod_abs_def nat_of_integer_half)
+
+declare rbtreeify_fi.simps[simp del] rbtreeify_gi.simps[simp del]
+
+lemma integer_of_nat_rbt_simps:
+  "integer_of_nat n \<le> 0 \<longleftrightarrow> n = 0" "integer_of_nat n \<le> 1 \<longleftrightarrow> n = 0 \<or> n = 1"
+  "integer_of_nat n = 1 \<longleftrightarrow> n = 1"
+  "Code_Numeral.divmod_abs (integer_of_nat n) 2 = (integer_of_nat (n div 2), integer_of_nat (n mod 2))"
+  "integer_of_nat m = 0 \<longleftrightarrow> m = 0"
+  by (simp_all add: integer_eq_iff less_eq_integer.rep_eq divmod_abs_def integer_of_nat.rep_eq
+      zdiv_int zmod_int le_Suc_eq)
+
+lemma rbtreeify_fi: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+  and rbtreeify_gi: "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+proof -
+  have fg: "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs \<and>
+      rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs" for n and kvs :: "('a \<times> 'b) list"
+  proof (induction n arbitrary: kvs rule: less_induct)
+    case (less n kvs)
+    consider "n = 0" | "n = 1" | "1 < n"
+      by linarith
+    then show ?case
+    proof cases
+      case 3
+      then have ne: "n \<noteq> 0" "n \<noteq> 1" and lt: "n div 2 < n"
+        by simp_all
+      show ?thesis
+      proof
+        show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+          by (subst rbtreeify_fi.simps, subst rbtreeify_f.simps)
+            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case)
+        show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+          by (subst rbtreeify_gi.simps, subst rbtreeify_g.simps)
+            (simp only: integer_of_nat_rbt_simps less.IH[OF lt] ne if_False prod.case simp_thms)
+      qed
+    qed (simp_all add: rbtreeify_fi.simps rbtreeify_gi.simps rbtreeify_f.simps rbtreeify_g.simps
+      integer_of_nat_rbt_simps)
+  qed
+  show "rbtreeify_fi (integer_of_nat n) kvs = rbtreeify_f n kvs"
+    using fg by simp
+  show "rbtreeify_gi (integer_of_nat n) kvs = rbtreeify_g n kvs"
+    using fg by simp
+qed
+
+fun ilen :: "integer \<Rightarrow> 'a list \<Rightarrow> integer" where
+  "ilen acc [] = acc"
+| "ilen acc (x # xs) = ilen (acc + 1) xs"
+
+lemma ilen: "ilen acc xs = acc + integer_of_nat (length xs)"
+  by (induction acc xs rule: ilen.induct) (simp_all add: integer_of_nat_eq_of_nat)
+
+lemma ilen_code[code]: "ilen acc [] = acc" "ilen acc (x # xs) = ilen (idx_succ acc) xs"
+  by (simp_all add: idx_succ_def)
+
+definition rbtreeify_i :: "('a \<times> 'b) list \<Rightarrow> ('a, 'b) rbt" where
+  "rbtreeify_i kvs = fst (rbtreeify_gi (ilen 1 kvs) kvs)"
+
+lemma rbtreeify_i: "rbtreeify_i kvs = rbtreeify kvs"
+proof -
+  have "ilen 1 kvs = integer_of_nat (Suc (length kvs))"
+    by (simp add: ilen integer_of_nat_eq_of_nat)
+  then show ?thesis
+    by (simp add: rbtreeify_i_def rbtreeify_def rbtreeify_gi)
+qed
+
+text \<open>The tables of a time point are built with this sort and tree construction. The groups
+  hold their tuples in the reverse order of the log; the code reverses them before sorting them,
+  so that tuples that come sorted in the log are sorted in linear time.\<close>
 
 lemma comparator_edl: "comparator ed_comparator"
   by (rule ID_ccompare'[OF ID_ccompare_etuple])
@@ -899,11 +770,11 @@ qed
 lemma build_db_code_sort[code]: "build_db evs =
   fold (\<lambda>(k, xs) db. uinsert_table_into_db k (RBT_set (urbt_sort (rev xs))) db) (group_evs evs) uempty_db"
 proof -
-  have "RBT_set (urbt_of_sorted (sort_t (rev xs))) = RBT_set (urbt_sort (rev xs))" for xs
-    by (simp add: urbt_of_sorted_def urbt_sort_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple set_sort_t
+  have "utable_of_list xs = RBT_set (urbt_sort (rev xs))" for xs
+    by (simp add: utable_of_list_def urbt_sort_def RBT_set_rbt_of_sorted_list ID_ccompare_etuple
         csort(1)[OF comparator_edl])
   then show ?thesis
-    by (simp add: build_db_code)
+    by (simp add: build_db_def)
 qed
 
 subsection \<open>Converting events faster\<close>

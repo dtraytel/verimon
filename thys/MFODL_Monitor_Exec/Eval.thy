@@ -2116,7 +2116,7 @@ lemma eands_step:
     and lk: "length kss = length css" and lnk: "length nkss = length nss"
     and sb: "\<forall>c \<in> set nss. set c \<subseteq> set (eands_cols c0 css)"
     and fK: "eframe ks (eands_cols c0 css)"
-    and las: "length as = length (c0 # css @ nss)"
+    and las: "length (as :: event_data table list) = length (c0 # css @ nss)"
     and mas: "\<forall>i < length (c0 # css @ nss). ftable ((k0 # kss @ nkss) ! i) (as ! i)"
   shows "etabc ks (eands_cols c0 css) (mmulti_join ks (k0 # kss) nkss as)
     = gmulti_join (eands_plans c0 css) (eands_plans (eands_cols c0 css) nss)
@@ -2436,7 +2436,7 @@ next
     by (rule produces_tables[OF esim_produces[OF sim1] w sts mts e1])
   have tb: "list_all (ftable k2) bs"
     by (rule produces_tables[OF esim_produces[OF sim2] w sts mts e2])
-  have step: "\<And>a b. ftable k1 a \<Longrightarrow> ftable k2 b \<Longrightarrow>
+  have step: "\<And>a b. ftable k1 (a :: event_data table) \<Longrightarrow> ftable k2 b \<Longrightarrow>
       gbin_join pl (etabc k1 c1 a) pos (etabc k2 c2 b) = etabc ks cs (bin_join k1 a pos k2 b)"
   proof -
     fix a b :: "event_data table" assume a: "ftable k1 a" and b: "ftable k2 b"
