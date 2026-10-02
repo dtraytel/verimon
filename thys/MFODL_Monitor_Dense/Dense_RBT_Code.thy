@@ -196,13 +196,9 @@ lemma paint_code[code]:
 
 section \<open>The Since structure's deletions, through the specialised deletion\<close>
 
-text \<open>@{theory MFODL_Monitor_Dense.Dense_Code_Opt} gives the deletion of a key set from the
-  Since structure's timestamp mapping a code equation through the specialised deletion
-  (@{thm [source] de_mapping_delete_set_nat_rbt}); the second pass of
-  @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep} made a second copy of the same operation at the
-  same type from the generic equations, and its redirection is the one the code takes.  The copy
-  gets the specialised deletion for the tree representation, and the generic equation for the
-  others.\<close>
+text \<open>The deletion of a key set from the Since structure's timestamp mapping, copied by
+  @{theory MFODL_Monitor_Dense.Dense_Mono_Sweep}, gets the specialised deletion for the tree
+  representation and the generic equation for the others.\<close>
 
 lemma edl_mapping_delete_set_code[code]:
   "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
@@ -225,8 +221,8 @@ lemma edl_mapping_delete_set_code[code]:
 proof -
   \<comment> \<open>The tree case is the specialised equation of the first copy.\<close>
   show "edl_mapping_delete_set m (RBT_set rbt) = RBT_Set2.fold ed_delete_nat rbt m"
-    using de_mapping_delete_set_nat_rbt
-    unfolding edl_mapping_delete_set_def de_mapping_delete_set_nat_def .
+    by (simp add: edl_mapping_delete_set_def ed_delete_nat_def mapping_delete_set_RBT_code
+        ID_ccompare_etuple ccomp_etuple)
   \<comment> \<open>The other four cases are instances of the generic equation.\<close>
 qed (unfold edl_mapping_delete_set_def, (rule mapping_delete_set_code)+)
 
