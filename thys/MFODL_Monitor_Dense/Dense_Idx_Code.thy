@@ -584,6 +584,54 @@ proof -
         mfilter_keys_def dsemi_idx_def prod.case)
 qed
 
+text \<open>The dense evaluator's own Since structure (@{theory MFODL_Monitor_Dense.Dense_Aux}) has the
+  same shift and join as the generic one above; they get the same code equations.\<close>
+
+declare [[code drop: dshift_end djoin_msaux]]
+
+lemma dshift_end_code[code]:
+  "dshift_end args nt (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let I = args_ivl args;
+     data_prev' = dropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_prev;
+     (data_in, discard) = takedropWhile_queue (\<lambda>(t, X). \<not> memR I (nt - t)) data_in;
+     (tuple_in, del) = fold_filter_set discard (tuple_in, {}) in
+     (t, gc, msk, data_prev', data_in, table_in - del,
+      didx_upd args (\<lambda>_. didx_minus idx_in (didx msk del)), tuple_in, idx_since, tuple_since))"
+  unfolding fold_filter_set_def by simp
+
+lemma djoin_msaux_code[code]:
+  "djoin_msaux args Y (t, gc, msk, data_prev, data_in, table_in, idx_in, tuple_in,
+      idx_since, tuple_since) =
+    (let pos = args_pos args in
+     (if \<forall>i \<in> set msk. \<not> i then
+        (let take_all = (([] \<in> Y) = pos) in
+         (t, gc, msk, data_prev, data_in,
+          if take_all then table_in else {},
+          if take_all then idx_in else Mapping.empty,
+          if take_all then tuple_in else Mapping.empty,
+          if take_all then idx_since else Mapping.empty,
+          if take_all then tuple_since else Mapping.empty))
+      else if \<forall>i \<in> set msk. i then
+        (let in_del = (if pos then table_in - Y else table_in \<inter> Y);
+         tuple_in' = mapping_delete_set tuple_in in_del;
+         tuple_since' = mfilter_keys pos Y tuple_since in
+         (t, gc, msk, data_prev, data_in, table_in - in_del, Mapping.empty, tuple_in',
+          Mapping.empty, tuple_since'))
+      else
+        (let (idx_in', table_in', tuple_in') = gjoin_idx pos Y idx_in (table_in, tuple_in);
+             (idx_since', tuple_since') = gjoin_idx1 pos Y idx_since tuple_since in
+         (t, gc, msk, data_prev, data_in, table_in', idx_in', tuple_in', idx_since',
+          tuple_since'))))"
+proof -
+  have D: "\<And>M. del_buckets M (table_in, tuple_in)
+      = (table_in - set_of_idx M, mapping_delete_set tuple_in (set_of_idx M))"
+    by (simp add: del_buckets_def)
+  show ?thesis
+    by (simp only: djoin_msaux.simps Let_def D gjoin_idx_def gjoin_idx1_def del_buckets1_def
+        mfilter_keys_def dsemi_idx_def prod.case)
+qed
+
 subsection \<open>The Until structure's map of the left operand\<close>
 
 text \<open>For a positive left operand the Until structure keeps, for every tuple of the latest left
