@@ -813,4 +813,277 @@ termination udeval by (rule total_udeval)
 lemma ursize_snd_udeval[simp]: "ursize (snd (udeval j ts db \<phi>)) = ursize \<phi>"
   by (rule psize_snd_udeval[OF total_udeval[THEN spec]])
 
+subsection \<open>The two evaluators agree\<close>
+
+lemma mebuf2t_take_nat:
+  assumes "\<And>x y t z. f x y t (h z) = h (g x y t z)"
+  shows "mebuf2t_take f (h z) buf t ts
+    = (case mebuf2t_take g z buf t ts of (z', b) \<Rightarrow> (h z', b))"
+  using assms
+proof (induct g z buf t ts rule: mebuf2t_take.induct)
+  case (1 g z xs ys t0 ts)
+  obtain ot ts' where t: "mbuf_t_cases ts = (ot, ts')" by fastforce
+  obtain ox xs' where x: "mbuf_t_cases xs = (ox, xs')" by fastforce
+  obtain oy ys' where y: "mbuf_t_cases ys = (oy, ys')" by fastforce
+  show ?case
+  proof (cases "ot = None \<or> ox = None \<or> oy = None")
+    case True
+    then show ?thesis
+      using t x y by (subst (1 2) mebuf2t_take.simps) (auto simp del: mebuf2t_take.simps split: option.splits)
+  next
+    case False
+    then obtain t1 x1 y1 where s: "ot = Some t1" "ox = Some x1" "oy = Some y1"
+      by auto
+    have IH: "mebuf2t_take f (h (g x1 y1 t1 z)) (xs', ys') t1 ts' =
+        (case mebuf2t_take g (g x1 y1 t1 z) (xs', ys') t1 ts' of (z', b) \<Rightarrow> (h z', b))"
+      by (rule 1(1)[OF t[symmetric] s(1) x[symmetric] s(2) y[symmetric] s(3) 1(2)])
+    show ?thesis
+      by (subst (1 2) mebuf2t_take.simps) (simp only: t x y s prod.case option.case 1(2) IH)
+  qed
+qed
+
+lemma mbuf2t_take_until:
+  "mbuf2t_take (dux_add_new dags msk) (rdux aux) (rbuf2 buf) t (Rep_mbuf_t nts @ ts)
+   = (case mebuf2t_take (udux_add_new dags msk) aux buf t (nts @@ ts) of
+        (aux', buf', t', nts') \<Rightarrow> (rdux aux', rbuf2 buf', t', Rep_mbuf_t nts'))"
+  using mbuf2t_take_rbuf2[of "dux_add_new dags msk" "rdux aux" buf t nts ts]
+    mebuf2t_take_nat[of "dux_add_new dags msk" rdux "udux_add_new dags msk" aux buf t "nts @@ ts"]
+  by (simp add: dux_add_new_rdux split: prod.splits)
+
+lemma mbuf2_add_rbufo: "mbuf2_add xs ys (rbufo buf) = rbufo (mebuf2_add xs ys buf)"
+  by (rule mbuf2_add)
+
+lemma mbuf2_take_rbufo:
+  "mbuf2_take f (rbufo buf) = (case mebuf2_take f buf of (zs, buf') \<Rightarrow> (zs, rbufo buf'))"
+  by (cases "mebuf2_take f buf") (simp add: mebuf2_take)
+
+lemma uletpast_meval0_Rep:
+  "(\<And>ts db \<psi>. ursize \<psi> = n \<Longrightarrow>
+      eval ts db (Rep_udformula \<psi>) = (case eval' ts db \<psi> of (ys, \<psi>') \<Rightarrow> (ys, Rep_udformula \<psi>'))) \<Longrightarrow>
+    ursize \<phi> = n \<Longrightarrow>
+    letpast_meval0 eval j i ys xs p ts db (Rep_udformula \<phi>)
+    = (case uletpast_meval0 eval' j i ys xs p ts db \<phi> of
+        (ys', i', b, \<phi>') \<Rightarrow> (ys', i', b, Rep_udformula \<phi>'))"
+proof (induct eval' j i ys xs p ts db \<phi> rule: uletpast_meval0.induct)
+  case (1 eval' j i ys xs p ts db \<phi>)
+  obtain ys' \<phi>' where e: "eval' ts (Mapping.update p xs db) \<phi> = (ys', \<phi>')"
+    by (cases "eval' ts (Mapping.update p xs db) \<phi>")
+  have L: "eval ts (Mapping.update p xs db) (Rep_udformula \<phi>) = (ys', Rep_udformula \<phi>')"
+    using "1.prems"(1)[OF "1.prems"(2), of ts "Mapping.update p xs db"] by (simp add: e)
+  have g: "(size (Rep_udformula \<phi>') \<noteq> size (Rep_udformula \<phi>)) = (ursize \<phi>' \<noteq> ursize \<phi>)"
+    by (simp add: ursize_Rep)
+  show ?case
+  proof (cases "ursize \<phi>' = ursize \<phi>")
+    case False
+    then show ?thesis
+      by (subst letpast_meval0.simps, subst uletpast_meval0.simps) (simp add: Let_def L e g)
+  next
+    case True
+    show ?thesis
+    proof (cases ys')
+      case Nil
+      then show ?thesis
+        using True by (subst letpast_meval0.simps, subst uletpast_meval0.simps) (simp add: Let_def L e g)
+    next
+      case (Cons y ys'')
+      show ?thesis
+      proof (cases "j \<le> Suc (i + length xs)")
+        case le: True
+        then show ?thesis
+          using True Cons
+          by (subst letpast_meval0.simps, subst uletpast_meval0.simps) (simp add: Let_def L e g)
+      next
+        case False
+        have n: "ursize \<phi>' = n"
+          using True "1.prems"(2) by simp
+        have rec: "letpast_meval0 eval j (i + length xs) (ys @ ys')
+            ys' p [] (Mapping.map_values (\<lambda>_ _. []) db) (Rep_udformula \<phi>') =
+          (case uletpast_meval0 eval' j (i + length xs) (ys @ ys') ys' p []
+              (Mapping.map_values (\<lambda>_ _. []) db) \<phi>' of
+            (ys', i', b, \<phi>') \<Rightarrow> (ys', i', b, Rep_udformula \<phi>'))"
+          using "1.hyps"[OF e[symmetric] refl _ Cons False "1.prems"(1) n] True by simp
+        show ?thesis
+          using True False Cons rec
+          by (subst letpast_meval0.simps, subst uletpast_meval0.simps) (simp add: Let_def L e g)
+      qed
+    qed
+  qed
+qed
+
+lemma gbin_join_eq': "(gbin_join :: _ \<Rightarrow> event_data table \<Rightarrow> _) = dbin_join"
+  by (intro ext) (rule gbin_join_eq)
+
+theorem udeval_Rep:
+  "deval j ts db (Rep_udformula \<phi>)
+   = (case udeval j ts db \<phi> of (zs, \<phi>') \<Rightarrow> (zs, Rep_udformula \<phi>'))"
+proof (induction j ts db \<phi> rule: udeval.induct)
+  case (13 j ts db ps ns L buf)
+  have "map fst (map (deval j ts db) (map Rep_udformula L)) = map fst (map (udeval j ts db) L)"
+    "map snd (map (deval j ts db) (map Rep_udformula L))
+      = map Rep_udformula (map snd (map (udeval j ts db) L))"
+    by (auto simp: 13 split: prod.splits)
+  then show ?case
+    by (auto simp only: Let_def deval.simps udeval.simps Rep_udformula.simps
+        mbufn_add_rbl mbufn_take_ands split: prod.splits)
+next
+  case (20 j ts db p m \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)
+  let ?db0 = "Mapping.update (p, m) [] db"
+  let ?dbe = "Mapping.map_values (\<lambda>_ _. []) db"
+  obtain xs \<phi>' where \<phi>: "udeval j ts db \<phi> = (xs, \<phi>')"
+    by (cases "udeval j ts db \<phi>")
+  obtain zs0 \<psi>' where \<psi>: "udeval j ts ?db0 \<psi> = (zs0, \<psi>')"
+    by (cases "udeval j ts ?db0 \<psi>")
+  obtain rs \<rho>' where \<rho>: "udeval j ts ?db0 \<rho> = (rs, \<rho>')"
+    by (cases "udeval j ts ?db0 \<rho>")
+  have IH1: "deval j ts db (Rep_udformula \<phi>) = (xs, Rep_udformula \<phi>')"
+    using 20(1) \<phi> by simp
+  have IH2: "deval j ts ?db0 (Rep_udformula \<psi>) = (zs0, Rep_udformula \<psi>')"
+    using 20(2)[OF refl \<phi>[symmetric] refl] \<psi> by simp
+  have IH3: "deval j ts ?db0 (Rep_udformula \<rho>) = (rs, Rep_udformula \<rho>')"
+    using 20(3)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric]] \<rho> by simp
+  let ?z = "drop (jfrz - jpsi0) zs0"
+  let ?as = "drop (jfrz - jphi + length ?z) (\<alpha>s @ xs)"
+  let ?dbL = "Mapping.update (p, m) (replicate (length ts) (hd ?as)) db"
+  define lru where "lru = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+    if ?z = [] \<and> ?as \<noteq> [] then Some (g, udeval j ts ?dbL \<rho>L) else None)"
+  define lre where "lre = (case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+    if ?z = [] \<and> ?as \<noteq> [] then Some (g, deval j ts ?dbL (Rep_udformula \<rho>L)) else None)"
+  have st: "(let zs0_out = drop (jfrz - jpsi0) zs0;
+       \<alpha>s1 = drop (jfrz - jphi + length zs0_out) (\<alpha>s @ xs)
+     in (zs0_out, jfrz + length zs0_out, frz_fill ng (\<alpha>s @ xs), \<alpha>s1,
+       case lv of None \<Rightarrow> None | Some g \<Rightarrow>
+         if zs0_out = [] \<and> \<alpha>s1 \<noteq> []
+         then Some (g, udeval j ts (Mapping.update (p, m) (replicate (length ts) (hd \<alpha>s1)) db) \<rho>L)
+         else None)) = (?z, jfrz + length ?z, frz_fill ng (\<alpha>s @ xs), ?as, lru)"
+    by (simp only: Let_def lru_def)
+  have IHL: "lre = map_option (\<lambda>(k, us, \<sigma>). (k, us, Rep_udformula \<sigma>)) lru"
+  proof (cases lv)
+    case (Some g)
+    show ?thesis
+    proof (cases "?z = [] \<and> ?as \<noteq> []")
+      case True
+      have "deval j ts ?dbL (Rep_udformula \<rho>L) =
+          (case udeval j ts ?dbL \<rho>L of (zs, \<phi>') \<Rightarrow> (zs, Rep_udformula \<phi>'))"
+        by (rule 20(4)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl refl Some True])
+      then show ?thesis
+        using Some True by (simp add: lru_def lre_def split: prod.splits)
+    qed (use Some in \<open>auto simp: lru_def lre_def\<close>)
+  qed (simp add: lru_def lre_def)
+  have IHloop: "deval j ts' db' (Rep_udformula \<chi>) = apsnd Rep_udformula (udeval j ts' db' \<chi>)"
+    if "ursize \<chi> = ursize \<rho>'" for ts' db' \<chi>
+    using 20(5)[OF refl \<phi>[symmetric] refl refl \<psi>[symmetric] refl \<rho>[symmetric] refl st[symmetric]
+        refl refl refl, of \<chi> ts' db'] that
+    by (simp split: prod.splits)
+  let ?k = "min (jfrz + length ?z) (pR + length rs) - (pR - length rb)"
+  let ?tq = "if d = \<infinity> then [] else tq @ ts"
+  obtain ys as' lvu \<rho>2 w2 pR2 tq2 rb2 where fr0: "frz_live_loop ursize (udeval j) (p, m) ?dbe
+      (frz_fill ng (\<alpha>s @ xs)) d po j (jfrz + length ?z) ?as lru (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs))
+      = (ys, as', lvu, \<rho>2, w2, pR2, tq2, rb2)"
+    by (metis prod_cases4 prod_cases5)
+  have fre: "frz_live_loop size (deval j) (p, m) ?dbe
+      (frz_fill ng (\<alpha>s @ xs)) d po j (jfrz + length ?z) ?as lre
+      (Rep_udformula \<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs))
+      = (ys, as', map_option (apsnd Rep_udformula) lvu, Rep_udformula \<rho>2, w2, pR2, tq2, rb2)"
+  proof -
+    have ev: "deval j ts' db' (Rep_udformula \<chi>) = apsnd Rep_udformula (udeval j ts' db' \<chi>)"
+      if "ursize \<chi> = ursize (fst (\<rho>', w, pR + length rs, ?tq, drop ?k (rb @ rs)))" for ts' db' \<chi>
+      by (rule IHloop) (use that in \<open>simp only: fst_conv\<close>)
+    show ?thesis
+      using frz_live_loop_map[where sz' = size and ev' = "deval j" and f = Rep_udformula,
+          OF ev ursize_Rep[symmetric] fr0]
+      by (simp only: IHL[symmetric] apfst_conv)
+  qed
+  have keep: "frz_keep_lv (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
+      ufrz_keep_lv (if po then None else lvu) \<rho>L"
+    "frz_keep_st (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
+      Rep_udformula (ufrz_keep_st (if po then None else lvu) \<rho>L)"
+  proof -
+    have ifm: "(if po then None else map_option (apsnd Rep_udformula) lvu) =
+      map_option (apsnd Rep_udformula) (if po then None else lvu)"
+      by simp
+    show "frz_keep_lv (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
+      ufrz_keep_lv (if po then None else lvu) \<rho>L"
+      "frz_keep_st (if po then None else map_option (apsnd Rep_udformula) lvu) (Rep_udformula \<rho>L) =
+      Rep_udformula (ufrz_keep_st (if po then None else lvu) \<rho>L)"
+      by (simp_all only: ifm frz_keep_Rep)
+  qed
+  show ?case
+    by (simp only: Rep_udformula.simps deval.simps udeval.simps Let_def IH1 IH2 IH3 \<phi> \<psi> \<rho>
+        lre_def[symmetric] lru_def[symmetric] fr0 fre keep prod.case)
+next
+  case (21 j ts db p m \<phi> \<psi> i buf)
+  have IH: "ursize \<psi> = ursize \<phi> \<Longrightarrow> deval j ts db (Rep_udformula \<psi>) =
+    (case udeval j ts db \<psi> of (zs, \<psi>') \<Rightarrow> (zs, Rep_udformula \<psi>'))" for ts db \<psi>
+    using 21 by auto
+  have lp: "letpast_meval0 (deval j) j i [] (list_of_option buf) (p, m) ts db (Rep_udformula \<phi>)
+    = (case uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi> of
+        (ys', i', b, \<phi>') \<Rightarrow> (ys', i', b, Rep_udformula \<phi>'))"
+    by (rule uletpast_meval0_Rep[where n = "ursize \<phi>" and eval = "deval j" and eval' = "udeval j",
+          OF IH refl])
+  show ?case
+    using 21(2)[OF refl _ refl refl]
+    by (cases "uletpast_meval0 (udeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>")
+      (auto simp: lp split: prod.splits)
+next
+  case (11 j ts db I \<phi> first buf nts)
+  then show ?case
+    by (simp add: mprev_next_prev mbuf_t_append.rep_eq
+        del: mprev_next.simps meprev_next.simps split: prod.splits)
+next
+  case (12 j ts db I \<phi> first nts)
+  then show ?case
+    by (simp add: mprev_next_next del: mprev_next.simps meprev_next.simps split: prod.splits list.splits bool.splits)
+next
+  case (14 j ts db dags \<phi> \<psi> buf aux)
+  obtain xs \<phi>' where e1: "udeval j ts db \<phi> = (xs, \<phi>')" by (cases "udeval j ts db \<phi>")
+  obtain ys \<psi>' where e2: "udeval j ts db \<psi> = (ys, \<psi>')" by (cases "udeval j ts db \<psi>")
+  obtain zs buf' aux' where e3: "uedsx_eval_since dags [] (mebuf2S_add xs ys ts buf) aux
+      = (zs, buf', aux')"
+    by (cases "uedsx_eval_since dags [] (mebuf2S_add xs ys ts buf) aux")
+  obtain Zs Bf Ax where E3: "dsx_eval_since dags [] (rbufS (mebuf2S_add xs ys ts buf)) (rdsx aux)
+      = (Zs, Bf, Ax)"
+    by (cases "dsx_eval_since dags [] (rbufS (mebuf2S_add xs ys ts buf)) (rdsx aux)")
+  have Z: "map (ufilt (usx_q aux)) Zs = zs" and B: "Bf = rbufS buf'" and A: "Ax = rdsx aux'"
+    using dsx_eval_since_rdsx0[where args = dags and buf = "mebuf2S_add xs ys ts buf" and aux = aux]
+    by (simp_all add: e3 E3)
+  have q: "usx_q aux' = usx_q aux" by (rule usx_q_uedsx_eval_since'[OF e3])
+  show ?case
+    using 14
+    by (simp add: e1 e2 e3 E3 Z B A q mbuf2S_add_rbufS deval_dandrel
+        del: dsx_eval_since.simps uedsx_eval_since.simps split: prod.splits)
+next
+  case (15 j ts db dags msk \<phi> \<psi> buf nts t aux)
+  then show ?case
+    by (simp add: mbuf2_add_rbuf2 mbuf2t_take_until dux_eval_rdux split: prod.splits)
+next
+  case (22 j ts db dags pl \<phi> \<psi> dbuf nts daux)
+  then show ?case
+    by (simp add: mbuf2_add_rbuf2 mbuf2T_take_rbuf2
+        del: mbuf2T_take.simps mebuf2T_take.simps split: prod.splits)
+next
+  case (23 j ts db m I mr mrs pls Ld dbuf nts daux)
+  have R: "map fst (map (deval j ts db) (map Rep_udformula Ld)) = map fst (map (udeval j ts db) Ld)"
+    "map snd (map (deval j ts db) (map Rep_udformula Ld))
+      = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
+    by (auto simp: 23 split: prod.splits)
+  show ?case
+    by (simp only: Let_def deval.simps udeval.simps R mbufn_add_rbl mbufnt_take_matchP
+        Rep_udformula.simps) (simp split: prod.splits)
+next
+  case (24 j ts db m I mr mrs pls Ld dbuf nts t daux)
+  have R: "map fst (map (deval j ts db) (map Rep_udformula Ld)) = map fst (map (udeval j ts db) Ld)"
+    "map snd (map (deval j ts db) (map Rep_udformula Ld))
+      = map Rep_udformula (map snd (map (udeval j ts db) Ld))"
+    by (auto simp: 24 split: prod.splits)
+  show ?case
+    by (simp only: Let_def deval.simps udeval.simps R mbufn_add_rbl mbufnt_take_rbl
+        Rep_udformula.simps) (simp split: prod.splits)
+next
+  case (25 j ts db pl \<alpha> dbf1 dags \<phi> \<psi> dbf2 nts daux)
+  then show ?case
+    by (simp add: mbuf2_add_rbuf2 mbuf2T_take_rbuf2 mbuf2_add_rbufo mbuf2_take_rbufo gbin_join_eq'
+        del: mbuf2T_take.simps mebuf2T_take.simps mbuf2_take.simps mebuf2_take.simps split: prod.splits)
+qed (simp_all add: mbuf2_add_rbuf2 mbuf2_take_rbuf2 gbin_join_eq'
+    del: mbuf2_take.simps mebuf2_take.simps split: prod.splits option.splits)
+
 end
