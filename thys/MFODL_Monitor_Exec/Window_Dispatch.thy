@@ -1,6 +1,6 @@
 (*<*)
 theory Window_Dispatch
-  imports Until_Gen Agg_Cache
+  imports Agg_Cache Match_Window
 begin
 (*>*)
 

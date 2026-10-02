@@ -1041,8 +1041,8 @@ section \<open>The executable fused Since window\<close>
 text \<open>
   The fused aggregation window the executable evaluator runs: its count structure is a mapping alone,
   and its read is guarded by the node's constraint; the result cache of
-  @{text Agg_Cache} is built on it.  This theory provides the window, and proves that it
-  refines the window of @{theory MFODL_Monitor_Exec.Since_Agg}.
+  @{text Agg_Cache} is built on it.  This section provides the window, and proves that it
+  refines the fused window above.
 \<close>
 
 subsection \<open>The count mapping\<close>
