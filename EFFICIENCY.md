@@ -9723,3 +9723,31 @@ change by a further −0.5% (FRZ), −0.4% (Trigger), −0.3% (And-Trigger) and 
 Verdicts identical, wall times the same up to noise.  The export is not
 dictionary-free as a whole: the fallback branches, the compiler's code and the constants that
 `monomorphize` cannot instantiate (Section 21.16) remain, and none of them runs per event.
+
+### 22.3 One dense evaluator
+
+The session had two dense evaluators: `deval` over lists, on which the simulation `dsim` of
+the kernel was proved, and `udeval` over the structures the code runs (queues for the buffers,
+the dispatched Since/Until windows of `Dense_Unbox_Eval`, the aggregation caches of
+`Dense_Agg_Cache`, the constraint over a fused aggregating Since node kept as the node's guard),
+with `udeval_Rep` relating the two.  They are now one: `dformula` and `deval` have `udeval`'s
+representation, and `dsim` relates them to the kernel's formula through the representation maps
+that `Rep_udformula` used (`Rep_mbuf_t`, `rbuf2`, `rbufS`, `rbufo`, `rdsx`, `rdux`), so the
+list-level relations and step lemmas are unchanged.  The guard gets its own `dsim` rule
+(`DsSinceGuard`); the compiler `dof` sets it (`dset_q`), with `dsim_dset_q` for the
+And-constraint case.  `Dense_Unbox_Exec` (1586 lines: `udformula`, `udeval`, the direct
+compiler `udinit`, `udeval_Rep`, `udmstate`, `udmstep`) is deleted; the session is 1150 lines
+shorter than before the merge (31971 to 30834 lines of theory).
+
+The initial state is now `dminit_safe`, the kernel's initial state compiled by `dof`
+(`dof_state`), so the kernel's `minit0` is exported for the first time.  Its window
+initializations are locale definitions whose global equations carry the locale predicate; they
+get code through four constants at the interpretation (`kinit_since` and its siblings) and
+`code_unfold`.  The generated code: `deval` is `udeval` case for case up to names, except that
+the size bound of the Frz and LetPast cases is the datatype's `size` (the same traversal as
+`ursize`) passed as a dictionary; every other definition common to the two exports is identical
+up to renaming; the export gains the kernel's formula datatype and the initializations of its
+windows, run once before the first event.  On 109 formulas of nine families (`-verified` only,
+best of three, new over old) the verdicts and statuses are identical and the geometric mean is
+0.977; rerun sequentially with five repetitions on since, agg_once and match (46 formulas) it is
+0.974, with the per-formula swings changing sign between the two runs.
