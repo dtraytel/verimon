@@ -17,7 +17,7 @@ text \<open>
   @{const vfinish}. The prefixes are those of the events that the parser keeps; the corollaries
   for logs whose events all denote a prefix follow, and from them, at the end, the theorems for
   all of the log, or for all of it that has been read, from the initial state
-  (@{thm [source] verimon_log.vrun_log}).
+  (@{text verimon_log.vrun_log}).
 \<close>
 
 subsection \<open>The executable monitor's state after a prefix\<close>
@@ -819,7 +819,7 @@ proof -
     using monitor_\<phi>.Mt_restrict[OF _ E] prefix_of_items_wty(1)[OF assms] by (simp add: map_sig_lsig)
 qed
 
-text \<open>The online versions of @{thm [source] vrun_log}: for bytes whose events all denote a
+text \<open>The online versions of @{text vrun_log} below: for bytes whose events all denote a
   prefix, a chunk and the end of the input report no error, and output exactly the verdicts that
   the specification prescribes for the longer prefix and not for the shorter one, although the
   parser skips the events of the other declared predicates if @{text filt}.\<close>
