@@ -23,9 +23,6 @@ text \<open>
   passes or fails as a whole, because the filter only looks at the key.
 \<close>
 
-lemma keys_didx: "Mapping.keys (didx msk T) = dproj msk ` T"
-  by (auto simp: Mapping.keys_dom_lookup lookup_didx dom_def split: if_splits)
-
 lemma didx_filter:
   "Mapping.filter (\<lambda>k _. (k \<in> X) = pos) (didx msk T) = didx msk (dsemi msk pos T X)"
 proof -
@@ -42,12 +39,6 @@ proof -
   qed
   then show ?thesis by (simp add: mapping_eqI)
 qed
-
-lemma keys_Mapping_filter_dsemi:
-  "Mapping.keys (Mapping.filter (\<lambda>as _. (dproj msk as \<in> X) = pos) m)
-   = dsemi msk pos (Mapping.keys m) X"
-  by (auto simp: Mapping.keys_dom_lookup Mapping.lookup_filter dsemi_def dom_def
-      split: option.splits if_splits)
 
 subsection \<open>Maintaining the index incrementally\<close>
 
@@ -113,11 +104,6 @@ subsection \<open>The mask of the left operand's columns among the right operand
 lemma length_mrg_left_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
      length (mrg_left_key (mrg_plan cs1 cs2)) = length cs1"
-  by (induct cs1 cs2 rule: mrg_plan.induct) auto
-
-lemma length_filter_mrg_left_key:
-  "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs2 \<subseteq> set cs1 \<Longrightarrow>
-     length (filter id (mrg_left_key (mrg_plan cs1 cs2))) = length cs2"
   by (induct cs1 cs2 rule: mrg_plan.induct) auto
 
 lemma mrg_left_key_MRgt: "mrg_left_key (map (\<lambda>_. MRgt) ds) = []"
@@ -1046,8 +1032,7 @@ lemma valid_dresult_msaux_lz:
 section \<open>The dense Since structure over ascending columns\<close>
 
 text \<open>
-  The same relation the verified structure has to the reordered auxiliary list
-  (@{const dsaux}), now for the dense structure.
+  The dense structure is valid for the reordering of the kernel's auxiliary list.
 \<close>
 
 definition dmsk :: "cols \<Rightarrow> cols \<Rightarrow> bool list" where
@@ -1274,11 +1259,6 @@ proof -
     by (simp add: dvalid_muaux_def)
 qed
 
-lemma dvalid_length_muaux:
-  "dvalid_muaux args msk cur daux auxlist \<Longrightarrow> length_dq args daux = length auxlist"
-  using valid_length_muaux_dq[of args cur "MU_dq daux" auxlist]
-  by (simp add: dvalid_muaux_def)
-
 section \<open>The dense Until structure over ascending columns\<close>
 
 definition duaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> event_data mmuaux_dq \<Rightarrow>
@@ -1348,11 +1328,6 @@ proof -
     using eval_until_auxlist'[OF we] by (simp add: set_drop_subset)
   then show ?thesis using vd r w by (auto simp: duaux'_def)
 qed
-
-lemma duaux'_length:
-  "duaux' kL cL kR cR args cur daux auxlist \<Longrightarrow>
-     length_dq (dargs cR cL args) daux = length auxlist"
-  unfolding duaux'_def by (auto dest: dvalid_length_muaux)
 
 section \<open>The match structures over ascending columns\<close>
 

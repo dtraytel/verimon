@@ -103,9 +103,6 @@ lemma dsx_agg_init_agg[simp]: "dsx_agg (dsx_init_agg args p) = Some p"
 text \<open>The windows are used for a closed left operand, whose kernel columns are then empty as
   well.\<close>
 
-lemma dframe_Nil: "dframe kL [] \<Longrightarrow> kL = []"
-  by (simp add: dframe_def)
-
 definition dsxaux' :: "cols \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ts \<Rightarrow> dsaux_x \<Rightarrow>
     (ts \<times> event_data table) list \<Rightarrow> bool" where
   "dsxaux' kR cR cL args cur daux auxlist \<longleftrightarrow> (case daux of
@@ -310,11 +307,6 @@ fun dux_eval :: "args \<Rightarrow> ts \<Rightarrow> duaux_x \<Rightarrow> event
 | "dux_eval args nt (DUX_wagg p a) =
      (let (zs, a') = ua_eval args p (args_n args) nt a in (zs, DUX_wagg p a'))"
 
-fun dux_length :: "args \<Rightarrow> duaux_x \<Rightarrow> nat" where
-  "dux_length args (DUX_gen d) = glength_dq args d"
-| "dux_length args (DUX_win w) = uw_length args w"
-| "dux_length args (DUX_wagg p a) = ua_length args a"
-
 definition dux_init_agg :: "args \<Rightarrow> daggp \<Rightarrow> duaux_x" where
   "dux_init_agg args p = DUX_wagg p (ua_init args p)"
 
@@ -517,12 +509,6 @@ next
     by (auto simp: duxaux'_def)
 qed
 
-lemma duxaux'_length:
-  "duxaux' kL cL kR cR args cur daux auxlist \<Longrightarrow>
-     dux_length (dargs cR cL args) daux = length auxlist"
-  using duaux'_length valid_uw_length valid_ua_length
-  by (cases daux) (auto simp: duxaux'_def dauxlist3_def glength_dq_eq[symmetric])
-
 section \<open>The structures the evaluator runs\<close>
 
 text \<open>
@@ -643,11 +629,6 @@ fun udux_eval :: "args \<Rightarrow> ts \<Rightarrow> uduaux_x \<Rightarrow> uta
 | "udux_eval args nt (UDUX_wagg p a) =
      (let (zs, a') = uua_eval args p (args_n args) nt a in (zs, UDUX_wagg p a'))"
 
-fun udux_length :: "args \<Rightarrow> uduaux_x \<Rightarrow> nat" where
-  "udux_length args (UDUX_gen d) = glength_dq args d"
-| "udux_length args (UDUX_win w) = uw_length args w"
-| "udux_length args (UDUX_wagg p a) = uua_length args a"
-
 lemma dux_init_rdux: "dux_init args = rdux (udux_init args)"
   by (simp add: dux_init_def udux_init_def)
 
@@ -661,9 +642,6 @@ lemma dux_add_new_rdux:
 lemma dux_eval_rdux:
   "dux_eval args nt (rdux d) = (case udux_eval args nt d of (zs, d') \<Rightarrow> (zs, rdux d'))"
   by (cases d) (simp_all add: ua_eval_rua split: prod.splits)
-
-lemma dux_length_rdux: "dux_length args (rdux d) = udux_length args d"
-  by (cases d) (simp_all add: ua_length_rua)
 
 subsection \<open>The buffers\<close>
 

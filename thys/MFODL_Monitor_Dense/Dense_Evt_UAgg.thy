@@ -54,9 +54,6 @@ declare ua_extend.simps[simp del]
 definition ua_init :: "args \<Rightarrow> daggp \<Rightarrow> uwagg" where
   "ua_init args p = (uw_init args, ag_init p (args_n args))"
 
-definition ua_length :: "args \<Rightarrow> uwagg \<Rightarrow> nat" where
-  "ua_length args a = uw_length args (fst a)"
-
 definition ua_step :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uwagg \<Rightarrow> uwagg" where
   "ua_step args p w ts0 a = (case a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
      (case ua_extend args p w ts0 win rest bend cc ax of (win, rest, bend, cc, ax) \<Rightarrow>
@@ -103,9 +100,6 @@ subsection \<open>It tracks the plain window\<close>
 text \<open>The fused operations differ from @{const uw_extend}, @{const uw_step} and
   @{const uw_shift} only in the extra component and in what is pushed onto the list of finished
   answers.  The first lemmas say so: everything but that list steps identically.\<close>
-
-abbreviation ua_w :: "uwagg \<Rightarrow> uwaux" where
-  "ua_w a \<equiv> fst a"
 
 lemma ua_extend_proj:
   "(case ua_extend args p w ts0 win rest bend cc ax of (a, b, c, d, e) \<Rightarrow> (a, b, c, d))
@@ -208,26 +202,6 @@ lemma valid_ua_init:
   shows "valid_ua args p 0 (ua_init args p) []"
   using assms valid_uw_init[of args] ag_inv_init[of p "args_n args"]
   by (auto simp: valid_ua_def ua_rel_def ua_init_def uw_init_def)
-
-lemma ua_rel_w:
-  assumes "ua_rel p w a u"
-  shows "ua_w a = (case u of (nts, win, rest, len, bend, cc, dn) \<Rightarrow>
-    (nts, win, rest, len, bend, cc, map (dagg_p p) dn))"
-  using assms by (auto simp: ua_rel_def split: prod.splits)
-
-lemma ua_rel_inv: "ua_rel p w a u \<Longrightarrow> ag_inv p w (fst (snd (snd (snd (snd (snd (ua_w a)))))) ) (snd a)"
-  by (auto simp: ua_rel_def split: prod.splits)
-
-lemma valid_ua_length:
-  assumes "valid_ua args p cur a auxlist"
-  shows "ua_length args a = length auxlist"
-proof -
-  obtain u where r: "ua_rel p (args_n args) a u" and v: "valid_uw args cur u auxlist"
-    using assms by (auto simp: valid_ua_def)
-  show ?thesis
-    using valid_uw_length[OF v] ua_rel_w[OF r]
-    by (auto simp: ua_length_def uw_length_def split: prod.splits)
-qed
 
 text \<open>The two recursions in step, and the shift that drives them, keep the relation.\<close>
 

@@ -98,12 +98,6 @@ proof -
   qed
 qed
 
-lemma dq_inv_upd_nested_step_dq: "dq_inv dq \<Longrightarrow> dq_inv (upd_nested_step_dq base d f x dq)"
-  by (auto simp: upd_nested_step_dq_def Let_def split: prod.splits)
-
-lemma dq_inv_gupd_nested_step_dq: "dq_inv dq \<Longrightarrow> dq_inv (gupd_nested_step_dq base d f x dq)"
-  by (auto simp: gupd_nested_step_dq_def Let_def split: prod.splits)
-
 type_synonym 'b gmuaux = "tp \<times> ts queue \<times> ('b list set \<times> (ts + tp)) queue \<times> nat \<times>
   'b list set \<times> ('b list, tp) mapping \<times>
   ('b list, ts + tp) mapping dq \<times> ts dq \<times> 'b list set list"
@@ -240,9 +234,6 @@ subsection \<open>Agreement with the kernel's structure\<close>
 
 lemma ginit_dq_eq: "ginit_dq args = (init_dq args :: event_data mmuaux_dq)"
   by (simp add: ginit_dq_def init_dq_def)
-
-lemma glength_dq_eq: "glength_dq args (d :: event_data mmuaux_dq) = length_dq args d"
-  by (cases d rule: mmuaux_dq_cases) simp
 
 lemma geval_step_dq_eq:
   assumes ag: "args_agg args = None"

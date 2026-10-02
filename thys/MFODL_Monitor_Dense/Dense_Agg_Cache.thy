@@ -85,7 +85,6 @@ lemma gres_gvset: "gres g0 \<omega> p (\<lambda>x. x) a =
     (if g0 \<and> gkeys a = {} then {[eval_agg_op \<omega> {}]} else gvset \<omega> p a)"
   by (cases a) (auto simp: gvset_def gmr_mkr split: Formula.agg_type.splits)
 
-
 lemma gval_gstep_ins: "gstep_ins k ev t (Some a) = Some a' \<Longrightarrow> h \<noteq> drop k t \<Longrightarrow>
     gval \<omega> a' h = gval \<omega> a h"
   by (cases a) (auto simp: gstep_ins_def Let_def lookup_update' split: prod.splits option.splits
@@ -144,7 +143,6 @@ proof -
     unfolding gvset_def eq[symmetric] ..
   finally show ?thesis .
 qed
-
 
 subsection \<open>The counts and the aggregate, in one pass\<close>
 
@@ -208,7 +206,6 @@ proof (cases "finite X")
   then show ?thesis
     using Dense_Unbox.ID_ccompare_ed by (simp add: csl_finite) (subst csorted_list_of_set_split, auto)
 qed (simp add: csl_infinite)
-
 
 subsection \<open>The aggregate with its result\<close>
 
@@ -783,7 +780,6 @@ proof (induct xs arbitrary: R)
   show ?case using Cons.hyps[OF rdel(2)[OF Cons.prems]] rdel(1)[OF Cons.prems] by simp
 qed simp
 
-
 definition dk :: "daggp \<Rightarrow> nat" where
   "dk p = (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> k)"
 
@@ -908,7 +904,6 @@ lemma cstep_ins_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_ins 
 lemma cstep_del_cinv: "cinv q p axC \<Longrightarrow> cinv q p (cstep gstep_del q p t axC)"
   by (rule cstep_cinv) (auto intro: gval_gstep_del)
 
-
 lemma fold_cstep_fst:
   "(\<And>t axC. fst (S t axC) = G t (fst axC)) \<Longrightarrow> fst (fold S xs axC) = fold G xs (fst axC)"
   by (induct xs arbitrary: axC) simp_all
@@ -916,9 +911,6 @@ lemma fold_cstep_fst:
 lemma fold_cstep_cinv:
   "(\<And>t axC. cinv q p axC \<Longrightarrow> cinv q p (S t axC)) \<Longrightarrow> cinv q p axC \<Longrightarrow> cinv q p (fold S xs axC)"
   by (induct xs arbitrary: axC) simp_all
-
-lemma cinv_cset: "cinv q p (ax, cset q p ax)"
-  by (simp add: cinv_def cset_def)
 
 lemma fst_fold_cstep_ins: "fst (fold (cstep gstep_ins q p) xs axC) =
     (case p of (g0, \<omega>, f, k, pos) \<Rightarrow> gins k (umeval_trm f) xs (fst axC))"
@@ -1287,7 +1279,6 @@ lemma uc_res_code[code]: "uc_res q p w x = (case p of (g0, \<omega>, f, k, pos) 
   by (auto simp: uc_res_def uc_ax_rep uc_cnt_rep ugres_nc_def ugres_ns_def nis_empty_def
       split: ucrep.splits prod.splits option.splits)
 
-
 text \<open>The code reads the count set through the executable flattening, and a tuple's count through
   its group's map; the projection @{const nflat} itself is a lookup function, not a tree.\<close>
 
@@ -1299,7 +1290,6 @@ definition nlk :: "nat \<Rightarrow> 'a nmap \<Rightarrow> event_data list \<Rig
 
 lemma lookup_nflat_nlk[code_unfold]: "Mapping.lookup (nflat k M) t = nlk k M t"
   by (simp add: lookup_nflat nlk_def)
-
 
 subsection \<open>The window over it\<close>
 

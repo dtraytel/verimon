@@ -87,15 +87,6 @@ lemma cnt_del_ucc[simp]: "cnt_del T (ucc c) = ucc (ucnt_del T c)"
 text \<open>What enters the window is what the mapping does not hold yet, and what leaves it is what
   it holds exactly once: both are read off the mapping, one lookup per tuple.\<close>
 
-definition ucnt_enter :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> event_data list set" where
-  "ucnt_enter T c = Set.filter (\<lambda>x. Mapping.lookup c x = None) T"
-
-definition ucnt_leave :: "event_data list set \<Rightarrow> ucnt \<Rightarrow> event_data list set" where
-  "ucnt_leave T c = Set.filter (\<lambda>x. Mapping.lookup c x = Some 1) T"
-
-lemma ucnt_enter_ucc: "ucnt_enter T c = T - snd (ucc c)"
-  by (auto simp: ucnt_enter_def ucc.simps lookup_None_keys)
-
 type_synonym ugagg = "event_data gagg"
 
 definition uag_ins :: "daggp \<Rightarrow> nat \<Rightarrow> event_data list set \<Rightarrow> ucnt \<Rightarrow>
@@ -144,9 +135,6 @@ lemma ufilt_Some: "ufilt (Some c) X = Set.filter (ueval_constraint c) X"
   by (simp add: ufilt_def uqok_def)
 
 lemma ufilt_idem[simp]: "ufilt q (ufilt q X) = ufilt q X"
-  by (auto simp: ufilt_def)
-
-lemma ufilt_Un: "ufilt q (A \<union> B) = ufilt q A \<union> ufilt q B"
   by (auto simp: ufilt_def)
 
 text \<open>The result writes the aggregate into each group and keeps what passes the node's guard.

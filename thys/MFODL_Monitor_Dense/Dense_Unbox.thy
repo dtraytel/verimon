@@ -134,44 +134,6 @@ lemma set_csorted_list_of_set_ed:
 lemma set_csl_ed: "finite (X :: event_data list set) \<Longrightarrow> set (csl X) = X"
   by (simp add: csl_finite set_csorted_list_of_set_ed)
 
-definition gbucket :: "('b list, 'b list list) mapping \<Rightarrow> 'b list \<Rightarrow> 'b list list" where
-  "gbucket m k = (case Mapping.lookup m k of None \<Rightarrow> [] | Some l \<Rightarrow> l)"
-
-lemma gbucket_gindex_step:
-  "gbucket (gindex_step msk x m) k = (if dproj msk x = k then x # gbucket m k else gbucket m k)"
-  by (auto simp: gbucket_def gindex_step_def Let_def Mapping.lookup_update'
-      split: option.splits)
-
-lemma gindex_fold_lookup:
-  "set (gbucket (fold (gindex_step msk) xs m) k)
-   = {b \<in> set xs. dproj msk b = k} \<union> set (gbucket m k)"
-  by (induct xs arbitrary: m) (auto simp: gbucket_gindex_step)
-
-lemma gindex_lookup:
-  assumes "set (csl B) = B"
-  shows "set (gbucket (gindex msk B) k) = {b \<in> B. dproj msk b = k}"
-  using gindex_fold_lookup[of msk "csl B" Mapping.empty k] assms
-  by (simp add: gindex_def gbucket_def)
-
-lemma gprobe_fold:
-  "fold (gprobe_step p lk m) xs acc
-   = acc \<union> (\<Union>a \<in> set xs. (\<lambda>b. dmerge p a b) ` set (gbucket m (dproj lk a)))"
-  by (induct xs arbitrary: acc)
-    (auto simp: gprobe_step_def gbucket_def fold_insert_image split: option.splits)
-
-lemma gprobe_l_fold:
-  "fold (gprobe_step_l p rk m) ys acc
-   = acc \<union> (\<Union>y \<in> set ys. (\<lambda>x. dmerge p x y) ` set (gbucket m (dproj rk y)))"
-  by (induct ys arbitrary: acc)
-    (auto simp: gprobe_step_l_def gbucket_def fold_insert_image split: option.splits)
-
-lemma ggen_join_spec:
-  assumes cA: "set (csl A) = A" and cB: "set (csl B) = B"
-  shows "ggen_join p lk rk A B
-       = {dmerge p a b | a b. a \<in> A \<and> b \<in> B \<and> dproj lk a = dproj rk b}"
-  by (auto simp: ggen_join_def Let_def gprobe_fold gprobe_l_fold
-      gindex_lookup[OF cA] gindex_lookup[OF cB] cA cB) force
-
 subsection \<open>The trigger structure over short tuples\<close>
 
 text \<open>

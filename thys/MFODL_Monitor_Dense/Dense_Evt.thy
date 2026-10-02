@@ -178,9 +178,6 @@ definition cnt_of :: "event_data table list \<Rightarrow> event_data tuple \<Rig
 lemma cnt_of_Nil: "cnt_of [] = (\<lambda>_. 0)"
   by (simp add: cnt_of_def fun_eq_iff)
 
-lemma cnt_of_Cons: "cnt_of (T # Ts) = (\<lambda>x. if x \<in> T then cnt_of Ts x + 1 else cnt_of Ts x)"
-  by (simp add: cnt_of_def fun_eq_iff)
-
 lemma cnt_of_snoc: "cnt_of (Ts @ [T]) = (\<lambda>x. if x \<in> T then cnt_of Ts x + 1 else cnt_of Ts x)"
   by (simp add: cnt_of_def fun_eq_iff)
 
@@ -265,9 +262,6 @@ lemma tbls_at_Cons: "tbls_at u ((t, rel) # es) = (if t = u then rel \<union> tbl
   by (auto simp: tbls_at_def)
 
 lemma tbls_at_append: "tbls_at u (xs @ ys) = tbls_at u xs \<union> tbls_at u ys"
-  by (auto simp: tbls_at_def)
-
-lemma tbls_at_filter: "tbls_at u (filter (\<lambda>e. P (fst e)) es) = (if P u then tbls_at u es else {})"
   by (auto simp: tbls_at_def)
 
 lemma tbls_at_map_empty: "tbls_at u (map (\<lambda>(t, rel). (t, {})) es) = {}"
@@ -840,9 +834,6 @@ declare uw_extend.simps[simp del]
 definition uw_init :: "args \<Rightarrow> uwaux" where
   "uw_init args = (empty_queue, empty_queue, empty_queue, 0, True, (Mapping.empty, {}), [])"
 
-definition uw_length :: "args \<Rightarrow> uwaux \<Rightarrow> nat" where
-  "uw_length args aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow> length dn + len)"
-
 text \<open>The oldest pending time point leaves: its window is extended as far as its timestamp
   allows, the window's union is its answer, and its own entry is dropped from the window.\<close>
 
@@ -909,7 +900,6 @@ fun uw_abs :: "args \<Rightarrow> uw_entry list \<Rightarrow> event_data muaux" 
 
 lemma length_uw_abs[simp]: "length (uw_abs args es) = length es"
   by (induct es rule: uw_abs.induct) simp_all
-
 
 text \<open>Appending an entry to a run extends every answer by the new table exactly when the new
   timestamp is in range from the run's start and the left operand held throughout the run.\<close>
@@ -1032,9 +1022,6 @@ lemma uw_ext_prefix: "\<exists>sfx. rl = uw_ext I ts0 bend rl @ sfx"
 
 lemma uw_ext_range: "e \<in> set (uw_ext I ts0 bend rl) \<Longrightarrow> memR I (fst e - ts0)"
   by (induct I ts0 bend rl rule: uw_ext.induct) (auto split: if_splits)
-
-lemma uw_ext_bend: "uw_ext I ts0 False rl = []"
-  by simp
 
 lemma uw_extend_rep:
   "linearize rest = rl \<Longrightarrow> uw_extend args ts0 win rest bend cc = (win', rest', bend', cc') \<Longrightarrow>
@@ -1204,11 +1191,6 @@ definition valid_uw :: "args \<Rightarrow> ts \<Rightarrow> uwaux \<Rightarrow> 
 
 lemma valid_uw_init: "valid_uw args 0 (uw_init args) []"
   by (simp add: valid_uw_def uw_init_def empty_queue_rep cnt_inv_empty uw_win_Nil)
-
-lemma valid_uw_length:
-  "valid_uw args cur aux auxlist \<Longrightarrow> uw_length args aux = length auxlist"
-  by (auto simp: valid_uw_def uw_length_def Let_def split: prod.splits)
-    (metis length_map length_rev)
 
 text \<open>One step: the oldest pending time point's answer is its abstract entry's.\<close>
 
@@ -1526,12 +1508,6 @@ proof -
     qed
   qed
 qed
-
-lemma uw_abs_takeWhile:
-  assumes srt: "sorted_wrt (\<lambda>e e'. fst e \<le> fst e') es"
-    and all: "\<forall>e \<in> set es. memR I (nt - fst e)"
-  shows "takeWhile (check_before I nt) (uw_abs args es) = []"
-  using all by (cases es) (auto simp: check_before_fst split: prod.splits)
 
 lemma valid_uw_eval:
   assumes v: "valid_uw args cur aux auxlist" and cn: "cur \<le> nt"

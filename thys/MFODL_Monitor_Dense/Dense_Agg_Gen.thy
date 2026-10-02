@@ -161,11 +161,6 @@ text \<open>The kernel's steps carry a flag and keep folding once it is down; th
   the map of the fold.  The keys a fold leaves are the ones it started with and the groups of
   the tuples it inserted.\<close>
 
-lemma fold_rel:
-  assumes "\<And>t s. t \<in> set xs \<Longrightarrow> F (h t) (R s) = R (G t s)"
-  shows "fold (\<lambda>t. F (h t)) xs (R s) = R (fold G xs s)"
-  using assms by (induct xs arbitrary: s) simp_all
-
 lemma fold_flag_False:
   assumes "\<And>t m. S t (False, m) = (False, m)"
   shows "fold S xs (False, m) = (False, m)"
@@ -197,38 +192,9 @@ fun gkeys :: "'b gagg \<Rightarrow> 'b list set" where
 | "gkeys (GSum m) = Mapping.keys m"
 | "gkeys (GRank m ty) = Mapping.keys m"
 
-lemma gkeys_gstep_ins: "gstep_ins k ev t (Some a) = Some a' \<Longrightarrow> gkeys a' \<subseteq> Set.insert (drop k t) (gkeys a)"
-  by (cases a) (auto simp: gstep_ins_def Let_def split: option.splits prod.splits event_data.splits
-      type.splits list_aux.splits if_splits)
-
-lemma gkeys_gstep_del: "gstep_del k ev t (Some a) = Some a' \<Longrightarrow> gkeys a' \<subseteq> gkeys a"
-  by (cases a) (auto simp: gstep_del_def Let_def Mapping.keys_is_none_rep Option.is_none_def
-      lookup_update' lookup_delete split: option.splits prod.splits event_data.splits type.splits
-      list_aux.splits if_splits)
-
 lemma fold_gstep_None[simp]:
   "fold (gstep_ins k ev) xs None = None" "fold (gstep_del k ev) xs None = None"
   using gins_None gdel_None by (simp_all add: gins_def gdel_def)
-
-lemma gkeys_gins: "gins k ev xs (Some a) = Some a' \<Longrightarrow> gkeys a' \<subseteq> gkeys a \<union> drop k ` set xs"
-proof (induct xs arbitrary: a)
-  case (Cons x xs)
-  then show ?case
-  proof (cases "gstep_ins k ev x (Some a)")
-    case (Some b)
-    then show ?thesis using Cons(1)[of b] Cons(2) gkeys_gstep_ins[OF Some] by (auto simp: gins_def)
-  qed (use Cons(2) in \<open>simp add: gins_def\<close>)
-qed (simp add: gins_def)
-
-lemma gkeys_gdel: "gdel k ev xs (Some a) = Some a' \<Longrightarrow> gkeys a' \<subseteq> gkeys a"
-proof (induct xs arbitrary: a)
-  case (Cons x xs)
-  then show ?case
-  proof (cases "gstep_del k ev x (Some a)")
-    case (Some b)
-    then show ?thesis using Cons(1)[of b] Cons(2) gkeys_gstep_del[OF Some] by (auto simp: gdel_def)
-  qed (use Cons(2) in \<open>simp add: gdel_def\<close>)
-qed (simp add: gdel_def)
 
 (*<*)
 end

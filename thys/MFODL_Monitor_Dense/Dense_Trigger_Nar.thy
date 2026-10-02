@@ -21,76 +21,6 @@ text \<open>
   @{const dproj}.  @{term tmm} drops the mask, and the update and the read commute with it.
 \<close>
 
-subsection \<open>Mapping a queue\<close>
-
-lift_definition map_queue :: "('a \<Rightarrow> 'b) \<Rightarrow> 'a queue \<Rightarrow> 'b queue" is
-  "\<lambda>f (fs, ls). (map f fs, map f ls)"
-  by (auto simp: queue_invariant_def split: list.splits)
-
-lemma linearize_map_queue[simp]: "linearize (map_queue f q) = map f (linearize q)"
-  by transfer (auto simp: rev_map split: prod.splits)
-
-lemma map_queue_empty[simp]: "map_queue f empty_queue = empty_queue"
-  by transfer simp
-
-lemma is_empty_map_queue[simp]: "Queue.is_empty (map_queue f q) = Queue.is_empty q"
-  by transfer (auto split: prod.splits list.splits)
-
-lemma append_queue_map_queue[simp]:
-  "append_queue (f x) (map_queue f q) = map_queue f (append_queue x q)"
-  by transfer (auto split: prod.splits)
-
-lemma prepend_queue_map_queue[simp]:
-  "prepend_queue (f x) (map_queue f q) = map_queue f (prepend_queue x q)"
-  by transfer (auto simp: queue_invariant_def split: prod.splits list.splits)
-
-lemma safe_hd_map_queue[simp]:
-  "safe_hd (map_queue f q) = map_prod (map_option f) (map_queue f) (safe_hd q)"
-proof (transfer, goal_cases)
-  case (1 f q)
-  then show ?case
-    by (cases q rule: safe_hd_t.cases)
-      (simp_all add: Let_def rev_map hd_map queue_invariant_def hd_append)
-qed
-
-lemma tl_queue_map_queue[simp]: "tl_queue (map_queue f q) = map_queue f (tl_queue q)"
-proof (transfer, goal_cases)
-  case (1 f q)
-  then show ?case
-    by (cases q rule: tl_queue_t.cases) (simp_all add: rev_map map_tl queue_invariant_def)
-qed
-
-lemma dropWhile_queue_map_queue:
-  "dropWhile_queue P (map_queue f q) = map_queue f (dropWhile_queue (\<lambda>x. P (f x)) q)"
-proof (induct "\<lambda>x. P (f x)" q rule: dropWhile_queue.induct)
-  case (1 q)
-  then show ?case
-    by (subst dropWhile_queue.simps, subst (2) dropWhile_queue.simps)
-      (auto split: prod.splits option.splits simp del: dropWhile_queue.simps)
-qed
-
-lemma takeWhile_queue_map_queue:
-  "takeWhile_queue P (map_queue f q)
-   = map_prod (map_queue f) (map_queue f) (takeWhile_queue (\<lambda>x. P (f x)) q)"
-proof (induct "\<lambda>x. P (f x)" q rule: takeWhile_queue.induct)
-  case (1 q)
-  then show ?case
-    by (subst takeWhile_queue.simps, subst (2) takeWhile_queue.simps)
-      (auto simp: Let_def split: prod.splits option.splits simp del: takeWhile_queue.simps)
-qed
-
-text \<open>The queue scan that both drops and returns the dropped prefix, mapped.\<close>
-
-lemma takedropWhile_queue_map_queue:
-  "takedropWhile_queue P (map_queue f q)
-   = map_prod (map_queue f) (map f) (takedropWhile_queue (\<lambda>x. P (f x)) q)"
-proof (induct "\<lambda>x. P (f x)" q rule: takedropWhile_queue.induct)
-  case (1 q)
-  then show ?case
-    by (subst takedropWhile_queue.simps, subst (2) takedropWhile_queue.simps)
-      (auto split: prod.splits option.splits simp del: takedropWhile_queue.simps)
-qed
-
 subsection \<open>The kernel's state of a dense state\<close>
 
 fun tmm :: "'a gmmtaux \<Rightarrow> 'a mmtaux" where
@@ -290,11 +220,6 @@ lemma gresult_mmtaux_tmm:
   assumes ne: "\<not> gmmtaux_empty ax"
   shows "gresult_mmtaux args ax = snd (result_nmtaux args (tmm ax))"
   using ne by (cases ax rule: tmm.cases) (simp add: gmmtaux_empty_def gresult_mmtaux_def)
-
-lemma result_nmtaux_empty:
-  assumes e: "gmmtaux_empty ax"
-  shows "result_nmtaux args (tmm ax) = ([], unit_table)"
-  using e by (cases ax rule: tmm.cases) (simp add: gmmtaux_empty_def)
 
 text \<open>With the interval containing zero the window is never empty after a step: the update
   appends the right operand's table to it.\<close>

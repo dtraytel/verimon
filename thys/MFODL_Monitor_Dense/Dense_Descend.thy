@@ -43,10 +43,6 @@ definition dagg_gcols :: "aggargs \<Rightarrow> cols" where
 text \<open>The width a temporal structure runs at: its own, or -- with an aggregation fused into it --
   the operand's, which is wider by the bound variables the aggregation ranges over.\<close>
 
-definition dnode_n :: "nat \<Rightarrow> args \<Rightarrow> nat" where
-  "dnode_n n args = (case args_agg args of None \<Rightarrow> n
-     | Some ag \<Rightarrow> length (aggargs_tys ag) + aggargs_n ag)"
-
 text \<open>A constraint over a fused aggregating Since becomes the node's guard rather than a filter
   above it: the constraint is on the node's own columns, which are exactly the aggregation's, so
   the groups that fail it never have to be built.  Nothing else takes a guard.\<close>
@@ -280,11 +276,6 @@ abbreviation (input) dofc :: "nat \<Rightarrow> ts \<Rightarrow> ty Formula.form
 
 abbreviation (input) dofz :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
   "dofz n \<phi> \<equiv> vdfail_nodes (dof n (Formula.fv_list \<phi>) (dcols (Formula.fv_list \<phi>)) (minit0 n \<phi>)) = 0"
-
-lemma dof_check:
-  assumes "vdfail_nodes (dof n ks cs \<phi>) = 0" and "\<not> P \<Longrightarrow> dof n ks cs \<phi> = DFail"
-  shows P
-  using assms by (cases P) auto
 
 lemma mok_MRelD: "mok n ks tw (mformula.MRel rel) \<Longrightarrow> ftable ks rel"
   by (cases rule: mok.cases) auto

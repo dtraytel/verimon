@@ -433,41 +433,6 @@ definition dsres :: "cols \<Rightarrow> cols \<Rightarrow> args \<Rightarrow> ev
 lemma dsres_Nil[simp]: "dsres ks cs args [] []"
   unfolding dsres_def by (intro exI[of _ "[]"]) simp
 
-lemma dsres_Cons:
-  assumes w: "table ks w" and r: "dsres ks cs args zs dzs"
-  shows "dsres ks cs args (eval_args_agg args w # zs) (dtabc ks cs w # dzs)"
-proof -
-  obtain ws where ws: "list_all (table ks) ws" "zs = map (eval_args_agg args) ws"
-    "dzs = map (dtabc ks cs) ws" using r unfolding dsres_def by blast
-  show ?thesis unfolding dsres_def by (intro exI[of _ "w # ws"]) (use w ws in simp)
-qed
-
-lemma dsres_append:
-  assumes a: "dsres ks cs args zs dzs" and b: "dsres ks cs args us dus"
-  shows "dsres ks cs args (zs @ us) (dzs @ dus)"
-proof -
-  obtain ws where ws: "list_all (table ks) ws" "zs = map (eval_args_agg args) ws"
-    "dzs = map (dtabc ks cs) ws" using a unfolding dsres_def by blast
-  obtain vs where vs: "list_all (table ks) vs" "us = map (eval_args_agg args) vs"
-    "dus = map (dtabc ks cs) vs" using b unfolding dsres_def by blast
-  show ?thesis unfolding dsres_def
-    by (intro exI[of _ "ws @ vs"]) (use ws vs in simp)
-qed
-
-lemma dsres_rev:
-  assumes "dsres ks cs args zs dzs"
-  shows "dsres ks cs args (rev zs) (rev dzs)"
-proof -
-  obtain ws where ws: "list_all (table ks) ws" "zs = map (eval_args_agg args) ws"
-    "dzs = map (dtabc ks cs) ws" using assms unfolding dsres_def by blast
-  show ?thesis unfolding dsres_def
-    by (intro exI[of _ "rev ws"]) (use ws in \<open>simp add: rev_map list_all_iff\<close>)
-qed
-
-lemma dsres_rev':
-  "rev zs = us \<Longrightarrow> rev dzs = dus \<Longrightarrow> dsres ks cs args zs dzs \<Longrightarrow> dsres ks cs args us dus"
-  using dsres_rev by blast
-
 lemma dsres_none:
   assumes "args_agg args = None" and "dsres ks cs args zs dzs"
   shows "dzs = map (dtabc ks cs) zs"
@@ -589,11 +554,6 @@ lemma dsince_relD_buf:
 
 text \<open>Widening the bound is harmless, which is what the node needs when a new batch of
   timestamps arrives.\<close>
-
-lemma dsince_rel_mono:
-  "dsince_rel kR cR kL cL args tw aux daux buf dbuf \<Longrightarrow> tw \<le> tw' \<Longrightarrow>
-     dsince_rel kR cR kL cL args tw' aux daux buf dbuf"
-  unfolding dsince_rel_def by (fastforce simp del: valid_mmasaux.simps)
 
 text \<open>A fresh batch of operand tables and timestamps enters the buffer at both representations at
   once.  The batch's timestamps are all at or after the old bound, and the buffer's are all at or
@@ -1539,39 +1499,6 @@ lemma dsim_dframe: "dsim n ks cs tw \<phi>d \<phi> \<Longrightarrow> dframe ks c
 
 lemma dsim_produces: "dsim n ks cs tw \<phi>d \<phi> \<Longrightarrow> produces n ks tw \<phi>"
   by (induct rule: dsim.induct) assumption+
-
-text \<open>The unfused Since and Until nodes are related by one rule each, so the relation can be read
-  backwards there: the operands are related at the node's own columns.  The compiler uses this to
-  reuse an unfused node's simulation for the fused one, whose operands are the very same.\<close>
-
-lemma dsim_DSinceD:
-  assumes "dsim n ks cs tw (DSince dags \<phi>d \<psi>d dbuf daux) (mformula.MSince args \<phi> \<psi> buf aux)"
-    and "dsx_agg (rdsx daux) = None"
-  obtains kL cL where "dsim (args_n args) kL cL tw \<phi>d \<phi>" and "dsim (args_n args) ks cs tw \<psi>d \<psi>"
-    and "args_L args = kL"
-  using assms(1)
-proof (cases rule: dsim.cases)
-  case DsSince
-  then show ?thesis by (intro that) assumption+
-next
-  case DsSinceFused
-  then show ?thesis using assms(2) by (simp only: option.distinct)
-qed
-
-lemma dsim_DUntilD:
-  assumes "dsim n ks cs tw (DUntil dags msk \<phi>d \<psi>d dbuf nts t daux)
-      (mformula.MUntil args \<phi> \<psi> buf nts' t' aux)"
-    and "dux_agg (rdux daux) = None"
-  obtains kL cL where "dsim (args_n args) kL cL tw \<phi>d \<phi>" and "dsim (args_n args) ks cs tw \<psi>d \<psi>"
-    and "args_L args = kL"
-  using assms(1)
-proof (cases rule: dsim.cases)
-  case DsUntil
-  then show ?thesis by (intro that) assumption+
-next
-  case DsUntilFused
-  then show ?thesis using assms(2) by (simp only: option.distinct)
-qed
 
 section \<open>The simulation\<close>
 

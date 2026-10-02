@@ -22,9 +22,6 @@ type_synonym uuwagg = "uuwauxm \<times> ugagg option"
 definition uuwm_init :: "args \<Rightarrow> uuwauxm" where
   "uuwm_init args = (empty_queue, empty_queue, empty_queue, 0, True, Mapping.empty, [])"
 
-definition uuwm_length :: "args \<Rightarrow> uuwauxm \<Rightarrow> nat" where
-  "uuwm_length args aux = (case aux of (nts, win, rest, len, bend, cc, dn) \<Rightarrow> length dn + len)"
-
 fun uuwm :: "uuwauxm \<Rightarrow> uwaux" where
   "uuwm (nts, win, rest, len, bend, cc, dn) = (nts, win, rest, len, bend, ucc cc, dn)"
 
@@ -32,9 +29,6 @@ declare uuwm.simps[simp del]
 
 lemma uuwm_init_ucc: "uw_init args = uuwm (uuwm_init args)"
   by (simp add: uw_init_def uuwm_init_def uuwm.simps ucc.simps)
-
-lemma uuwm_length_ucc: "uw_length args (uuwm w) = uuwm_length args w"
-  by (cases w) (simp add: uw_length_def uuwm_length_def uuwm.simps)
 
 function uua_extend :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uw_entry queue \<Rightarrow> uw_entry queue \<Rightarrow> bool \<Rightarrow>
     ucnt \<Rightarrow> ugagg option \<Rightarrow>
@@ -59,9 +53,6 @@ declare uua_extend.simps[simp del]
 
 definition uua_init :: "args \<Rightarrow> daggp \<Rightarrow> uuwagg" where
   "uua_init args p = (uuwm_init args, ag_init p (args_n args))"
-
-definition uua_length :: "args \<Rightarrow> uuwagg \<Rightarrow> nat" where
-  "uua_length args a = uuwm_length args (fst a)"
 
 definition uua_step :: "args \<Rightarrow> daggp \<Rightarrow> nat \<Rightarrow> ts \<Rightarrow> uuwagg \<Rightarrow> uuwagg" where
   "uua_step args p w ts0 a = (case a of ((nts, win, rest, len, bend, cc, dn), ax) \<Rightarrow>
@@ -226,9 +217,6 @@ qed
 
 lemma rua_init: "rua (uua_init args p) = ua_init args p"
   by (simp add: rua.simps uua_init_def ua_init_def uuwm_init_ucc)
-
-lemma ua_length_rua: "ua_length args (rua a) = uua_length args a"
-  by (simp add: ua_length_def uua_length_def uuwm_length_ucc)
 
 (*<*)
 end
