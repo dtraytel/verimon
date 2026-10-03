@@ -27,12 +27,13 @@ text \<open>
   it says, and runs the loop over the log. The driver also locates the errors in the log and
   reports them, as for @{text "monpoly -verified"}.
 
-  @{text cli_run} states the correctness of the whole: if @{text cli_main} starts the
-  monitor on the contents of the formula and signature files, then the formula file parses to a
-  formula @{text \<psi>}, the signature file is a signature @{text S}, and for every log that denotes a
-  prefix @{text \<pi>}, the monitor reports no error and its verdicts are those that the
-  specification of the formula prescribes for @{text \<pi>} (@{thm [source] verimon_log.vrun_log}),
-  where the formula is the conversion of @{text \<psi>} and its negation with @{text "-negate"}.
+  @{text verimon_correct} states the correctness of the whole: if @{text cli_main} starts the
+  monitor on the contents of the formula and signature files, then the formula file is derived by
+  the grammar of formulas from a formula @{text \<psi>}, the signature file by the grammar of
+  signatures from a signature @{text S}, and for every log that denotes a prefix @{text \<pi>}, the
+  monitor reports no error and its verdicts are exactly the satisfactions on @{text \<pi>} of the
+  conversion of @{text \<psi>} (negated with @{text "-negate"}), as the semantics of MFODL defines
+  them.
 \<close>
 
 subsection \<open>The monitor's signature\<close>
@@ -187,10 +188,11 @@ text \<open>If the monitor starts on the contents of the two files, then they ar
 lemma cli_main_Run:
   assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
     and "k2 stext = Run msg conf cf z fin n L"
-  obtains \<psi>0 S \<phi> where "parse_formula (Rep_bytes ftext) = Some \<psi>0"
+  obtains \<psi>0 S \<phi> f where "parse_formula (Rep_bytes ftext) = Some \<psi>0"
     and "read_sig (Rep_bytes stext) = Inr S"
     and "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
     and "lsig_of S \<phi> = Inr L"
+    and "check (lsig_tsig L) TAny \<phi> = Inr f"
     and "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
   using assms unfolding cli_main_def start_monitor_def Let_def
   by (auto split: command.splits if_splits option.splits sum.splits vinit_error.splits prod.splits)
@@ -213,21 +215,90 @@ theorem cli_run:
     and "verimon_log (c_rw conf) L \<phi>"
   using cli_main_Run[OF assms] vinit_verimon_log by metis
 
-text \<open>For instance, the run reports no error on a log that denotes a prefix, and its verdicts
-  are those of the prefix (@{thm [source] verimon_log.vrun_log}, which is used below in the
-  interpretation of the locale for the started monitor).\<close>
+subsection \<open>End-to-end correctness\<close>
 
-corollary cli_log:
-  assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
-    and "k2 stext = Run msg conf cf z fin n L"
-    and "log_prefix (\<lambda>_. True) (sf pf) L fin (concat (map Rep_bytes ss)) = Some \<pi>"
-  shows "\<not> has_verror (vrun cf fin z ss)"
+text \<open>The correctness of the whole monitor, in terms of the specifications of its parts: if the
+  program starts the monitor on the contents of the formula file and of the signature file, then
+
+  \<^enum> the formula file is lexed into a token sequence that the grammar of MonPoly's formulas
+    derives (@{const mfodl_Formula}), and @{text \<psi>0} is the formula it denotes;
+  \<^enum> the signature file is lexed into a token sequence that the grammar of signatures derives
+    (@{const sig_lang}), and @{text S} is the signature it denotes;
+  \<^enum> @{text \<phi>} is the conversion of @{text \<psi>0} (negated with @{text "-negate"}), @{text L} the
+    signature of the monitor, and @{text f} the types that the type checker infers for
+    @{text \<phi>};
+  \<^enum> the run on a log reports an error exactly when the log's events of the formula's predicates
+    and of the predicates the signature does not declare (all events with
+    @{text "-nofilterrel"}, @{const keep_spec}) denote no prefix; and
+  \<^enum> on a log that denotes a prefix @{text \<pi>}, its verdicts are exactly the time points
+    @{text i} up to the progress on @{text \<pi>}, with their timestamps, and the tuples @{text v}
+    over the free variables of @{text \<phi>} such that @{text \<phi>}, with the inferred types, holds at
+    @{text i} under @{text v} on every well-typed trace that extends @{text \<pi>}.
+
+  The verdicts are those of @{const vrun}, which the driver computes as the outputs of
+  @{const vfeed_chunk} on the chunks of the log and of @{const vfinish} at its end, and prints
+  with @{const verdict_out}.\<close>
+
+theorem verimon_correct:
+  assumes run: "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
+    "k2 stext = Run msg conf cf z fin n L"
+  obtains w \<psi> \<psi>0 ds S \<phi> f where
+    "lex (Rep_bytes ftext) = Some w" "mfodl_Formula w \<psi>" "postprocess \<psi> = Some \<psi>0"
+    and "sig_lang (Rep_bytes stext) ds" "decls_schema ds base_schema = Inr S"
+    and "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
+    and "lsig_of S \<phi> = Inr L"
+    and "check (lsig_tsig L) TAny \<phi> = Inr f"
+    and "\<And>ss. has_verror (vrun cf fin z ss) \<longleftrightarrow>
+      log_prefix (keep_spec (c_filter conf) \<phi> L) (sf pf) L fin (concat (map Rep_bytes ss)) = None"
+    and "\<And>ss \<pi>. log_prefix (\<lambda>_. True) (sf pf) L fin (concat (map Rep_bytes ss)) = Some \<pi> \<Longrightarrow>
+      \<not> has_verror (vrun cf fin z ss) \<and>
+      flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) =
+        {(i, pts \<pi> ! i, v) | i v. i < pprogress \<phi> \<pi> \<and> wf_tuple (Formula.fv_list \<phi>) v \<and>
+          (\<forall>\<sigma>. wty_trace (lsig_lookup L) \<sigma> \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow>
+            Formula.sat \<sigma> Map.empty (val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v) i
+              (Formula.formula.map_formula (convert_tysym \<circ> f) \<phi>))}"
 proof -
-  obtain \<phi> where init: "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
-    and loc: "verimon_log (c_rw conf) L \<phi>"
-    using cli_run[OF assms(1-3)] by metis
-  interpret verimon_log "c_rw conf" L \<phi> by (rule loc)
-  show ?thesis using vrun_log(1)[OF init assms(4)] .
+  obtain \<psi>0 S \<phi> f where P: "parse_formula (Rep_bytes ftext) = Some \<psi>0"
+    and R: "read_sig (Rep_bytes stext) = Inr S"
+    and C: "conv_formula pf (c_rw conf) (input_formula conf \<psi>0) = Inr \<phi>"
+    and Ls: "lsig_of S \<phi> = Inr L"
+    and ch: "check (lsig_tsig L) TAny \<phi> = Inr f"
+    and init: "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    using cli_main_Run[OF run] by metis
+  obtain w \<psi> where W: "lex (Rep_bytes ftext) = Some w" "mfodl_Formula w \<psi>" "postprocess \<psi> = Some \<psi>0"
+    using P unfolding parse_formula_Some_iff by blast
+  obtain ds where D: "sig_lang (Rep_bytes stext) ds" "decls_schema ds base_schema = Inr S"
+    using R unfolding read_sig_correct by blast
+  interpret verimon_log "c_rw conf" L \<phi>
+    using vinit_verimon_log[OF init] .
+  have cs: "check_subst = f"
+    using check_check_subst ch by simp
+  have E: "has_verror (vrun cf fin z ss) \<longleftrightarrow>
+      log_prefix (keep_spec (c_filter conf) \<phi> L) (sf pf) L fin (concat (map Rep_bytes ss)) = None" for ss
+    using vrun_filtered(1)[OF init] by blast
+  have V: "\<not> has_verror (vrun cf fin z ss) \<and>
+      flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) =
+        {(i, pts \<pi> ! i, v) | i v. i < pprogress \<phi> \<pi> \<and> wf_tuple (Formula.fv_list \<phi>) v \<and>
+          (\<forall>\<sigma>. wty_trace (lsig_lookup L) \<sigma> \<longrightarrow> prefix_of \<pi> \<sigma> \<longrightarrow>
+            Formula.sat \<sigma> Map.empty (val (Formula.nfv \<phi>) (Formula.fv_list \<phi>) v) i
+              (Formula.formula.map_formula (convert_tysym \<circ> f) \<phi>))}"
+    if "log_prefix (\<lambda>_. True) (sf pf) L fin (concat (map Rep_bytes ss)) = Some \<pi>" for ss \<pi>
+  proof -
+    have pp: "pprogress (Formula.formula.map_formula g \<phi>) = pprogress \<phi>" for g :: "tysym \<Rightarrow> ty"
+      by (simp add: pprogress_def fun_eq_iff)
+    interpret fb: future_bounded_mfodl "Formula.formula.map_formula (convert_tysym \<circ> check_subst) \<phi>"
+      "map_sig (convert_tysym o check_subst) (lsig_tsig L)" "convert_tysym o check_subst o TAny"
+      using future_bounded_\<phi>
+      by (auto simp: future_bounded_mfodl_def future_bounded_mfodl_axioms_def wty_mfodl_def)
+    have X: "flatten_verdicts (vwiden \<phi> (vverdicts (vrun cf fin z ss))) = fb.Mt \<pi>"
+      using vrun_log(2)[OF init that] by simp
+    show ?thesis
+      using vrun_log(1)[OF init that] X[unfolded fb.Mt_def, unfolded fb.M_def,
+          unfolded fb.traces_def, unfolded map_sig_lsig, unfolded cs]
+      by (auto simp: pp)
+  qed
+  show thesis
+    using that[OF W D C Ls ch E V] .
 qed
 
 (*<*)
