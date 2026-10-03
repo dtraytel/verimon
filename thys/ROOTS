@@ -5,3 +5,4 @@ MFODL_Monitor_Exec
 Log_Parser
 grammar
 MFODL_Parser
+VeriMon_CLI

@@ -21,6 +21,7 @@ session MFODL_Parser_Code in "Parser/Code" = MFODL_Parser +
   description
     "Examples of the verified parser and its code export."
   theories
+    MFODL_Lexer_Code
     MFODL_Parser_Code
   export_files (in ".") [2]
     "MFODL_Parser_Code.MFODL_Parser_Code:code/**"

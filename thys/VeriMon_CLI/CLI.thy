@@ -1,0 +1,217 @@
+(*<*)
+theory CLI
+  imports Formula_Conv CLI_Output "MFODL_Parser.MFODL_Parser"
+begin
+(*>*)
+
+section \<open>The verified monitor with MonPoly's command line\<close>
+
+text \<open>
+  This theory composes the verified parts into the monitor that the program @{text verimon}
+  runs, with MonPoly's command line (theory @{theory VeriMon_CLI.CLI_Options}):
+
+  \<^enum> the arguments are parsed (@{const parse_command});
+  \<^enum> the formula file is parsed by the verified parser (@{const parse_formula}, session
+    @{text MFODL_Parser}), and negated with @{text "-negate"};
+  \<^enum> the signature file is read (@{const read_sig}, theory @{theory VeriMon_CLI.Signature});
+  \<^enum> the formula is converted into the monitor's (@{const conv_formula}, theory
+    @{theory VeriMon_CLI.Formula_Conv}), and the signature into the monitor's (@{const lsig_of});
+  \<^enum> the monitor is started (@{const vinit}, theory @{theory MFODL_Monitor_Exec.Log_Monitor}),
+    which type checks the formula and prepares it as VeriMon does;
+  \<^enum> the log is read in chunks (@{const vfeed_chunk} and @{const vfinish}), and the verdicts are
+    printed as MonPoly prints them (theory @{theory VeriMon_CLI.CLI_Output}).
+
+  The decisions, and the order in which MonPoly's front end takes them, are those of
+  @{const cli_main}: the driver only reads the files it asks for (@{const NeedFile}), prints what
+  it says, and runs the loop over the log. The driver also locates the errors in the log and
+  reports them, as for @{text "monpoly -verified"}.
+
+  @{thm [source] cli_run} states the correctness of the whole: if @{const cli_main} starts the
+  monitor on the contents of the formula and signature files, then the formula file parses to a
+  formula @{text \<psi>}, the signature file is a signature @{text S}, and for every log that denotes a
+  prefix @{text \<pi>}, the monitor reports no error and its verdicts are those that the
+  specification of the formula prescribes for @{text \<pi>} (@{thm [source] verimon_log.vrun_log}),
+  where the formula is the conversion of @{text \<psi>} and its negation with @{text "-negate"}.
+\<close>
+
+subsection \<open>The monitor's signature\<close>
+
+text \<open>The signature as the monitor reads it (@{text Verified_adapter.lsig_of_schema}): the
+  types of the arguments of each predicate. The monitor has no type of regular expressions: a
+  formula with a predicate with such an argument is refused, and the arguments of the other such
+  predicates are read as strings.\<close>
+
+fun ty_of_sty :: "sty \<Rightarrow> ty" where
+  "ty_of_sty SInt = TInt"
+| "ty_of_sty SStr = TString"
+| "ty_of_sty SFloat = TFloat"
+| "ty_of_sty SRegexp = TString"
+
+definition lsig_of :: "schema \<Rightarrow> tysym Formula.formula \<Rightarrow> string + lsig" where
+  "lsig_of S \<phi> = (let used = map fst (free_preds \<phi>) in
+     if (\<exists>(p, fs) \<in> set S. str8_of_string p \<in> set used \<and> SRegexp \<in> snd ` set fs)
+     then Inl (unsupported ''Regular expressions constants are not supported'')
+     else Inr (map (\<lambda>(p, fs). (str8_of_string p, map (ty_of_sty \<circ> snd) fs)) S))"
+
+subsection \<open>Messages\<close>
+
+definition str_of_ty :: "ty \<Rightarrow> string" where
+  "str_of_ty t = (case t of TInt \<Rightarrow> ''int'' | TString \<Rightarrow> ''string'' | TFloat \<Rightarrow> ''float'')"
+
+text \<open>@{text "-sigout"}: the free variables with their types (@{text Predicate.print_vartypes_list}),
+  as the monitor's type checker infers them.\<close>
+
+definition sigout_text :: "string list \<Rightarrow> (tysym \<Rightarrow> tysym) \<Rightarrow> string" where
+  "sigout_text vs f = concat (between '', '' (map (\<lambda>(i, v). v @ '':'' @ str_of_ty (convert_tysym (f (TAny i))))
+     (zip [0..<length vs] vs))) @ nl"
+
+definition fv_text :: "string list \<Rightarrow> string" where
+  "fv_text vs = ''The sequence of free variables is: ('' @ concat (between '','' vs) @ '')'' @ nl"
+
+subsection \<open>The main program\<close>
+
+text \<open>What the driver does next: print the two texts (on standard output and on standard error)
+  and exit with the code; print the version; read a file and continue with its contents; or print
+  the text on standard error and run the monitor on the log, with the configuration, the
+  monitor's configuration and state, the last time point to add at the end of the log, the number
+  of free variables, and the signature.\<close>
+
+type_synonym text = "string8 list"
+
+definition txt :: "string \<Rightarrow> text" where
+  "txt s = [str8_of_string s]"
+
+datatype step = Done text text nat | Version | NeedFile bytes "bytes \<Rightarrow> step"
+  | Run text config vconf vstate "nat option" nat lsig
+
+text \<open>MonPoly adds the last time point only for formulas with future operators
+  (@{text Rewriting.is_future}).\<close>
+
+fun is_future :: "formula \<Rightarrow> bool"
+and is_future_r :: "regex \<Rightarrow> bool" where
+  "is_future (FNeg f) = is_future f"
+| "is_future (FExists _ f) = is_future f"
+| "is_future (FForAll _ f) = is_future f"
+| "is_future (FAggreg _ _ _ _ f) = is_future f"
+| "is_future (FPrev _ f) = is_future f"
+| "is_future (FOnce _ f) = is_future f"
+| "is_future (FPastAlways _ f) = is_future f"
+| "is_future (FPrex _ r) = is_future_r r"
+| "is_future (FAnd f g) = (is_future f \<or> is_future g)"
+| "is_future (FOr f g) = (is_future f \<or> is_future g)"
+| "is_future (FImplies f g) = (is_future f \<or> is_future g)"
+| "is_future (FEquiv f g) = (is_future f \<or> is_future g)"
+| "is_future (FSince _ f g) = (is_future f \<or> is_future g)"
+| "is_future (FTrigger _ f g) = (is_future f \<or> is_future g)"
+| "is_future (FLet _ f g) = (is_future f \<or> is_future g)"
+| "is_future (FLetPast _ f g) = (is_future f \<or> is_future g)"
+| "is_future (FFrz _ f g) = (is_future f \<or> is_future g)"
+| "is_future (FNext _ _) = True"
+| "is_future (FEventually _ _) = True"
+| "is_future (FAlways _ _) = True"
+| "is_future (FUntil _ _ _) = True"
+| "is_future (FRelease _ _ _) = True"
+| "is_future (FFrex _ _) = True"
+| "is_future _ = False"
+| "is_future_r (RTest f) = is_future f"
+| "is_future_r (RConcat r s) = (is_future_r r \<or> is_future_r s)"
+| "is_future_r (RPlus r s) = (is_future_r r \<or> is_future_r s)"
+| "is_future_r (RStar r) = is_future_r r"
+| "is_future_r (RSkip _) = False"
+
+text \<open>The formula of the input, negated with @{text "-negate"}.\<close>
+
+definition input_formula :: "config \<Rightarrow> formula \<Rightarrow> formula" where
+  "input_formula cfg \<psi> = (if c_negate cfg then FNeg \<psi> else \<psi>)"
+
+text \<open>The message of a failure of the preparation, whose text is the type checker's.\<close>
+
+definition prep_msg :: "String.literal \<Rightarrow> text" where
+  "prep_msg e = [S8 STR ''Fatal error: exception Failure(\"Error during the verified preparation of the formula: '',
+     string8_literal e, S8 STR ''\")'', S8 STR ''\<newline>'']"
+
+text \<open>After the signature is read: convert the formula and start the monitor, or report why it
+  cannot start, as MonPoly's front end does. With @{text "-sigout"} the types of the free
+  variables are printed; with @{text "-check"} whether the formula is monitorable.\<close>
+
+definition start_monitor :: "config \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> formula \<Rightarrow> schema \<Rightarrow> step" where
+  "start_monitor cfg pf \<psi> S = (case conv_formula pf (c_rw cfg) \<psi> of
+     Inl msg \<Rightarrow> Done [] (txt (msg @ nl)) 2
+   | Inr \<phi> \<Rightarrow> (case lsig_of S \<phi> of
+       Inl msg \<Rightarrow> Done [] (txt (msg @ nl)) 2
+     | Inr L \<Rightarrow> (let vs = out_vars \<psi>; info = c_verbose cfg \<or> c_check cfg in
+       (case check (lsig_tsig L) TAny \<phi> of
+         Inl e \<Rightarrow> Done [] (prep_msg e) 2
+       | Inr f \<Rightarrow>
+         (case vinit (c_mw cfg) (c_rw cfg) (c_filter cfg) L pf \<phi> of
+           Inl VI_WF \<Rightarrow> Done [] (prep_msg STR ''the formula is not well-formed'') 2
+         | Inl (VI_FRAGMENT n) \<Rightarrow> Done [] (txt (fatal_failure ''the formula is outside the verified dense fragment'' @ nl)) 2
+         | Inl (VI_PREPARE e) \<Rightarrow>
+             let msg = (if info then txt (fv_text vs) @ [S8 STR ''The analyzed formula is NOT monitorable: '',
+                 string8_literal e, S8 STR ''\<newline>'']
+               else txt (''The formula is NOT monitorable. Use the -check or -verbose flags.'' @ nl)) in
+             if c_sigout cfg then Done (txt (sigout_text vs f)) msg 0 else Done [] msg 0
+         | Inr (cf, z) \<Rightarrow>
+             let msg = txt ((if info then fv_text vs else []) @
+               (if c_check cfg then ''The analyzed formula is monitorable.'' @ nl else [])) in
+             if c_sigout cfg then Done (txt (sigout_text vs f)) msg 0
+             else if c_check cfg then Done [] msg 0
+             else Run msg cfg cf z (if c_newlastts cfg \<and> is_future \<psi> then Some ts_max else None) (length vs) L)))))"
+
+text \<open>The main program, from the program name and the arguments.\<close>
+
+definition cli_main :: "bytes \<Rightarrow> bytes list \<Rightarrow> (bytes \<Rightarrow> double option) \<Rightarrow> step" where
+  "cli_main prog args pf = (case parse_command (string_of_bytes prog) (map string_of_bytes args) of
+     CExit out e c \<Rightarrow> Done (txt out) (txt e) c
+   | CRun cfg \<Rightarrow>
+       if c_version cfg then Version
+       else if c_formula cfg = [] then Done [] (txt (usage_string @ nl)) 2
+       else NeedFile (bytes_of_string (c_formula cfg)) (\<lambda>ft.
+         case parse_formula (string_of_bytes ft) of
+           None \<Rightarrow> Done [] (txt (''[Main.main] Failed to parse formula file'' @ nl @
+             fatal_failure ''[Main.main] the verified parser rejects the formula'' @ nl)) 2
+         | Some \<psi>0 \<Rightarrow> let \<psi> = input_formula cfg \<psi>0 in
+             if c_sig cfg = [] then Done [] (txt (usage_string @ nl)) 2
+             else NeedFile (bytes_of_string (c_sig cfg)) (\<lambda>st.
+               case read_sig (string_of_bytes st) of
+                 Inl e \<Rightarrow> Done [] (txt (sig_error_msg e @ nl)) 2
+               | Inr S \<Rightarrow> start_monitor cfg pf \<psi> S)))"
+
+subsection \<open>Correctness\<close>
+
+text \<open>If the monitor starts on the contents of the two files, then they are a formula and a
+  signature, and the monitor was started by @{const vinit} on the converted formula and the
+  converted signature.\<close>
+
+lemma cli_main_Run:
+  assumes "cli_main prog args pf = NeedFile fn k1" "k1 ft = NeedFile sn k2"
+    and "k2 st = Run msg cfg cf z fin n L"
+  obtains \<psi>0 S \<phi> where "parse_formula (Rep_bytes ft) = Some \<psi>0"
+    and "read_sig (Rep_bytes st) = Inr S"
+    and "conv_formula pf (c_rw cfg) (input_formula cfg \<psi>0) = Inr \<phi>"
+    and "lsig_of S \<phi> = Inr L"
+    and "vinit (c_mw cfg) (c_rw cfg) (c_filter cfg) L pf \<phi> = Inr (cf, z)"
+  using assms unfolding cli_main_def start_monitor_def Let_def
+  by (auto split: command.splits if_splits option.splits sum.splits vinit_error.splits prod.splits)
+
+text \<open>The main theorem: the monitor runs on the formula of the input and the signature, which
+  satisfy the assumptions of @{locale verimon_log}. So for every log that denotes a prefix, the
+  monitor reports no error and outputs the verdicts that the specification of the formula
+  prescribes for the prefix (@{thm [source] verimon_log.vrun_log}), and an error on every log
+  whose events of the formula's predicates denote no prefix
+  (@{thm [source] verimon_log.vrun_filtered}).\<close>
+
+theorem cli_run:
+  assumes "cli_main prog args pf = NeedFile fn k1" "k1 ft = NeedFile sn k2"
+    and "k2 st = Run msg cfg cf z fin n L"
+  obtains \<psi>0 S \<phi> where "parse_formula (Rep_bytes ft) = Some \<psi>0"
+    and "read_sig (Rep_bytes st) = Inr S"
+    and "conv_formula pf (c_rw cfg) (input_formula cfg \<psi>0) = Inr \<phi>"
+    and "lsig_of S \<phi> = Inr L"
+    and "vinit (c_mw cfg) (c_rw cfg) (c_filter cfg) L pf \<phi> = Inr (cf, z)"
+    and "verimon_log (c_rw cfg) L \<phi>"
+  using cli_main_Run[OF assms] vinit_verimon_log by metis
+
+(*<*)
+end
+(*>*)
