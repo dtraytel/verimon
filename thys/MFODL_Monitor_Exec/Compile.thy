@@ -1,6 +1,6 @@
 (*<*)
 theory Compile
-  imports Init
+  imports Correct
 begin
 (*>*)
 
@@ -256,12 +256,35 @@ lemma ecols_upt: "set k = {0..<m} \<Longrightarrow> ecols k = [0..<m]"
 lemma eframe_fv_list: "eframe (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>))"
   by (rule eframe_dcols[OF distinct_fvi_list])
 
-subsection \<open>The nodes the executable fragment does not cover\<close>
+subsection \<open>The kernel's initial state\<close>
 
-lemma produces_minit0:
-  assumes "safe_formula \<phi>" and "\<forall>x \<in> Formula.fv \<phi>. x < n"
-  shows "produces n (Formula.fv_list \<phi>) tw (minit0 n \<phi>)"
-  by (rule mok_produces[OF mok_minit0[OF assms]])
+text \<open>The kernel compiles a release by rewriting it; the rewritten formula has the same
+  free-variable list as the original.\<close>
+
+lemma fv_list_release_safe_0:
+  "Formula.fv \<phi> \<subseteq> Formula.fv \<psi> \<Longrightarrow>
+   Formula.fv_list (release_safe_0 \<phi> I \<psi>) = Formula.fv_list (Formula.Release \<phi> I \<psi>)"
+  by (simp add: release_safe_0_def always_safe_0_def cols_union_subset)
+
+lemma fv_list_and_release_safe_bounded:
+  "Formula.fv (Formula.Release \<phi>' I \<psi>') \<subseteq> Formula.fv \<phi> \<Longrightarrow>
+   Formula.fv_list (and_release_safe_bounded \<phi> \<phi>' I \<psi>')
+     = Formula.fv_list (Formula.And \<phi> (Formula.Release \<phi>' I \<psi>'))"
+  by (simp add: and_release_safe_bounded_def release_safe_bounded_def always_safe_bounded_def
+      cols_union_subset)
+
+text \<open>The fields of the kernel's initial state, read off @{const minit_safe}.\<close>
+
+lemma minit_safe_state:
+  assumes "mmonitorable \<phi>"
+  shows "mstate_n (minit_safe \<phi>) = Formula.nfv \<phi>"
+    and "mstate_m (minit_safe \<phi>) = minit0 (Formula.nfv \<phi>) \<phi>"
+    and "mstate_i (minit_safe \<phi>) = 0" and "mstate_j (minit_safe \<phi>) = 0"
+    and "mstate_t (minit_safe \<phi>) = []"
+  using assms[unfolded monitorable_formula_code]
+  by (simp_all add: default_maux.minit_safe_def default_maux.minit_def Let_def)
+
+subsection \<open>The nodes the executable fragment does not cover\<close>
 
 text \<open>
   @{const eof} is total, and answers @{const EFail} where it has no executable node or where a check
@@ -277,19 +300,23 @@ abbreviation (input) eofc :: "nat \<Rightarrow> ts \<Rightarrow> ty Formula.form
 abbreviation (input) eofz :: "nat \<Rightarrow> ty Formula.formula \<Rightarrow> bool" where
   "eofz n \<phi> \<equiv> efail_nodes (eof n (Formula.fv_list \<phi>) (ecols (Formula.fv_list \<phi>)) (minit0 n \<phi>)) = 0"
 
-lemma mok_MRelD: "mok n ks tw (mformula.MRel rel) \<Longrightarrow> ftable ks rel"
-  by (cases rule: mok.cases) auto
+text \<open>A safe formula's initial state is a constant table only for an equality, whose table the
+  kernel's correctness proof describes.\<close>
 
 lemma esim_dof_minit0_rel:
   assumes s: "safe_formula \<phi>" and b: "\<forall>x \<in> Formula.fv \<phi>. x < n"
     and m: "minit0 n \<phi> = mformula.MRel rel"
   shows "eofc n tw \<phi>"
 proof -
-  have mk: "mok n (Formula.fv_list \<phi>) tw (mformula.MRel rel)"
-    using mok_minit0[OF s b] unfolding m .
-  show ?thesis unfolding m eof.simps
-    by (rule EsRel[OF eframe_fv_list mok_produces[OF mk]])
-      (use mok_MRelD[OF mk] in simp)
+  have "kwf_mformula \<sigma> 0 Map.empty Map.empty n UNIV (mformula.MRel rel) \<phi>" for \<sigma>
+    using kmaux_wf_minit0[OF s b, of Map.empty \<sigma> Map.empty UNIV] unfolding m by simp
+  then obtain t1 t2 where \<phi>: "\<phi> = Formula.Eq t1 t2" and rel: "rel = eq_rel t1 t2"
+    and simple: "is_simple_eq t1 t2" and fv1: "\<forall>x\<in>Formula.fv_trm t1. x < n" and fv2: "\<forall>x\<in>Formula.fv_trm t2. x < n"
+    by (cases rule: kmaux_wf_mformula_cases) auto
+  have "table (Formula.fv_list \<phi>) rel"
+    using qtableD(1)[OF qtable_eq_relI[OF fv1 fv2 simple refl, of UNIV]] by (simp add: \<phi> rel)
+  then show ?thesis
+    unfolding m eof.simps by (rule EsRel[OF eframe_fv_list])
 qed
 
 subsection \<open>The temporal structures' initial states\<close>
@@ -387,7 +414,6 @@ lemma eof_until_z:
 
 lemma esim_dof_since:
   assumes a: "args = init_args I n kL kR pos None"
-    and pr: "produces n kR tw (MSince args \<phi> \<psi> init_mbuf2S (init_mmasaux args))"
     and s1: "esim n kL (ecols kL) tw (eof n kL (ecols kL) \<phi>) \<phi>"
     and s2: "esim n kR (ecols kR) tw (eof n kR (ecols kR) \<psi>) \<psi>"
     and dL: "distinct kL" and dR: "distinct kR" and sub: "set kL \<subseteq> set kR"
@@ -402,12 +428,11 @@ proof -
     by (rule esince_rel_init[OF a eframe_dcols[OF dR] eframe_dcols[OF dL] sub])
   show ?thesis
     by (simp add: ag sub Let_def del: init_mmasaux.simps)
-      (rule EsSince[OF eframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
+      (rule EsSince[OF eframe_dcols[OF dR] _ _ sub ag(1,3,4) refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
 qed
 
 lemma esim_dof_until:
   assumes a: "args = init_args I n kL kR pos None"
-    and pr: "produces n kR tw (MUntil args \<phi> \<psi> ([], []) [] 0 (init_muaux_dq args))"
     and s1: "esim n kL (ecols kL) tw (eof n kL (ecols kL) \<phi>) \<phi>"
     and s2: "esim n kR (ecols kR) tw (eof n kR (ecols kR) \<psi>) \<psi>"
     and dL: "distinct kL" and dR: "distinct kR" and sub: "set kL \<subseteq> set kR"
@@ -421,7 +446,7 @@ proof -
     by (rule euntil_rel_init[OF a eframe_dcols[OF dR] eframe_dcols[OF dL] sub])
   show ?thesis
     by (simp add: ag sub Let_def)
-      (rule EsUntil[OF eframe_dcols[OF dR] pr _ _ sub ag(1,3,4) refl refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
+      (rule EsUntil[OF eframe_dcols[OF dR] _ _ sub ag(1,3,4) refl refl], use s1 s2 rl in \<open>simp_all add: ag\<close>)
 qed
 
 lemma esim_dof_neg:
@@ -432,9 +457,7 @@ lemma esim_dof_neg:
 proof -
   have e: "Formula.fv_list \<phi> = []" using fv by (metis List.set_empty Formula.set_fvi_list)
   have s: "eofc n tw \<phi>" using z fv e by (intro ih) simp
-  have pr: "produces n (Formula.fv_list (Formula.Neg \<phi>)) tw (minit0 n (Formula.Neg \<phi>))"
-    using produces_minit0[of "Formula.Neg \<phi>" n tw] b sf fv by simp
-  show ?thesis using s pr fv e by (auto intro!: EsNeg)
+  show ?thesis using s fv e by (auto intro!: EsNeg)
 qed
 
 lemma eof_trigger_z:
@@ -445,7 +468,6 @@ lemma eof_trigger_z:
 
 lemma esim_dof_trigger:
   assumes a: "args = init_args I n kL kR pos None" and m0: "mem I 0"
-    and pr: "produces n kR tw (MTrigger args \<phi> \<psi> ([], []) [] (init_mmtaux args))"
     and s1: "esim n kL (ecols kL) tw (eof n kL (ecols kL) \<phi>) \<phi>"
     and s2: "esim n kR (ecols kR) tw (eof n kR (ecols kR) \<psi>) \<psi>"
     and dL: "distinct kL" and dR: "distinct kR" and sub: "set kL \<subseteq> set kR"
@@ -461,7 +483,7 @@ proof -
     by (rule etrigger_rel_init[OF a eframe_dcols[OF dR] eframe_dcols[OF dL] sub ok])
   show ?thesis
     by (simp add: ag sub m0 Let_def)
-      (rule EsTrigger[OF eframe_dcols[OF dR] pr s1 s2 sub ag(1,2) _ refl refl], use rl in \<open>simp_all add: ag m0\<close>)
+      (rule EsTrigger[OF eframe_dcols[OF dR] s1 s2 sub ag(1,2) _ refl refl], use rl in \<open>simp_all add: ag m0\<close>)
 qed
 
 lemma esim_dof_minit0_trigger:
@@ -480,11 +502,8 @@ proof -
   note zz = eof_trigger_z[OF z[unfolded m e]]
   have s1: "eofc n tw \<phi>" using zz(1) by (intro i1) (simp add: init_args_def)
   have s2: "eofc n tw \<psi>" using zz(2) by (intro i2) (simp add: init_args_def)
-  have pr: "produces n (Formula.fv_list \<psi>) tw
-      (MTrigger ?args (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mmtaux ?args))"
-    using produces_minit0[OF sft b, of tw] unfolding m e .
   show ?thesis unfolding m e
-    by (rule esim_dof_trigger[OF refl m0 pr s1 s2 distinct_fvi_list distinct_fvi_list])
+    by (rule esim_dof_trigger[OF refl m0 s1 s2 distinct_fvi_list distinct_fvi_list])
       (simp add: sub)
 qed
 
@@ -494,8 +513,7 @@ lemma cpos_empty_Nil: "set c \<subseteq> set c' \<Longrightarrow> cpos c' (set c
   by (cases c) (auto simp: cpos_def in_set_conv_nth)
 
 lemma esim_dof_agg:
-  assumes pr: "produces n ks tw (MAgg ag \<phi>)"
-    and z: "efail_nodes (eof n ks (ecols ks) (MAgg ag \<phi>)) = 0" and ek: "distinct ks"
+  assumes z: "efail_nodes (eof n ks (ecols ks) (MAgg ag \<phi>)) = 0" and ek: "distinct ks"
     and s: "efail_nodes (eof (length (aggargs_tys ag) + n) (aggargs_cols ag)
         (ecols (aggargs_cols ag)) \<phi>) = 0 \<Longrightarrow>
       esim (length (aggargs_tys ag) + n) (aggargs_cols ag) (ecols (aggargs_cols ag)) tw
@@ -514,13 +532,12 @@ proof -
     using c by (simp add: Let_def)
   have zc: "efail_nodes (eof (?m + n) ?k0 (ecols ?k0) \<phi>) = 0" using z unfolding d c(3) by simp
   show ?thesis unfolding d
-    by (rule EsAgg[OF eframe_dcols[OF ek] pr s[OF zc, unfolded c(3)] refl refl c(4) _ c(6) c(1,2)])
+    by (rule EsAgg[OF eframe_dcols[OF ek] s[OF zc, unfolded c(3)] refl refl c(4) _ c(6) c(1,2)])
       (use c(5) in simp)
 qed
 
 lemma esim_dof_since_agg:
   assumes a: "args = init_args I nn kL kR pos (Some ag)"
-    and pr: "produces n ks tw (MSince args \<phi> \<psi> init_mbuf2S (init_mmasaux args))"
     and s1: "esim nn kL (ecols kL) tw (eof nn kL (ecols kL) \<phi>) \<phi>"
     and s2: "esim nn kR (ecols kR) tw (eof nn kR (ecols kR) \<psi>) \<psi>"
     and dL: "distinct kL" and dR: "distinct kR" and ek: "distinct ks" and sub: "set kL \<subseteq> set kR"
@@ -555,7 +572,7 @@ proof -
           (udsx_init_agg (eargs ?cR ?cL args) ?p None)"
       using True c by (simp add: ag sub Let_def del: init_mmasaux.simps)
     show ?thesis unfolding d
-      by (rule EsSinceFused[OF eframe_dcols[OF ek] pr _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
+      by (rule EsSinceFused[OF eframe_dcols[OF ek] _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
             c(2)[symmetric] c(3,4)], use s1 s2 c(6) rla in \<open>simp_all add: ag\<close>)
   next
     case False
@@ -565,14 +582,13 @@ proof -
             (udsx_init (eargs ?cR ?cL args) (emsk ?cR ?cL)))"
       using False c by (simp add: ag sub Let_def del: init_mmasaux.simps)
     show ?thesis unfolding d
-      by (rule EsSinceAgg[OF eframe_dcols[OF ek] pr _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
+      by (rule EsSinceAgg[OF eframe_dcols[OF ek] _ _ sub ag(1,3,4) refl _ c(1) refl c(5) _ c(7)
             c(2)[symmetric] c(3,4)], use s1 s2 c(6) rl in \<open>simp_all add: ag\<close>)
   qed
 qed
 
 lemma esim_dof_until_agg:
   assumes a: "args = init_args I nn kL kR pos (Some ag)"
-    and pr: "produces n ks tw (MUntil args \<phi> \<psi> ([], []) [] 0 (init_muaux_dq args))"
     and s1: "esim nn kL (ecols kL) tw (eof nn kL (ecols kL) \<phi>) \<phi>"
     and s2: "esim nn kR (ecols kR) tw (eof nn kR (ecols kR) \<psi>) \<psi>"
     and dL: "distinct kL" and dR: "distinct kR" and ek: "distinct ks" and sub: "set kL \<subseteq> set kR"
@@ -608,7 +624,7 @@ proof -
           (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init_agg (eargs ?cR ?cL args) ?p)"
       using True c by (simp add: ag sub Let_def)
     show ?thesis unfolding d
-      by (rule EsUntilFused[OF eframe_dcols[OF ek] pr _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
+      by (rule EsUntilFused[OF eframe_dcols[OF ek] _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
             c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) rla in \<open>simp_all add: ag\<close>)
   next
     case False
@@ -618,7 +634,7 @@ proof -
             (mbuf_t_empty, mbuf_t_empty) mbuf_t_empty 0 (udux_init (eargs ?cR ?cL args)))"
       using False c by (simp add: ag sub Let_def)
     show ?thesis unfolding d
-      by (rule EsUntilAgg[OF eframe_dcols[OF ek] pr _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
+      by (rule EsUntilAgg[OF eframe_dcols[OF ek] _ _ sub ag(1,3,4) refl refl _ _ c(1) refl c(5) _
             c(7) c(2)[symmetric] c(3,4)], use s1 s2 c(6) rl in \<open>simp_all add: ag\<close>)
   qed
 qed
@@ -630,7 +646,7 @@ text \<open>A constraint over a node goes into the node as its guard exactly whe
   kernel's node by the rule for the guarded Since, and otherwise the constraint stays above it.\<close>
 
 lemma esim_eset_q:
-  assumes s: "esim n ks cs tw d \<phi>" and pr: "produces n ks tw (MAndRel ks \<phi> (t1, p, c, t2))"
+  assumes s: "esim n ks cs tw d \<phi>"
     and wf: "eframe ks cs"
     and fv1: "Formula.fv_trm t1 \<subseteq> set cs" and fv2: "Formula.fv_trm t2 \<subseteq> set cs"
   shows "esim n ks cs tw (case eset_q (reindex_constraint cs (t1, p, c, t2)) d of
@@ -638,7 +654,7 @@ lemma esim_eset_q:
     (MAndRel ks \<phi> (t1, p, c, t2))"
 proof (cases "eset_q (reindex_constraint cs (t1, p, c, t2)) d")
   case None
-  then show ?thesis using EsAndRel[OF wf pr s fv1 fv2] by simp
+  then show ?thesis using EsAndRel[OF wf s fv1 fv2] by simp
 next
   case (Some d')
   then obtain dags \<phi>d \<psi>d dbuf ap a where d: "d = ESince dags \<phi>d \<psi>d dbuf (UDSX_wagg ap None a)"
@@ -651,10 +667,8 @@ next
     then show ?thesis by simp
   next
     case (EsSinceFused args \<phi>' \<psi> buf aux kL cL kR cR ag y gcols)
-    from EsSinceFused(1) pr have prA: "produces n ks tw (MAndRel ks (MSince args \<phi>' \<psi> buf aux) (t1, p, c, t2))"
-      by simp
     show ?thesis unfolding d' EsSinceFused(1)
-      by (rule esim.EsSinceGuard[OF wf prA]) (use EsSinceFused fv1 fv2 in simp_all)
+      by (rule esim.EsSinceGuard[OF wf]) (use EsSinceFused fv1 fv2 in simp_all)
   next
     case EsSinceGuard
     then show ?thesis by simp
@@ -677,9 +691,7 @@ next
   show ?case by (rule esim_dof_minit0_rel[OF _ Eq_Var2.prems(1)]) simp_all
 next
   case (Pred e ts)
-  have pr: "produces n (Formula.fv_list (Formula.Pred e ts)) tw (minit0 n (Formula.Pred e ts))"
-    using produces_minit0[of "Formula.Pred e ts" n tw] Pred by simp
-  show ?case using Pred.prems(2) pr eframe_fv_list[of "Formula.Pred e ts"]
+  show ?case using Pred.prems(2) eframe_fv_list[of "Formula.Pred e ts"]
     by (cases "pred_mode_of n ts") (auto split: if_splits intro: esim.intros)
 next
   case (Let p \<phi> \<psi>)
@@ -689,9 +701,7 @@ next
     using Let.prems(2) unfolding c by (simp_all split: if_splits)
   have s1: "eofc (Formula.nfv \<phi>) tw \<phi>" by (rule Let.IH(1)[OF fvi_less_nfv z1])
   have s2: "eofc n tw \<psi>" using Let.prems(1) z2 by (intro Let.IH(2)) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.Let p \<phi> \<psi>)) tw (minit0 n (Formula.Let p \<phi> \<psi>))"
-    using produces_minit0[of "Formula.Let p \<phi> \<psi>" n tw] Let by simp
-  show ?case using s1[unfolded c] s2 pr eframe_fv_list[of \<psi>] c by (auto intro!: EsLet)
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c by (auto intro!: EsLet)
 next
   case (Frz p \<phi> \<psi>)
   have c: "ecols (Formula.fv_list \<phi>) = [0..<Formula.nfv \<phi>]"
@@ -700,9 +710,7 @@ next
     using Frz.prems(2) unfolding c by (simp_all split: if_splits)
   have s1: "eofc (Formula.nfv \<phi>) tw \<phi>" by (rule Frz.IH(1)[OF fvi_less_nfv z1])
   have s2: "eofc n tw \<psi>" using Frz.prems(1) z2 by (intro Frz.IH(2)) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.Frz p \<phi> \<psi>)) tw (minit0 n (Formula.Frz p \<phi> \<psi>))"
-    using produces_minit0[of "Formula.Frz p \<phi> \<psi>" n tw] Frz by simp
-  show ?case using s1[unfolded c] s2 pr eframe_fv_list[of \<psi>] c
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c
     by (auto intro!: EsFrz[where rb = "[]", unfolded list.map(1)])
 next
   case (LetPast p \<phi> \<psi>)
@@ -712,34 +720,27 @@ next
     using LetPast.prems(2) unfolding c by (simp_all split: if_splits)
   have s1: "eofc (Formula.nfv \<phi>) tw \<phi>" by (rule LetPast.IH(1)[OF fvi_less_nfv z1])
   have s2: "eofc n tw \<psi>" using LetPast.prems(1) z2 by (intro LetPast.IH(2)) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.LetPast p \<phi> \<psi>)) tw
-      (minit0 n (Formula.LetPast p \<phi> \<psi>))"
-    using produces_minit0[of "Formula.LetPast p \<phi> \<psi>" n tw] LetPast by simp
-  show ?case using s1[unfolded c] s2 pr eframe_fv_list[of \<psi>] c by (auto intro!: EsLetPast)
+  show ?case using s1[unfolded c] s2 eframe_fv_list[of \<psi>] c by (auto intro!: EsLetPast)
 next
   case (And_assign \<phi> \<psi>)
   obtain y t where sp: "split_assignment (Formula.fv \<phi>) \<psi> = (y, t)"
     by (cases "split_assignment (Formula.fv \<phi>) \<psi>") auto
   have m: "minit0 n (Formula.And \<phi> \<psi>) = MAndAssign (Formula.fv_list \<phi>) (minit0 n \<phi>) (y, t)"
     using And_assign.hyps(2) sp by simp
-  have pr: "produces n (Formula.fv_list (Formula.And \<phi> \<psi>)) tw (minit0 n (Formula.And \<phi> \<psi>))"
-    using produces_minit0[of "Formula.And \<phi> \<psi>" n tw] And_assign by simp
   have z: "eofz n \<phi>" using And_assign.prems(2) unfolding m by (simp add: Let_def split: if_splits)
   have s: "eofc n tw \<phi>" using And_assign.prems(1) z by (intro And_assign.IH) simp_all
-  show ?case using And_assign.prems(2) s pr eframe_fv_list[of "Formula.And \<phi> \<psi>"] unfolding m
+  show ?case using And_assign.prems(2) s eframe_fv_list[of "Formula.And \<phi> \<psi>"] unfolding m
     by (auto simp: Let_def split: if_splits intro!: EsAndAssign)
 next
   case (And_safe \<phi> \<psi>)
   have m: "minit0 n (Formula.And \<phi> \<psi>) = MAnd (Formula.fv_list \<phi>)
       (minit0 n \<phi>) True (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])"
     using And_safe.hyps by simp
-  have pr: "produces n (Formula.fv_list (Formula.And \<phi> \<psi>)) tw (minit0 n (Formula.And \<phi> \<psi>))"
-    using produces_minit0[of "Formula.And \<phi> \<psi>" n tw] And_safe by simp
   have z1: "eofz n \<phi>" and z2: "eofz n \<psi>"
     using And_safe.prems(2) unfolding m by (simp_all add: Let_def split: if_splits)
   have s1: "eofc n tw \<phi>" using And_safe.prems(1) z1 by (intro And_safe.IH(1)) simp_all
   have s2: "eofc n tw \<psi>" using And_safe.prems(1) z2 by (intro And_safe.IH(2)) simp_all
-  show ?case using And_safe.prems(2) s1 s2 pr eframe_fv_list[of "Formula.And \<phi> \<psi>"] unfolding m
+  show ?case using And_safe.prems(2) s1 s2 eframe_fv_list[of "Formula.And \<phi> \<psi>"] unfolding m
     by (auto simp: Let_def ebuf2_def split: if_splits intro!: EsAnd)
 next
   case (And_constraint \<phi> \<psi>)
@@ -749,8 +750,6 @@ next
     using And_constraint.hyps sc by simp
   have e: "Formula.fv_list (Formula.And \<phi> \<psi>) = Formula.fv_list \<phi>"
     using And_constraint.hyps(4) by (simp add: cols_union_subset)
-  have pr: "produces n (Formula.fv_list (Formula.And \<phi> \<psi>)) tw (minit0 n (Formula.And \<phi> \<psi>))"
-    using produces_minit0[of "Formula.And \<phi> \<psi>" n tw] And_constraint by simp
   have z: "eofz n \<phi>" using And_constraint.prems(2) unfolding m e
     by (auto simp: Let_def efail_nodes_eset_q split: if_splits option.splits)
   have s: "eofc n tw \<phi>" using And_constraint.prems(1) z by (intro And_constraint.IH) simp_all
@@ -758,20 +757,17 @@ next
     "Formula.fv_trm t2 \<subseteq> set (ecols (Formula.fv_list \<phi>))"
     using And_constraint.prems(2) unfolding m e by (simp_all split: if_splits)
   show ?case unfolding m e using fv
-    by (simp add: Let_def esim_eset_q[OF s pr[unfolded m e] eframe_fv_list])
+    by (simp add: Let_def esim_eset_q[OF s eframe_fv_list])
 next
   case (And_Not \<phi> \<psi>)
   have m: "minit0 n (Formula.And \<phi> (Formula.Neg \<psi>)) = MAnd (Formula.fv_list \<phi>)
       (minit0 n \<phi>) False (Formula.fv_list \<psi>) (minit0 n \<psi>) ([], [])"
     using And_Not.hyps by simp
-  have pr: "produces n (Formula.fv_list (Formula.And \<phi> (Formula.Neg \<psi>))) tw
-      (minit0 n (Formula.And \<phi> (Formula.Neg \<psi>)))"
-    using produces_minit0[of "Formula.And \<phi> (Formula.Neg \<psi>)" n tw] And_Not by simp
   have z1: "eofz n \<phi>" and z2: "eofz n \<psi>"
     using And_Not.prems(2) unfolding m by (simp_all add: Let_def split: if_splits)
   have s1: "eofc n tw \<phi>" using And_Not.prems(1) z1 by (intro And_Not.IH(1)) simp_all
   have s2: "eofc n tw \<psi>" using And_Not.prems(1) z2 by (intro And_Not.IH(2)) simp_all
-  show ?case using And_Not.prems(2) s1 s2 pr eframe_fv_list[of "Formula.And \<phi> (Formula.Neg \<psi>)"]
+  show ?case using And_Not.prems(2) s1 s2 eframe_fv_list[of "Formula.And \<phi> (Formula.Neg \<psi>)"]
     unfolding m by (auto simp: Let_def ebuf2_def split: if_splits intro!: EsAnd)
 next
   case (And_Trigger \<phi> \<phi>' I \<psi>')
@@ -804,11 +800,8 @@ next
     have s2: "eofc n tw (Formula.Trigger \<phi>' I \<psi>')"
       by (rule esim_dof_minit0_trigger[OF True sp' sub st _ z2])
         (use bR sub And_Trigger.IH(2,3) bL in auto)
-    have pr: "produces n (Formula.fv_list (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>'))) tw
-        (minit0 n (Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')))"
-      by (rule produces_minit0[OF sfa And_Trigger.prems(1)])
     show ?thesis
-      using And_Trigger.prems(2) s1 s2 pr eframe_fv_list[of "Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')"]
+      using And_Trigger.prems(2) s1 s2 eframe_fv_list[of "Formula.And \<phi> (Formula.Trigger \<phi>' I \<psi>')"]
       unfolding m by (auto simp: Let_def ebuf2_def split: if_splits intro!: EsAnd)
   next
     case False
@@ -833,10 +826,6 @@ next
     have s1: "eofc n tw \<phi>" by (rule And_Trigger.IH(1)[OF bA z1])
     have s2: "eofc n tw \<phi>'" by (rule And_Trigger.IH(2)[OF bL z2])
     have s3: "eofc n tw \<psi>'" by (rule And_Trigger.IH(3)[OF bR z3])
-    have pr: "produces n (Formula.fv_list \<phi>) tw
-        (MAndTrigger (Formula.fv_list \<phi>) (minit0 n \<phi>) ([], []) ?args
-          (minit0 n \<phi>') (minit0 n \<psi>') ([], []) [] (init_mmtaux ?args))"
-      using produces_minit0[OF sfa And_Trigger.prems(1), of tw] unfolding m e .
     have rl: "etrigger_rel (Formula.fv_list \<psi>') (ecols (Formula.fv_list \<psi>'))
         (Formula.fv_list \<phi>') (ecols (Formula.fv_list \<phi>')) ?args tw (init_mmtaux ?args)
         (ginit_mmtaux (eargs (ecols (Formula.fv_list \<psi>')) (ecols (Formula.fv_list \<phi>')) ?args)
@@ -845,7 +834,7 @@ next
       by (rule etrigger_rel_init[OF refl eframe_fv_list eframe_fv_list _ ok]) (simp add: sub)
     show ?thesis unfolding m e
       by (simp add: Let_def ag sub subR ok)
-        (rule EsAndTrigger[OF eframe_fv_list pr s1 s2 s3 _ _ ag(1,2) ok refl refl],
+        (rule EsAndTrigger[OF eframe_fv_list s1 s2 s3 _ _ ag(1,2) ok refl refl],
           use rl in \<open>simp_all add: sub subR eandbuf_def\<close>)
   qed
 next
@@ -936,15 +925,11 @@ next
       ((?c0 # ?css @ ?nss) ! i) tw (Ld ! i) (L ! i)"
     unfolding e1 e2 using pL lK by simp
   have sfa: "safe_formula (Formula.Ands l)" using Ands.hyps by (auto simp: list_all_iff)
-  have pr: "produces n (Formula.fv_list (Formula.Ands l)) tw
-      (MAnds (Formula.fv_list (Formula.Ands l)) (Formula.fv_list p # map Formula.fv_list ps)
-        (map Formula.fv_list neg) L (replicate (length l) []))"
-    using produces_minit0[OF sfa Ands.prems(1), of tw] unfolding m .
   have bf: "ebufn (Formula.fv_list p # map Formula.fv_list ps @ map Formula.fv_list neg)
       (?c0 # ?css @ ?nss) (replicate (length l) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     unfolding e1 e2 using lK lenL by (auto simp: ebufn_def intro!: nth_equalityI)
   show ?case unfolding m d
-    by (rule EsAnds[OF eframe_fv_list pr pL' _ _ _ _ _ _ refl refl bf])
+    by (rule EsAnds[OF eframe_fv_list pL' _ _ _ _ _ _ refl refl bf])
       (use chk lK lLd lenL pl in \<open>simp_all add: Ks_def\<close>)
 next
   case (Neg \<phi>)
@@ -958,9 +943,7 @@ next
   have z1: "eofz n \<phi>" and z2: "eofz n \<psi>" using Or.prems(2) Or.hyps(1) unfolding e c by simp_all
   have s1: "eofc n tw \<phi>" using Or.prems(1) z1 by (intro Or.IH(1)) simp_all
   have s2: "eofc n tw \<psi>" using Or.prems(1) z2 Or.hyps(1) by (intro Or.IH(2)) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.Or \<phi> \<psi>)) tw (minit0 n (Formula.Or \<phi> \<psi>))"
-    using produces_minit0[of "Formula.Or \<phi> \<psi>" n tw] Or by simp
-  show ?case unfolding e using s1 s2[unfolded c] pr[unfolded e] eframe_fv_list[of \<phi>] Or.hyps(1)
+  show ?case unfolding e using s1 s2[unfolded c] eframe_fv_list[of \<phi>] Or.hyps(1)
     by (auto simp: ebuf2_def intro!: EsOr)
 next
   case (Exists t \<phi>)
@@ -968,11 +951,9 @@ next
     using fvi_Suc_bound[where b = 0 and \<phi> = \<phi> and n = n] Exists.prems by simp
   have e: "Formula.fv_list (Formula.Exists t \<phi>) = ex_cols (Formula.fv_list \<phi>)"
     by (simp add: fvi_list_Suc)
-  have pr: "produces n (Formula.fv_list (Formula.Exists t \<phi>)) tw (minit0 n (Formula.Exists t \<phi>))"
-    using produces_minit0[of "Formula.Exists t \<phi>" n tw] Exists by simp
   have z: "eofz (Suc n) \<phi>" using Exists.prems(2) by (simp add: Let_def split: if_splits)
   have s: "eofc (Suc n) tw \<phi>" by (rule Exists.IH[OF b z])
-  show ?case using Exists.prems(2) s pr eframe_fv_list[of "Formula.Exists t \<phi>"]
+  show ?case using Exists.prems(2) s eframe_fv_list[of "Formula.Exists t \<phi>"]
     by (auto simp: Let_def split: if_splits intro!: EsExists)
 next
   case (Agg y \<omega> tys f \<phi>)
@@ -999,11 +980,8 @@ next
       eofc n tw (Formula.Agg y \<omega> tys f \<phi>)"
   proof -
     assume m: "minit0 n (Formula.Agg y \<omega> tys f \<phi>) = MAgg ?ag (minit0 (length tys + n) \<phi>)"
-    have pr: "produces n (Formula.fv_list (Formula.Agg y \<omega> tys f \<phi>)) tw
-        (MAgg ?ag (minit0 (length tys + n) \<phi>))"
-      using produces_minit0[OF sfa Agg.prems(1), of tw] unfolding m .
     show ?thesis unfolding m
-      by (rule esim_dof_agg[OF pr Agg.prems(2)[unfolded m] distinct_fvi_list])
+      by (rule esim_dof_agg[OF Agg.prems(2)[unfolded m] distinct_fvi_list])
         (unfold ag, rule Agg.IH[OF order_refl sf bp])
   qed
   show ?case
@@ -1027,11 +1005,8 @@ next
         by (rule Agg.IH[OF _ True bL]) (use z(1) in \<open>simp_all add: Since init_args_def\<close>)
       have s2: "eofc (length tys + n) tw \<eta>"
         by (rule Agg.IH[OF _ se bR]) (use z(2) in \<open>simp_all add: Since init_args_def\<close>)
-      have pr: "produces n (Formula.fv_list (Formula.Agg y \<omega> tys f \<phi>)) tw (MSince ?args
-          (minit0 (length tys + n) \<chi>) (minit0 (length tys + n) \<eta>) init_mbuf2S (init_mmasaux ?args))"
-        using produces_minit0[OF sfa Agg.prems(1), of tw] unfolding m .
       show ?thesis unfolding m
-        by (rule esim_dof_since_agg[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list
+        by (rule esim_dof_since_agg[OF refl s1 s2 distinct_fvi_list distinct_fvi_list
               distinct_fvi_list _ zz]) (simp add: s)
     next
       case False
@@ -1049,11 +1024,8 @@ next
         by (rule Agg.IH[OF _ sc' bL']) (use z(1) in \<open>simp_all add: Since chi init_args_def\<close>)
       have s2: "eofc (length tys + n) tw \<eta>"
         by (rule Agg.IH[OF _ se bR]) (use z(2) in \<open>simp_all add: Since init_args_def\<close>)
-      have pr: "produces n (Formula.fv_list (Formula.Agg y \<omega> tys f \<phi>)) tw (MSince ?args
-          (minit0 (length tys + n) \<chi>') (minit0 (length tys + n) \<eta>) init_mbuf2S (init_mmasaux ?args))"
-        using produces_minit0[OF sfa Agg.prems(1), of tw] unfolding m .
       show ?thesis unfolding m
-        by (rule esim_dof_since_agg[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list
+        by (rule esim_dof_since_agg[OF refl s1 s2 distinct_fvi_list distinct_fvi_list
               distinct_fvi_list _ zz]) (use s chi in simp)
     qed
   next
@@ -1076,11 +1048,8 @@ next
         by (rule Agg.IH[OF _ True bL]) (use z(1) in \<open>simp_all add: Until init_args_def\<close>)
       have s2: "eofc (length tys + n) tw \<eta>"
         by (rule Agg.IH[OF _ se bR]) (use z(2) in \<open>simp_all add: Until init_args_def\<close>)
-      have pr: "produces n (Formula.fv_list (Formula.Agg y \<omega> tys f \<phi>)) tw (MUntil ?args
-          (minit0 (length tys + n) \<chi>) (minit0 (length tys + n) \<eta>) ([], []) [] 0 (init_muaux_dq ?args))"
-        using produces_minit0[OF sfa Agg.prems(1), of tw] unfolding m .
       show ?thesis unfolding m
-        by (rule esim_dof_until_agg[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list
+        by (rule esim_dof_until_agg[OF refl s1 s2 distinct_fvi_list distinct_fvi_list
               distinct_fvi_list _ zz]) (simp add: s)
     next
       case False
@@ -1097,11 +1066,8 @@ next
         by (rule Agg.IH[OF _ sc' bL']) (use z(1) in \<open>simp_all add: Until chi init_args_def\<close>)
       have s2: "eofc (length tys + n) tw \<eta>"
         by (rule Agg.IH[OF _ se bR]) (use z(2) in \<open>simp_all add: Until init_args_def\<close>)
-      have pr: "produces n (Formula.fv_list (Formula.Agg y \<omega> tys f \<phi>)) tw (MUntil ?args
-          (minit0 (length tys + n) \<chi>') (minit0 (length tys + n) \<eta>) ([], []) [] 0 (init_muaux_dq ?args))"
-        using produces_minit0[OF sfa Agg.prems(1), of tw] unfolding m .
       show ?thesis unfolding m
-        by (rule esim_dof_until_agg[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list
+        by (rule esim_dof_until_agg[OF refl s1 s2 distinct_fvi_list distinct_fvi_list
               distinct_fvi_list _ zz]) (use s chi in simp)
     qed
   qed (rule D; simp add: Let_def)+
@@ -1109,16 +1075,12 @@ next
   case (Prev I \<phi>)
   have z: "eofz n \<phi>" using Prev.prems(2) by simp
   have s: "eofc n tw \<phi>" using Prev.prems(1) z by (intro Prev.IH) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.Prev I \<phi>)) tw (minit0 n (Formula.Prev I \<phi>))"
-    using produces_minit0[of "Formula.Prev I \<phi>" n tw] Prev by simp
-  show ?case using s pr eframe_fv_list[of "Formula.Prev I \<phi>"] by (auto intro!: EsPrev)
+  show ?case using s eframe_fv_list[of "Formula.Prev I \<phi>"] by (auto intro!: EsPrev)
 next
   case (Next I \<phi>)
   have z: "eofz n \<phi>" using Next.prems(2) by simp
   have s: "eofc n tw \<phi>" using Next.prems(1) z by (intro Next.IH) simp_all
-  have pr: "produces n (Formula.fv_list (Formula.Next I \<phi>)) tw (minit0 n (Formula.Next I \<phi>))"
-    using produces_minit0[of "Formula.Next I \<phi>" n tw] Next by simp
-  show ?case using s pr eframe_fv_list[of "Formula.Next I \<phi>"] by (auto intro!: EsNext)
+  show ?case using s eframe_fv_list[of "Formula.Next I \<phi>"] by (auto intro!: EsNext)
 next
   case (Since \<phi> I \<psi>)
   note sub = \<open>Formula.fv \<phi> \<subseteq> Formula.fv \<psi>\<close>
@@ -1129,14 +1091,11 @@ next
     using Since.hyps(2) by (simp add: default_mmasaux.init_since_def)
   have e: "Formula.fv_list (Formula.Since \<phi> I \<psi>) = Formula.fv_list \<psi>"
     using sub by (simp add: cols_union_subset)
-  have pr: "produces n (Formula.fv_list \<psi>) tw
-      (MSince ?args (minit0 n \<phi>) (minit0 n \<psi>) init_mbuf2S (init_mmasaux ?args))"
-    using produces_minit0[of "Formula.Since \<phi> I \<psi>" n tw] Since unfolding m e by simp
   note z = eof_since_z[OF Since.prems(2)[unfolded m e]]
   have s1: "eofc n tw \<phi>" using b sub z(1) by (intro Since.IH(1)) (auto simp: init_args_def)
   have s2: "eofc n tw \<psi>" using b z(2) by (intro Since.IH(2)) (auto simp: init_args_def)
   show ?case unfolding m e
-    by (rule esim_dof_since[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
+    by (rule esim_dof_since[OF refl s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
 next
   case (Not_Since \<phi> I \<psi>)
   have sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>" using Not_Since.hyps(1) by simp
@@ -1147,15 +1106,11 @@ next
     using Not_Since.hyps(3) by (simp add: default_mmasaux.init_since_def)
   have e: "Formula.fv_list (Formula.Since (Formula.Neg \<phi>) I \<psi>) = Formula.fv_list \<psi>"
     using sub by (simp add: cols_union_subset)
-  have pr: "produces n (Formula.fv_list \<psi>) tw
-      (MSince ?args (minit0 n \<phi>) (minit0 n \<psi>) init_mbuf2S (init_mmasaux ?args))"
-    using produces_minit0[of "Formula.Since (Formula.Neg \<phi>) I \<psi>" n tw] Not_Since unfolding m e
-    by simp
   note z = eof_since_z[OF Not_Since.prems(2)[unfolded m e]]
   have s1: "eofc n tw \<phi>" using b sub z(1) by (intro Not_Since.IH(1)) (auto simp: init_args_def)
   have s2: "eofc n tw \<psi>" using b z(2) by (intro Not_Since.IH(2)) (auto simp: init_args_def)
   show ?case unfolding m e
-    by (rule esim_dof_since[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
+    by (rule esim_dof_since[OF refl s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
 next
   case (Until \<phi> I \<psi>)
   note sub = \<open>Formula.fv \<phi> \<subseteq> Formula.fv \<psi>\<close>
@@ -1166,14 +1121,11 @@ next
     using Until.hyps(2) by (simp add: dq_muaux.init_until_def)
   have e: "Formula.fv_list (Formula.Until \<phi> I \<psi>) = Formula.fv_list \<psi>"
     using sub by (simp add: cols_union_subset)
-  have pr: "produces n (Formula.fv_list \<psi>) tw
-      (MUntil ?args (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux_dq ?args))"
-    using produces_minit0[of "Formula.Until \<phi> I \<psi>" n tw] Until unfolding m e by simp
   note z = eof_until_z[OF Until.prems(2)[unfolded m e]]
   have s1: "eofc n tw \<phi>" using b sub z(1) by (intro Until.IH(1)) (auto simp: init_args_def)
   have s2: "eofc n tw \<psi>" using b z(2) by (intro Until.IH(2)) (auto simp: init_args_def)
   show ?case unfolding m e
-    by (rule esim_dof_until[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
+    by (rule esim_dof_until[OF refl s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
 next
   case (Not_Until \<phi> I \<psi>)
   have sub: "Formula.fv \<phi> \<subseteq> Formula.fv \<psi>" using Not_Until.hyps(1) by simp
@@ -1184,15 +1136,11 @@ next
     using Not_Until.hyps(3) by (simp add: dq_muaux.init_until_def)
   have e: "Formula.fv_list (Formula.Until (Formula.Neg \<phi>) I \<psi>) = Formula.fv_list \<psi>"
     using sub by (simp add: cols_union_subset)
-  have pr: "produces n (Formula.fv_list \<psi>) tw
-      (MUntil ?args (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] 0 (init_muaux_dq ?args))"
-    using produces_minit0[of "Formula.Until (Formula.Neg \<phi>) I \<psi>" n tw] Not_Until unfolding m e
-    by simp
   note z = eof_until_z[OF Not_Until.prems(2)[unfolded m e]]
   have s1: "eofc n tw \<phi>" using b sub z(1) by (intro Not_Until.IH(1)) (auto simp: init_args_def)
   have s2: "eofc n tw \<psi>" using b z(2) by (intro Not_Until.IH(2)) (auto simp: init_args_def)
   show ?case unfolding m e
-    by (rule esim_dof_until[OF refl pr s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
+    by (rule esim_dof_until[OF refl s1 s2 distinct_fvi_list distinct_fvi_list]) (simp add: sub)
 next
   case (Trigger_0 \<phi> I \<psi>)
   note m0 = \<open>mem I 0\<close>
@@ -1225,11 +1173,8 @@ next
       show ?thesis unfolding phi
         by (rule esim_dof_neg[OF fc sc]) (use bp z1 ih fc phi in auto)
     qed
-    have pr: "produces n (Formula.fv_list \<psi>) tw
-        (MTrigger ?args (minit0 n \<phi>) (minit0 n \<psi>) ([], []) [] (init_mmtaux ?args))"
-      using produces_minit0[OF sft Trigger_0.prems(1), of tw] unfolding m e .
     show ?thesis unfolding m e
-      by (rule esim_dof_trigger[OF refl m0 pr s1 s2 distinct_fvi_list distinct_fvi_list])
+      by (rule esim_dof_trigger[OF refl m0 s1 s2 distinct_fvi_list distinct_fvi_list])
         (simp add: sub)
   next
     case False
@@ -1246,11 +1191,8 @@ next
     have s1: "eofc n tw \<chi>" using ih bp z1 phi by simp
     have sft: "safe_formula (Formula.Trigger \<phi> I \<psi>)"
       using m0 sub Trigger_0(2) sc phi by (simp add: safe_dual_def)
-    have pr: "produces n (Formula.fv_list \<psi>) tw
-        (MTrigger ?args (minit0 n \<chi>) (minit0 n \<psi>) ([], []) [] (init_mmtaux ?args))"
-      using produces_minit0[OF sft Trigger_0.prems(1), of tw] unfolding m e .
     show ?thesis unfolding m e
-      by (rule esim_dof_trigger[OF refl m0 pr s1 s2 distinct_fvi_list distinct_fvi_list])
+      by (rule esim_dof_trigger[OF refl m0 s1 s2 distinct_fvi_list distinct_fvi_list])
         (use sub phi in simp)
   qed
 next
@@ -1313,16 +1255,12 @@ next
     then show "esim n (dss ! i) (map ecols dss ! i) tw (Ld ! i) (L ! i)"
       using Ldi[OF i'] i' by (simp add: dss_def L_def)
   qed
-  have pr: "produces n ks tw
-      (MMatchP I ks dss mr (sorted_list_of_set (RPDs mr)) L (replicate (length \<phi>s) []) [] [])"
-    using produces_minit0[OF _ MatchP.prems(1), of tw] MatchP.hyps unfolding m ks_def[symmetric]
-    by simp
   have A: "set ks = Formula.fv_regex (from_mregex mr \<phi>s)"
     unfolding ks_def Formula.set_fvi_list fm by simp
   have bf: "ebufn dss (map ecols dss) (replicate (length \<phi>s) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     using lL ld by (auto simp: ebufn_def intro!: nth_equalityI)
   show ?case unfolding m ks_def[symmetric] d
-    by (rule EsMatchP[OF eframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchP I r", folded ks_def]] pr
+    by (rule EsMatchP[OF eframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchP I r", folded ks_def]]
           sr[folded fm] ok A _ _ dss_def _ lL lLd[folded lL] _ _ pL refl bf])
       (use sub fm A in \<open>auto simp: finite_RPDs dss_def intro!: eframe_fv_list\<close>)
 next
@@ -1371,29 +1309,21 @@ next
     then show "esim n (dss ! i) (map ecols dss ! i) tw (Ld ! i) (L ! i)"
       using Ldi[OF i'] i' by (simp add: dss_def L_def)
   qed
-  have pr: "produces n ks tw
-      (MMatchF I ks dss mr (sorted_list_of_set (LPDs mr)) L (replicate (length \<phi>s) []) [] 0 [])"
-    using produces_minit0[OF _ MatchF.prems(1), of tw] MatchF.hyps unfolding m ks_def[symmetric]
-    by simp
   have A: "set ks = Formula.fv_regex (from_mregex mr \<phi>s)"
     unfolding ks_def Formula.set_fvi_list fm by simp
   have bf: "ebufn dss (map ecols dss) (replicate (length \<phi>s) []) (map Rep_mbuf_t (map (\<lambda>_. mbuf_t_empty) L))"
     using lL ld by (auto simp: ebufn_def intro!: nth_equalityI)
   show ?case unfolding m ks_def[symmetric] d
-    by (rule EsMatchF[OF eframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchF I r", folded ks_def]] pr
+    by (rule EsMatchF[OF eframe_dcols[OF distinct_fvi_list[of 0 "Formula.MatchF I r", folded ks_def]]
           sr[folded fm] ok A _ _ dss_def _ lL lLd[folded lL] _ _ pL refl bf])
       (use sub fm A in \<open>auto simp: finite_LPDs dss_def intro!: eframe_fv_list\<close>)
 next
   case (TP t)
-  have pr: "produces n (Formula.fv_list (Formula.TP t)) tw (minit0 n (Formula.TP t))"
-    using produces_minit0[of "Formula.TP t" n tw] TP by simp
-  show ?case using TP.prems(2) pr eframe_fv_list[of "Formula.TP t"]
+  show ?case using TP.prems(2) eframe_fv_list[of "Formula.TP t"]
     by (auto split: if_splits intro!: EsTP)
 next
   case (TS t)
-  have pr: "produces n (Formula.fv_list (Formula.TS t)) tw (minit0 n (Formula.TS t))"
-    using produces_minit0[of "Formula.TS t" n tw] TS by simp
-  show ?case using TS.prems(2) pr eframe_fv_list[of "Formula.TS t"]
+  show ?case using TS.prems(2) eframe_fv_list[of "Formula.TS t"]
     by (auto split: if_splits intro!: EsTS)
 qed
 

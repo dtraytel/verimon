@@ -1454,7 +1454,7 @@ next
 next
   case (MTimes r t)
   then show ?case by (auto intro: table_join_sub)
-qed (simp_all add: table_def empty_table_def)
+qed auto
 
 lemma table_reps_strict:
   fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"

@@ -23,14 +23,9 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Window_Dispatch
     Trigger_Window
     Match_Window
+    Kernel_Call
     Eval
-    Produces
-    Produces_Match
-    Produces_Let
-    Produces_Agg
     Correct
-    Compile_Check
-    Init
     Compile
     Idx_Code
     Frz_Rewrite
