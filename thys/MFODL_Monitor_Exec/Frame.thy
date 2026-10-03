@@ -1620,46 +1620,6 @@ lemma mprev_next_map:
   by (induct I xs ts arbitrary: ys xs' ts' rule: mprev_next.induct)
     (auto split: prod.splits)
 
-lemma mbuf2t_take_rel:
-  "(\<And>a b t z z'. a \<in> set xs \<Longrightarrow> b \<in> set ys \<Longrightarrow> R z z' \<Longrightarrow>
-      R (f a b t z) (g (h a) (k b) t z')) \<Longrightarrow>
-   R z z' \<Longrightarrow>
-   mbuf2t_take f z (xs, ys) t0 ts = (w, (xs', ys'), nt, ts') \<Longrightarrow>
-   mbuf2t_take g z' (map h xs, map k ys) t0 ts = (w2, buf2, nt2, ts2) \<Longrightarrow>
-   R w w2 \<and> buf2 = (map h xs', map k ys') \<and> nt2 = nt \<and> ts2 = ts'"
-proof (induct xs arbitrary: ys z z' t0 ts w xs' ys' nt ts' w2 buf2 nt2 ts2)
-  case Nil
-  then show ?case by (auto split: list.splits)
-next
-  case (Cons x xs)
-  note IH = Cons(1) and P1 = Cons(2) and P2 = Cons(3) and P3 = Cons(4) and P4 = Cons(5)
-  show ?case
-  proof (cases ys)
-    case Nil
-    then show ?thesis using P2 P3 P4 by (auto split: list.splits)
-  next
-    case (Cons y ys2)
-    note ysC = Cons
-    show ?thesis
-    proof (cases ts)
-      case Nil
-      then show ?thesis using P2 P3 P4 ysC by simp
-    next
-      case (Cons t ts3)
-      note tsC = Cons
-      have r: "R (f x y t z) (g (h x) (k y) t z')" using P1 P2 ysC by simp
-      have p1: "\<And>a b t' za z'a. a \<in> set xs \<Longrightarrow> b \<in> set ys2 \<Longrightarrow> R za z'a \<Longrightarrow>
-          R (f a b t' za) (g (h a) (k b) t' z'a)" using P1 ysC by simp
-      have s1: "mbuf2t_take f (f x y t z) (xs, ys2) t ts3 = (w, (xs', ys'), nt, ts')"
-        using P3 ysC tsC by simp
-      have s2: "mbuf2t_take g (g (h x) (k y) t z') (map h xs, map k ys2) t ts3
-          = (w2, buf2, nt2, ts2)"
-        using P4 ysC tsC by simp
-      show ?thesis by (rule IH[OF p1 r s1 s2])
-    qed
-  qed
-qed
-
 text \<open>
   The Until node's operation is the one place where the step condition is not uniform in the
   timestamp: the verified structure accepts a new timestamp only at or after the one it is already
@@ -1751,7 +1711,7 @@ subsection \<open>The multi-way buffer\<close>
 text \<open>
   @{const mbufn_take} lines up one table per conjunct, and each conjunct has its own column list,
   so the morphism is a list of reorderings applied slotwise.  The step condition is relational for
-  the same reason as @{thm [source] mbuf2t_take_rel}, and it is restricted to tables drawn from
+  the same reason as @{thm [source] mbuf2t_take_rel_ts}, and it is restricted to tables drawn from
   fixed sets @{term Ss}, one per slot, because the tables the operands produce have to be well
   formed for the multi-way join theorem to apply and the buffer only ever shrinks.
 \<close>

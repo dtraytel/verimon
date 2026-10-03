@@ -1056,10 +1056,6 @@ proof -
     by (simp add: vitem_def e t c)
 qed
 
-lemma vitems_append: "vitems cf (xs @ ys) z = (case vitems cf xs z of (vs1, z1) \<Rightarrow>
-  (case vitems cf ys z1 of (vs2, z2) \<Rightarrow> (vs1 @ vs2, z2)))"
-  by (induction cf xs z rule: vitems.induct) (auto split: prod.splits)
-
 lemma vitems_has_err: "has_err xs \<Longrightarrow> has_verror (fst (vitems cf xs z))"
 proof (induction cf xs z rule: vitems.induct)
   case (2 cf x xs z)

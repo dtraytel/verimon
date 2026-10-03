@@ -189,9 +189,6 @@ text \<open>The update that does not return the old value: one descent that comb
 definition mupdw :: "'a \<Rightarrow> ('b option \<Rightarrow> 'b) \<Rightarrow> ('a, 'b) mapping \<Rightarrow> ('a, 'b) mapping"
   where "mupdw k F m = Mapping.update k (F (Mapping.lookup m k)) m"
 
-lemma snd_mupd: "snd (mupd k F m) = mupdw k F m"
-  by (simp add: mupd_def mupdw_def)
-
 lemma mupdw_code[code]:
   fixes t :: "('a :: ccompare, 'b) mapping_rbt"
   shows "mupdw k F (RBT_Mapping t) = (case ID CCOMPARE('a) of

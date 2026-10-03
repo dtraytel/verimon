@@ -13,39 +13,6 @@ text \<open>
   correctness theorem describes (@{thm [source] kgood_tables}).
 \<close>
 
-text \<open>
-  A database is well formed when the table stored at a name of arity @{term ar} holds tuples of
-  that width -- which is what the trace's own databases look like.  The executable formula's predicate
-  nodes read the database at the width the name was declared with, so this is exactly the
-  condition they need.  The tables are also required to be finite: the executable multi-way join and
-  the executable aggregation need it.  The kernel's invariant carries finiteness too
-  (@{term qtable} does), but only for the trace's databases, while the simulation below is stated
-  for every well-formed database.  It is a property of the input, and a real log has it.
-\<close>
-
-definition wf_db :: "database \<Rightarrow> bool" where
-  "wf_db db \<longleftrightarrow> (\<forall>e ar X. Mapping.lookup db (e, ar) = Some X \<longrightarrow>
-     list_all (\<lambda>T. table [0..<ar] T \<and> finite T) X)"
-
-lemma wf_dbD:
-  "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow> table [0..<ar] T"
-  by (auto simp: wf_db_def list_all_iff)
-
-lemma wf_dbD_finite:
-  "wf_db db \<Longrightarrow> Mapping.lookup db (e, ar) = Some X \<Longrightarrow> T \<in> set X \<Longrightarrow> finite T"
-  by (auto simp: wf_db_def list_all_iff)
-
-text \<open>A let-bound formula's tables are reordered to the positional columns before they are bound
-  into the database, so they are exactly what a well-formed database holds.\<close>
-
-lemma wf_db_map_values_empty: "wf_db (Mapping.map_values (\<lambda>_ _. []) db)"
-  by (auto simp: wf_db_def Mapping.lookup_map_values split: option.splits)
-
-lemma wf_db_update':
-  "wf_db db \<Longrightarrow> list_all (\<lambda>T. table [0..<snd q] T \<and> finite T) xs \<Longrightarrow>
-     wf_db (Mapping.update q xs db)"
-  by (auto simp: wf_db_def lookup_update' split: if_splits)
-
 definition enext :: "ts \<Rightarrow> ts list \<Rightarrow> ts" where
   "enext tw ts = (if ts = [] then tw else last ts)"
 
@@ -1261,7 +1228,7 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     esim n ks cs tw (EAnd pl \<phi>d pos \<psi>d dbuf) (mformula.MAnd k1 \<phi> pos k2 \<psi> buf)"
 | EsPrev: "eframe ks cs \<Longrightarrow>
     esim n ks cs tw \<phi>d \<phi> \<Longrightarrow>
-    list_all (ftable ks) buf \<Longrightarrow> Rep_mbuf_t dbuf = map (etabc ks cs) buf \<Longrightarrow>
+    Rep_mbuf_t dbuf = map (etabc ks cs) buf \<Longrightarrow>
     Rep_mbuf_t dnts = nts \<Longrightarrow>
     esim n ks cs tw (EPrev I \<phi>d first dbuf dnts) (mformula.MPrev I \<phi> first buf nts)"
 | EsNext: "eframe ks cs \<Longrightarrow>
@@ -1392,13 +1359,12 @@ inductive esim :: "nat \<Rightarrow> cols \<Rightarrow> cols \<Rightarrow> ts \<
     esim n ks cs tw (ELet p m \<phi>d \<psi>d) (mformula.MLet p m kks \<phi> \<psi>)"
 | EsFrz: "eframe ks cs \<Longrightarrow>
     esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> esim n ks cs tw \<psi>d \<psi> \<Longrightarrow>
-    list_all (ftable [0..<m]) \<alpha>s \<Longrightarrow> esim n ks cs tw \<rho>d \<rho> \<Longrightarrow>
+    esim n ks cs tw \<rho>d \<rho> \<Longrightarrow>
     size \<rho>L = size \<rho> \<Longrightarrow> size \<rho>Ld = size \<rho>d \<Longrightarrow> (lv \<noteq> None \<longrightarrow> esim n ks cs tw \<rho>Ld \<rho>L) \<Longrightarrow>
     esim n ks cs tw (EFrz p m \<phi>d \<psi>d jfrz jpsi0 jphi \<alpha>s \<rho>d w pR tq (map (etabc ks cs) rb) d po ng lv \<rho>Ld)
       (mformula.MFrz p m kks \<phi> \<psi> jfrz jpsi0 jphi \<alpha>s \<rho> w pR tq rb d po ng lv \<rho>L)"
 | EsLetPast: "eframe ks cs \<Longrightarrow>
     esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> esim n ks cs tw \<psi>d \<psi> \<Longrightarrow>
-    \<forall>y. buf = Some y \<longrightarrow> ftable [0..<m] y \<Longrightarrow>
     esim n ks cs tw (ELetPast p m \<phi>d \<psi>d i buf) (mformula.MLetPast p m kks \<phi> \<psi> i buf)"
 | EsTrigger: "eframe kR cR \<Longrightarrow>
     esim n kL cL tw \<phi>d \<phi> \<Longrightarrow> esim n kR cR tw \<psi>d \<psi> \<Longrightarrow>
@@ -1951,11 +1917,6 @@ text \<open>
 lemma etabc_reorder_eq: "distinct ks \<Longrightarrow> table ks T \<Longrightarrow> etabc ks cs T = reorder cs ks T"
   unfolding reorder_def using etabc_same[of ks T] by (auto simp: etabc_def)
 
-lemma list_all_ftable_reorder:
-  "eframe ks [0..<m] \<Longrightarrow> list_all (ftable ks) xs \<Longrightarrow>
-     list_all (ftable [0..<m]) (map (reorder [0..<m] ks) xs)"
-  by (auto simp: list_all_iff reorder_def table_def)
-
 text \<open>
   The recursive let runs its bound formula against databases it builds itself, feeding the
   previous round's output back under the bound predicate.  The two runs produce literally the
@@ -1966,23 +1927,21 @@ text \<open>
 
 lemma letpast_meval0_rel:
   assumes Q: "\<And>tw' \<chi>d \<chi> ts' db' zs' \<chi>'. size \<chi> < NN \<Longrightarrow> esim m kks [0..<m] tw' \<chi>d \<chi> \<Longrightarrow>
-      wf_db db' \<Longrightarrow> sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
+      sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
       meval j m ts' db' \<chi> = (zs', \<chi>') \<Longrightarrow> kgood m kks j ts' db' \<chi> \<Longrightarrow>
       \<exists>\<chi>d'. eeval j ts' db' \<chi>d = (map (etabc kks [0..<m]) zs', \<chi>d') \<and>
         esim m kks [0..<m] (enext tw' ts') \<chi>d' \<chi>'"
   shows "letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j m ts db \<phi>))
       J i ys xs q ts db \<phi> = (zs, i', bo, \<phi>') \<Longrightarrow>
-    snd q = m \<Longrightarrow> size \<phi> < NN \<Longrightarrow> esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
-    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> list_all (ftable [0..<m]) ys \<Longrightarrow>
-    list_all (ftable [0..<m]) xs \<Longrightarrow> J = j \<Longrightarrow> lpgood m kks j i ys xs q ts db \<phi> \<Longrightarrow>
-    list_all (ftable [0..<m]) zs \<and> (\<forall>y. bo = Some y \<longrightarrow> ftable [0..<m] y) \<and>
-      (\<exists>\<phi>d'. letpast_meval0 (eeval j) J i ys xs q ts db \<phi>d = (zs, i', bo, \<phi>d')
-        \<and> esim m kks [0..<m] (enext tw ts) \<phi>d' \<phi>')"
+    snd q = m \<Longrightarrow> size \<phi> < NN \<Longrightarrow> esim m kks [0..<m] tw \<phi>d \<phi> \<Longrightarrow> sorted ts \<Longrightarrow>
+    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> J = j \<Longrightarrow> lpgood m kks j i ys xs q ts db \<phi> \<Longrightarrow>
+    \<exists>\<phi>d'. letpast_meval0 (eeval j) J i ys xs q ts db \<phi>d = (zs, i', bo, \<phi>d')
+      \<and> esim m kks [0..<m] (enext tw ts) \<phi>d' \<phi>'"
 proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j m ts db \<phi>)"
     J i ys xs q ts db \<phi> arbitrary: zs i' bo \<phi>' tw \<phi>d rule: letpast_meval0.induct)
   case (1 J i ys xs q ts db \<phi>)
-  note IH = 1(1) and E = 1(2) and SQ = 1(3) and SZ = 1(4) and SIM = 1(5) and W = 1(6)
-    and S = 1(7) and B = 1(8) and LY = 1(9) and LX = 1(10) and JJ = 1(11) and LP = 1(12)
+  note IH = 1(1) and E = 1(2) and SQ = 1(3) and SZ = 1(4) and SIM = 1(5)
+    and S = 1(6) and B = 1(7) and JJ = 1(8) and LP = 1(9)
   obtain p where q: "q = (p, m)" using SQ by (cases q) auto
   have kgc: "kgood m kks j ts (Mapping.update q xs db) \<phi>"
     using lpgood_call[OF LP[unfolded q]] q by simp
@@ -1991,19 +1950,15 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
   define ys' where "ys' = map (reorder [0..<m] kks) ys0"
   have ev: "apfst (map (reorder [0..<m] kks)) (meval j m ts (Mapping.update q xs db) \<phi>) = (ys', \<phi>2)"
     using ev0 by (simp add: ys'_def)
-  have wu: "wf_db (Mapping.update q xs db)"
-    by (rule wf_db_update'[OF W]) (use LX SQ in \<open>simp add: list_all_iff\<close>)
   obtain \<phi>d2 where dv0: "eeval j ts (Mapping.update q xs db) \<phi>d = (map (etabc kks [0..<m]) ys0, \<phi>d2)"
     and s2: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2"
-    using Q[OF SZ SIM wu S B ev0 kgc] by blast
+    using Q[OF SZ SIM S B ev0 kgc] by blast
   have fk: "eframe kks [0..<m]" by (rule esim_dframe[OF SIM])
   have ty0: "list_all (ftable kks) ys0"
     by (rule kgood_tables[OF kgc ev0])
   have dv: "eeval j ts (Mapping.update q xs db) \<phi>d = (ys', \<phi>d2)"
     using dv0 ty0 etabc_reorder_eq[OF eframeD(1)[OF fk]] unfolding ys'_def
     by (auto simp: list_all_iff intro!: map_cong)
-  have ty: "list_all (ftable [0..<m]) ys'"
-    unfolding ys'_def by (rule list_all_ftable_reorder[OF fk ty0])
   have same: "\<not> size \<phi>2 \<noteq> size \<phi>"
     using default_maux.size_snd_meval[of j m ts "Mapping.update q xs db" \<phi>] ev0 by simp
   have dsame: "\<not> size \<phi>d2 \<noteq> size \<phi>d"
@@ -2017,7 +1972,7 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
     moreover have "letpast_meval0 (eeval j) J i ys xs q ts db \<phi>d
         = (ys @ ys', i + length xs, None, \<phi>d2)"
       using dv dsame Nil by (simp add: letpast_meval0.simps)
-    ultimately show ?thesis using s2 LY ty by auto
+    ultimately show ?thesis using s2 by auto
   next
     case (Cons y r)
     show ?thesis
@@ -2028,7 +1983,7 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
       moreover have "letpast_meval0 (eeval j) J i ys xs q ts db \<phi>d
           = (ys @ ys', i + length xs, Some y, \<phi>d2)"
         using dv dsame Cons True by (simp add: letpast_meval0.simps)
-      ultimately show ?thesis using s2 LY ty Cons by auto
+      ultimately show ?thesis using s2 by auto
     next
       case cont: False
       have e': "letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j m ts db \<phi>))
@@ -2041,12 +1996,10 @@ proof (induct "\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j
           = letpast_meval0 (eeval j) J (i + length xs) (ys @ ys') ys' q []
               (Mapping.map_values (\<lambda>_ _. []) db) \<phi>d2"
         using dv dsame Cons cont by (simp add: letpast_meval0.simps)
-      have "list_all (ftable [0..<m]) zs \<and> (\<forall>y. bo = Some y \<longrightarrow> ftable [0..<m] y) \<and>
-          (\<exists>\<phi>d''. letpast_meval0 (eeval j) J (i + length xs) (ys @ ys') ys' q []
+      have "\<exists>\<phi>d''. letpast_meval0 (eeval j) J (i + length xs) (ys @ ys') ys' q []
             (Mapping.map_values (\<lambda>_ _. []) db) \<phi>d2 = (zs, i', bo, \<phi>d'')
-          \<and> esim m kks [0..<m] (enext (enext tw ts) []) \<phi>d'' \<phi>')"
-        by (rule IH[OF ev[symmetric] refl same Cons cont e' SQ szp s2
-              wf_db_map_values_empty]) (use LY ty JJ LP' in auto)
+          \<and> esim m kks [0..<m] (enext (enext tw ts) []) \<phi>d'' \<phi>'"
+        by (rule IH[OF ev[symmetric] refl same Cons cont e' SQ szp s2]) (use JJ LP' in auto)
       then show ?thesis using d' by (auto simp: enext_def)
     qed
   qed
@@ -2181,11 +2134,11 @@ qed
 
 theorem esim_deval_N:
   assumes Q: "\<And>n' ks' cs' tw' \<phi>d' \<chi> j' ts' db' xs' \<chi>'. size \<chi> < NN \<Longrightarrow> esim n' ks' cs' tw' \<phi>d' \<chi> \<Longrightarrow>
-      wf_db db' \<Longrightarrow> sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
+      sorted ts' \<Longrightarrow> (\<forall>t \<in> set ts'. tw' \<le> t) \<Longrightarrow>
       meval j' n' ts' db' \<chi> = (xs', \<chi>') \<Longrightarrow> kgood n' ks' j' ts' db' \<chi> \<Longrightarrow>
       \<exists>\<phi>d''. eeval j' ts' db' \<phi>d' = (map (etabc ks' cs') xs', \<phi>d'')
         \<and> esim n' ks' cs' (enext tw' ts') \<phi>d'' \<chi>'"
-  shows "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+  shows "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> sorted ts \<Longrightarrow>
    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> size \<phi> \<le> NN \<Longrightarrow>
    kgood n ks j ts db \<phi> \<Longrightarrow>
    \<exists>\<phi>d'. eeval j ts db \<phi>d = (map (etabc ks cs) xs, \<phi>d')
@@ -2193,15 +2146,15 @@ theorem esim_deval_N:
 proof (induct arbitrary: j ts db xs \<phi>' rule: esim.induct)
   case (EsRel ks cs rel n tw)
   note wf = EsRel.hyps(1) and t = EsRel.hyps(2)
-    and kg = EsRel.prems(6) and w = EsRel.prems(1) and sts = EsRel.prems(2)
-    and mts = EsRel.prems(3) and m = EsRel.prems(4)
+    and kg = EsRel.prems(5) and sts = EsRel.prems(1)
+    and mts = EsRel.prems(2) and m = EsRel.prems(3)
   have x: "xs = replicate (length ts) rel" and f: "\<phi>' = mformula.MRel rel" using m by simp_all
   show ?case using wf t f by (simp add: x f esim.EsRel)
 next
   case (EsPredC ks cs tms n tw e)
   note wf = EsPredC.hyps(1) and tm = EsPredC.hyps(2)
-    and kse = EsPredC.hyps(3) and cse = EsPredC.hyps(4) and kg = EsPredC.prems(6) and w = EsPredC.prems(1)
-    and sts = EsPredC.prems(2) and mts = EsPredC.prems(3) and m = EsPredC.prems(4)
+    and kse = EsPredC.hyps(3) and cse = EsPredC.hyps(4) and kg = EsPredC.prems(5)
+    and sts = EsPredC.prems(1) and mts = EsPredC.prems(2) and m = EsPredC.prems(3)
   have f: "\<phi>' = mformula.MPred e tms Copy" using m by simp
   have t: "list_all (ftable ks) xs" by (rule kgood_tables[OF kg m])
   have mp: "map (etabc ks cs) xs = xs"
@@ -2221,8 +2174,8 @@ next
 next
   case (EsPredS ks cs tms n tw e)
   note wf = EsPredS.hyps(1) and sp = EsPredS.hyps(2)
-    and cse = EsPredS.hyps(3) and kse = EsPredS.hyps(4) and kg = EsPredS.prems(6) and w = EsPredS.prems(1)
-    and sts = EsPredS.prems(2) and mts = EsPredS.prems(3) and m = EsPredS.prems(4)
+    and cse = EsPredS.hyps(3) and kse = EsPredS.hyps(4) and kg = EsPredS.prems(5)
+    and sts = EsPredS.prems(1) and mts = EsPredS.prems(2) and m = EsPredS.prems(3)
   have f: "\<phi>' = mformula.MPred e tms Simple" using m by simp
   have t: "list_all (ftable ks) xs" by (rule kgood_tables[OF kg m])
   have mp: "map (etabc ks cs) xs = xs"
@@ -2242,8 +2195,8 @@ next
 next
   case (EsPredM ks cs tms n tw e)
   note wf = EsPredM.hyps(1) and kse = EsPredM.hyps(2)
-    and kg = EsPredM.prems(6) and w = EsPredM.prems(1) and sts = EsPredM.prems(2)
-    and mts = EsPredM.prems(3) and m = EsPredM.prems(4)
+    and kg = EsPredM.prems(5) and sts = EsPredM.prems(1)
+    and mts = EsPredM.prems(2) and m = EsPredM.prems(3)
   have f: "\<phi>' = mformula.MPred e tms Match" using m by simp
   show ?case
   proof (cases "Mapping.lookup db (e, length tms)")
@@ -2266,15 +2219,15 @@ next
   case (EsAndRel ks cs n tw \<phi>d \<phi> t1 t2 p c)
   note wf = EsAndRel.hyps(1) and sim = EsAndRel.hyps(2)
     and IH = EsAndRel.hyps(3) and fv1 = EsAndRel.hyps(4) and fv2 = EsAndRel.hyps(5)
-    and kg = EsAndRel.prems(6) and w = EsAndRel.prems(1) and sts = EsAndRel.prems(2)
-    and mts = EsAndRel.prems(3) and m = EsAndRel.prems(4)
+    and kg = EsAndRel.prems(5) and sts = EsAndRel.prems(1)
+    and mts = EsAndRel.prems(2) and m = EsAndRel.prems(3)
   have kgc: "kgood n ks j ts db \<phi>" by (rule kgood_MAndRel[OF kg])
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (Set.filter (eval_constraint ks (t1, p, c, t2))) ys"
     and f: "\<phi>' = mformula.MAndRel ks \<psi>' (t1, p, c, t2)" using m e by simp_all
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAndRel.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAndRel.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc ks cs) ys, \<psi>d')"
-    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have "map (Set.filter (ueval_constraint (reindex_constraint cs (t1, p, c, t2))))
         (map (etabc ks cs) ys) = map (etabc ks cs) xs"
     unfolding x by (simp only: map_map comp_def ueval_constraint_reindex[OF fv1 fv2])
@@ -2283,15 +2236,15 @@ next
 next
   case (EsNeg n tw \<phi>d \<phi>)
   note sim = EsNeg.hyps(1) and IH = EsNeg.hyps(2)
-    and kg = EsNeg.prems(6) and w = EsNeg.prems(1) and sts = EsNeg.prems(2)
-    and mts = EsNeg.prems(3) and m = EsNeg.prems(4)
+    and kg = EsNeg.prems(5) and sts = EsNeg.prems(1)
+    and mts = EsNeg.prems(2) and m = EsNeg.prems(3)
   have kgc: "kgood n [] j ts db \<phi>" by (rule kgood_MNeg[OF kg])
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (\<lambda>r. if r = empty_table then unit_table else empty_table) ys"
     and f: "\<phi>' = mformula.MNeg \<psi>'" using m e by simp_all
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsNeg.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsNeg.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc [] []) ys, \<psi>d')"
-    and sim': "esim n [] [] (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim n [] [] (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have "map (\<lambda>r. if r = {} then {[]} else {}) (map (etabc [] []) ys) = map (etabc [] []) xs"
     unfolding x by (rule etabc_neg)
   then show ?case using d sim' f
@@ -2301,16 +2254,16 @@ next
   note wf = EsExists.hyps(1) and sim = EsExists.hyps(2)
     and IH = EsExists.hyps(3) and kse = EsExists.hyps(4) and cse = EsExists.hyps(5)
     and be = EsExists.hyps(6)
-    and kg = EsExists.prems(6) and w = EsExists.prems(1) and sts = EsExists.prems(2)
-    and mts = EsExists.prems(3) and m = EsExists.prems(4)
+    and kg = EsExists.prems(5) and sts = EsExists.prems(1)
+    and mts = EsExists.prems(2) and m = EsExists.prems(3)
   have kgc: "kgood (Suc n) kks j ts db \<phi>" by (rule kgood_MExists[OF kg])
   obtain ys \<psi>' where e: "meval j (Suc n) ts db \<phi> = (ys, \<psi>')"
     by (cases "meval j (Suc n) ts db \<phi>")
   have x: "xs = map (\<lambda>r. ex_proj kks ` r) ys" and f: "\<phi>' = mformula.MExists kks \<psi>'"
     using m e by simp_all
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsExists.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsExists.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc kks ccs) ys, \<psi>d')"
-    and sim': "esim (Suc n) kks ccs (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim (Suc n) kks ccs (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have fc: "eframe kks ccs" by (rule esim_dframe[OF sim])
   have pe1: "ex_drop0 ccs \<Longrightarrow> tl ` etabc kks ccs r = etabc ks cs (ex_proj kks ` r)"
     for r :: "event_data table"
@@ -2327,8 +2280,8 @@ next
   case (EsOr ks cs n tw \<phi>d \<phi> k2 \<psi>d \<psi> buf dbuf)
   note wf = EsOr.hyps(1) and sim1 = EsOr.hyps(2) and IH1 = EsOr.hyps(3)
     and sim2 = EsOr.hyps(4) and IH2 = EsOr.hyps(5) and bf = EsOr.hyps(6)
-    and kg = EsOr.prems(6) and w = EsOr.prems(1) and sts = EsOr.prems(2)
-    and mts = EsOr.prems(3) and m = EsOr.prems(4)
+    and kg = EsOr.prems(5) and sts = EsOr.prems(1)
+    and mts = EsOr.prems(2) and m = EsOr.prems(3)
   have kg1: "kgood n ks j ts db \<phi>" and kg2: "kgood n k2 j ts db \<psi>" by (rule kgood_MOr[OF kg])+
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
   obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
@@ -2336,11 +2289,11 @@ next
     by (cases "mbuf2_take (\<lambda>r1 r2. r1 \<union> reorder ks k2 r2) (mbuf2_add as bs buf)")
   have x: "xs = zs" and f: "\<phi>' = mformula.MOr ks \<phi>2 k2 \<psi>2 buf2" using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsOr.prems(5)], simp)+
+    by (rule order_trans[OF _ EsOr.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc ks cs) as, \<phi>d2)"
-    and s1: "esim n ks cs (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim n ks cs (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc k2 cs) bs, \<psi>d2)"
-    and s2: "esim n k2 cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim n k2 cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have f2: "eframe k2 cs" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable ks) as"
     by (rule kgood_tables[OF kg1 e1])
@@ -2369,8 +2322,8 @@ next
     and IH1 = EsAnd.hyps(3) and sim2 = EsAnd.hyps(4) and IH2 = EsAnd.hyps(5)
     and kse = EsAnd.hyps(6) and cse = EsAnd.hyps(7) and ple = EsAnd.hyps(8)
     and neg = EsAnd.hyps(9) and bf = EsAnd.hyps(10)
-    and kg = EsAnd.prems(6) and w = EsAnd.prems(1) and sts = EsAnd.prems(2)
-    and mts = EsAnd.prems(3) and m = EsAnd.prems(4)
+    and kg = EsAnd.prems(5) and sts = EsAnd.prems(1)
+    and mts = EsAnd.prems(2) and m = EsAnd.prems(3)
   have kg1: "kgood n k1 j ts db \<phi>" and kg2: "kgood n k2 j ts db \<psi>" by (rule kgood_MAnd[OF kg])+
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
   obtain bs \<psi>2 where e2: "meval j n ts db \<psi> = (bs, \<psi>2)" by (cases "meval j n ts db \<psi>")
@@ -2380,11 +2333,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MAnd k1 \<phi>2 pos k2 \<psi>2 buf2"
     using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsAnd.prems(5)], simp)+
+    by (rule order_trans[OF _ EsAnd.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc k1 c1) as, \<phi>d2)"
-    and s1: "esim n k1 c1 (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim n k1 c1 (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc k2 c2) bs, \<psi>d2)"
-    and s2: "esim n k2 c2 (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim n k2 c2 (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have f1: "eframe k1 c1" by (rule esim_dframe[OF sim1])
   have f2: "eframe k2 c2" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable k1) as"
@@ -2408,20 +2361,18 @@ next
   show ?case using d1 d2 dt bf' s1 s2 wf kse cse ple neg x f
     by (auto intro!: esim.EsAnd simp del: mebuf2_take.simps)
 next
-  case (EsPrev ks cs n tw \<phi>d \<phi> buf dbuf dnts nts I first)
+  case (EsPrev ks cs n tw \<phi>d \<phi> dbuf buf dnts nts I first)
   note wf = EsPrev.hyps(1) and sim = EsPrev.hyps(2)
-    and IH = EsPrev.hyps(3) and lb = EsPrev.hyps(4) and be = EsPrev.hyps(5)
-    and ne = EsPrev.hyps(6)
-    and kg = EsPrev.prems(6) and w = EsPrev.prems(1) and sts = EsPrev.prems(2)
-    and mts = EsPrev.prems(3) and m = EsPrev.prems(4)
+    and IH = EsPrev.hyps(3) and be = EsPrev.hyps(4) and ne = EsPrev.hyps(5)
+    and kg = EsPrev.prems(5) and sts = EsPrev.prems(1)
+    and mts = EsPrev.prems(2) and m = EsPrev.prems(3)
   have kgc: "kgood n ks j ts db \<phi>" by (rule kgood_MPrev[OF kg])
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsPrev.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsPrev.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc ks cs) ys, \<psi>d')"
-    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have t: "list_all (ftable ks) ys"
     by (rule kgood_tables[OF kgc e])
-  have tb: "list_all (ftable ks) (buf @ ys)" using lb t by simp
   show ?case
   proof (cases "first \<and> ts = []")
     case True
@@ -2430,7 +2381,7 @@ next
     have b2: "Rep_mbuf_t (dbuf @@ map (etabc ks cs) ys) = map (etabc ks cs) (buf @ ys)"
       and n2: "Rep_mbuf_t (dnts @@ ts) = nts @ ts"
       using be ne by (simp_all add: mbuf_t_append.rep_eq)
-    show ?thesis using d True x f sim' wf tb b2 n2
+    show ?thesis using d True x f sim' wf b2 n2
       by (auto intro!: esim.EsPrev)
   next
     case False
@@ -2448,21 +2399,19 @@ next
     have r: "(zs'', Rep_mbuf_t ub, Rep_mbuf_t un) = (map (etabc ks cs) zs, map (etabc ks cs) buf', nts')"
       using mprev_next_prev[of I dbuf "map (etabc ks cs) ys" dnts ts] g' eu be ne
       by (simp del: mprev_next.simps meprev_next.simps)
-    have tb': "list_all (ftable ks) buf'"
-      using mprev_next_sub[OF g] tb by (auto simp: list_all_iff)
-    show ?thesis using d False x f sim' wf tb' eu r
+    show ?thesis using d False x f sim' wf eu r
       by (auto simp: empty_table_def intro!: esim.EsPrev simp del: meprev_next.simps)
   qed
 next
   case (EsNext ks cs n tw \<phi>d \<phi> dnts nts I first)
   note wf = EsNext.hyps(1) and sim = EsNext.hyps(2)
-    and IH = EsNext.hyps(3) and ne = EsNext.hyps(4) and kg = EsNext.prems(6) and w = EsNext.prems(1) and sts = EsNext.prems(2)
-    and mts = EsNext.prems(3) and m = EsNext.prems(4)
+    and IH = EsNext.hyps(3) and ne = EsNext.hyps(4) and kg = EsNext.prems(5) and sts = EsNext.prems(1)
+    and mts = EsNext.prems(2) and m = EsNext.prems(3)
   have kgc: "kgood n ks j ts db \<phi>" by (rule kgood_MNext[OF kg])
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsNext.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsNext.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc ks cs) ys, \<psi>d')"
-    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim n ks cs (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   obtain ys0 first0 where c:
       "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a) = (ys0, first0)"
     by (cases "(case (ys, first) of (_ # r, True) \<Rightarrow> (r, False) | a \<Rightarrow> a)") auto
@@ -2490,8 +2439,8 @@ next
     and l1 = EsAnds.hyps(3) and l2 = EsAnds.hyps(4) and lk = EsAnds.hyps(5)
     and lnk = EsAnds.hyps(6) and sb = EsAnds.hyps(7) and cse = EsAnds.hyps(8)
     and pse = EsAnds.hyps(9) and nse = EsAnds.hyps(10) and bf = EsAnds.hyps(11)
-    and kg = EsAnds.prems(6) and w = EsAnds.prems(1) and sts = EsAnds.prems(2)
-    and mts = EsAnds.prems(3) and m = EsAnds.prems(4)
+    and kg = EsAnds.prems(5) and sts = EsAnds.prems(1)
+    and mts = EsAnds.prems(2) and m = EsAnds.prems(3)
   let ?ks' = "k0 # kss @ nkss"
   let ?cs' = "c0 # css @ nss"
   let ?R = "map (meval j n ts db) L"
@@ -2523,14 +2472,14 @@ next
     fix i assume i: "i < length L"
     have "size (L ! i) \<le> size_list size L"
       by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsAnds.prems(5)]) simp
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsAnds.prems(4)]) simp
     finally show "size (L ! i) \<le> NN" .
   qed
   have la1: "\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
          (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (?ks' ! i) (?cs' ! i)) as, \<psi>d')
             \<and> esim n (?ks' ! i) (?cs' ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la w sts mts szL kgL by blast
+    using la sts mts szL kgL by blast
   have dlr: "length (map (eeval j ts db) Ld) = length L \<and>
       map fst (map (eeval j ts db) Ld)
         = map2 map (map2 etabc ?ks' ?cs') (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
@@ -2585,8 +2534,8 @@ next
   note wf = EsAgg.hyps(1) and sim = EsAgg.hyps(2) and IH = EsAgg.hyps(3)
     and kc = EsAgg.hyps(4) and ye = EsAgg.hyps(5) and yg = EsAgg.hyps(6)
     and g0 = EsAgg.hyps(7) and fv = EsAgg.hyps(8) and kse = EsAgg.hyps(9) and cse = EsAgg.hyps(10)
-    and kg = EsAgg.prems(6) and w = EsAgg.prems(1) and sts = EsAgg.prems(2)
-    and mts = EsAgg.prems(3) and m = EsAgg.prems(4)
+    and kg = EsAgg.prems(5) and sts = EsAgg.prems(1)
+    and mts = EsAgg.prems(2) and m = EsAgg.prems(3)
   have kgc: "kgood (length (aggargs_tys args) + n) k0 j ts db \<phi>" using kgood_MAgg[OF kg] kc by simp
   let ?mm = "length (aggargs_tys args)"
   let ?cc = "agg_cols ?mm gcols"
@@ -2594,9 +2543,9 @@ next
     by (cases "meval j (?mm + n) ts db \<phi>")
   have x: "xs = map (eval_aggargs args) ys" and f: "\<phi>' = mformula.MAgg args \<psi>'"
     using m e by simp_all
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAgg.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAgg.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc k0 ?cc) ys, \<psi>d')"
-    and sim': "esim (?mm + n) k0 ?cc (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim (?mm + n) k0 ?cc (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have fc: "eframe k0 ?cc" by (rule esim_dframe[OF sim])
   have t: "list_all (ftable k0) ys"
     by (rule kgood_tables[OF kgc e])
@@ -2615,8 +2564,8 @@ next
     and sub = EsSince.hyps(6) and agg = EsSince.hyps(7)
     and aL = EsSince.hyps(8) and aR = EsSince.hyps(9)
     and dag = EsSince.hyps(10) and rel = EsSince.hyps(11) and nag = EsSince.hyps(12)
-    and kg = EsSince.prems(6) and w = EsSince.prems(1) and sts = EsSince.prems(2)
-    and mts = EsSince.prems(3) and m = EsSince.prems(4)
+    and kg = EsSince.prems(5) and sts = EsSince.prems(1)
+    and mts = EsSince.prems(2) and m = EsSince.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MSince[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2627,11 +2576,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
     using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsSince.prems(5)], simp)+
+    by (rule order_trans[OF _ EsSince.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have ta: "list_all (ftable kL) as"
     by (rule kgood_tables[OF kg1 e1])
@@ -2681,8 +2630,8 @@ next
     and aL = EsUntil.hyps(8) and aR = EsUntil.hyps(9)
     and dag = EsUntil.hyps(10) and pe = EsUntil.hyps(11) and rel = EsUntil.hyps(12)
     and ne = EsUntil.hyps(13) and nag = EsUntil.hyps(14)
-    and kg = EsUntil.prems(6) and w = EsUntil.prems(1) and sts = EsUntil.prems(2)
-    and mts = EsUntil.prems(3) and m = EsUntil.prems(4)
+    and kg = EsUntil.prems(5) and sts = EsUntil.prems(1)
+    and mts = EsUntil.prems(2) and m = EsUntil.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MUntil[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2696,11 +2645,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
     using m e1 e2 e3 e4 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsUntil.prems(5)], simp)+
+    by (rule order_trans[OF _ EsUntil.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have ta: "list_all (ftable kL) as"
     by (rule kgood_tables[OF kg1 e1])
@@ -2757,8 +2706,8 @@ next
     and kc = EsSinceAgg.hyps(12) and ye = EsSinceAgg.hyps(13) and yg = EsSinceAgg.hyps(14)
     and g0 = EsSinceAgg.hyps(15) and fv = EsSinceAgg.hyps(16) and cRe = EsSinceAgg.hyps(17)
     and kse = EsSinceAgg.hyps(18) and cse = EsSinceAgg.hyps(19) and nag = EsSinceAgg.hyps(20)
-    and kg = EsSinceAgg.prems(6) and w = EsSinceAgg.prems(1) and sts = EsSinceAgg.prems(2)
-    and mts = EsSinceAgg.prems(3) and m = EsSinceAgg.prems(4)
+    and kg = EsSinceAgg.prems(5) and sts = EsSinceAgg.prems(1)
+    and mts = EsSinceAgg.prems(2) and m = EsSinceAgg.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MSince[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2771,11 +2720,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
     using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsSinceAgg.prems(5)], simp)+
+    by (rule order_trans[OF _ EsSinceAgg.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable kL) as"
@@ -2841,8 +2790,8 @@ next
     and g0 = EsSinceFused.hyps(15) and fv = EsSinceFused.hyps(16) and cRe = EsSinceFused.hyps(17)
     and kse = EsSinceFused.hyps(18) and cse = EsSinceFused.hyps(19) and nag = EsSinceFused.hyps(20)
     and nq = EsSinceFused.hyps(21)
-    and kg = EsSinceFused.prems(6) and w = EsSinceFused.prems(1) and sts = EsSinceFused.prems(2)
-    and mts = EsSinceFused.prems(3) and m = EsSinceFused.prems(4)
+    and kg = EsSinceFused.prems(5) and sts = EsSinceFused.prems(1)
+    and mts = EsSinceFused.prems(2) and m = EsSinceFused.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MSince[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2853,11 +2802,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MSince args \<phi>2 \<psi>2 buf2 aux2"
     using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsSinceFused.prems(5)], simp)+
+    by (rule order_trans[OF _ EsSinceFused.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable kL) as"
@@ -2893,8 +2842,8 @@ next
     and g0 = EsSinceGuard.hyps(15) and fv = EsSinceGuard.hyps(16) and cRe = EsSinceGuard.hyps(17)
     and kse = EsSinceGuard.hyps(18) and cse = EsSinceGuard.hyps(19) and nag = EsSinceGuard.hyps(20)
     and fv1 = EsSinceGuard.hyps(21) and fv2 = EsSinceGuard.hyps(22) and gq = EsSinceGuard.hyps(23)
-    and kg = EsSinceGuard.prems(6) and w = EsSinceGuard.prems(1) and sts = EsSinceGuard.prems(2)
-    and mts = EsSinceGuard.prems(3) and m = EsSinceGuard.prems(4)
+    and kg = EsSinceGuard.prems(5) and sts = EsSinceGuard.prems(1)
+    and mts = EsSinceGuard.prems(2) and m = EsSinceGuard.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MSince[OF kgood_MAndRel[OF kg]] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2909,11 +2858,11 @@ next
     and f: "\<phi>' = mformula.MAndRel ks (mformula.MSince args \<phi>2 \<psi>2 buf2 aux2) (t1, p, c, t2)"
     using m mS by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsSinceGuard.prems(5)], simp)+
+    by (rule order_trans[OF _ EsSinceGuard.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable kL) as"
@@ -2951,8 +2900,8 @@ next
     and kc = EsUntilAgg.hyps(14) and ye = EsUntilAgg.hyps(15) and yg = EsUntilAgg.hyps(16)
     and g0 = EsUntilAgg.hyps(17) and fv = EsUntilAgg.hyps(18) and cRe = EsUntilAgg.hyps(19)
     and kse = EsUntilAgg.hyps(20) and cse = EsUntilAgg.hyps(21) and nag = EsUntilAgg.hyps(22)
-    and kg = EsUntilAgg.prems(6) and w = EsUntilAgg.prems(1) and sts = EsUntilAgg.prems(2)
-    and mts = EsUntilAgg.prems(3) and m = EsUntilAgg.prems(4)
+    and kg = EsUntilAgg.prems(5) and sts = EsUntilAgg.prems(1)
+    and mts = EsUntilAgg.prems(2) and m = EsUntilAgg.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MUntil[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -2968,11 +2917,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
     using m e1 e2 e3 e4 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsUntilAgg.prems(5)], simp)+
+    by (rule order_trans[OF _ EsUntilAgg.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable kL) as"
@@ -3045,8 +2994,8 @@ next
     and kc = EsUntilFused.hyps(14) and ye = EsUntilFused.hyps(15) and yg = EsUntilFused.hyps(16)
     and g0 = EsUntilFused.hyps(17) and fv = EsUntilFused.hyps(18) and cRe = EsUntilFused.hyps(19)
     and kse = EsUntilFused.hyps(20) and cse = EsUntilFused.hyps(21) and nag = EsUntilFused.hyps(22)
-    and kg = EsUntilFused.prems(6) and w = EsUntilFused.prems(1) and sts = EsUntilFused.prems(2)
-    and mts = EsUntilFused.prems(3) and m = EsUntilFused.prems(4)
+    and kg = EsUntilFused.prems(5) and sts = EsUntilFused.prems(1)
+    and mts = EsUntilFused.prems(2) and m = EsUntilFused.prems(3)
   have kg1: "kgood (args_n args) kL j ts db \<phi>" and kg2: "kgood (args_n args) kR j ts db \<psi>"
     using kgood_MUntil[OF kg] aL aR by simp_all
   let ?nn = "args_n args"
@@ -3062,11 +3011,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MUntil args \<phi>2 \<psi>2 buf1 nts1 nt aux2"
     using m e1 e2 e3 e4 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsUntilFused.prems(5)], simp)+
+    by (rule order_trans[OF _ EsUntilFused.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim ?nn kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim ?nn kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have ta: "list_all (ftable kL) as"
@@ -3126,16 +3075,16 @@ next
   note wf = EsAndAssign.hyps(1) and sim = EsAndAssign.hyps(2)
     and IH = EsAndAssign.hyps(3) and yk = EsAndAssign.hyps(4) and fv = EsAndAssign.hyps(5)
     and kse = EsAndAssign.hyps(6) and cse = EsAndAssign.hyps(7)
-    and kg = EsAndAssign.prems(6) and w = EsAndAssign.prems(1) and sts = EsAndAssign.prems(2)
-    and mts = EsAndAssign.prems(3) and m = EsAndAssign.prems(4)
+    and kg = EsAndAssign.prems(5) and sts = EsAndAssign.prems(1)
+    and mts = EsAndAssign.prems(2) and m = EsAndAssign.prems(3)
   have kgc: "kgood n k0 j ts db \<phi>" by (rule kgood_MAndAssign[OF kg])
   obtain ys \<psi>' where e: "meval j n ts db \<phi> = (ys, \<psi>')" by (cases "meval j n ts db \<phi>")
   have x: "xs = map (\<lambda>r. eval_assignment k0 (y, t) ` r) ys"
     and f: "\<phi>' = mformula.MAndAssign k0 \<psi>' (y, t)"
     using m e by (simp_all del: eval_assignment.simps)
-  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAndAssign.prems(5)]) simp
+  have sz: "size \<phi> \<le> NN" by (rule order_trans[OF _ EsAndAssign.prems(4)]) simp
   obtain \<psi>d' where d: "eeval j ts db \<phi>d = (map (etabc k0 c0) ys, \<psi>d')"
-    and sim': "esim n k0 c0 (enext tw ts) \<psi>d' \<psi>'" using IH[OF w sts mts e sz kgc] by blast
+    and sim': "esim n k0 c0 (enext tw ts) \<psi>d' \<psi>'" using IH[OF sts mts e sz kgc] by blast
   have tb: "list_all (ftable k0) ys"
     by (rule kgood_tables[OF kgc e])
   have f0: "eframe k0 c0" by (rule esim_dframe[OF sim])
@@ -3155,8 +3104,8 @@ next
 next
   case (EsTP ks cs mt n tw i)
   note wf = EsTP.hyps(1) and cse = EsTP.hyps(2) and kse = EsTP.hyps(3)
-    and kg = EsTP.prems(6) and w = EsTP.prems(1) and sts = EsTP.prems(2)
-    and mts = EsTP.prems(3) and m = EsTP.prems(4)
+    and kg = EsTP.prems(5) and sts = EsTP.prems(1)
+    and mts = EsTP.prems(2) and m = EsTP.prems(3)
   have x: "xs = map (\<lambda>x. eval_mtrm mt (EInt (integer_of_nat x))) [i..<j]"
     and f: "\<phi>' = mformula.MTP mt j" using m by simp_all
   have t: "list_all (ftable ks) xs" by (rule kgood_tables[OF kg m])
@@ -3173,8 +3122,8 @@ next
 next
   case (EsTS ks cs mt n tw)
   note wf = EsTS.hyps(1) and cse = EsTS.hyps(2) and kse = EsTS.hyps(3)
-    and kg = EsTS.prems(6) and w = EsTS.prems(1) and sts = EsTS.prems(2)
-    and mts = EsTS.prems(3) and m = EsTS.prems(4)
+    and kg = EsTS.prems(5) and sts = EsTS.prems(1)
+    and mts = EsTS.prems(2) and m = EsTS.prems(3)
   have x: "xs = map (\<lambda>x. eval_mtrm mt (EInt (integer_of_nat x))) ts"
     and f: "\<phi>' = mformula.MTS mt" using m by simp_all
   have t: "list_all (ftable ks) xs" by (rule kgood_tables[OF kg m])
@@ -3192,8 +3141,8 @@ next
   case (EsLet ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> p)
   note wf = EsLet.hyps(1) and sim1 = EsLet.hyps(2)
     and IH1 = EsLet.hyps(3) and sim2 = EsLet.hyps(4) and IH2 = EsLet.hyps(5)
-    and kg = EsLet.prems(6) and w = EsLet.prems(1) and sts = EsLet.prems(2)
-    and mts = EsLet.prems(3) and mv = EsLet.prems(4)
+    and kg = EsLet.prems(5) and sts = EsLet.prems(1)
+    and mts = EsLet.prems(2) and mv = EsLet.prems(3)
   obtain as \<phi>2 where e1: "meval j m ts db \<phi> = (as, \<phi>2)" by (cases "meval j m ts db \<phi>")
   let ?as = "map (reorder [0..<m] kks) as"
   obtain bs \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) ?as db) \<psi> = (bs, \<psi>2)"
@@ -3206,15 +3155,13 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have dt: "map (etabc kks [0..<m]) as = ?as"
     using ta etabc_reorder_eq[OF eframeD(1)[OF fk]] by (auto simp: list_all_iff)
-  have w': "wf_db (Mapping.update (p, m) ?as db)"
-    by (rule wf_db_update'[OF w]) (use list_all_ftable_reorder[OF fk ta] in \<open>simp add: list_all_iff\<close>)
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsLet.prems(5)], simp)+
+    by (rule order_trans[OF _ EsLet.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kks [0..<m]) as, \<phi>d2)"
-    and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts (Mapping.update (p, m) ?as db) \<psi>d
         = (map (etabc ks cs) bs, \<psi>d2)"
-    and s2: "esim n ks cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w' sts mts e2 sz2 kg2] by blast
+    and s2: "esim n ks cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (ELet p m \<phi>d \<psi>d) = (map (etabc ks cs) xs, ELet p m \<phi>d2 \<psi>d2)"
@@ -3224,13 +3171,13 @@ next
       by (rule esim.EsLet[OF wf s1 s2])
   qed
 next
-  case (EsFrz ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> \<alpha>s \<rho>d \<rho> \<rho>L \<rho>Ld lv p jfrz jpsi0 jphi wv pR tq rb d po ng)
+  case (EsFrz ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> \<rho>d \<rho> \<rho>L \<rho>Ld lv p jfrz jpsi0 jphi \<alpha>s wv pR tq rb d po ng)
   note wf = EsFrz.hyps(1) and sim1 = EsFrz.hyps(2)
     and IH1 = EsFrz.hyps(3) and sim2 = EsFrz.hyps(4) and IH2 = EsFrz.hyps(5)
-    and tas = EsFrz.hyps(6) and sim3 = EsFrz.hyps(7) and IH3 = EsFrz.hyps(8)
-    and szL = EsFrz.hyps(9) and szLd = EsFrz.hyps(10)
-    and kg = EsFrz.prems(6) and w = EsFrz.prems(1) and sts = EsFrz.prems(2)
-    and mts = EsFrz.prems(3) and mv = EsFrz.prems(4) and le = EsFrz.prems(5)
+    and sim3 = EsFrz.hyps(6) and IH3 = EsFrz.hyps(7)
+    and szL = EsFrz.hyps(8) and szLd = EsFrz.hyps(9)
+    and kg = EsFrz.prems(5) and sts = EsFrz.prems(1)
+    and mts = EsFrz.prems(2) and mv = EsFrz.prems(3) and le = EsFrz.prems(4)
   have kg1: "kgood m kks j ts db \<phi>" by (rule kgood_MFrz_phi[OF kg])
   have kg2: "kgood n ks j ts (Mapping.update (p, m) [] db) \<psi>" by (rule kgood_MFrz_psi[OF kg])
   have kg3: "kgood n ks j ts (Mapping.update (p, m) [] db) \<rho>" by (rule kgood_MFrz_rho[OF kg])
@@ -3244,41 +3191,31 @@ next
   have fk: "eframe kks [0..<m]" by (rule esim_dframe[OF sim1])
   have ta0: "list_all (ftable kks) as0"
     by (rule kgood_tables[OF kg1 e1])
-  have ta: "list_all (ftable [0..<m]) ?as" by (rule list_all_ftable_reorder[OF fk ta0])
   have dt: "map (etabc kks [0..<m]) as0 = ?as"
     using ta0 etabc_reorder_eq[OF eframeD(1)[OF fk]] by (auto simp: list_all_iff)
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (?as, \<phi>d2)"
     and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2"
-    using IH1[OF w sts mts e1 sz1 kg1] unfolding dt by blast
+    using IH1[OF sts mts e1 sz1 kg1] unfolding dt by blast
   \<comment> \<open>the body and the replay base, against the database in which the bound predicate is empty\<close>
-  have w0: "wf_db (Mapping.update (p, m) [] db)" by (rule wf_db_update'[OF w]) simp
   obtain zs0 \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) [] db) \<psi> = (zs0, \<psi>2)"
     by (cases "meval j n ts (Mapping.update (p, m) [] db) \<psi>")
   obtain \<psi>d2 where d2: "eeval j ts (Mapping.update (p, m) [] db) \<psi>d
         = (map (etabc ks cs) zs0, \<psi>d2)"
     and s2: "esim n ks cs (enext tw ts) \<psi>d2 \<psi>2"
-    using IH2[OF w0 sts mts e2 sz2 kg2] by blast
+    using IH2[OF sts mts e2 sz2 kg2] by blast
   obtain rs \<rho>2 where e4: "meval j n ts (Mapping.update (p, m) [] db) \<rho> = (rs, \<rho>2)"
     by (cases "meval j n ts (Mapping.update (p, m) [] db) \<rho>")
   obtain \<rho>d2 where d4: "eeval j ts (Mapping.update (p, m) [] db) \<rho>d
         = (map (etabc ks cs) rs, \<rho>d2)"
     and s4: "esim n ks cs (enext tw ts) \<rho>d2 \<rho>2"
-    using IH3[OF w0 sts mts e4 sz3 kg3] by blast
+    using IH3[OF sts mts e4 sz3 kg3] by blast
   \<comment> \<open>the frozen tuples the two runs are handed are the same list\<close>
   let ?zout = "drop (jfrz - jpsi0) zs0"
   let ?as1 = "drop (jfrz - jphi + length ?zout) (\<alpha>s @ ?as)"
   let ?F = "frz_fill ng (\<alpha>s @ ?as)"
-  have tas1: "list_all (ftable [0..<m]) ?as1"
-    using tas ta by (auto simp: list_all_iff dest!: in_set_dropD)
-  have tF: "ftable [0..<m] ?F"
-    using frz_fill_cases[of ng "\<alpha>s @ ?as"] tas ta by (auto simp: list_all_iff table_def)
   let ?A = "Set.insert ?F (set (\<alpha>s @ ?as))"
-  have tA: "ftable [0..<m] X" if "X \<in> ?A" for X
-    using that tas ta tF by (auto simp: list_all_iff)
   have subA: "set ?as1 \<subseteq> ?A"
     by (auto dest: in_set_dropD)
-  have wa: "wf_db (Mapping.update (p, m) (replicate k \<alpha>) ?dbe)" if "ftable [0..<m] \<alpha>" for k \<alpha>
-    by (rule wf_db_update'[OF wf_db_map_values_empty]) (use that in \<open>simp add: list_all_iff\<close>)
   have sz\<rho>2: "size \<rho>2 = size \<rho>"
     using default_maux.size_snd_meval[of j n ts "Mapping.update (p, m) [] db" \<rho>] e4 by simp
   have sz\<rho>d2: "size \<rho>d2 = size \<rho>d"
@@ -3293,15 +3230,13 @@ next
     if r: "R \<chi> \<chi>d" and X: "X \<in> ?A"
       and kgc: "kgood n ks j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>" for \<chi> \<chi>d c X
   proof -
-    have tX: "ftable [0..<m] X"
-      by (rule tA[OF X])
     obtain us \<chi>' where eu: "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi> = (us, \<chi>')"
       by (cases "meval j n [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>")
     have sz\<chi>: "size \<chi> < NN"
       using r szr by (simp add: R_def)
     obtain dus where du: "eeval j [] (Mapping.update (p, m) (replicate c X) ?dbe) \<chi>d
         = (map (etabc ks cs) us, dus)" and sdu: "esim n ks cs (enext (enext tw ts) []) dus \<chi>'"
-      using Q[OF sz\<chi> conjunct1[OF r[unfolded R_def]] wa[OF tX] _ _ eu kgc] by auto
+      using Q[OF sz\<chi> conjunct1[OF r[unfolded R_def]] _ _ eu kgc] by auto
     have "size \<chi>' = size \<rho>"
       using default_maux.size_snd_meval[of j n "[]" "Mapping.update (p, m) (replicate c X) ?dbe" \<chi>]
         eu r by (simp add: R_def)
@@ -3324,15 +3259,11 @@ next
     then obtain g where lv: "lv = Some g"
       by auto
     have simL: "esim n ks cs tw \<rho>Ld \<rho>L"
-      using EsFrz.hyps(11) True by blast
+      using EsFrz.hyps(10) True by blast
     have szl: "size \<rho>L < NN"
       by (rule order.strict_trans2[OF _ le]) simp
     have hin: "hd ?as1 \<in> set ?as1"
       by (rule hd_in_set) (use True in blast)
-    have hdt: "ftable [0..<m] (hd ?as1)"
-      using tas1 hin unfolding list_all_iff by blast
-    have wL: "wf_db ?dbL"
-      by (rule wf_db_update'[OF w]) (use hdt in \<open>simp add: list_all_iff\<close>)
     have as1: "?as1 = drop (jfrz - jphi) (\<alpha>s @ ?as)"
       using True by simp
     have kgL: "kgood n ks j ts ?dbL \<rho>L"
@@ -3341,7 +3272,7 @@ next
       by (cases "meval j n ts ?dbL \<rho>L")
     obtain dus where dL: "eeval j ts ?dbL \<rho>Ld = (map (etabc ks cs) us, dus)"
       and sL: "esim n ks cs (enext tw ts) dus \<chi>"
-      using Q[OF szl simL wL sts mts eL kgL] by blast
+      using Q[OF szl simL sts mts eL kgL] by blast
     have "size \<chi> = size \<rho>"
       using default_maux.size_snd_meval[of j n ts ?dbL \<rho>L] eL szL by simp
     moreover have "size dus = size \<rho>d"
@@ -3412,8 +3343,6 @@ next
   qed
   have sub: "set as' \<subseteq> set ?as1"
     using frz_live_loop_inv[where P = "\<lambda>_. True" and T = "\<lambda>_. True", OF _ _ _ e3] by (simp add: list_all_iff)
-  have tas': "list_all (ftable [0..<m]) as'"
-    using sub tas1 by (auto simp: list_all_iff)
   obtain \<rho>d3 where sd3: "sd3 = (\<rho>d3, w3, pR3, tq3, map (etabc ks cs) rb3)" and R3: "R \<rho>3 \<rho>d3"
     using frel by (cases sd3) auto
   let ?lvk = "if po then None else lvk"
@@ -3471,19 +3400,17 @@ next
     show "esim n ks cs (enext tw ts) (EFrz p m \<phi>d2 \<psi>d2 ?jfrz1 (jpsi0 + length zs0) (jphi + length as0) as'
             \<rho>d3 w3 pR3 tq3 (map (etabc ks cs) rb3) d po ng (frz_keep_lv ?lvk \<rho>L) (frz_keep_st ?lvd \<rho>Ld)) \<phi>'"
       unfolding f
-      by (rule esim.EsFrz[OF wf s1 s2 tas'])
+      by (rule esim.EsFrz[OF wf s1 s2])
         (use R3 szL szLd keep(2) in \<open>simp_all add: R_def\<close>)
   qed
 next
-  case (EsLetPast ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> buf p i)
+  case (EsLetPast ks cs m kks tw \<phi>d \<phi> n \<psi>d \<psi> p i buf)
   note wf = EsLetPast.hyps(1) and sim1 = EsLetPast.hyps(2)
     and IH1 = EsLetPast.hyps(3) and sim2 = EsLetPast.hyps(4) and IH2 = EsLetPast.hyps(5)
-    and lbo = EsLetPast.hyps(6)
-    and kg = EsLetPast.prems(6) and w = EsLetPast.prems(1) and sts = EsLetPast.prems(2)
-    and mts = EsLetPast.prems(3) and mv = EsLetPast.prems(4) and le = EsLetPast.prems(5)
+    and kg = EsLetPast.prems(5) and sts = EsLetPast.prems(1)
+    and mts = EsLetPast.prems(2) and mv = EsLetPast.prems(3) and le = EsLetPast.prems(4)
   have sz2: "size \<psi> \<le> NN" by (rule order_trans[OF _ le]) simp
   have szs: "size \<phi> < NN" by (rule order.strict_trans2[OF _ le]) simp
-  have lbl: "list_all (ftable [0..<m]) (list_of_option buf)" using lbo by (cases buf) auto
   \<comment> \<open>the rounds of the bound formula\<close>
   obtain as i2 buf2 \<phi>2 where e1: "letpast_meval m kks j i [] (list_of_option buf) (p, m) ts db \<phi>
       = (as, i2, buf2, \<phi>2)"
@@ -3491,26 +3418,20 @@ next
   have e1': "letpast_meval0 (\<lambda>ts db \<phi>. apfst (map (reorder [0..<m] kks)) (meval j m ts db \<phi>))
       j i [] (list_of_option buf) (p, m) ts db \<phi> = (as, i2, buf2, \<phi>2)"
     using e1 by (simp add: default_maux.letpast_meval_def)
-  have lnil: "list_all (ftable [0..<m]) []" by simp
-  have lr: "list_all (ftable [0..<m]) as \<and> (\<forall>y. buf2 = Some y \<longrightarrow> ftable [0..<m] y) \<and>
-      (\<exists>\<phi>d'. letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
-        = (as, i2, buf2, \<phi>d') \<and> esim m kks [0..<m] (enext tw ts) \<phi>d' \<phi>2)"
-    by (rule letpast_meval0_rel[OF _ e1' snd_conv szs sim1 w sts mts lnil lbl refl
+  have lr: "\<exists>\<phi>d'. letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
+        = (as, i2, buf2, \<phi>d') \<and> esim m kks [0..<m] (enext tw ts) \<phi>d' \<phi>2"
+    by (rule letpast_meval0_rel[OF _ e1' snd_conv szs sim1 sts mts refl
         kgood_MLetPast_init[OF kg]]) (rule Q)
-  have ta: "list_all (ftable [0..<m]) as" using lr by simp
-  have lbo2: "\<forall>y. buf2 = Some y \<longrightarrow> ftable [0..<m] y" using lr by simp
   obtain \<phi>d2 where d1: "letpast_meval0 (eeval j) j i [] (list_of_option buf) (p, m) ts db \<phi>d
         = (as, i2, buf2, \<phi>d2)"
     and s1: "esim m kks [0..<m] (enext tw ts) \<phi>d2 \<phi>2" using lr by blast
   \<comment> \<open>the body, against the database in which the bound predicate holds the rounds' output\<close>
   have kg2: "kgood n ks j ts (Mapping.update (p, m) as db) \<psi>"
     by (rule kgood_MLetPast_body[OF kg e1])
-  have w2: "wf_db (Mapping.update (p, m) as db)"
-    by (rule wf_db_update'[OF w]) (use ta in \<open>simp add: list_all_iff\<close>)
   obtain bs \<psi>2 where e2: "meval j n ts (Mapping.update (p, m) as db) \<psi> = (bs, \<psi>2)"
     by (cases "meval j n ts (Mapping.update (p, m) as db) \<psi>")
   obtain \<psi>d2 where d2: "eeval j ts (Mapping.update (p, m) as db) \<psi>d = (map (etabc ks cs) bs, \<psi>d2)"
-    and s2: "esim n ks cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w2 sts mts e2 sz2 kg2] by blast
+    and s2: "esim n ks cs (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have x: "xs = bs" and f: "\<phi>' = mformula.MLetPast p m kks \<phi>2 \<psi>2 i2 buf2"
     using mv e1 e2 by simp_all
   show ?case
@@ -3520,7 +3441,7 @@ next
       using d1 d2 unfolding x by simp
     show "esim n ks cs (enext tw ts) (ELetPast p m \<phi>d2 \<psi>d2 i2 buf2) \<phi>'"
       unfolding f
-      by (rule esim.EsLetPast[OF wf s1 s2 lbo2])
+      by (rule esim.EsLetPast[OF wf s1 s2])
   qed
 next
   case (EsTrigger kR cR n kL cL tw \<phi>d \<phi> \<psi>d \<psi> args dags pl aux daux buf dbuf nts dnts)
@@ -3530,8 +3451,8 @@ next
     and sub = EsTrigger.hyps(6) and aL = EsTrigger.hyps(7) and aR = EsTrigger.hyps(8)
     and m0 = EsTrigger.hyps(9) and dag = EsTrigger.hyps(10) and pe = EsTrigger.hyps(11)
     and rel = EsTrigger.hyps(12) and ne = EsTrigger.hyps(13)
-    and kg = EsTrigger.prems(6) and w = EsTrigger.prems(1) and sts = EsTrigger.prems(2)
-    and mts = EsTrigger.prems(3) and m = EsTrigger.prems(4)
+    and kg = EsTrigger.prems(5) and sts = EsTrigger.prems(1)
+    and mts = EsTrigger.prems(2) and m = EsTrigger.prems(3)
   have kg1: "kgood n kL j ts db \<phi>" and kg2: "kgood n kR j ts db \<psi>"
     using kgood_MTrigger[OF kg] aL aR by simp_all
   obtain as \<phi>2 where e1: "meval j n ts db \<phi> = (as, \<phi>2)" by (cases "meval j n ts db \<phi>")
@@ -3546,11 +3467,11 @@ next
   have x: "xs = zs" and f: "\<phi>' = mformula.MTrigger args \<phi>2 \<psi>2 buf2 nts2 aux2"
     using m e1 e2 e3 by simp_all
   have sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsTrigger.prems(5)], simp)+
+    by (rule order_trans[OF _ EsTrigger.prems(4)], simp)+
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) as, \<phi>d2)"
-    and s1: "esim n kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim n kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) bs, \<psi>d2)"
-    and s2: "esim n kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim n kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have ta: "list_all (ftable kL) as"
     by (rule kgood_tables[OF kg1 e1])
@@ -3594,8 +3515,8 @@ next
     and aL = EsAndTrigger.hyps(10) and aR = EsAndTrigger.hyps(11) and ok = EsAndTrigger.hyps(12)
     and dag = EsAndTrigger.hyps(13) and ple = EsAndTrigger.hyps(14)
     and bf1 = EsAndTrigger.hyps(15) and rel = EsAndTrigger.hyps(16) and ne = EsAndTrigger.hyps(17)
-    and kg = EsAndTrigger.prems(6) and w = EsAndTrigger.prems(1) and sts = EsAndTrigger.prems(2)
-    and mts = EsAndTrigger.prems(3) and m = EsAndTrigger.prems(4)
+    and kg = EsAndTrigger.prems(5) and sts = EsAndTrigger.prems(1)
+    and mts = EsAndTrigger.prems(2) and m = EsAndTrigger.prems(3)
   have kg0: "kgood n ks j ts db \<alpha>" and kg1: "kgood n kL j ts db \<phi>" and kg2: "kgood n kR j ts db \<psi>"
     using kgood_MAndTrigger[OF kg] aL aR by simp_all
   obtain as \<alpha>2 where e0: "meval j n ts db \<alpha> = (as, \<alpha>2)" by (cases "meval j n ts db \<alpha>")
@@ -3616,13 +3537,13 @@ next
     and f: "\<phi>' = mformula.MAndTrigger ks \<alpha>2 buf1' args \<phi>2 \<psi>2 buf2' nts2 aux2"
     using m e0 e1 e2 e3 e4 by (simp_all del: bin_join.simps)
   have sz0: "size \<alpha> \<le> NN" and sz1: "size \<phi> \<le> NN" and sz2: "size \<psi> \<le> NN"
-    by (rule order_trans[OF _ EsAndTrigger.prems(5)], simp)+
+    by (rule order_trans[OF _ EsAndTrigger.prems(4)], simp)+
   obtain \<alpha>d2 where d0: "eeval j ts db \<alpha>d = (map (etabc ks cs) as, \<alpha>d2)"
-    and s0: "esim n ks cs (enext tw ts) \<alpha>d2 \<alpha>2" using IH0[OF w sts mts e0 sz0 kg0] by blast
+    and s0: "esim n ks cs (enext tw ts) \<alpha>d2 \<alpha>2" using IH0[OF sts mts e0 sz0 kg0] by blast
   obtain \<phi>d2 where d1: "eeval j ts db \<phi>d = (map (etabc kL cL) xs1, \<phi>d2)"
-    and s1: "esim n kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF w sts mts e1 sz1 kg1] by blast
+    and s1: "esim n kL cL (enext tw ts) \<phi>d2 \<phi>2" using IH1[OF sts mts e1 sz1 kg1] by blast
   obtain \<psi>d2 where d2: "eeval j ts db \<psi>d = (map (etabc kR cR) ys1, \<psi>d2)"
-    and s2: "esim n kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF w sts mts e2 sz2 kg2] by blast
+    and s2: "esim n kR cR (enext tw ts) \<psi>d2 \<psi>2" using IH2[OF sts mts e2 sz2 kg2] by blast
   have fL: "eframe kL cL" by (rule esim_dframe[OF sim1])
   have fR: "eframe kR cR" by (rule esim_dframe[OF sim2])
   have t0: "list_all (ftable ks) as"
@@ -3687,8 +3608,8 @@ next
     and lL = EsMatchP.hyps(9) and lLd = EsMatchP.hyps(10) and fas = EsMatchP.hyps(11)
     and csub = EsMatchP.hyps(12) and la = EsMatchP.hyps(13) and pe = EsMatchP.hyps(14)
     and bf = EsMatchP.hyps(15) and ne = EsMatchP.hyps(16) and rel = EsMatchP.hyps(17)
-    and kg = EsMatchP.prems(6) and w = EsMatchP.prems(1) and sts = EsMatchP.prems(2)
-    and mts = EsMatchP.prems(3) and m = EsMatchP.prems(4)
+    and kg = EsMatchP.prems(5) and sts = EsMatchP.prems(1)
+    and mts = EsMatchP.prems(2) and m = EsMatchP.prems(3)
   let ?R = "map (meval j n ts db) L"
   let ?dR = "map (eeval j ts db) Ld"
   let ?F = "\<lambda>rels t (zs, ax).
@@ -3721,14 +3642,14 @@ next
     fix i assume i: "i < length L"
     have "size (L ! i) \<le> size_list size L"
       by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchP.prems(5)]) simp
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchP.prems(4)]) simp
     finally show "size (L ! i) \<le> NN" .
   qed
   have la1: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
          (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (dss ! i) (css ! i)) as, \<psi>d')
             \<and> esim n (dss ! i) (css ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la w sts mts szL kgL by blast
+    using la sts mts szL kgL by blast
   have dlr: "length ?dR = length L \<and>
       map fst ?dR = map2 map (map2 etabc dss css) (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
       (\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
@@ -3826,8 +3747,8 @@ next
     and lL = EsMatchF.hyps(9) and lLd = EsMatchF.hyps(10) and fas = EsMatchF.hyps(11)
     and csub = EsMatchF.hyps(12) and la = EsMatchF.hyps(13) and pe = EsMatchF.hyps(14)
     and bf = EsMatchF.hyps(15) and ne = EsMatchF.hyps(16) and rel = EsMatchF.hyps(17)
-    and kg = EsMatchF.prems(6) and w = EsMatchF.prems(1) and sts = EsMatchF.prems(2)
-    and mts = EsMatchF.prems(3) and m = EsMatchF.prems(4)
+    and kg = EsMatchF.prems(5) and sts = EsMatchF.prems(1)
+    and mts = EsMatchF.prems(2) and m = EsMatchF.prems(3)
   let ?R = "map (meval j n ts db) L"
   let ?dR = "map (eeval j ts db) Ld"
   let ?F = "update_matchF ks dss I mr mrs"
@@ -3858,14 +3779,14 @@ next
     fix i assume i: "i < length L"
     have "size (L ! i) \<le> size_list size L"
       by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchF.prems(5)]) simp
+    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchF.prems(4)]) simp
     finally show "size (L ! i) \<le> NN" .
   qed
   have la1: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
       (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
          (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (dss ! i) (css ! i)) as, \<psi>d')
             \<and> esim n (dss ! i) (css ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la w sts mts szL kgL by blast
+    using la sts mts szL kgL by blast
   have dlr: "length ?dR = length L \<and>
       map fst ?dR = map2 map (map2 etabc dss css) (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
       (\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
@@ -3951,19 +3872,19 @@ text \<open>Induction on the bound discharges the assumption the theorem above c
   instantiating it at the formula's own size recovers the statement without it.\<close>
 
 lemma esim_deval_bound:
-  "size \<phi> \<le> NN \<Longrightarrow> esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+  "size \<phi> \<le> NN \<Longrightarrow> esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> sorted ts \<Longrightarrow>
    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> kgood n ks j ts db \<phi> \<Longrightarrow>
    \<exists>\<phi>d'. eeval j ts db \<phi>d = (map (etabc ks cs) xs, \<phi>d')
      \<and> esim n ks cs (enext tw ts) \<phi>d' \<phi>'"
 proof (induct NN arbitrary: n ks cs tw \<phi>d \<phi> j ts db xs \<phi>' rule: less_induct)
   case (less NN)
   show ?case
-    by (rule esim_deval_N[OF _ less(3) less(4) less(5) less(6) less(7) less(2) less(8)])
+    by (rule esim_deval_N[OF _ less(3) less(4) less(5) less(6) less(2) less(7)])
       (use less(1) in blast)
 qed
 
 theorem esim_deval:
-  "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> wf_db db \<Longrightarrow> sorted ts \<Longrightarrow>
+  "esim n ks cs tw \<phi>d \<phi> \<Longrightarrow> sorted ts \<Longrightarrow>
    (\<forall>t \<in> set ts. tw \<le> t) \<Longrightarrow> meval j n ts db \<phi> = (xs, \<phi>') \<Longrightarrow> kgood n ks j ts db \<phi> \<Longrightarrow>
    \<exists>\<phi>d'. eeval j ts db \<phi>d = (map (etabc ks cs) xs, \<phi>d')
      \<and> esim n ks cs (enext tw ts) \<phi>d' \<phi>'"

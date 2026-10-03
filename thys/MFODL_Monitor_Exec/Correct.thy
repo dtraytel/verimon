@@ -6,24 +6,6 @@ begin
 
 section \<open>The executable monitor inherits the kernel's correctness theorems\<close>
 
-subsection \<open>The trace's databases are well formed\<close>
-
-lemma wf_db_mk_db:
-  assumes f: "finite X"
-  shows "wf_db (mk_db X)"
-  unfolding wf_db_def
-proof (intro allI impI)
-  fix e ar and T :: "event_data table list"
-  assume "Mapping.lookup (mk_db X) (e, ar) = Some T"
-  then have T: "T = [{ts. (e, ts) \<in> X \<and> ar = length ts}]"
-    by (transfer fixing: e ar) (auto split: if_splits)
-  have "{ts. (e, ts) \<in> X \<and> ar = length ts} \<subseteq> snd ` X" by force
-  then have "finite {ts. (e, ts) \<in> X \<and> ar = length ts}"
-    using f by (auto elim: finite_subset)
-  then show "list_all (\<lambda>T. table [0..<ar] T \<and> finite T) T"
-    unfolding T by (auto simp: table_def wf_tuple_def)
-qed
-
 subsection \<open>The concrete monitor is a @{locale verimon}\<close>
 
 sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
@@ -145,7 +127,7 @@ lemma enumerate_zip_map:
 subsection \<open>One step\<close>
 
 lemma emstep_mstep:
-  assumes r: "emsim_state n ks cs tw st dst" and w: "wf_db (fst tdb)" and le: "tw \<le> snd tdb"
+  assumes r: "emsim_state n ks cs tw st dst" and le: "tw \<le> snd tdb"
     and kg: "kgood n ks (mstate_j st + 1) [snd tdb] (fst tdb) (mstate_m st)"
   shows "fst (emstep tdb dst)
        = map (\<lambda>(i, t, X). (i, t, etabc ks cs X)) (fst (mstep tdb st))
@@ -162,7 +144,7 @@ proof -
   obtain dm where d: "eeval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)
       = (map (etabc ks cs) xs, dm)"
     and sim': "esim n ks cs (enext tw [snd tdb]) dm m"
-    using esim_deval[OF sim w _ _ e] le kg by auto
+    using esim_deval[OF sim _ _ e] le kg by auto
   have tb: "list_all (ftable ks) xs"
     by (rule kgood_tables[OF kg e])
   have dnx: "enext tw [snd tdb] = snd tdb" by (simp add: enext_def)
@@ -217,7 +199,6 @@ next
   case (Cons tdb \<pi>)
   note IH = Cons(1) and r = Cons(2) and wfm = Cons(3) and srt = Cons(4) and b = Cons(5)
     and lt = Cons(6) and fin = Cons(7)
-  have w: "wf_db (fst (apfst mk_db tdb))" using fin by (simp add: wf_db_mk_db)
   have le: "tw \<le> snd (apfst mk_db tdb)" using b by simp
   have le': "last_ts \<pi>0 \<le> snd tdb" and ft: "finite (fst tdb)" and wtd: "wty_db S (fst tdb)"
     using lt fin by simp_all
@@ -230,7 +211,7 @@ next
     and r': "emsim_state n (Formula.fv_list \<phi>) cs (snd tdb) (snd (mstep (apfst mk_db tdb) st))
         (snd (emstep (apfst mk_db tdb) dst))"
     and tb: "\<forall>(i, t, X) \<in> set (fst (mstep (apfst mk_db tdb) st)). table (Formula.fv_list \<phi>) X"
-    using emstep_mstep[OF r w le kg] by simp_all
+    using emstep_mstep[OF r le kg] by simp_all
   have wfm': "kwf_mstate S E \<phi> (psnoc \<pi>0 tdb) R (snd (mstep (apfst mk_db tdb) st))"
     by (rule kmaux_wf_mstate_mstep[OF wfm wtd le' ft])
   have b': "\<forall>x \<in> set \<pi>. snd tdb \<le> snd x" using srt by simp
@@ -319,7 +300,6 @@ theorem emstep_mverdicts:
         (fst (emstep (apfst mk_db tdb) dst)))
      \<longleftrightarrow> (i, t, v) \<in> Mt (psnoc \<pi> tdb) - Mt \<pi>"
 proof -
-  have w: "wf_db (fst (apfst mk_db tdb))" using fin by (simp add: wf_db_mk_db)
   have tle': "tw \<le> snd (apfst mk_db tdb)" using tle by simp
   have mn: "mstate_n st = n" using r by (simp add: emsim_state_def)
   have kg: "kgood n (Formula.fv_list \<phi>) (mstate_j st + 1) [snd (apfst mk_db tdb)] (fst (apfst mk_db tdb))
@@ -328,7 +308,7 @@ proof -
   have step: "fst (emstep (apfst mk_db tdb) dst)
       = map (\<lambda>(i, t, X). (i, t, etabc (Formula.fv_list \<phi>) cs X)) (fst (mstep (apfst mk_db tdb) st))"
     and tb: "\<forall>(i, t, X) \<in> set (fst (mstep (apfst mk_db tdb) st)). table (Formula.fv_list \<phi>) X"
-    using emstep_mstep[OF r w tle' kg] by simp_all
+    using emstep_mstep[OF r tle' kg] by simp_all
   have "map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) cs X)) (fst (emstep (apfst mk_db tdb) dst))
       = fst (mstep (apfst mk_db tdb) st)"
     unfolding step by (rule map_etabw_etabc[OF emsim_state_dframe[OF r] tb])

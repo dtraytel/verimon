@@ -235,9 +235,6 @@ subsection \<open>Column lists in ascending order\<close>
 lemma set_ecols[simp]: "set (ecols k) = set k"
   by (simp add: ecols_def set_cols)
 
-lemma sorted_ecols: "sorted_wrt (<) (ecols k)"
-  by (simp add: ecols_def set_cols)
-
 lemma ecols_Nil[simp]: "ecols [] = []"
   by (simp add: ecols_def set_cols_empty)
 
@@ -246,9 +243,6 @@ lemma eframe_dcols: "distinct k \<Longrightarrow> eframe k (ecols k)"
 
 lemma ecols_cong: "set k = set k' \<Longrightarrow> ecols k = ecols k'"
   by (simp add: ecols_def)
-
-lemma ecols_eqI: "sorted_wrt (<) c \<Longrightarrow> set c = set k \<Longrightarrow> ecols k = c"
-  unfolding ecols_def by (rule set_cols_eqI[symmetric]) simp_all
 
 lemma ecols_upt: "set k = {0..<m} \<Longrightarrow> ecols k = [0..<m]"
   by (simp add: ecols_def set_cols_upt)

@@ -329,11 +329,6 @@ proof -
     by (intro that[of \<pi>]) (simp_all add: stream_prefix_def r)
 qed
 
-lemma prefix_of_items_append_mono:
-  assumes "prefix_of_items pf S None es = Some \<pi>" and "prefix_of_items pf S None (es @ es') = Some \<pi>'"
-  shows "\<pi> \<le> \<pi>'"
-  using prefix_of_items_append_Some[OF assms(2)] assms(1) by auto
-
 lemma stream_prefix_mono:
   assumes "stream_prefix K pf S s = Some \<pi>" and "stream_prefix K pf S (s @ s') = Some \<pi>'"
   shows "\<pi> \<le> \<pi>'"
