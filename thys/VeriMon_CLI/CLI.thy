@@ -51,7 +51,7 @@ fun ty_of_sty :: "sty \<Rightarrow> ty" where
 
 definition lsig_of :: "schema \<Rightarrow> tysym Formula.formula \<Rightarrow> string + lsig" where
   "lsig_of S \<phi> = (let used = map fst (free_preds \<phi>) in
-     if (\<exists>(p, fs) \<in> set S. str8_of_string p \<in> set used \<and> SRegexp \<in> snd ` set fs)
+     if (\<exists>(p, fs) \<in> set S. str8_of_string p \<in> set used \<and> SRegexp \<in> set (map snd fs))
      then Inl (unsupported ''Regular expressions constants are not supported'')
      else Inr (map (\<lambda>(p, fs). (str8_of_string p, map (ty_of_sty \<circ> snd) fs)) S))"
 

@@ -36,6 +36,13 @@ lemma natlit_numeral[code_unfold]: "(numeral k :: nat) = natlit (numeral k)"
 code_printing
   constant natlit \<rightharpoonup> (OCaml) "Nat"
 
+text \<open>The signature reader takes sets of the types of fields, which the Containers framework
+  implements as lists.\<close>
+
+derive (eq) ceq sty
+derive (no) ccompare sty
+derive (dlist) set_impl sty
+
 export_code
   integer_of_nat nat_of_integer integer_of_int int_of_integer
   cli_main Done Version NeedFile Run
