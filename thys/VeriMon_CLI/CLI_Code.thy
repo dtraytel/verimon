@@ -20,6 +20,8 @@ text \<open>
   the tables are static data, which the OCaml compiler does not compile into code.
 \<close>
 
+declare [[code drop: str8_of_string bytes_of_string str8_of_integer str8_quoted]]
+
 code_printing
   constant str8_of_string \<rightharpoonup> (OCaml) "(fun cs -> String.of'_seq (List.to'_seq cs))"
 | constant bytes_of_string \<rightharpoonup> (OCaml) "(fun cs -> String.of'_seq (List.to'_seq cs))"
