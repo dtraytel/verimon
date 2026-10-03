@@ -24,7 +24,7 @@ introduction rule per production, with the semantic actions as values.
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
-the inductive definitions of the relation; `MFODL_Parser` about 40 minutes, most
+the inductive definitions of the relation; `MFODL_Parser` about 17 minutes, most
 of it in evaluating the LR tables and the static check), and neither needs to
 rerun unless the grammar changes.
 
