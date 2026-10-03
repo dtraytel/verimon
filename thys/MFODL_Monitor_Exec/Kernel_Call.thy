@@ -78,6 +78,17 @@ lemma kgoodE:
     "S, E \<turnstile> \<psi>" "ks = Formula.fv_list \<psi>"
   using assms unfolding kgood_def by blast
 
+text \<open>A call on an operand is good when every well-formed, well-typed kernel formula the node can
+  stand for gives the operand one, in the same environments and on the same database.\<close>
+
+lemma kgood_sub:
+  assumes "kgood n ks j ts db \<phi>"
+    and "\<And>\<sigma> j0 P V R \<chi> S E. kwf_mformula \<sigma> j0 P V n R \<phi> \<chi> \<Longrightarrow> S, E \<turnstile> \<chi> \<Longrightarrow>
+      ks = Formula.fv_list \<chi> \<Longrightarrow>
+      \<exists>R' E' \<psi>. kwf_mformula \<sigma> j0 P V n' R' \<phi>' \<psi> \<and> S, E' \<turnstile> \<psi> \<and> ks' = Formula.fv_list \<psi>"
+  shows "kgood n' ks' j ts db \<phi>'"
+  using assms(1) by (rule kgoodE) (use assms(2) in \<open>blast intro: kgoodI\<close>)
+
 text \<open>A good call's tables are finite tables over its columns.\<close>
 
 lemma kgood_tables:
@@ -112,19 +123,7 @@ text \<open>The operands are evaluated in the same environments and on the same 
 lemma kgood_MAndRel:
   assumes "kgood n ks j ts db (MAndRel ks \<phi> conf)"
   shows "kgood n ks j ts db \<phi>"
-proof -
-  obtain S E \<sigma> j0 P P' V R \<chi> where g: "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
-    and wf: "kwf_mformula \<sigma> j0 P V n R (MAndRel ks \<phi> conf) \<chi>"
-    and envs: "wf_envs S \<sigma> j0 (j - j0) P P' V db" and wty: "S, E \<turnstile> \<chi>"
-    using assms by (rule kgoodE)
-  from wf obtain \<phi>1 \<psi>1 where \<chi>: "\<chi> = Formula.And \<phi>1 \<psi>1"
-    and wf\<phi>: "kwf_mformula \<sigma> j0 P V n R \<phi> \<phi>1" and ks: "ks = Formula.fv_list \<phi>1"
-    by (cases rule: kmaux_wf_mformula_cases) auto
-  from wty have "S, E \<turnstile> \<phi>1"
-    unfolding \<chi> by (rule wty_formula_AndD(1))
-  then show ?thesis
-    by (rule kgoodI[OF g wf\<phi> envs _ ks])
-qed
+  using assms by (rule kgood_sub) (erule kmaux_wf_mformula_cases, auto dest: wty_formula_AndD)
 
 lemma kgood_MNeg:
   assumes "kgood n ks j ts db (MNeg \<phi>)"
@@ -190,55 +189,17 @@ qed
 lemma kgood_MAndAssign:
   assumes "kgood n ks j ts db (MAndAssign k0 \<phi> conf)"
   shows "kgood n k0 j ts db \<phi>"
-proof -
-  obtain S E \<sigma> j0 P P' V R \<chi> where g: "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
-    and wf: "kwf_mformula \<sigma> j0 P V n R (MAndAssign k0 \<phi> conf) \<chi>"
-    and envs: "wf_envs S \<sigma> j0 (j - j0) P P' V db" and wty: "S, E \<turnstile> \<chi>"
-    using assms by (rule kgoodE)
-  from wf obtain \<phi>1 \<psi>1 where \<chi>: "\<chi> = Formula.And \<phi>1 \<psi>1"
-    and wf\<phi>: "kwf_mformula \<sigma> j0 P V n R \<phi> \<phi>1" and k0: "k0 = Formula.fv_list \<phi>1"
-    by (cases rule: kmaux_wf_mformula_cases) auto
-  from wty have "S, E \<turnstile> \<phi>1"
-    unfolding \<chi> by (rule wty_formula_AndD(1))
-  then show ?thesis
-    by (rule kgoodI[OF g wf\<phi> envs _ k0])
-qed
+  using assms by (rule kgood_sub) (erule kmaux_wf_mformula_cases, auto dest: wty_formula_AndD)
 
 lemma kgood_MPrev:
   assumes "kgood n ks j ts db (MPrev I \<phi> first buf nts)"
   shows "kgood n ks j ts db \<phi>"
-proof -
-  obtain S E \<sigma> j0 P P' V R \<chi> where g: "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
-    and wf: "kwf_mformula \<sigma> j0 P V n R (MPrev I \<phi> first buf nts) \<chi>"
-    and envs: "wf_envs S \<sigma> j0 (j - j0) P P' V db" and wty: "S, E \<turnstile> \<chi>"
-    and ks: "ks = Formula.fv_list \<chi>"
-    using assms by (rule kgoodE)
-  from wf obtain \<phi>1 where \<chi>: "\<chi> = Formula.Prev I \<phi>1"
-    and wf\<phi>: "kwf_mformula \<sigma> j0 P V n R \<phi> \<phi>1"
-    by (cases rule: kmaux_wf_mformula_cases) auto
-  from wty have "S, E \<turnstile> \<phi>1"
-    unfolding \<chi> by (rule wty_formula_PrevD)
-  then show ?thesis
-    by (rule kgoodI[OF g wf\<phi> envs]) (simp add: ks \<chi>)
-qed
+  using assms by (rule kgood_sub) (erule kmaux_wf_mformula_cases, auto dest: wty_formula_PrevD)
 
 lemma kgood_MNext:
   assumes "kgood n ks j ts db (MNext I \<phi> first nts)"
   shows "kgood n ks j ts db \<phi>"
-proof -
-  obtain S E \<sigma> j0 P P' V R \<chi> where g: "j0 \<le> j" "ts = map (\<tau> \<sigma>) [j0..<j]"
-    and wf: "kwf_mformula \<sigma> j0 P V n R (MNext I \<phi> first nts) \<chi>"
-    and envs: "wf_envs S \<sigma> j0 (j - j0) P P' V db" and wty: "S, E \<turnstile> \<chi>"
-    and ks: "ks = Formula.fv_list \<chi>"
-    using assms by (rule kgoodE)
-  from wf obtain \<phi>1 where \<chi>: "\<chi> = Formula.Next I \<phi>1"
-    and wf\<phi>: "kwf_mformula \<sigma> j0 P V n R \<phi> \<phi>1"
-    by (cases rule: kmaux_wf_mformula_cases) auto
-  from wty have "S, E \<turnstile> \<phi>1"
-    unfolding \<chi> by (rule wty_formula_NextD)
-  then show ?thesis
-    by (rule kgoodI[OF g wf\<phi> envs]) (simp add: ks \<chi>)
-qed
+  using assms by (rule kgood_sub) (erule kmaux_wf_mformula_cases, auto dest: wty_formula_NextD)
 
 lemma kgood_MAgg:
   assumes "kgood n ks j ts db (MAgg args \<phi>)"

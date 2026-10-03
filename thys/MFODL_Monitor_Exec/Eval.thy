@@ -1726,6 +1726,54 @@ proof -
   show ?thesis using e l1 l2 l3 by (auto intro!: nth_equalityI)
 qed
 
+text \<open>
+  The operand block shared by the multi-operand nodes: given the induction hypotheses for the
+  operands, their executable steps report the reordered tables, stay related, and the buffer
+  stays related after adding their results.
+\<close>
+
+lemma eeval_operands:
+  assumes la: "\<forall>i < length L. esim n (kss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
+      (\<forall>j ts. sorted ts \<longrightarrow> (\<forall>t \<in> set ts. tw \<le> t) \<longrightarrow> (\<forall>db xs \<phi>'.
+        meval j n ts db (L ! i) = (xs, \<phi>') \<longrightarrow> size (L ! i) \<le> NN \<longrightarrow>
+        kgood n (kss ! i) j ts db (L ! i) \<longrightarrow>
+        (\<exists>\<phi>d'. eeval j ts db (Ld ! i) = (map (etabc (kss ! i) (css ! i)) xs, \<phi>d') \<and>
+          esim n (kss ! i) (css ! i) (enext tw ts) \<phi>d' \<phi>')))"
+    and l1: "length Ld = length L" and l2: "length css = length L" and l3: "length kss = length L"
+    and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. tw \<le> t" and sz: "size_list size L \<le> NN"
+    and kgL: "\<forall>i < length L. kgood n (kss ! i) j ts db (L ! i)"
+    and bf: "ebufn kss css buf (map Rep_mbuf_t dbuf)"
+  shows "length (map (eeval j ts db) Ld) = length L"
+    and "map fst (map (eeval j ts db) Ld) = map2 map (map2 etabc kss css) (map fst (map (meval j n ts db) L))"
+    and "\<forall>i < length L. esim n (kss ! i) (css ! i) (enext tw ts) (map snd (map (eeval j ts db) Ld) ! i)
+      (snd (meval j n ts db (L ! i)))"
+    and "ebufn kss css (mbufn_add (map fst (map (meval j n ts db) L)) buf)
+      (map Rep_mbuf_t (mebufn_add (map fst (map (eeval j ts db) Ld)) dbuf))"
+proof -
+  have szL: "size (L ! i) \<le> NN" if i: "i < length L" for i
+    by (rule order_trans[OF size_list_estimation'[OF nth_mem[OF i] order.refl, where f = size] sz])
+  have la1: "\<forall>i < length L. esim n (kss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
+      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
+         (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (kss ! i) (css ! i)) as, \<psi>d')
+            \<and> esim n (kss ! i) (css ! i) (enext tw ts) \<psi>d' \<psi>'))"
+    using la sts mts szL kgL by blast
+  have dlr: "length (map (eeval j ts db) Ld) = length L \<and>
+      map fst (map (eeval j ts db) Ld) = map2 map (map2 etabc kss css) (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
+      (\<forall>i < length L. esim n (kss ! i) (css ! i) (enext tw ts) (map snd (map (eeval j ts db) Ld) ! i)
+          (snd (meval j n ts db (L ! i))))"
+    by (rule eeval_list_rel[OF l1 l2 l3 la1])
+  then show "length (map (eeval j ts db) Ld) = length L"
+    and dl: "map fst (map (eeval j ts db) Ld) = map2 map (map2 etabc kss css) (map fst (map (meval j n ts db) L))"
+    and "\<forall>i < length L. esim n (kss ! i) (css ! i) (enext tw ts) (map snd (map (eeval j ts db) Ld) ! i)
+      (snd (meval j n ts db (L ! i)))"
+    using l1 by (auto simp: comp_def)
+  have tabs: "\<forall>i < length css. list_all (ftable (kss ! i)) (map fst (map (meval j n ts db) L) ! i)"
+    using esims_tables[OF kgL] l2 by simp
+  show "ebufn kss css (mbufn_add (map fst (map (meval j n ts db) L)) buf)
+      (map Rep_mbuf_t (mebufn_add (map fst (map (eeval j ts db) Ld)) dbuf))"
+    unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use l2 in simp)
+qed
+
 subsection \<open>One firing of the Since structure\<close>
 
 text \<open>
@@ -2074,6 +2122,98 @@ text \<open>One firing of a fused aggregating Since node.  The node reports the 
   read through its guard; the kernel's node reports the windows, which its aggregation then
   aggregates.\<close>
 
+text \<open>One firing of a Since node, whatever the post-processing of its window: the executable
+  node's results are the kernel's under the window's post-processing, and the relation carries
+  over to the successor states.\<close>
+
+lemma esince_node_rel:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and dag: "dags = eargs cR cL args"
+    and rel: "esince_rel kR cR kL cL args tw aux (rdsx daux) buf (rbufS dbuf)"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and sts: "sorted ts" and mts: "\<forall>t \<in> set ts. tw \<le> t"
+    and e3: "meval_since args [] (mbuf2S_add as bs ts buf) aux = (zs, buf2, aux2)"
+  obtains dzs ub ua where "uedsx_eval_since dags []
+      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
+      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
+    and "esresh kR cR args (esx_post (rdsx daux)) zs dzs"
+    and "esince_rel kR cR kL cL args (enext tw ts) aux2 (rdsx ua) buf2 (rbufS ub)"
+    and "esx_agg (rdsx ua) = esx_agg (rdsx daux)" and "usx_q ua = usx_q daux"
+proof -
+  obtain dzs dbf2 daux2 where d3: "esx_eval_since dags []
+      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
+      = (dzs, dbf2, daux2)"
+    by (cases "esx_eval_since dags []
+      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)")
+  have radd: "esince_rel kR cR kL cL args (enext tw ts) aux (rdsx daux) (mbuf2S_add as bs ts buf)
+      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf))"
+    by (rule esince_rel_add[OF rel ta tb sts mts])
+  have step: "esresh kR cR args (esx_post (rdsx daux)) zs dzs \<and>
+      esince_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 dbf2"
+    using eval_since_rel[OF fR fL sub aL aR e3 d3[unfolded dag] radd refl] by (simp add: esresh_def)
+  have nag2: "esx_agg daux2 = esx_agg (rdsx daux)"
+    using esx_agg_eval_since[OF d3] by simp
+  obtain ub ua where "uedsx_eval_since dags []
+      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
+      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
+    and "rbufS ub = dbf2" and "rdsx ua = daux2" and "usx_q ua = usx_q daux"
+    by (rule uedsx_eval_since_rel[OF d3])
+  then show ?thesis
+    using that step nag2 by simp
+qed
+
+text \<open>One firing of an Until node, likewise.\<close>
+
+lemma euntil_node_rel:
+  assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
+    and aL: "args_L args = kL" and aR: "args_R args = kR"
+    and dag: "dags = eargs cR cL args" and pe: "msk = emsk cR cL"
+    and rel: "euntil_rel kR cR kL cL args tw t aux (rdux daux) buf (rbuf2 dbuf) nts"
+    and ne: "Rep_mbuf_t dnts = nts"
+    and ta: "list_all (ftable kL) as" and tb: "list_all (ftable kR) bs"
+    and sts: "sorted ts" and mts: "\<forall>u \<in> set ts. tw \<le> u"
+    and e3: "mbuf2t_take (add_new_muaux_dq args) aux (mbuf2_add as bs buf) t (nts @ ts)
+      = (aux1, buf1, nt, nts1)"
+    and e4: "eval_muaux_dq args nt aux1 = (zs, aux2)"
+  obtains dzs ua ub un ua2 where
+    "mebuf2t_take (udux_add_new dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt, un)"
+    and "udux_eval dags nt ua = (dzs, ua2)"
+    and "esresh kR cR args (eux_post (rdux daux)) zs dzs"
+    and "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 (rdux ua2) buf1 (rbuf2 ub) nts1"
+    and "Rep_mbuf_t un = nts1" and "eux_agg (rdux ua2) = eux_agg (rdux daux)"
+proof -
+  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eux_add_new dags msk) (rdux daux)
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
+      = (daux1, dbuf1, dnt, dnts1)"
+    by (cases "mbuf2t_take (eux_add_new dags msk) (rdux daux)
+      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
+  obtain dzs daux2 where d4: "eux_eval dags dnt daux1 = (dzs, daux2)"
+    by (cases "eux_eval dags dnt daux1")
+  have step: "esresh kR cR args (eux_post (rdux daux)) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
+      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
+      euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    by (rule until_step_rel[OF fR fL sub aL aR rel ta tb sts mts e3
+        d3[unfolded dag pe] e4 d4[unfolded dag]])
+  have nag2: "eux_agg daux2 = eux_agg (rdux daux)"
+    using eux_agg_mbuf2t_take[OF d3] eux_agg_eval[of dags dnt daux1] d4 by simp
+  obtain ua ub un where eu: "mebuf2t_take (udux_add_new dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, dnt, un)"
+    and ua: "rdux ua = daux1" and ub: "rbuf2 ub = dbuf1" and un: "Rep_mbuf_t un = dnts1"
+    by (rule mebuf2t_take_until_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
+  obtain uzs ua2 where eu2: "udux_eval dags dnt ua = (uzs, ua2)"
+    by (cases "udux_eval dags dnt ua")
+  have uz: "uzs = dzs" and ua2: "rdux ua2 = daux2"
+    using d4 eu2 eux_eval_rdux[of dags dnt ua] unfolding ua by simp_all
+  have dnt: "dnt = nt" and dn1: "dnts1 = nts1"
+    and db1: "dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1))"
+    and r: "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
+    using step by blast+
+  show ?thesis
+    by (rule that[of ua ub un uzs ua2]) (use eu eu2 uz ua2 ub un step nag2 r dnt dn1 in simp_all)
+qed
+
 lemma esince_fused_rel:
   assumes fR: "eframe kR cR" and fL: "eframe kL cL" and sub: "set kL \<subseteq> set kR"
     and agg: "args_agg args = Some ag" and aL: "args_L args = kL" and aR: "args_R args = kR"
@@ -2096,40 +2236,26 @@ lemma esince_fused_rel:
 proof -
   let ?ag = "uagg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cR (aggargs_f ag))
       (length (aggargs_tys ag)) (ins_pos gcols y)"
-  obtain dzs dbf2 daux2 where d3: "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, dbf2, daux2)"
-    by (cases "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)")
-  have radd: "esince_rel kR cR kL cL args (enext tw ts) aux (rdsx daux) (mbuf2S_add as bs ts buf)
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf))"
-    by (rule esince_rel_add[OF rel ta tb sts mts])
-  have d3': "esx_eval_since (eargs cR cL args) []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, dbf2, daux2)" using d3 unfolding dag by simp
+  obtain dzs ub ua where eu: "uedsx_eval_since dags []
+      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
+      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
+    and step: "esresh kR cR args (esx_post (rdsx daux)) zs dzs"
+    and rel': "esince_rel kR cR kL cL args (enext tw ts) aux2 (rdsx ua) buf2 (rbufS ub)"
+    and nag2: "esx_agg (rdsx ua) = esx_agg (rdsx daux)" and uq: "usx_q ua = usx_q daux"
+    by (rule esince_node_rel[OF fR fL sub aL aR dag rel ta tb sts mts e3])
   have post: "esx_post (rdsx daux) = ?ag" using nag by (simp add: esx_post_eq)
-  have step: "esresh kR cR args ?ag zs dzs \<and>
-      esince_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 dbf2"
-    using eval_since_rel[OF fR fL sub aL aR e3 d3' radd refl] by (simp add: post)
-  have nag2: "esx_agg daux2 = esx_agg (rdsx daux)"
-    using esx_agg_eval_since[OF d3] by simp
   have fc: "eframe kR (agg_cols (length (aggargs_tys ag)) gcols)" using fR cRe by simp
   have agc: "dzs = map (etabc ks cs) zs"
   proof -
     obtain vs where v: "list_all (table kR) vs"
       "zs = map (eval_args_agg args) vs" "dzs = map (?ag \<circ> etabc kR cR) vs"
-      using step unfolding esresh_def by blast
+      using step unfolding post esresh_def by blast
     show ?thesis unfolding v(2) v(3) kse cse cRe
       using v(1) by (intro nth_equalityI)
         (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg kc uagg_eval_agg[OF fc _ fv yg g0])
   qed
-  obtain ub ua where "uedsx_eval_since dags []
-      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
-      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
-    and "rbufS ub = dbf2" and "rdsx ua = daux2" and "usx_q ua = usx_q daux"
-    by (rule uedsx_eval_since_rel[OF d3])
-  then show ?thesis
-    using that step nag2 agc by simp
+  show ?thesis
+    by (rule that[OF eu[unfolded agc] rel' nag2 uq])
 qed
 
 theorem esim_deval_N:
@@ -2458,43 +2584,9 @@ next
   have la0: "\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) tw (Ld ! i) (L ! i)" using la by blast
   have kgL: "\<forall>i < length L. kgood n (?ks' ! i) j ts db (L ! i)"
     using kgood_MAnds[OF kg] by simp
-  have tabs: "\<forall>i < length ?cs'. list_all (ftable (?ks' ! i)) (map fst ?R ! i)"
-  proof (intro allI impI)
-    fix i assume i: "i < length ?cs'"
-    then have iL: "i < length L" using l2 by simp
-    have "list_all (ftable (?ks' ! i)) (fst (meval j n ts db (L ! i)))"
-      by (rule esims_tables[OF kgL iL])
-    then show "list_all (ftable (?ks' ! i)) (map fst ?R ! i)"
-      using iL by simp
-  qed
-  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
-  proof -
-    fix i assume i: "i < length L"
-    have "size (L ! i) \<le> size_list size L"
-      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsAnds.prems(4)]) simp
-    finally show "size (L ! i) \<le> NN" .
-  qed
-  have la1: "\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) tw (Ld ! i) (L ! i) \<and>
-      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
-         (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (?ks' ! i) (?cs' ! i)) as, \<psi>d')
-            \<and> esim n (?ks' ! i) (?cs' ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la sts mts szL kgL by blast
-  have dlr: "length (map (eeval j ts db) Ld) = length L \<and>
-      map fst (map (eeval j ts db) Ld)
-        = map2 map (map2 etabc ?ks' ?cs') (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
-      (\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) (enext tw ts) (map snd (map (eeval j ts db) Ld) ! i)
-          (snd (meval j n ts db (L ! i))))"
-    by (rule eeval_list_rel[OF l1 l2 l3 la1])
-  have dl0: "length (map (eeval j ts db) Ld) = length L" using dlr by blast
-  have dl: "map fst (map (eeval j ts db) Ld) = map2 map (map2 etabc ?ks' ?cs') (map fst ?R)"
-    using dlr by (simp add: comp_def)
-  have dl2: "\<forall>i < length L. esim n (?ks' ! i) (?cs' ! i) (enext tw ts) (map snd (map (eeval j ts db) Ld) ! i)
-      (snd (meval j n ts db (L ! i)))" using dlr by blast
-  \<comment> \<open>the buffer\<close>
-  have badd: "ebufn ?ks' ?cs' (mbufn_add (map fst ?R) buf)
-      (map Rep_mbuf_t (mebufn_add (map fst (map (eeval j ts db) Ld)) dbuf))"
-    unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use l2 in simp)
+  have sz: "size_list size L \<le> NN" using EsAnds.prems(4) by simp
+  note ops = eeval_operands[OF la l1 l2 l3 sts mts sz kgL bf]
+  note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
   \<comment> \<open>the join at each firing\<close>
   have fs: "\<forall>i < length ?cs'. eframe (?ks' ! i) (?cs' ! i)"
     using la0 l2 by (auto dest: esim_dframe)
@@ -2586,40 +2678,26 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  obtain dzs ebuf2 daux2 where d3: "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, ebuf2, daux2)"
-    by (cases "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)")
-  have radd: "esince_rel kR cR kL cL args (enext tw ts) aux (rdsx daux) (mbuf2S_add as bs ts buf)
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf))"
-    by (rule esince_rel_add[OF rel ta tb sts mts])
-  have d3': "esx_eval_since (eargs cR cL args) []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, ebuf2, daux2)" using d3 unfolding dag by simp
-  have post: "esx_post (rdsx daux) = id" using nag by (simp add: esx_post_eq)
-  have step0: "esres kR cR args zs dzs \<and>
-      esince_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 ebuf2"
-    using eval_since_rel[OF wf fL sub aL aR e3 d3' radd refl] by (simp add: post esresh_id)
-  have nag2: "esx_agg daux2 = None" using esx_agg_eval_since[OF d3] nag by simp
-  have step: "dzs = map (etabc kR cR) zs \<and>
-      esince_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 ebuf2"
-    using step0 esres_none[OF agg] by blast
-  obtain ub ua where eu: "uedsx_eval_since dags []
+  obtain dzs ub ua where eu: "uedsx_eval_since dags []
       (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
       = (map (ufilt (usx_q daux)) dzs, ub, ua)"
-    and ub: "rbufS ub = ebuf2" and ua: "rdsx ua = daux2" and uq: "usx_q ua = usx_q daux"
-    by (rule uedsx_eval_since_rel[OF d3])
+    and step: "esresh kR cR args (esx_post (rdsx daux)) zs dzs"
+    and rel': "esince_rel kR cR kL cL args (enext tw ts) aux2 (rdsx ua) buf2 (rbufS ub)"
+    and nag2: "esx_agg (rdsx ua) = esx_agg (rdsx daux)"
+    by (rule esince_node_rel[OF wf fL sub aL aR dag rel ta tb sts mts e3])
+  have post: "esx_post (rdsx daux) = id" using nag by (simp add: esx_post_eq)
+  have dz: "dzs = map (etabc kR cR) zs"
+    using step esres_none[OF agg] by (simp add: post esresh_id)
   have q: "usx_q daux = None" using nag by (cases daux) simp_all
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (ESince dags \<phi>d \<psi>d dbuf daux)
         = (map (etabc kR cR) xs, ESince dags \<phi>d2 \<psi>d2 ub ua)"
-      using d1 d2 eu step x q by simp
+      using d1 d2 eu dz x q by simp
     show "esim n kR cR (enext tw ts) (ESince dags \<phi>d2 \<psi>d2 ub ua) \<phi>'"
       unfolding f
       by (rule esim.EsSince[OF wf s1 s2 sub agg aL aR
-            dag]) (use step nag2 ub ua in simp_all)
+            dag]) (use rel' nag2 nag in simp_all)
   qed
 next
   case (EsUntil kR cR args kL cL tw \<phi>d \<phi> \<psi>d \<psi> dags msk t aux daux buf dbuf nts dnts n)
@@ -2655,45 +2733,25 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
-      = (daux1, dbuf1, dnt, dnts1)"
-    by (cases "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
-  obtain dzs daux2 where d4: "eux_eval dags dnt daux1 = (dzs, daux2)"
-    by (cases "eux_eval dags dnt daux1")
+  obtain dzs ua ub un ua2 where eu: "mebuf2t_take (udux_add_new dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt, un)"
+    and eu2: "udux_eval dags nt ua = (dzs, ua2)"
+    and step: "esresh kR cR args (eux_post (rdux daux)) zs dzs"
+    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 (rdux ua2) buf1 (rbuf2 ub) nts1"
+    and un: "Rep_mbuf_t un = nts1" and nag2: "eux_agg (rdux ua2) = eux_agg (rdux daux)"
+    by (rule euntil_node_rel[OF wf fL sub aL aR dag pe rel ne ta tb sts mts e3 e4])
   have post: "eux_post (rdux daux) = id" using nag by (simp add: eux_post_eq)
-  have step: "esresh kR cR args (eux_post (rdux daux)) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
-      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
-      euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    by (rule until_step_rel[OF wf fL sub aL aR rel ta tb sts mts e3
-        d3[unfolded dag pe] e4 d4[unfolded dag]])
-  have dres: "esres kR cR args zs dzs"
-    using step unfolding post by (simp add: esresh_def esres_def)
-  have nag2: "eux_agg daux2 = None"
-    using eux_agg_mbuf2t_take[OF d3[unfolded dag pe]] eux_agg_eval[of dags dnt daux1]
-      d4 nag by simp
-  have dz: "dzs = map (etabc kR cR) zs" using dres esres_none[OF agg] by blast
-  have dn: "dnt = nt" and dns: "dnts1 = nts1"
-    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    using step by blast+
-  obtain ua ub un where eu: "mebuf2t_take (udux_add_new dags msk) daux
-      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, dnt, un)"
-    and ua: "rdux ua = daux1" and ub: "rbuf2 ub = dbuf1" and un: "Rep_mbuf_t un = dnts1"
-    by (rule mebuf2t_take_until_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
-  obtain uzs ua2 where eu2: "udux_eval dags dnt ua = (uzs, ua2)"
-    by (cases "udux_eval dags dnt ua")
-  have uz: "uzs = dzs" and ua2: "rdux ua2 = daux2"
-    using d4 eu2 eux_eval_rdux[of dags dnt ua] unfolding ua by simp_all
+  have dz: "dzs = map (etabc kR cR) zs"
+    using step esres_none[OF agg] by (simp add: post esresh_id)
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (EUntil dags msk \<phi>d \<psi>d dbuf dnts t daux)
         = (map (etabc kR cR) xs, EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2)"
-      using d1 d2 eu eu2 uz dz dn x by simp
+      using d1 d2 eu eu2 dz x by simp
     show "esim n kR cR (enext tw ts) (EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2) \<phi>'"
       unfolding f
       by (rule esim.EsUntil[OF wf s1 s2 sub agg aL aR
-            dag pe]) (use rel' nag2 ua2 ub un dns in simp_all)
+            dag pe]) (use rel' nag2 nag un in simp_all)
   qed
 next
   case (EsSinceAgg ks cs args kL cL tw \<phi>d \<phi> kR cR \<psi>d \<psi> ag dags aux daux buf dbuf y gcols n)
@@ -2731,37 +2789,24 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  obtain dzs ebuf2 daux2 where d3: "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, ebuf2, daux2)"
-    by (cases "esx_eval_since dags []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)")
-  have radd: "esince_rel kR cR kL cL args (enext tw ts) aux (rdsx daux) (mbuf2S_add as bs ts buf)
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf))"
-    by (rule esince_rel_add[OF rel ta tb sts mts])
-  have d3': "esx_eval_since (eargs cR cL args) []
-      (mbuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts (rbufS dbuf)) (rdsx daux)
-      = (dzs, ebuf2, daux2)" using d3 unfolding dag by simp
+  obtain dzs ub ua where eu: "uedsx_eval_since dags []
+      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
+      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
+    and step: "esresh kR cR args (esx_post (rdsx daux)) zs dzs"
+    and rel': "esince_rel kR cR kL cL args (enext tw ts) aux2 (rdsx ua) buf2 (rbufS ub)"
+    and nag2: "esx_agg (rdsx ua) = esx_agg (rdsx daux)"
+    by (rule esince_node_rel[OF fR fL sub aL aR dag rel ta tb sts mts e3])
   have post: "esx_post (rdsx daux) = id" using nag by (simp add: esx_post_eq)
-  have step: "esres kR cR args zs dzs \<and>
-      esince_rel kR cR kL cL args (enext tw ts) aux2 daux2 buf2 ebuf2"
-    using eval_since_rel[OF fR fL sub aL aR e3 d3' radd refl] by (simp add: post esresh_id)
-  have nag2: "esx_agg daux2 = None" using esx_agg_eval_since[OF d3] nag by simp
   have fc: "eframe kR (agg_cols (length (aggargs_tys ag)) gcols)" using fR cRe by simp
   have agc: "map ?ag dzs = map (etabc ks cs) xs"
   proof -
     obtain vs where v: "list_all (table kR) vs"
       "zs = map (eval_args_agg args) vs" "dzs = map (etabc kR cR) vs"
-      using step unfolding esres_def by blast
+      using step unfolding post esresh_id esres_def by blast
     show ?thesis unfolding x v(2) v(3) kse cse cRe
       using v(1) by (intro nth_equalityI)
         (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg kc uagg_eval_agg[OF fc _ fv yg g0])
   qed
-  obtain ub ua where eu: "uedsx_eval_since dags []
-      (mebuf2S_add (map (etabc kL cL) as) (map (etabc kR cR) bs) ts dbuf) daux
-      = (map (ufilt (usx_q daux)) dzs, ub, ua)"
-    and ub: "rbufS ub = ebuf2" and ua: "rdsx ua = daux2"
-    by (rule uedsx_eval_since_rel[OF d3])
   have q: "usx_q daux = None" using nag by (cases daux) simp_all
   show ?case
   proof (intro exI conjI)
@@ -2776,7 +2821,7 @@ next
           (ESince dags \<phi>d2 \<psi>d2 ub ua)) \<phi>'"
       unfolding f
       by (rule esim.EsSinceAgg[OF wf s1 s2 sub
-            agg aL aR dag _ kc ye yg g0 fv cRe kse cse]) (use step nag2 ub ua in simp_all)
+            agg aL aR dag _ kc ye yg g0 fv cRe kse cse]) (use rel' nag2 nag in simp_all)
   qed
 next
   case (EsSinceFused ks cs args kL cL tw \<phi>d \<phi> kR cR \<psi>d \<psi> ag dags aux daux buf dbuf y gcols n)
@@ -2928,45 +2973,24 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
-      = (daux1, dbuf1, dnt, dnts1)"
-    by (cases "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
-  obtain dzs daux2 where d4: "eux_eval dags dnt daux1 = (dzs, daux2)"
-    by (cases "eux_eval dags dnt daux1")
+  obtain dzs ua ub un ua2 where eu: "mebuf2t_take (udux_add_new dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt, un)"
+    and eu2: "udux_eval dags nt ua = (dzs, ua2)"
+    and step: "esresh kR cR args (eux_post (rdux daux)) zs dzs"
+    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 (rdux ua2) buf1 (rbuf2 ub) nts1"
+    and un: "Rep_mbuf_t un = nts1" and nag2: "eux_agg (rdux ua2) = eux_agg (rdux daux)"
+    by (rule euntil_node_rel[OF fR fL sub aL aR dag pe rel ne ta tb sts mts e3 e4])
   have post: "eux_post (rdux daux) = id" using nag by (simp add: eux_post_eq)
-  have step: "esresh kR cR args (eux_post (rdux daux)) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
-      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
-      euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    by (rule until_step_rel[OF fR fL sub aL aR rel ta tb sts mts e3
-        d3[unfolded dag pe] e4 d4[unfolded dag]])
-  have dres: "esres kR cR args zs dzs"
-    using step unfolding post by (simp add: esresh_def esres_def)
-  have nag2: "eux_agg daux2 = None"
-    using eux_agg_mbuf2t_take[OF d3[unfolded dag pe]] eux_agg_eval[of dags dnt daux1]
-      d4 nag by simp
-  have dn: "dnt = nt" and dns: "dnts1 = nts1"
-    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    using step by blast+
   have fc: "eframe kR (agg_cols (length (aggargs_tys ag)) gcols)" using fR cRe by simp
   have agc: "map ?ag dzs = map (etabc ks cs) xs"
   proof -
     obtain vs where v: "list_all (table kR) vs"
       "zs = map (eval_args_agg args) vs" "dzs = map (etabc kR cR) vs"
-      using dres unfolding esres_def by blast
+      using step unfolding post esresh_id esres_def by blast
     show ?thesis unfolding x v(2) v(3) kse cse cRe
       using v(1) by (intro nth_equalityI)
         (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg kc uagg_eval_agg[OF fc _ fv yg g0])
   qed
-  obtain ua ub un where eu: "mebuf2t_take (udux_add_new dags msk) daux
-      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, dnt, un)"
-    and ua: "rdux ua = daux1" and ub: "rbuf2 ub = dbuf1" and un: "Rep_mbuf_t un = dnts1"
-    by (rule mebuf2t_take_until_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
-  obtain uzs ua2 where eu2: "udux_eval dags dnt ua = (uzs, ua2)"
-    by (cases "udux_eval dags dnt ua")
-  have uz: "uzs = dzs" and ua2: "rdux ua2 = daux2"
-    using d4 eu2 eux_eval_rdux[of dags dnt ua] unfolding ua by simp_all
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (EAgg (aggargs_g0 ag) (aggargs_\<omega> ag) (reindex_trm cR (aggargs_f ag))
@@ -2974,13 +2998,13 @@ next
         = (map (etabc ks cs) xs, EAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
             (reindex_trm cR (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
             (EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2))"
-      using d1 d2 eu eu2 uz agc dn by simp
+      using d1 d2 eu eu2 agc by simp
     show "esim n ks cs (enext tw ts) (EAgg (aggargs_g0 ag) (aggargs_\<omega> ag)
           (reindex_trm cR (aggargs_f ag)) (length (aggargs_tys ag)) (ins_pos gcols y)
           (EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2)) \<phi>'"
       unfolding f
       by (rule esim.EsUntilAgg[OF wf s1 s2 sub
-            agg aL aR dag pe _ _ kc ye yg g0 fv cRe kse cse]) (use rel' nag2 ua2 ub un dns in simp_all)
+            agg aL aR dag pe _ _ kc ye yg g0 fv cRe kse cse]) (use rel' nag2 nag un in simp_all)
   qed
 next
   case (EsUntilFused ks cs args kL cL tw \<phi>d \<phi> kR cR \<psi>d \<psi> ag dags msk t aux daux buf dbuf nts dnts y gcols n)
@@ -3022,26 +3046,14 @@ next
     by (rule kgood_tables[OF kg1 e1])
   have tb: "list_all (ftable kR) bs"
     by (rule kgood_tables[OF kg2 e2])
-  obtain daux1 dbuf1 dnt dnts1 where d3: "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)
-      = (daux1, dbuf1, dnt, dnts1)"
-    by (cases "mbuf2t_take (eux_add_new dags msk) (rdux daux)
-      (mbuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) (rbuf2 dbuf)) t (nts @ ts)")
-  obtain dzs daux2 where d4: "eux_eval dags dnt daux1 = (dzs, daux2)"
-    by (cases "eux_eval dags dnt daux1")
+  obtain dzs ua ub un ua2 where eu: "mebuf2t_take (udux_add_new dags msk) daux
+      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, nt, un)"
+    and eu2: "udux_eval dags nt ua = (dzs, ua2)"
+    and step: "esresh kR cR args (eux_post (rdux daux)) zs dzs"
+    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 (rdux ua2) buf1 (rbuf2 ub) nts1"
+    and un: "Rep_mbuf_t un = nts1" and nag2: "eux_agg (rdux ua2) = eux_agg (rdux daux)"
+    by (rule euntil_node_rel[OF fR fL sub aL aR dag pe rel ne ta tb sts mts e3 e4])
   have post: "eux_post (rdux daux) = ?ag" using nag by (simp add: eux_post_eq)
-  have step: "esresh kR cR args (eux_post (rdux daux)) zs dzs \<and> dnt = nt \<and> dnts1 = nts1 \<and>
-      dbuf1 = (map (etabc kL cL) (fst buf1), map (etabc kR cR) (snd buf1)) \<and>
-      euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    by (rule until_step_rel[OF fR fL sub aL aR rel ta tb sts mts e3
-        d3[unfolded dag pe] e4 d4[unfolded dag]])
-  have nag2: "eux_agg daux2 = Some (aggargs_g0 ag, aggargs_\<omega> ag, reindex_trm cR (aggargs_f ag),
-      length (aggargs_tys ag), ins_pos gcols y)"
-    using eux_agg_mbuf2t_take[OF d3[unfolded dag pe]] eux_agg_eval[of dags dnt daux1]
-      d4 nag by simp
-  have dn: "dnt = nt" and dns: "dnts1 = nts1"
-    and rel': "euntil_rel kR cR kL cL args (enext tw ts) nt aux2 daux2 buf1 dbuf1 nts1"
-    using step by blast+
   have fc: "eframe kR (agg_cols (length (aggargs_tys ag)) gcols)" using fR cRe by simp
   have agc: "dzs = map (etabc ks cs) xs"
   proof -
@@ -3052,23 +3064,15 @@ next
       using v(1) by (intro nth_equalityI)
         (auto simp: list_all_iff eval_args_agg_def eval_aggargs_def agg kc uagg_eval_agg[OF fc _ fv yg g0])
   qed
-  obtain ua ub un where eu: "mebuf2t_take (udux_add_new dags msk) daux
-      (mebuf2_add (map (etabc kL cL) as) (map (etabc kR cR) bs) dbuf) t (dnts @@ ts) = (ua, ub, dnt, un)"
-    and ua: "rdux ua = daux1" and ub: "rbuf2 ub = dbuf1" and un: "Rep_mbuf_t un = dnts1"
-    by (rule mebuf2t_take_until_obtain[OF d3[unfolded mbuf2_add_rbuf2 ne[symmetric]]])
-  obtain uzs ua2 where eu2: "udux_eval dags dnt ua = (uzs, ua2)"
-    by (cases "udux_eval dags dnt ua")
-  have uz: "uzs = dzs" and ua2: "rdux ua2 = daux2"
-    using d4 eu2 eux_eval_rdux[of dags dnt ua] unfolding ua by simp_all
   show ?case
   proof (intro exI conjI)
     show "eeval j ts db (EUntil dags msk \<phi>d \<psi>d dbuf dnts t daux)
         = (map (etabc ks cs) xs, EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2)"
-      using d1 d2 eu eu2 uz agc dn by simp
+      using d1 d2 eu eu2 agc by simp
     show "esim n ks cs (enext tw ts) (EUntil dags msk \<phi>d2 \<psi>d2 ub un nt ua2) \<phi>'"
       unfolding f
       by (rule esim.EsUntilFused[OF wf s1 s2 sub
-            agg aL aR dag pe _ _ kc ye yg g0 fv cRe kse cse]) (use rel' nag2 ua2 ub un dns in simp_all)
+            agg aL aR dag pe _ _ kc ye yg g0 fv cRe kse cse]) (use rel' nag2 nag un in simp_all)
   qed
 next
   case (EsAndAssign ks cs n k0 c0 tw \<phi>d \<phi> y t)
@@ -3624,45 +3628,13 @@ next
   have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchP I ks dss mr mrs (map snd ?R) buf2 nts2 aux2"
     using m g0 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
   \<comment> \<open>the operands, and their reordering\<close>
-  have la0: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i)" using la by blast
   have kgL: "\<forall>i < length L. kgood n (dss ! i) j ts db (L ! i)"
     using kgood_MMatchP[OF kg] by blast
   have lcL: "length css = length L" using lcs lL by simp
   have ldL: "length dss = length L" using dsse lL by simp
-  have tabs: "\<forall>i < length css. list_all (ftable (dss ! i)) (map fst ?R ! i)"
-  proof (intro allI impI)
-    fix i assume i: "i < length css"
-    then have iL: "i < length L" using lcL by simp
-    have "list_all (ftable (dss ! i)) (fst (meval j n ts db (L ! i)))"
-      by (rule esims_tables[OF kgL iL])
-    then show "list_all (ftable (dss ! i)) (map fst ?R ! i)" using iL by simp
-  qed
-  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
-  proof -
-    fix i assume i: "i < length L"
-    have "size (L ! i) \<le> size_list size L"
-      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchP.prems(4)]) simp
-    finally show "size (L ! i) \<le> NN" .
-  qed
-  have la1: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
-      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
-         (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (dss ! i) (css ! i)) as, \<psi>d')
-            \<and> esim n (dss ! i) (css ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la sts mts szL kgL by blast
-  have dlr: "length ?dR = length L \<and>
-      map fst ?dR = map2 map (map2 etabc dss css) (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
-      (\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
-          (snd (meval j n ts db (L ! i))))"
-    by (rule eeval_list_rel[OF lLd lcL ldL la1])
-  have dl: "map fst ?dR = map2 map (map2 etabc dss css) (map fst ?R)"
-    using dlr by (simp add: comp_def)
-  have dl2: "\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
-      (snd (meval j n ts db (L ! i)))" using dlr by blast
-  \<comment> \<open>the buffer\<close>
-  have badd: "ebufn dss css (mbufn_add (map fst ?R) buf)
-      (map Rep_mbuf_t (mebufn_add (map fst ?dR) dbuf))"
-    unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use lcL in simp)
+  have sz: "size_list size L \<le> NN" using EsMatchP.prems(4) by simp
+  note ops = eeval_operands[OF la lLd lcL ldL sts mts sz kgL bf]
+  note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
   \<comment> \<open>the masks the window probes with\<close>
   have msk: "map emb_msk pls = map (emsk cs) css"
     unfolding pe map_map o_def
@@ -3737,7 +3709,7 @@ next
       unfolding fe
       by (rule esim.EsMatchP[OF wf sr okm fvA dm
             mrsd dsse lcs _ _ fas csub _ pe _ un rel2])
-        (use lL lLd dl2 dlr bf2 ub in auto)
+        (use lL lLd dl2 dl0 bf2 ub in auto)
   qed
 next
   case (EsMatchF ks cs mr \<psi>s mrs dss css L Ld n tw pls buf dbuf dnts nts aux daux I t)
@@ -3761,45 +3733,13 @@ next
   have x: "xs = zs" and fe: "\<phi>' = mformula.MMatchF I ks dss mr mrs (map snd ?R) buf2 nts2 nt2 aux3"
     using m g0 g1 by (simp_all add: Let_def map_split_alt del: mbufnt_take.simps)
   \<comment> \<open>the operands, and their reordering\<close>
-  have la0: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i)" using la by blast
   have kgL: "\<forall>i < length L. kgood n (dss ! i) j ts db (L ! i)"
     using kgood_MMatchF[OF kg] by blast
   have lcL: "length css = length L" using lcs lL by simp
   have ldL: "length dss = length L" using dsse lL by simp
-  have tabs: "\<forall>i < length css. list_all (ftable (dss ! i)) (map fst ?R ! i)"
-  proof (intro allI impI)
-    fix i assume i: "i < length css"
-    then have iL: "i < length L" using lcL by simp
-    have "list_all (ftable (dss ! i)) (fst (meval j n ts db (L ! i)))"
-      by (rule esims_tables[OF kgL iL])
-    then show "list_all (ftable (dss ! i)) (map fst ?R ! i)" using iL by simp
-  qed
-  have szL: "\<And>i. i < length L \<Longrightarrow> size (L ! i) \<le> NN"
-  proof -
-    fix i assume i: "i < length L"
-    have "size (L ! i) \<le> size_list size L"
-      by (rule size_list_estimation'[OF nth_mem[OF i] order.refl])
-    also have "size_list size L \<le> NN" by (rule order_trans[OF _ EsMatchF.prems(4)]) simp
-    finally show "size (L ! i) \<le> NN" .
-  qed
-  have la1: "\<forall>i < length L. esim n (dss ! i) (css ! i) tw (Ld ! i) (L ! i) \<and>
-      (\<forall>as \<psi>'. meval j n ts db (L ! i) = (as, \<psi>') \<longrightarrow>
-         (\<exists>\<psi>d'. eeval j ts db (Ld ! i) = (map (etabc (dss ! i) (css ! i)) as, \<psi>d')
-            \<and> esim n (dss ! i) (css ! i) (enext tw ts) \<psi>d' \<psi>'))"
-    using la sts mts szL kgL by blast
-  have dlr: "length ?dR = length L \<and>
-      map fst ?dR = map2 map (map2 etabc dss css) (map (\<lambda>\<psi>. fst (meval j n ts db \<psi>)) L) \<and>
-      (\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
-          (snd (meval j n ts db (L ! i))))"
-    by (rule eeval_list_rel[OF lLd lcL ldL la1])
-  have dl: "map fst ?dR = map2 map (map2 etabc dss css) (map fst ?R)"
-    using dlr by (simp add: comp_def)
-  have dl2: "\<forall>i < length L. esim n (dss ! i) (css ! i) (enext tw ts) (map snd ?dR ! i)
-      (snd (meval j n ts db (L ! i)))" using dlr by blast
-  \<comment> \<open>the buffer\<close>
-  have badd: "ebufn dss css (mbufn_add (map fst ?R) buf)
-      (map Rep_mbuf_t (mebufn_add (map fst ?dR) dbuf))"
-    unfolding dl by (rule ebufn_eadd[OF bf _ tabs]) (use lcL in simp)
+  have sz: "size_list size L \<le> NN" using EsMatchF.prems(4) by simp
+  note ops = eeval_operands[OF la lLd lcL ldL sts mts sz kgL bf]
+  note dl0 = ops(1) and dl = ops(2) and dl2 = ops(3) and badd = ops(4)
   \<comment> \<open>one firing of the window\<close>
   interpret ematchF_frame ks cs \<psi>s css mrs
   proof
@@ -3864,7 +3804,7 @@ next
       unfolding fe
       by (rule esim.EsMatchF[OF wf sr okm fvA dm
             mrsd dsse lcs _ _ fas csub _ pe _ un rel3])
-        (use lL lLd dl2 dlr bf2 ub in auto)
+        (use lL lLd dl2 dl0 bf2 ub in auto)
   qed
 qed
 
