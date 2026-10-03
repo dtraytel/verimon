@@ -48,12 +48,6 @@ definition etabc :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightar
 definition etabw :: "cols \<Rightarrow> cols \<Rightarrow> 'b list set \<Rightarrow> 'b list set" where
   "etabw ks cs D = restrict ks cs ` D"
 
-definition etable :: "cols \<Rightarrow> 'b list set \<Rightarrow> bool" where
-  "etable cs D \<longleftrightarrow> (\<forall>d \<in> D. length d = length cs)"
-
-lemma etable_table: "etable cs D = table cs D"
-  by (simp add: etable_def table_def wf_tuple_def)
-
 lemma restrict_map: "restrict cs ks x = map (tup_get ks x) cs"
   by (simp add: restrict_def)
 
@@ -76,8 +70,8 @@ lemma etabc_in_iff:
   "eframe ks cs \<Longrightarrow> table ks T \<Longrightarrow> wf_tuple ks x \<Longrightarrow> (restrict cs ks x \<in> etabc ks cs T) = (x \<in> T)"
   using inj_on_restrict[of ks cs] by (auto simp: etabc_def table_def inj_on_def)
 
-lemma etable_dtabc: "etable cs (etabc ks cs T)"
-  by (auto simp: etable_def etabc_def)
+lemma table_etabc: "table cs (etabc ks cs T)"
+  by (auto simp: table_def wf_tuple_def etabc_def)
 
 lemma etabw_dtabc: "eframe ks cs \<Longrightarrow> table ks T \<Longrightarrow> etabw ks cs (etabc ks cs T) = T"
   by (force simp: etabw_def etabc_def table_def restrict_inv image_image)
@@ -396,69 +390,35 @@ fun mrg_right_key :: "mrg list \<Rightarrow> bool list" where
 definition no_left :: "mrg list \<Rightarrow> bool" where
   "no_left p = list_all (\<lambda>m. m \<noteq> MLft) p"
 
+text \<open>The plan the other way round swaps the two sides, so the right-hand facts are the
+  left-hand ones.\<close>
+
+fun mrg_swap :: "mrg \<Rightarrow> mrg" where
+  "mrg_swap MLft = MRgt"
+| "mrg_swap MRgt = MLft"
+| "mrg_swap MBth = MBth"
+
+lemma mrg_plan_Nil2: "mrg_plan cs [] = map (\<lambda>_. MLft) cs"
+  by (induct cs) auto
+
+lemma mrg_plan_swap: "map mrg_swap (mrg_plan cs1 cs2) = mrg_plan cs2 cs1"
+  by (induct cs1 cs2 rule: mrg_plan.induct) (auto simp: mrg_plan_Nil2)
+
+lemma mrg_right_key_swap: "mrg_right_key p = mrg_left_key (map mrg_swap p)"
+  by (induct p rule: mrg_right_key.induct) auto
+
+lemma no_left_swap: "no_left p = no_right (map mrg_swap p)"
+  by (induct p) (auto simp: no_left_def no_right_def elim: mrg_swap.elims)
+
 lemma no_left_mrg_plan:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow>
      no_left (mrg_plan cs1 cs2) = (set cs1 \<subseteq> set cs2)"
-proof (induct cs1 cs2 rule: mrg_plan.induct)
-  case (1 ds)
-  then show ?case by (simp add: no_left_def list_all_iff)
-next
-  case (3 c cs d ds)
-  have s1: "sorted_wrt (<) cs" and hc: "\<forall>x \<in> set cs. c < x"
-    and s2: "sorted_wrt (<) ds" and hd: "\<forall>x \<in> set ds. d < x"
-    using 3(4,5) by auto
-  consider (lt) "c < d" | (gt) "d < c" | (eq) "c = d" by force
-  then show ?case
-  proof cases
-    case lt
-    have "c \<notin> set (d # ds)" using lt hd by force
-    then show ?thesis using lt by (simp add: no_left_def)
-  next
-    case gt
-    have "d \<notin> set (c # cs)" using gt hc by force
-    then have "(set (c # cs) \<subseteq> set (d # ds)) = (set (c # cs) \<subseteq> set ds)" by auto
-    then show ?thesis using 3(2)[OF _ gt 3(4) s2] gt by (simp add: no_left_def)
-  next
-    case eq
-    have "(set (c # cs) \<subseteq> set (d # ds)) = (set cs \<subseteq> set ds)" using eq hc by force
-    then show ?thesis using 3(3)[OF _ _ s1 s2] eq by (simp add: no_left_def)
-  qed
-qed (simp add: no_left_def)
-
-lemma eproj_replicate_False: "length xs = k \<Longrightarrow> eproj (replicate k False) xs = []"
-  by (induct xs arbitrary: k) auto
-
-lemma mrg_right_key_all_MRgt: "mrg_right_key (map (\<lambda>_. MRgt) ds) = replicate (length ds) False"
-  by (induct ds) auto
+  by (simp add: no_left_swap mrg_plan_swap no_right_mrg_plan)
 
 lemma eproj_mrg_right_key:
   "sorted_wrt (<) cs1 \<Longrightarrow> sorted_wrt (<) cs2 \<Longrightarrow> set cs1 \<subseteq> set cs2 \<Longrightarrow>
      eproj (mrg_right_key (mrg_plan cs1 cs2)) (map g cs2) = map g cs1"
-proof (induct cs1 cs2 rule: mrg_plan.induct)
-  case (1 ds)
-  then show ?case by (simp add: mrg_right_key_all_MRgt eproj_replicate_False)
-next
-  case (3 c cs d ds)
-  have s1: "sorted_wrt (<) cs" and hc: "\<forall>x \<in> set cs. c < x"
-    and s2: "sorted_wrt (<) ds" and hd: "\<forall>x \<in> set ds. d < x"
-    using 3(4,5) by auto
-  consider (lt) "c < d" | (gt) "d < c" | (eq) "c = d" by force
-  then show ?case
-  proof cases
-    case lt
-    have "c \<notin> set (d # ds)" using lt hd by auto
-    then show ?thesis using 3(6) by auto
-  next
-    case gt
-    have "d \<notin> set (c # cs)" using gt hc by force
-    then have "set (c # cs) \<subseteq> set ds" using 3(6) by auto
-    then show ?thesis using 3(2)[OF _ gt 3(4) s2] gt by simp
-  next
-    case eq
-    have "set cs \<subseteq> set ds" using 3(6) eq hc by force
-    then show ?thesis using 3(3)[OF _ _ s1 s2] eq by simp
-  qed
-qed simp
+  using eproj_mrg_left_key[of cs2 cs1] by (simp add: mrg_right_key_swap mrg_plan_swap)
 
 lemma eproj_right_key_eq:
   assumes f1: "eframe ks1 cs1" and f2: "eframe ks2 cs2" and sub: "set cs1 \<subseteq> set cs2"
@@ -1465,7 +1425,7 @@ theorem etabc_join_sub:
 proof -
   have sub': "set cL \<subseteq> set cR" using sub eframeD(3)[OF fR] eframeD(3)[OF fL] by simp
   have tR': "table cR (etabc kR cR T)" and tL': "table cL (etabc kL cL U)"
-    using etable_dtabc by (simp_all add: etable_table[symmetric])
+    by (simp_all add: table_etabc)
   have key: "restrict cL cR (restrict cR kR a) = restrict cL kL (restrict kL kR a)" for a :: "'a list"
     using sub sub' eframeD(3)[OF fR] eframeD(3)[OF fL] by (simp add: restrict_restrict)
   have mem: "(restrict cL kL (restrict kL kR a) \<in> etabc kL cL U) = (restrict kL kR a \<in> U)" for a :: "'a list"
@@ -2162,9 +2122,6 @@ definition mtrm_ecols :: "mtrm \<Rightarrow> cols" where
 
 theorem umtrm_eval_mtrm: "umtrm mt x = eval_mtrm mt x"
   by (cases mt) (simp_all add: singleton_table_def unit_table_def empty_table_def)
-
-lemma table_etabc: "table cs (etabc ks cs T)"
-  using etable_dtabc by (simp add: etable_table[symmetric])
 
 section \<open>The verified Trigger structure over ascending columns\<close>
 

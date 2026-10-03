@@ -144,7 +144,7 @@ proof -
   obtain dm where d: "eeval (mstate_j st + 1) [snd tdb] (fst tdb) (emstate_m dst)
       = (map (etabc ks cs) xs, dm)"
     and sim': "esim n ks cs (enext tw [snd tdb]) dm m"
-    using esim_deval[OF sim _ _ e] le kg by auto
+    using esim_deval[OF sim _ e] le kg by auto
   have tb: "list_all (ftable ks) xs"
     by (rule kgood_tables[OF kg e])
   have dnx: "enext tw [snd tdb] = snd tdb" by (simp add: enext_def)
@@ -179,29 +179,29 @@ lemma emsim_state_dframe: "emsim_state n ks cs tw st dst \<Longrightarrow> efram
 subsection \<open>The whole prefix\<close>
 
 text \<open>
-  The timestamp bound of @{const esim} threads through the prefix: each step re-establishes it at
-  the timestamp just consumed, and the prefix's own sortedness says the next one is no smaller.
-  That is where the third input hypothesis of @{thm [source] esim_deval} is discharged, once and
-  for all.  The kernel's invariant @{const kwf_mstate} threads through alongside: it
+  The timestamp bound of @{const esim} is the last timestamp of the prefix read so far: each step
+  re-establishes it at the timestamp just consumed, and the prefix's own sortedness says the next
+  one is no smaller.  That is where the timestamp hypothesis of @{thm [source] esim_deval} is
+  discharged, once and for all.  The kernel's invariant @{const kwf_mstate} threads through alongside: it
   makes every step a good call (@{thm [source] kgood_mstep}).
 \<close>
 
 lemma emsteps0_stateless_rel:
-  "emsim_state n (Formula.fv_list \<phi>) cs tw st dst \<Longrightarrow> kwf_mstate S E \<phi> \<pi>0 R st \<Longrightarrow>
-   sorted (map snd \<pi>) \<Longrightarrow> (\<forall>x \<in> set \<pi>. tw \<le> snd x) \<Longrightarrow> (\<forall>x \<in> set \<pi>. last_ts \<pi>0 \<le> snd x) \<Longrightarrow>
+  "emsim_state n (Formula.fv_list \<phi>) cs (last_ts \<pi>0) st dst \<Longrightarrow> kwf_mstate S E \<phi> \<pi>0 R st \<Longrightarrow>
+   sorted (map snd \<pi>) \<Longrightarrow> (\<forall>x \<in> set \<pi>. last_ts \<pi>0 \<le> snd x) \<Longrightarrow>
    (\<forall>x \<in> set \<pi>. finite (fst x) \<and> wty_db S (fst x)) \<Longrightarrow>
    emsteps0_stateless \<pi> dst = map (\<lambda>(i, t, X). (i, t, etabc (Formula.fv_list \<phi>) cs X)) (msteps0_stateless \<pi> st)
    \<and> (\<forall>(i, t, X) \<in> set (msteps0_stateless \<pi> st). table (Formula.fv_list \<phi>) X)"
-proof (induct \<pi> arbitrary: st dst tw \<pi>0)
+proof (induct \<pi> arbitrary: st dst \<pi>0)
   case Nil
   then show ?case by simp
 next
   case (Cons tdb \<pi>)
-  note IH = Cons(1) and r = Cons(2) and wfm = Cons(3) and srt = Cons(4) and b = Cons(5)
-    and lt = Cons(6) and fin = Cons(7)
-  have le: "tw \<le> snd (apfst mk_db tdb)" using b by simp
+  note IH = Cons(1) and r = Cons(2) and wfm = Cons(3) and srt = Cons(4)
+    and lt = Cons(5) and fin = Cons(6)
   have le': "last_ts \<pi>0 \<le> snd tdb" and ft: "finite (fst tdb)" and wtd: "wty_db S (fst tdb)"
     using lt fin by simp_all
+  have le: "last_ts \<pi>0 \<le> snd (apfst mk_db tdb)" using le' by simp
   have mn: "mstate_n st = n" using r by (simp add: emsim_state_def)
   have kg: "kgood n (Formula.fv_list \<phi>) (mstate_j st + 1) [snd (apfst mk_db tdb)] (fst (apfst mk_db tdb))
       (mstate_m st)"
@@ -218,9 +218,12 @@ next
   have lts: "last_ts (psnoc \<pi>0 tdb) = snd tdb"
     using le' by transfer (auto split: list.splits)
   have lt': "\<forall>x \<in> set \<pi>. last_ts (psnoc \<pi>0 tdb) \<le> snd x" using b' lts by simp
+  have r'': "emsim_state n (Formula.fv_list \<phi>) cs (last_ts (psnoc \<pi>0 tdb))
+      (snd (mstep (apfst mk_db tdb) st)) (snd (emstep (apfst mk_db tdb) dst))"
+    using r' lts by simp
   have srt': "sorted (map snd \<pi>)" using srt by simp
   have fin': "\<forall>x \<in> set \<pi>. finite (fst x) \<and> wty_db S (fst x)" using fin by simp
-  show ?case using IH[OF r' wfm' srt' b' lt' fin'] step tb by (simp add: split_beta) blast
+  show ?case using IH[OF r'' wfm' srt' lt' fin'] step tb by (simp add: split_beta) blast
 qed
 
 lemma emsteps_stateless_rel:
@@ -235,7 +238,7 @@ proof -
     using f wty by (simp add: pfinite.rep_eq wty_prefix.rep_eq)
   show ?thesis
     unfolding emsteps_stateless.rep_eq default_maux.msteps_stateless.rep_eq
-    by (rule emsteps0_stateless_rel[OF r wfm srt _ _ fin]) (simp_all add: last_ts.rep_eq pnil.rep_eq)
+    by (rule emsteps0_stateless_rel[OF _ wfm srt _ fin]) (use r in \<open>simp_all add: last_ts.rep_eq pnil.rep_eq\<close>)
 qed
 
 subsection \<open>The verdicts are the narrowing of the kernel's\<close>
@@ -291,16 +294,16 @@ theorem emonitor_mverdicts:
   by (rule dmon.monitor_mverdicts[OF wty f])
 
 theorem emstep_mverdicts:
-  assumes r: "emsim_state n (Formula.fv_list \<phi>) cs tw st dst"
+  assumes r: "emsim_state n (Formula.fv_list \<phi>) cs (last_ts \<pi>) st dst"
     and wf: "dmon.wf_mstate SIG ENV \<phi> \<pi> R st"
     and wtydb: "wty_db SIG (fst tdb)" and fin: "finite (fst tdb)"
-    and le: "last_ts \<pi> \<le> snd tdb" and tle: "tw \<le> snd tdb"
+    and le: "last_ts \<pi> \<le> snd tdb"
     and restrict: "mem_restr R (Formula.fv_list \<phi>) v"
   shows "(i, t, v) \<in> flatten_verdicts (map (\<lambda>(i, t, X). (i, t, etabw (Formula.fv_list \<phi>) cs X))
         (fst (emstep (apfst mk_db tdb) dst)))
      \<longleftrightarrow> (i, t, v) \<in> Mt (psnoc \<pi> tdb) - Mt \<pi>"
 proof -
-  have tle': "tw \<le> snd (apfst mk_db tdb)" using tle by simp
+  have tle': "last_ts \<pi> \<le> snd (apfst mk_db tdb)" using le by simp
   have mn: "mstate_n st = n" using r by (simp add: emsim_state_def)
   have kg: "kgood n (Formula.fv_list \<phi>) (mstate_j st + 1) [snd (apfst mk_db tdb)] (fst (apfst mk_db tdb))
       (mstate_m st)"
