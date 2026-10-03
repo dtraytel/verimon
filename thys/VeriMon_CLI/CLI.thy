@@ -1,6 +1,7 @@
 (*<*)
 theory CLI
   imports Formula_Conv CLI_Output "MFODL_Parser.MFODL_Parser"
+    "MFODL_Monitor_Exec.Log_Monitor_Online"
 begin
 (*>*)
 
@@ -197,9 +198,9 @@ lemma cli_main_Run:
 text \<open>The main theorem: the monitor runs on the formula of the input and the signature, which
   satisfy the assumptions of @{locale verimon_log}. So for every log that denotes a prefix, the
   monitor reports no error and outputs the verdicts that the specification of the formula
-  prescribes for the prefix (@{thm [source] verimon_log.vrun_log}), and an error on every log
-  whose events of the formula's predicates denote no prefix
-  (@{thm [source] verimon_log.vrun_filtered}).\<close>
+  prescribes for the prefix (@{thm [source] verimon_log.vrun_log}, theory
+  @{theory MFODL_Monitor_Exec.Log_Monitor_Online}), and an error on every log whose events of
+  the formula's predicates denote no prefix (@{thm [source] verimon_log.vrun_filtered}).\<close>
 
 theorem cli_run:
   assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
@@ -211,6 +212,23 @@ theorem cli_run:
     and "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
     and "verimon_log (c_rw conf) L \<phi>"
   using cli_main_Run[OF assms] vinit_verimon_log by metis
+
+text \<open>For instance, the run reports no error on a log that denotes a prefix, and its verdicts
+  are those of the prefix (@{thm [source] verimon_log.vrun_log}, which is used below in the
+  interpretation of the locale for the started monitor).\<close>
+
+corollary cli_log:
+  assumes "cli_main prog args pf = NeedFile fn k1" "k1 ftext = NeedFile sn k2"
+    and "k2 stext = Run msg conf cf z fin n L"
+    and "log_prefix (\<lambda>_. True) (sf pf) L fin (concat (map Rep_bytes ss)) = Some \<pi>"
+  shows "\<not> has_verror (vrun cf fin z ss)"
+proof -
+  obtain \<phi> where init: "vinit (c_mw conf) (c_rw conf) (c_filter conf) L pf \<phi> = Inr (cf, z)"
+    and loc: "verimon_log (c_rw conf) L \<phi>"
+    using cli_run[OF assms(1-3)] by metis
+  interpret verimon_log "c_rw conf" L \<phi> by (rule loc)
+  show ?thesis using vrun_log(1)[OF init assms(4)] .
+qed
 
 (*<*)
 end
