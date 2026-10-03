@@ -276,6 +276,8 @@ proof -
     proof (intro conjI allI impI)
       show "table ?oc (eval_agg cs g0 \<omega> tys f rel)"
         using True scs_Nil by (simp add: eval_agg_def table_def singleton_table_def wf_tuple_def)
+      show "finite (eval_agg cs g0 \<omega> tys f rel)"
+        using True by (simp add: eval_agg_def singleton_table_def)
       fix v
       assume mr: "mem_restr R ?oc v"
       then obtain a where v: "v = [a]"
@@ -310,6 +312,8 @@ proof -
     proof (intro conjI allI impI)
       show "table ?oc ((\<lambda>kk. eval_agg_op \<omega> (M' kk) # kk) ` ?key ` rel)"
         by (auto simp: table_def)
+      show "finite ((\<lambda>kk. eval_agg_op \<omega> (M' kk) # kk) ` ?key ` rel)"
+        using qtableD(5)[OF inner] by simp
       fix v
       assume mr: "mem_restr R ?oc v"
       then obtain a kk where v: "v = a # kk"

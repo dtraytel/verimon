@@ -21,9 +21,9 @@ text \<open>
   that width -- which is what the trace's own databases look like.  The executable formula's predicate
   nodes read the database at the width the name was declared with, so this is exactly the
   condition they need.  The tables are also required to be finite: the executable multi-way join and
-  the executable aggregation need it, and it cannot come from anywhere else -- the kernel's own
-  invariant does not carry finiteness (@{term qtable} does not), and the trace does not either.
-  It is a property of the input, and a real log has it.
+  the executable aggregation need it.  The kernel's invariant carries finiteness too
+  (@{term qtable} does), but only for the trace's databases, while the simulation below is stated
+  for every well-formed database.  It is a property of the input, and a real log has it.
 \<close>
 
 definition wf_db :: "database \<Rightarrow> bool" where

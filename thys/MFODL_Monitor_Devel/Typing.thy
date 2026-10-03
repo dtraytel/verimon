@@ -156,6 +156,19 @@ lemma wty_psnoc: "wty_prefix S \<pi> \<Longrightarrow> wty_db S (fst x) \<Longri
   wty_prefix S (psnoc \<pi> x)"
   by (transfer fixing: S x) simp
 
+text \<open>A prefix all of whose databases are finite -- what a log is.\<close>
+
+lift_definition pfinite :: "Formula.prefix \<Rightarrow> bool" is "\<lambda>p. \<forall>x \<in> set p. finite (fst x)" .
+
+lemma pfinite_psnoc: "pfinite \<pi> \<Longrightarrow> finite (fst x) \<Longrightarrow> last_ts \<pi> \<le> snd x \<Longrightarrow> pfinite (psnoc \<pi> x)"
+  by (transfer fixing: x) simp
+
+lemma pfinite_psnocD: "pfinite (psnoc \<pi> x) \<Longrightarrow> last_ts \<pi> \<le> snd x \<Longrightarrow> pfinite \<pi> \<and> finite (fst x)"
+  by (transfer fixing: x) simp
+
+lemma pfinite_mono: "pfinite \<pi>' \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> pfinite \<pi>"
+  by transfer auto
+
 lemma wty_envs_\<Gamma>_D: "wty_envs S \<sigma> V \<Longrightarrow> (p, length xs) \<notin> dom V \<Longrightarrow> (p, xs) \<in> \<Gamma> \<sigma> i \<Longrightarrow> S (p, length xs) = Some ts \<Longrightarrow>
   wty_tuple ts xs"
   by (fastforce simp: wty_envs_def wty_event_def split: option.splits)

@@ -22,11 +22,25 @@ definition "wf_envs S \<sigma> j \<delta> P P' V db =
    pred_mapping (\<lambda>i. i \<le> j + \<delta>) P' \<and>
    (\<forall>p \<in> Mapping.keys db - dom P. the (Mapping.lookup db p) = map (\<lambda>k. {ts. (fst p, ts) \<in> \<Gamma> \<sigma> k \<and> length ts = snd p}) [j ..< j + \<delta>]) \<and>
    (\<forall>p \<in> dom P. list_all2 (\<lambda>i X. X = {v. length v = snd p \<and> the (V p) v i}) [the (P p)..<the (P' p)] (the (Mapping.lookup db p))) \<and>
-   wty_envs S \<sigma> V)"
+   wty_envs S \<sigma> V \<and>
+   (\<forall>p \<in> Mapping.keys db. \<forall>X \<in> set (the (Mapping.lookup db p)). finite X))"
 
-lemma wf_envs_mk_db: "wty_trace S \<sigma> \<Longrightarrow> wf_envs S \<sigma> j 1 Map.empty Map.empty Map.empty (mk_db (\<Gamma> \<sigma> j))"
-  unfolding wf_envs_def mk_db_def
-  by transfer (force split: if_splits simp: image_iff rel_mapping_alt)
+lemma wf_envs_mk_db:
+  assumes "wty_trace S \<sigma>" "finite (\<Gamma> \<sigma> j)"
+  shows "wf_envs S \<sigma> j 1 Map.empty Map.empty Map.empty (mk_db (\<Gamma> \<sigma> j))"
+proof -
+  have fin: "finite {ts. (p, ts) \<in> \<Gamma> \<sigma> j \<and> n = length ts}" for p n
+    by (rule finite_subset[OF _ finite_imageI[OF assms(2), of snd]]) force
+  have F: "\<forall>p \<in> Mapping.keys (mk_db (\<Gamma> \<sigma> j)). \<forall>X \<in> set (the (Mapping.lookup (mk_db (\<Gamma> \<sigma> j)) p)). finite X"
+    using fin by (auto simp: keys_dom_lookup Mapping.lookup.rep_eq mk_db.rep_eq split: if_splits)
+  show ?thesis
+    unfolding wf_envs_def
+  proof (intro conjI)
+    show "\<forall>p \<in> Mapping.keys (mk_db (\<Gamma> \<sigma> j)). \<forall>X \<in> set (the (Mapping.lookup (mk_db (\<Gamma> \<sigma> j)) p)). finite X"
+      by (rule F)
+  qed (use assms(1) in \<open>auto simp: keys_dom_lookup Mapping.lookup.rep_eq mk_db.rep_eq rel_mapping_alt
+    domIff split: if_splits\<close>)
+qed
 
 lemma wf_envs_empty: "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow>
   wf_envs S \<sigma> (j + \<delta>) 0 P' P' V (Mapping.map_values (\<lambda>_ _. []) db)"
@@ -109,6 +123,24 @@ next
   then show ?case unfolding wty_envs_def
     using ty_of_sat_safe[OF safe wty] in_fv 
     by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+next
+  case (9 p' X)
+  show ?case
+  proof (cases "p' = (p, m)")
+    case True
+    with 9 have "X \<in> set xs"
+      by (simp add: lookup_update')
+    then obtain k where "k < length xs" "X = xs ! k"
+      by (auto simp: in_set_conv_nth)
+    with xs show ?thesis
+      by (auto simp: list_all2_conv_all_nth dest: qtableD(5))
+  next
+    case False
+    with 9 have "p' \<in> Mapping.keys db" "X \<in> set (the (Mapping.lookup db p'))"
+      by (simp_all add: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (simp add: wf_envs_def)
+  qed
 qed (use assms in \<open>auto simp: wf_envs_def subset_iff\<close>)
 
 lemma wf_envs_update_sup:
@@ -158,6 +190,24 @@ next
   case 8
   have wty_envs: "wty_envs S \<sigma> V" using wf_envs by (auto simp:wf_envs_def)
   show ?case using wty_envs_letpast_update[OF in_fv[unfolded m_eq] safe wty[unfolded m_eq] wty_envs] m_eq by auto
+next
+  case (9 p' X)
+  show ?case
+  proof (cases "p' = (p, m)")
+    case True
+    with 9 have "X \<in> set xs'"
+      by (simp add: lookup_update')
+    then obtain k where "k < length xs'" "X = xs' ! k"
+      by (auto simp: in_set_conv_nth)
+    with xs' show ?thesis
+      by (auto simp: list_all2_conv_all_nth dest: qtableD(5))
+  next
+    case False
+    with 9 have "p' \<in> Mapping.keys db" "X \<in> set (the (Mapping.lookup db p'))"
+      by (simp_all add: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (simp add: wf_envs_def)
+  qed
 qed (use assms in \<open>auto simp: wf_envs_def subset_iff\<close>)
 
 lemma wf_envs_update2:
@@ -201,7 +251,37 @@ next
   case (8)
   have wty_envs: "wty_envs S \<sigma> V" using wf_envs by (auto simp:wf_envs_def)
   show ?case using wty_envs_letpast_update in_fv wty safe m_eq wty_envs by auto 
+next
+  case (9 p' X)
+  show ?case
+  proof (cases "p' = (p, m)")
+    case True
+    with 9 have "X \<in> set xs"
+      by (simp add: lookup_update')
+    then obtain k where "k < length xs" "X = xs ! k"
+      by (auto simp: in_set_conv_nth)
+    with xs show ?thesis
+      by (auto simp: list_all2_conv_all_nth dest: qtableD(5))
+  next
+    case False
+    with 9 have "p' \<in> Mapping.keys db" "X \<in> set (the (Mapping.lookup db p'))"
+      by (simp_all add: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (simp add: wf_envs_def)
+  qed
 qed (use assms in \<open>auto simp: wf_envs_def subset_iff\<close>)
+lemma wf_envs_finite:
+  assumes "wf_envs S \<sigma> j \<delta> P P' V db" "Mapping.lookup db p = Some Rs" "X \<in> set Rs"
+  shows "finite X"
+proof -
+  have "p \<in> Mapping.keys db"
+    using assms(2) by (simp add: keys_dom_lookup domI)
+  moreover have "\<forall>p \<in> Mapping.keys db. \<forall>X \<in> set (the (Mapping.lookup db p)). finite X"
+    using assms(1) by (simp add: wf_envs_def)
+  ultimately show ?thesis
+    using assms(2,3) by auto
+qed
+
 lemma wf_envs_P_simps[simp]:
    "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow> pred_mapping (\<lambda>i. i \<le> j) P"
    "wf_envs S \<sigma> j \<delta> P P' V db \<Longrightarrow> pred_mapping (\<lambda>i. i \<le> j + \<delta>) P'"

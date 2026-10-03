@@ -24,10 +24,6 @@ proof (intro allI impI)
     unfolding T by (auto simp: table_def wf_tuple_def)
 qed
 
-text \<open>A prefix all of whose databases are finite -- what a log is.\<close>
-
-lift_definition pfinite :: "Formula.prefix \<Rightarrow> bool" is "\<lambda>p. \<forall>x \<in> set p. finite (fst x)" .
-
 subsection \<open>The concrete monitor is a @{locale verimon}\<close>
 
 sublocale verimon_spec \<subseteq> dmon: verimon \<phi> SIG ENV
@@ -290,7 +286,7 @@ theorem emonitor_mverdicts:
     and f: "pfinite \<pi>" and wty: "wty_prefix SIG \<pi>"
   shows "flatten_verdicts (map (\<lambda>(i, t, X). (i, t, etabw ks cs X)) (emonitor dst \<pi>)) = Mt \<pi>"
   unfolding emonitor_widen[OF r f] Monitor_Impl.monitor_def
-  by (rule dmon.monitor_mverdicts[OF wty])
+  by (rule dmon.monitor_mverdicts[OF wty f])
 
 theorem emstep_mverdicts:
   assumes r: "emsim_state n ks cs tw st dst"
@@ -313,7 +309,7 @@ proof -
     unfolding step by (rule map_etabw_etabc[OF emsim_state_dframe[OF r] tb])
   then show ?thesis
     unfolding Monitor_Impl.mstep_def
-    using dmon.mstep_mverdicts[OF wf wtydb le restrict] by simp
+    using dmon.mstep_mverdicts[OF wf wtydb le restrict fin] by simp
 qed
 
 end

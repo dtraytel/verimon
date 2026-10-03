@@ -162,6 +162,149 @@ lemma mbuf2t_take_add':
       progress_le_gen)
 
 
+text \<open>The trigger's result is finite if the latest entry of the window is in the interval
+  (each result tuple is then in that entry's right table) or if the left operand is positive
+  and has the result's columns (each result tuple then occurs in some left or right table).\<close>
+
+lemma finite_trigger_results:
+  assumes fin: "\<And>t l r. (t, l, r) \<in> set auxlist \<Longrightarrow> finite l \<and> finite r"
+    and cond: "auxlist \<noteq> [] \<and> mem (args_ivl args) (cur - fst (last auxlist)) \<or>
+      args_pos args \<and> set (args_R args) \<subseteq> set (args_L args) \<and> distinct (args_R args)"
+  shows "finite (snd (trigger_results args cur auxlist))"
+proof (cases "0 < length (filter (\<lambda>(t, _, _). mem (args_ivl args) (cur - t)) auxlist)")
+  case True
+  let ?L = "args_L args" and ?R = "args_R args"
+  have "snd (trigger_results args cur auxlist) \<subseteq>
+    (\<Union>(t, l, r) \<in> set auxlist. r \<union> restrict ?R ?L ` l)" (is "_ \<subseteq> ?S")
+  proof
+    fix x
+    assume x: "x \<in> snd (trigger_results args cur auxlist)"
+    then have wf: "wf_tuple ?R x"
+      using True by simp
+    have all: "x \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
+        join_cond (args_pos args) (fst (snd (auxlist ! j))) (restrict ?L ?R x))"
+      if "i < length auxlist" "auxlist ! i = (t, l, r)" "mem (args_ivl args) (cur - t)" for i t l r
+    proof -
+      from x True have "\<forall>i\<in>{0..<length auxlist}. case auxlist ! i of (t, l, r) \<Rightarrow>
+        mem (args_ivl args) (cur - t) \<longrightarrow> x \<in> r \<or> (\<exists>j \<in> {i<..<length auxlist}.
+          join_cond (args_pos args) (fst (snd (auxlist ! j))) (restrict ?L ?R x))"
+        by (simp only: trigger_results.simps if_True snd_conv mem_Collect_eq Let_def comp_apply) (erule conjunct2)
+      from bspec[OF this, of i] that show ?thesis
+        by simp
+    qed
+    have in_S: "x \<in> ?S" if "(t, l, r) \<in> set auxlist" "x \<in> r \<or> x \<in> restrict ?R ?L ` l" for t l r
+      using that by (intro UN_I[of "(t, l, r)"]) auto
+    show "x \<in> ?S"
+    proof (rule disjE[OF cond])
+      assume A: "auxlist \<noteq> [] \<and> mem (args_ivl args) (cur - fst (last auxlist))"
+      obtain t l r where tlr: "last auxlist = (t, l, r)"
+        by (cases "last auxlist" rule: prod_cases3)
+      have "x \<in> r"
+        using all[of "length auxlist - 1" t l r] A tlr by (auto simp: last_conv_nth)
+      then show "x \<in> ?S"
+        using A tlr last_in_set[of auxlist] by (intro in_S[of t l r]) auto
+    next
+      assume "args_pos args \<and> set ?R \<subseteq> set ?L \<and> distinct ?R"
+      then have pos: "args_pos args" and sub: "set ?R \<subseteq> set ?L" and dist: "distinct ?R"
+        by simp_all
+      from True obtain p where "p \<in> set auxlist" "case p of (t, _, _) \<Rightarrow> mem (args_ivl args) (cur - t)"
+        unfolding length_greater_0_conv filter_empty_conv by blast
+      moreover from this(1) obtain i where "i < length auxlist" "auxlist ! i = p"
+        by (metis in_set_conv_nth)
+      ultimately obtain t l r where i: "i < length auxlist" "auxlist ! i = (t, l, r)"
+        "mem (args_ivl args) (cur - t)"
+        by (cases p rule: prod_cases3) simp
+      from all[OF i] pos consider "x \<in> r" | j where "j < length auxlist"
+        "restrict ?L ?R x \<in> fst (snd (auxlist ! j))"
+        by auto
+      then show "x \<in> ?S"
+      proof cases
+        case 1
+        then show ?thesis
+          using nth_mem[OF i(1)] i(2) by (intro in_S[of t l r]) auto
+      next
+        case (2 j)
+        obtain t' l' r' where j: "auxlist ! j = (t', l', r')"
+          by (cases "auxlist ! j" rule: prod_cases3)
+        have "x = restrict ?R ?L (restrict ?L ?R x)"
+          by (simp add: restrict_restrict[OF sub] restrict_idle[OF dist wf])
+        with 2 j have "x \<in> restrict ?R ?L ` l'"
+          by auto
+        then show ?thesis
+          using nth_mem[OF 2(1)] j by (intro in_S[of t' l' r']) auto
+      qed
+    qed
+  qed
+  moreover have "finite ?S"
+    using fin by auto
+  ultimately show ?thesis
+    by (rule finite_subset)qed (simp add: unit_table_def)
+
+lemma last_filter: "xs \<noteq> [] \<Longrightarrow> P (last xs) \<Longrightarrow> filter P xs \<noteq> [] \<and> last (filter P xs) = last xs"
+  by (induction xs) (auto split: if_splits)
+
+lemma finite_trigger_results_filter:
+  assumes fin: "\<And>t l r. (t, l, r) \<in> set auxlist \<Longrightarrow> finite l \<and> finite r"
+    and cond: "auxlist \<noteq> [] \<and> fst (last auxlist) = cur \<and> mem (args_ivl args) 0 \<or>
+      args_pos args \<and> set (args_R args) \<subseteq> set (args_L args) \<and> distinct (args_R args)"
+  shows "finite (snd (trigger_results args cur (filter (\<lambda>(t, _). memR (args_ivl args) (cur - t)) auxlist)))"
+proof -
+  define auxlist' where "auxlist' = filter (\<lambda>(t, _). memR (args_ivl args) (cur - t)) auxlist"
+  have fin': "finite l \<and> finite r" if "(t, l, r) \<in> set auxlist'" for t l r
+    using fin that unfolding auxlist'_def by auto
+  have cond': "auxlist' \<noteq> [] \<and> mem (args_ivl args) (cur - fst (last auxlist')) \<or>
+    args_pos args \<and> set (args_R args) \<subseteq> set (args_L args) \<and> distinct (args_R args)"
+    using cond
+  proof (elim disjE)
+    assume A: "auxlist \<noteq> [] \<and> fst (last auxlist) = cur \<and> mem (args_ivl args) 0"
+    then obtain X where lst: "last auxlist = (cur, X)"
+      by (cases "last auxlist") auto
+    have "memR (args_ivl args) (cur - cur)"
+      using A by auto
+    then have "auxlist' \<noteq> [] \<and> last auxlist' = (cur, X)"
+      using last_filter[of auxlist "\<lambda>(t, _). memR (args_ivl args) (cur - t)"] A lst
+      unfolding auxlist'_def by auto
+    then show ?thesis
+      using A by auto
+  qed simp
+  show ?thesis
+    unfolding auxlist'_def[symmetric] by (rule finite_trigger_results[OF fin' cond'])
+qed
+lemma finite_trigger_results_auxlist:
+  assumes props: "\<forall>(i, t, l, r) \<in> set (zip [0..<length auxlist] auxlist). Suc k \<noteq> 0 \<and> t = \<tau> \<sigma> i \<and>
+      t \<le> \<tau> \<sigma> k \<and> sat_table \<sigma> V n R (Formula.fv_list \<gamma>) i \<gamma> l \<and> sat_table \<sigma> V n R (Formula.fv_list \<beta>) i \<beta> r"
+    and len: "length auxlist = Suc k"
+    and cond: "mem (args_ivl args) 0 \<or>
+      args_pos args \<and> set (args_R args) \<subseteq> set (args_L args) \<and> distinct (args_R args)"
+  shows "finite (snd (trigger_results args (\<tau> \<sigma> k)
+    (filter (\<lambda>(t, _). memR (args_ivl args) (\<tau> \<sigma> k - t)) auxlist)))"
+proof (rule finite_trigger_results_filter)
+  fix t l r
+  assume "(t, l, r) \<in> set auxlist"
+  then obtain i where "i < length auxlist" "auxlist ! i = (t, l, r)"
+    by (metis in_set_conv_nth)
+  then have "(i, t, l, r) \<in> set (zip [0..<length auxlist] auxlist)"
+    by (force simp: set_zip)
+  with props show "finite l \<and> finite r"
+    by (auto dest: qtableD(5))
+next
+  obtain t l r where lst: "last auxlist = (t, l, r)"
+    by (cases "last auxlist" rule: prod_cases3)
+  have "auxlist \<noteq> []"
+    using len by auto
+  with len lst have "auxlist ! k = (t, l, r)"
+    by (simp add: last_conv_nth)
+  moreover have "k < length auxlist"
+    using len by simp
+  ultimately have "(k, t, l, r) \<in> set (zip [0..<length auxlist] auxlist)"
+    by (force simp: set_zip)
+  with props have "t = \<tau> \<sigma> k"
+    by auto
+  then show "auxlist \<noteq> [] \<and> fst (last auxlist) = \<tau> \<sigma> k \<and> mem (args_ivl args) 0 \<or>
+    args_pos args \<and> set (args_R args) \<subseteq> set (args_L args) \<and> distinct (args_R args)"
+    using cond len lst by auto
+qed
+
 subsubsection \<open> Invariants \<close>
 
 definition (in mtaux) wf_trigger_aux :: "Formula.trace \<Rightarrow> _ \<Rightarrow> event_data list set \<Rightarrow> args \<Rightarrow>

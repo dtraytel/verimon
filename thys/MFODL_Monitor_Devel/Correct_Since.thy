@@ -474,6 +474,16 @@ proof -
   proof (rule qtableI)
     show "table ?cs (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
       unfolding table_def Ball_def result_iff using in_auxlist by (blast dest: qtable_wf_tupleD)
+    show "finite (foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {})"
+      unfolding foldr_union
+    proof (rule finite_Union)
+      fix X
+      assume "X \<in> set [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)]"
+      then obtain t where "(t, X) \<in> set auxlist"
+        by auto
+      then show "finite X"
+        using in_auxlist qtableD(5) by blast
+    qed (rule finite_set)
   next
     fix x
     assume "x \<in> foldr (\<union>) [rel. (t, rel) \<leftarrow> auxlist, memL (args_ivl args) (cur - t)] {}"

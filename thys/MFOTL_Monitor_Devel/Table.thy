@@ -374,6 +374,9 @@ lemma join_True_code[code]: "join cs A True ds B = (\<Union>a \<in> A. \<Union>b
 lemma join_False_code[code]: "join cs A False ds B = {a \<in> A. \<forall>b \<in> B. join1 cs ds (a, b) = None}"
   unfolding join_def by simp
 
+lemma finite_join: "finite X \<Longrightarrow> finite Y \<Longrightarrow> finite (join cs X b ds Y)"
+  by (cases b) (auto simp: join_True_code join_False_code)
+
 lemma join_restrict:
   assumes "distinct cs" "distinct ds" "table cs X" "table ds Y" "\<not> b \<Longrightarrow> set ds \<subseteq> set cs"
   shows "v \<in> join cs X b ds Y \<longleftrightarrow> wf_tuple (cols_union cs ds) v \<and>
@@ -488,16 +491,18 @@ qed
 
 subsection \<open>Correctness predicate\<close>
 
-text \<open>@{term "qtable cs P Q X"}: @{term X} is a table over @{term cs} and, among the tuples that
-  satisfy @{term P}, holds exactly those that satisfy @{term Q}.\<close>
+text \<open>@{term "qtable cs P Q X"}: @{term X} is a finite table over @{term cs} and, among the tuples
+  that satisfy @{term P}, holds exactly those that satisfy @{term Q}.\<close>
 
 definition qtable :: "nat list \<Rightarrow> ('a tuple \<Rightarrow> bool) \<Rightarrow> ('a tuple \<Rightarrow> bool) \<Rightarrow> 'a table \<Rightarrow> bool" where
-  "qtable cs P Q X \<longleftrightarrow> table cs X \<and> (\<forall>x. (x \<in> X \<and> P x \<longrightarrow> Q x) \<and> (wf_tuple cs x \<and> P x \<and> Q x \<longrightarrow> x \<in> X))"
+  "qtable cs P Q X \<longleftrightarrow> table cs X \<and> finite X \<and>
+    (\<forall>x. (x \<in> X \<and> P x \<longrightarrow> Q x) \<and> (wf_tuple cs x \<and> P x \<and> Q x \<longrightarrow> x \<in> X))"
 
 lemma qtable_wf_tupleD: "qtable cs P Q X \<Longrightarrow> \<forall>x\<in>X. wf_tuple cs x"
   unfolding qtable_def using tableD by blast
 
-lemma qtable_iff: "qtable cs P Q R \<longleftrightarrow> (table cs R \<and> (\<forall>v. P v \<longrightarrow> v \<in> R \<longleftrightarrow> (Q v \<and> wf_tuple cs v)))"
+lemma qtable_iff: "qtable cs P Q R \<longleftrightarrow>
+    (table cs R \<and> finite R \<and> (\<forall>v. P v \<longrightarrow> v \<in> R \<longleftrightarrow> (Q v \<and> wf_tuple cs v)))"
   by (auto simp: qtable_def table_def)
 
 lemma qtable_cong: "qtable cs P Q X \<Longrightarrow> cs = ds \<Longrightarrow> (\<And>v. P v \<Longrightarrow> Q v \<longleftrightarrow> Q' v) \<Longrightarrow> qtable ds P Q' X"
@@ -521,13 +526,13 @@ lemma qtable_singleton_table: "qtable [i] P (\<lambda>v. v = [x]) (singleton_tab
 abbreviation wf_table where
   "wf_table cs Q X \<equiv> qtable cs (\<lambda>_. True) Q X"
 
-lemma wf_table_iff: "wf_table cs Q X \<longleftrightarrow> (\<forall>x. x \<in> X \<longleftrightarrow> (Q x \<and> wf_tuple cs x))"
+lemma wf_table_iff: "wf_table cs Q X \<longleftrightarrow> finite X \<and> (\<forall>x. x \<in> X \<longleftrightarrow> (Q x \<and> wf_tuple cs x))"
   unfolding qtable_def table_def by auto
 
-lemma table_wf_table: "table cs X = wf_table cs (\<lambda>v. v \<in> X) X"
+lemma table_wf_table: "finite X \<Longrightarrow> table cs X = wf_table cs (\<lambda>v. v \<in> X) X"
   unfolding table_def wf_table_iff by auto
 
-lemma qtableI: "table cs X \<Longrightarrow>
+lemma qtableI: "table cs X \<Longrightarrow> finite X \<Longrightarrow>
   (\<And>x. x \<in> X \<Longrightarrow> wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x) \<Longrightarrow>
   (\<And>x. wf_tuple cs x \<Longrightarrow> P x \<Longrightarrow> Q x \<Longrightarrow> x \<in> X) \<Longrightarrow>
   qtable cs P Q X"
@@ -545,6 +550,7 @@ lemma qtableD:
     and "P v \<Longrightarrow> v \<in> R \<Longrightarrow> Q v"
     and "P v \<Longrightarrow> v \<in> R \<Longrightarrow> wf_tuple cs v"
     and "P v \<Longrightarrow> Q v \<Longrightarrow> wf_tuple cs v \<Longrightarrow> v \<in> R"
+    and "finite R"
   using assms unfolding qtable_iff by auto
 
 
@@ -552,12 +558,12 @@ subsubsection \<open>No columns\<close>
 
 lemma qtable_empty_vars_iff:
   "qtable [] P Q R \<longleftrightarrow> (R = empty_table \<or> R = unit_table) \<and> (\<forall>v. P v \<longrightarrow> (v \<in> R) = (Q v \<and> v = []))"
-  unfolding qtable_iff table_empty_vars_iff by auto
+  unfolding qtable_iff table_empty_vars_iff by (auto simp: empty_table_def unit_table_def)
 
 lemma qtable_empty_varsI:
   "(\<And>v. P v \<Longrightarrow> Q v \<Longrightarrow> v \<noteq> []) \<Longrightarrow> qtable [] P Q empty_table"
   "(\<And>v. P v \<Longrightarrow> (v = []) = Q v) \<Longrightarrow> qtable [] P Q unit_table"
-  unfolding qtable_iff table_empty_vars_iff by (auto simp: unit_table_def)
+  unfolding qtable_iff table_empty_vars_iff by (auto simp: empty_table_def unit_table_def)
 
 lemmas qtable_empty_varsD =
   iffD1[OF qtable_empty_vars_iff, THEN conjunct1, rule_format]
@@ -572,7 +578,7 @@ lemma qtable_empty_unit_table:
 
 lemma qtable_unit_empty_table:
   "qtable [] R P unit_table \<Longrightarrow> qtable [] R (\<lambda>v. \<not> P v) empty_table"
-  by (auto simp: qtable_iff unit_table_def table_empty_vars_iff)
+  by (auto simp: qtable_iff empty_table_def unit_table_def table_empty_vars_iff)
 
 lemma qtable_nonempty_empty_table:
   "qtable [] R P X \<Longrightarrow> x \<in> X \<Longrightarrow> qtable [] R (\<lambda>v. \<not> P v) empty_table"
@@ -594,7 +600,7 @@ lemma qtable_unitI: "(P [] \<Longrightarrow> Q []) \<Longrightarrow> cs = [] \<L
   by (simp add: qtable_unit_iff)
 
 lemma qtable_unit_table: "(\<And>x. wf_tuple [] x \<Longrightarrow> P x \<Longrightarrow> Q x) \<Longrightarrow> qtable [] P Q unit_table"
-  unfolding qtable_def table_def by (auto simp: in_unit_table)
+  unfolding qtable_def table_def by (auto simp: in_unit_table unit_table_def)
 
 
 subsubsection \<open>Union\<close>
@@ -630,6 +636,8 @@ lemma qtable_filter:
 proof (rule qtableI)
   show "table cs (Set.filter R X)"
     using qtableD(1)[OF assms(1)] by (auto simp: table_def)
+  show "finite (Set.filter R X)"
+    using qtableD(5)[OF assms(1)] by simp
 next
   fix x
   assume "x \<in> Set.filter R X" "wf_tuple cs x" "P x"
@@ -658,6 +666,8 @@ proof (rule qtableI)
     by simp
   show "table ds (restrict ds cs ` X)"
     by (auto intro: tableI)
+  show "finite (restrict ds cs ` X)"
+    using qtableD(5)[OF assms(1)] by simp
   show "Q' v" if "v \<in> restrict ds cs ` X" "wf_tuple ds v" "P' v" for v
   proof -
     from that(1) obtain x where x: "x \<in> X" "v = restrict ds cs x"
@@ -699,6 +709,8 @@ proof (rule qtableI)
   have jr: "x \<in> join cs X b ds Y \<longleftrightarrow> wf_tuple es x \<and> restrict cs es x \<in> X \<and>
     (if b then restrict ds es x \<in> Y else restrict ds es x \<notin> Y)" for x
     using join_restrict[OF assms(3,4) tX tY assms(5), where v=x] assms(6) by simp
+  show "finite (join cs X b ds Y)"
+    using qtableD(5)[OF assms(1)] qtableD(5)[OF assms(2)] by (rule finite_join)
   show "table es (join cs X b ds Y)"
     using join_table[OF tX tY assms(5) assms(6)[symmetric]] .
   show "Q x" if "x \<in> join cs X b ds Y" "wf_tuple es x" "P x" for x
@@ -771,6 +783,8 @@ lemma qtable_assign:
 proof (rule qtableI)
   show "table cs' ((\<lambda>x. x @ [f x]) ` X)"
     using qtableD(1)[OF assms(1)] assms(2) by (auto simp: table_def wf_tuple_def)
+  show "finite ((\<lambda>x. x @ [f x]) ` X)"
+    using qtableD(5)[OF assms(1)] by simp
   show "Q' x'" if "x' \<in> (\<lambda>x. x @ [f x]) ` X" "wf_tuple cs' x'" "P' x'" for x'
   proof -
     from that(1) obtain x where x: "x \<in> X" "x' = x @ [f x]"
@@ -1027,6 +1041,8 @@ lemma qtable_project:
 proof (rule qtableI)
   show "table (ex_cols cs) (ex_proj cs ` X)"
     by (auto intro: tableI)
+  show "finite (ex_proj cs ` X)"
+    using qtableD(5)[OF assms(2)] by simp
 next
   fix v
   assume "v \<in> ex_proj cs ` X" "mem_restr R (ex_cols cs) v"

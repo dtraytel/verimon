@@ -78,7 +78,7 @@ text \<open>With a simple pattern, the arguments of a predicate are distinct var
 lemma qtable_simple_pattern_gen:
   assumes "is_simple_pattern ts 0" "\<forall>t\<in>set ts. \<forall>x\<in>Formula.fv_trm t. x < n"
     and sat: "\<And>v. Formula.sat \<sigma> V v i (Formula.Pred p ts) \<longleftrightarrow> map (Formula.eval_trm v) ts \<in> S"
-    and len: "\<forall>x\<in>S. length x = length ts"
+    and len: "\<forall>x\<in>S. length x = length ts" and fin: "finite S"
   shows "qtable (pred_cols ts) (mem_restr UU (pred_cols ts))
     (\<lambda>v. Formula.sat \<sigma> V (val n (pred_cols ts) v) i (Formula.Pred p ts)) S"
 proof -
@@ -101,6 +101,8 @@ proof -
   proof (intro conjI allI impI)
     show "table ys S"
       using len ts(1) by (auto simp: table_def wf_tuple_def)
+    show "finite S"
+      by (rule fin)
     fix v
     assume "mem_restr UU ys v"
     then have "wf_tuple ys v"
@@ -121,31 +123,31 @@ lemma qtable_simple_pattern:
   assumes "X = Formula.fv_list (Formula.Pred p ts)" and "\<forall>x\<in>fv (Formula.Pred p ts). x < n" 
     and "is_simple_pattern ts 0"
   shows "V (p, length ts) = Some P \<Longrightarrow> 
-  R = {v. length v = length ts \<and> P v i} \<Longrightarrow>
+  R = {v. length v = length ts \<and> P v i} \<Longrightarrow> finite R \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
     and "V (p, length ts) = None \<Longrightarrow> 
-  R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow> 
+  R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow> finite R \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
 proof -
   have *: "\<forall>t\<in>set ts. \<forall>x\<in>Formula.fv_trm t. x < n"
     using assms(2) by simp
   show "qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
-    if "V (p, length ts) = Some P" "R = {v. length v = length ts \<and> P v i}"
-    unfolding that(2) assms(1) fv_list_Pred using that(1)
+    if "V (p, length ts) = Some P" "R = {v. length v = length ts \<and> P v i}" "finite R"
+    unfolding assms(1) fv_list_Pred using that
     by (intro qtable_simple_pattern_gen[OF assms(3) *]) simp_all
   show "qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
-    if "V (p, length ts) = None" "R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}"
-    unfolding that(2) assms(1) fv_list_Pred using that(1)
+    if "V (p, length ts) = None" "R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}" "finite R"
+    unfolding assms(1) fv_list_Pred using that
     by (intro qtable_simple_pattern_gen[OF assms(3) *]) simp_all
 qed
 lemma qtable_copy_pattern:
   assumes "X = Formula.fv_list (Formula.Pred p ts)" and "\<forall>x\<in>fv (Formula.Pred p ts). x < n"
     and "is_copy_pattern n ts"
   shows "V (p, length ts) = Some P \<Longrightarrow> 
-  R = {v. length v = length ts \<and> P v i} \<Longrightarrow>
+  R = {v. length v = length ts \<and> P v i} \<Longrightarrow> finite R \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
     and "V (p, length ts) = None \<Longrightarrow> 
-  R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow> 
+  R = {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow> finite R \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
   by (fact qtable_simple_pattern[OF assms(1,2) is_copy_pattern_simple[OF assms(3)]])+
 
@@ -209,6 +211,7 @@ proof (induction ts)
 lemma qtable_no_pattern_gen:
   assumes "\<forall>t\<in>set ts. \<forall>x\<in>Formula.fv_trm t. x < n" "\<forall>t\<in>set ts. trm.is_Var t \<or> trm.is_Const t"
     and sat: "\<And>v. Formula.sat \<sigma> V v i (Formula.Pred p ts) \<longleftrightarrow> map (Formula.eval_trm v) ts \<in> S"
+    and fin: "finite S"
   shows "qtable (pred_cols ts) (mem_restr UU (pred_cols ts))
     (\<lambda>v. Formula.sat \<sigma> V (val n (pred_cols ts) v) i (Formula.Pred p ts))
     (tabulate_match (pred_cols ts) ` Option.these (match ts ` S))"
@@ -222,6 +225,8 @@ proof -
   proof (intro conjI allI impI)
     show "table ?cs ?R"
       by (auto simp: table_def wf_tuple_def tabulate_match_def mem)
+    show "finite ?R"
+      using fin by (simp add: Option.these_def)
     fix v
     assume "mem_restr UU ?cs v"
     then have wf: "wf_tuple ?cs v"
@@ -271,9 +276,11 @@ lemma qtable_no_pattern:
     and "\<forall>t\<in>set ts. trm.is_Var t \<or> trm.is_Const t"
   shows "V (p, length ts) = Some P \<Longrightarrow> 
   R = tabulate_match X ` Option.these (match ts ` {v. length v = length ts \<and> P v i}) \<Longrightarrow>
+  finite {v. length v = length ts \<and> P v i} \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
     and "V (p, length ts) = None \<Longrightarrow> 
   R = tabulate_match X ` Option.these (match ts ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}) \<Longrightarrow>
+  finite {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts} \<Longrightarrow>
   qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
 proof -
   have *: "\<forall>t\<in>set ts. \<forall>x\<in>Formula.fv_trm t. x < n"
@@ -281,12 +288,14 @@ proof -
   show "qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
     if "V (p, length ts) = Some P"
       "R = tabulate_match X ` Option.these (match ts ` {v. length v = length ts \<and> P v i})"
-    unfolding that(2) assms(1) fv_list_Pred using that(1)
+      "finite {v. length v = length ts \<and> P v i}"
+    unfolding that(2) assms(1) fv_list_Pred using that(1,3)
     by (intro qtable_no_pattern_gen[OF * assms(3)]) simp
   show "qtable X (mem_restr UU X) (\<lambda>v. Formula.sat \<sigma> V (val n X v) i (Formula.Pred p ts)) R"
     if "V (p, length ts) = None"
       "R = tabulate_match X ` Option.these (match ts ` {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts})"
-    unfolding that(2) assms(1) fv_list_Pred using that(1)
+      "finite {v. (p, v) \<in> \<Gamma> \<sigma> i \<and> length v = length ts}"
+    unfolding that(2) assms(1) fv_list_Pred using that(1,3)
     by (intro qtable_no_pattern_gen[OF * assms(3)]) simp
 qed
 

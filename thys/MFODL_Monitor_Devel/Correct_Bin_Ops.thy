@@ -118,6 +118,41 @@ lemma qtable_reorder_mem_restr:
   shows "qtable cs (mem_restr R cs) Q' (reorder cs ds X)"
   using assms by (intro qtable_reorder_table[OF assms(1-4)] restrict_mem_restr) auto
 
+text \<open>A tuple whose restrictions to a cover of its columns lie in finite tables takes its values
+  from those tables, so there are finitely many.\<close>
+
+lemma finite_restrict_cover:
+  assumes "distinct C" "set C \<subseteq> (\<Union>A\<in>set As. set A)" "\<forall>X \<in> set Xs. finite X"
+  shows "finite {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs}"
+proof -
+  let ?D = "\<Union>X \<in> set Xs. \<Union>t \<in> X. set t"
+  have D: "finite ?D"
+    using assms(3) by auto
+  have "set x \<subseteq> ?D" if x: "wf_tuple C x" "list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs" for x
+  proof
+    fix a
+    assume "a \<in> set x"
+    then obtain k where k: "k < length C" "a = x ! k"
+      using x(1) by (auto simp: wf_tuple_def in_set_conv_nth)
+    obtain A where "A \<in> set As" "C ! k \<in> set A"
+      using assms(2) nth_mem[OF k(1)] by blast
+    then obtain i where i: "i < length As" "C ! k \<in> set (As ! i)"
+      by (auto simp: in_set_conv_nth)
+    have "restrict (As ! i) C x \<in> Xs ! i" "i < length Xs"
+      using x(2) i(1) by (auto simp: list_all2_conv_all_nth)
+    moreover have "a \<in> set (restrict (As ! i) C x)"
+      using i(2) tup_get_nth[OF assms(1) x(1) k(1)] k(2) unfolding restrict_def
+      by (metis image_eqI set_map)
+    ultimately show "a \<in> ?D"
+      by (auto intro!: bexI[of _ "Xs ! i"])
+  qed
+  then have "{x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) As Xs} \<subseteq>
+    {xs. set xs \<subseteq> ?D \<and> length xs = length C}"
+    by (auto simp: wf_tuple_def)
+  then show ?thesis
+    by (rule finite_subset) (rule finite_lists_length_eq[OF D])
+qed
+
 lemma qtable_mmulti_join:
   assumes pos: "list_all3 (\<lambda>A Qi X. qtable A (mem_restr R A) Qi X \<and> distinct A) A_pos Q_pos L_pos"
     and neg: "list_all3 (\<lambda>A Qi X. qtable A (mem_restr R A) Qi X \<and> distinct A) A_neg Q_neg L_neg"
@@ -167,6 +202,12 @@ proof (rule qtableI)
       by (simp add: qtable_iff)
   qed
   note mmulti_join.simps[simp del]
+  have sub: "mmulti_join C A_pos A_neg L \<subseteq> {x. wf_tuple C x \<and> list_all2 (\<lambda>A X. restrict A C x \<in> X) A_pos L_pos}"
+    unfolding L_eq subset_iff in_join_iff take_eq by blast
+  have finL: "\<forall>X \<in> set L_pos. finite X"
+    using pos by (auto simp: list_all3_conv_all_nth in_set_conv_nth qtable_def)
+  show "finite (mmulti_join C A_pos A_neg L)"
+    by (rule finite_subset[OF sub finite_restrict_cover[OF C(1) _ finL]]) (simp add: C(2))
   show "table C (mmulti_join C A_pos A_neg L)"
     unfolding L_eq table_def by (simp add: in_join_iff)
   show "Q x" if "x \<in> mmulti_join C A_pos A_neg L" "wf_tuple C x" "mem_restr R C x" for x

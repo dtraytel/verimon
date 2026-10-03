@@ -846,9 +846,6 @@ fun kands_neg :: "cols \<Rightarrow> 'a table \<Rightarrow> (cols \<times> 'a ta
   "kands_neg acc t [] = t"
 | "kands_neg acc t ((k, u) # us) = kands_neg acc (join acc t False k u) us"
 
-lemma finite_join: "finite X \<Longrightarrow> finite Y \<Longrightarrow> finite (join cs X b ds Y)"
-  by (cases b) (auto simp: join_True_code join_False_code)
-
 lemma set_kands_cols: "set (kands_cols acc kss) = set acc \<union> (\<Union>k \<in> set kss. set k)"
   by (induct kss arbitrary: acc) auto
 

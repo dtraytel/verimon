@@ -194,6 +194,7 @@ inductive (in maux) wf_mformula :: "Formula.trace \<Rightarrow> nat \<Rightarrow
     \<Longrightarrow> args_L args = Formula.fv_list \<phi>' \<Longrightarrow> args_R args = Formula.fv_list \<psi>'
     \<Longrightarrow> \<forall>x\<in>Formula.fv \<psi>'. x < n 
     \<Longrightarrow> if mem I 0 then Formula.fv \<phi>' \<subseteq> Formula.fv \<psi>' else Formula.fv \<phi>' = Formula.fv \<psi>'
+    \<Longrightarrow> (\<not> mem I 0 \<longrightarrow> args_pos args)
     \<Longrightarrow> wf_mbuf2' \<sigma> P V j n R \<phi>' \<psi>' buf2
     \<Longrightarrow> wf_ts \<sigma> P j \<phi>' \<psi>' nts
     \<Longrightarrow> wf_trigger_aux \<sigma> V R args \<phi>' \<psi>' aux (progress \<sigma> P (Formula.Trigger \<phi>'' I \<psi>') j)
@@ -887,6 +888,7 @@ next
     "args_R args = Formula.fv_list \<psi>'"
     "\<forall>x\<in>fv \<psi>'. x < n"
     "if mem I 0 then fv \<phi>' \<subseteq> fv \<psi>' else fv \<phi>' = fv \<psi>'"
+    "\<not> mem I 0 \<longrightarrow> args_pos args"
     using And_Trigger(2,3,8)
     unfolding args_def init_args_def safe_dual_def
     by auto
@@ -1520,6 +1522,20 @@ next
   then show ?case unfolding wty_envs_def
     using ty_of_sat_safe[OF safe wty] in_fv
     by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+next
+  case (9 q Y)
+  show ?case
+  proof (cases "q = (p, m)")
+    case True
+    with 9 show ?thesis
+      using refl by (simp add: lookup_update')
+  next
+    case False
+    with 9 obtain Rs where "Mapping.lookup db q = Some Rs" "Y \<in> set Rs"
+      by (auto simp: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (rule wf_envs_finite)
+  qed
 qed
 
 lemma (in maux) wf_envs_update4:
@@ -1567,6 +1583,20 @@ next
   then show ?case unfolding wty_envs_def
     using ty_of_sat_safe[OF safe wty] in_fv
     by (auto simp: wty_envs_def wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+next
+  case (9 q Y)
+  show ?case
+  proof (cases "q = (p, m)")
+    case True
+    with 9 show ?thesis
+      using qtableD(5)[OF \<alpha>] by (simp add: lookup_update')
+  next
+    case False
+    with 9 obtain Rs where "Mapping.lookup db q = Some Rs" "Y \<in> set Rs"
+      by (auto simp: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (rule wf_envs_finite)
+  qed
 qed
 
 lemma sat_V_cong:
@@ -1717,6 +1747,7 @@ lemma (in maux) wf_envs_update_frz:
   and X: "\<And>v k. X v k \<Longrightarrow> \<exists>i. \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>"
   and w: "w \<le> j" "w \<le> w'" "w' \<le> j + \<delta>"
   and Ys: "list_all2 (\<lambda>k Y. Y = {v. length v = m \<and> X v k}) [w..<w'] Ys"
+  and fYs: "\<forall>Y \<in> set Ys. finite Y"
   shows "wf_envs (S((p, m) \<mapsto> tabulate E 0 (Formula.nfv \<phi>))) \<sigma> j \<delta> (P((p, m) \<mapsto> w)) (P'((p, m) \<mapsto> w'))
     (V((p, m) \<mapsto> X)) (Mapping.update (p, m) Ys db)"
   unfolding wf_envs_def
@@ -1761,6 +1792,20 @@ next
   qed
   with wty_V show ?case unfolding wty_envs_def
     by (auto simp: wty_event_def wty_tuple_def list_all2_conv_all_nth m_eq domIff)
+next
+  case (9 q Y)
+  show ?case
+  proof (cases "q = (p, m)")
+    case True
+    with 9 show ?thesis
+      using fYs by (simp add: lookup_update')
+  next
+    case False
+    with 9 obtain Rs where "Mapping.lookup db q = Some Rs" "Y \<in> set Rs"
+      by (auto simp: lookup_update' keys_dom_lookup domIff)
+    with wf_envs show ?thesis
+      by (rule wf_envs_finite)
+  qed
 qed
 
 lemma (in maux) qtable_frz_alpha:
@@ -1944,13 +1989,15 @@ next
       show ?thesis
         using key unfolding inits(1)
         by (rule list.rel_mono_strong)
-          (rule qtable_simple_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple wtnss(3)], simp)
+          (rule qtable_simple_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple wtnss(3)],
+            simp_all add: wf_envs_finite[OF MPred(2) wtnss(4)])
     qed
     have case3: "list_all2 (\<lambda>i T. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>'
         (tabulate_match (Formula.fv_list \<phi>') ` Option.these (match ts ` T))) [m..<m'] Rs"
       using key unfolding inits(1)
       by (rule list.rel_mono_strong)
-        (rule qtable_no_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) wtnss(3)], simp)
+        (rule qtable_no_pattern(1)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) wtnss(3)],
+          simp, metis wf_envs_finite[OF MPred(2) wtnss(4)])
     show ?thesis
     proof (cases "mode = Match")
       case True
@@ -1985,6 +2032,8 @@ next
     proof -
       from lk key have Rs: "Rs = map ?sats_at [j ..< j + \<delta>]"
         by (simp add: keys_dom_lookup domI)
+      have fin: "finite (?sats_at k)" if "k \<in> set [j ..< j + \<delta>]" for k
+        using wf_envs_finite[OF MPred(2) lk] that by (auto simp: Rs)
       show ?thesis
       proof (cases "mode = Match")
         case True
@@ -1992,7 +2041,8 @@ next
           (tabulate_match (Formula.fv_list \<phi>') ` Option.these (match ts ` T))) [j..<j + \<delta>] Rs"
           unfolding Rs list.rel_map inits(1)
           by (rule list.rel_refl_strong)
-            (rule qtable_no_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) P_None(3)], simp)
+            (rule qtable_no_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2,3) P_None(3)],
+              simp_all add: fin)
         with True lk wfmf inits P_None show ?thesis
           by (simp add: list.rel_map pred_cols_def)
       next
@@ -2002,7 +2052,8 @@ next
         have "list_all2 (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list \<phi>') i \<phi>') [j..<j + \<delta>] Rs"
           unfolding Rs list.rel_map inits(1)
           by (rule list.rel_refl_strong)
-            (rule qtable_simple_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple P_None(3)], simp)
+            (rule qtable_simple_pattern(2)[where X="Formula.fv_list (p \<dagger> ts)" and p=p and ts=ts and V=V, OF refl inits(2) simple P_None(3)],
+              simp_all add: fin)
         with False lk wfmf inits P_None show ?thesis
           by (cases mode) simp_all
       qed
@@ -2277,6 +2328,8 @@ next
   obtain flv where fl: "fl = {v. length v = m \<and>
       (case flv of None \<Rightarrow> False | Some i \<Rightarrow> \<langle>\<sigma>, V, v, i\<rangle> \<Turnstile> \<phi>1)}"
     using frz_fill_val[OF \<alpha>s_xs_qtab fv(2)] unfolding fl_def by blast
+  have fin_fl: "finite fl"
+    using frz_fill_cases[of ng "\<alpha>s @ xsr"] \<alpha>s_xs_qtab unfolding fl_def by (auto dest: qtableD(5))
   \<comment> \<open>the replay base, fed the frozen predicate up to @{term "w' + c"}\<close>
   have replay: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> w' + c)) (V(?pn \<mapsto> frz_val \<sigma> V \<phi>1 L)) n R \<rho>'' \<psi>1 \<and>
       list_all2 (\<lambda>k. sat_table \<sigma> (V(?pn \<mapsto> frz_val \<sigma> V \<phi>1 L)) n R (Formula.fv_list \<psi>1) k \<psi>1)
@@ -2286,11 +2339,12 @@ next
       and c: "w' + c \<le> j + \<delta>"
       and Ys: "list_all2 (\<lambda>k Y. Y = {v. length v = m \<and> frz_val \<sigma> V \<phi>1 L v k}) [w'..<w' + c] Xs"
       and e: "meval (j + \<delta>) n [] (Mapping.update ?pn Xs ?dbe) \<rho>' = (us, \<rho>'')"
+      and fXs: "\<forall>Y \<in> set Xs. finite Y"
     for \<rho>' w' c L Xs us \<rho>''
   proof -
     have envs: "wf_envs (S(?pn \<mapsto> tabulate E' 0 (Formula.nfv \<phi>1))) \<sigma> (j + \<delta>) 0 (P'(?pn \<mapsto> w'))
       (P'(?pn \<mapsto> w' + c)) (V(?pn \<mapsto> frz_val \<sigma> V \<phi>1 L)) (Mapping.update ?pn Xs ?dbe)"
-      by (rule wf_envs_update_frz[OF wf_envs_empty[OF MFrz.prems(2)] fv safe1 wty1 _ _ _ _ Ys])
+      by (rule wf_envs_update_frz[OF wf_envs_empty[OF MFrz.prems(2)] fv safe1 wty1 _ _ _ _ Ys fXs])
         (use c frz_val_sat in auto)
     show ?thesis
       using MFrz(3)[OF sz wf' envs wty2] e by (simp add: fun_upd_def)
@@ -2416,8 +2470,10 @@ next
       have Ys: "list_all2 (\<lambda>k Y. Y = {v. length v = m \<and>
           frz_val \<sigma> V \<phi>1 (\<lambda>k. if k < w' + a then N'' k else M k) v k}) [w'..<w' + a] (replicate a fl)"
         by (auto simp: list_all2_conv_all_nth fl N''_def frz_val_def)
+      have fXs: "\<forall>Y \<in> set (replicate a fl). finite Y"
+        using fin_fl by simp
       show ?thesis
-        using replay[OF sz wf\<rho>[of "\<lambda>k. if k < w' + a then flv else M k", unfolded eq] wa_le Ys e2]
+        using replay[OF sz wf\<rho>[of "\<lambda>k. if k < w' + a then flv else M k", unfolded eq] wa_le Ys e2 fXs]
         unfolding pR'_eq pR2_def .
     qed
     have size2: "size \<rho>2 = size \<rho>'"
@@ -2508,10 +2564,13 @@ next
     have Ys: "list_all2 (\<lambda>k Y. Y = {v. length v = m \<and> frz_cv \<sigma> V \<phi>1 N' w' i v k})
       [w'..<w' + c] (replicate c \<alpha>)"
       using qtable_frz_alpha[OF \<alpha> fv(2)] by (auto simp: list_all2_conv_all_nth frz_cv_ge)
+    have fXs: "\<forall>Y \<in> set (replicate c \<alpha>). finite Y"
+      using qtableD(5)[OF \<alpha>] by simp
     have R: "wf_mformula \<sigma> (j + \<delta>) (P'(?pn \<mapsto> w' + c)) (V(?pn \<mapsto> frz_cv \<sigma> V \<phi>1 N' w' i)) n R st \<psi>1 \<and>
       list_all2 (\<lambda>k. sat_table \<sigma> (V(?pn \<mapsto> frz_cv \<sigma> V \<phi>1 N' w' i)) n R (Formula.fv_list \<psi>1) k \<psi>1)
         [pR'..<jpsic] us"
-      using replay[OF sz wf\<rho>[of "\<lambda>_. Some i"] c_le Ys e[folded c_def]] unfolding pR'_eq jpsic_def .
+      using replay[OF sz wf\<rho>[of "\<lambda>_. Some i"] c_le Ys e[folded c_def] fXs[folded c_def]]
+      unfolding pR'_eq jpsic_def .
     have pR'_jpsic: "pR' \<le> jpsic"
       unfolding pR'_eq jpsic_def by (rule mono_pn) (use c_le in simp_all)
     have jpsic_le: "jpsic \<le> jpsij'"
@@ -2730,7 +2789,7 @@ next
         [j..<j + \<delta>] (replicate (length ?ts) (hd \<alpha>s1))"
         using qtable_frz_alpha[OF hd_q fv(2)] wL_le jfrz0_j
         by (auto simp: list_all2_conv_all_nth frz_cv_ge)
-    qed (auto dest: frz_val_sat)
+    qed (auto dest: frz_val_sat simp: qtableD(5)[OF hd_q])
     show ?thesis
       using MFrz(4)[OF wfL envs wty2] ev npo winL gap cond
       by (auto simp: jpsij_def jpsij'_def fun_upd_def)
@@ -3185,6 +3244,7 @@ next
       and fv_l_n: "\<forall>x\<in>fv \<beta>. x < n" and fv_phi_eq: "X\<^sub>\<phi> = Formula.fv_list \<phi>"
       and nts: "wf_ts \<sigma> P j \<gamma> \<beta> nts" 
       and fvi_subset: "if mem I 0 then fv \<gamma> \<subseteq> fv \<beta> else fv \<gamma> = fv \<beta>" 
+      and pos_nmem: "\<not> mem I 0 \<longrightarrow> args_pos args"
       and aux: "wf_trigger_aux \<sigma> V R args \<gamma> \<beta> aux (progress \<sigma> P (\<alpha> \<^bold>T I \<beta>) j)"
     by (cases rule: wf_mformula.cases)
       (auto dest: wf_mformula_and_release_safe_bddE wf_mformula_and_release_safe0E)    
@@ -3383,8 +3443,13 @@ next
         by (rule trigger_sat_equiv[OF that pos args_n args_ivl args_L args_R fvi_subset
               valid_mtaux[unfolded aux'_def] sorted_wrt auxlist_len auxlist_props[unfolded args_n]
               auxlist_mem non_empty])
+      have fin: "finite z"
+        unfolding z auxlist''_def
+        using pos_nmem fvi_subset
+        by (intro finite_trigger_results_auxlist[OF auxlist_props auxlist_len])
+          (auto simp: args_ivl args_L args_R split: if_splits)
       have "sat_table \<sigma> V n R (Formula.fv_list \<beta>) k (formula.Trigger \<alpha> I \<beta>) z"
-        by (rule qtableI[OF table]) (auto simp: equiv)
+        by (rule qtableI[OF table fin]) (auto simp: equiv)
       moreover have "wf_dfvs fv_z \<sigma> I k (formula.Trigger \<alpha> I \<beta>)"
         unfolding wf_dfvs_def fv_z fvl_T if_not_P[OF int_non_empty] ..
       ultimately show ?thesis
@@ -3478,7 +3543,7 @@ next
     unfolding z''_eq
     using  wf_mformula.And_Trigger[OF IH_phi(1) buf_and(1) fv_t_subset 
         IH_beta(1) pos IH_gamma(1) pos_eq args_ivl args_n args_L args_R fv_l_n(1) fvi_subset 
-        wf_buf_ts_trigger update_trigger(1)] .
+        pos_nmem wf_buf_ts_trigger update_trigger(1)] .
   moreover have "list_all2
        (\<lambda>i. sat_table \<sigma> V n R (Formula.fv_list (formula.And \<phi> (formula.Trigger \<alpha> I \<beta>))) i
           (formula.And \<phi> (formula.Trigger \<alpha> I \<beta>)))
@@ -4593,8 +4658,12 @@ next
           Formula.sat \<sigma> V (val n (Formula.fv_list \<beta>) x) k (formula.Trigger \<alpha> I \<beta>) \<Longrightarrow> x \<in> z"
         using equiv by auto
 
+      have fin: "finite z"
+        unfolding z_eq auxlist''_def
+        using mem0 by (intro finite_trigger_results_auxlist[OF auxlist_props auxlist_len])
+          (simp add: args_ivl)
       have qtable_k: "sat_table \<sigma> V n R (Formula.fv_list \<beta>) k (formula.Trigger \<alpha> I \<beta>) z"
-        using qtableI[OF table correctness completeness]
+        using qtableI[OF table fin correctness completeness]
         by auto
 
       have zs'_eq: "zs' = zs @ [z]"
@@ -5004,6 +5073,7 @@ qed
 
 lemma (in maux) wf_mstate_mstep:
   assumes "wf_mstate S E \<phi> \<pi> R st" and "wty_db S (fst tdb)" and  "last_ts \<pi> \<le> snd tdb"
+    and "finite (fst tdb)"
   shows "wf_mstate S E \<phi> (psnoc \<pi> tdb) R (snd (mstep (apfst mk_db tdb) st))"
 proof -
   from assms(1) have "mstate_i st \<le> plen \<pi>"
@@ -5025,7 +5095,7 @@ lemma flatten_verdicts_append[simp]:
 
 lemma (in maux) mstep_output_iff:
   assumes "wf_mstate S E \<phi> \<pi> R st" "last_ts \<pi> \<le> snd tdb" "prefix_of (psnoc \<pi> tdb) \<sigma>" "wty_trace S \<sigma>"
-    "mem_restr R (Formula.fv_list \<phi>) v"
+    "mem_restr R (Formula.fv_list \<phi>) v" "finite (fst tdb)"
   shows "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st)) \<longleftrightarrow>
     progress \<sigma> Map.empty \<phi> (plen \<pi>) \<le> i \<and> i < progress \<sigma> Map.empty \<phi> (Suc (plen \<pi>)) \<and> t = \<tau> \<sigma> i \<and>
     wf_tuple (Formula.fv_list \<phi>) v \<and>
@@ -5043,7 +5113,7 @@ proof -
     and wf_m: "wf_mformula \<sigma> (plen \<pi>) Map.empty Map.empty (Formula.nfv \<phi>) R (mstate_m st) \<phi>" and
     wty: "S, E \<turnstile> \<phi>"
     unfolding wf_mstate_def by auto
-  from meval_correct[OF wf_m wf_envs_mk_db[OF assms(4)] wty]
+  from meval_correct[OF wf_m wf_envs_mk_db[OF assms(4)] wty] assms(6)
   obtain Vs st' where
     meval_eq: "meval (Suc (plen \<pi>)) (Formula.nfv \<phi>) [snd tdb] (mk_db (fst tdb)) (mstate_m st) = (Vs, st')"
     and wf_m': "wf_mformula \<sigma> (Suc (plen \<pi>)) Map.empty Map.empty (Formula.nfv \<phi>) R st' \<phi>"
@@ -5093,7 +5163,7 @@ text \<open>Every verdict tuple is over the formula's columns.\<close>
 
 lemma (in maux) mstep_output_wf:
   assumes "wf_mstate S E \<phi> \<pi> R st" "wty_db S (fst tdb)" "last_ts \<pi> \<le> snd tdb"
-    "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st))"
+    "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st))" "finite (fst tdb)"
   shows "wf_tuple (Formula.fv_list \<phi>) v"
 proof -
   have "wty_prefix S (psnoc \<pi> tdb)"
@@ -5107,7 +5177,7 @@ proof -
     and wf_m: "wf_mformula \<sigma> (plen \<pi>) Map.empty Map.empty (Formula.nfv \<phi>) R (mstate_m st) \<phi>" and
     wty: "S, E \<turnstile> \<phi>"
     unfolding wf_mstate_def by auto
-  from meval_correct[OF wf_m wf_envs_mk_db[OF wty_\<sigma>] wty]
+  from meval_correct[OF wf_m wf_envs_mk_db[OF wty_\<sigma>] wty] assms(5)
   obtain Vs st' where
     meval_eq: "meval (Suc (plen \<pi>)) (Formula.nfv \<phi>) [snd tdb] (mk_db (fst tdb)) (mstate_m st) = (Vs, st')"
     and "list_all2 (\<lambda>i. sat_table \<sigma> Map.empty (Formula.nfv \<phi>) R (Formula.fv_list \<phi>) i \<phi>)
@@ -5229,6 +5299,7 @@ lemma (in verimon) mstep_mverdicts:
     and wty: "wty_db SIG (fst tdb)"
     and le[simp]: "last_ts \<pi> \<le> snd tdb"
     and restrict: "mem_restr R (Formula.fv_list \<phi>) v"
+    and fin: "finite (fst tdb)"
   shows "(i, t, v) \<in> flatten_verdicts (fst (mstep (apfst mk_db tdb) st)) \<longleftrightarrow>
     (i, t, v) \<in> Mt (psnoc \<pi> tdb) - Mt \<pi>"
 proof -
@@ -5244,25 +5315,25 @@ proof -
     by (auto 0 3 simp: p2 progress_prefix_conv[OF _ p1] sat_prefix_conv[OF _ p1] not_less
         pprogress_eq[OF p1] pprogress_eq[OF p2] nth_pts_eq_\<tau>[OF p1] nth_pts_eq_\<tau>[OF p2]
         image_iff less_Suc_eq traces_def cong: conj_cong
-        dest: mstep_output_iff[OF wf le p2 _ restrict, THEN iffD1] spec[of _ \<sigma>]
-        mstep_output_iff[OF wf le _ _ restrict, THEN iffD1] progress_sat_cong[OF _ p1]
-        intro: mstep_output_iff[OF wf le p2 _ restrict, THEN iffD2] p1)
+        dest: mstep_output_iff[OF wf le p2 _ restrict fin, THEN iffD1] spec[of _ \<sigma>]
+        mstep_output_iff[OF wf le _ _ restrict fin, THEN iffD1] progress_sat_cong[OF _ p1]
+        intro: mstep_output_iff[OF wf le p2 _ restrict fin, THEN iffD2] p1)
 qed
 
 lemma (in verimon) wf_mstate_msteps: 
-  "wf_mstate SIG ENV \<phi> \<pi> R st \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> wty_prefix SIG \<pi>' \<Longrightarrow>
+  "wf_mstate SIG ENV \<phi> \<pi> R st \<Longrightarrow> \<pi> \<le> \<pi>' \<Longrightarrow> wty_prefix SIG \<pi>' \<Longrightarrow> pfinite \<pi>' \<Longrightarrow>
   X = msteps (pdrop (plen \<pi>) \<pi>') st \<Longrightarrow> wf_mstate SIG ENV \<phi> \<pi>' R (snd X) \<and>
   ((i, t, v) \<in> flatten_verdicts (fst X) \<longrightarrow> wf_tuple (Formula.fv_list \<phi>) v) \<and>
   (mem_restr R (Formula.fv_list \<phi>) v \<longrightarrow>
     ((i, t, v) \<in> flatten_verdicts (fst X)) = ((i, t, v) \<in> Mt \<pi>' - Mt \<pi>))"
 proof (induct "plen \<pi>' - plen \<pi>" arbitrary: X st \<pi> \<pi>')
   case 0
-  from 0(1,3,4,5) have "\<pi> = \<pi>'"  "X = ([], st)"
+  from 0(1,3,4,6) have "\<pi> = \<pi>'"  "X = ([], st)"
     by (transfer; auto)+
   with 0(2) show ?case unfolding flatten_verdicts_def by simp
 next
   case (Suc x)
-  from Suc(2,4,5) obtain \<pi>'' tdb where "x = plen \<pi>'' - plen \<pi>"  "\<pi> \<le> \<pi>''" "wty_prefix SIG \<pi>''" "wty_db SIG (fst tdb)"
+  from Suc(2,4,5) obtain \<pi>'' tdb where P: "x = plen \<pi>'' - plen \<pi>"  "\<pi> \<le> \<pi>''" "wty_prefix SIG \<pi>''" "wty_db SIG (fst tdb)"
     "\<pi>' = psnoc \<pi>'' tdb" "pdrop (plen \<pi>) (psnoc \<pi>'' tdb) = psnoc (pdrop (plen \<pi>) \<pi>'') tdb"
     "last_ts (pdrop (plen \<pi>) \<pi>'') \<le> snd tdb" "last_ts \<pi>'' \<le> snd tdb"
     "\<pi>'' \<le> psnoc \<pi>'' tdb"
@@ -5276,7 +5347,10 @@ next
           (force simp: sorted_append append_eq_Cons_conv split: list.splits if_splits)+
     qed simp
   qed
-  with Suc(1)[OF this(1) Suc.prems(1) this(2,3) refl] Suc.prems show ?case
+  moreover have fin: "pfinite \<pi>''" "finite (fst tdb)"
+    using pfinite_psnocD[of \<pi>'' tdb] Suc.prems(4) P(5,8) by simp_all
+  ultimately show ?case
+    using Suc(1)[OF P(1) Suc.prems(1) P(2,3) fin(1) refl] Suc.prems
     by (auto simp: msteps_psnoc split_beta mstep_mverdicts
         dest: mono_monitor'[THEN set_mp, rotated, unfolded prefixes_alt] mstep_output_wf
         intro!: wf_mstate_mstep)
@@ -5284,12 +5358,13 @@ qed
 
 lemma (in verimon) wf_mstate_msteps_stateless:
   assumes "wf_mstate SIG ENV \<phi> \<pi> R st" "mem_restr R (Formula.fv_list \<phi>) v" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'"
+    "pfinite \<pi>'"
   shows "(i, t, v) \<in> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st) \<longleftrightarrow>
     (i, t, v) \<in> Mt \<pi>' - Mt \<pi>"
-  using wf_mstate_msteps[OF assms(1,3,4) refl] assms(2) unfolding msteps_msteps_stateless by simp
+  using wf_mstate_msteps[OF assms(1,3,4,5) refl] assms(2) unfolding msteps_msteps_stateless by simp
 
 lemma (in verimon) wf_mstate_msteps_stateless_UNIV: 
-  assumes "wf_mstate SIG ENV \<phi> \<pi> UNIV st" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'"
+  assumes "wf_mstate SIG ENV \<phi> \<pi> UNIV st" "\<pi> \<le> \<pi>'" "wty_prefix SIG \<pi>'" "pfinite \<pi>'"
   shows "flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st) = Mt \<pi>' - Mt \<pi>"
 proof (intro set_eqI iffI)
   fix x
@@ -5299,7 +5374,7 @@ proof (intro set_eqI iffI)
   have "wf_tuple (Formula.fv_list \<phi>) v"
     using x wf_mstate_msteps[OF assms refl, of i t v] unfolding x_eq msteps_msteps_stateless by simp
   then show "x \<in> Mt \<pi>' - Mt \<pi>"
-    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3)]
+    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3,4)]
     unfolding x_eq by blast
 next
   fix x
@@ -5309,12 +5384,12 @@ next
   have "wf_tuple (Formula.fv_list \<phi>) v"
     using x unfolding x_eq by (auto simp: Mt_def M_def)
   then show "x \<in> flatten_verdicts (msteps_stateless (pdrop (plen \<pi>) \<pi>') st)"
-    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3)]
+    using x wf_mstate_msteps_stateless[OF assms(1) mem_restr_UNIV[OF distinct_fvi_list] assms(2,3,4)]
     unfolding x_eq by blast
 qed
 
 lemma (in verimon) monitor_mverdicts: 
-  "wty_prefix SIG \<pi> \<Longrightarrow> flatten_verdicts (monitor \<phi> \<pi>) = Mt \<pi>"
+  "wty_prefix SIG \<pi> \<Longrightarrow> pfinite \<pi> \<Longrightarrow> flatten_verdicts (monitor \<phi> \<pi>) = Mt \<pi>"
   unfolding monitor_def using monitorable
   by (subst wf_mstate_msteps_stateless_UNIV[OF wf_mstate_minit_safe, simplified])
     (auto simp: mmonitorable_def Mt_pnil well_typed)

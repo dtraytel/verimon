@@ -1428,35 +1428,182 @@ text \<open>
   Unlike the lax one, a strict epsilon does not carry a guard, and its value is a table over the
   node's columns only because the regular expression is safe: an empty skip and a star return the
   unit table, which is a table over the node's columns only when there are none, and safety is
-  what rules the other case out.  The kernel's own correctness proof establishes exactly that, so
-  the lemmas below read it off @{thm [source] qtable_r\<epsilon>_strict} at the empty restriction.
+  what rules the other case out.  The proofs below follow the kernel's
+  @{thm [source] qtable_r\<epsilon>_strict} and @{thm [source] qtable_l\<epsilon>_strict}, keeping only
+  the columns: the kernel's lemmas also ask the operands' tables to be finite.
 \<close>
 
-lemma qtable_mem_restr_empty: "qtable A (mem_restr {} A) Q X \<longleftrightarrow> table A X"
-  by (auto simp: qtable_def mem_restr_def)
+lemma table_eps_lax_atms:
+  assumes ops: "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel) \<psi>s rels"
+  shows "ok (length \<psi>s) mr \<Longrightarrow> fv_regex (from_mregex mr \<psi>s) \<subseteq> set A \<Longrightarrow> table A guard \<Longrightarrow>
+    table A (\<epsilon>_lax A (map Formula.fv_list \<psi>s) guard rels mr)"
+proof (induct mr arbitrary: guard)
+  case (MTestPos i)
+  then have i: "i < length \<psi>s" by simp
+  have t: "table (Formula.fv_list (\<psi>s ! i)) (rels ! i)"
+    using ops i by (simp add: list_all2_conv_all_nth)
+  show ?case
+    using MTestPos i by (simp, intro table_join_sub[OF _ t]) auto
+next
+  case (MTestNeg i)
+  then have i: "i < length \<psi>s" by simp
+  have t: "table (Formula.fv_list (\<psi>s ! i)) (rels ! i)"
+    using ops i by (simp add: list_all2_conv_all_nth)
+  show ?case
+    using MTestNeg i by (simp, intro table_join_sub[OF _ t]) (auto split: if_splits)
+next
+  case (MTimes r t)
+  then show ?case by (auto intro: table_join_sub)
+qed (simp_all add: table_def empty_table_def)
 
 lemma table_reps_strict:
   fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
-  assumes sr: "Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex mr \<psi>s)"
-    and ok: "ok (length \<psi>s) mr" and A: "set A = fv_regex (from_mregex mr \<psi>s)" "distinct A"
-    and ops: "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel) \<psi>s rels"
+  assumes "Regex.safe_regex fv rgx_safe_pred Past Strict (from_mregex mr \<psi>s)"
+    and "ok (length \<psi>s) mr" and "set A = fv_regex (from_mregex mr \<psi>s)" "distinct A"
+    and "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel) \<psi>s rels"
   shows "table A (r\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr)"
-proof -
-  have q: "list_all2 (\<lambda>\<psi> rel. sat_table \<sigma> V n {} (Formula.fv_list \<psi>) i \<psi> rel) \<psi>s rels"
-    using ops by (simp add: list_all2_conv_all_nth qtable_mem_restr_empty)
-  show ?thesis using qtable_r\<epsilon>_strict[OF sr ok A q] by (simp add: qtable_mem_restr_empty)
+  using assms
+proof (induct Past Strict "from_mregex mr \<psi>s" arbitrary: mr A rule: safe_regex_induct)
+  case (Skip n)
+  then have "A = []"
+    by (cases mr) (auto split: if_splits)
+  with Skip show ?case
+    by (cases mr) (auto simp: table_empty_vars_iff split: if_splits)
+next
+  case (Test \<phi>)
+  from Test.hyps Test.prems(2) obtain k where k: "k < length \<psi>s"
+    and mr: "mr = MTestPos k \<or> mr = MTestNeg k"
+    by (cases mr) auto
+  from Test.prems(5) k have rel: "table (Formula.fv_list (\<psi>s ! k)) (rels ! k)"
+    by (simp add: list_all2_conv_all_nth)
+  from mr show ?case
+  proof
+    assume mr: "mr = MTestPos k"
+    show ?case
+      unfolding mr r\<epsilon>_strict.simps nth_map[OF k] reorder_def
+      using rel by (auto intro: tableI)
+  next
+    assume mr: "mr = MTestNeg k"
+    with Test.hyps Test.prems(1,3) have A: "A = []"
+      by (auto split: if_splits)
+    show ?case
+      unfolding mr A r\<epsilon>_strict.simps by (simp add: table_empty_vars_iff)
+  qed
+next
+  case (Plus r s)
+  from Plus(3) obtain mr1 mr2 where mr: "mr = MPlus mr1 mr2"
+    and r: "r = from_mregex mr1 \<psi>s" and s: "s = from_mregex mr2 \<psi>s"
+    by (cases mr) (simp_all split: if_splits)
+  from Plus.prems have safe1: "Regex.safe_regex fv rgx_safe_pred Past Strict r"
+    and safe2: "Regex.safe_regex fv rgx_safe_pred Past Strict s"
+    and fv: "fv_regex s = fv_regex r" and ok1: "ok (length \<psi>s) mr1" and ok2: "ok (length \<psi>s) mr2"
+    by (simp_all add: mr r s)
+  have fv_mr: "fv_regex (from_mregex mr \<psi>s) = fv_regex r"
+    using fv by (simp add: mr r s)
+  have IH1: "table A (r\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr1)"
+    using Plus(1)[of mr1 A] safe1 ok1 Plus.prems fv_mr by (simp add: r)
+  have IH2: "table A (r\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr2)"
+    using Plus(2)[of mr2 A] safe2 ok2 Plus.prems fv_mr fv by (simp add: s)
+  show ?case
+    unfolding mr r\<epsilon>_strict.simps using IH1 IH2 by simp
+next
+  case (TimesP r s)
+  from TimesP.hyps(2) obtain mr1 mr2 where mr: "mr = MTimes mr1 mr2"
+    and r: "r = from_mregex mr1 \<psi>s" and s: "s = from_mregex mr2 \<psi>s"
+    by (cases mr) (simp_all split: if_splits)
+  from TimesP.prems have safe1: "Regex.safe_regex fv rgx_safe_pred Past Strict r"
+    and fv: "fv_regex s \<subseteq> fv_regex r" and ok1: "ok (length \<psi>s) mr1" and ok2: "ok (length \<psi>s) mr2"
+    by (simp_all add: mr r s)
+  have fv_mr: "fv_regex (from_mregex mr \<psi>s) = fv_regex r"
+    using fv by (auto simp: mr r s)
+  have IH: "table A (r\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr1)"
+    using TimesP(1)[of mr1 A] safe1 ok1 TimesP.prems fv_mr by (simp add: r)
+  have fv2: "fv_regex (from_mregex mr2 \<psi>s) \<subseteq> set A"
+    using TimesP.prems(3) fv_mr fv by (simp add: s)
+  show ?case
+    unfolding mr r\<epsilon>_strict.simps
+    by (rule table_eps_lax_atms[OF TimesP.prems(5) ok2 fv2 IH])
+next
+  case (Star r)
+  then have "A = []"
+    by (cases mr) (auto split: if_splits)
+  with Star show ?case
+    by (cases mr) (auto simp: table_empty_vars_iff split: if_splits)
 qed
 
 lemma table_leps_strict:
   fixes \<psi>s :: "ty Formula.formula list" and rels :: "event_data table list"
-  assumes sr: "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex mr \<psi>s)"
-    and ok: "ok (length \<psi>s) mr" and A: "set A = fv_regex (from_mregex mr \<psi>s)" "distinct A"
-    and ops: "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel) \<psi>s rels"
+  assumes "Regex.safe_regex fv rgx_safe_pred Futu Strict (from_mregex mr \<psi>s)"
+    and "ok (length \<psi>s) mr" and "set A = fv_regex (from_mregex mr \<psi>s)" "distinct A"
+    and "list_all2 (\<lambda>\<psi> rel. table (Formula.fv_list \<psi>) rel) \<psi>s rels"
   shows "table A (l\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr)"
-proof -
-  have q: "list_all2 (\<lambda>\<psi> rel. sat_table \<sigma> V n {} (Formula.fv_list \<psi>) i \<psi> rel) \<psi>s rels"
-    using ops by (simp add: list_all2_conv_all_nth qtable_mem_restr_empty)
-  show ?thesis using qtable_l\<epsilon>_strict[OF sr ok A q] by (simp add: qtable_mem_restr_empty)
+  using assms
+proof (induct Futu Strict "from_mregex mr \<psi>s" arbitrary: mr A rule: safe_regex_induct)
+  case (Skip n)
+  then have "A = []"
+    by (cases mr) (auto split: if_splits)
+  with Skip show ?case
+    by (cases mr) (auto simp: table_empty_vars_iff split: if_splits)
+next
+  case (Test \<phi>)
+  from Test.hyps Test.prems(2) obtain k where k: "k < length \<psi>s"
+    and mr: "mr = MTestPos k \<or> mr = MTestNeg k"
+    by (cases mr) auto
+  from Test.prems(5) k have rel: "table (Formula.fv_list (\<psi>s ! k)) (rels ! k)"
+    by (simp add: list_all2_conv_all_nth)
+  from mr show ?case
+  proof
+    assume mr: "mr = MTestPos k"
+    show ?case
+      unfolding mr l\<epsilon>_strict.simps nth_map[OF k] reorder_def
+      using rel by (auto intro: tableI)
+  next
+    assume mr: "mr = MTestNeg k"
+    with Test.hyps Test.prems(1,3) have A: "A = []"
+      by (auto split: if_splits)
+    show ?case
+      unfolding mr A l\<epsilon>_strict.simps by (simp add: table_empty_vars_iff)
+  qed
+next
+  case (Plus r s)
+  from Plus(3) obtain mr1 mr2 where mr: "mr = MPlus mr1 mr2"
+    and r: "r = from_mregex mr1 \<psi>s" and s: "s = from_mregex mr2 \<psi>s"
+    by (cases mr) (simp_all split: if_splits)
+  from Plus.prems have safe1: "Regex.safe_regex fv rgx_safe_pred Futu Strict r"
+    and safe2: "Regex.safe_regex fv rgx_safe_pred Futu Strict s"
+    and fv: "fv_regex s = fv_regex r" and ok1: "ok (length \<psi>s) mr1" and ok2: "ok (length \<psi>s) mr2"
+    by (simp_all add: mr r s)
+  have fv_mr: "fv_regex (from_mregex mr \<psi>s) = fv_regex r"
+    using fv by (simp add: mr r s)
+  have IH1: "table A (l\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr1)"
+    using Plus(1)[of mr1 A] safe1 ok1 Plus.prems fv_mr by (simp add: r)
+  have IH2: "table A (l\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr2)"
+    using Plus(2)[of mr2 A] safe2 ok2 Plus.prems fv_mr fv by (simp add: s)
+  show ?case
+    unfolding mr l\<epsilon>_strict.simps using IH1 IH2 by simp
+next
+  case (TimesF r s)
+  from TimesF.hyps(2) obtain mr1 mr2 where mr: "mr = MTimes mr1 mr2"
+    and r: "r = from_mregex mr1 \<psi>s" and s: "s = from_mregex mr2 \<psi>s"
+    by (cases mr) (simp_all split: if_splits)
+  from TimesF.prems have safe2: "Regex.safe_regex fv rgx_safe_pred Futu Strict s"
+    and fv: "fv_regex r \<subseteq> fv_regex s" and ok1: "ok (length \<psi>s) mr1" and ok2: "ok (length \<psi>s) mr2"
+    by (simp_all add: mr r s)
+  have fv_mr: "fv_regex (from_mregex mr \<psi>s) = fv_regex s"
+    using fv by (auto simp: mr r s)
+  have IH: "table A (l\<epsilon>_strict A (map Formula.fv_list \<psi>s) rels mr2)"
+    using TimesF(1)[of mr2 A] safe2 ok2 TimesF.prems fv_mr by (simp add: s)
+  have fv1: "fv_regex (from_mregex mr1 \<psi>s) \<subseteq> set A"
+    using TimesF.prems(3) fv_mr fv by (simp add: r)
+  show ?case
+    unfolding mr l\<epsilon>_strict.simps
+    by (rule table_eps_lax_atms[OF TimesF.prems(5) ok1 fv1 IH])
+next
+  case (Star r)
+  then have "A = []"
+    by (cases mr) (auto split: if_splits)
+  with Star show ?case
+    by (cases mr) (auto simp: table_empty_vars_iff split: if_splits)
 qed
 
 text \<open>A tested atom is moved to the node's column order; the executable one is already in it.\<close>
