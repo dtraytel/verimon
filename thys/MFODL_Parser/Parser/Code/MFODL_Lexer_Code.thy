@@ -4,7 +4,7 @@ begin
 
 text \<open>Code equations for the lexer model and the semantic actions, proved equal to their
   definitions. They do not depend on the representation of natural numbers in the code, so that
-  both the export of the parser (\<^theory>\<open>MFODL_Parser_Code.MFODL_Parser_Code\<close>, with binary
+  both the export of the parser (theory \<^verbatim>\<open>MFODL_Parser_Code\<close>, with binary
   naturals) and that of the verified monitor (session \<^verbatim>\<open>VeriMon_CLI\<close>, with Zarith's
   integers) use them.\<close>
 
