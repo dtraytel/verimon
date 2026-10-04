@@ -164,16 +164,6 @@ module Verimon : sig
   val c_verbose : 'a config_ext -> bool
   val cli_main : string -> string list -> (string -> float option) -> step
   val tp_out : nat -> string list
-  val c_stop_first : 'a config_ext -> bool
-  val c_unix : 'a config_ext -> bool
-  val verdict_fold :
-    unit config_ext ->
-      (float -> string) ->
-        nat ->
-          nat ->
-            nat ->
-              (event_data list) set ->
-                (Z.t -> 'a -> 'a) -> (string -> 'a -> 'a) -> 'a -> 'a * bool
   val vfinish :
     vconf ->
       nat option ->
@@ -185,10 +175,20 @@ module Verimon : sig
     (Z.t * (elstate * (string fpstate option * Z.t))) *
       (unit emstate_ext * nat) ->
       Z.t
+  val c_stop_first : 'a config_ext -> bool
+  val c_unix : 'a config_ext -> bool
   val verdict_out :
     unit config_ext ->
       (float -> string) ->
         nat -> nat -> nat -> (event_data list) set -> string list * bool
+  val verdict_fold :
+    unit config_ext ->
+      (float -> string) ->
+        nat ->
+          nat ->
+            nat ->
+              (event_data list) set ->
+                (Z.t -> 'a -> 'a) -> (string -> 'a -> 'a) -> 'a -> 'a * bool
   val vfeed_chunk :
     vconf ->
       string ->
@@ -61549,20 +61549,6 @@ let rec cli_main
          | Inr a -> start_monitor conf pf psi a))))))))))
       | CExit (out, e, a) -> Done (otxt out, otxt e, a));;
 
-let rec ed_fold
-  ff fi f d acc =
-    (match d with EInt i -> fi i acc | EFloat x -> f (ff x) acc
-      | EString s ->
-        (if Stdlib.(=) s "" then f (id "\034\034") acc
-          else (if (fun s -> let n = String.length s in n > 0 && String.get s 0 = Char.chr 34 && String.get s (n - 1) = Char.chr 34)
-                     s
-                 then f s acc else f (id "\034") (f s (f (id "\034") acc)))));;
-
-let rec sep_fold
-  g d f x3 acc = match g, d, f, x3, acc with g, d, f, [], acc -> acc
-    | g, d, f, [x], acc -> g x acc
-    | g, d, f, x :: y :: zs, acc -> sep_fold g d f (y :: zs) (f d (g x acc));;
-
 let rec is_r
   pre s st i =
     (match filtera (fun x -> not ((String.length x = 0))) pre
@@ -62563,10 +62549,6 @@ s j
 
 let rec eloop k s n b i l p sp acc = floop k s n b i l p sp acc;;
 
-let rec tuple_fold
-  ff fi f t acc =
-    f (id ")") (sep_fold (ed_fold ff fi f) (id ",") f t (f (id "(") acc));;
-
 let rec mapping_rbt_insertwk _A
   xc xd xe xf =
     Mapping_RBTa
@@ -62777,7 +62759,8 @@ let rec mp_cmp
         (match mp_ed_cmp x y with Eqa -> mp_cmp xs ys | Lt -> Lt | Gt -> Gt);;
 
 let rec tp_out
-  q = [id "At time point "; Verimon_runtime.dec_of_z (integer_of_nat q); id ":\010"];;
+  q = [id "At time point "; Verimon_runtime.dec_of_z (integer_of_nat q);
+        id ":\010"];;
 
 let rec modulo_int
   k l = Int_of_integer (modulo_integer (integer_of_int k) (integer_of_int l));;
@@ -62880,56 +62863,6 @@ let rec unix_str
                                      (Int_of_integer (Z.of_int 60)))));;
 
 let rec ts_str unix t = (if unix then unix_str t else dec_nat t);;
-
-let rec c_stop_first
-  (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
-      c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
-      c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
-    = c_stop_first;;
-
-let rec c_unix
-  (Config_ext
-    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
-      c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
-      c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
-    = c_unix;;
-
-let rec adj_sorted
-  r x1 = match r, x1 with r, x :: y :: zs -> r x y && adj_sorted r (y :: zs)
-    | r, [] -> true
-    | r, [v] -> true;;
-
-let rec rows_of
-  x = (let l = edl_csorted_list_of_set x in
-        (if adj_sorted (fun a b -> equal_order (mp_cmp a b) Lt) l then l
-          else csort mp_cmp l));;
-
-let rec verdict_fold
-  conf ff n q t x fi f acc =
-    (let rows =
-       (if c_stop_first conf then take one_nata (rows_of x) else rows_of x) in
-     let head =
-       id "@" ::
-         ts_out (c_unix conf) t @
-           [id " (time point "; Verimon_runtime.dec_of_z (integer_of_nat q); id "): "]
-       in
-     let nl8 = id "\010" in
-      ((if c_verbose conf
-         then (if equal_nata n zero_nata
-                then fold f
-                       (head @
-                         [(if null rows then id "false" else id "true"); nl8])
-                       acc
-                else f nl8 (f (id ")")
-                             (sep_fold (tuple_fold ff fi f) (id ",") f rows
-                               (f (id "(") (fold f head acc)))))
-         else (if null rows then acc
-                else (if equal_nata n zero_nata
-                       then fold f (head @ [id "true"; nl8]) acc
-                       else f nl8 (sep_fold (tuple_fold ff fi f) (id " ") f rows
-                                    (fold f head acc))))),
-        not (null rows)));;
 
 let rec vc_lookup (VConf (x1, x2, x3, x4)) = x3;;
 
@@ -63242,6 +63175,25 @@ let rec vc_skip (VConf (x1, x2, x3, x4)) = x1;;
 
 let rec vkeep cf b = not (vc_skip cf ((fun x -> x) b));;
 
+let rec ed_fold
+  ff fi f d acc =
+    (match d with EInt i -> fi i acc | EFloat x -> f (ff x) acc
+      | EString s ->
+        (if Stdlib.(=) s "" then f (id "\034\034") acc
+          else (if (fun s -> let n = String.length s in n > 0 && String.get s 0 = Char.chr 34 && String.get s (n - 1) = Char.chr 34)
+                     s
+                 then f s acc else f (id "\034") (f s (f (id "\034") acc)))));;
+
+let rec adj_sorted
+  r x1 = match r, x1 with r, x :: y :: zs -> r x y && adj_sorted r (y :: zs)
+    | r, [] -> true
+    | r, [v] -> true;;
+
+let rec rows_of
+  x = (let l = edl_csorted_list_of_set x in
+        (if adj_sorted (fun a b -> equal_order (mp_cmp a b) Lt) l then l
+          else csort mp_cmp l));;
+
 let rec sep_out d x1 = match d, x1 with d, [] -> []
                   | d, [x] -> x
                   | d, x :: y :: zs -> x @ d :: sep_out d (y :: zs);;
@@ -63252,6 +63204,11 @@ let rec vitems_acc
         (let (v, st1) = vitem cf x z in vitems_acc cf xs st1 (v :: acc));;
 
 let rec vitems cf xs z = vitems_acc cf xs z [];;
+
+let rec sep_fold
+  g d f x3 acc = match g, d, f, x3, acc with g, d, f, [], acc -> acc
+    | g, d, f, [x], acc -> g x acc
+    | g, d, f, x :: y :: zs, acc -> sep_fold g d f (y :: zs) (f d (g x acc));;
 
 let rec vfinish
   cf fin z =
@@ -63467,6 +63424,24 @@ let rec vpending
         | (_, (E_SIMPLE (_, _, t), _)) -> t | (_, (E_QUOTED (_, _, t), _)) -> t
         | (_, (E_ESCAPE (_, _, t), _)) -> t | (b, (E_COMMENT, _)) -> b);;
 
+let rec tuple_fold
+  ff fi f t acc =
+    f (id ")") (sep_fold (ed_fold ff fi f) (id ",") f t (f (id "(") acc));;
+
+let rec c_stop_first
+  (Config_ext
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+      c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
+      c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
+    = c_stop_first;;
+
+let rec c_unix
+  (Config_ext
+    (c_sig, c_formula, c_log, c_negate, c_verbose, c_check, c_rw, c_mw,
+      c_sigout, c_unix, c_mem, c_newlastts, c_filter, c_ignore_errors,
+      c_stop_first, c_version, c_gc_space_overhead, c_gc_minor_heap, more))
+    = c_unix;;
+
 let rec verdict_out
   cfg ff n q t x =
     (let rows =
@@ -63474,7 +63449,8 @@ let rec verdict_out
      let head =
        id "@" ::
          ts_out (c_unix cfg) t @
-           [id " (time point "; Verimon_runtime.dec_of_z (integer_of_nat q); id "): "]
+           [id " (time point "; Verimon_runtime.dec_of_z (integer_of_nat q);
+             id "): "]
        in
      let nl8 = id "\010" in
       ((if c_verbose cfg
@@ -63489,6 +63465,33 @@ let rec verdict_out
                        else head @
                               sep_out (id " ") (mapa (tuple_out ff) rows) @
                                 [nl8]))),
+        not (null rows)));;
+
+let rec verdict_fold
+  conf ff n q t x fi f acc =
+    (let rows =
+       (if c_stop_first conf then take one_nata (rows_of x) else rows_of x) in
+     let head =
+       id "@" ::
+         ts_out (c_unix conf) t @
+           [id " (time point "; Verimon_runtime.dec_of_z (integer_of_nat q);
+             id "): "]
+       in
+     let nl8 = id "\010" in
+      ((if c_verbose conf
+         then (if equal_nata n zero_nata
+                then fold f
+                       (head @
+                         [(if null rows then id "false" else id "true"); nl8])
+                       acc
+                else f nl8 (f (id ")")
+                             (sep_fold (tuple_fold ff fi f) (id ",") f rows
+                               (f (id "(") (fold f head acc)))))
+         else (if null rows then acc
+                else (if equal_nata n zero_nata
+                       then fold f (head @ [id "true"; nl8]) acc
+                       else f nl8 (sep_fold (tuple_fold ff fi f) (id " ") f rows
+                                    (fold f head acc))))),
         not (null rows)));;
 
 let rec vfeed_chunk
