@@ -1089,6 +1089,12 @@ function (sequential) rewrite :: "'a formula \<Rightarrow> argpos \<Rightarrow> 
 
 | "rewrite (Since l I r) Same = rewrite (Since r I l) Swapped"
 | "rewrite (Until l I r) Same = rewrite (Until r I l) Swapped"
+(* a disjunction one level down a conjunction, as from EQUIV: the conjunction of the other
+   two conjuncts is distributed over it, as in (1) *)
+| "rewrite (And l (And \<beta> (Or \<gamma>1 \<gamma>2))) Same =
+     (if prop_cond (And l \<beta>) \<gamma>1 \<or> prop_cond (And l \<beta>) \<gamma>2
+     then Or (rewrite (And (And l \<beta>) \<gamma>1) Same) (rewrite (And (And l \<beta>) \<gamma>2) Same)
+     else rewrite (And (And \<beta> (Or \<gamma>1 \<gamma>2)) l) Swapped)"
 | "rewrite (And l r) Same = rewrite (And r l) Swapped"
 
 | "rewrite (Since l I r) Swapped = Since (rewrite r Same) I (rewrite l Same)" (*swap back before recursing on subformulas*)
@@ -1287,10 +1293,10 @@ next
   then show ?case
     by (cases t) (auto simp: Let_def split: if_splits)
 next
-  case (34 I r t)
+  case (35 I r t)
   then show ?case by (induction r;auto)
 next
-  case (35 I r t)
+  case (36 I r t)
   then show ?case by (induction r;auto)
 qed (auto simp: Let_def fvi_frz_atom once_def eventually_def always_def historically_def)
 
@@ -1667,10 +1673,10 @@ next
   then show ?case
     by (cases t) (simp_all add: Let_def once_def Un_ac split: if_splits)
 next
-  case (34 I r t)
+  case (35 I r t)
   then show ?case by (simp add: fv_regex_alt regex.set_map)
 next
-  case (35 I r t)
+  case (36 I r t)
   then show ?case by (simp add: fv_regex_alt regex.set_map)
 qed (simp_all add: Let_def nfv_project project_shift once_def eventually_def historically_def
   always_def frz_name_fresh Un_Diff Diff_fresh Un_ac split: if_splits)
@@ -1810,22 +1816,22 @@ next
       by (auto simp: Let_def)
   qed
 next
-  case (24 y \<omega> b' f \<phi> t)
+  case (25 y \<omega> b' f \<phi> t)
   have "sat \<sigma> V v i (Agg y \<omega> b' f (rewrite \<phi> Same)) = sat \<sigma> V v i (Agg y \<omega> b' f \<phi>)"
-    by (rule rsub_agg[OF f_conr_agg_t]) (simp_all add: 24 flip: rewrite_fv)
+    by (rule rsub_agg[OF f_conr_agg_t]) (simp_all add: 25 flip: rewrite_fv)
   then show ?case
     by simp
 next
-  case (25 I \<phi> t)
+  case (26 I \<phi> t)
   have "sat \<sigma> V v i (Prev I (rewrite \<phi> Same)) = sat \<sigma> V v i (Prev I \<phi>)"
-    by (rule rsub_1[OF f_conr_6_t]) (simp add: 25)
+    by (rule rsub_1[OF f_conr_6_t]) (simp add: 26)
   then show ?case
     by simp
-next
-  case (34 I r t)
-  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
 next
   case (35 I r t)
+  then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
+next
+  case (36 I r t)
   then show ?case by (simp add: regex.map_comp o_def match_map_regex cong: regex.map_cong)
 qed (simp only:rewrite.simps fix_r.simps;auto)+
 

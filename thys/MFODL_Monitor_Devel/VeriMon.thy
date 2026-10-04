@@ -680,25 +680,24 @@ next
     using wl w\<alpha> w\<beta> w\<gamma>
     by (cases t) (auto simp: Let_def once_def intro!: wty_formula.intros "15.IH"(2-4))
 next
-  case (34 I r t)
+  case (18 l \<beta> \<gamma>1 \<gamma>2)
+  from "18.prems" have "S, E \<turnstile> project l" "S, E \<turnstile> project \<beta>"
+    "S, E \<turnstile> project \<gamma>1" "S, E \<turnstile> project \<gamma>2"
+    by auto
   then show ?case
-    by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+    by (auto intro!: "18.IH" wty_formula.intros)
 next
   case (35 I r t)
   then show ?case
+    by (force simp: regex.pred_map intro!: wty_formula.MatchF elim: regex.pred_mono_strong)
+next
+  case (36 I r t)
+  then show ?case
     by (force simp: regex.pred_map intro!: wty_formula.MatchP elim: regex.pred_mono_strong)
 next
-  case (36 \<phi>s t)
+  case (37 \<phi>s t)
   then show ?case
     by (auto intro!: wty_formula.Ands)
-next
-  case ("19_10" \<phi>s I r)
-  from "19_10.prems" have wr: "S, E \<turnstile> project r" and w\<phi>s: "\<forall>\<phi>\<in>set \<phi>s. S, E \<turnstile> project \<phi>"
-    by auto
-  have "S, E \<turnstile> project (rewrite (Ands \<phi>s) Same)"
-    by (rule "19_10.IH"(2)) (use w\<phi>s in \<open>auto intro!: wty_formula.Ands\<close>)
-  then show ?case
-    using "19_10.IH"(1)[OF wr] by (auto intro!: wty_formula.intros)
 next
   case ("20_10" \<phi>s I r)
   from "20_10.prems" have wr: "S, E \<turnstile> project r" and w\<phi>s: "\<forall>\<phi>\<in>set \<phi>s. S, E \<turnstile> project \<phi>"
@@ -707,6 +706,14 @@ next
     by (rule "20_10.IH"(2)) (use w\<phi>s in \<open>auto intro!: wty_formula.Ands\<close>)
   then show ?case
     using "20_10.IH"(1)[OF wr] by (auto intro!: wty_formula.intros)
+next
+  case ("21_10" \<phi>s I r)
+  from "21_10.prems" have wr: "S, E \<turnstile> project r" and w\<phi>s: "\<forall>\<phi>\<in>set \<phi>s. S, E \<turnstile> project \<phi>"
+    by auto
+  have "S, E \<turnstile> project (rewrite (Ands \<phi>s) Same)"
+    by (rule "21_10.IH"(2)) (use w\<phi>s in \<open>auto intro!: wty_formula.Ands\<close>)
+  then show ?case
+    using "21_10.IH"(1)[OF wr] by (auto intro!: wty_formula.intros)
 qed (auto simp: once_def eventually_def always_def historically_def intro!: wty_formula.intros)
 
 lemma wty_project_embed: "S, E \<turnstile> \<phi> \<Longrightarrow> S, E \<turnstile> project (embed \<phi>)"
@@ -1293,13 +1300,13 @@ next
       by (rule progress_Until_cong) (use R in \<open>simp add: L min.commute min.left_commute min.assoc\<close>)
   qed
 next
-  case (27 \<phi> I \<psi> t)
+  case (28 \<phi> I \<psi> t)
   then show ?case
-    using "27.IH"(1)[OF "27.prems"] "27.IH"(2)[OF "27.prems"]
-      progress_release_safe_bounded_cong[OF "27.IH"(1)[OF "27.prems"] "27.IH"(2)[OF "27.prems"], of I]
+    using "28.IH"(1)[OF "28.prems"] "28.IH"(2)[OF "28.prems"]
+      progress_release_safe_bounded_cong[OF "28.IH"(1)[OF "28.prems"] "28.IH"(2)[OF "28.prems"], of I]
     by simp
 qed (auto simp: once_def always_def eventually_def historically_def
-    progress_regex_def regex.set_map image_image)
+    progress_regex_def regex.set_map image_image min.commute)
 
 lemma progress_rrewrite: "pred_mapping (\<lambda>x. x \<le> j) P \<Longrightarrow> progress \<sigma> P (rrewrite \<phi>) j = progress \<sigma> P \<phi> j"
   by (simp add: rrewrite_def progress_rewrite project_embed)
