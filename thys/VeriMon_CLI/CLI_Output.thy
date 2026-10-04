@@ -138,7 +138,7 @@ definition verdict_out :: "config \<Rightarrow> (double \<Rightarrow> string8) \
 
 text \<open>The same text as a fold, for the driver: each piece is passed to @{text f} as it is
   produced, and each integer of a tuple to @{text fi}, rather than built into a list, which the
-  driver would then copy (@{thm [source] verdict_fold_eq}: with @{text fi} the printing of the
+  driver would then copy (@{text verdict_fold_eq}: with @{text fi} the printing of the
   integer, the fold over the pieces of @{const verdict_out}).\<close>
 
 fun sep_fold :: "('b \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> string8 \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> 'b list \<Rightarrow> 'a \<Rightarrow> 'a" where
