@@ -15240,6 +15240,12 @@ let rec rewrite
         rewrite (Untila (r, i, MatchPa (v, va))) Swapped
     | Untila (TPa v, i, r), Same -> rewrite (Untila (r, i, TPa v)) Swapped
     | Untila (TSa v, i, r), Same -> rewrite (Untila (r, i, TSa v)) Swapped
+    | Anda (l, Anda (beta, Ora (gamma_1, gamma_2))), Same ->
+        (if prop_cond (Anda (l, beta)) gamma_1 ||
+              prop_cond (Anda (l, beta)) gamma_2
+          then Ora (rewrite (Anda (Anda (l, beta), gamma_1)) Same,
+                     rewrite (Anda (Anda (l, beta), gamma_2)) Same)
+          else rewrite (Anda (Anda (beta, Ora (gamma_1, gamma_2)), l)) Swapped)
     | Anda (l, Preda (v, va)), Same -> rewrite (Anda (Preda (v, va), l)) Swapped
     | Anda (l, Leta (v, va, vb)), Same ->
         rewrite (Anda (Leta (v, va, vb), l)) Swapped
@@ -15251,7 +15257,58 @@ let rec rewrite
     | Anda (l, Lessa (v, va)), Same -> rewrite (Anda (Lessa (v, va), l)) Swapped
     | Anda (l, LessEqa (v, va)), Same ->
         rewrite (Anda (LessEqa (v, va), l)) Swapped
-    | Anda (l, Anda (v, va)), Same -> rewrite (Anda (Anda (v, va), l)) Swapped
+    | Anda (l, Anda (v, Preda (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Preda (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Leta (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Leta (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, Frza (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Frza (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, LetPasta (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, LetPasta (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, Eqb (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Eqb (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Lessa (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Lessa (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, LessEqa (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, LessEqa (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Nega vb)), Same ->
+        rewrite (Anda (Anda (v, Nega vb), l)) Swapped
+    | Anda (l, Anda (v, Anda (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Anda (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Andsa vb)), Same ->
+        rewrite (Anda (Anda (v, Andsa vb), l)) Swapped
+    | Anda (l, Anda (v, Existsa (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Existsa (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Agga (vb, vc, vd, ve, vf))), Same ->
+        rewrite (Anda (Anda (v, Agga (vb, vc, vd, ve, vf)), l)) Swapped
+    | Anda (l, Anda (v, Preva (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Preva (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Nexta (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Nexta (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Once (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Once (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Eventually (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Eventually (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Historically (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Historically (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Always (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, Always (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, Sincea (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Sincea (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, Untila (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Untila (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, Triggera (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Triggera (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, Releasea (vb, vc, vd))), Same ->
+        rewrite (Anda (Anda (v, Releasea (vb, vc, vd)), l)) Swapped
+    | Anda (l, Anda (v, MatchFa (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, MatchFa (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, MatchPa (vb, vc))), Same ->
+        rewrite (Anda (Anda (v, MatchPa (vb, vc)), l)) Swapped
+    | Anda (l, Anda (v, TPa vb)), Same ->
+        rewrite (Anda (Anda (v, TPa vb), l)) Swapped
+    | Anda (l, Anda (v, TSa vb)), Same ->
+        rewrite (Anda (Anda (v, TSa vb), l)) Swapped
     | Anda (l, Andsa v), Same -> rewrite (Anda (Andsa v, l)) Swapped
     | Anda (l, Agga (v, va, vb, vc, vd)), Same ->
         rewrite (Anda (Agga (v, va, vb, vc, vd), l)) Swapped
