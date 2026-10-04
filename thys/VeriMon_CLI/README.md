@@ -89,6 +89,38 @@ literals would be exported as calls of `nat_of_integer` that ocamlopt compiles
 into code, and it fails with a stack overflow. `CLI_Code` prints them as
 constructor applications (`natlit`), which OCaml compiles into static data.
 
+## Performance
+
+Measured on the performance suite (`evaluation/perf`: 285 formulas on synthetic
+logs of about 47 MB, best of 3, 5-second timeout, 2 workers on a 4-core
+machine), with `python3 run_suite.py --systems verimon,cli,monpoly`, on
+80a33c0a:
+
+| | `verimon-cli` / `monpoly -verified` | `monpoly` / `monpoly -verified` |
+|---|---|---|
+| formulas both run | 284 | 264 |
+| geometric mean | 1.00 | 1.11 |
+| median | 0.99 | 1.10 |
+| faster / more than 2x slower | 145 / 0 | 80 / 6 |
+| verdict disagreements | none | none |
+
+The one formula that `verimon-cli` does not run is `der-equiv`, which only
+MonPoly's fallback rewriting makes monitorable (see below). The largest ratio
+is `lp-chain` (1.60), whose run outputs 100 MB of verdicts: what remains of
+the printing's cost is the check that the monitor's order of the tuples is
+MonPoly's (`rows_of`), which `monpoly -verified` does as it streams.
+
+Start-up (`-check` on the 285 formulas, best of 5): 4.0 ms median for both
+programs, a median ratio of 1.008; the verified formula parser, signature
+reader and conversion cost no measurable time.
+
+The verdicts are printed with `verdict_fold` (theory `CLI_Output`), which
+passes each piece of the text and each integer of a tuple to the driver,
+which appends them to one buffer; it is proved equal to the fold over the
+pieces of `verdict_out` (`verdict_fold_eq`). With `verdict_out`'s lists, the
+same suite had a geometric mean of 1.06 and `lp-chain` timed out (6.4 s
+against 1.8 s).
+
 ## Differences from `monpoly -verified`
 
 `tools/verimon_cli_difftest.py` replays the commands of the cram tests
@@ -116,7 +148,9 @@ the others differ as follows:
 - 5 use `-load`, which is refused.
 - 1 formula is monitorable only after MonPoly's own rewriting, to which
   `monpoly -verified` falls back when VeriMon's preparation fails;
-  `verimon-cli` does not.
+  `verimon-cli` does not (also `der-equiv` in the performance suite,
+  `A(x,y) AND (C(x) EQUIV C(y))`, which MonPoly distributes into a
+  disjunction).
 - 1 differs in the message for a formula that the parser rejects.
 
 In detail:
