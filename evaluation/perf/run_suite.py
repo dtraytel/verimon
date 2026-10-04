@@ -3,13 +3,16 @@
 run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
 
   python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 3] [--timeout 5]
-                       [--jobs 2] [--budget 1800] [--systems monpoly,verimon]
+                       [--jobs 2] [--budget 1800] [--systems monpoly,verimon[,cli]]
+                       [--cli-bin ../../_build/default/src/verimon_cli.exe]
                        [--families once,since] [--out results]
 
 Systems: monpoly is the binary without flags; verimon is `-verified`, the verified dense evaluator
 of thys/MFODL_Monitor_Exec (reports before 2026-09-23 call it `vdense`, from when it needed
 `-vdense` next to a second, unverified dense monitor under `-verified`; that monitor is no
 longer in the binary).  Run against a build of master, `-verified` is the original VeriMon.
+cli is the program verimon-cli (--cli-bin), the verified monitor with MonPoly's command line
+(thys/VeriMon_CLI), whose formula parser, signature reader and conversion are verified too.
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
 classified as `refused` (outside the verified executable fragment), `unmonitorable` (the front end
@@ -26,7 +29,7 @@ Writes <out>/results.json, <out>/results.csv and <out>/report.md.
 import argparse, concurrent.futures, csv, hashlib, json, math, os, statistics, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SYSTEMS = {"monpoly": [], "verimon": ["-verified"]}
+SYSTEMS = {"monpoly": [], "verimon": ["-verified"], "cli": []}
 
 
 def read_suite(path):
@@ -91,7 +94,8 @@ def run_formula(entry, args, systems, reps_for):
         for s in systems:
             if r > 0 and res[s]["status"] != "ok":
                 continue
-            st, dt, h = run_once(args.bin, flags_for(s, entry), sig, formula, log, args.timeout)
+            binary = args.cli_bin if s == "cli" else args.bin
+            st, dt, h = run_once(binary, flags_for(s, entry), sig, formula, log, args.timeout)
             if st == "ok":
                 res[s]["times"].append(dt)
                 res[s]["status"] = "ok"
@@ -120,6 +124,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--budget", type=float, default=1800.0, help="wall-clock budget in seconds")
     ap.add_argument("--systems", default="monpoly,verimon")
+    ap.add_argument("--cli-bin", default=os.path.join(HERE, "..", "..", "_build", "default", "src", "verimon_cli.exe"))
     ap.add_argument("--families", default="", help="comma-separated subset of families")
     ap.add_argument("--names", default="", help="comma-separated subset of formula names")
     args = ap.parse_args()
