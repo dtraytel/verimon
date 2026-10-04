@@ -194,9 +194,10 @@ let main () =
                  large as possible -- 4M words removes 14% of P2 -- and wall clock says the
                  opposite, because a nursery that does not fit the cache costs more than the
                  collections it saves: 4M words is a third slower than the default.  768k
-                 words is where the two meet (EFFICIENCY.md, Section 18). *)
+                 words is where the two meet under OCaml 4 (EFFICIENCY.md, Section 18); under
+                 OCaml 5, 4M words is faster (Misc.verified_minor_heap). *)
               let mh = if !Misc.gc_minor_heap > 0 then !Misc.gc_minor_heap
-                else if !Misc.verified then 786432 else 0 in
+                else if !Misc.verified then Misc.verified_minor_heap else 0 in
               if so > 0 || mh > 0 then
                 Gc.set { (Gc.get ()) with
                   Gc.space_overhead = (if so > 0 then so else (Gc.get ()).Gc.space_overhead);
@@ -251,7 +252,7 @@ let _ =
     "-bulk_min", Arg.Set_int Misc.bulk_min, "\tDeprecated, accepted and ignored: not reachable from the monitor the verified kernel now ships (dense tuples only)";
     "-heap_since", Arg.Set Misc.heap_since, "\tDeprecated, accepted and ignored: the verified kernel is the one over the dense tuples";
     "-gc_space_overhead", Arg.Set_int Misc.gc_space_overhead, "\tOCaml GC space_overhead in percent (default: 500 with the verified kernel, otherwise the OCaml default of 120); larger values trade memory for speed";
-    "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default: 768k with the verified kernel, otherwise the OCaml default of 256k)";
+    "-gc_minor_heap", Arg.Set_int Misc.gc_minor_heap, "\tOCaml GC minor_heap_size in words (default with the verified kernel: 768k under OCaml 4, 4M under OCaml 5; otherwise the OCaml default of 256k)";
     "-no_mw", Arg.Set Algorithm_verified.no_mw, "\tNo multi-way join (only with the verified kernel)";
     "-generic_join", Arg.Set Algorithm_verified.generic_join, "\tDeprecated, accepted and ignored: gated the wide-tuple monitor's own multi-way join, which the verified kernel no longer exports";
     "-imperative_join", Arg.Set Algorithm_verified.imperative_join, "\tDeprecated, accepted and ignored: gated the wide-tuple monitor's own multi-way join, which the verified kernel no longer exports";

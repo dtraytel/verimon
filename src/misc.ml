@@ -108,6 +108,15 @@ let gc_space_overhead = ref 0
    one keeps it in the minor heap. *)
 let gc_minor_heap = ref 0
 
+(* The minor heap size in words that the verified kernel runs with unless the user chose one
+   (main.ml and verimon_cli.ml).  Under OCaml 4, 768k words is where instruction counts (fewer
+   promotions with a larger nursery) and wall clock (a nursery that does not fit the cache costs
+   more than the collections it saves; 4M words is a third slower) meet (EFFICIENCY.md, Section
+   18).  OCaml 5's runtime does not have that cost: on the performance suite, 4M words is the
+   fastest of 768k, 2M, 4M and 8M words (6% faster than 768k on the runs over 1.5 s, the same on
+   the short ones), and 8M words is slower again. *)
+let verified_minor_heap = if Sys.ocaml_release.major >= 5 then 4194304 else 786432
+
 (* Set by the deprecated -dense, which the verified monitor ignores: it always represents each
    table's tuples without the positions that are None for all of them (thys/MFODL_Monitor_Exec). *)
 let dense_cols = ref false

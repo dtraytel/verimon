@@ -80,6 +80,9 @@ val bulk_min: int ref
 (** GC space overhead in percent to set before monitoring (0: leave the default). *)
 val gc_space_overhead: int ref
 val gc_minor_heap: int ref
+(** Minor heap size in words for the verified kernel when the user chose none: 768k words
+    under OCaml 4, 4M words under OCaml 5. *)
+val verified_minor_heap: int
 val dense_cols: bool ref
 val verified_dense: bool ref
 val new_last_ts: bool ref

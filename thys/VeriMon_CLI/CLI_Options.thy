@@ -66,7 +66,7 @@ definition opt_table :: "(string \<times> okind \<times> string) list" where
     (''-bulk_min'', OInt, tab @ ''Deprecated, accepted and ignored''),
     (''-heap_since'', OFlag, tab @ ''Deprecated, accepted and ignored''),
     (''-gc_space_overhead'', OInt, tab @ ''OCaml GC space_overhead in percent (default: 500); larger values trade memory for speed''),
-    (''-gc_minor_heap'', OInt, tab @ ''OCaml GC minor_heap_size in words (default: 768k)''),
+    (''-gc_minor_heap'', OInt, tab @ ''OCaml GC minor_heap_size in words (default: 768k under OCaml 4, 4M under OCaml 5)''),
     (''-no_mw'', OFlag, tab @ ''No multi-way join''),
     (''-generic_join'', OFlag, tab @ ''Deprecated, accepted and ignored''),
     (''-imperative_join'', OFlag, tab @ ''Deprecated, accepted and ignored''),

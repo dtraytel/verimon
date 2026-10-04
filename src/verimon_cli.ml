@@ -182,11 +182,11 @@ let () =
     | V.Run (msg, cfg, cf, st, fin, n, lsig) ->
         print_text stderr msg;
         (* As for monpoly -verified: a larger GC space overhead and nursery (EFFICIENCY.md,
-           Sections 9 and 18), unless the options say otherwise. *)
+           Sections 9 and 18, and Misc.verified_minor_heap), unless the options say otherwise. *)
         let so = int_of_int (V.c_gc_space_overhead cfg) and mh = int_of_int (V.c_gc_minor_heap cfg) in
         Gc.set { (Gc.get ()) with
           Gc.space_overhead = (if so > 0 then so else 500);
-          Gc.minor_heap_size = (if mh > 0 then mh else 786432) };
+          Gc.minor_heap_size = (if mh > 0 then mh else Misc.verified_minor_heap) };
         run cfg cf st fin n lsig;
         if V.c_mem cfg then prerr_endline (Misc.mem_max ());
         exit 0 in

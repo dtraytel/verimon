@@ -142,7 +142,7 @@ The command line:
     -bulk_min 	Deprecated, accepted and ignored
     -heap_since 	Deprecated, accepted and ignored
     -gc_space_overhead 	OCaml GC space_overhead in percent (default: 500); larger values trade memory for speed
-    -gc_minor_heap 	OCaml GC minor_heap_size in words (default: 768k)
+    -gc_minor_heap 	OCaml GC minor_heap_size in words (default: 768k under OCaml 4, 4M under OCaml 5)
     -no_mw 	No multi-way join
     -generic_join 	Deprecated, accepted and ignored
     -imperative_join 	Deprecated, accepted and ignored
