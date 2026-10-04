@@ -21,12 +21,22 @@
   (flags (:standard -w -a))
   (modules verified_parser))
 
+; The verified monitor with MonPoly's command line (thys/VeriMon_CLI): the monitor, the log
+; parser and the formula parser in one module, generated in the same way.
+(library
+  (name verimon_code)
+  (public_name libmonpoly.verimon_code)
+  (libraries zarith)
+  (instrumentation (backend bisect_ppx))
+  (flags (:standard -w -a))
+  (modules verimon_code))
+
 (library
   (name libmonpoly)
   (public_name libmonpoly)
   (libraries str unix zarith verified verified_parser)
   (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main verified verified_parser)))
+  (modules (:standard \ Main Verimon_cli verified verified_parser verimon_code)))
 
 (executable
   (name main)
@@ -35,3 +45,11 @@
   (libraries libmonpoly dune-build-info)
   (instrumentation (backend bisect_ppx))
   (modules Main))
+
+(executable
+  (name verimon_cli)
+  (public_name verimon-cli)
+  (package monpoly)
+  (libraries libmonpoly verimon_code dune-build-info)
+  (instrumentation (backend bisect_ppx))
+  (modules Verimon_cli))

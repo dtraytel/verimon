@@ -75,13 +75,49 @@ constructor applications (`natlit`), which OCaml compiles into static data.
 
 ## Differences from `monpoly -verified`
 
-`tools/verimon_cli_difftest.py` replays the commands of the cram tests with
-both programs and compares their outputs. The known differences:
+`tools/verimon_cli_difftest.py` replays the commands of the cram tests
+(`tests/*.t/run.t`) with both programs and compares standard output, standard
+error and exit code:
+
+```
+dune build ./src/main.exe ./src/verimon_cli.exe
+python3 tools/verimon_cli_difftest.py _build/default/src/main.exe _build/default/src/verimon_cli.exe
+python3 tools/verimon_cli_difftest.py -all -noformula _build/default/src/main.exe _build/default/src/verimon_cli.exe
+```
+
+All 95 commands that run `monpoly -verified` give the same output. Of all 841
+`monpoly` commands (run with `-verified` added, and without the lines in
+which MonPoly prints the input or analyzed formula), 631 give the same output;
+the others differ as follows:
+
+- 141 use `-debug`, which prints MonPoly's internal state.
+- 47 differ in the reason why a formula is not monitorable (MonPoly prints its
+  own analysis of the subformula and of safe-range-ness; `verimon-cli` the
+  verified monitor's).
+- 9 grep for the analyzed formula, which `verimon-cli` does not print.
+- 6 differ in the message of a type error, which is the verified type
+  checker's.
+- 5 use `-load`, which is refused.
+- 1 formula is monitorable only after MonPoly's own rewriting, to which
+  `monpoly -verified` falls back when VeriMon's preparation fails;
+  `verimon-cli` does not.
+- 1 differs in the message for a formula that the parser rejects.
+
+In detail:
 
 - The verified parser rejects some formulas that MonPoly's parser accepts (see
   `thys/MFODL_Parser/README.md`), and reports a rejection with its own message.
-- `EQUIV` is `(φ IMPLIES ψ) AND (ψ IMPLIES φ)`; MonPoly's `-no_rw` path has
-  `(φ IMPLIES ψ) AND (ψ IMPLIES ψ)`.
-- `-check` and `-verbose` do not print the analyzed formula, and the reason
-  why a formula is not monitorable is the verified monitor's.
-- `-load` and `-combine` are refused.
+- MonPoly's checks of the input formula (`Rewriting.check_wff` and
+  `check_syntax`) are done with MonPoly's messages for intervals, unbounded
+  future operators and undeclared predicates; the checks of `LET` and of
+  aggregations, whose messages print subformulas, and type errors are left to
+  the conversion and to the verified type checker.
+- `-check` and `-verbose` do not print the input or the analyzed formula.
+- `EQUIV` is `(φ IMPLIES ψ) AND (ψ IMPLIES φ)`; MonPoly's conversion without
+  rewriting has `(φ IMPLIES ψ) AND (ψ IMPLIES ψ)`.
+- `-load` and `-combine` are refused; `-debug`, `-stats` and the options of
+  MonPoly's own algorithm are accepted and ignored.
+- The usage text names `verimon` and lists its options.
+
+`tests/verimon_cli.t` runs `verimon-cli` on examples of verdicts, errors in
+the log, the checks of the input, and the command line.

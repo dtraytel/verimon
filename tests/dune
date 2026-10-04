@@ -5,3 +5,7 @@
 (cram
   (applies_to verified_parser)
   (deps %{bin:parser_difftest}))
+
+(cram
+  (applies_to verimon_cli)
+  (deps %{bin:verimon-cli}))
