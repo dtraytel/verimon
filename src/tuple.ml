@@ -96,9 +96,17 @@ let make_tuple x = x
 
 exception Type_error of string
 
+(* List.map2 converting from left to right before it compares the lengths, as OCaml 4's
+   List.map2 does (OCaml 5's compares them first), so that a wrong number of fields is reported
+   only if the fields in common convert. *)
+let rec map2_lr f l1 l2 = match l1, l2 with
+  | [], [] -> []
+  | a1 :: l1, a2 :: l2 -> let r = f a1 a2 in r :: map2_lr f l1 l2
+  | _ -> invalid_arg "List.map2"
+
 let make_tuple2 sl tl =
   let pos = ref 0 in
-  List.map2
+  map2_lr
     (fun s (_, t) ->
        incr pos;
        match t with

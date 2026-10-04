@@ -159,24 +159,28 @@ let uconvert_tuple (pname, tl) sl =
     raise (Conversion_error (Printf.sprintf "Wrong type for predicate %s: Expected type %s\
       \ for field number %d" pname tname !pos))
   in
-  try List.map2
-    (fun (_, t) s ->
-      incr pos;
-      (match t with
-      | TInt ->
-        (try EInt (Z.of_string s)
-         with Invalid_argument _ -> type_error "int")
-      | TStr -> EString s
-      | TFloat ->
-        (try EFloat (float_of_string s)
-         with Failure _ -> type_error "float")
-      | TRegexp -> unsupported "Regular expressions constants are not supported"
-      )
-    )
-    tl sl
-  with Invalid_argument _ ->
-    raise (Conversion_error (Printf.sprintf "Wrong tuple length for predicate %s\
-      \ (expected: %d, actual: %d)" pname (List.length tl) (List.length sl)))
+  let convert (_, t) s =
+    incr pos;
+    match t with
+    | TInt ->
+      (try EInt (Z.of_string s)
+       with Invalid_argument _ -> type_error "int")
+    | TStr -> EString s
+    | TFloat ->
+      (try EFloat (float_of_string s)
+       with Failure _ -> type_error "float")
+    | TRegexp -> unsupported "Regular expressions constants are not supported"
+  in
+  (* The fields are converted from left to right before the lengths are compared, as MonPoly's
+     parser does (not with List.map2, whose order of checks differs between OCaml versions). *)
+  let rec go ts ss = match ts, ss with
+    | [], [] -> []
+    | t :: ts, s :: ss -> let d = convert t s in d :: go ts ss
+    | _ ->
+      raise (Conversion_error (Printf.sprintf "Wrong tuple length for predicate %s\
+        \ (expected: %d, actual: %d)" pname (List.length tl) (List.length sl)))
+  in
+  go tl sl
 
 type udb = ((string * nat), ((event_data list) set list)) mapping
 
