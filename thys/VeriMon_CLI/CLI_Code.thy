@@ -27,13 +27,18 @@ code_printing
 | constant bytes_of_string \<rightharpoonup> (OCaml) "(fun cs -> String.of'_seq (List.to'_seq cs))"
 | constant str8_of_integer \<rightharpoonup> (OCaml) "Z.to'_string"
 | constant str8_quoted \<rightharpoonup> (OCaml)
-    "(fun s -> let n = String.length s in n > 0 && String.get s 0 = '\"' && String.get s (n - 1) = '\"')"
+    "(fun s -> let n = String.length s in n > 0 && String.get s 0 = Char.chr 34 && String.get s (n - 1) = Char.chr 34)"
 
 definition natlit :: "integer \<Rightarrow> nat" where
-  "natlit = nat_of_integer"
+  "natlit k = nat_of_integer k"
 
-lemma natlit_numeral[code_unfold]: "(numeral k :: nat) = natlit (numeral k)"
+text \<open>After the preprocessing of numerals, a literal of type @{typ nat} is
+  @{term "nat_of_integer (Code_Numeral.Pos k)"}.\<close>
+
+lemma natlit_Pos[code_unfold]: "nat_of_integer (Code_Numeral.Pos k) = natlit (Code_Numeral.Pos k)"
   by (simp add: natlit_def)
+
+declare [[code drop: natlit]]
 
 code_printing
   constant natlit \<rightharpoonup> (OCaml) "Nat"
@@ -48,7 +53,7 @@ derive (dlist) set_impl sty
 export_code
   integer_of_nat nat_of_integer integer_of_int int_of_integer
   cli_main Done Version NeedFile Run
-  c_log c_verbose c_ignore_errors c_stop_first c_mem c_gc_space_overhead c_gc_minor_heap
+  c_log c_verbose c_unix c_ignore_errors c_stop_first c_mem c_gc_space_overhead c_gc_minor_heap
   vfeed_chunk vfinish vpending VO_VERDICTS
   verdict_out tp_out log_error LE_LOC
   in OCaml module_name Verimon file_prefix "verimon_code"

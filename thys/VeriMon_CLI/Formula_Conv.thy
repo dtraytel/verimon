@@ -196,6 +196,16 @@ primrec t2s :: "trm \<Rightarrow> bool \<Rightarrow> string" where
 definition string_of_term :: "trm \<Rightarrow> string" where
   "string_of_term t = t2s t True"
 
+text \<open>@{text MFOTL.string_of_opt_term}, and @{text Misc.string_of_list_ext}'s separators.\<close>
+
+definition string_of_opt_term :: "trm option \<Rightarrow> string" where
+  "string_of_opt_term t = (case t of None \<Rightarrow> ''_'' | Some u \<Rightarrow> string_of_term u)"
+
+fun between_list :: "string \<Rightarrow> string list \<Rightarrow> string list" where
+  "between_list s [] = []"
+| "between_list s [x] = [x]"
+| "between_list s (x # y # zs) = x # s # between_list s (y # zs)"
+
 fun string_of_bound_l :: "bound \<Rightarrow> string" where
   "string_of_bound_l (OBnd a) = ''('' @ string_of_int a @ '',''"
 | "string_of_bound_l (CBnd a) = ''['' @ string_of_int a @ '',''"
@@ -352,8 +362,11 @@ and conv_r :: "(bytes \<Rightarrow> double option) \<Rightarrow> string list \<R
      | Inr a \<Rightarrow> map_sum id (Formula.Less a) (conv_trm pf fvl bvl u))"
 | "conv_f pf fvl bvl lets (FLessEq t u) = clift (case conv_trm pf fvl bvl t of Inl e \<Rightarrow> Inl e
      | Inr a \<Rightarrow> map_sum id (Formula.LessEq a) (conv_trm pf fvl bvl u))"
-| "conv_f pf fvl bvl lets (FSubstring t u) = clift (Inl (unsupported ''Unsupported formula SUBSTRING''))"
-| "conv_f pf fvl bvl lets (FMatches t u ts) = clift (Inl (unsupported ''Unsupported formula MATCHES''))"
+| "conv_f pf fvl bvl lets (FSubstring t u) = clift (Inl (unsupported
+     (''Unsupported formula '' @ string_of_term t @ '' SUBSTRING '' @ string_of_term u)))"
+| "conv_f pf fvl bvl lets (FMatches t u ts) = clift (Inl (unsupported
+     (''Unsupported formula '' @ string_of_term t @ '' MATCHES '' @ string_of_term u @
+      (if ts = [] then [] else '' ('' @ concat (between_list '', '' (map string_of_opt_term ts)) @ '')''))))"
 | "conv_f pf fvl bvl lets (FPred p) = clift (conv_pred pf fvl bvl lets p)"
 | "conv_f pf fvl bvl lets (FLet p f g) = do {
      a \<leftarrow> conv_f pf (def_vars p) [] lets f;

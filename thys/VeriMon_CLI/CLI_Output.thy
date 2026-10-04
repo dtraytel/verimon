@@ -190,16 +190,28 @@ definition dec_nat :: "nat \<Rightarrow> string" where
 definition lsig_arity :: "lsig \<Rightarrow> bytes \<Rightarrow> nat option" where
   "lsig_arity L p = map_option length (map_of L (string8_of_bytes p))"
 
-fun log_error :: "lsig \<Rightarrow> verror \<Rightarrow> lerr" where
-  "log_error L (VE_PARSE e) = LE_LOC (perror_msg e)"
-| "log_error L (VE_TIMESTAMP ts) = LE_LOC (''Cannot convert '' @ string_of_bytes ts @ '' into a timestamp'')"
-| "log_error L (VE_ORDER t p) = LE_ORDER (''ERROR: Out of order timestamp '' @ dec_nat t @ '' (previous: '' @ dec_nat p @ '')'')"
-| "log_error L (VE_PREDICATE p n) = LE_LOC (case lsig_arity L p of
+text \<open>A timestamp in a message (@{text MFOTL.string_of_ts}), with @{text "-unix"} as a date as
+  in @{const unix_out}.\<close>
+
+definition unix_str :: "nat \<Rightarrow> string" where
+  "unix_str t = (let s = int t; (y, m, d) = civil_of_days (s div 86400); r = s mod 86400 in
+     dec_nat (nat (y - 1900)) @ ''-'' @ dec_nat (nat (m - 1)) @ ''-'' @ dec_nat (nat d) @ '' '' @
+     dec_nat (nat (r div 3600)) @ '':'' @ dec_nat (nat (r div 60 mod 60)) @ '':'' @ dec_nat (nat (r mod 60)))"
+
+definition ts_str :: "bool \<Rightarrow> nat \<Rightarrow> string" where
+  "ts_str unix t = (if unix then unix_str t else dec_nat t)"
+
+fun log_error :: "bool \<Rightarrow> lsig \<Rightarrow> verror \<Rightarrow> lerr" where
+  "log_error unix L (VE_PARSE e) = LE_LOC (perror_msg e)"
+| "log_error unix L (VE_TIMESTAMP ts) = LE_LOC (''Cannot convert '' @ string_of_bytes ts @ '' into a timestamp'')"
+| "log_error unix L (VE_ORDER t p) =
+     LE_ORDER (''ERROR: Out of order timestamp '' @ ts_str unix t @ '' (previous: '' @ ts_str unix p @ '')'')"
+| "log_error unix L (VE_PREDICATE p n) = LE_LOC (case lsig_arity L p of
      Some a \<Rightarrow> ''Wrong tuple length for predicate '' @ string_of_bytes p @ '' (expected: '' @ dec_nat a @ '', actual: '' @ dec_nat n @ '')''
    | None \<Rightarrow> ''Predicate '' @ string_of_bytes p @ '' was not defined in the signature.'')"
-| "log_error L (VE_FIELD p i t) = LE_LOC (''Expected type '' @ (case t of TInt \<Rightarrow> ''int'' | TFloat \<Rightarrow> ''float'' | TString \<Rightarrow> ''string'') @
+| "log_error unix L (VE_FIELD p i t) = LE_LOC (''Expected type '' @ (case t of TInt \<Rightarrow> ''int'' | TFloat \<Rightarrow> ''float'' | TString \<Rightarrow> ''string'') @
      '' for predicate '' @ string_of_bytes p @ '', field number '' @ dec_nat (Suc i))"
-| "log_error L (VE_COMMAND c) = LE_CMD ''ERROR: Commands are not supported by the verified kernel''"
+| "log_error unix L (VE_COMMAND c) = LE_CMD ''ERROR: Commands are not supported by the verified kernel''"
 
 (*<*)
 end
