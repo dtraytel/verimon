@@ -43,18 +43,34 @@ the formula file and the signature file, then
   formula's predicates and of undeclared predicates (all events with
   `-nofilterrel`) denote no prefix;
 - on a log that denotes a prefix `π`, there is no error, and the verdicts are
-  exactly the time points `i` below the progress on `π`, with their
-  timestamps, and the tuples `v` over the free variables of `φ` such that
-  `Formula.sat σ Map.empty (val … v) i φ'` holds on every well-typed trace `σ`
-  that extends `π`, where `φ'` is `φ` with the inferred types.
+  exactly `verdict_spec L φ f π`: the time points `i` below the progress on
+  `π`, with their timestamps, and the tuples `v` over the free variables of
+  `φ` such that `Formula.sat σ Map.empty (val … v) i φ'` holds on every
+  well-typed trace `σ` that extends `π`, where `φ'` is `φ` with the inferred
+  types.
+
+`CLI.verimon_correct_online` states the same online, as the driver runs the
+monitor. After the chunks read so far:
+
+- the outputs so far contain an error exactly when the bytes read so far
+  (restricted to the events the monitor keeps) denote no prefix;
+- if the bytes read so far denote a prefix `π`, the outputs so far contain no
+  error and their verdicts are exactly `verdict_spec L φ f π`;
+- the outputs of a further chunk, after which the bytes denote `π'`, contain no
+  error, and their verdicts are exactly `verdict_spec L φ f π' -
+  verdict_spec L φ f π`, so every verdict is output once, as soon as the bytes
+  that determine it have been read;
+- the outputs at the end of the log are those of the prefix the whole log
+  denotes, minus those of `π`;
+- a chunk, or the end of the log, after which the bytes no longer denote a
+  prefix outputs an error.
 
 The types matter for aggregations (an aggregation's type annotation decides,
 for example, whether `SUM` is an integer or a floating point sum), so the
 semantics is that of `φ'`.
 
-Not covered: the driver's loop and its printing (the verdicts are those of
-`vrun`, which the driver computes chunk by chunk), the location of errors in
-the log, and the four functions that `CLI_Code` implements in OCaml (strings of
+Not covered: the driver's printing of the verdicts (`verdict_out`), the
+location of errors in the log, what is output after the first error, and the four functions that `CLI_Code` implements in OCaml (strings of
 characters as byte strings, decimal representation of integers, and the test
 whether a string is quoted).
 
@@ -62,11 +78,11 @@ whether a string is quoted).
 
 ```
 cd thys && isabelle build -b -e -d . VeriMon_CLI
-cp VeriMon_CLI/verimon_code.ml ../src/verimon_code.ml
+cp VeriMon_CLI/verimon_code.ocaml ../src/verimon_code.ml
 ```
 
 The session processes the grammar and the parser from source (its parent is
-`MFODL_Monitor_Exec`), which takes about 30 minutes.
+`MFODL_Monitor_Exec`), which takes about 22 minutes.
 
 The parser's tables are large: under `Code_Target_Nat`, natural number
 literals would be exported as calls of `nat_of_integer` that ocamlopt compiles
