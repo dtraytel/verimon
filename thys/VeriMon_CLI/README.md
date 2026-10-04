@@ -94,19 +94,21 @@ constructor applications (`natlit`), which OCaml compiles into static data.
 Measured on the performance suite (`evaluation/perf`: 285 formulas on synthetic
 logs of about 47 MB, best of 3, 5-second timeout, 2 workers on a 4-core
 machine), with `python3 run_suite.py --systems verimon,cli,monpoly`, on
-80a33c0a:
+482050d8:
 
 | | `verimon-cli` / `monpoly -verified` | `monpoly` / `monpoly -verified` |
 |---|---|---|
-| formulas both run | 284 | 264 |
-| geometric mean | 1.00 | 1.11 |
-| median | 0.99 | 1.10 |
-| faster / more than 2x slower | 145 / 0 | 80 / 6 |
+| formulas both run | 285 | 264 |
+| geometric mean | 1.01 | 1.08 |
+| median | 1.01 | 1.09 |
+| faster / more than 2x slower | 135 / 0 | 101 / 5 |
 | verdict disagreements | none | none |
 
-The one formula that `verimon-cli` does not run is `der-equiv`, which only
-MonPoly's fallback rewriting makes monitorable (see below). The largest ratio
-is `lp-chain` (1.60), whose run outputs 100 MB of verdicts: what remains of
+`verimon-cli` runs all formulas of the suite, among them `der-equiv`,
+`A(x,y) AND (C(x) EQUIV C(y))`, which VeriMon's rewriting distributes into a
+disjunction (the equation of `Rewriting.rewrite` for a disjunction one level
+down a conjunction, as `EQUIV` produces). The largest ratio
+is `lp-chain` (1.62), whose run outputs 100 MB of verdicts: what remains of
 the printing's cost is the check that the monitor's order of the tuples is
 MonPoly's (`rows_of`), which `monpoly -verified` does as it streams.
 
@@ -148,9 +150,7 @@ the others differ as follows:
 - 5 use `-load`, which is refused.
 - 1 formula is monitorable only after MonPoly's own rewriting, to which
   `monpoly -verified` falls back when VeriMon's preparation fails;
-  `verimon-cli` does not (also `der-equiv` in the performance suite,
-  `A(x,y) AND (C(x) EQUIV C(y))`, which MonPoly distributes into a
-  disjunction).
+  `verimon-cli` does not.
 - 1 differs in the message for a formula that the parser rejects.
 
 In detail:
