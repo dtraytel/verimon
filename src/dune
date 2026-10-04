@@ -26,17 +26,18 @@
 (library
   (name verimon_code)
   (public_name libmonpoly.verimon_code)
+  (wrapped false)
   (libraries zarith)
   (instrumentation (backend bisect_ppx))
   (flags (:standard -w -a))
-  (modules verimon_code))
+  (modules verimon_code verimon_runtime))
 
 (library
   (name libmonpoly)
   (public_name libmonpoly)
   (libraries str unix zarith verified verified_parser)
   (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main Verimon_cli verified verified_parser verimon_code)))
+  (modules (:standard \ Main Verimon_cli verified verified_parser verimon_code verimon_runtime)))
 
 (executable
   (name main)

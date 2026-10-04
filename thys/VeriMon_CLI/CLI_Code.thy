@@ -12,7 +12,11 @@ text \<open>
   for the lexer (@{theory MFODL_Parser_Code.MFODL_Lexer_Code}). The trusted part beyond theirs is
   the code printing of the four functions below on byte strings and integers, each by the OCaml
   function with the same meaning: the strings of bytes of a list of characters, the decimal
-  representation of an integer, and the test whether a string begins and ends with a double quote.
+  representation of an integer (@{text Verimon_runtime.dec_of_z} in
+  \<^verbatim>\<open>src/verimon_runtime.ml\<close>, which is @{text Z.to_string} without its general formatting for
+  the integers that fit into an OCaml integer), and the test whether a string begins and ends
+  with a double quote. The driver prints the verdicts with @{const verdict_fold}, passing for the
+  integers @{text Verimon_runtime.add_dec_of_z}, which appends the same digits to its buffer.
 
   The natural numbers in the parser's tables are printed as constants
   (@{text "Nat (Z.of_int n)"}, which is a constant since Zarith's @{text Z.of_int} is the
@@ -25,7 +29,7 @@ declare [[code drop: str8_of_string bytes_of_string str8_of_integer str8_quoted]
 code_printing
   constant str8_of_string \<rightharpoonup> (OCaml) "(fun cs -> String.of'_seq (List.to'_seq cs))"
 | constant bytes_of_string \<rightharpoonup> (OCaml) "(fun cs -> String.of'_seq (List.to'_seq cs))"
-| constant str8_of_integer \<rightharpoonup> (OCaml) "Z.to'_string"
+| constant str8_of_integer \<rightharpoonup> (OCaml) "Verimon'_runtime.dec'_of'_z"
 | constant str8_quoted \<rightharpoonup> (OCaml)
     "(fun s -> let n = String.length s in n > 0 && String.get s 0 = Char.chr 34 && String.get s (n - 1) = Char.chr 34)"
 
@@ -55,7 +59,7 @@ export_code
   cli_main Done Version NeedFile Run
   c_log c_verbose c_unix c_ignore_errors c_stop_first c_mem c_gc_space_overhead c_gc_minor_heap
   vfeed_chunk vfinish vpending VO_VERDICTS
-  verdict_out tp_out log_error LE_LOC
+  verdict_out verdict_fold tp_out log_error LE_LOC
   in OCaml module_name Verimon file_prefix "verimon_code"
 
 (*<*)

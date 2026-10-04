@@ -136,6 +136,67 @@ definition verdict_out :: "config \<Rightarrow> (double \<Rightarrow> string8) \
      else if n = 0 then head @ [S8 STR ''true'', nl8]
      else head @ sep_out (S8 STR '' '') (map (tuple_out ff) rows) @ [nl8], rows \<noteq> []))"
 
+text \<open>The same text as a fold, for the driver: each piece is passed to @{text f} as it is
+  produced, and each integer of a tuple to @{text fi}, rather than built into a list, which the
+  driver would then copy (@{thm [source] verdict_fold_eq}: with @{text fi} the printing of the
+  integer, the fold over the pieces of @{const verdict_out}).\<close>
+
+fun sep_fold :: "('b \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> string8 \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> 'b list \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "sep_fold g d f [] acc = acc"
+| "sep_fold g d f [x] acc = g x acc"
+| "sep_fold g d f (x # y # zs) acc = sep_fold g d f (y # zs) (f d (g x acc))"
+
+lemma sep_fold_out: "sep_fold (\<lambda>x. fold f (h x)) d f xs acc = fold f (sep_out d (map h xs)) acc"
+  by (induction "\<lambda>x. fold f (h x)" d f xs acc rule: sep_fold.induct) simp_all
+
+definition ed_fold :: "(double \<Rightarrow> string8) \<Rightarrow> (integer \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow>
+    event_data \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "ed_fold ff fi f d acc = (case d of
+     EInt i \<Rightarrow> fi i acc
+   | EFloat x \<Rightarrow> f (ff x) acc
+   | EString s \<Rightarrow> if s = empty_string then f (S8 STR ''\"\"'') acc
+       else if str8_quoted s then f s acc else f (S8 STR ''\"'') (f s (f (S8 STR ''\"'') acc)))"
+
+lemma ed_fold_out: "ed_fold ff (\<lambda>i. f (str8_of_integer i)) f d acc = fold f (ed_out ff d) acc"
+  by (simp add: ed_fold_def ed_out_def split: event_data.splits)
+
+definition tuple_fold :: "(double \<Rightarrow> string8) \<Rightarrow> (integer \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow>
+    event_data list \<Rightarrow> 'a \<Rightarrow> 'a" where
+  "tuple_fold ff fi f t acc =
+     f (S8 STR '')'') (sep_fold (ed_fold ff fi f) (S8 STR '','') f t (f (S8 STR ''('') acc))"
+
+lemma tuple_fold_out: "tuple_fold ff (\<lambda>i. f (str8_of_integer i)) f t acc = fold f (tuple_out ff t) acc"
+proof -
+  have "ed_fold ff (\<lambda>i. f (str8_of_integer i)) f = (\<lambda>d. fold f (ed_out ff d))"
+    by (simp add: fun_eq_iff ed_fold_out)
+  then show ?thesis
+    by (simp add: tuple_fold_def tuple_out_def sep_fold_out)
+qed
+
+definition verdict_fold :: "config \<Rightarrow> (double \<Rightarrow> string8) \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> nat \<Rightarrow> utable \<Rightarrow>
+    (integer \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> (string8 \<Rightarrow> 'a \<Rightarrow> 'a) \<Rightarrow> 'a \<Rightarrow> 'a \<times> bool" where
+  "verdict_fold conf ff n q t X fi f acc = (let
+     rows = (if c_stop_first conf then take 1 (rows_of X) else rows_of X);
+     head = S8 STR ''@'' # ts_out (c_unix conf) t @ [S8 STR '' (time point '', str8_of_integer (integer_of_nat q), S8 STR ''): ''];
+     nl8 = S8 STR ''\<newline>''
+   in (if c_verbose conf then
+       (if n = 0 then fold f (head @ [if rows = [] then S8 STR ''false'' else S8 STR ''true'', nl8]) acc
+        else f nl8 (f (S8 STR '')'') (sep_fold (tuple_fold ff fi f) (S8 STR '','') f rows
+          (f (S8 STR ''('') (fold f head acc)))))
+     else if rows = [] then acc
+     else if n = 0 then fold f (head @ [S8 STR ''true'', nl8]) acc
+     else f nl8 (sep_fold (tuple_fold ff fi f) (S8 STR '' '') f rows (fold f head acc)), rows \<noteq> []))"
+
+lemma verdict_fold_eq:
+  "verdict_fold conf ff n q t X (\<lambda>i. f (str8_of_integer i)) f acc =
+     apfst (\<lambda>text. fold f text acc) (verdict_out conf ff n q t X)"
+proof -
+  have "tuple_fold ff (\<lambda>i. f (str8_of_integer i)) f = (\<lambda>t. fold f (tuple_out ff t))"
+    by (simp add: fun_eq_iff tuple_fold_out)
+  then show ?thesis
+    by (simp add: verdict_fold_def verdict_out_def Let_def sep_fold_out)
+qed
+
 text \<open>With @{text "-verbose"}, each time point begins with this line.\<close>
 
 definition tp_out :: "nat \<Rightarrow> string8 list" where

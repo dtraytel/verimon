@@ -9,7 +9,7 @@
    verimon_log.vrun_log and vrun_filtered apply to the verdicts it outputs.
 
    This driver reads the files, prints the texts it is given, and runs the loop over the log in
-   chunks ([vfeed_chunk], [vfinish]); the verdicts are printed as [verdict_out] says, and the
+   chunks ([vfeed_chunk], [vfinish]); the verdicts are printed as [verdict_fold] says (proved equal to [verdict_out]), and the
    errors in the log as [log_error] words them, at the positions this driver computes, as
    Algorithm_verified does for monpoly -verified. *)
 
@@ -23,7 +23,15 @@ let int_of_int i = Z.to_int (V.integer_of_int i)
 (* The generated code's strings of characters, as OCaml strings. *)
 let string_of_chars cs = String.of_seq (List.to_seq cs)
 
-let print_text oc t = List.iter (output_string oc) t; flush oc
+(* The pieces of a text are collected in a buffer and written at once: a write per piece costs
+   more than the pieces' contents. *)
+let text_buf = Buffer.create 4096
+
+let print_text oc t =
+  Buffer.clear text_buf;
+  List.iter (Buffer.add_string text_buf) t;
+  Buffer.output_buffer oc text_buf;
+  flush oc
 
 let print_banner () =
   let banner =
@@ -66,8 +74,12 @@ let run cfg cf st fin n lsig =
     | V.VO_VERDICTS vs ->
         if verbose then print_text stdout (V.tp_out (V.nat_of_integer (Z.of_int !cur_tp)));
         List.iter (fun (q, (tsq, table)) ->
-            let (text, nonempty) = V.verdict_out cfg ff n q tsq table in
-            print_text stdout text;
+            Buffer.clear text_buf;
+            let ((), nonempty) =
+              V.verdict_fold cfg ff n q tsq table (fun i () -> Verimon_runtime.add_dec_of_z text_buf i)
+                (fun s () -> Buffer.add_string text_buf s) () in
+            Buffer.output_buffer stdout text_buf;
+            flush stdout;
             if stop_first && nonempty then raise Stop) vs;
         incr cur_tp
     | V.VO_ERROR (off, e) ->
