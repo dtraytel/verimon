@@ -92,25 +92,25 @@ constructor applications (`natlit`), which OCaml compiles into static data.
 ## Performance
 
 Measured on the performance suite (`evaluation/perf`: 285 formulas on synthetic
-logs of about 47 MB, best of 3, 5-second timeout, 2 workers on a 4-core
-machine) against MonPoly and VeriMon 1 (`monpoly -verified`) as built from the
-branch `refine-parser`; `evaluation/perf/README.md` has the details of the
-latest run:
+logs of about 47 MB, best of 3, 5-second timeout); `evaluation/perf/README.md`
+has the details. Against MonPoly's own algorithm, on the latest run (8 workers),
+and against VeriMon 1 (`monpoly -verified`, as built from the branch
+`refine-parser`), on an earlier, noisier run (2 workers on a 4-core machine):
 
-| | `verimon` / `monpoly -verified` | `verimon` / `monpoly` |
+| | `verimon` / `monpoly` | `verimon` / `monpoly -verified` |
 |---|---|---|
-| formulas both finish | 282 | 262 |
-| geometric mean | 0.98 | 1.03 |
-| median | 0.98 | 1.05 |
-| faster / more than 2x slower | 153 / 0 | 101 / 0 |
+| formulas both finish | 264 | 282 |
+| geometric mean | 0.81 | 0.98 |
+| median | 0.83 | 0.98 |
+| faster / more than 2x slower | 236 / 0 | 153 / 0 |
 | verdict disagreements | none | none |
 
 `verimon` monitors all formulas of the suite, among them `der-equiv`,
 `A(x,y) AND (C(x) EQUIV C(y))`, which VeriMon's rewriting distributes into a
 disjunction (the equation of `Rewriting.rewrite` for a disjunction one level
-down a conjunction, as `EQUIV` produces), but two of them exceed the timeout
-on that run. One is `lp-chain`, whose run outputs 100 MB of verdicts; earlier, on a
-quieter machine, it was 1.62x `monpoly -verified`. What remains of the
+down a conjunction, as `EQUIV` produces). The largest ratio against
+`monpoly -verified` was `lp-chain` (1.62 on a quiet machine), whose run outputs
+100 MB of verdicts. What remains of the
 printing's cost is the check that the monitor's order of the tuples is MonPoly's
 (`rows_of`), which `monpoly -verified` does as it streams.
 

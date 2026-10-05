@@ -47,28 +47,30 @@ since its filter of empty time points rejects FRZ.
 
 ## Results
 
-`report.md`, `ratios.svg` (verimon/monpoly) and `ratios_v1.svg` (verimon/monpoly-verified) are
-a run of VeriMon 2.0 (b4d17739) against MonPoly and VeriMon 1 as built from the branch
-`refine-parser` (11815690), all three with OCaml 4.14.1 without flambda, the whole suite, 2
-workers on a 4-core machine (`--systems monpoly,verimon,monpoly-verified`). The machine was
-noisier than in earlier runs (the suite took 1561 s; single formulas varied by up to 1.6x between
-repetitions), so the ratios are of one run, not of a stable baseline.
+`report.md` and `ratios.svg` are a run of VeriMon 2.0 (b4d17739) against MonPoly's own algorithm,
+with the whole suite, 8 workers (`--monpoly PATH --jobs 8`, the default systems
+`monpoly,verimon`). The suite took 75 s of wall time.
 
-| | verimon / monpoly-verified | verimon / monpoly | monpoly / monpoly-verified |
-|---|---|---|---|
-| formulas both finish | 282 | 262 | 261 |
-| geometric mean | 0.98 | 1.03 | 0.95 |
-| median | 0.98 | 1.05 | 0.94 |
-| first faster | 153 | 101 | 172 |
-| more than 2x slower | 0 | 0 | 4 |
-| verdict disagreements | none | none | none |
+| | verimon / monpoly |
+|---|---|
+| formulas both finish | 264 |
+| geometric mean | 0.81 |
+| median | 0.83 |
+| verimon faster | 236 |
+| within 10% | 81 |
+| more than 2x slower | 0 |
+| timeouts (5 s) | none |
+| verdict disagreements | none |
 
-MonPoly does not monitor 21 of the formulas. Timeouts (5 s): `verimon` on `long-sum100`
-(also MonPoly) and `lp-chain` (about 5 to 8 s here, against 2.7 to 3.3 s for VeriMon 1; its run
-prints 100 MB of verdicts, and printing is where VeriMon 2.0 spends more than VeriMon 1);
-`monpoly` on `once-first500` and `long-sum100`; `monpoly-verified` on `agg-medonce`. Against
-VeriMon 1 the largest ratio is `since-u5` (1.45) and the smallest `frz-once5` (0.65); against
-MonPoly the largest is `pol-sincefutb` (1.97) and the smallest `frz-nested` (0.04).
+MonPoly does not monitor 21 of the formulas (the `andtrigger` and `vm_only` groups, among them
+`der-equiv` and `lp-chain`), which VeriMon runs in 0.2 to 0.8 s. The largest ratios are
+`frz-neglag` (1.37), `frz-agg` (1.24), `frz-sincelag` (1.23) and `pol-sincefutb` (1.20); every
+other formula is at most 1.13x. The fastest formulas relative to MonPoly are `frz-nested` (0.04),
+`onceex-not50` (0.21) and `onceex-50` (0.27).
+
+`ratios_v1.svg` (verimon/monpoly-verified) is from an earlier run of the same code against
+VeriMon 1, on a noisier 2-worker machine (the suite took 1561 s there): a geometric mean of 0.98
+over the 282 formulas both finish, none more than 2x slower, no verdict disagreements.
 
 `report.md` gives, per system against the reference: the counts of finished, timed-out, refused
 and erroneous runs; the geometric mean and median of the runtime ratio over the formulas both
