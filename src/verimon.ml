@@ -169,7 +169,7 @@ let run cfg cf st fin n lsig =
 
 let () =
   let args = Array.to_list Sys.argv in
-  let prog = match args with p :: _ -> p | [] -> "verimon-cli" in
+  let prog = match args with p :: _ -> p | [] -> "verimon" in
   let rest = match args with _ :: r -> r | [] -> [] in
   let pf s = float_of_string_opt s in
   let rec step = function

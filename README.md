@@ -194,7 +194,10 @@ Performance
 
 `evaluation/perf` is a suite of 285 formulas on synthetic logs, each chosen to exercise one
 operator or one shape of formula. It times VeriMon, and, for comparison, an installed MonPoly
-(`--monpoly`), and compares their verdicts; see `evaluation/perf/README.md`.
+(`--monpoly`), and compares their verdicts; see `evaluation/perf/README.md`. On its latest run,
+VeriMon 2.0 took 0.98 times the time of VeriMon 1 (`monpoly -verified`) and 1.03 times that of
+MonPoly's own algorithm (geometric means over the formulas both finish), with the same verdicts
+everywhere; 21 of the formulas are ones MonPoly does not monitor.
 
 
 Repository layout
