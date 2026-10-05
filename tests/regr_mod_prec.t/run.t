@@ -9,7 +9,5 @@ Log: @0 p3(7,3,10). The free variable r = (7 mod 3) + 10 = 11 (fixed); the old
 parse gave 7 mod (3 + 10) = 7. Both monitors must agree on 11.
 
   $ echo '(p3(x,y,z) AND r = x MOD y + z)' > mod.mfotl
-  $ monpoly -sig prec.sig -formula mod.mfotl -log mod.log
-  @0 (time point 0): (7,3,10,11)
-  $ monpoly -verified -sig prec.sig -formula mod.mfotl -log mod.log
+  $ verimon -sig prec.sig -formula mod.mfotl -log mod.log
   @0 (time point 0): (7,3,10,11)

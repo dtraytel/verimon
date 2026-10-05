@@ -12,11 +12,7 @@ difference when p(14) left the window, incorrectly suppressing tp2.
 Both monitors must output true at all three time points.
 
   $ echo '(EXISTS y. ONCE [0, 1] (p(y) AND y > 0))' > f.mfotl
-  $ monpoly -sig bug.sig -formula f.mfotl -log bug1.log
-  @0 (time point 0): true
-  @1 (time point 1): true
-  @2 (time point 2): true
-  $ monpoly -verified -sig bug.sig -formula f.mfotl -log bug1.log
+  $ verimon -sig bug.sig -formula f.mfotl -log bug1.log
   @0 (time point 0): true
   @1 (time point 1): true
   @2 (time point 2): true

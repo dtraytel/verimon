@@ -5,7 +5,5 @@ Regression test: a nested per-instance FRZ must inherit its parent's db history 
 a grandchild live predicate (here c(z), the phi of the innermost FRZ) is seeded for the
 timepoints that elapsed before the enclosing instance was created.  Previously this crashed
 with an assertion failure in the native engine (only at triple or deeper nesting).
-  $ monpoly -sig frz_bug_triple_nest.sig -formula frz_bug_triple_nest.mfotl -log frz_bug_triple_nest.log -nofilteremptytp -verified
-  @0 (time point 0): (1,2,3)
-  $ monpoly -sig frz_bug_triple_nest.sig -formula frz_bug_triple_nest.mfotl -log frz_bug_triple_nest.log -nofilteremptytp
+  $ verimon -sig frz_bug_triple_nest.sig -formula frz_bug_triple_nest.mfotl -log frz_bug_triple_nest.log -nofilteremptytp
   @0 (time point 0): (1,2,3)

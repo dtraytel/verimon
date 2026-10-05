@@ -1,1 +1,0 @@
-A(x,y) AND (C(x) TRIGGER[0,10] A(x,y))

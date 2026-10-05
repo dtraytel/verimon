@@ -1,7 +1,5 @@
   $ echo 'NOT b(x) UNTIL [0,5] c(x)' > test21_1.mfotl
-  $ monpoly -sig test21.sig -formula test21_1.mfotl -log test21.log -verbose -nonewlastts
-  The analyzed formula is:
-    (NOT b(x)) UNTIL[0,5] c(x)
+  $ verimon -sig test21.sig -formula test21_1.mfotl -log test21.log -verbose -nonewlastts
   The sequence of free variables is: (x)
   At time point 0:
   At time point 1:

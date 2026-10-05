@@ -1,7 +1,5 @@
   $ echo 'ONCE[2,21) P(x)' > test11_1.mfotl
-  $ monpoly -sig test11.sig -formula test11_1.mfotl -log test11.log -verbose -nonewlastts
-  The analyzed formula is:
-    ONCE[2,21) P(x)
+  $ verimon -sig test11.sig -formula test11_1.mfotl -log test11.log -verbose -nonewlastts
   The sequence of free variables is: (x)
   At time point 0:
   @13 (time point 0): ()

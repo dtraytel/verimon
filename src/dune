@@ -1,56 +1,17 @@
-(ocamllex formula_lexer log_lexer)
-(ocamlyacc formula_parser)
-
-; The verified kernel is generated from the Isabelle/HOL formalization and is
-; not meant to be edited, so its (many, harmless) compiler warnings are silenced
-; by isolating it in its own library with -w -a. It only depends on zarith.
-(library
-  (name verified)
-  (public_name libmonpoly.verified)
-  (libraries zarith)
-  (instrumentation (backend bisect_ppx))
-  (flags (:standard -w -a))
-  (modules verified))
-
-; The verified formula parser, generated from thys/MFODL_Parser in the same way.
-(library
-  (name verified_parser)
-  (public_name libmonpoly.verified_parser)
-  (libraries zarith)
-  (instrumentation (backend bisect_ppx))
-  (flags (:standard -w -a))
-  (modules verified_parser))
-
-; The verified monitor with MonPoly's command line (thys/VeriMon_CLI): the monitor, the log
-; parser and the formula parser in one module, generated in the same way.
+; The code generated from the Isabelle/HOL formalization (thys/VeriMon_CLI, theory CLI_Code):
+; the formula parser, the signature reader, the log parser and the monitor in one module, with
+; the few functions CLI_Code implements in OCaml (verimon_runtime.ml). It is not meant to be
+; edited, so its (many, harmless) compiler warnings are silenced.
 (library
   (name verimon_code)
-  (public_name libmonpoly.verimon_code)
   (wrapped false)
   (libraries zarith)
-  (instrumentation (backend bisect_ppx))
   (flags (:standard -w -a))
   (modules verimon_code verimon_runtime))
 
-(library
-  (name libmonpoly)
-  (public_name libmonpoly)
-  (libraries str unix zarith verified verified_parser)
-  (instrumentation (backend bisect_ppx))
-  (modules (:standard \ Main Verimon_cli verified verified_parser verimon_code verimon_runtime)))
-
 (executable
-  (name main)
-  (public_name monpoly)
-  (package monpoly)
-  (libraries libmonpoly dune-build-info)
-  (instrumentation (backend bisect_ppx))
-  (modules Main))
-
-(executable
-  (name verimon_cli)
-  (public_name verimon-cli)
-  (package monpoly)
-  (libraries libmonpoly verimon_code dune-build-info)
-  (instrumentation (backend bisect_ppx))
-  (modules Verimon_cli))
+  (name verimon)
+  (public_name verimon)
+  (package verimon)
+  (libraries zarith verimon_code dune-build-info)
+  (modules verimon verimon_io))

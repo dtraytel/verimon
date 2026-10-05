@@ -1,7 +1,5 @@
   $ echo '(x1 <- MAX x1; x2 (ONCE[1,1] (S(y1,x1,x2))))' > test30_1.mfotl
-  $ monpoly -sig test30.sig -formula test30_1.mfotl -log test30.log -verbose -nonewlastts
-  The analyzed formula is:
-    x1 <- MAX x1; x2 ONCE[1,1] S(y1,x1,x2)
+  $ verimon -sig test30.sig -formula test30_1.mfotl -log test30.log -verbose -nonewlastts
   The sequence of free variables is: (x1,x2)
   At time point 0:
   @0 (time point 0): ()

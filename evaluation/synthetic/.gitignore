@@ -1,7 +1,0 @@
-# generated benchmark inputs (see bench_suite.py for how to make them)
-*.log
-P2.mfotl
-P3.mfotl
-P2.sig
-P3.sig
-syn.sig

@@ -2,17 +2,16 @@
 """Run the performance suite: every formula of suite.txt under each system, with a timeout per
 run, a few interleaved repetitions, and a wall-clock budget for the whole suite.
 
-  python3 run_suite.py --bin ../../_build/default/src/main.exe [--reps 3] [--timeout 5]
-                       [--jobs 2] [--budget 1800] [--systems monpoly,verimon[,cli]]
-                       [--cli-bin ../../_build/default/src/verimon_cli.exe]
-                       [--families once,since] [--out results]
+  python3 run_suite.py [--systems monpoly,verimon] [--bin ../../_build/default/src/verimon.exe]
+                       [--monpoly PATH] [--reps 3] [--timeout 5] [--jobs 2] [--budget 1800]
+                       [--families once,since] [--names a,b] [--out results]
 
-Systems: monpoly is the binary without flags; verimon is `-verified`, the verified dense evaluator
-of thys/MFODL_Monitor_Exec (reports before 2026-09-23 call it `vdense`, from when it needed
-`-vdense` next to a second, unverified dense monitor under `-verified`; that monitor is no
-longer in the binary).  Run against a build of master, `-verified` is the original VeriMon.
-cli is the program verimon-cli (--cli-bin), the verified monitor with MonPoly's command line
-(thys/VeriMon_CLI), whose formula parser, signature reader and conversion are verified too.
+Systems: verimon is this repository's program (--bin).  monpoly and monpoly-verified are an
+external MonPoly (https://bitbucket.org/jshs/monpoly), which is not part of this repository:
+--monpoly names its binary (default: $MONPOLY, else `monpoly` on the PATH); monpoly runs it
+without flags (MonPoly's own algorithm), monpoly-verified with -verified (the VeriMon 1 that
+MonPoly ships).  The first system is the reference of the report's ratios; --systems verimon
+runs VeriMon alone.
 
 A run that exceeds the timeout is recorded as such and not repeated.  A non-zero exit is
 classified as `refused` (outside the verified executable fragment), `unmonitorable` (the front end
@@ -26,10 +25,10 @@ exceed it, the remaining formulas are skipped -- the report says so.
 
 Writes <out>/results.json, <out>/results.csv and <out>/report.md.
 """
-import argparse, concurrent.futures, csv, hashlib, json, math, os, statistics, subprocess, sys, threading, time
+import argparse, concurrent.futures, csv, hashlib, json, math, os, shutil, statistics, subprocess, sys, threading, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SYSTEMS = {"monpoly": [], "verimon": ["-verified"], "cli": []}
+SYSTEMS = {"verimon": [], "monpoly": [], "monpoly-verified": ["-verified"]}
 
 
 def read_suite(path):
@@ -78,7 +77,7 @@ def run_once(binary, flags, sig, formula, log, timeout):
 def flags_for(system, entry):
     """MonPoly's filter of empty time points rejects FRZ, so a formula with FRZ runs without it."""
     flags = list(SYSTEMS[system])
-    if system == "monpoly" and "FRZ" in entry["formula"]:
+    if system.startswith("monpoly") and "FRZ" in entry["formula"]:
         flags.append("-nofilteremptytp")
     return flags
 
@@ -94,7 +93,7 @@ def run_formula(entry, args, systems, reps_for):
         for s in systems:
             if r > 0 and res[s]["status"] != "ok":
                 continue
-            binary = args.cli_bin if s == "cli" else args.bin
+            binary = args.bin if s == "verimon" else args.monpoly
             st, dt, h = run_once(binary, flags_for(s, entry), sig, formula, log, args.timeout)
             if st == "ok":
                 res[s]["times"].append(dt)
@@ -115,7 +114,10 @@ def geomean(xs):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bin", default=os.path.join(HERE, "..", "..", "_build", "default", "src", "main.exe"))
+    ap.add_argument("--bin", default=os.path.join(HERE, "..", "..", "_build", "default", "src", "verimon.exe"),
+                    help="the verimon binary")
+    ap.add_argument("--monpoly", default=os.environ.get("MONPOLY") or shutil.which("monpoly"),
+                    help="an external MonPoly binary, for the systems monpoly and monpoly-verified")
     ap.add_argument("--logs", default=os.path.join(HERE, "logs"))
     ap.add_argument("--suite", default=os.path.join(HERE, "suite.txt"))
     ap.add_argument("--out", default=os.path.join(HERE, "results"))
@@ -124,12 +126,19 @@ def main():
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--budget", type=float, default=1800.0, help="wall-clock budget in seconds")
     ap.add_argument("--systems", default="monpoly,verimon")
-    ap.add_argument("--cli-bin", default=os.path.join(HERE, "..", "..", "_build", "default", "src", "verimon_cli.exe"))
     ap.add_argument("--families", default="", help="comma-separated subset of families")
     ap.add_argument("--names", default="", help="comma-separated subset of formula names")
     args = ap.parse_args()
     args.reps = max(1, min(3, args.reps))
     systems = args.systems.split(",")
+    for s in systems:
+        if s not in SYSTEMS:
+            sys.exit("unknown system %s (known: %s)" % (s, ", ".join(SYSTEMS)))
+    if not os.path.exists(args.bin):
+        sys.exit("no verimon binary at %s: run `dune build` first, or pass --bin" % args.bin)
+    if any(s.startswith("monpoly") for s in systems) and not (args.monpoly and os.path.exists(args.monpoly)):
+        sys.exit("no MonPoly binary: install MonPoly (https://bitbucket.org/jshs/monpoly) and pass "
+                 "--monpoly PATH or set $MONPOLY, or run --systems verimon")
     suite = read_suite(args.suite)
     if args.families:
         fams = set(args.families.split(","))
