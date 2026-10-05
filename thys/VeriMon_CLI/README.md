@@ -93,35 +93,42 @@ constructor applications (`natlit`), which OCaml compiles into static data.
 
 Measured on the performance suite (`evaluation/perf`: 285 formulas on synthetic
 logs of about 47 MB, best of 3, 5-second timeout, 2 workers on a 4-core
-machine), with `python3 run_suite.py --systems verimon,cli,monpoly`, on
-482050d8:
+machine) against MonPoly and VeriMon 1 (`monpoly -verified`) as built from the
+branch `refine-parser`; `evaluation/perf/README.md` has the details of the
+latest run:
 
-| | `verimon-cli` / `monpoly -verified` | `monpoly` / `monpoly -verified` |
+| | `verimon` / `monpoly -verified` | `verimon` / `monpoly` |
 |---|---|---|
-| formulas both run | 285 | 264 |
-| geometric mean | 1.01 | 1.08 |
-| median | 1.01 | 1.09 |
-| faster / more than 2x slower | 135 / 0 | 101 / 5 |
+| formulas both finish | 282 | 262 |
+| geometric mean | 0.98 | 1.03 |
+| median | 0.98 | 1.05 |
+| faster / more than 2x slower | 153 / 0 | 101 / 0 |
 | verdict disagreements | none | none |
 
-`verimon-cli` runs all formulas of the suite, among them `der-equiv`,
+`verimon` monitors all formulas of the suite, among them `der-equiv`,
 `A(x,y) AND (C(x) EQUIV C(y))`, which VeriMon's rewriting distributes into a
 disjunction (the equation of `Rewriting.rewrite` for a disjunction one level
-down a conjunction, as `EQUIV` produces). The largest ratio
-is `lp-chain` (1.62), whose run outputs 100 MB of verdicts: what remains of
-the printing's cost is the check that the monitor's order of the tuples is
-MonPoly's (`rows_of`), which `monpoly -verified` does as it streams.
+down a conjunction, as `EQUIV` produces), but two of them exceed the timeout
+on that run. One is `lp-chain`, whose run outputs 100 MB of verdicts; earlier, on a
+quieter machine, it was 1.62x `monpoly -verified`. What remains of the
+printing's cost is the check that the monitor's order of the tuples is MonPoly's
+(`rows_of`), which `monpoly -verified` does as it streams.
 
-Start-up (`-check` on the 285 formulas, best of 5): 4.0 ms median for both
-programs, a median ratio of 1.008; the verified formula parser, signature
-reader and conversion cost no measurable time.
+Start-up (`-check` on the 285 formulas, best of 5): 4.0 ms median, the same as
+`monpoly -verified`; the verified formula parser, signature reader and
+conversion cost no measurable time.
 
 The verdicts are printed with `verdict_fold` (theory `CLI_Output`), which
 passes each piece of the text and each integer of a tuple to the driver,
 which appends them to one buffer; it is proved equal to the fold over the
 pieces of `verdict_out` (`verdict_fold_eq`). With `verdict_out`'s lists, the
-same suite had a geometric mean of 1.06 and `lp-chain` timed out (6.4 s
-against 1.8 s).
+same suite had a geometric mean of 1.06 against `monpoly -verified` and
+`lp-chain` timed out (6.4 s against 1.8 s).
+
+Compiled with flambda (`dune build --release`), `verimon` is about 7% faster
+on the suite with OCaml 4.14.1 and about 2% with OCaml 5.5.1, against the
+same OCaml 4.14.1 without flambda; under OCaml 5, the minor heap's default is
+4M words (`Verimon_io.default_minor_heap`), 768k under OCaml 4.
 
 ## Differences from MonPoly and from VeriMon 1
 
