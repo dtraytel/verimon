@@ -1,8 +1,8 @@
-# The verified monitor with MonPoly's command line
+# VeriMon: the verified monitor with MonPoly's command line
 
-This session composes the verified parts of VeriMon into one program,
-`verimon-cli`, whose decisions are made in Isabelle/HOL and which reads
-MonPoly's command line:
+This session composes the verified parts of VeriMon into one program, VeriMon 2.0
+(`verimon`), whose decisions are made in Isabelle/HOL and which reads MonPoly's
+command line:
 
 - the formula file is parsed by the verified parser (session `MFODL_Parser`);
 - the signature file is read by a verified reader (theory `Signature`);
@@ -13,16 +13,16 @@ MonPoly's command line:
 - the verdicts and messages are worded as MonPoly words them (theories
   `CLI_Options` and `CLI_Output`).
 
-The OCaml driver `src/verimon_cli.ml` only reads the files that `cli_main`
-asks for, prints the texts it is given, runs the loop over the log, and locates
-errors in the log, as `monpoly -verified` does.
+The OCaml driver (`src/verimon.ml`, `src/verimon_io.ml`) only reads the files that
+`cli_main` asks for, prints the texts it is given, runs the loop over the log, and locates
+errors in the log by line and column.
 
 ## Theories
 
 | Theory | Content |
 |---|---|
 | `Signature` | Signature files: grammar `G_sig` over the log lexer's tokens, its language `sig_lang`, the reader `read_sig` with MonPoly's messages, and `read_sig_correct` |
-| `Formula_Conv` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax` with `-verified`), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
+| `Formula_Conv` | MonPoly's free-variable order (`MFOTL.free_vars`), its syntactic sugar (`normalize_syntax`, as MonPoly's front end applied it for VeriMon 1), the conversion `conv_formula` into `Formula.formula`, the folding of ground terms, and `sat_fold_ground` |
 | `CLI_Options` | MonPoly's options and `Arg.parse`'s messages: `parse_command`, `config` |
 | `CLI_Output` | Verdicts (`show_results`), timestamps (`-unix`), MonPoly's tuple order, and the messages for errors in the log |
 | `CLI` | `cli_main`, and the correctness theorems `cli_run` and `verimon_correct` |
@@ -123,35 +123,29 @@ pieces of `verdict_out` (`verdict_fold_eq`). With `verdict_out`'s lists, the
 same suite had a geometric mean of 1.06 and `lp-chain` timed out (6.4 s
 against 1.8 s).
 
-## Differences from `monpoly -verified`
+## Differences from MonPoly and from VeriMon 1
 
-`tools/verimon_cli_difftest.py` replays the commands of the cram tests
-(`tests/*.t/run.t`) with both programs and compares standard output, standard
-error and exit code:
+VeriMon 1 was MonPoly's mode `monpoly -verified`: MonPoly's unverified front end
+read the inputs and prepared the formula for the verified monitor. Before VeriMon
+became a program of its own, a differential test replayed the commands of
+MonPoly's tests with `monpoly -verified` and with `verimon` and compared
+standard output, standard error and exit code. All 95 commands that ran
+`monpoly -verified` gave the same output. Of all 841 `monpoly` commands (run
+with `-verified` added, and without the lines in which MonPoly prints the input
+or analyzed formula), 631 gave the same output; the others differed as follows:
 
-```
-dune build ./src/main.exe ./src/verimon_cli.exe
-python3 tools/verimon_cli_difftest.py _build/default/src/main.exe _build/default/src/verimon_cli.exe
-python3 tools/verimon_cli_difftest.py -all -noformula _build/default/src/main.exe _build/default/src/verimon_cli.exe
-```
-
-All 95 commands that run `monpoly -verified` give the same output. Of all 841
-`monpoly` commands (run with `-verified` added, and without the lines in
-which MonPoly prints the input or analyzed formula), 631 give the same output;
-the others differ as follows:
-
-- 141 use `-debug`, which prints MonPoly's internal state.
-- 47 differ in the reason why a formula is not monitorable (MonPoly prints its
-  own analysis of the subformula and of safe-range-ness; `verimon-cli` the
+- 141 used `-debug`, which prints MonPoly's internal state.
+- 47 differed in the reason why a formula is not monitorable (MonPoly prints its
+  own analysis of the subformula and of safe-range-ness; `verimon` the
   verified monitor's).
-- 9 grep for the analyzed formula, which `verimon-cli` does not print.
-- 6 differ in the message of a type error, which is the verified type
+- 9 grepped for the analyzed formula, which `verimon` does not print.
+- 6 differed in the message of a type error, which is the verified type
   checker's.
-- 5 use `-load`, which is refused.
+- 5 used `-load`, which is refused.
 - 1 formula is monitorable only after MonPoly's own rewriting, to which
-  `monpoly -verified` falls back when VeriMon's preparation fails;
-  `verimon-cli` does not.
-- 1 differs in the message for a formula that the parser rejects.
+  `monpoly -verified` fell back when VeriMon's preparation failed;
+  `verimon` does not.
+- 1 differed in the message for a formula that the parser rejects.
 
 In detail:
 
@@ -168,6 +162,13 @@ In detail:
 - `-load` and `-combine` are refused; `-debug`, `-stats` and the options of
   MonPoly's own algorithm are accepted and ignored.
 - The usage text names `verimon` and lists its options.
+- MonPoly's log commands (`> get_pos <` and the like) are refused.
 
-`tests/verimon_cli.t` runs `verimon-cli` on examples of verdicts, errors in
-the log, the checks of the input, and the command line.
+The messages that the verified front end prints are MonPoly's, word for word,
+also where they name MonPoly's modules (for example
+`Libmonpoly.Verified_adapter.UnsupportedFragment` for a formula outside the
+supported fragment).
+
+`tests/verimon.t` runs `verimon` on examples of verdicts, errors in the log, the
+checks of the input, and the command line; the other tests in `tests/` are
+MonPoly's and VeriMon 1's tests, run with `verimon`.

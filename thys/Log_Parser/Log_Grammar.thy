@@ -13,8 +13,8 @@ text \<open>
   @{text G_parser} from tokens to the log's entries. The executable lexer and parser of the
   following theories are proved sound and complete for them.
 
-  The format is the one MonPoly's hand-written lexer (@{file \<open>../../src/log_lexer.mll\<close>}) and
-  parser (@{file \<open>../../src/log_parser.ml\<close>}) accept:
+  The format is the one MonPoly's hand-written lexer (\<^verbatim>\<open>src/log_lexer.mll\<close> of MonPoly) and
+  parser (\<^verbatim>\<open>src/log_parser.ml\<close> of MonPoly) accept:
   \<^item> A log is a sequence of time points @{text "@ts db"}, each optionally ended by @{text ";"},
     and of commands @{text "> name args <"}.
   \<^item> The database @{text db} of a time point is a sequence of predicate names, each followed by

@@ -6,7 +6,7 @@ section \<open>Surface syntax of MFODL formulas\<close>
 
 text \<open>
   The abstract syntax produced by MonPoly's formula parser
-  (\<^file>\<open>../../src/MFOTL.mli\<close>, \<^file>\<open>../../src/predicate.mli\<close>), with named
+  (\<^verbatim>\<open>src/MFOTL.mli\<close> of MonPoly, \<^verbatim>\<open>src/predicate.mli\<close> of MonPoly), with named
   variables. Constructor names carry a prefix to avoid clashes with
   constants of \<^theory>\<open>Main\<close>. Numeric literals are kept as they are
   written: integers as \<^typ>\<open>int\<close> (MonPoly uses arbitrary precision

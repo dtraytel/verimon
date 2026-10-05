@@ -6,7 +6,7 @@ section \<open>Lexer\<close>
 
 text \<open>
   An executable model of MonPoly's formula lexer
-  (\<^file>\<open>../../../src/formula_lexer.mll\<close>). Like ocamllex, it takes the longest
+  (\<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly). Like ocamllex, it takes the longest
   match at every position and resolves ties by rule order. Characters are
   bytes, so the Unicode spellings \<open>\<triangleright>\<close> and \<open>\<triangleleft>\<close> of \<open>|>\<close> and \<open><|\<close> are matched by their
   UTF-8 encodings. Unlike MonPoly, a time unit other than \<open>d\<close>, \<open>h\<close>, \<open>m\<close>, \<open>s\<close>
@@ -100,7 +100,7 @@ subsection \<open>Rules\<close>
 
 datatype action = Emit mtok | Skip | Comment | LineComment | EmitTU
 
-text \<open>The rules in the order of \<^file>\<open>../../../src/formula_lexer.mll\<close>.\<close>
+text \<open>The rules in the order of \<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly.\<close>
 
 definition keyword_table :: \<open>(string \<times> mtok) list\<close> where
   \<open>keyword_table =

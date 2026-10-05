@@ -2,7 +2,7 @@ theory MFODL_Parser_Code
   imports MFODL_Lexer_Code "HOL-Library.Code_Binary_Nat"
 begin
 
-text \<open>Examples, checked by evaluation, and the code export. A separate session,
+text \<open>Examples, checked by evaluation. A separate session,
   so that the heap image of \<^session>\<open>MFODL_Parser\<close>, whose \<^theory_text>\<open>parser\<close>
   command takes long, does not depend on them.\<close>
 
@@ -58,22 +58,5 @@ lemma mfodl_examples:
    (parse_formula ''P(x) AND'' = None) \<and>
    (parse_formula ''P(x) Q(x)'' = None)\<close>
   by eval
-
-
-section \<open>Code export\<close>
-
-text \<open>Entry points for \<^verbatim>\<open>src/verified_parser_adapter.ml\<close>. Strings are passed
-  as lists of characters, so that every byte of the input reaches the lexer
-  (\<^typ>\<open>String.literal\<close> only holds 7-bit characters). Characters are
-  integers in the code (\<^verbatim>\<open>Code_Abstract_Char\<close>), converted by
-  \<^const>\<open>char_of_integer\<close> and \<^const>\<open>integer_of_char\<close>. One constructor per
-  datatype makes its constructors visible to OCaml.\<close>
-
-definition lex_chars :: \<open>string \<Rightarrow> (mtok \<times> string) list option\<close> where
-  \<open>lex_chars s = map_option (map (\<lambda>t. (tok t, lexeme t))) (lex s)\<close>
-
-export_code parse_formula lex_chars lex mfodl_parse postprocess integer_of_int integer_of_nat
-  char_of_integer integer_of_char CInt TVar OBnd ACnt FEqual RSkip FALSE
-  in OCaml module_name Verified_parser file_prefix "verified_parser"
 
 end

@@ -1,7 +1,7 @@
 # A verified parser for MonPoly's formula syntax
 
 This session defines MonPoly's formula grammar
-(`src/formula_parser.mly`) with the `grammar` command of the
+(`src/formula_parser.mly` in MonPoly's sources) with the `grammar` command of the
 [grammar](https://github.com/dtraytel/grammar) package (`thys/grammar`, a git
 submodule). From it, the `parser` command generates an LALR(1) parser and proves
 it sound and complete:
@@ -17,10 +17,11 @@ introduction rule per production, with the semantic actions as values.
 |---|---|---|
 | `MFODL_Grammar` (`.`) | `MFODL_Syntax` | The syntax tree: MonPoly's `MFOTL.formula` with named variables |
 | | `MFODL_Grammar` | Tokens, the grammar `mfodl` and its semantic actions |
-| `MFODL_Parser` (`Parser`) | `MFODL_Lexer` | An executable model of `src/formula_lexer.mll` (not verified) |
+| `MFODL_Parser` (`Parser`) | `MFODL_Lexer` | An executable model of MonPoly's `src/formula_lexer.mll` (not verified) |
 | | `MFODL_Post` | What MonPoly's actions do besides building the tree: numbering `_`, `add_ex`, checks |
 | | `MFODL_Parser` | The parser `mfodl_parse`, its correctness, and `parse_formula` = lexer + parser + post-processing |
-| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Parser_Code` | Examples checked by evaluation, and the code export |
+| `MFODL_Parser_Code` (`Parser/Code`) | `MFODL_Lexer_Code` | Code equations for the lexer |
+| | `MFODL_Parser_Code` | Examples checked by evaluation |
 
 The sessions are separate because the `grammar` and `parser` commands are slow
 on a grammar of this size (`MFODL_Grammar` takes about 4 minutes, most of it in
@@ -28,11 +29,11 @@ the inductive definitions of the relation; `MFODL_Parser` about 17 minutes, most
 of it in evaluating the LR tables and the static check), and neither needs to
 rerun unless the grammar changes.
 
-Building and exporting the parser:
+VeriMon's code export (session `VeriMon_CLI`, `src/verimon_code.ml`) contains the parser. The
+sessions alone are built with
 
 ```
-cd thys && isabelle build -b -e -d . MFODL_Parser_Code
-cp MFODL_Parser/Parser/Code/verified_parser.ocaml ../src/verified_parser.ml
+cd thys && isabelle build -b -d . MFODL_Parser_Code
 ```
 
 The `grammar` package's own session `Grammar_Command` builds its PDF
@@ -60,9 +61,9 @@ premises only if the check succeeds.
 
 ## Differences from MonPoly's parser
 
-The grammar was checked against MonPoly's parser with
-`tools/parser_difftest.ml` (random formulas and all formulas in the
-repository). Where both accept, they build the same syntax tree. The verified
+The grammar was checked against MonPoly's parser with a differential test on
+random formulas and on all formulas of MonPoly's repository (`tools/parser_difftest.ml`,
+which ran both parsers in one program before VeriMon became a program of its own). Where both accept, they build the same syntax tree. The verified
 parser rejects some formulas that MonPoly accepts; in each case it accepts the
 formula once parentheses are added:
 
@@ -82,18 +83,19 @@ formula once parentheses are added:
 Differences that do not come from the grammar:
 
 - Regular expression constants `r"..."` are not compiled. MonPoly rejects
-  those that `Str.regexp` rejects. The OCaml adapter
-  (`src/verified_parser_adapter.ml`) compiles them and rejects the same ones.
+  those that `Str.regexp` rejects; VeriMon does not support `MATCHES`, and
+  rejects formulas with it as `monpoly -verified` did.
 - A time unit other than `d`, `h`, `m`, `s` (as in `5x`) is rejected by the
   lexer. MonPoly lexes it and then fails in the parser, so the outcome is the
   same.
 
 ## Testing
 
-`tools/parser_difftest.ml` (`parser_difftest`) runs both parsers on the same
-inputs and compares the syntax trees; with `-lex` it compares the token streams
-of the lexer model and of `src/formula_lexer.mll` on random strings of tricky
-lexemes. `tests/verified_parser.t` runs a small instance of both.
+The differential test compared the syntax trees of both parsers on the same
+inputs, and the token streams of the lexer model and of MonPoly's lexer on
+random strings of tricky lexemes. In this repository, `tests/verified_parser.t`
+checks the messages for rejected formulas, and the other tests run VeriMon,
+whose formulas all go through the parser.
 
 ## Performance
 
@@ -102,14 +104,10 @@ On the 201 formulas of the performance suite (`evaluation/perf/suite.txt`,
 parser (median 6.7): with MonPoly's parser at 1.4 to 5.6 µs per formula
 (median 2.4 µs), about 16 µs at the median. The LR driver takes 71% of the
 time, the lexer 21%, post-processing and conversion 8%. In a `monpoly -check`
-run (about 5.5 ms) the difference is within the noise. Measured with
-
-```
-parser_difftest -time FILE...
-```
-
-which prints, per formula, the CPU time in microseconds of both parsers and
-that of the verified lexer, LR parser and the rest. The earlier versions of
+run (about 5.5 ms) the difference is within the noise. Measured with the
+differential test's timing mode, which printed, per formula, the CPU time in
+microseconds of both parsers and that of the verified lexer, LR parser and the
+rest. The earlier versions of
 the export, on the same suite (median per formula):
 
 | version                                    | median | total   |
@@ -186,7 +184,7 @@ character. They reduced the lexer from 427 M to 13 M instructions.
 `MFODL_Parser_Code` also imports `Code_Abstract_Char`, which exports a
 character as its code, an integer: comparing two characters then compares two
 integers instead of eight bits, and `integer_of_char` needs no arithmetic
-(the adapter converts OCaml strings with `char_of_integer`). A pattern match on
+(OCaml strings are converted with `char_of_integer`). A pattern match on
 a character literal, as in `int_of_lexeme` (`CHR ''-'' # ds`), still takes the
 character apart into its bits; `digit_val`, `int_of_lexeme` and `sign_len` get
 code equations that compare instead.
@@ -196,7 +194,9 @@ ocamlopt sees the tables as static data; with `Code_Target_Nat` the tables
 become some 36,000 `Z.of_int` calls and ocamlopt fails with a stack overflow.
 The `grammar` package can also run the driver on arrays with integer indices
 (`declare [[parser_int_tables]]`, `lr/LR_Int.thy`), but converting the tables
-when the module is loaded adds about 4.5 ms to every run of `monpoly`.
+when the module is loaded adds about 4.5 ms to every run. (VeriMon's export
+prints the naturals of the tables as constructor applications instead, which
+OCaml also compiles into static data; see `thys/VeriMon_CLI/README.md`.)
 
-`src/verified_parser.ml` is about 2.6 MB, mostly the action and goto tables
+The parser's own export was about 2.6 MB, mostly the action and goto tables
 of the product automaton as tries; a reduce entry holds its production.

@@ -6,7 +6,7 @@ section \<open>Tokens\<close>
 
 text \<open>
   The token classes of MonPoly's formula lexer
-  (\<^file>\<open>../../src/formula_lexer.mll\<close>). Tokens that carry a payload
+  (\<^verbatim>\<open>src/formula_lexer.mll\<close> of MonPoly). Tokens that carry a payload
   (\<open>NAME\<close>, \<open>INTEGER\<close>, \<dots>) carry it as their lexeme, the text \<^const>\<open>s_txt\<close>
   of their \<^const>\<open>span\<close>; the semantic actions convert it.
 \<close>
@@ -70,7 +70,7 @@ definition bare_atom :: \<open>formula \<Rightarrow> bool \<Rightarrow> regex\<c
 section \<open>The grammar\<close>
 
 text \<open>
-  MonPoly's grammar (\<^file>\<open>../../src/formula_parser.mly\<close>) is ambiguous and
+  MonPoly's grammar (\<^verbatim>\<open>src/formula_parser.mly\<close> of MonPoly) is ambiguous and
   resolved by ocamlyacc's precedence declarations. Here the precedences are
   compiled into the productions, so that the grammar is unambiguous and passes
   the LALR(1) conflict check of the \<^theory_text>\<open>parser\<close> command.

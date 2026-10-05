@@ -4,10 +4,10 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
   description
     "The verified executable monitor: the evaluator emstep/eeval, which refines the kernel's
      evaluation function over short tuples with executable window structures, its compiler from
-     the kernel's state, and the formula rewrites it runs with.  Monitor_Code is the code export
-     the shipping binary is built from (src/verified.ml), together with the verified log parser
-     of session Log_Parser; Log_Monitor composes the two, from the bytes of the log to the
-     verdicts, and Log_Monitor_Online states its correctness for the online interface."
+     the kernel's state, and the formula rewrites it runs with.  Log_Monitor composes it with the
+     verified log parser of session Log_Parser, from the bytes of the log to the verdicts, and
+     Log_Monitor_Online states its correctness for the online interface; Monitor_Code holds the
+     code-generator setup that VeriMon's code export (session VeriMon_CLI) relies on."
   sessions
     Log_Parser
   theories
@@ -42,5 +42,3 @@ session MFODL_Monitor_Exec = MFODL_Monitor_Devel +
     Log_Monitor_Online
   theories [document=false]
     Monitor_Code
-  export_files (in ".") [2]
-    "MFODL_Monitor_Exec.Monitor_Code:code/**"
